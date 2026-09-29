@@ -20,7 +20,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/behaviorsurface"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/events"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hooks"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
@@ -32,7 +32,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
-	usagecore "github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
 )
 
 type waitCommandProber struct {
@@ -96,7 +95,7 @@ func TestWaitVerbArgumentsAndResult(t *testing.T) {
 		t.Fatalf("invalid resume identifier code=%d stderr=%q", code, problem)
 	}
 	result := metarun.WaitResult{SchemaVersion: 2, WaitID: strings.Repeat("a", 32), Selector: metarun.WaitSelector{Kind: "run", TargetID: "run-a"}, TargetIncarnation: metarun.WaiterTarget{Generation: 2, LaunchNonce: "n"}, ExitCode: metarun.ExitGreen, Reason: "run completed green", SourceOutcome: "green", SourceEvidence: "run:run-a:g2:n"}
-	code, output, problem := captureChannelOutput(t, func() int { printWaitResult(result, true); return 0 })
+	code, output, problem := captureChannelOutput(t, func() int { writeWaitResult(os.Stdout, result, true); return 0 })
 	if code != 0 || problem != "" {
 		t.Fatalf("JSON result code=%d stderr=%q", code, problem)
 	}
@@ -104,7 +103,7 @@ func TestWaitVerbArgumentsAndResult(t *testing.T) {
 	if err := json.Unmarshal([]byte(output), &decoded); err != nil || decoded.WaitID != result.WaitID || decoded.TargetIncarnation.Generation != 2 {
 		t.Fatalf("JSON result=%q decoded=%+v err=%v", output, decoded, err)
 	}
-	_, plain, _ := captureChannelOutput(t, func() int { printWaitResult(result, false); return 0 })
+	_, plain, _ := captureChannelOutput(t, func() int { writeWaitResult(os.Stdout, result, false); return 0 })
 	if strings.Count(strings.TrimSpace(plain), "\n") != 0 || !strings.Contains(plain, "run-a") || !strings.Contains(plain, "run:run-a:g2:n") {
 		t.Fatalf("plain result is not one complete line: %q", plain)
 	}
@@ -189,10 +188,12 @@ func TestUnassociatedRegistrationRefusesNoRow(t *testing.T) {
 	waitCallerPID = func() int64 { return self }
 	waitDeliveryRuntime = func(string, string) (string, error) { return "fake", nil }
 	t.Cleanup(func() { waitCallerPID, waitDeliveryRuntime = originalPID, originalAdapter })
-	code, _, problem := captureChannelOutput(t, func() int { return runWait([]string{"--root", root, "--job", "job-unassociated"}) })
+	// A refusal before the wait starts is the wait's result, printed where
+	// the caller reads every outcome.
+	code, output, problem := captureChannelOutput(t, func() int { return runWait([]string{"--root", root, "--job", "job-unassociated"}) })
 	rows, _ := filepath.Glob(filepath.Join(metarun.WaitersDir(root), "*.json"))
-	if code != metarun.ExitWaiterBusy || !strings.Contains(problem, "authenticated runtime session") || len(rows) != 0 {
-		t.Fatalf("unassociated registration code=%d stderr=%q rows=%v", code, problem, rows)
+	if code != metarun.ExitWaiterBusy || !strings.Contains(output, "authenticated runtime session") || len(rows) != 0 {
+		t.Fatalf("unassociated registration code=%d stdout=%q stderr=%q rows=%v", code, output, problem, rows)
 	}
 	if err := lease.AssociateSession(root, mainID, "session-associated", "start", "clear"); err != nil {
 		t.Fatal(err)
@@ -347,7 +348,7 @@ func TestWaitPlainResumeRefusesChannelRegistration(t *testing.T) {
 	waitCallerPID = func() int64 { return self }
 	t.Cleanup(func() { waitCallerPID = originalPID })
 	code, _, problem := captureChannelOutput(t, func() int { return runWait([]string{"--root", root, "--resume", waitID}) })
-	if code != metarun.ExitWaiterBusy || !strings.Contains(problem, "metasystem internal channel wait --resume "+waitID) {
+	if code != metarun.ExitWaiterBusy || !strings.Contains(problem, "metasystem work wait wait:"+waitID) {
 		t.Fatalf("plain channel resume code=%d stderr=%q", code, problem)
 	}
 }
@@ -394,20 +395,7 @@ func TestWaitInstalledRunCommand(t *testing.T) {
 		waitDeliveryRuntime = originalAdapterPath
 	})
 	code, output, problem := 0, "", ""
-	if binary := os.Getenv("METASYSTEM_WAIT_BINARY"); binary != "" {
-		binary = testutil.InstalledWaitBinary(t, binary)
-		cmd := exec.Command(binary, "internal", "wait", "--root", root, "--run", "run-command", "--timeout", "1m", "--json")
-		data, commandErr := cmd.CombinedOutput()
-		output = string(data)
-		if commandErr != nil {
-			problem = commandErr.Error()
-			if exit, ok := commandErr.(*exec.ExitError); ok {
-				code = exit.ExitCode()
-			} else {
-				code = -1
-			}
-		}
-	} else {
+	{
 		code, output, problem = captureChannelOutput(t, func() int {
 			return runWait([]string{"--root", root, "--run", "run-command", "--timeout", "1m", "--json"})
 		})
@@ -431,14 +419,20 @@ func TestWaitInstalledRunCommand(t *testing.T) {
 		t.Fatal(err)
 	}
 	if binary := os.Getenv("METASYSTEM_WAIT_BINARY"); binary != "" {
-		binary = testutil.InstalledWaitBinary(t, binary)
-		cmd := exec.Command(binary, "internal", "wait", "--root", root, "--job", "job-command", "--timeout", "1m", "--json")
+		testutil.InstalledWaitBinary(t, binary)
+		cmd := exec.Command(commandTestExecutable(t), waitHelperCommand, "--root", root, "--job", "job-command", "--timeout", "1m", "--json")
+		cmd.Env = append(os.Environ(), "GO_WANT_BATCH_E2E_COMMAND=1")
 		data, commandErr := cmd.CombinedOutput()
 		if commandErr != nil || !strings.Contains(string(data), `"exitCode":0`) {
 			t.Fatalf("installed job wait output=%s err=%v", data, commandErr)
 		}
-		if err := os.MkdirAll(filepath.Join(root, "scripts", "agents"), 0o755); err != nil {
+		if err := os.MkdirAll(root, 0o755); err != nil {
 			t.Fatal(err)
+		}
+		if marker, err := os.OpenFile(filepath.Join(root, "metasystem.conf"), os.O_CREATE|os.O_WRONLY, 0o644); err != nil {
+			t.Fatal(err)
+		} else {
+			marker.Close()
 		}
 		if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("dispatch.cap-max=120\nmetasystem.runtimes=fake\n"), 0o600); err != nil {
 			t.Fatal(err)
@@ -448,8 +442,8 @@ func TestWaitInstalledRunCommand(t *testing.T) {
 		// executing this test; the fake-runtime root authorizes this temp slot.
 		t.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", filepath.Join(root, "proof-admission"))
 		t.Setenv("METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT", root)
-		for _, name := range []string{"coverage-ratchet.json", "coverage-ratchet-linux.json"} {
-			if err := os.WriteFile(filepath.Join(root, "scripts", "agents", name), []byte(`{"floors":{"internal/proofrun":1},"exempt":{}}`), 0o600); err != nil {
+		for _, name := range []string{"testing-coverage-floors.json", "testing-coverage-floors-linux.json"} {
+			if err := os.WriteFile(filepath.Join(root, name), []byte(`{"floors":{"internal/proofrun":1},"exempt":{}}`), 0o600); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -469,7 +463,8 @@ func TestWaitInstalledRunCommand(t *testing.T) {
 		if _, err := proofrun.FinalizeAttempt(root, proofAttempt.AttemptID, proofrun.TerminalSuccess, 0, "installed proof terminal", nil, time.Now().UTC()); err != nil {
 			t.Fatal(err)
 		}
-		cmd = exec.Command(binary, "internal", "wait", "--root", root, "--attempt", proofAttempt.AttemptID, "--timeout", "1m", "--json")
+		cmd = exec.Command(commandTestExecutable(t), waitHelperCommand, "--root", root, "--attempt", proofAttempt.AttemptID, "--timeout", "1m", "--json")
+		cmd.Env = append(os.Environ(), "GO_WANT_BATCH_E2E_COMMAND=1")
 		data, commandErr = cmd.CombinedOutput()
 		if commandErr != nil || !strings.Contains(string(data), `"exitCode":0`) {
 			t.Fatalf("installed proof wait output=%s err=%v", data, commandErr)
@@ -481,164 +476,6 @@ func TestWaitInstalledRunCommand(t *testing.T) {
 		if code != 0 || problem != "" || !strings.Contains(data, `"exitCode":0`) {
 			t.Fatalf("job wait code=%d output=%s problem=%s", code, data, problem)
 		}
-	}
-}
-
-func TestWaitNotifyCommand(t *testing.T) {
-	root := t.TempDir()
-	if err := os.MkdirAll(metarun.WaitersDir(root), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	waitID := strings.Repeat("a", 32)
-	nonce := strings.Repeat("b", 32)
-	rowPath := metarun.WaiterPath(root, "job", "notify-job", "owner")
-	hintPath := rowPath + "." + nonce + ".hint"
-	receiver, err := metarun.OpenFIFOHintReceiver(hintPath, waitID, nonce)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer receiver.Close()
-	defer os.Remove(hintPath)
-	row := metarun.Waiter{SchemaVersion: 2, WaitID: waitID, Nonce: nonce, Kind: "job", TargetID: "notify-job", OwnerDigest: "owner", State: "pending", Accelerator: "fifo", HintPath: hintPath}
-	encoded, err := json.Marshal(row)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(rowPath, encoded, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	output, code := captureStdout(t, func() int {
-		return runWait([]string{"notify", "--root", root, "--job", "notify-job"})
-	})
-	if code != 0 || !strings.Contains(output, "matched=1 delivered=1") {
-		t.Fatalf("notify code=%d output=%q", code, output)
-	}
-	hinted, err := receiver.Wait(context.Background(), time.Second)
-	if err != nil || !hinted {
-		t.Fatalf("notify did not reach the private FIFO: hinted=%t err=%v", hinted, err)
-	}
-	if code := runWait([]string{"notify", "--job", "one", "--goal", "two"}); code != metarun.ExitInvalidWait {
-		t.Fatalf("ambiguous notify exit=%d", code)
-	}
-}
-
-func TestWaitMeasureVerb(t *testing.T) {
-	emitReturn := func(root, id, runtimeName string, atEntry bool, previous, observed, returned int64) {
-		t.Helper()
-		fields := map[string]string{
-			"waitId": id, "nonce": strings.Repeat("b", 32), "kind": "attempt", "targetId": id, "runtime": runtimeName, "mode": "register", "state": "ready",
-			"sourceEvidence": "attempt:" + id + ":digest", "registeredAt": "2026-09-16T10:00:00Z", "returnedAt": "2026-09-16T10:00:01Z",
-			"registeredBootNanos": "1", "prevObservedBootNanos": strconv.FormatInt(previous, 10), "observedBootNanos": strconv.FormatInt(observed, 10), "returnedBootNanos": strconv.FormatInt(returned, 10),
-			"registeredBootId": "boot", "prevObservedBootId": "boot", "observedBootId": "boot", "returnedBootId": "boot", "atEntry": strconv.FormatBool(atEntry),
-		}
-		if err := (&events.Emitter{Component: "run", Pid: 30, PidStartedAt: 40}).EmitChecked(root, "wait-returned", "wait measure verb fixture", fields); err != nil {
-			t.Fatal(err)
-		}
-	}
-	makeRoot := func(atEntry bool, previous, observed, returned int64) string {
-		root := t.TempDir()
-		emitReturn(root, strings.Repeat("a", 32), "codex", atEntry, previous, observed, returned)
-		return root
-	}
-	refuted := makeRoot(false, 2, 5, int64(70*time.Second))
-	first, code := captureStdout(t, func() int { return runWait([]string{"measure", "--root", refuted, "--json"}) })
-	second, again := captureStdout(t, func() int { return runWait([]string{"measure", "--root", refuted, "--json"}) })
-	if code != 1 || again != 1 || first != second || !strings.Contains(first, `"verdict":"refuted"`) || strings.Contains(strings.ToLower(first), "pass") {
-		t.Fatalf("refuted code=%d/%d output=%s", code, again, first)
-	}
-	if binary := os.Getenv("METASYSTEM_WAIT_BINARY"); binary != "" {
-		command := exec.Command(binary, "internal", "wait", "measure", "--root", refuted, "--json")
-		data, err := command.CombinedOutput()
-		if err == nil || command.ProcessState.ExitCode() != 1 || string(data) != first {
-			t.Fatalf("installed exit=%v output=%s", err, data)
-		}
-	}
-	available := makeRoot(false, 10, 20, int64(time.Second))
-	if output, code := captureStdout(t, func() int { return runWaitMeasure([]string{"--root", available, "--json"}) }); code != 0 || !strings.Contains(output, `"verdict":"unproven"`) {
-		t.Fatalf("available exit=%d output=%s", code, output)
-	}
-	unavailable := makeRoot(true, 10, 20, int64(time.Second))
-	if _, code := captureStdout(t, func() int { return runWaitMeasure([]string{"--root", unavailable}) }); code != 2 {
-		t.Fatalf("unavailable exit=%d", code)
-	}
-	if code := runWaitMeasure([]string{"--since", "bad"}); code != metarun.ExitInvalidWait {
-		t.Fatalf("invalid exit=%d", code)
-	}
-
-	grouped := t.TempDir()
-	emitReturn(grouped, "codex-event", "codex", false, 10, 20, int64(time.Second))
-	emitReturn(grouped, "fake-event", "fake", false, 10, 20, int64(time.Second))
-	before, err := os.ReadFile(filepath.Join(grouped, "artifacts", "agents", "events.jsonl"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	type answer struct {
-		data string
-		err  error
-	}
-	answers := make(chan answer, 2)
-	for range 2 {
-		go func() {
-			measurement, measureErr := usagecore.MeasureWaits(grouped, usagecore.WaitMeasureOptions{})
-			encoded, _ := json.Marshal(measurement)
-			answers <- answer{data: string(encoded), err: measureErr}
-		}()
-	}
-	one, two := <-answers, <-answers
-	after, err := os.ReadFile(filepath.Join(grouped, "artifacts", "agents", "events.jsonl"))
-	if err != nil || one.err != nil || two.err != nil || one.data != two.data || string(before) != string(after) || !strings.Contains(one.data, `"runtime":"codex"`) || !strings.Contains(one.data, `"runtime":"fake"`) {
-		t.Fatalf("concurrent read one=%s/%v two=%s/%v unchanged=%t readErr=%v", one.data, one.err, two.data, two.err, string(before) == string(after), err)
-	}
-
-	duplicateRoot := t.TempDir()
-	bootID, bootElapsed := "boot-duplicate", 10*time.Second
-	publicationClock := func() (string, time.Duration, error) { return bootID, bootElapsed, nil }
-	publicationID := "job:job-duplicate:operation:r1:started:completed"
-	jobReturn := map[string]string{
-		"waitId": strings.Repeat("c", 32), "nonce": strings.Repeat("d", 32), "kind": "job", "targetId": "job-duplicate", "runtime": "codex", "mode": "register", "state": "ready",
-		"sourceEvidence": "job:job-duplicate:operation:r1:started", "sourceOutcome": "completed", "registeredAt": "2026-09-16T10:00:00Z", "returnedAt": "2026-09-16T10:00:01Z",
-		"registeredBootNanos": strconv.FormatInt((bootElapsed - 5*time.Second).Nanoseconds(), 10), "prevObservedBootNanos": strconv.FormatInt((bootElapsed - 4*time.Second).Nanoseconds(), 10),
-		"observedBootNanos": strconv.FormatInt((bootElapsed - 2*time.Second).Nanoseconds(), 10), "returnedBootNanos": strconv.FormatInt((bootElapsed - time.Second).Nanoseconds(), 10),
-		"registeredBootId": bootID, "prevObservedBootId": bootID, "observedBootId": bootID, "returnedBootId": bootID, "atEntry": "false",
-	}
-	if err := (&events.Emitter{Component: "run", Pid: 31, PidStartedAt: 41}).EmitChecked(duplicateRoot, "wait-returned", "duplicate publication fixture", jobReturn); err != nil {
-		t.Fatal(err)
-	}
-	for range 2 {
-		_, err := metarun.NotifyWaiters(duplicateRoot, metarun.WaitHint{
-			Kind: "job", TargetID: "job-duplicate", PublicationID: publicationID,
-			BeganBootNanos: (bootElapsed - 3*time.Second).Nanoseconds(), BeganBootID: bootID,
-		}, publicationClock)
-		if err != nil {
-			t.Fatalf("duplicate notify: %v", err)
-		}
-	}
-	stream, err := os.ReadFile(filepath.Join(duplicateRoot, "artifacts", "agents", "events.jsonl"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	publicationCount := 0
-	for _, line := range strings.Split(strings.TrimSpace(string(stream)), "\n") {
-		var event map[string]any
-		if err := json.Unmarshal([]byte(line), &event); err != nil {
-			t.Fatal(err)
-		}
-		if event["event"] != "wait-published" {
-			continue
-		}
-		began, beganErr := strconv.ParseInt(fmt.Sprint(event["beganBootNanos"]), 10, 64)
-		published, publishedErr := strconv.ParseInt(fmt.Sprint(event["publishedBootNanos"]), 10, 64)
-		if beganErr != nil || publishedErr != nil || began != (bootElapsed-3*time.Second).Nanoseconds() || published != bootElapsed.Nanoseconds() || event["beganBootId"] != bootID || event["publishedBootId"] != bootID || began >= published {
-			t.Fatalf("raw publication clock mismatch: began=%v/%v/%v published=%v/%v/%v", began, event["beganBootId"], beganErr, published, event["publishedBootId"], publishedErr)
-		}
-		publicationCount++
-	}
-	if publicationCount != 2 {
-		t.Fatalf("published event count=%d, want 2", publicationCount)
-	}
-	duplicate, err := usagecore.MeasureWaits(duplicateRoot, usagecore.WaitMeasureOptions{})
-	if err != nil || len(duplicate.Runtimes) != 1 || len(duplicate.Runtimes[0].Samples) != 1 || duplicate.Runtimes[0].Samples[0].LooseEdgeReason != "publication-ambiguous" || duplicate.Runtimes[0].Samples[0].LowerEdge != "prev-observation" || duplicate.Runtimes[0].Samples[0].UpperEdge != "observation" || duplicate.Runtimes[0].Defects["publication-ambiguous"] != 1 {
-		t.Fatalf("duplicate publication measurement=%+v err=%v", duplicate, err)
 	}
 }
 
@@ -689,7 +526,7 @@ func TestWaitSessionStartPrintsPendingRows(t *testing.T) {
 		t.Fatalf("turn verdict code=%d output=%q stderr=%q display=%q", code, verdictOutput, problem, verdict.Display)
 	}
 	if binary := os.Getenv("METASYSTEM_WAIT_BINARY"); binary != "" {
-		binary = testutil.InstalledWaitBinary(t, binary)
+		testutil.InstalledWaitBinary(t, binary)
 		if output, err := exec.Command("git", "-C", root, "init", "-q").CombinedOutput(); err != nil {
 			t.Fatalf("initialize hook fixture repository: %v %s", err, output)
 		}
@@ -699,11 +536,12 @@ func TestWaitSessionStartPrintsPendingRows(t *testing.T) {
 		// nor a start-context channel; the announced holder must still recover its
 		// durable wait row through the hook's system message.
 		canonicalEngine := filepath.Join(root, "bin", "metasystem")
-		// scripts/agents marks the installation the state root resolves.
-		for _, directory := range []string{filepath.Dir(canonicalEngine), filepath.Join(root, "scripts", "agents")} {
-			if err := os.MkdirAll(directory, 0o755); err != nil {
-				t.Fatal(err)
-			}
+		// metasystem.conf marks the installation the state root resolves.
+		if err := os.MkdirAll(filepath.Dir(canonicalEngine), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), nil, 0o644); err != nil {
+			t.Fatal(err)
 		}
 		engineBytes, err := os.ReadFile(binary)
 		if err != nil {
@@ -1701,7 +1539,7 @@ func TestRegisteredLocalAndHumanWaitsInstalledVerdicts(t *testing.T) {
 	commandFixture := pendingWaitVerdictCommandFixtureWithOptions(t, root, "fake", pendingWaitVerdictCommandOptions{jobStatus: "pending", requireHook: true})
 	fixture := newInstalledWaitFixture(t, commandFixture.ownerLineage)
 	session := commandFixture.session
-	hook, canonical, owners := installPendingWaitHookFixture(t, root, binary)
+	hook, _, owners := installPendingWaitHookFixture(t, root, binary)
 	owners.fakeUp = true
 	payload := fmt.Sprintf(`{"session_id":%q,"cwd":%q,"hook_event_name":"Stop"}`, session, root)
 
@@ -1728,8 +1566,8 @@ func TestRegisteredLocalAndHumanWaitsInstalledVerdicts(t *testing.T) {
 	}
 	t.Cleanup(stopChild)
 
-	register := exec.Command(canonical, "internal", "wait", "register", "--root", root, "--pid", fmt.Sprint(child.Process.Pid), "--label", "installed local build", "--job", "wait-stop-job", "--timeout", "1h", "--json")
-	register.Env = fixture.Env(os.Environ())
+	register := exec.Command(commandTestExecutable(t), sessionWaitHelperCommand, "--root", root, "--pid", fmt.Sprint(child.Process.Pid), "--label", "installed local build", "--job", "wait-stop-job", "--timeout", "1h", "--json")
+	register.Env = fixture.Env(append(os.Environ(), "GO_WANT_BATCH_E2E_COMMAND=1"))
 	registerOutput, err := register.CombinedOutput()
 	var local metarun.Waiter
 	if err != nil || json.Unmarshal(registerOutput, &local) != nil || local.Kind != "local" {
@@ -1749,8 +1587,8 @@ func TestRegisteredLocalAndHumanWaitsInstalledVerdicts(t *testing.T) {
 		t.Fatalf("dead registered local wait allowed Stop: stdout=%s stderr=%s artifactErr=%v artifact=%s", deadHook.stdout, deadHook.stderr, artifactErr, deadArtifact)
 	}
 
-	humanCommand := exec.Command(canonical, "internal", "wait", "register", "--root", root, "--human", "--question", "May the installed run stop?", "--timeout", "1h", "--json")
-	humanCommand.Env = fixture.Env(os.Environ())
+	humanCommand := exec.Command(commandTestExecutable(t), sessionWaitHelperCommand, "--root", root, "--question", "May the installed run stop?", "--timeout", "1h", "--json")
+	humanCommand.Env = fixture.Env(append(os.Environ(), "GO_WANT_BATCH_E2E_COMMAND=1"))
 	humanOutput, err := humanCommand.CombinedOutput()
 	var human metarun.Waiter
 	if err != nil || json.Unmarshal(humanOutput, &human) != nil || human.Kind != "human" {
@@ -1870,22 +1708,12 @@ func TestPendingWaitFromChildShell(t *testing.T) {
 		if err := writePendingWaitJobStatus(root, "completed"); err != nil {
 			return err
 		}
-		notifyStdout, err := os.Create(filepath.Join(childOutputDir, "notify.stdout"))
-		if err != nil {
-			return err
+		stateRoot, stateErr := goal.ResolveStateRoot(root)
+		if stateErr != nil {
+			return stateErr
 		}
-		notifyStderr, err := os.Create(filepath.Join(childOutputDir, "notify.stderr"))
-		if err != nil {
-			_ = notifyStdout.Close()
-			return err
-		}
-		notify := exec.Command(binary, "internal", "wait", "notify", "--root", root, "--job", "wait-stop-job")
-		notify.Env = fixture.Env(os.Environ())
-		notify.Stdout, notify.Stderr = notifyStdout, notifyStderr
-		notifyErr := notify.Run()
-		closeNotifyStdoutErr, closeNotifyStderrErr := notifyStdout.Close(), notifyStderr.Close()
-		if notifyErr != nil || closeNotifyStdoutErr != nil || closeNotifyStderrErr != nil {
-			return fmt.Errorf("notify child wait while waiting for wait notify --job wait-stop-job: run=%v close=(%v,%v)", notifyErr, closeNotifyStdoutErr, closeNotifyStderrErr)
+		if _, notifyErr := metarun.NotifyWaiters(stateRoot, metarun.WaitHint{Kind: "job", TargetID: "wait-stop-job"}); notifyErr != nil {
+			return fmt.Errorf("notify child wait for job wait-stop-job: %v", notifyErr)
 		}
 		childWaitErr = <-childExit
 		childObserved = true
@@ -2246,4 +2074,25 @@ func directHookCommand(hookEntry, installation string) *exec.Cmd {
 	command := exec.Command(hookEntry, "internal", "hook", "fake", "start")
 	command.Dir = installation
 	return command
+}
+
+// runWait drives the wait owner work wait reaches, with the caller the
+// command registers and its result printed as the command prints it.
+func runWait(args []string) int {
+	return runWaitCommand(args, nil, waitCallerPID(), func(result metarun.WaitResult, jsonOutput bool) {
+		writeWaitResult(os.Stdout, result, jsonOutput)
+	})
+}
+
+// waitHelperCommand and sessionWaitHelperCommand run the wait owner (the one
+// work wait reaches) and the session wait registration in a child of this
+// test binary, a process of its own that a bed can kill and restart.
+const (
+	waitHelperCommand        = "test-helper-wait"
+	sessionWaitHelperCommand = "test-helper-session-wait"
+)
+
+func init() {
+	testHelperCommands[waitHelperCommand] = runWait
+	testHelperCommands[sessionWaitHelperCommand] = runSessionWait
 }

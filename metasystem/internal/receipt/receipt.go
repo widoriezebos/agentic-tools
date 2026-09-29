@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -167,17 +168,25 @@ func ValidBuiltByValue(value string) bool {
 	}
 }
 
+var (
+	receiptTypes    = []string{"implement", "refactor", "improve", "review", "design", "investigate", "metrics-report", "retro", "other"}
+	receiptOutcomes = []string{"shipped", "reworked", "blocked", "parked"}
+)
+
 // Add implements `receipt add`.
 func Add(opts Options) Result {
-	switch opts.Type {
-	case "implement", "refactor", "improve", "review", "design", "investigate", "metrics-report", "retro", "other":
-	default:
-		return fail(2, "invalid --type: %s", opts.Type)
-	}
-	switch opts.Outcome {
-	case "shipped", "reworked", "blocked", "parked":
-	default:
-		return fail(2, "invalid --outcome: %s", opts.Outcome)
+	types, outcomes := strings.Join(receiptTypes, ", "), strings.Join(receiptOutcomes, ", ")
+	switch {
+	case opts.Type == "" && opts.Outcome == "":
+		return fail(2, "receipt add needs --type (%s) and --outcome (%s); nothing was recorded", types, outcomes)
+	case opts.Type == "":
+		return fail(2, "receipt add needs --type (%s); nothing was recorded", types)
+	case !slices.Contains(receiptTypes, opts.Type):
+		return fail(2, "--type %s is not a receipt type; the types are %s; nothing was recorded", opts.Type, types)
+	case opts.Outcome == "":
+		return fail(2, "receipt add needs --outcome (%s); nothing was recorded", outcomes)
+	case !slices.Contains(receiptOutcomes, opts.Outcome):
+		return fail(2, "--outcome %s is not a receipt outcome; the outcomes are %s; nothing was recorded", opts.Outcome, outcomes)
 	}
 	switch opts.Verify {
 	case "clean", "caught", "skipped":

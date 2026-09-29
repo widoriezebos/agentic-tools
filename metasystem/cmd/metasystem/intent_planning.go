@@ -1,7 +1,9 @@
 package main
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -350,7 +352,7 @@ func intentPlanningCommands() []intentCommand {
 				intentTargetFlag,
 				{name: "all", usage: "include closed items"},
 				{name: "add", value: "TEXT", repeat: true, usage: "an item to record (repeatable)"},
-				{name: "add-file", value: "FILE", advanced: true, usage: "record each line of FILE as its own note (the read-items --items-file format), not one note"},
+				{name: "add-file", value: "FILE", advanced: true, usage: "record each line of FILE as its own note, not one note"},
 				{name: "read", value: "LABEL", usage: "with --add: the read the items came from"},
 				{name: "close", value: "ITEM", usage: "the item to close"},
 				{name: "fixed", value: "COMMIT", usage: "with --close: the commit that fixed it"},
@@ -506,13 +508,18 @@ func (inv *intentInvocation) actingAs(verb, target string, actor intentActor) ([
 		return append(args, "--by", typed), nil, nil
 	}
 	if err != nil {
-		summary := fmt.Sprintf("%s is a person's act and no enrolled person was proven here (%v); nothing was done", verb, err)
+		// In the words the caller typed: the public command, who may run
+		// it, and the plain reason this shell is not that actor.
+		public := "metasystem " + inv.command.name
+		reason := strings.TrimPrefix(humanauthority.PlainReason(err), "only a person at the enrolled terminal may run this: ")
+		summary := fmt.Sprintf("%s is a person's act, and %s; nothing was done", public, reason)
+		decision := "a person runs " + public + " at the terminal enrolled on this machine (metasystem system enroll enrolls one)"
 		if actor == actorEither && typed == "" {
-			summary = fmt.Sprintf("cannot tell who acts: no agent lineage, and no enrolled person was proven here (%v); nothing was done", err)
+			summary = fmt.Sprintf("cannot tell who runs %s: %s, and no agent session is named; nothing was done", public, reason)
+			decision = "a person runs it at the terminal enrolled on this machine; an agent runs it from the session its launcher started, which names itself in METASYSTEM_OWNER_LINEAGE, or passes --lineage LINEAGE"
 		}
-		decision := "a person runs it at the enrolled terminal; an agent session passes --lineage LINEAGE"
 		if stopping && typed == "" {
-			decision = "a person names themself with --by NAME (a terminal that is not enrolled is proven by its own ancestry) or runs it at the enrolled terminal; an agent session passes --lineage LINEAGE"
+			decision = "a person names themself with --by NAME at a terminal no agent started, or runs it at the terminal enrolled on this machine; an agent passes --lineage LINEAGE"
 		}
 		return nil, nil, &intentResult{Outcome: intentRefused, code: 1, Targets: inv.targets(target), Summary: summary, Decision: decision}
 	}
@@ -543,9 +550,22 @@ func (inv *intentInvocation) textValue(name string) (string, *intentResult) {
 func (inv *intentInvocation) readTextFile(option, path string) (string, *intentResult) {
 	data, err := os.ReadFile(inv.inputPath(path))
 	if err != nil {
-		return "", &intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("cannot read --%s: %v; nothing was done", option, err)}
+		return "", &intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("--%s: %s; nothing was done", option, fileProblem("file", inv.inputPath(path), err))}
 	}
 	return strings.TrimRight(string(data), "\r\n"), nil
+}
+
+// fileProblem names a file that cannot be read by its path, in plain words:
+// absent, or unreadable with the reason, never the system call's own text.
+func fileProblem(what, path string, err error) string {
+	if errors.Is(err, fs.ErrNotExist) {
+		return "no " + what + " at " + path
+	}
+	var pathErr *fs.PathError
+	if errors.As(err, &pathErr) {
+		return what + " at " + path + " cannot be read: " + pathErr.Err.Error()
+	}
+	return what + " at " + path + " cannot be read: " + err.Error()
 }
 
 // resolveTextFiles reads every --NAME-file of this command whose NAME is a
@@ -826,17 +846,21 @@ func (inv *intentInvocation) openGoal(id, intent, next string) int {
 		return inv.render(*problem)
 	}
 	var missing []string
-	for name, value := range map[string]string{"G": id, "--intent": intent, "--next": next, "--risk": inv.input.text("risk"), "--basis": inv.input.text("basis")} {
+	for name, value := range map[string]string{"--intent": intent, "--next": next, "--risk": inv.input.text("risk"), "--basis": inv.input.text("basis")} {
 		if strings.TrimSpace(value) == "" {
 			missing = append(missing, name)
 		}
 	}
+	slices.Sort(missing)
+	if strings.TrimSpace(id) == "" {
+		missing = append([]string{"G"}, missing...)
+	}
 	if len(missing) > 0 {
-		slices.Sort(missing)
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id),
-			Summary:  fmt.Sprintf("a new goal needs %s; nothing was done", strings.Join(missing, ", ")),
-			Decision: "the four risk answers (severity, novelty, exposure, accumulation) and their basis are a judgement about this goal, not a default",
-			Data:     map[string]any{"missing": missing}})
+			Summary: fmt.Sprintf("a new goal needs %s; nothing was done", strings.Join(missing, ", ")),
+			Decision: "metasystem goal open G --intent TEXT --next TEXT --risk severity=N,novelty=N,exposure=N,accumulation=N --basis TEXT; " +
+				"the four risk answers and their basis are a judgement about this goal, not a default",
+			Data: map[string]any{"missing": missing}})
 	}
 	actor, _, problem := inv.actingAs("open", id, actorEither)
 	if problem != nil {
@@ -1580,7 +1604,8 @@ func runIntentRevoke(inv *intentInvocation) int {
 		entry = inv.input.args[0]
 	}
 	if entry == "" {
-		return inv.refuse("", "needs the grant to close: metasystem grant revoke GRANT; nothing was done", "the grant's id was printed when it was recorded")
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "needs the grant to close: metasystem grant revoke GRANT; nothing was done",
+			next: inv.publicArgv("grant", "list"), nextReason: "lists the grants with their ids"})
 	}
 	if problem := inv.selectRoot(); problem != nil {
 		return inv.render(*problem)

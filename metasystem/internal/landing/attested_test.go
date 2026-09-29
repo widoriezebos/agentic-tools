@@ -12,7 +12,7 @@ func (e fixtureAttestationError) LandingAttestationCode() string { return e.code
 
 func TestObserveAttestedBranchDeclarationEnforcesBoundary(t *testing.T) {
 	f := newRepositoryObservationFixture(t)
-	f.base("scripts/agents/path-classes.txt", string(f.baseFiles["scripts/agents/path-classes.txt"])+"install:product.txt behavior\n")
+	f.base("internal/pathclass/path-classes.txt", string(f.baseFiles["internal/pathclass/path-classes.txt"])+"install:product.txt behavior\n")
 	f.base("plans/goals/goal-a.md", string(observationHeldGoal("goal-a", "m1", "lineage")))
 	c := f.comparison(observeTreeB, string(chainDiff(chainReplacement("product.txt", "before\n", "candidate\n"))), "product.txt")
 	c.declare("product.txt", observationText("before\n"), observationText("candidate\n"))

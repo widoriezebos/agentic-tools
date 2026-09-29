@@ -299,6 +299,37 @@ func TestLandingOwnerComponentRetriesConstructionWithFreshInputs(t *testing.T) {
 	assertLandingOwnerAnnouncementCount(t, root, 1, 1)
 }
 
+// A new supervised landing owner sweeps the retained-verification worktrees a
+// prior owner left, once per construction and in the checkout it owns; a
+// failed sweep is reported and never stops the owner's pass.
+func TestLandingOwnerComponentSweepsRetainedSourcesOnceAndAFailureNeverStopsIt(t *testing.T) {
+	fixture := newLandingOwnerOrdinaryFixture(t, "mac-cli")
+	root, pass, release := fixture.root, fixture.pass, fixture.release
+	defer release()
+	fixture.enroll("mac-cli")
+	originalSweep, originalResume := batchOwnerSweepSources, batchOwnerResume
+	t.Cleanup(func() { batchOwnerSweepSources, batchOwnerResume = originalSweep, originalResume })
+	var swept []string
+	batchOwnerSweepSources = func(repo string) error {
+		swept = append(swept, repo)
+		return errors.New("injected sweep failure")
+	}
+	resumes := 0
+	batchOwnerResume = func(*batch.Owner) { resumes++ }
+	if err := pass(); err != nil || resumes != 1 {
+		t.Fatalf("first pass resumes=%d error=%v; a failed sweep must not stop the owner", resumes, err)
+	}
+	if err := pass(); err != nil || resumes != 2 {
+		t.Fatalf("second pass resumes=%d error=%v", resumes, err)
+	}
+	if len(swept) != 1 {
+		t.Fatalf("sweeps=%v, want exactly one for one owner construction", swept)
+	}
+	if swept[0] != root {
+		t.Fatalf("swept %q, want the owned checkout %q", swept[0], root)
+	}
+}
+
 func TestLandingOwnerComponentStopsActingAfterLeaseLoss(t *testing.T) {
 	fixture := newLandingOwnerOrdinaryFixture(t, "mac-cli", "mac-cli")
 	root, pass, release := fixture.root, fixture.pass, fixture.release

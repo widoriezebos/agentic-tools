@@ -5,7 +5,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
@@ -74,43 +73,6 @@ func ScanFixtureSurvivors(prober identity.Prober, processes []Process, selection
 	}, selection)
 }
 
-// ReapFixtureSurvivors kills only survivors with certain ownership.
-func ReapFixtureSurvivors(prober identity.Prober, processes []Process, selection FixtureSurvivorSelection, sender identity.SignalFunc) ([]identity.FixtureSurvivor, error) {
-	survivors, err := ScanFixtureSurvivors(prober, processes, selection)
-	if err != nil {
-		return nil, err
-	}
-	for _, survivor := range survivors {
-		if survivor.Class != identity.FixtureSurvivorCertain {
-			continue
-		}
-		if sender == nil {
-			err = identity.SignalExact(prober, survivor.Ref, syscall.SIGKILL)
-		} else {
-			err = identity.SignalExact(prober, survivor.Ref, syscall.SIGKILL, sender)
-		}
-		if err != nil && err != identity.ErrGone {
-			return survivors, fmt.Errorf("reap fixture survivor %d: %w", survivor.Ref.Pid, err)
-		}
-	}
-	return survivors, nil
-}
-
-// FixtureSurvivorLines renders the whole-table survivor view and reports whether it contains a certain survivor.
-func FixtureSurvivorLines(prober identity.Prober, processes []Process) ([]string, bool, error) {
-	survivors, err := ScanFixtureSurvivors(prober, processes, FixtureSurvivorSelection{})
-	if err != nil {
-		return nil, false, err
-	}
-	lines := make([]string, 0, len(survivors))
-	certain := false
-	for _, survivor := range survivors {
-		lines = append(lines, FixtureSurvivorLine(prober, survivor))
-		certain = certain || survivor.Class == identity.FixtureSurvivorCertain
-	}
-	return lines, certain, nil
-}
-
 // FixtureSurvivorLine renders one finding without exposing the process environment.
 func FixtureSurvivorLine(prober identity.Prober, survivor identity.FixtureSurvivor) string {
 	field := func(value int64) string {
@@ -146,17 +108,4 @@ func FixtureSurvivorLine(prober identity.Prober, survivor identity.FixtureSurviv
 	return fmt.Sprintf("%s pid=%d pgid=%s ppid=%s since=%s owner=%s %s key=%s exe=%s argv=%s carrier=%s",
 		survivor.Class, survivor.Ref.Pid, field(survivor.Pgid), field(survivor.Ppid), since,
 		owner, ownerState, key, exe, argv, carrier)
-}
-
-// FixtureSurvivorSource selects the authorized configured table or the live kernel table.
-func FixtureSurvivorSource(metasystemRoot string) (identity.Prober, []Process, bool, error) {
-	return fixtureSurvivorSource(metasystemRoot, liveProductionProcessSource())
-}
-
-func fixtureSurvivorSource(metasystemRoot string, source productionProcessSource) (identity.Prober, []Process, bool, error) {
-	if processes, configured, err := ConfiguredProcessFixture(metasystemRoot); configured || err != nil {
-		return FixtureProcessProber(processes), processes, true, err
-	}
-	processes, err := source.enumerateFixtureSurvivors()
-	return source.prober, processes, false, err
 }

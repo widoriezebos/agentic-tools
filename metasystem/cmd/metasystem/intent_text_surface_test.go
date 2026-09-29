@@ -209,7 +209,7 @@ func TestIntentTextNamesOnlyPublicForms(t *testing.T) {
 	markdown := func(path string) bool {
 		return strings.HasSuffix(path, ".md") || strings.HasSuffix(path, ".yaml") || strings.HasSuffix(path, ".txt")
 	}
-	for _, root := range []string{"metasystem/docs", "metasystem/skills", "metasystem/optional-skills", "metasystem/scripts/agents/roles", "metasystem/scripts/agents/templates", ".claude", ".devin"} {
+	for _, root := range []string{"metasystem/docs", "metasystem/skills", "metasystem/optional-skills", "metasystem/internal/protocol/roles", "metasystem/internal/protocol/templates", ".claude", ".devin"} {
 		walk(root, markdown, readLines)
 	}
 	for _, file := range []string{"metasystem/AGENTS.md", "metasystem/wow.md", "AGENTS.md", "metasystem/README.md"} {

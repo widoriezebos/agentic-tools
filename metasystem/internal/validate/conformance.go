@@ -517,7 +517,7 @@ func (r *conformanceRun) mergeStage(recordPath, recertification string) ([]strin
 	configuredRuntime := r.configGet("role.code-critic.runtime", "__missing__")
 	independence := r.configGet("independence", "")
 
-	classes, err := pathclass.Load(r.root)
+	classes, err := pathclass.Load()
 	if err != nil {
 		return r.fail(fmt.Sprintf("conformance failure: path class manifest is unreadable: %v", err))
 	}
@@ -596,7 +596,7 @@ func (r *conformanceRun) mergeRecertified(recordPath, recertification string) ([
 	configuredRuntime := r.configGet("role.code-critic.runtime", "__missing__")
 	independence := r.configGet("independence", "")
 
-	classes, err := pathclass.Load(r.root)
+	classes, err := pathclass.Load()
 	if err != nil {
 		return r.fail(fmt.Sprintf("conformance failure: path class manifest is unreadable: %v", err))
 	}

@@ -21,6 +21,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/contract"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
@@ -502,7 +503,7 @@ func (e *Engine) pinVerifiedContract(mode string, snapshot []byte, approvedSHA s
 			// exists a corrected start may simply re-pin — no partial
 			// cleanup can wedge the mission id.
 			if born {
-				return failf(3, "mission start refused: approved contract is already pinned; use resume")
+				return failf(3, "mission start refused: approved contract is already pinned; metasystem mission resume %s continues it", e.Mission)
 			}
 			// The never-born mission spent none of its sealed budget:
 			// the remnant's clock resets so an interrupted cleanup
@@ -662,7 +663,12 @@ func (e *Engine) launch(mode string, foreground bool, generations ...int64) erro
 		}
 	}
 	if mode == "start" && stateBorn(statePath) {
-		return failf(3, "mission state already exists; use resume")
+		return failf(3, "mission state already exists; metasystem mission resume %s continues it", e.Mission)
+	}
+	// A mission without a contract is named before anything is read,
+	// cleaned or armed for it.
+	if mode == "start" && !pathExists(e.contractPath()) {
+		return failf(3, "no mission contract %s: %s does not exist; nothing was started", e.Mission, e.contractPath())
 	}
 	// Birth evidence is consulted before ANY mutation on the launch
 	// path — the stale-lease cleanup below rewrites lease and turn
@@ -674,7 +680,7 @@ func (e *Engine) launch(mode string, foreground bool, generations ...int64) erro
 	}
 	if mode == "resume" {
 		if !pathExists(statePath) {
-			return failf(7, "mission state does not exist")
+			return failf(7, "no mission %s has started here; nothing was done; metasystem mission start %s starts it", e.Mission, e.Mission)
 		}
 		state, err := e.verifyState(statePath, false)
 		if err != nil {
@@ -952,35 +958,29 @@ func (p *treeCPUProgress) advanced(now time.Time) bool {
 }
 
 // processTreeCPUSeconds sums the CPU time of a process and every descendant
-// from one ps listing. It reports false when the listing is unreadable, so a
-// caller never mistakes a missing sample for a stall.
+// from one kernel process-table snapshot and per-process kernel CPU reads
+// (R-138-m1e: Go decides natively, it once listed `ps`). It reports false
+// when the root's CPU is unreadable, so a caller never mistakes a missing
+// sample for a stall; a descendant that exits between the snapshot and its
+// read contributes nothing.
 func processTreeCPUSeconds(rootPID int) (float64, bool) {
-	output, err := exec.Command("ps", "-axo", "pid=,ppid=,cputime=").Output()
+	census, err := identity.TakeProcessCensus()
 	if err != nil {
 		return 0, false
 	}
-	children := map[int][]int{}
-	cpu := map[int]float64{}
-	for _, line := range strings.Split(string(output), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) != 3 {
-			continue
-		}
-		pid, pidErr := strconv.Atoi(fields[0])
-		ppid, ppidErr := strconv.Atoi(fields[1])
-		seconds, cpuErr := parsePSCPUTime(fields[2])
-		if pidErr != nil || ppidErr != nil || cpuErr != nil {
-			continue
-		}
-		children[ppid] = append(children[ppid], pid)
-		cpu[pid] = seconds
-	}
-	if _, ok := cpu[rootPID]; !ok {
+	root := int64(rootPID)
+	total, err := identity.ProcessCPUSeconds(root)
+	if err != nil {
 		return 0, false
 	}
-	total := 0.0
-	queue := []int{rootPID}
-	seen := map[int]bool{}
+	children := map[int64][]int64{}
+	for _, pid := range census.Pids() {
+		if parent, known := census.Parent(pid); known && pid != root {
+			children[parent] = append(children[parent], pid)
+		}
+	}
+	queue := append([]int64(nil), children[root]...)
+	seen := map[int64]bool{root: true}
 	for len(queue) > 0 {
 		pid := queue[0]
 		queue = queue[1:]
@@ -988,35 +988,10 @@ func processTreeCPUSeconds(rootPID int) (float64, bool) {
 			continue
 		}
 		seen[pid] = true
-		total += cpu[pid]
+		if seconds, err := identity.ProcessCPUSeconds(pid); err == nil {
+			total += seconds
+		}
 		queue = append(queue, children[pid]...)
 	}
 	return total, true
-}
-
-// parsePSCPUTime reads ps's cputime column: [[dd-]hh:]mm:ss[.ff].
-func parsePSCPUTime(value string) (float64, error) {
-	days := 0.0
-	if before, after, ok := strings.Cut(value, "-"); ok {
-		parsed, err := strconv.Atoi(before)
-		if err != nil {
-			return 0, err
-		}
-		days, value = float64(parsed), after
-	}
-	parts := strings.Split(value, ":")
-	if len(parts) < 2 || len(parts) > 3 {
-		return 0, fmt.Errorf("invalid cputime %q", value)
-	}
-	total := days * 24 * 3600
-	multiplier := 1.0
-	for i := len(parts) - 1; i >= 0; i-- {
-		field, err := strconv.ParseFloat(parts[i], 64)
-		if err != nil || field < 0 {
-			return 0, fmt.Errorf("invalid cputime %q", value)
-		}
-		total += field * multiplier
-		multiplier *= 60
-	}
-	return total, nil
 }

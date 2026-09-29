@@ -29,6 +29,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostsetup"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ledgerfence"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
@@ -419,10 +420,18 @@ func TestAdoptGitIntegrationDefaultInstallsTheWholePayload(t *testing.T) {
 			t.Fatalf("adoption did not install %s", path)
 		}
 	}
-	for _, dir := range []string{"internal", "cmd", "scripts/agents", "artifacts"} {
+	for _, dir := range []string{"internal", "cmd", "artifacts"} {
 		if info, err := os.Stat(filepath.Join(target, dir)); err != nil || !info.IsDir() {
 			t.Fatalf("adoption did not install the %s directory", dir)
 		}
+	}
+	// The engine's data is compiled in: adoption ships no scripts tree, and
+	// the workflow it installs is the engine's own.
+	if exists(filepath.Join(target, "scripts")) {
+		t.Fatal("adoption shipped a scripts tree")
+	}
+	if workflow, err := os.ReadFile(filepath.Join(target, ".github", "workflows", "metasystem.yml")); err != nil || !bytes.Equal(workflow, githubActionsWorkflow) {
+		t.Fatalf("the installed workflow is not the engine's: %v", err)
 	}
 	for _, link := range []string{".claude/skills/verify", ".claude/skills/code-critique"} {
 		if info, err := os.Lstat(filepath.Join(target, link)); err != nil || info.Mode()&fs.ModeSymlink == 0 {
@@ -851,7 +860,7 @@ func TestAdoptGitIntegrationFromAVendoredTemplate(t *testing.T) {
 		target := filepath.Join(base, "nested-target")
 		gitIn(t, base, "init", "-q", "-b", "main", target)
 		adoptWith(t, optionsFor(nested, target, io.Discard))
-		if !exists(filepath.Join(target, "metasystem.conf")) || !exists(filepath.Join(target, "scripts", "agents")) {
+		if !exists(filepath.Join(target, "metasystem.conf")) || !exists(filepath.Join(target, "internal", "protocol")) {
 			t.Fatal("a nested-prefix adoption staged an empty payload")
 		}
 		if exists(filepath.Join(target, "benchmark")) || exists(filepath.Join(target, "development")) {
@@ -992,8 +1001,10 @@ func TestAdoptGitIntegrationVendoredWritersUseApplicationState(t *testing.T) {
 	}
 	run("receipt", "add", "--type", "implement", "--outcome", "shipped", "--skills", "none", "--verify", "clean",
 		"--corrections", "0", "--stop-loss", "no", "--note", "adopted state-root fixture", "--root", prefix)
-	if tick := run("internal", "steward", "tick", "--repo", target); strings.Contains(tick, `"verdict": "degraded"`) {
-		t.Fatalf("the adopted steward tick degraded: %s", tick)
+	// The steward's tick runs in its runner's process; its owner is called
+	// here for the adopted repository.
+	if tick, err := steward.RunTick(target, steward.TickConfig{}, steward.RuntimeWorkerCensus{MetasystemRoot: target}); err != nil || tick.Decision.Verdict == steward.VerdictDegraded {
+		t.Fatalf("the adopted steward tick degraded: %+v %v", tick, err)
 	}
 	if !exists(filepath.Join(target, "memory", "receipts.log")) || !exists(filepath.Join(target, "artifacts", "agents", "steward", "highwater.json")) {
 		t.Fatal("the vendored writers did not use the application's state trees")

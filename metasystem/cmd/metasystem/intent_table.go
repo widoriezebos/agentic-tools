@@ -1,14 +1,19 @@
 package main
 
 import (
+	"errors"
+	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 )
 
 // The rows of the object-action table that are not goal, work or process
@@ -19,8 +24,100 @@ import (
 // passthroughAction is a public action whose words go, unchanged, to an
 // existing handler with its own parser, output and exit codes.
 func passthroughAction(object, action, audience, summary string, usage []string, flags []intentFlag, examples []string, run func([]string) int) intentCommand {
-	return intentCommand{object: object, action: action, audience: audience, summary: summary, usage: usage,
-		flags: flags, examples: examples, maxArgs: -1, passthrough: run}
+	// An owner's --root is the repository every public command takes as
+	// --repo (its --root spelling still parses): the help says so, and the
+	// installation is found from the current directory when neither is given.
+	shown := make([]intentFlag, 0, len(flags))
+	for _, flag := range flags {
+		if flag.name == "root" {
+			flag = intentRepoFlag
+		}
+		shown = append(shown, flag)
+	}
+	optionalRoot := regexp.MustCompile(`\[--root [A-Z]+\]`)
+	requiredRoot := regexp.MustCompile(` --root [A-Z.]+`)
+	lines := make([]string, len(usage))
+	for index, line := range usage {
+		lines[index] = requiredRoot.ReplaceAllString(optionalRoot.ReplaceAllString(line, "[--repo PATH]"), "")
+	}
+	shownExamples := make([]string, len(examples))
+	for index, example := range examples {
+		shownExamples[index] = strings.ReplaceAll(example, " --root .", "")
+	}
+	command := intentCommand{object: object, action: action, audience: audience, summary: summary, usage: lines,
+		flags: shown, examples: shownExamples, maxArgs: -1, owner: run}
+	command.passthrough = func(args []string) int { return runPassthrough(command, run, args, os.Stderr) }
+	return command
+}
+
+// runPassthrough gives a passthrough action what every public command has:
+// --repo, and the installation found from the current directory or --repo
+// when its help shows --root as optional (its owner takes it as --root; a
+// receipt action also takes the ledger it writes). What the owner answers
+// is its own.
+func runPassthrough(command intentCommand, run func([]string) int, args []string, stderr io.Writer) int {
+	label := "metasystem " + command.object + " " + command.action
+	repo, repoGiven, rest := takeIntentFlag(args, "repo", true)
+	if repoGiven && repo == "" {
+		fmt.Fprintf(stderr, "%s: --repo needs a value (PATH); nothing was done\n", label)
+		return 2
+	}
+	documentsRoot := slices.ContainsFunc(command.flags, func(flag intentFlag) bool { return flag.name == "repo" })
+	_, rootGiven, _ := takeIntentFlag(rest, "root", true)
+	_, fileGiven, _ := takeIntentFlag(rest, "file", true)
+	if repoGiven && !documentsRoot {
+		fmt.Fprintf(stderr, "%s: works on the files it names and takes no --repo; nothing was done\n", label)
+		return 2
+	}
+	receipts := command.object == "receipt" && !fileGiven
+	if !documentsRoot || rootGiven && !receipts {
+		return run(rest)
+	}
+	path := repo
+	if path == "" {
+		path = "."
+	}
+	if absolute, err := filepath.Abs(path); err == nil {
+		path = absolute
+	}
+	resolver := stateroot.NewResolver(stateroot.RepositoryTop, os.Executable)
+	layout, err := resolver.ResolveLayout(path)
+	if err != nil {
+		if repoGiven {
+			fmt.Fprintf(stderr, "%s: %s is not inside a metasystem installation; name the repository with --repo PATH; nothing was done\n", label, path)
+			return 2
+		}
+		// Outside a repository the owner answers for its own --root.
+		return run(rest)
+	}
+	var extra []string
+	if !rootGiven {
+		extra = append(extra, "--root", layout.InstallationRoot)
+	}
+	if receipts {
+		stateRoot, err := resolver.RootForInstallation(layout.InstallationRoot)
+		relative, relErr := stateroot.RelativeRoot(stateroot.Receipts)
+		if err == nil && relErr == nil {
+			extra = append(extra, "--file", filepath.Join(stateRoot, relative, "receipts.log"))
+		}
+	}
+	// The options go after the leading words the usage shows before them
+	// (receipt retro SUMMARY), before any other word.
+	leading := 0
+	if len(command.usage) > 0 {
+		words := strings.Fields(command.usage[0])
+		for _, word := range words[min(3, len(words)):] {
+			if strings.HasPrefix(word, "[") || strings.HasPrefix(word, "-") {
+				break
+			}
+			leading++
+		}
+	}
+	at := 0
+	for at < len(rest) && at < leading && !strings.HasPrefix(rest[at], "-") {
+		at++
+	}
+	return run(slices.Concat(rest[:at], extra, rest[at:]))
 }
 
 // withLead gives a handler that takes its action word first the same words.
@@ -37,11 +134,11 @@ func designIntentCommands() []intentCommand {
 		designCommand(),
 		{
 			object: "design", action: "show", audience: "both", summary: "one goal's design attempts and proposal",
-			usage:    []string{"metasystem design show --goal G [--out FILE] [--attempt N]"},
+			usage:    []string{"metasystem design show G [--out FILE] [--attempt N]"},
 			details:  []string{"Shows the goal's design attempts, or with --attempt N one attempt and its proposal."},
-			flags:    []intentFlag{{name: "goal", value: "G", usage: "the goal whose design records are shown"}, {name: "attempt", value: "N", usage: "one design attempt and its proposal"}, {name: "out", value: "FILE", usage: "the design document, when the goal has several"}},
-			maxArgs:  0,
-			examples: []string{"metasystem design show --goal verbs-match-intent"},
+			flags:    []intentFlag{{name: "goal", value: "G", advanced: true, usage: "the goal, as an alternative to naming it first"}, {name: "attempt", value: "N", usage: "one design attempt and its proposal"}, {name: "out", value: "FILE", usage: "the design document, when the goal has several"}},
+			maxArgs:  1,
+			examples: []string{"metasystem design show verbs-match-intent"},
 			run:      func(inv *intentInvocation) int { return runIntentShowRecords(inv, "design", inv.input.args) },
 		},
 		{
@@ -51,6 +148,19 @@ func designIntentCommands() []intentCommand {
 			maxArgs:  0,
 			examples: []string{"metasystem design list", "metasystem design list --goal verbs-match-intent"},
 			run:      func(inv *intentInvocation) int { return runIntentShowRecords(inv, "designs", inv.input.args) },
+		},
+		{
+			object: "design", action: "check", audience: "both", summary: "check a plan's obligation matrix: is every critical or high obligation proven",
+			usage: []string{"metasystem design check FILE... [--complete]"},
+			details: []string{
+				"Checks the structure and declared state of each file's design-obligation matrix (docs/design/design-obligation-gate.md); it reads, never changes, the files.",
+				"By default a critical or high obligation may still await its one named runtime proof (READY_FOR_RUNTIME); --complete, the completion gate, requires every one DONE.",
+				"Proof and owner cells on critical and high rows must name something concrete; a passing check does not prove the named tests are truthful.",
+			},
+			flags:    []intentFlag{{name: "complete", usage: "the completion gate: every critical or high obligation is DONE"}},
+			maxArgs:  -1,
+			examples: []string{"metasystem design check plans/rate-limit.md", "metasystem design check plans/rate-limit.md --complete"},
+			run:      runIntentDesignCheck,
 		},
 		{
 			object: "design", action: "review", audience: "both", summary: "independently critique an existing project design",
@@ -218,7 +328,7 @@ func practiceIntentCommands() []intentCommand {
 		passthroughAction("session", "status", "agent", "why this session may or may not stop: one exact Stop report",
 			[]string{"metasystem session status --id ID [--root INSTALLATION]"},
 			[]intentFlag{documented("id", "ID", "the Stop report's short alias, as the Stop line printed it"), documented("root", "INSTALLATION", "the installation")},
-			[]string{"metasystem session status --id r-7f3a"}, runReportStopStatus),
+			[]string{"metasystem session status --id 7f3a"}, runReportStopStatus),
 		passthroughAction("session", "handoff", "agent", "hand this session's work to a successor, cancel a handoff, or read the session's context budget",
 			[]string{"metasystem session handoff --root ROOT --note FILE [--no-delegates]", "metasystem session handoff --root ROOT --cancel NONCE",
 				"metasystem session handoff --status --root ROOT [--json]", "metasystem session handoff --verify NONCE --root ROOT"},
@@ -232,19 +342,19 @@ func practiceIntentCommands() []intentCommand {
 			[]intentFlag{documented("root", "INSTALLATION", "the installation whose checkout the session isolates from")},
 			[]string{"metasystem session isolate"}, runSessionIsolate),
 		passthroughAction("test", "plan", "both", "preview the risk-selected tests and their reasons without running them",
-			[]string{"metasystem test plan --root INSTALLATION [--goal G] --json"},
+			[]string{"metasystem test plan [--goal G] [--root INSTALLATION] [--json]"},
 			[]intentFlag{documented("root", "INSTALLATION", "the installation"), documented("goal", "G", "the goal owning the delivery")},
-			[]string{"metasystem test plan --root . --json"}, runTestPlan),
+			[]string{"metasystem test plan", "metasystem test plan --goal verbs-match-intent --json"}, runTestPlan),
 		passthroughAction("test", "add", "agent", "add verified Go tests to a group of the testing contract",
 			[]string{"metasystem test add --file FILE --group ID --tests NAME,NAME"},
 			[]intentFlag{documented("file", "FILE", "the testing contract"), documented("group", "ID", "the group the tests join"),
 				documented("tests", "NAME,NAME", "Go test names, each verified in the group's packages")},
-			[]string{"metasystem test add --file testing.json --group verb-ratchet --tests TestVerbRatchetInternalVerbCount"}, runTestingAddTests),
-		passthroughAction("test", "merge", "both", "merge two concurrent edits of the testing contract",
-			[]string{"metasystem test merge --base FILE --ours FILE --theirs FILE --out FILE"},
-			[]intentFlag{documented("base", "FILE", "the common ancestor"), documented("ours", "FILE", "one edit"),
-				documented("theirs", "FILE", "the other edit"), documented("out", "FILE", "where the merged contract is written")},
-			[]string{"metasystem test merge --base base.json --ours ours.json --theirs theirs.json --out testing.json"}, runTestingMerge),
+			[]string{"metasystem test add --file testing.json --group verb-ratchet --tests TestEveryInternalVerbHasALauncherThatStartsIt"}, runTestingAddTests),
+		passthroughAction("test", "remove", "agent", "take deleted Go tests, or a whole group, out of the testing contract",
+			[]string{"metasystem test remove --file FILE --group ID --tests NAME,NAME", "metasystem test remove --file FILE --group ID"},
+			[]intentFlag{documented("file", "FILE", "the testing contract"), documented("group", "ID", "the group the tests leave; without --tests the group itself and every reference to it"),
+				documented("tests", "NAME,NAME", "Go test names the group lists; a name it no longer lists is already removed")},
+			[]string{"metasystem test remove --file testing.json --group verb-ratchet --tests TestLauncherRuleRefusesAVerbNothingStarts"}, runTestingRemoveTests),
 		passthroughAction("test", "baseline", "agent", "record or check the trusted baseline a refactor proceeds from",
 			[]string{"metasystem test baseline --gate COMMAND [--file FILE] [--root INSTALLATION]",
 				"metasystem test baseline --check [--file FILE] [--max-age-minutes N] [--max-commits N] [--root INSTALLATION]"},
@@ -254,11 +364,16 @@ func practiceIntentCommands() []intentCommand {
 				documented("max-age-minutes", "N", "with --check: the cadence's age limit"), documented("max-commits", "N", "with --check: the cadence's commit limit"),
 				documented("root", "INSTALLATION", "the installation whose metasystem.conf supplies the cadence")},
 			[]string{"metasystem test baseline --gate 'go test ./...'", "metasystem test baseline --check"}, runTestBaseline),
-		passthroughAction("system", "register", "both", "install or check this installation's agent-runtime registrations",
-			[]string{"metasystem system register --repo PATH [--runtimes CSV] [--copy-skills] [--check]"},
-			[]intentFlag{documented("runtimes", "CSV", "the runtimes to register, or none (default: every adoptable runtime)"),
-				{name: "copy-skills", usage: "copy skill trees instead of linking them"}, {name: "check", usage: "validate the registrations without writing"}},
-			[]string{"metasystem system register --repo . --check", "metasystem system register --repo . --runtimes claude,codex"}, runRuntimeSetup),
+		passthroughAction("session", "wait", "agent", "say this session waits for a running process or a person's answer, so it may stop",
+			[]string{"metasystem session wait --pid PID --label TEXT [--job J] [--timeout DURATION]",
+				"metasystem session wait --question TEXT --timeout DURATION",
+				"metasystem session wait --end WAIT-ID"},
+			[]intentFlag{documented("pid", "PID", "the running process this session waits for"), documented("label", "TEXT", "what that process is doing"),
+				documented("job", "J", "the delegate job the process belongs to"), documented("question", "TEXT", "the question a person is to answer"),
+				documented("timeout", "DURATION", "how long the wait lasts, at most 24h; required with --question (default 4h)"),
+				documented("end", "WAIT-ID", "the wait is over"), documented("root", "PATH", "the checkout (default: the current directory)"),
+				{name: "json", usage: "print the recorded wait as JSON"}},
+			[]string{"metasystem session wait --pid 4242 --label 'release build'", "metasystem session wait --question 'Ship it?' --timeout 2h", "metasystem session wait --end 0123456789abcdef0123456789abcdef"}, runSessionWait),
 		passthroughAction("test", "list", "both", "every group in the committed testing contract",
 			[]string{"metasystem test list [--root INSTALLATION] [--json]"}, []intentFlag{documented("root", "INSTALLATION", "the installation")},
 			[]string{"metasystem test list --root ."}, runTestList),
@@ -375,7 +490,14 @@ func sessionHandoffRoute(args []string) (func([]string) int, []string) {
 // runTestStatus reads whether retained proof covers an exact tree, or with
 // --result the measured cost of one recorded result; neither runs a test.
 func runTestStatus(args []string) int {
-	return testStatusRoute(args)(args)
+	route := testStatusRoute(args)
+	if _, result, _ := takeIntentFlag(args, "result", true); result {
+		// A recorded result is read on its own; the installation found for
+		// it is not an option the report takes.
+		_, _, args = takeIntentFlag(args, "root", true)
+		return route(args)
+	}
+	return runTestVerifyAs("test status", args)
 }
 
 // testStatusRoute is the owner a test status's words reach: the result
@@ -448,6 +570,19 @@ func runIntentTopStatus(inv *intentInvocation) int {
 // baseline, --check asks whether another edit batch may start; both reach
 // the refactor baseline owner.
 func runTestBaseline(args []string) int {
+	// Its options are judged first, in the public style.
+	options := newFlagSet("test baseline")
+	options.Bool("check", false, "")
+	options.String("gate", "", "the gate command that passed, e.g. metasystem test baseline --gate 'go test ./...'")
+	for _, name := range []string{"file", "max-age-minutes", "max-commits", "root"} {
+		options.String(name, "", "")
+	}
+	if err := options.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
+		return 2
+	}
 	words, err := testBaselineArgs(args)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "metasystem test baseline:", err)
@@ -469,5 +604,36 @@ func testBaselineArgs(args []string) ([]string, error) {
 	case gate:
 		return append([]string{"record"}, rest...), nil
 	}
-	return nil, fmt.Errorf("record the baseline with --gate COMMAND, or check it with --check")
+	return nil, fmt.Errorf("needs --gate COMMAND to record the baseline (e.g. metasystem test baseline --gate 'go test ./...') or --check to check it; nothing was done")
+}
+
+// runIntentDesignCheck judges the obligation matrices of the named files
+// through the design-obligation owner in this process.
+func runIntentDesignCheck(inv *intentInvocation) int {
+	if len(inv.input.args) == 0 {
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "design check needs the plan: metasystem design check FILE...; nothing was checked"})
+	}
+	files := make([]string, 0, len(inv.input.args))
+	targets := make([]intentTarget, 0, len(inv.input.args))
+	for _, name := range inv.input.args {
+		path := inv.callerPath(name)
+		files = append(files, path)
+		targets = append(targets, intentTarget{Kind: "design", ID: path})
+	}
+	out, problems, code := validate.DesignObligations(inv.cwd, files, inv.input.switched("complete"))
+	data := map[string]any{"files": files, "complete": inv.input.switched("complete"), "lines": nonNilLines(out), "problems": nonNilLines(problems)}
+	switch {
+	case code == 0:
+		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, text: out, Data: data,
+			Summary: fmt.Sprintf("%d obligation matrix(es) pass the %s gate", len(files), map[bool]string{true: "completion", false: "default"}[inv.input.switched("complete")])})
+	case code == 2:
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: targets, text: problems, Data: data,
+			Summary: strings.Join(nonNilLines(problems), "; ") + "; nothing was checked"})
+	}
+	summary := "the obligation matrix does not pass"
+	if len(problems) > 0 {
+		summary = problems[0]
+	}
+	return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, text: problems, Data: data, Summary: summary,
+		nextReason: "prove or re-state the named obligations in the plan, then check again"})
 }

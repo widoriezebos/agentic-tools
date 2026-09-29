@@ -758,6 +758,16 @@
       "reason": "uses promptSandbox, which sets the mission prompt limits with t.Setenv"
     },
     {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/mission",
+      "test": "TestAuthorizeCapRecordsTheSettingThatBindsTheCap",
+      "reason": "uses fenceEnv, which pins the package fence clock through withFixedClock"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/mission",
+      "test": "TestRefuseBudgetCapNamesTheSettingThatRanOut",
+      "reason": "uses fenceEnv, which pins the package fence clock through withFixedClock"
+    },
+    {
       "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/supervise",
       "test": "TestDownwardRearmRefusesWhileARunningJobReservesAboveTheNewCeiling",
       "reason": "swaps the package arming clock seam (armingNow, armingSleep) to write the racing reservation inside the cap-authority lock wait"

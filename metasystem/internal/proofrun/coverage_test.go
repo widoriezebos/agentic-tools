@@ -140,8 +140,8 @@ func TestCoverageReuseRefusesChangedCompleteProjectInputAndLegacyEvidence(t *tes
 	}
 	writeTestFile(t, filepath.Join(project, ".gitattributes"), []byte("testing.json merge=metasystem-testing\n"), 0o644)
 	writeTestFile(t, filepath.Join(root, "metasystem.conf"), []byte(coverageFixtureConf), 0o600)
-	for _, name := range []string{"coverage-ratchet.json", "coverage-ratchet-linux.json"} {
-		writeTestFile(t, filepath.Join(root, "scripts", "agents", name), []byte(`{"floors":{"internal/proofrun":1},"exempt":{}}`), 0o600)
+	for _, name := range []string{"testing-coverage-floors.json", "testing-coverage-floors-linux.json"} {
+		writeTestFile(t, filepath.Join(root, name), []byte(`{"floors":{"internal/proofrun":1},"exempt":{}}`), 0o600)
 	}
 	runFreezeTestGit(t, project, "init", "-q", "-b", "main")
 	runFreezeTestGit(t, project, "add", ".")
@@ -220,7 +220,7 @@ func TestCoverageEligibilityAcceptsEquivalentSnapshotPath(t *testing.T) {
 		t.Fatal(err)
 	}
 	snapshot := t.TempDir()
-	for _, relative := range []string{"metasystem.conf", "scripts/agents/coverage-ratchet.json", "scripts/agents/coverage-ratchet-linux.json"} {
+	for _, relative := range []string{"metasystem.conf", "testing-coverage-floors.json", "testing-coverage-floors-linux.json"} {
 		data, readErr := os.ReadFile(filepath.Join(root, relative))
 		if readErr != nil {
 			t.Fatal(readErr)
@@ -273,7 +273,7 @@ func TestCoverageReuseSeparatesControlAndExecutionRoots(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(executionRoot, "scripts", "agents"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	for _, relative := range []string{"metasystem.conf", "scripts/agents/coverage-ratchet.json", "scripts/agents/coverage-ratchet-linux.json"} {
+	for _, relative := range []string{"metasystem.conf", "testing-coverage-floors.json", "testing-coverage-floors-linux.json"} {
 		data, err := os.ReadFile(filepath.Join(controlRoot, relative))
 		if err != nil {
 			t.Fatal(err)

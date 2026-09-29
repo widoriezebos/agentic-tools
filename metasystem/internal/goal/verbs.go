@@ -5445,7 +5445,7 @@ func carryRequest(r VerbRequest, args CarryArgs, generation uint64) PublishReque
 				return nil, AlreadyApplied{}
 			}
 			if tree.Root.FormatVersion == "1" && !args.RaiseFormat {
-				return nil, carryAsk("carry-format-required", "the ledger is at format 1; a carry word needs format 2, which every older engine refuses to read: rebuild and re-arm every seat (`metasystem session start`, or `metasystem system start` at a person's terminal), then run `metasystem internal goal carry --raise-format`")
+				return nil, carryAsk("carry-format-required", "the ledger is at format 1; a carry word needs format 2, which every older engine refuses to read: rebuild and re-arm every seat (`metasystem session start`, or `metasystem system start` at a person's terminal), then record the exception again with `metasystem work land G --exception CODE --reason TEXT --upgrade-goals`")
 			}
 			if tree.Root.FormatVersion != "1" && args.RaiseFormat {
 				return nil, fmt.Errorf("--raise-format is only valid while the ledger is at format 1")

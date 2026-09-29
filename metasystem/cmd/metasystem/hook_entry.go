@@ -46,6 +46,9 @@ func runHookEntry(args []string) int {
 	if len(args) == 1 && args[0] == "--accepts" {
 		return 0
 	}
+	if len(args) > 0 && strings.HasPrefix(args[0], "-") {
+		return refuseUnknownOption(nil, "hook", args[0], "it takes RUNTIME EVENT, or --accepts")
+	}
 	runtime, event := "", ""
 	if len(args) > 0 {
 		runtime = args[0]

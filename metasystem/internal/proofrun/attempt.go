@@ -27,6 +27,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostload"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
 const (
@@ -1378,11 +1379,7 @@ func CompleteToolchainIdentityAt(root string) (string, error) {
 }
 
 func coverageRatchetPath(root string) string {
-	name := "coverage-ratchet.json"
-	if runtime.GOOS == "linux" {
-		name = "coverage-ratchet-linux.json"
-	}
-	return filepath.Join(root, "scripts", "agents", name)
+	return filepath.Join(root, testpolicy.CoverageFloorsFile(runtime.GOOS))
 }
 
 func coverageRatchetDigest(root string) (string, error) {

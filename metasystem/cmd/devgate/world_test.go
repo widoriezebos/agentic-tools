@@ -97,8 +97,8 @@ func newGateWorld(t *testing.T) *gateWorld {
 	w.write("internal/fixture/fixture.go", "package fixture\n")
 	w.write("cmd/metasystem/main.go", "package main\n")
 	w.write("docs/payload.md", "payload baseline\n")
-	w.write("scripts/agents/coverage-ratchet.json", `{"floors":{"internal/fixture":50.0},"exempt":{}}`+"\n")
-	w.write("scripts/agents/coverage-ratchet-linux.json", `{"floors":{"internal/fixture":50.0},"exempt":{}}`+"\n")
+	w.write("testing-coverage-floors.json", `{"floors":{"internal/fixture":50.0},"exempt":{}}`+"\n")
+	w.write("testing-coverage-floors-linux.json", `{"floors":{"internal/fixture":50.0},"exempt":{}}`+"\n")
 	w.writeMode("bin/metasystem", "#!/bin/sh\nexit 0\n", 0o755)
 	// The trusted authentication engine a proof launcher hands its worker;
 	// the stubbed tool answers its worker-authorized question.

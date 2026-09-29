@@ -62,7 +62,7 @@ func TestBatchWithdrawBeforeSealAndRefusesAfterSeal(t *testing.T) {
 		_, err = RequestWithdrawal(store, "goal-a", "seat", "l", "/seat", "seat+l", time.Unix(4, 0))
 		after, readErr := os.ReadFile(path)
 		must(t, readErr)
-		if err == nil || !strings.Contains(err.Error(), "BATCH_SEALED") || !strings.Contains(err.Error(), "landing batch wait --goal goal-a") || !slices.Equal(before, after) {
+		if err == nil || !strings.Contains(err.Error(), "BATCH_SEALED") || !strings.Contains(err.Error(), "metasystem work wait goal-a --for landing") || !slices.Equal(before, after) {
 			t.Fatalf("sealed refusal=%v changed=%t", err, !slices.Equal(before, after))
 		}
 	})

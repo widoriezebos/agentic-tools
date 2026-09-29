@@ -1,7 +1,9 @@
 package main
 
 import (
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -108,7 +110,8 @@ func TestGoalBranchReadRealDelegateReachesSelectedClaude(t *testing.T) {
 			// complete before they are read and before the worktree is removed.
 			// The fake's result is not a critic verdict, so any terminal outcome
 			// is accepted; timeout, interruption or a missing record is not.
-			wait := exec.CommandContext(t.Context(), filepath.Join(worktree, "bin", "metasystem"), "internal", "wait", "--root", worktree, "--job", job, "--timeout", "90s", "--json")
+			wait := exec.CommandContext(t.Context(), commandTestExecutable(t), waitHelperCommand, "--root", worktree, "--job", job, "--timeout", "90s", "--json")
+			wait.Env = append(os.Environ(), "GO_WANT_BATCH_E2E_COMMAND=1")
 			var waitStderr strings.Builder
 			wait.Stderr = &waitStderr
 			waitOutput, waitErr := wait.Output()
@@ -212,13 +215,13 @@ func realDelegateRosterFields(fields map[string]any) map[string]any {
 }
 
 // realDelegateGoalWorktree builds the claimed, approved goal fixture with a
-// breach-stop capability, the repository's real scripts and a placeholder
+// breach-stop capability, the repository's real docs and skills and a placeholder
 // worktree roster, then creates goal/standing-validation with one pushed unit
 // commit and the built engine installed and enrolled in the worktree.
 func realDelegateGoalWorktree(t *testing.T, moduleRoot, engine string) (string, string) {
 	t.Helper()
 	main, _, _ := goalBranchMainCLIFixtureBelow(t, "m1", ".")
-	for _, dir := range []string{"scripts", "docs", "skills"} {
+	for _, dir := range []string{"docs", "skills"} {
 		if output, err := exec.Command("cp", "-R", filepath.Join(moduleRoot, dir), main).CombinedOutput(); err != nil {
 			t.Fatalf("install %s: %v: %s", dir, err, output)
 		}
@@ -278,14 +281,14 @@ func realDelegateGoalWorktree(t *testing.T, moduleRoot, engine string) (string, 
 	writeTestingFixtureFile(t, filepath.Join(worktree, "metasystem", "code.go"), []byte("package fixture\n"), 0o644)
 	goalSyncMutationGit(t, worktree, "add", "metasystem/code.go")
 	code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
-		return runGoalBranch([]string{"commit", "--goal", "standing-validation", "--kind", "unit", "--unit", "u1", "--root", worktree})
+		return goalBranchTestCommand([]string{"commit", "--goal", "standing-validation", "--kind", "unit", "--unit", "u1", "--root", worktree})
 	})
 	unit := strings.TrimSpace(stdout)
 	if code != 0 || len(unit) != 40 {
 		t.Fatalf("unit commit: code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
 	code, _, stderr = captureCommandOutput(t, true, true, func() int {
-		return runGoalBranch([]string{"push", "--goal", "standing-validation", "--root", worktree, "--opid", "real-delegate-push"})
+		return goalBranchTestCommand([]string{"push", "--goal", "standing-validation", "--root", worktree, "--opid", "real-delegate-push"})
 	})
 	if code != 0 {
 		t.Fatalf("goal push: code=%d stderr=%q", code, stderr)
@@ -301,12 +304,9 @@ func realDelegateGoalWorktree(t *testing.T, moduleRoot, engine string) (string, 
 	if err := testexec.WriteFile(installed, body, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	digest, err := exec.Command(installed, "util", "sha256", "--file", installed).Output()
-	if err != nil {
-		t.Fatalf("engine digest: %v", err)
-	}
+	digest := fmt.Sprintf("%x", sha256.Sum256(body))
 	writeTestingFixtureFile(t, filepath.Join(worktree, "artifacts", "agents", "steward", "identity.json"), []byte(
-		`{"repoIdentity":"`+worktree+`","generation":1,"installPath":"`+installed+`","installDigest":"sha256:`+strings.TrimSpace(string(digest))+
+		`{"repoIdentity":"`+worktree+`","generation":1,"installPath":"`+installed+`","installDigest":"sha256:`+digest+
 			`","mintedAt":"1970-01-01T00:00:00Z","enrollment":"fixture"}`+"\n"), 0o600)
 	// Supervision is armed the way the dispatch fixture bed arms it and shut
 	// down when the case ends. Shutdown stops the supervision rings but not

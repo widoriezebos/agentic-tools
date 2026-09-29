@@ -99,7 +99,7 @@ func TestCommitRefusesBeforeAnyEffect(t *testing.T) {
 			b.git.on("write-tree", func(GitCall) GitResult { tree := trees[0]; trees = trees[1:]; return ok(tree) })
 		}, CommitRequest{}, 1, "agent commit refused: the index or a gate input moved while the proof ran; re-stage and retry"},
 		{"no machine nickname", func(b *bed) { b.git.machine = "" }, CommitRequest{}, 2,
-			"commit refused: no machine nickname is enrolled"},
+			"commit refused: no machine nickname is enrolled on this machine; name it once with: git config metasystem.goal.machine NAME"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

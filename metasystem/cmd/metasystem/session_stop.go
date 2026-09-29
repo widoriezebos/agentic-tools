@@ -42,13 +42,13 @@ func authorizeSessionStop(stateRoot, by string) (goal.SessionStop, string, int) 
 		return goal.SessionStop{}, fmt.Sprintf("session stop refused: caller classification failed: %v", err), 3
 	}
 	if classification.Class != lease.ClassHuman {
-		return goal.SessionStop{}, fmt.Sprintf("session stop refused: this is human-reserved; caller classifies %s", classification.Class), 3
+		return goal.SessionStop{}, "session stop refused: only a person at the enrolled terminal can stop a session quietly; this shell was started by an agent; nothing was done", 3
 	}
 
 	now := sessionStopNow().UTC()
 	humanProof, err := proveSessionStopHuman(stateRoot, int64(os.Getppid()), now)
 	if err != nil {
-		return goal.SessionStop{}, fmt.Sprintf("session stop refused: attended human authority was not proven: %v", err), 3
+		return goal.SessionStop{}, fmt.Sprintf("session stop refused: only a person at the enrolled terminal can stop a session quietly; %s; nothing was done", humanauthority.PlainReason(err)), 3
 	}
 	holder, err := currentSessionStopHolder(stateRoot)
 	if err != nil {

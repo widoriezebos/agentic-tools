@@ -119,7 +119,7 @@ func TestParseGuardrailsRefusals(t *testing.T) {
 		"dot segment": "goldens/./",
 		"doubled":     "goldens//deep",
 		"lone dot":    ".",
-		"protected":   "scripts/agents/gate.sh",
+		"protected":   "internal/protocol/gate.sh",
 	} {
 		if _, violation := mission.ParseGuardrails(mission.ContractGuardrailSubject, value, protectedArtifactPath); violation == "" {
 			t.Fatalf("%s must refuse", name)

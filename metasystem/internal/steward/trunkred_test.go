@@ -18,7 +18,7 @@ func TestTrunkRedRoleVerdicts(t *testing.T) {
 	t.Run("none is not green", func(t *testing.T) {
 		bed := newRoleTrunkRedBed(t, now, nil, nil)
 		role := bed.trunkRedWithoutBatch()
-		if role.Status != HealthDead || !strings.Contains(role.Reason, "no deep validation cadence") || !strings.Contains(role.Remedy, "gate cadence-tick") {
+		if role.Status != HealthDead || !strings.Contains(role.Reason, "no deep validation cadence") || (!strings.Contains(role.Remedy, "metasystem system start") || strings.Contains(role.Remedy, "internal")) {
 			t.Fatalf("no entries: %+v", role)
 		}
 	})
@@ -63,7 +63,7 @@ func TestTrunkRedRoleVerdicts(t *testing.T) {
 		}
 		writeHealthBatch(t, landing, now.Add(-2*time.Minute), "held-opid")
 		role := bed.trunkRed(resolve)
-		if role.Status != HealthDead || !strings.Contains(role.Reason, "batch batch-held opid") || !strings.Contains(role.Remedy, "landing batch tick") {
+		if role.Status != HealthDead || !strings.Contains(role.Reason, "batch batch-held opid") || !strings.Contains(role.Remedy, "metasystem system start") || strings.Contains(role.Remedy, "internal") {
 			t.Fatalf("stale hold: %+v", role)
 		}
 		writeHealthBatch(t, landing, now.Add(-2*time.Minute), "second-opid")
@@ -123,7 +123,7 @@ func TestTrunkRedHealthReportsOverdueAndNonGreenCadence(t *testing.T) {
 			status := healthCadence(test.window, test.groupStatus)
 			bed := newRoleTrunkRedBed(t, now, nil, status)
 			role := bed.trunkRedWithoutBatch()
-			if role.Status != HealthDead || !strings.Contains(role.Reason, test.reason) || !strings.Contains(role.Reason, status.TrunkCommit) || !strings.Contains(role.Remedy, "gate cadence-tick") {
+			if role.Status != HealthDead || !strings.Contains(role.Reason, test.reason) || !strings.Contains(role.Reason, status.TrunkCommit) || (!strings.Contains(role.Remedy, "metasystem system start") || strings.Contains(role.Remedy, "internal")) {
 				t.Fatalf("cadence health=%+v", role)
 			}
 		})

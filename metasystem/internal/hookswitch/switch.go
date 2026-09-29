@@ -22,11 +22,13 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hooks"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostsetup"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ledgerfence"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/contractgit"
 )
 
 // BuildCommand is the bootstrap that builds or rebuilds an engine.
@@ -52,11 +54,72 @@ type Report struct {
 	// re-enrolled (a composer from before the engine guard was upgraded).
 	Fence     string
 	FenceHook string
+	// MergeDriver is the testing contract's merge-driver registration:
+	// registered, unchanged, or no-git (Setup only).
+	MergeDriver string
 }
 
 // Unchanged reports whether the switch found every effect already in place.
 func (r Report) Unchanged() bool {
-	return len(r.Changed) == 0 && (r.Fence == FenceUnchanged || r.Fence == FenceNoGit)
+	return len(r.Changed) == 0 && (r.Fence == FenceUnchanged || r.Fence == FenceNoGit) &&
+		(r.MergeDriver == "" || r.MergeDriver == contractgit.DriverUnchanged || r.MergeDriver == contractgit.DriverNoGit)
+}
+
+// Options are what Setup registers beyond the hooks.
+type Options struct {
+	// Runtimes are the runtimes registered in full: instruction pointers,
+	// skills, profiles and hooks. Empty registers the runtimes the
+	// installation's metasystem.runtimes enables; ["none"] registers none.
+	Runtimes []string
+	// CopySkills copies skill trees instead of linking them.
+	CopySkills bool
+}
+
+// Setup is the checkout's one activation (system setup): it validates the
+// engine as Switch does, then registers the chosen runtimes in full, switches
+// every registered runtime's hooks to the engine, enrolls the commit fence,
+// and registers the testing contract's merge driver. Nothing is written when
+// the engine is refused; a repeat with everything in place writes nothing.
+func Setup(path string, options Options, deps Deps) (Report, error) {
+	return run(path, &options, deps)
+}
+
+// ConfiguredRuntimes are the adoptable runtimes the installation's
+// metasystem.runtimes enables: every adoptable one when it names none, and
+// ["none"] when it is "none".
+func ConfiguredRuntimes(installation string) []string {
+	value, present, err := config.ConfLookup(filepath.Join(installation, "metasystem.conf"), "metasystem.runtimes")
+	value = strings.TrimSpace(value)
+	if err != nil || !present || value == "" {
+		return nil
+	}
+	if value == "none" {
+		return []string{"none"}
+	}
+	var selected []string
+	for _, name := range strings.Split(value, ",") {
+		if declaration, ok := runtimes.Lookup(strings.TrimSpace(name)); ok && declaration.Adoptable {
+			selected = append(selected, strings.TrimSpace(name))
+		}
+	}
+	if len(selected) == 0 {
+		return []string{"none"}
+	}
+	return selected
+}
+
+// TestingContract is the testing contract's path relative to the
+// repository root, as .gitattributes names it.
+func TestingContract(layout stateroot.Layout) string {
+	name := "testing.json"
+	if value, present, err := config.ConfLookup(filepath.Join(layout.InstallationRoot, "metasystem.conf"), "testing.contract"); err == nil && present && strings.TrimSpace(value) != "" {
+		name = strings.TrimSpace(value)
+	}
+	relative, err := filepath.Rel(layout.RepositoryRoot, filepath.Join(layout.InstallationRoot, filepath.FromSlash(name)))
+	if err != nil {
+		return name
+	}
+	return filepath.ToSlash(relative)
 }
 
 // RefusalError is a refusal before any write, with the command that fixes it.
@@ -83,7 +146,9 @@ func Production() Deps {
 }
 
 // Switch connects the checkout at path to its engine.
-func Switch(path string, deps Deps) (Report, error) {
+func Switch(path string, deps Deps) (Report, error) { return run(path, nil, deps) }
+
+func run(path string, options *Options, deps Deps) (Report, error) {
 	layout, err := deps.Resolve(path)
 	if err != nil {
 		return Report{}, &RefusalError{Reason: fmt.Sprintf("%s is not inside one metasystem installation: %v", path, err),
@@ -104,17 +169,36 @@ func Switch(path string, deps Deps) (Report, error) {
 		return report, &RefusalError{Reason: fmt.Sprintf("the engine at %s does not serve the hook entry (%v); nothing was changed", engine, err),
 			Remedy: fmt.Sprintf("rebuild it with %s in %s, then run metasystem system setup again", BuildCommand, filepath.Dir(filepath.Dir(engine)))}
 	}
+	if options != nil {
+		selected := options.Runtimes
+		if len(selected) == 0 {
+			selected = ConfiguredRuntimes(layout.InstallationRoot)
+		}
+		result, err := hostsetup.SetupWithResolver(hostsetup.Options{RepositoryPath: path, Runtimes: selected, CopySkills: options.CopySkills}, deps.Resolve)
+		if err != nil {
+			return report, err
+		}
+		report.Changed = append(report.Changed, result.Changed...)
+	}
 	report.Runtimes = registeredRuntimes(layout.RepositoryRoot)
 	if len(report.Runtimes) > 0 {
 		result, err := hostsetup.SetupWithResolver(hostsetup.Options{RepositoryPath: path, Runtimes: report.Runtimes, HooksOnly: true}, deps.Resolve)
 		if err != nil {
 			return report, err
 		}
-		report.Changed = result.Changed
+		report.Changed = append(report.Changed, result.Changed...)
 	}
 	report.Fence, report.FenceHook, err = ensureFence(layout.InstallationRoot, deps)
+	if err != nil || options == nil {
+		return report, err
+	}
+	report.MergeDriver, err = contractgit.Register(layout.RepositoryRoot, TestingContract(layout), engine, deps.Git)
 	return report, err
 }
+
+// RegisteredRuntimes are the adoptable runtimes whose hook settings file
+// this checkout carries.
+func RegisteredRuntimes(repository string) []string { return registeredRuntimes(repository) }
 
 // registeredRuntimes are the adoptable runtimes whose hook settings file this
 // checkout already carries; the switch registers no new runtime.
@@ -162,6 +246,9 @@ func ensureFence(installation string, deps Deps) (string, string, error) {
 		return FenceEnrolled, hookPath, nil
 	}
 }
+
+// Git runs git with the switch's scrubbed environment.
+func Git(args ...string) (string, error) { return git(args...) }
 
 func git(args ...string) (string, error) {
 	command := exec.Command("git", args...)

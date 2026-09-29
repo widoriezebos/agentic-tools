@@ -82,7 +82,7 @@ app-doctrine goal's, not yours.
 ## Step 4 — The evidence table, before any net is authored
 
 This is the interview's spine, and it outlives the interview. The
-canonical format — the engine's `covenant evidence` gate parses
+canonical format — the covenant evidence gate `metasystem system check` runs parses
 exactly this shape, so it is law, not style:
 
 ```markdown
@@ -152,7 +152,7 @@ battery, budgets, guards, guardrails — the reader refuses anything
 else) with these disciplines:
 
 - Every requirement row's `id` IS the criterion id from the table —
-  one namespace, matched exactly by the `covenant evidence` gate —
+  one namespace, matched exactly by the covenant evidence gate —
   and `ref` describes the criterion in English with no identity role.
   `proof` names the table row's proof id. A proof name that appears
   nowhere in the table is an invented proof; do not write it.
@@ -233,7 +233,7 @@ Goal origin derives from who runs the command: the human's asks carry
 the human's authority gates only when the human's own hand opens them.
 Generate the exact `metasystem goal open <goal> --intent <text> --next <text>`
 command(s) — id, intent with its cited IDs, next step with its
-`Appetite:` token, and the risk fields `metasystem help open` requires — and hand them over for the
+`Appetite:` token, and the risk fields `metasystem goal open --help` requires — and hand them over for the
 human to run. Zero transcription: the command is complete as displayed.
 The first open clears the adopted repo's declared Goal-free by the
 machinery's own design.

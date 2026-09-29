@@ -55,7 +55,7 @@ func TestWorktreeEnvelopeGrantsGitRoots(t *testing.T) {
 	source := filepath.Join(dir, "preset.json")
 	os.WriteFile(source, []byte(`{"readRoots":["."],"writeRoots":["<worktree>"],"network":"deny","approvals":"deny","tools":"runtime-default"}`), 0o644)
 	output := filepath.Join(dir, "envelope.json")
-	if err := ExpandPermissions(source, repo, worktree, true, "workspace", "", output); err != nil {
+	if err := ExpandPermissions(mustReadFile(t, source), repo, worktree, true, "workspace", "", output); err != nil {
 		t.Fatalf("expand: %v", err)
 	}
 	data, _ := os.ReadFile(output)

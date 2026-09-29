@@ -48,9 +48,9 @@ func TestWallMechanicalRecoveryRestoresUndeclaredScribble(t *testing.T) {
 	// (window expires before its real fact on every retry); real scale
 	// until audited — tracked under timing-tests-synthetic-clock.
 
-	bed := newRecoveryFileBed(t, map[string]string{"scripts/agents/templates/host-turn-instruction.md": "original\n"})
+	bed := newRecoveryFileBed(t, map[string]string{"internal/protocol/templates/host-turn-instruction.md": "original\n"})
 	engine, statePath, ledgerPath, turnDir := bed.e, bed.state, bed.ledger, bed.turnDir
-	scribbled := filepath.Join(engine.Root, "scripts", "agents", "templates", "host-turn-instruction.md")
+	scribbled := filepath.Join(engine.Root, "internal", "protocol", "templates", "host-turn-instruction.md")
 	original, err := os.ReadFile(scribbled)
 	if err != nil {
 		t.Fatal(err)
@@ -60,10 +60,10 @@ func TestWallMechanicalRecoveryRestoresUndeclaredScribble(t *testing.T) {
 
 	bed.facts.ledgerGuard()
 	bed.facts.violation(recoveryPre, recoveryPost,
-		[]string{"host-scribble.txt", "scripts/agents/templates/host-turn-instruction.md"},
+		[]string{"host-scribble.txt", "internal/protocol/templates/host-turn-instruction.md"},
 		recoveryMaterialize{
-			before: map[string]string{"host-scribble.txt": "junk\n", "scripts/agents/templates/host-turn-instruction.md": string(original) + "# host scribble\n"},
-			after:  map[string]*string{"host-scribble.txt": nil, "scripts/agents/templates/host-turn-instruction.md": recoveryString(string(original))},
+			before: map[string]string{"host-scribble.txt": "junk\n", "internal/protocol/templates/host-turn-instruction.md": string(original) + "# host scribble\n"},
+			after:  map[string]*string{"host-scribble.txt": nil, "internal/protocol/templates/host-turn-instruction.md": recoveryString(string(original))},
 		})
 	ctx, final, violated, err := engine.wallGate(statePath, ledgerPath, "alpha-t1-live", turnDir, 1, nil, false, true, nil)
 	if err != nil {
@@ -84,7 +84,7 @@ func TestWallMechanicalRecoveryRestoresUndeclaredScribble(t *testing.T) {
 		path, _ := p.(string)
 		joined += path + "\n"
 	}
-	if !strings.Contains(joined, "scripts/agents/templates/host-turn-instruction.md") || !strings.Contains(joined, "host-scribble.txt") {
+	if !strings.Contains(joined, "internal/protocol/templates/host-turn-instruction.md") || !strings.Contains(joined, "host-scribble.txt") {
 		t.Fatalf("both scribbles must be in the restore set: %q", joined)
 	}
 	after, err := os.ReadFile(scribbled)

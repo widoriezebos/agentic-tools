@@ -86,8 +86,6 @@ func TestDispatchSelectionRefusals(t *testing.T) {
 func TestDispatchRefusesInvalidBriefHeadersWithTheRepairSentence(t *testing.T) {
 	t.Parallel()
 	b := newBed(t)
-	b.installAsset("scripts/agents/roles/implementer.md")
-	b.installAsset("scripts/agents/roles/implementer.requirements.json")
 	b.writeFile("metasystem.conf", "metasystem.runtimes=fake\nrole.default.runtime=fake\nrole.default.model.fake=fake-model\n")
 	partial := b.writeFile("partial.md", "Working Mode:\n")
 	result := b.run("dispatch", "--role", "implementer", "--brief", partial, "--destructive-reach", "MECHANICAL")
@@ -131,8 +129,6 @@ func TestAStoppedCheckoutRefusesBeforeCensusAdmission(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	b.installAsset("scripts/agents/roles/implementer.md")
-	b.installAsset("scripts/agents/roles/implementer.requirements.json")
 	brief := b.writeFile("brief.md", "Working Mode: implement\n")
 	b.writeRecord("parent", map[string]any{"status": "completed", "round": 1, "sessionId": "s"})
 	for _, argv := range [][]string{

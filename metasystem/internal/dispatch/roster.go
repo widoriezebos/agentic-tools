@@ -25,6 +25,9 @@ type RosterParams struct {
 	Mode            string
 	RuntimeOverride string
 	ModelOverride   string
+	// LookupEnv is the invocation's configuration environment (a request's
+	// carried configuration over the process's own); nil is os.LookupEnv.
+	LookupEnv func(string) (string, bool)
 }
 
 // RosterResolution is the decision dispatch consumes. Field order is the
@@ -71,9 +74,13 @@ func refuseTemplateModel(conf, role, runtime, model string) error {
 		role, runtime, model, key, key, runtime, conf)
 }
 
-func rosterGet(conf, key, mode string) (string, error) {
+func rosterGet(conf, key, mode string, lookup ...func(string) (string, bool)) (string, error) {
+	var lookupEnv func(string) (string, bool)
+	if len(lookup) > 0 {
+		lookupEnv = lookup[0]
+	}
 	value, _, err := config.Get(config.GetParams{
-		Key: key, Mode: mode, ConfPath: conf,
+		Key: key, Mode: mode, ConfPath: conf, LookupEnv: lookupEnv,
 		Default: missingSentinel, DefaultSet: true,
 	})
 	if err != nil {
@@ -136,7 +143,7 @@ func tierIndices(conf string) []int {
 // classifying whether the request escalates. Refusal texts are the wire the
 // shell relays verbatim.
 func ResolveRoster(p RosterParams) (RosterResolution, error) {
-	get := func(key string) (string, error) { return rosterGet(p.ConfPath, key, p.Mode) }
+	get := func(key string) (string, error) { return rosterGet(p.ConfPath, key, p.Mode, p.LookupEnv) }
 
 	rosterRuntime, err := get("role." + p.Role + ".runtime")
 	if err != nil {
@@ -157,7 +164,7 @@ func ResolveRoster(p RosterParams) (RosterResolution, error) {
 	if runtime == "main" {
 		return RosterResolution{}, fmt.Errorf("role %s is assigned to main and cannot be dispatched", p.Role)
 	}
-	registered, err := rosterGet(p.ConfPath, "metasystem.runtimes", "")
+	registered, err := rosterGet(p.ConfPath, "metasystem.runtimes", "", p.LookupEnv)
 	if err != nil {
 		return RosterResolution{}, err
 	}

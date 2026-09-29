@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/protocol"
 )
 
 func movedEffectsPage(row string) []byte {
@@ -88,10 +90,7 @@ func TestMovesOwnerFixtureCarriesNoInventory(t *testing.T) {
 
 func TestDesignCriticPacketCarriesMovedEffectsCheck(t *testing.T) {
 	metasystem, _ := filepath.Abs("../..")
-	data, err := os.ReadFile(filepath.Join(metasystem, "scripts/agents/role-packets.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	data := protocol.RolePackets()
 	var recipe struct {
 		Roles map[string]struct {
 			Sources []struct {
@@ -108,7 +107,10 @@ func TestDesignCriticPacketCarriesMovedEffectsCheck(t *testing.T) {
 		if strings.HasPrefix(source.Path, "metasystem/") {
 			root = filepath.Dir(metasystem)
 		}
-		content, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(source.Path)))
+		content, isProtocol, err := protocol.Source(source.Path)
+		if !isProtocol {
+			content, err = os.ReadFile(filepath.Join(root, filepath.FromSlash(source.Path)))
+		}
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -55,12 +55,12 @@ func newObserveFixtureAt(t *testing.T, repository, root string) *observeFixture 
 	f.git("config", "user.email", "landing@example.invalid")
 	f.write(".gitignore", "artifacts/\n")
 	f.write("product.txt", "before\n")
-	for _, policyFile := range []string{"path-classes.txt", "landing-classes.json"} {
-		content, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", policyFile))
+	for _, policyFile := range []string{"internal/pathclass/path-classes.txt", "internal/landing/landing-classes.json"} {
+		content, err := os.ReadFile(filepath.Join("..", "..", filepath.FromSlash(policyFile)))
 		if err != nil {
 			t.Fatalf("read repository policy %s: %v", policyFile, err)
 		}
-		f.writeBytes(filepath.Join("scripts", "agents", policyFile), content)
+		f.writeBytes(filepath.Join(filepath.FromSlash(policyFile)), content)
 	}
 	f.write("memory/rulings.md", "| R-1 | existing ruling |\n| R-35-m0 | landing class authority |\n| R-54-m1 | tier-1 landing authority |\n")
 	f.write("memory/receipts.log", "receipt=existing\n")
@@ -482,6 +482,12 @@ func TestObserveTierOneDirectFixBoundsAndReceipt(t *testing.T) {
 	}{
 		{"lawful area landing with absent gateWidth", "", "docs/constant.txt", "one changed line\n", "tier-1", 1, 1},
 		{"protected floor", "area", "internal/goal/constant.txt", "protected\n", "tier1-floor-refused", 1, 1},
+		// The code that writes or checks a landing's own receipt is on the
+		// floor: a small tier-1 landing may not change the verb that proves it.
+		{"the test-receipt verb", "area", "cmd/metasystem/landing_verbs.go", "package main\n", "tier1-floor-refused", 1, 1},
+		{"the landing path's receipt line", "area", "cmd/metasystem/landing_path.go", "package main\n", "tier1-floor-refused", 1, 1},
+		{"the batch landing's receipt append", "area", "cmd/metasystem/landing_batch_land.go", "package main\n", "tier1-floor-refused", 1, 1},
+		{"the receipt ledger writer", "area", "internal/receipt/receipt.go", "package receipt\n", "tier1-floor-refused", 1, 1},
 		{"goal raised to tier two after root dispatch", "area", "docs/constant.txt", "change\n", "tier1-goal-tier-2-refused", 2, 1},
 		{"forty-one changed lines", "area", "docs/large.txt", strings.Repeat("changed\n", 41), "tier1-line-bound-refused", 1, 1},
 		{"four changed files", "area", "docs/file.txt", "change\n", "tier1-file-bound-refused", 1, 4},
@@ -640,7 +646,7 @@ func TestSTR4R1FullWidthChainRequiresFullBatteryReceipt(t *testing.T) {
 
 func TestTierOneClassCutoverAcceptsTheTwoClassLandingBase(t *testing.T) {
 	f := newRepositoryObservationFixture(t)
-	f.base("scripts/agents/landing-classes.json", `{
+	f.base("internal/landing/landing-classes.json", `{
   "schemaVersion": 1,
   "enginePolicyVersion": 1,
   "classes": [
@@ -673,9 +679,9 @@ func TestSliceOneRetainsHandoffCarriage(t *testing.T) {
 
 func TestObserveManifestIsBehavior(t *testing.T) {
 	fixture := newRepositoryObservationFixture(t)
-	before := string(fixture.baseFiles["scripts/agents/path-classes.txt"])
-	c := fixture.comparison(observeTreeB, "diff --git a/scripts/agents/path-classes.txt b/scripts/agents/path-classes.txt\n+install:memory/ record\n", "scripts/agents/path-classes.txt")
-	c.declare("scripts/agents/path-classes.txt", &before, observationText("install:memory/ record\n"))
+	before := string(fixture.baseFiles["internal/pathclass/path-classes.txt"])
+	c := fixture.comparison(observeTreeB, "diff --git a/internal/pathclass/path-classes.txt b/internal/pathclass/path-classes.txt\n+install:memory/ record\n", "internal/pathclass/path-classes.txt")
+	c.declare("internal/pathclass/path-classes.txt", &before, observationText("install:memory/ record\n"))
 	got := c.observe(ObserveParams{
 		RepoRoot: fixture.root, CandidateTree: c.candidate, DirectFix: "register-carriage",
 	})
@@ -709,7 +715,7 @@ func TestObserveClassifiesEachPathClass(t *testing.T) {
 			if got.Code != fixture.wantCode || (got.Verdict == "pass") != fixture.wantPass {
 				t.Fatalf("%s path classified as %+v", name, got)
 			}
-			if fixture.wantDetail && (len(got.Unclassified) != 1 || got.Unclassified[0] != "product.txt" || got.Refusal != "path product.txt has no class in scripts/agents/path-classes.txt; no classified ancestor; add a row for product.txt or its directory to scripts/agents/path-classes.txt") {
+			if fixture.wantDetail && (len(got.Unclassified) != 1 || got.Unclassified[0] != "product.txt" || got.Refusal != "path product.txt has no class in the engine's path-class policy (internal/pathclass/path-classes.txt); no classified ancestor") {
 				t.Fatalf("unclassified detail was not preserved from the base manifest: %+v", got)
 			}
 		})
@@ -815,11 +821,11 @@ func TestObserveUnclassifiedDetailFromBase(t *testing.T) {
 	c := f.comparison(observeTreeB, "diff --git a/product.txt b/product.txt\n+changed\n", "product.txt")
 	c.declare("product.txt", observationText("before\n"), observationText("changed\n"))
 	candidate := c.candidate
-	manifest, err := os.ReadFile(filepath.Join(f.root, "scripts/agents/path-classes.txt"))
+	manifest, err := os.ReadFile(filepath.Join(f.root, "internal/pathclass/path-classes.txt"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.write("scripts/agents/path-classes.txt", string(manifest)+"install:product.txt record\n")
+	f.write("internal/pathclass/path-classes.txt", string(manifest)+"install:product.txt record\n")
 	got := c.observe(ObserveParams{RepoRoot: f.root, CandidateTree: candidate, DirectFix: "register-carriage"})
 	if got.Code != "path-unclassified" || len(got.Unclassified) != 1 || got.Unclassified[0] != "product.txt" || !strings.Contains(got.Refusal, "path product.txt has no class") {
 		t.Fatalf("candidate manifest reclassified its own landing: %+v", got)

@@ -82,10 +82,14 @@ func TestGoalLandingHostContractRetainsPriorGroupsAndGoGate(t *testing.T) {
 // (plans/designs/verbs-object-action.md 6.1). Each maps to that verb; nothing
 // else may leave the legacy floor this way.
 var retiredWithDeletedVerb = map[string]string{
-	"context-standard/TestRuntimeContextSampleVerb":  "runtime context-sample",
-	"launch-standard/TestPackCheckVerbPrintsOneLine": "launch pack-check",
-	"launch-standard/TestUnitRunPrintsOneLine":       "unit run",
-	"launch-standard/TestUnitFamilyIsRegistered":     "unit run",
+	// U9b (B3): test merge left the public surface; git's merge driver,
+	// which system setup registers, is the one merge (its witness is
+	// TestTestingMergeDriverPreservesOursOnRefusal).
+	"command-interface-smoke/TestTestingMergeVerbRoutesAndPreservesOutputOnRefusal": "test merge",
+	"context-standard/TestRuntimeContextSampleVerb":                                 "runtime context-sample",
+	"launch-standard/TestPackCheckVerbPrintsOneLine":                                "launch pack-check",
+	"launch-standard/TestUnitRunPrintsOneLine":                                      "unit run",
+	"launch-standard/TestUnitFamilyIsRegistered":                                    "unit run",
 	// U7c: the only caller was dependency-tree-guard.sh.
 	"batch-buildcd-standard/TestAuditParallelRatchetVerbRefusesAndLowers": "audit parallel-ratchet",
 	// U7c step B: proc fixture-key lost its last caller with the fixture
@@ -103,6 +107,32 @@ var retiredWithDeletedVerb = map[string]string{
 	"launch-standard/TestLaunchWaitNamesTheCapAndThePendingState":          "launch wait",
 	"goal-decision-standard/TestRestampVerbRefusesTheByFlag":               "goal restamp",
 	"context-standard/TestContextPruneVerb":                                "context prune",
+	// U9b: internal verbs no launcher starts; the census scan and cadence
+	// owners they wrapped keep their own tests.
+	"command-interface-smoke/TestProcFixtureSurvivorsVerb":                                           "proc fixture-survivors",
+	"command-interface-smoke/TestProcFixtureSurvivorsReapsALiveSurvivor":                             "proc fixture-survivors",
+	"landing-command-standard/TestGateCadenceTickRefusesEveryNonOwnerAndPrintsOneOwnerResult":        "gate cadence-tick",
+	"landing-command-standard/TestGateCadenceTickClassifiesOnlyTickRefusalsNonZero":                  "gate cadence-tick",
+	"landing-command-standard/TestCadenceResultNamesTriggerForJoinedAndOccupiedClaims":               "gate cadence-tick",
+	"batch-buildcd-standard/TestGateUnitGreenOutputAndAggregatedSteps":                               "gate unit",
+	"batch-buildcd-standard/TestGateUnitRedOutputAndExitCode":                                        "gate unit",
+	"command-interface-smoke/TestAuditStopDecisionSurfaceVerb":                                       "audit stop-decision-surface",
+	"command-interface-smoke/TestAuditStopDecisionSurfaceRefusesRecordTheGoalParserRejects":          "audit stop-decision-surface",
+	"command-interface-smoke/TestChannelFakeServePublicCommandListensUnderSyntheticFixtureAuthority": "channel fake",
+	"command-interface-smoke/TestChannelFakeServeRequiresBoundedLifetime":                            "channel fake",
+	"command-interface-smoke/TestChannelFakeServeStopsAtInjectedExpiry":                              "channel fake",
+	"goal-decision-standard/TestGoalBranchCheckPrintsKinds":                                          "goal branch",
+	"goal-decision-standard/TestGoalBranchCheckFetchesCurrentOriginTip":                              "goal branch",
+	"goal-decision-standard/TestGoalBranchHelpNamesPush":                                             "goal branch",
+	"goal-decision-standard/TestGoalBranchStatusReportsAbsentOrigin":                                 "goal branch",
+	"goal-decision-standard/TestTransportMirrorAndLeasedDelete":                                      "goal branch",
+	"goal-decision-standard/TestGoalBranchSweepListsParkedDoneAbandonedAndOrphan":                    "goal branch",
+	"goal-decision-standard/TestGoalListJSONKeepsItsShapeAndRequiresHistoryFlag":                     "goal list",
+	"goal-decision-standard/TestGoalBranchCommitRefusesToMoveAnArmedCheckout":                        "goal branch",
+	"goal-decision-standard/TestCommitReadRefusesUnrecordedFastGateRun":                              "goal branch",
+	"supervision-bed-standard/TestRunLaunchReadsClosedFenceBeforeCallerGate":                         "run launch",
+	"supervision-bed-standard/TestSupervisionBedAWaitMeasureJoinsLiveWaits":                          "wait measure",
+	"supervision-bed-standard/TestWaitMeasureVerb":                                                   "wait measure",
 }
 
 // retiredWithDeletedBed names legacy mandatory tests whose only subject was a
@@ -240,11 +270,9 @@ func assertLegacyHostContractCoverage(t *testing.T, current testpolicy.Contract)
 		"section/runtime-contract-audits":        {replacement: "runtime-contract-standard"},
 		"section/agent-protocol-fixtures":        {replacement: "agent-protocol-standard"},
 		"section/workflow-tooling-fixtures":      {replacement: "workflow-tooling-standard"},
-		"section/watch-background-jobs-fixtures": {replacement: "watch-jobs-standard"},
-		"section/covenant-evidence-pre-rebuild": {replacement: "agent-protocol-standard", tests: []string{
-			"TestCovenantEvidenceVerb", "TestCovenantEvidenceVerbRefusals"}},
-		"section/covenant-evidence-post-rebuild": {replacement: "agent-protocol-standard", tests: []string{
-			"TestCovenantEvidenceVerb", "TestCovenantEvidenceVerbRefusals"}},
+		"section/watch-background-jobs-fixtures": {reason: "the job watcher it tested lost its last caller and was deleted with it (verbs-object-action U9b)"},
+		"section/covenant-evidence-pre-rebuild":  {reason: "the covenant evidence verb it drove is deleted; the gate runs inside delivery (verbs-object-action U9b)"},
+		"section/covenant-evidence-post-rebuild": {reason: "the covenant evidence verb it drove is deleted; the gate runs inside delivery (verbs-object-action U9b)"},
 		"section/supervisor-fingerprint-heal-harness": {replacement: "runtime-owner-standard", tests: []string{
 			"TestWatcherRestartRequestReplacesOnlyTheEnrolledGenerationWithinOneCycle",
 			"TestCompletedWatcherRequestIsReplacedByANewGeneration",

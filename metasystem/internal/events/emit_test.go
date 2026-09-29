@@ -6,21 +6,30 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
 
+// testRegistries holds the catalogue each sandbox root is judged by.
+var testRegistries sync.Map
+
+func init() {
+	engine := registryFor
+	registryFor = func(root string) []byte {
+		if registry, ok := testRegistries.Load(root); ok {
+			return registry.([]byte)
+		}
+		return engine(root)
+	}
+}
+
+// sandbox is an emission root judged by registry in place of the engine's
+// catalogue.
 func sandbox(t *testing.T, registry string) string {
 	t.Helper()
 	root := t.TempDir()
-	dir := filepath.Join(root, "scripts", "agents")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if registry != "" {
-		if err := os.WriteFile(filepath.Join(dir, "event-registry.json"), []byte(registry), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
+	testRegistries.Store(root, []byte(registry))
+	t.Cleanup(func() { testRegistries.Delete(root) })
 	return root
 }
 
@@ -80,12 +89,12 @@ func TestEmitDropsUnregisteredEventAndWrongEmitter(t *testing.T) {
 	}
 }
 
-func TestEmitWritesWhenRegistryAbsent(t *testing.T) {
-	root := sandbox(t, "") // no registry file
+func TestEmitWritesWhenRegistryMalformed(t *testing.T) {
+	root := sandbox(t, "{not json")
 	e := &Emitter{Component: "lease"}
 	e.Emit(root, "anything", "witness must not be silenced", nil)
 	if lines := readLines(t, root); len(lines) != 1 {
-		t.Fatalf("absent registry should not silence the witness; got %d lines", len(lines))
+		t.Fatalf("a malformed registry should not silence the witness; got %d lines", len(lines))
 	}
 }
 
@@ -149,7 +158,7 @@ func TestEmitSequenceIncrements(t *testing.T) {
 // lease-census-6: a payload field named like an envelope field must not
 // clobber the emitter's kernel-fact identity.
 func TestEmitProtectsTheEnvelopeFromPayloadClobber(t *testing.T) {
-	dir := t.TempDir()
+	dir := sandbox(t, `{"events":{"clobber-probe":{"emitters":["test"]}}}`)
 	e := &Emitter{Component: "test", Pid: 42, PidStartedAt: 7}
 	e.Emit(dir, "clobber-probe", "probing", map[string]string{
 		"pid": "evil", "seq": "evil", "ts": "evil", "schemaVersion": "evil",

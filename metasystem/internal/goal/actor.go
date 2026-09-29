@@ -32,7 +32,7 @@ func ResolveMachineWithConfig(root string, lookup func(string, string) (string, 
 			return name, nil
 		}
 	}
-	return "", fmt.Errorf("no machine nickname is enrolled and hostnames are never published: run  git config metasystem.goal.machine <nickname>  once on this machine")
+	return "", fmt.Errorf("no machine nickname is enrolled on this machine; name it once with: git config metasystem.goal.machine NAME")
 }
 
 // ValidateMachineNickname checks the shared read-and-claim vocabulary. The

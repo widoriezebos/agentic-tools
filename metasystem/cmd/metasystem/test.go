@@ -11,6 +11,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -112,6 +113,9 @@ func currentTestingWorkerCapabilities() testingWorkerCapabilities {
 }
 
 func runTestWorkerCapabilities(args []string) int {
+	if len(args) > 0 && strings.HasPrefix(args[0], "-") {
+		return refuseUnknownOption(nil, "test worker-capabilities", args[0], "it takes no options")
+	}
 	if len(args) != 0 {
 		fmt.Fprintln(os.Stderr, "usage: metasystem internal test worker-capabilities")
 		return 2
@@ -163,15 +167,19 @@ func (prepared testingPreparation) proofControlRoot() string {
 }
 
 func runTestList(args []string) int {
-	flags := flag.NewFlagSet("test list", flag.ContinueOnError)
+	flags := newFlagSet("test list")
 	root := pathFlag(flags, "root", "", "MetaSystem installation root")
 	jsonOutput := flags.Bool("json", false, "emit structured JSON")
-	if flags.Parse(args) != nil || flags.NArg() != 0 || *root == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem test list --root INSTALLATION [--json]")
+	if flags.Parse(args) != nil || flags.NArg() != 0 || !requireFlags(flags, nil, "root") {
+		fmt.Fprintln(os.Stderr, "metasystem test list --help shows its forms and options")
 		return 2
 	}
 	installation, contract, path, err := loadPhysicalTestingContract(*root)
 	if err != nil {
+		if _, statErr := os.Stat(*root); errors.Is(statErr, fs.ErrNotExist) {
+			fmt.Fprintf(os.Stderr, "metasystem test list: %s does not exist; nothing was listed\n", *root)
+			return 1
+		}
 		fmt.Fprintln(os.Stderr, "metasystem test list:", err)
 		return 1
 	}
@@ -215,8 +223,12 @@ func testingContractReady(root string, discovery bool) (string, int, error) {
 	return path, len(contract.Groups), nil
 }
 
-func runTestPlan(args []string) int {
-	request, jsonOutput, status := parseTestingSelection("test plan", args, false)
+func runTestPlan(args []string) int { return runTestPlanAs("test plan", args) }
+
+// runTestPlanAs is test plan answering as name: the public action, or the
+// internal entrypoint a pinned engine is started with.
+func runTestPlanAs(name string, args []string) int {
+	request, jsonOutput, status := parseTestingSelection(name, args, false)
 	if status != 0 {
 		return status
 	}
@@ -321,7 +333,7 @@ func (admission testingCommandAdmission) forced(launch proofLaunchAdmission) (pr
 }
 
 func parseTestingSelection(name string, args []string, execution bool) (testingSelectionRequest, bool, int) {
-	flags := flag.NewFlagSet(name, flag.ContinueOnError)
+	flags := newFlagSet(name)
 	// One command is one invocation: its preparations share one state.
 	request := testingSelectionRequest{Preparation: &testingPreparationState{}}
 	pathFlagVar(flags, &request.Root, "root", "", "MetaSystem installation root")
@@ -353,11 +365,15 @@ func parseTestingSelection(name string, args []string, execution bool) (testingS
 		flags.BoolVar(&request.AllGroups, "all-groups", false, "run every selected delivery group after a failure")
 		flags.StringVar(&request.AppAddress, "app-address", "", "the address of the application run a named group is run against")
 	}
-	if flags.Parse(args) != nil || flags.NArg() != 0 || request.Root == "" {
-		fmt.Fprintf(os.Stderr, "usage: metasystem %s --root INSTALLATION [--goal ID] [--authority ID] [--tree TREE] [--mode auto|standard|deep|canary] [--purpose delivery|diagnostic|cadence] [--groups ID,ID]\n", name)
+	if flags.Parse(args) != nil || !requireFlags(flags, nil, "root") || flags.NArg() != 0 || request.Root == "" {
+		if _, public := publicCommand(name); public {
+			fmt.Fprintf(os.Stderr, "metasystem %s --help shows its forms and options\n", name)
+		} else {
+			fmt.Fprintf(os.Stderr, "usage: metasystem internal %s --root INSTALLATION [--goal ID] [--authority ID] [--tree TREE] [--mode auto|standard|deep|canary] [--purpose delivery|diagnostic|cadence] [--groups ID,ID]\n", name)
+		}
 		return request, false, 2
 	}
-	if request.PolicyChild && (name != "test plan" || execution) {
+	if request.PolicyChild && (strings.TrimPrefix(name, "internal ") != "test plan" || execution) {
 		fmt.Fprintln(os.Stderr, "--policy-child is internal to the pinned test plan child")
 		return request, false, 2
 	}
@@ -878,9 +894,17 @@ type protectedCoverageBaseline struct {
 }
 
 func protectCoverageRatchets(workspace gittree.Workspace, baseTree, candidateTree, prefix string) error {
-	for _, relative := range []string{"scripts/agents/coverage-ratchet.json", "scripts/agents/coverage-ratchet-linux.json"} {
-		path := strings.TrimPrefix(filepath.ToSlash(filepath.Join(strings.TrimSuffix(prefix, "/"), relative)), "./")
+	inTree := func(relative string) string {
+		return strings.TrimPrefix(filepath.ToSlash(filepath.Join(strings.TrimSuffix(prefix, "/"), relative)), "./")
+	}
+	for _, relative := range testpolicy.CoverageFloorsFiles() {
+		path := inTree(relative)
+		// A base from before the floors moved beside testing.json keeps them
+		// at the legacy path; the landing that moves them is judged by those.
 		baseBytes, basePresent, err := workspace.FileAt(baseTree, path)
+		if err == nil && !basePresent {
+			baseBytes, basePresent, err = workspace.FileAt(baseTree, inTree(testpolicy.LegacyCoverageFloorsFile(relative)))
+		}
 		if err != nil || !basePresent {
 			continue
 		}
@@ -1776,7 +1800,7 @@ func bindMaterializedCandidateCommit(ctx context.Context, workspace gittree.Work
 
 func runTestRun(args []string) (exit int) {
 	// The entry supplies its own caller, as it always did.
-	return runTestRunWith(testRunInvocation{callerPID: int64(os.Getppid()), stdout: os.Stdout, stderr: os.Stderr}, args)
+	return runTestRunWith(testRunInvocation{callerPID: int64(os.Getppid()), stdout: os.Stdout, stderr: os.Stderr, name: "internal test run"}, args)
 }
 
 // testRunInvocation is the explicit context of one test run (design 6.2): the
@@ -1787,11 +1811,17 @@ func runTestRun(args []string) (exit int) {
 type testRunInvocation struct {
 	callerPID      int64
 	stdout, stderr io.Writer
+	// name is the command it answers as (default: test run).
+	name string
 }
 
 func runTestRunWith(invocation testRunInvocation, args []string) (exit int) {
 	commandStarted := time.Now().UTC()
-	request, _, status := parseTestingSelection("test run", args, true)
+	name := invocation.name
+	if name == "" {
+		name = "test run"
+	}
+	request, _, status := parseTestingSelection(name, args, true)
 	if status != 0 {
 		return status
 	}
@@ -2302,11 +2332,11 @@ func runTestWorker(args []string) int {
 }
 
 func runTestWorkerWithCandidateOpener(args []string, opener func(string, string) (proofrun.CandidateWorkspace, error)) int {
-	flags := flag.NewFlagSet("test worker", flag.ContinueOnError)
+	flags := newFlagSet("test worker")
 	packet := flags.String("packet", "", "private testing request")
 	packetDigest := flags.String("packet-sha256", "", "SHA-256 identity of the immutable testing request")
 	resultPath := flags.String("result", "", "private testing result")
-	if flags.Parse(args) != nil || flags.NArg() != 0 || *packet == "" || *packetDigest == "" || *resultPath == "" {
+	if flags.Parse(args) != nil || !requireFlags(flags, nil, "packet", "packet-sha256", "result") || flags.NArg() != 0 || *packet == "" || *packetDigest == "" || *resultPath == "" {
 		return 2
 	}
 	actualPacketDigest, err := fileSHA256(*packet)
@@ -2466,13 +2496,17 @@ func frozenPolicyProbeRefusal(request proofrun.TestRunRequest, resultPath string
 	}
 }
 
-func runTestVerify(args []string) int {
-	request, jsonOutput, status := parseTestingSelection("test verify", args, false)
+func runTestVerify(args []string) int { return runTestVerifyAs("test verify", args) }
+
+// runTestVerifyAs is test verify answering as name: the internal entrypoint
+// or the public test status.
+func runTestVerifyAs(name string, args []string) int {
+	request, jsonOutput, status := parseTestingSelection(name, args, false)
 	if status != 0 {
 		return status
 	}
 	if request.Tree == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem test status --tree TREE [--goal ID] [--root INSTALLATION] [--json]")
+		fmt.Fprintf(os.Stderr, "%s: needs the tree: metasystem test status --tree TREE [--goal G]; nothing was read\n", commandLabel(name))
 		return 2
 	}
 	return testVerifyTo(os.Stdout, os.Stderr, request, jsonOutput)

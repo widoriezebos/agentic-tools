@@ -38,7 +38,11 @@ func StatusReport(stateRoot string, prober identity.Prober, digest func() (strin
 		return failure(err), Unreadable
 	}
 	if status.State != Running {
-		return Result{[]string{stateLine(stateRoot, status.State, status.Record)}, 1}, status.State
+		line := stateLine(stateRoot, status.State, status.Record)
+		if status.State == Stopped || status.State == Stale {
+			line += "; start it with: metasystem ui start"
+		}
+		return Result{[]string{line}, 1}, status.State
 	}
 	return runningResult(status.Record, digest), Running
 }

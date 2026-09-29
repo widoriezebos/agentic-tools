@@ -24,13 +24,13 @@ func TestLaunchGuardLadder(t *testing.T) {
 
 	// Resume with no state at all.
 	if err := engine.launch("resume", false); err == nil ||
-		!strings.Contains(err.Error(), "state does not exist") {
+		!strings.Contains(err.Error(), "has started here") {
 		t.Fatalf("resume without state: %v", err)
 	}
 	// Start over an existing state steers to resume.
 	os.WriteFile(statePath, []byte(`{}`), 0o644)
 	if err := engine.launch("start", false); err == nil ||
-		!strings.Contains(err.Error(), "already exists; use resume") {
+		!strings.Contains(err.Error(), "already exists; metasystem mission resume mr-launch continues it") {
 		t.Fatalf("start over state: %v", err)
 	}
 	// Resume over a malformed state surfaces the verifier's refusal.
@@ -64,5 +64,23 @@ func TestArmAndPreflightRefusals(t *testing.T) {
 	if err := armed.armAndPreflight("start"); err == nil ||
 		!strings.Contains(err.Error(), "refused by preflight") {
 		t.Fatalf("preflight handoff: %v", err)
+	}
+}
+
+// EM-13, EM-24: a start names a mission without a contract before anything
+// is armed, and a resume names a mission that never started, with the
+// public command that starts it.
+func TestLaunchNamesAMissingMission(t *testing.T) {
+	t.Parallel()
+	engine := &Engine{Root: t.TempDir(), Mission: "mr-none"}
+	armed := 0
+	engine.ArmSupervision = func([]string) (string, string, int) { armed++; return "up outcome=armed", "", 0 }
+	err := engine.launch("start", false)
+	if err == nil || !strings.Contains(err.Error(), "no mission contract mr-none") || armed != 0 {
+		t.Fatalf("start without a contract: %v (armed %d)", err, armed)
+	}
+	err = engine.launch("resume", false)
+	if err == nil || !strings.Contains(err.Error(), "no mission mr-none has started here") || !strings.Contains(err.Error(), "metasystem mission start mr-none") {
+		t.Fatalf("resume without state: %v", err)
 	}
 }

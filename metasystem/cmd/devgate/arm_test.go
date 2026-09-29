@@ -69,7 +69,7 @@ func TestArmProducesAWitnessFromACompleteFrozenExport(t *testing.T) {
 	}
 	content := string(data)
 	for _, pattern := range []string{`"manifestDigest":"[a-f0-9]{64}"`, `"summary":"full gate in frozen proof tree"`,
-		`"controller":\{"pid":` + strconv.Itoa(os.Getppid()) + `,`, `"ratchetBaseline":"scripts/agents/coverage-ratchet`,
+		`"controller":\{"pid":` + strconv.Itoa(os.Getppid()) + `,`, `"ratchetBaseline":"testing-coverage-floors`,
 		`"goVersion":"go version go1.fixture darwin/arm64"`, `"payloadManifest":"witness.payload-paths.nul"`} {
 		if !regexp.MustCompile(pattern).MatchString(content) {
 			t.Fatalf("witness lacks %s:\n%s", pattern, content)

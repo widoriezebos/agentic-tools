@@ -191,12 +191,24 @@ func (values *humanVerbValues) sameCommandWithout(drop ...string) string {
 	for _, name := range drop {
 		dropped[strings.TrimPrefix(name, "--")] = true
 	}
-	// A public command's remedy is the public form of the same act; the
-	// goal family's own form is reached through the explicit internal entry.
-	args := []string{"metasystem", "internal", "goal", values.verb}
-	if action, public := publicGoalActions[values.verb]; public && values.report != nil && publicGoalTakesKept(action, values.rawArgs, dropped) {
-		args = []string{"metasystem", "goal", action}
+	// The remedy is the public form of the same act, with the options it
+	// takes; an option the public form does not take is left out.
+	action, public := publicGoalActions[values.verb]
+	if !public {
+		action = values.verb
 	}
+	command, found := findIntentAction("goal", action)
+	if !found || command.hidden {
+		return ""
+	}
+	accepted := map[string]bool{"repo": true, "root": true, "json": true}
+	for _, flag := range command.allFlags() {
+		accepted[flag.name] = true
+		for _, alias := range flag.aliases {
+			accepted[alias] = true
+		}
+	}
+	args := []string{"metasystem", "goal", action}
 	for index := 0; index < len(values.rawArgs); index++ {
 		token := values.rawArgs[index]
 		if !strings.HasPrefix(token, "--") {
@@ -205,14 +217,15 @@ func (values *humanVerbValues) sameCommandWithout(drop ...string) string {
 		}
 		nameValue := strings.TrimPrefix(token, "--")
 		name, _, joined := strings.Cut(nameValue, "=")
-		if !dropped[name] {
+		keep := !dropped[name] && accepted[name]
+		if keep {
 			args = append(args, token)
 		}
 		if joined || goalBooleanFlag(name) || index+1 >= len(values.rawArgs) {
 			continue
 		}
 		index++
-		if !dropped[name] {
+		if keep {
 			args = append(args, values.rawArgs[index])
 		}
 	}
@@ -257,32 +270,4 @@ func goalBooleanFlag(name string) bool {
 	default:
 		return false
 	}
-}
-
-// publicGoalTakesKept reports whether the public goal action accepts every
-// option the remedy keeps. A kept option only the family form takes (the
-// approval --sweep) makes the remedy the family form, so the printed command
-// runs instead of being refused.
-func publicGoalTakesKept(action string, raw []string, dropped map[string]bool) bool {
-	command, found := findIntentAction("goal", action)
-	if !found {
-		return false
-	}
-	accepted := map[string]bool{"repo": true, "root": true, "json": true}
-	for _, flag := range command.flags {
-		accepted[flag.name] = true
-		for _, alias := range flag.aliases {
-			accepted[alias] = true
-		}
-	}
-	for _, token := range raw {
-		if !strings.HasPrefix(token, "--") {
-			continue
-		}
-		name, _, _ := strings.Cut(strings.TrimPrefix(token, "--"), "=")
-		if !dropped[name] && !accepted[name] {
-			return false
-		}
-	}
-	return true
 }

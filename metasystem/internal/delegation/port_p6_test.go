@@ -211,7 +211,7 @@ func TestFollowUpIntegrationBehindWorktreeStaysUnlessTheBriefCitesATrunkPath(t *
 	requireRebaseFields(t, b.record("stale-wt-r2"), nil, nil, []string{})
 	b.p6Complete("stale-wt", "stale-wt-r2", 2, "metasystem/stale-chain.txt")
 
-	guidance := "metasystem/scripts/agents/fresh-trunk-guidance.md"
+	guidance := "metasystem/docs/fresh-trunk-guidance.md"
 	freshTrunk := b.p6TrunkCommit("fresh trunk guidance", map[string]string{guidance: "fresh trunk guidance\n"})
 	result = b.p6FollowUp("stale-wt", b.p6Message("fresh-trunk.md", "", "Authority: "+guidance))
 	requireExit(t, result, 0, b.stderr.String())
@@ -417,7 +417,7 @@ func TestFollowUpIntegrationRecoversConflictProvenanceAfterAnAuthorityRefusal(t 
 	b.p6Complete("recover-wt", "recover-wt", 1, target)
 	to := b.p6TrunkCommit("authority retry", map[string]string{target: "trunk recovered behaviour\n"})
 
-	refused := b.p6FollowUp("recover-wt", b.p6Message("missing.md", "", "Authority: scripts/agents/missing-after-rebase.md"))
+	refused := b.p6FollowUp("recover-wt", b.p6Message("missing.md", "", "Authority: docs/missing-after-rebase.md"))
 	if refused.ExitCode == 0 || !strings.Contains(b.stderr.String(), "follow-up brief authority admission refused") {
 		t.Fatalf("a missing authority was admitted: exit %d stderr %s", refused.ExitCode, b.stderr.String())
 	}

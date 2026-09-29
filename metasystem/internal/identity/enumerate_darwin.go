@@ -15,6 +15,16 @@ import (
 // TakeProcessCensus reads every process id and parent link from one Darwin
 // process-table snapshot.
 func TakeProcessCensus() (ProcessCensus, error) {
+	raw, err := readProcessTable()
+	if err != nil {
+		return ProcessCensus{}, err
+	}
+	return decodeProcessCensus(raw)
+}
+
+// readProcessTable is one kern.proc.all snapshot, the raw kinfo_proc array
+// every Darwin process-table reader decodes.
+func readProcessTable() ([]byte, error) {
 	var raw []byte
 	var err error
 	// The sysctl sizes its buffer in one call and fills it in another; a
@@ -30,9 +40,9 @@ func TakeProcessCensus() (ProcessCensus, error) {
 		time.Sleep(time.Duration(10*(attempt+1)) * time.Millisecond)
 	}
 	if err != nil {
-		return ProcessCensus{}, fmt.Errorf("identity: sysctl kern.proc.all: %w", err)
+		return nil, fmt.Errorf("identity: sysctl kern.proc.all: %w", err)
 	}
-	return decodeProcessCensus(raw)
+	return raw, nil
 }
 
 // AllPids returns every process id on the machine via sysctl kern.proc.all —

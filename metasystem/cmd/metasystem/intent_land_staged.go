@@ -85,7 +85,7 @@ func runIntentLandStaged(inv *intentInvocation) int {
 	layout, err := inv.owners.resolver.ResolveLayout(path)
 	if err != nil {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2,
-			Summary:  fmt.Sprintf("%s is not inside one metasystem installation: %v", shellCommand([]string{path}), err),
+			Summary:  notAnInstallation(path, err),
 			Decision: "run this inside the repository, or name it with --repo PATH"})
 	}
 	request.Root = layout.InstallationRoot

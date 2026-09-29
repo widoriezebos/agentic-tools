@@ -45,6 +45,9 @@ type OwnerConfig struct {
 	// Host supplies the operations whose owners live in the engine's
 	// command layer.
 	Host HostOps
+	// ConfigEnv is the configuration a request carries (Request.ConfigEnv),
+	// handed explicitly to every adapter process the lifecycle starts.
+	ConfigEnv []string
 }
 
 // NewOwnerPorts wires every port to its real owner.
@@ -78,7 +81,7 @@ func NewOwnerPorts(config OwnerConfig) (Ports, error) {
 	return Ports{
 		Lease:   ownerLease{root: root},
 		Steward: ownerSteward{root: root},
-		Adapter: ownerAdapter{root: root, engine: engine},
+		Adapter: ownerAdapter{root: root, engine: engine, env: config.ConfigEnv},
 		Goal:    ownerGoal{root: root, now: now},
 		Records: ownerRecords{root: root},
 		Events:  ownerEvents{root: eventRoot, emitter: emitter},
@@ -158,7 +161,21 @@ func (o ownerSteward) AuthorizeDispatch(inv Invocation, intent string) (steward.
 // own; its small reads (signature, config-identity, probe, output-stream)
 // and the cancel are the same entry run to completion. The retired
 // dispatch.sh made these same calls.
-type ownerAdapter struct{ root, engine string }
+type ownerAdapter struct {
+	root, engine string
+	// env is configuration carried to the adapter processes (OwnerConfig.ConfigEnv).
+	env []string
+}
+
+// command is one adapter process with the carried configuration in its
+// environment.
+func (o ownerAdapter) command(ctx context.Context, argv []string) *exec.Cmd {
+	command := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	if len(o.env) > 0 {
+		command.Env = append(os.Environ(), o.env...)
+	}
+	return command
+}
 
 func (o ownerAdapter) argv(runtime, verb string, flags ...string) ([]string, error) {
 	if runtime == "" || strings.ContainsAny(runtime, `/\`) || runtime == "." || runtime == ".." || strings.HasPrefix(runtime, "-") {
@@ -181,7 +198,7 @@ func (o ownerAdapter) run(ctx context.Context, runtime, verb string, flags ...st
 	if err != nil {
 		return "", err
 	}
-	command := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	command := o.command(ctx, argv)
 	var stdout, stderr bytes.Buffer
 	command.Stdout = &stdout
 	command.Stderr = &stderr
@@ -211,7 +228,7 @@ func (o ownerAdapter) Cancel(ctx context.Context, runtime, job string) error {
 	if err != nil {
 		return err
 	}
-	command := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	command := o.command(ctx, argv)
 	var output bytes.Buffer
 	command.Stdout, command.Stderr = &output, &output
 	if err := command.Run(); err != nil {
@@ -248,7 +265,7 @@ func (o ownerAdapter) Launch(ctx context.Context, request AdapterLaunch) (int64,
 	}
 	launch := gaterun.DetachedLaunch{
 		Dir: o.root,
-		Env: []string{"GIT_AUTHOR_NAME=" + request.Job, "GIT_AUTHOR_EMAIL=" + request.Job + "@metasystem.invalid"},
+		Env: append([]string{"GIT_AUTHOR_NAME=" + request.Job, "GIT_AUTHOR_EMAIL=" + request.Job + "@metasystem.invalid"}, o.env...),
 	}
 	if guard := request.ExecutionGuard; guard != nil {
 		argv = append([]string{o.engine, "internal", "delegate", RunMemberCallback, "--root", guard.Root, "--"}, argv...)

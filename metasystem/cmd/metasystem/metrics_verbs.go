@@ -1,10 +1,8 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"io"
-	"os"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/metrics"
 )
@@ -40,27 +38,4 @@ func concludedGoalMetrics(root, id string, reporter func(metrics.Options) (metri
 		target = metrics.GoalReportTarget(root, id)
 	}
 	return fmt.Errorf("goal %s concluded, but its metrics report could not be written to %s: %v", id, target, err)
-}
-
-func runMetricsReport(args []string) int {
-	flags := flag.NewFlagSet("metrics report", flag.ContinueOnError)
-	periodEnd := flags.String("period-end", "", "report instant and event-window end as ISO 8601; fractional seconds are truncated")
-	since := flags.String("since", "", "event-window start as ISO 8601; fractional seconds are truncated")
-	goalID := flags.String("goal", "", "write a whole-lifecycle report for one goal")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if flags.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem internal metrics report [--period-end <iso8601>] [--since <iso8601>] [--goal <id>]")
-		return 2
-	}
-	result, err := metrics.Report(metrics.Options{Root: ".", PeriodEnd: *periodEnd, Since: *since, GoalID: *goalID})
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	for _, path := range result.Paths {
-		fmt.Println("metrics report written: " + path)
-	}
-	return 0
 }

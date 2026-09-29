@@ -70,7 +70,7 @@ var registrationRows = map[string][]RegistrationRow{
 		{ID: "enforcement-config", Operation: OpJSONStripKey,
 			Requiredness: Requiredness{TemplateSource: "required", AdoptedDestination: "required"},
 			Destination:  ".claude/settings.json", Policy: PolicyTransformedBytes,
-			InstructionBearing: true, Source: "scripts/enforcement/claude-code-hooks.json", Key: "_comment"},
+			InstructionBearing: true, Source: enforcementSourceDir + "/claude-code-hooks.json", Key: "_comment"},
 	},
 	// Devin discovers project skills under .agents/skills (its skills
 	// documentation; the devin selftest probe proves symlinked discovery
@@ -88,7 +88,7 @@ var registrationRows = map[string][]RegistrationRow{
 		{ID: "enforcement-config", Operation: OpCopyFile,
 			Requiredness: Requiredness{TemplateSource: "required", AdoptedDestination: "required"},
 			Destination:  ".devin/config.json", Policy: PolicyPresenceOnly,
-			InstructionBearing: true, Source: "scripts/enforcement/devin-hooks.json"},
+			InstructionBearing: true, Source: enforcementSourceDir + "/devin-hooks.json"},
 	},
 	"codex": {
 		{ID: "skill-tree", Operation: OpTree,
@@ -103,7 +103,7 @@ var registrationRows = map[string][]RegistrationRow{
 			Requiredness: Requiredness{TemplateSource: "required", AdoptedDestination: "required"},
 			Destination:  ".codex/hooks.json", Policy: PolicyPresenceOnly,
 			InstructionBearing: true, UncoveredException: true,
-			Source: "scripts/enforcement/codex-hooks.json"},
+			Source: enforcementSourceDir + "/codex-hooks.json"},
 	},
 }
 

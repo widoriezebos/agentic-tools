@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,12 +19,14 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/applaunch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/audit"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/protocol"
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes/external"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
@@ -82,7 +85,6 @@ func (inv *intentInvocation) work() intentWorkOwners {
 		owners.units = func(layout stateroot.Layout) *launch.UnitRunner {
 			manager := launchManager()
 			if layout.InstallationRoot != "" {
-				manager.TemplateDirectory = filepath.Join(layout.InstallationRoot, "scripts", "agents", "templates")
 				manager.Settings, manager.SettingsError = launch.ResolveSettings(intentConfPath(layout), launchLookupEnv)
 			}
 			return &launch.UnitRunner{Manager: manager, Git: launch.OSGitRunner{}}
@@ -262,6 +264,19 @@ func intentWorkCommands() []intentCommand {
 			run:      runIntentTest,
 		},
 		{
+			object: "test", action: "declare-moves", audience: "agent", summary: "record that this change moves or removes Stop test assertions on purpose",
+			usage: []string{"metasystem test declare-moves G --reason TEXT [--base COMMIT]"},
+			details: []string{
+				"The static gate refuses a change that removes or changes an assertion deciding whether work must stop, unless the change carries a declaration.",
+				"This writes that declaration under docs/stop-decision-moves for goal G, which a person must first allow: metasystem goal allow G stop-test-changes --reason TEXT.",
+				"Commit the file with the change; a declaration binds exactly the moves it names, so a later change needs its own.",
+			},
+			flags: []intentFlag{reasonFlag("why", "why this change moves a Stop decision"),
+				{name: "base", value: "COMMIT", advanced: true, usage: "the base the moves are measured from (default: the merge base with origin/main)"}},
+			maxArgs: 1, examples: []string{"metasystem test declare-moves verbs-match-intent --reason 'the Stop checks moved into Go'"},
+			run: runIntentDeclareStopMoves,
+		},
+		{
 			object: "test", action: "wait", audience: "agent", summary: "wait for a proof attempt's recorded end",
 			usage:    []string{"metasystem test wait proof:ID [--timeout DURATION]"},
 			flags:    []intentFlag{{name: "timeout", value: "DURATION", usage: "how long this invocation waits (for example 20s or 10m)"}},
@@ -283,7 +298,7 @@ func intentWorkCommands() []intentCommand {
 			object: "settings", action: "show", audience: "both", summary: "the launch settings, or one setting with its source",
 			usage: []string{"metasystem settings show [KEY]"},
 			details: []string{"Without KEY: the launch settings. With KEY: that launch setting or any metasystem.conf key.",
-				"Read only. Settings are changed in metasystem.conf or the environment, not by this command; settings check validates them all."},
+				"Read only. settings set changes one for this seat; settings check validates them all."},
 			maxArgs:  1,
 			examples: []string{"metasystem settings show", "metasystem settings show launch.read.model"},
 			run:      runIntentSettings,
@@ -344,7 +359,7 @@ func (inv *intentInvocation) resolveLayout() *intentResult {
 	layout, err := inv.owners.resolver.ResolveLayout(path)
 	if err != nil {
 		return &intentResult{Outcome: intentRefused, code: 2,
-			Summary:  fmt.Sprintf("%s is not inside one metasystem installation: %v", shellCommand([]string{path}), err),
+			Summary:  notAnInstallation(path, err),
 			Decision: "run this inside the repository, or name it with --repo PATH"}
 	}
 	inv.layout = layout
@@ -589,7 +604,7 @@ func (inv *intentInvocation) unitRequest(runner *launch.UnitRunner, id, unit str
 	briefPath := inv.callerPath(inv.input.text("brief"))
 	brief, err := os.ReadFile(briefPath)
 	if err != nil {
-		return unitRequest{}, &intentResult{Outcome: intentRefused, code: 1, Summary: "cannot read the brief: " + err.Error() + "; nothing was built"}
+		return unitRequest{}, &intentResult{Outcome: intentRefused, code: 1, Summary: fileProblem("brief", briefPath, err) + "; nothing was built"}
 	}
 	if missing := missingDecisionLines(brief); len(missing) > 0 {
 		return unitRequest{}, &intentResult{Outcome: intentRefused, code: 1, text: missing,
@@ -613,11 +628,11 @@ func (inv *intentInvocation) unitRequest(runner *launch.UnitRunner, id, unit str
 	if problem != nil {
 		return unitRequest{}, problem
 	}
-	templates := runner.Manager.TemplateDirectory
-	if templates == "" {
-		templates = filepath.Join(inv.layout.InstallationRoot, "scripts", "agents", "templates")
+	templates := runner.Manager.Templates
+	if templates == nil {
+		templates = protocol.Templates()
 	}
-	template, err := os.ReadFile(filepath.Join(templates, "review-brief.md"))
+	template, err := fs.ReadFile(templates, "review-brief.md")
 	if err != nil {
 		return unitRequest{}, &intentResult{Outcome: intentFailed, code: 1, Summary: "cannot read the review brief template: " + err.Error()}
 	}
@@ -635,7 +650,7 @@ func (inv *intentInvocation) unitRequest(runner *launch.UnitRunner, id, unit str
 		Effort        string            `json:"effort,omitempty"`
 	}{Check: check, Lines: inv.input.text("lines"), ReadToolCalls: toolCalls, Model: inv.input.text("model"), Effort: inv.input.text("effort"), Designs: []unitRequestFile{}}
 	if identity.Brief, err = fileIdentity(briefPath); err != nil {
-		return unitRequest{}, &intentResult{Outcome: intentRefused, code: 1, Summary: "cannot read the brief: " + err.Error()}
+		return unitRequest{}, &intentResult{Outcome: intentRefused, code: 1, Summary: fileProblem("brief", briefPath, err) + "; nothing was built"}
 	}
 	for _, design := range designs {
 		entry, err := fileIdentity(design)
@@ -692,7 +707,7 @@ func (inv *intentInvocation) unitRequest(runner *launch.UnitRunner, id, unit str
 		if _, err := launch.ReadUnitPlan(planPath); err != nil {
 			return "", fmt.Errorf("the generated unit plan is invalid: %w", err)
 		}
-		pack := &launch.Manager{TemplateDirectory: templates}
+		pack := &launch.Manager{Templates: templates}
 		if _, err := pack.CheckPack(launch.StartSpec{Kind: "read", Brief: readBrief, WorkingDirectory: worktree}); err != nil {
 			return "", fmt.Errorf("the generated read brief does not fill the review template: %w", err)
 		}
@@ -1321,11 +1336,14 @@ func runIntentWaitResume(inv *intentInvocation, id string) int {
 	if problem := inv.selectRoot(); problem != nil {
 		return inv.render(*problem)
 	}
+	targets := []intentTarget{{Kind: "wait", ID: id}}
+	if row, _, err := metarun.FindWaiterByID(inv.stateRoot, id); err == nil && row.Selector.Poll == "channel" {
+		return inv.render(inv.resumeChannelWait(id, row, timeout, targets))
+	}
 	args := []string{"--root", inv.layout.InstallationRoot, "--resume", id}
 	if timeout > 0 {
 		args = append(args, "--timeout", timeout.String())
 	}
-	targets := []intentTarget{{Kind: "wait", ID: id}}
 	var waited *metarun.WaitResult
 	code := inv.work().wait(args, func(result metarun.WaitResult, _ bool) { waited = &result })
 	if waited == nil {
@@ -1853,4 +1871,77 @@ func runIntentSettingsSet(inv *intentInvocation) int {
 	}
 	return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: data,
 		Summary: key + "=" + value + " is set in " + local})
+}
+
+// runIntentDeclareStopMoves writes the Stop decision move declaration for
+// one goal through the stop-surface owner in this process. The same moves
+// and reason again change nothing (R-129).
+func runIntentDeclareStopMoves(inv *intentInvocation) int {
+	if len(inv.input.args) != 1 {
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "test declare-moves needs the goal: metasystem test declare-moves G --reason TEXT; nothing was done"})
+	}
+	id, reason := inv.input.args[0], inv.input.text("reason")
+	if strings.TrimSpace(reason) == "" {
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id),
+			Summary: "needs the reason the change moves a Stop decision; nothing was done", Decision: "state it with --reason TEXT"})
+	}
+	if problem := inv.selectRoot(); problem != nil {
+		return inv.render(*problem)
+	}
+	declare := inv.owners.stopMovesDeclare
+	if declare == nil {
+		declare = audit.DeclareStopDecisionSurface
+	}
+	root := inv.layout.InstallationRoot
+	before := stopMovesSnapshot(root)
+	path, err := declare(root, audit.StopSurfaceOptions{Base: inv.input.text("base"), GoalRecord: goal.StopSurfaceGoalReader}, id, reason)
+	if err != nil {
+		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: inv.targets(id), Summary: err.Error() + "; nothing was declared",
+			next: inv.publicArgv("goal", "allow", id, "stop-test-changes", "--reason", "TEXT"), nextReason: "a person allows goal " + id + " to move Stop assertions, then this declares the moves"})
+	}
+	result := intentResult{Outcome: intentConfirmed, Targets: inv.targets(id), Summary: "declared the Stop decision moves in " + path + "; commit it with the change",
+		Data: map[string]any{"declaration": path}}
+	if before == stopMovesSnapshot(root) {
+		result.Outcome, result.Summary = intentUnchanged, "the declaration "+path+" already records these moves; nothing changed"
+	}
+	return inv.render(result)
+}
+
+// stopMovesSnapshot is the declarations directory's names and bytes, so a
+// repeat that rewrote nothing is seen as such.
+func stopMovesSnapshot(root string) string {
+	directory := filepath.Join(root, "docs", "stop-decision-moves")
+	entries, err := os.ReadDir(directory)
+	if err != nil {
+		return ""
+	}
+	var snapshot strings.Builder
+	for _, entry := range entries {
+		data, _ := os.ReadFile(filepath.Join(directory, entry.Name()))
+		snapshot.WriteString(entry.Name() + "\x00" + string(data) + "\x00")
+	}
+	return snapshot.String()
+}
+
+// resumeChannelWait continues a durable wait on a channel answer through the
+// channel wait owner in this process, which polls the provider as it waits;
+// this process is the waiting caller its registration names.
+func (inv *intentInvocation) resumeChannelWait(id string, row metarun.Waiter, timeout time.Duration, targets []intentTarget) intentResult {
+	args := []string{"--root", inv.stateRoot, "--resume", id}
+	if timeout > 0 {
+		args = append(args, "--timeout", fmt.Sprint(max(int(timeout.Minutes()), 1)))
+	}
+	caller, lineage := currentProcessIdentity(), ""
+	if inv.owners.dependencies.ownerLineage != nil {
+		lineage = inv.owners.dependencies.ownerLineage()
+	}
+	ran := ownerCall(func(stdout, stderr io.Writer) int {
+		return inv.ownerCalls().channelWait(caller, lineage, stdout, stderr, args)
+	})
+	result := ownerVerbResult(ran, targets, "the channel question "+row.Selector.Question+" is answered", nil)
+	if result.Outcome != intentConfirmed {
+		result.Outcome = intentInProgress
+		result.next, result.nextReason = inv.publicArgv("work", "wait", waitRefPrefix+id), "the same wait continues; delivery or the answer is still pending"
+	}
+	return result
 }

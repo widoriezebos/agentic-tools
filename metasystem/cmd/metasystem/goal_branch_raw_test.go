@@ -244,21 +244,6 @@ func (f *branchRawFixture) LiveWorkspaceTree(string, string) (string, error) {
 	f.t.Fatal("unexpected workspace tree")
 	return "", nil
 }
-func (f *branchRawFixture) readerRecord() string {
-	f.record = "metasystem/records/misc/command-read.md"
-	path := filepath.Join(f.project, filepath.FromSlash(f.record))
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-		f.t.Fatal(err)
-	}
-	digest, err := branch.UnitDigestWithRaw(f.installation, f.unit, f.raw)
-	if err != nil {
-		f.t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte(f.unit+" "+digest+"\n"), 0644); err != nil {
-		f.t.Fatal(err)
-	}
-	return f.record
-}
 
 type branchRawTransport struct{ f *branchRawFixture }
 
@@ -423,15 +408,5 @@ func (f *branchRawFixture) unchangedFiles(paths ...string) func() {
 				f.t.Errorf("physical file %s changed: err=%v", path, err)
 			}
 		}
-	}
-}
-
-func (f *branchRawFixture) assertNoPreflightEffects() {
-	f.t.Helper()
-	if f.ledger.canonical != strings.Repeat("0", 39)+"1" || f.ledger.accepted != strings.Repeat("0", 39)+"1" ||
-		f.ledger.captures != 0 || f.ledger.builds != 0 || f.ledger.publications != 0 || f.ledger.advances != 0 || f.ledger.releases != 0 ||
-		len(f.ledger.commits) != 1 || f.tip != f.unit || f.staged || f.published || f.generated != nil || len(f.responses) != 0 {
-		f.t.Fatalf("early refusal changed raw state: ledger=%+v tip=%s staged=%t published=%t generated=%v replies=%d",
-			f.ledger, f.tip, f.staged, f.published, f.generated, len(f.responses))
 	}
 }

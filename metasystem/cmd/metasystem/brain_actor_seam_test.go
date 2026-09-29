@@ -116,7 +116,6 @@ cmd/metasystem/process_verbs.go:func classifyVerbCallerWith(root string, callerP
 cmd/metasystem/proof_run.go:				Actor: goal.Actor{Machine: binding.Machine, Lineage: binding.Lineage}, Ulid: ulid, Now: now,
 cmd/metasystem/proof_run.go:	classification, err := classifyVerbCaller(root, int64(os.Getppid()))
 cmd/metasystem/run.go:		view, err := classifyVerbCaller(root, int64(os.Getpid()))
-cmd/metasystem/run.go:	view, err := classifyVerbCaller(root, callerPid)
 cmd/metasystem/wait_register.go:	view, err := classifyVerbCaller(root, callerPID)
 internal/channel/poll.go:				approved, approveErr := goal.Approve(goal.VerbRequest{Endpoint: ep, Actor: goal.Actor{Machine: c.Machine, Lineage: c.Lineage, Human: a.UserID}, Ulid: a.ApprovalULID, Now: a.At}, []string{q.Goal}, q.Budget, &proof)
 internal/channel/poll.go:		published, err := goal.Answer(goal.VerbRequest{Endpoint: ep, Actor: goal.Actor{Machine: c.Machine, Lineage: c.Lineage}, Ulid: a.ULID, Now: a.At}, q.Goal, q.ID, a.Text, wants, goal.AnswerProof{Provider: c.ProviderName, User: a.UserID, Ref: a.Ref.ThreadID + "/" + a.Ref.ID, Step: a.Step})

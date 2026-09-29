@@ -1,7 +1,6 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -10,10 +9,15 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 )
 
 var launchExecutable = os.Executable
 var launchLookupEnv = os.LookupEnv
+
+// shippedClaudeSettings is the Claude hook settings this engine ships; the
+// seat window it imposes is reported beside the configured one.
+var shippedClaudeSettings = func() ([]byte, error) { return runtimes.ShippedEnforcement("claude") }
 
 func newLaunchManager() *launch.Manager {
 	prober := identity.KernelProber{}
@@ -26,7 +30,7 @@ func newLaunchManager() *launch.Manager {
 		settingsErr = executableErr
 	}
 	scanner := launch.KernelProcessScanner{Prober: prober}
-	codex := launch.CodexExec{Binary: "codex", SessionsRoot: filepath.Join(home, ".codex", "sessions"), CommonTemplate: filepath.Join(filepath.Dir(executable), "..", "scripts", "agents", "templates", "design-common.md"), Now: time.Now, Scanner: scanner}
+	codex := launch.CodexExec{Binary: "codex", SessionsRoot: filepath.Join(home, ".codex", "sessions"), Now: time.Now, Scanner: scanner}
 	// Claude Code keeps its session transcripts under CLAUDE_CONFIG_DIR when
 	// that is set, else under ~/.claude; the measurement reads the same place.
 	claudeConfig := filepath.Join(home, ".claude")
@@ -59,9 +63,9 @@ func runLaunchSupervise(args []string) int {
 }
 
 func launchID(args []string, verb string) (string, bool) {
-	flags := flag.NewFlagSet("launch "+verb, flag.ContinueOnError)
+	flags := newFlagSet("launch " + verb)
 	id := flags.String("id", "", "launch id")
-	if flags.Parse(args) != nil || *id == "" || flags.NArg() != 0 {
+	if flags.Parse(args) != nil || !requireFlags(flags, nil, "id") || *id == "" || flags.NArg() != 0 {
 		if verb == "status" || verb == "cancel" {
 			writeLaunchRecordUsage(os.Stderr, verb)
 		} else {
@@ -77,7 +81,7 @@ func writeLaunchRecordUsage(w io.Writer, verb string) {
 	fmt.Fprintln(w, "--root is not a launch flag. Use --id to select a launch record.")
 }
 func runLaunchReport(args []string) int {
-	flags := flag.NewFlagSet("launch report", flag.ContinueOnError)
+	flags := newFlagSet("launch report")
 	id := flags.String("id", "", "launch id")
 	goal := flags.String("goal", "", "goal id")
 	sinceText := flags.String("since", "", "include activity at or after this RFC3339 instant")

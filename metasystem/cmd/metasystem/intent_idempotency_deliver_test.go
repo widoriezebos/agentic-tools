@@ -35,6 +35,7 @@ func init() {
 	registerIdempotency("mission start", idemStateful, "a mission whose runner is live is already running; nothing is armed or spawned", witnessMissionLaunch("start"))
 	registerIdempotency("mission status", idemRead, "", nil)
 	registerIdempotency("mission resume", idemStateful, "a mission whose runner is live is already running; nothing is armed or spawned", witnessMissionLaunch("resume"))
+	registerIdempotency("mission seal", idemStateful, "a sealed contract is left as it is; nothing is written", witnessMissionSeal)
 	registerIdempotency("mission repair", idemStateful, "the recorded resolution again writes and anchors nothing; another resolution is refused", witnessMissionRepair)
 
 	registerIdempotency("receipt add", idemCreation, "each receipt records one completed task, so a second call is another task's record; an identical correction that already stands appends nothing at the receipt owner", nil)

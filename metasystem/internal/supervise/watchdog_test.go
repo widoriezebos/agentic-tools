@@ -103,7 +103,7 @@ func TestWatchdogReportJudgments(t *testing.T) {
 			census: `{"verdict":"SUCCESS","completedAtEpoch":` + itoaTest(watchdogNow-10) + `,"intervalSec":60,"fingerprint":"fp-1",` +
 				`"inventory":[{"class":"UNTRACKED","pid":7,"runtime":"claude"},{"class":"UNTRACKED","pid":9,"runtime":"claude"},{"class":"UNTRACKED","pid":8},{"class":"CUSTODY","pid":42,"runtime":"claude"}]}`,
 			state: healthyState(),
-			want:  []string{"UNTRACKED agents (not this checkout's work; detail: bin/metasystem internal proc census): claude 7,9; unknown 8"},
+			want:  []string{"UNTRACKED agents (not this checkout's work): claude 7,9; unknown 8"},
 		},
 	}
 	for _, c := range cases {

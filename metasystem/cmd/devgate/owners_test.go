@@ -28,16 +28,20 @@ func ownerTree(t *testing.T, files map[string]string) string {
 
 func TestDependencyRatchetPassesDeclaredScriptsAndNamesABannedInterpreter(t *testing.T) {
 	t.Parallel()
-	clean := ownerTree(t, map[string]string{"scripts/agents/ok.sh": "#!/usr/bin/env bash\ngit status\n"})
+	clean := ownerTree(t, map[string]string{"skills/fixture/ok.sh": "#!/usr/bin/env bash\ngit status\n"})
 	if out, ok := dependencyRatchet(clean); !ok || out != "dependency ratchet passed\n" {
 		t.Fatalf("clean tree: %v %q", ok, out)
 	}
-	banned := ownerTree(t, map[string]string{"scripts/agents/bad.sh": "#!/usr/bin/env bash\necho x\nnode run.js\n"})
-	if out, ok := dependencyRatchet(banned); ok || out != "dependency ratchet: banned interpreter node: scripts/agents/bad.sh:3\n" {
+	banned := ownerTree(t, map[string]string{"optional-skills/fixture/bad.sh": "#!/usr/bin/env bash\necho x\nnode run.js\n"})
+	if out, ok := dependencyRatchet(banned); ok || out != "dependency ratchet: banned interpreter node: optional-skills/fixture/bad.sh:3\n" {
 		t.Fatalf("banned interpreter: %v %q", ok, out)
 	}
-	if out, ok := dependencyRatchet(t.TempDir()); ok || !strings.Contains(out, "dependency audit scripts root unreadable") {
-		t.Fatalf("missing scripts root: %v %q", ok, out)
+	if out, ok := dependencyRatchet(t.TempDir()); !ok || out != "dependency ratchet passed\n" {
+		t.Fatalf("a tree shipping no shell: %v %q", ok, out)
+	}
+	unreadable := ownerTree(t, map[string]string{"skills": "not a directory"})
+	if out, ok := dependencyRatchet(unreadable); ok || !strings.Contains(out, "dependency audit shell root is not a directory") {
+		t.Fatalf("a skills file: %v %q", ok, out)
 	}
 }
 

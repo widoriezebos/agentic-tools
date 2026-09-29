@@ -3,10 +3,6 @@ package missionrunner
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/janitor"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
-	"golang.org/x/sys/unix"
 	"io"
 	"os"
 	"os/exec"
@@ -15,6 +11,11 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/janitor"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
+	"golang.org/x/sys/unix"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )

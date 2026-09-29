@@ -31,7 +31,7 @@ func resolveWaitCaller(root string, callerPID int64) (resolvedWaitCaller, int, e
 		return resolvedWaitCaller{}, metarun.ExitWaiterUnknown, fmt.Errorf("wait caller identity is uncertain: %w", err)
 	}
 	if view.Class != lease.ClassMain || !view.Holder || view.Announcement == nil {
-		return resolvedWaitCaller{}, metarun.ExitWaiterBusy, fmt.Errorf("wait registration is eligible only for the live checkout holder's main session")
+		return resolvedWaitCaller{}, metarun.ExitWaiterBusy, fmt.Errorf("only this checkout's main agent session can wait, so it may stop while it waits; this shell is not that session")
 	}
 	lineage := view.Announcement.OwnerLineage
 	if lineage == "" {
@@ -75,7 +75,7 @@ func waitRegisterOptions(root string) (metarun.WaitOptions, error) {
 }
 
 func runWaitRegister(args []string) int {
-	flags := flag.NewFlagSet("wait register", flag.ContinueOnError)
+	flags := newFlagSet("session wait")
 	root := pathFlag(flags, "root", ".", "checkout or installation state root")
 	pid := flags.Int64("pid", 0, "tracked process identifier")
 	label := flags.String("label", "", "description of the tracked work")
@@ -151,7 +151,7 @@ func runWaitRegister(args []string) int {
 }
 
 func runWaitEnd(args []string) int {
-	flags := flag.NewFlagSet("wait end", flag.ContinueOnError)
+	flags := newFlagSet("session wait")
 	root := pathFlag(flags, "root", ".", "checkout or installation state root")
 	waitID := flags.String("wait-id", "", "registered wait identifier")
 	jsonOutput := flags.Bool("json", false, "print the ended row as JSON")
@@ -189,4 +189,33 @@ func runWaitEnd(args []string) int {
 		fmt.Printf("ended %s wait %s by %s\n", row.Kind, row.WaitID, row.InterruptedBy)
 	}
 	return 0
+}
+
+// runSessionWait is the public session wait: this session records that it
+// waits for a running process (--pid, --label) or for a person's answer
+// (--question, --timeout), so its Stop gate lets it stop and names the wait;
+// --end ID says the wait is over. The caller the registration records is the
+// command's parent, the waiting session's own process.
+func runSessionWait(args []string) int {
+	for index, arg := range args {
+		if arg == "--end" || strings.HasPrefix(arg, "--end=") {
+			rest := append(append([]string(nil), args[:index]...), args[index+1:]...)
+			id, ok := strings.CutPrefix(arg, "--end=")
+			if !ok {
+				if index+1 >= len(args) {
+					fmt.Fprintln(os.Stderr, "session wait --end needs the wait id")
+					return metarun.ExitInvalidWait
+				}
+				id = args[index+1]
+				rest = append(append([]string(nil), args[:index]...), args[index+2:]...)
+			}
+			return runWaitEnd(append([]string{"--wait-id", id}, rest...))
+		}
+	}
+	for _, arg := range args {
+		if arg == "--question" || strings.HasPrefix(arg, "--question=") {
+			return runWaitRegister(append([]string{"--human"}, args...))
+		}
+	}
+	return runWaitRegister(args)
 }

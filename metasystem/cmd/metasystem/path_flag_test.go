@@ -145,7 +145,6 @@ func TestReadOnlyVerbsReportTheSamePathForRelativeAndAbsoluteFlags(t *testing.T)
 		name, flagName string
 		command        []string
 	}{
-		{"goal list", "root", []string{"internal", "goal", "list", "--json"}},
 		{"test list", "root", []string{"test", "list", "--json"}},
 	}
 	for _, test := range tests {
@@ -164,4 +163,15 @@ func TestReadOnlyVerbsReportTheSamePathForRelativeAndAbsoluteFlags(t *testing.T)
 			}
 		})
 	}
+	// The public goal list (the internal form U9b retired read a bare
+	// directory) reads a synced ledger, so it runs in the goal CLI bed.
+	t.Run("goal list", func(t *testing.T) {
+		bed := newGoalCLIBed(t, goalCLISeed{})
+		relativeCode, relativeOutput, relativeErr := bed.public("goal", "list", "--json", "--repo", ".")
+		absoluteCode, absoluteOutput, absoluteErr := bed.public("goal", "list", "--json", "--repo", bed.root)
+		if relativeCode != 0 || absoluteCode != 0 || relativeOutput != absoluteOutput || !strings.Contains(relativeOutput, "ship-widget") {
+			t.Fatalf("relative: code=%d output=%q stderr=%q\nabsolute: code=%d output=%q stderr=%q",
+				relativeCode, relativeOutput, relativeErr, absoluteCode, absoluteOutput, absoluteErr)
+		}
+	})
 }

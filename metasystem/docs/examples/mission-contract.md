@@ -1,6 +1,6 @@
 # Mission Contract Example
 
-This is a draft contract shape, not signed authority. Replace the repository facts, run `metasystem internal mission contract-validate --file <path>`, price the exposure, run `contract-seal`, commit the signed bytes to the shared default branch, arm supervision, and then run `--preflight`.
+This is a draft contract shape, not signed authority. Replace the repository facts, price the exposure, run `metasystem mission seal <mission-id>` (it checks the contract first and names what is wrong), add the approval line it prints, commit the signed bytes to the shared default branch, and then run `metasystem mission start <mission-id>`, which runs the launch checks before anything starts.
 
 # Intent
 
@@ -24,7 +24,7 @@ truth.certification=certified
 gate.direction=min
 gate.threshold.validation=<=0
 gate.noise-floor.validation=0
-guard.audit.command=bash -c 'bin/metasystem internal audit metasystem --root .; status=$?; passed=$((status == 0)); printf "metric=audit=%s\n" "$passed"; exit 0'
+guard.audit.command=bash -c 'go test -count=1 -run TestShippedInstallationPassesMetasystemAudit ./internal/audit >/dev/null; status=$?; passed=$((status == 0)); printf "metric=audit=%s\n" "$passed"; exit 0'
 guard.audit.floor=1
 guard.audit.noise=0
 guard.cadence=1

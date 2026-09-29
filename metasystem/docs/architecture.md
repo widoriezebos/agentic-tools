@@ -28,9 +28,13 @@ ruling that kept plumbing (process launching, polling, signaling,
 environment glue, fixture drivers) in scripts (`memory/rulings.md`
 R-139-m1e, kept as history). A Go programmer must never read the engine
 and find a shell script wearing Go syntax; a script must never make a
-decision the engine owns. The delegate-job choreography that once lived in `dispatch.sh` is Go now
+decision the engine owns. The engine's own data is compiled into the
+engine from the Go package that reads it (go:embed), and the
+installation carries no `scripts/` tree.
+The delegate-job choreography that once lived in `dispatch.sh` is Go now
 (`internal/delegation`, verbs-object-action U6b): a composition package
-above the owners, reached through `metasystem internal delegate`.
+above the owners, which the public work, design and review actions call in
+process and the delegate entrypoint serves for the runtimes' callbacks.
 
 ## Runtime agnosticism
 
@@ -53,7 +57,8 @@ sanctioned seams as declarations the core consumes:
   operations (describe, probe, selftest, prepare, observe, finalize,
   repair, cancel) behind the one runtime interface the shared delegate
   round and host turn call; per-skill runtime profiles and
-  `scripts/enforcement/<runtime>-*.json` remain data seams.
+  `internal/runtimes/enforcement/<runtime>-hooks.json` (compiled into
+  the engine) remain data seams.
 
 Sanctioned appearances of runtime names outside seam files: (a)
 provenance comments naming the critic or incident behind a decision,

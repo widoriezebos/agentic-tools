@@ -176,7 +176,7 @@ var Table = []Cause{
 	}},
 	{Token: "engine-behind-tip", Kind: "named-delivery-tree", Commands: 4, sample: []Fact{Value("fact", "named-delivery-tree")}, remedy: rearm},
 	{Token: "engine-behind-tip", Kind: "live-attempt", Commands: 5, sample: []Fact{Value("fact", "live-attempt"), Value("attempt", "proof-1")}, remedy: func(f []Fact) []string {
-		commands := []string{"bin/metasystem internal wait --root " + quoted(fact(f, "checkout", ".")) + " --attempt " + quoted(fact(f, "attempt", "<attempt>"))}
+		commands := []string{"bin/metasystem test wait proof:" + fact(f, "attempt", "<attempt>") + " --repo " + quoted(fact(f, "checkout", "."))}
 		return append(commands, rearm(f)...)
 	}},
 	{Token: "fast-forward-blocked", Commands: 9, sample: []Fact{

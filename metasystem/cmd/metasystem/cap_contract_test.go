@@ -35,10 +35,11 @@ func TestCapContractPublicAdapterAndRetiredVerb(t *testing.T) {
 	stderr, code := captureStderr(t, func() int {
 		return dispatch([]string{"internal", "job", "exhaustion-patches"})
 	})
+	// The internal job family itself is gone (U9b): the retired cap verb
+	// routes nowhere and is refused as an entrypoint that does not exist.
 	if code != 2 ||
-		!strings.HasPrefix(stderr, "metasystem job: unknown verb \"exhaustion-patches\"\nusage: metasystem internal job <verb> [flags]\n") ||
-		!strings.Contains(stderr, "\n  goal-revision-admission ") ||
-		strings.Contains(stderr, "\n  exhaustion-patches ") {
+		!strings.HasPrefix(stderr, "metasystem internal: no entrypoint is named \"job\"; nothing was done\n") ||
+		strings.Contains(stderr, "exhaustion-patches") {
 		t.Fatalf("retired public cap verb: code=%d stderr=%q", code, stderr)
 	}
 }

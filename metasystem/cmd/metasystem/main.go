@@ -16,13 +16,21 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
 
-// A verb takes its own arguments (after the family and verb words)
-// and returns a process exit code. Verbs print their own output and
-// errors; main only routes.
+// entry is one process entrypoint of a family: its words, what it does, the
+// handler, and the launcher that starts it. Every internal verb is an
+// entrypoint (design 3.2): a program other than a person or agent starts it
+// as a process of its own. launcher is the file that starts it and evidence
+// is the text in that file that names it (the argv words, or the command
+// line it writes), which TestEveryInternalVerbHasALauncherThatStartsIt
+// checks.
 type verb struct {
-	name    string
-	summary string
-	run     func(args []string) int
+	name     string
+	summary  string
+	run      func(args []string) int
+	launcher string
+	evidence string
+	// required are the options the entrypoint refuses to run without.
+	required []string
 }
 
 type family struct {
@@ -31,261 +39,187 @@ type family struct {
 	verbs   []verb
 }
 
+// topLevelEntry is an entrypoint whose argv is one word before its own
+// arguments.
+type topLevelEntry struct {
+	name, usage        string
+	launcher, evidence string
+	required           []string
+	run                func(args []string, stdout, stderr io.Writer, repositoryTop func(string) (string, error)) int
+}
+
+// topLevelEntries are the one-word entrypoints.
+func topLevelEntries() []topLevelEntry {
+	entries := registeredTopLevelEntries()
+	for i := range entries {
+		run := entries[i].run
+		entries[i].run = func(args []string, stdout, stderr io.Writer, repositoryTop func(string) (string, error)) int {
+			return helpAware(func(args []string) int { return run(args, stdout, stderr, repositoryTop) })(args)
+		}
+	}
+	return entries
+}
+
+func registeredTopLevelEntries() []topLevelEntry {
+	return []topLevelEntry{
+		{name: "up", usage: "up [--repo <checkout>] [--pid <pid> --start-time <epoch>] | up --print-scheduler-entry [--repo <checkout>]",
+			launcher: "cmd/metasystem/rearm_on_landed.go", evidence: `"up", "--repo"`,
+			run: func(args []string, _, _ io.Writer, repositoryTop func(string) (string, error)) int {
+				return runUpWith(args, repositoryTop)
+			}},
+		{name: "hook", usage: "hook <runtime> <start|stop|end|receipt|tool>",
+			launcher: "internal/hooks/runtime_hook_worker.go", evidence: `"internal", "hook"`,
+			run: func(args []string, _, _ io.Writer, _ func(string) (string, error)) int { return runHookEntry(args) }},
+		{name: "pre-commit", usage: "pre-commit --root <installation>",
+			launcher: "internal/ledgerfence/fence.go", evidence: "internal pre-commit", required: []string{"root"},
+			run: func(args []string, stdout, stderr io.Writer, _ func(string) (string, error)) int {
+				return runPreCommitEntry(args, stdout, stderr)
+			}},
+		{name: runtimes.SupervisorEntry, usage: runtimes.SupervisorEntry + " <runtime> <verb> --root <installation> [flags]",
+			launcher: "internal/delegation/owners.go", evidence: "runtimes.SupervisorArgs",
+			run: func(args []string, _, _ io.Writer, _ func(string) (string, error)) int {
+				return runDelegateSupervisor(args)
+			}},
+		{name: "delegate", usage: "delegate --revive <intent> | delegate __run-member --root <installation> -- <command...> | delegate __<callback> ...",
+			launcher: "cmd/metasystem/steward_verbs.go", evidence: `"internal", "delegate", "--revive"`,
+			run: func(args []string, _, _ io.Writer, _ func(string) (string, error)) int { return runDelegate(args) }},
+	}
+}
+
+// families are the internal entrypoints grouped by their first word.
 func families() []family {
+	registered := registeredFamilies()
+	for i := range registered {
+		for j := range registered[i].verbs {
+			registered[i].verbs[j].run = helpAware(registered[i].verbs[j].run)
+		}
+	}
+	return registered
+}
+
+func registeredFamilies() []family {
 	return []family{
 		{
-			name:    "app",
-			summary: "the application this project builds, under its launch contract",
+			name: "app", summary: "the application's run supervisor",
 			verbs: []verb{
-				{"serve", "own one run of the application for its life (internal)", runAppServe},
+				{name: "serve", summary: "own one run of the application for its life", run: runAppServe, launcher: "internal/applaunch/launch.go", evidence: "\"app\", \"serve\""},
 			},
 		},
 		{
-			name:    "ui",
-			summary: "the checkout's browser interface",
+			name: "ui", summary: "the browser interface's servers",
 			verbs: []verb{
-				{"serve", "serve the interface in the foreground (internal)", runUIServe},
-				{"tools", "serve the interface's read tools to the Project Partner over stdio (internal)", runUITools},
+				{name: "serve", summary: "serve the interface in the foreground with a ready descriptor", run: runUIServe, launcher: "internal/ui/lifecycle/launch.go", evidence: "\"ui\", \"serve\""},
+				{name: "tools", summary: "serve the interface's read tools to the Project Partner over stdio", run: runUITools, launcher: "internal/ui/partner/runtime.go", evidence: "\"ui\", \"tools\""},
 			},
 		},
 		{
-			name:    "testing",
-			summary: "semantic maintenance of the testing contract",
+			name: "testing", summary: "the testing contract's git merge driver",
 			verbs: []verb{
-				{"merge-driver", "run the testing contract Git merge driver, or print its setup", runTestingMergeDriver},
+				{name: "merge-driver", summary: "merge the testing contract as git's merge driver", run: runTestingMergeDriver, launcher: "internal/testpolicy/contractgit/register.go", evidence: "testing merge-driver"},
 			},
 		},
 		{
-			name:    "test",
-			summary: "risk-selected common application testing with retained proof and reuse",
+			name: "test", summary: "proof runs on another engine or as the landing owner's child",
 			verbs: []verb{
-				{"plan", "compute the candidate's risk-selected groups without running tests", runTestPlan},
-				{"run", "admit and execute the recomputed selected test plan", runTestRun},
-				{"verify", "verify sufficient retained proof without launching tests or builds", runTestVerify},
-				{"worker-capabilities", "report the installed testing worker protocol (internal)", runTestWorkerCapabilities},
-				{"worker", "execute one admitted selected plan (internal)", runTestWorker},
+				{name: "plan", summary: "compute a candidate's risk-selected groups for a pinned or candidate engine", run: func(args []string) int { return runTestPlanAs("internal test plan", args) }, launcher: "cmd/metasystem/test_protection.go", evidence: "\"test\", \"plan\"", required: []string{"root"}},
+				{name: "run", summary: "run one proof as the landing owner's own child", run: runTestRun, launcher: "cmd/metasystem/landing_batch_prove.go", evidence: "\"internal\", \"test\", \"run\"", required: []string{"root"}},
+				{name: "verify", summary: "verify retained proof on the base engine a carried landing builds", run: runTestVerify, launcher: "cmd/metasystem/landing_path.go", evidence: "\"test\", \"verify\"", required: []string{"root"}},
+				{name: "worker-capabilities", summary: "report the testing worker protocol of a pinned engine", run: runTestWorkerCapabilities, launcher: "cmd/metasystem/test.go", evidence: "\"test\", \"worker-capabilities\""},
+				{name: "worker", summary: "execute one admitted selected plan on a pinned engine", run: runTestWorker, launcher: "cmd/metasystem/test_protection.go", evidence: "\"test\", \"worker\"", required: []string{"packet", "packet-sha256", "result"}},
 			},
 		},
 		{
-			name:    "brain",
-			summary: "the fleet brain seat: designation, boot context, and checkout-local fences",
+			name: "brain", summary: "the brain boot's bounded input child",
 			verbs: []verb{
-				{"boot", "compose the declared brain's bounded standing context", runBrainBoot},
-				{"boot-inputs", "read optional brain boot inputs in the bounded child (internal)", runBrainBootInputs},
+				{name: "boot-inputs", summary: "read the brain boot inputs in a child the boot can kill at its deadline", run: runBrainBootInputs, launcher: "cmd/metasystem/brain_boot.go", evidence: "\"brain\", \"boot-inputs\"", required: []string{"root", "repo", "dir"}},
 			},
 		},
 		{
-			name:    "proof-run",
-			summary: "priced validation runs with structural progress and a sibling watchdog",
+			name: "proof-run", summary: "suite runs, their watchdog and custody",
 			verbs: []verb{
-				{"banner", "print the suite witness state, duration class, heartbeat, and log paths", runProofRunBanner},
-				{"launch", "launch a suite in its own process group with a sibling watchdog", runProofRunLaunch},
-				{"worker-authorized", "authenticate a suite worker against its live parent proof", runProofRunWorkerAuthorized},
-				{"watchdog", "watch suite output growth and enforce the section ceiling (internal)", runProofRunWatchdog},
-				{"custody-exec", "hold a resource-active command until its custodian binds exact identity (internal)", runProofRunCustodyExec},
-				{"preserve", "copy bounded watchdog evidence (internal)", runProofRunPreserve},
+				{name: "banner", summary: "print the suite witness state for the development gate", run: runProofRunBanner, launcher: "cmd/devgate/gate.go", evidence: "\"proof-run\", \"banner\"", required: []string{"suite", "root", "progress", "log"}},
+				{name: "launch", summary: "launch a suite in its own process group with a sibling watchdog", run: runProofRunLaunch, launcher: "cmd/devgate/gate.go", evidence: "\"proof-run\", \"launch\"", required: []string{"root", "conf"}},
+				{name: "worker-authorized", summary: "authenticate a suite worker against its live parent proof", run: runProofRunWorkerAuthorized, launcher: "cmd/devgate/gate.go", evidence: "\"proof-run\", \"worker-authorized\"", required: []string{"root"}},
+				{name: "watchdog", summary: "watch suite output growth and enforce the section ceiling", run: runProofRunWatchdog, launcher: "internal/proofrun/launcher.go", evidence: "\"proof-run\", \"watchdog\""},
+				{name: "custody-exec", summary: "hold a resource-active command until its custodian binds its identity", run: runProofRunCustodyExec, launcher: "internal/proofrun/resource_custody.go", evidence: "\"proof-run\", \"custody-exec\""},
+				{name: "preserve", summary: "copy bounded watchdog evidence in a child the watchdog can kill", run: runProofRunPreserve, launcher: "internal/proofrun/watchdog.go", evidence: "\"proof-run\", \"preserve\""},
 			},
 		},
 		{
-			name:    "proc",
-			summary: "process identity and census: who is running, provably",
+			name: "config", summary: "a new machine's configuration steps",
 			verbs: []verb{
-				{"fixture-survivors", "name or reap fixture children that outlived their owner", runFixtureSurvivors},
-				{"census", "compute a fixture-driven census verdict", runCensusRun},
+				{name: "validate", summary: "validate a new machine's configuration on its own engine", run: runConfigValidate, launcher: "internal/seat/launch/sequence.go", evidence: "\"config\", \"validate\""},
 			},
 		},
 		{
-			name:    "config",
-			summary: "configuration and identity helpers",
+			name: "validate", summary: "a new machine's isolation step",
 			verbs: []verb{
-				{"get", "resolve a config key with flag/env/local/mode/conf/default precedence", runConfigGet},
-				{"validate", "validate the whole metasystem.conf domain", runConfigValidate},
+				{name: "session-isolation", summary: "isolate a new machine's local configuration on its own engine", run: runValidateSessionIsolation, launcher: "internal/seat/launch/sequence.go", evidence: "\"validate\", \"session-isolation\"", required: []string{"source-root", "destination-root", "manifest", "harness-root"}},
 			},
 		},
 		{
-			name:    "validate",
-			summary: "whole-artifact validators the assert scripts exec into",
+			name: "landing", summary: "a carried landing's base-engine judgment",
 			verbs: []verb{
-				{"session-isolation", "copy adapter local config into a second-session worktree and audit isolation", runValidateSessionIsolation},
-				{"skills", "validate every present skill's SKILL.md frontmatter, or the named skill directories", runValidateSkills},
-				{"design-obligations", "check the structure and declared state of design-obligation matrices", runValidateDesignObligations},
+				{name: "observe", summary: "judge a carried landing on the base engine it builds", run: runLandingObserve, launcher: "cmd/metasystem/landing_path.go", evidence: "\"landing\", \"observe\""},
+				{name: "workspace", summary: "project a carried landing's workspace on the base engine it builds", run: runLandingWorkspace, launcher: "cmd/metasystem/landing_path.go", evidence: "\"landing\", \"workspace\"", required: []string{"root", "tree"}},
 			},
 		},
 		{
-			name:    "landing",
-			summary: "classify and record the two bars for a prospective landing",
+			name: "adapter", summary: "runtime hooks the agent runtimes start",
 			verbs: []verb{
-				{"batch", "join, status, withdraw, owner, tick, or wait for a guarded landing batch", runLandingBatch},
-				{"observe", "emit a provenance verdict for the prospective project tree", runLandingObserve},
-				{"workspace", "print the delivery workspace projection of a whole-project tree", runLandingWorkspace},
-				{"test-receipt", "run tests against one exact candidate tree and record their result", runLandingTestReceipt},
+				{name: "claude-tool-gate", summary: "decide one Claude tool call on the checkout's local engine", run: runAdapterClaudeToolGate, launcher: "internal/hooks/runtime_hook.go", evidence: "\"adapter\", \"claude-tool-gate\"", required: []string{"root"}},
+				{name: "claude-session-signal", summary: "record a delegate Claude session's start from its settings hook", run: runAdapterClaudeSessionSignal, launcher: "internal/adapter/claude.go", evidence: "adapter claude-session-signal"},
 			},
 		},
 		{
-			name:    "job",
-			summary: "the delegate-job domain: records, chains, locks, caps, snapshots, authority",
+			name: "launch", summary: "the launch supervisor",
 			verbs: []verb{
-				{"goal-revision-admission", "judge one exact revision and proposed cap under its lock", runDispatchGoalRevisionAdmission},
-				{"snapshot-select", "select the capability snapshot matching a dispatch's identity", runCapabilitySelect},
+				{name: "supervise", summary: "own one launched agent process through its end, in a session of its own", run: runLaunchSupervise, launcher: "internal/launch/process.go", evidence: "\"launch\", \"supervise\"", required: []string{"id"}},
 			},
 		},
 		{
-			name:    "adapter",
-			summary: "shared runtime-adapter plumbing: permissions, patches, snapshots",
+			name: "util", summary: "the fake runtime's stand-in child",
 			verbs: []verb{
-				{"claude-tool-gate", "decide one Claude tool call against the context budget", runAdapterClaudeToolGate},
-				{"claude-session-signal", "record the Claude session-established signal", runAdapterClaudeSessionSignal},
+				{name: "hold", summary: "stand in for a runtime child of the fake runtime until signalled", run: runUtilHold, launcher: "internal/adapter/supervisor/fake.go", evidence: "\"util\", \"hold\"", required: []string{"tag"}},
 			},
 		},
 		{
-			name:    "audit",
-			summary: "mechanical fences the gate bootstrap consults between steps",
+			name: "goal", summary: "a new machine's ledger steps",
 			verbs: []verb{
-				{"metasystem", "instruction-asset audit: required files, outside references, placeholders, word budgets", runAuditMetasystem},
-				{"stop-decision-surface", "report additions and refuse undeclared moves of Stop assertions", runAuditStopDecisionSurface},
+				{name: "next", summary: "select a new machine's claimable work on its own engine", run: runGoalNext, launcher: "internal/seat/launch/sequence.go", evidence: "\"goal\", \"next\""},
+				{name: "fetch", summary: "advance a new machine's accepted ledger on its own engine", run: runGoalFetch, launcher: "internal/seat/launch/sequence.go", evidence: "\"goal\", \"fetch\""},
 			},
 		},
 		{
-			name:    "behavior-surface",
-			summary: "versioned byte projections shared by witness, landing, adoption, and weight laws",
-			verbs:   []verb{},
-		},
-		{
-			name:    "gate",
-			summary: "unit validation and gate-run state",
+			name: "seat", summary: "a new machine's launch",
 			verbs: []verb{
-				{"unit", "gate changed Go packages and every transitive reverse dependent", runGateUnit},
-				{"weight-discharge", "reset validation weight at the exact authorized green-run boundary", runGateWeightDischarge},
-				{"cadence-tick", "run one landing-owner deep validation cadence decision", runGateCadenceTick},
+				{name: "launch", summary: "clone, build, configure and supervise a new machine, outliving the request", run: runSeatLaunch, launcher: "cmd/metasystem/ui_launch.go", evidence: "\"seat\", \"launch\""},
 			},
 		},
 		{
-			name:    "report",
-			summary: "turn-end report decisions",
+			name: "steward", summary: "the steward's runner and a new machine's enrollment",
 			verbs: []verb{
-				{"watch-jobs", "watch background job records and report every reportable job", runReportWatchJobs},
+				{name: "run", summary: "the steward's resident runner", run: runStewardRun, launcher: "internal/steward/runner.go", evidence: "\"steward\", \"run\"", required: []string{"repo"}},
+				{name: "arm", summary: "enroll a new machine's steward on its own engine", run: runStewardArm, launcher: "internal/seat/launch/sequence.go", evidence: "\"steward\", \"arm\"", required: []string{"repo"}},
 			},
 		},
 		{
-			name:    "metrics",
-			summary: "actionable process, proof, lifecycle, delegation, collision, and cost measures",
+			name: "run", summary: "the cadence run's detached leader",
 			verbs: []verb{
-				{"report", "compute and atomically publish a period or per-goal report", runMetricsReport},
+				{name: "wrap", summary: "the detached leader of the landing owner's cadence run", run: runRunWrap, launcher: "cmd/metasystem/gate_cadence.go", evidence: "\"run\", \"wrap\""},
 			},
 		},
 		{
-			name:    "launch",
-			summary: "owned external agent processes with durable state and exact cancellation",
+			name: "mission", summary: "a mission's detached loop",
 			verbs: []verb{
-				{"supervise", "own one launch child through its terminal state (internal)", runLaunchSupervise},
+				{name: "run-loop", summary: "a started mission's detached loop", run: runMissionRunnerRunLoop, launcher: "internal/missionrunner/launch.go", evidence: "\"mission\", \"run-loop\""},
 			},
 		},
 		{
-			name:    "hooks",
-			summary: "the Stop hook's deadline worker: wait for it, or stop it past its deadline",
-			verbs:   []verb{},
-		},
-		{
-			name:    "util",
-			summary: "small utilities for shell callers",
+			name: "supervise", summary: "the supervision owner and its components",
 			verbs: []verb{
-				{"sha256", "print the hex sha-256 of --file or stdin", runUtilSHA256},
-				{"engine-stamp", "print the build stamp read from an engine file's bytes; exit 1 when it has none", runUtilEngineStamp},
-				{"now-ns", "print the current wall-clock time in nanoseconds", runUtilNowNs},
-				{"hold", "stay alive carrying --tag until SIGTERM, then write the stopped file", runUtilHold},
-			},
-		},
-		{
-			name:    "json",
-			summary: "JSON field access for shell callers",
-			verbs:   []verb{},
-		},
-		{
-			name:    "covenant",
-			summary: "the app's covenant: the versioned declaration binding intent to proofs",
-			verbs: []verb{
-				{"evidence", "the traceability gate: every requirement backed by the evidence table, declared deps present (statuses stay claims)", runCovenantEvidence},
-			},
-		},
-		{
-			name:    "channel",
-			summary: "fleet status and authenticated question threads",
-			verbs: []verb{
-				{"status", "compose or post this machine's durable status", runChannelStatus},
-				{"ask", "open one durable question thread", runChannelAsk},
-				{"wait", "wait for one recorded answer", runChannelWait},
-				{"poll", "receive and durably disposition replies", runChannelPoll},
-				{"fake", "fixture-only fake serve and code verbs", runChannelFake},
-			},
-		},
-		{
-			name:    "goal",
-			summary: "the goal ledger: the thread of intent that survives every turn (D67)",
-			verbs: []verb{
-				{"list", "print a bounded ledger summary (--json for the records without history, --json --history for the full records, --done to list archived goals)", runGoalList},
-				{"show", "print one goal without ledger history (--history for the full record)", runGoalShow},
-				{"branch", "inspect, commit, land, verify, and sweep goal branches", runGoalBranch},
-				{"open", "declare a goal; Current when none exists, queued otherwise", runGoalOpen},
-				{"carry", "human-only: name the live successor carrying an abandoned goal, or carry a landing past one named refusal or testing group", runGoalCarry},
-				{"done", "conclude the Current goal; requires --then or --and-none", runGoalDone},
-				{"claim", "claim a goal (or its whole arc with --arc) for this machine", runGoalClaim},
-				{"approve", "human-only (or a seat --under a power of attorney): approve a goal for execution (its box goes through goal budget), or run the grandfather sweep", runGoalApprove},
-				{"next", "select ordered claimable work for one machine (read-only)", runGoalNext},
-				{"reconcile", "adopt, restore, or authority-replay bytes the verbs did not write", runGoalReconcile},
-				{"migrate", "the cutover: one commit turns the legacy ledger into the multi-machine tree (human act, reviewed bytes)", runGoalMigrate},
-				{"fetch", "the read-side advance: validate the canonical tip and move the accepted ref", runGoalFetch},
-			},
-		},
-		{
-			name:    "seat",
-			summary: "the fleet's seats: who is present, what each is running",
-			verbs: []verb{
-				{"launch", "clone, build, configure, enroll and supervise one new machine of this fleet on this host", runSeatLaunch},
-			},
-		},
-		{
-			name:    "steward",
-			summary: "the idle watchdog: open delegated work is never silently idle (D121)",
-			verbs: []verb{
-				{"tick", "one scheduled observation: decide, age the evidence, report the action", runStewardTick},
-				{"run", "the runner's body: tick until disarmed (spawned by arm; callable by any external ticker)", runStewardRun},
-				{"arm", "explicit human enrollment and runner start (long form of metasystem system start)", runStewardArm},
-			},
-		},
-		{
-			name:    "run",
-			summary: "tracked long-running work: launch, watch, conclude (the monitor facility)",
-			verbs: []verb{
-				{"launch", "reserve, spawn the wrapped command detached, print the watch line", runRunLaunch},
-				{"wrap", "the setsid leader: bind, run the workload, write the exit sidecar (internal)", runRunWrap},
-			},
-		},
-		{
-			name:    "lease",
-			summary: "checkout write-authority (internal/lease)",
-			verbs:   []verb{},
-		},
-		{
-			name:    "mission",
-			summary: "the mission domain: state, fences, contract, prompt, runner, turns, ledger",
-			verbs: []verb{
-				{"contract-validate", "validate a mission contract's authored block", runMissionContractValidate},
-				{"contract-seal", "seal a validated contract and print its digest", runMissionContractSeal},
-				{"contract-preflight", "preflight a sealed, signed contract and emit its verified bytes", runMissionContractPreflight},
-				{"start", "start a mission's detached run loop", runMissionRunnerStart},
-				{"resume", "resume a parked or interrupted mission", runMissionRunnerResume},
-				{"status", "print the mission's runner status line", runMissionRunnerStatus},
-				{"resolve-taint", "apply a typed human resolution (--restore <treeId> | --adopt --waives <claim>) to a workspace taint", runMissionRunnerResolveTaint},
-				{"run-loop", "the detached mission loop (internal; spawned by start/resume)", runMissionRunnerRunLoop},
-			},
-		},
-		{
-			name:    "supervise",
-			summary: "the supervision lifecycle (docs/design/supervision-lifecycle.md)",
-			verbs: []verb{
-				{"owner", "run the owner loop for a checkout (internal; launched by up)", runSuperviseOwnerLoop},
-				{"component", "run a supervised component (internal; launched by the owner)", runSuperviseComponent},
-				{"launch-detached", "start a command in its own session with logged output", runSuperviseLaunchDetached},
+				{name: "owner", summary: "the supervision owner loop in a session of its own", run: runSuperviseOwnerLoop, launcher: "internal/supervise/arming.go", evidence: "\"supervise\", \"owner\"", required: []string{"repo", "tag"}},
+				{name: "component", summary: "one supervised component the owner starts", run: runSuperviseComponent, launcher: "cmd/metasystem/supervise_owner.go", evidence: "\"supervise\", \"component\"", required: []string{"component", "tag", "heartbeat"}},
 			},
 		},
 	}
@@ -348,14 +282,9 @@ func dispatchWithFamiliesAndRepositoryTop(args []string, stdout, stderr io.Write
 		return dispatchObject(args, stdout, stderr, registered, repositoryTop)
 	}
 	// Process entrypoints whose first word is not an object (supervise,
-	// steward, up, ...) and the transitional families keep their argv.
-	if args[0] == runtimes.SupervisorEntry {
-		return dispatchInternal(args, stdout, stderr, registered, repositoryTop)
-	}
-	if len(args) >= 2 && !isHelpWord(args[1]) && (args[0] == "up" || familyHasVerb(registered, args[0], args[1])) {
-		return dispatchInternal(args, stdout, stderr, registered, repositoryTop)
-	}
-	if args[0] == "up" {
+	// steward, up, ...) keep their argv; a family word with a verb it lacks,
+	// or none, is answered by the family's own internal help.
+	if isTopLevelEntry(args[0]) || familyNamed(registered, args[0]) {
 		return dispatchInternal(args, stdout, stderr, registered, repositoryTop)
 	}
 	writeUnknownIntentCommand(stderr, args[0], args[1:])
@@ -422,50 +351,79 @@ func dispatchInternal(args []string, stdout, stderr io.Writer, registered []fami
 			}
 		}
 	}
-	if args[0] == "up" {
-		return runUpWith(args[1:], repositoryTop)
-	}
-	if args[0] == "hook" {
-		return runHookEntry(args[1:])
-	}
-	if args[0] == "pre-commit" {
-		return runPreCommitEntry(args[1:], stdout, stderr)
-	}
-	if args[0] == runtimes.SupervisorEntry {
-		return runDelegateSupervisor(args[1:])
-	}
-	if args[0] == "wait" {
-		return runWait(args[1:])
-	}
-	if args[0] == "delegate" {
-		return runDelegate(args[1:])
+	for _, entry := range topLevelEntries() {
+		if entry.name == args[0] {
+			return entry.run(args[1:], stdout, stderr, repositoryTop)
+		}
 	}
 	for _, fam := range registered {
 		if fam.name != args[0] {
 			continue
 		}
-		if len(args) < 2 {
-			fmt.Fprintf(stderr, "metasystem %s: a verb is required\n", fam.name)
-			writeFamilyHelp(stderr, fam)
-			return 2
-		}
-		for _, v := range fam.verbs {
-			if v.name == args[1] {
-				return v.run(args[2:])
+		if len(args) >= 2 {
+			for _, v := range fam.verbs {
+				if v.name == args[1] {
+					return v.run(args[2:])
+				}
 			}
+			if isHelpWord(args[1]) {
+				fmt.Fprintf(stderr, "metasystem internal %s: %s takes no further word; nothing was done\n", fam.name, args[1])
+			} else {
+				fmt.Fprintf(stderr, "metasystem internal %s: %q is not one of its entrypoints; nothing was done\n", fam.name, args[1])
+			}
+		} else {
+			fmt.Fprintf(stderr, "metasystem internal %s: needs one of its entrypoints named; nothing was done\n", fam.name)
 		}
-		fmt.Fprintf(stderr, "metasystem %s: unknown verb %q\n", fam.name, args[1])
 		writeFamilyHelp(stderr, fam)
 		return 2
 	}
-	writeUnknownIntentCommand(stderr, args[0], args[1:])
+	fmt.Fprintf(stderr, "metasystem internal: no entrypoint is named %q; nothing was done\n", args[0])
+	fmt.Fprintln(stderr, "metasystem internal, with no further word, lists every entrypoint and the program that starts it; people and agents use metasystem help")
 	return 2
+}
+
+// topLevelEntryNamed returns the one-word entrypoint called word.
+func topLevelEntryNamed(word string) (topLevelEntry, bool) {
+	for _, entry := range topLevelEntries() {
+		if entry.name == word {
+			return entry, true
+		}
+	}
+	return topLevelEntry{}, false
+}
+
+// isTopLevelEntry reports whether word is a one-word entrypoint.
+func isTopLevelEntry(word string) bool {
+	for _, entry := range topLevelEntries() {
+		if entry.name == word {
+			return true
+		}
+	}
+	return false
+}
+
+// familyNamed reports whether word names an internal family.
+func familyNamed(registered []family, word string) bool {
+	for _, fam := range registered {
+		if fam.name == word {
+			return true
+		}
+	}
+	return false
 }
 
 // writeUnknownIntentCommand refuses a first word no object answers to and
 // names the current command that was probably meant.
 func writeUnknownIntentCommand(w io.Writer, name string, rest []string) {
-	fmt.Fprintf(w, "metasystem: unknown object %q; nothing was done\n", name)
+	entry, top := topLevelEntryNamed(name)
+	switch {
+	case top:
+		fmt.Fprintf(w, "metasystem: %q is not an object people or agents use but a process entrypoint that %s starts; nothing was done\n", name, entry.launcher)
+	case familyNamed(families(), name):
+		fmt.Fprintf(w, "metasystem: %q is not an object people or agents use but a family of process entrypoints; metasystem internal %s lists them and what starts each; nothing was done\n", name, name)
+	default:
+		fmt.Fprintf(w, "metasystem: unknown object %q; nothing was done\n", name)
+	}
 	if near := suggestIntent(name, rest); len(near) > 0 {
 		fmt.Fprintf(w, "did you mean: %s\n", strings.Join(near, " | "))
 	}
@@ -482,18 +440,14 @@ func writeUnknownIntentAction(w io.Writer, object, action string, rest []string)
 }
 
 func writeFamilyHelp(w io.Writer, fam family) {
-	fmt.Fprintf(w, "usage: metasystem internal %s <verb> [flags]\n%s\n", fam.name, fam.summary)
-	for _, command := range fam.verbs {
-		fmt.Fprintf(w, "  %-14s %s\n", command.name, command.summary)
+	fmt.Fprintf(w, "metasystem internal %s: %s; process entrypoints, each started by the program named, not commands for people or agents\n", fam.name, fam.summary)
+	for _, v := range fam.verbs {
+		fmt.Fprintf(w, "  %-24s %s (started by %s)\n", v.name, v.summary, v.launcher)
 	}
 	if len(fam.verbs) > 0 {
-		fmt.Fprintf(w, "example: metasystem internal %s %s --help (show leaf flags)\n", fam.name, fam.verbs[0].name)
+		fmt.Fprintf(w, "metasystem internal %s %s --help shows one entrypoint's options\n", fam.name, fam.verbs[0].name)
 	}
-	fmt.Fprintln(w, "Flags are specific to each verb; use the verb help before adding options such as --root or --dir.")
-	if fam.name == "launch" {
-		fmt.Fprintln(w, "Launch records belong to the current user under ~/.metasystem/launch; they are not selected by repository.")
-		fmt.Fprintln(w, "--root is not a launch flag. Use --id to select a launch record.")
-	}
+	fmt.Fprintln(w, "metasystem help lists what people and agents run")
 }
 
 func writeInternalUsage(w io.Writer, registered []family) {
@@ -504,29 +458,13 @@ func writeInternalUsage(w io.Writer, registered []family) {
 }
 
 func writeUsage(w io.Writer, registered []family) {
-	fmt.Fprintln(w, "usage: metasystem internal <family> <verb> [flags]")
-	fmt.Fprintln(w, "       metasystem internal up [--repo <checkout>] [--pid <pid> --start-time <epoch>]")
-	fmt.Fprintln(w, "       metasystem internal up --print-scheduler-entry [--repo <checkout>]")
-	fmt.Fprintln(w, "       metasystem internal hook <runtime> <start|stop|end|receipt|tool>  (run by the runtime settings system setup writes)")
-	fmt.Fprintln(w, "       metasystem internal pre-commit --root <installation>  (run by the enrolled git pre-commit hook)")
-	fmt.Fprintln(w, "       metasystem internal delegate-supervisor <runtime> <verb> --root <installation> [flags]  (launched by internal/delegation and internal/missionrunner/host.go)")
-	fmt.Fprintln(w, "       metasystem internal wait (--job <id>|--run <id>|--attempt <id>|--goal <id>|--path <absolute-path> --until <present|absent>|--resume <wait-id>) [--timeout <duration>] [--json]")
-	fmt.Fprintln(w, "       metasystem internal wait register --pid <pid> --label <text> [--job <id>] [--timeout <duration>] [--json]")
-	fmt.Fprintln(w, "       metasystem internal wait register --human --question <text> --timeout <duration> [--json]")
-	fmt.Fprintln(w, "       metasystem internal wait end --wait-id <id> [--json]")
-	fmt.Fprintln(w, "       metasystem internal delegate --role <role> --brief <file> --goal <id|none-explicit> --destructive-reach <class> [--op <id>]")
-	fmt.Fprintln(w, "       metasystem internal delegate --follow-up <job> --brief <file>")
-	fmt.Fprintln(w, "       metasystem internal delegate --cancel <job>")
 	fmt.Fprintln(w, "Process entrypoints (started by the named launcher; never typed by a person or agent):")
-	for _, command := range intentCommands() {
-		if command.hidden {
-			fmt.Fprintf(w, "  %-28s %s\n", command.name, command.launcher)
-		}
+	for _, entry := range topLevelEntries() {
+		fmt.Fprintf(w, "  %-36s %s\n", entry.name, entry.launcher)
 	}
 	for _, fam := range registered {
-		fmt.Fprintf(w, "  %-10s %s\n", fam.name, fam.summary)
 		for _, v := range fam.verbs {
-			fmt.Fprintf(w, "    %-14s %s\n", v.name, v.summary)
+			fmt.Fprintf(w, "  %-36s %s\n", fam.name+" "+v.name, v.launcher)
 		}
 	}
 }

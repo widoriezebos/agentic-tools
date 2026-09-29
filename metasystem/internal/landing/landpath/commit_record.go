@@ -25,7 +25,7 @@ func (b *boundary) refuseAgent(decided decision) int {
 		if decided.refusal != "" {
 			fmt.Fprintln(b.stderr, decided.refusal)
 		}
-		repair = "classify every named path in scripts/agents/path-classes.txt, then retry"
+		repair = "classify every named path in the engine's path-class policy (internal/pathclass/path-classes.txt, engine source), rebuild the engine, then retry"
 	case "ledger-path-not-goal-verb":
 		fmt.Fprintf(b.stderr, "agent commit refused: ledger paths change only through goal verbs (%s)\n", decided.verdict)
 		repair = "use the owning goal verb instead of the commit wrapper"

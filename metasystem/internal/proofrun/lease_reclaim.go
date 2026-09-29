@@ -232,7 +232,8 @@ func (reclaimer *leaseReclaimer) fixtureRemedy(record hostLeaseRecord) string {
 	if err != nil {
 		return reclaimer.handRemedy(record)
 	}
-	return fmt.Sprintf("metasystem internal proc fixture-survivors --owner '%s' --root %s --reap, then the next admission pass reclaims it", ref, root)
+	return fmt.Sprintf("no metasystem command settles this; stop the processes whose environment carries %s with owner '%s' (they belong to a dead test run in %s; `ps -axeww -o pid,command` shows the tag), and the next admission pass reclaims it",
+		identity.FixtureOwnerEnv, ref, root)
 }
 
 func (reclaimer *leaseReclaimer) handRemedy(record hostLeaseRecord) string {

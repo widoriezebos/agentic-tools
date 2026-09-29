@@ -1,9 +1,10 @@
 package main
 
 import (
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/adapter/supervisor"
 	"strings"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/adapter/supervisor"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/adapter"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/host"

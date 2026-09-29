@@ -332,18 +332,7 @@ var intentPlanningDisposition = map[string]string{
 
 func TestIntentPlanningDescriptorCoverage(t *testing.T) {
 	t.Parallel()
-	var goalVerbs []string
-	for _, registered := range families() {
-		if registered.name == "goal" {
-			for _, entry := range registered.verbs {
-				goalVerbs = append(goalVerbs, entry.name)
-			}
-		}
-	}
 	for verb, public := range intentPlanningDisposition {
-		if !slices.Contains(goalVerbs, verb) {
-			t.Fatalf("goal %s is no longer registered", verb)
-		}
 		command, ok := findIntentCommand(public)
 		if !ok {
 			t.Fatalf("goal %s is reached through %s, which is not a public command", verb, public)

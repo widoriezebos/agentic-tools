@@ -23,7 +23,7 @@ func (inv *intentInvocation) permissionWord(id, act string) (goal.Permission, in
 	}
 	permission, err := goal.LookupPermission(inv.input.args[1])
 	if err != nil {
-		return goal.Permission{}, inv.refuse(id, err.Error()+"; nothing was done", known), false
+		return goal.Permission{}, inv.refuse(id, err.Error()+"; nothing was done", ""), false
 	}
 	return permission, 0, true
 }

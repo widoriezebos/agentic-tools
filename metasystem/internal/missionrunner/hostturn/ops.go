@@ -5,6 +5,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/adapter/supervisor"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/host"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/protocol"
 )
 
 // hostPreflight is the optional operation a runtime answers before the
@@ -23,10 +24,20 @@ func runHostOps(t *Turn, ops supervisor.Operations) int {
 		fmt.Fprintln(d.Stderr, err)
 		return 1
 	}
+	schema, err := t.protocolFile("orchestrator.schema.json", protocol.RoleSchema, "orchestrator")
+	if err != nil {
+		fmt.Fprintln(d.Stderr, err)
+		return 1
+	}
+	requested, err := t.protocolFile("workspace-permissions.json", protocol.Permissions, "workspace")
+	if err != nil {
+		fmt.Fprintln(d.Stderr, err)
+		return 1
+	}
 	turn := supervisor.NewHostTurn(d, supervisor.HostTurnFacts{
 		Runtime: t.runtime, TurnDir: t.TurnDir, Mission: t.Mission, TurnID: t.TurnID,
-		Prompt: t.Prompt, Schema: t.schema(), ResumeSession: t.ResumeSession, Tag: t.InstanceTag,
-		Requested: t.permissions(), Result: t.Result,
+		Prompt: t.Prompt, Schema: schema, ResumeSession: t.ResumeSession, Tag: t.InstanceTag,
+		Requested: requested, Result: t.Result,
 	})
 	// A runtime may end the turn before the start gate (the fake host's
 	// turn-record check and unverified start).

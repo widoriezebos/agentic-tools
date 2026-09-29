@@ -41,6 +41,9 @@ func TestMain(m *testing.M) {
 	// fixture-only GO_WANT flag was removed from the inherited environment.
 	resourceCustodyCommand := len(os.Args) > 2 && os.Args[1] == "proof-run" &&
 		(os.Args[2] == "custody-exec" || os.Args[2] == "watchdog")
+	if helper, ok := testHelperCommands[firstArgument()]; ok && os.Getenv("GO_WANT_BATCH_E2E_COMMAND") == "1" {
+		os.Exit(helper(os.Args[2:]))
+	}
 	if resourceCustodyCommand || os.Getenv("GO_WANT_BATCH_E2E_COMMAND") == "1" && len(os.Args) > 1 && os.Args[1][0] != '-' {
 		os.Exit(dispatch(os.Args[1:]))
 	}
@@ -250,4 +253,16 @@ func TestWaitCandidateIsBuiltTrimmed(t *testing.T) {
 		}
 	}
 	t.Fatalf("wait candidate build settings %v lack -trimpath=true", info.Settings)
+}
+
+// testHelperCommands are owner calls a test runs in a child of this test
+// binary (for an environment of its own), by name as the child's first
+// argument. They are test code, never engine verbs.
+var testHelperCommands = map[string]func([]string) int{}
+
+func firstArgument() string {
+	if len(os.Args) > 1 {
+		return os.Args[1]
+	}
+	return ""
 }

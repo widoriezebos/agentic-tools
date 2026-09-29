@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
@@ -170,7 +171,7 @@ func (s *session) mustTemp(dir, prefix string) (string, error) {
 // configGet is `metasystem-config.sh get --key KEY --default DEFAULT`.
 func (s *session) configGet(key, def string) (string, error) {
 	value, code, err := config.Get(config.GetParams{
-		Key: key, Default: def, DefaultSet: true, ConfPath: filepath.Join(s.root, "metasystem.conf"),
+		Key: key, Default: def, DefaultSet: true, ConfPath: filepath.Join(s.root, "metasystem.conf"), LookupEnv: s.configLookup(),
 	})
 	if err != nil {
 		s.eprintln(err.Error())
@@ -291,4 +292,40 @@ func (s *session) recordPath(job string) string { return filepath.Join(s.jobs, j
 
 func writePatch(path, body string) error {
 	return os.WriteFile(path, []byte(body+"\n"), 0o600)
+}
+
+// configLookup is the invocation's configuration environment: the request's
+// carried configuration over the process's own.
+func (s *session) configLookup() func(string) (string, bool) {
+	var base func(string) (string, bool)
+	if s.l != nil {
+		base = s.l.lookupEnv
+	}
+	return configLookupOver(s.request.ConfigEnv, base)
+}
+
+// ConfigLookup resolves an environment name from carried KEY=VALUE
+// configuration first and the process environment after it.
+func ConfigLookup(carried []string) func(string) (string, bool) {
+	return configLookupOver(carried, nil)
+}
+
+// configLookupOver resolves an environment name from carried KEY=VALUE
+// configuration first and base after it (nil is the process environment).
+func configLookupOver(carried []string, base func(string) (string, bool)) func(string) (string, bool) {
+	if base == nil {
+		base = os.LookupEnv
+	}
+	overlay := map[string]string{}
+	for _, entry := range carried {
+		if name, value, ok := strings.Cut(entry, "="); ok {
+			overlay[name] = value
+		}
+	}
+	return func(name string) (string, bool) {
+		if value, ok := overlay[name]; ok {
+			return value, true
+		}
+		return base(name)
+	}
 }

@@ -49,7 +49,7 @@ Decide the fate of every rule with the table below. A file is not the unit of de
 | Authorization boundaries, protected areas, "never touch X" | `docs/project-rules.md`, in the reserved decisions and external state sections |
 | Judgment rules duplicating metasystem guidance | Drop in favor of the metasystem owner; note the mapping in the ledger |
 | Judgment rules the metasystem lacks, backed by evidence | Keep as a project delta in the correct owner; propose upstream to the template in the final report |
-| Repeated specialist workflows | Keep as a project skill validated by `metasystem internal validate skills`, or map to `verify`, `refactor`, or `take-a-step-back` and deprecate |
+| Repeated specialist workflows | Keep as a project skill (`metasystem system check` validates its frontmatter), or map to `verify`, `refactor`, or `take-a-step-back` and deprecate |
 | Machine-verifiable rules stated as prose | Convert to a script or CI check, or map to an existing metasystem script. Delete the prose |
 | Incident history, one-off lessons, session logs | Delete. Git history is the archive. Promote only lessons with repeated evidence, through the change gate |
 | Provider- or model-specific prompt recipes | Delete unless repeated product-specific evidence justifies a per-runtime adapter |
@@ -80,13 +80,16 @@ checklist; no step is optional and none may be reordered:
    - **Project-owned, never overwrite:** `docs/project-rules.md`, everything
      under `plans/`, registered runtime profiles, and any file a local retro
      changed (the instruction ledger names them).
-   - **Template-owned, take upstream verbatim:** `scripts/`,
-     `docs/examples/`, and skills without local modifications.
+   - **Template-owned, take upstream verbatim:** the engine source (`cmd/`,
+     `internal/`, including the agent protocol, landing and path policy and
+     runtime hook settings compiled into the engine), `docs/examples/`, and
+     skills without local modifications. An installation carries no
+     `scripts/` tree; an old one is removed, not merged.
    - **Merge deliberately:** `AGENTS.md`, `wow.md`, and retro-modified docs.
      Re-apply the local changes on top of the new template text, never the
      reverse; a conflict between a local rule and a new template rule is
      escalated, not silently resolved.
-4. Run `bin/metasystem system register --repo <target> --runtimes <selected>`
+4. Run `bin/metasystem system setup --repo <target> --runtimes <selected>`
    from the updated installation, adding `--copy-skills` only when the existing
    installation intentionally uses copies. This owner structurally merges
    known lifecycle handlers and preserves unrelated settings; a foreign skill,
@@ -113,7 +116,7 @@ Clean cutover, per the design principles: the same change that installs a metasy
 
 ## Phase 4: prove and hand over
 
-1. `bin/metasystem system register --repo <target> --runtimes <selected> --check` and `metasystem test run` pass in the repository. The first result is configuration readiness, not provider trust, restart completion, supervision arming, or observed lifecycle execution. Outside the template checkout (which the audit detects by its folder name plus the development docs beside it) the audit also fails on unreplaced `docs/project-rules.md` placeholders, along with the always-loaded cap.
+1. `bin/metasystem system check --repo <target>` reports no setup drift and `metasystem test run` passes in the repository. The first result is configuration readiness, not provider trust, restart completion, supervision arming, or observed lifecycle execution. Outside the template checkout (which the audit detects by its folder name plus the development docs beside it) the audit also fails on unreplaced `docs/project-rules.md` placeholders, along with the always-loaded cap.
 2. The commands recorded in `docs/project-rules.md` each actually ran, at minimum the focused test and the build.
 3. A final sweep finds no orphaned instruction files and no dangling references to deleted ones.
 4. Report with the ledger first: dispositions by bucket, deletions with reasons, conflicts escalated, deltas kept, and upstream proposals for the template. Append a receipt (`metasystem receipt add`) and recommend the first retro after a handful of tasks rather than at the default cadence.
@@ -160,6 +163,6 @@ moved to the family whose staleness it detects:
 | proc started-at, lease announce/retire/require-holder | deleted (their last caller, the benchmark kit's drivers, retired; verbs-object-action U8b) |
 | census classify, census authentication-identity | deleted (no callers; c72f662) |
 
-The disposition registry (scripts/agents/shell-dispositions.json) is
+The disposition registry (the former shell-dispositions.json) is
 deleted: nothing executable read it, and adoption's allowlist in
 internal/adopt remains the single export contract.

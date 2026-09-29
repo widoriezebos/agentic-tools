@@ -1248,7 +1248,7 @@ func TestPresentStopRejectsMissingRequiredNestedObjectAndSymlinkedReportDirector
 	input = stopPresentationFixture(root, strings.Repeat("d", 32), true)
 	inputPath := filepath.Join(t.TempDir(), "symlink-input.json")
 	writeStopInput(t, inputPath, input)
-	if _, err := PresentStop(root, inputPath, filepath.Join(t.TempDir(), "output.json"), time.Now()); err == nil || !strings.Contains(err.Error(), "must not contain symlinks") {
+	if _, err := PresentStop(root, inputPath, filepath.Join(t.TempDir(), "output.json"), time.Now()); err == nil || !strings.Contains(err.Error(), "passes through a symlink at "+filepath.Join(reportParent, "stop-verdicts")) {
 		t.Fatalf("symlinked report directory was accepted: %v", err)
 	}
 }

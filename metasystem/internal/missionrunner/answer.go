@@ -58,7 +58,7 @@ func (e *Engine) Answer(askID, answer string) int {
 		return 3
 	}
 	if reason == "wall-violation" {
-		fmt.Fprintln(e.answerErrors(), "answer refused: a generic answer never clears taint; use metasystem internal mission resolve-taint (restore or adopt-disputed-tree)")
+		fmt.Fprintf(e.answerErrors(), "answer refused: a generic answer never clears taint; resolve it with metasystem mission repair %s --problem N (--confirm-restored TREE | --accept-workspace --waive CLAIM...) --by NAME --reason TEXT\n", e.Mission)
 		return 3
 	}
 	if !turnvocab.OrchestratorMayRaise(reason) && reason != "fence" {
@@ -95,8 +95,7 @@ func (e *Engine) Answer(askID, answer string) int {
 		}
 		unpark()
 	case reason == "fence":
-		// The preflight runs in this process (design 6.2), as the engine's own
-		// `mission contract-preflight` ran it.
+		// The contract preflight runs in this process (design 6.2).
 		if _, _, err := contract.Preflight(e.contractPath(), ""); err != nil {
 			fmt.Fprintf(e.answerErrors(), "answer refused: fence contract amendment is not preflight-ready: %s\n", firstDetail(err.Error(), ""))
 			return 3

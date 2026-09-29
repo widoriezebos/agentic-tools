@@ -13,10 +13,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/audit"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/behaviorsurface"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginebuild"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostsetup"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
@@ -244,13 +246,14 @@ func TestAdoptionComparisonSelectedScenarios(t *testing.T) {
 	}
 	// registrationCheck runs the adopted target's host registration check,
 	// the owner of its registration rules, and reports whether it passed.
+	// The owner runs in this process in check mode, as system check's
+	// setup-drift report does.
 	registrationCheck := func(target, runtimes string, copySkills bool) (string, bool) {
-		argv := []string{filepath.Join(target, "bin", "metasystem"), "system", "register", "--repo", target, "--runtimes", runtimes}
-		if copySkills {
-			argv = append(argv, "--copy-skills")
+		_, err := hostsetup.Setup(hostsetup.Options{RepositoryPath: target, Runtimes: strings.Split(runtimes, ","), CopySkills: copySkills, Check: true})
+		if err != nil {
+			return err.Error(), false
 		}
-		output, code := run(target, nil, append(argv, "--check")...)
-		return output, code == 0
+		return "", true
 	}
 	refusedRegistration := func(target, runtimes string, copySkills bool, what, message string) {
 		t.Helper()
@@ -278,15 +281,21 @@ func TestAdoptionComparisonSelectedScenarios(t *testing.T) {
 	var checked struct {
 		Data struct {
 			Covenant struct {
-				Present, Valid bool
+				Present, Valid, Traceable bool
+				Evidence                  struct {
+					Pairs []struct {
+						Proof string `json:"proof"`
+					} `json:"pairs"`
+				} `json:"evidence"`
 			} `json:"covenant"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal([]byte(check), &checked); err != nil || !checked.Data.Covenant.Present || !checked.Data.Covenant.Valid {
 		t.Fatalf("the filled target's system check did not find its covenant valid (%d, %v):\n%s", checkCode, err, check)
 	}
-	if evidence := mustRun(filled, engine, "internal", "covenant", "evidence", "--root", filled); !strings.Contains(evidence, "(proof greets): ") {
-		t.Fatalf("the filled target's covenant evidence gate did not judge its requirement:\n%s", evidence)
+	// The same system check runs the covenant's evidence gate.
+	if !checked.Data.Covenant.Traceable || len(checked.Data.Covenant.Evidence.Pairs) != 1 || checked.Data.Covenant.Evidence.Pairs[0].Proof != "greets" {
+		t.Fatalf("the filled target's covenant evidence gate did not judge its requirement:\n%s", check)
 	}
 	for _, path := range []string{"wow.md", "internal/hooks/runtime_hook_start.go", "internal/hooks/runtime_hook_start_test.go"} {
 		if _, err := os.Stat(filepath.Join(filled, path)); err != nil {
@@ -298,12 +307,13 @@ func TestAdoptionComparisonSelectedScenarios(t *testing.T) {
 	if err := os.Rename(assertion, hidden); err != nil {
 		t.Fatal(err)
 	}
-	output, code := run(filled, nil, engine, "internal", "audit", "hook-start-exits", "--root", filled)
+	// The audit's owner, which the development gate runs, in this process.
+	_, auditErr := audit.AuditHookStartExits(filled)
 	if err := os.Rename(hidden, assertion); err != nil {
 		t.Fatal(err)
 	}
-	if code == 0 || !strings.Contains(output, "hook start exit audit could not read "+assertion) {
-		t.Fatalf("the SessionStart audit passed or refused without naming its missing assertion source (%d):\n%s", code, output)
+	if auditErr == nil || !strings.Contains(auditErr.Error(), "hook start exit audit could not read "+assertion) {
+		t.Fatalf("the SessionStart audit passed or refused without naming its missing assertion source: %v", auditErr)
 	}
 	evidencePath := filepath.Join(filled, "docs", "covenant-evidence.md")
 	green, err := os.ReadFile(evidencePath)
@@ -313,8 +323,8 @@ func TestAdoptionComparisonSelectedScenarios(t *testing.T) {
 	if err := os.WriteFile(evidencePath, []byte(strings.Replace(string(green), "| greets |", "| salutes |", 1)), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if output, code := run(filled, nil, engine, "internal", "covenant", "evidence", "--root", filled); code == 0 || !strings.Contains(output, "bound to proof greets in the covenant but records proof salutes") {
-		t.Fatalf("the evidence gate accepted or misnamed a table recording another proof (%d):\n%s", code, output)
+	if lines, _, traceable := checkCovenantEvidence(filled); traceable || !strings.Contains(strings.Join(lines, "\n"), "bound to proof greets in the covenant but records proof salutes") {
+		t.Fatalf("the evidence gate accepted or misnamed a table recording another proof:\n%s", strings.Join(lines, "\n"))
 	}
 	if err := os.WriteFile(evidencePath, green, 0o644); err != nil {
 		t.Fatal(err)
@@ -330,8 +340,8 @@ func TestAdoptionComparisonSelectedScenarios(t *testing.T) {
 	if err := os.Symlink("covenant-that-does-not-exist.json", covenantPath); err != nil {
 		t.Fatal(err)
 	}
-	if output, code := run(filled, nil, engine, "internal", "covenant", "evidence", "--root", filled); code == 0 || !strings.Contains(output, "symlink") {
-		t.Fatalf("the evidence gate accepted or misnamed a dangling covenant symlink (%d):\n%s", code, output)
+	if lines, _, traceable := checkCovenantEvidence(filled); traceable || !strings.Contains(strings.Join(lines, "\n"), "symlink") {
+		t.Fatalf("the evidence gate accepted or misnamed a dangling covenant symlink:\n%s", strings.Join(lines, "\n"))
 	}
 	if err := os.Remove(covenantPath); err != nil {
 		t.Fatal(err)
@@ -357,7 +367,7 @@ func TestAdoptionComparisonSelectedScenarios(t *testing.T) {
 	if err := os.Rename(gomod, gomod+".hidden"); err != nil {
 		t.Fatal(err)
 	}
-	output, code = run(filled, nil, engine, "test", "run", "--repo", filled, "--goal", "adoption-goal")
+	output, code := run(filled, nil, engine, "test", "run", "--repo", filled, "--goal", "adoption-goal")
 	if err := os.Rename(gomod+".hidden", gomod); err != nil {
 		t.Fatal(err)
 	}
@@ -377,9 +387,11 @@ func TestAdoptionComparisonSelectedScenarios(t *testing.T) {
 	// source outside tailoring, and drift of each copied registration.
 	copied := prepare("copied", "claude,codex", true)
 	isolateFixtureAdmission()
-	copiedEngine := filepath.Join(copied, "bin", "metasystem")
-	if setup := mustRun(copied, copiedEngine, "system", "register", "--repo", copied, "--runtimes", "claude,codex", "--copy-skills", "--check"); !strings.Contains(setup, "TEST_CONTRACT_READY") {
-		t.Fatalf("copied registration setup passed without a ready testing contract:\n%s", setup)
+	if _, err := testpolicy.Load(filepath.Join(copied, "testing.json")); err != nil {
+		t.Fatalf("the copied target's testing contract is not ready: %v", err)
+	}
+	if output, passed := registrationCheck(copied, "claude,codex", true); !passed {
+		t.Fatalf("the copied target's registrations are not ready:\n%s", output)
 	}
 	surfacePolicy, err := behaviorsurface.Load()
 	if err != nil {

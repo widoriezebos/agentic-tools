@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -15,8 +16,10 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/contract"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/jsonedit"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/protocol"
 )
 
 // subject is the launch a dispatch or follow-up is admitting: the fields the
@@ -545,20 +548,31 @@ func (s *session) enforceInlineInputLimit(content, hint string) (int64, error) {
 	return info.Size(), nil
 }
 
+// wardenPermissions names the compiled-in zero-write preset itself, so no
+// file that shadows the preset name can stand in for it.
+const wardenPermissions = protocol.ReferencePrefix + "permissions/critic.json"
+
+// permissionEnvelope resolves a requested permission set: the compiled-in
+// preset a protocol reference names, an envelope file (the
+// dispatch.permissions.<role> extension point), or a shipped preset by name.
+func permissionEnvelope(requested string) (data []byte, preset string, err error) {
+	switch {
+	case protocol.IsReference(requested):
+		data, _, err = protocol.Source(requested)
+		return data, strings.TrimSuffix(path.Base(requested), ".json"), err
+	case isFile(requested):
+		data, err = os.ReadFile(requested)
+		return data, "custom", err
+	default:
+		data, err = protocol.Permissions(requested)
+		return data, requested, err
+	}
+}
+
 // expandPermissions is expand_permissions.
 func (s *session) expandPermissions(requested, workspace string, isWorktree bool, output string) error {
-	presets := filepath.Join(s.root, "scripts", "agents", "permissions")
-	var source, preset string
-	switch {
-	case strings.HasPrefix(requested, presets+"/") && strings.HasSuffix(requested, ".json"):
-		source = requested
-		preset = strings.TrimSuffix(filepath.Base(requested), ".json")
-	case isFile(requested):
-		source, preset = requested, "custom"
-	default:
-		source, preset = filepath.Join(presets, requested+".json"), requested
-	}
-	if !isFile(source) {
+	source, preset, err := permissionEnvelope(requested)
+	if err != nil {
 		return s.die(1, "unknown permissions preset or envelope file: "+requested)
 	}
 	networkFloor, err := s.configGet("dispatch.permissions.network", "")
@@ -575,14 +589,11 @@ func (s *session) expandPermissions(requested, workspace string, isWorktree bool
 
 // permissionEnvelopeRequestsWrites is permission_envelope_requests_writes.
 func (s *session) permissionEnvelopeRequestsWrites(requested string) bool {
-	source := requested
-	if !isFile(requested) {
-		source = filepath.Join(s.root, "scripts", "agents", "permissions", requested+".json")
-	}
-	if !isFile(source) {
+	source, _, err := permissionEnvelope(requested)
+	if err != nil {
 		return false
 	}
-	roots, ok := field(source, "writeRoots")
+	roots, ok := jsonedit.Get(source, "writeRoots", nil)
 	if !ok || !strings.HasPrefix(roots, "[") {
 		return false
 	}

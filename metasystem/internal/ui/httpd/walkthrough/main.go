@@ -52,8 +52,7 @@ func main() {
 	// The walkthrough's own one-time-code secret. It is synthetic — the base32
 	// string every TOTP example uses — so the sign-in sheet can be walked
 	// through without a configured seat and without a real secret anywhere
-	// near it. bin/metasystem internal channel fake code --secret <this> prints the
-	// code it accepts.
+	// near it. The walkthrough prints the code it accepts when it starts.
 	secret := flag.String("secret", "JBSWY3DPEHPK3PXP", "synthetic one-time-code secret for the sign-in walkthrough")
 	human := flag.String("human", "", "the handle this fixture seat signs in as; empty makes the sheet ask")
 	// How often the fixture steward says something new. The notification
@@ -411,6 +410,9 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	if code, codeErr := channel.TOTPCode(*secret, time.Now()); codeErr == nil {
+		fmt.Println("sign-in code " + code + " (it changes every 30 seconds; restart for a fresh one)")
+	}
 	fmt.Println("ready http://" + listener.Addr().String())
 	server := &http.Server{Handler: httpd.New(info, listener.Addr(), web.Dist()), ReadHeaderTimeout: 5 * time.Second}
 	log.Fatal(server.Serve(listener))
@@ -563,9 +565,6 @@ func fixtureCheckout(calm bool, register string) string {
 	}
 	directory, err := os.MkdirTemp("", "metasystem-walkthrough-")
 	if err != nil {
-		log.Fatalf("cannot make the walkthrough checkout: %v", err)
-	}
-	if err := os.MkdirAll(filepath.Join(directory, "scripts", "agents"), 0o755); err != nil {
 		log.Fatalf("cannot make the walkthrough checkout: %v", err)
 	}
 	for _, planted := range []struct{ relative, text string }{

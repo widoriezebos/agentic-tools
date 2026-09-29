@@ -182,10 +182,17 @@ var positiveRE = regexp.MustCompile(`^[1-9][0-9]*$`)
 // Path joins a file name onto the turn directory.
 func (t *Turn) Path(name string) string { return filepath.Join(t.TurnDir, name) }
 
-func (t *Turn) schema() string {
-	return filepath.Join(t.d.Root, "scripts", "agents", "schemas", "orchestrator.schema.json")
-}
-
-func (t *Turn) permissions() string {
-	return filepath.Join(t.d.Root, "scripts", "agents", "permissions", "workspace.json")
+// protocolFile writes compiled-in protocol bytes into the turn directory:
+// the runtime CLIs take the orchestrator schema and the requested
+// permission envelope as paths.
+func (t *Turn) protocolFile(name string, read func(string) ([]byte, error), item string) (string, error) {
+	data, err := read(item)
+	if err != nil {
+		return "", err
+	}
+	path := t.Path(name)
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		return "", fmt.Errorf("write host turn %s: %w", name, err)
+	}
+	return path, nil
 }

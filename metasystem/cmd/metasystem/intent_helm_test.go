@@ -124,8 +124,9 @@ func TestHelmTakeRefusesAgentAncestry(t *testing.T) {
 	t.Run("HM-1", func(t *testing.T) {
 		bed := newHelmBed(t, 80, true)
 		bed.wantTake(nil, 3, "", "")
-		if _, out := bed.run("helm", "take", "--reason", "by hand"); !strings.Contains(out, humanauthority.OutcomeAgent) {
-			t.Fatalf("take under an agent ancestry must name %s:\n%s", humanauthority.OutcomeAgent, out)
+		// The refusal says so in the reader's terms, not the proof's code (EM-38).
+		if _, out := bed.run("helm", "take", "--reason", "by hand"); !strings.Contains(out, "an agent started this shell") || strings.Contains(out, humanauthority.OutcomeAgent) {
+			t.Fatalf("take under an agent ancestry must say an agent started this shell:\n%s", out)
 		}
 	})
 }

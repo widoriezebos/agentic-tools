@@ -20,7 +20,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/returnschema"
 )
 
-// returnSchemaBedRoot is the checkout whose scripts/agents/schemas the
+// returnSchemaBedRoot is the checkout whose internal/protocol/schemas the
 // validators and materializer read.
 func returnSchemaBedRoot(t *testing.T) string {
 	t.Helper()
@@ -205,12 +205,11 @@ func TestReturnSchemaBedCriticV3(t *testing.T) {
 
 func TestReturnSchemaBedCodeCriticSchemaVersions(t *testing.T) {
 	t.Parallel()
-	root := returnSchemaBedRoot(t)
 	dir := t.TempDir()
 	materialize := func(version int) string {
 		t.Helper()
 		output := filepath.Join(dir, fmt.Sprintf("code-critic-v%d.schema.json", version))
-		if err := returnschema.Materialize(root, "code-critic", version, output); err != nil {
+		if err := returnschema.Materialize("code-critic", version, output); err != nil {
 			t.Fatal(err)
 		}
 		data, err := os.ReadFile(output)

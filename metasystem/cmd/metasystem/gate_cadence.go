@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
 	"os"
 	"os/exec"
@@ -13,7 +12,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gaterun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
@@ -25,11 +23,9 @@ import (
 )
 
 const (
-	cadenceOwnerUnconfigured = "CADENCE_OWNER_UNCONFIGURED"
-	cadenceNotLandingOwner   = "CADENCE_NOT_LANDING_OWNER"
-	cadenceFetchRefused      = "CADENCE_FETCH_REFUSED"
-	cadenceLedgerUnreadable  = "CADENCE_LEDGER_UNREADABLE"
-	cadenceAuthorityGoal     = "standing-validation"
+	cadenceFetchRefused     = "CADENCE_FETCH_REFUSED"
+	cadenceLedgerUnreadable = "CADENCE_LEDGER_UNREADABLE"
+	cadenceAuthorityGoal    = "standing-validation"
 )
 
 type cadenceRefusal struct{ code, detail string }
@@ -56,112 +52,6 @@ type cadenceRevalidationDependencies struct {
 func productionCadenceRevalidationDependencies() cadenceRevalidationDependencies {
 	return cadenceRevalidationDependencies{prepare: prepareTestingForCommand, readAttempts: proofrun.ReadAttempts,
 		buildIdentity: cadenceBuildIdentity, retainedDigest: cadenceRetainedEngineDigest}
-}
-
-func runGateCadenceTick(args []string) int {
-	flags := flag.NewFlagSet("gate cadence-tick", flag.ContinueOnError)
-	root := pathFlag(flags, "root", "", "configured landing-owner checkout")
-	if flags.Parse(args) != nil || *root == "" || flags.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem internal gate cadence-tick --root REPO")
-		return 2
-	}
-	owner, err := configuredCadenceOwner(*root)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 3
-	}
-	if owner != canonicalCadenceRoot(*root) {
-		fmt.Fprintf(os.Stderr, "%s: configured landing owner is %s\n", cadenceNotLandingOwner, owner)
-		return 3
-	}
-	held, err := batchOwnerAcquire(owner)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 3
-	}
-	defer held.retire()
-	output, err := cadenceTick(owner, held, cadenceProductionClock)
-	if err != nil {
-		var refusal cadenceRefusal
-		if errors.As(err, &refusal) {
-			fmt.Fprintln(os.Stderr, refusal)
-		} else {
-			fmt.Fprintln(os.Stderr, cadenceRefusal{cadenceLedgerUnreadable, err.Error()})
-		}
-		return 3
-	}
-	trigger, happened, attempt := cadenceResultWords(output.Tick)
-	fmt.Printf("cadence trigger=%s happened=%s trunk-commit=%s trunk-tree=%s", trigger, happened, output.Trunk.Commit, output.Trunk.Tree)
-	if attempt != "" {
-		fmt.Printf(" attempt=%s", attempt)
-	}
-	fmt.Println()
-	return 0
-}
-
-func canonicalCadenceRoot(root string) string {
-	absolute, err := filepath.Abs(root)
-	if err != nil {
-		return filepath.Clean(root)
-	}
-	if resolved, resolveErr := filepath.EvalSymlinks(absolute); resolveErr == nil {
-		absolute = resolved
-	}
-	return filepath.Clean(absolute)
-}
-
-func configuredCadenceOwner(root string) (string, error) {
-	value, _, err := config.Get(config.GetParams{Key: config.BatchRootKey, ConfPath: filepath.Join(root, "metasystem.conf"), Default: "", DefaultSet: true})
-	if err != nil || strings.TrimSpace(value) == "" {
-		return "", cadenceRefusal{cadenceOwnerUnconfigured, "landing.batch-root is not configured"}
-	}
-	if !filepath.IsAbs(value) {
-		return "", cadenceRefusal{cadenceOwnerUnconfigured, "landing.batch-root must be absolute"}
-	}
-	return canonicalCadenceRoot(value), nil
-}
-
-func cadenceResultWords(result gaterun.CadenceTickResult) (trigger, happened, attempt string) {
-	trigger, happened = "none", "reused"
-	selected := result.Trigger
-	if selected == "" && result.Status != nil {
-		selected = result.Status.Trigger
-	}
-	switch selected {
-	case goal.CadenceTriggerIdentityChanged:
-		trigger = "identity"
-	case goal.CadenceTriggerWeightDue:
-		trigger = "weight"
-	case goal.CadenceTriggerForcedWindow:
-		trigger = "six-hour"
-	}
-	if result.Status != nil {
-		if result.Status.Trigger == goal.CadenceTriggerRevalidation {
-			happened = "revalidation-only"
-		} else if result.Published && !result.Executed && result.ClaimOutcome == goal.CadenceClaimAcquired {
-			happened = strings.Join([]string{"authority", "unavailable"}, "-")
-		} else if result.Executed {
-			attempt = result.Status.AttemptID
-			happened = "executed"
-			allReused := len(result.Status.Groups) != 0
-			for _, group := range result.Status.Groups {
-				allReused = allReused && group.Status == "reused"
-			}
-			if allReused {
-				happened = "reused"
-			}
-		}
-	}
-	switch result.ClaimOutcome {
-	case goal.CadenceClaimJoined, goal.CadenceClaimOccupied:
-		happened = "joined"
-	case goal.CadenceClaimComplete:
-		happened = "terminal-read"
-		if result.Status != nil {
-			attempt = result.Status.AttemptID
-		}
-	}
-	return trigger, happened, attempt
 }
 
 func runProductionCadenceTick(root string, held batchOwnerLease, clock func() time.Time) (cadenceTickOutput, error) {

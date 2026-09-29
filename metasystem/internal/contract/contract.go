@@ -856,7 +856,7 @@ func (d *contractDoc) contractExpandPaths(repo, projectRoot, ref string, globs [
 	}
 	rel, err := filepath.Rel(realpath.Resolve(repo), realpath.Resolve(projectRoot))
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return nil, stateErr("metasystem project root is outside its git repository")
+		return nil, stateErr("the project root is outside its git repository")
 	}
 	prefix := ""
 	if rel != "." {
@@ -1219,7 +1219,7 @@ func contractPatienceKeys(values map[string]string) []string {
 // already approved, since the seal must precede the signature it protects.
 func (d *contractDoc) seal(repo, projectRoot string) (string, error) {
 	if len(d.sealed) > 0 {
-		return "", stateErr("contract is already sealed")
+		return "", ErrAlreadySealed
 	}
 	if d.approval != nil {
 		return "", stateErr("seal must run before approval is added")
@@ -1623,7 +1623,7 @@ func contractProjectRoot(contractPath, repo string) string {
 }
 
 // contractMetasystemRoot locates the metasystem checkout containing this binary,
-// confirmed by its shipped supervision assets.
+// confirmed by its metasystem.conf.
 func contractMetasystemRoot() string {
 	exe, err := os.Executable()
 	if err != nil {
@@ -1635,7 +1635,7 @@ func contractMetasystemRoot() string {
 	// land on the checkout's PARENT and
 	// make the confirmation below fail everywhere.
 	root := realpath.ResolveExisting(filepath.Dir(filepath.Dir(exe)))
-	if fileExists(filepath.Join(root, "metasystem.conf")) || contractDirExists(filepath.Join(root, "scripts", "agents")) {
+	if fileExists(filepath.Join(root, "metasystem.conf")) {
 		return root
 	}
 	return ""
@@ -1654,11 +1654,6 @@ func contractPathWithin(inner, outer string) bool {
 		return false
 	}
 	return true
-}
-
-func contractDirExists(path string) bool {
-	info, err := os.Stat(path)
-	return err == nil && info.IsDir()
 }
 
 // --- typed JSON reads ---

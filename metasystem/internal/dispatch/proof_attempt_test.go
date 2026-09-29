@@ -378,8 +378,8 @@ func dispatchProofFixture(t *testing.T, commandClass string) (string, proofrun.P
 	if err := os.MkdirAll(filepath.Join(root, "scripts", "agents"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"coverage-ratchet.json", "coverage-ratchet-linux.json"} {
-		if err := os.WriteFile(filepath.Join(root, "scripts", "agents", name), []byte(`{"floors":{"internal/proofrun":1},"exempt":{}}`), 0o600); err != nil {
+	for _, name := range []string{"testing-coverage-floors.json", "testing-coverage-floors-linux.json"} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(`{"floors":{"internal/proofrun":1},"exempt":{}}`), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}

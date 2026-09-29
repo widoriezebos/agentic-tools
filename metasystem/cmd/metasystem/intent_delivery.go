@@ -592,7 +592,7 @@ func runIntentReview(inv *intentInvocation) int {
 	if len(inv.input.args) == 0 {
 		if !manual {
 			return inv.render(intentResult{Outcome: intentRefused, code: 2,
-				Summary:    "work review names what to review: G, j2:J, run:RUN, --commit SHA --goal G, or --changes|--patch PATCH for feedback",
+				Summary:    "work review needs what to review: G, j2:J, run:RUN, --commit SHA --goal G, or --changes|--patch PATCH for feedback; nothing was done",
 				nextReason: "for example: metasystem work review verbs-match-intent"})
 		}
 		if inv.input.has("changes") && inv.input.has("patch") {
@@ -789,7 +789,7 @@ func (inv *intentInvocation) reviewBriefFacts(targets []intentTarget, goalID str
 	return file.Budget.ReviewRoundLimit, calls, nil
 }
 
-// reviewBrief renders scripts/agents/templates/review-brief.md for one
+// reviewBrief renders the engine's review-brief.md template for one
 // subject. Every value is recorded state or the caller's explicit input.
 const designCritiqueRounds = 2
 

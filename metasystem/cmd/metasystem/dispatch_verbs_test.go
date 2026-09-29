@@ -454,3 +454,9 @@ func TestDispatchCritiqueRegisterCloseKeepsRegisterlessCompatibility(t *testing.
 		t.Fatalf("register-less close = outcome %q err %v", outcome, err)
 	}
 }
+
+func captureStderr(t *testing.T, fn func() int) (string, int) {
+	t.Helper()
+	code, _, stderr := captureCommandOutput(t, false, true, fn)
+	return stderr, code
+}

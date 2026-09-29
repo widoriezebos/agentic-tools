@@ -16,6 +16,13 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel/phase"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/contract"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/evidencetable"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/hooks"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostsetup"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/contractgit"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
+	"golang.org/x/sys/unix"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
@@ -105,7 +112,7 @@ func processIntentCommands() []intentCommand {
 		{
 			object: "system", action: "check", primary: true, audience: "both", summary: "diagnose problems with this checkout, changing nothing",
 			usage:    []string{"metasystem system check"},
-			details:  []string{"Checks this checkout once, with the shape of its app covenant when it has one, and repairs nothing.", "Each problem names the command that fixes it, where there is one."},
+			details:  []string{"Checks this checkout once: its machinery, what system setup would change, its skills, and its app covenant (shape and evidence) when it has one; it repairs nothing.", "Each problem names the command that fixes it, where there is one."},
 			flags:    []intentFlag{intentInstallationFlag},
 			maxArgs:  0,
 			examples: []string{"metasystem system check", "metasystem system check --json"},
@@ -121,15 +128,17 @@ func processIntentCommands() []intentCommand {
 			run:      runIntentEnroll,
 		},
 		{
-			object: "system", action: "setup", audience: "both", summary: "connect this checkout's agent hooks and commit fence to its engine",
-			usage: []string{"metasystem system setup"},
+			object: "system", action: "setup", audience: "both", summary: "set this checkout up to work with its engine: runtimes, hooks, commit fence and testing-contract merges",
+			usage: []string{"metasystem system setup [--runtimes CSV|none] [--copy-skills]"},
 			details: []string{
-				"Checks that the engine answers the hook entry, then writes each registered runtime's lifecycle hooks to run it directly and enrolls the git pre-commit fence, upgrading a hook from before the engine guard.",
-				"Nothing is written when the engine is missing or older than the hook entry; the refusal names the build. A repeat with everything in place changes nothing.",
+				"Checks that the engine answers the hook entry, then registers the agent runtimes (instruction pointers, skills, profiles and lifecycle hooks), writes every registered runtime's hooks to run the engine directly, enrolls the git pre-commit fence and registers the testing contract's git merge driver.",
+				"The runtimes are the ones metasystem.runtimes enables unless --runtimes names them. Nothing is written when the engine is missing or older than the hook entry; the refusal names the build. A repeat with everything in place changes nothing; metasystem system check reports what setup would change.",
 			},
-			flags:    []intentFlag{intentInstallationFlag},
+			flags: []intentFlag{intentInstallationFlag,
+				{name: "runtimes", value: "CSV", usage: "the runtimes to register, or none (default: those metasystem.runtimes enables)"},
+				{name: "copy-skills", usage: "copy skill trees instead of linking them"}},
 			maxArgs:  0,
-			examples: []string{"metasystem system setup"},
+			examples: []string{"metasystem system setup", "metasystem system setup --runtimes claude,codex"},
 			run:      runIntentSystemSetup,
 		},
 		adoptIntentCommand(),
@@ -153,8 +162,10 @@ func processIntentCommands() []intentCommand {
 		},
 		{
 			object: "mission", action: "start", audience: "both", summary: "start an autonomous mission",
-			usage: []string{"metasystem mission start M"}, maxArgs: 1, examples: []string{"metasystem mission start demo"},
-			run: func(inv *intentInvocation) int { return runIntentMissionNamed(inv, "start") },
+			usage: []string{"metasystem mission start M [--wait]"}, maxArgs: 1, examples: []string{"metasystem mission start demo"},
+			details: []string{"The mission's signed contract passes its launch checks first. Without --wait the mission runs on its own and this returns once its first turn starts."},
+			flags:   []intentFlag{missionWaitFlag},
+			run:     func(inv *intentInvocation) int { return runIntentMissionNamed(inv, "start") },
 		},
 		{
 			object: "mission", action: "status", audience: "both", summary: "a mission's runner status",
@@ -163,8 +174,20 @@ func processIntentCommands() []intentCommand {
 		},
 		{
 			object: "mission", action: "resume", audience: "human", summary: "resume a parked or interrupted mission",
-			usage: []string{"metasystem mission resume M"}, maxArgs: 1, examples: []string{"metasystem mission resume demo"},
-			run: func(inv *intentInvocation) int { return runIntentMissionNamed(inv, "resume") },
+			usage: []string{"metasystem mission resume M [--wait]"}, maxArgs: 1, examples: []string{"metasystem mission resume demo"},
+			flags: []intentFlag{missionWaitFlag},
+			run:   func(inv *intentInvocation) int { return runIntentMissionNamed(inv, "resume") },
+		},
+		{
+			object: "mission", action: "seal", audience: "human", summary: "check a mission contract and seal it so a person can sign it",
+			usage: []string{"metasystem mission seal M"},
+			details: []string{
+				"M is the mission id (plans/mission-M.contract.md) or the contract file.",
+				"Checks the authored contract and prints any sizing warnings, then records its baseline and priced exposure in the file.",
+				"Add the approval line it names, commit it, and run metasystem mission start M. A sealed contract is left as it is.",
+			},
+			maxArgs: 1, examples: []string{"metasystem mission seal demo"},
+			run: runIntentMissionSeal,
 		},
 		{
 			object: "mission", action: "repair", audience: "human", summary: "record a person's resolution of one mission workspace problem",
@@ -256,10 +279,10 @@ func processIntentCommands() []intentCommand {
 			run:      runIntentWorkStatus,
 		},
 		{
-			object: "work", action: "stop", audience: "both", summary: "stop exactly one running job or diagnostic read, or finish a goal's recorded stop",
+			object: "work", action: "stop", audience: "both", summary: "stop one running job or diagnostic read, or every running job of a goal",
 			usage: []string{"metasystem work stop REF", "metasystem work stop G"},
-			details: []string{"REF is j1:ID (a launch), j2:ID (a dispatch job) or read:REF (a diagnostic read); nothing else stops.",
-				"G is a goal whose budget stopped it: its recorded stop is advanced from the job records, and completes once none of its jobs still runs; a stop that already completed is left as it is."},
+			details: []string{"REF is j1:ID (a launch), j2:ID (a dispatch job) or read:REF (a diagnostic read): exactly that one stops.",
+				"G is a goal: every running job of that goal stops, and no other goal's. A goal its budget stopped completes its recorded stop by itself once none of its jobs runs."},
 			maxArgs:  1,
 			accepts:  []string{refGoal, refJ1, refJ2, refRead},
 			examples: []string{"metasystem work stop j2:design-r2-4f1c", "metasystem work stop verbs-match-intent"},
@@ -443,7 +466,7 @@ func (inv *intentInvocation) selectInstallation() (stateroot.Layout, string, boo
 		layout, err := inv.owners.resolver.ResolveLayout(path)
 		if err != nil {
 			return stateroot.Layout{}, "", false, &intentResult{Outcome: intentRefused, code: 2,
-				Summary:  fmt.Sprintf("%s is not inside one metasystem installation: %v", shellCommand([]string{path}), err),
+				Summary:  notAnInstallation(path, err),
 				Decision: "run this inside the repository, name it with --repo PATH, or name its installation with --installation DIR"}
 		}
 		return layout, layout.InstallationRoot, false, nil
@@ -674,7 +697,7 @@ func (inv *intentInvocation) selectLayoutRoot() *intentResult {
 	}
 	if err != nil {
 		return &intentResult{Outcome: intentRefused, code: 2,
-			Summary:  fmt.Sprintf("%s is not inside one metasystem installation: %v", shellCommand([]string{path}), err),
+			Summary:  notAnInstallation(path, err),
 			Decision: "run this inside the repository, or name it with --repo PATH"}
 	}
 	return nil
@@ -725,12 +748,58 @@ func jobPurpose(job intentJob) string {
 // unless --all includes ended ones, each with its public reference.
 func runIntentStatusWork(inv *intentInvocation) int {
 	all := inv.input.switched("all")
+	jobs, scope, problem := inv.listJobs(all)
+	if problem != nil {
+		return inv.render(*problem)
+	}
+	views, lines := []map[string]any{}, []string{}
+	for _, job := range jobs {
+		ref := jobReference(job)
+		ended := jobEnded(job)
+		view := map[string]any{"reference": ref, "kind": job.kind, "purpose": jobPurpose(job), "status": inv.publicArgv("work", "status", ref)}
+		line := fmt.Sprintf("  %s: %s", ref, jobPurpose(job))
+		if !ended {
+			view["wait"], view["stop"] = inv.publicArgv("work", "wait", ref), inv.publicArgv("work", "stop", ref)
+			line += "; " + shellCommand(inv.publicArgv("work", "wait", ref)) + " or " + shellCommand(inv.publicArgv("work", "stop", ref))
+		}
+		views = append(views, view)
+		lines = append(lines, line)
+	}
+	word := "running"
+	if all {
+		word = "known"
+	}
+	result := intentResult{Outcome: intentConfirmed, text: lines, Data: map[string]any{"scope": scope, "all": all, "jobs": views},
+		Summary: fmt.Sprintf("%d %s job(s) among %s", len(jobs), word, scope)}
+	if !all {
+		result.next, result.nextReason = inv.publicArgv("work", "status", "--all"), "also lists ended jobs"
+	}
+	return inv.render(result)
+}
+
+// jobEnded reports whether a launch or dispatch job has ended.
+func jobEnded(job intentJob) bool {
+	return (job.kind == "launch" && job.launch.State.Terminal()) || (job.kind == "dispatch" && dispatchcore.TerminalStatus(fmt.Sprint(job.dispatch["status"])))
+}
+
+// jobGoal is the goal a launch or dispatch job works for.
+func jobGoal(job intentJob) string {
+	if job.kind == "launch" {
+		return job.launch.Goal
+	}
+	goalID, _ := job.dispatch["goalId"].(string)
+	return goalID
+}
+
+// listJobs is this user's launches and the selected repository's dispatch
+// jobs, running only unless all includes ended ones, and the scope read.
+func (inv *intentInvocation) listJobs(all bool) ([]intentJob, string, *intentResult) {
 	var jobs []intentJob
 	var records []launch.Record
 	if inv.owners.processes.launches != nil {
 		listed, err := inv.owners.processes.launches().List()
 		if err != nil {
-			return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "this user's launches cannot be listed: " + err.Error()})
+			return nil, "", &intentResult{Outcome: intentFailed, code: 1, Summary: "this user's launches cannot be listed: " + err.Error()}
 		}
 		records = listed
 	}
@@ -757,29 +826,7 @@ func runIntentStatusWork(inv *intentInvocation) int {
 	} else {
 		scope += " (no repository here, so no dispatch jobs)"
 	}
-	views, lines := []map[string]any{}, []string{}
-	for _, job := range jobs {
-		ref := jobReference(job)
-		ended := (job.kind == "launch" && job.launch.State.Terminal()) || (job.kind == "dispatch" && dispatchcore.TerminalStatus(fmt.Sprint(job.dispatch["status"])))
-		view := map[string]any{"reference": ref, "kind": job.kind, "purpose": jobPurpose(job), "status": inv.publicArgv("work", "status", ref)}
-		line := fmt.Sprintf("  %s: %s", ref, jobPurpose(job))
-		if !ended {
-			view["wait"], view["stop"] = inv.publicArgv("work", "wait", ref), inv.publicArgv("work", "stop", ref)
-			line += "; " + shellCommand(inv.publicArgv("work", "wait", ref)) + " or " + shellCommand(inv.publicArgv("work", "stop", ref))
-		}
-		views = append(views, view)
-		lines = append(lines, line)
-	}
-	word := "running"
-	if all {
-		word = "known"
-	}
-	result := intentResult{Outcome: intentConfirmed, text: lines, Data: map[string]any{"scope": scope, "all": all, "jobs": views},
-		Summary: fmt.Sprintf("%d %s job(s) among %s", len(jobs), word, scope)}
-	if !all {
-		result.next, result.nextReason = inv.publicArgv("work", "status", "--all"), "also lists ended jobs"
-	}
-	return inv.render(result)
+	return jobs, scope, nil
 }
 
 func (inv *intentInvocation) stopJob(ref string) int {
@@ -787,20 +834,26 @@ func (inv *intentInvocation) stopJob(ref string) int {
 	if problem != nil {
 		return inv.render(*problem)
 	}
+	return inv.render(inv.stopResolvedJob(job))
+}
+
+// stopResolvedJob stops one launch or dispatch job; one already ended is
+// already stopped (R-129-ui).
+func (inv *intentInvocation) stopResolvedJob(job intentJob) intentResult {
 	id := job.id
 	targets := []intentTarget{{Kind: "job", ID: jobReference(job)}}
 	if job.kind == "launch" {
 		if job.launch.State.Terminal() {
-			return inv.render(intentResult{Outcome: intentUnchanged, Targets: targets, Summary: fmt.Sprintf("launch %s already ended: %s", id, job.launch.State),
-				text: []string{launchReport(job.launch)}, Data: map[string]any{"kind": "launch", "record": job.launch}})
+			return intentResult{Outcome: intentUnchanged, Targets: targets, Summary: fmt.Sprintf("launch %s already ended: %s", id, job.launch.State),
+				text: []string{launchReport(job.launch)}, Data: map[string]any{"kind": "launch", "record": job.launch}}
 		}
 		record, err := inv.owners.processes.launches().Cancel(id)
 		if err != nil {
-			return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: fmt.Sprintf("launch %s cancel: %v", id, err),
-				Data: map[string]any{"kind": "launch", "record": record}})
+			return intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: fmt.Sprintf("launch %s cancel: %v", id, err),
+				Data: map[string]any{"kind": "launch", "record": record}}
 		}
-		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Summary: fmt.Sprintf("launch %s cancelled: %s", id, record.State),
-			text: []string{launchReport(record)}, Data: map[string]any{"kind": "launch", "record": record}})
+		return intentResult{Outcome: intentConfirmed, Targets: targets, Summary: fmt.Sprintf("launch %s cancelled: %s", id, record.State),
+			text: []string{launchReport(record)}, Data: map[string]any{"kind": "launch", "record": record}}
 	}
 	if status, _ := job.dispatch["status"].(string); dispatchcore.TerminalStatus(status) {
 		// A job that already ended is already stopped: the repeat is success
@@ -809,11 +862,11 @@ func (inv *intentInvocation) stopJob(ref string) int {
 		if ended, _ := job.dispatch["endedAt"].(string); ended != "" {
 			summary += " (at " + ended + ")"
 		}
-		return inv.render(intentResult{Outcome: intentUnchanged, Targets: targets, Summary: summary, Data: map[string]any{"kind": "dispatch", "status": status}})
+		return intentResult{Outcome: intentUnchanged, Targets: targets, Summary: summary, Data: map[string]any{"kind": "dispatch", "status": status}}
 	}
 	outcome, code, err := inv.owners.processes.cancelDispatch(inv.layout.GitRoot, id)
 	if err != nil {
-		return inv.render(intentResult{Outcome: intentFailed, code: max(code, 1), Targets: targets, Summary: fmt.Sprintf("dispatch job %s cancel: %v", id, err)})
+		return intentResult{Outcome: intentFailed, code: max(code, 1), Targets: targets, Summary: fmt.Sprintf("dispatch job %s cancel: %v", id, err)}
 	}
 	result := intentResult{Targets: targets, code: code, Data: map[string]any{"kind": "dispatch", "owner": outcome}}
 	label, _ := outcome["outcome"].(string)
@@ -824,7 +877,7 @@ func (inv *intentInvocation) stopJob(ref string) int {
 		result.Outcome, result.Summary = intentRefused, strings.TrimSpace(fmt.Sprintf("dispatch job %s not cancelled: %s %s", id, label, detail))
 		result.code = max(code, 1)
 	}
-	return inv.render(result)
+	return result
 }
 
 // runIntentCheckoutStatus is the overview of this checkout: its
@@ -943,11 +996,11 @@ func runIntentWorkStop(inv *intentInvocation) int {
 	return inv.stopJob(ref.qualified())
 }
 
-// runIntentWorkStopGoal finishes a breach-stopped goal's recorded stop: it
-// advances the goal's stop batch from the authoritative job records (the
-// dispatch owner's ReconcileStopBatch, formerly the internal job
-// stop-batch-reconcile). It cancels nothing itself; a job still running is
-// named with the command that stops it.
+// runIntentWorkStopGoal stops every running job of goal G, and no other
+// goal's. A goal its budget stopped keeps its recorded stop: once none of its
+// jobs runs, the stop completes by itself (the steward's next pass advances
+// it), and this act advances it at once as well. A repeat with nothing
+// running stops nothing and is success (R-129-ui).
 func runIntentWorkStopGoal(inv *intentInvocation, id string) int {
 	if problem := inv.selectRoot(); problem != nil {
 		return inv.render(*problem)
@@ -962,39 +1015,50 @@ func runIntentWorkStopGoal(inv *intentInvocation, id string) int {
 		// Neither a goal nor a record of any kind work stop takes.
 		return inv.render(*inv.noReference(id, inv.command.accepts))
 	}
-	if file.StopFence == nil {
-		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets,
-			Summary: fmt.Sprintf("goal %s has no stop in progress; nothing was done", id),
-			next:    inv.publicArgv("work", "status", id), nextReason: "lists the goal's running work, each with the reference work stop takes"})
+	jobs, _, problem := inv.listJobs(false)
+	if problem != nil {
+		return inv.render(*problem)
 	}
-	stopID := file.StopFence.StopID
-	before, readErr := goal.ReadStopBatch(inv.stateRoot, stopID)
-	if readErr == nil && before.State == goal.StopBatchComplete {
-		return inv.render(intentResult{Outcome: intentUnchanged, Targets: targets, Data: map[string]any{"stop": stopID, "state": string(before.State)},
-			Summary: fmt.Sprintf("goal %s: stop %s is already complete; nothing was changed", id, stopID)})
+	var stopped, failed []string
+	var lines []string
+	for _, job := range jobs {
+		if jobGoal(job) != id || jobEnded(job) {
+			continue
+		}
+		result := inv.stopResolvedJob(job)
+		lines = append(lines, jobReference(job)+": "+result.Summary)
+		if result.Outcome == intentConfirmed || result.Outcome == intentUnchanged {
+			stopped = append(stopped, jobReference(job))
+		} else {
+			failed = append(failed, jobReference(job))
+		}
 	}
-	batch, err := dispatchcore.ReconcileStopBatch(inv.stateRoot, stopID, now)
-	if err != nil {
-		return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Data: map[string]any{"stop": stopID},
-			Summary: fmt.Sprintf("goal %s: stop %s could not be advanced: %v", id, stopID, err)})
+	data := map[string]any{"stopped": nonNilLines(stopped), "failed": nonNilLines(failed)}
+	stopLine := ""
+	if file.StopFence != nil {
+		// The recorded stop's bookkeeping, as the steward's pass does it.
+		stopID := file.StopFence.StopID
+		if batch, err := dispatchcore.ReconcileStopBatch(inv.stateRoot, stopID, now); err == nil {
+			data["stop"], data["stopState"] = stopID, string(batch.State)
+			if batch.State == goal.StopBatchComplete {
+				stopLine = "its budget stop " + stopID + " is complete; metasystem goal resume " + id + " lifts it"
+			} else {
+				stopLine = "its budget stop " + stopID + " completes by itself once none of its jobs runs"
+			}
+			lines = append(lines, stopLine)
+		}
 	}
-	data := map[string]any{"stop": stopID, "state": string(batch.State), "pending": nonNilLines(batch.Pending)}
-	switch batch.State {
-	case goal.StopBatchComplete:
-		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: data,
-			Summary: fmt.Sprintf("goal %s: stop %s is complete; the goal can be resumed", id, stopID),
-			next:    inv.publicArgv("goal", "resume", id), nextReason: "lifts the stop under the goal's standing box"})
-	case goal.StopBatchIndeterminate:
-		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Data: data,
-			Summary: fmt.Sprintf("goal %s: stop %s is indeterminate: a job record could not be judged; nothing was lifted", id, stopID),
+	switch {
+	case len(failed) > 0:
+		return inv.render(intentResult{Outcome: intentPartial, code: 1, Targets: targets, Data: data, text: lines,
+			Summary: fmt.Sprintf("goal %s: %d job(s) stopped, %d not stopped", id, len(stopped), len(failed)),
 			next:    inv.publicArgv("work", "status", id), nextReason: "shows each of the goal's jobs and its state"})
+	case len(stopped) == 0:
+		return inv.render(intentResult{Outcome: intentUnchanged, Targets: targets, Data: data, text: lines,
+			Summary: fmt.Sprintf("no job of goal %s is running; nothing was stopped", id)})
 	}
-	result := intentResult{Outcome: intentPartial, code: 1, Targets: targets, Data: data, text: nonNilLines(batch.Pending),
-		Summary: fmt.Sprintf("goal %s: stop %s still waits for %d job(s) to end", id, stopID, len(batch.Pending))}
-	if len(batch.Pending) > 0 {
-		result.next, result.nextReason = inv.publicArgv("work", "stop", refJ2+":"+batch.Pending[0]), "stops the first job the stop waits for; then run work stop "+id+" again"
-	}
-	return inv.render(result)
+	return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: data, text: lines,
+		Summary: fmt.Sprintf("goal %s: %d running job(s) stopped", id, len(stopped))})
 }
 
 // runIntentSystemRestart stops this checkout's machinery and, only once
@@ -1288,6 +1352,19 @@ func runIntentDoctor(inv *intentInvocation) int {
 			code = max(code, 1)
 		} else {
 			lines = append(lines, "covenant shape valid: "+path+"; adequacy not established: shape says the rows parse, never that the proofs guard the intent")
+			evidenceLines, evidence, traceable := checkCovenantEvidence(filepath.Dir(path))
+			lines = append(lines, evidenceLines...)
+			covenantData["evidence"] = evidence
+			covenantData["traceable"] = traceable
+			if !traceable {
+				code = max(code, 1)
+			}
+		}
+	}
+	if layout, err := inv.owners.resolver.ResolveLayout(scope.Checkout); err == nil {
+		if drift := setupDrift(layout); len(drift) > 0 {
+			lines = append(lines, drift...)
+			code = max(code, 1)
 		}
 	}
 	adapters, refused := adapterReport(scope.Installation)
@@ -1295,8 +1372,17 @@ func runIntentDoctor(inv *intentInvocation) int {
 	if refused > 0 {
 		code = max(code, 1)
 	}
+	// Skills are where users extend the metasystem; their frontmatter and
+	// naming rules are part of this checkout's health.
+	skillsData := map[string]any{"valid": true}
+	var skillLines strings.Builder
+	if err := validate.SkillInventory(scope.Installation, &skillLines); err != nil {
+		skillsData = map[string]any{"valid": false, "reason": err.Error()}
+		lines = append(lines, "skills invalid: "+err.Error()+"; fix that skill's SKILL.md (its name and description frontmatter)")
+		code = max(code, 1)
+	}
 	result := intentResult{Outcome: intentConfirmed, code: code, Targets: inv.checkoutTarget(scope),
-		Summary: verdict.Line(), text: lines, Data: additiveData(steward.NewHookHealthPreview(verdict), map[string]any{"publicRemedies": remedies, "covenant": covenantData, "adapters": adapters})}
+		Summary: verdict.LineWithoutRemedies(), text: lines, Data: additiveData(steward.NewHookHealthPreview(verdict), map[string]any{"publicRemedies": remedies, "covenant": covenantData, "adapters": adapters, "skills": skillsData})}
 	if first != nil {
 		result.next, result.nextReason = first, "the first public remedy check found"
 	}
@@ -1353,6 +1439,93 @@ func checkCovenantShape(scope processScope) (string, error) {
 	return "", nil
 }
 
+// setupDrift is what system setup would change in this checkout, each item
+// ending in the act that repairs it: runtime registrations that differ from
+// the ones metasystem.runtimes enables, hooks that do not run the engine,
+// and a testing contract that does not merge through the engine's driver.
+func setupDrift(layout stateroot.Layout) []string {
+	repair := "; metasystem system setup repairs it"
+	var drift []string
+	selected := hookswitch.ConfiguredRuntimes(layout.InstallationRoot)
+	check := func(options hostsetup.Options) error {
+		_, err := hostsetup.SetupWithResolver(options, func(string) (stateroot.Layout, error) { return layout, nil })
+		return err
+	}
+	registration := hostsetup.Options{RepositoryPath: layout.RepositoryRoot, Runtimes: selected, Check: true}
+	if err := check(registration); err != nil {
+		registration.CopySkills = true
+		if copyErr := check(registration); copyErr != nil {
+			drift = append(drift, "runtime registrations differ: "+err.Error()+repair)
+		}
+	}
+	if registered := hookswitch.RegisteredRuntimes(layout.RepositoryRoot); len(registered) > 0 {
+		if err := check(hostsetup.Options{RepositoryPath: layout.RepositoryRoot, Runtimes: registered, HooksOnly: true, Check: true}); err != nil {
+			drift = append(drift, "hooks do not run the engine: "+err.Error()+repair)
+		}
+	}
+	engine, err := hooks.DirectEngine(layout.InstallationRoot, hookswitch.Git)
+	if err != nil {
+		return append(drift, "the engine the hooks would run cannot be found: "+err.Error())
+	}
+	if _, gitErr := hookswitch.Git("-C", layout.RepositoryRoot, "rev-parse", "--git-dir"); gitErr == nil {
+		missing, err := contractgit.Registration(layout.RepositoryRoot, hookswitch.TestingContract(layout), engine, hookswitch.Git)
+		if err != nil {
+			missing = []string{err.Error()}
+		}
+		for _, item := range missing {
+			drift = append(drift, "testing-contract merges: "+item+repair)
+		}
+	}
+	return drift
+}
+
+// checkCovenantEvidence runs the covenant's traceability gate at root, the
+// directory holding covenant.json: every requirement backed by a row of
+// docs/covenant-evidence.md whose declared dependencies are present. The
+// statuses the rows record are claims on file, not re-verified here.
+func checkCovenantEvidence(root string) ([]string, *evidencetable.Report, bool) {
+	cov, err := covenant.Load(filepath.Join(root, covenant.Filename))
+	if err != nil {
+		return []string{"covenant evidence not judged: " + err.Error()}, nil, false
+	}
+	rootFD, err := evidencetable.OpenRoot(root)
+	if err != nil {
+		return []string{"covenant evidence not judged: " + err.Error()}, nil, false
+	}
+	defer unix.Close(rootFD)
+	table, err := evidencetable.LoadTable(rootFD, root)
+	if err != nil {
+		return []string{"covenant evidence not judged: " + err.Error() + "; the table is docs/covenant-evidence.md"}, nil, false
+	}
+	report := evidencetable.Judge(cov, table, rootFD)
+	var lines []string
+	for _, refusal := range report.Refusals {
+		lines = append(lines, fmt.Sprintf("covenant evidence refused %s: %s", refusal.Kind, refusal.Detail))
+	}
+	for _, pair := range report.Pairs {
+		line := fmt.Sprintf("requirement %s (proof %s): %s", pair.ID, pair.Proof, pair.Verdict)
+		if pair.Assessment != "" {
+			line += fmt.Sprintf(" [%s: %s]", pair.Status, pair.Assessment)
+		}
+		lines = append(lines, line)
+	}
+	for _, orphan := range report.Orphans {
+		line := fmt.Sprintf("orphan row %s %q (proof %s, %s)", orphan.CriterionID, orphan.Criterion, orphan.Proof, orphan.Status)
+		if len(orphan.Notes) > 0 {
+			line += " — " + strings.Join(orphan.Notes, "; ")
+		}
+		lines = append(lines, line)
+	}
+	for _, note := range report.Notes {
+		lines = append(lines, "note: "+note)
+	}
+	if report.Outcome != "traceable" {
+		return append(lines, fmt.Sprintf("covenant evidence refused: %s (%d refusal(s))", report.App, len(report.Refusals))), report, false
+	}
+	return append(lines, fmt.Sprintf("covenant evidence traceable: %s (%d requirement(s), wired %d, floating %d); recorded statuses are claims on file, not re-verified here",
+		report.App, len(report.Pairs), report.Counts.DerivedWired, report.Counts.DerivedFloating)), report, true
+}
+
 // publicHealthRemedy is the public command, or the plain instruction, for
 // one unhealthy role, chosen from the role and its typed remedy facts; the
 // owner's own remedy is kept only as diagnostic data.
@@ -1362,7 +1535,7 @@ func publicHealthRemedy(role steward.RoleVerdict, stopped bool) ([]string, strin
 	}
 	switch role.Role {
 	case steward.RoleStewardRunner, steward.RoleSupervisionOwner, steward.RoleRepoWatcher, steward.RoleNarratorFreshness,
-		steward.RoleCensusFreshness, steward.RoleHookFreshness:
+		steward.RoleCensusFreshness, steward.RoleHookFreshness, steward.RoleSessionMain:
 		if stopped {
 			return []string{"metasystem", "system", "start"}, ""
 		}
@@ -1370,17 +1543,33 @@ func publicHealthRemedy(role steward.RoleVerdict, stopped bool) ([]string, strin
 	case steward.RoleLedgerAttention:
 		return []string{"metasystem", "goal", "list"}, ""
 	case steward.RoleNonterminalJobs:
-		return nil, "the job reaper reconciles these on its next pass; metasystem status lists the work"
+		return nil, "metasystem work stop j2:JOB records a job whose process is gone as ended; metasystem status lists the work"
 	case steward.RoleRetroDebt:
 		return nil, "run the retro and record its receipt"
 	case steward.RoleTrunkRed:
+		if strings.Contains(role.Reason, "cadence") {
+			// The landing owner records the deep validation cadence on its
+			// own runs.
+			return []string{"metasystem", "system", "start"}, ""
+		}
 		return []string{"metasystem", "incident", "list"}, ""
+	case steward.RoleCapabilitySnapshots:
+		return nil, "the next delegated job for each runtime named probes it and records a fresh snapshot; nothing needs doing now"
 	case steward.RoleSpendFence:
 		return nil, "a person raises the spend ceiling in metasystem.conf"
 	case steward.RoleProofAttempts:
 		return []string{"metasystem", "test", "run"}, ""
 	}
-	return nil, "no public command repairs this; the reason above names what a person must change"
+	return nil, reasonRemedy(role.Reason)
+}
+
+// reasonRemedy is the instruction for a role whose reason is its own
+// remedy: the command it names, or the change it names.
+func reasonRemedy(reason string) string {
+	if strings.Contains(reason, "run ") {
+		return "run the command the reason above names"
+	}
+	return "a person changes what the reason above names; no metasystem command does it"
 }
 
 // publicRemedyForFact is the public act for one typed cause.
@@ -1403,7 +1592,7 @@ func publicRemedyForFact(fact steward.RemedyFact) ([]string, string) {
 	case steward.CauseStopCapabilityMissing:
 		return nil, "a person repairs goal " + fact.Goal + "'s record (" + fact.Record + "), which has no stop capability"
 	}
-	return nil, "no public command repairs this; the reason above names what a person must change"
+	return nil, "a person changes what the reason above names; no metasystem command does it"
 }
 
 // runUIVerb runs the interface's status or restart through its lifecycle
@@ -1563,6 +1752,10 @@ func (inv *intentInvocation) askAfterFailure(q channel.Question, failure error, 
 // its authenticated reply location and records nothing.
 func runIntentAnswerQuestion(inv *intentInvocation) int {
 	args := inv.input.args
+	if len(args) == 0 {
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "needs the question: metasystem question answer Q [TEXT]; nothing was answered",
+			next: inv.publicArgv("question", "list"), nextReason: "lists the open questions with their ids"})
+	}
 	if len(args) > 2 {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "answer takes Q and at most one quoted TEXT; nothing was answered"})
 	}
@@ -1675,17 +1868,42 @@ func runIntentMission(inv *intentInvocation, verb, mission string) int {
 		if result.Summary == "" {
 			result.Summary = done
 		}
+		// EM-08: a mission with no state here is not a status record; exit
+		// 0 would tell a script the mission exists.
+		if strings.Contains(result.Summary, " status=unreadable reason=missing-state") {
+			result = inv.missionStatusWithoutState(mission)
+		}
 	}
 	return inv.render(result)
+}
+
+// missionStatusWithoutState refuses the status of a mission that has no
+// runner state in this repository: never started when its contract is
+// there, unknown otherwise. Nothing is read or changed.
+func (inv *intentInvocation) missionStatusWithoutState(mission string) intentResult {
+	targets := []intentTarget{{Kind: "mission", ID: mission}}
+	for _, root := range []string{inv.stateRoot, inv.layout.GitRoot} {
+		if root == "" {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(root, "plans", "mission-"+mission+".contract.md")); err == nil {
+			result := intentResult{Targets: targets, Outcome: intentRefused, code: 1,
+				Summary: "mission " + mission + " has a contract but was never started; nothing was read"}
+			result.next, result.nextReason = inv.publicArgv("mission", "start", mission), "starts the mission its contract describes"
+			return result
+		}
+	}
+	return intentResult{Targets: targets, Outcome: intentRefused, code: 1,
+		Summary: "no mission " + mission + " in this repository; nothing was read"}
 }
 
 // missionOwnerLaunch starts or resumes one mission through the runner in
 // this process (design 6.2); this process is the caller a closed fence's
 // reopening classifies.
 func (inv *intentInvocation) missionOwnerLaunch(mission, mode string) intentProcessResult {
-	caller, root := currentProcessIdentity(), inv.stateRoot
+	caller, root, wait := currentProcessIdentity(), inv.stateRoot, inv.input.switched("wait")
 	return ownerCall(func(stdout, stderr io.Writer) int {
-		return inv.ownerCalls().missionLaunch(caller, stdout, stderr, root, mission, mode)
+		return inv.ownerCalls().missionLaunch(caller, stdout, stderr, root, mission, mode, wait)
 	})
 }
 
@@ -1704,6 +1922,45 @@ func missionAlreadyRunning(ran intentProcessResult) (string, bool) {
 }
 
 // runIntentMissionNamed starts, resumes or reads the one named mission.
+// missionWaitFlag runs a started or resumed mission in this terminal until
+// it ends, instead of on its own.
+var missionWaitFlag = intentFlag{name: "wait", usage: "run the mission here until it ends instead of on its own"}
+
+// runIntentMissionSeal checks and seals one mission contract through the
+// contract owner in this process. A sealed contract is unchanged (R-129).
+func runIntentMissionSeal(inv *intentInvocation) int {
+	if len(inv.input.args) != 1 {
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "mission seal needs the mission: metasystem mission seal M; nothing was done"})
+	}
+	if problem := inv.selectLayoutRoot(); problem != nil {
+		return inv.render(*problem)
+	}
+	named := inv.input.args[0]
+	path := inv.callerPath(named)
+	if missionIDRe.MatchString(named) {
+		if _, err := os.Stat(path); err != nil {
+			path = filepath.Join(inv.layout.GitRoot, "plans", "mission-"+named+".contract.md")
+		}
+	}
+	targets := []intentTarget{{Kind: "contract", ID: path}}
+	digest, warnings, err := inv.ownerCalls().missionSeal(path)
+	switch {
+	case errors.Is(err, contract.ErrAlreadySealed):
+		return inv.render(intentResult{Targets: targets, Outcome: intentUnchanged, Summary: "the contract is already sealed; nothing changed: " + path})
+	case err != nil:
+		return inv.render(intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: "the contract was not sealed: " + err.Error() + "; nothing was changed",
+			nextReason: "fix the contract and run metasystem mission seal again; a contract that already carries an approval line is sealed before the line is added"})
+	}
+	lines := make([]string, 0, len(warnings)+1)
+	for _, warning := range warnings {
+		lines = append(lines, "warning: "+warning)
+	}
+	lines = append(lines, "sign it: add the line  Approval: name=NAME; date=YYYY-MM-DD; contract-sha256="+digest+"  and commit the contract")
+	return inv.render(intentResult{Targets: targets, Outcome: intentConfirmed, text: lines,
+		Summary: "mission contract sealed: " + path + " (contract-sha256=" + digest + ")",
+		Data:    map[string]any{"contract": path, "contractSha256": digest, "warnings": nonNilLines(warnings)}})
+}
+
 func runIntentMissionNamed(inv *intentInvocation, verb string) int {
 	if len(inv.input.args) != 1 {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("mission %s needs the mission: metasystem mission %s M; nothing was done", verb, verb)})
@@ -1844,7 +2101,15 @@ func runIntentSystemSetup(inv *intentInvocation) int {
 	if inv.owners.hookSwitch != nil {
 		deps = inv.owners.hookSwitch(deps)
 	}
-	report, err := hookswitch.Switch(installation, deps)
+	var options hookswitch.Options
+	if inv.input.has("runtimes") {
+		if strings.TrimSpace(inv.input.text("runtimes")) == "" {
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--runtimes names runtimes, or none; nothing was done"})
+		}
+		options.Runtimes = strings.Split(inv.input.text("runtimes"), ",")
+	}
+	options.CopySkills = inv.input.switched("copy-skills")
+	report, err := hookswitch.Setup(installation, options, deps)
 	targets := []intentTarget{{Kind: "checkout", ID: layout.GitRoot}}
 	if err != nil {
 		var refusal *hookswitch.RefusalError
@@ -1858,10 +2123,10 @@ func runIntentSystemSetup(inv *intentInvocation) int {
 	changed := map[string]bool{}
 	for _, path := range report.Changed {
 		changed[path] = true
-		lines = append(lines, "hooks switched to the engine: "+path)
+		lines = append(lines, "written: "+path)
 	}
 	if len(report.Runtimes) == 0 {
-		lines = append(lines, "no runtime hook settings are registered in this checkout; system adopt registers them")
+		lines = append(lines, "no agent runtime is registered in this checkout")
 	} else if len(report.Changed) == 0 {
 		lines = append(lines, "hooks already run the engine: "+strings.Join(report.Runtimes, ", "))
 	}
@@ -1875,10 +2140,16 @@ func runIntentSystemSetup(inv *intentInvocation) int {
 	default:
 		lines = append(lines, "pre-commit fence already runs the engine: "+report.FenceHook)
 	}
-	outcome, summary := intentConfirmed, "this checkout's hooks and commit fence run the engine"
+	switch report.MergeDriver {
+	case contractgit.DriverRegistered:
+		lines = append(lines, "the testing contract merges through the engine's merge driver")
+	case contractgit.DriverUnchanged:
+		lines = append(lines, "the testing contract's merge driver is already registered")
+	}
+	outcome, summary := intentConfirmed, "this checkout is set up: its runtimes, hooks, commit fence and testing-contract merges run the engine"
 	if report.Unchanged() {
-		outcome, summary = intentUnchanged, "this checkout's hooks and commit fence already run the engine; nothing was changed"
+		outcome, summary = intentUnchanged, "this checkout is already set up; nothing was changed"
 	}
 	return inv.render(intentResult{Outcome: outcome, Targets: targets, Summary: summary, text: lines,
-		Data: map[string]any{"engine": report.Engine, "runtimes": nonNilLines(report.Runtimes), "changed": nonNilLines(report.Changed), "fence": report.Fence, "fenceHook": report.FenceHook}})
+		Data: map[string]any{"engine": report.Engine, "runtimes": nonNilLines(report.Runtimes), "changed": nonNilLines(report.Changed), "fence": report.Fence, "fenceHook": report.FenceHook, "mergeDriver": report.MergeDriver}})
 }

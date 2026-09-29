@@ -48,7 +48,7 @@ func TestSkillFrontmatterRules(t *testing.T) {
 			}
 		})
 	}
-	if _, err := Skill(filepath.Join(t.TempDir(), "absent")); err == nil || !strings.Contains(err.Error(), "missing ") {
+	if _, err := skillAt(filepath.Join(t.TempDir(), "absent"), "absent"); err == nil || !strings.Contains(err.Error(), "missing ") {
 		t.Fatalf("absent skill: %v", err)
 	}
 }

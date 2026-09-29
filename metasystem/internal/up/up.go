@@ -361,7 +361,7 @@ type ProductionCommand struct {
 }
 
 // ProductionCommands is the command inventory. shasum is deliberately absent:
-// production hashing is `util sha256`.
+// production hashing is the engine's own Go.
 var ProductionCommands = []ProductionCommand{
 	{"git", "git"}, {"ps", "procps"}, {"pgrep", "procps"}, {"awk", "mawk or gawk"},
 	{"sed", "sed"}, {"grep", "grep"}, {"tar", "tar"}, {"date", "coreutils"},
@@ -837,7 +837,7 @@ func recovery(options Options) Result {
 	if err != nil {
 		result := enrollmentDrift(components, err, installationRoot(options), options.Root)
 		if errors.Is(err, steward.ErrEngineRebuilt) {
-			result.Remedy = "run metasystem session start from a session, which re-arms a rebuilt engine at its enrolled path; or run metasystem internal steward arm at an agent-free terminal"
+			result.Remedy = "run metasystem session start from a session, which re-arms a rebuilt engine at its enrolled path; or a person runs metasystem system start at an agent-free terminal"
 			result.Components[len(result.Components)-1].Remedy = result.Remedy
 		}
 		return result

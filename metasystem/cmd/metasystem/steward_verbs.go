@@ -7,12 +7,10 @@ package main
 // itself lands with the dispatch continuation mode.
 
 import (
-	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -24,7 +22,6 @@ import (
 	"syscall"
 	"time"
 
-	channelphase "github.com/widoriezebos/agentic-tools/metasystem/internal/channel/phase"
 	dispatchpkg "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hooks"
@@ -170,91 +167,6 @@ func completeHookAttempt(request hooks.HookCompletion, stderr io.Writer) int {
 	return 0
 }
 
-// runStewardTick is one scheduled observation: decide, persist the
-// aging, and print the decision as JSON for the tick script.
-func runStewardTick(args []string) int {
-	flags := flag.NewFlagSet("steward tick", flag.ContinueOnError)
-	repo := pathFlag(flags, "repo", "", "checkout root")
-	staleTicks := flags.Int("stale-ticks", 0, "live-idle noise threshold in ticks (default 5)")
-	maxRevivals := flags.Int("max-revivals", 0, "dry revivals before notify-only (default 3)")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if *repo == "" {
-		fmt.Fprintln(os.Stderr, "steward tick: --repo is required")
-		return 2
-	}
-	tickConfig, err := stewardFixtureTickConfig(*repo, "")
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "steward tick: fixture clock:", err)
-		return 2
-	}
-	tickConfig.StaleTicks, tickConfig.MaxRevivals = *staleTicks, *maxRevivals
-	tickConfig.BreachStop = delegateBreachStop(*repo)
-	result, err := steward.RunTick(*repo, tickConfig, stewardCensusFor(*repo))
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "steward tick: %v\n", err)
-		if _, deliverErr := steward.DeliverPending(*repo); deliverErr != nil {
-			fmt.Fprintf(os.Stderr, "steward tick: notifications pending: %v\n", deliverErr)
-		}
-		return 1
-	}
-	// The tick is a functional seam: an external ticker gets the runner's
-	// whole pass. Recovery precedes notification, so a condition the machinery
-	// heals never reaches the operator as an alert.
-	revived := false
-	resume := result.Decision.Action == steward.ActRevive
-	if !resume {
-		// A prepared intent that never launched resumes here too; the
-		// external-ticker seam must not strand what the resident runner
-		// would have completed.
-		if _, ok, resumeErr := steward.ResumableIntent(*repo); resumeErr == nil && ok {
-			resume = true
-		}
-	}
-	if resume {
-		if out, err := stewardReviveOwner(*repo); err != nil {
-			fmt.Fprintf(os.Stderr, "steward tick: revive: %v (%s)\n", err, strings.TrimSpace(string(out)))
-			// Durable, not just printed: a failed revival must reach
-			// the operator even when nobody reads this output.
-			if qErr := steward.QueueNotification(*repo, steward.PendingNotification{
-				Nonce:   "revive-failure",
-				Message: "steward: revival failed — " + strings.TrimSpace(string(out)),
-			}); qErr != nil {
-				fmt.Fprintf(os.Stderr, "steward tick: revive-failure incident could not queue: %v\n", qErr)
-			}
-		} else {
-			revived = strings.Contains(string(out), "launched=true")
-		}
-	}
-	delivered, deliverErr := steward.DeliverPending(*repo)
-	channelContext, cancelChannel := context.WithTimeout(context.Background(), 15*time.Second)
-	channelUndelivered, channelErr := channelphase.Run(channelContext, *repo)
-	cancelChannel()
-	if channelErr != nil {
-		fmt.Fprintf(os.Stderr, "steward tick: channel pending: %d undelivered: %v\n", channelUndelivered, channelErr)
-	}
-	report := map[string]any{
-		"verdict":            result.Decision.Verdict,
-		"action":             result.Decision.Action,
-		"reason":             result.Decision.Reason,
-		"openWork":           result.OpenWork,
-		"evidence":           result.Evidence,
-		"health":             result.Health,
-		"reaped":             result.Reaped,
-		"goalStops":          result.GoalStops,
-		"delivered":          delivered,
-		"channelUndelivered": channelUndelivered,
-		"revived":            revived,
-	}
-	if deliverErr != nil {
-		report["deliveryProblem"] = deliverErr.Error()
-	}
-	out, _ := json.MarshalIndent(report, "", "  ")
-	fmt.Println(string(out))
-	return 0
-}
-
 // stewardReviveOwner is one revival called in the caller's process (the
 // steward runner or tick), with its output returned as the former child's
 // combined output was.
@@ -366,12 +278,12 @@ func stewardRevive(repo string, stdout, stderr io.Writer) int {
 // runStewardRun is the runner's body — normally spawned by arm,
 // callable directly by any external ticker the operator provides.
 func runStewardRun(args []string) int {
-	flags := flag.NewFlagSet("steward run", flag.ContinueOnError)
+	flags := newFlagSet("steward run")
 	repo := pathFlag(flags, "repo", "", "checkout root")
 	// The arming caller's handoff. The runner keeps the value in memory and
 	// reports it on this machine's presence record; nothing persists it.
 	lineage := flags.String("lineage", "", "the session lineage this runner was armed under (\"no-lease\" when there was none)")
-	if flags.Parse(args) != nil {
+	if flags.Parse(args) != nil || !requireFlags(flags, nil, "repo") {
 		return 2
 	}
 	if *repo == "" {
@@ -414,11 +326,11 @@ func runStewardRun(args []string) int {
 }
 
 func runStewardArm(args []string) int {
-	flags := flag.NewFlagSet("steward arm", flag.ContinueOnError)
+	flags := newFlagSet("steward arm")
 	repo := pathFlag(flags, "repo", "", "checkout root")
 	temporaryWord := flags.String("temporary-human-word", "", "verbatim remote human authorization; enrolls TEMPORARILY with the word recorded on the identity until a terminal re-arm")
 	reviewBy := flags.String("review-by", "", "the human's own re-approval date (required with --temporary-human-word)")
-	if flags.Parse(args) != nil {
+	if flags.Parse(args) != nil || !requireFlags(flags, nil, "repo") {
 		return 2
 	}
 	if *repo == "" {
@@ -567,7 +479,7 @@ func printStewardStopped(checkout string, record stopfence.Record) {
 // live intents, and pending notifications — the second visibility
 // channel the design pins.
 func runStewardStatus(args []string) int {
-	flags := flag.NewFlagSet("steward status", flag.ContinueOnError)
+	flags := newFlagSet("steward status")
 	repo := pathFlag(flags, "repo", "", "checkout root")
 	if flags.Parse(args) != nil {
 		return 2

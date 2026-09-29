@@ -594,7 +594,7 @@ func TestGoalCLIBrainStatusLine(t *testing.T) {
 		var stdout, stderr strings.Builder
 		machine := func(string) (string, error) { return "mac-cli", nil }
 		landing := func(string, time.Time) ([]byte, error) { return []byte{}, nil }
-		if code := runChannelStatusTo([]string{"--root", bed.root()}, &stdout, &stderr, machine, bed.dependencies().endpoint, landing); code != 0 {
+		if code := channelStatus(bed.root(), false, &stdout, &stderr, machine, bed.dependencies().endpoint, landing); code != 0 {
 			t.Fatalf("channel status exited %d: %s", code, stderr.String())
 		}
 		return stdout.String()

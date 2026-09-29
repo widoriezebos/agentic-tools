@@ -15,6 +15,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	critiqueModel "github.com/widoriezebos/agentic-tools/metasystem/internal/critique"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/protocol"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
 )
@@ -260,6 +261,10 @@ func (a capAuthority) resolutionField() map[string]any {
 		"origin":       a.source["origin"],
 		"truncatedBy":  a.source["truncatedBy"],
 		"deadline":     a.deadline,
+		// The signed setting the cap answers to, which a budget-cap
+		// timeout names in its fence ask (mission.BudgetCapReason).
+		"key":       a.source["key"],
+		"signedMin": a.source["signedMin"],
 	}
 }
 
@@ -267,6 +272,9 @@ func (a capAuthority) resolutionField() map[string]any {
 // from. File-valued fields are read here so the record shape and its inputs
 // stay in one place.
 type BuildRecordParams struct {
+	// LookupEnv is the invocation's configuration environment; nil is the
+	// process environment.
+	LookupEnv         func(string) (string, bool)
 	Output            string
 	Job               string
 	Role              string
@@ -546,7 +554,7 @@ func buildRecordWithReads(p BuildRecordParams, facts buildWorkspaceFacts, reads 
 	if err != nil {
 		return err
 	}
-	if err := ValidateRuntimeHazardConfiguration(p.Root, p.Runtime, p.Model, p.DestructiveReach); err != nil {
+	if err := ValidateRuntimeHazardConfigurationWith(p.LookupEnv, p.Root, p.Runtime, p.Model, p.DestructiveReach); err != nil {
 		return err
 	}
 	if p.ReasoningEffort != configuration.BuilderReasoningEffort {
@@ -710,6 +718,9 @@ func buildRecordWithReads(p BuildRecordParams, facts buildWorkspaceFacts, reads 
 
 // BuildFollowRecordParams carries the inputs for a follow-up round record.
 type BuildFollowRecordParams struct {
+	// LookupEnv is the invocation's configuration environment; nil is the
+	// process environment.
+	LookupEnv       func(string) (string, bool)
 	Output          string
 	Parent          string // parent (latest) record file
 	Job             string
@@ -907,7 +918,7 @@ func BuildFollowRecord(p BuildFollowRecordParams) error {
 	if err != nil {
 		return err
 	}
-	if err := ValidateRuntimeHazardConfiguration(p.Root, runtimeName, model, p.DestructiveReach); err != nil {
+	if err := ValidateRuntimeHazardConfigurationWith(p.LookupEnv, p.Root, runtimeName, model, p.DestructiveReach); err != nil {
 		return err
 	}
 	capMinutes, ok := numInt(authority.capMin)
@@ -1056,7 +1067,7 @@ func readCompositionForJob(path, job, role, runtimeName, model, mission string, 
 	if expectedErr != nil || !configurationOK || !configurationObligationsMatchObject(expectedConfiguration, configuration) {
 		return nil, fmt.Errorf("composition record does not carry the hazard configuration obligations")
 	}
-	if asString(record["recipe"]) != rolePacketTablePath+"#"+role || !incarnationRe.MatchString(asString(record["recipeDigest"])) ||
+	if asString(record["recipe"]) != protocol.RolePacketRecipe(role) || !incarnationRe.MatchString(asString(record["recipeDigest"])) ||
 		!incarnationRe.MatchString(packetDigest) || packetBytes <= 0 {
 		return nil, fmt.Errorf("composition record has invalid recipe or packet provenance")
 	}
@@ -1201,7 +1212,7 @@ func productRootsEmpty(value any) bool {
 
 // ImpactedTestsRule is the test set a builder runs before it returns: the
 // tests its change impacts, never whole packages. Whole packages run once,
-// at the orchestrator's proof. scripts/agents/templates/brief.md carries the
+// at the orchestrator's proof. The engine's brief.md template carries the
 // same sentence.
 const ImpactedTestsRule = "Before you return, run the tests your change impacts, never whole packages: every test you added or changed; in each package you changed, every test whose file references a function, type, constant, verb, flag or file you changed; in each package that imports a changed package, every test whose file references a changed exported symbol; each by -run name, plain and with every build tag its package's tests use, and -count=3 only for new tests that start processes, goroutines or fixtures. Run gofmt, `go build ./...`, `go vet ./...` and `go run ./cmd/devgate static` (from `metasystem/`) as well. Whole packages run once, at the orchestrator's proof; a red there comes back to you as a follow-up."
 

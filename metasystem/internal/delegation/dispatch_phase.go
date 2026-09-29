@@ -10,6 +10,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/protocol"
 )
 
 var commitReviewPattern = regexp.MustCompile(`^commit:[0-9a-f]{40}$`)
@@ -146,8 +147,7 @@ func (s *session) dispatchJob(args []string) error {
 	if a.goal != "" && !validID(a.goal) {
 		return s.die(2, "invalid goal id: "+a.goal)
 	}
-	rolesDir := filepath.Join(s.root, "scripts", "agents", "roles")
-	if !isFile(filepath.Join(rolesDir, a.role+".md")) || !isFile(filepath.Join(rolesDir, a.role+".requirements.json")) {
+	if !protocol.Dispatchable(a.role) {
 		return s.die(1, "unknown dispatch role: "+a.role)
 	}
 	if err := s.requireOpenDispatchFence(); err != nil {
@@ -242,7 +242,7 @@ func (s *session) dispatchJob(args []string) error {
 	// keeps only the approval ladder below.
 	roster, rosterErr := dispatch.ResolveRoster(dispatch.RosterParams{
 		ConfPath: filepath.Join(s.root, "metasystem.conf"), Role: a.role, Mode: mode,
-		RuntimeOverride: a.runtimeOverride, ModelOverride: a.modelOverride,
+		RuntimeOverride: a.runtimeOverride, ModelOverride: a.modelOverride, LookupEnv: s.configLookup(),
 	})
 	if rosterErr != nil {
 		s.eprintln(rosterErr.Error())
@@ -316,7 +316,7 @@ func (s *session) dispatchJob(args []string) error {
 		if a.permissionsOverride != "" {
 			return s.die(2, "the warden role dispatches with the zero-write preset; --permissions cannot change it")
 		}
-		permissionName = filepath.Join(s.root, "scripts", "agents", "permissions", "critic.json")
+		permissionName = wardenPermissions
 	}
 	if !a.useWorktree && !a.workspaceSelected && s.permissionEnvelopeRequestsWrites(permissionName) {
 		a.useWorktree = true
@@ -650,7 +650,7 @@ func (s *session) dispatchJob(args []string) error {
 		return exitWith(1)
 	}
 	params := dispatch.BuildRecordParams{
-		Output: recordJSON, Job: job, Role: a.role, Mission: missionID, MissionTurn: missionTurn, Stream: a.stream,
+		LookupEnv: s.configLookup(), Output: recordJSON, Job: job, Role: a.role, Mission: missionID, MissionTurn: missionTurn, Stream: a.stream,
 		Root: s.root, Runtime: runtime, Workspace: workspace, CapResolution: capResolution, Model: model,
 		AliasedFrom: aliasedFrom, RosterAliasedFrom: rosterAliasedFrom, Overridden: roster.Overridden,
 		Snapshot: snapshot.path, InputBytes: inputBytes, InputHash: inputHash, Permissions: permissionJSON,

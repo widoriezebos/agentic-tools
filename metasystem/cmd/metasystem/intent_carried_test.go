@@ -360,16 +360,16 @@ func publishCarriedLandScripts(t *testing.T, f *wholeOwnerLanding) (string, proo
 	goalSyncMutationGit(t, f.mainRoot, "update-ref", goal.AcceptedRef, accepted)
 	// The landing path reads the installation's path classes and landing
 	// classes; the transaction itself is the engine's Go landing path.
-	for _, name := range []string{"path-classes.txt", "landing-classes.json"} {
-		data, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", name))
+	for _, name := range []string{"internal/pathclass/path-classes.txt", "internal/landing/landing-classes.json"} {
+		data, err := os.ReadFile(filepath.Join("..", "..", filepath.FromSlash(name)))
 		if err != nil {
 			t.Fatal(err)
 		}
-		if name == "path-classes.txt" {
+		if name == "internal/pathclass/path-classes.txt" {
 			// The goal's product file is classed as a behavior payload.
 			data = append(data, []byte("install:owned.go behavior\n")...)
 		}
-		writeTestingFixtureFile(t, filepath.Join(clone, filepath.FromSlash(prefix), "scripts", "agents", name), data, 0o644)
+		writeTestingFixtureFile(t, filepath.Join(clone, filepath.FromSlash(prefix), filepath.FromSlash(name)), data, 0o644)
 	}
 	// The commit owner's proof engine is the bed's built engine, copied by
 	// the bed's go-build.sh: this bed proves the carried transport, not the
@@ -653,9 +653,9 @@ func (b *carriedDeliveryBed) answerCarry(workspace, ulid string) string {
 func (b *carriedDeliveryBed) raiseFormatThroughAnExpiredExercise() {
 	b.t.Helper()
 	tree := goalSyncMutationGit(b.t, b.f.mainRoot, "rev-parse", "refs/remotes/origin/main^{tree}")
-	carry := exec.Command(b.engine, "goal", "carry", "--root", b.f.mainRoot, "--id", "standing-validation", "--by", "Wido", "--tree", tree,
+	carry := exec.Command(commandTestExecutable(b.t), goalCarryHelperCommand, "--root", b.f.mainRoot, "--id", "standing-validation", "--by", "Wido", "--tree", tree,
 		"--past", "missing-declaration", "--why", "an earlier exception", "--expires", "1h", "--raise-format", "--fixture-human-authority", "--lineage", "m1")
-	carry.Env = append(os.Environ(), "METASYSTEM_GOAL_NOW="+time.Now().UTC().Add(-2*time.Hour).Format(time.RFC3339))
+	carry.Env = fixtureCommandEnvironment(b.t, "METASYSTEM_GOAL_NOW="+time.Now().UTC().Add(-2*time.Hour).Format(time.RFC3339))
 	if output, err := carry.CombinedOutput(); err != nil {
 		b.t.Fatalf("raise the ledger format through an earlier exception: %v\n%s", err, output)
 	}

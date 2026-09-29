@@ -143,22 +143,3 @@ func TestDeleteUnknownOutcomeNotCompleted(t *testing.T) {
 		t.Fatalf("incomplete unknown delete = %v, remote = %q", err, transport.tips[ref])
 	}
 }
-
-func TestDeleteLandingRemovesOrphanRef(t *testing.T) {
-	t.Parallel()
-	repo := t.TempDir()
-	const ref = "refs/heads/landing/goal-a"
-	const tip = "5555555555555555555555555555555555555555"
-	transport := newDeleteTransport(t, ref, tip,
-		deleteTransportCall{method: "RemoteTip", repo: repo, remote: "origin", ref: ref, readTip: tip, present: true},
-		deleteTransportCall{method: "Push", repo: repo, remote: "origin", ref: ref, expected: tip, newTip: "", beforeTip: tip,
-			outcome: branch.CASLanded, apply: true, effectTip: ""},
-	)
-	if err := branch.DeleteLanding(branch.DeleteLandingRequest{Repo: repo, Remote: "origin", GoalID: "goal-a",
-		CheckClaim: claimAllowed, PushTransport: transport}); err != nil {
-		t.Fatal(err)
-	}
-	if refs := transport.tips[ref]; refs != "" {
-		t.Fatalf("orphan landing survived: %s", refs)
-	}
-}

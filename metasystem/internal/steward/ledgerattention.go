@@ -663,7 +663,7 @@ func checkLedgerAttention(repoRoot string, now time.Time) RoleVerdict {
 	// A coordinator-turn timestamp is intentionally not a remedy: the
 	// human-reserved accepted-ref repair can rewind after remoteTip was held,
 	// so hook timing cannot prove that the turn examined this stored tip.
-	remedy := "run a journaling goal verb that examines the canonical tip; 'metasystem internal goal fetch' does not examine"
+	remedy := "run a journaling goal verb that examines the canonical tip; 'metasystem goal list --fetch' reads without examining"
 	if err != nil {
 		return roleUnknown(RoleLedgerAttention, "the ledger-attention state is unreadable: "+err.Error(), remedy)
 	}

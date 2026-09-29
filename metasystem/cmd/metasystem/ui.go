@@ -4,7 +4,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"io/fs"
 	"net"
 	"net/http"
@@ -15,6 +14,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
@@ -44,7 +45,7 @@ import (
 )
 
 func runUIServe(args []string) int {
-	flags := flag.NewFlagSet("ui serve", flag.ContinueOnError)
+	flags := newFlagSet("ui serve")
 	repo := pathFlag(flags, "repo", "", "checkout path (default: the checkout that contains the installation)")
 	root := flags.String("metasystem-root", "", "metasystem installation")
 	listen := flags.String("listen", "", "loopback IP and port")

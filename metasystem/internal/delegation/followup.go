@@ -632,7 +632,7 @@ func (s *session) followUp(args []string) error {
 		return err
 	}
 	params := dispatch.BuildFollowRecordParams{
-		Output: recordJSON, Parent: latest, Job: child, OperationID: operationID, Round: round,
+		LookupEnv: s.configLookup(), Output: recordJSON, Parent: latest, Job: child, OperationID: operationID, Round: round,
 		ParentJob: operationParent, Model: model, AliasedFrom: aliasedFrom, Snapshot: snapshot.path,
 		Fallbacks: snapshot.fallbacks, ResumeMode: resumeMode, Continuation: continuation,
 		InputBytes: inputBytes, InputHash: inputHash, MissionTurn: missionTurn, MainID: s.inv.MainID,

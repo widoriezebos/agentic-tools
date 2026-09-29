@@ -20,11 +20,11 @@ type hostCollectFixture struct {
 func newHostCollectFixture(t *testing.T) *hostCollectFixture {
 	t.Helper()
 	f := &hostCollectFixture{root: t.TempDir()}
-	schemaDir := filepath.Join(f.root, "scripts", "agents", "schemas")
+	schemaDir := filepath.Join(f.root, "internal", "protocol", "schemas")
 	if err := os.MkdirAll(schemaDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	shipped, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", "schemas", "orchestrator.schema.json"))
+	shipped, err := os.ReadFile(filepath.Join("..", "..", "internal", "protocol", "schemas", "orchestrator.schema.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

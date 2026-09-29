@@ -82,38 +82,85 @@ func resolveRepo(root string) string {
 	return root
 }
 
-var markdownFence = regexp.MustCompile("^```(?:[^`].*)?$")
-
-// planField returns the value of a mandated "- <label>:" line outside fenced examples, if present.
-func planField(text, label string) (string, bool) {
-	re := regexp.MustCompile(`^-\s*` + regexp.QuoteMeta(label) + `\s*:\s*(.*)$`)
-	lines := strings.Split(text, "\n")
-	fenceCount := 0
-	for _, line := range lines {
-		if markdownFence.MatchString(strings.TrimSuffix(line, "\r")) {
-			fenceCount++
-		}
-	}
-	pairedFenceCount := fenceCount - fenceCount%2
-	seenFences := 0
-	inFence := false
-	for _, line := range lines {
-		line = strings.TrimSuffix(line, "\r")
-		if markdownFence.MatchString(line) {
-			seenFences++
-			if seenFences <= pairedFenceCount {
-				inFence = !inFence
+// planFenceLines marks which lines of a plan are fenced code under the
+// CommonMark rule (OSR-08/09/10): a fence opens at a line of three or more
+// backticks or tildes indented at most three spaces (a backtick fence's info
+// string may not hold a backtick), closes only at a line of the same
+// character at least as long with nothing after it but spaces, and an
+// unclosed fence runs to the end of the file. Fence lines themselves are
+// marked. unclosedLine is the 1-based line of a fence that never closes, or 0.
+func planFenceLines(lines []string) (fenced []bool, unclosedLine int) {
+	fenced = make([]bool, len(lines))
+	var open rune
+	openLength, openedAt := 0, 0
+	for index, raw := range lines {
+		line := strings.TrimSuffix(raw, "\r")
+		char, length, rest, isFence := markdownFenceLine(line)
+		if open == 0 {
+			if isFence && !(char == '`' && strings.ContainsRune(rest, '`')) {
+				open, openLength, openedAt = char, length, index+1
+				fenced[index] = true
 			}
 			continue
 		}
-		if inFence {
+		fenced[index] = true
+		if isFence && char == open && length >= openLength && strings.Trim(rest, " \t") == "" {
+			open = 0
+		}
+	}
+	if open != 0 {
+		return fenced, openedAt
+	}
+	return fenced, 0
+}
+
+// markdownFenceLine reads a fence run: up to three spaces of indent, then
+// three or more of one fence character. rest is what follows the run.
+func markdownFenceLine(line string) (char rune, length int, rest string, ok bool) {
+	indent := 0
+	for indent < len(line) && line[indent] == ' ' {
+		indent++
+	}
+	if indent > 3 || indent == len(line) || (line[indent] != '`' && line[indent] != '~') {
+		return 0, 0, "", false
+	}
+	char = rune(line[indent])
+	end := indent
+	for end < len(line) && rune(line[end]) == char {
+		end++
+	}
+	if end-indent < 3 {
+		return 0, 0, "", false
+	}
+	return char, end - indent, line[end:], true
+}
+
+// planField returns the value of a mandated "- <label>:" line outside fenced
+// code, if present.
+func planField(text, label string) (string, bool) {
+	re := regexp.MustCompile(`^-\s*` + regexp.QuoteMeta(label) + `\s*:\s*(.*)$`)
+	lines := strings.Split(text, "\n")
+	fenced, _ := planFenceLines(lines)
+	for index, line := range lines {
+		if fenced[index] {
 			continue
 		}
-		if match := re.FindStringSubmatch(line); match != nil {
+		if match := re.FindStringSubmatch(strings.TrimSuffix(line, "\r")); match != nil {
 			return strings.TrimSpace(match[1]), true
 		}
 	}
 	return "", false
+}
+
+// unclosedPlanFence is the diagnostics line for a plan whose code fence never
+// closes, so every field after it reads as fenced text; empty when every
+// fence closes.
+func unclosedPlanFence(name, text string) string {
+	_, line := planFenceLines(strings.Split(text, "\n"))
+	if line == 0 {
+		return ""
+	}
+	return fmt.Sprintf("PLAN-FENCE-UNCLOSED %s: the code fence opened at line %d never closes, so every field after it reads as fenced text; close it", name, line)
 }
 
 func readJobRecords(root string) []map[string]any {
@@ -436,6 +483,9 @@ func openWorkWithReads(root string, reads scanGoalReads) []string {
 		text, err := os.ReadFile(plan)
 		if err != nil {
 			continue
+		}
+		if unclosed := unclosedPlanFence(relName(root, plan), string(text)); unclosed != "" {
+			lines = append(lines, unclosed)
 		}
 		step, ok := planField(string(text), "Next step")
 		if !ok || step == "" || settledStep.MatchString(step) {

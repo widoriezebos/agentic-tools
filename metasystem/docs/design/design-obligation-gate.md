@@ -77,8 +77,8 @@ Allowed status:
 Run:
 
 ```bash
-bin/metasystem internal validate design-obligations --file plans/<plan>.md
-bin/metasystem internal validate design-obligations --runtime-required --file plans/<plan>.md
+metasystem design check plans/<plan>.md
+metasystem design check plans/<plan>.md --complete
 ```
 
-The matrix is semantic work; the script checks structure and declared state. A passing script does not prove that a named owner or test is truthful.
+The matrix is semantic work; the check reads structure and declared state. A passing check does not prove that a named owner or test is truthful.

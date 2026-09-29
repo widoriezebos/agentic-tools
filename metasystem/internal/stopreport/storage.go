@@ -101,9 +101,32 @@ func reportDir(root string, create bool) (string, error) {
 		}
 	}
 	if _, err := resolveInstallationDirectory(root, dir); err != nil {
+		if os.IsNotExist(err) {
+			return "", fmt.Errorf("no Stop report has been recorded in this installation yet (%s does not exist); nothing was read", dir)
+		}
+		if link := symlinkBelow(root, dir); link != "" {
+			return "", fmt.Errorf("the Stop report directory %s passes through a symlink at %s, which is refused", dir, link)
+		}
 		return "", fmt.Errorf("stop report directory must not contain symlinks")
 	}
 	return dir, nil
+}
+
+// symlinkBelow is the first path component under root, on the way to dir,
+// that is a symbolic link; "" when there is none.
+func symlinkBelow(root, dir string) string {
+	relative, err := filepath.Rel(root, dir)
+	if err != nil {
+		return ""
+	}
+	path := root
+	for _, part := range strings.Split(relative, string(filepath.Separator)) {
+		path = filepath.Join(path, part)
+		if info, err := os.Lstat(path); err == nil && info.Mode()&os.ModeSymlink != 0 {
+			return path
+		}
+	}
+	return ""
 }
 
 // ReserveShortestAlias permanently occupies the shortest free prefix of the
@@ -204,10 +227,16 @@ func Resolve(root, id string) (Resolution, error) {
 	}
 	aliasDir := filepath.Join(dir, "aliases")
 	if _, err := resolveInstallationDirectory(root, aliasDir); err != nil {
+		if os.IsNotExist(err) {
+			return Resolution{}, fmt.Errorf("no Stop report %s is recorded in this installation; nothing was read", id)
+		}
 		return Resolution{}, fmt.Errorf("stop report alias directory is unavailable or contains symlinks")
 	}
 	path := filepath.Join(aliasDir, id+".json")
 	info, err := os.Lstat(path)
+	if os.IsNotExist(err) {
+		return Resolution{}, fmt.Errorf("no Stop report %s is recorded in this installation; nothing was read", id)
+	}
 	if err != nil {
 		return Resolution{}, fmt.Errorf("read Stop report alias %s: %w", id, err)
 	}

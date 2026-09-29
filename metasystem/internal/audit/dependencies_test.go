@@ -94,14 +94,14 @@ func TestShellCommandWordsFindsCommandsNestedInArithmetic(t *testing.T) {
 
 func TestAuditDependenciesReportsEveryForbiddenCommandIncludingPython(t *testing.T) {
 	root := t.TempDir()
-	writeDependencyTestFile(t, filepath.Join(root, "scripts", "agents", "bad.sh"), strings.Join([]string{
+	writeDependencyTestFile(t, filepath.Join(root, "skills", "fixture", "bad.sh"), strings.Join([]string{
 		"#!/usr/bin/env bash",
 		"node -v",
 		"printf '%s' okay; perl -e 1",
 		"python3 -c pass",
 	}, "\n"))
-	writeDependencyTestFile(t, filepath.Join(root, "scripts", "agents", "safe.sh"), "echo 'node is prose'; printf '%s' node\n")
-	writeDependencyTestFile(t, filepath.Join(root, "scripts", "agents", "channel-fixtures.sh"), "python3 -c pass\n")
+	writeDependencyTestFile(t, filepath.Join(root, "skills", "fixture", "safe.sh"), "echo 'node is prose'; printf '%s' node\n")
+	writeDependencyTestFile(t, filepath.Join(root, "skills", "fixture", "channel-fixtures.sh"), "python3 -c pass\n")
 
 	findings, err := AuditDependencies(root)
 	if err != nil {
@@ -114,10 +114,10 @@ func TestAuditDependenciesReportsEveryForbiddenCommandIncludingPython(t *testing
 	}
 	got := []string{findings[0].String(), findings[1].String(), findings[2].String(), findings[3].String()}
 	for index, want := range []string{
-		"banned interpreter node: scripts/agents/bad.sh:2",
-		"banned interpreter perl: scripts/agents/bad.sh:3",
-		"banned interpreter python3: scripts/agents/bad.sh:4",
-		"banned interpreter python3: scripts/agents/channel-fixtures.sh:1",
+		"banned interpreter node: skills/fixture/bad.sh:2",
+		"banned interpreter perl: skills/fixture/bad.sh:3",
+		"banned interpreter python3: skills/fixture/bad.sh:4",
+		"banned interpreter python3: skills/fixture/channel-fixtures.sh:1",
 	} {
 		if got[index] != want {
 			t.Fatalf("finding %d = %q, want %q", index, got[index], want)
@@ -147,14 +147,14 @@ func TestAuditDependenciesPreservesLogicalContextAndPhysicalLines(t *testing.T) 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			root := t.TempDir()
-			writeDependencyTestFile(t, filepath.Join(root, "scripts", "context.sh"), test.source)
+			writeDependencyTestFile(t, filepath.Join(root, "optional-skills", "context.sh"), test.source)
 			findings, err := AuditDependencies(root)
 			if err != nil {
 				t.Fatal(err)
 			}
 			var gotLines []int
 			for _, finding := range findings {
-				if finding.Interpreter != "node" || finding.Path != "scripts/context.sh" {
+				if finding.Interpreter != "node" || finding.Path != "optional-skills/context.sh" {
 					t.Errorf("unexpected finding: %#v", finding)
 				}
 				gotLines = append(gotLines, finding.Line)
@@ -166,12 +166,16 @@ func TestAuditDependenciesPreservesLogicalContextAndPhysicalLines(t *testing.T) 
 	}
 }
 
-func TestAuditDependenciesRejectsMissingOrNonDirectoryScriptsRoot(t *testing.T) {
+func TestAuditDependenciesSkipsAbsentAndRejectsNonDirectoryShellRoots(t *testing.T) {
 	root := t.TempDir()
-	if _, err := AuditDependencies(root); err == nil || !strings.Contains(err.Error(), "scripts root unreadable") {
-		t.Fatalf("missing scripts root error = %v", err)
+	if findings, err := AuditDependencies(root); err != nil || len(findings) != 0 {
+		t.Fatalf("absent shell roots = %v, %v; want no findings", findings, err)
 	}
-	writeDependencyTestFile(t, filepath.Join(root, "scripts"), "not a directory")
+	writeDependencyTestFile(t, filepath.Join(root, "scripts", "agents", "bad.sh"), "node -v\n")
+	if findings, err := AuditDependencies(root); err != nil || len(findings) != 0 {
+		t.Fatalf("a scripts tree is not a shipped shell root: %v, %v", findings, err)
+	}
+	writeDependencyTestFile(t, filepath.Join(root, "skills"), "not a directory")
 	if _, err := AuditDependencies(root); err == nil || !strings.Contains(err.Error(), "not a directory") {
 		t.Fatalf("file scripts root error = %v", err)
 	}
@@ -179,10 +183,10 @@ func TestAuditDependenciesRejectsMissingOrNonDirectoryScriptsRoot(t *testing.T) 
 
 func TestAuditDependenciesReportsScanFailures(t *testing.T) {
 	brokenRoot := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(brokenRoot, "scripts"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(brokenRoot, "skills"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(filepath.Join(brokenRoot, "missing"), filepath.Join(brokenRoot, "scripts", "broken.sh")); err != nil {
+	if err := os.Symlink(filepath.Join(brokenRoot, "missing"), filepath.Join(brokenRoot, "skills", "broken.sh")); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := AuditDependencies(brokenRoot); err == nil || !strings.Contains(err.Error(), "scan failed") {
@@ -192,8 +196,8 @@ func TestAuditDependenciesReportsScanFailures(t *testing.T) {
 
 func TestAuditDependenciesSortsAcrossPathsLinesAndInterpreters(t *testing.T) {
 	root := t.TempDir()
-	writeDependencyTestFile(t, filepath.Join(root, "scripts", "z.sh"), "ruby -v; node -v\n")
-	writeDependencyTestFile(t, filepath.Join(root, "scripts", "a.sh"), "\nphp -v\n")
+	writeDependencyTestFile(t, filepath.Join(root, "skills", "z.sh"), "ruby -v; node -v\n")
+	writeDependencyTestFile(t, filepath.Join(root, "optional-skills", "a.sh"), "\nphp -v\n")
 	findings, err := AuditDependencies(root)
 	if err != nil {
 		t.Fatal(err)
@@ -203,9 +207,9 @@ func TestAuditDependenciesSortsAcrossPathsLinesAndInterpreters(t *testing.T) {
 		got = append(got, finding.String())
 	}
 	want := []string{
-		"banned interpreter php: scripts/a.sh:2",
-		"banned interpreter node: scripts/z.sh:1",
-		"banned interpreter ruby: scripts/z.sh:1",
+		"banned interpreter php: optional-skills/a.sh:2",
+		"banned interpreter node: skills/z.sh:1",
+		"banned interpreter ruby: skills/z.sh:1",
 	}
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("sorted findings = %q, want %q", got, want)

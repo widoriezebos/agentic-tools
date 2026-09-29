@@ -544,7 +544,7 @@ func TestGoalApproveSweepWithIDsDropsSweepAndConfirmFromItsRemedy(t *testing.T) 
 		}, fixedFixtureGoalAuthority)
 	})
 	lines := strings.Split(strings.TrimSpace(stderr), "\n")
-	if code != 2 || len(lines) != 2 || !strings.Contains(lines[1], "run: metasystem internal goal approve") || !strings.Contains(lines[1], "--id standing-validation") ||
+	if code != 2 || len(lines) != 2 || !strings.Contains(lines[1], "run: metasystem goal approve") || !strings.Contains(lines[1], "--id standing-validation") ||
 		strings.Contains(lines[1], "--sweep") || strings.Contains(lines[1], "--confirm") {
 		t.Fatalf("the direct-ID approval remedy retained sweep-only flags: code=%d stderr=%q", code, stderr)
 	}
@@ -1466,8 +1466,8 @@ func TestHCL80TrailingWhitespaceWhyIsAdmitted(t *testing.T) {
 		t.Fatalf("projected accepted goal does not match accepted tip %s", fixture.repo.accepted)
 	}
 	policyFiles := map[string][]byte{"memory/rulings.md": []byte("| R-35-m0 | landing class authority |\n| R-54-m1 | tier-1 landing authority |\n")}
-	for _, name := range []string{"path-classes.txt", "landing-classes.json"} {
-		policyFiles["scripts/agents/"+name], err = os.ReadFile(filepath.Join("..", "..", "scripts", "agents", name))
+	for _, name := range []string{"internal/pathclass/path-classes.txt", "internal/landing/landing-classes.json"} {
+		policyFiles[name], err = os.ReadFile(filepath.Join("..", "..", filepath.FromSlash(name)))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1475,9 +1475,9 @@ func TestHCL80TrailingWhitespaceWhyIsAdmitted(t *testing.T) {
 	const riskPath = "records/counselor/accepted-risk-register.jsonl"
 	baseTree, candidateTree := strings.Repeat("7", 40), strings.Repeat("8", 40)
 	pathOID := map[string]string{
-		"scripts/agents/landing-classes.json": strings.Repeat("1", 40),
-		"scripts/agents/path-classes.txt":     strings.Repeat("2", 40),
-		"memory/rulings.md":                   strings.Repeat("3", 40),
+		"internal/landing/landing-classes.json": strings.Repeat("1", 40),
+		"internal/pathclass/path-classes.txt":   strings.Repeat("2", 40),
+		"memory/rulings.md":                     strings.Repeat("3", 40),
 	}
 	blobs := map[string][]byte{}
 	for path, data := range policyFiles {
@@ -1553,7 +1553,7 @@ func TestHCL80TrailingWhitespaceWhyIsAdmitted(t *testing.T) {
 	}
 	delete(calls, prefixKey)
 	wantCalls := [][]string{{"rev-parse", "HEAD^{tree}"}, {"diff", "--name-only", "-z", "--no-renames", "--no-ext-diff", "--no-textconv", "--ignore-submodules=none", baseTree, candidateTree, "--"}}
-	for _, path := range []string{"scripts/agents/landing-classes.json", "memory/rulings.md", "scripts/agents/path-classes.txt", riskPath} {
+	for _, path := range []string{"internal/landing/landing-classes.json", "memory/rulings.md", "internal/pathclass/path-classes.txt", riskPath} {
 		wantCalls = append(wantCalls, []string{"--literal-pathspecs", "ls-tree", "-r", "-z", "--full-tree", baseTree, "--", path})
 		if oid := pathOID[path]; oid != "" {
 			wantCalls = append(wantCalls, []string{"cat-file", "blob", oid})
@@ -1779,7 +1779,7 @@ func TestGoalMigrateStillRefusesTemporaryHumanWord(t *testing.T) {
 	stderr, code := captureStderr(t, func() int {
 		return runGoalMigrate([]string{"--temporary-human-word", "Wido authorizes this migration"})
 	})
-	if code != 2 || !strings.Contains(stderr, "flag provided but not defined: -temporary-human-word") {
+	if code != 2 || !strings.Contains(stderr, "does not take --temporary-human-word") {
 		t.Fatalf("goal migrate unexpectedly accepted the relay flag: code=%d stderr=%q", code, stderr)
 	}
 }
@@ -1790,7 +1790,7 @@ func TestGoalSetObligationWithoutTemporaryWordStillProvesAncestry(t *testing.T) 
 	stderr, code := captureStderr(t, func() int {
 		return runGoalSetObligationWithAuthorityFacts(completeSetObligationArgs(root), humanauthority.ProveOrTemporaryGoalAuthority, facts)
 	})
-	if code != 1 || !strings.Contains(stderr, "could not prove enrolled human ancestry") {
+	if code != 1 || !strings.Contains(stderr, "only a person at the enrolled terminal may run this") {
 		t.Fatalf("ordinary set-obligation no longer failed closed on missing ancestry: code=%d stderr=%q", code, stderr)
 	}
 }
@@ -1804,7 +1804,7 @@ func TestGoalSetObligationAnnouncesTemporaryAuthority(t *testing.T) {
 		!strings.Contains(stdout, "re-approval due 2026-09-06 at an agent-free terminal") {
 		t.Fatalf("temporary set-obligation did not announce its status: code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
-	if strings.Contains(stderr, "could not prove enrolled human ancestry") {
+	if strings.Contains(stderr, "only a person at the enrolled terminal may run this") {
 		t.Fatalf("temporary set-obligation still attempted enrolled ancestry: %q", stderr)
 	}
 	fixture.expectTransactions(1, 0)

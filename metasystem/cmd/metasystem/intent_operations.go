@@ -62,6 +62,8 @@ func ownerVerbResult(ran intentProcessResult, targets []intentTarget, done strin
 	if ran.err != nil {
 		summary = "the owner could not run: " + ran.err.Error()
 	}
+	// The summary is not repeated under itself.
+	problem = slices.DeleteFunc(problem, func(line string) bool { return line == summary })
 	return intentResult{Outcome: intentRefused, Targets: targets, Data: data, code: max(ran.code, 1), Summary: summary, text: problem}
 }
 
@@ -428,18 +430,26 @@ func runIntentShowRecords(inv *intentInvocation, kind string, args []string) int
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--history belongs to a goal's record; nothing was done"})
 	}
 	goalID := inv.input.text("goal")
+	if kind == "design" && len(args) == 1 {
+		if goalID != "" && goalID != args[0] {
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("design show names one goal, not %s and --goal %s; nothing was done", args[0], goalID)})
+		}
+		goalID, args = args[0], nil
+	}
 	switch {
 	case kind == "record" && len(args) != 1:
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "decision show takes one record id; nothing was done"})
-	case kind == "design" && (len(args) != 0 || goalID == ""):
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "design show names its goal: design show --goal G; nothing was done"})
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "decision show takes one record id; nothing was done",
+			next: inv.publicArgv("decision", "list"), nextReason: "lists the decision records with their ids"})
+	case kind == "design" && goalID == "":
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "design show needs its goal: metasystem design show G; nothing was done",
+			next: inv.publicArgv("design", "list"), nextReason: "lists the design records with their goals"})
 	case kind == "design" && (inv.input.has("attempt") || inv.input.has("out")):
 		if problem := inv.selectRoot(); problem != nil {
 			return inv.render(*problem)
 		}
 		return inv.render(inv.showDesignAttempts(goalID))
 	case kind != "design" && (inv.input.has("attempt") || inv.input.has("out")):
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--attempt and --out belong to design show --goal G; nothing was done"})
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--attempt and --out belong to design show G; nothing was done"})
 	case (kind == "designs" || kind == "decisions") && len(args) != 0:
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: inv.command.name + " takes no further words; nothing was done"})
 	}
@@ -458,7 +468,7 @@ func runIntentShowRecords(inv *intentInvocation, kind string, args []string) int
 		record := read.Record(args[0])
 		if record == nil {
 			return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: []intentTarget{{Kind: "record", ID: args[0]}},
-				Summary: fmt.Sprintf("the project has no record %s; nothing was read", shellCommand(args[:1])), next: inv.publicArgv("design", "list"), nextReason: "list the design records"})
+				Summary: fmt.Sprintf("the project has no record %s; nothing was read", shellCommand(args[:1])), next: inv.publicArgv("decision", "list"), nextReason: "lists the decision records with their ids"})
 		}
 		referencedBy := read.ReferencedBy(record.ID)
 		return inv.render(intentResult{Outcome: intentConfirmed, Targets: []intentTarget{{Kind: "record", ID: record.ID}},
@@ -482,6 +492,15 @@ func runIntentShowRecords(inv *intentInvocation, kind string, args []string) int
 	}
 	result := intentResult{Outcome: intentConfirmed, Data: map[string]any{"kind": recordKind, "goal": goalID, "records": views}, text: lines, Summary: summary}
 	if kind == "design" && len(records) == 0 {
+		// A goal the ledger does not know is named as unknown, not as a
+		// goal without designs.
+		if problem := inv.selectRoot(); problem == nil {
+			if projection, _, problem := inv.projection(); problem == nil {
+				if file, _ := goalRecord(projection, goalID); file == nil {
+					return unknownGoal(inv, goalID)
+				}
+			}
+		}
 		result.Summary = fmt.Sprintf("goal %s has no design record", goalID)
 	}
 	return inv.render(result)
