@@ -181,6 +181,14 @@ describe("the turn's start", () => {
     store = received(store, beat(1, "doing", "Read plans/goals/backlog.md"));
     const before = loaded(store, { ...SNAPSHOT, messages: [] });
     expect(before.live).toEqual(store.live);
+    // It is older than the page's transcript too: the question stays, and the
+    // turn's end writes its answer under it (Sol S74-01).
+    const ended = received(before, beat(2, "done"));
+    expect(ended.messages.map((message) => [message.turn, message.role])).toEqual([
+      ["t1", "human"],
+      ["t1", "partner"],
+    ]);
+    expect(ended.live).toEqual(nothingRunning);
     // A snapshot that holds the turn's question and no running turn is the
     // turn over, and it ends here as it always did.
     const over = loaded(store, { ...SNAPSHOT, messages: [store.messages[0]] });

@@ -1374,8 +1374,7 @@ body {
   .ms-drawer-bar .ms-drawer-about,
   .ms-drawer-who .ms-help,
   .ms-drawer-who .ms-font-control,
-  .ms-drawer-title,
-  .ms-drawer-who .ms-drawer-title-dot {
+  .ms-drawer-title {
     display: none;
   }
 
@@ -1458,7 +1457,8 @@ body {
   white-space: nowrap;
 }
 
-/* The drawer's title carries the dot alone while a turn runs. */
+/* The open drawer's title carries the dot alone while a turn runs; on a phone,
+   where the title is hidden, the dot stands alone at the bar's start. */
 .ms-drawer-title-dot {
   margin-left: 2px;
 }

@@ -193,7 +193,9 @@ export function loaded(store: Store, snapshot: Snapshot): Store {
   // so a reading without that question is older than the turn, and a stream
   // open's read can come back after the send's 202 has. Replacing the turn with
   // nothing there would leave its next beats to start it again without the
-  // start the 202 carried, and so without its clock (g1-s74 D4).
+  // start the 202 carried, and so without its clock (g1-s74 D4). It is older
+  // than the page's transcript as well, which holds the question the reading
+  // lacks, so the page keeps its own messages there (Sol S74-01).
   const before =
     !running && store.live.turn !== "" && !messages.some((message) => message.turn === store.live.turn);
   return {
@@ -203,7 +205,7 @@ export function loaded(store: Store, snapshot: Snapshot): Store {
     model: snapshot.model,
     human: snapshot.human,
     readOnly: snapshot.readOnly,
-    messages,
+    messages: before ? store.messages : messages,
     index: snapshot.index ?? { goals: [], records: [] },
     sitting: snapshot.sitting,
     live: ahead

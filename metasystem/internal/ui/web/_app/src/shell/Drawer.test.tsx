@@ -1,4 +1,7 @@
 import * as TooltipPrimitive from "@radix-ui/react-tooltip";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import type { ComponentProps } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router";
@@ -117,7 +120,8 @@ describe("the room a deposit card asks for", () => {
  * to the live line and a Stop that calls the store's stop, and the field comes
  * back with the draft as it was when the turn ends. The Seeing chip, the
  * proposal bar and the handed chip stand where they are either way. The
- * drawer's title carries the dot alone while a turn runs, open or closed.
+ * drawer's title carries the dot alone while a turn runs and the drawer is
+ * open; closed, the bar's live line is the mark (D3b as amended).
  */
 describe("the bar while a turn runs", () => {
   const RUNNING = { ...emptyStore, live: { ...nothingRunning, turn: "t1", seq: 2, doing: "Read plans/goals/backlog.md" } };
@@ -162,12 +166,25 @@ describe("the bar while a turn runs", () => {
     expect(markup).toContain("Draft: Edit goal");
   });
 
-  it("puts the dot alone in the title while a turn runs, open or closed", () => {
-    for (const open of [false, true]) {
-      const markup = bar({ store: RUNNING, busy: true }, open);
-      expect({ open, dot: /ms-drawer-title[^>]*>Project Partner<\/span><span class="ms-live-dot ms-drawer-title-dot" aria-hidden="true"><\/span>/.test(markup) }).toEqual({ open, dot: true });
-    }
-    expect(bar({ store: emptyStore, busy: false })).not.toContain("ms-live-dot");
+  it("puts the dot alone in the title while a turn runs and the drawer is open", () => {
+    const TITLE_DOT = /ms-drawer-title[^>]*>Project Partner<\/span><span class="ms-live-dot ms-drawer-title-dot" aria-hidden="true"><\/span>/;
+    expect(bar({ store: RUNNING, busy: true }, true)).toMatch(TITLE_DOT);
     expect(bar({ store: emptyStore, busy: false }, true)).not.toContain("ms-live-dot");
+    // Closed, the line's own dot is the mark, and a second beside it would say
+    // one thing twice.
+    const closed = bar({ store: RUNNING, busy: true });
+    expect(closed).not.toContain("ms-drawer-title-dot");
+    expect(closed).toMatch(/class="ms-drawer-live"><span class="ms-live[^"]*"[^>]*><span class="ms-live-dot"/);
+    expect(bar({ store: emptyStore, busy: false })).not.toContain("ms-live-dot");
+  });
+
+  it("keeps the title's dot on a phone, where the title itself is hidden", () => {
+    const css = readFileSync(path.resolve(fileURLToPath(import.meta.url), "../shell.css"), "utf8");
+    // The phone rule that hides the title with the help and the font chooser.
+    const phone = [...css.matchAll(/([^{}]*)\{\s*display: none;\s*\}/g)]
+      .map((match) => match[1])
+      .filter((selectors) => selectors.includes(".ms-drawer-who .ms-font-control"));
+    expect(phone).toHaveLength(1);
+    expect(phone[0]).not.toContain("ms-drawer-title-dot");
   });
 });
