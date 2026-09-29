@@ -556,6 +556,23 @@ printf '{"suite":"writer-failure","section":"over-cap","event":"end","at":"%s","
 	defer next.Close()
 	t.Run("prior regular done marker", func(t *testing.T) {
 		doneLog := filepath.Join(root, "done-race.log")
+		// A regular marker exists when the launcher publishes completion,
+		// forcing the same exclusive-create order as custodian-first
+		// settlement. It is placed after the suite ended, as the custodian
+		// places it: a marker the suite wrote itself told the custodian the
+		// suite was done while that shell still lived, and the custodian's
+		// drain killed it ("native descendants survived direct worker
+		// completion") whenever the shell was descheduled for a tick.
+		previous := beforeLauncherDone
+		t.Cleanup(func() { beforeLauncherDone = previous })
+		beforeLauncherDone = func(path string) {
+			file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE, 0o600)
+			if err != nil {
+				t.Errorf("place the prior done marker: %v", err)
+				return
+			}
+			_ = file.Close()
+		}
 		var publicOut, publicErr bytes.Buffer
 		status := LaunchSuite(LaunchOptions{
 			Suite: "done-race", Root: root, ConfPath: conf,
@@ -563,9 +580,7 @@ printf '{"suite":"writer-failure","section":"over-cap","event":"end","at":"%s","
 			Banner: "done race fixture", Silence: 10 * time.Second, SectionCap: 10 * time.Second,
 			EvidenceTimeout: 5 * time.Second, EvidenceMax: 1024, Poll: 20 * time.Millisecond,
 			TermGrace: time.Second, KillGrace: time.Second, WatchdogExecutable: engine,
-			// A regular marker exists when the launcher publishes completion,
-			// forcing the same exclusive-create order as custodian-first settlement.
-			Command:           []string{"sh", "-c", `: > "$1"`, "sh", doneLog + ".done"},
+			Command:           []string{"sh", "-c", ":"},
 			HostResourceFiles: next.Files(), Output: &publicOut, ErrorOutput: &publicErr,
 		})
 		if status != 0 {
