@@ -237,3 +237,31 @@ func TestLandingBatchNamerHoldsOnAnUnresolvableLane(t *testing.T) {
 		t.Fatalf("no lane configured reads no lane: %v %v", roots, err)
 	}
 }
+
+// A ledger view keeps its projection only while the accepted tip stays the
+// same: a moved tip projects again, and an unreadable tip is an error
+// (Round B3-4).
+func TestLedgerViewReprojectsWhenTheTipMoves(t *testing.T) {
+	t.Parallel()
+	tip, projections := "a", 0
+	view := &ledgerView{tip: func() (string, error) {
+		if tip == "" {
+			return "", errors.New("tip unreadable")
+		}
+		return tip, nil
+	}, project: func() (goal.Projection, error) { projections++; return goal.Projection{Tree: &goal.TreeGoals{}}, nil }}
+	view.get()
+	view.get()
+	if projections != 1 {
+		t.Fatalf("the same tip projects once: %d", projections)
+	}
+	tip = "b"
+	view.get()
+	if projections != 2 {
+		t.Fatalf("a moved tip projects again: %d", projections)
+	}
+	tip = ""
+	if _, err := view.get(); err == nil {
+		t.Fatal("an unreadable tip is an error")
+	}
+}

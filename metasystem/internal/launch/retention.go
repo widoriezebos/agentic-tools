@@ -19,6 +19,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -47,6 +48,11 @@ type Retention struct {
 	count int
 	bytes int64
 	named map[string]bool
+	// mentions is every launch-id-shaped token in the JSON files under the
+	// unit store and the design store, read at the plan, with each file's
+	// modification time, so the apply rereads only what changed.
+	mentions map[string]bool
+	seen     map[string]time.Time
 }
 
 // Name names the class.
@@ -113,7 +119,11 @@ func (r *Retention) Plan(ctx context.Context, pass *diskstore.Pass) ([]diskstore
 	if r.bytes <= r.Target {
 		return items, nil
 	}
-	named, unitErr := namedLaunches(r.UnitRoot)
+	named, unitErr := namedLaunches(r.UnitRoot, root)
+	if unitErr == nil {
+		r.mentions, r.seen = map[string]bool{}, map[string]time.Time{}
+		unitErr = r.readMentions(root, false)
+	}
 	if unitErr != nil {
 		return append(items, diskstore.Item{Class: r.Name(), Key: "~units", Path: r.UnitRoot,
 			Verdict: diskstore.Verdict{Decision: diskstore.Pending, Reason: "which launches the unit records name is unknown (" + unitErr.Error() + "); no launch is released",
@@ -160,7 +170,7 @@ func (r *Retention) judge(record Record, now time.Time) diskstore.Verdict {
 	switch {
 	case !record.State.Terminal(), ended.IsZero(), now.Sub(ended) < r.Keep:
 		return diskstore.Verdict{}
-	case r.named[record.ID]:
+	case r.named[record.ID] || r.mentions[record.ID]:
 		return diskstore.Verdict{Decision: diskstore.Keep, Reason: "a unit record's round names this launch; it stays while that unit record exists",
 			Command: "metasystem work status"}
 	case record.OutputOwnerUnproven || strings.Contains(record.Reason, "process-group-unproven"):
@@ -200,6 +210,9 @@ func (r *Retention) Apply(ctx context.Context, pass *diskstore.Pass, item diskst
 	if err != nil {
 		return diskstore.Verdict{Decision: diskstore.Pending, Reason: "launch record unreadable: " + err.Error(), Command: "metasystem work status"}
 	}
+	if root, err := r.Manager.Store.root(); err != nil || r.readMentions(root, true) != nil {
+		return diskstore.Verdict{Decision: diskstore.Pending, Reason: "the records that may name this launch cannot all be read", Command: "metasystem work status"}
+	}
 	if verdict := r.judge(record, pass.Now); verdict.Decision != diskstore.Release {
 		if verdict.Decision == "" {
 			verdict = diskstore.Verdict{Decision: diskstore.Keep, Reason: "the launch changed since the plan", Command: "metasystem disk show"}
@@ -234,17 +247,24 @@ func endedAt(record Record) time.Time {
 	return time.Time{}
 }
 
-// namedLaunches reads every unit record's rounds for the launches they
-// name. A unit directory without its run.json names none yet (its launches
-// are newer than itself); an unreadable run.json is an error, because
-// which launches it names is then unknown.
-func namedLaunches(unitRoot string) (map[string]bool, error) {
+// namedLaunches reads the records that name launches, each by its type:
+// every unit record's rounds, every standalone read attempt's round
+// (unit/.reads/<ref>/attempt-N/attempt.json) and every retained design
+// request's attempts (launch/.design/<key>/request.json). A unit directory
+// without its run.json names none yet (its launches are newer than
+// itself); any other record that cannot be read is an error, because which
+// launches it names is then unknown.
+func namedLaunches(unitRoot, launchRoot string) (map[string]bool, error) {
 	named := map[string]bool{}
-	entries, err := os.ReadDir(unitRoot)
-	if errors.Is(err, os.ErrNotExist) {
-		return named, nil
+	steps := func(round UnitRound) {
+		for _, step := range round.Steps {
+			if step.LaunchID != "" {
+				named[step.LaunchID] = true
+			}
+		}
 	}
-	if err != nil {
+	entries, err := os.ReadDir(unitRoot)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, err
 	}
 	for _, entry := range entries {
@@ -264,14 +284,102 @@ func namedLaunches(unitRoot string) (map[string]bool, error) {
 			return nil, fmt.Errorf("unit record %s: %w", path, err)
 		}
 		for _, round := range record.Rounds {
-			for _, step := range round.Steps {
-				if step.LaunchID != "" {
-					named[step.LaunchID] = true
-				}
+			steps(round)
+		}
+	}
+	reads, err := filepath.Glob(filepath.Join(unitRoot, ".reads", "*", "*", "attempt.json"))
+	if err != nil {
+		return nil, err
+	}
+	for _, path := range reads {
+		var attempt ReadAttempt
+		if err := readJSONFile(path, &attempt); err != nil {
+			return nil, err
+		}
+		steps(attempt.Round)
+	}
+	designs, err := filepath.Glob(filepath.Join(launchRoot, ".design", "*", "request.json"))
+	if err != nil {
+		return nil, err
+	}
+	for _, path := range designs {
+		var entry designEntry
+		if err := readJSONFile(path, &entry); err != nil {
+			return nil, err
+		}
+		for _, attempt := range entry.Attempts {
+			if attempt.LaunchID != "" {
+				named[attempt.LaunchID] = true
 			}
 		}
 	}
 	return named, nil
+}
+
+func readJSONFile(path string, value any) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	if err := json.Unmarshal(data, value); err != nil {
+		return fmt.Errorf("%s: %w", path, err)
+	}
+	return nil
+}
+
+// launchToken is a launch id's shape inside any text.
+var launchToken = regexp.MustCompile(`[a-z0-9][a-z0-9-]{0,63}`)
+
+// readMentions is the backstop behind the typed readers (Round B3-4): it
+// collects every launch-id-shaped token from every JSON file under the
+// unit store and the design store, so a launch any of them mentions, in
+// any field, is kept. With changedOnly it rereads only files new or
+// changed since the plan. A file or directory that cannot be read is an
+// error, which holds the class.
+func (r *Retention) readMentions(launchRoot string, changedOnly bool) error {
+	for _, dir := range []string{r.UnitRoot, filepath.Join(launchRoot, ".design")} {
+		err := filepath.WalkDir(dir, func(path string, entry os.DirEntry, err error) error {
+			if err != nil {
+				if errors.Is(err, os.ErrNotExist) && path == dir {
+					return filepath.SkipDir
+				}
+				return err
+			}
+			if entry.IsDir() || !strings.HasSuffix(path, ".json") {
+				return nil
+			}
+			info, err := entry.Info()
+			if err != nil {
+				return err
+			}
+			if seen, ok := r.seen[path]; changedOnly && ok && seen.Equal(info.ModTime()) {
+				return nil
+			}
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			r.seen[path] = info.ModTime()
+			for _, token := range launchToken.FindAll(data, -1) {
+				r.mentions[string(token)] = true
+			}
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// compressFinishedLog compresses the log of a launch that ended with its
+// process group proven ended; a launch whose group or outputs are unproven
+// keeps its log exactly as written.
+func compressFinishedLog(record Record, path string, threshold int64) {
+	if !record.State.Terminal() || record.OutputOwnerUnproven || strings.Contains(record.Reason, "process-group-unproven") {
+		return
+	}
+	compressLog(path, threshold)
 }
 
 // compressLog replaces a finished launch's log at or above threshold bytes

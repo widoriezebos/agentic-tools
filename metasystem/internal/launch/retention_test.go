@@ -298,3 +298,51 @@ func TestSuperviseCompressesItsLogAtCompletion(t *testing.T) {
 		}
 	}
 }
+
+// The backstop behind the typed readers: a launch whose id any JSON file
+// under the unit or design stores mentions, in any field, is kept; a file
+// there that cannot be read holds the class (Round B3-4).
+func TestLaunchRetentionKeepsALaunchAnyRecordMentions(t *testing.T) {
+	t.Parallel()
+	f := newRetentionFixture(t)
+	f.launch("mentioned", Completed, 40*day, 4<<10, 100)
+	f.launch("free", Completed, 40*day, 4<<10, 110)
+	if err := os.MkdirAll(filepath.Join(f.units, "somewhere"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(f.units, "somewhere", "note.json"), []byte(`{"see":"logs of launch mentioned, retry later"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	f.pass(f.retention(1))
+	if !f.exists("mentioned") || f.exists("free") {
+		t.Fatalf("mentioned kept=%v free kept=%v", f.exists("mentioned"), f.exists("free"))
+	}
+	f.launch("free2", Completed, 40*day, 4<<10, 120)
+	unreadable := filepath.Join(f.units, "somewhere", "locked.json")
+	if err := os.WriteFile(unreadable, []byte("{}"), 0o000); err != nil {
+		t.Fatal(err)
+	}
+	if report := f.pass(f.retention(1)); !f.exists("free2") || len(report.Pending) == 0 {
+		t.Fatalf("an unreadable record there holds the class: %+v", report)
+	}
+}
+
+// A launch whose process group was never proven ended keeps its log as
+// written: it is never compressed (Round B3-4, item 7).
+func TestUnprovenLaunchLogIsNeverCompressed(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	log := filepath.Join(dir, "exec.log")
+	if err := os.WriteFile(log, make([]byte, 4096), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	compressFinishedLog(Record{State: Failed, Reason: "child-start: x; process-group-unproven"}, log, 1024)
+	compressFinishedLog(Record{State: Failed, OutputOwnerUnproven: true}, log, 1024)
+	if _, err := os.Stat(log); err != nil {
+		t.Fatalf("an unproven launch's log stays: %v", err)
+	}
+	compressFinishedLog(Record{State: Completed}, log, 1024)
+	if _, err := os.Stat(log + ".gz"); err != nil {
+		t.Fatalf("a proven launch's log is compressed: %v", err)
+	}
+}

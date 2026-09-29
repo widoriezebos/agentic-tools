@@ -95,6 +95,10 @@ func (r *UnitRetention) Plan(ctx context.Context, pass *diskstore.Pass) ([]disks
 	if r.bytes <= r.Target {
 		return items, nil
 	}
+	if _, err := r.namedEntries(""); err != nil {
+		return append(items, diskstore.Item{Class: r.Name(), Key: "~named", Path: filepath.Join(r.Root, ".named"), Verdict: diskstore.Verdict{Decision: diskstore.Pending,
+			Reason: "the named entries cannot all be read (" + err.Error() + "); no unit is released this pass", Command: "metasystem work status"}}), nil
+	}
 	sort.Slice(units, func(i, j int) bool {
 		if !units[i].ended.Equal(units[j].ended) {
 			return units[i].ended.Before(units[j].ended)
@@ -151,7 +155,11 @@ func (r *UnitRetention) heldLock(id string, holdingRun bool) string {
 	if !holdingRun {
 		locks = append(locks, filepath.Join(r.Root, id, ".lock"))
 	}
-	for _, entry := range r.namedEntries(id) {
+	named, err := r.namedEntries(id)
+	if err != nil {
+		return "the named entries cannot all be read (" + err.Error() + ")"
+	}
+	for _, entry := range named {
 		locks = append(locks, strings.TrimSuffix(entry, ".json")+".lock")
 	}
 	for _, path := range locks {
@@ -174,21 +182,35 @@ func (r *UnitRetention) heldLock(id string, holdingRun bool) string {
 	return ""
 }
 
-// namedEntries are the named entries whose run is id.
-func (r *UnitRetention) namedEntries(id string) []string {
-	paths, _ := filepath.Glob(filepath.Join(r.Root, ".named", "*.json"))
+// namedEntries are the named entries whose run is id; a named entry that
+// cannot be read is an error, because which run it reaches is unknown.
+func (r *UnitRetention) namedEntries(id string) ([]string, error) {
+	entries, err := os.ReadDir(filepath.Join(r.Root, ".named"))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
 	var found []string
-	for _, path := range paths {
-		data, err := os.ReadFile(path)
-		if err != nil {
+	for _, dirEntry := range entries {
+		if !strings.HasSuffix(dirEntry.Name(), ".json") {
 			continue
 		}
+		path := filepath.Join(r.Root, ".named", dirEntry.Name())
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil, err
+		}
 		var entry namedUnitEntry
-		if json.Unmarshal(data, &entry) == nil && entry.Run == id {
+		if err := json.Unmarshal(data, &entry); err != nil {
+			return nil, fmt.Errorf("named entry %s: %w", path, err)
+		}
+		if entry.Run == id {
 			found = append(found, path)
 		}
 	}
-	return found
+	return found, nil
 }
 
 // Apply holds the unit's run lock for the removal, so a Continue or Revise
@@ -223,7 +245,11 @@ func (r *UnitRetention) Apply(ctx context.Context, pass *diskstore.Pass, item di
 		}
 		return verdict
 	}
-	for _, entry := range r.namedEntries(item.Key) {
+	named, err := r.namedEntries(item.Key)
+	if err != nil {
+		return diskstore.Verdict{Decision: diskstore.Pending, Reason: "the named entries cannot all be read: " + err.Error(), Command: "metasystem work status"}
+	}
+	for _, entry := range named {
 		named, err := lock.File(strings.TrimSuffix(entry, ".json")+".lock", 0o600, lock.TryExclusive)
 		if err != nil {
 			return diskstore.Verdict{Decision: diskstore.Pending, Reason: "the unit's name is being advanced", Command: "metasystem disk clean, once that has ended"}

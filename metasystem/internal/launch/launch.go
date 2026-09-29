@@ -420,9 +420,7 @@ func (m *Manager) Supervise(id string) (Record, error) {
 	if err != nil {
 		return Record{}, err
 	}
-	if record.State.Terminal() {
-		compressLog(command.LogPath, m.CompressAbove)
-	}
+	compressFinishedLog(record, command.LogPath, m.CompressAbove)
 	return record, nil
 }
 func (m *Manager) finishCancelledBeforeChild(id string, cause error) (Record, error) {

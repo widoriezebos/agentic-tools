@@ -37,28 +37,45 @@ func attemptIDs(values ...string) []string {
 	return ids
 }
 
-// ledgerView reads the checkout's accepted goal ledger once per pass,
-// without a fetch.
+// ledgerView reads a checkout's accepted goal ledger without a fetch. It
+// keeps a projection only while the accepted tip it was read at stays the
+// same: every read checks the tip and projects again when it moved, so an
+// apply never judges on what a plan read (Round B3-4). Without a tip
+// reader it projects on every read.
 type ledgerView struct {
 	project    func() (goal.Projection, error)
+	tip        func() (string, error)
 	projection goal.Projection
+	readTip    string
 	err        error
 	read       bool
 }
 
 func (v *ledgerView) get() (goal.Projection, error) {
-	if !v.read {
-		v.read = true
-		v.projection, v.err = v.project()
-		if v.err == nil && v.projection.Tree == nil {
-			v.err = errors.New("the goal ledger projection has no tree")
+	current := ""
+	if v.tip != nil {
+		tip, err := v.tip()
+		if err != nil {
+			return goal.Projection{}, err
 		}
+		current = tip
+		if v.read && v.err == nil && tip == v.readTip {
+			return v.projection, nil
+		}
+	}
+	v.read, v.readTip = true, current
+	v.projection, v.err = v.project()
+	if v.err == nil && v.projection.Tree == nil {
+		v.err = errors.New("the goal ledger projection has no tree")
 	}
 	return v.projection, v.err
 }
 
 func checkoutLedger(top string, now time.Time) *ledgerView {
-	return &ledgerView{project: func() (goal.Projection, error) {
+	return &ledgerView{tip: func() (string, error) {
+		tip, _, err := goal.AcceptedLedgerTip(top)
+		return tip, err
+	}, project: func() (goal.Projection, error) {
 		endpoint, err := goal.ResolveEndpoint(top)
 		if err != nil {
 			return goal.Projection{}, err

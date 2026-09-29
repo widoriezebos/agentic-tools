@@ -93,7 +93,7 @@ func TestUnitRetentionReleasesOnlyConcludedGoalsUnits(t *testing.T) {
 		t.Fatalf("open kept=%v held pending=%v unknown kept=%v\n%+v", openNamed, heldPending, unknownPending, report)
 	}
 	// With the unit gone, the launch its round named is no longer a root.
-	if named, err := namedLaunches(f.units); err != nil || named["unit-done-read"] || !named["unit-open-read"] {
+	if named, err := namedLaunches(f.units, f.root); err != nil || named["unit-done-read"] || !named["unit-open-read"] {
 		t.Fatalf("named launches after the release: %v %v", named, err)
 	}
 }
@@ -109,3 +109,18 @@ func TestUnitRetentionUnderTargetKeepsEverything(t *testing.T) {
 }
 
 var _ diskstore.Class = (*UnitRetention)(nil)
+
+// A named entry that cannot be read holds the class: which run it reaches
+// is unknown (Round B3-4, item 6).
+func TestUnitRetentionHoldsOnAnUnreadableNamedEntry(t *testing.T) {
+	t.Parallel()
+	f := newRetentionFixture(t)
+	f.unitRun("unit-done", "done", 40*day, 4096)
+	if err := os.WriteFile(filepath.Join(f.units, ".named", "broken.json"), []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	report := f.pass(f.unitRetention(1, map[string]bool{"done": true}))
+	if !f.unitExists("unit-done") || len(report.Pending) == 0 {
+		t.Fatalf("an unreadable named entry holds: %+v", report)
+	}
+}
