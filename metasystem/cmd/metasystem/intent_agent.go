@@ -20,22 +20,13 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 )
 
-// agentLedger is what the ask reads of the checkout's accepted ledger: the
-// live goals, who holds each claimed one, and the nearest fact about a goal
-// that is no longer live.
-type agentLedger struct {
-	claims   map[string]string
-	live     map[string]bool
-	archived map[string]string
-}
-
 // agentOwners are the agent verbs' seams; the zero value is production.
 type agentOwners struct {
 	root    func(inv *intentInvocation) (string, error)
 	home    func() (string, error)
 	machine func(root string) (string, error)
 	seats   func() ([]string, error)
-	ledger  func(root string) (agentLedger, error)
+	ledger  func(root string) (board.Ownership, error)
 	lineage func() string
 	now     func() time.Time
 	publish func(home string, request board.Request, now time.Time) (board.Published, error)
@@ -55,7 +46,7 @@ func (o agentOwners) withDefaults() agentOwners {
 		o.seats = armedNicknames
 	}
 	if o.ledger == nil {
-		o.ledger = acceptedAgentLedger
+		o.ledger = goal.PeerOwnership
 	}
 	if o.lineage == nil {
 		o.lineage = ownerLineageFromEnvironment
@@ -97,42 +88,6 @@ func armedNicknames() ([]string, error) {
 	return names, nil
 }
 
-// acceptedAgentLedger reads the checkout's accepted ledger tip.
-func acceptedAgentLedger(root string) (agentLedger, error) {
-	ledger := agentLedger{claims: map[string]string{}, live: map[string]bool{}, archived: map[string]string{}}
-	tip, exists, err := goal.AcceptedLedgerTip(root)
-	if err != nil || !exists {
-		return ledger, err
-	}
-	projection, err := goal.ProjectAt(root, tip)
-	if err != nil || projection.Tree == nil {
-		return ledger, err
-	}
-	for id, file := range projection.Tree.Live {
-		ledger.live[id] = true
-		if file != nil && file.Claimed != nil && file.Claimed.Machine != "" {
-			ledger.claims[id] = file.Claimed.Machine
-		}
-	}
-	for state, files := range map[string]map[string]*goal.GoalFile{"done": projection.Tree.Done, "abandoned": projection.Tree.Abandoned} {
-		for id, file := range files {
-			ledger.archived[id] = state + lastHistoryDate(file)
-		}
-	}
-	return ledger, nil
-}
-
-func lastHistoryDate(file *goal.GoalFile) string {
-	if file == nil || len(file.History) == 0 {
-		return ""
-	}
-	at := file.History[len(file.History)-1].At
-	if len(at) >= 10 {
-		at = at[:10]
-	}
-	return " on " + at
-}
-
 func ownerLineageFromEnvironment() string { return os.Getenv("METASYSTEM_OWNER_LINEAGE") }
 
 // agentSeat is who is acting: the checkout, its nickname, its lineage and
@@ -170,9 +125,8 @@ func (inv *intentInvocation) agentSeat() (agentSeat, *intentResult) {
 }
 
 // claims is the lazy ledger read the ownership rule asks for.
-func (seat agentSeat) claims() (map[string]string, error) {
-	ledger, err := seat.owners.ledger(seat.root)
-	return ledger.claims, err
+func (seat agentSeat) claims() (board.Ownership, error) {
+	return seat.owners.ledger(seat.root)
 }
 
 const agentIsNotAPerson = "An agent ask reaches an agent working on this host, never a person; a question for a person is metasystem question ask."
@@ -285,10 +239,11 @@ func runAgentAsk(inv *intentInvocation) int {
 				Summary:  "the accepted goal ledger cannot be read (" + err.Error() + "), so goal " + goalID + " cannot be checked; nothing was sent",
 				Decision: "run the command again once metasystem goal list reads the ledger, or ask a seat: metasystem agent ask MACHINE --text TEXT"})
 		}
-		if !ledger.live[goalID] {
+		current, live := ledger.Live[goalID]
+		if !live {
 			return inv.render(agentGoalUnknown(goalID, ledger))
 		}
-		holder = ledger.claims[goalID]
+		holder = current
 		request.To = board.Address{Goal: goalID}
 	}
 	published, err := seat.owners.publish(seat.home, request, seat.now)
@@ -314,8 +269,8 @@ func agentTargetUnknown(machine string, seats []string) intentResult {
 
 // agentGoalUnknown refuses a goal that is not live on the accepted ledger:
 // a message queued for it would wait forever (D14D-04's wording).
-func agentGoalUnknown(goalID string, ledger agentLedger) intentResult {
-	fact := ledger.archived[goalID]
+func agentGoalUnknown(goalID string, ledger board.Ownership) intentResult {
+	fact := ledger.Concluded[goalID]
 	if fact == "" {
 		fact = "no goal by that id"
 	}
@@ -550,16 +505,18 @@ func agentAllMessages(seat agentSeat) ([]board.Message, error) {
 	if err != nil {
 		return nil, err
 	}
-	var claims map[string]string
+	var claims *board.Ownership
 	var messages []board.Message
 	for _, thread := range threads {
 		for _, message := range thread.Messages {
 			if message.To.Goal != "" && claims == nil {
-				if claims, err = seat.claims(); err != nil {
-					claims = map[string]string{}
+				read, err := seat.claims()
+				if err != nil {
+					read = board.Ownership{}
 				}
+				claims = &read
 			}
-			if message.To.Machine == seat.machine || (message.To.Goal != "" && claims[message.To.Goal] == seat.machine) {
+			if message.To.Machine == seat.machine || (message.To.Goal != "" && claims.Live[message.To.Goal] == seat.machine) {
 				messages = append(messages, message)
 			}
 		}
@@ -582,10 +539,7 @@ func (inv *intentInvocation) peerStatusLines(checkout string) []string {
 	if err != nil || !board.SafeName(machine) {
 		return nil
 	}
-	claims := func() (map[string]string, error) {
-		ledger, err := owners.ledger(checkout)
-		return ledger.claims, err
-	}
+	claims := func() (board.Ownership, error) { return owners.ledger(checkout) }
 	counts, err := board.Count(home, machine, claims, owners.now().UTC())
 	if err != nil {
 		return []string{"peer messages: the board cannot be read (" + err.Error() + ")"}

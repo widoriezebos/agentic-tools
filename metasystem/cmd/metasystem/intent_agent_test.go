@@ -25,7 +25,7 @@ type agentBed struct {
 	mu      sync.Mutex
 	now     time.Time
 	seats   []string
-	ledger  agentLedger
+	ledger  board.Ownership
 	ledgerE error
 	reads   int
 	publish func(home string, request board.Request, now time.Time) (board.Published, error)
@@ -39,8 +39,8 @@ func newAgentBed(t *testing.T, self string) *agentBed {
 	}
 	return &agentBed{t: t, home: home, root: t.TempDir(), self: self, now: time.Date(2026, 9, 29, 10, 0, 0, 0, time.UTC),
 		seats: []string{"m1a", "m1b", "m1c"},
-		ledger: agentLedger{claims: map[string]string{"goal-x": "m1b"}, live: map[string]bool{"goal-x": true, "goal-z": true},
-			archived: map[string]string{"goal-old": "done on 2026-09-20"}}}
+		ledger: board.Ownership{Live: map[string]string{"goal-x": "m1b", "goal-z": ""},
+			Concluded: map[string]string{"goal-old": "done on 2026-09-20"}}}
 }
 
 // as is the same host seen from another seat.
@@ -55,7 +55,7 @@ func (b *agentBed) owners() intentOwners {
 		home:    func() (string, error) { return b.home, nil },
 		machine: func(string) (string, error) { return b.self, nil },
 		seats:   func() ([]string, error) { return b.seats, nil },
-		ledger: func(string) (agentLedger, error) {
+		ledger: func(string) (board.Ownership, error) {
 			b.mu.Lock()
 			defer b.mu.Unlock()
 			b.reads++
@@ -480,15 +480,17 @@ func TestHookPeerBindingsAnswerTheHook(t *testing.T) {
 	if out, status := peerSeatLine(func(string) (string, error) { return "", errors.New("no nickname") }, "/repo"); out != "" || status != 1 {
 		t.Fatalf("no enrolled seat = %q %d", out, status)
 	}
-	out, status := peerClaimsLine(func() (map[string]string, error) { return map[string]string{"goal-x": "m1b"}, nil })
-	var claims map[string]string
-	if status != 0 || json.Unmarshal([]byte(out), &claims) != nil || claims["goal-x"] != "m1b" || !strings.HasSuffix(out, "\n") {
-		t.Fatalf("the claims = %q %d", out, status)
+	out, status := peerClaimsLine(func() (board.Ownership, error) {
+		return board.Ownership{Live: map[string]string{"goal-x": "m1b"}, Concluded: map[string]string{"goal-old": "done"}}, nil
+	})
+	var ownership board.Ownership
+	if status != 0 || json.Unmarshal([]byte(out), &ownership) != nil || ownership.Live["goal-x"] != "m1b" || ownership.Concluded["goal-old"] != "done" || !strings.HasSuffix(out, "\n") {
+		t.Fatalf("the ownership = %q %d", out, status)
 	}
-	if out, status := peerClaimsLine(func() (map[string]string, error) { return nil, nil }); out != "{}\n" || status != 0 {
+	if out, status := peerClaimsLine(func() (board.Ownership, error) { return board.Ownership{}, nil }); out != `{"live":{},"concluded":{}}`+"\n" || status != 0 {
 		t.Fatalf("an empty ledger = %q %d", out, status)
 	}
-	if out, status := peerClaimsLine(func() (map[string]string, error) { return nil, errors.New("tip unreadable") }); out != "tip unreadable\n" || status != 1 {
+	if out, status := peerClaimsLine(func() (board.Ownership, error) { return board.Ownership{}, errors.New("tip unreadable") }); out != "tip unreadable\n" || status != 1 {
 		t.Fatalf("an unreadable ledger = %q %d", out, status)
 	}
 }

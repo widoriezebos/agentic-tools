@@ -586,7 +586,7 @@ func (i *Inbox) Release() {
 // either waits for the offer or has already moved the claim; a goal whose
 // lock a handover holds is skipped this time. The error is a board that
 // cannot be listed.
-func Pending(home, self string, claims func() (map[string]string, error), now time.Time) (*Inbox, error) {
+func Pending(home, self string, claims func() (Ownership, error), now time.Time) (*Inbox, error) {
 	inbox := &Inbox{}
 	if !SafeName(self) {
 		return inbox, checkName("seat nickname", self)
@@ -637,7 +637,7 @@ func Pending(home, self string, claims func() (map[string]string, error), now ti
 	return inbox, nil
 }
 
-func (inbox *Inbox) addGoalMessages(home, self string, candidates map[string][]Message, claims func() (map[string]string, error)) {
+func (inbox *Inbox) addGoalMessages(home, self string, candidates map[string][]Message, claims func() (Ownership, error)) {
 	var locked []string
 	for _, goal := range sortedGoals(candidates) {
 		release, ok := lockGoal(home, goal, syscall.LOCK_SH|syscall.LOCK_NB)
@@ -660,7 +660,7 @@ func (inbox *Inbox) addGoalMessages(home, self string, candidates map[string][]M
 		return
 	}
 	for _, goal := range locked {
-		if owners[goal] == self {
+		if owners.Live[goal] == self {
 			inbox.Messages = append(inbox.Messages, candidates[goal]...)
 		}
 	}
@@ -915,13 +915,13 @@ type Counts struct {
 // Count reads the counts for self; the claims are read only when a goal
 // mailbox holds a message, and unreadable claims count nothing for goals and
 // say why.
-func Count(home, self string, claims func() (map[string]string, error), now time.Time) (Counts, error) {
+func Count(home, self string, claims func() (Ownership, error), now time.Time) (Counts, error) {
 	var counts Counts
 	threads, err := Threads(home)
 	if err != nil {
 		return counts, fmt.Errorf("BOARD_UNREADABLE: %w", err)
 	}
-	var owners map[string]string
+	var owners *Ownership
 	read := false
 	waiting := map[string]bool{}
 	for _, thread := range threads {
@@ -931,17 +931,19 @@ func Count(home, self string, claims func() (map[string]string, error), now time
 		root := *thread.Root
 		if root.To.Goal != "" && !read {
 			read = true
-			if owners, err = claims(); err != nil {
-				counts.Unreadable, owners = err.Error(), nil
+			if read, err := claims(); err != nil {
+				counts.Unreadable = err.Error()
+			} else {
+				owners = &read
 			}
 		}
 		state, _ := thread.State(now)
 		switch {
 		case root.To.Machine == self && state == ThreadOpen:
 			counts.Open++
-		case root.To.Goal != "" && owners != nil && owners[root.To.Goal] == self && state == ThreadOpen:
+		case root.To.Goal != "" && owners != nil && owners.Live[root.To.Goal] == self && state == ThreadOpen:
 			counts.Open++
-		case root.To.Goal != "" && owners != nil && owners[root.To.Goal] == "" && len(root.offeredTo) == 0:
+		case root.To.Goal != "" && owners != nil && owners.unheld(root.To.Goal) && len(root.offeredTo) == 0:
 			counts.WaitingForHolder++
 			waiting[root.To.Goal] = true
 		}
@@ -970,6 +972,12 @@ func HasMessages(home string) bool {
 		}
 	}
 	return false
+}
+
+// unheld reports a live goal nobody holds.
+func (o *Ownership) unheld(goal string) bool {
+	holder, live := o.Live[goal]
+	return live && holder == ""
 }
 
 // Lookup finds the message id names, in any mailbox on this host, for a

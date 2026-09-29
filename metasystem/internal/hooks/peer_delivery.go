@@ -57,9 +57,9 @@ func (o *PeerOffer) Release() {
 // carrying a Waiting line) must still be released. claims is asked for only
 // when a goal mailbox holds a message this seat could receive; nil reads
 // every goal message as nobody's.
-func OfferPeerMessage(home, seat, lineage string, claims func() (map[string]string, error), event string, room int, now time.Time) (*PeerOffer, bool) {
+func OfferPeerMessage(home, seat, lineage string, claims func() (board.Ownership, error), event string, room int, now time.Time) (*PeerOffer, bool) {
 	if claims == nil {
-		claims = func() (map[string]string, error) { return map[string]string{}, nil }
+		claims = func() (board.Ownership, error) { return board.Ownership{}, nil }
 	}
 	inbox, err := board.Pending(home, seat, claims, now)
 	offer := &PeerOffer{release: inbox.Release}
@@ -87,23 +87,24 @@ func OfferPeerMessage(home, seat, lineage string, claims func() (map[string]stri
 	return offer, true
 }
 
-// peerClaims turns the Ops answer into the claims the ownership rule reads:
-// {"goal":"machine"}, or an error naming why the ledger is unreadable.
-func peerClaims(ops Ops, repo string) func() (map[string]string, error) {
-	return func() (map[string]string, error) {
+// peerClaims turns the Ops answer into the ownership the rule reads (the
+// live goals with their holders, the concluded ones with their facts), or
+// an error naming why the ledger is unreadable.
+func peerClaims(ops Ops, repo string) func() (board.Ownership, error) {
+	return func() (board.Ownership, error) {
 		out, status := ops.PeerClaims(repo)
 		out = trimNewlines(out)
 		if status != 0 {
 			if out == "" {
 				out = "the accepted ledger cannot be read"
 			}
-			return nil, errors.New(out)
+			return board.Ownership{}, errors.New(out)
 		}
-		claims := map[string]string{}
-		if err := json.Unmarshal([]byte(out), &claims); err != nil {
-			return nil, fmt.Errorf("the ledger's claims are malformed: %w", err)
+		var ownership board.Ownership
+		if err := json.Unmarshal([]byte(out), &ownership); err != nil {
+			return board.Ownership{}, fmt.Errorf("the ledger's ownership is malformed: %w", err)
 		}
-		return claims, nil
+		return ownership, nil
 	}
 }
 

@@ -121,7 +121,7 @@ func TestToolGatePeerOffersTheSeatsOldestMessage(t *testing.T) {
 	}
 	resolved := 0
 	resolve := func(string) (string, error) { resolved++; return "m1b", nil }
-	claims := func() (map[string]string, error) { return map[string]string{}, nil }
+	claims := func() (board.Ownership, error) { return board.Ownership{}, nil }
 	now := func() time.Time { return time.Date(2026, 9, 29, 10, 0, 0, 0, time.UTC) }
 	peer, release := toolGatePeer(home, "/repo", resolve, claims, 10000, io.Discard, now)
 	if text, mark := peer(); text != "" || mark != nil || resolved != 0 {

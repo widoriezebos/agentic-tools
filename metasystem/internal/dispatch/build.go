@@ -1150,27 +1150,11 @@ func PeerMessagesWaiting(root string) int {
 	if err != nil {
 		return 0
 	}
-	claims := func() (map[string]string, error) {
-		tip, exists, err := goal.AcceptedLedgerTip(root)
-		if err != nil || !exists {
-			return map[string]string{}, err
-		}
-		projection, err := goal.ProjectAt(root, tip)
-		if err != nil || projection.Tree == nil {
-			return map[string]string{}, err
-		}
-		claims := map[string]string{}
-		for id, file := range projection.Tree.Live {
-			if file != nil && file.Claimed != nil {
-				claims[id] = file.Claimed.Machine
-			}
-		}
-		return claims, nil
-	}
+	claims := func() (board.Ownership, error) { return goal.PeerOwnership(root) }
 	return peerMessagesCount(home, seat, claims, time.Now())
 }
 
-func peerMessagesCount(home, seat string, claims func() (map[string]string, error), now time.Time) int {
+func peerMessagesCount(home, seat string, claims func() (board.Ownership, error), now time.Time) int {
 	inbox, err := board.Pending(home, seat, claims, now)
 	defer inbox.Release()
 	if err != nil {

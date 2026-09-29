@@ -21,7 +21,7 @@ func TestDelegateBriefCarriesThePeerCount(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Date(2026, 9, 29, 10, 0, 0, 0, time.UTC)
-	claims := func() (map[string]string, error) { return map[string]string{"goal-x": "m1b"}, nil }
+	claims := func() (board.Ownership, error) { return board.Ownership{Live: map[string]string{"goal-x": "m1b"}}, nil }
 	if count := peerMessagesCount(home, "m1b", claims, now); count != 0 || PeerMessagesPointer(count) != "" {
 		t.Fatalf("an empty board counts %d and points %q", count, PeerMessagesPointer(count))
 	}

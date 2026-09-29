@@ -260,7 +260,7 @@ func (f *fakeOps) PeerClaims(repo string) (string, int) {
 	if f.peerClaims != nil {
 		return f.peerClaims(repo)
 	}
-	return "{}\n", 0
+	return `{"live":{},"concluded":{}}` + "\n", 0
 }
 
 func (f *fakeOps) BrainBoot(ctx context.Context, root, repo string, bytes, deadlineMS int) (string, string, int) {

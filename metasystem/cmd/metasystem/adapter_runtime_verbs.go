@@ -55,7 +55,7 @@ func runAdapterClaudeToolGate(args []string) int {
 	startedAt, _ := toolGateProcessBirth(int64(os.Getpid()))
 	home, _ := board.Home()
 	claude, _ := runtimes.Lookup("claude")
-	peer, release := toolGatePeer(home, stateRoot, goal.ResolveMachine, acceptedClaims(stateRoot), claude.ToolContextBytes, os.Stderr, toolGateClock)
+	peer, release := toolGatePeer(home, stateRoot, goal.ResolveMachine, func() (board.Ownership, error) { return goal.PeerOwnership(stateRoot) }, claude.ToolContextBytes, os.Stderr, toolGateClock)
 	defer release()
 	err = adapter.RunToolGate(adapter.ToolGateOptions{
 		ShellStartedAt: startedAt, Clock: toolGateClock, MemoryDir: memoryDir, Mode: mode,
@@ -74,7 +74,7 @@ func runAdapterClaudeToolGate(args []string) int {
 // at its single exit only; release gives back the claim locks the offer
 // holds, after the gate returned. An empty board reads no enrollment and a
 // runtime without a declared field is offered nothing.
-func toolGatePeer(home, root string, resolve func(string) (string, error), claims func() (map[string]string, error), room int, stderr io.Writer, now func() time.Time) (func() (string, func() error), func()) {
+func toolGatePeer(home, root string, resolve func(string) (string, error), claims func() (board.Ownership, error), room int, stderr io.Writer, now func() time.Time) (func() (string, func() error), func()) {
 	var offer *hooks.PeerOffer
 	peer := func() (string, func() error) {
 		if home == "" || room <= 0 || !board.HasMessages(home) {

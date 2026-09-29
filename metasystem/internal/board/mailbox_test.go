@@ -21,13 +21,13 @@ func askGoal(goal, text string) Request {
 	return Request{Kind: KindAsk, From: Sender{Machine: "m1a", Lineage: "L1"}, To: Address{Goal: goal}, Text: text}
 }
 
-func claimsOf(pairs ...string) func() (map[string]string, error) {
-	return func() (map[string]string, error) {
+func claimsOf(pairs ...string) func() (Ownership, error) {
+	return func() (Ownership, error) {
 		claims := map[string]string{}
 		for i := 0; i+1 < len(pairs); i += 2 {
 			claims[pairs[i]] = pairs[i+1]
 		}
-		return claims, nil
+		return Ownership{Live: claims}, nil
 	}
 }
 
@@ -40,7 +40,7 @@ func mustPublish(t *testing.T, home string, request Request, now time.Time) Publ
 	return published
 }
 
-func pendingIDs(t *testing.T, home, self string, claims func() (map[string]string, error), now time.Time) ([]string, *Inbox) {
+func pendingIDs(t *testing.T, home, self string, claims func() (Ownership, error), now time.Time) ([]string, *Inbox) {
 	t.Helper()
 	inbox, err := Pending(home, self, claims, now)
 	if err != nil {
@@ -54,7 +54,7 @@ func pendingIDs(t *testing.T, home, self string, claims func() (map[string]strin
 }
 
 // offer is one hook's pending read and marker for self, released at once.
-func offer(t *testing.T, home, self string, claims func() (map[string]string, error), now time.Time) []string {
+func offer(t *testing.T, home, self string, claims func() (Ownership, error), now time.Time) []string {
 	t.Helper()
 	ids, inbox := pendingIDs(t, home, self, claims, now)
 	defer inbox.Release()
@@ -375,7 +375,7 @@ func TestGoalMessagesFollowTheLedgerClaim(t *testing.T) {
 	var reads atomic.Int32
 	claims := map[string]string{"goal-x": "m1b"}
 	var mu sync.Mutex
-	read := func() (map[string]string, error) {
+	read := func() (Ownership, error) {
 		reads.Add(1)
 		mu.Lock()
 		defer mu.Unlock()
@@ -383,7 +383,7 @@ func TestGoalMessagesFollowTheLedgerClaim(t *testing.T) {
 		for goal, machine := range claims {
 			copied[goal] = machine
 		}
-		return copied, nil
+		return Ownership{Live: copied}, nil
 	}
 	if ids := offer(t, home, "m1b", read, t0); len(ids) != 0 || reads.Load() != 0 {
 		t.Fatalf("an empty board: offered %v, %d claim reads; want none", ids, reads.Load())
@@ -444,7 +444,7 @@ func TestGoalMessagesFollowTheLedgerClaim(t *testing.T) {
 	// Unreadable claims: goal messages stay pending, seat messages flow.
 	mustPublish(t, home, askGoal("goal-z", "anyone?"), t0)
 	seatID := mustPublish(t, home, askTo("m1f", "for the seat"), t0).Message.ID
-	failing := func() (map[string]string, error) { return nil, errors.New("accepted tip unreadable") }
+	failing := func() (Ownership, error) { return Ownership{}, errors.New("accepted tip unreadable") }
 	ids, inbox := pendingIDs(t, home, "m1f", failing, t0)
 	inbox.Release()
 	if strings.Join(ids, ",") != seatID || inbox.GoalWaiting == 0 || !strings.Contains(inbox.Unreadable, "accepted tip unreadable") {
@@ -548,7 +548,7 @@ func TestCountsNameOpenAndWaiting(t *testing.T) {
 	seatAsk := mustPublish(t, home, askTo("m1b", "q1"), t0).Message
 	mustPublish(t, home, askGoal("goal-x", "q2"), t0)
 	mustPublish(t, home, askGoal("goal-z", "q3"), t0)
-	counts, err := Count(home, "m1b", claimsOf("goal-x", "m1b"), t0)
+	counts, err := Count(home, "m1b", claimsOf("goal-x", "m1b", "goal-z", ""), t0)
 	if err != nil || counts.Open != 2 || counts.WaitingForHolder != 1 || fmt.Sprint(counts.WaitingGoals) != "[goal-z]" {
 		t.Fatalf("counts = %+v, %v", counts, err)
 	}

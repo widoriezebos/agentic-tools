@@ -205,7 +205,7 @@ func TestDeliveryFieldIsTheRuntimesDeclaration(t *testing.T) {
 			t.Fatalf("with the ledger unreadable: stdout %q stderr %q", run.stdout, run.stderr)
 		}
 		ops = packetOps(t, installation, "role packet")
-		ops.peerClaims = func(string) (string, int) { return `{"goal-x":"m1b"}` + "\n", 0 }
+		ops.peerClaims = func(string) (string, int) { return `{"live":{"goal-x":"m1b"},"concluded":{}}` + "\n", 0 }
 		run = runHook(t, installation, ops, hookCall{runtime: "claude", event: "start", env: env, payload: `{"session_id":"s-1","source":"startup"}` + "\n"})
 		if !strings.Contains(startContextField(t, run.stdout), "about goal goal-x, id "+message.ID) || !markerExists(home, message, "m1b") {
 			t.Fatalf("the holder's start = %q", run.stdout)

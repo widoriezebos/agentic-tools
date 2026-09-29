@@ -34,8 +34,9 @@ type Ops interface {
 	// PeerSeat is the checkout's enrolled seat nickname, the seat its peer
 	// messages are addressed to; nonzero status when none is enrolled.
 	PeerSeat(repo string) (string, int)
-	// PeerClaims is the live claims of the checkout's accepted ledger as
-	// {"goal":"machine"}; status 1 with the reason when it is unreadable.
+	// PeerClaims is the goals' ownership at the checkout's accepted tip as
+	// {"live":{"goal":"machine"},"concluded":{"goal":"fact"}}; status 1 with
+	// the reason when it is unreadable.
 	PeerClaims(repo string) (string, int)
 	// StewardPending names undelivered steward incidents in one line.
 	StewardPending(repo string) (string, int)

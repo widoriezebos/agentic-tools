@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/adapter"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/cachedomain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
@@ -231,7 +232,7 @@ func (o hookOwners) PeerSeat(repo string) (string, int) {
 // PeerClaims is the live claims of the checkout's accepted ledger, the
 // ownership a goal's peer message is delivered by; never a card.
 func (o hookOwners) PeerClaims(repo string) (string, int) {
-	return peerClaimsLine(acceptedClaims(repo))
+	return peerClaimsLine(func() (board.Ownership, error) { return goal.PeerOwnership(repo) })
 }
 
 // peerSeatLine is the nickname on one line, status 1 when none is enrolled.
@@ -243,17 +244,20 @@ func peerSeatLine(resolve func(string) (string, error), repo string) (string, in
 	return strings.TrimSpace(machine) + "\n", 0
 }
 
-// peerClaimsLine is the claims as one JSON object {"goal":"machine"}, or the
-// reason the ledger is unreadable with status 1.
-func peerClaimsLine(read func() (map[string]string, error)) (string, int) {
-	claims, err := read()
+// peerClaimsLine is the ownership as one JSON object, or the reason the
+// ledger is unreadable with status 1.
+func peerClaimsLine(read func() (board.Ownership, error)) (string, int) {
+	ownership, err := read()
 	if err != nil {
 		return err.Error() + "\n", 1
 	}
-	if claims == nil {
-		claims = map[string]string{}
+	if ownership.Live == nil {
+		ownership.Live = map[string]string{}
 	}
-	return jsonLine(claims), 0
+	if ownership.Concluded == nil {
+		ownership.Concluded = map[string]string{}
+	}
+	return jsonLine(ownership), 0
 }
 
 func (o hookOwners) StewardPending(repo string) (string, int) {

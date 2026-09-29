@@ -373,7 +373,9 @@ func TestHandoverHoldsTheClaimLockAgainstAPeerOffer(t *testing.T) {
 	if _, err := board.Publish(home, board.Request{Kind: board.KindAsk, From: board.Sender{Machine: "m1a"}, To: board.Address{Goal: id}, Text: "who reviews?"}, req.Now); err != nil {
 		t.Fatal(err)
 	}
-	sourceHolds := func() (map[string]string, error) { return map[string]string{id: "mac-studio"}, nil }
+	sourceHolds := func() (board.Ownership, error) {
+		return board.Ownership{Live: map[string]string{id: "mac-studio"}}, nil
+	}
 	offered, waiting := -1, -1
 	req.Ulid, req.Now = "01J5X00000000000000000HP01", req.Now.Add(time.Minute)
 	result, err := Handover(req, id, "landing", "landing-lineage", 11, "batch-a", func() (identity.Liveness, error) {

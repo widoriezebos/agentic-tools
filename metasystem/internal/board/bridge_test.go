@@ -409,7 +409,7 @@ func TestBridgeSweepNeverRemovesAnUnofferedMessage(t *testing.T) {
 			t.Fatalf("at +%v the sweep removed %v", step, removed)
 		}
 	}
-	inbox, err := Pending(home, "m1b", func() (map[string]string, error) { return map[string]string{"goal-q": "m1b"}, nil }, clock.Now())
+	inbox, err := Pending(home, "m1b", func() (Ownership, error) { return Ownership{Live: map[string]string{"goal-q": "m1b"}}, nil }, clock.Now())
 	if err != nil || len(inbox.Messages) != 1 || inbox.Messages[0].ID != ask.Message.ID ||
 		!strings.Contains(Render(inbox.Messages[0], clock.Now(), time.UTC), "[deadline 2026-09-29 10:30 passed; the asker said it would: land alone]") {
 		t.Fatalf("the first holder's offer = %+v, %v", inbox, err)
@@ -426,7 +426,7 @@ func TestBridgeSweepNeverRemovesAnUnofferedMessage(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, seat := range []string{"m1a", "m1c"} {
-		inbox, _ := Pending(home, seat, func() (map[string]string, error) { return nil, nil }, clock.Now())
+		inbox, _ := Pending(home, seat, func() (Ownership, error) { return Ownership{}, nil }, clock.Now())
 		for _, message := range inbox.Messages {
 			if message.ID == reply.Message.ID || message.ID == kept.Message.ID {
 				if err := Mark(message, seat, "L", "inbox", clock.Now()); err != nil {
