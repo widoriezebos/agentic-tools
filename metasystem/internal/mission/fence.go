@@ -389,47 +389,6 @@ func sortedKeysOfSet(set map[string]bool) []string {
 	return out
 }
 
-// CheckOrReserve checks the job fences and, when reserve is set and clear,
-// records the job's reservation.
-func CheckOrReserve(repo, mission, job string, capMin int, reserve bool) error {
-	return CheckOrReserveWithClock(repo, mission, job, capMin, reserve, nowUTC)
-}
-
-// CheckOrReserveWithClock applies the job fences using a caller-owned clock.
-func CheckOrReserveWithClock(repo, mission, job string, capMin int, reserve bool, clock func() time.Time) error {
-	dir, path, lockPath := fencePaths(repo, mission)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
-	lock, err := lockFileAt(lockPath)
-	if err != nil {
-		return err
-	}
-	defer lock.release()
-	fences, err := loadFencesAt(repo, mission, clock())
-	if err != nil {
-		return err
-	}
-	values, err := verifiedContractValues(repo, mission, fences)
-	if err != nil {
-		return err
-	}
-	now := clock().UTC()
-	if found := violationsAt(repo, values, fences, &capMin, "job", now); len(found) > 0 {
-		ask, askErr := writeBatchedAsk(repo, mission, found)
-		return fenceRefusal("job", found, ask, askErr)
-	}
-	if reserve {
-		reservations := reservationsMap(fences)
-		if _, exists := reservations[job]; exists {
-			return fmt.Errorf("mission fence reservation already exists for job: %s", job)
-		}
-		reservations[job] = map[string]any{"reservedAt": fenceISOAt(now), "capMin": capMin}
-		return atomicWriteJSON(path, fences)
-	}
-	return nil
-}
-
 // ReleaseJob deletes a job's fence reservation, for dispatches that died
 // during setup without ever starting a process. A husk's reservation
 // otherwise counts against fence.jobs forever — the signed job budget is

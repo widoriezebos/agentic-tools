@@ -75,7 +75,7 @@ func TestMissionBedConcurrentReservationsAdmitExactlyOne(t *testing.T) {
 		go func() {
 			defer group.Done()
 			<-start
-			results[index] = CheckOrReserveWithClock(repo, "race", job, 30, true, clock)
+			_, results[index] = AuthorizeCapWithClock(repo, "race", job, "codex", "gpt-5-6-sol", "", nil, clock)
 		}()
 	}
 	close(start)

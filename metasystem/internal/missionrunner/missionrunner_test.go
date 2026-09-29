@@ -35,22 +35,14 @@ func TestScaledWaitCompressesBelowOneSecond(t *testing.T) {
 	}
 }
 
-func TestScaledSeconds(t *testing.T) {
+func TestScaledWaitDefaultsToOneAndRefusesABadScale(t *testing.T) {
 	t.Setenv("METASYSTEM_FIXTURE_CAP_SCALE_MILLI", "")
-	if got, err := ScaledSeconds(5); err != nil || got != 5 {
-		t.Fatalf("default scale: got %d, %v", got, err)
-	}
-	t.Setenv("METASYSTEM_FIXTURE_CAP_SCALE_MILLI", "250")
-	if got, err := ScaledSeconds(10); err != nil || got != 3 {
-		t.Fatalf("scale 250: got %d, %v (want ceil(10*250/1000)=3)", got, err)
-	}
-	t.Setenv("METASYSTEM_FIXTURE_CAP_SCALE_MILLI", "100")
-	if got, err := ScaledSeconds(5); err != nil || got != 1 {
-		t.Fatalf("scale 100: got %d, %v (rounds up, floor one second)", got, err)
+	if w, err := ScaledWait(5); err != nil || w != 5*time.Second {
+		t.Fatalf("default scale: got %v, %v", w, err)
 	}
 	for _, bad := range []string{"0", "-5", "fast"} {
 		t.Setenv("METASYSTEM_FIXTURE_CAP_SCALE_MILLI", bad)
-		if _, err := ScaledSeconds(5); err == nil {
+		if _, err := ScaledWait(5); err == nil {
 			t.Fatalf("scale %q: want error", bad)
 		}
 	}
