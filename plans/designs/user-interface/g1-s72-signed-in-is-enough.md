@@ -219,6 +219,11 @@ migration of temporary-word machines; the kind on the fleet card; a
 terminal-run `seat launch --resume` of a browser record enrolls from the
 record, which is honest and may one day want a choice.
 
+Wido, 2026-09-29, on the three questions put to him (no migration of
+existing temporary-word machines in step 1; a terminal resume of a
+browser record enrolls as `human-session`; D2's caller classification
+stays): "Yeah, agreed."
+
 ## 8. Verification and box
 
 Go. `steward`: `VerifyIdentity` accepts `human-session` and still
