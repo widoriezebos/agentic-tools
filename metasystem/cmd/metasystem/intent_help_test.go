@@ -216,6 +216,11 @@ func TestIntentHelpJSON(t *testing.T) {
 		}
 	}
 	for _, object := range intentObjects() {
+		// help agent is the agents' page, the whole catalogue (above); the
+		// agent object's own actions are each reachable as help agent ACTION.
+		if intentTopic(object) {
+			continue
+		}
 		_, page := readHelpJSON(t, object, "--json")
 		if len(page.Commands) != len(objectActions(object)) {
 			t.Errorf("help %s --json lists %d actions, want %d", object, len(page.Commands), len(objectActions(object)))

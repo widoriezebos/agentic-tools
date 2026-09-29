@@ -115,7 +115,7 @@ func intentCommands() []intentCommand {
 	var commands []intentCommand
 	for _, part := range [][]intentCommand{
 		goalIntentCommands(), intentPlanningCommands(), goalReviewIntentCommands(), goalLandWithoutSittingIntentCommands(), designIntentCommands(), intentWorkCommands(),
-		intentDeliveryCommands(), helmIntentCommands(), processIntentCommands(), diskIntentCommands(), appIntentCommands(), practiceIntentCommands(), hiddenIntentEntries(), {topLevelStatus()},
+		intentDeliveryCommands(), agentIntentCommands(), helmIntentCommands(), processIntentCommands(), diskIntentCommands(), appIntentCommands(), practiceIntentCommands(), hiddenIntentEntries(), {topLevelStatus()},
 	} {
 		commands = append(commands, part...)
 	}
@@ -544,6 +544,8 @@ type intentOwners struct {
 	// internal/adopt.
 	adopt func(adopt.Options) (adopt.Result, error)
 	helm  helmOwners
+	// agent are the agent verbs' seams; the zero value is production.
+	agent agentOwners
 	// hookSwitch adjusts system setup's seams; nil keeps production.
 	hookSwitch func(hookswitch.Deps) hookswitch.Deps
 	// sentBackRevise runs the one work revise a sent-back goal's holder
@@ -992,7 +994,7 @@ type intentGroup struct {
 
 var intentGroups = []intentGroup{
 	{"plan", "Plan", []string{"goal", "design", "decision", "grant"}},
-	{"deliver", "Deliver", []string{"work", "test", "question", "incident"}},
+	{"deliver", "Deliver", []string{"work", "test", "question", "agent", "incident"}},
 	{"run", "Run", []string{"status", "helm", "session", "mission", "system", "machine", "disk", "app", "ui", "settings"}},
 	{"practice", "Practice", []string{"receipt", "experiment"}},
 }
@@ -1006,6 +1008,7 @@ var intentObjectSummaries = map[string]string{
 	"work":       "a goal's work: brief, build, review, revise, land, finish, wait and stop",
 	"test":       "risk-selected tests and their proof",
 	"question":   "questions for a person, and their answers",
+	"agent":      "messages between the agents on this host: ask, reply and read, never a person",
 	"incident":   "failures on main that someone must own",
 	"status":     "the overview of this checkout, or one goal's work",
 	"helm":       "human at the helm: take the whole seat out of the machinery's hands, and give it back",

@@ -598,6 +598,7 @@ func (inv *intentInvocation) statusBoardLines() ([]string, board.View) {
 	for _, record := range inv.unfinishedBatches() {
 		lines = append(lines, batchStatusLine(record, now))
 	}
+	lines = append(lines, inv.peerStatusLines(inv.layout.GitRoot)...)
 	return lines, view
 }
 

@@ -25,6 +25,7 @@ var publicPairs = []string{
 	"work brief", "work build", "work wait", "work review", "work revise", "work land", "work finish", "work status", "work stop",
 	"test run", "test wait", "test declare-moves", "test plan", "test add", "test remove", "test baseline", "test list", "test status",
 	"question ask", "question retry", "question withdraw", "question answer", "question show", "question list", "question wait",
+	"agent ask", "agent reply", "agent inbox",
 	"incident list", "incident claim", "incident close",
 	"status",
 	"helm take", "helm return",
@@ -42,7 +43,7 @@ var publicPairs = []string{
 
 // revisionSevenObjects are the objects section 3.4 leaves, in help order,
 // with helm (human-control design, section 3.1) in the Run group.
-var revisionSevenObjects = []string{"goal", "design", "decision", "grant", "work", "test", "question", "incident",
+var revisionSevenObjects = []string{"goal", "design", "decision", "grant", "work", "test", "question", "agent", "incident",
 	"helm", "session", "mission", "system", "machine", "disk", "app", "ui", "settings", "receipt", "experiment"}
 
 // hiddenPairs are the process entrypoints whose first word is an object.

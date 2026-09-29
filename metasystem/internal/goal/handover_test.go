@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
@@ -353,4 +354,49 @@ func TestHandedOverClaimReleaseClearsRecord(t *testing.T) {
 func TestHandedOverClaimConclusionClearsRecord(t *testing.T) {
 	t.Parallel()
 	handedOverTerminalClearsRecord(t, true)
+}
+
+// TestHandoverHoldsTheClaimLockAgainstAPeerOffer (R26, D14D-01): the
+// handover moves the claim while it holds the goal's claim lock, so the
+// source seat's offer of a goal message, reading ownership while the move is
+// in flight, emits nothing and leaves the message waiting; once the handover
+// has returned the lock is free again.
+func TestHandoverHoldsTheClaimLockAgainstAPeerOffer(t *testing.T) {
+	t.Parallel()
+	const id = "handover-peer-lock"
+	endpoint, req := handoverBed(t, id, false)
+	_ = endpoint
+	home, err := board.Home()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := board.Publish(home, board.Request{Kind: board.KindAsk, From: board.Sender{Machine: "m1a"}, To: board.Address{Goal: id}, Text: "who reviews?"}, req.Now); err != nil {
+		t.Fatal(err)
+	}
+	sourceHolds := func() (board.Ownership, error) {
+		return board.Ownership{Live: map[string]string{id: "mac-studio"}}, nil
+	}
+	offered, waiting := -1, -1
+	req.Ulid, req.Now = "01J5X00000000000000000HP01", req.Now.Add(time.Minute)
+	result, err := Handover(req, id, "landing", "landing-lineage", 11, "batch-a", func() (identity.Liveness, error) {
+		// Inside the claim transition: the source's offer is refused the lock.
+		inbox, err := board.Pending(home, "mac-studio", sourceHolds, req.Now)
+		if err != nil {
+			return identity.Unknown, err
+		}
+		offered, waiting = len(inbox.Messages), inbox.GoalWaiting
+		inbox.Release()
+		return identity.Alive, nil
+	})
+	if err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("handover: %+v %v", result, err)
+	}
+	if offered != 0 || waiting != 1 {
+		t.Fatalf("during the handover the source was offered %d messages (%d waiting); want none offered and the message waiting", offered, waiting)
+	}
+	inbox, err := board.Pending(home, "mac-studio", sourceHolds, req.Now)
+	if err != nil || len(inbox.Messages) != 1 {
+		t.Fatalf("after the handover the claim lock is still held: %+v %v", inbox, err)
+	}
+	inbox.Release()
 }

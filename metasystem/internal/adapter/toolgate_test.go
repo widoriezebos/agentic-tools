@@ -131,16 +131,16 @@ func TestToolGateAllowEmitsNothing(t *testing.T) {
 		Decide(Classify(Call{Tool: "Edit", Input: json.RawMessage(`{"bad":true}`)}, ""), budget.Ceiling, budget, "/repo"),
 	}
 	for index, decision := range allows {
-		if decision.Deny || decision.Output() != nil {
-			t.Fatalf("allow %d emitted %#v from %#v", index, decision.Output(), decision)
+		if decision.Deny || decision.Compose("") != nil {
+			t.Fatalf("allow %d emitted %#v from %#v", index, decision.Compose(""), decision)
 		}
 	}
 
 	deny := Decide(Classify(bashToolGateCall("rm scratch"), memoryDir), 123456, budget, "/repo")
 	wantReason := "CONTEXT AT 123K (trigger 105K): this call is denied; run metasystem session handoff --root /repo alone, or launch a delegate"
 	wantOutput := `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"` + wantReason + `"}}`
-	if !deny.Deny || deny.Reason != wantReason || string(deny.Output()) != wantOutput {
-		t.Fatalf("deny = %#v output=%s", deny, deny.Output())
+	if !deny.Deny || deny.Reason != wantReason || string(deny.Compose("")) != wantOutput || string(deny.Compose("peer text")) != wantOutput {
+		t.Fatalf("deny = %#v output=%s, with a peer message %s", deny, deny.Compose(""), deny.Compose("peer text"))
 	}
 }
 

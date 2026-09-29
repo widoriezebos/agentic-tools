@@ -6,24 +6,29 @@ import (
 	"time"
 )
 
-// The host board's two settings (batch-lane design D14-r2, R25). The
-// steward's bridge role reads them; board.Write and board.Read never do.
+// The host board's settings (batch-lane design D14-r2, R25; the mailbox's
+// keep-days D14-r3, R26). The steward's bridge role reads them; board.Write,
+// board.Read and the mailbox never do.
 const (
-	BoardKeepHoursKey = "board.keep-hours"
-	BoardPollSecKey   = "board.poll-sec"
+	BoardKeepHoursKey       = "board.keep-hours"
+	BoardPollSecKey         = "board.poll-sec"
+	BoardMailboxKeepDaysKey = "board.mailbox-keep-days"
 )
 
 // Board is how long a terminal card stays on the board before the bridge
 // sweeps it, and the bridge's bounded poll where no kernel watch can be
-// established.
+// established, and how long a closed peer-message thread whose every
+// message was offered stays in its mailbox after it closed.
 type Board struct {
-	Keep time.Duration
-	Poll time.Duration
+	Keep        time.Duration
+	Poll        time.Duration
+	MailboxKeep time.Duration
 }
 
 // DefaultBoard is the compiled board settings.
 func DefaultBoard() Board {
-	return Board{Keep: time.Duration(intDefault(BoardKeepHoursKey)) * time.Hour, Poll: time.Duration(intDefault(BoardPollSecKey)) * time.Second}
+	return Board{Keep: time.Duration(intDefault(BoardKeepHoursKey)) * time.Hour, Poll: time.Duration(intDefault(BoardPollSecKey)) * time.Second,
+		MailboxKeep: time.Duration(intDefault(BoardMailboxKeepDaysKey)) * 24 * time.Hour}
 }
 
 // ResolveBoard reads the board settings through the one resolver.
@@ -47,5 +52,9 @@ func ResolveBoard(confPath string) (Board, error) {
 	if err != nil {
 		return Board{}, err
 	}
-	return Board{Keep: time.Duration(keep) * time.Hour, Poll: time.Duration(poll) * time.Second}, nil
+	mailboxKeep, err := read(BoardMailboxKeepDaysKey)
+	if err != nil {
+		return Board{}, err
+	}
+	return Board{Keep: time.Duration(keep) * time.Hour, Poll: time.Duration(poll) * time.Second, MailboxKeep: time.Duration(mailboxKeep) * 24 * time.Hour}, nil
 }

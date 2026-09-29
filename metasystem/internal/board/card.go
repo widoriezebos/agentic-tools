@@ -158,8 +158,12 @@ type Card struct {
 
 // Home is the directory the board lives under: the registry's own
 // .metasystem directory, redirected by the registry's fixture variable.
-func Home() (string, error) {
-	if override := os.Getenv(registryHomeEnv); override != "" {
+func Home() (string, error) { return HomeWith(os.LookupEnv) }
+
+// HomeWith is Home read through lookup: a hook resolves the board from the
+// environment its invocation carries.
+func HomeWith(lookup func(string) (string, bool)) (string, error) {
+	if override, _ := lookup(registryHomeEnv); override != "" {
 		if !filepath.IsAbs(override) {
 			return "", fmt.Errorf("%s must name an absolute run-scoped home", registryHomeEnv)
 		}

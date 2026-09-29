@@ -69,3 +69,34 @@ func drain(watcher *Watcher) {
 		}
 	}
 }
+
+// TestKernelWatchSignalsMailboxWrites (R25, R26; U10e-2): the kernel watch
+// covers the seats' and the goals' mailboxes: a message published into an
+// existing mailbox and a first marker written for it are each a signal.
+func TestKernelWatchSignalsMailboxWrites(t *testing.T) {
+	t.Parallel()
+	home := t.TempDir()
+	for _, to := range []Address{{Machine: "m1b"}, {Goal: "goal-x"}} {
+		if _, err := Publish(home, Request{Kind: KindAsk, From: Sender{Machine: "m1a"}, To: to, Text: "first"}, t0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	watcher, err := KernelWatch(Dir(home))
+	if err != nil {
+		t.Fatalf("no kernel watch on this platform's temporary directory: %v", err)
+	}
+	defer watcher.Close()
+	for _, to := range []Address{{Machine: "m1b"}, {Goal: "goal-x"}} {
+		drain(watcher)
+		published, err := Publish(home, Request{Kind: KindAsk, From: Sender{Machine: "m1a"}, To: to, Text: "second"}, t0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		<-watcher.Events()
+		drain(watcher)
+		if err := Mark(published.Message, "m1b", "L", "tool", t0); err != nil {
+			t.Fatal(err)
+		}
+		<-watcher.Events()
+	}
+}

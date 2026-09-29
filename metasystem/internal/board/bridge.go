@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -34,16 +35,20 @@ var knownKinds = map[string]bool{KindCard: true, KindStall: true, KindMessage: t
 // the last read of the armed seats' raw cards, and pushes each change to its
 // subscribers over the user-only socket, raw cards in the snapshot and
 // events that carry nothing. It classifies nothing, writes no card, takes no
-// command, and decides nothing; its one write is the sweep of terminal cards
-// older than Keep.
+// command, and decides nothing; its writes are the sweeps: terminal cards
+// older than Keep, and peer-message threads closed, every message offered,
+// and MailboxKeep past their close (zero sweeps no message). A mailbox write
+// is one message event that carries nothing, never a message's text.
 type Bridge struct {
-	Home  string
-	Seats func() ([]Seat, error)
-	Stall time.Duration
-	Keep  time.Duration
-	Now   func() time.Time
+	Home        string
+	Seats       func() ([]Seat, error)
+	Stall       time.Duration
+	Keep        time.Duration
+	MailboxKeep time.Duration
+	Now         func() time.Time
 
 	mu          sync.Mutex
+	mail        string
 	last        map[string][]byte
 	cards       map[string]Card
 	stalled     map[string]bool
@@ -65,6 +70,7 @@ func (b *Bridge) Run(stop <-chan struct{}, listener net.Listener, changed <-chan
 	b.last, b.cards, b.stalled, b.subscribers = map[string][]byte{}, map[string]Card{}, map[string]bool{}, map[*subscriber]bool{}
 	b.mu.Unlock()
 	b.refresh(false)
+	b.refreshMail(false)
 	go func() {
 		for {
 			conn, err := listener.Accept()
@@ -93,6 +99,7 @@ func (b *Bridge) Run(stop <-chan struct{}, listener net.Listener, changed <-chan
 				continue
 			}
 			b.refresh(true)
+			b.refreshMail(true)
 		case now, open := <-ticks:
 			if !open {
 				ticks = nil
@@ -101,6 +108,10 @@ func (b *Bridge) Run(stop <-chan struct{}, listener net.Listener, changed <-chan
 			if len(b.Sweep()) > 0 {
 				b.refresh(true)
 			}
+			b.SweepMessages()
+			// A marker written under a message's own delivered directory is
+			// not under the watch; the tick finds it.
+			b.refreshMail(true)
 			b.checkStalls()
 			heartbeat, _ := json.Marshal(map[string]string{"heartbeat": now.UTC().Format(time.RFC3339)})
 			b.broadcast("", heartbeat)
@@ -145,6 +156,108 @@ func (b *Bridge) refresh(emit bool) {
 	}
 	for range changes {
 		b.broadcastLocked(KindCard, []byte(`{"event":"card"}`))
+	}
+}
+
+// refreshMail reads the mailboxes' listing afresh; with emit, a change is
+// one message event, which carries nothing.
+func (b *Bridge) refreshMail(emit bool) {
+	print := mailPrint(b.Home)
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	changed := print != b.mail
+	b.mail = print
+	if emit && changed {
+		b.broadcastLocked(KindMessage, []byte(`{"event":"message"}`))
+	}
+}
+
+// mailPrint is every message and marker name on the board, in order: what a
+// message event reports changed, and nothing of any message's content.
+func mailPrint(home string) string {
+	var names []string
+	mailboxes := seatMailboxes(home)
+	goals, _ := goalMailboxes(home)
+	for _, goal := range goals {
+		mailboxes = append(mailboxes, mailboxDir(home, Address{Goal: goal}))
+	}
+	for _, mailbox := range mailboxes {
+		messages, _ := os.ReadDir(filepath.Join(mailbox, "messages"))
+		for _, entry := range messages {
+			names = append(names, mailbox+"/m/"+entry.Name())
+		}
+		delivered, _ := os.ReadDir(filepath.Join(mailbox, "delivered"))
+		for _, entry := range delivered {
+			markers, _ := os.ReadDir(filepath.Join(mailbox, "delivered", entry.Name()))
+			for _, marker := range markers {
+				names = append(names, mailbox+"/d/"+entry.Name()+"/"+marker.Name())
+			}
+		}
+	}
+	return strings.Join(names, "\n")
+}
+
+// SweepMessages removes the threads that may leave the board (Sweepable:
+// closed, every message offered to its addressee, MailboxKeep past the
+// close): each message's file and markers, then a goal mailbox left empty.
+// An unoffered message is never removed. It returns what it removed, board
+// relative, sorted.
+func (b *Bridge) SweepMessages() []string {
+	if b.MailboxKeep <= 0 {
+		return nil
+	}
+	threads, err := Threads(b.Home)
+	if err != nil {
+		return nil
+	}
+	now := b.Now()
+	board := Dir(b.Home)
+	var removed []string
+	for _, thread := range threads {
+		if !thread.Sweepable(now, b.MailboxKeep) {
+			continue
+		}
+		for _, message := range thread.Messages {
+			if removeMessage(message) {
+				relative, _ := filepath.Rel(board, filepath.Join(message.mailbox, "messages", message.ID+".json"))
+				removed = append(removed, filepath.ToSlash(relative))
+			}
+		}
+	}
+	goals, _ := goalMailboxes(b.Home)
+	for _, goal := range goals {
+		removeEmptyGoalMailbox(b.Home, goal)
+	}
+	sort.Strings(removed)
+	return removed
+}
+
+// removeMessage removes one message's markers and then its file.
+func removeMessage(message Message) bool {
+	if message.mailbox == "" || !ValidID(message.ID) {
+		return false
+	}
+	markers := filepath.Join(message.mailbox, "delivered", message.ID)
+	for _, machine := range message.offeredTo {
+		_ = os.Remove(filepath.Join(markers, machine+".json"))
+	}
+	_ = os.Remove(markers)
+	_ = os.Remove(filepath.Join(message.mailbox, "concluded", message.ID+".json"))
+	return os.Remove(filepath.Join(message.mailbox, "messages", message.ID+".json")) == nil
+}
+
+// removeEmptyGoalMailbox removes a goal's mailbox directories when no
+// message is left in it; a directory that is not empty stays.
+func removeEmptyGoalMailbox(home, goal string) {
+	mailbox := mailboxDir(home, Address{Goal: goal})
+	if entries, err := os.ReadDir(filepath.Join(mailbox, "messages")); err != nil || len(entries) > 0 {
+		return
+	}
+	_ = os.Remove(filepath.Join(mailbox, "concluded"))
+	for _, dir := range []string{filepath.Join(mailbox, "messages"), filepath.Join(mailbox, "delivered"), mailbox, filepath.Dir(mailbox)} {
+		if os.Remove(dir) != nil {
+			return
+		}
 	}
 }
 
