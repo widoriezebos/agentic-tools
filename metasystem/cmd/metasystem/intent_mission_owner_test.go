@@ -172,3 +172,39 @@ func TestMissionStartWaitRunsTheMissionToItsEnd(t *testing.T) {
 		t.Fatalf("launch waits = %v, want [true false]", waits)
 	}
 }
+
+// TestMissionStatusOfAnUnknownMissionIsRefused is EM-08: a mission with no
+// state in this repository is not a status line with exit 0 (a false
+// success a script reads as a live record); it is refused, exit 1, naming
+// the mission. A never-started mission with a contract says so and names
+// the start. A known mission's status is still a confirmed read.
+func TestMissionStatusOfAnUnknownMissionIsRefused(t *testing.T) {
+	t.Parallel()
+	b := newProcessBed(t)
+	parkedHostFailureMission(t, b.root())
+	owners := b.owners()
+	owners.delivery = &intentDeliveryOwners{executable: func() (string, error) { return "/fake/metasystem", nil },
+		process: func(process intentProcess) intentProcessResult {
+			t.Errorf("an engine child ran: %v", process.argv)
+			return intentProcessResult{code: 1}
+		}, calls: defaultIntentOwnerCalls()}
+	code, result := b.runJSON(owners, "mission", "status", "nosuch")
+	if code != 1 || result.Outcome != intentRefused || result.Summary != "no mission nosuch in this repository; nothing was read" {
+		t.Fatalf("unknown mission status = %d %+v", code, result)
+	}
+	contractPath := filepath.Join(b.root(), "plans", "mission-drafted.contract.md")
+	if err := os.MkdirAll(filepath.Dir(contractPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(contractPath, []byte("# drafted\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	code, result = b.runJSON(owners, "mission", "status", "drafted")
+	if code != 1 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "mission drafted has a contract but was never started") ||
+		result.Next == nil || !strings.Contains(strings.Join(result.Next.Argv, " "), "mission start drafted") {
+		t.Fatalf("never-started mission status = %d %+v", code, result)
+	}
+	if code, result = b.runJSON(owners, "mission", "status", "demo"); code != 0 || result.Outcome != intentConfirmed {
+		t.Fatalf("known mission status = %d %+v", code, result)
+	}
+}

@@ -1868,8 +1868,33 @@ func runIntentMission(inv *intentInvocation, verb, mission string) int {
 		if result.Summary == "" {
 			result.Summary = done
 		}
+		// EM-08: a mission with no state here is not a status record; exit
+		// 0 would tell a script the mission exists.
+		if strings.Contains(result.Summary, " status=unreadable reason=missing-state") {
+			result = inv.missionStatusWithoutState(mission)
+		}
 	}
 	return inv.render(result)
+}
+
+// missionStatusWithoutState refuses the status of a mission that has no
+// runner state in this repository: never started when its contract is
+// there, unknown otherwise. Nothing is read or changed.
+func (inv *intentInvocation) missionStatusWithoutState(mission string) intentResult {
+	targets := []intentTarget{{Kind: "mission", ID: mission}}
+	for _, root := range []string{inv.stateRoot, inv.layout.GitRoot} {
+		if root == "" {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(root, "plans", "mission-"+mission+".contract.md")); err == nil {
+			result := intentResult{Targets: targets, Outcome: intentRefused, code: 1,
+				Summary: "mission " + mission + " has a contract but was never started; nothing was read"}
+			result.next, result.nextReason = inv.publicArgv("mission", "start", mission), "starts the mission its contract describes"
+			return result
+		}
+	}
+	return intentResult{Targets: targets, Outcome: intentRefused, code: 1,
+		Summary: "no mission " + mission + " in this repository; nothing was read"}
 }
 
 // missionOwnerLaunch starts or resumes one mission through the runner in
