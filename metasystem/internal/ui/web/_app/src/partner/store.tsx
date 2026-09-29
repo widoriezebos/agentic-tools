@@ -1067,7 +1067,7 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
         // Refused: the draft stays, and so does the key, so pressing Send
         // again is this turn again rather than a second one.
         if (isBusy(error)) {
-          setStore((held) => refused(held, reasonOf(error), ""));
+          setStore((held) => refused(held, reasonOf(error), "", true));
           return;
         }
         setStore((held) => refused(held, reasonOf(error), installOf(error)));

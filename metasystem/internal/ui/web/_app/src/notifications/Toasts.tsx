@@ -1,9 +1,10 @@
 import { X } from "lucide-react";
 import type { AnimationEvent } from "react";
 
-import { needsAHuman, type Notification } from "./notifications";
+import { happened, needsAHuman, type Notification } from "./notifications";
 import { useNotifications } from "./store";
 import { Chip, IconButton } from "../shell/controls";
+import { Trouble } from "../shell/Trouble";
 
 /**
  * What just arrived, at the bottom right, above the Project Partner's drawer.
@@ -52,7 +53,7 @@ export function Toasts() {
   );
 }
 
-function Toast({
+export function Toast({
   notification,
   onOpen,
   onClose,
@@ -62,6 +63,25 @@ function Toast({
   onClose: () => void;
 }) {
   const stays = needsAHuman(notification.source);
+  // A failure — an alert, or a delivery that did not happen — is a trouble
+  // line, as its bell row is (Sol SOL-S68-04): its Ask stands beside the
+  // message, outside the button that opens the panel at it, because a button
+  // inside a button is neither.
+  const alert = notification.source === "alert";
+  const failed = alert || !notification.delivered;
+  const body = (
+    <button
+      type="button"
+      className="ms-toast-body"
+      onClick={onOpen}
+      aria-label={failed ? "Open in the notifications" : undefined}
+    >
+      <span className="ms-toast-line">
+        <Chip>{notification.source}</Chip>
+      </span>
+      {!alert && <span className="ms-toast-message">{notification.message}</span>}
+    </button>
+  );
   return (
     <div
       className={stays ? "ms-toast ms-toast--standing" : "ms-toast ms-toast--fading"}
@@ -73,15 +93,17 @@ function Toast({
         }
       }}
     >
-      <button type="button" className="ms-toast-body" onClick={onOpen}>
-        <span className="ms-toast-line">
-          <Chip>{notification.source}</Chip>
-        </span>
-        <span className="ms-toast-message">{notification.message}</span>
-        {!notification.delivered && (
-          <span className="ms-toast-undelivered">not delivered to macOS: {notification.error}</span>
-        )}
-      </button>
+      {failed ? (
+        <div className="ms-toast-main">
+          {body}
+          {alert && <Trouble text={notification.message} {...happened(notification)} />}
+          {!notification.delivered && (
+            <Trouble text={`not delivered to macOS: ${notification.error}`} variant="small" {...happened(notification)} />
+          )}
+        </div>
+      ) : (
+        body
+      )}
       <IconButton label="Close this notification" onClick={onClose}>
         <X size={14} strokeWidth={1.75} aria-hidden="true" />
       </IconButton>

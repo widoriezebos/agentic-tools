@@ -1,5 +1,5 @@
 import { useNotifications } from "./store";
-import { clockTime, groupByDay, type Notification } from "./notifications";
+import { clockTime, groupByDay, happened, type Notification } from "./notifications";
 import { Button, Chip } from "../shell/controls";
 import { Sheet } from "../shell/Sheet";
 import { Trouble } from "../shell/Trouble";
@@ -78,7 +78,7 @@ export function NotificationsPanel() {
  * clicking a toast body does — the toast is a glimpse and this is the record,
  * and landing anywhere but on that message would make the click a lie.
  */
-function Row({
+export function Row({
   notification,
   focused,
   onAsked,
@@ -107,12 +107,12 @@ function Row({
           (g1-s68 D5). The press closes the panel, which is window-modal, so
           the answer is where the human can read it. */}
       {notification.source === "alert" ? (
-        <Trouble text={notification.message} onAsked={onAsked} />
+        <Trouble text={notification.message} onAsked={onAsked} {...happened(notification)} />
       ) : (
         <p className="ms-notification-message">{notification.message}</p>
       )}
       {!notification.delivered && (
-        <Trouble text={`not delivered to macOS: ${notification.error}`} onAsked={onAsked} />
+        <Trouble text={`not delivered to macOS: ${notification.error}`} onAsked={onAsked} {...happened(notification)} />
       )}
     </li>
   );

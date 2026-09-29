@@ -36,6 +36,7 @@ export function Trouble({
   code,
   act,
   subject,
+  at,
   signIn,
   onAsked,
   broken,
@@ -53,6 +54,8 @@ export function Trouble({
   act?: TroubleAct;
   /** What the page is about, where the site knows better than the page. */
   subject?: { id: string; kind: string };
+  /** When it happened, where the site knows: a notification's own time, not when its row was drawn. */
+  at?: string;
   signIn?: boolean;
   /** What the press closes first, so the answer can be read: the bell's panel, the sign-in sheet. */
   onAsked?: () => void;
@@ -66,10 +69,11 @@ export function Trouble({
 }) {
   const { ask, pending, secrets } = useTroubles();
   const origin = useId();
-  // When it happened is when the line first said it, not when it was asked.
-  const seen = useRef({ text, at: new Date().toISOString() });
-  if (seen.current.text !== text) {
-    seen.current = { text, at: new Date().toISOString() };
+  // When it happened is when the line first said it, not when it was asked —
+  // or, where the site knows the moment itself, that moment.
+  const seen = useRef({ text, at: at ?? new Date().toISOString() });
+  if (seen.current.text !== text || (at !== undefined && seen.current.at !== at)) {
+    seen.current = { text, at: at ?? new Date().toISOString() };
   }
   const waiting = pending.find((entry) => entry.origin === origin);
 

@@ -516,9 +516,7 @@ export function SendBackBrief({
   if (fixes.length === 0) {
     return (
       <div className="ms-send-back">
-        <p className="ms-end-refused" role="status">
-          {NO_FIX}
-        </p>
+        <Trouble text={NO_FIX} role="status" act={{ verb: "Send back", object: "review" }} />
         <Button onClick={onBack}>Back to the three ways</Button>
       </div>
     );
@@ -603,8 +601,14 @@ export function EndWays({
               </Button>
               <span className="ms-finding-consequence">{one.consequence}</span>
               {refused && (
-                <div className="ms-end-refused" role="status">
-                  <p>{CLEAR_REFUSED}</p>
+                <div className="ms-end-unanswered">
+                  <Trouble
+                    text={`${CLEAR_REFUSED} ${unanswered.map((entry) => entry.text).join("; ")}`}
+                    role="status"
+                    act={{ verb: "Clear to land", object: "review" }}
+                  >
+                    {CLEAR_REFUSED}
+                  </Trouble>
                   <ul>
                     {unanswered.map((entry) => (
                       <li key={entry.mark === "" ? entry.text : entry.mark}>{entry.text}</li>

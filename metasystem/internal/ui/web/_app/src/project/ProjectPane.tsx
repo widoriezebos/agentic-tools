@@ -89,7 +89,7 @@ import { ReviewItOrDoor } from "../review/Door";
 import { doorLine } from "../review/room";
 import { StickiesBlock } from "../stickies/Block";
 import { useSession } from "../shell/identity";
-import { failureMessage as actFailureMessage } from "../shell/workspace";
+import { failureCode, failureMessage as actFailureMessage } from "../shell/workspace";
 import {
   readBacklogView,
   readGoalTab,
@@ -994,6 +994,7 @@ function Dependencies({
   const [adding, setAdding] = useState<"waits" | "holds" | null>(null);
   const [chosen, setChosen] = useState<string[]>([]);
   const [refusal, setRefusal] = useState("");
+  const [refusalCode, setRefusalCode] = useState("");
   const [sending, setSending] = useState(false);
   const { askToSignIn } = useSession();
   const retried = useRef(false);
@@ -1034,6 +1035,7 @@ function Dependencies({
           return;
         }
         setRefusal(actFailureMessage(error));
+        setRefusalCode(failureCode(error));
       });
   };
 
@@ -1134,9 +1136,7 @@ function Dependencies({
         {list("holds", mine.holds)}
       </div>
       {refusal !== "" && (
-        <p className="ms-act-refuse" role="alert">
-          {refusal}
-        </p>
+        <Trouble text={refusal} role="alert" variant="small" code={refusalCode} subject={{ id: goal, kind: "goal" }} />
       )}
     </section>
   );

@@ -7,6 +7,7 @@ import { usePartner } from "../partner/store";
 import { Help } from "../help/Help";
 import { loadDocument, type Block, type DocumentPayload } from "../project/api";
 import { Markdown } from "../project/Markdown";
+import { Trouble } from "../shell/Trouble";
 
 /**
  * The desk (g1-s65 §3, D4): the laptop in the room. It shows one thing at a
@@ -115,11 +116,9 @@ function useRead<T>(load: (signal: AbortSignal) => Promise<T>, key: string): Rea
   return read;
 }
 
-function Refused({ reason }: { reason: string }) {
+export function Refused({ reason }: { reason: string }) {
   return (
-    <p className="ms-desk-refused" role="status">
-      {reason}
-    </p>
+    <Trouble text={reason} role="status" />
   );
 }
 

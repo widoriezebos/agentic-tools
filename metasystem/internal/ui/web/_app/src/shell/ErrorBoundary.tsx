@@ -3,6 +3,7 @@ import { Component, type ErrorInfo, type ReactNode } from "react";
 import { Button } from "./controls";
 import { Trouble } from "./Trouble";
 import { BROKEN_DRAWER, BROKEN_ROOM, boundaryText } from "./troubling";
+import { activeSection } from "../routes";
 
 /**
  * A pane that throws takes down the pane, not the shell: the rail, the header
@@ -65,4 +66,15 @@ export function Caught({ error, conversation }: { error: Error; conversation?: H
       )}
     </div>
   );
+}
+
+/**
+ * Which conversation the work area's boundary would take down at this
+ * address. The focused view at /brain is the conversation in full, with no
+ * drawer beside it, so a throw there takes the conversation's renderer with
+ * it and the line offers the reload rather than an Ask nobody could read the
+ * answer of (Sol SOL-S68-02).
+ */
+export function holdsAt(pathname: string): Holds {
+  return activeSection(pathname)?.id === "brain" ? "drawer" : undefined;
 }

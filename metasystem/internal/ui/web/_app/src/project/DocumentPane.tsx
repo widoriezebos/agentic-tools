@@ -798,7 +798,7 @@ function Editing({
  */
 function Problems({ problems }: { problems: Problem[] }) {
   return (
-    <ul className="ms-editor-refused">
+    <ul className="ms-editor-troubles">
       {problems.map((problem, index) => (
         <Trouble
           key={`${problem.path}-${String(problem.line)}-${String(index)}`}

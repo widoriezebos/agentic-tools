@@ -1014,15 +1014,8 @@
 
 /* Nothing was offered: the reason first, then the words that were prepared, and
    no press at all — there is nowhere to put them and nothing to fold away. */
-.ms-suggestion--refused {
+.ms-suggestion--not-offered {
   border-style: dashed;
-}
-
-.ms-suggestion-refused {
-  margin: 0;
-  color: var(--ms-text-2);
-  font-size: 12px;
-  line-height: 18px;
 }
 
 /*

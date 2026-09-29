@@ -23,13 +23,19 @@ const SRC = path.resolve(fileURLToPath(import.meta.url), "..");
 const RULE = "trouble.test.ts";
 const COMPONENT = "shell/Trouble.tsx";
 
-/** The shapes a trouble line used to be drawn in, one per site. */
-const REFUSED = /ms-[a-z0-9-]*-(?:refusal|problem)s?(?![a-z0-9-])|ms-partner-failed|ms-error-[a-z]/gu;
+/**
+ * The shapes a trouble line used to be drawn in, one per site: a refusal, a
+ * refuse and a refused line (Sol SOL-S68-01) as well as a problem, and a card's
+ * refused state as much as a line of its own.
+ */
+const REFUSED = /ms-[a-z0-9-]*-(?:refusal|refused|refuse|problem)s?(?![a-z0-9-])|ms-partner-failed|ms-error-[a-z]/gu;
 
 /** The sites this slice converted, by file, each of which renders `Trouble`. */
 const CONVERTED = [
   "backlog/BacklogPane.tsx",
   "backlog/Board.tsx",
+  "backlog/EditSheet.tsx",
+  "backlog/OpenSheet.tsx",
   "backlog/Panel.tsx",
   "decisions/DecisionsPane.tsx",
   "decisions/InboxRow.tsx",
@@ -39,13 +45,16 @@ const CONVERTED = [
   "notifications/Panel.tsx",
   "partner/Deposit.tsx",
   "partner/FontControl.tsx",
+  "partner/Proposal.tsx",
   "partner/Seeing.tsx",
   "partner/StartSitting.tsx",
+  "partner/Suggestion.tsx",
   "partner/Transcript.tsx",
   "project/DocumentPane.tsx",
   "project/ProjectPane.tsx",
   "project/Sheet.tsx",
   "review/Answers.tsx",
+  "review/Desk.tsx",
   "review/Door.tsx",
   "review/Pill.tsx",
   "review/ReviewRoom.tsx",

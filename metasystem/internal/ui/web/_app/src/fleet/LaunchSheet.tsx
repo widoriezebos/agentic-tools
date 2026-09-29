@@ -22,7 +22,7 @@ import { Help } from "../help/Help";
 import { Button } from "../shell/controls";
 import { useSession } from "../shell/identity";
 import { Sheet } from "../shell/Sheet";
-import { failureMessage } from "../shell/workspace";
+import { failureCode, failureMessage } from "../shell/workspace";
 import { Trouble } from "../shell/Trouble";
 import { useSecret } from "../shell/troubles";
 
@@ -74,6 +74,8 @@ export function LaunchSheet({
   const [ownPath, setOwnPath] = useState(false);
   const [sending, setSending] = useState(false);
   const [refusal, setRefusal] = useState("");
+  // The code the launch was refused under, where it was refused under one (Sol SOL-S68-03).
+  const [refusalCode, setRefusalCode] = useState("");
   const { askToSignIn } = useSession();
   const retried = useRef(false);
 
@@ -114,6 +116,7 @@ export function LaunchSheet({
           return;
         }
         setRefusal(failureMessage(error));
+        setRefusalCode(failureCode(error));
       });
   };
 
@@ -208,7 +211,7 @@ export function LaunchSheet({
         </div>
       </section>
 
-      {refusal !== "" && <Trouble text={refusal} variant="small" />}
+      {refusal !== "" && <Trouble text={refusal} code={refusalCode} variant="small" />}
       {blocked !== "" && <p className="ms-launch-hint">{blocked}</p>}
       <div className="ms-launch-actions">
         <Button primary disabled={blocked !== "" || sending} onClick={send}>

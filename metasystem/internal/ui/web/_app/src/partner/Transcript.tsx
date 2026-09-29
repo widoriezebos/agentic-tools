@@ -184,7 +184,7 @@ export function Transcript() {
         />
       ))}
       {store.live.turn !== "" && <Running />}
-      {store.refusal !== "" && <Refusal reason={store.refusal} install={store.install} />}
+      {store.refusal !== "" && <Refusal reason={store.refusal} install={store.install} busy={store.refusedBusy} />}
       {behind && (
         <button type="button" className="ms-partner-latest" onClick={toEnd}>
           Latest ↓
@@ -395,14 +395,17 @@ function Running() {
 }
 
 /** A refusal, in the server's own words, with the line that installs it. */
-function Refusal({ reason, install }: { reason: string; install: string }) {
+function Refusal({ reason, install, busy }: { reason: string; install: string; busy: boolean }) {
   return (
     <div className="ms-turn ms-turn--partner">
       <TurnHead who="partner" name={PARTNER} at="" />
       <div className="ms-turn-body">
         {/* The conversation's own refusal to take a turn: a press here would
-            meet it again, so the line offers no Ask (g1-s68 D2). */}
-        <Trouble text={reason} askable={false}>
+            meet it again, so the line offers no Ask (g1-s68 D2) — unless it
+            was refused as busy, where a press waits for the answer as a
+            pending chip, the way a press in a busy room does, and is sent
+            first once the conversation is free. */}
+        <Trouble text={reason} askable={busy}>
           <AlertTriangle size={14} strokeWidth={1.75} aria-hidden="true" />
           {reason}
         </Trouble>

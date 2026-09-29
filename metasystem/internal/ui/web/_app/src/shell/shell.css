@@ -1623,8 +1623,7 @@ body {
 }
 
 /* The delivery gate, made visible. */
-.ms-notification-undelivered,
-.ms-toast-undelivered {
+.ms-notification-undelivered {
   margin: 0;
   font-size: 12px;
   line-height: 18px;
@@ -1712,6 +1711,15 @@ body {
   font: inherit;
   text-align: left;
   cursor: pointer;
+}
+
+/* A failure toast's column: the panel-opening body, then its trouble lines. */
+.ms-toast-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
 }
 
 .ms-toast-line {
@@ -2090,7 +2098,7 @@ body {
   margin: 4px 0 0;
 }
 
-.ms-editor-refused {
+.ms-editor-troubles {
   margin: 0;
   padding: 12px 12px 12px 28px;
   border: 1px solid var(--ms-danger);

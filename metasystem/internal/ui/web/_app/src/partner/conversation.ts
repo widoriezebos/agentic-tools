@@ -105,6 +105,11 @@ export type Store = {
    */
   refusal: string;
   install: string;
+  /**
+   * Whether the refusal was the conversation being busy: a press of Ask what
+   * happened on it waits for the answer as a pending chip (g1-s68 D2).
+   */
+  refusedBusy: boolean;
 };
 
 export const emptyStore: Store = {
@@ -120,6 +125,7 @@ export const emptyStore: Store = {
   sitting: null,
   refusal: "",
   install: "",
+  refusedBusy: false,
 };
 
 /** True while a turn is running, which is what disables the composer. */
@@ -241,7 +247,7 @@ function keptProposals(store: Store, arriving: Message[]): Message[] {
 
 /** A Partner this seat does not have, or one that could not be admitted. */
 export function unavailable(store: Store, reason: string): Store {
-  return { ...store, state: "unavailable", refusal: reason, live: nothingRunning };
+  return { ...store, state: "unavailable", refusal: reason, refusedBusy: false, live: nothingRunning };
 }
 
 /**
@@ -377,17 +383,18 @@ export function asked(
     live: ended ? nothingRunning : store.live.turn === turn ? store.live : { ...nothingRunning, turn },
     refusal: "",
     install: "",
+    refusedBusy: false,
   };
 }
 
-/** A send the server refused, in its own words. */
-export function refused(store: Store, reason: string, install: string): Store {
-  return { ...store, refusal: reason, install };
+/** A send the server refused, in its own words, and whether it refused it as busy. */
+export function refused(store: Store, reason: string, install: string, busy = false): Store {
+  return { ...store, refusal: reason, install, refusedBusy: busy };
 }
 
 /** A send the human is retrying: the refusal goes and the draft stays. */
 export function retrying(store: Store): Store {
-  return { ...store, refusal: "", install: "" };
+  return { ...store, refusal: "", install: "", refusedBusy: false };
 }
 
 /**

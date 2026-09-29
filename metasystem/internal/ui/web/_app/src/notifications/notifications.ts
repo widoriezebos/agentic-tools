@@ -31,6 +31,17 @@ export type Notification = {
   error: string;
 };
 
+/**
+ * What a notification's trouble knows of itself (Sol SOL-S68-05): when the
+ * steward said it, and the alert episode or pending nonce it is about, rather
+ * than when its line was drawn and whatever page is on screen at the press.
+ */
+export function happened(notification: Notification): { at: string; subject?: { id: string; kind: string } } {
+  return notification.ref === ""
+    ? { at: notification.at }
+    : { at: notification.at, subject: { id: notification.ref, kind: "notification" } };
+}
+
 /** The four sources this build has words for. */
 export const SOURCES = ["alert", "handoff", "verdict", "steward"] as const;
 

@@ -1101,15 +1101,6 @@
   overflow-wrap: anywhere;
 }
 
-/* What the field itself refuses, before the act is sent. */
-.ms-act-refuse {
-  margin: 0;
-  font-size: 12px;
-  line-height: 16px;
-  color: var(--ms-danger);
-  overflow-wrap: anywhere;
-}
-
 /* Why this seat cannot open a goal at all, under the head. */
 .ms-act-cannot {
   margin: 0;

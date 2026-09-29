@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { Caught } from "./ErrorBoundary";
+import { Caught, holdsAt } from "./ErrorBoundary";
 import { TroublesAs } from "./troubles";
 import { BROKEN_DRAWER, BROKEN_ROOM } from "./troubling";
 
@@ -39,5 +39,19 @@ describe("the boundary's trouble", () => {
     const markup = caught("drawer");
     expect(markup).toContain(BROKEN_DRAWER);
     expect(markup).not.toContain("Ask what happened");
+  });
+
+  // Sol SOL-S68-02: the focused view at /brain is the conversation in full and
+  // shows no drawer, so its work-area boundary takes the conversation down too.
+  it("offers the reload and no Ask where the focused Partner view broke", () => {
+    const markup = caught(holdsAt("/brain"));
+    expect(markup).toContain(BROKEN_DRAWER);
+    expect(markup).toContain("Reload page");
+    expect(markup).not.toContain("Ask what happened");
+  });
+
+  it("and still offers the Ask over any other work-area pane", () => {
+    expect(holdsAt("/backlog")).toBeUndefined();
+    expect(caught(holdsAt("/backlog"))).toContain("Ask what happened");
   });
 });
