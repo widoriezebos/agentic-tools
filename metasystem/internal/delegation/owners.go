@@ -115,7 +115,7 @@ func (o ownerLease) Held(inv Invocation, expectedEpoch *int64, fn func() error) 
 	if inv.CallerClass == lease.ClassSteward {
 		return fn()
 	}
-	return lease.Held(o.root, inv.CallerPid, expectedEpoch, fn)
+	return lease.WithHeld(o.root, inv.CallerPid, expectedEpoch, fn)
 }
 
 // Authorize is internal_authority: classify the supplied caller, then judge

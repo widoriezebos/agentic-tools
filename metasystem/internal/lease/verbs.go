@@ -528,34 +528,11 @@ func Renew(root string, callerPid int64) (RenewResult, error) {
 	return RenewResult{ClaimEpoch: lease.ClaimEpoch, Revision: lease.Revision}, nil
 }
 
-// Held runs fn while holding the lease lock: a HUMAN runs ungated and
+// WithHeld runs fn while holding the lease lock: a HUMAN runs ungated and
 // unlocked, internal helpers pass, and a MAIN must be the holder at the
 // expected epoch. It is the in-process gate for a composition package that
 // calls owners instead of spawning the engine (verbs-object-action 6.2,
 // 6.3). fn's error is returned as is.
-func Held(root string, callerPid int64, expectedEpoch *int64, fn func() error) error {
-	root = resolveRoot(root)
-	identity, err := Classify(root, callerPid)
-	if err != nil {
-		return err
-	}
-	if identity.Class == ClassHuman {
-		return fn()
-	}
-	lock, err := acquireBounded(leasePaths(root).Lock, "run-held")
-	if err != nil {
-		return err
-	}
-	defer lock.release()
-	if err := gateHolder(root, identity, expectedEpoch); err != nil {
-		return err
-	}
-	return fn()
-}
-
-// WithHeld runs fn while holding the lease lock, gated as Held gates it: a
-// HUMAN caller runs it ungated; any other caller must pass the holder gate at
-// the expected epoch while the lock is held.
 func WithHeld(root string, callerPid int64, expectedEpoch *int64, fn func() error) error {
 	root = resolveRoot(root)
 	identity, err := Classify(root, callerPid)
