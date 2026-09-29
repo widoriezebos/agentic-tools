@@ -17,12 +17,15 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/evidence"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
 
 // userHome is the user's home directory, where the host's blob store and
@@ -152,4 +155,77 @@ func gitRootAbove(dir string) string {
 		}
 		current = parent
 	}
+}
+
+// installationOf is the installation of an armed checkout's state root:
+// itself in the template layout, else the one its layout names.
+func installationOf(checkout string) string {
+	if regularFileExists(filepath.Join(checkout, "metasystem.conf")) {
+		return checkout
+	}
+	if layout, err := stateroot.ResolveLayout(checkout); err == nil {
+		return layout.InstallationRoot
+	}
+	return checkout
+}
+
+// evidenceBoundClass is the machine pass's evidence bound over every root
+// of the host (design engine-owns-disk-lifetimes 3.12).
+func evidenceBoundClass(ctx context.Context, home, top string, checkouts []string, participants []diskstore.Participant,
+	host diskstore.HostSettings, pass DiskPass) (*evidence.BoundClass, error) {
+	userHome, err := pass.userHome()
+	if err != nil {
+		return nil, err
+	}
+	readFacts := pass.Facts
+	if readFacts == nil {
+		readFacts = func(ctx context.Context, installation string) (diskstore.CheckoutFacts, error) {
+			return checkoutFactsReader(installation, gitRootAbove(installation))(ctx)
+		}
+	}
+	var hostCheckouts []evidence.HostCheckout
+	var ageFloor time.Duration
+	var extras = map[string]string{}
+	for index, checkout := range checkouts {
+		installation := installationOf(checkout)
+		entry := evidence.HostCheckout{Installation: installation}
+		if index < len(participants) {
+			entry.Settings, entry.SettingsErr = participants[index].Settings, participants[index].Err
+		}
+		entry.Facts, entry.FactsErr = readFacts(ctx, installation)
+		if entry.Facts.GitRoot == "" {
+			entry.Facts.GitRoot = gitRootAbove(installation)
+		}
+		entry.Facts.Installation = installation
+		if entry.SettingsErr == nil {
+			if floor := entry.Settings.Duration(config.DiskEvidenceAgeFloorKey); floor > ageFloor {
+				ageFloor = floor
+			}
+			extras[installation] = entry.Settings.Values[config.DiskEvidenceCitationKey]
+		}
+		hostCheckouts = append(hostCheckouts, entry)
+	}
+	class := &evidence.BoundClass{UserHome: userHome, HomeStateRoot: home, Checkouts: hostCheckouts,
+		MachineCap: host.Bytes(config.DiskEvidenceMachineCapKey), BlobGrace: host.Duration(config.DiskEvidenceBlobGraceKey), AgeFloor: ageFloor,
+		Observe: evidence.GoalLedgerObserver(pass.Clock),
+		Citations: &evidence.Citations{Dir: filepath.Join(home, "stores", "citations"), Now: pass.Now,
+			Roots: func() ([]string, error) {
+				var roots []string
+				for installation, extra := range extras {
+					found, err := evidence.CitationRoots(installation, extra)
+					if err != nil {
+						return nil, err
+					}
+					roots = append(roots, found...)
+				}
+				sort.Strings(roots)
+				return roots, nil
+			}},
+		Bound: evidence.Bound{BoundLock: diskstore.BoundLockPath(home), Now: pass.Now, Entropy: rand.Reader, By: "steward " + top,
+			Locks: evidence.OwnerLocks(int64(os.Getpid()), os.Args[0], pass.Clock, func(time.Duration) {}),
+			Blobs: diskstore.BlobStore{Dir: diskstore.BlobStoreDir(userHome)}}}
+	if pass.EvidenceSeams != nil {
+		pass.EvidenceSeams(class)
+	}
+	return class, nil
 }

@@ -224,6 +224,15 @@ func (c *Citations) Step(ctx context.Context) (published bool, err error) {
 	}
 	generation := Generation{Schema: CitationSchema, Generation: state.Generation, Roots: state.Roots, Files: state.Files, Hits: state.Hits,
 		Unreadable: state.Unreadable, Published: c.Now.UTC()}
+	if newest, err := c.Newest(); err == nil && sameGeneration(newest, generation) {
+		// Nothing changed since the newest generation: it still answers,
+		// and the pass writes nothing (R-129).
+		published = true
+		if err := os.Remove(c.statePath()); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return false, err
+		}
+		return false, nil
+	}
 	data, err := json.Marshal(generation)
 	if err != nil {
 		return false, err
@@ -241,6 +250,12 @@ func (c *Citations) Step(ctx context.Context) (published bool, err error) {
 		return true, err
 	}
 	return true, nil
+}
+
+func sameGeneration(a, b Generation) bool {
+	left, _ := json.Marshal([]any{a.Roots, a.Files, a.Hits, a.Unreadable})
+	right, _ := json.Marshal([]any{b.Roots, b.Files, b.Hits, b.Unreadable})
+	return string(left) == string(right)
 }
 
 func sameRoots(a, b []string) bool {
@@ -280,6 +295,10 @@ func (c *Citations) writeState(state generationState) error {
 
 // walkOne enters one pending directory (or takes one pending file root).
 func (s *generationState) walkOne() {
+	if len(s.Pending) == 0 {
+		s.Walked = true
+		return
+	}
 	last := len(s.Pending) - 1
 	path := s.Pending[last]
 	s.Pending = s.Pending[:last]

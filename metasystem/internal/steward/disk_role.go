@@ -23,6 +23,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/evidence"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gocache"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/janitor"
@@ -156,6 +157,12 @@ type DiskPass struct {
 	// SuiteFailureSeams adjusts the checkout pass's suite-failure class
 	// (fixtures stub its git reads); nil is production.
 	SuiteFailureSeams func(*diskstore.SuiteFailures)
+	// Facts reads an armed checkout's four facts for the evidence bound
+	// (fixtures stub the git reads); nil is production.
+	Facts func(ctx context.Context, installation string) (diskstore.CheckoutFacts, error)
+	// EvidenceSeams adjusts the machine pass's evidence bound (fixtures);
+	// nil is production.
+	EvidenceSeams func(*evidence.BoundClass)
 }
 
 func (p DiskPass) registryPath() (string, error) {
@@ -318,6 +325,11 @@ func machinePass(ctx context.Context, home, top string, own diskstore.Settings, 
 	options.Classes = []diskstore.Class{
 		diskstore.RegisteredStores{Registry: diskstore.MachineRegistry(home), Proofs: pass.proofs()},
 		diskstore.TempStrays{Roots: tempRoots},
+	}
+	if bound, err := evidenceBoundClass(ctx, home, top, checkouts, participants, host, pass); err == nil {
+		options.Classes = append(options.Classes, bound)
+	} else {
+		options.Notes = append(options.Notes, "the evidence bound does not run this pass: "+err.Error())
 	}
 	options.Volumes = pass.Volumes
 	if options.Volumes == nil {

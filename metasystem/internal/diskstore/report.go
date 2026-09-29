@@ -41,6 +41,8 @@ type Report struct {
 	Census  *UseCensus        `json:"census,omitempty"`
 	// Evidence is the evidence bound's position per segment (3.12).
 	Evidence []EvidenceSegment `json:"evidence,omitempty"`
+	// EvidenceRoots names every evidence root of the host with its owner.
+	EvidenceRoots []string `json:"evidenceRoots,omitempty"`
 
 	Notes       []string `json:"notes,omitempty"`
 	HostUnknown []string `json:"hostUnknown,omitempty"`
@@ -205,6 +207,9 @@ func (r Report) render(verbose bool) []string {
 	lines = append(lines, groupedLines("kept", r.Kept, verbose)...)
 	lines = append(lines, groupedLines("pending", r.Pending, verbose)...)
 	lines = append(lines, groupedStrays(r.Strays, verbose)...)
+	for _, root := range r.EvidenceRoots {
+		lines = append(lines, "  evidence root "+root)
+	}
 	for _, segment := range r.Evidence {
 		lines = append(lines, segment.Lines(verbose)...)
 	}

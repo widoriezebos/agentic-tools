@@ -554,7 +554,7 @@ func (b Bound) CompactSegment(ctx context.Context, segment Segment, settings Pas
 			position.Pending = append(position.Pending, "the pass budget ran out before "+item.Name)
 			break
 		}
-		outcome := b.compactOne(ctx, segment, settings, item, &position)
+		outcome := b.compactOne(ctx, segment, settings, item, &position, b.segmentCap(segment, settings))
 		if outcome.stop {
 			break
 		}
@@ -571,8 +571,25 @@ type stepOutcome struct {
 	held string
 }
 
+// capTest is what one step measures, against which cap, under which rule:
+// a segment's total against evidence.segment-cap-gib (rule bound), or the
+// host's physical evidence bytes against evidence.machine-cap-gib (rule
+// machine-cap).
+type capTest struct {
+	measure  func(ctx context.Context) (total, charges int64, complete bool)
+	capBytes int64
+	rule     string
+	// where names what was measured, for a walk cut short.
+	where string
+}
+
+func (b Bound) segmentCap(segment Segment, settings PassSettings) capTest {
+	return capTest{measure: func(ctx context.Context) (int64, int64, bool) { return b.Measure(ctx, segment) },
+		capBytes: settings.CapBytes, rule: diskstore.RuleBound, where: segment.Root}
+}
+
 // compactOne is one item's critical section.
-func (b Bound) compactOne(ctx context.Context, segment Segment, settings PassSettings, item Item, position *diskstore.EvidenceSegment) stepOutcome {
+func (b Bound) compactOne(ctx context.Context, segment Segment, settings PassSettings, item Item, position *diskstore.EvidenceSegment, test capTest) stepOutcome {
 	lock, err := diskstore.TryBoundExclusive(b.BoundLock)
 	if err != nil {
 		position.Pending = append(position.Pending, "the bound lock is held (a disposal or another pass is in its step); the rest waits for the next pass")
@@ -606,7 +623,7 @@ func (b Bound) compactOne(ctx context.Context, segment Segment, settings PassSet
 		return judgement
 	}
 	if _, _, open, err := diskstore.OpenDisposal(item.Path); err == nil && open {
-		_, err := diskstore.RecoverDisposal(ctx, item.Path, segment.Ledger(), b.receipt(segment, settings, item, Judgement{}), b.Sync, stage,
+		_, err := diskstore.RecoverDisposal(ctx, item.Path, segment.Ledger(), b.receipt(segment, settings, item, Judgement{}, test.rule), b.Sync, stage,
 			func(diskstore.Tombstone) diskstore.Recovery {
 				current := judge()
 				if reason := blocking(current); reason != "" {
@@ -620,14 +637,16 @@ func (b Bound) compactOne(ctx context.Context, segment Segment, settings PassSet
 		}
 		return stepOutcome{}
 	}
-	total, charges, complete := b.Measure(ctx, segment)
-	position.TotalBytes, position.BlobChargeBytes = total, charges
+	total, charges, complete := test.measure(ctx)
+	if test.rule == diskstore.RuleBound {
+		position.TotalBytes, position.BlobChargeBytes = total, charges
+	}
 	if !complete {
 		position.Pending = append(position.Pending, fmt.Sprintf("measurement did not finish within %s (reached %s of %s)",
-			config.DiskSweepBudgetKey, formatGiB(total), segment.Root))
+			config.DiskSweepBudgetKey, formatGiB(total), test.where))
 		return stepOutcome{stop: true}
 	}
-	if total <= settings.CapBytes {
+	if total <= test.capBytes {
 		return stepOutcome{stop: true}
 	}
 	current := judge()
@@ -638,7 +657,7 @@ func (b Bound) compactOne(ctx context.Context, segment Segment, settings PassSet
 	if reason := blocking(current); reason != "" {
 		return stepOutcome{held: reason}
 	}
-	receipt := b.receipt(segment, settings, item, current)
+	receipt := b.receipt(segment, settings, item, current, test.rule)
 	receipt.SegmentBytesBefore, receipt.BlobChargeBytes = total, charges
 	result, err := diskstore.Dispose(ctx, diskstore.DisposalStep{Item: item.Path, Receipt: receipt, Ledger: segment.Ledger(),
 		Kept: KeptFor(item.Kind), Verdict: Verdict(item), Commit: current.Commit, Stage: stage, Sync: b.Sync})
@@ -674,9 +693,9 @@ func blocking(judgement Judgement) string {
 	return ""
 }
 
-func (b Bound) receipt(segment Segment, settings PassSettings, item Item, judgement Judgement) diskstore.DisposalReceipt {
+func (b Bound) receipt(segment Segment, settings PassSettings, item Item, judgement Judgement, rule string) diskstore.DisposalReceipt {
 	return diskstore.DisposalReceipt{At: b.Now.UTC(), Segment: segment.Git, Checkout: segment.CheckoutName(), Kind: item.Kind, Item: item.Name,
-		Rule: diskstore.RuleBound, By: b.By, LedgerTip: judgement.LedgerTip, LedgerIdentity: judgement.LedgerIdentity, Settings: settings.Values,
+		Rule: rule, By: b.By, LedgerTip: judgement.LedgerTip, LedgerIdentity: judgement.LedgerIdentity, Settings: settings.Values,
 		EndedAt: item.EndedAt.Format(time.RFC3339), Goal: item.Goal, GoalState: judgement.GoalState, UncoveredReceipts: judgement.Uncovered,
 		Citations: judgement.Citations}
 }

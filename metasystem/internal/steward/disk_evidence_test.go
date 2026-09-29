@@ -5,10 +5,12 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/evidence"
 )
 
 // The checkout pass ages its suite-failure bundles (design
@@ -72,5 +74,61 @@ func TestCheckoutPassDistilsThenMovesSuiteFailureBundles(t *testing.T) {
 	}
 	if _, err := os.Stat(bundle); !os.IsNotExist(err) {
 		t.Fatalf("the source goes after the verified move: %v", err)
+	}
+}
+
+// The machine pass carries the evidence bound over every root of the host
+// (3.12 "Where it runs"): the armed checkout's root is named with its
+// owner, its segment index is recorded, and an old chain past the cap is
+// compacted, never removed.
+func TestTheMachinePassRunsTheEvidenceBound(t *testing.T) {
+	t.Parallel()
+	bed := newStaleBed(t)
+	evidenceRoot := filepath.Join(bed.root, "evidence")
+	conf := "metasystem.template=true\ndisk.floor-gib=1\nevidence.root=" + evidenceRoot + "\n"
+	if err := os.WriteFile(filepath.Join(bed.inst, "metasystem.conf"), []byte(conf), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	gitRoot := filepath.Join(bed.root, "repo")
+	chain := filepath.Join(evidenceRoot, "agents", diskstore.Segment(gitRoot), "old-chain")
+	for rel, data := range map[string]string{"jobs/old-chain.json": `{"jobId":"old-chain","round":1,"status":"completed","chainClosed":true,"endedAt":"2026-01-01T00:00:00Z"}`,
+		"jobs/old-chain.log": strings.Repeat("log line\n", 1000), "brief.md": "brief"} {
+		path := filepath.Join(chain, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	pass := bed.pass(diskstore.ModeApply, []string{bed.inst}, false)
+	pass.UserHome = filepath.Join(bed.root, "user")
+	pass.SuiteFailureSeams = func(class *diskstore.SuiteFailures) { class.Known, class.Facts = nil, nil }
+	pass.Facts = func(_ context.Context, installation string) (diskstore.CheckoutFacts, error) {
+		return diskstore.CheckoutFacts{GitRoot: gitRoot, Installation: installation, RootCommit: "e83c5163316f89bfbde7d9ab23ca2e25604af290", LedgerIdentity: "01J9LEDGER0000000000000000"}, nil
+	}
+	pass.EvidenceSeams = func(class *evidence.BoundClass) {
+		class.Observe = func(context.Context, string, bool) (evidence.LedgerView, error) {
+			return evidence.LedgerView{Tip: "9498700a9", Identity: "01J9LEDGER0000000000000000", States: map[string]string{}}, nil
+		}
+		class.Citations.Roots = func() ([]string, error) { return nil, nil }
+		class.SegmentSettings = func(evidence.Segment) (evidence.PassSettings, error) {
+			return evidence.PassSettings{CapBytes: 1, AgeFloor: 90 * 24 * time.Hour}, nil
+		}
+	}
+	for index := 0; index < 2; index++ { // the first pass publishes the citation generation
+		result, err := SweepDiskStores(context.Background(), bed.inst, pass)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if index == 1 && !strings.Contains(strings.Join(result.Machine.EvidenceRoots, "\n"), evidenceRoot+": root of "+gitRoot) {
+			t.Fatalf("the machine report names the root with its owner: %v", result.Machine.Lines())
+		}
+	}
+	if _, err := os.Stat(filepath.Join(chain, diskstore.CompactTombstoneName)); err != nil {
+		t.Fatalf("the old chain past the cap is compacted: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(chain, "brief.md")); err != nil {
+		t.Fatalf("and never removed: %v", err)
 	}
 }

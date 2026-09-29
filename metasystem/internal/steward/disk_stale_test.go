@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -45,7 +46,12 @@ func newStaleBed(t *testing.T) staleBed {
 func (bed staleBed) pass(mode diskstore.Mode, checkouts []string, forget bool) DiskPass {
 	return DiskPass{Mode: mode, Now: staleNow, Clock: func() time.Time { return staleNow }, Home: bed.home,
 		TempRoots: []string{bed.tmp}, Volumes: []string{bed.root}, Checkouts: checkouts, Registry: bed.registry, ForgetRemoved: forget,
-		Proofs: map[diskstore.OwnerKind]diskstore.OwnerProof{}}
+		Proofs: map[diskstore.OwnerKind]diskstore.OwnerProof{},
+		// The fixtures run no git: an armed checkout's facts are unknown,
+		// so the evidence bound reports its segments and acts on none.
+		Facts: func(context.Context, string) (diskstore.CheckoutFacts, error) {
+			return diskstore.CheckoutFacts{}, errors.New("the fixture runs no git")
+		}}
 }
 
 // row appends one registry record to the bed's host registry.
