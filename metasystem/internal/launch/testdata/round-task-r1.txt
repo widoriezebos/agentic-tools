@@ -1,0 +1,4 @@
+You are the DESIGN CRITIC for revision 1 of the design of goal demo, review round 1 of 3. Read artifacts/reports/demo-critique-r1.md in this worktree's report.
+
+The design is plans/page-design-r1.md (untracked here). Its brief is artifacts/reports/demo-design-brief-r1.md and shared material.
+The design was written against a checkout 65 code files behind this worktree's origin/main: a cited line number that is merely shifted is NOT a finding; a cited symbol, branch, file or behaviour that does not exist at origin/main IS.

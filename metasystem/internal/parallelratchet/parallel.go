@@ -15,6 +15,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 )
 
 // ParallelRatchet records the maximum serial-test count for each package.
@@ -58,6 +60,12 @@ type ParallelViolation struct {
 func (violation ParallelViolation) String() string {
 	return fmt.Sprintf("package %s test %s at %s:%d: recorded serial count %d, actual %d",
 		violation.Package, violation.Test, violation.File, violation.Line, violation.Recorded, violation.Actual)
+}
+
+type ParallelDrop struct {
+	Package string
+	From    int
+	To      int
 }
 
 // ReadParallelRatchet loads and validates the checked-in serial-test ceiling.
@@ -262,4 +270,86 @@ func CheckParallelRatchet(ratchet ParallelRatchet, inventory ParallelInventory) 
 		}
 	}
 	return counts, violations
+}
+
+// LowerParallelRatchet returns a baseline containing the current package
+// inventory. It never raises a ceiling and returns the blocking violations
+// without changing the supplied baseline when a raise would be required.
+func LowerParallelRatchet(ratchet ParallelRatchet, inventory ParallelInventory) (ParallelRatchet, []ParallelDrop, []ParallelViolation) {
+	counts, violations := CheckParallelRatchet(ratchet, inventory)
+	if len(violations) != 0 {
+		return ratchet, nil, violations
+	}
+	updated := ParallelRatchet{
+		Packages: make(map[string]int, len(ratchet.Packages)+len(inventory.Packages)),
+		Exempt:   append([]ParallelExemption(nil), ratchet.Exempt...),
+	}
+	for pkg, recorded := range ratchet.Packages {
+		updated.Packages[pkg] = recorded
+	}
+	for _, pkg := range inventory.Packages {
+		updated.Packages[pkg] = counts[pkg]
+	}
+	var drops []ParallelDrop
+	for pkg, recorded := range ratchet.Packages {
+		actual, present := counts[pkg]
+		if !present {
+			actual = 0
+			updated.Packages[pkg] = 0
+		}
+		if actual < recorded {
+			drops = append(drops, ParallelDrop{Package: pkg, From: recorded, To: actual})
+		}
+	}
+	sort.Slice(drops, func(i, j int) bool { return drops[i].Package < drops[j].Package })
+	return updated, drops, nil
+}
+
+// WriteParallelRatchet atomically replaces the checked-in baseline.
+func WriteParallelRatchet(path, root string, ratchet ParallelRatchet) error {
+	data, err := renderParallelRatchet(ratchet)
+	if err != nil {
+		return err
+	}
+	_, err = atomicfile.WriteText(path, string(data), root)
+	if err != nil {
+		return fmt.Errorf("parallel ratchet baseline write failed: %w", err)
+	}
+	return nil
+}
+
+func renderParallelRatchet(ratchet ParallelRatchet) ([]byte, error) {
+	packages := make([]string, 0, len(ratchet.Packages))
+	for pkg := range ratchet.Packages {
+		packages = append(packages, pkg)
+	}
+	sort.Strings(packages)
+	var output bytes.Buffer
+	output.WriteString("{\n  \"packages\": {\n")
+	for index, pkg := range packages {
+		encodedPackage, err := json.Marshal(pkg)
+		if err != nil {
+			return nil, err
+		}
+		fmt.Fprintf(&output, "    %s: %d", encodedPackage, ratchet.Packages[pkg])
+		if index+1 < len(packages) {
+			output.WriteByte(',')
+		}
+		output.WriteByte('\n')
+	}
+	output.WriteString("  },\n  \"exempt\": [\n")
+	for index, exemption := range ratchet.Exempt {
+		encoded, err := json.Marshal(exemption)
+		if err != nil {
+			return nil, err
+		}
+		output.WriteString("    ")
+		output.Write(encoded)
+		if index+1 < len(ratchet.Exempt) {
+			output.WriteByte(',')
+		}
+		output.WriteByte('\n')
+	}
+	output.WriteString("  ]\n}\n")
+	return output.Bytes(), nil
 }

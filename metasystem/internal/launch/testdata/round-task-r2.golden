@@ -1,0 +1,6 @@
+You are the DESIGN CRITIC for revision 2 of the design of goal demo, review round 2 of 3. Read artifacts/reports/demo-critique-r2.md in this worktree's report.
+
+The design is plans/page-design-r2.md (untracked here). Its brief is artifacts/reports/demo-design-brief-r2.md and shared material.
+The design was revision 2 was written in this worktree against its own tree: a cited symbol, branch, file, line or behaviour that does not exist here IS a finding.
+
+Round 1's critique is artifacts/reports/demo-critique-r1.md in this worktree. The page's "Fold of critique r1" section claims FIXED, REFUTED or DEFERRED for each round-1 finding. Check every claim FIRST: a FIXED that does not actually fix the failure is material; a REFUTED whose file:line evidence is wrong is material; a DEFERRED that leaves a DONE condition unmet is material. Do not re-raise a round-1 finding that was correctly fixed or correctly refuted. Then attack the content the fold added, with the same attack list.

@@ -127,8 +127,13 @@ func TestDeliveryResultRecordsFirstFailureTruncation(t *testing.T) {
 	}
 }
 
-func TestDeliveryResultWithoutTheRunLevelTruncationFieldStillParses(t *testing.T) {
+func TestFailingGroupSetCompleteReadsLegacyTruncation(t *testing.T) {
 	truncated, _, _ := stopFixture(t, testpolicy.PurposeDelivery)
+	complete, _, _ := stopFixtureWithAllGroups(t, testpolicy.PurposeDelivery, true)
+	if FailingGroupSetComplete(truncated) || !FailingGroupSetComplete(complete) {
+		t.Fatalf("failing-group completeness helper disagrees with current results: truncated=%t complete=%t",
+			FailingGroupSetComplete(truncated), FailingGroupSetComplete(complete))
+	}
 	truncated.StoppedAtFirstFailure = false
 	legacyBytes, err := json.Marshal(truncated)
 	if err != nil {
@@ -148,6 +153,14 @@ func TestDeliveryResultWithoutTheRunLevelTruncationFieldStillParses(t *testing.T
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&legacy); err != nil {
 		t.Fatalf("old result without the run-level field no longer parses: %v", err)
+	}
+	if FailingGroupSetComplete(legacy) {
+		t.Fatal("legacy fail-fast evidence was mistaken for a complete failing-group set")
+	}
+	missing := complete
+	missing.Groups[0].Status, missing.Groups[0].NotRunReason = "not-run", "missing-proof"
+	if FailingGroupSetComplete(missing) {
+		t.Fatal("a result with a nonterminal selected group was mistaken for a complete failing-group set")
 	}
 }
 
