@@ -100,8 +100,11 @@ func authorizeChangeInProjection(controlRoot string, unit batch.Unit, projection
 		return fmt.Errorf("BATCH_PREFIX_AUTHORITY_REFUSED: live goal projection is empty")
 	}
 	file := projection.Tree.Live[change.Goal]
-	if file == nil || file.State != goal.StateClaimed || file.Claimed == nil || file.Claimed.Machine+"+"+file.Claimed.Lineage != change.AskedBy ||
-		file.Claimed.Revision != change.GoalRevision {
+	// A person's commit holds no claim of the goal (held only warns on it),
+	// so a person's change answers to the goal's landing gate alone.
+	person := strings.HasSuffix(change.AskedBy, "+human")
+	if !person && (file == nil || file.State != goal.StateClaimed || file.Claimed == nil || file.Claimed.Machine+"+"+file.Claimed.Lineage != change.AskedBy ||
+		file.Claimed.Revision != change.GoalRevision) {
 		return &batch.PrefixRevisionRefusal{Reason: "BATCH_PREFIX_AUTHORITY_REFUSED: change " + unit.GoalID + " was committed in goal " + change.Goal +
 			"'s name by " + change.AskedBy + " at revision " + fmt.Sprint(change.GoalRevision) + ", and that claim moved; commit it again and land it"}
 	}

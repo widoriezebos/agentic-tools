@@ -185,6 +185,22 @@ func TestBatchChangeAuthorityRechecksItsGoal(t *testing.T) {
 	if err := authorizeBatchMemberInProjection("", time.Unix(10, 0), record, named, goal.Projection{}); err == nil {
 		t.Fatal("an unreadable ledger authorized a change in a goal's name")
 	}
+	// A person's change in G's name holds no claim of G (held only warns on
+	// a person's commit): its authority is G's landing gate alone.
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	person := named
+	person.Change = &batch.ChangeMember{Commit: laneChangeCommit, AskedBy: "m1e+human", Goal: "goal-g"}
+	moved.Tree.Live["goal-g"].Tier = 1
+	if err := authorizeBatchMemberInProjection(root, time.Unix(10, 0), record, person, moved); err != nil {
+		t.Fatalf("a person's change in a goal's name below the human tier: %v", err)
+	}
+	moved.Tree.Live["goal-g"].Tier = 4
+	if err := authorizeBatchMemberInProjection(root, time.Unix(10, 0), record, person, moved); !errors.As(err, &revision) || !strings.Contains(err.Error(), "waits for a person") {
+		t.Fatalf("a person's change past its goal's gate: %v", err)
+	}
 }
 
 // TestBatchChangeLandingSeamsReplayAndFindTheTrailer (U11b): the landing
