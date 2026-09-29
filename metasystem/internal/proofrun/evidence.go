@@ -13,7 +13,54 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 )
+
+// proofAttemptEnvironment names the proof attempt a launched suite runs
+// under (launcher.go exports it).
+const proofAttemptEnvironment = "METASYSTEM_PROOF_ATTEMPT"
+
+// WriteBundleOwner writes a suite-failure bundle's OWNER.json before the
+// bundle receives a byte (design engine-owns-disk-lifetimes 3.5, 3.12
+// clause 1): the attempt the bundle was written under and the goal that
+// attempt is accounted to, read from its record now; "standalone" and goal
+// "none" outside an attempt; goal "unknown" when the record cannot be read.
+// The checkout facts that need git (root commit, ledger identity) are
+// completed by the checkout pass that distils the bundle: this path runs
+// when a suite has failed and runs no git.
+// installation is where the bundle lives; attemptRoot holds the attempt's
+// record.
+func WriteBundleOwner(bundle, installation, attemptRoot, attempt string, now time.Time) error {
+	owner := diskstore.BundleOwner{Attempt: diskstore.AttemptStandalone, Goal: diskstore.GoalNone,
+		Installation: installation, GitRoot: gitRootAbove(installation), WrittenBy: "bundle-writer", WrittenAt: now.UTC()}
+	if attempt != "" {
+		owner.Attempt, owner.Goal = attempt, diskstore.GoalUnknown
+		if record, err := ReadAttempt(attemptRoot, attempt); err == nil {
+			owner.Goal = diskstore.GoalNone
+			if goal := record.AccountedGoal(); goal != "" {
+				owner.Goal = goal
+			}
+		}
+	}
+	_, err := diskstore.WriteBundleOwner(bundle, owner, diskstore.Syncer{})
+	return err
+}
+
+// gitRootAbove is the nearest directory from dir upward holding a .git
+// entry, else dir.
+func gitRootAbove(dir string) string {
+	for current := dir; ; {
+		if _, err := os.Lstat(filepath.Join(current, ".git")); err == nil {
+			return current
+		}
+		parent := filepath.Dir(current)
+		if parent == current {
+			return dir
+		}
+		current = parent
+	}
+}
 
 type EvidenceResult struct {
 	CopiedBytes int64
@@ -164,8 +211,12 @@ func PreserveDetachedSuiteFailures(controlRoot, candidateRoot, owner string, tim
 		return EvidenceResult{}, "", nil
 	}
 	sort.Strings(sources)
+	attempt := os.Getenv(proofAttemptEnvironment)
 	destination := filepath.Join(controlRoot, "artifacts", "agents", "suite-failures",
-		time.Now().UTC().Format("20060102T150405Z")+"-detached-"+safeEvidenceName(owner)+fmt.Sprintf("-%d-%d", os.Getpid(), time.Now().UnixNano()))
+		time.Now().UTC().Format("20060102T150405Z")+"-detached-"+safeEvidenceName(owner)+"-"+diskstore.BundleRunName(attempt, os.Getpid())+fmt.Sprintf("-%d", time.Now().UnixNano()))
+	if err := WriteBundleOwner(destination, controlRoot, controlRoot, attempt, time.Now()); err != nil {
+		return EvidenceResult{}, destination, fmt.Errorf("preserve detached suite-failure evidence at %s: %w", destination, err)
+	}
 	result, copyErr := preserveEvidence(ctx, destination, sources, maxBytes,
 		evidenceCopyRules{skipGitDirs: true, skipSymlinks: true, maxFileBytes: detachedEvidenceFileMaxBytes})
 	if ctx.Err() != nil {

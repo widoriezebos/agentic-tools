@@ -183,7 +183,7 @@ func (s Store) Read(id string) (Record, error) {
 }
 func (s Store) Update(id string, change func(*Record) error) (Record, error) {
 	var result Record
-	err := s.withLock(id, func() error {
+	err := s.withExistingLock(id, func() error {
 		record, err := s.Read(id)
 		if err != nil {
 			return err
@@ -295,6 +295,25 @@ func (s Store) withLock(id string, fn func() error) error {
 	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
+	}
+	held, err := lock.File(filepath.Join(dir, ".lock"), 0o600, lock.Exclusive)
+	if err != nil {
+		return err
+	}
+	defer held.Release()
+	return fn()
+}
+
+// withExistingLock is withLock for a launch that must already exist: a
+// directory the retention removed is never recreated empty by a late
+// update, which would leave a record-less entry every listing trips on.
+func (s Store) withExistingLock(id string, fn func() error) error {
+	dir, err := s.StateDir(id)
+	if err != nil {
+		return err
+	}
+	if _, err := os.Stat(dir); err != nil {
+		return fmt.Errorf("launch %s: %w", id, err)
 	}
 	held, err := lock.File(filepath.Join(dir, ".lock"), 0o600, lock.Exclusive)
 	if err != nil {

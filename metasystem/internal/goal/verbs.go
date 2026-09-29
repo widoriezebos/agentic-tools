@@ -31,6 +31,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/receiptlog"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/retrodebt"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
@@ -247,7 +248,12 @@ type VerbRequest struct {
 	ParkBranchCheck func(goalID, next string) (string, error)
 	// SweepBranch removes recoverable branch work after a confirmed conclusion.
 	SweepBranch func(goalID string) error
-	abandon     abandonDependencies
+	// ForceBy names the person at the helm who concludes a goal despite
+	// its open read items, review obligations, carry word or unfinished
+	// blockers; each is recorded as overridden. Only goal done reads it; the
+	// command edge admits it only at the helm, from the person's own proof.
+	ForceBy string
+	abandon abandonDependencies
 }
 
 const EpochAuthorityHolder = "holder"
@@ -2576,9 +2582,7 @@ func acceptedRiskDecisionOpIDWithResolver(repoRoot, id, finding, chain string, n
 func doneRequest(r VerbRequest, id, conclusion string) PublishRequest {
 	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
-		Intent: Intent{Verb: "done", Targets: []string{id}, Args: intentArgs(r, map[string]string{
-			"conclusion": conclusion,
-		})},
+		Intent:  Intent{Verb: "done", Targets: []string{id}, Args: intentArgs(r, doneArgs(r, conclusion))},
 		Message: "goal done " + id,
 		Mutate: func(tip string) ([]Change, error) {
 			t, err := loadTreeFor(r.Endpoint, tip)
@@ -2601,16 +2605,35 @@ func doneRequest(r VerbRequest, id, conclusion string) PublishRequest {
 			if !exists {
 				return nil, fmt.Errorf("goal %s is not live; nothing to conclude", id)
 			}
+			// A forced conclusion (the person at the helm) records each
+			// goal-state refusal below as overridden and goes on.
+			var overridden []string
 			if err := refuseOpenReadItems(id, f); err != nil {
-				return nil, err
+				if r.ForceBy == "" {
+					return nil, err
+				}
+				overridden = append(overridden, "read items "+strings.Join(acceptOpenReadItems(f, r), ", "))
 			}
-			for _, obligation := range f.ReviewObligations {
+			var obligations []string
+			for index, obligation := range f.ReviewObligations {
 				if obligation.State == "open" {
-					return nil, fmt.Errorf("goal %s has open review obligation finding=%s chain=%s test=%s", id, obligation.Finding, obligation.Chain, obligation.Test)
+					if r.ForceBy == "" {
+						return nil, fmt.Errorf("goal %s has open review obligation finding=%s chain=%s test=%s", id, obligation.Finding, obligation.Chain, obligation.Test)
+					}
+					f.ReviewObligations[index].State = "discharged"
+					obligations = append(obligations, obligation.Finding+"/"+obligation.Chain)
 				}
 			}
-			if err := doneCarryRefusalFor(r.Endpoint, t, carryCodeTip(r.Endpoint, tip), id, f, r.Now); err != nil {
-				return nil, err
+			if len(obligations) > 0 {
+				overridden = append(overridden, "review obligation "+strings.Join(obligations, ", "))
+			}
+			// Only the open word itself is passed over (HF-02): an error
+			// with no open word is an inspection failure and still refuses.
+			if words, err := doneCarryRefusalFor(r.Endpoint, t, carryCodeTip(r.Endpoint, tip), id, f, r.Now); err != nil {
+				if r.ForceBy == "" || len(words) == 0 {
+					return nil, err
+				}
+				overridden = append(overridden, "carry word "+strings.Join(words, ", "))
 			}
 			// Queued concludes directly; a foreign
 			// claim concludes only under a human, and the override
@@ -2635,10 +2658,22 @@ func doneRequest(r VerbRequest, id, conclusion string) PublishRequest {
 					return nil, err
 				}
 			}
+			// A forced conclusion removes each unfinished blocker edge in
+			// this transaction (HF-01): a done goal's blockers are done.
+			var kept, unfinished []string
 			for _, dep := range f.Blocked {
 				if depState(t, dep) != StateDone {
-					return nil, fmt.Errorf("goal %s is blocked by %s, which is not done", id, dep)
+					if r.ForceBy == "" {
+						return nil, fmt.Errorf("goal %s is blocked by %s, which is not done", id, dep)
+					}
+					unfinished = append(unfinished, dep)
+					continue
 				}
+				kept = append(kept, dep)
+			}
+			if len(unfinished) > 0 {
+				f.Blocked = kept
+				overridden = append(overridden, "blocked by "+strings.Join(unfinished, ", "))
 			}
 			displaced := ""
 			if f.State == StateClaimed && f.Claimed != nil && !ownPair(f.Claimed, r.Actor) {
@@ -2646,6 +2681,9 @@ func doneRequest(r VerbRequest, id, conclusion string) PublishRequest {
 			}
 			f.State = StateDone
 			f.Conclude = conclusion
+			if len(overridden) > 0 {
+				f.Conclude = conclusion + " — overridden by " + r.ForceBy + " at the helm: " + strings.Join(overridden, "; ")
+			}
 			if err := clearClaimBinding(f); err != nil {
 				return nil, err
 			}
@@ -2683,6 +2721,42 @@ func doneRequest(r VerbRequest, id, conclusion string) PublishRequest {
 		},
 		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
 	}
+}
+
+// doneArgs are the done intent's own args: the conclusion, and the person
+// who forced it, so recovery rebuilds the same forced request.
+func doneArgs(r VerbRequest, conclusion string) map[string]string {
+	args := map[string]string{"conclusion": conclusion}
+	if r.ForceBy != "" {
+		args["force"] = r.ForceBy
+	}
+	return args
+}
+
+// acceptOpenReadItems closes every open read item as accepted, as the close
+// verb records it, naming the person who forced the conclusion.
+func acceptOpenReadItems(f *GoalFile, r VerbRequest) []string {
+	var ids []string
+	for index, item := range f.ReadItems {
+		if item.State == ReadItemOpen {
+			f.ReadItems[index].State = ReadItemAccepted
+			f.ReadItems[index].ClosingReference = "overridden by " + r.ForceBy + " at the helm"
+			f.ReadItems[index].ChangedAt = r.stamp()
+			ids = append(ids, item.ID)
+		}
+	}
+	return ids
+}
+
+// overridableDoneRe is the fixed shape of the three goal-state refusals of
+// done besides the read items' typed one.
+var overridableDoneRe = regexp.MustCompile(`^goal \S+ (has open review obligation finding=|has open carry word |is blocked by \S+, which is not done)`)
+
+// ConclusionOverridable reports whether a rejected done's detail is one of
+// the four goal-state refusals a forced conclusion overrides: open read
+// items, an open review obligation, an open carry word, a blocker not done.
+func ConclusionOverridable(detail string) bool {
+	return strings.HasPrefix(detail, "GOAL_DONE_READ_ITEMS_OPEN: ") || overridableDoneRe.MatchString(detail)
 }
 
 func depState(t *TreeGoals, id string) string {
@@ -3197,6 +3271,10 @@ func unblockRequest(r VerbRequest, id, blocker string, proof *humanauthority.Pro
 // Reopen is done's explicit exception: the archived file moves back
 // to the live set as queued. Goal-free clears when it was declared.
 func Reopen(r VerbRequest, id string) (PublishResult, error) {
+	// The evidence bound judges "goal open" under its lock held
+	// exclusively: a reopen on this host is seen by the judgement or waits
+	// for the one item in flight (engine-owns-disk-lifetimes 3.12).
+	defer receiptlog.HoldBoundShared(r.Endpoint.Root)()
 	return Publish(r.Endpoint, reopenRequest(r, id))
 }
 
@@ -3209,6 +3287,7 @@ func ReopenAbandoned(r VerbRequest, id string, proof *humanauthority.Proof) (Pub
 	if proof == nil || !proof.ValidFor(r.Endpoint.Root) {
 		return PublishResult{}, fmt.Errorf("reopen from abandoned requires freshly observed enrolled-terminal human authority")
 	}
+	defer receiptlog.HoldBoundShared(r.Endpoint.Root)()
 	return Publish(r.Endpoint, reopenAbandonedRequest(r, id))
 }
 
@@ -3315,6 +3394,7 @@ func CarryAbandoned(r VerbRequest, id, successor string, proof *humanauthority.P
 	if !validId(id) || !validId(successor) || id == successor {
 		return PublishResult{}, fmt.Errorf("carried must name a live successor")
 	}
+	defer receiptlog.HoldBoundShared(r.Endpoint.Root)()
 	return Publish(r.Endpoint, carryAbandonedRequest(r, id, successor))
 }
 
@@ -5382,24 +5462,33 @@ func Carry(r VerbRequest, args CarryArgs, proof *humanauthority.Proof) (PublishR
 }
 
 func doneCarryRefusal(root string, tree *TreeGoals, codeTip, id string, file *GoalFile, now time.Time) error {
-	return doneCarryRefusalFor(Endpoint{Root: root}, tree, codeTip, id, file, now)
+	_, err := doneCarryRefusalFor(Endpoint{Root: root}, tree, codeTip, id, file, now)
+	return err
 }
 
-func doneCarryRefusalFor(endpoint Endpoint, tree *TreeGoals, codeTip, id string, file *GoalFile, now time.Time) error {
+// doneCarryRefusalFor refuses a conclusion over an open carry word. The open
+// words come back beside the refusal, so a forced conclusion passes over
+// exactly them; an inspection error comes back with no word and refuses
+// every conclusion.
+func doneCarryRefusalFor(endpoint Endpoint, tree *TreeGoals, codeTip, id string, file *GoalFile, now time.Time) ([]string, error) {
 	goalOnly := &TreeGoals{Root: tree.Root, Live: map[string]*GoalFile{id: file}, Done: map[string]*GoalFile{}}
+	var open []string
 	for _, word := range carryWords(goalOnly) {
 		if !CarryWordProven(endpoint.Root, word) {
 			continue
 		}
 		consumption, err := carryConsumptionAtFor(endpoint, tree, codeTip, word)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if consumption.Kind == "origin" || (consumption.Kind == "none" && now.Before(word.Expires)) {
-			return fmt.Errorf("goal %s has open carry word %s; land it, supersede it, or let it expire; a carried commit without its ledger row must be closed with metasystem work land %s --using-exception %s whether the word is expired or not", id, word.History.Opid, id, word.History.Opid)
+			open = append(open, word.History.Opid)
 		}
 	}
-	return nil
+	if len(open) == 0 {
+		return nil, nil
+	}
+	return open, fmt.Errorf("goal %s has open carry word %s; land it, supersede it, or let it expire; a carried commit without its ledger row must be closed with metasystem work land %s --using-exception %s whether the word is expired or not", id, open[0], id, open[0])
 }
 
 func carryDebtAskAt(root string, tree *TreeGoals, codeTip, exceptRef string, now time.Time) error {

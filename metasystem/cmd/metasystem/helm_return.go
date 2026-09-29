@@ -67,7 +67,8 @@ func (inv *intentInvocation) helmCatchUp(seat helm.Seat, record helm.Record, sin
 		if named == "" {
 			named = "G"
 		}
-		lines = append(lines, "every goal stays open; to conclude one: "+shellCommand([]string{"metasystem", "goal", "done", named, "--reason", conclusion, "--by", record.By}))
+		lines = append(lines, "every goal stays open; to conclude one: "+shellCommand([]string{"metasystem", "goal", "done", named, "--reason", conclusion, "--by", record.By}),
+			"if the conclusion refuses for an open read item, review obligation, carry word or blocked dependency, "+helmForceRemedy(named, conclusion))
 		if patch != "" {
 			lines = append(lines, "to ask independent readers for feedback: "+shellCommand([]string{"metasystem", "work", "review", "--patch", patch, "--brief", brief}))
 		}
@@ -113,7 +114,7 @@ func (inv *intentInvocation) helmAnswers(owners helmOwners, seat helm.Seat, reco
 		if err != nil {
 			lines = append(lines, "goal done "+id+": "+err.Error()+"; the goal stays open")
 		} else {
-			lines = append(lines, helmActLine("goal done "+id, owners.done(inv, id, record.By, conclusion, proof)))
+			lines = append(lines, inv.helmForceAnswer(owners, record, root, id, conclusion, owners.done(inv, id, record.By, conclusion, proof, false))...)
 		}
 	} else {
 		lines = append(lines, "every goal stays open")
@@ -125,6 +126,35 @@ func (inv *intentInvocation) helmAnswers(owners helmOwners, seat helm.Seat, reco
 		lines = append(lines, helmActLine("read", owners.read(inv, patch, brief)))
 	}
 	return lines
+}
+
+// helmForceRemedy is the forced conclusion after the return: the helm is
+// gone, so the person takes it again at their terminal first.
+func helmForceRemedy(id, conclusion string) string {
+	return "take the helm again at your terminal and run: " + shellCommand([]string{"metasystem", "goal", "done", id, "--reason", conclusion, "--force"})
+}
+
+// helmForceAnswer follows the plain conclusion: a refusal a forced conclusion
+// overrides asks whether to conclude anyway, when return's own walk is the
+// person's real proof; yes concludes again with --force, the removed record
+// answering as the helm that was held and the walk as the proof.
+func (inv *intentInvocation) helmForceAnswer(owners helmOwners, record helm.Record, root, id, conclusion string, result intentResult) []string {
+	line := helmActLine("goal done "+id, result)
+	if result.Outcome != intentRefused || !goal.ConclusionOverridable(result.Summary) {
+		return []string{line}
+	}
+	walk, err := humanauthority.Prove(root, owners.pid(), owners.reader, owners.now())
+	if err != nil || forceAdmission(helm.State{Active: true}, &walk, root) != nil {
+		return []string{line, "to conclude anyway, " + helmForceRemedy(id, conclusion)}
+	}
+	fmt.Fprintln(inv.stdout, line)
+	if answer, _ := owners.ask("Conclude anyway and record what was overridden? [y/N] "); !helmYes(answer) {
+		return []string{"goal " + id + " stays open; to conclude anyway, " + helmForceRemedy(id, conclusion)}
+	}
+	since, _ := time.Parse(time.RFC3339, record.At)
+	held := *inv
+	held.owners.dependencies.helm = func(string) helm.State { return helm.State{Active: true, Record: record, Since: since} }
+	return []string{helmActLine("goal done "+id, owners.done(&held, id, record.By, conclusion, walk, true))}
 }
 
 func helmYes(answer string) bool {
@@ -357,8 +387,10 @@ func helmBranches(commits []helmCommit) []string {
 
 // helmReturnDone is the answer yes to the conclusion question: goal done in
 // this process, as runIntentDone calls its owner, with the person proof the
-// holder's take was: the helm proof built from the removed signature.
-func helmReturnDone(inv *intentInvocation, id, by, reason string, proof humanauthority.Proof) intentResult {
+// holder's take was: the helm proof built from the removed signature. The
+// forced conclusion proves instead through return's own walk, taken now:
+// with the signature gone it is the person's real proof or none.
+func helmReturnDone(inv *intentInvocation, id, by, reason string, proof humanauthority.Proof, force bool) intentResult {
 	if problem := inv.selectRoot(); problem != nil {
 		return *problem
 	}
@@ -372,6 +404,13 @@ func helmReturnDone(inv *intentInvocation, id, by, reason string, proof humanaut
 		return proof, nil
 	}
 	args := []string{"--root", inv.stateRoot, "--id", id, "--conclude", reason, "--by", by}
+	if force {
+		walker := inv.owners.helm.withDefaults()
+		owned.owners.dependencies.proveHuman = func(root string, _ int64, _ humanauthority.Reader, _ time.Time) (humanauthority.Proof, error) {
+			return humanauthority.Prove(root, walker.pid(), walker.reader, walker.now())
+		}
+		args = append(args, "--force")
+	}
 	return owned.ownerCall(inv.targets(id), func(dependencies syncRequestDependencies) int {
 		code, _ := trySyncMutationWithCompletion("done", args, owned.owners.commandNow, dependencies, owned.owners.parkBranchCheck, owned.owners.completion)
 		return code

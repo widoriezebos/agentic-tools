@@ -12,6 +12,8 @@ Changed-line allocation: <the design's estimate for this unit, additions plus de
 
 <State the path, branch, what may be touched, and what must not be touched.>
 
+A bed, an output directory or a second tree for this goal is `metasystem work workspace G` (with `--copy-of REV` for a worktree at a revision), released with `--release` when done; never copy the checkout into /tmp or clone it.
+
 The build cache is provided: the adapter sets GOCACHE and STATICCHECK_CACHE to the machine delegate cache, shared by every round of every chain, and GOTMPDIR; never set, unset or strip them, never point GOCACHE elsewhere, never run go clean, never strip the METASYSTEM_HOOK_DELEGATE_ markers, and never run the go gate (`go run ./cmd/devgate`) or any test under env -u or env -i: a self-set cache is cold every round, and only the steward trims the shared one.
 
 The proof of your round is made by the

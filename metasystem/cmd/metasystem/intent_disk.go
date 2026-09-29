@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/evidence"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gocache"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
@@ -44,6 +45,11 @@ type diskOwners struct {
 	stateDir     string
 	// trimPass replaces one trim pass (fixtures); nil is the steward's.
 	trimPass steward.CacheTrimPass
+	// git runs git for workspaces; nil is the real git.
+	git diskstore.WorkspaceGit
+	// evidenceEnv builds a person's evidence verb's environment (fixtures);
+	// nil is steward.EvidenceEnv.
+	evidenceEnv func(ctx context.Context, top, by string) (evidence.Env, error)
 }
 
 func (o diskOwners) withDefaults() diskOwners {
@@ -68,6 +74,9 @@ func (o diskOwners) withDefaults() diskOwners {
 	}
 	if o.proofs == nil {
 		o.proofs = map[diskstore.OwnerKind]diskstore.OwnerProof{}
+	}
+	if o.git == nil {
+		o.git = steward.ExecWorkspaceGit
 	}
 	if o.tempRoots == nil {
 		o.tempRoots = func() []string {
@@ -198,36 +207,15 @@ func diskCacheLines(owners diskOwners) ([]string, []gocache.TrimReport) {
 	return lines, reports
 }
 
-// diskEvidenceRootLines names this checkout's evidence root and the other
-// directories under $HOME/metasystem-evidence. Retired and unclaimed roots
-// are judged by the evidence bound (U5h); until it lands they are listed,
-// never judged.
+// diskEvidenceRootLines names this checkout's evidence root. Every root of
+// the host, with its owner, is in the machine pass's report above (the
+// evidence bound, 3.12).
 func diskEvidenceRootLines(installation, home string) []string {
-	var lines []string
-	own := ""
-	if settings, err := diskstore.LoadSettings(filepath.Join(installation, "metasystem.conf"), nil); err == nil {
-		own = settings.EvidenceRoot.Path
-		lines = append(lines, "evidence root of this checkout: "+own+" ("+settings.EvidenceRoot.Origin+")")
-	} else {
-		lines = append(lines, "evidence root of this checkout: unknown, the settings cannot be read: "+err.Error()+"; run metasystem settings check")
-	}
-	parent := filepath.Join(filepath.Dir(home), "metasystem-evidence")
-	entries, err := os.ReadDir(parent)
+	settings, err := diskstore.LoadSettings(filepath.Join(installation, "metasystem.conf"), nil)
 	if err != nil {
-		return lines
+		return []string{"evidence root of this checkout: unknown, the settings cannot be read: " + err.Error() + "; run metasystem settings check"}
 	}
-	var others []string
-	for _, entry := range entries {
-		path := filepath.Join(parent, entry.Name())
-		if entry.IsDir() && entry.Name() != ".blobs" && path != own {
-			others = append(others, path)
-		}
-	}
-	sort.Strings(others)
-	for _, path := range others {
-		lines = append(lines, "evidence directory: "+path+" (not judged until the evidence bound lands)")
-	}
-	return lines
+	return []string{"evidence root of this checkout: " + settings.EvidenceRoot.Path + " (" + settings.EvidenceRoot.Origin + ")"}
 }
 
 func runIntentDiskClean(inv *intentInvocation) int {
@@ -261,7 +249,7 @@ func runIntentDiskClean(inv *intentInvocation) int {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2,
 			Summary: "--plan ID names the preview --strays acts on; alone it does nothing: metasystem disk clean --strays --plan ID; nothing was done"})
 	}
-	pass := steward.DiskPass{Mode: diskstore.ModeApply, Now: owners.now().UTC(), Clock: owners.now, ForgetRemoved: true}
+	pass := steward.DiskPass{Mode: diskstore.ModeApply, Now: owners.now().UTC(), Clock: owners.now, ForgetRemoved: true, Clones: true}
 	if inv.input.switched("preview") {
 		pass.Mode, pass.ForgetRemoved = diskstore.ModePreview, false
 	}

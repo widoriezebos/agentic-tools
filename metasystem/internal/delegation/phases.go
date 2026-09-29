@@ -221,7 +221,7 @@ func (s *session) internalCancel(job string) error {
 		s.missionReleaseJob(missionID, job)
 	}
 	if s.stopCancelAuthorized == "" {
-		_ = s.mirrorRecord(job)
+		_ = s.mirrorRecordLocked(job) // cancel holds the lifecycle lock
 	}
 	s.releaseLifecycleLock(job)
 	return nil

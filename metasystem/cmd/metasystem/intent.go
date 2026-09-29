@@ -114,8 +114,8 @@ var (
 func intentCommands() []intentCommand {
 	var commands []intentCommand
 	for _, part := range [][]intentCommand{
-		goalIntentCommands(), intentPlanningCommands(), goalReviewIntentCommands(), goalLandWithoutSittingIntentCommands(), designIntentCommands(), intentWorkCommands(),
-		intentDeliveryCommands(), agentIntentCommands(), helmIntentCommands(), processIntentCommands(), landingIntentCommands(), diskIntentCommands(), appIntentCommands(), practiceIntentCommands(), hiddenIntentEntries(), {topLevelStatus()},
+		goalIntentCommands(), intentPlanningCommands(), goalReviewIntentCommands(), goalLandWithoutSittingIntentCommands(), designIntentCommands(), intentWorkCommands(), workspaceIntentCommands(),
+		intentDeliveryCommands(), agentIntentCommands(), helmIntentCommands(), processIntentCommands(), landingIntentCommands(), diskIntentCommands(), evidenceIntentCommands(), appIntentCommands(), practiceIntentCommands(), hiddenIntentEntries(), {topLevelStatus()},
 	} {
 		commands = append(commands, part...)
 	}
@@ -247,12 +247,13 @@ func goalIntentCommands() []intentCommand {
 		},
 		{
 			object: "goal", action: "done", audience: "both", summary: "conclude a goal",
-			usage:   []string{"metasystem goal done G --reason TEXT"},
+			usage:   []string{"metasystem goal done G --reason TEXT [--force]"},
 			details: []string{"The goal's obligations are checked first; its merged branch is swept afterwards. A goal conclusion needs --reason."},
 			flags: []intentFlag{
 				intentTargetFlag,
 				{name: "reason", aliases: []string{"conclude"}, value: "TEXT", usage: "the conclusion"},
 				fileFlag("reason", "read the reason from FILE"),
+				{name: "force", usage: "at the helm: conclude despite open read items, review obligations, a carry word or a blocked dependency; each is recorded as overridden"},
 				intentByFlag, intentLineageFlag,
 			},
 			maxArgs:  1,
@@ -997,7 +998,7 @@ type intentGroup struct {
 var intentGroups = []intentGroup{
 	{"plan", "Plan", []string{"goal", "design", "decision", "grant"}},
 	{"deliver", "Deliver", []string{"work", "test", "question", "agent", "incident"}},
-	{"run", "Run", []string{"status", "helm", "session", "mission", "system", "landing", "machine", "disk", "app", "ui", "settings"}},
+	{"run", "Run", []string{"status", "helm", "session", "mission", "system", "landing", "machine", "disk", "evidence", "app", "ui", "settings"}},
 	{"practice", "Practice", []string{"receipt", "experiment"}},
 }
 
@@ -1020,6 +1021,7 @@ var intentObjectSummaries = map[string]string{
 	"landing":    "the landing lane on this computer: where every seat's work is proved and pushed",
 	"machine":    "the fleet's machines",
 	"disk":       "what MetaSystem keeps on this computer's disk, and reclaiming it",
+	"evidence":   "durable evidence outside the checkout: its bound, verified exports, and a person's disposal",
 	"app":        "the application this project builds, under its launch contract",
 	"ui":         "the browser interface",
 	"settings":   "MetaSystem settings and coordination",
@@ -1028,7 +1030,7 @@ var intentObjectSummaries = map[string]string{
 }
 
 // intentAdministrationObjects configure or repair MetaSystem itself.
-var intentAdministrationObjects = []string{"system", "machine", "disk", "ui", "settings"}
+var intentAdministrationObjects = []string{"system", "machine", "disk", "evidence", "ui", "settings"}
 
 func intentObjectGroup(object string) string {
 	for _, group := range intentGroups {

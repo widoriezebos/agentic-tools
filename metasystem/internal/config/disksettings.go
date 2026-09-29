@@ -99,9 +99,9 @@ const (
 
 var diskSettings = []DiskSetting{
 	{Key: EvidenceRootKey, Unit: UnitPath, Scope: ScopeSegment, Meaning: "this checkout's durable evidence root (default " + DiskEvidenceRootDefaultDoc + "); read only through ResolveEvidenceRoot"},
-	{Key: DiskEvidenceSegmentCapKey, Default: "10", Unit: UnitGiB, Scope: ScopeSegment, Meaning: "per checkout segment: measured bytes plus blob charges past which the bound compacts"},
-	{Key: DiskEvidenceMachineCapKey, Default: "50", Unit: UnitGiB, Scope: ScopeHost, Conservative: ConservativeLargest, Meaning: "every evidence root on the host plus the blob store, physical bytes; compaction only"},
-	{Key: DiskEvidenceAgeFloorKey, Default: "90", Unit: UnitDays, Scope: ScopeSegment, Meaning: "an item younger than this by its recorded end time is never touched by machinery"},
+	{Key: DiskEvidenceSegmentCapKey, Default: "10", Unit: UnitGiB, Scope: ScopeSegment, Meaning: "per checkout segment: measured bytes plus blob charges past which the machine pass reports the segment over its bound (it never removes)"},
+	{Key: DiskEvidenceMachineCapKey, Default: "50", Unit: UnitGiB, Scope: ScopeHost, Conservative: ConservativeLargest, Meaning: "every evidence root on the host plus the blob store, physical bytes, past which the machine pass reports (it never removes)"},
+	{Key: DiskEvidenceAgeFloorKey, Default: "90", Unit: UnitDays, Scope: ScopeSegment, Meaning: "an item younger than this by its recorded end time is never selected by evidence dispose --over-bound"},
 	{Key: DiskEvidenceCitationKey, Unit: UnitPaths, Scope: ScopeSegment, Meaning: "extra locations scanned for citations, comma-separated, absolute or relative to the state root"},
 	{Key: DiskEvidenceExportDirKey, Unit: UnitPath, Scope: ScopeSegment, Meaning: "where evidence export writes archives when --to is omitted; outside every evidence root and checkout"},
 	{Key: DiskEvidenceBlobGraceKey, Default: "24", Unit: UnitHours, Scope: ScopeHost, Conservative: ConservativeLargest, Meaning: "how long an unreferenced blob stays before the sweep removes it"},

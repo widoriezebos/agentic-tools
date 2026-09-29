@@ -31,9 +31,12 @@ type returnBed struct {
 	gitArgs [][]string
 	done    []struct{ id, by, reason string }
 	proofs  []humanauthority.Proof
-	reads   [][2]string
-	gitErr  error
-	fail    bool
+	forces  []bool
+	// refuse, when set, is the plain conclusion's refusal; a forced one confirms.
+	refuse string
+	reads  [][2]string
+	gitErr error
+	fail   bool
 }
 
 func newReturnBed(t *testing.T, branch string) *returnBed {
@@ -84,9 +87,13 @@ func newReturnBed(t *testing.T, branch string) *returnBed {
 	h.holder = func(string) (lease.CurrentHolderView, error) {
 		return lease.CurrentHolderView{}, errors.New("no lease")
 	}
-	h.done = func(_ *intentInvocation, id, by, reason string, proof humanauthority.Proof) intentResult {
+	h.done = func(_ *intentInvocation, id, by, reason string, proof humanauthority.Proof, force bool) intentResult {
 		b.done = append(b.done, struct{ id, by, reason string }{id, by, reason})
 		b.proofs = append(b.proofs, proof)
+		b.forces = append(b.forces, force)
+		if b.refuse != "" && !force {
+			return intentResult{Outcome: intentRefused, Summary: b.refuse}
+		}
 		if b.fail {
 			return intentResult{Outcome: intentRefused, Summary: "g1 has an open read item"}
 		}

@@ -224,8 +224,10 @@ func (r Registry) Register(reg Registration, now time.Time, entropy io.Reader) (
 	}
 	var identity Identity
 	if reg.Git {
+		// A worktree registered before it exists (reserved, 3.6) gets its
+		// identity when it is accepted.
 		read, err := ReadGitIdentity(reg.Path)
-		if err != nil {
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
 			return Record{}, err
 		}
 		identity = read
