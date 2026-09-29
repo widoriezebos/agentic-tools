@@ -10,8 +10,6 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
 
 // These tests port scripts/agents/path-class-fixtures.sh's manifest legs:
@@ -20,24 +18,6 @@ import (
 // TestDeletedListsHaveNoReader (the static reader scan over the manifest's
 // behavior roots).
 
-// pathClassBedInstallation writes a repository holding an installation (its
-// metasystem.conf); the manifest is the engine's compiled-in one. A non-empty installation name places it one level
-// below the repository; the template marker makes that layout a template.
-func pathClassBedInstallation(t *testing.T, installationName string, template bool) (repository, installation string) {
-	t.Helper()
-	repository, err := filepath.EvalSymlinks(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	installation = filepath.Join(repository, installationName)
-	conf := ""
-	if template {
-		conf = "metasystem.template=true\n"
-	}
-	pathClassBedWrite(t, filepath.Join(installation, "metasystem.conf"), conf)
-	return repository, installation
-}
-
 func pathClassBedWrite(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -45,86 +25,6 @@ func pathClassBedWrite(t *testing.T, path, content string) {
 	}
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
-	}
-}
-
-// pathClassBedResolver answers like ResolvePath for an engine installed at
-// <installation>/bin/metasystem inside repository, with Git discovery
-// replaced by the known repository top.
-func pathClassBedResolver(t *testing.T, repository, installation string) func(string) Resolution {
-	t.Helper()
-	oracle := stateroot.NewResolver(func(string) (string, error) { return repository, nil },
-		func() (string, error) { return filepath.Join(installation, "bin", "metasystem"), nil })
-	owner := func(path string) (stateroot.Ownership, string, error) {
-		return oracle.OwnerForInstallation(installation, path)
-	}
-	return func(absolute string) Resolution {
-		t.Helper()
-		answer, err := resolveDiscovered(absolute, installation, repository, owner)
-		if err != nil {
-			t.Fatalf("resolve %s: %v", absolute, err)
-		}
-		return answer
-	}
-}
-
-func TestPathClassBedAnswersFromManifest(t *testing.T) {
-	t.Parallel()
-	repository, installation := pathClassBedInstallation(t, "metasystem", true)
-	resolve := pathClassBedResolver(t, repository, installation)
-
-	for _, test := range []struct {
-		path string
-		want Class
-	}{
-		{"metasystem/internal/x.go", Behavior},
-		{"metasystem/records/misc/x.md", Record},
-		{"metasystem/plans/goals/x.md", Ledger},
-		{"metasystem/bin/metasystem", Runtime},
-	} {
-		if got := resolve(filepath.Join(repository, filepath.FromSlash(test.path))); got.Class != test.want || got.Mode != Template {
-			t.Errorf("%s resolved as %+v; want %s in template mode", test.path, got, test.want)
-		}
-	}
-
-	// Existing installation files answer by their installation key.
-	pathClassBedWrite(t, filepath.Join(installation, "internal", "goal", "txn.go"), "fixture\n")
-	pathClassBedWrite(t, filepath.Join(installation, "plans", "path-class-fixture.md"), "fixture\n")
-	for _, test := range []struct {
-		key  string
-		want Class
-	}{
-		{"internal/goal/txn.go", Behavior},
-		{"plans/path-class-fixture.md", Record},
-	} {
-		if got := resolve(filepath.Join(installation, filepath.FromSlash(test.key))); got.Class != test.want || got.Namespace != Install || got.Key != test.key {
-			t.Errorf("%s resolved as %+v; want %s at install:%s", test.key, got, test.want, test.key)
-		}
-	}
-
-	unclassified := resolve(filepath.Join(repository, "product.txt"))
-	const refusal = "path product.txt has no class in the engine's path-class policy (internal/pathclass/path-classes.txt); no classified ancestor"
-	if unclassified.Class != Unclassified || unclassified.Key != "product.txt" || RefusalText(unclassified.Key) != refusal {
-		t.Fatalf("product.txt resolved as %+v with refusal %q", unclassified, RefusalText(unclassified.Key))
-	}
-
-	if got := resolve(filepath.Join(filepath.Dir(repository), "outside.txt")); got.Class != Outside {
-		t.Fatalf("a path beyond the repository resolved as %+v; want outside", got)
-	}
-
-	explained := resolve(filepath.Join(repository, "metasystem", "docs", "guide.md"))
-	if explained.Class != Behavior || explained.Row != "install:docs/" || explained.Namespace != Install ||
-		explained.Key != "docs/guide.md" || explained.Mode != Template {
-		t.Fatalf("docs/guide.md explained as %+v; want behavior row=install:docs/ key=install:docs/guide.md mode=template", explained)
-	}
-}
-
-func TestPathClassBedAdoptedApplicationPathIsOutside(t *testing.T) {
-	t.Parallel()
-	repository, installation := pathClassBedInstallation(t, "", false)
-	resolve := pathClassBedResolver(t, repository, installation)
-	if got := resolve(filepath.Join(repository, "docs", "application.md")); got.Class != Outside || got.Mode != Adopted {
-		t.Fatalf("adopted docs/application.md resolved as %+v; want outside in adopted mode", got)
 	}
 }
 

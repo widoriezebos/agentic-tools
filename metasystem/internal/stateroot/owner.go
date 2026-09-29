@@ -30,8 +30,6 @@ const (
 // repository is refused. Symlinks are judged by their entry path,
 // never their referent. The repo mode rides along so callers needing
 // the self-hosting distinction get both answers from one mouth.
-func Owner(path string) (Ownership, string, error) { return defaultResolver().Owner(path) }
-
 func (r Resolver) Owner(path string) (Ownership, string, error) {
 	installation, err := r.installationRoot()
 	if err != nil {
