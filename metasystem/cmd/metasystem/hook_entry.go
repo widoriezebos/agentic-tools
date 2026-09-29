@@ -222,6 +222,40 @@ func (o hookOwners) StartContext(runtime string) (string, int) {
 		strings.Join(declaration.StartContextSources, ",")), 0
 }
 
+// PeerSeat is the checkout's enrolled nickname: the seat its peer messages
+// are addressed to (batch-lane design D14-r3, R26).
+func (o hookOwners) PeerSeat(repo string) (string, int) {
+	return peerSeatLine(goal.ResolveMachine, repo)
+}
+
+// PeerClaims is the live claims of the checkout's accepted ledger, the
+// ownership a goal's peer message is delivered by; never a card.
+func (o hookOwners) PeerClaims(repo string) (string, int) {
+	return peerClaimsLine(acceptedClaims(repo))
+}
+
+// peerSeatLine is the nickname on one line, status 1 when none is enrolled.
+func peerSeatLine(resolve func(string) (string, error), repo string) (string, int) {
+	machine, err := resolve(repo)
+	if err != nil || strings.TrimSpace(machine) == "" {
+		return "", 1
+	}
+	return strings.TrimSpace(machine) + "\n", 0
+}
+
+// peerClaimsLine is the claims as one JSON object {"goal":"machine"}, or the
+// reason the ledger is unreadable with status 1.
+func peerClaimsLine(read func() (map[string]string, error)) (string, int) {
+	claims, err := read()
+	if err != nil {
+		return err.Error() + "\n", 1
+	}
+	if claims == nil {
+		claims = map[string]string{}
+	}
+	return jsonLine(claims), 0
+}
+
 func (o hookOwners) StewardPending(repo string) (string, int) {
 	pending, err := steward.PendingNotifications(repo)
 	if err != nil {

@@ -68,6 +68,13 @@ type Declaration struct {
 	StartContextEventName string
 	StartContextBytes     int
 	StartContextSources   []string
+	// ToolContextField is the dotted JSON field into which a tool call's
+	// hook may place model context without deciding the call, and
+	// ToolContextBytes its byte bound; empty and zero declare the capability
+	// absent. A peer message reaches a runtime in band only through a field
+	// it declares (batch-lane design D14-r3, R26).
+	ToolContextField string
+	ToolContextBytes int
 	// ContextSample declares the granularity of context evidence available
 	// for this runtime. MainObservable states whether the runtime's main
 	// process can be observed by the local supervisor.
@@ -257,6 +264,8 @@ var declarations = []Declaration{
 		StartContextEventName:    "SessionStart",
 		StartContextBytes:        10000,
 		StartContextSources:      []string{"startup", "resume", "clear", "compact"},
+		ToolContextField:         "hookSpecificOutput.additionalContext",
+		ToolContextBytes:         10000,
 		SelfCheck:                &LiveSelfCheck{VendoredMarker: "$CLAUDE_PROJECT_DIR/metasystem"},
 		ExpectedEnvelopeEnforcement: map[string]Enforcement{
 			"writeRoots": Mapped, "readRoots": Mapped, "network": Mapped,
@@ -483,6 +492,18 @@ func Validate() []string {
 					add("%s: start context source %q declared twice", d.Name, source)
 				}
 				seenSources[source] = true
+			}
+		}
+		if d.ToolContextField == "" {
+			if d.ToolContextBytes != 0 {
+				add("%s: absent tool context must have a zero bound", d.Name)
+			}
+		} else {
+			if !startContextFieldRe.MatchString(d.ToolContextField) {
+				add("%s: tool context field %q violates the dotted-field grammar", d.Name, d.ToolContextField)
+			}
+			if d.ToolContextBytes < 2048 {
+				add("%s: tool context byte bound %d is below the minimum 2048", d.Name, d.ToolContextBytes)
 			}
 		}
 		if d.ExpectedACP != nil && d.ExpectedACP.ExpectedProtocolVersion < 1 {

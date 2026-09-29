@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	critiqueModel "github.com/widoriezebos/agentic-tools/metasystem/internal/critique"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
@@ -1125,6 +1126,58 @@ func productRootsEmpty(value any) bool {
 // at the orchestrator's proof. The engine's brief.md template carries the
 // same sentence.
 const ImpactedTestsRule = "Before you return, run the tests your change impacts, never whole packages: every test you added or changed; in each package you changed, every test whose file references a function, type, constant, verb, flag or file you changed; in each package that imports a changed package, every test whose file references a changed exported symbol; each by -run name, plain and with every build tag its package's tests use, and -count=3 only for new tests that start processes, goroutines or fixtures. Run gofmt, `go build ./...`, `go vet ./...` and `go run ./cmd/devgate static` (from `metasystem/`) as well. Whole packages run once, at the orchestrator's proof; a red there comes back to you as a follow-up."
+
+// PeerMessagesPointer is the one line a delegate's brief carries about peer
+// messages (batch-lane design D14-r3, R26): how many wait for the seat and
+// the command that reads them, never a message's text; no line when none
+// wait.
+func PeerMessagesPointer(count int) string {
+	if count <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("\n%d peer messages wait: metasystem agent inbox\n", count)
+}
+
+// PeerMessagesWaiting counts the peer messages pending for the seat of the
+// checkout at root, by the accepted ledger's claims; zero when the seat, the
+// board or the ledger cannot be read. It marks nothing.
+func PeerMessagesWaiting(root string) int {
+	home, err := board.Home()
+	if err != nil || !board.HasMessages(home) {
+		return 0
+	}
+	seat, err := goal.ResolveMachine(root)
+	if err != nil {
+		return 0
+	}
+	claims := func() (map[string]string, error) {
+		tip, exists, err := goal.AcceptedLedgerTip(root)
+		if err != nil || !exists {
+			return map[string]string{}, err
+		}
+		projection, err := goal.ProjectAt(root, tip)
+		if err != nil || projection.Tree == nil {
+			return map[string]string{}, err
+		}
+		claims := map[string]string{}
+		for id, file := range projection.Tree.Live {
+			if file != nil && file.Claimed != nil {
+				claims[id] = file.Claimed.Machine
+			}
+		}
+		return claims, nil
+	}
+	return peerMessagesCount(home, seat, claims, time.Now())
+}
+
+func peerMessagesCount(home, seat string, claims func() (map[string]string, error), now time.Time) int {
+	inbox, err := board.Pending(home, seat, claims, now)
+	defer inbox.Release()
+	if err != nil {
+		return 0
+	}
+	return len(inbox.Messages)
+}
 
 // BuildCacheRule is the delegate build cache contract every build brief
 // carries (disk-lifetimes A7): one machine delegate cache for every round of

@@ -24,13 +24,15 @@ func TestDeclarationInvariants(t *testing.T) {
 		{Name: "dup", TailoringPriority: 1},
 		{Name: "dup", TailoringPriority: 0, InstructionFile: "./dot.md",
 			SelfCheck: &LiveSelfCheck{VendoredMarker: ""}},
+		{Name: "tool-a", TailoringPriority: 5, ToolContextBytes: 100},
+		{Name: "tool-b", TailoringPriority: 6, ToolContextField: "bad field", ToolContextBytes: 2047},
 	}
 	problems := Validate()
 	for _, want := range []string{"shell-safe grammar", "variable grammar", "clean-relative",
 		"already belongs", "not a permission field", "empty residual",
 		"declared twice", "must be positive", "ascending priority order",
 		"nonblank vendored marker", "dotted-field grammar", "below the minimum 2048",
-		"event-name grammar", "source grammar"} {
+		"event-name grammar", "source grammar", "absent tool context", "tool context field", "tool context byte bound 2047"} {
 		found := false
 		for _, p := range problems {
 			if contains(p, want) {
@@ -285,6 +287,30 @@ func TestValidateC2Rows(t *testing.T) {
 		}
 		if !found {
 			t.Fatalf("validator missed %q in %v", want, problems)
+		}
+	}
+}
+
+// TestToolContextIsDeclared (R26; U10f-1's declaration): Claude declares
+// hookSpecificOutput.additionalContext with 10,000 bytes as the field a tool
+// call's hook may fill with model context; Codex, Devin and fake declare
+// none, and the fake declares no start field either. (The validator's side
+// is in TestDeclarationInvariants.)
+func TestToolContextIsDeclared(t *testing.T) {
+	t.Parallel()
+	for _, d := range All() {
+		switch d.Name {
+		case "claude":
+			if d.ToolContextField != "hookSpecificOutput.additionalContext" || d.ToolContextBytes != 10000 {
+				t.Errorf("claude tool context = %q %d", d.ToolContextField, d.ToolContextBytes)
+			}
+		default:
+			if d.ToolContextField != "" || d.ToolContextBytes != 0 {
+				t.Errorf("%s declares a tool context field %q %d", d.Name, d.ToolContextField, d.ToolContextBytes)
+			}
+		}
+		if d.Name == "fake" && d.StartContextField != "" {
+			t.Errorf("the fake declares a start context field %q", d.StartContextField)
 		}
 	}
 }

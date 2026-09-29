@@ -451,3 +451,28 @@ func agentDataID(t *testing.T, b *agentBed, mailbox string) string {
 	}
 	return strings.TrimSuffix(entries[0].Name(), ".json")
 }
+
+// TestHookPeerBindingsAnswerTheHook (R26, U10f-1): the hook's PeerSeat is
+// the enrolled nickname on one line, status 1 without one; PeerClaims is the
+// ledger's live claims as one JSON object the hook reads, status 1 with the
+// reason when the ledger cannot be read.
+func TestHookPeerBindingsAnswerTheHook(t *testing.T) {
+	t.Parallel()
+	if out, status := peerSeatLine(func(string) (string, error) { return "m1b", nil }, "/repo"); out != "m1b\n" || status != 0 {
+		t.Fatalf("an enrolled seat = %q %d", out, status)
+	}
+	if out, status := peerSeatLine(func(string) (string, error) { return "", errors.New("no nickname") }, "/repo"); out != "" || status != 1 {
+		t.Fatalf("no enrolled seat = %q %d", out, status)
+	}
+	out, status := peerClaimsLine(func() (map[string]string, error) { return map[string]string{"goal-x": "m1b"}, nil })
+	var claims map[string]string
+	if status != 0 || json.Unmarshal([]byte(out), &claims) != nil || claims["goal-x"] != "m1b" || !strings.HasSuffix(out, "\n") {
+		t.Fatalf("the claims = %q %d", out, status)
+	}
+	if out, status := peerClaimsLine(func() (map[string]string, error) { return nil, nil }); out != "{}\n" || status != 0 {
+		t.Fatalf("an empty ledger = %q %d", out, status)
+	}
+	if out, status := peerClaimsLine(func() (map[string]string, error) { return nil, errors.New("tip unreadable") }); out != "tip unreadable\n" || status != 1 {
+		t.Fatalf("an unreadable ledger = %q %d", out, status)
+	}
+}

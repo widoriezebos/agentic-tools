@@ -867,6 +867,7 @@ func (s *session) appendTestingRequirement(brief, goalID, gateWidth, prefix stri
 		_ = s.verbFailure(err)
 		return "", err
 	}
+	requirement += dispatch.PeerMessagesPointer(dispatch.PeerMessagesWaiting(s.root))
 	if err := os.WriteFile(composed, append(content, []byte(requirement)...), 0o600); err != nil {
 		return "", err
 	}
