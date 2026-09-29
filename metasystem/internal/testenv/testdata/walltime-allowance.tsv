@@ -10,7 +10,7 @@ internal/adapter/supervisor/fake_helpers_test.go	1	The pause polls a real fixtur
 internal/adapter/supervisor/fake_test.go	3	Two pauses poll real hold and critique children; the deadline caps a released-critique round; success requires the observed process and record state.
 internal/adapter/supervisor/protocol_acpfixtures_test.go	2	Both pauses poll a real ACP stub's journal and outcome files; success requires the observed wire records.
 internal/applaunch/run_test.go	4	Three pauses poll real detached supervisors and fixture applications: until their recorded identities are dead before cleanup, until a released supervisor is reaped, and until a status or file is observed; the fourth lets a real Follow seek the log's end before a line is appended; success requires the observed record, identity or output.
-internal/applaunch/supervise_test.go	5	Each deadline caps the join of an in-process supervisor owning a real fixture application, failing the test rather than hanging it; success requires the observed record, signals and group reads.
+internal/applaunch/supervise_test.go	1	The one deadline caps the join of an in-process supervisor owning a real fixture application, failing the test rather than hanging it; success requires the observed record, signals and group reads.
 internal/dispatch/proof_attempt_test.go	1	The sleeping child is the stop fixture's subject and is killed, never waited out.
 internal/identity/fixture_custodian_witness_test.go	2	The timers are failure ceilings around a real command and its forced reap; successful observation comes from the command result.
 internal/identity/survivors_test.go	2	The scans observe real kernel process membership; success is a survivor fact and the delays only avoid busy-spinning.
