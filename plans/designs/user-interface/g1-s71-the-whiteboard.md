@@ -322,4 +322,8 @@ of 84.7, httpd 88.7 of 88.5, partner 84.9 of 80.1), the structural
 tests, the static gate with its dead-code check, the fast build gate,
 vitest and typecheck, the bundle rebuilt under Node 24; the whole
 `cmd/metasystem` package left to the batch's suite. The landing
-commit is the batch's.
+commit is the batch's: main `dd0abf0e1` (batch 19, 2026-09-29 14:2x,
+with the D14 bridge Part 1's rest; the batch moved the CSP proof's
+build directory inside the test that draws, so the audit that refuses
+host-temp leaks passes, and rebuilt the bundle once over both slices
+under Node 24, mermaid's chunks byte-identical to this build's).
