@@ -277,8 +277,18 @@ func judgeContent(ctx context.Context, git WorkspaceGit, record Record, discard 
 	if record.Owner.Kind != OwnerGoal {
 		land = "commit the work, or "
 	}
-	if record.Class == DelegateClass {
+	switch record.Class {
+	case DelegateClass:
 		land = "metasystem work review j2:" + record.Owner.Ref + " to capture the work, or "
+	}
+	remedy := land + discardCommand(record.Owner, name)
+	switch record.Class {
+	case GoalWorktreeClass:
+		// A goal's worktree has no discard: its work lands, or a person
+		// commits or removes it where it is.
+		remedy = "metasystem work land " + record.Owner.Ref + " for the work, or commit or remove it yourself in " + record.Path
+	case SessionWorktreeClass:
+		remedy = "commit or remove the work yourself in " + record.Path + ", then metasystem disk clean"
 	}
 	// A person's discard waives the uncommitted content alone (Round B3-4,
 	// F-3): committed history a reflog holds is never discarded, so an
@@ -292,7 +302,7 @@ func judgeContent(ctx context.Context, git WorkspaceGit, record Record, discard 
 	}
 	status, err := git(ctx, record.Path, "status", "--porcelain=v1", "-z", "--ignored=matching", "--untracked-files=all")
 	if err != nil {
-		return Verdict{Decision: Keep, Reason: "its status cannot be read (" + err.Error() + "); it is kept", Command: land + discardCommand(record.Owner, name)}
+		return Verdict{Decision: Keep, Reason: "its status cannot be read (" + err.Error() + "); it is kept", Command: remedy}
 	}
 	var entries []string
 	for _, entry := range strings.Split(string(status), "\x00") {
@@ -305,10 +315,10 @@ func judgeContent(ctx context.Context, git WorkspaceGit, record Record, discard 
 			entries = []string{strings.TrimSpace(string(status))}
 		}
 		return Verdict{Decision: Keep, Reason: fmt.Sprintf("the workspace holds %d uncommitted, untracked or ignored entries: %s", len(entries), firstPaths(entries)),
-			Command: land + discardCommand(record.Owner, name)}
+			Command: remedy}
 	}
 	if reason := copyHidden(ctx, git, record); reason != "" {
-		return Verdict{Decision: Keep, Reason: reason + "; it is kept", Command: land + discardCommand(record.Owner, name)}
+		return Verdict{Decision: Keep, Reason: reason + "; it is kept", Command: remedy}
 	}
 	return Verdict{Decision: Release}
 }
@@ -701,16 +711,22 @@ const DelegateClass = "delegate workspace"
 // linkedBranch is a linked-worktree store's branch: agent/<chain> for a
 // delegate workspace, workspace/<owner>/<name> for a copy.
 func linkedBranch(record Record) string {
-	if record.Class == DelegateClass {
+	switch record.Class {
+	case DelegateClass:
 		return "agent/" + record.Owner.Ref
+	case GoalWorktreeClass:
+		return "goal/" + record.Owner.Ref
+	case SessionWorktreeClass:
+		return "session/" + record.Owner.Ref
 	}
 	return WorkspaceBranch(record.Owner, filepath.Base(record.Path))
 }
 
 // linkedArchiveRef is where a linked-worktree store's tips are archived.
 func linkedArchiveRef(record Record) string {
-	if record.Class == DelegateClass {
-		return "refs/archive/delegate-" + record.Owner.Ref + "/agent/" + record.Owner.Ref
+	switch record.Class {
+	case DelegateClass, GoalWorktreeClass, SessionWorktreeClass:
+		return "refs/archive/" + WorkspaceOwnerSegment(record.Owner) + "/" + linkedBranch(record)
 	}
 	return WorkspaceArchiveRef(record.Owner, filepath.Base(record.Path))
 }

@@ -15,6 +15,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/adopt"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/audit"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hookswitch"
@@ -594,6 +595,9 @@ type intentInvocation struct {
 	// inferredChain is the one examination root inferred from the goal's
 	// work records, when the caller named none.
 	inferredChain string
+	// entrants are the registered stores this verb is inside, each held
+	// shared until the verb ends (Part B 3.1 "Entrants").
+	entrants []*diskstore.Entrant
 }
 
 // runIntent routes one public command. Help needs no repository, identity or
@@ -630,7 +634,16 @@ func runIntentIn(command intentCommand, raw []string, stdout, stderr io.Writer, 
 	if problem := inv.resolveTextFiles(); problem != nil {
 		return inv.render(*problem)
 	}
+	defer inv.leaveStores()
 	return command.run(inv)
+}
+
+// leaveStores drops every shared hold the verb took on a store it entered.
+func (inv *intentInvocation) leaveStores() {
+	for _, entrant := range inv.entrants {
+		_ = entrant.Leave()
+	}
+	inv.entrants = nil
 }
 
 // selectRoot resolves the repository once: any path inside the repository,

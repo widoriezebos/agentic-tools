@@ -20,9 +20,11 @@ import (
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
+	"time"
 )
 
 // ExecWorkspaceGit runs git in dir under ctx with the repository-steering
@@ -166,8 +168,15 @@ func checkoutProofs(top string, pass DiskPass) map[diskstore.OwnerKind]diskstore
 	if err != nil {
 		return proofs
 	}
-	proofs[diskstore.OwnerGoal] = diskstore.WorkspaceProof{GitRoot: layout.GitRoot, Git: ExecWorkspaceGit, Ended: goalEnded(checkoutLedger(top, pass.Now)),
-		Now: pass.Now}
+	ledger := checkoutLedger(top, pass.Now)
+	workspace := diskstore.WorkspaceProof{GitRoot: layout.GitRoot, Git: ExecWorkspaceGit, Ended: goalEnded(ledger), Now: pass.Now}
+	// The grace only chooses between two kept-item reasons; unknown settings
+	// make the checkout pass report-only anyway.
+	var grace time.Duration
+	if settings, err := diskSettingsFor(top); err == nil {
+		grace = settings.Duration(config.DiskSessionBootstrapKey)
+	}
+	linkedWorktreeProofs(proofs, top, layout, ledger, workspace, pass.Now, grace)
 	if delegate, err := DelegateProof(top, pass.Now); err == nil {
 		proofs[diskstore.OwnerDelegate] = delegate
 	}

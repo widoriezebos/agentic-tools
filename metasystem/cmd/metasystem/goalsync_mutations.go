@@ -20,10 +20,12 @@ import (
 	"strings"
 	"time"
 
+	"context"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/brain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/counselor"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
@@ -39,6 +41,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/metrics"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 )
 
 type goalRecoveryPolicy struct {
@@ -1846,9 +1849,12 @@ func trySyncMutationWithCompletion(name string, args []string, commandNow func(s
 			if _, remoteErr := goalBranchGit(f.root, "remote", "get-url", "transport"); remoteErr == nil {
 				transport = "transport"
 			}
-			_, err = goalbranch.Sweep(goalbranch.SweepRequest{Repo: f.root, Remote: req.Endpoint.Remote, Transport: transport,
-				EndpointTip: endpointTip, GoalID: goalID, Dropped: dropped, CheckClaim: func() error { return nil }})
-			return err
+			sweep := func(ctx context.Context) error {
+				_, err := goalbranch.Sweep(goalbranch.SweepRequest{Repo: f.root, Remote: req.Endpoint.Remote, Transport: transport,
+					EndpointTip: endpointTip, GoalID: goalID, Dropped: dropped, CheckClaim: func() error { return nil }, Context: ctx})
+				return err
+			}
+			return sweepGoalWorktrees(f.root, goalID, sweep)
 		}
 		if f.force {
 			if err := forceAdmission(dependencies.helmState(f.root), req.Authority, f.root); err != nil {
@@ -3401,4 +3407,93 @@ func goalDoneWithoutMetrics(req goal.VerbRequest, root, id string) bool {
 	}
 	_, statErr := os.Stat(metrics.GoalReportTarget(root, id))
 	return errors.Is(statErr, fs.ErrNotExist)
+}
+
+// sweepGoalWorktrees runs goal done's sweep inside the critical section of
+// every registered worktree of the goal (Part B 3.2 "Goal"): each record
+// lock taken without waiting and the record reloaded, the worktree judged by
+// the workspace rules and the use census, every tip archived and read back,
+// then the sweep. A goal with no registered worktree sweeps as before. A
+// worktree an engine verb is inside, or one something still keeps, is left
+// for the steward's disk pass, which retries the sweep once it is clear.
+func sweepGoalWorktrees(root, goalID string, sweep func(context.Context) error) error {
+	registry := diskstore.CheckoutRegistry(root)
+	records, err := diskstore.FindLinkedWorktrees(registry, diskstore.GoalWorktreeClass, diskstore.Owner{Kind: diskstore.OwnerGoal, Ref: goalID})
+	if err != nil {
+		return err
+	}
+	if len(records) == 0 {
+		return sweep(context.Background())
+	}
+	layout, err := stateroot.ResolveLayout(root)
+	if err != nil {
+		return err
+	}
+	ids := make([]string, 0, len(records))
+	for _, record := range records {
+		ids = append(ids, record.ID)
+	}
+	outcome, err := diskstore.ReleaseLinkedWorktrees(context.Background(), registry, ids, diskstore.LinkedRelease{
+		GitRoot: layout.GitRoot, Git: steward.ExecWorkspaceGit, Now: time.Now().UTC(), By: "goal done",
+		TakeCensus: func() *diskstore.UseCensus {
+			home, _ := steward.HomeStateRoot()
+			census := diskstore.TakeUseCensus(context.Background(), *steward.KernelCensusReader(home, append(steward.ArmedCheckouts(), root)))
+			return &census
+		},
+		Remove: sweep})
+	switch {
+	case err != nil:
+		return err
+	case outcome.Done:
+		return nil
+	}
+	return fmt.Errorf("goal/%s's worktree %s is kept for now: %s; the steward's disk pass retries the sweep (%s)", goalID, outcome.Path, outcome.Reason, outcome.Command)
+}
+
+// The steward's disk pass retries goal done's sweep for a concluded goal's
+// registered worktree through the same request goal done builds.
+func init() {
+	steward.RegisterGoalBranchSweep(steward.GoalBranchSweep{Plan: goalSweepPlan, Sweep: goalSweepRun})
+}
+
+// goalSweepRequest is goal done's sweep request for goalID at root.
+func goalSweepRequest(ctx context.Context, root, goalID, dropped string) (goalbranch.SweepRequest, error) {
+	endpoint, err := goal.ResolveEndpoint(root)
+	if err != nil {
+		return goalbranch.SweepRequest{}, err
+	}
+	tip, err := goalBranchEndpointTip(root, endpoint)
+	if err != nil {
+		return goalbranch.SweepRequest{}, err
+	}
+	transport := ""
+	if _, remoteErr := goalBranchGit(root, "remote", "get-url", "transport"); remoteErr == nil {
+		transport = "transport"
+	}
+	return goalbranch.SweepRequest{Repo: root, Remote: endpoint.Remote, Transport: transport, EndpointTip: tip, GoalID: goalID,
+		Dropped: dropped, CheckClaim: func() error { return nil }, Context: ctx}, nil
+}
+
+func goalSweepPlan(ctx context.Context, root, goalID, dropped string) (string, error) {
+	request, err := goalSweepRequest(ctx, root, goalID, dropped)
+	if err != nil {
+		return "", err
+	}
+	plan, err := goalbranch.SweepPlan(request)
+	if err != nil {
+		return "", err
+	}
+	if plan.Refusal != nil {
+		return plan.Refusal.Error(), nil
+	}
+	return "", nil
+}
+
+func goalSweepRun(ctx context.Context, root, goalID, dropped string) error {
+	request, err := goalSweepRequest(ctx, root, goalID, dropped)
+	if err != nil {
+		return err
+	}
+	_, err = goalbranch.Sweep(request)
+	return err
 }

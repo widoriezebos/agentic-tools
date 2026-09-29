@@ -89,9 +89,16 @@ func TestCheckoutPassRetriesLandingReleaseSets(t *testing.T) {
 func TestCheckoutProofsCarryTheWorkspaceProof(t *testing.T) {
 	t.Parallel()
 	bed := newStaleBed(t)
-	proof, ok := checkoutProofs(bed.inst, DiskPass{Now: staleNow})[diskstore.OwnerGoal].(diskstore.WorkspaceProof)
+	classes, ok := checkoutProofs(bed.inst, DiskPass{Now: staleNow})[diskstore.OwnerGoal].(diskstore.ClassProofs)
+	if !ok {
+		t.Fatalf("the goal's proofs are not by class: %+v", classes)
+	}
+	proof, ok := classes.ByClass[diskstore.WorkspaceClass].(diskstore.WorkspaceProof)
 	if !ok || proof.GitRoot == "" || proof.Git == nil || proof.Ended == nil {
 		t.Fatalf("proof = %+v", proof)
+	}
+	if worktree, ok := classes.ByClass[diskstore.GoalWorktreeClass].(diskstore.GoalWorktreeProof); !ok || worktree.Plan == nil || worktree.Sweep == nil {
+		t.Fatalf("the goal worktree's proof = %+v", classes.ByClass[diskstore.GoalWorktreeClass])
 	}
 	if ended, known, _ := proof.Ended(diskstore.Owner{Kind: diskstore.OwnerGoal, Ref: "g"}); ended || known {
 		t.Fatalf("no readable ledger: ended=%v known=%v", ended, known)
