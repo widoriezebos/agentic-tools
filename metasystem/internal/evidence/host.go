@@ -198,7 +198,7 @@ func discoverRoot(path string, checkouts []HostCheckout) Root {
 		default:
 			segment.LedgerIdentity = recorded.LedgerIdentity
 			if reason := recorded.Revalidate(checkout.Facts); reason != "" {
-				segment.Unknown = reason + "; metasystem internal evidence retire is the person's action"
+				segment.Unknown = reason + "; a person decides: metasystem evidence show --all, then metasystem evidence dispose PATH --export DIR --preview"
 			}
 		}
 		root.Segments = append(root.Segments, segment)
@@ -213,12 +213,12 @@ func discoverRoot(path string, checkouts []HostCheckout) Root {
 			if directory == "events" {
 				claimedInstallation[name] = true
 				root.Segments = append(root.Segments, Segment{Root: path, Installation: name,
-					Unknown: "orphan segment events/" + name + ": no armed checkout's installation hashes to it; arm its checkout, or retire it with metasystem internal evidence retire"})
+					Unknown: "orphan segment events/" + name + ": no armed checkout's installation hashes to it; arm its checkout (metasystem system setup there), or a person disposes of it: metasystem evidence dispose PATH --export DIR --preview"})
 				continue
 			}
 			claimedGit[name] = true
 			root.Segments = append(root.Segments, Segment{Root: path, Git: name,
-				Unknown: "orphan segment " + name + ": no armed checkout's git root hashes to it; arm its checkout, or retire it with metasystem internal evidence retire"})
+				Unknown: "orphan segment " + name + ": no armed checkout's git root hashes to it; arm its checkout (metasystem system setup there), or a person disposes of it: metasystem evidence dispose PATH --export DIR --preview"})
 		}
 	}
 	if entries, err := os.ReadDir(path); err == nil {
@@ -240,7 +240,7 @@ func discoverRoot(path string, checkouts []HostCheckout) Root {
 			_ = json.Unmarshal(retired, &pointer)
 			root.Owner = "retired root of " + strings.Join(pointer.Checkouts, ", ") + ", successor " + pointer.Successor
 		} else {
-			root.Owner = "unclaimed root: no armed checkout resolves to it; claim it by arming its checkout, or retire it with metasystem internal evidence retire"
+			root.Owner = "unclaimed root: no armed checkout resolves to it; claim it by arming its checkout (metasystem system setup there), or a person disposes of its entries: metasystem evidence dispose PATH --export DIR --preview"
 		}
 		for index := range root.Segments {
 			if root.Segments[index].Unknown == "" || strings.HasPrefix(root.Segments[index].Unknown, "orphan segment") {

@@ -912,7 +912,15 @@ func (e Env) Show(ctx context.Context) SegmentView {
 		}
 	}
 	if segment.Root == "" {
-		view.Unknown = "this checkout has no evidence segment yet (no root resolves, or nothing was mirrored)"
+		root := e.This.Settings.EvidenceRoot.Path
+		switch {
+		case e.This.SettingsErr != nil:
+			view.Unknown = "its settings cannot be read: " + e.This.SettingsErr.Error() + "; metasystem settings check names the fix"
+		case root == "":
+			view.Unknown = "no evidence root resolves for it; metasystem settings check names the fix"
+		default:
+			view.Unknown = "nothing is in its evidence root " + root + " yet; metasystem evidence show --all names every root of this host with its owner"
+		}
 		return view
 	}
 	view.Root = root.Path
