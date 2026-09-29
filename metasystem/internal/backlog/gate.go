@@ -43,6 +43,12 @@ type GateWord struct {
 	Kind string `json:"kind"`
 	By   string `json:"by"`
 	Tip  string `json:"tip"`
+	// Moved says the goal branch at origin is no longer at Tip, so a word to
+	// land no longer lets the goal land: a moved tip needs the word again
+	// (G5); BranchTip is where the branch is now. Both are empty where the
+	// branch's tip was not read.
+	Moved     bool   `json:"moved,omitempty"`
+	BranchTip string `json:"branchTip,omitempty"`
 }
 
 // GateOf is one goal's reading at now.
@@ -64,8 +70,9 @@ func GateOf(f *goal.GoalFile, s goal.GateSettings, now time.Time) *Gate {
 }
 
 // JoinGates fills the gate's reading on every row in the Review lane, from the
-// tree the rows were projected from.
-func JoinGates(rows []Row, tree *goal.TreeGoals, s goal.GateSettings, now time.Time) {
+// tree the rows were projected from; branchTip reads a goal branch's tip at
+// origin, against which a word to land is read, and may be nil.
+func JoinGates(rows []Row, tree *goal.TreeGoals, s goal.GateSettings, now time.Time, branchTip func(goalID string) (string, error)) {
 	if tree == nil {
 		return
 	}
@@ -75,6 +82,21 @@ func JoinGates(rows []Row, tree *goal.TreeGoals, s goal.GateSettings, now time.T
 		}
 		if f := tree.Live[rows[index].ID]; f != nil {
 			rows[index].Gate = GateOf(f, s, now)
+			readAgainstTheBranch(rows[index].Gate.Reviewed, rows[index].ID, branchTip)
 		}
+	}
+}
+
+// readAgainstTheBranch says whether a word to land still stands at the goal
+// branch's tip at origin: the engine refuses a landing whose word was given at
+// another tip, so the card and the inbox ask for the word again (G5). A send-
+// back lets nothing land and is not read; a tip that cannot be read says
+// nothing either way.
+func readAgainstTheBranch(word *GateWord, goalID string, branchTip func(string) (string, error)) {
+	if word == nil || word.Kind == goal.VerdictSendBack || branchTip == nil {
+		return
+	}
+	if tip, err := branchTip(goalID); err == nil && tip != "" && tip != word.Tip {
+		word.Moved, word.BranchTip = true, tip
 	}
 }

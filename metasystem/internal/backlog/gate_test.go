@@ -20,7 +20,7 @@ func TestAReviewRowCarriesTheGatesReading(t *testing.T) {
 	below.Tier = 1
 	tree := treeOf(below)
 	board := Project(tree, goal.ApprovalHorizon{}, Admission{})
-	JoinGates(board.Rows, tree, cardSettings, time.Date(2026, 8, 26, 1, 0, 0, 0, time.UTC))
+	JoinGates(board.Rows, tree, cardSettings, time.Date(2026, 8, 26, 1, 0, 0, 0, time.UTC), nil)
 	gate := board.Rows[0].Gate
 	if gate == nil {
 		t.Fatalf("the Review row carries no gate: %+v", board.Rows[0])
@@ -34,7 +34,7 @@ func TestAReviewRowCarriesTheGatesReading(t *testing.T) {
 	above.Tier = 3
 	tree = treeOf(above)
 	board = Project(tree, goal.ApprovalHorizon{}, Admission{})
-	JoinGates(board.Rows, tree, cardSettings, time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC))
+	JoinGates(board.Rows, tree, cardSettings, time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC), nil)
 	gate = board.Rows[0].Gate
 	testutil.Expect(t, "waits above", gate.WaitsForHuman, true)
 	testutil.Expect(t, "no clock above", gate.AutoLandsAt, "")
@@ -48,9 +48,52 @@ func TestAReviewRowCarriesTheGatesReading(t *testing.T) {
 		Reason: goal.SittingReason(true, verdictRecord, "Wido")})
 	tree = treeOf(held)
 	board = Project(tree, goal.ApprovalHorizon{}, Admission{})
-	JoinGates(board.Rows, tree, cardSettings, time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC))
+	JoinGates(board.Rows, tree, cardSettings, time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC), nil)
 	gate = board.Rows[0].Gate
 	if len(gate.HeldBy) != 1 || gate.HeldBy[0].By != "Wido" || gate.AutoLandsAt != "" || gate.Eligible {
 		t.Fatalf("the hold = %+v", gate)
 	}
+}
+
+// A word to land read against the goal branch's tip at origin (SOL-S70-04):
+// where the branch has left the word's tip, the reading says so and where the
+// branch is now, for a verdict and a decision to land without a sitting alike;
+// at the word's tip, or where the tip was not read, it says nothing more.
+func TestAWordAtATipTheBranchLeftNeedsTheWordAgain(t *testing.T) {
+	t.Parallel()
+	const moved = "a1b2c3d4e5f60718293a4b5c6d7e8f9011223344"
+	at := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	wordOf := func(f *goal.GoalFile, branchTip func(string) (string, error)) *GateWord {
+		t.Helper()
+		f.Tier = 3
+		tree := treeOf(f)
+		board := Project(tree, goal.ApprovalHorizon{}, Admission{})
+		JoinGates(board.Rows, tree, cardSettings, at, branchTip)
+		if board.Rows[0].Gate == nil || board.Rows[0].Gate.Reviewed == nil {
+			t.Fatalf("the row carries no word: %+v", board.Rows[0].Gate)
+		}
+		return board.Rows[0].Gate.Reviewed
+	}
+	branchAt := func(tip string) func(string) (string, error) {
+		return func(id string) (string, error) {
+			if id != "landing" {
+				t.Fatalf("the branch read is goal/%s's", id)
+			}
+			return tip, nil
+		}
+	}
+
+	cleared := wordOf(reviewed(waitingToLand(), goal.VerdictClearToLand), branchAt(moved))
+	testutil.Expect(t, "a cleared word at a moved tip", *cleared, GateWord{Kind: goal.VerdictClearToLand, By: "Wido", Tip: verdictTip, Moved: true, BranchTip: moved})
+
+	without := waitingToLand()
+	without.History = append(without.History, goal.HistoryLine{At: "2026-08-27T00:00:00Z", Opid: reviewOpid, Verb: goal.LandWithoutSittingVerb, Actor: "human:Wido",
+		Targets: []string{without.Id}, Reason: "landed-without-sitting tip=" + verdictTip + " by=Wido because=one-line doc fix"})
+	decided := wordOf(without, branchAt(moved))
+	testutil.Expect(t, "a decision at a moved tip", *decided, GateWord{Kind: goal.LandWithoutSittingVerb, By: "Wido", Tip: verdictTip, Moved: true, BranchTip: moved})
+
+	standing := wordOf(reviewed(waitingToLand(), goal.VerdictClearToLand), branchAt(verdictTip))
+	testutil.Expect(t, "a word at the branch's tip", *standing, GateWord{Kind: goal.VerdictClearToLand, By: "Wido", Tip: verdictTip})
+	unread := wordOf(reviewed(waitingToLand(), goal.VerdictClearToLand), nil)
+	testutil.Expect(t, "a word whose branch was not read", *unread, GateWord{Kind: goal.VerdictClearToLand, By: "Wido", Tip: verdictTip})
 }

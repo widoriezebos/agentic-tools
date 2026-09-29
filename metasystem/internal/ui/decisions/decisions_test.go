@@ -882,3 +882,24 @@ func TestALandingRowIsTheGoalThatWaitsForYourReview(t *testing.T) {
 		t.Fatalf("the landing row = %+v", need)
 	}
 }
+
+// A word to land given before the branch moved no longer lets the goal land
+// (SOL-S70-04): the goal is back among those waiting for this human's review,
+// for a verdict and a decision to land without a sitting alike, while a word
+// that still stands at the branch's tip keeps it off the inbox.
+func TestAWordAtAMovedTipIsBackInTheInbox(t *testing.T) {
+	t.Parallel()
+	for _, kind := range []string{goal.VerdictClearToLand, goal.LandWithoutSittingVerb} {
+		waiting := row("g1-s61", "A goal whose branch moved after the word", backlog.LaneReview)
+		waiting.State = goal.StateClaimed
+		waiting.Gate = &backlog.Gate{Tier: 2, HumanFromTier: 2, AutoAfter: "4h", WaitsForHuman: true,
+			Reviewed: &backlog.GateWord{Kind: kind, By: "Wido", Tip: strings.Repeat("9", 40), Moved: true, BranchTip: strings.Repeat("a", 40)}}
+		if needs := landings([]backlog.Row{waiting}); len(needs) != 1 || needs[0].ID != "g1-s61" || needs[0].Asked != "g1-s61 waits for your review" {
+			t.Fatalf("%s at a moved tip: the inbox = %+v", kind, needs)
+		}
+		waiting.Gate.Reviewed.Moved, waiting.Gate.Reviewed.BranchTip = false, ""
+		if needs := landings([]backlog.Row{waiting}); len(needs) != 0 {
+			t.Fatalf("%s standing at the tip: the inbox = %+v", kind, needs)
+		}
+	}
+}

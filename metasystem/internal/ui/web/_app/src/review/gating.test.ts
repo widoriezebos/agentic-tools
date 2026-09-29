@@ -45,6 +45,20 @@ describe("the landing gate's words", () => {
     expect(offersLandWithoutSitting(below)).toBe(false);
   });
 
+  it("asks for the word again once the branch moved past it, with the press and no clock", () => {
+    const above: Gate = { tier: 2, humanFromTier: 2, autoAfter: "4h", waitsForHuman: true, eligible: false, landed: false };
+    const moved = { tip: "9c1f0a2b3c4d5e6f708192a3b4c5d6e7f8091a2b", moved: true, branchTip: "a1b2c3d4e5f60718293a4b5c6d7e8f9011223344" };
+    const cleared: Gate = { ...above, reviewed: { kind: "clear-to-land", by: "Wido", ...moved } };
+    expect(gateLine(cleared, "Wido", now)).toBe("cleared by Wido at 9c1f0a2, but the branch moved to a1b2c3d: needs the word again");
+    expect(offersLandWithoutSitting(cleared)).toBe(true);
+    const decided: Gate = { ...above, reviewed: { kind: "land-without-sitting", by: "Wido", ...moved } };
+    expect(gateLine(decided, "Wido", now)).toBe(
+      "decided to land without a sitting by Wido at 9c1f0a2, but the branch moved to a1b2c3d: needs the word again",
+    );
+    expect(offersLandWithoutSitting(decided)).toBe(true);
+    expect(gateLine(cleared, "Wido", now)).not.toContain("eligible");
+  });
+
   it("says nothing without a reading, and the landing once recorded", () => {
     expect(gateLine(undefined, "Wido", now)).toBe("");
     expect(gateLine({ ...below, landed: true }, "Wido", now)).toBe("landed; the goal stays open until it is done");

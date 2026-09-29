@@ -50,8 +50,8 @@ function whose(by: string, you: string): string {
 /**
  * The card's one line about the gate, or "" where there is nothing to say:
  * "held by your sitting", "eligible to land in 3h 12m", "eligible to land,
- * waiting for the holder", "waits for your review", or the human's word
- * waiting for the holder.
+ * waiting for the holder", "waits for your review", the human's word
+ * waiting for the holder, or that word asked for again once the branch moved.
  */
 export function gateLine(gate: Gate | undefined, you: string, now: Date): string {
   if (gate === undefined) {
@@ -72,6 +72,11 @@ export function gateLine(gate: Gate | undefined, you: string, now: Date): string
     return left <= 0 ? ELIGIBLE_WAITING : `eligible to land in ${durationWords(left)}`;
   }
   const word = gate.reviewed;
+  if (word !== undefined && word.moved === true && word.branchTip !== undefined) {
+    // A moved tip needs the word again (G5): the engine refuses the landing.
+    const given = word.kind === "clear-to-land" ? "cleared" : "decided to land without a sitting";
+    return `${given} by ${word.by} at ${word.tip.slice(0, 7)}, but the branch moved to ${word.branchTip.slice(0, 7)}: needs the word again`;
+  }
   if (word !== undefined && word.kind === "clear-to-land") {
     return `cleared to land by ${word.by} at ${word.tip.slice(0, 7)}, waiting for the holder`;
   }
@@ -81,11 +86,14 @@ export function gateLine(gate: Gate | undefined, you: string, now: Date): string
   return WAITS_FOR_YOUR_REVIEW;
 }
 
-/** Whether the card offers Land without a sitting: the goal waits for this human's word. */
+/**
+ * Whether the card offers Land without a sitting: the goal waits for this
+ * human's word, because none stands at the branch's tip.
+ */
 export function offersLandWithoutSitting(gate: Gate | undefined): boolean {
   if (gate === undefined || !gate.waitsForHuman || gate.landed || (gate.heldBy ?? []).length > 0) {
     return false;
   }
   const word = gate.reviewed;
-  return word === undefined || word.kind === "send-back";
+  return word === undefined || word.kind === "send-back" || word.moved === true;
 }

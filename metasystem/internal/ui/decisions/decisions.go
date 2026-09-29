@@ -999,8 +999,8 @@ func parked(rows []backlog.Row) []Need {
 // landings is the goals in Review that wait for this human's word before
 // they land (g1-s70 D5): at or above the gate's tier, not held by a sitting,
 // and with no clear-to-land or land-without-sitting word standing on the
-// landing. A word at a tip the branch has since left is the holder's landing
-// to refuse; the card says so once the holder has tried.
+// landing. A word at a tip the branch has since left does not stand: a moved
+// tip needs the word again (G5), so the goal is back here.
 //
 // Silence: no seat lands a goal at or above the tier without the human's word
 // at its current tip (goal.Gate, at every land form and every publication),
@@ -1013,7 +1013,7 @@ func landings(rows []backlog.Row) []Need {
 		if row.Lane != backlog.LaneReview || gate == nil || !gate.WaitsForHuman || gate.Landed || len(gate.HeldBy) > 0 {
 			continue
 		}
-		if gate.Reviewed != nil && gate.Reviewed.Kind != goal.VerdictSendBack {
+		if gate.Reviewed != nil && gate.Reviewed.Kind != goal.VerdictSendBack && !gate.Reviewed.Moved {
 			continue
 		}
 		since := ""

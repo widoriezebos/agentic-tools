@@ -182,3 +182,48 @@ func TestAReviewSittingOnAWaitingGoalHoldsItAndItsEndReleasesIt(t *testing.T) {
 	testutil.Expect(t, "a second end", again.Code == http.StatusOK || again.Code == http.StatusInternalServerError, true)
 	testutil.Expect(t, "releases nothing again", len(ledger.holds), 2)
 }
+
+// The server reads the newest word against the goal branch's tip at origin
+// (SOL-S70-04): a word given before the branch moved says so on the board's
+// row, and the inbox asks for the word again, for a verdict and a decision to
+// land without a sitting alike.
+func TestAMovedTipIsReadOnTheBoardAndAsksForTheWordAgain(t *testing.T) {
+	t.Parallel()
+	const given = "9c1f0a2b3c4d5e6f708192a3b4c5d6e7f8091a2b"
+	for _, reason := range []string{
+		"reviewed verdict=clear-to-land tip=" + given + " record=plans/reviews/review-of-landing.md by=Wido",
+		"landed-without-sitting tip=" + given + " by=Wido because=one-line doc fix",
+	} {
+		verb := "review"
+		if strings.HasPrefix(reason, "landed-without-sitting") {
+			verb = goal.LandWithoutSittingVerb
+		}
+		ledger := &gateLedger{lines: []goal.HistoryLine{{At: "2026-09-28T08:00:00Z", Opid: "01J5X0000000000000000000W1-mac-ui-1a2b3c4d", Verb: verb, Actor: "human:Wido", Reason: reason}}}
+		info := Info{Project: func() (project.Pane, error) { return project.Pane{}, nil }, Review: &review.Owner{Git: deskGit{}}}
+		ledger.wire(&info)
+		served := New(info, loopback(), testBundle())
+
+		var board backlogPayload
+		testutil.Require(t, verb+": the board", json.Unmarshal(get(t, served, backlogPath, nil).Body.Bytes(), &board), nil)
+		var word *struct{ Moved bool }
+		for _, row := range board.Rows {
+			if row.ID == "landing" && row.Gate != nil && row.Gate.Reviewed != nil {
+				testutil.Expect(t, verb+": where the branch is now", row.Gate.Reviewed.BranchTip, reviewTip)
+				word = &struct{ Moved bool }{row.Gate.Reviewed.Moved}
+			}
+		}
+		if word == nil || !word.Moved {
+			t.Fatalf("%s: the board does not say the branch moved past the word: %+v", verb, board.Rows)
+		}
+
+		var page decisions.Page
+		testutil.Require(t, verb+": the inbox", json.Unmarshal(get(t, served, decisionsPath, nil).Body.Bytes(), &page), nil)
+		found := false
+		for _, need := range page.NeedsYou {
+			if need.Kind == decisions.KindLanding && need.ID == "landing" && need.Act == decisions.ActLandWithoutSitting {
+				found = true
+			}
+		}
+		testutil.Expect(t, verb+": the inbox asks for the word again", found, true)
+	}
+}

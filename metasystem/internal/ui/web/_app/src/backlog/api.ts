@@ -287,8 +287,12 @@ export type Gate = {
 
 export type GateHold = { by: string; record: string; since: string };
 
-/** The newest word: clear-to-land, send-back or land-without-sitting, whose, and at which tip. */
-export type GateWord = { kind: string; by: string; tip: string };
+/**
+ * The newest word: clear-to-land, send-back or land-without-sitting, whose, and
+ * at which tip; `moved` says the goal branch has left that tip since, so the
+ * word needs giving again, and `branchTip` is where the branch is now.
+ */
+export type GateWord = { kind: string; by: string; tip: string; moved?: boolean; branchTip?: string };
 
 /** The history line goal review wrote, as the route answers it. */
 export type Recorded = {

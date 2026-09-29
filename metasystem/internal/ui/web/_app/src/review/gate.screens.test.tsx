@@ -63,6 +63,18 @@ describe("the card's gate", () => {
     expect(waits).toContain("waits for your review");
     expect(waits).toMatch(/<button[^>]*>Land without a sitting</u);
   });
+
+  it("asks for the word again once the branch moved past it, with Land without a sitting", () => {
+    const word = { kind: "clear-to-land", by: "Wido", tip: "9c1f0a2b3c4d5e6f708192a3b4c5d6e7f8091a2b" };
+    const moved = rendered(
+      <CardGate row={row({ ...above, reviewed: { ...word, moved: true, branchTip: "a1b2c3d4e5f60718293a4b5c6d7e8f9011223344" } })} now={now} />,
+    );
+    expect(moved).toContain("cleared by Wido at 9c1f0a2, but the branch moved to a1b2c3d: needs the word again");
+    expect(moved).toMatch(/<button[^>]*>Land without a sitting</u);
+    const standing = rendered(<CardGate row={row({ ...above, reviewed: word })} now={now} />);
+    expect(standing).toContain("cleared to land by Wido at 9c1f0a2, waiting for the holder");
+    expect(standing).not.toContain("Land without a sitting");
+  });
 });
 
 describe("the Decide sheet", () => {
