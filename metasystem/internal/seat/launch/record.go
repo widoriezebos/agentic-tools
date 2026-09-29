@@ -138,6 +138,11 @@ type Record struct {
 	Steps         []Step  `json:"steps"`
 	Orientation   string  `json:"orientation"`
 	Next          Next    `json:"next"`
+	// DiscardedAt is when a human put this launch out of sight on the fleet
+	// page, RFC3339 UTC, or nil for one nobody has. The record is kept for
+	// the trail and the clone it made is never touched: a discard deletes
+	// nothing, so it asks for no confirmation.
+	DiscardedAt *string `json:"discardedAt"`
 }
 
 // Dir is where this checkout keeps its launch records, one file per launch.
@@ -351,7 +356,7 @@ func Launched(checkout string, request Request) (Record, bool, error) {
 		if err != nil {
 			return Record{}, false, err
 		}
-		return record, record.Outcome == OutcomeDone && present(record.Destination), nil
+		return record, record.Outcome == OutcomeDone && Present(record.Destination), nil
 	}
 	records, err := List(checkout)
 	if err != nil {
@@ -364,17 +369,51 @@ func Launched(checkout string, request Request) (Record, bool, error) {
 		if request.Destination != "" && filepath.Clean(request.Destination) != filepath.Clean(record.Destination) {
 			continue
 		}
-		if present(record.Destination) {
+		if Present(record.Destination) {
 			return record, true, nil
 		}
 	}
 	return Record{}, false, nil
 }
 
-func present(path string) bool {
+// Present reports whether a launch's destination is still on this host. The
+// fleet page says a stopped launch's clone stays on disk only while it does.
+func Present(path string) bool {
 	if path == "" {
 		return false
 	}
 	_, err := os.Lstat(path)
 	return err == nil
+}
+
+// Discard marks one launch discarded, and answers the record as it now reads.
+//
+// It is idempotent: a launch already discarded is answered as it stands, and
+// nothing is written. A launch still starting or running is refused, because
+// its verb rewrites the record after every step and would write the mark away;
+// stopping a running launch is not something this act does.
+func Discard(checkout, id string, now time.Time) (Record, error) {
+	path, err := Path(checkout, id)
+	if err != nil {
+		return Record{}, err
+	}
+	record, err := LoadAt(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return Record{}, refuse(CodeUnknown, "no launch %s is recorded on this host", id)
+		}
+		return Record{}, err
+	}
+	if record.DiscardedAt != nil {
+		return record, nil
+	}
+	if record.Outcome == OutcomeStarting || record.Outcome == OutcomeRunning {
+		return Record{}, refuse(CodeDiscardRunning, "the launch of %s is still %s; it can be discarded once it has stopped", record.Machine, record.Outcome)
+	}
+	at := now.UTC().Format(time.RFC3339)
+	record.DiscardedAt = &at
+	if err := SaveAt(path, record, checkout); err != nil {
+		return Record{}, err
+	}
+	return record, nil
 }
