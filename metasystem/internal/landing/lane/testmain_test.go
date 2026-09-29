@@ -3,9 +3,10 @@ package lane
 import (
 	"fmt"
 	"os"
+	"os/signal"
 	"strconv"
+	"syscall"
 	"testing"
-	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 )
@@ -31,11 +32,13 @@ func runProvingHolder(home string) int {
 	// drop the flock.
 	defer release()
 	fmt.Println("held")
-	for {
-		// A sleeping loop, not an empty select: the runtime ends a process
-		// whose goroutines all block forever.
-		time.Sleep(time.Hour)
-	}
+	// It waits for a signal, never on the wall clock: a registered signal
+	// channel keeps the runtime from reading the wait as a deadlock, and the
+	// tests end the holder with SIGKILL, which no process can catch.
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, syscall.SIGTERM, syscall.SIGINT)
+	<-stop
+	return 0
 }
 
 func itoa(n int) string { return strconv.Itoa(n) }
