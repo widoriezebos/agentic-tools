@@ -89,10 +89,12 @@ export function refusalFor(heading: string, found: Found): string {
 /**
  * The whole source with exactly that section replaced by the draft.
  *
- * The draft is the section anew, heading line and all; a draft that opens with
- * no heading keeps the document's own line, so a Partner that sent the body
- * alone does not take the section's heading away. The blank lines between this
- * section and the next are the gap between sections and are kept.
+ * The draft is the section's body anew under the document's own heading line:
+ * a heading the draft opens with is the Partner restating the section and is
+ * not written, so a draft that opens under another heading cannot remove this
+ * section's heading or write a second copy of another's. A Partner that sent
+ * the body alone keeps the heading too. The blank lines between this section
+ * and the next are the gap between sections and are kept.
  */
 export function sectionReplaced(source: string, heading: string, draft: string): Replaced {
   const found = sectionIn(source, heading);
@@ -104,8 +106,11 @@ export function sectionReplaced(source: string, heading: string, draft: string):
   while (last > found.at + 1 && lines[last - 1].trim() === "") {
     last -= 1;
   }
-  const body = draft.replace(/^\n+/, "").replace(/\s+$/, "").split("\n");
-  const written = HEADING.test(body[0] ?? "") ? body : [lines[found.at], "", ...body];
+  let body = draft.replace(/^\n+/, "").replace(/\s+$/, "");
+  if (HEADING.test(body.split("\n")[0])) {
+    body = body.replace(/^[^\n]*/, "").replace(/^\s+/, "");
+  }
+  const written = body === "" ? [lines[found.at]] : [lines[found.at], "", ...body.split("\n")];
   return { state: "replaced", source: [...lines.slice(0, found.at), ...written, ...lines.slice(last)].join("\n") };
 }
 

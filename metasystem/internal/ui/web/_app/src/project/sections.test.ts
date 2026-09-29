@@ -78,6 +78,18 @@ describe("a section", () => {
     expect(replaced.state === "replaced" && replaced.source.includes("## 3. The room\n\nOnly the body.\n\n## 4. Decisions")).toBe(true);
   });
 
+  it("keeps the document's headings when the draft opens under another heading", () => {
+    const replaced = sectionReplaced(DESIGN, "4. Decisions", "## 5. Step 1, the smallest thing that works\n\nNew decisions.");
+    expect(replaced.state).toBe("replaced");
+    if (replaced.state === "replaced") {
+      expect(headingsOf(replaced.source)).toEqual(headingsOf(DESIGN));
+      expect(sectionIn(replaced.source, "4. Decisions")).toMatchObject({
+        state: "found",
+        text: "## 4. Decisions\n\nNew decisions.\n",
+      });
+    }
+  });
+
   it("refuses in words, keeping nothing written, for an absent or duplicate heading", () => {
     expect(sectionReplaced(DESIGN, "9. Nowhere", "x")).toEqual({
       state: "refused",
