@@ -163,10 +163,15 @@ type Evidence struct {
 
 // EvidenceNote is what the Behaves walk's request says about the evidence: what
 // is there, by the one path convention the present tool and the desk share, or
-// why there is nothing to present.
+// why there is nothing to present. A cut is said first: a listing cut before
+// it found a file never claims the path holds nothing.
 func EvidenceNote(evidence Evidence) string {
 	if strings.TrimSpace(evidence.Refusal) != "" {
 		return "The evidence of this review could not be listed: " + evidence.Refusal + ". Say so, and present none."
+	}
+	if len(evidence.Entries) == 0 && evidence.Cut {
+		return "The listing of the evidence path " + evidence.Path + " stopped at its bound before it found an image or " +
+			"text: nothing was found within the listing's bounds, and the path may hold more. Say so, and present none."
 	}
 	if len(evidence.Entries) == 0 {
 		return "The evidence path " + evidence.Path + " holds no image or text; say that nothing is recorded there."

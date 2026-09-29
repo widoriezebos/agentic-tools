@@ -222,6 +222,22 @@ describe("the evidence on the desk (D4)", () => {
     const cut = screen(<EvidenceListingShown listing={{ root: "~/e/", entries, supplied: 1, total: 700, cut: true }} record={RECORD} put={() => {}} />, {}, notepadOf([]));
     expect(cut).toContain("The first 1 files found are listed; the listing stopped at its bound, so the evidence may hold more.");
     expect(cut).not.toContain("of 700");
+    expect(cut.indexOf("the listing stopped at its bound")).toBeLessThan(cut.indexOf("a.png"));
+    const none = screen(<EvidenceListingShown listing={{ root: "~/e/", entries: [], supplied: 0, total: 0 }} record={RECORD} put={() => {}} />, {}, notepadOf([]));
+    expect(none).toContain("The evidence holds no image and no text.");
+  });
+
+  it("a listing cut before it found a file says so first, and never that the evidence holds nothing", () => {
+    // The deep-only and wide-only walks: a screenshot below the depth bound, or
+    // after the visited bound's other entries, answers an empty listing, cut.
+    for (const root of ["~/deep-only/", "~/wide-only/"]) {
+      const cut = screen(<EvidenceListingShown listing={{ root, entries: [], supplied: 0, total: 0, cut: true }} record={RECORD} put={() => {}} />, {}, notepadOf([]));
+      expect(cut).toContain(
+        "The listing stopped at its bound before it found an image or text: nothing was found within the listing&#x27;s bounds, and the evidence may hold more.",
+      );
+      expect(cut).not.toContain("holds no image");
+      expect(cut).not.toContain("The first 0 files");
+    }
   });
 
   it("an image is shown large from the evidence read's address", () => {

@@ -129,6 +129,15 @@ func TestTheBehavesWalkCarriesTheEvidenceListing(t *testing.T) {
 		Path: "~/e/", Entries: []string{"a.png (image, 1 KB)"}, Supplied: 1, Total: 700, Cut: true}})
 	testutil.Expect(t, "a cut listing says it is a part", strings.Contains(cut, "the first 1 found listed; the listing stopped at its bound, so the path may hold more"), true)
 	testutil.Expect(t, "and claims no whole", strings.Contains(cut, "1 of 700"), false)
+	cutBare := asked(&partner.Candidate{Reviewed: closingTip, Evidence: &partner.Evidence{Path: "~/e/", Cut: true}})
+	testutil.Expect(t, "a cut listing that found nothing says the cut first", strings.Contains(cutBare,
+		"The listing of the evidence path ~/e/ stopped at its bound before it found an image or text: nothing was found "+
+			"within the listing's bounds, and the path may hold more."), true)
+	testutil.Expect(t, "and never that the path holds nothing", strings.Contains(cutBare, "holds no image or text"), false)
+	testutil.Expect(t, "nor that nothing is recorded there", strings.Contains(cutBare, "nothing is recorded there"), false)
+	empty := asked(&partner.Candidate{Reviewed: closingTip, Evidence: &partner.Evidence{Path: "~/e/"}})
+	testutil.Expect(t, "a whole listing that found nothing keeps its words", strings.Contains(empty,
+		"The evidence path ~/e/ holds no image or text; say that nothing is recorded there."), true)
 	refused := asked(&partner.Candidate{Reviewed: closingTip, Evidence: &partner.Evidence{
 		Refusal: "this review's record names no Evidence path, so there is no evidence to read"}})
 	testutil.Expect(t, "no evidence is said in words", strings.Contains(refused, "names no Evidence path"), true)

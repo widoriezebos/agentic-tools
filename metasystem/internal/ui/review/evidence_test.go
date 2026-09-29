@@ -95,6 +95,30 @@ func TestTheListingsWalkStopsAtItsBoundsAndSaysItIsAPart(t *testing.T) {
 	testutil.Expect(t, "the deep cut named", listing.Cut, true)
 }
 
+// A walk that reaches its bound before it finds any image or text answers an
+// empty listing that is cut, never one that claims the path holds nothing: a
+// screenshot below the depth bound, or after the visited bound's other entries.
+func TestAListingCutBeforeAnyFileIsFoundIsEmptyAndSaysItIsCut(t *testing.T) {
+	t.Parallel()
+	home := t.TempDir()
+	deep := filepath.Join(home, "deep-only")
+	for depth := range MaxEvidenceDepth + 1 {
+		deep = filepath.Join(deep, "level-"+itoa(depth))
+	}
+	writeFile(t, filepath.Join(deep, "room-1280-light.png"), "\x89PNG\r\n\x1a\npicture")
+	for at := range MaxEvidenceVisited {
+		writeFile(t, filepath.Join(home, "wide-only", "trace-"+itoa(at)+".bin"), "x")
+	}
+	writeFile(t, filepath.Join(home, "wide-only", "shots", "room-1280-light.png"), "\x89PNG\r\n\x1a\npicture")
+
+	for _, named := range []string{"~/deep-only", "~/wide-only"} {
+		listing, err := Owner{Home: home}.EvidenceList(named)
+		testutil.Require(t, named+" listed", err, nil)
+		testutil.Expect(t, named+" found nothing within the bounds", []int{len(listing.Entries), listing.Supplied, listing.Total}, []int{0, 0, 0})
+		testutil.Expect(t, named+" says it is cut", listing.Cut, true)
+	}
+}
+
 func itoa(n int) string {
 	if n == 0 {
 		return "0"

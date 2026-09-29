@@ -5,10 +5,12 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/partner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/project"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/review"
 )
@@ -107,4 +109,45 @@ func TestTheBehavesWalkIsHandedTheEvidenceListing(t *testing.T) {
 	bare := h.candidateFor(reviewed, "behaves")
 	testutil.Require(t, "a review without evidence", bare != nil && bare.Evidence != nil, true)
 	testutil.Expect(t, "is told why there is none", strings.Contains(bare.Evidence.Refusal, "names no Evidence path"), true)
+}
+
+// A listing whose walk reached its bound before it found an image or text —
+// a screenshot below the depth bound, or after the visited bound's other
+// entries — reaches the Behaves walk as a cut, and its note says nothing was
+// found within the bounds rather than that the path holds nothing.
+func TestTheBehavesWalkIsToldAnEmptyCutListingMayHoldMore(t *testing.T) {
+	t.Parallel()
+	h, _ := serveEvidence(t)
+	deep := filepath.Join(t.TempDir(), "deep-only")
+	at := deep
+	for depth := range review.MaxEvidenceDepth + 1 {
+		at = filepath.Join(at, "level-"+strconv.Itoa(depth))
+	}
+	writeEvidence(t, filepath.Join(at, "room-1280-light.png"))
+	wide := filepath.Join(t.TempDir(), "wide-only")
+	for n := range review.MaxEvidenceVisited {
+		writeEvidence(t, filepath.Join(wide, "trace-"+strconv.Itoa(n)+".bin"))
+	}
+	writeEvidence(t, filepath.Join(wide, "shots", "room-1280-light.png"))
+
+	for _, named := range []string{deep, wide} {
+		evidence := h.evidenceFor("# Review of sync\n\n- Kind: review\n- Evidence: " + named + "\n\n## Facts\n")
+		testutil.Expect(t, named+" is cut and found nothing", []any{evidence.Cut, len(evidence.Entries), evidence.Refusal},
+			[]any{true, 0, ""})
+		note := partner.EvidenceNote(*evidence)
+		testutil.Expect(t, named+" says the cut first", strings.HasPrefix(note, "The listing of the evidence path "+named+
+			" stopped at its bound before it found an image or text: nothing was found within the listing's bounds, "+
+			"and the path may hold more."), true)
+		testutil.Expect(t, named+" never claims the path holds nothing", strings.Contains(note, "holds no image or text"), false)
+	}
+}
+
+func writeEvidence(t *testing.T, name string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(name), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(name, []byte("\x89PNG\r\n\x1a\npicture"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 }

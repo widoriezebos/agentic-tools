@@ -535,7 +535,7 @@ function EvidenceListingView({ record, at }: { record: string; at: string }) {
   return <EvidenceListingShown listing={read.value} record={record} put={putOnDesk} />;
 }
 
-/** What the evidence holds, each file opening on the desk. */
+/** What the evidence holds, each file opening on the desk; a cut is said first. */
 export function EvidenceListingShown({ listing, record, put }: { listing: EvidenceListing; record: string; put: (item: DeskItem) => void }) {
   return (
     <section className="ms-desk-changes" aria-label="The evidence">
@@ -543,8 +543,18 @@ export function EvidenceListingShown({ listing, record, put }: { listing: Eviden
         <span>The evidence</span>
         <span className="ms-mono">{listing.root}</span>
       </p>
+      {listing.cut === true &&
+        (listing.entries.length === 0 ? (
+          <p className="ms-desk-empty">
+            The listing stopped at its bound before it found an image or text: nothing was found within the listing&apos;s bounds, and the evidence may hold more.
+          </p>
+        ) : (
+          <p className="ms-desk-bound">
+            The first {listing.supplied} files found are listed; the listing stopped at its bound, so the evidence may hold more.
+          </p>
+        ))}
       {listing.entries.length === 0 ? (
-        <p className="ms-desk-empty">The evidence holds no image and no text.</p>
+        listing.cut !== true && <p className="ms-desk-empty">The evidence holds no image and no text.</p>
       ) : (
         <ul className="ms-desk-files">
           {listing.entries.map((entry) => (
@@ -563,16 +573,10 @@ export function EvidenceListingShown({ listing, record, put }: { listing: Eviden
           ))}
         </ul>
       )}
-      {listing.cut === true ? (
+      {listing.cut !== true && listing.supplied < listing.total && (
         <p className="ms-desk-bound">
-          The first {listing.supplied} files found are listed; the listing stopped at its bound, so the evidence may hold more.
+          {listing.supplied} of {listing.total} files are listed.
         </p>
-      ) : (
-        listing.supplied < listing.total && (
-          <p className="ms-desk-bound">
-            {listing.supplied} of {listing.total} files are listed.
-          </p>
-        )
       )}
     </section>
   );
