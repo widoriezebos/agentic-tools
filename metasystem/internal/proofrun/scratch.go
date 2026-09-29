@@ -126,6 +126,9 @@ type ScratchRun struct {
 	writer     *os.File
 	removed    bool
 	borrowed   bool
+	// drain is how Cleanup waits out fork copies of the writer description;
+	// the zero value probes once.
+	drain scratchDrain
 	// run and root never change after construction; getters read them
 	// without the mutex while mutate replaces record under it.
 	run, root string
@@ -154,6 +157,7 @@ func CreateScratchRun(control string) (_ *ScratchRun, err error) {
 		recordPath: filepath.Join(store, id+".json"),
 		record:     ScratchRecord{Schema: scratchSchema, Run: id, Root: filepath.Join(store, id), Launcher: launcher},
 		run:        id, root: filepath.Join(store, id),
+		drain: defaultScratchDrain,
 	}
 	if err := writeScratchRecordFile(run.recordPath, run.record); err != nil {
 		return nil, err
@@ -522,7 +526,8 @@ func OpenScratchRun(control, attempt string, locator ScratchLocator) (*ScratchRu
 
 // Cleanup is the normal removal. Every open tuple is removed through its
 // recorded proof first; then the launcher's lock copy is closed without
-// unlocking, a distinct description takes the lock exclusively, and only
+// unlocking, a distinct description takes the lock exclusively (waiting out
+// fork copies for the drain window, see scratchDrain), and only
 // after the root preconditions hold is the root removed and the record
 // deleted. Any failure leaves the record (and the root) for recovery and
 // returns an error that names ScratchIncomplete.
@@ -551,7 +556,7 @@ func (r *ScratchRun) Cleanup(remove func(gittree.WorktreeTuple, gittree.Workspac
 		return fmt.Errorf("%s: scratch %s retained: %w", ScratchIncomplete, r.record.Root, err)
 	}
 	defer releaseScratchLock(lock)
-	reason, err := removeScratchRoot(r.record, func() (string, error) {
+	reason, err := removeScratchRoot(r.record, r.drain, func() (string, error) {
 		current, err := r.reloadLocked()
 		if err != nil {
 			return "record reload", errors.Join(errScratchPending, err)
@@ -574,10 +579,50 @@ func (r *ScratchRun) Cleanup(remove func(gittree.WorktreeTuple, gittree.Workspac
 
 var errScratchPending = errors.New("pending")
 
+// scratchDrain bounds the launcher's wait for the writer lock after it
+// closed its own copy. A fork by any goroutine of the launcher process
+// duplicates every descriptor, close-on-exec ones included, and the child
+// keeps the duplicate (and with it the flock) until it execs. That window is
+// not closed by syscall.ForkLock on darwin, where the parent releases
+// ForkLock as soon as fork returns, before the child execs. The copy is
+// released at exec, so it is waited out; a writer that is still alive after
+// the window keeps the root. LOCK_UN is no remedy: it would release the lock
+// for every real inheritor too. The zero value probes once.
+type scratchDrain struct {
+	window time.Duration
+	step   time.Duration
+	now    func() time.Time
+	sleep  func(time.Duration)
+}
+
+// defaultScratchDrain is the launcher's bound; a fork-to-exec window is
+// microseconds unloaded and stays far below this on a loaded host.
+var defaultScratchDrain = scratchDrain{window: 2 * time.Second, step: 5 * time.Millisecond, now: time.Now, sleep: time.Sleep}
+
+// takeWriterLock takes the writer lock LOCK_EX|LOCK_NB, re-probing while it
+// is held until the drain window has passed.
+func (d scratchDrain) takeWriterLock(lock *os.File) error {
+	var deadline time.Time
+	for {
+		err := unix.Flock(int(lock.Fd()), unix.LOCK_EX|unix.LOCK_NB)
+		if err == nil || !(errors.Is(err, unix.EWOULDBLOCK) || errors.Is(err, unix.EAGAIN)) || d.now == nil || d.sleep == nil {
+			return err
+		}
+		now := d.now()
+		if deadline.IsZero() {
+			deadline = now.Add(d.window)
+		}
+		if !now.Before(deadline) {
+			return err
+		}
+		d.sleep(d.step)
+	}
+}
+
 // removeScratchRoot takes the writer lock through a fresh description and
 // removes the root after its identity checks. The returned reason is the
 // operator word; errScratchPending marks a live writer.
-func removeScratchRoot(record ScratchRecord, whileLocked func() (string, error)) (string, error) {
+func removeScratchRoot(record ScratchRecord, drain scratchDrain, whileLocked func() (string, error)) (string, error) {
 	info, err := os.Lstat(record.Root)
 	if errors.Is(err, os.ErrNotExist) {
 		if reason, err := whileLocked(); err != nil {
@@ -621,7 +666,7 @@ func removeScratchRoot(record ScratchRecord, whileLocked func() (string, error))
 		return "writer lock unreadable", errors.Join(errScratchPending, err)
 	}
 	defer releaseScratchLock(lock)
-	if err := unix.Flock(int(lock.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
+	if err := drain.takeWriterLock(lock); err != nil {
 		if errors.Is(err, unix.EWOULDBLOCK) || errors.Is(err, unix.EAGAIN) {
 			return "writer-lock-held", errScratchPending
 		}
@@ -759,7 +804,7 @@ func reconcileScratchOne(control, store, run string, options ScratchOptions) (st
 // gone), then the root. An unresolved Git registration keeps both root and
 // record.
 func removeScratchRootWithWorktrees(record ScratchRecord, options ScratchOptions) (string, error) {
-	return removeScratchRoot(record, func() (string, error) {
+	return removeScratchRoot(record, scratchDrain{}, func() (string, error) {
 		if reason, err := removeRecordedWorktrees(record, options); err != nil {
 			return reason, err
 		}
