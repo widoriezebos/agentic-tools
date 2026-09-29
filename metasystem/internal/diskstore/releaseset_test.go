@@ -22,17 +22,18 @@ func (g *fakeWorkspaceGit) withAncestry(pairs ...[2]string) WorkspaceGit {
 	}
 }
 
-// A landing's release set is the goal's accepted copies whose recorded
-// copyOf or branch tip is an ancestor of the selected tip; a copy whose
-// work lies beyond a --through prefix, a plain workspace, another goal's
-// workspace and a released one are not in it. Running the set releases
-// each id and marks it released, kept with the reason, or absent; a repeat
+// A landing's release set is the goal's accepted, clean copies whose branch
+// tip and worktree HEAD both lie in the selected tip; a copy whose work lies
+// beyond it (a --through prefix), a dirty copy, a plain workspace and
+// another goal's workspace are not in it. Running the set releases each
+// id and marks it released, kept with the reason, or absent; a repeat
 // finishes only what is still pending and writes nothing new (3.6,
-// revision 4d; R22).
+// revision 4d; R22; Round B3 ruling).
 func TestReleaseSetSelectsContainedCopiesAndRunsOnce(t *testing.T) {
 	t.Parallel()
 	bed := newWorkspaceBed(t)
 	inside := bed.obtain(goalG, "inside", "base1")
+	later := bed.obtain(goalG, "later", "base1")
 	beyond := bed.obtain(goalG, "beyond", "base2")
 	dirty := bed.obtain(goalG, "dirty", "base1")
 	bed.obtain(goalG, "plain", "")
@@ -48,9 +49,10 @@ func TestReleaseSetSelectsContainedCopiesAndRunsOnce(t *testing.T) {
 	for _, entry := range set.Stores {
 		ids[entry.ID] = entry.State == ReleasePending
 	}
-	if len(ids) != 2 || !ids[inside.Record.ID] || !ids[dirty.Record.ID] || ids[beyond.Record.ID] {
-		t.Fatalf("the set holds the contained copies only: %+v", set)
+	if len(ids) != 2 || !ids[inside.Record.ID] || !ids[later.Record.ID] || ids[beyond.Record.ID] || ids[dirty.Record.ID] {
+		t.Fatalf("the set holds the clean contained copies only: %+v", set)
 	}
+	bed.git.dirty[later.Record.Path] = "?? new\n"
 	request := WorkspaceReleaseRequest{Registry: bed.registry, GitRoot: bed.git.gitRoot, Git: git, Census: emptyCensus(), By: "landing", Now: testNow}
 	if changed := RunReleaseSet(context.Background(), request, &set); !changed {
 		t.Fatal("the first run changes the set")
@@ -59,7 +61,7 @@ func TestReleaseSetSelectsContainedCopiesAndRunsOnce(t *testing.T) {
 	for _, entry := range set.Stores {
 		states[entry.ID] = entry.State
 	}
-	if states[inside.Record.ID] != ReleaseReleased || states[dirty.Record.ID] != ReleaseKept || !set.Finished() {
+	if states[inside.Record.ID] != ReleaseReleased || states[later.Record.ID] != ReleaseKept || !set.Finished() {
 		t.Fatalf("states = %v", states)
 	}
 	if record, _ := bed.registry.Load(beyond.Record.ID); record.State != StateAccepted {

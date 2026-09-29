@@ -17,9 +17,10 @@ import (
 // workspaceGit is one test's git for the workspace verb: a worktree is a
 // directory with a .git file, refs a map. It never runs git.
 type workspaceGit struct {
-	mu    sync.Mutex
-	refs  map[string]string
-	dirty map[string]string
+	mu        sync.Mutex
+	refs      map[string]string
+	dirty     map[string]string
+	worktrees map[string]string
 }
 
 func (g *workspaceGit) run(_ context.Context, dir string, args ...string) ([]byte, error) {
@@ -28,6 +29,13 @@ func (g *workspaceGit) run(_ context.Context, dir string, args ...string) ([]byt
 	switch {
 	case len(args) == 4 && args[0] == "rev-parse" && args[1] == "--verify":
 		ref := strings.TrimSuffix(args[3], "^{commit}")
+		if ref == "HEAD" {
+			for branch, worktree := range g.worktrees {
+				if worktree == dir {
+					ref = "refs/heads/" + branch
+				}
+			}
+		}
 		if sha, ok := g.refs[ref]; ok {
 			return []byte(sha + "\n"), nil
 		}
@@ -42,6 +50,10 @@ func (g *workspaceGit) run(_ context.Context, dir string, args ...string) ([]byt
 			return nil, err
 		}
 		g.refs["refs/heads/"+args[3]] = args[5]
+		if g.worktrees == nil {
+			g.worktrees = map[string]string{}
+		}
+		g.worktrees[args[3]] = path
 		return nil, os.WriteFile(filepath.Join(path, ".git"), []byte("gitdir: "+gitdir+"\n"), 0o600)
 	case len(args) >= 3 && args[0] == "worktree" && args[1] == "remove":
 		return nil, os.RemoveAll(args[len(args)-1])
@@ -50,6 +62,13 @@ func (g *workspaceGit) run(_ context.Context, dir string, args ...string) ([]byt
 	case args[0] == "update-ref":
 		g.refs[args[1]] = args[2]
 		return nil, nil
+	case args[0] == "log":
+		return nil, nil
+	case args[0] == "merge-base":
+		if args[2] == args[3] {
+			return nil, nil
+		}
+		return nil, errors.New("exit status 1")
 	case args[0] == "rev-list":
 		return []byte("0\n"), nil
 	case len(args) == 3 && args[0] == "branch" && args[1] == "-D":

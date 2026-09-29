@@ -18,12 +18,10 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
 
@@ -47,6 +45,8 @@ type LandingReleaseSets struct {
 	// store registry; GitRoot the repository.
 	Installation, StateRoot, GitRoot string
 	Git                              diskstore.WorkspaceGit
+	// IgnoredReleaseBytes is disk.workspace-ignored-release-mib in bytes.
+	IgnoredReleaseBytes int64
 }
 
 func (LandingReleaseSets) Name() string { return "landing release sets" }
@@ -108,6 +108,11 @@ func (c LandingReleaseSets) Plan(_ context.Context, _ *diskstore.Pass) ([]diskst
 // Apply runs the pending entries of one landing's set and rewrites its
 // record when an entry changed.
 func (c LandingReleaseSets) Apply(ctx context.Context, pass *diskstore.Pass, item diskstore.Item) diskstore.Verdict {
+	release, err := diskstore.LockLandingRecord(item.Path, false)
+	if err != nil {
+		return diskstore.Verdict{Decision: diskstore.Pending, Reason: err.Error(), Command: "metasystem disk clean"}
+	}
+	defer release()
 	record, whole, err := readLandingRecord(item.Path)
 	if err != nil {
 		return diskstore.Verdict{Decision: diskstore.Pending, Reason: "the landing record is unreadable: " + err.Error(), Command: "metasystem disk show"}
@@ -117,14 +122,16 @@ func (c LandingReleaseSets) Apply(ctx context.Context, pass *diskstore.Pass, ite
 	}
 	registry := diskstore.CheckoutRegistry(c.StateRoot)
 	request := diskstore.WorkspaceReleaseRequest{Registry: registry, GitRoot: c.GitRoot, Git: c.Git,
-		By: "the sweeper, for the landing of " + record.Landing, Now: pass.Now}
-	for _, entry := range record.ReleaseSet.Stores {
-		// The use census is taken only for a store that still exists.
-		if _, err := registry.Load(entry.ID); entry.State == diskstore.ReleasePending && err == nil {
-			request.Census = pass.Census(ctx)
-			break
-		}
-	}
+		By: "the sweeper, for the landing of " + record.Landing, Now: pass.Now, IgnoredReleaseBytes: c.IgnoredReleaseBytes,
+		TakeCensus: func() *diskstore.UseCensus {
+			census := pass.Census(ctx)
+			if census != nil && census.Taken && pass.CensusReader() != nil {
+				if err := census.ReadNew(ctx, *pass.CensusReader()); err != nil {
+					return &diskstore.UseCensus{NotTaken: "processes started since the census could not be read: " + err.Error()}
+				}
+			}
+			return census
+		}}
 	if diskstore.RunReleaseSet(ctx, request, record.ReleaseSet) {
 		encoded, err := json.Marshal(record.ReleaseSet)
 		if err == nil {
@@ -152,7 +159,7 @@ func (c LandingReleaseSets) Apply(ctx context.Context, pass *diskstore.Pass, ite
 // checkoutProofs are the owner-kind proofs of one checkout's pass: the
 // engine's, plus the workspace proof over this checkout's repository and
 // goal ledger. Fixtures that name their own proofs get exactly those.
-func checkoutProofs(top string, pass DiskPass) map[diskstore.OwnerKind]diskstore.OwnerProof {
+func checkoutProofs(top string, pass DiskPass, ignored int64) map[diskstore.OwnerKind]diskstore.OwnerProof {
 	if pass.Proofs != nil {
 		return pass.Proofs
 	}
@@ -161,32 +168,26 @@ func checkoutProofs(top string, pass DiskPass) map[diskstore.OwnerKind]diskstore
 	if err != nil {
 		return proofs
 	}
-	proofs[diskstore.OwnerGoal] = diskstore.WorkspaceProof{GitRoot: layout.GitRoot, Git: ExecWorkspaceGit, Ended: goalEnded(top, pass.Now), Now: pass.Now}
+	proofs[diskstore.OwnerGoal] = diskstore.WorkspaceProof{GitRoot: layout.GitRoot, Git: ExecWorkspaceGit, Ended: goalEnded(checkoutLedger(top, pass.Now)),
+		Now: pass.Now, IgnoredReleaseBytes: ignored}
 	return proofs
 }
 
-// goalEnded reads the checkout's accepted goal ledger once, without a
-// fetch, the first time a proof asks: a goal is ended when it is done or
-// abandoned; an unreadable ledger is unknown for every goal.
-func goalEnded(top string, now time.Time) func(diskstore.Owner) (bool, bool) {
-	var projection goal.Projection
-	var read, readable bool
-	return func(owner diskstore.Owner) (bool, bool) {
+// goalEnded answers from the checkout's accepted goal ledger, read once
+// without a fetch: a goal is ended when it is done or abandoned; an
+// unreadable ledger is unknown for every goal. The basis names the ledger
+// tip the answer was read at, for the release record.
+func goalEnded(ledger *ledgerView) func(diskstore.Owner) (bool, bool, string) {
+	return func(owner diskstore.Owner) (bool, bool, string) {
 		if owner.Kind != diskstore.OwnerGoal {
-			return false, false
+			return false, false, ""
 		}
-		if !read {
-			read = true
-			if endpoint, err := goal.ResolveEndpoint(top); err == nil {
-				projection, err = goal.Project(endpoint, false, now)
-				readable = err == nil
-			}
-		}
-		if !readable {
-			return false, false
+		projection, err := ledger.get()
+		if err != nil {
+			return false, false, ""
 		}
 		_, done := projection.Tree.Done[owner.Ref]
 		_, abandoned := projection.Tree.Abandoned[owner.Ref]
-		return done || abandoned, true
+		return done || abandoned, true, "the accepted goal ledger at " + projection.Tip
 	}
 }

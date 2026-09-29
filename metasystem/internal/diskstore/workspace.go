@@ -7,8 +7,9 @@ package diskstore
 // directory; a copy is a linked worktree of the checkout's common store on
 // branch workspace/<owner>/<name>, so its commits live in the common store
 // and it has no object store of its own. A request is serialized on its
-// reservation key; its release is its own end, separate from the goal's,
-// and archives a copy's branch tip before anything is removed.
+// reservation key and never claims a path it did not create; its release
+// is its own end, separate from the goal's, and archives every tip of a
+// copy before anything is removed (workspace_release.go).
 
 import (
 	"context"
@@ -18,7 +19,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -47,23 +47,44 @@ func WorkspaceBranch(owner Owner, name string) string {
 	return "workspace/" + WorkspaceOwnerSegment(owner) + "/" + workspaceName(name)
 }
 
-// WorkspaceArchiveRef is where a copy's branch tip is archived at release.
+// WorkspaceArchiveRef is where a copy's branch tip is archived at release;
+// its worktree HEAD and reflog tips are archived beneath it.
 func WorkspaceArchiveRef(owner Owner, name string) string {
 	return "refs/archive/" + WorkspaceOwnerSegment(owner) + "/" + workspaceName(name) + "/" + WorkspaceBranch(owner, name)
 }
 
 // WorkspacePath is where a workspace lives.
 func WorkspacePath(control string, owner Owner, name string) string {
-	return filepath.Join(control, "artifacts", "agents", "workspaces", WorkspaceOwnerSegment(owner), workspaceName(name))
+	return filepath.Join(workspacesRoot(control), WorkspaceOwnerSegment(owner), workspaceName(name))
+}
+
+func workspacesRoot(control string) string {
+	return filepath.Join(control, "artifacts", "agents", "workspaces")
 }
 
 // WorkspaceTmp is the workspace's temporary directory: inside a plain
-// workspace, beside a copy (never inside its tree, which must stay clean).
+// workspace; for a copy, whose tree must stay clean, under the workspace
+// store's reserved .metasystem-tmp keyed by the record id, which no
+// workspace name can reach (names never start with a dot).
 func WorkspaceTmp(record Record) string {
 	if record.Layout == LayoutCopy {
-		return record.Path + ".tmp"
+		return filepath.Join(workspacesRoot(record.Checkout), ".metasystem-tmp", record.ID)
 	}
 	return filepath.Join(record.Path, "tmp")
+}
+
+// ValidWorkspaceName reports a name usable as one path element and one
+// branch component (git check-ref-format --branch): letters, digits, dot,
+// underscore and dash, not starting with a dot or a dash, not ending with
+// a dot or ".lock", no "..", at most 100 characters.
+func ValidWorkspaceName(name string) bool {
+	if name == "" || len(name) > 100 || strings.HasPrefix(name, ".") || strings.HasPrefix(name, "-") ||
+		strings.HasSuffix(name, ".") || strings.HasSuffix(name, ".lock") || strings.Contains(name, "..") {
+		return false
+	}
+	return strings.IndexFunc(name, func(r rune) bool {
+		return !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '.' || r == '_' || r == '-')
+	}) < 0
 }
 
 func workspaceName(name string) string {
@@ -111,6 +132,17 @@ func (c *WorkspaceConflict) Error() string {
 		workspaceName(c.Name), what, c.Existing.Path, workspaceName(c.Name))
 }
 
+// WorkspaceUnproven is a path the request did not make and cannot prove
+// it made: it is never claimed or removed; a person looks at it.
+type WorkspaceUnproven struct {
+	Path   string
+	Reason string
+}
+
+func (e *WorkspaceUnproven) Error() string {
+	return fmt.Sprintf("%s %s; nothing there was changed; metasystem disk show lists it for a person to settle", e.Path, e.Reason)
+}
+
 type reservation struct {
 	Record string `json:"record"`
 }
@@ -118,11 +150,15 @@ type reservation struct {
 // ObtainWorkspace returns the workspace a request names, creating it when
 // none is accepted (3.6's repeat contract). The reservation lock is taken
 // before a ulid is allocated or a byte copied; the same request again
-// returns the same workspace and writes nothing; an interrupted creation
-// is discarded and made anew.
+// returns the same workspace and writes nothing. A path that exists
+// without the request's record is never claimed; a creation that fails
+// removes what it proves it made and its reservation.
 func ObtainWorkspace(ctx context.Context, request WorkspaceRequest) (Workspace, error) {
 	if request.Owner.Kind != OwnerGoal && request.Owner.Kind != OwnerSession {
 		return Workspace{}, fmt.Errorf("a workspace belongs to a goal or a session, not %s", request.Owner.Kind)
+	}
+	if !ValidWorkspaceName(workspaceName(request.Name)) {
+		return Workspace{}, fmt.Errorf("%q is not a workspace name: letters, digits, dot, underscore and dash, not starting with a dot or dash", request.Name)
 	}
 	key, err := ReservationKey(request.Owner, request.Name)
 	if err != nil {
@@ -148,7 +184,7 @@ func ObtainWorkspace(ctx context.Context, request WorkspaceRequest) (Workspace, 
 			return Workspace{Record: existing, Tmp: WorkspaceTmp(existing)}, nil
 		case StateReserved:
 			if err := discardPartial(ctx, request, existing); err != nil {
-				return Workspace{}, fmt.Errorf("an interrupted workspace at %s could not be discarded: %w", existing.Path, err)
+				return Workspace{}, err
 			}
 		case StateReleasing:
 			return Workspace{}, fmt.Errorf("the earlier workspace at %s is still being released; metasystem disk clean finishes it, then repeat this request", existing.Path)
@@ -195,6 +231,14 @@ func createWorkspace(ctx context.Context, request WorkspaceRequest, key, entry s
 		layout = LayoutCopy
 	}
 	path := WorkspacePath(request.Control, request.Owner, request.Name)
+	if _, err := os.Lstat(path); err == nil {
+		return Workspace{}, &WorkspaceUnproven{Path: path, Reason: "exists but no workspace record holds it"}
+	}
+	if layout == LayoutCopy {
+		if _, found := revParseIn(ctx, request.Git, request.GitRoot, "refs/heads/"+WorkspaceBranch(request.Owner, request.Name)); found {
+			return Workspace{}, &WorkspaceUnproven{Path: path, Reason: "has no worktree, but its branch " + WorkspaceBranch(request.Owner, request.Name) + " exists without a record"}
+		}
+	}
 	record, err := request.Registry.Register(Registration{Path: path, Git: layout == LayoutCopy, Class: WorkspaceClass, Owner: request.Owner,
 		Checkout: request.Control, Lifetime: LifetimeOwner, CapBytes: request.CapBytes, CapKind: CapTarget, Layout: layout,
 		Reservation: key, CopyOf: request.CopyOf}, request.Now, request.Entropy)
@@ -202,7 +246,7 @@ func createWorkspace(ctx context.Context, request WorkspaceRequest, key, entry s
 		return Workspace{}, err
 	}
 	if record.State != StateReserved || record.Reservation != key {
-		return Workspace{}, fmt.Errorf("store record %s already holds %s; metasystem disk show names it", record.ID, path)
+		return Workspace{}, &WorkspaceUnproven{Path: path, Reason: "is held by store record " + record.ID}
 	}
 	data, err := json.Marshal(reservation{Record: record.ID})
 	if err != nil {
@@ -211,74 +255,118 @@ func createWorkspace(ctx context.Context, request WorkspaceRequest, key, entry s
 	if _, err := atomicfile.WriteFile(entry, append(data, '\n'), 0o600, filepath.Dir(entry)); err != nil {
 		return Workspace{}, err
 	}
-	if _, err := os.Lstat(path); err == nil {
-		return Workspace{}, fmt.Errorf("%s exists but no workspace record holds it; metasystem disk show lists it", path)
+	accepted, err := makeWorkspace(ctx, request, record)
+	if err == nil {
+		return Workspace{Record: accepted, Tmp: WorkspaceTmp(accepted), Created: true}, nil
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return Workspace{}, err
+	if cleanup := discardPartial(ctx, request, record); cleanup != nil {
+		return Workspace{}, fmt.Errorf("the workspace could not be made (%v), and what was made stays: %w", err, cleanup)
+	}
+	_ = os.Remove(entry)
+	return Workspace{}, fmt.Errorf("the workspace could not be made; nothing is left at %s: %w", path, err)
+}
+
+// makeWorkspace creates the layout at the recorded path, its temporary
+// directory with its marker, and accepts the record.
+func makeWorkspace(ctx context.Context, request WorkspaceRequest, record Record) (Record, error) {
+	if err := os.MkdirAll(filepath.Dir(record.Path), 0o700); err != nil {
+		return Record{}, err
 	}
 	var mutate func(*Record)
-	switch layout {
+	switch record.Layout {
 	case LayoutPlain:
-		if err := os.Mkdir(path, 0o700); err != nil {
-			return Workspace{}, err
+		if err := os.Mkdir(record.Path, 0o700); err != nil {
+			return Record{}, err
 		}
 		if err := WriteMarker(record); err != nil {
-			return Workspace{}, err
+			return Record{}, err
 		}
 	case LayoutCopy:
 		branch := WorkspaceBranch(request.Owner, request.Name)
-		if _, err := request.Git(ctx, request.GitRoot, "worktree", "add", "-b", branch, path, request.CopyOf); err != nil {
-			return Workspace{}, fmt.Errorf("git worktree add %s: %w", path, err)
+		if _, err := request.Git(ctx, request.GitRoot, "worktree", "add", "-b", branch, record.Path, request.CopyOf); err != nil {
+			return Record{}, fmt.Errorf("git worktree add %s: %w", record.Path, err)
 		}
-		identity, err := ReadGitIdentity(path)
+		identity, err := ReadGitIdentity(record.Path)
 		if err != nil {
-			return Workspace{}, err
+			return Record{}, err
 		}
 		mutate = func(record *Record) { record.Identity = identity }
 	}
-	if err := os.MkdirAll(WorkspaceTmp(record), 0o700); err != nil {
-		return Workspace{}, err
+	if err := makeTmp(record); err != nil {
+		return Record{}, err
 	}
-	accepted, err := request.Registry.Transition(record.ID, []State{StateReserved}, StateAccepted, mutate)
-	if err != nil {
-		return Workspace{}, err
-	}
-	return Workspace{Record: accepted, Tmp: WorkspaceTmp(accepted), Created: true}, nil
+	return request.Registry.Transition(record.ID, []State{StateReserved}, StateAccepted, mutate)
 }
 
-// discardPartial removes what an interrupted creation left at the recorded
-// path, by its layout, and marks the record released. The path is the
-// reservation's own; a marker naming another record refuses.
+// makeTmp creates the temporary directory; a copy's carries a marker
+// naming its record, so its removal proves whose it is.
+func makeTmp(record Record) error {
+	tmp := WorkspaceTmp(record)
+	if err := os.MkdirAll(tmp, 0o700); err != nil {
+		return err
+	}
+	if record.Layout != LayoutCopy {
+		return nil
+	}
+	return writeTmpMarker(record, tmp)
+}
+
+func writeTmpMarker(record Record, tmp string) error {
+	if found, err := readMarker(tmp); err == nil {
+		if found.ID == record.ID && found.Path == tmp {
+			return nil
+		}
+		return fmt.Errorf("%s carries the marker of record %s", tmp, found.ID)
+	}
+	data, err := json.Marshal(marker{Schema: Schema, ID: record.ID, Path: tmp})
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(tmp, MarkerName), append(data, '\n'), 0o600)
+}
+
+// removeTmp removes a copy's temporary directory only when its marker
+// names this record, or it is empty; a plain one goes with its store.
+func removeTmp(ctx context.Context, record Record) error {
+	if record.Layout != LayoutCopy {
+		return nil
+	}
+	tmp := WorkspaceTmp(record)
+	if _, err := os.Lstat(tmp); errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if found, err := readMarker(tmp); err == nil && found.ID == record.ID && found.Path == tmp {
+		return RemoveTree(ctx, tmp)
+	}
+	if entries, err := os.ReadDir(tmp); err == nil && len(entries) == 0 {
+		return os.Remove(tmp)
+	}
+	return &WorkspaceUnproven{Path: tmp, Reason: "holds content without the marker of record " + record.ID}
+}
+
+// discardPartial removes what an interrupted creation of record made, only
+// where it proves it made it: a plain directory carrying this record's
+// marker, or empty; a worktree on this record's branch, at the recorded
+// commit, clean including ignored files; the branch only at the recorded
+// commit. Anything else is refused as unproven and nothing is removed.
 func discardPartial(ctx context.Context, request WorkspaceRequest, record Record) error {
 	critical, err := request.Registry.TryCritical(record.ID)
 	if err != nil {
 		return err
 	}
 	defer critical.Release()
+	branch := WorkspaceBranch(request.Owner, request.Name)
 	switch record.Layout {
 	case LayoutCopy:
-		if _, err := os.Lstat(filepath.Join(record.Path, ".git")); err == nil {
-			if _, err := request.Git(ctx, request.GitRoot, "worktree", "remove", "--force", record.Path); err != nil {
-				return err
-			}
-		}
-		if _, err := request.Git(ctx, request.GitRoot, "worktree", "prune"); err != nil {
-			return err
-		}
-		_, _ = request.Git(ctx, request.GitRoot, "branch", "-D", WorkspaceBranch(request.Owner, request.Name))
-		if err := RemoveTree(ctx, record.Path); err != nil {
+		if err := discardPartialCopy(ctx, request, record, branch); err != nil {
 			return err
 		}
 	default:
-		if found, err := readMarker(record.Path); err == nil && found.ID != record.ID {
-			return fmt.Errorf("%s carries the marker of record %s", record.Path, found.ID)
-		}
-		if err := RemoveTree(ctx, record.Path); err != nil {
+		if err := discardPartialPlain(ctx, record); err != nil {
 			return err
 		}
 	}
-	if err := RemoveTree(ctx, WorkspaceTmp(record)); err != nil {
+	if err := removeTmp(ctx, record); err != nil {
 		return err
 	}
 	record.State = StateReleased
@@ -286,302 +374,74 @@ func discardPartial(ctx context.Context, request WorkspaceRequest, record Record
 	return critical.Write(record)
 }
 
-// WorkspaceReleaseRequest releases one workspace record.
-type WorkspaceReleaseRequest struct {
-	Registry Registry
-	GitRoot  string
-	ID       string
-	Git      WorkspaceGit
-	// Census is the use census; nil is "not taken".
-	Census *UseCensus
-	// Discard is a person's authorised discard of a copy's uncommitted work.
-	Discard *Discard
-	By      string
-	Now     time.Time
+func discardPartialPlain(ctx context.Context, record Record) error {
+	info, err := os.Lstat(record.Path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil || !info.IsDir() {
+		return &WorkspaceUnproven{Path: record.Path, Reason: "is not the directory the interrupted creation made"}
+	}
+	if found, err := readMarker(record.Path); err == nil && found.ID == record.ID && found.Path == record.Path {
+		return RemoveTree(ctx, record.Path)
+	}
+	if entries, err := os.ReadDir(record.Path); err == nil && len(entries) == 0 {
+		return os.Remove(record.Path)
+	}
+	return &WorkspaceUnproven{Path: record.Path, Reason: "holds content without the marker of record " + record.ID}
 }
 
-// WorkspaceRelease is a release's outcome: Done, Kept (a content check or a
-// live user) or Pending (a held lock, an incomplete census), with the
-// reason and the command that settles it.
-type WorkspaceRelease struct {
-	Done    bool   `json:"done"`
-	Already bool   `json:"already,omitempty"`
-	Kept    bool   `json:"kept,omitempty"`
-	Pending bool   `json:"pending,omitempty"`
-	Path    string `json:"path,omitempty"`
-	Reason  string `json:"reason"`
-	Command string `json:"command,omitempty"`
-	Archive string `json:"archive,omitempty"`
-	Unique  int    `json:"unique,omitempty"`
+func discardPartialCopy(ctx context.Context, request WorkspaceRequest, record Record, branch string) error {
+	tip, branchFound := revParseIn(ctx, request.Git, request.GitRoot, "refs/heads/"+branch)
+	if branchFound && tip != record.CopyOf {
+		return &WorkspaceUnproven{Path: record.Path, Reason: "has branch " + branch + " at " + tip + ", not the recorded " + record.CopyOf}
+	}
+	if _, err := os.Lstat(filepath.Join(record.Path, ".git")); err == nil {
+		head, err := os.ReadFile(filepath.Join(gitdirOf(record.Path), "HEAD"))
+		if err != nil || strings.TrimSpace(string(head)) != "ref: refs/heads/"+branch {
+			return &WorkspaceUnproven{Path: record.Path, Reason: "is a worktree, but not on the recorded branch " + branch}
+		}
+		status, err := request.Git(ctx, record.Path, "status", "--porcelain=v1", "--untracked-files=all", "--ignored")
+		if err != nil || strings.TrimSpace(string(status)) != "" {
+			return &WorkspaceUnproven{Path: record.Path, Reason: "is a worktree with changes the interrupted creation did not make"}
+		}
+		if _, err := request.Git(ctx, request.GitRoot, "worktree", "remove", record.Path); err != nil {
+			return err
+		}
+	} else if _, err := os.Lstat(record.Path); err == nil {
+		if entries, err := os.ReadDir(record.Path); err != nil || len(entries) != 0 {
+			return &WorkspaceUnproven{Path: record.Path, Reason: "holds content but no worktree"}
+		}
+		if err := os.Remove(record.Path); err != nil {
+			return err
+		}
+	}
+	if _, err := request.Git(ctx, request.GitRoot, "worktree", "prune"); err != nil {
+		return err
+	}
+	if branchFound {
+		if _, err := request.Git(ctx, request.GitRoot, "branch", "-D", branch); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
-// ReleaseWorkspace is the one release of a workspace (3.6), whoever asks:
-// the verb, a landing's release set, the sweeper at the owner's end. Inside
-// the store's critical section it revalidates identity, checks a copy is
-// clean (unless a person discards), archives a copy's branch tip and reads
-// it back, runs the checkout-use proof, writes releasing, removes the
-// layout at the recorded path and the branch, and marks the record
-// released. It never calls goalbranch.Sweep. A release of a released or
-// absent workspace is success and writes nothing.
-func ReleaseWorkspace(ctx context.Context, request WorkspaceReleaseRequest) (WorkspaceRelease, error) {
-	critical, err := request.Registry.TryCritical(request.ID)
-	var held *HeldError
-	switch {
-	case errors.Is(err, ErrNotFound):
-		return WorkspaceRelease{Done: true, Already: true, Reason: "no such workspace; nothing to release"}, nil
-	case errors.As(err, &held):
-		return WorkspaceRelease{Pending: true, Reason: "an engine verb is inside the workspace (its record lock is held)",
-			Command: "metasystem disk clean, once that verb has ended"}, nil
-	case err != nil:
-		return WorkspaceRelease{}, err
-	}
-	defer critical.Release()
-	record := critical.Record()
-	outcome := WorkspaceRelease{Path: record.Path}
-	if record.Class != WorkspaceClass {
-		return outcome, fmt.Errorf("store %s is a %s, not a workspace", record.ID, record.Class)
-	}
-	switch record.State {
-	case StateReleased:
-		outcome.Done, outcome.Already, outcome.Reason = true, true, "already released"
-		return outcome, nil
-	case StateReserved:
-		return WorkspaceRelease{Pending: true, Path: record.Path, Reason: "the workspace is still being created", Command: "repeat the request once it returned"}, nil
-	case StateAccepted:
-		if kept := checkWorkspace(ctx, request, record, &outcome); kept {
-			return outcome, nil
-		}
-		record.State = StateReleasing
-		if outcome.Archive != "" {
-			record.Notes = append(record.Notes, fmt.Sprintf("released %s: branch tip archived as %s (%d commit(s) nothing else contains)",
-				request.Now.UTC().Format(time.RFC3339), outcome.Archive, outcome.Unique))
-		}
-		if request.Discard != nil {
-			record.AuthorizedDiscard = request.Discard
-		}
-		if err := critical.Write(record); err != nil {
-			return outcome, err
-		}
-	case StateReleasing:
-		if err := revalidateReleasing(record); err != nil {
-			return WorkspaceRelease{Pending: true, Path: record.Path, Reason: "a releasing workspace changed: " + err.Error() + "; a person decides",
-				Command: "metasystem disk show"}, nil
-		}
-	}
-	if err := removeWorkspace(ctx, request, record); err != nil {
-		return WorkspaceRelease{Pending: true, Path: record.Path, Reason: "removal cut short (" + err.Error() + "); the workspace is releasing and the next pass finishes it",
-			Command: "metasystem disk clean"}, nil
-	}
-	record = critical.Record()
-	record.State, record.ReleasedBy = StateReleased, request.By
-	if err := critical.Write(record); err != nil {
-		return outcome, err
-	}
-	outcome.Done, outcome.Reason = true, "released"
-	return outcome, nil
-}
-
-// checkWorkspace runs the checks before anything is written: identity, a
-// copy's cleanliness and archive, and the use proof. It reports true when
-// outcome says why the workspace stays.
-func checkWorkspace(ctx context.Context, request WorkspaceReleaseRequest, record Record, outcome *WorkspaceRelease) bool {
-	keep := func(pending bool, reason, command string) bool {
-		outcome.Kept, outcome.Pending, outcome.Reason, outcome.Command = !pending, pending, reason, command
-		return true
-	}
-	if err := Revalidate(record); err != nil {
-		return keep(true, "the workspace is not the recorded one: "+err.Error(), "metasystem disk show")
-	}
-	name := filepath.Base(record.Path)
-	if record.Layout == LayoutCopy {
-		status, err := request.Git(ctx, record.Path, "status", "--porcelain=v1", "--untracked-files=all")
-		if err != nil {
-			return keep(true, "git status failed: "+err.Error(), "git -C "+record.Path+" status")
-		}
-		if strings.TrimSpace(string(status)) != "" && request.Discard == nil {
-			land := "metasystem work land " + record.Owner.Ref + " for the work, or "
-			if record.Owner.Kind != OwnerGoal {
-				land = "commit the work, or "
-			}
-			return keep(false, "the workspace has uncommitted changes", land+discardCommand(record.Owner, name))
-		}
-		archive, unique, err := archiveWorkspace(ctx, request, record, name)
-		if err != nil {
-			return keep(true, "the branch tip could not be archived: "+err.Error(), "git -C "+request.GitRoot+" branch --list "+WorkspaceBranch(record.Owner, name))
-		}
-		outcome.Archive, outcome.Unique = archive, unique
-	}
-	census := request.Census
-	switch {
-	case census == nil || !census.Taken:
-		return keep(true, "use census not taken", "metasystem disk clean --release "+record.ID)
-	case !census.Complete():
-		return keep(true, "use census incomplete: "+joinLines(census.GapLines()), "metasystem disk clean --release "+record.ID)
-	}
-	for _, path := range []string{record.Path, WorkspaceTmp(record)} {
-		if holders := census.Holders(path); len(holders) != 0 {
-			holder := holders[0]
-			return keep(false, fmt.Sprintf("in use by pid %d (uid %d, %s)", holder.Pid, holder.UID, holder.Command),
-				fmt.Sprintf("metasystem work workspace %s --release --name %s once pid %d has ended", record.Owner.Ref, name, holder.Pid))
-		}
-	}
-	return false
-}
-
-func discardCommand(owner Owner, name string) string {
-	if owner.Kind == OwnerGoal {
-		return "metasystem work workspace " + owner.Ref + " --release --discard --name " + name
-	}
-	return "metasystem disk clean --preview, then a person's metasystem work workspace --release --discard"
-}
-
-// archiveWorkspace writes the copy's branch tip to its archive ref in the
-// common store and reads it back; an archive ref already holding the tip
-// is success, one holding another commit leaves it and archives under a
-// stamped name. It counts the commits nothing else contains.
-func archiveWorkspace(ctx context.Context, request WorkspaceReleaseRequest, record Record, name string) (string, int, error) {
-	branch := WorkspaceBranch(record.Owner, name)
-	tip, found := revParse(ctx, request, "refs/heads/"+branch)
-	if !found {
-		return "", 0, nil
-	}
-	archive := WorkspaceArchiveRef(record.Owner, name)
-	if existing, ok := revParse(ctx, request, archive); ok && existing != tip {
-		archive += "@" + request.Now.UTC().Format("20060102T150405Z")
-	}
-	if existing, ok := revParse(ctx, request, archive); !ok || existing != tip {
-		if _, err := request.Git(ctx, request.GitRoot, "update-ref", archive, tip); err != nil {
-			return "", 0, err
-		}
-		if readBack, ok := revParse(ctx, request, archive); !ok || readBack != tip {
-			return "", 0, fmt.Errorf("%s does not read back as %s", archive, tip)
-		}
-	}
-	args := []string{"rev-list", "--count", tip, "--not", "HEAD"}
-	if record.Owner.Kind == OwnerGoal {
-		for _, ref := range []string{"refs/heads/goal/" + record.Owner.Ref, "refs/remotes/origin/goal/" + record.Owner.Ref} {
-			if _, ok := revParse(ctx, request, ref); ok {
-				args = append(args, ref)
-			}
-		}
-	}
-	counted, err := request.Git(ctx, request.GitRoot, args...)
+// gitdirOf is the gitdir a worktree's .git file names; empty when it names
+// none.
+func gitdirOf(worktree string) string {
+	identity, err := ReadGitIdentity(worktree)
 	if err != nil {
-		return "", 0, err
+		return ""
 	}
-	unique, err := strconv.Atoi(strings.TrimSpace(string(counted)))
-	if err != nil {
-		return "", 0, fmt.Errorf("rev-list count %q", counted)
-	}
-	return archive, unique, nil
+	return identity.Gitdir
 }
 
-func revParse(ctx context.Context, request WorkspaceReleaseRequest, ref string) (string, bool) {
-	out, err := request.Git(ctx, request.GitRoot, "rev-parse", "--verify", "-q", ref)
+func revParseIn(ctx context.Context, git WorkspaceGit, dir, ref string) (string, bool) {
+	out, err := git(ctx, dir, "rev-parse", "--verify", "-q", ref)
 	if err != nil {
 		return "", false
 	}
 	sha := strings.TrimSpace(string(out))
 	return sha, sha != ""
-}
-
-// removeWorkspace removes the layout at the recorded path: a plain tree
-// (its marker last), or a copy's linked worktree and then its branch, and
-// the temporary directory either way.
-func removeWorkspace(ctx context.Context, request WorkspaceReleaseRequest, record Record) error {
-	if record.Layout == LayoutCopy {
-		if _, err := os.Lstat(filepath.Join(record.Path, ".git")); err == nil {
-			args := []string{"worktree", "remove"}
-			if record.AuthorizedDiscard != nil {
-				args = append(args, "--force")
-			}
-			if _, err := request.Git(ctx, request.GitRoot, append(args, record.Path)...); err != nil {
-				return err
-			}
-		}
-		branch := WorkspaceBranch(record.Owner, filepath.Base(record.Path))
-		if _, found := revParse(ctx, request, "refs/heads/"+branch); found {
-			if _, err := request.Git(ctx, request.GitRoot, "branch", "-D", branch); err != nil {
-				return err
-			}
-		}
-	} else if err := RemoveStore(ctx, record); err != nil {
-		return err
-	}
-	return RemoveTree(ctx, WorkspaceTmp(record))
-}
-
-// WorkspaceProof is the sweeper's proof for a handed-out workspace (3.1's
-// workspace row): its owner ended by its own row, a copy is clean, then
-// the checkout-use proof (RegisteredStores runs it) and, inside the
-// store's critical section, the copy's archive and the layout's removal,
-// the same steps as ReleaseWorkspace. A store of its owner kind that is not
-// a workspace (a goal or session worktree) is pending: its release is
-// another owner's.
-type WorkspaceProof struct {
-	GitRoot string
-	Git     WorkspaceGit
-	// Ended reports whether the owner has ended, and whether that is known.
-	Ended func(Owner) (ended, known bool)
-	// Now stamps an archive ref that must not overwrite another commit.
-	Now time.Time
-}
-
-func (WorkspaceProof) Kind() OwnerKind { return OwnerGoal }
-
-func (p WorkspaceProof) request() WorkspaceReleaseRequest {
-	return WorkspaceReleaseRequest{GitRoot: p.GitRoot, Git: p.Git, Now: p.Now}
-}
-
-// Observe reads only: the owner's state and a copy's git status.
-func (p WorkspaceProof) Observe(ctx context.Context, record Record) Verdict {
-	name := filepath.Base(record.Path)
-	if record.Class != WorkspaceClass {
-		return Verdict{Decision: Pending, Reason: "a " + record.Class + " store of " + string(record.Owner.Kind) + " " + record.Owner.Ref + " is released by its own owner, not this proof",
-			Command: "metasystem disk show"}
-	}
-	ended, known := false, false
-	if p.Ended != nil {
-		ended, known = p.Ended(record.Owner)
-	}
-	switch {
-	case !known:
-		return Verdict{Decision: Pending, Reason: "whether " + string(record.Owner.Kind) + " " + record.Owner.Ref + " has ended cannot be read", Command: "metasystem goal show " + record.Owner.Ref}
-	case !ended:
-		command := "metasystem work workspace " + record.Owner.Ref + " --release --name " + name
-		if record.Owner.Kind != OwnerGoal {
-			command = "metasystem disk show"
-		}
-		return Verdict{Decision: Keep, Reason: "its " + string(record.Owner.Kind) + " is open; it ends with --release, the landing of its work, or the goal's conclusion", Command: command}
-	}
-	if record.Layout == LayoutCopy {
-		status, err := p.Git(ctx, record.Path, "status", "--porcelain=v1", "--untracked-files=all")
-		if err != nil {
-			return Verdict{Decision: Pending, Reason: "git status failed: " + err.Error(), Command: "git -C " + record.Path + " status"}
-		}
-		if strings.TrimSpace(string(status)) != "" {
-			return Verdict{Decision: Keep, Reason: "the workspace has uncommitted changes and its owner has ended", Command: discardCommand(record.Owner, name)}
-		}
-	}
-	return Verdict{Decision: Release, Reason: string(record.Owner.Kind) + " " + record.Owner.Ref + " has ended"}
-}
-
-// Apply archives a copy's branch tip, then removes the layout, inside the
-// critical section RegisteredStores holds.
-func (p WorkspaceProof) Apply(ctx context.Context, critical *Critical) error {
-	record := critical.Record()
-	if record.Layout == LayoutCopy {
-		archive, unique, err := archiveWorkspace(ctx, p.request(), record, filepath.Base(record.Path))
-		if err != nil {
-			return err
-		}
-		if archive != "" {
-			record.Notes = append(record.Notes, fmt.Sprintf("released %s: branch tip archived as %s (%d commit(s) nothing else contains)",
-				p.Now.UTC().Format(time.RFC3339), archive, unique))
-			if err := critical.Write(record); err != nil {
-				return err
-			}
-		}
-	}
-	return removeWorkspace(ctx, p.request(), record)
 }

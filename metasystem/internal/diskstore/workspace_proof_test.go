@@ -10,7 +10,7 @@ import (
 
 func (b *workspaceBed) sweep(ended map[string]bool, known bool) Report {
 	b.t.Helper()
-	proof := WorkspaceProof{GitRoot: b.git.gitRoot, Git: b.git.run, Ended: func(owner Owner) (bool, bool) { return ended[owner.Ref], known }}
+	proof := WorkspaceProof{GitRoot: b.git.gitRoot, Git: b.git.run, Ended: func(owner Owner) (bool, bool, string) { return ended[owner.Ref], known, "the ledger at abc" }}
 	report, err := RunPass(context.Background(), PassOptions{Kind: "checkout", Name: b.control, Registry: b.registry, Mode: ModeApply,
 		Now: testNow, Clock: func() time.Time { return testNow },
 		Classes:      []Class{RegisteredStores{Registry: b.registry, Proofs: map[OwnerKind]OwnerProof{OwnerGoal: proof}}},
@@ -60,7 +60,8 @@ func TestSweeperReleasesAConcludedGoalsWorkspaces(t *testing.T) {
 		t.Fatalf("kept lines: %+v", report.Kept)
 	}
 	record, _ := bed.registry.Load(copied.Record.ID)
-	if record.State != StateReleased || !strings.Contains(strings.Join(record.Notes, " "), "archived") {
+	if record.State != StateReleased || !strings.Contains(strings.Join(record.Notes, " "), "archived") ||
+		!strings.Contains(strings.Join(record.Notes, " "), "read from the ledger at abc") {
 		t.Fatalf("record = %+v", record)
 	}
 }

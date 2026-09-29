@@ -1725,11 +1725,14 @@ func (inv *intentInvocation) resumeSweep(targets []intentTarget, goalID, base st
 		if err := writeIntentInputs(filepath.Dir(path), map[string]string{path: mustJSON(landed)}); err != nil {
 			data["recordError"] = err.Error()
 		}
-		if err := inv.runReleaseSet(path, &landed); err != nil {
+		if released, err := inv.runReleaseSet(path); err != nil {
 			data["releaseError"] = err.Error()
+		} else {
+			landed = released
+			data["landing"] = landed
 		}
 		return &intentResult{Targets: targets, Outcome: intentConfirmed, Data: data,
-			Summary: fmt.Sprintf("landed %s on %s and swept the merged goal branch; goal %s stays open until done", landed.Landing, landed.Endpoint, goalID)}
+			Summary: fmt.Sprintf("landed %s on %s and swept the merged goal branch; goal %s stays open until done%s", landed.Landing, landed.Endpoint, goalID, releaseSummary(landed.ReleaseSet))}
 	}
 	return nil
 }
@@ -1813,8 +1816,10 @@ func (inv *intentInvocation) landByHand(targets []intentTarget, goalID, through,
 	if writeErr := writeIntentInputs(dir, map[string]string{landedPath: mustJSON(landed)}); writeErr != nil {
 		data["recordError"] = writeErr.Error()
 	}
-	if releaseErr := inv.runReleaseSet(landedPath, &landed); releaseErr != nil {
+	if released, releaseErr := inv.runReleaseSet(landedPath); releaseErr != nil {
 		data["releaseError"] = releaseErr.Error()
+	} else {
+		landed = released
 	}
 	data["landing"] = landed
 	if err != nil {
@@ -1823,7 +1828,7 @@ func (inv *intentInvocation) landByHand(targets []intentTarget, goalID, through,
 			next:    inv.sameCommand(), nextReason: "retries the branch owner's sweep of the pushed landing"}
 	}
 	return intentResult{Targets: targets, Outcome: intentConfirmed, Data: data,
-		Summary: fmt.Sprintf("landed %s on %s; goal %s stays open until done", pushed.Landing, endpoint, goalID)}
+		Summary: fmt.Sprintf("landed %s on %s; goal %s stays open until done%s", pushed.Landing, endpoint, goalID, releaseSummary(landed.ReleaseSet))}
 }
 
 // writeHandLandingCard projects the hand route onto the goal's board card

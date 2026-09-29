@@ -86,6 +86,7 @@ const (
 	DiskProcessScratchKey      = "disk.process-scratch-target-gib"
 	DiskJobWorktreeKey         = "disk.job-worktree-target-gib"
 	DiskWorkspaceKey           = "disk.workspace-target-gib"
+	DiskWorkspaceIgnoredKey    = "disk.workspace-ignored-release-mib"
 	DiskCandidateEnginesKey    = "disk.candidate-engines-keep"
 	DiskCompressAboveKey       = "disk.compress-above-mib"
 	DiskSessionBootstrapKey    = "disk.session-bootstrap-hours"
@@ -119,6 +120,7 @@ var diskSettings = []DiskSetting{
 	{Key: DiskProcessScratchKey, Default: "4", Unit: UnitGiB, Scope: ScopeCheckout, Meaning: "one process's scratch root"},
 	{Key: DiskJobWorktreeKey, Default: "8", Unit: UnitGiB, Scope: ScopeCheckout, Meaning: "one delegate workspace"},
 	{Key: DiskWorkspaceKey, Default: "8", Unit: UnitGiB, Scope: ScopeCheckout, Meaning: "one handed-out workspace"},
+	{Key: DiskWorkspaceIgnoredKey, Default: "1", Unit: UnitMiB, Scope: ScopeCheckout, Meaning: "ignored files a copy workspace may hold and still be released with it; more keeps the workspace for a person"},
 	{Key: DiskCandidateEnginesKey, Default: "8", Unit: UnitCount, Scope: ScopeCheckout, Meaning: "newest candidate engines kept"},
 	{Key: DiskCompressAboveKey, Default: "1", Unit: UnitMiB, Scope: ScopeCheckout, Meaning: "files at or above this are gzipped by the launcher and the distiller"},
 	{Key: DiskSessionBootstrapKey, Default: "24", Unit: UnitHours, Scope: ScopeCheckout, Meaning: "a reserved session whose bootstrap died with no main announced is reported after this"},

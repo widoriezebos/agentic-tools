@@ -16,17 +16,20 @@ import (
 // a .git file, refs a map, status and the unique-commit count set by the
 // test. It never runs git.
 type fakeWorkspaceGit struct {
-	mu      sync.Mutex
-	gitRoot string
-	refs    map[string]string
-	dirty   map[string]string
-	unique  string
-	calls   []string
-	failAdd bool
+	mu        sync.Mutex
+	gitRoot   string
+	refs      map[string]string
+	dirty     map[string]string
+	unique    string
+	calls     []string
+	failAdd   bool
+	worktrees map[string]string
 }
 
+func (g *fakeWorkspaceGit) branchOf(worktree string) string { return g.worktrees[worktree] }
+
 func newFakeWorkspaceGit(gitRoot string) *fakeWorkspaceGit {
-	return &fakeWorkspaceGit{gitRoot: gitRoot, refs: map[string]string{"HEAD": "c0ffee"}, dirty: map[string]string{}, unique: "0"}
+	return &fakeWorkspaceGit{gitRoot: gitRoot, refs: map[string]string{"HEAD": "c0ffee"}, dirty: map[string]string{}, unique: "0", worktrees: map[string]string{}}
 }
 
 func (g *fakeWorkspaceGit) run(_ context.Context, dir string, args ...string) ([]byte, error) {
@@ -50,6 +53,7 @@ func (g *fakeWorkspaceGit) run(_ context.Context, dir string, args ...string) ([
 			return nil, err
 		}
 		g.refs["refs/heads/"+branch] = sha
+		g.worktrees[path] = branch
 		return nil, nil
 	case len(args) >= 3 && args[0] == "worktree" && args[1] == "remove":
 		return nil, os.RemoveAll(args[len(args)-1])
@@ -64,13 +68,27 @@ func (g *fakeWorkspaceGit) run(_ context.Context, dir string, args ...string) ([
 	case len(args) >= 2 && args[0] == "status":
 		return []byte(g.dirty[dir]), nil
 	case len(args) == 4 && args[0] == "rev-parse" && args[1] == "--verify" && args[2] == "-q":
-		if sha, ok := g.refs[args[3]]; ok {
+		ref := args[3]
+		if ref == "HEAD" && dir != g.gitRoot {
+			ref = "refs/heads/" + g.branchOf(dir)
+		}
+		if sha, ok := g.refs[ref]; ok {
 			return []byte(sha + "\n"), nil
 		}
 		return nil, errors.New("exit status 1")
-	case len(args) == 3 && args[0] == "update-ref":
+	case len(args) == 4 && args[0] == "update-ref" && args[3] == "":
+		if _, exists := g.refs[args[1]]; exists {
+			return nil, errors.New("fatal: reference already exists")
+		}
 		g.refs[args[1]] = args[2]
 		return nil, nil
+	case len(args) >= 2 && args[0] == "log" && args[1] == "-g":
+		return nil, nil
+	case len(args) == 4 && args[0] == "merge-base" && args[1] == "--is-ancestor":
+		if args[2] == args[3] {
+			return nil, nil
+		}
+		return nil, errors.New("exit status 1")
 	case len(args) >= 3 && args[0] == "rev-list" && args[1] == "--count":
 		return []byte(g.unique + "\n"), nil
 	}
@@ -178,8 +196,8 @@ func TestCopyWorkspaceReleaseArchivesTheTipThenRemovesWorktreeAndBranch(t *testi
 	if workspace.Record.Layout != LayoutCopy || workspace.Record.CopyOf != "abc123" || workspace.Record.Identity.Gitdir == "" {
 		t.Fatalf("copy record = %+v", workspace.Record)
 	}
-	if workspace.Tmp != workspace.Record.Path+".tmp" {
-		t.Fatalf("a copy's tmp lies beside it, never inside the tree: %s", workspace.Tmp)
+	if workspace.Tmp != filepath.Join(bed.control, "artifacts", "agents", "workspaces", ".metasystem-tmp", workspace.Record.ID) {
+		t.Fatalf("a copy's tmp lies in the reserved .metasystem-tmp, keyed by its record: %s", workspace.Tmp)
 	}
 	branch := "refs/heads/workspace/goal-g/bed"
 	if bed.git.refs[branch] != "abc123" {
@@ -233,14 +251,15 @@ func TestDirtyCopyIsKeptUntilAPersonDiscards(t *testing.T) {
 	}
 }
 
-// The checkout-use proof: a live process inside keeps the workspace naming
-// it; a census not taken or incomplete is pending with disk clean --release.
+// The checkout-use proof: a live process inside makes the release pending
+// naming it (retried once it ended); a census not taken or incomplete is
+// pending with disk clean --release.
 func TestWorkspaceInUseIsKeptAndAnIncompleteCensusIsPending(t *testing.T) {
 	t.Parallel()
 	bed := newWorkspaceBed(t)
 	workspace := bed.obtain(goalG, "", "")
 	inside := &UseCensus{Taken: true, Processes: []CensusProcess{{Pid: 42, UID: 501, Command: "go test", Cwd: filepath.Join(workspace.Record.Path, "tmp")}}}
-	if outcome := bed.release(workspace.Record.ID, inside, nil); !outcome.Kept || !strings.Contains(outcome.Reason, "pid 42") {
+	if outcome := bed.release(workspace.Record.ID, inside, nil); !outcome.Pending || !strings.Contains(outcome.Reason, "pid 42") {
 		t.Fatalf("in use: %+v", outcome)
 	}
 	incomplete := &UseCensus{Taken: true, Unreadable: []CensusGap{{Pid: 7, Reason: "denied"}}}
@@ -321,27 +340,38 @@ func TestConcurrentFirstRequestsYieldOneWorkspace(t *testing.T) {
 	}
 }
 
-// A creation interrupted between the reservation and accepted is discarded
-// and recreated by the next request, never returned as it is.
+// A creation that fails removes what it made and its reservation, so the
+// next request creates anew; a creation interrupted by a crash (a reserved
+// record, nothing made yet) is discarded and recreated by the next
+// request, never returned as it is.
 func TestInterruptedCreationIsDiscardedAndRecreated(t *testing.T) {
 	t.Parallel()
 	bed := newWorkspaceBed(t)
 	bed.git.failAdd = true
-	if _, err := ObtainWorkspace(context.Background(), bed.request(goalG, "bed", "abc123")); err == nil {
-		t.Fatal("the interrupted creation reports its failure")
+	if _, err := ObtainWorkspace(context.Background(), bed.request(goalG, "bed", "abc123")); err == nil || !strings.Contains(err.Error(), "nothing is left") {
+		t.Fatalf("the failed creation reports it and what it left: %v", err)
 	}
-	interrupted := bed.records()
-	if len(interrupted) != 1 || interrupted[0].State != StateReserved {
-		t.Fatalf("a reserved record stays: %+v", interrupted)
+	for _, record := range bed.records() {
+		if record.State != StateReleased {
+			t.Fatalf("a failed creation leaves no reserved record: %+v", record)
+		}
+	}
+	if _, found, _ := FindWorkspace(bed.registry, goalG, "bed"); found {
+		t.Fatal("a failed creation leaves no reservation")
 	}
 	bed.git.failAdd = false
+	crashed, err := bed.registry.Register(Registration{Path: WorkspacePath(bed.control, goalG, "bed"), Git: true, Class: WorkspaceClass, Owner: goalG,
+		Checkout: bed.control, Lifetime: LifetimeOwner, CapKind: CapTarget, Layout: LayoutCopy, Reservation: mustKey(t, goalG, "bed"), CopyOf: "abc123"}, testNow, rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeReservation(t, bed.registry, goalG, "bed", crashed.ID)
 	workspace := bed.obtain(goalG, "bed", "abc123")
-	if !workspace.Created || workspace.Record.ID == interrupted[0].ID || workspace.Record.State != StateAccepted {
+	if !workspace.Created || workspace.Record.ID == crashed.ID || workspace.Record.State != StateAccepted {
 		t.Fatalf("recreated: %+v", workspace)
 	}
-	old, _ := bed.registry.Load(interrupted[0].ID)
-	if old.State != StateReleased {
-		t.Fatalf("the interrupted record is released: %+v", old)
+	if old, _ := bed.registry.Load(crashed.ID); old.State != StateReleased {
+		t.Fatalf("the crashed record is released: %+v", old)
 	}
 }
 

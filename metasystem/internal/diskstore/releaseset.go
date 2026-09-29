@@ -10,8 +10,12 @@ package diskstore
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"sort"
+	"strings"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 )
 
 // The states of one store in a release set.
@@ -50,31 +54,38 @@ func (s ReleaseSet) Finished() bool {
 	return true
 }
 
-// SelectReleaseSet names the goal's accepted copies whose recorded copyOf
-// or branch tip is an ancestor of tip (the commit the landing selects, a
-// --through prefix included). It reads only.
+// SelectReleaseSet names the goal's accepted copies whose branch tip and
+// worktree HEAD both lie in tip (the commit the landing selects, a
+// --through prefix included) and whose tree is clean (Round B3 ruling: a
+// workspace is in a landing's set only when all its work landed; a plain
+// workspace, which has no branch, ends at --release or the goal's end,
+// never at a landing). It reads only.
 func SelectReleaseSet(ctx context.Context, registry Registry, gitRoot, goalID, tip string, git WorkspaceGit) (ReleaseSet, error) {
 	set := ReleaseSet{Tip: tip, Stores: []ReleaseEntry{}}
 	records, _ := registry.Inventory()
-	request := WorkspaceReleaseRequest{GitRoot: gitRoot, Git: git}
 	for _, record := range records {
 		if record.Class != WorkspaceClass || record.Layout != LayoutCopy || record.State != StateAccepted ||
 			record.Owner != (Owner{Kind: OwnerGoal, Ref: goalID}) {
 			continue
 		}
-		candidates := []string{record.CopyOf}
-		if branchTip, found := revParse(ctx, request, "refs/heads/"+WorkspaceBranch(record.Owner, filepath.Base(record.Path))); found {
-			candidates = append(candidates, branchTip)
+		branchTip, branchFound := revParseIn(ctx, git, gitRoot, "refs/heads/"+WorkspaceBranch(record.Owner, filepath.Base(record.Path)))
+		head, headFound := revParseIn(ctx, git, record.Path, "HEAD")
+		if !branchFound || !headFound {
+			continue
 		}
-		for _, commit := range candidates {
-			if commit == "" {
-				continue
-			}
-			if _, err := git(ctx, gitRoot, "merge-base", "--is-ancestor", commit, tip); err == nil {
-				set.Stores = append(set.Stores, ReleaseEntry{ID: record.ID, Path: record.Path, State: ReleasePending})
-				break
+		landed := true
+		for _, commit := range []string{branchTip, head} {
+			if _, err := git(ctx, gitRoot, "merge-base", "--is-ancestor", commit, tip); err != nil {
+				landed = false
 			}
 		}
+		if !landed {
+			continue
+		}
+		if status, err := git(ctx, record.Path, "status", "--porcelain=v1", "--untracked-files=all"); err != nil || strings.TrimSpace(string(status)) != "" {
+			continue
+		}
+		set.Stores = append(set.Stores, ReleaseEntry{ID: record.ID, Path: record.Path, State: ReleasePending})
 	}
 	sort.Slice(set.Stores, func(i, j int) bool { return set.Stores[i].ID < set.Stores[j].ID })
 	return set, nil
@@ -109,4 +120,25 @@ func RunReleaseSet(ctx context.Context, request WorkspaceReleaseRequest, set *Re
 		changed = changed || *entry != before
 	}
 	return changed
+}
+
+// ErrRecordHeld is a landing record whose lock another writer holds.
+var ErrRecordHeld = errors.New("the landing record is being written by another process")
+
+// LockLandingRecord serializes every read-modify-write of one landing
+// record that carries a release set (the landing route and the sweeper):
+// wait takes the lock blocking, else a held lock is ErrRecordHeld.
+func LockLandingRecord(path string, wait bool) (func(), error) {
+	mode := lock.TryExclusive
+	if wait {
+		mode = lock.Exclusive
+	}
+	held, err := lock.File(path+".lock", 0o600, mode)
+	if err != nil {
+		if lock.Busy(err) {
+			return nil, ErrRecordHeld
+		}
+		return nil, err
+	}
+	return func() { _ = held.Release() }, nil
 }

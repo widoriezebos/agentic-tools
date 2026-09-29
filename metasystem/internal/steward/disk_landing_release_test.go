@@ -46,7 +46,7 @@ func (g *releaseGit) run(_ context.Context, dir string, args ...string) ([]byte,
 	case args[0] == "branch":
 		delete(g.refs, "refs/heads/"+args[2])
 		return nil, nil
-	case args[0] == "status", args[0] == "merge-base":
+	case args[0] == "status", args[0] == "merge-base", args[0] == "log":
 		return nil, nil
 	}
 	return nil, errors.New("unexpected git " + strings.Join(args, " "))

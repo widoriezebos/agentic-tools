@@ -23,7 +23,7 @@ type landReleaseGit struct {
 
 func (g landReleaseGit) run(ctx context.Context, dir string, args ...string) ([]byte, error) {
 	if len(args) == 4 && args[0] == "merge-base" && args[1] == "--is-ancestor" {
-		if g.contained[args[2]] {
+		if g.contained[args[2]] || args[2] == args[3] {
 			return nil, nil
 		}
 		return nil, errors.New("exit status 1")

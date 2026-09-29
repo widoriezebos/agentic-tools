@@ -71,9 +71,9 @@ func runIntentWorkWorkspace(inv *intentInvocation) int {
 	if name == "" {
 		name = diskstore.DefaultWorkspaceName
 	}
-	if _, err := diskstore.ReservationKey(owner, name); err != nil || strings.HasPrefix(name, ".") {
+	if !diskstore.ValidWorkspaceName(name) {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id),
-			Summary: fmt.Sprintf("%q is not a workspace name: it may not contain a slash or start with a dot; nothing was done", name)})
+			Summary: fmt.Sprintf("%q is not a workspace name: letters, digits, dot, underscore and dash, not starting with a dot or dash, not ending with a dot or .lock; nothing was done", name)})
 	}
 	registry := diskstore.CheckoutRegistry(inv.stateRoot)
 	if inv.input.has("release") {
@@ -109,13 +109,17 @@ func runIntentWorkWorkspace(inv *intentInvocation) int {
 		GitRoot: inv.layout.GitRoot, Owner: owner, Name: name, CopyOf: copyOf, CapBytes: settings.Bytes(config.DiskWorkspaceKey),
 		Now: owners.now().UTC(), Entropy: rand.Reader, Git: owners.git})
 	var conflict *diskstore.WorkspaceConflict
+	var unproven *diskstore.WorkspaceUnproven
 	switch {
 	case errors.As(err, &conflict):
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id), Summary: err.Error() + "; nothing was made",
 			next: inv.publicArgv("work", "workspace", id, "--release", "--name", name), nextReason: "release the existing workspace first"})
+	case errors.As(err, &unproven):
+		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: inv.targets(id), Summary: "no workspace was made: " + err.Error(),
+			Decision: "metasystem disk show"})
 	case err != nil:
-		return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: inv.targets(id), Summary: "the workspace could not be made: " + err.Error(),
-			Decision: "repeat the same command: an interrupted workspace is discarded and made anew"})
+		return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: inv.targets(id), Summary: err.Error(),
+			Decision: "metasystem disk show names what is at the path; the same command makes the workspace once the cause is settled"})
 	}
 	environment := append([]string{"TMPDIR=" + workspace.Tmp}, workspaceCaches(inv.layout.InstallationRoot)...)
 	lines := []string{"path: " + workspace.Record.Path}
@@ -182,7 +186,8 @@ func releaseWorkWorkspace(inv *intentInvocation, owners diskOwners, registry dis
 		discard = &diskstore.Discard{By: by, At: owners.now().UTC(), Reason: reason}
 	}
 	outcome, err := diskstore.ReleaseWorkspace(context.Background(), diskstore.WorkspaceReleaseRequest{Registry: registry, GitRoot: inv.layout.GitRoot,
-		ID: record.ID, Git: owners.git, Census: owners.census(), Discard: discard, By: "work workspace --release", Now: owners.now().UTC()})
+		ID: record.ID, Git: owners.git, TakeCensus: owners.census, Discard: discard, By: "work workspace --release", Now: owners.now().UTC(),
+		IgnoredReleaseBytes: workspaceIgnoredBytes(inv.layout.InstallationRoot)})
 	if err != nil {
 		return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "the release stopped: " + err.Error(), Decision: "metasystem disk show"})
 	}

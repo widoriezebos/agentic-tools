@@ -93,10 +93,16 @@ func useVerdict(census *UseCensus, record Record) Verdict {
 		return Verdict{Decision: Pending, Reason: "use census incomplete: " + joinLines(census.GapLines()),
 			Command: "metasystem disk clean --release " + record.ID}
 	}
-	if holders := census.Holders(record.Path); len(holders) != 0 {
-		holder := holders[0]
-		return Verdict{Decision: Keep, Reason: fmt.Sprintf("in use by pid %d (uid %d, %s)", holder.Pid, holder.UID, holder.Command),
-			Command: fmt.Sprintf("metasystem disk clean --release %s once pid %d has ended", record.ID, holder.Pid)}
+	paths := []string{record.Path}
+	if record.Class == WorkspaceClass {
+		paths = append(paths, WorkspaceTmp(record))
+	}
+	for _, path := range paths {
+		if holders := census.Holders(path); len(holders) != 0 {
+			holder := holders[0]
+			return Verdict{Decision: Keep, Reason: fmt.Sprintf("in use by pid %d (uid %d, %s)", holder.Pid, holder.UID, holder.Command),
+				Command: fmt.Sprintf("metasystem disk clean --release %s once pid %d has ended", record.ID, holder.Pid)}
+		}
 	}
 	return Verdict{Decision: Release, Reason: "owner ended and no live process uses it"}
 }
