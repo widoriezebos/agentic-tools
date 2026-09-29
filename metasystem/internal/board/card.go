@@ -223,6 +223,20 @@ func seatDir(home, machine string) (string, error) {
 	if err := checkName("seat nickname", machine); err != nil {
 		return "", err
 	}
+	dir, err := boardDir(home)
+	if err != nil {
+		return "", err
+	}
+	dir = filepath.Join(dir, machine)
+	if err := privateDir(dir); err != nil {
+		return "", err
+	}
+	return dir, nil
+}
+
+// boardDir checks every component from home down and returns the private
+// board directory, creating host/ and host/board/ as needed.
+func boardDir(home string) (string, error) {
 	info, err := os.Lstat(home)
 	if errors.Is(err, fs.ErrNotExist) {
 		if err := os.MkdirAll(home, 0o700); err != nil {
@@ -237,7 +251,7 @@ func seatDir(home, machine string) (string, error) {
 		return "", fmt.Errorf("BOARD_PATH_NOT_A_DIRECTORY: %s is not a directory (a symlink or a file stands there); no card was written; move it aside so the board can create its own directory", home)
 	}
 	dir := home
-	for _, component := range []string{"host", "board", machine} {
+	for _, component := range []string{"host", "board"} {
 		dir = filepath.Join(dir, component)
 		if err := privateDir(dir); err != nil {
 			return "", err

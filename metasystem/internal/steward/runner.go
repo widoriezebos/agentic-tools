@@ -138,6 +138,7 @@ func RunLoop(repoRoot string, census WorkerCensus, revive func() error, interval
 		Tick: RunTick, DeliverPending: DeliverPending, Resumable: ResumableIntent, Channel: channelphase.Run,
 		TrimCaches: machineCacheTrimmer(nil, ""),
 		Now:        runnerNow, Sleep: runnerSleep, AfterRecordPublished: runnerAfterRecordPublished, SweepDisk: runnerSweepDisk,
+		Bridge: func(top string) bridgeStepper { return newBridgeRole(top) },
 	})
 }
 
@@ -155,6 +156,16 @@ type runnerLoopDependencies struct {
 	// SweepDisk runs the disk sweeper's passes after the tick has returned
 	// and released arbitration (Part B 3.3); helm reports without acting.
 	SweepDisk func(top string, now time.Time, helm bool)
+	// Bridge makes this runner's bridge role (batch-lane design D14-r2,
+	// R25); nil runs none.
+	Bridge func(top string) bridgeStepper
+}
+
+// bridgeStepper is the bridge role as the runner drives it: one step per
+// cycle, at the helm as well, and a clean close when the runner ends.
+type bridgeStepper interface {
+	Step() string
+	Close()
 }
 
 // runnerSweepDisk is the production sweep: both passes under the budget,
@@ -233,6 +244,12 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 	// runner knows the identity it was enrolled with and the lineage its
 	// arming caller handed it, so only the resident runner publishes presence.
 	cfg.Runner = runnerContext(top, cfg.ArmedLineage)
+	var bridge bridgeStepper
+	if deps.Bridge != nil {
+		bridge = deps.Bridge(top)
+		defer bridge.Close()
+	}
+	bridgeLine := ""
 
 	for {
 		if _, err := os.Stat(runnerStopPath(top)); err == nil {
@@ -247,6 +264,14 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 		// helm it still reports (the 2026-09-29 amendment) and acts on nothing.
 		if deps.SweepDisk != nil {
 			deps.SweepDisk(top, deps.Now(), helm.Active(top).Active)
+		}
+		// The bridge role runs every cycle, at the helm too: it reports and
+		// decides nothing (R25). Its line is printed when it changes.
+		if bridge != nil {
+			if line := bridge.Step(); line != bridgeLine {
+				fmt.Fprintln(os.Stderr, line)
+				bridgeLine = line
+			}
 		}
 		// The helm is resolved here, after the tick returned and before any
 		// post-tick act, whatever the tick's outcome: a take that lands during

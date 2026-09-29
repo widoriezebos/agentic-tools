@@ -222,6 +222,12 @@ var coreSettings = []Setting{
 		Meaning: "the stage estimates while the lane has no recorded spans of a stage; every pre-join stage named once"},
 	{Key: PipelineHistoryNKey, Default: "8",
 		Meaning: "how many recent completed spans, and same-runner batch proofs, a median is taken over"},
+	// The host board (batch-lane design D14-r2, R25), read by the steward's
+	// bridge role only.
+	{Key: BoardKeepHoursKey, Default: "24",
+		Meaning: "hours a terminal card stays on the host board before the bridge sweeps it"},
+	{Key: BoardPollSecKey, Default: "5",
+		Meaning: "seconds between the bridge's reads of the host board where no kernel file watch can be established"},
 	{Key: IntentReviewToolCallsKey, Default: "48", ProofInput: true,
 		Meaning: "the independent read's tool calls for a public build whose brief names none"},
 
