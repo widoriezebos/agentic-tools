@@ -22,7 +22,9 @@ type Proof struct {
 	// Runner is where the proof ran, stamped by the owner when the run it
 	// dispatched completes: the lane's measured proof cost is per runner
 	// (D14, R22).
-	Runner          string              `json:"runner,omitempty"`
+	Runner string `json:"runner,omitempty"`
+	// Reason is the one line saying why the batch started (D14, R23).
+	Reason          string              `json:"reason,omitempty"`
 	RequiredMode    testpolicy.Mode     `json:"requiredMode"`
 	ExecutedMode    testpolicy.Mode     `json:"executedMode"`
 	SelectedGroups  []string            `json:"selectedGroups"`
@@ -174,7 +176,8 @@ func RequireProofPlan(store Store, id, actor, window, token string, sample proof
 			candidateTip = current.Landing.candidateTip()
 		}
 		current.Proof = &Proof{Status: "planned", Token: token, Tree: current.TipTree, CandidateTip: candidateTip, Window: window, RequiredMode: plan.RequiredMode,
-			ExecutedMode: plan.ExecutedMode, SelectedGroups: selected, Sample: sample, Launchers: sample.OverlappingHost}
+			ExecutedMode: plan.ExecutedMode, SelectedGroups: selected, Sample: sample, Launchers: sample.OverlappingHost,
+			Reason: current.StartReason}
 		current.Transition(StateProving, at, "prove", actor, "planned")
 		return nil
 	})

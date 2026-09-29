@@ -191,3 +191,9 @@ func TestBatchPipelineChecksTheLedger(t *testing.T) {
 		t.Fatalf("believed %v", believed)
 	}
 }
+
+// emptyHostBoard is a readable host board with nothing underway: an owner
+// built for a test decides every start from its own joined units.
+type emptyHostBoard struct{}
+
+func (emptyHostBoard) Board(time.Time) batch.BoardPicture { return batch.BoardPicture{Readable: true} }

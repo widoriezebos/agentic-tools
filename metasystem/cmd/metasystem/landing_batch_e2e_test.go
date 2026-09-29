@@ -371,14 +371,12 @@ func runBatchLandingLifecycleWithdraw(t *testing.T, harness *batchE2EHarness, en
 	if withdrawn.State != batch.UnitWithdrawn || withdrawn.Outcome != batch.UnitWithdrawn {
 		t.Fatalf("withdrawn unit = %+v", withdrawn)
 	}
-	fixture.assertState(batchID, batch.StateOpen)
-	if err := os.Setenv("METASYSTEM_GOAL_NOW", joinedAt.Add(2*time.Minute).Format(time.RFC3339)); err != nil {
-		t.Fatal(err)
-	}
-	fixture.tick(batchID)
+	// D14: the remaining unit does not wait for a timer; nothing on the
+	// host board is within reach, so the tick that settled the withdrawal
+	// also started the proof of goal-a alone.
 	fixture.assertState(batchID, batch.StateLanding)
-	if proof := fixture.load(batchID).Proof; proof == nil || proof.Window != "expired" {
-		t.Fatalf("remaining unit proof window = %+v, want expired", proof)
+	if proof := fixture.load(batchID).Proof; proof == nil || proof.Window != batch.WindowNothingNear || proof.Reason != "nothing within reach" {
+		t.Fatalf("remaining unit proof = %+v, want started with nothing within reach", proof)
 	}
 	fixture.tick(batchID)
 	fixture.assertState(batchID, batch.StateLanded)

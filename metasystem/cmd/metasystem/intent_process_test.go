@@ -12,11 +12,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
@@ -578,4 +580,28 @@ func TestSystemStartSaysTheEvidenceRoot(t *testing.T) {
 			t.Fatalf("the fence moved: %+v, then %+v", before, after)
 		}
 	})
+}
+
+// TestIntentWorkStatusPrintsTheBatchWaitLine (R23, U10b-2): work status G
+// for a goal in a waiting batch prints the batch's one wait line, in local
+// time, and the record's data names the batch.
+func TestIntentWorkStatusPrintsTheBatchWaitLine(t *testing.T) {
+	t.Parallel()
+	b := newDeliveryBed(t)
+	landing := t.TempDir()
+	b.owners.batchRoot = func(string, time.Time) (string, bool, error) { return landing, true, nil }
+	three := 3
+	record := batch.Record{Schema: 1, BatchID: "01j5x00000000000000000wa01", State: batch.StateOpen,
+		Units: []batch.Unit{{GoalID: "standing-validation", Chain: "c", Claim: batch.Claim{Machine: "landing", Lineage: "l", Epoch: 1, Revision: 1, AccountingRevision: 1}, State: batch.UnitJoined}},
+		Wait: &batch.WaitState{Reason: "r", ProofCost: 40 * time.Minute, Basis: "default", For: []batch.Waited{
+			{Goal: "goal-x", Seat: "m1b", Stage: board.StageReview, Round: &board.Round{N: 2, Max: &three}, ExpectedAt: time.Date(2026, 9, 25, 12, 8, 0, 0, time.UTC)}}}}
+	if err := batch.NewStore(landing, identity.KernelProber{}).Create(record); err != nil {
+		t.Fatal(err)
+	}
+	code, result := b.do("work", "status", "standing-validation")
+	want := "batch 01j5x00000000000000000wa01 waits for goal-x on m1b (review round 2 of 3, ~8 min); a separate proof costs ~40 min (default)"
+	data, _ := result.Data.(map[string]any)
+	if code != 0 || data == nil || data["batch"] == nil || data["batch"].(map[string]any)["line"] != want {
+		t.Fatalf("work status: code %d data %+v", code, result.Data)
+	}
 }

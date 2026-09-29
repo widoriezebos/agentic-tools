@@ -89,6 +89,10 @@ type Record struct {
 	Landing  *LandingProgress         `json:"landing,omitempty"`
 
 	CensusHold bool `json:"censusHold,omitempty"`
+	// Wait is why an open batch has not started (D14, R23); StartReason is
+	// why it started, copied into the proof it plans.
+	Wait        *WaitState `json:"wait,omitempty"`
+	StartReason string     `json:"startReason,omitempty"`
 	batchRecordFields
 }
 
