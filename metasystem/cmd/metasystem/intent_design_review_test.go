@@ -147,6 +147,30 @@ func TestDesignCritiqueReplayAndCap(t *testing.T) {
 	}
 }
 
+// TestDesignCritiqueRejoinKeepsTheBrief: a second Send while the
+// examination runs rejoins it and writes nothing, so the brief that states
+// the running read's budget, which a follow-up is built from, keeps its bytes
+// even when the second Send names another reader budget.
+func TestDesignCritiqueRejoinKeepsTheBrief(t *testing.T) {
+	t.Parallel()
+	b := newDesignReviewBed(t)
+	if _, result := b.do("design", "review", b.design, "--tool-calls", "30"); result.Outcome != intentInProgress || b.fresh != 1 {
+		t.Fatalf("first examination: %+v", result)
+	}
+	briefs, _ := filepath.Glob(filepath.Join(b.install, "artifacts", "agents", "intent-review", "design-01designreader-*", "brief.md"))
+	if len(briefs) != 1 {
+		t.Fatalf("the admitted brief: %v", briefs)
+	}
+	admitted := string(mustRead(t, briefs[0]))
+	_, result := b.do("design", "review", b.design, "--tool-calls", "45")
+	if result.Outcome != intentInProgress || b.fresh != 1 {
+		t.Fatalf("the rejoin: %+v fresh=%d", result, b.fresh)
+	}
+	if after := string(mustRead(t, briefs[0])); after != admitted {
+		t.Fatalf("the rejoin rewrote the admitted brief:\n--- admitted\n%s\n--- after\n%s", admitted, after)
+	}
+}
+
 // TestIntentDesignCritiqueAdmission: the first paid critique of an
 // approved goal nobody holds claims it through the real claim owner, and
 // refuses without starting any critique when that owner refuses.

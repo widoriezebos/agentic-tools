@@ -2,7 +2,9 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -76,6 +78,23 @@ type designReviewPlan struct {
 	design           string // canonical absolute path
 	subject          string // current design digest
 	brief            string
+	inputs           map[string]string // the generated brief and outputs, by path, not yet written
+}
+
+// writeMissingInputs writes the generated inputs a continuing chain needs
+// where none are written yet; one already written is the one its chain
+// admitted and is kept as it is.
+func (plan designReviewPlan) writeMissingInputs() error {
+	missing := map[string]string{}
+	for path, content := range plan.inputs {
+		if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
+			missing[path] = content
+		}
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	return writeIntentInputs(filepath.Dir(plan.brief), missing)
 }
 
 // reviewDesignChain decides a design review against the document's
@@ -200,6 +219,9 @@ func (inv *intentInvocation) continueDesignChain(plan designReviewPlan, chain di
 	operation := fmt.Sprintf("design-%s-after-%d-%s", strings.ToLower(plan.recordID), bound.Round, decisions[:12])
 	// The follow-up examines the changed design with the author's decisions
 	// on the reviewed findings; both are frozen in its brief.
+	if err := plan.writeMissingInputs(); err != nil {
+		return &intentResult{Targets: plan.targets, Outcome: intentFailed, code: 1, Summary: err.Error()}
+	}
 	brief, err := os.ReadFile(plan.brief)
 	if err != nil {
 		return &intentResult{Targets: plan.targets, Outcome: intentFailed, code: 1, Summary: "the review brief cannot be read: " + err.Error()}
@@ -235,6 +257,9 @@ func (inv *intentInvocation) retryDesignExamination(plan designReviewPlan, chain
 	if round != chain.NewestRound {
 		return &intentResult{Targets: plan.targets, Outcome: intentRefused, code: 1,
 			Summary: fmt.Sprintf("examination %d is not design %s's newest examination (%d); nothing was requested", round, plan.recordID, chain.NewestRound)}
+	}
+	if err := plan.writeMissingInputs(); err != nil {
+		return &intentResult{Targets: plan.targets, Outcome: intentFailed, code: 1, Summary: err.Error()}
 	}
 	return inv.designFollowUp(plan, chain, entry, designReviewRequest{Kind: "retry", Root: chain.Root, AfterRound: round, OperationID: operation,
 		SubjectSHA256: entry.Subjects[strconv.FormatInt(round, 10)], Brief: plan.brief})
