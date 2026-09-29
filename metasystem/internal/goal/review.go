@@ -88,29 +88,37 @@ var (
 )
 
 // ReviewRecordHead is what the act reads out of a review record: the goals it
-// names, the branch tip its Reviewed line records, and its Outcome's verdict
-// and Reviewed at lines.
+// names, the branch tip its Reviewed line records, its Outcome's verdict and
+// Reviewed at lines, and how many of its findings the human answered fix.
 type ReviewRecordHead struct {
 	Goals      []string
 	Tip        string
 	Verdict    string
 	ReviewedAt string
+	Fixes      int
 }
+
+// findingAnswer is a finding's Answer line as the room's recorder writes it,
+// nested under the finding's list item.
+var findingAnswer = regexp.MustCompile(`^\s+[-*]\s+Answer:\s*(.*)$`)
 
 // ReadReviewRecord reads a review record's head and Outcome. The head is the
 // list before the first section; the Outcome is its section's first two lines
-// of words, the verdict and the tip it was drafted for.
+// of words, the verdict and the tip it was drafted for. A finding's answer is
+// its Answer line's words before the dash, as the room reads it.
 func ReadReviewRecord(content []byte) ReviewRecordHead {
 	head := ReviewRecordHead{}
 	lines := strings.Split(strings.ReplaceAll(string(content), "\r\n", "\n"), "\n")
 	inHead := true
 	outcomeLevel := 0
+	inFindings := false
 	var said []string
 	for _, line := range lines {
 		if level, title, heading := headingOf(line); heading {
 			// The title is not a section: the head is the list before the
 			// first section, as the room's own reader takes it.
 			inHead = inHead && level == 1
+			inFindings = title == "Findings"
 			switch {
 			case outcomeLevel > 0 && level <= outcomeLevel:
 				outcomeLevel = -1
@@ -134,6 +142,12 @@ func ReadReviewRecord(content []byte) ReviewRecordHead {
 						head.Tip = fields[0]
 					}
 				}
+			}
+			continue
+		}
+		if answer := findingAnswer.FindStringSubmatch(line); inFindings && answer != nil {
+			if words, _, _ := strings.Cut(answer[1], " — "); strings.TrimSpace(words) == "fix" {
+				head.Fixes++
 			}
 			continue
 		}
@@ -232,6 +246,9 @@ func (act ReviewAct) check(id string) (ReviewRecordHead, error) {
 	}
 	switch act.Verdict {
 	case VerdictSendBack:
+		if head.Fixes == 0 {
+			return ReviewRecordHead{}, fmt.Errorf("the review record %s has no finding answered fix, and a send-back carries the findings answered fix as its correction brief; answer the findings the builder must fix, or end the review another way", act.Record)
+		}
 		if len(bytes.TrimSpace(act.Brief)) == 0 {
 			return ReviewRecordHead{}, fmt.Errorf("a send-back carries its correction brief: the findings answered fix; mark at least one finding fix, or end the review another way")
 		}

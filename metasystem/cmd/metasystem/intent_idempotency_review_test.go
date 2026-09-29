@@ -30,12 +30,21 @@ func waitingToLandBed(file *goal.GoalFile) {
 
 func writeReviewRecord(t *testing.T, root, verdict string) string {
 	t.Helper()
+	return writeReviewRecordAnswered(t, root, verdict, "fix — waits for Send back")
+}
+
+// writeReviewRecordAnswered writes the bed's review record with one finding
+// carrying the answer given, as the room's recorder writes it.
+func writeReviewRecordAnswered(t *testing.T, root, verdict, answer string) string {
+	t.Helper()
 	path := filepath.Join(root, filepath.FromSlash(reviewBedRecord))
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	record := "# Review of " + bedGoal + "\n\n- Kind: review\n- Id: 01M3MP8CZYPATTR0382JS6HMFB\n- Status: draft\n- Goals: " + bedGoal +
-		"\n- Reviewed: " + reviewBedTip + " (the tip of goal/" + bedGoal + ")\n\n## Findings\n\n## Outcome\n\nVerdict: " + verdict +
+		"\n- Reviewed: " + reviewBedTip + " (the tip of goal/" + bedGoal + ")\n\n## Findings\n\n" +
+		"- 2026-09-29 · Wido · The owner reads the wrong tree [d:deposit:t2#0]\n  - Anchor: internal/owner.go:60\n  - Answer: " + answer +
+		"\n\n## Outcome\n\nVerdict: " + verdict +
 		"\n\nReviewed at: " + reviewBedTip + "\n\nExamined: the change index\n"
 	if err := os.WriteFile(path, []byte(record), 0o644); err != nil {
 		t.Fatal(err)
@@ -82,6 +91,14 @@ func TestIntentGoalReviewRecordsTheVerdictAndRefusesInPublicWords(t *testing.T) 
 	if err := os.WriteFile(brief, []byte("# Correction brief\n\n1. Read the reviewed tree.\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	// A send-back whose record answers no finding fix is refused in words on
+	// its first call (Sol SOL-S69-02).
+	writeReviewRecordAnswered(t, bed.root(), "send back", "left open")
+	if code, result := bed.runJSON(bed.terminalOwners(), "goal", "review", bedGoal, "--record", record, "--verdict", "send-back", "--brief", brief); code == 0 ||
+		!strings.Contains(result.Summary+" "+result.Decision, "no finding answered fix") {
+		t.Fatalf("a send-back with no finding answered fix = %d %+v", code, result)
+	}
+	writeReviewRecord(t, bed.root(), "send back")
 	code, result := bed.runJSON(bed.terminalOwners(), "goal", "review", bedGoal, "--record", record, "--verdict", "send-back", "--brief", brief)
 	if code != 0 || result.Outcome != intentConfirmed {
 		t.Fatalf("send back = %d %+v", code, result)

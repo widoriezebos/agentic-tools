@@ -40,9 +40,20 @@ func underReview(id string) *GoalFile {
 }
 
 func reviewRecord(goals, verdict, reviewedAt string) []byte {
+	return reviewRecordAnswered(goals, verdict, reviewedAt, "fix — waits for Send back")
+}
+
+// reviewRecordAnswered is a review record as the room's recorder writes it,
+// with one finding per answer, each answer on its finding's Answer line.
+func reviewRecordAnswered(goals, verdict, reviewedAt string, answers ...string) []byte {
+	findings := ""
+	for index, answer := range answers {
+		findings += fmt.Sprintf("- 2026-09-29 · Wido · The owner reads the wrong tree %d [d:deposit:t2#%d]\n"+
+			"  - Anchor: internal/owner.go:60\n  - Answer: %s\n", index, index, answer)
+	}
 	return []byte("# Review of " + goals + "\n\n- Kind: review\n- Id: 01M3MP8CZYPATTR0382JS6HMFA\n- Status: draft\n" +
 		"- Goals: " + goals + "\n- Reviewed: " + reviewedTip + " (the tip of goal/" + goals + ")\n\n" +
-		"## Facts\n\n## Findings\n\n- The owner reads the wrong tree · 2026-09-29 · Wido — Anchor: internal/owner.go:60 — Answer: fix\n\n" +
+		"## Facts\n\n## Findings\n\n" + findings + "\n" +
 		"## Decisions\n\n## Open questions\n\n## Drawings\n\n## Outcome\n\n" +
 		"Verdict: " + verdict + "\n\nReviewed at: " + reviewedAt + "\n\nExamined: internal/owner.go:60\n\n" +
 		"- Recorded from the sitting · 2026-09-29 · Wido [d:deposit:t3#0]\n")
@@ -206,6 +217,38 @@ func sendBackAct() ReviewAct {
 	return ReviewAct{
 		Record: reviewPath, Content: reviewRecord("under-review", "send back", reviewedTip), Verdict: VerdictSendBack,
 		Brief: []byte("# Correction brief\n\n## Fix these findings from " + reviewPath + " at 9c1f0a2\n\n1. The owner reads the wrong tree (internal/owner.go:60)\n"),
+	}
+}
+
+// A send-back carries the findings answered fix; a record with none answered
+// fix is refused in words at the act, as the room's sheet refuses it (Sol
+// SOL-S69-02), and one fix among other answers is admitted.
+func TestGoalReviewSendBackRefusesARecordWithNoFindingAnsweredFix(t *testing.T) {
+	t.Parallel()
+	for name, answers := range map[string][]string{
+		"no findings":        nil,
+		"unanswered":         {"unanswered"},
+		"answered otherwise": {"accepted — the tree is right after all", "left open", "follow-up — goal later-one"},
+		"fix in other words": {"fixed by hand"},
+	} {
+		act := sendBackAct()
+		act.Content = reviewRecordAnswered("under-review", "send back", reviewedTip, answers...)
+		if _, err := act.Line("under-review", "Wido"); err == nil || !strings.Contains(err.Error(), "no finding answered fix") {
+			t.Fatalf("%s: a send-back with no finding answered fix was admitted: %v", name, err)
+		}
+	}
+	endpoint := reviewBed(t, underReview("under-review"))
+	request, proof := reviewer(t, endpoint, 9, 1)
+	refused := sendBackAct()
+	refused.Content = reviewRecordAnswered("under-review", "send back", reviewedTip, "unanswered", "left open")
+	if _, err := Review(request, "under-review", refused, proof); err == nil || !strings.Contains(err.Error(), "no finding answered fix") {
+		t.Fatalf("goal review published a send-back with no finding answered fix: %v", err)
+	}
+	admitted := sendBackAct()
+	admitted.Content = reviewRecordAnswered("under-review", "send back", reviewedTip, "left open", "fix — waits for Send back")
+	request, proof = reviewer(t, endpoint, 9, 2)
+	if result, err := Review(request, "under-review", admitted, proof); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("a send-back with one finding answered fix was refused: %+v %v", result, err)
 	}
 }
 
