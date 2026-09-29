@@ -15,7 +15,7 @@ var (
 	// A launch lane (R-123) names the agent it runs on, as a role does.
 	laneRuntimeKey = regexp.MustCompile(`^launch\.([a-z0-9-]+)\.runtime$`)
 	laneModelKey   = regexp.MustCompile(`^launch\.([a-z0-9-]+)\.model$`)
-	modelKeyRe     = regexp.MustCompile(`^(?:role\.[a-z0-9-]+|mode\.[a-z0-9-]+\.role\.[a-z0-9-]+)\.model\.([a-z0-9-]+)$`)
+	modelKeyRe     = regexp.MustCompile(`^(?:role\.[a-z0-9-]+|mode\.[a-z0-9-]+\.role\.[a-z0-9-]+|launch\.[a-z0-9-]+)\.model\.([a-z0-9-]+)$`)
 	tierKeyRe      = regexp.MustCompile(`^model\.tier\.[1-9][0-9]*$`)
 )
 
@@ -25,32 +25,48 @@ var (
 func tailorKnownRuntime(name string) bool { return runtimes.Supported(name) }
 
 // TailorConf rewrites a metasystem.conf in place for the selected
-// runtime set. The selected list becomes the durable
+// runtime set. The selected list, in the registry's canonical preference
+// order whatever order it was asked in, becomes the durable
 // metasystem.runtimes value; unselected runtimes lose their role, mode,
 // and launch-lane runtime bindings, their per-runtime model keys, and
-// their model-tier members; the default runtime is set to the strongest
-// selected runtime. A lane rebound to the default runtime gets that
-// runtime's model: its synthesized model, else its concrete
-// role.default.model.<runtime>, else an explicit empty value that launch
-// settings refuse, never the unselected runtime's model or the launch
-// package's shipped default. Selecting none ("none") drops every role,
+// their model-tier members. A selection with any detectable runtime keeps
+// every agent-picking key on auto, so the adopted repository takes the
+// first of its runtimes on each host's PATH; a binding that named an
+// unselected runtime becomes auto and loses its runtime-independent lane
+// model, so each runtime's own model applies. A selection of synthetic
+// runtimes only (fake) binds the strongest of them instead, since auto
+// never detects one, and a lane rebound to it gets its synthesized model,
+// else its concrete role.default.model.<runtime>, else an explicit empty
+// value that launch settings refuse. Selecting none ("none") drops every role,
 // mode, and launch-lane runtime and model binding and empties the tiers, so no unselected runtime's model
 // placeholder or mode override leaks into an adopted repository. The
 // rewrite is atomic: a temporary sibling is written, then renamed over
 // the original.
 func TailorConf(confPath string, requested []string) error {
-	selected := requested
+	selected := runtimes.Canonical(requested)
 	if len(requested) == 1 && requested[0] == "none" {
 		selected = nil
 	}
 	selectedSet := map[string]bool{}
+	detectable := false
 	for _, runtime := range selected {
 		selectedSet[runtime] = true
+		if declaration, known := runtimes.Lookup(runtime); known && declaration.Executable != "" {
+			detectable = true
+		}
 	}
 	// The fake runtime never outranks a real one: it becomes the default
 	// only when it is the sole selection, which is the fixture-harness
 	// shape (validation suites tailor a copied conf to the fake adapter).
 	defaultRuntime := runtimes.DefaultFor(selectedSet)
+	if detectable {
+		defaultRuntime = config.AutoRuntime
+	}
+	// stale is a runtime binding this selection cannot keep. Auto never is:
+	// it resolves among the selected runtimes on every host.
+	stale := func(value string) bool {
+		return value != "main" && value != config.AutoRuntime && !selectedSet[value]
+	}
 
 	original, err := os.ReadFile(confPath)
 	if err != nil {
@@ -100,7 +116,7 @@ func TailorConf(confPath string, requested []string) error {
 		}
 		parts := strings.SplitN(raw, "=", 2)
 		key, value := strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1])
-		if match := laneRuntimeKey.FindStringSubmatch(key); match != nil && value != "main" && !selectedSet[value] {
+		if match := laneRuntimeKey.FindStringSubmatch(key); match != nil && stale(value) {
 			reboundLanes[match[1]] = true
 		}
 		if match := laneModelKey.FindStringSubmatch(key); match != nil {
@@ -155,24 +171,28 @@ func TailorConf(confPath string, requested []string) error {
 		// name an unselected runtime.
 		if roleRuntimeKey.MatchString(key) || laneRuntimeKey.MatchString(key) {
 			kept := value
-			if value != "main" && !selectedSet[value] {
+			if stale(value) {
 				kept = defaultRuntime
 			}
 			out = append(out, key+"="+kept)
-			// A rebound lane with no model row would inherit the shipped
-			// default model, which belongs to whichever runtime it names.
-			if match := laneRuntimeKey.FindStringSubmatch(key); match != nil &&
+			// A lane rebound to a synthetic runtime with no model row would
+			// inherit a model that belongs to another runtime.
+			if match := laneRuntimeKey.FindStringSubmatch(key); match != nil && !detectable &&
 				reboundLanes[match[1]] && !laneHasModel[match[1]] {
 				out = append(out, "launch."+match[1]+".model="+laneModel)
 			}
 			continue
 		}
 		if match := laneModelKey.FindStringSubmatch(key); match != nil && reboundLanes[match[1]] {
-			out = append(out, key+"="+laneModel)
+			// On auto the lane's runtime-independent model would follow it
+			// to whichever runtime a host has; each runtime's own applies.
+			if !detectable {
+				out = append(out, key+"="+laneModel)
+			}
 			continue
 		}
 		if modeRuntimeKey.MatchString(key) {
-			if value == "main" || selectedSet[value] {
+			if !stale(value) {
 				out = append(out, raw)
 			}
 			continue
@@ -181,16 +201,21 @@ func TailorConf(confPath string, requested []string) error {
 		// The template ships one placeholder model binding keyed by the
 		// literal token <runtime>; it becomes the default runtime's key.
 		if key == "role.code-critic.model.<runtime>" {
-			if defaultRuntime == "fake" {
+			switch {
+			case defaultRuntime == "fake":
 				out = append(out, "role.code-critic.model.fake=fake-model")
-			} else {
+			case detectable:
+				// Under auto the preferred selected runtime takes the slot.
+				out = append(out, "role.code-critic.model."+selected[0]+"="+value)
+			default:
 				out = append(out, "role.code-critic.model."+defaultRuntime+"="+value)
 			}
 			continue
 		}
 
 		if match := modelKeyRe.FindStringSubmatch(key); match != nil && !selectedSet[match[1]] {
-			if defaultRuntime == "fake" {
+			// A launch lane never runs on fake; only roles collapse.
+			if defaultRuntime == "fake" && !strings.HasPrefix(key, "launch.") {
 				prefix := strings.TrimSuffix(key, ".model."+match[1])
 				if !hasFakeModel[prefix] {
 					hasFakeModel[prefix] = true
@@ -240,6 +265,9 @@ func TailorConf(confPath string, requested []string) error {
 			continue
 		}
 		key := "role.default.model." + runtime
+		if _, compiled := config.CompiledDefault(key); compiled {
+			continue
+		}
 		present := false
 		for _, line := range out {
 			if strings.HasPrefix(line, key+"=") {

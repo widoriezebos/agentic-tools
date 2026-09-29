@@ -1,6 +1,7 @@
 package dispatch
 
 import (
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"os"
 	"path/filepath"
 	"strings"
@@ -52,8 +53,10 @@ func TestResolveRosterDecisions(t *testing.T) {
 			},
 		},
 		{
+			// Every role's runtime defaults to auto; a seat that empties the
+			// default roster has none.
 			name:    "no roster anywhere refuses",
-			conf:    []string{"metasystem.runtimes=codex"},
+			conf:    []string{"metasystem.runtimes=codex", "role.default.runtime="},
 			params:  RosterParams{Role: "ghost"},
 			refusal: "role ghost has neither a runtime entry nor role.default.runtime",
 		},
@@ -103,9 +106,9 @@ func TestResolveRosterDecisions(t *testing.T) {
 		},
 		{
 			name:    "missing model refuses naming the runtime",
-			conf:    []string{rosterBase, "role.implementer.runtime=codex"},
+			conf:    []string{"metasystem.runtimes=claude,codex,fake", "role.implementer.runtime=fake"},
 			params:  RosterParams{Role: "implementer"},
-			refusal: "role implementer resolves to codex but has no model.codex value",
+			refusal: "role implementer resolves to fake but has no model.fake value",
 		},
 		{
 			name: "override to the same pair does not escalate",
@@ -283,5 +286,31 @@ func TestResolveRosterReadsItsConfigurationLookupNotTheProcess(t *testing.T) {
 	overlay["METASYSTEM_RUNTIME_CLAUDE_MAXIMAL_MODELS"] = "opus"
 	if err := ValidateRuntimeHazardConfigurationWith(lookup, t.TempDir(), "claude", "opus", HazardDestructiveReach); err != nil {
 		t.Fatalf("the lookup's maximal models were not read: %v", err)
+	}
+}
+
+// A role on auto takes the first listed runtime on the invocation's PATH and
+// that runtime's own model.
+func TestResolveRosterTakesAutoFromThePath(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	if err := testexec.WriteFile(filepath.Join(dir, "devin"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	conf := filepath.Join(t.TempDir(), "metasystem.conf")
+	if err := os.WriteFile(conf, []byte("# overrides only\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	lookup := func(key string) (string, bool) {
+		if key == "PATH" {
+			return dir, true
+		}
+		return "", false
+	}
+	for role, model := range map[string]string{"implementer": "claude-opus-5-5-xhigh", "code-critic": "gpt-6-astra-xhigh", "design-critic": "gpt-6-astra-xhigh"} {
+		got, err := ResolveRoster(RosterParams{ConfPath: conf, Role: role, LookupEnv: lookup})
+		if err != nil || got.RosterPair != "devin:"+model || got.Runtime != "devin" {
+			t.Fatalf("%s: %+v err=%v", role, got, err)
+		}
 	}
 }

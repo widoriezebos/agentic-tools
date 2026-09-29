@@ -65,6 +65,7 @@ func TestWindowReachesTheChildFromTheRecord(t *testing.T) {
 	brief := writeLaunchFile(t, "brief", "hello")
 	data := map[string]json.RawMessage{}
 	setString(data, "brief", brief)
+	setString(data, "model", "a-model")
 	setInt64(data, "window", 345678)
 	codex, err := (CodexExec{}).Command(Record{Kind: "build", WorkingDirectory: t.TempDir(), AdapterData: data}, t.TempDir())
 	if err != nil || len(codex.Args) < 3 || codex.Args[len(codex.Args)-2] != "model_auto_compact_token_limit=345678" || containsString(codex.Environment, "CODEX_CONTEXT_WINDOW=345678") {

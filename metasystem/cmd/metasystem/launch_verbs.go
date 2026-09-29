@@ -41,7 +41,9 @@ func newLaunchManager() *launch.Manager {
 		claudeConfig = configured
 	}
 	claude := launch.ClaudeHeadless{Binary: "claude", ProjectsRoot: filepath.Join(claudeConfig, "projects"), Scanner: scanner}
-	return &launch.Manager{Store: launch.Store{}, Adapters: map[string]launch.Adapter{"codex-exec": codex, "claude-headless": claude, "plain-exec": launch.PlainExec{}},
+	stateRoot, _ := launch.DefaultRoot()
+	devin := launch.DevinPrint{Binary: "devin", StateRoot: stateRoot, Scanner: scanner}
+	return &launch.Manager{Store: launch.Store{}, Adapters: map[string]launch.Adapter{"codex-exec": codex, "claude-headless": claude, "devin-print": devin, "plain-exec": launch.PlainExec{}},
 		Processes: processes, Signaler: processes, Prober: prober, Supervisor: launch.OSSupervisorStarter{Prober: prober}, Now: time.Now,
 		Sleep: time.Sleep, Grace: 2 * time.Second, Poll: 50 * time.Millisecond, StartCap: launch.DefaultWaitTimeout,
 		Settings: settings, SettingsError: settingsErr, Seat: launchSeat(executable, executableErr, goal.ResolveMachine)}

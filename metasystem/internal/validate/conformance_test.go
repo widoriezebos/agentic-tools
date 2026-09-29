@@ -660,15 +660,16 @@ func TestConformanceMissingCriticConfiguration(t *testing.T) {
 	if run.record == nil {
 		t.Fatal("implementer record is missing")
 	}
+	// The code critic's compiled runtime is auto, so a file that names none
+	// still has one: the refusal is the missing chain alone.
 	configuredRuntime := run.configGet("role.code-critic.runtime", "__missing__")
-	if configuredRuntime != "__missing__" {
-		t.Fatalf("unconfigured code-critic runtime = %q", configuredRuntime)
+	if configuredRuntime != "fake" {
+		t.Fatalf("auto code-critic runtime = %q, want fake", configuredRuntime)
 	}
 	recordPath := filepath.Join(f.controller, "artifacts", "agents", "jobs", "impl.json")
 	_, errs, code := run.mergeCritique(recordPath, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", configuredRuntime, run.configGet("independence", ""))
-	want := "conformance failure: the code-critic role is unconfigured; set the exact key role.code-critic.runtime"
-	if code != 1 || len(errs) != 2 || errs[1] != want {
-		t.Fatalf("missing code-critic configuration: code=%d errs=%v; want %q", code, errs, want)
+	if code != 1 || len(errs) != 1 || !strings.Contains(errs[0], "merge requires a code-critic chain") {
+		t.Fatalf("missing code-critic chain: code=%d errs=%v", code, errs)
 	}
 }
 

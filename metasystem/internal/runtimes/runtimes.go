@@ -48,10 +48,15 @@ type Declaration struct {
 	// adoptable. AdoptionDefault marks the one default (claude).
 	Adoptable       bool
 	AdoptionDefault bool
-	// TailoringPriority pins conf tailoring's default-runtime
-	// precedence: the LOWEST selected priority wins (codex 1, devin 2,
-	// claude 3, fake 4 — fake never outranks a real runtime).
+	// TailoringPriority is the canonical preference order: adoption writes
+	// metasystem.runtimes in it, and the LOWEST selected priority wins
+	// where one runtime must be named (claude 1, codex 2, devin 3, fake 4
+	// — fake never outranks a real runtime).
 	TailoringPriority int
+	// Executable is the program whose presence on PATH makes this runtime
+	// available to an `auto` runtime setting; empty for a runtime that is
+	// never detected (fake).
+	Executable string
 	// SynthesizedModel is the fixed model name tailoring materializes
 	// for a synthetic runtime ("fake-model"); empty for real runtimes.
 	SynthesizedModel string
@@ -182,8 +187,31 @@ var startContextEventNameRe = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9]{0,63}$`)
 // declarations is the universe, in tailoring-priority order.
 var declarations = []Declaration{
 	{
+		Name: "claude", HasAdapter: true, HasHostLauncher: true,
+		Adoptable: true, AdoptionDefault: true, TailoringPriority: 1, Executable: "claude",
+		ContextSample:            "per-call",
+		MainObservable:           true,
+		SignatureVectors:         SignatureVectors{Positive: "claude", Lookalike: "metasystem-claude-lookalike"},
+		CommonLifecycleAdapter:   true,
+		CollisionRoots:           []string{".claude"},
+		SessionEnv:               "CLAUDE_PROJECT_DIR",
+		InstructionFile:          "CLAUDE.md",
+		ExpectedStopDelivery:     "shared-reason-v1",
+		RegistrationDirs:         []string{".claude/skills", ".claude/agents"},
+		ShippedEnforcementConfig: "claude-code-hooks.json",
+		StartContextField:        "hookSpecificOutput.additionalContext",
+		StartContextEventName:    "SessionStart",
+		StartContextBytes:        10000,
+		StartContextSources:      []string{"startup", "resume", "clear", "compact"},
+		SelfCheck:                &LiveSelfCheck{VendoredMarker: "$CLAUDE_PROJECT_DIR/metasystem"},
+		ExpectedEnvelopeEnforcement: map[string]Enforcement{
+			"writeRoots": Mapped, "readRoots": Mapped, "network": Mapped,
+		},
+		ExpectedCapabilities: []string{CapUsageRecovery},
+	},
+	{
 		Name: "codex", HasAdapter: true, HasHostLauncher: true,
-		Adoptable: true, TailoringPriority: 1,
+		Adoptable: true, TailoringPriority: 2, Executable: "codex",
 		ContextSample:            "per-call",
 		MainObservable:           true,
 		SignatureVectors:         SignatureVectors{Positive: "codex", Lookalike: "metasystem-codex-lookalike"},
@@ -200,7 +228,7 @@ var declarations = []Declaration{
 	},
 	{
 		Name: "devin", HasAdapter: true, HasHostLauncher: true,
-		Adoptable: true, TailoringPriority: 2,
+		Adoptable: true, TailoringPriority: 3, Executable: "devin",
 		ContextSample:  "per-invocation",
 		MainObservable: false,
 		// The lookalike IS the host CLI's internal ACP helper (issue
@@ -239,29 +267,6 @@ var declarations = []Declaration{
 				ProtocolServer:           true,
 			},
 		},
-	},
-	{
-		Name: "claude", HasAdapter: true, HasHostLauncher: true,
-		Adoptable: true, AdoptionDefault: true, TailoringPriority: 3,
-		ContextSample:            "per-call",
-		MainObservable:           true,
-		SignatureVectors:         SignatureVectors{Positive: "claude", Lookalike: "metasystem-claude-lookalike"},
-		CommonLifecycleAdapter:   true,
-		CollisionRoots:           []string{".claude"},
-		SessionEnv:               "CLAUDE_PROJECT_DIR",
-		InstructionFile:          "CLAUDE.md",
-		ExpectedStopDelivery:     "shared-reason-v1",
-		RegistrationDirs:         []string{".claude/skills", ".claude/agents"},
-		ShippedEnforcementConfig: "claude-code-hooks.json",
-		StartContextField:        "hookSpecificOutput.additionalContext",
-		StartContextEventName:    "SessionStart",
-		StartContextBytes:        10000,
-		StartContextSources:      []string{"startup", "resume", "clear", "compact"},
-		SelfCheck:                &LiveSelfCheck{VendoredMarker: "$CLAUDE_PROJECT_DIR/metasystem"},
-		ExpectedEnvelopeEnforcement: map[string]Enforcement{
-			"writeRoots": Mapped, "readRoots": Mapped, "network": Mapped,
-		},
-		ExpectedCapabilities: []string{CapUsageRecovery},
 	},
 	{
 		Name: "fake", HasAdapter: true, HasHostLauncher: true,
@@ -344,6 +349,20 @@ func DefaultFor(selected map[string]bool) string {
 		}
 	}
 	return best
+}
+
+// Canonical returns names in the canonical preference order: declared
+// runtimes by TailoringPriority, then any undeclared name in the order given.
+func Canonical(names []string) []string {
+	out := append([]string(nil), names...)
+	rank := func(name string) int {
+		if d, ok := Lookup(name); ok {
+			return d.TailoringPriority
+		}
+		return 1 << 30
+	}
+	sort.SliceStable(out, func(i, j int) bool { return rank(out[i]) < rank(out[j]) })
+	return out
 }
 
 // InstructionFiles returns the deduplicated set of declared
