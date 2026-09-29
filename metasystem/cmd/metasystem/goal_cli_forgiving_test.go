@@ -11,6 +11,7 @@ import (
 
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 )
 
 // The forgiving budget scenarios of goal-cli-fixtures.sh (forgiving-*), run
@@ -518,7 +519,7 @@ func TestGoalCLIForgivingBudgetMembers(t *testing.T) {
 
 	code, _, stderr = gcliForgivingPublic(bed, "goal", "budget", "fixture-over-norm", "8h/10/1201m/1/3", gcliForgivingFixture)
 	gcliForgivingWords(t, "fixture authority over the norm", "goal budget", code, stderr,
-		"GOAL_NORM_REFUSED: goal fixture-over-norm", "run the over-norm box at a real enrolled terminal")
+		"GOAL_NORM_REFUSED: goal fixture-over-norm", humanauthority.PersonActRemedy("the over-norm box"))
 	if bed.tip() != tip {
 		t.Fatal("a words refusal published")
 	}

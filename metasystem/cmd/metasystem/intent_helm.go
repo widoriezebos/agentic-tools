@@ -63,13 +63,15 @@ func (o helmOwners) withDefaults() helmOwners {
 func helmIntentCommands() []intentCommand {
 	return []intentCommand{{
 		object: "helm", action: "take", primary: true, audience: "human", summary: "take this seat out of the machinery's hands until you return it",
-		usage: []string{"metasystem helm take --reason TEXT [--by NAME]"},
+		usage: []string{"metasystem helm take --reason TEXT [--name NAME]"},
 		details: []string{
 			"I take the helm of this seat (this checkout and its linked worktrees). From now until metasystem helm return, MetaSystem decides nothing for this seat: " +
 				strings.Join(helmYielding, ", ") + ". What runs keeps running: the helm stops or contains no job. Records are still written and tests still report what they find.",
 			"Run it at a terminal; it works when the ledger, the enrollment or supervision is broken. It refuses an agent anywhere in its chain; it cannot see who created the terminal (metasystem status names the session leader). Taking it again is fine.",
+			"A terminal that is not enrolled is enrolled in the same act, as metasystem system enroll --name NAME would, so a person's acts there are admitted too; an enrolled one is left as it is. The fleet cutoff of a first enrollment is published by metasystem system enroll.",
 		},
-		flags:    []intentFlag{{name: "reason", value: "TEXT", usage: "why you take the helm"}, {name: "by", value: "NAME", advanced: true, usage: "your name (default: the enrolled name, else your account)"}},
+		flags: []intentFlag{{name: "reason", value: "TEXT", usage: "why you take the helm"},
+			{name: "name", aliases: []string{"by"}, value: "NAME", advanced: true, usage: "your name, at the helm and on this terminal's enrollment (default: the enrolled name, else your account)"}},
 		examples: []string{`metasystem helm take --reason "coordinating the U5 builders by hand tonight"`},
 		run:      runIntentHelmTake,
 	}, {
@@ -123,8 +125,9 @@ func runIntentHelmTake(inv *intentInvocation) int {
 			Summary:  "only a person at a terminal no agent started can take the helm, and this shell is not one (" + actorProofReason(err) + "); nothing was done",
 			Decision: "run metasystem helm take yourself, at a terminal no agent started"})
 	}
-	record := helm.Record{By: strings.TrimSpace(inv.input.text("by")), At: now.Format(time.RFC3339), Reason: reason, Checkout: seat.Checkout, Enrollment: "unreadable"}
-	if enrollment, readErr := humanauthority.ReadEnrollment(root); readErr == nil {
+	record := helm.Record{By: strings.TrimSpace(inv.input.text("name")), At: now.Format(time.RFC3339), Reason: reason, Checkout: seat.Checkout, Enrollment: "unreadable"}
+	enrollment, readErr := humanauthority.ReadEnrollment(root)
+	if readErr == nil {
 		record.Enrollment, record.EnrolledAs = "other-terminal", enrollment.Human
 		if _, proveErr := humanauthority.Prove(root, pid, owners.reader, now); proveErr == nil {
 			record.Enrollment = "proven"
@@ -134,22 +137,41 @@ func runIntentHelmTake(inv *intentInvocation) int {
 		}
 	}
 	if record.By == "" {
+		record.By = enrollment.Human
+	}
+	if record.By == "" {
 		record.By = owners.account()
+	}
+	// One notion of a person: the terminal the helm is taken at is enrolled
+	// in the same act, under the same terminal proof, so the helm holder's
+	// acts there are a person's acts. An enrolled terminal is left as it is;
+	// a failed enrollment leaves the helm taken and says what to run.
+	enrollmentLine, enrolledNow := "", false
+	if record.Enrollment != "proven" && (readErr == nil || os.IsNotExist(readErr)) {
+		if enrolled, enrollErr := humanauthority.Enroll(root, pid, owners.reader, record.By, now); enrollErr != nil {
+			enrollmentLine = "this terminal is not enrolled (" + humanauthority.PlainReason(enrollErr) + "): " + humanauthority.PersonActRemedy("")
+		} else {
+			record.Enrollment, record.EnrolledAs, enrolledNow = "proven", enrolled.Human, !enrolled.Repeat
+			if enrolledNow {
+				enrollmentLine = fmt.Sprintf("this terminal is now enrolled as %s (session leader %s (%d@%d)): a person's acts here are admitted",
+					enrolled.Human, helmLeaderName(owners.reader, proof.TerminalRef.PID), proof.TerminalRef.PID, proof.TerminalRef.PIDStartedAt)
+			}
+		}
 	}
 	if record.Machine, err = owners.machine(root); err != nil {
 		record.Machine, _ = os.Hostname()
 	}
 	record.LeaderRef = fmt.Sprintf("%d@%d", proof.TerminalRef.PID, proof.TerminalRef.PIDStartedAt)
-	if leader, readErr := owners.reader.Read(proof.TerminalRef.PID); readErr == nil {
-		record.Leader = filepath.Base(leader.Executable)
+	if leader := helmLeaderName(owners.reader, proof.TerminalRef.PID); leader != "unknown" {
+		record.Leader = leader
 	}
 	standing := helm.Active(path)
 	entry := helm.Entry{At: now, Action: "take", By: record.By, Reason: reason, Leader: record.Leader}
 	targets := []intentTarget{{Kind: "seat", ID: seat.Checkout}}
 	switch {
-	case standing.Active && standing.Malformed == "" && standing.By == record.By && standing.Reason == reason:
+	case standing.Active && standing.Malformed == "" && standing.By == record.By && standing.Reason == reason && standing.Enrollment == record.Enrollment && !enrolledNow:
 		return inv.render(intentResult{Outcome: intentUnchanged, Targets: targets, Summary: "applied: " + helmLine(standing.Record, standing.Since, owners.zone),
-			text: helmTerminalLines(standing.Record), Data: map[string]any{"helm": standing.Record}})
+			text: withLine(helmTerminalLines(standing.Record), enrollmentLine), Data: map[string]any{"helm": standing.Record}})
 	case standing.Active && standing.Malformed == "" && standing.By == record.By:
 		record.At = standing.Record.At
 	case standing.Active:
@@ -159,7 +181,10 @@ func runIntentHelmTake(inv *intentInvocation) int {
 		return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "helm take: the signature cannot be written: " + err.Error(),
 			Decision: "make " + seat.Dir + " writable by you (chmod u+w), then take the helm again"})
 	}
-	lines := helmTerminalLines(record)
+	lines := withLine(helmTerminalLines(record), enrollmentLine)
+	if enrolledNow {
+		lines = []string{enrollmentLine}
+	}
 	if err := helm.Log(path, entry); err != nil {
 		lines = append(lines, "helm.log was not appended: "+err.Error())
 	}
@@ -170,6 +195,45 @@ func runIntentHelmTake(inv *intentInvocation) int {
 	return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Summary: helmLine(record, since, owners.zone), text: lines, Data: map[string]any{"helm": record}})
 }
 
+// helmLeaderName is the session leader's executable name, or unknown.
+func helmLeaderName(reader humanauthority.Reader, pid int64) string {
+	if leader, err := reader.Read(pid); err == nil {
+		return filepath.Base(leader.Executable)
+	}
+	return "unknown"
+}
+
+// helmHolderEnrollment says whether the terminal the helm was taken at is
+// the enrolled one now, and when it is not, the one command that enrolls it.
+func (inv *intentInvocation) helmHolderEnrollment(path string, record helm.Record) string {
+	enroll := shellCommand([]string{"metasystem", "system", "enroll", "--name", record.By})
+	leader := fmt.Sprintf("session leader %s (%s)", record.Leader, record.LeaderRef)
+	layout, err := inv.owners.resolver.ResolveLayout(path)
+	root := layout.InstallationRoot
+	if err == nil {
+		root, err = inv.owners.resolver.RootForInstallation(root)
+	}
+	var enrollment humanauthority.Enrollment
+	if err == nil {
+		enrollment, err = humanauthority.ReadEnrollment(root)
+	}
+	switch {
+	case err != nil:
+		return "the helm holder's terminal is not known to be enrolled (" + err.Error() + "); a person's acts there need it: run there " + enroll
+	case record.LeaderRef != "" && fmt.Sprintf("%d@%d", enrollment.SessionLeader.PID, enrollment.SessionLeader.PIDStartedAt) == record.LeaderRef:
+		return "the helm holder's terminal is enrolled as " + enrollment.Human + " (" + leader + "): a person's acts there are admitted"
+	}
+	return "the helm holder's terminal is not enrolled (" + leader + "; the enrolled terminal is another): a person's acts there are refused until you run there " + enroll
+}
+
+// withLine appends line to lines when there is one.
+func withLine(lines []string, line string) []string {
+	if line == "" {
+		return lines
+	}
+	return append(lines, line)
+}
+
 func helmLine(record helm.Record, since time.Time, zone *time.Location) string {
 	local := since.In(zone)
 	return fmt.Sprintf("HUMAN AT THE HELM since %s by %s: %s — metasystem helm return ends it", local.Format("15:04 MST (2006-01-02)"), record.By, record.Reason)
@@ -178,7 +242,7 @@ func helmLine(record helm.Record, since time.Time, zone *time.Location) string {
 func helmTerminalLines(record helm.Record) []string {
 	switch record.Enrollment {
 	case "proven":
-		return []string{"taken at the enrolled terminal"}
+		return []string{fmt.Sprintf("taken at the enrolled terminal; session leader %s (%s)", record.Leader, record.LeaderRef)}
 	case "other-terminal":
 		return []string{fmt.Sprintf("taken at a terminal that is not enrolled; session leader %s (%s)", record.Leader, record.LeaderRef)}
 	}
@@ -305,7 +369,7 @@ func (inv *intentInvocation) helmStatusLines(path string) []string {
 		return []string{"HUMAN AT THE HELM (the signature is unreadable: " + state.Malformed + ") — metasystem helm return ends it"}
 	}
 	seat, _ := helm.Locate(path)
-	return append(append([]string{helmLine(state.Record, state.Since, zone)}, helmTerminalLines(state.Record)...), inv.helmReport(seat, state.Since)...)
+	return append([]string{helmLine(state.Record, state.Since, zone), inv.helmHolderEnrollment(path, state.Record)}, inv.helmReport(seat, state.Since)...)
 }
 
 // withHelm puts the helm lines first in a status result while the seat is at

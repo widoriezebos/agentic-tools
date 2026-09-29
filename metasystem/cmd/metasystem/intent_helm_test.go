@@ -139,7 +139,9 @@ func TestHelmTakeRefusesNoTerminal(t *testing.T) {
 func TestHelmTakeAtOtherTerminalAttributes(t *testing.T) {
 	t.Parallel()
 	t.Run("HM-1", func(t *testing.T) {
-		record := newHelmBed(t, 60, true).wantTake(nil, 0, "other-terminal", "wido")
+		// The take enrolls the terminal (intent_helm_enroll_test.go) under
+		// the enrolled name, and records the leader it proved.
+		record := newHelmBed(t, 60, true).wantTake(nil, 0, "proven", "Wido")
 		if record.EnrolledAs != "Wido" || record.Leader != "sshd" || record.LeaderRef != "50@500" || record.Machine != "m1e" {
 			t.Fatalf("other-terminal take recorded %+v", record)
 		}
@@ -176,7 +178,7 @@ func TestHelmTakeDetachedLeaderIsAcceptedAndNamed(t *testing.T) {
 	t.Parallel()
 	t.Run("HM-1", func(t *testing.T) {
 		b := newHelmBed(t, 95, true)
-		if record := b.wantTake(nil, 0, "other-terminal", "wido"); record.Leader != "python3" {
+		if record := b.wantTake(nil, 0, "proven", "Wido"); record.Leader != "python3" {
 			t.Fatalf("detached take recorded leader %q", record.Leader)
 		}
 		if _, out := b.run("helm", "take", "--reason", "by hand"); !strings.Contains(out, "session leader python3 (90@900)") {
@@ -312,11 +314,11 @@ func TestReturnRemovesOnlySignature(t *testing.T) {
 func TestHelmStatusLinesInLocalTime(t *testing.T) {
 	t.Parallel()
 	b := newHelmBed(t, 60, true)
-	b.wantTake(nil, 0, "other-terminal", "wido")
+	b.wantTake(nil, 0, "proven", "Wido")
 	inv := &intentInvocation{owners: b.owners}
 	result := inv.withHelm(intentResult{Summary: "status of " + b.root, text: []string{"machinery: stopped"}, Data: map[string]any{}}, b.root)
-	want := "HUMAN AT THE HELM since 21:14 CEST (2026-09-28) by wido: by hand — metasystem helm return ends it"
-	if result.Summary != want || !strings.HasPrefix(result.text[0], "taken at a terminal that is not enrolled; session leader sshd") || result.text[len(result.text)-1] != "machinery: stopped" {
+	want := "HUMAN AT THE HELM since 21:14 CEST (2026-09-28) by Wido: by hand — metasystem helm return ends it"
+	if result.Summary != want || !strings.HasPrefix(result.text[0], "the helm holder's terminal is enrolled as Wido (session leader sshd") || result.text[len(result.text)-1] != "machinery: stopped" {
 		t.Fatalf("status lines: %q %q", result.Summary, result.text)
 	}
 }

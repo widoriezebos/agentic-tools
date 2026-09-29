@@ -16,6 +16,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 )
 
 // RecoveryReport is one entry's disposition.
@@ -158,7 +160,7 @@ func completeFromIntent(e Endpoint, entry Entry, policy SensitiveRecoveryPolicy)
 		return refuseJournaledHumanIntent(e, taken, recoveryHumanBoundaryDetail(taken.Intent.Verb, nil))
 	}
 	if taken.Intent.Verb == "resume" {
-		detail := "human authority cannot be recovered from journal text; rerun goal resume from the enrolled terminal"
+		detail := "human authority cannot be recovered from journal text; " + humanauthority.PersonActRemedy("metasystem goal resume G")
 		if err := MarkTerminal(e.Root, entry.Opid, OutcomeRejected, detail); err != nil {
 			return "", err
 		}
@@ -166,7 +168,7 @@ func completeFromIntent(e Endpoint, entry Entry, policy SensitiveRecoveryPolicy)
 		return "escalation required: " + detail, nil
 	}
 	if taken.Intent.Verb == "set-priority" {
-		detail := "human authority cannot be recovered from journal text; rerun metasystem goal prioritize from the enrolled terminal"
+		detail := "human authority cannot be recovered from journal text; " + humanauthority.PersonActRemedy("metasystem goal prioritize")
 		if err := MarkTerminal(e.Root, entry.Opid, OutcomeRejected, detail); err != nil {
 			return "", err
 		}
@@ -174,7 +176,7 @@ func completeFromIntent(e Endpoint, entry Entry, policy SensitiveRecoveryPolicy)
 		return "escalation required: " + detail, nil
 	}
 	if taken.Intent.Verb == "steal" {
-		detail := "human authority cannot be recovered from journal text; rerun the take-over from the enrolled terminal: metasystem goal claim G --take-over --reason TEXT"
+		detail := "human authority cannot be recovered from journal text; " + humanauthority.PersonActRemedy("the take-over, metasystem goal claim G --take-over --reason TEXT,")
 		if err := MarkTerminal(e.Root, entry.Opid, OutcomeRejected, detail); err != nil {
 			return "", err
 		}
@@ -182,7 +184,7 @@ func completeFromIntent(e Endpoint, entry Entry, policy SensitiveRecoveryPolicy)
 		return "escalation required: " + detail, nil
 	}
 	if taken.Intent.Verb == "split" && taken.Intent.Args["ratifierTier"] == RatifierHuman {
-		detail := "human split ratification cannot be recovered from journal text; rerun goal split from the enrolled terminal against the recorded draft"
+		detail := "human split ratification cannot be recovered from journal text; " + humanauthority.PersonActRemedy("metasystem goal split against the recorded draft")
 		if err := MarkTerminal(e.Root, entry.Opid, OutcomeRejected, detail); err != nil {
 			return "", err
 		}
@@ -477,11 +479,11 @@ func requestForEntry(e Endpoint, entry Entry, parkChecks ...func(string, string)
 	case "grant", "revoke":
 		return PublishRequest{}, fmt.Errorf("%s is proof-bearing and cannot be replayed from journal text; re-run it from the human authority boundary and close this entry by hand", in.Verb)
 	case "set-priority":
-		return PublishRequest{}, fmt.Errorf("set-priority is proof-bearing and cannot be replayed from journal text; re-run it from the enrolled terminal")
+		return PublishRequest{}, fmt.Errorf("set-priority is proof-bearing and cannot be replayed from journal text; %s", humanauthority.PersonActRemedy("metasystem goal prioritize"))
 	case "engine-floor":
 		return PublishRequest{}, fmt.Errorf("engine-floor is retired and cannot be replayed from journal text")
 	case "abandon", "carry", reviewVerb:
-		return PublishRequest{}, fmt.Errorf("%s is proof-bearing and cannot be replayed from journal text; re-run it from the enrolled terminal", in.Verb)
+		return PublishRequest{}, fmt.Errorf("%s is proof-bearing and cannot be replayed from journal text; %s", in.Verb, humanauthority.PersonActRemedy(""))
 	case "split":
 		members, err := ParseMemberDraft([]byte(in.Args["members"]), target)
 		if err != nil {
@@ -526,7 +528,7 @@ func requestForEntry(e Endpoint, entry Entry, parkChecks ...func(string, string)
 		return unparkRequest(r, target, ""), nil
 	case "reopen":
 		if in.Args["from"] == "abandoned" {
-			return PublishRequest{}, fmt.Errorf("reopen is proof-bearing and cannot be replayed from journal text; re-run it from the enrolled terminal")
+			return PublishRequest{}, fmt.Errorf("reopen is proof-bearing and cannot be replayed from journal text; %s", humanauthority.PersonActRemedy("metasystem goal reopen G --by NAME"))
 		}
 		return reopenRequest(r, target), nil
 	case "edit":
@@ -568,7 +570,7 @@ func requestForEntry(e Endpoint, entry Entry, parkChecks ...func(string, string)
 					return PublishRequest{}, fmt.Errorf("%v; close this entry by hand", err)
 				}
 				if change.Allowed {
-					return PublishRequest{}, fmt.Errorf("allowing a goal permission is proof-bearing and cannot be replayed from journal text; re-run it from the enrolled terminal: %s", AllowCommand(target, change.Name))
+					return PublishRequest{}, fmt.Errorf("allowing a goal permission is proof-bearing and cannot be replayed from journal text; %s", humanauthority.PersonActRemedy(AllowCommand(target, change.Name)))
 				}
 				fields.Permission = &change
 			}

@@ -285,7 +285,7 @@ func TestDiskStraysArePersonsActFromAPreview(t *testing.T) {
 		t.Fatalf("preview = %d:\n%s", code, out)
 	}
 	bed.person = errors.New("an agent runs this terminal")
-	if code, out := bed.run("disk", "clean", "--strays"); code != 3 || !strings.Contains(out, "a person runs metasystem disk clean --strays at their enrolled terminal") {
+	if code, out := bed.run("disk", "clean", "--strays"); code != 3 || !strings.Contains(out, "enrolls it once with metasystem system enroll --name NAME, then runs metasystem disk clean --strays there") {
 		t.Fatalf("strays by an agent = %d:\n%s", code, out)
 	}
 	bed.person = nil

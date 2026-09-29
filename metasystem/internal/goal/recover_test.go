@@ -341,7 +341,10 @@ func TestRecoveryRefusesToReplayAbandonEngineFloorAndAbandonedReopen(t *testing.
 				Intent: Intent{Verb: test.verb, Targets: []string{"target"}, Args: test.args},
 			}
 			_, err := requestForEntry(endpoint, entry)
-			want := test.verb + " is proof-bearing and cannot be replayed from journal text; re-run it from the enrolled terminal"
+			want := test.verb + " is proof-bearing and cannot be replayed from journal text; " + humanauthority.PersonActRemedy("")
+			if test.verb == "reopen" {
+				want = "reopen is proof-bearing and cannot be replayed from journal text; " + humanauthority.PersonActRemedy("metasystem goal reopen G --by NAME")
+			}
 			if test.verb == "engine-floor" {
 				want = "engine-floor is retired and cannot be replayed from journal text"
 			}

@@ -16,6 +16,8 @@ import (
 	"os"
 	"sort"
 	"strings"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 )
 
 // outsideReconcileScope names every goal a mapped row would publish that
@@ -565,7 +567,7 @@ func applyRow(t *TreeGoals, r VerbRequest, row MappedVerb, session *replaySessio
 				return nil, handErr
 			}
 			if hand == nil {
-				return nil, fmt.Errorf("allowing %s is a person's act, and a name without a proof is not one; a person runs %s at the enrolled terminal", permission.Words, AllowCommand(row.Id, change.Name))
+				return nil, fmt.Errorf("allowing %s is a person's act, and a name without a proof is not one; %s", permission.Words, humanauthority.PersonActRemedy(AllowCommand(row.Id, change.Name)))
 			}
 		}
 		permission.Set(f, change.Allowed)
