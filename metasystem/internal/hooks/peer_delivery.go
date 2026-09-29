@@ -74,12 +74,30 @@ func OfferPeerMessage(home, seat, lineage string, claims func() (board.Ownership
 		}
 		offer.Waiting = fmt.Sprintf("%d goal messages wait: %s", inbox.GoalWaiting, reason)
 	}
-	if len(inbox.Messages) == 0 {
-		return offer, false
+	// The oldest message that fits is offered; one too long for this room
+	// does not block the rest, and it stays pending (the read's N-1).
+	var message board.Message
+	var text string
+	skipped := 0
+	for _, candidate := range inbox.Messages {
+		if rendered := board.Render(candidate, now, time.Local); len(rendered) <= room {
+			message, text = candidate, rendered
+			break
+		}
+		skipped++
 	}
-	message := inbox.Messages[0]
-	text := board.Render(message, now, time.Local)
-	if len(text) > room {
+	if skipped > 0 {
+		noun := "peer messages do"
+		if skipped == 1 {
+			noun = "peer message does"
+		}
+		line := fmt.Sprintf("%d %s not fit here and wait (metasystem agent inbox shows them)", skipped, noun)
+		if offer.Waiting != "" {
+			line = offer.Waiting + "; " + line
+		}
+		offer.Waiting = line
+	}
+	if text == "" {
 		return offer, false
 	}
 	offer.Text, offer.ID = text, message.ID

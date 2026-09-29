@@ -245,3 +245,27 @@ func TestStopOutputIgnoresPendingMessages(t *testing.T) {
 		})
 	}
 }
+
+// TestOfferSkipsWhatDoesNotFit (R26; the read's N-1): a pending message too
+// long for the room does not block the ones after it: the oldest message
+// that fits is offered, and the skipped one is named in the waiting line and
+// stays pending.
+func TestOfferSkipsWhatDoesNotFit(t *testing.T) {
+	t.Parallel()
+	_, home := peerBoard(t)
+	now := time.Now().UTC()
+	big, err := board.Publish(home, board.Request{Kind: board.KindAsk, From: board.Sender{Machine: "m1a"}, To: board.Address{Machine: "m1b"}, Text: strings.Repeat("b", 4000)}, now.Add(-time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	small := peerAsk(t, home, board.Address{Machine: "m1b"}, "small")
+	room := len(board.Render(small, now, time.Local))
+	offer, ok := OfferPeerMessage(home, "m1b", "L", nil, "tool", room, now)
+	defer offer.Release()
+	if !ok || offer.ID != small.ID || !strings.Contains(offer.Waiting, "1 peer message does not fit here") {
+		t.Fatalf("offer = ok %v id %s waiting %q; want %s offered and %s named as not fitting", ok, offer.ID, offer.Waiting, small.ID, big.Message.ID)
+	}
+	if err := offer.Mark(); err != nil || markerExists(home, big.Message, "m1b") {
+		t.Fatalf("the skipped message was marked: %v", err)
+	}
+}
