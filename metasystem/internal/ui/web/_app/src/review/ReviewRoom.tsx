@@ -25,6 +25,7 @@ import {
   nodded,
   openingDesk,
   ownSnapshot,
+  recordedOutcome,
   roomWord,
   unansweredIn,
   VERDICTS,
@@ -169,17 +170,25 @@ export function Room({ record }: { record: string }) {
   // The sitting ended — the Outcome was recorded, or the human left without
   // one — so the room closes: a review's board, a shaping sitting's record.
   const stood = useRef(false);
+  // The design a shaping sitting stood on, kept past its end: once its Outcome
+  // is recorded the room stays to offer the goal that builds it (g1-s66 D5).
+  const designed = useRef("");
+  const handoff = sitting === null && stood.current && designed.current !== "" && recordedOutcome(partner.deposits)
+    ? designed.current
+    : "";
   useEffect(() => {
     if (sitting !== null) {
       stood.current = stood.current || here;
+      designed.current = sitting.purpose === "shape a design" ? sitting.subject.id : "";
       return;
     }
-    // A verdict that acted stays to say what it did (g1-s69 §3); the human
-    // leaves when they have read it.
-    if (stood.current && here && verdictSaid === "") {
+    // A verdict that acted stays to say what it did (g1-s69 §3), and a design's
+    // recorded Outcome stays to offer its goal; the human leaves when they have
+    // read it.
+    if (stood.current && here && verdictSaid === "" && handoff === "") {
       void navigate(away);
     }
-  }, [sitting, here, navigate, away, verdictSaid]);
+  }, [sitting, here, navigate, away, verdictSaid, handoff]);
 
   const stepOut = async () => {
     setStayed("");
@@ -280,6 +289,14 @@ export function Room({ record }: { record: string }) {
             Back to the board
           </Button>
         </p>
+      )}
+      {handoff !== "" && (
+        <OutcomeRecordedWays
+          design={handoff}
+          onBack={() => {
+            void navigate(away);
+          }}
+        />
       )}
       {stranded !== null && verdictRefusal === "" && (
         <PendingVerdict pending={stranded} busy={verdictBusy} onPress={recordStranded} />
@@ -687,9 +704,9 @@ function ShapingEndSheet({ open, onOpenChange }: { open: boolean; onOpenChange: 
 
 /**
  * A shaping End sheet's two ways out, and no verdict (g1-s67 D7) — and, in a
- * sitting on a design, the way on to the goal that builds it (g1-s66 D5): the
- * design's page, where the New goal sheet opens prefilled from the Outcome once
- * it is recorded.
+ * sitting on a design, where the way on to the goal that builds it comes
+ * (g1-s66 D5): not here, because nothing is recorded yet, but in the room once
+ * the Outcome is (OutcomeRecordedWays).
  */
 export function EndShapingWays({
   busy,
@@ -713,10 +730,27 @@ export function EndShapingWays({
       </Button>
       {design !== "" && (
         <p className="ms-sitting-said">
-          <NavLink to={openGoalPath(documentPath(design))}>{OPEN_FROM}</NavLink>: on the design&apos;s page, with the intent and
-          the next step taken from the Outcome you record.
+          Once you record the Outcome, the room offers {OPEN_FROM}, with the intent and the next step taken from it.
         </p>
       )}
     </div>
+  );
+}
+
+/**
+ * A sitting on a design ended with its Outcome recorded (g1-s66 D5): the way on
+ * to the goal that builds it, on the design's page, where the New goal sheet
+ * opens prefilled from that Outcome, and the way back to the design.
+ */
+export function OutcomeRecordedWays({ design, onBack }: { design: string; onBack: () => void }) {
+  return (
+    <p className="ms-room-banner" role="status">
+      The Outcome is recorded and the sitting has ended.{" "}
+      <NavLink to={openGoalPath(documentPath(design))}>{OPEN_FROM}</NavLink>, with the intent and the next step taken
+      from the Outcome.{" "}
+      <Button primary onClick={onBack}>
+        Back to the design
+      </Button>
+    </p>
   );
 }

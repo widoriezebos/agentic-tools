@@ -5,11 +5,13 @@ import { describe, expect, it } from "vitest";
 
 import type { DocumentPayload } from "./api";
 import { CritiqueBlock, FindingCard, RoundCards, SectionCard, SendFields } from "./Critique";
-import { cardsOf, OPEN_FROM, type DesignLoop, type DesignRound } from "./critiquing";
+import { cardsOf, goalSheetAsked, OPEN_FROM, type DesignLoop, type DesignRound } from "./critiquing";
 import { FileActions } from "./DocumentPane";
 import { foldConflicted, foldOpened, foldUse } from "./folding";
+import { nextStepFor, outcomeParagraph } from "./sections";
 import { PartnerAs } from "../partner/store";
-import { EndShapingWays } from "../review/ReviewRoom";
+import { EndShapingWays, OutcomeRecordedWays } from "../review/ReviewRoom";
+import { recordedOutcome } from "../review/room";
 
 /**
  * The loop from the room on the design's page (g1-s66 §3, §8), read from the
@@ -205,10 +207,26 @@ describe("a goal from this design (D5)", () => {
     expect(markup).toMatch(/<button[^>]*>Open a goal from this design</u);
   });
 
-  it("is reached from a design sitting's End sheet, on the design's page", () => {
+  it("is not reached from a design sitting's End sheet before Record it", () => {
     const markup = rendered(<EndShapingWays busy={false} onDraft={noop} onWithout={noop} design="plans/designs/g1-s66.md" />);
-    expect(markup).toMatch(/<a[^>]*href="\/project\/doc\/plans\/designs\/g1-s66.md\?open-goal=1"[^>]*>Open a goal from this design</u);
+    expect(markup).not.toContain("open-goal");
+    expect(markup).not.toMatch(/<a[^>]*>Open a goal from this design</u);
     const intent = rendered(<EndShapingWays busy={false} onDraft={noop} onWithout={noop} />);
     expect(intent).not.toContain(OPEN_FROM);
+  });
+
+  it("is offered once the Outcome is recorded, and the sheet opens prefilled from it", () => {
+    const cards = [{ kind: "outcome", standing: "waiting" as const }];
+    expect(recordedOutcome(cards)).toBe(false);
+    expect(recordedOutcome([{ kind: "outcome", standing: "recorded" as const }])).toBe(true);
+    const markup = rendered(<OutcomeRecordedWays design="plans/designs/g1-s66.md" onBack={noop} />);
+    expect(markup).toMatch(/<a[^>]*href="\/project\/doc\/plans\/designs\/g1-s66.md\?open-goal=1"[^>]*>Open a goal from this design</u);
+    const before = "# g1-s66\n\n## 5. Step 1\n\nD1 to D5.\n";
+    const recorded = `${before}\n## Outcome\n\nBuild the loop from the room.\n`;
+    expect(goalSheetAsked("?open-goal=1", before)).toBe(false);
+    expect(goalSheetAsked("", recorded)).toBe(false);
+    expect(goalSheetAsked("?open-goal=1", recorded)).toBe(true);
+    expect(outcomeParagraph(recorded)).toBe("Build the loop from the room.");
+    expect(nextStepFor(page.id, recorded)).toBe("Continue from the record plans/designs/g1-s66.md: build step 1 as its §5 says");
   });
 });

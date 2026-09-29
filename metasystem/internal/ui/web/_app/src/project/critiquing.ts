@@ -20,6 +20,7 @@
  */
 
 import { ResourceError } from "./api";
+import { outcomeParagraph } from "./sections";
 
 const DESIGN = "/api/design/";
 const REVIEW = "/review";
@@ -131,12 +132,21 @@ export const USE = "Use";
 export const NOT_THIS = "Not this";
 export const OPEN_FROM = "Open a goal from this design";
 
-/** The address a sitting's End sheet sends a human to, to open that goal (D5). */
-export const OPEN_GOAL_PARAM = "open-goal";
+/** The address a sitting on a design sends a human to, to open that goal once its Outcome is recorded (D5). */
+const OPEN_GOAL_PARAM = "open-goal";
 
 /** The design's page, asking for the New goal sheet once it has read. */
 export function openGoalPath(documentPath: string): string {
   return `${documentPath}?${OPEN_GOAL_PARAM}=1`;
+}
+
+/**
+ * Whether the address asks the design's page for the New goal sheet and the
+ * design, as read, carries the Outcome it is prefilled from: the sheet is never
+ * opened this way on the design's title and an empty next step.
+ */
+export function goalSheetAsked(search: string, source: string): boolean {
+  return new URLSearchParams(search).has(OPEN_GOAL_PARAM) && outcomeParagraph(source) !== "";
 }
 
 /** A goal may fund a critique once it is approved; a claimed goal still is. */

@@ -28,7 +28,7 @@ import {
   type Outcome,
 } from "./editing";
 import { Critique } from "./Critique";
-import { OPEN_FROM, OPEN_GOAL_PARAM, SEND } from "./critiquing";
+import { goalSheetAsked, OPEN_FROM, SEND } from "./critiquing";
 import { Editor } from "./Editor";
 import { Markdown } from "./Markdown";
 import { outlineOf, useReadingRow, type OutlineRow } from "./outline";
@@ -538,11 +538,12 @@ function Read({
           },
         };
 
-  // The End sheet of a sitting on this design sends the human here to open the
-  // goal once the Outcome is recorded: the address asks for the sheet, once.
+  // A sitting on this design whose Outcome is recorded sends the human here to
+  // open the goal: the address asks for the sheet, once, and only on a design
+  // that carries the Outcome it is prefilled from.
   const askedForGoal = useRef(false);
   useEffect(() => {
-    if (askedForGoal.current || working === null || !new URLSearchParams(globalThis.location.search).has(OPEN_GOAL_PARAM)) {
+    if (askedForGoal.current || working === null || !goalSheetAsked(globalThis.location.search, document.source)) {
       return;
     }
     askedForGoal.current = true;
