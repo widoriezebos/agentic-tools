@@ -138,7 +138,7 @@ func TestHelmPersonProofEndToEnd(t *testing.T) {
 	helmMust(t, err)
 
 	code, out = helmEngine(t, root, "goal", "done", "helm-done", "--reason", "landed at the helm")
-	if code != 0 || strings.Count(out, "HUMAN AT THE HELM (wido): the person proof yields to the helm for goal done; caller UNTRUSTED; recorded in "+yields) != 1 {
+	if code != 0 || strings.Count(out, "HUMAN AT THE HELM (wido): the person proof yields to the helm for goal done helm-done; caller UNTRUSTED; recorded in "+yields) != 1 {
 		t.Fatalf("done at the helm: %d\n%s", code, out)
 	}
 	if record := helmLedgerRecord(t, root, "records/goals/helm-done.md"); !strings.Contains(record, " done actor=human:wido ") {
@@ -147,7 +147,7 @@ func TestHelmPersonProofEndToEnd(t *testing.T) {
 	lines := yieldLines(t, yields)
 	var y helm.Yield
 	if len(lines) != 1 || json.Unmarshal([]byte(lines[0]), &y) != nil || y.Boundary != "person-proof" || y.Gate != "human-proof" ||
-		y.By != "wido" || !strings.Contains(y.Subject, "verb=goal done class=UNTRUSTED cwd="+root) {
+		y.By != "wido" || !strings.Contains(y.Subject, "verb=goal done helm-done class=UNTRUSTED cwd="+root) {
 		t.Fatalf("yields %q", lines)
 	}
 

@@ -161,7 +161,7 @@ func TestHelmAdmitsUnderAMalformedSignature(t *testing.T) {
 
 func TestPublicVerbIsTheWordsBeforeTheFirstFlag(t *testing.T) {
 	t.Parallel()
-	for args, want := range map[string]string{"goal done G --reason x": "goal done", "status --json": "status", "": ""} {
+	for args, want := range map[string]string{"goal done G --reason x": "goal done G", "status --json": "status", "goal list --all": "goal list", "": ""} {
 		if got := publicVerb(strings.Fields(args)); got != want {
 			t.Fatalf("publicVerb(%q) = %q, want %q", args, got, want)
 		}

@@ -75,12 +75,12 @@ func (o helmAdmitOwners) withDefaults() helmAdmitOwners {
 	return o
 }
 
-// publicVerb is the command's words before its first flag or target, at most
-// two ("goal open").
+// publicVerb is the command's words before its first flag, at most three:
+// the object, the action and its target ("goal open g1-s76").
 func publicVerb(args []string) string {
 	var words []string
 	for _, arg := range args {
-		if len(words) == 2 || strings.HasPrefix(arg, "-") {
+		if len(words) == 3 || strings.HasPrefix(arg, "-") {
 			break
 		}
 		words = append(words, arg)
