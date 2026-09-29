@@ -517,10 +517,13 @@ type landingOwners struct {
 	status        intentBranchState
 	configured    bool
 	branchDeleted bool
+	// redFix is the open red-on-main entry the goal fixes, or "".
+	redFix string
 }
 
 func (l *landingOwners) install(b *deliveryBed) {
 	b.owners.batchRoot = func(string, time.Time) (string, bool, error) { return "/landing", l.configured, nil }
+	b.owners.redOnMain = func(*intentInvocation, string) (string, error) { return l.redFix, nil }
 	b.owners.batchUnit = func(string, batchJoinRequest, string) (batch.Record, batch.Unit, bool, error) {
 		if l.member == nil {
 			return batch.Record{}, batch.Unit{}, false, nil
@@ -641,18 +644,6 @@ func TestIntentLandRouteEvidence(t *testing.T) {
 		t.Fatalf("a batch refusal never falls back to the hand route: %+v", result)
 	}
 
-	owners.joinErr = nil
-	owners.status = readBranch(2, "critic-root", "reader-record")
-	joins := len(owners.joins)
-	code, result = b.do("work", "land", "standing-validation")
-	expectOutcome(t, "reader-record evidence lands by hand", code, result, intentConfirmed)
-	if len(owners.joins) != joins || owners.candidates != 1 || !slices.Equal(owners.receiptTrees, []string{"cand-eeee"}) || len(owners.pushes) != 1 {
-		t.Fatalf("hand-reader evidence takes the hand route and proves the composed candidate: %v", owners.receiptTrees)
-	}
-	if result.Data.(map[string]any)["batchConfigured"] != true {
-		t.Fatalf("the route is chosen with the batch configured: %+v", result)
-	}
-
 	owners.configured = false
 	b.writeJob(map[string]any{"jobId": "impl1", "role": "implementer", "status": "completed", "goalId": "standing-validation"})
 	code, result = b.do("work", "land", "j2:impl1")
@@ -713,6 +704,50 @@ func TestIntentLandRecovery(t *testing.T) {
 	expectOutcome(t, "proof refused", code, result, intentRefused)
 	if len(owners.preps) != preps || !strings.Contains(result.Summary, "no schema-3 receipt") {
 		t.Fatalf("no receipt, no preparation: %+v", result)
+	}
+}
+
+// With a landing lane configured, the lane is the one route for a goal's
+// selection: a unit read by a reader record, which the lane does not accept,
+// is refused with the read that lets it in, and lands by hand only when its
+// goal fixes an open red on main.
+func TestWorkLandRoutesEverySelectionThroughTheLane(t *testing.T) {
+	t.Parallel()
+	b := newDeliveryBed(t)
+	owners := &landingOwners{configured: true, status: readBranch(2, "critic-root", "reader-record")}
+	owners.install(b)
+
+	code, result := b.do("work", "land", "standing-validation")
+	expectOutcome(t, "a reader-record read under the lane", code, result, intentRefused)
+	if len(owners.joins) != 0 || owners.candidates != 0 || len(owners.pushes) != 0 || len(b.calls) != 0 {
+		t.Fatalf("a selection the lane cannot take is neither joined nor landed by hand: %+v", result)
+	}
+	unit := strings.Repeat("2", 40)
+	if result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "work", "review", "--commit", unit, "--goal", "standing-validation"}) {
+		t.Fatalf("the refusal names the critic read that lets the unit into the lane: %+v", result.Next)
+	}
+	if !strings.Contains(result.Summary, unit) || !strings.Contains(result.Summary, "landing lane") || !strings.Contains(result.Decision, "incident claim") {
+		t.Fatalf("the refusal says what happened and the other way through: %+v", result)
+	}
+
+	owners.redFix = "tr-0001"
+	code, result = b.do("work", "land", "standing-validation")
+	expectOutcome(t, "a red-on-main fix read by a reader record", code, result, intentConfirmed)
+	if len(owners.joins) != 0 || owners.candidates != 1 || len(owners.pushes) != 1 {
+		t.Fatalf("the fix of an open red on main lands by hand: joins=%d candidates=%d pushes=%d", len(owners.joins), owners.candidates, len(owners.pushes))
+	}
+	data := result.Data.(map[string]any)
+	if data["route"] != "hand" || data["redOnMain"] != "tr-0001" {
+		t.Fatalf("the hand route names the red it fixes: %+v", data)
+	}
+
+	fresh := newDeliveryBed(t)
+	critic := &landingOwners{configured: true, redFix: "tr-0001", status: readBranch(2, "critic-root", "critic-root")}
+	critic.install(fresh)
+	code, result = fresh.do("work", "land", "standing-validation")
+	expectOutcome(t, "a critic-read red-on-main fix", code, result, intentInProgress)
+	if len(critic.joins) != 1 || critic.candidates != 0 {
+		t.Fatalf("a fix the lane can take joins it, where it starts at once: %+v", result)
 	}
 }
 
@@ -953,5 +988,60 @@ func TestIntentLandByHandWritesLandingThenLanded(t *testing.T) {
 	}
 	if !landed {
 		t.Fatalf("no landed card after the push: %+v", picture)
+	}
+}
+
+// The red-on-main hand route reads the synced ledger's red register: an open
+// trunk red whose fix goal is the landing goal opens it; the same entry closed,
+// or a known flake, does not.
+func TestWorkLandReadsTheRedOnMainRegisterForTheHandRoute(t *testing.T) {
+	t.Parallel()
+	entry := func(class string, closed bool) goal.TrunkRedEntry {
+		red := goal.TrunkRedEntry{ID: "tr-units", Identity: "tr-units", Group: "units", Status: "open", Failures: []goal.TrunkRedFailure{},
+			Sightings: []goal.TrunkRedSighting{{Attempt: "attempt-1", BaseCommit: strings.Repeat("b", 40), SeenAt: "2026-09-01T09:00:00Z",
+				Opid: goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FR1", "mac-cli", "m1")}},
+			Owner: goal.TrunkRedOwner{Machine: "mac-cli", Since: "2026-09-01T09:10:00Z", How: "joiner"}, FixGoal: bedGoal,
+			Holds: []string{}, Opened: "2026-09-01T09:00:00Z", Class: class}
+		if class == goal.TrunkRedClassKnownFlake {
+			red.AllowanceUntil = "2026-09-04T09:00:00Z"
+		}
+		if closed {
+			red.Closed = &goal.TrunkRedClosure{At: "2026-09-01T10:00:00Z", Attempt: "attempt-2", BaseCommit: strings.Repeat("c", 40),
+				How: "green", Opid: goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FR2", "mac-cli", "m1")}
+		}
+		return red
+	}
+	for _, row := range []struct {
+		name string
+		red  goal.TrunkRedEntry
+		hand bool
+	}{
+		{"open trunk red", entry("", false), true},
+		{"closed trunk red", entry("", true), false},
+		{"known flake", entry(goal.TrunkRedClassKnownFlake, false), false},
+	} {
+		b, owners, _ := gatedDeliveryBed(t, clearedAt(gateBedTip))
+		owners.status = readBranch(2, "critic-root", "reader-record")
+		b.owners.redOnMain = nil
+		if problems := func() []goal.Problem {
+			rendered := goal.RenderTrunkRed([]goal.TrunkRedEntry{row.red})
+			_, problems := goal.ParseTrunkRed(rendered)
+			b.repo.commit(b.repo.canonical).files["plans/goals/trunk-red.json"] = rendered
+			return problems
+		}(); len(problems) != 0 {
+			t.Fatalf("%s: the bed's register is invalid: %v", row.name, problems)
+		}
+		code, result := b.do("work", "land", bedGoal)
+		if row.hand {
+			expectOutcome(t, row.name, code, result, intentConfirmed)
+			if result.Data.(map[string]any)["redOnMain"] != "tr-units" || len(owners.joins) != 0 || len(owners.pushes) != 1 {
+				t.Fatalf("%s: the fix did not land by hand naming its red: %+v", row.name, result)
+			}
+			continue
+		}
+		expectOutcome(t, row.name, code, result, intentRefused)
+		if owners.candidates != 0 || len(owners.joins) != 0 || result.Next == nil {
+			t.Fatalf("%s: a goal fixing no open trunk red took a route: %+v", row.name, result)
+		}
 	}
 }

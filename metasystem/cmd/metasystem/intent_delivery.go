@@ -250,6 +250,9 @@ type intentDeliveryOwners struct {
 	landingGate func(inv *intentInvocation, goalID, tip string) (string, error)
 	// branchTip reads a goal branch's tip at origin; nil reads origin.
 	branchTip func(root, goalID string) (string, error)
+	// redOnMain names the open red-on-main entry whose fix goal is goalID,
+	// or "" when the goal fixes none; nil reads the synced ledger.
+	redOnMain func(inv *intentInvocation, goalID string) (string, error)
 	// recordLanded writes the holder's landed line after a confirmed
 	// publication; nil selects the ledger's own act.
 	recordLanded func(inv *intentInvocation, goalID string) error
@@ -1690,14 +1693,61 @@ func (inv *intentInvocation) landGoalRoute(goalID, through string) intentResult 
 	if refused := inv.admitLanding(targets, goalID, state.BranchTip); refused != nil {
 		return *refused
 	}
-	kinds := map[string]bool{}
-	for _, source := range state.Sources[:count] {
-		kinds[source] = true
+	if !configured {
+		return inv.landByHand(targets, goalID, through, subject, state, base, configured)
 	}
-	if configured && len(kinds) == 1 && kinds["critic-root"] {
+	// With a landing lane configured, the lane is the one route. It takes
+	// only units read by a critic root; a selection holding a unit read by a
+	// reader record lands by hand only as the fix of an open red on main.
+	unread := slices.IndexFunc(state.Sources[:count], func(source string) bool { return source != "critic-root" })
+	if unread < 0 {
 		return inv.joinBatch(targets, batchJoinRequest{SeatRoot: root, LandingRoot: landingRoot, GoalID: goalID, Through: through, Last: through == ""}, state.BranchTip)
 	}
-	return inv.landByHand(targets, goalID, through, subject, state, base, configured)
+	entry, err := inv.redOnMainFixed(goalID)
+	if err != nil {
+		return intentResult{Targets: targets, Outcome: intentRefused, code: 1,
+			Summary:  fmt.Sprintf("the red-on-main register cannot be read, so work land cannot tell whether goal %s may land by hand: %v; nothing was landed", goalID, err),
+			Decision: "run metasystem goal sync, then the same work land again"}
+	}
+	if entry == "" {
+		commit := state.Status.Units[unread].Commit
+		return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Data: map[string]any{"route": "batch", "unit": commit, "source": state.Sources[unread]},
+			Summary: fmt.Sprintf("unit %s of goal %s was read from a reader record, and the landing lane takes only units read by a critic; nothing was landed", commit, goalID),
+			next:    []string{"metasystem", "work", "review", "--commit", commit, "--goal", goalID}, nextReason: "reads that unit through a critic, after which work land joins the lane",
+			Decision: "if this goal fixes a red on main, claim the incident for it (metasystem incident claim E --goal " + goalID + ") and it lands by hand"}
+	}
+	result := inv.landByHand(targets, goalID, through, subject, state, base, configured)
+	if data, ok := result.Data.(map[string]any); ok {
+		data["redOnMain"] = entry
+	}
+	return result
+}
+
+// redOnMainFixed names the open red-on-main entry the goal is the fix goal
+// of, or "" when it fixes none. Only a trunk red holds landings, so only a
+// trunk red opens the hand route beside a configured landing lane.
+func (inv *intentInvocation) redOnMainFixed(goalID string) (string, error) {
+	if read := inv.delivery().redOnMain; read != nil {
+		return read(inv, goalID)
+	}
+	endpoint, err := inv.owners.dependencies.endpoint(inv.stateRoot)
+	if err != nil {
+		return "", err
+	}
+	now, err := inv.owners.commandNow(inv.stateRoot)
+	if err != nil {
+		return "", err
+	}
+	projection, err := goal.Project(endpoint, false, now)
+	if err != nil {
+		return "", err
+	}
+	for _, entry := range projection.Tree.TrunkRed {
+		if entry.Closed == nil && entry.FixGoal == goalID && entry.EntryClass() == goal.TrunkRedClassTrunkRed {
+			return entry.ID, nil
+		}
+	}
+	return "", nil
 }
 
 // resumeSweep finishes a pushed hand landing whose merged branch was not yet
