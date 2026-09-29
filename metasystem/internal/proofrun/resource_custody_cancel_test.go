@@ -357,7 +357,10 @@ func TestGLEResourceCommandCancellationDrainsClosedFDDescendantBeforeRelease(t *
 	if err := identity.SignalExact(prober, child, syscall.SIGTERM); err != nil {
 		t.Fatalf("send TERM to exact descendant: %v", err)
 	}
-	waitCustodyFileWhile(t, termAckPath, 0, runDone, func() error { return runErr })
+	// The trap's redirection creates the file before printf writes it, so
+	// existence alone could read an empty acknowledgement.
+	waitCustodyBarrier(t, termAckPath, 0, runDone, func() error { return runErr },
+		func() bool { return completeCustodyRecord(termAckPath) })
 	termAck, err := os.ReadFile(termAckPath)
 	if err != nil || string(termAck) != "TERM\n" {
 		t.Fatalf("exact descendant did not acknowledge TERM: ack=%q err=%v", termAck, err)

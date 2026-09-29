@@ -393,6 +393,9 @@ func PrepareScratchEnvironmentFor(request *TestRunRequest, run *ScratchRun, poli
 				return fmt.Errorf("scratch environment: group %s: %w", id, err)
 			}
 		}
+		if err := descriptor.disableGoTelemetry(group); err != nil {
+			return fmt.Errorf("scratch environment: group %s: %w", id, err)
+		}
 		if prepared.DefaultGoEnv == "managed" {
 			_, post, _, _ := descriptor.defaultGoEnvPaths(request.Environment, group)
 			if err := os.MkdirAll(filepath.Dir(post), 0o700); err != nil {
@@ -565,22 +568,63 @@ func goEnvFileFor(environment []string, goos string) (string, bool, error) {
 		}
 		return value, false, nil
 	}
+	config := userConfigDirFor(environment, goos)
+	if config == "" {
+		return "", false, nil
+	}
+	return filepath.Join(config, "go", "env"), false, nil
+}
+
+// userConfigDirFor is os.UserConfigDir's rule evaluated over environment on
+// goos rather than this process's; empty when it has no answer.
+func userConfigDirFor(environment []string, goos string) string {
 	home := lookupEnvironment(environment, "HOME")
 	switch goos {
 	case "darwin", "ios":
 		if home == "" {
-			return "", false, nil
+			return ""
 		}
-		return filepath.Join(home, "Library", "Application Support", "go", "env"), false, nil
+		return filepath.Join(home, "Library", "Application Support")
 	default:
 		if config := lookupEnvironment(environment, "XDG_CONFIG_HOME"); filepath.IsAbs(config) {
-			return filepath.Join(config, "go", "env"), false, nil
+			return config
 		}
 		if home == "" {
-			return "", false, nil
+			return ""
 		}
-		return filepath.Join(home, ".config", "go", "env"), false, nil
+		return filepath.Join(home, ".config")
 	}
+}
+
+// disableGoTelemetry records Go telemetry as off in the group's managed
+// config dir. Under any other mode a go command starts a daemonized sidecar
+// (its own session, outside every process-group custody) that outlives the
+// command and recreates its directory chain under the config dir, racing
+// the lease release and root removal. A declared HOME or XDG_CONFIG_HOME
+// that moves the config dir out of the group's tree is the user's own and
+// stays untouched.
+func (e *ScratchEnvironment) disableGoTelemetry(group testpolicy.Group) error {
+	values := e.managedValues(group.ID)
+	var environment []string
+	for _, name := range []string{"HOME", "XDG_CONFIG_HOME"} {
+		value, declared := group.Env[name]
+		if !declared {
+			value = values[name]
+		}
+		environment = append(environment, name+"="+value)
+	}
+	config := userConfigDirFor(environment, runtime.GOOS)
+	if !strings.HasPrefix(config, e.groupDir(group.ID)+string(filepath.Separator)) {
+		return nil
+	}
+	directory := filepath.Join(config, "go", "telemetry")
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		return fmt.Errorf("turn go telemetry off: %w", err)
+	}
+	if err := writeScratchFile(filepath.Join(directory, "mode"), []byte("off")); err != nil {
+		return fmt.Errorf("turn go telemetry off: %w", err)
+	}
+	return nil
 }
 
 // readGoEnvFile returns an absent file as empty, the way go reads it. The

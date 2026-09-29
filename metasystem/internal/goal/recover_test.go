@@ -99,7 +99,7 @@ func TestRecoveryCompletesADeadOwnersOpen(t *testing.T) {
 		t.Fatalf("recovery visits the stranded entry: %+v", reports)
 	}
 	// The work LANDED under the ORIGINAL opid.
-	p, err := Project(aEndpoint, true, time.Now())
+	p, err := projectFetched(aEndpoint, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,7 +145,7 @@ func TestRecoveryRebuildsAnswer(t *testing.T) {
 	if _, err := Recover(endpoint); err != nil {
 		t.Fatal("repeated recovery failed:", err)
 	}
-	projection, err := Project(endpoint, true, time.Now())
+	projection, err := projectFetched(endpoint, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -182,7 +182,7 @@ func TestRecoveryRefusesOpenClaimWithoutHumanApproval(t *testing.T) {
 	if _, err := Recover(aEndpoint); err != nil {
 		t.Fatal(err)
 	}
-	p, err := Project(aEndpoint, true, time.Now())
+	p, err := projectFetched(aEndpoint, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -279,7 +279,7 @@ func TestRecoveryUnblocksAStrandedPush(t *testing.T) {
 	if !clear {
 		t.Fatalf("recovery completes the stranded push: %+v", reports)
 	}
-	p, err := Project(aEndpoint, true, time.Now())
+	p, err := projectFetched(aEndpoint, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -399,7 +399,7 @@ func TestRecoveryRebuildsParkAndEdit(t *testing.T) {
 	if _, err := RecoverWithPolicy(aEndpoint, fixtureParkRecoveryPolicy{check: func(string, string) (string, error) { return "", nil }}); err != nil {
 		t.Fatal(err)
 	}
-	p, err := Project(aEndpoint, true, time.Now())
+	p, err := projectFetched(aEndpoint, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -426,7 +426,7 @@ func TestRecoveryRebuildsParkAndEdit(t *testing.T) {
 	if _, err := Recover(aEndpoint); err != nil {
 		t.Fatal(err)
 	}
-	p, err = Project(aEndpoint, true, time.Now())
+	p, err = projectFetched(aEndpoint, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -479,7 +479,7 @@ func TestRecoveryRefusesParkWhenGoalBranchIsUnpushed(t *testing.T) {
 	if err != nil || entry.Phase != PhaseTerminal || entry.Outcome != OutcomeRejected || !strings.Contains(entry.Evidence, "GOAL_PARK_UNPUSHED") {
 		t.Fatalf("entry=%+v reports=%+v err=%v", entry, reports, err)
 	}
-	projection, err := Project(endpoint, true, time.Now())
+	projection, err := projectFetched(endpoint, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -503,7 +503,7 @@ func TestRecoveryCompletesParkWhenGoalBranchIsPushed(t *testing.T) {
 	if err != nil || entry.Phase != PhaseTerminal || entry.Outcome != OutcomeConfirmed {
 		t.Fatalf("entry=%+v err=%v", entry, err)
 	}
-	projection, err := Project(endpoint, true, time.Now())
+	projection, err := projectFetched(endpoint, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -545,7 +545,7 @@ func TestRecoveryReplaysOwnReleaseAndRefusesHumanRequiredStoppingActs(t *testing
 	if _, err := Recover(endpoint); err != nil {
 		t.Fatal(err)
 	}
-	projection, err := Project(endpoint, true, time.Now())
+	projection, err := projectFetched(endpoint, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -579,7 +579,7 @@ func TestRecoveryReplaysOwnReleaseAndRefusesHumanRequiredStoppingActs(t *testing
 	if after := acceptedTipForEndpoint(t, endpoint); after != acceptedBefore {
 		t.Fatalf("recovery moved the accepted goal tip: before=%s after=%s", acceptedBefore, after)
 	}
-	projection, err = Project(endpoint, true, time.Now())
+	projection, err = projectFetched(endpoint, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -620,7 +620,7 @@ func TestRecoveryReplaysOwnReleaseAndRefusesHumanRequiredStoppingActs(t *testing
 	foreignOpid := Opid("01J5X00000000000000000Q145", "mac-a", "lin-1")
 	strandEntry(t, root, foreignOpid, PhaseCreated, Intent{Verb: "release", Targets: []string{"foreign-release"}, Args: map[string]string{"by": "Wido"}})
 	assertHumanBoundaryRefusal(foreignOpid, "release", "foreign release", humanauthority.GradeTerminal, foreignTip)
-	projection, err = Project(endpoint, true, time.Now())
+	projection, err = projectFetched(endpoint, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -638,7 +638,7 @@ func TestRecoveryReplaysOwnReleaseAndRefusesHumanRequiredStoppingActs(t *testing
 	humanOriginOpid := Opid("01J5X00000000000000000Q147", "mac-a", "lin-1")
 	strandEntry(t, root, humanOriginOpid, PhaseCreated, Intent{Verb: "park", Targets: []string{"human-origin"}, Args: map[string]string{"because": "journal pause", "by": "Wido"}})
 	assertHumanBoundaryRefusal(humanOriginOpid, "park", "park of a human-origin goal", humanauthority.GradeTerminal, humanOriginTip)
-	projection, err = Project(endpoint, true, time.Now())
+	projection, err = projectFetched(endpoint, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -662,7 +662,7 @@ func TestRecoveryReplaysOwnReleaseAndRefusesHumanRequiredStoppingActs(t *testing
 	unparkOpid := Opid("01J5X00000000000000000Q150", "mac-a", "lin-1")
 	strandEntry(t, root, unparkOpid, PhaseCreated, Intent{Verb: "unpark", Targets: []string{"human-park"}, Args: map[string]string{"by": "Wido"}})
 	assertHumanBoundaryRefusal(unparkOpid, "unpark", "unpark of a human park to queued", humanauthority.GradeTerminal, humanParkTip)
-	projection, err = Project(endpoint, true, time.Now())
+	projection, err = projectFetched(endpoint, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -853,7 +853,7 @@ func TestRecoveryHandlesOwnEntriesAndDoneRebuild(t *testing.T) {
 	if _, err := Recover(aEndpoint); err != nil {
 		t.Fatal(err)
 	}
-	p, err := Project(aEndpoint, true, time.Now())
+	p, err := projectFetched(aEndpoint, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -887,7 +887,7 @@ func TestRecoveryRunsTheRealVerbSemanticsAcrossAnArc(t *testing.T) {
 	if _, err := Recover(aEndpoint); err != nil {
 		t.Fatal(err)
 	}
-	p, err := Project(aEndpoint, true, time.Now())
+	p, err := projectFetched(aEndpoint, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -917,7 +917,7 @@ func TestRecoveryRunsTheRealVerbSemanticsAcrossAnArc(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, err = Project(bEndpoint, true, time.Now())
+	p, err = projectFetched(bEndpoint, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1003,7 +1003,7 @@ func TestRecoveryRefusesJournaledHumanDone(t *testing.T) {
 	if after := acceptedTipForEndpoint(t, aEndpoint); after != acceptedBefore {
 		t.Fatalf("recovery moved the accepted goal tip: before=%s after=%s", acceptedBefore, after)
 	}
-	p, err := Project(aEndpoint, true, time.Now())
+	p, err := projectFetched(aEndpoint, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1159,7 +1159,7 @@ func TestRecoveryCompletesADeadOwnersBlockerOpen(t *testing.T) {
 	if _, err := Recover(aEndpoint); err != nil {
 		t.Fatal(err)
 	}
-	p, err := Project(aEndpoint, true, time.Now())
+	p, err := projectFetched(aEndpoint, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}

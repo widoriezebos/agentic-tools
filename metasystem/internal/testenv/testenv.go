@@ -842,6 +842,22 @@ func openRegistryOwner(home string) (*os.File, error) {
 	return owner, nil
 }
 
+// unlockAndClose ends a hold on a registry owner lock or a custodian log
+// lock: the flock is released on the open file description first, so a
+// duplicate a concurrent fork made before its exec cannot keep the lock
+// after the holder has ended. The launcher's own copy of a custodian's log
+// is not ended this way: the custodian inherits that description and its
+// lock on purpose.
+func unlockAndClose(file *os.File) error {
+	unlockErr := unix.Flock(int(file.Fd()), unix.LOCK_UN)
+	return errors.Join(unlockErr, file.Close())
+}
+
+// registryLockTaken runs each time a registry sweep or observation takes a
+// home's owner lock or a custodian log's lock; tests stand a fork's
+// duplicate descriptor in at that moment.
+var registryLockTaken = func(*os.File) {}
+
 func (registry *registryHomeLease) cleanup() error {
 	return registry.cleanupReporting(os.Stderr)
 }
@@ -855,16 +871,16 @@ func (registry *registryHomeLease) cleanupReporting(output io.Writer) error {
 		return nil
 	}
 	if !registry.owner {
-		return registry.lock.Close()
+		return unlockAndClose(registry.lock)
 	}
 	if err := unix.Flock(int(registry.lock.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
-		closeErr := registry.lock.Close()
+		closeErr := unlockAndClose(registry.lock)
 		if lockWouldBlock(err) {
 			return closeErr
 		}
 		return errors.Join(fmt.Errorf("lock registry home for cleanup: %w", err), closeErr)
 	}
-	return errors.Join(removeSettledRegistryHome(registry.path, output), registry.lock.Close())
+	return errors.Join(removeSettledRegistryHome(registry.path, output), unlockAndClose(registry.lock))
 }
 
 // removeSettledRegistryHome removes the sidecars of home's finished custodians
@@ -931,10 +947,11 @@ func HomeSettled(home string) bool {
 	if err != nil {
 		return false
 	}
-	defer owner.Close()
+	defer unlockAndClose(owner)
 	if err := unix.Flock(int(owner.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
 		return false
 	}
+	registryLockTaken(owner)
 	entries, err := os.ReadDir(filepath.Dir(home))
 	if err != nil {
 		return false
@@ -965,13 +982,14 @@ func custodianSidecarsSettled(home, pid string) bool {
 		return false
 	}
 	log := os.NewFile(uintptr(fd), logPath)
-	defer log.Close()
+	defer unlockAndClose(log)
 	if opened, err := log.Stat(); err != nil || !opened.Mode().IsRegular() {
 		return false
 	}
 	if err := unix.Flock(int(log.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
 		return false
 	}
+	registryLockTaken(log)
 	absent, err := fixtureCustodianRecordsAbsent(recordsPath)
 	return absent && err == nil
 }
@@ -988,13 +1006,14 @@ func RemoveSettledHome(home string, output io.Writer) error {
 		}
 		return err
 	}
-	defer owner.Close()
+	defer unlockAndClose(owner)
 	if err := unix.Flock(int(owner.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
 		if lockWouldBlock(err) {
 			return nil
 		}
 		return fmt.Errorf("lock registry home %s: %w", home, err)
 	}
+	registryLockTaken(owner)
 	return removeSettledRegistryHome(home, output)
 }
 
@@ -1030,7 +1049,7 @@ func removeFixtureCustodianSidecarsLocking(home, pid string, output io.Writer, l
 		return false, fmt.Errorf("open custodian log: %w", err)
 	}
 	log := os.NewFile(uintptr(fd), logPath)
-	defer log.Close()
+	defer unlockAndClose(log)
 	opened, err := log.Stat()
 	if err != nil || !opened.Mode().IsRegular() {
 		return false, err
@@ -1041,6 +1060,7 @@ func removeFixtureCustodianSidecarsLocking(home, pid string, output io.Writer, l
 		}
 		return false, fmt.Errorf("lock custodian log: %w", err)
 	}
+	registryLockTaken(log)
 	if pathInfo, err := os.Lstat(logPath); err != nil || !os.SameFile(opened, pathInfo) {
 		return false, err
 	}

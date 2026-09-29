@@ -2480,10 +2480,6 @@ func recordGoalApprovalProof(root, operationID, action string, proof humanauthor
 	return nil
 }
 
-func runGoalClassifySweepWithAuthority(args []string, prove goalAuthorityProver) int {
-	return runGoalClassifySweepWithInputs(args, prove, goalCommandNow, defaultSyncRequestDependencies())
-}
-
 func runGoalClassifySweepWithInputs(args []string, prove goalAuthorityProver, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies) int {
 	values := newHumanVerbValues("classify-sweep", args)
 	values.bindDependencies(dependencies)

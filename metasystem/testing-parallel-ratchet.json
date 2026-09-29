@@ -100,6 +100,11 @@
   },
   "exempt": [
     {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/testenv",
+      "test": "TestARegistrySweepLeavesNoLockAForkDuplicated",
+      "reason": "replaces the package's registryLockTaken seam to stand a fork's duplicate in at every registry lock a sweep takes"
+    },
+    {
       "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/steward",
       "test": "TestInspectHandoffsObservesWithoutALock",
       "reason": "mints handoff nonces through the package's mintHandoffNonce seam (useHandoffNonces)"
@@ -148,6 +153,11 @@
       "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun",
       "test": "TestScratchWorkerProcessAppendsThroughTheInheritedWriter",
       "reason": "starts its own writer child while the scratch writer is open and then proves the lock free, so forks cannot be excluded; a parallel test's fork would hold a copy of the writer description until it execs"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun",
+      "test": "TestScratchEnvironmentRealGoWorkload",
+      "reason": "runs its own go child while the scratch writer is open and then proves the lock free, so forks cannot be excluded; a parallel test's fork would hold a copy of the writer description until it execs"
     },
     {
       "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",

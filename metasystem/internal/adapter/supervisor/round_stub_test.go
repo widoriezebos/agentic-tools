@@ -33,8 +33,17 @@ func stubRound(t *testing.T, runtime, cli, script string) (*fakeInstall, Deps) {
 		return "", exec.ErrNotFound
 	}
 	d.Git = func(string, ...string) (string, bool) { return "", false }
+	d.Environ = append(d.Environ, "STUB_DISPATCH_LOG="+f.dispatcher.Log)
 	return f, d
 }
+
+// stubAwaitsCustody holds a stub CLI until the supervisor has recorded its
+// exact identity in custody. A stub that drained its stdin file and exited at
+// once could end before the supervisor's first custody attempt, which then
+// refuses the round ("codex child exited before custody identity was
+// recorded", batch 13 VM); a real CLI outlives that registration.
+const stubAwaitsCustody = `until grep -q '"__register-custody"' "$STUB_DISPATCH_LOG" 2>/dev/null; do sleep 0.01; done
+`
 
 func stubReturn(t *testing.T, f *fakeInstall) string {
 	t.Helper()
@@ -55,7 +64,7 @@ func TestClaudeDelegateRoundCompletes(t *testing.T) {
 	ret := stubReturn(t, f)
 	// The stub signals the session through the hook's channel, then streams
 	// the result line whose result is the return.
-	script := `cat >/dev/null
+	script := stubAwaitsCustody + `cat >/dev/null
 printf '{"session_id":"claude-session","model":"claude-model"}' >"$METASYSTEM_CLAUDE_SESSION_SIGNAL"
 printf '%s\n' "$STUB_RESULT"
 `
@@ -88,7 +97,7 @@ func TestCodexDelegateRoundCompletes(t *testing.T) {
 	t.Parallel()
 	f, d := stubRound(t, "codex", "codex", "")
 	ret := stubReturn(t, f)
-	script := `out=
+	script := stubAwaitsCustody + `out=
 while [ $# -gt 0 ]; do case "$1" in -o|--output-last-message) out=$2; shift 2 ;; *) shift ;; esac; done
 cat >/dev/null
 printf '{"type":"thread.started","thread_id":"codex-thread"}\n'

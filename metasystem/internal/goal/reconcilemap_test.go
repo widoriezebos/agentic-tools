@@ -212,7 +212,7 @@ func TestFullArcHandParkMapsToOneCascade(t *testing.T) {
 			t.Fatalf("set-arc %s: %+v %v", id, res, err)
 		}
 	}
-	p, err := Project(endpoint, true, time.Now())
+	p, err := projectFetched(endpoint, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
