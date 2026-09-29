@@ -8,6 +8,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/partner"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/uitools"
 )
 
 // Asking what happened (g1-s68 D2, §6): one press sends one fixed sentence in
@@ -127,4 +128,33 @@ func TestATroubleOverTheBoundIsNeverATurn(t *testing.T) {
 	testutil.Require(t, "the snapshot reads", err, nil)
 	testutil.Expect(t, "nothing was written", len(snapshot.Messages), 0)
 	testutil.Expect(t, "nothing was sent", len(handed.Prompts()), 0)
+}
+
+// A recovery that is not one of the ten goal acts never arrives as a card
+// (g1-s68 D3, S68-04): the tool refuses "open the room" at the call, and a
+// frame that names a route the catalogue does not carry is refused by the
+// service rather than offered with an Apply nothing could perform.
+func TestARecoveryThatIsNotAGoalActIsNeverACard(t *testing.T) {
+	t.Parallel()
+	called := uitools.Readers{}.Answer(uitools.OpPropose, uitools.Args{
+		"verb": "open the room", "goal": "fleet-presence", "explanation": "the room offers Review the new tip",
+	})
+	testutil.Expect(t, "the tool refuses the call",
+		strings.HasPrefix(called.Text(), "Outcome: this call was refused"), true)
+
+	service := serviceProposing(t, proposed("open-room", "fleet-presence", nil,
+		"the room offers Review the new tip"))
+	events, stop := service.Subscribe()
+	defer stop()
+	_, err := service.AskTrouble(context.Background(), "Wido", "", "key-room", landRefused(), onDecisions())
+	testutil.Require(t, "the trouble is asked", err, nil)
+	drain(t, events)
+	read, err := service.Snapshot("Wido", 100)
+	testutil.Require(t, "the conversation reads back", err, nil)
+	kept := read.Messages[len(read.Messages)-1].Proposals
+	for _, proposal := range kept {
+		testutil.Expect(t, "no card is offered for "+proposal.Verb, proposal.Offered, false)
+	}
+	testutil.Require(t, "the refused line is kept", len(kept), 1)
+	testutil.Expect(t, "and says why", kept[0].Reason != "", true)
 }

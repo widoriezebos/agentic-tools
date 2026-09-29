@@ -301,6 +301,19 @@ func (s *Service) admitProposal(running *turn, prepared Action) {
 		return
 	}
 
+	// A route the catalogue does not carry is not a card: Apply could perform
+	// nothing, and a press elsewhere in this interface is a link in the answer,
+	// never a proposal (g1-s68 D3, S68-04). The tool refuses such a call; this
+	// refuses a frame that never passed through it.
+	if _, known := uitools.ProposedActOf(prepared.Verb); !known {
+		s.refuseProposal(running, Proposal{
+			Index: index, Verb: boundedGoal(prepared.Verb), Goal: boundedGoal(prepared.Goal),
+			State: ProposalWaiting, Version: 1,
+			At: s.now().UTC().Format(time.RFC3339),
+		}, "this is not one of the ten acts a proposal can be; say the press and give the place as a link")
+		return
+	}
+
 	admitted := Proposal{
 		Index: index, Verb: prepared.Verb, Goal: prepared.Goal, Fields: copiedFields(prepared.Fields),
 		Why: prepared.Why, State: ProposalWaiting, Version: 1,
