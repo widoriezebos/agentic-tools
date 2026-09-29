@@ -114,20 +114,6 @@ type TaggedProcessScanner interface {
 	ScanTag(tag string, reservationCreatedAt time.Time) TaggedProcessCensus
 }
 
-// KernelTaggedProcessScanner binds the result shape to the live process table.
-type KernelTaggedProcessScanner struct {
-	MatchesTag func(argv []string, tag string) bool
-}
-
-func (s KernelTaggedProcessScanner) ScanTag(tag string, reservationCreatedAt time.Time) TaggedProcessCensus {
-	if s.MatchesTag == nil {
-		return TaggedProcessCensus{EnumerationError: "tag-position matcher is unavailable"}
-	}
-	return ScanTaggedProcesses(tag, TaggedScanDependencies{
-		MatchesTag: s.MatchesTag, ReservationCreatedAt: reservationCreatedAt,
-	})
-}
-
 // TaggedScanDependencies keeps process-table access injectable while the
 // result and its completeness law remain owned here.
 type TaggedScanDependencies struct {
