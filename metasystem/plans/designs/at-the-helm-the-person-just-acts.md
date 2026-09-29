@@ -2,8 +2,10 @@
 
 - Kind: design
 - Id: 01M3PSJ0KEC7DEVMF2CS2340ZW
-- Status: draft, revision 3 (Astra rounds 1 and 2 folded; loop closed at the failsafe; confirmation read CONFIRMED, zero material)
+- Status: draft
 - Goals: human-controls-goal
+
+Revision 3: Astra rounds 1 and 2 folded; loop closed at the failsafe; confirmation read CONFIRMED, zero material.
 
 Wido, 2026-09-29, verbatim:
 
