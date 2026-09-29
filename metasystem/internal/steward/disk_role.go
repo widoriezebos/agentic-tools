@@ -321,7 +321,7 @@ func machinePass(ctx context.Context, home, top string, own diskstore.Settings, 
 	options.Classes = []diskstore.Class{
 		diskstore.RegisteredStores{Registry: diskstore.MachineRegistry(home), Proofs: pass.proofs()},
 		&launch.UnitRetention{Root: filepath.Join(home, "unit"), Target: host.Bytes(config.DiskUnitTargetKey), Keep: host.Duration(config.DiskUnitKeepKey),
-			GoalEnded: unitGoalEnded(checkouts, func(root string) *ledgerView { return checkoutLedger(root, pass.Now) })},
+			GoalEnded: unitGoalEnded(func(root string) *ledgerView { return checkoutLedger(root, pass.Now) })},
 		launchRetention(home, host),
 		diskstore.TempStrays{Roots: tempRoots},
 	}
@@ -363,37 +363,30 @@ func launchRetention(home string, host diskstore.HostSettings) *launch.Retention
 		Target: host.Bytes(config.DiskLaunchTargetKey), Keep: host.Duration(config.DiskLaunchKeepKey)}
 }
 
-// unitGoalEnded answers whether a unit's goal has concluded from the goal
-// ledgers of the checkout its worktree belongs to (while that worktree
-// exists) and of every armed checkout, each read once without a fetch: a
-// goal open in any is open; concluded in one and open in none is ended;
-// known to none is unknown.
-func unitGoalEnded(checkouts []string, ledgerFor func(string) *ledgerView) func(goal, worktree string) (bool, bool) {
+// unitGoalEnded answers whether a unit's goal has concluded, read only in
+// the checkout the unit record names (the installation its worktree
+// belongs to), once and without a fetch. A worktree that no longer
+// resolves, or a ledger that cannot be read, is unknown, which keeps the
+// unit (Round B3-2 R9).
+func unitGoalEnded(ledgerFor func(string) *ledgerView) func(goal, worktree string) (bool, bool) {
 	views := map[string]*ledgerView{}
-	view := func(root string) *ledgerView {
+	return func(goalID, worktree string) (bool, bool) {
+		if worktree == "" {
+			return false, false
+		}
+		layout, err := stateroot.ResolveLayout(worktree)
+		if err != nil {
+			return false, false
+		}
+		root := layout.InstallationRoot
 		if views[root] == nil {
 			views[root] = ledgerFor(root)
 		}
-		return views[root]
-	}
-	return func(goalID, worktree string) (bool, bool) {
-		roots := append([]string(nil), checkouts...)
-		if layout, err := stateroot.ResolveLayout(worktree); err == nil {
-			roots = append(roots, layout.InstallationRoot)
+		projection, err := views[root].get()
+		if err != nil || projection.Tree.Live[goalID] != nil {
+			return false, err == nil
 		}
-		ended := false
-		for _, root := range roots {
-			projection, err := view(root).get()
-			if err != nil {
-				continue
-			}
-			if projection.Tree.Live[goalID] != nil {
-				return false, true
-			}
-			if projection.Tree.Done[goalID] != nil || projection.Tree.Abandoned[goalID] != nil {
-				ended = true
-			}
-		}
+		ended := projection.Tree.Done[goalID] != nil || projection.Tree.Abandoned[goalID] != nil
 		return ended, ended
 	}
 }

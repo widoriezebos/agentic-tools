@@ -6,7 +6,9 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -74,7 +76,8 @@ func TestStopBatchNamerReadsOpenBatchesAndOpenGoals(t *testing.T) {
 }
 
 // An open trunk-red entry names its sightings and fix passes; a closed one
-// is history; the cadence status names its attempt and reuse sources.
+// is history; the cadence status names its attempt and reuse sources, of
+// whatever shape (a reference of any shape keeps what it names).
 func TestTrunkRedNamerReadsOpenEntriesAndTheCadence(t *testing.T) {
 	t.Parallel()
 	tree := &goal.TreeGoals{
@@ -85,7 +88,7 @@ func TestTrunkRedNamerReadsOpenEntriesAndTheCadence(t *testing.T) {
 		Cadence: &goal.CadenceStatus{AttemptID: attemptC, Groups: []goal.CadenceGroupStatus{{ReuseSource: "not-an-attempt"}}},
 	}
 	named := namedSet(t, trunkRedNamer{Ledger: fixedLedger(tree, nil)})
-	if !slices.Equal(named, []string{attemptA, attemptB, attemptC}) {
+	if !slices.Equal(named, []string{"not-an-attempt", attemptA, attemptB, attemptC}) {
 		t.Fatalf("named = %v", named)
 	}
 }
@@ -155,19 +158,66 @@ func TestValidationWindowNamerReadsTheWindow(t *testing.T) {
 	}
 }
 
-// A unit's goal is open when any ledger holds it live, ended when one holds
-// it concluded and none live, and unknown when no readable ledger knows it.
-func TestUnitGoalEndedReadsEveryArmedLedger(t *testing.T) {
+// A unit's goal is read only in the checkout its worktree belongs to: open
+// there is open, concluded there is ended, and an unreadable ledger or a
+// worktree that no longer resolves is unknown (Round B3-2 R9).
+func TestUnitGoalEndedReadsOnlyTheUnitsOwnCheckout(t *testing.T) {
 	t.Parallel()
+	bed := newStaleBed(t)
 	ledgers := map[string]*ledgerView{
-		"a":      fixedLedger(&goal.TreeGoals{Done: map[string]*goal.GoalFile{"g": {}, "h": {}}}, nil),
-		"b":      fixedLedger(&goal.TreeGoals{Live: map[string]*goal.GoalFile{"h": {}}}, nil),
-		"broken": fixedLedger(nil, errors.New("unreadable")),
+		bed.inst: fixedLedger(&goal.TreeGoals{Done: map[string]*goal.GoalFile{"g": {}}, Live: map[string]*goal.GoalFile{"h": {}}}, nil),
 	}
-	ended := unitGoalEnded([]string{"a", "b", "broken"}, func(root string) *ledgerView { return ledgers[root] })
+	ended := unitGoalEnded(func(root string) *ledgerView {
+		if ledgers[root] == nil {
+			return fixedLedger(nil, errors.New("unreadable"))
+		}
+		return ledgers[root]
+	})
 	for goalID, want := range map[string][2]bool{"g": {true, true}, "h": {false, true}, "x": {false, false}} {
-		if gotEnded, gotKnown := ended(goalID, "/nowhere"); gotEnded != want[0] || gotKnown != want[1] {
+		if gotEnded, gotKnown := ended(goalID, bed.inst); gotEnded != want[0] || gotKnown != want[1] {
 			t.Errorf("goal %s: ended=%v known=%v, want %v", goalID, gotEnded, gotKnown, want)
 		}
+	}
+	if gotEnded, gotKnown := ended("g", "/nowhere"); gotEnded || gotKnown {
+		t.Error("a worktree that no longer resolves is unknown")
+	}
+	broken := unitGoalEnded(func(string) *ledgerView { return fixedLedger(nil, errors.New("unreadable")) })
+	if gotEnded, gotKnown := broken("g", bed.inst); gotEnded || gotKnown {
+		t.Error("an unreadable ledger is unknown")
+	}
+}
+
+// The goal record kinds are filled by reflection (every string field named
+// or tagged attempt or reuse given a fresh id) and their readers must name
+// every one (Round B3-2 R3). A trunk-red entry's closure is left unset: a
+// closed entry is history and names nothing.
+func TestAttemptKindsReadTheGoalRecordsOwnFields(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	fill := &attemptFill{skip: map[string]bool{"Closed": true}}
+	var batch goal.StopBatch
+	fill.fill(reflect.ValueOf(&batch).Elem(), "goal.StopBatch", false, 0)
+	batch.State = goal.StopBatchOpen
+	writeRecord(t, filepath.Join(root, "artifacts", "agents", "goal-stops", "s.json"), batch)
+	var entry goal.TrunkRedEntry
+	fill.fill(reflect.ValueOf(&entry).Elem(), "goal.TrunkRedEntry", false, 0)
+	var cadence goal.CadenceStatus
+	fill.fill(reflect.ValueOf(&cadence).Elem(), "goal.CadenceStatus", false, 0)
+	ledger := fixedLedger(&goal.TreeGoals{TrunkRed: []goal.TrunkRedEntry{entry}, Cadence: &cadence}, nil)
+	var named []string
+	for _, namer := range []interface {
+		Named(context.Context, time.Time) ([]string, error)
+	}{stopBatchNamer{Root: root, Ledger: ledger}, trunkRedNamer{Ledger: ledger}} {
+		found, err := namer.Named(context.Background(), attemptsNow)
+		if err != nil {
+			t.Fatal(err)
+		}
+		named = append(named, found...)
+	}
+	if len(fill.ids) < 6 {
+		t.Fatalf("the fill reached only %d attempt fields", len(fill.ids))
+	}
+	if missing := fill.uncovered(named); len(missing) > 0 {
+		t.Fatalf("attempt fields no reader names:\n%s", strings.Join(missing, "\n"))
 	}
 }

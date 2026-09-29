@@ -23,11 +23,12 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
 
-// attemptIDs keeps the values shaped like attempt ids.
+// attemptIDs keeps every non-empty value: a reference of any shape keeps
+// the attempt it names.
 func attemptIDs(values ...string) []string {
 	var ids []string
 	for _, value := range values {
-		if proofrun.IsAttemptID(value) {
+		if value != "" {
 			ids = append(ids, value)
 		}
 	}
@@ -118,6 +119,9 @@ func (n trunkRedNamer) Named(context.Context, time.Time) ([]string, error) {
 		}
 		for _, sighting := range entry.Sightings {
 			named = append(named, attemptIDs(sighting.Attempt)...)
+			if sighting.Rerun != nil {
+				named = append(named, attemptIDs(sighting.Rerun.Attempt)...)
+			}
 		}
 		if entry.FixProof != nil {
 			for _, pass := range entry.FixProof.Passes {
@@ -149,11 +153,19 @@ type landingBatchRecord struct {
 		} `json:"red"`
 	} `json:"trunkRed"`
 	Proof *struct {
-		AttemptID string `json:"attemptId"`
+		AttemptID string            `json:"attemptId"`
+		Reuse     map[string]string `json:"reuse"`
 		Sources   map[string]struct {
 			Attempt string `json:"attempt"`
 		} `json:"sources"`
 	} `json:"proof"`
+	Wait *struct {
+		For []struct {
+			Proof *struct {
+				Attempt string `json:"attempt"`
+			} `json:"proof"`
+		} `json:"for"`
+	} `json:"wait"`
 	Receipts map[string]struct {
 		AttemptID string
 		Reused    map[string]string
@@ -198,6 +210,16 @@ func (n landingBatchNamer) Named(context.Context, time.Time) ([]string, error) {
 			for _, source := range record.Proof.Sources {
 				named = append(named, attemptIDs(source.Attempt)...)
 			}
+			for _, reused := range record.Proof.Reuse {
+				named = append(named, attemptIDs(reused)...)
+			}
+		}
+		if record.Wait != nil {
+			for _, waited := range record.Wait.For {
+				if waited.Proof != nil {
+					named = append(named, attemptIDs(waited.Proof.Attempt)...)
+				}
+			}
 		}
 		for _, receipt := range record.Receipts {
 			named = append(named, attemptIDs(receipt.AttemptID)...)
@@ -217,6 +239,9 @@ type landingReceipt struct {
 	Proof      *struct {
 		AttemptID string `json:"attemptId"`
 	} `json:"proof"`
+	Coverage *struct {
+		AttemptID string `json:"attemptId"`
+	} `json:"coverage"`
 	Testing *proofrun.TestResult `json:"testing"`
 }
 
@@ -260,8 +285,11 @@ func (n landingReceiptNamer) Named(_ context.Context, now time.Time) ([]string, 
 		if receipt.Proof != nil {
 			named = append(named, attemptIDs(receipt.Proof.AttemptID)...)
 		}
+		if receipt.Coverage != nil {
+			named = append(named, attemptIDs(receipt.Coverage.AttemptID)...)
+		}
 		if receipt.Testing != nil {
-			named = append(named, attemptIDs(append([]string{receipt.Testing.AttemptID}, proofrun.TestResultReferences(*receipt.Testing)...)...)...)
+			named = append(named, attemptIDs(proofrun.TestResultReferences(*receipt.Testing)...)...)
 		}
 	}
 	return named, nil

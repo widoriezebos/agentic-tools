@@ -6,7 +6,7 @@ package launch
 // goal has concluded, whose run lock and named lock are both free, and
 // whose last step is older than disk.unit-keep-days, with the named entry
 // that reached it. A unit of an open goal is a live owner whatever its age;
-// an unknown goal state or a held lock is pending. Units are visited before
+// an unknown goal state keeps it; a held lock is pending. Units are visited before
 // launches, so a launch a released unit named stops being a retention root.
 
 import (
@@ -131,7 +131,7 @@ func (r *UnitRetention) judge(unit unitEntry, now time.Time, holdingRun bool) di
 	}
 	switch {
 	case !known:
-		return diskstore.Verdict{Decision: diskstore.Pending, Reason: "whether goal " + goal + " has concluded cannot be read from its checkout",
+		return diskstore.Verdict{Decision: diskstore.Keep, Reason: "whether goal " + goal + " has concluded cannot be read in the checkout the unit names; it is kept",
 			Command: "metasystem goal show " + goal}
 	case !ended:
 		return diskstore.Verdict{Decision: diskstore.Keep, Reason: "its goal is open; a unit of an open goal stays whatever its age",

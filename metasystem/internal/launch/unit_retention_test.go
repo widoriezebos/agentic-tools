@@ -56,8 +56,9 @@ func (f *retentionFixture) unitExists(id string) bool {
 // The unit proof of 3.1 (U5d, DL3B-03): over disk.unit-target-mib a unit
 // whose goal has concluded, whose locks are free and whose last step ended
 // past disk.unit-keep-days goes, with its named entry; a unit of an open
-// goal survives whatever its age and names the goal; one whose goal state
-// is unknown, or whose run lock is held, is pending; a young one stays.
+// goal survives whatever its age and names the goal, and so does one whose
+// goal state is unknown; one whose run lock is held is pending; a young one
+// stays.
 func TestUnitRetentionReleasesOnlyConcludedGoalsUnits(t *testing.T) {
 	t.Parallel()
 	f := newRetentionFixture(t)
@@ -83,13 +84,13 @@ func TestUnitRetentionReleasesOnlyConcludedGoalsUnits(t *testing.T) {
 	var openNamed, heldPending, unknownPending bool
 	for _, line := range report.Kept {
 		openNamed = openNamed || strings.Contains(line.Path, "unit-open") && strings.Contains(line.Command, "metasystem goal show open")
+		unknownPending = unknownPending || strings.Contains(line.Path, "unit-unknown")
 	}
 	for _, line := range report.Pending {
 		heldPending = heldPending || strings.Contains(line.Path, "unit-held")
-		unknownPending = unknownPending || strings.Contains(line.Path, "unit-unknown")
 	}
 	if !openNamed || !heldPending || !unknownPending {
-		t.Fatalf("open kept=%v held pending=%v unknown pending=%v\n%+v", openNamed, heldPending, unknownPending, report)
+		t.Fatalf("open kept=%v held pending=%v unknown kept=%v\n%+v", openNamed, heldPending, unknownPending, report)
 	}
 	// With the unit gone, the launch its round named is no longer a root.
 	if named, err := namedLaunches(f.units); err != nil || named["unit-done-read"] || !named["unit-open-read"] {
