@@ -252,6 +252,37 @@ func TestGoalReviewSendBackRefusesARecordWithNoFindingAnsweredFix(t *testing.T) 
 	}
 }
 
+// The engine reads the Findings the way the room's entriesIn does: an Answer
+// line belongs to the finding entry before it, and a line with no finding
+// before it, or under another section, answers nothing (Sol SOL-S69-02).
+func TestGoalReviewSendBackCountsOnlyAFindingsOwnAnswer(t *testing.T) {
+	t.Parallel()
+	bare := string(reviewRecordAnswered("under-review", "send back", reviewedTip))
+	for name, content := range map[string]string{
+		"orphan answer in Findings": strings.Replace(bare, "## Findings\n\n", "## Findings\n\n  - Answer: fix — waits for Send back\n", 1),
+		"answer under Decisions": strings.Replace(bare, "## Decisions\n\n",
+			"## Decisions\n\n- 2026-09-29 · Wido · Keep the tree [d:deposit:t4#0]\n  - Answer: fix — waits for Send back\n", 1),
+	} {
+		act := sendBackAct()
+		act.Content = []byte(content)
+		if fixes := ReadReviewRecord(act.Content).Fixes; fixes != 0 {
+			t.Fatalf("%s: read %d findings answered fix, the room reads none", name, fixes)
+		}
+		if _, err := act.Line("under-review", "Wido"); err == nil || !strings.Contains(err.Error(), "no finding answered fix") {
+			t.Fatalf("%s: a send-back with no finding answered fix was admitted: %v", name, err)
+		}
+	}
+	nested := reviewRecordAnswered("under-review", "send back", reviewedTip, "left open", "fix — waits for Send back", "fix — also")
+	if fixes := ReadReviewRecord(nested).Fixes; fixes != 2 {
+		t.Fatalf("the room's nested findings read %d answered fix, want 2", fixes)
+	}
+	act := sendBackAct()
+	act.Content = nested
+	if _, err := act.Line("under-review", "Wido"); err != nil {
+		t.Fatalf("a send-back with findings answered fix was refused: %v", err)
+	}
+}
+
 // A holder that lawfully claimed a second goal while the first waits to land:
 // clearing the Landing would put it over the one-claim quota, so the send-back
 // leaves the Landing as it stands and the ledger stays valid (Astra S69-05).

@@ -99,22 +99,36 @@ type ReviewRecordHead struct {
 }
 
 // findingAnswer is a finding's Answer line as the room's recorder writes it,
-// nested under the finding's list item.
-var findingAnswer = regexp.MustCompile(`^\s+[-*]\s+Answer:\s*(.*)$`)
+// nested under the finding's list item; findingEntry is that item.
+var (
+	findingAnswer = regexp.MustCompile(`^\s+[-*]\s+Answer:\s*(.*)$`)
+	findingEntry  = regexp.MustCompile(`^[-*]\s+`)
+)
 
 // ReadReviewRecord reads a review record's head and Outcome. The head is the
 // list before the first section; the Outcome is its section's first two lines
 // of words, the verdict and the tip it was drafted for. A finding's answer is
-// its Answer line's words before the dash, as the room reads it.
+// its last Answer line's words before the dash, as the room reads it: an Answer
+// line belongs to the finding entry before it in the Findings section, and one
+// with no entry before it answers nothing.
 func ReadReviewRecord(content []byte) ReviewRecordHead {
 	head := ReviewRecordHead{}
 	lines := strings.Split(strings.ReplaceAll(string(content), "\r\n", "\n"), "\n")
 	inHead := true
 	outcomeLevel := 0
 	inFindings := false
+	// fix is the answer of the finding entry being read, nil before the first.
+	var fix *bool
+	settle := func() {
+		if fix != nil && *fix {
+			head.Fixes++
+		}
+		fix = nil
+	}
 	var said []string
 	for _, line := range lines {
 		if level, title, heading := headingOf(line); heading {
+			settle()
 			// The title is not a section: the head is the list before the
 			// first section, as the room's own reader takes it.
 			inHead = inHead && level == 1
@@ -146,15 +160,22 @@ func ReadReviewRecord(content []byte) ReviewRecordHead {
 			continue
 		}
 		if answer := findingAnswer.FindStringSubmatch(line); inFindings && answer != nil {
-			if words, _, _ := strings.Cut(answer[1], " — "); strings.TrimSpace(words) == "fix" {
-				head.Fixes++
+			if fix != nil {
+				words, _, _ := strings.Cut(answer[1], " — ")
+				*fix = strings.TrimSpace(words) == "fix"
 			}
+			continue
+		}
+		if inFindings && findingEntry.MatchString(line) {
+			settle()
+			fix = new(bool)
 			continue
 		}
 		if outcomeLevel > 0 && strings.TrimSpace(line) != "" && len(said) < 2 {
 			said = append(said, strings.TrimSpace(line))
 		}
 	}
+	settle()
 	if len(said) > 0 {
 		if words, found := strings.CutPrefix(said[0], "Verdict:"); found {
 			head.Verdict = strings.TrimSpace(words)
