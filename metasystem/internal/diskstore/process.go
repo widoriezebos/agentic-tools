@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
@@ -201,9 +202,7 @@ func (s *processScratch) releaseIfIdle(ctx context.Context) (bool, error) {
 	if currentScratch == s {
 		currentScratch = nil
 	}
-	// Close only this process's copy: a child that inherited the
-	// description keeps the lock, and with it the root, alive.
-	_ = s.writer.Close()
+	s.closeWriter()
 	critical, err := s.registry.TryCritical(s.record.ID)
 	if err != nil {
 		return false, fmt.Errorf("process scratch %s is kept for the sweeper: %w", s.record.Path, err)
@@ -216,6 +215,18 @@ func (s *processScratch) releaseIfIdle(ctx context.Context) (bool, error) {
 	// others count; nothing counts a process-scratch record, so its owner
 	// removes its own record and record lock, under that lock.
 	return true, errors.Join(os.Remove(s.registry.RecordPath(s.record.ID)), os.Remove(s.registry.LockPath(s.record.ID)))
+}
+
+// closeWriter closes only this process's copy of the writer lock, never
+// LOCK_UN: a child that inherited the description through ExtraFiles keeps
+// the lock, and with it the root, alive. It closes under syscall.ForkLock:
+// a fork in flight holds a duplicate of every descriptor until its exec,
+// which would read as a child holding the lock; with the read lock no fork
+// is in flight, and none after the close can copy it.
+func (s *processScratch) closeWriter() {
+	syscall.ForkLock.RLock()
+	defer syscall.ForkLock.RUnlock()
+	_ = s.writer.Close()
 }
 
 // newProcessScratch registers and creates a root under tempRoot/metasystem.
@@ -361,7 +372,16 @@ func (ProcessProof) Apply(context.Context, *Critical) error {
 }
 
 // Release is the sweeper's removal inside the store's critical section.
-func (ProcessProof) Release(ctx context.Context, critical *Critical, _ *UseCensus) Verdict {
+// A child of the dead owner that never inherited the writer lock (a git
+// run, a measurement command) may still use the root, so the use census,
+// with the processes started since it read fresh, is judged over the root
+// just before the removal: any holder, or a census not taken or
+// incomplete, keeps the root, pending, for the next pass (fail-closed
+// rules 1 and 4).
+func (ProcessProof) Release(ctx context.Context, critical *Critical, census *UseCensus) Verdict {
+	if verdict := useVerdict(census, critical.Record()); verdict.Decision != Release {
+		return verdict
+	}
 	return releaseScratchRoot(ctx, critical, "sweeper")
 }
 

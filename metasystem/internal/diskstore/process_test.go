@@ -10,6 +10,8 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -52,6 +54,33 @@ func processScratchHelper() (code int, handled bool) {
 			return fail(err)
 		}
 		fmt.Println("ready")
+		wait := make(chan os.Signal, 1)
+		signal.Notify(wait, syscall.SIGTERM)
+		<-wait
+		return 0, true
+	case "cwd", "open":
+		// A child that never inherited the writer lock (a git run, a
+		// measurement command) still uses the root: its cwd, or an open
+		// file, lies there. It ends when the test closes its pipe.
+		dir, _, err := ScratchDir("child-")
+		if err != nil {
+			return fail(err)
+		}
+		held := filepath.Join(dir, "held")
+		if err := os.WriteFile(held, []byte("x"), 0o600); err != nil {
+			return fail(err)
+		}
+		child := exec.Command("cat")
+		if mode == "cwd" {
+			child.Dir = dir
+		} else {
+			child = exec.Command("sh", "-c", `exec cat 4<"$0"`, held)
+		}
+		child.Stdin, child.Stdout = os.Stdin, os.Stdout
+		if err := child.Start(); err != nil {
+			return fail(err)
+		}
+		fmt.Printf("child=%d\nready\n", child.Process.Pid)
 		wait := make(chan os.Signal, 1)
 		signal.Notify(wait, syscall.SIGTERM)
 		<-wait
@@ -147,10 +176,22 @@ func (b scratchBed) onlyRecord(t *testing.T) Record {
 	return records[0]
 }
 
+// sweep runs a pass with the kernel's use census; an unreadable process
+// with no metasystem ancestor is not a holder (the census's ancestry
+// rule), and a test bed records no metasystem process.
 func (b scratchBed) sweep(t *testing.T, prober identity.Prober) Report {
 	t.Helper()
-	report, err := RunPass(context.Background(), passOptions(b.registry, realDir(t),
-		RegisteredStores{Registry: b.registry, Proofs: map[OwnerKind]OwnerProof{OwnerProcess: ProcessProof{Prober: prober}}}))
+	reader := KernelCensusReader(uint32(os.Getuid()))
+	reader.Ours = func(int64) bool { return false }
+	return b.sweepWith(t, prober, &reader)
+}
+
+func (b scratchBed) sweepWith(t *testing.T, prober identity.Prober, reader *CensusReader) Report {
+	t.Helper()
+	options := passOptions(b.registry, realDir(t),
+		RegisteredStores{Registry: b.registry, Proofs: map[OwnerKind]OwnerProof{OwnerProcess: ProcessProof{Prober: prober}}})
+	options.CensusReader = reader
+	report, err := RunPass(context.Background(), options)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -410,7 +451,7 @@ func TestProcessProofHoldsOnAnyUnreadableInput(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			bed, created := ownScratch(t)
-			_ = created.writer.Close()
+			created.closeWriter()
 			prober := spoil(t, bed, created.record)
 			bed.sweep(t, prober)
 			if _, err := os.Lstat(filepath.Join(created.record.Path, "payload")); err != nil {
@@ -429,7 +470,7 @@ func TestProcessProofKnowsTheRootByDeviceAndInode(t *testing.T) {
 		t.Run(swap, func(t *testing.T) {
 			t.Parallel()
 			bed, created := ownScratch(t)
-			_ = created.writer.Close()
+			created.closeWriter()
 			root := created.record.Path
 			moved := root + ".moved"
 			if err := os.Rename(root, moved); err != nil {
@@ -458,7 +499,7 @@ func TestProcessProofKnowsTheRootByDeviceAndInode(t *testing.T) {
 func TestProcessProofKeepsTheRecordAndEverythingBesideTheRoot(t *testing.T) {
 	t.Parallel()
 	bed, created := ownScratch(t)
-	_ = created.writer.Close()
+	created.closeWriter()
 	beside := filepath.Join(filepath.Dir(created.record.Path), "beside")
 	if err := os.WriteFile(beside, []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
@@ -481,7 +522,7 @@ func TestProcessProofKeepsTheRecordAndEverythingBesideTheRoot(t *testing.T) {
 func TestProcessProofRetryRechecksUse(t *testing.T) {
 	t.Parallel()
 	bed, created := ownScratch(t)
-	_ = created.writer.Close()
+	created.closeWriter()
 	rewriteRecord(t, bed.registry, created.record.ID, func(r *Record) { r.State = StateReleasing })
 	holder, err := os.OpenFile(filepath.Join(created.record.Path, WriterLockName), os.O_RDWR, 0)
 	if err != nil {
@@ -535,5 +576,102 @@ func TestScratchFileLiesInTheProcessScratch(t *testing.T) {
 	done()
 	if _, err := os.Lstat(file.Name()); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("done left the file: %v", err)
+	}
+}
+
+// A child of the dead owner that never inherited the writer lock still
+// uses the root: its cwd, or a file it holds open, lies there. The lock is
+// free and the owner reads Dead, but the use census taken just before the
+// removal finds the child, so the sweeper keeps the root; once the child
+// has exited the next pass releases it.
+func TestProcessScratchUsedByAChildWithoutTheLockIsKept(t *testing.T) {
+	t.Parallel()
+	for _, mode := range []string{"cwd", "open"} {
+		t.Run(mode, func(t *testing.T) {
+			t.Parallel()
+			bed := newScratchBed(t)
+			helper := bed.helper(mode)
+			childIn, stdin, err := os.Pipe()
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = stdin.Close() })
+			stdout, childOut, err := os.Pipe()
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = stdout.Close() })
+			helper.Stdin, helper.Stdout, helper.Stderr = childIn, childOut, os.Stderr
+			if err := helper.Start(); err != nil {
+				t.Fatal(err)
+			}
+			_ = childIn.Close()
+			_ = childOut.Close()
+			lines := bufio.NewScanner(stdout)
+			var printed []string
+			for lines.Scan() && lines.Text() != "ready" {
+				printed = append(printed, lines.Text())
+			}
+			output := strings.Join(printed, "\n")
+			root := helperValue(t, output, "root")
+			child, err := strconv.Atoi(helperValue(t, output, "child"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := helper.Process.Signal(syscall.SIGKILL); err != nil {
+				t.Fatal(err)
+			}
+			_ = helper.Wait()
+			record := bed.onlyRecord(t)
+			if free, err := ProbeWriterLock(record); err != nil || !free {
+				t.Fatalf("the child never inherited the lock, yet the probe = free %v, %v", free, err)
+			}
+			bed.sweep(t, identity.KernelProber{})
+			if _, err := os.Lstat(root); err != nil {
+				t.Fatalf("the sweeper removed a root a live child uses (%s): %v", mode, err)
+			}
+			if record := bed.onlyRecord(t); record.State != StateAccepted {
+				t.Fatalf("a kept root's record is %s", record.State)
+			}
+			// Closing the pipe ends the child; its end is awaited on the
+			// kernel's process table, never on a clock.
+			_ = stdin.Close()
+			for unix.Kill(child, 0) == nil {
+				if t.Context().Err() != nil {
+					t.Fatal("the child did not end")
+				}
+				runtime.Gosched()
+			}
+			bed.sweep(t, identity.KernelProber{})
+			if _, err := os.Lstat(root); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("after the child ended the root stayed: %v", err)
+			}
+		})
+	}
+}
+
+// Any holder the census names, or a census that cannot complete, keeps a
+// dead owner's root (pending, retried next pass); nothing is removed.
+func TestProcessProofKeepsARootTheCensusCannotClear(t *testing.T) {
+	t.Parallel()
+	for name, reader := range map[string]func(root string) *CensusReader{
+		"holder": func(root string) *CensusReader {
+			return fakeCensus(map[int64]identity.ProcessUse{4242: {Cwd: root}}, nil)
+		},
+		"incomplete": func(string) *CensusReader { return fakeCensus(nil, map[int64]bool{7: true}) },
+		"no census":  func(string) *CensusReader { return nil },
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			bed, created := ownScratch(t)
+			created.closeWriter()
+			bed.sweepWith(t, fixedProber{state: identity.Dead}, reader(created.record.Path))
+			if _, err := os.Lstat(filepath.Join(created.record.Path, "payload")); err != nil {
+				t.Fatalf("%s: the root lost its content: %v", name, err)
+			}
+			if record := bed.onlyRecord(t); record.State != StateAccepted {
+				t.Fatalf("%s: record %s; want kept", name, record.State)
+			}
+		})
 	}
 }

@@ -118,7 +118,7 @@ func TestTempStoreRefusesATemporaryRootInsideAStore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = created.writer.Close() })
+	t.Cleanup(func() { created.closeWriter() })
 	if _, err := createTempStore(created.record.Path, bed.registry, "metasystem-read-context.r1-a1", "read-context", readOwner, rand.Reader); err == nil {
 		t.Fatal("a store was made inside a process scratch root")
 	}
