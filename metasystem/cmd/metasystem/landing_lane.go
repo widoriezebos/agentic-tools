@@ -9,9 +9,11 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
@@ -19,7 +21,9 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 )
 
 // landingLaneHome is the home the host lane lives under (the board's). An
@@ -60,6 +64,18 @@ func validateLandingCheckout(root, seatRoot string, now time.Time) (string, erro
 // root is admitted as a landing checkout before this seat registers it, so
 // no seat registers a checkout that cannot land.
 func (seams landingLaneSeams) batchRoot(installation string, now time.Time) (string, bool, error) {
+	return seams.resolve(installation, now, true)
+}
+
+// landingLaneRoot is the same resolution for a reader: it never registers.
+// helm's report and the steward's trunk-red check read the lane through it.
+func landingLaneRoot(installation string, now time.Time) (string, bool, error) {
+	return productionLandingLaneSeams().resolve(installation, now, false)
+}
+
+func init() { steward.LandingLaneRoot = landingLaneRoot }
+
+func (seams landingLaneSeams) resolve(installation string, now time.Time, register bool) (string, bool, error) {
 	confPath := filepath.Join(installation, "metasystem.conf")
 	raw, _, err := config.Get(config.GetParams{Key: config.BatchRootKey, ConfPath: confPath, Default: "", DefaultSet: true})
 	if err != nil {
@@ -89,7 +105,7 @@ func (seams landingLaneSeams) batchRoot(installation string, now time.Time) (str
 	if err != nil {
 		return "", true, err
 	}
-	if found.Record.Root == "" {
+	if found.Record.Root == "" && register {
 		if _, err := lane.Resolve(home, root, by, now, true); err != nil {
 			return "", true, err
 		}
@@ -180,4 +196,44 @@ func landingLaneView(home func() (string, error), now time.Time) lane.View {
 		return lane.View{Owner: lane.OwnerView{State: lane.OwnerNotStarted}, Summary: "the landing lane cannot be read: this host has no home for it (" + err.Error() + ")"}
 	}
 	return lane.BuildView(lane.ViewSources{Home: laneHome, Now: now, Owner: landingLaneOwnerProbe})
+}
+
+// endLaneOwner ends the lane's running owner for a restart: the process the
+// checkout lease's holder recorded, proven by its exact identity (pid, start
+// time and boot) immediately before a SIGTERM, never found by name. The
+// owner releases its lease on TERM and its supervision launches a fresh
+// one from the supervision owner's executable path. It returns the ended
+// pid, 0 when no owner held the lane, and waits up to 15 seconds for the
+// process to be gone.
+func endLaneOwner(root string) (int64, error) {
+	holder, err := lease.CurrentHolder(root)
+	if errors.Is(err, lease.ErrLeaseAbsent) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	if holder.OwnerLineage != landingOwnerLineage {
+		return 0, fmt.Errorf("the landing checkout is held by lineage %s, not its landing owner; nothing was ended", holder.OwnerLineage)
+	}
+	prober := identity.KernelProber{}
+	for _, announcement := range lease.AnnouncementsFor(root, holder.Pid) {
+		if announcement.MainId != holder.MainId {
+			continue
+		}
+		ref := identity.Ref{Pid: announcement.Pid, StartedAtSec: announcement.PidStartedAt, StartTicks: announcement.PidStartTicks, BootID: announcement.BootID}
+		if err := identity.SignalExact(prober, ref, syscall.SIGTERM); errors.Is(err, identity.ErrGone) {
+			return 0, nil
+		} else if err != nil {
+			return holder.Pid, fmt.Errorf("the landing owner pid %d could not be ended: %w", holder.Pid, err)
+		}
+		for deadline := time.Now().Add(15 * time.Second); identity.AliveRef(prober, ref) == identity.Alive && time.Now().Before(deadline); {
+			time.Sleep(100 * time.Millisecond)
+		}
+		if identity.AliveRef(prober, ref) == identity.Alive {
+			return holder.Pid, fmt.Errorf("the landing owner pid %d is still running 15 seconds after it was asked to end", holder.Pid)
+		}
+		return holder.Pid, nil
+	}
+	return holder.Pid, fmt.Errorf("the landing owner pid %d has no announcement to prove its identity, so it was not ended", holder.Pid)
 }

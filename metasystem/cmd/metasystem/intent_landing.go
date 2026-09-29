@@ -8,9 +8,11 @@ package main
 import (
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 )
@@ -30,6 +32,11 @@ type laneVerbOwners struct {
 	validate func(root, seatRoot string, now time.Time) (string, error)
 	by       func(installation string) string
 	now      func() time.Time
+	// end ends the running owner for a restart, by its recorded identity.
+	end func(root string) (int64, error)
+	// person proves the person at the enrolled terminal of an installation
+	// and names them.
+	person func(root string) (string, error)
 }
 
 func (inv *intentInvocation) landing() laneVerbOwners {
@@ -51,6 +58,12 @@ func (inv *intentInvocation) landing() laneVerbOwners {
 	}
 	if owners.now == nil {
 		owners.now = func() time.Time { return time.Now().UTC() }
+	}
+	if owners.end == nil {
+		owners.end = endLaneOwner
+	}
+	if owners.person == nil {
+		owners.person = provenPerson(humanauthority.KernelReader{}, func() int64 { return int64(os.Getppid()) }, time.Now)
 	}
 	return owners
 }
@@ -246,14 +259,33 @@ func runIntentLandingSet(inv *intentInvocation) int {
 			Summary:  fmt.Sprintf("%s: %s is not a landing checkout: %v; nothing was registered", lane.CodeRegisterInvalid, path, err),
 			Decision: "name a dedicated landing checkout (a clone of this repository that no seat works in)"})
 	}
+	actor := ""
 	if record.Root != "" && record.Root != root {
 		if busy := laneBusy(inv.laneView(owners, home), false); busy != "" {
 			return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: laneTargets(record.Root),
 				Summary:  fmt.Sprintf("%s: batch %s in the current lane %s; moving the lane now would leave that batch without its owner, so nothing was changed", codeLandingLaneBusy, busy, record.Root),
 				Decision: "wait until it lands (metasystem landing status shows it), or pause the lane first with metasystem landing stop, then run metasystem landing set " + root + " again"})
 		}
+		// Moving the host's lane changes where every seat lands: a
+		// person's act at an enrolled terminal. The first registration and
+		// a repeat stay open to anyone.
+		retry := "metasystem landing set " + root
+		proveAt := seat
+		if proveAt == "" {
+			proveAt = inv.cwd
+		}
+		person, err := owners.person(proveAt)
+		if err != nil {
+			return inv.render(intentResult{Outcome: intentRefused, code: 3, Targets: laneTargets(record.Root),
+				Summary:  "moving this computer's landing lane from " + record.Root + " to " + root + " is a person's act, and this shell was not proven to be one: " + humanauthority.PlainReason(err) + "; nothing was changed",
+				Decision: humanauthority.PersonActRemedy(retry)})
+		}
+		actor = person
 	}
-	previous, changed, err := lane.Register(home, root, inv.landingActor(owners), owners.now())
+	if by := strings.TrimSpace(inv.input.text("by")); by != "" || actor == "" {
+		actor = inv.landingActor(owners)
+	}
+	previous, changed, err := lane.Register(home, root, actor, owners.now())
 	var refusal *lane.Refusal
 	if errors.As(err, &refusal) {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: laneTargets(path), Summary: refusal.Error(), Decision: refusal.Fix})
@@ -308,8 +340,10 @@ func (inv *intentInvocation) startLane(owners laneVerbOwners, home string, recor
 	}
 	view := inv.laneView(owners, home)
 	switch {
+	case started && view.Owner.PID != nil:
+		return intentResult{Outcome: intentConfirmed, Targets: targets, Data: view, Summary: fmt.Sprintf("started the landing lane's owner at %s (pid %d)", record.Root, *view.Owner.PID)}
 	case started:
-		return intentResult{Outcome: intentConfirmed, Targets: targets, Data: view, Summary: "started the landing lane's owner at " + record.Root}
+		return intentResult{Outcome: intentConfirmed, Targets: targets, Data: view, Summary: "started the landing lane's owner at " + record.Root + "; it is still coming up (metasystem landing status shows it)"}
 	case resumed || kept || restarted:
 		return intentResult{Outcome: intentConfirmed, Targets: targets, Data: view, Summary: fmt.Sprintf("the landing lane's owner at %s runs again (pid %d); its restart count is cleared", record.Root, probe.PID)}
 	}
@@ -345,6 +379,10 @@ func (inv *intentInvocation) stopLane(owners laneVerbOwners, home string, record
 		Summary: "stopped the landing lane at " + record.Root + " for " + by + ": its owner advances no batch and is not restarted until metasystem landing start"}, true
 }
 
+// runIntentLandingRestart gives the lane a fresh owner process (a person
+// restarts for a new engine): pause, end the running owner by its recorded
+// identity, then start: the pause and the restart count are cleared and a
+// new owner runs.
 func runIntentLandingRestart(inv *intentInvocation) int {
 	owners, home, record, problem := inv.laneContext(true)
 	if problem != nil {
@@ -353,7 +391,20 @@ func runIntentLandingRestart(inv *intentInvocation) int {
 	if stopped, ok := inv.stopLane(owners, home, record); !ok {
 		return inv.render(stopped)
 	}
-	return inv.render(inv.startLane(owners, home, record, true))
+	ended, err := owners.end(record.Root)
+	if err != nil {
+		return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: laneTargets(record.Root),
+			Summary: err.Error() + "; the lane stays paused",
+			next:    inv.publicArgv("landing", "start"), nextReason: "resume the lane with the owner it has"})
+	}
+	result := inv.startLane(owners, home, record, true)
+	if result.Outcome == intentConfirmed || result.Outcome == intentUnchanged {
+		result.Outcome = intentConfirmed
+		if ended != 0 {
+			result.Summary = fmt.Sprintf("ended the landing lane's owner pid %d; ", ended) + result.Summary
+		}
+	}
+	return inv.render(result)
 }
 
 // statusLaneLine is the lane's line in status's board block: landing

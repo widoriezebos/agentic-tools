@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
@@ -167,5 +168,38 @@ func TestBatchRootWithoutALaneHomeKeepsTheSeatSetting(t *testing.T) {
 	}
 	if landingLaneProving(noHome) != nil || landingLaneKeeper(noHome) != nil {
 		t.Fatalf("a host without a lane home gates proofs or keeps an owner")
+	}
+}
+
+// helm's report reads the lane through the lane resolver: a seat with no
+// landing.batch-root of its own sees the batches of the host's lane that
+// carry its work.
+func TestHelmHeldBatchesReadsTheHostLaneForAnUnsetSeat(t *testing.T) {
+	t.Parallel()
+	bed := newLaneBed(t)
+	if err := os.MkdirAll(filepath.Join(bed.seatB, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	bed.setRoot(t, bed.seatA, bed.landingA)
+	if _, _, err := bed.seams.batchRoot(bed.seatA, laneTestNow); err != nil {
+		t.Fatal(err)
+	}
+	batches := filepath.Join(bed.landingA, "artifacts", "agents", "landing-batches")
+	if err := os.MkdirAll(batches, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	record := `{"batchId":"b1","state":"proving","units":[{"seatRoot":"` + bed.seatB + `"}]}`
+	if err := os.WriteFile(filepath.Join(batches, "b1.json"), []byte(record), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	seat, err := helm.Locate(bed.seatB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	held, err := helmHeldBatches(bed.seatB, seat, func(installation string, now time.Time) (string, bool, error) {
+		return bed.seams.resolve(installation, now, false)
+	})
+	if err != nil || len(held) != 1 || held[0] != "b1 (proving)" {
+		t.Fatalf("unset seat's held batches = %v %v; want b1 from the host lane", held, err)
 	}
 }

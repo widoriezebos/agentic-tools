@@ -99,7 +99,7 @@ func (b *roleHealthProjectionBed) trunkRed(resolve func(string, string, func() t
 	if err != nil {
 		b.t.Fatal(err)
 	}
-	return checkTrunkRedFromProjection(b.root, b.now, projection, nil, resolve)
+	return checkTrunkRedFromProjection(b.root, b.now, projection, nil, resolve, nil)
 }
 
 func (b *roleHealthProjectionBed) trunkRedWithoutBatch() RoleVerdict {

@@ -21,14 +21,16 @@ import (
 type laneVerbBed struct {
 	cwd, home, landingA, landingB string
 	alive                         bool
-	starts                        int
+	starts, ends                  int
+	pid                           int64
+	person                        error
 	records                       []batch.Record
 }
 
 func newLaneVerbBed(t *testing.T) *laneVerbBed {
 	t.Helper()
 	base := t.TempDir()
-	bed := &laneVerbBed{cwd: filepath.Join(base, "cwd"), home: filepath.Join(base, "home"), landingA: filepath.Join(base, "landing-a"), landingB: filepath.Join(base, "landing-b")}
+	bed := &laneVerbBed{pid: 4242, cwd: filepath.Join(base, "cwd"), home: filepath.Join(base, "home"), landingA: filepath.Join(base, "landing-a"), landingB: filepath.Join(base, "landing-b")}
 	for _, dir := range []string{bed.cwd, bed.home, bed.landingA, bed.landingB} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatal(err)
@@ -46,9 +48,29 @@ func (bed *laneVerbBed) owners() intentOwners {
 			if !bed.alive {
 				return lane.OwnerProbe{}, nil
 			}
-			return lane.OwnerProbe{Alive: true, PID: 4242, Since: laneTestNow.Add(-time.Hour)}, nil
+			return lane.OwnerProbe{Alive: true, PID: bed.pid, Since: laneTestNow.Add(-time.Hour)}, nil
 		},
-		start:    func(string) error { bed.starts++; bed.alive = true; return nil },
+		start: func(string) error {
+			if !bed.alive {
+				bed.starts++
+				bed.alive, bed.pid = true, bed.pid+1
+			}
+			return nil
+		},
+		end: func(string) (int64, error) {
+			if !bed.alive {
+				return 0, nil
+			}
+			bed.ends++
+			bed.alive = false
+			return bed.pid, nil
+		},
+		person: func(string) (string, error) {
+			if bed.person != nil {
+				return "", bed.person
+			}
+			return "Wido", nil
+		},
 		records:  func(string) ([]batch.Record, error) { return bed.records, nil },
 		validate: func(root, _ string, _ time.Time) (string, error) { return realpath.Resolve(root), nil },
 		by:       func(string) string { return "seat" },
@@ -100,7 +122,7 @@ func TestLandingVerbsSetStartStopRestart(t *testing.T) {
 	if code, stdout, _ := bed.run(t, "landing", "start"); code != 0 || bed.starts != 1 || !strings.Contains(stdout, "started") {
 		t.Fatalf("start = %d %q starts=%d", code, stdout, bed.starts)
 	}
-	if code, stdout, _ := bed.run(t, "landing", "start"); code != 0 || bed.starts != 1 || !strings.Contains(stdout, "already running (pid 4242)") {
+	if code, stdout, _ := bed.run(t, "landing", "start"); code != 0 || bed.starts != 1 || !strings.Contains(stdout, "already running (pid 4243)") {
 		t.Fatalf("start again = %d %q starts=%d", code, stdout, bed.starts)
 	}
 	if code, stdout, _ := bed.run(t, "landing", "stop", "--by", "Wido"); code != 0 || !strings.Contains(stdout, "stopped the landing lane") {
@@ -113,13 +135,10 @@ func TestLandingVerbsSetStartStopRestart(t *testing.T) {
 	if code, stdout, _ := bed.run(t, "landing", "stop"); code != 0 || !strings.Contains(stdout, "already stopped by Wido") {
 		t.Fatalf("stop again = %d %q", code, stdout)
 	}
-	if code, stdout, _ := bed.run(t, "landing", "restart"); code != 0 || !strings.Contains(stdout, "runs again") {
-		t.Fatalf("restart = %d %q", code, stdout)
+	if code, stdout, _ := bed.run(t, "landing", "start"); code != 0 {
+		t.Fatalf("start after stop = %d %q", code, stdout)
 	}
-	if view := bed.status(t); view.Owner.State != lane.OwnerRunning {
-		t.Fatalf("status after restart = %+v", view.Owner)
-	}
-	if code, stdout, _ := bed.run(t, "landing", "status", "--verbose"); code != 0 || !strings.Contains(stdout, "registered by Wido") || !strings.Contains(stdout, "pid 4242") {
+	if code, stdout, _ := bed.run(t, "landing", "status", "--verbose"); code != 0 || !strings.Contains(stdout, "registered by Wido") || !strings.Contains(stdout, "pid 4243") {
 		t.Fatalf("status --verbose = %d %q", code, stdout)
 	}
 }
@@ -190,5 +209,62 @@ func TestStatusShowsTheLandingLaneLine(t *testing.T) {
 	bed.records = []batch.Record{provingRecord("b1", batch.StateProving)}
 	if line := inv.statusLaneLine(); !strings.Contains(line, "landing lane "+bed.landingA) || !strings.Contains(line, "batch b1 proving") {
 		t.Fatalf("lane line = %q", line)
+	}
+}
+
+// landing restart gives a fresh owner process: the running owner is ended
+// by its recorded identity, a new one runs with another pid, the pause is
+// cleared and the keep-alive's restarts are forgotten.
+func TestLandingRestartGivesAFreshOwner(t *testing.T) {
+	t.Parallel()
+	bed := newLaneVerbBed(t)
+	bed.alive = true
+	if code, _, stderr := bed.run(t, "landing", "set", bed.landingA); code != 0 {
+		t.Fatalf("set = %d %q", code, stderr)
+	}
+	if _, err := lane.SetPause(bed.home, "Wido", laneTestNow); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(lane.HostDir(bed.home), "landing-lane-keeper.json"), []byte(`{"failures":2,"restarts":2}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, stdout, stderr := bed.run(t, "landing", "restart")
+	if code != 0 || bed.ends != 1 || !strings.Contains(stdout, "4242") || !strings.Contains(stdout, "4243") {
+		t.Fatalf("restart = %d %q %q, ends %d; want pid 4242 ended and 4243 running", code, stdout, stderr, bed.ends)
+	}
+	view := bed.status(t)
+	if view.Owner.State != lane.OwnerRunning || view.Owner.PID == nil || *view.Owner.PID != 4243 || view.Owner.Restarts != 0 {
+		t.Fatalf("after restart = %+v", view.Owner)
+	}
+	if _, paused := lane.ReadPause(bed.home); paused {
+		t.Fatalf("restart left the lane paused")
+	}
+}
+
+// Moving a registered lane elsewhere is a person's act at an enrolled
+// terminal; the first registration and a repeat of the same root are not.
+func TestLandingSetMoveIsAPersonsAct(t *testing.T) {
+	t.Parallel()
+	bed := newLaneVerbBed(t)
+	bed.person = errors.New("human authority has no readable terminal enrollment")
+	if code, _, stderr := bed.run(t, "landing", "set", bed.landingA); code != 0 {
+		t.Fatalf("first registration by anyone = %d %q", code, stderr)
+	}
+	if code, _, stderr := bed.run(t, "landing", "set", bed.landingA); code != 0 {
+		t.Fatalf("repeat by anyone = %d %q", code, stderr)
+	}
+	code, _, stderr := bed.run(t, "landing", "set", bed.landingB)
+	if code == 0 || !strings.Contains(stderr, "a person's act") || !strings.Contains(stderr, "metasystem system enroll") {
+		t.Fatalf("move by no person = %d %q", code, stderr)
+	}
+	if record, _, _ := lane.Read(bed.home); record.Root != bed.landingA {
+		t.Fatalf("the refused move moved the lane")
+	}
+	bed.person = nil
+	if code, stdout, stderr := bed.run(t, "landing", "set", bed.landingB); code != 0 || !strings.Contains(stdout, "is now "+bed.landingB) {
+		t.Fatalf("move by the person = %d %q %q", code, stdout, stderr)
+	}
+	if record, _, _ := lane.Read(bed.home); record.RegisteredBy != "Wido" {
+		t.Fatalf("registered by %q; want the proven person", record.RegisteredBy)
 	}
 }
