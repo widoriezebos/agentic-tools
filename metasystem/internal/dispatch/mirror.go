@@ -61,6 +61,18 @@ func Mirror(repoRoot, checkout, evidence, rootJob, job, resultPath string) error
 	}
 
 	destination := filepath.Join(evidenceResolved, "agents", CheckoutSegment(checkoutResolved), rootJob)
+	// The tombstone is the durable disposal state (engine-owns-disk-lifetimes
+	// 3.12, DL4D-13): into a removed chain nothing is mirrored and the
+	// result says so; into a compacted one only its kept set. The caller
+	// holds the job's lifecycle lock, which the disposer holds too.
+	if removed, err := diskstore.ReadTombstone(diskstore.RemovedTombstonePath(destination)); err == nil {
+		return writeCompactJSON(resultPath, map[string]any{
+			"path": destination, "manifest": "", "unchanged": true, "mirroredAt": nowISO(),
+			"disposed": fmt.Sprintf("disposed on %s under rule %s, receipt %s", removed.At.Format("2006-01-02"), removed.Rule, removed.Receipt),
+		})
+	}
+	_, compactErr := os.Stat(filepath.Join(destination, diskstore.CompactTombstoneName))
+	compacted := compactErr == nil
 	if err := os.MkdirAll(destination, 0o755); err != nil {
 		return err
 	}
@@ -69,6 +81,15 @@ func Mirror(repoRoot, checkout, evidence, rootJob, job, resultPath string) error
 	sources, err := mirrorSources(agents, payload, repoRoot, recordPath, job, record)
 	if err != nil {
 		return err
+	}
+	if compacted {
+		kept := sources[:0]
+		for _, source := range sources {
+			if diskstore.ChainKept(filepath.ToSlash(source.relative)) {
+				kept = append(kept, source)
+			}
+		}
+		sources = kept
 	}
 	old := map[string]any{}
 	manifestExisted := fileExists(manifestPath)

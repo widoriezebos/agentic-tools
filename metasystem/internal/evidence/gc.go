@@ -24,6 +24,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 )
@@ -395,6 +396,15 @@ func pruneMirroredRecordsWithEndpoint(checkoutRoot, jobsDir, evidenceRoot string
 		// collectChains honors it (review foundations-1).
 		manifestPath := chainManifestPath(evidenceRoot, checkoutRoot, rootChain, mirroredPath(record))
 		if !fileExists(manifestPath) {
+			// A mirror a person removed (rule person or machine-remove)
+			// is current by its tombstone (engine-owns-disk-lifetimes 3.12,
+			// DL4D-13): the record goes after the grace, unless a claimed
+			// goal still needs it (checked above).
+			if removedByPerson(filepath.Dir(manifestPath), graceSeconds) {
+				if err := os.Remove(recordPath); err != nil && !os.IsNotExist(err) {
+					return err
+				}
+			}
 			continue
 		}
 		files, err := manifestFiles(manifestPath)
@@ -878,6 +888,19 @@ func sha256File(path string) (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(digest.Sum(nil)), nil
+}
+
+// removedByPerson reports a chain mirror whose removal by a person (or a
+// machine removal) is done and older than the grace.
+func removedByPerson(mirror string, graceSeconds float64) bool {
+	tombstone, err := diskstore.ReadTombstone(diskstore.RemovedTombstonePath(mirror))
+	if err != nil || tombstone.State != diskstore.StateDone {
+		return false
+	}
+	if tombstone.Rule != diskstore.RulePerson && tombstone.Rule != diskstore.RuleMachineRemove {
+		return false
+	}
+	return now().Sub(tombstone.At).Seconds() > graceSeconds
 }
 
 func fileExists(path string) bool {

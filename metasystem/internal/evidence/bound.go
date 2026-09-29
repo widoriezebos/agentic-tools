@@ -297,17 +297,7 @@ func bundleItem(path string) Item {
 func KeptFor(kind string) func(rel string) bool {
 	switch kind {
 	case diskstore.KindChain:
-		return func(rel string) bool {
-			switch {
-			case rel == "manifest.json", rel == "brief.md":
-				return true
-			case strings.HasPrefix(rel, "jobs/") && strings.HasSuffix(rel, ".json") && strings.Count(rel, "/") == 1:
-				return true
-			case strings.HasPrefix(rel, "rounds/") && strings.HasSuffix(rel, "/return.json") && strings.Count(rel, "/") == 2:
-				return true
-			}
-			return false
-		}
+		return diskstore.ChainKept
 	case diskstore.KindBundle:
 		return func(rel string) bool { return rel == diskstore.DistilledName || rel == diskstore.OwnerFileName }
 	}

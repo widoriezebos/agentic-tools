@@ -374,6 +374,21 @@ func Dispose(ctx context.Context, step DisposalStep) (DisposalResult, error) {
 	return remove(ctx, step, compacted)
 }
 
+// ChainKept is a compacted chain's kept set (3.12): its manifest, every job
+// record, its brief and every round's return. A mirror into a compacted
+// chain lands only these (DL4D-13).
+func ChainKept(rel string) bool {
+	switch {
+	case rel == "manifest.json", rel == "brief.md":
+		return true
+	case strings.HasPrefix(rel, "jobs/") && strings.HasSuffix(rel, ".json") && strings.Count(rel, "/") == 1:
+		return true
+	case strings.HasPrefix(rel, "rounds/") && strings.HasSuffix(rel, "/return.json") && strings.Count(rel, "/") == 2:
+		return true
+	}
+	return false
+}
+
 // keptAlways are the members every compaction keeps.
 func keptAlways(rel string) bool {
 	switch rel {

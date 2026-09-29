@@ -745,3 +745,48 @@ func TestAuditDiskReceiptLedgerHasOneAppender(t *testing.T) {
 		t.Fatalf("receipts.log is appended outside receiptlog.AppendLine, without the bound lock:\n%s", ratchetSiteList(sites))
 	}
 }
+
+// auditMirrorLockHolders are the functions that call mirrorRecordLocked
+// while holding the job's lifecycle lock (the reaper and a cancellation),
+// and mirrorRecord, which takes the lock itself.
+var auditMirrorLockHolders = map[string]bool{"mirrorRecord": true, "reapOneLocked": true, "recollectLostReturn": true, "internalCancel": true}
+
+// TestAuditDiskEveryMirrorHoldsTheLifecycleLock is the static witness of
+// design engine-owns-disk-lifetimes 3.12 (DL4E-02, DL4F-01): dispatch.Mirror
+// has one production caller, mirrorRecordLocked, and mirrorRecordLocked is
+// called only by a function that holds the job's lifecycle lock or takes
+// it, so every mirror runs under a lock the evidence disposer also holds.
+func TestAuditDiskEveryMirrorHoldsTheLifecycleLock(t *testing.T) {
+	t.Parallel()
+	sites := auditDiskGoSites(t, func(string) bool { return true }, func(fileSet *token.FileSet, file *ast.File) []int {
+		dispatchNames := auditDiskImportNames(file, "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch")
+		var lines []int
+		for _, declaration := range file.Decls {
+			function, ok := declaration.(*ast.FuncDecl)
+			if !ok || function.Body == nil {
+				continue
+			}
+			ast.Inspect(function.Body, func(node ast.Node) bool {
+				call, ok := node.(*ast.CallExpr)
+				if !ok {
+					return true
+				}
+				selector, ok := call.Fun.(*ast.SelectorExpr)
+				if !ok {
+					return true
+				}
+				if ident, ok := selector.X.(*ast.Ident); ok && dispatchNames[ident.Name] && selector.Sel.Name == "Mirror" && function.Name.Name != "mirrorRecordLocked" {
+					lines = append(lines, fileSet.Position(call.Pos()).Line)
+				}
+				if selector.Sel.Name == "mirrorRecordLocked" && !auditMirrorLockHolders[function.Name.Name] {
+					lines = append(lines, fileSet.Position(call.Pos()).Line)
+				}
+				return true
+			})
+		}
+		return lines
+	})
+	if len(sites) != 0 {
+		t.Fatalf("a mirror runs outside the job's lifecycle lock:\n%s", ratchetSiteList(sites))
+	}
+}
