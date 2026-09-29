@@ -14,9 +14,11 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
@@ -24,8 +26,10 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gocache"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/janitor"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/registry"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
 )
 
@@ -137,6 +141,22 @@ type DiskPass struct {
 	// armed checkouts read from the host registry (fixtures).
 	Proofs    map[diskstore.OwnerKind]diskstore.OwnerProof
 	Checkouts []string
+	// Registry is the host registry the armed checkouts are read from and
+	// a removed checkout's registration is closed in; empty is
+	// registry.DefaultPath() (fixtures name their own).
+	Registry string
+	// ForgetRemoved, in an apply pass, closes the registration of every
+	// armed checkout whose directory no longer exists and whose recorded
+	// processes have all ended: `metasystem disk clean`. The steward's own
+	// pass only counts them.
+	ForgetRemoved bool
+}
+
+func (p DiskPass) registryPath() (string, error) {
+	if p.Registry != "" {
+		return p.Registry, nil
+	}
+	return registry.DefaultPath()
 }
 
 func (p DiskPass) proofs() map[diskstore.OwnerKind]diskstore.OwnerProof {
@@ -151,6 +171,9 @@ type DiskPassResult struct {
 	Checkout diskstore.Report
 	Machine  diskstore.Report
 	Machined bool
+	// Forgotten are the removed checkouts whose registrations this pass
+	// closed.
+	Forgotten []string
 }
 
 // HomeStateRoot is ~/.metasystem, or the run-scoped home a fixture selects
@@ -200,7 +223,7 @@ func SweepDiskStores(ctx context.Context, top string, pass DiskPass) (DiskPassRe
 	if err != nil || pass.SkipMachine {
 		return result, err
 	}
-	result.Machine, err = machinePass(ctx, home, top, settings, settingsErr, pass)
+	result.Machine, result.Forgotten, err = machinePass(ctx, home, top, settings, settingsErr, pass)
 	result.Machined = err == nil && !result.Machine.Running
 	return result, err
 }
@@ -212,14 +235,43 @@ func reportOnly(mode diskstore.Mode) diskstore.Mode {
 	return mode
 }
 
-func machinePass(ctx context.Context, home, top string, own diskstore.Settings, ownErr error, pass DiskPass) (diskstore.Report, error) {
+func machinePass(ctx context.Context, home, top string, own diskstore.Settings, ownErr error, pass DiskPass) (diskstore.Report, []string, error) {
+	registryPath, registryErr := pass.registryPath()
 	checkouts := pass.Checkouts
-	if checkouts == nil {
-		checkouts = armedCheckouts()
+	if checkouts == nil && registryErr == nil {
+		checkouts = armedCheckoutsAt(registryPath)
 	}
-	checkouts = append([]string(nil), checkouts...)
+	// A registration whose checkout directory is gone is stale, not an
+	// unreadable participant: it stays out of the host settings and is
+	// counted once.
+	var live, removed []string
+	for _, checkout := range checkouts {
+		if checkout != top && checkoutRemoved(checkout) {
+			removed = append(removed, checkout)
+			continue
+		}
+		live = append(live, checkout)
+	}
+	checkouts = live
 	if !containsPath(checkouts, top) {
 		checkouts = append(checkouts, top)
+	}
+	var forgotten []string
+	staleNotes := []string{}
+	if len(removed) > 0 {
+		if pass.ForgetRemoved && pass.Mode == diskstore.ModeApply {
+			var running []string
+			var err error
+			if registryErr == nil {
+				forgotten, running, err = forgetRemovedCheckouts(registryPath, removed, pass.Now)
+			} else {
+				err = registryErr
+			}
+			staleNotes = forgetNotes(forgotten, running, err)
+		} else {
+			staleNotes = append(staleNotes, fmt.Sprintf("%d stale %s of removed checkouts; metasystem disk clean forgets them%s",
+				len(removed), plural(len(removed), "registration", "registrations"), examplesOf(removed)))
+		}
 	}
 	var participants []diskstore.Participant
 	var evidenceRoots, gitRoots []string
@@ -241,10 +293,11 @@ func machinePass(ctx context.Context, home, top string, own diskstore.Settings, 
 	options := diskstore.PassOptions{Kind: "machine", Name: "machine", Registry: diskstore.MachineRegistry(home),
 		LockPath: filepath.Join(diskstore.MachineRegistry(home).Dir, ".sweep.flock"), ReportPath: diskstore.MachineReportPath(home),
 		PlanDir: filepath.Join(home, "stores", "plans"), Mode: pass.Mode, Now: pass.Now, Clock: pass.Clock, Entropy: rand.Reader,
-		Notes: host.Conflicts, HostUnknown: host.Unknown}
+		Notes: append(append([]string(nil), host.Conflicts...), staleNotes...), HostUnknown: host.Unknown}
 	if !host.Known() {
 		options.Mode = reportOnly(pass.Mode)
-		return diskstore.RunPass(ctx, options)
+		report, err := diskstore.RunPass(ctx, options)
+		return report, forgotten, err
 	}
 	tempRoots := pass.TempRoots
 	if tempRoots == nil {
@@ -278,7 +331,191 @@ func machinePass(ctx context.Context, home, top string, own diskstore.Settings, 
 		roots := consumerRoots(home, tempRoots, gitRoots, evidenceRoots)
 		return diskstore.InventoryConsumers(ctx, pass.Now, roots, registeredPaths(home, checkouts, gitRoots), census)
 	}
-	return diskstore.RunPass(ctx, options)
+	report, err := diskstore.RunPass(ctx, options)
+	return report, forgotten, err
+}
+
+// checkoutRemoved reports whether the checkout directory itself no longer
+// exists. Anything else (a checkout that exists but whose settings cannot
+// be read, a path that cannot be examined) is not removed.
+func checkoutRemoved(checkout string) bool {
+	_, err := os.Lstat(checkout)
+	return errors.Is(err, fs.ErrNotExist)
+}
+
+// forgetNotes are the machine report's lines for what disk clean forgot.
+func forgetNotes(forgotten, running []string, err error) []string {
+	var notes []string
+	if len(forgotten) > 0 {
+		notes = append(notes, fmt.Sprintf("forgot %d %s%s", len(forgotten),
+			plural(len(forgotten), "registration of a removed checkout", "registrations of removed checkouts"), examplesOf(forgotten)))
+	}
+	if len(running) > 0 {
+		notes = append(notes, fmt.Sprintf("%d %s still %s a running process; it is forgotten once that ends%s", len(running),
+			plural(len(running), "registration of a removed checkout", "registrations of removed checkouts"), plural(len(running), "names", "name"), examplesOf(running)))
+	}
+	if err != nil {
+		notes = append(notes, "the registrations of removed checkouts could not be forgotten: "+err.Error()+"; the next metasystem disk clean retries")
+	}
+	return notes
+}
+
+func plural(count int, one, many string) string {
+	if count == 1 {
+		return one
+	}
+	return many
+}
+
+// examplesOf names at most three paths.
+func examplesOf(paths []string) string {
+	if len(paths) == 0 {
+		return ""
+	}
+	return " (e.g. " + strings.Join(paths[:min(len(paths), 3)], ", ") + ")"
+}
+
+// forgetRemovedCheckouts closes, under the registry lock, every open claim
+// and owner publication whose checkout is one of removed and whose recorded
+// processes have all ended: one reaped record with reason checkout-gone and
+// nothing left to sweep. A registration whose process still runs, or whose
+// process cannot be examined, is kept. A repeat finds nothing open and
+// writes nothing.
+func forgetRemovedCheckouts(registryPath string, removed []string, now time.Time) (forgotten, running []string, err error) {
+	gone := map[string]bool{}
+	for _, path := range removed {
+		gone[path] = true
+	}
+	frames, err := registry.ReadFrames(registryPath)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil, nil
+	}
+	if err != nil {
+		return nil, nil, err
+	}
+	reduction, err := registry.Reduce(frames)
+	if err != nil {
+		return nil, nil, err
+	}
+	type open struct {
+		checkout string
+		refs     []registry.ProcessRef
+	}
+	registrations := map[string]*open{}
+	var tags []string
+	note := func(tag, checkout string, refs ...registry.ProcessRef) {
+		if !gone[checkout] {
+			return
+		}
+		if registrations[tag] == nil {
+			registrations[tag] = &open{checkout: checkout}
+			tags = append(tags, tag)
+		}
+		registrations[tag].refs = append(registrations[tag].refs, refs...)
+	}
+	for _, tag := range reduction.SortedTags() {
+		if claim := reduction.Claims[tag]; claim != nil && claim.Open() {
+			refs := []registry.ProcessRef{}
+			if claim.Armed {
+				refs = append(refs, claim.Owner)
+			}
+			for _, generation := range claim.Generations {
+				for _, ref := range generation.Identities {
+					refs = append(refs, ref)
+				}
+			}
+			note(tag, claim.CheckoutPath, refs...)
+		}
+	}
+	for tag, owner := range reduction.PublishedOwners {
+		if owner.Open() {
+			var refs []registry.ProcessRef
+			for _, generation := range owner.Generations {
+				for _, ref := range generation.Identities {
+					refs = append(refs, ref)
+				}
+			}
+			note(tag, owner.CheckoutPath, refs...)
+		}
+	}
+	sort.Strings(tags)
+	forgottenPaths, runningPaths := map[string]bool{}, map[string]bool{}
+	for _, tag := range tags {
+		registration := registrations[tag]
+		if anyProcessRuns(registration.refs) {
+			runningPaths[registration.checkout] = true
+			continue
+		}
+		if err := appendCheckoutGone(registryPath, tag, registration.checkout, now); err != nil {
+			return sortedKeys(forgottenPaths), sortedKeys(runningPaths), err
+		}
+		forgottenPaths[registration.checkout] = true
+	}
+	for path := range runningPaths {
+		delete(forgottenPaths, path)
+	}
+	return sortedKeys(forgottenPaths), sortedKeys(runningPaths), nil
+}
+
+// anyProcessRuns reports whether a recorded process is alive or cannot be
+// proven dead.
+func anyProcessRuns(refs []registry.ProcessRef) bool {
+	for _, ref := range refs {
+		if ref.Pid < 1 {
+			continue
+		}
+		if identity.AliveRef(identity.KernelProber{}, identity.Ref{Pid: ref.Pid, StartedAtSec: ref.PidStartedAt}) != identity.Dead {
+			return true
+		}
+	}
+	return false
+}
+
+func sortedKeys(set map[string]bool) []string {
+	keys := make([]string, 0, len(set))
+	for key := range set {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// forgetLockWait bounds the wait for the registry lock.
+const forgetLockWait = 10 * time.Second
+
+// appendCheckoutGone writes the reaped record that closes one registration
+// of a removed checkout.
+func appendCheckoutGone(registryPath, tag, checkout string, now time.Time) error {
+	payload, err := supervise.EncodeRecord(map[string]any{
+		"schemaVersion": 1,
+		"event":         registry.EventReaped,
+		"checkoutPath":  checkout,
+		"at":            now.UTC().Format(time.RFC3339),
+		"ownerTag":      tag,
+		"reason":        "checkout-gone",
+		"diagnosis":     "the checkout directory no longer exists; metasystem disk clean forgot its registration",
+		"sweepPending":  false,
+		"engine":        "go",
+		"engineBuild":   supervise.BuildStamp,
+	})
+	if err != nil {
+		return err
+	}
+	exact, state, err := identity.KernelProber{}.ReadStart(int64(os.Getpid()))
+	if err != nil || state != identity.Alive {
+		return fmt.Errorf("read this process's identity for the registry lock: %v", err)
+	}
+	self := lock.Identity{Pid: exact.Pid, PidStartedAt: exact.StartedAt.Unix(), Tag: fmt.Sprintf("metasystem-disk-clean-%d", exact.Pid)}
+	probe := func(who lock.Identity) lock.Liveness {
+		switch identity.AliveRef(identity.KernelProber{}, identity.Ref{Pid: who.Pid, StartedAtSec: who.PidStartedAt}) {
+		case identity.Alive:
+			return lock.Alive
+		case identity.Dead:
+			return lock.Dead
+		}
+		return lock.Unknown
+	}
+	return registry.LockedAppend(registryPath, self, payload, forgetLockWait, 25*time.Millisecond, probe)
 }
 
 // consumerRoots are the places the floor names unregistered consumers in:
@@ -429,6 +666,11 @@ func armedCheckouts() []string {
 	if err != nil {
 		return nil
 	}
+	return armedCheckoutsAt(path)
+}
+
+// armedCheckoutsAt reads the open claims and owners of the registry at path.
+func armedCheckoutsAt(path string) []string {
 	frames, err := registry.ReadFrames(path)
 	if err != nil {
 		return nil
