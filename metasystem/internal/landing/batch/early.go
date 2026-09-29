@@ -90,7 +90,7 @@ func (owner *Owner) useWait(record Record, sample proofrun.LoadSample, at time.T
 		return nil
 	}
 	shape := goalIDs(joinedUnits(record.Units))
-	if len(shape) == 0 {
+	if _, ok := ChargeMember(joinedUnits(record.Units)); len(shape) == 0 || !ok {
 		return nil
 	}
 	early := Early{Shape: shape, Tree: record.TipTree}

@@ -53,6 +53,8 @@ type Unit struct {
 	// when it joined: the lane's history of how long each stage takes
 	// (D14, R22).
 	Stages []board.StageSpan `json:"stages,omitempty"`
+	// Change is set on a change member: work made without a goal (U11b).
+	Change *ChangeMember `json:"change,omitempty"`
 
 	unitRecordFields
 }

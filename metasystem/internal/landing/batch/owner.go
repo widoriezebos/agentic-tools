@@ -516,6 +516,14 @@ func (owner *Owner) start(record *Record, sample proofrun.LoadSample, at time.Ti
 	if oldest.IsZero() {
 		return false, "", nil
 	}
+	if joinedUnits := joinedUnits(record.Units); len(joinedUnits) != 0 {
+		if _, ok := ChargeMember(joinedUnits); !ok {
+			// Every proof is charged to a goal and a change has none: a batch
+			// of changes alone waits for a goal member to carry its proof.
+			wait := &WaitState{Reason: "no goal member", Changes: goalIDs(joinedUnits), Since: oldest}
+			return false, "", owner.recordDecision(record, Decision{Wait: wait}, at)
+		}
+	}
 	var open []OpenEntry
 	if _, unbound := owner.store.LedgerOwner().(UnboundLedgerOwner); !unbound {
 		open, _ = owner.store.LedgerOwner().Open()

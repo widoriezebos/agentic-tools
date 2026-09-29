@@ -75,6 +75,9 @@ type LandSeams struct {
 	ApplyBuild         func(Unit, BranchBuild) error
 	AppendBuildReceipt func(Unit, BranchBuild, PrefixReceipt) error
 	CommitBuild        func(Unit, BranchBuild, PrefixReceipt) (string, error)
+	// ReplayChange lands a change member's commit on the landing branch
+	// with its Landing-Change trailer and returns the new commit.
+	ReplayChange func(Unit) (string, error)
 	Held               func(base, tip string) error
 	VerifySeries       func(units []Unit, commits map[string]string) error
 	PublishBranch      func(expected, tip string) error
@@ -433,6 +436,23 @@ func LandSeries(store Store, id, actor string, at time.Time, seams LandSeams) er
 	}
 	for index, unit := range units {
 		if progress.Commits[unit.GoalID] != "" {
+			continue
+		}
+		if unit.IsChange() {
+			if seams.ReplayChange == nil {
+				return fmt.Errorf("BATCH_LAND_UNWIRED: change replay helper is absent")
+			}
+			commit, replayErr := seams.ReplayChange(unit)
+			if replayErr != nil {
+				return ejectRefusedMember(store, id, actor, at, record.BaseTree, unit, replayErr, seams.Reset)
+			}
+			if commit == "" {
+				return fmt.Errorf("BATCH_LAND_COMMIT_REFUSED: change %s returned no commit", unit.GoalID)
+			}
+			progress.Commits[unit.GoalID] = commit
+			if err := store.Update(id, func(current *Record) error { current.Landing = &progress; return nil }); err != nil {
+				return err
+			}
 			continue
 		}
 		receipt, ok := record.Receipts[unit.GoalID]

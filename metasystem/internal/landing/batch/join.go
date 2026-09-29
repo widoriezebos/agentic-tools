@@ -51,7 +51,13 @@ func assembleUnits(root, base string, units []Unit) (prefixes []string, err erro
 	}
 	current := base
 	for _, unit := range units {
-		if member, ok := branchMemberOf(unit); ok {
+		if unit.IsChange() {
+			next, changeErr := assembleChangeUnit(root, current, unit)
+			if changeErr != nil {
+				return nil, changeErr
+			}
+			current = next
+		} else if member, ok := branchMemberOf(unit); ok {
 			memberPrefixes, memberErr := AssembleBranchMembers(root, current, []BranchMember{member})
 			if memberErr != nil {
 				return nil, memberErr

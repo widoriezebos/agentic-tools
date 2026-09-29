@@ -169,6 +169,12 @@ func selectSealCandidateWithReader(root string, candidate *Record, plan func(str
 	candidate.Seal = map[string]Claim{}
 	units := joinedUnits(candidate.Units)
 	for _, unit := range units {
+		if unit.IsChange() {
+			// A change holds no claim and is planned by no goal of its own:
+			// the goal members' plans on the tip tree hold its paths.
+			candidate.Seal[unit.GoalID] = Claim{}
+			continue
+		}
 		selection, planErr := plan(root, unit.GoalID, candidate.TipTree)
 		if planErr != nil {
 			return planErr
