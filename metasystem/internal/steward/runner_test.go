@@ -3,6 +3,7 @@ package steward
 import (
 	"bufio"
 	"context"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -764,5 +765,55 @@ func TestRunnerLaunchWaitsForConfirmationOrExitNotTime(t *testing.T) {
 	}, exited, sleep)
 	if err == nil || !strings.Contains(err.Error(), "died before guarding") || polls != 3 {
 		t.Fatalf("exit before confirmation after %d polls = %v", polls, err)
+	}
+}
+
+// fakeBridge counts the runner's cycles of the bridge role.
+type fakeBridge struct {
+	steps, closes int
+	helmAtStep    []bool
+	root          string
+}
+
+func (f *fakeBridge) Step() string {
+	f.steps++
+	f.helmAtStep = append(f.helmAtStep, helm.Active(f.root).Active)
+	return "bridge serving"
+}
+
+func (f *fakeBridge) Close() { f.closes++ }
+
+// TestRunnerRunsTheBridgeRoleEveryCycleAndAtTheHelm (R25, U10c-1): the
+// runner gives the bridge role one step every cycle, at the helm as well
+// (the role reports and decides nothing), and closes it when the runner
+// ends, so a clean exit removes the socket.
+func TestRunnerRunsTheBridgeRoleEveryCycleAndAtTheHelm(t *testing.T) {
+	t.Parallel()
+	loop := newHelmLoop(t)
+	bridge := &fakeBridge{root: loop.root}
+	now := time.Date(2026, 9, 29, 10, 0, 0, 0, time.UTC)
+	sleeps := 0
+	deps := runnerLoopDependencies{
+		Tick:           func(string, TickConfig, WorkerCensus) (TickResult, error) { return TickResult{}, nil },
+		Resumable:      func(string) (string, bool, error) { return "", false, nil },
+		DeliverPending: func(string) (int, error) { return 0, nil },
+		Channel:        func(context.Context, string) (int, error) { return 0, nil },
+		Now:            func() time.Time { return now },
+		Sleep: func(d time.Duration) {
+			now = now.Add(d)
+			sleeps++
+			if sleeps == 1 {
+				takeHelmFixture(t, loop.root)
+				return
+			}
+			loop.stop(t)
+		},
+		Bridge: func(string) bridgeStepper { return bridge },
+	}
+	if err := runLoopWithDependencies(loop.root, fakeCensus{}, nil, 200*time.Millisecond, TickConfig{Now: now}, deps); err != nil {
+		t.Fatal(err)
+	}
+	if bridge.steps != 2 || bridge.helmAtStep[0] || !bridge.helmAtStep[1] || bridge.closes != 1 {
+		t.Fatalf("bridge steps %d at helm %v, closes %d; want one free step, one at the helm, and one close", bridge.steps, bridge.helmAtStep, bridge.closes)
 	}
 }

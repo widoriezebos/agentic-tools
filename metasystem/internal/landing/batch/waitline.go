@@ -44,21 +44,9 @@ func waitText(wait WaitState, now time.Time, location *time.Location) string {
 	return fmt.Sprintf("waits for %s; a separate proof costs ~%s (%s)", joinAnd(units), minutes(wait.ProofCost), basis)
 }
 
-// stageText is a stage as a person reads it: review round 2 of 3, unit
-// proof 120 of 189.
+// stageText is a stage as a person reads it, the board's own rendering.
 func stageText(stage board.Stage, round *board.Round, proof *board.Proof) string {
-	text := strings.ReplaceAll(string(stage), "-", " ")
-	if proof != nil && proof.Planned > 0 && stage == board.StageUnitProof {
-		text += fmt.Sprintf(" %d of %d", proof.Done, proof.Planned)
-	}
-	if round != nil && (stage == board.StageReview || stage == board.StageRevise) {
-		if round.Max != nil {
-			text += fmt.Sprintf(" round %d of %d", round.N, *round.Max)
-		} else {
-			text += fmt.Sprintf(" round %d", round.N)
-		}
-	}
-	return text
+	return board.StageText(stage, round, proof)
 }
 
 func joinAnd(items []string) string {

@@ -179,7 +179,10 @@ const CALL_SITES: readonly (readonly [string, number, readonly string[]])[] = [
   // 202 and starts a launch that runs for minutes; what happens after it
   // reaches the page on the same stream, because a launch record that changed
   // is a cause of the fleet event, which is why there is still no timer here.
-  ["fleet/api.ts", 1, ["/api/fleet", "/api/fleet/launch"]],
+  // This host's board (batch-lane design D14-r2) joins the fleet's read at
+  // the same call site: one more resource, read when the pane mounts and on
+  // the same event and reconnect the fleet re-reads on, and no timer.
+  ["fleet/api.ts", 1, ["/api/fleet", "/api/fleet/launch", "/api/board"]],
   // The Project Partner. Three requests through one call site: the
   // conversation, read when the page loads and again on every reconnect of the
   // one stream below; a send, when a human presses Send; and a stop, when they

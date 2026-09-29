@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,6 +17,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
@@ -714,4 +716,95 @@ func cmpOrNone(value string) string {
 		return "none"
 	}
 	return value
+}
+
+// bridgeNudges keeps the landing owner component subscribed to the host
+// board's bridge (batch-lane design D14-r2, R25): an event is a nudge that
+// carries nothing the owner trusts, on which the component runs its pass as
+// on a tick, and the pass's start re-reads the board and classifies it with
+// the owner's own prober and clock. Without the bridge (none holds the
+// flock, the dial is refused, or it fell silent for two heartbeats) the
+// owner reads the board at its tick, the same decision at most one tick
+// later, and connects again at its next tick; it never waits for the
+// bridge.
+type bridgeNudges struct {
+	dial    func() (net.Conn, error)
+	options board.SubscribeOptions
+	report  func(string)
+	sub     *board.Subscription
+	state   string
+}
+
+// newBridgeNudges is the production subscription of this host's bridge.
+func newBridgeNudges() *bridgeNudges {
+	return &bridgeNudges{
+		dial: func() (net.Conn, error) {
+			home, err := board.Home()
+			if err != nil {
+				return nil, err
+			}
+			return board.Dial(home)
+		},
+		options: board.SubscribeOptions{Kinds: []string{board.KindCard, board.KindStall}, Heartbeat: board.DefaultHeartbeat},
+		report: func(line string) {
+			encoded, _ := json.Marshal(map[string]any{"component": "landing-owner", "bridge": line})
+			fmt.Fprintln(os.Stderr, string(encoded))
+		},
+	}
+}
+
+// Events is the live subscription's nudges; nil, which never delivers,
+// while the owner reads directly.
+func (n *bridgeNudges) Events() <-chan board.Event {
+	if n == nil || n.sub == nil {
+		return nil
+	}
+	return n.sub.Events
+}
+
+// Ensure connects when no subscription is live, at once or not at all.
+func (n *bridgeNudges) Ensure() {
+	if n == nil || n.sub != nil {
+		return
+	}
+	conn, err := n.dial()
+	if err == nil {
+		n.sub, err = board.Subscribe(conn, n.options)
+	}
+	if err != nil {
+		n.say("bridge absent (" + err.Error() + "): the board is read at each tick")
+		return
+	}
+	n.say("bridge live: the batch decides on each board event")
+}
+
+// Lost records that the subscription ended; the owner reads directly until
+// its next tick connects again.
+func (n *bridgeNudges) Lost() {
+	if n == nil || n.sub == nil {
+		return
+	}
+	n.sub.Close()
+	n.sub = nil
+	n.say("bridge absent (the connection ended): the board is read at each tick")
+}
+
+// Close ends the subscription with the component.
+func (n *bridgeNudges) Close() {
+	if n != nil && n.sub != nil {
+		n.sub.Close()
+		n.sub = nil
+	}
+}
+
+// say reports a change of the bridge's state once, not on every tick.
+func (n *bridgeNudges) say(line string) {
+	state := strings.SplitN(line, " ", 3)[1]
+	if state == n.state {
+		return
+	}
+	n.state = state
+	if n.report != nil {
+		n.report(line)
+	}
 }

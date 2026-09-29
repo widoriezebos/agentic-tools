@@ -87,6 +87,11 @@ type Info struct {
 	// watch is a build with no presence fetcher, whose pages read on mount
 	// and never again.
 	Watch *fleet.Watch
+	// Board is where the board panel's resource reads the host board from
+	// (batch-lane design D14-r2): read and classified here on every request.
+	// A nil Board is an engine that cannot read the board, which the route
+	// says.
+	Board *BoardSource
 	// Project answers what the project's records declare, per request for the
 	// same reason.
 	Project func() (project.Pane, error)
@@ -339,6 +344,10 @@ type handler struct {
 	// per handler so that a test's faster clock is its own server's alone.
 	streamTick      time.Duration
 	streamHeartbeat time.Duration
+	// bridge is the one subscription to the host board's bridge, alive
+	// while a notification stream is open; nil without a board reader or a
+	// fleet watch to announce on.
+	bridge *bridgeFollower
 }
 
 func New(info Info, bound net.Addr, bundle fs.FS) http.Handler {
@@ -364,6 +373,9 @@ func newHandler(info Info, bound net.Addr, bundle fs.FS, nonce func() string) *h
 
 		streamTick:      notificationTick,
 		streamHeartbeat: notificationHeartbeat,
+	}
+	if info.Board != nil && info.Watch != nil {
+		handler.bridge = &bridgeFollower{source: info.Board, watch: info.Watch}
 	}
 	// The Partner is told what the landing page shows from this server's own
 	// composition of it, which needs the journal and the seat's standing as
@@ -494,6 +506,10 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Path == fleetPath {
 		h.fleet(w)
+		return
+	}
+	if r.URL.Path == boardPath {
+		h.board(w)
 		return
 	}
 	if r.URL.Path == applicationPath {

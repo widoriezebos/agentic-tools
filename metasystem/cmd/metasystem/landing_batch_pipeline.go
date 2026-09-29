@@ -4,14 +4,16 @@ import (
 	"errors"
 	"io/fs"
 	"os"
-	"sort"
+	"path/filepath"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/registry"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/httpd"
 )
 
 // hostPipeline is the production pipeline source (batch-lane design D14,
@@ -37,15 +39,59 @@ func productionPipeline(stall time.Duration, claims func() (map[string]string, e
 
 // Board reads the picture afresh.
 func (source hostPipeline) Board(now time.Time) batch.BoardPicture {
+	_, picture := source.read(now)
+	return picture
+}
+
+// View is the board as a one-shot command shows it (D14-r2, R23): the same
+// direct read and classification the lane decides from, grouped by seat,
+// with the bridge's state from its socket's presence. It never connects to
+// the bridge.
+func (source hostPipeline) View(now time.Time) board.View {
+	seats, picture := source.read(now)
+	view := board.NewView(seats, board.Picture{Cards: picture.Cards, Unknown: picture.Unknown})
+	view.Readable, view.Reason, view.Bridge = picture.Readable, picture.Reason, board.BridgeAbsent
+	if home, err := source.home(); err == nil {
+		view.Bridge = board.BridgeState(home)
+	}
+	return view
+}
+
+// read is the armed seats of this host and their classified picture.
+func (source hostPipeline) read(now time.Time) ([]board.Seat, batch.BoardPicture) {
+	seats, err := source.seats()
+	if err != nil {
+		return nil, batch.BoardPicture{Reason: "registry: " + err.Error()}
+	}
+	home, err := source.home()
+	if err != nil {
+		return seats, batch.BoardPicture{Reason: "board: " + err.Error()}
+	}
+	picture, _ := board.Read(home, seats, source.prober, now, source.stall)
+	result := batch.BoardPicture{Cards: picture.Cards, Unknown: picture.Unknown, Readable: true}
+	// With no armed seat no claim can be checked, and the ledger is not read.
+	if source.claims == nil || len(seats) == 0 {
+		return seats, result
+	}
+	claims, err := source.claims()
+	if err != nil {
+		return seats, result
+	}
+	return seats, checkAgainstLedger(result, seats, claims)
+}
+
+// seats are the armed checkouts of the host registry, each named by its
+// enrolled nickname; an error is an unreadable registry, never an empty one.
+func (source hostPipeline) seats() ([]board.Seat, error) {
 	path, err := source.registry()
 	if err != nil {
-		return batch.BoardPicture{Reason: "registry: " + err.Error()}
+		return nil, err
 	}
 	checkouts, err := registry.ArmedCheckouts(path)
 	if err != nil {
-		return batch.BoardPicture{Reason: "registry: " + err.Error()}
+		return nil, err
 	}
-	var seats []board.Seat
+	seats := []board.Seat{}
 	for _, checkout := range checkouts {
 		// A registration whose checkout is gone is stale, as the disk pass
 		// reads it; a checkout without a nickname is no seat.
@@ -58,67 +104,59 @@ func (source hostPipeline) Board(now time.Time) batch.BoardPicture {
 		}
 		seats = append(seats, board.Seat{Machine: machine, Installation: checkout})
 	}
-	home, err := source.home()
-	if err != nil {
-		return batch.BoardPicture{Reason: "board: " + err.Error()}
-	}
-	picture, _ := board.Read(home, seats, source.prober, now, source.stall)
-	result := batch.BoardPicture{Cards: picture.Cards, Unknown: picture.Unknown, Readable: true}
-	if source.claims == nil {
-		return result
-	}
-	claims, err := source.claims()
-	if err != nil {
-		return result
-	}
-	return checkAgainstLedger(result, seats, claims)
+	return seats, nil
 }
 
-// checkAgainstLedger applies the checks only a reader of the ledger can
-// make: a card whose goal the live claim gives to another machine (claim
-// moved: a delayed writer of a seat that handed over cannot resurrect it), a
-// live card for a goal nobody claims (not claimed), and a goal claimed by a
-// seat of this host with no card at all (no card: an older engine, or a
-// writer that failed). Each is Unknown, never near.
-func checkAgainstLedger(picture batch.BoardPicture, seats []board.Seat, claims map[string]string) batch.BoardPicture {
-	carded := map[string]bool{}
-	var believed []board.Card
-	for _, card := range picture.Cards {
-		carded[card.Goal] = true
-		if card.Stage.Terminal() {
-			believed = append(believed, card)
-			continue
-		}
-		holder, claimed := claims[card.Goal]
-		kept := card
-		switch {
-		case !claimed:
-			picture.Unknown = append(picture.Unknown, board.Unknown{Seat: card.Seat, Goal: card.Goal, Reason: "not claimed", Card: &kept})
-		case holder != card.Seat.Machine:
-			picture.Unknown = append(picture.Unknown, board.Unknown{Seat: card.Seat, Goal: card.Goal, Reason: "claim moved to " + holder, Card: &kept})
-		default:
-			believed = append(believed, card)
-		}
+// hostBoardSource is where the interface reads the host board from: the
+// same registry projection, home and prober the lane decides with.
+func hostBoardSource(installation string) *httpd.BoardSource {
+	source := productionPipeline(pipelineStall(installation), nil)
+	home, err := source.home()
+	if err != nil {
+		return nil
 	}
-	for _, unknown := range picture.Unknown {
-		carded[unknown.Goal] = true
+	return &httpd.BoardSource{Home: home, Seats: source.seats, Prober: source.prober, Stall: source.stall}
+}
+
+// pipelineStall is the stall bound the installation's configuration sets,
+// or the compiled default.
+func pipelineStall(installation string) time.Duration {
+	if withPipeline, err := (config.BatchLanding{}).WithPipeline(filepath.Join(installation, "metasystem.conf")); err == nil {
+		return withPipeline.Pipeline.Stall
 	}
-	goals := make([]string, 0, len(claims))
-	for goalID := range claims {
-		goals = append(goals, goalID)
-	}
-	sort.Strings(goals)
-	for _, goalID := range goals {
-		holder := claims[goalID]
-		if carded[goalID] {
-			continue
+	return config.DefaultPipelineSettings().Stall
+}
+
+// acceptedClaims maps every live claimed goal of the checkout's accepted
+// ledger to its holder: the claims a one-shot view checks the board
+// against.
+func acceptedClaims(checkout string) func() (map[string]string, error) {
+	return func() (map[string]string, error) {
+		tip, exists, err := goal.AcceptedLedgerTip(checkout)
+		if err != nil || !exists {
+			return map[string]string{}, err
 		}
-		for _, seat := range seats {
-			if seat.Machine == holder {
-				picture.Unknown = append(picture.Unknown, board.Unknown{Seat: seat, Goal: goalID, Reason: "no card"})
+		projection, err := goal.ProjectAt(checkout, tip)
+		if err != nil {
+			return nil, err
+		}
+		claims := map[string]string{}
+		if projection.Tree == nil {
+			return claims, nil
+		}
+		for id, file := range projection.Tree.Live {
+			if file != nil && file.Claimed != nil && file.Claimed.Machine != "" {
+				claims[id] = file.Claimed.Machine
 			}
 		}
+		return claims, nil
 	}
-	picture.Cards = believed
+}
+
+// checkAgainstLedger applies the board's ledger checks (claim moved, not
+// claimed, no card) to the lane's picture.
+func checkAgainstLedger(picture batch.BoardPicture, seats []board.Seat, claims map[string]string) batch.BoardPicture {
+	checked := board.CheckClaims(board.Picture{Cards: picture.Cards, Unknown: picture.Unknown}, seats, claims)
+	picture.Cards, picture.Unknown = checked.Cards, checked.Unknown
 	return picture
 }

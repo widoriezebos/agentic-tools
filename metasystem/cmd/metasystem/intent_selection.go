@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -14,7 +13,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 )
@@ -184,6 +182,11 @@ func runIntentStatusGoal(inv *intentInvocation, id string) int {
 		}
 	}
 	result := intentResult{Outcome: intentConfirmed, Targets: inv.targets(id), text: lines, Data: map[string]any{"goal": id, "work": views, "designs": designs}}
+	// The goal's own card line, then its batch's line (D14-r2, R23).
+	if line, ok := inv.hostBoardView(inv.boardNow()).GoalLine(id, inv.boardNow(), time.Local); ok {
+		result.text = append(result.text, "  "+line)
+		result.Data.(map[string]any)["board"] = line
+	}
 	if line, batchID := inv.goalBatchLine(id); line != "" {
 		result.text = append(result.text, "  "+line)
 		result.Data.(map[string]any)["batch"] = map[string]any{"id": batchID, "line": line}
@@ -209,32 +212,10 @@ func runIntentStatusGoal(inv *intentInvocation, id string) int {
 // goal in an unfinished batch. An owner the invocation leaves unset selects
 // the production one, as every other delivery owner does.
 func (inv *intentInvocation) goalBatchLine(id string) (string, string) {
-	owners := inv.delivery()
-	clock, batchRoot := owners.now, owners.batchRoot
-	if clock == nil {
-		clock = func() time.Time { return time.Now().UTC() }
-	}
-	if batchRoot == nil {
-		batchRoot = productionIntentBatchRoot
-	}
-	now := clock()
-	landingRoot, configured, err := batchRoot(inv.layout.InstallationRoot, now)
-	if err != nil || !configured {
-		return "", ""
-	}
-	paths, err := filepath.Glob(filepath.Join(landingRoot, "artifacts", "agents", "landing-batches", "*.json"))
-	if err != nil {
-		return "", ""
-	}
-	store := batch.NewStore(landingRoot, identity.KernelProber{})
-	for _, path := range paths {
-		record, loadErr := store.Load(strings.TrimSuffix(filepath.Base(path), ".json"))
-		if loadErr != nil || record.State != batch.StateOpen && record.State != batch.StateSealed && record.State != batch.StateProving {
-			continue
-		}
+	for _, record := range inv.unfinishedBatches() {
 		for _, unit := range record.Units {
 			if unit.GoalID == id && (unit.State == batch.UnitJoined || unit.State == batch.UnitJoining) {
-				return batch.WaitLine(record, now, time.Local), record.BatchID
+				return batch.WaitLine(record, inv.boardNow(), time.Local), record.BatchID
 			}
 		}
 	}

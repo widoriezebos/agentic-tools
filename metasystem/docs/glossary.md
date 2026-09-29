@@ -318,6 +318,29 @@ the engine's `metasystem goal` family (`internal/goal`).
   test union, proves one tip, creates exact prefix receipts, builds every unit
   commit locally in join order, and publishes the complete series with one
   push. Red diagnosis may eject units, but never changes the survivors' order.
+- **Host board** — `~/.metasystem/host/board/`, one private (`0700`)
+  directory per seat of this host named by its enrolled nickname, holding
+  one **progress card** per claimed goal (`internal/board`). A card is
+  identifiers, numbers and times, never free text: the goal's **stage**
+  (`claimed-idle`, `build`, `revise`, `unit-proof`, `review`, `judgement`,
+  `land-ready`, `joined`, `landing`, and the terminal `landed`, `returned`,
+  `released`), its round of limit, a proof's distinct sections ended of
+  planned, when the stage began, the last real progress, and the process the
+  stage's life depends on. The owner of each stage transition writes it in
+  the same act as its own record. `metasystem status` shows one line per
+  seat from it, `work status G` the goal's own line, and the interface's
+  Fleet page the same lines.
+- **Unknown (on the board)** — a card the reader cannot believe: a newer
+  schema, a foreign installation, a dead or reused owner, no real progress
+  within `landing.pipeline-stall-min` (stalled), a stamp ahead of the clock,
+  a goal whose ledger claim names another machine or nobody, or a claimed
+  goal with no card. One function classifies for every reader; Unknown is
+  never near, and every view names its reason.
+- **Bridge** — a role of the steward that wins the board's flock: it watches
+  the board and pushes raw cards to subscribers over the user-only socket
+  `~/.metasystem/host/bridge.sock`, decides nothing and writes no card.
+  One-shot commands never connect to it; `status` says `bridge live` or
+  `bridge absent` from the socket's presence.
 - **Batch withdrawal** — `landing batch withdraw --goal G`, issued by the
   lineage that joined G before its batch is sealed. It records a pending
   voluntary withdrawal and removes G from the queued candidate; the landing

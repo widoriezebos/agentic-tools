@@ -140,6 +140,9 @@ func (h *handler) notificationStream(w http.ResponseWriter, r *http.Request) {
 	// is listening and a page that is connected are one fact.
 	fleetEvents, leaveFleet := h.info.Watch.Join()
 	defer leaveFleet()
+	// The host board's bridge is followed while a stream is open, and its
+	// events ride back as the same fleet event (D14-r2, U10c-2).
+	defer h.followBridge()()
 	_, _ = io.WriteString(w, ": the steward's notifications\nretry: "+
 		strconv.FormatInt(notificationRetry.Milliseconds(), 10)+"\n\n")
 	flusher.Flush()

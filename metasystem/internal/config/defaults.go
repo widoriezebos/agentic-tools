@@ -226,6 +226,12 @@ var coreSettings = []Setting{
 		Meaning: "the lowest goal tier whose landing waits for a person's review or word (g1-s70); 4 lets every tier land by itself"},
 	{Key: LandingAutoAfterKey, Default: "4h",
 		Meaning: "how long a goal below that tier waits in Review before it is eligible to land by itself"},
+	// The host board (batch-lane design D14-r2, R25), read by the steward's
+	// bridge role only.
+	{Key: BoardKeepHoursKey, Default: "24",
+		Meaning: "hours a terminal card stays on the host board before the bridge sweeps it"},
+	{Key: BoardPollSecKey, Default: "5",
+		Meaning: "seconds between the bridge's reads of the host board where no kernel file watch can be established"},
 	{Key: IntentReviewToolCallsKey, Default: "48", ProofInput: true,
 		Meaning: "the independent read's tool calls for a public build whose brief names none"},
 

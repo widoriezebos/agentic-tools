@@ -9,9 +9,14 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 )
@@ -551,10 +556,11 @@ func topLevelStatus() intentCommand {
 			"Without G: this checkout's MetaSystem, its running work, open questions and what needs attention.",
 			"With G: every named work item of the goal with its stage and the command that continues it; goal show G is the goal's record.",
 			"Unknown and stale readings are reported as such; a read failure is never shown as stopped or healthy.",
+			"The board block names each seat of this host with what it works on and how far it is, then one line per unfinished landing batch; --verbose adds one line per goal.",
 		},
-		flags:    []intentFlag{intentInstallationFlag, {name: "work", value: "NAME", usage: "with G: only this named work"}},
+		flags:    []intentFlag{intentInstallationFlag, {name: "work", value: "NAME", usage: "with G: only this named work"}, intentVerboseFlag},
 		maxArgs:  -1,
-		examples: []string{"metasystem status", "metasystem status verbs-match-intent"},
+		examples: []string{"metasystem status", "metasystem status verbs-match-intent", "metasystem status --verbose"},
 		run:      runIntentTopStatus,
 	}
 }
@@ -575,6 +581,75 @@ func runIntentTopStatus(inv *intentInvocation) int {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--work names a goal's work: status G --work NAME; nothing was done"})
 	}
 	return runIntentCheckoutStatus(inv)
+}
+
+// statusBoardLines are status's board block (D14-r2, R23, U10d): the host
+// board from a direct read (one line per armed seat of this host, saying
+// bridge live or absent; --verbose one more per goal), then one line per
+// unfinished batch of the configured lane. It never connects to the bridge.
+func (inv *intentInvocation) statusBoardLines() ([]string, board.View) {
+	now := inv.boardNow()
+	view := inv.hostBoardView(now)
+	lines := view.Lines(now, time.Local, inv.input.switched("verbose"))
+	for _, record := range inv.unfinishedBatches() {
+		lines = append(lines, batchStatusLine(record, now))
+	}
+	return lines, view
+}
+
+// hostBoardView is the board as this checkout's one-shot views show it.
+func (inv *intentInvocation) hostBoardView(now time.Time) board.View {
+	if inv.owners.delivery != nil && inv.owners.delivery.boardView != nil {
+		return inv.owners.delivery.boardView(inv.layout.GitRoot, now)
+	}
+	return productionPipeline(pipelineStall(inv.layout.InstallationRoot), acceptedClaims(inv.layout.GitRoot)).View(now)
+}
+
+func (inv *intentInvocation) boardNow() time.Time {
+	if inv.owners.delivery != nil && inv.owners.delivery.now != nil {
+		return inv.owners.delivery.now()
+	}
+	return time.Now().UTC()
+}
+
+// unfinishedBatches are the configured lane's batches that have not
+// finished, oldest first; none when no lane is configured.
+func (inv *intentInvocation) unfinishedBatches() []batch.Record {
+	batchRoot := productionIntentBatchRoot
+	if inv.owners.delivery != nil && inv.owners.delivery.batchRoot != nil {
+		batchRoot = inv.owners.delivery.batchRoot
+	}
+	landingRoot, configured, err := batchRoot(inv.layout.InstallationRoot, inv.boardNow())
+	if err != nil || !configured {
+		return nil
+	}
+	paths, err := filepath.Glob(filepath.Join(landingRoot, "artifacts", "agents", "landing-batches", "*.json"))
+	if err != nil {
+		return nil
+	}
+	sort.Strings(paths)
+	store := batch.NewStore(landingRoot, identity.KernelProber{})
+	var records []batch.Record
+	for _, path := range paths {
+		record, loadErr := store.Load(strings.TrimSuffix(filepath.Base(path), ".json"))
+		if loadErr != nil {
+			continue
+		}
+		switch record.State {
+		case batch.StateOpen, batch.StateSealed, batch.StateProving, batch.StateDiagnosing, batch.StateLanding:
+			records = append(records, record)
+		}
+	}
+	return records
+}
+
+// batchStatusLine is one unfinished batch's line: why it waits or started,
+// or its state and size when it records neither.
+func batchStatusLine(record batch.Record, now time.Time) string {
+	if line := batch.WaitLine(record, now, time.Local); line != "" {
+		return line
+	}
+	return fmt.Sprintf("batch %s %s, %d unit%s", record.BatchID, record.State, len(record.Units), map[bool]string{true: "", false: "s"}[len(record.Units) == 1])
 }
 
 // runTestBaseline is test baseline: --gate records the trusted refactor

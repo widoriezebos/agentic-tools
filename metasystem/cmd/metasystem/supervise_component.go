@@ -116,6 +116,9 @@ func runSuperviseComponent(args []string) (code int) {
 	beat := heartbeatWriter(*heartbeat, *component, self, *tag, *intervalSec, *capMin)
 
 	var work func() error
+	// The landing owner alone subscribes to the host board's bridge; every
+	// other component's nudges are nil and never deliver.
+	var nudges *bridgeNudges
 	switch *component {
 	case "watcher":
 		release, pass, ok := setupWatcher(*metasystemRoot, *repo, *scope, self, *tag, *generation, *intervalSec)
@@ -141,6 +144,8 @@ func runSuperviseComponent(args []string) (code int) {
 			}
 		}()
 		work = landingOwnerReportedPass(*repo, pass)
+		nudges = newBridgeNudges()
+		defer nudges.Close()
 	default:
 		// An unknown component still beats, so a mislabelled owner launch is
 		// observable rather than a silent no-op.
@@ -170,27 +175,51 @@ func runSuperviseComponent(args []string) (code int) {
 	} // and produce a first verdict/sweep without waiting a full interval
 	ticker := time.NewTicker(time.Duration(*intervalSec) * time.Second)
 	defer ticker.Stop()
+	runWork := func() {
+		beat()
+		if err := work(); err != nil {
+			fmt.Fprintln(os.Stderr, "supervise component:", err)
+		}
+	}
+	nudges.Ensure()
+	signalled := superviseLoop(stop, ticker.C, wake, nudges, func() bool {
+		if rootGone() {
+			fmt.Fprintln(os.Stderr, "supervise component: checkout root is gone; exiting")
+			return false
+		}
+		runWork()
+		return true
+	}, runWork)
+	if signalled && *slowStop > 0 {
+		time.Sleep(time.Duration(*slowStop) * time.Second)
+	}
+	return 0
+}
+
+// superviseLoop is the component's one loop: a stop signal ends it; the
+// ticker runs tick (false ends the loop) and then connects the bridge when
+// no subscription is live; a SIGUSR1 wake and a bridge event each run the
+// work at once, as on a tick (batch-lane design D14-r2, R25). A lost
+// subscription is dropped, and the tick reads the board directly. It
+// reports whether a stop signal ended it.
+func superviseLoop(stop <-chan os.Signal, ticks <-chan time.Time, wake <-chan os.Signal, nudges *bridgeNudges, tick func() bool, run func()) bool {
 	for {
 		select {
 		case <-stop:
-			if *slowStop > 0 {
-				time.Sleep(time.Duration(*slowStop) * time.Second)
+			return true
+		case <-ticks:
+			if !tick() {
+				return false
 			}
-			return 0
-		case <-ticker.C:
-			if rootGone() {
-				fmt.Fprintln(os.Stderr, "supervise component: checkout root is gone; exiting")
-				return 0
-			}
-			beat()
-			if err := work(); err != nil {
-				fmt.Fprintln(os.Stderr, "supervise component:", err)
-			}
+			nudges.Ensure()
 		case <-wake:
-			beat()
-			if err := work(); err != nil {
-				fmt.Fprintln(os.Stderr, "supervise component:", err)
+			run()
+		case _, open := <-nudges.Events():
+			if !open {
+				nudges.Lost()
+				continue
 			}
+			run()
 		}
 	}
 }

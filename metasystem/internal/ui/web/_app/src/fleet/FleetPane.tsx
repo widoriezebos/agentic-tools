@@ -58,6 +58,7 @@ import { Button, Chip, Hint } from "../shell/controls";
 import { useOffersRefresh } from "../shell/refresh";
 import { readFleetOpen, writeFleetOpen } from "../storage";
 import { captureOfFleet } from "./capture";
+import { HostBoard } from "./HostBoard";
 import { LaunchCard } from "./LaunchCard";
 import { LaunchSheet } from "./LaunchSheet";
 import { visibleCard } from "./launching";
@@ -167,6 +168,7 @@ export function FleetPane() {
         <Trouble text={`The fleet could not be read again, so what is on screen is the last reading: ${read.problem}`} role="status" />
       )}
       {read.state === "read" && <Blocks page={read.page} />}
+      {read.state === "read" && <HostBoard />}
     </Pane>
   );
 }

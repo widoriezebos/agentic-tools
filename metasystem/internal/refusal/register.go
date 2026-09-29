@@ -86,6 +86,8 @@ var Rows = []Row{
 	{Code: "BOARD_NAME_UNSAFE", Owner: "internal/board", Site: "card.go#checkName", Shape: Question, H1: StandingInput},
 	{Code: "BOARD_PATH_NOT_A_DIRECTORY", Owner: "internal/board", Site: "card.go#privateDir", Shape: Question, H1: StandingInput},
 	{Code: "BOARD_UNREADABLE", Owner: "internal/board", Site: "board.go#Read", Shape: Question, H1: StandingInput},
+	{Code: "BRIDGE_SOCKET_PATH_OCCUPIED", Owner: "internal/board", Site: "bridge.go#Listen", Shape: Question, H1: StandingInput},
+	{Code: "BRIDGE_SOCKET_PATH_TOO_LONG", Owner: "internal/board", Site: "bridge.go#Listen", Shape: Question, H1: StandingInput},
 	{Code: "BATCH_CLOSED", Owner: "internal/landing/batch", Site: "join.go#joinRefusal", Shape: Question, H1: StandingInput},
 	{Code: "BATCH_GOAL_ELSEWHERE", Owner: "internal/landing/batch", Site: "join.go#checkMembership", Shape: Question, H1: StandingInput},
 	{Code: "BATCH_JOIN_CONFLICT", Owner: "internal/landing/batch", Site: "join.go#assembleChainUnit", Shape: Question, H1: StandingInput},
