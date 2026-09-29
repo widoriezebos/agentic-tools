@@ -110,7 +110,7 @@ func (fixture *landingOwnerOrdinaryFixture) resolve(root string) (productionBatc
 		return productionBatchOwnerInputs{}, fmt.Errorf("landing-owner enrollment on resolution %d is %q, want %q", fixture.calls, fixture.machine, want)
 	}
 	if fixture.machine == "" {
-		return productionBatchOwnerInputs{}, fmt.Errorf("no machine nickname is enrolled and hostnames are never published: run  git config metasystem.goal.machine <nickname>  once on this machine")
+		return productionBatchOwnerInputs{}, fmt.Errorf("no machine nickname is enrolled on this machine; name it once with: git config metasystem.goal.machine NAME")
 	}
 	lockDir, queueDir, err := batchOwnerFixtureProofLockDirectories(root)
 	if err != nil {

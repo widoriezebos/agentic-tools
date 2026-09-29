@@ -846,17 +846,21 @@ func (inv *intentInvocation) openGoal(id, intent, next string) int {
 		return inv.render(*problem)
 	}
 	var missing []string
-	for name, value := range map[string]string{"G": id, "--intent": intent, "--next": next, "--risk": inv.input.text("risk"), "--basis": inv.input.text("basis")} {
+	for name, value := range map[string]string{"--intent": intent, "--next": next, "--risk": inv.input.text("risk"), "--basis": inv.input.text("basis")} {
 		if strings.TrimSpace(value) == "" {
 			missing = append(missing, name)
 		}
 	}
+	slices.Sort(missing)
+	if strings.TrimSpace(id) == "" {
+		missing = append([]string{"G"}, missing...)
+	}
 	if len(missing) > 0 {
-		slices.Sort(missing)
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id),
-			Summary:  fmt.Sprintf("a new goal needs %s; nothing was done", strings.Join(missing, ", ")),
-			Decision: "the four risk answers (severity, novelty, exposure, accumulation) and their basis are a judgement about this goal, not a default",
-			Data:     map[string]any{"missing": missing}})
+			Summary: fmt.Sprintf("a new goal needs %s; nothing was done", strings.Join(missing, ", ")),
+			Decision: "metasystem goal open G --intent TEXT --next TEXT --risk severity=N,novelty=N,exposure=N,accumulation=N --basis TEXT; " +
+				"the four risk answers and their basis are a judgement about this goal, not a default",
+			Data: map[string]any{"missing": missing}})
 	}
 	actor, _, problem := inv.actingAs("open", id, actorEither)
 	if problem != nil {
@@ -1600,7 +1604,8 @@ func runIntentRevoke(inv *intentInvocation) int {
 		entry = inv.input.args[0]
 	}
 	if entry == "" {
-		return inv.refuse("", "needs the grant to close: metasystem grant revoke GRANT; nothing was done", "the grant's id was printed when it was recorded")
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "needs the grant to close: metasystem grant revoke GRANT; nothing was done",
+			next: inv.publicArgv("grant", "list"), nextReason: "lists the grants with their ids"})
 	}
 	if problem := inv.selectRoot(); problem != nil {
 		return inv.render(*problem)

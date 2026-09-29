@@ -11,7 +11,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
-const unenrolledMachineError = "no machine nickname is enrolled and hostnames are never published: run  git config metasystem.goal.machine <nickname>  once on this machine"
+const unenrolledMachineError = "no machine nickname is enrolled on this machine; name it once with: git config metasystem.goal.machine NAME"
 
 // convertedProjectionBed declares accepted goal bytes while leaving live
 // process and job records on disk for the normal liveness join.

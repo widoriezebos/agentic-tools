@@ -95,8 +95,11 @@ func TestStatusResultStates(t *testing.T) {
 		state State
 		line  func(string) string
 	}{
-		{"stopped", Stopped, func(string) string { return "interface not running" }},
-		{"stale", Stale, func(string) string { return "interface not running (stale record from pid 4201 removed)" }},
+		// EM-32: a stopped interface's status names the command that starts it.
+		{"stopped", Stopped, func(string) string { return "interface not running; start it with: metasystem ui start" }},
+		{"stale", Stale, func(string) string {
+			return "interface not running (stale record from pid 4201 removed); start it with: metasystem ui start"
+		}},
 		{"uninspectable", Uninspectable, func(string) string { return "cannot prove pid 4201 is the interface server; nothing was changed" }},
 		{"unreadable", Unreadable, func(stateRoot string) string {
 			return "a process holds the interface lock but " + recordPath(stateRoot) + " cannot be read; nothing was changed"

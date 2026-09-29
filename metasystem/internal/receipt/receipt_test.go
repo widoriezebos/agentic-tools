@@ -272,8 +272,13 @@ func TestAddValidation(t *testing.T) {
 		mutate func(*Options)
 		want   string
 	}{
-		{func(o *Options) { o.Type = "bogus" }, "invalid --type: bogus"},
-		{func(o *Options) { o.Outcome = "bogus" }, "invalid --outcome: bogus"},
+		// EM-27: a missing or unknown type or outcome names what is required
+		// and the accepted values.
+		{func(o *Options) { o.Type, o.Outcome = "", "" }, "receipt add needs --type (implement, refactor, improve, review, design, investigate, metrics-report, retro, other) and --outcome (shipped, reworked, blocked, parked); nothing was recorded"},
+		{func(o *Options) { o.Type = "" }, "receipt add needs --type (implement, refactor, improve, review, design, investigate, metrics-report, retro, other); nothing was recorded"},
+		{func(o *Options) { o.Type = "bogus" }, "--type bogus is not a receipt type; the types are implement, refactor, improve, review, design, investigate, metrics-report, retro, other; nothing was recorded"},
+		{func(o *Options) { o.Outcome = "" }, "receipt add needs --outcome (shipped, reworked, blocked, parked); nothing was recorded"},
+		{func(o *Options) { o.Outcome = "bogus" }, "--outcome bogus is not a receipt outcome; the outcomes are shipped, reworked, blocked, parked; nothing was recorded"},
 		{func(o *Options) { o.Verify = "bogus" }, "invalid --verify: bogus"},
 		{func(o *Options) { o.StopLoss = "maybe" }, "invalid --stop-loss: maybe"},
 		{func(o *Options) { o.Corrections = "x" }, "invalid --corrections: x"},
