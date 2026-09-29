@@ -44,7 +44,14 @@ const (
 	RecipeGit       = "git"
 	RecipeBlob      = "blob"
 	RecipeCollision = "collision"
+	// RecipeStage is an intent line: a stage the distiller is about to
+	// write, listed before it exists, so a restart removes only stages the
+	// manifest lists as its own (Round B2, F-5).
+	RecipeStage = "stage"
 )
+
+// Restores reports a line that maps an original to a replacement.
+func (l RecipeLine) Restores() bool { return l.Kind != RecipeCollision && l.Kind != RecipeStage }
 
 // DistilledHeader is the manifest's first line.
 type DistilledHeader struct {
@@ -139,11 +146,15 @@ func Distill(ctx context.Context, bundle string, rules DistillRules, now time.Ti
 			}
 		}
 	}
-	header, lines, present, err := ReadDistilled(bundle)
+	header, lines, _, err := ReadDistilled(bundle)
 	if err != nil {
 		return result, err
 	}
-	if err := rules.recover(ctx, bundle, lines, &result); err != nil {
+	if err := rules.recover(ctx, bundle, header, lines, &result); err != nil {
+		return result, err
+	}
+	header, lines, present, err := ReadDistilled(bundle)
+	if err != nil {
 		return result, err
 	}
 	candidates, err := distillCandidates(ctx, bundle, lines)
@@ -288,8 +299,14 @@ type candidate struct {
 // than the owner file, the manifest, replacements and stages; and nested
 // .git directories. Symlinks stay as they are.
 func distillCandidates(ctx context.Context, bundle string, lines []RecipeLine) ([]candidate, error) {
-	named := map[string]bool{}
+	named, stages := map[string]bool{}, map[string]bool{}
 	for _, line := range lines {
+		if line.Stage != "" {
+			stages[line.Stage] = true
+		}
+		if line.Kind == RecipeStage {
+			continue
+		}
 		named[line.Path] = true
 		if line.Kind != RecipeBlob && line.Replacement != "" {
 			named[line.Replacement] = true
@@ -308,7 +325,7 @@ func distillCandidates(ctx context.Context, bundle string, lines []RecipeLine) (
 		}
 		rel := filepath.ToSlash(strings.TrimPrefix(full, bundle+string(filepath.Separator)))
 		name := entry.Name()
-		if IsPartial(name) {
+		if stages[rel] || ownManifestStage(rel) {
 			if entry.IsDir() {
 				return filepath.SkipDir
 			}
@@ -458,12 +475,19 @@ func (rules DistillRules) transact(ctx context.Context, bundle string, header Di
 				return nil, err
 			}
 		}
-	case RecipeGzip:
+	case RecipeGzip, RecipeGit:
 		stage = filepath.Join(bundle, filepath.FromSlash(line.Replacement)) + PartialSuffix + rules.Stage
-		err = gzipStage(ctx, original, stage, line.SHA256)
-	case RecipeGit:
-		stage = filepath.Join(bundle, filepath.FromSlash(line.Replacement)) + PartialSuffix + rules.Stage
-		err = tarStage(ctx, original, stage, line.SHA256)
+		// The stage is listed before it is written: only a listed stage is
+		// ever removed by a restart.
+		intent := RecipeLine{Kind: RecipeStage, Path: line.Path, Stage: relOrBlob(bundle, stage, rules.Blobs), Mtime: line.Mtime}
+		if err := writeDistilled(bundle, header, append(append([]RecipeLine(nil), lines...), intent), rules.Sync, rules.Stage); err != nil {
+			return nil, err
+		}
+		if line.Kind == RecipeGzip {
+			err = gzipStage(ctx, original, stage, line.SHA256)
+		} else {
+			err = tarStage(ctx, original, stage, line.SHA256)
+		}
 	default:
 		return nil, fmt.Errorf("no transaction for recipe kind %s", line.Kind)
 	}
@@ -547,14 +571,42 @@ func (rules DistillRules) stop(step, path string) bool {
 
 // recover applies the restart rules of 3.5 to every line whose transaction
 // may be open, and removes the bundle's stages no line names.
-func (rules DistillRules) recover(ctx context.Context, bundle string, lines []RecipeLine, result *DistillResult) error {
-	stages := map[string]bool{}
+func (rules DistillRules) recover(ctx context.Context, bundle string, header DistilledHeader, lines []RecipeLine, result *DistillResult) error {
+	restoring := map[string]bool{}
 	for _, line := range lines {
-		if line.Kind == RecipeCollision {
+		if line.Restores() {
+			restoring[line.Path] = true
+		}
+	}
+	// A listed stage whose transaction never published its line is this
+	// distiller's incomplete work: removed, and its intent line dropped.
+	var kept []RecipeLine
+	dropped := false
+	for _, line := range lines {
+		if line.Kind != RecipeStage {
+			kept = append(kept, line)
 			continue
 		}
-		if line.Stage != "" && line.Kind != RecipeBlob {
-			stages[line.Stage] = true
+		if !restoring[line.Path] && line.Stage != "" {
+			full := filepath.Join(bundle, filepath.FromSlash(line.Stage))
+			if fileExists(full) {
+				if err := RemoveTree(ctx, full); err != nil {
+					return err
+				}
+				result.Discarded = append(result.Discarded, line.Stage)
+			}
+		}
+		dropped = true
+	}
+	if dropped {
+		if err := writeDistilled(bundle, header, kept, rules.Sync, rules.Stage); err != nil {
+			return err
+		}
+		lines = kept
+	}
+	for _, line := range lines {
+		if !line.Restores() {
+			continue
 		}
 		original := filepath.Join(bundle, filepath.FromSlash(line.Path))
 		if _, err := os.Lstat(original); errors.Is(err, os.ErrNotExist) {
@@ -602,27 +654,23 @@ func (rules DistillRules) recover(ctx context.Context, bundle string, lines []Re
 		}
 		result.Finished = append(result.Finished, line)
 	}
-	entries := []string{}
-	_ = filepath.WalkDir(bundle, func(full string, entry fs.DirEntry, err error) error {
-		if err == nil && full != bundle && IsPartial(entry.Name()) {
-			entries = append(entries, full)
-			if entry.IsDir() {
-				return filepath.SkipDir
+	// The manifest's and owner file's own stages at the bundle's top
+	// level are this engine's; captured content lives in source-* members
+	// and is never one of them.
+	top, _ := os.ReadDir(bundle)
+	for _, entry := range top {
+		if ownManifestStage(entry.Name()) {
+			if err := os.Remove(filepath.Join(bundle, entry.Name())); err == nil {
+				result.Discarded = append(result.Discarded, entry.Name())
 			}
 		}
-		return nil
-	})
-	for _, full := range entries {
-		rel := filepath.ToSlash(strings.TrimPrefix(full, bundle+string(filepath.Separator)))
-		if stages[rel] && fileExists(full) {
-			continue
-		}
-		if err := RemoveTree(ctx, full); err != nil {
-			return err
-		}
-		result.Discarded = append(result.Discarded, rel)
 	}
 	return nil
+}
+
+// ownManifestStage is a top-level stage of DISTILLED.txt or OWNER.json.
+func ownManifestStage(rel string) bool {
+	return strings.HasPrefix(rel, DistilledName+PartialSuffix) || strings.HasPrefix(rel, OwnerFileName+PartialSuffix)
 }
 
 // linePaths are a line's stage and final replacement paths.

@@ -20,6 +20,16 @@ import (
 // on an unconfirmed publication.
 type Syncer struct {
 	Dir func(path string) error
+	// File syncs an open file; nil is its Sync. A fixture injects a failure.
+	File func(file *os.File) error
+}
+
+// SyncFile syncs one open file.
+func (s Syncer) SyncFile(file *os.File) error {
+	if s.File != nil {
+		return s.File(file)
+	}
+	return file.Sync()
 }
 
 // SyncDir syncs one directory.

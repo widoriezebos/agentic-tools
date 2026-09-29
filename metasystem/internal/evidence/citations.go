@@ -107,6 +107,11 @@ type Citations struct {
 	Now   time.Time
 	Sync  diskstore.Syncer
 	pass  *citationPass
+	// generation is the newest published generation, read once per pass;
+	// scanned are the changed files already scanned this pass.
+	generation    *Generation
+	generationErr error
+	scanned       map[FileTuple][]string
 }
 
 // CitationRoots are one installation's roots (DL4D-04): every home of
@@ -460,11 +465,12 @@ type citationPass struct {
 	pending string
 }
 
-// Cited answers clause 3 for one item.
+// Cited answers clause 3 for one item, at that item's own critical
+// section (Round B2, F-7): the newest generation answers for unchanged
+// files, and every file changed since it is scanned now (a file already
+// scanned this pass with the same tuple is not read twice).
 func (c *Citations) Cited(ctx context.Context, segment Segment, item Item) ([]string, string, string) {
-	if c.pass == nil {
-		c.pass = c.build(ctx)
-	}
+	c.pass = c.build(ctx)
 	if c.pass.unknown != "" || c.pass.pending != "" {
 		return nil, c.pass.unknown, c.pass.pending
 	}
@@ -491,7 +497,11 @@ func (c *Citations) Cited(ctx context.Context, segment Segment, item Item) ([]st
 
 func (c *Citations) build(ctx context.Context) *citationPass {
 	pass := &citationPass{hits: map[string][]string{}}
-	generation, err := c.Newest()
+	if c.generation == nil && c.generationErr == nil {
+		generation, err := c.Newest()
+		c.generation, c.generationErr = &generation, err
+	}
+	generation, err := *c.generation, c.generationErr
 	switch {
 	case errors.Is(err, os.ErrNotExist):
 		pass.pending = "the first citation generation has not completed yet"
@@ -532,6 +542,12 @@ func (c *Citations) build(ctx context.Context) *citationPass {
 			}
 			continue
 		}
+		if tokens, done := c.scanned[tuple]; done {
+			if len(tokens) > 0 {
+				pass.hits[tuple.Path] = tokens
+			}
+			continue
+		}
 		tokens, err := scanWhole(ctx, tuple.Path)
 		if ctx.Err() != nil {
 			pass.pending = "more changed citation files than the pass budget scans; the running generation covers them"
@@ -541,6 +557,10 @@ func (c *Citations) build(ctx context.Context) *citationPass {
 			pass.unknown = "a citation file cannot be read: " + tuple.Path + ": " + err.Error()
 			return pass
 		}
+		if c.scanned == nil {
+			c.scanned = map[FileTuple][]string{}
+		}
+		c.scanned[tuple] = tokens
 		if len(tokens) > 0 {
 			pass.hits[tuple.Path] = tokens
 		}

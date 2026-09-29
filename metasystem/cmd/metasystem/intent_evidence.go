@@ -11,12 +11,14 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/evidence"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
+	"golang.org/x/sys/unix"
 )
 
 func evidenceIntentCommands() []intentCommand {
@@ -85,6 +87,9 @@ func evidenceEnv(inv *intentInvocation, top, by string) (evidence.Env, *intentRe
 		}
 	}
 	env, err := build(context.Background(), top, by)
+	if env.Session == "" {
+		env.Session = terminalSession()
+	}
 	if err != nil {
 		return env, &intentResult{Outcome: intentFailed, code: 1, Summary: "the evidence roots cannot be read: " + err.Error(),
 			Decision: "metasystem settings check names what is wrong with this checkout's settings"}
@@ -140,7 +145,7 @@ func evidenceTargets(inv *intentInvocation, env evidence.Env, fetch bool) ([]evi
 		if len(inv.input.args) > 0 {
 			return nil, nil, &intentResult{Outcome: intentRefused, code: 2, Summary: "--over-bound selects the items itself; name items or pass --over-bound, not both; nothing was done"}
 		}
-		exclusions := &evidence.Exclusions{Observe: env.Observe, Fetch: fetch, Citations: env.Citations}
+		exclusions := env.Exclusions(fetch)
 		targets, stillOver := env.OverBound(ctx, func(segment evidence.Segment, item evidence.Item) evidence.Judgement {
 			return exclusions.Judge(ctx, segment, item)
 		})
@@ -157,7 +162,7 @@ func evidenceTargets(inv *intentInvocation, env evidence.Env, fetch bool) ([]evi
 				argument = abs
 			}
 		}
-		target, err := env.Locate(ctx, argument)
+		resolved, err := env.Resolve(ctx, argument)
 		if err != nil {
 			summary := err.Error() + "; nothing was done"
 			if strings.Contains(err.Error(), evidence.ErrNotEvidence.Error()) {
@@ -165,7 +170,7 @@ func evidenceTargets(inv *intentInvocation, env evidence.Env, fetch bool) ([]evi
 			}
 			return nil, nil, &intentResult{Outcome: intentRefused, code: 2, Summary: summary, next: inv.publicArgv("evidence", "show", "--all"), nextReason: "list the evidence roots"}
 		}
-		targets = append(targets, target)
+		targets = append(targets, resolved...)
 	}
 	return targets, nil, nil
 }
@@ -287,11 +292,12 @@ func runIntentEvidenceDispose(inv *intentInvocation) int {
 	}
 	id := inv.input.text("plan")
 	if id == "" {
-		id = evidence.NewestDisposePlan(env.HomeStateRoot)
+		id = evidence.NewestDisposePlan(env.HomeStateRoot, env.Session)
 	}
 	if id == "" {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "there is no evidence disposal plan to execute; nothing was done",
-			next: inv.publicArgv("evidence", "dispose", "--over-bound", "--preview"), nextReason: "plan one first"})
+		return inv.render(intentResult{Outcome: intentRefused, code: 2,
+			Summary: "this terminal session has previewed no evidence disposal; preview one here with --preview, or name a plan with --plan ID; nothing was done",
+			next:    inv.publicArgv("evidence", "dispose", "--over-bound", "--preview"), nextReason: "plan one first"})
 	}
 	plan, err := evidence.ReadDisposePlan(env.HomeStateRoot, id)
 	if err != nil {
@@ -355,4 +361,14 @@ func evidencePlanResult(inv *intentInvocation, plan evidence.DisposePlan) intent
 	}
 	lines = append(lines, "  a person executes it: metasystem evidence dispose --plan "+plan.ID)
 	return intentResult{Outcome: intentConfirmed, Summary: summary, text: lines, Data: plan}
+}
+
+// terminalSession is the invoking terminal's session id: a preview and its
+// execution from one shell share it.
+func terminalSession() string {
+	sid, err := unix.Getsid(0)
+	if err != nil {
+		return ""
+	}
+	return strconv.Itoa(sid)
 }

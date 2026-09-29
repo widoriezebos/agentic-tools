@@ -51,12 +51,17 @@ type Env struct {
 	Entropy   io.Reader
 	Sync      diskstore.Syncer
 	Observe   Observer
+	// Tip reads a checkout's accepted ledger tip (no fetch); nil
+	// re-observes every item.
+	Tip       func(ctx context.Context, installation string) (string, error)
 	Citations *Citations
 	// Locks takes a chain's lifecycle locks; the verb waits the reaper's
 	// bound.
 	Locks Locks
 	Blobs diskstore.BlobStore
 	By    string
+	// Session names the terminal session the verb runs in (its session id).
+	Session string
 	// SegmentSettings reads a segment's numbers; nil is SegmentSettings.
 	SegmentSettings func(Segment) (PassSettings, error)
 }
@@ -96,50 +101,116 @@ type Target struct {
 // ErrNotEvidence is a path outside every evidence root.
 var ErrNotEvidence = errors.New("not in any evidence root of this host")
 
-// Locate finds an item by its path (any path inside it) or by its name in
-// this checkout's segment.
-func (e Env) Locate(ctx context.Context, argument string) (Target, error) {
-	roots := e.Roots()
-	if filepath.IsAbs(argument) {
-		clean := filepath.Clean(argument)
-		for _, root := range roots {
-			rel, err := filepath.Rel(root.Path, clean)
-			if err != nil || rel == "." || strings.HasPrefix(rel, "..") {
-				continue
-			}
-			parts := strings.Split(filepath.ToSlash(rel), "/")
-			if len(parts) >= 3 && (parts[0] == "agents" || parts[0] == "suite-failures" || parts[0] == "events") {
-				segment := segmentNamed(root, parts[0], parts[1])
-				path := filepath.Join(root.Path, parts[0], parts[1], parts[2])
-				item, err := itemAt(ctx, parts[0], path)
-				if err != nil {
-					return Target{}, err
-				}
-				return Target{Root: root, Segment: segment, Item: item}, nil
-			}
-			path := filepath.Join(root.Path, parts[0])
-			bytes, _, _ := diskstore.Measure(ctx, path)
-			return Target{Root: root, Unsegmented: true, Item: Item{Kind: diskstore.KindUnsegmented, Name: parts[0], Path: path, Bytes: bytes}}, nil
-		}
-		return Target{}, fmt.Errorf("%s is %w", argument, ErrNotEvidence)
+// structureNames are an evidence root's own directories and files: never an
+// item (Round B2, F-3).
+var structureNames = map[string]bool{"agents": true, "suite-failures": true, "events": true, "segments": true, "disposals": true, "RETIRED.json": true}
+
+// segmentName12 reports a segment directory's name: twelve hex digits.
+func segmentName12(name string) bool {
+	if len(name) != 12 {
+		return false
 	}
-	for _, root := range roots {
-		for _, segment := range root.Segments {
-			if segment.Context == nil || segment.Context.Installation != e.This.Installation {
-				continue
+	for _, r := range name {
+		if !(r >= '0' && r <= '9' || r >= 'a' && r <= 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+// Resolve finds exactly the items a word names (Round B2, F-3): an item's
+// path is that item; a segment's path is each of that segment's items; a
+// root's top-level entry that is not its structure is that one unsegmented
+// item (a legacy chain directly under agents/ is one too); a name is the
+// item of that name in this checkout's segment. A root's structure
+// directories, the root itself and a path inside an item are refused.
+func (e Env) Resolve(ctx context.Context, argument string) ([]Target, error) {
+	roots := e.Roots()
+	if !filepath.IsAbs(argument) {
+		for _, root := range roots {
+			for _, segment := range root.Segments {
+				if segment.Context == nil || segment.Context.Installation != e.This.Installation {
+					continue
+				}
+				items, err := segment.Items(ctx)
+				if err != nil {
+					return nil, err
+				}
+				for _, item := range items {
+					if item.Name == argument {
+						return []Target{{Root: root, Segment: segment, Item: item}}, nil
+					}
+				}
 			}
+		}
+		return nil, fmt.Errorf("no item named %s in this checkout's segment; name it by its path", argument)
+	}
+	clean := filepath.Clean(argument)
+	for _, root := range roots {
+		rel, err := filepath.Rel(root.Path, clean)
+		if err != nil || strings.HasPrefix(rel, "..") {
+			continue
+		}
+		if rel == "." {
+			return nil, fmt.Errorf("%s is an evidence root, not an item; name its items or segments", clean)
+		}
+		parts := strings.Split(filepath.ToSlash(rel), "/")
+		structural := parts[0] == "agents" || parts[0] == "suite-failures" || parts[0] == "events"
+		switch {
+		case len(parts) == 1 && structureNames[parts[0]]:
+			return nil, fmt.Errorf("%s is the root's %s directory, never an item; name a segment (%s/<segment>) or an item", clean, parts[0], clean)
+		case len(parts) == 1:
+			bytes, _, _ := diskstore.Measure(ctx, clean)
+			return []Target{{Root: root, Unsegmented: true, Item: Item{Kind: diskstore.KindUnsegmented, Name: parts[0], Path: clean, Bytes: bytes}}}, nil
+		case !structural:
+			return nil, fmt.Errorf("%s lies inside %s; name the item itself", clean, filepath.Join(root.Path, parts[0]))
+		case len(parts) == 2 && parts[0] == "agents" && !segmentName12(parts[1]):
+			// A legacy chain mirrored before segments: unsegmented, judged
+			// by the exclusions like every item.
+			item := chainItem(clean)
+			item.Kind = diskstore.KindUnsegmented
+			item.Bytes, _, _ = diskstore.Measure(ctx, clean)
+			return []Target{{Root: root, Unsegmented: true, Item: item}}, nil
+		case len(parts) == 2:
+			segment := segmentNamed(root, parts[0], parts[1])
 			items, err := segment.Items(ctx)
 			if err != nil {
-				return Target{}, err
+				return nil, err
 			}
+			var targets []Target
 			for _, item := range items {
-				if item.Name == argument {
-					return Target{Root: root, Segment: segment, Item: item}, nil
+				if filepath.Dir(item.Path) == clean {
+					targets = append(targets, Target{Root: root, Segment: segment, Item: item})
 				}
 			}
+			if len(targets) == 0 {
+				return nil, fmt.Errorf("segment %s holds no item", clean)
+			}
+			return targets, nil
+		case len(parts) == 3:
+			item, err := itemAt(ctx, parts[0], clean)
+			if err != nil {
+				return nil, err
+			}
+			return []Target{{Root: root, Segment: segmentNamed(root, parts[0], parts[1]), Item: item}}, nil
+		default:
+			return nil, fmt.Errorf("%s lies inside the item %s; name the item itself (metasystem evidence show PATH answers for a file)", clean,
+				filepath.Join(root.Path, parts[0], parts[1], parts[2]))
 		}
 	}
-	return Target{}, fmt.Errorf("no item named %s in this checkout's segment; name it by its path", argument)
+	return nil, fmt.Errorf("%s is %w", argument, ErrNotEvidence)
+}
+
+// Locate is Resolve for a word that must name exactly one item.
+func (e Env) Locate(ctx context.Context, argument string) (Target, error) {
+	targets, err := e.Resolve(ctx, argument)
+	if err != nil {
+		return Target{}, err
+	}
+	if len(targets) != 1 {
+		return Target{}, fmt.Errorf("%s names %d items, not one", argument, len(targets))
+	}
+	return targets[0], nil
 }
 
 func segmentNamed(root Root, directory, name string) Segment {
@@ -211,7 +282,7 @@ func Pointer(ctx context.Context, path string) PointerAnswer {
 		}
 		if _, lines, present, err := diskstore.ReadDistilled(item); err == nil && present {
 			for _, line := range lines {
-				if line.Path == rel && line.Kind != diskstore.RecipeCollision {
+				if line.Path == rel && line.Restores() {
 					answer.State, answer.Size, answer.SHA256 = "distilled", line.Size, line.SHA256
 					answer.Line = fmt.Sprintf("%s: distilled (%s) into %s; %d bytes, sha256 %s; restored through %s", clean, line.Kind, line.Replacement, line.Size, line.SHA256,
 						filepath.Join(item, diskstore.DistilledName))
@@ -259,6 +330,24 @@ func fromTombstone(answer PointerAnswer, tombstonePath string, tombstone disksto
 	return answer
 }
 
+// judgeTarget judges every item by the exclusions (Round B2, F-3): a
+// segmented item in its segment; an unsegmented entry against its root's
+// context checkout, held when the root has none.
+func judgeTarget(ctx context.Context, exclusions *Exclusions, target Target) Judgement {
+	if !target.Unsegmented {
+		if target.Segment.Context == nil {
+			return Judgement{Held: []string{"its segment has no armed context checkout: " + target.Segment.Unknown}}
+		}
+		return exclusions.Judge(ctx, target.Segment, target.Item)
+	}
+	for _, segment := range target.Root.Segments {
+		if segment.Context != nil && segment.Unknown == "" {
+			return exclusions.Judge(ctx, segment, target.Item)
+		}
+	}
+	return Judgement{Held: []string{"its root has no armed context checkout to judge it against"}}
+}
+
 // DisposePlanSchema names a person's disposal plan.
 const DisposePlanSchema = "metasystem.evidence-dispose-plan/1"
 
@@ -293,6 +382,9 @@ type DisposePlan struct {
 	Compact   bool              `json:"compact,omitempty"`
 	Items     []PlannedDisposal `json:"items"`
 	StillOver []string          `json:"stillOver,omitempty"`
+	// Session is the terminal session that previewed it: execution without
+	// --plan takes only this session's newest preview (Round B2, F-8).
+	Session string `json:"session,omitempty"`
 }
 
 // PlanPath is where a plan is written.
@@ -374,8 +466,9 @@ func (e Env) Preview(ctx context.Context, targets []Target, stillOver []string, 
 	if err != nil {
 		return DisposePlan{}, err
 	}
-	plan := DisposePlan{Schema: DisposePlanSchema, ID: id, At: e.Now.UTC(), Export: exportDir, Compact: compact, StillOver: stillOver, Items: []PlannedDisposal{}}
-	exclusions := &Exclusions{Observe: e.Observe, Fetch: false, Peers: e.peers(), Citations: e.citer()}
+	plan := DisposePlan{Schema: DisposePlanSchema, ID: id, At: e.Now.UTC(), Export: exportDir, Compact: compact, StillOver: stillOver, Items: []PlannedDisposal{},
+		Session: e.Session}
+	exclusions := e.Exclusions(false)
 	plan.Ledger = "goal state unknown: no accepted ledger"
 	for _, target := range targets {
 		planned := e.plan(ctx, target, compact, exclusions)
@@ -399,6 +492,18 @@ func (e Env) Preview(ctx context.Context, targets []Target, stillOver []string, 
 		return plan, err
 	}
 	return plan, e.Sync.WriteDurable(PlanPath(e.HomeStateRoot, id), append(data, '\n'), "plan-"+id)
+}
+
+// Exclusions are this environment's judge: every armed checkout as a
+// peer, the unreadable ones named, the accepted-tip check per item.
+func (e Env) Exclusions(fetch bool) *Exclusions {
+	var unreadable []string
+	for _, checkout := range e.checkouts() {
+		if checkout.FactsErr != nil {
+			unreadable = append(unreadable, checkout.Installation)
+		}
+	}
+	return &Exclusions{Observe: e.Observe, Fetch: fetch, Peers: e.peers(), Unreadable: unreadable, Tip: e.Tip, Citations: e.citer()}
 }
 
 func (e Env) peers() []Context {
@@ -447,15 +552,7 @@ func (e Env) plan(ctx context.Context, target Target, compact bool, exclusions *
 		planned.State = "declined"
 		return planned
 	}
-	if target.Unsegmented {
-		return planned
-	}
-	if target.Segment.Context == nil {
-		planned.Held = []string{"its segment has no armed context checkout: " + target.Segment.Unknown}
-		planned.State = "held"
-		return planned
-	}
-	if reason := blocking(exclusions.Judge(ctx, target.Segment, item)); reason != "" {
+	if reason := blocking(judgeTarget(ctx, exclusions, target)); reason != "" {
 		planned.Held = strings.Split(reason, "; ")
 		planned.State = "held"
 	}
@@ -478,8 +575,10 @@ func ReadDisposePlan(homeStateRoot, id string) (DisposePlan, error) {
 	return plan, nil
 }
 
-// NewestDisposePlan is the newest evidence disposal plan's id, or "".
-func NewestDisposePlan(homeStateRoot string) string {
+// NewestDisposePlan is the newest evidence disposal plan this session
+// previewed, or "": another session's preview is never executed by
+// default.
+func NewestDisposePlan(homeStateRoot, session string) string {
 	entries, err := os.ReadDir(filepath.Join(homeStateRoot, "stores", "plans"))
 	if err != nil {
 		return ""
@@ -487,7 +586,7 @@ func NewestDisposePlan(homeStateRoot string) string {
 	var ids []string
 	for _, entry := range entries {
 		id := strings.TrimSuffix(entry.Name(), ".json")
-		if _, err := ReadDisposePlan(homeStateRoot, id); err == nil {
+		if plan, err := ReadDisposePlan(homeStateRoot, id); err == nil && session != "" && plan.Session == session {
 			ids = append(ids, id)
 		}
 	}
@@ -519,7 +618,7 @@ type ExecuteOptions struct {
 // item) and a chain's lifecycle locks (waiting the reaper's bound), after
 // a fresh ledger observation, with the item revalidated and re-judged.
 func (e Env) Execute(ctx context.Context, plan DisposePlan, options ExecuteOptions) []Outcome {
-	exclusions := &Exclusions{Observe: e.Observe, Fetch: true, Peers: e.peers(), Citations: e.citer()}
+	exclusions := e.Exclusions(true)
 	var outcomes []Outcome
 	for _, planned := range plan.Items {
 		outcomes = append(outcomes, e.executeOne(ctx, plan, planned, options, exclusions))
@@ -565,10 +664,7 @@ func (e Env) executeOne(ctx context.Context, plan DisposePlan, planned PlannedDi
 		return outcome
 	}
 	ledger := disposalLedger(target)
-	judgement := Judgement{}
-	if !target.Unsegmented {
-		judgement = exclusions.Judge(ctx, target.Segment, target.Item)
-	}
+	judgement := judgeTarget(ctx, exclusions, target)
 	if recovered, handled := e.recover(ctx, target, ledger, stage, judgement, options); handled {
 		return recovered
 	}
@@ -584,23 +680,28 @@ func (e Env) executeOne(ctx context.Context, plan DisposePlan, planned PlannedDi
 		outcome.Line = planned.Path + ": changed since the preview; run --preview again"
 		return outcome
 	}
+	var overrides []string
+	if judgement.SegmentUnknown != "" && strings.HasPrefix(judgement.SegmentUnknown, "ledger not observed") {
+		judgement.Held = append(judgement.Held, "ledger-not-observed")
+		judgement.SegmentUnknown = ""
+	}
+	if reason := blocking(judgement); reason != "" {
+		if !options.Override {
+			outcome.Line = planned.Path + ": held: " + reason + "; --override takes it anyway"
+			return outcome
+		}
+		overrides = strings.Split(reason, "; ")
+	}
+	// Settlement re-mirrors only after the exclusions let the item go
+	// (Round B2, F-13); a re-mirror that changed the item since the
+	// preview sends the person back to it.
 	if decline := e.settle(ctx, target, stage); decline != "" {
 		outcome.Line = planned.Path + ": declined: " + decline
 		return outcome
 	}
-	var overrides []string
-	if !target.Unsegmented {
-		if judgement.SegmentUnknown != "" && strings.HasPrefix(judgement.SegmentUnknown, "ledger not observed") {
-			judgement.Held = append(judgement.Held, "ledger-not-observed")
-			judgement.SegmentUnknown = ""
-		}
-		if reason := blocking(judgement); reason != "" {
-			if !options.Override {
-				outcome.Line = planned.Path + ": held: " + reason + "; --override takes it anyway"
-				return outcome
-			}
-			overrides = strings.Split(reason, "; ")
-		}
+	if files, err := diskstore.Inventory(ctx, planned.Path, nil); err != nil || diskstore.InventoryDigest(files) != planned.InventoryDigest {
+		outcome.Line = planned.Path + ": its settlement re-mirrored records that differ from the preview; run --preview again"
+		return outcome
 	}
 	receipt := diskstore.DisposalReceipt{At: e.Now.UTC(), Segment: target.Segment.Git, Checkout: target.Segment.CheckoutName(), Kind: target.Item.Kind,
 		Item: target.Item.Name, Rule: diskstore.RulePerson, By: e.By, LedgerTip: judgement.LedgerTip, LedgerIdentity: judgement.LedgerIdentity,
@@ -608,6 +709,10 @@ func (e Env) executeOne(ctx context.Context, plan DisposePlan, planned PlannedDi
 		UncoveredReceipts: judgement.Uncovered, Citations: judgement.Citations, Plan: plan.ID, Reason: options.Reason, Overrides: overrides}
 	if target.Unsegmented {
 		receipt.Kind = diskstore.KindUnsegmented
+	}
+	if receipt.ID, err = diskstore.NewReceiptID(e.Now, e.Entropy); err != nil {
+		outcome.Line = planned.Path + ": " + err.Error()
+		return outcome
 	}
 	if plan.Export != "" && planned.Step == diskstore.StepRemove {
 		exported, err := diskstore.Export(ctx, diskstore.ExportRequest{Item: planned.Path, Dir: plan.Export, Segment: segmentName(target), Kind: receipt.Kind,
@@ -621,7 +726,12 @@ func (e Env) executeOne(ctx context.Context, plan DisposePlan, planned PlannedDi
 	}
 	step := diskstore.DisposalStep{Item: planned.Path, Receipt: receipt, Ledger: ledger, Commit: judgement.Commit, Stage: stage, Sync: e.Sync}
 	if planned.Step == diskstore.StepCompact {
-		step.Kept, step.Verdict = KeptFor(target.Item.Kind), Verdict(target.Item)
+		verdict, err := Verdict(target.Item, e.Blobs)
+		if err != nil {
+			outcome.Line = planned.Path + ": not compacted: " + err.Error()
+			return outcome
+		}
+		step.Kept, step.Verdict = KeptFor(target.Item.Kind), verdict
 	}
 	result, err := diskstore.Dispose(ctx, step)
 	switch {
@@ -894,6 +1004,8 @@ type SegmentView struct {
 	// NextPass are the items the next pass would compact, oldest first.
 	NextPass []string `json:"nextPass,omitempty"`
 	Unknown  string   `json:"unknown,omitempty"`
+	// Open are disposals a person must finish or roll back.
+	Open []string `json:"open,omitempty"`
 }
 
 // Show reads this checkout's segment: its total against its cap, every
@@ -936,7 +1048,7 @@ func (e Env) Show(ctx context.Context) SegmentView {
 	if segment.Unknown != "" {
 		view.Unknown, position.Unknown = segment.Unknown, segment.Unknown
 	}
-	exclusions := &Exclusions{Observe: e.Observe, Fetch: false, Peers: e.peers(), Citations: e.citer()}
+	exclusions := e.Exclusions(false)
 	if observed, unknown := exclusions.observe(ctx, segment); unknown == "" {
 		view.Ledger = "judged on the accepted ledger " + short12(observed.Tip)
 		if !observed.Committed.IsZero() {
@@ -945,6 +1057,7 @@ func (e Env) Show(ctx context.Context) SegmentView {
 	} else {
 		view.Ledger = unknown
 	}
+	view.Open = segment.OpenPersonDisposals(ctx)
 	items, _ := segment.Items(ctx)
 	sort.SliceStable(items, func(i, j int) bool { return items[i].EndedAt.Before(items[j].EndedAt) })
 	held := map[string]string{}
@@ -999,6 +1112,9 @@ func (v SegmentView) Lines(verbose bool) []string {
 		len(v.Items), counts["live"], counts["compacted"], eligible, heldCount, v.Ledger))
 	if v.Unknown != "" {
 		lines = append(lines, "  Unknown to the bound: "+v.Unknown)
+	}
+	for _, line := range v.Open {
+		lines = append(lines, "  unfinished: "+line)
 	}
 	if len(v.NextPass) > 0 {
 		lines = append(lines, fmt.Sprintf("  the next pass would compact %d item(s): %s", len(v.NextPass), examplesOf(v.NextPass)))

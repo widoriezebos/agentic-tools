@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -190,4 +191,42 @@ func TestEvidenceExportTwiceSecondWritesNothing(t *testing.T) {
 func TestEvidenceDisposeFromAPreviewedPlanOnceAndOnlyByAPerson(t *testing.T) {
 	t.Parallel()
 	witnessEvidenceDisposeRepeat(t, newEvidenceVerbBed(t))
+}
+
+// Round B2, F-8: execution without --plan takes only this terminal
+// session's newest preview; another session's preview runs only when a
+// person names it.
+func TestEvidenceDisposeWithoutAPlanTakesOnlyThisSessionsPreview(t *testing.T) {
+	t.Parallel()
+	bed := newEvidenceVerbBed(t)
+	code, out := bed.run("evidence", "dispose", "old-chain", "--preview")
+	if code != 0 {
+		t.Fatalf("preview = %d:\n%s", code, out)
+	}
+	plans, _ := filepath.Glob(filepath.Join(bed.home, "stores", "plans", "*.json"))
+	if len(plans) != 1 {
+		t.Fatalf("one plan: %v", plans)
+	}
+	data, err := os.ReadFile(plans[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var plan map[string]any
+	if err := json.Unmarshal(data, &plan); err != nil || plan["session"] == "" || plan["session"] == nil {
+		t.Fatalf("the plan names its session: %v %v", plan["session"], err)
+	}
+	plan["session"] = "another-terminal"
+	data, _ = json.Marshal(plan)
+	helmMust(t, os.WriteFile(plans[0], data, 0o644))
+	code, out = bed.run("evidence", "dispose")
+	if code == 0 || !strings.Contains(out, "--preview") || !strings.Contains(out, "--plan ID") {
+		t.Fatalf("another session's preview is not executed by default = %d:\n%s", code, out)
+	}
+	if _, err := os.Stat(bed.chain); err != nil {
+		t.Fatal("nothing was removed")
+	}
+	id := strings.TrimSuffix(filepath.Base(plans[0]), ".json")
+	if code, out := bed.run("evidence", "dispose", "--plan", id); code != 0 || !strings.Contains(out, "1 of 1 item(s) disposed") {
+		t.Fatalf("a named plan runs = %d:\n%s", code, out)
+	}
 }

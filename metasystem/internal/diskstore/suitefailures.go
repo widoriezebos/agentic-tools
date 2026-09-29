@@ -143,7 +143,7 @@ func minDuration(a, b time.Duration) time.Duration {
 // an interrupted distillation the next run finishes.
 func openTransaction(bundle string, lines []RecipeLine) bool {
 	for _, line := range lines {
-		if line.Kind != RecipeCollision && fileExists(filepath.Join(bundle, filepath.FromSlash(line.Path))) {
+		if line.Restores() && fileExists(filepath.Join(bundle, filepath.FromSlash(line.Path))) {
 			return true
 		}
 	}

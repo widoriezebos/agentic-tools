@@ -183,6 +183,12 @@ func evidenceBoundClass(ctx context.Context, home, top string, checkouts []strin
 			return checkoutFactsReader(installation, gitRootAbove(installation))(ctx)
 		}
 	}
+	hostHasEvidence := anyEvidenceUnder(diskstore.EvidenceParent(userHome))
+	for index := range checkouts {
+		if index < len(participants) && participants[index].Err == nil && evidenceRootHoldsSegments(participants[index].Settings.EvidenceRoot.Path) {
+			hostHasEvidence = true
+		}
+	}
 	var hostCheckouts []evidence.HostCheckout
 	var ageFloor time.Duration
 	var extras = map[string]string{}
@@ -192,9 +198,11 @@ func evidenceBoundClass(ctx context.Context, home, top string, checkouts []strin
 		if index < len(participants) {
 			entry.Settings, entry.SettingsErr = participants[index].Settings, participants[index].Err
 		}
-		// The checkout's facts need git; they are read only when its evidence
-		// root holds something the bound could act on.
-		if entry.SettingsErr == nil && evidenceRootHoldsSegments(entry.Settings.EvidenceRoot.Path) {
+		// Every armed checkout's facts are read once any root of the host
+		// holds evidence: a local-mode peer's ledger identity is part of
+		// every union (Round B2, F-10). With no evidence anywhere nothing
+		// needs them and no git runs.
+		if hostHasEvidence {
 			entry.Facts, entry.FactsErr = readFacts(ctx, installation)
 		}
 		if entry.Facts.GitRoot == "" {
@@ -211,7 +219,7 @@ func evidenceBoundClass(ctx context.Context, home, top string, checkouts []strin
 	}
 	class := &evidence.BoundClass{UserHome: userHome, HomeStateRoot: home, Checkouts: hostCheckouts,
 		MachineCap: host.Bytes(config.DiskEvidenceMachineCapKey), BlobGrace: host.Duration(config.DiskEvidenceBlobGraceKey), AgeFloor: ageFloor,
-		Observe: evidence.GoalLedgerObserver(pass.Clock),
+		Observe: evidence.GoalLedgerObserver(pass.Clock), Tip: evidence.AcceptedTipReader(),
 		Citations: &evidence.Citations{Dir: filepath.Join(home, "stores", "citations"), Now: pass.Now,
 			Roots: func() ([]string, error) {
 				var roots []string
@@ -279,7 +287,7 @@ func EvidenceEnv(ctx context.Context, top string, pass DiskPass, by string) (evi
 		return evidence.Env{}, err
 	}
 	env := evidence.Env{UserHome: userHome, HomeStateRoot: home, Checkouts: class.Checkouts, Now: pass.Now, Entropy: rand.Reader,
-		Observe: class.Observe, Citations: class.Citations, Blobs: class.Bound.Blobs, By: by,
+		Observe: class.Observe, Tip: class.Tip, Citations: class.Citations, Blobs: class.Bound.Blobs, By: by,
 		Locks: evidence.OwnerLocks(int64(os.Getpid()), os.Args[0], pass.Clock, time.Sleep)}
 	installation := installationOf(top)
 	for _, checkout := range class.Checkouts {
@@ -298,6 +306,21 @@ func evidenceRootHoldsSegments(root string) bool {
 	}
 	for _, name := range []string{"agents", "suite-failures", "events"} {
 		if info, err := os.Stat(filepath.Join(root, name)); err == nil && info.IsDir() {
+			return true
+		}
+	}
+	return false
+}
+
+// anyEvidenceUnder reports a directory under the evidence parent that holds
+// a segment directory.
+func anyEvidenceUnder(parent string) bool {
+	entries, err := os.ReadDir(parent)
+	if err != nil {
+		return false
+	}
+	for _, entry := range entries {
+		if entry.IsDir() && entry.Name() != diskstore.BlobStoreName && evidenceRootHoldsSegments(filepath.Join(parent, entry.Name())) {
 			return true
 		}
 	}

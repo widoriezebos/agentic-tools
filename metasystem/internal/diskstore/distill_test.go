@@ -288,22 +288,36 @@ func TestDistillResumesFromEveryDestructiveBoundary(t *testing.T) {
 	}
 }
 
-func TestDistillRemovesAStageNoLineNamesAndKeepsACollision(t *testing.T) {
+func TestDistillRemovesOnlyItsListedStagesAndKeepsACollision(t *testing.T) {
 	t.Parallel()
 	bed := newDistillBed(t)
+	// A stage the manifest lists (the distiller died after staging) is its
+	// own and goes; a partial-named file nothing lists is captured content.
+	rules := bed.rules("01STAGE0000000000000000000")
+	rules.interrupt = func(step, path string) bool { return step == "staged" && path == "source-001-tmp/work/.git" }
+	if _, err := Distill(context.Background(), bed.bundle, rules, testNow); !errors.Is(err, errInterrupted) {
+		t.Fatal(err)
+	}
+	listed := filepath.Join(bed.bundle, "source-001-tmp", "work", ".git.tar.gz"+PartialSuffix+"01STAGE0000000000000000000")
+	if _, err := os.Stat(listed); err != nil {
+		t.Fatalf("setup: the listed stage exists: %v", err)
+	}
 	orphan := filepath.Join(bed.bundle, "source-003-log", "run.log.gz"+PartialSuffix+"01DEAD000000000000000000000")
-	writeBedFile(t, orphan, []byte("an interrupted gzip no manifest line names"))
+	writeBedFile(t, orphan, []byte("a partial-named file nothing lists"))
 	foreign := filepath.Join(bed.bundle, "source-003-log", "nested", "deeper", "only-a-large-file.log.gz")
 	writeBedFile(t, foreign, []byte("a member the bundle arrived with"))
 	result, err := Distill(context.Background(), bed.bundle, bed.rules("01STAGE0000000000000000001"), testNow)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(orphan); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("a stage with no manifest line is incomplete work and goes: %v", err)
+	if _, err := os.Stat(listed); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("a listed stage of a transaction that never published is removed: %v", err)
+	}
+	if data, err := os.ReadFile(orphan); err != nil || string(data) != "a partial-named file nothing lists" {
+		t.Fatalf("an unlisted partial-named file is evidence and stays: %q %v", data, err)
 	}
 	if len(result.Discarded) != 1 {
-		t.Fatalf("discarded %v, want the one orphan stage", result.Discarded)
+		t.Fatalf("discarded %v, want the one listed stage", result.Discarded)
 	}
 	large := filepath.Join(bed.bundle, "source-003-log", "nested", "deeper", "only-a-large-file.log")
 	if _, err := os.Stat(large); err != nil {

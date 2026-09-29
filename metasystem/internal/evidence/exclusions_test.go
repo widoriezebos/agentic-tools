@@ -59,7 +59,10 @@ func (bed *boundBed) judged(exclusions *Exclusions) Bound {
 
 func (bed *boundBed) ledger(t *testing.T, lines ...string) string {
 	t.Helper()
-	path := ReceiptLedgerPath(bed.installation)
+	path, err := ReceiptLedgerPath(bed.installation)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +86,13 @@ func TestAnOpenGoalHoldsItsChainOnTheFetchedLedger(t *testing.T) {
 		accepted: map[string]LedgerView{bed.installation: view(identityA, map[string]string{"g-reopened": GoalDone, "g-done": GoalDone})},
 		fetched:  map[string]LedgerView{bed.installation: view(identityA, map[string]string{"g-reopened": GoalOpen, "g-done": GoalDone})},
 	}
-	bed.judged(bed.exclusions(fake)).CompactSegment(context.Background(), bed.segment, settingsOf(1))
+	exclusions := bed.exclusions(fake)
+	tips := 0
+	exclusions.Tip = func(context.Context, string) (string, error) { tips++; return "9498700a9", nil }
+	bed.judged(exclusions).CompactSegment(context.Background(), bed.segment, settingsOf(1))
+	if tips == 0 {
+		t.Fatal("each item after the first checks the accepted tip")
+	}
 	if compacted(open) || !compacted(done) {
 		t.Fatalf("the goal reopened on the remote holds its chain: %v %v", compacted(open), compacted(done))
 	}
@@ -216,7 +225,8 @@ func (bed *boundBed) bundle(t *testing.T, name string, daysAgo int, owner diskst
 	if err := os.WriteFile(filepath.Join(dir, diskstore.DistilledName), append(header, '\n'), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "run.log"), make([]byte, 400*kib), 0o644); err != nil {
+	log := append([]byte("=== RUN   TestLanding\n--- FAIL: TestLanding (0.01s)\n    land_test.go:42: want green, got red\nFAIL\tgithub.com/x/landing\t0.2s\n"), make([]byte, 400*kib)...)
+	if err := os.WriteFile(filepath.Join(dir, "run.log"), log, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	owner.WrittenBy, owner.WrittenAt = "bundle-writer", boundNow

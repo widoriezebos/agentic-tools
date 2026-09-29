@@ -67,7 +67,15 @@ type Exclusions struct {
 	// no ref advances.
 	Fetch bool
 	// Peers are the armed checkouts of the host, for the local-mode union.
-	Peers     []Context
+	Peers []Context
+	// Unreadable are armed checkouts whose facts could not be read: in
+	// local mode their ledgers are part of the union, so an identity they
+	// might carry is Unknown (Round B2, F-10).
+	Unreadable []string
+	// Tip reads a checkout's accepted ledger tip cheaply (no fetch); every
+	// item's judgement checks it and re-projects only when it moved since
+	// the last judgement (Round B2, F-7). nil re-observes every item.
+	Tip       func(ctx context.Context, installation string) (string, error)
 	Citations Citer
 	views     map[string]observation
 	ledgers   map[string]*receiptLedger
@@ -100,6 +108,14 @@ func (e *Exclusions) Judge(ctx context.Context, segment Segment, item Item) Judg
 		judgement.Held = append(judgement.Held, fmt.Sprintf("named by %d receipt(s) no retro covered", count))
 	}
 	judgement.Commit = ledger.recheck
+	if item.Kind == diskstore.KindUnsegmented {
+		// The citation index names segmented items; an unsegmented entry's
+		// citations cannot be judged, so it is held for a person.
+		if judgement.Unknown == "" {
+			judgement.Unknown = "citations of an unsegmented entry are not indexed"
+		}
+		return judgement
+	}
 	if e.Citations == nil {
 		if judgement.Unknown == "" {
 			judgement.Unknown = "the citation index is not available"
@@ -136,10 +152,19 @@ func (e *Exclusions) observe(ctx context.Context, segment Segment) (LedgerView, 
 	}
 	installation := segment.Context.Installation
 	observed, cached := e.views[installation]
-	if !cached {
-		observed = e.take(ctx, installation)
-		e.views[installation] = observed
+	switch {
+	case !cached:
+		observed = e.take(ctx, installation, e.Fetch)
+	case e.Tip == nil:
+		observed = e.take(ctx, installation, e.Fetch)
+	default:
+		// Each item is judged at its own critical section: the accepted
+		// tip is read again, and a moved tip is projected afresh.
+		if tip, err := e.Tip(ctx, installation); err != nil || tip != observed.view.Tip {
+			observed = e.take(ctx, installation, false)
+		}
 	}
+	e.views[installation] = observed
 	if observed.err != "" {
 		return observed.view, "ledger not observed: " + observed.err
 	}
@@ -155,18 +180,22 @@ func (e *Exclusions) observe(ctx context.Context, segment Segment) (LedgerView, 
 	return view, ""
 }
 
-func (e *Exclusions) take(ctx context.Context, installation string) observation {
+func (e *Exclusions) take(ctx context.Context, installation string, fetch bool) observation {
 	if e.Observe == nil {
 		return observation{err: "no ledger observer in this engine"}
 	}
-	view, err := e.Observe(ctx, installation, e.Fetch)
+	view, err := e.Observe(ctx, installation, fetch)
 	if err != nil {
 		return observation{view: view, err: err.Error()}
 	}
 	if !view.Local {
 		return observation{view: view}
 	}
-	// Local mode: a goal open in any armed clone of this identity is open.
+	// Local mode: a goal open in any armed clone of this identity is open;
+	// a clone whose identity cannot be read may be one of them.
+	if len(e.Unreadable) > 0 {
+		return observation{view: view, err: "local mode: the ledger facts of " + strings.Join(e.Unreadable, ", ") + " cannot be read, so the union for this identity is unknown"}
+	}
 	union := LedgerView{Tip: view.Tip, Identity: view.Identity, Committed: view.Committed, Local: true, States: map[string]string{}}
 	for id, state := range view.States {
 		union.States[id] = state
@@ -210,7 +239,7 @@ func (e *Exclusions) goalClause(segment Segment, item Item, view LedgerView, jud
 			judgement.Unknown = "the bundle was written under ledger " + item.OwnerLedger + ", not " + view.Identity
 			return
 		}
-	case diskstore.KindChain:
+	case diskstore.KindChain, diskstore.KindUnsegmented:
 		if id == "" {
 			return
 		}
@@ -244,8 +273,12 @@ func (e *Exclusions) receipts(installation string) *receiptLedger {
 	if ledger, ok := e.ledgers[installation]; ok {
 		return ledger
 	}
-	ledger := &receiptLedger{path: ReceiptLedgerPath(installation)}
+	path, err := ReceiptLedgerPath(installation)
+	ledger := &receiptLedger{path: path, err: err}
 	e.ledgers[installation] = ledger
+	if err != nil {
+		return ledger
+	}
 	data, err := os.ReadFile(ledger.path)
 	switch {
 	case errors.Is(err, os.ErrNotExist):
@@ -266,13 +299,14 @@ func (e *Exclusions) receipts(installation string) *receiptLedger {
 }
 
 // ReceiptLedgerPath is an installation's receipt ledger under its state
-// root.
-func ReceiptLedgerPath(installation string) string {
+// root. A state root that cannot be resolved is an error: the clause is
+// Unknown, never judged against a guessed ledger (Round B2, F-11).
+func ReceiptLedgerPath(installation string) (string, error) {
 	root, err := stateroot.RootForInstallation(installation)
 	if err != nil {
-		root = installation
+		return "", fmt.Errorf("the state root of %s cannot be resolved: %w", installation, err)
 	}
-	return filepath.Join(root, "memory", "receipts.log")
+	return filepath.Join(root, "memory", "receipts.log"), nil
 }
 
 func ledgerDigest(data []byte) string {
@@ -286,7 +320,7 @@ func (l *receiptLedger) names(item Item) int {
 	count := 0
 	for _, line := range l.uncovered {
 		switch item.Kind {
-		case diskstore.KindChain:
+		case diskstore.KindChain, diskstore.KindUnsegmented:
 			if delegateNames(line, item) {
 				count++
 			}
@@ -399,4 +433,16 @@ func commitTime(ctx context.Context, root, commit string) time.Time {
 	}
 	at, _ := time.Parse(time.RFC3339, strings.TrimSpace(string(out)))
 	return at
+}
+
+// AcceptedTipReader reads a checkout's accepted goal ledger tip under the
+// context: one rev-parse, no fetch.
+func AcceptedTipReader() func(ctx context.Context, installation string) (string, error) {
+	return func(ctx context.Context, installation string) (string, error) {
+		out, err := exec.CommandContext(ctx, "git", "-C", installation, "rev-parse", "--verify", "--quiet", goal.AcceptedRef).Output()
+		if err != nil {
+			return "", err
+		}
+		return strings.TrimSpace(string(out)), nil
+	}
 }

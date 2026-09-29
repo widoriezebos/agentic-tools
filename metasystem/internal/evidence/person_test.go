@@ -223,8 +223,11 @@ func TestCompactIsNeverStrengthenedAndEveryRemovalLeavesATombstone(t *testing.T)
 		t.Fatalf("nothing changes: %+v", outcomes)
 	}
 	plan = bed.preview(t, false, "", cache)
-	if outcomes := bed.env.Execute(context.Background(), plan, ExecuteOptions{}); !outcomes[0].Done || !gone(cache) {
-		t.Fatalf("a person removes the tree: %+v", outcomes)
+	if plan.Items[0].State != "held" {
+		t.Fatalf("an unsegmented entry is judged by the exclusions and held: %+v", plan.Items[0])
+	}
+	if outcomes := bed.env.Execute(context.Background(), plan, ExecuteOptions{Override: true}); !outcomes[0].Done || !gone(cache) {
+		t.Fatalf("a person removes the tree, overriding what cannot be judged: %+v", outcomes)
 	}
 	tombstone, err := diskstore.ReadTombstone(diskstore.RemovedTombstonePath(cache))
 	if err != nil || len(tombstone.Files) != 1 || tombstone.Files[0].Path != "unique.bin" {

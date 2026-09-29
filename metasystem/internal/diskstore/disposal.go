@@ -147,6 +147,16 @@ type Tombstone struct {
 	// VerdictWritten says the compaction wrote VERDICT.txt (a rollback
 	// removes it).
 	VerdictWritten bool `json:"verdictWritten,omitempty"`
+	// Plan is a person's plan the disposal executes: the command that
+	// finishes or rolls back an interrupted one names it.
+	Plan string `json:"plan,omitempty"`
+}
+
+// MachineOwned reports a disposal the machine pass may recover: its own
+// compaction. A person's removal or compaction, and a machine removal, are
+// finished or rolled back only by a person (Round B2, F-4).
+func (t Tombstone) MachineOwned() bool {
+	return t.Step == StepCompact && (t.Rule == RuleBound || t.Rule == RuleMachineCap)
 }
 
 // DisposalReceipt is one line of a segment's disposals ledger.
@@ -241,7 +251,7 @@ func Inventory(ctx context.Context, item string, kept func(rel string) bool) ([]
 	if _, lines, present, err := ReadDistilled(item); err == nil && present {
 		for index := range lines {
 			line := lines[index]
-			if line.Kind == RecipeCollision {
+			if !line.Restores() {
 				continue
 			}
 			files = append(files, InventoryFile{Path: line.Path, Size: line.Size, SHA256: line.SHA256, Original: &line})
@@ -326,6 +336,9 @@ func ReadTombstone(path string) (Tombstone, error) {
 		}
 		return Tombstone{}, fmt.Errorf("%s is unreadable: %w", path, err)
 	}
+	if !validReceiptID(tombstone.Receipt) {
+		return Tombstone{}, fmt.Errorf("%s names no receipt id; it is not a disposal this engine can judge, a person decides", path)
+	}
 	return tombstone, nil
 }
 
@@ -353,6 +366,9 @@ func isNotDir(err error) bool {
 // Dispose runs one disposal step: compaction when step.Kept is set, else
 // removal. A repeat of a finished disposal writes nothing (R-129).
 func Dispose(ctx context.Context, step DisposalStep) (DisposalResult, error) {
+	if !validReceiptID(step.Receipt.ID) {
+		return DisposalResult{}, errors.New("a disposal needs a minted receipt id (NewReceiptID); nothing was done")
+	}
 	compacted, removed, err := ItemTombstones(step.Item)
 	if err != nil {
 		return DisposalResult{}, err
@@ -482,7 +498,7 @@ func (s DisposalStep) newTombstone(files []InventoryFile, before int64, kind str
 	tombstone := Tombstone{Schema: TombstoneSchema, Item: filepath.Base(s.Item), Kind: receipt.Kind, Segment: receipt.Segment,
 		Checkout: receipt.Checkout, History: []HistoryEntry{}, InventoryDigest: InventoryDigest(files), Step: kind, Rule: receipt.Rule,
 		By: receipt.By, At: receipt.At.UTC(), Receipt: receipt.ID, LedgerTip: receipt.LedgerTip, LedgerIdentity: receipt.LedgerIdentity,
-		BytesBefore: before, State: StateBegun, Overrides: receipt.Overrides, Export: receipt.Export, Settings: receipt.Settings}
+		BytesBefore: before, State: StateBegun, Overrides: receipt.Overrides, Export: receipt.Export, Settings: receipt.Settings, Plan: receipt.Plan}
 	if data, err := os.ReadFile(filepath.Join(s.Item, "manifest.json")); err == nil {
 		sum := sha256.Sum256(data)
 		tombstone.ManifestSHA256 = hex.EncodeToString(sum[:])
@@ -706,6 +722,23 @@ func ignoreMissing(err error) error {
 	return err
 }
 
+// NewReceiptID mints a disposal's receipt id: a ULID, unique per disposal.
+func NewReceiptID(now time.Time, entropy io.Reader) (string, error) { return NewID(now, entropy) }
+
+// validReceiptID is a non-empty id of letters, digits, '-' and '_': an
+// empty id is invalid everywhere (Round B2, F-1).
+func validReceiptID(id string) bool {
+	if id == "" {
+		return false
+	}
+	for _, r := range id {
+		if !(r >= '0' && r <= '9' || r >= 'A' && r <= 'Z' || r >= 'a' && r <= 'z' || r == '-' || r == '_') {
+			return false
+		}
+	}
+	return true
+}
+
 // AppendReceipt appends one receipt line to a disposals ledger and syncs it;
 // a ledger created by this append has its directory synced too.
 func AppendReceipt(ledger string, receipt DisposalReceipt, sync Syncer) error {
@@ -717,17 +750,26 @@ func AppendReceipt(ledger string, receipt DisposalReceipt, sync Syncer) error {
 	if err := os.MkdirAll(directory, 0o755); err != nil {
 		return err
 	}
-	_, statErr := os.Lstat(ledger)
+	info, statErr := os.Lstat(ledger)
 	created := errors.Is(statErr, os.ErrNotExist)
+	var prior int64
+	if statErr == nil {
+		prior = info.Size()
+	}
 	file, err := os.OpenFile(ledger, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
 		return err
 	}
+	// A failed append is truncated back to the ledger's prior length, so
+	// a full disk never leaves a torn line that poisons every later read
+	// (the caller holds the bound lock).
 	if _, err := file.Write(append(data, '\n')); err != nil {
-		_ = file.Close()
-		return err
+		return errors.Join(err, file.Truncate(prior), file.Close())
 	}
-	if err := errors.Join(file.Sync(), file.Close()); err != nil {
+	if err := sync.SyncFile(file); err != nil {
+		return errors.Join(err, file.Truncate(prior), file.Close())
+	}
+	if err := file.Close(); err != nil {
 		return err
 	}
 	if created {
@@ -762,18 +804,45 @@ func ReadReceipts(ledger string) ([]DisposalReceipt, error) {
 	return receipts, scanner.Err()
 }
 
-// ReceiptCommitted reports whether a receipt id is in the ledger.
-func ReceiptCommitted(ledger, id string) (bool, error) {
+// ReceiptCommitted reports whether a receipt with this id, for this item,
+// is in the ledger; an empty or malformed id is never committed, and a
+// line of another item never commits this one.
+func ReceiptCommitted(ledger, id, item string) (bool, error) {
+	if !validReceiptID(id) {
+		return false, nil
+	}
 	receipts, err := ReadReceipts(ledger)
 	if err != nil {
 		return false, err
 	}
 	for _, receipt := range receipts {
-		if receipt.ID == id {
+		if receipt.ID == id && receipt.Item == item {
 			return true, nil
 		}
 	}
 	return false, nil
+}
+
+// OpenRemovals lists the begun removal tombstones in a directory: a
+// removal set aside as .disposing-* is no longer listed as an item, and
+// its tombstone is how a pass finds it.
+func OpenRemovals(directory string) []string {
+	entries, err := os.ReadDir(directory)
+	if err != nil {
+		return nil
+	}
+	var items []string
+	for _, entry := range entries {
+		name, ok := strings.CutSuffix(entry.Name(), removedSuffix)
+		if !ok {
+			continue
+		}
+		tombstone, err := ReadTombstone(filepath.Join(directory, entry.Name()))
+		if err != nil || tombstone.State == StateBegun {
+			items = append(items, filepath.Join(directory, name))
+		}
+	}
+	return items
 }
 
 // OpenDisposal finds an item's begun tombstone, if any.
@@ -811,7 +880,7 @@ func RecoverDisposal(ctx context.Context, item, ledger string, receipt DisposalR
 	if err != nil || !open {
 		return DisposalResult{}, err
 	}
-	committed, err := ReceiptCommitted(ledger, tombstone.Receipt)
+	committed, err := ReceiptCommitted(ledger, tombstone.Receipt, tombstone.Item)
 	if err != nil {
 		return DisposalResult{}, err
 	}

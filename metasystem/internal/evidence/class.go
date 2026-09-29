@@ -29,6 +29,8 @@ type BoundClass struct {
 	BlobGrace  time.Duration
 	AgeFloor   time.Duration
 	Observe    Observer
+	// Tip reads a checkout's accepted ledger tip per item (nil re-observes).
+	Tip func(ctx context.Context, installation string) (string, error)
 	// Citations is the host's index; nil keeps every item (Unknown).
 	Citations *Citations
 	// SegmentSettings reads a segment's numbers; nil is SegmentSettings
@@ -64,12 +66,16 @@ func (c *BoundClass) Plan(ctx context.Context, pass *diskstore.Pass) ([]diskstor
 	c.segments, c.settings, c.positions = map[string]Segment{}, map[string]PassSettings{}, map[string]*diskstore.EvidenceSegment{}
 	c.held = map[string]map[string]string{}
 	var peers []Context
+	var unreadable []string
 	for _, checkout := range c.Checkouts {
+		if checkout.FactsErr != nil {
+			unreadable = append(unreadable, checkout.Installation)
+		}
 		if checkout.SettingsErr == nil && checkout.FactsErr == nil {
 			peers = append(peers, Context{Installation: checkout.Installation, Facts: checkout.Facts, Settings: checkout.Settings})
 		}
 	}
-	c.exclusion = &Exclusions{Observe: c.Observe, Fetch: pass.Mode == diskstore.ModeApply, Peers: peers}
+	c.exclusion = &Exclusions{Observe: c.Observe, Fetch: pass.Mode == diskstore.ModeApply, Peers: peers, Unreadable: unreadable, Tip: c.Tip}
 	if c.Citations != nil {
 		c.exclusion.Citations = c.Citations
 	}

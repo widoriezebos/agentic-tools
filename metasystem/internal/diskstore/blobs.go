@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
@@ -194,7 +195,9 @@ func (b BlobStore) Refs(digest string) ([]BlobRef, error) {
 	}
 	var refs []BlobRef
 	for _, entry := range entries {
-		if IsPartial(entry.Name()) {
+		// A reference is a plain referrer name; a dot-file (Finder's
+		// .DS_Store) or a stage is never one.
+		if IsPartial(entry.Name()) || strings.HasPrefix(entry.Name(), ".") {
 			continue
 		}
 		data, err := os.ReadFile(filepath.Join(b.refDir(digest), entry.Name()))

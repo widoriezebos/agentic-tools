@@ -213,12 +213,12 @@ func discoverRoot(path string, checkouts []HostCheckout) Root {
 			if directory == "events" {
 				claimedInstallation[name] = true
 				root.Segments = append(root.Segments, Segment{Root: path, Installation: name,
-					Unknown: "orphan segment events/" + name + ": no armed checkout's installation hashes to it; arm its checkout (metasystem system setup there), or a person disposes of it: metasystem evidence dispose PATH --export DIR --preview"})
+					Unknown: "orphan segment events/" + name + ": no armed checkout's installation hashes to it; arm its checkout (metasystem system setup there), or a person plans each of its items: metasystem evidence dispose " + filepath.Join(path, directory, name) + " --export DIR --preview (each is held until --override, having no checkout to judge it against)"})
 				continue
 			}
 			claimedGit[name] = true
 			root.Segments = append(root.Segments, Segment{Root: path, Git: name,
-				Unknown: "orphan segment " + name + ": no armed checkout's git root hashes to it; arm its checkout (metasystem system setup there), or a person disposes of it: metasystem evidence dispose PATH --export DIR --preview"})
+				Unknown: "orphan segment " + name + ": no armed checkout's git root hashes to it; arm its checkout (metasystem system setup there), or a person plans each of its items: metasystem evidence dispose " + filepath.Join(path, directory, name) + " --export DIR --preview (each is held until --override, having no checkout to judge it against)"})
 		}
 	}
 	if entries, err := os.ReadDir(path); err == nil {

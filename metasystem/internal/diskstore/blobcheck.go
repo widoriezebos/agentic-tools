@@ -64,6 +64,8 @@ type BlobCheckResult struct {
 	Removed    []string `json:"removed,omitempty"`
 	Pending    string   `json:"pending,omitempty"`
 	FreedBytes int64    `json:"freedBytes,omitempty"`
+	// Unreadable are blobs whose references could not be read: kept.
+	Unreadable []string `json:"unreadable,omitempty"`
 }
 
 // ReferenceState is how one reference stands.
@@ -103,6 +105,11 @@ func (c BlobCheck) Run(ctx context.Context) BlobCheckResult {
 		}
 		c.checkDigest(digest, &result)
 	}
+	if result.Pending != "" {
+		// A check that could not judge every reference sweeps nothing:
+		// a blob it could not see the references of may still be needed.
+		return result
+	}
 	c.sweep(ctx, &result)
 	return result
 }
@@ -127,7 +134,8 @@ func (c BlobCheck) referencedDigests() ([]string, error) {
 func (c BlobCheck) checkDigest(digest string, result *BlobCheckResult) {
 	refs, err := c.Blobs.Refs(digest)
 	if err != nil {
-		result.Pending = err.Error()
+		result.Unreadable = append(result.Unreadable, digest[:12]+": "+err.Error())
+		result.Pending = "the references of blob " + digest[:12] + " cannot be read (" + err.Error() + "); every blob is kept and nothing is swept this pass"
 		return
 	}
 	for _, ref := range refs {
@@ -174,7 +182,7 @@ func (c BlobCheck) judge(digest string, ref BlobRef) (referenceState, string) {
 	tombstone, tombErr := ReadTombstone(RemovedTombstonePath(bundle))
 	if tombErr == nil {
 		ledger := filepath.Join(filepath.Dir(filepath.Dir(filepath.Dir(bundle))), "disposals", tombstone.Segment+".jsonl")
-		committed, err := ReceiptCommitted(ledger, tombstone.Receipt)
+		committed, err := ReceiptCommitted(ledger, tombstone.Receipt, tombstone.Item)
 		switch {
 		case err != nil:
 			return refUnknown, ""
@@ -244,7 +252,12 @@ func (c BlobCheck) sweep(ctx context.Context, result *BlobCheckResult) {
 			continue
 		}
 		refDir := c.Blobs.refDir(digest)
-		refs, _ := c.Blobs.Refs(digest)
+		refs, err := c.Blobs.Refs(digest)
+		if err != nil {
+			// Fail closed: references that cannot be read keep the blob.
+			result.Unreadable = append(result.Unreadable, digest[:12]+": "+err.Error())
+			continue
+		}
 		if len(refs) > 0 {
 			continue
 		}

@@ -275,7 +275,7 @@ func bundleItem(path string) Item {
 	default:
 		item.EndedAt = header.Created.UTC()
 		for _, line := range lines {
-			if line.Kind != diskstore.RecipeCollision && pathPresent(filepath.Join(path, filepath.FromSlash(line.Path))) {
+			if line.Restores() && pathPresent(filepath.Join(path, filepath.FromSlash(line.Path))) {
 				item.Unsettled = "a distillation is unfinished"
 			}
 		}
@@ -304,11 +304,15 @@ func KeptFor(kind string) func(rel string) bool {
 	return nil
 }
 
-// Verdict is a compaction's VERDICT.txt: for a chain one line per round
+// Verdict is a compaction's VERDICT.txt. For a chain: one line per round
 // (round|job|role|status|endedAt|claimed model|gaps=<n>|the first line of
-// whatWasDone, at most 300 characters) from its record and return; for a
-// bundle its copy note's failing lines.
-func Verdict(item Item) []byte {
+// whatWasDone, at most 300 characters) from its record and return. For a
+// bundle: the failure facts it holds (Round B2, F-6): every failing test
+// and its failure lines, panics and exit lines, read from its members as
+// they stand, gzipped ones inflated and blob-backed ones read from the
+// host's store. A bundle whose failure facts cannot be extracted is not
+// compacted: the error says so and the item is kept for a person.
+func Verdict(item Item, blobs diskstore.BlobStore) ([]byte, error) {
 	var lines []string
 	switch item.Kind {
 	case diskstore.KindChain:
@@ -339,17 +343,16 @@ func Verdict(item Item) []byte {
 				claimed, fmt.Sprintf("gaps=%d", gaps), done}, "|"))
 		}
 	case diskstore.KindBundle:
-		note, _ := os.ReadFile(filepath.Join(item.Path, "copy-note.txt"))
-		for _, line := range strings.Split(string(note), "\n") {
-			if strings.Contains(line, "FAIL") || strings.Contains(line, "exit") || strings.Contains(line, "DROPPED") {
-				lines = append(lines, line)
-			}
+		facts, err := failureFacts(item.Path, blobs)
+		if err != nil {
+			return nil, err
 		}
-		if len(lines) == 0 {
-			lines = append(lines, "a suite-failure bundle of attempt "+item.Attempt+"; its copy note names no failing line")
+		if len(facts) == 0 {
+			return nil, errors.New("its failure facts cannot be extracted (no failing test, panic or exit line in any member); it is kept for a person")
 		}
+		lines = append([]string{"failure facts of a suite-failure bundle of attempt " + item.Attempt + ":"}, facts...)
 	}
-	return []byte(strings.Join(lines, "\n") + "\n")
+	return []byte(strings.Join(lines, "\n") + "\n"), nil
 }
 
 // pathPresent reports any entry at path, a directory included.
@@ -531,6 +534,7 @@ func (b Bound) CompactSegment(ctx context.Context, segment Segment, settings Pas
 		position.Unknown = "the segment cannot be listed: " + err.Error()
 		return position
 	}
+	position.Pending = append(position.Pending, segment.OpenPersonDisposals(ctx)...)
 	var candidates []Item
 	for _, item := range items {
 		if ok, _ := b.Candidate(segment, item, settings.AgeFloor); ok {
@@ -612,7 +616,13 @@ func (b Bound) compactOne(ctx context.Context, segment Segment, settings PassSet
 		}
 		return judgement
 	}
-	if _, _, open, err := diskstore.OpenDisposal(item.Path); err == nil && open {
+	if _, tombstone, open, err := diskstore.OpenDisposal(item.Path); err != nil {
+		position.Pending = append(position.Pending, item.Name+": its tombstone is unreadable ("+err.Error()+"); a person decides: metasystem evidence show "+item.Path)
+		return stepOutcome{}
+	} else if open && !tombstone.MachineOwned() {
+		position.Pending = append(position.Pending, PersonsOpenDisposal(item.Path, tombstone))
+		return stepOutcome{}
+	} else if open {
 		_, err := diskstore.RecoverDisposal(ctx, item.Path, segment.Ledger(), b.receipt(segment, settings, item, Judgement{}, test.rule), b.Sync, stage,
 			func(diskstore.Tombstone) diskstore.Recovery {
 				current := judge()
@@ -647,10 +657,19 @@ func (b Bound) compactOne(ctx context.Context, segment Segment, settings PassSet
 	if reason := blocking(current); reason != "" {
 		return stepOutcome{held: reason}
 	}
+	verdict, err := Verdict(item, b.Blobs)
+	if err != nil {
+		position.Pending = append(position.Pending, item.Name+": not compacted: "+err.Error())
+		return stepOutcome{held: "failure facts not extractable"}
+	}
 	receipt := b.receipt(segment, settings, item, current, test.rule)
+	if receipt.ID, err = diskstore.NewReceiptID(b.Now, b.Entropy); err != nil {
+		position.Pending = append(position.Pending, item.Name+": "+err.Error())
+		return stepOutcome{}
+	}
 	receipt.SegmentBytesBefore, receipt.BlobChargeBytes = total, charges
 	result, err := diskstore.Dispose(ctx, diskstore.DisposalStep{Item: item.Path, Receipt: receipt, Ledger: segment.Ledger(),
-		Kept: KeptFor(item.Kind), Verdict: Verdict(item), Commit: current.Commit, Stage: stage, Sync: b.Sync})
+		Kept: KeptFor(item.Kind), Verdict: verdict, Commit: current.Commit, Stage: stage, Sync: b.Sync})
 	switch {
 	case err != nil:
 		position.Pending = append(position.Pending, item.Name+": compaction stopped: "+err.Error())
@@ -688,6 +707,50 @@ func (b Bound) receipt(segment Segment, settings PassSettings, item Item, judgem
 		Rule: rule, By: b.By, LedgerTip: judgement.LedgerTip, LedgerIdentity: judgement.LedgerIdentity, Settings: settings.Values,
 		EndedAt: item.EndedAt.Format(time.RFC3339), Goal: item.Goal, GoalState: judgement.GoalState, UncoveredReceipts: judgement.Uncovered,
 		Citations: judgement.Citations}
+}
+
+// PersonsOpenDisposal is the line for a disposal the machine never finishes
+// (Round B2, F-4): a person's removal or compaction interrupted before its
+// commit point, with the command that finishes or rolls it back (the
+// person's path re-verifies a recorded export first).
+func PersonsOpenDisposal(item string, tombstone diskstore.Tombstone) string {
+	command := "metasystem evidence dispose " + item + " --preview, then metasystem evidence dispose --plan ID"
+	if tombstone.Plan != "" {
+		command = "metasystem evidence dispose --plan " + tombstone.Plan
+	}
+	return fmt.Sprintf("%s: a %s by %s (rule %s) stopped before its commit point; the machine leaves it for a person: %s finishes or rolls it back",
+		item, tombstone.Step, tombstone.By, tombstone.Rule, command)
+}
+
+// OpenPersonDisposals lists every disposal in the segment the machine
+// leaves for a person, each with the command that settles it: removals
+// found by their begun tombstones (the item may be set aside), and begun
+// compactions that are not the machine's own.
+func (s Segment) OpenPersonDisposals(ctx context.Context) []string {
+	var lines []string
+	seen := map[string]bool{}
+	for _, directory := range s.Dirs() {
+		for _, item := range diskstore.OpenRemovals(directory) {
+			seen[item] = true
+			_, tombstone, open, err := diskstore.OpenDisposal(item)
+			switch {
+			case err != nil:
+				lines = append(lines, item+": its removal tombstone is unreadable ("+err.Error()+"); a person decides: metasystem evidence show "+item)
+			case open:
+				lines = append(lines, PersonsOpenDisposal(item, tombstone))
+			}
+		}
+	}
+	items, _ := s.Items(ctx)
+	for _, item := range items {
+		if seen[item.Path] {
+			continue
+		}
+		if _, tombstone, open, err := diskstore.OpenDisposal(item.Path); err == nil && open && !tombstone.MachineOwned() {
+			lines = append(lines, PersonsOpenDisposal(item.Path, tombstone))
+		}
+	}
+	return lines
 }
 
 // chainJobs is the chain's job set: every job record the item holds plus
