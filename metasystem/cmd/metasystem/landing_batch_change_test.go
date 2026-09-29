@@ -411,7 +411,10 @@ func TestLaneHoldIsVisibleOnTheBatch(t *testing.T) {
 			plan: func(string, string, string, testpolicy.Mode) (testpolicy.Plan, error) {
 				return testpolicy.Plan{}, errors.New("LANE_ENGINE_TOO_OLD: the pinned policy engine predates --lane; run: metasystem landing restart")
 			},
-			launch: func(batchProofLaunch) (proofrun.TestResult, error) { t.Fatal("a held batch launched"); return proofrun.TestResult{}, nil },
+			launch: func(batchProofLaunch) (proofrun.TestResult, error) {
+				t.Fatal("a held batch launched")
+				return proofrun.TestResult{}, nil
+			},
 		}
 		_ = executeBatchProof(root, id, "landing+owner", "window", "token", proofrun.LoadSample{}, time.Unix(10, 0), dependencies)
 		after, err := store.Load(id)
