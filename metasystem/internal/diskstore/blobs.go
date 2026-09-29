@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"golang.org/x/sys/unix"
@@ -56,6 +57,9 @@ type BlobRef struct {
 	Recipe       string `json:"recipe"`
 	Installation string `json:"installation,omitempty"`
 	Segment      string `json:"segment,omitempty"`
+	// DanglingSince is when the reference check first found its bundle
+	// gone with no tombstone.
+	DanglingSince *time.Time `json:"danglingSince,omitempty"`
 }
 
 // BlobRefSchema names the reference format.
