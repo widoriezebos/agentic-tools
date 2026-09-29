@@ -233,11 +233,19 @@ type intentDeliveryOwners struct {
 	sweep         func(root, goalID, landing string) error
 	// batchUnit finds the batch member a land request names; branchTip is the
 	// live goal branch, or empty once the branch is gone.
-	batchUnit    func(landingRoot string, request batchJoinRequest, branchTip string) (batch.Record, batch.Unit, bool, error)
-	publishRead  func(root, goalID, unit string) (branch.PublishReadResult, error)
-	batchRoot    func(root string, now time.Time) (string, bool, error)
-	batchJoin    func(batchJoinRequest) (batch.Record, error)
-	now          func() time.Time
+	batchUnit   func(landingRoot string, request batchJoinRequest, branchTip string) (batch.Record, batch.Unit, bool, error)
+	publishRead func(root, goalID, unit string) (branch.PublishReadResult, error)
+	batchRoot   func(root string, now time.Time) (string, bool, error)
+	batchJoin   func(batchJoinRequest) (batch.Record, error)
+	now         func() time.Time
+	// landingGate evaluates the landing gate for a goal at a branch tip
+	// against a fresh ledger (g1-s70 D2); nil selects the production gate.
+	landingGate func(inv *intentInvocation, goalID, tip string) (string, error)
+	// branchTip reads a goal branch's tip at origin; nil reads origin.
+	branchTip func(root, goalID string) (string, error)
+	// recordLanded writes the holder's landed line after a confirmed
+	// publication; nil selects the ledger's own act.
+	recordLanded func(inv *intentInvocation, goalID string) error
 	foldUnitHook func(inv *intentInvocation, run string) int
 	// calls are the owner functions public commands call in this process
 	// (intent_owner_calls.go); nil selects the production owners.
@@ -1544,7 +1552,15 @@ func (inv *intentInvocation) landJob(job string) intentResult {
 			Summary:  fmt.Sprintf("certified chain %s lands only through the landing batch, and landing.batch-root is not set", job),
 			Decision: "set landing.batch-root to a dedicated landing checkout"}
 	}
-	return inv.joinBatch(targets, batchJoinRequest{SeatRoot: inv.layout.InstallationRoot, LandingRoot: landingRoot, GoalID: goalID, ChainID: job}, "")
+	request := batchJoinRequest{SeatRoot: inv.layout.InstallationRoot, LandingRoot: landingRoot, GoalID: goalID, ChainID: job}
+	if _, _, member, err := inv.delivery().batchUnit(landingRoot, request, ""); err != nil || member {
+		return inv.noteLanded(goalID, inv.joinBatch(targets, request, ""))
+	}
+	// A certified chain has no branch tip a human word could be bound to.
+	if refused := inv.admitLanding(targets, goalID, ""); refused != nil {
+		return *refused
+	}
+	return inv.noteLanded(goalID, inv.joinBatch(targets, request, ""))
 }
 
 // joinBatch reads the goal's existing batch membership first: a joined unit
@@ -1601,6 +1617,10 @@ type intentLanded struct {
 }
 
 func (inv *intentInvocation) landGoal(goalID, through string) intentResult {
+	return inv.noteLanded(goalID, inv.landGoalRoute(goalID, through))
+}
+
+func (inv *intentInvocation) landGoalRoute(goalID, through string) intentResult {
 	targets := []intentTarget{{Kind: "goal", ID: goalID}}
 	if !validIntentJobID(goalID) {
 		return intentResult{Targets: targets, Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("%q is not a goal id", goalID)}
@@ -1638,6 +1658,9 @@ func (inv *intentInvocation) landGoal(goalID, through string) intentResult {
 	subject, count, refusal := handLandingSubject(targets, goalID, through, state)
 	if refusal != nil {
 		return *refusal
+	}
+	if refused := inv.admitLanding(targets, goalID, state.BranchTip); refused != nil {
+		return *refused
 	}
 	kinds := map[string]bool{}
 	for _, source := range state.Sources[:count] {
@@ -1730,6 +1753,12 @@ func (inv *intentInvocation) landByHand(targets []intentTarget, goalID, through,
 				Summary:  fmt.Sprintf("the landing proof of %s is red (%s); nothing was pushed", goalID, outcome.Classification),
 				Decision: "fix the failing groups on the goal branch; a new branch tip gets a new proof"}
 		}
+	}
+	// The proof took its time; the gate is read again against the fresh
+	// ledger right before the publication (g1-s70 D2).
+	if refused := inv.admitLanding(targets, goalID, state.BranchTip); refused != nil {
+		refused.Data = data
+		return *refused
 	}
 	pushed, endpoint, code, err := owners.landPush([]string{"--root", root, "--goal", goalID, "--prepared", prepared})
 	if pushed.Landing == "" {

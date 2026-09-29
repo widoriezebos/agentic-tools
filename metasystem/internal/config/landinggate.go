@@ -37,6 +37,10 @@ type LandingGate struct {
 // the default: a gate that silently ran on another threshold is the failure
 // the layered read exists to prevent.
 func ResolveLandingGate(confPath string) (LandingGate, error) {
+	if confPath != "" && !isFile(confPath) && !isFile(confPath+".local") {
+		// No configuration file at all: the environment over the defaults.
+		confPath = ""
+	}
 	read := func(key string) (LandingGateFact, error) {
 		params := GetParams{Key: key, ConfPath: confPath}
 		value, _, err := Get(params)

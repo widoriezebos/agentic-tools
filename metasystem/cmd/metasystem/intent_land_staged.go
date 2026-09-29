@@ -89,6 +89,16 @@ func runIntentLandStaged(inv *intentInvocation) int {
 			Decision: "run this inside the repository, or name it with --repo PATH"})
 	}
 	request.Root = layout.InstallationRoot
+	if request.GoalSet && !inv.input.switched("local") {
+		// A hand-made change landed in a goal's name meets the goal's gate
+		// (g1-s70 D2); --local publishes nothing.
+		if problem := inv.selectRoot(); problem != nil {
+			return inv.render(*problem)
+		}
+		if refused := inv.admitLanding([]intentTarget{{Kind: "goal", ID: request.Goal}}, request.Goal, inv.intentBranchTip(request.Goal)); refused != nil {
+			return inv.render(*refused)
+		}
+	}
 	stdout, stderr := inv.stdout, inv.stderr
 	var captured bytes.Buffer
 	if inv.input.switched("json") {

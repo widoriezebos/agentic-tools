@@ -110,7 +110,7 @@ var (
 func intentCommands() []intentCommand {
 	var commands []intentCommand
 	for _, part := range [][]intentCommand{
-		goalIntentCommands(), intentPlanningCommands(), goalReviewIntentCommands(), designIntentCommands(), intentWorkCommands(),
+		goalIntentCommands(), intentPlanningCommands(), goalReviewIntentCommands(), goalLandWithoutSittingIntentCommands(), designIntentCommands(), intentWorkCommands(),
 		intentDeliveryCommands(), helmIntentCommands(), processIntentCommands(), diskIntentCommands(), appIntentCommands(), practiceIntentCommands(), hiddenIntentEntries(), {topLevelStatus()},
 	} {
 		commands = append(commands, part...)

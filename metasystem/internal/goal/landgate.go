@@ -2,11 +2,13 @@ package goal
 
 import (
 	"fmt"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 )
 
@@ -239,8 +241,8 @@ func Gate(f *GoalFile, tip string, s GateSettings) (string, error) {
 	}
 	if holds := HoldsOf(f); len(holds) > 0 {
 		return "", &GateRefusal{Code: GateHeldBySitting, Reason: fmt.Sprintf(
-			"goal %s is held by %s's review sitting (%s); nothing lands while a sitting stands, whatever the tier; it lands once the sitting ends",
-			f.Id, holds[0].By, holds[0].Record)}
+			"goal %s is held by %s's review sitting (%s); nothing lands while a sitting stands, whatever the tier; it lands once the sitting ends, which releases it: metasystem goal review %s --release --record %s",
+			f.Id, holds[0].By, holds[0].Record, f.Id, holds[0].Record)}
 	}
 	tier := GateTier(f)
 	if !s.WaitsForHuman(f) {
@@ -249,8 +251,8 @@ func Gate(f *GoalFile, tip string, s GateSettings) (string, error) {
 	said := newestWord(f)
 	missing := func(why string) error {
 		return &GateRefusal{Code: GateWaitsForHuman, Reason: fmt.Sprintf(
-			"goal %s is tier %d, at or above landing.review.human-from-tier=%d, and waits for a person: %s; hold a review sitting that ends clear to land, or land it without a sitting with a reason",
-			f.Id, tier, s.HumanFromTier, why)}
+			"goal %s is tier %d, at or above landing.review.human-from-tier=%d, and waits for a person: %s; a person reviews it in a sitting that ends clear to land, or lands it without a sitting: metasystem goal land-without-sitting %s --reason TEXT",
+			f.Id, tier, s.HumanFromTier, why, f.Id)}
 	}
 	switch {
 	case said == nil:
@@ -261,10 +263,15 @@ func Gate(f *GoalFile, tip string, s GateSettings) (string, error) {
 		return "", missing("this landing names no branch tip the word could be bound to")
 	case said.tip != tip:
 		return "", missing(fmt.Sprintf("%s's word was given at %s and the branch is now at %s; a moved tip needs the word again", said.by, short(said.tip), short(tip)))
-	case said.kind == LandWithoutSittingVerb:
-		return fmt.Sprintf("landed-without-sitting by=%s tip=%s, tier %d at or above human-from-tier=%d", said.by, short(tip), tier, s.HumanFromTier), nil
 	}
-	return fmt.Sprintf("reviewed verdict=clear-to-land by=%s tip=%s record=%s, tier %d at or above human-from-tier=%d", said.by, short(tip), said.record, tier, s.HumanFromTier), nil
+	return said.under(tier, s), nil
+}
+
+func (said *word) under(tier uint8, s GateSettings) string {
+	if said.kind == LandWithoutSittingVerb {
+		return fmt.Sprintf("landed-without-sitting by=%s tip=%s, tier %d at or above human-from-tier=%d", said.by, short(said.tip), tier, s.HumanFromTier)
+	}
+	return fmt.Sprintf("reviewed verdict=clear-to-land by=%s tip=%s record=%s, tier %d at or above human-from-tier=%d", said.by, short(said.tip), said.record, tier, s.HumanFromTier)
 }
 
 // GateReading is what the card and the inbox say about one goal waiting to
@@ -541,4 +548,87 @@ func landedRequest(r VerbRequest, id, reason string) PublishRequest {
 		},
 		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
 	}
+}
+
+// LandedUnder is what a landing whose publication was confirmed was under, as
+// the holder's landed line says it: the setting and the tier below the
+// threshold, or the human's newest word at or above it. The publication passed
+// the gate, so the word is the one that let it through.
+func LandedUnder(f *GoalFile, s GateSettings) string {
+	said := newestWord(f)
+	if s.WaitsForHuman(f) && said != nil && said.kind != VerdictSendBack {
+		return said.under(GateTier(f), s)
+	}
+	return fmt.Sprintf("landing.review.auto-after=%s, tier %d below human-from-tier=%d", s.AutoAfterText, GateTier(f), s.HumanFromTier)
+}
+
+// ReviewRecordPath is a review record's path relative to root, however it was
+// given, as a sitting's hold names it: the record need not be written yet, but
+// its path lies in the review home.
+func ReviewRecordPath(root, given string) (string, error) {
+	if strings.TrimSpace(given) == "" {
+		return "", fmt.Errorf("a sitting names its review record with --record PATH")
+	}
+	absolute := given
+	if !filepath.IsAbs(absolute) {
+		absolute = filepath.Join(root, absolute)
+	}
+	relative, err := filepath.Rel(root, filepath.Clean(absolute))
+	if err != nil {
+		return "", fmt.Errorf("%s is not a review record in its home; a review record is %s<name>.md", given, ReviewHome)
+	}
+	relative = filepath.ToSlash(relative)
+	if !reviewRecordPath.MatchString(relative) || strings.HasSuffix(relative, ".brief.md") {
+		return "", fmt.Errorf("%s is not a review record in its home; a review record is %s<name>.md", given, ReviewHome)
+	}
+	return relative, nil
+}
+
+// ResolveGateSettings reads the two settings of the installation whose
+// metasystem.conf is confPath, through the layered resolution.
+func ResolveGateSettings(confPath string) (GateSettings, error) {
+	resolved, err := config.ResolveLandingGate(confPath)
+	if err != nil {
+		return GateSettings{}, err
+	}
+	return GateSettings{HumanFromTier: resolved.HumanFromTier, AutoAfter: resolved.AutoAfter, AutoAfterText: resolved.After.Value}, nil
+}
+
+// HolderStepLines are the holder's own steps over the claims it holds, as its
+// turn reads them (g1-s70 D3, g1-s69 SOL-S69-01): a landing that is due, and a
+// send-back that waits for its revision. Each names the public command the
+// holder runs under its own identity, and the key its turn remembers so the
+// same fact is said once. The landing evaluates the gate again when it runs,
+// and a claim that changed hands is not this seat's to read here.
+func HolderStepLines(files []*GoalFile, s GateSettings, now time.Time) (lines, keys []string) {
+	for _, file := range files {
+		if review, standing := SentBackOf(file); standing {
+			lines = append(lines, fmt.Sprintf("SENT BACK %s by %s at %s: revise it from the published brief now: metasystem work revise %s", file.Id, review.By, short(review.Tip), file.Id))
+			keys = append(keys, "sent-back:"+file.Id+"@"+review.Opid)
+			continue
+		}
+		if due, why, key := LandingDue(file, s, now); due {
+			lines = append(lines, fmt.Sprintf("LANDING DUE %s, %s: land it now: metasystem work land %s", file.Id, why, file.Id))
+			keys = append(keys, "landing-due:"+key)
+		}
+	}
+	return lines, keys
+}
+
+// holderSteps reads the gate's settings from the installation the verdict's
+// ledger belongs to and answers the holder's due steps; unreadable settings
+// say so on the turn and prompt nothing.
+func (s *Store) holderSteps(files []*GoalFile) ([]string, []string) {
+	if len(files) == 0 {
+		return nil, nil
+	}
+	endpoint, err := s.projectionEndpoint()
+	if err != nil {
+		return []string{"the landing gate's settings cannot be read: " + err.Error()}, []string{""}
+	}
+	settings, err := ResolveGateSettings(filepath.Join(endpoint.Root, "metasystem.conf"))
+	if err != nil {
+		return []string{"the landing gate's settings cannot be read: " + err.Error()}, []string{""}
+	}
+	return HolderStepLines(files, settings, s.now())
 }

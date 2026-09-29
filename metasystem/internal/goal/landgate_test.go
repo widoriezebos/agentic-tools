@@ -358,3 +358,35 @@ func TestGateHistoryGrammar(t *testing.T) {
 		}
 	}
 }
+
+func TestLandedUnderNamesTheSettingOrTheWord(t *testing.T) {
+	t.Parallel()
+	if under := LandedUnder(tiered("g", 1), gateSettings); under != "landing.review.auto-after=4h, tier 1 below human-from-tier=2" {
+		t.Fatalf("below the tier: %q", under)
+	}
+	f := tiered("g", 2)
+	humanLine(f, "2026-08-20T11:00:00Z", "01J5X0000000000000000000L1-mac-ui-1a2b3c4d", "review",
+		"reviewed verdict=clear-to-land tip="+reviewedTip+" record="+reviewPath+" by=Wido")
+	if under := LandedUnder(f, gateSettings); !strings.HasPrefix(under, "reviewed verdict=clear-to-land by=Wido tip=9c1f0a2") {
+		t.Fatalf("at the tier: %q", under)
+	}
+}
+
+func TestReviewRecordPathIsInTheReviewHome(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	for given, want := range map[string]string{
+		"plans/reviews/review-of-g.md":              "plans/reviews/review-of-g.md",
+		root + "/plans/reviews/review-of-g.md":      "plans/reviews/review-of-g.md",
+		"plans/reviews/../reviews/review-of-g.md":   "plans/reviews/review-of-g.md",
+		"plans/designs/g.md":                        "",
+		"plans/reviews/review-of-g.brief.md":        "",
+		"":                                          "",
+		"../elsewhere/plans/reviews/review-of-g.md": "",
+	} {
+		got, err := ReviewRecordPath(root, given)
+		if got != want || (want == "") != (err != nil) {
+			t.Errorf("%q: %q %v, want %q", given, got, err, want)
+		}
+	}
+}

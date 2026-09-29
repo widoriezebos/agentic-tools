@@ -66,6 +66,11 @@ func (inv *intentInvocation) landException(goalID string, validateOnly ...bool) 
 	if len(validateOnly) > 0 && validateOnly[0] {
 		return intentResult{}
 	}
+	// An exception carries a landing past an agent refusal; it is not the
+	// human's current-tip word, and the landing gate still binds (g1-s70 D2).
+	if refused := inv.admitLanding(targets, goalID, inv.intentBranchTip(goalID)); refused != nil {
+		return *refused
+	}
 	root := inv.layout.InstallationRoot
 	opid := using
 	data := map[string]any{"goal": goalID}

@@ -186,10 +186,13 @@ type sessionState struct {
 	LastTouched          string   `json:"lastTouched"`
 	OpenWorkSignature    string   `json:"openWorkSignature"`
 	BlockedGoalRevisions []string `json:"blockedGoalRevisions"`
-	BlockedFreeDigests   []string `json:"blockedFreeDigests"`
-	BlockedQueueDigests  []string `json:"blockedQueueDigests,omitempty"`
-	ObservedQueueDigest  string   `json:"observedQueueDigest,omitempty"`
-	WatchdogSurfaced     *string  `json:"watchdogSurfaced"`
+	// HolderSteps are the holder's due steps this session was already told
+	// of (g1-s70 D3): a due landing, a send-back to revise.
+	HolderSteps         []string `json:"holderSteps,omitempty"`
+	BlockedFreeDigests  []string `json:"blockedFreeDigests"`
+	BlockedQueueDigests []string `json:"blockedQueueDigests,omitempty"`
+	ObservedQueueDigest string   `json:"observedQueueDigest,omitempty"`
+	WatchdogSurfaced    *string  `json:"watchdogSurfaced"`
 	// The monitor facility's two additive slots: the
 	// unwatched-work block-once digests and the green cursor riding the
 	// terminal sequence's total order.
@@ -1731,6 +1734,21 @@ func (s *Store) decide(verdict *Verdict, scan ScanResult, session *sessionState,
 		verdict.BlockSource = &source
 		display = append(display, reason)
 	}
+	// landingClaims says what this machine holds waiting to land, and the
+	// holder's due steps over it: each blocks the turn once, naming the
+	// command the holder runs under its own identity (g1-s70 D3).
+	landingClaims := func() {
+		display = append(display, LandingClaimLines(work.landingClaims, s.now())...)
+		lines, keys := s.holderSteps(work.landingClaims)
+		for index, line := range lines {
+			if keys[index] == "" || contains(session.HolderSteps, keys[index]) {
+				display = append(display, line)
+				continue
+			}
+			session.HolderSteps = appendCapped(session.HolderSteps, keys[index], maxGoalRevisions)
+			blockGoal(line)
+		}
+	}
 
 	switch {
 	case len(scan.Busy) > 0:
@@ -1811,7 +1829,7 @@ func (s *Store) decide(verdict *Verdict, scan ScanResult, session *sessionState,
 			}
 			if work != nil {
 				display = append(display, FencedClaimLines(work.fencedClaims)...)
-				display = append(display, LandingClaimLines(work.landingClaims, s.now())...)
+				landingClaims()
 			}
 		case "queued-only":
 			first, _ := s.queuedFrontier()
@@ -1819,14 +1837,14 @@ func (s *Store) decide(verdict *Verdict, scan ScanResult, session *sessionState,
 				display = append(display, "no goal is claimed here and the queue is empty; a person opens the next goal (`goal open --origin human`); a seat opens only the blocker of its claimed goal (`--blocks`, R-93-m1e)")
 				if work != nil {
 					display = append(display, FencedClaimLines(work.fencedClaims)...)
-					display = append(display, LandingClaimLines(work.landingClaims, s.now())...)
+					landingClaims()
 				}
 				break
 			}
 			display = append(display, "no current goal; the queue holds "+first)
 			if work != nil {
 				display = append(display, FencedClaimLines(work.fencedClaims)...)
-				display = append(display, LandingClaimLines(work.landingClaims, s.now())...)
+				landingClaims()
 			}
 		case "goal-free":
 			fresh, digest, declared := s.freeState()
