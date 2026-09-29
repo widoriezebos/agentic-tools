@@ -177,8 +177,16 @@ func (h *handler) startReview(w http.ResponseWriter, r *http.Request, body sitti
 		h.sitOnReview(w, r, human, body, unopened, "Review of "+goal)
 		return
 	}
+	standing := h.standingOf(goal)
+	if standing == review.Waiting && h.info.Sitting != nil {
+		// The hold is a ledger fact, and a sitting on a waiting goal takes it
+		// under the sign-in before anything is written (g1-s70 D2).
+		if _, ok := h.sessionFor(w, r); !ok {
+			return
+		}
+	}
 	written, err := h.info.CreateReview(project.NewReview{
-		Goal: goal, Reviewed: h.info.Review.ReviewedLine(goal, h.standingOf(goal)),
+		Goal: goal, Reviewed: h.info.Review.ReviewedLine(goal, standing),
 	})
 	if err != nil {
 		var refusal *project.Refusal
@@ -195,6 +203,11 @@ func (h *handler) startReview(w http.ResponseWriter, r *http.Request, body sitti
 // sitOnReview opens the review sitting on one record, answering its path as
 // the draft where the opening is refused, so the next press is about it.
 func (h *handler) sitOnReview(w http.ResponseWriter, r *http.Request, human string, body sittingBody, record, title string) {
+	// A sitting on a goal waiting to land holds it on the ledger before the
+	// room reports it open, at every tier (g1-s70 D2).
+	if goalID := strings.TrimSpace(body.Subject.ID); h.standingOf(goalID) == review.Waiting && !h.holdForSitting(w, r, goalID, record) {
+		return
+	}
 	subject := partner.Subject{Kind: partner.SubjectRecord, ID: record, Title: title}
 	if _, err := h.info.Partner.Sit(r.Context(), human, subject, partner.PurposeReview, body.About); err != nil {
 		h.refuseTurn(w, err, record)

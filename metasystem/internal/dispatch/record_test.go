@@ -9,6 +9,10 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 )
 
 // sandbox creates a checkout root and returns it. Records land under
@@ -832,4 +836,131 @@ func TestCustodyAddDefersDuringCancellation(t *testing.T) {
 	if record["custodyProcesses"] != nil {
 		t.Fatalf("no custody may register on a marked record: %v", record["custodyProcesses"])
 	}
+}
+
+// goalJob reserves and sets up a goal-bound job whose record names machine
+// and goal, as build.go and claim.go write them.
+func goalJob(t *testing.T, root, job, role string, round int, parent any, machine, goal string) {
+	t.Helper()
+	create := writeJSON(t, filepath.Join(t.TempDir(), "create.json"), map[string]any{
+		"jobId": job, "status": "pending-setup", "phase": "reservation", "error": nil, "mainId": "main-1",
+		"claimEpoch": 5, "createdAt": "2026-09-29T10:00:00Z", "goalId": goal, "machineId": machine, "parentJob": parent,
+		"instanceTag": "card-tag",
+	})
+	if err := RecordCreate(root, job, create); err != nil {
+		t.Fatalf("create %s: %v", job, err)
+	}
+	setup := writeJSON(t, filepath.Join(t.TempDir(), "setup.json"), map[string]any{
+		"jobId": job, "role": role, "runtime": "fake", "round": round, "parentJob": parent, "status": "pending",
+		"phase": "handshake", "error": nil, "mainId": "main-1", "claimEpoch": 5, "sessionId": nil,
+		"startedAt": "2026-09-29T10:00:01Z", "endedAt": nil, "goalId": goal, "machineId": machine,
+	})
+	if err := RecordSetup(root, job, setup); err != nil {
+		t.Fatalf("setup %s: %v", job, err)
+	}
+}
+
+func boardCard(t *testing.T, machine, goal string) board.Card {
+	t.Helper()
+	home, err := board.Home()
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(board.Dir(home), machine, goal+".json"))
+	if err != nil {
+		t.Fatalf("no card for %s on %s: %v", goal, machine, err)
+	}
+	var card board.Card
+	if err := json.Unmarshal(data, &card); err != nil {
+		t.Fatal(err)
+	}
+	return card
+}
+
+// TestCardWritersPublishEveryStage (R24, U10a-2, dispatch): a goal-bound job
+// publishes its card in the act that writes its record: the handshake as a
+// build with no owner yet, running with the job's custody process as owner,
+// a critic at round 2 of the chain root's limit 3 as review, a completed
+// critic as judgement, a failed build closing its span into the history; a
+// board that cannot take the card leaves the transition and the record whole.
+func TestCardWritersPublishEveryStage(t *testing.T) {
+	t.Parallel()
+	root := sandbox(t)
+	machine, goal := "m1-dispatch-card", "goal-dispatch-card"
+	goalJob(t, root, "impl-a", "implementer", 1, nil, machine, goal)
+	card := boardCard(t, machine, goal)
+	if card.Stage != board.StageBuild || card.Job == nil || card.Job.Phase != "handshake" || card.Owner != nil || card.Seat.Installation != realpath.Resolve(root) {
+		t.Fatalf("handshake card = %+v", card)
+	}
+	// The job's custody process is not this caller: the parent stands in.
+	pid := int64(os.Getppid())
+	self, _, _ := identity.KernelProber{}.Probe(pid)
+	run := filepath.Join(t.TempDir(), "run.json")
+	if err := BuildOwnershipPatch(run, pid, pid, "card-tag", "2026-09-29T10:00:02Z", 0, identity.KernelProber{}); err != nil {
+		t.Fatal(err)
+	}
+	patch := readObjectT(t, run)
+	patch["sessionId"], patch["phase"] = "s", "running"
+	writeJSON(t, run, patch)
+	if _, err := RecordCAS(root, "impl-a", "pending", "running", run); err != nil {
+		t.Fatal(err)
+	}
+	card = boardCard(t, machine, goal)
+	if card.Stage != board.StageBuild || card.Job.Phase != "running" || card.Owner == nil || card.Owner.Pid != pid || card.Owner.PidStartedAt != self.StartedAt.Unix() {
+		t.Fatalf("running card = %+v owner %+v", card, card.Owner)
+	}
+	lost := writeJSON(t, filepath.Join(t.TempDir(), "lost.json"), map[string]any{"error": "process-lost", "phase": "supervision"})
+	if _, err := RecordCAS(root, "impl-a", "running", "failed", lost); err != nil {
+		t.Fatal(err)
+	}
+	card = boardCard(t, machine, goal)
+	if card.Stage != board.StageClaimedIdle || card.Owner != nil || len(card.Stages) != 1 || card.Stages[0].Stage != board.StageBuild {
+		t.Fatalf("terminal card = %+v", card)
+	}
+
+	// A critic resumed at round 2 reads the limit from its chain root.
+	writeJSON(t, filepath.Join(root, "artifacts", "agents", "jobs", "crit-root.json"), map[string]any{
+		"jobId": "crit-root", "role": "code-critic", "round": 1, "reviewRoundLimit": 3, "status": "completed", "goalId": goal, "machineId": machine,
+	})
+	goalJob(t, root, "crit-root-r2", "code-critic", 2, "crit-root", machine, goal)
+	card = boardCard(t, machine, goal)
+	if card.Stage != board.StageReview || card.Round == nil || card.Round.N != 2 || card.Round.Max == nil || *card.Round.Max != 3 {
+		t.Fatalf("critic card = %+v round %+v", card, card.Round)
+	}
+	if _, err := RecordCAS(root, "crit-root-r2", "pending", "running", run); err != nil {
+		t.Fatal(err)
+	}
+	done := writeJSON(t, filepath.Join(t.TempDir(), "done.json"), map[string]any{"phase": "validation"})
+	if _, err := RecordCAS(root, "crit-root-r2", "running", "completed", done); err != nil {
+		t.Fatal(err)
+	}
+	if card = boardCard(t, machine, goal); card.Stage != board.StageJudgement {
+		t.Fatalf("completed critic card = %+v", card)
+	}
+
+	// A board that cannot take the card: the transition stands.
+	home, _ := board.Home()
+	blocked := "m1-dispatch-blocked"
+	if err := os.MkdirAll(board.Dir(home), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(board.Dir(home), blocked), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	goalJob(t, root, "impl-b", "implementer", 1, nil, blocked, goal)
+	if _, err := RecordCAS(root, "impl-b", "pending", "running", run); err != nil {
+		t.Fatalf("an unwritable board failed the transition: %v", err)
+	}
+	if record := readRecord(t, root, "impl-b"); record["status"] != "running" {
+		t.Fatalf("record = %v", record["status"])
+	}
+}
+
+func readObjectT(t *testing.T, path string) map[string]any {
+	t.Helper()
+	value, err := readObject(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return value
 }

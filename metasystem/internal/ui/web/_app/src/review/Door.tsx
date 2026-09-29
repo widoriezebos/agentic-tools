@@ -7,6 +7,7 @@ import { Help } from "../help/Help";
 import { draftOf } from "../partner/api";
 import { usePartner } from "../partner/store";
 import { reviewPath } from "../routes";
+import { useSession } from "../shell/identity";
 import { Button } from "../shell/controls";
 import { Trouble } from "../shell/Trouble";
 
@@ -31,6 +32,7 @@ export function standingDoor(doors: readonly Door[], goal: string): Door | null 
 export function ReviewItOrDoor({ goal, doors, now = new Date() }: { goal: string; doors?: readonly Door[]; now?: Date }) {
   const board = useContext(ReviewDoors);
   const { startSitting, sittingBusy } = usePartner();
+  const { askToSignIn } = useSession();
   const navigate = useNavigate();
   const [refusal, setRefusal] = useState("");
   // The record a refused press left behind, which the next press is about.
@@ -57,6 +59,7 @@ export function ReviewItOrDoor({ goal, doors, now = new Date() }: { goal: string
       <Button
         disabled={sittingBusy}
         onClick={() => {
+          const start = (again: boolean) => {
           setRefusal("");
           startSitting(reviewStart(goal, made)).then(
             (opened) => {
@@ -65,6 +68,14 @@ export function ReviewItOrDoor({ goal, doors, now = new Date() }: { goal: string
               }
             },
             (error: unknown) => {
+              // A sitting on a goal waiting to land holds it on the ledger
+              // under the sign-in (g1-s70 D2): sign in, and press again once.
+              if (again && (error as { signIn?: unknown } | null)?.signIn === true) {
+                askToSignIn(() => {
+                  start(false);
+                });
+                return;
+              }
               setRefusal(error instanceof Error ? error.message : String(error));
               const created = draftOf(error);
               if (created !== "") {
@@ -72,6 +83,8 @@ export function ReviewItOrDoor({ goal, doors, now = new Date() }: { goal: string
               }
             },
           );
+          };
+          start(true);
         }}
       >
         Review it

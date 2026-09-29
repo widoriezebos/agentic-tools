@@ -32,6 +32,9 @@ type ownerSeams struct {
 	lock                func(string) *proofLock
 	after               func(time.Duration) <-chan time.Time
 	report              func(string, error)
+	pipeline            PipelineSource
+	logWait             func(id, line string)
+	location            *time.Location
 	glob                func(string) ([]string, error)
 	helmActive          func(string) bool
 	baseMove            func(string, string) (BaseMove, error)
@@ -40,6 +43,15 @@ type ownerSeams struct {
 	inflight            map[string]*proofRun
 	completions         chan Completion
 	standing            bool
+	facts               PipelineFacts
+	factsAt             time.Time
+	decided             map[string]decidedAt
+}
+
+// decidedAt is the last start decision of a batch and when it was made.
+type decidedAt struct {
+	at       time.Time
+	decision Decision
 }
 
 // HeldBatch is one batch the owner held on its last pass because a unit's
@@ -78,7 +90,14 @@ type OwnerOptions struct {
 	ProbeRun            func(string, Record) (RunProbe, error) // a planned proof's launcher, read from the proof store after a restart
 	After               func(time.Duration) <-chan time.Time
 	Report              func(string, error)
-	Glob                func(string) ([]string, error)
+	// Pipeline reads the host board a start is decided from (D14, R22).
+	Pipeline PipelineSource
+	// LogWait receives a batch's wait or start line once per change; nil
+	// logs nothing.
+	LogWait func(id, line string)
+	// Location renders times for people; nil is the local zone.
+	Location *time.Location
+	Glob     func(string) ([]string, error)
 	// HelmActive reports whether a unit's seat is at the helm; nil holds nothing.
 	HelmActive func(root string) bool
 	// BaseMove reads what moved main between two base trees; nil leaves a
@@ -97,7 +116,8 @@ type Owner struct {
 func NewOwner(options OwnerOptions) (*Owner, error) {
 	if options.Now == nil || options.FetchTree == nil || options.ReadClaim == nil || options.Rebind == nil || options.Mint == nil || options.LogRed == nil ||
 		options.BaseCommit == nil || options.RunDiagnostic == nil || options.DescendsFrom == nil ||
-		options.Sample == nil || options.Admission == nil || options.Launch == nil || options.ProbeRun == nil || options.After == nil || options.Report == nil {
+		options.Sample == nil || options.Admission == nil || options.Launch == nil || options.ProbeRun == nil || options.After == nil || options.Report == nil ||
+		options.Pipeline == nil {
 		return nil, fmt.Errorf("construct batch owner: every owner seam is required")
 	}
 	if options.PID < 1 {
@@ -112,8 +132,8 @@ func NewOwner(options OwnerOptions) (*Owner, error) {
 		returns: options.Returns, rebind: options.Rebind, mint: options.Mint, logRed: options.LogRed,
 		baseCommit: options.BaseCommit, runDiagnostic: options.RunDiagnostic, descendsFrom: options.DescendsFrom, sample: options.Sample,
 		admission: options.Admission, launch: options.Launch, probeRun: options.ProbeRun, after: options.After,
-		report: options.Report, glob: options.Glob, helmActive: options.HelmActive, baseMove: options.BaseMove, locks: map[string]*proofLock{}, held: map[string]HeldBatch{},
-		inflight: map[string]*proofRun{}, completions: make(chan Completion, 64),
+		report: options.Report, glob: options.Glob, pipeline: options.Pipeline, logWait: options.LogWait, location: options.Location, helmActive: options.HelmActive, baseMove: options.BaseMove, locks: map[string]*proofLock{}, held: map[string]HeldBatch{},
+		inflight: map[string]*proofRun{}, decided: map[string]decidedAt{}, completions: make(chan Completion, 64),
 		runners: func(sample proofrun.LoadSample, admission proofrun.AdmissionCap) []RunnerCapacity {
 			return []RunnerCapacity{hostRunner(sample, admission)}
 		},
@@ -466,8 +486,87 @@ func (owner *Owner) start(record *Record, sample proofrun.LoadSample, at time.Ti
 	if oldest.IsZero() {
 		return false, "", nil
 	}
-	start, window, _ := batchStartRule(true, joined, oldest, owner.settings, sample, owner.admission(sample))
-	return start, window, nil
+	var open []OpenEntry
+	if _, unbound := owner.store.LedgerOwner().(UnboundLedgerOwner); !unbound {
+		open, _ = owner.store.LedgerOwner().Open()
+	}
+	decision := pipelineStartRule(startInputs{record: *record, joined: joined, oldest: oldest, facts: owner.pipelineFacts(sample, at),
+		open: open, settings: owner.settings, sample: sample, admission: owner.admission(sample), now: at, location: owner.location})
+	// A tick decides twice, around its lock, at one time: the second call
+	// keeps the first start's reason rather than re-deciding from the record
+	// the first wrote.
+	if previous, ok := owner.decided[record.BatchID]; ok && previous.at.Equal(at) && previous.decision.Start && decision.Start {
+		decision = previous.decision
+	}
+	owner.decided[record.BatchID] = decidedAt{at: at, decision: decision}
+	if err := owner.recordDecision(record, decision, at); err != nil {
+		return false, "", err
+	}
+	return decision.Start, decision.Window, nil
+}
+
+// pipelineFacts reads the host board and the lane's retained records once
+// per decision time: a tick decides twice, around its lock, from one read.
+func (owner *Owner) pipelineFacts(sample proofrun.LoadSample, at time.Time) PipelineFacts {
+	if owner.factsAt.Equal(at) && !at.IsZero() {
+		return owner.facts
+	}
+	var records []Record
+	if paths, err := owner.glob(filepath.Join(owner.store.root, "artifacts", "agents", "landing-batches", "*.json")); err == nil {
+		for _, path := range paths {
+			if record, loadErr := owner.store.Load(strings.TrimSuffix(filepath.Base(path), ".json")); loadErr == nil {
+				records = append(records, record)
+			}
+		}
+	}
+	runner := ""
+	if runners := owner.runners(sample, owner.admission(sample)); len(runners) > 0 {
+		runner = runners[0].Runner
+	}
+	owner.facts = Facts(owner.pipeline.Board(at), records, owner.settings.Pipeline, runner, at)
+	owner.factsAt = at
+	return owner.facts
+}
+
+// recordDecision writes a decision onto the record only when its reason
+// changed (R-129): a new wait records its line once, with one history
+// entry; a start clears the wait and keeps its reason for the proof.
+func (owner *Owner) recordDecision(record *Record, decision Decision, at time.Time) error {
+	var changed bool
+	switch {
+	case decision.Start:
+		changed = record.Wait != nil || record.StartReason != decision.Reason
+	case decision.Wait != nil:
+		changed = record.Wait == nil || record.Wait.Reason != decision.Wait.Reason
+	}
+	if !changed {
+		return nil
+	}
+	var line string
+	err := owner.store.Update(record.BatchID, func(current *Record) error {
+		if decision.Start {
+			current.Wait, current.StartReason = nil, decision.Reason
+		} else {
+			current.Wait, current.StartReason = decision.Wait, ""
+		}
+		line = WaitLine(*current, at, owner.location)
+		if !decision.Start {
+			current.Transition(current.State, at, "wait", owner.actor, line)
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	loaded, err := owner.store.Load(record.BatchID)
+	if err != nil {
+		return err
+	}
+	*record = loaded
+	if owner.logWait != nil {
+		owner.logWait(record.BatchID, line)
+	}
+	return nil
 }
 
 // helmSeat names the first unit's seat that is at the helm. A unit without a

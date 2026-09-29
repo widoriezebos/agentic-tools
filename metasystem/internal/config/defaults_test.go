@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 // An overrides-only metasystem.conf: every reader answers a key it does not
@@ -263,5 +264,54 @@ func TestNoConfigurationFileResolvesTheCompiledDefaults(t *testing.T) {
 	}
 	if origin, err := KeyOrigin(GetParams{Key: "watch.stale-min", LookupEnv: noEnv}); err != nil || origin != "default" {
 		t.Fatalf("KeyOrigin without a file = %q, %v", origin, err)
+	}
+}
+
+// TestBoardAndPipelineSettingsHaveCompiledDefaults (R19, R22, R24; U10b-1's
+// five rows): the pipeline keys and the max wait resolve to the table's
+// defaults with no configuration file; a stage list naming a stage twice,
+// missing one of the pre-join order or naming landing, and a non-integer
+// -min or -n, are refused by validate with the key named; the wait cap is
+// not a key.
+func TestBoardAndPipelineSettingsHaveCompiledDefaults(t *testing.T) {
+	t.Parallel()
+	conf := filepath.Join(t.TempDir(), "metasystem.conf")
+	putFile(t, conf, "# overrides only\n")
+	for key, want := range map[string]string{
+		BatchMaxWaitKey: "10m", PipelineStallMinKey: "20", PipelineProofCostKey: "40m",
+		PipelineStageDefaultsKey: "build=10m,revise=10m,unit-proof=5m,review=18m,judgement=5m,land-ready=3m", PipelineHistoryNKey: "8",
+	} {
+		if value, _, err := Get(GetParams{Key: key, ConfPath: conf, LookupEnv: noEnv}); err != nil || value != want {
+			t.Fatalf("Get(%s) = %q, %v; want %q", key, value, err, want)
+		}
+		if ProofInput(key) {
+			t.Fatalf("%s decides when a proof starts, never what it proves; it is no proof input", key)
+		}
+	}
+	if DefaultBatchMaxWait != 10*time.Minute {
+		t.Fatalf("DefaultBatchMaxWait = %v; the table's 10m", DefaultBatchMaxWait)
+	}
+	settings := DefaultPipelineSettings()
+	if settings.Stall != 20*time.Minute || settings.ProofCost != 40*time.Minute || settings.HistoryN != 8 ||
+		settings.StageDefaults["review"] != 18*time.Minute || settings.StageDefaults["judgement"] != 5*time.Minute || len(settings.StageDefaults) != 6 {
+		t.Fatalf("compiled pipeline settings = %+v", settings)
+	}
+	if _, ok := CompiledDefault("landing.pipeline-wait-cap"); ok {
+		t.Fatal("landing.pipeline-wait-cap is not a key: the bound is the measured proof cost")
+	}
+	for _, row := range []struct{ setting, want string }{
+		{PipelineStageDefaultsKey + "=build=10m,build=5m,revise=10m,unit-proof=5m,review=18m,judgement=5m,land-ready=3m\n", "names build twice"},
+		{PipelineStageDefaultsKey + "=build=10m,revise=10m,unit-proof=5m,review=18m,land-ready=3m\n", "does not name judgement"},
+		{PipelineStageDefaultsKey + "=build=10m,revise=10m,unit-proof=5m,review=18m,judgement=5m,land-ready=3m,landing=2m\n", "landing"},
+		{PipelineStallMinKey + "=20m\n", PipelineStallMinKey},
+		{PipelineHistoryNKey + "=eight\n", PipelineHistoryNKey},
+		{PipelineProofCostKey + "=forty\n", PipelineProofCostKey},
+	} {
+		if problems := validateRepo(t, validConf+row.setting); !hasProblem(problems, row.want) {
+			t.Fatalf("Validate accepted %q: %v", row.setting, problems)
+		}
+	}
+	if problems := validateRepo(t, validConf); len(problems) != 0 {
+		t.Fatalf("the compiled max wait alone is no max wait without a root: %v", problems)
 	}
 }

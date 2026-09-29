@@ -106,7 +106,9 @@ func TestEveryCatalogueFieldIsItsRoutesOwnBodyField(t *testing.T) {
 		routeEditGoal: fieldsOf(editGoalBody{}),
 		routeAbandon:  fieldsOf(abandonBody{}),
 		routeReview:   fieldsOf(reviewBody{}),
-		routeAppStart: {},
+		// The landing gate's decision: the reason; the tip is the route's.
+		routeLandWithoutSitting: fieldsOf(landWithoutSittingBody{}),
+		routeAppStart:           {},
 		// The design is the route's path, and the decisions file is the one
 		// the route derives from the examination it answers: both travel
 		// beside the body (Beside), so the body is the goal, the budget and

@@ -387,6 +387,7 @@ func (d *driver) land() int {
 		if d.runStep("verify shared testing proof before recertified push", d.verifyCurrentTestingProof) != 0 {
 			d.parkRecertified("chain-recertification-test-command-refused", d.lastStepLine())
 		}
+		d.requiredStep("landing gate before push", d.gateBeforePush)
 		d.sampleBoot()
 		if status := d.runStep("push recertified commit to origin (single attempt)", d.pushOrigin); status != 0 {
 			if d.movingOriginRejection() {
@@ -409,6 +410,7 @@ func (d *driver) land() int {
 		const pushLimit = 3
 		d.sampleBoot()
 		for attempt := 1; attempt <= pushLimit; attempt++ {
+			d.requiredStep("landing gate before push", d.gateBeforePush)
 			status := d.runStep(fmt.Sprintf("push origin (attempt %d of %d)", attempt, pushLimit), d.pushOrigin)
 			if status == 0 {
 				break
@@ -723,6 +725,21 @@ func (d *driver) heldCheck(out io.Writer) int {
 		base = d.recertTarget
 	}
 	return d.owners.Held(d.request.Root, base, "HEAD", "origin", "refs/heads/"+d.branch, out, out)
+}
+
+// gateBeforePush reads the goal's landing gate once more, immediately before
+// a push (g1-s70 D2): admission is not the last word, so a hold or a changed
+// human word that arrived while the landing proved, or while origin moved,
+// stops the publication. A landing in no goal's name has no gate.
+func (d *driver) gateBeforePush(out io.Writer) int {
+	if d.request.Goal == "" || d.owners.LandingGate == nil {
+		return 0
+	}
+	if err := d.owners.LandingGate(d.request.Root, d.request.Goal); err != nil {
+		fmt.Fprintf(out, "%v; nothing was pushed\n", err)
+		return 1
+	}
+	return 0
 }
 
 func (d *driver) pushOrigin(out io.Writer) int {

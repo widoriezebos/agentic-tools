@@ -48,7 +48,15 @@ export type Workspace = {
   adoptedFrom: string;
   adoptionRecord: string;
   store?: Store;
+  /** The landing gate's two settings, each with its source (g1-s70 D1). */
+  landingGate?: LandingGate;
 };
+
+/** One setting as the layered resolution answered it. */
+export type LandingGateFact = { key: string; value: string; source: string };
+
+/** The landing gate's settings, or why they could not be read. */
+export type LandingGate = { facts?: LandingGateFact[]; problem?: string };
 
 export async function loadWorkspace(signal?: AbortSignal): Promise<Workspace> {
   const response = await fetch("/api/workspace", { signal, headers: { Accept: "application/json" } });

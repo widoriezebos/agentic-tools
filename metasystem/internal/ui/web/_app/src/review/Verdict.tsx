@@ -11,7 +11,7 @@ export const VerdictActed = createContext<(after: Backlog) => void>(() => {});
 
 /**
  * The goal's verdict on its card (g1-s69 §3, D2): "reviewed by Wido · clear to
- * land", "sent back by Wido · the holder takes it with work revise G",
+ * land", "sent back by Wido · the seat that holds G revises on its next turn",
  * "attempt 3 started from your brief", or the holder asking which work — with a press per name that
  * performs the send-back again naming it. Everything it says is the goal's own
  * history, read as every seat reads it.

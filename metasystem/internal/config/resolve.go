@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -25,15 +26,124 @@ var (
 )
 
 const (
-	BatchRootKey        = "landing.batch-root"
-	BatchMaxWaitKey     = "landing.batch-max-wait"
-	DefaultBatchMaxWait = 10 * time.Minute
+	BatchRootKey             = "landing.batch-root"
+	BatchMaxWaitKey          = "landing.batch-max-wait"
+	PipelineStallMinKey      = "landing.pipeline-stall-min"
+	PipelineProofCostKey     = "landing.pipeline-proof-cost"
+	PipelineStageDefaultsKey = "landing.pipeline-stage-defaults"
+	PipelineHistoryNKey      = "landing.pipeline-history-n"
 )
 
+// DefaultBatchMaxWait is the compiled max wait; the table holds the number.
+var DefaultBatchMaxWait = durationDefault(BatchMaxWaitKey)
+
+// PipelineStages are the stages of the pre-join order, each of which the
+// stage defaults name exactly once.
+var PipelineStages = []string{"build", "revise", "unit-proof", "review", "judgement", "land-ready"}
+
+// PipelineSettings decide when a batch starts from the host board (D14,
+// R22): the stall bound, the separate-proof cost and the stage estimates
+// used until the lane has measured its own, and the median's window.
+type PipelineSettings struct {
+	Stall         time.Duration
+	ProofCost     time.Duration
+	StageDefaults map[string]time.Duration
+	HistoryN      int
+}
+
 type BatchLanding struct {
-	Root    string
-	MaxWait time.Duration
-	now     func() time.Time
+	Root     string
+	MaxWait  time.Duration
+	Pipeline PipelineSettings
+	now      func() time.Time
+}
+
+func durationDefault(key string) time.Duration {
+	value, err := time.ParseDuration(MustDefault(key))
+	if err != nil {
+		panic("config: compiled default " + key + " is not a duration")
+	}
+	return value
+}
+
+// DefaultPipelineSettings are the compiled pipeline settings.
+func DefaultPipelineSettings() PipelineSettings {
+	stages, err := ParseStageDefaults(MustDefault(PipelineStageDefaultsKey))
+	if err != nil {
+		panic("config: compiled " + PipelineStageDefaultsKey + ": " + err.Error())
+	}
+	return PipelineSettings{Stall: time.Duration(intDefault(PipelineStallMinKey)) * time.Minute,
+		ProofCost: durationDefault(PipelineProofCostKey), StageDefaults: stages, HistoryN: intDefault(PipelineHistoryNKey)}
+}
+
+// ParseStageDefaults reads a stage list: every stage of the pre-join order
+// named exactly once with a positive duration, and nothing else.
+func ParseStageDefaults(raw string) (map[string]time.Duration, error) {
+	stages := map[string]time.Duration{}
+	known := map[string]bool{}
+	for _, stage := range PipelineStages {
+		known[stage] = true
+	}
+	for _, item := range strings.Split(raw, ",") {
+		name, value, ok := strings.Cut(strings.TrimSpace(item), "=")
+		if !ok || !known[name] {
+			return nil, fmt.Errorf("%s names %q, which is not a stage of the pre-join order (%s)", PipelineStageDefaultsKey, name, strings.Join(PipelineStages, ", "))
+		}
+		if _, twice := stages[name]; twice {
+			return nil, fmt.Errorf("%s names %s twice", PipelineStageDefaultsKey, name)
+		}
+		duration, err := time.ParseDuration(value)
+		if err != nil || duration <= 0 {
+			return nil, fmt.Errorf("%s gives %s the duration %q; want a positive duration", PipelineStageDefaultsKey, name, value)
+		}
+		stages[name] = duration
+	}
+	for _, stage := range PipelineStages {
+		if _, ok := stages[stage]; !ok {
+			return nil, fmt.Errorf("%s does not name %s", PipelineStageDefaultsKey, stage)
+		}
+	}
+	return stages, nil
+}
+
+// resolvePipelineSettings reads the pipeline keys through the one resolver.
+func resolvePipelineSettings(confPath string) (PipelineSettings, error) {
+	get := func(key string) (string, error) {
+		value, _, err := Get(GetParams{Key: key, ConfPath: confPath})
+		if err != nil {
+			return "", fmt.Errorf("resolve %s: %w", key, err)
+		}
+		return value, nil
+	}
+	settings := PipelineSettings{}
+	raw, err := get(PipelineStallMinKey)
+	if err != nil {
+		return settings, err
+	}
+	minutes, err := strconv.Atoi(raw)
+	if err != nil || minutes < 1 {
+		return settings, fmt.Errorf("%s must be a positive integer, got %q", PipelineStallMinKey, raw)
+	}
+	settings.Stall = time.Duration(minutes) * time.Minute
+	if raw, err = get(PipelineProofCostKey); err != nil {
+		return settings, err
+	}
+	if settings.ProofCost, err = time.ParseDuration(raw); err != nil || settings.ProofCost <= 0 {
+		return settings, fmt.Errorf("%s must be a positive duration, got %q", PipelineProofCostKey, raw)
+	}
+	if raw, err = get(PipelineStageDefaultsKey); err != nil {
+		return settings, err
+	}
+	if settings.StageDefaults, err = ParseStageDefaults(raw); err != nil {
+		return settings, err
+	}
+	if raw, err = get(PipelineHistoryNKey); err != nil {
+		return settings, err
+	}
+	if settings.HistoryN, err = strconv.Atoi(raw); err != nil || settings.HistoryN < 1 {
+		return settings, fmt.Errorf("%s must be a positive integer, got %q", PipelineHistoryNKey, raw)
+	}
+	return settings, nil
 }
 
 type gitRequest struct {
@@ -62,7 +172,18 @@ func NewBatchLanding(root string, maxWait time.Duration, now func() time.Time) (
 	if maxWait < time.Minute || maxWait > 6*time.Hour {
 		return BatchLanding{}, fmt.Errorf("%s must be a duration from 1m through 6h", BatchMaxWaitKey)
 	}
-	return BatchLanding{Root: realpath.Resolve(root), MaxWait: maxWait, now: now}, nil
+	return BatchLanding{Root: realpath.Resolve(root), MaxWait: maxWait, Pipeline: DefaultPipelineSettings(), now: now}, nil
+}
+
+// WithPipeline binds pipeline settings the caller resolved from its own
+// configuration file.
+func (landing BatchLanding) WithPipeline(confPath string) (BatchLanding, error) {
+	settings, err := resolvePipelineSettings(confPath)
+	if err != nil {
+		return landing, err
+	}
+	landing.Pipeline = settings
+	return landing, nil
 }
 
 // ResolveExplicitBatchLanding validates an explicitly supplied landing root
@@ -113,7 +234,11 @@ func resolveBatchLandingWithRunner(confPath, seatRoot string, now func() time.Ti
 	if err != nil || wait < time.Minute || wait > 6*time.Hour {
 		return BatchLanding{}, fmt.Errorf("%s must be a duration from 1m through 6h, got %q", BatchMaxWaitKey, rawWait)
 	}
-	return BatchLanding{Root: root, MaxWait: wait, now: now}, nil
+	pipeline, err := resolvePipelineSettings(confPath)
+	if err != nil {
+		return BatchLanding{}, err
+	}
+	return BatchLanding{Root: root, MaxWait: wait, Pipeline: pipeline, now: now}, nil
 }
 
 func batchLandingRootWithRunner(raw, seatRoot string, runner gitRunner) (string, error) {

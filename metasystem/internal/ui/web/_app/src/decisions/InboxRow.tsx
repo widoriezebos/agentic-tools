@@ -1,3 +1,5 @@
+import { LandWithoutSittingPress } from "../review/Gate";
+import { ReviewItOrDoor } from "../review/Door";
 import { useState, type ReactNode } from "react";
 import { NavLink } from "react-router";
 
@@ -52,6 +54,8 @@ export type Acts = {
   onEdit: (need: Need) => void;
   /** Unpark: one publication, then the page reads its payload again. */
   onReturn: (id: string) => void;
+  /** A landing row's decision landed: the page reads its payload again (g1-s70 D5). */
+  onLanded: () => void;
   /** A record's status: accepting a draft, marking a landed design done. */
   onWrite: (need: Need, status: string) => void;
   /** The row a write is in flight for, or "". */
@@ -361,6 +365,22 @@ function Offered({ need, acts }: { need: Need; acts: Acts }): ReactNode {
       );
     case "proposal":
       return <ProposalPresses need={need} acts={acts} />;
+    case "landing":
+      // Its two answers (g1-s70 D5): Review it opens the goal's room, and Land
+      // without a sitting opens the Decide sheet.
+      return (
+        <>
+          <ReviewItOrDoor goal={need.id} />
+          {need.act === "land-without-sitting" && (
+            <LandWithoutSittingPress
+              goal={need.id}
+              onDone={() => {
+                acts.onLanded();
+              }}
+            />
+          )}
+        </>
+      );
     default:
       // A question, a ruling review, an alert, a seat's ask and a stopped
       // goal are all decided somewhere this interface does not publish to.

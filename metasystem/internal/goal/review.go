@@ -458,6 +458,10 @@ func validReviewHistory(h HistoryLine) error {
 		if !strings.HasPrefix(h.Actor, "human:") || len(h.Targets) != 1 {
 			return fmt.Errorf("review history is a human's act on one goal")
 		}
+		// A sitting's hold and its release are the review verb's too (g1-s70).
+		if _, _, _, sitting := sittingReason(h.Reason); sitting {
+			return nil
+		}
 		_, err := parseReviewReason(h.Reason)
 		return err
 	case sendBackVerb:

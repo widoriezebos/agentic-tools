@@ -7,8 +7,11 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 )
 
@@ -41,7 +44,23 @@ func newLaunchManager() *launch.Manager {
 	return &launch.Manager{Store: launch.Store{}, Adapters: map[string]launch.Adapter{"codex-exec": codex, "claude-headless": claude, "plain-exec": launch.PlainExec{}},
 		Processes: processes, Signaler: processes, Prober: prober, Supervisor: launch.OSSupervisorStarter{Prober: prober}, Now: time.Now,
 		Sleep: time.Sleep, Grace: 2 * time.Second, Poll: 50 * time.Millisecond, StartCap: launch.DefaultWaitTimeout,
-		Settings: settings, SettingsError: settingsErr}
+		Settings: settings, SettingsError: settingsErr, Seat: launchSeat(executable, executableErr, goal.ResolveMachine)}
+}
+
+// launchSeat is the engine installation's seat on the host board, resolved
+// once at the manager's one constructor: the installation that holds this
+// engine and its enrolled nickname. Without a nickname the launches write no
+// card (D14, R24).
+func launchSeat(executable string, executableErr error, resolve func(string) (string, error)) board.Seat {
+	if executableErr != nil {
+		return board.Seat{}
+	}
+	installation := realpath.Resolve(filepath.Join(filepath.Dir(executable), ".."))
+	machine, err := resolve(installation)
+	if err != nil {
+		return board.Seat{}
+	}
+	return board.Seat{Machine: machine, Installation: installation}
 }
 
 var launchManager = newLaunchManager

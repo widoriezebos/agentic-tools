@@ -5,6 +5,7 @@ import (
 	"crypto/sha1"
 	"errors"
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"os"
 	"path/filepath"
 	"slices"
@@ -240,4 +241,40 @@ func TestBatchFailedHandbackSeesOccupiedSourceOnNextTick(t *testing.T) {
 	unit := load(t, store).Units[0]
 	witness(t, targets == 2 && releases == 1 && unit.State == UnitEjected && unit.ReturnDisposition == ReturnReleased,
 		"targets=%d releases=%d unit=%+v", targets, releases, unit)
+}
+
+// TestBatchSettleWritesLandedOrReturned (R24, U10a-3, landed and returned):
+// a unit that settles landed writes landed on the goal's card, one that
+// settles ejected writes returned.
+func TestBatchSettleWritesLandedOrReturned(t *testing.T) {
+	t.Parallel()
+	for _, row := range []struct {
+		outcome string
+		want    board.Stage
+	}{{UnitLanded, board.StageLanded}, {UnitEjected, board.StageReturned}} {
+		goalID := "goal-card-" + row.outcome
+		seat := board.Seat{Machine: "m1-batch-settle", Installation: "/checkouts/m1-batch-settle/metasystem"}
+		seedBoardCard(t, seat, goalID, []board.Stage{board.StageClaimedIdle}, time.Date(2026, 9, 29, 9, 0, 0, 0, time.UTC))
+		store := NewStore(t.TempDir(), scriptedProber{})
+		must(t, store.Create(Record{Schema: 1, BatchID: testBatchID, State: StateOpen, Units: []Unit{{GoalID: goalID, Chain: "chain-a", Claim: Claim{Machine: seat.Machine, Lineage: "lineage-a", Epoch: 4, Revision: 2, AccountingRevision: 1}, State: UnitJoined}}}))
+		must(t, RequestReturn(store, testBatchID, goalID, row.outcome, "settled", "landing+owner", time.Unix(1, 0)))
+		ledger := ReturnLedgerGoal{Claimed: true, Machine: "landing", Lineage: "owner", Batch: testBatchID}
+		must(t, ReturnUnits(store, testBatchID, "tree-a", "landing+owner", time.Unix(2, 0), ReturnSeams{
+			Read:     func(string, string, string) (ReturnLedgerGoal, error) { return ledger, nil },
+			Target:   func(Unit) ReturnTarget { return ReturnTarget{State: ReturnTargetLive, Epoch: 9} },
+			HandBack: func(string, Claim, uint64) error { return nil },
+			Release:  func(string, string) error { return nil },
+		}))
+		home, _ := board.Home()
+		picture, _ := board.Read(home, []board.Seat{seat}, nil, time.Unix(3, 0), time.Hour)
+		found := false
+		for _, card := range picture.Cards {
+			if card.Goal == goalID {
+				found = card.Stage == row.want && card.Batch == testBatchID
+			}
+		}
+		if !found {
+			t.Fatalf("%s: board %+v, want %s", row.outcome, picture, row.want)
+		}
+	}
 }

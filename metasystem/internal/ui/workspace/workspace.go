@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
 
@@ -54,6 +55,17 @@ type Workspace struct {
 	// seat's configuration and the measurement is a walk of the account's home
 	// — neither is a fact of the three roots.
 	Store *Store `json:"store,omitempty"`
+	// LandingGate is the landing gate's two settings, each with the source
+	// the layered resolution reports (g1-s70 D1), filled by the server's
+	// wiring from the same resolution the engine reads.
+	LandingGate *LandingGate `json:"landingGate,omitempty"`
+}
+
+// LandingGate is the two settings the Settings page shows, or why they could
+// not be read.
+type LandingGate struct {
+	Facts   []config.LandingGateFact `json:"facts,omitempty"`
+	Problem string                   `json:"problem,omitempty"`
 }
 
 // Describe answers the workspace resource from the three roots and the

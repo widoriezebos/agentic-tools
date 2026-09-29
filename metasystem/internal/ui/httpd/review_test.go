@@ -70,6 +70,8 @@ func (deskGit) PathDiff(string, string, string) ([]byte, error) {
 
 func (deskGit) CommitsCarrying(string, string) ([]string, error) { return nil, errors.New("none") }
 
+func (deskGit) FetchBranch(string) error { return nil }
+
 func (deskGit) LineCommits(string, string) ([]string, error) { return nil, errors.New("no blame") }
 
 // withALanding is the board with one goal built and waiting to land.
@@ -104,7 +106,7 @@ func serveReview(t *testing.T, script fakeacp.Script) *servedReview {
 	return serveReviewOn(t, fakeacp.Open(script))
 }
 
-func serveReviewOn(t *testing.T, opener func(context.Context) (partner.Endpoint, error)) *servedReview {
+func serveReviewOn(t *testing.T, opener func(context.Context) (partner.Endpoint, error), amend ...func(*Info)) *servedReview {
 	t.Helper()
 	root := t.TempDir()
 	runtime := partner.Runtime{Name: "fake", Model: "fake-1", ReadOnly: "a fake server reads nothing"}
@@ -148,6 +150,9 @@ func serveReviewOn(t *testing.T, opener func(context.Context) (partner.Endpoint,
 					Title: "Review of landing"}, Counts: project.PileCounts{Findings: 2, Unanswered: 1}}},
 			}, nil
 		},
+	}
+	for _, change := range amend {
+		change(&info)
 	}
 	served.handler = New(info, loopback(), testBundle())
 	return served

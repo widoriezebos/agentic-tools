@@ -18,14 +18,17 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/authority"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/landpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/project"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 )
@@ -216,9 +219,10 @@ type intentDeliveryOwners struct {
 	// engine may write the named chain's records, before anything writes.
 	recordWriter func(root, job string) (cause string, err error)
 	process      func(intentProcess) intentProcessResult
-	// landCarried runs one carried landing through the landing path and
-	// returns what it printed and its exit status.
-	landCarried func(landpath.LandRequest) intentProcessResult
+	// landCarried runs one carried landing through the landing path, which
+	// reads gate immediately before its push, and returns what it printed and
+	// its exit status.
+	landCarried func(request landpath.LandRequest, gate func(root, goalID string) error) intentProcessResult
 	// closeOwner runs the delegate lifecycle's close command (the whole
 	// chain close) for an installation root.
 	closeOwner  func(root string, args []string) intentProcessResult
@@ -233,11 +237,19 @@ type intentDeliveryOwners struct {
 	sweep         func(root, goalID, landing string) error
 	// batchUnit finds the batch member a land request names; branchTip is the
 	// live goal branch, or empty once the branch is gone.
-	batchUnit    func(landingRoot string, request batchJoinRequest, branchTip string) (batch.Record, batch.Unit, bool, error)
-	publishRead  func(root, goalID, unit string) (branch.PublishReadResult, error)
-	batchRoot    func(root string, now time.Time) (string, bool, error)
-	batchJoin    func(batchJoinRequest) (batch.Record, error)
-	now          func() time.Time
+	batchUnit   func(landingRoot string, request batchJoinRequest, branchTip string) (batch.Record, batch.Unit, bool, error)
+	publishRead func(root, goalID, unit string) (branch.PublishReadResult, error)
+	batchRoot   func(root string, now time.Time) (string, bool, error)
+	batchJoin   func(batchJoinRequest) (batch.Record, error)
+	now         func() time.Time
+	// landingGate evaluates the landing gate for a goal at a branch tip
+	// against a fresh ledger (g1-s70 D2); nil selects the production gate.
+	landingGate func(inv *intentInvocation, goalID, tip string) (string, error)
+	// branchTip reads a goal branch's tip at origin; nil reads origin.
+	branchTip func(root, goalID string) (string, error)
+	// recordLanded writes the holder's landed line after a confirmed
+	// publication; nil selects the ledger's own act.
+	recordLanded func(inv *intentInvocation, goalID string) error
 	foldUnitHook func(inv *intentInvocation, run string) int
 	// calls are the owner functions public commands call in this process
 	// (intent_owner_calls.go); nil selects the production owners.
@@ -257,8 +269,10 @@ type intentBranchState struct {
 }
 
 // landCarriedInProcess runs one carried landing in this process.
-func landCarriedInProcess(request landpath.LandRequest) intentProcessResult {
-	return landCarriedWithOwners(landingPathOwners(), request)
+func landCarriedInProcess(request landpath.LandRequest, gate func(root, goalID string) error) intentProcessResult {
+	owners := landingPathOwners()
+	owners.LandingGate = gate
+	return landCarriedWithOwners(owners, request)
 }
 
 func landCarriedWithOwners(owners landpath.Owners, request landpath.LandRequest) intentProcessResult {
@@ -1544,7 +1558,34 @@ func (inv *intentInvocation) landJob(job string) intentResult {
 			Summary:  fmt.Sprintf("certified chain %s lands only through the landing batch, and landing.batch-root is not set", job),
 			Decision: "set landing.batch-root to a dedicated landing checkout"}
 	}
-	return inv.joinBatch(targets, batchJoinRequest{SeatRoot: inv.layout.InstallationRoot, LandingRoot: landingRoot, GoalID: goalID, ChainID: job}, "")
+	request := batchJoinRequest{SeatRoot: inv.layout.InstallationRoot, LandingRoot: landingRoot, GoalID: goalID, ChainID: job}
+	if _, _, member, err := inv.delivery().batchUnit(landingRoot, request, ""); err != nil || member {
+		return inv.noteLanded(goalID, inv.joinBatch(targets, request, ""))
+	}
+	// The human's word on a chain is bound to the commit the chain publishes,
+	// the head of its candidate branch; the batch carries it to its
+	// publication gate.
+	request.ChainHead = chainHead(record)
+	if refused := inv.admitLanding(targets, goalID, request.ChainHead); refused != nil {
+		return *refused
+	}
+	return inv.noteLanded(goalID, inv.joinBatch(targets, request, ""))
+}
+
+// chainHead is the commit a certified chain publishes: its job record names
+// no commit, so it is the head of the candidate branch the record names
+// (branch) in the worktree it names (workspaceRoot), or "" where that branch
+// cannot be read, which no human word can be bound to.
+func chainHead(record map[string]any) string {
+	workspace, branch := recordText(record, "workspaceRoot"), recordText(record, "branch")
+	if workspace == "" || branch == "" {
+		return ""
+	}
+	read := landingPathGit(landpath.GitCall{Dir: workspace, Args: []string{"rev-parse", "--verify", "--quiet", "refs/heads/" + branch + "^{commit}"}})
+	if read.Code != 0 {
+		return ""
+	}
+	return strings.TrimSpace(string(read.Stdout))
 }
 
 // joinBatch reads the goal's existing batch membership first: a joined unit
@@ -1601,6 +1642,10 @@ type intentLanded struct {
 }
 
 func (inv *intentInvocation) landGoal(goalID, through string) intentResult {
+	return inv.noteLanded(goalID, inv.landGoalRoute(goalID, through))
+}
+
+func (inv *intentInvocation) landGoalRoute(goalID, through string) intentResult {
 	targets := []intentTarget{{Kind: "goal", ID: goalID}}
 	if !validIntentJobID(goalID) {
 		return intentResult{Targets: targets, Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("%q is not a goal id", goalID)}
@@ -1638,6 +1683,9 @@ func (inv *intentInvocation) landGoal(goalID, through string) intentResult {
 	subject, count, refusal := handLandingSubject(targets, goalID, through, state)
 	if refusal != nil {
 		return *refusal
+	}
+	if refused := inv.admitLanding(targets, goalID, state.BranchTip); refused != nil {
+		return *refused
 	}
 	kinds := map[string]bool{}
 	for _, source := range state.Sources[:count] {
@@ -1701,6 +1749,7 @@ func (inv *intentInvocation) landByHand(targets []intentTarget, goalID, through,
 		return intentResult{Targets: targets, Outcome: intentUnchanged, Data: data,
 			Summary: fmt.Sprintf("goal %s already landed %s on %s", goalID, landed.Landing, landed.Endpoint)}
 	}
+	writeHandLandingCard(root, goalID, board.StageLanding)
 	selection := []string{"--last"}
 	if through != "" {
 		selection = []string{"--through", through}
@@ -1731,6 +1780,12 @@ func (inv *intentInvocation) landByHand(targets []intentTarget, goalID, through,
 				Decision: "fix the failing groups on the goal branch; a new branch tip gets a new proof"}
 		}
 	}
+	// The proof took its time; the gate is read again against the fresh
+	// ledger right before the publication (g1-s70 D2).
+	if refused := inv.admitLanding(targets, goalID, state.BranchTip); refused != nil {
+		refused.Data = data
+		return *refused
+	}
 	pushed, endpoint, code, err := owners.landPush([]string{"--root", root, "--goal", goalID, "--prepared", prepared})
 	if pushed.Landing == "" {
 		data["pushError"] = fmt.Sprint(err)
@@ -1740,6 +1795,7 @@ func (inv *intentInvocation) landByHand(targets []intentTarget, goalID, through,
 	}
 	landed = intentLanded{Landing: pushed.Landing, Endpoint: endpoint, Branch: pushed.Branch, Subject: subject, Swept: err == nil}
 	data["landing"] = landed
+	writeHandLandingCard(root, goalID, board.StageLanded)
 	if writeErr := writeIntentInputs(dir, map[string]string{landedPath: mustJSON(landed)}); writeErr != nil {
 		data["recordError"] = writeErr.Error()
 	}
@@ -1750,6 +1806,35 @@ func (inv *intentInvocation) landByHand(targets []intentTarget, goalID, through,
 	}
 	return intentResult{Targets: targets, Outcome: intentConfirmed, Data: data,
 		Summary: fmt.Sprintf("landed %s on %s; goal %s stays open until done", pushed.Landing, endpoint, goalID)}
+}
+
+// writeHandLandingCard projects the hand route onto the goal's board card
+// (D14, R24): landing when the route begins, with this landing process as
+// owner, so an abandoned attempt reads as a dead owner and the goal's next
+// real transition overwrites it; landed after the push. The card is the
+// goal's live card, or this installation's own seat. A card that cannot be
+// written is reported and the landing goes on.
+func writeHandLandingCard(root, goalID string, stage board.Stage) {
+	home, err := board.Home()
+	if err != nil {
+		return
+	}
+	seat, found := board.Seat{}, false
+	if live, ok := board.LiveCard(home, goalID); ok {
+		seat, found = live.Seat, true
+	} else if machine, resolveErr := goal.ResolveMachine(root); resolveErr == nil {
+		seat, found = board.Seat{Machine: machine, Installation: realpath.Resolve(root)}, true
+	}
+	if !found {
+		return
+	}
+	card := board.Card{Seat: seat, Goal: goalID, Stage: stage, Writer: board.Writer{Component: "work-land"}}
+	if stage == board.StageLanding {
+		card.Owner = board.Self()
+	}
+	if err := board.Write(card); err != nil {
+		fmt.Fprintf(os.Stderr, "work land %s: the board card was not written: %v\n", goalID, err)
+	}
 }
 
 // receiptProves reports whether a retained receipt is a schema-3 receipt of

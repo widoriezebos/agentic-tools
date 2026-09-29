@@ -89,7 +89,9 @@ func newOwnerBed(t *testing.T, record Record, now time.Time) *ownerBed {
 			bed.launches++
 			bed.launched, bed.window = request.Sample, request.Window
 			return nil
-		}, ProbeRun: func(string, Record) (RunProbe, error) { return RunProbe{State: RunLive}, nil }, After: func(time.Duration) <-chan time.Time { return make(chan time.Time) }, Report: func(string, error) {}})
+		}, ProbeRun: func(string, Record) (RunProbe, error) { return RunProbe{State: RunLive}, nil }, After: func(time.Duration) <-chan time.Time { return make(chan time.Time) }, Report: func(string, error) {},
+		// An empty readable board: nothing on any seat is underway.
+		Pipeline: &scriptedBoard{picture: BoardPicture{Readable: true}}})
 	must(t, err)
 	return bed
 }
@@ -303,6 +305,8 @@ func TestBatchOwnerLaunchesAtMaximumWait(t *testing.T) {
 	witness(t, !strings.Contains(string(contents(t, "owner.go")), "time.Now("), "owner reads the wall clock")
 	joined := time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC)
 	bed := newOwnerBed(t, ownerRecord(testBatchID, StateOpen, joined), joined.Add(time.Minute-time.Second))
+	// The max wait decides only when the host board cannot be read (D14).
+	bed.owner.pipeline = &scriptedBoard{picture: BoardPicture{Reason: "registry: unreadable"}}
 	must(t, bed.owner.Tick(testBatchID))
 	_, lockErr := os.Stat(bed.lockDir)
 	_, queueErr := os.Stat(bed.queueDir)
