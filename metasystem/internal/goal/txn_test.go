@@ -271,7 +271,9 @@ type installedGoalWaitProcess struct {
 	registered chan error
 }
 
-func startInstalledGoalWait(t *testing.T, binary, root string, args ...string) *installedGoalWaitProcess {
+// startInstalledGoalWait runs the installed engine's public goal-event wait,
+// metasystem work wait GOAL, on root's ledger.
+func startInstalledGoalWait(t *testing.T, binary, root, goalID string, args ...string) *installedGoalWaitProcess {
 	t.Helper()
 	eventsPath := filepath.Join(root, "artifacts", "agents", "events.jsonl")
 	if err := os.MkdirAll(filepath.Dir(eventsPath), 0o755); err != nil {
@@ -287,7 +289,8 @@ func startInstalledGoalWait(t *testing.T, binary, root string, args ...string) *
 	if err != nil {
 		t.Fatal(err)
 	}
-	allArgs := append([]string{"wait", "--root", root}, args...)
+	markSyncedInstallation(t, root)
+	allArgs := append([]string{"work", "wait", goalID, "--repo", root}, args...)
 	command := exec.Command(binary, allArgs...)
 	var output bytes.Buffer
 	command.Stdout, command.Stderr = &output, &output
@@ -327,6 +330,23 @@ func startInstalledGoalWait(t *testing.T, binary, root string, args ...string) *
 		_ = eventPipe.Close()
 	})
 	return process
+}
+
+// markSyncedInstallation gives root the synced ledger's projection file, the
+// mark by which the public commands tell a converted installation from one
+// still on the legacy goals file; the ledger itself is the fixture's refs.
+func markSyncedInstallation(t *testing.T, root string) {
+	t.Helper()
+	backlog := filepath.Join(root, "plans", "goals", "backlog.md")
+	if _, err := os.Stat(backlog); err == nil {
+		return
+	}
+	if err := os.MkdirAll(filepath.Dir(backlog), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(backlog, []byte("# Goals\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func waitForInstalledGoalRow(t *testing.T, root, lineage, target string, process *installedGoalWaitProcess) metarun.Waiter {
@@ -397,7 +417,7 @@ func testInstalledGoalWaits(t *testing.T, binary string) {
 	actionTarget := "installed-actionable-target"
 	actionCursor := openGoal(actionTarget, "01J5X0000000000000000000Y1")
 	syncCursor(actionCursor)
-	actionWait := startInstalledGoalWait(t, binary, waiterClone, "--goal", actionTarget, "--event", "human-act", "--verb", "deny", "--after", actionCursor, "--timeout", "1m", "--json")
+	actionWait := startInstalledGoalWait(t, binary, waiterClone, actionTarget, "--for", "human-act", "--verb", "deny", "--since", actionCursor, "--timeout", "1m", "--json")
 	_ = waitForInstalledGoalRow(t, waiterClone, lineage, actionTarget, actionWait)
 	// Reaching pending is the bounded proof that an unchanged frontier did
 	// not end registration before the newly-ready goal is published.
@@ -411,14 +431,20 @@ func testInstalledGoalWaits(t *testing.T, binary string) {
 	answerTarget := "installed-answer-target"
 	answerCursor := openGoal(answerTarget, "01J5X0000000000000000000Y4")
 	syncCursor(answerCursor)
-	answerWait := startInstalledGoalWait(t, binary, waiterClone, "--goal", answerTarget, "--event", "human-act", "--verb", "answer", "--question", "installed-question", "--after", answerCursor, "--timeout", "1m", "--json")
+	answerWait := startInstalledGoalWait(t, binary, waiterClone, answerTarget, "--for", "human-act", "--verb", "answer", "--question", "installed-question", "--since", answerCursor, "--timeout", "1m", "--json")
 	_ = waitForInstalledGoalRow(t, waiterClone, lineage, answerTarget, answerWait)
 	answerResult, answerErr := Answer(verbReq(publisher, "01J5X0000000000000000000Y5", "mac-a"), answerTarget, "installed-question", "continue", "", AnswerProof{Provider: "fake", User: "wido", Ref: "thread/installed", Step: 1})
 	if answerErr != nil || answerResult.Outcome != OutcomeConfirmed {
 		t.Fatalf("publish installed answer: %+v %v", answerResult, answerErr)
 	}
-	if output := awaitInstalledGoalWait(t, answerWait, metarun.ExitGreen); !strings.Contains(output, `"exitCode":0`) {
-		t.Fatalf("installed answer result was not green: %s", output)
+	output := awaitInstalledGoalWait(t, answerWait, metarun.ExitGreen)
+	var answered struct {
+		Data struct {
+			ExitCode *int `json:"exitCode"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(output), &answered); err != nil || answered.Data.ExitCode == nil || *answered.Data.ExitCode != 0 {
+		t.Fatalf("installed answer result was not green (%v): %s", err, output)
 	}
 }
 
