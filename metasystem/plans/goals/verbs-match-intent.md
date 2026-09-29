@@ -10,13 +10,14 @@
 - StopSurface: moves
 - Next step: Wido 2026-09-26 ~22:30 CEST rejected the aa00d78ed result: 44 public commands sat on top of 465 untouched internal verbs (45 families), ~213 of which exist only because Bash scripts call Go as a standard library. Ruling: object-action grammar (metasystem goal approve G), metasystem status kept as the one top-level exception, no other aliases; delete every internal verb that is not a genuine external process entrypoint; port all orchestration Bash (dispatch, supervision-hook, land, commit, go-gate, validate-metasystem, adapters) and the 33k lines of Bash fixtures to Go so no script calls an internal verb. Hard cutover, callers updated in the same slice; land and push to origin per green reviewed slice; up to 3 Opus builders in parallel worktrees. Process: m1e root authors metasystem/plans/designs/verbs-object-action.md, Codex Astra critiques until no material findings, then build. DONE: every Bash script gone or not calling internal verbs; public verbs object-action only; ratchet on internal-verb count and script lines.
 - OpenedAt: 2026-09-06T12:49:42Z
-- Revision: 50
+- Revision: 51
 - Budget: elapsedLimit=2d attemptLimit=20 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 1
 - NormApproval: approvedRef=6X49HF6CPNYHRNPSC08DGGKX6Q-m1e-c6925449 minutes=2400 reviewRounds=3 goalRevision=48
 - Approved: by=human:Wido at=2026-09-27T19:58:48Z revision=49 opid=6X49HF6CPNYHRNPSC08DGGKX6Q-m1e-c6925449 authority=proven digest=dadc5ad03974a7add1f7507a089170200de45de42ae924ce1e278aa9fd92a039 episode=49
 - Claimed: machine=m1e lineage=main-1790454088-93948-21671b at=2026-09-27T19:58:48Z revision=49 accountingRevision=49 episodeAt=2026-09-27T19:58:20Z episodeRevision=48
-- StopCapability: generation=49 revision=49 machine=m1e claimEpoch=9 fenceEpoch=0
+- StopCapability: generation=49 revision=49 machine=m1e claimEpoch=9 fenceEpoch=1
+- StopFence: stopId=stop-verbs-match-intent-r49-f1 revision=49 epoch=1 capabilityGeneration=49 closedAt=2026-09-29T03:43:20Z reason=ELAPSED_LIMIT
 
 History:
 - 2026-09-06T12:49:42Z Y85Z3NWBZQ3WG34G89RP885ANW-m1d-62183579 open actor=m1d+main-1788683763-71870-f7f607 targets=verbs-match-intent
@@ -69,4 +70,5 @@ History:
 - 2026-09-27T19:58:20Z 8BPKJ5XK4Z7XXDCJF69SPC0H1R-m1e-c6925449 resume actor=human:Wido targets=verbs-match-intent
 - 2026-09-27T19:58:48Z 6X49HF6CPNYHRNPSC08DGGKX6Q-m1e-c6925449 set-budget actor=human:Wido targets=verbs-match-intent displaced=m1e+main-1790454088-93948-21671b@2026-09-27T19:58:20Z
 - 2026-09-28T14:41:30Z 8GMQ3X3CFDEWJQPKMMR0M7MBK4-m1e-c6925449 edit actor=human:Wido targets=verbs-match-intent displaced=m1e+main-1790454088-93948-21671b@2026-09-27T19:58:48Z reason=Allowed: stop-test-changes why=the Stop hook runs the engine directly: internal hook claude stop replaces supervision-hook.sh claude stop (Wido approved 2026-09-29)
-Integrity: sha256=02a2749eca5ae919c2f882ab345fd4507ecb616c77a349d899a8f09ac5adc873
+- 2026-09-29T03:43:20Z 7SP2D1A09WA98V11G7R6VB00PE-m1e-43182c96 breach-stop actor=m1e+goal-stop-custodian targets=verbs-match-intent
+Integrity: sha256=2a801343600f61e966bd548b3aa190789656c4c54a3d82db6e8567221f25e477
