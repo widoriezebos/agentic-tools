@@ -206,10 +206,13 @@ reduced motion the dot stands still and the clock still counts.
   carries every local job, so a running job beside a newer reservation
   counts. When any machine is working, the Fleet row carries the dot as
   a badge on its icon, visible collapsed and expanded, and the row's
-  accessible name and its collapsed hint gain the words, one machine
-  per line, "m1e: build round 2 on verbs-match-intent", the Fleet
-  page's own words for that machine (`workingWords`). No clock:
-  presence cannot tick. On the Fleet page the Running column takes the same dot before
+  accessible name and its collapsed hint gain the words, one line per
+  running job, "m1e: implementer round 2 on verbs-match-intent ·
+  running 41 min", the phase words of the entry that lit the dot
+  (`phaseWords`, `fleet.ts:182-195`), never the machine's first entry,
+  which may be a reservation. The Fleet table's own wording is
+  unchanged. No clock of this slice's own: the minutes in those words
+  are the Fleet page's, from presence. On the Fleet page the Running column takes the same dot before
   its words for a working machine. Before the read lands, or after it
   fails, the rail says nothing.
 - D6. **Two feeds of one mark.** The Partner's turn and the machines
@@ -244,7 +247,7 @@ timer's name and count; the live line's row grants one `setInterval`;
 the shell's fleet read is the existing call site in `fleet/api.ts` and
 adds no row. Copy: "Thinking" (no ellipsis), "N read", ", N failed";
 the bar's Stop is the composer's "Stop"; the rail's words "<machine>:
-<workingWords>".
+<phaseWords of each running job>".
 
 ## 7. Not here, later
 
@@ -274,7 +277,9 @@ kept; the rail's Fleet row from a page with one reachable machine whose
 job is `running` carries the dot and the words, and none from an
 unreachable machine, a `pending` job with a start stamp, a job with no
 status, or no page, and this seat's row with a running job beside a
-newer reservation counts; the cut guard's rows (one `setInterval` in
+newer reservation counts and its words name the running job, not the
+reservation listed first (`rail_words_follow_running_job`); the cut
+guard's rows (one `setInterval` in
 the named file and no other, no new network site); the tokens and
 contrast tests over the halo token; reduced motion turns the
 animation off, held by a static assertion over the stylesheet.
@@ -320,3 +325,23 @@ list. Astra also verified, and the design leans on, that the words and
 the clock are separate spans; that the bar swap's controls have owners
 that survive it; that both title setters are reached; and that
 `loadFleet` from the shell adds no call site.
+
+**Round 2, the declared failsafe (2026-09-29, at `2c84875a8`):**
+S74-02, S74-03, S74-04 and S74-05 confirmed answered; no new
+material finding. S74-01 held on one point: the predicate was right
+but the words were not, since `workingWords` names a machine's first
+entry and counts the rest (`fleet.ts:206-216`), so a local machine
+with a pending job listed before a running one would breathe for the
+running job and name the pending one. Fold, in D5, §6 and §8: the
+rail's words are the phase words of each entry that lit the dot
+(`phaseWords`, `fleet.ts:182-195`), one line per running job; the
+Fleet table's wording unchanged; fixture
+`rail_words_follow_running_job`. Astra also noted, and the build must
+honour, that the host's `calls` map holds no start order
+(`host.go:380`), so "earliest started of the remaining" needs one
+recorded; that `loaded`'s ahead branch returns the live state
+unchanged today (`conversation.ts:194`) and must fill the start there;
+that the service has an injectable clock (`service.go:157`); and that
+a failed local jobs read yields no jobs, so `workingProblem` lights
+nothing. Closed at the failsafe round on one fold, with one scoped
+confirmation read on S74-01 alone.
