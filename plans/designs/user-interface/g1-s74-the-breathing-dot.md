@@ -345,3 +345,6 @@ that the service has an injectable clock (`service.go:157`); and that
 a failed local jobs read yields no jobs, so `workingProblem` lights
 nothing. Closed at the failsafe round on one fold, with one scoped
 confirmation read on S74-01 alone.
+
+**Confirmation read (2026-09-29, at `08123ffde`):** S74-01 confirmed
+answered, zero material. The loop is CLOSED.

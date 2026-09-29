@@ -129,3 +129,20 @@ Commit reviewed: `2c84875a80f6f2f34fb2e6dd74fc376a31c4cf4d`, already checked out
 
 Codex session ID: 01a0ed39-8891-72f3-aee6-f47dc1eedd30
 Resume in Codex: codex resume 01a0ed39-8891-72f3-aee6-f47dc1eedd30
+
+## Confirmation read (2026-09-29, task-mump0blg-14okm4, revision 3 at 08123ffde)
+
+**S74-01: CONFIRMED**
+
+[D5:209](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/user-interface/g1-s74-the-breathing-dot.md:209) now derives the rail’s words from each running entry that lights the dot, one line per job. [fleet.ts:182](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/web/_app/src/fleet/fleet.ts:182) confirms that `phaseWords` describes the supplied entry rather than selecting the machine’s first entry.
+
+For `[pending job B, running job A]`, the revised design therefore names A. The Fleet table’s wording remains unchanged. §6’s copy agrees, and [§8:279](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/user-interface/g1-s74-the-breathing-dot.md:279) explicitly requires this result in `rail_words_follow_running_job`. The Round 2 disposition records the same correction.
+
+The fold answers the remainder. No additional deferrals.
+
+**VERDICT: 0 material findings (fail test 2): none.**
+
+Commit reviewed: `08123ffdefce41e38bbb1d93a427e67f1067056c` on `ui-development`. Limitations: scoped source-only confirmation of the design; no implementation, tests or browser behavior verified. No files changed.
+
+Codex session ID: 01a0ed39-8891-72f3-aee6-f47dc1eedd30
+Resume in Codex: codex resume 01a0ed39-8891-72f3-aee6-f47dc1eedd30
