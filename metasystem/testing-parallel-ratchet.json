@@ -95,7 +95,6 @@
     "github.com/widoriezebos/agentic-tools/metasystem/internal/up": 30,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/usage": 74,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/validate": 122,
-    "github.com/widoriezebos/agentic-tools/metasystem/internal/watch": 10,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/wiredoc": 7
   },
   "exempt": [
