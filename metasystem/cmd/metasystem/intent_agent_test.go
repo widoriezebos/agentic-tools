@@ -476,3 +476,25 @@ func TestHookPeerBindingsAnswerTheHook(t *testing.T) {
 		t.Fatalf("an unreadable ledger = %q %d", out, status)
 	}
 }
+
+type failingAgentWriter struct{}
+
+func (failingAgentWriter) Write([]byte) (int, error) { return 0, errors.New("injected: stdout closed") }
+
+// TestIntentAgentInboxMarksOnlyWhatItPrinted (R26): an inbox whose output
+// cannot be written marks nothing, and the next inbox prints the message.
+func TestIntentAgentInboxMarksOnlyWhatItPrinted(t *testing.T) {
+	t.Parallel()
+	b := newAgentBed(t, "m1a")
+	b.run("agent", "ask", "m1b", "--text", "is it green?")
+	holder := b.as("m1b")
+	command, rest, _ := resolveIntentArgv([]string{"agent", "inbox"})
+	var stderr bytes.Buffer
+	runIntentIn(command, rest, failingAgentWriter{}, &stderr, holder.root, holder.owners())
+	if delivered, _ := filepath.Glob(filepath.Join(board.Dir(b.home), "m1b", "mailbox", "delivered", "*", "*")); len(delivered) != 0 {
+		t.Fatalf("an inbox that could not print marked %v", delivered)
+	}
+	if _, stdout, _ := holder.run("agent", "inbox"); !strings.Contains(stdout, "is it green?") {
+		t.Fatalf("the next inbox = %q", stdout)
+	}
+}

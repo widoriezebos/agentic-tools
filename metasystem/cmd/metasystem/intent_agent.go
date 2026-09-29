@@ -8,6 +8,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -474,9 +475,15 @@ func runAgentInbox(inv *intentInvocation) int {
 		item["from"], item["text"], item["rendered"] = message.From, message.PeerText(), rendered
 		shown = append(shown, item)
 	}
-	// Printed, then marked: a marker exists only for what this run showed.
+	// Printed, then marked: a marker exists only for what this run showed,
+	// and nothing is marked when the output could not be written.
+	printed := &agentWriteGuard{w: inv.stdout}
+	inv.stdout = printed
 	if !all {
 		defer func() {
+			if printed.err != nil {
+				return
+			}
 			for _, message := range inbox.Messages {
 				if err := board.Mark(message, seat.machine, seat.lineage, "inbox", seat.now); err != nil {
 					fmt.Fprintf(inv.stderr, "metasystem agent inbox: message %s was shown but not marked read (%v); it is shown again next time\n", message.ID, err)
@@ -503,6 +510,20 @@ func runAgentInbox(inv *intentInvocation) int {
 	}
 	result.Data = map[string]any{"seat": seat.machine, "messages": shown, "goalWaiting": inbox.GoalWaiting, "unreadable": inbox.Unreadable}
 	return inv.render(result)
+}
+
+// agentWriteGuard remembers the first failed write of an output.
+type agentWriteGuard struct {
+	w   io.Writer
+	err error
+}
+
+func (g *agentWriteGuard) Write(data []byte) (int, error) {
+	n, err := g.w.Write(data)
+	if err != nil && g.err == nil {
+		g.err = err
+	}
+	return n, err
 }
 
 // peerMessageCount is "1 peer message" or "N peer messages".
