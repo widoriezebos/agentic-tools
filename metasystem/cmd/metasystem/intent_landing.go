@@ -152,7 +152,13 @@ func (inv *intentInvocation) laneContext(needLane bool) (owners laneVerbOwners, 
 }
 
 func (inv *intentInvocation) laneView(owners laneVerbOwners, home string) lane.View {
-	return lane.BuildView(lane.ViewSources{Home: home, Now: owners.now(), Owner: owners.probe, Records: owners.records})
+	sources := lane.ViewSources{Home: home, Now: owners.now(), Owner: owners.probe, Records: owners.records}
+	if inv.input.switched("verbose") {
+		// The lane's spend is a full read of its proof store: only --verbose
+		// pays for it (N-5).
+		sources.Spend = laneSpend
+	}
+	return lane.BuildView(sources)
 }
 
 func laneTargets(root string) []intentTarget {
@@ -216,6 +222,13 @@ func landingViewDetail(view lane.View) []string {
 		for _, waited := range view.Batch.WaitingFor {
 			lines = append(lines, "  waits for "+waited.Goal+" on "+waited.Seat+", expected "+local(waited.Expected))
 		}
+		for _, change := range view.Batch.Returned {
+			lines = append(lines, "  "+change.Outcome+" "+change.Goal+" from "+change.Seat+": "+change.Reason)
+		}
+	}
+	if view.Spend != nil {
+		lines = append(lines, fmt.Sprintf("lane spend (%s, batches of changes; no goal's budget): %d attempts, %d reserved minutes",
+			view.Spend.Account, view.Spend.Attempts, view.Spend.ReservedMinutes))
 	}
 	if view.Next != nil {
 		lines = append(lines, "next batch "+view.Next.ID+" collecting:")

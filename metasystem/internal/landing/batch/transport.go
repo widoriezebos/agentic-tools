@@ -85,6 +85,18 @@ func RebuildLandingBranch(root, id, baseTree, expected, actor string, survivors 
 	}
 	parent, tree := baseCommit, baseTree
 	for _, unit := range survivors {
+		if unit.IsChange() {
+			next, err := assembleChangeUnit(root, tree, unit)
+			if err != nil {
+				return "", err
+			}
+			commit, err := commitChange(root, unit, next, parent)
+			if err != nil {
+				return "", fmt.Errorf("BATCH_LANDING_BRANCH_PREP_REFUSED: %w", err)
+			}
+			parent, tree = commit, next
+			continue
+		}
 		for index, build := range unit.Builds {
 			prefixes, err := AssembleBranchMembers(root, tree, []BranchMember{{GoalID: unit.GoalID, Tip: unit.BranchTip, Builds: []BranchBuild{build}}})
 			if err != nil {

@@ -45,6 +45,9 @@ func batchAuthorityProjection(root string) (string, time.Time, goal.Projection, 
 }
 
 func authorizeBatchMemberInProjection(controlRoot string, now time.Time, record batch.Record, unit batch.Unit, projection goal.Projection) error {
+	if unit.IsChange() {
+		return authorizeChangeInProjection(controlRoot, unit, projection)
+	}
 	if projection.Tree == nil {
 		return fmt.Errorf("BATCH_PREFIX_AUTHORITY_REFUSED: live goal projection is empty")
 	}
@@ -84,6 +87,56 @@ func authorizeBatchMemberInProjection(controlRoot string, now time.Time, record 
 	return nil
 }
 
+// authorizeChangeInProjection is a change's publication authority: a change
+// holds no claim, so a goal-less change needs none; one made in G's name
+// leaves the batch when G's claim is no longer the asker's at the revision it
+// committed under, or G's landing gate now refuses (U11b).
+func authorizeChangeInProjection(controlRoot string, unit batch.Unit, projection goal.Projection) error {
+	return authorizeChangeWith(controlRoot, unit, projection, changeGoalBranchTip)
+}
+
+// changeGoalBranchTip reads a goal's branch tip at origin as it is now: the
+// tip a goal-bound change's landing gate is read at before each push (N-6).
+func changeGoalBranchTip(controlRoot, goalID string) (string, error) {
+	endpoint, err := goalBranchEndpoint(controlRoot)
+	if err != nil {
+		return "", err
+	}
+	tip, _, err := goalBranchOriginTip(controlRoot, endpoint, goalID)
+	return tip, err
+}
+
+func authorizeChangeWith(controlRoot string, unit batch.Unit, projection goal.Projection, branchTip func(string, string) (string, error)) error {
+	change := unit.Change
+	if change.Goal == "" {
+		return nil
+	}
+	if projection.Tree == nil {
+		return fmt.Errorf("BATCH_PREFIX_AUTHORITY_REFUSED: live goal projection is empty")
+	}
+	file := projection.Tree.Live[change.Goal]
+	// A person's commit holds no claim of the goal (held only warns on it),
+	// so a person's change answers to the goal's landing gate alone.
+	person := strings.HasSuffix(change.AskedBy, "+human")
+	if !person && (file == nil || file.State != goal.StateClaimed || file.Claimed == nil || file.Claimed.Machine+"+"+file.Claimed.Lineage != change.AskedBy ||
+		file.Claimed.Revision != change.GoalRevision) {
+		return &batch.PrefixRevisionRefusal{Reason: "BATCH_PREFIX_AUTHORITY_REFUSED: change " + unit.GoalID + " was committed in goal " + change.Goal +
+			"'s name by " + change.AskedBy + " at revision " + fmt.Sprint(change.GoalRevision) + ", and that claim moved; commit it again and land it"}
+	}
+	settings, err := landingGateSettings(controlRoot)
+	if err != nil {
+		return err
+	}
+	tip, err := branchTip(controlRoot, change.Goal)
+	if err != nil {
+		return fmt.Errorf("BATCH_PREFIX_AUTHORITY_REFUSED: goal %s's branch tip cannot be read for change %s's landing gate: %w", change.Goal, unit.GoalID, err)
+	}
+	if _, err := goal.Gate(file, tip, settings); err != nil {
+		return &batch.PrefixRevisionRefusal{Reason: "BATCH_PREFIX_AUTHORITY_REFUSED: change " + unit.GoalID + " " + err.Error()}
+	}
+	return nil
+}
+
 func authorizeBatchSeries(root string, store batch.Store, record batch.Record, actor string, at time.Time) error {
 	if !slices.ContainsFunc(record.Units, func(unit batch.Unit) bool { return unit.State == batch.UnitJoined }) {
 		return nil
@@ -116,6 +169,21 @@ func productionPrefixDecision(root string, units []batch.Unit, tree string) (bat
 }
 
 func planPrefixDecisionWith(root string, units []batch.Unit, tree string, plan func(string, string, string, testpolicy.Mode, []string) (testingPlanOutput, error)) (batch.PrefixDecision, error) {
+	if len(units) == 0 {
+		return batch.PrefixDecision{}, fmt.Errorf("BATCH_PREFIX_PLAN_REFUSED: no joined members")
+	}
+	// A change is planned by no goal of its own: the goal members' plans on
+	// the prefix tree hold every change before them (U11b).
+	planned := slices.DeleteFunc(slices.Clone(units), func(unit batch.Unit) bool { return unit.IsChange() })
+	if len(planned) == 0 && len(units) != 0 {
+		// A prefix of changes alone is planned on the lane's account.
+		charge, err := batchChargeID(root, units[len(units)-1], nil)
+		if err != nil {
+			return batch.PrefixDecision{}, err
+		}
+		planned = []batch.Unit{{GoalID: charge}}
+	}
+	units = planned
 	if len(units) == 0 {
 		return batch.PrefixDecision{}, fmt.Errorf("BATCH_PREFIX_PLAN_REFUSED: no joined members")
 	}
@@ -209,7 +277,11 @@ func verifyBatchPrefix(root string, unit batch.Unit, tree string, decision batch
 		return err
 	}
 	defer detached.Close()
-	request := testingSelectionRequest{Root: batch.ModuleRoot(detached.Workspace().Dir), ControlRoot: batch.ModuleRoot(root), GoalID: unit.GoalID,
+	charge, err := batchChargeID(root, unit, nil)
+	if err != nil {
+		return err
+	}
+	request := testingSelectionRequest{Root: batch.ModuleRoot(detached.Workspace().Dir), ControlRoot: batch.ModuleRoot(root), GoalID: charge,
 		Tree: tree, Mode: testpolicy.ModeAuto, Purpose: testpolicy.PurposeDelivery, BatchRequirements: slices.Clone(decision.Groups), BatchPrefixReceipt: true,
 		FreshEpisode: decision.FreshEpisode, FreshExpiresAt: decision.FreshExpiresAt}
 	result, err := verifyRetainedTesting(request)
@@ -228,6 +300,12 @@ var batchVerifyPrefixEvidence = verifyBatchPrefix
 // publication. A retained receipt binds one decision but cannot certify a
 // changed destination policy or a rebased series by itself.
 func verifyBatchSeries(root string, record batch.Record, trees []string) error {
+	return verifyBatchSeriesWith(root, record, trees, productionPrefixDecision, batchVerifyPrefixEvidence)
+}
+
+// verifyBatchSeriesWith is verifyBatchSeries with its planner and verifier.
+func verifyBatchSeriesWith(root string, record batch.Record, trees []string,
+	decide func(string, []batch.Unit, string) (batch.PrefixDecision, error), verify func(string, batch.Unit, string, batch.PrefixDecision) error) error {
 	units := []batch.Unit{}
 	for _, unit := range record.Units {
 		if unit.State == batch.UnitJoined {
@@ -238,11 +316,17 @@ func verifyBatchSeries(root string, record batch.Record, trees []string) error {
 		return fmt.Errorf("BATCH_PREFIX_PROOF_REFUSED: incomplete final prefix series")
 	}
 	for index, unit := range units {
-		decision, err := productionPrefixDecision(root, units[:index+1], trees[index])
+		last := index == len(units)-1
+		if unit.IsChange() && !last {
+			// A replayed change carries no receipt of its own.
+			continue
+		}
+		charge := batch.ChargeUnit(units[:index+1])
+		decision, err := decide(root, units[:index+1], trees[index])
 		if err != nil {
 			return err
 		}
-		if index == len(units)-1 {
+		if last {
 			for _, required := range record.SelectedGroups {
 				if !slices.Contains(decision.Groups, required) {
 					decision.Groups = append(decision.Groups, required)
@@ -281,7 +365,7 @@ func verifyBatchSeries(root string, record batch.Record, trees []string) error {
 				decision.FreshEpisode, decision.FreshExpiresAt = episode.Token, episode.ExpiresAt
 			}
 		}
-		if err := batchVerifyPrefixEvidence(root, unit, trees[index], decision); err != nil {
+		if err := verify(root, charge, trees[index], decision); err != nil {
 			return err
 		}
 	}
@@ -294,6 +378,11 @@ func verifyBatchCommittedSeries(root string, record batch.Record, units []batch.
 		if commit == "" {
 			return fmt.Errorf("BATCH_PREFIX_PROOF_REFUSED: %s has no final commit", unit.GoalID)
 		}
+		if unit.IsChange() && index < len(units)-1 {
+			// A replayed change carries no receipt of its own.
+			continue
+		}
+		charge := batch.ChargeUnit(units[:index+1])
 		tree, err := gitOutput(root, "rev-parse", commit+"^{tree}")
 		if err != nil {
 			return err
@@ -329,7 +418,7 @@ func verifyBatchCommittedSeries(root string, record batch.Record, units []batch.
 			}
 			decision.FreshEpisode, decision.FreshExpiresAt = episode.Token, episode.ExpiresAt
 		}
-		if err := batchVerifyPrefixEvidence(root, unit, tree, decision); err != nil {
+		if err := batchVerifyPrefixEvidence(root, charge, tree, decision); err != nil {
 			return err
 		}
 	}

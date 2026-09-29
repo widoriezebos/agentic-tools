@@ -39,6 +39,9 @@ type portableProofFixture struct {
 	installedDigest   string
 	contract          testpolicy.Contract
 	proofCommand      proofBinaryFixture
+	// holderLineage is the lineage this process holds the checkout under;
+	// setup may name the landing owner's (default portable-lineage).
+	holderLineage string
 }
 
 func newPortableProofFixture(t *testing.T) *portableProofFixture {
@@ -122,7 +125,10 @@ func newPortableProofFixtureWithSetup(t *testing.T, baselineSource string, setup
 			t.Fatalf("frozen baseline engine stamp %s does not bind app base %s", stamp, base)
 		}
 	}
-	batchFixture.announce(root, "portable-lineage")
+	if fixture.holderLineage == "" {
+		fixture.holderLineage = "portable-lineage"
+	}
+	batchFixture.announce(root, fixture.holderLineage)
 	holder, err := lease.RequireHolder(root, int64(os.Getpid()), nil)
 	if err != nil || !holder.Holder {
 		t.Fatalf("fixture checkout has no active lease holder: %+v %v", holder, err)

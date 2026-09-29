@@ -129,3 +129,23 @@ func TestLandStepFailureSpillsTheLogAndStops(t *testing.T) {
 	b.owners.Advance = func(string, string, io.Writer, io.Writer) int { return 2 }
 	b.expect(b.land(LandRequest{StagedOnly: true}), 2, "land: full step log not retained: disk full")
 }
+
+// TestLandCommitOnlyStopsAfterTheCommit (U11b): a change bound for the
+// landing lane runs the seat's steps up to the commit (checks, staging, the
+// receipt line, the commit boundary and its proof, the clean tree) and
+// nothing after it: no fetch, rebase, push or transport, which the lane owns.
+func TestLandCommitOnlyStopsAfterTheCommit(t *testing.T) {
+	t.Parallel()
+	b := newBed(t)
+	b.git.stagedEmpty = true
+	b.git.on("add --", func(GitCall) GitResult { b.git.stagedEmpty = false; return ok("") })
+	b.expect(b.land(LandRequest{Pathspecs: []string{"a.go"}, CommitOnly: true}), 0)
+	for _, call := range []string{"advance", "held", "transport", "notify"} {
+		if b.log.has(call) {
+			t.Fatalf("a lane-bound change ran %s: %v", call, b.log.calls)
+		}
+	}
+	if len(b.git.called("push")) != 0 || len(b.git.called("fetch")) != 0 || !b.log.has("drift empty=true") || !strings.Contains(b.stdout.String(), "== STEP: commit") {
+		t.Fatalf("git=%v log=%v stdout=%s", b.git.calls, b.log.calls, b.stdout.String())
+	}
+}

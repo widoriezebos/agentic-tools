@@ -75,17 +75,20 @@ type LandSeams struct {
 	ApplyBuild         func(Unit, BranchBuild) error
 	AppendBuildReceipt func(Unit, BranchBuild, PrefixReceipt) error
 	CommitBuild        func(Unit, BranchBuild, PrefixReceipt) (string, error)
-	Held               func(base, tip string) error
-	VerifySeries       func(units []Unit, commits map[string]string) error
-	PublishBranch      func(expected, tip string) error
-	Push               func(base, tip string) error
-	Reset              func(base string) error
-	Cleanup            func() error
-	Origin             func() (string, error)
-	OriginTree         func(string) (string, error)
-	Abandon            func(tip, detachAt string) error
-	SeriesOnOrigin     func(origin, tip string) (bool, error)
-	LeaseBase          string
+	// ReplayChange lands a change member's commit on the landing branch
+	// with its Landing-Change trailer and returns the new commit.
+	ReplayChange   func(Unit) (string, error)
+	Held           func(base, tip string) error
+	VerifySeries   func(units []Unit, commits map[string]string) error
+	PublishBranch  func(expected, tip string) error
+	Push           func(base, tip string) error
+	Reset          func(base string) error
+	Cleanup        func() error
+	Origin         func() (string, error)
+	OriginTree     func(string) (string, error)
+	Abandon        func(tip, detachAt string) error
+	SeriesOnOrigin func(origin, tip string) (bool, error)
+	LeaseBase      string
 	// RecoverPush rebases, re-verifies and pushes a refused series. It calls
 	// recheck immediately before its own endpoint push, so a known flake's
 	// allowance that expired while it rebased publishes nothing (BL3S-01).
@@ -435,6 +438,23 @@ func LandSeries(store Store, id, actor string, at time.Time, seams LandSeams) er
 		if progress.Commits[unit.GoalID] != "" {
 			continue
 		}
+		if unit.IsChange() {
+			if seams.ReplayChange == nil {
+				return fmt.Errorf("BATCH_LAND_UNWIRED: change replay helper is absent")
+			}
+			commit, replayErr := seams.ReplayChange(unit)
+			if replayErr != nil {
+				return ejectRefusedMember(store, id, actor, at, record.BaseTree, unit, replayErr, seams.Reset)
+			}
+			if commit == "" {
+				return fmt.Errorf("BATCH_LAND_COMMIT_REFUSED: change %s returned no commit", unit.GoalID)
+			}
+			progress.Commits[unit.GoalID] = commit
+			if err := store.Update(id, func(current *Record) error { current.Landing = &progress; return nil }); err != nil {
+				return err
+			}
+			continue
+		}
 		receipt, ok := record.Receipts[unit.GoalID]
 		if index == len(units)-1 && !ok {
 			receipt = PrefixReceipt{GoalID: unit.GoalID, Tree: record.TipTree, AttemptID: record.Proof.AttemptID,
@@ -513,6 +533,23 @@ func LandSeries(store Store, id, actor string, at time.Time, seams LandSeams) er
 			return fmt.Errorf("BATCH_LAND_HELD_REFUSED: held helper is absent")
 		}
 		if heldErr := seams.Held(record.BaseTree, tip); heldErr != nil {
+			// A refusal naming one member's commit ejects that member (a
+			// change or a goal) and reopens the rest; the refused step is
+			// never tried again as it was (U11b).
+			var series *HeldSeriesRefusal
+			if errors.As(heldErr, &series) {
+				// About the series or the lane's configuration, not one
+				// member: the batch holds with the refusal as its reason.
+				return RecordHold(store, id, actor, "held refused the series: "+heldErr.Error(), at)
+			}
+			var refused *HeldCommitRefusal
+			if errors.As(heldErr, &refused) && refused.Commit != "" {
+				for _, unit := range units {
+					if landedCommitOf(progress, unit, refused.Commit) {
+						return ejectHeldMember(store, id, actor, at, record.BaseTree, unit, heldErr, seams.Reset)
+					}
+				}
+			}
 			return fmt.Errorf("BATCH_LAND_HELD_REFUSED: complete series did not pass held: %w", heldErr)
 		}
 		progress.HeldChecked = true
@@ -678,6 +715,35 @@ func ejectRefusedMember(store Store, id, actor string, at time.Time, base string
 		return errors.Join(refusal, reassembleErr)
 	}
 	return fmt.Errorf("%w; goal %s was ejected; fix and rejoin it, then re-prove before the next landing", refusal, unit.GoalID)
+}
+
+// landedCommitOf reports whether commit is one the landing made for unit.
+func landedCommitOf(progress LandingProgress, unit Unit, commit string) bool {
+	if progress.Commits[unit.GoalID] == commit {
+		return true
+	}
+	for _, build := range unit.Builds {
+		if progress.BuildCommits[build.Commit] == commit {
+			return true
+		}
+	}
+	return false
+}
+
+// ejectHeldMember returns a member held refused at the push, with the
+// refusal as its reason, and reassembles the survivors on the same base.
+func ejectHeldMember(store Store, id, actor string, at time.Time, base string, unit Unit, cause error, reset func(string) error) error {
+	if reset != nil {
+		if err := reset(base); err != nil {
+			return fmt.Errorf("BATCH_LAND_HELD_REFUSED: change %s: reset: %w", unit.GoalID, err)
+		}
+	}
+	kind := "goal"
+	if unit.IsChange() {
+		kind = "change"
+	}
+	reason := "EJECTED from landing batch " + id + ": held refused " + kind + " " + unit.GoalID + " at the push: " + cause.Error()
+	return ReassembleSurvivorsWithReturns(store, id, actor, at, []ReturnDecision{{GoalID: unit.GoalID, Outcome: UnitEjected, Reason: reason}})
 }
 
 func cloneStrings(source map[string]string) map[string]string {

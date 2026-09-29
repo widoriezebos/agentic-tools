@@ -18,6 +18,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
@@ -429,7 +430,12 @@ func productionBatchTreePlanOutputWithGroups(root, goalID, tree string, mode tes
 
 func batchTreePlanCommand(binary, planningRoot, goalID, tree string, mode testpolicy.Mode) *exec.Cmd {
 	controlRoot := batch.ModuleRoot(planningRoot)
-	command := exec.Command(binary, "test", "plan", "--root", controlRoot, "--goal", goalID, "--tree", tree, "--mode", string(mode), "--purpose", "delivery", "--json")
+	account := []string{"test", "plan", "--root", controlRoot, "--goal", goalID}
+	if lane.IsAccount(goalID) {
+		// A batch of changes is planned on the lane's account (U11b).
+		account = []string{"internal", "test", "plan", "--root", controlRoot, "--lane", goalID}
+	}
+	command := exec.Command(binary, append(account, "--tree", tree, "--mode", string(mode), "--purpose", "delivery", "--json")...)
 	command.Dir, command.Env = controlRoot, gittree.ScrubbedEnviron()
 	return command
 }

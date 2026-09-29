@@ -27,6 +27,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/digest"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginecause"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
+	landinglane "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/pathpattern"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
@@ -91,12 +92,15 @@ func (prepared Preparation) ProofControlRoot() string {
 
 type SelectionRequest struct {
 	Root, ControlRoot, GoalID, AuthorityGoalID, Tree, CapMin, RetryDecision, ResultPath string
-	ExpectedGoalRevision, ExpectedAccountingRevision                                    uint64
-	Mode                                                                                testpolicy.Mode
-	Purpose                                                                             testpolicy.Purpose
-	Groups, BatchRequirements                                                           []string
-	Carried                                                                             bool
-	NoReuse, ForceGroups, RequireDiagnosticHeadroom, AllGroups                          bool
+	// LaneID charges the run to the landing lane instead of a goal: a batch
+	// whose members are all changes (U11b).
+	LaneID                                                     string
+	ExpectedGoalRevision, ExpectedAccountingRevision           uint64
+	Mode                                                       testpolicy.Mode
+	Purpose                                                    testpolicy.Purpose
+	Groups, BatchRequirements                                  []string
+	Carried                                                    bool
+	NoReuse, ForceGroups, RequireDiagnosticHeadroom, AllGroups bool
 	// AppAddress is the launch contract's check: the address of the
 	// application run the named group is run against.
 	AppAddress                                        string
@@ -264,10 +268,19 @@ func prepareOnce(request SelectionRequest) (Preparation, error) {
 	if err != nil || unborn {
 		return Preparation{}, fmt.Errorf("testing requires a committed project HEAD")
 	}
+	if landinglane.IsAccount(request.GoalID) {
+		// An in-process caller names the lane where a goal would go (U11b).
+		request.LaneID, request.GoalID = request.GoalID, ""
+	}
 	goalID := request.GoalID
 	accountToGoal, err := accountsToGoal(request)
 	if err != nil {
 		return Preparation{}, err
+	}
+	if request.LaneID != "" {
+		// Charged to the lane (U11b): no goal is resolved, and its attempts
+		// are accounted to the lane's identity.
+		goalID, accountToGoal = request.LaneID, false
 	}
 	if accountToGoal {
 		goalID, err = resolveGoalFor(installation, request.GoalID, request.EffectiveCallerPID())
@@ -387,7 +400,10 @@ func prepareOnce(request SelectionRequest) (Preparation, error) {
 		return Preparation{}, err
 	}
 	risk, accountingRevision := testpolicy.GoalRisk{}, uint64(0)
-	if accountToGoal {
+	if landinglane.IsAccount(goalID) {
+		// The lane has no goal risk; its one accounting revision is 1.
+		accountingRevision = 1
+	} else if accountToGoal {
 		risk, accountingRevision, err = GoalRisk(installation, goalID)
 		if err != nil {
 			return Preparation{}, err
@@ -672,7 +688,10 @@ func TrustedPolicyEngine(installation, policyBaseCommit string, firstTransition 
 
 func PlanWithTrustedPolicyEngine(engine string, request SelectionRequest, installation, candidateTree string) (PlanOutput, error) {
 	args := []string{"test", "plan", "--root", installation, "--tree", candidateTree, "--mode", string(request.Mode), "--purpose", string(request.Purpose), "--json", "--policy-child"}
-	if request.GoalID != "" {
+	if request.LaneID != "" {
+		// A run charged to the lane is planned on the lane (U11b).
+		args = append(append([]string{"internal"}, args...), "--lane", request.LaneID)
+	} else if request.GoalID != "" {
 		args = append(args, "--goal", request.GoalID)
 	}
 	if len(request.Groups) > 0 {
@@ -691,6 +710,9 @@ func PlanWithTrustedPolicyEngine(engine string, request SelectionRequest, instal
 		command.Env = append(command.Env, PolicyProbeWorkerEnvironment+"=1")
 	}
 	data, err := command.CombinedOutput()
+	if err != nil && request.LaneID != "" && strings.Contains(string(data), "flag provided but not defined: -lane") {
+		return PlanOutput{}, fmt.Errorf("LANE_ENGINE_TOO_OLD: the pinned policy engine %s predates charging a batch of changes to the landing lane (it has no --lane), so the batch holds; once this checkout's engine has moved to one that has it, run: metasystem landing restart", engine)
+	}
 	if err != nil {
 		return PlanOutput{}, engineRefusal("child-failed", []enginecause.Fact{enginecause.Path("engine", engine)}, fmt.Sprintf("retained trusted-base engine could not decide version-1 policy: %v: %s", err, strings.TrimSpace(string(data))))
 	}

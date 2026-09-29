@@ -184,6 +184,9 @@ func batchLandSeamsWithRead(root, id string, record batch.Record, baseCommit, ac
 			}
 			return readGit(root, "rev-parse", "HEAD")
 		},
+		ReplayChange: func(unit batch.Unit) (string, error) {
+			return batch.ReplayChange(root, unit)
+		},
 		ApplyBuild: func(_ batch.Unit, build batch.BranchBuild) error {
 			return batch.ApplyBranchBuild(root, root, build)
 		},
@@ -689,6 +692,9 @@ func batchRecoverySeamsWithGit(root string, store batch.Store, id string, at tim
 	return batch.RecoverySeams{
 		OriginCommit: func(unit batch.Unit) (string, bool, error) {
 			return findTrailer(func(line string) bool { return landingProvenanceNamesChain(line, unit.Chain) })
+		},
+		OriginChange: func(unit batch.Unit) (string, bool, error) {
+			return findTrailer(func(line string) bool { return line == batch.LandingChangeTrailer+": "+unit.GoalID })
 		},
 		OriginSource: func(_ batch.Unit, source string) (string, bool, error) {
 			return findTrailer(func(line string) bool { return line == "Goal-Source: "+source })
