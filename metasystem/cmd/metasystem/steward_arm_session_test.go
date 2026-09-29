@@ -304,11 +304,13 @@ func TestSessionArmAdmitsTheGenuineDetachedChainThroughTheRealClassifier(t *test
 	if err := os.WriteFile(filepath.Join(clone, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	engine := installTestEngine(t, clone)
+	// The clone's installed engine is this test binary: the launch runs a
+	// helper through it, not a proof attempt, so it needs no proof fixture.
+	installed := installTestEngine(t, clone)
 	record := writeSessionLaunchRecord(t, launcher, clone, nil)
 	out := filepath.Join(t.TempDir(), "armed.json")
 
-	launcherProcess := exec.Command(engine, sessionArmLauncherHelper, engine, "--repo", clone, "--launch-record", record)
+	launcherProcess := exec.Command(installed, sessionArmLauncherHelper, installed, "--repo", clone, "--launch-record", record)
 	launcherProcess.Dir = clone
 	// PATH names an empty directory: no Git is reachable from the chain.
 	launcherProcess.Env = fixtureCommandEnvironment(t, sessionArmOutEnv+"="+out, sessionArmCloneEnv+"="+clone, "PATH="+t.TempDir())
