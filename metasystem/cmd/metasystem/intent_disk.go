@@ -44,6 +44,8 @@ type diskOwners struct {
 	stateDir     string
 	// trimPass replaces one trim pass (fixtures); nil is the steward's.
 	trimPass steward.CacheTrimPass
+	// git runs git for workspaces; nil is the real git.
+	git diskstore.WorkspaceGit
 }
 
 func (o diskOwners) withDefaults() diskOwners {
@@ -68,6 +70,9 @@ func (o diskOwners) withDefaults() diskOwners {
 	}
 	if o.proofs == nil {
 		o.proofs = map[diskstore.OwnerKind]diskstore.OwnerProof{}
+	}
+	if o.git == nil {
+		o.git = execWorkspaceGit
 	}
 	if o.tempRoots == nil {
 		o.tempRoots = func() []string {
