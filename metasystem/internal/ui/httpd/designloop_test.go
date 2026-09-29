@@ -8,6 +8,7 @@ package httpd
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -140,4 +141,51 @@ func TestADecisionsRowIsWrittenOrRefusedInWords(t *testing.T) {
 			t.Fatalf("%s is not a design-loop route", bad)
 		}
 	}
+}
+
+// An engine built without the loop refuses its own routes and no others; the
+// act's own refusal is a 409 in its words, a design this checkout does not
+// serve is the read's 404, and anything else is a failure with its reason.
+func TestTheDesignLoopAnswersEachWayItCanBeRefused(t *testing.T) {
+	t.Parallel()
+	rec := &designing{}
+	_, cookie := designSignedIn(t, rec)
+	bare := New(Info{Observe: readObservation, Sessions: rec.sessions}, loopback(), testBundle())
+	for _, path := range []string{designPrefix + designID + designReviewSuffix, designPrefix + designID + "/review/1/decisions"} {
+		testutil.Expect(t, path+" without the loop", post(t, bare, path, `{}`, cookie).Code, http.StatusInternalServerError)
+	}
+	testutil.Expect(t, "a read without the loop", get(t, bare, designPrefix+designID+designReviewSuffix, nil).Code, http.StatusInternalServerError)
+
+	info := rec.serving()
+	info.DesignReview = func(*session.Session, string, DesignAsked) (DesignAnswer, error) {
+		return DesignAnswer{}, &DesignRefusal{Code: "no-chain", Message: "this design has no critique to answer"}
+	}
+	info.DesignLoop = func(string) (DesignLoop, error) {
+		return DesignLoop{}, &DesignRefusal{Code: "not-found", Message: designID + " is not in this checkout"}
+	}
+	info.DesignDecide = func(string, int64, DesignRow) (DesignLoop, error) {
+		return DesignLoop{}, errors.New("the disk is full")
+	}
+	refusing := New(info, loopback(), testBundle())
+	answered := post(t, refusing, designPrefix+designID+designReviewSuffix, `{"goal":"g","toolCalls":30,"after":1}`, cookie)
+	testutil.Expect(t, "the act's refusal", answered.Code, http.StatusConflict)
+	testutil.Expect(t, "in its words", actRefusal(t, answered).Error, "this design has no critique to answer")
+	testutil.Expect(t, "a design not served", get(t, refusing, designPrefix+designID+designReviewSuffix, nil).Code, http.StatusNotFound)
+	failed := post(t, refusing, designPrefix+designID+"/review/1/decisions", `{"finding":"F1","disposition":"refuted","reasoning":"r","amendment":""}`, cookie)
+	testutil.Expect(t, "a failure", failed.Code, http.StatusInternalServerError)
+	info.DesignReview = func(*session.Session, string, DesignAsked) (DesignAnswer, error) {
+		return DesignAnswer{}, errors.New("the verb could not run")
+	}
+	testutil.Expect(t, "an act that failed", post(t, New(info, loopback(), testBundle()), designPrefix+designID+designReviewSuffix, `{"goal":"g","toolCalls":30}`, cookie).Code, http.StatusInternalServerError)
+}
+
+// A cookie that names no live session is sent to sign in, and nothing is sent.
+func TestTheDesignLoopSendsAnUnknownSessionToSignIn(t *testing.T) {
+	t.Parallel()
+	rec := &designing{}
+	served, _ := designSignedIn(t, rec)
+	unknown := post(t, served, designPrefix+designID+designReviewSuffix, `{"goal":"g","toolCalls":30}`, carrying("no-such-session"))
+	testutil.Expect(t, "an unknown session", unknown.Code, http.StatusForbidden)
+	testutil.Expect(t, "is sent to sign in", actRefusal(t, unknown).SignIn, true)
+	testutil.Expect(t, "nothing was sent", len(rec.asked), 0)
 }
