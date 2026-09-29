@@ -2,6 +2,7 @@ package diskstore
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -72,5 +73,34 @@ func TestReportGolden(t *testing.T) {
 	}
 	if _, err := ReadReport(path); err == nil {
 		t.Fatal("a foreign report was read")
+	}
+}
+
+// A finding repeated for many paths is one line with its count and at most
+// three example paths, never the same message N times: the live m1e report
+// printed 45 "host settings unknown" lines, one per removed fixture checkout.
+func TestReportLinesGroupRepeatedFindings(t *testing.T) {
+	t.Parallel()
+	report := Report{Schema: ReportSchema, Kind: "machine", Name: "machine", At: testNow, Mode: ModeReport}
+	for index := 0; index < 45; index++ {
+		path := fmt.Sprintf("/private/var/folders/T/tmp.%02d/repo", index)
+		report.HostUnknown = append(report.HostUnknown, fmt.Sprintf("host settings unknown: %s unreadable: state root: inspect repository path: stat %s: no such file or directory; run metasystem settings check there", path, path))
+	}
+	report.HostUnknown = append(report.HostUnknown, "host settings unknown: /m1b unreadable: settings of /m1b/metasystem.conf unreadable at disk.floor-gib: permission denied; run metasystem settings check there")
+	for index := 0; index < 5; index++ {
+		report.Pending = append(report.Pending, Line{Class: "stores", Path: fmt.Sprintf("/stores/s%d", index), Reason: "no proof for this owner kind yet", Command: "metasystem disk show"})
+	}
+	report.Pending = append(report.Pending, Line{Class: "stores", Path: "/stores/other", Reason: "in use by pid 7", Command: "metasystem disk show"})
+	report.Notes = []string{"settings conflict: x", "settings conflict: x"}
+	want := []string{
+		"machine: report pass at 2026-09-28T12:00:00Z",
+		"  pending: 5 items: no proof for this owner kind yet; run metasystem disk show (e.g. /stores/s0, /stores/s1, /stores/s2)",
+		"  pending: /stores/other: in use by pid 7; run metasystem disk show",
+		"  host settings unknown: 45 checkouts unreadable: state root: inspect repository path: stat <checkout>: no such file or directory; run metasystem settings check there (e.g. /private/var/folders/T/tmp.00/repo, /private/var/folders/T/tmp.01/repo, /private/var/folders/T/tmp.02/repo)",
+		"  host settings unknown: /m1b unreadable: settings of /m1b/metasystem.conf unreadable at disk.floor-gib: permission denied; run metasystem settings check there",
+		"  settings conflict: x (2 times)",
+	}
+	if got := report.Lines(); strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("report lines:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
 }
