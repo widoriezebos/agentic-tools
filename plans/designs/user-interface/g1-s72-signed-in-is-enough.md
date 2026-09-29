@@ -321,3 +321,41 @@ no third round.
 |---|---|---|
 | S72-01 (r2) | a fresh `seat launch` naming an existing browser record with a new machine and destination rewrites the record's destination (`sequence.go:167`) before D2 compares it, so a stale record path, not a forgery, enrolls another machine under the old session | folded as a fixture obligation in §8: a session-enrolled record's machine and destination are authoritative on a fresh invocation as on a resume; conflicting flags refused before any write; no token, no ancestry binding |
 | S72-04 (r2) | a CLI pair launch from this checkout shows "temporary enrollment, review due …" on the fleet card (`sequence.go:683`, `LaunchCard.tsx:143`) | not folded: that machine IS temporarily enrolled, and saying so is true; L4 and Wido's ruling are about the browser launch, which never writes those words. Hiding a true enrollment state would be the silent false answer. Reported to Wido as a residual |
+
+## Built (2026-09-29)
+
+Landed on main as `729f04a93` in m1e's batch 17 (branch `g1-s72` at
+`f48c27954`, merged onto current main, one full VM suite; the integrator
+wrote the session-arm test's engine copy through `testexec` and renamed a
+variable, `3f9d002af`/`729f04a93`, and recomputed the bundle digest).
+Built by Claude on Opus 5.5 in four parallel lanes against a contract
+commit (`ab1f1d441`: steward `EnrolledSession` and the
+`ArmSessionWithLineage` stub, `launch.Record.Enrollment`): steward
+(`663cb1137`), arm (`2650bcf5e`), launch (`af52fdf79`), UI (`ad8a35ba1`),
+plus the end-to-end test (`b16c8d13b`). Read by Codex on Sol under R-124
+(`sol-r1.md` and `sol-r2.md` in the evidence directory below): one material finding, SOL-S72-01, the
+real-classifier test ran `git init`; fixed in the one fix round
+(`63cc3ae96`, injected repository-top and landing-ref Git, run with an
+empty PATH) and closed on re-read. The end-to-end test runs the real
+starter, the sequencer and the real `steward arm --launch-record` through
+the real classifier and reads back `human-session` with no word and no
+review date; it fails under each of three one-link reverts and passes with
+Git off PATH. `devgate static` green (two new steward tests made parallel
+for the ratchet; the Git stand-in's env names excluded in the refusal
+register); 117 frontend files, 1,690 tests. Walkthrough at 1280 and 400,
+light and dark: the sheet without its authorization section, a stopped
+card whose Retry is one press, a folded "joined" card without a review
+clause (reached by rewriting the fixture's answers in the browser; the
+fixture cannot fold a card). Evidence:
+`~/LocalStorage/agentic-tools-evidence/signed-in-launch-20260929/`.
+
+Departures accepted: the arm also refuses a record whose launch id does
+not match its file name or that is not under a `launches` directory, so
+`From` and `Launch` are unambiguous.
+
+Later, when it hurts: a retry in the same second overwrites the earlier
+proof file (SOL-S72-02); a pre-slice card still shows "temporary
+enrollment, review due" (S72-04); the fleet payload still carries an empty
+`reviewBy`; binding the arm to the launching `ui serve`'s ancestry
+(S72-01); the rollout proof on this host (launch from the live page and
+read the clone's `system check`), which waits for Wido's word.
