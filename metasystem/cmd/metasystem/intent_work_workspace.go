@@ -21,6 +21,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gocache"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 )
 
@@ -240,9 +241,21 @@ func releaseClone(inv *intentInvocation) int {
 		}
 		discard = &diskstore.Discard{By: by, At: owners.now().UTC(), Reason: reason}
 	}
+	protected := steward.ArmedGitRoots()
+	landingRoot, configured, err := productionIntentBatchRoot(inv.layout.InstallationRoot, owners.now())
+	if err != nil {
+		return inv.render(intentResult{Outcome: intentRefused, code: 1,
+			Summary: "the landing lane's checkout cannot be resolved (" + err.Error() + "), so no clone is released; nothing was removed", Decision: "metasystem settings check"})
+	}
+	if configured {
+		protected = append(protected, landingRoot)
+		if layout, err := stateroot.ResolveLayout(landingRoot); err == nil {
+			protected = append(protected, layout.GitRoot)
+		}
+	}
 	outcome, err := diskstore.ReleaseClone(context.Background(), diskstore.CloneReleaseRequest{Registry: diskstore.CheckoutRegistry(inv.stateRoot),
 		GitRoot: inv.layout.GitRoot, Path: path, Git: owners.git, Census: owners.census(), Discard: discard, Now: owners.now().UTC(),
-		Armed: steward.ArmedGitRoots()})
+		Protected: protected, IgnoredReleaseBytes: workspaceIgnoredBytes(inv.layout.InstallationRoot)})
 	if err != nil {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: err.Error() + "; nothing was removed"})
 	}

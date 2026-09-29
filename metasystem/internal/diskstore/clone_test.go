@@ -120,8 +120,8 @@ func TestCloneReleaseRealGitArchivesEveryRowThenRemoves(t *testing.T) {
 }
 
 // A release interrupted after its mapping resumes from it and never makes
-// a second archive name; a gitlink without a git directory is a
-// not-initialized row.
+// a second archive name; a gitlink without a git directory keeps the clone
+// until a person discards, and the discard is persisted.
 func TestCloneReleaseRealGitResumesFromItsMapping(t *testing.T) {
 	t.Parallel()
 	r := newRealRepo(t)
@@ -143,20 +143,24 @@ func TestCloneReleaseRealGitResumesFromItsMapping(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var notInitialized bool
-	for _, row := range mapping.Rows {
-		notInitialized = notInitialized || row.Kind == "not-initialized" && strings.HasSuffix(row.Source, ":vendored")
-	}
-	if !notInitialized {
-		t.Fatalf("a gitlink without a git directory is a not-initialized row: %+v", mapping.Rows)
+	blockers := cloneBlockers(context.Background(), realWorkspaceGit, clone, mapping, 1<<20)
+	if len(blockers) == 0 || !strings.Contains(strings.Join(blockers, "\n"), "vendored: a gitlink without a git directory") {
+		t.Fatalf("a gitlink without a git directory keeps the clone: %v", blockers)
 	}
 	if err := writeCloneMapping(CloneMappingPath(r.registry, clone), mapping); err != nil {
 		t.Fatal(err)
 	}
-	outcome, err := ReleaseClone(context.Background(), CloneReleaseRequest{Registry: r.registry, GitRoot: r.repo, Path: clone,
-		Git: realWorkspaceGit, Census: &UseCensus{Taken: true}, Now: testNow})
+	request := CloneReleaseRequest{Registry: r.registry, GitRoot: r.repo, Path: clone, Git: realWorkspaceGit, Census: &UseCensus{Taken: true}, Now: testNow}
+	if outcome, err := ReleaseClone(context.Background(), request); err != nil || !outcome.Kept {
+		t.Fatalf("kept: %+v %v", outcome, err)
+	}
+	request.Discard = &Discard{By: "Wido", At: testNow, Reason: "the vendored gitlink is published elsewhere"}
+	outcome, err := ReleaseClone(context.Background(), request)
 	if err != nil || !outcome.Done || outcome.Base != mapping.Base {
 		t.Fatalf("resumed: %+v %v", outcome, err)
+	}
+	if saved, _, _ := readCloneMapping(CloneMappingPath(r.registry, clone)); saved.Discard == nil || saved.Discard.Reason == "" {
+		t.Fatalf("the person's discard is persisted: %+v", saved)
 	}
 	if !r.reachable(unique) {
 		t.Fatal("the unique commit is archived")
@@ -219,11 +223,64 @@ func TestCloneReleaseRefusesAnArmedCheckout(t *testing.T) {
 	seat := filepath.Join(root, "seat")
 	r.git(root, "clone", "-q", r.repo, seat)
 	_, err := ReleaseClone(context.Background(), CloneReleaseRequest{Registry: r.registry, GitRoot: r.repo, Path: seat, Git: realWorkspaceGit,
-		Census: &UseCensus{Taken: true}, Now: testNow, Armed: []string{seat}})
+		Census: &UseCensus{Taken: true}, Now: testNow, Protected: []string{seat}})
 	if err == nil || !strings.Contains(err.Error(), "armed checkout") {
 		t.Fatalf("an armed checkout is refused: %v", err)
 	}
 	if _, err := os.Stat(seat); err != nil {
 		t.Fatal("the armed checkout stays")
+	}
+}
+
+// Round B3-2 R4: a hook, a configuration beyond a clone's defaults, an
+// info/exclude line, LFS objects and a worktree whose directory is gone
+// each keep the clone, named; a repository beside it whose alternates read
+// from it refuses the release outright.
+func TestCloneReleaseKeepsWhatTheArchiveCannotCarry(t *testing.T) {
+	t.Parallel()
+	r := newRealRepo(t)
+	root := filepath.Dir(r.repo)
+	clone := filepath.Join(root, "clone")
+	r.git(root, "clone", "-q", r.repo, clone)
+	r.git(clone, "config", "alias.st", "status")
+	r.git(clone, "worktree", "add", "-q", "--detach", filepath.Join(root, "gone-wt"))
+	for path, content := range map[string]string{
+		filepath.Join(clone, ".git", "hooks", "pre-commit"):             "#!/bin/sh\n",
+		filepath.Join(clone, ".git", "info", "exclude"):                 "# comment\nscratch/\n",
+		filepath.Join(clone, ".git", "lfs", "objects", "ab", "cd", "x"): "blob",
+	} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.RemoveAll(filepath.Join(root, "gone-wt")); err != nil {
+		t.Fatal(err)
+	}
+	request := CloneReleaseRequest{Registry: r.registry, GitRoot: r.repo, Path: clone, Git: realWorkspaceGit, Census: &UseCensus{Taken: true}, Now: testNow}
+	outcome, err := ReleaseClone(context.Background(), request)
+	if err != nil || !outcome.Kept {
+		t.Fatalf("kept: %+v %v", outcome, err)
+	}
+	mapping, _, _ := readCloneMapping(CloneMappingPath(r.registry, clone))
+	joined := strings.Join(mapping.Blockers, "\n")
+	for _, want := range []string{"hook pre-commit", "configuration alias.st", "info/exclude line scratch/", "LFS objects", "gone-wt: a worktree of the clone whose directory is gone"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("blockers lack %q:\n%s", want, joined)
+		}
+	}
+	reader := filepath.Join(root, "reader")
+	r.git(root, "init", "-q", reader)
+	if err := os.WriteFile(filepath.Join(reader, ".git", "objects", "info", "alternates"), []byte(filepath.Join(clone, ".git", "objects")+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	request.Discard = &Discard{By: "Wido", At: testNow, Reason: "fixture"}
+	if _, err := ReleaseClone(context.Background(), request); err == nil || !strings.Contains(err.Error(), "alternates") {
+		t.Fatalf("a repository reading through the clone refuses the release: %v", err)
+	}
+	if _, err := os.Stat(clone); err != nil {
+		t.Fatal("the clone stays")
 	}
 }

@@ -103,7 +103,7 @@ func RunReleaseSet(ctx context.Context, request WorkspaceReleaseRequest, set *Re
 			continue
 		}
 		before := *entry
-		request.ID = entry.ID
+		request.ID, request.LandedTip = entry.ID, set.Tip
 		outcome, err := ReleaseWorkspace(ctx, request)
 		switch {
 		case err != nil:

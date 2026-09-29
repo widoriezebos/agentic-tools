@@ -56,8 +56,14 @@ type CloneMapping struct {
 	State     string     `json:"state"`
 	Worktrees []string   `json:"worktrees"`
 	Rows      []CloneRow `json:"rows"`
-	Dirty     []string   `json:"dirty,omitempty"`
-	Created   time.Time  `json:"created"`
+	// Blockers are what the archive cannot carry (uncommitted work,
+	// ignored content over the allowance, hooks, configuration, excludes,
+	// LFS objects, gitlinks it cannot archive, missing worktrees): each
+	// keeps the clone until a person discards (Round B3-2 R4).
+	Blockers []string `json:"blockers,omitempty"`
+	// Discard is the person's discard that released the clone anyway.
+	Discard *Discard  `json:"discard,omitempty"`
+	Created time.Time `json:"created"`
 }
 
 // CloneMappingPath is where a clone's mapping lives in the checkout's
@@ -77,9 +83,11 @@ type CloneReleaseRequest struct {
 	Census  *UseCensus
 	Discard *Discard
 	Now     time.Time
-	// Armed are the git roots of the host's armed checkouts, never released
-	// as a clone.
-	Armed []string
+	// Protected are the host's armed checkouts and the landing lane's
+	// checkout, never released as a clone.
+	Protected []string
+	// IgnoredReleaseBytes is disk.workspace-ignored-release-mib in bytes.
+	IgnoredReleaseBytes int64
 }
 
 // CloneRelease is a clone release's outcome.
@@ -127,13 +135,17 @@ func ReleaseClone(ctx context.Context, request CloneReleaseRequest) (CloneReleas
 	if err != nil {
 		return CloneRelease{}, err
 	}
+	mapping.Blockers = append(mapping.Blockers, cloneBlockers(ctx, request.Git, path, mapping, request.IgnoredReleaseBytes)...)
+	if request.Discard != nil {
+		mapping.Discard = request.Discard
+	}
 	if err := writeCloneMapping(mappingPath, mapping); err != nil {
 		return CloneRelease{}, err
 	}
 	outcome := CloneRelease{Base: mapping.Base, Rows: len(mapping.Rows)}
-	if len(mapping.Dirty) > 0 && request.Discard == nil {
-		outcome.Kept, outcome.Reason = true, "the clone has work no commit holds: "+firstPaths(mapping.Dirty)
-		outcome.Command = "commit it, or a person's metasystem work workspace --release --path " + path + " --discard --reason TEXT"
+	if len(mapping.Blockers) > 0 && request.Discard == nil {
+		outcome.Kept, outcome.Reason = true, "the archive cannot carry all the clone holds: "+firstPaths(mapping.Blockers)
+		outcome.Command = "settle each, or a person's metasystem work workspace --release --path " + path + " --discard --reason TEXT"
 		return outcome, nil
 	}
 	if verdict := cloneUse(request.Census, append([]string{path}, mapping.Worktrees...)); verdict.Decision != Release {
@@ -195,10 +207,32 @@ func checkCloneCandidate(ctx context.Context, request CloneReleaseRequest, path 
 	if !filepath.IsAbs(path) || path == checkout || strings.HasPrefix(checkout, path+string(filepath.Separator)) || strings.HasPrefix(path, checkout+string(filepath.Separator)) {
 		return fmt.Errorf("%s is this checkout, holds it, or lies inside it; only a clone beside it is released this way", path)
 	}
-	for _, armed := range request.Armed {
-		if filepath.Clean(armed) == path {
-			return fmt.Errorf("%s is an armed checkout of this host; metasystem system stop ends it first, and it is no clone to release", path)
+	if filepath.Dir(path) != filepath.Dir(checkout) {
+		return fmt.Errorf("%s is not beside the checkout %s; only a clone in the same directory is released this way", path, checkout)
+	}
+	for _, protected := range request.Protected {
+		if filepath.Clean(protected) == path {
+			return fmt.Errorf("%s is an armed checkout of this host or the landing lane's checkout; it is no clone to release", path)
 		}
+	}
+	common, err := request.Git(ctx, checkout, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	if err != nil {
+		return fmt.Errorf("the checkout's common store cannot be read: %w", err)
+	}
+	if inside(filepath.Clean(strings.TrimSpace(string(common))), path) {
+		return fmt.Errorf("%s holds this checkout's own object store; it is no clone to release", path)
+	}
+	listing, err := request.Git(ctx, checkout, "worktree", "list", "--porcelain")
+	if err != nil {
+		return fmt.Errorf("the checkout's worktrees cannot be read: %w", err)
+	}
+	for _, line := range strings.Split(string(listing), "\n") {
+		if worktree, ok := strings.CutPrefix(line, "worktree "); ok && inside(filepath.Clean(worktree), path) {
+			return fmt.Errorf("%s holds %s, a worktree of this checkout; it is no clone to release", path, worktree)
+		}
+	}
+	if repo := alternatesInto(path, filepath.Dir(path)); repo != "" {
+		return fmt.Errorf("%s reads objects from %s through its alternates; removing it would break that repository", repo, path)
 	}
 	top, err := request.Git(ctx, path, "rev-parse", "--show-toplevel")
 	if err != nil || filepath.Clean(strings.TrimSpace(string(top))) != path {
@@ -271,6 +305,10 @@ func InventoryClone(ctx context.Context, git WorkspaceGit, path, base string, no
 		if worktree == "" {
 			continue
 		}
+		if _, err := os.Lstat(worktree); err != nil {
+			mapping.Blockers = append(mapping.Blockers, worktree+": a worktree of the clone whose directory is gone")
+			continue
+		}
 		mapping.Worktrees = append(mapping.Worktrees, worktree)
 		prefix := fmt.Sprintf("%s/worktree/%d", base, index)
 		if head != "" && !strings.HasPrefix(head, "0000000") {
@@ -280,7 +318,172 @@ func InventoryClone(ctx context.Context, git WorkspaceGit, path, base string, no
 			return mapping, err
 		}
 	}
+	if err := inventoryReflogs(ctx, git, &mapping, path, gitdir, refs); err != nil {
+		return mapping, err
+	}
 	return mapping, nil
+}
+
+// inventoryReflogs adds a row for every reflog entry of every worktree's
+// HEAD and every branch that no other row reaches (Round B3-2 R5).
+func inventoryReflogs(ctx context.Context, git WorkspaceGit, mapping *CloneMapping, path, gitdir string, refs [][2]string) error {
+	var candidates []string
+	seen := map[string]bool{}
+	for _, row := range mapping.Rows {
+		seen[row.SHA] = true
+	}
+	add := func(dir, ref string) {
+		out, err := git(ctx, dir, "log", "-g", "--format=%H", ref)
+		if err != nil {
+			return
+		}
+		for _, sha := range strings.Fields(string(out)) {
+			if !seen[sha] {
+				seen[sha] = true
+				candidates = append(candidates, sha)
+			}
+		}
+	}
+	for _, worktree := range mapping.Worktrees {
+		add(worktree, "HEAD")
+	}
+	for _, ref := range refs {
+		if strings.HasPrefix(ref[1], "refs/heads/") {
+			add(path, ref[1])
+		}
+	}
+	if len(candidates) == 0 {
+		return nil
+	}
+	args := append([]string{"rev-list"}, candidates...)
+	args = append(args, "--not")
+	for _, row := range mapping.Rows {
+		if row.SHA != "" && row.Repo == gitdir {
+			args = append(args, row.SHA)
+		}
+	}
+	out, err := git(ctx, path, args...)
+	if err != nil {
+		return err
+	}
+	unreached := map[string]bool{}
+	for _, sha := range strings.Fields(string(out)) {
+		unreached[sha] = true
+	}
+	for _, sha := range candidates {
+		if unreached[sha] {
+			mapping.Rows = append(mapping.Rows, CloneRow{Kind: "reflog", Repo: gitdir, Source: "reflog", SHA: sha, Archive: mapping.Base + "/reflog/" + shortSHA(sha)})
+		}
+	}
+	return nil
+}
+
+// cloneBlockers are the repository-wide things the archive cannot carry:
+// ignored content over the allowance, hooks, configuration beyond a
+// clone's defaults, info/exclude lines, LFS objects and gitlinks without a
+// git directory.
+func cloneBlockers(ctx context.Context, git WorkspaceGit, path string, mapping CloneMapping, ignoredLimit int64) []string {
+	var blockers []string
+	gitdir := filepath.Join(path, ".git")
+	var ignoredBytes int64
+	var ignored []string
+	for _, worktree := range mapping.Worktrees {
+		status, err := git(ctx, worktree, "status", "--porcelain=v1", "--untracked-files=all", "--ignored")
+		if err != nil {
+			blockers = append(blockers, worktree+": its status cannot be read")
+			continue
+		}
+		for _, line := range strings.Split(string(status), "\n") {
+			if rest, ok := strings.CutPrefix(line, "!! "); ok {
+				bytes, _, _ := Measure(ctx, filepath.Join(worktree, strings.TrimSuffix(rest, "/")))
+				ignoredBytes += bytes
+				ignored = append(ignored, filepath.Join(worktree, rest))
+			}
+		}
+	}
+	if ignoredBytes > ignoredLimit {
+		blockers = append(blockers, fmt.Sprintf("%s of ignored files, over disk.workspace-ignored-release-mib: %s", formatBytes(ignoredBytes), firstPaths(ignored)))
+	}
+	if entries, err := os.ReadDir(filepath.Join(gitdir, "hooks")); err == nil {
+		for _, entry := range entries {
+			if !strings.HasSuffix(entry.Name(), ".sample") {
+				blockers = append(blockers, "hook "+entry.Name())
+			}
+		}
+	}
+	if out, err := git(ctx, path, "config", "--file", filepath.Join(gitdir, "config"), "--list", "--name-only"); err != nil {
+		blockers = append(blockers, "its configuration cannot be read")
+	} else {
+		for _, name := range strings.Fields(string(out)) {
+			if !defaultCloneConfig(name) {
+				blockers = append(blockers, "configuration "+name)
+			}
+		}
+	}
+	if data, err := os.ReadFile(filepath.Join(gitdir, "info", "exclude")); err == nil {
+		for _, line := range strings.Split(string(data), "\n") {
+			if line = strings.TrimSpace(line); line != "" && !strings.HasPrefix(line, "#") {
+				blockers = append(blockers, "info/exclude line "+line)
+			}
+		}
+	}
+	if bytes, _, _ := Measure(ctx, filepath.Join(gitdir, "lfs", "objects")); bytes > 0 {
+		blockers = append(blockers, "LFS objects in .git/lfs")
+	}
+	if out, err := git(ctx, path, "ls-files", "-s"); err == nil {
+		for _, line := range strings.Split(string(out), "\n") {
+			if !strings.HasPrefix(line, "160000 ") {
+				continue
+			}
+			_, sub, _ := strings.Cut(line, "\t")
+			if _, err := os.Lstat(filepath.Join(path, sub, ".git")); err != nil {
+				blockers = append(blockers, sub+": a gitlink without a git directory; its commit cannot be archived")
+			}
+		}
+	}
+	return blockers
+}
+
+// defaultCloneConfig reports a configuration key a plain clone writes, or
+// a remote or branch (whose refs are archived).
+func defaultCloneConfig(name string) bool {
+	switch name {
+	case "core.repositoryformatversion", "core.filemode", "core.bare", "core.logallrefupdates", "core.ignorecase", "core.precomposeunicode", "core.symlinks":
+		return true
+	}
+	return strings.HasPrefix(name, "remote.") || strings.HasPrefix(name, "branch.") || strings.HasPrefix(name, "submodule.")
+}
+
+// inside reports whether path is dir or lies under it.
+func inside(path, dir string) bool {
+	return path == dir || strings.HasPrefix(path, dir+string(filepath.Separator))
+}
+
+// alternatesInto names a repository beside the clone whose alternates read
+// objects from inside it.
+func alternatesInto(path, parent string) string {
+	entries, err := os.ReadDir(parent)
+	if err != nil {
+		return ""
+	}
+	for _, entry := range entries {
+		repo := filepath.Join(parent, entry.Name())
+		if repo == path {
+			continue
+		}
+		for _, file := range []string{filepath.Join(repo, ".git", "objects", "info", "alternates"), filepath.Join(repo, "objects", "info", "alternates")} {
+			data, err := os.ReadFile(file)
+			if err != nil {
+				continue
+			}
+			for _, line := range strings.Split(string(data), "\n") {
+				if line = strings.TrimSpace(line); line != "" && inside(filepath.Clean(line), path) {
+					return repo
+				}
+			}
+		}
+	}
+	return ""
 }
 
 // repoRefs lists a repository's refs but the temporary archive refs, as
@@ -319,10 +522,10 @@ func inventoryWorktree(ctx context.Context, git WorkspaceGit, mapping *CloneMapp
 		}
 		changes = append(changes, worktree+": "+strings.TrimSpace(line))
 	}
-	mapping.Dirty = append(mapping.Dirty, changes...)
+	mapping.Blockers = append(mapping.Blockers, changes...)
 	if unmerged {
 		stages, _ := git(ctx, worktree, "ls-files", "-u")
-		mapping.Rows = append(mapping.Rows, CloneRow{Kind: "unmerged", Source: worktree, Note: "INDEX-STAGES.txt\n" + string(stages)})
+		mapping.Blockers = append(mapping.Blockers, worktree+": an unmerged index; INDEX-STAGES.txt:\n"+string(stages))
 	} else if treeOut, err := git(ctx, worktree, "write-tree"); err == nil {
 		tree := strings.TrimSpace(string(treeOut))
 		note := "tree " + tree + " parent " + head
@@ -347,6 +550,7 @@ func inventoryWorktree(ctx context.Context, git WorkspaceGit, mapping *CloneMapp
 	}
 	out, err := git(ctx, worktree, "submodule", "status", "--recursive")
 	if err != nil {
+		mapping.Blockers = append(mapping.Blockers, worktree+": its submodules cannot be read ("+strings.TrimSpace(err.Error())+")")
 		return nil
 	}
 	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
@@ -359,7 +563,7 @@ func inventoryWorktree(ctx context.Context, git WorkspaceGit, mapping *CloneMapp
 		}
 		sub := fields[1]
 		if line[0] == '-' {
-			mapping.Rows = append(mapping.Rows, CloneRow{Kind: "not-initialized", Source: worktree + ":" + sub, SHA: fields[0], Note: "a gitlink without a git directory; nothing to archive"})
+			mapping.Blockers = append(mapping.Blockers, worktree+":"+sub+": a gitlink without a git directory; its commit "+fields[0]+" cannot be archived")
 			continue
 		}
 		subPath := filepath.Join(worktree, sub)
@@ -382,7 +586,7 @@ func inventoryWorktree(ctx context.Context, git WorkspaceGit, mapping *CloneMapp
 		subStatus, _ := git(ctx, subPath, "status", "--porcelain=v1", "--untracked-files=all")
 		for _, change := range strings.Split(strings.TrimSpace(string(subStatus)), "\n") {
 			if change != "" {
-				mapping.Dirty = append(mapping.Dirty, subPath+": "+change)
+				mapping.Blockers = append(mapping.Blockers, subPath+": "+change)
 			}
 		}
 	}

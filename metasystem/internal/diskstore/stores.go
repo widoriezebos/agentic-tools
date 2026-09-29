@@ -118,6 +118,13 @@ func joinLines(lines []string) string {
 	return text
 }
 
+// SelfReleaser is a proof whose store has its own release sequence (a
+// handed-out workspace): inside the critical section it judges, archives,
+// writes releasing and removes in its own order, on every attempt.
+type SelfReleaser interface {
+	Release(ctx context.Context, critical *Critical, census *UseCensus) Verdict
+}
+
 // Apply is the critical section of 3.1 for one store: the record lock taken
 // without waiting, the record reloaded and its identity revalidated, the
 // content and use proofs re-run (unless the record is already releasing),
@@ -136,6 +143,18 @@ func (s RegisteredStores) Apply(ctx context.Context, pass *Pass, item Item) Verd
 	defer critical.Release()
 	record := critical.Record()
 	proof := s.Proofs[record.Owner.Kind]
+	if releaser, ok := proof.(SelfReleaser); ok && record.State != StateReleased {
+		census := pass.Census(ctx)
+		if census != nil && census.Taken && pass.CensusReader() != nil {
+			if err := census.ReadNew(ctx, *pass.CensusReader()); err != nil {
+				return Verdict{Decision: Pending, Reason: "processes started since the census could not be read: " + err.Error(), Command: "metasystem disk clean"}
+			}
+		}
+		if verdict := proof.Observe(ctx, record); verdict.Decision != Release {
+			return verdict
+		}
+		return releaser.Release(ctx, critical, census)
+	}
 	switch {
 	case proof == nil:
 		return Verdict{Decision: Pending, Reason: "no proof for owner kind " + string(record.Owner.Kind), Command: "metasystem disk show"}

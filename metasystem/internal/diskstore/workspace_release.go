@@ -36,6 +36,9 @@ type WorkspaceReleaseRequest struct {
 	// IgnoredReleaseBytes is disk.workspace-ignored-release-mib in bytes:
 	// ignored content up to it goes with a copy; more keeps the copy.
 	IgnoredReleaseBytes int64
+	// LandedTip, set by a landing's release set, is the tip every tip of
+	// the workspace must lie in at release time (Round B3-2 R8).
+	LandedTip string
 }
 
 // WorkspaceRelease is a release's outcome: Done, Kept (its content keeps
@@ -54,12 +57,9 @@ type WorkspaceRelease struct {
 	Unique   int      `json:"unique,omitempty"`
 }
 
-// ReleaseWorkspace releases one workspace inside its critical section:
-// identity revalidated, a copy's content judged, the use census read, the
-// record written releasing, every tip archived and read back, the layout
-// removed at the recorded path with its branch and temporary directory,
-// and the record released. It never calls goalbranch.Sweep. A release of
-// a released or absent workspace is success and writes nothing.
+// ReleaseWorkspace releases one workspace inside its critical section. It
+// never calls goalbranch.Sweep. A release of a released or absent
+// workspace is success and writes nothing.
 func ReleaseWorkspace(ctx context.Context, request WorkspaceReleaseRequest) (WorkspaceRelease, error) {
 	critical, err := request.Registry.TryCritical(request.ID)
 	var held *HeldError
@@ -73,27 +73,70 @@ func ReleaseWorkspace(ctx context.Context, request WorkspaceReleaseRequest) (Wor
 		return WorkspaceRelease{}, err
 	}
 	defer critical.Release()
+	if record := critical.Record(); record.Class != WorkspaceClass {
+		return WorkspaceRelease{Path: record.Path}, fmt.Errorf("store %s is a %s, not a workspace", record.ID, record.Class)
+	}
+	return releaseInSection(ctx, critical, request)
+}
+
+// releaseInSection is the one release sequence, whatever the record's state
+// and whoever asks (Round B3-2 R7): identity revalidated; a copy that is
+// still a worktree judged for its content, and every workspace for its
+// users, on every attempt (a record already releasing included); for a
+// landing's release, its tips checked to lie in the landed tip (R8); every
+// tip archived and read back; only then releasing written; the layout
+// removed; released written.
+func releaseInSection(ctx context.Context, critical *Critical, request WorkspaceReleaseRequest) (WorkspaceRelease, error) {
 	record := critical.Record()
 	outcome := WorkspaceRelease{Path: record.Path}
-	if record.Class != WorkspaceClass {
-		return outcome, fmt.Errorf("store %s is a %s, not a workspace", record.ID, record.Class)
+	keep := func(verdict Verdict) (WorkspaceRelease, error) {
+		outcome.Kept, outcome.Pending = verdict.Decision == Keep, verdict.Decision == Pending
+		outcome.Reason, outcome.Command = verdict.Reason, verdict.Command
+		return outcome, nil
 	}
 	switch record.State {
 	case StateReleased:
 		outcome.Done, outcome.Already, outcome.Reason = true, true, "already released"
 		return outcome, nil
 	case StateReserved:
-		return WorkspaceRelease{Pending: true, Path: record.Path, Reason: "the workspace is still being created", Command: "repeat the request once it returned"}, nil
-	case StateAccepted:
-		census := request.Census
-		if request.TakeCensus != nil {
-			census = request.TakeCensus()
+		return keep(Verdict{Decision: Pending, Reason: "the workspace is still being created", Command: "metasystem disk show"})
+	case StateReleasing:
+		if err := revalidateReleasing(record); err != nil {
+			return keep(Verdict{Decision: Pending, Reason: "a releasing workspace changed: " + err.Error() + "; a person decides", Command: "metasystem disk show"})
 		}
-		if verdict := judgeWorkspace(ctx, request.Git, record, request.IgnoredReleaseBytes, request.Discard != nil, census); verdict.Decision != Release {
-			outcome.Kept, outcome.Pending = verdict.Decision == Keep, verdict.Decision == Pending
-			outcome.Reason, outcome.Command = verdict.Reason, verdict.Command
-			return outcome, nil
+	default:
+		if err := Revalidate(record); err != nil {
+			return keep(Verdict{Decision: Pending, Reason: "the workspace is not the recorded one: " + err.Error(), Command: "metasystem disk show"})
 		}
+	}
+	discard := request.Discard != nil || record.AuthorizedDiscard != nil
+	if record.Layout != LayoutCopy || workspaceTreeExists(record) {
+		if verdict := judgeContent(ctx, request.Git, record, request.IgnoredReleaseBytes, discard); verdict.Decision != Release {
+			return keep(verdict)
+		}
+	}
+	census := request.Census
+	if request.TakeCensus != nil {
+		census = request.TakeCensus()
+	}
+	if verdict := judgeUse(census, record); verdict.Decision != Release {
+		return keep(verdict)
+	}
+	if request.LandedTip != "" {
+		if verdict := judgeLanded(ctx, request.GitRoot, request.Git, record, request.LandedTip); verdict.Decision != Release {
+			return keep(verdict)
+		}
+	}
+	archives, unique, err := archiveIfCopy(ctx, critical, request.GitRoot, request.Git, request.Now)
+	outcome.Archives, outcome.Unique = archives, unique
+	if len(archives) > 0 {
+		outcome.Archive = archives[0]
+	}
+	if err != nil {
+		return keep(Verdict{Decision: Pending, Reason: "the tips could not be archived (" + err.Error() + "); nothing was removed", Command: "metasystem disk clean"})
+	}
+	record = critical.Record()
+	if record.State != StateReleasing {
 		record.State = StateReleasing
 		if request.Discard != nil {
 			record.AuthorizedDiscard = request.Discard
@@ -101,20 +144,9 @@ func ReleaseWorkspace(ctx context.Context, request WorkspaceReleaseRequest) (Wor
 		if err := critical.Write(record); err != nil {
 			return outcome, err
 		}
-	case StateReleasing:
-		if err := revalidateReleasing(record); err != nil {
-			return WorkspaceRelease{Pending: true, Path: record.Path, Reason: "a releasing workspace changed: " + err.Error() + "; a person decides",
-				Command: "metasystem disk show"}, nil
-		}
 	}
-	archives, unique, err := releaseWorkspaceLayout(ctx, critical, request.GitRoot, request.Git, request.Now)
-	outcome.Archives, outcome.Unique = archives, unique
-	if len(archives) > 0 {
-		outcome.Archive = archives[0]
-	}
-	if err != nil {
-		return WorkspaceRelease{Pending: true, Path: record.Path, Archives: archives, Reason: "the release stopped (" + err.Error() + "); the workspace is releasing and the next pass finishes it",
-			Command: "metasystem disk clean"}, nil
+	if err := removeWorkspace(ctx, request.GitRoot, request.Git, record); err != nil {
+		return keep(Verdict{Decision: Pending, Reason: "the removal stopped (" + err.Error() + "); the next attempt judges and finishes it", Command: "metasystem disk clean"})
 	}
 	record = critical.Record()
 	record.State, record.ReleasedBy = StateReleased, request.By
@@ -125,31 +157,59 @@ func ReleaseWorkspace(ctx context.Context, request WorkspaceReleaseRequest) (Wor
 	return outcome, nil
 }
 
-// releaseWorkspaceLayout archives every tip of a copy and records the
-// archive, then removes the layout; the sweeper's proof and the release
-// share it, and it runs whatever the record's state, so a release cut
-// short archives again (idempotently) before it removes anything.
-func releaseWorkspaceLayout(ctx context.Context, critical *Critical, gitRoot string, git WorkspaceGit, now time.Time) ([]string, int, error) {
-	record := critical.Record()
-	var archives []string
-	unique := 0
-	if record.Layout == LayoutCopy {
-		var err error
-		archives, unique, err = archiveWorkspace(ctx, gitRoot, git, record, now)
-		if err != nil {
-			return nil, 0, fmt.Errorf("the tips could not be archived: %w", err)
+// workspaceTreeExists reports a copy whose worktree is still there to judge.
+func workspaceTreeExists(record Record) bool {
+	_, err := os.Lstat(filepath.Join(record.Path, ".git"))
+	return err == nil
+}
+
+// judgeLanded checks, for a landing's release, that the copy's branch tip
+// and worktree HEAD both lie in the landed tip; work beyond it keeps the
+// workspace out of the set.
+func judgeLanded(ctx context.Context, gitRoot string, git WorkspaceGit, record Record, tip string) Verdict {
+	name := filepath.Base(record.Path)
+	if record.Layout != LayoutCopy {
+		return Verdict{Decision: Keep, Reason: "a plain workspace is never released by a landing", Command: "metasystem work workspace " + record.Owner.Ref + " --release --name " + name}
+	}
+	var commits []string
+	if sha, found := revParseIn(ctx, git, gitRoot, "refs/heads/"+WorkspaceBranch(record.Owner, name)); found {
+		commits = append(commits, sha)
+	}
+	if workspaceTreeExists(record) {
+		if sha, found := revParseIn(ctx, git, record.Path, "HEAD"); found {
+			commits = append(commits, sha)
 		}
-		if len(archives) > 0 {
-			note := fmt.Sprintf("archived %s: %s (%d commit(s) nothing else contains)", now.UTC().Format(time.RFC3339), strings.Join(archives, ", "), unique)
-			if !containsString(record.Notes, note) {
-				record.Notes = append(record.Notes, note)
-				if err := critical.Write(record); err != nil {
-					return archives, unique, err
-				}
+	}
+	for _, commit := range commits {
+		if _, err := git(ctx, gitRoot, "merge-base", "--is-ancestor", commit, tip); err != nil {
+			return Verdict{Decision: Keep, Reason: "it holds work beyond the landed tip " + shortSHA(tip) + "; dropped from the landing's release set",
+				Command: "metasystem work land " + record.Owner.Ref + ", or metasystem work workspace " + record.Owner.Ref + " --release --name " + name}
+		}
+	}
+	return Verdict{Decision: Release}
+}
+
+// archiveIfCopy archives every tip of a copy and records the archive in
+// the record's notes; it runs before any removal on every attempt.
+func archiveIfCopy(ctx context.Context, critical *Critical, gitRoot string, git WorkspaceGit, now time.Time) ([]string, int, error) {
+	record := critical.Record()
+	if record.Layout != LayoutCopy {
+		return nil, 0, nil
+	}
+	archives, unique, err := archiveWorkspace(ctx, gitRoot, git, record, now)
+	if err != nil {
+		return nil, 0, err
+	}
+	if len(archives) > 0 {
+		note := fmt.Sprintf("archived %s: %s (%d commit(s) nothing else contains)", now.UTC().Format(time.RFC3339), strings.Join(archives, ", "), unique)
+		if !containsString(record.Notes, note) {
+			record.Notes = append(record.Notes, note)
+			if err := critical.Write(record); err != nil {
+				return archives, unique, err
 			}
 		}
 	}
-	return archives, unique, removeWorkspace(ctx, gitRoot, git, record)
+	return archives, unique, nil
 }
 
 func containsString(values []string, want string) bool {
@@ -161,18 +221,9 @@ func containsString(values []string, want string) bool {
 	return false
 }
 
-// judgeWorkspace is the release's check before anything is written:
-// identity; for a copy, its content (modified or untracked files keep it
-// unless a person discards; ignored content up to ignoredLimit goes with
-// it, more keeps it); then the use census (a live user, or no complete
-// census, is pending and retried).
-func judgeWorkspace(ctx context.Context, git WorkspaceGit, record Record, ignoredLimit int64, discard bool, census *UseCensus) Verdict {
-	if err := Revalidate(record); err != nil {
-		return Verdict{Decision: Pending, Reason: "the workspace is not the recorded one: " + err.Error(), Command: "metasystem disk show"}
-	}
-	if verdict := judgeContent(ctx, git, record, ignoredLimit, discard); verdict.Decision != Release {
-		return verdict
-	}
+// judgeUse is the checkout-use proof from a census: a live user, or no
+// complete census, is pending and retried.
+func judgeUse(census *UseCensus, record Record) Verdict {
 	switch {
 	case census == nil || !census.Taken:
 		return Verdict{Decision: Pending, Reason: "use census not taken", Command: "metasystem disk clean --release " + record.ID}
@@ -186,7 +237,7 @@ func judgeWorkspace(ctx context.Context, git WorkspaceGit, record Record, ignore
 				Command: fmt.Sprintf("metasystem disk clean once pid %d has ended", holder.Pid)}
 		}
 	}
-	return Verdict{Decision: Release, Reason: "clean and unused"}
+	return Verdict{Decision: Release, Reason: "unused"}
 }
 
 // judgeContent reads a copy's status including ignored files.
@@ -442,10 +493,18 @@ func (p WorkspaceProof) Observe(ctx context.Context, record Record) Verdict {
 	return Verdict{Decision: Release, Reason: string(record.Owner.Kind) + " " + record.Owner.Ref + " has ended (" + basis + ")"}
 }
 
-// Apply archives every tip of a copy, then removes the layout, inside the
-// critical section RegisteredStores holds; the release record names what
-// the owner's end was read from.
-func (p WorkspaceProof) Apply(ctx context.Context, critical *Critical) error {
+// Apply is never reached: RegisteredStores hands a workspace to Release,
+// which runs the release's own sequence. It refuses, so a caller that
+// skipped Release never removes anything.
+func (p WorkspaceProof) Apply(context.Context, *Critical) error {
+	return errors.New("a workspace is released through its own release sequence")
+}
+
+// Release is the sweeper's release of a workspace whose owner ended: the
+// release's own sequence inside the critical section RegisteredStores
+// holds, with the pass's census, and a note naming what the owner's end
+// was read from.
+func (p WorkspaceProof) Release(ctx context.Context, critical *Critical, census *UseCensus) Verdict {
 	record := critical.Record()
 	if p.Ended != nil {
 		if _, _, basis := p.Ended(record.Owner); basis != "" {
@@ -453,11 +512,20 @@ func (p WorkspaceProof) Apply(ctx context.Context, critical *Critical) error {
 			if !containsString(record.Notes, note) {
 				record.Notes = append(record.Notes, note)
 				if err := critical.Write(record); err != nil {
-					return err
+					return Verdict{Decision: Pending, Reason: err.Error(), Command: "metasystem disk show"}
 				}
 			}
 		}
 	}
-	_, _, err := releaseWorkspaceLayout(ctx, critical, p.GitRoot, p.Git, p.Now)
-	return err
+	outcome, err := releaseInSection(ctx, critical, WorkspaceReleaseRequest{GitRoot: p.GitRoot, Git: p.Git, Census: census, By: "sweeper", Now: p.Now,
+		IgnoredReleaseBytes: p.IgnoredReleaseBytes})
+	switch {
+	case err != nil:
+		return Verdict{Decision: Pending, Reason: err.Error(), Command: "metasystem disk show"}
+	case outcome.Done:
+		return Verdict{Decision: Release, Reason: "owner ended; released"}
+	case outcome.Kept:
+		return Verdict{Decision: Keep, Reason: outcome.Reason, Command: outcome.Command}
+	}
+	return Verdict{Decision: Pending, Reason: outcome.Reason, Command: outcome.Command}
 }
