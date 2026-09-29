@@ -15,6 +15,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
 // The fake runtime's test installation: a real artifacts tree in
@@ -466,30 +468,67 @@ type helperConfig struct {
 	Dispatcher fakeRecordingDispatcher `json:"dispatcher"`
 }
 
-// TestFakeSupervisorHelperProcess is the subprocess body for the behaviors
-// that end or hold the supervisor process itself (kill -KILL $$, the
-// forever heartbeat loops, the SIGTERM trap). It is not a test.
-func TestFakeSupervisorHelperProcess(t *testing.T) {
-	t.Parallel()
-	if os.Getenv("FAKE_SUPERVISOR_HELPER") != "1" {
-		t.Skip("subprocess helper")
-	}
+// runFakeSupervisorHelper is the subprocess body for the behaviors that end
+// or hold the supervisor process itself (kill -KILL $$, the forever
+// heartbeat loops, the SIGTERM trap). TestMain runs it in place of the test
+// environment: the subprocess stands in for the product supervisor, so it
+// starts no fixture custodian, whose reaping of the owner's descendants at
+// exit would end the children the supervisor leaves to the dispatcher. The
+// parent test's custodian and cleanups own those children. The helper's
+// markers are dropped so no child it starts is taken for the helper.
+func runFakeSupervisorHelper() int {
+	encoded := os.Getenv("FAKE_SUPERVISOR_CONFIG")
+	_ = os.Unsetenv("FAKE_SUPERVISOR_HELPER")
+	_ = os.Unsetenv("FAKE_SUPERVISOR_CONFIG")
 	var config helperConfig
-	if err := json.Unmarshal([]byte(os.Getenv("FAKE_SUPERVISOR_CONFIG")), &config); err != nil {
-		os.Exit(90)
+	if err := json.Unmarshal([]byte(encoded), &config); err != nil {
+		return 90
 	}
 	d := ProcessDeps(config.Root)
 	d.Engine = config.Engine
 	d.Dispatch = config.Dispatcher
-	os.Exit(Main(config.Args, func(string) Deps { return d }))
+	return Main(config.Args, func(string) Deps { return d })
+}
+
+// fakeSupervisorHelperCommand is the supervisor subprocess command.
+func fakeSupervisorHelperCommand(config []byte, env ...string) *exec.Cmd {
+	command := exec.Command(os.Args[0])
+	command.Env = append(env, "FAKE_SUPERVISOR_HELPER=1", "FAKE_SUPERVISOR_CONFIG="+string(config))
+	return command
+}
+
+// fixtureCustodiansOf returns the live children of pid that are fixture
+// custodians (they carry the custodian's environment marker).
+func fixtureCustodiansOf(t *testing.T, pid int) []identity.Ref {
+	t.Helper()
+	census, err := identity.TakeProcessCensus()
+	if err != nil {
+		t.Fatalf("process census: %v", err)
+	}
+	var custodians []identity.Ref
+	for _, child := range census.Pids() {
+		if parent, known := census.Parent(child); !known || parent != int64(pid) {
+			continue
+		}
+		exact, state, err := identity.KernelProber{}.Probe(child)
+		if err != nil || state != identity.Alive || !exact.EnvironKnown {
+			continue
+		}
+		for _, entry := range exact.Environ {
+			if entry == identity.FixtureCustodianEnv+"=1" {
+				custodians = append(custodians, exact.Ref())
+				break
+			}
+		}
+	}
+	return custodians
 }
 
 // startSubprocess runs the supervisor in its own process (and group).
 func (f *fakeInstall) startSubprocess() *exec.Cmd {
 	f.t.Helper()
 	config, _ := json.Marshal(helperConfig{Args: f.superviseArgs(), Root: f.root, Engine: f.engine, Dispatcher: f.dispatcher})
-	command := exec.Command(os.Args[0], "-test.run=^TestFakeSupervisorHelperProcess$")
-	command.Env = append(f.environ(), "FAKE_SUPERVISOR_HELPER=1", "FAKE_SUPERVISOR_CONFIG="+string(config))
+	command := fakeSupervisorHelperCommand(config, f.environ()...)
 	// Files, not pipes: an orphaned hold child keeps an inherited pipe
 	// open, and Wait would block on its copy until the hold exits.
 	output, err := os.Create(filepath.Join(f.root, "subprocess.out"))

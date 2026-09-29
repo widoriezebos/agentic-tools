@@ -174,10 +174,9 @@ func TestExternalRuntimeSelftestRunsTheSharedLegs(t *testing.T) {
 	}
 	config, _ := json.Marshal(helperConfig{Args: []string{"newagent", "selftest", "--root", f.root}, Root: f.root, Engine: f.engine,
 		Dispatcher: fakeRecordingDispatcher{Root: f.root, Log: filepath.Join(f.root, "dispatch.log")}})
-	command := exec.Command(os.Args[0], "-test.run=^TestFakeSupervisorHelperProcess$")
-	command.Env = append(f.environ(), "FAKE_SUPERVISOR_HELPER=1", "FAKE_SUPERVISOR_CONFIG="+string(config),
+	command := fakeSupervisorHelperCommand(config, append(f.environ(),
 		"PATH="+stubs+":"+os.Getenv("PATH"), "TMPDIR="+t.TempDir(),
-		"EXTERNAL_ENGINE_STANDIN=1", "EXTERNAL_ENGINE_ROOT="+f.root)
+		"EXTERNAL_ENGINE_STANDIN=1", "EXTERNAL_ENGINE_ROOT="+f.root)...)
 	output, err := command.CombinedOutput()
 	if err != nil {
 		t.Fatalf("selftest: %v\n%s\njob logs: %s", err, output, strings.Join(operationsLogged(t, log), " "))
