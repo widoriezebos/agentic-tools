@@ -383,8 +383,10 @@ func TestIntentCloseWholeOwner(t *testing.T) {
 	conf := filepath.Join(b.install, "metasystem.conf")
 	existing, _ := os.ReadFile(conf)
 
-	// Without an evidence root the owner cannot mirror, so its close check
-	// refuses and nothing is stamped.
+	// With an evidence root it cannot use the owner cannot mirror, so its
+	// close check refuses and nothing is stamped. (An unset root no longer
+	// serves: it resolves to the compiled-in default.)
+	b.writeFile(conf, string(existing)+"\nevidence.root=relative/evidence\n")
 	code, result = b.do("work", "finish", "j2:inv1")
 	expectOutcome(t, "owner refusal", code, result, intentRefused)
 	if closed, _ := b.job("inv1")["chainClosed"].(bool); closed || result.Decision == "" {
