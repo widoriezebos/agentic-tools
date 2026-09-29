@@ -296,6 +296,7 @@ func processIntentCommands() []intentCommand {
 				"The person answers in the channel thread; the answer is authenticated there, never by a local command.",
 				"--kind selects an authority question (stop, budget-above-norm, carry); stop and budget-above-norm take --budget BOX.",
 				"question show Q shows its state and how it is answered; question wait Q waits for its answer.",
+				"It reaches a person, never another agent; to ask the agent on another seat of this host, or whoever works on a goal, run metasystem agent ask.",
 			},
 			flags: []intentFlag{
 				intentTargetFlag,

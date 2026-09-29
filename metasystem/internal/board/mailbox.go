@@ -100,8 +100,34 @@ type Address struct {
 }
 
 // Message is one published message. The sender is the file's only writer
-// and the file is never rewritten.
+// and the file is never rewritten. Its text is reachable only through
+// PeerText, so the files that read it are named by one word (R26: no seat
+// text reaches a human surface).
 type Message struct {
+	SchemaVersion int
+	ID            string
+	Thread        string
+	Kind          string
+	From          Sender
+	To            Address
+	IfSilent      string
+	Deadline      *string
+	DeadlineAt    *time.Time
+	At            time.Time
+
+	text string
+	// mailbox is the directory the message was read from; offeredTo are
+	// the machines whose markers it carries.
+	mailbox   string
+	offeredTo []string
+}
+
+// PeerText is the message's text: another agent's words, information and
+// never an order. Only the inbox and the delivered field read it.
+func (m Message) PeerText() string { return m.text }
+
+// messageFile is a message as its file holds it.
+type messageFile struct {
 	SchemaVersion int        `json:"schemaVersion"`
 	ID            string     `json:"id"`
 	Thread        string     `json:"thread"`
@@ -113,11 +139,23 @@ type Message struct {
 	Deadline      *string    `json:"deadline"`
 	DeadlineAt    *time.Time `json:"deadlineAt"`
 	At            time.Time  `json:"at"`
+}
 
-	// mailbox is the directory the message was read from; offeredTo are
-	// the machines whose markers it carries.
-	mailbox   string
-	offeredTo []string
+// MarshalJSON writes the message's file form.
+func (m Message) MarshalJSON() ([]byte, error) {
+	return json.Marshal(messageFile{SchemaVersion: m.SchemaVersion, ID: m.ID, Thread: m.Thread, Kind: m.Kind, From: m.From, To: m.To,
+		Text: m.text, IfSilent: m.IfSilent, Deadline: m.Deadline, DeadlineAt: m.DeadlineAt, At: m.At})
+}
+
+// UnmarshalJSON reads the message's file form.
+func (m *Message) UnmarshalJSON(data []byte) error {
+	var file messageFile
+	if err := json.Unmarshal(data, &file); err != nil {
+		return err
+	}
+	*m = Message{SchemaVersion: file.SchemaVersion, ID: file.ID, Thread: file.Thread, Kind: file.Kind, From: file.From, To: file.To,
+		text: file.Text, IfSilent: file.IfSilent, Deadline: file.Deadline, DeadlineAt: file.DeadlineAt, At: file.At}
+	return nil
 }
 
 // Request is what a sender asks to publish. Thread is a reply's root; ID is
@@ -188,7 +226,7 @@ func (m Message) canonical() canonicalRequest {
 		deadline = *m.Deadline
 	}
 	return canonicalRequest{Kind: m.Kind, FromMachine: m.From.Machine, FromLineage: m.From.Lineage,
-		ToMachine: m.To.Machine, ToGoal: m.To.Goal, Thread: thread, Text: m.Text, IfSilent: m.IfSilent,
+		ToMachine: m.To.Machine, ToGoal: m.To.Goal, Thread: thread, Text: m.text, IfSilent: m.IfSilent,
 		Deadline: deadline, SchemaVersion: m.SchemaVersion}
 }
 
@@ -228,7 +266,7 @@ func publish(home string, request Request, now time.Time, confirm func(path, anc
 		id = request.DerivedID()
 	}
 	message := Message{SchemaVersion: MessageSchemaVersion, ID: id, Thread: id, Kind: request.Kind, From: request.From,
-		To: request.To, Text: request.Text, IfSilent: request.IfSilent, At: now.UTC()}
+		To: request.To, text: request.Text, IfSilent: request.IfSilent, At: now.UTC()}
 	if request.Kind != KindAsk {
 		message.Thread = request.Thread
 	}
@@ -290,7 +328,7 @@ func (r Request) check(now time.Time) error {
 	if id == "" {
 		id = r.DerivedID()
 	}
-	longest := Message{ID: id, Thread: r.Thread, Kind: r.Kind, From: r.From, To: r.To, Text: r.Text, IfSilent: r.IfSilent, At: now}
+	longest := Message{ID: id, Thread: r.Thread, Kind: r.Kind, From: r.From, To: r.To, text: r.Text, IfSilent: r.IfSilent, At: now}
 	if longest.Thread == "" {
 		longest.Thread = id
 	}
@@ -318,7 +356,7 @@ func Render(m Message, now time.Time, loc *time.Location) string {
 	if m.DeadlineAt != nil && !now.Before(*m.DeadlineAt) {
 		lines = append(lines, fmt.Sprintf(DeadlinePassed, m.DeadlineAt.In(loc).Format(deadlineLayout), m.IfSilent))
 	}
-	return strings.Join(append(lines, m.Text), "\n")
+	return strings.Join(append(lines, m.text), "\n")
 }
 
 // Mailbox directories: a seat's under its own board directory, a goal's
@@ -833,6 +871,25 @@ func Count(home, self string, claims func() (map[string]string, error), now time
 	}
 	sort.Strings(counts.WaitingGoals)
 	return counts, nil
+}
+
+// HasMessages reports whether any mailbox on the board holds a message: a
+// one-shot view with nothing to count reads no enrollment and no ledger.
+func HasMessages(home string) bool {
+	mailboxes := seatMailboxes(home)
+	goals, _ := goalMailboxes(home)
+	for _, goal := range goals {
+		mailboxes = append(mailboxes, mailboxDir(home, Address{Goal: goal}))
+	}
+	for _, mailbox := range mailboxes {
+		entries, _ := os.ReadDir(filepath.Join(mailbox, "messages"))
+		for _, entry := range entries {
+			if stem, ok := strings.CutSuffix(entry.Name(), ".json"); ok && ValidID(stem) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // Lookup finds the message id names, in any mailbox on this host, for a

@@ -675,6 +675,30 @@ func TestStatusShowsTheBoardAndEachUnfinishedBatch(t *testing.T) {
 		}
 	})
 
+	t.Run("status counts peer messages and prints none", func(t *testing.T) {
+		t.Parallel()
+		peers := newAgentBed(t, "m1a")
+		peers.run("agent", "ask", "m1b", "--text", "SECRET-SEAT-TEXT")
+		peers.run("agent", "ask", "--goal", "goal-z", "--text", "SECRET-GOAL-TEXT")
+		b := newProcessBed(t)
+		owners := b.owners()
+		owners.delivery.now = func() time.Time { return now }
+		owners.delivery.batchRoot = func(string, time.Time) (string, bool, error) { return landing, true, nil }
+		owners.delivery.boardView = view
+		owners.agent = peers.as("m1b").owners().agent
+		code, stdout, _ := b.run(owners, "status")
+		lines := strings.Split(strings.TrimRight(stdout, "\n"), "\n")
+		if code != 0 || !slices.Contains(lines, "open peer messages: 1 (metasystem agent inbox)") || !slices.Contains(lines, "peer messages waiting for a holder: 1 (goal-z)") {
+			t.Fatalf("status = %d:\n%s", code, stdout)
+		}
+		_, verbose, _ := b.run(owners, "status", "--verbose")
+		_, data := b.runJSON(owners, "status")
+		encoded, _ := json.Marshal(data)
+		if strings.Contains(stdout+verbose+string(encoded), "SECRET") {
+			t.Fatalf("status printed a peer message's text:\n%s\n%s\n%s", stdout, verbose, encoded)
+		}
+	})
+
 	t.Run("work status G", func(t *testing.T) {
 		t.Parallel()
 		b := newDeliveryBed(t)

@@ -337,3 +337,125 @@ func TestBridgeListensOnlyWhereTheStaleRuleAllows(t *testing.T) {
 		t.Fatal("a refused listen created the board")
 	}
 }
+
+// TestBridgeAnnouncesMailboxWrites (R25, R26; U10e-2): a message published
+// on the board, and a marker written for it, are each one message event
+// carrying nothing, to a subscriber of messages; a tick finds a write the
+// watch missed; the text never crosses the socket.
+func TestBridgeAnnouncesMailboxWrites(t *testing.T) {
+	t.Parallel()
+	home := t.TempDir()
+	clock := &artificialClock{now: t0}
+	listener := newPipeListener()
+	changed, ticks, stop := make(chan struct{}), make(chan time.Time), make(chan struct{})
+	bridge := &Bridge{Home: home, Seats: func() ([]Seat, error) { return []Seat{seatOf("m1b")}, nil }, Stall: time.Hour, Keep: time.Hour, MailboxKeep: 7 * 24 * time.Hour, Now: clock.Now}
+	done := make(chan error, 1)
+	go func() { done <- bridge.Run(stop, listener, changed, ticks) }()
+	raw := listener.dial()
+	defer raw.Close()
+	reader := bufio.NewReader(raw)
+	if _, err := io.WriteString(raw, `{"subscribe":{"kinds":["message"]}}`+"\n"); err != nil {
+		t.Fatal(err)
+	}
+	readLine(t, reader)
+	published, err := Publish(home, Request{Kind: KindAsk, From: Sender{Machine: "m1a"}, To: Address{Machine: "m1b"}, Text: "SECRET TEXT"}, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed <- struct{}{}
+	if line := readLine(t, reader); line != `{"event":"message"}` {
+		t.Fatalf("message event %q", line)
+	}
+	if err := Mark(published.Message, "m1b", "L", "tool", t0); err != nil {
+		t.Fatal(err)
+	}
+	ticks <- clock.Now()
+	if line := readLine(t, reader); line != `{"event":"message"}` {
+		t.Fatalf("a marker found at the tick: %q", line)
+	}
+	if line := readLine(t, reader); !strings.HasPrefix(line, `{"heartbeat":`) {
+		t.Fatalf("heartbeat %q", line)
+	}
+	close(stop)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestBridgeSweepNeverRemovesAnUnofferedMessage (R26; U10e-2's half of
+// TestUnofferedMessagesAreNeverSwept, artificial clock): a goal ask queued
+// with nobody holding the goal survives its deadline and eight days with the
+// sweep run at every step; the first holder is offered the original id with
+// the deadline line; once replied and the reply offered, keep-days after the
+// close the sweep removes both messages, their markers and the empty goal
+// mailbox, and nothing else; a closed thread whose reply was never offered
+// is kept.
+func TestBridgeSweepNeverRemovesAnUnofferedMessage(t *testing.T) {
+	t.Parallel()
+	home := t.TempDir()
+	clock := &artificialClock{now: t0}
+	bridge := &Bridge{Home: home, Seats: func() ([]Seat, error) { return nil, nil }, Keep: time.Hour, MailboxKeep: 7 * 24 * time.Hour, Now: clock.Now}
+	ask, err := Publish(home, Request{Kind: KindAsk, From: Sender{Machine: "m1a"}, To: Address{Goal: "goal-q"}, Text: "queued", IfSilent: "land alone", Deadline: 30 * time.Minute}, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kept, err := Publish(home, Request{Kind: KindAsk, From: Sender{Machine: "m1a"}, To: Address{Machine: "m1c"}, Text: "answered, reply unread"}, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, step := range []time.Duration{31 * time.Minute, 24 * time.Hour, 8 * 24 * time.Hour} {
+		clock.now = t0.Add(step)
+		if removed := bridge.SweepMessages(); len(removed) != 0 {
+			t.Fatalf("at +%v the sweep removed %v", step, removed)
+		}
+	}
+	inbox, err := Pending(home, "m1b", func() (map[string]string, error) { return map[string]string{"goal-q": "m1b"}, nil }, clock.Now())
+	if err != nil || len(inbox.Messages) != 1 || inbox.Messages[0].ID != ask.Message.ID ||
+		!strings.Contains(Render(inbox.Messages[0], clock.Now(), time.UTC), "[deadline 2026-09-29 10:30 passed; the asker said it would: land alone]") {
+		t.Fatalf("the first holder's offer = %+v, %v", inbox, err)
+	}
+	if err := Mark(inbox.Messages[0], "m1b", "L", "start", clock.Now()); err != nil {
+		t.Fatal(err)
+	}
+	inbox.Release()
+	reply, err := Publish(home, Request{Kind: KindReply, From: Sender{Machine: "m1b"}, To: Address{Machine: "m1a"}, Thread: ask.Message.ID, Text: "here"}, clock.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Publish(home, Request{Kind: KindReply, From: Sender{Machine: "m1c"}, To: Address{Machine: "m1a"}, Thread: kept.Message.ID, Text: "unread reply"}, clock.Now()); err != nil {
+		t.Fatal(err)
+	}
+	for _, seat := range []string{"m1a", "m1c"} {
+		inbox, _ := Pending(home, seat, func() (map[string]string, error) { return nil, nil }, clock.Now())
+		for _, message := range inbox.Messages {
+			if message.ID == reply.Message.ID || message.ID == kept.Message.ID {
+				if err := Mark(message, seat, "L", "inbox", clock.Now()); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}
+		inbox.Release()
+	}
+	closed := clock.Now()
+	clock.now = closed.Add(6 * 24 * time.Hour)
+	if removed := bridge.SweepMessages(); len(removed) != 0 {
+		t.Fatalf("before keep-days the sweep removed %v", removed)
+	}
+	clock.now = closed.Add(8 * 24 * time.Hour)
+	removed := bridge.SweepMessages()
+	want := []string{"goal/goal-q/mailbox/messages/" + ask.Message.ID + ".json", "m1a/mailbox/messages/" + reply.Message.ID + ".json"}
+	if !slices.Equal(removed, want) {
+		t.Fatalf("swept %v, want %v", removed, want)
+	}
+	if _, err := os.Stat(filepath.Join(Dir(home), GoalNamespace, "goal-q")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("the empty goal mailbox stayed: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(Dir(home), "m1a", "mailbox", "delivered", reply.Message.ID)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("the swept reply's markers stayed: %v", err)
+	}
+	for _, id := range []string{kept.Message.ID} {
+		if _, err := os.Stat(filepath.Join(Dir(home), "m1c", "mailbox", "messages", id+".json")); err != nil {
+			t.Fatalf("the thread whose reply was never offered was swept: %v", err)
+		}
+	}
+}
