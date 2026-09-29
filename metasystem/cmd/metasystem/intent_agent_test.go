@@ -261,7 +261,7 @@ func TestIntentAgentReplyAndInbox(t *testing.T) {
 	if code, _, stderr := holder.run("agent", "reply", "d-nothing", "--text", "x"); code == 0 || !strings.Contains(stderr, "AGENT_REPLY_THREAD_UNKNOWN") {
 		t.Fatalf("a reply to an unknown id = %d %q", code, stderr)
 	}
-	if code, stdout, _ = asker.run("agent", "inbox"); code != 0 || !strings.Contains(stdout, "[peer reply from m1b in thread "+askID) || !strings.Contains(stdout, "green since 09:40") {
+	if code, stdout, _ = asker.run("agent", "inbox"); code != 0 || !strings.HasPrefix(stdout, "1 peer message for m1a:\n") || !strings.Contains(stdout, "[peer reply from m1b in thread "+askID) || !strings.Contains(stdout, "green since 09:40") {
 		t.Fatalf("the asker's inbox = %d %q", code, stdout)
 	}
 

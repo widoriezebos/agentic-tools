@@ -490,9 +490,9 @@ func runAgentInbox(inv *intentInvocation) int {
 	case len(messages) == 0:
 		result.Summary = "nothing pending for " + seat.machine
 	case all:
-		result.Summary = fmt.Sprintf("%d peer messages for %s, read and unread:", len(messages), seat.machine)
+		result.Summary = fmt.Sprintf("%s for %s, read and unread:", peerMessageCount(len(messages)), seat.machine)
 	default:
-		result.Summary = fmt.Sprintf("%d peer messages for %s:", len(messages), seat.machine)
+		result.Summary = fmt.Sprintf("%s for %s:", peerMessageCount(len(messages)), seat.machine)
 	}
 	if inbox.GoalWaiting > 0 {
 		reason := "a handover of their goal is in progress"
@@ -503,6 +503,14 @@ func runAgentInbox(inv *intentInvocation) int {
 	}
 	result.Data = map[string]any{"seat": seat.machine, "messages": shown, "goalWaiting": inbox.GoalWaiting, "unreadable": inbox.Unreadable}
 	return inv.render(result)
+}
+
+// peerMessageCount is "1 peer message" or "N peer messages".
+func peerMessageCount(n int) string {
+	if n == 1 {
+		return "1 peer message"
+	}
+	return fmt.Sprintf("%d peer messages", n)
 }
 
 // agentAllMessages are every message this seat has: its own mailbox and the
