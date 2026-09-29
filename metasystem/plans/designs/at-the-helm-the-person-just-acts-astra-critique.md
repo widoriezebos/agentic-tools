@@ -107,3 +107,26 @@ Reviewed commit: `4da766b7b5558e78a4747c8418e48676b43448b3`, branch `ui-developm
 
 Codex session ID: 01a0ed9e-9deb-7bb2-a339-cd0d6cbfcd9d
 Resume in Codex: codex resume 01a0ed9e-9deb-7bb2-a339-cd0d6cbfcd9d
+
+
+# Astra scoped confirmation read (task-mumsrjfe-n5hcr4, commit befa262cb), verbatim
+
+**HA-03 is FIXED (CONFIRMED)** at `befa262cbfb9d408c5f3edfdbb97ef4cb6251b28`.
+
+[D-scope](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/plans/designs/at-the-helm-the-person-just-acts.md:32) now binds both effective Git directory answers to the worktree’s on-disk `.git` entry. Any resolution failure retains today’s guard behavior.
+
+Read-only Git probes confirmed:
+
+- Primary checkout: all three directories match.
+- Ordinary linked worktree: its administrative directory differs from the common directory.
+- Steered linked worktree and foreign-repository cases: the on-disk entry differs from the effective directories.
+
+Submodule admission remains correct by inspection: its `.git` entry resolves to its Git directory, also its common directory. This case was not executed.
+
+Test legs 1–3 and §7 agree with the revised predicate. I found no fold-introduced first-use WORK or SAFE failure. No implementation tests or commits were run; no files were changed.
+
+**CONFIRMATION: CONFIRMED**
+
+Codex session ID: 01a0ed9e-9deb-7bb2-a339-cd0d6cbfcd9d
+Resume in Codex: codex resume 01a0ed9e-9deb-7bb2-a339-cd0d6cbfcd9d
+
