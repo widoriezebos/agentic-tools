@@ -20,7 +20,7 @@ func forceAdmission(state helm.State, proof *humanauthority.Proof, root string) 
 		if proof != nil && proof.Helm != nil {
 			why = "admitted by the helm"
 		}
-		return errors.New("goal done --force is the person's own act: this shell was not proven at the enrolled terminal (" + why + "); run it yourself at the terminal you took the helm at")
+		return errors.New("goal done --force is the person's own act: this shell was not proven at the enrolled terminal (" + why + "); run it yourself at the terminal you took the helm at (a terminal is enrolled once with " + humanauthority.EnrollCommand + ")")
 	}
 	return nil
 }

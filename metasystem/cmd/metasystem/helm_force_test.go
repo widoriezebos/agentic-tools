@@ -19,8 +19,8 @@ import (
 
 const (
 	forceOutsideText = "goal done --force works only at the helm: take it first (metasystem helm take --reason TEXT), or close what blocks the conclusion"
-	forceAgentText   = "goal done --force is the person's own act: this shell was not proven at the enrolled terminal (admitted by the helm); run it yourself at the terminal you took the helm at"
-	forceNoProofText = "goal done --force is the person's own act: this shell was not proven at the enrolled terminal (no person proof); run it yourself at the terminal you took the helm at"
+	forceAgentText   = "goal done --force is the person's own act: this shell was not proven at the enrolled terminal (admitted by the helm); run it yourself at the terminal you took the helm at (a terminal is enrolled once with " + humanauthority.EnrollCommand + ")"
+	forceNoProofText = "goal done --force is the person's own act: this shell was not proven at the enrolled terminal (no person proof); run it yourself at the terminal you took the helm at (a terminal is enrolled once with " + humanauthority.EnrollCommand + ")"
 )
 
 func TestForceAdmissionAdmitsOnlyThePersonsOwnProofAtTheHelm(t *testing.T) {
