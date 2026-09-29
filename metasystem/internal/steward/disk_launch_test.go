@@ -45,9 +45,13 @@ func TestMachinePassReleasesEndedLaunchesOverTheTarget(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(launches, "20260928t000000-bbbbbbbbbb")); err != nil {
 		t.Errorf("the young launch stays: %v", err)
 	}
-	var counted bool
+	var counted, units bool
 	for _, class := range result.Machine.Classes {
 		counted = counted || class.Name == "launch store" && class.Items == 2 && class.Released == 1
+		units = units || class.Name == "unit records"
+	}
+	if !units {
+		t.Errorf("the machine pass carries the unit records before the launches: %+v", result.Machine.Classes)
 	}
 	if !counted {
 		t.Errorf("the launch store's class line: %+v", result.Machine.Classes)

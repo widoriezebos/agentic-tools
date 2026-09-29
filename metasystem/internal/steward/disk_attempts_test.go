@@ -154,3 +154,20 @@ func TestValidationWindowNamerReadsTheWindow(t *testing.T) {
 		t.Fatal("an unknown window is an error")
 	}
 }
+
+// A unit's goal is open when any ledger holds it live, ended when one holds
+// it concluded and none live, and unknown when no readable ledger knows it.
+func TestUnitGoalEndedReadsEveryArmedLedger(t *testing.T) {
+	t.Parallel()
+	ledgers := map[string]*ledgerView{
+		"a":      fixedLedger(&goal.TreeGoals{Done: map[string]*goal.GoalFile{"g": {}, "h": {}}}, nil),
+		"b":      fixedLedger(&goal.TreeGoals{Live: map[string]*goal.GoalFile{"h": {}}}, nil),
+		"broken": fixedLedger(nil, errors.New("unreadable")),
+	}
+	ended := unitGoalEnded([]string{"a", "b", "broken"}, func(root string) *ledgerView { return ledgers[root] })
+	for goalID, want := range map[string][2]bool{"g": {true, true}, "h": {false, true}, "x": {false, false}} {
+		if gotEnded, gotKnown := ended(goalID, "/nowhere"); gotEnded != want[0] || gotKnown != want[1] {
+			t.Errorf("goal %s: ended=%v known=%v, want %v", goalID, gotEnded, gotKnown, want)
+		}
+	}
+}

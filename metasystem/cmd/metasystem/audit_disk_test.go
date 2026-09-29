@@ -529,7 +529,7 @@ func TestAuditDiskTempDirReaders(t *testing.T) {
 
 // auditDiskSweeperCallees are the owners' retention files the sweeper
 // calls into outside internal/diskstore; R13 binds them too.
-var auditDiskSweeperCallees = map[string]bool{"internal/launch/retention.go": true}
+var auditDiskSweeperCallees = map[string]bool{"internal/launch/retention.go": true, "internal/launch/unit_retention.go": true, "internal/proofrun/retention.go": true}
 
 // TestAuditDiskStoreReadsNoWallClock is R13's witness for the registry and
 // sweeper package: every instant is a parameter, so no file of
