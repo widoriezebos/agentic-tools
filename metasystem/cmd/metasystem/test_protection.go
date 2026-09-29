@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
@@ -91,11 +92,11 @@ func runFrozenSelectionProbe(ctx context.Context, request proofrun.TestRunReques
 			return err
 		}
 	}
-	cloneParent, err := os.MkdirTemp("", "metasystem-policy-clone.")
+	cloneParent, doneClone, err := diskstore.ScratchDir("metasystem-policy-clone.")
 	if err != nil {
 		return err
 	}
-	defer os.RemoveAll(cloneParent)
+	defer doneClone()
 	projectRoot := filepath.Join(cloneParent, "source")
 	if _, err := runPolicyProbeGit(ctx, request.ProjectRoot, "clone", "-q", "--shared", "--no-checkout", request.ProjectRoot, projectRoot); err != nil {
 		return err

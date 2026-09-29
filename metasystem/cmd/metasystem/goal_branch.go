@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
@@ -100,13 +101,13 @@ func lastOutputLine(output []byte) string {
 }
 
 func readGate(worktree string) (string, error) {
-	proof, err := os.CreateTemp("", "goal-branch-read-gate-*")
+	proof, done, err := diskstore.ScratchFile("goal-branch-read-gate-*")
 	if err != nil {
 		return "", err
 	}
 	proofPath := proof.Name()
 	proof.Close()
-	defer os.Remove(proofPath)
+	defer done()
 	argv := goalBranchStaticArgv(proofPath)
 	command := exec.Command(argv[0], argv[1:]...)
 	command.Dir = worktree

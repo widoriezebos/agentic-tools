@@ -18,6 +18,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/applaunch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/lifecycle"
@@ -454,11 +455,11 @@ func (r appRun) preserveRunEvidence(record *applaunch.Record, out io.Writer) err
 		return fmt.Errorf("%v, so goal %s's run evidence was not copied and its record is kept; fix the evidence root, then stop or start again to close the run", err, goal)
 	}
 	root := resolved.Path
-	staging, err := os.MkdirTemp("", "app-evidence.")
+	staging, done, err := diskstore.ScratchDir("app-evidence.")
 	if err != nil {
 		return err
 	}
-	defer os.RemoveAll(staging)
+	defer done()
 	summary := strings.Join(append([]string{"run " + r.key}, applaunch.Status{Key: r.key, Record: record}.Lines()...), "\n") + "\n"
 	summaryPath := filepath.Join(staging, "run.txt")
 	if err := os.WriteFile(summaryPath, []byte(summary), 0o644); err != nil {

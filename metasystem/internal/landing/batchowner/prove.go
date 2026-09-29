@@ -16,6 +16,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
@@ -104,19 +105,26 @@ func BatchRetainedSources(root string, record batch.Record) (map[string]string, 
 }
 
 // batchSourcesRoot is where one lane's retained-verification worktrees live:
-// a directory of the host's temporary root named for the lane's control
-// root, so a later owner of the same lane finds what a killed one left.
+// a directory of the host's temporary root (diskstore.HostShared, never
+// TMPDIR) named for the lane's control root, so a later owner of the same
+// lane finds what a killed one left.
 func batchSourcesRoot(root string) (string, error) {
 	control, err := filepath.EvalSymlinks(batch.ModuleRoot(root))
 	if err != nil {
 		return "", err
 	}
-	temporary, err := filepath.EvalSymlinks(os.TempDir())
+	// A shared host path, which no owner's TMPDIR moves: a later owner of
+	// the lane runs with its own process scratch (Part B U1b-2).
+	sum := sha256.Sum256([]byte(control))
+	shared, err := diskstore.HostShared("metasystem-batch-sources-" + hex.EncodeToString(sum[:6]))
 	if err != nil {
 		return "", err
 	}
-	sum := sha256.Sum256([]byte(control))
-	return filepath.Join(temporary, "metasystem-batch-sources-"+hex.EncodeToString(sum[:6])), nil
+	parent, err := filepath.EvalSymlinks(filepath.Dir(shared))
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(parent, filepath.Base(shared)), nil
 }
 
 // batchSourcesTuple is the exact recorded worktree of one batch's retained

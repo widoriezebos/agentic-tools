@@ -230,7 +230,8 @@ type Invocation struct {
 	StartWorker func(installation, runtime string, env []string, stdin, stdout, stderr *os.File) (Worker, error)
 	// IsExecutable reports whether a path is an executable file.
 	IsExecutable func(path string) bool
-	// TempDir is where the hook stages files.
+	// TempDir is where the hook stages files; empty is the process scratch
+	// root, resolved when the hook first stages something.
 	TempDir string
 	// Deadline carries the Stop deadline owner's process dependencies.
 	Deadline DeadlineDeps

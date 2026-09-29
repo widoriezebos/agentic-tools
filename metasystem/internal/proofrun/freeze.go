@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 )
 
@@ -172,7 +173,7 @@ func CleanupFrozenExport(snapshotRoot string) error {
 		return fmt.Errorf("resolve frozen snapshot cleanup root: %w", err)
 	}
 	owner := filepath.Dir(canonical)
-	temporaryRoot, tempErr := filepath.EvalSymlinks(os.TempDir())
+	temporaryRoot, tempErr := filepath.EvalSymlinks(diskstore.ProcessTempRoot())
 	ownerInfo, ownerErr := os.Lstat(owner)
 	if tempErr != nil || filepath.Dir(owner) != temporaryRoot ||
 		!strings.HasPrefix(filepath.Base(owner), "metasystem-witness-freeze-") ||

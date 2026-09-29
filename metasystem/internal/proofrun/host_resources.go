@@ -21,6 +21,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostload"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
@@ -194,10 +195,10 @@ func hostAdmissionDirectoryForRequest(controlRoot, selected string) (string, err
 	if selected == "" {
 		return hostAdmissionDirectory()
 	}
-	temporaryRoot, err := filepath.EvalSymlinks(os.TempDir())
-	if err != nil {
-		return "", err
-	}
+	// The host's temporary roots, never this process's TMPDIR: an engine
+	// child runs with a process-scratch TMPDIR and must accept the directory
+	// its parent selected (Part B U1b-2, DL2-15).
+	temporaryRoots := diskstore.HostTempRoots()
 	// macOS exposes the same temporary tree through /var and /private/var.
 	// Resolve only an existing ancestor, before creating the requested path.
 	ancestor := filepath.Clean(selected)
@@ -222,9 +223,12 @@ func hostAdmissionDirectoryForRequest(controlRoot, selected string) (string, err
 	for index := len(remainder) - 1; index >= 0; index-- {
 		canonical = filepath.Join(canonical, remainder[index])
 	}
-	relative, err := filepath.Rel(temporaryRoot, canonical)
-	if err != nil || !filepath.IsAbs(selected) || relative == "." || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) ||
-		!fixtureauth.FixtureModeRoot(controlRoot) {
+	temporary := false
+	for _, temporaryRoot := range temporaryRoots {
+		relative, err := filepath.Rel(temporaryRoot, canonical)
+		temporary = temporary || err == nil && relative != "." && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator))
+	}
+	if !temporary || !filepath.IsAbs(selected) || !fixtureauth.FixtureModeRoot(controlRoot) {
 		return "", fmt.Errorf("proof admission test directory requires a temporary path and fake-runtime root")
 	}
 	if err := secureHostAdmissionDirectory(selected, 0o700); err != nil {

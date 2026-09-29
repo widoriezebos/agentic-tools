@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 )
 
@@ -120,11 +121,11 @@ func SecondSession(o SecondSessionOptions) (string, error) {
 		return "", fmt.Errorf("second-session: git worktree add failed: %w", err)
 	}
 
-	manifest, err := os.CreateTemp("", "metasystem-local-config-paths.")
+	manifest, doneManifest, err := diskstore.ScratchFile("metasystem-local-config-paths.")
 	if err != nil {
 		return "", err
 	}
-	defer os.Remove(manifest.Name())
+	defer doneManifest()
 	if _, err := manifest.WriteString(Manifest()); err != nil {
 		manifest.Close()
 		return "", err

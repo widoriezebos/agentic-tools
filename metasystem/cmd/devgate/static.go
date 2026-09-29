@@ -11,6 +11,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 )
 
 // staticcheckModule is pinned to release 2026.2 (module v0.8.0;
@@ -449,11 +451,17 @@ func present(path string) bool {
 	return err == nil
 }
 
+// tempDir is where the gate stages disposable files: the TMPDIR it was
+// given, else its process's registered scratch root (Part B R1), which the
+// gate releases before it exits. With neither, the empty root makes each
+// allocation use TMPDIR's default, and that allocation fails loudly only if
+// that fails too.
 func tempDir(env *environment) string {
 	if dir := env.get("TMPDIR"); dir != "" {
 		return dir
 	}
-	return os.TempDir()
+	scratch, _ := diskstore.ProcessScratch()
+	return scratch
 }
 
 // quiet discards the output of an in-process build whose verdict the gate

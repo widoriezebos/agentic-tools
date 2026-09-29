@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"io"
-	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -77,6 +77,7 @@ type driver struct {
 
 	messageFile string
 	ownedFile   string
+	ownedDone   func()
 	stepName    string
 	stepOutput  bytes.Buffer
 	branch      string
@@ -129,6 +130,9 @@ func (d *driver) cleanup(status int) {
 	}
 	if d.ownedFile != "" {
 		d.owners.RemoveFile(d.ownedFile)
+	}
+	if d.ownedDone != nil {
+		d.ownedDone()
 	}
 }
 
@@ -262,12 +266,12 @@ func (d *driver) held() int {
 	}
 	d.messageFile = request.MessageFile
 	if request.MessageFile == "-" {
-		file, err := os.CreateTemp("", "metasystem-land-message.")
+		file, done, err := diskstore.ScratchFile("metasystem-land-message.")
 		if err != nil {
 			fmt.Fprintln(d.stderr, err)
 			return 1
 		}
-		d.ownedFile = file.Name()
+		d.ownedFile, d.ownedDone = file.Name(), done
 		_, writeErr := file.Write(request.Message)
 		closeErr := file.Close()
 		if writeErr != nil || closeErr != nil {

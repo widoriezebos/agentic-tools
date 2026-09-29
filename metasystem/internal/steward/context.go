@@ -14,6 +14,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/output"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
@@ -140,7 +141,13 @@ func contextBudgetLineWithProber(stateRoot, installationRoot string, now time.Ti
 // readContextTranscriptOverride keeps an operator-supplied transcript outside
 // the evidence that health and reports consume.
 func readContextTranscriptOverride(runtime, session string, opts usage.ReadOptions) (usage.Reading, error) {
-	root, err := makeContextDiagnosticRoot("", "metasystem-context-diagnostic-")
+	// In the process's registered scratch root (Part B U1b-2): a killed
+	// read leaves a root the sweeper proves about, never a TMPDIR entry.
+	scratch, err := diskstore.ProcessScratch()
+	if err != nil {
+		return usage.Reading{}, fmt.Errorf("cannot create diagnostic context store: %w", err)
+	}
+	root, err := makeContextDiagnosticRoot(scratch, "metasystem-context-diagnostic-")
 	if err != nil {
 		return usage.Reading{}, fmt.Errorf("cannot create diagnostic context store: %w", err)
 	}

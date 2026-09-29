@@ -25,6 +25,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/brain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/cachedomain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	goalbranch "github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
@@ -190,11 +191,10 @@ func landingPathLiveJudge() landpath.Judge {
 // worktree, for a carried landing whose live engine could not decide. The
 // base engine is a different binary: it is asked through its own argv.
 func landingPathBaseJudge(toplevel, prefix string, stderr io.Writer) (landpath.Judge, func(), error) {
-	scratch, err := os.MkdirTemp("", "metasystem-carry-judge.")
+	scratch, cleanup, err := diskstore.ScratchDir("metasystem-carry-judge.")
 	if err != nil {
 		return landpath.Judge{}, nil, err
 	}
-	cleanup := func() { os.RemoveAll(scratch) }
 	worktree := filepath.Join(scratch, "base")
 	add := exec.Command("git", "-C", toplevel, "worktree", "add", "--detach", worktree, "HEAD")
 	add.Stdout, add.Stderr = stderr, stderr

@@ -21,6 +21,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/audit"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
@@ -75,6 +76,12 @@ type intentWorkOwners struct {
 }
 
 // intentConfPath is the selected installation's configuration file.
+
+// unitReadFindingsClass is the class of the temporary store a unit's read
+// writes its findings into (Part B R1): it outlives the command that makes
+// it, so it is registered, owned by the unit's named inputs.
+const unitReadFindingsClass = "unit-read-findings"
+
 func intentConfPath(layout stateroot.Layout) string {
 	return filepath.Join(layout.InstallationRoot, "metasystem.conf")
 }
@@ -692,10 +699,14 @@ func (inv *intentInvocation) unitRequest(runner *launch.UnitRunner, id, unit str
 		buildBrief, readBrief := filepath.Join(directory, "build-brief.md"), filepath.Join(directory, "read-brief.md")
 		// The reader writes its findings where its sandbox allows writes and
 		// outside the product diff: a private temporary directory, created
-		// once for the unit and kept in the plan. The launch owner copies the
+		// once for the unit's named inputs and kept in the plan. The launch owner copies the
 		// file into each read launch; the unit runner recreates a cleaned
 		// directory before a later read.
-		findingsDirectory, err := os.MkdirTemp("", "metasystem-unit-read-")
+		// It outlives this command (a later round's read writes into it),
+		// so it is a registered temporary store the unit's named inputs own
+		// (Part B R1), never an unowned TMPDIR entry.
+		findingsDirectory, err := diskstore.CreateTempStore("metasystem-unit-read."+filepath.Base(directory), unitReadFindingsClass,
+			diskstore.Owner{Kind: diskstore.OwnerUnit, Ref: filepath.Base(directory)})
 		if err != nil {
 			return "", fmt.Errorf("cannot create the read's findings directory: %w", err)
 		}

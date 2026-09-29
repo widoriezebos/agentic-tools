@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/landpath"
 )
 
@@ -165,12 +166,12 @@ func landStagedLocally(request landpath.LandRequest, stdout, stderr io.Writer) i
 	}
 	message := request.MessageFile
 	if message == "-" {
-		file, err := os.CreateTemp("", "metasystem-local-commit-message-*")
+		file, done, err := diskstore.ScratchFile("metasystem-local-commit-message-*")
 		if err != nil {
 			fmt.Fprintln(stderr, err)
 			return 1
 		}
-		defer os.Remove(file.Name())
+		defer done()
 		_, writeErr := file.Write(request.Message)
 		if closeErr := file.Close(); writeErr != nil || closeErr != nil {
 			fmt.Fprintln(stderr, "land refused: the commit message cannot be written")

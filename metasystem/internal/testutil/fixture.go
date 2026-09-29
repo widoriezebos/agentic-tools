@@ -140,7 +140,7 @@ func registerProcessFixture(t fixtureTB, fixture *ProcessFixture) {
 }
 
 func openFixtureLeash() (*os.File, error) {
-	directory, err := os.MkdirTemp("", "metasystem-fixture-")
+	directory, err := testenv.MkdirTemp("metasystem-fixture-")
 	if err != nil {
 		return nil, err
 	}

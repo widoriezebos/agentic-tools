@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/adapter/supervisor"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
@@ -313,11 +314,11 @@ func (inv *intentInvocation) isolateAdapterConfiguration(source, destination str
 	if manifest.Len() == 0 {
 		return nil
 	}
-	file, err := os.CreateTemp("", "metasystem-local-config-paths.")
+	file, done, err := diskstore.ScratchFile("metasystem-local-config-paths.")
 	if err != nil {
 		return err
 	}
-	defer os.Remove(file.Name())
+	defer done()
 	if _, err := file.WriteString(manifest.String()); err != nil {
 		file.Close()
 		return err
