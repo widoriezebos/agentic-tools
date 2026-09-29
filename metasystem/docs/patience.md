@@ -270,7 +270,6 @@ makes load-slowness-as-failure a defect.
   generous wall-clock timeout is honest there. A wait whose progress
   fingerprint carries no intermediate state is a timeout and must be
   called one.
-- The Go form is internal/dispatch/census_wait.go (AttemptBudget).
 
 ## The recursion caution
 

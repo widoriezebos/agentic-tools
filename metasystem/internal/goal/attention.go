@@ -523,37 +523,6 @@ func projectWaitAt(ctx context.Context, root, tip string) (Projection, error) {
 	return Projection{Root: root, Tip: tip, Tree: tree, Horizon: approvalHorizon(tree, time.Now().UTC())}, nil
 }
 
-// WaitClaimableGoals returns the revisioned claimable frontier from the
-// waiter's already validated private tip. The caller compares it with the
-// registration snapshot; this function never turns an existing backlog into
-// an event.
-func WaitClaimableGoals(ctx context.Context, root, tip, waitingGoal, ownerLineage string) ([]metarun.ClaimableGoal, error) {
-	projection, err := projectWaitAt(ctx, root, tip)
-	if err != nil {
-		return nil, err
-	}
-	machine, err := ResolveMachine(root)
-	if err != nil {
-		return nil, err
-	}
-	frontier, err := Next(projection, machine)
-	if err != nil {
-		return nil, err
-	}
-	goals := make([]metarun.ClaimableGoal, 0, len(frontier.Ready))
-	for _, id := range frontier.Ready {
-		if id == waitingGoal {
-			continue
-		}
-		file := projection.Tree.Live[id]
-		if file == nil || (file.Claimed != nil && file.Claimed.Lineage == ownerLineage) {
-			continue
-		}
-		goals = append(goals, metarun.ClaimableGoal{ID: id, Revision: file.Revision})
-	}
-	return goals, nil
-}
-
 func waitClaimableGoalsFromTree(ctx context.Context, root, tip string, tree *TreeGoals, waitingGoal, ownerLineage string) ([]metarun.ClaimableGoal, error) {
 	out, err := waitGit(ctx, root, nil, "config", "--get", "metasystem.goal.machine")
 	if err != nil || strings.TrimSpace(out) == "" {

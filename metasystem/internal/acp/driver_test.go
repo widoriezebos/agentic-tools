@@ -191,12 +191,14 @@ func TestDriverJournalByteIdentity(t *testing.T) {
 	if err != nil || result.Row != delegate.RowDelivered {
 		t.Fatalf("driver not delivered: %+v %v", result, err)
 	}
-	// The owner's finalization: close the pipes, then Quiesce — the
-	// evidence is final only after the Done wait and the journal
-	// health sample (the design's owner law, exercised for real).
+	// The finalization: close the pipes, then wait for the connection's
+	// read loop to stop — the evidence is final only after the Done wait
+	// and the journal health sample.
 	cleanup()
-	if err := session.(Quiescer).Quiesce(context.Background()); err != nil {
-		t.Fatalf("driver quiesce: %v", err)
+	native := session.(*nativeSession)
+	<-native.conn.Done()
+	if err := native.conn.JournalErr(); err != nil {
+		t.Fatalf("driver journal unhealthy: %v", err)
 	}
 	if !bytes.Equal(directJournal.Bytes(), driverJournal.Bytes()) {
 		t.Fatalf("journal bytes diverged:\ndirect:\n%s\ndriver:\n%s", directJournal.Bytes(), driverJournal.Bytes())

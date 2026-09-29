@@ -32,8 +32,6 @@ func operationRefusal(code, format string, args ...any) error {
 // every commit it creates. A binary assembled without that owner fails closed.
 var pushProtocolAvailable bool
 
-func PushProtocolAvailable() bool { return pushProtocolAvailable }
-
 type CommitRequest struct {
 	Repo, Remote, EndpointTip, GoalID, Unit, OpID string
 	Units                                         []string

@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes/external"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
@@ -127,7 +128,7 @@ func TestRefusedExternalIsAbsentToRecognizers(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=claude,loose\nadapters.loose.use=external\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	_, refusals, err := ExternalAdapters(root)
+	_, refusals, err := external.Discover(root)
 	if err != nil || len(refusals) != 2 {
 		t.Fatalf("refusals = %v, %v", refusals, err)
 	}

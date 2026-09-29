@@ -1,3 +1,5 @@
+// Package hooks runs the lifecycle hook entry the agent runtimes call and
+// merges the hook settings each runtime reads into a checkout.
 package hooks
 
 import (

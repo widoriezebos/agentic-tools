@@ -144,9 +144,9 @@ func (g *gateRun) static(proofOut string) int {
 	}
 	g.dropScratch()
 	if g.installation {
-		fmt.Fprintln(d.stdout, "go gate: fast mode passed (dependency ratchet, parallel ratchet, gofmt, shell parse, vet, staticcheck, refusal register, SessionStart exit audit, Stop decision surface audit, build); the full gate remains the landing requirement")
+		fmt.Fprintln(d.stdout, "go gate: fast mode passed (dependency ratchet, parallel ratchet, gofmt, shell parse, vet, staticcheck, dead code, refusal register, SessionStart exit audit, Stop decision surface audit, build); the full gate remains the landing requirement")
 	} else {
-		fmt.Fprintln(d.stdout, "go gate: fast mode passed (dependency ratchet, parallel ratchet, gofmt, shell parse, vet, staticcheck, refusal register, build); the full gate remains the landing requirement")
+		fmt.Fprintln(d.stdout, "go gate: fast mode passed (dependency ratchet, parallel ratchet, gofmt, shell parse, vet, staticcheck, dead code, refusal register, build); the full gate remains the landing requirement")
 	}
 	return 0
 }
@@ -239,6 +239,7 @@ func (g *gateRun) collectStatic() int {
 	if d.goTool(g.ctx, g.root, env, []string{"run", "-trimpath", "-p=" + g.workers, staticcheckModule, "./..."}, &staticcheckOut, &staticcheckOut) != nil {
 		reds = append(reds, "staticcheck 2026.2 (module v0.8.0) refused (or could not run):\n"+strings.TrimRight(staticcheckOut.String(), "\n"))
 	}
+	reds = append(reds, g.deadCode()...)
 
 	scratch, err := os.CreateTemp(tempDir(g.env), "metasystem-gate-collect.")
 	if err == nil {

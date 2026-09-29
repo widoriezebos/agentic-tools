@@ -497,12 +497,6 @@ func Restart(repoRoot, binaryPath string) (string, error) {
 	return outcome.Message, err
 }
 
-// RestartFixture is Restart under fixture-granted HUMAN classification.
-func RestartFixture(repoRoot, binaryPath string) (string, error) {
-	outcome, err := arm(repoRoot, binaryPath, true, false, true, "", humanMintDecision("human-terminal", "", "", EnrollmentFixture))
-	return outcome.Message, err
-}
-
 // EnsureRunnerResult reports how session-start arming treated the steward.
 // Excluded is reserved for fixture repositories and linked worktrees whose
 // standing policy deliberately assigns the runner to another checkout.

@@ -33,7 +33,7 @@ func TestU6bPortCodexTurnResultEnvelope(t *testing.T) {
 	returnPath := filepath.Join(turn, "return.json")
 	write(t, returnPath, `{"turnId":"t1"}`+"\n")
 	result := filepath.Join(turn, "result.json")
-	code, err := FinishTurn(result, "codex-fixture-session", usage, raw, returnPath, "", 0, false)
+	code, err := FinishTurnTransport(result, "codex-fixture-session", usage, raw, returnPath, "", 0, false, "")
 	if err != nil || code != 0 {
 		t.Fatalf("finish = (%d, %v)", code, err)
 	}

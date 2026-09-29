@@ -23,12 +23,6 @@ func SiteFile(site string) string {
 	return file
 }
 
-// SiteSymbol is the declaration a site anchor names.
-func SiteSymbol(site string) string {
-	_, symbol, _ := strings.Cut(site, "#")
-	return symbol
-}
-
 // siteSpan resolves a site anchor against its file's source to the first and
 // last line of the declaration it names.
 func siteSpan(site string, source []byte) (first, last int, err error) {

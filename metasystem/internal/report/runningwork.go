@@ -57,17 +57,6 @@ func missionRootBase(argv string) string {
 	return ""
 }
 
-// RunningWorkClause composes the active clause of the turn-end sentence —
-// empty when nothing is running. The wording is the hook's historical one:
-// "N helper agent(s): role id [status, runtime]; ...", ", and a mission
-// still going in a, b", ", and the test gates". The facts come from
-// the checkout-scoped scanner: argv matching
-// answers for the whole machine, so another checkout's mission could
-// swing this checkout's sentence.
-func RunningWorkClause(repo string) string {
-	return runningWorkClauseWithReads(repo, defaultScanGoalReads())
-}
-
 func runningWorkClauseWithReads(repo string, reads scanGoalReads) string {
 	scan, _ := scanWithCompletionWithReads(repo, reads)
 	var details, missions []string

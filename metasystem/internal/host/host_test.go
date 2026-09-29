@@ -36,7 +36,7 @@ func TestResultWriteShapeAndNulls(t *testing.T) {
 	usage := filepath.Join(dir, "usage.json")
 	write(t, usage, `{"availability":"native","inputTokens":5}`)
 	result := filepath.Join(dir, "result.json")
-	if err := ResultWrite(result, "", "unresumable", usage, "/raw", ""); err != nil {
+	if err := resultWriteTransport(result, "", "unresumable", usage, "/raw", "", ""); err != nil {
 		t.Fatal(err)
 	}
 	got := readObject(t, result)
@@ -68,7 +68,7 @@ func TestResultWriteShapeAndNulls(t *testing.T) {
 func TestResultWriteUnavailableUsageWhenMissing(t *testing.T) {
 	dir := t.TempDir()
 	result := filepath.Join(dir, "result.json")
-	if err := ResultWrite(result, "sess-1", "failed", filepath.Join(dir, "absent.json"), "/raw", ""); err != nil {
+	if err := resultWriteTransport(result, "sess-1", "failed", filepath.Join(dir, "absent.json"), "/raw", "", ""); err != nil {
 		t.Fatal(err)
 	}
 	got := readObject(t, result)

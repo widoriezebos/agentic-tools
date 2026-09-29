@@ -343,9 +343,9 @@ func TestBriefMode(t *testing.T) {
 	dir := t.TempDir()
 	good := filepath.Join(dir, "good.md")
 	os.WriteFile(good, []byte("Title\nWorking Mode: deep-work\nBody\n"), 0o644)
-	mode, err := BriefMode(good)
+	mode, err := BriefModeOnly(good)
 	if err != nil || mode != "deep-work" {
-		t.Fatalf("BriefMode = %q, %v", mode, err)
+		t.Fatalf("BriefModeOnly = %q, %v", mode, err)
 	}
 	for name, content := range map[string]string{
 		"none.md":        "Title\n",
@@ -354,7 +354,7 @@ func TestBriefMode(t *testing.T) {
 	} {
 		path := filepath.Join(dir, name)
 		os.WriteFile(path, []byte(content), 0o644)
-		if _, err := BriefMode(path); err == nil {
+		if _, err := BriefModeOnly(path); err == nil {
 			t.Fatalf("%s: expected a refusal", name)
 		}
 	}

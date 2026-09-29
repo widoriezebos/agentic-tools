@@ -74,12 +74,6 @@ type wireUpdate struct {
 	Message  message `json:"message"`
 }
 
-type Update struct {
-	ChatID int64
-	UserID int64
-	Text   string
-}
-
 func (a *Adapter) request(ctx context.Context, dest channel.DestinationConfig, method string, body any, result any, kind channel.ErrorKind) error {
 	if dest.APIBase == "" || dest.Token == "" {
 		return channel.ErrUnconfigured("telegram bot token and API base are required")
@@ -292,18 +286,6 @@ func (a *Adapter) Credential(ctx context.Context, dest channel.DestinationConfig
 		return channel.CredentialIdentity{}, channel.ErrReceiveFailed("getMe returned no bot identity")
 	}
 	return channel.CredentialIdentity{UserID: strconv.FormatInt(out.ID, 10)}, nil
-}
-
-func (a *Adapter) Peek(ctx context.Context, dest channel.DestinationConfig) ([]Update, error) {
-	updates, _, err := a.updates(ctx, dest, "", false, 0)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]Update, 0, len(updates))
-	for _, update := range updates {
-		out = append(out, Update{ChatID: update.Message.Chat.ID, UserID: update.Message.From.ID, Text: update.Message.Text})
-	}
-	return out, nil
 }
 
 var _ channel.Provider = (*Adapter)(nil)

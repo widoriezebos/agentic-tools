@@ -21,7 +21,6 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/shellquote"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopreport"
@@ -1414,8 +1413,4 @@ func ReadStopStatus(root, id string) ([]byte, StopIdentity, error) {
 	}
 	data, identity, _, err := stopreport.Read(resolvedRoot, id)
 	return data, identity, err
-}
-
-func AbsoluteStopStatusCommand(root, id string) string {
-	return fmt.Sprintf("%s report stop-status --id %s --root %s", shellquote.Quote(filepath.Join(root, "bin", "metasystem")), id, shellquote.Quote(root))
 }

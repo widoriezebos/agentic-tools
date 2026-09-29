@@ -27,16 +27,6 @@ type EvidenceFacts struct {
 	ExternalSideEffectBoundaryCrossed bool `json:"externalSideEffectBoundaryCrossed"`
 }
 
-// RigorRow is the version-three wire declaration joined to one material
-// finding.
-type RigorRow struct {
-	FindingID        string        `json:"findingId"`
-	RigorClass       RigorClass    `json:"rigorClass"`
-	Facts            EvidenceFacts `json:"facts"`
-	ReopeningTrigger string        `json:"reopeningTrigger"`
-	Artifact         string        `json:"artifact"`
-}
-
 type ArtifactRefKind uint8
 
 const (

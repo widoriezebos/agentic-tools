@@ -44,9 +44,6 @@ func DomainPaths(domain Domain) (Paths, error) {
 	return DomainPathsUsing(domain, os.UserCacheDir)
 }
 
-// DelegatePaths is the delegate cache pair under os.UserCacheDir.
-func DelegatePaths() (Paths, error) { return DomainPaths(DomainDelegate) }
-
 // DomainPathsUsing is DomainPaths with the user cache dir behind a seam; a
 // nil seam is os.UserCacheDir. The paths are a pure function of that
 // directory and never read GOCACHE.

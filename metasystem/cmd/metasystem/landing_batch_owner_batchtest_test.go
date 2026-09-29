@@ -26,7 +26,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
@@ -640,9 +639,6 @@ func TestBatchSupervisorTakeoverRebindsJoinedClaims(t *testing.T) {
 	t.Setenv("METASYSTEM_PROOF_CONTROL_ROOT", "")
 	t.Setenv("METASYSTEM_PROOF_ATTEMPT", "")
 	const batchID = "01j5x00000000000000000ba01"
-	if !slices.Contains(supervise.ProductionComponents(), supervise.LandingOwner) {
-		t.Fatal("production supervisor arming omitted the landing owner")
-	}
 	root := syncedClaimedGoalFixture(t)
 	goalSyncMutationGit(t, root, "config", "metasystem.goal.machine", "landing-machine")
 	amendSyncedGoalFixture(t, root, "hand standing validation to the landing owner", func(file *goal.GoalFile) {

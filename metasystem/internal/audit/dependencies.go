@@ -122,15 +122,6 @@ func shellScan(source string) ([]shellCommand, []shellScanIssue) {
 	return scanner.commands, scanner.issues
 }
 
-func shellCommandWords(source string) []string {
-	commands := shellCommands(source)
-	words := make([]string, 0, len(commands))
-	for _, command := range commands {
-		words = append(words, command.Word)
-	}
-	return words
-}
-
 type shellWordScanner struct {
 	source   string
 	position int

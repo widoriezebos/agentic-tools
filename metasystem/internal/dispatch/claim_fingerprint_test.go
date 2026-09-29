@@ -1,7 +1,6 @@
 package dispatch
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -9,48 +8,17 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 )
 
-type fingerprintGolden struct {
-	Name     string                 `json:"name"`
-	Request  CanonicalLaunchRequest `json:"request"`
-	Expected string                 `json:"sha256"`
-}
-
-func TestLaunchFingerprintV1GoldenVectors(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("testdata", "claim-fingerprint-v1.json"))
+func TestFingerprintDistinguishesAbsentFromExplicitEmpty(t *testing.T) {
+	presentBytes, err := encodeLaunchFingerprint(launchFingerprintV2Preamble, []fingerprintWireField{{Present: true, Value: []byte{}}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	var vectors []fingerprintGolden
-	if err := json.Unmarshal(data, &vectors); err != nil {
-		t.Fatal(err)
-	}
-	if len(vectors) < 3 {
-		t.Fatalf("golden vectors = %d, want at least 3", len(vectors))
-	}
-	for _, vector := range vectors {
-		t.Run(vector.Name, func(t *testing.T) {
-			got, err := LaunchFingerprintV1(vector.Request)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if got.Digest != vector.Expected || got.Version != 1 {
-				t.Fatalf("fingerprint = version %d %s, want version 1 %s", got.Version, got.Digest, vector.Expected)
-			}
-		})
-	}
-}
-
-func TestFingerprintV1DistinguishesAbsentFromExplicitEmpty(t *testing.T) {
-	presentBytes, err := encodeLaunchFingerprintV1([]fingerprintWireField{{Present: true, Value: []byte{}}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	absentBytes, err := encodeLaunchFingerprintV1([]fingerprintWireField{{Present: false}})
+	absentBytes, err := encodeLaunchFingerprint(launchFingerprintV2Preamble, []fingerprintWireField{{Present: false}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if string(presentBytes) == string(absentBytes) {
-		t.Fatal("the v1 wire encoding collapsed an explicit empty field into an absent field")
+		t.Fatal("the wire encoding collapsed an explicit empty field into an absent field")
 	}
 }
 

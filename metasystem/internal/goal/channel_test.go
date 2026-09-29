@@ -2,11 +2,8 @@ package goal
 
 import (
 	"encoding/json"
-	"errors"
-	"reflect"
 	"strings"
 	"testing"
-	"time"
 )
 
 const (
@@ -78,11 +75,11 @@ func (f channelFixture) files(t *testing.T) map[string][]byte {
 
 func mustMarshalChannel(t *testing.T, value any) []byte {
 	t.Helper()
-	b, err := MarshalChannel(value)
+	b, err := json.MarshalIndent(value, "", "  ")
 	if err != nil {
 		t.Fatal(err)
 	}
-	return b
+	return append(b, '\n')
 }
 
 func commitChannelFilesForEndpoint(t *testing.T, e Endpoint, files map[string][]byte) string {
@@ -113,40 +110,6 @@ func expectChannelProblem(t *testing.T, problems []Problem, code string) {
 		}
 	}
 	t.Fatalf("no problem has code %s; got %v", code, problems)
-}
-
-func TestMarshalChannelRoundTripsEveryStruct(t *testing.T) {
-	t.Parallel()
-	fixture := validChannelFixture()
-	ref := ChannelRef{Provider: "telegram", ID: "1", ThreadID: ""}
-	posting := ChannelPosting{Kind: "question", By: "mac-a", At: channelTestTime}
-	values := []any{
-		ref,
-		ChannelOption{Label: "yes", Consequence: "continue"},
-		posting,
-		ChannelRejection{Ref: ref, Reason: "late", At: channelTestTime, PostRef: &ref, By: "mac-a"},
-		*fixture.question.Answer,
-		fixture.question,
-		fixture.inbound,
-		fixture.listener,
-	}
-	for _, value := range values {
-		value := value
-		t.Run(reflect.TypeOf(value).Name(), func(t *testing.T) {
-			t.Parallel()
-			data := mustMarshalChannel(t, value)
-			if len(data) == 0 || data[len(data)-1] != '\n' {
-				t.Fatal("canonical channel JSON must end in one newline")
-			}
-			decoded := reflect.New(reflect.TypeOf(value))
-			if err := json.Unmarshal(data, decoded.Interface()); err != nil {
-				t.Fatal(err)
-			}
-			if got := decoded.Elem().Interface(); !reflect.DeepEqual(got, value) {
-				t.Fatalf("round trip changed the record:\n got %#v\nwant %#v", got, value)
-			}
-		})
-	}
 }
 
 func TestValidateChannelTreeAndCommitAcceptValidTree(t *testing.T) {
@@ -331,240 +294,5 @@ func TestValidateChannelTreeAbsentIsSilent(t *testing.T) {
 	}
 	if err := validateCommitFor(e, tip); err != nil {
 		t.Fatalf("absent channel directory must not change ValidateCommit: %v", err)
-	}
-}
-
-func channelPosting(kind, by string) *ChannelPosting {
-	return &ChannelPosting{Kind: kind, By: by, At: channelTestTime}
-}
-
-func TestChannelQuestionTuple(t *testing.T) {
-	t.Parallel()
-	question := validChannelFixture().question
-	question.Posting = channelPosting("receipt", "mac-a")
-	got := question.Tuple()
-	want := ChannelTuple{State: "answered", Phase: "approved", Posting: question.Posting, ThreadNull: false, ReceiptRefNull: true}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("question tuple mismatch: got %#v want %#v", got, want)
-	}
-}
-
-func TestChannelQuestionTupleAtMarksOnlyStaleCanonicalPosting(t *testing.T) {
-	t.Parallel()
-	question := validChannelFixture().question
-	question.Posting = channelPosting("question", "mac-b")
-	postedAt := time.Date(2026, time.September, 4, 12, 34, 56, 0, time.UTC)
-	if question.Tuple().PostingStale {
-		t.Fatal("Tuple must leave clock-relative posting staleness false")
-	}
-	if question.TupleAt(postedAt.Add(5*time.Minute), 10*time.Minute).PostingStale {
-		t.Fatal("fresh posting must not be stale")
-	}
-	if !question.TupleAt(postedAt.Add(11*time.Minute), 10*time.Minute).PostingStale {
-		t.Fatal("posting older than the threshold must be stale")
-	}
-	question.Posting.At = "2026-09-04T12:34:56.123Z"
-	if question.TupleAt(postedAt.Add(11*time.Minute), 10*time.Minute).PostingStale {
-		t.Fatal("non-canonical posting time must not be stale")
-	}
-}
-
-func TestClassifyChannelTransitionMatrix(t *testing.T) {
-	t.Parallel()
-	e, _ := fakeGoalEndpoint(t)
-	tip := acceptedTipForEndpoint(t, e)
-	const me = "mac-a"
-	tests := []struct {
-		name    string
-		present bool
-		from    ChannelTuple
-		to      *ChannelTuple
-	}{
-		{"ask", false, ChannelTuple{}, &ChannelTuple{State: "open", Posting: channelPosting("question", "winner"), ThreadNull: true, ReceiptRefNull: true}},
-		{"migrate", false, ChannelTuple{}, &ChannelTuple{State: "closed", Posting: nil, ThreadNull: false, ReceiptRefNull: true}},
-		{"post-ref question", true, ChannelTuple{State: "open", Posting: channelPosting("question", me), ThreadNull: true, ReceiptRefNull: true}, &ChannelTuple{State: "open", ThreadNull: false, ReceiptRefNull: true}},
-		{"answer budget", true, ChannelTuple{State: "open", Posting: channelPosting("list", "mac-b"), ThreadNull: false, ReceiptRefNull: true}, &ChannelTuple{State: "answered", Phase: "recorded", Posting: channelPosting("list", "mac-b"), ThreadNull: false, ReceiptRefNull: true}},
-		{"answer", true, ChannelTuple{State: "open", ThreadNull: false, ReceiptRefNull: true}, &ChannelTuple{State: "answered", Phase: "approved", ThreadNull: false, ReceiptRefNull: true}},
-		{"approve-intent", true, ChannelTuple{State: "answered", Phase: "recorded", ThreadNull: false, ReceiptRefNull: true}, &ChannelTuple{State: "answered", Phase: "recorded", Posting: channelPosting("approval", "winner"), ThreadNull: false, ReceiptRefNull: true}},
-		{"approved", true, ChannelTuple{State: "answered", Phase: "recorded", Posting: channelPosting("approval", me), ThreadNull: false, ReceiptRefNull: true}, &ChannelTuple{State: "answered", Phase: "approved", ThreadNull: false, ReceiptRefNull: true}},
-		{"receipt-intent", true, ChannelTuple{State: "answered", Phase: "approved", ThreadNull: false, ReceiptRefNull: true}, &ChannelTuple{State: "answered", Phase: "approved", Posting: channelPosting("receipt", "winner"), ThreadNull: false, ReceiptRefNull: true}},
-		{"receipted", true, ChannelTuple{State: "answered", Phase: "approved", Posting: channelPosting("receipt", me), ThreadNull: false, ReceiptRefNull: true}, &ChannelTuple{State: "closed", Phase: "receipted", ThreadNull: false, ReceiptRefNull: false}},
-		{"rejection intent", true, ChannelTuple{State: "open", ThreadNull: false, ReceiptRefNull: true}, &ChannelTuple{State: "open", Posting: channelPosting("rejection", "winner"), ThreadNull: false, ReceiptRefNull: true}},
-		{"list intent", true, ChannelTuple{State: "open", ThreadNull: false, ReceiptRefNull: true}, &ChannelTuple{State: "open", Posting: channelPosting("list", "winner"), ThreadNull: false, ReceiptRefNull: true}},
-		{"silence intent", true, ChannelTuple{State: "open", ThreadNull: false, ReceiptRefNull: true}, &ChannelTuple{State: "open", Posting: channelPosting("silence", "winner"), ThreadNull: false, ReceiptRefNull: true}},
-		{"rejection ref", true, ChannelTuple{State: "open", Posting: channelPosting("rejection", me), ThreadNull: false, ReceiptRefNull: true}, &ChannelTuple{State: "open", ThreadNull: false, ReceiptRefNull: true}},
-		{"list ref", true, ChannelTuple{State: "open", Posting: channelPosting("list", me), ThreadNull: false, ReceiptRefNull: true}, &ChannelTuple{State: "open", ThreadNull: false, ReceiptRefNull: true}},
-		{"silence ref", true, ChannelTuple{State: "open", Posting: channelPosting("silence", me), ThreadNull: false, ReceiptRefNull: true}, &ChannelTuple{State: "open", ThreadNull: false, ReceiptRefNull: true}},
-		{"take-over", true, ChannelTuple{State: "open", Posting: channelPosting("question", "mac-b"), PostingStale: true, ThreadNull: true, ReceiptRefNull: true}, &ChannelTuple{State: "open", Posting: channelPosting("question", "winner"), ThreadNull: true, ReceiptRefNull: true}},
-		{"orphan-post", true, ChannelTuple{State: "closed", Phase: "receipted", ThreadNull: false, ReceiptRefNull: false}, nil},
-		{"close", true, ChannelTuple{State: "open", ThreadNull: true, ReceiptRefNull: true}, &ChannelTuple{State: "closed", ThreadNull: true, ReceiptRefNull: true}},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
-			row, ok := ChannelMatrix[test.name]
-			if !ok {
-				t.Fatalf("matrix row %q is missing", test.name)
-			}
-			apply, err := ClassifyChannelTransition(e, tip, channelTestQuestionID, "operation", me, "", test.present, test.from, row)
-			if err != nil || !apply {
-				t.Fatalf("FROM tuple must apply: apply=%v err=%v", apply, err)
-			}
-			if test.to != nil {
-				apply, err = ClassifyChannelTransition(e, tip, channelTestQuestionID, "operation", me, "winner", true, *test.to, row)
-				var lost LostToCompetitor
-				if apply || !errors.As(err, &lost) || lost.Winner != "winner" {
-					t.Fatalf("TO tuple must name the other writer: apply=%v err=%v", apply, err)
-				}
-			}
-		})
-	}
-}
-
-func TestClassifyChannelTransitionAlreadyAppliedAndForeignTuple(t *testing.T) {
-	t.Parallel()
-	e, _ := fakeGoalEndpoint(t)
-	parent := acceptedTipForEndpoint(t, e)
-	tip, err := e.Repository.Build("own-opid", parent, []Change{{
-		Path: livePath("own-transaction"), Content: RenderFile(vGoal("own-transaction", StateQueued)),
-	}}, "own transaction")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if outcome, err := e.Repository.Publish(parent, tip); err != nil || outcome != CASLanded {
-		t.Fatalf("publish own transaction: outcome=%s err=%v", outcome, err)
-	}
-	foreign := ChannelTuple{State: "closed", Posting: channelPosting("list", "mac-b"), ThreadNull: false, ReceiptRefNull: false}
-	apply, err := ClassifyChannelTransition(e, tip, channelTestQuestionID, "own-opid", "mac-a", "", true, foreign, ChannelMatrix["post-ref question"])
-	if err != nil || apply {
-		t.Fatalf("own trailer must classify AlreadyApplied: apply=%v err=%v", apply, err)
-	}
-	apply, err = ClassifyChannelTransition(e, tip, channelTestQuestionID, "foreign-opid", "mac-a", "", true, foreign, ChannelMatrix["post-ref question"])
-	want := "channel-transition: " + channelTestQuestionID + " is (closed, null, posting list mac-b, thread set, receiptRef set), expected post-ref question"
-	if apply || err == nil || err.Error() != want {
-		t.Fatalf("foreign tuple mismatch:\n got apply=%v err=%v\nwant %s", apply, err, want)
-	}
-}
-
-func TestRejectionIntentClosedRequiresLateReason(t *testing.T) {
-	t.Parallel()
-	e, _ := fakeGoalEndpoint(t)
-	tip := acceptedTipForEndpoint(t, e)
-	row := ChannelMatrix["rejection intent"]
-	closed := ChannelTuple{State: "closed", ThreadNull: false, ReceiptRefNull: true}
-	if apply, err := ClassifyChannelTransition(e, tip, channelTestQuestionID, "opid", "mac-a", "", true, closed, row); apply || err == nil {
-		t.Fatalf("closed rejection without late reason must refuse: apply=%v err=%v", apply, err)
-	}
-	row.RejectionReason = "late"
-	if apply, err := ClassifyChannelTransition(e, tip, channelTestQuestionID, "opid", "mac-a", "", true, closed, row); !apply || err != nil {
-		t.Fatalf("late rejection on closed question must apply: apply=%v err=%v", apply, err)
-	}
-}
-
-func TestListAndSilenceIntentsRejectClosedQuestions(t *testing.T) {
-	t.Parallel()
-	e, _ := fakeGoalEndpoint(t)
-	tip := acceptedTipForEndpoint(t, e)
-	closed := ChannelTuple{State: "closed", ThreadNull: false, ReceiptRefNull: true}
-	for _, name := range []string{"list intent", "silence intent"} {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-			apply, err := ClassifyChannelTransition(e, tip, channelTestQuestionID, "opid", "mac-a", "", true, closed, ChannelMatrix[name])
-			if apply || err == nil || !strings.HasPrefix(err.Error(), "channel-transition: ") {
-				t.Fatalf("closed %s must refuse with a channel-transition error: apply=%v err=%v", name, apply, err)
-			}
-		})
-	}
-}
-
-func TestTakeOverRequiresStaleForeignPosting(t *testing.T) {
-	t.Parallel()
-	e, _ := fakeGoalEndpoint(t)
-	tip := acceptedTipForEndpoint(t, e)
-	question := validChannelFixture().question
-	question.State = "open"
-	question.Answer = nil
-	question.Posting = channelPosting("question", "mac-b")
-	postedAt := time.Date(2026, time.September, 4, 12, 34, 56, 0, time.UTC)
-	row := ChannelMatrix["take-over"]
-
-	for _, test := range []struct {
-		name  string
-		tuple ChannelTuple
-	}{
-		{"fresh TupleAt", question.TupleAt(postedAt.Add(5*time.Minute), 10*time.Minute)},
-		{"Tuple without a clock", question.Tuple()},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
-			apply, err := ClassifyChannelTransition(e, tip, channelTestQuestionID, "opid", "mac-a", "", true, test.tuple, row)
-			if apply || err == nil || !strings.HasPrefix(err.Error(), "channel-transition: ") {
-				t.Fatalf("non-stale posting must refuse with a channel-transition error: apply=%v err=%v", apply, err)
-			}
-		})
-	}
-
-	stale := question.TupleAt(postedAt.Add(11*time.Minute), 10*time.Minute)
-	if apply, err := ClassifyChannelTransition(e, tip, channelTestQuestionID, "opid", "mac-a", "", true, stale, row); !apply || err != nil {
-		t.Fatalf("stale foreign posting must apply take-over: apply=%v err=%v", apply, err)
-	}
-}
-
-func TestChannelInboxMutateThreeBranches(t *testing.T) {
-	t.Parallel()
-	e, _ := fakeGoalEndpoint(t)
-	recordPath := ChannelPrefix + "inbox/team/telegram-42.json"
-	content := []byte("{\"opid\":\"winner\"}\n")
-	tip, err := e.Repository.Capture("inbox-fixture")
-	if err != nil {
-		t.Fatal(err)
-	}
-	publishStep := func(opid string, change Change) {
-		t.Helper()
-		commit, err := e.Repository.Build(opid, tip, []Change{change}, "inbox fixture")
-		if err != nil {
-			t.Fatal(err)
-		}
-		if outcome, err := e.Repository.Publish(tip, commit); err != nil || outcome != CASLanded {
-			t.Fatalf("publish inbox fixture: outcome=%s err=%v", outcome, err)
-		}
-		tip = commit
-	}
-	changes, err := ChannelInboxMutate(e, tip, recordPath, content)
-	if err != nil || len(changes) != 1 || changes[0].Path != recordPath || !reflect.DeepEqual(changes[0].Content, content) {
-		t.Fatalf("absent path must produce one write: changes=%v err=%v", changes, err)
-	}
-	publishStep("prefix-sibling", Change{Path: recordPath + "-sibling", Content: content})
-	if changes, err = ChannelInboxMutate(e, tip, recordPath, content); err != nil || len(changes) != 1 || changes[0].Path != recordPath || !reflect.DeepEqual(changes[0].Content, content) {
-		t.Fatalf("prefix sibling must leave the exact path absent: changes=%v err=%v", changes, err)
-	}
-	publishStep("record-without-transaction", Change{Path: recordPath, Content: content})
-	if changes, err = ChannelInboxMutate(e, tip, recordPath, content); changes != nil || err == nil || err.Error() != "inbox record present without its transaction" {
-		t.Fatalf("unproven record must refuse by name: changes=%v err=%v", changes, err)
-	}
-	publishStep("winner", Change{Path: "unrelated/winner.txt", Content: []byte("winner\n")})
-	changes, err = ChannelInboxMutate(e, tip, recordPath, content)
-	var lost LostToCompetitor
-	if changes != nil || !errors.As(err, &lost) || lost.Winner != "winner" {
-		t.Fatalf("proven existing record must name its winner: changes=%v err=%v", changes, err)
-	}
-	publishStep("malformed-record", Change{Path: recordPath, Content: []byte("{malformed")})
-	if changes, err = ChannelInboxMutate(e, tip, recordPath, content); changes != nil || err == nil || !strings.HasPrefix(err.Error(), "read inbox record opid: ") {
-		t.Fatalf("malformed stored JSON must refuse: changes=%v err=%v", changes, err)
-	}
-	changes, err = ChannelInboxMutate(e, "not-a-commit", recordPath, content)
-	if changes != nil || err == nil {
-		t.Fatalf("bogus tip must surface the committed-read error: changes=%v err=%v", changes, err)
-	}
-}
-
-func TestChannelOpidHasGoalOperationShape(t *testing.T) {
-	t.Parallel()
-	ulid, opid, err := ChannelOpid("mac-a", "lineage-a")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(ulid) != 26 || !strings.HasPrefix(opid, ulid+"-mac-a-") || !validOpidShape(opid) {
-		t.Fatalf("channel operation identity has the wrong shape: ulid=%q opid=%q", ulid, opid)
 	}
 }

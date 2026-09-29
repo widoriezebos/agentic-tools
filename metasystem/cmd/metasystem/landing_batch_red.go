@@ -13,7 +13,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/trunkredmap"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/adapter"
@@ -228,7 +227,7 @@ func launchBatchDiagnosticWithExecute(root, batchID string, request batch.Diagno
 		}
 		return batch.DiagnosticResult{}, readErr
 	}
-	diagnostic := batch.DiagnosticResult{AttemptID: result.AttemptID, Groups: trunkredmap.ResultToRedGroups(result), Sample: sample}
+	diagnostic := batch.DiagnosticResult{AttemptID: result.AttemptID, Groups: batch.ResultToRedGroups(result), Sample: sample}
 	for _, group := range result.Groups {
 		diagnostic.Evidence = append(diagnostic.Evidence, batch.GroupEvidence{ID: group.ID, Status: group.Status, ExecutionIdentity: group.ExecutionIdentity,
 			LogPath: group.LogPath, LogDigest: group.LogDigest, NativeLaunched: group.NativeLaunched, CollectionComplete: group.CollectionComplete})

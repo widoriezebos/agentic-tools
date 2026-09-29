@@ -530,12 +530,6 @@ type AlreadyApplied struct{}
 
 func (AlreadyApplied) Error() string { return "already applied" }
 
-// AlreadySatisfied is a successful operation whose requested state already
-// holds. It records a terminal journal result without writing a ledger commit.
-type AlreadySatisfied struct{ Reason string }
-
-func (a AlreadySatisfied) Error() string { return "already satisfied: " + a.Reason }
-
 // AlreadyHolds is an idempotent repeat (R-129-ui, Wido 2026-09-27: "if we
 // pause an already paused goal, that should be fine"): the effect this act
 // asks for already stands, whoever made it. It is success, and it leaves no
@@ -566,7 +560,7 @@ type PublishRequest struct {
 	// Mutate produces the changes for exactly the given tip — called
 	// again on every rebuild, so the verb re-reads and re-decides on
 	// the current world. Returning LostToCompetitor or
-	// AlreadyApplied and AlreadySatisfied classify the rebuilt tip; any other
+	// AlreadyApplied, AlreadyHolds or NothingToDo classify the rebuilt tip; any other
 	// error is a definite rejection by name.
 	Mutate func(tip string) ([]Change, error)
 	// Validate runs the full read-set revalidation on the built
@@ -908,12 +902,6 @@ func terminalFromMutate(e Endpoint, req PublishRequest, tip string, err error) (
 		}
 		CleanupRefs(e, opid)
 		return PublishResult{Outcome: OutcomeConfirmed, Tip: tip, Detail: "idempotent"}, nil
-	case AlreadySatisfied:
-		if mErr := MarkTerminal(e.Root, opid, OutcomeConfirmed, "already satisfied: "+v.Reason); mErr != nil {
-			return PublishResult{}, mErr
-		}
-		CleanupRefs(e, opid)
-		return PublishResult{Outcome: OutcomeConfirmed, Tip: tip, Detail: v.Reason}, nil
 	case AlreadyHolds:
 		if dErr := DiscardUnpushed(e.Root, opid); dErr != nil {
 			if mErr := MarkTerminal(e.Root, opid, OutcomeAbandoned, v.Reason); mErr != nil {

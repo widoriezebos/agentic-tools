@@ -60,9 +60,6 @@ func TestPositionedJobTagMatchesOnlyTheShippedTagPosition(t *testing.T) {
 	at := PositionedJobTagAt("")
 	atRoot := PositionedJobTagAt(t.TempDir())
 	for _, tc := range cases {
-		if got := PositionedJobTag(tc.argv, "job-1"); got != tc.want {
-			t.Errorf("%s: PositionedJobTag = %v, want %v", tc.name, got, tc.want)
-		}
 		if got := at(tc.argv, "job-1"); got != tc.want {
 			t.Errorf("%s: PositionedJobTagAt(\"\") = %v, want %v", tc.name, got, tc.want)
 		}

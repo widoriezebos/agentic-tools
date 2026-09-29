@@ -335,10 +335,10 @@ func TestTelegramFaceSeparatesScriptRowsAndOtherChats(t *testing.T) {
 		t.Fatal(slackInbound, err)
 	}
 	base, _ := os.ReadFile(filepath.Join(dir, "base-url"))
-	d := channel.DestinationConfig{Token: "fake-telegram-token", APIBase: strings.TrimSpace(string(base)), Secrets: []string{"fake-telegram-token"}}
-	updates, err := telegram.New(nil).Peek(ctx, d)
-	if err != nil || len(updates) != 1 || updates[0].ChatID != 2000 || updates[0].Text != "telegram" {
-		t.Fatal(updates, err)
+	d := channel.DestinationConfig{Token: "fake-telegram-token", APIBase: strings.TrimSpace(string(base)), ChannelID: "2000", Secrets: []string{"fake-telegram-token"}}
+	inbound, _, err := telegram.New(nil).Receive(ctx, d, []channel.MessageRef{{ID: "1"}}, "")
+	if err != nil || len(inbound) != 1 || inbound[0].Text != "telegram" {
+		t.Fatal(inbound, err)
 	}
 }
 

@@ -157,15 +157,6 @@ func setAcceptedTo(root, newTip, oldTip string) error {
 	return err
 }
 
-// PrefixDiagnosis reports every goal file in the new tree whose
-// History is a strict PREFIX of the same file's History in the old
-// tree — the shape of a descendant revert restoring an older state.
-// A DIAGNOSTIC, never a gate: the caller reports it and
-// accepts anyway.
-func PrefixDiagnosis(root, oldTip, newTip string) ([]string, error) {
-	return prefixDiagnosisFor(Endpoint{Root: root}, oldTip, newTip)
-}
-
 func prefixDiagnosisFor(e Endpoint, oldTip, newTip string) ([]string, error) {
 	oldFiles, err := readCommitGoals(e, oldTip)
 	if err != nil {

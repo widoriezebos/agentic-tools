@@ -57,8 +57,8 @@ func TestGoExpansionPreservesGroupsAcrossPackageInventoryChanges(t *testing.T) {
 	t.Parallel()
 	contract := loadGoExpansionContract(t)
 	template := goExpansionTemplate(t, contract)
-	if !slices.Contains(template.Inputs, "metasystem/scripts/**") {
-		t.Fatalf("Go template lost shared script declaration: %v", template.Inputs)
+	if !slices.Contains(template.Inputs, "metasystem/docs/**") {
+		t.Fatalf("Go template lost its shared docs declaration: %v", template.Inputs)
 	}
 	root := t.TempDir()
 	const baseTree = "opaque-base-inventory-tree"

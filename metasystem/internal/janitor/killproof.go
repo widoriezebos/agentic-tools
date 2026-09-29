@@ -11,7 +11,6 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/registry"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes/external"
 )
@@ -244,26 +243,4 @@ func groupOwnershipFromVerifications(verifications []identity.Verification, unce
 	// winddown-zombie-ownership-linux finding). NOT-OWNED requires at
 	// least one positive not-ours observation.
 	return GroupIndeterminate
-}
-
-// Killable applies the three-part signal proof to one live observation: pid,
-// start identity, and claim-consistent argv captured immediately before
-// signalling. recorded may be nil for an establishment orphan whose identity
-// was never recorded; then the positioned shape match is the ownership proof.
-func Killable(observed identity.Exact, recorded *registry.ProcessRef, shapes []Shape, claimTags []string) (string, bool) {
-	if recorded != nil {
-		if observed.Pid != recorded.Pid || observed.StartedAt.Unix() != recorded.PidStartedAt {
-			return "", false // The pid now names a different process.
-		}
-	}
-	if !observed.ArgvKnown {
-		// No readable argv means no third factor: report, never kill.
-		return "", false
-	}
-	for _, tag := range claimTags {
-		if shape, ok := MatchShape(shapes, observed.Argv, tag); ok {
-			return shape.Name, true
-		}
-	}
-	return "", false
 }

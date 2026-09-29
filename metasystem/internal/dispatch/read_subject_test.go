@@ -124,7 +124,7 @@ func TestLoadReadRefusalsMissingAndDeduplicated(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	refusals, err := LoadReadRefusals(missing, first, second)
+	refusals, err := loadReadRefusals(missing, first, second)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +134,7 @@ func TestLoadReadRefusalsMissingAndDeduplicated(t *testing.T) {
 	if err := os.WriteFile(malformed, []byte("\n{broken\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := LoadReadRefusals(malformed); err == nil || !strings.Contains(err.Error(), malformed) || !strings.Contains(err.Error(), "line 2") {
+	if _, err := loadReadRefusals(malformed); err == nil || !strings.Contains(err.Error(), malformed) || !strings.Contains(err.Error(), "line 2") {
 		t.Fatalf("malformed line error = %v; want path and line 2", err)
 	}
 }

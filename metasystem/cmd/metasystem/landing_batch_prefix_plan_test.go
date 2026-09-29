@@ -12,8 +12,7 @@ import (
 
 // The migration battery the first testing transition adds to every delivery
 // plan. RequireFirstTransition refuses a contract missing any of them.
-var prefixPlanTransitionGroups = []string{"policy-protection", "fast-static-build", "section/dispatcher-adapter-and-mission-runner-fixtures",
-	"goal-cli-standard", "landing-command-standard", "section/adoption-fixtures"}
+var prefixPlanTransitionGroups = []string{"policy-protection", "fast-static-build", "goal-cli-standard", "landing-command-standard", "section/adoption-fixtures"}
 
 func prefixPlanContract() testpolicy.Contract {
 	contract := testpolicy.Contract{ProjectRisk: testpolicy.ProjectRisk{Severity: 1, Exposure: 1, Reversibility: "revert", Detection: "immediate", Recovery: "bounded"},

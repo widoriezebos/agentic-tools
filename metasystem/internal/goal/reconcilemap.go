@@ -53,12 +53,6 @@ func (v MappedVerb) baseStateFor(id string) string {
 	return ""
 }
 
-// MapDeltas decomposes the snapshot-vs-base delta into lawful verb
-// rows, refusing the unmappable by file and field.
-func MapDeltas(repoRoot, baseCommit string, snap *Snapshot) ([]MappedVerb, error) {
-	return mapDeltasFor(Endpoint{Root: repoRoot}, baseCommit, snap)
-}
-
 func mapDeltasFor(e Endpoint, baseCommit string, snap *Snapshot) ([]MappedVerb, error) {
 	baseTree, err := loadTreeFor(e, baseCommit)
 	if err != nil {

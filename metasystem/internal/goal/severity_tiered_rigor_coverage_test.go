@@ -174,10 +174,6 @@ func TestSeverityTieredRigorUtilityWrappers(t *testing.T) {
 	// The fixture's claim starts its ownership episode at 2026-08-30T08:05Z; the
 	// verbs below act after it, since a claim never rebinds behind its episode.
 	req.Now = time.Date(2026, 8, 30, 9, 0, 0, 0, time.UTC)
-	if _, err := SetBudget(req, "utility-goal", testBudget()); err == nil || !strings.Contains(err.Error(), "human authority proof") {
-		t.Fatalf("retired set-budget wrapper = %v", err)
-	}
-
 	ids := []string{"zeta", "alpha", "middle"}
 	SortIds(ids)
 	if got := strings.Join(ids, ","); got != "alpha,middle,zeta" {

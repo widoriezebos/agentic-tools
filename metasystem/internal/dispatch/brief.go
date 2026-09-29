@@ -38,15 +38,6 @@ func (e *BriefAuthorityRefusal) Error() string {
 	return fmt.Sprintf("BRIEF_AUTHORITY_REFUSED: missing repository paths: %s", strings.Join(e.MissingPaths, ", "))
 }
 
-// BriefMode extracts the working mode a brief declares. A brief must carry
-// exactly one filled "Working Mode:" header — none, several, or a template
-// placeholder still in place is a silent refusal, and the caller names the
-// requirement.
-func BriefMode(briefPath string) (string, error) {
-	admission, err := ReadBriefAdmission(briefPath, "", true, nil)
-	return admission.Mode, err
-}
-
 type BriefBounds struct {
 	Boundary []string
 	Ceiling  *int64
@@ -102,16 +93,6 @@ func BriefModeOnly(briefPath string) (string, error) {
 		return "", silentRefusal(1)
 	}
 	return briefModeFromHeaders(scanBriefHeaders(data))
-}
-func ReadBriefAdmission(briefPath, installPrefix string, requireMode bool, authority func([]byte, BriefBounds) error) (BriefAdmission, error) {
-	data, err := os.ReadFile(briefPath)
-	if err != nil {
-		if authority == nil {
-			return BriefAdmission{}, silentRefusal(1)
-		}
-		return BriefAdmission{}, fmt.Errorf("brief authority admission cannot read brief: %w", err)
-	}
-	return admitBriefBytes(data, func() (string, error) { return installPrefix, nil }, requireMode, authority)
 }
 func admitBriefBytes(data []byte, resolveInstallPrefix briefInstallPrefix, requireMode bool, authority func([]byte, BriefBounds) error) (BriefAdmission, error) {
 	headers := scanBriefHeaders(data)

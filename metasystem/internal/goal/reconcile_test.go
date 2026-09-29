@@ -26,7 +26,7 @@ func materialize(t *testing.T, root, commit string) {
 			t.Fatal(err)
 		}
 	}
-	if err := RecordMaterialized(root, commit); err != nil {
+	if err := recordMaterializedFor(Endpoint{Root: root}, commit, anchorBase); err != nil {
 		t.Fatal(err)
 	}
 }

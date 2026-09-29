@@ -405,10 +405,16 @@ func TestTrimSkipsAHeldCacheAndStopsOnCancellation(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	started := time.Now()
-	report, err = gocache.Trim(ctx, c.config(1))
-	if elapsed := time.Since(started); elapsed > 200*time.Millisecond {
-		t.Fatalf("a cancelled pass took %v", elapsed)
+	// Promptly is counted in work, not wall time: a pass cancelled before
+	// it starts stats and removes nothing of the 3000 entries, whatever
+	// the host's load.
+	stats, removals := 0, 0
+	report, err = gocache.Trim(ctx, gocache.WithTrimHooks(c.config(1), gocache.TrimHooks{
+		BeforeStat:   func(string, string) { stats++ },
+		BeforeRemove: func(string, string) { removals++ },
+	}))
+	if stats != 0 || removals != 0 {
+		t.Fatalf("a cancelled pass statted %d and removed %d entries", stats, removals)
 	}
 	if err != nil || report.EndedBy != "cancelled" {
 		t.Fatalf("cancelled pass: %+v %v", report, err)

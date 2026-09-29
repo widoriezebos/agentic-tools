@@ -200,12 +200,6 @@ const (
 	authorityBudgetMembers
 )
 
-// EvaluateGoalRevisionAdmission preserves admission for callers that do not
-// dispatch a critic chain.
-func EvaluateGoalRevisionAdmission(repoRoot, id string, revision, proposedCap uint64, now time.Time, hazards ...HazardClass) (GoalRevisionAdmission, error) {
-	return evaluateGoalRevisionAdmissionWithReads(repoRoot, id, revision, proposedCap, now, concreteGoalAdmissionReads(), hazards...)
-}
-
 func evaluateGoalRevisionAdmissionWithReads(repoRoot, id string, revision, proposedCap uint64, now time.Time, reads goalAdmissionReads, hazards ...HazardClass) (GoalRevisionAdmission, error) {
 	return evaluateGoalRevisionAdmissionForDispatchWithReads(repoRoot, id, revision, proposedCap, now, "implementer", "fresh", allBudgetMembers, reads, hazards...)
 }

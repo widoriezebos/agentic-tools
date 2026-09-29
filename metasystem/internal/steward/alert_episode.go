@@ -332,14 +332,6 @@ func migrateHeldHealthNotifications(repoRoot string, episodes *[]AlertEpisode, n
 	return nil
 }
 
-// UpdateAlertEpisodes joins one health verdict to the durable episode store.
-// It opens silent history on the first failure and submits only at the alert
-// boundary; every healthy verdict clears retained episodes without deleting
-// them.
-func UpdateAlertEpisodes(repoRoot string, health HealthVerdict, message string, now time.Time) (AlertEpisode, error) {
-	return updateAlertEpisodesWith(repoRoot, health, message, now, deliver)
-}
-
 func updateAlertEpisodesWith(repoRoot string, health HealthVerdict, message string, now time.Time, deliver func(string, string) error) (AlertEpisode, error) {
 	lock, err := lockAlerts(repoRoot, lock.Exclusive)
 	if err != nil {
@@ -486,12 +478,6 @@ func submitEpisode(repoRoot string, episode *AlertEpisode, now time.Time, delive
 		return err
 	}
 	return nil
-}
-
-// UpdateSpendEpisodes joins one valid spend observation to the durable alert
-// store. Unknown observations are no-ops because absence was not proven.
-func UpdateSpendEpisodes(repoRoot string, observation SpendObservation, now time.Time) error {
-	return updateSpendEpisodesWith(repoRoot, observation, now, deliver)
 }
 
 func updateSpendEpisodesWith(repoRoot string, observation SpendObservation, now time.Time, deliver func(string, string) error) error {

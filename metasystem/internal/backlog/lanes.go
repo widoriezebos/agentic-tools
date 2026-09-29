@@ -43,6 +43,3 @@ var LaneOrder = []Lane{
 	LaneDraft, LaneToDo, LaneReady, LaneInProgress,
 	LaneReview, LaneWaiting, LaneDone, LaneAbandoned, LaneUnknown,
 }
-
-// ClosedLanes are the lanes whose goals have left the live ledger.
-var ClosedLanes = []Lane{LaneDone, LaneAbandoned}

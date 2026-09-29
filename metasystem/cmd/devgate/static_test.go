@@ -32,7 +32,7 @@ func TestStaticPublishesTheCollectedBuildWithoutRecompiling(t *testing.T) {
 	if data, _ := os.ReadFile(filepath.Join(w.root, "bin", "metasystem")); string(data) != "#!/bin/sh\nexit 0\n" {
 		t.Fatalf("--proof-out touched bin/metasystem: %q", data)
 	}
-	want := "go gate: fast mode passed (dependency ratchet, parallel ratchet, gofmt, shell parse, vet, staticcheck, refusal register, SessionStart exit audit, Stop decision surface audit, build); the full gate remains the landing requirement\n"
+	want := "go gate: fast mode passed (dependency ratchet, parallel ratchet, gofmt, shell parse, vet, staticcheck, dead code, refusal register, SessionStart exit audit, Stop decision surface audit, build); the full gate remains the landing requirement\n"
 	if !strings.HasSuffix(w.stdout.String(), want) {
 		t.Fatalf("stdout does not end with the fast pass line:\n%s", w.stdout.String())
 	}
@@ -216,7 +216,7 @@ func TestStaticScriptFixtureScopeSkipsTheInstallationAudits(t *testing.T) {
 	}
 	for _, line := range []string{"go gate: SessionStart exit audit not applicable to this script fixture\n",
 		"go gate: Stop decision surface audit not applicable to this tree\n",
-		"go gate: fast mode passed (dependency ratchet, parallel ratchet, gofmt, shell parse, vet, staticcheck, refusal register, build); the full gate remains the landing requirement\n"} {
+		"go gate: fast mode passed (dependency ratchet, parallel ratchet, gofmt, shell parse, vet, staticcheck, dead code, refusal register, build); the full gate remains the landing requirement\n"} {
 		if !strings.Contains(w.stdout.String(), line) {
 			t.Fatalf("stdout lacks %q:\n%s", line, w.stdout.String())
 		}
@@ -383,5 +383,73 @@ func TestStaticShellParseReadsGitsListAndNamesABrokenBash(t *testing.T) {
 	if code := broken.static(); code != 1 ||
 		!strings.Contains(broken.stderr.String(), "--- shell parse: bash itself failed (status 127): bash: not found\n") {
 		t.Fatalf("broken bash: exit %d\n%s", code, broken.output())
+	}
+}
+
+// The dead-code stage runs deadcode with the tests as roots once per
+// supported platform: a function neither a program nor any test reaches on
+// every platform is dead, and the gate names it. A planted function with no
+// caller is exactly that.
+func TestStaticRefusesAFunctionNothingReaches(t *testing.T) {
+	t.Parallel()
+	w := newGateWorld(t)
+	planted := "internal/fixture/fixture.go:3:6: unreachable func: Planted\n"
+	w.outputs["deadcode-darwin"], w.outputs["deadcode-linux"] = planted, planted
+	if code := w.static(); code != 1 {
+		t.Fatalf("exit %d, want 1:\n%s", code, w.output())
+	}
+	want := "--- dead code: deadcode (golang.org/x/tools v0.50.0, tests as roots) finds functions nothing reaches on darwin and linux; delete them, or allowlist a deliberate one with its reason in cmd/devgate/deadcode.go:\ninternal/fixture/fixture.go:3:6: unreachable func: Planted\n"
+	if !strings.Contains(w.stderr.String(), want) {
+		t.Fatalf("stderr lacks %q:\n%s", want, w.stderr.String())
+	}
+	if installs := w.called("go install -trimpath " + deadcodeModule); len(installs) != 1 || envValue(installs[0].env, "GOOS") != "" || envValue(installs[0].env, "GOBIN") == "" {
+		t.Fatalf("deadcode must be installed once, for the host, into a scratch GOBIN: %v", installs)
+	}
+	var platforms []string
+	for _, call := range w.calls {
+		if filepath.Base(call.name) == "deadcode" && strings.Join(call.args, " ") == "-test ./..." {
+			platforms = append(platforms, envValue(call.env, "GOOS"))
+		}
+	}
+	if slices.Sort(platforms); strings.Join(platforms, ",") != "darwin,linux" {
+		t.Fatalf("deadcode platforms = %v, want darwin and linux", platforms)
+	}
+}
+
+// A function one platform's files reach is alive: only what is unreachable
+// on every platform is dead.
+func TestStaticDeadCodeIsWhatEveryPlatformLeavesUnreached(t *testing.T) {
+	t.Parallel()
+	w := newGateWorld(t)
+	w.outputs["deadcode-darwin"] = "internal/fixture/proc.go:9:6: unreachable func: linuxOnly\n"
+	if code := w.static(); code != 0 {
+		t.Fatalf("a function the linux build reaches was refused: exit %d:\n%s", code, w.output())
+	}
+}
+
+func TestStaticDeadCodeThatCannotRunIsRed(t *testing.T) {
+	t.Parallel()
+	uninstallable := newGateWorld(t)
+	uninstallable.statuses["deadcode-install"], uninstallable.outputs["deadcode-install"] = 1, "go: offline\n"
+	if code := uninstallable.static(); code != 1 || !strings.Contains(uninstallable.stderr.String(), "--- dead code check could not install deadcode (golang.org/x/tools v0.50.0):\ngo: offline\n") {
+		t.Fatalf("a dead-code tool that could not install passed: exit %d:\n%s", code, uninstallable.output())
+	}
+	w := newGateWorld(t)
+	w.statuses["deadcode-linux"], w.outputs["deadcode-linux"] = 1, "go: module lookup disabled\n"
+	if code := w.static(); code != 1 || !strings.Contains(w.stderr.String(), "--- dead code check could not run on linux (deadcode golang.org/x/tools v0.50.0):\ngo: module lookup disabled\n") {
+		t.Fatalf("a dead-code check that could not run passed: exit %d:\n%s", code, w.output())
+	}
+}
+
+func TestDeadCodeAllowlistEntriesCarryAReasonAndAreStillDead(t *testing.T) {
+	t.Parallel()
+	for key, reason := range deadCodeAllowed {
+		if strings.TrimSpace(reason) == "" || !strings.Contains(key, "#") {
+			t.Errorf("allowlist entry %q needs the form file.go#Name and a reason", key)
+		}
+	}
+	findings := parseDeadCode("a/b.go:1:6: unreachable func: Kept\nnoise line\nc/d.go:2:6: unreachable func: T.Method\n")
+	if len(findings) != 2 || findings[0].key != "a/b.go#Kept" || findings[1].key != "c/d.go#T.Method" {
+		t.Fatalf("findings = %+v", findings)
 	}
 }

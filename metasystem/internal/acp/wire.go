@@ -4,7 +4,7 @@
 // is runtime-neutral — dialect facts (mode identifiers, launch argv,
 // wire-to-effect mappings) are supplied by adapter-owned tables, and
 // nothing here names an agent runtime. Message shapes: the pinned
-// schema artifact in schema/ (see schema/PIN.md).
+// schema artifact in testdata/schema/ (see testdata/schema/PIN.md).
 package acp
 
 import (

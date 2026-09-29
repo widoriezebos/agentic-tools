@@ -102,12 +102,6 @@ func GoalRevisionLockDir(root, id string, revision uint64) (string, error) {
 	return goalrevision.Path(root, id, revision)
 }
 
-// GoalLockBusyError keeps the ranked-lock refusal machine-readable while
-// retaining the holder evidence an operator needs to retry safely.
-func GoalLockBusyError(directory, key string) error {
-	return goalrevision.BusyError(directory, key)
-}
-
 func liveStopReason(projection BudgetProjection) string {
 	if projection.ElapsedState == ElapsedBreach {
 		return goal.StopReasonElapsedLimit

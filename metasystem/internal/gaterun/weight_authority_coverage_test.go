@@ -73,7 +73,7 @@ func weightAuthorityBed(t *testing.T) (*goalRepositoryFixture, *time.Time) {
 
 func TestWeightAddAndCheckUsePersistedThresholdState(t *testing.T) {
 	root := t.TempDir()
-	state, reached, err := WeightCheck(root, 1)
+	state, reached, err := WeightCheckAt(root, 1, weightNow())
 	if err != nil || reached || state.Generation != 0 || state.Accumulated != 0 {
 		t.Fatalf("empty weight check was not a clean zero state: %+v reached=%t err=%v", state, reached, err)
 	}
@@ -81,7 +81,7 @@ func TestWeightAddAndCheckUsePersistedThresholdState(t *testing.T) {
 	if err != nil || reached || state.Generation != 1 || state.Accumulated != 3 || state.Landings != 1 {
 		t.Fatalf("weight add did not persist its landing: %+v reached=%t err=%v", state, reached, err)
 	}
-	checked, reached, err := WeightCheck(root, 3)
+	checked, reached, err := WeightCheckAt(root, 3, weightNow())
 	if err != nil || !reached || checked.Generation != state.Generation || checked.Accumulated != state.Accumulated {
 		t.Fatalf("weight check did not read the persisted threshold: %+v reached=%t err=%v", checked, reached, err)
 	}
@@ -91,7 +91,7 @@ func TestWeightAddAndCheckUsePersistedThresholdState(t *testing.T) {
 	if err := os.WriteFile(weightPath(root), []byte("{broken"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := WeightCheck(root, 3); err == nil {
+	if _, _, err := WeightCheckAt(root, 3, weightNow()); err == nil {
 		t.Fatal("an unreadable persisted weight state passed check")
 	}
 }

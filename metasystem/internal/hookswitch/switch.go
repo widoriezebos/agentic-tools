@@ -145,9 +145,6 @@ func Production() Deps {
 	return Deps{Resolve: stateroot.ResolveLayout, Git: git, Accepts: accepts, EnsureFence: ledgerfence.Ensure}
 }
 
-// Switch connects the checkout at path to its engine.
-func Switch(path string, deps Deps) (Report, error) { return run(path, nil, deps) }
-
 func run(path string, options *Options, deps Deps) (Report, error) {
 	layout, err := deps.Resolve(path)
 	if err != nil {
