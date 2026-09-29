@@ -46,6 +46,7 @@ func (s RegisteredStores) Plan(ctx context.Context, pass *Pass) ([]Item, error) 
 		item := Item{Class: s.Name(), Key: record.ID, Path: record.Path, Record: record.ID}
 		if info, err := os.Lstat(record.Path); err == nil {
 			item.Device, item.Inode, _ = fileID(info)
+			item.Generation = pathGeneration(record.Path)
 		}
 		item.Verdict = s.observe(ctx, pass, record)
 		if item.Verdict.Decision == Release {

@@ -6,3 +6,6 @@ import "os"
 // device and inode alone tell a replaced .git file apart, and st_gen reads
 // as 0 for anyone but root.
 func fileGeneration(*os.File) uint64 { return 0 }
+
+// pathGeneration is 0 on Darwin, as fileGeneration is.
+func pathGeneration(string) uint64 { return 0 }

@@ -41,17 +41,20 @@ type VolumeFree struct {
 
 // Item is one thing a class found: a store, a stray, a foreign entry.
 type Item struct {
-	Class    string  `json:"class"`
-	Key      string  `json:"key"`
-	Path     string  `json:"path"`
-	Bytes    int64   `json:"bytes,omitempty"`
-	Device   uint64  `json:"device,omitempty"`
-	Inode    uint64  `json:"inode,omitempty"`
-	Record   string  `json:"record,omitempty"`
-	Verdict  Verdict `json:"verdict"`
-	Stray    bool    `json:"stray,omitempty"`
-	Foreign  bool    `json:"foreign,omitempty"`
-	IdleSecs int64   `json:"idleSeconds,omitempty"`
+	Class  string `json:"class"`
+	Key    string `json:"key"`
+	Path   string `json:"path"`
+	Bytes  int64  `json:"bytes,omitempty"`
+	Device uint64 `json:"device,omitempty"`
+	Inode  uint64 `json:"inode,omitempty"`
+	// Generation is the entry's inode generation where the file system has
+	// one (Linux reuses a freed inode number at once); 0 elsewhere.
+	Generation uint64  `json:"generation,omitempty"`
+	Record     string  `json:"record,omitempty"`
+	Verdict    Verdict `json:"verdict"`
+	Stray      bool    `json:"stray,omitempty"`
+	Foreign    bool    `json:"foreign,omitempty"`
+	IdleSecs   int64   `json:"idleSeconds,omitempty"`
 }
 
 // Class is one store class of a pass: its plan is an observation that

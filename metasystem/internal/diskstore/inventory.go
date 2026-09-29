@@ -198,7 +198,7 @@ func (t TempStrays) Plan(ctx context.Context, pass *Pass) ([]Item, error) {
 				command = "metasystem disk show"
 			}
 			device, inode, _ := fileID(info)
-			items = append(items, Item{Class: t.Name(), Key: path, Path: path, Bytes: bytes, Device: device, Inode: inode, Stray: true,
+			items = append(items, Item{Class: t.Name(), Key: path, Path: path, Bytes: bytes, Device: device, Inode: inode, Generation: pathGeneration(path), Stray: true,
 				IdleSecs: int64(idle / time.Second), Verdict: Verdict{Decision: Keep, Reason: reason, Command: command}})
 		}
 		if foreign > 0 {

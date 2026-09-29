@@ -18,3 +18,15 @@ func fileGeneration(file *os.File) uint64 {
 	}
 	return uint64(generation[0])
 }
+
+// pathGeneration is the inode generation of the entry at path itself (a
+// directory, file or symlink is never followed), or 0 when it cannot be read.
+func pathGeneration(path string) uint64 {
+	fd, err := syscall.Open(path, syscall.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK|syscall.O_CLOEXEC, 0)
+	if err != nil {
+		return 0
+	}
+	file := os.NewFile(uintptr(fd), path)
+	defer file.Close()
+	return fileGeneration(file)
+}

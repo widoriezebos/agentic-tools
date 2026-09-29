@@ -65,7 +65,7 @@ func executeStray(ctx context.Context, item Item, now time.Time, census *UseCens
 		outcome.Reason, outcome.Command = "cannot be read: "+err.Error(), "metasystem disk clean --preview"
 		return outcome
 	}
-	if device, inode, _ := fileID(info); device != item.Device || inode != item.Inode {
+	if device, inode, _ := fileID(info); device != item.Device || inode != item.Inode || pathGeneration(item.Path) != item.Generation {
 		outcome.Reason, outcome.Command = "replaced since the preview", "metasystem disk clean --preview, then --strays with the new plan"
 		return outcome
 	}
