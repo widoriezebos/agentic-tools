@@ -1,6 +1,6 @@
 # machinery-runs-unattended-on-codex
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 1
 - Risk: severity=3 novelty=2 exposure=3 accumulation=1 basis="severity 3: a broken dispatch or landing path stops delivery on every seat, and a relaunch leak fills the host-wide admission cap; novelty 2: the launch verbs, batch verbs and gate already exist and are rewired, not invented; exposure 3: every seat and every landing goes through them; accumulation 1: the old dispatch path and the flag code are deleted in the same landings"
@@ -9,10 +9,12 @@
 - Origin: human
 - Next step: Push 17 (58a943387) landed the batch lane; ledger tip after SYNC 17 is 5b9d9588e. In flight: the rehearsal driver job 20260919t193156-acc7dad92f (worktree mruc-rehearse) and the impacted-tests verb U1 to U3 job 20260919t183829-a8e293b0fd (worktree mruc-timpb1, design r2 be795570e, plans/impacted-tests-verb-design.md). The verb's deep-analysis units U4 to U7 are parked under goal test-selection-improves-on-the-simple-rule (Wido 22:50 CEST). Next: push 18 with both jobs and the lessons L1 to L7, the local rehearsal, landing.batch-root on a dedicated checkout, then the staged switch-on with trial goal test-environment-edges-are-closed. A3 and A6 wait (Wido 16:40 CEST).
 - OpenedAt: 2026-09-19T14:45:49Z
-- Revision: 12
+- Revision: 13
 - Budget: elapsedLimit=2d attemptLimit=12 reservedJobMinutesLimit=1200 activeJobLimit=3 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-19T15:49:27Z revision=6 opid=Q2BM49SPT5YPBKH90FFX32T3F9-m1e-c6925449 authority=proven digest=6e3fcca60467676e227960b85c799c1f964a8db2320448c024fbdf059b4c8bd2 episode=6
+- Claimed: machine=ui lineage=main-1790617310-14120-96d9c7 at=2026-09-29T05:34:34Z revision=13 accountingRevision=13 episodeAt=2026-09-29T05:34:34Z episodeRevision=13
+- StopCapability: generation=13 revision=13 machine=ui claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-09-19T14:45:49Z C0AKBJN5K7PM281E91EG4G57TD-m1e-c6925449 open actor=human:Wido targets=machinery-runs-unattended-on-codex
@@ -27,4 +29,5 @@ History:
 - 2026-09-19T19:04:27Z 8KSQA1TWH1GJG5FDXQKZHQ213R-m1e-c6925449 edit actor=human:Wido targets=machinery-runs-unattended-on-codex displaced=m1e+main-1789561396-11601-6f713b@2026-09-19T15:51:18Z
 - 2026-09-19T20:56:07Z 7D3J897XRPZZ0JHWA60Q8BNWEC-m1e-c19f13ae edit actor=m1e+main-1789561396-11601-6f713b targets=machinery-runs-unattended-on-codex
 - 2026-09-20T10:44:46Z M6YGC9STCMK39H5J313E2WY8AH-m1e-063b9fe0 release actor=human:Wido targets=machinery-runs-unattended-on-codex displaced=m1e+main-1789561396-11601-6f713b@2026-09-19T15:51:18Z
-Integrity: sha256=6b7b4534b4b7d375b042cc477536df8ccc3686ee39bb737849d5f926d768ca79
+- 2026-09-29T05:34:34Z WQHXYZVF4XT2VDW7J2STF9SQKV-ui-5ce27ee0 claim actor=ui+main-1790617310-14120-96d9c7 targets=machinery-runs-unattended-on-codex
+Integrity: sha256=a3362cf47017b954a6bdfe633d94fdde792db745b38de7a3b10542301df69ea3
