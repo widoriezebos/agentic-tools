@@ -79,8 +79,9 @@ func TestCheckoutPassDistilsThenMovesSuiteFailureBundles(t *testing.T) {
 
 // The machine pass carries the evidence bound over every root of the host
 // (3.12 "Where it runs"): the armed checkout's root is named with its
-// owner, its segment index is recorded, and an old chain past the cap is
-// compacted, never removed.
+// owner, its segment index is recorded, and a segment past its cap is
+// reported with the command pair while its old chain is left whole (Round
+// B2-3: machinery never compacts or removes).
 func TestTheMachinePassRunsTheEvidenceBound(t *testing.T) {
 	t.Parallel()
 	bed := newStaleBed(t)
@@ -108,27 +109,28 @@ func TestTheMachinePassRunsTheEvidenceBound(t *testing.T) {
 		return diskstore.CheckoutFacts{GitRoot: gitRoot, Installation: installation, RootCommit: "e83c5163316f89bfbde7d9ab23ca2e25604af290", LedgerIdentity: "01J9LEDGER0000000000000000"}, nil
 	}
 	pass.EvidenceSeams = func(class *evidence.BoundClass) {
-		class.Observe = func(context.Context, string, bool) (evidence.LedgerView, error) {
-			return evidence.LedgerView{Tip: "9498700a9", Identity: "01J9LEDGER0000000000000000", States: map[string]string{}}, nil
-		}
 		class.Citations.Roots = func() ([]string, error) { return nil, nil }
 		class.SegmentSettings = func(evidence.Segment) (evidence.PassSettings, error) {
 			return evidence.PassSettings{CapBytes: 1, AgeFloor: 90 * 24 * time.Hour}, nil
 		}
 	}
-	for index := 0; index < 2; index++ { // the first pass publishes the citation generation
-		result, err := SweepDiskStores(context.Background(), bed.inst, pass)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if index == 1 && !strings.Contains(strings.Join(result.Machine.EvidenceRoots, "\n"), evidenceRoot+": root of "+gitRoot) {
-			t.Fatalf("the machine report names the root with its owner: %v", result.Machine.Lines())
+	result, err := SweepDiskStores(context.Background(), bed.inst, pass)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(strings.Join(result.Machine.EvidenceRoots, "\n"), evidenceRoot+": root of "+gitRoot) {
+		t.Fatalf("the machine report names the root with its owner: %v", result.Machine.Lines())
+	}
+	text := strings.Join(result.Machine.Lines(), "\n")
+	if !strings.Contains(text, "over the bound: "+diskstore.Segment(gitRoot)) || !strings.Contains(text, "metasystem evidence dispose --over-bound --export DIR --preview") {
+		t.Fatalf("the segment past its cap is reported with the command pair:\n%s", text)
+	}
+	for _, rel := range []string{"brief.md", "jobs/old-chain.log"} {
+		if _, err := os.Stat(filepath.Join(chain, filepath.FromSlash(rel))); err != nil {
+			t.Fatalf("the chain is left whole: %s %v", rel, err)
 		}
 	}
-	if _, err := os.Stat(filepath.Join(chain, diskstore.CompactTombstoneName)); err != nil {
-		t.Fatalf("the old chain past the cap is compacted: %v", err)
-	}
-	if _, err := os.Stat(filepath.Join(chain, "brief.md")); err != nil {
-		t.Fatalf("and never removed: %v", err)
+	if _, err := evidence.ReadSegmentIndex(evidenceRoot, diskstore.Segment(gitRoot)); err != nil {
+		t.Fatalf("the segment index is recorded: %v", err)
 	}
 }

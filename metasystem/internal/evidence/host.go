@@ -4,13 +4,12 @@ package evidence
 // 3.12 "Roots", "Where it runs"; DL4D-12): the steward that wins the
 // machine flock runs, over every evidence root of the host, the citation
 // generation's next step, the host registry of roots and the segment
-// indexes, each segment's compaction loop with its checkout as context,
-// the blob reference check and sweep, and the machine cap. Each root is
-// named with its owner; a segment no armed checkout resolves is an orphan,
-// reported and Unknown to the bound.
+// indexes, the blob reference check and sweep, and reports each segment
+// and the machine cap against their bounds (Round B2-3: it never compacts
+// or removes). Each root is named with its owner; a segment no armed
+// checkout resolves is an orphan, reported and Unknown to the bound.
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -20,7 +19,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"golang.org/x/sys/unix"
 )
@@ -130,12 +128,13 @@ type Root struct {
 	Path     string
 	Owner    string
 	Segments []Segment
-	// Unsegmented are the root's top-level entries that belong to no
-	// segment: reported and measured, disposed of only by a person.
-	Unsegmented []string
-	// Legacy are entries written under agents, suite-failures or events
-	// before segments existed: unsegmented items too.
-	Legacy []string
+	// NotManaged are the entries that belong to no segment: the root's
+	// unknown top-level entries and anything under agents, suite-failures
+	// or events whose name is not an engine segment name exactly (Round
+	// B2-3, rule 3). They are never items: evidence show lists them as
+	// "not managed: remove by hand if unneeded" and dispose refuses them.
+	// Another evidence root nested here is never listed.
+	NotManaged []string
 }
 
 // segmentDirs are the directories under a root that hold segments; the
@@ -171,13 +170,13 @@ func DiscoverRoots(userHome string, checkouts []HostCheckout, registry []RootEnt
 		if info, err := os.Stat(path); err != nil || !info.IsDir() {
 			continue
 		}
-		roots = append(roots, discoverRoot(path, checkouts))
+		roots = append(roots, discoverRoot(path, checkouts, paths))
 	}
 	sort.Slice(roots, func(i, j int) bool { return roots[i].Path < roots[j].Path })
 	return roots
 }
 
-func discoverRoot(path string, checkouts []HostCheckout) Root {
+func discoverRoot(path string, checkouts []HostCheckout, roots map[string]bool) Root {
 	root := Root{Path: path}
 	var owners []string
 	claimedGit, claimedInstallation := map[string]bool{}, map[string]bool{}
@@ -206,17 +205,28 @@ func discoverRoot(path string, checkouts []HostCheckout) Root {
 		}
 		root.Segments = append(root.Segments, segment)
 	}
+	claimedDirs := map[string][]string{}
+	for _, segment := range root.Segments {
+		claimedDirs["agents"] = append(claimedDirs["agents"], filepath.Join(path, "agents", segment.Git))
+		claimedDirs["suite-failures"] = append(claimedDirs["suite-failures"], filepath.Join(path, "suite-failures", segment.Git))
+		claimedDirs["events"] = append(claimedDirs["events"], filepath.Join(path, "events", segment.Installation))
+	}
 	for _, directory := range segmentDirs {
 		entries, _ := os.ReadDir(filepath.Join(path, directory))
 		for _, entry := range entries {
 			name := entry.Name()
-			if notAnItem(name) || claimedGit[name] || claimedInstallation[name] {
+			full := filepath.Join(path, directory, name)
+			if notAnItem(name) || claimedGit[name] || claimedInstallation[name] || isEvidenceRoot(full, roots) {
 				continue
 			}
 			if !entry.IsDir() || !segmentName12(name) {
-				// Written before segments (a legacy basename layout): an
-				// unsegmented item of the root, never a segment.
-				root.Legacy = append(root.Legacy, filepath.Join(path, directory, name))
+				// Not an engine segment name exactly (a legacy basename, an
+				// upper-case spelling): not managed, never an item. A
+				// spelling that is a claimed segment's own directory on a
+				// case-insensitive volume is that segment, never listed.
+				if !sameAsAny(full, claimedDirs[directory]) {
+					root.NotManaged = append(root.NotManaged, full)
+				}
 				continue
 			}
 			if directory == "events" {
@@ -232,8 +242,9 @@ func discoverRoot(path string, checkouts []HostCheckout) Root {
 	}
 	if entries, err := os.ReadDir(path); err == nil {
 		for _, entry := range entries {
-			if !rootBookkeeping[entry.Name()] && !notAnItem(entry.Name()) {
-				root.Unsegmented = append(root.Unsegmented, filepath.Join(path, entry.Name()))
+			full := filepath.Join(path, entry.Name())
+			if !rootBookkeeping[entry.Name()] && !notAnItem(entry.Name()) && !isEvidenceRoot(full, roots) {
+				root.NotManaged = append(root.NotManaged, full)
 			}
 		}
 	}
@@ -260,92 +271,40 @@ func discoverRoot(path string, checkouts []HostCheckout) Root {
 	return root
 }
 
-// HostCap is the machine cap's position after the pass.
-type HostCap struct {
-	TotalBytes int64
-	CapBytes   int64
-	Compacted  int
-	Pending    []string
+// isEvidenceRoot reports a directory that is itself an evidence root:
+// the resolved root of an armed checkout or a registry entry (the same
+// file, never a string comparison), or one carrying a root's own
+// structure (Round B2-3, rule 3). Such a directory is never listed.
+func isEvidenceRoot(path string, roots map[string]bool) bool {
+	info, err := os.Lstat(path)
+	if err != nil || !info.IsDir() {
+		return false
+	}
+	for root := range roots {
+		if other, err := os.Stat(root); err == nil && os.SameFile(info, other) {
+			return true
+		}
+	}
+	for _, marker := range []string{"agents", "suite-failures", "events", "segments", "disposals", "RETIRED.json"} {
+		if pathPresent(filepath.Join(path, marker)) {
+			return true
+		}
+	}
+	return false
 }
 
-// CompactHost is the machine cap (3.12): while the physical bytes of every
-// root plus the blob store exceed evidence.machine-cap-gib, the oldest
-// eligible item on the host (across every segment whose context is armed
-// and observed) is compacted, one item per bound-lock acquisition, with a
-// fresh host walk before each cap test. Nothing is removed.
-func (b Bound) CompactHost(ctx context.Context, roots []Root, settings map[string]PassSettings, capBytes int64,
-	positions map[string]*diskstore.EvidenceSegment) HostCap {
-	host := HostCap{CapBytes: capBytes}
-	measure := func(ctx context.Context) (int64, int64, bool) {
-		var total int64
-		complete := true
-		for _, root := range roots {
-			bytes, _, done := diskstore.Measure(ctx, root.Path)
-			total += bytes
-			complete = complete && done
-		}
-		if b.Blobs.Dir != "" {
-			bytes, _, done := diskstore.Measure(ctx, b.Blobs.Dir)
-			total += bytes
-			complete = complete && done
-		}
-		return total, 0, complete && ctx.Err() == nil
+// sameAsAny reports a path that is the same file as one of paths.
+func sameAsAny(path string, paths []string) bool {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return false
 	}
-	type candidate struct {
-		segment Segment
-		item    Item
-	}
-	var candidates []candidate
-	for _, root := range roots {
-		for _, segment := range root.Segments {
-			if segment.Unknown != "" || segment.Context == nil {
-				continue
-			}
-			items, err := segment.Items(ctx)
-			if err != nil {
-				continue
-			}
-			for _, item := range items {
-				if ok, _ := b.Candidate(segment, item, settings[segment.Git].AgeFloor); ok {
-					candidates = append(candidates, candidate{segment: segment, item: item})
-				}
-			}
+	for _, other := range paths {
+		if candidate, err := os.Lstat(other); err == nil && os.SameFile(info, candidate) {
+			return true
 		}
 	}
-	sort.SliceStable(candidates, func(i, j int) bool { return candidates[i].item.EndedAt.Before(candidates[j].item.EndedAt) })
-	test := capTest{measure: measure, capBytes: capBytes, rule: diskstore.RuleMachineCap, where: "the host's evidence roots"}
-	for _, next := range candidates {
-		if ctx.Err() != nil {
-			host.Pending = append(host.Pending, "the pass budget ran out in the machine cap")
-			break
-		}
-		position := positions[next.segment.Git]
-		if position == nil {
-			position = &diskstore.EvidenceSegment{Segment: next.segment.Git, Root: next.segment.Root, Held: map[string]int64{}}
-			positions[next.segment.Git] = position
-		}
-		before := position.Compacted
-		outcome := b.compactOne(ctx, next.segment, settings[next.segment.Git], next.item, position, test)
-		host.Compacted += position.Compacted - before
-		if outcome.stop {
-			break
-		}
-	}
-	host.TotalBytes, _, _ = measure(ctx)
-	return host
-}
-
-// Lines renders the machine cap's position.
-func (h HostCap) Lines() []string {
-	var lines []string
-	if h.Compacted > 0 {
-		lines = append(lines, fmt.Sprintf("machine cap: compacted %d item(s) across the host", h.Compacted))
-	}
-	if h.TotalBytes > h.CapBytes {
-		lines = append(lines, fmt.Sprintf("machine cap: the host's evidence holds %s, over %s = %s after compaction; %s and %s name what a person may remove",
-			formatGiB(h.TotalBytes), config.DiskEvidenceMachineCapKey, formatGiB(h.CapBytes), "metasystem disk show", "metasystem evidence show --all"))
-	}
-	return append(lines, h.Pending...)
+	return false
 }
 
 // notAnItem is a name enumeration never yields: a disposal record, a stage,

@@ -1,8 +1,6 @@
 package evidence
 
 import (
-	"bytes"
-	"compress/gzip"
 	"context"
 	"encoding/json"
 	"os"
@@ -27,21 +25,21 @@ func TestOnlyEnumeratedItemsResolveAndEachIsJudged(t *testing.T) {
 			t.Fatalf("%s must never resolve to an item: %v", structure, err)
 		}
 	}
-	plan := bed.preview(t, false, "", open, done)
+	plan := bed.preview(t, "", open, done)
 	outcomes := bed.env.Execute(context.Background(), plan, ExecuteOptions{})
 	if gone(open) || !gone(done) {
 		t.Fatalf("the open goal's chain is held, the concluded one removed: %+v", outcomes)
 	}
 }
 
-// Round B2, F-4 (Wido's option B): the machine pass never removes a whole
-// item and never finishes a person's removal; it reports it with the
-// command the person runs.
+// Round B2, F-4 (Wido's option B; Round B2-3): the machine pass never
+// removes an item and never settles a person's removal; it reports it with
+// the command the person runs.
 func TestTheMachinePassNeverFinishesAPersonsRemoval(t *testing.T) {
 	t.Parallel()
 	bed := newBoundBed(t)
 	item := bed.chain(t, "old-chain", 300, 400, "g-done")
-	files, err := diskstore.Inventory(context.Background(), item, nil)
+	files, err := diskstore.Inventory(context.Background(), item)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,8 +52,7 @@ func TestTheMachinePassNeverFinishesAPersonsRemoval(t *testing.T) {
 	if err := os.WriteFile(diskstore.RemovedTombstonePath(item), data, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	bound := bed.bound(nil, nil)
-	position := bound.CompactSegment(context.Background(), bed.segment, settingsOf(1))
+	position := bed.bound().ReportSegment(context.Background(), bed.segment, settingsOf(1))
 	t.Logf("position: %+v", position)
 	lines := receipts(t, bed.segment)
 	t.Logf("receipts: %+v", lines)
@@ -91,7 +88,7 @@ func TestEveryDisposalHasItsOwnReceiptID(t *testing.T) {
 	t.Parallel()
 	bed := newPersonBed(t)
 	first := bed.chain(t, "first", 300, 50, "g-done")
-	plan := bed.preview(t, false, "", first)
+	plan := bed.preview(t, "", first)
 	outcomes := bed.env.Execute(context.Background(), plan, ExecuteOptions{})
 	lines := receipts(t, bed.segment)
 	if len(lines) != 1 || lines[0].ID == "" {
@@ -103,7 +100,7 @@ func TestEveryDisposalHasItsOwnReceiptID(t *testing.T) {
 	// A second removal (of an OPEN goal's chain, overridden by the person)
 	// crashes after its begun tombstone, before its rename and receipt.
 	held := bed.chain(t, "held", 300, 400, "g-open")
-	files, _ := diskstore.Inventory(context.Background(), held, nil)
+	files, _ := diskstore.Inventory(context.Background(), held)
 	tombstone := diskstore.Tombstone{Schema: diskstore.TombstoneSchema, Item: "held", Kind: diskstore.KindChain, Segment: bed.segment.Git,
 		Files: files, History: []diskstore.HistoryEntry{}, InventoryDigest: diskstore.InventoryDigest(files), Step: diskstore.StepRemove,
 		Rule: diskstore.RulePerson, By: "Wido", At: boundNow, Receipt: lines[0].ID, State: diskstore.StateBegun, Disposing: "held.disposing-01X"}
@@ -117,62 +114,15 @@ func TestEveryDisposalHasItsOwnReceiptID(t *testing.T) {
 	if committed, _ := diskstore.ReceiptCommitted(bed.segment.Ledger(), "", "first"); committed {
 		t.Fatal("an empty id is never committed")
 	}
-	holds := func(context.Context, Segment, Item) Judgement { return Judgement{Held: []string{"goal g-open open"}} }
-	bound := bed.bound(holds, nil)
-	bound.CompactSegment(context.Background(), bed.segment, settingsOf(1))
-	if gone(held) {
-		t.Fatalf("UNCOMMITTED REMOVAL FINISHED: %s was removed with no receipt of its own and no re-judgement (held by an open goal)", held)
-	}
-}
-
-// Round B2, F-6: a compacted bundle's VERDICT.txt holds what failed, read
-// from its members as they stand (a gzipped log inflated); a bundle whose
-// failure facts cannot be extracted is not compacted and is reported.
-func TestABundleVerdictHoldsItsFailureFactsOrItIsNotCompacted(t *testing.T) {
-	t.Parallel()
-	bed := newBoundBed(t)
-	fake := &ledgers{fetched: map[string]LedgerView{bed.installation: view(identityA, map[string]string{})}}
-	owner := diskstore.BundleOwner{Attempt: diskstore.AttemptStandalone, Goal: diskstore.GoalNone}
-	facts := bed.bundle(t, "20260801T000000Z-watchdog-facts", 150, owner)
-	// The failing log was gzipped by the distiller.
-	var gz bytes.Buffer
-	writer := gzip.NewWriter(&gz)
-	writer.Write([]byte("ok  \tgithub.com/x/other\t0.1s\n--- FAIL: TestLanding (0.01s)\n    land_test.go:42: want green, got red\nFAIL\tgithub.com/x/landing\t0.2s\nexit status 1\n"))
-	writer.Close()
-	if err := os.Remove(filepath.Join(facts, "run.log")); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(facts, "run.log.gz"), gz.Bytes(), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(facts, "copy-note.txt"), []byte("copied-bytes=10\nDROPPED x\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	silent := bed.bundle(t, "20260801T000000Z-watchdog-silent", 150, owner)
-	if err := os.WriteFile(filepath.Join(silent, "run.log"), make([]byte, 400*kib), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	position := bed.judged(bed.exclusions(fake)).CompactSegment(context.Background(), bed.segment, settingsOf(1))
-	verdict, err := os.ReadFile(filepath.Join(facts, diskstore.VerdictName))
-	if err != nil {
-		t.Fatalf("the bundle with facts is compacted: %v %+v", err, position)
-	}
-	for _, want := range []string{"--- FAIL: TestLanding (0.01s)", "land_test.go:42: want green, got red", "FAIL\tgithub.com/x/landing\t0.2s", "exit status 1"} {
-		if !strings.Contains(string(verdict), want) {
-			t.Fatalf("VERDICT.txt names %q:\n%s", want, verdict)
-		}
-	}
-	if strings.Contains(string(verdict), "copied-bytes") {
-		t.Fatalf("copy bookkeeping is not a failure fact:\n%s", verdict)
-	}
-	if compacted(silent) || !strings.Contains(strings.Join(position.Pending, "\n"), "failure facts cannot be extracted") {
-		t.Fatalf("a bundle without failure facts is kept and reported: %+v", position.Pending)
+	settled, err := diskstore.SettlePersonDisposal(context.Background(), held, bed.segment.Ledger(), diskstore.Syncer{}, "01S")
+	if err != nil || settled.Finished || gone(held) {
+		t.Fatalf("UNCOMMITTED REMOVAL FINISHED: %s was removed with no receipt of its own: %+v %v", held, settled, err)
 	}
 }
 
 // Round B2, F-11: an installation whose state root cannot be resolved
 // makes the receipt clause Unknown for its segment; no guessed ledger.
-func TestAnUnresolvableStateRootCompactsNothing(t *testing.T) {
+func TestAnUnresolvableStateRootHoldsTheSegment(t *testing.T) {
 	t.Parallel()
 	bed := newBoundBed(t)
 	dir := bed.chain(t, "old", 300, 400, "")
@@ -184,9 +134,9 @@ func TestAnUnresolvableStateRootCompactsNothing(t *testing.T) {
 		t.Fatal(err)
 	}
 	fake := &ledgers{fetched: map[string]LedgerView{bed.installation: view(identityA, map[string]string{})}}
-	position := bed.judged(bed.exclusions(fake)).CompactSegment(context.Background(), bed.segment, settingsOf(1))
-	if compacted(dir) || !strings.Contains(position.Unknown, "state root") {
-		t.Fatalf("an unresolvable state root compacts nothing: %+v", position)
+	pass := bed.judge(bed.exclusions(fake))
+	if pass.clear[dir] || !strings.Contains(pass.unknown, "state root") {
+		t.Fatalf("an unresolvable state root holds every item: %+v", pass)
 	}
 }
 
@@ -204,7 +154,7 @@ func TestAHeldItemIsNotSettledBeforeTheOverride(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(jobs, "held-payload.json"), []byte(`{"jobId":"held-payload","status":"completed","chainClosed":true,"goalId":"g-open"}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	plan := bed.preview(t, false, "", dir)
+	plan := bed.preview(t, "", dir)
 	outcomes := bed.env.Execute(context.Background(), plan, ExecuteOptions{})
 	if outcomes[0].Done || !strings.Contains(outcomes[0].Line, "held: goal g-open open") {
 		t.Fatalf("%+v", outcomes)
@@ -254,7 +204,7 @@ func TestACitationWrittenBetweenItemsIsSeen(t *testing.T) {
 }
 
 // Round B2, F-10: in local mode a peer whose ledger facts cannot be read
-// makes the union unknown: nothing of that identity is compacted.
+// makes the union unknown: every item of that identity is held.
 func TestALocalModePeerWithUnreadableFactsMakesTheUnionUnknown(t *testing.T) {
 	t.Parallel()
 	bed := newBoundBed(t)
@@ -264,8 +214,8 @@ func TestALocalModePeerWithUnreadableFactsMakesTheUnionUnknown(t *testing.T) {
 	fake := &ledgers{fetched: map[string]LedgerView{bed.installation: here}}
 	exclusions := bed.exclusions(fake)
 	exclusions.Unreadable = []string{"/elsewhere/clone/metasystem"}
-	position := bed.judged(exclusions).CompactSegment(context.Background(), bed.segment, settingsOf(1))
-	if compacted(dir) || !strings.Contains(position.Unknown, "/elsewhere/clone/metasystem") {
-		t.Fatalf("an unreadable peer holds the identity: %+v", position)
+	pass := bed.judge(exclusions)
+	if pass.clear[dir] || !strings.Contains(pass.unknown, "/elsewhere/clone/metasystem") {
+		t.Fatalf("an unreadable peer holds the identity: %+v", pass)
 	}
 }

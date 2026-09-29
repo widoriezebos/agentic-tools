@@ -33,7 +33,7 @@ type CheckoutFacts struct {
 type SuiteFailures struct {
 	// Dir is <control>/artifacts/agents/suite-failures.
 	Dir string
-	// SegmentDir is evidence.root/suite-failures/<segment of the git root>;
+	// SegmentDir is <the evidence root>/suite-failures/<segment of the git root>;
 	// empty when the evidence root is unknown, and then nothing moves.
 	SegmentDir    string
 	Installation  string
@@ -220,7 +220,7 @@ var attemptInName = regexp.MustCompile(`proof-[a-z0-9]+-[0-9a-f]{16}`)
 
 // legacyOwner is the owner of a bundle written without OWNER.json (3.5): the
 // attempt its name carries and that attempt's accounted goal while the
-// record exists; otherwise goal unknown, which the bound never compacts.
+// record exists; otherwise goal unknown, which the exclusions hold.
 func (s SuiteFailures) legacyOwner(bundle string, now time.Time) BundleOwner {
 	owner := BundleOwner{Attempt: GoalUnknown, Goal: GoalUnknown, GitRoot: s.GitRoot, Installation: s.Installation,
 		WrittenBy: "distiller", WrittenAt: now.UTC()}

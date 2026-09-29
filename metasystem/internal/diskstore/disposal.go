@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"golang.org/x/sys/unix"
 	"io"
 	"io/fs"
 	"os"
@@ -19,35 +20,31 @@ import (
 	"time"
 )
 
-// A disposal of evidence (3.12 "Inventory before the first unlink", "The
-// tombstone and the pointer", "Commit point and recovery", "The receipt";
-// R20): every disposal, compaction or removal, by machinery or a person,
-// first walks the item and writes every file's path, size and sha256 into a
-// tombstone that is durable (file and directory synced) before anything
-// else; a removal then renames the item aside; the receipt line appended
-// and synced to evidence.root/disposals/<segment>.jsonl is the commit
-// point; only then are members unlinked, and the tombstone is marked done.
-// A restart before the receipt re-judges and continues or rolls back; a
-// restart after it finishes with exactly that one receipt. The caller holds
-// the bound lock and, for a chain, its job lifecycle locks throughout.
+// A person's removal of evidence (3.12 "Inventory before the first
+// unlink", "The tombstone and the pointer", "Commit point", "The receipt";
+// R20; Round B2-3: machinery never compacts or removes). It first walks the
+// item and writes every file's path, size and sha256 into a tombstone that
+// is durable (file and directory synced) before anything else; it then
+// renames the item aside; the receipt line appended and synced to
+// <the evidence root>/disposals/<segment>.jsonl is the commit point; only then is
+// the set-aside copy removed and the tombstone marked done. An interrupted
+// removal is only ever rolled back before its commit point, never
+// continued; after it, only the recorded set-aside copy is removed. The
+// caller holds the bound lock and, for a chain, its job lifecycle locks.
 
 // Item kinds.
 const (
 	KindChain       = "chain"
 	KindBundle      = "bundle"
 	KindEvents      = "events"
-	KindUnsegmented = "unsegmented"
 	KindCacheShaped = "cache-under-evidence"
 	KindSourceCopy  = "source-copy-under-evidence"
 )
 
 // Disposal steps and rules.
 const (
-	StepCompact = "compact"
-	StepRemove  = "remove"
+	StepRemove = "remove"
 
-	RuleBound         = "bound"
-	RuleMachineCap    = "machine-cap"
 	RulePerson        = "person"
 	RuleMachineRemove = "machine-remove"
 )
@@ -60,9 +57,6 @@ const (
 
 // The names a disposal writes.
 const (
-	CompactTombstoneName = "DISPOSED.json"
-	CompactSidecarName   = "DISPOSED.files.jsonl.gz"
-	VerdictName          = "VERDICT.txt"
 	removedSuffix        = ".disposed.json"
 	removedSidecarSuffix = ".disposed.files.jsonl.gz"
 	disposingMark        = ".disposing-"
@@ -93,7 +87,6 @@ type InventoryFile struct {
 	Size   int64  `json:"size"`
 	SHA256 string `json:"sha256,omitempty"`
 	Link   string `json:"link,omitempty"`
-	Kept   bool   `json:"kept,omitempty"`
 	// Original is a distilled file's logical original, answered through its
 	// recipe line (3.12: a pointer to the pre-distillation path answers).
 	Original *RecipeLine `json:"original,omitempty"`
@@ -144,19 +137,9 @@ type Tombstone struct {
 	Settings        map[string]string `json:"settings,omitempty"`
 	// Disposing is a removal's aside name while it is uncommitted.
 	Disposing string `json:"disposing,omitempty"`
-	// VerdictWritten says the compaction wrote VERDICT.txt (a rollback
-	// removes it).
-	VerdictWritten bool `json:"verdictWritten,omitempty"`
 	// Plan is a person's plan the disposal executes: the command that
 	// finishes or rolls back an interrupted one names it.
 	Plan string `json:"plan,omitempty"`
-}
-
-// MachineOwned reports a disposal the machine pass may recover: its own
-// compaction. A person's removal or compaction, and a machine removal, are
-// finished or rolled back only by a person (Round B2, F-4).
-func (t Tombstone) MachineOwned() bool {
-	return t.Step == StepCompact && (t.Rule == RuleBound || t.Rule == RuleMachineCap)
 }
 
 // DisposalReceipt is one line of a segment's disposals ledger.
@@ -196,19 +179,19 @@ type DisposalReceipt struct {
 // Inventory walks one item (a directory, or a single file such as an events
 // archive): every regular file's path, size and sha256, a symlink with its
 // target, a nested .git as its files, and each DISTILLED.txt line's logical
-// original. kept marks the members a compaction keeps.
-func Inventory(ctx context.Context, item string, kept func(rel string) bool) ([]InventoryFile, error) {
-	return inventory(ctx, item, kept, false)
+// original.
+func Inventory(ctx context.Context, item string) ([]InventoryFile, error) {
+	return inventory(ctx, item, false)
 }
 
 // InventoryComplete is Inventory that fails closed (Round B2-2, R3): an
 // unreadable DISTILLED.txt is an error, so an item whose recipes cannot be
 // read is never exported as if it had none.
-func InventoryComplete(ctx context.Context, item string, kept func(rel string) bool) ([]InventoryFile, error) {
-	return inventory(ctx, item, kept, true)
+func InventoryComplete(ctx context.Context, item string) ([]InventoryFile, error) {
+	return inventory(ctx, item, true)
 }
 
-func inventory(ctx context.Context, item string, kept func(rel string) bool, strict bool) ([]InventoryFile, error) {
+func inventory(ctx context.Context, item string, strict bool) ([]InventoryFile, error) {
 	info, err := os.Lstat(item)
 	if err != nil {
 		return nil, err
@@ -252,7 +235,6 @@ func inventory(ctx context.Context, item string, kept func(rel string) bool, str
 		default:
 			return nil
 		}
-		file.Kept = kept != nil && kept(rel)
 		files = append(files, file)
 		return nil
 	})
@@ -298,20 +280,16 @@ func InventoryDigest(files []InventoryFile) string {
 	return hex.EncodeToString(hash.Sum(nil))
 }
 
-// DisposalStep is one disposal's inputs. The caller holds the bound lock
+// DisposalStep is one removal's inputs. The caller holds the bound lock
 // and, for a chain, every job lifecycle lock of the chain.
 type DisposalStep struct {
 	// Item is the item's absolute path.
 	Item string
-	// Receipt carries the judgement's fields; the step fills ID, At,
-	// InventoryDigest, the byte counts, Dropped and Tombstone.
+	// Receipt carries the judgement's fields and a minted ID; the step
+	// fills InventoryDigest, the byte counts, Dropped and Tombstone.
 	Receipt DisposalReceipt
 	// Ledger is the segment's disposals ledger.
 	Ledger string
-	// Kept is a compaction's kept set; nil is a removal.
-	Kept func(rel string) bool
-	// Verdict is a compaction's VERDICT.txt.
-	Verdict []byte
 	// Commit runs immediately before the receipt append (the commit point);
 	// an error rolls the step back with no receipt and is reported.
 	Commit func() error
@@ -321,7 +299,7 @@ type DisposalStep struct {
 	interrupt func(point string) bool
 }
 
-// DisposalResult is what a disposal did.
+// DisposalResult is what a removal did.
 type DisposalResult struct {
 	Receipt    DisposalReceipt `json:"receipt"`
 	Tombstone  string          `json:"tombstone"`
@@ -329,14 +307,11 @@ type DisposalResult struct {
 	RolledBack string          `json:"rolledBack,omitempty"`
 }
 
-// ErrDisposalOpen is an item whose earlier disposal has a begun tombstone:
-// it is recovered first.
-var ErrDisposalOpen = errors.New("an earlier disposal of this item is not finished; it is recovered first")
+// ErrDisposalOpen is an item whose earlier removal has a begun tombstone:
+// it is settled first.
+var ErrDisposalOpen = errors.New("an earlier removal of this item is not settled; it is settled first")
 
 func (s DisposalStep) stop(point string) bool { return s.interrupt != nil && s.interrupt(point) }
-
-// compactTombstonePath is a compacted item's own tombstone.
-func compactTombstonePath(item string) string { return filepath.Join(item, CompactTombstoneName) }
 
 // ReadTombstone reads a tombstone file.
 func ReadTombstone(path string) (Tombstone, error) {
@@ -357,161 +332,84 @@ func ReadTombstone(path string) (Tombstone, error) {
 	return tombstone, nil
 }
 
-// ItemTombstones reads an item's compaction and removal tombstones; an
-// absent one is nil.
-func ItemTombstones(item string) (compacted, removed *Tombstone, err error) {
-	if tombstone, readErr := ReadTombstone(compactTombstonePath(item)); readErr == nil {
-		compacted = &tombstone
-	} else if !errors.Is(readErr, os.ErrNotExist) && !isNotDir(readErr) {
-		return nil, nil, readErr
-	}
-	if tombstone, readErr := ReadTombstone(RemovedTombstonePath(item)); readErr == nil {
-		removed = &tombstone
-	} else if !errors.Is(readErr, os.ErrNotExist) {
-		return nil, nil, readErr
-	}
-	return compacted, removed, nil
-}
-
-func isNotDir(err error) bool {
-	var pathErr *fs.PathError
-	return errors.As(err, &pathErr) && strings.Contains(pathErr.Err.Error(), "not a directory")
-}
-
-// Dispose runs one disposal step: compaction when step.Kept is set, else
-// removal. A repeat of a finished disposal writes nothing (R-129).
+// Dispose removes one item. A repeat of a finished removal writes nothing
+// (R-129).
 func Dispose(ctx context.Context, step DisposalStep) (DisposalResult, error) {
 	if !validReceiptID(step.Receipt.ID) {
-		return DisposalResult{}, errors.New("a disposal needs a minted receipt id (NewReceiptID); nothing was done")
+		return DisposalResult{}, errors.New("a removal needs a minted receipt id (NewReceiptID); nothing was done")
 	}
-	compacted, removed, err := ItemTombstones(step.Item)
-	if err != nil {
-		return DisposalResult{}, err
-	}
+	removed, err := ReadTombstone(RemovedTombstonePath(step.Item))
 	switch {
-	case removed != nil && removed.State == StateDone:
+	case err == nil && removed.State == StateDone:
 		return DisposalResult{Already: true, Tombstone: RemovedTombstonePath(step.Item)}, nil
-	case removed != nil || compacted != nil && compacted.State == StateBegun:
+	case err == nil:
 		return DisposalResult{}, ErrDisposalOpen
-	case step.Kept != nil && compacted != nil:
-		return DisposalResult{Already: true, Tombstone: compactTombstonePath(step.Item)}, nil
+	case !errors.Is(err, os.ErrNotExist):
+		return DisposalResult{}, err
 	}
 	if _, err := os.Lstat(step.Item); err != nil {
 		return DisposalResult{}, err
 	}
-	if step.Kept != nil {
-		return compact(ctx, step)
-	}
-	return remove(ctx, step, compacted)
-}
-
-// ChainKept is a compacted chain's kept set (3.12): its manifest, every job
-// record, its brief and every round's return. A mirror into a compacted
-// chain lands only these (DL4D-13).
-func ChainKept(rel string) bool {
-	switch {
-	case rel == "manifest.json", rel == "brief.md":
-		return true
-	case strings.HasPrefix(rel, "jobs/") && strings.HasSuffix(rel, ".json") && strings.Count(rel, "/") == 1:
-		return true
-	case strings.HasPrefix(rel, "rounds/") && strings.HasSuffix(rel, "/return.json") && strings.Count(rel, "/") == 2:
-		return true
-	}
-	return false
-}
-
-// keptAlways are the members every compaction keeps.
-func keptAlways(rel string) bool {
-	switch rel {
-	case CompactTombstoneName, CompactSidecarName, VerdictName:
-		return true
-	}
-	return false
-}
-
-func compact(ctx context.Context, step DisposalStep) (DisposalResult, error) {
-	kept := func(rel string) bool { return keptAlways(rel) || step.Kept(rel) }
-	files, err := Inventory(ctx, step.Item, kept)
+	files, err := Inventory(ctx, step.Item)
 	if err != nil {
 		return DisposalResult{}, err
 	}
 	before, _, _ := Measure(ctx, step.Item)
-	tombstone := step.newTombstone(files, before, StepCompact)
-	if !hasFile(files, VerdictName) && len(step.Verdict) > 0 {
-		if err := step.Sync.WriteDurable(filepath.Join(step.Item, VerdictName), step.Verdict, step.Stage); err != nil {
-			return DisposalResult{}, err
-		}
-		tombstone.VerdictWritten = true
-	}
-	path := compactTombstonePath(step.Item)
-	if err := step.writeTombstone(path, filepath.Join(step.Item, CompactSidecarName), &tombstone, files, nil); err != nil {
-		return DisposalResult{}, step.rollback(ctx, tombstone, path, err)
-	}
-	if step.stop("tombstone") {
-		return DisposalResult{}, errInterrupted
-	}
-	return step.commitAndFinish(ctx, tombstone, path)
-}
-
-func hasFile(files []InventoryFile, rel string) bool {
-	for _, file := range files {
-		if file.Original == nil && file.Path == rel {
-			return true
-		}
-	}
-	return false
-}
-
-func remove(ctx context.Context, step DisposalStep, compacted *Tombstone) (DisposalResult, error) {
-	files, err := Inventory(ctx, step.Item, nil)
-	if err != nil {
-		return DisposalResult{}, err
-	}
-	before, _, _ := Measure(ctx, step.Item)
-	tombstone := step.newTombstone(files, before, StepRemove)
-	var history []InventoryFile
-	if compacted != nil {
-		raw, err := os.ReadFile(compactTombstonePath(step.Item))
-		if err != nil {
-			return DisposalResult{}, err
-		}
-		tombstone.History = append(tombstone.History, HistoryEntry{Receipt: compacted.Receipt, Tombstone: raw})
-		// The compaction's sidecar is copied into the removal's own, never
-		// moved: a rollback leaves the compacted item exactly as it was.
-		if compacted.Sidecar != "" {
-			if history, err = readSidecar(filepath.Join(step.Item, compacted.Sidecar)); err != nil {
-				return DisposalResult{}, err
-			}
-			for index := range history {
-				history[index].History = 1
-			}
-		}
-	}
+	tombstone := step.newTombstone(files, before)
 	tombstone.Disposing = filepath.Base(step.Item) + disposingMark + step.Stage
 	path := RemovedTombstonePath(step.Item)
-	if err := step.writeTombstone(path, RemovedSidecarPath(step.Item), &tombstone, files, history); err != nil {
-		return DisposalResult{}, step.rollback(ctx, tombstone, path, err)
+	if err := step.writeTombstone(path, RemovedSidecarPath(step.Item), &tombstone, files); err != nil {
+		return DisposalResult{}, errors.Join(err, rollbackTombstone(step.Item, path, tombstone))
 	}
 	if step.stop("tombstone") {
 		return DisposalResult{}, errInterrupted
 	}
 	aside := filepath.Join(filepath.Dir(step.Item), tombstone.Disposing)
 	if err := os.Rename(step.Item, aside); err != nil {
-		return DisposalResult{}, step.rollback(ctx, tombstone, path, err)
+		return DisposalResult{}, errors.Join(err, rollbackTombstone(step.Item, path, tombstone))
 	}
 	if err := step.Sync.SyncDir(filepath.Dir(step.Item)); err != nil {
-		return DisposalResult{}, step.rollback(ctx, tombstone, path, err)
+		return DisposalResult{}, errors.Join(err, rollbackTombstone(step.Item, path, tombstone))
 	}
 	if step.stop("aside") {
 		return DisposalResult{}, errInterrupted
 	}
-	return step.commitAndFinish(ctx, tombstone, path)
+	if step.Commit != nil {
+		if err := step.Commit(); err != nil {
+			return DisposalResult{RolledBack: err.Error()}, rollbackTombstone(step.Item, path, tombstone)
+		}
+	}
+	receipt := step.Receipt
+	receipt.Schema, receipt.At = ReceiptSchema, receipt.At.UTC()
+	receipt.Step, receipt.Kind, receipt.InventoryDigest = StepRemove, tombstone.Kind, tombstone.InventoryDigest
+	receipt.ItemBytesBefore, receipt.ManifestSHA256 = tombstone.BytesBefore, tombstone.ManifestSHA256
+	receipt.Tombstone, receipt.Dropped = path, len(physical(files))
+	if err := AppendReceipt(step.Ledger, receipt, step.Sync); err != nil {
+		return DisposalResult{}, errors.Join(err, rollbackTombstone(step.Item, path, tombstone))
+	}
+	if step.stop("receipt") {
+		return DisposalResult{}, errInterrupted
+	}
+	if err := finishAside(ctx, step.Item, path, tombstone, step.Sync, step.Stage); err != nil {
+		return DisposalResult{}, err
+	}
+	return DisposalResult{Receipt: receipt, Tombstone: path}, nil
 }
 
-func (s DisposalStep) newTombstone(files []InventoryFile, before int64, kind string) Tombstone {
+func physical(files []InventoryFile) []InventoryFile {
+	var kept []InventoryFile
+	for _, file := range files {
+		if file.Original == nil && file.History == 0 {
+			kept = append(kept, file)
+		}
+	}
+	return kept
+}
+
+func (s DisposalStep) newTombstone(files []InventoryFile, before int64) Tombstone {
 	receipt := s.Receipt
 	tombstone := Tombstone{Schema: TombstoneSchema, Item: filepath.Base(s.Item), Kind: receipt.Kind, Segment: receipt.Segment,
-		Checkout: receipt.Checkout, History: []HistoryEntry{}, InventoryDigest: InventoryDigest(files), Step: kind, Rule: receipt.Rule,
+		Checkout: receipt.Checkout, History: []HistoryEntry{}, InventoryDigest: InventoryDigest(files), Step: StepRemove, Rule: receipt.Rule,
 		By: receipt.By, At: receipt.At.UTC(), Receipt: receipt.ID, LedgerTip: receipt.LedgerTip, LedgerIdentity: receipt.LedgerIdentity,
 		BytesBefore: before, State: StateBegun, Overrides: receipt.Overrides, Export: receipt.Export, Settings: receipt.Settings, Plan: receipt.Plan}
 	if data, err := os.ReadFile(filepath.Join(s.Item, "manifest.json")); err == nil {
@@ -521,18 +419,18 @@ func (s DisposalStep) newTombstone(files []InventoryFile, before int64, kind str
 	return tombstone
 }
 
-// writeTombstone writes the inventory (inline, or as a sidecar when large
-// or when an earlier sidecar is carried) and the tombstone, each durable.
-func (s DisposalStep) writeTombstone(path, sidecar string, tombstone *Tombstone, files, history []InventoryFile) error {
+// writeTombstone writes the inventory (inline, or as a sidecar when large)
+// and the tombstone, each durable.
+func (s DisposalStep) writeTombstone(path, sidecar string, tombstone *Tombstone, files []InventoryFile) error {
 	inline, err := json.Marshal(files)
 	if err != nil {
 		return err
 	}
-	if len(inline) > sidecarAbove || len(history) > 0 {
+	if len(inline) > sidecarAbove {
 		var buffer bytes.Buffer
 		writer := gzip.NewWriter(&buffer)
 		encoder := json.NewEncoder(writer)
-		for _, file := range append(append([]InventoryFile(nil), files...), history...) {
+		for _, file := range files {
 			if err := encoder.Encode(file); err != nil {
 				return err
 			}
@@ -547,15 +445,15 @@ func (s DisposalStep) writeTombstone(path, sidecar string, tombstone *Tombstone,
 	} else {
 		tombstone.Files = files
 	}
-	return s.writeTombstoneFile(path, *tombstone)
+	return writeTombstoneFile(path, *tombstone, s.Sync, s.Stage)
 }
 
-func (s DisposalStep) writeTombstoneFile(path string, tombstone Tombstone) error {
+func writeTombstoneFile(path string, tombstone Tombstone, sync Syncer, stage string) error {
 	data, err := json.MarshalIndent(tombstone, "", "  ")
 	if err != nil {
 		return err
 	}
-	return s.Sync.WriteDurable(path, append(data, '\n'), s.Stage)
+	return sync.WriteDurable(path, append(data, '\n'), stage)
 }
 
 func readSidecar(path string) ([]InventoryFile, error) {
@@ -591,146 +489,59 @@ func TombstoneFiles(path string, tombstone Tombstone) ([]InventoryFile, error) {
 	return readSidecar(filepath.Join(filepath.Dir(path), tombstone.Sidecar))
 }
 
-// commitAndFinish is steps (3) to (5): the commit hook, the receipt line
-// appended and synced (the commit point), the dropped members removed, the
-// tombstone marked done.
-func (s DisposalStep) commitAndFinish(ctx context.Context, tombstone Tombstone, path string) (DisposalResult, error) {
-	if s.Commit != nil {
-		if err := s.Commit(); err != nil {
-			rollbackErr := s.rollback(ctx, tombstone, path, nil)
-			return DisposalResult{RolledBack: err.Error()}, rollbackErr
-		}
+// asidePath is the set-aside copy a tombstone records, refused when the
+// recorded name is empty or is not this item's own set-aside name (Round
+// B2-3, N3-2): a finish never removes the item path or a parent.
+func asidePath(item string, tombstone Tombstone) (string, error) {
+	name := tombstone.Disposing
+	if name == "" || filepath.Base(name) != name || !strings.HasPrefix(name, filepath.Base(item)+disposingMark) {
+		return "", fmt.Errorf("the tombstone of %s records no valid set-aside name (%q); a person decides", item, name)
 	}
-	files, err := TombstoneFiles(path, tombstone)
-	if err != nil {
-		return DisposalResult{}, err
-	}
-	receipt := s.Receipt
-	receipt.Schema, receipt.At, receipt.ID = ReceiptSchema, receipt.At.UTC(), tombstone.Receipt
-	receipt.Step, receipt.Kind, receipt.InventoryDigest = tombstone.Step, tombstone.Kind, tombstone.InventoryDigest
-	receipt.ItemBytesBefore, receipt.ManifestSHA256 = tombstone.BytesBefore, tombstone.ManifestSHA256
-	receipt.Tombstone, receipt.Dropped = path, dropped(files, tombstone.Step)
-	if err := AppendReceipt(s.Ledger, receipt, s.Sync); err != nil {
-		return DisposalResult{}, err
-	}
-	if s.stop("receipt") {
-		return DisposalResult{}, errInterrupted
-	}
-	return finish(ctx, s.Item, path, tombstone, receipt, s.Sync, s.Stage)
+	return filepath.Join(filepath.Dir(item), name), nil
 }
 
-func dropped(files []InventoryFile, step string) int {
-	count := 0
-	for _, file := range files {
-		if file.Original == nil && file.History == 0 && (step == StepRemove || !file.Kept) {
-			count++
-		}
-	}
-	return count
-}
-
-// finish is steps (4) and (5), for a committed disposal: idempotent, so a
-// recovery after the receipt runs it again.
-func finish(ctx context.Context, item, path string, tombstone Tombstone, receipt DisposalReceipt, sync Syncer, stage string) (DisposalResult, error) {
-	if tombstone.Step == StepRemove {
-		if err := RemoveTree(ctx, filepath.Join(filepath.Dir(item), tombstone.Disposing)); err != nil {
-			return DisposalResult{}, err
-		}
-		if err := RemoveTree(ctx, item); err != nil { // cut short before the rename
-			return DisposalResult{}, err
-		}
-	} else {
-		files, err := TombstoneFiles(path, tombstone)
-		if err != nil {
-			return DisposalResult{}, err
-		}
-		keep := map[string]bool{}
-		for _, file := range files {
-			if file.Kept && file.Original == nil {
-				keep[file.Path] = true
-			}
-		}
-		if err := removeUnkept(ctx, item, keep); err != nil {
-			return DisposalResult{}, err
-		}
-	}
-	after, _, _ := Measure(ctx, item)
-	tombstone.State, tombstone.BytesAfter = StateDone, after
-	step := DisposalStep{Sync: sync, Stage: stage}
-	if err := step.writeTombstoneFile(path, tombstone); err != nil {
-		return DisposalResult{}, err
-	}
-	receipt.ItemBytesAfter = after
-	return DisposalResult{Receipt: receipt, Tombstone: path}, nil
-}
-
-// removeUnkept removes every member of a compacted item that is neither in
-// its kept set nor one of the compaction's own files, deepest first, and
-// the directories that leaves empty.
-func removeUnkept(ctx context.Context, item string, keep map[string]bool) error {
-	var members, directories []string
-	err := filepath.WalkDir(item, func(full string, entry fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if full == item {
-			return nil
-		}
-		rel := filepath.ToSlash(strings.TrimPrefix(full, item+string(filepath.Separator)))
-		if entry.IsDir() {
-			directories = append(directories, full)
-			return nil
-		}
-		if !keep[rel] && !keptAlways(rel) && !IsPartial(entry.Name()) {
-			members = append(members, full)
-		}
-		return nil
-	})
+// finishAside removes the recorded set-aside copy of a committed removal
+// and marks the tombstone done; it never touches the item path.
+func finishAside(ctx context.Context, item, path string, tombstone Tombstone, sync Syncer, stage string) error {
+	aside, err := asidePath(item, tombstone)
 	if err != nil {
 		return err
 	}
-	for _, member := range members {
-		if err := removeEntry(ctx, member, nil); err != nil {
+	if err := RemoveTree(ctx, aside); err != nil {
+		return err
+	}
+	tombstone.State = StateDone
+	return writeTombstoneFile(path, tombstone, sync, stage)
+}
+
+// rollbackTombstone undoes an uncommitted removal: the item renamed back
+// from its set-aside copy when the item path is free, then the tombstone
+// and its sidecar removed. When both the copy and an entry at the item path
+// exist, or the rename back fails, the tombstone stays: it is the only
+// record of the copy (Round B2-3, N3-3; L-1).
+func rollbackTombstone(item, path string, tombstone Tombstone) error {
+	if tombstone.Disposing != "" {
+		aside, err := asidePath(item, tombstone)
+		if err != nil {
 			return err
 		}
-	}
-	sort.Slice(directories, func(i, j int) bool { return len(directories[i]) > len(directories[j]) })
-	for _, directory := range directories {
-		_ = os.Remove(directory) // only an emptied directory goes
-	}
-	return nil
-}
-
-// rollback undoes an uncommitted disposal: the item renamed back, the
-// tombstone, its sidecar and a written verdict removed. cause, when set, is
-// returned joined with any rollback failure.
-func (s DisposalStep) rollback(ctx context.Context, tombstone Tombstone, path string, cause error) error {
-	return errors.Join(cause, rollbackTombstone(ctx, s.Item, path, tombstone))
-}
-
-func rollbackTombstone(ctx context.Context, item, path string, tombstone Tombstone) error {
-	var errs []error
-	if tombstone.Step == StepRemove && tombstone.Disposing != "" {
-		aside := filepath.Join(filepath.Dir(item), tombstone.Disposing)
 		if _, err := os.Lstat(aside); err == nil {
-			if _, err := os.Lstat(item); errors.Is(err, os.ErrNotExist) {
-				if err := os.Rename(aside, item); err != nil {
-					// The tombstone stays: it is the only record of where
-					// the item is (Round B2-2, L-1).
-					return fmt.Errorf("the item could not be renamed back from %s, its tombstone is kept: %w", aside, err)
-				}
+			if _, err := os.Lstat(item); err == nil {
+				return fmt.Errorf("both %s and its set-aside copy %s exist; the tombstone is kept for a person", item, aside)
+			}
+			if err := os.Rename(aside, item); err != nil {
+				return fmt.Errorf("the item could not be renamed back from %s, its tombstone is kept: %w", aside, err)
 			}
 		}
 	}
-	if tombstone.VerdictWritten {
-		errs = append(errs, ignoreMissing(os.Remove(filepath.Join(item, VerdictName))))
+	if _, err := os.Lstat(item); err != nil {
+		return fmt.Errorf("neither %s nor its set-aside copy exists; the tombstone is kept for a person", item)
 	}
+	var errs []error
 	if tombstone.Sidecar != "" {
 		errs = append(errs, ignoreMissing(os.Remove(filepath.Join(filepath.Dir(path), tombstone.Sidecar))))
 	}
-	errs = append(errs, ignoreMissing(os.Remove(path)))
-	errs = append(errs, syncDirectory(filepath.Dir(item)))
-	_ = ctx
+	errs = append(errs, ignoreMissing(os.Remove(path)), syncDirectory(filepath.Dir(item)))
 	return errors.Join(errs...)
 }
 
@@ -739,6 +550,35 @@ func ignoreMissing(err error) error {
 		return nil
 	}
 	return err
+}
+
+// Settlement is what SettlePersonDisposal did.
+type Settlement struct {
+	// Finished: the removal was committed and its set-aside copy is gone.
+	Finished bool
+	// RolledBack: the removal was not committed and the item is back.
+	RolledBack bool
+	Receipt    string
+}
+
+// SettlePersonDisposal settles an item's open removal (Round B2-3, rule
+// 2): an uncommitted one is only ever rolled back (the item renamed back
+// when its path is free; with both present the tombstone stays and the
+// error says so); a committed one only has its recorded set-aside copy
+// removed. Nothing is re-judged or continued; the person previews again.
+func SettlePersonDisposal(ctx context.Context, item, ledger string, sync Syncer, stage string) (Settlement, error) {
+	path, tombstone, open, err := OpenDisposal(item)
+	if err != nil || !open {
+		return Settlement{}, err
+	}
+	committed, err := ReceiptCommitted(ledger, tombstone.Receipt, tombstone.Item)
+	if err != nil {
+		return Settlement{}, err
+	}
+	if committed {
+		return Settlement{Finished: true, Receipt: tombstone.Receipt}, finishAside(ctx, item, path, tombstone, sync, stage)
+	}
+	return Settlement{RolledBack: true, Receipt: tombstone.Receipt}, rollbackTombstone(item, path, tombstone)
 }
 
 // NewReceiptID mints a disposal's receipt id: a ULID, unique per disposal.
@@ -759,7 +599,13 @@ func validReceiptID(id string) bool {
 }
 
 // AppendReceipt appends one receipt line to a disposals ledger and syncs it;
-// a ledger created by this append has its directory synced too.
+// a ledger created by this append has its directory synced too (Round
+// B2-3, rule 5). A symlinked ledger is refused and never written. A last
+// line without its newline that parses as a whole receipt is whole: its
+// newline is written and synced first, nothing is truncated. An
+// unparseable last line is torn: nothing is appended and the refusal names
+// a repair that keeps every parseable receipt. A ledger that cannot be read
+// holds.
 func AppendReceipt(ledger string, receipt DisposalReceipt, sync Syncer) error {
 	data, err := json.Marshal(receipt)
 	if err != nil {
@@ -771,20 +617,41 @@ func AppendReceipt(ledger string, receipt DisposalReceipt, sync Syncer) error {
 	}
 	info, statErr := os.Lstat(ledger)
 	created := errors.Is(statErr, os.ErrNotExist)
+	switch {
+	case statErr != nil && !created:
+		return statErr
+	case statErr == nil && !info.Mode().IsRegular():
+		return fmt.Errorf("the disposals ledger %s is not a regular file (a symbolic link or other entry); nothing is appended, a person decides", ledger)
+	}
 	var prior int64
+	var missingNewline bool
 	if statErr == nil {
 		prior = info.Size()
-		if torn, offset := tornTail(ledger, prior); torn {
-			return fmt.Errorf("the disposals ledger %s ends in a torn line; nothing is appended until a person repairs it: truncate -s %d %s (keeps every whole line)", ledger, offset, ledger)
+		tail, err := ledgerTail(ledger, prior)
+		if err != nil {
+			return err
 		}
+		if tail.torn {
+			return fmt.Errorf("the disposals ledger %s ends in a torn line that is not a whole receipt; nothing is appended until a person repairs it: truncate -s %d %s (keeps every whole receipt)", ledger, tail.keep, ledger)
+		}
+		missingNewline = tail.missingNewline
 	}
-	file, err := os.OpenFile(ledger, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	file, err := os.OpenFile(ledger, os.O_CREATE|os.O_APPEND|os.O_WRONLY|unix.O_NOFOLLOW, 0o644)
 	if err != nil {
 		return err
 	}
-	// A failed append is truncated back to the ledger's prior length, so
-	// a full disk never leaves a torn line that poisons every later read
-	// (the caller holds the bound lock).
+	if missingNewline {
+		if _, err := file.Write([]byte{'\n'}); err != nil {
+			return errors.Join(err, file.Close())
+		}
+		if err := sync.SyncFile(file); err != nil {
+			return errors.Join(err, file.Close())
+		}
+		prior++
+	}
+	// A failed append is truncated back to the ledger's prior length (its
+	// whole receipts), so a full disk never leaves a torn line that poisons
+	// every later read (the caller holds the bound lock).
 	if _, err := file.Write(append(data, '\n')); err != nil {
 		return errors.Join(err, file.Truncate(prior), file.Close())
 	}
@@ -800,17 +667,35 @@ func AppendReceipt(ledger string, receipt DisposalReceipt, sync Syncer) error {
 	return nil
 }
 
-// tornTail reports a ledger whose last byte is not a newline, and the
-// length that keeps every whole line (Round B2-2, R8).
-func tornTail(ledger string, size int64) (bool, int64) {
+type ledgerTailState struct {
+	// missingNewline: the last line is a whole receipt without its newline.
+	missingNewline bool
+	// torn: the last line is not a whole receipt; keep is the length that
+	// keeps every whole line before it.
+	torn bool
+	keep int64
+}
+
+// ledgerTail judges a ledger's last line (Round B2-2, R8; Round B2-3, rule
+// 5); a read error is returned, so the caller holds.
+func ledgerTail(ledger string, size int64) (ledgerTailState, error) {
 	if size == 0 {
-		return false, 0
+		return ledgerTailState{}, nil
 	}
 	data, err := os.ReadFile(ledger)
-	if err != nil || len(data) == 0 || data[len(data)-1] == '\n' {
-		return false, size
+	if err != nil {
+		return ledgerTailState{}, fmt.Errorf("the disposals ledger %s cannot be read, nothing is appended: %w", ledger, err)
 	}
-	return true, int64(bytes.LastIndexByte(data, '\n') + 1)
+	if len(data) == 0 || data[len(data)-1] == '\n' {
+		return ledgerTailState{}, nil
+	}
+	start := bytes.LastIndexByte(data, '\n') + 1
+	var last DisposalReceipt
+	line := bytes.TrimSuffix(data[start:], []byte{'\r'})
+	if json.Unmarshal(line, &last) == nil && last.Schema == ReceiptSchema && validReceiptID(last.ID) {
+		return ledgerTailState{missingNewline: true}, nil
+	}
+	return ledgerTailState{torn: true, keep: int64(start)}, nil
 }
 
 // ReadReceipts reads a disposals ledger; absent is empty.
@@ -880,65 +765,14 @@ func OpenRemovals(directory string) []string {
 	return items
 }
 
-// OpenDisposal finds an item's begun tombstone, if any.
+// OpenDisposal finds an item's begun removal tombstone, if any.
 func OpenDisposal(item string) (path string, tombstone Tombstone, open bool, err error) {
-	compacted, removed, err := ItemTombstones(item)
-	if err != nil {
+	tombstone, err = ReadTombstone(RemovedTombstonePath(item))
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		return "", Tombstone{}, false, nil
+	case err != nil:
 		return "", Tombstone{}, false, err
 	}
-	if removed != nil && removed.State == StateBegun {
-		return RemovedTombstonePath(item), *removed, true, nil
-	}
-	if compacted != nil && compacted.State == StateBegun {
-		return compactTombstonePath(item), *compacted, true, nil
-	}
-	return "", Tombstone{}, false, nil
-}
-
-// Recovery is what a restart does with a begun tombstone whose receipt is
-// absent: Continue with a commit hook, or roll back naming why.
-type Recovery struct {
-	Continue bool
-	Commit   func() error
-	Reason   string
-}
-
-// RecoverDisposal settles an item's begun disposal under the bound lock
-// (3.12 "Commit point and recovery"): with its receipt in the ledger it is
-// committed and is finished, never re-judged; without it, rejudge decides
-// (after a fresh ledger observation and, for an export, a re-verification
-// of the archive on disk) whether to continue at the commit point or to roll
-// back, leaving the item as it was.
-func RecoverDisposal(ctx context.Context, item, ledger string, receipt DisposalReceipt, sync Syncer, stage string,
-	rejudge func(Tombstone) Recovery) (DisposalResult, error) {
-	path, tombstone, open, err := OpenDisposal(item)
-	if err != nil || !open {
-		return DisposalResult{}, err
-	}
-	committed, err := ReceiptCommitted(ledger, tombstone.Receipt, tombstone.Item)
-	if err != nil {
-		return DisposalResult{}, err
-	}
-	if committed {
-		receipt.ID = tombstone.Receipt
-		return finish(ctx, item, path, tombstone, receipt, sync, stage)
-	}
-	decision := rejudge(tombstone)
-	if !decision.Continue {
-		return DisposalResult{RolledBack: decision.Reason}, rollbackTombstone(ctx, item, path, tombstone)
-	}
-	if tombstone.Step == StepRemove {
-		aside := filepath.Join(filepath.Dir(item), tombstone.Disposing)
-		if _, err := os.Lstat(item); err == nil {
-			if err := os.Rename(item, aside); err != nil {
-				return DisposalResult{}, err
-			}
-			if err := sync.SyncDir(filepath.Dir(item)); err != nil {
-				return DisposalResult{}, err
-			}
-		}
-	}
-	receipt.ID, receipt.At = tombstone.Receipt, tombstone.At
-	step := DisposalStep{Item: item, Receipt: receipt, Ledger: ledger, Commit: decision.Commit, Stage: stage, Sync: sync}
-	return step.commitAndFinish(ctx, tombstone, path)
+	return RemovedTombstonePath(item), tombstone, tombstone.State == StateBegun, nil
 }

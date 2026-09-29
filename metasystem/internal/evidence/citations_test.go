@@ -201,13 +201,13 @@ func TestNoPublishedGenerationKeepsEveryItem(t *testing.T) {
 	bed := newCitationBed(t)
 	_, _, pending := bed.fresh().Cited(context.Background(), bed.segment, Item{Kind: diskstore.KindChain, Name: "any"})
 	if pending == "" {
-		t.Fatal("before the first generation completes nothing is compacted")
+		t.Fatal("before the first generation completes every item is held")
 	}
 }
 
-// A generation whose scan needs three pass budgets completes, and
-// compaction then runs; a cited chain stays.
-func TestCompactionRunsOnceTheGenerationCompletes(t *testing.T) {
+// A generation whose scan needs three pass budgets completes, and only
+// then is an uncited chain clear; a cited chain stays held.
+func TestAnItemIsClearOnlyOnceTheGenerationCompletes(t *testing.T) {
 	t.Parallel()
 	bed := newCitationBed(t)
 	cited := bed.chain(t, "cited", 300, 400, "")
@@ -217,9 +217,8 @@ func TestCompactionRunsOnceTheGenerationCompletes(t *testing.T) {
 	exclusions := bed.exclusions(fake)
 	for passes := 0; ; passes++ {
 		exclusions.Citations = bed.fresh()
-		bed.judged(exclusions).CompactSegment(context.Background(), bed.segment, settingsOf(1))
-		if compacted(free) || compacted(cited) {
-			t.Fatal("nothing is compacted before the generation completes")
+		if pass := bed.judge(exclusions); pass.clear[free] || pass.clear[cited] {
+			t.Fatal("nothing is clear before the generation completes")
 		}
 		if published, err := bed.index.Step(newBudget(3)); err != nil {
 			t.Fatal(err)
@@ -232,8 +231,7 @@ func TestCompactionRunsOnceTheGenerationCompletes(t *testing.T) {
 	}
 	exclusions = bed.exclusions(fake)
 	exclusions.Citations = bed.fresh()
-	bed.judged(exclusions).CompactSegment(context.Background(), bed.segment, settingsOf(1))
-	if !compacted(free) || compacted(cited) {
-		t.Fatalf("after the generation the uncited chain compacts and the cited one stays: %v %v", compacted(free), compacted(cited))
+	if pass := bed.judge(exclusions); !pass.clear[free] || pass.clear[cited] {
+		t.Fatalf("after the generation the uncited chain is clear and the cited one held: %v %v", pass.clear[free], pass.clear[cited])
 	}
 }

@@ -46,7 +46,7 @@ func newPersonBed(t *testing.T) personBed {
 	return personBed{boundBed: bed, env: env, fake: fake, export: filepath.Join(filepath.Dir(bed.root), "backup", "exports")}
 }
 
-func (bed personBed) preview(t *testing.T, compact bool, exportDir string, paths ...string) DisposePlan {
+func (bed personBed) preview(t *testing.T, exportDir string, paths ...string) DisposePlan {
 	t.Helper()
 	var targets []Target
 	for _, path := range paths {
@@ -56,7 +56,7 @@ func (bed personBed) preview(t *testing.T, compact bool, exportDir string, paths
 		}
 		targets = append(targets, target)
 	}
-	plan, err := bed.env.Preview(context.Background(), targets, nil, compact, exportDir)
+	plan, err := bed.env.Preview(context.Background(), targets, nil, exportDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +77,7 @@ func TestAPersonRemovesFromAPreviewedPlan(t *testing.T) {
 	bed := newPersonBed(t)
 	young := bed.chain(t, "ten-days-old", 10, 50, "g-done")
 	before := snapshot(t, filepath.Dir(bed.root))
-	plan := bed.preview(t, false, "", young)
+	plan := bed.preview(t, "", young)
 	after := snapshot(t, filepath.Dir(bed.root))
 	delete(after, strings.TrimPrefix(PlanPath(bed.home, plan.ID), filepath.Dir(bed.root)))
 	if !equalSnapshots(before, after) || bed.fake.fetches != 0 {
@@ -104,7 +104,7 @@ func TestAHeldItemIsSkippedUnlessOverriddenAndTheOverrideIsRecorded(t *testing.T
 	bed := newPersonBed(t)
 	held := bed.chain(t, "open-goal", 300, 50, "g-open")
 	clear := bed.chain(t, "done-goal", 300, 50, "g-done")
-	plan := bed.preview(t, false, "", held, clear)
+	plan := bed.preview(t, "", held, clear)
 	if plan.Items[0].State != "held" || plan.Items[1].State != "clear" {
 		t.Fatalf("the preview says held or clear: %+v", plan.Items)
 	}
@@ -127,7 +127,7 @@ func TestAFailedObservationIsAnExclusionAPersonMayOverride(t *testing.T) {
 	bed := newPersonBed(t)
 	dir := bed.chain(t, "offline", 300, 50, "g-done")
 	bed.fake.err = errors.New("offline")
-	plan := bed.preview(t, false, "", dir)
+	plan := bed.preview(t, "", dir)
 	if plan.Items[0].State != "held" || !strings.Contains(strings.Join(plan.Items[0].Held, " "), "ledger not observed") {
 		t.Fatalf("a failed observation holds the item in the preview: %+v", plan.Items)
 	}
@@ -145,7 +145,7 @@ func TestDisposeExportsFirstAndThePointerNamesTheArchive(t *testing.T) {
 	t.Parallel()
 	bed := newPersonBed(t)
 	dir := bed.chain(t, "exported", 300, 50, "g-done")
-	plan := bed.preview(t, false, bed.export, dir)
+	plan := bed.preview(t, bed.export, dir)
 	outcomes := bed.env.Execute(context.Background(), plan, ExecuteOptions{})
 	if !outcomes[0].Done || outcomes[0].Export == "" || !gone(dir) {
 		t.Fatalf("exported, then removed: %+v", outcomes)
@@ -172,12 +172,12 @@ func TestAnItemWhoseExportFailsIsKeptAndTheRestCompletes(t *testing.T) {
 	if err := os.WriteFile(bed.export, []byte("full"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	plan := bed.preview(t, false, bed.export, first)
+	plan := bed.preview(t, bed.export, first)
 	outcomes := bed.env.Execute(context.Background(), plan, ExecuteOptions{})
 	if outcomes[0].Done || gone(first) || !strings.Contains(outcomes[0].Line, "kept: not exported") {
 		t.Fatalf("a failed export keeps the item: %+v", outcomes)
 	}
-	plan = bed.preview(t, false, "", second)
+	plan = bed.preview(t, "", second)
 	if outcomes := bed.env.Execute(context.Background(), plan, ExecuteOptions{}); !outcomes[0].Done {
 		t.Fatalf("the rest completes: %+v", outcomes)
 	}
@@ -187,7 +187,7 @@ func TestAnItemChangedSinceThePreviewIsSkipped(t *testing.T) {
 	t.Parallel()
 	bed := newPersonBed(t)
 	dir := bed.chain(t, "changing", 300, 50, "g-done")
-	plan := bed.preview(t, false, "", dir)
+	plan := bed.preview(t, "", dir)
 	if err := os.WriteFile(filepath.Join(dir, "brief.md"), []byte("a re-landed record"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -197,10 +197,10 @@ func TestAnItemChangedSinceThePreviewIsSkipped(t *testing.T) {
 	}
 }
 
-// --compact is never strengthened (DL4C-10): an item without a compact
-// form is declined and nothing changes; a cache-shaped tree removed by a
-// person still leaves an inventory, a tombstone and a receipt.
-func TestCompactIsNeverStrengthenedAndEveryRemovalLeavesATombstone(t *testing.T) {
+// Every removal of an item leaves an inventory, a tombstone and a receipt
+// in its segment's ledger; an entry outside every segment is not managed
+// and refused (Round B2-3, rule 3).
+func TestEveryRemovalLeavesATombstoneAndAnUnsegmentedEntryIsRefused(t *testing.T) {
 	t.Parallel()
 	bed := newPersonBed(t)
 	events := filepath.Join(bed.root, "events", bed.segment.Installation, "events-20260101T000000Z.jsonl")
@@ -213,28 +213,19 @@ func TestCompactIsNeverStrengthenedAndEveryRemovalLeavesATombstone(t *testing.T)
 			t.Fatal(err)
 		}
 	}
-	plan := bed.preview(t, true, "", events, cache)
-	for _, item := range plan.Items {
-		if item.State != "declined" || !strings.Contains(item.Decline, "no compact form") {
-			t.Fatalf("--compact on %s is declined: %+v", item.Path, item)
-		}
+	if _, err := bed.env.Locate(context.Background(), cache); err == nil || !strings.Contains(err.Error(), NotManagedLine) {
+		t.Fatalf("an unsegmented entry is not managed and refused: %v", err)
 	}
-	if outcomes := bed.env.Execute(context.Background(), plan, ExecuteOptions{}); outcomes[0].Done || gone(events) || gone(cache) {
-		t.Fatalf("nothing changes: %+v", outcomes)
+	plan := bed.preview(t, "", events)
+	if outcomes := bed.env.Execute(context.Background(), plan, ExecuteOptions{}); !outcomes[0].Done || !gone(events) || gone(cache) {
+		t.Fatalf("the events archive is removed, the entry outside every segment untouched: %+v", outcomes)
 	}
-	plan = bed.preview(t, false, "", cache)
-	if plan.Items[0].State != "held" {
-		t.Fatalf("an unsegmented entry is judged by the exclusions and held: %+v", plan.Items[0])
+	tombstone, err := diskstore.ReadTombstone(diskstore.RemovedTombstonePath(events))
+	if err != nil || len(tombstone.Files) != 1 || tombstone.Files[0].Path != filepath.Base(events) {
+		t.Fatalf("the inventory names the archive: %+v %v", tombstone, err)
 	}
-	if outcomes := bed.env.Execute(context.Background(), plan, ExecuteOptions{Override: true}); !outcomes[0].Done || !gone(cache) {
-		t.Fatalf("a person removes the tree, overriding what cannot be judged: %+v", outcomes)
-	}
-	tombstone, err := diskstore.ReadTombstone(diskstore.RemovedTombstonePath(cache))
-	if err != nil || len(tombstone.Files) != 1 || tombstone.Files[0].Path != "unique.bin" {
-		t.Fatalf("the inventory names the unique file: %+v %v", tombstone, err)
-	}
-	if receipts, _ := diskstore.ReadReceipts(filepath.Join(bed.root, "disposals", "unsegmented.jsonl")); len(receipts) != 1 {
-		t.Fatalf("a receipt in unsegmented.jsonl: %+v", receipts)
+	if receipts, _ := diskstore.ReadReceipts(filepath.Join(bed.root, "disposals", bed.segment.Installation+".jsonl")); len(receipts) != 1 {
+		t.Fatalf("a receipt in the events segment's ledger: %+v", receipts)
 	}
 }
 
@@ -270,7 +261,7 @@ func TestAnUnsettledChainIsDeclinedWithTheActionThatSettlesIt(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		plan := bed.preview(t, false, "", dir)
+		plan := bed.preview(t, "", dir)
 		outcomes := bed.env.Execute(context.Background(), plan, ExecuteOptions{})
 		if outcomes[0].Done || gone(dir) || !strings.Contains(outcomes[0].Line, test.want) {
 			t.Fatalf("case %d: %+v", index, outcomes)
@@ -289,17 +280,17 @@ func TestDisposeDeclinesWhileAMirrorHoldsTheLifecycleLock(t *testing.T) {
 		waited = wait
 		return nil, "job mirroring's lifecycle lock is held by pid=4242,tag=reap", nil
 	}
-	plan := bed.preview(t, false, "", dir)
+	plan := bed.preview(t, "", dir)
 	outcomes := bed.env.Execute(context.Background(), plan, ExecuteOptions{})
 	if outcomes[0].Done || gone(dir) || waited != ReaperBound || !strings.Contains(outcomes[0].Line, "pid=4242,tag=reap") {
 		t.Fatalf("waits the reaper's bound, then declines naming the holder: waited %s %+v", waited, outcomes)
 	}
 }
 
-// A removal with an export, crashed before its receipt, re-verifies the
-// archive on the disk before it resumes; an archive that no longer
-// re-hashes rolls it back with the item kept (DL4E-05).
-func TestAResumedRemovalReverifiesItsExport(t *testing.T) {
+// A removal with a verified export, cut short before its receipt, is
+// rolled back and never resumed (Round B2-3, rule 2): the item is back,
+// the tombstone gone, no receipt written, and the person previews again.
+func TestARemovalCutShortIsRolledBackNeverResumed(t *testing.T) {
 	t.Parallel()
 	bed := newPersonBed(t)
 	dir := bed.chain(t, "crashed", 300, 50, "g-done")
@@ -308,25 +299,16 @@ func TestAResumedRemovalReverifiesItsExport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The crash: a begun removal tombstone carrying the export, no receipt.
-	step := diskstore.DisposalStep{Item: dir, Ledger: bed.segment.Ledger(), Stage: "01R", Commit: func() error { return errors.New("the crash") },
-		Receipt: diskstore.DisposalReceipt{ID: "01RECEIPTCRASH", Kind: diskstore.KindChain, Item: "crashed", Segment: bed.segment.Git, Rule: diskstore.RulePerson, Export: exported.Ref(bed.export)}}
-	if result, _ := diskstore.Dispose(context.Background(), step); result.RolledBack == "" {
-		t.Fatal("the fixture's crash rolled back; build the begun tombstone by hand instead")
-	}
-	tombstone := diskstore.Tombstone{Schema: diskstore.TombstoneSchema, Item: "crashed", Kind: diskstore.KindChain, Segment: bed.segment.Git, Step: diskstore.StepRemove,
-		Rule: diskstore.RulePerson, Receipt: "01RECEIPTCRASH", State: diskstore.StateBegun, Export: exported.Ref(bed.export), History: []diskstore.HistoryEntry{}}
+	plan := bed.preview(t, "", dir)
+	tombstone, aside := interruptedRemoval(t, bed, dir, "crashed", plan.ID)
+	tombstone.Export = exported.Ref(bed.export)
 	writeJSON(t, diskstore.RemovedTombstonePath(dir), tombstone)
-	if err := os.WriteFile(exported.Archive, []byte("not the archive"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	plan := bed.preview(t, false, "", dir)
-	outcomes := bed.env.Execute(context.Background(), plan, ExecuteOptions{})
-	if outcomes[0].Done || gone(dir) || !strings.Contains(outcomes[0].Line, "export not verified after restart") {
+	outcomes := bed.env.Execute(context.Background(), plan, ExecuteOptions{Override: true})
+	if outcomes[0].Done || gone(dir) || !gone(aside) || !strings.Contains(outcomes[0].Line, "rolled back, the item is back; run --preview again") {
 		t.Fatalf("%+v", outcomes)
 	}
-	if !gone(diskstore.RemovedTombstonePath(dir)) {
-		t.Fatal("the rollback removes the begun tombstone")
+	if !gone(diskstore.RemovedTombstonePath(dir)) || len(receipts(t, bed.segment)) != 0 {
+		t.Fatal("the rollback removes the begun tombstone and writes no receipt")
 	}
 }
 
@@ -341,18 +323,12 @@ func writeJSON(t *testing.T, path string, value any) {
 	}
 }
 
-func TestOverBoundSelectsCompactedItemsAndEventsArchivesOldestFirst(t *testing.T) {
+func TestOverBoundSelectsItemsPastTheAgeFloorOldestFirst(t *testing.T) {
 	t.Parallel()
 	bed := newPersonBed(t)
-	compactedOld := bed.chain(t, "compacted-old", 400, 50, "g-done")
-	held := bed.chain(t, "compacted-held", 350, 50, "g-open")
-	uncompacted := bed.chain(t, "uncompacted", 300, 400, "g-done")
-	for _, dir := range []string{compactedOld, held} {
-		if _, err := diskstore.Dispose(context.Background(), diskstore.DisposalStep{Item: dir, Ledger: bed.segment.Ledger(), Kept: KeptFor(diskstore.KindChain),
-			Stage: "01C" + filepath.Base(dir), Receipt: diskstore.DisposalReceipt{ID: "01C" + filepath.Base(dir), Kind: diskstore.KindChain, Item: filepath.Base(dir), Rule: diskstore.RuleBound}}); err != nil {
-			t.Fatal(err)
-		}
-	}
+	bed.chain(t, "oldest", 400, 50, "g-done")
+	bed.chain(t, "held", 350, 50, "g-open")
+	bed.chain(t, "young", 10, 400, "g-done")
 	events := filepath.Join(bed.root, "events", bed.segment.Installation, "events-20260101T000000Z.jsonl")
 	if err := os.MkdirAll(filepath.Dir(events), 0o755); err != nil {
 		t.Fatal(err)
@@ -369,13 +345,12 @@ func TestOverBoundSelectsCompactedItemsAndEventsArchivesOldestFirst(t *testing.T
 	for _, target := range targets {
 		names = append(names, target.Item.Name)
 	}
-	if strings.Join(names, ",") != "compacted-old,events-20260101T000000Z.jsonl,compacted-held" {
-		t.Fatalf("compacted items and events archives, oldest first, the held one listed: %v", names)
+	if strings.Join(names, ",") != "oldest,events-20260101T000000Z.jsonl,held" {
+		t.Fatalf("items past the age floor, oldest first, the held one listed: %v", names)
 	}
-	if len(stillOver) != 1 || !strings.Contains(stillOver[0], "awaiting compaction") {
+	if len(stillOver) != 1 || !strings.Contains(stillOver[0], "younger than the age floor") {
 		t.Fatalf("the still-over line says what the plan cannot select: %v", stillOver)
 	}
-	_ = uncompacted
 }
 
 func TestThePointerAnswersEveryPathThatEverLayInAnItem(t *testing.T) {
@@ -386,19 +361,11 @@ func TestThePointerAnswersEveryPathThatEverLayInAnItem(t *testing.T) {
 	if live.State != "live" {
 		t.Fatalf("%+v", live)
 	}
-	if _, err := diskstore.Dispose(context.Background(), diskstore.DisposalStep{Item: dir, Ledger: bed.segment.Ledger(), Kept: KeptFor(diskstore.KindChain),
-		Stage: "01C", Receipt: diskstore.DisposalReceipt{ID: "01COMPACT", At: boundNow, Kind: diskstore.KindChain, Item: "pointed", Rule: diskstore.RuleBound}}); err != nil {
-		t.Fatal(err)
-	}
-	compactedAnswer := Pointer(context.Background(), filepath.Join(dir, "jobs", "pointed.log"))
-	if compactedAnswer.State != "compacted" || !strings.Contains(compactedAnswer.Line, "compacted on 2026-12-29 under rule bound, receipt 01COMPACT") {
-		t.Fatalf("%+v", compactedAnswer)
-	}
-	plan := bed.preview(t, false, "", dir)
+	plan := bed.preview(t, "", dir)
 	bed.env.Execute(context.Background(), plan, ExecuteOptions{})
 	removed := Pointer(context.Background(), filepath.Join(dir, "rounds", "1", "raw.out"))
-	if removed.State != "removed" {
-		t.Fatalf("a file the compaction dropped answers through the removal's cumulative inventory: %+v", removed)
+	if removed.State != "removed" || !strings.Contains(removed.Line, "removed on 2026-12-29 under rule person") {
+		t.Fatalf("a file of a removed item answers through its tombstone: %+v", removed)
 	}
 	if unknown := Pointer(context.Background(), filepath.Join(bed.root, "nothing-here")); unknown.State != "absent" || !strings.HasSuffix(unknown.Line, "no such evidence") {
 		t.Fatalf("%+v", unknown)

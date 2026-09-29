@@ -1,8 +1,6 @@
 package evidence
 
 import (
-	"bytes"
-	"compress/gzip"
 	"context"
 	"encoding/json"
 	"os"
@@ -34,8 +32,8 @@ func TestACaseVariantOfAgentsIsNotAnItem(t *testing.T) {
 		}
 		return
 	}
-	t.Logf("target item: kind=%s name=%s path=%s unsegmented=%v", targets[0].Item.Kind, targets[0].Item.Name, targets[0].Item.Path, targets[0].Unsegmented)
-	plan, err := bed.env.Preview(context.Background(), targets, nil, false, "")
+	t.Logf("target item: kind=%s name=%s path=%s ", targets[0].Item.Kind, targets[0].Item.Name, targets[0].Item.Path)
+	plan, err := bed.env.Preview(context.Background(), targets, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,9 +60,9 @@ func TestAnUpperCaseSegmentPathIsNotAnItem(t *testing.T) {
 		return
 	}
 	for _, target := range targets {
-		t.Logf("  kind=%s name=%s path=%s unsegmented=%v", target.Item.Kind, target.Item.Name, target.Item.Path, target.Unsegmented)
+		t.Logf("  kind=%s name=%s path=%s ", target.Item.Kind, target.Item.Name, target.Item.Path)
 	}
-	plan, _ := bed.env.Preview(context.Background(), targets, nil, false, "")
+	plan, _ := bed.env.Preview(context.Background(), targets, nil, "")
 	outcomes := bed.env.Execute(context.Background(), plan, ExecuteOptions{Override: true})
 	t.Logf("outcomes: %+v", outcomes)
 	if gone(a) || gone(b) {
@@ -78,7 +76,7 @@ func TestATombstoneIsNotAnItem(t *testing.T) {
 	t.Parallel()
 	bed := newPersonBed(t)
 	first := bed.chain(t, "first", 300, 50, "g-done")
-	plan := bed.preview(t, false, "", first)
+	plan := bed.preview(t, "", first)
 	bed.env.Execute(context.Background(), plan, ExecuteOptions{})
 	tomb := diskstore.RemovedTombstonePath(first)
 	if _, err := os.Stat(tomb); err != nil {
@@ -90,7 +88,7 @@ func TestATombstoneIsNotAnItem(t *testing.T) {
 		return
 	}
 	t.Logf("  kind=%s name=%s", targets[0].Item.Kind, targets[0].Item.Name)
-	plan2, _ := bed.env.Preview(context.Background(), targets, nil, false, "")
+	plan2, _ := bed.env.Preview(context.Background(), targets, nil, "")
 	t.Logf("plan: %+v", plan2.Items[0])
 	outcomes := bed.env.Execute(context.Background(), plan2, ExecuteOptions{Override: true})
 	t.Logf("outcomes: %+v", outcomes)
@@ -123,8 +121,8 @@ func TestAPersonsRemovalInterruptedAfterAsideIsSettledByThePlan(t *testing.T) {
 	t.Parallel()
 	bed := newPersonBed(t)
 	item := bed.chain(t, "aside-chain", 300, 50, "g-done")
-	plan := bed.preview(t, false, "", item)
-	files, _ := diskstore.Inventory(context.Background(), item, nil)
+	plan := bed.preview(t, "", item)
+	files, _ := diskstore.Inventory(context.Background(), item)
 	id, _ := diskstore.NewReceiptID(boundNow, strings.NewReader(strings.Repeat("x", 64)))
 	tombstone := diskstore.Tombstone{Schema: diskstore.TombstoneSchema, Item: "aside-chain", Kind: diskstore.KindChain, Segment: bed.segment.Git,
 		Files: files, History: []diskstore.HistoryEntry{}, InventoryDigest: diskstore.InventoryDigest(files), Step: diskstore.StepRemove,
@@ -136,7 +134,7 @@ func TestAPersonsRemovalInterruptedAfterAsideIsSettledByThePlan(t *testing.T) {
 	if err := os.Rename(item, aside); err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("open: %v", bed.segment.OpenPersonDisposals(context.Background()))
+	t.Logf("open: %v", bed.segment.OpenPersonDisposals())
 	outcomes := bed.env.Execute(context.Background(), plan, ExecuteOptions{})
 	t.Logf("outcomes: %+v", outcomes)
 	_, statAside := os.Stat(aside)
@@ -145,49 +143,6 @@ func TestAPersonsRemovalInterruptedAfterAsideIsSettledByThePlan(t *testing.T) {
 	t.Logf("aside present=%v item present=%v tombstone state=%s", statAside == nil, statItem == nil, tomb.State)
 	if statAside == nil && tomb.State == diskstore.StateBegun {
 		t.Fatalf("STUCK: the reported command (evidence dispose --plan %s) neither finished nor rolled back the removal: %s", plan.ID, outcomes[0].Line)
-	}
-}
-
-// V6a: one member gives facts, another cannot be read (a corrupt gzip);
-// the verdict is written from the readable member only.
-func TestNoVerdictWhileAMemberCannotBeReadCompletely(t *testing.T) {
-	t.Parallel()
-	bed := newBoundBed(t)
-	owner := diskstore.BundleOwner{Attempt: diskstore.AttemptStandalone, Goal: diskstore.GoalNone}
-	dir := bed.bundle(t, "20260801T000000Z-watchdog-mixed", 150, owner)
-	// run.log (from the bed) holds TestLanding; a second, gzipped log holds
-	// TestSecond but is truncated mid-stream.
-	var gz bytes.Buffer
-	w := gzip.NewWriter(&gz)
-	w.Write([]byte(strings.Repeat("noise line\n", 20000) + "--- FAIL: TestSecond (0.01s)\n    second_test.go:9: boom\n"))
-	w.Close()
-	os.WriteFile(filepath.Join(dir, "second.log.gz"), gz.Bytes()[:gz.Len()/2], 0o644)
-	// A third member with a single line longer than the scanner's 4 MiB
-	// buffer before its failure line.
-	os.WriteFile(filepath.Join(dir, "third.log"), append(bytes.Repeat([]byte("y"), 5<<20), []byte("\n--- FAIL: TestThird (0.01s)\n")...), 0o644)
-	item := bundleItem(dir)
-	verdict, err := Verdict(item, diskstore.BlobStore{Dir: filepath.Join(bed.home, "nope")})
-	t.Logf("err=%v verdict:\n%s", err, verdict)
-	if err == nil && (!strings.Contains(string(verdict), "TestSecond") || !strings.Contains(string(verdict), "TestThird")) {
-		t.Fatalf("FACTS LOST: the verdict was built while members could not be read (TestSecond in a corrupt gzip, TestThird after a >4 MiB line); a compaction then drops those members")
-	}
-}
-
-// V6b: a blob-backed member whose blob is missing: its facts are skipped
-// silently.
-func TestNoVerdictWhileABlobIsMissing(t *testing.T) {
-	t.Parallel()
-	bed := newBoundBed(t)
-	owner := diskstore.BundleOwner{Attempt: diskstore.AttemptStandalone, Goal: diskstore.GoalNone}
-	dir := bed.bundle(t, "20260801T000000Z-watchdog-blob", 150, owner)
-	header, _ := json.Marshal(diskstore.DistilledHeader{Schema: diskstore.DistilledSchema, Created: boundNow.AddDate(0, 0, -150)})
-	line, _ := json.Marshal(diskstore.RecipeLine{Kind: diskstore.RecipeBlob, Path: "bin/engine.log", SHA256: strings.Repeat("ab", 32), Size: 10})
-	os.WriteFile(filepath.Join(dir, diskstore.DistilledName), append(append(header, '\n'), append(line, '\n')...), 0o644)
-	item := bundleItem(dir)
-	verdict, err := Verdict(item, diskstore.BlobStore{Dir: filepath.Join(bed.home, "no-blobs")})
-	t.Logf("err=%v verdict:\n%s", err, verdict)
-	if err == nil {
-		t.Fatalf("FACTS UNKNOWN: a blob-backed member whose blob cannot be read contributed nothing and the verdict was still built")
 	}
 }
 
@@ -219,7 +174,7 @@ func TestACaseVariantOfDisposalsIsNotAnItem(t *testing.T) {
 	t.Parallel()
 	bed := newPersonBed(t)
 	first := bed.chain(t, "first", 300, 50, "g-done")
-	bed.env.Execute(context.Background(), bed.preview(t, false, "", first), ExecuteOptions{})
+	bed.env.Execute(context.Background(), bed.preview(t, "", first), ExecuteOptions{})
 	before := receipts(t, bed.segment)
 	upper := filepath.Join(bed.root, "Disposals")
 	targets, err := bed.env.Resolve(context.Background(), upper)
@@ -227,7 +182,7 @@ func TestACaseVariantOfDisposalsIsNotAnItem(t *testing.T) {
 		t.Logf("refused: %v", err)
 		return
 	}
-	plan, _ := bed.env.Preview(context.Background(), targets, nil, false, "")
+	plan, _ := bed.env.Preview(context.Background(), targets, nil, "")
 	t.Logf("plan: state=%s held=%v", plan.Items[0].State, plan.Items[0].Held)
 	outcomes := bed.env.Execute(context.Background(), plan, ExecuteOptions{Override: true})
 	t.Logf("outcomes: %+v", outcomes)

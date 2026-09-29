@@ -29,7 +29,7 @@ const (
 	// bound's goal clause does not apply.
 	GoalNone = "none"
 	// GoalUnknown: a legacy bundle whose attempt record is gone; the goal
-	// clause is Unknown and machinery never compacts it.
+	// clause is Unknown and the exclusions hold it.
 	GoalUnknown = "unknown"
 	// AttemptStandalone: written outside a proof attempt.
 	AttemptStandalone = "standalone"

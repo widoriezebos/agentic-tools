@@ -612,6 +612,17 @@ func (rules DistillRules) recover(ctx context.Context, bundle string, header Dis
 		if _, err := os.Lstat(original); errors.Is(err, os.ErrNotExist) {
 			continue // the original is gone: complete
 		}
+		// The original is unlinked only while it still is what the line
+		// recorded (Round B2-3, N3-6): one rewritten after the line was
+		// published is kept beside its replacement and reported.
+		if matches, err := originalMatches(ctx, original, line); err != nil || !matches {
+			reason := "it no longer matches its published line"
+			if err != nil {
+				reason = "it cannot be read against its published line: " + err.Error()
+			}
+			result.Kept = append(result.Kept, line.Path+": "+reason+"; the original and its replacement are both kept for a person")
+			continue
+		}
 		stage, final := rules.linePaths(bundle, line)
 		finalOK, err := rules.verifyReplacement(ctx, line, final)
 		if err != nil {
@@ -666,6 +677,22 @@ func (rules DistillRules) recover(ctx context.Context, bundle string, header Dis
 		}
 	}
 	return nil
+}
+
+// originalMatches reports whether an original still is what its line
+// recorded: a file by its sha256, a git directory by its tree digest.
+func originalMatches(ctx context.Context, original string, line RecipeLine) (bool, error) {
+	var digest string
+	var err error
+	if line.Kind == RecipeGit {
+		digest, _, err = treeDigest(ctx, original)
+	} else {
+		digest, _, err = FileDigest(ctx, original)
+	}
+	if err != nil {
+		return false, err
+	}
+	return digest == line.SHA256, nil
 }
 
 // ownManifestStage is a top-level stage of DISTILLED.txt or OWNER.json.

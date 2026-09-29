@@ -22,9 +22,8 @@ func writeTombstone(t *testing.T, path string, tombstone diskstore.Tombstone) {
 	}
 }
 
-// A mirror into a removed chain lands nothing and says so; into a
-// compacted one it lands only the kept set (engine-owns-disk-lifetimes
-// 3.12, DL4D-13).
+// A mirror into a removed chain lands nothing and says so
+// (engine-owns-disk-lifetimes 3.12, DL4D-13).
 func TestMirrorHonoursTheDisposalTombstone(t *testing.T) {
 	t.Parallel()
 	repo, evidence, job := mirrorFixture(t)
@@ -39,22 +38,5 @@ func TestMirrorHonoursTheDisposalTombstone(t *testing.T) {
 	}
 	if got := asString(readJSONFile(t, result)["disposed"]); !strings.Contains(got, "receipt 01RECEIPT") {
 		t.Fatalf("the result reports the tombstone: %q", got)
-	}
-	if err := os.Remove(diskstore.RemovedTombstonePath(destination)); err != nil {
-		t.Fatal(err)
-	}
-	writeTombstone(t, filepath.Join(destination, diskstore.CompactTombstoneName), diskstore.Tombstone{Item: job, Step: diskstore.StepCompact, Rule: diskstore.RuleBound, Receipt: "01RECEIPTC"})
-	if err := Mirror(repo, repo, evidence, job, job, result); err != nil {
-		t.Fatal(err)
-	}
-	for _, kept := range []string{"jobs/" + job + ".json", "brief.md"} {
-		if _, err := os.Stat(filepath.Join(destination, filepath.FromSlash(kept))); err != nil {
-			t.Fatalf("the kept set lands: %s %v", kept, err)
-		}
-	}
-	for _, dropped := range []string{"rounds/1/diff.patch", "capabilities/snap.json"} {
-		if _, err := os.Stat(filepath.Join(destination, filepath.FromSlash(dropped))); !os.IsNotExist(err) {
-			t.Fatalf("a dropped member never lands again: %s %v", dropped, err)
-		}
 	}
 }

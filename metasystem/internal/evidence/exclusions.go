@@ -8,7 +8,7 @@ package evidence
 // identity must be the one the segment index recorded. Then per item: a
 // goal still open holds it; a receipt line no retro covered that names it
 // holds it; a record that cites it by path holds it. Any Unknown keeps the
-// item; a segment-wide Unknown compacts nothing in the segment.
+// item; a segment-wide Unknown holds every item of the segment.
 
 import (
 	"context"
@@ -108,14 +108,6 @@ func (e *Exclusions) Judge(ctx context.Context, segment Segment, item Item) Judg
 		judgement.Held = append(judgement.Held, fmt.Sprintf("named by %d receipt(s) no retro covered", count))
 	}
 	judgement.Commit = ledger.recheck
-	if item.Kind == diskstore.KindUnsegmented {
-		// The citation index names segmented items; an unsegmented entry's
-		// citations cannot be judged, so it is held for a person.
-		if judgement.Unknown == "" {
-			judgement.Unknown = "citations of an unsegmented entry are not indexed"
-		}
-		return judgement
-	}
 	if e.Citations == nil {
 		if judgement.Unknown == "" {
 			judgement.Unknown = "the citation index is not available"
@@ -206,7 +198,15 @@ func (e *Exclusions) take(ctx context.Context, installation string, fetch bool) 
 		union.States[id] = state
 	}
 	for _, peer := range e.Peers {
-		if peer.Installation == installation || peer.Facts.LedgerIdentity != view.Identity {
+		if peer.Installation == installation {
+			continue
+		}
+		// A peer whose identity read failed may be a clone of this one:
+		// the whole union is Unknown (Round B2-3, rule 4).
+		if peer.Facts.LedgerIdentity == "" {
+			return observation{view: view, err: "local mode: the ledger identity of " + peer.Installation + " cannot be read, so the union for this identity is unknown"}
+		}
+		if peer.Facts.LedgerIdentity != view.Identity {
 			continue
 		}
 		other, err := e.Observe(ctx, peer.Installation, false)
@@ -244,7 +244,7 @@ func (e *Exclusions) goalClause(segment Segment, item Item, view LedgerView, jud
 			judgement.Unknown = "the bundle was written under ledger " + item.OwnerLedger + ", not " + view.Identity
 			return
 		}
-	case diskstore.KindChain, diskstore.KindUnsegmented:
+	case diskstore.KindChain:
 		if id == "" {
 			return
 		}
@@ -325,7 +325,7 @@ func (l *receiptLedger) names(item Item) int {
 	count := 0
 	for _, line := range l.uncovered {
 		switch item.Kind {
-		case diskstore.KindChain, diskstore.KindUnsegmented:
+		case diskstore.KindChain:
 			if delegateNames(line, item) {
 				count++
 			}

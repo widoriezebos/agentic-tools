@@ -219,7 +219,7 @@ func evidenceBoundClass(ctx context.Context, home, top string, checkouts []strin
 	}
 	class := &evidence.BoundClass{UserHome: userHome, HomeStateRoot: home, Checkouts: hostCheckouts,
 		MachineCap: host.Bytes(config.DiskEvidenceMachineCapKey), BlobGrace: host.Duration(config.DiskEvidenceBlobGraceKey), AgeFloor: ageFloor,
-		Observe: evidence.GoalLedgerObserver(pass.Clock), Tip: evidence.AcceptedTipReader(),
+		By: "steward " + top,
 		Citations: &evidence.Citations{Dir: filepath.Join(home, "stores", "citations"), Now: pass.Now,
 			Roots: func() ([]string, error) {
 				var roots []string
@@ -233,9 +233,7 @@ func evidenceBoundClass(ctx context.Context, home, top string, checkouts []strin
 				sort.Strings(roots)
 				return roots, nil
 			}},
-		Bound: evidence.Bound{BoundLock: diskstore.BoundLockPath(home), Now: pass.Now, Entropy: rand.Reader, By: "steward " + top,
-			Locks: evidence.OwnerLocks(int64(os.Getpid()), os.Args[0], pass.Clock, func(time.Duration) {}),
-			Blobs: diskstore.BlobStore{Dir: diskstore.BlobStoreDir(userHome)}}}
+		Bound: evidence.Bound{Now: pass.Now, Blobs: diskstore.BlobStore{Dir: diskstore.BlobStoreDir(userHome)}}}
 	if pass.EvidenceSeams != nil {
 		pass.EvidenceSeams(class)
 	}
@@ -287,7 +285,7 @@ func EvidenceEnv(ctx context.Context, top string, pass DiskPass, by string) (evi
 		return evidence.Env{}, err
 	}
 	env := evidence.Env{UserHome: userHome, HomeStateRoot: home, Checkouts: class.Checkouts, Now: pass.Now, Entropy: rand.Reader,
-		Observe: class.Observe, Tip: class.Tip, Citations: class.Citations, Blobs: class.Bound.Blobs, By: by,
+		Observe: evidence.GoalLedgerObserver(pass.Clock), Tip: evidence.AcceptedTipReader(), Citations: class.Citations, Blobs: class.Bound.Blobs, By: by,
 		Locks: evidence.OwnerLocks(int64(os.Getpid()), os.Args[0], pass.Clock, time.Sleep)}
 	installation := installationOf(top)
 	for _, checkout := range class.Checkouts {

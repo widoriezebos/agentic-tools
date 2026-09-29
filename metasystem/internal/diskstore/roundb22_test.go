@@ -88,7 +88,7 @@ func TestABundleWithAnUnreadableRecipeIsNotExported(t *testing.T) {
 	manifest := filepath.Join(bed.bundle, DistilledName)
 	data, _ := os.ReadFile(manifest)
 	os.WriteFile(manifest, []byte(strings.Replace(string(data), DistilledSchema, DistilledSchema+"-v2", 1)), 0o644)
-	files, err := Inventory(context.Background(), bed.bundle, nil)
+	files, err := Inventory(context.Background(), bed.bundle)
 	originals := 0
 	for _, file := range files {
 		if file.Original != nil {
@@ -188,9 +188,7 @@ func TestARollbackThatCannotRenameBackKeepsTheTombstone(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { os.Chmod(parent, 0o755) })
-	_, err := RecoverDisposal(context.Background(), item, ledger, step.Receipt, Syncer{}, "01S", func(Tombstone) Recovery {
-		return Recovery{Reason: "rolled back"}
-	})
+	_, err := SettlePersonDisposal(context.Background(), item, ledger, Syncer{}, "01S")
 	os.Chmod(parent, 0o755)
 	if err == nil {
 		t.Fatal("a rollback that cannot rename back is an error")

@@ -82,7 +82,7 @@ func TestEvidenceShowIsAShortSummaryThatChangesNothing(t *testing.T) {
 	bed := newEvidenceVerbBed(t)
 	before := evidenceSnapshot(t, bed.root)
 	code, out := bed.run("evidence", "show")
-	if code != 0 || !strings.Contains(out, "evidence of "+bed.gitRoot) || !strings.Contains(out, "1 item(s): 1 live, 0 compacted") {
+	if code != 0 || !strings.Contains(out, "evidence of "+bed.gitRoot) || !strings.Contains(out, "1 item(s): ") {
 		t.Fatalf("evidence show = %d:\n%s", code, out)
 	}
 	if strings.Contains(out, "old-chain,") || len(strings.Split(strings.TrimSpace(out), "\n")) > 6 {
@@ -243,5 +243,61 @@ func TestEvidenceShowAllVerboseListsTheItemsDisposeAccepts(t *testing.T) {
 	code, out = bed.run("evidence", "dispose", filepath.Join(bed.root, "AGENTS"), "--preview")
 	if code == 0 || !strings.Contains(out, "not an item; metasystem evidence show --verbose") {
 		t.Fatalf("a structure directory in another case is refused = %d:\n%s", code, out)
+	}
+}
+
+// witnessEvidenceShowSettlesOnce (Round B2-3, rule 2): a person's removal
+// cut short after its set-aside is rolled back by the first show, which
+// says so; a repeat show changes nothing.
+func witnessEvidenceShowSettlesOnce(t *testing.T, bed *evidenceVerbBed) {
+	t.Helper()
+	files, err := diskstore.Inventory(context.Background(), bed.chain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tombstone := diskstore.Tombstone{Schema: diskstore.TombstoneSchema, Item: "old-chain", Kind: diskstore.KindChain, Segment: diskstore.Segment(bed.gitRoot),
+		Files: files, History: []diskstore.HistoryEntry{}, InventoryDigest: diskstore.InventoryDigest(files), Step: diskstore.StepRemove,
+		Rule: diskstore.RulePerson, By: "Wido", At: diskNow, Receipt: "01RECEIPTSHOW", State: diskstore.StateBegun, Disposing: "old-chain.disposing-01S"}
+	data, _ := json.Marshal(tombstone)
+	helmMust(t, os.WriteFile(diskstore.RemovedTombstonePath(bed.chain), data, 0o644), os.Rename(bed.chain, bed.chain+".disposing-01S"))
+	code, out := bed.run("evidence", "show")
+	if code != 0 || !strings.Contains(out, "settled: ") || !strings.Contains(out, "rolled back, the item is back") {
+		t.Fatalf("the first show settles = %d:\n%s", code, out)
+	}
+	if _, err := os.Stat(filepath.Join(bed.chain, "jobs", "old-chain.log")); err != nil {
+		t.Fatalf("the item is back: %v", err)
+	}
+	before := evidenceSnapshot(t, bed.root)
+	code, out = bed.run("evidence", "show")
+	if code != 0 || strings.Contains(out, "settled: ") {
+		t.Fatalf("a repeat show settles nothing = %d:\n%s", code, out)
+	}
+	if after := evidenceSnapshot(t, bed.root); after != before {
+		t.Fatal("a repeat show changes nothing")
+	}
+}
+
+func TestEvidenceShowRollsBackARemovalCutShortOnce(t *testing.T) {
+	t.Parallel()
+	witnessEvidenceShowSettlesOnce(t, newEvidenceVerbBed(t))
+}
+
+// Round B2-3, rule 3: an entry of the root outside every segment is listed
+// as not managed and refused by dispose.
+func TestEvidenceShowListsNotManagedEntriesAndDisposeRefusesThem(t *testing.T) {
+	t.Parallel()
+	bed := newEvidenceVerbBed(t)
+	legacy := filepath.Join(bed.root, "agents", "old-layout-chain")
+	helmMust(t, os.MkdirAll(filepath.Join(legacy, "jobs"), 0o755), os.WriteFile(filepath.Join(legacy, "jobs", "x.json"), []byte("{}"), 0o644))
+	code, out := bed.run("evidence", "show", "--verbose")
+	if code != 0 || !strings.Contains(out, legacy+", ") || !strings.Contains(out, "not managed: remove by hand if unneeded") {
+		t.Fatalf("show names the entry = %d:\n%s", code, out)
+	}
+	code, out = bed.run("evidence", "dispose", legacy, "--preview")
+	if code == 0 || !strings.Contains(out, "not managed: remove by hand if unneeded") {
+		t.Fatalf("dispose refuses it = %d:\n%s", code, out)
+	}
+	if _, err := os.Stat(legacy); err != nil {
+		t.Fatal("nothing was removed")
 	}
 }

@@ -11,7 +11,7 @@ import (
 
 // The move protocol (3.5): a distilled bundle older than
 // disk.suite-failure-move-days moves into its segment of the evidence root,
-// evidence.root/suite-failures/<segment of the git root>/<name>. The copy
+// <the evidence root>/suite-failures/<segment of the git root>/<name>. The copy
 // goes to <destination>.partial-<stage>, every file is verified by digest
 // against the source's listing, the copy is renamed into place and its
 // directory synced, the bundle's blob references are rewritten to name the
@@ -31,7 +31,7 @@ type MoveResult struct {
 
 // MoveRules are one move's inputs.
 type MoveRules struct {
-	// SegmentDir is evidence.root/suite-failures/<segment>.
+	// SegmentDir is <the evidence root>/suite-failures/<segment>.
 	SegmentDir string
 	Blobs      BlobStore
 	Referrer   string

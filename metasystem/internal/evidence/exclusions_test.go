@@ -51,10 +51,26 @@ func (bed *boundBed) exclusions(fake *ledgers) *Exclusions {
 	return &Exclusions{Observe: fake.observe, Fetch: true, Citations: noCitations{}}
 }
 
-func (bed *boundBed) judged(exclusions *Exclusions) Bound {
-	bound := bed.bound(nil, nil)
-	bound.Judge = exclusions.Judge
-	return bound
+// judgedPass is every item of the segment judged as a person's dispose
+// judges it: clear by path, the segment-wide Unknown, each judgement.
+type judgedPass struct {
+	clear      map[string]bool
+	unknown    string
+	judgements map[string]Judgement
+}
+
+func (bed *boundBed) judge(exclusions *Exclusions) judgedPass {
+	pass := judgedPass{clear: map[string]bool{}, judgements: map[string]Judgement{}}
+	items, _ := bed.segment.Items(context.Background())
+	for _, item := range items {
+		judgement := exclusions.Judge(context.Background(), bed.segment, item)
+		if judgement.SegmentUnknown != "" && pass.unknown == "" {
+			pass.unknown = judgement.SegmentUnknown
+		}
+		pass.clear[item.Path] = blocking(judgement) == ""
+		pass.judgements[item.Path] = judgement
+	}
+	return pass
 }
 
 func (bed *boundBed) ledger(t *testing.T, lines ...string) string {
@@ -89,29 +105,28 @@ func TestAnOpenGoalHoldsItsChainOnTheFetchedLedger(t *testing.T) {
 	exclusions := bed.exclusions(fake)
 	tips := 0
 	exclusions.Tip = func(context.Context, string) (string, error) { tips++; return "9498700a9", nil }
-	bed.judged(exclusions).CompactSegment(context.Background(), bed.segment, settingsOf(1))
+	pass := bed.judge(exclusions)
 	if tips == 0 {
 		t.Fatal("each item after the first checks the accepted tip")
 	}
-	if compacted(open) || !compacted(done) {
-		t.Fatalf("the goal reopened on the remote holds its chain: %v %v", compacted(open), compacted(done))
+	if pass.clear[open] || !pass.clear[done] {
+		t.Fatalf("the goal reopened on the remote holds its chain: %v %v", pass.clear[open], pass.clear[done])
 	}
 	if fake.fetches != 1 {
 		t.Fatalf("one observation per checkout per pass, fetched first: %d", fake.fetches)
 	}
-	lines := receipts(t, bed.segment)
-	if len(lines) != 1 || lines[0].GoalState != GoalDone || lines[0].LedgerIdentity != identityA || lines[0].LedgerTip != "9498700a9" {
-		t.Fatalf("the receipt records the observation: %+v", lines)
+	if judgement := pass.judgements[done]; judgement.GoalState != GoalDone || judgement.LedgerIdentity != identityA || judgement.LedgerTip != "9498700a9" {
+		t.Fatalf("the judgement records the observation for the receipt: %+v", judgement)
 	}
 }
 
-func TestAFailedObservationCompactsNothingInTheSegment(t *testing.T) {
+func TestAFailedObservationHoldsEveryItemOfTheSegment(t *testing.T) {
 	t.Parallel()
 	bed := newBoundBed(t)
 	dir := bed.chain(t, "old", 300, 400, "")
-	position := bed.judged(bed.exclusions(&ledgers{err: errors.New("fetch: could not resolve host")})).CompactSegment(context.Background(), bed.segment, settingsOf(1))
-	if compacted(dir) || !strings.Contains(position.Unknown, "ledger not observed: fetch: could not resolve host") {
-		t.Fatalf("a failed fetch is Unknown for the whole segment: %+v", position)
+	pass := bed.judge(bed.exclusions(&ledgers{err: errors.New("fetch: could not resolve host")}))
+	if pass.clear[dir] || !strings.Contains(pass.unknown, "ledger not observed: fetch: could not resolve host") {
+		t.Fatalf("a failed fetch is Unknown for the whole segment: %+v", pass)
 	}
 }
 
@@ -122,14 +137,14 @@ func TestTwoLedgerIdentitiesAreTwoViews(t *testing.T) {
 	bed := newBoundBed(t)
 	dir := bed.chain(t, "forked", 300, 400, "g")
 	fake := &ledgers{fetched: map[string]LedgerView{bed.installation: view("01KOTHERADOPTION0000000000", map[string]string{"g": GoalDone})}}
-	position := bed.judged(bed.exclusions(fake)).CompactSegment(context.Background(), bed.segment, settingsOf(1))
-	if compacted(dir) || !strings.Contains(position.Unknown, "ledger identity changed: "+identityA) {
-		t.Fatalf("an observed identity other than the index's is Unknown: %+v", position)
+	pass := bed.judge(bed.exclusions(fake))
+	if pass.clear[dir] || !strings.Contains(pass.unknown, "ledger identity changed: "+identityA) {
+		t.Fatalf("an observed identity other than the index's is Unknown: %+v", pass)
 	}
 	fake.fetched[bed.installation] = view("", map[string]string{"g": GoalDone})
-	position = bed.judged(bed.exclusions(fake)).CompactSegment(context.Background(), bed.segment, settingsOf(1))
-	if compacted(dir) || !strings.Contains(position.Unknown, "no ledger identity") {
-		t.Fatalf("a root record with no identity is Unknown: %+v", position)
+	pass = bed.judge(bed.exclusions(fake))
+	if pass.clear[dir] || !strings.Contains(pass.unknown, "no ledger identity") {
+		t.Fatalf("a root record with no identity is Unknown: %+v", pass)
 	}
 }
 
@@ -144,8 +159,7 @@ func TestLocalModeUnionHoldsAGoalOpenInEitherClone(t *testing.T) {
 		accepted: map[string]LedgerView{peer.Installation: view(identityA, map[string]string{"g": GoalOpen})}}
 	exclusions := bed.exclusions(fake)
 	exclusions.Peers = []Context{peer}
-	bed.judged(exclusions).CompactSegment(context.Background(), bed.segment, settingsOf(1))
-	if compacted(dir) {
+	if bed.judge(exclusions).clear[dir] {
 		t.Fatal("in local mode a goal open in any armed clone of the identity holds")
 	}
 }
@@ -157,60 +171,55 @@ func TestAnUncoveredReceiptHoldsTheChainItNamesUntilARetroCoversIt(t *testing.T)
 	unnamed := bed.chain(t, "unnamed", 300, 400, "")
 	path := bed.ledger(t, receiptNaming("named"))
 	fake := &ledgers{fetched: map[string]LedgerView{bed.installation: view(identityA, map[string]string{})}}
-	bed.judged(bed.exclusions(fake)).CompactSegment(context.Background(), bed.segment, settingsOf(1))
-	if compacted(named) || !compacted(unnamed) {
-		t.Fatalf("an uncovered receipt holds the chain it names; an unnamed item is not held: %v %v", compacted(named), compacted(unnamed))
+	pass := bed.judge(bed.exclusions(fake))
+	if pass.clear[named] || !pass.clear[unnamed] {
+		t.Fatalf("an uncovered receipt holds the chain it names; an unnamed item is not held: %v %v", pass.clear[named], pass.clear[unnamed])
 	}
 	coverage := receipt.CoverageOf(readText(t, path))
 	retro := "1790000100|2026-09-21T00:00:00Z|RETRO|note=covered|covered=" + strings.Join(coverage.Digests, ",")
 	bed.ledger(t, receiptNaming("named"), retro)
-	bed.judged(bed.exclusions(fake)).CompactSegment(context.Background(), bed.segment, settingsOf(1))
-	if !compacted(named) {
-		t.Fatal("once a RETRO row covers the line, the chain is eligible")
+	if !bed.judge(bed.exclusions(fake)).clear[named] {
+		t.Fatal("once a RETRO row covers the line, the chain is clear")
 	}
 }
 
 // A line merged into the ledger by git between the judgement and the
-// receipt append makes the step roll back with nothing dropped
-// (DL4E-07); the next pass holds the item the line names.
-func TestALedgerChangedUnderTheJudgementRollsBack(t *testing.T) {
+// receipt append fails the commit check, so the removal rolls back with
+// nothing removed (DL4E-07); the next judgement holds the item the line
+// names.
+func TestALedgerChangedUnderTheJudgementFailsTheCommitCheck(t *testing.T) {
 	t.Parallel()
 	bed := newBoundBed(t)
 	dir := bed.chain(t, "merged", 300, 400, "")
 	path := bed.ledger(t, receiptNaming("someone-else"))
 	fake := &ledgers{fetched: map[string]LedgerView{bed.installation: view(identityA, map[string]string{})}}
-	exclusions := bed.exclusions(fake)
-	bound := bed.judged(exclusions)
-	bound.Judge = func(ctx context.Context, segment Segment, item Item) Judgement {
-		judgement := exclusions.Judge(ctx, segment, item)
-		// The fixture's git merge lands after the judgement.
-		handle, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
-		if err != nil {
-			t.Fatal(err)
-		}
-		handle.WriteString(receiptNaming("merged") + "\n")
-		handle.Close()
-		return judgement
+	judgement := bed.judge(bed.exclusions(fake)).judgements[dir]
+	if blocking(judgement) != "" || judgement.Commit == nil || judgement.Commit() != nil {
+		t.Fatalf("clear, with a commit check that passes on an unchanged ledger: %+v", judgement)
 	}
-	position := bound.CompactSegment(context.Background(), bed.segment, settingsOf(1))
-	if compacted(dir) || len(receipts(t, bed.segment)) != 0 || !strings.Contains(strings.Join(position.Pending, "\n"), "receipt ledger changed during the judgement") {
-		t.Fatalf("the step rolls back with no receipt: %+v", position)
+	handle, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
 	}
-	bed.judged(bed.exclusions(fake)).CompactSegment(context.Background(), bed.segment, settingsOf(1))
-	if compacted(dir) {
-		t.Fatal("the next pass holds the item the merged line names")
+	handle.WriteString(receiptNaming("merged") + "\n")
+	handle.Close()
+	if err := judgement.Commit(); err == nil || !strings.Contains(err.Error(), "receipt ledger changed during the judgement") {
+		t.Fatalf("the commit check fails and says why: %v", err)
+	}
+	if bed.judge(bed.exclusions(fake)).clear[dir] {
+		t.Fatal("the next judgement holds the item the merged line names")
 	}
 }
 
-func TestAMalformedReceiptLedgerCompactsNothing(t *testing.T) {
+func TestAMalformedReceiptLedgerHoldsTheSegment(t *testing.T) {
 	t.Parallel()
 	bed := newBoundBed(t)
 	dir := bed.chain(t, "old", 300, 400, "")
 	bed.ledger(t, "<<<<<<< HEAD", receiptNaming("x"))
 	fake := &ledgers{fetched: map[string]LedgerView{bed.installation: view(identityA, map[string]string{})}}
-	position := bed.judged(bed.exclusions(fake)).CompactSegment(context.Background(), bed.segment, settingsOf(1))
-	if compacted(dir) || !strings.Contains(position.Unknown, "malformed") {
-		t.Fatalf("a malformed receipt ledger compacts nothing in the segment: %+v", position)
+	pass := bed.judge(bed.exclusions(fake))
+	if pass.clear[dir] || !strings.Contains(pass.unknown, "malformed") {
+		t.Fatalf("a malformed receipt ledger holds every item of the segment: %+v", pass)
 	}
 }
 
@@ -245,14 +254,9 @@ func TestTheOwnerFileHoldsABundleOfAnOpenGoal(t *testing.T) {
 	none := bed.bundle(t, "20260801T000000Z-watchdog-standalone-1", 150, diskstore.BundleOwner{Attempt: diskstore.AttemptStandalone, Goal: diskstore.GoalNone})
 	unknown := bed.bundle(t, "20260801T000000Z-detached-legacy", 150, diskstore.BundleOwner{Attempt: diskstore.GoalUnknown, Goal: diskstore.GoalUnknown})
 	fake := &ledgers{fetched: map[string]LedgerView{bed.installation: view(identityA, map[string]string{"g-open": GoalOpen})}}
-	bed.judged(bed.exclusions(fake)).CompactSegment(context.Background(), bed.segment, settingsOf(1))
-	if compacted(held) || !compacted(none) || compacted(unknown) {
-		t.Fatalf("open goal held, goal none compacted, goal unknown never: %v %v %v", compacted(held), compacted(none), compacted(unknown))
-	}
-	for _, kept := range []string{diskstore.DistilledName, diskstore.OwnerFileName, diskstore.VerdictName} {
-		if _, err := os.Stat(filepath.Join(none, kept)); err != nil {
-			t.Fatalf("a compacted bundle keeps %s: %v", kept, err)
-		}
+	pass := bed.judge(bed.exclusions(fake))
+	if pass.clear[held] || !pass.clear[none] || pass.clear[unknown] {
+		t.Fatalf("open goal held, goal none clear, goal unknown never: %v %v %v", pass.clear[held], pass.clear[none], pass.clear[unknown])
 	}
 }
 

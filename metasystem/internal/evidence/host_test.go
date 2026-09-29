@@ -42,16 +42,11 @@ func (bed hostBed) checkouts() []HostCheckout {
 }
 
 func (bed hostBed) class(capBytes int64) *BoundClass {
-	fake := &ledgers{fetched: map[string]LedgerView{
-		bed.one.installation: view(identityA, map[string]string{}), bed.two.installation: view(identityA, map[string]string{})},
-		accepted: map[string]LedgerView{
-			bed.one.installation: view(identityA, map[string]string{}), bed.two.installation: view(identityA, map[string]string{})}}
 	citations := &Citations{Dir: filepath.Join(bed.homeState, "stores", "citations"), Now: boundNow,
 		Roots: func() ([]string, error) { return nil, nil }}
 	return &BoundClass{UserHome: bed.userHome, HomeStateRoot: bed.homeState, Checkouts: bed.checkouts(), MachineCap: capBytes,
-		BlobGrace: 24 * time.Hour, AgeFloor: 90 * 24 * time.Hour, Observe: fake.observe, Citations: citations,
-		Bound: Bound{BoundLock: diskstore.BoundLockPath(bed.homeState), Now: boundNow, Entropy: rand.Reader, By: "steward m1e",
-			Blobs: diskstore.BlobStore{Dir: diskstore.BlobStoreDir(bed.userHome)}}}
+		BlobGrace: 24 * time.Hour, AgeFloor: 90 * 24 * time.Hour, Citations: citations, By: "steward m1e",
+		Bound: Bound{Now: boundNow, Blobs: diskstore.BlobStore{Dir: diskstore.BlobStoreDir(bed.userHome)}}}
 }
 
 func (bed hostBed) run(t *testing.T, class *BoundClass, mode diskstore.Mode) diskstore.Report {
@@ -66,33 +61,43 @@ func (bed hostBed) run(t *testing.T, class *BoundClass, mode diskstore.Mode) dis
 	return report
 }
 
-// The machine cap (3.12): two roots each under their segment caps with the
-// host over evidence.machine-cap-gib compact the oldest item across both
-// first, and nothing is removed.
-func TestTheMachineCapCompactsTheOldestAcrossRootsAndRemovesNothing(t *testing.T) {
+// Round B2-3, rule 1: past the machine cap and past a segment's cap the
+// machine pass only reports, with the command pair; it changes nothing but
+// its bookkeeping and writes no receipt.
+func TestTheMachinePassOnlyReportsPastEitherCapAndRemovesNothing(t *testing.T) {
 	t.Parallel()
 	bed := newHostBed(t)
 	older := bed.two.chain(t, "older", 400, 400, "")
 	newer := bed.one.chain(t, "newer", 300, 400, "")
-	// The first pass publishes the citation generation.
 	bed.run(t, bed.class(1<<40), diskstore.ModeApply)
-	var total int64
-	for _, b := range []*boundBed{bed.one, bed.two} {
-		bytes, _, _ := diskstore.Measure(context.Background(), b.root)
-		total += bytes
-	}
-	report := bed.run(t, bed.class(total-300*kib), diskstore.ModeApply)
-	if !compacted(older) || compacted(newer) {
-		t.Fatalf("the oldest item on the host is compacted first, and the pass stops at the cap: %v %v\n%v", compacted(older), compacted(newer), report.Lines())
-	}
-	for _, dir := range []string{older, newer} {
-		if _, err := os.Stat(filepath.Join(dir, "brief.md")); err != nil {
-			t.Fatalf("no item is removed: %v", err)
+	before := snapshot(t, filepath.Dir(bed.one.root))
+	before2 := snapshot(t, filepath.Dir(bed.two.root))
+	class := bed.class(1)
+	class.SegmentSettings = func(Segment) (PassSettings, error) { return settingsOf(1), nil }
+	report := bed.run(t, class, diskstore.ModeApply)
+	text := strings.Join(report.Lines(), "\n")
+	for _, want := range []string{"machine cap: the host's evidence holds", "over the bound: " + bed.one.segment.Git, "over the bound: " + bed.two.segment.Git,
+		"metasystem evidence dispose --over-bound --export DIR --preview"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("the report names %q:\n%s", want, text)
 		}
 	}
-	lines := receipts(t, bed.two.segment)
-	if len(lines) != 1 || lines[0].Rule != diskstore.RuleMachineCap {
-		t.Fatalf("the compaction's rule is machine-cap: %+v", lines)
+	for _, dir := range []string{older, newer} {
+		if _, err := os.Stat(filepath.Join(dir, "jobs", filepath.Base(dir)+".log")); err != nil {
+			t.Fatalf("nothing is dropped or removed: %v", err)
+		}
+	}
+	for _, b := range []*boundBed{bed.one, bed.two} {
+		if len(receipts(t, b.segment)) != 0 {
+			t.Fatal("the machine writes no receipt")
+		}
+	}
+	for _, pair := range [][2]map[string]string{{before, snapshot(t, filepath.Dir(bed.one.root))}, {before2, snapshot(t, filepath.Dir(bed.two.root))}} {
+		for path, content := range pair[0] {
+			if strings.Contains(path, "/evidence/") && pair[1][path] != content {
+				t.Fatalf("an evidence file changed: %s", path)
+			}
+		}
 	}
 }
 
@@ -127,7 +132,7 @@ func TestEveryRootIsNamedWithItsOwnerAndOrphansAreUntouched(t *testing.T) {
 	report := bed.run(t, bed.class(1), diskstore.ModeApply)
 	text := strings.Join(report.Lines(), "\n")
 	for _, want := range []string{bed.one.root + ": root of " + bed.one.gitRoot, retired + ": retired root of /gone/checkout, successor per-checkout default",
-		unclaimed + ": unclaimed root", custom + ": unclaimed root", "1 unsegmented entry", "orphan segment 0123456789ab"} {
+		unclaimed + ": unclaimed root", custom + ": unclaimed root", "1 entry not managed", "orphan segment 0123456789ab"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("the report names %q:\n%s", want, text)
 		}
@@ -144,12 +149,11 @@ func TestEveryRootIsNamedWithItsOwnerAndOrphansAreUntouched(t *testing.T) {
 	}
 }
 
-// A preview lists what the bound would compact, judged on the accepted
-// ledger as it stands, and changes nothing but its plan (R15).
-func TestAPreviewPlansTheCompactionsAndChangesNothing(t *testing.T) {
+// A preview plans nothing and changes nothing but its plan (R15).
+func TestAPreviewOfTheMachinePassChangesNothing(t *testing.T) {
 	t.Parallel()
 	bed := newHostBed(t)
-	dir := bed.one.chain(t, "old", 300, 400, "")
+	bed.one.chain(t, "old", 300, 400, "")
 	bed.run(t, bed.class(1<<40), diskstore.ModeApply)
 	class := bed.class(1 << 40)
 	class.SegmentSettings = func(Segment) (PassSettings, error) { return settingsOf(1), nil }
@@ -157,16 +161,10 @@ func TestAPreviewPlansTheCompactionsAndChangesNothing(t *testing.T) {
 	report := bed.run(t, class, diskstore.ModePreview)
 	after := snapshot(t, filepath.Dir(bed.one.root))
 	delete(after, strings.TrimPrefix(filepath.Join(bed.homeState, "stores", "plans", report.Plan+".json"), filepath.Dir(bed.one.root)))
-	if !equalSnapshots(before, after) || compacted(dir) {
-		t.Fatal("a preview changes nothing but its plan")
+	if !equalSnapshots(before, after) || len(report.Planned) != 0 {
+		t.Fatalf("a preview changes nothing but its plan and plans no step: %+v", report.Planned)
 	}
-	planned := false
-	for _, item := range report.Planned {
-		if item.Path == dir {
-			planned = true
-		}
-	}
-	if !planned {
-		t.Fatalf("the preview lists the compaction: %+v", report.Planned)
+	if !strings.Contains(strings.Join(report.Lines(), "\n"), "over the bound: "+bed.one.segment.Git) {
+		t.Fatalf("it reports the segment over its bound:\n%s", strings.Join(report.Lines(), "\n"))
 	}
 }

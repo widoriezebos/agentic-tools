@@ -98,7 +98,7 @@ func Export(ctx context.Context, request ExportRequest) (ExportResult, error) {
 	if !filepath.IsAbs(request.Dir) {
 		return ExportResult{}, fmt.Errorf("the export directory must be absolute, got %q", request.Dir)
 	}
-	files, err := InventoryComplete(ctx, request.Item, nil)
+	files, err := InventoryComplete(ctx, request.Item)
 	if err != nil {
 		return ExportResult{}, fmt.Errorf("not exported: %w", err)
 	}

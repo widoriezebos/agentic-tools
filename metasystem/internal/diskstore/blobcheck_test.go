@@ -54,15 +54,6 @@ func TestABlobWhoseRecipeStandsSurvivesEverySweep(t *testing.T) {
 	if !bed.blobPresent() || result.Kept != 1 || len(result.Dropped) != 0 {
 		t.Fatalf("a distilled bundle keeps its blob through the sweep: %+v", result)
 	}
-	// A compaction keeps DISTILLED.txt, so its references stand.
-	if _, err := Dispose(context.Background(), DisposalStep{Item: bed.bundle, Ledger: filepath.Join(bed.root, "evidence", "disposals", "107e72c67539.jsonl"),
-		Kept: func(rel string) bool { return rel == DistilledName }, Stage: "01C", Receipt: DisposalReceipt{ID: "01RECEIPTC", Kind: KindBundle, Item: filepath.Base(bed.bundle), Segment: "107e72c67539", Rule: RuleBound}}); err != nil {
-		t.Fatal(err)
-	}
-	result = bed.check(testNow.Add(800*24*time.Hour), true).Run(context.Background())
-	if !bed.blobPresent() || result.Kept != 1 {
-		t.Fatalf("a compaction tombstone keeps the references: %+v", result)
-	}
 }
 
 func TestASharedBlobSurvivesTheFirstBundlesRemoval(t *testing.T) {
@@ -100,9 +91,7 @@ func TestAnUncommittedRemovalKeepsEveryReference(t *testing.T) {
 	if result := bed.check(later, true).Run(context.Background()); result.Kept != 1 || !bed.blobPresent() {
 		t.Fatalf("a bundle set aside under a begun tombstone keeps its reference: %+v", result)
 	}
-	if _, err := RecoverDisposal(context.Background(), bed.bundle, ledger, step.Receipt, Syncer{}, "01S", func(Tombstone) Recovery {
-		return Recovery{Reason: "rolled back"}
-	}); err != nil {
+	if _, err := SettlePersonDisposal(context.Background(), bed.bundle, ledger, Syncer{}, "01S"); err != nil {
 		t.Fatal(err)
 	}
 	if result := bed.check(later.Add(48*time.Hour), true).Run(context.Background()); len(result.Removed) != 0 || !bed.blobPresent() {

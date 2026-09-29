@@ -3,8 +3,8 @@ package evidence
 // A person's evidence acts (design engine-owns-disk-lifetimes Part B 3.12
 // "The public actions"; Wido 2026-09-28: "export before we then delete
 // with the verb because I want a verb to help me clean this in a safe
-// way"): show, export and dispose. Removal is only a person's act, from a
-// previewed plan: the preview judges on the accepted ledger as it stands
+// way"): show, export and dispose. Removal is only a person's act, of a
+// segmented item (Round B2-3, rule 3), from a previewed plan: the preview judges on the accepted ledger as it stands
 // and fetches nothing; the execution observes the ledger afresh under the
 // bound lock, re-judges every item, revalidates its device, inode and
 // inventory digest, skips a held item unless --override (every override
@@ -12,6 +12,9 @@ package evidence
 // only an item whose export verified. H1: a person is never refused; an
 // item whose removal would damage something is declined with what would
 // go wrong and the public command that settles it, and the rest completes.
+// A removal cut short is only ever rolled back before its commit point
+// and has only its set-aside copy removed after it (Round B2-3, rule 2);
+// the person then previews again.
 
 import (
 	"context"
@@ -88,15 +91,17 @@ func (e Env) settingsOf(segment Segment) (PassSettings, error) {
 	return SegmentSettings(segment)
 }
 
-// Target is one located item.
+// Target is one located item: always an item of a segment.
 type Target struct {
 	Root    Root
 	Segment Segment
 	Item    Item
-	// Unsegmented is a root's top-level entry outside every segment: a
-	// person's to remove whole, with no compact form.
-	Unsegmented bool
 }
+
+// DefaultPlanMaxAge bounds the plan dispose executes without --plan
+// (Round B2-3, N3-7): only this session's newest preview, and only when
+// it is younger than this.
+const DefaultPlanMaxAge = 24 * time.Hour
 
 // ErrNotEvidence is a path outside every evidence root.
 var ErrNotEvidence = errors.New("not in any evidence root of this host")
@@ -117,11 +122,14 @@ func segmentName12(name string) bool {
 // NotAnItem is the refusal for any word that is not an enumerated item.
 const NotAnItem = "not an item; metasystem evidence show --verbose lists this checkout's items, and --all --verbose every root's"
 
-// Enumerate is the inventory of items (Round B2-2, R1): every item of
-// every segment of every root (orphan segments included), every
-// unsegmented top-level entry and every legacy entry. It never yields a
-// structure directory, a segment, a tombstone, a sidecar, a stage or an
-// entry set aside for disposal.
+// NotManagedLine is how a not-managed entry is named (Round B2-3, rule 3).
+const NotManagedLine = "not managed: remove by hand if unneeded"
+
+// Enumerate is the inventory of items (Round B2-2, R1; Round B2-3, rule
+// 3): every item of every segment of every root, orphan segments
+// included. It never yields a structure directory, a segment, a
+// tombstone, a sidecar, a stage, an entry set aside for disposal, or an
+// entry that is not managed.
 func (e Env) Enumerate(ctx context.Context) ([]Target, error) {
 	var targets []Target
 	for _, root := range e.Roots() {
@@ -134,22 +142,21 @@ func (e Env) Enumerate(ctx context.Context) ([]Target, error) {
 				targets = append(targets, Target{Root: root, Segment: segment, Item: item})
 			}
 		}
-		for _, path := range root.Unsegmented {
-			bytes, _, _ := diskstore.Measure(ctx, path)
-			targets = append(targets, Target{Root: root, Unsegmented: true,
-				Item: Item{Kind: diskstore.KindUnsegmented, Name: filepath.Base(path), Path: path, Bytes: bytes}})
-		}
-		for _, path := range root.Legacy {
-			item := Item{Kind: diskstore.KindUnsegmented, Name: filepath.Base(path), Path: path}
-			if filepath.Base(filepath.Dir(path)) == "agents" {
-				item = chainItem(path)
-				item.Kind = diskstore.KindUnsegmented
-			}
-			item.Bytes, _, _ = diskstore.Measure(ctx, path)
-			targets = append(targets, Target{Root: root, Unsegmented: true, Item: item})
-		}
 	}
 	return targets, nil
+}
+
+// NotManaged lists every root's entries that are not managed, with their
+// bytes: evidence show names them, dispose refuses them.
+func (e Env) NotManaged(ctx context.Context) []ItemView {
+	var views []ItemView
+	for _, root := range e.Roots() {
+		for _, path := range root.NotManaged {
+			bytes, _, _ := diskstore.Measure(ctx, path)
+			views = append(views, ItemView{Name: filepath.Base(path), Path: path, State: "not managed", Bytes: bytes, Why: NotManagedLine})
+		}
+	}
+	return views
 }
 
 // Resolve accepts only items the inventory enumerates (Round B2-2, R1): a
@@ -166,7 +173,7 @@ func (e Env) Resolve(ctx context.Context, argument string) ([]Target, error) {
 	if !filepath.IsAbs(argument) {
 		for _, target := range targets {
 			segment := target.Segment
-			if !target.Unsegmented && segment.Context != nil && segment.Context.Installation == e.This.Installation && target.Item.Name == argument {
+			if segment.Context != nil && segment.Context.Installation == e.This.Installation && target.Item.Name == argument {
 				return []Target{target}, nil
 			}
 		}
@@ -187,6 +194,11 @@ func (e Env) Resolve(ctx context.Context, argument string) ([]Target, error) {
 		}
 	}
 	if len(found) != 1 {
+		for _, entry := range e.NotManaged(ctx) {
+			if candidate, err := os.Lstat(entry.Path); err == nil && os.SameFile(info, candidate) {
+				return nil, fmt.Errorf("%s is %s; dispose removes only an item of a segment", argument, NotManagedLine)
+			}
+		}
 		return nil, fmt.Errorf("%s: %s", argument, NotAnItem)
 	}
 	return found, nil
@@ -204,41 +216,6 @@ func (e Env) Locate(ctx context.Context, argument string) (Target, error) {
 	return targets[0], nil
 }
 
-func segmentNamed(root Root, directory, name string) Segment {
-	for _, segment := range root.Segments {
-		if directory == "events" && segment.Installation == name || directory != "events" && segment.Git == name {
-			return segment
-		}
-	}
-	segment := Segment{Root: root.Path, Git: name, Unknown: "orphan segment " + name}
-	if directory == "events" {
-		segment = Segment{Root: root.Path, Installation: name, Unknown: "orphan segment events/" + name}
-	}
-	return segment
-}
-
-func itemAt(ctx context.Context, directory, path string) (Item, error) {
-	info, err := os.Lstat(path)
-	if err != nil {
-		return Item{}, err
-	}
-	var item Item
-	switch directory {
-	case "agents":
-		item = chainItem(path)
-	case "suite-failures":
-		item = bundleItem(path)
-	default:
-		item = Item{Kind: diskstore.KindEvents, Name: filepath.Base(path), Path: path}
-		if match := eventsStamp.FindStringSubmatch(filepath.Base(path)); match != nil {
-			item.EndedAt, _ = time.Parse("20060102T150405Z", match[1])
-		}
-	}
-	_ = info
-	item.Bytes, _, _ = diskstore.Measure(ctx, path)
-	return item, nil
-}
-
 // PointerAnswer is what a path a record holds points at now (3.12 "The
 // tombstone and the pointer").
 type PointerAnswer struct {
@@ -250,7 +227,7 @@ type PointerAnswer struct {
 }
 
 // Pointer resolves any path a record may hold: a live file, a file of a
-// compacted or removed item from its tombstone's cumulative inventory
+// removed item from its tombstone's cumulative inventory
 // (with the export when there was one), or a distilled file's logical
 // original through its recipe line.
 func Pointer(ctx context.Context, path string) PointerAnswer {
@@ -267,9 +244,6 @@ func Pointer(ctx context.Context, path string) PointerAnswer {
 		rel = filepath.ToSlash(rel)
 		if removed, err := diskstore.ReadTombstone(diskstore.RemovedTombstonePath(item)); err == nil {
 			return fromTombstone(answer, diskstore.RemovedTombstonePath(item), removed, rel, "removed")
-		}
-		if compacted, err := diskstore.ReadTombstone(filepath.Join(item, diskstore.CompactTombstoneName)); err == nil {
-			return fromTombstone(answer, filepath.Join(item, diskstore.CompactTombstoneName), compacted, rel, "compacted")
 		}
 		if _, lines, present, err := diskstore.ReadDistilled(item); err == nil && present {
 			for _, line := range lines {
@@ -321,22 +295,13 @@ func fromTombstone(answer PointerAnswer, tombstonePath string, tombstone disksto
 	return answer
 }
 
-// judgeTarget judges every item by the exclusions (Round B2, F-3): a
-// segmented item in its segment; an unsegmented entry against its root's
-// context checkout, held when the root has none.
+// judgeTarget judges an item by the exclusions (Round B2, F-3) in its
+// segment; an item of a segment with no armed context checkout is held.
 func judgeTarget(ctx context.Context, exclusions *Exclusions, target Target) Judgement {
-	if !target.Unsegmented {
-		if target.Segment.Context == nil {
-			return Judgement{Held: []string{"its segment has no armed context checkout: " + target.Segment.Unknown}}
-		}
-		return exclusions.Judge(ctx, target.Segment, target.Item)
+	if target.Segment.Context == nil {
+		return Judgement{Held: []string{"its segment has no armed context checkout: " + target.Segment.Unknown}}
 	}
-	for _, segment := range target.Root.Segments {
-		if segment.Context != nil && segment.Unknown == "" {
-			return exclusions.Judge(ctx, segment, target.Item)
-		}
-	}
-	return Judgement{Held: []string{"its root has no armed context checkout to judge it against"}}
+	return exclusions.Judge(ctx, target.Segment, target.Item)
 }
 
 // DisposePlanSchema names a person's disposal plan.
@@ -370,7 +335,6 @@ type DisposePlan struct {
 	LedgerTip string            `json:"ledgerTip,omitempty"`
 	Ledger    string            `json:"ledger"`
 	Export    string            `json:"export,omitempty"`
-	Compact   bool              `json:"compact,omitempty"`
 	Items     []PlannedDisposal `json:"items"`
 	StillOver []string          `json:"stillOver,omitempty"`
 	// Session is the terminal session that previewed it: execution without
@@ -384,11 +348,10 @@ func PlanPath(homeStateRoot, id string) string {
 }
 
 // OverBound is the removal set that brings every segment over its cap to
-// or under it (3.12 --over-bound; DL4E-12): its compacted items and its
-// events archives past the age floor, oldest end time first, until the
-// segment's total from a stat walk now would be at or under the cap; held
-// items are listed as held and do not count; an uncompacted eligible item
-// is never in the set. The still-over lines say what it cannot select.
+// or under it (3.12 --over-bound; DL4E-12; Round B2-3): its items past the
+// age floor, oldest end time first, until the segment's total from a stat
+// walk now would be at or under the cap; held items are listed as held and
+// do not count. The still-over lines say what it cannot select.
 func (e Env) OverBound(ctx context.Context, judge func(Segment, Item) Judgement) ([]Target, []string) {
 	var targets []Target
 	var stillOver []string
@@ -401,7 +364,8 @@ func (e Env) OverBound(ctx context.Context, judge func(Segment, Item) Judgement)
 			if err != nil {
 				continue
 			}
-			total, _, complete := Bound{Blobs: e.Blobs}.Measure(ctx, segment)
+			bound := Bound{Now: e.Now, Blobs: e.Blobs}
+			total, _, complete := bound.Measure(ctx, segment)
 			if !complete || total <= settings.CapBytes {
 				continue
 			}
@@ -410,17 +374,17 @@ func (e Env) OverBound(ctx context.Context, judge func(Segment, Item) Judgement)
 				continue
 			}
 			sort.SliceStable(items, func(i, j int) bool { return items[i].EndedAt.Before(items[j].EndedAt) })
-			var held, young, awaiting int64
+			var held, young, unknown int64
 			for _, item := range items {
-				removable := item.EndUnknown == "" && e.Now.Sub(item.EndedAt) >= settings.AgeFloor && (item.Compacted || item.Kind == diskstore.KindEvents)
-				switch {
-				case !removable && item.EndUnknown == "" && e.Now.Sub(item.EndedAt) < settings.AgeFloor:
-					young += item.Bytes
+				if removable, _ := bound.Removable(item, settings.AgeFloor); !removable {
+					if item.EndUnknown != "" {
+						unknown += item.Bytes
+					} else {
+						young += item.Bytes
+					}
 					continue
-				case !removable:
-					awaiting += item.Bytes
-					continue
-				case total <= settings.CapBytes:
+				}
+				if total <= settings.CapBytes {
 					continue
 				}
 				targets = append(targets, Target{Root: root, Segment: segment, Item: item})
@@ -431,17 +395,17 @@ func (e Env) OverBound(ctx context.Context, judge func(Segment, Item) Judgement)
 				total -= item.Bytes
 			}
 			if total > settings.CapBytes {
-				stillOver = append(stillOver, fmt.Sprintf("still over by %s after this plan in %s: held %s; younger than the age floor %s; awaiting compaction %s; unsegmented %s (name them explicitly)",
-					formatGiB(total-settings.CapBytes), segment.Git, formatGiB(held), formatGiB(young), formatGiB(awaiting), formatGiB(unsegmentedBytes(ctx, root))))
+				stillOver = append(stillOver, fmt.Sprintf("still over by %s after this plan in %s: held %s; younger than the age floor %s; end time unknown %s; not managed in its root %s (%s)",
+					formatGiB(total-settings.CapBytes), segment.Git, formatGiB(held), formatGiB(young), formatGiB(unknown), formatGiB(notManagedBytes(ctx, root)), NotManagedLine))
 			}
 		}
 	}
 	return targets, stillOver
 }
 
-func unsegmentedBytes(ctx context.Context, root Root) int64 {
+func notManagedBytes(ctx context.Context, root Root) int64 {
 	var total int64
-	for _, entry := range root.Unsegmented {
+	for _, entry := range root.NotManaged {
 		bytes, _, _ := diskstore.Measure(ctx, entry)
 		total += bytes
 	}
@@ -452,17 +416,17 @@ func unsegmentedBytes(ctx context.Context, root Root) int64 {
 // and bytes, device, inode and inventory digest, and held or clear judged
 // on the accepted ledger as it stands: no fetch, no ref advance. It writes
 // exactly the plan file.
-func (e Env) Preview(ctx context.Context, targets []Target, stillOver []string, compact bool, exportDir string) (DisposePlan, error) {
+func (e Env) Preview(ctx context.Context, targets []Target, stillOver []string, exportDir string) (DisposePlan, error) {
 	id, err := diskstore.NewID(e.Now, e.Entropy)
 	if err != nil {
 		return DisposePlan{}, err
 	}
-	plan := DisposePlan{Schema: DisposePlanSchema, ID: id, At: e.Now.UTC(), Export: exportDir, Compact: compact, StillOver: stillOver, Items: []PlannedDisposal{},
+	plan := DisposePlan{Schema: DisposePlanSchema, ID: id, At: e.Now.UTC(), Export: exportDir, StillOver: stillOver, Items: []PlannedDisposal{},
 		Session: e.Session}
 	exclusions := e.Exclusions(false)
 	plan.Ledger = "goal state unknown: no accepted ledger"
 	for _, target := range targets {
-		planned := e.plan(ctx, target, compact, exclusions)
+		planned := e.plan(ctx, target, exclusions)
 		if target.Segment.Context != nil && plan.LedgerTip == "" {
 			if view, unknown := exclusions.observe(ctx, target.Segment); unknown == "" {
 				plan.LedgerTip = view.Tip
@@ -515,17 +479,14 @@ func (e Env) citer() Citer {
 }
 
 // plan is one item's preview.
-func (e Env) plan(ctx context.Context, target Target, compact bool, exclusions *Exclusions) PlannedDisposal {
+func (e Env) plan(ctx context.Context, target Target, exclusions *Exclusions) PlannedDisposal {
 	item := target.Item
 	planned := PlannedDisposal{Path: item.Path, Name: item.Name, Kind: item.Kind, Segment: target.Segment.Git, Root: target.Root.Path,
 		Step: diskstore.StepRemove, State: "clear"}
-	if compact {
-		planned.Step = diskstore.StepCompact
-	}
 	if info, err := os.Lstat(item.Path); err == nil {
 		planned.Device, planned.Inode = statIDs(info)
 	}
-	files, err := diskstore.Inventory(ctx, item.Path, nil)
+	files, err := diskstore.Inventory(ctx, item.Path)
 	if err != nil {
 		planned.Decline = "the item cannot be read: " + err.Error()
 		planned.State = "declined"
@@ -537,11 +498,6 @@ func (e Env) plan(ctx context.Context, target Target, compact bool, exclusions *
 			planned.Files++
 			planned.Bytes += file.Size
 		}
-	}
-	if compact && (item.Compacted || KeptFor(item.Kind) == nil || target.Unsegmented) {
-		planned.Decline = fmt.Sprintf("no compact form; without --compact the item is removed whole: %d files, %d bytes", planned.Files, planned.Bytes)
-		planned.State = "declined"
-		return planned
 	}
 	if reason := blocking(judgeTarget(ctx, exclusions, target)); reason != "" {
 		planned.Held = strings.Split(reason, "; ")
@@ -567,9 +523,10 @@ func ReadDisposePlan(homeStateRoot, id string) (DisposePlan, error) {
 }
 
 // NewestDisposePlan is the newest evidence disposal plan this session
-// previewed, or "": another session's preview is never executed by
-// default.
-func NewestDisposePlan(homeStateRoot, session string) string {
+// previewed within DefaultPlanMaxAge of now, or "": another session's
+// preview, or an older one, is never executed by default (Round B2-3,
+// N3-7).
+func NewestDisposePlan(homeStateRoot, session string, now time.Time) string {
 	entries, err := os.ReadDir(filepath.Join(homeStateRoot, "stores", "plans"))
 	if err != nil {
 		return ""
@@ -577,7 +534,7 @@ func NewestDisposePlan(homeStateRoot, session string) string {
 	var ids []string
 	for _, entry := range entries {
 		id := strings.TrimSuffix(entry.Name(), ".json")
-		if plan, err := ReadDisposePlan(homeStateRoot, id); err == nil && session != "" && plan.Session == session {
+		if plan, err := ReadDisposePlan(homeStateRoot, id); err == nil && session != "" && plan.Session == session && now.Sub(plan.At) < DefaultPlanMaxAge && !plan.At.After(now) {
 			ids = append(ids, id)
 		}
 	}
@@ -633,20 +590,14 @@ func (e Env) executeOne(ctx context.Context, plan DisposePlan, planned PlannedDi
 		outcome.Done, outcome.Already, outcome.Line = true, true, already
 		return outcome
 	}
-	// An interrupted disposal of this item is settled first, from its
-	// tombstone, even when the item was set aside and no longer enumerates
-	// (Round B2-2, R5).
-	var target Target
-	_, tombstone, open, openErr := diskstore.OpenDisposal(planned.Path)
-	switch {
-	case openErr != nil:
-		outcome.Line = planned.Path + ": its tombstone cannot be read (" + openErr.Error() + "); a person decides"
+	// A removal of this item that was cut short is settled first, from its
+	// tombstone, and never continued (Round B2-3, rule 2): the person
+	// previews again.
+	if line, open := e.settleOpen(ctx, planned.Path, disposalLedgerAt(planned)); open {
+		outcome.Line = line
 		return outcome
-	case open:
-		target, err = e.openTarget(ctx, planned, tombstone)
-	default:
-		target, err = e.Locate(ctx, planned.Path)
 	}
+	target, err := e.Locate(ctx, planned.Path)
 	if err != nil {
 		outcome.Line = planned.Path + ": " + err.Error()
 		return outcome
@@ -667,11 +618,6 @@ func (e Env) executeOne(ctx context.Context, plan DisposePlan, planned PlannedDi
 		outcome.Line = planned.Path + ": " + err.Error()
 		return outcome
 	}
-	ledger := disposalLedger(target)
-	judgement := judgeTarget(ctx, exclusions, target)
-	if recovered, handled := e.recover(ctx, target, ledger, stage, judgement, options); handled {
-		return recovered
-	}
 	if info, err := os.Lstat(planned.Path); err != nil {
 		outcome.Line = planned.Path + ": " + err.Error()
 		return outcome
@@ -679,11 +625,12 @@ func (e Env) executeOne(ctx context.Context, plan DisposePlan, planned PlannedDi
 		outcome.Line = planned.Path + ": changed since the preview; run --preview again"
 		return outcome
 	}
-	files, err := diskstore.Inventory(ctx, planned.Path, nil)
+	files, err := diskstore.Inventory(ctx, planned.Path)
 	if err != nil || diskstore.InventoryDigest(files) != planned.InventoryDigest {
 		outcome.Line = planned.Path + ": changed since the preview; run --preview again"
 		return outcome
 	}
+	judgement := judgeTarget(ctx, exclusions, target)
 	var overrides []string
 	if judgement.SegmentUnknown != "" && strings.HasPrefix(judgement.SegmentUnknown, "ledger not observed") {
 		judgement.Held = append(judgement.Held, "ledger-not-observed")
@@ -696,14 +643,14 @@ func (e Env) executeOne(ctx context.Context, plan DisposePlan, planned PlannedDi
 		}
 		overrides = strings.Split(reason, "; ")
 	}
-	// Settlement re-mirrors only after the exclusions let the item go
-	// (Round B2, F-13); a re-mirror that changed the item since the
+	// A chain's payload is settled only after the exclusions let the item
+	// go (Round B2, F-13); a re-mirror that changed the item since the
 	// preview sends the person back to it.
-	if decline := e.settle(ctx, target, stage); decline != "" {
+	if decline := e.settleChain(target, stage); decline != "" {
 		outcome.Line = planned.Path + ": declined: " + decline
 		return outcome
 	}
-	if files, err := diskstore.Inventory(ctx, planned.Path, nil); err != nil || diskstore.InventoryDigest(files) != planned.InventoryDigest {
+	if files, err := diskstore.Inventory(ctx, planned.Path); err != nil || diskstore.InventoryDigest(files) != planned.InventoryDigest {
 		outcome.Line = planned.Path + ": its settlement re-mirrored records that differ from the preview; run --preview again"
 		return outcome
 	}
@@ -711,14 +658,11 @@ func (e Env) executeOne(ctx context.Context, plan DisposePlan, planned PlannedDi
 		Item: target.Item.Name, Rule: diskstore.RulePerson, By: e.By, LedgerTip: judgement.LedgerTip, LedgerIdentity: judgement.LedgerIdentity,
 		EndedAt: target.Item.EndedAt.Format(time.RFC3339), Goal: target.Item.Goal, GoalState: judgement.GoalState,
 		UncoveredReceipts: judgement.Uncovered, Citations: judgement.Citations, Plan: plan.ID, Reason: options.Reason, Overrides: overrides}
-	if target.Unsegmented {
-		receipt.Kind = diskstore.KindUnsegmented
-	}
 	if receipt.ID, err = diskstore.NewReceiptID(e.Now, e.Entropy); err != nil {
 		outcome.Line = planned.Path + ": " + err.Error()
 		return outcome
 	}
-	if plan.Export != "" && planned.Step == diskstore.StepRemove {
+	if plan.Export != "" {
 		exported, err := diskstore.Export(ctx, diskstore.ExportRequest{Item: planned.Path, Dir: plan.Export, Segment: segmentName(target), Kind: receipt.Kind,
 			Checkout: receipt.Checkout, EndedAt: receipt.EndedAt, Blobs: e.Blobs, Now: e.Now, Stage: stage, Sync: e.Sync})
 		if err != nil {
@@ -728,135 +672,113 @@ func (e Env) executeOne(ctx context.Context, plan DisposePlan, planned PlannedDi
 		receipt.Export = exported.Ref(plan.Export)
 		outcome.Export = exported.Archive
 	}
-	step := diskstore.DisposalStep{Item: planned.Path, Receipt: receipt, Ledger: ledger, Commit: judgement.Commit, Stage: stage, Sync: e.Sync}
-	if planned.Step == diskstore.StepCompact {
-		verdict, err := Verdict(target.Item, e.Blobs)
-		if err != nil {
-			outcome.Line = planned.Path + ": not compacted: " + err.Error()
-			return outcome
-		}
-		step.Kept, step.Verdict = KeptFor(target.Item.Kind), verdict
-	}
-	result, err := diskstore.Dispose(ctx, step)
+	result, err := diskstore.Dispose(ctx, diskstore.DisposalStep{Item: planned.Path, Receipt: receipt, Ledger: disposalLedger(target), Commit: judgement.Commit,
+		Stage: stage, Sync: e.Sync})
 	switch {
 	case err != nil:
-		outcome.Line = planned.Path + ": stopped: " + err.Error() + "; repeat metasystem evidence dispose --plan " + plan.ID
+		outcome.Line = planned.Path + ": stopped: " + err.Error() + "; run --preview again"
 	case result.RolledBack != "":
 		outcome.Line = planned.Path + ": rolled back, nothing removed: " + result.RolledBack + "; run --preview again"
 	case result.Already:
-		outcome.Done, outcome.Already, outcome.Line = true, true, planned.Path+": already "+pastTense(planned.Step)
+		outcome.Done, outcome.Already, outcome.Line = true, true, planned.Path+": already removed"
 	default:
-		outcome.Done, outcome.Freed = true, result.Receipt.ItemBytesBefore-result.Receipt.ItemBytesAfter
-		outcome.Line = fmt.Sprintf("%s: %s, %d files, receipt %s", planned.Path, pastTense(planned.Step), result.Receipt.Dropped, result.Receipt.ID)
+		outcome.Done, outcome.Freed = true, result.Receipt.ItemBytesBefore
+		outcome.Line = fmt.Sprintf("%s: removed, %d files, receipt %s", planned.Path, result.Receipt.Dropped, result.Receipt.ID)
 		if outcome.Export != "" {
 			outcome.Line += ", exported to " + outcome.Export
 		}
-		if planned.Step == diskstore.StepRemove && target.Item.Kind == diskstore.KindBundle {
+		if target.Item.Kind == diskstore.KindBundle {
 			e.dropReferences(result.Tombstone, target)
 		}
 	}
 	return outcome
 }
 
-// openTarget is the target of an item whose disposal is open: its root and
-// segment from its path, its facts from the item or its set-aside copy.
-func (e Env) openTarget(ctx context.Context, planned PlannedDisposal, tombstone diskstore.Tombstone) (Target, error) {
-	for _, root := range e.Roots() {
-		rel, err := filepath.Rel(root.Path, planned.Path)
-		if err != nil || strings.HasPrefix(rel, "..") || rel == "." {
-			continue
-		}
-		parts := strings.Split(filepath.ToSlash(rel), "/")
-		read := planned.Path
-		if tombstone.Disposing != "" {
-			if aside := filepath.Join(filepath.Dir(planned.Path), tombstone.Disposing); pathPresent(aside) {
-				read = aside
-			}
-		}
-		if len(parts) == 3 && segmentName12(parts[1]) {
-			item, err := itemAt(ctx, parts[0], read)
-			if err != nil {
-				return Target{}, err
-			}
-			item.Name, item.Path = filepath.Base(planned.Path), planned.Path
-			return Target{Root: root, Segment: segmentNamed(root, parts[0], parts[1]), Item: item}, nil
-		}
-		return Target{Root: root, Unsegmented: true, Item: Item{Kind: diskstore.KindUnsegmented, Name: filepath.Base(planned.Path), Path: planned.Path}}, nil
+// settleOpen settles a removal of the item that was cut short (Round
+// B2-3, rule 2): rolled back before its commit point, its set-aside copy
+// removed after it. open is false when there was none; the line says what
+// was done and that the person previews again.
+func (e Env) settleOpen(ctx context.Context, item, ledger string) (string, bool) {
+	_, tombstone, open, err := diskstore.OpenDisposal(item)
+	switch {
+	case err != nil:
+		return item + ": its tombstone cannot be read (" + err.Error() + "); a person decides", true
+	case !open:
+		return "", false
 	}
-	return Target{}, fmt.Errorf("%s is %w", planned.Path, ErrNotEvidence)
+	stage, err := diskstore.NewID(e.Now, e.Entropy)
+	if err != nil {
+		return item + ": " + err.Error(), true
+	}
+	settled, err := diskstore.SettlePersonDisposal(ctx, item, ledger, e.Sync, stage)
+	switch {
+	case err != nil:
+		return item + ": its removal (receipt " + tombstone.Receipt + ") was cut short and could not be settled: " + err.Error(), true
+	case settled.Finished:
+		return item + ": its removal (receipt " + tombstone.Receipt + ") was committed; its set-aside copy is now removed", true
+	}
+	return item + ": its removal that was cut short was rolled back, the item is back; run --preview again", true
 }
 
-func pastTense(step string) string {
-	if step == diskstore.StepCompact {
-		return "compacted"
+// SettleOpen settles every removal of this host's segments that was cut
+// short (evidence show; Round B2-3, rule 2), under the bound lock without
+// waiting; held, it settles nothing and says so.
+func (e Env) SettleOpen(ctx context.Context) []string {
+	var open []string
+	for _, root := range e.Roots() {
+		for _, segment := range root.Segments {
+			for _, directory := range segment.Dirs() {
+				if directory != "" {
+					open = append(open, diskstore.OpenRemovals(directory)...)
+				}
+			}
+		}
 	}
-	return "removed"
+	if len(open) == 0 {
+		return nil
+	}
+	lock, err := diskstore.TryBoundExclusive(diskstore.BoundLockPath(e.HomeStateRoot))
+	if err != nil {
+		return []string{fmt.Sprintf("%d removal(s) cut short are settled once the bound lock is free (a disposal is in its step)", len(open))}
+	}
+	defer lock.Release()
+	var lines []string
+	for _, item := range open {
+		line, _ := e.settleOpen(ctx, item, disposalLedgerAt(PlannedDisposal{Path: item}))
+		lines = append(lines, line)
+	}
+	return lines
 }
 
 func segmentName(target Target) string {
-	switch {
-	case target.Unsegmented:
-		return "unsegmented"
-	case target.Item.Kind == diskstore.KindEvents:
+	if target.Item.Kind == diskstore.KindEvents {
 		return target.Segment.Installation
 	}
 	return target.Segment.Git
 }
 
-// disposalLedger is the item's receipt ledger: its segment's, or
-// unsegmented.jsonl for a root's unsegmented entry.
+// disposalLedger is the item's receipt ledger: its segment's.
 func disposalLedger(target Target) string {
-	name := segmentName(target)
-	return filepath.Join(target.Root.Path, "disposals", name+".jsonl")
+	return filepath.Join(target.Root.Path, "disposals", segmentName(target)+".jsonl")
 }
 
-// alreadyDone answers a repeat: a removed item, or a compacted one asked
-// to compact again, succeeds and writes nothing (R-129).
+// disposalLedgerAt is the ledger of an item known by its path alone
+// (<root>/<agents|suite-failures|events>/<segment>/<item>), as it is
+// while the item is set aside.
+func disposalLedgerAt(planned PlannedDisposal) string {
+	segment := filepath.Dir(planned.Path)
+	return filepath.Join(filepath.Dir(filepath.Dir(segment)), "disposals", filepath.Base(segment)+".jsonl")
+}
+
+// alreadyDone answers a repeat: a removed item succeeds and writes nothing
+// (R-129).
 func (e Env) alreadyDone(planned PlannedDisposal) string {
 	if tombstone, err := diskstore.ReadTombstone(diskstore.RemovedTombstonePath(planned.Path)); err == nil && tombstone.State == diskstore.StateDone {
 		if _, err := os.Lstat(planned.Path); errors.Is(err, os.ErrNotExist) {
 			return planned.Path + ": already removed (receipt " + tombstone.Receipt + ")"
 		}
 	}
-	if planned.Step == diskstore.StepCompact {
-		if tombstone, err := diskstore.ReadTombstone(filepath.Join(planned.Path, diskstore.CompactTombstoneName)); err == nil && tombstone.State == diskstore.StateDone {
-			return planned.Path + ": already compacted (receipt " + tombstone.Receipt + ")"
-		}
-	}
 	return ""
-}
-
-// recover settles an unfinished disposal of the item first: committed, it
-// is finished; uncommitted, it is re-judged and a recorded export is
-// re-verified on the disk before it may continue (DL4E-05).
-func (e Env) recover(ctx context.Context, target Target, ledger, stage string, judgement Judgement, options ExecuteOptions) (Outcome, bool) {
-	_, tombstone, open, err := diskstore.OpenDisposal(target.Item.Path)
-	if err != nil || !open {
-		return Outcome{}, false
-	}
-	outcome := Outcome{Path: target.Item.Path}
-	result, err := diskstore.RecoverDisposal(ctx, target.Item.Path, ledger, diskstore.DisposalReceipt{Kind: tombstone.Kind, Item: tombstone.Item,
-		Segment: tombstone.Segment, Rule: tombstone.Rule, By: tombstone.By, Export: tombstone.Export, Overrides: tombstone.Overrides}, e.Sync, stage,
-		func(tombstone diskstore.Tombstone) diskstore.Recovery {
-			if tombstone.Export != nil {
-				if got, _, err := diskstore.FileDigest(ctx, tombstone.Export.Archive); err != nil || got != tombstone.Export.ArchiveSHA256 {
-					return diskstore.Recovery{Reason: "kept: export not verified after restart"}
-				}
-			}
-			if reason := blocking(judgement); reason != "" && !options.Override {
-				return diskstore.Recovery{Reason: "held: " + reason}
-			}
-			return diskstore.Recovery{Continue: true, Commit: judgement.Commit}
-		})
-	switch {
-	case err != nil:
-		outcome.Line = target.Item.Path + ": its unfinished disposal could not be settled: " + err.Error()
-	case result.RolledBack != "":
-		outcome.Line = target.Item.Path + ": its unfinished disposal was rolled back: " + result.RolledBack
-	default:
-		outcome.Done, outcome.Line = true, target.Item.Path+": its unfinished disposal was finished, receipt "+tombstone.Receipt
-	}
-	return outcome, true
 }
 
 // dropReferences drops a removed bundle's blob references after its commit
@@ -883,13 +805,13 @@ func (e Env) dropReferences(tombstonePath string, target Target) {
 	}
 }
 
-// settle is the damage protection for a chain (3.12, DL4C-15, DL4E-11): a
+// settleChain is the damage protection for a chain (3.12, DL4C-15, DL4E-11): a
 // closed chain whose payload is still in its checkout is settled by the
 // verb itself (every terminal job re-mirrored, then the collector's own
 // collection for this one chain), unless a registered, unreleased
 // workspace store of the chain keeps that payload; a chain that is not
 // closed is declined naming the one action that changes its state.
-func (e Env) settle(ctx context.Context, target Target, stage string) string {
+func (e Env) settleChain(target Target, stage string) string {
 	if target.Item.Kind != diskstore.KindChain || target.Segment.Context == nil {
 		return ""
 	}
@@ -936,7 +858,6 @@ func (e Env) settle(ctx context.Context, target Target, stage string) string {
 	case !collected:
 		return "its payload stays in " + installation + ": " + reason + "; run metasystem system check there"
 	}
-	_ = ctx
 	return ""
 }
 
@@ -967,11 +888,7 @@ func (e Env) ExportTargets(ctx context.Context, targets []Target, dir string) []
 				defer release()
 			}
 			stage, _ := diskstore.NewID(e.Now, e.Entropy)
-			kind := target.Item.Kind
-			if target.Unsegmented {
-				kind = diskstore.KindUnsegmented
-			}
-			result, err := diskstore.Export(ctx, diskstore.ExportRequest{Item: target.Item.Path, Dir: dir, Segment: segmentName(target), Kind: kind,
+			result, err := diskstore.Export(ctx, diskstore.ExportRequest{Item: target.Item.Path, Dir: dir, Segment: segmentName(target), Kind: target.Item.Kind,
 				Checkout: target.Segment.CheckoutName(), EndedAt: target.Item.EndedAt.Format(time.RFC3339), Blobs: e.Blobs, Now: e.Now, Stage: stage, Sync: e.Sync})
 			switch {
 			case err != nil:
@@ -1014,15 +931,17 @@ func (e Env) ExportDirFor(to string, stores []string) (string, string) {
 
 // ItemView is one item as evidence show prints it.
 type ItemView struct {
-	Name     string    `json:"name"`
-	Kind     string    `json:"kind"`
-	Path     string    `json:"path"`
-	State    string    `json:"state"`
-	EndedAt  time.Time `json:"endedAt,omitempty"`
-	Bytes    int64     `json:"bytes"`
-	Eligible bool      `json:"eligible"`
-	Why      string    `json:"why,omitempty"`
-	Held     []string  `json:"held,omitempty"`
+	Name    string    `json:"name"`
+	Kind    string    `json:"kind,omitempty"`
+	Path    string    `json:"path"`
+	State   string    `json:"state"`
+	EndedAt time.Time `json:"endedAt,omitempty"`
+	Bytes   int64     `json:"bytes"`
+	// Removable: past the age floor with a known end time, so
+	// --over-bound may select it (a held item is still judged).
+	Removable bool     `json:"removable"`
+	Why       string   `json:"why,omitempty"`
+	Held      []string `json:"held,omitempty"`
 }
 
 // SegmentView is this checkout's segment for evidence show.
@@ -1033,19 +952,23 @@ type SegmentView struct {
 	AgeFloor time.Duration             `json:"ageFloor"`
 	Items    []ItemView                `json:"items"`
 	Ledger   string                    `json:"ledger"`
-	// NextPass are the items the next pass would compact, oldest first.
-	NextPass []string `json:"nextPass,omitempty"`
-	Unknown  string   `json:"unknown,omitempty"`
-	// Open are disposals a person must finish or roll back.
-	Open []string `json:"open,omitempty"`
+	Unknown  string                    `json:"unknown,omitempty"`
+	// Settled are the removals cut short that this show settled (Round
+	// B2-3, rule 2).
+	Settled []string `json:"settled,omitempty"`
+	// NotManaged are the root's entries outside every segment.
+	NotManaged []ItemView `json:"notManaged,omitempty"`
 }
 
 // Show reads this checkout's segment: its total against its cap, every
-// item's state, eligibility and the exclusion that holds it (judged on the
-// accepted ledger as it stands), what the next pass would compact, and the
-// over-the-bound line with the command pair. It writes nothing.
+// item's state, whether --over-bound may select it and the exclusion that
+// holds it (judged on the accepted ledger as it stands), the over-the-bound
+// line with the command pair, and the root's entries that are not managed.
+// Its one write is settling a removal that was cut short (Round B2-3, rule
+// 2).
 func (e Env) Show(ctx context.Context) SegmentView {
 	view := SegmentView{Checkout: e.This.Facts.GitRoot, Ledger: "goal state unknown: no accepted ledger"}
+	view.Settled = e.SettleOpen(ctx)
 	var segment Segment
 	var root Root
 	for _, candidate := range e.Roots() {
@@ -1068,6 +991,10 @@ func (e Env) Show(ctx context.Context) SegmentView {
 		return view
 	}
 	view.Root = root.Path
+	for _, path := range root.NotManaged {
+		bytes, _, _ := diskstore.Measure(ctx, path)
+		view.NotManaged = append(view.NotManaged, ItemView{Name: filepath.Base(path), Path: path, State: "not managed", Bytes: bytes, Why: NotManagedLine})
+	}
 	settings, err := e.settingsOf(segment)
 	if err != nil {
 		view.Unknown = err.Error()
@@ -1075,11 +1002,8 @@ func (e Env) Show(ctx context.Context) SegmentView {
 	}
 	view.AgeFloor = settings.AgeFloor
 	bound := Bound{Now: e.Now, Blobs: e.Blobs}
-	position := diskstore.EvidenceSegment{Segment: segment.Git, Root: segment.Root, Checkout: segment.CheckoutName(), CapBytes: settings.CapBytes, Held: map[string]int64{}}
-	position.TotalBytes, position.BlobChargeBytes, _ = bound.Measure(ctx, segment)
-	if segment.Unknown != "" {
-		view.Unknown, position.Unknown = segment.Unknown, segment.Unknown
-	}
+	view.Position = bound.ReportSegment(ctx, segment, settings)
+	view.Unknown = segment.Unknown
 	exclusions := e.Exclusions(false)
 	if observed, unknown := exclusions.observe(ctx, segment); unknown == "" {
 		view.Ledger = "judged on the accepted ledger " + short12(observed.Tip)
@@ -1089,79 +1013,73 @@ func (e Env) Show(ctx context.Context) SegmentView {
 	} else {
 		view.Ledger = unknown
 	}
-	view.Open = segment.OpenPersonDisposals(ctx)
 	items, _ := segment.Items(ctx)
 	sort.SliceStable(items, func(i, j int) bool { return items[i].EndedAt.Before(items[j].EndedAt) })
-	held := map[string]string{}
-	estimate := position.TotalBytes
 	for _, item := range items {
-		state := "live"
-		if item.Compacted {
-			state = "compacted"
-		}
-		entry := ItemView{Name: item.Name, Kind: item.Kind, Path: item.Path, State: state, EndedAt: item.EndedAt, Bytes: item.Bytes}
-		entry.Eligible, entry.Why = bound.Candidate(segment, item, settings.AgeFloor)
-		if entry.Eligible && segment.Unknown == "" {
+		entry := ItemView{Name: item.Name, Kind: item.Kind, Path: item.Path, State: "live", EndedAt: item.EndedAt, Bytes: item.Bytes}
+		entry.Removable, entry.Why = bound.Removable(item, settings.AgeFloor)
+		if entry.Removable && segment.Unknown == "" {
 			if reason := blocking(exclusions.Judge(ctx, segment, item)); reason != "" {
-				entry.Eligible, entry.Held = false, strings.Split(reason, "; ")
-				held[item.Name] = reason
-			} else if estimate > settings.CapBytes {
-				view.NextPass = append(view.NextPass, item.Name)
-				estimate -= item.Bytes
+				entry.Held = strings.Split(reason, "; ")
 			}
 		}
 		view.Items = append(view.Items, entry)
 	}
-	if position.Unknown == "" {
-		bound.finishPosition(ctx, segment, settings, &position, held)
-	}
-	view.Position = position
 	return view
 }
 
 // Lines renders a segment view: a short summary by default; every item
 // with --verbose.
 func (v SegmentView) Lines(verbose bool) []string {
-	if v.Root == "" {
-		return []string{"evidence of " + v.Checkout + ": " + v.Unknown}
-	}
 	var lines []string
+	for _, line := range v.Settled {
+		lines = append(lines, "settled: "+line)
+	}
+	if v.Root == "" {
+		return append(lines, "evidence of "+v.Checkout+": "+v.Unknown)
+	}
 	position := v.Position
 	lines = append(lines, fmt.Sprintf("evidence of %s: segment %s in %s: %s of the %s cap%s; age floor %d days",
 		v.Checkout, position.Segment, v.Root, formatGiB(position.TotalBytes), formatGiB(position.CapBytes), charges(position.BlobChargeBytes), int(v.AgeFloor.Hours()/24)))
-	counts := map[string]int{}
-	var heldCount, eligible int
+	var heldCount, removable int
 	for _, item := range v.Items {
-		counts[item.State]++
 		if len(item.Held) > 0 {
 			heldCount++
-		}
-		if item.Eligible {
-			eligible++
+		} else if item.Removable {
+			removable++
 		}
 	}
-	lines = append(lines, fmt.Sprintf("  %d item(s): %d live, %d compacted; %d eligible for compaction, %d held by an exclusion; %s",
-		len(v.Items), counts["live"], counts["compacted"], eligible, heldCount, v.Ledger))
+	lines = append(lines, fmt.Sprintf("  %d item(s): %d past the age floor and clear, %d held by an exclusion; %s",
+		len(v.Items), removable, heldCount, v.Ledger))
 	if v.Unknown != "" {
 		lines = append(lines, "  Unknown to the bound: "+v.Unknown)
 	}
-	for _, line := range v.Open {
+	for _, line := range position.Pending {
 		lines = append(lines, "  unfinished: "+line)
-	}
-	if len(v.NextPass) > 0 {
-		lines = append(lines, fmt.Sprintf("  the next pass would compact %d item(s): %s", len(v.NextPass), examplesOf(v.NextPass)))
 	}
 	if position.Over {
 		lines = append(lines, position.Lines(verbose)...)
 	}
+	if count := len(v.NotManaged); count > 0 {
+		var bytes int64
+		for _, entry := range v.NotManaged {
+			bytes += entry.Bytes
+		}
+		lines = append(lines, fmt.Sprintf("  %d entr%s of %s outside every segment, %s: %s", count, plural(count, "y", "ies"), v.Root, formatGiB(bytes), NotManagedLine))
+		if verbose {
+			for _, entry := range v.NotManaged {
+				lines = append(lines, fmt.Sprintf("    %s, %s: %s", entry.Path, formatGiB(entry.Bytes), NotManagedLine))
+			}
+		}
+	}
 	if verbose {
 		for _, item := range v.Items {
-			line := fmt.Sprintf("    %s %s %s, ended %s, %s", item.State, item.Kind, item.Name, item.EndedAt.Format("2006-01-02"), formatGiB(item.Bytes))
+			line := fmt.Sprintf("    %s %s, ended %s, %s", item.Kind, item.Name, item.EndedAt.Format("2006-01-02"), formatGiB(item.Bytes))
 			switch {
 			case len(item.Held) > 0:
 				line += "; held: " + strings.Join(item.Held, "; ")
-			case item.Eligible:
-				line += "; eligible"
+			case item.Removable:
+				line += "; past the age floor, clear"
 			default:
 				line += "; " + item.Why
 			}
@@ -1176,11 +1094,4 @@ func charges(bytes int64) string {
 		return ""
 	}
 	return " (blob charges " + formatGiB(bytes) + ")"
-}
-
-func examplesOf(names []string) string {
-	if len(names) <= 3 {
-		return strings.Join(names, ", ")
-	}
-	return strings.Join(names[:3], ", ") + fmt.Sprintf(" and %d more", len(names)-3)
 }
