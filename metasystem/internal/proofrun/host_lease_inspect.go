@@ -119,7 +119,7 @@ func inspectHostLease(directory, path string, locked bool, reclaimer *leaseRecla
 	if record.Cleared {
 		return report, false, nil
 	}
-	verdict := reclaimer.judge(record)
+	verdict := reclaimer.judge(path, record)
 	switch {
 	case verdict.live:
 		report.State, report.Reason = HostLeaseLive, fmt.Sprintf("owner pid %d is alive", record.Owner.Pid)
@@ -128,7 +128,7 @@ func inspectHostLease(directory, path string, locked bool, reclaimer *leaseRecla
 	case !locked:
 		report.State, report.Reason = HostLeaseDead, verdict.ownerDead+"; admission.lock is busy, the next admission pass reclaims it"
 	default:
-		if err := reclaimer.commit(directory, path, file, record, verdict.ownerDead); err != nil {
+		if err := reclaimer.commit(directory, path, file, record, verdict); err != nil {
 			return report, false, err
 		}
 		report.State, report.Reason = HostLeaseReclaimed, verdict.ownerDead
