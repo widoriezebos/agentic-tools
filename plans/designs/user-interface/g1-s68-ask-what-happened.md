@@ -339,3 +339,63 @@ S68-07 and S68-08 alone.
 confirmed answered, zero material, no first-use case left where words
 are lost, a trouble reaches another conversation, or an answer cannot
 be read. The loop is CLOSED.
+
+## Built (2026-09-29)
+
+Step 1 built by Claude on Opus 5.5 in worktree `agentic-tools-ask`,
+branch `ask-what-happened` from main `da139f839`, in five commits
+(`71e810454` the trouble block, `TroubleRequest`, the `refusal` reader
+and the skill's rule; `c3de9724f` a proposal outside the ten acts
+refused, never a card; `948b9f43b` the refusal names the catalogue;
+`bf97c31ab` every trouble on screen as one line with Ask what
+happened, the trouble context above the providers, the pending chip
+owned by its conversation; `ec86d1d6c` an answer's link to a place in
+the interface followed, the walkthrough's fake Partner answering in
+three parts with one card and one link). Report: `~/LocalStorage/
+agentic-tools-evidence/review-room-20260928/opus-build-report-ask-what
+-happened.md`; screenshots under `ask-what-happened/`. Departures,
+recorded there: the trouble context lives in `shell/troubles.tsx`,
+since `trouble.tsx` and `Trouble.tsx` are one path on this host's
+case-insensitive filesystem; the answer renderer gained answer-only
+links to interface addresses so a recovery that is a press elsewhere
+can be followed (D3); a waiting trouble is held in page memory and
+lost on reload, like the draft, while the line stays on screen to
+press again; the Launch sheet's authorization word is the token secret
+the scrub withholds.
+
+**Sol's read** (`g1-s68-sol-read.md`, verbatim): five material
+findings and one proof gap. Four refusal sites still drawn outside
+`Trouble` because the structural rule's pattern missed `-refuse` and
+`-refused`, and the Partner's busy refusal not askable; a caught throw
+under the focused Partner view offering a control with no conversation
+left to read the answer; the candidate's and the launch sheet's
+refusals dropping their codes; the failure toast without a control of
+its own; the bell row passing neither the notification's time nor its
+reference; and the sign-in fixture synthetic. **Fix round 1**
+(`e143e6265`): all six, the last proved by a walk through the real
+sign-in sheet with a typed and echoed code that reached neither the
+trouble nor the runtime. **Sol's re-read**: four fixed, the proof gap
+closed by inspected evidence, one held on a last site (the ledger's
+"could not be read" statement, drawn with a `problems` class the
+widened rule still missed), and one new: a notification without a
+reference borrowed the current page's goal as its subject. **Fix
+round 2** (`ef7e69242`, `3f14e1ac4`): the ledger statement is trouble
+lines and the rule refuses a problem in any shape; a notification's
+trouble names the notification and never the page's subject. Read by
+the design's author under Wido's rule of 2026-09-28 to stop a loop at
+one class's root; the two fixes are a pattern and a where.
+
+Residuals, none material at first use: a waiting trouble does not
+survive a reload; the bell chip's label is loose; the failure toast's
+control is proved by vitest, not in the browser.
+
+Landed through `ask-landing3`, merged with main (the engine's GLE fix
+and batch 13), the bundle rebuilt, every landing check green, the
+whole `cmd/metasystem` package run to completion. Two tests outside
+this slice failed in that run and pass by name on main and on the
+landing branch alike, `TestScratchEnvironmentRealGoWorkload` in
+`internal/proofrun` and `TestGoalBudgetRoutesQueuedBoxesAndDefaults
+TheEnrolledName` in `cmd/metasystem`: load flakes on a machine running
+several gates at once, which the engine seat has on its list to fix at
+the cause (Go telemetry writing into a scratch directory being
+removed). The standing interface restarted onto the landed build.
