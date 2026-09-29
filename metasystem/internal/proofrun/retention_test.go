@@ -115,11 +115,22 @@ func (b *retentionBed) retention(target int64, namers ...AttemptNamer) *Retentio
 		}}
 }
 
+// emptyCensusReader is a host with no other process: its census is
+// complete and names no holder.
+func emptyCensusReader() *diskstore.CensusReader {
+	return &diskstore.CensusReader{Pids: func() ([]int64, error) { return nil, nil }}
+}
+
 func (b *retentionBed) pass(class diskstore.Class) diskstore.Report {
+	b.t.Helper()
+	return b.passWith(class, emptyCensusReader())
+}
+
+func (b *retentionBed) passWith(class diskstore.Class, reader *diskstore.CensusReader) diskstore.Report {
 	b.t.Helper()
 	report, err := diskstore.RunPass(context.Background(), diskstore.PassOptions{Kind: "checkout", Name: b.control,
 		Registry: diskstore.Registry{Dir: filepath.Join(b.control, "stores")}, Mode: diskstore.ModeApply, Now: retentionNow,
-		Clock: func() time.Time { return retentionNow }, Classes: []diskstore.Class{class}})
+		Clock: func() time.Time { return retentionNow }, Classes: []diskstore.Class{class}, CensusReader: reader})
 	if err != nil {
 		b.t.Fatal(err)
 	}
@@ -315,7 +326,7 @@ func TestAttemptReferencesCoverEveryAttemptField(t *testing.T) {
 	if len(fill.ids) < 4 {
 		t.Fatalf("the fill reached only %d attempt fields", len(fill.ids))
 	}
-	if missing := fill.uncovered(AttemptReferences(attempt)); len(missing) > 0 {
+	if missing := fill.uncovered(AttemptReferences(attempt), attemptNotAttemptIDs); len(missing) > 0 {
 		t.Fatalf("attempt fields AttemptReferences does not name:\n%s", strings.Join(missing, "\n"))
 	}
 	b := newRetentionBed(t)
@@ -328,7 +339,40 @@ func TestAttemptReferencesCoverEveryAttemptField(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if missing := scratchFill.uncovered(named); len(missing) > 0 || len(scratchFill.ids) == 0 {
+	if missing := scratchFill.uncovered(named, nil); len(missing) > 0 || len(scratchFill.ids) == 0 {
 		t.Fatalf("scratch fields no reader names: %v", missing)
+	}
+}
+
+// attemptNotAttemptIDs are the attempt record fields the detector's name
+// rule matches that carry no attempt id, each with why.
+var attemptNotAttemptIDs = map[string]string{
+	"Attempt.Retry.PriorAttribution":              "the prior attempt's load attribution, a sentence",
+	"Attempt.TestResult.EngineRearm.SourceCommit": "a git commit the engine was rebuilt from",
+}
+
+// The detector catches the two shapes the third read found it missed: an
+// attempt id in a struct nested under an attempt-named slice, and a field
+// named for a proof with no "attempt" in its name.
+func TestAttemptFieldDetectorCatchesNestedAndProofNamedFields(t *testing.T) {
+	t.Parallel()
+	var record struct {
+		ReplayAttempts []struct{ Source string } `json:"replayAttempts"`
+		PriorProof     string                    `json:"priorProof"`
+		Nested         struct {
+			Deeper []struct{ ReuseFrom string }
+		}
+		Unrelated string
+	}
+	fill := &attemptFill{}
+	fill.fill(reflect.ValueOf(&record).Elem(), "Variant", false, 0)
+	missing := strings.Join(fill.uncovered(nil, nil), "\n")
+	for _, want := range []string{"Variant.ReplayAttempts[].Source", "Variant.PriorProof", "Variant.Nested.Deeper[].ReuseFrom"} {
+		if !strings.Contains(missing, want) {
+			t.Errorf("the detector misses %s:\n%s", want, missing)
+		}
+	}
+	if strings.Contains(missing, "Unrelated") {
+		t.Errorf("the detector marks a field its rule does not name:\n%s", missing)
 	}
 }

@@ -425,8 +425,9 @@ func attemptEnded(attempt Attempt) time.Time {
 // Apply empties one attempt's payload under the proof mutation lock, taken
 // without waiting: the attempt is reloaded and judged again, every attempt
 // written since the plan is read for a reference to it (one that cannot
-// be read keeps it), the note is written, then every payload entry but the
-// note is removed. The attempt's records are never touched.
+// be read keeps it), the use census is read over the payload, the note is
+// written, then every payload entry but the note is removed. The attempt's
+// records are never touched.
 func (r *Retention) Apply(ctx context.Context, pass *diskstore.Pass, item diskstore.Item) diskstore.Verdict {
 	held, err := TryAcquireMutation(r.Control)
 	if errors.Is(err, ErrMutationHeld) {
@@ -459,6 +460,9 @@ func (r *Retention) Apply(ctx context.Context, pass *diskstore.Pass, item diskst
 		return diskstore.Verdict{Decision: diskstore.Keep, Reason: "no payload directory of this attempt is found by listing the store", Command: "metasystem disk show"}
 	}
 	dir := r.payload(id)
+	if verdict := payloadUse(ctx, pass, dir); verdict.Decision != diskstore.Release {
+		return verdict
+	}
 	note, _ := json.Marshal(map[string]any{"attempt": id, "payloadReleasedAt": pass.Now.UTC().Format(time.RFC3339), "bytes": item.Bytes})
 	if _, err := atomicfile.WriteFile(filepath.Join(dir, PayloadNote), append(note, '\n'), 0o600, dir); err != nil {
 		return diskstore.Verdict{Decision: diskstore.Pending, Reason: "the payload note could not be written: " + err.Error(), Command: "metasystem disk show"}
@@ -528,4 +532,32 @@ func readRetainedAttempt(control, id string) (Attempt, error) {
 		return Attempt{}, fmt.Errorf("proof attempt %s has schema %d, which this engine does not know", id, attempt.SchemaVersion)
 	}
 	return attempt, nil
+}
+
+// payloadUse is the use census over a payload just before its removal
+// (the pass's census, with processes started since it read afresh): any
+// live holder of its cwd, executable or an open file inside, and a census
+// not taken or incomplete, keep the payload, pending and retried.
+func payloadUse(ctx context.Context, pass *diskstore.Pass, dir string) diskstore.Verdict {
+	census := pass.Census(ctx)
+	switch {
+	case census == nil || !census.Taken:
+		reason := "use census not taken"
+		if census != nil && census.NotTaken != "" {
+			reason = census.NotTaken
+		}
+		return diskstore.Verdict{Decision: diskstore.Pending, Reason: reason + "; the payload waits", Command: "metasystem disk clean"}
+	case pass.CensusReader() != nil:
+		if err := census.ReadNew(ctx, *pass.CensusReader()); err != nil {
+			return diskstore.Verdict{Decision: diskstore.Pending, Reason: "processes started since the census could not be read: " + err.Error(), Command: "metasystem disk clean"}
+		}
+	}
+	if !census.Complete() {
+		return diskstore.Verdict{Decision: diskstore.Pending, Reason: "use census incomplete: " + strings.Join(census.GapLines(), "; "), Command: "metasystem disk clean"}
+	}
+	if holders := census.Holders(dir); len(holders) != 0 {
+		return diskstore.Verdict{Decision: diskstore.Pending, Reason: fmt.Sprintf("in use by pid %d (%s)", holders[0].Pid, holders[0].Command),
+			Command: fmt.Sprintf("metasystem disk clean, once pid %d has ended", holders[0].Pid)}
+	}
+	return diskstore.Verdict{Decision: diskstore.Release}
 }
