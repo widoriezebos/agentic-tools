@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -14,6 +15,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 )
 
 // helmYielding names the boundaries that yield under the helm in this binary;
@@ -21,8 +23,9 @@ import (
 // yield the binary does not make.
 var helmYielding = []string{"the hooks allow every turn", "the tool gate is silent", "status names the person at the helm", "the pre-commit guard admits your commits in the checkout you sit in"}
 
-// helmOwners are the facts helm take reads besides the signature. Zero values
-// are the production readers.
+// helmOwners are the facts helm take reads besides the signature, and what
+// helm return's catch-up reads and runs. Zero values are the production
+// readers.
 type helmOwners struct {
 	reader  humanauthority.Reader
 	pid     func() int64
@@ -30,6 +33,16 @@ type helmOwners struct {
 	machine func(string) (string, error)
 	account func() string
 	zone    *time.Location
+
+	git           func(dir string, args ...string) (string, error)
+	stdin         io.Reader
+	stdinTerminal func() bool
+	ask           func(prompt string) (string, bool)
+	holder        func(root string) (lease.CurrentHolderView, error)
+	done          func(inv *intentInvocation, id, by, reason string, proof humanauthority.Proof) intentResult
+	read          func(inv *intentInvocation, patch, brief string) intentResult
+	recover       func(scope processScope) string
+	fence         func(root string) error
 }
 
 func (o helmOwners) withDefaults() helmOwners {
@@ -56,6 +69,38 @@ func (o helmOwners) withDefaults() helmOwners {
 	if o.zone == nil {
 		o.zone = time.Local
 	}
+	if o.git == nil {
+		o.git = goalBranchGit
+	}
+	if o.stdin == nil {
+		o.stdin = os.Stdin
+	}
+	if o.stdinTerminal == nil {
+		stdin := o.stdin
+		o.stdinTerminal = func() bool {
+			file, ok := stdin.(*os.File)
+			if !ok {
+				return false
+			}
+			info, err := file.Stat()
+			return err == nil && info.Mode()&os.ModeCharDevice != 0
+		}
+	}
+	if o.holder == nil {
+		o.holder = helmHolder
+	}
+	if o.done == nil {
+		o.done = helmReturnDone
+	}
+	if o.read == nil {
+		o.read = helmReturnRead
+	}
+	if o.recover == nil {
+		o.recover = helmRecover
+	}
+	if o.fence == nil {
+		o.fence = ensureGuardEnrolled
+	}
 	return o
 }
 
@@ -76,7 +121,9 @@ func helmIntentCommands() []intentCommand {
 	}, {
 		object: "helm", action: "return", audience: "both", summary: "give the seat back to the machinery",
 		usage: []string{"metasystem helm return"},
-		details: []string{"I give the seat back to the machinery. It removes the signature first, then shows what changed while at the helm and what the machinery sees now; it starts, stops, claims or cleans nothing.",
+		details: []string{"I give the seat back to the machinery. It removes the signature first, then shows what changed while at the helm and what the machinery sees now, " +
+			"then asks whether to conclude the goal and whether to request a read; without a terminal it prints the commands. " +
+			"It re-enrolls the ledger hook and recovers supervision that is down, as metasystem system start --if-down does; it stops, claims or cleans nothing.",
 			"Anyone in the seat may run it; returning a helm nobody holds is fine."},
 		examples: []string{"metasystem helm return"},
 		run:      runIntentHelmReturn,
@@ -128,7 +175,8 @@ func runIntentHelmTake(inv *intentInvocation) int {
 	enrollment, readErr := humanauthority.ReadEnrollment(root)
 	if readErr == nil {
 		record.Enrollment, record.EnrolledAs = "other-terminal", enrollment.Human
-		if _, proveErr := humanauthority.Prove(root, pid, owners.reader, now); proveErr == nil {
+		// A helm proof is never the take's grade: only the real walk is.
+		if enrolled, proveErr := humanauthority.Prove(root, pid, owners.reader, now); proveErr == nil && enrolled.Helm == nil {
 			record.Enrollment = "proven"
 			if record.By == "" {
 				record.By = enrollment.Human
@@ -275,9 +323,14 @@ func runIntentHelmReturn(inv *intentInvocation) int {
 		lines = append(lines, "helm.log was not appended: "+err.Error())
 	}
 	lines = append(lines, inv.helmReport(removal.Seat, since)...)
-	lines = append(lines, "supervision re-arms at the next turn end (the Stop hook arms it) or now with metasystem system start")
+	lines, printed := inv.helmCatchUp(removal.Seat, record, since, problem == "", lines)
+	lines = append(lines, "the machinery is at the helm again")
+	summary := ""
+	if !printed {
+		summary, lines = lines[0], lines[1:]
+	}
 	return inv.render(intentResult{Outcome: intentConfirmed, Targets: []intentTarget{{Kind: "seat", ID: removal.Seat.Checkout}},
-		Summary: "the machinery is at the helm again", text: lines, Data: map[string]any{"returned": record}})
+		Summary: summary, text: lines, Data: map[string]any{"returned": record}})
 }
 
 // helmReport is the best-effort account shared by status and return: yields

@@ -124,6 +124,10 @@ func Prove(root, installation string, invokerPID int64, now time.Time) Authority
 	if err != nil || !proof.ValidFor(root) {
 		return unproven(proofReason(proof, err))
 	}
+	// A helm proof lasts one act; the interface's proof outlives the helm.
+	if proof.Helm != nil {
+		return unproven("the process that started the interface was admitted only by the person at the helm, not proven at the enrolled terminal (a terminal is enrolled once with " + humanauthority.EnrollCommand + ")")
+	}
 	classification, classifyErr := lease.ClassifyVerbAt(root, installation, invokerPID)
 	if classifyErr != nil {
 		return unproven("the process that started the interface could not be classified (" + classifyErr.Error() + ")")

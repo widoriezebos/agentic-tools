@@ -164,10 +164,7 @@ func Guard(owners GuardOwners, root, workTree string, stdout, stderr io.Writer) 
 
 // helmAdmission answers, once per guard run, whether the helm admits this
 // commit: the work tree's seat is at the helm and the work tree is the seat's
-// primary checkout, which holds when its own .git entry, the effective git
-// dir and the common dir resolve to one directory. A linked worktree's git
-// dir lies under the common dir's worktrees/; steering GIT_DIR cannot change
-// the on-disk entry. Any answer that fails is "not admitted".
+// primary checkout (PrimaryCheckout).
 func helmAdmission(owners GuardOwners, workTree string, git func(args ...string) GitResult) func() (helm.State, string, bool) {
 	var (
 		asked, admitted bool
@@ -185,29 +182,39 @@ func helmAdmission(owners GuardOwners, workTree string, git func(args ...string)
 		if state = owners.Helm(workTree); !state.Active {
 			return state, commonDir, false
 		}
-		var dirs []string
-		for _, args := range [][]string{
-			{"rev-parse", "--path-format=absolute", "--resolve-git-dir", filepath.Join(workTree, ".git")},
-			{"rev-parse", "--path-format=absolute", "--git-dir"},
-			{"rev-parse", "--path-format=absolute", "--git-common-dir"},
-		} {
-			answer := git(args...)
-			dir := strings.TrimRight(string(answer.Stdout), "\n")
-			if answer.Code != 0 || dir == "" {
-				return state, commonDir, false
-			}
-			if !filepath.IsAbs(dir) {
-				dir = filepath.Join(workTree, dir)
-			}
-			dir, err := filepath.EvalSymlinks(dir)
-			if err != nil || len(dirs) > 0 && dir != dirs[0] {
-				return state, commonDir, false
-			}
-			dirs = append(dirs, dir)
-		}
-		commonDir, admitted = dirs[0], true
+		commonDir, admitted = PrimaryCheckout(git, workTree)
 		return state, commonDir, admitted
 	}
+}
+
+// PrimaryCheckout reports whether workTree is its seat's primary checkout,
+// and names the common dir when it is: the work tree's own .git entry, the
+// effective git dir and the common dir resolve to one directory. A linked
+// worktree's git dir lies under the common dir's worktrees/; steering GIT_DIR
+// cannot change the on-disk entry. git runs in workTree. Any answer that
+// fails is "not the primary checkout".
+func PrimaryCheckout(git func(args ...string) GitResult, workTree string) (string, bool) {
+	var dirs []string
+	for _, args := range [][]string{
+		{"rev-parse", "--path-format=absolute", "--resolve-git-dir", filepath.Join(workTree, ".git")},
+		{"rev-parse", "--path-format=absolute", "--git-dir"},
+		{"rev-parse", "--path-format=absolute", "--git-common-dir"},
+	} {
+		answer := git(args...)
+		dir := strings.TrimRight(string(answer.Stdout), "\n")
+		if answer.Code != 0 || dir == "" {
+			return "", false
+		}
+		if !filepath.IsAbs(dir) {
+			dir = filepath.Join(workTree, dir)
+		}
+		dir, err := filepath.EvalSymlinks(dir)
+		if err != nil || len(dirs) > 0 && dir != dirs[0] {
+			return "", false
+		}
+		dirs = append(dirs, dir)
+	}
+	return dirs[0], true
 }
 
 // helmSubject names what a helm yield admitted: the branch HEAD names, the

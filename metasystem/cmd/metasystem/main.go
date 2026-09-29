@@ -232,6 +232,9 @@ func registeredFamilies() []family {
 }
 
 func main() {
+	// While the seat is at the helm, a person proof refused in the seat's
+	// primary checkout is the holder's act (helm_admits.go).
+	wireHelmAdmission()
 	os.Exit(dispatch(os.Args[1:]))
 }
 

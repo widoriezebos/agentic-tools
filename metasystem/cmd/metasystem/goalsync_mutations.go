@@ -1499,6 +1499,11 @@ func resolveGoalHuman(flags *syncFlags, proof humanauthority.Proof) error {
 	if !proof.EnrolledTerminalFor(flags.root) && !(proof.FixtureOnly && proof.ValidFor(flags.root)) {
 		return fmt.Errorf("the enrolled terminal has no recorded name")
 	}
+	// At the helm the act is the holder's, whatever name the enrollment has.
+	if proof.Helm != nil {
+		flags.by = proof.Helm.By
+		return nil
+	}
 	enrollment, err := humanauthority.ReadEnrollment(flags.root)
 	if err != nil || strings.TrimSpace(enrollment.Human) == "" {
 		return fmt.Errorf("the enrolled terminal has no recorded name")
