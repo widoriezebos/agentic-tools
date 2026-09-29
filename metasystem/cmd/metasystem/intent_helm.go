@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -34,6 +35,7 @@ type helmOwners struct {
 	zone    *time.Location
 
 	git           func(dir string, args ...string) (string, error)
+	stdin         io.Reader
 	stdinTerminal func() bool
 	ask           func(prompt string) (string, bool)
 	holder        func(root string) (lease.CurrentHolderView, error)
@@ -70,18 +72,18 @@ func (o helmOwners) withDefaults() helmOwners {
 	if o.git == nil {
 		o.git = goalBranchGit
 	}
-	if o.stdinTerminal == nil {
-		o.stdinTerminal = func() bool {
-			info, err := os.Stdin.Stat()
-			return err == nil && info.Mode()&os.ModeCharDevice != 0
-		}
+	if o.stdin == nil {
+		o.stdin = os.Stdin
 	}
-	if o.ask == nil {
-		input := bufio.NewReader(os.Stdin)
-		o.ask = func(prompt string) (string, bool) {
-			fmt.Fprint(os.Stdout, prompt)
-			answer, err := input.ReadString('\n')
-			return strings.TrimSpace(answer), err == nil
+	if o.stdinTerminal == nil {
+		stdin := o.stdin
+		o.stdinTerminal = func() bool {
+			file, ok := stdin.(*os.File)
+			if !ok {
+				return false
+			}
+			info, err := file.Stat()
+			return err == nil && info.Mode()&os.ModeCharDevice != 0
 		}
 	}
 	if o.holder == nil {

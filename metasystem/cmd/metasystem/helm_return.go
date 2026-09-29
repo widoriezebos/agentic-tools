@@ -2,8 +2,10 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -30,6 +32,9 @@ type helmCommit struct{ sha, tree, subject, branch, where string }
 // the questions are asked they are printed first, so the person sees them.
 func (inv *intentInvocation) helmCatchUp(seat helm.Seat, record helm.Record, since time.Time, readable bool, lines []string) (out []string, printed bool) {
 	owners := inv.owners.helm.withDefaults()
+	if owners.ask == nil {
+		owners.ask = helmAsk(owners.stdin, inv.stdout)
+	}
 	yields, err := helmYieldsSince(seat, since)
 	if err != nil {
 		lines = append(lines, "acts at the helm: unavailable: "+err.Error())
@@ -384,12 +389,30 @@ func helmReturnRead(inv *intentInvocation, patch, brief string) intentResult {
 	return inv.diagnosticReadResult(result, err, patch)
 }
 
-// helmRecover is the recover path system start --if-down takes.
+// helmAsk asks on the invocation's own writer and reads one answer line from
+// the standard input it was given.
+func helmAsk(stdin io.Reader, stdout io.Writer) func(string) (string, bool) {
+	input := bufio.NewReader(stdin)
+	return func(prompt string) (string, bool) {
+		fmt.Fprint(stdout, prompt)
+		answer, err := input.ReadString('\n')
+		return strings.TrimSpace(answer), err == nil
+	}
+}
+
+// helmRecover is the recover path system start --if-down takes; its own
+// report is kept to one line.
 func helmRecover(scope processScope) string {
-	if runUpWith([]string{"--metasystem-root", scope.Installation, "--repo", scope.Checkout, "--recover-only", "--if-down"}, stateroot.RepositoryTop) == 0 {
+	var report bytes.Buffer
+	if runUpWith([]string{"--metasystem-root", scope.Installation, "--repo", scope.Checkout, "--recover-only", "--if-down"}, stateroot.RepositoryTop, &report, &report) == 0 {
 		return "supervision: recovered"
 	}
-	return "supervision re-arms at the next turn end (the Stop hook arms it)"
+	line := "supervision re-arms at the next turn end (the Stop hook arms it)"
+	if last := strings.TrimSpace(report.String()); last != "" {
+		lines := strings.Split(last, "\n")
+		line += "; the recovery said: " + lines[len(lines)-1]
+	}
+	return line
 }
 
 // helmHolder is the seat's recorded lease holder.

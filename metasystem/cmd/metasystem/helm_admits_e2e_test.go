@@ -277,19 +277,17 @@ func TestHelmReturnConcludesThroughTheRealDoneOwner(t *testing.T) {
 	helmMust(t, err)
 	owners := defaultIntentOwners()
 	owners.dependencies.ownerLineage = func() string { return "" }
-	answers := []string{"helm-return", "", "n"}
+	// The person answers at the terminal: the goal, Enter for the offered
+	// conclusion; the questions are asked on the invocation's own writer.
 	owners.helm = helmOwners{
+		stdin:         strings.NewReader("helm-return\n\n"),
 		stdinTerminal: func() bool { return true },
-		ask: func(string) (string, bool) {
-			answer := answers[0]
-			answers = answers[1:]
-			return answer, true
-		},
-		recover: func(processScope) string { return "supervision: recovered" },
+		recover:       func(processScope) string { return "supervision: recovered" },
 	}
 	command, rest, _ := resolveIntentArgv([]string{"helm", "return"})
 	var stdout, stderr bytes.Buffer
-	if code := runIntentIn(command, rest, &stdout, &stderr, root, owners); code != 0 || !strings.Contains(stdout.String(), "goal done helm-return: ") {
+	if code := runIntentIn(command, rest, &stdout, &stderr, root, owners); code != 0 || !strings.Contains(stdout.String(), "goal done helm-return: ") ||
+		!strings.Contains(stdout.String(), "Conclude a goal with these commits? [goal id / Enter keeps every goal open] Conclusion [Enter: landed at the helm by wido] ") {
 		t.Fatalf("return: %d\n%s\n%s", code, stdout.String(), stderr.String())
 	}
 	if record := helmLedgerRecord(t, root, "records/goals/helm-return.md"); !strings.Contains(record, " done actor=human:wido ") ||
