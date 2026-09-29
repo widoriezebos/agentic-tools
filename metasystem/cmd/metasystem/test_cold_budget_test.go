@@ -41,8 +41,19 @@ func testColdCandidateBuildRefusalRunsBeforeNativeBuilder(t *testing.T) {
 	want := &coldBuildBudgetRefusal{detail: "fixture exhausted"}
 	called := 0
 	environment := testingEnvironment(os.Environ())
+	// Outside a proof run's scratch nothing is prepared and the legacy
+	// namespace gains nothing (engine-owns-disk-lifetimes 3.5, DL2-11).
 	fixture.queueIdentity(ordinaryProjectTree, ordinaryEngineTree, ordinaryBuildFive, environment, false)
-	artifact, err := prepareCandidateEngineWithColdPreflight(context.Background(), controlRoot,
+	if artifact, err := prepareCandidateEngineWithColdPreflight(context.Background(), controlRoot, fixture.workspace(), "metasystem", ordinaryProjectTree,
+		environment, func() error { t.Fatal("no cold build outside a scratch run"); return nil }, fixture.dependency()); artifact != nil || err == nil ||
+		!strings.Contains(err.Error(), "scratch") {
+		t.Fatalf("preparation outside a scratch run is refused: artifact=%+v err=%v", artifact, err)
+	}
+	if _, err := os.Stat(filepath.Join(controlRoot, "artifacts", "agents", "candidate-engines")); !os.IsNotExist(err) {
+		t.Fatalf("a refused preparation writes nothing: %v", err)
+	}
+	fixture.queueIdentity(ordinaryProjectTree, ordinaryEngineTree, ordinaryBuildFive, environment, false)
+	artifact, err := prepareCandidateEngineWithColdPreflight(candidateScratchContext(t, context.Background(), controlRoot), controlRoot,
 		fixture.workspace(), "metasystem", ordinaryProjectTree,
 		environment, func() error { called++; return want }, fixture.dependency())
 	fixture.assertDrained()
@@ -50,7 +61,7 @@ func testColdCandidateBuildRefusalRunsBeforeNativeBuilder(t *testing.T) {
 	if artifact != nil || !errors.As(err, &refusal) || refusal != want || called != 1 {
 		t.Fatalf("cold preflight did not refuse before build: artifact=%+v err=%v called=%d", artifact, err, called)
 	}
-	entries, err := os.ReadDir(filepath.Join(controlRoot, "artifacts", "agents", "candidate-engines"))
+	entries, err := os.ReadDir(filepath.Join(controlRoot, "artifacts", "agents", "candidate-engines", "v2"))
 	if err != nil {
 		t.Fatal(err)
 	}
