@@ -25,8 +25,10 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/progress"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/wiredoc"
 	"golang.org/x/sys/unix"
@@ -191,7 +193,14 @@ func withRecordLock(root, job string, fn func(recordPath string) error, clocks .
 		return fmt.Errorf("record lock for %s is busy after %s; a wedged holder keeps it", job, wait)
 	}
 	defer unix.Flock(int(handle.Fd()), unix.LOCK_UN)
-	return fn(recordPath)
+	before, _ := os.Stat(recordPath)
+	if err := fn(recordPath); err != nil {
+		return err
+	}
+	if after, statErr := os.Stat(recordPath); statErr == nil && (before == nil || !os.SameFile(before, after) || !before.ModTime().Equal(after.ModTime())) {
+		publishJobCard(root, recordPath)
+	}
+	return nil
 }
 
 // withOperationPublicationLock serializes the repository-wide scan and
@@ -889,4 +898,98 @@ func sessionOccupancyEvidenceObjects(evidence []SessionOccupant) []any {
 		items = append(items, sessionOccupantObject(occupant))
 	}
 	return items
+}
+
+// publishJobCard projects a goal-bound job's record onto the host board in
+// the same locked act that wrote the record (batch-lane D14, R24): the stage
+// from the role and the round, the phase, the round of the chain root's
+// limit, and the job's own custody process as owner. A terminal record ends
+// the stage: a completed critic leaves its goal awaiting judgement, anything
+// else leaves the claim idle. The card is a projection, never the record: a
+// card that cannot be written is reported and the transition stands.
+func publishJobCard(root, recordPath string) {
+	record, err := readObject(recordPath)
+	if err != nil {
+		return
+	}
+	card, ok := jobCard(root, record)
+	if !ok {
+		return
+	}
+	if err := board.Write(card); err != nil {
+		fmt.Fprintf(os.Stderr, "dispatch: job %s: the board card was not written: %v\n", asString(record["jobId"]), err)
+	}
+}
+
+// jobCard is the card a job record stands for; false when the job is not
+// goal-bound or its role carries no stage.
+func jobCard(root string, record map[string]any) (board.Card, bool) {
+	goal, machine, role := asString(record["goalId"]), asString(record["machineId"]), asString(record["role"])
+	if goal == "" || machine == "" {
+		return board.Card{}, false
+	}
+	round, _ := numInt(record["round"])
+	var stage board.Stage
+	switch role {
+	case "implementer":
+		stage = board.StageBuild
+		if round > 1 {
+			stage = board.StageRevise
+		}
+	case "code-critic", "design-critic", "warden":
+		stage = board.StageReview
+	default:
+		return board.Card{}, false
+	}
+	card := board.Card{
+		Seat:   board.Seat{Machine: machine, Installation: realpath.Resolve(root)},
+		Goal:   goal,
+		Stage:  stage,
+		Job:    &board.Job{ID: asString(record["jobId"]), Role: role, Phase: asString(record["phase"])},
+		Writer: board.Writer{Component: "dispatch"},
+	}
+	if round > 0 {
+		card.Round = &board.Round{N: int(round)}
+		if limit, ok := chainRoundLimit(root, record); ok {
+			max := int(limit)
+			card.Round.Max = &max
+		}
+	}
+	if TerminalStatus(asString(record["status"])) {
+		card.Stage = board.StageClaimedIdle
+		if stage == board.StageReview && asString(record["status"]) == "completed" {
+			card.Stage = board.StageJudgement
+		}
+		return card, true
+	}
+	if started, err := time.Parse(time.RFC3339, asString(record["startedAt"])); err == nil {
+		card.Since = started
+	}
+	if pid, ok := numInt(record["pid"]); ok && pid > 0 {
+		startedAt, _ := numInt(record["pidStartedAt"])
+		card.Owner = &board.Owner{Pid: pid, PidStartedAt: startedAt}
+	}
+	return card, true
+}
+
+// chainRoundLimit is the review-round limit the chain root carries: resumed
+// rounds name their parent, and the root holds the limit.
+func chainRoundLimit(root string, record map[string]any) (int64, bool) {
+	current := record
+	for hops := 0; hops < 64; hops++ {
+		if limit, ok := numInt(current["reviewRoundLimit"]); ok && limit > 0 {
+			return limit, true
+		}
+		parent := asString(current["parentJob"])
+		if parent == "" || !validJobID.MatchString(parent) {
+			return 0, false
+		}
+		_, parentPath, _ := paths(root, parent)
+		next, err := readObject(parentPath)
+		if err != nil {
+			return 0, false
+		}
+		current = next
+	}
+	return 0, false
 }

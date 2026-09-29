@@ -407,3 +407,31 @@ func readCardFile(path string) (Card, bool) {
 	}
 	return card, true
 }
+
+// LiveCard is the one non-terminal card for goal on the board under home, on
+// whichever seat holds it: a stage owner that knows the goal but not the
+// seat (the proof-run launcher) advances the card the claim's seat wrote.
+// False when no seat, or more than one, holds a live card for the goal.
+func LiveCard(home, goal string) (Card, bool) {
+	if !SafeName(goal) {
+		return Card{}, false
+	}
+	entries, err := os.ReadDir(Dir(home))
+	if err != nil {
+		return Card{}, false
+	}
+	var found []Card
+	for _, entry := range entries {
+		if !entry.IsDir() || !SafeName(entry.Name()) {
+			continue
+		}
+		card, ok := readCardFile(filepath.Join(Dir(home), entry.Name(), goal+".json"))
+		if ok && card.Goal == goal && card.Seat.Machine == entry.Name() && !card.Stage.Terminal() {
+			found = append(found, card)
+		}
+	}
+	if len(found) != 1 {
+		return Card{}, false
+	}
+	return found[0], true
+}
