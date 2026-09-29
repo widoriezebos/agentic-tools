@@ -37,6 +37,11 @@ var lawfulExecPrograms = map[string]execAllowance{
 		files:  []string{"internal/landing/receipt.go", "internal/contract/measure.go", "internal/testutil/"},
 		reason: "runs a command the adopter declared (a proof or measurement command, an extension point) or drives a fixture from test support",
 	},
+	"/usr/bin/getconf": {
+		files: []string{"internal/diskstore/host_darwin.go"},
+		reason: "the adapter to confstr(_CS_DARWIN_USER_TEMP_DIR): the per-user temporary root Darwin assigns, which ignores TMPDIR; " +
+			"Go without cgo has no confstr, and the path is derived from the user's directory-services UUID, not a file the engine can read",
+	},
 	"/bin/sh": {
 		files:  []string{"internal/testutil/"},
 		reason: "test support drives a fixture script; never production decision code",
