@@ -17,17 +17,15 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/adapter"
 )
 
 // quietEarlySeams are early acts that find nothing: a bed about something
 // else runs them without effect.
 func quietEarlySeams() batch.EarlySeams {
 	return batch.EarlySeams{
-		Cheap:   func(batch.Record) (batch.EarlyResult, error) { return batch.EarlyResult{}, nil },
-		Prove:   func(batch.Record) (batch.EarlyResult, error) { return batch.EarlyResult{}, nil },
-		Budget:  func(batch.Record) (bool, string) { return false, "quiet" },
-		Adapter: func(batch.RedGroup) (adapter.Adapter, bool) { return nil, false },
+		Cheap:  func(batch.Record) (batch.EarlyResult, error) { return batch.EarlyResult{}, nil },
+		Prove:  func(batch.Record) (batch.EarlyResult, error) { return batch.EarlyResult{}, nil },
+		Budget: func(batch.Record) (bool, string) { return false, "quiet" },
 	}
 }
 
@@ -197,9 +195,9 @@ func TestBatchEarlyBudgetKeepsTheBatchProofsHeadroom(t *testing.T) {
 		why               string
 	}{
 		{"three attempts and three caps left", 3, 180, dispatchcore.BudgetKnown, true, ""},
-		{"two attempts left", 2, 900, dispatchcore.BudgetKnown, false, "no early proof: goal-b has 2 attempts and 900 reserved minutes left, kept for the batch proof"},
-		{"two caps of minutes left", 5, 179, dispatchcore.BudgetKnown, false, "no early proof: goal-b has 5 attempts and 179 reserved minutes left, kept for the batch proof"},
-		{"unknown budget", 5, 900, dispatchcore.BudgetUnknown, false, "no early proof: goal-b's budget is unknown"},
+		{"two attempts left", 2, 900, dispatchcore.BudgetKnown, false, "no early work: goal-b has 2 attempts and 900 reserved minutes left, kept for the batch proof"},
+		{"two caps of minutes left", 5, 179, dispatchcore.BudgetKnown, false, "no early work: goal-b has 5 attempts and 179 reserved minutes left, kept for the batch proof"},
+		{"unknown budget", 5, 900, dispatchcore.BudgetUnknown, false, "no early work: goal-b's budget is unknown"},
 	} {
 		ok, why := earlyBudget("/lane", earlyRecord(), at, budget(row.attempts, row.minutes, row.status), cap)
 		if ok != row.ok || why != row.why {
@@ -228,10 +226,11 @@ func TestBatchProofRetriesWhatTheEarlyProofOfItsTreeFailed(t *testing.T) {
 		t.Fatalf("the early proof did not fail: %+v", red)
 	}
 	earlyAttempt := retainedAttemptFor(t, fixture.root, "")
+	// The batch record kept nothing of the early red (it ended after the
+	// start, or the owner restarted): the lookup is the retained store's.
 	record := batch.Record{Schema: 1, BatchID: "01j5x00000000000000000ea01", State: batch.StateSealed, TipTree: tree,
-		Wait: nil, StartReason: "goal-y on m1c left the pipeline without joining; nothing else within reach",
-		Early: &batch.Early{Shape: []string{"goal-a", "goal-b"}, Tree: tree, Cheap: "green", Proof: "red", Attempt: earlyAttempt,
-			Finding: &batch.EarlyFinding{Group: "app-a", Attempt: earlyAttempt}, Ended: "batch started"}}
+		StartReason: "goal-y on m1c left the pipeline without joining; nothing else within reach"}
+	head := batch.Unit{GoalID: "portable"}
 
 	ids, _ := fixture.prepare(run)
 	launcher, err := proofrun.CurrentProcessIdentity(nil)
@@ -248,7 +247,7 @@ func TestBatchProofRetriesWhatTheEarlyProofOfItsTreeFailed(t *testing.T) {
 		t.Fatalf("without a decision: %+v decided %t err %v", decision, decided, err)
 	}
 
-	path, err := earlyRetryDecision(fixture.root, record)
+	path, err := tipRetryDecision(fixture.root, record, head, proofrun.ReadAttempts)
 	if err != nil || path == "" {
 		t.Fatalf("no retry decision for the early tree: %q %v", path, err)
 	}
@@ -275,7 +274,7 @@ func TestBatchProofRetriesWhatTheEarlyProofOfItsTreeFailed(t *testing.T) {
 	// A member joined after the early proof: the batch proof's tree is not the
 	// early tree, and nothing is retried.
 	record.TipTree = strings.Repeat("f", 40)
-	if path, err := earlyRetryDecision(fixture.root, record); err != nil || path != "" {
+	if path, err := tipRetryDecision(fixture.root, record, head, proofrun.ReadAttempts); err != nil || path != "" {
 		t.Fatalf("a grown batch carried a retry decision: %q %v", path, err)
 	}
 }

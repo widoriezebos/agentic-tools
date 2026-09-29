@@ -332,7 +332,7 @@ func executeBatchProof(root, id, actor, window, token string, sample proofrun.Lo
 	sealed := admitted.Seal[head.GoalID]
 	request := batchProofLaunch{Root: controlRoot, BatchID: id, GoalID: head.GoalID, Tree: admitted.TipTree, CandidateTip: admitted.Proof.CandidateTip, ResultPath: resultPath, Token: token,
 		Mode: plan.ExecutedMode, Groups: slices.Clone(plan.SelectedGroups), GoalRevision: sealed.Revision, AccountingRevision: sealed.AccountingRevision}
-	if request.RetryDecision, err = earlyRetryDecision(controlRoot, admitted); err != nil {
+	if request.RetryDecision, err = tipRetryDecision(controlRoot, admitted, head, batchTipRetryAttempts); err != nil {
 		return err
 	}
 	if dependencies.freshDecision != nil {

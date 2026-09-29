@@ -625,7 +625,7 @@ func TestIntentWorkStatusSaysWhatTheWaitIsUsedFor(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := "batch 01j5x00000000000000000wa01 waits for goal-x on m1b (build, ~8 min); a separate proof costs ~40 min (default); " +
-		"meanwhile: partial red: go-unit on standing-validation+goal-b, nobody named; decided at the batch proof"
+		"meanwhile: partial red: go-unit on standing-validation+goal-b; decided at the batch proof"
 	b := newDeliveryBed(t)
 	b.owners.now = func() time.Time { return now }
 	b.owners.batchRoot = func(string, time.Time) (string, bool, error) { return landing, true, nil }

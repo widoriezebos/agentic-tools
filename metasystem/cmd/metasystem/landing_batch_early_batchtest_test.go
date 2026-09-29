@@ -14,23 +14,26 @@ import (
 )
 
 // TestBatchOwnerProofNamesTheEarlyRetryAndOwnsItsAttempt (R27, U3-03,
-// U10b-3): a sealed batch whose tip is the tree its early proof failed
-// launches its proof with the accountable retry decision naming the early
-// attempt, and the proof it records is its own launch, never the early one;
-// a batch whose tip moved past the early tree carries none.
+// U10b-3, fix round F-1): a sealed batch whose tip is a tree an earlier
+// attempt of its head member failed (its early proof) launches its proof
+// with the accountable retry decision naming that attempt, read from the
+// retained proof store whatever the record kept, and the proof it records is
+// its own launch, never the early one; a batch whose early red was on
+// another tree carries none.
 func TestBatchOwnerProofNamesTheEarlyRetryAndOwnsItsAttempt(t *testing.T) {
+	previous := batchTipRetryAttempts
+	t.Cleanup(func() { batchTipRetryAttempts = previous })
 	for _, sameTree := range []bool{true, false} {
-		root, id, store, record := batchProofRefusalBed(t)
+		root, id, _, record := batchProofRefusalBed(t)
+		store := batch.NewStore(root, nil)
 		earlyTree := record.TipTree
 		if !sameTree {
 			earlyTree = record.PrefixTrees[0]
 		}
-		if err := store.Update(id, func(current *batch.Record) error {
-			current.Early = &batch.Early{Shape: []string{"goal-a", "goal-b"}, Tree: earlyTree, Cheap: "green", Proof: "red", Attempt: "proof-early-1",
-				Finding: &batch.EarlyFinding{Group: "required", Attempt: "proof-early-1"}, Ended: "batch started"}
-			return nil
-		}); err != nil {
-			t.Fatal(err)
+		batchTipRetryAttempts = func(string) ([]proofrun.Attempt, error) {
+			return []proofrun.Attempt{{AttemptID: "proof-early-1", SchemaVersion: proofrun.CandidateAttemptSchemaVersion, CandidateGoalID: "goal-b",
+				CandidateTree: earlyTree, TestAdmission: 3, Terminal: &proofrun.AttemptTerminal{Result: proofrun.TerminalFailed},
+				TestResult: &proofrun.TestResult{Groups: []proofrun.GroupResult{{ID: "required", Status: "failed"}}}}}, nil
 		}
 		var launched batchProofLaunch
 		deps := batchProofDependencies{

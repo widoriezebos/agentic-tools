@@ -92,16 +92,13 @@ func (runner RunnerCapacity) admits(own int) bool {
 	return max(runner.Load, float64(running)*share)+share <= float64(runner.Cores)
 }
 
-// ownRuns counts this owner's runs on a runner, an early proof among them:
-// it holds a slot on the host like any run until it ends.
+// ownRuns counts this owner's real runs on a runner. Early work never
+// counts here: speculative work never delays a real proof (D14, R27).
 func (owner *Owner) ownRuns(runner string) (count int) {
 	for _, run := range owner.inflight {
 		if run.runner == runner {
 			count++
 		}
-	}
-	if runner == "host" {
-		count += len(owner.earlyRuns)
 	}
 	return count
 }

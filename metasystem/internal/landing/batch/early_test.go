@@ -9,7 +9,6 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/adapter/fakeadapter"
 )
 
 // earlyWitness is an owner over one waiting batch: goal-a (changes the fake's
@@ -30,6 +29,11 @@ type earlyWitness struct {
 	proveErr    error
 	gate        chan struct{}
 	budgetWhy   string
+	// budgetAllows, when positive, is how many acts pass the budget gate
+	// before it answers budgetWhy.
+	budgetAllows int
+	// cheapGate, when set, holds the cheap phase until a witness lets it end.
+	cheapGate chan struct{}
 }
 
 // spare gives the host runner room for the batch proof beside an early one.
@@ -39,8 +43,8 @@ func spare(ceiling int) func(proofrun.LoadSample, proofrun.AdmissionCap) []Runne
 	}
 }
 
-// early is the number of early proofs of this owner in flight: an early
-// proof is launched exactly when one is recorded, in the tick.
+// early is the number of early acts of this owner in flight: an act is
+// launched exactly when one is recorded, in the tick.
 func (w *earlyWitness) early() int { return len(w.owner.earlyRuns) }
 
 // finishEarly lets the early proof in flight end and applies its completion.
@@ -77,6 +81,9 @@ func newEarlyWitness(t *testing.T) *earlyWitness {
 	bed.owner.early = EarlySeams{
 		Cheap: func(record Record) (EarlyResult, error) {
 			w.cheap = append(w.cheap, record.TipTree)
+			if w.cheapGate != nil {
+				<-w.cheapGate
+			}
 			return w.cheapResult, w.cheapErr
 		},
 		Prove: func(record Record) (EarlyResult, error) {
@@ -84,8 +91,13 @@ func newEarlyWitness(t *testing.T) *earlyWitness {
 			<-w.gate
 			return w.proveResult, w.proveErr
 		},
-		Budget:  func(Record) (bool, string) { return w.budgetWhy == "", w.budgetWhy },
-		Adapter: fakeRedLanguage(fakeadapter.New()),
+		Budget: func(Record) (bool, string) {
+			if w.budgetAllows > 0 {
+				w.budgetAllows--
+				return true, ""
+			}
+			return w.budgetWhy == "", w.budgetWhy
+		},
 	}
 	// By default the host has no room beside the batch proof: a witness of
 	// the early proof gives it some.
@@ -104,9 +116,16 @@ func newEarlyWitness(t *testing.T) *earlyWitness {
 	return w
 }
 
+// tick is one owner tick and, when it started the cheap phase, the owner's
+// loop applying the cheap phase's return and ticking again at the same time.
 func (w *earlyWitness) tick(t *testing.T, at time.Time) Record {
 	t.Helper()
-	return tickAt(t, w.ownerBed, at)
+	record := tickAt(t, w.ownerBed, at)
+	if run, running := w.owner.earlyRuns[testBatchID]; running && run.kind == earlyCheap && w.cheapGate == nil {
+		w.owner.CompleteEarly(<-w.owner.EarlyCompletions())
+		record = tickAt(t, w.ownerBed, at)
+	}
+	return record
 }
 
 func (w *earlyWitness) recordBytes(t *testing.T) string {
@@ -156,8 +175,8 @@ func TestWaitIsUsedOnlyOnSpareCapacity(t *testing.T) {
 		t.Fatal("a second early proof of the same tip started")
 	}
 
-	// A real proof that arrives while an early proof holds a slot queues as
-	// any run queues: the early proof counts as one of this owner's runs.
+	// Speculative work never delays a real proof: the batch's start is
+	// admitted as if its early proof, still running, were not there.
 	w = newEarlyWitness(t)
 	w.owner.runners = spare(3)
 	w.tick(t, ten)
@@ -165,13 +184,57 @@ func TestWaitIsUsedOnlyOnSpareCapacity(t *testing.T) {
 		return []RunnerCapacity{{Runner: "host", Cores: 18, Load: 1, LoadKnown: true, Overlapping: 1, Ceiling: 2}}
 	}
 	joinUnit(t, w.ownerBed, "goal-y", ten.Add(13*time.Minute))
-	record = w.tick(t, ten.Add(13*time.Minute))
-	if w.launches != 0 || lastHistory(record).Verb != "cap" || !strings.Contains(WaitLine(record, ten, time.UTC), "first in line") {
-		t.Fatalf("a real proof beside the early one's slot: launches %d last %+v", w.launches, lastHistory(record))
+	if w.tick(t, ten.Add(13*time.Minute)); w.launches != 1 || w.early() != 1 {
+		t.Fatalf("the real proof waited for the early one: launches %d early in flight %d", w.launches, w.early())
 	}
-	w.finishEarly(t)
-	if w.tick(t, ten.Add(14*time.Minute)); w.launches != 1 {
-		t.Fatalf("the real proof did not start once the early one ended: launches %d", w.launches)
+
+	// No new early proof starts while a batch proof waits for a slot.
+	w = newEarlyWitness(t)
+	const capped = "01j5x00000000000000000ba03"
+	sealed := load(t, w.store)
+	sealed.BatchID, sealed.State, sealed.History, sealed.Early = capped, StateSealed, sealed.History[:0:0], nil
+	for _, unit := range sealed.Units {
+		appendUnitHistory(&sealed, ten, "join", "seat", unit.GoalID, "", UnitJoined)
+	}
+	must(t, w.store.Create(sealed))
+	w.owner.runners = func(proofrun.LoadSample, proofrun.AdmissionCap) []RunnerCapacity {
+		return []RunnerCapacity{{Runner: "host", Cores: 18, Load: 1, LoadKnown: true, Overlapping: 3, Ceiling: 3}}
+	}
+	w.source.picture = BoardPicture{Readable: true}
+	w.now = ten
+	must(t, w.owner.Tick(capped))
+	w.source.picture = BoardPicture{Readable: true, Cards: []board.Card{boardCardAt("goal-y", "m1c", board.StageJudgement, ten)}}
+	w.owner.runners = spare(3)
+	record = w.tick(t, ten.Add(time.Minute))
+	if w.launches != 0 || w.early() != 0 || !strings.HasSuffix(WaitLine(record, ten, time.UTC), "; meanwhile: goal-a+goal-b: cheap checks green; no early proof: a batch proof waits for a slot") {
+		t.Fatalf("an early proof beside a capped batch proof: early %d line %q", w.early(), WaitLine(record, ten, time.UTC))
+	}
+
+	// The cheap phase runs in the background: the tick returns while it runs.
+	w = newEarlyWitness(t)
+	w.cheapGate = make(chan struct{})
+	record = w.tick(t, ten)
+	if w.early() != 1 || record.Early == nil || record.Early.Cheap != earlyRunning ||
+		!strings.HasSuffix(WaitLine(record, ten, time.UTC), "; meanwhile: goal-a+goal-b: cheap checks running") {
+		t.Fatalf("the cheap phase held the tick: early %d record %+v", w.early(), record.Early)
+	}
+	close(w.cheapGate)
+	w.owner.CompleteEarly(<-w.owner.EarlyCompletions())
+	if record = load(t, w.store); record.Early.Cheap != earlyGreen || !slices.Equal(w.cheap, []string{"tip-ab"}) {
+		t.Fatalf("the cheap phase's return: %+v", record.Early)
+	}
+
+	// A restarted owner finds an act it has no run of: the acts on that tip
+	// are over, said once, and nothing runs again.
+	w = newEarlyWitness(t)
+	w.owner.runners = spare(3)
+	w.tick(t, ten)
+	w.owner.earlyRuns = map[string]earlyRun{}
+	record = w.tick(t, ten.Add(time.Minute))
+	before = w.recordBytes(t)
+	w.tick(t, ten.Add(2*time.Minute))
+	if record.Early == nil || record.Early.Ended != "owner restarted" || w.early() != 0 || len(w.cheap) != 1 || w.recordBytes(t) != before {
+		t.Fatalf("restart: early %+v in flight %d cheap %v", record.Early, w.early(), w.cheap)
 	}
 
 	// Room for exactly one more real proof: the cheap phase, no early proof.
@@ -210,19 +273,30 @@ func TestWaitIsUsedOnlyOnSpareCapacity(t *testing.T) {
 	w.tick(t, ten)
 	w.now = ten
 	must(t, w.owner.Tick(second))
+	w.owner.CompleteEarly(<-w.owner.EarlyCompletions())
+	must(t, w.owner.Tick(second))
 	if otherRecord, err := w.store.Load(second); err != nil || w.early() != 1 || len(w.cheap) != 2 || otherRecord.Early == nil ||
 		otherRecord.Early.Proof != "" || otherRecord.Early.Idle != noSpareSlot {
 		t.Fatalf("second batch: early proofs %d cheap %v early %+v err %v", w.early(), w.cheap, otherRecord.Early, err)
 	}
 
-	// The head's budget could not keep the batch proof's headroom (U3-01):
-	// no early proof, the line says why, and the batch proof still starts.
+	// The head's budget could not keep the batch proof's needs (U3-01): no
+	// early act at all, not even the cheap phase, the line says why, and the
+	// batch proof still starts.
 	w = newEarlyWitness(t)
 	w.owner.runners = spare(3)
-	w.budgetWhy = "no early proof: goal-b has 2 attempts and 900 reserved minutes left, kept for the batch proof"
+	w.budgetWhy = "no early work: goal-b has 2 attempts and 900 reserved minutes left, kept for the batch proof"
 	record = w.tick(t, ten)
-	if w.early() != 0 || !strings.HasSuffix(WaitLine(record, ten, time.UTC), "; meanwhile: goal-a+goal-b: cheap checks green; "+w.budgetWhy) {
-		t.Fatalf("budget: early proofs %d line %q", w.early(), WaitLine(record, ten, time.UTC))
+	if w.early() != 0 || len(w.cheap) != 0 || !strings.HasSuffix(WaitLine(record, ten, time.UTC), "; meanwhile: "+w.budgetWhy) {
+		t.Fatalf("budget: cheap %v early %d line %q", w.cheap, w.early(), WaitLine(record, ten, time.UTC))
+	}
+	// Enough for the cheap phase only: the gate stops the early proof.
+	w = newEarlyWitness(t)
+	w.owner.runners = spare(3)
+	w.budgetAllows, w.budgetWhy = 1, "no early work: goal-b has 2 attempts and 900 reserved minutes left, kept for the batch proof"
+	record = w.tick(t, ten)
+	if w.early() != 0 || len(w.cheap) != 1 || !strings.HasSuffix(WaitLine(record, ten, time.UTC), "; meanwhile: goal-a+goal-b: cheap checks green; "+w.budgetWhy) {
+		t.Fatalf("budget after the cheap phase: cheap %v early %d line %q", w.cheap, w.early(), WaitLine(record, ten, time.UTC))
 	}
 	joinUnit(t, w.ownerBed, "goal-y", ten.Add(13*time.Minute))
 	if w.tick(t, ten.Add(13*time.Minute)); w.launches != 1 {
@@ -269,76 +343,40 @@ func TestWaitIsUsedOnlyOnSpareCapacity(t *testing.T) {
 	}
 }
 
-// TestPartialRedIsJudgedByTheLanesRules (R27, R1, R2, U10b-3, with the fake
-// adapter): a red of the partial tip is judged by D1's first two steps
-// against the members of its own shape; the classification never runs.
+// TestPartialRedIsJudgedByTheLanesRules (R27, R1, U10b-3, fix round F-2 and
+// F-5): a red of the partial tip, even one a member's closure owns, is a
+// finding on the record and in the line, decided by the batch proof's D1: no
+// diagnostic runs in the wait, nobody is ejected, nothing is held, every
+// member stays joined, and no early proof follows it; a red that returns
+// while the owner stands down under the helm is recorded and nothing else.
 func TestPartialRedIsJudgedByTheLanesRules(t *testing.T) {
 	t.Parallel()
 	paymentRed := EarlyResult{Attempt: "cheap-1", Failing: []RedGroup{{ID: "fake/pay", LogPath: "/logs/pay.log",
 		Failures: []Failure{{Classname: "com.example.PaymentTest", Name: "testCharge"}}}}}
-
-	// Base green, the failure owned by payments, which goal-a alone changed:
-	// goal-a is ejected now, the survivors reassemble, the wait goes on and
-	// the acts start again over them.
 	w := newEarlyWitness(t)
+	w.owner.runners = spare(3)
 	w.cheapResult = paymentRed
 	record := w.tick(t, ten)
-	if len(w.diagnostics) != 1 || w.diagnostics[0].Tree != "base" || !slices.Equal(w.diagnostics[0].Groups, []string{"fake/pay"}) || !w.diagnostics[0].NeverReuse {
-		t.Fatalf("the base check: %+v", w.diagnostics)
-	}
-	a := record.Units[0]
-	want := "EJECTED from landing batch " + testBatchID + " before its proof: testCharge (fake/pay) failed on the batch's partial tip (goal-a, goal-b) and passes on main; log /logs/pay.log. Fix it, then metasystem work land goal-a."
-	if a.GoalID != "goal-a" || a.State != UnitReturnPending || a.Outcome != UnitEjected || a.Failure != want || record.Units[1].State != UnitJoined ||
-		record.State != StateOpen || record.TipTree != "tip-b" || record.Early != nil || !historyWith(record, "early-forget", "goal-a ejected") {
-		t.Fatalf("named member: state %s tip %s early %+v units %+v", record.State, record.TipTree, record.Early, record.Units)
-	}
-	w.cheapResult = EarlyResult{Attempt: "cheap-2"}
-	record = w.tick(t, ten.Add(time.Minute))
-	if w.launches != 0 || !slices.Equal(w.cheap, []string{"tip-ab", "tip-b"}) || record.Early == nil || !slices.Equal(record.Early.Shape, []string{"goal-b"}) {
-		t.Fatalf("the acts did not start again over the survivors: cheap %v early %+v", w.cheap, record.Early)
+	w.tick(t, ten.Add(time.Minute))
+	record = load(t, w.store)
+	if len(w.diagnostics) != 0 || record.State != StateOpen || slices.ContainsFunc(record.Units, func(unit Unit) bool { return unit.State != UnitJoined }) ||
+		record.Early == nil || record.Early.Finding == nil || *record.Early.Finding != (EarlyFinding{Group: "fake/pay", Attempt: "cheap-1", Log: "/logs/pay.log"}) ||
+		w.early() != 0 || record.TrunkRed != nil {
+		t.Fatalf("partial red: diagnostics %d state %s units %+v early %+v in flight %d", len(w.diagnostics), record.State, record.Units, record.Early, w.early())
 	}
 
-	// Base red twice: a trunk red, held and registered as today.
 	w = newEarlyWitness(t)
-	w.cheapResult = paymentRed
-	red := DiagnosticResult{AttemptID: "base-red", Groups: []RedGroup{{ID: "fake/pay", Status: "failed"}}}
-	w.base = []DiagnosticResult{red, red}
-	var registered []string
-	w.store = w.store.WithLedgerOwner(recordOwner(func(opid string, red TrunkRed) ([]EntryRef, error) {
-		registered = append(registered, opid)
-		return []EntryRef{{ID: "entry-1", Group: "fake/pay"}}, nil
-	}))
-	w.owner.store = w.store
-	record = w.tick(t, ten)
-	if record.State != StateHeldTrunkRed || record.TrunkRed == nil || len(record.TrunkRed.Entries) != 1 || len(registered) != 1 ||
-		len(w.diagnostics) != 2 || !slices.Equal(w.diagnostics[1].Fresh, []string{"--rerun-fake"}) {
-		t.Fatalf("base red twice: state %s trunk %+v registered %v diagnostics %+v", record.State, record.TrunkRed, registered, w.diagnostics)
+	w.owner.runners = spare(3)
+	w.proveResult = EarlyResult{Attempt: "early-1", Failing: paymentRed.Failing}
+	w.tick(t, ten)
+	if first, _, err := w.owner.Withdraw(); err != nil || !first {
+		t.Fatalf("stand down: %t %v", first, err)
 	}
-
-	// Base green, nobody named: a finding on the record and in the line;
-	// every member stays joined, the batch open, no classification runs.
-	w = newEarlyWitness(t)
-	w.cheapResult = EarlyResult{Attempt: "cheap-1", Failing: []RedGroup{{ID: "fake/other", LogPath: "/logs/other.log",
-		Failures: []Failure{{Classname: "com.example.OtherTest", Name: "testOther"}}}}}
-	record = w.tick(t, ten)
-	if record.State != StateOpen || record.Units[0].State != UnitJoined || record.Units[1].State != UnitJoined || len(w.diagnostics) != 1 ||
-		record.Early == nil || record.Early.Finding == nil || *record.Early.Finding != (EarlyFinding{Group: "fake/other", Attempt: "cheap-1", Log: "/logs/other.log"}) {
-		t.Fatalf("nobody named: state %s units %+v diagnostics %d early %+v", record.State, record.Units, len(w.diagnostics), record.Early)
-	}
-
-	// Red then green on main: nobody named, and nothing enters the register.
-	w = newEarlyWitness(t)
-	w.cheapResult = paymentRed
-	w.base = []DiagnosticResult{red, {AttemptID: "base-green"}}
-	registered = nil
-	w.store = w.store.WithLedgerOwner(recordOwner(func(opid string, _ TrunkRed) ([]EntryRef, error) {
-		registered = append(registered, opid)
-		return nil, nil
-	}))
-	w.owner.store = w.store
-	record = w.tick(t, ten)
-	if record.State != StateOpen || record.Early == nil || record.Early.Finding == nil || len(registered) != 0 || record.Units[0].State != UnitJoined {
-		t.Fatalf("red then green: state %s early %+v registered %v", record.State, record.Early, registered)
+	w.finishEarly(t)
+	record = load(t, w.store)
+	if len(w.diagnostics) != 0 || slices.ContainsFunc(record.Units, func(unit Unit) bool { return unit.State != UnitJoined }) ||
+		record.Early.Finding == nil || record.Early.Proof != earlyRed || w.launches != 0 {
+		t.Fatalf("a red under the helm: diagnostics %d units %+v early %+v", len(w.diagnostics), record.Units, record.Early)
 	}
 }
 
@@ -354,6 +392,18 @@ func TestEarlyProofIsAbandonedAndReusedOnlyByIdentity(t *testing.T) {
 	record := load(t, w.store)
 	if record.Early != nil || !historyWith(record, "early-forget", "base moved to base-2") {
 		t.Fatalf("base moved: early %+v", record.Early)
+	}
+
+	// A trunk-red hold reopening on a new base (fix round F-8).
+	w = newEarlyWitness(t)
+	w.tick(t, ten)
+	must(t, w.store.Update(testBatchID, func(record *Record) error {
+		record.State, record.TrunkRed = StateHeldTrunkRed, &TrunkRedHold{Opid: "opid-1", Opids: []string{"opid-1"}}
+		return nil
+	}))
+	must(t, applyHeldReopen(w.store, testBatchID, "base-3", "owner", ten.Add(time.Minute), heldReopen{opid: "opid-1", prefixes: []string{"tip-a3", "tip-ab3"}}))
+	if record = load(t, w.store); record.Early != nil || !historyWith(record, "early-forget", "base moved to base-3") {
+		t.Fatalf("held reopen: early %+v", record.Early)
 	}
 
 	w = newEarlyWitness(t)
@@ -486,7 +536,7 @@ func TestPartialRedJudgesOnlyTheMembersItsShapeHeld(t *testing.T) {
 	}))
 	w.finishEarly(t)
 	record := load(t, w.store)
-	if len(w.diagnostics) != 1 || slices.ContainsFunc(record.Units, func(unit Unit) bool { return unit.State != UnitJoined }) ||
+	if len(w.diagnostics) != 0 || slices.ContainsFunc(record.Units, func(unit Unit) bool { return unit.State != UnitJoined }) ||
 		record.Early == nil || record.Early.Finding == nil || record.Early.Finding.Attempt != "early-1" {
 		t.Fatalf("a later member was judged: diagnostics %d units %+v early %+v", len(w.diagnostics), record.Units, record.Early)
 	}
@@ -500,19 +550,20 @@ func TestWaitLineSaysWhatTheWaitIsUsedFor(t *testing.T) {
 	w := newEarlyWitness(t)
 	record := w.tick(t, ten)
 	line := WaitLine(record, ten, time.UTC)
-	if !strings.HasSuffix(line, "; meanwhile: goal-a+goal-b: cheap checks green; no spare proof slot") || len(w.logged) != 2 || w.logged[1] != line ||
-		!historyWith(record, "meanwhile", line) {
+	logged := len(w.logged)
+	if !strings.HasSuffix(line, "; meanwhile: goal-a+goal-b: cheap checks green; no spare proof slot") || w.logged[logged-1] != line ||
+		!historyWith(record, "meanwhile", line) || !slices.ContainsFunc(w.logged, func(line string) bool { return strings.HasSuffix(line, "cheap checks running") }) {
 		t.Fatalf("cheap green: line %q logged %q", line, w.logged)
 	}
 	w.tick(t, ten.Add(time.Minute))
-	if len(w.logged) != 2 {
+	if len(w.logged) != logged {
 		t.Fatalf("an unchanged tick logged again: %q", w.logged)
 	}
 
 	w = newEarlyWitness(t)
 	w.cheapResult = EarlyResult{Attempt: "cheap-1", Failing: []RedGroup{{ID: "fake/other", Failures: []Failure{{Classname: "com.example.OtherTest", Name: "testOther"}}}}}
 	record = w.tick(t, ten)
-	if line = WaitLine(record, ten, time.UTC); !strings.HasSuffix(line, "; meanwhile: partial red: fake/other on goal-a+goal-b, nobody named; decided at the batch proof") {
+	if line = WaitLine(record, ten, time.UTC); !strings.HasSuffix(line, "; meanwhile: partial red: fake/other on goal-a+goal-b; decided at the batch proof") {
 		t.Fatalf("finding: %q", line)
 	}
 

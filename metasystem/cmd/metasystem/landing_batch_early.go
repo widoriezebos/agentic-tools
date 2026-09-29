@@ -13,7 +13,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/adapter"
 )
 
 // productionEarlySeams are the owner's early acts on the lane at root (D14,
@@ -33,12 +32,6 @@ func productionEarlySeams(root string) batch.EarlySeams {
 				return false, "no early proof: the clock is unreadable (" + err.Error() + ")"
 			}
 			return earlyBudget(root, record, now, batchBudgetProjection, proofCostCap)
-		},
-		Adapter: func(group batch.RedGroup) (adapter.Adapter, bool) {
-			if language := batchDiagnosisSeams.redLanguage(root); language != nil {
-				return language(group)
-			}
-			return nil, false
 		},
 	}
 }
@@ -128,61 +121,86 @@ func earlyProof(root string, record batch.Record, plan func(string, string, stri
 	return early, nil
 }
 
-// earlyBudget admits an early proof only when the head member's budget, the
-// one the early attempt is charged to, still leaves the batch proof its two
-// attempts and its reserved minutes of diagnostic headroom afterwards
-// (U3-01); otherwise the early proof is skipped and the line says why.
+// earlyBudget admits an early act (the cheap phase or the early proof) only
+// when the head member's budget, the one every early act is charged to,
+// still leaves the batch proof its two attempts and its reserved minutes of
+// diagnostic headroom after one more attempt (U3-01; the tip proof's own
+// admission needs two); otherwise the act is skipped and the line says why.
 func earlyBudget(root string, record batch.Record, at time.Time, project func(string, batch.Unit, *batch.Unit, time.Time) (batchCostBudgetProjection, error),
 	capMinutes func(string) (uint64, error)) (bool, string) {
 	head, _, err := earlyHead(record)
 	if err != nil {
-		return false, "no early proof: " + err.Error()
+		return false, "no early work: " + err.Error()
 	}
 	view, err := project(root, head, nil, at)
 	if err != nil {
-		return false, "no early proof: " + head.GoalID + "'s budget is unreadable (" + err.Error() + ")"
+		return false, "no early work: " + head.GoalID + "'s budget is unreadable (" + err.Error() + ")"
 	}
 	projection := view.Budget
 	if projection.Status != dispatchcore.BudgetKnown {
-		return false, "no early proof: " + head.GoalID + "'s budget is unknown"
+		return false, "no early work: " + head.GoalID + "'s budget is unknown"
 	}
 	if !view.LandingClaim && (projection.ElapsedState != "" || projection.Elapsed >= projection.Limits.ElapsedDuration()) {
-		return false, "no early proof: " + head.GoalID + "'s elapsed budget is spent"
+		return false, "no early work: " + head.GoalID + "'s elapsed budget is spent"
 	}
 	cap, err := capMinutes(root)
 	if err != nil {
-		return false, "no early proof: the proof cap is unreadable (" + err.Error() + ")"
+		return false, "no early work: the proof cap is unreadable (" + err.Error() + ")"
 	}
 	attempts := saturatingLeft(projection.Limits.AttemptLimit, projection.Attempts)
 	minutes := saturatingLeft(projection.Limits.ReservedJobMinutesLimit, projection.ReservedJobMinutes)
 	if attempts < 3 || minutes < 3*cap {
-		return false, fmt.Sprintf("no early proof: %s has %d attempts and %d reserved minutes left, kept for the batch proof", head.GoalID, attempts, minutes)
+		return false, fmt.Sprintf("no early work: %s has %d attempts and %d reserved minutes left, kept for the batch proof", head.GoalID, attempts, minutes)
 	}
 	return true, ""
 }
 
-// earlyRetryDecision writes the accountable retry decision for a batch proof
-// of the very tree an early proof failed (U3-03): the shared-component
-// admission then re-executes that failed producer's group instead of
-// refusing, and never reuses the red. Empty when the batch proof's tree is
-// not the early tree or nothing failed early.
-func earlyRetryDecision(controlRoot string, record batch.Record) (string, error) {
-	early := record.Early
-	if early == nil || early.Finding == nil || early.Finding.Attempt == "" || early.Tree != record.TipTree {
+// batchTipRetryAttempts reads the retained proof store the tip proof's retry
+// decision is looked up in.
+var batchTipRetryAttempts = proofrun.ReadAttempts
+
+// tipRetryDecision writes the accountable retry decision for a batch proof
+// whose tree an earlier attempt of its head member already failed, the
+// batch's early proof above all (U3-03): the shared-component admission then
+// re-executes that failed producer's group instead of refusing, and never
+// reuses the red. It is read from the retained proof store, the newest such
+// attempt, so it holds whatever the batch record kept (a red that ended after
+// the start, an owner restart). Empty when no attempt on the tree failed.
+func tipRetryDecision(controlRoot string, record batch.Record, head batch.Unit, readAttempts func(string) ([]proofrun.Attempt, error)) (string, error) {
+	attempts, err := readAttempts(controlRoot)
+	if err != nil {
+		return "", err
+	}
+	var prior proofrun.Attempt
+	group := ""
+	for _, attempt := range attempts {
+		tree, known := attempt.CandidateTreeDigest()
+		if !known || tree != record.TipTree || attempt.AccountedGoal() != head.GoalID || attempt.Terminal == nil || attempt.TestResult == nil ||
+			prior.AttemptID != "" && attempt.TestAdmission <= prior.TestAdmission {
+			continue
+		}
+		for _, result := range attempt.TestResult.Groups {
+			if result.Status == "failed" {
+				prior, group = attempt, result.ID
+				break
+			}
+		}
+	}
+	if prior.AttemptID == "" {
 		return "", nil
 	}
-	evidence, err := proofrun.AttemptPath(controlRoot, early.Finding.Attempt)
+	evidence, err := proofrun.AttemptPath(controlRoot, prior.AttemptID)
 	if err != nil {
 		return "", err
 	}
-	decision, err := json.Marshal(proofrun.RetryDecision{SchemaVersion: 1, PriorAttempt: early.Finding.Attempt,
-		Cause:        "the early proof of batch " + record.BatchID + " failed " + early.Finding.Group + " on this tree and named nobody",
+	decision, err := json.Marshal(proofrun.RetryDecision{SchemaVersion: 1, PriorAttempt: prior.AttemptID,
+		Cause:        "attempt " + prior.AttemptID + " failed " + group + " on the tree of batch " + record.BatchID + ", its early proof's or an earlier one's",
 		EvidencePath: evidence,
-		Rationale:    "the batch proof re-executes what the early proof of the identical tree failed; a red is never reused (R27, U3-03)"})
+		Rationale:    "the batch proof re-executes what an earlier attempt of the identical tree failed; a red is never reused (R27, U3-03)"})
 	if err != nil {
 		return "", err
 	}
-	path := filepath.Join(controlRoot, "artifacts", "agents", "proof-runs", "batch", record.BatchID+"-early-retry.json")
+	path := filepath.Join(controlRoot, "artifacts", "agents", "proof-runs", "batch", record.BatchID+"-tip-retry.json")
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return "", err
 	}

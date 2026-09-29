@@ -39,7 +39,8 @@ type ownerSeams struct {
 	helmActive          func(string) bool
 	baseMove            func(string, string) (BaseMove, error)
 	early               EarlySeams
-	earlyRuns           map[string]string
+	earlyRuns           map[string]earlyRun
+	capped              map[string]bool
 	earlyDone           chan EarlyCompletion
 	locks               map[string]*proofLock
 	held                map[string]HeldBatch
@@ -122,7 +123,7 @@ func NewOwner(options OwnerOptions) (*Owner, error) {
 	if options.Now == nil || options.FetchTree == nil || options.ReadClaim == nil || options.Rebind == nil || options.Mint == nil || options.LogRed == nil ||
 		options.BaseCommit == nil || options.RunDiagnostic == nil || options.DescendsFrom == nil ||
 		options.Sample == nil || options.Admission == nil || options.Launch == nil || options.ProbeRun == nil || options.After == nil || options.Report == nil ||
-		options.Pipeline == nil || options.Early.Cheap == nil || options.Early.Prove == nil || options.Early.Budget == nil || options.Early.Adapter == nil {
+		options.Pipeline == nil || options.Early.Cheap == nil || options.Early.Prove == nil || options.Early.Budget == nil {
 		return nil, fmt.Errorf("construct batch owner: every owner seam is required")
 	}
 	if options.PID < 1 {
@@ -139,7 +140,7 @@ func NewOwner(options OwnerOptions) (*Owner, error) {
 		admission: options.Admission, launch: options.Launch, probeRun: options.ProbeRun, after: options.After,
 		report: options.Report, glob: options.Glob, pipeline: options.Pipeline, logWait: options.LogWait, location: options.Location, helmActive: options.HelmActive, baseMove: options.BaseMove, early: options.Early, locks: map[string]*proofLock{}, held: map[string]HeldBatch{},
 		inflight: map[string]*proofRun{}, decided: map[string]decidedAt{}, completions: make(chan Completion, 64),
-		earlyRuns: map[string]string{}, earlyDone: make(chan EarlyCompletion, 64),
+		earlyRuns: map[string]earlyRun{}, capped: map[string]bool{}, earlyDone: make(chan EarlyCompletion, 64),
 		runners: func(sample proofrun.LoadSample, admission proofrun.AdmissionCap) []RunnerCapacity {
 			return []RunnerCapacity{hostRunner(sample, admission)}
 		},
@@ -274,6 +275,7 @@ func (owner *Owner) Tick(id string) error {
 		return err
 	}
 	if !start {
+		delete(owner.capped, id)
 		return owner.release(id)
 	}
 	lock := owner.batchLock(id)
@@ -293,8 +295,11 @@ func (owner *Owner) Tick(id string) error {
 	admission := owner.admission(sample)
 	runner, room := owner.chooseRunner(sample, admission)
 	if !room {
+		// A batch proof waits for a slot: no early proof starts meanwhile.
+		owner.capped[id] = true
 		return errors.Join(owner.recordCap(id, sample, admission, at), lock.release())
 	}
+	delete(owner.capped, id)
 	token, err := owner.mint()
 	if err != nil {
 		return errors.Join(err, lock.release())
