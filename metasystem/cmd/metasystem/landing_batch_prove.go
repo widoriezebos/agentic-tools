@@ -471,7 +471,10 @@ func launchBatchTipProofWithDependencies(request batchProofLaunch, dependencies 
 			args = append(args, "--fresh-expires-at", request.FreshExpiresAt)
 		}
 	}
-	command := batchProofCommand(binary, args, false)
+	// The early proof runs on spare capacity and launches without the host's
+	// proving flock (U12): speculative work never delays a real proof. The
+	// tip proof holds it for the child's life.
+	command := batchProofCommand(binary, args, request.Early)
 	command.Dir, command.Env = executionRoot, append(gittree.ScrubbedEnviron(), "METASYSTEM_OWNER_LINEAGE="+landingOwnerLineage)
 	output, launchErr := command.CombinedOutput()
 	if launchErr != nil && command.ProcessState != nil && command.ProcessState.ExitCode() == proofrun.ExitAdmissionRefused {

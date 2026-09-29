@@ -160,8 +160,9 @@ func executeBatchJoin(request batchJoinRequest, dependencies batchJoinDependenci
 	store := batch.NewStore(request.LandingRoot, dependencies.prober)
 	record := batch.Record{BatchID: id, BaseTree: baseTree, TipTree: baseTree, State: batch.StateOpen}
 	// A join addresses an open batch (the newest on the current base, else the
-	// newest on any base), else a new batch on the current base; batches sealed
-	// or proving prove side by side while new joins open beside them.
+	// newest on any base), else a new batch on the current base; new joins open
+	// beside batches already sealed or proving, while their proofs run one at a
+	// time on the host, each child holding the host's proving flock (U12).
 	records, err := store.Records()
 	if err != nil {
 		return batch.Record{}, err

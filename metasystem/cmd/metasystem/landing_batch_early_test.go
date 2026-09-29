@@ -90,8 +90,9 @@ func TestBatchEarlyCheapPhaseRunsTheJoinsChecksOnTheRecordedTip(t *testing.T) {
 // U10b-3): the early proof is one delivery attempt on the recorded tip, the
 // head member's claim revisions and the members' union plan, launched by the
 // tip proof's own launcher; its argv is the tip proof's without
-// --require-diagnostic-headroom, and a batch proof carrying an early retry
-// decision names it.
+// --require-diagnostic-headroom and without --hold-host-proving (the early
+// proof runs on spare capacity and never takes the host's proving flock,
+// U12), and a batch proof carrying an early retry decision names it.
 func TestBatchEarlyProofIsLaunchedAsTheTipProofReservingNoHeadroom(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
@@ -153,8 +154,14 @@ func TestBatchEarlyProofIsLaunchedAsTheTipProofReservingNoHeadroom(t *testing.T)
 	retried := tip
 	retried.RetryDecision = "/decisions/early-retry.json"
 	tipArgv, earlyArgv, retriedArgv := argv(tip), argv(early), argv(retried)
+	// The early proof launches through the one launcher on spare capacity
+	// (U12): it never takes the host's proving flock, so speculative work
+	// never delays a real proof; the tip proof and its retry hold it.
 	if !slices.Contains(tipArgv, "--require-diagnostic-headroom") || slices.Contains(earlyArgv, "--require-diagnostic-headroom") ||
-		!slices.Equal(slices.DeleteFunc(slices.Clone(tipArgv), func(arg string) bool { return arg == "--require-diagnostic-headroom" }), earlyArgv) ||
+		!slices.Contains(tipArgv, holdHostProvingFlag) || !slices.Contains(retriedArgv, holdHostProvingFlag) || slices.Contains(earlyArgv, holdHostProvingFlag) ||
+		!slices.Equal(slices.DeleteFunc(slices.Clone(tipArgv), func(arg string) bool {
+			return arg == "--require-diagnostic-headroom" || arg == holdHostProvingFlag
+		}), earlyArgv) ||
 		!slices.Contains(retriedArgv, "--retry-decision") || !slices.Contains(retriedArgv, "/decisions/early-retry.json") || slices.Contains(tipArgv, "--retry-decision") {
 		t.Fatalf("argv:\ntip     %q\nearly   %q\nretried %q", tipArgv, earlyArgv, retriedArgv)
 	}
