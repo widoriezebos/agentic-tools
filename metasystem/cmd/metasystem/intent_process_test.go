@@ -605,3 +605,98 @@ func TestIntentWorkStatusPrintsTheBatchWaitLine(t *testing.T) {
 		t.Fatalf("work status: code %d data %+v", code, result.Data)
 	}
 }
+
+// TestStatusShowsTheBoardAndEachUnfinishedBatch (R23, R24, U10d): status
+// prints the board block from a direct read of the fixture host (one line
+// per armed seat, in local time, saying bridge absent with no socket) and
+// one line per unfinished batch, never a finished one; --verbose adds one
+// line per goal; work status G prints the goal's card line, naming its seat,
+// before its batch's wait line.
+func TestStatusShowsTheBoardAndEachUnfinishedBatch(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 9, 25, 12, 0, 0, 0, time.UTC)
+	host := newPipelineHost(t)
+	m1b := host.checkout(t, "b", "m1b", false, false)
+	m1c := host.checkout(t, "c", "m1c", false, false)
+	host.card(t, "m1b", m1b, "goal-x", board.StageBuild, now.Add(-10*time.Minute))
+	host.card(t, "m1c", m1c, "standing-validation", board.StageJoined, now.Add(-5*time.Minute))
+	host.card(t, "m1b", m1b, "goal-l", board.StageLanded, now.Add(-30*time.Minute))
+	claims := map[string]string{"goal-x": "m1b", "standing-validation": "m1c", "goal-q": "m1c"}
+	landing := t.TempDir()
+	store := batch.NewStore(landing, identity.KernelProber{})
+	claim := batch.Claim{Machine: "landing", Lineage: "l", Epoch: 1, Revision: 1, AccountingRevision: 1}
+	for _, record := range []batch.Record{
+		{Schema: 1, BatchID: "01j5x00000000000000000wa01", State: batch.StateOpen,
+			Units: []batch.Unit{{GoalID: "standing-validation", Chain: "c", Claim: claim, State: batch.UnitJoined}},
+			Wait: &batch.WaitState{Reason: "r", ProofCost: 40 * time.Minute, Basis: "default", For: []batch.Waited{
+				{Goal: "goal-x", Seat: "m1b", Stage: board.StageBuild, ExpectedAt: now.Add(8 * time.Minute)}}}},
+		{Schema: 1, BatchID: "01j5x00000000000000000wa02", State: batch.StateProving, StartReason: "nothing within reach",
+			Units: []batch.Unit{{GoalID: "goal-p", Chain: "c", Claim: claim, State: batch.UnitJoined}}},
+		{Schema: 1, BatchID: "01j5x00000000000000000wa03", State: batch.StateLanded, StartReason: "nothing within reach",
+			Units: []batch.Unit{{GoalID: "goal-l", Chain: "c", Claim: claim, State: batch.UnitJoined}}},
+	} {
+		if err := store.Create(record); err != nil {
+			t.Fatal(err)
+		}
+	}
+	view := func(string, time.Time) board.View { return host.source(claims).View(now) }
+	local := func(at time.Time) string { return at.In(time.Local).Format("15:04") }
+
+	t.Run("status", func(t *testing.T) {
+		t.Parallel()
+		b := newProcessBed(t)
+		owners := b.owners()
+		owners.delivery.now = func() time.Time { return now }
+		owners.delivery.batchRoot = func(string, time.Time) (string, bool, error) { return landing, true, nil }
+		owners.delivery.boardView = view
+		code, stdout, _ := b.run(owners, "status")
+		printed := strings.Split(strings.TrimRight(stdout, "\n"), "\n")
+		want := []string{
+			"board: 2 seats on this host (bridge absent)",
+			"  m1b: goal-x, build since " + local(now.Add(-10*time.Minute)) + " (1 finished)",
+			"  m1c: standing-validation, joined since " + local(now.Add(-5*time.Minute)) + "; goal-q unknown: no card",
+			"batch 01j5x00000000000000000wa01 waits for goal-x on m1b (build, ~8 min); a separate proof costs ~40 min (default)",
+			"batch 01j5x00000000000000000wa02 started: nothing within reach",
+		}
+		if code != 0 || !slices.Equal(tailLines(printed, len(want)), want) {
+			t.Fatalf("status = %d:\n%s\nwant the tail:\n%s", code, stdout, strings.Join(want, "\n"))
+		}
+		for _, line := range printed {
+			if strings.Contains(line, "wa03") || strings.Contains(line, "{") {
+				t.Errorf("status printed a finished batch or JSON: %q", line)
+			}
+		}
+		_, verbose, _ := b.run(owners, "status", "--verbose")
+		if !slices.Contains(strings.Split(verbose, "\n"), "    goal-l, landed since "+local(now.Add(-30*time.Minute))) {
+			t.Errorf("status --verbose lacks the finished card's own line:\n%s", verbose)
+		}
+		if _, data := b.runJSON(owners, "status"); data.Data.(map[string]any)["board"] == nil {
+			t.Errorf("status --json carries no board: %+v", data.Data)
+		}
+	})
+
+	t.Run("work status G", func(t *testing.T) {
+		t.Parallel()
+		b := newDeliveryBed(t)
+		b.owners.now = func() time.Time { return now }
+		b.owners.batchRoot = func(string, time.Time) (string, bool, error) { return landing, true, nil }
+		b.owners.boardView = view
+		owners := b.intentBed.owners()
+		owners.delivery = b.owners
+		code, stdout, _ := b.run(owners, "work", "status", "standing-validation")
+		printed := strings.Split(strings.TrimRight(stdout, "\n"), "\n")
+		cardLine := "  board: standing-validation on m1c, joined since " + local(now.Add(-5*time.Minute))
+		waitLine := "  batch 01j5x00000000000000000wa01 waits for goal-x on m1b (build, ~8 min); a separate proof costs ~40 min (default)"
+		at := slices.Index(printed, cardLine)
+		if code != 0 || at < 0 || at+1 >= len(printed) || printed[at+1] != waitLine {
+			t.Fatalf("work status = %d:\n%s", code, stdout)
+		}
+	})
+}
+
+func tailLines(lines []string, n int) []string {
+	if len(lines) < n {
+		return lines
+	}
+	return lines[len(lines)-n:]
+}

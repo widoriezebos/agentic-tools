@@ -68,6 +68,7 @@ List only rules that cannot be inferred from code or tooling and apply broadly i
 - The shipped Claude settings carry the seat context window, and `metasystem settings show` reports drift from the configured value.
 - The landing owner remains the only process that returns or releases a
   claim handed over to a landing batch.
+- The host board (`~/.metasystem/host/board/`) is written only by the owner of each stage transition, in the same act as its own record, and read for the armed seats the host registry names; every reader classifies cards with `board.Classify` and treats Unknown as never near. `metasystem status` and `metasystem work status G` read it directly and never connect to the bridge; the interface serves it at `/api/board`.
 
 ## Decisions Reserved for Humans
 

@@ -37,6 +37,14 @@ func put(t *testing.T, home string, card Card) {
 	t.Helper()
 	// Written as a seat's writer would, then stamped as the fixture needs:
 	// the board owns Since and LastProgressAt, so the fixture sets them after.
+	// The write is stamped with the fixture's own time, never the wall clock,
+	// so a reader's clock decides nothing the fixture did not set.
+	if card.Writer.At.IsZero() {
+		card.Writer.At = card.Since
+		if card.Writer.At.IsZero() {
+			card.Writer.At = t0
+		}
+	}
 	if err := WriteAt(home, card); err != nil {
 		t.Fatal(err)
 	}

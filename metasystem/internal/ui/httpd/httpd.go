@@ -86,6 +86,11 @@ type Info struct {
 	// watch is a build with no presence fetcher, whose pages read on mount
 	// and never again.
 	Watch *fleet.Watch
+	// Board is where the board panel's resource reads the host board from
+	// (batch-lane design D14-r2): read and classified here on every request.
+	// A nil Board is an engine that cannot read the board, which the route
+	// says.
+	Board *BoardSource
 	// Project answers what the project's records declare, per request for the
 	// same reason.
 	Project func() (project.Pane, error)
@@ -485,6 +490,10 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Path == fleetPath {
 		h.fleet(w)
+		return
+	}
+	if r.URL.Path == boardPath {
+		h.board(w)
 		return
 	}
 	if r.URL.Path == applicationPath {

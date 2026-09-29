@@ -18,6 +18,7 @@ import type { LaneId } from "../backlog/lanes";
 const FLEET = "/api/fleet";
 const LAUNCH = "/api/fleet/launch";
 const LAUNCHES = "/api/fleet/launches/";
+const BOARD = "/api/board";
 
 /** What this seat concludes about one machine, from its presence record. */
 export type Standing = "reachable" | "unreachable" | "unknown";
@@ -328,6 +329,34 @@ async function request(resource: string, body?: unknown, signal?: AbortSignal): 
 
 export async function loadFleet(signal?: AbortSignal): Promise<Page> {
   return (await request(FLEET, undefined, signal)) as Page;
+}
+
+/**
+ * One seat's line on the host board, in the server's own words: what it
+ * works on and how far it is, or why it cannot be believed (batch-lane
+ * design D14-r2). The server classified the cards; this page judges nothing.
+ */
+export type BoardLine = { machine: string; text: string };
+
+/**
+ * The host board: every armed seat of this host with its line, whether the
+ * registry could be read at all, and the bridge's state. `seats` is the
+ * classified picture the lines were rendered from; the block reads the lines.
+ */
+export type BoardPayload = {
+  readable: boolean;
+  reason?: string;
+  bridge: string;
+  seats: unknown[];
+  lines: BoardLine[];
+};
+
+/**
+ * The host board, read beside the fleet: when the pane mounts, on Refresh,
+ * and on the same `fleet` event and reconnect the fleet re-reads on.
+ */
+export async function loadBoard(signal?: AbortSignal): Promise<BoardPayload> {
+  return (await request(BOARD, undefined, signal)) as BoardPayload;
 }
 
 /**

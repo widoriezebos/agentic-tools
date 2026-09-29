@@ -892,7 +892,11 @@ func runIntentCheckoutStatus(inv *intentInvocation) int {
 	if err != nil {
 		return inv.render(inv.withHelm(intentResult{Outcome: intentFailed, code: 1, Targets: inv.checkoutTarget(scope), Summary: "status is unknown: " + err.Error()}, scope.Checkout))
 	}
-	return inv.render(inv.withHelm(processReportResult(inv.checkoutTarget(scope), "status of "+scope.Checkout, report), scope.Checkout))
+	result := processReportResult(inv.checkoutTarget(scope), "status of "+scope.Checkout, report)
+	lines, view := inv.statusBoardLines()
+	result.text = append(result.text, lines...)
+	result.Data.(map[string]any)["board"] = view
+	return inv.render(inv.withHelm(result, scope.Checkout))
 }
 
 // runIntentSystemStatus is the checkout's machinery status, or with

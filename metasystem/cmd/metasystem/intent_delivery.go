@@ -236,9 +236,12 @@ type intentDeliveryOwners struct {
 	sweep         func(root, goalID, landing string) error
 	// batchUnit finds the batch member a land request names; branchTip is the
 	// live goal branch, or empty once the branch is gone.
-	batchUnit    func(landingRoot string, request batchJoinRequest, branchTip string) (batch.Record, batch.Unit, bool, error)
-	publishRead  func(root, goalID, unit string) (branch.PublishReadResult, error)
-	batchRoot    func(root string, now time.Time) (string, bool, error)
+	batchUnit   func(landingRoot string, request batchJoinRequest, branchTip string) (batch.Record, batch.Unit, bool, error)
+	publishRead func(root, goalID, unit string) (branch.PublishReadResult, error)
+	batchRoot   func(root string, now time.Time) (string, bool, error)
+	// boardView reads the host board for a one-shot view of the checkout;
+	// nil reads the host this command runs on.
+	boardView    func(checkout string, now time.Time) board.View
 	batchJoin    func(batchJoinRequest) (batch.Record, error)
 	now          func() time.Time
 	foldUnitHook func(inv *intentInvocation, run string) int

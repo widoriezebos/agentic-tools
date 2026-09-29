@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceDigest": "sha256:dca44f3e4e3932024f5de5a858dfc56774870d155b17ad2e58f156d87d776118",
+  "sourceDigest": "sha256:a87fcfff9f36b80e9dd38f83d2435b20d78bd91fbfabf5050552820439b9ba26",
   "source": [
     {
       "path": ".npmrc",
@@ -292,7 +292,7 @@
     },
     {
       "path": "src/cuts.test.ts",
-      "sha256": "25ccc2388032dba39e2a724e99aeaa916a763058267159a5225717f4116fb498"
+      "sha256": "72956bf99b140aa8fe8c371d766f8ea0db9274f32c86fb1d8d1c51755b0e078e"
     },
     {
       "path": "src/decisions/BulkSheet.tsx",
@@ -368,7 +368,15 @@
     },
     {
       "path": "src/fleet/FleetPane.tsx",
-      "sha256": "cd3dee009f80b4dc014f33dbc04ac73194cc3ccdc68c5dc9d184a75cebc2928d"
+      "sha256": "026309c5cd42459563bd0a0a71e36b87e49fa4df792e66c95b9a6ddaadcb7721"
+    },
+    {
+      "path": "src/fleet/HostBoard.test.tsx",
+      "sha256": "34b8accfc9d4e8a9df11b885323a953aa37caad50bd00eab3c8c63d788460f2d"
+    },
+    {
+      "path": "src/fleet/HostBoard.tsx",
+      "sha256": "2626ab9686f41746d09b3cae4b6c14deb24acd387f3e78c0f8c17f32a1294b57"
     },
     {
       "path": "src/fleet/LaunchCard.test.tsx",
@@ -388,7 +396,7 @@
     },
     {
       "path": "src/fleet/api.ts",
-      "sha256": "f36685e4e16af0a69db40635671ac2f06b70e0065f0b200f690b4f76063d3df0"
+      "sha256": "9169bb31a5f59f5fd4dcdb1168aced0b87f3092589a326c521d5bf55629b60d5"
     },
     {
       "path": "src/fleet/capture.ts",

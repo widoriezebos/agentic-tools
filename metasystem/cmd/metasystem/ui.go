@@ -470,6 +470,9 @@ func runUIServe(args []string) int {
 				// own.
 				Fleet: fleetReader(roots, presence.Succeeded, presence.State),
 				Watch: presenceWatch,
+				// The board panel: every seat of this host and how far its
+				// work is, read and classified on request (D14-r2).
+				Board: hostBoardSource(roots.Installation),
 				// One machine of this fleet joining on this host. It is
 				// the signed-in human's act and nothing weaker, which the
 				// route checks for itself: a launch spends disk, a build
