@@ -729,6 +729,21 @@ func TestWorkLandRoutesEverySelectionThroughTheLane(t *testing.T) {
 	if !strings.Contains(result.Summary, unit) || !strings.Contains(result.Summary, "landing lane") || !strings.Contains(result.Decision, "incident claim") {
 		t.Fatalf("the refusal says what happened and the other way through: %+v", result)
 	}
+	for _, want := range []string{"metasystem incident list", "open trunk red", "not a flake or a closed"} {
+		if !strings.Contains(result.Decision, want) {
+			t.Fatalf("the claim hint does not say %q: %q", want, result.Decision)
+		}
+	}
+
+	unfetched := newDeliveryBed(t)
+	unread := &landingOwners{configured: true, status: readBranch(2, "critic-root", "reader-record")}
+	unread.install(unfetched)
+	unfetched.owners.redOnMain = func(*intentInvocation, string) (string, error) { return "", goal.ErrLedgerNotFetched }
+	code, result = unfetched.do("work", "land", "standing-validation")
+	expectOutcome(t, "an unreadable red register", code, result, intentRefused)
+	if !strings.Contains(result.Summary, "metasystem goal list --fetch") || result.Decision != "metasystem goal list --fetch" || strings.Contains(result.Summary+result.Decision, "goal sync") {
+		t.Fatalf("the unreadable register names one fixing command in summary and decision: %+v", result)
+	}
 
 	// Once the named critic read is collected the branch attests the unit
 	// through a critic root, and the same work land joins the lane.
@@ -1057,6 +1072,51 @@ func TestWorkLandReadsTheRedOnMainRegisterForTheHandRoute(t *testing.T) {
 		expectOutcome(t, row.name, code, result, intentRefused)
 		if owners.candidates != 0 || len(owners.joins) != 0 || result.Next == nil {
 			t.Fatalf("%s: a goal fixing no open trunk red took a route: %+v", row.name, result)
+		}
+	}
+}
+
+// The red register is read after a fetch: an open trunk red published on the
+// canonical ledger but not yet accepted by this checkout still opens the hand
+// route for its fix goal.
+func TestWorkLandFetchesTheRedRegisterBeforeRefusing(t *testing.T) {
+	t.Parallel()
+	b, owners, _ := gatedDeliveryBed(t, clearedAt(gateBedTip))
+	owners.status = readBranch(2, "critic-root", "reader-record")
+	b.owners.redOnMain = nil
+	b.owners.landingGate = func(*intentInvocation, string, string) (string, error) { return "the bed's landing", nil }
+	red := goal.TrunkRedEntry{ID: "tr-units", Identity: "tr-units", Group: "units", Status: "open", Failures: []goal.TrunkRedFailure{},
+		Sightings: []goal.TrunkRedSighting{{Attempt: "attempt-1", BaseCommit: strings.Repeat("b", 40), SeenAt: "2026-09-01T09:00:00Z",
+			Opid: goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FR1", "mac-cli", "m1")}},
+		Owner: goal.TrunkRedOwner{Machine: "mac-cli", Since: "2026-09-01T09:10:00Z", How: "joiner"}, FixGoal: bedGoal,
+		Holds: []string{}, Opened: "2026-09-01T09:00:00Z"}
+	parent := b.repo.canonical
+	published, err := b.repo.Build("red-published", parent, []goal.Change{{Path: "plans/goals/trunk-red.json", Content: goal.RenderTrunkRed([]goal.TrunkRedEntry{red})}}, "record a red on main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.repo.Publish(parent, published); err != nil || b.repo.accepted == published {
+		t.Fatalf("the red must be canonical and not yet accepted: %v", err)
+	}
+	code, result := b.do("work", "land", bedGoal)
+	expectOutcome(t, "a red on main not yet fetched", code, result, intentConfirmed)
+	if result.Data.(map[string]any)["redOnMain"] != "tr-units" || len(owners.pushes) != 1 {
+		t.Fatalf("the fix of a freshly published red did not land by hand: %+v", result)
+	}
+}
+
+// work land's help states the routing a person meets with a lane configured.
+func TestWorkLandHelpStatesTheLaneRouting(t *testing.T) {
+	t.Parallel()
+	code, page, problem := runCLIHelp([]string{"help", "work", "land"}, families())
+	if code != 0 {
+		t.Fatalf("help work land = code %d stderr %q", code, problem)
+	}
+	flat := strings.Join(strings.Fields(page), " ")
+	for _, want := range []string{"read from a reader record is refused", "metasystem work review --commit SHA --goal G",
+		"fix goal of an open trunk red", "metasystem incident claim E --goal G", "--message keeps its own landing path"} {
+		if !strings.Contains(flat, want) {
+			t.Errorf("work land help does not say %q:\n%s", want, page)
 		}
 	}
 }

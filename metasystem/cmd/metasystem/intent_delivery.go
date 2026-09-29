@@ -155,6 +155,10 @@ func intentDeliveryCommands() []intentCommand {
 				"The claim leaves the one-claim quota and its elapsed fence until it lands; each machine has one landing slot.",
 				"With landing.batch-root configured, the goal branch (or the certified chain) joins the landing batch, which proves and pushes it.",
 				"Without it, the read-clean goal branch is proved on its landing candidate, prepared and pushed by hand.",
+				"With the batch configured, a selection holding a unit read from a reader record is refused with the critic read that admits it",
+				"(metasystem work review --commit SHA --goal G); it lands by hand only when G is the fix goal of an open trunk red on main",
+				"(metasystem incident list names it; metasystem incident claim E --goal G). --message keeps its own landing path: the batch holds",
+				"goal branches and certified chains only.",
 				"Missing reads, proof or approval refuse with the missing input; no other route is tried instead.",
 				"A repeat reuses the retained receipt and prepared landing; a moved endpoint starts from a new proof. The goal is not concluded: that stays goal done G.",
 				"--message lands a hand-made change instead: the named paths (or the staged set) are staged, committed through the commit",
@@ -1706,15 +1710,16 @@ func (inv *intentInvocation) landGoalRoute(goalID, through string) intentResult 
 	entry, err := inv.redOnMainFixed(goalID)
 	if err != nil {
 		return intentResult{Targets: targets, Outcome: intentRefused, code: 1,
-			Summary:  fmt.Sprintf("the red-on-main register cannot be read, so work land cannot tell whether goal %s may land by hand: %v; nothing was landed", goalID, err),
-			Decision: "run metasystem goal sync, then the same work land again"}
+			Summary:  fmt.Sprintf("the red-on-main register cannot be read, so work land cannot tell whether goal %s may land by hand: %v; nothing was landed; metasystem goal list --fetch fetches and checks the goal ledger, then run the same work land again", goalID, err),
+			Decision: "metasystem goal list --fetch"}
 	}
 	if entry == "" {
 		commit := state.Status.Units[unread].Commit
 		return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Data: map[string]any{"route": "batch", "unit": commit, "source": state.Sources[unread]},
 			Summary: fmt.Sprintf("unit %s of goal %s was read from a reader record, and the landing lane takes only units read by a critic; nothing was landed", commit, goalID),
 			next:    []string{"metasystem", "work", "review", "--commit", commit, "--goal", goalID}, nextReason: "reads that unit through a critic, after which work land joins the lane",
-			Decision: "if this goal fixes a red on main, claim the incident for it (metasystem incident claim E --goal " + goalID + ") and it lands by hand"}
+			Decision: "if this goal fixes a red on main, find the incident with metasystem incident list and claim it for the goal (metasystem incident claim E --goal " + goalID +
+				"); only the fix of an open trunk red lands by hand, not a flake or a closed incident"}
 	}
 	result := inv.landByHand(targets, goalID, through, subject, state, base, configured)
 	if data, ok := result.Data.(map[string]any); ok {
@@ -1724,8 +1729,10 @@ func (inv *intentInvocation) landGoalRoute(goalID, through string) intentResult 
 }
 
 // redOnMainFixed names the open red-on-main entry the goal is the fix goal
-// of, or "" when it fixes none. Only a trunk red holds landings, so only a
-// trunk red opens the hand route beside a configured landing lane.
+// of, or "" when it fixes none, read from a freshly fetched ledger so an
+// incident claimed moments ago on another seat counts. Only a trunk red holds
+// landings, so only a trunk red opens the hand route beside a configured
+// landing lane.
 func (inv *intentInvocation) redOnMainFixed(goalID string) (string, error) {
 	if read := inv.delivery().redOnMain; read != nil {
 		return read(inv, goalID)
@@ -1738,7 +1745,7 @@ func (inv *intentInvocation) redOnMainFixed(goalID string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	projection, err := goal.Project(endpoint, false, now)
+	projection, err := goal.Project(endpoint, true, now)
 	if err != nil {
 		return "", err
 	}
