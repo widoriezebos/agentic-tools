@@ -232,3 +232,9 @@ func goalEnded(ledger *ledgerView) func(diskstore.Owner) (bool, bool, string) {
 		return done || abandoned, true, "the accepted goal ledger at " + projection.Tip
 	}
 }
+
+// DiskOwnerProofs are the owner-kind proofs of the checkout at top, as its
+// pass judges them at now: a person's disk clean --release uses the same.
+func DiskOwnerProofs(top string, now time.Time) map[diskstore.OwnerKind]diskstore.OwnerProof {
+	return checkoutProofs(top, DiskPass{Now: now})
+}

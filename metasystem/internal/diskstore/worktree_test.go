@@ -406,3 +406,36 @@ func TestAnAbandonedReservationBecomesHistoryOnlyWhenNothingExists(t *testing.T)
 		t.Fatalf("record = %+v", loaded)
 	}
 }
+
+// A person's --release of a store with its own release sequence (DL3B-12):
+// the person's word stands in for the processes the census could not read,
+// and nothing else: a readable holder still keeps it; the release runs the
+// store's own sequence (tips archived first) and records the person.
+func TestAPersonReleasesAGoalWorktreeThatOnlyAnIncompleteCensusKept(t *testing.T) {
+	t.Parallel()
+	bed := newLinkedBed(t)
+	record := bed.goalWorktree("g")
+	proof := ClassProofs{Owner: OwnerGoal, ByClass: map[string]OwnerProof{GoalWorktreeClass: GoalWorktreeProof{GitRoot: bed.repo, Git: realWorkspaceGit, Now: testNow,
+		Ended: func(Owner) (bool, bool, string) { return true, true, "the ledger at abc" },
+		Plan:  func(context.Context, string) (string, error) { return "", nil },
+		Sweep: bed.goalSweep}}}
+	held := &UseCensus{Taken: true, Processes: []CensusProcess{{Pid: 5151, UID: 501, Command: "vim", Cwd: record.Path}},
+		Unreadable: []CensusGap{{Pid: 7, Reason: "unreadable"}}}
+	if verdict, err := ReleaseByPerson(context.Background(), bed.registry, record.ID, proof, held, "Wido"); err != nil || verdict.Decision == Release || !strings.Contains(verdict.Reason, "pid 5151") {
+		t.Fatalf("a readable holder = %+v, %v", verdict, err)
+	}
+	gap := &UseCensus{Taken: true, Unreadable: []CensusGap{{Pid: 7, Reason: "unreadable"}}}
+	verdict, err := ReleaseByPerson(context.Background(), bed.registry, record.ID, proof, gap, "Wido")
+	if err != nil || verdict.Decision != Release {
+		t.Fatalf("an incomplete census alone = %+v, %v", verdict, err)
+	}
+	if _, err := os.Stat(record.Path); !os.IsNotExist(err) {
+		t.Fatalf("the worktree survived: %v", err)
+	}
+	if loaded, _ := bed.registry.Load(record.ID); loaded.State != StateReleased || loaded.ReleasedBy != "person Wido" {
+		t.Fatalf("record = %+v", loaded)
+	}
+	if verdict, err := ReleaseByPerson(context.Background(), bed.registry, record.ID, proof, gap, "Wido"); err != nil || verdict.Reason != "already released" {
+		t.Fatalf("a repeat = %+v, %v", verdict, err)
+	}
+}
