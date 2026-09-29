@@ -143,7 +143,7 @@ func (r *bridgeRole) Step() string {
 	ticks, stopTicker := r.ticks(board.DefaultHeartbeat)
 	r.stopTicker = stopTicker
 	r.stop, r.done = make(chan struct{}), make(chan error, 1)
-	bridge := &board.Bridge{Home: r.home, Seats: r.seats, Stall: stall, Keep: settings.Keep, Now: r.now}
+	bridge := &board.Bridge{Home: r.home, Seats: r.seats, Stall: stall, Keep: settings.Keep, MailboxKeep: settings.MailboxKeep, Now: r.now}
 	go func(stop chan struct{}, done chan error, events <-chan struct{}) {
 		done <- bridge.Run(stop, listener, events, ticks)
 	}(r.stop, r.done, r.watcher.Events())

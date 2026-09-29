@@ -1,6 +1,7 @@
 package main
 
 import (
+	"io"
 	"os"
 	"strings"
 	"testing"
@@ -8,8 +9,8 @@ import (
 
 func TestLaunchReportRejectsMalformedSince(t *testing.T) {
 	t.Parallel()
-	code, _, stderr := captureCommandOutput(t, true, true, func() int {
-		return runLaunchReport([]string{"--since", "yesterday"})
+	code, _, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
+		return runLaunchReport([]string{"--since", "yesterday"}, stdout, stderr)
 	})
 	if code != 2 || !strings.Contains(stderr, "invalid --since") {
 		t.Fatalf("code=%d stderr=%q", code, stderr)

@@ -57,7 +57,7 @@ var intentReaderToolCalls = regexp.MustCompile(`(?m)^Maximum reader tool calls:\
 type intentWorkOwners struct {
 	units func(layout stateroot.Layout) *launch.UnitRunner
 	git   func(dir string, args ...string) ([]byte, error)
-	wait  func(args []string, print func(metarun.WaitResult, bool)) int
+	wait  func(args []string, print func(metarun.WaitResult, bool), stdout, stderr io.Writer) int
 	// testRun is the testing runner, reached with the argv its former child
 	// carried; it returns the structured result it prints and its exit.
 	testRun  func(dir string, argv []string, stderr io.Writer) ([]byte, int, error)
@@ -65,8 +65,8 @@ type intentWorkOwners struct {
 	config   func(key, confPath string) (value, source string, code int, err error)
 	// jobWatch and runWatch are the job and tracked-run waiters work wait
 	// --exit-code blocks in, with their own pinned exit codes.
-	jobWatch func(args []string) int
-	runWatch func(args []string) int
+	jobWatch command
+	runWatch command
 	// waitClock replaces the default wait owner's clock (see
 	// runWaitCommandOnClock); nil keeps the kernel clock.
 	waitClock func(*metarun.WaitOptions)
@@ -104,8 +104,8 @@ func (inv *intentInvocation) work() intentWorkOwners {
 	}
 	if owners.wait == nil {
 		clock := owners.waitClock
-		owners.wait = func(args []string, print func(metarun.WaitResult, bool)) int {
-			return runWaitCommandOnClock(args, nil, waitCallerPID(), print, clock)
+		owners.wait = func(args []string, print func(metarun.WaitResult, bool), stdout, stderr io.Writer) int {
+			return runWaitCommandOnClock(args, nil, waitCallerPID(), print, clock, stdout, stderr)
 		}
 	}
 	if owners.testRun == nil {
@@ -1267,7 +1267,7 @@ func runIntentWaitTarget(inv *intentInvocation, kind, id string, job *intentJob)
 		args = append(args, "--timeout", timeout.String())
 	}
 	var waited *metarun.WaitResult
-	code := inv.work().wait(args, func(result metarun.WaitResult, _ bool) { waited = &result })
+	code := inv.work().wait(args, func(result metarun.WaitResult, _ bool) { waited = &result }, inv.stdout, inv.stderr)
 	if waited == nil {
 		return inv.render(intentResult{Outcome: intentFailed, Targets: targets, code: max(code, 1),
 			Summary: "the wait owner stopped before a result; its message is on standard error"})
@@ -1321,7 +1321,7 @@ func runIntentWaitObserved(inv *intentInvocation, kind, ref string) int {
 		args = append(args, "--timeout", timeout.String())
 	}
 	var waited *metarun.WaitResult
-	code := inv.work().wait(args, func(result metarun.WaitResult, _ bool) { waited = &result })
+	code := inv.work().wait(args, func(result metarun.WaitResult, _ bool) { waited = &result }, inv.stdout, inv.stderr)
 	if waited == nil {
 		return inv.render(intentResult{Outcome: intentFailed, Targets: targets, code: max(code, 1), Summary: "the wait owner stopped before a result; its message is on standard error"})
 	}
@@ -1362,7 +1362,7 @@ func runIntentWaitResume(inv *intentInvocation, id string) int {
 		args = append(args, "--timeout", timeout.String())
 	}
 	var waited *metarun.WaitResult
-	code := inv.work().wait(args, func(result metarun.WaitResult, _ bool) { waited = &result })
+	code := inv.work().wait(args, func(result metarun.WaitResult, _ bool) { waited = &result }, inv.stdout, inv.stderr)
 	if waited == nil {
 		return inv.render(intentResult{Outcome: intentFailed, Targets: targets, code: max(code, 1), Summary: "the wait owner stopped before a result; its message is on standard error"})
 	}
@@ -1580,7 +1580,7 @@ func runIntentWaitExitCode(inv *intentInvocation) int {
 		if len(inv.input.args) != 0 || inv.input.has("caller-pid") {
 			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "work wait --run ID --exit-code names one tracked run and nothing else; nothing was done"})
 		}
-		return inv.work().runWatch([]string{"--root", root, "--id", inv.input.text("run")})
+		return inv.work().runWatch([]string{"--root", root, "--id", inv.input.text("run")}, inv.stdout, inv.stderr)
 	}
 	if len(inv.input.args) != 1 {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "work wait --exit-code needs the job or a tracked run: metasystem work wait j2:J --exit-code | --run ID --exit-code; nothing was done"})
@@ -1595,7 +1595,7 @@ func runIntentWaitExitCode(inv *intentInvocation) int {
 	if inv.input.has("caller-pid") {
 		args = append(args, "--caller-pid", inv.input.text("caller-pid"))
 	}
-	return inv.work().jobWatch(args)
+	return inv.work().jobWatch(args, inv.stdout, inv.stderr)
 }
 
 // brief

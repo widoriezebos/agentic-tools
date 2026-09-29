@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -29,8 +30,8 @@ var procfsMounts = "/proc/self/mounts"
 // Observability: every cycle narrates one JSON line to the owner log
 // (the extreme-observability ruling), and the terminal exit is both
 // logged and appended to the registry.
-func runSuperviseOwnerLoop(args []string) int {
-	flags := newFlagSet("supervise owner")
+func runSuperviseOwnerLoop(args []string, stdout, stderr io.Writer) int {
+	flags := newFlagSet("supervise owner", stdout, stderr)
 	registryDefault, registryDefaultErr := registry.DefaultPath()
 	repo := pathFlag(flags, "repo", "", "checkout root")
 	metasystemRoot := flags.String("metasystem-root", "", "installation root containing config and runtime adapters")
@@ -42,15 +43,15 @@ func runSuperviseOwnerLoop(args []string) int {
 	registryPath := flags.String("registry", registryDefault, "machine-wide registry file")
 	gate := flags.String("gate", "", "start-gate file: wait for it to appear, then delete it, before supervising (the armer publishes the lock, then signals the gate — avoids the lock/pid chicken-and-egg)")
 	ignoreTerm := flags.Bool("ignore-term", false, "ignore TERM (fixture-only)")
-	if flags.Parse(args) != nil || !requireFlags(flags, nil, "repo", "tag") {
+	if flags.Parse(args) != nil || !requireFlags(flags, stderr, "repo", "tag") {
 		return 2
 	}
 	if *repo == "" || *tag == "" {
-		fmt.Fprintln(os.Stderr, "supervise owner: --repo and --tag are required")
+		fmt.Fprintln(stderr, "supervise owner: --repo and --tag are required")
 		return 2
 	}
 	if registryDefaultErr != nil && *registryPath == registryDefault {
-		fmt.Fprintln(os.Stderr, registryDefaultErr)
+		fmt.Fprintln(stderr, registryDefaultErr)
 		return 2
 	}
 	// Restricted procfs breaks the three-way liveness guarantee (a live
@@ -58,7 +59,7 @@ func runSuperviseOwnerLoop(args []string) int {
 	// under it. Configuration-based, never
 	// privilege-based: root's hidepid exemption does not relax this.
 	if value, restricted := identity.RestrictedProcfsAt(procfsMounts); restricted {
-		fmt.Fprintf(os.Stderr, "supervise owner: refusing to arm: /proc is mounted hidepid=%s, which makes another user's live process indistinguishable from a dead one and breaks identity's three-way liveness guarantee\n", value)
+		fmt.Fprintf(stderr, "supervise owner: refusing to arm: /proc is mounted hidepid=%s, which makes another user's live process indistinguishable from a dead one and breaks identity's three-way liveness guarantee\n", value)
 		return 1
 	}
 	if *scope == "" {
@@ -69,7 +70,7 @@ func runSuperviseOwnerLoop(args []string) int {
 	}
 	fixtureMode := fixtureauth.FixtureModeRoot(*metasystemRoot)
 	if *ignoreTerm && !fixtureMode {
-		fmt.Fprintln(os.Stderr, "supervise owner: --ignore-term is fixture-only")
+		fmt.Fprintln(stderr, "supervise owner: --ignore-term is fixture-only")
 		return 1
 	}
 	for _, variable := range []string{
@@ -78,7 +79,7 @@ func runSuperviseOwnerLoop(args []string) int {
 		"METASYSTEM_GO_COMPONENT_SLOW_STOP",
 	} {
 		if os.Getenv(variable) != "" && !fixtureMode {
-			fmt.Fprintf(os.Stderr, "supervise owner: %s is fixture-only\n", variable)
+			fmt.Fprintf(stderr, "supervise owner: %s is fixture-only\n", variable)
 			return 1
 		}
 	}
@@ -95,7 +96,7 @@ func runSuperviseOwnerLoop(args []string) int {
 				break
 			}
 			if time.Now().After(deadline) {
-				fmt.Fprintln(os.Stderr, "supervise owner: start gate never appeared")
+				fmt.Fprintln(stderr, "supervise owner: start gate never appeared")
 				return 1
 			}
 			time.Sleep(20 * time.Millisecond)
@@ -104,7 +105,7 @@ func runSuperviseOwnerLoop(args []string) int {
 
 	exact, state, err := identity.KernelProber{}.Probe(int64(os.Getpid()))
 	if err != nil || state != identity.Alive {
-		fmt.Fprintln(os.Stderr, "supervise owner: cannot read own identity")
+		fmt.Fprintln(stderr, "supervise owner: cannot read own identity")
 		return 1
 	}
 	self := exact.Ref()
@@ -198,12 +199,12 @@ func runSuperviseOwnerLoop(args []string) int {
 		case <-time.After(d):
 		case <-stop:
 			exit := owner.ExitOnSignal()
-			fmt.Printf("owner exit: reason=%s teardownComplete=%v\n", exit.Reason, exit.TeardownComplete)
+			fmt.Fprintf(stdout, "owner exit: reason=%s teardownComplete=%v\n", exit.Reason, exit.TeardownComplete)
 			os.Exit(0)
 		}
 	}
 	exit := owner.Run()
-	fmt.Printf("owner exit: reason=%s teardownComplete=%v\n", exit.Reason, exit.TeardownComplete)
+	fmt.Fprintf(stdout, "owner exit: reason=%s teardownComplete=%v\n", exit.Reason, exit.TeardownComplete)
 	return 0
 }
 

@@ -152,6 +152,9 @@ var retiredWithDeletedLibrary = map[string]string{
 	// Its record half went with InboundRecord; its git-window half is
 	// TestGitWindowRemainsUTC in the same group.
 	"authority-standard/TestChannelRecordTimesAndGitWindowRemainUTC": "channel/inbox.go InboundRecord",
+	// Commands print on their invocation's writers; the process-stream swap
+	// it tested is gone, held by TestNoTestSwapsTheProcessStreams.
+	"batch-buildcd-standard/TestCaptureCommandOutputAllowsNestedAndConcurrentDisjointStreams": "cmd/metasystem captureCommandOutput",
 }
 
 var retiredWithDeletedBed = map[string]string{

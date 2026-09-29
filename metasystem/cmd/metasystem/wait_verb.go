@@ -91,16 +91,16 @@ func waitInstallation(root string) string {
 	return root
 }
 
-func runWaitCommand(args []string, poll func(context.Context) error, callerPID int64, printResult func(metarun.WaitResult, bool)) int {
-	return runWaitCommandOnClock(args, poll, callerPID, printResult, nil)
+func runWaitCommand(args []string, poll func(context.Context) error, callerPID int64, printResult func(metarun.WaitResult, bool), stdout, stderr io.Writer) int {
+	return runWaitCommandOnClock(args, poll, callerPID, printResult, nil, stdout, stderr)
 }
 
 // runWaitCommandOnClock is runWaitCommand with the wait's clock replaced when
 // clock is not nil. The replacement sets Now, BootClock, Sleep and
 // WithTimeout together, so every deadline the wait derives is measured and
 // enforced on that one clock; production passes nil and keeps the kernel's.
-func runWaitCommandOnClock(args []string, poll func(context.Context) error, callerPID int64, printResult func(metarun.WaitResult, bool), clock func(*metarun.WaitOptions)) int {
-	flags := newFlagSet("wait")
+func runWaitCommandOnClock(args []string, poll func(context.Context) error, callerPID int64, printResult func(metarun.WaitResult, bool), clock func(*metarun.WaitOptions), stdout, stderr io.Writer) int {
+	flags := newFlagSet("wait", stdout, stderr)
 	root := pathFlag(flags, "root", ".", "checkout or installation state root")
 	job := flags.String("job", "", "delegate job identifier")
 	runID := flags.String("run", "", "tracked run identifier")
@@ -132,15 +132,15 @@ func runWaitCommandOnClock(args []string, poll func(context.Context) error, call
 		}
 	}
 	if selectors != 1 {
-		fmt.Fprintln(os.Stderr, "wait requires exactly one of --job, --run, --attempt, --goal, --path, or --resume")
+		fmt.Fprintln(stderr, "wait requires exactly one of --job, --run, --attempt, --goal, --path, or --resume")
 		return metarun.ExitInvalidWait
 	}
 	if *resume == "" && *path == "" && *until != "" {
-		fmt.Fprintln(os.Stderr, "wait --until requires --path")
+		fmt.Fprintln(stderr, "wait --until requires --path")
 		return metarun.ExitInvalidWait
 	}
 	if *timeout <= 0 || *timeout > 24*time.Hour {
-		fmt.Fprintln(os.Stderr, "wait timeout must be positive and no longer than 24 hours")
+		fmt.Fprintln(stderr, "wait timeout must be positive and no longer than 24 hours")
 		return metarun.ExitInvalidWait
 	}
 	selector := metarun.WaitSelector{}
@@ -161,16 +161,16 @@ func runWaitCommandOnClock(args []string, poll func(context.Context) error, call
 			selector = metarun.WaitSelector{Kind: "path", TargetID: metarun.PathWaitTargetID(*path), Path: *path, Until: *until}
 		}
 		if err := metarun.ValidateWaitSelector(selector); err != nil {
-			fmt.Fprintln(os.Stderr, err)
+			fmt.Fprintln(stderr, err)
 			return metarun.ExitInvalidWait
 		}
 	} else {
 		if *job != "" || *runID != "" || *attempt != "" || *goalID != "" || *path != "" || *until != "" || *event != "" || *after != "" || *verb != "" || *question != "" || *chain != "" {
-			fmt.Fprintln(os.Stderr, "--resume accepts no replacement target, cursor, or event selector")
+			fmt.Fprintln(stderr, "--resume accepts no replacement target, cursor, or event selector")
 			return metarun.ExitInvalidWait
 		}
 		if !metarun.ValidWaitID(*resume) {
-			fmt.Fprintln(os.Stderr, "wait identifier is invalid")
+			fmt.Fprintln(stderr, "wait identifier is invalid")
 			return metarun.ExitInvalidWait
 		}
 	}
@@ -203,17 +203,17 @@ func runWaitCommandOnClock(args []string, poll func(context.Context) error, call
 		resumeRow = row
 		selector = row.Selector
 		if selector.Poll == "channel" && poll == nil {
-			fmt.Fprintf(os.Stderr, "this wait belongs to channel recovery; run %s\n", metarun.WaitResumeCommand(row))
+			fmt.Fprintf(stderr, "this wait belongs to channel recovery; run %s\n", metarun.WaitResumeCommand(row))
 			return metarun.ExitWaiterBusy
 		}
 		if selector.Poll != "channel" && poll != nil {
-			fmt.Fprintln(os.Stderr, "channel wait cannot resume a wait that has no channel poll selector")
+			fmt.Fprintln(stderr, "channel wait cannot resume a wait that has no channel poll selector")
 			return metarun.ExitInvalidWait
 		}
 	}
 	options, err := waitOptions(stateRoot, selector, owner, view.Announcement.Runtime, poll)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return metarun.ExitWaiterIO
 	}
 	if clock != nil {
@@ -223,7 +223,7 @@ func runWaitCommandOnClock(args []string, poll func(context.Context) error, call
 	if *resume != "" && view.ClaimEpoch != nil {
 		lineage, succeeded, successionErr := report.SucceededWaitOwner(stateRoot, view.MainId, *view.ClaimEpoch, resumeRow.MainId)
 		if successionErr != nil {
-			fmt.Fprintln(os.Stderr, "wait owner succession could not be verified:", successionErr)
+			fmt.Fprintln(stderr, "wait owner succession could not be verified:", successionErr)
 			return metarun.ExitWaiterIO
 		}
 		if succeeded {

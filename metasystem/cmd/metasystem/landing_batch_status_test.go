@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -171,11 +172,11 @@ func TestLandingReceiptForwardsBothExpectedRevisions(t *testing.T) {
 		return gittree.RawResult{Stdout: result.Stdout, Stderr: result.Stderr, Err: result.Err}
 	}
 	var forwarded []string
-	testRun := func(args []string) int {
+	testRun := func(args []string, _, _ io.Writer) int {
 		forwarded = append([]string(nil), args...)
 		return proofrun.ExitAdmissionRefused
 	}
-	code := runLandingTestReceiptWithDependencies(context.Background(), goalCommandClock, raw, testRun,
+	code := runLandingTestReceiptWithDependencies(t.Output(), t.Output(), context.Background(), goalCommandClock, raw, testRun,
 		[]string{"--root", root, "--tree", tree, "--mode", "auto", "--goal", "goal-a", "--expected-goal-revision", "7", "--expected-accounting-revision", "5"})
 	resultPath := filepath.Join(controlRoot, "artifacts", "agents", "proof-runs", "delivery", "testing-result-"+tree+".json")
 	wantForwarded := []string{"--root", controlRoot, "--tree", tree, "--mode", "auto", "--purpose", "delivery",
@@ -196,16 +197,16 @@ func TestDiagnosticNoReuseForcesFreshRunsAndDeliveryRefuses(t *testing.T) {
 	root := t.TempDir()
 	diagnostic, _, status := parseTestingSelection("test run", []string{
 		"--root", root, "--purpose", "diagnostic", "--groups", "red-group", "--no-reuse",
-	}, true)
+	}, true, t.Output(), t.Output())
 	if status != 0 || !diagnostic.NoReuse || diagnostic.Purpose != "diagnostic" {
 		t.Fatalf("diagnostic request=%+v status=%d", diagnostic, status)
 	}
 	// The refusal writes the process's stderr: it runs under the capture
 	// lock, so a parallel test capturing stderr never receives it.
-	status, _, refusal := captureCommandOutput(t, false, true, func() int {
+	status, _, refusal := runOnOwnStreams(func(stdout, stderr io.Writer) int {
 		_, _, status := parseTestingSelection("test run", []string{
 			"--root", root, "--purpose", "delivery", "--no-reuse",
-		}, true)
+		}, true, stdout, stderr)
 		return status
 	})
 	if status != 2 || refusal != "--no-reuse is available only for diagnostic purpose\n" {

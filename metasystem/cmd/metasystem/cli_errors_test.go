@@ -2,7 +2,7 @@ package main
 
 import (
 	"bytes"
-	"os"
+	"io"
 	"strings"
 	"testing"
 )
@@ -50,8 +50,8 @@ func TestInternalMissPointsAtTheInternalList(t *testing.T) {
 // before it does anything.
 func TestEveryInternalEntrypointNamesAnUnknownFlag(t *testing.T) {
 	const bogus = "--u9b-no-such-option"
-	check := func(t *testing.T, name string, run func() int) {
-		code, stdout, stderr := captureCommandOutput(t, true, true, run)
+	check := func(t *testing.T, name string, run func(stdout, stderr io.Writer) int) {
+		code, stdout, stderr := runOnOwnStreams(run)
 		if code != 2 || strings.Contains(stderr, "flag provided but not defined") || strings.Contains(stderr, "Usage of") ||
 			!strings.Contains(stderr, "does not take "+bogus) {
 			t.Errorf("%s %s: code %d stdout %q stderr %q", name, bogus, code, stdout, stderr)
@@ -60,13 +60,13 @@ func TestEveryInternalEntrypointNamesAnUnknownFlag(t *testing.T) {
 	for _, fam := range families() {
 		for _, v := range fam.verbs {
 			v := v
-			check(t, fam.name+" "+v.name, func() int { return v.run([]string{bogus}) })
+			check(t, fam.name+" "+v.name, func(stdout, stderr io.Writer) int { return v.run([]string{bogus}, stdout, stderr) })
 		}
 	}
 	for _, entry := range topLevelEntries() {
 		entry := entry
-		check(t, entry.name, func() int {
-			return entry.run([]string{bogus}, os.Stdout, os.Stderr, func(string) (string, error) { return "", nil })
+		check(t, entry.name, func(stdout, stderr io.Writer) int {
+			return entry.run([]string{bogus}, stdout, stderr, func(string) (string, error) { return "", nil })
 		})
 	}
 }
@@ -85,8 +85,8 @@ func TestEveryPublicMissNamesTheNearestCommand(t *testing.T) {
 // Every entrypoint that cannot run without an option names it as required,
 // before it does anything.
 func TestEveryInternalEntrypointNamesItsRequiredOptions(t *testing.T) {
-	check := func(t *testing.T, name, first string, run func() int) {
-		code, stdout, stderr := captureCommandOutput(t, true, true, run)
+	check := func(t *testing.T, name, first string, run func(stdout, stderr io.Writer) int) {
+		code, stdout, stderr := runOnOwnStreams(run)
 		if code != 2 || !strings.Contains(stderr, "--"+first+" is required") {
 			t.Errorf("%s without options: code %d stdout %q stderr %q", name, code, stdout, stderr)
 		}
@@ -97,7 +97,7 @@ func TestEveryInternalEntrypointNamesItsRequiredOptions(t *testing.T) {
 				continue
 			}
 			v := v
-			check(t, fam.name+" "+v.name, v.required[0], func() int { return v.run(nil) })
+			check(t, fam.name+" "+v.name, v.required[0], func(stdout, stderr io.Writer) int { return v.run(nil, stdout, stderr) })
 		}
 	}
 	for _, entry := range topLevelEntries() {
@@ -105,8 +105,8 @@ func TestEveryInternalEntrypointNamesItsRequiredOptions(t *testing.T) {
 			continue
 		}
 		entry := entry
-		check(t, entry.name, entry.required[0], func() int {
-			return entry.run(nil, os.Stdout, os.Stderr, func(string) (string, error) { return "", nil })
+		check(t, entry.name, entry.required[0], func(stdout, stderr io.Writer) int {
+			return entry.run(nil, stdout, stderr, func(string) (string, error) { return "", nil })
 		})
 	}
 }
@@ -115,8 +115,8 @@ func TestEveryInternalEntrypointNamesItsRequiredOptions(t *testing.T) {
 // before it does anything; a help request is never refused as an unknown
 // option.
 func TestEveryInternalEntrypointAnswersHelp(t *testing.T) {
-	check := func(t *testing.T, name string, run func() int) {
-		code, stdout, stderr := captureCommandOutput(t, true, true, run)
+	check := func(t *testing.T, name string, run func(stdout, stderr io.Writer) int) {
+		code, stdout, stderr := runOnOwnStreams(run)
 		if code != 0 || strings.Contains(stderr, "does not take") || !strings.Contains(stdout, "usage: metasystem internal "+name) {
 			t.Errorf("%s --help: code %d stdout %q stderr %q", name, code, stdout, stderr)
 		}
@@ -124,13 +124,13 @@ func TestEveryInternalEntrypointAnswersHelp(t *testing.T) {
 	for _, fam := range families() {
 		for _, v := range fam.verbs {
 			v := v
-			check(t, fam.name+" "+v.name, func() int { return v.run([]string{"--help"}) })
+			check(t, fam.name+" "+v.name, func(stdout, stderr io.Writer) int { return v.run([]string{"--help"}, stdout, stderr) })
 		}
 	}
 	for _, entry := range topLevelEntries() {
 		entry := entry
-		check(t, entry.name, func() int {
-			return entry.run([]string{"--help"}, os.Stdout, os.Stderr, func(string) (string, error) { return "", nil })
+		check(t, entry.name, func(stdout, stderr io.Writer) int {
+			return entry.run([]string{"--help"}, stdout, stderr, func(string) (string, error) { return "", nil })
 		})
 	}
 }

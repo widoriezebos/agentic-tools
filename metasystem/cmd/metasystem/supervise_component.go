@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -37,8 +38,8 @@ import (
 // A transient error in either job is logged and the loop continues — a
 // component must not die on a bad scan or an unreadable record; the owner tears
 // it down deliberately by signal, or replaces it when its heartbeat goes stale.
-func runSuperviseComponent(args []string) (code int) {
-	flags := newFlagSet("supervise component")
+func runSuperviseComponent(args []string, stdout, stderr io.Writer) (code int) {
+	flags := newFlagSet("supervise component", stdout, stderr)
 	component := flags.String("component", "", "watcher | reaper | landing-owner")
 	repo := pathFlag(flags, "repo", "", "checkout root the component operates on")
 	metasystemRoot := flags.String("metasystem-root", "", "installation root containing config and runtime adapters")
@@ -57,20 +58,20 @@ func runSuperviseComponent(args []string) (code int) {
 	crashOnStart := flags.Bool("crash-on-start", false, "exit immediately without beating (fixture-only)")
 	ignoreTerm := flags.Bool("ignore-term", false, "ignore TERM (fixture-only)")
 	slowStop := flags.Int("slow-stop", 0, "delay orderly signal exit by this many seconds (fixture-only)")
-	if flags.Parse(args) != nil || !requireFlags(flags, nil, "component", "tag", "heartbeat") {
+	if flags.Parse(args) != nil || !requireFlags(flags, stderr, "component", "tag", "heartbeat") {
 		return 2
 	}
 	if *component == "" || *tag == "" || *heartbeat == "" {
-		fmt.Fprintln(os.Stderr, "supervise component: --component, --tag, --heartbeat required")
+		fmt.Fprintln(stderr, "supervise component: --component, --tag, --heartbeat required")
 		return 2
 	}
 	if *component == "watcher" || *component == "reaper" || *component == "landing-owner" {
 		if *repo == "" {
-			fmt.Fprintln(os.Stderr, "supervise component: --repo is required for the "+*component)
+			fmt.Fprintln(stderr, "supervise component: --repo is required for the "+*component)
 			return 2
 		}
 		if *generation < 1 {
-			fmt.Fprintln(os.Stderr, "supervise component: --generation is required for the "+*component)
+			fmt.Fprintln(stderr, "supervise component: --generation is required for the "+*component)
 			return 2
 		}
 	}
@@ -81,15 +82,15 @@ func runSuperviseComponent(args []string) (code int) {
 		*metasystemRoot = *repo
 	}
 	if *slowStop < 0 {
-		fmt.Fprintln(os.Stderr, "supervise component: --slow-stop must be non-negative")
+		fmt.Fprintln(stderr, "supervise component: --slow-stop must be non-negative")
 		return 2
 	}
 	if (*crashOnStart || *ignoreTerm || *slowStop > 0) && !fixtureauth.FixtureModeRoot(*metasystemRoot) {
-		fmt.Fprintln(os.Stderr, "supervise component: crash and signal-control flags are fixture-only")
+		fmt.Fprintln(stderr, "supervise component: crash and signal-control flags are fixture-only")
 		return 1
 	}
 	if *crashOnStart {
-		fmt.Fprintln(os.Stderr, "supervise component: crash-on-start (fixture)")
+		fmt.Fprintln(stderr, "supervise component: crash-on-start (fixture)")
 		return 1
 	}
 
@@ -122,30 +123,30 @@ func runSuperviseComponent(args []string) (code int) {
 	var nudges *bridgeNudges
 	switch *component {
 	case "watcher":
-		release, pass, ok := setupWatcher(*metasystemRoot, *repo, *scope, self, *tag, *generation, *intervalSec)
+		release, pass, ok := setupWatcher(stderr, *metasystemRoot, *repo, *scope, self, *tag, *generation, *intervalSec)
 		if !ok {
 			return 1
 		}
 		defer release()
 		work = pass
 	case "reaper":
-		reaperPass := setupReaper(*repo, *metasystemRoot)
+		reaperPass := setupReaper(stderr, *repo, *metasystemRoot)
 		work = func() error {
 			reaperPass()
 			return nil
 		}
 	case "landing-owner":
-		release, pass, ok := setupLandingOwner(*metasystemRoot, landingOwnerCheckoutRoot(*repo, *scope))
+		release, pass, ok := setupLandingOwner(stderr, *metasystemRoot, landingOwnerCheckoutRoot(*repo, *scope))
 		if !ok {
 			return 1
 		}
 		defer func() {
-			if releaseCode := reportLandingOwnerRelease(release); releaseCode != 0 {
+			if releaseCode := reportLandingOwnerRelease(stderr, release); releaseCode != 0 {
 				code = 1
 			}
 		}()
 		work = landingOwnerReportedPass(*repo, pass)
-		nudges = newBridgeNudges()
+		nudges = newBridgeNudges(stderr)
 		defer nudges.Close()
 	default:
 		// An unknown component still beats, so a mislabelled owner launch is
@@ -167,25 +168,25 @@ func runSuperviseComponent(args []string) (code int) {
 	}
 
 	if rootGone() {
-		fmt.Fprintln(os.Stderr, "supervise component: checkout root is gone; exiting")
+		fmt.Fprintln(stderr, "supervise component: checkout root is gone; exiting")
 		return 0
 	}
 	beat() // beat once immediately so the owner sees liveness fast
 	if err := work(); err != nil {
-		fmt.Fprintln(os.Stderr, "supervise component:", err)
+		fmt.Fprintln(stderr, "supervise component:", err)
 	} // and produce a first verdict/sweep without waiting a full interval
 	ticker := time.NewTicker(time.Duration(*intervalSec) * time.Second)
 	defer ticker.Stop()
 	runWork := func() {
 		beat()
 		if err := work(); err != nil {
-			fmt.Fprintln(os.Stderr, "supervise component:", err)
+			fmt.Fprintln(stderr, "supervise component:", err)
 		}
 	}
 	nudges.Ensure()
 	signalled := superviseLoop(stop, ticker.C, wake, nudges, func() bool {
 		if rootGone() {
-			fmt.Fprintln(os.Stderr, "supervise component: checkout root is gone; exiting")
+			fmt.Fprintln(stderr, "supervise component: checkout root is gone; exiting")
 			return false
 		}
 		runWork()
@@ -243,15 +244,15 @@ func landingOwnerCheckoutRoot(repo, scope string) string {
 	return scope
 }
 
-func setupLandingOwner(metasystemRoot, repo string) (release func() error, pass func() error, ok bool) {
-	return setupLandingOwnerWithCadence(metasystemRoot, repo, newBatchOwnerCadence())
+func setupLandingOwner(stderr io.Writer, metasystemRoot, repo string) (release func() error, pass func() error, ok bool) {
+	return setupLandingOwnerWithCadence(stderr, metasystemRoot, repo, newBatchOwnerCadence())
 }
 
-func setupLandingOwnerWithCadence(metasystemRoot, repo string, cadence *batchOwnerCadence) (release func() error, pass func() error, ok bool) {
-	return setupLandingOwnerWithInputs(metasystemRoot, repo, cadence, resolveProductionBatchOwnerInputs)
+func setupLandingOwnerWithCadence(stderr io.Writer, metasystemRoot, repo string, cadence *batchOwnerCadence) (release func() error, pass func() error, ok bool) {
+	return setupLandingOwnerWithInputs(stderr, metasystemRoot, repo, cadence, resolveProductionBatchOwnerInputs)
 }
 
-func setupLandingOwnerWithInputs(metasystemRoot, repo string, cadence *batchOwnerCadence, resolveInputs func(string) (productionBatchOwnerInputs, error)) (release func() error, pass func() error, ok bool) {
+func setupLandingOwnerWithInputs(stderr io.Writer, metasystemRoot, repo string, cadence *batchOwnerCadence, resolveInputs func(string) (productionBatchOwnerInputs, error)) (release func() error, pass func() error, ok bool) {
 	var activePass func() error
 	var held *batchOwnerLease
 	var announced *batchOwnerLease
@@ -296,6 +297,7 @@ func setupLandingOwnerWithInputs(metasystemRoot, repo string, cadence *batchOwne
 		if err != nil {
 			return err
 		}
+		inputs.log = stderr
 		if held == nil {
 			acquired, err := acquireBatchOwnerForComponent(repo)
 			if acquired.announced {
@@ -315,7 +317,7 @@ func setupLandingOwnerWithInputs(metasystemRoot, repo string, cadence *batchOwne
 		// owner left; a failure is reported and never stops the owner.
 		if err := batchOwnerSweepSources(repo); err != nil {
 			line, _ := json.Marshal(map[string]any{"component": "landing-owner", "sweep": "retained-sources", "error": err.Error()})
-			fmt.Fprintln(os.Stderr, string(line))
+			fmt.Fprintln(stderr, string(line))
 		}
 		activePass = func() error {
 			if err := batchOwnerRequire(*held); err != nil {
@@ -323,7 +325,7 @@ func setupLandingOwnerWithInputs(metasystemRoot, repo string, cadence *batchOwne
 				held = nil
 				return err
 			}
-			runBatchOwnerPass(owner, *held, repo, clock, cadence)
+			runBatchOwnerPass(stderr, owner, *held, repo, clock, cadence)
 			return nil
 		}
 		return activePass()
@@ -365,9 +367,9 @@ func landingOwnerReportedPass(repo string, pass func() error) func() error {
 	}
 }
 
-func reportLandingOwnerRelease(release func() error) int {
+func reportLandingOwnerRelease(stderr io.Writer, release func() error) int {
 	if err := release(); err != nil {
-		fmt.Fprintln(os.Stderr, "supervise component landing-owner release:", err)
+		fmt.Fprintln(stderr, "supervise component landing-owner release:", err)
 		return 1
 	}
 	return 0
@@ -386,17 +388,17 @@ func heartbeatWriter(path, component string, self identity.Ref, tag string, inte
 // and the per-interval census pass. It returns ok=false (and logs) when a live
 // writer already owns the lock — the owner then sees this watcher fail and, once
 // the incumbent stops, relaunches one that can claim it.
-func setupWatcher(metasystemRoot, repo, scope string, self identity.Ref, tag string, generation, intervalSec int) (release func(), pass func() error, ok bool) {
+func setupWatcher(stderr io.Writer, metasystemRoot, repo, scope string, self identity.Ref, tag string, generation, intervalSec int) (release func(), pass func() error, ok bool) {
 	supervisionDir := supervise.SupervisionDir(repo)
 	lock := &supervise.CensusWriterLock{
 		Dir: supervisionDir, Self: self, Tag: tag, Prober: identity.KernelProber{},
 	}
 	if err := lock.Claim(); err != nil {
-		fmt.Fprintln(os.Stderr, "supervise component watcher:", err)
+		fmt.Fprintln(stderr, "supervise component watcher:", err)
 		return nil, nil, false
 	}
 
-	cfg := watcherConfig(metasystemRoot, repo, scope, supervisionDir, intervalSec)
+	cfg := watcherConfig(stderr, metasystemRoot, repo, scope, supervisionDir, intervalSec)
 	pass = func() error {
 		attempt, err := steward.BeginComponentAttempt(repo, "repo-watcher", generation, self, time.Now())
 		if err != nil {
@@ -414,7 +416,7 @@ func setupWatcher(metasystemRoot, repo, scope string, self identity.Ref, tag str
 		// this watcher's identity plus the full lifecycle triples it
 		// scanned, so a one-shot invocation can never impersonate the
 		// standing watcher and a reused id can never be blessed unseen.
-		if err := runPass(repo, self); err != nil {
+		if err := runPass(stderr, repo, self); err != nil {
 			passErrors = append(passErrors, err)
 		}
 		repair, err := steward.RepairEnrolledRunner(repo)
@@ -459,12 +461,12 @@ func requireSuccessfulWatcherCensus(supervisionDir string, generation int) error
 }
 
 // runPass assesses runs and writes the attestation on full success.
-func runPass(repo string, self identity.Ref) error {
+func runPass(stderr io.Writer, repo string, self identity.Ref) error {
 	store := dispatchpkg.NewConcludingRunStore(repo, nil)
-	return runPassWithStore(repo, self, store)
+	return runPassWithStore(stderr, repo, self, store)
 }
 
-func runPassWithStore(repo string, self identity.Ref, store *run.Store) error {
+func runPassWithStore(stderr io.Writer, repo string, self identity.Ref, store *run.Store) error {
 	records, unreadable := store.List()
 	type scanned struct {
 		Id          string `json:"id"`
@@ -478,14 +480,14 @@ func runPassWithStore(repo string, self identity.Ref, store *run.Store) error {
 			continue
 		}
 		if _, err := store.Assess(record.RunId); err != nil {
-			fmt.Fprintln(os.Stderr, "supervise component watcher run pass:", err)
+			fmt.Fprintln(stderr, "supervise component watcher run pass:", err)
 			clean = false
 			continue
 		}
 		scannedRuns = append(scannedRuns, scanned{record.RunId, record.Generation, record.LaunchNonce})
 	}
 	for _, line := range unreadable {
-		fmt.Fprintln(os.Stderr, "supervise component watcher run pass:", line)
+		fmt.Fprintln(stderr, "supervise component watcher run pass:", line)
 	}
 	if !clean {
 		return fmt.Errorf("run assessment did not complete")
@@ -518,7 +520,7 @@ func runPassWithStore(repo string, self identity.Ref, store *run.Store) error {
 // against the live kernel. Verdicts land through the locked job-record
 // compare-and-swap owner: a completion that arrives after the sweep's read
 // wins, and the stale verdict is void.
-func setupReaper(repo, metasystemRoot string) func() {
+func setupReaper(stderr io.Writer, repo, metasystemRoot string) func() {
 	cfg := supervise.ReaperConfig{
 		Repo:      repo,
 		JobsDir:   supervise.JobsDir(repo),
@@ -528,19 +530,19 @@ func setupReaper(repo, metasystemRoot string) func() {
 			return len(returnschema.ReturnCompleteRole(repo, role, file)) == 0
 		},
 		Apply: recordCASApplier(repo),
-		Emit:  func(line string) { fmt.Fprintln(os.Stderr, line) },
+		Emit:  func(line string) { fmt.Fprintln(stderr, line) },
 	}
 	return func() {
 		if err := cfg.ReaperPass(); err != nil {
-			fmt.Fprintln(os.Stderr, "supervise component reaper:", err)
+			fmt.Fprintln(stderr, "supervise component reaper:", err)
 		}
 		// Proof attempts are reconciled on the same tick: a dead launcher
 		// commits no terminal, and nothing else on the checkout read the
 		// attempt records (goal hung-proof-attempts-end-at-their-deadline).
 		if _, err := proofrun.ReconcileAttempts(metasystemRoot, proofrun.ReconcileOptions{
-			Emit: func(line string) { fmt.Fprintln(os.Stderr, "supervise component reaper:", line) },
+			Emit: func(line string) { fmt.Fprintln(stderr, "supervise component reaper:", line) },
 		}); err != nil {
-			fmt.Fprintln(os.Stderr, "supervise component reaper: proof attempts:", err)
+			fmt.Fprintln(stderr, "supervise component reaper: proof attempts:", err)
 		}
 	}
 }

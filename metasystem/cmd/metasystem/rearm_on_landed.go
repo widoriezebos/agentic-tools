@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -561,8 +562,9 @@ var landedRearmOpenEnrollment = func(installation string) (steward.InstallIdenti
 // candidate and resolves the policy base. It returns the record of a re-arm
 // it performed (nil when the enrolled engine already owned the tip) and the
 // index tree as it stood before any fast-forward, so a delivery run that
-// named that tree can follow the index onto the tip.
-func landedRearm(installation, projectRoot, prefix string, namedDeliveryTree bool) (*proofrun.EngineRearm, error) {
+// named that tree can follow the index onto the tip. What it does is told on
+// notes, the invocation's standard error.
+func landedRearm(notes io.Writer, installation, projectRoot, prefix string, namedDeliveryTree bool) (*proofrun.EngineRearm, error) {
 	pinned, openErr := steward.OpenEnrolledBinary(installation)
 	if openErr != nil {
 		// Not enrolled, or rebuilt bytes not yet re-armed: the trusted
@@ -580,7 +582,7 @@ func landedRearm(installation, projectRoot, prefix string, namedDeliveryTree boo
 			_ = pinned.Close()
 			return &record, nil
 		}
-		fmt.Fprintf(os.Stderr, "metasystem test run: %s does not match the enrollment (generation %d, landed %s); judging the engine afresh\n", engineRearmEnv, pinned.Install.Generation, pinned.Install.LandedCommit)
+		fmt.Fprintf(notes, "metasystem test run: %s does not match the enrollment (generation %d, landed %s); judging the engine afresh\n", engineRearmEnv, pinned.Install.Generation, pinned.Install.LandedCommit)
 	}
 	defer pinned.Close()
 	seconds := steward.RearmResolveSeconds(installation)
@@ -601,7 +603,7 @@ func landedRearm(installation, projectRoot, prefix string, namedDeliveryTree boo
 	}
 	facts.NamedDeliveryTree = namedDeliveryTree
 	if decision := decideLandedRearm(facts, projectRoot); decision.Rearm {
-		fmt.Fprintf(os.Stderr, "metasystem test run: the enrolled engine (%s) is behind the landed tip %s of %s by landed commits only; fast-forwarding, rebuilding and re-arming\n", facts.Source, facts.Tip, facts.LandingRef)
+		fmt.Fprintf(notes, "metasystem test run: the enrolled engine (%s) is behind the landed tip %s of %s by landed commits only; fast-forwarding, rebuilding and re-arming\n", facts.Source, facts.Tip, facts.LandingRef)
 	}
 	// The rebuild and the re-arm are not bounded by the resolver's seconds:
 	// a build takes what it takes, and up has its own bounds.
@@ -609,12 +611,12 @@ func landedRearm(installation, projectRoot, prefix string, namedDeliveryTree boo
 	if err != nil || record == nil {
 		return nil, err
 	}
-	fmt.Fprintf(os.Stderr, "metasystem test run: re-armed %s; restarting this run on the landed engine\n", record.ReArmed)
+	fmt.Fprintf(notes, "metasystem test run: re-armed %s; restarting this run on the landed engine\n", record.ReArmed)
 	if reexecErr := landedRearmReexec(record); reexecErr != nil {
 		// The re-exec could not happen; this run continues on its own bytes
 		// with the new enrollment as its policy engine, as any run whose
 		// invoking binary is not the pin.
-		fmt.Fprintf(os.Stderr, "metasystem test run: could not restart on the landed engine (%v); continuing with the re-armed enrollment as the policy engine\n", reexecErr)
+		fmt.Fprintf(notes, "metasystem test run: could not restart on the landed engine (%v); continuing with the re-armed enrollment as the policy engine\n", reexecErr)
 	}
 	return record, nil
 }

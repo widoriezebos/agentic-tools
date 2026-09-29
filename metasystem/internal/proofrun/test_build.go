@@ -685,7 +685,7 @@ type progressWriter struct {
 func (w *progressWriter) record(group, event, status, reason string) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	return testGroupProgress(w.path, group, event, status, reason)
+	return testGroupProgress(os.Stdout, w.path, group, event, status, reason)
 }
 
 // verdict records the supervisor's judgement of a group in the progress
@@ -1579,7 +1579,7 @@ func runShardedGoGroup(ctx context.Context, request TestRunRequest, group testpo
 	return merged, closeErr, coverageMerge, executions, launchErr
 }
 
-func testGroupProgress(path, group, event, status, reason string) error {
+func testGroupProgress(out io.Writer, path, group, event, status, reason string) error {
 	if path == "" {
 		return nil
 	}
@@ -1589,7 +1589,7 @@ func testGroupProgress(path, group, event, status, reason string) error {
 	}
 	// The launcher watches output growth separately from section boundaries.
 	// Emit actual group transitions into its pipe so completed work resets silence.
-	_, err := fmt.Fprintf(os.Stdout, "TEST-GROUP %s %s status=%s reason=%s\n", event, group, status, reason)
+	_, err := fmt.Fprintf(out, "TEST-GROUP %s %s status=%s reason=%s\n", event, group, status, reason)
 	return err
 }
 

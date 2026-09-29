@@ -131,7 +131,7 @@ func (s *session) callback(command string, args []string) error {
 // flags is a callback's strict flag set over the session's stderr, its
 // errors in the public style (package cliflags).
 func (s *session) flags(name string) *flag.FlagSet {
-	return cliflags.New(name, "metasystem internal delegate "+name, s.stderr)
+	return cliflags.New(name, "metasystem internal delegate "+name, nil, s.stderr)
 }
 
 // verbRecordFile is job record-create / record-setup.

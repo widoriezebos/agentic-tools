@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -360,8 +361,8 @@ func runBatchLandingLifecycleWithdraw(t *testing.T, harness *batchE2EHarness, en
 	if err := os.Setenv("METASYSTEM_OWNER_LINEAGE", joined.Claim.Lineage); err != nil {
 		t.Fatal(err)
 	}
-	code, _, stderr := captureCommandOutput(t, true, true, func() int {
-		return runLandingBatch([]string{"withdraw", "--root", seatRoot, "--goal", "goal-b"})
+	code, _, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
+		return runLandingBatch([]string{"withdraw", "--root", seatRoot, "--goal", "goal-b"}, stdout, stderr)
 	})
 	if code != 0 {
 		t.Fatalf("withdraw code=%d stderr=%q", code, stderr)
@@ -694,8 +695,8 @@ func batchE2EProofResult(request batchProofLaunch, green bool, manifest []string
 }
 
 func (fixture *batchE2EFixture) join(goalID string) string {
-	code, stdout, stderr := captureCommandOutput(fixture.t, true, true, func() int {
-		return runLandingBatch([]string{"join", "--root", fixture.seats[goalID], "--goal", goalID, "--last"})
+	code, stdout, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
+		return runLandingBatch([]string{"join", "--root", fixture.seats[goalID], "--goal", goalID, "--last"}, stdout, stderr)
 	})
 	if code != 0 {
 		fixture.t.Fatalf("join %s code=%d stderr=%q", goalID, code, stderr)
@@ -716,7 +717,7 @@ func (fixture *batchE2EFixture) joinInto(batchID, goalID string) {
 }
 
 func (fixture *batchE2EFixture) tick(batchID string) {
-	code := runLandingBatch([]string{"tick", "--root", fixture.seats[firstSeat(fixture.seats)], "--landing-root", fixture.landing, "--max-wait", "1m", "--batch", batchID})
+	code := runLandingBatch([]string{"tick", "--root", fixture.seats[firstSeat(fixture.seats)], "--landing-root", fixture.landing, "--max-wait", "1m", "--batch", batchID}, fixture.t.Output(), fixture.t.Output())
 	if code != 0 {
 		record, _ := batch.NewStore(fixture.landing, nil).Load(batchID)
 		status, _ := exec.Command("git", "-C", fixture.landing, "status", "--short", "--branch").CombinedOutput()
@@ -764,8 +765,8 @@ func (fixture *batchE2EFixture) assertState(batchID, want string) {
 
 func (fixture *batchE2EFixture) statusAndWait(batchID, want string) error {
 	root := fixture.seats[firstSeat(fixture.seats)]
-	code, stdout, stderr := captureCommandOutput(fixture.t, true, true, func() int {
-		return runLandingBatch([]string{"status", "--root", root, "--batch", batchID})
+	code, stdout, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
+		return runLandingBatch([]string{"status", "--root", root, "--batch", batchID}, stdout, stderr)
 	})
 	if code != 0 {
 		return fmt.Errorf("status %s: %s", want, stderr)
@@ -774,8 +775,8 @@ func (fixture *batchE2EFixture) statusAndWait(batchID, want string) error {
 	if err := json.Unmarshal([]byte(stdout), &status); err != nil || len(status.Batches) != 1 || status.Batches[0].State != want {
 		return fmt.Errorf("status at %s = %q err=%v parsed=%+v", want, stdout, err, status)
 	}
-	code, stdout, stderr = captureCommandOutput(fixture.t, true, true, func() int {
-		return runLandingBatch([]string{"wait", "--root", root, "--batch", batchID, "--bound", "1s"})
+	code, stdout, stderr = runOnOwnStreams(func(stdout, stderr io.Writer) int {
+		return runLandingBatch([]string{"wait", "--root", root, "--batch", batchID, "--bound", "1s"}, stdout, stderr)
 	})
 	if want == batch.StateLanded {
 		var view batchStatusView

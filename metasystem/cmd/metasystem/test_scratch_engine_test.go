@@ -145,7 +145,7 @@ func TestScratchCandidateEnginePublicationSurvivesEXDEV(t *testing.T) {
 		entry := filepath.Join(controlRoot, "artifacts", "agents", "candidate-engines", "v2", identity)
 		used, err := publishScratchCandidateEngine(scratch.Dir("engine"), entry, identity,
 			&candidateEngineBuild{Path: filepath.Join(source, "metasystem"), Digest: digest, Commit: identity},
-			func(string, string) error { return &os.LinkError{Op: "rename", Err: unix.EXDEV} })
+			func(string, string) error { return &os.LinkError{Op: "rename", Err: unix.EXDEV} }, t.Output())
 		if err != nil {
 			t.Fatal(err)
 		}

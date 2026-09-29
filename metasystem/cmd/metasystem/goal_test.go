@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -20,8 +21,8 @@ import (
 func TestStopVerdictWaitingLinesFromGateOnly(t *testing.T) {
 	acceptedRoot := t.TempDir()
 	acceptedSession, acceptedMain := pendingWaitVerdictCommandFixture(t, acceptedRoot, "fake")
-	code, output, problem := captureChannelOutput(t, func() int {
-		return runReportTurnVerdict([]string{"--root", acceptedRoot, "--session", acceptedSession, "--main-id", acceptedMain})
+	code, output, problem := captureChannelOutput(t, func(stdout, stderr io.Writer) int {
+		return runReportTurnVerdict([]string{"--root", acceptedRoot, "--session", acceptedSession, "--main-id", acceptedMain}, stdout, stderr)
 	})
 	var accepted struct {
 		Display string `json:"display"`
@@ -47,8 +48,8 @@ func TestStopVerdictWaitingLinesFromGateOnly(t *testing.T) {
 	if err := os.WriteFile(paths[0], append(data, '\n'), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	code, output, problem = captureChannelOutput(t, func() int {
-		return runReportTurnVerdict([]string{"--root", refusedRoot, "--session", refusedSession, "--main-id", refusedMain})
+	code, output, problem = captureChannelOutput(t, func(stdout, stderr io.Writer) int {
+		return runReportTurnVerdict([]string{"--root", refusedRoot, "--session", refusedSession, "--main-id", refusedMain}, stdout, stderr)
 	})
 	var refused struct {
 		Display string `json:"display"`
@@ -56,9 +57,13 @@ func TestStopVerdictWaitingLinesFromGateOnly(t *testing.T) {
 	if code != 0 || problem != "" || json.Unmarshal([]byte(output), &refused) != nil || strings.Contains(refused.Display, "WAITING") {
 		t.Fatalf("refused Stop inherited recovery orientation: code=%d stderr=%q output=%q display=%q", code, problem, output, refused.Display)
 	}
-	for name, invoke := range map[string]func() int{
-		"session start": func() int { return sessionStartRecovery(refusedRoot, refusedSession, os.Stdout, os.Stderr) },
-		"goal next":     func() int { return runGoalNext([]string{"--root", refusedRoot}) },
+	for name, invoke := range map[string]func(stdout, stderr io.Writer) int{
+		"session start": func(stdout, stderr io.Writer) int {
+			return sessionStartRecovery(refusedRoot, refusedSession, stdout, stderr)
+		},
+		"goal next": func(stdout, stderr io.Writer) int {
+			return runGoalNext([]string{"--root", refusedRoot}, stdout, stderr)
+		},
 	} {
 		orientationCode, orientation, orientationProblem := captureChannelOutput(t, invoke)
 		if orientationCode != 0 || orientationProblem != "" || !strings.Contains(orientation, "WAITING") {
@@ -341,9 +346,9 @@ exit 1
 	initial := runReceiptGit(t, root, "rev-parse", "HEAD")
 
 	stageHumanTerminal(t, root, int64(os.Getppid()))
-	if stderr, code := captureStderr(t, func() int {
+	if stderr, code := captureStderr(t, func(stdout, stderr io.Writer) int {
 		return runGoalMigrate([]string{"--root", root, "--source-digest", digest, "--sync-mode", "local",
-			"--identity", "01J5XM00000000000000000000", "--by", "fixture-human"})
+			"--identity", "01J5XM00000000000000000000", "--by", "fixture-human"}, stdout, stderr)
 	}); code != 0 {
 		t.Fatalf("real migration after the human initialization commit failed: code=%d stderr=%s", code, stderr)
 	}

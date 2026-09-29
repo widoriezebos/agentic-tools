@@ -69,10 +69,10 @@ type intentCommand struct {
 	// passthrough hands the words after the action, unchanged, to a handler
 	// with its own parser, output and exit codes: a machinery verb given a
 	// public home, or a process entrypoint.
-	passthrough func([]string) int
+	passthrough command
 	// owner is the handler a passthrough runs, once its public options
 	// (--repo, the installation found) are applied.
-	owner func([]string) int
+	owner command
 	// hidden rows are process entrypoints: routed, never listed in public
 	// help; launcher names the code that starts them.
 	hidden   bool
@@ -115,7 +115,7 @@ func intentCommands() []intentCommand {
 	var commands []intentCommand
 	for _, part := range [][]intentCommand{
 		goalIntentCommands(), intentPlanningCommands(), goalReviewIntentCommands(), goalLandWithoutSittingIntentCommands(), designIntentCommands(), intentWorkCommands(),
-		intentDeliveryCommands(), helmIntentCommands(), processIntentCommands(), landingIntentCommands(), diskIntentCommands(), appIntentCommands(), practiceIntentCommands(), hiddenIntentEntries(), {topLevelStatus()},
+		intentDeliveryCommands(), agentIntentCommands(), helmIntentCommands(), processIntentCommands(), landingIntentCommands(), diskIntentCommands(), appIntentCommands(), practiceIntentCommands(), hiddenIntentEntries(), {topLevelStatus()},
 	} {
 		commands = append(commands, part...)
 	}
@@ -394,7 +394,7 @@ func parseIntentArgs(command intentCommand, raw []string) (intentInput, *intentI
 		return input, nil
 	}
 	// Go's own flag parsing checks each value against its option's kind.
-	set := newFlagSet(command.name)
+	set := newFlagSet(command.name, io.Discard, io.Discard)
 	set.SetOutput(io.Discard)
 	for _, definition := range command.allFlags() {
 		if definition.value == "" {
@@ -544,6 +544,8 @@ type intentOwners struct {
 	// internal/adopt.
 	adopt func(adopt.Options) (adopt.Result, error)
 	helm  helmOwners
+	// agent are the agent verbs' seams; the zero value is production.
+	agent agentOwners
 	// hookSwitch adjusts system setup's seams; nil keeps production.
 	hookSwitch func(hookswitch.Deps) hookswitch.Deps
 	// sentBackRevise runs the one work revise a sent-back goal's holder
@@ -601,6 +603,14 @@ func runIntent(command intentCommand, raw []string, stdout, stderr io.Writer, ow
 }
 
 func runIntentIn(command intentCommand, raw []string, stdout, stderr io.Writer, cwd string, owners intentOwners) int {
+	// An owner that prints does so on this invocation's streams, unless the
+	// caller gave the owners streams of their own.
+	if owners.dependencies.stdout == nil {
+		owners.dependencies.stdout = stdout
+	}
+	if owners.dependencies.stderr == nil {
+		owners.dependencies.stderr = stderr
+	}
 	inv := &intentInvocation{command: command, raw: raw, stdout: stdout, stderr: stderr, cwd: cwd, owners: owners}
 	input, inputErr := parseIntentArgs(command, raw)
 	inv.input = input
@@ -986,7 +996,7 @@ type intentGroup struct {
 
 var intentGroups = []intentGroup{
 	{"plan", "Plan", []string{"goal", "design", "decision", "grant"}},
-	{"deliver", "Deliver", []string{"work", "test", "question", "incident"}},
+	{"deliver", "Deliver", []string{"work", "test", "question", "agent", "incident"}},
 	{"run", "Run", []string{"status", "helm", "session", "mission", "system", "landing", "machine", "disk", "app", "ui", "settings"}},
 	{"practice", "Practice", []string{"receipt", "experiment"}},
 }
@@ -1000,6 +1010,7 @@ var intentObjectSummaries = map[string]string{
 	"work":       "a goal's work: brief, build, review, revise, land, finish, wait and stop",
 	"test":       "risk-selected tests and their proof",
 	"question":   "questions for a person, and their answers",
+	"agent":      "messages between the agents on this host: ask, reply and read, never a person",
 	"incident":   "failures on main that someone must own",
 	"status":     "the overview of this checkout, or one goal's work",
 	"helm":       "human at the helm: take the whole seat out of the machinery's hands, and give it back",

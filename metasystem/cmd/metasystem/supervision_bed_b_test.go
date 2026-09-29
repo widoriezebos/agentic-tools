@@ -1,6 +1,7 @@
 package main
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -76,7 +77,7 @@ func supBPrintRefusal(t *testing.T, refusal *processRefusal) (string, int) {
 	if refusal == nil {
 		t.Fatal("the verb was not refused")
 	}
-	return captureStderr(t, refusal.print)
+	return captureStderr(t, func(_, stderr io.Writer) int { return refusal.printTo(stderr) })
 }
 
 func supBReadFile(t *testing.T, path string) string {
@@ -226,8 +227,8 @@ func TestSupBStewardCreationVerbsRefuseTheClosedFenceWithTheStartRemedy(t *testi
 	}
 	want := "the metasystem is stopped for " + repo + " since 2026-09-27T12:30:00Z, by stop pid 72\n" +
 		"run: metasystem system start --repo " + repo + "\n"
-	for name, verb := range map[string]func([]string) int{"arm": runStewardArm} {
-		stdout, stderr, code := captureRelay(t, func() int { return verb([]string{"--repo", repo}) })
+	for name, verb := range map[string]command{"arm": runStewardArm} {
+		stdout, stderr, code := captureRelay(t, func(stdout, stderr io.Writer) int { return verb([]string{"--repo", repo}, stdout, stderr) })
 		if code != 1 || stdout != "" || stderr != want {
 			t.Fatalf("steward %s under the closed fence = code %d stdout %q stderr %q, want %q", name, code, stdout, stderr, want)
 		}
@@ -263,10 +264,10 @@ func TestSupBProofRunLaunchRefusesTheClosedFenceWithAFailedProofResult(t *testin
 	// capacity.
 	t.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", "/")
 	logPath := filepath.Join(repo, "stop-fence-proof.log")
-	stdout, stderr, code := captureRelay(t, func() int {
+	stdout, stderr, code := captureRelay(t, func(stdout, stderr io.Writer) int {
 		return runProofRunLaunch([]string{"--suite", "stop-fence-proof", "--root", repo, "--control-root", repo,
 			"--conf", conf, "--progress", filepath.Join(repo, "stop-fence-progress.jsonl"), "--log", logPath,
-			"--banner", "stop-fence", "--", "/bin/true"})
+			"--banner", "stop-fence", "--", "/bin/true"}, stdout, stderr)
 	})
 	want := "the metasystem is stopped for " + repo + " since 2026-09-27T12:30:00Z, by stop pid 72\n" +
 		"at an agent-free terminal, run: metasystem system start --repo " + repo + "\n" +

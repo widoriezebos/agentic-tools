@@ -2,35 +2,35 @@ package main
 
 import (
 	"fmt"
-	"os"
+	"io"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hooks"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/report"
 )
 
-func runReportStopStatus(args []string) int {
-	flags := newFlagSet("session status")
+func runReportStopStatus(args []string, stdout, stderr io.Writer) int {
+	flags := newFlagSet("session status", stdout, stderr)
 	id := flags.String("id", "", "exact short Stop report alias or legacy full id")
 	root := pathFlag(flags, "root", "", "explicit metasystem installation")
 	if flags.Parse(args) != nil {
 		return 2
 	}
 	if *id == "" || len(flags.Args()) != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem session status --id ID [--root INSTALLATION]")
+		fmt.Fprintln(stderr, "usage: metasystem session status --id ID [--root INSTALLATION]")
 		return 2
 	}
 	if err := report.ValidateStopStatusID(*id); err != nil {
-		fmt.Fprintf(os.Stderr, "metasystem session status: %s is not a Stop report id (the ids are lowercase hexadecimal); copy the id from the Stop line; nothing was read\n", *id)
+		fmt.Fprintf(stderr, "metasystem session status: %s is not a Stop report id (the ids are lowercase hexadecimal); copy the id from the Stop line; nothing was read\n", *id)
 		return 2
 	}
 	data, _, err := report.ReadStopStatus(*root, *id)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "metasystem session status:", err)
+		fmt.Fprintln(stderr, "metasystem session status:", err)
 		return 1
 	}
-	if _, err := os.Stdout.Write(data); err != nil {
-		fmt.Fprintln(os.Stderr, "metasystem session status:", err)
+	if _, err := stdout.Write(data); err != nil {
+		fmt.Fprintln(stderr, "metasystem session status:", err)
 		return 1
 	}
 	return 0

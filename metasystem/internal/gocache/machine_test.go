@@ -35,7 +35,7 @@ func TestTrimMachineTrimsTheFourCachesEachToItsCap(t *testing.T) {
 	reports, err := gocache.TrimMachine(context.Background(), gocache.MachineTrim{
 		UserCacheDir: func() (string, error) { return userCache, nil }, StateDir: state,
 		EngineGoCapBytes: 150, DelegateGoCapBytes: 250, StaticcheckCapBytes: 150,
-		Keep: 12 * time.Hour, Now: trimNow,
+		Keep: 12 * time.Hour, MinKeep: trimMinKeep, Now: trimNow,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -64,7 +64,7 @@ func TestTrimMachineTrimsTheFourCachesEachToItsCap(t *testing.T) {
 	cancel()
 	reports, err = gocache.TrimMachine(ctx, gocache.MachineTrim{
 		UserCacheDir: func() (string, error) { return userCache, nil }, StateDir: state,
-		EngineGoCapBytes: 1, DelegateGoCapBytes: 1, StaticcheckCapBytes: 1, Keep: 12 * time.Hour, Now: trimNow,
+		EngineGoCapBytes: 1, DelegateGoCapBytes: 1, StaticcheckCapBytes: 1, Keep: 12 * time.Hour, MinKeep: trimMinKeep, Now: trimNow,
 	})
 	if err != nil || len(reports) != 4 {
 		t.Fatalf("cancelled: %+v %v", reports, err)
@@ -97,7 +97,7 @@ func TestTrimMachineOnlyTheNamedCachesAndTheLastReports(t *testing.T) {
 	reports, err := gocache.TrimMachine(context.Background(), gocache.MachineTrim{
 		UserCacheDir: func() (string, error) { return userCache, nil }, StateDir: state,
 		EngineGoCapBytes: 1000, DelegateGoCapBytes: 1000, StaticcheckCapBytes: 1000,
-		Keep: 12 * time.Hour, Now: trimNow, Only: []string{"engine-go-build"},
+		Keep: 12 * time.Hour, MinKeep: trimMinKeep, Now: trimNow, Only: []string{"engine-go-build"},
 	})
 	if err != nil || len(reports) != 1 || reports[0].Cache != "engine-go-build" || reports[0].EndedBy != "complete" {
 		t.Fatalf("only the engine Go cache: %+v %v", reports, err)

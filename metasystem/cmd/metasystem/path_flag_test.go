@@ -151,7 +151,7 @@ func TestReadOnlyVerbsReportTheSamePathForRelativeAndAbsoluteFlags(t *testing.T)
 		t.Run(test.name, func(t *testing.T) {
 			run := func(value string) (string, int) {
 				args := append(append([]string{}, test.command...), "--"+test.flagName, value)
-				return captureStdout(t, func() int { return dispatch(args) })
+				return captureStdout(t, func(stdout, stderr io.Writer) int { return dispatchOn(args, stdout, stderr) })
 			}
 			relativeOutput, relativeCode := run(".")
 			absoluteOutput, absoluteCode := run(absolute)

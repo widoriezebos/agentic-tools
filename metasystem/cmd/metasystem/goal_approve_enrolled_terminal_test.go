@@ -1,6 +1,7 @@
 package main
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -31,14 +32,9 @@ func TestGoalApproveAtTheEnrolledTerminalProvesThroughTheRuntimeRegistry(t *test
 		}
 	}
 	approve := func(prove goalAuthorityProver) (int, string, string) {
-		var stdout string
-		stderr, code := captureStderr(t, func() int {
-			var code int
-			stdout, code = captureStdout(t, func() int {
-				return runGoalApproveWithInputs([]string{"--root", root, "--id", "standing-validation", "--by", "Wido", "--lineage", "m1"},
-					prove, fixture.commandNow, fixture.dependencies(), nil)
-			})
-			return code
+		code, stdout, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
+			return runGoalApproveWithInputs([]string{"--root", root, "--id", "standing-validation", "--by", "Wido", "--lineage", "m1"},
+				prove, fixture.commandNow, withStreams(fixture.dependencies(), stdout, stderr), nil)
 		})
 		return code, stdout, stderr
 	}

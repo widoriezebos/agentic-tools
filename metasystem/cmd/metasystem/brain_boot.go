@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -322,17 +323,17 @@ func firstGroup(lines []brainBootLine, group string) int {
 	return -1
 }
 
-func runBrainBootInputs(args []string) int {
-	flags := newFlagSet("brain boot-inputs")
+func runBrainBootInputs(args []string, stdout, stderr io.Writer) int {
+	flags := newFlagSet("brain boot-inputs", stdout, stderr)
 	root := pathFlag(flags, "root", "", "checkout state root")
 	repo := pathFlag(flags, "repo", "", "checkout containing records")
 	dir := flags.String("dir", "", "parent-owned section directory")
-	if flags.Parse(args) != nil || !requireFlags(flags, nil, "root", "repo", "dir") || *root == "" || *repo == "" || *dir == "" {
-		fmt.Fprintln(os.Stderr, "brain boot-inputs needs --root, --repo, and --dir")
+	if flags.Parse(args) != nil || !requireFlags(flags, stderr, "root", "repo", "dir") || *root == "" || *repo == "" || *dir == "" {
+		fmt.Fprintln(stderr, "brain boot-inputs needs --root, --repo, and --dir")
 		return 2
 	}
 	if err := writeBrainBootInputs(*root, *repo, *dir, defaultBrainBootInputReaders()); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
 	return 0

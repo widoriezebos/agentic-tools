@@ -127,10 +127,6 @@ type processRefusal struct {
 	plain string
 }
 
-func (r *processRefusal) print() int {
-	return r.printTo(os.Stderr)
-}
-
 // printTo writes the refusal to w.
 func (r *processRefusal) printTo(w io.Writer) int {
 	if r.plain != "" {
@@ -388,10 +384,6 @@ func armRefusalSecondLine(scope processScope, err error) string {
 	return second
 }
 
-func refuseProcessVerb(verb, checkout, sentence, second string) int {
-	return refuseProcessVerbTo(os.Stderr, verb, checkout, sentence, second)
-}
-
 func refuseProcessVerbTo(w io.Writer, verb, checkout, sentence, second string) int {
 	sentence = strings.TrimSuffix(strings.TrimSpace(sentence), ".")
 	fmt.Fprintf(w, "metasystem %s: %s.\n", publicProcessVerb(verb), sentence)
@@ -402,23 +394,20 @@ func refuseProcessVerbTo(w io.Writer, verb, checkout, sentence, second string) i
 // requireHumanTerminal is the common classifier gate for process stopping and
 // steward enrollment. Fixture-granted HUMAN classifications are explicit
 // authority, while every other class is refused.
-func requireHumanTerminal(repo, verb string, retryCommands ...string) (fixtureGranted, authorized bool) {
+func requireHumanTerminal(stderr io.Writer, repo, verb string, retryCommands ...string) (fixtureGranted, authorized bool) {
 	metasystemRoot, err := upMetasystemRoot("")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "%s: cannot resolve the installed engine: %v\n", verb, err)
+		fmt.Fprintf(stderr, "%s: cannot resolve the installed engine: %v\n", verb, err)
 		return false, false
 	}
-	return requireHumanTerminalAt(repo, metasystemRoot, verb, retryCommands...)
+	return requireHumanTerminalAtWith(stderr, repo, metasystemRoot, verb, stateroot.RepositoryTop, lease.ClassifyAt, retryCommands...)
 }
 
-func requireHumanTerminalAt(repo, metasystemRoot, verb string, retryCommands ...string) (fixtureGranted, authorized bool) {
-	return requireHumanTerminalAtWith(repo, metasystemRoot, verb, stateroot.RepositoryTop, lease.ClassifyAt, retryCommands...)
-}
-
-func requireHumanTerminalAtWith(repo, metasystemRoot, verb string, repositoryTop func(string) (string, error), classify processCallerClassifier, retryCommands ...string) (fixtureGranted, authorized bool) {
+// requireHumanTerminalAtWith prints a refusal on stderr, the invocation's.
+func requireHumanTerminalAtWith(stderr io.Writer, repo, metasystemRoot, verb string, repositoryTop func(string) (string, error), classify processCallerClassifier, retryCommands ...string) (fixtureGranted, authorized bool) {
 	fixtureGranted, refusal := humanTerminalCheck(repo, metasystemRoot, verb, repositoryTop, classify, retryCommands...)
 	if refusal != nil {
-		refusal.print()
+		refusal.printTo(stderr)
 		return false, false
 	}
 	return fixtureGranted, true

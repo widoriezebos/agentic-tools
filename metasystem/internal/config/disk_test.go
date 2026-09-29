@@ -9,7 +9,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 )
 
-// The cache trimmer's six settings (disk-lifetimes A12): compiled-in
+// The cache trimmer's seven settings (disk-lifetimes A12): compiled-in
 // defaults, a seat's own numbers, the environment over the file, and a
 // value that is not a positive whole number refused rather than defaulted.
 func TestCacheTrimSettingsResolution(t *testing.T) {
@@ -22,17 +22,18 @@ func TestCacheTrimSettingsResolution(t *testing.T) {
 		want      CacheTrim
 		refused   string
 	}{
-		{name: "the shipped defaults", want: CacheTrim{EngineGoCapBytes: 30 * gib, DelegateGoCapBytes: 10 * gib, StaticcheckCapBytes: 2 * gib, Keep: 12 * time.Hour, Budget: 10 * time.Second, PersonBudget: 300 * time.Second}},
+		{name: "the shipped defaults", want: CacheTrim{EngineGoCapBytes: 30 * gib, DelegateGoCapBytes: 10 * gib, StaticcheckCapBytes: 2 * gib, Keep: 12 * time.Hour, MinKeep: 2 * time.Hour, Budget: 10 * time.Second, PersonBudget: 300 * time.Second}},
 		{
 			name: "a seat's own numbers",
 			committed: DiskGoCacheCapGiBKey + "=40\n" + DiskDelegateGoCacheCapGiBKey + "=5\n" + DiskStaticcheckCacheCapGiBKey + "=1\n" +
-				DiskGoCacheKeepHoursKey + "=24\n" + DiskCacheTrimBudgetSecKey + "=30\n" + DiskCacheTrimPersonBudgetSecKey + "=600\n",
-			want: CacheTrim{EngineGoCapBytes: 40 * gib, DelegateGoCapBytes: 5 * gib, StaticcheckCapBytes: gib, Keep: 24 * time.Hour, Budget: 30 * time.Second, PersonBudget: 600 * time.Second},
+				DiskGoCacheKeepHoursKey + "=24\n" + DiskCacheTrimBudgetSecKey + "=30\n" + DiskCacheTrimPersonBudgetSecKey + "=600\n" +
+				DiskCacheMinKeepMinutesKey + "=90\n",
+			want: CacheTrim{EngineGoCapBytes: 40 * gib, DelegateGoCapBytes: 5 * gib, StaticcheckCapBytes: gib, Keep: 24 * time.Hour, MinKeep: 90 * time.Minute, Budget: 30 * time.Second, PersonBudget: 600 * time.Second},
 		},
 		{
 			name:   "the environment over the committed value",
 			lookup: mapEnv(map[string]string{EnvName(DiskGoCacheCapGiBKey): "50"}),
-			want:   CacheTrim{EngineGoCapBytes: 50 * gib, DelegateGoCapBytes: 10 * gib, StaticcheckCapBytes: 2 * gib, Keep: 12 * time.Hour, Budget: 10 * time.Second, PersonBudget: 300 * time.Second},
+			want:   CacheTrim{EngineGoCapBytes: 50 * gib, DelegateGoCapBytes: 10 * gib, StaticcheckCapBytes: 2 * gib, Keep: 12 * time.Hour, MinKeep: 2 * time.Hour, Budget: 10 * time.Second, PersonBudget: 300 * time.Second},
 		},
 		{name: "zero is refused", committed: DiskGoCacheKeepHoursKey + "=0\n", refused: DiskGoCacheKeepHoursKey + " must be a whole number from 1 to 100000"},
 		{name: "words are refused", committed: DiskGoCacheCapGiBKey + "=lots\n", refused: DiskGoCacheCapGiBKey + " must be a whole number from 1 to 100000"},
@@ -57,10 +58,10 @@ func TestCacheTrimSettingsResolution(t *testing.T) {
 	}
 }
 
-// The six keys are validated beside the other numeric knobs.
+// The seven keys are validated beside the other numeric knobs.
 func TestValidateCacheTrimKnobs(t *testing.T) {
 	t.Parallel()
-	for _, key := range []string{DiskGoCacheCapGiBKey, DiskDelegateGoCacheCapGiBKey, DiskStaticcheckCacheCapGiBKey, DiskGoCacheKeepHoursKey, DiskCacheTrimBudgetSecKey, DiskCacheTrimPersonBudgetSecKey} {
+	for _, key := range []string{DiskGoCacheCapGiBKey, DiskDelegateGoCacheCapGiBKey, DiskStaticcheckCacheCapGiBKey, DiskGoCacheKeepHoursKey, DiskCacheTrimBudgetSecKey, DiskCacheTrimPersonBudgetSecKey, DiskCacheMinKeepMinutesKey} {
 		if problems := validateRepo(t, validConf+key+"=0\n"); !hasProblem(problems, key+" must be a positive integer") {
 			t.Fatalf("%s=0: %v", key, problems)
 		}

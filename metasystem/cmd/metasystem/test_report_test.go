@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"io"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -30,7 +31,9 @@ func TestTestReportReadsValidatedResultWithoutExecutingProof(t *testing.T) {
 	if err := writePrivateJSON(path, result); err != nil {
 		t.Fatal(err)
 	}
-	output, code := captureStdout(t, func() int { return runTestReport([]string{"--result", path, "--expensive-ms", "500"}) })
+	output, code := captureStdout(t, func(stdout, stderr io.Writer) int {
+		return runTestReport([]string{"--result", path, "--expensive-ms", "500"}, stdout, stderr)
+	})
 	if code != 0 {
 		t.Fatalf("test report refused valid retained result: %s", output)
 	}
@@ -43,7 +46,9 @@ func TestTestReportReadsValidatedResultWithoutExecutingProof(t *testing.T) {
 	if err := writePrivateJSON(path, result); err != nil {
 		t.Fatal(err)
 	}
-	_, code = captureStdout(t, func() int { return runTestReport([]string{"--result", path, "--expensive-ms", "500"}) })
+	_, code = captureStdout(t, func(stdout, stderr io.Writer) int {
+		return runTestReport([]string{"--result", path, "--expensive-ms", "500"}, stdout, stderr)
+	})
 	if code == 0 {
 		t.Fatal("test report accepted an invalid retained result")
 	}

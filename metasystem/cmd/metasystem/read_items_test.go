@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -95,9 +96,9 @@ func (f *readItemCommandFixture) report(opts metrics.Options) (metrics.Result, e
 	return metrics.Result{}, nil
 }
 
-func (f *readItemCommandFixture) done() int {
+func (f *readItemCommandFixture) done(stdout, stderr io.Writer) int {
 	trySync := func(name string, args []string) (int, bool) {
-		return trySyncMutationWithCompletion(name, args, f.repository.commandNow(f.now), f.dependencies, goalParkBranchCheck, completionInputs{localTip: f.localTip, reporter: f.report})
+		return trySyncMutationWithCompletion(name, args, f.repository.commandNow(f.now), withStreams(f.dependencies, stdout, stderr), goalParkBranchCheck, completionInputs{localTip: f.localTip, reporter: f.report})
 	}
 	return runGoalDoneWithSync([]string{"--root", f.repository.root, "--id", "standing-validation", "--conclude", "Finished.", "--lineage", "m1"}, trySync)
 }
@@ -105,14 +106,14 @@ func (f *readItemCommandFixture) done() int {
 func TestGoalShowAndNextPrintOpenReadItemFixUnit(t *testing.T) {
 	fixture := newReadItemCommandFixture(t)
 	root := fixture.repository.root
-	showCode, show, showErr := captureCommandOutput(t, true, true, func() int {
-		return runGoalShowWithResolver([]string{"--root", root, "--id", "standing-validation"}, fixture.endpoint)
+	showCode, show, showErr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
+		return runGoalShowWithResolver([]string{"--root", root, "--id", "standing-validation"}, fixture.endpoint, stdout, stderr)
 	})
 	if showCode != 0 || showErr != "" || !strings.Contains(show, `"heading":"Open read items (fix unit critic): 1"`) || !strings.Contains(show, `"id":"critic-1"`) {
 		t.Fatalf("goal show omitted read fix unit: code=%d output=%q stderr=%q", showCode, show, showErr)
 	}
-	nextCode, next, nextErr := captureCommandOutput(t, true, true, func() int {
-		return runGoalNextWithInputs([]string{"--root", root, "--machine", "mac-cli"}, fixture.dependencies, fixture.repository.commandNow(fixture.now))
+	nextCode, next, nextErr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
+		return runGoalNextWithInputs([]string{"--root", root, "--machine", "mac-cli"}, withStreams(fixture.dependencies, stdout, stderr), fixture.repository.commandNow(fixture.now), stdout, stderr)
 	})
 	if nextCode != 0 || nextErr != "" || !strings.Contains(next, "continue your claimed goal: standing-validation\nOpen read items (fix unit critic): 1\n- critic-1: Name the boundary.\n") {
 		t.Fatalf("goal next omitted block after selection: code=%d output=%q stderr=%q", nextCode, next, nextErr)
@@ -121,8 +122,8 @@ func TestGoalShowAndNextPrintOpenReadItemFixUnit(t *testing.T) {
 
 func TestGoalReadItemsListJSONShape(t *testing.T) {
 	fixture := newReadItemCommandFixture(t)
-	code, output, stderr := captureCommandOutput(t, true, true, func() int {
-		return runGoalReadItemsListWithInputs([]string{"--root", fixture.repository.root, "--open", "--json"}, fixture.repository.commandNow(fixture.now), fixture.dependencies.endpoint)
+	code, output, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
+		return runGoalReadItemsListWithInputs([]string{"--root", fixture.repository.root, "--open", "--json"}, fixture.repository.commandNow(fixture.now), fixture.dependencies.endpoint, stdout, stderr)
 	})
 	var envelope struct {
 		Tip   string              `json:"tip"`
@@ -136,7 +137,7 @@ func TestGoalReadItemsListJSONShape(t *testing.T) {
 func TestDoneReadItemRefusalRemedyExecutes(t *testing.T) {
 	fixture := newReadItemCommandFixture(t)
 	before := fixture.projection().Tip
-	code, stdout, stderr := captureCommandOutput(t, true, true, fixture.done)
+	code, stdout, stderr := runOnOwnStreams(fixture.done)
 	var refusal struct {
 		Detail string `json:"detail"`
 	}
@@ -160,8 +161,8 @@ func TestDoneReadItemRefusalRemedyExecutes(t *testing.T) {
 		t.Fatalf("printed remedy is not the public goal notes form: %q", command)
 	}
 	closeArgs := []string{"--id", fields[3], "--item", fields[5], fields[6], fields[7], "--root", fixture.repository.root, "--lineage", "m1"}
-	code, stdout, stderr = captureCommandOutput(t, true, true, func() int {
-		return runGoalReadItemsCloseWithInputs(closeArgs, fixture.repository.commandNow(fixture.now), fixture.dependencies, fixture.resolveCodeCommit)
+	code, stdout, stderr = runOnOwnStreams(func(stdout, stderr io.Writer) int {
+		return runGoalReadItemsCloseWithInputs(closeArgs, fixture.repository.commandNow(fixture.now), withStreams(fixture.dependencies, stdout, stderr), fixture.resolveCodeCommit)
 	})
 	if code != 0 || stderr != "" {
 		t.Fatalf("printed fixed remedy failed: command=%q code=%d stdout=%q stderr=%q", command, code, stdout, stderr)
@@ -170,7 +171,7 @@ func TestDoneReadItemRefusalRemedyExecutes(t *testing.T) {
 	if closed.Tip == before || closed.Tree.Live["standing-validation"].ReadItems[0].State != goal.ReadItemFixed || closed.Tree.Live["standing-validation"].ReadItems[0].ClosingReference != fixture.codeCommit || fixture.reports != 0 {
 		t.Fatalf("printed fixed remedy did not close item: projection=%+v reports=%d", closed, fixture.reports)
 	}
-	code, stdout, stderr = captureCommandOutput(t, true, true, fixture.done)
+	code, stdout, stderr = runOnOwnStreams(fixture.done)
 	if code != 0 || stderr != "" || fixture.reports != 1 {
 		t.Fatalf("done after remedy: code=%d stdout=%q stderr=%q reports=%d", code, stdout, stderr, fixture.reports)
 	}

@@ -146,22 +146,38 @@ func Decide(class Classification, tokens int64, budget config.Budget, installati
 	return Decision{Deny: true, Cause: string(class.Kind), Reason: reason}
 }
 
-// Output returns the hook response. An allow is represented by silence so the
-// runtime's ordinary permission flow remains in control.
-func (d Decision) Output() []byte {
-	if !d.Deny {
+// Compose is the gate's one response (batch-lane design D14C-08): an
+// enforced denial is the deny object, unchanged and never carrying peer
+// text; an allowed call with a peer message is the context object, which
+// carries no permissionDecision and so leaves the runtime's ordinary
+// permission flow in control exactly as silence does; an allowed call with
+// nothing to say is silence (nil).
+func (d Decision) Compose(peer string) []byte {
+	if d.Deny {
+		payload := struct {
+			HookSpecificOutput struct {
+				HookEventName            string `json:"hookEventName"`
+				PermissionDecision       string `json:"permissionDecision"`
+				PermissionDecisionReason string `json:"permissionDecisionReason"`
+			} `json:"hookSpecificOutput"`
+		}{}
+		payload.HookSpecificOutput.HookEventName = "PreToolUse"
+		payload.HookSpecificOutput.PermissionDecision = "deny"
+		payload.HookSpecificOutput.PermissionDecisionReason = d.Reason
+		encoded, _ := json.Marshal(payload)
+		return encoded
+	}
+	if peer == "" {
 		return nil
 	}
 	payload := struct {
 		HookSpecificOutput struct {
-			HookEventName            string `json:"hookEventName"`
-			PermissionDecision       string `json:"permissionDecision"`
-			PermissionDecisionReason string `json:"permissionDecisionReason"`
+			HookEventName     string `json:"hookEventName"`
+			AdditionalContext string `json:"additionalContext"`
 		} `json:"hookSpecificOutput"`
 	}{}
 	payload.HookSpecificOutput.HookEventName = "PreToolUse"
-	payload.HookSpecificOutput.PermissionDecision = "deny"
-	payload.HookSpecificOutput.PermissionDecisionReason = d.Reason
+	payload.HookSpecificOutput.AdditionalContext = peer
 	encoded, _ := json.Marshal(payload)
 	return encoded
 }

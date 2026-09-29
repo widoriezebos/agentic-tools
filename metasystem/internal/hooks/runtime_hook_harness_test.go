@@ -138,6 +138,8 @@ type fakeOps struct {
 	unmigratable   func() ([]string, error)
 	rebuild        func() error
 	tokenHex       func() (string, error)
+	peerSeat       func(string) (string, int)
+	peerClaims     func(string) (string, int)
 
 	identityRuntime string
 	identityPid     int
@@ -241,6 +243,24 @@ func (f *fakeOps) StewardPending(repo string) (string, int) {
 		return f.stewardPending(repo)
 	}
 	return "", 0
+}
+
+// PeerSeat answers no enrolled seat unless the test names one.
+func (f *fakeOps) PeerSeat(repo string) (string, int) {
+	f.record("peer seat")
+	if f.peerSeat != nil {
+		return f.peerSeat(repo)
+	}
+	return "", 1
+}
+
+// PeerClaims answers an empty ledger unless the test gives claims.
+func (f *fakeOps) PeerClaims(repo string) (string, int) {
+	f.record("peer claims")
+	if f.peerClaims != nil {
+		return f.peerClaims(repo)
+	}
+	return `{"live":{},"concluded":{}}` + "\n", 0
 }
 
 func (f *fakeOps) BrainBoot(ctx context.Context, root, repo string, bytes, deadlineMS int) (string, string, int) {

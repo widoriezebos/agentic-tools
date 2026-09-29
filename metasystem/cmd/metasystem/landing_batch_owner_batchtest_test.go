@@ -1004,7 +1004,7 @@ func TestLandingBatchJoinVerbPublishesOutsideFlock(t *testing.T) {
 		return nil
 	}
 	batchJoinDependenciesForCommand = func() batchJoinDependencies { return dependencies }
-	if code := runBatchJoin([]string{"--root", seat, "--goal", "goal-a", "--chain", "chain-a"}); code != 0 {
+	if code := runBatchJoin([]string{"--root", seat, "--goal", "goal-a", "--chain", "chain-a"}, t.Output(), t.Output()); code != 0 {
 		t.Fatalf("join exited %d", code)
 	}
 	record, err := store.Load(batchID)

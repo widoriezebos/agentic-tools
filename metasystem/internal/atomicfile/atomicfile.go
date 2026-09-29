@@ -141,6 +141,83 @@ func publish(path, anchor string, fill func(*os.File) error) (durable bool, err 
 	return true, nil
 }
 
+// Create publishes data at path under a NEW name or not at all (batch-lane
+// design D14C-04): the directory chain made durable through anchor, a filled
+// and synced temporary beside the target carrying mode, a hard link to the
+// final name, and the parent sync. A link cannot replace an existing name,
+// where publish's rename would, so an existing name is an error that
+// errors.Is(err, os.ErrExist) with the existing bytes untouched. The target's
+// directory must exist: Create never creates a directory, so a caller that
+// keeps its directories private is not undone here. The outcome model is
+// the package's: a failed parent sync after the link is (false, nil).
+func Create(path string, data []byte, mode os.FileMode, anchor string) (durable bool, err error) {
+	return create(path, data, mode, anchor, createSeams{sync: syncDir})
+}
+
+// createSeams are Create's per-call dependencies: the directory sync, and a
+// pause between the link and the parent sync (nil in production).
+type createSeams struct {
+	sync      func(string) error
+	afterLink func(string)
+}
+
+func create(path string, data []byte, mode os.FileMode, anchor string, seams createSeams) (bool, error) {
+	target := filepath.Dir(path)
+	info, err := os.Stat(target)
+	if err != nil {
+		return false, err
+	}
+	if !info.IsDir() {
+		return false, fmt.Errorf("atomicfile: %s is not a directory", target)
+	}
+	for _, dir := range chain(target, anchor) {
+		if err := seams.sync(dir); err != nil {
+			return false, fmt.Errorf("atomicfile: cannot make the directory chain durable at %s: %w", dir, err)
+		}
+	}
+	tmp, err := writeTemp(target, filepath.Base(path), func(file *os.File) error {
+		if err := file.Chmod(mode); err != nil {
+			return err
+		}
+		_, err := file.Write(data)
+		return err
+	}, true)
+	if err != nil {
+		return false, err
+	}
+	defer os.Remove(tmp)
+	if err := os.Link(tmp, path); err != nil {
+		return false, err
+	}
+	// PUBLISHED under the new name; only its durability may be in doubt.
+	if seams.afterLink != nil {
+		seams.afterLink(path)
+	}
+	if err := seams.sync(target); err != nil {
+		return false, nil
+	}
+	return true, nil
+}
+
+// Confirm makes an existing published name durable: the chain through
+// anchor and the name's own directory are synced by this call, so a caller
+// that met os.ErrExist from Create for identical content never rests its
+// success on another publication's unfinished parent sync (D14D-02). False
+// means the name exists and its durability is not confirmed.
+func Confirm(path, anchor string) bool { return confirm(path, anchor, syncDir) }
+
+func confirm(path, anchor string, sync func(string) error) bool {
+	if _, err := os.Lstat(path); err != nil {
+		return false
+	}
+	for _, dir := range chain(filepath.Dir(path), anchor) {
+		if err := sync(dir); err != nil {
+			return false
+		}
+	}
+	return true
+}
+
 // writeTemp creates, fills, optionally syncs, and closes a temp file beside
 // the target, returning its name. The caller owns removal.
 func writeTemp(dir, base string, fill func(*os.File) error, durable bool) (string, error) {

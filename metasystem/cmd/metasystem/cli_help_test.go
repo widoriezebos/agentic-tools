@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"io"
 	"strings"
 	"testing"
 )
@@ -83,7 +84,7 @@ func TestFamilyHelpDoesNotInvokeHandler(t *testing.T) {
 	t.Parallel()
 	called := 0
 	registered := []family{{name: "safe", summary: "safe help", verbs: []verb{{
-		name: "mutate", summary: "must remain idle", run: func([]string) int { called++; return 0 },
+		name: "mutate", summary: "must remain idle", run: func([]string, io.Writer, io.Writer) int { called++; return 0 },
 	}}}}
 	for _, args := range [][]string{{"internal", "safe", "--help"}, {"internal", "safe", "-h"}} {
 		if code, _, problem := runCLIHelp(args, registered); code != 0 || problem != "" {
@@ -151,9 +152,11 @@ func TestGoalOpenHelpShowsSharedFlagsBeforeAnyMutationInputs(t *testing.T) {
 		ensureGuard:   func(string) error { calls++; return nil },
 	}
 	for _, alias := range []string{"--help", "-h"} {
-		code, output, problem := captureCommandOutput(t, true, true, func() int {
+		code, output, problem := runOnOwnStreams(func(stdout, stderr io.Writer) int {
+			own := inputs
+			own.stdout, own.stderr = stdout, stderr
 			return goalMutationWithInputs("open", []string{alias}, nil, nil,
-				func(string, []string) (int, bool) { calls++; return 0, false }, inputs)
+				func(string, []string) (int, bool) { calls++; return 0, false }, own)
 		})
 		if code != 0 || problem != "" || !strings.Contains(output, "Shared synced-goal options") || !strings.Contains(output, "each verb may accept fewer flags") {
 			t.Errorf("goal open %s = code %d, stdout %q, stderr %q", alias, code, output, problem)

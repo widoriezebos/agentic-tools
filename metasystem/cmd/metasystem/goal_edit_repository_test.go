@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -49,13 +50,8 @@ func (f *goalEditRepositoryFixture) commandNow(root string) (time.Time, error) {
 
 func (f *goalEditRepositoryFixture) run(args []string) (string, string, int) {
 	f.t.Helper()
-	var stdout string
-	stderr, code := captureStderr(f.t, func() int {
-		var innerCode int
-		stdout, innerCode = captureStdout(f.t, func() int {
-			return runGoalEditWithDependencies(args, f.commandNow, f.dependencies())
-		})
-		return innerCode
+	code, stdout, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
+		return runGoalEditWithDependencies(args, f.commandNow, withStreams(f.dependencies(), stdout, stderr))
 	})
 	return stdout, stderr, code
 }

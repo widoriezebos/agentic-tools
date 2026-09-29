@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -1079,16 +1078,10 @@ func TestAnswerRefusesSupersededAsk(t *testing.T) {
 		map[string]any{"askId": "ask-1-1", "streamId": "build", "reasonClass": "reserved-decision",
 			"question": "old wording", "answeredAt": nil, "supersededBy": "ask-2-1"})
 
-	saved := os.Stderr
-	read, wr, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	os.Stderr = wr
+	var refusal strings.Builder
+	bed.e.Errors = &refusal
 	code := bed.e.Answer("ask-1-1", "approve: too late")
-	wr.Close()
-	os.Stderr = saved
-	captured, _ := io.ReadAll(read)
+	captured := refusal.String()
 
 	if code == 0 {
 		t.Fatal("answering a superseded ask must refuse")
@@ -2557,20 +2550,16 @@ func TestTailAnchorRefusesMovedLedger(t *testing.T) {
 	for _, path := range announcements2 {
 		os.Remove(path)
 	}
-	stderrR, stderrW, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	savedStderr := os.Stderr
-	os.Stderr = stderrW
+	var refusal strings.Builder
+	savedErrors := engine.Errors
+	engine.Errors = &refusal
 	trace.tipReads(trace.tip)
 	trace.movedRetry(trace.tip)
 	trace.begin()
 	code := engine.ResolveTaint(1, "restore", preTree, "Wido", "retry over moved bytes", nil)
-	os.Stderr = savedStderr
-	stderrW.Close()
+	engine.Errors = savedErrors
 	trace.done()
-	captured, _ := io.ReadAll(stderrR)
+	captured := refusal.String()
 	if code == 0 {
 		t.Fatal("resolve over moved bytes must refuse")
 	}

@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -531,7 +532,7 @@ func (run *batchRehearsalRun) holdLanding() {
 
 func (run *batchRehearsalRun) verb(argv []string, batchID string) string {
 	started := time.Now()
-	code, stdout, stderr := captureCommandOutput(run.t, true, true, func() int { return runLandingBatch(argv) })
+	code, stdout, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int { return runLandingBatch(argv, stdout, stderr) })
 	entry := batchRehearsalVerb{argv: slices.Clone(argv), exit: code, duration: time.Since(started), stdout: stdout, stderr: stderr}
 	observedBatchID := batchID
 	if observedBatchID == "" && len(argv) != 0 && argv[0] == "join" {
@@ -549,7 +550,7 @@ func (run *batchRehearsalRun) verb(argv []string, batchID string) string {
 		}
 		statusArgs := []string{"status", "--root", run.seats["goal-rehearsal-a"], "--batch", observedBatchID}
 		var statusOut, statusErr string
-		statusCode, statusOut, statusErr = captureCommandOutput(run.t, true, true, func() int { return runLandingBatch(statusArgs) })
+		statusCode, statusOut, statusErr = runOnOwnStreams(func(stdout, stderr io.Writer) int { return runLandingBatch(statusArgs, stdout, stderr) })
 		entry.status = strings.TrimSpace(statusOut + statusErr)
 		if statusCode != 0 {
 			entry.status = fmt.Sprintf("exit=%d %s", statusCode, entry.status)

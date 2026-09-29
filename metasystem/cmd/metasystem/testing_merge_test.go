@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -31,7 +32,7 @@ func TestTestingMergeDriverUsesGitArgumentOrderAndPrintsUsage(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if code := runTestingMergeDriver(paths); code != 0 {
+	if code := runTestingMergeDriver(paths, t.Output(), t.Output()); code != 0 {
 		t.Fatalf("merge driver exit = %d", code)
 	}
 	merged, err := testpolicy.Load(paths[1])
@@ -46,7 +47,7 @@ func TestTestingMergeDriverUsesGitArgumentOrderAndPrintsUsage(t *testing.T) {
 		t.Fatalf("driver did not preserve ours mode: info=%v err=%v", info, err)
 	}
 
-	stderr := captureTestingStderr(t, func() { runTestingMergeDriver(nil) })
+	_, _, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int { return runTestingMergeDriver(nil, stdout, stderr) })
 	for _, want := range []string{"BASE OURS THEIRS", "%O %A %B", "metasystem system setup registers it"} {
 		if !strings.Contains(stderr, want) {
 			t.Errorf("usage missing %q:\n%s", want, stderr)
@@ -89,7 +90,7 @@ func TestTestingMergeDriverPreservesOursOnRefusal(t *testing.T) {
 		t.Fatal(err)
 	}
 	args := []string{"testing", "merge-driver", paths[0], paths[1], paths[2]}
-	if code := dispatch(args); code != 1 {
+	if code := dispatchOn(args, t.Output(), t.Output()); code != 1 {
 		t.Fatalf("invalid merge driver exit = %d", code)
 	}
 	if got, err := os.ReadFile(paths[1]); err != nil || !reflect.DeepEqual(got, before) {
@@ -106,7 +107,7 @@ func TestTestingMergeDriverPreservesOursOnRefusal(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if code := dispatch(args); code != 0 {
+	if code := dispatchOn(args, t.Output(), t.Output()); code != 0 {
 		t.Fatalf("valid merge driver exit = %d", code)
 	}
 	if _, err := testpolicy.Load(paths[1]); err != nil {
@@ -134,14 +135,14 @@ func TestTestingAddTestsWritesCanonicalContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	args := []string{"--file", path, "--group", "app-group", "--tests", "TestAdded,TestAdded"}
-	if code := runTestingAddTests(args); code != 0 {
+	if code := runTestingAddTests(args, t.Output(), t.Output()); code != 0 {
 		t.Fatalf("add-tests exit = %d", code)
 	}
 	first, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if code := runTestingAddTests(args); code != 0 {
+	if code := runTestingAddTests(args, t.Output(), t.Output()); code != 0 {
 		t.Fatalf("second add-tests exit = %d", code)
 	}
 	second, err := os.ReadFile(path)
@@ -184,13 +185,4 @@ func testingMergeClone(t *testing.T, contract testpolicy.Contract) testpolicy.Co
 		t.Fatal(err)
 	}
 	return result
-}
-
-func captureTestingStderr(t *testing.T, run func()) string {
-	t.Helper()
-	_, _, stderr := captureCommandOutput(t, false, true, func() int {
-		run()
-		return 0
-	})
-	return stderr
 }

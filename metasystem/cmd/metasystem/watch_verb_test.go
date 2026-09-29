@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -33,16 +34,16 @@ func TestWaitCompatibilityMappings(t *testing.T) {
 		{67, "invalid-arguments"}, {124, "wait-deadline"}, {130, "interrupted"},
 	}
 	for _, test := range cases {
-		compatibilityWaitCommand = func(_ []string, _ func(context.Context) error, _ int64, printResult func(metarun.WaitResult, bool)) int {
+		compatibilityWaitCommand = func(_ []string, _ func(context.Context) error, _ int64, printResult func(metarun.WaitResult, bool), _, _ io.Writer) int {
 			printResult(metarun.WaitResult{ExitCode: test.code, SourceOutcome: test.outcome, TargetIncarnation: metarun.WaiterTarget{Generation: 1}}, false)
 			return test.code
 		}
-		if output, code := captureStdout(t, func() int {
-			return runRunWatch([]string{"--root", t.TempDir(), "--id", "compat", "--caller-pid", "1"})
+		if output, code := captureStdout(t, func(stdout, stderr io.Writer) int {
+			return runRunWatch([]string{"--root", t.TempDir(), "--id", "compat", "--caller-pid", "1"}, stdout, stderr)
 		}); code != test.code {
 			t.Fatalf("run watch wait exit %d mapped to %d (output %q)", test.code, code, output)
 		}
-		if code := runJobWatchVerb([]string{"--root", t.TempDir(), "--job", "compat", "--caller-pid", "1"}); code != test.code {
+		if code := runJobWatchVerb([]string{"--root", t.TempDir(), "--job", "compat", "--caller-pid", "1"}, t.Output(), t.Output()); code != test.code {
 			t.Fatalf("job watch wait exit %d mapped to %d", test.code, code)
 		}
 	}

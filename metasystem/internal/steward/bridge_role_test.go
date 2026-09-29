@@ -26,7 +26,7 @@ func testRole(home string, seat board.Seat, now time.Time) (*bridgeRole, chan ti
 		home:  home,
 		seats: func() ([]board.Seat, error) { return []board.Seat{seat}, nil },
 		settings: func() (config.Board, time.Duration) {
-			return config.Board{Keep: 24 * time.Hour, Poll: time.Hour}, 20 * time.Minute
+			return config.Board{Keep: 24 * time.Hour, Poll: time.Hour, MailboxKeep: 24 * time.Hour}, 20 * time.Minute
 		},
 		now:   func() time.Time { return now },
 		watch: func(string, time.Duration) *board.Watcher { return board.PollWatch(nil) },
@@ -100,8 +100,9 @@ func subscribeRaw(t *testing.T, home string) (net.Conn, *bufio.Reader) {
 // listener closed, the pathname left behind) the second wins at its next
 // cycle, removes the stale socket under the flock and binds; the lock
 // file's inode is the same before and after the failover; the bridge writes
-// nothing under the board but its sweep of a terminal card older than
-// board.keep-hours; a regular file at the socket path is
+// nothing under the board but its sweeps of a terminal card older than
+// board.keep-hours and of a peer-message thread closed, offered and
+// board.mailbox-keep-days past its close; a regular file at the socket path is
 // BRIDGE_SOCKET_PATH_OCCUPIED and the flock is released; a clean exit
 // removes the socket.
 func TestOnlyTheStewardHoldingTheFlockRunsTheBridge(t *testing.T) {
@@ -118,6 +119,19 @@ func TestOnlyTheStewardHoldingTheFlockRunsTheBridge(t *testing.T) {
 		{Seat: seat, Goal: "live", Stage: board.StageLandReady, Writer: board.Writer{At: now.Add(-time.Minute)}},
 	} {
 		if err := board.WriteAt(home, card); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ask, err := board.Publish(home, board.Request{Kind: board.KindAsk, From: board.Sender{Machine: "m1a"}, To: board.Address{Machine: "m1b"}, Text: "q"}, now.Add(-72*time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reply, err := board.Publish(home, board.Request{Kind: board.KindReply, From: board.Sender{Machine: "m1b"}, To: board.Address{Machine: "m1a"}, Thread: ask.Message.ID, Text: "a"}, now.Add(-48*time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for seat, message := range map[string]board.Message{"m1b": ask.Message, "m1a": reply.Message} {
+		if err := board.Mark(message, seat, "L", "inbox", now.Add(-48*time.Hour)); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -163,7 +177,12 @@ func TestOnlyTheStewardHoldingTheFlockRunsTheBridge(t *testing.T) {
 	}
 	conn.Close()
 	after := boardListing(t, board.Dir(home))
-	if want := slices.DeleteFunc(slices.Clone(before), func(name string) bool { return strings.HasPrefix(name, "m1b/old-landed.json@") }); !slices.Equal(after, want) {
+	if !slices.ContainsFunc(before, func(name string) bool { return strings.Contains(name, "/mailbox/") }) {
+		t.Fatalf("the fixture thread is not on the board: %v", before)
+	}
+	if want := slices.DeleteFunc(slices.Clone(before), func(name string) bool {
+		return strings.HasPrefix(name, "m1b/old-landed.json@") || strings.Contains(name, "/mailbox/")
+	}); !slices.Equal(after, want) {
 		t.Fatalf("the bridge wrote under the board:\nbefore %v\nafter  %v", before, after)
 	}
 

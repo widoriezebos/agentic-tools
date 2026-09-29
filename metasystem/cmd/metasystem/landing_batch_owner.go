@@ -43,6 +43,9 @@ type productionBatchOwnerInputs struct {
 	sample      func() proofrun.LoadSample
 	lockDir     string
 	queueDir    string
+	// log is where the owner reports each red, start wait and error: the
+	// standard error of the component or command that runs it.
+	log io.Writer
 }
 
 // batchOwnerSource supplies raw command inputs for a single invocation.
@@ -86,9 +89,9 @@ var batchOwnerCadenceTick = func(root string, held batchOwnerLease, clock func()
 	return err
 }
 var batchOwnerCadenceStart = func(tick func()) { go tick() }
-var batchOwnerCadenceReport = func(err error) {
+var batchOwnerCadenceReport = func(log io.Writer, err error) {
 	line, _ := json.Marshal(map[string]any{"component": "landing-owner", "cadence": "tick", "error": err.Error()})
-	fmt.Fprintln(os.Stderr, string(line))
+	fmt.Fprintln(log, string(line))
 }
 
 func inspectBatchOwner(root string) (int64, identity.Liveness, error) {
@@ -534,7 +537,7 @@ func newProductionBatchOwner(settings config.BatchLanding, held batchOwnerLease,
 		},
 		LogRed: func(id string, outcome batch.TrunkRedRecordOutcome) {
 			line, _ := json.Marshal(map[string]any{"component": "landing-owner", "batch": id, "trunkRed": outcome})
-			fmt.Fprintln(os.Stderr, string(line))
+			fmt.Fprintln(inputs.log, string(line))
 		},
 		BaseCommit:    func(tree string) (string, error) { return commitForTree(settings.Root, "origin/main", tree) },
 		RunDiagnostic: clearingDiagnostic(settings.Root),
@@ -587,7 +590,7 @@ func newProductionBatchOwner(settings config.BatchLanding, held batchOwnerLease,
 		}),
 		LogWait: func(id, line string) {
 			encoded, _ := json.Marshal(map[string]any{"component": "landing-owner", "batch": id, "start": line})
-			fmt.Fprintln(os.Stderr, string(encoded))
+			fmt.Fprintln(inputs.log, string(encoded))
 		},
 		HelmActive: func(root string) bool { return helm.Active(root).Active },
 		BaseMove:   batchBaseMove(settings.Root),
@@ -596,7 +599,7 @@ func newProductionBatchOwner(settings config.BatchLanding, held batchOwnerLease,
 		Proving: landingLaneProving(landingLaneHome),
 		Report: func(id string, err error) {
 			line, _ := json.Marshal(map[string]any{"component": "landing-owner", "batch": id, "error": err.Error()})
-			fmt.Fprintln(os.Stderr, string(line))
+			fmt.Fprintln(inputs.log, string(line))
 		},
 	})
 }
@@ -663,12 +666,12 @@ func probeBatchProofRun(controlRoot, id string, record batch.Record, prober iden
 	return batch.RunProbe{State: batch.RunDead, Detail: "no live launcher for goal " + head}, nil
 }
 
-func runBatchOwnerPass(owner *batch.Owner, held batchOwnerLease, root string, clock func() time.Time, cadence *batchOwnerCadence) {
-	batchOwnerPassWith(owner, root, batchOwnerPassSeams{helm: helm.Active, resume: batchOwnerResume, out: os.Stderr, now: clock,
+func runBatchOwnerPass(out io.Writer, owner *batch.Owner, held batchOwnerLease, root string, clock func() time.Time, cadence *batchOwnerCadence) {
+	batchOwnerPassWith(owner, root, batchOwnerPassSeams{helm: helm.Active, resume: batchOwnerResume, out: out, now: clock,
 		cadence: func() {
 			cadence.start(func() {
 				if err := batchOwnerCadenceTick(root, held, clock); err != nil {
-					batchOwnerCadenceReport(err)
+					batchOwnerCadenceReport(out, err)
 				}
 			})
 		}})
@@ -742,7 +745,7 @@ type bridgeNudges struct {
 }
 
 // newBridgeNudges is the production subscription of this host's bridge.
-func newBridgeNudges() *bridgeNudges {
+func newBridgeNudges(log io.Writer) *bridgeNudges {
 	return &bridgeNudges{
 		dial: func() (net.Conn, error) {
 			home, err := board.Home()
@@ -754,7 +757,7 @@ func newBridgeNudges() *bridgeNudges {
 		options: board.SubscribeOptions{Kinds: []string{board.KindCard, board.KindStall}, Heartbeat: board.DefaultHeartbeat},
 		report: func(line string) {
 			encoded, _ := json.Marshal(map[string]any{"component": "landing-owner", "bridge": line})
-			fmt.Fprintln(os.Stderr, string(encoded))
+			fmt.Fprintln(log, string(encoded))
 		},
 	}
 }

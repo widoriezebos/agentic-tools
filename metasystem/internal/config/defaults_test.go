@@ -203,7 +203,7 @@ func TestTemplateModeReadsOnlyTheCommittedKey(t *testing.T) {
 	}
 }
 
-// The disk-lifetime settings and the cache trimmer's six keys have their
+// The disk-lifetime settings and the cache trimmer's seven keys have their
 // defaults in the one compiled table: an overrides-only file answers each
 // from source "default", lists it, and none is a proof input (they meter
 // the machine's disk, never what a proof proves).
@@ -214,14 +214,15 @@ func TestDiskDefaultsAreInTheOneCompiledTable(t *testing.T) {
 	want := map[string]string{
 		DiskGoCacheCapGiBKey: "30", DiskDelegateGoCacheCapGiBKey: "10", DiskStaticcheckCacheCapGiBKey: "2",
 		DiskGoCacheKeepHoursKey: "12", DiskCacheTrimBudgetSecKey: "10", DiskCacheTrimPersonBudgetSecKey: "300",
+		DiskCacheMinKeepMinutesKey: "120",
 	}
 	for _, row := range DiskSettings() {
 		if row.Default != "" {
 			want[row.Key] = row.Default
 		}
 	}
-	if len(want) != 32 {
-		t.Fatalf("disk keys with a default = %d, want 32 (26 of 3.13 and the trimmer's six)", len(want))
+	if len(want) != 33 {
+		t.Fatalf("disk keys with a default = %d, want 33 (26 of 3.13 and the trimmer's seven)", len(want))
 	}
 	for key, value := range want {
 		if compiled, ok := CompiledDefault(key); !ok || compiled != value {
@@ -242,7 +243,7 @@ func TestDiskDefaultsAreInTheOneCompiledTable(t *testing.T) {
 		}
 	}
 	trim, err := CacheTrimSettings(conf)
-	if err != nil || trim.EngineGoCapBytes != 30<<30 || trim.Budget.Seconds() != 10 || trim.PersonBudget.Seconds() != 300 {
+	if err != nil || trim.EngineGoCapBytes != 30<<30 || trim.Budget.Seconds() != 10 || trim.PersonBudget.Seconds() != 300 || trim.MinKeep.Minutes() != 120 {
 		t.Fatalf("CacheTrimSettings over an overrides-only file = %+v, %v", trim, err)
 	}
 }
@@ -285,7 +286,7 @@ func TestBoardAndPipelineSettingsHaveCompiledDefaults(t *testing.T) {
 	for key, want := range map[string]string{
 		BatchMaxWaitKey: "10m", PipelineStallMinKey: "20", PipelineProofCostKey: "40m",
 		PipelineStageDefaultsKey: "build=10m,revise=10m,unit-proof=5m,review=18m,judgement=5m,land-ready=3m", PipelineHistoryNKey: "8",
-		BoardKeepHoursKey: "24", BoardPollSecKey: "5",
+		BoardKeepHoursKey: "24", BoardPollSecKey: "5", BoardMailboxKeepDaysKey: "7",
 	} {
 		if value, _, err := Get(GetParams{Key: key, ConfPath: conf, LookupEnv: noEnv}); err != nil || value != want {
 			t.Fatalf("Get(%s) = %q, %v; want %q", key, value, err, want)
@@ -312,6 +313,7 @@ func TestBoardAndPipelineSettingsHaveCompiledDefaults(t *testing.T) {
 		{PipelineStallMinKey + "=20m\n", PipelineStallMinKey},
 		{PipelineHistoryNKey + "=eight\n", PipelineHistoryNKey},
 		{PipelineProofCostKey + "=forty\n", PipelineProofCostKey},
+		{BoardMailboxKeepDaysKey + "=7d\n", BoardMailboxKeepDaysKey},
 	} {
 		if problems := validateRepo(t, validConf+row.setting); !hasProblem(problems, row.want) {
 			t.Fatalf("Validate accepted %q: %v", row.setting, problems)

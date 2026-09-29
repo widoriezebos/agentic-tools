@@ -64,8 +64,11 @@ func Watch(dir string, poll time.Duration) *Watcher {
 	return watcher
 }
 
-// seatDirs are the seat directories on the board whose names pass the
-// safe-name rule: the directories a watch covers beside the board itself.
+// seatDirs are the directories a watch covers beside the board itself: the
+// seat directories whose names pass the safe-name rule, and the mailboxes'
+// directories (a seat's mailbox, the goal namespace and each goal's
+// mailbox), where they exist. A marker for a message already offered lands
+// one level below a watched directory; the bridge's tick finds it.
 func seatDirs(dir string) []string {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -73,8 +76,28 @@ func seatDirs(dir string) []string {
 	}
 	var dirs []string
 	for _, entry := range entries {
-		if entry.IsDir() && SafeName(entry.Name()) {
-			dirs = append(dirs, filepath.Join(dir, entry.Name()))
+		if !entry.IsDir() || !SafeName(entry.Name()) {
+			continue
+		}
+		seat := filepath.Join(dir, entry.Name())
+		dirs = append(dirs, seat)
+		mailboxes := []string{filepath.Join(seat, "mailbox")}
+		if entry.Name() == GoalNamespace {
+			mailboxes = nil
+			goals, _ := os.ReadDir(seat)
+			for _, goal := range goals {
+				if goal.IsDir() && SafeName(goal.Name()) {
+					dirs = append(dirs, filepath.Join(seat, goal.Name()))
+					mailboxes = append(mailboxes, filepath.Join(seat, goal.Name(), "mailbox"))
+				}
+			}
+		}
+		for _, mailbox := range mailboxes {
+			for _, sub := range []string{mailbox, filepath.Join(mailbox, "messages"), filepath.Join(mailbox, "delivered")} {
+				if info, err := os.Lstat(sub); err == nil && info.IsDir() {
+					dirs = append(dirs, sub)
+				}
+			}
 		}
 	}
 	return dirs

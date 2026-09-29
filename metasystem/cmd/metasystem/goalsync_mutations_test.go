@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -268,12 +269,12 @@ func TestHolderSetBudgetRebindsEpochForProofAdmission(t *testing.T) {
 	}
 	t.Setenv("METASYSTEM_OWNER_LINEAGE", "m1")
 	t.Setenv("METASYSTEM_GOAL_NOW", now.Format(time.RFC3339))
-	code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
+	code, stdout, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
 		return runGoalSetBudgetWithInputs([]string{
 			"--root", root, "--id", "standing-validation", "--by", "Wido", "--fixture-human-authority",
 			"--elapsed-limit", "8h", "--attempt-limit", "2", "--reserved-job-minutes-limit", "1200",
 			"--active-job-limit", "1", "--review-round-limit", "3",
-		}, humanauthority.ProveOrTemporaryGoalAuthority, commandNow, dependencies, bindingWithReads)
+		}, humanauthority.ProveOrTemporaryGoalAuthority, commandNow, withStreams(dependencies, stdout, stderr), bindingWithReads)
 	})
 	if code != 0 || !strings.Contains(stderr, "hint: metasystem goal budget ") ||
 		!strings.Contains(stderr, "goal budget standing-validation ") ||
@@ -302,12 +303,12 @@ func TestHolderSetBudgetRebindsEpochForProofAdmission(t *testing.T) {
 		stoppedRoot := fixture.root()
 		writeFixtureEnrollment(t, stoppedRoot, "Wido")
 		before := fixture.project()
-		code, output, errors := captureCommandOutput(t, true, true, func() int {
+		code, output, errors := runOnOwnStreams(func(stdout, stderr io.Writer) int {
 			return runGoalSetBudgetWithInputs([]string{
 				"--root", stoppedRoot, "--id", "standing-validation", "--by", "Wido", "--fixture-human-authority", "--lineage", "m1",
 				"--elapsed-limit", "6h", "--attempt-limit", "5", "--reserved-job-minutes-limit", "250",
 				"--active-job-limit", "2", "--review-round-limit", "3",
-			}, fixedFixtureGoalAuthority, fixture.commandNow, fixture.dependencies(), fixture.binding)
+			}, fixedFixtureGoalAuthority, fixture.commandNow, withStreams(fixture.dependencies(), stdout, stderr), fixture.binding)
 		})
 		if code != 0 || !strings.Contains(output, `"outcome":"confirmed"`) {
 			t.Fatalf("stopped set-budget: code=%d stdout=%q stderr=%q", code, output, errors)
@@ -380,16 +381,11 @@ func TestParkAcceptsFixtureHumanAuthorityAtTheCommandEdge(t *testing.T) {
 	t.Setenv("METASYSTEM_OWNER_LINEAGE", "m1")
 	t.Setenv("METASYSTEM_GOAL_NOW", "2026-09-09T10:00:00Z")
 
-	var stdout string
-	stderr, code := captureStderr(t, func() int {
-		var innerCode int
-		stdout, innerCode = captureStdout(t, func() int {
-			return fixture.park([]string{
-				"--root", root, "--id", "standing-validation", "--because", "fixture human pause",
-				"--by", "Wido", "--fixture-human-authority",
-			})
-		})
-		return innerCode
+	code, stdout, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
+		return fixture.park([]string{
+			"--root", root, "--id", "standing-validation", "--because", "fixture human pause",
+			"--by", "Wido", "--fixture-human-authority",
+		}, stdout, stderr)
 	})
 	if code != 0 || !strings.Contains(stdout, `"outcome":"confirmed"`) {
 		t.Fatalf("fixture human park did not carry its proof through the stopping command edge: code=%d stdout=%q stderr=%q", code, stdout, stderr)
@@ -422,11 +418,11 @@ func TestParkCommandEdgeSkipsUnreadableRemoteOnlyWithoutLocalBranch(t *testing.T
 			t.Setenv("METASYSTEM_OWNER_LINEAGE", "m1")
 			t.Setenv("METASYSTEM_GOAL_NOW", "2026-09-09T10:00:00Z")
 
-			code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
+			code, stdout, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
 				return fixture.park([]string{
 					"--root", root, "--id", "standing-validation", "--because", "fixture human pause",
 					"--by", "Wido", "--fixture-human-authority",
-				})
+				}, stdout, stderr)
 			})
 			if !test.localBranch {
 				if code != 0 || !strings.Contains(stdout, `"outcome":"confirmed"`) || stderr != "" {
@@ -476,8 +472,8 @@ func TestDoneAcceptsFixtureHumanAuthorityOnlyOnItsFakeRoot(t *testing.T) {
 			}
 			_, before := fixture.acceptedGoal()
 			accepted := fixture.repo.accepted
-			trySync := func(name string, args []string) (int, bool) {
-				return trySyncMutationWithCompletion(name, args, fixture.commandNow, fixture.dependencies(), fixture.parkBranchCheck, completionInputs{
+			trySync := func(stdout, stderr io.Writer, name string, args []string) (int, bool) {
+				return trySyncMutationWithCompletion(name, args, fixture.commandNow, withStreams(fixture.dependencies(), stdout, stderr), fixture.parkBranchCheck, completionInputs{
 					localTip: func(repo, ref string) (string, bool, error) {
 						if repo != root || ref != "refs/heads/goal/standing-validation" {
 							t.Fatalf("local tip read: repo=%q ref=%q", repo, ref)
@@ -491,11 +487,11 @@ func TestDoneAcceptsFixtureHumanAuthorityOnlyOnItsFakeRoot(t *testing.T) {
 					reporter: func(metrics.Options) (metrics.Result, error) { return metrics.Result{}, nil },
 				})
 			}
-			code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
+			code, stdout, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
 				return runGoalDoneWithSync([]string{
 					"--root", root, "--id", "standing-validation", "--by", "Wido", "--lineage", "m1",
 					"--fixture-human-authority", "--conclude", "Concluded by the fixture human.",
-				}, trySync)
+				}, func(name string, args []string) (int, bool) { return trySync(stdout, stderr, name, args) })
 			})
 			if test.conf != "metasystem.runtimes=fake\n" {
 				if code != 1 || stdout != "" || !strings.Contains(stderr, "goal done could not prove fixture human authority") ||
@@ -680,11 +676,9 @@ func TestGoalBudgetCompletionMirrorsTheEngineNoOpGuard(t *testing.T) {
 				if len(fields) < 4 || strings.Join(fields[:3], " ") != "metasystem goal budget" {
 					t.Fatalf("the refusal did not print an executable goal budget command: stderr=%q", stderr)
 				}
-				runCode, stdout, runStderr := captureCommandOutput(t, true, true, func() int {
-					// The public form names the goal first; the goal family
-					// owner it reaches takes it as --id.
-					return fixture.runBudget(append([]string{"--id", fields[3]}, fields[4:]...), fixedFixtureGoalAuthority)
-				})
+				// The public form names the goal first; the goal family owner it
+				// reaches takes it as --id.
+				runCode, stdout, runStderr := fixture.runBudgetTo(append([]string{"--id", fields[3]}, fields[4:]...), fixedFixtureGoalAuthority)
 				if runCode != 0 || !strings.Contains(stdout, `"outcome":"confirmed"`) {
 					t.Fatalf("the printed completion did not represent a successful proven re-approval: code=%d stdout=%q stderr=%q", runCode, stdout, runStderr)
 				}
@@ -726,11 +720,11 @@ func TestParkCommandEdgeChecksEndpointOnlyForLocalBranch(t *testing.T) {
 			t.Setenv("METASYSTEM_OWNER_LINEAGE", "m1")
 			t.Setenv("METASYSTEM_GOAL_NOW", "2026-09-09T10:00:00Z")
 
-			code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
+			code, stdout, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
 				return fixture.park([]string{
 					"--root", root, "--id", "standing-validation", "--because", "fixture human pause",
 					"--by", "Wido", "--fixture-human-authority",
-				})
+				}, stdout, stderr)
 			})
 			if !test.localBranch {
 				if code != 0 || !strings.Contains(stdout, `"outcome":"confirmed"`) || stderr != "" {
@@ -759,7 +753,7 @@ func TestArcStoppingCommandsFallBackToTerminalGrade(t *testing.T) {
 	tests := []struct {
 		name    string
 		prepare func(*testing.T, *parkArcCommandFixture)
-		run     func(*parkArcCommandFixture, []string) int
+		run     func(*parkArcCommandFixture, []string, io.Writer, io.Writer) int
 		args    []string
 	}{
 		{
@@ -802,12 +796,7 @@ func TestArcStoppingCommandsFallBackToTerminalGrade(t *testing.T) {
 			fixture.terminal(t)
 
 			args := append([]string{"--root", root}, test.args...)
-			var stdout string
-			stderr, code := captureStderr(t, func() int {
-				var innerCode int
-				stdout, innerCode = captureStdout(t, func() int { return test.run(fixture, args) })
-				return innerCode
-			})
+			code, stdout, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int { return test.run(fixture, args, stdout, stderr) })
 			if code != 0 || !strings.Contains(stdout, `"outcome":"confirmed"`) {
 				t.Fatalf("arc %s did not use terminal-grade authority: code=%d stdout=%q stderr=%q", test.name, code, stdout, stderr)
 			}
@@ -1001,8 +990,8 @@ func TestGoalClassifySweepEmptyListingInstallsTierLawAndClosesDispatch(t *testin
 	if err := os.WriteFile(draft, nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	preview, previewCode := captureStdout(t, func() int {
-		return runGoalClassifySweepWithInputs([]string{"--root", root, "--draft", draft, "--preview"}, fixedFixtureGoalAuthority, fixture.commandNow, fixture.dependencies())
+	preview, previewCode := captureStdout(t, func(stdout, stderr io.Writer) int {
+		return runGoalClassifySweepWithInputs([]string{"--root", root, "--draft", draft, "--preview"}, fixedFixtureGoalAuthority, fixture.commandNow, withStreams(fixture.dependencies(), stdout, stderr))
 	})
 	markerIndex := strings.LastIndex(preview, "listing-digest ")
 	if previewCode != 0 || markerIndex < 0 || strings.TrimSpace(preview[:markerIndex]) != "" {
@@ -1012,8 +1001,8 @@ func TestGoalClassifySweepEmptyListingInstallsTierLawAndClosesDispatch(t *testin
 	if len(digest) != 64 {
 		t.Fatalf("empty classification listing had no SHA-256 digest: %q", digest)
 	}
-	confirmed, confirmCode := captureStdout(t, func() int {
-		return runGoalClassifySweepWithInputs([]string{"--root", root, "--draft", draft, "--confirm", digest, "--by", "Wido", "--lineage", "m1"}, fixedFixtureGoalAuthority, fixture.commandNow, fixture.dependencies())
+	confirmed, confirmCode := captureStdout(t, func(stdout, stderr io.Writer) int {
+		return runGoalClassifySweepWithInputs([]string{"--root", root, "--draft", draft, "--confirm", digest, "--by", "Wido", "--lineage", "m1"}, fixedFixtureGoalAuthority, fixture.commandNow, withStreams(fixture.dependencies(), stdout, stderr))
 	})
 	if confirmCode != 0 || !strings.Contains(confirmed, `"outcome":"confirmed"`) || !strings.Contains(confirmed, `"classified":0`) {
 		t.Fatalf("empty classification confirmation failed: code=%d output=%q", confirmCode, confirmed)
@@ -1284,28 +1273,24 @@ func TestSTR3Gap05AcceptRiskWritesGoalCounselorAndRegisterThenCloses(t *testing.
 			break
 		}
 	}
-	stderr, code := captureStderr(t, func() int {
-		return runGoalAcceptRiskWithFacts(blankWhy, fixedTemporaryGoalAuthority, fixture.commandNow, dependencies, nil)
+	stderr, code := captureStderr(t, func(stdout, stderr io.Writer) int {
+		return runGoalAcceptRiskWithFacts(blankWhy, fixedTemporaryGoalAuthority, fixture.commandNow, withStreams(dependencies, stdout, stderr), nil)
 	})
 	if code != 2 || !strings.Contains(stderr, "goal accept-risk: needs --id, --finding, --chain, and --why") ||
 		!strings.Contains(stderr, "no command completes this: add the missing decision value named in the refusal") {
 		t.Fatalf("blank accepted-risk reason = exit %d stderr %q", code, stderr)
 	}
 	paired := append(append([]string(nil), base...), "--temporary-human-word", "Wido accepts this severe risk")
-	stderr, code = captureStderr(t, func() int {
-		return runGoalAcceptRiskWithFacts(paired, fixedTemporaryGoalAuthority, fixture.commandNow, dependencies, nil)
+	stderr, code = captureStderr(t, func(stdout, stderr io.Writer) int {
+		return runGoalAcceptRiskWithFacts(paired, fixedTemporaryGoalAuthority, fixture.commandNow, withStreams(dependencies, stdout, stderr), nil)
 	})
 	if code != 2 || !strings.Contains(stderr, "--temporary-human-word and --review-by travel together") {
 		t.Fatalf("unpaired authority flags = exit %d stderr %q", code, stderr)
 	}
 
 	args := append(paired, "--review-by", "2026-09-06")
-	var stdout string
-	stderr, code = captureStderr(t, func() int {
-		stdout, code = captureStdout(t, func() int {
-			return runGoalAcceptRiskWithFacts(args, fixedTemporaryGoalAuthority, fixture.commandNow, dependencies, nil)
-		})
-		return code
+	code, stdout, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
+		return runGoalAcceptRiskWithFacts(args, fixedTemporaryGoalAuthority, fixture.commandNow, withStreams(dependencies, stdout, stderr), nil)
 	})
 	if code != 0 || !strings.Contains(stdout, `"outcome":"confirmed"`) {
 		t.Fatalf("accepted-risk verb = exit %d stdout %q stderr %q", code, stdout, stderr)
@@ -1369,8 +1354,8 @@ func TestSTR3Gap05AcceptRiskWritesGoalCounselorAndRegisterThenCloses(t *testing.
 		"--by", "Wido", "--why", "not applicable", "--lineage", "m1",
 		"--temporary-human-word", "Wido accepts this bounded risk", "--review-by", "2026-09-06",
 	}
-	stderr, code = captureStderr(t, func() int {
-		return runGoalAcceptRiskWithFacts(boundedArgs, fixedTemporaryGoalAuthority, fixture.commandNow, dependencies, nil)
+	stderr, code = captureStderr(t, func(stdout, stderr io.Writer) int {
+		return runGoalAcceptRiskWithFacts(boundedArgs, fixedTemporaryGoalAuthority, fixture.commandNow, withStreams(dependencies, stdout, stderr), nil)
 	})
 	if code != 1 || !strings.Contains(stderr, "bounded findings defer at close, not by acceptance") {
 		t.Fatalf("bounded finding acceptance = exit %d stderr %q", code, stderr)
@@ -1426,8 +1411,8 @@ func TestHCL80TrailingWhitespaceWhyIsAdmitted(t *testing.T) {
 		"--chain", goal.HumanCarriedChain, "--by", "Wido", "--why", "paid the carried debt ", "--lineage", "m1",
 		"--temporary-human-word", "Wido accepts this carried risk", "--review-by", "2026-09-06",
 	}
-	stdout, code := captureStdout(t, func() int {
-		return runGoalAcceptRiskWithFacts(args, fixedTemporaryGoalAuthority, fixture.commandNow, fixture.dependencies(), readCommit)
+	stdout, code := captureStdout(t, func(stdout, stderr io.Writer) int {
+		return runGoalAcceptRiskWithFacts(args, fixedTemporaryGoalAuthority, fixture.commandNow, withStreams(fixture.dependencies(), stdout, stderr), readCommit)
 	})
 	if code != 0 || !strings.Contains(stdout, `"outcome":"confirmed"`) {
 		t.Fatalf("goal accept-risk = exit %d output %q", code, stdout)
@@ -1604,8 +1589,8 @@ func TestGoalTemporaryAuthorityRefusesPastAndBeyondHorizon(t *testing.T) {
 			t.Setenv("METASYSTEM_GOAL_NOW", "2026-09-01T10:00:00Z")
 			args := append(completeSetObligationArgs(root),
 				"--temporary-human-word", "Wido authorizes this obligation", "--review-by", test.reviewBy)
-			stderr, code := captureStderr(t, func() int {
-				return runGoalSetObligationWithAuthorityFacts(args, humanauthority.ProveOrTemporaryGoalAuthority, facts)
+			stderr, code := captureStderr(t, func(stdout, stderr io.Writer) int {
+				return runGoalSetObligationWithAuthorityFacts(args, humanauthority.ProveOrTemporaryGoalAuthority, facts, stdout, stderr)
 			})
 			if code != 2 || !strings.Contains(stderr, test.want) {
 				t.Fatalf("temporary authority date was not refused exactly: code=%d stderr=%q", code, stderr)
@@ -1628,8 +1613,8 @@ func TestGoalTemporaryAuthorityIgnoresFixtureClock(t *testing.T) {
 	t.Setenv("METASYSTEM_GOAL_NOW", wallDate.AddDate(0, 0, -1).Format(time.RFC3339))
 	args := append(completeSetObligationArgs(root),
 		"--temporary-human-word", "Wido authorizes stale obligation", "--review-by", reviewBy)
-	stderr, code := captureStderr(t, func() int {
-		return runGoalSetObligationWithAuthorityFacts(args, humanauthority.ProveOrTemporaryGoalAuthority, facts)
+	stderr, code := captureStderr(t, func(stdout, stderr io.Writer) int {
+		return runGoalSetObligationWithAuthorityFacts(args, humanauthority.ProveOrTemporaryGoalAuthority, facts, stdout, stderr)
 	})
 	want := "--review-by " + reviewBy + " is in the past"
 	if code != 2 || !strings.Contains(stderr, want) {
@@ -1680,13 +1665,8 @@ func TestGoalApproveAndUnapproveTemporarySurfacesRecordProofs(t *testing.T) {
 		"--root", root, "--id", "standing-validation", "--by", "Wido", "--lineage", "m1",
 		"--temporary-human-word", "Wido authorizes this goal approval", "--review-by", "2026-09-06",
 	}
-	var approveOut string
-	approveErr, approveCode := captureStderr(t, func() int {
-		var code int
-		approveOut, code = captureStdout(t, func() int {
-			return runGoalApproveWithInputs(approveArgs, fixedTemporaryGoalAuthority, fixture.commandNow, fixture.dependencies(), nil)
-		})
-		return code
+	approveCode, approveOut, approveErr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
+		return runGoalApproveWithInputs(approveArgs, fixedTemporaryGoalAuthority, fixture.commandNow, withStreams(fixture.dependencies(), stdout, stderr), nil)
 	})
 	if approveCode != 0 || !strings.Contains(approveOut, `"outcome":"confirmed"`) || !strings.Contains(approveOut, "TEMPORARY authority") {
 		t.Fatalf("goal approve temporary surface failed: code=%d stdout=%q stderr=%q", approveCode, approveOut, approveErr)
@@ -1702,13 +1682,8 @@ func TestGoalApproveAndUnapproveTemporarySurfacesRecordProofs(t *testing.T) {
 		"--root", root, "--id", "standing-validation", "--by", "Wido", "--lineage", "m1", "--because", "human withdrew execution",
 		"--temporary-human-word", "Wido withdraws this goal approval", "--review-by", "2026-09-06",
 	}
-	var unapproveOut string
-	unapproveErr, unapproveCode := captureStderr(t, func() int {
-		var code int
-		unapproveOut, code = captureStdout(t, func() int {
-			return runGoalUnapproveWithInputs(unapproveArgs, fixedTemporaryGoalAuthority, fixture.commandNow, fixture.dependencies())
-		})
-		return code
+	unapproveCode, unapproveOut, unapproveErr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
+		return runGoalUnapproveWithInputs(unapproveArgs, fixedTemporaryGoalAuthority, fixture.commandNow, withStreams(fixture.dependencies(), stdout, stderr))
 	})
 	if unapproveCode != 0 || !strings.Contains(unapproveOut, `"outcome":"confirmed"`) {
 		t.Fatalf("goal unapprove temporary surface failed: code=%d stdout=%q stderr=%q", unapproveCode, unapproveOut, unapproveErr)
@@ -1766,8 +1741,8 @@ func TestGoalResumeTemporaryWordFlagsTravelTogether(t *testing.T) {
 		root, facts := goalAuthorityRefusalRoot(t)
 		t.Setenv("METASYSTEM_GOAL_NOW", "2026-09-01T10:00:00Z")
 		args := append(completeResumeArgs(root), loneFlag, "present")
-		stderr, code := captureStderr(t, func() int {
-			return runGoalResumeWithAuthorityFacts(args, humanauthority.ProveOrTemporaryGoalAuthority, goalCommandNow, facts)
+		stderr, code := captureStderr(t, func(stdout, stderr io.Writer) int {
+			return runGoalResumeWithAuthorityFacts(args, humanauthority.ProveOrTemporaryGoalAuthority, goalCommandNow, facts, stdout, stderr)
 		})
 		if code != 2 || !strings.Contains(stderr, "--temporary-human-word and --review-by travel together") {
 			t.Fatalf("resume accepted one temporary flag: flag=%s code=%d stderr=%q", loneFlag, code, stderr)
@@ -1776,8 +1751,8 @@ func TestGoalResumeTemporaryWordFlagsTravelTogether(t *testing.T) {
 }
 
 func TestGoalMigrateStillRefusesTemporaryHumanWord(t *testing.T) {
-	stderr, code := captureStderr(t, func() int {
-		return runGoalMigrate([]string{"--temporary-human-word", "Wido authorizes this migration"})
+	stderr, code := captureStderr(t, func(stdout, stderr io.Writer) int {
+		return runGoalMigrate([]string{"--temporary-human-word", "Wido authorizes this migration"}, stdout, stderr)
 	})
 	if code != 2 || !strings.Contains(stderr, "does not take --temporary-human-word") {
 		t.Fatalf("goal migrate unexpectedly accepted the relay flag: code=%d stderr=%q", code, stderr)
@@ -1787,8 +1762,8 @@ func TestGoalMigrateStillRefusesTemporaryHumanWord(t *testing.T) {
 func TestGoalSetObligationWithoutTemporaryWordStillProvesAncestry(t *testing.T) {
 	root, facts := goalAuthorityRefusalRoot(t)
 	t.Setenv("METASYSTEM_GOAL_NOW", "2026-09-01T10:00:00Z")
-	stderr, code := captureStderr(t, func() int {
-		return runGoalSetObligationWithAuthorityFacts(completeSetObligationArgs(root), humanauthority.ProveOrTemporaryGoalAuthority, facts)
+	stderr, code := captureStderr(t, func(stdout, stderr io.Writer) int {
+		return runGoalSetObligationWithAuthorityFacts(completeSetObligationArgs(root), humanauthority.ProveOrTemporaryGoalAuthority, facts, stdout, stderr)
 	})
 	if code != 1 || !strings.Contains(stderr, personOnlyPrefix) {
 		t.Fatalf("ordinary set-obligation no longer failed closed on missing ancestry: code=%d stderr=%q", code, stderr)
@@ -1926,15 +1901,19 @@ func TestForeignLandedAuthorityKeepsGoalTreeUsable(t *testing.T) {
 	}
 	resolve := fixture.dependencies().endpoint
 
-	for name, run := range map[string]func() int{
-		"list": func() int { return runGoalListWithResolver([]string{"--root", root}, resolve) },
-		"show": func() int {
-			return runGoalShowWithResolver([]string{"--root", root, "--id", "standing-validation"}, resolve)
+	for name, run := range map[string]func(stdout, stderr io.Writer) int{
+		"list": func(stdout, stderr io.Writer) int {
+			return runGoalListWithResolver([]string{"--root", root}, resolve, stdout, stderr)
 		},
-		"next": func() int {
-			return runGoalNextWithInputs([]string{"--root", root}, fixture.dependencies(), fixture.commandNow)
+		"show": func(stdout, stderr io.Writer) int {
+			return runGoalShowWithResolver([]string{"--root", root, "--id", "standing-validation"}, resolve, stdout, stderr)
 		},
-		"fetch": func() int { return runGoalFetchWithResolver([]string{"--root", root}, resolve) },
+		"next": func(stdout, stderr io.Writer) int {
+			return runGoalNextWithInputs([]string{"--root", root}, fixture.dependencies(), fixture.commandNow, stdout, stderr)
+		},
+		"fetch": func(stdout, stderr io.Writer) int {
+			return runGoalFetchWithResolver([]string{"--root", root}, resolve, stdout, stderr)
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			stderr, code := captureStderr(t, run)
@@ -2039,8 +2018,8 @@ func enrollmentDependencies(fixture *obligationCommandFixture, machine string, r
 
 func captureEnrollTerminalOutput(t *testing.T, args []string, enroll goalTerminalEnroller, now func(string) (time.Time, error), dependencies syncRequestDependencies) (string, string, int) {
 	t.Helper()
-	code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
-		return runGoalEnrollTerminalWithDependencies(args, enroll, now, dependencies)
+	code, stdout, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
+		return runGoalEnrollTerminalWithDependencies(args, enroll, now, withStreams(dependencies, stdout, stderr))
 	})
 	return stdout, stderr, code
 }
@@ -2195,8 +2174,8 @@ func TestStewardArmTemporaryWordRequiresContentAndDate(t *testing.T) {
 		{name: "non-date review", word: "Wido authorizes this enrollment", reviewBy: "whenever", want: "real date"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			stderr, code := captureStderr(t, func() int {
-				return runStewardArm([]string{"--repo", t.TempDir(), "--temporary-human-word", test.word, "--review-by", test.reviewBy})
+			stderr, code := captureStderr(t, func(stdout, stderr io.Writer) int {
+				return runStewardArm([]string{"--repo", t.TempDir(), "--temporary-human-word", test.word, "--review-by", test.reviewBy}, stdout, stderr)
 			})
 			if code != 2 || !strings.Contains(stderr, test.want) {
 				t.Fatalf("steward arm did not mirror temporary validation: code=%d stderr=%q", code, stderr)
@@ -2680,31 +2659,31 @@ func (f *parkArcCommandFixture) parkBranchCheck(root string, endpoint goal.Endpo
 		})
 }
 
-func (f *parkArcCommandFixture) trySync(name string, args []string) (int, bool) {
+func (f *parkArcCommandFixture) trySync(name string, args []string, stdout, stderr io.Writer) (int, bool) {
 	deps := f.dependencies()
 	if f.facts.reader != nil {
 		deps = f.terminalDependencies()
 	}
-	return trySyncMutationWithDependencies(name, args, goalCommandNow, deps, f.parkBranchCheck)
+	return trySyncMutationWithDependencies(name, args, goalCommandNow, withStreams(deps, stdout, stderr), f.parkBranchCheck)
 }
 
 // park and unpark run the synced-ledger owner the public goal pause and goal
 // resume reach; the fixture's checkout is synced, so the owner always takes
 // the act.
-func (f *parkArcCommandFixture) park(args []string) int {
-	code, _ := f.trySync("park", args)
+func (f *parkArcCommandFixture) park(args []string, stdout, stderr io.Writer) int {
+	code, _ := f.trySync("park", args, stdout, stderr)
 	return code
 }
 
-func (f *parkArcCommandFixture) unpark(args []string) int {
-	code, _ := f.trySync("unpark", args)
+func (f *parkArcCommandFixture) unpark(args []string, stdout, stderr io.Writer) int {
+	code, _ := f.trySync("unpark", args, stdout, stderr)
 	return code
 }
 
-func (f *parkArcCommandFixture) release(args []string) int {
+func (f *parkArcCommandFixture) release(args []string, stdout, stderr io.Writer) int {
 	return runGoalReleaseWithDependencies(args, func(verb, root, by, lineage string) (goal.VerbRequest, error) {
 		return syncStoppingReqWithProofWithDependencies(verb, root, by, lineage, nil, goalCommandNow, f.terminalDependencies())
-	}, defaultSyncRequestDependencies())
+	}, withStreams(defaultSyncRequestDependencies(), stdout, stderr))
 }
 
 func (f *parkArcCommandFixture) terminal(t *testing.T) {

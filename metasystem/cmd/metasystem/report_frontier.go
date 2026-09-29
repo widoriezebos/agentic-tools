@@ -2,20 +2,20 @@ package main
 
 import (
 	"fmt"
-	"os"
+	"io"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/report"
 )
 
 // runReportFrontier is the frontier report's one calling convention:
 // the action word, then the flag set the shell always accepted.
-func runReportFrontier(args []string) int {
+func runReportFrontier(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem experiment record|challenge|status [flags]")
+		fmt.Fprintln(stderr, "usage: metasystem experiment record|challenge|status [flags]")
 		return 2
 	}
 	action := args[0]
-	flags := newFlagSet("experiment " + action)
+	flags := newFlagSet("experiment "+action, stdout, stderr)
 	opts := report.FrontierOptions{Repo: "."}
 	flags.StringVar(&opts.File, "file", "plans/frontier", "frontier file")
 	flags.StringVar(&opts.Score, "score", "", "candidate score")
@@ -38,14 +38,14 @@ func runReportFrontier(args []string) int {
 	case "status":
 		lines, ferr = report.FrontierStatus(opts)
 	default:
-		fmt.Fprintln(os.Stderr, "usage: metasystem experiment record|challenge|status [flags]")
+		fmt.Fprintln(stderr, "usage: metasystem experiment record|challenge|status [flags]")
 		return 2
 	}
 	for _, line := range lines {
-		fmt.Println(line)
+		fmt.Fprintln(stdout, line)
 	}
 	if ferr != nil {
-		fmt.Fprintln(os.Stderr, ferr.Message)
+		fmt.Fprintln(stderr, ferr.Message)
 		return ferr.Code
 	}
 	return 0

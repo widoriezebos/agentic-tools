@@ -247,7 +247,7 @@ func testOrdinaryPublicApplicationCancellationIsolated(t *testing.T) {
 	}()
 	workerContext, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	go cancelOnRecordedIntent(workerContext, cancel, root, attempt.AttemptID)
+	go cancelOnRecordedIntent(t.Output(), workerContext, cancel, root, attempt.AttemptID)
 	go func() {
 		result, status, runErr := proofrun.RunTestPlan(workerContext, request)
 		if validationErr := proofrun.ValidateTestResult(result); validationErr == nil {

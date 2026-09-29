@@ -1390,19 +1390,9 @@ func validSupervisorStatusResult(status, reason string) TestResult {
 
 func captureTestGroupProgress(t *testing.T, status, reason string) string {
 	t.Helper()
-	reader, writer, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
+	var out strings.Builder
+	if err := testGroupProgress(&out, filepath.Join(t.TempDir(), "progress.jsonl"), "group", "end", status, reason); err != nil {
+		t.Fatalf("write TEST-GROUP line: %v", err)
 	}
-	original := os.Stdout
-	os.Stdout = writer
-	progressErr := testGroupProgress(filepath.Join(t.TempDir(), "progress.jsonl"), "group", "end", status, reason)
-	os.Stdout = original
-	closeErr := writer.Close()
-	data, readErr := io.ReadAll(reader)
-	_ = reader.Close()
-	if progressErr != nil || closeErr != nil || readErr != nil {
-		t.Fatalf("capture TEST-GROUP line: progress=%v close=%v read=%v", progressErr, closeErr, readErr)
-	}
-	return string(data)
+	return out.String()
 }

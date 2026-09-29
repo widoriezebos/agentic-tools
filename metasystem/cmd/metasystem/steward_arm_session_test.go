@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -203,7 +204,7 @@ func TestSessionArmRefusesTheTemporaryPairBesideARecord(t *testing.T) {
 				return "", nil
 			}}
 		args := append([]string{"--repo", t.TempDir(), "--launch-record", "/fixture/record.json"}, pair...)
-		stderr, code := captureStderr(t, func() int { return runStewardArmWith(args, deps) })
+		stderr, code := captureStderr(t, func(stdout, stderr io.Writer) int { return runStewardArmWith(args, deps, stdout, stderr) })
 		if code != 2 || called || !strings.Contains(stderr, "--launch-record cannot be combined with --temporary-human-word or --review-by") {
 			t.Fatalf("pair %v beside --launch-record = code %d called %v stderr %q", pair, code, called, stderr)
 		}
@@ -272,7 +273,7 @@ func init() {
 				}
 				return "steward armed (test)", nil
 			},
-		})
+		}, os.Stdout, os.Stderr)
 	}
 }
 

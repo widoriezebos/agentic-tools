@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -245,13 +246,8 @@ func (f *obligationCommandFixture) dependencies() syncRequestDependencies {
 
 func (f *obligationCommandFixture) run(args []string, prove goalAuthorityProver) (string, string, int) {
 	f.t.Helper()
-	var stdout string
-	stderr, code := captureStderr(f.t, func() int {
-		var innerCode int
-		stdout, innerCode = captureStdout(f.t, func() int {
-			return runGoalSetObligationWithAuthorityFactsAtWithDependencies(args, prove, f.commandNow, f.dependencies())
-		})
-		return innerCode
+	code, stdout, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
+		return runGoalSetObligationWithAuthorityFactsAtWithDependencies(args, prove, f.commandNow, withStreams(f.dependencies(), stdout, stderr))
 	})
 	return stdout, stderr, code
 }

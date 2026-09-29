@@ -710,7 +710,7 @@ func runIntentReviewCheckOnly(inv *intentInvocation) int {
 		if job != "" {
 			args = append(args, "--repo", root, "--root-job", job)
 		}
-		return runValidateCritiqueClosed(args)
+		return runValidateCritiqueClosed(args, inv.stdout, inv.stderr)
 	}
 	if job == "" || !inv.input.has("stage") {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2,
@@ -722,7 +722,7 @@ func runIntentReviewCheckOnly(inv *intentInvocation) int {
 			args = append(args, "--"+name, inv.input.text(name))
 		}
 	}
-	return runValidateConformance(args)
+	return runValidateConformance(args, inv.stdout, inv.stderr)
 }
 
 // runIntentWorkFinish completes one finished dispatch job's records through
@@ -1802,7 +1802,7 @@ func (inv *intentInvocation) landByHand(targets []intentTarget, goalID, through,
 		return intentResult{Targets: targets, Outcome: intentUnchanged, Data: data,
 			Summary: fmt.Sprintf("goal %s already landed %s on %s", goalID, landed.Landing, landed.Endpoint)}
 	}
-	writeHandLandingCard(root, goalID, board.StageLanding)
+	writeHandLandingCard(inv.stderr, root, goalID, board.StageLanding)
 	selection := []string{"--last"}
 	if through != "" {
 		selection = []string{"--through", through}
@@ -1848,7 +1848,7 @@ func (inv *intentInvocation) landByHand(targets []intentTarget, goalID, through,
 	}
 	landed = intentLanded{Landing: pushed.Landing, Endpoint: endpoint, Branch: pushed.Branch, Subject: subject, Swept: err == nil}
 	data["landing"] = landed
-	writeHandLandingCard(root, goalID, board.StageLanded)
+	writeHandLandingCard(inv.stderr, root, goalID, board.StageLanded)
 	if writeErr := writeIntentInputs(dir, map[string]string{landedPath: mustJSON(landed)}); writeErr != nil {
 		data["recordError"] = writeErr.Error()
 	}
@@ -1867,7 +1867,7 @@ func (inv *intentInvocation) landByHand(targets []intentTarget, goalID, through,
 // real transition overwrites it; landed after the push. The card is the
 // goal's live card, or this installation's own seat. A card that cannot be
 // written is reported and the landing goes on.
-func writeHandLandingCard(root, goalID string, stage board.Stage) {
+func writeHandLandingCard(stderr io.Writer, root, goalID string, stage board.Stage) {
 	home, err := board.Home()
 	if err != nil {
 		return
@@ -1886,7 +1886,7 @@ func writeHandLandingCard(root, goalID string, stage board.Stage) {
 		card.Owner = board.Self()
 	}
 	if err := board.Write(card); err != nil {
-		fmt.Fprintf(os.Stderr, "work land %s: the board card was not written: %v\n", goalID, err)
+		fmt.Fprintf(stderr, "work land %s: the board card was not written: %v\n", goalID, err)
 	}
 }
 

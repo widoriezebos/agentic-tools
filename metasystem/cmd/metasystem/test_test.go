@@ -9,6 +9,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -41,8 +42,8 @@ func TestTestPlanReArmsOnALandedEngine(t *testing.T) {
 		rearm = request.LandedRearm
 		return testingPreparation{}, errors.New("stop after observing preparation")
 	}
-	status, _, _ := captureCommandOutput(t, true, true, func() int {
-		return runTestPlan([]string{"--root", t.TempDir(), "--purpose", "diagnostic"})
+	status, _, _ := runOnOwnStreams(func(stdout, stderr io.Writer) int {
+		return runTestPlan([]string{"--root", t.TempDir(), "--purpose", "diagnostic"}, stdout, stderr)
 	})
 	if status != 1 || called != 1 || !rearm {
 		t.Fatalf("outer test plan did not enter landed re-arm: status=%d calls=%d rearm=%t", status, called, rearm)
@@ -58,8 +59,8 @@ func TestTestRunRearmsOnALandedEngine(t *testing.T) {
 		rearm = request.LandedRearm
 		return testingPreparation{}, errors.New("stop after observing preparation")
 	}
-	status, _, _ := captureCommandOutput(t, true, true, func() int {
-		return runTestRun([]string{"--root", t.TempDir(), "--purpose", "diagnostic"})
+	status, _, _ := runOnOwnStreams(func(stdout, stderr io.Writer) int {
+		return runTestRun([]string{"--root", t.TempDir(), "--purpose", "diagnostic"}, stdout, stderr)
 	})
 	if status != 1 || called != 1 || !rearm {
 		t.Fatalf("outer test run did not enter landed re-arm: status=%d calls=%d rearm=%t", status, called, rearm)
@@ -508,8 +509,8 @@ func TestTestRunKeepsProofRecordsUnderTheControlRoot(t *testing.T) {
 	// The call and the position of its control-root argument.
 	wantFirstArgument := map[string]int{
 		"proofrun.ReadAttempts":        0,
-		"publishTestingResultTo":       1,
-		"retainIncompleteProofAttempt": 0,
+		"publishTestingResultTo":       2, // after the invocation's stdout and stderr
+		"retainIncompleteProofAttempt": 1, // after the invocation's stderr
 	}
 	ast.Inspect(body, func(node ast.Node) bool {
 		switch typed := node.(type) {
@@ -737,8 +738,8 @@ func TestPolicyChildNeverFetchesOrReArms(t *testing.T) {
 		}
 		return testingPreparation{CandidateTree: "candidate", PolicyBaseCommit: "base"}, nil
 	}
-	status, stdout, stderr := captureCommandOutput(t, true, true, func() int {
-		return runTestPlan([]string{"--root", t.TempDir(), "--purpose", "diagnostic", "--json", "--policy-child"})
+	status, stdout, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
+		return runTestPlan([]string{"--root", t.TempDir(), "--purpose", "diagnostic", "--json", "--policy-child"}, stdout, stderr)
 	})
 	var output testingPlanOutput
 	if status != 0 || preparations != 1 || rearmCalls != 0 || stderr != "" || json.Unmarshal([]byte(stdout), &output) != nil {
@@ -753,7 +754,7 @@ func TestPolicyChildNeverFetchesOrReArms(t *testing.T) {
 	if _, err := planWithTrustedPolicyEngine(engine, testingSelectionRequest{Mode: testpolicy.ModeAuto, Purpose: testpolicy.PurposeDiagnostic}, t.TempDir(), "candidate"); err != nil {
 		t.Fatalf("parent did not flag its policy child: %v", err)
 	}
-	verify, _, code := parseTestingSelection("test verify", []string{"--root", t.TempDir()}, false)
+	verify, _, code := parseTestingSelection("test verify", []string{"--root", t.TempDir()}, false, t.Output(), t.Output())
 	if code != 0 || verify.LandedRearm || verify.PolicyChild {
 		t.Fatalf("test verify changed its re-arm behavior: code=%d request=%+v", code, verify)
 	}
@@ -763,8 +764,8 @@ func TestBaseMovedUnderTheRunRestartsPreparationOnce(t *testing.T) {
 	calls, state := 0, &testingPreparationState{}
 	var prepared testingPreparation
 	var prepareErr error
-	status, _, stderr := captureCommandOutput(t, true, true, func() int {
-		prepared, prepareErr = prepareTestingWith(testingSelectionRequest{LandedRearm: true, Preparation: state}, func(request testingSelectionRequest) (testingPreparation, error) {
+	status, _, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
+		prepared, prepareErr = prepareTestingWith(testingSelectionRequest{LandedRearm: true, Preparation: state, notes: stderr}, func(request testingSelectionRequest) (testingPreparation, error) {
 			calls++
 			if !request.LandedRearm {
 				return testingPreparation{}, errors.New("restart skipped landed re-arm entry")
@@ -932,10 +933,10 @@ func TestPreparationRestartAllowanceIsInvocationLocal(t *testing.T) {
 			return testingPreparation{PolicyBaseCommit: "base-b"}, nil
 		}
 	}
-	captureCommandOutput(t, false, true, func() int {
+	runOnOwnStreams(func(stdout, stderr io.Writer) int {
 		for invocation := 1; invocation <= 2; invocation++ {
 			calls := 0
-			request := testingSelectionRequest{Preparation: &testingPreparationState{}}
+			request := testingSelectionRequest{Preparation: &testingPreparationState{}, notes: stderr}
 			if prepared, err := prepareTestingWith(request, onceMoved(&calls)); err != nil || calls != 2 || prepared.PolicyBaseCommit != "base-b" {
 				t.Fatalf("invocation %d in the same process: calls=%d prepared=%+v err=%v", invocation, calls, prepared, err)
 			}
@@ -947,17 +948,17 @@ func TestPreparationRestartAllowanceIsInvocationLocal(t *testing.T) {
 	}
 	shared := &testingPreparationState{}
 	first, second := 0, 0
-	captureCommandOutput(t, false, true, func() int {
-		if _, err := prepareTestingWith(testingSelectionRequest{Preparation: shared}, onceMoved(&first)); err != nil {
+	runOnOwnStreams(func(stdout, stderr io.Writer) int {
+		if _, err := prepareTestingWith(testingSelectionRequest{Preparation: shared, notes: stderr}, onceMoved(&first)); err != nil {
 			t.Fatalf("first preparation of the invocation: %v", err)
 		}
-		_, err := prepareTestingWith(testingSelectionRequest{Preparation: shared}, onceMoved(&second))
+		_, err := prepareTestingWith(testingSelectionRequest{Preparation: shared, notes: stderr}, onceMoved(&second))
 		if err == nil || second != 1 || !strings.Contains(err.Error(), "cause=base-moved") {
 			t.Fatalf("a second movement within one invocation was admitted: calls=%d err=%v", second, err)
 		}
 		return 0
 	})
-	parsed, _, code := parseTestingSelection("test run", []string{"--root", t.TempDir()}, true)
+	parsed, _, code := parseTestingSelection("test run", []string{"--root", t.TempDir()}, true, t.Output(), t.Output())
 	if code != 0 || parsed.Preparation == nil || parsed.Preparation.restarted {
 		t.Fatalf("a command invocation does not start with its own fresh preparation state: code=%d state=%+v", code, parsed.Preparation)
 	}
@@ -1001,8 +1002,8 @@ func TestPublishTestingResultSpillsOverTheBound(t *testing.T) {
 		}
 	}
 	var publishErr error
-	stdout, _ := captureStdout(t, func() int {
-		publishErr = publishTestingResult(root, "", result)
+	stdout, _ := captureStdout(t, func(stdout, stderr io.Writer) int {
+		publishErr = publishTestingResultTo(stdout, stderr, root, "", result)
 		return 0
 	})
 	if publishErr != nil {
@@ -1036,8 +1037,8 @@ func TestPublishTestingResultUnderTheBoundIsUnchanged(t *testing.T) {
 		t.Fatal(err)
 	}
 	var publishErr error
-	stdout, _ := captureStdout(t, func() int {
-		publishErr = publishTestingResult(root, "", result)
+	stdout, _ := captureStdout(t, func(stdout, stderr io.Writer) int {
+		publishErr = publishTestingResultTo(stdout, stderr, root, "", result)
 		return 0
 	})
 	if publishErr != nil {
@@ -1053,19 +1054,19 @@ func TestPublishTestingResultUnderTheBoundIsUnchanged(t *testing.T) {
 
 func TestTestingSelectionCarriesDeliveryAllGroupsOnlyForExecution(t *testing.T) {
 	root := t.TempDir()
-	request, _, code := parseTestingSelection("test run", []string{"--root", root, "--purpose", "delivery", "--all-groups"}, true)
+	request, _, code := parseTestingSelection("test run", []string{"--root", root, "--purpose", "delivery", "--all-groups"}, true, t.Output(), t.Output())
 	if code != 0 || !request.AllGroups {
 		t.Fatalf("test run did not carry --all-groups: code=%d request=%+v", code, request)
 	}
-	_, code = captureStderr(t, func() int {
-		_, _, parsed := parseTestingSelection("test run", []string{"--root", root, "--purpose", "diagnostic", "--all-groups"}, true)
+	_, code = captureStderr(t, func(stdout, stderr io.Writer) int {
+		_, _, parsed := parseTestingSelection("test run", []string{"--root", root, "--purpose", "diagnostic", "--all-groups"}, true, stdout, stderr)
 		return parsed
 	})
 	if code != 2 {
 		t.Fatalf("diagnostic --all-groups status=%d, want usage refusal", code)
 	}
-	_, code = captureStderr(t, func() int {
-		_, _, parsed := parseTestingSelection("test plan", []string{"--root", root, "--all-groups"}, false)
+	_, code = captureStderr(t, func(stdout, stderr io.Writer) int {
+		_, _, parsed := parseTestingSelection("test plan", []string{"--root", root, "--all-groups"}, false, stdout, stderr)
 		return parsed
 	})
 	if code != 2 {
@@ -1615,13 +1616,13 @@ func TestTestWorkerBuildIdentityCompatibilityDoorIsPolicyProbeOnly(t *testing.T)
 	args := []string{"--packet", packetPath, "--packet-sha256", packetDigest, "--result", filepath.Join(root, "result.json")}
 
 	t.Setenv(policyProbeWorkerEnvironment, "")
-	stderr, code := captureStderr(t, func() int { return runTestWorker(args) })
+	stderr, code := captureStderr(t, func(stdout, stderr io.Writer) int { return runTestWorker(args, stdout, stderr) })
 	if code != 3 || !strings.Contains(stderr, "input-bound candidate engine is absent") {
 		t.Fatalf("ordinary worker accepted a request without a candidate build identity: code=%d stderr=%q", code, stderr)
 	}
 
 	t.Setenv(policyProbeWorkerEnvironment, "1")
-	stderr, code = captureStderr(t, func() int { return runTestWorker(args) })
+	stderr, code = captureStderr(t, func(stdout, stderr io.Writer) int { return runTestWorker(args, stdout, stderr) })
 	if code != 3 || strings.Contains(stderr, "input-bound candidate engine is absent") ||
 		!strings.Contains(stderr, "input-bound policy engine changed") {
 		t.Fatalf("legacy policy probe did not pass the build-identity request check: code=%d stderr=%q", code, stderr)
@@ -3330,17 +3331,17 @@ func TestTestListCheckPlanAndVerifyWithoutLaunching(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if status := runTestList([]string{"--root", root, "--json"}); status != 0 {
+	if status := runTestList([]string{"--root", root, "--json"}, t.Output(), t.Output()); status != 0 {
 		t.Fatalf("test list status = %d", status)
 	}
 	// The contract check settings check runs (formerly internal test check).
 	if _, _, err := testingContractReady(root, true); err != nil {
 		t.Fatalf("testing contract not ready: %v", err)
 	}
-	if status := runTestPlan([]string{"--root", root, "--tree", tree, "--purpose", "diagnostic", "--json"}); status != 0 {
+	if status := runTestPlan([]string{"--root", root, "--tree", tree, "--purpose", "diagnostic", "--json"}, t.Output(), t.Output()); status != 0 {
 		t.Fatalf("test plan status = %d", status)
 	}
-	if status := runTestVerify([]string{"--root", root, "--tree", tree, "--purpose", "diagnostic", "--json"}); status != 1 {
+	if status := runTestVerify([]string{"--root", root, "--tree", tree, "--purpose", "diagnostic", "--json"}, t.Output(), t.Output()); status != 1 {
 		t.Fatalf("test verify without proof status = %d, want 1", status)
 	}
 	if _, err := os.Stat(marker); !os.IsNotExist(err) {

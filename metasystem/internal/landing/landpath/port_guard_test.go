@@ -14,6 +14,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 )
 
@@ -32,11 +33,19 @@ type guardBed struct {
 	syncBranch     string
 	syncConfigCode int
 	commonDir      string
-	owners         GuardOwners
-	observations   []string
-	tokenChecks    int
-	stdout         bytes.Buffer
-	stderr         bytes.Buffer
+	// gitDir and dotGit are git's answers for --git-dir and for the work
+	// tree's own .git entry ("" is the common dir); the codes fail each of
+	// the three answers.
+	gitDir, dotGit                        string
+	dotGitCode, gitDirCode, commonDirCode int
+	helmState                             helm.State
+	helmReads                             int
+	yields                                []helm.Yield
+	owners                                GuardOwners
+	observations                          []string
+	tokenChecks                           int
+	stdout                                bytes.Buffer
+	stderr                                bytes.Buffer
 }
 
 func newGuardBed(t *testing.T) *guardBed {
@@ -60,7 +69,27 @@ func newGuardBed(t *testing.T) *guardBed {
 		}
 		return ok(g.syncBranch + "\n")
 	})
-	g.git.on("rev-parse --path-format=absolute --git-common-dir", func(GitCall) GitResult { return ok(g.commonDir + "\n") })
+	g.git.on("rev-parse --path-format=absolute --git-common-dir", func(GitCall) GitResult {
+		if g.commonDirCode != 0 {
+			return failed(g.commonDirCode, "fatal: not a git repository\n")
+		}
+		return ok(g.commonDir + "\n")
+	})
+	g.git.on("rev-parse --path-format=absolute --git-dir", func(GitCall) GitResult {
+		if g.gitDirCode != 0 {
+			return failed(g.gitDirCode, "fatal: not a git repository\n")
+		}
+		return ok(orDefault(g.gitDir, g.commonDir) + "\n")
+	})
+	g.git.on("rev-parse --path-format=absolute --resolve-git-dir", func(call GitCall) GitResult {
+		if len(call.Args) != 4 || call.Args[3] != filepath.Join(g.root, ".git") {
+			t.Fatalf("resolve-git-dir asked for %q, want the work tree's .git", call.Args[3:])
+		}
+		if g.dotGitCode != 0 {
+			return failed(g.dotGitCode, "fatal: not a gitdir\n")
+		}
+		return ok(orDefault(g.dotGit, orDefault(g.gitDir, g.commonDir)) + "\n")
+	})
 	g.git.on("diff --cached --name-only", func(GitCall) GitResult { return ok(g.names("")) })
 	g.git.on("diff --cached --name-only --diff-filter=AM", func(GitCall) GitResult { return ok(g.names("AM")) })
 	g.git.on("diff --cached --name-status --diff-filter=A", func(GitCall) GitResult {
@@ -94,6 +123,13 @@ func newGuardBed(t *testing.T) *guardBed {
 		},
 	}
 	return g
+}
+
+func orDefault(value, fallback string) string {
+	if value == "" {
+		return fallback
+	}
+	return value
 }
 
 func (g *guardBed) stage(status string, paths ...string) {
@@ -450,4 +486,254 @@ func TestGuardUnheldCloneKeepsTheOtherFences(t *testing.T) {
 	g = agentOn(t, "feature")
 	g.stage("A", "plans/new.md")
 	g.expect(g.run(), 1, "refusing to commit NEW plan file(s)")
+}
+
+// atHelm puts the bed at the helm (By "wido") in its primary checkout: the
+// work tree's .git entry, git dir and common dir are one directory, which
+// exists so each answer resolves. Yields are collected in g.yields.
+func (g *guardBed) atHelm() {
+	g.t.Helper()
+	if err := os.MkdirAll(g.commonDir, 0o755); err != nil {
+		g.t.Fatal(err)
+	}
+	g.helmState = helm.State{Active: true, Record: helm.Record{By: "wido"}}
+	g.owners.Helm = func(workTree string) helm.State {
+		g.helmReads++
+		if workTree != g.root {
+			g.t.Fatalf("helm read for %s, want the work tree %s", workTree, g.root)
+		}
+		return g.helmState
+	}
+	g.owners.HelmYield = func(workTree string, y helm.Yield) {
+		if workTree != g.root {
+			g.t.Fatalf("yield recorded for %s, want the work tree %s", workTree, g.root)
+		}
+		g.yields = append(g.yields, y)
+	}
+}
+
+// mkdir creates a directory the bed's git answers name.
+func (g *guardBed) mkdir(path string) string {
+	g.t.Helper()
+	if err := os.MkdirAll(path, 0o755); err != nil {
+		g.t.Fatal(err)
+	}
+	return path
+}
+
+// expectYields asserts the gates of the recorded yields, in order.
+func (g *guardBed) expectYields(gates ...string) {
+	g.t.Helper()
+	if len(g.yields) != len(gates) {
+		g.t.Fatalf("yields %+v, want gates %q\nstderr:\n%s", g.yields, gates, g.stderr.String())
+	}
+	for i, gate := range gates {
+		y := g.yields[i]
+		if y.Gate != gate || y.Boundary != "pre-commit" || y.Would != "refuse" {
+			g.t.Fatalf("yield %d is %+v, want pre-commit %s would refuse", i, y, gate)
+		}
+	}
+}
+
+// helmLine is the one stderr line a yield prints.
+func helmLine(who, gate, commonDir string) string {
+	return "pre-commit guard: HUMAN AT THE HELM (" + who + "): the " + gate + " yields; recorded in " + filepath.Join(commonDir, "metasystem", "helm-yields.log") + "\n"
+}
+
+func resolved(t *testing.T, path string) string {
+	t.Helper()
+	out, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+// TestGuardYieldsTheWrapperFenceAtTheHelmInThePrimaryCheckout: at the helm,
+// an agent commit on main in the seat's primary checkout (git dir = common
+// dir = the work tree's own .git) is admitted; the wrapper fence records one
+// yield naming the branch, the index tree and the class, and prints one line.
+func TestGuardYieldsTheWrapperFenceAtTheHelmInThePrimaryCheckout(t *testing.T) {
+	t.Parallel()
+	g := agentOn(t, "main")
+	g.atHelm()
+	g.expect(g.run(), 0)
+	g.expectYields("wrapper-fence")
+	subject := g.yields[0].Subject
+	for _, part := range []string{"branch=refs/heads/main", "tree=" + guardTree, "class=DELEGATE"} {
+		if !strings.Contains(subject, part) {
+			t.Fatalf("subject %q lacks %q", subject, part)
+		}
+	}
+	if want := helmLine("wido", "wrapper-fence", resolved(t, g.commonDir)); g.stderr.String() != want {
+		t.Fatalf("stderr %q, want %q", g.stderr.String(), want)
+	}
+}
+
+// TestGuardAtTheHelmReachesOnlyThePrimaryCheckout: a linked worktree (its git
+// dir under the common dir's worktrees/), a caller steering GIT_DIR at the
+// primary from a linked worktree (its .git entry still names worktrees/w),
+// and a work tree whose .git entry names another repository all refuse as
+// today and record nothing; a submodule's primary worktree (git dir = common
+// dir = .git/modules/c) is admitted.
+func TestGuardAtTheHelmReachesOnlyThePrimaryCheckout(t *testing.T) {
+	t.Parallel()
+	refused := []struct {
+		name  string
+		setup func(g *guardBed)
+	}{
+		{"linked worktree", func(g *guardBed) {
+			primary := filepath.Join(t.TempDir(), ".git")
+			g.commonDir = primary
+			g.gitDir = g.mkdir(filepath.Join(primary, "worktrees", "w"))
+		}},
+		{"steered", func(g *guardBed) {
+			g.dotGit = g.mkdir(filepath.Join(g.commonDir, "worktrees", "w"))
+		}},
+		{"foreign", func(g *guardBed) {
+			g.dotGit = g.mkdir(filepath.Join(t.TempDir(), "other", ".git"))
+		}},
+		{"unanswered .git entry", func(g *guardBed) { g.dotGitCode = 128 }},
+		{"unanswered git dir", func(g *guardBed) { g.gitDirCode = 128 }},
+		{"unanswered common dir", func(g *guardBed) { g.commonDirCode = 128 }},
+		{"unresolvable git dir", func(g *guardBed) { g.gitDir = filepath.Join(g.root, "absent") }},
+	}
+	for _, c := range refused {
+		t.Run(c.name, func(t *testing.T) {
+			g := agentOn(t, "main")
+			g.atHelm()
+			c.setup(g)
+			g.expect(g.run(), 1, "the live wrapper ancestry token is missing", "refs/heads/main is the published line")
+			g.expectYields()
+			if strings.Contains(g.stderr.String(), "HUMAN AT THE HELM") {
+				t.Fatalf("a refused commit printed the helm line: %s", g.stderr.String())
+			}
+		})
+	}
+
+	t.Run("submodule", func(t *testing.T) {
+		g := agentOn(t, "main")
+		g.commonDir = filepath.Join(t.TempDir(), ".git", "modules", "c")
+		g.atHelm()
+		g.expect(g.run(), 0)
+		g.expectYields("wrapper-fence")
+		if want := helmLine("wido", "wrapper-fence", resolved(t, g.commonDir)); g.stderr.String() != want {
+			t.Fatalf("stderr %q, want %q", g.stderr.String(), want)
+		}
+	})
+}
+
+// TestGuardAtTheHelmKeepsTheDamageChecks: the ledger fence and the .orig
+// refusal refuse at the helm with today's messages. With the classifier
+// unavailable nothing yields; with DELEGATE on main the wrapper fence yields
+// first and the damage check then refuses (the guard's order is kept).
+func TestGuardAtTheHelmKeepsTheDamageChecks(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		path, message string
+	}{
+		{"plans/goals/smuggled.md", "goal files change only through goal verbs"},
+		{"plans/channel/smuggled.json", "goal files change only through goal verbs"},
+		{"scratch.orig", "patch backups are never tracked"},
+	} {
+		g := newGuardBed(t)
+		g.atHelm()
+		g.stage("A", c.path)
+		g.expect(g.run(), 1, c.message)
+		g.expectYields()
+
+		g = agentOn(t, "main")
+		g.atHelm()
+		g.stage("A", c.path)
+		g.expect(g.run(), 1, c.message, "HUMAN AT THE HELM (wido): the wrapper-fence yields")
+		g.expectYields("wrapper-fence")
+	}
+}
+
+// TestGuardWithoutTheHelmRefusesAsToday: no helm owner and an inactive helm
+// both leave the wrapper fence and the new-plan acknowledgment refusing, and
+// record nothing.
+func TestGuardWithoutTheHelmRefusesAsToday(t *testing.T) {
+	t.Parallel()
+	g := agentOn(t, "main")
+	g.expect(g.run(), 1, "the live wrapper ancestry token is missing")
+	g = agentOn(t, "main")
+	g.atHelm()
+	g.helmState = helm.State{}
+	g.expect(g.run(), 1, "the live wrapper ancestry token is missing")
+	g.expectYields()
+
+	g = newGuardBed(t)
+	g.atHelm()
+	g.helmState = helm.State{}
+	g.stage("A", "plans/new.md")
+	g.expect(g.run(), 1, "refusing to commit NEW plan file(s)")
+	g.expectYields()
+}
+
+// TestGuardYieldsTheNewPlanAcknowledgmentAtTheHelm: a new plan at the helm is
+// admitted with one yield; an agent's new plan on main yields both gates, the
+// helm read once; the other fences of an unheld clone hold with the helm on.
+func TestGuardYieldsTheNewPlanAcknowledgmentAtTheHelm(t *testing.T) {
+	t.Parallel()
+	g := newGuardBed(t)
+	g.atHelm()
+	g.stage("A", "plans/new.md")
+	g.expect(g.run(), 0)
+	g.expectYields("new-plan-acknowledgment")
+	if subject := g.yields[0].Subject; !strings.Contains(subject, "branch=refs/heads/main") || !strings.Contains(subject, "class=unavailable") {
+		t.Fatalf("subject %q", subject)
+	}
+	if want := helmLine("wido", "new-plan-acknowledgment", resolved(t, g.commonDir)); !strings.HasSuffix(g.stderr.String(), want) {
+		t.Fatalf("stderr %q lacks %q", g.stderr.String(), want)
+	}
+
+	g = agentOn(t, "main")
+	g.atHelm()
+	g.stage("A", "plans/new.md")
+	g.expect(g.run(), 0)
+	g.expectYields("wrapper-fence", "new-plan-acknowledgment")
+	if g.helmReads != 1 || strings.Count(g.stderr.String(), "HUMAN AT THE HELM") != 2 {
+		t.Fatalf("helm reads %d, stderr %q", g.helmReads, g.stderr.String())
+	}
+
+	g = agentOn(t, "feature")
+	g.atHelm()
+	g.stage("A", "plans/goals/smuggled.md")
+	g.expect(g.run(), 1, "goal files change only through goal verbs")
+	g = agentOn(t, "feature")
+	g.atHelm()
+	g.stage("A", "scratch.orig")
+	g.expect(g.run(), 1, "patch backups are never tracked")
+	g.expectYields()
+}
+
+// TestGuardAtAMalformedHelmYields: a present signature that cannot be decoded
+// is active with By "unknown": the guard admits, and its line says the
+// signature is unreadable.
+func TestGuardAtAMalformedHelmYields(t *testing.T) {
+	t.Parallel()
+	g := agentOn(t, "main")
+	g.atHelm()
+	g.helmState = helm.State{Active: true, Malformed: "helm.json: malformed", Record: helm.Record{By: "unknown"}}
+	g.expect(g.run(), 0)
+	g.expectYields("wrapper-fence")
+	if want := helmLine("signature unreadable", "wrapper-fence", resolved(t, g.commonDir)); g.stderr.String() != want {
+		t.Fatalf("stderr %q, want %q", g.stderr.String(), want)
+	}
+}
+
+// TestGuardClassifierUnavailableAtTheHelmOnlyObserves: the bed's failing
+// classifier at the helm admits with today's observation and no yield: the
+// helm is consulted only where a gate would refuse.
+func TestGuardClassifierUnavailableAtTheHelmOnlyObserves(t *testing.T) {
+	t.Parallel()
+	g := newGuardBed(t)
+	g.atHelm()
+	g.stage("M", "tracked.txt")
+	g.expect(g.run(), 0)
+	g.expectYields()
+	if len(g.observations) != 1 || g.helmReads != 0 || g.stderr.Len() != 0 {
+		t.Fatalf("observations %q helm reads %d stderr %q", g.observations, g.helmReads, g.stderr.String())
+	}
 }

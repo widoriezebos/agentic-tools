@@ -296,6 +296,7 @@ func processIntentCommands() []intentCommand {
 				"The person answers in the channel thread; the answer is authenticated there, never by a local command.",
 				"--kind selects an authority question (stop, budget-above-norm, carry); stop and budget-above-norm take --budget BOX.",
 				"question show Q shows its state and how it is answered; question wait Q waits for its answer.",
+				"It reaches a person, never another agent; to ask the agent on another seat of this host, or whoever works on a goal, run metasystem agent ask.",
 			},
 			flags: []intentFlag{
 				intentTargetFlag,
@@ -588,7 +589,7 @@ func runIntentSystemStart(inv *intentInvocation) int {
 		if problem != nil {
 			return inv.render(*problem)
 		}
-		return runUpWith([]string{"--metasystem-root", scope.Installation, "--repo", scope.Checkout, "--recover-only", "--if-down"}, inv.owners.processes.process.repositoryTop)
+		return runUpWith([]string{"--metasystem-root", scope.Installation, "--repo", scope.Checkout, "--recover-only", "--if-down"}, inv.owners.processes.process.repositoryTop, inv.stdout, inv.stderr)
 	}
 	scope, scale, problem := inv.selectProcessScope()
 	if problem != nil {
@@ -913,7 +914,7 @@ func runIntentSystemStatus(inv *intentInvocation) int {
 	if inv.input.switched("json") {
 		args = append(args, "--json")
 	}
-	return runStewardStatus(args)
+	return runStewardStatus(args, inv.stdout, inv.stderr)
 }
 
 // runIntentWorkStatus lists running work, or reads the one goal, job, run
@@ -1424,7 +1425,7 @@ func runIntentWorkHistory(inv *intentInvocation) int {
 	if inv.input.switched("json") {
 		args = append(args, "--json")
 	}
-	return runLaunchReport(args)
+	return runLaunchReport(args, inv.stdout, inv.stderr)
 }
 
 // checkCovenantShape checks the app covenant's shape when the checkout has
