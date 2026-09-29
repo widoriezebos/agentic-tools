@@ -218,9 +218,9 @@ export type LaunchCreated = { destination: boolean; nickname: boolean; evidenceR
 /**
  * One launch, as the verb's own record carries it.
  *
- * The human's authorization is not a field here and never was: the word
- * reaches the arming verb's argument list and nothing else, which is why a
- * retry that has to enroll asks for it again.
+ * The record's own enrollment and review fields are not here: nothing on
+ * this page reads them, and a machine launched from it is its human's own,
+ * enrolled by the signed-in session (g1-s72).
  */
 export type Launch = {
   schemaVersion: number;
@@ -239,7 +239,6 @@ export type Launch = {
    * a failure.
    */
   outcome: string;
-  reviewBy: string;
   created: LaunchCreated;
   steps: LaunchStep[];
   orientation: string;
@@ -276,15 +275,6 @@ export type Page = {
 export type LaunchRequest = {
   machine?: string;
   destination?: string;
-  word: string;
-  reviewBy: string;
-  /**
-   * The day this browser is on, as a plain YYYY-MM-DD. The server judges the
-   * review date against it rather than against its own day: the two differ
-   * for several hours of every day, and the date a human answered is the one
-   * that was on their screen.
-   */
-  today: string;
   resume?: string;
 };
 

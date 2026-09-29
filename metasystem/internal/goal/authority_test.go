@@ -810,7 +810,7 @@ func TestParkThenDetachComposesInOneHandSession(t *testing.T) {
 	t.Parallel()
 	a, _ := fakeGoalEndpoint(t)
 	arcBedFor(t, a, "pd-arc", "pd", "PD")
-	p, err := Project(a, true, time.Now())
+	p, err := projectFetched(a, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}

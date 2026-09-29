@@ -84,7 +84,7 @@ func TestLandReadyOpensTheSlotBesideAWorkingClaim(t *testing.T) {
 	}
 	// The frontier lists the landing goal apart and continues the working
 	// claim; the current goal is the working claim.
-	projection, err := Project(a, true, landAt.Add(5*time.Minute))
+	projection, err := projectFetched(a, landAt.Add(5*time.Minute))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,7 +115,7 @@ func TestLandReadyOpensTheSlotBesideAWorkingClaim(t *testing.T) {
 	if res, err := Release(landingReqFor(a, "01J5X00000000000000000NA18", "mac-a", landAt.Add(6*time.Minute)), "next-b"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("release: %+v %v", res, err)
 	}
-	projection, err = Project(a, true, landAt.Add(7*time.Minute))
+	projection, err = projectFetched(a, landAt.Add(7*time.Minute))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -561,7 +561,7 @@ func TestRecoveryReplaysADeadOwnersLandReady(t *testing.T) {
 	if _, err := Recover(a); err != nil {
 		t.Fatal(err)
 	}
-	p, err := Project(a, true, time.Now())
+	p, err := projectFetched(a, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -584,7 +584,7 @@ func TestResumeIsNotBlockedByALandingClaim(t *testing.T) {
 	if result, err := claimApprovedForTest(t, claimA, "fenced-a", budget); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim stopped goal: %+v %v", result, err)
 	}
-	projection, err := Project(endpoint, true, claimA.Now)
+	projection, err := projectFetched(endpoint, claimA.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -600,7 +600,7 @@ func TestResumeIsNotBlockedByALandingClaim(t *testing.T) {
 	if result, err := CloseStop(stop); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("breach-stop goal A: %+v %v", result, err)
 	}
-	projection, err = Project(endpoint, true, stop.Now)
+	projection, err = projectFetched(endpoint, stop.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -802,7 +802,7 @@ func TestLandReadyRefusesAFencedClaimAndAFencedLandingClaimKeepsItsSlot(t *testi
 	}
 	stop := func(id, ulid string, at time.Time) {
 		t.Helper()
-		projection, err := Project(endpoint, true, at)
+		projection, err := projectFetched(endpoint, at)
 		if err != nil {
 			t.Fatal(err)
 		}

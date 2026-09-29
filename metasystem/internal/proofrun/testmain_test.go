@@ -71,7 +71,7 @@ func TestMain(m *testing.M) {
 	// which holds exact refs and a bounded cleanup. Giving the helper a second
 	// testenv fixture custodian would kill the product custodian when the
 	// launcher is deliberately killed, obscuring the behavior under test.
-	if hostResourceCustodyHelperInvocation() || hostResourceNestedCustodyHelperInvocation() {
+	if hostResourceCustodyHelperInvocation() || hostResourceNestedCustodyHelperInvocation() || hostResourceChainHelperInvocation() {
 		os.Exit(m.Run())
 	}
 	// Independent test binaries have independent proof roots. Give their host
@@ -272,6 +272,65 @@ func hostResourceNestedCustodyHelperInvocation() bool {
 	relative, err := filepath.Rel(os.TempDir(), root)
 	return err == nil && filepath.IsAbs(root) && relative != "." && relative != ".." &&
 		!strings.HasPrefix(relative, ".."+string(filepath.Separator)) && fixtureauth.FixtureModeRoot(root)
+}
+
+// hostResourceChainHelperEnv marks the owner, worker and grandchild helpers
+// of TestHostResourceChildRetainsSlotAfterOwnerDies. Their parent test owns
+// them; a testenv fixture custodian in each would kill it one poll after its
+// parent died, which is the very death the test stages.
+const hostResourceChainHelperEnv = "METASYSTEM_HOST_RESOURCE_CHAIN_HELPER"
+
+func hostResourceChainHelperInvocation() bool {
+	return hostResourceChainHelperArgsUnder(os.Args, os.Getenv(hostResourceChainHelperEnv), os.TempDir())
+}
+
+func hostResourceChainHelperArgsUnder(args []string, helperMode, temporaryRoot string) bool {
+	if helperMode != "1" || len(args) != 9 || args[1] != "-test.run=^TestHostResourceSubprocess$" || args[2] != "--" ||
+		(args[3] != "hold" && args[3] != "middle" && args[3] != "grandchild") {
+		return false
+	}
+	root := args[4]
+	relative, err := filepath.Rel(temporaryRoot, root)
+	return err == nil && filepath.IsAbs(root) && relative != "." && relative != ".." &&
+		!strings.HasPrefix(relative, ".."+string(filepath.Separator)) && fixtureauth.FixtureModeRoot(root)
+}
+
+func TestHostResourceChainHelperInvocation(t *testing.T) {
+	t.Parallel()
+	temporary := t.TempDir()
+	root := filepath.Join(temporary, "admission")
+	if err := os.Mkdir(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	args := func(mode, directory string) []string {
+		return []string{"proofrun.test", "-test.run=^TestHostResourceSubprocess$", "--", mode, directory, "conf", "ready", "release", "pid"}
+	}
+	if hostResourceChainHelperArgsUnder(args("hold", root), "1", temporary) {
+		t.Fatal("a root without the fixture runtime skipped the fixture custodian")
+	}
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, mode := range []string{"hold", "middle", "grandchild"} {
+		if !hostResourceChainHelperArgsUnder(args(mode, root), "1", temporary) {
+			t.Fatalf("%s helper keeps a fixture custodian", mode)
+		}
+	}
+	for name, refused := range map[string]struct {
+		args        []string
+		mode, under string
+	}{
+		"no marker":       {args("hold", root), "", temporary},
+		"other mode":      {args("worker", root), "1", temporary},
+		"other test":      {append([]string{"proofrun.test", "-test.run=^TestOther$"}, args("hold", root)[2:]...), "1", temporary},
+		"outside tmp":     {args("hold", root), "1", filepath.Join(temporary, "elsewhere")},
+		"relative root":   {args("hold", "admission"), "1", temporary},
+		"short arguments": {args("hold", root)[:8], "1", temporary},
+	} {
+		if hostResourceChainHelperArgsUnder(refused.args, refused.mode, refused.under) {
+			t.Errorf("%s: skipped the fixture custodian", name)
+		}
+	}
 }
 
 type deadTestProber struct{}

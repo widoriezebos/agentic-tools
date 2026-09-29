@@ -3,17 +3,12 @@ import { useMemo, useRef, useState } from "react";
 import { launchMachine, ResourceError, type Launch, type Launching, type Machine } from "./api";
 import {
   blockedForLaunch,
-  clientToday,
   destinationRefusal,
-  earliestReviewBy,
   IDLE_WARNING,
   nicknameRefusal,
   nicknamesTaken,
   proposedDestination,
   proposedNickname,
-  proposedReviewBy,
-  reviewByRefusal,
-  TEMPORARY_RULE,
   WHAT_IT_GETS,
   WHAT_IT_WILL_NOT_DO,
   type LaunchDraft,
@@ -24,7 +19,6 @@ import { useSession } from "../shell/identity";
 import { Sheet } from "../shell/Sheet";
 import { failureCode, failureMessage } from "../shell/workspace";
 import { Trouble } from "../shell/Trouble";
-import { useSecret } from "../shell/troubles";
 
 /**
  * Launch a machine: the form, before the act.
@@ -32,13 +26,12 @@ import { useSecret } from "../shell/troubles";
  * It is a work-area sheet, so the Project Partner stays live beside it and a
  * half-filled form is never lost to a stray click. Everything it refuses, it
  * refuses by the engine's own rules — the nickname the presence publisher
- * takes, an absolute path, a review date that is not already behind us — and
- * everything it proposes, the human may change.
+ * takes, an absolute path — and everything it proposes, the human may change.
  *
- * One field is different from every other field in this interface: the
- * authorization. It is the human's own words, it enrolls the machine, and it
- * travels to the verb's argument list and nowhere else — not to the record,
- * not to this sheet's draft, and not into the Partner's capture.
+ * Nothing here asks who is launching or why. The signed-in session is the
+ * human's own enrollment (g1-s72): the server stamps the new machine's record
+ * from the session's proof, and a browser nobody is signed into is answered
+ * with the sign-in sheet when Launch is pressed.
  */
 export function LaunchSheet({
   machines,
@@ -56,18 +49,12 @@ export function LaunchSheet({
   /** The record the server wrote before anything ran, which becomes the card. */
   onStarted: (started: Launch) => void;
 }) {
-  const now = useMemo(() => new Date(), []);
   const taken = useMemo(() => nicknamesTaken(machines, launches), [machines, launches]);
   const proposed = useMemo(() => proposedNickname(thisSeat, taken), [thisSeat, taken]);
   const [draft, setDraft] = useState<LaunchDraft>(() => ({
     machine: proposed,
     destination: proposedDestination(where, proposed),
-    word: "",
-    reviewBy: proposedReviewBy(now),
   }));
-  // The authorization is the one field that travels nowhere but the verb: a
-  // trouble composed while it is typed has it replaced (g1-s68 D1).
-  useSecret(draft.word);
   // Whether the human has taken the path over. Until they do, the proposal
   // follows the nickname, because a path named for another nickname is a
   // machine landing in the wrong directory.
@@ -87,7 +74,7 @@ export function LaunchSheet({
     }));
   };
 
-  const blocked = blockedForLaunch(draft, taken, thisSeat, now);
+  const blocked = blockedForLaunch(draft, taken, thisSeat);
 
   const send = () => {
     setSending(true);
@@ -95,12 +82,6 @@ export function LaunchSheet({
     launchMachine({
       machine: draft.machine.trim(),
       destination: draft.destination.trim(),
-      word: draft.word,
-      reviewBy: draft.reviewBy,
-      // The day this browser is on. The server judges the review date
-      // against it rather than against its own, so one rule decides at both
-      // ends whatever zone either is in.
-      today: clientToday(new Date()),
     })
       .then((started) => {
         setSending(false);
@@ -174,41 +155,6 @@ export function LaunchSheet({
         <p className="ms-launch-hint">{WHAT_IT_GETS}</p>
         <p className="ms-launch-hint">{WHAT_IT_WILL_NOT_DO}</p>
         <p className="ms-launch-hint">{IDLE_WARNING}</p>
-      </section>
-
-      <section className="ms-launch-block">
-        <h3 className="ms-launch-heading">
-          Your authorization
-          <Help id="temporary-word" />
-        </h3>
-        <div className="ms-launch-field">
-          <label htmlFor="ms-launch-word">In your own words</label>
-          <textarea
-            id="ms-launch-word"
-            rows={3}
-            value={draft.word}
-            onChange={(event) => {
-              setDraft((held) => ({ ...held, word: event.target.value }));
-            }}
-          />
-          <p className="ms-launch-hint">{TEMPORARY_RULE}</p>
-        </div>
-        <div className="ms-launch-field">
-          <label htmlFor="ms-launch-review">
-            Review by
-            <Help id="review-by" />
-          </label>
-          <input
-            id="ms-launch-review"
-            type="date"
-            min={earliestReviewBy(now)}
-            value={draft.reviewBy}
-            onChange={(event) => {
-              setDraft((held) => ({ ...held, reviewBy: event.target.value }));
-            }}
-          />
-          <Refused said={reviewByRefusal(draft.reviewBy, now)} />
-        </div>
       </section>
 
       {refusal !== "" && <Trouble text={refusal} code={refusalCode} variant="small" />}

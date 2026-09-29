@@ -211,12 +211,15 @@ func (f *ProcessFixture) HoldOwnedChildren() error {
 		if recorded[survivor.Ref] {
 			continue
 		}
+		// A child already dead, a zombie or exiting needs no hold, and one
+		// caught while it exits reads with no executable or argv, so the scan
+		// cannot class it certain: its ending is judged before its ownership.
+		exact, state, probeErr := f.prober.Probe(survivor.Ref.Pid)
+		if probeErr == nil && (state == identity.Dead || state == identity.Alive && (!identity.SameIdentity(exact, survivor.Ref) || exact.Zombie || exact.Exiting)) {
+			continue
+		}
 		if survivor.Class != identity.FixtureSurvivorCertain {
 			return fmt.Errorf("fixture child ownership is unproven: pid=%d exe=%q argv=%q", survivor.Ref.Pid, survivor.Exe, survivor.Argv)
-		}
-		exact, state, probeErr := f.prober.Probe(survivor.Ref.Pid)
-		if probeErr == nil && (state == identity.Dead || state == identity.Alive && (!identity.SameIdentity(exact, survivor.Ref) || exact.Zombie)) {
-			continue
 		}
 		if probeErr != nil || state != identity.Alive || !identity.SameIdentity(exact, survivor.Ref) || !exact.Ref().NativeExact() {
 			return fmt.Errorf("fixture child identity is unproven: ref=%+v state=%s err=%v", survivor.Ref, state, probeErr)

@@ -238,11 +238,16 @@ func TestAResumeRedoesTheStepWhosePostconditionDoesNotHold(t *testing.T) {
 	}
 }
 
+// S72-02: a record created without an enrollment is never armed by the new
+// path, so a pre-slice clone's engine, kept at its HEAD by the resume, is
+// never handed a flag it does not know. The refusal names what a human can
+// do instead.
 func TestAResumeThatHasToArmAgainAsksForTheWord(t *testing.T) {
 	t.Parallel()
 	asked := request()
 	asked.Resume, asked.Word, asked.ReviewBy = launchID, "", ""
 	built := newWorld(asked)
+	built.sequencer.RecordPath = sessionRecord
 	built.host.exists[destRoot] = true
 	built.host.exists[destBinary()] = true
 	built.host.exists[filepath.Join(destInstall(), "metasystem.conf.local")] = true
@@ -253,8 +258,19 @@ func TestAResumeThatHasToArmAgainAsksForTheWord(t *testing.T) {
 	if !named || refusal.Code != CodeWordRequired {
 		t.Fatalf("error = %v, want %s", err, CodeWordRequired)
 	}
+	for _, words := range []string{"Discard launch", "launch it again"} {
+		if !strings.Contains(refusal.Message, words) {
+			t.Fatalf("refusal %q does not name %q", refusal.Message, words)
+		}
+	}
 	if record.Outcome != OutcomeFailed {
 		t.Fatalf("outcome = %q, want %q", record.Outcome, OutcomeFailed)
+	}
+	if step, _ := record.StepOf(StepEnrollment); step.Outcome != StepFailed {
+		t.Fatalf("enrollment step = %+v, want failed", step)
+	}
+	if armed := armCommands(built.runner); len(armed) != 0 {
+		t.Fatalf("a legacy resume ran %v", armed)
 	}
 }
 

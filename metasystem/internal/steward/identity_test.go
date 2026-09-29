@@ -461,3 +461,22 @@ func TestPrepareForExecutionRepairsInvalidPins(t *testing.T) {
 		})
 	}
 }
+
+func TestIdentityAcceptsHumanSessionAndRefusesAnUnknownKind(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "identity.json")
+	session := EnrolledSession{Provider: "browser", Human: "wido", Reference: "ref", Launch: "launch", From: "/from"}
+	if err := MintIdentity(path, InstallIdentity{RepoIdentity: "repo-ulid", Generation: 1, Enrollment: EnrollmentHumanSession, MintedBy: "human-session", Session: &session}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := VerifyIdentity(path, "repo-ulid")
+	if err != nil || got.Enrollment != EnrollmentHumanSession || got.Session == nil || *got.Session != session {
+		t.Fatalf("a human-session identity must verify: %+v %v", got, err)
+	}
+	if err := MintIdentity(path, InstallIdentity{RepoIdentity: "repo-ulid", Generation: 1, Enrollment: "human-whim"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := VerifyIdentity(path, "repo-ulid"); err == nil || !strings.Contains(err.Error(), `unknown enrollment "human-whim"`) {
+		t.Fatalf("an unknown enrollment kind must still refuse by name: %v", err)
+	}
+}

@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 )
@@ -143,10 +142,6 @@ func runGoalShowWithResolver(args []string, resolve func(string) (goal.Endpoint,
 func runGoalDoneWithSync(args []string, trySync func(string, []string) (int, bool)) int {
 	code, _ := trySync("done", args)
 	return code
-}
-
-func runGoalApproveWithAuthority(args []string, prove goalAuthorityProver) int {
-	return runGoalApproveWithInputs(args, prove, goalCommandNow, defaultSyncRequestDependencies(), dispatchcore.ResolveGoalBinding)
 }
 
 func runGoalMigrate(args []string) int {

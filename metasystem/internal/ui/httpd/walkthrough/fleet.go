@@ -22,6 +22,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/fleet"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/session"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/snapshot"
 )
 
@@ -275,7 +276,7 @@ func fixtureLaunches(now time.Time) []launch.Record {
 			ClonedCommit: "b50abb959c1e2a4f6d8b0c3e5a7f9012d4b6c8e0", BuiltStamp: "b50abb959c1e2a4f6d8b0c3e5a7f9012d4b6c8e0",
 			Process:   launch.Process{PID: 40912, StartedAt: now.Add(-3 * time.Minute).Unix()},
 			StartedAt: seat.FormatTime(now.Add(-3 * time.Minute)), Outcome: launch.OutcomeRunning,
-			ReviewBy: "2026-10-02", Created: launch.Created{Destination: true, EvidenceRoot: true},
+			Created: launch.Created{Destination: true, EvidenceRoot: true},
 			Steps: []launch.Step{
 				{Step: launch.StepClone, Outcome: launch.StepDone, At: seat.FormatTime(now.Add(-3 * time.Minute))},
 				{Step: launch.StepTracking, Outcome: launch.StepDone, At: seat.FormatTime(now.Add(-2 * time.Minute))},
@@ -293,7 +294,7 @@ func fixtureLaunches(now time.Time) []launch.Record {
 			ClonedCommit: "b50abb959c1e2a4f6d8b0c3e5a7f9012d4b6c8e0",
 			Process:      launch.Process{PID: 40655, StartedAt: now.Add(-22 * time.Minute).Unix()},
 			StartedAt:    seat.FormatTime(now.Add(-22 * time.Minute)), EndedAt: &ended,
-			Outcome: launch.OutcomeFailed, ReviewBy: "2026-10-02",
+			Outcome: launch.OutcomeFailed,
 			Created: launch.Created{Destination: true, EvidenceRoot: true},
 			Steps: []launch.Step{
 				{Step: launch.StepClone, Outcome: launch.StepDone, At: seat.FormatTime(now.Add(-22 * time.Minute))},
@@ -312,7 +313,7 @@ func fixtureLaunches(now time.Time) []launch.Record {
 			SchemaVersion: launch.SchemaVersion, Launch: fixtureDiscardedLaunch, Machine: "m1h",
 			Destination: "/Users/wido/LocalStorage/GitHub/agentic-tools-m1h",
 			StartedAt:   seat.FormatTime(now.Add(-3 * time.Hour)), EndedAt: &discardedEnded,
-			Outcome: launch.OutcomeFailed, ReviewBy: "2026-10-02",
+			Outcome: launch.OutcomeFailed,
 			Steps: []launch.Step{
 				{Step: launch.StepClone, Outcome: launch.StepFailed, At: discardedEnded, Words: "git clone: exit status 128"},
 			},
@@ -337,8 +338,10 @@ func fixtureLaunchesNewest(now time.Time, newest string) []launch.Record {
 }
 
 // fixtureLaunchOf is what this fixture answers a launch act with: the running
-// record, told what the sheet asked for. It clones nothing.
-func fixtureLaunchOf(asked launch.Request, now time.Time) launch.Record {
+// record, told what the sheet asked for and stamped with the enrollment the
+// signed session names, as the engine's starter stamps it (g1-s72 D1). It
+// clones nothing.
+func fixtureLaunchOf(signed *session.Session, asked launch.Request, now time.Time) launch.Record {
 	record := fixtureLaunches(now)[0]
 	if asked.Machine != "" {
 		record.Machine = asked.Machine
@@ -346,8 +349,12 @@ func fixtureLaunchOf(asked launch.Request, now time.Time) launch.Record {
 	if asked.Destination != "" {
 		record.Destination = asked.Destination
 	}
-	if asked.ReviewBy != "" {
-		record.ReviewBy = asked.ReviewBy
+	if signed != nil {
+		record.Enrollment = &launch.Enrollment{
+			Kind:     launch.EnrollmentHumanSession,
+			Provider: signed.Proof.ChannelProvider, Human: signed.Proof.ChannelUser,
+			Session: signed.Proof.ChannelRef, At: now.UTC().Format(time.RFC3339),
+		}
 	}
 	record.Next = launch.Next{
 		Session: "cd " + record.Destination + " && claude",

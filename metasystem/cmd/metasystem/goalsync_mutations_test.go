@@ -537,13 +537,16 @@ func TestGoalBudgetCompletionUsesOnlyFiveValidMembers(t *testing.T) {
 func TestGoalApproveSweepWithIDsDropsSweepAndConfirmFromItsRemedy(t *testing.T) {
 	t.Parallel()
 	root := syncedMarkerRoot(t)
-	code, _, stderr := captureCommandOutput(t, false, true, func() int {
-		return runGoalApproveWithAuthority([]string{
-			"--root", root, "--sweep", "--id", "standing-validation", "--confirm", "stale",
-			"--by", "Wido", "--fixture-human-authority",
-		}, fixedFixtureGoalAuthority)
-	})
-	lines := strings.Split(strings.TrimSpace(stderr), "\n")
+	// The command prints on the streams its dependencies carry: a capture of
+	// the process's os.Stderr also received every parallel test's lines.
+	stdout, stderr := callerStreams()
+	dependencies := defaultSyncRequestDependencies()
+	dependencies.stdout, dependencies.stderr = stdout, stderr
+	code := runGoalApproveWithInputs([]string{
+		"--root", root, "--sweep", "--id", "standing-validation", "--confirm", "stale",
+		"--by", "Wido", "--fixture-human-authority",
+	}, fixedFixtureGoalAuthority, goalCommandNow, dependencies, dispatchcore.ResolveGoalBinding)
+	lines := strings.Split(strings.TrimSpace(stderr.String()), "\n")
 	if code != 2 || len(lines) != 2 || !strings.Contains(lines[1], "run: metasystem goal approve") || !strings.Contains(lines[1], "--id standing-validation") ||
 		strings.Contains(lines[1], "--sweep") || strings.Contains(lines[1], "--confirm") {
 		t.Fatalf("the direct-ID approval remedy retained sweep-only flags: code=%d stderr=%q", code, stderr)
@@ -553,12 +556,20 @@ func TestGoalApproveSweepWithIDsDropsSweepAndConfirmFromItsRemedy(t *testing.T) 
 func TestGoalClassifySweepWithoutDraftPrintsWordsInsteadOfAnEmptyPath(t *testing.T) {
 	t.Parallel()
 	root := syncedMarkerRoot(t)
-	code, _, stderr := captureCommandOutput(t, false, true, func() int {
-		return runGoalClassifySweepWithAuthority([]string{"--root", root, "--preview"}, fixedFixtureGoalAuthority)
-	})
+	stdout, errStream := callerStreams()
+	dependencies := defaultSyncRequestDependencies()
+	dependencies.stdout, dependencies.stderr = stdout, errStream
+	code := runGoalClassifySweepWithInputs([]string{"--root", root, "--preview"}, fixedFixtureGoalAuthority, goalCommandNow, dependencies)
+	stderr := errStream.String()
 	if code != 2 || !strings.Contains(stderr, "no command completes this:") || strings.Contains(stderr, "run:") || strings.Contains(stderr, "--draft ''") {
 		t.Fatalf("the missing-draft refusal printed an unusable command: code=%d stderr=%q", code, stderr)
 	}
+}
+
+// callerStreams are a command's own output buffers, handed to it through its
+// dependencies instead of capturing the process's shared standard streams.
+func callerStreams() (*strings.Builder, *strings.Builder) {
+	return &strings.Builder{}, &strings.Builder{}
 }
 
 func syncedMarkerRoot(t *testing.T) string {
@@ -633,11 +644,9 @@ func TestGoalBudgetCompletionMirrorsTheEngineNoOpGuard(t *testing.T) {
 			fixture := newGoalBudgetResumeFixture(t, test.wantFenceCleared, test.mutate)
 			root := fixture.root()
 			writeFixtureEnrollment(t, root, "Wido")
-			code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
-				return fixture.runBudget([]string{
-					"--root", root, "--id", "standing-validation", "4h/4/240m/2", "--fixture-human-authority", "--lineage", "m1",
-				}, fixedFixtureGoalAuthority)
-			})
+			code, stdout, stderr := fixture.runBudgetTo([]string{
+				"--root", root, "--id", "standing-validation", "4h/4/240m/2", "--fixture-human-authority", "--lineage", "m1",
+			}, fixedFixtureGoalAuthority)
 			// A box that completes to the one the goal already carries is a
 			// repeat (R-129-ui, U-idem): success, nothing recorded. A box
 			// that needs a fresh act still refuses and prints it.
@@ -900,13 +909,11 @@ func TestGoalResumeWithoutAStopFencePrintsTheTypedBudget(t *testing.T) {
 	})
 	root := fixture.root()
 	writeFixtureEnrollment(t, root, "Wido")
-	code, _, stderr := captureCommandOutput(t, false, true, func() int {
-		return fixture.runResume([]string{
-			"--root", root, "--id", "standing-validation", "--by", "Wido", "--fixture-human-authority",
-			"--elapsed-limit", "3h", "--attempt-limit", "5", "--reserved-job-minutes-limit", "300",
-			"--active-job-limit", "1", "--review-round-limit", "2", "--lineage", "m1",
-		}, fixedFixtureGoalAuthority)
-	})
+	code, _, stderr := fixture.runResumeTo([]string{
+		"--root", root, "--id", "standing-validation", "--by", "Wido", "--fixture-human-authority",
+		"--elapsed-limit", "3h", "--attempt-limit", "5", "--reserved-job-minutes-limit", "300",
+		"--active-job-limit", "1", "--review-round-limit", "2", "--lineage", "m1",
+	}, fixedFixtureGoalAuthority)
 	if code != 1 {
 		t.Fatalf("resume without a stop fence did not refuse: code=%d stderr=%q", code, stderr)
 	}
@@ -953,9 +960,7 @@ func TestGoalBudgetRoutesQueuedBoxesAndDefaultsTheEnrolledName(t *testing.T) {
 			})
 			root := fixture.root()
 			writeFixtureEnrollment(t, root, "Enroller")
-			code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
-				return fixture.runBudget(test.args(root), fixedFixtureGoalAuthority)
-			})
+			code, stdout, stderr := fixture.runBudgetTo(test.args(root), fixedFixtureGoalAuthority)
 			if code != 0 || stderr != "" || !strings.Contains(stdout, `"outcome":"confirmed"`) {
 				t.Fatalf("compact budget command did not confirm: code=%d stdout=%q stderr=%q", code, stdout, stderr)
 			}
@@ -978,9 +983,7 @@ func TestGoalBudgetKeepsOverNormFixtureAuthorityOutsideTheTerminalFold(t *testin
 	root := fixture.root()
 	writeFixtureEnrollment(t, root, "Wido")
 	args := []string{"--root", root, "--id", "standing-validation", "--fixture-human-authority", "--lineage", "m1", "8h/10/1201m/1/3"}
-	code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
-		return fixture.runBudget(args, fixedFixtureGoalAuthority)
-	})
+	code, stdout, stderr := fixture.runBudgetTo(args, fixedFixtureGoalAuthority)
 	if code != 1 || !strings.Contains(stdout, `"outcome":"rejected"`) || strings.Count(stderr, "\n") != 2 ||
 		!strings.Contains(stderr, "goal budget: GOAL_NORM_REFUSED") || !strings.Contains(stderr, "no command completes this: a person, at a terminal no agent started, enrolls it once with metasystem system enroll --name NAME, then runs the over-norm box there") {
 		t.Fatalf("fixture proof reached the enrolled-terminal fold: code=%d stdout=%q stderr=%q", code, stdout, stderr)
@@ -1640,9 +1643,7 @@ func TestGoalResumeTemporaryPathConfirmsAndRecordsWords(t *testing.T) {
 	word := "Wido authorizes this goal resume"
 	args := append(completeResumeArgs(root),
 		"--temporary-human-word", word, "--review-by", "2026-09-06")
-	code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
-		return fixture.runResume(args, fixedTemporaryGoalAuthority)
-	})
+	code, stdout, stderr := fixture.runResumeTo(args, fixedTemporaryGoalAuthority)
 	if code != 0 || !strings.Contains(stdout, `"outcome":"confirmed"`) ||
 		!strings.Contains(stdout, "goal resume: TEMPORARY authority under a recorded relayed word (human provenance not verified); re-approval due 2026-09-06 at an agent-free terminal") {
 		t.Fatalf("temporary resume did not confirm and announce: code=%d stdout=%q stderr=%q", code, stdout, stderr)
@@ -1749,9 +1750,7 @@ func TestGoalSecondRelayedResumeRefusesWithFirstAct(t *testing.T) {
 	root := fixture.root()
 	args := append(completeResumeArgs(root),
 		"--temporary-human-word", "Wido authorizes second resume", "--review-by", "2026-09-06")
-	code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
-		return fixture.runResume(args, fixedTemporaryGoalAuthority)
-	})
+	code, stdout, stderr := fixture.runResumeTo(args, fixedTemporaryGoalAuthority)
 	want := `goal standing-validation already used relayed resume authority on 2026-09-01T09:30:00Z with recorded word \"Wido authorizes first resume\"; a further resume needs freshly observed enrolled-terminal authority`
 	if code != 1 || !strings.Contains(stdout, want) || strings.Contains(stdout, "TEMPORARY authority") {
 		t.Fatalf("second relayed resume refusal mismatch: code=%d stdout=%q stderr=%q", code, stdout, stderr)

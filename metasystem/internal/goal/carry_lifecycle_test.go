@@ -906,7 +906,7 @@ func TestDeclareFreeAndLabelDelta(t *testing.T) {
 	if res, err := DeclareFree(first, "main", strings.Repeat("1", 64)); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("declare over parked only: %+v %v", res, err)
 	}
-	projection, err := Project(endpoint, true, first.Now)
+	projection, err := projectFetched(endpoint, first.Now)
 	if err != nil || projection.Tree.Root.Free == nil || projection.Tree.Root.Free.Digest != strings.Repeat("1", 64) || projection.Tree.Root.Free.Origin != "main" {
 		t.Fatalf("free record = %+v, %v", projection.Tree.Root, err)
 	}

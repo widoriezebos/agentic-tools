@@ -561,8 +561,11 @@ func TestScratchEnvironmentDiscoverySharesOnlyManagedDifferences(t *testing.T) {
 // TestScratchEnvironmentRealGoWorkload is A5 for the Go adapter: a real go
 // test writes through HOME, the user cache and config dirs and the temp dir
 // in its managed environment, and root cleanup removes exactly those bytes.
+// It is serial (see the writer-lock note in scratch_test.go): the scratch
+// writer stays open across its own go child, and Cleanup then proves the
+// lock free, so a parallel test's fork would hold a copy of the writer
+// description until that child execs and Cleanup would read a live writer.
 func TestScratchEnvironmentRealGoWorkload(t *testing.T) {
-	t.Parallel()
 	fixture := newScratchEnvFixture(t)
 	sentinel := filepath.Join(fixture.host, "sentinel")
 	if err := os.WriteFile(sentinel, []byte("user"), 0o600); err != nil {
@@ -1014,6 +1017,42 @@ func TestScratchEnvironmentCarriesTheResolvedEngineCache(t *testing.T) {
 	tampered.ScratchEnvironment = &copied
 	if err := ValidateScratchEnvironment(tampered, run); err == nil {
 		t.Fatal("relative engine cache accepted")
+	}
+}
+
+// A go command under a group's managed environment starts no telemetry
+// sidecar: with telemetry on or local, go starts a daemonized child (its own
+// session, so no process-group custody reaches it) that outlives the command
+// and MkdirAlls its directory chain under the managed config dir, which
+// raced lease release and root removal ("unlinkat .../leases/
+// scratch-environment-v2: directory not empty", batch 12). Preparation
+// records telemetry off in the managed config dir; a declared HOME keeps the
+// user's own config untouched.
+func TestScratchEnvironmentTurnsGoTelemetryOffInTheManagedConfig(t *testing.T) {
+	t.Parallel()
+	fixture := newScratchEnvFixture(t)
+	path := scratchGoPath(t)
+	external := filepath.Join(fixture.host, "declared-home")
+	groups := []testpolicy.Group{
+		{ID: "explicit", Adapter: "go", EnvironmentMode: "explicit", Env: map[string]string{"PATH": path, "GOTOOLCHAIN": "local"}},
+		{ID: "inherit", Adapter: "go", EnvironmentMode: "inherit", Env: map[string]string{"PATH": path, "GOTOOLCHAIN": "local"}},
+		{ID: "declared", Adapter: "go", EnvironmentMode: "explicit", Env: map[string]string{"HOME": external, "PATH": path, "GOTOOLCHAIN": "local"}},
+	}
+	request, run := prepareScratchEnvV2(t, fixture.control, scratchEnvRequest(fixture.base, groups))
+	for _, group := range groups[:2] {
+		if got := strings.TrimSpace(scratchGoEnvOutput(t, request, group, "GOTELEMETRY")); got != "off" {
+			t.Errorf("%s go telemetry = %q, want off", group.ID, got)
+		}
+	}
+	userEnv, _, err := goEnvFileFor([]string{"HOME=" + external}, runtime.GOOS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(filepath.Join(filepath.Dir(userEnv), "telemetry")); !os.IsNotExist(err) {
+		t.Errorf("preparation wrote the telemetry mode into a declared HOME: %v", err)
+	}
+	if err := ValidateScratchEnvironment(request, run); err != nil {
+		t.Fatal(err)
 	}
 }
 

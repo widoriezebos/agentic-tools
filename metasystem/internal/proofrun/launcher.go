@@ -607,6 +607,7 @@ func LaunchSuite(options LaunchOptions) int {
 	}
 	cardTicker.Stop()
 	stopCard()
+	beforeLauncherDone(donePath)
 	doneErr := touchDone(donePath)
 	if doneErr != nil {
 		fmt.Fprintln(combinedErr, "suite launcher: write watchdog done file:", doneErr)
@@ -975,6 +976,11 @@ func watchdogCommand(options LaunchOptions, ref identity.Ref, donePath string, f
 	}
 	return exec.Command(executable, args...)
 }
+
+// beforeLauncherDone runs after the suite ended and before the launcher
+// publishes its done marker: a test's point to place a marker the custodian
+// published first, which only an ended suite may meet.
+var beforeLauncherDone = func(string) {}
 
 func touchDone(path string) error {
 	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
