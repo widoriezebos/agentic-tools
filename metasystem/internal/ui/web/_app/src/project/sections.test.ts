@@ -4,6 +4,7 @@ import {
   changedLines,
   headingsOf,
   nextStepFor,
+  draftRefusal,
   outcomeParagraph,
   sectionIn,
   sectionReplaced,
@@ -69,8 +70,21 @@ describe("a section", () => {
   });
 
   it("is replaced exactly, and nothing else moves", () => {
-    const replaced = sectionReplaced(DESIGN, "3. The room", "## 3. The room\n\nThe room, continued.\n\n### A detail\n\nKept with its section.\n");
-    expect(replaced).toEqual({ state: "replaced", source: DESIGN.replace("The room, as it was.", "The room, continued.") });
+    const replaced = sectionReplaced(DESIGN, "5. Step 1, the smallest thing that works", "## 5. Step 1, the smallest thing that works\n\nD1 to D6.\n");
+    expect(replaced).toEqual({ state: "replaced", source: DESIGN.replace("D1 to D5.", "D1 to D6.") });
+  });
+
+  it("is refused in words when the draft's body carries a heading, and the document is unchanged", () => {
+    const said = "The draft carries a heading, and a section's body has none; edit it or Not this.";
+    expect(sectionReplaced(DESIGN, "4. Decisions", "New decisions.\n## 5. Step 1, the smallest thing that works\n\nMore.")).toEqual({
+      state: "refused",
+      said,
+    });
+    expect(sectionReplaced(DESIGN, "3. The room", "## 3. The room\n\nThe room, continued.\n\n### A detail\n\nKept.")).toEqual({
+      state: "refused",
+      said,
+    });
+    expect(draftRefusal("New decisions.\n\n```\n## 4. Decisions\n```")).toBe("");
   });
 
   it("keeps the document's heading line when the draft carries none", () => {

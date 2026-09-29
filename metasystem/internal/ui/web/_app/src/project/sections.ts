@@ -13,7 +13,8 @@
  *
  * A section runs from its heading to the next heading of its own level or
  * higher, as the Outcome's does, so its own sub-headings go with it; a heading
- * inside a code fence is text and not a heading.
+ * inside a code fence is text and not a heading. A draft written in its place
+ * carries no heading in its body, so a Use cannot move a section's boundaries.
  */
 
 export type Found =
@@ -86,6 +87,24 @@ export function refusalFor(heading: string, found: Found): string {
   return "";
 }
 
+/** The draft without the heading it opens with, if it opens with one. */
+function bodyOf(draft: string): string {
+  const body = draft.replace(/^\n+/, "").replace(/\s+$/, "");
+  return HEADING.test(body.split("\n")[0]) ? body.replace(/^[^\n]*/, "").replace(/^\s+/, "") : body;
+}
+
+/**
+ * Why a draft cannot be written as a section's body, or "" when it can: a
+ * heading anywhere in the body would be read as a heading of the document, and
+ * one Use would restructure the design. The Partner's words are not rewritten;
+ * the draft is refused and kept, to be edited or put aside.
+ */
+export function draftRefusal(draft: string): string {
+  return headingLines(bodyOf(draft).split("\n")).length > 0
+    ? "The draft carries a heading, and a section's body has none; edit it or Not this."
+    : "";
+}
+
 /**
  * The whole source with exactly that section replaced by the draft.
  *
@@ -93,23 +112,25 @@ export function refusalFor(heading: string, found: Found): string {
  * a heading the draft opens with is the Partner restating the section and is
  * not written, so a draft that opens under another heading cannot remove this
  * section's heading or write a second copy of another's. A Partner that sent
- * the body alone keeps the heading too. The blank lines between this section
- * and the next are the gap between sections and are kept.
+ * the body alone keeps the heading too; a body that carries a heading of its
+ * own is refused (draftRefusal). The blank lines between this section and the
+ * next are the gap between sections and are kept.
  */
 export function sectionReplaced(source: string, heading: string, draft: string): Replaced {
   const found = sectionIn(source, heading);
   if (found.state !== "found") {
     return { state: "refused", said: refusalFor(heading, found) };
   }
+  const refused = draftRefusal(draft);
+  if (refused !== "") {
+    return { state: "refused", said: refused };
+  }
   const lines = source.split("\n");
   let last = found.end;
   while (last > found.at + 1 && lines[last - 1].trim() === "") {
     last -= 1;
   }
-  let body = draft.replace(/^\n+/, "").replace(/\s+$/, "");
-  if (HEADING.test(body.split("\n")[0])) {
-    body = body.replace(/^[^\n]*/, "").replace(/^\s+/, "");
-  }
+  const body = bodyOf(draft);
   const written = body === "" ? [lines[found.at]] : [lines[found.at], "", ...body.split("\n")];
   return { state: "replaced", source: [...lines.slice(0, found.at), ...written, ...lines.slice(last)].join("\n") };
 }

@@ -12,7 +12,7 @@
  */
 
 import { cardsOf, foldAskedIn, rowFor, type DesignLoop, type DesignRow, type FoldAsked } from "./critiquing";
-import { changedLines, refusalFor, sectionIn, sectionReplaced, type Compared } from "./sections";
+import { changedLines, draftRefusal, refusalFor, sectionIn, sectionReplaced, type Compared } from "./sections";
 
 export type Fold = {
   heading: string;
@@ -32,11 +32,15 @@ export function foldOpened(heading: string, text: string, source: string, revisi
   return { heading, text, source, revision, phase: "comparing", said: "" };
 }
 
-/** Old and new side by side, or why the heading cannot be told apart. */
+/** Old and new side by side, or why the heading cannot be told apart or the draft cannot be written. */
 export function comparisonOf(fold: Fold): { state: "compared"; old: Compared[]; new: Compared[] } | { state: "refused"; said: string } {
   const found = sectionIn(fold.source, fold.heading);
   if (found.state !== "found") {
     return { state: "refused", said: refusalFor(fold.heading, found) };
+  }
+  const refused = draftRefusal(fold.text);
+  if (refused !== "") {
+    return { state: "refused", said: refused };
   }
   return { state: "compared", ...changedLines(found.text.replace(/\s+$/, ""), fold.text.replace(/\s+$/, "")) };
 }

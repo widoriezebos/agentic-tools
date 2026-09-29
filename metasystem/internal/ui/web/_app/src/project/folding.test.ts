@@ -55,6 +55,14 @@ describe("the section card", () => {
     expect(comparisonOf(doubled.fold).state).toBe("refused");
   });
 
+  it("says a draft whose body carries a heading is refused before Use is offered, the draft kept", () => {
+    const fold = foldOpened("4. Decisions", "New decisions.\n## 5. Step 1\n", SOURCE, "blob:1");
+    expect(comparisonOf(fold)).toEqual({ state: "refused", said: "The draft carries a heading, and a section's body has none; edit it or Not this." });
+    const used = foldUse(fold);
+    expect(used.save).toBeUndefined();
+    expect(used.fold.text).toBe("New decisions.\n## 5. Step 1\n");
+  });
+
   it("after a conflict, compares against the design as it is now before Use is offered again", () => {
     const writing = foldUse(foldOpened("4. Decisions", DRAFT, SOURCE, "blob:1")).fold;
     const now = SOURCE.replace("- D1. Old.", "- D1. Changed by somebody else.");
