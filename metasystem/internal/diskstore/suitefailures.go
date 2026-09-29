@@ -158,8 +158,19 @@ func (s SuiteFailures) Apply(ctx context.Context, pass *Pass, item Item) Verdict
 	}
 	switch {
 	case strings.HasPrefix(item.Key, actionFinish):
-		if err := RemoveTree(ctx, item.Path); err != nil {
-			return Verdict{Decision: Pending, Reason: "removal cut short: " + err.Error(), Command: "metasystem disk clean"}
+		// A source set aside by a move cut short is re-checked against its
+		// copy first, and its references go to the copy only then (Round
+		// B2-4).
+		bundle, _ := MovedSource(filepath.Base(item.Path))
+		source := filepath.Join(filepath.Dir(item.Path), bundle)
+		rules := MoveRules{SegmentDir: s.SegmentDir, Blobs: s.Blobs, Referrer: s.referrer(source), Installation: s.Installation,
+			Segment: Segment(s.GitRoot), Stage: movedStage(item.Path), Sync: s.Sync}
+		kept, err := rules.FinishMovedSource(ctx, item.Path, filepath.Join(s.SegmentDir, bundle))
+		switch {
+		case err != nil:
+			return s.pending("finishing the move", err)
+		case kept != "":
+			return Verdict{Decision: Keep, Reason: kept, Command: "metasystem evidence show " + source}
 		}
 		return Verdict{Decision: Release, Reason: "removed a moved bundle's source"}
 	case strings.HasPrefix(item.Key, actionDistil):

@@ -809,10 +809,21 @@ func (e Env) dropReferences(tombstonePath string, target Target) {
 		return // the reference check drops them later
 	}
 	defer release()
-	referrer := segmentName(target) + "-" + target.Item.Name
+	// Only references whose recipe is this bundle's go (Round B2-4): a
+	// kept move source of the same name keeps its own.
+	recipe := filepath.Join(target.Item.Path, diskstore.DistilledName)
 	for _, file := range files {
-		if file.Original != nil && file.Original.Kind == diskstore.RecipeBlob {
-			_ = os.Remove(e.Blobs.RefPath(file.Original.SHA256, referrer))
+		if file.Original == nil || file.Original.Kind != diskstore.RecipeBlob {
+			continue
+		}
+		refs, err := e.Blobs.Refs(file.Original.SHA256)
+		if err != nil {
+			continue // the reference check decides
+		}
+		for _, ref := range refs {
+			if ref.Recipe == recipe {
+				_ = os.Remove(e.Blobs.RefPath(file.Original.SHA256, ref.Referrer))
+			}
 		}
 	}
 }

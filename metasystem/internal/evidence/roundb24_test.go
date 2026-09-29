@@ -55,3 +55,45 @@ func TestDisposeNeverRemovesContentItsExportDidNotHold(t *testing.T) {
 		t.Fatalf("content the export never held is kept: %v", err)
 	}
 }
+
+// Round B2-4 follow-up: a person's removal of a bundle drops only the
+// blob references whose recipe is that bundle; a kept move source of the
+// same name keeps its own.
+func TestAPersonsRemovalDropsOnlyTheBundlesOwnBlobReferences(t *testing.T) {
+	t.Parallel()
+	bed := newPersonBed(t)
+	name := "20260801T000000Z-watchdog-copy"
+	dir := bed.bundle(t, name, 150, diskstore.BundleOwner{Attempt: diskstore.AttemptStandalone, Goal: diskstore.GoalNone})
+	digest := strings.Repeat("ab", 32)
+	if err := os.MkdirAll(bed.env.Blobs.Dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(bed.env.Blobs.Path(digest), []byte("blob"), 0o444); err != nil {
+		t.Fatal(err)
+	}
+	header, err := os.ReadFile(filepath.Join(dir, diskstore.DistilledName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	line := `{"kind":"blob","path":"bin/engine","replacement":"` + digest + `","sha256":"` + digest + `","size":4}` + "\n"
+	if err := os.WriteFile(filepath.Join(dir, diskstore.DistilledName), append(header, []byte(line)...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	referrer := bed.segment.Git + "-" + name
+	source := filepath.Join(bed.installation, "suite-failures", name, diskstore.DistilledName)
+	for _, ref := range []diskstore.BlobRef{{Referrer: referrer, Recipe: source}, {Referrer: referrer + "-copy-01S", Recipe: filepath.Join(dir, diskstore.DistilledName)}} {
+		if err := bed.env.Blobs.WriteRef(digest, ref, "01R"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	plan := bed.preview(t, "", dir)
+	if outcomes := bed.env.Execute(context.Background(), plan, ExecuteOptions{}); !outcomes[0].Done {
+		t.Fatalf("%+v", outcomes)
+	}
+	if _, err := os.Stat(bed.env.Blobs.RefPath(digest, referrer)); err != nil {
+		t.Fatalf("the kept source's reference stands: %v", err)
+	}
+	if _, err := os.Stat(bed.env.Blobs.RefPath(digest, referrer+"-copy-01S")); !os.IsNotExist(err) {
+		t.Fatalf("the removed bundle's own reference is dropped: %v", err)
+	}
+}

@@ -27,6 +27,10 @@ func TestCheckoutPassDistilsThenMovesSuiteFailureBundles(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(bed.inst, "metasystem.conf"), []byte(conf), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	// The evidence root exists: a move never creates it (Round B2-4).
+	if err := os.MkdirAll(evidence, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	bundle := filepath.Join(bed.inst, "artifacts", "agents", "suite-failures", "20260927T010000Z-detached-group-standalone-7-1")
 	if err := os.MkdirAll(bundle, 0o700); err != nil {
 		t.Fatal(err)

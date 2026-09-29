@@ -397,6 +397,10 @@ func moveBed(t *testing.T) (distillBed, MoveRules) {
 	if _, err := Distill(context.Background(), bed.bundle, bed.rules("01STAGE0000000000000000001"), testNow); err != nil {
 		t.Fatal(err)
 	}
+	// The evidence root exists (a move never creates it).
+	if err := os.MkdirAll(filepath.Join(bed.root, "evidence"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	rules := MoveRules{SegmentDir: filepath.Join(bed.root, "evidence", "suite-failures", "107e72c67539"), Blobs: bed.blobs,
 		Referrer: "107e72c67539-" + filepath.Base(bed.bundle), Segment: "107e72c67539", Stage: "01MOVE00000000000000000001"}
 	return bed, rules
@@ -536,6 +540,9 @@ func TestSuiteFailuresDistilAtIdleThenMoveAtAgeWithTheLegacyOwner(t *testing.T) 
 	items, _ = class.Plan(context.Background(), pass)
 	if len(items) != 1 || items[0].Verdict.Decision != Wait {
 		t.Fatalf("a distilled bundle younger than seven days by its creation stamp waits: %+v", items)
+	}
+	if err := os.MkdirAll(filepath.Dir(filepath.Dir(class.SegmentDir)), 0o755); err != nil {
+		t.Fatal(err)
 	}
 	later := &Pass{Now: time.Date(2026, 10, 3, 10, 10, 10, 0, time.UTC), Mode: ModeApply}
 	items, _ = class.Plan(context.Background(), later)

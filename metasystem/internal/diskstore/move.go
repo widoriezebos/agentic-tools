@@ -55,6 +55,12 @@ func MoveBundle(ctx context.Context, source string, rules MoveRules) (MoveResult
 	name := filepath.Base(source)
 	destination := filepath.Join(rules.SegmentDir, name)
 	result.Destination = destination
+	// The evidence root must already exist: a move never creates it (an
+	// unmounted volume's mount point would receive it; read-4 D3).
+	root := filepath.Dir(filepath.Dir(rules.SegmentDir))
+	if info, err := os.Stat(root); err != nil || !info.IsDir() {
+		return result, fmt.Errorf("the evidence root %s does not exist (an unmounted volume?); nothing was moved", root)
+	}
 	if err := os.MkdirAll(rules.SegmentDir, 0o755); err != nil {
 		return result, err
 	}
@@ -117,9 +123,6 @@ func MoveBundle(ctx context.Context, source string, rules MoveRules) (MoveResult
 	if rules.stop("renamed") {
 		return result, errInterrupted
 	}
-	if err := rules.rewriteRefs(destination); err != nil {
-		return result, err
-	}
 	// The source is renamed aside before its removal, so a removal cut
 	// short leaves a name that says "moved" rather than a bundle that
 	// no longer matches its copy.
@@ -133,17 +136,55 @@ func MoveBundle(ctx context.Context, source string, rules MoveRules) (MoveResult
 	if rules.stop("set-aside") {
 		return result, errInterrupted
 	}
-	// The source is re-checked just before its removal (Round B2-4, F-3):
-	// one written to after its copy verified is renamed back and kept
-	// beside the copy for a person.
-	if now, _, err := treeDigest(ctx, moved); err != nil || now != want {
-		if renameErr := os.Rename(moved, source); renameErr != nil {
-			return result, fmt.Errorf("the source %s changed after its copy verified and could not be renamed back from %s: %w", source, moved, renameErr)
-		}
-		result.Kept = fmt.Sprintf("%s changed after its copy verified; the source and its copy %s are both kept for a person", source, destination)
-		return result, rules.Sync.SyncDir(filepath.Dir(source))
+	kept, err := rules.FinishMovedSource(ctx, moved, destination)
+	result.Kept = kept
+	return result, err
+}
+
+// FinishMovedSource settles a moved bundle's source that was set aside
+// (Round B2-4): it is re-checked against its verified copy just before its
+// removal. Equal, the blob references are rewritten to the copy and only
+// then is the source removed. Different (written to after its copy
+// verified) or unreadable, the source is renamed back and keeps its own
+// references, the copy gets references of its own under
+// <referrer>-copy-<stage>, and both are kept for a person.
+func (rules MoveRules) FinishMovedSource(ctx context.Context, moved, destination string) (kept string, err error) {
+	source, ok := strings.CutSuffix(moved, movedMark+movedStage(moved))
+	if !ok {
+		return "", fmt.Errorf("%s is not a moved source", moved)
 	}
-	return result, RemoveTree(ctx, moved)
+	copyDigest, _, copyErr := treeDigest(ctx, destination)
+	now, _, sourceErr := treeDigest(ctx, moved)
+	if copyErr == nil && sourceErr == nil && now == copyDigest {
+		if err := rules.rewriteRefs(destination, rules.Referrer); err != nil {
+			return "", err
+		}
+		return "", RemoveTree(ctx, moved)
+	}
+	if _, err := os.Lstat(source); err == nil {
+		return "", fmt.Errorf("%s changed after its copy verified and %s is taken; both are kept for a person", moved, source)
+	}
+	if err := os.Rename(moved, source); err != nil {
+		return "", fmt.Errorf("the source %s changed after its copy verified and could not be renamed back from %s: %w", source, moved, err)
+	}
+	if err := rules.Sync.SyncDir(filepath.Dir(source)); err != nil {
+		return "", err
+	}
+	if copyErr == nil {
+		if err := rules.rewriteRefs(destination, rules.Referrer+"-copy-"+rules.Stage); err != nil {
+			return "", err
+		}
+	}
+	return fmt.Sprintf("%s changed after its copy verified; the source and its copy %s are both kept for a person, each with its own blob references", source, destination), nil
+}
+
+// movedStage is the stage a moved source's name carries.
+func movedStage(moved string) string {
+	index := strings.LastIndex(moved, movedMark)
+	if index < 0 {
+		return ""
+	}
+	return moved[index+len(movedMark):]
 }
 
 // movedMark is in the name a moved bundle's source carries while it is
@@ -167,7 +208,7 @@ func (rules MoveRules) stop(step string) bool { return rules.interrupt != nil &&
 
 // rewriteRefs points every blob reference of the moved bundle at its moved
 // recipe, under the blob store's shared lock.
-func (rules MoveRules) rewriteRefs(destination string) error {
+func (rules MoveRules) rewriteRefs(destination, referrer string) error {
 	_, lines, present, err := ReadDistilled(destination)
 	if err != nil || !present {
 		return err
@@ -187,7 +228,7 @@ func (rules MoveRules) rewriteRefs(destination string) error {
 	}
 	defer release()
 	for _, digest := range digests {
-		ref := BlobRef{Referrer: rules.Referrer, Recipe: filepath.Join(destination, DistilledName), Installation: rules.Installation, Segment: rules.Segment}
+		ref := BlobRef{Referrer: referrer, Recipe: filepath.Join(destination, DistilledName), Installation: rules.Installation, Segment: rules.Segment}
 		if err := rules.Blobs.WriteRef(digest, ref, rules.Stage); err != nil {
 			return err
 		}
