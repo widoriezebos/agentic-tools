@@ -104,8 +104,24 @@ func (f *goalBudgetResumeFixture) runBudget(args []string, prove goalAuthorityPr
 	return runGoalBudgetWithInputs(args, prove, f.commandNow, f.dependencies(), f.binding)
 }
 
-func (f *goalBudgetResumeFixture) runResume(args []string, prove goalAuthorityProver) int {
-	return runGoalResumeWithInputs(args, prove, f.commandNow, f.dependencies(), f.binding)
+// runBudgetTo and runResumeTo run the command on the caller's own streams.
+// A capture of the process's os.Stdout/os.Stderr also received every
+// parallel test's lines ("goal open does not take --blocker", "mission is
+// already running") in TestGoalBudgetRoutesQueuedBoxesAndDefaultsTheEnrolledName.
+func (f *goalBudgetResumeFixture) runBudgetTo(args []string, prove goalAuthorityProver) (int, string, string) {
+	stdout, stderr := callerStreams()
+	dependencies := f.dependencies()
+	dependencies.stdout, dependencies.stderr = stdout, stderr
+	code := runGoalBudgetWithInputs(args, prove, f.commandNow, dependencies, f.binding)
+	return code, stdout.String(), stderr.String()
+}
+
+func (f *goalBudgetResumeFixture) runResumeTo(args []string, prove goalAuthorityProver) (int, string, string) {
+	stdout, stderr := callerStreams()
+	dependencies := f.dependencies()
+	dependencies.stdout, dependencies.stderr = stdout, stderr
+	code := runGoalResumeWithInputs(args, prove, f.commandNow, dependencies, f.binding)
+	return code, stdout.String(), stderr.String()
 }
 
 func (f *goalBudgetResumeFixture) project() *goal.GoalFile {
