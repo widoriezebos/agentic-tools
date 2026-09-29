@@ -561,8 +561,11 @@ func TestScratchEnvironmentDiscoverySharesOnlyManagedDifferences(t *testing.T) {
 // TestScratchEnvironmentRealGoWorkload is A5 for the Go adapter: a real go
 // test writes through HOME, the user cache and config dirs and the temp dir
 // in its managed environment, and root cleanup removes exactly those bytes.
+// It is serial (see the writer-lock note in scratch_test.go): the scratch
+// writer stays open across its own go child, and Cleanup then proves the
+// lock free, so a parallel test's fork would hold a copy of the writer
+// description until that child execs and Cleanup would read a live writer.
 func TestScratchEnvironmentRealGoWorkload(t *testing.T) {
-	t.Parallel()
 	fixture := newScratchEnvFixture(t)
 	sentinel := filepath.Join(fixture.host, "sentinel")
 	if err := os.WriteFile(sentinel, []byte("user"), 0o600); err != nil {
