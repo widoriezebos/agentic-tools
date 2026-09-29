@@ -4,7 +4,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"strings"
 	"testing"
 )
 
@@ -85,71 +84,6 @@ func TestCheckParallelRatchetUsesPackageCeilingsAndReasonedExemptions(t *testing
 	}
 }
 
-func TestLowerParallelRatchetDropsCountsAndRefusesRaises(t *testing.T) {
-	t.Parallel()
-	baseline := ParallelRatchet{
-		Packages: map[string]int{"example.test/gone": 2, "example.test/lower": 3, "example.test/steady": 1},
-		Exempt:   []ParallelExemption{{Package: "example.test/lower", Test: "TestReason", Reason: "documented"}},
-	}
-	inventory := ParallelInventory{
-		Packages: []string{"example.test/lower", "example.test/new", "example.test/steady"},
-		Tests: []ParallelTest{
-			{Package: "example.test/lower", Test: "TestSerial"},
-			{Package: "example.test/lower", Test: "TestReason"},
-			{Package: "example.test/new", Test: "TestParallel", Parallel: true},
-			{Package: "example.test/steady", Test: "TestSerial"},
-		},
-	}
-	updated, drops, violations := LowerParallelRatchet(baseline, inventory)
-	if len(violations) != 0 {
-		t.Fatalf("unexpected violations: %#v", violations)
-	}
-	wantCounts := map[string]int{"example.test/gone": 0, "example.test/lower": 1, "example.test/new": 0, "example.test/steady": 1}
-	if !reflect.DeepEqual(updated.Packages, wantCounts) {
-		t.Fatalf("updated counts = %#v, want %#v", updated.Packages, wantCounts)
-	}
-	wantDrops := []ParallelDrop{{Package: "example.test/gone", From: 2, To: 0}, {Package: "example.test/lower", From: 3, To: 1}}
-	if !reflect.DeepEqual(drops, wantDrops) {
-		t.Fatalf("drops = %#v, want %#v", drops, wantDrops)
-	}
-
-	raiseBaseline := ParallelRatchet{Packages: map[string]int{"example.test/steady": 0}}
-	refused, refusedDrops, raiseViolations := LowerParallelRatchet(raiseBaseline, inventory)
-	if len(raiseViolations) != 3 || refusedDrops != nil || !reflect.DeepEqual(refused, raiseBaseline) {
-		t.Fatalf("raise result = %#v, %#v, %#v", refused, refusedDrops, raiseViolations)
-	}
-}
-
-func TestParallelRatchetRoundTripsCanonicalListObjects(t *testing.T) {
-	t.Parallel()
-	root := t.TempDir()
-	path := filepath.Join(root, "testing-parallel-ratchet.json")
-	ratchet := ParallelRatchet{
-		Packages: map[string]int{"example.test/z": 2, "example.test/a": 1},
-		Exempt:   []ParallelExemption{{Package: "example.test/a", Test: "TestSerial", Reason: "owns a singleton"}},
-	}
-	if err := WriteParallelRatchet(path, root, ratchet); err != nil {
-		t.Fatal(err)
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(data), `    {"package":"example.test/a","test":"TestSerial","reason":"owns a singleton"}`) {
-		t.Fatalf("exemption is not one object on one line:\n%s", data)
-	}
-	if strings.Index(string(data), "example.test/a") > strings.Index(string(data), "example.test/z") {
-		t.Fatalf("package keys are not sorted:\n%s", data)
-	}
-	decoded, err := ReadParallelRatchet(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(decoded, ratchet) {
-		t.Fatalf("round trip = %#v, want %#v", decoded, ratchet)
-	}
-}
-
 func parallelFixtureModule(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
@@ -164,5 +98,39 @@ func writeParallelFixture(t *testing.T, path, content string) {
 	}
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestReadParallelRatchetReadsTheCanonicalBaselineAndRefusesAMalformedOne(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	path := filepath.Join(root, "testing-parallel-ratchet.json")
+	writeParallelFixture(t, path, "{\n  \"packages\": {\n    \"example.test/a\": 1,\n    \"example.test/z\": 2\n  },\n  \"exempt\": [\n"+
+		"    {\"package\":\"example.test/a\",\"test\":\"TestSerial\",\"reason\":\"owns a singleton\"}\n  ]\n}\n")
+	decoded, err := ReadParallelRatchet(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := ParallelRatchet{
+		Packages: map[string]int{"example.test/z": 2, "example.test/a": 1},
+		Exempt:   []ParallelExemption{{Package: "example.test/a", Test: "TestSerial", Reason: "owns a singleton"}},
+	}
+	if !reflect.DeepEqual(decoded, want) {
+		t.Fatalf("read = %#v, want %#v", decoded, want)
+	}
+	for name, content := range map[string]string{
+		"unknown field":  `{"packages":{},"extra":1}`,
+		"no packages":    `{"exempt":[]}`,
+		"negative count": `{"packages":{"example.test/a":-1}}`,
+		"blank package":  `{"packages":{" ":1}}`,
+		"two values":     `{"packages":{}} {}`,
+	} {
+		writeParallelFixture(t, path, content)
+		if _, err := ReadParallelRatchet(path); err == nil {
+			t.Fatalf("%s was accepted", name)
+		}
+	}
+	if _, err := ReadParallelRatchet(filepath.Join(root, "absent.json")); err == nil {
+		t.Fatal("an absent baseline was accepted")
 	}
 }
