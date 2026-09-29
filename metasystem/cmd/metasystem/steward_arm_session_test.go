@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"errors"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,6 +13,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 // g1-s72 D2: `steward arm --launch-record <path>` reads the verdict the
@@ -286,19 +286,13 @@ func installTestEngine(t *testing.T, root string) string {
 	if err := os.Link(source, engine); err == nil {
 		return engine
 	}
-	in, err := os.Open(source)
+	// A copy is an executable a parallel test may fork beside: it is
+	// written through testexec, under the fork lock.
+	data, err := os.ReadFile(source)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer in.Close()
-	out, err := os.OpenFile(engine, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o755)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := io.Copy(out, in); err != nil {
-		t.Fatal(err)
-	}
-	if err := out.Close(); err != nil {
+	if err := testexec.WriteFile(engine, data, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	return engine
