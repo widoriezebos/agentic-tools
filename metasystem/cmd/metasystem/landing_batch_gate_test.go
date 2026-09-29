@@ -67,10 +67,15 @@ func TestBatchPublicationReadsTheLandingGateAgainstTheFreshLedger(t *testing.T) 
 	if err := authorizeBatchMemberInProjection(root, now, record, moved, projection); err == nil || !strings.Contains(err.Error(), goal.GateWaitsForHuman) {
 		t.Fatalf("a member at another tip than the word passed: %v", err)
 	}
-	// A chain member has no tip a word binds to.
+	// A chain member's tip is the commit the chain publishes: a word at it
+	// passes, and a member whose head could not be read has none to bind to.
 	chain := unit
-	chain.BranchTip, chain.Chain = "", "impl1"
+	chain.Chain = "impl1"
+	if err := authorizeBatchMemberInProjection(root, now, record, chain, projection); err != nil {
+		t.Fatalf("a chain member cleared at its head was refused: %v", err)
+	}
+	chain.BranchTip = ""
 	if err := authorizeBatchMemberInProjection(root, now, record, chain, projection); err == nil || !strings.Contains(err.Error(), "names no branch tip") {
-		t.Fatalf("a chain member at tier 2 passed on the branch's word: %v", err)
+		t.Fatalf("a chain member with no head passed: %v", err)
 	}
 }

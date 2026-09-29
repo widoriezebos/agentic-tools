@@ -26,8 +26,9 @@ import (
 //
 // The candidate's tip is the goal branch at origin: the tip a review records
 // and a land-without-sitting decision binds. A certified chain landed with
-// work land j2:J has no branch tip, so at or above the tier no human word can
-// be bound to it and it is refused; its work lands through the goal branch.
+// work land j2:J publishes the head of its candidate branch, so that commit is
+// its tip (chainHead): a word recorded at it lets the chain land, a word at any
+// other commit refuses naming both.
 
 // landingGateSettings resolves the two settings of the installation at root.
 func landingGateSettings(root string) (goal.GateSettings, error) {

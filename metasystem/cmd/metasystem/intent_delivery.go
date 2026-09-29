@@ -1556,11 +1556,30 @@ func (inv *intentInvocation) landJob(job string) intentResult {
 	if _, _, member, err := inv.delivery().batchUnit(landingRoot, request, ""); err != nil || member {
 		return inv.noteLanded(goalID, inv.joinBatch(targets, request, ""))
 	}
-	// A certified chain has no branch tip a human word could be bound to.
-	if refused := inv.admitLanding(targets, goalID, ""); refused != nil {
+	// The human's word on a chain is bound to the commit the chain publishes,
+	// the head of its candidate branch; the batch carries it to its
+	// publication gate.
+	request.ChainHead = chainHead(record)
+	if refused := inv.admitLanding(targets, goalID, request.ChainHead); refused != nil {
 		return *refused
 	}
 	return inv.noteLanded(goalID, inv.joinBatch(targets, request, ""))
+}
+
+// chainHead is the commit a certified chain publishes: its job record names
+// no commit, so it is the head of the candidate branch the record names
+// (branch) in the worktree it names (workspaceRoot), or "" where that branch
+// cannot be read, which no human word can be bound to.
+func chainHead(record map[string]any) string {
+	workspace, branch := recordText(record, "workspaceRoot"), recordText(record, "branch")
+	if workspace == "" || branch == "" {
+		return ""
+	}
+	read := landingPathGit(landpath.GitCall{Dir: workspace, Args: []string{"rev-parse", "--verify", "--quiet", "refs/heads/" + branch + "^{commit}"}})
+	if read.Code != 0 {
+		return ""
+	}
+	return strings.TrimSpace(string(read.Stdout))
 }
 
 // joinBatch reads the goal's existing batch membership first: a joined unit

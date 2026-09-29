@@ -6,6 +6,7 @@ package main
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -101,13 +102,61 @@ func TestAChainOfAClaimedGoalWithNoLandingRecordMeetsTheGate(t *testing.T) {
 	if len(owners.joins) != 0 {
 		t.Fatalf("the chain joined: %+v", owners.joins)
 	}
-	// A word on the goal's branch is not a word on a chain, which has no tip.
-	cleared, clearedOwners, _ := gatedDeliveryBed(t, clearedAt(gateBedTip))
-	cleared.writeJob(map[string]any{"jobId": "impl3", "role": "implementer", "status": "completed", "goalId": bedGoal})
-	code, result = cleared.do("work", "land", "j2:impl3")
-	expectGateRefusal(t, "a cleared goal's chain", code, result, "names no branch tip")
-	if len(clearedOwners.joins) != 0 {
-		t.Fatalf("the chain joined on the branch's word: %+v", clearedOwners.joins)
+}
+
+// chainCandidate is a delegate's worktree whose branch holds one commit: the
+// head a certified chain publishes, as its job record names it (workspaceRoot
+// and branch).
+func chainCandidate(t *testing.T) (workspace, head string) {
+	t.Helper()
+	workspace = t.TempDir()
+	for _, args := range [][]string{{"init", "-q", "-b", "delegate-impl"},
+		{"-c", "user.name=Bed", "-c", "user.email=bed@example.invalid", "commit", "-q", "--allow-empty", "-m", "the certified change"}} {
+		if output, err := exec.Command("git", append([]string{"-C", workspace}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, output)
+		}
+	}
+	output, err := exec.Command("git", "-C", workspace, "rev-parse", "HEAD").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return workspace, strings.TrimSpace(string(output))
+}
+
+// The human's word on a certified chain is bound to the commit the chain
+// publishes, the head of its candidate branch (SOL-S70-03): at a tier-2 goal a
+// word at that head lets work land j2:J join, and the batch carries the head
+// its publication gate reads; a word at another commit refuses naming both;
+// below the tier a chain lands as before, with no word.
+func TestAChainLandsWithTheWordAtItsHead(t *testing.T) {
+	t.Parallel()
+	workspace, head := chainCandidate(t)
+	job := map[string]any{"jobId": "impl3", "role": "implementer", "status": "completed", "goalId": bedGoal,
+		"workspaceRoot": workspace, "branch": "delegate-impl"}
+
+	cleared, clearedOwners, _ := gatedDeliveryBed(t, func(file *goal.GoalFile) { clearedAt(head)(file); retier(file, 2) })
+	cleared.writeJob(job)
+	code, result := cleared.do("work", "land", "j2:impl3")
+	expectOutcome(t, "a chain cleared at its head", code, result, intentInProgress)
+	if len(clearedOwners.joins) != 1 || clearedOwners.joins[0].ChainID != "impl3" || clearedOwners.joins[0].ChainHead != head {
+		t.Fatalf("the chain cleared at its head did not join carrying its head: %+v", clearedOwners.joins)
+	}
+
+	elsewhere, elsewhereOwners, _ := gatedDeliveryBed(t, func(file *goal.GoalFile) { clearedAt(gateBedTip)(file); retier(file, 2) })
+	elsewhere.writeJob(job)
+	code, result = elsewhere.do("work", "land", "j2:impl3")
+	expectGateRefusal(t, "a word at another commit", code, result,
+		"Wido's word was given at "+gateBedTip[:12]+" and the branch is now at "+head[:12]+"; a moved tip needs the word again")
+	if len(elsewhereOwners.joins) != 0 {
+		t.Fatalf("a chain joined on a word at another commit: %+v", elsewhereOwners.joins)
+	}
+
+	below, belowOwners, _ := gatedDeliveryBed(t, func(file *goal.GoalFile) { retier(file, 1) })
+	below.writeJob(job)
+	code, result = below.do("work", "land", "j2:impl3")
+	expectOutcome(t, "a chain below the tier", code, result, intentInProgress)
+	if len(belowOwners.joins) != 1 {
+		t.Fatalf("a chain below the tier did not land as before: %+v", belowOwners.joins)
 	}
 }
 
