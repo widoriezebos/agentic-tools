@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 )
 
 // GuardOwners are what the pre-commit guard reads.
@@ -32,6 +34,10 @@ type GuardOwners struct {
 	// AppendObservation appends one line to the landing observation log and
 	// reports why it could not.
 	AppendObservation func(root, line string) error
+	// Helm reads whether the work tree's seat is at the helm (helm.Active);
+	// nil is no helm. HelmYield records one yield (helm.RecordYield).
+	Helm      func(workTree string) helm.State
+	HelmYield func(workTree string, y helm.Yield)
 }
 
 // GuardProbeStatus is the guard's distinct exit status under an enrollment
@@ -60,6 +66,25 @@ func Guard(owners GuardOwners, root, workTree string, stdout, stderr io.Writer) 
 		return 0
 	}
 	class, err := owners.Classify(root, owners.CallerPID)
+	// yield is consulted only where a gate would refuse: at the helm in the
+	// seat's primary checkout the gate records one yield, prints one line
+	// and lets the guard go on.
+	admits := helmAdmission(owners, workTree, git)
+	yield := func(gate string) bool {
+		state, commonDir, admitted := admits()
+		if !admitted {
+			return false
+		}
+		who := state.By
+		if state.Malformed != "" {
+			who = "signature unreadable"
+		}
+		if owners.HelmYield != nil {
+			owners.HelmYield(workTree, helm.Yield{Boundary: "pre-commit", Gate: gate, Would: "refuse", Subject: helmSubject(git, class, err)})
+		}
+		fmt.Fprintf(stderr, "pre-commit guard: HUMAN AT THE HELM (%s): the %s yields; recorded in %s\n", who, gate, filepath.Join(commonDir, "metasystem", "helm-yields.log"))
+		return true
+	}
 	if err != nil || class == "" {
 		// Observe mode stays non-refusing, but an unavailable identity
 		// decision is itself evidence: keep it.
@@ -75,7 +100,7 @@ func Guard(owners GuardOwners, root, workTree string, stdout, stderr io.Writer) 
 		// Human commits are sovereign; an agent commit that could damage
 		// what the wrapper protects must run under the live landing path
 		// that minted the wrapper token.
-		if reason := wrapperFenced(git, root); reason != "" && !owners.WrapperToken(TokenPath(root), owners.CallerPID) {
+		if reason := wrapperFenced(git, root); reason != "" && !owners.WrapperToken(TokenPath(root), owners.CallerPID) && !yield("wrapper-fence") {
 			fmt.Fprintln(stderr, "pre-commit guard: an agent commit goes through metasystem work land; the live wrapper ancestry token is missing")
 			fmt.Fprintf(stderr, "  fenced because %s; land it with metasystem work land, or commit on a feature branch of a clone no seat holds\n", reason)
 			return 1
@@ -124,7 +149,7 @@ func Guard(owners GuardOwners, root, workTree string, stdout, stderr io.Writer) 
 			added = append(added, strings.Fields(path)...)
 		}
 	}
-	if len(added) == 0 {
+	if len(added) == 0 || yield("new-plan-acknowledgment") {
 		return 0
 	}
 	fmt.Fprintln(stderr, "pre-commit guard: refusing to commit NEW plan file(s):")
@@ -135,6 +160,71 @@ func Guard(owners GuardOwners, root, workTree string, stdout, stderr io.Writer) 
 	fmt.Fprintln(stderr, "by accident (0b9ca1b). If this addition is deliberate, acknowledge it:")
 	fmt.Fprintln(stderr, "  METASYSTEM_ALLOW_NEW_PLAN=1 git commit ...")
 	return 1
+}
+
+// helmAdmission answers, once per guard run, whether the helm admits this
+// commit: the work tree's seat is at the helm and the work tree is the seat's
+// primary checkout, which holds when its own .git entry, the effective git
+// dir and the common dir resolve to one directory. A linked worktree's git
+// dir lies under the common dir's worktrees/; steering GIT_DIR cannot change
+// the on-disk entry. Any answer that fails is "not admitted".
+func helmAdmission(owners GuardOwners, workTree string, git func(args ...string) GitResult) func() (helm.State, string, bool) {
+	var (
+		asked, admitted bool
+		state           helm.State
+		commonDir       string
+	)
+	return func() (helm.State, string, bool) {
+		if asked {
+			return state, commonDir, admitted
+		}
+		asked = true
+		if owners.Helm == nil {
+			return state, commonDir, false
+		}
+		if state = owners.Helm(workTree); !state.Active {
+			return state, commonDir, false
+		}
+		var dirs []string
+		for _, args := range [][]string{
+			{"rev-parse", "--path-format=absolute", "--resolve-git-dir", filepath.Join(workTree, ".git")},
+			{"rev-parse", "--path-format=absolute", "--git-dir"},
+			{"rev-parse", "--path-format=absolute", "--git-common-dir"},
+		} {
+			answer := git(args...)
+			dir := strings.TrimRight(string(answer.Stdout), "\n")
+			if answer.Code != 0 || dir == "" {
+				return state, commonDir, false
+			}
+			if !filepath.IsAbs(dir) {
+				dir = filepath.Join(workTree, dir)
+			}
+			dir, err := filepath.EvalSymlinks(dir)
+			if err != nil || len(dirs) > 0 && dir != dirs[0] {
+				return state, commonDir, false
+			}
+			dirs = append(dirs, dir)
+		}
+		commonDir, admitted = dirs[0], true
+		return state, commonDir, admitted
+	}
+}
+
+// helmSubject names what a helm yield admitted: the branch HEAD names, the
+// index tree and the caller's class.
+func helmSubject(git func(args ...string) GitResult, class string, classErr error) string {
+	branch := "unavailable"
+	if head := git("symbolic-ref", "--quiet", "HEAD"); head.Code == 0 {
+		branch = strings.TrimSpace(string(head.Stdout))
+	}
+	tree := strings.TrimSpace(string(git("write-tree").Stdout))
+	if !fullTree.MatchString(tree) {
+		tree = "unknown"
+	}
+	if classErr != nil || class == "" {
+		class = "unavailable"
+	}
+	return fmt.Sprintf("branch=%s tree=%s class=%s", branch, tree, class)
 }
 
 // ledgerBranch is the dedicated single-machine ledger branch
