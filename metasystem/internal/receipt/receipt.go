@@ -17,6 +17,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/receiptlog"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 )
 
@@ -63,6 +64,10 @@ type Options struct {
 
 	Summary string
 	All     bool
+	// Covered is the token of `receipt status --uncovered` a retro marker
+	// records coverage of; JSON prints the uncovered read as JSON.
+	Covered string
+	JSON    bool
 
 	MaxAgeDays     string
 	MaxAgeSet      bool
@@ -450,9 +455,17 @@ func Retro(opts Options) Result {
 	if err := os.MkdirAll(filepath.Dir(opts.File), 0o755); err != nil {
 		return fail(2, "cannot create receipt directory: %v", err)
 	}
+	covered := ""
+	if opts.Covered != "" {
+		digests, failed := coveredDigests(opts.File, opts.Covered)
+		if failed != nil {
+			return *failed
+		}
+		covered = "|covered=" + strings.Join(digests, ",")
+	}
 	now := opts.now().UTC()
-	line := fmt.Sprintf("%d|%s|RETRO|note=%s\n",
-		now.Unix(), now.Format("2006-01-02T15:04:05Z"), noPipes(sanitize(opts.Summary)))
+	line := fmt.Sprintf("%d|%s|RETRO|note=%s%s\n",
+		now.Unix(), now.Format("2006-01-02T15:04:05Z"), noPipes(sanitize(opts.Summary)), covered)
 	if err := appendLine(opts.File, line); err != nil {
 		return fail(2, "cannot write receipt file: %v", err)
 	}
@@ -632,19 +645,7 @@ func Check(opts Options) Result {
 // simply fails to match a record shape, which is the reader-side contract
 // that makes the third outcome survivable.
 func appendLine(path, line string) error {
-	handle, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-	if err != nil {
-		return err
-	}
-	if _, err := handle.WriteString(line); err != nil {
-		handle.Close()
-		return err
-	}
-	if err := syncFile(handle); err != nil {
-		handle.Close()
-		return fmt.Errorf("receipt append: not durably written: %w", err)
-	}
-	return handle.Close()
+	return receiptlog.AppendLine(path, line, receiptlog.Options{Create: true, Sync: syncFile})
 }
 
 // syncFile is the durability barrier, injectable so fault tests can fail it.

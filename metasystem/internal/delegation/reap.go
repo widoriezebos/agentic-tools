@@ -135,7 +135,7 @@ func (s *session) reapOneLocked(job string) error {
 			s.aggregateChainUsage(rootID)
 		}
 		_ = s.aggregateMissionUsage(record)
-		_ = s.mirrorRecord(job)
+		_ = s.mirrorRecordLocked(job)
 		return nil
 	case "pending-setup", "pending", "running":
 	default:
@@ -160,7 +160,7 @@ func (s *session) reapOneLocked(job string) error {
 			_ = writePatch(patch, `{"error":null,"phase":"supervision"}`)
 			_, _ = s.recordCASQuiet(job, status, "cancelled", patch)
 		}
-		_ = s.mirrorRecord(job)
+		_ = s.mirrorRecordLocked(job)
 		return nil
 	}
 	if status == "pending-setup" {
@@ -206,7 +206,7 @@ func (s *session) reapOneLocked(job string) error {
 			_ = writePatch(patch, fmt.Sprintf(`{"error":"process-lost","phase":"supervision","groupDeathProvenAt":"%s"}`, s.nowISO()))
 			observed, casErr := s.recordCASQuiet(job, status, "failed", patch)
 			s.reapVerdictEvents(job, "failed", "process-lost", casErr, observed)
-			_ = s.mirrorRecord(job)
+			_ = s.mirrorRecordLocked(job)
 			return nil
 		}
 	}
@@ -230,7 +230,7 @@ func (s *session) reapOneLocked(job string) error {
 			}
 			_ = s.aggregateMissionUsage(record)
 		}
-		_ = s.mirrorRecord(job)
+		_ = s.mirrorRecordLocked(job)
 	}
 	return nil
 }
@@ -387,7 +387,7 @@ func (s *session) recollectLostReturn(job, record, status string) bool {
 		return false
 	}
 	s.reapVerdictEvents(job, "completed", "recollected", nil, observed)
-	_ = s.mirrorRecord(job)
+	_ = s.mirrorRecordLocked(job)
 	return true
 }
 
@@ -432,9 +432,28 @@ func (s *session) mirrorFail(job, reason string) {
 	s.eprintf("cannot mirror %s: %s\n", job, reason)
 }
 
-// mirrorRecord is mirror_record: a terminal job's evidence copied under the
-// evidence root, stamped on exactly the job that was mirrored.
+// mirrorRecord mirrors a job's evidence for a caller that does not hold
+// the job's lifecycle lock (chain close, a redundant critique read): it
+// takes the lock with the reaper's own bound, so every mirror runs under a
+// lock the evidence disposer also holds (engine-owns-disk-lifetimes 3.12,
+// DL4F-01).
 func (s *session) mirrorRecord(job string) error {
+	acquired, err := s.acquireLifecycleLockUntil(job, 5)
+	if err != nil {
+		return err
+	}
+	if !acquired {
+		s.mirrorFail(job, "the job's lifecycle lock is held; the next reap mirrors it")
+		return exitWith(1)
+	}
+	defer s.releaseLifecycleLock(job)
+	return s.mirrorRecordLocked(job)
+}
+
+// mirrorRecordLocked is mirror_record: a terminal job's evidence copied
+// under the evidence root, stamped on exactly the job that was mirrored.
+// The caller holds the job's lifecycle lock.
+func (s *session) mirrorRecordLocked(job string) error {
 	record := s.recordPath(job)
 	if !isFile(record) {
 		return nil

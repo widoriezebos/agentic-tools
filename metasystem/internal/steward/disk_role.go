@@ -23,6 +23,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/evidence"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gocache"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/janitor"
@@ -155,6 +156,18 @@ type DiskPass struct {
 	// disk clean and its preview; the steward's cycle runs no git on the
 	// checkout's siblings).
 	Clones bool
+	// UserHome replaces the user's home directory, where the blob store and
+	// the default evidence roots live (fixtures); empty is os.UserHomeDir.
+	UserHome string
+	// SuiteFailureSeams adjusts the checkout pass's suite-failure class
+	// (fixtures stub its git reads); nil is production.
+	SuiteFailureSeams func(*diskstore.SuiteFailures)
+	// Facts reads an armed checkout's four facts for the evidence bound
+	// (fixtures stub the git reads); nil is production.
+	Facts func(ctx context.Context, installation string) (diskstore.CheckoutFacts, error)
+	// EvidenceSeams adjusts the machine pass's evidence bound (fixtures);
+	// nil is production.
+	EvidenceSeams func(*evidence.BoundClass)
 }
 
 func (p DiskPass) registryPath() (string, error) {
@@ -228,6 +241,11 @@ func SweepDiskStores(ctx context.Context, top string, pass DiskPass) (DiskPassRe
 			}
 			checkoutOptions.Classes = append(checkoutOptions.Classes, LandingReleaseSets{Installation: layout.InstallationRoot,
 				StateRoot: top, GitRoot: layout.GitRoot, Git: ExecWorkspaceGit})
+		}
+		if suiteFailures, err := suiteFailureClass(top, settings, pass); err == nil {
+			checkoutOptions.Classes = append(checkoutOptions.Classes, suiteFailures)
+		} else {
+			checkoutOptions.Notes = append(checkoutOptions.Notes, "suite-failure bundles are not aged this pass: "+err.Error())
 		}
 		checkoutOptions.CensusMinBudget = settings.Duration(config.DiskCensusMinBudgetKey)
 		checkoutOptions.CensusReader = KernelCensusReader(home, append(armedCheckouts(), top))
@@ -324,6 +342,11 @@ func machinePass(ctx context.Context, home, top string, own diskstore.Settings, 
 			GoalEnded: unitGoalEnded(func(root string) *ledgerView { return checkoutLedger(root, pass.Now) })},
 		launchRetention(home, host),
 		diskstore.TempStrays{Roots: tempRoots},
+	}
+	if bound, err := evidenceBoundClass(ctx, home, top, checkouts, participants, host, pass); err == nil {
+		options.Classes = append(options.Classes, bound)
+	} else {
+		options.Notes = append(options.Notes, "the evidence bound does not run this pass: "+err.Error())
 	}
 	options.Volumes = pass.Volumes
 	if options.Volumes == nil {

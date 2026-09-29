@@ -72,6 +72,12 @@ type Totaller interface {
 	Totals() (items int, bytes int64)
 }
 
+// Finisher is a class that adds its own section to the report once its
+// items are visited (the evidence bound's per-segment position).
+type Finisher interface {
+	Finish(pass *Pass, report *Report)
+}
+
 // PassOptions configure one pass.
 type PassOptions struct {
 	// Kind is "checkout" or "machine"; Name the checkout path or "machine".
@@ -268,6 +274,7 @@ func (p *Pass) visit(ctx context.Context, class Class, report *Report, positions
 		summary.Items++
 		summary.Bytes += item.Bytes
 		switch {
+		case item.Verdict.Decision == Wait:
 		case item.Stray:
 			report.Strays = append(report.Strays, item)
 		case item.Foreign:
@@ -300,12 +307,18 @@ func (p *Pass) visit(ctx context.Context, class Class, report *Report, positions
 			break
 		}
 		outcome := class.Apply(ctx, p, item)
+		if outcome.Decision == Wait {
+			continue
+		}
 		if outcome.Decision == Release {
 			report.Actions = append(report.Actions, Line{Class: name, Path: item.Path, Reason: outcome.Reason})
 			summary.Released++
 			continue
 		}
 		report.add(item, outcome)
+	}
+	if finisher, ok := class.(Finisher); ok {
+		finisher.Finish(p, report)
 	}
 	if finished {
 		delete(positions, name)

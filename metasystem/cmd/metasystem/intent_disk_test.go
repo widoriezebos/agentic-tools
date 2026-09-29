@@ -71,6 +71,10 @@ func newDiskBed(t *testing.T) *diskBed {
 			pass.Home, pass.TempRoots, pass.Volumes, pass.Checkouts = bed.home, []string{bed.tmp}, []string{root}, []string{}
 			pass.Proofs = map[diskstore.OwnerKind]diskstore.OwnerProof{diskstore.OwnerProcess: diskProof{}}
 			pass.Clock = func() time.Time { return diskNow }
+			pass.UserHome = filepath.Join(root, "user")
+			pass.Facts = func(context.Context, string) (diskstore.CheckoutFacts, error) {
+				return diskstore.CheckoutFacts{}, errors.New("the fixture runs no git")
+			}
 			return steward.SweepDiskStores(ctx, top, pass)
 		},
 		home:         func() (string, error) { return bed.home, nil },

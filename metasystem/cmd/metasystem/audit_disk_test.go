@@ -710,3 +710,95 @@ func TestAuditDiskSettingsAreSpelledOnce(t *testing.T) {
 		t.Fatalf("disk-lifetime keys spelled outside their table; use the config constants:\n%s", ratchetSiteList(sites))
 	}
 }
+
+// TestAuditDiskReceiptLedgerHasOneAppender is the static witness of design
+// engine-owns-disk-lifetimes 3.12 clause 2 (DL4D-03): no production
+// function outside internal/receiptlog both opens a file with O_APPEND and
+// names receipts.log, so every engine append to the receipt ledger holds
+// the bound lock shared through receiptlog.AppendLine.
+func TestAuditDiskReceiptLedgerHasOneAppender(t *testing.T) {
+	t.Parallel()
+	outside := func(rel string) bool { return !strings.HasPrefix(rel, "internal/receiptlog/") }
+	sites := auditDiskGoSites(t, outside, func(fileSet *token.FileSet, file *ast.File) []int {
+		osNames := auditDiskImportNames(file, "os")
+		var lines []int
+		for _, declaration := range file.Decls {
+			function, ok := declaration.(*ast.FuncDecl)
+			if !ok || function.Body == nil {
+				continue
+			}
+			appends, names := false, false
+			ast.Inspect(function.Body, func(node ast.Node) bool {
+				switch value := node.(type) {
+				case *ast.SelectorExpr:
+					if ident, ok := value.X.(*ast.Ident); ok && osNames[ident.Name] && value.Sel.Name == "O_APPEND" {
+						appends = true
+					}
+				case *ast.BasicLit:
+					if value.Kind == token.STRING && strings.Contains(value.Value, "receipts.log") {
+						names = true
+					}
+				}
+				return true
+			})
+			if appends && names {
+				lines = append(lines, fileSet.Position(function.Pos()).Line)
+			}
+		}
+		return lines
+	})
+	if len(sites) != 0 {
+		t.Fatalf("receipts.log is appended outside receiptlog.AppendLine, without the bound lock:\n%s", ratchetSiteList(sites))
+	}
+}
+
+// auditMirrorLockHolders are the functions that call mirrorRecordLocked
+// while holding the job's lifecycle lock (the reaper and a cancellation),
+// and mirrorRecord, which takes the lock itself.
+var auditMirrorLockHolders = map[string]bool{"mirrorRecord": true, "reapOneLocked": true, "recollectLostReturn": true, "internalCancel": true}
+
+// auditMirrorSettlers call dispatch.Mirror besides mirrorRecordLocked, each
+// with every job's lifecycle lock held: evidence's settleChain runs inside a
+// person's disposal step, which takes the chain's locks first (3.12
+// settlement).
+var auditMirrorSettlers = map[string]bool{"mirrorRecordLocked": true, "settleChain": true}
+
+// TestAuditDiskEveryMirrorHoldsTheLifecycleLock is the static witness of
+// design engine-owns-disk-lifetimes 3.12 (DL4E-02, DL4F-01): dispatch.Mirror
+// has one production caller, mirrorRecordLocked, and mirrorRecordLocked is
+// called only by a function that holds the job's lifecycle lock or takes
+// it, so every mirror runs under a lock the evidence disposer also holds.
+func TestAuditDiskEveryMirrorHoldsTheLifecycleLock(t *testing.T) {
+	t.Parallel()
+	sites := auditDiskGoSites(t, func(string) bool { return true }, func(fileSet *token.FileSet, file *ast.File) []int {
+		dispatchNames := auditDiskImportNames(file, "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch")
+		var lines []int
+		for _, declaration := range file.Decls {
+			function, ok := declaration.(*ast.FuncDecl)
+			if !ok || function.Body == nil {
+				continue
+			}
+			ast.Inspect(function.Body, func(node ast.Node) bool {
+				call, ok := node.(*ast.CallExpr)
+				if !ok {
+					return true
+				}
+				selector, ok := call.Fun.(*ast.SelectorExpr)
+				if !ok {
+					return true
+				}
+				if ident, ok := selector.X.(*ast.Ident); ok && dispatchNames[ident.Name] && selector.Sel.Name == "Mirror" && !auditMirrorSettlers[function.Name.Name] {
+					lines = append(lines, fileSet.Position(call.Pos()).Line)
+				}
+				if selector.Sel.Name == "mirrorRecordLocked" && !auditMirrorLockHolders[function.Name.Name] {
+					lines = append(lines, fileSet.Position(call.Pos()).Line)
+				}
+				return true
+			})
+		}
+		return lines
+	})
+	if len(sites) != 0 {
+		t.Fatalf("a mirror runs outside the job's lifecycle lock:\n%s", ratchetSiteList(sites))
+	}
+}

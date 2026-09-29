@@ -9,7 +9,7 @@ The metasystem improves itself the same way improve mode improves code: changes 
 
 ## Inputs
 
-- Receipts since the last retro: `metasystem receipt status` for the period numbers, including the critique-waiver count, and the raw `critique_waived` plus `waiver_stream` fields for per-stream waiver patterns.
+- Receipts this retro has not yet read: run `metasystem receipt status --uncovered` first. It prints exactly the ledger lines no earlier retro covered, in ledger order, and a token; mine exactly those lines (never a position or a time) and keep the token for Step 4. `metasystem receipt status` gives the period numbers, including the critique-waiver count; the raw `critique_waived` plus `waiver_stream` fields give per-stream waiver patterns.
 - Launch usage for the same period: in the receipt ledger used by `metasystem receipt status`, read the final `RETRO` row and use its second pipe-separated field as the previous retro's RFC3339 time. Run `metasystem work status --history --since <the previous retro's time> --json` and record these four numbers in the retro record: builds over the cap, compactions per build job, compacted reads, and calls above 200K context.
 - Git history for the same period, cross-checked against receipts. A "shipped" receipt followed by fix commits is hidden rework, and it counts as rework.
 - The instruction ledger at `memory/instruction-ledger.md`: every change previous retros adopted, each with its expected effect.
@@ -44,7 +44,7 @@ The expected effect must be testable: "fewer rework receipts on refactor tasks",
 
 ## Step 4: Apply and Close
 
-Present verdicts and proposals as a list the human can accept or veto item by item. Apply the accepted rows, update the ledger, then record the marker: `metasystem receipt retro` with a one-line summary. A retro that forgets its marker breaks the cadence for the next one.
+Present verdicts and proposals as a list the human can accept or veto item by item. Apply the accepted rows, update the ledger, then record the marker: `metasystem receipt retro SUMMARY --covered TOKEN` with a one-line summary and the token the `--uncovered` read under Inputs printed. The marker records exactly the lines that read covered; a line that arrived after the read stays uncovered for the next retro, and a stale token writes nothing and says to read again. A retro that forgets its marker breaks the cadence for the next one, and a marker without `--covered` covers nothing, so the evidence bound keeps every chain an unread receipt names.
 
 With peer agents active, run retros at a quiet point on the integration branch. Accepted changes land through the normal review flow, agents mid-task finish under the rules they started with, and new rules apply from their next session.
 

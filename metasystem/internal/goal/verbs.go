@@ -31,6 +31,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/receiptlog"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/retrodebt"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
@@ -3270,6 +3271,10 @@ func unblockRequest(r VerbRequest, id, blocker string, proof *humanauthority.Pro
 // Reopen is done's explicit exception: the archived file moves back
 // to the live set as queued. Goal-free clears when it was declared.
 func Reopen(r VerbRequest, id string) (PublishResult, error) {
+	// The evidence bound judges "goal open" under its lock held
+	// exclusively: a reopen on this host is seen by the judgement or waits
+	// for the one item in flight (engine-owns-disk-lifetimes 3.12).
+	defer receiptlog.HoldBoundShared(r.Endpoint.Root)()
 	return Publish(r.Endpoint, reopenRequest(r, id))
 }
 
@@ -3282,6 +3287,7 @@ func ReopenAbandoned(r VerbRequest, id string, proof *humanauthority.Proof) (Pub
 	if proof == nil || !proof.ValidFor(r.Endpoint.Root) {
 		return PublishResult{}, fmt.Errorf("reopen from abandoned requires freshly observed enrolled-terminal human authority")
 	}
+	defer receiptlog.HoldBoundShared(r.Endpoint.Root)()
 	return Publish(r.Endpoint, reopenAbandonedRequest(r, id))
 }
 
@@ -3388,6 +3394,7 @@ func CarryAbandoned(r VerbRequest, id, successor string, proof *humanauthority.P
 	if !validId(id) || !validId(successor) || id == successor {
 		return PublishResult{}, fmt.Errorf("carried must name a live successor")
 	}
+	defer receiptlog.HoldBoundShared(r.Endpoint.Root)()
 	return Publish(r.Endpoint, carryAbandonedRequest(r, id, successor))
 }
 

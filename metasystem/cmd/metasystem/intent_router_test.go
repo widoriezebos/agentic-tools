@@ -183,7 +183,7 @@ func TestIntentRouterSuggestsTheCurrentCommand(t *testing.T) {
 		{[]string{"review", "g"}, []string{"metasystem work review g", "metasystem design review g", "metasystem goal review g"}},
 		{[]string{"list"}, []string{"metasystem goal list", "metasystem design list", "metasystem decision list", "metasystem grant list",
 			"metasystem test list", "metasystem question list", "metasystem incident list", "metasystem machine list"}},
-		{[]string{"show", "g", "--json"}, []string{"metasystem goal show g --json", "metasystem design show g --json", "metasystem decision show g --json", "metasystem question show g --json", "metasystem disk show g --json", "metasystem settings show g --json"}},
+		{[]string{"show", "g", "--json"}, []string{"metasystem goal show g --json", "metasystem design show g --json", "metasystem decision show g --json", "metasystem question show g --json", "metasystem disk show g --json", "metasystem evidence show g --json", "metasystem settings show g --json"}},
 		// Rule 2: the nearest current object or action by spelling.
 		{[]string{"goel", "list"}, []string{"metasystem goal list"}},
 		{[]string{"wrk", "land", "g"}, []string{"metasystem work land g"}},

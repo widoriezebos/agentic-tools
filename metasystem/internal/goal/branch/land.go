@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/receiptlog"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/contractgit"
 )
 
@@ -478,16 +479,7 @@ func appendReceiptRow(worktree, goalID, lastUnit, attempt, stamp string) error {
 	rowTime := parsed.UTC()
 	row := fmt.Sprintf("%d|%s|RECEIPT|type=implement|outcome=shipped|skills=none|verify=clean|corrections=0|stop_loss=no|delegate=none|goal=%s|built_by=coordinator|last_unit=%s|proof=%s|critique_waived=none|waiver_stream=none|note=landing proof %s\n",
 		rowTime.Unix(), rowTime.Format("2006-01-02T15:04:05Z"), goalID, lastUnit, attempt, attempt)
-	handle, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
-	if err != nil {
-		return err
-	}
-	_, writeErr := handle.WriteString(row)
-	closeErr := handle.Close()
-	if writeErr != nil {
-		return writeErr
-	}
-	return closeErr
+	return receiptlog.AppendLine(path, row, receiptlog.Options{})
 }
 
 func redProofChecked(r landingRepository, repo, branchTip, goalID string, proof LandingProof) bool {

@@ -317,12 +317,16 @@ func practiceIntentCommands() []intentCommand {
 				"metasystem receipt add --corrects EPOCH:SHA1 --field FIELD --was OLD --now NEW --reason TEXT"}, receiptFlags,
 			[]string{"metasystem receipt add --type implementation --outcome done --goal verbs-match-intent",
 				"metasystem receipt add --corrects 1788441779:3f2a9c1e0d4b5a6978695a4b3c2d1e0f98765432 --field outcome --was done --now rework --reason 'reopened'"}, runReceiptAdd),
-		passthroughAction("receipt", "status", "both", "whether a metasystem retro is due, and the period's numbers; exit 1 when due",
-			[]string{"metasystem receipt status [--all] [--root CHECKOUT]"},
-			[]intentFlag{receiptFlags[0], {name: "all", usage: "count the whole ledger, not only the period since the last retro"}},
-			[]string{"metasystem receipt status"}, runReceiptStatus),
-		passthroughAction("receipt", "retro", "agent", "record that a retro ran and reset the cadence",
-			[]string{"metasystem receipt retro SUMMARY [--root CHECKOUT]"}, receiptFlags[:1], []string{"metasystem receipt retro 'kept 3, reverted 1'"}, withLead("retro", runReceipt)),
+		passthroughAction("receipt", "status", "both", "whether a metasystem retro is due, and the period's numbers; exit 1 when due; with --uncovered the lines no retro has read",
+			[]string{"metasystem receipt status [--all] [--root CHECKOUT]", "metasystem receipt status --uncovered [--json] [--root CHECKOUT]"},
+			[]intentFlag{receiptFlags[0], {name: "all", usage: "count the whole ledger, not only the period since the last retro"},
+				{name: "uncovered", usage: "print exactly the lines no retro has covered, in ledger order, and the token the retro marker takes"},
+				{name: "json", usage: "with --uncovered: print the lines, their digests and the token as JSON"}},
+			[]string{"metasystem receipt status", "metasystem receipt status --uncovered"}, runReceiptStatus),
+		passthroughAction("receipt", "retro", "agent", "record that a retro ran and reset the cadence, and which lines it read",
+			[]string{"metasystem receipt retro SUMMARY [--covered TOKEN] [--root CHECKOUT]"},
+			[]intentFlag{receiptFlags[0], documented("covered", "TOKEN", "the token receipt status --uncovered printed: the lines this retro read")},
+			[]string{"metasystem receipt retro 'kept 3, reverted 1' --covered 12:4f1a2b3c4d5e"}, withLead("retro", runReceipt)),
 		passthroughAction("experiment", "record", "agent", "record the measured-improvement frontier",
 			[]string{"metasystem experiment record --score SCORE --eval COMMAND --artifact PATH [--direction max|min] [--force]"}, frontierFlags,
 			[]string{"metasystem experiment record --score 0.82 --eval 'go test ./bench/...' --artifact runs/1.json"}, withLead("record", runReportFrontier)),
@@ -464,6 +468,9 @@ func receiptAddWords(args []string) ([]string, string) {
 // runReceiptStatus says whether a retro is due and prints the period's
 // numbers; its exit code is the due check's (1 when a retro is due).
 func runReceiptStatus(args []string, stdout, stderr io.Writer) int {
+	if _, uncovered, rest := takeIntentFlag(args, "uncovered", false); uncovered {
+		return runReceipt(append([]string{"uncovered"}, rest...), stdout, stderr)
+	}
 	all, _, checkArgs := takeIntentFlag(args, "all", false)
 	if _, named, _ := takeIntentFlag(checkArgs, "file", true); !named {
 		// Both reads use the one ledger, resolved once.

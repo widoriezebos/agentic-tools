@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"io/fs"
 	"os"
@@ -60,6 +61,16 @@ func Mirror(repoRoot, checkout, evidence, rootJob, job, resultPath string) error
 	}
 
 	destination := filepath.Join(evidenceResolved, "agents", CheckoutSegment(checkoutResolved), rootJob)
+	// The tombstone is the durable disposal state (engine-owns-disk-lifetimes
+	// 3.12, DL4D-13): into a removed chain nothing is mirrored and the
+	// result says so (machinery never compacts; Round B2-3). The caller
+	// holds the job's lifecycle lock, which the disposer holds too.
+	if removed, err := diskstore.ReadTombstone(diskstore.RemovedTombstonePath(destination)); err == nil {
+		return writeCompactJSON(resultPath, map[string]any{
+			"path": destination, "manifest": "", "unchanged": true, "mirroredAt": nowISO(),
+			"disposed": fmt.Sprintf("disposed on %s under rule %s, receipt %s", removed.At.Format("2006-01-02"), removed.Rule, removed.Receipt),
+		})
+	}
 	if err := os.MkdirAll(destination, 0o755); err != nil {
 		return err
 	}
@@ -307,8 +318,7 @@ func runtimesConfigured(repoRoot string) string {
 // checkout's segment — a shared derivation is the
 // only way the two sides cannot drift.
 func CheckoutSegment(checkoutRoot string) string {
-	sum := sha256.Sum256([]byte(realpath.Resolve(checkoutRoot)))
-	return hex.EncodeToString(sum[:])[:12]
+	return diskstore.Segment(checkoutRoot)
 }
 
 // SemanticRecordHash digests a job record with its mirror field blanked: the
