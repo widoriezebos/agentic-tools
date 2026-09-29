@@ -57,7 +57,14 @@ func TestAttemptKindsReadTheLandingPackagesOwnRecords(t *testing.T) {
 	if len(fill.ids) < 8 {
 		t.Fatalf("the fill reached only %d attempt fields", len(fill.ids))
 	}
-	if missing := fill.uncovered(named); len(missing) > 0 {
+	if missing := fill.uncovered(named, landingNotAttemptIDs); len(missing) > 0 {
 		t.Fatalf("attempt fields no reader names:\n%s", strings.Join(missing, "\n"))
 	}
+}
+
+// landingNotAttemptIDs are the landing record fields the detector's name
+// rule matches that carry no attempt id, each with why.
+var landingNotAttemptIDs = map[string]string{
+	"batch.Record.Proof.SourcesUnresolved":                 "a sentence saying why a proof's sources were not recorded",
+	"landing.TestReceipt.Testing.EngineRearm.SourceCommit": "a git commit the engine was rebuilt from",
 }

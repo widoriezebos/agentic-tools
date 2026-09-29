@@ -217,7 +217,7 @@ func TestAttemptKindsReadTheGoalRecordsOwnFields(t *testing.T) {
 	if len(fill.ids) < 6 {
 		t.Fatalf("the fill reached only %d attempt fields", len(fill.ids))
 	}
-	if missing := fill.uncovered(named); len(missing) > 0 {
+	if missing := fill.uncovered(named, nil); len(missing) > 0 {
 		t.Fatalf("attempt fields no reader names:\n%s", strings.Join(missing, "\n"))
 	}
 }

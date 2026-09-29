@@ -8,9 +8,10 @@ import (
 
 // attemptFill fills a record type the way a writer could: every exported
 // field allocated (a pointer set, a slice and a map given one entry), and
-// every string field whose name or JSON tag says attempt or reuse, and
-// every string in a slice or map such a field holds, given a fresh attempt
-// id (a struct's fields are judged by their own names). The ids it
+// every string field whose name or JSON tag says attempt, reuse, proof,
+// prior or source, and every string in a slice or map such a field holds,
+// given a fresh attempt id; it recurses into every field, whatever its
+// name (a struct's fields are judged by their own names). The ids it
 // hands out are what a reader of that record kind must name.
 type attemptFill struct {
 	ids   []string
@@ -56,21 +57,33 @@ func (f *attemptFill) fill(value reflect.Value, path string, marked bool, depth 
 			if !field.IsExported() || f.skip[field.Name] {
 				continue
 			}
-			words := strings.ToLower(field.Name + " " + field.Tag.Get("json"))
-			f.fill(value.Field(index), path+"."+field.Name, strings.Contains(words, "attempt") || strings.Contains(words, "reuse"), depth+1)
+			f.fill(value.Field(index), path+"."+field.Name, attemptWords(field.Name+" "+field.Tag.Get("json")), depth+1)
 		}
 	}
 }
 
-// uncovered are the fields whose handed-out ids a reader did not name.
-func (f *attemptFill) uncovered(named []string) []string {
+// attemptWords reports a field whose name or tag may carry an attempt id:
+// it says attempt, reuse, proof, prior or source.
+func attemptWords(text string) bool {
+	text = strings.ToLower(text)
+	for _, word := range []string{"attempt", "reuse", "proof", "prior", "source"} {
+		if strings.Contains(text, word) {
+			return true
+		}
+	}
+	return false
+}
+
+// uncovered are the fields whose handed-out ids a reader did not name,
+// but those allowed as carrying no attempt id.
+func (f *attemptFill) uncovered(named []string, allowed map[string]string) []string {
 	seen := map[string]bool{}
 	for _, id := range named {
 		seen[id] = true
 	}
 	var missing []string
 	for index, id := range f.ids {
-		if !seen[id] {
+		if _, allow := allowed[f.where[index]]; !seen[id] && !allow {
 			missing = append(missing, f.where[index])
 		}
 	}
