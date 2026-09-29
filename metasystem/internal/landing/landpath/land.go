@@ -38,6 +38,9 @@ type LandRequest struct {
 	Carried                    string
 
 	OwnerLineage string
+	// CommitOnly stops the landing after its commit: a change bound for the
+	// landing lane is fetched, rebased, proved and pushed by the lane (U11b).
+	CommitOnly bool
 }
 
 // landExit ends a landing with a status from anywhere below Land, as the
@@ -402,6 +405,10 @@ func (d *driver) land() int {
 	} else {
 		d.requiredStep("commit", d.commitChanges)
 		d.requiredStep("verify clean after commit", d.requireCleanAfterCommit)
+		if request.CommitOnly {
+			// The landing lane fetches, rebases, proves and pushes it (U11b).
+			return 0
+		}
 		d.requiredStep("fetch origin", d.fetchOrigin)
 		d.requiredStep("rebase onto origin/"+d.branch, d.rebaseOrigin)
 		d.requiredStep("goal held at the rebased base", d.heldCheck)

@@ -247,3 +247,9 @@ func commitChange(root string, unit Unit, tree, parent string) (string, error) {
 	}
 	return strings.TrimSpace(string(output)), nil
 }
+
+// UnitClosure asks the checkout's language adapter for a member's changed
+// and dependent units at its tree; nil when no adapter can say.
+func UnitClosure(root, baseTree, tree string) *adapter.Closure {
+	return unitClosure(root, baseTree, tree)
+}

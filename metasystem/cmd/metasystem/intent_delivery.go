@@ -157,12 +157,15 @@ func intentDeliveryCommands() []intentCommand {
 				"Without it, the read-clean goal branch is proved on its landing candidate, prepared and pushed by hand.",
 				"With the batch configured, a selection holding a unit read from a reader record is refused with the critic read that admits it",
 				"(metasystem work review --commit SHA --goal G); it lands by hand only when G is the fix goal of an open trunk red on main",
-				"(metasystem incident list names it; metasystem incident claim E --goal G). --message keeps its own landing path: the batch holds",
-				"goal branches and certified chains only.",
+				"(metasystem incident list names it; metasystem incident claim E --goal G).",
 				"Missing reads, proof or approval refuse with the missing input; no other route is tried instead.",
 				"A repeat reuses the retained receipt and prepared landing; a moved endpoint starts from a new proof. The goal is not concluded: that stays goal done G.",
-				"--message lands a hand-made change instead: the named paths (or the staged set) are staged, committed through the commit",
-				"boundary with the landing's declarations, rebased onto origin, proved against retained delivery proof, and pushed.",
+				"--message lands a hand-made change instead: the named paths (or the staged set) are staged and committed through the commit",
+				"boundary with the landing's declarations. With a landing lane the commit is pinned and joins the lane as a change member",
+				"(change:<first 12 of the commit>), proved on a goal member's proof, since every proof is charged to a goal, and landed with a",
+				"Landing-Change trailer; the same command reads its membership until it lands, and an ejected change's commit is undone with",
+				"its changes kept, to fix and land again. Without a lane, and with --local or --recertification, it is rebased onto origin,",
+				"proved against retained delivery proof, and pushed by hand.",
 			},
 			flags: append([]intentFlag{
 				{name: "through", value: "COMMIT", usage: "land a human-approved prefix ending at this unit commit"},
@@ -268,6 +271,21 @@ type intentDeliveryOwners struct {
 	// registers a review of a chain continues; nil selects the dispatch
 	// owner.
 	rebind func(root, job string) (map[string]string, error)
+	// landPath runs one landing through the landing path; nil runs
+	// landpath.Land.
+	landPath func(landpath.Owners, landpath.LandRequest, io.Writer, io.Writer) int
+	// changeHeld runs held over a change's one commit on the seat; nil runs
+	// the landing path's held owner (U11b).
+	changeHeld func(root, base, commit, branch string) (string, int)
+	// changeJoin joins a change the seat committed to the landing lane; nil
+	// runs the production join.
+	changeJoin func(changeJoinRequest) (batch.Record, error)
+	// changeUnit reads a change's membership in the lane's batches; nil reads
+	// the lane checkout's store, and any unreadable record is an error.
+	changeUnit func(landingRoot, id string) (batch.Record, batch.Unit, bool, error)
+	// changeAdvance moves the seat's branch onto origin after its change
+	// landed; nil fetches and advances.
+	changeAdvance func(root, branch string) error
 }
 
 // intentBranchState is the goal branch as the landing owners read it.

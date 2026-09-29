@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/adapter"
 )
 
 const laneChangeCommit = "abcdef0123456789abcdef0123456789abcdef01"
@@ -204,5 +206,70 @@ func TestBatchChangeLandingSeamsReplayAndFindTheTrailer(t *testing.T) {
 	other.GoalID = "change:000000000000"
 	if _, found, err := recovery.OriginChange(other); err != nil || found {
 		t.Fatalf("another change found=%v err=%v", found, err)
+	}
+}
+
+// TestChangeJoinGitAdapterFetchesThePinnedChangeAndJoins (U11b): the lane
+// checkout fetches the seat's pinned commit (Git is the claim), reads the
+// asker and subject from the commit the boundary made, and joins it as a
+// change member of a new open batch; a repeat changes nothing; a commit with
+// no Machine trailer was not made through the commit boundary and is refused.
+func TestChangeJoinGitAdapterFetchesThePinnedChangeAndJoins(t *testing.T) {
+	seat, lane := t.TempDir(), t.TempDir()
+	run := func(dir string, args ...string) string {
+		t.Helper()
+		output, err := exec.Command("git", append([]string{"-C", dir, "-c", "user.name=Wido", "-c", "user.email=wido@example.com"}, args...)...).CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, output)
+		}
+		return strings.TrimSpace(string(output))
+	}
+	run(seat, "init", "-q", "-b", "main")
+	if err := os.WriteFile(filepath.Join(seat, "notes.md"), []byte("one\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run(seat, "add", "notes.md")
+	run(seat, "commit", "-qm", "base")
+	base := run(seat, "rev-parse", "HEAD")
+	run(lane, "clone", "-q", seat, ".")
+	if err := os.WriteFile(filepath.Join(seat, "notes.md"), []byte("one\ntwo\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run(seat, "commit", "-qam", "record: notes\n\nMachine: m1e+human\nLanding-Provenance-Verdict: would-refuse code=missing-declaration")
+	commit := run(seat, "rev-parse", "HEAD")
+	run(seat, "update-ref", changePinRef(commit), commit)
+	ensured := 0
+	dependencies := productionChangeJoinDependencies()
+	dependencies.base = func(root string) (string, error) { return run(root, "rev-parse", "HEAD^{tree}"), nil }
+	dependencies.mint = func() (string, error) { return "01j5x00000000000000000ba82", nil }
+	dependencies.protectedTests = func(string, string, string) error { return nil }
+	dependencies.closure = func(string, string, string) *adapter.Closure { return nil }
+	dependencies.ensure = func(string) error { ensured++; return nil }
+	request := changeJoinRequest{SeatRoot: seat, LandingRoot: lane, Commit: commit, At: time.Unix(10, 0)}
+	record, err := executeChangeJoin(request, dependencies)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.BatchID != "01j5x00000000000000000ba82" || record.State != batch.StateOpen || len(record.Units) != 1 || ensured != 1 {
+		t.Fatalf("record=%+v ensured=%d", record, ensured)
+	}
+	unit := record.Units[0]
+	if unit.GoalID != batch.ChangeID(commit) || unit.State != batch.UnitJoined || unit.Claim.Machine != "m1e" || unit.Claim.Lineage != "human" ||
+		unit.Change.AskedBy != "m1e+human" || unit.Change.Subject != "record: notes" || unit.Change.Parent != base || !slices.Equal(unit.ChangedPaths, []string{"notes.md"}) {
+		t.Fatalf("change unit=%+v change=%+v", unit, unit.Change)
+	}
+	if fetched := run(lane, "rev-parse", changePinRef(commit)); fetched != commit {
+		t.Fatalf("lane pin=%s", fetched)
+	}
+	again, err := executeChangeJoin(request, dependencies)
+	if err != nil || len(again.History) != len(record.History) {
+		t.Fatalf("repeat err=%v history %d -> %d", err, len(record.History), len(again.History))
+	}
+	run(seat, "commit", "-q", "--allow-empty", "-m", "made by hand")
+	bare := run(seat, "rev-parse", "HEAD")
+	run(seat, "update-ref", changePinRef(bare), bare)
+	if _, err := executeChangeJoin(changeJoinRequest{SeatRoot: seat, LandingRoot: lane, Commit: bare, At: time.Unix(11, 0)}, dependencies); err == nil ||
+		!strings.Contains(err.Error(), "BATCH_CHANGE_UNREADABLE") || !strings.Contains(err.Error(), "commit boundary") {
+		t.Fatalf("a commit without a Machine trailer joined: %v", err)
 	}
 }

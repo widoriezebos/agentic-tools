@@ -112,15 +112,35 @@ func runIntentLandStaged(inv *intentInvocation) int {
 	if inv.input.switched("json") {
 		stdout, stderr = &captured, &captured
 	}
+	targets := []intentTarget{}
+	if request.GoalSet {
+		targets = append(targets, intentTarget{Kind: "goal", ID: request.Goal})
+	}
+	// With a landing lane on this host the change joins it (U11b); the hand
+	// path stays for a checkout with no lane, for --local (it publishes
+	// nothing) and for a recertified chain, whose proof binds a frozen origin
+	// target a batch would move.
+	if !inv.input.switched("local") && request.Recertification == "" {
+		inv.layout = layout
+		landingRoot, configured, refused := inv.landingBatchRoot(targets)
+		if refused != nil {
+			return inv.render(*refused)
+		}
+		if configured {
+			result := inv.landChange(request, owners, landingRoot, targets, stdout, stderr)
+			if inv.input.switched("json") {
+				if data, ok := result.Data.(map[string]any); ok {
+					data["output"] = captured.String()
+				}
+			}
+			return inv.render(result)
+		}
+	}
 	var status int
 	if inv.input.switched("local") {
 		status = landStagedLocally(request, stdout, stderr)
 	} else {
-		status = landpath.Land(owners, request, stdout, stderr)
-	}
-	targets := []intentTarget{}
-	if request.GoalSet {
-		targets = append(targets, intentTarget{Kind: "goal", ID: request.Goal})
+		status = inv.delivery().runLandPath(owners, request, stdout, stderr)
 	}
 	data := map[string]any{"exitCode": status}
 	if inv.input.switched("json") {
