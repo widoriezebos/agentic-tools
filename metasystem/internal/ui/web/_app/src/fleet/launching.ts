@@ -107,79 +107,10 @@ export function destinationRefusal(path: string): string {
   return "";
 }
 
-/** How many days out the review date is proposed. */
-export const REVIEW_DAYS = 7;
-
-/** The review date a sheet opens on: a week from today, in the local day. */
-export function proposedReviewBy(now: Date): string {
-  const then = new Date(now.getTime());
-  then.setDate(then.getDate() + REVIEW_DAYS);
-  return isoDay(then);
-}
-
-/**
- * The earliest date the field takes: tomorrow, in this browser's own day.
- *
- * A review due today is a review due the moment the machine joins, which is
- * not what choosing a date means. The server is one day more permissive — it
- * refuses only a date BEFORE the day this browser says it is on — so that a
- * request written a minute before midnight is not refused for arriving a
- * minute after it.
- */
-export function earliestReviewBy(now: Date): string {
-  const tomorrow = new Date(now.getTime());
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  return isoDay(tomorrow);
-}
-
-/**
- * The day this browser is on, which travels with every launch.
- *
- * The server judges the review date against it rather than against its own
- * UTC day: the two are different dates for several hours of every day, and
- * the date a human answered is the one that was on their screen.
- */
-export function clientToday(now: Date): string {
-  return isoDay(now);
-}
-
-function isoDay(day: Date): string {
-  const month = String(day.getMonth() + 1).padStart(2, "0");
-  const date = String(day.getDate()).padStart(2, "0");
-  return `${String(day.getFullYear())}-${month}-${date}`;
-}
-
-/**
- * Why this review date cannot be the machine's, or "" when it can.
- *
- * A date that is not later than today is this side's refusal and not the
- * engine's: the validator the arming verb runs accepts one, and nothing ever
- * compares the date to a clock afterwards. A review already due the moment a
- * machine joins is not what choosing a date means.
- *
- * Today is this browser's own day, and the same day travels with the request
- * so the server judges the date against it. One rule, one day.
- */
-export function reviewByRefusal(date: string, now: Date): string {
-  const wanted = date.trim();
-  if (wanted === "") {
-    return "";
-  }
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(wanted)) {
-    return "A review date is a day, as YYYY-MM-DD.";
-  }
-  if (wanted < earliestReviewBy(now)) {
-    return "A review due today or earlier is a review due the moment the machine joins; choose a later day.";
-  }
-  return "";
-}
-
 /** A launch as the sheet has it filled in. */
 export type LaunchDraft = {
   machine: string;
   destination: string;
-  word: string;
-  reviewBy: string;
 };
 
 /**
@@ -187,15 +118,11 @@ export type LaunchDraft = {
  *
  * Nothing about proof is here: a browser nobody is signed into is still
  * offered the act, and the route answers such a press with the sign-in this
- * page can open. What is left is the human's own to fill in, and each reason
- * names the field rather than saying that something is missing.
+ * page can open. The signed-in session is the human's own enrollment (g1-s72),
+ * so what is left is the nickname and the path, and each reason names the
+ * field rather than saying that something is missing.
  */
-export function blockedForLaunch(
-  draft: LaunchDraft,
-  taken: readonly string[],
-  thisSeat: string,
-  now: Date,
-): string {
+export function blockedForLaunch(draft: LaunchDraft, taken: readonly string[], thisSeat: string): string {
   if (draft.machine.trim() === "") {
     return "A machine is named by one nickname, which is how every other seat will refer to it.";
   }
@@ -210,16 +137,6 @@ export function blockedForLaunch(
   if (destination !== "") {
     return destination;
   }
-  if (draft.word.trim() === "") {
-    return "The machine is enrolled under your own words, which are recorded on its identity.";
-  }
-  const review = reviewByRefusal(draft.reviewBy, now);
-  if (review !== "") {
-    return review;
-  }
-  if (draft.reviewBy.trim() === "") {
-    return "The enrollment carries a review date, which is when a human re-approves it at a terminal.";
-  }
   return "";
 }
 
@@ -232,10 +149,6 @@ export const WHAT_IT_WILL_NOT_DO =
 /** What a sessionless machine will do, which is not nothing. */
 export const IDLE_WARNING =
   "A machine with no session raises an idle alert whenever claimable work exists, and raises it again after every delivery. Start a session by hand, or stop the machine.";
-
-/** What the temporary enrollment is, said where the word is typed. */
-export const TEMPORARY_RULE =
-  "The machine carries a temporary enrollment with a review due on this date. The date stops nothing: a human re-approves it, or stops the machine, at a terminal.";
 
 /* --------------------------------------------------------------- the card -- */
 
@@ -311,42 +224,19 @@ export function visibleCard(
 /**
  * The one line a finished launch folds to, once its machine is in the table.
  *
- * It is the design's own sentence: the machine, when it joined, and what its
- * enrollment is. The date is rendered in the reader's own zone, like every
- * other instant on this page.
+ * The machine and when it joined. A machine launched from this page is its
+ * human's own, enrolled by the signed-in session (g1-s72), so there is no
+ * review to name; how it was enrolled is its health's to say, not this line's.
  */
 export function foldedLine(record: Launch, now: Date): string {
   const joined = record.endedAt === null ? "just now" : `${ageBetween(record.endedAt, now.toISOString())} ago`;
-  const review = record.reviewBy === "" ? "" : `; temporary enrollment, review due ${reviewDay(record.reviewBy)}`;
-  return `${record.machine} joined ${joined}${review}`;
-}
-
-/** A review date as a human reads it: the day, in words. */
-export function reviewDay(date: string): string {
-  const parsed = new Date(`${date}T00:00:00`);
-  if (Number.isNaN(parsed.getTime())) {
-    return date;
-  }
-  return parsed.toLocaleDateString(undefined, { day: "numeric", month: "long" });
+  return `${record.machine} joined ${joined}`;
 }
 
 /** When a step happened, for the row's own title. */
 export function stepTitle(step: LaunchStep): string {
   return step.at === "" ? "" : dateAndTime(step.at);
 }
-
-/**
- * What a retry asks for, which is the word and the date, every time.
- *
- * The page cannot know whether a resume will reach the arming step: the
- * sequencer decides that from the clone's own identity and the binary
- * installed there, and a record's own enrollment step says only what happened
- * last time. A retry that guessed wrong would either refuse for a word it did
- * not need or be refused for one it did, so the card asks once and the verb
- * ignores it when the machine is already enrolled.
- */
-export const RETRY_ASKS_AGAIN =
-  "The record never held your authorization, and a retry may have to enroll the machine, so it asks again.";
 
 /**
  * What a stopped launch left on this host, while it is still there.

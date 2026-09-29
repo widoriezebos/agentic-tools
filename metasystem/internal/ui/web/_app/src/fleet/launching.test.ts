@@ -1,12 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import type { Launch, Machine } from "./api";
+import * as launching from "./launching";
 import {
   blockedForLaunch,
   cardFor,
-  clientToday,
   destinationRefusal,
-  earliestReviewBy,
   failedStep,
   foldedLine,
   launchHeadline,
@@ -14,9 +13,6 @@ import {
   nicknamesTaken,
   proposedDestination,
   proposedNickname,
-  proposedReviewBy,
-  reviewByRefusal,
-  reviewDay,
   leftoverLine,
   showsCard,
   visibleCard,
@@ -46,7 +42,6 @@ function launch(over: Partial<Launch> = {}): Launch {
     startedAt: "2026-09-25T10:57:00Z",
     endedAt: null,
     outcome: "running",
-    reviewBy: "2026-10-02",
     created: { destination: true, nickname: false, evidenceRoot: true },
     steps: [{ step: "clone", outcome: "done", at: "2026-09-25T10:57:10Z", words: "" }],
     orientation: "",
@@ -138,45 +133,26 @@ describe("where the sheet proposes a machine lands", () => {
   });
 });
 
-describe("the review date", () => {
-  it("opens a week out", () => {
-    expect(proposedReviewBy(new Date(2026, 8, 25))).toBe("2026-10-02");
-  });
-
-  it("refuses a date that is not later than today, which the engine's validator does not", () => {
-    expect(reviewByRefusal("2026-09-24", new Date(2026, 8, 25))).toContain("due the moment the machine joins");
-    expect(reviewByRefusal("2026-09-25", new Date(2026, 8, 25))).toContain("due the moment the machine joins");
-    expect(reviewByRefusal("2026-10-02", new Date(2026, 8, 25))).toBe("");
-  });
-
-  it("refuses something that is not a day at all", () => {
-    expect(reviewByRefusal("next tuesday", now)).toContain("YYYY-MM-DD");
-  });
-});
-
 describe("why the Launch button is disabled", () => {
   const whole = {
     machine: "m1f",
     destination: "/w/agentic-tools-m1f",
-    word: "Wido says launch m1f on this host",
-    reviewBy: "2026-10-02",
   };
 
-  it("is nothing when every field validates", () => {
-    expect(blockedForLaunch(whole, ["m1e"], "m1u", new Date(2026, 8, 25))).toBe("");
+  // g1-s72: signed in is enough. The nickname and the path are the whole
+  // form; nothing asks for words or a date.
+  it("is nothing when the nickname and the path validate", () => {
+    expect(blockedForLaunch(whole, ["m1e"], "m1u")).toBe("");
   });
 
   it("names the field rather than saying something is missing", () => {
-    expect(blockedForLaunch({ ...whole, machine: "" }, [], "m1u", now)).toContain("nickname");
-    expect(blockedForLaunch({ ...whole, destination: "" }, [], "m1u", now)).toContain("path on this host");
-    expect(blockedForLaunch({ ...whole, word: "  " }, [], "m1u", now)).toContain("your own words");
+    expect(blockedForLaunch({ ...whole, machine: "" }, [], "m1u")).toContain("nickname");
+    expect(blockedForLaunch({ ...whole, destination: "" }, [], "m1u")).toContain("path on this host");
   });
 
   it("carries each field's own refusal up to the button", () => {
-    expect(blockedForLaunch({ ...whole, machine: "m1e" }, ["m1e"], "m1u", now)).toContain("already a machine");
-    expect(blockedForLaunch({ ...whole, reviewBy: "2026-09-24" }, [], "m1u", new Date(2026, 8, 25))).toContain(
-      "due the moment the machine joins",
-    );
+    expect(blockedForLaunch({ ...whole, machine: "m1e" }, ["m1e"], "m1u")).toContain("already a machine");
+    expect(blockedForLaunch({ ...whole, destination: "w/m1f" }, [], "m1u")).toContain("absolute path");
   });
 });
 
@@ -227,26 +203,9 @@ describe("the card a launch becomes", () => {
     expect(failedStep(launch())).toBe(null);
   });
 
-  it("folds a machine that joined to one line with its enrollment on it", () => {
+  it("folds a machine that joined to one line: the machine and when it joined", () => {
     const joined = launch({ outcome: "done", endedAt: "2026-09-25T10:58:00Z" });
-    // The day is rendered in the reader's own locale, like every other
-    // instant on this page, so the line is asserted around it.
-    expect(foldedLine(joined, now)).toContain("m1f joined 2 min ago; temporary enrollment, review due ");
-    expect(foldedLine(joined, now)).toContain(reviewDay("2026-10-02"));
-  });
-});
-
-describe("the day that travels with a launch", () => {
-  it("is this browser's own day, and the earliest review date is the one after it", () => {
-    const now = new Date(2026, 8, 25, 23, 50);
-    expect(clientToday(now)).toBe("2026-09-25");
-    expect(earliestReviewBy(now)).toBe("2026-09-26");
-  });
-
-  it("refuses a review due today, because that is due the moment the machine joins", () => {
-    const now = new Date(2026, 8, 25);
-    expect(reviewByRefusal("2026-09-25", now)).toContain("due the moment the machine joins");
-    expect(reviewByRefusal("2026-09-26", now)).toBe("");
+    expect(foldedLine(joined, now)).toBe("m1f joined 2 min ago");
   });
 });
 
@@ -287,5 +246,24 @@ describe("what a stopped launch leaves on disk", () => {
 
   it("says nothing once it is gone", () => {
     expect(leftoverLine(launch({ outcome: "failed", destinationPresent: false }))).toBe("");
+  });
+});
+
+// g1-s72 D5: the interface forgets the word. Nothing on the fleet page
+// proposes, refuses or explains a review date or a temporary enrollment.
+describe("what the launch no longer asks for", () => {
+  it("offers no review date rule and no temporary-enrollment words", () => {
+    for (const gone of [
+      "TEMPORARY_RULE",
+      "RETRY_ASKS_AGAIN",
+      "REVIEW_DAYS",
+      "proposedReviewBy",
+      "earliestReviewBy",
+      "clientToday",
+      "reviewByRefusal",
+      "reviewDay",
+    ]) {
+      expect(Object.keys(launching)).not.toContain(gone);
+    }
   });
 });

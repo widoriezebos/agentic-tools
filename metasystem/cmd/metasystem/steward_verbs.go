@@ -29,6 +29,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
@@ -325,16 +326,37 @@ func runStewardRun(args []string) int {
 	return 0
 }
 
+// stewardArmDeps are the arm verb's Git-facing and minting dependencies,
+// passed per call so a test hands in its own instances.
+type stewardArmDeps struct {
+	repositoryTop func(string) (string, error)
+	landingRefGit stewardLandingRefGit
+	armSession    func(repoRoot, binaryPath string, session steward.EnrolledSession, lineage string) (string, error)
+}
+
 func runStewardArm(args []string) int {
+	return runStewardArmWith(args, stewardArmDeps{
+		repositoryTop: stateroot.RepositoryTop,
+		landingRefGit: realStewardLandingRefGit{},
+		armSession:    steward.ArmSessionWithLineage,
+	})
+}
+
+func runStewardArmWith(args []string, deps stewardArmDeps) int {
 	flags := newFlagSet("steward arm")
 	repo := pathFlag(flags, "repo", "", "checkout root")
 	temporaryWord := flags.String("temporary-human-word", "", "verbatim remote human authorization; enrolls TEMPORARILY with the word recorded on the identity until a terminal re-arm")
 	reviewBy := flags.String("review-by", "", "the human's own re-approval date (required with --temporary-human-word)")
+	launchRecord := pathFlag(flags, "launch-record", "", "a launch record the interface stamped with a signed-in browser session's enrollment; enrolls as that human (g1-s72)")
 	if flags.Parse(args) != nil || !requireFlags(flags, nil, "repo") {
 		return 2
 	}
 	if *repo == "" {
 		fmt.Fprintln(os.Stderr, "steward arm: --repo is required")
+		return 2
+	}
+	if *launchRecord != "" && (*temporaryWord != "" || *reviewBy != "") {
+		fmt.Fprintln(os.Stderr, "steward arm: --launch-record cannot be combined with --temporary-human-word or --review-by: a session-enrolled launch carries its human's verdict, not a word")
 		return 2
 	}
 	if refused, err := refuseStewardIfStopped(*repo); err != nil {
@@ -348,7 +370,23 @@ func runStewardArm(args []string) int {
 		return 2
 	}
 	fixtureEnrollment := false
-	if *temporaryWord == "" {
+	var session steward.EnrolledSession
+	if *launchRecord != "" {
+		var err error
+		if session, err = sessionEnrollmentFromRecord(*repo, *launchRecord, deps.repositoryTop); err != nil {
+			fmt.Fprintln(os.Stderr, "steward arm:", err)
+			return 1
+		}
+		metasystemRoot, err := upMetasystemRoot("")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "steward arm: cannot resolve the installed engine: %v\n", err)
+			return 1
+		}
+		if err := sessionCallerCheck(*repo, metasystemRoot, lease.ClassifyAt); err != nil {
+			fmt.Fprintln(os.Stderr, "steward arm:", err)
+			return 1
+		}
+	} else if *temporaryWord == "" {
 		var authorized bool
 		fixtureEnrollment, authorized = requireHumanTerminal(*repo, "steward arm")
 		if !authorized {
@@ -362,7 +400,7 @@ func runStewardArm(args []string) int {
 		// construction — the word and the review date are durable.
 		fmt.Fprintf(os.Stderr, "steward arm: TEMPORARY enrollment under a recorded remote human word; re-approval due %s at an agent-free terminal\n", *reviewBy)
 	}
-	if seed, err := seedStewardLandingRef(*repo); err != nil {
+	if seed, err := seedStewardLandingRefWithGit(*repo, deps.landingRefGit); err != nil {
 		fmt.Fprintf(os.Stderr, "steward arm: %v\n", err)
 		return 1
 	} else if seed.Ref != "" {
@@ -377,7 +415,9 @@ func runStewardArm(args []string) int {
 	}
 	var msg string
 	lineage := armingLineage(*repo)
-	if *temporaryWord != "" {
+	if *launchRecord != "" {
+		msg, err = deps.armSession(*repo, bin, session, lineage)
+	} else if *temporaryWord != "" {
 		msg, err = steward.ArmTemporaryWithLineage(*repo, bin, *temporaryWord, *reviewBy, lineage)
 	} else if fixtureEnrollment {
 		msg, err = steward.ArmFixtureWithLineage(*repo, bin, lineage)
@@ -520,4 +560,92 @@ func armingLineage(repo string) string {
 		return seat.NoLease
 	}
 	return holder.OwnerLineage
+}
+
+// sessionEnrollmentFromRecord reads the verdict a signed-in browser launch
+// left on its record and binds it to the clone being armed (g1-s72 D2).
+//
+// Threat model (S72-01): a same-user adversary is out of scope repo-wide
+// (internal/steward/identity.go). The record's ownership, owner-only mode and
+// destination binding defend against accident and against one record arming
+// a second clone; the caller classification below refuses an agent runtime,
+// a delegate, the steward and supervision by name. The residual, stated: a
+// same-user process that has escaped its ancestry, or another checkout's
+// steward (recognition is target-repository local), could forge a 0600
+// record and mint a human-session identity; nothing here proves the record
+// was the interface's. The temporary word pair has the same exposure.
+func sessionEnrollmentFromRecord(repo, recordPath string, repositoryTop func(string) (string, error)) (steward.EnrolledSession, error) {
+	path, err := canonicalPath(recordPath)
+	if err != nil {
+		return steward.EnrolledSession{}, fmt.Errorf("launch record %s: %w", recordPath, err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return steward.EnrolledSession{}, fmt.Errorf("launch record absent: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		return steward.EnrolledSession{}, fmt.Errorf("launch record %s is not a regular file", path)
+	}
+	if info.Mode().Perm()&0o077 != 0 {
+		return steward.EnrolledSession{}, fmt.Errorf("launch record %s is not owner-only (mode %o)", path, info.Mode().Perm())
+	}
+	if st, ok := info.Sys().(*syscall.Stat_t); ok && int(st.Uid) != os.Getuid() {
+		return steward.EnrolledSession{}, fmt.Errorf("launch record %s is owned by uid %d, not the calling user", path, st.Uid)
+	}
+	// The launching checkout is where the record lives: the interface writes
+	// it under <checkout>/artifacts/agents/ui/launches/<launch>.json.
+	from := filepath.Dir(filepath.Dir(filepath.Dir(filepath.Dir(filepath.Dir(path)))))
+	id, isJSON := strings.CutSuffix(filepath.Base(path), ".json")
+	if !isJSON || !launch.ValidLaunchID(id) || launch.Dir(from) != filepath.Dir(path) {
+		return steward.EnrolledSession{}, fmt.Errorf("launch record %s is not a launch record under a checkout's artifacts/agents/ui/launches", path)
+	}
+	record, err := launch.LoadAt(path)
+	if err != nil {
+		return steward.EnrolledSession{}, err
+	}
+	if record.Launch != id {
+		return steward.EnrolledSession{}, fmt.Errorf("launch record %s names launch %s, not the %s its file is named for", path, record.Launch, id)
+	}
+	enrollment := record.Enrollment
+	if enrollment == nil {
+		return steward.EnrolledSession{}, fmt.Errorf("launch record %s carries no signed-in session enrollment", path)
+	}
+	if enrollment.Kind != launch.EnrollmentHumanSession {
+		return steward.EnrolledSession{}, fmt.Errorf("launch record %s carries enrollment kind %q, not %q", path, enrollment.Kind, launch.EnrollmentHumanSession)
+	}
+	for _, field := range []struct{ name, value string }{
+		{"provider", enrollment.Provider}, {"human", enrollment.Human}, {"session", enrollment.Session},
+	} {
+		if strings.TrimSpace(field.value) == "" {
+			return steward.EnrolledSession{}, fmt.Errorf("launch record %s: its enrollment has no %s", path, field.name)
+		}
+	}
+	top, err := upRepositoryScopeWith(repo, repositoryTop)
+	if err != nil {
+		return steward.EnrolledSession{}, err
+	}
+	destination, err := canonicalPath(record.Destination)
+	if err != nil || record.Destination == "" || destination != top {
+		return steward.EnrolledSession{}, fmt.Errorf("launch record %s names destination %s, not this repository %s", path, record.Destination, top)
+	}
+	return steward.EnrolledSession{
+		Provider: enrollment.Provider, Human: enrollment.Human, Reference: enrollment.Session,
+		Launch: record.Launch, From: from,
+	}, nil
+}
+
+// sessionCallerCheck classifies the arm's caller as the terminal path does,
+// with the same injectable classifier. A caller with no recognised ancestor
+// passes as well as a human's: the browser's detached launch has no terminal
+// and the record is what vouches. Every recognised actor is refused by name.
+func sessionCallerCheck(repo, metasystemRoot string, classify processCallerClassifier) error {
+	classification, err := classify(repo, metasystemRoot, int64(os.Getppid()))
+	if err != nil {
+		return fmt.Errorf("a session enrollment classifies its caller and the caller's ancestry could not be read: %w", err)
+	}
+	switch classification.Class {
+	case lease.ClassHuman, lease.ClassUntrusted:
+		return nil
+	}
+	return fmt.Errorf("a session enrollment is a human's launch; caller classified %s", classification.Class)
 }
