@@ -187,3 +187,40 @@ func belowTheGate(delivery *intentDeliveryOwners) *intentDeliveryOwners {
 	delivery.recordLanded = func(*intentInvocation, string) error { return nil }
 	return delivery
 }
+
+// The landing path reads the gate immediately before each push of the staged
+// --message form and the exceptional forms (SOL-S70-01): production wires it,
+// and it reads the fresh ledger at the goal branch's tip, so a hold recorded
+// after admission refuses, its release lets the retry pass, and a word at
+// another tip refuses naming both commits.
+func TestTheLandingPathsGateReadsTheFreshLedgerBeforeEachPush(t *testing.T) {
+	t.Parallel()
+	if landingPathOwners().LandingGate == nil {
+		t.Fatal("the production landing path reads no gate before its pushes")
+	}
+	hold := func(file *goal.GoalFile) {
+		humanWord(file, "01ARZ3NDEKTSV4RRFFQ69G5FW2", "review", goal.SittingReason(true, reviewBedRecord, "Wido"))
+	}
+	release := func(file *goal.GoalFile) {
+		humanWord(file, "01ARZ3NDEKTSV4RRFFQ69G5FW3", "review", goal.SittingReason(false, reviewBedRecord, "Wido"))
+	}
+	gateOf := func(amend func(*goal.GoalFile)) error {
+		b := newDeliveryBedWith(t, amend)
+		owners := b.intentBed.owners()
+		return landingPathGateAt(b.root(), b.install, bedGoal, owners.dependencies, owners.commandNow,
+			func(string, string) (string, error) { return gateBedTip, nil })
+	}
+
+	held := gateOf(func(file *goal.GoalFile) { clearedAt(gateBedTip)(file); hold(file) })
+	if held == nil || !strings.Contains(held.Error(), goal.GateHeldBySitting) || !strings.Contains(held.Error(), "metasystem goal review "+bedGoal+" --release") {
+		t.Fatalf("a hold recorded after admission did not refuse with its code and the human verb: %v", held)
+	}
+	if released := gateOf(func(file *goal.GoalFile) { clearedAt(gateBedTip)(file); hold(file); release(file) }); released != nil {
+		t.Fatalf("a hold released before the retry still refuses: %v", released)
+	}
+	moved := gateOf(clearedAt(strings.Repeat("3", 40)))
+	if moved == nil || !strings.Contains(moved.Error(), goal.GateWaitsForHuman) || !strings.Contains(moved.Error(), "given at 333333333333 and the branch is now at 222222222222") ||
+		!strings.Contains(moved.Error(), "metasystem goal land-without-sitting "+bedGoal+" --reason TEXT") {
+		t.Fatalf("a word at another tip did not refuse naming both commits and the human verb: %v", moved)
+	}
+}

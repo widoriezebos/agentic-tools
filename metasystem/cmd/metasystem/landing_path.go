@@ -490,6 +490,7 @@ func landingPathOwners() landpath.Owners {
 		Held: func(root, base, commit, remote, ref string, stdout, stderr io.Writer) int {
 			return landingHeldTo(stdout, stderr, cleanOwnerRoot(root), base, commit, remote, ref)
 		},
+		LandingGate: landingPathGate,
 		WeightAdd: func(root, commit, prefix, goalID string, numstat []byte, stdout, stderr io.Writer) int {
 			return gateWeightAddTo(stdout, stderr, root, commit, prefix, goalID, numstat)
 		},
