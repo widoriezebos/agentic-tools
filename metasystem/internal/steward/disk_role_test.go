@@ -15,6 +15,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/registry"
+	"golang.org/x/sys/unix"
 )
 
 // The runner sweeps after the tick returned and released arbitration, and
@@ -276,8 +277,20 @@ func TestSweeperYieldsArbitrationToAQueuedWaiter(t *testing.T) {
 	if err := flockWaiting(want, 1); err != nil { // LOCK_SH: a waiter is queued
 		t.Fatal(err)
 	}
+	// A child forked by a parallel test before its exec shares the want
+	// file's open description; the dup stands for that copy, so closing our
+	// descriptor alone would leave the waiter queued. The waiter leaves the
+	// queue by unlocking, which ends the lock for every copy.
+	inherited, err := unix.Dup(int(want.Fd()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unix.Close(inherited)
 	if _, err := TryAcquireArbitration(root); !errors.Is(err, ErrArbitrationHeld) {
 		t.Fatalf("the sweeper's acquisition with a waiter queued = %v; want held", err)
+	}
+	if err := unix.Flock(int(want.Fd()), unix.LOCK_UN); err != nil {
+		t.Fatal(err)
 	}
 	want.Close()
 	lock, err = TryAcquireArbitration(root)
