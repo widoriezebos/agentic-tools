@@ -541,6 +541,16 @@ func validateWithRunner(confPath, repoRoot string, runner gitRunner) (tiersAbsen
 	}
 	// The disk-lifetime settings of Part B 3.13, in every source.
 	errs = append(errs, validateDiskSettings(confPath, values, os.LookupEnv)...)
+	if raw, present := values[LandingHumanFromTierKey]; present {
+		if _, err := landingTier(raw); err != nil {
+			add("%s", err.Error())
+		}
+	}
+	if raw, present := values[LandingAutoAfterKey]; present {
+		if _, err := landingAutoAfter(raw); err != nil {
+			add("%s", err.Error())
+		}
+	}
 	if raw, present := values["dispatch.return-margin-min"]; present {
 		if parsed, parseErr := strconv.Atoi(raw); parseErr != nil || parsed < 0 {
 			add("dispatch.return-margin-min must be a non-negative integer, got %s", pyRepr(raw))

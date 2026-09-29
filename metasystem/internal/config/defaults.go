@@ -210,6 +210,10 @@ var coreSettings = []Setting{
 		Meaning: "the oldest a runtime capability snapshot may be, in days"},
 	{Key: "landing.receipt-bound-min", Default: "40", ProofInput: true,
 		Meaning: "the bound on a landing's tier-one receipt battery, in minutes"},
+	{Key: LandingHumanFromTierKey, Default: "2",
+		Meaning: "the lowest goal tier whose landing waits for a person's review or word (g1-s70); 4 lets every tier land by itself"},
+	{Key: LandingAutoAfterKey, Default: "4h",
+		Meaning: "how long a goal below that tier waits in Review before it is eligible to land by itself"},
 	{Key: IntentReviewToolCallsKey, Default: "48", ProofInput: true,
 		Meaning: "the independent read's tool calls for a public build whose brief names none"},
 
