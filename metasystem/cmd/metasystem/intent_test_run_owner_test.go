@@ -16,8 +16,9 @@ import (
 // TestIntentTestRunRunsTheTestingRunnerInThisProcess is the U9a witness that
 // the public test run reaches the testing runner in this process (design
 // 6.2): with the production seam, a checkout whose committed configuration
-// names no testing contract is refused by the runner's own admission check,
-// on this command's standard error, with the runner's exit; no engine child
+// names an absolute testing contract path is refused by the runner's own
+// admission check, on this command's standard error, with the runner's exit;
+// no engine child
 // (which, in a test, would be this test binary) runs.
 func TestIntentTestRunRunsTheTestingRunnerInThisProcess(t *testing.T) {
 	t.Parallel()
