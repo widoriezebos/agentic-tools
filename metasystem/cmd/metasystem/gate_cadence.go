@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/candidateengine"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gaterun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
@@ -38,7 +39,7 @@ type cadenceTickOutput struct {
 }
 
 var cadenceTick = runProductionCadenceTick
-var cadenceBuildIdentity = candidateEngineBuildIdentity
+var cadenceBuildIdentity = candidateengine.BuildIdentity
 var cadenceRetainedEngineDigest = retainedCandidateEngineDigest
 
 type cadenceRevalidationDependencies struct {

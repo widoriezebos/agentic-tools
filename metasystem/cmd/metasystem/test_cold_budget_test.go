@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/candidateengine"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 )
@@ -42,9 +43,9 @@ func testColdCandidateBuildRefusalRunsBeforeNativeBuilder(t *testing.T) {
 	called := 0
 	environment := testingEnvironment(os.Environ())
 	fixture.queueIdentity(ordinaryProjectTree, ordinaryEngineTree, ordinaryBuildFive, environment, false)
-	artifact, err := prepareCandidateEngineWithColdPreflight(context.Background(), controlRoot,
+	artifact, err := candidateengine.Prepare(context.Background(), controlRoot,
 		fixture.workspace(), "metasystem", ordinaryProjectTree,
-		environment, func() error { called++; return want }, fixture.dependency())
+		environment, func() error { called++; return want }, fixture.dependency().engine())
 	fixture.assertDrained()
 	var refusal *coldBuildBudgetRefusal
 	if artifact != nil || !errors.As(err, &refusal) || refusal != want || called != 1 {

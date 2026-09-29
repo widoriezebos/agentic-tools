@@ -219,6 +219,7 @@ func TestEngineBindingWitnessInventory(t *testing.T) {
 		"cmd/metasystem/rearm_on_landed_test.go",
 		"cmd/metasystem/engine_refusal_test.go",
 		"cmd/metasystem/engine_inventory_test.go",
+		"internal/candidateengine/environment_test.go",
 		"internal/enginecause/cause_test.go",
 	}
 	actual := map[string]bool{}
