@@ -1010,16 +1010,6 @@ func acceptedHumanAct(row HistoryLine) bool {
 	return false
 }
 
-func landingAt(ctx context.Context, root, tip, goalID, chain string) (bool, string, error) {
-	cmd := exec.CommandContext(ctx, "git", "-C", root, "-c", "core.logAllRefUpdates=false", "show", "-s", "--format=%B", tip)
-	cmd.Env = environWithoutGitSteering()
-	output, err := cmd.Output()
-	if err != nil {
-		return false, "", fmt.Errorf("read landing commit %s: %w", short(tip), err)
-	}
-	return matchLandingMessage(string(output), goalID, chain)
-}
-
 func landingWaitAt(ctx context.Context, root, tip, goalID, chain string) (bool, string, error) {
 	output, err := waitGit(ctx, root, nil, "show", "-s", "--format=%B", tip)
 	if err != nil {

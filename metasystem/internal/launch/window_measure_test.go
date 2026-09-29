@@ -61,6 +61,7 @@ func TestZeroRecordedWindowImposesNoCapAndNegativeRefuses(t *testing.T) {
 			for _, window := range []int64{0, -1} {
 				data := map[string]json.RawMessage{}
 				setString(data, "brief", briefPath)
+				setString(data, "model", "a-model")
 				setInt64(data, "window", window)
 				command, err := adapter.command(Record{Kind: "build", WorkingDirectory: t.TempDir(), AdapterData: data}, t.TempDir())
 				if window < 0 {
@@ -79,6 +80,7 @@ func TestZeroRecordedWindowImposesNoCapAndNegativeRefuses(t *testing.T) {
 			}
 			data := map[string]json.RawMessage{}
 			setString(data, "brief", briefPath)
+			setString(data, "model", "a-model")
 			command, err := adapter.command(Record{Kind: "build", WorkingDirectory: t.TempDir(), AdapterData: data}, t.TempDir())
 			if err != nil {
 				t.Fatalf("absent window error=%v", err)

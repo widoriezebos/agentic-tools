@@ -104,12 +104,6 @@ func Permissions(preset string) ([]byte, error) {
 	return read("permissions/" + preset + ".json")
 }
 
-// IsPreset reports whether name is a shipped permission preset.
-func IsPreset(name string) bool {
-	_, err := Permissions(name)
-	return err == nil
-}
-
 // Template is templates/<name>, name including its extension.
 func Template(name string) ([]byte, error) {
 	if !nameRe.MatchString(strings.TrimSuffix(name, ".md")) || !strings.HasSuffix(name, ".md") {

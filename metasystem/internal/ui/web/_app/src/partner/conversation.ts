@@ -34,6 +34,13 @@ import type {
 export type Live = {
   /** The turn's id, or "" when nothing is running. */
   turn: string;
+  /**
+   * The instant the server admitted the turn, RFC 3339, or "" until the page
+   * has been told it. It is the live line's clock's one origin (g1-s74 D4): it
+   * arrives with the question's 202 or with a snapshot, and never from this
+   * page's own receipt of anything.
+   */
+  startedAt: string;
   /** The sequence of the last beat folded in. */
   seq: number;
   text: string;
@@ -70,7 +77,7 @@ export type Live = {
 };
 
 export const nothingRunning: Live = {
-  turn: "", seq: 0, text: "", activity: [], doing: "", looked: [], suggestions: [], deposits: [],
+  turn: "", startedAt: "", seq: 0, text: "", activity: [], doing: "", looked: [], suggestions: [], deposits: [],
   proposals: [], presents: [],
 };
 
@@ -181,6 +188,16 @@ export function loaded(store: Store, snapshot: Snapshot): Store {
   // kept as they left it: a joined beat is never sent again, so replacing it
   // with the older snapshot would lose it until a reload (g1-s67 walkthrough).
   const ahead = running && store.live.turn === snapshot.turn && store.live.seq > snapshot.partialSeq;
+  // A snapshot read before this page's running turn was admitted knows nothing
+  // of it: the server writes a turn's question down before it answers the send,
+  // so a reading without that question is older than the turn, and a stream
+  // open's read can come back after the send's 202 has. Replacing the turn with
+  // nothing there would leave its next beats to start it again without the
+  // start the 202 carried, and so without its clock (g1-s74 D4). It is older
+  // than the page's transcript as well, which holds the question the reading
+  // lacks, so the page keeps its own messages there (Sol S74-01).
+  const before =
+    !running && store.live.turn !== "" && !messages.some((message) => message.turn === store.live.turn);
   return {
     ...store,
     state: "ready",
@@ -188,14 +205,15 @@ export function loaded(store: Store, snapshot: Snapshot): Store {
     model: snapshot.model,
     human: snapshot.human,
     readOnly: snapshot.readOnly,
-    messages,
+    messages: before ? store.messages : messages,
     index: snapshot.index ?? { goals: [], records: [] },
     sitting: snapshot.sitting,
     live: ahead
-      ? store.live
+      ? startedFrom(store.live, snapshot.startedAt ?? "")
       : running
       ? {
           turn: snapshot.turn,
+          startedAt: snapshot.startedAt ?? "",
           seq: snapshot.partialSeq,
           text: snapshot.partial,
           activity: snapshot.activity ?? [],
@@ -206,8 +224,19 @@ export function loaded(store: Store, snapshot: Snapshot): Store {
           proposals: snapshot.proposals ?? [],
           presents: [],
         }
+      : before
+      ? store.live
       : nothingRunning,
   };
+}
+
+/**
+ * A running turn the beats carried further than a snapshot, with the start the
+ * snapshot knows where the page does not know one yet. Nothing else of it is
+ * taken: the beats are the newer account of everything else.
+ */
+function startedFrom(live: Live, startedAt: string): Live {
+  return live.startedAt === "" && startedAt !== "" ? { ...live, startedAt } : live;
 }
 
 /**
@@ -364,6 +393,7 @@ export function asked(
   page: Page,
   at: string,
   asking: Pick<Message, "interface" | "trouble"> = {},
+  startedAt = "",
 ): Store {
   const question: Message = { id: `${turn}-human`, turn, role: "human", text, at, key, page, ...asking };
   const already = store.messages.some((message) => message.turn === turn && message.role === "human");
@@ -380,7 +410,13 @@ export function asked(
   return {
     ...store,
     messages,
-    live: ended ? nothingRunning : store.live.turn === turn ? store.live : { ...nothingRunning, turn },
+    // The start the 202 carried is the server's own, so it is set whether or
+    // not the beats got here first, and everything they brought stays.
+    live: ended
+      ? nothingRunning
+      : store.live.turn === turn
+        ? startedFrom(store.live, startedAt)
+        : { ...nothingRunning, turn, startedAt },
     refusal: "",
     install: "",
     refusedBusy: false,

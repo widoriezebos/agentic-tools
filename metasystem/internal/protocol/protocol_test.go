@@ -53,12 +53,11 @@ func TestEmbeddedPermissionPresets(t *testing.T) {
 		if err := json.Unmarshal(data, &envelope); err != nil || envelope["writeRoots"] == nil {
 			t.Fatalf("preset %s is not an envelope: %v", preset, err)
 		}
-		if !IsPreset(preset) {
-			t.Errorf("IsPreset(%q) = false", preset)
-		}
 	}
-	if IsPreset("custom") || IsPreset("../role-packets") {
-		t.Error("IsPreset accepted a name that is not a shipped preset")
+	for _, name := range []string{"custom", "../role-packets"} {
+		if _, err := Permissions(name); err == nil {
+			t.Errorf("Permissions accepted %q, which is not a shipped preset", name)
+		}
 	}
 }
 

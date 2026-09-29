@@ -866,6 +866,9 @@ body {
 
 .ms-tooltip {
   max-width: 240px;
+  /* A hint of several lines — the rail's Fleet row names one running job a
+     line — breaks where its label does. */
+  white-space: pre-line;
   padding: 4px 8px;
   border-radius: 4px;
   background: var(--ms-text);
@@ -1383,6 +1386,120 @@ body {
   }
 }
 
+/* ------------------------------------------------------------ the live line -- */
+
+/*
+ * That an agent is alive, and at what (g1-s74). The dot is the fleet's own
+ * "alive", and it breathes: a halo widens from nothing to nine pixels and
+ * fades while the dot swells a little and settles, once every 2.4 seconds. A
+ * breath says "present"; nothing on the page rotates for a turn. The words
+ * are the text colour the place they stand in already uses, the clock is in
+ * the mono face with digits of one width, so a ticking second never moves the
+ * line.
+ */
+.ms-live {
+  display: inline-flex;
+  align-items: baseline;
+  min-width: 0;
+  color: var(--ms-text-3);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.ms-live-dot {
+  flex: none;
+  display: inline-block;
+  align-self: center;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ms-ok);
+  animation: ms-live-breath 2400ms ease-out infinite;
+}
+
+.ms-live > .ms-live-dot {
+  margin-right: 8px;
+}
+
+@keyframes ms-live-breath {
+  0% {
+    box-shadow: 0 0 0 0 var(--ms-ok-halo);
+    transform: scale(1);
+  }
+
+  30% {
+    transform: scale(1.18);
+  }
+
+  100% {
+    box-shadow: 0 0 0 9px transparent;
+    transform: scale(1);
+  }
+}
+
+.ms-live-words {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ms-live-failed {
+  color: var(--ms-marker-fg);
+}
+
+.ms-live-clock {
+  flex: none;
+  /* A flex item's leading space is trimmed; this is the space before its dot. */
+  margin-left: 0.3em;
+  font-family: "JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* The open drawer's title carries the dot alone while a turn runs; on a phone,
+   where the title is hidden, the dot stands alone at the bar's start. */
+.ms-drawer-title-dot {
+  margin-left: 2px;
+}
+
+/* The closed bar's live line takes the field's place, and Stop stands beside it. */
+.ms-drawer-live {
+  flex: none;
+  max-width: 50%;
+  display: flex;
+  align-items: center;
+}
+
+.ms-drawer-live .ms-live {
+  max-width: 100%;
+}
+
+.ms-drawer-stop {
+  flex: none;
+}
+
+/* The rail's Fleet row: the dot as a badge on the icon's corner. */
+.ms-rail-icon {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.ms-rail-badge {
+  position: absolute;
+  top: -2px;
+  right: -3px;
+  width: 7px;
+  height: 7px;
+  outline: 2px solid var(--ms-bg);
+}
+
+/* The Fleet table's Running column: the dot before the words. */
+.ms-fleet-cell .ms-live-dot {
+  margin-right: 6px;
+}
+
 /*
  * Under a reduced-motion preference every duration is zero and the skeleton
  * stands still. Nothing here is decorative enough to be worth an exception.
@@ -1399,6 +1516,14 @@ body {
   .ms-skeleton {
     animation: none;
     opacity: 1;
+  }
+
+  /* The dot stands still and has no halo; the words, the tally and the clock
+     carry the state. */
+  .ms-live-dot {
+    animation: none;
+    box-shadow: none;
+    transform: none;
   }
 }
 

@@ -383,6 +383,10 @@ type live struct {
 	// it was — are remembered from the call that started it.
 	callsMu sync.Mutex
 	calls   map[string]called
+	// started counts the calls that have started, so the calls still running
+	// can be told apart by which began first: a map holds no order, and the
+	// line a completion leaves behind is the earliest of those that remain.
+	started uint64
 }
 
 // called is one running tool call as its start described it.
@@ -394,6 +398,8 @@ type called struct {
 	// every other tool. A completion is read for a suggestion only when this
 	// says the call was the one that prepares them.
 	operation string
+	// order is when it started among this session's calls.
+	order uint64
 }
 
 // NewHost builds a host for one runtime and checkout, spawning the runtime's
@@ -810,8 +816,15 @@ func (l *live) settle() {
 	}
 }
 
-// listen swaps the turn's listener.
+// listen swaps the turn's listener. A new turn starts with no call in flight:
+// one an earlier turn left running, a stopped answer's, is not this turn's to
+// name.
 func (l *live) listen(sink func(Update)) {
+	if sink != nil {
+		l.callsMu.Lock()
+		clear(l.calls)
+		l.callsMu.Unlock()
+	}
 	l.sinkMu.Lock()
 	l.sink = sink
 	l.sinkMu.Unlock()
@@ -999,7 +1012,8 @@ func (l *live) tool(started bool, body toolCall) {
 		}
 		if id != "" {
 			l.callsMu.Lock()
-			l.calls[id] = called{what: what, operation: operation}
+			l.started++
+			l.calls[id] = called{what: what, operation: operation, order: l.started}
 			l.callsMu.Unlock()
 		}
 		if what != "" {
@@ -1029,11 +1043,9 @@ func (l *live) tool(started bool, body toolCall) {
 		// when it started, and how it ended is what a look is.
 		return
 	}
-	if id != "" {
-		l.callsMu.Lock()
-		delete(l.calls, id)
-		l.callsMu.Unlock()
-	}
+	// The line that announced this call goes before the call becomes a look,
+	// so whoever reads the look reads a turn that is no longer doing it.
+	l.emit(Update{Kind: UpdateDoing, Text: l.retired(id)})
 	// The three calls whose result is more than a look.
 	prepared := operation == uitools.OpSuggest || operation == uitools.OpDeposit ||
 		operation == uitools.OpPropose || operation == uitools.OpPresent
@@ -1051,6 +1063,23 @@ func (l *live) tool(started bool, body toolCall) {
 		}
 	}
 	l.emit(update)
+}
+
+// retired forgets one ended call and answers what is still in flight: the
+// line of the earliest started call that remains, or "" when none does.
+func (l *live) retired(id string) string {
+	l.callsMu.Lock()
+	defer l.callsMu.Unlock()
+	if id != "" {
+		delete(l.calls, id)
+	}
+	var earliest called
+	for _, running := range l.calls {
+		if earliest.order == 0 || running.order < earliest.order {
+			earliest = running
+		}
+	}
+	return earliest.what
 }
 
 // resultText is what one completed call came back with, whole.

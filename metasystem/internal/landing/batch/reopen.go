@@ -47,6 +47,7 @@ func applyHeldReopen(store Store, id, newBaseTree, actor string, at time.Time, p
 		current.BaseTree, current.PrefixTrees, current.TipTree = newBaseTree, prepared.prefixes, prepared.prefixes[len(prepared.prefixes)-1]
 		current.SelectedGroups, current.Seal, current.Proof, current.TrunkRed = nil, nil, nil, nil
 		current.ClosedReason = ""
+		forgetEarly(current, at, actor, "base moved to "+newBaseTree)
 		current.Transition(StateOpen, at, "reopen", actor, "new base tree")
 		return nil
 	})

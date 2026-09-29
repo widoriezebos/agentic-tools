@@ -403,14 +403,3 @@ func RemoveClaimFile(root, path string) error {
 func CreatorLiveness(claim CreationClaim, prober identity.Prober) identity.Liveness {
 	return identity.AliveRef(prober, claim.Creator.Ref())
 }
-
-// RemoveStale removes a claim only after its exact creator identity is dead.
-func RemoveStale(claim CreationClaim, prober identity.Prober) (bool, error) {
-	if CreatorLiveness(claim, prober) != identity.Dead {
-		return false, nil
-	}
-	if err := os.Remove(claim.Path); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return false, err
-	}
-	return true, nil
-}

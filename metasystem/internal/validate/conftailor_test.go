@@ -50,8 +50,8 @@ func TestTailorConfSelectsOneRuntime(t *testing.T) {
 	got := readFile(t, conf)
 	want := `# adopted configuration
 metasystem.runtimes=claude
-role.default.runtime=claude
-role.implementer.runtime=claude
+role.default.runtime=auto
+role.implementer.runtime=auto
 role.verifier.runtime=main
 mode.cheap.role.verifier.runtime=main
 role.code-critic.model.claude=<model>
@@ -59,7 +59,6 @@ role.implementer.model.claude=frontier-general
 model.tier.1=claude:big,local-model
 model.tier.2=<members>
 evidence.root=artifacts
-role.default.model.claude=
 `
 	if got != want {
 		t.Fatalf("tailored conf mismatch:\n--- got ---\n%s--- want ---\n%s", got, want)
@@ -105,18 +104,9 @@ role.implementer.model.fake=fake-model
 model.tier.1=local-model
 model.tier.2=<members>
 evidence.root=artifacts
-launch.build.runtime=fake
-launch.build.model=fake-model
-launch.critique.runtime=fake
-launch.critique.model=fake-model
-launch.design.runtime=fake
-launch.design.model=fake-model
-launch.read.runtime=fake
-launch.read.model=fake-model
 `
-	// The compiled launch lanes name Claude, which is unselected: they are
-	// rebound to the fake runtime and its synthesized model, as the lines of
-	// a spelled-out file were.
+	// The compiled roles and launch lanes are auto, which resolves to the
+	// only selected runtime, so nothing is rebound for them.
 	if got != want {
 		t.Fatalf("tailored conf mismatch:\n--- got ---\n%s--- want ---\n%s", got, want)
 	}
@@ -133,10 +123,6 @@ func TestTailorConfFakeRuntimeKeepsExplicitFakeModel(t *testing.T) {
 	got := readFile(t, conf)
 	want := "metasystem.runtimes=fake\n" +
 		"role.implementer.model.fake=pinned-model\n" +
-		"launch.build.runtime=fake\nlaunch.build.model=fake-model\n" +
-		"launch.critique.runtime=fake\nlaunch.critique.model=fake-model\n" +
-		"launch.design.runtime=fake\nlaunch.design.model=fake-model\n" +
-		"launch.read.runtime=fake\nlaunch.read.model=fake-model\n" +
 		"role.default.runtime=fake\n"
 	if got != want {
 		t.Fatalf("an explicit fake model binding must win over synthesis:\n--- got ---\n%s--- want ---\n%s", got, want)
@@ -173,18 +159,10 @@ func TestTailorConfInsertsMissingDurableKeys(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := readFile(t, conf)
-	// Every selected
-	// non-synthesized runtime gets its default-model row, empty for
-	// the operator to fill — a tailoring that emits NEITHER key
-	// silently drops that obligation.
-	// The compiled Claude roster and lanes are rebound to the default
-	// selected runtime; a lane with no model for it gets an explicit blank
-	// that launch settings refuse.
-	want := "evidence.root=artifacts\nmetasystem.runtimes=devin,codex\nrole.default.runtime=codex\n" +
-		"role.design-critic.runtime=codex\nrole.implementer.runtime=codex\nrole.code-critic.runtime=codex\n" +
-		"launch.build.runtime=codex\nlaunch.build.model=\nlaunch.critique.runtime=codex\nlaunch.critique.model=\n" +
-		"launch.design.runtime=codex\nlaunch.design.model=\nlaunch.read.runtime=codex\nlaunch.read.model=\n" +
-		"role.default.model.devin=\nrole.default.model.codex=\n"
+	// The selection is written in the canonical preference order whatever
+	// order it was asked in. Every compiled role and lane is auto and every
+	// selected runtime has compiled models, so nothing else is written.
+	want := "evidence.root=artifacts\nmetasystem.runtimes=codex,devin\n"
 	if got != want {
 		t.Fatalf("tailored conf mismatch:\n--- got ---\n%s--- want ---\n%s", got, want)
 	}
@@ -192,11 +170,11 @@ func TestTailorConfInsertsMissingDurableKeys(t *testing.T) {
 
 // Launch lanes name their runtime and model (R-123). A lane's model row the
 // file does not hold is the compiled one, rendered after the file's own lines.
-// A lane on a selected
-// runtime keeps its pair byte-for-byte; a lane rebound to the default
-// runtime takes that runtime's configured model, wherever that row sits,
-// or an explicit empty model that launch settings refuse; none drops every
-// lane binding. Unrelated lane settings stay.
+// A lane on a selected runtime keeps its pair byte-for-byte; a lane on an
+// unselected runtime becomes auto and loses its runtime-independent model,
+// so each runtime's own model applies; a fake-only selection rebinds it to
+// fake and its synthesized model; none drops every lane binding. Unrelated
+// lane settings stay.
 func TestTailorConfRebindsLaneRuntimesAndModels(t *testing.T) {
 	t.Parallel()
 	const lanes = `launch.build.runtime=claude
@@ -214,23 +192,17 @@ launch.read.window.tokens=0
 	}{
 		{"selected pairs unchanged", "", []string{"claude", "codex", "devin"},
 			lanes},
-		{"rebound to configured default", "role.default.model.claude=configured-claude\n", []string{"claude"},
+		{"rebound to auto drops the lane's own model", "role.default.model.claude=configured-claude\n", []string{"claude"},
 			"launch.build.runtime=claude\nlaunch.build.model=claude-opus-5-5\nlaunch.build.effort=xhigh\n" +
-				"launch.critique.model=configured-claude\nlaunch.critique.runtime=claude\n" +
-				"launch.read.runtime=claude\nlaunch.read.window.tokens=0\nlaunch.read.model=configured-claude\n"},
-		{"rebound with a placeholder default is explicit blank", "role.default.model.codex=<model>\n", []string{"claude", "codex"},
+				"launch.critique.runtime=auto\nlaunch.read.runtime=auto\nlaunch.read.window.tokens=0\n"},
+		{"a lane on a selected runtime keeps its model", "role.default.model.codex=<model>\n", []string{"claude", "codex"},
 			"launch.build.runtime=claude\nlaunch.build.model=claude-opus-5-5\nlaunch.build.effort=xhigh\n" +
 				"launch.critique.model=gpt-6-sol\nlaunch.critique.runtime=codex\n" +
-				"launch.read.runtime=codex\nlaunch.read.window.tokens=0\nlaunch.read.model=\n"},
-		{"rebound takes the compiled default model", "", []string{"claude"},
-			"launch.build.runtime=claude\nlaunch.build.model=claude-opus-5-5\nlaunch.build.effort=xhigh\n" +
-				"launch.critique.model=claude-opus-5-5\nlaunch.critique.runtime=claude\n" +
-				"launch.read.runtime=claude\nlaunch.read.window.tokens=0\nlaunch.read.model=claude-opus-5-5\n"},
+				"launch.read.runtime=auto\nlaunch.read.window.tokens=0\n"},
 		{"fake takes its synthesized model", "", []string{"fake"},
 			"launch.build.runtime=fake\nlaunch.build.model=fake-model\nlaunch.build.effort=xhigh\n" +
 				"launch.critique.model=fake-model\nlaunch.critique.runtime=fake\n" +
-				"launch.read.runtime=fake\nlaunch.read.window.tokens=0\n" +
-				"launch.design.runtime=fake\nlaunch.design.model=fake-model\nlaunch.read.model=fake-model\n"},
+				"launch.read.runtime=fake\nlaunch.read.window.tokens=0\nlaunch.read.model=fake-model\n"},
 		{"none drops lane runtime and model", "", []string{"none"},
 			"launch.build.effort=xhigh\nlaunch.read.window.tokens=0\n"},
 	} {

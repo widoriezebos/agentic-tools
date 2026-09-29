@@ -198,7 +198,7 @@ func TestSetupNestedDefaultsAllPreservesUnrelatedStateModesAndIsIdempotent(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Join(result.Runtimes, ",") != "codex,devin,claude" {
+	if strings.Join(result.Runtimes, ",") != "claude,codex,devin" {
 		t.Fatalf("default runtimes = %v", result.Runtimes)
 	}
 	if _, err := os.Lstat(filepath.Join(repo, ".devin", "skills")); !os.IsNotExist(err) {
@@ -754,7 +754,7 @@ func TestSetupSupportsNestedAdoptedInstallationWithoutOwningParent(t *testing.T)
 	if result.Layout.GitRoot != wantRepo || result.Layout.RepositoryRoot != wantInstallation || result.Layout.InstallationRoot != wantInstallation || result.Layout.InstallationRel != filepath.ToSlash(relative) || result.Layout.Template {
 		t.Fatalf("nested adopted setup selected the wrong layout: %+v", result.Layout)
 	}
-	if strings.Join(result.Runtimes, ",") != "codex,devin,claude" {
+	if strings.Join(result.Runtimes, ",") != "claude,codex,devin" {
 		t.Fatalf("nested adopted default runtimes = %v", result.Runtimes)
 	}
 	if _, err := os.Lstat(filepath.Join(installation, ".devin", "skills")); !os.IsNotExist(err) {

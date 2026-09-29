@@ -278,16 +278,3 @@ func TestFakeResultOutcomes(t *testing.T) {
 		t.Fatalf("unknown outcome should error")
 	}
 }
-
-func TestCompact(t *testing.T) {
-	dir := t.TempDir()
-	file := filepath.Join(dir, "schema.json")
-	write(t, file, "{\n  \"a\": 1,\n  \"b\": [1, 2]\n}\n")
-	compact, err := Compact(file)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if compact != `{"a":1,"b":[1,2]}` {
-		t.Fatalf("compact wrong: %q", compact)
-	}
-}

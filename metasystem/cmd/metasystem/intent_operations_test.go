@@ -126,6 +126,21 @@ func TestIntentRepairAuthority(t *testing.T) {
 	if code, result, ran := owner("settings", "coordinator"); code != 0 || !strings.Contains(result.Summary, "no coordinator is declared") || ran != nil {
 		t.Errorf("coordinator read: %d %+v", code, result)
 	}
+	// settings show reads the launch settings first, and every lane resolves
+	// to this bed's only runtime, fake, which the compiled table gives no
+	// lane models (it is the fixture harness, not an agent a person runs).
+	// The bed names them, as an installation listing fake would.
+	confPath := filepath.Join(b.root(), "metasystem.conf")
+	conf, err := os.ReadFile(confPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, lane := range []string{"build", "critique", "design", "read"} {
+		conf = append(conf, "launch."+lane+".model.fake=fake-model\n"...)
+	}
+	if err := os.WriteFile(confPath, conf, 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if code, result, _ := owner("settings", "show", "compatibility"); code == 0 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "there is no setting compatibility") {
 		t.Errorf("retired compatibility read: %d %+v", code, result)
 	}

@@ -72,7 +72,12 @@ const (
 	// census's record field (internal/diskstore/census.go, Executable:
 	// use.Executable), another process's executable read from the kernel,
 	// which the field-name rule counts; nothing is launched there.
-	verbRatchetSelfSubprocessCeiling = 94
+	// Batch 21 (U12): measured 95. The one site added is batchProofCommand's
+	// exec.Command (cmd/metasystem/landing_lane.go), the single launcher of
+	// a batch's proof children that asks each child to hold the host's
+	// proving flock; the tip proof and the diagnostic now call it instead of
+	// starting the engine themselves, so it launches nothing new.
+	verbRatchetSelfSubprocessCeiling = 95
 	// R6: instruction text naming a form whose first word is not public, over
 	// the vocabulary frozen when the witness landed. Batch 9 (u9a's public
 	// homes, c3's plan deletions, distill's record removal): measured 12.

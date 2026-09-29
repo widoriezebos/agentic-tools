@@ -79,15 +79,6 @@ func scanWithProberAtWithoutGoal(t *testing.T, root string, prober identity.Prob
 	return scan
 }
 
-func runningWorkClauseWithoutGoal(t *testing.T, root string) string {
-	t.Helper()
-	f := absentScanReads(t, root)
-	f.expect("identity", "endpoint", "accepted", "world")
-	clause := runningWorkClauseWithReads(root, f.reads())
-	f.checked(0)
-	return clause
-}
-
 func (f *scanReadFixture) expect(calls ...string) {
 	f.t.Helper()
 	f.want, f.next, f.commitCalls = calls, 0, 0

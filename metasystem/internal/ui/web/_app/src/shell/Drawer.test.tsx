@@ -1,10 +1,15 @@
 import * as TooltipPrimitive from "@radix-ui/react-tooltip";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import type { ComponentProps } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router";
 import { describe, expect, it } from "vitest";
 
 import { asksForRoom, CARD_ROOM, Drawer } from "./Drawer";
 import { attachedDraft, type Attachment } from "../partner/attachments";
+import { emptyStore, nothingRunning } from "../partner/conversation";
 import { draftOf } from "../partner/drafting";
 import { PartnerAs } from "../partner/store";
 
@@ -107,5 +112,79 @@ describe("the room a deposit card asks for", () => {
     // the rendered drawer is the same drawer it was.
     expect(drawer([], true)).toContain("ms-drawer-panel");
     expect(drawer([])).toContain("ms-drawer-bar");
+  });
+});
+
+/**
+ * The closed bar while a turn runs (g1-s74 D3c): the disabled field gives way
+ * to the live line and a Stop that calls the store's stop, and the field comes
+ * back with the draft as it was when the turn ends. The Seeing chip, the
+ * proposal bar and the handed chip stand where they are either way. The
+ * drawer's title carries the dot alone while a turn runs and the drawer is
+ * open; closed, the bar's live line is the mark (D3b as amended).
+ */
+describe("the bar while a turn runs", () => {
+  const RUNNING = { ...emptyStore, live: { ...nothingRunning, turn: "t1", seq: 2, doing: "Read plans/goals/backlog.md" } };
+
+  function bar(held: ComponentProps<typeof PartnerAs>["held"], open = false): string {
+    return renderToStaticMarkup(
+      <MemoryRouter>
+        <TooltipPrimitive.Provider>
+          <PartnerAs held={held}>
+            <Drawer
+              open={open}
+              caret="none"
+              onCompose={() => undefined}
+              onToggle={() => undefined}
+              onEscape={() => undefined}
+            />
+          </PartnerAs>
+        </TooltipPrimitive.Provider>
+      </MemoryRouter>,
+    );
+  }
+
+  const WAITING = { proposalsLine: "2 proposals wait for you", attachments: HANDED, draft: "and the other one?" };
+
+  it("shows the live line and Stop in place of the field", () => {
+    const markup = bar({ ...WAITING, store: RUNNING, busy: true });
+    expect(markup).not.toContain('id="drawer-composer"');
+    expect(markup).toContain("ms-live-words");
+    expect(markup).toContain("Read plans/goals/backlog.md");
+    expect(markup).toMatch(/<button[^>]*class="ms-button ms-drawer-stop"[^>]*>.*Stop<\/button>/);
+    expect(markup).toContain("2 proposals wait for you");
+    expect(markup).toContain("Draft: Edit goal");
+  });
+
+  it("shows the field with the draft as it was when nothing runs", () => {
+    const markup = bar({ ...WAITING, store: emptyStore, busy: false });
+    expect(markup).toContain('id="drawer-composer"');
+    expect(markup).toContain('value="and the other one?"');
+    expect(markup).not.toContain("ms-live-words");
+    expect(markup).not.toContain("ms-drawer-stop");
+    expect(markup).toContain("2 proposals wait for you");
+    expect(markup).toContain("Draft: Edit goal");
+  });
+
+  it("puts the dot alone in the title while a turn runs and the drawer is open", () => {
+    const TITLE_DOT = /ms-drawer-title[^>]*>Project Partner<\/span><span class="ms-live-dot ms-drawer-title-dot" aria-hidden="true"><\/span>/;
+    expect(bar({ store: RUNNING, busy: true }, true)).toMatch(TITLE_DOT);
+    expect(bar({ store: emptyStore, busy: false }, true)).not.toContain("ms-live-dot");
+    // Closed, the line's own dot is the mark, and a second beside it would say
+    // one thing twice.
+    const closed = bar({ store: RUNNING, busy: true });
+    expect(closed).not.toContain("ms-drawer-title-dot");
+    expect(closed).toMatch(/class="ms-drawer-live"><span class="ms-live[^"]*"[^>]*><span class="ms-live-dot"/);
+    expect(bar({ store: emptyStore, busy: false })).not.toContain("ms-live-dot");
+  });
+
+  it("keeps the title's dot on a phone, where the title itself is hidden", () => {
+    const css = readFileSync(path.resolve(fileURLToPath(import.meta.url), "../shell.css"), "utf8");
+    // The phone rule that hides the title with the help and the font chooser.
+    const phone = [...css.matchAll(/([^{}]*)\{\s*display: none;\s*\}/g)]
+      .map((match) => match[1])
+      .filter((selectors) => selectors.includes(".ms-drawer-who .ms-font-control"));
+    expect(phone).toHaveLength(1);
+    expect(phone[0]).not.toContain("ms-drawer-title-dot");
   });
 });

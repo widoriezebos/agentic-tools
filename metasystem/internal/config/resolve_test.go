@@ -64,9 +64,9 @@ func noGitCalls(t *testing.T) gitRunner {
 	}
 }
 
-// TestMaxWaitDefaultIsTenMinutes: with batches proving side by side, waiting
-// for a partner no longer buys a proof slot, so an unset
-// landing.batch-max-wait resolves to ten minutes (Q6).
+// TestMaxWaitDefaultIsTenMinutes: the knowledge-driven start, not a long
+// timer, decides when a batch starts, so an unset landing.batch-max-wait
+// resolves to ten minutes (Q6).
 func TestMaxWaitDefaultIsTenMinutes(t *testing.T) {
 	t.Parallel()
 	seat, landing := t.TempDir(), t.TempDir()

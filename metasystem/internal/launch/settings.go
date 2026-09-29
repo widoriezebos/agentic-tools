@@ -94,35 +94,81 @@ func LoadShippedSeatWindow(data []byte, configured int64) (ShippedSeatWindow, er
 	return ShippedSeatWindow{Tokens: *source.AutoCompactWindow, Source: ShippedClaudeSettingsSource, DiffersFromConf: *source.AutoCompactWindow != configured}, nil
 }
 
+// DefaultSettings are the compiled defaults on no host: every auto lane takes
+// the first runtime metasystem.runtimes lists, since no PATH is searched.
 func DefaultSettings() Settings {
-	settings, _ := resolveSettings("", func(string) (string, bool) { return "", false }, false)
+	settings, _ := resolveSettings("", func(string) (string, bool) { return "", false })
 	return settings
 }
 
 func ResolveSettings(confPath string, lookupEnv func(string) (string, bool)) (Settings, error) {
-	return resolveSettings(confPath, lookupEnv, true)
+	return resolveSettings(confPath, lookupEnv)
 }
 
-func resolveSettings(confPath string, lookupEnv func(string) (string, bool), useConf bool) (Settings, error) {
-	var result Settings
+// laneModelKeys are each lane's runtime-independent model key; the model a
+// lane's resolved runtime binds is the same key with the runtime appended.
+var laneModelKeys = map[string]string{BuildRuntimeKey: BuildModelKey, CritiqueRuntimeKey: CritiqueModelKey,
+	DesignRuntimeKey: DesignModelKey, ReadRuntimeKey: ReadModelKey}
+
+func resolveSettings(confPath string, lookupEnv func(string) (string, bool)) (Settings, error) {
+	resolve := func(key string) (string, string, error) {
+		params := config.GetParams{Key: key, ConfPath: confPath, LookupEnv: lookupEnv}
+		value, _, err := config.Get(params)
+		if err != nil {
+			return "", "", fmt.Errorf("LAUNCH_SETTING_INVALID key=%s: %w", key, err)
+		}
+		source, err := config.KeyOrigin(params)
+		if err != nil {
+			return "", "", fmt.Errorf("LAUNCH_SETTING_INVALID key=%s: %w", key, err)
+		}
+		return value, source, nil
+	}
+	resolved := map[string]Setting{}
 	for _, definition := range settingDefaults {
-		value, source := definition.Value, "default"
-		if useConf {
-			params := config.GetParams{Key: definition.Key, ConfPath: confPath, Default: definition.Value, DefaultSet: true, LookupEnv: lookupEnv}
-			resolved, _, err := config.Get(params)
-			if err != nil {
-				return Settings{}, fmt.Errorf("LAUNCH_SETTING_INVALID key=%s: %w", definition.Key, err)
+		if _, model := laneModelKeyOf(definition.Key); model {
+			continue
+		}
+		value, source, err := resolve(definition.Key)
+		if err != nil {
+			return Settings{}, err
+		}
+		if config.RuntimeSelectionKey(definition.Key) {
+			if raw, _, rawErr := config.Get(config.GetParams{Key: definition.Key, ConfPath: confPath, LookupEnv: lookupEnv, KeepAuto: true}); rawErr == nil && raw == config.AutoRuntime {
+				choice, choiceErr := config.ResolveAutoRuntime(confPath, lookupEnv)
+				if choiceErr != nil {
+					return Settings{}, fmt.Errorf("LAUNCH_SETTING_INVALID key=%s: %w", definition.Key, choiceErr)
+				}
+				source += "; " + choice.Describe()
 			}
-			value = resolved
-			source, err = config.KeyOrigin(params)
-			if err != nil {
-				return Settings{}, fmt.Errorf("LAUNCH_SETTING_INVALID key=%s: %w", definition.Key, err)
-			}
+		}
+		resolved[definition.Key] = Setting{Key: definition.Key, Value: value, Source: source}
+	}
+	// A lane's model follows the lane's resolved runtime unless the
+	// runtime-independent key names one for every runtime.
+	for runtimeKey, modelKey := range laneModelKeys {
+		value, source, err := resolve(modelKey)
+		if err != nil {
+			return Settings{}, err
 		}
 		if strings.TrimSpace(value) == "" {
+			bound := modelKey + "." + resolved[runtimeKey].Value
+			if value, source, err = resolve(bound); err != nil {
+				return Settings{}, err
+			}
+			source += " via " + bound
+			if strings.TrimSpace(value) == "" {
+				return Settings{}, fmt.Errorf("LAUNCH_SETTING_INVALID key=%s: the lane runs on %s and neither %s nor %s names its model", modelKey, resolved[runtimeKey].Value, modelKey, bound)
+			}
+		}
+		resolved[modelKey] = Setting{Key: modelKey, Value: value, Source: source}
+	}
+	var result Settings
+	for _, definition := range settingDefaults {
+		setting := resolved[definition.Key]
+		if strings.TrimSpace(setting.Value) == "" {
 			return Settings{}, fmt.Errorf("LAUNCH_SETTING_INVALID key=%s", definition.Key)
 		}
-		result.Values = append(result.Values, Setting{Key: definition.Key, Value: value, Source: source})
+		result.Values = append(result.Values, setting)
 	}
 	number := func(index int) (int64, error) {
 		value, err := strconv.ParseInt(result.Values[index].Value, 10, 64)
@@ -176,6 +222,15 @@ func resolveSettings(confPath string, lookupEnv func(string) (string, bool), use
 		}
 	}
 	return result, nil
+}
+
+func laneModelKeyOf(key string) (string, bool) {
+	for runtimeKey, modelKey := range laneModelKeys {
+		if key == modelKey {
+			return runtimeKey, true
+		}
+	}
+	return "", false
 }
 
 // launchRuntime is the agent a lane runs on, by the lane's own setting.

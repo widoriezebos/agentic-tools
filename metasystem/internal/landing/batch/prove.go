@@ -420,6 +420,9 @@ func reassembleSurvivorsOnBase(store Store, id, actor string, at time.Time, deci
 	if err := applyReturns(&next); err != nil {
 		return err
 	}
+	if movedBase {
+		forgetEarly(&next, at, actor, "base moved to "+newBaseTree)
+	}
 	next.BaseTree = record.BaseTree
 	next.PrefixTrees, next.SelectedGroups, next.Seal, next.Proof, next.Landing, next.Receipts, next.CostForecast = prefixes, nil, nil, nil, nil, nil, nil
 	if len(survivors) == 0 {

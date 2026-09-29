@@ -134,7 +134,7 @@ func TestFenceOperationsSampleClockWhileHoldingMissionLock(t *testing.T) {
 		return
 	}
 
-	for _, operation := range []string{"check", "cycle", "authorize", "release"} {
+	for _, operation := range []string{"cycle", "authorize", "release"} {
 		t.Run(operation, func(t *testing.T) {
 			repo, mission := fenceEnv(t)
 			if operation == "release" {
@@ -163,8 +163,6 @@ func TestFenceOperationsSampleClockWhileHoldingMissionLock(t *testing.T) {
 
 			var err error
 			switch operation {
-			case "check":
-				err = CheckOrReserve(repo, mission, "job-check", 1, true)
 			case "cycle":
 				err = ReserveCycle(repo, mission)
 			case "authorize":

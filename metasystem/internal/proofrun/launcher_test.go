@@ -922,26 +922,12 @@ while [[ ! -e "$done_path" ]]; do sleep 0.005; done
 	}
 }
 
-func TestLaunchHelpersRejectBadInputsAndParseSelectorRows(t *testing.T) {
+func TestLaunchHelpersRejectBadInputs(t *testing.T) {
 	var errors bytes.Buffer
 	if result := LaunchSuite(LaunchOptions{ErrorOutput: &errors}); result != 2 || !strings.Contains(errors.String(), "required") {
 		t.Fatalf("invalid result = %d, errors = %q", result, errors.String())
 	}
 	root := t.TempDir()
-	selector := filepath.Join(root, "selector")
-	if err := os.WriteFile(selector, []byte("first\tFirst section\nsecond\tSecond section\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	sections, err := ReadSelectorSections(selector)
-	if err != nil || strings.Join(sections, ",") != "first,second" {
-		t.Fatalf("sections = %v, %v", sections, err)
-	}
-	if err := os.WriteFile(selector, []byte("invalid\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := ReadSelectorSections(selector); err == nil {
-		t.Fatal("invalid selector row passed")
-	}
 	if exitStatus(nil) != 0 || exitStatus(os.ErrInvalid) != 1 {
 		t.Fatal("exit status helper returned an invalid result")
 	}

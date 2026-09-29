@@ -1,0 +1,311 @@
+package lane
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
+)
+
+// The owner's states as a person reads them.
+const (
+	OwnerRunning    = "running"
+	OwnerStopped    = "stopped"
+	OwnerRestarting = "restarting"
+	OwnerGivenUp    = "given-up"
+	OwnerNotStarted = "not-started"
+)
+
+// The current batch's states as a person reads them.
+const (
+	BatchCollecting = "collecting"
+	BatchWaiting    = "waiting"
+	BatchProving    = "proving"
+	BatchPushing    = "pushing"
+)
+
+// View is the host's landing lane as every reader shows it: landing status
+// prints it and the interface's /api/board carries it as "lane". Every key is
+// always present; an absent value is null.
+type View struct {
+	Root         *string    `json:"root"`
+	RegisteredBy *string    `json:"registered_by"`
+	RegisteredAt *string    `json:"registered_at"`
+	Owner        OwnerView  `json:"owner"`
+	Batch        *BatchView `json:"batch"`
+	Next         *NextView  `json:"next"`
+	Summary      string     `json:"summary"`
+}
+
+// OwnerView is the lane owner and its keep-alive.
+type OwnerView struct {
+	State     string  `json:"state"`
+	PID       *int64  `json:"pid"`
+	Since     *string `json:"since"`
+	Restarts  int     `json:"restarts"`
+	LastExit  *string `json:"last_exit"`
+	StoppedBy *string `json:"stopped_by"`
+	RetryHint *string `json:"retry_hint"`
+}
+
+// Member is one goal in a batch and the seat it came from.
+type Member struct {
+	Goal string `json:"goal"`
+	Seat string `json:"seat"`
+}
+
+// Waiting is a goal the current batch waits for, and when it is expected.
+type Waiting struct {
+	Goal     string  `json:"goal"`
+	Seat     string  `json:"seat"`
+	Expected *string `json:"expected"`
+}
+
+// BatchView is the batch the lane works on now.
+type BatchView struct {
+	ID         string    `json:"id"`
+	State      string    `json:"state"`
+	Members    []Member  `json:"members"`
+	WaitingFor []Waiting `json:"waiting_for"`
+	Since      string    `json:"since"`
+	Reason     string    `json:"reason"`
+}
+
+// NextView is the batch collecting behind the current one.
+type NextView struct {
+	ID      string   `json:"id"`
+	Members []Member `json:"members"`
+}
+
+// OwnerProbe is whether the lane's owner runs, and since when.
+type OwnerProbe struct {
+	Alive bool
+	PID   int64
+	Since time.Time
+}
+
+// ViewSources are the reads a view is built from. Records nil reads the
+// lane's batch records from its checkout.
+type ViewSources struct {
+	Home    string
+	Now     time.Time
+	Owner   func(root string) (OwnerProbe, error)
+	Records func(root string) ([]batch.Record, error)
+}
+
+// BuildView reads the lane once and says it for a person and a page.
+func BuildView(sources ViewSources) View {
+	view := View{Owner: OwnerView{State: OwnerNotStarted}}
+	record, ok, err := Read(sources.Home)
+	if err != nil {
+		view.Summary = "the landing lane record is unreadable: " + err.Error()
+		return view
+	}
+	if !ok {
+		view.Summary = "no landing lane is registered on this host; the first seat that lands with landing.batch-root set registers it, or a person runs: metasystem landing set PATH"
+		return view
+	}
+	view.Root, view.RegisteredBy, view.RegisteredAt = text(record.Root), text(record.RegisteredBy), text(record.At)
+	if gone(record.Root) {
+		refusal := goneRefusal(record)
+		view.Summary = refusal.Message + "; " + refusal.Fix
+		view.Owner.RetryHint = text(refusal.Fix)
+		return view
+	}
+	view.Owner = ownerView(sources, record.Root)
+	records, recordsErr := readRecords(sources, record.Root)
+	view.Batch, view.Next = currentBatches(records)
+	view.Summary = summary(record.Root, view, recordsErr)
+	return view
+}
+
+func text(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
+}
+
+func ownerView(sources ViewSources, root string) OwnerView {
+	owner := OwnerView{State: OwnerNotStarted}
+	state := ReadKeeper(sources.Home)
+	owner.Restarts = state.Restarts
+	owner.LastExit = text(state.LastError)
+	if owner.LastExit == nil {
+		if data, err := os.ReadFile(LastErrorPath(root)); err == nil {
+			owner.LastExit = text(strings.TrimSpace(string(data)))
+		}
+	}
+	if pause, paused := ReadPause(sources.Home); paused {
+		owner.State, owner.StoppedBy, owner.Since = OwnerStopped, text(pause.By), text(pause.At)
+		owner.RetryHint = text("metasystem landing start resumes it")
+		return owner
+	}
+	probe, err := sources.Owner(root)
+	switch {
+	case err != nil:
+		owner.LastExit = text("whether the owner runs is unknown: " + err.Error())
+	case probe.Alive:
+		owner.State = OwnerRunning
+		pid := probe.PID
+		owner.PID = &pid
+		if !probe.Since.IsZero() {
+			owner.Since = text(probe.Since.UTC().Format(time.RFC3339))
+		}
+		return owner
+	}
+	switch {
+	case state.GaveUp != "":
+		owner.State, owner.Since = OwnerGivenUp, text(state.GaveUp)
+		owner.RetryHint = text(fmt.Sprintf("read %s, fix the cause, then run: metasystem landing start", LastErrorPath(root)))
+	case state.Failures > 0 || state.Restarts > 0:
+		owner.State, owner.Since = OwnerRestarting, text(state.Since)
+	}
+	return owner
+}
+
+func readRecords(sources ViewSources, root string) ([]batch.Record, error) {
+	if sources.Records != nil {
+		return sources.Records(root)
+	}
+	paths, err := filepath.Glob(filepath.Join(root, "artifacts", "agents", "landing-batches", "*.json"))
+	if err != nil {
+		return nil, err
+	}
+	sort.Strings(paths)
+	store := batch.NewStore(root, nil)
+	var records []batch.Record
+	for _, path := range paths {
+		if record, loadErr := store.Load(strings.TrimSuffix(filepath.Base(path), ".json")); loadErr == nil {
+			records = append(records, record)
+		}
+	}
+	return records, nil
+}
+
+// currentBatches picks the batch the lane works on (pushing, then proving,
+// then the oldest waiting or collecting one) and the next one collecting.
+func currentBatches(records []batch.Record) (*BatchView, *NextView) {
+	var active, queued []batch.Record
+	for _, record := range records {
+		switch record.State {
+		case batch.StateLanding, batch.StateProving, batch.StateDiagnosing:
+			active = append(active, record)
+		case batch.StateOpen, batch.StateSealed:
+			queued = append(queued, record)
+		}
+	}
+	sort.SliceStable(active, func(i, j int) bool {
+		return active[i].State == batch.StateLanding && active[j].State != batch.StateLanding
+	})
+	sort.SliceStable(queued, func(i, j int) bool { return firstAt(queued[i]) < firstAt(queued[j]) })
+	var current *BatchView
+	switch {
+	case len(active) > 0:
+		current = batchView(active[0])
+	case len(queued) > 0:
+		current, queued = batchView(queued[0]), queued[1:]
+	}
+	if len(queued) == 0 {
+		return current, nil
+	}
+	return current, &NextView{ID: queued[0].BatchID, Members: members(queued[0])}
+}
+
+func firstAt(record batch.Record) string {
+	if len(record.History) == 0 {
+		return ""
+	}
+	return record.History[0].At
+}
+
+func members(record batch.Record) []Member {
+	list := []Member{}
+	for _, unit := range record.Units {
+		if unit.State == batch.UnitJoined || unit.State == batch.UnitJoining {
+			list = append(list, Member{Goal: unit.GoalID, Seat: unit.Claim.Machine})
+		}
+	}
+	return list
+}
+
+func batchView(record batch.Record) *BatchView {
+	view := &BatchView{ID: record.BatchID, Members: members(record), WaitingFor: []Waiting{}, Since: stateSince(record)}
+	switch record.State {
+	case batch.StateLanding:
+		view.State, view.Reason = BatchPushing, "the batch proved green and is being pushed to main"
+	case batch.StateProving, batch.StateDiagnosing:
+		view.State, view.Reason = BatchProving, "proving: "+record.StartReason
+		if record.State == batch.StateDiagnosing {
+			view.Reason = "a red is being diagnosed so the rest can land"
+		}
+	default:
+		view.State, view.Reason = BatchCollecting, "collecting joins; it starts when the start rule says so"
+		if record.Wait != nil {
+			view.State, view.Reason = BatchWaiting, strings.TrimPrefix(batch.WaitLine(record, record.Wait.Since, time.Local), "batch "+record.BatchID+" ")
+			if !record.Wait.Since.IsZero() {
+				view.Since = record.Wait.Since.UTC().Format(time.RFC3339)
+			}
+			for _, waited := range record.Wait.For {
+				expected := (*string)(nil)
+				if !waited.ExpectedAt.IsZero() {
+					expected = text(waited.ExpectedAt.UTC().Format(time.RFC3339))
+				}
+				view.WaitingFor = append(view.WaitingFor, Waiting{Goal: waited.Goal, Seat: waited.Seat, Expected: expected})
+			}
+		}
+		if wait, waiting := batch.ProvingWait(record); waiting {
+			view.State, view.Reason = BatchWaiting, wait.Detail
+		}
+	}
+	return view
+}
+
+// stateSince is when the batch entered its state: the last history entry
+// that changed it, else its first entry.
+func stateSince(record batch.Record) string {
+	for index := len(record.History) - 1; index >= 0; index-- {
+		if entry := record.History[index]; entry.From != entry.To && entry.To == record.State {
+			return entry.At
+		}
+	}
+	return firstAt(record)
+}
+
+func summary(root string, view View, recordsErr error) string {
+	owner := "owner " + view.Owner.State
+	switch view.Owner.State {
+	case OwnerRunning:
+		owner += fmt.Sprintf(" (pid %d)", *view.Owner.PID)
+	case OwnerStopped:
+		owner += " by " + *view.Owner.StoppedBy + "; metasystem landing start resumes it"
+	case OwnerGivenUp:
+		owner += fmt.Sprintf(" after %d restarts; metasystem landing start retries", view.Owner.Restarts)
+	case OwnerRestarting:
+		owner += fmt.Sprintf(" (%d restarts so far)", view.Owner.Restarts)
+	}
+	line := "landing lane " + root + ": " + owner
+	switch {
+	case recordsErr != nil:
+		line += "; its batches are unreadable: " + recordsErr.Error()
+	case view.Batch == nil:
+		line += "; no batch"
+	default:
+		line += fmt.Sprintf("; batch %s %s, %d member%s", view.Batch.ID, view.Batch.State, len(view.Batch.Members), plural(len(view.Batch.Members)))
+	}
+	if view.Next != nil {
+		line += fmt.Sprintf("; next %s collecting, %d member%s", view.Next.ID, len(view.Next.Members), plural(len(view.Next.Members)))
+	}
+	return line
+}
+
+func plural(n int) string {
+	if n == 1 {
+		return ""
+	}
+	return "s"
+}

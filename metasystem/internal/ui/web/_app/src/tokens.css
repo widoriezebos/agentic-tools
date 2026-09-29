@@ -33,6 +33,7 @@
   --ms-ok: #2e8b57;
   --ms-ok-bg: #e4f3ea;
   --ms-ok-fg: #1d6b40;
+  --ms-ok-halo: rgba(46, 139, 87, 0.4);
   --ms-danger: #c0392b;
   --ms-scrim: rgba(31, 30, 27, 0.4);
   --ms-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
@@ -59,6 +60,7 @@
   --ms-ok: #57b37f;
   --ms-ok-bg: #16311f;
   --ms-ok-fg: #7fd3a3;
+  --ms-ok-halo: rgba(87, 179, 127, 0.4);
   --ms-danger: #e06b5c;
   --ms-scrim: rgba(0, 0, 0, 0.6);
   --ms-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
@@ -88,5 +90,6 @@
   --color-ok: var(--ms-ok);
   --color-ok-bg: var(--ms-ok-bg);
   --color-ok-fg: var(--ms-ok-fg);
+  --color-ok-halo: var(--ms-ok-halo);
   --color-danger: var(--ms-danger);
 }

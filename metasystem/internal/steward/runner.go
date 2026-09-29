@@ -249,7 +249,7 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 		bridge = deps.Bridge(top)
 		defer bridge.Close()
 	}
-	bridgeLine := ""
+	bridgeLine, laneLine := "", ""
 
 	for {
 		if _, err := os.Stat(runnerStopPath(top)); err == nil {
@@ -282,6 +282,14 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 				return nil
 			}
 			continue
+		}
+		// The landing lane's keeper restarts the host lane's owner when it
+		// died (U12); at the helm, above, it does not run.
+		if cfg.KeepLandingLane != nil {
+			if line := cfg.KeepLandingLane(); line != laneLine {
+				fmt.Fprintln(os.Stderr, line)
+				laneLine = line
+			}
 		}
 		resume := err == nil && result.Decision.Action == ActRevive
 		if !resume {

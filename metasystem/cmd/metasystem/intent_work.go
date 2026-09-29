@@ -149,7 +149,19 @@ func configSettingWithDefault(key, confPath string) (string, string, int, error)
 		return "", "", code, err
 	}
 	source, err := config.KeyOrigin(params)
-	return value, source, 0, err
+	if err != nil || !config.RuntimeSelectionKey(key) {
+		return value, source, 0, err
+	}
+	raw := params
+	raw.KeepAuto = true
+	if configured, _, rawErr := config.Get(raw); rawErr == nil && configured == config.AutoRuntime {
+		choice, choiceErr := config.ResolveAutoRuntime(confPath, nil)
+		if choiceErr != nil {
+			return "", "", 1, choiceErr
+		}
+		source += "; " + choice.Describe()
+	}
+	return value, source, 0, nil
 }
 
 var intentBriefFlag = intentFlag{name: "brief", value: "FILE", usage: "the brief, relative to the directory the command runs in"}

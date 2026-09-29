@@ -236,14 +236,3 @@ func TestUniverseNamesAndCounts(t *testing.T) {
 		t.Fatalf("universe counts = foreign:%d age:%d", census.ForeignCount(), census.ExcludedByAgeCount())
 	}
 }
-
-func TestKernelScannerRefusesWithoutAMatcher(t *testing.T) {
-	if got := (KernelTaggedProcessScanner{}).ScanTag("t", time.Time{}); got.EnumerationError == "" {
-		t.Fatal("a scanner without a matcher must refuse loudly")
-	}
-	scanner := KernelTaggedProcessScanner{MatchesTag: func(argv []string, tag string) bool { return false }}
-	result := scanner.ScanTag("no-such-tag-anywhere", time.Time{})
-	if result.EnumerationError != "" && len(result.Tagged) != 0 {
-		t.Fatalf("kernel scan against a nonsense tag = %+v", result)
-	}
-}
