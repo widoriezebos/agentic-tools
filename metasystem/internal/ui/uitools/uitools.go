@@ -55,7 +55,7 @@ import (
 // presents them as mcp__metasystem__board — composes that prefix from this.
 const ServerName = "metasystem"
 
-// The fourteen operations. They are named here, once, because two things
+// The operations. They are named here, once, because two things
 // depend on the same list: the tool catalogue this server publishes, and the
 // permission rule that admits calls to it.
 //
@@ -85,13 +85,15 @@ const (
 	// thing on a sitting's desk (g1-s65 D4, D5, g1-s67 D4).
 	OpChanges = "changes"
 	OpPresent = "present"
+	// OpRefusal reads the refusal register's row for one code (g1-s68 D4).
+	OpRefusal = "refusal"
 )
 
 // Operations is every operation this server answers, in the order the
 // catalogue lists them.
 var Operations = []string{
 	OpBoard, OpGoal, OpDocument, OpRecords, OpQuestions,
-	OpOverview, OpFleet, OpNotifications, OpSearch, OpInterface, OpKit, OpChanges,
+	OpOverview, OpFleet, OpNotifications, OpSearch, OpInterface, OpKit, OpRefusal, OpChanges,
 	OpSuggest, OpDeposit, OpPropose, OpPresent,
 }
 
@@ -246,6 +248,8 @@ func (r Readers) Answer(operation string, args Args) Result {
 			args.Text("anchor"), args.Text("reason"), args.Text("consequence"), args.Text("clause"))
 	case OpPropose:
 		return r.propose(args)
+	case OpRefusal:
+		return r.refusalRow(args.Text("code"))
 	case OpChanges:
 		return r.changes(args)
 	case OpPresent:

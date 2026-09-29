@@ -140,6 +140,8 @@ func TestTheSessionIsOfferedTheInterfaceAndKitTools(t *testing.T) {
 	}
 	testutil.Expect(t, "and it answers interface()", offered[uitools.OpInterface], true)
 	testutil.Expect(t, "and kit()", offered[uitools.OpKit], true)
+	// The refusal register is one more read (g1-s68 D4).
+	testutil.Expect(t, "and refusal()", offered[uitools.OpRefusal], true)
 }
 
 /* ---------------------------------------------------------------- driving -- */

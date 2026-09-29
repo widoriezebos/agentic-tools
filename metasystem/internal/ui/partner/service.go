@@ -703,6 +703,12 @@ func (s *Service) submitClosing(ctx context.Context, human, sitting, key, text s
 
 // submitClosingAt is submitClosing with the tip a review's record names.
 func (s *Service) submitClosingAt(ctx context.Context, human, sitting, key, text string, page Page, byInterface bool, verdict, tip string) (string, error) {
+	return s.submitWith(ctx, human, sitting, key, text, page, byInterface, verdict, tip, nil)
+}
+
+// submitWith is submitClosingAt with the trouble a press on "Ask what happened"
+// carries (g1-s68), or nil for every other turn.
+func (s *Service) submitWith(ctx context.Context, human, sitting, key, text string, page Page, byInterface bool, verdict, tip string, trouble *Trouble) (string, error) {
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return "", errors.New("a turn needs a question")
@@ -807,7 +813,7 @@ func (s *Service) submitClosingAt(ctx context.Context, human, sitting, key, text
 
 	now := s.now().UTC()
 	asked := Message{ID: mintTurn(), Turn: id, Role: RoleHuman, Text: text,
-		At: now.Format(time.RFC3339), Key: key, Page: &page, Interface: byInterface}
+		At: now.Format(time.RFC3339), Key: key, Page: &page, Interface: byInterface, Trouble: trouble}
 	if err := s.appendMessage(running, asked); err != nil {
 		s.mu.Lock()
 		s.current = nil
@@ -862,6 +868,11 @@ func (s *Service) submitClosingAt(ctx context.Context, human, sitting, key, text
 	if given > 0 {
 		prompt += history + "\n\n"
 		s.record(running, Event{Kind: EventActivity, Text: freshLine(given)})
+	}
+	// The trouble a press asked about travels beside the page, as the block
+	// the server composes from what the page knew (g1-s68 D2).
+	if trouble != nil {
+		prompt += TroubleBlock(*trouble) + "\n"
 	}
 	prompt += "The human asks:\n" + text
 

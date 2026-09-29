@@ -73,6 +73,10 @@ type turnBody struct {
 	Key          string       `json:"key"`
 	Text         string       `json:"text"`
 	About        partner.Page `json:"about"`
+	// Trouble is what a press on "Ask what happened" asks about (g1-s68 §6).
+	// Where it is present the server composes the question from the fixed
+	// sentence, and Text is not the question.
+	Trouble *partner.Trouble `json:"trouble"`
 }
 
 // partnerRouteOf reports which Partner write route a path names.
@@ -250,8 +254,17 @@ func (h *handler) partnerTurn(w http.ResponseWriter, r *http.Request) {
 	if !decodeDocument(w, r, &body) {
 		return
 	}
-	id, err := h.info.Partner.SubmitIn(r.Context(), h.partnerHuman(r), strings.TrimSpace(body.Conversation),
-		body.Key, body.Text, body.About)
+	var (
+		id  string
+		err error
+	)
+	if body.Trouble != nil {
+		id, err = h.info.Partner.AskTrouble(r.Context(), h.partnerHuman(r), strings.TrimSpace(body.Conversation),
+			body.Key, *body.Trouble, body.About)
+	} else {
+		id, err = h.info.Partner.SubmitIn(r.Context(), h.partnerHuman(r), strings.TrimSpace(body.Conversation),
+			body.Key, body.Text, body.About)
+	}
 	if err == nil {
 		w.WriteHeader(http.StatusAccepted)
 		_ = json.NewEncoder(w).Encode(struct {

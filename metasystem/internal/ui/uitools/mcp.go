@@ -258,6 +258,16 @@ func Catalogue() []Tool {
 			}, nil),
 		},
 		{
+			Name: OpRefusal,
+			Description: "One row of the engine's refusal register, by the code a refusal named: who owns the refusal, " +
+				"its shape and what the shape means, the human verb that carries past it and how many commands that " +
+				"takes, and its H1 standing. Ask it before saying why an act was refused; quote the row and add the " +
+				"state you read. A code the register has no row for is said as such.",
+			InputSchema: schema(map[string]any{
+				"code": map[string]any{"type": "string", "description": "The code exactly as the refusal named it, for example REVIEW_STALE."},
+			}, []string{"code"}),
+		},
+		{
 			Name: OpChanges,
 			Description: "In a review sitting, what the reviewed work changed, read from the candidate's own tree and " +
 				"not this checkout: the change index with each file's counts, or one file's hunks. It reads the review " +
