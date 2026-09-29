@@ -89,6 +89,13 @@ type Identity struct {
 	// file system reports one (Linux: ext4, btrfs, xfs), which a file
 	// created at a freed inode number does not share; 0 where it does not.
 	GitFileGeneration uint64 `json:"gitFileGeneration,omitempty"`
+	// RootDevice, RootInode and RootGeneration are a marker store's root
+	// directory as it was made, where its producer records them (process
+	// scratch): a path names the store only while it is that directory
+	// (fail-closed rule 2).
+	RootDevice     uint64 `json:"rootDevice,omitempty"`
+	RootInode      uint64 `json:"rootInode,omitempty"`
+	RootGeneration uint64 `json:"rootGeneration,omitempty"`
 }
 
 // RebuildFrom is the commit and the command that rebuild a rebuildable
@@ -129,6 +136,11 @@ type Record struct {
 	Reservation       string       `json:"reservation,omitempty"`
 	CopyOf            string       `json:"copyOf,omitempty"`
 	AuthorizedDiscard *Discard     `json:"authorizedDiscard,omitempty"`
+	// OwnerGroup and OwnerSession are a process owner's process group and
+	// session at creation: an orphan keeps both after its parent ends, so a
+	// live process in either keeps the dead owner's root (Round D1).
+	OwnerGroup   int64 `json:"ownerGroup,omitempty"`
+	OwnerSession int64 `json:"ownerSession,omitempty"`
 }
 
 // Registry is one directory of records: the machine registry
@@ -178,6 +190,11 @@ type Registration struct {
 	CopyOf      string
 	Adopted     bool
 	Notes       []string
+	// RootDevice, RootInode and RootGeneration identify a marker store's
+	// root made before registration (Identity's fields of the same names).
+	RootDevice, RootInode, RootGeneration uint64
+	// OwnerGroup and OwnerSession are Record's fields of the same names.
+	OwnerGroup, OwnerSession int64
 }
 
 func validID(id string) bool {
@@ -232,7 +249,7 @@ func (r Registry) Register(reg Registration, now time.Time, entropy io.Reader) (
 		}
 		identity = read
 	} else {
-		identity.Marker = true
+		identity = Identity{Marker: true, RootDevice: reg.RootDevice, RootInode: reg.RootInode, RootGeneration: reg.RootGeneration}
 	}
 	if err := os.MkdirAll(r.Dir, 0o700); err != nil {
 		return Record{}, fmt.Errorf("store registry %s: %w", r.Dir, err)
@@ -261,6 +278,7 @@ func (r Registry) Register(reg Registration, now time.Time, entropy io.Reader) (
 		Checkout: reg.Checkout, Lifetime: reg.Lifetime, RebuildFrom: reg.RebuildFrom, CapBytes: reg.CapBytes,
 		CapKind: reg.CapKind, State: StateReserved, Adopted: reg.Adopted, Created: now.UTC(),
 		Notes: reg.Notes, Layout: reg.Layout, Reservation: reg.Reservation, CopyOf: reg.CopyOf,
+		OwnerGroup: reg.OwnerGroup, OwnerSession: reg.OwnerSession,
 	}
 	// The lock file exists before the record, so no later reader, prober or
 	// entrant ever has to create it.

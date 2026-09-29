@@ -13,6 +13,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/contract"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
@@ -422,12 +423,12 @@ func (e *Engine) writeStateWith(statePath string, proposed map[string]any, expec
 		}
 		expected = hash
 	}
-	source, err := os.CreateTemp("", "mission-state-proposed.*.json")
+	source, done, err := diskstore.ScratchFile("mission-state-proposed.*.json")
 	if err != nil {
 		return nil, err
 	}
 	sourcePath := source.Name()
-	defer os.Remove(sourcePath)
+	defer done()
 	data, err := json.MarshalIndent(proposed, "", "  ")
 	if err != nil {
 		source.Close()

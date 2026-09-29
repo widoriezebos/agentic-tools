@@ -2,9 +2,10 @@ package branch
 
 import (
 	"bytes"
-	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 )
 
 type commitWorktree struct{ Path, Branch string }
@@ -131,18 +132,18 @@ func gitCommitRepository() commitRepository {
 				if amend {
 					pattern = "goal-branch-amend-*"
 				}
-				scratch, err := os.MkdirTemp("", pattern)
+				scratch, done, err := diskstore.ScratchDir(pattern)
 				if err != nil {
 					return "", nil, err
 				}
 				worktree := filepath.Join(scratch, "worktree")
 				if _, err := gitOutput(repo, "worktree", "add", "--quiet", "--detach", worktree, base); err != nil {
-					_ = os.RemoveAll(scratch)
+					done()
 					return "", nil, err
 				}
 				return worktree, func() {
 					_, _ = gitOutput(repo, "worktree", "remove", "--force", worktree)
-					_ = os.RemoveAll(scratch)
+					done()
 				}, nil
 			},
 			Apply: func(dir string, patch []byte) error {

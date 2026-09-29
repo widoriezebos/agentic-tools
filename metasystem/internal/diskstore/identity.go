@@ -112,7 +112,7 @@ func Revalidate(record Record) error {
 		if found.ID != record.ID || found.Path != record.Path {
 			return fmt.Errorf("store %s carries the marker of record %s, not %s", record.Path, found.ID, record.ID)
 		}
-		return nil
+		return sameRoot(record, info)
 	}
 	current, err := ReadGitIdentity(record.Path)
 	if err != nil {

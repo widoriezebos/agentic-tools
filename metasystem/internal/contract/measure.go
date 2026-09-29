@@ -13,6 +13,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
@@ -255,21 +256,21 @@ func (d *contractDoc) materializeCandidate(repo, projectRoot, candidateSHA, gate
 	if err != nil {
 		return "", nil, err
 	}
-	scratch, err := os.MkdirTemp("", "mission-candidate.")
+	scratch, done, err := diskstore.ScratchDir("mission-candidate.")
 	if err != nil {
 		return "", nil, err
 	}
 	worktree := filepath.Join(scratch, "candidate")
 	cleanup := func() {
 		d.gitTry(repo, "worktree", "remove", "--force", worktree)
-		os.RemoveAll(scratch)
+		done()
 	}
 	// The registry entry lands BEFORE the worktree exists: the wall's
 	// worktree census admits only runner-recorded worktrees, and a crash
 	// mid-measurement must leave a recorded artifact, never a private
 	// carrier. FAIL CLOSED: an unrecordable worktree never materializes.
 	if err := recordMeasureWorktree(projectRoot, worktree, candidateSHA, gateRef); err != nil {
-		os.RemoveAll(scratch)
+		done()
 		return "", nil, stateErr("measurement cannot record its worktree: %v", err)
 	}
 	if _, err := d.gitOutput(repo, "worktree", "add", "--detach", "--quiet", worktree, candidateSHA); err != nil {

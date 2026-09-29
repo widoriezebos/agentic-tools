@@ -1,6 +1,7 @@
 package launch
 
 import (
+	stdcontext "context"
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 )
 
@@ -439,7 +441,7 @@ func (runner *UnitRunner) advanceReadLocked(record ReadRequestRecord, attempt *R
 		return result, nil
 	}
 	attempt.State, attempt.Outcome = readAttemptFinished, outcome
-	runner.removeReadContext(attempt)
+	runner.removeReadContext(record.Ref, attempt)
 	if err := runner.saveReadAttempt(record.Ref, *attempt); err != nil {
 		return ReadResult{}, err
 	}
@@ -533,7 +535,7 @@ func (runner *UnitRunner) finishStoppedRead(record ReadRequestRecord, attempt *R
 		return runner.saveReadAttempt(record.Ref, *attempt)
 	}
 	attempt.State, attempt.Outcome = readAttemptStopped, "stopped"
-	runner.removeReadContext(attempt)
+	runner.removeReadContext(record.Ref, attempt)
 	return runner.saveReadAttempt(record.Ref, *attempt)
 }
 
@@ -623,23 +625,18 @@ func (runner *UnitRunner) readResult(record ReadRequestRecord, attempt ReadAttem
 // has no Git directory of its own; it is not a sandbox. A supplied patch
 // that does not apply leaves the base and records that limitation.
 func (runner *UnitRunner) prepareReadContext(record ReadRequestRecord, attempt *ReadAttempt) error {
-	// The name is the attempt's own, so an attempt interrupted before it
-	// recorded its context replaces only what it made itself.
-	context := filepath.Join(os.TempDir(), fmt.Sprintf("metasystem-read-context.%s-a%d", record.Ref, attempt.Number))
-	if err := os.Mkdir(context, 0o700); errors.Is(err, fs.ErrExist) {
-		if err := os.RemoveAll(context); err != nil {
-			return err
-		}
-		err = os.Mkdir(context, 0o700)
-		if err != nil {
-			return err
-		}
-	} else if err != nil {
+	// The context outlives this process, so it is a registered store the
+	// read attempt owns (DL-18), not process scratch. The name is the
+	// attempt's own, and an attempt interrupted before it recorded its
+	// context replaces only what its own record says it made.
+	owner := readContextOwner(record.Ref, attempt.Number)
+	context, err := diskstore.CreateTempStore(fmt.Sprintf("metasystem-read-context.%s-a%d", record.Ref, attempt.Number), readContextClass, owner)
+	if err != nil {
 		return err
 	}
 	checkout := filepath.Join(context, "checkout")
 	fail := func(err error) error {
-		_ = os.RemoveAll(context)
+		_ = diskstore.ReleaseTempStore(stdcontext.Background(), context, readContextClass, owner)
 		return err
 	}
 	if err := os.Mkdir(checkout, 0o700); err != nil {
@@ -668,16 +665,24 @@ func (runner *UnitRunner) prepareReadContext(record ReadRequestRecord, attempt *
 
 // removeReadContext removes an attempt's disposable context once its
 // launches have ended; reports are retained outside it.
-func (runner *UnitRunner) removeReadContext(attempt *ReadAttempt) {
+func (runner *UnitRunner) removeReadContext(ref string, attempt *ReadAttempt) {
 	if attempt.Context == "" || attempt.ContextRemoved || len(runner.unprovenReadLaunches(*attempt)) != 0 {
 		return
 	}
 	if !strings.HasPrefix(filepath.Base(attempt.Context), "metasystem-read-context.") || attempt.Checkout != filepath.Join(attempt.Context, "checkout") {
 		return
 	}
-	if err := os.RemoveAll(attempt.Context); err == nil {
+	if err := diskstore.ReleaseTempStore(stdcontext.Background(), attempt.Context, readContextClass, readContextOwner(ref, attempt.Number)); err == nil {
 		attempt.ContextRemoved = true
 	}
+}
+
+// readContextClass is the store class of a read attempt's context.
+const readContextClass = "read-context"
+
+// readContextOwner is the read attempt that owns its context store.
+func readContextOwner(ref string, number int) diskstore.Owner {
+	return diskstore.Owner{Kind: diskstore.OwnerAttempt, Ref: fmt.Sprintf("read:%s-a%d", ref, number)}
 }
 
 // verifyFrozenRead refuses a launch whose frozen bytes or read lane changed.

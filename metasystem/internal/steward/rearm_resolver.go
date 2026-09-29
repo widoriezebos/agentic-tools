@@ -16,6 +16,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/behaviorsurface"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 )
 
 const (
@@ -425,11 +426,11 @@ func writeWitnessDigestCache(path, repoRoot string, entries map[string]string) {
 }
 
 func digestArchivedTree(ctx context.Context, toplevel, tree string, policy behaviorsurface.Policy, clock RearmClock, seconds int) (string, error) {
-	directory, err := os.MkdirTemp("", "metasystem-rearm-witness-*")
+	directory, done, err := diskstore.ScratchDir("metasystem-rearm-witness-*")
 	if err != nil {
 		return "", err
 	}
-	defer os.RemoveAll(directory)
+	defer done()
 	if err := os.Chmod(directory, 0o700); err != nil {
 		return "", err
 	}

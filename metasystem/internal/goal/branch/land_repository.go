@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/contractgit"
@@ -59,7 +60,7 @@ func gitLandingRepository() landingRepository {
 			return gitOutput(repo, "config", "--get", "goal.human."+name)
 		},
 		open: func(repo, base string) (string, func(), error) {
-			scratch, err := os.MkdirTemp("", "goal-land-prep-*")
+			scratch, done, err := diskstore.ScratchDir("goal-land-prep-*")
 			if err != nil {
 				return "", nil, err
 			}
@@ -69,17 +70,17 @@ func gitLandingRepository() landingRepository {
 			// hooks directory turns them off, as a proof run's
 			// gittree.Materialization.HooksPath does.
 			if err := os.Mkdir(scratchHooks(scratch), 0o700); err != nil {
-				_ = os.RemoveAll(scratch)
+				done()
 				return "", nil, err
 			}
 			worktree := filepath.Join(scratch, "worktree")
 			if _, err := gitOutput(repo, "-c", "core.hooksPath="+scratchHooks(scratch), "worktree", "add", "--quiet", "--detach", worktree, base); err != nil {
-				_ = os.RemoveAll(scratch)
+				done()
 				return "", nil, err
 			}
 			return worktree, func() {
 				_, _ = gitOutput(repo, "worktree", "remove", "--force", worktree)
-				_ = os.RemoveAll(scratch)
+				done()
 			}, nil
 		},
 		reset: func(dir, base string) error {
