@@ -1020,6 +1020,42 @@ func TestScratchEnvironmentCarriesTheResolvedEngineCache(t *testing.T) {
 	}
 }
 
+// A go command under a group's managed environment starts no telemetry
+// sidecar: with telemetry on or local, go starts a daemonized child (its own
+// session, so no process-group custody reaches it) that outlives the command
+// and MkdirAlls its directory chain under the managed config dir, which
+// raced lease release and root removal ("unlinkat .../leases/
+// scratch-environment-v2: directory not empty", batch 12). Preparation
+// records telemetry off in the managed config dir; a declared HOME keeps the
+// user's own config untouched.
+func TestScratchEnvironmentTurnsGoTelemetryOffInTheManagedConfig(t *testing.T) {
+	t.Parallel()
+	fixture := newScratchEnvFixture(t)
+	path := scratchGoPath(t)
+	external := filepath.Join(fixture.host, "declared-home")
+	groups := []testpolicy.Group{
+		{ID: "explicit", Adapter: "go", EnvironmentMode: "explicit", Env: map[string]string{"PATH": path, "GOTOOLCHAIN": "local"}},
+		{ID: "inherit", Adapter: "go", EnvironmentMode: "inherit", Env: map[string]string{"PATH": path, "GOTOOLCHAIN": "local"}},
+		{ID: "declared", Adapter: "go", EnvironmentMode: "explicit", Env: map[string]string{"HOME": external, "PATH": path, "GOTOOLCHAIN": "local"}},
+	}
+	request, run := prepareScratchEnvV2(t, fixture.control, scratchEnvRequest(fixture.base, groups))
+	for _, group := range groups[:2] {
+		if got := strings.TrimSpace(scratchGoEnvOutput(t, request, group, "GOTELEMETRY")); got != "off" {
+			t.Errorf("%s go telemetry = %q, want off", group.ID, got)
+		}
+	}
+	userEnv, _, err := goEnvFileFor([]string{"HOME=" + external}, runtime.GOOS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(filepath.Join(filepath.Dir(userEnv), "telemetry")); !os.IsNotExist(err) {
+		t.Errorf("preparation wrote the telemetry mode into a declared HOME: %v", err)
+	}
+	if err := ValidateScratchEnvironment(request, run); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // Two preparations with different run roots and different machine cache
 // paths digest identically in both modes and in the discovery view: the
 // managed value digests as managed:NAME:v1, never as a path.
