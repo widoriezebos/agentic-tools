@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
@@ -80,7 +81,9 @@ func TestIntentCriticDelegateSelectedRoster(t *testing.T) {
 		t.Fatal(err)
 	}
 	lines := strings.Split(string(seen), "\n")
-	if len(environment) != 4 || !slices.Contains(environment, "METASYSTEM_RUNTIME_CLAUDE_MAXIMAL_MODELS=") {
+	// The selected installation names no maximal model, so the compiled
+	// default's is carried (C4: every default lives in the engine).
+	if len(environment) != 4 || !slices.Contains(environment, "METASYSTEM_RUNTIME_CLAUDE_MAXIMAL_MODELS="+config.MustDefault("runtime.claude.maximal-models")) {
 		t.Fatalf("exactly the resolved roster values are carried: %v", environment)
 	}
 	for _, entry := range environment {
@@ -90,8 +93,9 @@ func TestIntentCriticDelegateSelectedRoster(t *testing.T) {
 		name, value, _ := strings.Cut(entry, "=")
 		t.Setenv(name, value)
 	}
-	// The selected installation names no maximal model, so its critic is
-	// refused for a design-bearing read even where the worktree would admit it.
+	// The selected installation's maximal models (the compiled default) do
+	// not include its critic, so it is refused for a design-bearing read
+	// even where the worktree would admit it.
 	os.WriteFile(filepath.Join(worktree, "metasystem.conf.local"), []byte("runtime.claude.maximal-models=review-mode-critic\n"), 0o600)
 	if err := dispatchcore.ValidateRuntimeHazardConfiguration(worktree, "claude", "review-mode-critic", dispatchcore.HazardDesignBearing); err == nil {
 		t.Fatal("a selected critic the selected installation does not authorize as maximal must be refused")

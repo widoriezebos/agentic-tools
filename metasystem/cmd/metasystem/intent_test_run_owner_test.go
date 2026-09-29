@@ -27,12 +27,15 @@ func TestIntentTestRunRunsTheTestingRunnerInThisProcess(t *testing.T) {
 	if err != nil && !os.IsNotExist(err) {
 		t.Fatal(err)
 	}
+	// The compiled default names testing.json, so a key the file omits is
+	// never missing (C4): an absolute path is the runner's own refusal.
 	var kept []string
 	for _, line := range strings.Split(string(data), "\n") {
 		if !strings.HasPrefix(line, "testing.contract=") {
 			kept = append(kept, line)
 		}
 	}
+	kept = append(kept, "testing.contract=/absolute/testing.json", "")
 	if err := os.WriteFile(conf, []byte(strings.Join(kept, "\n")), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -44,8 +47,8 @@ func TestIntentTestRunRunsTheTestingRunnerInThisProcess(t *testing.T) {
 	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
 		t.Fatalf("no JSON result: %v; stdout=%q stderr=%q", err, stdout.String(), stderr.String())
 	}
-	if code != 1 || !strings.Contains(stderr.String(), "metasystem test run: testing.contract is required in committed metasystem.conf") {
-		t.Fatalf("test run without a contract = %d %+v; stderr=%q", code, result, stderr.String())
+	if code != 1 || !strings.Contains(stderr.String(), "metasystem test run: testing.contract must be a relative normalized path") {
+		t.Fatalf("test run with an absolute contract path = %d %+v; stderr=%q", code, result, stderr.String())
 	}
 }
 

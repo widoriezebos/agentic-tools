@@ -153,7 +153,7 @@ func TestGoalRevisionAdmissionCommandJSONCarriesBudgetExtensionOffer(t *testing.
 	now := time.Date(2026, 8, 30, 9, 0, 0, 0, time.UTC)
 	repository, _ := proofAdmissionExtensionFixture(t)
 	root, reads := repository.root, repository.reads()
-	config := []byte("metasystem.runtimes=fake\nmetasystem.governance.correlation-policy=A\nmetasystem.budget.tier-3=8h/1/1200m/1/3\n")
+	config := []byte("metasystem.template=true\nmetasystem.runtimes=fake\nmetasystem.governance.correlation-policy=A\nmetasystem.budget.tier-3=8h/1/1200m/1/3\n")
 	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), config, 0o644); err != nil {
 		t.Fatal(err)
 	}

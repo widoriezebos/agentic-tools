@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -32,7 +33,14 @@ func workerAuthorizedFileAttemptFixtureAt(t *testing.T, controlRoot, tree string
 		t.Fatal(err)
 	}
 	conf := filepath.Join(controlRoot, "metasystem.conf")
-	if err := os.WriteFile(conf, []byte("metasystem.runtimes=fake\nmetasystem.governance.correlation-policy=A\nmetasystem.budget.tier-3=8h/1/1200m/1/3\n"), 0o644); err != nil {
+	settings := "metasystem.runtimes=fake\nmetasystem.governance.correlation-policy=A\nmetasystem.budget.tier-3=8h/1/1200m/1/3\n"
+	// A control root that declares itself the template keeps the one
+	// signal (metasystem.template=true), so the rewritten file stays the
+	// bytes its repository fixture accepted.
+	if existing, err := os.ReadFile(conf); err == nil && strings.HasPrefix(string(existing), "metasystem.template=true\n") {
+		settings = "metasystem.template=true\n" + settings
+	}
+	if err := os.WriteFile(conf, []byte(settings), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	pinProofBinaryFixture(t, controlRoot)
