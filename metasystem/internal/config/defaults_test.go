@@ -280,7 +280,7 @@ func TestBoardAndPipelineSettingsHaveCompiledDefaults(t *testing.T) {
 	for key, want := range map[string]string{
 		BatchMaxWaitKey: "10m", PipelineStallMinKey: "20", PipelineProofCostKey: "40m",
 		PipelineStageDefaultsKey: "build=10m,revise=10m,unit-proof=5m,review=18m,judgement=5m,land-ready=3m", PipelineHistoryNKey: "8",
-		BoardKeepHoursKey: "24", BoardPollSecKey: "5",
+		BoardKeepHoursKey: "24", BoardPollSecKey: "5", BoardMailboxKeepDaysKey: "7",
 	} {
 		if value, _, err := Get(GetParams{Key: key, ConfPath: conf, LookupEnv: noEnv}); err != nil || value != want {
 			t.Fatalf("Get(%s) = %q, %v; want %q", key, value, err, want)
@@ -307,6 +307,7 @@ func TestBoardAndPipelineSettingsHaveCompiledDefaults(t *testing.T) {
 		{PipelineStallMinKey + "=20m\n", PipelineStallMinKey},
 		{PipelineHistoryNKey + "=eight\n", PipelineHistoryNKey},
 		{PipelineProofCostKey + "=forty\n", PipelineProofCostKey},
+		{BoardMailboxKeepDaysKey + "=7d\n", BoardMailboxKeepDaysKey},
 	} {
 		if problems := validateRepo(t, validConf+row.setting); !hasProblem(problems, row.want) {
 			t.Fatalf("Validate accepted %q: %v", row.setting, problems)
