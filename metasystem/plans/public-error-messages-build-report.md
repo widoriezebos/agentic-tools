@@ -117,3 +117,13 @@ Incident: to stop my own stale test run I ran `pkill -f "metasystem.test"`. That
 may also have ended test processes of another builder on this host. The sibling
 worktree was never touched, but any of their Go test processes running at about 01:06
 may have been killed; I did not check whose processes matched.
+
+## Sol's code critique and its dispositions (2026-09-29)
+
+Sol: `metasystem/plans/public-error-messages-sol-critique.md`, 3 material.
+
+| id | disposition | where |
+|---|---|---|
+| SOL-EM-01 | Not taken. With an explicit `--file`, printing a present file's contents outside a repository is true output, not a false success. EM-20 was an absent default path reported as "no frontier recorded" outside any project, and that stays refused. The existing test pins reading a present frontier without asking Git. | `internal/report/frontier.go:frontierStatusWithGit` |
+| SOL-EM-02 | Fixed. Only a frontier that does not exist is "no frontier recorded"; any other read error refuses with exit 1 and names the path. | `frontierStatusWithGit`; `TestFrontierStatusUnreadableIsNotAbsent` |
+| SOL-EM-03 | Fixed. The proof id is "in the output of metasystem test run", without claiming when it prints. | `cmd/metasystem/intent_references.go:noReference`; `public_error_messages_test.go` |

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -73,5 +74,17 @@ func TestFrontierStatusOutsideARepositoryRefuses(t *testing.T) {
 	lines, ferr = frontierStatusWithGit(FrontierOptions{File: present, Repo: repo}, frontierGitScript(t, nil))
 	if ferr != nil || len(lines) != 1 || lines[0] != "score=80\ndirection=min" {
 		t.Fatalf("present frontier = %v %+v", lines, ferr)
+	}
+}
+
+// SOL-EM-02: a frontier path that exists but cannot be read as a file (a
+// directory, say) is not an absent frontier; it refuses and names the path.
+func TestFrontierStatusUnreadableIsNotAbsent(t *testing.T) {
+	t.Parallel()
+	repo := t.TempDir()
+	insideGit := frontierGitScript(t, []frontierGitStep{{repo, []string{"rev-parse", "--is-inside-work-tree"}, "true", nil}})
+	lines, ferr := frontierStatusWithGit(FrontierOptions{File: repo, Repo: repo}, insideGit)
+	if ferr == nil || ferr.Code != 1 || !strings.Contains(ferr.Message, "cannot read the frontier at "+repo) || len(lines) != 0 {
+		t.Fatalf("a directory as the frontier = %v %+v, want code 1 naming it", lines, ferr)
 	}
 }

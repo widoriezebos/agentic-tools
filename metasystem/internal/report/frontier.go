@@ -389,6 +389,9 @@ func frontierStatusWithGit(opts FrontierOptions, gitRead func(repo string, args 
 			}
 			return nil, frontierFail(2, "%s is not inside a Git repository, so there is no frontier to read; run this inside the repository; nothing was read", where)
 		}
+		if !os.IsNotExist(err) {
+			return nil, frontierFail(1, "cannot read the frontier at %s: %v; nothing was read", opts.File, err)
+		}
 		return []string{fmt.Sprintf("no frontier recorded at %s", opts.File)}, nil
 	}
 	lines := []string{strings.TrimRight(string(data), "\n")}
