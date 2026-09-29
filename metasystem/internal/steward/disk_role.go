@@ -243,7 +243,7 @@ func SweepDiskStores(ctx context.Context, top string, pass DiskPass) (DiskPassRe
 			diskstore.RegisteredStores{Registry: diskstore.CheckoutRegistry(top), Proofs: checkoutProofs(top, pass)},
 			HandoffClass{Root: top, Keep: settings.Duration(config.DiskContextKeepKey)},
 			UsageClass{StateRoot: top, Limit: settings.Count(config.DiskSweepItemsPerLockKey)},
-			PinClass{Top: top},
+			PinClass{Top: top, Grace: settings.Duration(config.DiskPinGraceKey)},
 			DelegateWorktrees{Top: top},
 			LegacyCandidateEngines{Top: top},
 		}

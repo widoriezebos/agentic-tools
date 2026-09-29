@@ -20,6 +20,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
@@ -33,6 +34,9 @@ type PinClass struct {
 	Installed func() (InstallIdentity, error)
 	// Prober judges a component record's process; nil is the kernel's.
 	Prober identity.Prober
+	// Grace is disk.pin-grace-hours: how long a pin stays after its
+	// generation stopped being installed (Round D2 F-2).
+	Grace time.Duration
 }
 
 func (PinClass) Name() string { return "engine pins" }
@@ -49,6 +53,10 @@ func (c PinClass) directory() string {
 type pinKeep struct {
 	installed  string
 	generation map[int]string
+	// current is the installed generation and replacedAt when it was
+	// minted: every older generation stopped being installed then.
+	current    int
+	replacedAt time.Time
 }
 
 // keeps reads what keeps pins; any read error holds the class.
@@ -59,12 +67,15 @@ func (c PinClass) keeps() (pinKeep, error) {
 		installed = func() (InstallIdentity, error) { return VerifyIdentity(RepoIdentityPath(c.Top), c.Top) }
 	}
 	identityRecord, err := installed()
-	switch {
-	case errors.Is(err, os.ErrNotExist):
-	case err != nil:
+	if err != nil {
+		// Without the installed identity nothing says when a generation
+		// stopped being installed (Round D2 F-2): the class holds.
 		return keep, fmt.Errorf("the installed engine identity cannot be read: %w", err)
-	default:
-		keep.installed = filepath.Base(EnrolledExecutionPath(c.Top, identityRecord))
+	}
+	keep.installed = filepath.Base(EnrolledExecutionPath(c.Top, identityRecord))
+	keep.current = identityRecord.Generation
+	if keep.replacedAt, err = time.Parse(time.RFC3339, identityRecord.MintedAt); err != nil {
+		return keep, fmt.Errorf("the installed generation's minting time %q cannot be read", identityRecord.MintedAt)
 	}
 	prober := c.Prober
 	if prober == nil {
@@ -121,12 +132,20 @@ func probePin(path string) (held bool, err error) {
 }
 
 // judge is one pin's verdict against what keeps pins and the census.
-func judgePin(path string, keep pinKeep, census *diskstore.UseCensus) diskstore.Verdict {
+func judgePin(path string, keep pinKeep, census *diskstore.UseCensus, now time.Time, grace time.Duration) diskstore.Verdict {
 	match := pinName.FindStringSubmatch(filepath.Base(path))
 	generation, _ := strconv.Atoi(match[1])
 	switch {
 	case filepath.Base(path) == keep.installed:
 		return diskstore.Verdict{Decision: diskstore.Wait}
+	case generation >= keep.current:
+		return diskstore.Verdict{Decision: diskstore.Keep, Reason: fmt.Sprintf("generation %d is not older than the installed generation %d", generation, keep.current),
+			Command: "metasystem disk show"}
+	case now.Sub(keep.replacedAt) < grace:
+		// An older engine's run may still exec this pin without holding it
+		// (Round D2 F-2): it stays for the grace after the re-arm.
+		return diskstore.Verdict{Decision: diskstore.Keep, Reason: fmt.Sprintf("generation %d was replaced %s ago; it stays for disk.pin-grace-hours", generation, now.Sub(keep.replacedAt).Round(time.Minute)),
+			Command: "metasystem disk clean, after the grace"}
 	case keep.generation[generation] != "":
 		return diskstore.Verdict{Decision: diskstore.Keep, Reason: fmt.Sprintf("component %s runs generation %d", keep.generation[generation], generation),
 			Command: "metasystem machine stop, or the component's next re-arm"}
@@ -147,12 +166,12 @@ func judgePin(path string, keep pinKeep, census *diskstore.UseCensus) diskstore.
 	return diskstore.Verdict{Decision: diskstore.Release, Reason: "no installation, component, process or preparation uses this generation"}
 }
 
-// prepareLockHeld probes .prepare.flock without creating it; absent is free.
+// prepareLockHeld probes .prepare.flock without creating it. Every
+// preparation creates it beside its pins, so pins without it are not the
+// layout this class knows: absent is an error that holds the class (Round
+// D2 F-6).
 func (c PinClass) prepareLockHeld() (bool, error) {
 	file, err := os.Open(filepath.Join(c.directory(), ".prepare.flock"))
-	if errors.Is(err, os.ErrNotExist) {
-		return false, nil
-	}
 	if err != nil {
 		return false, err
 	}
@@ -200,7 +219,7 @@ func (c PinClass) Plan(ctx context.Context, pass *diskstore.Pass) ([]diskstore.I
 	census := pass.Census(ctx)
 	var items []diskstore.Item
 	for _, pin := range pins {
-		item := diskstore.Item{Class: c.Name(), Key: filepath.Base(pin), Path: pin, Verdict: judgePin(pin, keep, census)}
+		item := diskstore.Item{Class: c.Name(), Key: filepath.Base(pin), Path: pin, Verdict: judgePin(pin, keep, census, pass.Now, c.Grace)}
 		if item.Verdict.Decision == diskstore.Release {
 			item.Bytes, _, _ = diskstore.Measure(ctx, pin)
 		}
@@ -214,16 +233,14 @@ func (c PinClass) Plan(ctx context.Context, pass *diskstore.Pass) ([]diskstore.I
 // own LOCK_EX held through the unlink.
 func (c PinClass) Apply(ctx context.Context, pass *diskstore.Pass, item diskstore.Item) diskstore.Verdict {
 	lock, err := os.OpenFile(filepath.Join(c.directory(), ".prepare.flock"), os.O_RDWR, 0)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
+	if err != nil {
 		return diskstore.Verdict{Decision: diskstore.Pending, Reason: "the preparation lock cannot be opened: " + err.Error(), Command: "metasystem disk show"}
 	}
-	if lock != nil {
-		defer lock.Close()
-		if err := unix.Flock(int(lock.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
-			return diskstore.Verdict{Decision: diskstore.Pending, Reason: "an engine is being prepared (.prepare.flock is held)", Command: "metasystem disk clean"}
-		}
-		defer unix.Flock(int(lock.Fd()), unix.LOCK_UN)
+	defer lock.Close()
+	if err := unix.Flock(int(lock.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
+		return diskstore.Verdict{Decision: diskstore.Pending, Reason: "an engine is being prepared (.prepare.flock is held)", Command: "metasystem disk clean"}
 	}
+	defer unix.Flock(int(lock.Fd()), unix.LOCK_UN)
 	keep, err := c.keeps()
 	if err != nil {
 		return diskstore.Verdict{Decision: diskstore.Pending, Reason: err.Error(), Command: "metasystem system check"}
@@ -234,7 +251,7 @@ func (c PinClass) Apply(ctx context.Context, pass *diskstore.Pass, item diskstor
 			return diskstore.Verdict{Decision: diskstore.Pending, Reason: "processes started since the census could not be read: " + err.Error(), Command: "metasystem disk clean"}
 		}
 	}
-	if verdict := judgePin(item.Path, keep, census); verdict.Decision != diskstore.Release {
+	if verdict := judgePin(item.Path, keep, census, pass.Now, c.Grace); verdict.Decision != diskstore.Release {
 		return verdict
 	}
 	pin, err := os.Open(item.Path)

@@ -41,6 +41,10 @@ func writePin(t *testing.T, top string, generation int, digit string) string {
 	if err := testexec.WriteFile(path, []byte("#!/bin/sh\n"), 0o500); err != nil {
 		t.Fatal(err)
 	}
+	// Every preparation creates the preparation lock beside its pins.
+	if err := os.WriteFile(filepath.Join(filepath.Dir(path), ".prepare.flock"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	return path
 }
 
@@ -111,8 +115,8 @@ func TestThePinRuleKeepsEveryPinSomethingUses(t *testing.T) {
 	}
 	class := PinClass{Top: top, Prober: pinProber{100: identity.Alive},
 		Installed: func() (InstallIdentity, error) {
-			return InstallIdentity{Generation: 7, InstallDigest: "sha256:" + strings.Repeat("a", 64)}, nil
-		}}
+			return InstallIdentity{Generation: 7, InstallDigest: "sha256:" + strings.Repeat("a", 64), MintedAt: pinNow.Add(-48 * time.Hour).Format(time.RFC3339)}, nil
+		}, Grace: 24 * time.Hour}
 	if _, err := diskstore.RunPass(context.Background(), pinPass(top, censusReader(running, false), class)); err != nil {
 		t.Fatal(err)
 	}
@@ -200,8 +204,8 @@ func TestThePreparationLeaseKeepsAPreparedPinUntilClose(t *testing.T) {
 	// The generation is replaced: generation 3 is no longer installed.
 	class := PinClass{Top: root, Prober: pinProber{},
 		Installed: func() (InstallIdentity, error) {
-			return InstallIdentity{Generation: 4, InstallDigest: "sha256:" + strings.Repeat("9", 64)}, nil
-		}}
+			return InstallIdentity{Generation: 4, InstallDigest: "sha256:" + strings.Repeat("9", 64), MintedAt: pinNow.Add(-48 * time.Hour).Format(time.RFC3339)}, nil
+		}, Grace: 24 * time.Hour}
 	if _, err := diskstore.RunPass(context.Background(), pinPass(root, censusReader("/elsewhere", false), class)); err != nil {
 		t.Fatal(err)
 	}
@@ -273,5 +277,74 @@ func TestLegacyCandidateEnginesAreStraysNeverRemoved(t *testing.T) {
 		if !exists(t, filepath.Join(legacy, "metasystem")) {
 			t.Fatal("a pass never removes a legacy candidate engine")
 		}
+	}
+}
+
+// Round D2 F-2: an older engine's test run holds no lease on its policy
+// engine's pin between its plan and its first worker, so a pin stays for
+// disk.pin-grace-hours after its generation stopped being installed (a
+// re-arm N -> N+1 during an old run's build gap keeps pin N).
+func TestAReplacedGenerationsPinStaysForTheGrace(t *testing.T) {
+	t.Parallel()
+	for name, c := range map[string]struct {
+		mintedAgo time.Duration
+		kept      bool
+	}{
+		"re-armed an hour ago":  {mintedAgo: time.Hour, kept: true},
+		"re-armed two days ago": {mintedAgo: 48 * time.Hour, kept: false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			top := canonicalPath(t.TempDir())
+			previous := writePin(t, top, 3, "e")
+			writePin(t, top, 4, "a")
+			class := PinClass{Top: top, Prober: pinProber{}, Grace: 24 * time.Hour,
+				Installed: func() (InstallIdentity, error) {
+					return InstallIdentity{Generation: 4, InstallDigest: "sha256:" + strings.Repeat("a", 64), MintedAt: pinNow.Add(-c.mintedAgo).Format(time.RFC3339)}, nil
+				}}
+			report, err := diskstore.RunPass(context.Background(), pinPass(top, censusReader("/elsewhere", false), class))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if exists(t, previous) != c.kept {
+				t.Fatalf("pin of generation 3 kept=%v, want %v: %+v", exists(t, previous), c.kept, report.Kept)
+			}
+		})
+	}
+}
+
+// Rule 1 and Round D2 F-6: what cannot say when a generation stopped being
+// installed, or pins without their preparation lock, hold the class.
+func TestPinsHoldWhenTheirTimeOrLockCannotBeRead(t *testing.T) {
+	t.Parallel()
+	for name, c := range map[string]struct {
+		minted  string
+		noFlock bool
+	}{
+		"an installed identity without its minting time": {minted: ""},
+		"an unparseable minting time":                    {minted: "yesterday"},
+		"an absent .prepare.flock":                       {minted: pinNow.Add(-48 * time.Hour).Format(time.RFC3339), noFlock: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			top := canonicalPath(t.TempDir())
+			stale := writePin(t, top, 3, "e")
+			if c.noFlock {
+				if err := os.Remove(filepath.Join(filepath.Dir(stale), ".prepare.flock")); err != nil {
+					t.Fatal(err)
+				}
+			}
+			class := PinClass{Top: top, Prober: pinProber{}, Grace: 24 * time.Hour,
+				Installed: func() (InstallIdentity, error) {
+					return InstallIdentity{Generation: 4, InstallDigest: "sha256:" + strings.Repeat("a", 64), MintedAt: c.minted}, nil
+				}}
+			report, err := diskstore.RunPass(context.Background(), pinPass(top, censusReader("/elsewhere", false), class))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !exists(t, stale) || len(report.Pending) == 0 {
+				t.Fatalf("nothing is removed and the class is pending: %+v", report)
+			}
+		})
 	}
 }
