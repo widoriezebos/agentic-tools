@@ -398,3 +398,8 @@ func RemoveClaimFile(root, path string) error {
 	}
 	return nil
 }
+
+// CreatorLiveness preserves UNKNOWN as distinct from a live creator.
+func CreatorLiveness(claim CreationClaim, prober identity.Prober) identity.Liveness {
+	return identity.AliveRef(prober, claim.Creator.Ref())
+}

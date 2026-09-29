@@ -61,10 +61,16 @@ func TestCaptureProductRootScopesRefusesAnUnboundLaunch(t *testing.T) {
 	t.Parallel()
 	workspace := t.TempDir()
 	for name, call := range map[string]func() error{
-		"unknown mode":  func() error { _, err := CaptureProductRootScopes("elsewhere", workspace, nil); return err },
-		"no workspace":  func() error { _, err := CaptureProductRootScopes(LaunchModeWorktree, "", nil); return err },
-		"relative root": func() error { _, err := CaptureProductRootScopes(LaunchModeWorktree, workspace, []string{"product"}); return err },
-		"empty root":    func() error { _, err := CaptureProductRootScopes(LaunchModeWorktree, workspace, []string{""}); return err },
+		"unknown mode": func() error { _, err := CaptureProductRootScopes("elsewhere", workspace, nil); return err },
+		"no workspace": func() error { _, err := CaptureProductRootScopes(LaunchModeWorktree, "", nil); return err },
+		"relative root": func() error {
+			_, err := CaptureProductRootScopes(LaunchModeWorktree, workspace, []string{"product"})
+			return err
+		},
+		"empty root": func() error {
+			_, err := CaptureProductRootScopes(LaunchModeWorktree, workspace, []string{""})
+			return err
+		},
 	} {
 		if call() == nil {
 			t.Fatalf("%s was accepted", name)
