@@ -1,0 +1,426 @@
+package proofrun
+
+// Proof attempt retention (design engine-owns-disk-lifetimes Part B, 3.5
+// "Proof records and retained proof", U5b). An attempt, its process and
+// suite records and its retained proof under proof-runs/<attempt>/ are one
+// unit of retention. Over disk.proof-target-gib the checkout pass removes
+// the oldest terminal attempts past disk.proof-keep-days, never a retention
+// root: a live attempt; one younger than the window; one whose freshness
+// has not expired; one a retained attempt names (reuse, previous, retry,
+// waits and sources, transitively); one any record kind still names (an
+// open goal's stop batch, an unlanded landing batch or receipt, a scratch
+// record, the trunk-red register, the validation window). A record kind
+// that cannot be read stops the class for the pass. The window alone never
+// removes an attempt.
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"regexp"
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+)
+
+// AttemptNamer is one kind of record that can still need a proof attempt.
+// Named lists the attempt ids the kind's live records name; an error means
+// the kind could not be read, and the class removes nothing that pass.
+type AttemptNamer interface {
+	Kind() string
+	Named(ctx context.Context, now time.Time) ([]string, error)
+}
+
+var attemptIDPattern = regexp.MustCompile(`^proof-[a-z0-9]+-[0-9a-f]{16}$`)
+
+// IsAttemptID reports a value shaped like a proof attempt id.
+func IsAttemptID(value string) bool { return attemptIDPattern.MatchString(value) }
+
+// AttemptReferences are the attempts one attempt names: its reuse sources,
+// its previous and retried attempts, and the producers it waited on or
+// took groups from.
+func AttemptReferences(attempt Attempt) []string {
+	var named []string
+	add := func(values ...string) {
+		for _, value := range values {
+			if IsAttemptID(value) && value != attempt.AttemptID {
+				named = append(named, value)
+			}
+		}
+	}
+	add(attempt.PreviousAttempt)
+	if attempt.Retry != nil {
+		add(attempt.Retry.PriorAttempt)
+	}
+	for _, values := range []map[string]string{attempt.TestWaits, attempt.TestSources} {
+		for _, value := range values {
+			add(value)
+		}
+	}
+	if attempt.TestResult != nil {
+		add(TestResultReferences(*attempt.TestResult)...)
+	}
+	return named
+}
+
+// TestResultReferences are the attempts a test result reuses groups from.
+func TestResultReferences(result TestResult) []string {
+	var named []string
+	for _, group := range result.Groups {
+		if IsAttemptID(group.ReuseAttempt) {
+			named = append(named, group.ReuseAttempt)
+		}
+	}
+	return named
+}
+
+// ScratchNamer is the scratch records' kind: every attempt a present
+// scratch record names, so ReconcileScratch is never stranded.
+type ScratchNamer struct{ Control string }
+
+func (ScratchNamer) Kind() string { return "proof-run scratch records" }
+
+func (n ScratchNamer) Named(context.Context, time.Time) ([]string, error) {
+	paths, err := filepath.Glob(filepath.Join(ScratchStore(n.Control), "*.json"))
+	if err != nil {
+		return nil, err
+	}
+	var named []string
+	for _, path := range paths {
+		record, err := readScratchRecordFile(path)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("scratch record %s: %w", path, err)
+		}
+		if record.Attempt != "" {
+			named = append(named, record.Attempt)
+		}
+	}
+	return named, nil
+}
+
+// Retention is the attempt store's class in a checkout pass.
+type Retention struct {
+	Control string
+	// Target is disk.proof-target-gib in bytes; Keep disk.proof-keep-days.
+	Target int64
+	Keep   time.Duration
+	Namers []AttemptNamer
+	// Alive reads a recorded process's liveness.
+	Alive func(identity.Ref) identity.Liveness
+
+	count int
+	bytes int64
+	// seen is every attempt record's modification time at the plan, so
+	// the apply reads only what changed since.
+	seen  map[string]time.Time
+	units map[string]*attemptUnit
+}
+
+type attemptUnit struct {
+	attempt Attempt
+	records []string
+	bytes   int64
+	ended   time.Time
+}
+
+func (*Retention) Name() string { return "proof attempts" }
+
+// Totals are every attempt and the bytes of the whole proof-run store.
+func (r *Retention) Totals() (int, int64) { return r.count, r.bytes }
+
+func (r *Retention) root() string {
+	return filepath.Join(r.Control, "artifacts", "agents", "proof-runs")
+}
+
+// Plan reads every attempt and its records, measures, and, over the target,
+// names the oldest attempts whose proof holds until the store would be
+// under it. It writes nothing.
+func (r *Retention) Plan(ctx context.Context, pass *diskstore.Pass) ([]diskstore.Item, error) {
+	r.count, r.bytes, r.units, r.seen = 0, 0, map[string]*attemptUnit{}, map[string]time.Time{}
+	if _, err := os.Stat(r.root()); errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	r.bytes, _, _ = diskstore.Measure(ctx, r.root())
+	var items []diskstore.Item
+	records := r.attemptRecords()
+	paths, err := filepath.Glob(filepath.Join(attemptsDir(r.Control), "*.json"))
+	if err != nil {
+		return nil, err
+	}
+	for _, path := range paths {
+		id := strings.TrimSuffix(filepath.Base(path), ".json")
+		if info, err := os.Stat(path); err == nil {
+			r.seen[path] = info.ModTime()
+		}
+		attempt, err := readRetainedAttempt(r.Control, id)
+		r.count++
+		if err != nil {
+			items = append(items, diskstore.Item{Class: r.Name(), Key: id, Path: path,
+				Verdict: diskstore.Verdict{Decision: diskstore.Pending, Reason: "attempt record unreadable: " + err.Error(), Command: "metasystem test status"}})
+			continue
+		}
+		unit := &attemptUnit{attempt: attempt, records: records[id], ended: attemptEnded(attempt)}
+		unit.bytes = attemptBytes(r.Control, id, unit.records)
+		r.units[id] = unit
+	}
+	if r.bytes <= r.Target {
+		return items, nil
+	}
+	roots := map[string]bool{}
+	for _, namer := range r.Namers {
+		named, err := namer.Named(ctx, pass.Now)
+		if err != nil {
+			return append(items, diskstore.Item{Class: r.Name(), Key: "~" + namer.Kind(), Path: r.root(), Verdict: diskstore.Verdict{Decision: diskstore.Pending,
+				Reason:  "which attempts the " + namer.Kind() + " name is unknown (" + err.Error() + "); no attempt is removed this pass",
+				Command: "metasystem system check"}}), nil
+		}
+		for _, id := range named {
+			roots[id] = true
+		}
+	}
+	for id, unit := range r.units {
+		if r.isRoot(unit, pass.Now) {
+			roots[id] = true
+		}
+	}
+	closeOver(roots, r.units)
+	order := make([]*attemptUnit, 0, len(r.units))
+	for _, unit := range r.units {
+		order = append(order, unit)
+	}
+	sort.Slice(order, func(i, j int) bool {
+		if !order[i].ended.Equal(order[j].ended) {
+			return order[i].ended.Before(order[j].ended)
+		}
+		return order[i].attempt.AttemptID < order[j].attempt.AttemptID
+	})
+	over := r.bytes - r.Target
+	for _, unit := range order {
+		if over <= 0 || ctx.Err() != nil {
+			break
+		}
+		id := unit.attempt.AttemptID
+		if roots[id] {
+			continue
+		}
+		path := filepath.Join(attemptsDir(r.Control), id+".json")
+		if reason := r.processesAlive(unit); reason != "" {
+			items = append(items, diskstore.Item{Class: r.Name(), Key: id, Path: path, Bytes: unit.bytes,
+				Verdict: diskstore.Verdict{Decision: diskstore.Keep, Reason: reason, Command: "metasystem work status"}})
+			continue
+		}
+		items = append(items, diskstore.Item{Class: r.Name(), Key: id, Path: path, Bytes: unit.bytes,
+			Verdict: diskstore.Verdict{Decision: diskstore.Release, Reason: "terminal, past disk.proof-keep-days, named by nothing, the store over its target"}})
+		over -= unit.bytes
+	}
+	if over > 0 {
+		items = append(items, diskstore.Item{Class: r.Name(), Key: "~target", Path: r.root(), Verdict: diskstore.Verdict{Decision: diskstore.Keep,
+			Reason:  fmt.Sprintf("the proof-run store is over its target of %d GiB after every removal its proofs allow; what remains is live, young, fresh or still named", r.Target>>30),
+			Command: "metasystem disk show"}})
+	}
+	return items, nil
+}
+
+// isRoot reports the retention roots an attempt is by itself: live, younger
+// than the window, or fresh.
+func (r *Retention) isRoot(unit *attemptUnit, now time.Time) bool {
+	if unit.attempt.Terminal == nil || unit.ended.IsZero() || now.Sub(unit.ended) < r.Keep {
+		return true
+	}
+	if unit.attempt.FreshnessExpiresAt != "" {
+		expires, err := time.Parse(time.RFC3339Nano, unit.attempt.FreshnessExpiresAt)
+		if err != nil || expires.After(now) {
+			return true
+		}
+	}
+	return false
+}
+
+// closeOver adds every attempt a root names, transitively.
+func closeOver(roots map[string]bool, units map[string]*attemptUnit) {
+	queue := make([]string, 0, len(roots))
+	for id := range roots {
+		queue = append(queue, id)
+	}
+	for len(queue) > 0 {
+		id := queue[0]
+		queue = queue[1:]
+		unit := units[id]
+		if unit == nil {
+			continue
+		}
+		for _, named := range AttemptReferences(unit.attempt) {
+			if !roots[named] {
+				roots[named] = true
+				queue = append(queue, named)
+			}
+		}
+	}
+}
+
+// processesAlive names a recorded process of the attempt that is not
+// proven dead; empty when every one is.
+func (r *Retention) processesAlive(unit *attemptUnit) string {
+	for _, path := range unit.records {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return "process record unreadable: " + err.Error()
+		}
+		var record Record
+		if err := json.Unmarshal(data, &record); err != nil {
+			return "process record unreadable: " + err.Error()
+		}
+		for label, process := range map[string]ProcessIdentity{"suite": record.SuiteProcess, "watchdog": record.Watchdog, "launcher": record.Launcher} {
+			if process.Pid <= 0 {
+				continue
+			}
+			if state := r.Alive(process.Ref()); state != identity.Dead {
+				return fmt.Sprintf("its %s pid %d is %s", label, process.Pid, state)
+			}
+		}
+	}
+	return ""
+}
+
+// attemptRecords indexes the process and suite records by the attempt they
+// name.
+func (r *Retention) attemptRecords() map[string][]string {
+	byAttempt := map[string][]string{}
+	for _, pattern := range []string{filepath.Join(r.root(), "processes", "*.json"), filepath.Join(r.root(), "*.json")} {
+		paths, _ := filepath.Glob(pattern)
+		for _, path := range paths {
+			data, err := os.ReadFile(path)
+			if err != nil {
+				continue
+			}
+			var record struct {
+				AttemptID string `json:"attemptId"`
+			}
+			if json.Unmarshal(data, &record) == nil && IsAttemptID(record.AttemptID) {
+				byAttempt[record.AttemptID] = append(byAttempt[record.AttemptID], path)
+			}
+		}
+	}
+	return byAttempt
+}
+
+func attemptBytes(control, id string, records []string) int64 {
+	bytes, _, _ := diskstore.Measure(context.Background(), filepath.Join(control, "artifacts", "agents", "proof-runs", id))
+	for _, path := range append([]string{filepath.Join(attemptsDir(control), id+".json")}, records...) {
+		measured, _, _ := diskstore.Measure(context.Background(), path)
+		bytes += measured
+	}
+	return bytes
+}
+
+func attemptEnded(attempt Attempt) time.Time {
+	stamps := []string{attempt.EndedAt, attempt.StartedAt}
+	if attempt.Terminal != nil {
+		stamps = append([]string{attempt.Terminal.At}, stamps...)
+	}
+	for _, stamp := range stamps {
+		if parsed, err := time.Parse(time.RFC3339Nano, stamp); err == nil {
+			return parsed
+		}
+	}
+	return time.Time{}
+}
+
+// Apply is one attempt's removal under the proof mutation lock, taken
+// without waiting: the attempt is reloaded and judged again, every attempt
+// written since the plan is read for a reference to it, then its retained
+// proof, its records and, last, the attempt record itself are removed.
+func (r *Retention) Apply(ctx context.Context, pass *diskstore.Pass, item diskstore.Item) diskstore.Verdict {
+	held, err := TryAcquireMutation(r.Control)
+	if errors.Is(err, ErrMutationHeld) {
+		return diskstore.Verdict{Decision: diskstore.Pending, Reason: "a proof run holds the proof mutation lock", Command: "metasystem disk clean, once that run has ended"}
+	}
+	if err != nil {
+		return diskstore.Verdict{Decision: diskstore.Pending, Reason: err.Error(), Command: "metasystem disk show"}
+	}
+	defer held.Release()
+	id := item.Key
+	attempt, err := readRetainedAttempt(r.Control, id)
+	if errors.Is(err, os.ErrNotExist) {
+		return diskstore.Verdict{Decision: diskstore.Release, Reason: "already gone"}
+	}
+	if err != nil {
+		return diskstore.Verdict{Decision: diskstore.Pending, Reason: "attempt record unreadable: " + err.Error(), Command: "metasystem test status"}
+	}
+	unit := &attemptUnit{attempt: attempt, records: r.attemptRecords()[id], ended: attemptEnded(attempt)}
+	if r.isRoot(unit, pass.Now) {
+		return diskstore.Verdict{Decision: diskstore.Keep, Reason: "the attempt changed since the plan", Command: "metasystem disk show"}
+	}
+	if reason := r.processesAlive(unit); reason != "" {
+		return diskstore.Verdict{Decision: diskstore.Keep, Reason: reason, Command: "metasystem work status"}
+	}
+	if referrer := r.newerReferrer(id); referrer != "" {
+		return diskstore.Verdict{Decision: diskstore.Keep, Reason: "attempt " + referrer + " written since the plan names it", Command: "metasystem disk show"}
+	}
+	if err := diskstore.RemoveTree(ctx, filepath.Join(r.root(), id)); err != nil {
+		return diskstore.Verdict{Decision: diskstore.Pending, Reason: "removal cut short (" + err.Error() + "); the next pass finishes it", Command: "metasystem disk clean"}
+	}
+	for _, path := range append(unit.records, filepath.Join(attemptsDir(r.Control), id+".json")) {
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return diskstore.Verdict{Decision: diskstore.Pending, Reason: "removal cut short (" + err.Error() + "); the next pass finishes it", Command: "metasystem disk clean"}
+		}
+	}
+	return diskstore.Verdict{Decision: diskstore.Release, Reason: "attempt past its window, named by nothing; removed"}
+}
+
+// newerReferrer is an attempt record written or changed since the plan
+// that names id.
+func (r *Retention) newerReferrer(id string) string {
+	paths, _ := filepath.Glob(filepath.Join(attemptsDir(r.Control), "*.json"))
+	for _, path := range paths {
+		info, err := os.Stat(path)
+		if seen, ok := r.seen[path]; err != nil || ok && info.ModTime().Equal(seen) {
+			continue
+		}
+		other := strings.TrimSuffix(filepath.Base(path), ".json")
+		attempt, err := readRetainedAttempt(r.Control, other)
+		if err != nil {
+			return other
+		}
+		for _, named := range AttemptReferences(attempt) {
+			if named == id {
+				return other
+			}
+		}
+	}
+	return ""
+}
+
+// readRetainedAttempt decodes an attempt record for its retention facts
+// alone (terminal, times, freshness, references, process keys): retention
+// never judges whether a record is a valid proof, only whether it is still
+// needed, so a record the proof readers would refuse is still retained or
+// removed by these facts. A record that does not decode, or names another
+// attempt, is unreadable.
+func readRetainedAttempt(control, id string) (Attempt, error) {
+	path, err := AttemptPath(control, id)
+	if err != nil {
+		return Attempt{}, err
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return Attempt{}, err
+	}
+	var attempt Attempt
+	if err := json.Unmarshal(data, &attempt); err != nil {
+		return Attempt{}, fmt.Errorf("proof attempt %s: %w", id, err)
+	}
+	if attempt.AttemptID != id {
+		return Attempt{}, fmt.Errorf("proof attempt %s names %q", id, attempt.AttemptID)
+	}
+	return attempt, nil
+}

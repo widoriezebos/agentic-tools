@@ -216,6 +216,8 @@ func SweepDiskStores(ctx context.Context, top string, pass DiskPass) (DiskPassRe
 			HandoffClass{Root: top, Keep: settings.Duration(config.DiskContextKeepKey)},
 			UsageClass{StateRoot: top, Limit: settings.Count(config.DiskSweepItemsPerLockKey)},
 		}
+		checkoutOptions.Classes = append(checkoutOptions.Classes,
+			attemptRetention(top, pass.Now, settings.Bytes(config.DiskProofTargetKey), settings.Duration(config.DiskProofKeepKey)))
 		if layout, err := stateroot.ResolveLayout(top); err == nil {
 			checkoutOptions.Classes = append(checkoutOptions.Classes, LandingReleaseSets{Installation: layout.InstallationRoot,
 				StateRoot: top, GitRoot: layout.GitRoot, Git: ExecWorkspaceGit})
