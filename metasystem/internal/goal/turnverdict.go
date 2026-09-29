@@ -1731,14 +1731,18 @@ func (s *Store) decide(verdict *Verdict, scan ScanResult, session *sessionState,
 		verdict.BlockSource = &source
 		display = append(display, reason)
 	}
-	// landingClaims says what this machine holds waiting to land, and takes
-	// the holder's due steps over it under the session's own identity (g1-s70
-	// D3). A taken step never blocks: what stops one (a hold, a moved tip, a
-	// missing word) is the human's to resolve, and its refusal is shown at
-	// every Stop while it stands.
+	// The holder takes its due steps over the claims it holds on every Stop,
+	// under the session's own identity, before and whatever the scan says
+	// (g1-s70 D3): a machine holding a landing claim works on another goal. A
+	// taken step never blocks and leaves the scan's verdict as it is: what
+	// stops one (a hold, a moved tip, a missing word) is the human's to
+	// resolve, and its refusal is shown at every Stop while it stands.
+	if work != nil {
+		display = append(display, s.takeHolderSteps(work.landingClaims)...)
+	}
+	// landingClaims says what this machine holds waiting to land.
 	landingClaims := func() {
 		display = append(display, LandingClaimLines(work.landingClaims, s.now())...)
-		display = append(display, s.takeHolderSteps(work.landingClaims)...)
 	}
 
 	switch {

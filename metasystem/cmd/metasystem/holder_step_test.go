@@ -18,12 +18,18 @@ import (
 // judged over the bed's ledger with the production step taker.
 func holderStop(t *testing.T, bed *intentBed, owners intentOwners, now time.Time) goal.Verdict {
 	t.Helper()
+	return holderStopOver(t, bed, owners, now, goal.ScanResult{})
+}
+
+// holderStopOver is holderStop over what the Stop's scan found.
+func holderStopOver(t *testing.T, bed *intentBed, owners intentOwners, now time.Time, scan goal.ScanResult) goal.Verdict {
+	t.Helper()
 	endpoint, err := owners.dependencies.endpoint(bed.root())
 	if err != nil {
 		t.Fatal(err)
 	}
 	store := &goal.Store{Root: bed.root(), Now: func() time.Time { return now }, TakeHolderStep: holderStepTaker(bed.root(), owners)}
-	verdict, err := store.TurnVerdictAtEndpoint(endpoint, "mac-cli", goal.ScanResult{}, "holder-session", "", "main-1",
+	verdict, err := store.TurnVerdictAtEndpoint(endpoint, "mac-cli", scan, "holder-session", "", "main-1",
 		goal.TurnVerdictOptions{SeatActor: goal.Actor{Machine: "mac-cli", Lineage: "m1"}})
 	if err != nil {
 		t.Fatal(err)
@@ -92,6 +98,59 @@ func TestASendBacksRevisionIsStartedOnceAtTheHoldersStop(t *testing.T) {
 		t.Fatalf("the Stop does not say the revision started: %s", first.Display)
 	}
 	second := holderStop(t, bed, owners, holderDue.Add(time.Minute))
+	if len(calls) != 1 || strings.Contains(second.Display, "REVISION") {
+		t.Fatalf("the second Stop started the revision again: calls=%d\n%s", len(calls), second.Display)
+	}
+}
+
+// The holder takes its steps on every Stop, whatever the scan found (SOL-S70-02
+// round 2): a machine holding a landing claim while it works on another goal
+// has open work or a busy checkout, and the scan's own verdict stands beside
+// the step.
+var (
+	openWorkScan = goal.ScanResult{Open: []goal.Item{{Detail: "plans/other.md: 1 open item"}}}
+	busyScan     = goal.ScanResult{Busy: []goal.Item{{Detail: "a delegate job runs"}}}
+)
+
+func TestADueGoalIsAdmittedAtAStopWithOpenWorkAndTheOpenWorkStillReported(t *testing.T) {
+	t.Parallel()
+	b, owners, _ := gatedDeliveryBed(t, func(file *goal.GoalFile) { waitingToLandBed(file); retier(file, 1) })
+	b.lineage = "m1"
+	verdict := holderStopOver(t, b.intentBed, b.deliveryOwners(), holderDue, openWorkScan)
+	if len(owners.joins) != 1 || owners.joins[0].GoalID != bedGoal {
+		t.Fatalf("the due goal was not admitted on a Stop with open work: %+v\n%s", owners.joins, verdict.Display)
+	}
+	if !strings.Contains(verdict.Display, "LANDED "+bedGoal+": joined batch b-1") || !strings.Contains(verdict.Display, "OPEN WORK (1)") || !strings.Contains(verdict.Display, "plans/other.md: 1 open item") {
+		t.Fatalf("the Stop does not say both the landing and the open work: %s", verdict.Display)
+	}
+	if verdict.BlockSource == nil || *verdict.BlockSource != "open-work" {
+		t.Fatalf("the open work's own verdict changed: %+v", verdict)
+	}
+}
+
+func TestADueGoalIsAdmittedAtAStopWhileTheCheckoutIsBusy(t *testing.T) {
+	t.Parallel()
+	b, owners, _ := gatedDeliveryBed(t, func(file *goal.GoalFile) { waitingToLandBed(file); retier(file, 1) })
+	b.lineage = "m1"
+	verdict := holderStopOver(t, b.intentBed, b.deliveryOwners(), holderDue, busyScan)
+	if len(owners.joins) != 1 || owners.joins[0].GoalID != bedGoal {
+		t.Fatalf("the due goal was not admitted on a busy Stop: %+v\n%s", owners.joins, verdict.Display)
+	}
+	if verdict.ShouldBlock || !strings.Contains(verdict.Display, "LANDED "+bedGoal+": joined batch b-1") || !strings.Contains(verdict.Display, "STILL WORKING: a delegate job runs") {
+		t.Fatalf("the busy Stop blocks or does not say both: %+v", verdict)
+	}
+}
+
+func TestASendBacksRevisionIsStartedOnceAtStopsWithOpenWork(t *testing.T) {
+	t.Parallel()
+	bed := sentBackBed(t)
+	var calls []reviseCall
+	owners := holderOwners(bed, &calls, func(int) intentResult { return attemptStarted(3) })
+	first := holderStopOver(t, bed, owners, holderDue, openWorkScan)
+	if len(calls) != 1 || !strings.Contains(first.Display, "REVISION STARTED "+bedGoal) || !strings.Contains(first.Display, "OPEN WORK (1)") {
+		t.Fatalf("the revision was not started on a Stop with open work: calls=%d\n%s", len(calls), first.Display)
+	}
+	second := holderStopOver(t, bed, owners, holderDue.Add(time.Minute), openWorkScan)
 	if len(calls) != 1 || strings.Contains(second.Display, "REVISION") {
 		t.Fatalf("the second Stop started the revision again: calls=%d\n%s", len(calls), second.Display)
 	}
