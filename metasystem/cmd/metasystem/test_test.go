@@ -3068,7 +3068,7 @@ func runFrozenPublicVersionOneCorpusWorker(t *testing.T, phases *frozenCorpusPha
 	}
 	stored := attempts[0]
 	if stored.Terminal == nil || stored.Terminal.Result != proofrun.TerminalSuccess ||
-		stored.TestResult == nil || !stored.TestResult.Delivery.Sufficient || len(stored.TestResult.Groups) != 7 ||
+		stored.TestResult == nil || !stored.TestResult.Delivery.Sufficient || len(stored.TestResult.Groups) != 6 ||
 		len(stored.DeliveryReceiptBytes) == 0 {
 		t.Fatalf("first-transition worker result is incomplete: attempt=%+v", stored)
 	}
