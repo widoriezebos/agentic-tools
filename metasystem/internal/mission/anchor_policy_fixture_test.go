@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testgit"
 )
 
@@ -235,7 +236,11 @@ func (q *anchorPolicyQueue) index(stdout string, args ...string) {
 			}
 			path := strings.TrimPrefix(call.Env[0], "GIT_INDEX_FILE=")
 			dir := filepath.Dir(path)
-			if filepath.Base(path) != "index" || !strings.HasPrefix(filepath.Base(dir), "metasystem-anchor.") || filepath.Dir(dir) != os.TempDir() {
+			scratch, err := diskstore.ProcessScratch()
+			if err != nil {
+				return err
+			}
+			if filepath.Base(path) != "index" || !strings.HasPrefix(filepath.Base(dir), "metasystem-anchor.") || filepath.Dir(dir) != scratch {
 				return fmt.Errorf("index is not in a fresh temporary anchor directory: %q", path)
 			}
 			if _, err := os.Stat(dir); err != nil {

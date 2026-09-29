@@ -98,6 +98,14 @@ func ReturnUnits(store Store, batchID, tree, actor string, at time.Time, seams R
 			if err := store.seams.publish("before-return"); err != nil {
 				return err
 			}
+			if unit.IsChange() {
+				// No claim went out with a change, so none comes back: the
+				// outcome and its reason stay on the unit for the asker.
+				if err := settleReturn(store, batchID, unit.GoalID, ReturnRecorded, actor, at); err != nil {
+					return err
+				}
+				continue
+			}
 			ledger, readErr := seams.Read(store.root, tree, unit.GoalID)
 			if readErr != nil {
 				continue
@@ -159,7 +167,7 @@ func settleReturn(store Store, batchID, goalID, disposition, actor string, at ti
 		}
 		return fmt.Errorf("return-pending unit %s is absent", goalID)
 	})
-	if err == nil {
+	if err == nil && !settled.IsChange() {
 		stage := board.StageReturned
 		if settled.State == UnitLanded {
 			stage = board.StageLanded

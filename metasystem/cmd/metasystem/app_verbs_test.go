@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/applaunch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 )
 
 var (
@@ -74,6 +75,9 @@ type appBed struct {
 	// that a test can see the argument vector a verb hands it and answer for
 	// it.
 	testRun func(dir string, argv []string, stderr io.Writer) ([]byte, int, error)
+	// supervisorWait replaces an app start's wait for its supervisor's
+	// answer; zero is production's.
+	supervisorWait time.Duration
 }
 
 func newAppBed(t *testing.T, contract map[string]any) *appBed {
@@ -156,6 +160,7 @@ func (b *appBed) run(args ...string) (int, string) {
 	if b.testRun != nil {
 		owners.work.testRun = b.testRun
 	}
+	owners.appSupervisorWait = b.supervisorWait
 	code := runIntentIn(command, rest, &stdout, &stderr, b.root, owners)
 	b.reapSupervisors()
 	return code, stdout.String() + stderr.String()
@@ -796,13 +801,20 @@ func TestAppCheckRecordsItsVerdict(t *testing.T) {
 		t.Fatalf("status says the last check:\n%s", status)
 	}
 
-	dark := appHTTPContract(appFixtureApp(t), appFreePort(t), "--dark-after", "1s")
+	// The application goes dark when the test says so, never on a clock
+	// that starts with its process and could run out before a loaded host
+	// finished starting it.
+	darkFile := filepath.Join(t.TempDir(), "dark")
+	dark := appHTTPContract(appFixtureApp(t), appFreePort(t), "--dark-file", darkFile)
 	dark["check"] = "app-smoke"
 	darkBed := newAppBed(t, dark)
 	darkBed.testRun = bed.testRun
 	handed = nil
 	if code, out := darkBed.run("app", "start"); code != 0 {
 		t.Fatalf("app start: %d\n%s", code, out)
+	}
+	if err := os.WriteFile(darkFile, nil, 0o644); err != nil {
+		t.Fatal(err)
 	}
 	eventuallyTrue(t, "the application to stop answering", func() bool {
 		_, out := darkBed.run("app", "status")
@@ -894,7 +906,7 @@ func TestAppAddressIsOneNamedDiagnosticGroupsInput(t *testing.T) {
 	if status != 2 || !strings.Contains(refusal, "--app-address belongs to one named diagnostic group") {
 		t.Fatalf("an address outside one named diagnostic group is refused: status=%d %q", status, refusal)
 	}
-	request := testingRunRequest(testingPreparation{AppAddress: "127.0.0.1:7981"}, "attempt", root, "", "", "")
+	request := testrun.RunRequest(testrun.Preparation{AppAddress: "127.0.0.1:7981"}, "attempt", root, "", "", "")
 	if request.AppAddress != "127.0.0.1:7981" {
 		t.Fatalf("the run request carries the address to the runner: %+v", request.AppAddress)
 	}

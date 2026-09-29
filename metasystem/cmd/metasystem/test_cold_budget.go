@@ -8,6 +8,7 @@ import (
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 )
 
 // coldBuildBudgetRefusal is a performance preflight, never a reservation.
@@ -21,7 +22,7 @@ func (refusal *coldBuildBudgetRefusal) Error() string { return "BUDGET_REFUSED: 
 // the existing attempt-based reuse path cannot provide the whole selection.
 // Unknown evidence, an available budget extension, or a transient active-job
 // limit leaves the decision to the ordinary final admission.
-func refuseKnownColdBuildBudget(prepared testingPreparation, request testingSelectionRequest) error {
+func refuseKnownColdBuildBudget(prepared testrun.Preparation, request testrun.SelectionRequest) error {
 	if prepared.GoalID == "" || len(prepared.Plan.SelectedGroups) == 0 ||
 		os.Getenv("METASYSTEM_PROOF_CONTROL_ROOT") != "" || os.Getenv("METASYSTEM_PROOF_ATTEMPT") != "" ||
 		os.Getenv("METASYSTEM_PROOF_RUN_ROOT") != "" || os.Getenv("METASYSTEM_PROOF_RUN_ID") != "" ||
@@ -29,19 +30,19 @@ func refuseKnownColdBuildBudget(prepared testingPreparation, request testingSele
 		os.Getenv("METASYSTEM_HOOK_DELEGATE_JOB") != "" {
 		return nil
 	}
-	attempts, err := proofrun.ReadAttempts(prepared.proofControlRoot())
+	attempts, err := proofrun.ReadAttempts(prepared.ProofControlRoot())
 	if err != nil || retainedSuccessCouldCoverSelection(attempts, prepared.Plan.SelectedGroups, request) {
 		return nil
 	}
-	now, err := goalCommandNow(prepared.proofControlRoot())
+	now, err := goalCommandNow(prepared.ProofControlRoot())
 	if err != nil {
 		return nil
 	}
-	roles, err := resolveProofGoalRoles(prepared.proofControlRoot(), prepared.GoalID, request.AuthorityGoalID, now)
+	roles, err := resolveProofGoalRoles(prepared.ProofControlRoot(), prepared.GoalID, request.AuthorityGoalID, now)
 	if err != nil || roles.CandidateRevision != prepared.AccountingRevision {
 		return nil
 	}
-	binding, err := dispatchcore.ResolveGoalBinding(prepared.proofControlRoot(), roles.Authority.Id, now)
+	binding, err := dispatchcore.ResolveGoalBinding(prepared.ProofControlRoot(), roles.Authority.Id, now)
 	accountingRevision := uint64(0)
 	if err == nil && binding.File.Claimed != nil {
 		accountingRevision = binding.File.Claimed.AccountingRevision
@@ -58,7 +59,7 @@ func refuseKnownColdBuildBudget(prepared testingPreparation, request testingSele
 	if err != nil || capMinutes < 1 {
 		return nil
 	}
-	verdict, err := dispatchcore.EvaluateProofAdmissionForDispatch(prepared.proofControlRoot(), roles.Authority.Id,
+	verdict, err := dispatchcore.EvaluateProofAdmissionForDispatch(prepared.ProofControlRoot(), roles.Authority.Id,
 		binding.Revision, roles.Candidate, roles.CandidateRevision, uint64(capMinutes), now,
 		"implementer", "fresh", dispatchcore.HazardMechanical)
 	if err != nil || !permanentBudgetRefusal(verdict.Authority) && !permanentBudgetRefusal(verdict.Candidate) {
@@ -68,7 +69,7 @@ func refuseKnownColdBuildBudget(prepared testingPreparation, request testingSele
 		prepared.GoalID, strings.Join(dispatchcore.FormatProofAdmission(verdict), "; "))}
 }
 
-func retainedSuccessCouldCoverSelection(attempts []proofrun.Attempt, groups []string, request testingSelectionRequest) bool {
+func retainedSuccessCouldCoverSelection(attempts []proofrun.Attempt, groups []string, request testrun.SelectionRequest) bool {
 	if request.NoReuse || request.ForceGroups || request.Purpose == testpolicy.PurposeCadence {
 		return false
 	}

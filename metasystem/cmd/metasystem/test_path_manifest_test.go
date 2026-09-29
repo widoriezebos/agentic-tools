@@ -14,20 +14,21 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/pathpattern"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 )
 
 func TestGLEPathMovedInputAttributionUsesManifestPatterns(t *testing.T) {
 	t.Parallel()
 	manifest := []string{"metasystem/cmd/metasystem/landing_batch*.go", "metasystem/internal/proofrun/**"}
 	for _, path := range []string{"metasystem/cmd/metasystem/landing_batch_land.go", "metasystem/cmd/metasystem/landing_batch_new.go", "metasystem/internal/proofrun/test_build.go"} {
-		if !testInputManifestContains(manifest, path) {
+		if !testrun.InputManifestContains(manifest, path) {
 			t.Errorf("missed moved input %s", path)
 		}
 	}
-	if testInputManifestContains(manifest, "metasystem/cmd/metasystem/other.go") {
+	if testrun.InputManifestContains(manifest, "metasystem/cmd/metasystem/other.go") {
 		t.Fatal("unrelated path attributed")
 	}
-	if !testInputManifestContains([]string{"fixtures"}, "fixtures/case.txt") {
+	if !testrun.InputManifestContains([]string{"fixtures"}, "fixtures/case.txt") {
 		t.Fatal("legacy exact-directory input did not attribute its child")
 	}
 }
@@ -69,13 +70,13 @@ func TestGLEPathRootGoPackageExpansionPlansWithCompleteInputs(t *testing.T) {
 	plan := testpolicy.Plan{SelectedGroups: []string{selected}}
 	previous := prepareTestingForCommand
 	defer func() { prepareTestingForCommand = previous }()
-	prepareTestingForCommand = func(testingSelectionRequest) (testingPreparation, error) {
-		return testingPreparation{ProjectRoot: root, CandidateTree: candidate, EffectiveContract: contract, Plan: plan}, nil
+	prepareTestingForCommand = func(testrun.SelectionRequest) (testrun.Preparation, error) {
+		return testrun.Preparation{ProjectRoot: root, CandidateTree: candidate, EffectiveContract: contract, Plan: plan}, nil
 	}
 	status, stdout, _ := runOnOwnStreams(func(stdout, stderr io.Writer) int {
 		return runTestPlan([]string{"--root", root, "--purpose", "diagnostic", "--json"}, stdout, stderr)
 	})
-	var output testingPlanOutput
+	var output testrun.PlanOutput
 	if err := json.Unmarshal([]byte(stdout), &output); status != 0 || err != nil ||
 		!slices.Equal(output.Plan.SelectedGroups, []string{selected}) ||
 		len(output.Groups) != 1 || output.Groups[0].ID != selected {
@@ -85,7 +86,7 @@ func TestGLEPathRootGoPackageExpansionPlansWithCompleteInputs(t *testing.T) {
 		t: t, candidate: candidate, declarations: []string{"*", "*/**", "go.mod", "metasystem.conf", "testing.json"},
 		tree: "working-root-tree", wantCalls: 1,
 	}
-	err := checkDeliveryInputParityWith(candidate, "", "testing.json", contract, plan, fact.snapshot)
+	err := testrun.CheckDeliveryInputParity(candidate, "", "testing.json", contract, plan, fact.snapshot)
 	fact.assertConsumed()
 	if err == nil || err.Error() != "delivery candidate differs from relevant working-tree inputs: candidate=candidate-root-tree working=working-root-tree" {
 		t.Fatalf("root package input closure did not refuse nested input: %v", err)
@@ -124,7 +125,7 @@ func TestGLEPathPlanReportsOptionalNoMatch(t *testing.T) {
 	group := testpolicy.Group{ID: "app", Inputs: []string{"src/real.go", "src/futrue?.go"}}
 	contract := testpolicy.Contract{Groups: []testpolicy.Group{group}}
 	plan := testpolicy.Plan{SelectedGroups: []string{"app"}}
-	unmatched, err := unmatchedTestingInputs(workspace, tree, contract, plan)
+	unmatched, err := testrun.UnmatchedInputs(workspace, tree, contract, plan)
 	if calls != 1 {
 		t.Fatalf("raw tree calls = %d, want 1", calls)
 	}
@@ -133,8 +134,8 @@ func TestGLEPathPlanReportsOptionalNoMatch(t *testing.T) {
 	}
 	previous := prepareTestingForCommand
 	defer func() { prepareTestingForCommand = previous }()
-	prepareTestingForCommand = func(testingSelectionRequest) (testingPreparation, error) {
-		return testingPreparation{ProjectRoot: root, CandidateTree: tree, EffectiveContract: contract, Plan: plan, UnmatchedInputs: unmatched}, nil
+	prepareTestingForCommand = func(testrun.SelectionRequest) (testrun.Preparation, error) {
+		return testrun.Preparation{ProjectRoot: root, CandidateTree: tree, EffectiveContract: contract, Plan: plan, UnmatchedInputs: unmatched}, nil
 	}
 	status, stdout, _ := runOnOwnStreams(func(stdout, stderr io.Writer) int {
 		return runTestPlan([]string{"--root", root, "--purpose", "diagnostic", "--json"}, stdout, stderr)
@@ -142,7 +143,7 @@ func TestGLEPathPlanReportsOptionalNoMatch(t *testing.T) {
 	if status != 0 {
 		t.Fatalf("public plan status = %d", status)
 	}
-	var output testingPlanOutput
+	var output testrun.PlanOutput
 	if err := json.Unmarshal([]byte(stdout), &output); err != nil || len(output.UnmatchedInputs) != 1 || output.UnmatchedInputs[0] != unmatched[0] {
 		t.Fatalf("public no-match JSON = %q, %v", stdout, err)
 	}
@@ -166,7 +167,7 @@ func TestGLEPathPublicDeliveryPlanRejectsDirtyWildcardInput(t *testing.T) {
 	unrelated := &deliverySnapshotFact{
 		t: t, candidate: candidate, declarations: declarations, tree: candidate, wantCalls: 1,
 	}
-	if err := checkDeliveryInputParityWith(candidate, "", "testing.json", contract, plan, unrelated.snapshot); err != nil {
+	if err := testrun.CheckDeliveryInputParity(candidate, "", "testing.json", contract, plan, unrelated.snapshot); err != nil {
 		t.Fatalf("unrelated working edit refused delivery: %v", err)
 	}
 	unrelated.assertConsumed()
@@ -175,8 +176,8 @@ func TestGLEPathPublicDeliveryPlanRejectsDirtyWildcardInput(t *testing.T) {
 	}
 	previous := prepareTestingForCommand
 	defer func() { prepareTestingForCommand = previous }()
-	prepareTestingForCommand = func(testingSelectionRequest) (testingPreparation, error) {
-		return testingPreparation{}, checkDeliveryInputParityWith(candidate, "", "testing.json", contract, plan, matching.snapshot)
+	prepareTestingForCommand = func(testrun.SelectionRequest) (testrun.Preparation, error) {
+		return testrun.Preparation{}, testrun.CheckDeliveryInputParity(candidate, "", "testing.json", contract, plan, matching.snapshot)
 	}
 	status, _, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
 		return runTestPlan([]string{"--root", root, "--purpose", "delivery"}, stdout, stderr)
@@ -204,7 +205,7 @@ func TestGLEPathPublicDeliveryPlanRejectsUnstagedSelectedGoPackageSource(t *test
 		declarations: []string{"metasystem/go.mod", "metasystem/go.sum", "metasystem/metasystem.conf", "metasystem/testing.json"},
 		tree:         candidate, wantCalls: 1,
 	}
-	if err := checkDeliveryInputParityWith(candidate, "metasystem/", "testing.json", legacy, plan, oldFact.snapshot); err != nil {
+	if err := testrun.CheckDeliveryInputParity(candidate, "metasystem/", "testing.json", legacy, plan, oldFact.snapshot); err != nil {
 		t.Fatalf("old manifest unexpectedly detected the untracked package source: %v", err)
 	}
 	oldFact.assertConsumed()
@@ -215,8 +216,8 @@ func TestGLEPathPublicDeliveryPlanRejectsUnstagedSelectedGoPackageSource(t *test
 	}
 	previous := prepareTestingForCommand
 	defer func() { prepareTestingForCommand = previous }()
-	prepareTestingForCommand = func(testingSelectionRequest) (testingPreparation, error) {
-		return testingPreparation{}, checkDeliveryInputParityWith(candidate, "metasystem/", "testing.json", complete, plan, completeFact.snapshot)
+	prepareTestingForCommand = func(testrun.SelectionRequest) (testrun.Preparation, error) {
+		return testrun.Preparation{}, testrun.CheckDeliveryInputParity(candidate, "metasystem/", "testing.json", complete, plan, completeFact.snapshot)
 	}
 	status, _, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
 		return runTestPlan([]string{"--root", root, "--purpose", "delivery"}, stdout, stderr)
@@ -303,7 +304,7 @@ func TestDeliveryInputParityBoundary(t *testing.T) {
 				t: t, candidate: candidate, declarations: tc.declarations,
 				tree: tc.workingTree, err: tc.snapshotErr, wantCalls: tc.wantCalls,
 			}
-			err := checkDeliveryInputParityWith(candidate, tc.prefix, "testing.json", tc.contract, tc.plan, fact.snapshot)
+			err := testrun.CheckDeliveryInputParity(candidate, tc.prefix, "testing.json", tc.contract, tc.plan, fact.snapshot)
 			fact.assertConsumed()
 			if tc.wantErr == "" {
 				if err != nil {

@@ -94,6 +94,7 @@ const (
 	DiskSweepBudgetKey         = "disk.sweep-budget-sec"
 	DiskSweepItemsPerLockKey   = "disk.sweep-items-per-lock"
 	DiskCensusMinBudgetKey     = "disk.census-min-budget-sec"
+	DiskPinGraceKey            = "disk.pin-grace-hours"
 	DiskEvidenceRootDefaultDoc = "$HOME/metasystem-evidence/<checkout basename>"
 )
 
@@ -119,6 +120,7 @@ var diskSettings = []DiskSetting{
 	{Key: DiskProcessScratchKey, Default: "4", Unit: UnitGiB, Scope: ScopeCheckout, Meaning: "one process's scratch root"},
 	{Key: DiskJobWorktreeKey, Default: "8", Unit: UnitGiB, Scope: ScopeCheckout, Meaning: "one delegate workspace"},
 	{Key: DiskWorkspaceKey, Default: "8", Unit: UnitGiB, Scope: ScopeCheckout, Meaning: "one handed-out workspace"},
+	{Key: DiskPinGraceKey, Default: "24", Unit: UnitHours, Scope: ScopeCheckout, Meaning: "an engine pin stays this long after its generation stopped being installed (an older engine's run may still exec it)"},
 	{Key: DiskCandidateEnginesKey, Default: "8", Unit: UnitCount, Scope: ScopeCheckout, Meaning: "newest candidate engines kept"},
 	{Key: DiskCompressAboveKey, Default: "1", Unit: UnitMiB, Scope: ScopeCheckout, Meaning: "files at or above this are gzipped by the launcher and the distiller"},
 	{Key: DiskSessionBootstrapKey, Default: "24", Unit: UnitHours, Scope: ScopeCheckout, Meaning: "a reserved session whose bootstrap died with no main announced is reported after this"},

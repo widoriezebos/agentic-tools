@@ -586,7 +586,7 @@ func validateWithRunner(confPath, repoRoot string, runner gitRunner) (tiersAbsen
 		"channel.http-timeout-sec", "channel.long-poll-sec", "channel.poll-timeout-sec", "exec.local-timeout-sec", "exec.network-timeout-sec", "landing.receipt-bound-min",
 		"watch.interval-sec", "watch.stale-min", "watch.cap-min",
 		"census.log-max-bytes", "metasystem.counselor.brief-cadence-hours", "dispatch.cap-max",
-		"steward.tick-patience-sec", "steward.stop-slow-sec", IntentReviewToolCallsKey, PipelineStallMinKey, PipelineHistoryNKey, BoardKeepHoursKey, BoardPollSecKey, BoardMailboxKeepDaysKey,
+		"steward.tick-patience-sec", "steward.stop-slow-sec", IntentReviewToolCallsKey, PipelineStallMinKey, PipelineHistoryNKey, BoardKeepHoursKey, BoardPollSecKey, BoardMailboxKeepDaysKey, BoardHandoverLockWaitSecKey,
 		DiskGoCacheCapGiBKey, DiskDelegateGoCacheCapGiBKey, DiskStaticcheckCacheCapGiBKey, DiskGoCacheKeepHoursKey, DiskCacheTrimBudgetSecKey, DiskCacheTrimPersonBudgetSecKey, DiskCacheMinKeepMinutesKey,
 	} {
 		if raw, present := values[knob]; present {
@@ -742,6 +742,12 @@ func validateWithRunner(confPath, repoRoot string, runner gitRunner) (tiersAbsen
 		add("%v", evidenceErr)
 	} else if withinRepo(realpath.Resolve(evidence.Path), repo) {
 		add("%s must be outside the repository (%s)", EvidenceRootKey, evidence.Line())
+	} else {
+		// Caches and source copies never live under an evidence root
+		// (engine-owns-disk-lifetimes 3.12, R21).
+		for _, problem := range placementProblems(evidence.Path, machineCacheRoots()) {
+			add("%s", problem)
+		}
 	}
 
 	// Registration is adopted-repository state, not a template invariant (the

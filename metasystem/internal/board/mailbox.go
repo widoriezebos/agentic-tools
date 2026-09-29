@@ -866,11 +866,6 @@ func Mark(message Message, self, lineage, event string, now time.Time) error {
 // an offer reads; the files are never removed, so their inodes are stable.
 func claimLockDir(home string) string { return filepath.Join(home, "host", "claim-locks") }
 
-// HandoverLockWait bounds how long a handover waits for the offers that
-// hold its goal's claim lock (the read's N-2): an offer holds it for the
-// milliseconds of one emission, so a longer hold is a hung hook.
-const HandoverLockWait = 30 * time.Second
-
 var holderSequence atomic.Int64
 
 // tryLock takes goal's claim lock with how; busy when another holds it.
@@ -945,11 +940,13 @@ func holders(home, goal string) []string {
 // LockGoalHandover takes goal's claim lock exclusively for the act that
 // moves its claim (D14D-01): it waits for every offer that read the claim
 // and has not finished its emission and marker, and an offer that starts
-// meanwhile skips the goal. The wait is bounded by HandoverLockWait, after
+// meanwhile skips the goal. The wait is bounded by wait (the caller's
+// board.handover-lock-wait-sec: an offer holds the lock for the
+// milliseconds of one emission, so a longer hold is a hung hook), after
 // which the handover is refused naming the holders (N-2). A lock that
 // cannot be opened at all holds nothing and refuses nothing.
-func LockGoalHandover(home, goal string) (func(), error) {
-	return lockGoalHandover(home, goal, HandoverLockWait, time.Now, time.Sleep)
+func LockGoalHandover(home, goal string, wait time.Duration) (func(), error) {
+	return lockGoalHandover(home, goal, wait, time.Now, time.Sleep)
 }
 
 func lockGoalHandover(home, goal string, wait time.Duration, now func() time.Time, sleep func(time.Duration)) (func(), error) {

@@ -129,7 +129,8 @@ func (store Store) updateLocked(id string, mutate func(*Record) error) error {
 		return next.GoalID == old.GoalID && next.Chain == old.Chain && next.SeatRoot == old.SeatRoot && next.Claim == old.Claim &&
 			next.Approver == old.Approver && next.AuthorName == old.AuthorName && next.AuthorEmail == old.AuthorEmail &&
 			next.LastUnit == old.LastUnit && next.GoalLast == old.GoalLast && next.BranchTip == old.BranchTip && slices.Equal(next.CommitIDs, old.CommitIDs) &&
-			reflect.DeepEqual(next.Builds, old.Builds) && slices.Equal(next.ChangedPaths, old.ChangedPaths) && slices.Equal(next.SelectedGroups, old.SelectedGroups)
+			reflect.DeepEqual(next.Builds, old.Builds) && slices.Equal(next.ChangedPaths, old.ChangedPaths) && slices.Equal(next.SelectedGroups, old.SelectedGroups) &&
+			reflect.DeepEqual(next.Change, old.Change)
 	}
 	unitsImmutable := len(record.Units) >= len(prior.Units) && slices.EqualFunc(record.Units[:len(prior.Units)], prior.Units, sameUnit)
 	if record.BatchID != id || record.Schema != prior.Schema || !unitsImmutable {
@@ -211,7 +212,13 @@ func validateRecord(record Record) error {
 		return fmt.Errorf("held trunk-red record is incomplete")
 	}
 	for _, unit := range record.Units {
-		if unit.GoalID == "" || unit.Chain == "" || unit.Claim.Machine == "" || unit.Claim.Lineage == "" || unit.Claim.Epoch == 0 || unit.Claim.Revision == 0 || unit.Claim.AccountingRevision == 0 || !strings.Contains("|joining|joined|return-pending|withdrawn|withdrawn-budget|ejected|landed|", "|"+unit.State+"|") {
+		// A change member holds no claim: it names only the asker's seat and
+		// lineage, and its id is its commit's (U11b).
+		claimed := unit.Claim.Epoch != 0 && unit.Claim.Revision != 0 && unit.Claim.AccountingRevision != 0
+		if unit.Change != nil {
+			claimed = unit.Change.Commit != "" && unit.GoalID == ChangeID(unit.Change.Commit) && unit.Chain == unit.GoalID
+		}
+		if unit.GoalID == "" || unit.Chain == "" || unit.Claim.Machine == "" || unit.Claim.Lineage == "" || !claimed || !strings.Contains("|joining|joined|return-pending|withdrawn|withdrawn-budget|ejected|landed|", "|"+unit.State+"|") {
 			return fmt.Errorf("batch unit identity, revisions, or state are incomplete")
 		}
 		if unit.State == UnitReturnPending && (!terminalUnitState(unit.Outcome) || strings.TrimSpace(unit.Failure) == "" || unit.ReturnDisposition != "") {
@@ -226,5 +233,5 @@ func terminalUnitState(state string) bool {
 }
 
 func returnDisposition(disposition string) bool {
-	return disposition == ReturnHandedBack || disposition == ReturnReleased || disposition == ReturnAlreadyReturned
+	return disposition == ReturnHandedBack || disposition == ReturnReleased || disposition == ReturnAlreadyReturned || disposition == ReturnRecorded
 }

@@ -8,6 +8,8 @@ import (
 type RecoverySeams struct {
 	// OriginCommit resolves Landing-Provenance: chain=<unit.Chain> on origin.
 	OriginCommit func(Unit) (string, bool, error)
+	// OriginChange resolves Landing-Change: <unit.GoalID> on origin.
+	OriginChange func(Unit) (string, bool, error)
 	// OriginSource resolves the endpoint commit carrying one Goal-Source id.
 	OriginSource func(Unit, string) (string, bool, error)
 	// SweepGoalBranch removes a completed goal branch under its lease.
@@ -36,7 +38,16 @@ func RecoverPushedSeries(store Store, id, actor string, at time.Time, seams Reco
 			continue
 		}
 		commit, found := "", false
-		if len(snapshot.CommitIDs) != 0 {
+		if snapshot.IsChange() {
+			var err error
+			if seams.OriginChange == nil {
+				return fmt.Errorf("BATCH_P6_REFUSED: change %s has no Landing-Change resolver", snapshot.GoalID)
+			}
+			commit, found, err = seams.OriginChange(snapshot)
+			if err != nil {
+				return err
+			}
+		} else if len(snapshot.CommitIDs) != 0 {
 			found = true
 			for _, source := range snapshot.CommitIDs {
 				if seams.OriginSource == nil {
@@ -89,8 +100,11 @@ func RecoverPushedSeries(store Store, id, actor string, at time.Time, seams Reco
 		if seams.Finalize == nil {
 			return fmt.Errorf("BATCH_P6_REFUSED: unit %s finalization helper is absent", snapshot.GoalID)
 		}
-		if finalizeErr := seams.Finalize(unit, commit); finalizeErr != nil {
-			return fmt.Errorf("BATCH_P6_REFUSED: unit %s finalization failed: %w", snapshot.GoalID, finalizeErr)
+		// A change has no goal whose Next records the landing.
+		if !unit.IsChange() {
+			if finalizeErr := seams.Finalize(unit, commit); finalizeErr != nil {
+				return fmt.Errorf("BATCH_P6_REFUSED: unit %s finalization failed: %w", snapshot.GoalID, finalizeErr)
+			}
 		}
 		if err := store.Update(id, func(next *Record) error {
 			for index := range next.Units {

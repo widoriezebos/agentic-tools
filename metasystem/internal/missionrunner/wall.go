@@ -19,6 +19,7 @@ import (
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/covenant"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
@@ -704,11 +705,11 @@ func (e *Engine) wallPreflight(mode string, values map[string]string, approved [
 // blobOID names the git blob object a byte sequence would store as, in
 // the repository's own hash algorithm.
 func blobOID(root string, content []byte) (string, error) {
-	tmp, err := os.CreateTemp("", "metasystem-blob-oid.*")
+	tmp, done, err := diskstore.ScratchFile("metasystem-blob-oid.*")
 	if err != nil {
 		return "", err
 	}
-	defer os.Remove(tmp.Name())
+	defer done()
 	if _, err := tmp.Write(content); err != nil {
 		tmp.Close()
 		return "", err

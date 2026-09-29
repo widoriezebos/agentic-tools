@@ -13,6 +13,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/landpath"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 )
 
 // Exceptional landing is a person's explicit act: the goal's whole-project
@@ -235,7 +236,7 @@ func (inv *intentInvocation) landException(goalID string, validateOnly ...bool) 
 	if result.Outcome != intentConfirmed {
 		stopped := inv.carriedStopped(goalID, opid, targets, result.Data.(map[string]any), "the carried landing did not complete: "+result.Summary)
 		refusal := string(ran.stderr)
-		if strings.Contains(refusal, "carry-battery-unverified") && strings.Contains(refusal, errRetainedCandidateEngineAbsent.Error()) {
+		if strings.Contains(refusal, "carry-battery-unverified") && strings.Contains(refusal, testrun.ErrRetainedCandidateEngineAbsent.Error()) {
 			// The carried transaction verifies retained proof; it never
 			// runs tests. The person proves the staged candidate with the
 			// public test command, then continues under the same word.

@@ -221,8 +221,8 @@ func TestDiskDefaultsAreInTheOneCompiledTable(t *testing.T) {
 			want[row.Key] = row.Default
 		}
 	}
-	if len(want) != 33 {
-		t.Fatalf("disk keys with a default = %d, want 33 (26 of 3.13 and the trimmer's seven)", len(want))
+	if len(want) != 34 {
+		t.Fatalf("disk keys with a default = %d, want 34 (26 of 3.13, Round D2's pin grace and the trimmer's seven)", len(want))
 	}
 	for key, value := range want {
 		if compiled, ok := CompiledDefault(key); !ok || compiled != value {
@@ -286,7 +286,7 @@ func TestBoardAndPipelineSettingsHaveCompiledDefaults(t *testing.T) {
 	for key, want := range map[string]string{
 		BatchMaxWaitKey: "10m", PipelineStallMinKey: "20", PipelineProofCostKey: "40m",
 		PipelineStageDefaultsKey: "build=10m,revise=10m,unit-proof=5m,review=18m,judgement=5m,land-ready=3m", PipelineHistoryNKey: "8",
-		BoardKeepHoursKey: "24", BoardPollSecKey: "5", BoardMailboxKeepDaysKey: "7",
+		BoardKeepHoursKey: "24", BoardPollSecKey: "5", BoardMailboxKeepDaysKey: "7", BoardHandoverLockWaitSecKey: "30",
 	} {
 		if value, _, err := Get(GetParams{Key: key, ConfPath: conf, LookupEnv: noEnv}); err != nil || value != want {
 			t.Fatalf("Get(%s) = %q, %v; want %q", key, value, err, want)

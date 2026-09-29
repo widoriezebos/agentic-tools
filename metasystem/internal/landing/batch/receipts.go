@@ -134,6 +134,12 @@ func ComposePrefixReceipts(store Store, id, actor string, at time.Time, seams Pr
 		return fmt.Errorf("batch %s has no complete prefix tree list", id)
 	}
 	for index, unit := range joined[:len(joined)-1] {
+		if unit.IsChange() {
+			// A change is replayed, not committed through the boundary, so
+			// no proof binds its own prefix: the next goal member's receipt
+			// or the tip proof covers every tree after it (U11b).
+			continue
+		}
 		tree := record.PrefixTrees[index]
 		if seams.Authorize != nil {
 			if err := seams.Authorize(unit, record.Seal[unit.GoalID]); err != nil {

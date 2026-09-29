@@ -64,7 +64,9 @@ once when execution was explicitly requested and re-verifies after transport
 changes. The full Go gate
 (`go run ./cmd/devgate gate`) owns the legacy repository-wide coverage ratchet. Wido owns the review,
 after the next declared milestone, of whether that sweep still catches debt
-the landing delta cannot. The testing contract (`testing.json`) owns VM delivery and
+the testing contract's coverage groups cannot (a delivery run measures only
+the packages of the selected groups that declare `coverage`, each against its
+floor in `testing-coverage-floors.json`). The testing contract (`testing.json`) owns VM delivery and
 guest-runtime invariants; the adoption tests (`internal/adopt` and the
 delivery comparison) own installed-tree and update invariants. Wido reviews
 those distinct owners after the same two-run retirement window. The steward puts a due review in its single ceilinged

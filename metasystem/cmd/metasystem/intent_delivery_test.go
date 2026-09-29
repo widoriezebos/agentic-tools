@@ -1114,7 +1114,8 @@ func TestWorkLandHelpStatesTheLaneRouting(t *testing.T) {
 	}
 	flat := strings.Join(strings.Fields(page), " ")
 	for _, want := range []string{"read from a reader record is refused", "metasystem work review --commit SHA --goal G",
-		"fix goal of an open trunk red", "metasystem incident claim E --goal G", "--message keeps its own landing path"} {
+		"fix goal of an open trunk red", "metasystem incident claim E --goal G", "joins the lane as a change member", "Landing-Change trailer",
+		"Without a lane, and with --local or --recertification"} {
 		if !strings.Contains(flat, want) {
 			t.Errorf("work land help does not say %q:\n%s", want, page)
 		}

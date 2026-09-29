@@ -21,9 +21,11 @@ type RegisteredStores struct {
 func (s RegisteredStores) Name() string { return "stores in " + s.Registry.Dir }
 
 // NeedsUseProof reports the stores that need the checkout-use proof: every
-// git worktree store and a plain workspace (3.1).
+// git worktree store, a plain workspace (3.1), and a process scratch root,
+// which a child that never inherited its writer lock may still use; the
+// plan takes it as the apply does (Round D1 F-2, F-3).
 func NeedsUseProof(record Record) bool {
-	return !record.Identity.Marker || record.Layout == "plain"
+	return !record.Identity.Marker || record.Layout == "plain" || record.Class == ProcessScratchClass
 }
 
 // Plan observes every unreleased record: a missing proof, a held record
@@ -224,7 +226,15 @@ func removeStore(ctx context.Context, record Record, after func(string)) error {
 		if entry.Name() == MarkerName {
 			continue
 		}
-		if err := removeTree(ctx, filepath.Join(record.Path, entry.Name()), after); err != nil {
+		child := filepath.Join(record.Path, entry.Name())
+		if entry.Type()&os.ModeSymlink != 0 {
+			// A link is unlinked, never followed (Round D1 F-5).
+			if err := removeEntry(ctx, child, after); err != nil {
+				return err
+			}
+			continue
+		}
+		if err := removeTree(ctx, child, after); err != nil {
 			return err
 		}
 	}

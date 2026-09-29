@@ -23,6 +23,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/placement"
 )
 
 // SegmentIndexSchema names a segment index's format.
@@ -205,6 +206,12 @@ func (s Segment) Items(ctx context.Context) ([]Item, error) {
 				continue
 			}
 			path := filepath.Join(directory, name)
+			if index < 2 && entry.IsDir() && placement.Of(path).Kind != "" {
+				// A cache or a source copy is never an item and never
+				// counted as evidence (3.12 placement rules); the root
+				// lists it as not managed.
+				continue
+			}
 			var item Item
 			switch {
 			case index == 0 && entry.IsDir():

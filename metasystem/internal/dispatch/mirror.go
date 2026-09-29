@@ -80,6 +80,18 @@ func Mirror(repoRoot, checkout, evidence, rootJob, job, resultPath string) error
 	if err != nil {
 		return err
 	}
+	// A rebuildable store never enters an evidence root (3.12 placement
+	// rule 2, R22); a registry that cannot be read holds the mirror.
+	stores := diskstore.CheckoutRegistry(repoRoot)
+	for _, source := range sources {
+		store, held, err := stores.RebuildableHolding(source.path)
+		if err != nil {
+			return fmt.Errorf("the mirror holds: whether %s lies in a rebuildable store cannot be read: %v; metasystem disk show names the record", source.relative, err)
+		}
+		if held {
+			return fmt.Errorf("%s lies in rebuildable store %s, which never enters an evidence root; it ends with its goal's landing or conclusion", source.relative, store.ID)
+		}
+	}
 	old := map[string]any{}
 	manifestExisted := fileExists(manifestPath)
 	if manifestExisted {

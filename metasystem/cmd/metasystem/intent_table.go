@@ -548,8 +548,8 @@ func hiddenIntentEntries() []intentCommand {
 	return []intentCommand{
 		entry("goal", "fetch", "internal/seat/launch/sequence.go"),
 		entry("goal", "next", "internal/seat/launch/sequence.go"),
-		entry("test", "worker", "cmd/metasystem/test.go"),
-		entry("test", "worker-capabilities", "cmd/metasystem/test_protection.go"),
+		entry("test", "worker", "cmd/metasystem/test_protection.go"),
+		entry("test", "worker-capabilities", "internal/testrun/worker.go"),
 		entry("mission", "run-loop", "internal/missionrunner/launch.go"),
 		entry("app", "serve", "internal/applaunch/launch.go"),
 		entry("ui", "serve", "internal/ui/lifecycle/launch.go"),

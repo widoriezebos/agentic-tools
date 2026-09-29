@@ -80,7 +80,7 @@ func TestHeldRunsUngatedForHuman(t *testing.T) {
 	stageTerminalFact(t, root, caller, true)
 	want := errors.New("the human's own failure")
 	ran := false
-	if err := Held(root, caller, nil, func() error { ran = true; return want }); !ran || err != want {
+	if err := WithHeld(root, caller, nil, func() error { ran = true; return want }); !ran || err != want {
 		t.Fatalf("a human's work must run ungated and return its own error: ran=%v err=%v", ran, err)
 	}
 }
@@ -94,7 +94,7 @@ func TestHeldRefusesNonHolder(t *testing.T) {
 	}
 	// We are a MAIN but not the holder: Held must refuse before running.
 	ran := false
-	if err := Held(root, self, nil, func() error { ran = true; return nil }); ran || err == nil || !strings.Contains(err.Error(), "OWNED-ELSEWHERE") {
+	if err := WithHeld(root, self, nil, func() error { ran = true; return nil }); ran || err == nil || !strings.Contains(err.Error(), "OWNED-ELSEWHERE") {
 		t.Fatalf("Held should refuse a non-holder before running: ran=%v err=%v", ran, err)
 	}
 }

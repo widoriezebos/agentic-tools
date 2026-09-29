@@ -5,6 +5,7 @@ import (
 	"io"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 )
 
 // runTestReport summarizes an existing result without selecting or running
@@ -17,7 +18,7 @@ func runTestReport(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "usage: metasystem test status --result FILE --expensive-ms N")
 		return 2
 	}
-	result, err := readTestingWorkerResult(*resultPath)
+	result, err := testrun.ReadWorkerResult(*resultPath)
 	if err != nil {
 		fmt.Fprintln(stderr, "metasystem test status:", err)
 		return 1

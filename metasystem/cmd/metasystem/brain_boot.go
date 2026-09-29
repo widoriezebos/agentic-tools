@@ -19,6 +19,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/brain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/narratordigest"
@@ -98,17 +99,22 @@ func composeBrainBootWith(root, repo string, bound, deadlineMS int, readOnly boo
 		return brainBootOutput{}, fmt.Errorf("standing instruction exceeds the declared context bound")
 	}
 
-	dir, err := os.MkdirTemp("", "metasystem-brain-boot-*")
+	dir, done, err := diskstore.ScratchDir("metasystem-brain-boot-*")
 	if err != nil {
 		return brainBootOutput{}, err
 	}
-	defer os.RemoveAll(dir)
+	defer done()
 	executable, err := os.Executable()
 	if err != nil {
 		return brainBootOutput{}, err
 	}
 	cmd := deps.inputsCommand(executable, "brain", "boot-inputs", "--root", root, "--repo", repo, "--dir", dir)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	// The reader is an engine child writing into this process's scratch: it
+	// inherits the writer lock and takes its own scratch nested in ours.
+	if err := diskstore.PrepareChild(cmd); err != nil {
+		return brainBootOutput{}, err
+	}
 	var childErr bytes.Buffer
 	cmd.Stderr = &childErr
 	if err := cmd.Start(); err != nil {

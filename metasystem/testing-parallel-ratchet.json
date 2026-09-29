@@ -1,6 +1,6 @@
 {
   "packages": {
-    "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem": 540,
+    "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem": 508,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/acp": 60,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/adapter": 162,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/atif": 7,
@@ -10,6 +10,7 @@
     "github.com/widoriezebos/agentic-tools/metasystem/internal/behaviorsurface": 14,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec": 7,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/brain": 6,
+    "github.com/widoriezebos/agentic-tools/metasystem/internal/cadence": 2,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/capability": 6,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/census": 46,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/channel": 60,
@@ -88,6 +89,7 @@
     "github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy": 32,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/contractgit": 4,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/contractmerge": 8,
+    "github.com/widoriezebos/agentic-tools/metasystem/internal/testrun": 27,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/testutil": 22,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/turn": 3,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/ui/decisions": 0,
@@ -95,7 +97,6 @@
     "github.com/widoriezebos/agentic-tools/metasystem/internal/up": 30,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/usage": 74,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/validate": 122,
-    "github.com/widoriezebos/agentic-tools/metasystem/internal/watch": 10,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/wiredoc": 7
   },
   "exempt": [
@@ -300,7 +301,7 @@
       "reason": "runs public proof commands with host admission and live launcher controls"
     },
     {
-      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/testrun",
       "test": "TestLandedRearmRebuildWaitsForHostSlotAndClearsCustody",
       "reason": "uses live host resource admission and candidate engine rebuild controls"
     },

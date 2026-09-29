@@ -119,6 +119,9 @@ func commitForWorkspaceTree(root, tree string) (string, error) {
 }
 
 func joinedUnitPatch(root string, unit Unit) ([]byte, error) {
+	if unit.IsChange() {
+		return branchPatch(root, unit.Change.Commit)
+	}
 	if len(unit.Builds) != 0 {
 		member, _ := branchMemberOf(unit)
 		return branchMemberPatch(root, member)

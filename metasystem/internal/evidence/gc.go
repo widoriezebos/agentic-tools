@@ -51,6 +51,15 @@ var reservedDirs = map[string]bool{
 	"mains":        true,
 	"capabilities": true,
 	"missions":     true,
+	// The disk stores' roots (engine-owns-disk-lifetimes 3.11): the store
+	// registry, handed-out workspaces, proof runs, suite-failure bundles,
+	// candidate engines and the steward's own tree are never chains.
+	"stores":            true,
+	"workspaces":        true,
+	"proof-runs":        true,
+	"suite-failures":    true,
+	"candidate-engines": true,
+	"steward":           true,
 }
 
 // spineDirs stay even when empty: the census and watcher read these every
@@ -87,29 +96,38 @@ type keptChain struct {
 // absolute evidence root: with nowhere durable to check against, nothing here
 // is safe to delete.
 func GC(checkoutRoot, evidenceRoot string, graceSeconds float64, out io.Writer) error {
-	return gcWithGoalEndpoint(checkoutRoot, evidenceRoot, graceSeconds, out, nil)
+	return gcWithGoalEndpoint(checkoutRoot, evidenceRoot, graceSeconds, out, nil, now())
 }
 
-func gcWithGoalEndpoint(checkoutRoot, evidenceRoot string, graceSeconds float64, out io.Writer, endpoint *goal.Endpoint) error {
+// gcWithGoalEndpoint is one pass at the instant at: every grace, age and
+// projection of the pass reads at, never the clock.
+func gcWithGoalEndpoint(checkoutRoot, evidenceRoot string, graceSeconds float64, out io.Writer, endpoint *goal.Endpoint, at time.Time) error {
 	if !filepath.IsAbs(evidenceRoot) {
 		return fmt.Errorf("refusing to collect: the durable evidence root must be an absolute path, got %q", evidenceRoot)
 	}
 	agents := filepath.Join(checkoutRoot, "artifacts", "agents")
 	jobsDir := filepath.Join(agents, "jobs")
+	// The checkout's store registry, read once for the run (3.11): what it
+	// holds is never collected, pruned or emptied, and a registry that
+	// cannot be read whole holds all three.
+	holds := readStoreHolds(checkoutRoot)
+	if holds.unreadable != "" {
+		fmt.Fprintf(out, "held      the store registry cannot be read (%s): no chain is collected, no record pruned and no empty directory removed this pass; metasystem disk show names the record\n", holds.unreadable)
+	}
 
-	collected, kept, err := collectChains(checkoutRoot, agents, jobsDir, evidenceRoot)
+	collected, kept, err := collectChains(checkoutRoot, agents, jobsDir, evidenceRoot, holds)
 	if err != nil {
 		return err
 	}
-	if err := pruneMirroredRecordsWithEndpoint(checkoutRoot, jobsDir, evidenceRoot, graceSeconds, endpoint); err != nil {
+	if err := pruneMirroredRecordsWithEndpoint(checkoutRoot, jobsDir, evidenceRoot, graceSeconds, endpoint, holds, at); err != nil {
 		return err
 	}
-	residue, err := sweepResidue(agents, jobsDir)
+	residue, err := sweepResidue(agents, jobsDir, at)
 	if err != nil {
 		return err
 	}
-	residue += pruneEmptyDirs(agents, now(), time.Duration(graceSeconds*float64(time.Second)))
-	if err := collectEventArchives(checkoutRoot, evidenceRoot, out); err != nil {
+	residue += pruneEmptyDirs(agents, at, time.Duration(graceSeconds*float64(time.Second)), holds)
+	if err := collectEventArchives(checkoutRoot, evidenceRoot, out, at); err != nil {
 		return err
 	}
 
@@ -127,7 +145,7 @@ func gcWithGoalEndpoint(checkoutRoot, evidenceRoot string, graceSeconds float64,
 // collectChains removes every chain payload whose history is already durable,
 // and reports why each remaining chain stays. Job records (jobs/*.json)
 // always stay here: they are the registry.
-func collectChains(checkoutRoot, agents, jobsDir, evidenceRoot string) ([]string, []keptChain, error) {
+func collectChains(checkoutRoot, agents, jobsDir, evidenceRoot string, holds storeHolds) ([]string, []keptChain, error) {
 	entries, err := os.ReadDir(agents)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -142,7 +160,7 @@ func collectChains(checkoutRoot, agents, jobsDir, evidenceRoot string) ([]string
 			continue
 		}
 		chain := entry.Name()
-		done, reason, err := collectChain(checkoutRoot, agents, jobsDir, evidenceRoot, chain)
+		done, reason, err := collectChain(checkoutRoot, agents, jobsDir, evidenceRoot, chain, holds)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -165,10 +183,13 @@ func CollectChain(checkoutRoot, evidenceRoot, chain string) (collected bool, rea
 	if _, err := os.Stat(filepath.Join(agents, chain)); os.IsNotExist(err) {
 		return true, "", nil
 	}
-	return collectChain(checkoutRoot, agents, filepath.Join(agents, "jobs"), evidenceRoot, chain)
+	return collectChain(checkoutRoot, agents, filepath.Join(agents, "jobs"), evidenceRoot, chain, readStoreHolds(checkoutRoot))
 }
 
-func collectChain(checkoutRoot, agents, jobsDir, evidenceRoot, chain string) (bool, string, error) {
+func collectChain(checkoutRoot, agents, jobsDir, evidenceRoot, chain string, holds storeHolds) (bool, string, error) {
+	if reason := holds.holdsChain(chain); reason != "" {
+		return false, reason, nil
+	}
 	chainDir := filepath.Join(agents, chain)
 	records, err := chainRecords(jobsDir, chain)
 	if err != nil {
@@ -391,9 +412,12 @@ func removeMirroredLogs(jobsDir, chain string, files map[string]any) error {
 	return nil
 }
 
-func pruneMirroredRecordsWithEndpoint(checkoutRoot, jobsDir, evidenceRoot string, graceSeconds float64, endpoint *goal.Endpoint) error {
+func pruneMirroredRecordsWithEndpoint(checkoutRoot, jobsDir, evidenceRoot string, graceSeconds float64, endpoint *goal.Endpoint, holds storeHolds, at time.Time) error {
+	if holds.unreadable != "" {
+		return nil
+	}
 	agents := filepath.Join(checkoutRoot, "artifacts", "agents")
-	goalState := readGoalRevisionStateWithEndpoint(checkoutRoot, endpoint)
+	goalState := readGoalRevisionStateWithEndpoint(checkoutRoot, endpoint, at)
 	matches, _ := filepath.Glob(filepath.Join(jobsDir, "*.json"))
 	for _, recordPath := range matches {
 		record, err := readJSONObject(recordPath)
@@ -409,6 +433,9 @@ func pruneMirroredRecordsWithEndpoint(checkoutRoot, jobsDir, evidenceRoot string
 		}
 		stem := strings.TrimSuffix(filepath.Base(recordPath), ".json")
 		rootChain := roundSuffixRe.ReplaceAllString(stem, "")
+		if holds.holdsChain(rootChain) != "" {
+			continue // CloseCheck reads these until the chain's workspace is released
+		}
 		if _, err := os.Stat(filepath.Join(agents, rootChain)); err == nil {
 			continue // chain payload not collected yet; records stay with it
 		}
@@ -420,7 +447,7 @@ func pruneMirroredRecordsWithEndpoint(checkoutRoot, jobsDir, evidenceRoot string
 			// is current by its tombstone (engine-owns-disk-lifetimes 3.12,
 			// DL4D-13): the record goes after the grace, unless a claimed
 			// goal still needs it (checked above).
-			if removedByPerson(filepath.Dir(manifestPath), graceSeconds) {
+			if removedByPerson(filepath.Dir(manifestPath), graceSeconds, at) {
 				if err := os.Remove(recordPath); err != nil && !os.IsNotExist(err) {
 					return err
 				}
@@ -469,7 +496,7 @@ func pruneMirroredRecordsWithEndpoint(checkoutRoot, jobsDir, evidenceRoot string
 		if err != nil {
 			continue
 		}
-		if now().Sub(mirroredAt).Seconds() <= graceSeconds {
+		if at.Sub(mirroredAt).Seconds() <= graceSeconds {
 			continue
 		}
 		if err := os.Remove(recordPath); err != nil && !os.IsNotExist(err) {
@@ -484,7 +511,7 @@ type goalRevisionState struct {
 	unknown bool
 }
 
-func readGoalRevisionStateWithEndpoint(checkoutRoot string, explicit *goal.Endpoint) goalRevisionState {
+func readGoalRevisionStateWithEndpoint(checkoutRoot string, explicit *goal.Endpoint, at time.Time) goalRevisionState {
 	var endpoint goal.Endpoint
 	if explicit != nil {
 		if explicit.Root != checkoutRoot || explicit.Repository == nil {
@@ -501,7 +528,7 @@ func readGoalRevisionStateWithEndpoint(checkoutRoot string, explicit *goal.Endpo
 			return goalRevisionState{unknown: true}
 		}
 	}
-	projection, err := goal.Project(endpoint, false, now().UTC())
+	projection, err := goal.Project(endpoint, false, at.UTC())
 	if err != nil {
 		return goalRevisionState{unknown: true}
 	}
@@ -562,14 +589,14 @@ func (s goalRevisionState) hasClaimedGoal() bool {
 // job and that nobody else cleans — heartbeats, lock files and lifecycle
 // directories, and the mktemp leftovers of interrupted operations — plus
 // capability snapshots superseded within their own identity.
-func sweepResidue(agents, jobsDir string) (int, error) {
+func sweepResidue(agents, jobsDir string, at time.Time) (int, error) {
 	residue := 0
 	count, err := sweepHeartbeats(filepath.Join(agents, "hb"), jobsDir)
 	if err != nil {
 		return residue, err
 	}
 	residue += count
-	count, err = sweepRecordLocks(filepath.Join(agents, "record-locks"), jobsDir)
+	count, err = sweepRecordLocks(filepath.Join(agents, "record-locks"), jobsDir, at)
 	if err != nil {
 		return residue, err
 	}
@@ -609,7 +636,7 @@ func sweepHeartbeats(hbDir, jobsDir string) (int, error) {
 	return removed, nil
 }
 
-func sweepRecordLocks(locksDir, jobsDir string) (int, error) {
+func sweepRecordLocks(locksDir, jobsDir string, at time.Time) (int, error) {
 	entries, err := os.ReadDir(locksDir)
 	if err != nil {
 		return 0, nil // no lock directory, nothing to sweep
@@ -648,7 +675,7 @@ func sweepRecordLocks(locksDir, jobsDir string) (int, error) {
 		if err != nil {
 			continue
 		}
-		if now().Sub(info.ModTime()) <= tempLockMaxAge {
+		if at.Sub(info.ModTime()) <= tempLockMaxAge {
 			continue
 		}
 		if err := os.Remove(path); err != nil {
@@ -738,7 +765,10 @@ func rsplitTwo(s string) []string {
 // the runner created for it only when it exits, minutes later); on
 // 2026-09-11 a collection pass in that window took every shard directory of
 // a live proof attempt.
-func pruneEmptyDirs(agents string, now time.Time, grace time.Duration) int {
+func pruneEmptyDirs(agents string, now time.Time, grace time.Duration, holds storeHolds) int {
+	if holds.unreadable != "" {
+		return 0
+	}
 	var directories []string
 	// Ages are read before any removal: taking a child entry away touches
 	// the parent's modification time, and a parent emptied by this very
@@ -748,9 +778,16 @@ func pruneEmptyDirs(agents string, now time.Time, grace time.Duration) int {
 		if err != nil || path == agents || !entry.IsDir() {
 			return nil
 		}
-		if info, infoErr := entry.Info(); infoErr == nil {
-			modified[path] = info.ModTime()
+		info, infoErr := entry.Info()
+		if infoErr != nil {
+			return nil
 		}
+		// Nothing inside a registered store, and nothing of the registry
+		// itself, is the collector's to empty.
+		if holds.protects(path, info) || path == filepath.Join(agents, "stores") {
+			return filepath.SkipDir
+		}
+		modified[path] = info.ModTime()
 		directories = append(directories, path)
 		return nil
 	})
@@ -790,7 +827,7 @@ func underSupervision(agents, directory string) bool {
 // comes from the filename timestamp, never mtime, and verified means
 // BYTE-IDENTICAL, not same-sized: a corrupt or foreign same-name file must
 // never license deleting evidence.
-func collectEventArchives(checkoutRoot, evidenceRoot string, out io.Writer) error {
+func collectEventArchives(checkoutRoot, evidenceRoot string, out io.Writer, at time.Time) error {
 	archiveDir := filepath.Join(checkoutRoot, "artifacts", "agents", "events-archive")
 	if info, err := os.Stat(archiveDir); err != nil || !info.IsDir() {
 		return nil
@@ -815,7 +852,7 @@ func collectEventArchives(checkoutRoot, evidenceRoot string, out io.Writer) erro
 		if err != nil {
 			continue
 		}
-		ageDays := int(now().UTC().Sub(capturedAt).Hours() / 24)
+		ageDays := int(at.UTC().Sub(capturedAt).Hours() / 24)
 		if copied && ageDays >= archiveKeepDays {
 			if err := os.Remove(archive); err != nil && !os.IsNotExist(err) {
 				return err
@@ -912,7 +949,7 @@ func sha256File(path string) (string, error) {
 
 // removedByPerson reports a chain mirror whose removal by a person (or a
 // machine removal) is done and older than the grace.
-func removedByPerson(mirror string, graceSeconds float64) bool {
+func removedByPerson(mirror string, graceSeconds float64, at time.Time) bool {
 	tombstone, err := diskstore.ReadTombstone(diskstore.RemovedTombstonePath(mirror))
 	if err != nil || tombstone.State != diskstore.StateDone {
 		return false
@@ -920,7 +957,7 @@ func removedByPerson(mirror string, graceSeconds float64) bool {
 	if tombstone.Rule != diskstore.RulePerson && tombstone.Rule != diskstore.RuleMachineRemove {
 		return false
 	}
-	return now().Sub(tombstone.At).Seconds() > graceSeconds
+	return at.Sub(tombstone.At).Seconds() > graceSeconds
 }
 
 func fileExists(path string) bool {

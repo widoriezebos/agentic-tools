@@ -167,6 +167,9 @@ type appRun struct {
 	// lookupEnv answers the environment the evidence root resolves under;
 	// nil is os.LookupEnv.
 	lookupEnv func(string) (string, bool)
+	// supervisorWait replaces the launcher's wait for the supervisor's
+	// answer; zero is the contract's readiness wait plus ten seconds.
+	supervisorWait time.Duration
 }
 
 // resolveAppRun derives every path of one run from the roots, the contract
@@ -511,8 +514,11 @@ func (r appRun) launchSupervisor() (string, error) {
 		Dir:        r.roots.Checkout,
 		LogPath:    filepath.Join(applaunch.Dir(r.roots.StateRoot), r.key+".launch.log"),
 	}
-	address, _, err := applaunch.LaunchSupervisor(spec, applaunch.ExecSpawn,
-		time.Duration(r.contract.ReadyWaitMS())*time.Millisecond+10*time.Second,
+	wait := time.Duration(r.contract.ReadyWaitMS())*time.Millisecond + 10*time.Second
+	if r.supervisorWait != 0 {
+		wait = r.supervisorWait
+	}
+	address, _, err := applaunch.LaunchSupervisor(spec, applaunch.ExecSpawn, wait,
 		time.Duration(r.contract.StopWaitMS())*time.Millisecond+5*time.Second)
 	return address, err
 }

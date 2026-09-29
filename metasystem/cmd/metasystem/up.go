@@ -9,7 +9,6 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/up"
 )
 
@@ -47,10 +46,6 @@ func upMetasystemRootOf(binary string) (string, error) {
 		return "", fmt.Errorf("cannot derive the metasystem root from %s; pass --metasystem-root", binary)
 	}
 	return canonicalPath(root)
-}
-
-func upRepositoryScope(supplied string) (string, error) {
-	return upRepositoryScopeWith(supplied, stateroot.RepositoryTop)
 }
 
 func upRepositoryScopeWith(supplied string, repositoryTop func(string) (string, error)) (string, error) {

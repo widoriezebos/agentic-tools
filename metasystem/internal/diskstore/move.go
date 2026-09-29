@@ -39,6 +39,10 @@ type MoveRules struct {
 	Installation, Segment string
 	Stage                 string
 	Sync                  Syncer
+	// Stores is the checkout's store registry: a bundle inside a
+	// registered rebuildable store never enters an evidence root (R22).
+	// The zero registry checks nothing (fixtures of the move alone).
+	Stores Registry
 	// interrupt, in tests, stops the move after the named step.
 	interrupt func(step string) bool
 }
@@ -48,6 +52,16 @@ func MoveBundle(ctx context.Context, source string, rules MoveRules) (MoveResult
 	var result MoveResult
 	if err := checkBundleDir(source); err != nil {
 		return result, err
+	}
+	if rules.Stores.Dir != "" {
+		record, held, err := rules.Stores.RebuildableHolding(source)
+		if err != nil {
+			return result, fmt.Errorf("whether %s is a rebuildable store cannot be read: %w", source, err)
+		}
+		if held {
+			result.Kept = fmt.Sprintf("%s lies in rebuildable store %s, which never enters an evidence root; it ends with its goal's landing or conclusion", source, record.ID)
+			return result, nil
+		}
 	}
 	if !filepath.IsAbs(rules.SegmentDir) {
 		return result, fmt.Errorf("the segment directory must be absolute, got %q", rules.SegmentDir)

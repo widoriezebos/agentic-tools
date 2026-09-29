@@ -140,7 +140,7 @@ func TestHelpOfAnEntrypointWordSaysWhatItIs(t *testing.T) {
 	t.Parallel()
 	for _, row := range []struct{ word, want string }{
 		{"launch", "family of process entrypoints; metasystem internal launch lists them"},
-		{"up", "process entrypoint that cmd/metasystem/rearm_on_landed.go starts"},
+		{"up", "process entrypoint that internal/testrun/rearm.go starts"},
 	} {
 		code, _, stderr := runCLI("help", row.word)
 		if code != 2 || strings.Contains(stderr, "unknown object") || !strings.Contains(stderr, row.want) {

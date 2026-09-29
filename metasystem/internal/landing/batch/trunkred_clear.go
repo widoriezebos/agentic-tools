@@ -31,7 +31,8 @@ func reopenHeldAfterDiagnostic(store Store, id, newBaseTree, newBaseCommit, acto
 	}
 	refs, discoveryErr := heldTrunkRedEntries(id, record.TrunkRed.Entries, seams.ledger)
 	groups := heldTrunkRedGroups(refs)
-	result, err := seams.run(DiagnosticRequest{Tree: newBaseTree, GoalID: joined[len(joined)-1].GoalID, Groups: groups, NeverReuse: true}, joined[len(joined)-1].Claim)
+	charge := ChargeUnit(joined)
+	result, err := seams.run(DiagnosticRequest{Tree: newBaseTree, GoalID: charge.GoalID, Groups: groups, NeverReuse: true}, charge.Claim)
 	if err != nil {
 		return errors.Join(discoveryErr, err)
 	}

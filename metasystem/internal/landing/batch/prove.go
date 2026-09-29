@@ -339,6 +339,12 @@ func reassembleSurvivorsOnBase(store Store, id, actor string, at time.Time, deci
 			return err
 		}
 	}
+	// A change stacked on one that leaves leaves with it (U11b B-1b).
+	stacked, err := stackedReturns(&record, actor, at)
+	if err != nil {
+		return err
+	}
+	decisions = append(decisions, stacked...)
 	knownRemoved := func() string {
 		ids := make([]string, 0, len(record.Units))
 		for _, unit := range record.Units {
@@ -398,6 +404,11 @@ func reassembleSurvivorsOnBase(store Store, id, actor string, at time.Time, deci
 			return hold("survivor return unavailable: " + err.Error())
 		}
 		decisions = append(decisions, decision)
+		stacked, err := stackedReturns(&record, actor, at)
+		if err != nil {
+			return hold("survivor return unavailable: " + err.Error())
+		}
+		decisions = append(decisions, stacked...)
 	}
 	if len(survivors) != 0 && err != nil {
 		return hold("survivor composition exhausted bounded closure: " + err.Error())
@@ -490,4 +501,33 @@ func HoldUnclassified(store Store, id, actor, status, nextEvidence string, at ti
 		record.Transition(StateHeldUnclassified, at, "diagnose", actor, status+"; "+nextEvidence)
 		return nil
 	})
+}
+
+// stackedReturns returns every live change stacked (transitively, by its
+// parent commit) on a change that is leaving or has left the batch, with the
+// parent's reason, so reassembly never keeps a child without its parent
+// (U11b B-1b).
+func stackedReturns(record *Record, actor string, at time.Time) ([]ReturnDecision, error) {
+	var decisions []ReturnDecision
+	for changed := true; changed; {
+		changed = false
+		for _, child := range record.Units {
+			if !child.IsChange() || (child.State != UnitJoining && child.State != UnitJoined) {
+				continue
+			}
+			for _, parent := range record.Units {
+				if !parent.IsChange() || parent.Change.Commit != child.Change.Parent || (parent.State != UnitReturnPending && !terminalUnitState(parent.State)) || parent.State == UnitLanded {
+					continue
+				}
+				decision := ReturnDecision{GoalID: child.GoalID, Outcome: UnitEjected,
+					Reason: "its parent change " + parent.GoalID + " left the batch: " + parent.Failure}
+				if err := requestUnitReturn(record, decision.GoalID, decision.Outcome, decision.Reason, actor, at); err != nil {
+					return nil, err
+				}
+				decisions, changed = append(decisions, decision), true
+				break
+			}
+		}
+	}
+	return decisions, nil
 }

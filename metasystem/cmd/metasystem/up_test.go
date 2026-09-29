@@ -12,6 +12,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hooks"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
 
 func upAdapterGit(t *testing.T, args ...string) *exec.Cmd {
@@ -145,7 +146,7 @@ func TestUpRepositoryScopeIgnoresGitSteeringEnvironment(t *testing.T) {
 	t.Setenv("GIT_DIR", filepath.Join(primary, ".git"))
 	t.Setenv("GIT_WORK_TREE", worktree)
 
-	got, err := upRepositoryScope(primary)
+	got, err := upRepositoryScopeWith(primary, stateroot.RepositoryTop)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,6 +155,6 @@ func TestUpRepositoryScopeIgnoresGitSteeringEnvironment(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got != want {
-		t.Fatalf("upRepositoryScope() with Git steering = %q; want %q", got, want)
+		t.Fatalf("upRepositoryScopeWith() with Git steering = %q; want %q", got, want)
 	}
 }

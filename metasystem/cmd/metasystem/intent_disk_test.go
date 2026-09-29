@@ -104,7 +104,7 @@ func (b *diskBed) store(name, ref string) diskstore.Record {
 	b.t.Helper()
 	registry := diskstore.CheckoutRegistry(b.inst)
 	path := filepath.Join(b.root, "stores-data", name)
-	record, err := registry.Register(diskstore.Registration{Path: path, Class: "process-scratch", Owner: diskstore.Owner{Kind: diskstore.OwnerProcess, Ref: ref},
+	record, err := registry.Register(diskstore.Registration{Path: path, Class: "fixture-store", Owner: diskstore.Owner{Kind: diskstore.OwnerProcess, Ref: ref},
 		Lifetime: diskstore.LifetimeOwner, CapKind: diskstore.CapTarget}, diskNow, rand.Reader)
 	helmMust(b.t, err, os.MkdirAll(path, 0o700))
 	helmMust(b.t, diskstore.WriteMarker(record), os.WriteFile(filepath.Join(path, "payload"), []byte("bytes"), 0o600))

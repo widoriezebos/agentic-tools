@@ -408,7 +408,7 @@ func (f *portableFileProof) projection(tree string) (gittree.Workspace, func()) 
 			}
 			actual := strings.TrimPrefix(request.Env[len(env)], "GIT_INDEX_FILE=")
 			if !filepath.IsAbs(actual) || filepath.Base(actual) != "index" ||
-				filepath.Dir(filepath.Dir(actual)) != os.TempDir() ||
+				!inProcessScratch(f.t, filepath.Dir(actual)) ||
 				!strings.HasPrefix(filepath.Base(filepath.Dir(actual)), "metasystem-gittree.") {
 				f.t.Fatalf("freshness projection index=%q", actual)
 			}

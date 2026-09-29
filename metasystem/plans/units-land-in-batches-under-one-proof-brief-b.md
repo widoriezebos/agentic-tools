@@ -134,12 +134,12 @@ The origin/main validator still consumes its four-column compatibility projectio
 | Claim return | Landing seat | BA6b | `metasystem/internal/goal/verbs.go` owns return or release. |
 | Queue and stale cleanup | Shell landing lane | BA8 | `metasystem/internal/proofrun/admission.go` is the existing lock-admission boundary. |
 | Proof lock | Seat hand protocol | BA8 | `metasystem/internal/proofrun/admission.go` remains the engine-cap boundary. |
-| Re-arm | Lane seat | BA11a | `metasystem/cmd/metasystem/rearm_on_landed.go` supplies re-arm behavior. |
+| Re-arm | Lane seat | BA11a | `metasystem/internal/testrun/rearm.go` supplies re-arm behavior (moved there from cmd/metasystem by C8a). |
 | Proof reservation | Lane seat | BA11b | `metasystem/cmd/metasystem/proof_run.go` owns admission. |
 | Receipt row | Lane seat | BA13 and BA14a | `metasystem/internal/landing/receiptline.go` owns row construction. |
 | Commit | Lane seat | BA14a through BA14b | `metasystem/internal/landing/landpath/commit.go` remains the invoked boundary (formerly `commit.sh`, U5). |
 | Push | Lane seat | BA14b | `metasystem/internal/landing/landpath/land.go` is the old writer being replaced (formerly `land.sh`, U5). |
-| Fast-forward | Lane seat | BA10 | `metasystem/cmd/metasystem/rearm_on_landed.go` is the integration edge. |
+| Fast-forward | Lane seat | BA10 | `metasystem/internal/testrun/rearm.go` is the integration edge (moved there from cmd/metasystem by C8a). |
 | Goal Next edits | Seat | BA6b | `metasystem/internal/goal/verbs.go` owns the ledger mutation. |
 | Trunk-red record | Seat file hook | BA17 through BA12a | `metasystem/memory/flake-registry.md` is the test-only old sink. |
 | Worktree cleanup | Lane seat | BA14a in P6 | `metasystem/internal/landing/landpath/land.go` is the old cleanup writer (formerly `land.sh`, U5). |

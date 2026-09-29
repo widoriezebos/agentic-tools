@@ -46,12 +46,12 @@ func TestViewShapeWithoutALane(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, want := keysOf(t, data), []string{"batch", "next", "owner", "registered_at", "registered_by", "root", "summary"}; !reflect.DeepEqual(got, want) {
+	if got, want := keysOf(t, data), []string{"batch", "next", "owner", "registered_at", "registered_by", "root", "spend", "summary"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("lane keys = %v, want %v", got, want)
 	}
 	var object map[string]json.RawMessage
 	_ = json.Unmarshal(data, &object)
-	for _, key := range []string{"root", "registered_by", "registered_at", "batch", "next"} {
+	for _, key := range []string{"root", "registered_by", "registered_at", "batch", "next", "spend"} {
 		if string(object[key]) != "null" {
 			t.Errorf("%s = %s; want null", key, object[key])
 		}
@@ -171,5 +171,77 @@ func TestViewOfAGoneLaneNamesTheFix(t *testing.T) {
 	view := BuildView(viewSources(home, false, nil))
 	if view.Root == nil || view.Owner.RetryHint == nil || !strings.Contains(*view.Owner.RetryHint, "metasystem landing set PATH") || !strings.Contains(view.Summary, "no longer exists") {
 		t.Fatalf("gone lane view = %+v %q", view.Owner, view.Summary)
+	}
+}
+
+// TestLaneViewShowsChangeMembers (U11b): a change member is listed as its
+// change id from the asker's seat, and a change that left the batch is
+// listed with its outcome and reason, which is where its asker reads it.
+func TestLaneViewShowsChangeMembers(t *testing.T) {
+	t.Parallel()
+	home, root, _ := laneDirs(t)
+	if _, err := Resolve(home, root, "m1e", laneNow, true); err != nil {
+		t.Fatal(err)
+	}
+	change := batch.NewChangeUnit(batch.ChangeMember{Commit: "abcdef0123456789abcdef0123456789abcdef01", AskedBy: "m1e+human"}, "/seat", "m1e", "human", nil, nil)
+	change.State = batch.UnitJoined
+	ejected := batch.NewChangeUnit(batch.ChangeMember{Commit: "1234567890ab1234567890ab1234567890ab1234", AskedBy: "ui+human"}, "/ui", "ui", "human", nil, nil)
+	ejected.State = batch.UnitEjected
+	open := batch.Record{BatchID: "b1", State: batch.StateOpen, Units: []batch.Unit{joinedUnit("g1", "m1b"), change, ejected}}
+	open.Units[2].Outcome, open.Units[2].Failure = batch.UnitEjected, "EJECTED from landing batch b1: TestNotes failed on the batch tip"
+	view := BuildView(viewSources(home, true, []batch.Record{open}))
+	if view.Batch == nil || !reflect.DeepEqual(view.Batch.Members, []Member{{Goal: "g1", Seat: "m1b"}, {Goal: "change:abcdef012345", Seat: "m1e"}}) {
+		t.Fatalf("members = %+v", view.Batch)
+	}
+	want := []Returned{{Goal: "change:1234567890ab", Seat: "ui", Outcome: batch.UnitEjected, Reason: "EJECTED from landing batch b1: TestNotes failed on the batch tip"}}
+	if !reflect.DeepEqual(view.Batch.Returned, want) {
+		t.Fatalf("returned = %+v", view.Batch.Returned)
+	}
+}
+
+// TestLaneViewUnreadableRecordIsNotFewerMembers (U11b, fail closed): a batch
+// record the lane cannot read makes the summary say so; it never reads as a
+// lane with fewer members.
+func TestLaneViewUnreadableRecordIsNotFewerMembers(t *testing.T) {
+	t.Parallel()
+	home, root, _ := laneDirs(t)
+	if _, err := Resolve(home, root, "m1e", laneNow, true); err != nil {
+		t.Fatal(err)
+	}
+	store := batch.NewStore(root, nil)
+	if err := store.Create(batch.Record{Schema: 1, BatchID: "01j5x00000000000000000ba01", State: batch.StateOpen,
+		Units: []batch.Unit{{GoalID: "g1", Chain: "c1", State: batch.UnitJoined, Claim: batch.Claim{Machine: "m1e", Lineage: "l", Epoch: 1, Revision: 1, AccountingRevision: 1}}}}); err != nil {
+		t.Fatal(err)
+	}
+	broken := root + "/artifacts/agents/landing-batches/01j5x00000000000000000ba02.json"
+	if err := os.WriteFile(broken, []byte("{\"schema\": 1, \"batchId\""), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sources := viewSources(home, true, nil)
+	sources.Records = nil
+	view := BuildView(sources)
+	if !strings.Contains(view.Summary, "1 batch record unreadable") || view.Batch == nil || len(view.Batch.Members) != 1 {
+		t.Fatalf("an unreadable record must be said beside the rest: %q batch=%+v", view.Summary, view.Batch)
+	}
+}
+
+// TestLaneViewShowsTheLanesSpend (U11b): the proofs a lane charged to its own
+// account (batches of changes) are its spend, shown beside the lane, with no
+// goal named; without a lane the key is null.
+func TestLaneViewShowsTheLanesSpend(t *testing.T) {
+	t.Parallel()
+	home, root, _ := laneDirs(t)
+	if _, err := Resolve(home, root, "m1e", laneNow, true); err != nil {
+		t.Fatal(err)
+	}
+	sources := viewSources(home, true, nil)
+	var asked string
+	sources.Spend = func(laneRoot, account string) (Spend, error) {
+		asked = laneRoot + "|" + account
+		return Spend{Account: account, Attempts: 2, ReservedMinutes: 90}, nil
+	}
+	view := BuildView(sources)
+	if asked != resolved(root)+"|"+AccountID(root) || view.Spend == nil || *view.Spend != (Spend{Account: AccountID(root), Attempts: 2, ReservedMinutes: 90}) {
+		t.Fatalf("asked=%q spend=%+v", asked, view.Spend)
 	}
 }

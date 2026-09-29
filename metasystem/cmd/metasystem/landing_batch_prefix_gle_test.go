@@ -218,7 +218,7 @@ printf '%s\n' '{"schemaVersion":1,"candidateTree":"candidate","plan":{"purpose":
 func TestGLEBatchTipRetainsEveryAdmittedMemberObligation(t *testing.T) {
 	t.Parallel()
 	units := []batch.Unit{{GoalID: "a", SelectedGroups: []string{"accepted-a"}}, {GoalID: "b", SelectedGroups: []string{"accepted-b"}}}
-	plan, err := planBatchMemberUnion("", "tree", units, testpolicy.ModeAuto,
+	plan, err := planBatchMemberUnion("", "tree", units, "", testpolicy.ModeAuto,
 		func(_, _, _ string, _ testpolicy.Mode) (testpolicy.Plan, error) {
 			return testpolicy.Plan{SelectedGroups: []string{"protected-floor"}, RequiredMode: testpolicy.ModeStandard, ExecutedMode: testpolicy.ModeStandard}, nil
 		})

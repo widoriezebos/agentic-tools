@@ -1,6 +1,7 @@
 package lane
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -38,7 +39,18 @@ type View struct {
 	Owner        OwnerView  `json:"owner"`
 	Batch        *BatchView `json:"batch"`
 	Next         *NextView  `json:"next"`
-	Summary      string     `json:"summary"`
+	// Spend is what the lane charged to its own account: the proofs of
+	// batches whose members are all changes (U11b).
+	Spend   *Spend `json:"spend"`
+	Summary string `json:"summary"`
+}
+
+// Spend is the lane's own proof spend: its accounting identity, the attempts
+// charged to it and their reserved minutes. No goal's budget holds them.
+type Spend struct {
+	Account         string `json:"account"`
+	Attempts        int    `json:"attempts"`
+	ReservedMinutes uint64 `json:"reserved_minutes"`
 }
 
 // OwnerView is the lane owner and its keep-alive.
@@ -71,8 +83,20 @@ type BatchView struct {
 	State      string    `json:"state"`
 	Members    []Member  `json:"members"`
 	WaitingFor []Waiting `json:"waiting_for"`
-	Since      string    `json:"since"`
-	Reason     string    `json:"reason"`
+	// Returned are the changes that left the batch, with why: a change holds
+	// no goal whose Next could carry it, so its asker reads it here (U11b).
+	Returned []Returned `json:"returned"`
+	Since    string     `json:"since"`
+	Reason   string     `json:"reason"`
+}
+
+// Returned is one change that left a batch: its id, the asker's seat, the
+// outcome and the reason.
+type Returned struct {
+	Goal    string `json:"goal"`
+	Seat    string `json:"seat"`
+	Outcome string `json:"outcome"`
+	Reason  string `json:"reason"`
 }
 
 // NextView is the batch collecting behind the current one.
@@ -95,6 +119,8 @@ type ViewSources struct {
 	Now     time.Time
 	Owner   func(root string) (OwnerProbe, error)
 	Records func(root string) ([]batch.Record, error)
+	// Spend reads what the lane at root charged to account; nil shows none.
+	Spend func(root, account string) (Spend, error)
 }
 
 // BuildView reads the lane once and says it for a person and a page.
@@ -117,6 +143,11 @@ func BuildView(sources ViewSources) View {
 		return view
 	}
 	view.Owner = ownerView(sources, record.Root)
+	if sources.Spend != nil {
+		if spend, err := sources.Spend(record.Root, AccountID(record.Root)); err == nil {
+			view.Spend = &spend
+		}
+	}
 	records, recordsErr := readRecords(sources, record.Root)
 	view.Batch, view.Next = currentBatches(records)
 	view.Summary = summary(record.Root, view, recordsErr)
@@ -179,12 +210,28 @@ func readRecords(sources ViewSources, root string) ([]batch.Record, error) {
 	sort.Strings(paths)
 	store := batch.NewStore(root, nil)
 	var records []batch.Record
+	unreadable := 0
 	for _, path := range paths {
-		if record, loadErr := store.Load(strings.TrimSuffix(filepath.Base(path), ".json")); loadErr == nil {
-			records = append(records, record)
+		record, loadErr := store.Load(strings.TrimSuffix(filepath.Base(path), ".json"))
+		if loadErr != nil {
+			// Fail closed means visible: the rest is shown and the record the
+			// lane cannot read is counted in the summary.
+			unreadable++
+			continue
 		}
+		records = append(records, record)
+	}
+	if unreadable != 0 {
+		return records, &unreadableRecords{count: unreadable}
 	}
 	return records, nil
+}
+
+// unreadableRecords counts the batch records the lane could not read.
+type unreadableRecords struct{ count int }
+
+func (err *unreadableRecords) Error() string {
+	return fmt.Sprintf("%d batch record%s unreadable", err.count, plural(err.count))
 }
 
 // currentBatches picks the batch the lane works on (pushing, then proving,
@@ -233,8 +280,25 @@ func members(record batch.Record) []Member {
 	return list
 }
 
+// returned lists the changes that left the batch, with their outcome and
+// reason (U11b); a goal's return is on the goal's own Next.
+func returned(record batch.Record) []Returned {
+	list := []Returned{}
+	for _, unit := range record.Units {
+		if !unit.IsChange() || unit.State == batch.UnitJoined || unit.State == batch.UnitJoining || unit.State == batch.UnitLanded {
+			continue
+		}
+		outcome := unit.Outcome
+		if outcome == "" {
+			outcome = unit.State
+		}
+		list = append(list, Returned{Goal: unit.GoalID, Seat: unit.Claim.Machine, Outcome: outcome, Reason: unit.Failure})
+	}
+	return list
+}
+
 func batchView(record batch.Record) *BatchView {
-	view := &BatchView{ID: record.BatchID, Members: members(record), WaitingFor: []Waiting{}, Since: stateSince(record)}
+	view := &BatchView{ID: record.BatchID, Members: members(record), WaitingFor: []Waiting{}, Returned: returned(record), Since: stateSince(record)}
 	switch record.State {
 	case batch.StateLanding:
 		view.State, view.Reason = BatchPushing, "the batch proved green and is being pushed to main"
@@ -261,6 +325,9 @@ func batchView(record batch.Record) *BatchView {
 		if wait, waiting := batch.ProvingWait(record); waiting {
 			view.State, view.Reason = BatchWaiting, wait.Detail
 		}
+	}
+	if reason := batch.HoldReason(record); reason != "" {
+		view.State, view.Reason = BatchWaiting, "holds: "+reason
 	}
 	return view
 }
@@ -289,8 +356,10 @@ func summary(root string, view View, recordsErr error) string {
 		owner += fmt.Sprintf(" (%d restarts so far)", view.Owner.Restarts)
 	}
 	line := "landing lane " + root + ": " + owner
+	var unreadable *unreadableRecords
+	partial := errors.As(recordsErr, &unreadable)
 	switch {
-	case recordsErr != nil:
+	case recordsErr != nil && !partial:
 		line += "; its batches are unreadable: " + recordsErr.Error()
 	case view.Batch == nil:
 		line += "; no batch"
@@ -299,6 +368,9 @@ func summary(root string, view View, recordsErr error) string {
 	}
 	if view.Next != nil {
 		line += fmt.Sprintf("; next %s collecting, %d member%s", view.Next.ID, len(view.Next.Members), plural(len(view.Next.Members)))
+	}
+	if partial {
+		line += "; " + unreadable.Error()
 	}
 	return line
 }
@@ -309,3 +381,6 @@ func plural(n int) string {
 	}
 	return "s"
 }
+
+// BatchViewOf is one batch as every reader shows it.
+func BatchViewOf(record batch.Record) BatchView { return *batchView(record) }

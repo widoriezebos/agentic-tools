@@ -161,13 +161,14 @@ func executeBatchDiagnosisWithConfig(root, id, actor string, at time.Time, looku
 		UpdateNext: func(goalID, status string) error {
 			return batchEditNext(controlRoot, goalID, status)
 		},
+		LaneOwner: func() (string, bool) { return laneRegistrar(controlRoot) },
 	})
 }
 
 func batchDiagnosticArgs(root string, request batch.DiagnosticRequest, resultPath string) []string {
-	return []string{"internal", "test", "run", "--root", root, "--goal", request.GoalID, "--tree", request.Tree, "--mode", "canary",
-		"--purpose", "diagnostic", "--groups", strings.Join(request.Groups, ","), "--no-reuse", "--result", resultPath,
-		"--expected-goal-revision", fmt.Sprint(request.Claim.Revision), "--expected-accounting-revision", fmt.Sprint(request.Claim.AccountingRevision)}
+	args := append(append([]string{"internal", "test", "run", "--root", root}, accountFlag(request.GoalID)...), "--tree", request.Tree, "--mode", "canary",
+		"--purpose", "diagnostic", "--groups", strings.Join(request.Groups, ","), "--no-reuse", "--result", resultPath)
+	return append(args, accountRevisions(request.GoalID, request.Claim)...)
 }
 
 var batchDiagnosticExecute = func(binary string, args []string, dir string, environment []string) ([]byte, int, error) {
@@ -211,6 +212,10 @@ func launchBatchDiagnosticWithExecute(root, batchID string, request batch.Diagno
 	resultPath := filepath.Join(root, "artifacts", "agents", "proof-runs", "batch", batchID+"-diagnostic.json")
 	if err := os.Remove(resultPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return batch.DiagnosticResult{}, err
+	}
+	// A batch of changes is diagnosed on the lane's account (U11b).
+	if request.GoalID, err = batchChargeID(root, batch.Unit{GoalID: request.GoalID}, nil); err != nil {
+		return batch.DiagnosticResult{}, &batch.DiagnosticRefusal{Status: err.Error()}
 	}
 	args := batchDiagnosticArgs(root, request, resultPath)
 	// The host load when the run starts, recorded with a flake's sightings.

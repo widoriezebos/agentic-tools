@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
@@ -292,13 +293,13 @@ func (e *Engine) applyReapVerdict(job string, doc map[string]any, facts dispatch
 // record lock — lawful transitions only. A lost compare means the record
 // advanced under someone else's authority and is left exactly as it is.
 func (e *Engine) reapCAS(job, expect, target string, patch map[string]any) (bool, error) {
-	source, err := os.CreateTemp("", "mission-reap-patch.*.json")
+	source, done, err := diskstore.ScratchFile("mission-reap-patch.*.json")
 	if err != nil {
 		return false, err
 	}
 	sourcePath := source.Name()
 	source.Close()
-	defer os.Remove(sourcePath)
+	defer done()
 	if err := atomicWriteJSON(sourcePath, patch); err != nil {
 		return false, err
 	}

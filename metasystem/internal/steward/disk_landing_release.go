@@ -168,6 +168,9 @@ func checkoutProofs(top string, pass DiskPass) map[diskstore.OwnerKind]diskstore
 	}
 	proofs[diskstore.OwnerGoal] = diskstore.WorkspaceProof{GitRoot: layout.GitRoot, Git: ExecWorkspaceGit, Ended: goalEnded(checkoutLedger(top, pass.Now)),
 		Now: pass.Now}
+	if delegate, err := DelegateProof(top, pass.Now); err == nil {
+		proofs[diskstore.OwnerDelegate] = delegate
+	}
 	return proofs
 }
 

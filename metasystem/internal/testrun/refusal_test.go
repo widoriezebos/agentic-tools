@@ -1,4 +1,4 @@
-package main
+package testrun
 
 import (
 	"errors"
@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginecause"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 )
 
@@ -51,7 +52,7 @@ func TestUnenrolledLinkedWorktreeNamesItsMainCheckout(t *testing.T) {
 	landedGit(t, root, "commit", "-qm", "seed")
 	linked := filepath.Join(filepath.Dir(root), "linked")
 	landedGit(t, root, "worktree", "add", "-q", "-b", "linked", linked)
-	root, err := canonicalPath(root)
+	root, err := realpath.Canonical(root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +78,7 @@ func TestLinkedWorktreeMainInstallationPreservesInstallationSubdirectory(t *test
 	linked := filepath.Join(filepath.Dir(root), "linked")
 	landedGit(t, root, "worktree", "add", "-q", "-b", "linked-nested", linked)
 	got, ok := linkedWorktreeMainInstallation(filepath.Join(linked, "metasystem"))
-	want, err := canonicalPath(module)
+	want, err := realpath.Canonical(module)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +104,7 @@ func TestBatchPrefixProofControlRootMustOwnLinkedExecution(t *testing.T) {
 	linked := filepath.Join(parent, "linked")
 	landedGit(t, main, "worktree", "add", "-q", "-b", "linked-prefix", linked)
 	execution := filepath.Join(linked, "metasystem")
-	want, err := canonicalProofRoot(module)
+	want, err := realpath.Canonical(module)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,7 +140,7 @@ func TestBatchPrefixProofControlRootAcceptsALinkedLandingWorktree(t *testing.T) 
 	landedGit(t, main, "worktree", "add", "-q", "--detach", proof)
 	controlRoot := filepath.Join(landing, "metasystem")
 	execution := filepath.Join(proof, "metasystem")
-	want, err := canonicalProofRoot(controlRoot)
+	want, err := realpath.Canonical(controlRoot)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,7 +153,7 @@ func TestBatchPrefixProofControlRootAcceptsALinkedLandingWorktree(t *testing.T) 
 }
 
 func TestDecisionMismatchNamesTheField(t *testing.T) {
-	err := decisionMismatchRefusal("candidate", "ours-base", "digest", testingPlanOutput{
+	err := decisionMismatchRefusal("candidate", "ours-base", "digest", PlanOutput{
 		CandidateTree: "candidate", PolicyBaseCommit: "engine-base", BaseContractDigest: "digest",
 	})
 	if err == nil || !strings.Contains(err.Error(), "cause=decision-mismatch field=policy-base-commit ours=ours-base engine=engine-base") {

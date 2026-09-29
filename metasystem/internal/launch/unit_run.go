@@ -18,6 +18,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 	"golang.org/x/sys/unix"
 )
@@ -620,11 +621,11 @@ func (runner *UnitRunner) worktreeDiff(worktree, base string, excluded ...string
 	if git == nil {
 		git = OSGitRunner{}
 	}
-	temporary, err := os.MkdirTemp("", "metasystem-unit-diff.")
+	temporary, done, err := diskstore.ScratchDir("metasystem-unit-diff.")
 	if err != nil {
 		return nil, err
 	}
-	defer os.RemoveAll(temporary)
+	defer done()
 	indexPathData, err := git.Run(worktree, nil, "rev-parse", "--path-format=absolute", "--git-path", "index")
 	if err != nil {
 		return nil, err
@@ -745,11 +746,11 @@ func (runner *UnitRunner) snapshotRepository(worktree string) (repositorySnapsho
 	if err != nil {
 		return repositorySnapshot{}, err
 	}
-	temporary, err := os.MkdirTemp("", "metasystem-unit-snapshot.")
+	temporary, done, err := diskstore.ScratchDir("metasystem-unit-snapshot.")
 	if err != nil {
 		return repositorySnapshot{}, err
 	}
-	defer os.RemoveAll(temporary)
+	defer done()
 	index := filepath.Join(temporary, "index")
 	if err := os.WriteFile(index, indexData, 0o600); err != nil {
 		return repositorySnapshot{}, err

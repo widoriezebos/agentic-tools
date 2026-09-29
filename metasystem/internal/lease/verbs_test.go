@@ -260,7 +260,7 @@ func TestHeldRunsForHolder(t *testing.T) {
 	announceSelf(t, root)
 	self := int64(os.Getpid())
 	ran := false
-	if err := Held(root, self, nil, func() error { ran = true; return nil }); err != nil || !ran {
+	if err := WithHeld(root, self, nil, func() error { ran = true; return nil }); err != nil || !ran {
 		t.Fatalf("the holder's work must run under the lease: ran=%v err=%v", ran, err)
 	}
 }

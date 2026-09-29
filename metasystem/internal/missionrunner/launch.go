@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"os"
 	"os/exec"
@@ -556,13 +557,13 @@ func (e *Engine) armAndPreflight(mode string) error {
 	if code != 0 || !strings.Contains(stdout, "up outcome=armed") {
 		return failf(3, "mission start refused: supervision did not arm: %s", firstDetail(stderr, stdout))
 	}
-	verified, err := os.CreateTemp("", "mission-"+e.Mission+"-verified.*.contract.md")
+	verified, done, err := diskstore.ScratchFile("mission-" + e.Mission + "-verified.*.contract.md")
 	if err != nil {
 		return err
 	}
 	verifiedPath := verified.Name()
 	verified.Close()
-	defer os.Remove(verifiedPath)
+	defer done()
 	// The PUBLIC ladder names every non-regular contract shape before
 	// anything dereferences or READS it: a symlinked contract would
 	// otherwise refuse with only the generic origin error, and a FIFO

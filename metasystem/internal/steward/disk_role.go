@@ -44,6 +44,8 @@ const RoleDisk HealthRole = "disk"
 type HandoffClass struct {
 	Root string
 	Keep time.Duration
+	// Inspect is InspectHandoffs; nil is production (fixtures stub it).
+	Inspect func(root string, cutoff, now time.Time) ([]string, []error)
 }
 
 func (HandoffClass) Name() string { return "context handoffs" }
@@ -51,15 +53,24 @@ func (HandoffClass) Name() string { return "context handoffs" }
 func (c HandoffClass) cutoff(now time.Time) time.Time { return now.Add(-c.Keep) }
 
 func (c HandoffClass) Plan(_ context.Context, pass *diskstore.Pass) ([]diskstore.Item, error) {
-	nonces, problems := InspectHandoffs(c.Root, c.cutoff(pass.Now), pass.Now)
+	inspect := c.Inspect
+	if inspect == nil {
+		inspect = InspectHandoffs
+	}
+	nonces, problems := inspect(c.Root, c.cutoff(pass.Now), pass.Now)
 	var items []diskstore.Item
+	if len(problems) > 0 {
+		// Fail-closed rule 1: what the inspection could not read holds the
+		// whole class this pass; nothing beside it is released.
+		for index, problem := range problems {
+			items = append(items, diskstore.Item{Class: c.Name(), Key: fmt.Sprintf("~problem-%03d", index),
+				Verdict: diskstore.Verdict{Decision: diskstore.Pending, Reason: problem.Error() + "; no handoff is removed this pass", Command: "metasystem system check"}})
+		}
+		return items, nil
+	}
 	for _, nonce := range nonces {
 		items = append(items, diskstore.Item{Class: c.Name(), Key: nonce, Path: HandoffDir(c.Root, nonce),
 			Verdict: diskstore.Verdict{Decision: diskstore.Release, Reason: "complete, not live or consumed, older than disk.context-keep-days"}})
-	}
-	for index, problem := range problems {
-		items = append(items, diskstore.Item{Class: c.Name(), Key: fmt.Sprintf("~problem-%03d", index),
-			Verdict: diskstore.Verdict{Decision: diskstore.Keep, Reason: problem.Error(), Command: "metasystem system check"}})
 	}
 	return items, nil
 }
@@ -232,6 +243,9 @@ func SweepDiskStores(ctx context.Context, top string, pass DiskPass) (DiskPassRe
 			diskstore.RegisteredStores{Registry: diskstore.CheckoutRegistry(top), Proofs: checkoutProofs(top, pass)},
 			HandoffClass{Root: top, Keep: settings.Duration(config.DiskContextKeepKey)},
 			UsageClass{StateRoot: top, Limit: settings.Count(config.DiskSweepItemsPerLockKey)},
+			PinClass{Top: top, Grace: settings.Duration(config.DiskPinGraceKey)},
+			DelegateWorktrees{Top: top},
+			LegacyCandidateEngines{Top: top},
 		}
 		checkoutOptions.Classes = append(checkoutOptions.Classes,
 			attemptRetention(top, pass.Now, settings.Bytes(config.DiskProofTargetKey), settings.Duration(config.DiskProofKeepKey)))
@@ -657,7 +671,7 @@ func registeredPaths(home string, checkouts, gitRoots []string) map[string]bool 
 // and session worktrees U5e, delegate workspaces U5f, workspaces U6b), and a
 // record whose kind has no proof yet is kept and reported pending.
 func diskOwnerProofs() map[diskstore.OwnerKind]diskstore.OwnerProof {
-	return map[diskstore.OwnerKind]diskstore.OwnerProof{}
+	return map[diskstore.OwnerKind]diskstore.OwnerProof{diskstore.OwnerProcess: diskstore.ProcessProof{Prober: identity.KernelProber{}}}
 }
 
 // KernelCensusReader is the production use census: the kernel's process

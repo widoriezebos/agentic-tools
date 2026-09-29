@@ -101,3 +101,17 @@ func TestCheckoutProofsCarryTheWorkspaceProof(t *testing.T) {
 		t.Fatal("a fixture's proofs are used as named")
 	}
 }
+
+// Both passes carry the process proof (Part B U1a): a process scratch root
+// whose process ended and whose writer lock is free goes by it; the machine
+// registry is where process scratch registers.
+func TestDiskPassesCarryTheProcessProof(t *testing.T) {
+	t.Parallel()
+	bed := newStaleBed(t)
+	for name, proofs := range map[string]map[diskstore.OwnerKind]diskstore.OwnerProof{
+		"machine": DiskPass{}.proofs(), "checkout": checkoutProofs(bed.inst, DiskPass{Now: staleNow})} {
+		if proof, ok := proofs[diskstore.OwnerProcess].(diskstore.ProcessProof); !ok || proof.Prober == nil {
+			t.Errorf("the %s pass has no process proof: %+v", name, proofs[diskstore.OwnerProcess])
+		}
+	}
+}

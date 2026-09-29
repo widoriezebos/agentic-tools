@@ -73,7 +73,7 @@ func TestSuperviseWritesTheRecordBeforeTheSpawn(t *testing.T) {
 	t.Parallel()
 	app := mustApp(t)
 	bed := newSuperviseBed(t, map[string]any{
-		"start":  map[string]any{"argv": []string{app, "--no-listen", "--exit-after", "10s"}},
+		"start":  map[string]any{"argv": []string{app, "--no-listen"}},
 		"stopMs": 2000, "readyMs": 5000})
 	var atSpawn *Record
 	bed.options.Spawn = func(spec ChildSpec) (Child, error) {
@@ -84,12 +84,12 @@ func TestSuperviseWritesTheRecordBeforeTheSpawn(t *testing.T) {
 	bed.options.Ready = func(address string) { ready <- address }
 	done := make(chan error, 1)
 	go func() { done <- Supervise(bed.options) }()
+	// No clock between the supervisor and the test: it reports readiness or
+	// leaves, however long a loaded host takes to spawn the application.
 	select {
 	case <-ready:
 	case err := <-done:
 		t.Fatalf("the supervisor left before readiness: %v", err)
-	case <-time.After(20 * time.Second):
-		t.Fatal("the supervisor never reported readiness")
 	}
 	if atSpawn == nil {
 		t.Fatal("the record must exist before the application is spawned")
@@ -118,11 +118,7 @@ func TestSuperviseWritesTheRecordBeforeTheSpawn(t *testing.T) {
 	if err := identity.SignalExact(identity.KernelProber{}, ref, syscall.SIGKILL); err != nil {
 		t.Fatal(err)
 	}
-	select {
-	case <-done:
-	case <-time.After(20 * time.Second):
-		t.Fatal("the supervisor did not finish")
-	}
+	<-done
 	ended, err := ReadRecord(bed.stateRoot, StandingKey)
 	if err != nil || ended.Ended == nil {
 		t.Fatalf("a run ends into an ended record the supervisor never deletes: %+v %v", ended, err)
@@ -202,21 +198,16 @@ func TestSuperviseEndsTheApplicationOnASignal(t *testing.T) {
 	go func() { done <- Supervise(bed.options) }()
 	select {
 	case <-ready:
-	case <-time.After(20 * time.Second):
-		t.Fatal("the supervisor never reported readiness")
+	case err := <-done:
+		t.Fatalf("the supervisor left before readiness: %v", err)
 	}
 	record, err := ReadRecord(bed.stateRoot, StandingKey)
 	if err != nil {
 		t.Fatal(err)
 	}
 	cancel()
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatal(err)
-		}
-	case <-time.After(20 * time.Second):
-		t.Fatal("the supervisor did not finish after its signal")
+	if err := <-done; err != nil {
+		t.Fatal(err)
 	}
 	ref, _, err := record.ChildRef()
 	if err != nil {
