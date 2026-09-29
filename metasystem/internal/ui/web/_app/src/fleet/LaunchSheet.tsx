@@ -36,6 +36,7 @@ import { Trouble } from "../shell/Trouble";
 export function LaunchSheet({
   machines,
   launches,
+  hidden,
   thisSeat,
   where,
   onClose,
@@ -43,13 +44,15 @@ export function LaunchSheet({
 }: {
   machines: readonly Machine[];
   launches: readonly Launch[];
+  /** Launches this page has discarded before the server's reading says so. */
+  hidden?: ReadonlySet<string>;
   thisSeat: string;
   where: Launching;
   onClose: () => void;
   /** The record the server wrote before anything ran, which becomes the card. */
   onStarted: (started: Launch) => void;
 }) {
-  const taken = useMemo(() => nicknamesTaken(machines, launches), [machines, launches]);
+  const taken = useMemo(() => nicknamesTaken(machines, launches, hidden), [machines, launches, hidden]);
   const proposed = useMemo(() => proposedNickname(thisSeat, taken), [thisSeat, taken]);
   const [draft, setDraft] = useState<LaunchDraft>(() => ({
     machine: proposed,
