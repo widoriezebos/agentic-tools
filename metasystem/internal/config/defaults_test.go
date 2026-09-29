@@ -240,3 +240,28 @@ func TestDiskDefaultsAreInTheOneCompiledTable(t *testing.T) {
 		t.Fatalf("CacheTrimSettings over an overrides-only file = %+v, %v", trim, err)
 	}
 }
+
+// No configuration file (an empty path) is the compiled defaults under the
+// environment: Get and KeyOrigin answer every key Keys lists, as they did
+// before the defaults were compiled in, when Keys listed nothing for it.
+func TestNoConfigurationFileResolvesTheCompiledDefaults(t *testing.T) {
+	t.Parallel()
+	env := mapEnv(map[string]string{EnvName("watch.stale-min"): "7"})
+	for _, key := range Keys("", "", nil) {
+		if key == EvidenceRootKey {
+			continue // resolved from HOME by its owner, which noEnv leaves unset
+		}
+		if _, code, err := Get(GetParams{Key: key, LookupEnv: noEnv}); err != nil || code != 0 {
+			t.Fatalf("Get(%s) without a configuration file = %d, %v", key, code, err)
+		}
+	}
+	if value, _, err := Get(GetParams{Key: "suite.section-cap-min", LookupEnv: noEnv}); err != nil || value != "45" {
+		t.Fatalf("a compiled default without a file = %q, %v", value, err)
+	}
+	if value, _, err := Get(GetParams{Key: "watch.stale-min", LookupEnv: env}); err != nil || value != "7" {
+		t.Fatalf("the environment without a file = %q, %v", value, err)
+	}
+	if origin, err := KeyOrigin(GetParams{Key: "watch.stale-min", LookupEnv: noEnv}); err != nil || origin != "default" {
+		t.Fatalf("KeyOrigin without a file = %q, %v", origin, err)
+	}
+}

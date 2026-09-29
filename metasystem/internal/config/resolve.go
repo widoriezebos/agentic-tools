@@ -201,8 +201,11 @@ func Get(p GetParams) (value string, code int, err error) {
 		return env, 0, nil
 	}
 
+	// An empty ConfPath is no configuration file: the compiled defaults
+	// under the environment and the flag, nothing read from disk.
+	hasFile := p.ConfPath != ""
 	localPath := p.ConfPath + ".local"
-	if p.Mode != "" && (roleRuntimeKey.MatchString(p.Key) || roleModelKey.MatchString(p.Key)) && isFile(localPath) {
+	if hasFile && p.Mode != "" && (roleRuntimeKey.MatchString(p.Key) || roleModelKey.MatchString(p.Key)) && isFile(localPath) {
 		// The local overlay outranks the committed file for MODE-scoped
 		// role keys exactly as it does for base keys: a machine carrying
 		// its model lanes by hand (R-25) writes mode.<m>.role.<r>.* into
@@ -217,7 +220,7 @@ func Get(p GetParams) (value string, code int, err error) {
 			return v, 0, nil
 		}
 	}
-	if isFile(localPath) {
+	if hasFile && isFile(localPath) {
 		v, found, err := ConfLookup(localPath, p.Key)
 		if err != nil {
 			return "", 1, err
@@ -232,24 +235,28 @@ func Get(p GetParams) (value string, code int, err error) {
 	// base key, file then default, as the same lines in the shipped file did.
 	runtimes := effectiveRuntimes(p.ConfPath, lookupEnv)
 	if p.Mode != "" && (roleRuntimeKey.MatchString(p.Key) || roleModelKey.MatchString(p.Key)) {
-		v, found, err := ConfLookup(p.ConfPath, "mode."+p.Mode+"."+p.Key)
-		if err != nil {
-			return "", 1, err
-		}
-		if found {
-			return v, 0, nil
+		if hasFile {
+			v, found, err := ConfLookup(p.ConfPath, "mode."+p.Mode+"."+p.Key)
+			if err != nil {
+				return "", 1, err
+			}
+			if found {
+				return v, 0, nil
+			}
 		}
 		if v, ok := applicableDefault("mode."+p.Mode+"."+p.Key, runtimes); ok {
 			return v, 0, nil
 		}
 	}
 
-	v, found, err := ConfLookup(p.ConfPath, p.Key)
-	if err != nil {
-		return "", 1, err
-	}
-	if found {
-		return v, 0, nil
+	if hasFile {
+		v, found, err := ConfLookup(p.ConfPath, p.Key)
+		if err != nil {
+			return "", 1, err
+		}
+		if found {
+			return v, 0, nil
+		}
 	}
 	// A compiled default outranks a caller's fallback: each default lives
 	// once, in the table.
@@ -419,6 +426,11 @@ func KeyOrigin(p GetParams) (string, error) {
 	}
 	if _, ok := lookupEnv(EnvName(p.Key)); ok {
 		return "env", nil
+	}
+	if p.ConfPath == "" {
+		// No configuration file: what the environment does not set is
+		// the compiled default.
+		return "default", nil
 	}
 	localPath := p.ConfPath + ".local"
 	if isFile(localPath) {
