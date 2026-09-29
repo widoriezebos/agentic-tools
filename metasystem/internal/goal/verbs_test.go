@@ -8,8 +8,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/retrodebt"
 )
 
@@ -2170,5 +2172,104 @@ func TestSeatOpenNamesItsBlockerAndTheParkReturnsOnDone(t *testing.T) {
 	}
 	if tree, err = loadTreeFor(bEndpoint, res.Tip); err != nil || tree.Live["twice-blocked"].State != StateQueued || tree.Live["twice-blocked"].Parked != nil {
 		t.Fatalf("the last blocker's done returns the goal to its resting state: %v %+v", err, tree.Live["twice-blocked"])
+	}
+}
+
+func goalCard(t *testing.T, machine, id string) (board.Card, bool) {
+	t.Helper()
+	home, err := board.Home()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, card := range readSeatCards(t, home, machine) {
+		if card.Goal == id {
+			return card, true
+		}
+	}
+	return board.Card{}, false
+}
+
+func readSeatCards(t *testing.T, home, machine string) []board.Card {
+	t.Helper()
+	picture, _ := board.Read(home, []board.Seat{{Machine: machine}}, nil, time.Now(), 1<<62)
+	var cards []board.Card
+	for _, unknown := range picture.Unknown {
+		if unknown.Card != nil {
+			cards = append(cards, *unknown.Card)
+		}
+	}
+	return append(cards, picture.Cards...)
+}
+
+// TestGoalVerbsWriteTheirCards (R24, U10a-3, the goal verbs): claim writes
+// claimed-idle on the acting seat, land-ready writes land-ready, a handover
+// writes released on the source seat and claimed-idle on the target in the
+// one act that moves the claim, and the new holder's release ends the
+// target's card; a board that cannot take a card leaves the claim confirmed.
+func TestGoalVerbsWriteTheirCards(t *testing.T) {
+	t.Parallel()
+	id := "card-goal-verbs"
+	endpoint, req := handoverBed(t, id, false)
+	installation, err := board.EngineInstallation()
+	if err != nil {
+		t.Fatal(err)
+	}
+	card, ok := goalCard(t, "mac-studio", id)
+	if !ok || card.Stage != board.StageClaimedIdle || card.Seat.Installation != installation {
+		t.Fatalf("claim card = %+v (%v)", card, ok)
+	}
+	foreign := req
+	foreign.Actor = Actor{Machine: "m1-goal-foreign", Lineage: "other"}
+	foreign.Ulid = "01J5X00000000000000000HC00"
+	if result, err := LandReady(foreign, id); err == nil && result.Outcome == OutcomeConfirmed {
+		t.Fatalf("a foreign land-ready was confirmed: %+v", result)
+	}
+	if card, _ = goalCard(t, "mac-studio", id); card.Stage != board.StageClaimedIdle {
+		t.Fatalf("a refused land-ready moved the card: %+v", card)
+	}
+	if _, wrote := goalCard(t, "m1-goal-foreign", id); wrote {
+		t.Fatal("a refused land-ready wrote a card")
+	}
+	ready := req
+	ready.Ulid, ready.Now = "01J5X00000000000000000HC01", req.Now.Add(time.Minute)
+	if result, err := LandReady(ready, id); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("land-ready: %+v %v", result, err)
+	}
+	if card, _ = goalCard(t, "mac-studio", id); card.Stage != board.StageLandReady {
+		t.Fatalf("land-ready card = %+v", card)
+	}
+	handover := req
+	handover.Ulid, handover.Now = "01J5X00000000000000000HC02", req.Now.Add(2*time.Minute)
+	if result, err := Handover(handover, id, "landing-card", "landing-lineage", 11, "batch-a", func() (identity.Liveness, error) { return identity.Alive, nil }); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("handover: %+v %v", result, err)
+	}
+	source, _ := goalCard(t, "mac-studio", id)
+	target, ok := goalCard(t, "landing-card", id)
+	if source.Stage != board.StageReleased || !ok || target.Stage != board.StageClaimedIdle {
+		t.Fatalf("after handover: source %s, target %+v (%v)", source.Stage, target, ok)
+	}
+	holder := req
+	holder.Actor, holder.ClaimEpoch = Actor{Machine: "landing-card", Lineage: "landing-lineage"}, 11
+	holder.Ulid, holder.Now = "01J5X00000000000000000HC03", req.Now.Add(3*time.Minute)
+	if result, err := Release(holder, id); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("release: %+v %v", result, err)
+	}
+	if target, _ = goalCard(t, "landing-card", id); target.Stage != board.StageReleased {
+		t.Fatalf("released card = %+v", target)
+	}
+	_ = endpoint
+
+	// A board that cannot take the card: the claim stands.
+	home, _ := board.Home()
+	os.MkdirAll(board.Dir(home), 0o700)
+	if err := os.WriteFile(filepath.Join(board.Dir(home), "m1-goal-blocked"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	blocked, _ := fakeGoalEndpoint(t)
+	blockedReq := verbReqFor(blocked, "01J5X00000000000000000HC04", "m1-goal-blocked")
+	blockedReq.Actor.Lineage, blockedReq.ClaimEpoch = "session-b", 7
+	blockedReq.CallerClass, blockedReq.EpochAuthority = "MAIN", EpochAuthorityHolder
+	if result, err := openClaimForTest(t, blockedReq, "card-goal-blocked", "Claim with no board.", OriginMain, "Claim it.", testBudget()); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("an unwritable board failed the claim: %+v %v", result, err)
 	}
 }

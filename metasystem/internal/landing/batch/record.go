@@ -1,6 +1,7 @@
 package batch
 
 import (
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/adapter"
@@ -48,6 +49,10 @@ type Unit struct {
 	// Closure is the member's changed and dependent units at its admitted
 	// tree, from the language adapter; red naming asks it for owner units.
 	Closure *adapter.Closure `json:"closure,omitempty"`
+	// Stages are the closed stage spans the host board held for the goal
+	// when it joined: the lane's history of how long each stage takes
+	// (D14, R22).
+	Stages []board.StageSpan `json:"stages,omitempty"`
 
 	unitRecordFields
 }

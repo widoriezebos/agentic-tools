@@ -19,6 +19,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"syscall"
@@ -434,4 +435,66 @@ func LiveCard(home, goal string) (Card, bool) {
 		return Card{}, false
 	}
 	return found[0], true
+}
+
+// EngineInstallation is the installation that holds the running engine
+// (<installation>/bin/metasystem): the seat a record-bound writer's own card
+// names, the armed checkout the host registry records.
+func EngineInstallation() (string, error) {
+	executable, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	installation := filepath.Join(filepath.Dir(executable), "..")
+	if resolved, err := filepath.EvalSymlinks(installation); err == nil {
+		return resolved, nil
+	}
+	return filepath.Clean(installation), nil
+}
+
+// SeatInstallation is the installation a seat's own cards name: a writer
+// that moves a goal to another seat of this host (a handover) names that
+// seat as the seat names itself. False when the seat has written no card.
+func SeatInstallation(home, machine string) (string, bool) {
+	if !SafeName(machine) {
+		return "", false
+	}
+	entries, err := os.ReadDir(filepath.Join(Dir(home), machine))
+	if err != nil {
+		return "", false
+	}
+	for _, entry := range entries {
+		goal, ok := strings.CutSuffix(entry.Name(), ".json")
+		if !ok || !SafeName(goal) {
+			continue
+		}
+		if card, ok := readCardFile(filepath.Join(Dir(home), machine, entry.Name())); ok && card.Seat.Machine == machine && card.Seat.Installation != "" {
+			return card.Seat.Installation, true
+		}
+	}
+	return "", false
+}
+
+// History is every closed stage span the board holds for goal, on every
+// seat, oldest first: a goal handed from one seat to another keeps the
+// spans its first seat wrote.
+func History(home, goal string) []StageSpan {
+	if !SafeName(goal) {
+		return nil
+	}
+	entries, err := os.ReadDir(Dir(home))
+	if err != nil {
+		return nil
+	}
+	var spans []StageSpan
+	for _, entry := range entries {
+		if !entry.IsDir() || !SafeName(entry.Name()) {
+			continue
+		}
+		if card, ok := readCardFile(filepath.Join(Dir(home), entry.Name(), goal+".json")); ok && card.Goal == goal {
+			spans = append(spans, card.Stages...)
+		}
+	}
+	sort.SliceStable(spans, func(i, j int) bool { return spans[i].Since.Before(spans[j].Since) })
+	return spans
 }

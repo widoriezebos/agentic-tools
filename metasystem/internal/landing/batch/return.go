@@ -2,9 +2,11 @@ package batch
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 )
@@ -143,15 +145,60 @@ func ReturnUnits(store Store, batchID, tree, actor string, at time.Time, seams R
 }
 
 func settleReturn(store Store, batchID, goalID, disposition, actor string, at time.Time) error {
-	return store.updateLocked(batchID, func(record *Record) error {
+	var settled Unit
+	err := store.updateLocked(batchID, func(record *Record) error {
 		for index := range record.Units {
 			unit := &record.Units[index]
 			if unit.GoalID == goalID && unit.State == UnitReturnPending {
 				unit.State, unit.ReturnDisposition = unit.Outcome, disposition
 				appendUnitHistory(record, at, "return", actor, goalID, UnitReturnPending, unit.State)
+				settled = *unit
 				return nil
 			}
 		}
 		return fmt.Errorf("return-pending unit %s is absent", goalID)
 	})
+	if err == nil {
+		stage := board.StageReturned
+		if settled.State == UnitLanded {
+			stage = board.StageLanded
+		}
+		writeUnitCard(goalID, settled.Claim.Machine, stage, batchID, at)
+	}
+	return err
+}
+
+// boardHistory is the goal's closed stage spans on the host board, copied
+// into the unit at its join.
+func boardHistory(goalID string) []board.StageSpan {
+	home, err := board.Home()
+	if err != nil {
+		return nil
+	}
+	return board.History(home, goalID)
+}
+
+// writeUnitCard projects a lane transition onto the goal's card (D14, R24):
+// joined at the join, landed or returned when the unit settles. The card is
+// the goal's live card on whichever seat holds it, or, when the claim was
+// released on the way back, the seat the unit joined from. A card that cannot
+// be written is reported; the batch record stands.
+func writeUnitCard(goalID, machine string, stage board.Stage, batchID string, at time.Time) {
+	home, err := board.Home()
+	if err != nil {
+		return
+	}
+	seat, ok := board.Seat{}, false
+	if live, found := board.LiveCard(home, goalID); found {
+		seat, ok = live.Seat, true
+	} else if installation, found := board.SeatInstallation(home, machine); found {
+		seat, ok = board.Seat{Machine: machine, Installation: installation}, true
+	}
+	if !ok {
+		return
+	}
+	card := board.Card{Seat: seat, Goal: goalID, Stage: stage, Batch: batchID, Writer: board.Writer{Component: "landing-batch", At: at}}
+	if err := board.Write(card); err != nil {
+		fmt.Fprintf(os.Stderr, "batch %s: goal %s: the board card was not written: %v\n", batchID, goalID, err)
+	}
 }
