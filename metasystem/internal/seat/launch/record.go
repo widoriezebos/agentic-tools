@@ -120,8 +120,11 @@ type Next struct {
 
 // Record is one launch, rewritten atomically after every step.
 //
-// The human's authorization is not in it and never travels into it: the word
-// reaches the arming verb's argument list and nothing else.
+// A terminal's temporary word is not in it and never travels into it: the
+// word reaches the arming verb's argument list and nothing else. What it does
+// carry is the verdict of a signed-in human's launch, stamped by the
+// interface before it spawned the verb (Enrollment); ReviewBy is written only
+// by a launch given the temporary pair.
 type Record struct {
 	SchemaVersion int     `json:"schemaVersion"`
 	Launch        string  `json:"launch"`
@@ -147,6 +150,12 @@ type Record struct {
 	// before it spawned this launch (g1-s72 D1), or nil for a launch with
 	// none (a terminal or pair launch, or one written before g1-s72).
 	Enrollment *Enrollment `json:"enrollment,omitempty"`
+}
+
+// SessionEnrolled reports whether a signed-in session's verdict was stamped
+// on this record when it was created (g1-s72 D1).
+func (r Record) SessionEnrolled() bool {
+	return r.Enrollment != nil && r.Enrollment.Kind == EnrollmentHumanSession
 }
 
 // EnrollmentHumanSession is the one kind a launch record carries.

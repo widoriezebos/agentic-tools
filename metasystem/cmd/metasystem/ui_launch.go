@@ -11,15 +11,17 @@ package main
 // verb decides the race between two requests; what is decided here is only
 // whether this request is worth starting at all.
 //
-// The word reaches the verb's argument list and nothing else. It is not
-// written into the record, not into the log, and not into the answer.
+// Signed in is enough (g1-s72 D1). This process holds the one accepted
+// proof, so it checks that proof itself, stamps the verdict it stands for
+// into the record it creates, and leaves the proof as audit evidence before
+// anything is spawned. Nothing about the human travels on the verb's argv:
+// the clone's arm reads the verdict from the record.
 
 import (
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"syscall"
 	"time"
 
@@ -30,66 +32,63 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/session"
 )
 
+// launchSeams are the three things the starter asks of the world that a test
+// replaces: the facts the preflight judges against (a fetch of the fleet's
+// presence), the detached spawn, and the server's clock.
+type launchSeams struct {
+	facts func(launch.Request, launch.Record) (launch.Facts, error)
+	spawn func(lifecycle.Roots, launch.Request, launch.Record, string) error
+	now   func() time.Time
+}
+
 // launchStarter is the Launch the server is built with.
-//
-// The signed-in human is the hand this act is made under; the route has
-// already refused anything weaker, and nothing about who they are travels
-// further than that refusal — the authority the new machine carries is their
-// own word, recorded on its identity by the arming verb.
 func launchStarter(roots lifecycle.Roots) func(*session.Session, launch.Request) (launch.Record, error) {
-	return func(_ *session.Session, asked launch.Request) (launch.Record, error) {
+	return launchStarterWith(roots, launchSeams{facts: seatLaunchFacts, spawn: spawnLaunch, now: time.Now})
+}
+
+// launchProofAction is the action the audit proof of a launch is recorded
+// under: the verb the proof's verdict is carried into.
+const launchProofAction = "seat launch"
+
+// launchStarterWith is launchStarter over its seams.
+//
+// The route has already refused anything weaker than a signed-in human, and
+// this function asks again rather than trusting it: it is the one process
+// holding the proof, and the record it stamps is what the new machine is
+// enrolled from.
+func launchStarterWith(roots lifecycle.Roots, seams launchSeams) func(*session.Session, launch.Request) (launch.Record, error) {
+	return func(signed *session.Session, asked launch.Request) (launch.Record, error) {
+		if signed == nil || !signed.Proof.SessionValidFor(roots.StateRoot) {
+			return launch.Record{}, fmt.Errorf("this launch carries no signed-in session proof for this checkout; sign in again here")
+		}
 		asked.From = roots.Checkout
-		// The interface never launches a machine under an authorization
-		// nobody typed. The verb still takes the terminal-only path — arming
-		// from the caller's own enrolled terminal, with no pair at all — but
-		// that path belongs to a human standing at a terminal, and a browser
-		// is not one. So the word and the date travel with every launch and
-		// with every retry, including a retry whose enrollment step may
-		// already be done: the resume decides that from the clone's own
-		// identity and binary, which this side cannot read.
-		if strings.TrimSpace(asked.Word) == "" || strings.TrimSpace(asked.ReviewBy) == "" {
-			return launch.Record{}, &launch.Refusal{
-				Code:    launch.CodeWordRequired,
-				Message: "a machine launched from this interface is enrolled under your own words: give the word and the review date",
-			}
-		}
-		if err := humanauthority.ValidateTemporaryWordPair(asked.Word, asked.ReviewBy); err != nil {
-			return launch.Record{}, &launch.Refusal{Code: launch.CodeWordInvalid, Message: err.Error()}
-		}
-		// The one rule this side has that the engine's validator does not: a
-		// review date already behind the human who chose it is a review due
-		// the moment the machine joins. It is judged against the CLIENT's own
-		// day, which travels with the request: this server and the browser
-		// can be on different dates for several hours of every day, and the
-		// date on screen is the one a human answered.
-		if !launch.ValidDay(asked.ClientToday) {
-			return launch.Record{}, &launch.Refusal{
-				Code:    launch.CodeReviewDatePast,
-				Message: "this request does not say what day it was made on, so the review date cannot be judged against it",
-			}
-		}
-		if launch.ReviewDateBefore(asked.ReviewBy, asked.ClientToday) {
-			return launch.Record{}, &launch.Refusal{
-				Code:    launch.CodeReviewDatePast,
-				Message: "the review-by date " + asked.ReviewBy + " is before " + asked.ClientToday + "; choose a date this machine's enrollment can be reviewed by",
-			}
-		}
+		// The interface never forwards a pair: a browser launch is enrolled
+		// from the session's verdict on its record, never from words.
+		asked.Word, asked.ReviewBy = "", ""
 		// A machine already launched and supervised from here is a repeat
 		// whose effect holds (R-129-ui): its launch is the answer, and no
 		// record is written or spawned.
 		if launched, already, err := launch.Launched(roots.Checkout, asked); err == nil && already {
 			return launched, nil
 		}
-		record, path, err := launchRecordFor(roots, &asked)
+		now := seams.now().UTC()
+		record, path, err := launchRecordFor(roots, &asked, signed, now)
 		if err != nil {
 			return launch.Record{}, err
 		}
-		facts, err := seatLaunchFacts(asked, record)
+		facts, err := seams.facts(asked, record)
 		if err != nil {
 			return launch.Record{}, err
 		}
 		if err := launch.Preflight(asked, facts); err != nil {
 			return launch.Record{}, err
+		}
+		// The proof is the audit evidence every session act leaves, and it is
+		// written before the record and the spawn: a proof that cannot be
+		// recorded is a launch that does not start, with nothing on disk to
+		// say otherwise.
+		if err := humanauthority.RecordSessionProof(roots.StateRoot, launchProofOperation(record.Launch, now), launchProofAction, signed.Proof); err != nil {
+			return launch.Record{}, fmt.Errorf("the signed-in proof for this launch could not be recorded, so nothing was started: %w", err)
 		}
 		// The record is written before anything runs, so a page opened a
 		// second later already has something to read — and it says `starting`
@@ -100,11 +99,11 @@ func launchStarter(roots lifecycle.Roots) func(*session.Session, launch.Request)
 		if err := launch.SaveAt(path, record, roots.Checkout); err != nil {
 			return launch.Record{}, err
 		}
-		if err := spawnLaunch(roots, asked, record, path); err != nil {
+		if err := seams.spawn(roots, asked, record, path); err != nil {
 			// A launch that could not be started is a failed launch and not a
 			// starting one. Nothing else will ever write this record, so the
 			// reason is written here.
-			ended := time.Now().UTC().Format(time.RFC3339)
+			ended := seams.now().UTC().Format(time.RFC3339)
 			record.Outcome = launch.OutcomeFailed
 			record.EndedAt = &ended
 			record.SetStep(launch.Step{
@@ -117,6 +116,25 @@ func launchStarter(roots lifecycle.Roots) func(*session.Session, launch.Request)
 	}
 }
 
+// launchProofOperation names one launch's audit proof: the launch and the
+// moment its verdict was stamped, so a retry under a later session leaves a
+// proof of its own beside the first.
+func launchProofOperation(id string, at time.Time) string {
+	return id + "-" + at.UTC().Format("20060102T150405Z")
+}
+
+// launchEnrollment is the verdict a signed-in session's proof stands for,
+// stamped from the proof and the server's clock and never from the body.
+func launchEnrollment(signed *session.Session, now time.Time) *launch.Enrollment {
+	return &launch.Enrollment{
+		Kind:     launch.EnrollmentHumanSession,
+		Provider: signed.Proof.ChannelProvider,
+		Human:    signed.Proof.ChannelUser,
+		Session:  signed.Proof.ChannelRef,
+		At:       now.UTC().Format(time.RFC3339),
+	}
+}
+
 // launchDiscarder is the DiscardLaunch the server is built with: the record
 // in this checkout is marked, and the clone it names is not touched.
 func launchDiscarder(roots lifecycle.Roots) func(id string) (launch.Record, error) {
@@ -126,8 +144,8 @@ func launchDiscarder(roots lifecycle.Roots) func(id string) (launch.Record, erro
 }
 
 // launchRecordFor is the record this request is about: the one a retry
-// resumes, or a fresh one written before anything runs.
-func launchRecordFor(roots lifecycle.Roots, asked *launch.Request) (launch.Record, string, error) {
+// resumes, or a fresh one stamped with the signed-in session's verdict.
+func launchRecordFor(roots lifecycle.Roots, asked *launch.Request, signed *session.Session, now time.Time) (launch.Record, string, error) {
 	if asked.Resuming() {
 		path, err := launch.Path(roots.Checkout, asked.Resume)
 		if err != nil {
@@ -140,16 +158,20 @@ func launchRecordFor(roots lifecycle.Roots, asked *launch.Request) (launch.Recor
 		// A retry is the same launch: its machine and its destination are
 		// what the record says, whatever a browser sent.
 		asked.Machine, asked.Destination = record.Machine, record.Destination
-		if asked.ReviewBy == "" {
-			asked.ReviewBy = record.ReviewBy
-		}
 		// A retry is a fresh start of the same launch: the previous run's
 		// process identity is not this one's, and leaving it in place would
 		// let the reconciliation judge this retry by a pid that has gone.
 		record.Outcome = launch.OutcomeStarting
 		record.Process = launch.Process{}
 		record.EndedAt = nil
-		record.ReviewBy = asked.ReviewBy
+		// A record the interface stamped is stamped again under the session
+		// retrying it. One created without an enrollment is never stamped
+		// later (S72-02): its resume refuses by name at the enrollment step
+		// if it still has to arm, so a pre-slice clone's engine is never
+		// handed a flag it does not know.
+		if record.Enrollment != nil {
+			record.Enrollment = launchEnrollment(signed, now)
+		}
 		return record, path, nil
 	}
 	if asked.Destination == "" {
@@ -170,9 +192,10 @@ func launchRecordFor(roots lifecycle.Roots, asked *launch.Request) (launch.Recor
 	return launch.Record{
 		SchemaVersion: launch.SchemaVersion, Launch: id,
 		Machine: asked.Machine, Destination: asked.Destination,
-		Outcome: launch.OutcomeStarting, ReviewBy: asked.ReviewBy,
-		StartedAt: time.Now().UTC().Format(time.RFC3339),
-		Steps:     []launch.Step{},
+		Outcome:    launch.OutcomeStarting,
+		StartedAt:  now.Format(time.RFC3339),
+		Steps:      []launch.Step{},
+		Enrollment: launchEnrollment(signed, now),
 	}, path, nil
 }
 
@@ -186,15 +209,7 @@ func launchRecordFor(roots lifecycle.Roots, asked *launch.Request) (launch.Recor
 // into the new machine.
 func spawnLaunch(roots lifecycle.Roots, asked launch.Request, record launch.Record, path string) error {
 	engine := filepath.Join(roots.Installation, "bin", "metasystem")
-	args := []string{"seat", "launch", "--from", roots.Checkout, "--record", path}
-	if asked.Resuming() {
-		args = append(args, "--resume", record.Launch)
-	} else {
-		args = append(args, "--machine", asked.Machine, "--destination", asked.Destination)
-	}
-	if asked.Word != "" {
-		args = append(args, "--temporary-human-word", asked.Word, "--review-by", asked.ReviewBy)
-	}
+	args := launchArgs(roots, asked, record, path)
 	log, err := os.OpenFile(launchLogPath(roots.Checkout, record.Launch), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
 		return err
@@ -218,6 +233,17 @@ func spawnLaunch(roots lifecycle.Roots, asked launch.Request, record launch.Reco
 	// The child is nobody's to wait for: it outlives this request by design,
 	// and the record it rewrites is what this server reads it by.
 	return command.Process.Release()
+}
+
+// launchArgs is the verb's argument list: the record it continues and, for a
+// fresh launch, the machine and destination that record already names. No
+// pair and nothing about the human: the record carries the verdict.
+func launchArgs(roots lifecycle.Roots, asked launch.Request, record launch.Record, path string) []string {
+	args := []string{"seat", "launch", "--from", roots.Checkout, "--record", path}
+	if asked.Resuming() {
+		return append(args, "--resume", record.Launch)
+	}
+	return append(args, "--machine", asked.Machine, "--destination", asked.Destination)
 }
 
 // launchLogPath is where one launch's own output lands. It is beside the
