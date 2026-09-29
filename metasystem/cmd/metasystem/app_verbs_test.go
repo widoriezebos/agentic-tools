@@ -801,13 +801,20 @@ func TestAppCheckRecordsItsVerdict(t *testing.T) {
 		t.Fatalf("status says the last check:\n%s", status)
 	}
 
-	dark := appHTTPContract(appFixtureApp(t), appFreePort(t), "--dark-after", "1s")
+	// The application goes dark when the test says so, never on a clock
+	// that starts with its process and could run out before a loaded host
+	// finished starting it.
+	darkFile := filepath.Join(t.TempDir(), "dark")
+	dark := appHTTPContract(appFixtureApp(t), appFreePort(t), "--dark-file", darkFile)
 	dark["check"] = "app-smoke"
 	darkBed := newAppBed(t, dark)
 	darkBed.testRun = bed.testRun
 	handed = nil
 	if code, out := darkBed.run("app", "start"); code != 0 {
 		t.Fatalf("app start: %d\n%s", code, out)
+	}
+	if err := os.WriteFile(darkFile, nil, 0o644); err != nil {
+		t.Fatal(err)
 	}
 	eventuallyTrue(t, "the application to stop answering", func() bool {
 		_, out := darkBed.run("app", "status")
