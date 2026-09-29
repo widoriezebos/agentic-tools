@@ -46,6 +46,9 @@ type batchProofDependencies struct {
 	launch        func(batchProofLaunch) (proofrun.TestResult, error)
 	freshDecision func(string, []batch.Unit, string) (batch.PrefixDecision, error)
 	sources       func(string, batch.Record) (map[string]string, error)
+	// attempts reads the retained proof store for the tip's retry decision;
+	// nil reads it through batchTipRetryAttempts.
+	attempts func(string) ([]proofrun.Attempt, error)
 }
 
 var productionBatchProofDependencies = batchProofDependencies{
@@ -343,7 +346,11 @@ func executeBatchProof(root, id, actor, window, token string, sample proofrun.Lo
 	sealed := admitted.Seal[charge.GoalID]
 	request := batchProofLaunch{Root: controlRoot, BatchID: id, GoalID: charge.GoalID, Tree: admitted.TipTree, CandidateTip: admitted.Proof.CandidateTip, ResultPath: resultPath, Token: token,
 		Mode: plan.ExecutedMode, Groups: slices.Clone(plan.SelectedGroups), GoalRevision: sealed.Revision, AccountingRevision: sealed.AccountingRevision}
-	if request.RetryDecision, err = tipRetryDecision(controlRoot, admitted, charge, batchTipRetryAttempts); err != nil {
+	attempts := batchTipRetryAttempts
+	if dependencies.attempts != nil {
+		attempts = dependencies.attempts
+	}
+	if request.RetryDecision, err = tipRetryDecision(controlRoot, admitted, charge, attempts); err != nil {
 		return err
 	}
 	if dependencies.freshDecision != nil {

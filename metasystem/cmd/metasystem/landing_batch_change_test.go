@@ -37,6 +37,7 @@ func laneGoalUnit() batch.Unit {
 // last goal member, at that member's sealed revisions, on the tip tree that
 // holds the change; the change is never planned as a goal.
 func TestBatchChangeProofIsChargedToTheGoalMember(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	const id = "01j5x00000000000000000ba77"
 	record := batch.Record{Schema: 1, BatchID: id, State: batch.StateSealed, BaseTree: "base-tree", TipTree: "tip-tree",
@@ -47,13 +48,11 @@ func TestBatchChangeProofIsChargedToTheGoalMember(t *testing.T) {
 	if err := store.Create(record); err != nil {
 		t.Fatal(err)
 	}
-	previous := batchTipRetryAttempts
-	batchTipRetryAttempts = func(string) ([]proofrun.Attempt, error) { return nil, nil }
-	t.Cleanup(func() { batchTipRetryAttempts = previous })
 	var planned []string
 	var launched []batchProofLaunch
 	dependencies := batchProofDependencies{
-		rearm: func(string, string) error { return nil },
+		rearm:    func(string, string) error { return nil },
+		attempts: func(string) ([]proofrun.Attempt, error) { return nil, nil },
 		plan: func(_, goalID, tree string, _ testpolicy.Mode) (testpolicy.Plan, error) {
 			planned = append(planned, goalID+"@"+tree)
 			return testpolicy.Plan{SelectedGroups: []string{"app-a"}, ExecutedMode: testpolicy.ModeStandard, RequiredMode: testpolicy.ModeStandard}, nil
@@ -82,6 +81,7 @@ func TestBatchChangeProofIsChargedToTheGoalMember(t *testing.T) {
 // request for it, the tip request charged to the goal member, and no budget
 // row for it.
 func TestBatchChangeForecastChargesTheGoalMember(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), nil, 0o644); err != nil {
 		t.Fatal(err)
@@ -117,6 +117,7 @@ func TestBatchChangeForecastChargesTheGoalMember(t *testing.T) {
 // change before it; a series verified at landing checks the change's tip
 // with the charge member and asks no receipt of a change.
 func TestBatchChangePrefixDecisionPlansGoalMembersOnly(t *testing.T) {
+	t.Parallel()
 	change := laneChangeUnit()
 	var plans []string
 	decision, err := planPrefixDecisionWith("", []batch.Unit{laneGoalUnit(), change}, "tip-tree",
@@ -135,16 +136,14 @@ func TestBatchChangePrefixDecisionPlansGoalMembersOnly(t *testing.T) {
 		Units:    []batch.Unit{change, laneGoalUnit(), change},
 		Receipts: map[string]batch.PrefixReceipt{}, Seal: map[string]batch.Claim{"goal-a": {Revision: 7, AccountingRevision: 5}, change.GoalID: {}}}
 	record.Units[2].GoalID, record.Units[2].Chain, record.Units[2].Change = "change:111111111111", "change:111111111111", &batch.ChangeMember{Commit: "111111111111" + strings.Repeat("0", 28)}
-	previousDecision, previousVerify := batchSeriesDecision, batchVerifyPrefixEvidence
-	t.Cleanup(func() { batchSeriesDecision, batchVerifyPrefixEvidence = previousDecision, previousVerify })
-	batchSeriesDecision = func(_ string, units []batch.Unit, tree string) (batch.PrefixDecision, error) {
+	decide := func(_ string, units []batch.Unit, tree string) (batch.PrefixDecision, error) {
 		if _, ok := batch.ChargeMember(units); !ok {
 			return batch.PrefixDecision{}, errors.New("planned a prefix of changes only at " + tree)
 		}
 		return batch.PrefixDecision{Groups: []string{"app-a"}}, nil
 	}
 	var verified []string
-	batchVerifyPrefixEvidence = func(_ string, unit batch.Unit, tree string, _ batch.PrefixDecision) error {
+	verify := func(_ string, unit batch.Unit, tree string, _ batch.PrefixDecision) error {
 		verified = append(verified, unit.GoalID+"@"+tree)
 		return nil
 	}
@@ -156,7 +155,7 @@ func TestBatchChangePrefixDecisionPlansGoalMembersOnly(t *testing.T) {
 	receipt := record.Receipts["goal-a"]
 	receipt.DecisionID = id
 	record.Receipts["goal-a"] = receipt
-	if err := verifyBatchSeries("", record, []string{"change-tree", "goal-tree", "tip-tree"}); err != nil {
+	if err := verifyBatchSeriesWith("", record, []string{"change-tree", "goal-tree", "tip-tree"}, decide, verify); err != nil {
 		t.Fatal(err)
 	}
 	if !slices.Equal(verified, []string{"goal-a@goal-tree", "goal-a@tip-tree"}) {
@@ -168,6 +167,7 @@ func TestBatchChangePrefixDecisionPlansGoalMembersOnly(t *testing.T) {
 // ledger; a change made in G's name leaves the batch when G's claim is no
 // longer the asker's at the committed revision.
 func TestBatchChangeAuthorityRechecksItsGoal(t *testing.T) {
+	t.Parallel()
 	change := laneChangeUnit()
 	record := batch.Record{BatchID: "01j5x00000000000000000ba80"}
 	if err := authorizeBatchMemberInProjection("", time.Unix(10, 0), record, change, goal.Projection{}); err != nil {
@@ -191,6 +191,7 @@ func TestBatchChangeAuthorityRechecksItsGoal(t *testing.T) {
 // owner's seams replay a change and find it on origin by its Landing-Change
 // trailer.
 func TestBatchChangeLandingSeamsReplayAndFindTheTrailer(t *testing.T) {
+	t.Parallel()
 	change := laneChangeUnit()
 	seams := batchLandSeamsWithRead(t.TempDir(), "01j5x00000000000000000ba81", batch.Record{}, "base", "landing+owner", gitOutput, batchCommitBoundary)
 	if seams.ReplayChange == nil {
@@ -216,6 +217,7 @@ func TestBatchChangeLandingSeamsReplayAndFindTheTrailer(t *testing.T) {
 // change member of a new open batch; a repeat changes nothing; a commit with
 // no Machine trailer was not made through the commit boundary and is refused.
 func TestChangeJoinGitAdapterFetchesThePinnedChangeAndJoins(t *testing.T) {
+	t.Parallel()
 	seat, lane := t.TempDir(), t.TempDir()
 	run := func(dir string, args ...string) string {
 		t.Helper()
@@ -279,6 +281,7 @@ func TestChangeJoinGitAdapterFetchesThePinnedChangeAndJoins(t *testing.T) {
 // --verbose prints a change that left the current batch, its outcome, the
 // asker's seat and the reason, next to the members.
 func TestLandingStatusVerbosePrintsReturnedChanges(t *testing.T) {
+	t.Parallel()
 	view := lane.View{Batch: &lane.BatchView{ID: "b1", State: lane.BatchCollecting, Members: []lane.Member{{Goal: "change:abcdef012345", Seat: "m1e"}},
 		Returned: []lane.Returned{{Goal: "change:1234567890ab", Seat: "ui", Outcome: batch.UnitEjected, Reason: "EJECTED from landing batch b1: TestNotes failed"}}}}
 	lines := strings.Join(landingViewDetail(view), "\n")

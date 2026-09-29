@@ -33,6 +33,7 @@ func openBatchWithGoalMember(base string) Record {
 // charged to the goal member; the landing replays the change after the goal
 // member's commit and the replay carries the Landing-Change trailer.
 func TestChangeRidesWithGoalMemberAndLandsWithTrailer(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	base := testCommit(101)
 	store := NewStore(root, nil)
@@ -93,6 +94,7 @@ func TestChangeRidesWithGoalMemberAndLandsWithTrailer(t *testing.T) {
 // whose message keeps the asker's trailers and identity and adds one
 // Landing-Change trailer.
 func TestReplayChangeGitAdapterKeepsTheAskersTrailersAndAddsLandingChange(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	run := func(env []string, args ...string) string {
 		t.Helper()
@@ -170,6 +172,7 @@ func TestChangeOnlyBatchWaitsForAGoalMember(t *testing.T) {
 // hand back, and the goal ledger is never read for it); a known flake a
 // change's closure owns is owned by the charge member's approver.
 func TestRedChangeIsEjectedAndTheAskerIsTold(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	base := testCommit(101)
 	store := NewStore(root, nil)
@@ -210,6 +213,7 @@ func TestRedChangeIsEjectedAndTheAskerIsTold(t *testing.T) {
 // repeat changes nothing, and an unreadable origin log fails the recovery
 // instead of reading as "not landed yet".
 func TestChangeRecoveryFindsLandingChangeTrailer(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	base := testCommit(101)
 	store := NewStore(root, nil)

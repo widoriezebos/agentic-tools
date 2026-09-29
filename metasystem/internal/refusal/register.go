@@ -125,7 +125,7 @@ var Rows = []Row{
 	{Code: "BATCH_PREFIX_AUTHORITY_REFUSED", Owner: "cmd/metasystem", Site: "landing_batch_prefix.go#authorizeBatchMemberInProjection", Shape: Question, H1: StandingInput},
 	{Code: "BATCH_PREFIX_PLAN_REFUSED", Owner: "cmd/metasystem", Site: "landing_batch_prefix.go#planPrefixDecisionWith", Shape: Question, H1: StandingInput},
 	{Code: "BATCH_PREFIX_PROOF_REFUSED", Owner: "cmd/metasystem", Site: "landing_batch_prefix.go#verifyBatchPrefix", Shape: Question, H1: StandingInput},
-	{Code: "BATCH_PREFIX_DECISION_MOVED", Owner: "cmd/metasystem", Site: "landing_batch_prefix.go#verifyBatchSeries", Shape: Question, H1: StandingInput},
+	{Code: "BATCH_PREFIX_DECISION_MOVED", Owner: "cmd/metasystem", Site: "landing_batch_prefix.go#verifyBatchSeriesWith", Shape: Question, H1: StandingInput},
 	{Code: "BATCH_MEMBER_BUDGET_REFUSED", Owner: "cmd/metasystem", Site: "proof_run.go#admitProofLaunchWithReadsAndClassifier", Shape: Question, H1: StandingGuide, Forward: "goal budget"},
 	{Code: "BATCH_OWNER_IDENTITY_UNKNOWN", Owner: "cmd/metasystem", Site: "landing_batch_owner.go#acquireBatchOwnerWithRetention", Shape: Question, H1: StandingAgent},
 	{Code: "BATCH_OWNER_INDETERMINATE", Owner: "cmd/metasystem", Site: "landing_batch_owner.go#ensureBatchOwner", Shape: Question, H1: StandingAgent},

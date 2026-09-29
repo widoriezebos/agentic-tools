@@ -261,14 +261,16 @@ func verifyBatchPrefix(root string, unit batch.Unit, tree string, decision batch
 
 var batchVerifyPrefixEvidence = verifyBatchPrefix
 
-// batchSeriesDecision is the prefix decision a series verification re-plans
-// every final prefix with.
-var batchSeriesDecision = productionPrefixDecision
-
 // verifyBatchSeries re-plans every final prefix, including the tip, before
 // publication. A retained receipt binds one decision but cannot certify a
 // changed destination policy or a rebased series by itself.
 func verifyBatchSeries(root string, record batch.Record, trees []string) error {
+	return verifyBatchSeriesWith(root, record, trees, productionPrefixDecision, batchVerifyPrefixEvidence)
+}
+
+// verifyBatchSeriesWith is verifyBatchSeries with its planner and verifier.
+func verifyBatchSeriesWith(root string, record batch.Record, trees []string,
+	decide func(string, []batch.Unit, string) (batch.PrefixDecision, error), verify func(string, batch.Unit, string, batch.PrefixDecision) error) error {
 	units := []batch.Unit{}
 	for _, unit := range record.Units {
 		if unit.State == batch.UnitJoined {
@@ -288,7 +290,7 @@ func verifyBatchSeries(root string, record batch.Record, trees []string) error {
 		if !ok {
 			return fmt.Errorf("BATCH_PREFIX_PROOF_REFUSED: prefix %s has no goal member", unit.GoalID)
 		}
-		decision, err := batchSeriesDecision(root, units[:index+1], trees[index])
+		decision, err := decide(root, units[:index+1], trees[index])
 		if err != nil {
 			return err
 		}
@@ -331,7 +333,7 @@ func verifyBatchSeries(root string, record batch.Record, trees []string) error {
 				decision.FreshEpisode, decision.FreshExpiresAt = episode.Token, episode.ExpiresAt
 			}
 		}
-		if err := batchVerifyPrefixEvidence(root, charge, trees[index], decision); err != nil {
+		if err := verify(root, charge, trees[index], decision); err != nil {
 			return err
 		}
 	}
@@ -356,7 +358,7 @@ func verifyBatchCommittedSeries(root string, record batch.Record, units []batch.
 		if err != nil {
 			return err
 		}
-		decision, err := batchSeriesDecision(root, units[:index+1], tree)
+		decision, err := productionPrefixDecision(root, units[:index+1], tree)
 		if err != nil {
 			return err
 		}
