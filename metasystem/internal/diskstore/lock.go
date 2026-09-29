@@ -18,9 +18,12 @@ type HeldError struct{ Path string }
 
 func (e *HeldError) Error() string { return "store record lock is held: " + e.Path }
 
-// recordLockAcquired runs each time a record lock is taken; tests stand a
-// fork's duplicate descriptor in at that moment.
-var recordLockAcquired = func(*os.File) {}
+// acquired reports a record lock taken on file to the registry's seam.
+func (r Registry) acquired(file *os.File) {
+	if r.lockAcquired != nil {
+		r.lockAcquired(file)
+	}
+}
 
 // unlockAndClose ends a record-lock hold: the flock is released on the open
 // file description first, so a duplicate a concurrent fork made before its
@@ -52,7 +55,7 @@ func (r Registry) Enter(id string) (*Entrant, error) {
 		_ = file.Close()
 		return nil, fmt.Errorf("store record lock %s: %w", id, err)
 	}
-	recordLockAcquired(file)
+	r.acquired(file)
 	record, err := r.Load(id)
 	if errors.Is(err, ErrNotFound) || err == nil && (record.State == StateReleasing || record.State == StateReleased) {
 		_ = unlockAndClose(file)
@@ -105,7 +108,7 @@ func (r Registry) TryCritical(id string) (*Critical, error) {
 		}
 		return nil, fmt.Errorf("store record lock %s: %w", id, err)
 	}
-	recordLockAcquired(file)
+	r.acquired(file)
 	record, err := r.Load(id)
 	if err != nil {
 		_ = unlockAndClose(file)
@@ -164,7 +167,7 @@ func (r Registry) Transition(id string, from []State, to State, mutate func(*Rec
 		return Record{}, err
 	}
 	defer unlockAndClose(file)
-	recordLockAcquired(file)
+	r.acquired(file)
 	record, err := r.Load(id)
 	if err != nil {
 		return Record{}, err
@@ -215,7 +218,7 @@ func (r Registry) ProbeRecordLock(id string) (free bool, err error) {
 		}
 		return false, err
 	}
-	recordLockAcquired(file)
+	r.acquired(file)
 	if err := unlockAndClose(file); err != nil {
 		return false, err
 	}

@@ -17,26 +17,25 @@ import (
 // holder unlocks before it closes. The duplicate is made at the moment the
 // lock is taken, as a fork there would.
 func TestARecordLockIsFreeOnceItsHolderEndsWhateverAForkDuplicated(t *testing.T) {
-	registry := Registry{Dir: filepath.Join(realDir(t), "stores")}
-	record, err := registry.Register(plainRegistration(filepath.Join(realDir(t), "store")), testNow, rand.Reader)
-	if err != nil {
-		t.Fatal(err)
-	}
+	t.Parallel()
 	var duplicates []int
-	previous := recordLockAcquired
-	recordLockAcquired = func(file *os.File) {
+	registry := Registry{Dir: filepath.Join(realDir(t), "stores"), lockAcquired: func(file *os.File) {
 		duplicate, err := syscall.Dup(int(file.Fd()))
 		if err != nil {
-			t.Fatal(err)
+			t.Error(err)
+			return
 		}
 		duplicates = append(duplicates, duplicate)
-	}
+	}}
 	t.Cleanup(func() {
-		recordLockAcquired = previous
 		for _, duplicate := range duplicates {
 			_ = syscall.Close(duplicate)
 		}
 	})
+	record, err := registry.Register(plainRegistration(filepath.Join(realDir(t), "store")), testNow, rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
 	free := func(step string) {
 		t.Helper()
 		if held, err := registry.ProbeRecordLock(record.ID); err != nil || !held {

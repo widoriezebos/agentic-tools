@@ -134,7 +134,12 @@ type Record struct {
 // Registry is one directory of records: the machine registry
 // (~/.metasystem/stores) or a checkout registry
 // (<control>/artifacts/agents/stores).
-type Registry struct{ Dir string }
+type Registry struct {
+	Dir string
+	// lockAcquired runs each time a record lock is taken; tests stand a
+	// fork's duplicate descriptor in at that moment. Nil in production.
+	lockAcquired func(*os.File)
+}
 
 // MachineRegistry is the registry of stores that belong to the machine or to
 // a process, under the home state root (~/.metasystem).

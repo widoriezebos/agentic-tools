@@ -200,7 +200,7 @@ func (r Registry) setDiscard(id string, discard Discard) (Record, error) {
 		return Record{}, err
 	}
 	defer unlockAndClose(file)
-	recordLockAcquired(file)
+	r.acquired(file)
 	record, err := r.Load(id)
 	if err != nil {
 		return Record{}, err
