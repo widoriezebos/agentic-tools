@@ -22,7 +22,7 @@ var trimNow = time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC)
 
 const (
 	trimKeep    = 12 * time.Hour
-	trimMinKeep = time.Hour
+	trimMinKeep = 2 * time.Hour
 )
 
 // syntheticCache is a Go-layout cache under a temp dir: README and trim.txt
@@ -179,20 +179,20 @@ func TestTrimOverTheCapYieldsTheKeepWindowDownToTheFloor(t *testing.T) {
 	c.write("00/k11h-d", 1000, 11*time.Hour)
 	c.write("01/k8h-d", 1000, 8*time.Hour)
 	c.write("02/k5h-d", 1000, 5*time.Hour)
-	c.write("03/k2h-d", 1000, 2*time.Hour)
-	c.write("04/k61m-d", 1000, trimMinKeep+time.Minute)
-	c.write("05/k59m-d", 1000, trimMinKeep-time.Minute)
+	c.write("03/k3h-d", 1000, 3*time.Hour)
+	c.write("04/k121m-d", 1000, trimMinKeep+time.Minute)
+	c.write("05/k119m-d", 1000, trimMinKeep-time.Minute)
 	c.write("06/k1m-a", 1000, time.Minute)
 	report := c.trim(c.config(3500))
-	requireAbsent(t, c, "00/k11h-d", "01/k8h-d", "02/k5h-d", "03/k2h-d")
-	requirePresent(t, c, "04/k61m-d", "05/k59m-d", "06/k1m-a")
-	if report.BytesBefore != 7000 || report.BytesAfter != 3000 || report.EntriesRemoved != 4 || report.EndedBy != "complete" || !report.OverCap || report.MinKeepMinutes != 60 {
+	requireAbsent(t, c, "00/k11h-d", "01/k8h-d", "02/k5h-d", "03/k3h-d")
+	requirePresent(t, c, "04/k121m-d", "05/k119m-d", "06/k1m-a")
+	if report.BytesBefore != 7000 || report.BytesAfter != 3000 || report.EntriesRemoved != 4 || report.EndedBy != "complete" || !report.OverCap || report.MinKeepMinutes != 120 {
 		t.Fatalf("report = %+v", report)
 	}
 
 	report = c.trim(c.config(1))
-	requireAbsent(t, c, "04/k61m-d")
-	requirePresent(t, c, "05/k59m-d", "06/k1m-a")
+	requireAbsent(t, c, "04/k121m-d")
+	requirePresent(t, c, "05/k119m-d", "06/k1m-a")
 	if report.BytesAfter != 2000 || report.MinKeepBytes != 2000 || report.MinKeepEntries != 2 {
 		t.Fatalf("floor report = %+v", report)
 	}

@@ -156,7 +156,7 @@ func TestTheStewardPassYieldsTheKeepWindowOverTheCap(t *testing.T) {
 		t.Fatalf("reports = %+v", reports)
 	}
 	report := reports[0]
-	if report.Phase != "measure" || report.EntriesRemoved != 1 || !report.OverCap || report.MinKeepMinutes != 60 {
+	if report.Phase != "measure" || report.EntriesRemoved != 1 || !report.OverCap || report.MinKeepMinutes != 120 {
 		t.Fatalf("the pass did not evict from its partial measure: %+v", report)
 	}
 	if _, err := os.Stat(older); !os.IsNotExist(err) {

@@ -30,7 +30,8 @@ const (
 	DiskGoCacheKeepHoursKey = "disk.go-cache-keep-hours"
 	// DiskCacheMinKeepMinutesKey is the floor the keep window yields to
 	// over the cap: an entry used within it is never deleted, whatever the
-	// cap.
+	// cap. Its default (120) is twice Go's one-hour use-refresh interval, so
+	// an entry a running build uses is never removed.
 	DiskCacheMinKeepMinutesKey = "disk.cache-min-keep-minutes"
 	// DiskCacheTrimBudgetSecKey bounds one trim pass over all caches; a
 	// pass cut short resumes at its checkpoint on the next.

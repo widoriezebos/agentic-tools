@@ -214,7 +214,7 @@ func TestDiskDefaultsAreInTheOneCompiledTable(t *testing.T) {
 	want := map[string]string{
 		DiskGoCacheCapGiBKey: "30", DiskDelegateGoCacheCapGiBKey: "10", DiskStaticcheckCacheCapGiBKey: "2",
 		DiskGoCacheKeepHoursKey: "12", DiskCacheTrimBudgetSecKey: "10", DiskCacheTrimPersonBudgetSecKey: "300",
-		DiskCacheMinKeepMinutesKey: "60",
+		DiskCacheMinKeepMinutesKey: "120",
 	}
 	for _, row := range DiskSettings() {
 		if row.Default != "" {
@@ -243,7 +243,7 @@ func TestDiskDefaultsAreInTheOneCompiledTable(t *testing.T) {
 		}
 	}
 	trim, err := CacheTrimSettings(conf)
-	if err != nil || trim.EngineGoCapBytes != 30<<30 || trim.Budget.Seconds() != 10 || trim.PersonBudget.Seconds() != 300 || trim.MinKeep.Minutes() != 60 {
+	if err != nil || trim.EngineGoCapBytes != 30<<30 || trim.Budget.Seconds() != 10 || trim.PersonBudget.Seconds() != 300 || trim.MinKeep.Minutes() != 120 {
 		t.Fatalf("CacheTrimSettings over an overrides-only file = %+v, %v", trim, err)
 	}
 }

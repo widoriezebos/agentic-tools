@@ -108,7 +108,7 @@ func TestDiskCleanGoCacheTrimsTheMachineCachesNow(t *testing.T) {
 	said := false
 	for _, report := range decoded.Data.Caches {
 		if report.Cache == "engine-go-build" {
-			said = strings.Contains(diskTrimLine(report), "over the cap: removing the oldest entries, keeping the last 60 min")
+			said = strings.Contains(diskTrimLine(report), "over the cap: removing the oldest entries, keeping the last 120 min")
 		}
 	}
 	if !said {
@@ -180,8 +180,8 @@ func TestDiskTrimHeadlineMatchesItsLines(t *testing.T) {
 			want: []string{"still measuring the engine Go cache (74.9 GiB counted so far); the engine staticcheck cache is not measured yet; they resume on the next pass"}},
 		{name: "trimmed and still evicting", reports: []gocache.TrimReport{{Cache: "delegate-go-build", EndedBy: "budget", Phase: "evict", CapBytes: 10 * gib, EntriesRemoved: 4, BytesRemoved: 3 * gib}},
 			want: []string{"trimmed the machine caches: 4 entries, 3.0 GiB freed", "still trimming the delegate Go cache to its 10.0 GiB cap"}},
-		{name: "over its cap inside the floor", reports: []gocache.TrimReport{{Cache: "engine-go-build", EndedBy: "complete", Phase: "idle", CapBytes: gib, BytesAfter: 3 * gib, KeepWindowBytes: 3 * gib, MinKeepBytes: 2 * gib, MinKeepMinutes: 60}},
-			want: []string{"the engine Go cache stays over its 1.0 GiB cap: 2.0 GiB used within the last 60 min is never trimmed"}},
+		{name: "over its cap inside the floor", reports: []gocache.TrimReport{{Cache: "engine-go-build", EndedBy: "complete", Phase: "idle", CapBytes: gib, BytesAfter: 3 * gib, KeepWindowBytes: 3 * gib, MinKeepBytes: 2 * gib, MinKeepMinutes: 120}},
+			want: []string{"the engine Go cache stays over its 1.0 GiB cap: 2.0 GiB used within the last 120 min is never trimmed"}},
 		{name: "refused and held", reports: []gocache.TrimReport{{Cache: "engine-staticcheck", EndedBy: "refused", Reason: "shard 00 is a symbolic link"}, {Cache: "delegate-staticcheck", EndedBy: "lock-held"}},
 			want: []string{"the engine staticcheck cache was not trimmed: shard 00 is a symbolic link", "another steward is trimming the delegate staticcheck cache now"}},
 	} {
@@ -293,15 +293,15 @@ func TestDiskShowTellsTheCaches(t *testing.T) {
 func TestDiskTrimLineSaysTheKeepWindowYieldsOverTheCap(t *testing.T) {
 	t.Parallel()
 	const gib = int64(1) << 30
-	const plain = "over the cap: removing the oldest entries, keeping the last 60 min"
+	const plain = "over the cap: removing the oldest entries, keeping the last 120 min"
 	for _, tc := range []struct {
 		name   string
 		report gocache.TrimReport
 		says   bool
 	}{
-		{name: "trimmed to the cap", report: gocache.TrimReport{Cache: "engine-go-build", EndedBy: "complete", Phase: "idle", CapBytes: 30 * gib, BytesAfter: 30 * gib, EntriesRemoved: 9, BytesRemoved: 100 * gib, MinKeepMinutes: 60, OverCap: true}, says: true},
-		{name: "evicting from a partial measure", report: gocache.TrimReport{Cache: "engine-go-build", EndedBy: "budget", Phase: "measure", CapBytes: 30 * gib, EntriesRemoved: 9, MinKeepMinutes: 60, OverCap: true, Checkpoint: gocache.TrimCheckpoint{Shard: "40", LastName: "x-a", BytesSoFar: 30 * gib}}, says: true},
-		{name: "within the cap", report: gocache.TrimReport{Cache: "engine-go-build", EndedBy: "complete", Phase: "idle", CapBytes: 30 * gib, BytesAfter: gib, MinKeepMinutes: 60}},
+		{name: "trimmed to the cap", report: gocache.TrimReport{Cache: "engine-go-build", EndedBy: "complete", Phase: "idle", CapBytes: 30 * gib, BytesAfter: 30 * gib, EntriesRemoved: 9, BytesRemoved: 100 * gib, MinKeepMinutes: 120, OverCap: true}, says: true},
+		{name: "evicting from a partial measure", report: gocache.TrimReport{Cache: "engine-go-build", EndedBy: "budget", Phase: "measure", CapBytes: 30 * gib, EntriesRemoved: 9, MinKeepMinutes: 120, OverCap: true, Checkpoint: gocache.TrimCheckpoint{Shard: "40", LastName: "x-a", BytesSoFar: 30 * gib}}, says: true},
+		{name: "within the cap", report: gocache.TrimReport{Cache: "engine-go-build", EndedBy: "complete", Phase: "idle", CapBytes: 30 * gib, BytesAfter: gib, MinKeepMinutes: 120}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()

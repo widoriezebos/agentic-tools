@@ -22,7 +22,7 @@ func TestCacheTrimSettingsResolution(t *testing.T) {
 		want      CacheTrim
 		refused   string
 	}{
-		{name: "the shipped defaults", want: CacheTrim{EngineGoCapBytes: 30 * gib, DelegateGoCapBytes: 10 * gib, StaticcheckCapBytes: 2 * gib, Keep: 12 * time.Hour, MinKeep: time.Hour, Budget: 10 * time.Second, PersonBudget: 300 * time.Second}},
+		{name: "the shipped defaults", want: CacheTrim{EngineGoCapBytes: 30 * gib, DelegateGoCapBytes: 10 * gib, StaticcheckCapBytes: 2 * gib, Keep: 12 * time.Hour, MinKeep: 2 * time.Hour, Budget: 10 * time.Second, PersonBudget: 300 * time.Second}},
 		{
 			name: "a seat's own numbers",
 			committed: DiskGoCacheCapGiBKey + "=40\n" + DiskDelegateGoCacheCapGiBKey + "=5\n" + DiskStaticcheckCacheCapGiBKey + "=1\n" +
@@ -33,7 +33,7 @@ func TestCacheTrimSettingsResolution(t *testing.T) {
 		{
 			name:   "the environment over the committed value",
 			lookup: mapEnv(map[string]string{EnvName(DiskGoCacheCapGiBKey): "50"}),
-			want:   CacheTrim{EngineGoCapBytes: 50 * gib, DelegateGoCapBytes: 10 * gib, StaticcheckCapBytes: 2 * gib, Keep: 12 * time.Hour, MinKeep: time.Hour, Budget: 10 * time.Second, PersonBudget: 300 * time.Second},
+			want:   CacheTrim{EngineGoCapBytes: 50 * gib, DelegateGoCapBytes: 10 * gib, StaticcheckCapBytes: 2 * gib, Keep: 12 * time.Hour, MinKeep: 2 * time.Hour, Budget: 10 * time.Second, PersonBudget: 300 * time.Second},
 		},
 		{name: "zero is refused", committed: DiskGoCacheKeepHoursKey + "=0\n", refused: DiskGoCacheKeepHoursKey + " must be a whole number from 1 to 100000"},
 		{name: "words are refused", committed: DiskGoCacheCapGiBKey + "=lots\n", refused: DiskGoCacheCapGiBKey + " must be a whole number from 1 to 100000"},
