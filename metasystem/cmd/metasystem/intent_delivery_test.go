@@ -20,6 +20,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/delegation"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/delegation/fake"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
@@ -45,7 +46,17 @@ type deliveryBed struct {
 
 func newDeliveryBed(t *testing.T) *deliveryBed {
 	t.Helper()
-	bed := &deliveryBed{intentBed: newIntentBed(t, false, nil)}
+	bed := newDeliveryBedWith(t, nil)
+	// The landing gate is not what these beds prove: its own beds run the
+	// production gate over the ledger (intent_landing_gate_test.go).
+	bed.owners.landingGate = func(*intentInvocation, string, string) (string, error) { return "the bed's landing", nil }
+	bed.owners.recordLanded = func(*intentInvocation, string) error { return nil }
+	return bed
+}
+
+func newDeliveryBedWith(t *testing.T, amend func(*goal.GoalFile)) *deliveryBed {
+	t.Helper()
+	bed := &deliveryBed{intentBed: newIntentBed(t, false, amend)}
 	// The project's design homes and the close owner resolve the checkout
 	// through Git itself.
 	if output, err := exec.Command("git", "-C", bed.root(), "init", "-q").CombinedOutput(); err != nil {

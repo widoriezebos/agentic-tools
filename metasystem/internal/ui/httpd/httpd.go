@@ -17,6 +17,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/backlog"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/knownissues"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/rulings"
@@ -188,6 +189,14 @@ type Info struct {
 	// send-back's brief published beside it. Candidate runs one of the three
 	// app forms for a goal's candidate (D3). A nil one refuses its own routes.
 	Verdict func(signed *session.Session, id string, asked act.Reviewed) (act.Recorded, error)
+	// The landing gate (g1-s70 §6). LandingGate resolves the two settings
+	// through the layered resolution, read per request; Sitting writes a
+	// review sitting's hold or its release; LandWithoutSitting records the
+	// decision to land a goal without a sitting at the tip given. A nil one
+	// refuses its own route and costs the board its reading.
+	LandingGate        func() (config.LandingGate, error)
+	Sitting            func(signed *session.Session, id, record string, open bool) error
+	LandWithoutSitting func(signed *session.Session, id, tip, reason string) error
 	// The loop from the room (g1-s66 §6). DesignReview runs `design review`
 	// for the design at a checkout-relative path under a signed-in session and
 	// answers what the engine did in its words; DesignLoop reads the design's
@@ -615,6 +624,7 @@ func (h *handler) workspace(w http.ResponseWriter) {
 		writeFailure(w, err.Error())
 		return
 	}
+	h.landingFacts(&described)
 	_ = json.NewEncoder(w).Encode(described)
 }
 

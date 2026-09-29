@@ -209,7 +209,8 @@ func runIntentStatusGoal(inv *intentInvocation, id string) int {
 
 // goalBatchLine is the one line of the batch the goal is in (D14, R23): what
 // it waits for, or why it started; empty when no configured lane holds the
-// goal in an unfinished batch.
+// goal in an unfinished batch. An owner the invocation leaves unset selects
+// the production one, as every other delivery owner does.
 func (inv *intentInvocation) goalBatchLine(id string) (string, string) {
 	for _, record := range inv.unfinishedBatches() {
 		for _, unit := range record.Units {

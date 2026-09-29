@@ -51,7 +51,9 @@ func TestBatchCostLandingReadyElapsedAuthorityMatchesDispatch(t *testing.T) {
 	claim := batch.Claim{Machine: "source", Lineage: "lineage", Epoch: 1, Revision: 2, AccountingRevision: 2}
 	unit := batch.Unit{GoalID: "goal-ready", State: batch.UnitJoined, Claim: claim}
 	record := batch.Record{BatchID: "01j5x00000000000000000ba98", Seal: map[string]batch.Claim{"goal-ready": claim}}
-	file := &goal.GoalFile{Id: "goal-ready", State: goal.StateClaimed, Revision: 2,
+	// Tier 1: below the landing gate's default threshold, so the gate
+	// proceeds and the elapsed authority is what this bed reads.
+	file := &goal.GoalFile{Id: "goal-ready", State: goal.StateClaimed, Revision: 2, Tier: 1,
 		Budget: &goal.Budget{ElapsedLimit: "1h", AttemptLimit: 2, ReservedJobMinutesLimit: 20, ActiveJobLimit: 1},
 		Claimed: &goal.ClaimRecord{At: claimed, Revision: 2, AccountingRevision: 2,
 			HandedOver: goal.HandedOver{FromMachine: claim.Machine, FromLineage: claim.Lineage, FromEpoch: claim.Epoch, Batch: record.BatchID}},

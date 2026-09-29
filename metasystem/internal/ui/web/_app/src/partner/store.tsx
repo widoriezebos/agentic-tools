@@ -1586,7 +1586,7 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
     }
   }, [capture, where]);
 
-  const end = useCallback(async (): Promise<void> => {
+  const end = useCallback(async (again = true): Promise<void> => {
     setSittingBusy(true);
     setSittingRefusal("");
     try {
@@ -1594,11 +1594,18 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
       setStore((held) => loaded(held, answered));
     } catch (error: unknown) {
       setSittingRefusal(reasonOf(error));
+      // The end of a review sitting releases the goal's hold on the ledger,
+      // the signed-in human's act (g1-s70 D2): sign in, and end it once more.
+      if (again && error instanceof PartnerError && error.signIn) {
+        askToSignIn(() => {
+          void end(false).catch(() => undefined);
+        });
+      }
       throw error;
     } finally {
       setSittingBusy(false);
     }
-  }, [where]);
+  }, [where, askToSignIn]);
 
   /**
    * The verdict the recorded Outcome carries, performed on the goal: goal review

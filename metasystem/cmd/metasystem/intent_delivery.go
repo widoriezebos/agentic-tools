@@ -219,9 +219,10 @@ type intentDeliveryOwners struct {
 	// engine may write the named chain's records, before anything writes.
 	recordWriter func(root, job string) (cause string, err error)
 	process      func(intentProcess) intentProcessResult
-	// landCarried runs one carried landing through the landing path and
-	// returns what it printed and its exit status.
-	landCarried func(landpath.LandRequest) intentProcessResult
+	// landCarried runs one carried landing through the landing path, which
+	// reads gate immediately before its push, and returns what it printed and
+	// its exit status.
+	landCarried func(request landpath.LandRequest, gate func(root, goalID string) error) intentProcessResult
 	// closeOwner runs the delegate lifecycle's close command (the whole
 	// chain close) for an installation root.
 	closeOwner  func(root string, args []string) intentProcessResult
@@ -241,9 +242,17 @@ type intentDeliveryOwners struct {
 	batchRoot   func(root string, now time.Time) (string, bool, error)
 	// boardView reads the host board for a one-shot view of the checkout;
 	// nil reads the host this command runs on.
-	boardView    func(checkout string, now time.Time) board.View
-	batchJoin    func(batchJoinRequest) (batch.Record, error)
-	now          func() time.Time
+	boardView func(checkout string, now time.Time) board.View
+	batchJoin func(batchJoinRequest) (batch.Record, error)
+	now       func() time.Time
+	// landingGate evaluates the landing gate for a goal at a branch tip
+	// against a fresh ledger (g1-s70 D2); nil selects the production gate.
+	landingGate func(inv *intentInvocation, goalID, tip string) (string, error)
+	// branchTip reads a goal branch's tip at origin; nil reads origin.
+	branchTip func(root, goalID string) (string, error)
+	// recordLanded writes the holder's landed line after a confirmed
+	// publication; nil selects the ledger's own act.
+	recordLanded func(inv *intentInvocation, goalID string) error
 	foldUnitHook func(inv *intentInvocation, run string) int
 	// calls are the owner functions public commands call in this process
 	// (intent_owner_calls.go); nil selects the production owners.
@@ -263,8 +272,10 @@ type intentBranchState struct {
 }
 
 // landCarriedInProcess runs one carried landing in this process.
-func landCarriedInProcess(request landpath.LandRequest) intentProcessResult {
-	return landCarriedWithOwners(landingPathOwners(), request)
+func landCarriedInProcess(request landpath.LandRequest, gate func(root, goalID string) error) intentProcessResult {
+	owners := landingPathOwners()
+	owners.LandingGate = gate
+	return landCarriedWithOwners(owners, request)
 }
 
 func landCarriedWithOwners(owners landpath.Owners, request landpath.LandRequest) intentProcessResult {
@@ -1550,7 +1561,34 @@ func (inv *intentInvocation) landJob(job string) intentResult {
 			Summary:  fmt.Sprintf("certified chain %s lands only through the landing batch, and landing.batch-root is not set", job),
 			Decision: "set landing.batch-root to a dedicated landing checkout"}
 	}
-	return inv.joinBatch(targets, batchJoinRequest{SeatRoot: inv.layout.InstallationRoot, LandingRoot: landingRoot, GoalID: goalID, ChainID: job}, "")
+	request := batchJoinRequest{SeatRoot: inv.layout.InstallationRoot, LandingRoot: landingRoot, GoalID: goalID, ChainID: job}
+	if _, _, member, err := inv.delivery().batchUnit(landingRoot, request, ""); err != nil || member {
+		return inv.noteLanded(goalID, inv.joinBatch(targets, request, ""))
+	}
+	// The human's word on a chain is bound to the commit the chain publishes,
+	// the head of its candidate branch; the batch carries it to its
+	// publication gate.
+	request.ChainHead = chainHead(record)
+	if refused := inv.admitLanding(targets, goalID, request.ChainHead); refused != nil {
+		return *refused
+	}
+	return inv.noteLanded(goalID, inv.joinBatch(targets, request, ""))
+}
+
+// chainHead is the commit a certified chain publishes: its job record names
+// no commit, so it is the head of the candidate branch the record names
+// (branch) in the worktree it names (workspaceRoot), or "" where that branch
+// cannot be read, which no human word can be bound to.
+func chainHead(record map[string]any) string {
+	workspace, branch := recordText(record, "workspaceRoot"), recordText(record, "branch")
+	if workspace == "" || branch == "" {
+		return ""
+	}
+	read := landingPathGit(landpath.GitCall{Dir: workspace, Args: []string{"rev-parse", "--verify", "--quiet", "refs/heads/" + branch + "^{commit}"}})
+	if read.Code != 0 {
+		return ""
+	}
+	return strings.TrimSpace(string(read.Stdout))
 }
 
 // joinBatch reads the goal's existing batch membership first: a joined unit
@@ -1607,6 +1645,10 @@ type intentLanded struct {
 }
 
 func (inv *intentInvocation) landGoal(goalID, through string) intentResult {
+	return inv.noteLanded(goalID, inv.landGoalRoute(goalID, through))
+}
+
+func (inv *intentInvocation) landGoalRoute(goalID, through string) intentResult {
 	targets := []intentTarget{{Kind: "goal", ID: goalID}}
 	if !validIntentJobID(goalID) {
 		return intentResult{Targets: targets, Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("%q is not a goal id", goalID)}
@@ -1644,6 +1686,9 @@ func (inv *intentInvocation) landGoal(goalID, through string) intentResult {
 	subject, count, refusal := handLandingSubject(targets, goalID, through, state)
 	if refusal != nil {
 		return *refusal
+	}
+	if refused := inv.admitLanding(targets, goalID, state.BranchTip); refused != nil {
+		return *refused
 	}
 	kinds := map[string]bool{}
 	for _, source := range state.Sources[:count] {
@@ -1737,6 +1782,12 @@ func (inv *intentInvocation) landByHand(targets []intentTarget, goalID, through,
 				Summary:  fmt.Sprintf("the landing proof of %s is red (%s); nothing was pushed", goalID, outcome.Classification),
 				Decision: "fix the failing groups on the goal branch; a new branch tip gets a new proof"}
 		}
+	}
+	// The proof took its time; the gate is read again against the fresh
+	// ledger right before the publication (g1-s70 D2).
+	if refused := inv.admitLanding(targets, goalID, state.BranchTip); refused != nil {
+		refused.Data = data
+		return *refused
 	}
 	pushed, endpoint, code, err := owners.landPush([]string{"--root", root, "--goal", goalID, "--prepared", prepared})
 	if pushed.Landing == "" {

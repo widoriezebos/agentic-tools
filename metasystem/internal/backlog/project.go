@@ -153,15 +153,18 @@ type Row struct {
 	// carries one. It is here because the approval sheet prefills from it:
 	// the machinery never invents a budget, so the one the record already
 	// holds is the only one a human can be offered without being asked.
-	Budget     *goalbudget.Budget `json:"budget,omitempty"`
-	Claim      *Claim             `json:"claim,omitempty"`
-	Waiting    *Waiting           `json:"waiting,omitempty"`
-	Abandoned  *Abandoned         `json:"abandoned,omitempty"`
-	Fence      *Fence             `json:"fence,omitempty"`
-	Verdict    *Verdict           `json:"verdict,omitempty"`
-	Sliced     bool               `json:"sliced"`
-	Decomposed bool               `json:"decomposed"`
-	OpenedAt   string             `json:"openedAt"`
+	Budget    *goalbudget.Budget `json:"budget,omitempty"`
+	Claim     *Claim             `json:"claim,omitempty"`
+	Waiting   *Waiting           `json:"waiting,omitempty"`
+	Abandoned *Abandoned         `json:"abandoned,omitempty"`
+	Fence     *Fence             `json:"fence,omitempty"`
+	Verdict   *Verdict           `json:"verdict,omitempty"`
+	// Gate is the landing gate's reading of a goal in the Review lane
+	// (g1-s70), filled by JoinGates where the settings are known.
+	Gate       *Gate  `json:"gate,omitempty"`
+	Sliced     bool   `json:"sliced"`
+	Decomposed bool   `json:"decomposed"`
+	OpenedAt   string `json:"openedAt"`
 	// DoneAt is when this goal's own conclusion was written, from its
 	// History, and the empty string where nothing recorded one. A reader
 	// showing the work of the last few days needs the date the conclusion

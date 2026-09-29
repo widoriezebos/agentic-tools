@@ -77,7 +77,7 @@ describe("the card's verdict", () => {
 
   it("says who takes a send-back and with what, since nothing takes it unprompted yet", () => {
     const markup = rendered(<CardVerdict row={row({ ...sent, answered: false })} />);
-    expect(markup).toContain("sent back by Wido · the holder takes it with work revise g");
+    expect(markup).toContain("sent back by Wido · the seat that holds g revises on its next turn");
     expect(markup).not.toContain("awaiting the holder");
   });
 

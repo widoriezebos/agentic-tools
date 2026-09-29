@@ -24,9 +24,8 @@ import (
 // its answer rejoins the same attempt, because work revise keeps an identical
 // request and never spends another.
 //
-// It runs as work revise G with no --brief, on the holder's seat. The loop
-// that takes the step by itself on the holder's next activity over its claims
-// is slice D's; until then the holder's session runs it.
+// It runs as work revise G with no --brief, on the holder's seat; the
+// holder's Stop takes it by itself over the claims it holds (holder_step.go).
 
 const sentBackReviseDetail = "Without --brief, a goal sent back from review is corrected from the brief the review published, once, and the attempt is recorded on the goal."
 

@@ -546,6 +546,12 @@ export class PartnerError extends Error {
    * rather than what it had, and sends no act.
    */
   readonly held: Proposal | null;
+  /**
+   * Whether the remedy is a sign-in on this page: a review sitting on a goal
+   * waiting to land holds it on the ledger, which is the signed-in human's act
+   * (g1-s70 D2), and so is the release its end performs.
+   */
+  signIn = false;
 
   constructor(status: number, reason: string, install = "", draft = "", held: Proposal | null = null) {
     super(reason === "" ? `the Partner answered ${String(status)}` : reason);
@@ -567,7 +573,7 @@ export function draftOf(error: unknown): string {
   return error instanceof PartnerError ? error.draft : "";
 }
 
-type Refusal = { error?: string; install?: string; draft?: string; code?: string; proposal?: Proposal };
+type Refusal = { error?: string; install?: string; draft?: string; code?: string; proposal?: Proposal; signIn?: boolean };
 
 /**
  * The one request. A body makes it a write, and a write is a POST of JSON;
@@ -586,8 +592,10 @@ async function request<T>(resource: string, body?: unknown, signal?: AbortSignal
   });
   if (!response.ok) {
     const refusal = await reasonOf(response);
-    throw new PartnerError(response.status, refusal.error ?? "", refusal.install ?? "", refusal.draft ?? "",
+    const refused = new PartnerError(response.status, refusal.error ?? "", refusal.install ?? "", refusal.draft ?? "",
       heldIn(refusal));
+    refused.signIn = refusal.signIn === true;
+    throw refused;
   }
   return (await response.json()) as T;
 }

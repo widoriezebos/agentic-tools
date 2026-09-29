@@ -2207,6 +2207,9 @@ func ParseHistoryLine(line string) (HistoryLine, error) {
 	if err := validReviewHistory(h); err != nil {
 		return h, err
 	}
+	if err := validGateHistory(h); err != nil {
+		return h, err
+	}
 	return h, nil
 }
 

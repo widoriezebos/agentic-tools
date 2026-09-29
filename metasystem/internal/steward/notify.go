@@ -33,6 +33,11 @@ type notificationDependencies struct {
 	configuredCommand func(string) ([]byte, error)
 	platform          string
 	commandContext    func(context.Context, string, ...string) *exec.Cmd
+	// underTest reports a repository a test run owns. Such a repository never
+	// reaches the platform notifier: without a configured command of its own,
+	// its messages go to the fixture log instead. Nil
+	// means no repository is a test's (injected dependencies fake the notifier).
+	underTest func(string) bool
 }
 
 func defaultNotificationDependencies() notificationDependencies {
@@ -41,7 +46,33 @@ func defaultNotificationDependencies() notificationDependencies {
 			return exec.Command("git", "-C", root, "config", "--get", "metasystem.steward.notify-command").Output()
 		},
 		platform: runtime.GOOS, commandContext: exec.CommandContext,
+		underTest: ownedByTestRun,
 	}
+}
+
+// testRegistryPrefix names the run-scoped home a test binary makes for itself
+// (internal/testenv); every repository a test builds lives beneath one, and a
+// test process and its children carry it in METASYSTEM_SUPERVISION_REGISTRY_HOME.
+const testRegistryPrefix = "metasystem-test-registry-"
+
+// ownedByTestRun is true for a repository under a test registry home, or for
+// any repository when this process runs inside one. Only a live system speaks
+// to the operator; a test's steward notifying the desktop is noise at best
+// and a false alarm at worst.
+func ownedByTestRun(repoRoot string) bool {
+	return ownedByTestRunUnder(repoRoot, os.Getenv("METASYSTEM_SUPERVISION_REGISTRY_HOME"))
+}
+
+func ownedByTestRunUnder(repoRoot, registryHome string) bool {
+	if strings.HasPrefix(filepath.Base(registryHome), testRegistryPrefix) {
+		return true
+	}
+	for _, part := range strings.Split(filepath.ToSlash(canonicalPath(repoRoot)), "/") {
+		if strings.HasPrefix(part, testRegistryPrefix) {
+			return true
+		}
+	}
+	return false
 }
 
 const (
@@ -60,6 +91,9 @@ func resolveNotifyWithDependencies(repoRoot string, deps notificationDependencie
 	}
 	top := canonicalPath(repoRoot)
 	if installed, err := VerifyIdentity(RepoIdentityPath(top), top); err == nil && installed.Enrollment == EnrollmentFixture {
+		return "", notifyFixtureLog
+	}
+	if deps.underTest != nil && deps.underTest(repoRoot) {
 		return "", notifyFixtureLog
 	}
 	if deps.platform == "darwin" {

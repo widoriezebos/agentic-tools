@@ -421,6 +421,13 @@ func TestClassifyStewardByInstalledBinaryAndIdentity(t *testing.T) {
 	if got.Class != ClassSteward {
 		t.Fatalf("the installed steward binary with a valid identity must classify STEWARD, got %+v", got)
 	}
+	// The landing gate's clock is the holder's (g1-s70 D3, S70-07): a landing
+	// in the steward's name is refused by the holder check every landing
+	// makes before it prepares, whoever holds the checkout.
+	announceLiveChild(t, root)
+	if _, err := RequireHolder(root, pid, nil); err == nil || !strings.Contains(err.Error(), "OWNED-ELSEWHERE") {
+		t.Fatalf("the steward passed the holder check a landing makes: %v", err)
+	}
 }
 
 func TestForgedStewardIdentityDoesNotClassifySteward(t *testing.T) {

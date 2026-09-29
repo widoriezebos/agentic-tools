@@ -105,8 +105,21 @@ func everyKind() Inputs {
 	ready.State = goal.StateApproved
 	ready.Approved = &backlog.Approval{By: "human:Wido", At: ago(2 * time.Hour), Authority: "proven"}
 
+	// Three goals in Review (g1-s70 D5): one at the gate's tier that waits for
+	// this human, one below it whose clock runs, and one a sitting holds.
+	waitsForYou := row("g1-s58", "Order the backlog by priority", backlog.LaneReview)
+	waitsForYou.State = goal.StateClaimed
+	waitsForYou.Claim = &backlog.Claim{Machine: "m2a", Lineage: "coordinator", At: ago(6 * time.Hour), LandingAt: ago(2 * time.Hour)}
+	waitsForYou.Gate = &backlog.Gate{Tier: 2, HumanFromTier: 2, AutoAfter: "4h", WaitsForHuman: true}
+	landsByItself := waitsForYou
+	landsByItself.Ref.ID, landsByItself.Tier = "g1-s59", 1
+	landsByItself.Gate = &backlog.Gate{Tier: 1, HumanFromTier: 2, AutoAfter: "4h", AutoLandsAt: ago(-2 * time.Hour)}
+	heldBySitting := waitsForYou
+	heldBySitting.Ref.ID = "g1-s60"
+	heldBySitting.Gate = &backlog.Gate{Tier: 2, HumanFromTier: 2, AutoAfter: "4h", WaitsForHuman: true,
+		HeldBy: []backlog.GateHold{{By: "Wido", Record: "plans/reviews/review-of-g1-s60.md", Since: ago(time.Hour)}}}
 	return Inputs{
-		Rows:   []backlog.Row{awaiting, second, renew, claimed, park, dependency, blockerPark, seatPark, fenced, ready},
+		Rows:   []backlog.Row{awaiting, second, renew, claimed, park, dependency, blockerPark, seatPark, fenced, ready, waitsForYou, landsByItself, heldBySitting},
 		Closed: []backlog.Row{},
 		Project: project.Pane{
 			Goals: []project.Goal{
@@ -185,7 +198,7 @@ func TestTheInboxCarriesOneRowOfEveryKindTheDesignNames(t *testing.T) {
 	want := map[string]int{
 		KindApproval: 2, KindRenewal: 2, KindAsk: 1, KindQuestion: 1,
 		KindParked: 1, KindStopped: 1, KindDraft: 1, KindLanded: 1,
-		KindRulingReview: 1, KindAlert: 1,
+		KindRulingReview: 1, KindAlert: 1, KindLanding: 1,
 	}
 	for kind, count := range want {
 		if counted[kind] != count {
@@ -229,6 +242,7 @@ func TestEverySilenceLineIsTheOneTheEngineMakesTrue(t *testing.T) {
 		{KindLanded, []string{"it stays marked accepted"}},
 		{KindRulingReview, []string{"it stays in force as written"}},
 		{KindAlert, []string{"no recorded consequence"}},
+		{KindLanding, []string{"it stays in Review; nothing lands until a sitting ends clear to land or you land it without one"}},
 	} {
 		if strings.Join(said[expected.kind], "|") != strings.Join(expected.lines, "|") {
 			t.Errorf("%s says %q, want %q", expected.kind, said[expected.kind], expected.lines)
@@ -282,6 +296,12 @@ func TestOnlyTheActsTheInterfaceHasAreOffered(t *testing.T) {
 			// row: nothing about it is prefilled from the board.
 			if need.Act != ActUnpark || need.Row != nil {
 				t.Errorf("a seat's park was not offered the act that returns it: %+v", need)
+			}
+		case KindLanding:
+			// A goal that waits for your review carries the Decide sheet's
+			// act, and the row it names (g1-s70 D5).
+			if need.Act != ActLandWithoutSitting || need.Row == nil {
+				t.Errorf("a landing row was not offered land without a sitting: %+v", need)
 			}
 		default:
 			if need.Act != "" || need.Row != nil {
@@ -609,6 +629,7 @@ func TestTheOrderIsDeadlinesThenPastDueThenApprovalsThenTheOldest(t *testing.T) 
 		"landed/d-landed",
 		"ask/ask-1",
 		"stopped/g1-s48",
+		"landing/g1-s58",
 		"alert/n-1",
 	}
 	if strings.Join(read, ",") != strings.Join(want, ",") {
@@ -847,5 +868,38 @@ func TestAConcludedGoalsApprovalIsStillOnTheRecord(t *testing.T) {
 	last := page.Decided.Approved[len(page.Decided.Approved)-1]
 	if last.ID != "g1-s8" || last.Row.Where != backlog.WhereArchived {
 		t.Fatalf("a concluded goal's approval was dropped: %+v", last)
+	}
+}
+
+// A goal at the gate's tier waiting in Review is a landing row with its two
+// answers; below the tier and under a sitting it is not (g1-s70 D5).
+func TestALandingRowIsTheGoalThatWaitsForYourReview(t *testing.T) {
+	t.Parallel()
+	page := Compose(everyKind(), observed)
+	need := needOf(t, page, KindLanding)
+	if need.ID != "g1-s58" || need.Asked != "g1-s58 waits for your review" || need.Act != ActLandWithoutSitting ||
+		need.Where != (Where{Kind: WhereGoal, ID: "g1-s58"}) || need.Since != observed.Add(-2*time.Hour).Format(time.RFC3339) || need.Row == nil {
+		t.Fatalf("the landing row = %+v", need)
+	}
+}
+
+// A word to land given before the branch moved no longer lets the goal land
+// (SOL-S70-04): the goal is back among those waiting for this human's review,
+// for a verdict and a decision to land without a sitting alike, while a word
+// that still stands at the branch's tip keeps it off the inbox.
+func TestAWordAtAMovedTipIsBackInTheInbox(t *testing.T) {
+	t.Parallel()
+	for _, kind := range []string{goal.VerdictClearToLand, goal.LandWithoutSittingVerb} {
+		waiting := row("g1-s61", "A goal whose branch moved after the word", backlog.LaneReview)
+		waiting.State = goal.StateClaimed
+		waiting.Gate = &backlog.Gate{Tier: 2, HumanFromTier: 2, AutoAfter: "4h", WaitsForHuman: true,
+			Reviewed: &backlog.GateWord{Kind: kind, By: "Wido", Tip: strings.Repeat("9", 40), Moved: true, BranchTip: strings.Repeat("a", 40)}}
+		if needs := landings([]backlog.Row{waiting}); len(needs) != 1 || needs[0].ID != "g1-s61" || needs[0].Asked != "g1-s61 waits for your review" {
+			t.Fatalf("%s at a moved tip: the inbox = %+v", kind, needs)
+		}
+		waiting.Gate.Reviewed.Moved, waiting.Gate.Reviewed.BranchTip = false, ""
+		if needs := landings([]backlog.Row{waiting}); len(needs) != 0 {
+			t.Fatalf("%s standing at the tip: the inbox = %+v", kind, needs)
+		}
 	}
 }

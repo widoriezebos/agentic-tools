@@ -166,6 +166,7 @@ const acts: Acts = {
   onPark: () => undefined,
   onEdit: () => undefined,
   onReturn: () => undefined,
+  onLanded: () => undefined,
   onWrite: () => undefined,
   writing: "",
   refusedAt: "",
