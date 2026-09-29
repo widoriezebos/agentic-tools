@@ -11,7 +11,6 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/trunkredmap"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
@@ -71,7 +70,7 @@ func TestGLEBatchSplitNativeRedReprovesAndPublishesIndependentSurvivor(t *testin
 		t.Fatalf("native red tip passed: %s", output)
 	}
 	tip := readResult(tipPath)
-	red := trunkredmap.ResultToRedGroups(tip)
+	red := batch.ResultToRedGroups(tip)
 	if len(red) != 1 || red[0].ID != "app-a" || tip.Delivery.Sufficient {
 		t.Fatalf("native tip failure was not isolated to A: red=%+v delivery=%+v", red, tip.Delivery)
 	}
@@ -104,7 +103,7 @@ func TestGLEBatchSplitNativeRedReprovesAndPublishesIndependentSurvivor(t *testin
 				return batch.DiagnosticResult{}, errors.New(output)
 			}
 			result := readResult(diagnosticPath)
-			return batch.DiagnosticResult{AttemptID: result.AttemptID, Groups: trunkredmap.ResultToRedGroups(result)}, nil
+			return batch.DiagnosticResult{AttemptID: result.AttemptID, Groups: batch.ResultToRedGroups(result)}, nil
 		},
 	}); err != nil {
 		t.Fatal(err)

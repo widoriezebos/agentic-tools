@@ -1,4 +1,4 @@
-package trunkredmap
+package batch
 
 import (
 	"reflect"

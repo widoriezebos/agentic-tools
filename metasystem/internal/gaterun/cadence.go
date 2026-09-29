@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/trunkredmap"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 )
 
@@ -183,13 +183,13 @@ func RunCadenceTick(input CadenceTickInput, deps CadenceDependencies) (result Ca
 		result, err = publishCadenceFailure(result, deps, claim.Claim.Opid, trunk, trigger, key, started, input.DeepOnlyGroups, probes, "cadence runner did not return a terminal result")
 	} else {
 		status := cadenceStatus(trunk, trigger, run.RunID, run.Result, started, ended, key, input.DeepOnlyGroups, probes)
-		red := trunkredmap.RedGroupsToRecordGroups(trunkredmap.ResultToRedGroups(run.Result))
+		red := batch.RedGroupsToRecordGroups(batch.ResultToRedGroups(run.Result))
 		if cadenceRunGreen(run.Result) && input.WeightDue {
 			if deps.DischargeWeight == nil || deps.DischargeWeight(authority, run.RunID, input.Weight.Generation, ended) != nil {
 				failed := unavailableCadenceResult(input.DeepOnlyGroups, probes, "authorized weight discharge was refused")
 				failed.AttemptID = run.Result.AttemptID
 				status = cadenceStatus(trunk, trigger, run.RunID, failed, started, ended, key, input.DeepOnlyGroups, probes)
-				red = trunkredmap.RedGroupsToRecordGroups(trunkredmap.ResultToRedGroups(failed))
+				red = batch.RedGroupsToRecordGroups(batch.ResultToRedGroups(failed))
 			}
 		}
 		err = deps.Ledger.Publish(ended, claim.Claim.Opid, status, red)
@@ -291,7 +291,7 @@ func cadenceStatus(trunk CadenceTrunk, trigger goal.CadenceTrigger, runID string
 func publishCadenceFailure(result CadenceTickResult, deps CadenceDependencies, claim string, trunk CadenceTrunk, trigger goal.CadenceTrigger, key goal.CadenceClaimKey, started time.Time, ids []string, probes map[string]proofrun.GroupResult, reason string) (CadenceTickResult, error) {
 	failed := unavailableCadenceResult(ids, probes, reason)
 	status := cadenceStatus(trunk, trigger, "cadence-unavailable", failed, started, started, key, ids, probes)
-	red := trunkredmap.RedGroupsToRecordGroups(trunkredmap.ResultToRedGroups(failed))
+	red := batch.RedGroupsToRecordGroups(batch.ResultToRedGroups(failed))
 	err := deps.Ledger.Publish(started, claim, status, red)
 	if err == nil {
 		result.Status, result.Published = &status, true
