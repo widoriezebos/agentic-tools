@@ -6,12 +6,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"time"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 )
 
 // The acknowledged-process mechanism: an UNTRACKED report that
@@ -54,10 +51,6 @@ type AcknowledgedProcess struct {
 
 func acknowledgedPath(repo string) string {
 	return filepath.Join(repo, "artifacts", "agents", "supervision", "acknowledged-processes.json")
-}
-
-func acknowledgedLockDir(repo string) string {
-	return filepath.Join(repo, "artifacts", "agents", "supervision", "acknowledged-processes.lock.d")
 }
 
 // LoadAcknowledged reads and STRICTLY validates the acknowledgement
@@ -141,168 +134,4 @@ func silencedByAcknowledgement(index map[[2]int64]AcknowledgedProcess, pid, star
 	}
 	exact, ok := exactStartMicro(pid, probe)
 	return ok && exact == entry.PidStartedAtExactMicro
-}
-
-// Acknowledge records that one exact untracked process is
-// known-harmless. The caller names only the pid it saw in the nag;
-// everything else is derived and verified:
-//
-//   - the census must be CURRENT (verdict SUCCESS, completed within
-//     the same freshness window dispatch trusts) — a stale snapshot
-//     proves nothing about the pid it names;
-//   - the census entry must be class UNTRACKED — acknowledging a
-//     tracked process would pre-silence its later untracked fate;
-//   - the exact birth token must be provable NOW and agree with the
-//     census's whole-second start — disagreement means the pid was
-//     recycled since the census wrote;
-//   - the whole read-prune-append-write runs under a lock, so two
-//     acknowledgements cannot lose each other;
-//   - pruning drops an entry only when its process is PROVENLY dead
-//     (kernel veto or identity mismatch); unprovable liveness keeps.
-func Acknowledge(repo string, pid int64, reason string, now time.Time, probe identity.FixtureProbe) (AcknowledgedProcess, error) {
-	if reason == "" {
-		return AcknowledgedProcess{}, fmt.Errorf("acknowledge refused: a human reason is required")
-	}
-	startSec, censusExact, err := currentCensusUntrackedStart(repo, pid, now)
-	if err != nil {
-		return AcknowledgedProcess{}, err
-	}
-	exact, ok := exactStartMicro(pid, probe)
-	if !ok {
-		return AcknowledgedProcess{}, fmt.Errorf("acknowledge refused: pid %d's exact birth cannot be proven right now", pid)
-	}
-	// The binding is to THE process the census observed: the live
-	// probe's kernel-resolution token must equal the token the census
-	// recorded. A pid recycled after the scan — even within the same
-	// second — carries a different token and refuses; second-resolution
-	// binding alone would leave a same-second window open.
-	if exact != censusExact {
-		return AcknowledgedProcess{}, fmt.Errorf("acknowledge refused: pid %d is not the process the census observed (recycled since the last scan); re-run after the next census", pid)
-	}
-
-	self, _, selfErr := (identity.KernelProber{}).Probe(int64(os.Getpid()))
-	if selfErr != nil {
-		return AcknowledgedProcess{}, fmt.Errorf("acknowledge refused: own identity unreadable: %v", selfErr)
-	}
-	held, err := lock.Acquire(acknowledgedLockDir(repo), lock.Identity{
-		Pid: int64(os.Getpid()), PidStartedAt: self.StartedAt.Unix(),
-	}, lock.Options{
-		// Death-only takeover: a crashed acknowledger's husk yields; a
-		// live or unprovable holder refuses (the standard lock rule).
-		Probe: func(holder lock.Identity) lock.Liveness {
-			switch identity.AliveRef(identity.KernelProber{}, identity.Ref{Pid: holder.Pid, StartedAtSec: holder.PidStartedAt}) {
-			case identity.Alive:
-				return lock.Alive
-			case identity.Dead:
-				return lock.Dead
-			default:
-				return lock.Unknown
-			}
-		},
-	})
-	if err != nil {
-		return AcknowledgedProcess{}, fmt.Errorf("acknowledge refused: %v", err)
-	}
-	defer held.Release()
-
-	existing, err := LoadAcknowledged(repo)
-	if err != nil {
-		return AcknowledgedProcess{}, err
-	}
-	entry := AcknowledgedProcess{
-		Pid:                    pid,
-		PidStartedAt:           startSec,
-		PidStartedAtExactMicro: censusExact,
-		Reason:                 reason,
-		AcknowledgedAt:         now.UTC().Format(time.RFC3339),
-	}
-	kept := []AcknowledgedProcess{}
-	for _, a := range existing {
-		if a.Pid == pid && a.PidStartedAt == startSec {
-			continue // replaced by the fresh entry
-		}
-		// Only PROVEN death expires an entry: the kernel's veto, or a
-		// live pid whose identity no longer matches (recycled). An
-		// unprovable probe keeps the entry — losing a live
-		// acknowledgement to a transient read failure would re-nag a
-		// process the human already judged.
-		if identity.Custodian(a.Pid, a.PidStartedAt, "", probe) == identity.Dead {
-			continue
-		}
-		kept = append(kept, a)
-	}
-	kept = append(kept, entry)
-	sort.Slice(kept, func(i, j int) bool {
-		if kept[i].Pid != kept[j].Pid {
-			return kept[i].Pid < kept[j].Pid
-		}
-		return kept[i].PidStartedAt < kept[j].PidStartedAt
-	})
-
-	rendered, err := json.MarshalIndent(kept, "", "  ")
-	if err != nil {
-		return AcknowledgedProcess{}, err
-	}
-	if _, err := atomicfile.WriteText(acknowledgedPath(repo), string(rendered)+"\n", ""); err != nil {
-		return AcknowledgedProcess{}, err
-	}
-	return entry, nil
-}
-
-// currentCensusUntrackedStart reads the CURRENT census and returns the
-// recorded whole-second start for pid, requiring the census to be
-// fresh and successful and the entry to be UNTRACKED. The freshness
-// window mirrors what dispatch trusts: completed within
-// min(2×interval, 180s), never in the future.
-func currentCensusUntrackedStart(repo string, pid int64, now time.Time) (startSec, exactMicro int64, err error) {
-	last, err := readObjectFile(filepath.Join(repo, "artifacts", "agents", "supervision", "last-census.json"))
-	if err != nil {
-		if os.IsNotExist(err) {
-			return 0, 0, fmt.Errorf("acknowledge refused: no census has run; nothing names pid %d", pid)
-		}
-		return 0, 0, err
-	}
-	if verdict, _ := last["verdict"].(string); verdict != "SUCCESS" {
-		return 0, 0, fmt.Errorf("acknowledge refused: the last census did not succeed; a failed snapshot proves nothing")
-	}
-	completed, ok := intField(last["completedAtEpoch"])
-	if !ok {
-		return 0, 0, fmt.Errorf("acknowledge refused: the last census carries no completion time")
-	}
-	interval, ok := intField(last["intervalSec"])
-	if !ok || interval < 1 {
-		return 0, 0, fmt.Errorf("acknowledge refused: the last census carries no interval")
-	}
-	window := 2 * interval
-	if window > 180 {
-		window = 180
-	}
-	age := now.Unix() - completed
-	if age < 0 || age >= window {
-		return 0, 0, fmt.Errorf("acknowledge refused: the last census is not current (age %ds, window %ds); re-run after the next scan", age, window)
-	}
-	inventory, _ := last["inventory"].([]any)
-	for _, raw := range inventory {
-		item, _ := raw.(map[string]any)
-		if item == nil {
-			continue
-		}
-		itemPid, pidOK := intField(item["pid"])
-		if !pidOK || itemPid != pid {
-			continue
-		}
-		if class, _ := item["class"].(string); class != "UNTRACKED" {
-			return 0, 0, fmt.Errorf("acknowledge refused: pid %d is %s, not UNTRACKED; only untracked processes are acknowledged", pid, class)
-		}
-		itemStart, startOK := intField(item["pidStartedAt"])
-		if !startOK {
-			return 0, 0, fmt.Errorf("acknowledge refused: the census lists pid %d with no start time", pid)
-		}
-		itemExact, exactOK := intField(item["pidStartedAtExactMicro"])
-		if !exactOK || itemExact < 1 {
-			return 0, 0, fmt.Errorf("acknowledge refused: the census predates exact birth tokens; re-run after the next scan")
-		}
-		return itemStart, itemExact, nil
-	}
-	return 0, 0, fmt.Errorf("acknowledge refused: pid %d is not in the current census inventory", pid)
 }
