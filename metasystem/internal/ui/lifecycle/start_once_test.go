@@ -136,6 +136,31 @@ func TestExecSpawnChildThatClosesWithoutReadyLine(t *testing.T) {
 	_ = child.Kill()
 }
 
+// WaitForReport sets no clock on the read: it ends on the child's line or on
+// the child's exit, whatever the time it takes the child to get there.
+func TestReadyLineWithoutABoundEndsOnTheReportOrTheExit(t *testing.T) {
+	t.Parallel()
+
+	home := t.TempDir()
+	reporter := filepath.Join(home, "reporter")
+	testutil.Require(t, "write reporter", testexec.WriteFile(reporter, []byte("#!/bin/sh\necho \"ready 127.0.0.1:49998\" >&3\n"), 0o755), nil)
+	child, err := ExecSpawn(LaunchSpec{Executable: reporter, Dir: home, LogPath: filepath.Join(home, "reporter.log")})
+	testutil.Require(t, "spawn reporter", err, nil)
+	line, err := child.ReadyLine(WaitForReport)
+	testutil.Require(t, "read the report with no bound", err, nil)
+	testutil.Expect(t, "ready line", line, "ready 127.0.0.1:49998")
+	testutil.Require(t, "release", child.Release(), nil)
+
+	silent := filepath.Join(home, "silent")
+	testutil.Require(t, "write silent", testexec.WriteFile(silent, []byte("#!/bin/sh\nexit 0\n"), 0o755), nil)
+	child, err = ExecSpawn(LaunchSpec{Executable: silent, Dir: home, LogPath: filepath.Join(home, "silent.log")})
+	testutil.Require(t, "spawn silent", err, nil)
+	if _, err := child.ReadyLine(WaitForReport); err == nil || errors.Is(err, ErrReadyTimeout) {
+		t.Fatalf("an exit with no report = %v, want end of input", err)
+	}
+	_ = child.Kill()
+}
+
 func TestExecSpawnRefusesWhatItCannotOpenOrStart(t *testing.T) {
 	t.Parallel()
 

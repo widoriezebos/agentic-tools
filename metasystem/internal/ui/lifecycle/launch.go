@@ -16,6 +16,12 @@ const defaultReadyWait = 10 * time.Second
 
 var ErrReadyTimeout = errors.New("interface readiness timed out")
 
+// WaitForReport is a ready wait with no clock: the read ends on the child's
+// line or on its exit (the pipe's close), however long the child takes. No
+// production caller uses it; it lets a test drive a real start without a
+// wall-clock deadline between two processes.
+const WaitForReport time.Duration = -1
+
 func ServeArgs(checkout, metasystemRoot, listen string) []string {
 	return []string{
 		"ui", "serve",
@@ -118,7 +124,11 @@ type execChild struct {
 
 func (c *execChild) ReadyLine(wait time.Duration) (string, error) {
 	defer c.ready.Close()
-	if err := c.ready.SetReadDeadline(time.Now().Add(wait)); err != nil {
+	deadline := time.Time{}
+	if wait != WaitForReport {
+		deadline = time.Now().Add(wait)
+	}
+	if err := c.ready.SetReadDeadline(deadline); err != nil {
 		return "", err
 	}
 	line, err := bufio.NewReader(c.ready).ReadString('\n')

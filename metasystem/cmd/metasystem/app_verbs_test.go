@@ -74,6 +74,9 @@ type appBed struct {
 	// that a test can see the argument vector a verb hands it and answer for
 	// it.
 	testRun func(dir string, argv []string, stderr io.Writer) ([]byte, int, error)
+	// supervisorWait replaces an app start's wait for its supervisor's
+	// answer; zero is production's.
+	supervisorWait time.Duration
 }
 
 func newAppBed(t *testing.T, contract map[string]any) *appBed {
@@ -156,6 +159,7 @@ func (b *appBed) run(args ...string) (int, string) {
 	if b.testRun != nil {
 		owners.work.testRun = b.testRun
 	}
+	owners.appSupervisorWait = b.supervisorWait
 	code := runIntentIn(command, rest, &stdout, &stderr, b.root, owners)
 	b.reapSupervisors()
 	return code, stdout.String() + stderr.String()
