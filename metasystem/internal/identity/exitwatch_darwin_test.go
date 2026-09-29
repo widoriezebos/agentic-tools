@@ -5,53 +5,49 @@ package identity
 import (
 	"errors"
 	"fmt"
+	"unsafe"
 
 	"golang.org/x/sys/unix"
 )
 
+// darwinPPID is idtype_t P_PID from <sys/wait.h>; darwinSiginfoSize covers
+// its siginfo_t (104 bytes). x/sys/unix has no Waitid for darwin, so the
+// watch issues the system call itself.
+const (
+	darwinPPID        = 1
+	darwinSiginfoSize = 128
+)
+
 type exitWatch struct {
-	descriptor int
+	pid int
 }
 
 func armExitWatch(pid int) (*exitWatch, error) {
-	descriptor, err := unix.Kqueue()
-	if err != nil {
-		return nil, fmt.Errorf("create kqueue: %w", err)
-	}
-	watch := &exitWatch{descriptor: descriptor}
-	changes := []unix.Kevent_t{{
-		Ident:  uint64(pid),
-		Filter: unix.EVFILT_PROC,
-		Flags:  unix.EV_ADD | unix.EV_ONESHOT,
-		Fflags: unix.NOTE_EXIT,
-	}}
-	if _, err := keventNoInterrupt(descriptor, changes, nil); err != nil {
-		watch.close()
-		return nil, fmt.Errorf("register process exit: %w", err)
-	}
-	return watch, nil
+	return &exitWatch{pid: pid}, nil
 }
 
+// wait returns once the caller's child is waitable, a zombie, and leaves it
+// unreaped: waitid(P_PID, pid, WEXITED|WNOWAIT), as on Linux. A kqueue
+// NOTE_EXIT was earlier than that: XNU posts it while the process is still
+// exiting, before it is a zombie, so a probe right after it read
+// exiting=true zombie=false under load.
 func (watch *exitWatch) wait() error {
-	defer watch.close()
-	events := make([]unix.Kevent_t, 1)
-	count, err := keventNoInterrupt(watch.descriptor, nil, events)
-	if err != nil {
-		return fmt.Errorf("wait for process exit: %w", err)
+	var info [darwinSiginfoSize]byte
+	for {
+		_, _, errno := unix.Syscall6(unix.SYS_WAITID, darwinPPID, uintptr(watch.pid),
+			uintptr(unsafe.Pointer(&info[0])), unix.WEXITED|unix.WNOWAIT, 0, 0)
+		// EINTR reissues the system call; it does not retry an assertion.
+		if errors.Is(errno, unix.EINTR) {
+			continue
+		}
+		if errno != 0 {
+			return fmt.Errorf("wait for process exit: %w", errno)
+		}
+		return nil
 	}
-	if count != 1 {
-		return fmt.Errorf("wait for process exit returned %d events", count)
-	}
-	return nil
 }
 
-func (watch *exitWatch) close() {
-	if watch.descriptor < 0 {
-		return
-	}
-	_ = unix.Close(watch.descriptor)
-	watch.descriptor = -1
-}
+func (*exitWatch) close() {}
 
 func keventNoInterrupt(descriptor int, changes, events []unix.Kevent_t) (int, error) {
 	for {
