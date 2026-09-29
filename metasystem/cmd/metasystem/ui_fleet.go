@@ -87,7 +87,7 @@ func fleetReader(
 			Health:  fleet.ReadHealth(roots.Checkout),
 			Running: running, RunningProblem: runningProblem,
 			Jobs: jobs, Box: steward.SeatBox(roots.Checkout, now),
-			Launches: launches, Launching: launching,
+			Launches: launches, Present: launch.Present, Launching: launching,
 		}, now), nil
 	}
 }

@@ -76,12 +76,20 @@ type Page struct {
 	// opened after a launch began still sees a running or a failed one. It is
 	// never composed from: a launch is a record the verb writes, and this
 	// page carries it rather than judging it.
-	Launches []launch.Record `json:"launches"`
+	Launches []Launch `json:"launches"`
 	// Launching is what a new machine's destination is proposed from. Only
 	// this server knows either half — where this checkout sits on the host,
 	// and what the ledger remote calls the repository — and the sheet
 	// composes the path from them as the nickname is typed.
 	Launching Launching `json:"launching"`
+}
+
+// Launch is one launch record as the page carries it, with the one fact about
+// this host the record cannot hold: whether the clone it made is still on
+// disk. A stopped card names that leftover only while it is there.
+type Launch struct {
+	launch.Record
+	DestinationPresent bool `json:"destinationPresent"`
 }
 
 // Launching is the two facts a destination is proposed from. Empty halves are
@@ -292,6 +300,10 @@ type Inputs struct {
 	// the caller: a running record whose process is dead is read as failed,
 	// and this package never decides that for itself.
 	Launches []launch.Record
+	// Present reports whether a launch's destination is still on this host.
+	// A nil reader is a build that cannot look, and every clone then reads
+	// as gone, so the page names no leftover it has not seen.
+	Present func(path string) bool
 	// Launching is where a new machine would land, as the caller reads this
 	// host: the directory beside this checkout and the remote repository name.
 	Launching Launching
@@ -373,7 +385,7 @@ func Compose(in Inputs, now time.Time) Page {
 		This:          thisSeat(in, now),
 		NeedsYou:      needs,
 		Machines:      machines,
-		Launches:      launches(in.Launches),
+		Launches:      launches(in.Launches, in.Present),
 		Launching:     in.Launching,
 	}
 }
@@ -381,11 +393,12 @@ func Compose(in Inputs, now time.Time) Page {
 // launches is the list as the payload carries it: never nil, so a browser
 // reads an empty array rather than a null it has to tell from an absent
 // field.
-func launches(records []launch.Record) []launch.Record {
-	if records == nil {
-		return []launch.Record{}
+func launches(records []launch.Record, present func(string) bool) []Launch {
+	carried := make([]Launch, 0, len(records))
+	for _, record := range records {
+		carried = append(carried, Launch{Record: record, DestinationPresent: present != nil && present(record.Destination)})
 	}
-	return records
+	return carried
 }
 
 // claimsOf reads the holders out of ONE observation's board projection, so a

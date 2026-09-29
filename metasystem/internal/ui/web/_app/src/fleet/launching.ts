@@ -262,11 +262,17 @@ export function failedStep(record: Launch): LaunchStep | null {
 /**
  * Whether this launch is one the card shows at all.
  *
+ * A launch a human discarded is not: its record is kept for the trail, and
+ * the page has been told to put it away.
+ *
  * `starting` is a launch the server has written down and whose verb has not
  * yet named its own process. It is on screen from that moment, because the
  * act answers with it and a human who pressed Launch is owed a card.
  */
 export function showsCard(record: Launch): boolean {
+  if (record.discardedAt !== null) {
+    return false;
+  }
   return (
     record.outcome === "starting" ||
     record.outcome === "running" ||
@@ -278,6 +284,28 @@ export function showsCard(record: Launch): boolean {
 /** The newest launch worth a card, or null when there is none. */
 export function cardFor(launches: readonly Launch[]): Launch | null {
   return launches.find(showsCard) ?? null;
+}
+
+/**
+ * The card the fleet block shows: the launch started from this page, as the
+ * server's reading now has it, or else the newest launch still worth a card.
+ *
+ * `hidden` is the launches whose discard this page has had answered. The
+ * server's next reading carries the mark and says the same; until it arrives
+ * the card is already gone, and the next launch worth one takes its place
+ * exactly as it will once the reading lands.
+ */
+export function visibleCard(
+  launches: readonly Launch[],
+  started: Launch | null,
+  hidden: ReadonlySet<string>,
+): Launch | null {
+  const gone = (record: Launch) => record.discardedAt !== null || hidden.has(record.launch);
+  const own = started === null ? null : (launches.find((one) => one.launch === started.launch) ?? started);
+  if (own !== null && !gone(own)) {
+    return own;
+  }
+  return launches.find((record) => showsCard(record) && !hidden.has(record.launch)) ?? null;
 }
 
 /**
@@ -320,9 +348,18 @@ export function stepTitle(step: LaunchStep): string {
 export const RETRY_ASKS_AGAIN =
   "The record never held your authorization, and a retry may have to enroll the machine, so it asks again.";
 
-/** What the card says a human does with a failed clone, which is delete it. */
-export function failedRemedy(record: Launch): string {
-  return `Nothing here removes it: ${record.destination} is a directory you delete.`;
+/**
+ * What a stopped launch left on this host, while it is still there.
+ *
+ * Discarding the card deletes nothing, so the clone is named for as long as
+ * the server finds it on disk, and not a moment after. No verb removes a
+ * machine's clone yet, so the line names none.
+ */
+export function leftoverLine(record: Launch): string {
+  if (!record.destinationPresent) {
+    return "";
+  }
+  return `The clone at ${record.destination} stays on disk; delete it yourself.`;
 }
 
 /** How the health of a machine that armed but has not published is read. */

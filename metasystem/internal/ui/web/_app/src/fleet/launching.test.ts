@@ -17,7 +17,9 @@ import {
   proposedReviewBy,
   reviewByRefusal,
   reviewDay,
+  leftoverLine,
   showsCard,
+  visibleCard,
 } from "./launching";
 
 /**
@@ -48,6 +50,8 @@ function launch(over: Partial<Launch> = {}): Launch {
     created: { destination: true, nickname: false, evidenceRoot: true },
     steps: [{ step: "clone", outcome: "done", at: "2026-09-25T10:57:10Z", words: "" }],
     orientation: "",
+    discardedAt: null,
+    destinationPresent: false,
     next: { session: "cd /w/agentic-tools-m1f && claude", stop: "metasystem system stop --repo /w/agentic-tools-m1f/metasystem" },
     ...over,
   };
@@ -185,6 +189,17 @@ describe("the card a launch becomes", () => {
     expect(showsCard(launch({ outcome: "done" }))).toBe(false);
   });
 
+  it("leaves out a launch a human discarded", () => {
+    expect(showsCard(launch({ outcome: "failed", discardedAt: "2026-09-29T10:00:00Z" }))).toBe(false);
+    expect(showsCard(launch({ outcome: "armed", discardedAt: "2026-09-29T10:00:00Z" }))).toBe(false);
+    expect(
+      cardFor([
+        launch({ outcome: "failed", discardedAt: "2026-09-29T10:00:00Z" }),
+        launch({ launch: "01M3BQ8000000000000000000A", machine: "m1g", outcome: "failed" }),
+      ])?.machine,
+    ).toBe("m1g");
+  });
+
   it("is the newest launch still worth one", () => {
     expect(cardFor([launch({ outcome: "done" }), launch({ machine: "m1g", outcome: "failed" })])?.machine).toBe("m1g");
     expect(cardFor([launch({ outcome: "done" })])).toBe(null);
@@ -232,5 +247,45 @@ describe("the day that travels with a launch", () => {
     const now = new Date(2026, 8, 25);
     expect(reviewByRefusal("2026-09-25", now)).toContain("due the moment the machine joins");
     expect(reviewByRefusal("2026-09-26", now)).toBe("");
+  });
+});
+
+describe("the card the fleet block shows", () => {
+  const failed = launch({ outcome: "failed" });
+  const older = launch({ launch: "01M3BQ8000000000000000000A", machine: "m1g", outcome: "failed" });
+  const none = new Set<string>();
+
+  it("is the newest one worth a card, when nothing was started here", () => {
+    expect(visibleCard([failed, older], null, none)?.launch).toBe(failed.launch);
+  });
+
+  it("follows the server's record of a launch started here", () => {
+    const started = launch({ outcome: "starting" });
+    expect(visibleCard([], started, none)?.outcome).toBe("starting");
+    expect(visibleCard([launch({ outcome: "running" })], started, none)?.outcome).toBe("running");
+  });
+
+  it("hides a launch the moment its discard answers, before the next read", () => {
+    expect(visibleCard([failed], null, new Set([failed.launch]))).toBe(null);
+    expect(visibleCard([failed, older], null, new Set([failed.launch]))?.launch).toBe(older.launch);
+  });
+
+  it("keeps it hidden from the server's record once the read carries the mark", () => {
+    const discarded = { ...failed, discardedAt: "2026-09-29T10:00:00Z" };
+    expect(visibleCard([discarded], null, none)).toBe(null);
+    // A launch started here and then discarded stays gone too.
+    expect(visibleCard([discarded], failed, none)).toBe(null);
+  });
+});
+
+describe("what a stopped launch leaves on disk", () => {
+  it("names the clone while it is there", () => {
+    expect(leftoverLine(launch({ outcome: "failed", destinationPresent: true }))).toBe(
+      "The clone at /w/agentic-tools-m1f stays on disk; delete it yourself.",
+    );
+  });
+
+  it("says nothing once it is gone", () => {
+    expect(leftoverLine(launch({ outcome: "failed", destinationPresent: false }))).toBe("");
   });
 });

@@ -61,6 +61,11 @@ const (
 	// CodeIdentityUnreadable is a clone whose enrolled identity cannot be
 	// read after arming, so no presence record can be recognised as its own.
 	CodeIdentityUnreadable = "SEAT_LAUNCH_IDENTITY_UNREADABLE"
+	// CodeUnknown is a discard naming a launch this host has no record of.
+	CodeUnknown = "SEAT_LAUNCH_UNKNOWN"
+	// CodeDiscardRunning is a discard of a launch still starting or running,
+	// whose verb would write the mark away at its next step.
+	CodeDiscardRunning = "SEAT_LAUNCH_DISCARD_RUNNING"
 )
 
 // Refusal is one of the codes above with the sentence a human acts on.

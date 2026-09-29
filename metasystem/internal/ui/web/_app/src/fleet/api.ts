@@ -17,6 +17,7 @@ import type { LaneId } from "../backlog/lanes";
 
 const FLEET = "/api/fleet";
 const LAUNCH = "/api/fleet/launch";
+const LAUNCHES = "/api/fleet/launches/";
 
 /** What this seat concludes about one machine, from its presence record. */
 export type Standing = "reachable" | "unreachable" | "unknown";
@@ -243,6 +244,17 @@ export type Launch = {
   steps: LaunchStep[];
   orientation: string;
   next: LaunchNext;
+  /**
+   * When a human discarded this launch from the fleet page, or null. The
+   * record is kept and nothing is deleted; the page draws no card for it.
+   */
+  discardedAt: string | null;
+  /**
+   * Whether the clone this launch made is still on this host, as the server
+   * read the disk when it composed the page. It is not the record's own
+   * field: the record cannot know what happened to a directory after it.
+   */
+  destinationPresent: boolean;
 };
 
 /** The two facts a destination is proposed from, which only the server knows. */
@@ -338,6 +350,20 @@ export async function loadFleet(signal?: AbortSignal): Promise<Page> {
  */
 export async function launchMachine(asked: LaunchRequest, signal?: AbortSignal): Promise<Launch> {
   return (await request(LAUNCH, asked, signal)) as Launch;
+}
+
+/**
+ * A stopped launch put out of sight, or a joined machine's card dismissed:
+ * the server marks the record and deletes nothing. It is idempotent, and it
+ * answers the record as it now reads.
+ */
+export async function discardLaunch(id: string, signal?: AbortSignal): Promise<Launch> {
+  return (await request(discardAddress(id), {}, signal)) as Launch;
+}
+
+/** Where one launch's discard is posted: its own address beneath the fleet. */
+export function discardAddress(id: string): string {
+  return `${LAUNCHES}${encodeURIComponent(id)}/discard`;
 }
 
 /** A body that is not the refusal shape says nothing, which is not an error. */

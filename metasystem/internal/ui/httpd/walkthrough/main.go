@@ -246,6 +246,7 @@ func run(ctx context.Context, args []string) error {
 	}
 	presenceWatch := fleet.NewWatch()
 	startedAt := time.Now().UTC().Format(time.RFC3339)
+	discards := &fixtureDiscards{}
 	info := httpd.Info{
 		Checkout: "/walkthrough", StartedAt: startedAt,
 		EngineBuild: "walkthrough", BundleDigest: manifest.SourceDigest,
@@ -282,7 +283,7 @@ func run(ctx context.Context, args []string) error {
 		},
 		// The fleet, invented: three machines, one of each standing, joined
 		// to the claims the canned ledger carries. -proven is the armed seat.
-		Fleet: fixtureFleet(*proven, *launched),
+		Fleet: fixtureFleet(*proven, *launched, discards),
 		// Launching, invented: this fixture clones nothing and spawns
 		// nothing, so the act answers with the running record the page
 		// already shows. What it proves in a browser is the sheet, its
@@ -290,6 +291,11 @@ func run(ctx context.Context, args []string) error {
 		// tests' to prove.
 		Launch: func(_ *session.Session, asked launch.Request) (launch.Record, error) {
 			return fixtureLaunchOf(asked, time.Now().UTC()), nil
+		},
+		// Discarding, invented: the mark is held in memory, so the card goes
+		// and stays gone for as long as this fixture runs.
+		DiscardLaunch: func(id string) (launch.Record, error) {
+			return discards.discard(id, time.Now().UTC())
 		},
 		// The browsers holding the stream open, which the fleet event rides
 		// back to. It is the same registration the engine's own server uses

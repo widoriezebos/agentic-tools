@@ -385,6 +385,8 @@ var Rows = []Row{
 	{Code: "SEAT_LAUNCH_FLEET_UNREADABLE", Owner: "internal/seat/launch", Site: "presence.go#SeatPresence.Taken", Shape: Question, H1: StandingInput},
 	{Code: "SEAT_LAUNCH_SUPERVISION_DOWN", Owner: "internal/seat/launch", Site: "sequence.go#Sequencer.supervision", Shape: Question, H1: StandingInput},
 	{Code: "SEAT_LAUNCH_IDENTITY_UNREADABLE", Owner: "internal/seat/launch", Site: "sequence.go#Sequencer.presence", Shape: Question, H1: StandingIdentity},
+	{Code: "SEAT_LAUNCH_UNKNOWN", Owner: "internal/seat/launch", Site: "record.go#Discard", Shape: Question, H1: StandingInput},
+	{Code: "SEAT_LAUNCH_DISCARD_RUNNING", Owner: "internal/seat/launch", Site: "record.go#Discard", Shape: Question, H1: StandingInput},
 }
 
 var Exclusions = []Exclusion{
