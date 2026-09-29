@@ -7,7 +7,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"strings"
 	"syscall"
 	"time"
 
@@ -106,7 +105,7 @@ func (m *Manager) Start(spec StartSpec) (Record, error) {
 	if spec.Effort != "" {
 		effort = spec.Effort
 	}
-	adapterName := adapterForLane(spec.Kind, settings.launchRuntime(spec.Kind), model)
+	adapterName := adapterForLane(spec.Kind, settings.launchRuntime(spec.Kind))
 	if adapterName == "" {
 		return Record{}, fmt.Errorf("launch kind %q is not available", spec.Kind)
 	}
@@ -636,10 +635,10 @@ func (m *Manager) Census(reapValues ...bool) ([]string, error) {
 
 // adapterForLane names the adapter a lane runs on. The lane's runtime setting
 // decides, never the model: a model name is not an agent, since more than one
-// agent can serve the same model (Wido, 2026-09-24, R-123). Only a lane with
-// no runtime setting at all, as in a bare fixture, reads the model's prefix.
-// An agent this engine cannot launch names no adapter, and Start refuses it.
-func adapterForLane(kind, runtime, model string) string {
+// agent can serve the same model (Wido, 2026-09-24, R-123). A lane with no
+// runtime, or on an agent this engine cannot launch, names no adapter, and
+// Start refuses it.
+func adapterForLane(kind, runtime string) string {
 	switch kind {
 	case "build", "critique", "design", "read":
 	case "proof":
@@ -652,11 +651,8 @@ func adapterForLane(kind, runtime, model string) string {
 		return "claude-headless"
 	case "codex":
 		return "codex-exec"
-	case "":
-		if model == "" || strings.HasPrefix(model, "claude-") {
-			return "claude-headless"
-		}
-		return "codex-exec"
+	case "devin":
+		return "devin-print"
 	default:
 		return ""
 	}

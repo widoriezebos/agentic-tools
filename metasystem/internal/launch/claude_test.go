@@ -29,7 +29,7 @@ func claudeRecord(t *testing.T, kind string) (Record, string) {
 	if err := os.WriteFile(briefPath, []byte("brief text\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	data := map[string]json.RawMessage{"brief": rawString(briefPath)}
+	data := map[string]json.RawMessage{"brief": rawString(briefPath), "model": rawString("claude-opus-5-5")}
 	setInt64(data, "window", 1000000)
 	return Record{Kind: kind, Tag: "alpha", WorkingDirectory: root, AdapterData: data}, root
 }
@@ -85,11 +85,10 @@ func TestReadModelWithContextSuffixPassesThroughToClaude(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(command.Args, want) {
 		t.Fatalf("argv=%v want=%v err=%v", command.Args, want, err)
 	}
+	// The adapter picks no model of its own: the lane's configuration does.
 	delete(record.AdapterData, "model")
-	command, err = (ClaudeHeadless{Binary: "claude"}).Command(record, t.TempDir())
-	fallbackWant := []string{"-p", "--model", "claude-opus-5-5[1m]", "--dangerously-skip-permissions", "--output-format", "json", "--name", "read-alpha"}
-	if err != nil || !reflect.DeepEqual(command.Args, fallbackWant) {
-		t.Fatalf("fallback argv=%v want=%v err=%v", command.Args, fallbackWant, err)
+	if _, err = (ClaudeHeadless{Binary: "claude"}).Command(record, t.TempDir()); err == nil || !strings.Contains(err.Error(), "launch.read.model.claude") {
+		t.Fatalf("a record without a model: err=%v", err)
 	}
 }
 
@@ -203,6 +202,7 @@ func seedClaude(t *testing.T, m *Manager, id string) (Record, string) {
 		current.Adapter = "claude-headless"
 		current.Kind = "design"
 		current.AdapterData["brief"] = rawString(briefPath)
+		current.AdapterData["model"] = rawString("claude-fable-5-1")
 		setInt64(current.AdapterData, "window", 200000)
 		return nil
 	})

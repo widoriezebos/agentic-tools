@@ -82,17 +82,26 @@ func TestEveryDeclarationDeclaresContextSample(t *testing.T) {
 	}
 }
 
-// The pinned policy facts: tailoring precedence codex > devin > claude
+// The pinned policy facts: the preference order claude > codex > devin
 // > fake, fake never outranking a real runtime, claude the one adoption
-// default, fake never adoptable, the fake-model synthesis value.
+// default, fake never adoptable, the fake-model synthesis value, and a
+// program to detect for every real runtime and none for fake.
 func TestPinnedPolicies(t *testing.T) {
 	// Populations DERIVE from the declarations (a new runtime must not
 	// fail this test); only the RELATIONAL policies below are pinned.
 	if len(Names()) != len(All()) {
 		t.Fatalf("Names/All disagree: %v", Names())
 	}
-	if got := DefaultFor(map[string]bool{"claude": true, "devin": true, "codex": true, "fake": true}); got != "codex" {
-		t.Fatalf("strongest of all = %s, want codex", got)
+	if got := DefaultFor(map[string]bool{"claude": true, "devin": true, "codex": true, "fake": true}); got != "claude" {
+		t.Fatalf("strongest of all = %s, want claude", got)
+	}
+	if got := Canonical([]string{"devin", "newagent", "fake", "codex", "claude"}); strings.Join(got, ",") != "claude,codex,devin,fake,newagent" {
+		t.Fatalf("canonical order = %v", got)
+	}
+	for _, d := range All() {
+		if (d.Executable == "") != (d.Name == "fake") {
+			t.Fatalf("%s executable = %q", d.Name, d.Executable)
+		}
 	}
 	if got := DefaultFor(map[string]bool{"claude": true, "fake": true}); got != "claude" {
 		t.Fatalf("fake outranked claude: %s", got)

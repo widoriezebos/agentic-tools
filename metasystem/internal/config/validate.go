@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -355,7 +356,7 @@ func validateWithRunner(confPath, repoRoot string, runner gitRunner) (tiersAbsen
 	for _, key := range order {
 		if roleRuntimeSuffix.MatchString(key) {
 			value := values[key]
-			if value != "main" && !runtimeSet[value] {
+			if value != "main" && value != AutoRuntime && !runtimeSet[value] {
 				add("%s names runtime %s outside metasystem.runtimes", key, pyRepr(value))
 			}
 		}
@@ -488,10 +489,32 @@ func validateWithRunner(confPath, repoRoot string, runner gitRunner) (tiersAbsen
 	}
 	truthy := func(v string, ok bool) bool { return ok && v != "" }
 
+	// An auto runtime becomes, on some host, any listed runtime with a
+	// program to detect, or the first listed one when none is found; it must
+	// have a model for each of them, so the check never depends on this host.
+	var laneRuntimes []string
+	for _, runtime := range runtimes {
+		if declaration, known := runtimereg.Lookup(runtime); known && declaration.Executable != "" {
+			laneRuntimes = append(laneRuntimes, runtime)
+		}
+	}
+	autoCandidates := append([]string(nil), laneRuntimes...)
+	if len(runtimes) > 0 && !slices.Contains(autoCandidates, runtimes[0]) {
+		autoCandidates = append([]string{runtimes[0]}, autoCandidates...)
+	}
+	candidates := func(runtime string) []string {
+		if runtime == AutoRuntime {
+			return autoCandidates
+		}
+		return []string{runtime}
+	}
 	modeScopes := append([]string{""}, sortedKeysOf(modes)...)
 	for _, mode := range modeScopes {
-		runtime, ok := resolved("role.default.runtime", mode)
-		if truthy(runtime, ok) && runtime != "main" {
+		configured, ok := resolved("role.default.runtime", mode)
+		if !truthy(configured, ok) || configured == "main" {
+			continue
+		}
+		for _, runtime := range candidates(configured) {
 			if model, present := resolved("role.default.model."+runtime, mode); !present {
 				add("%s resolves to %s but has no model.%s value", roleLabel("default", mode, true), runtime, runtime)
 			} else if templateValue.MatchString(model) {
@@ -502,26 +525,53 @@ func validateWithRunner(confPath, repoRoot string, runner gitRunner) (tiersAbsen
 	}
 	for _, role := range sortedKeysOf(roles) {
 		for _, mode := range modeScopes {
-			runtime, ok := resolved("role."+role+".runtime", mode)
-			if !truthy(runtime, ok) {
-				runtime, ok = resolved("role.default.runtime", mode)
+			configured, ok := resolved("role."+role+".runtime", mode)
+			if !truthy(configured, ok) {
+				configured, ok = resolved("role.default.runtime", mode)
 			}
-			if !truthy(runtime, ok) || runtime == "main" {
+			if !truthy(configured, ok) || configured == "main" {
 				continue
 			}
-			modelKey := "role." + role + ".model." + runtime
-			model, present := resolved(modelKey, mode)
-			if !truthy(model, present) {
-				modelKey = "role.default.model." + runtime
-				model, present = resolved(modelKey, mode)
+			for _, runtime := range candidates(configured) {
+				modelKey := "role." + role + ".model." + runtime
+				model, present := resolved(modelKey, mode)
+				if !truthy(model, present) {
+					modelKey = "role.default.model." + runtime
+					model, present = resolved(modelKey, mode)
+				}
+				if !present {
+					add("%s resolves to %s but has no model.%s value", roleLabel(role, mode, false), runtime, runtime)
+				} else if templateValue.MatchString(model) {
+					// A placeholder left from the shipped file launches with the
+					// literal text and dies at the API; the seat's .local names it.
+					add("%s resolves to %s:%s, a template placeholder from %s; set it with: metasystem settings set %s <the %s model this seat runs>, which writes %s.local",
+						roleLabel(role, mode, false), runtime, model, modelKey, modelKey, runtime, confPath)
+				}
 			}
-			if !present {
-				add("%s resolves to %s but has no model.%s value", roleLabel(role, mode, false), runtime, runtime)
-			} else if templateValue.MatchString(model) {
-				// A placeholder left from the shipped file launches with the
-				// literal text and dies at the API; the seat's .local names it.
-				add("%s resolves to %s:%s, a template placeholder from %s; set it with: metasystem settings set %s <the %s model this seat runs>, which writes %s.local",
-					roleLabel(role, mode, false), runtime, model, modelKey, modelKey, runtime, confPath)
+		}
+	}
+	// A launch lane runs on main never; it names a listed runtime or auto,
+	// and has a model on every runtime it can resolve to. Only a runtime with
+	// a program to start runs a lane, so auto answers for those alone.
+	for _, lane := range []string{"build", "critique", "design", "read"} {
+		configured, ok := resolved("launch."+lane+".runtime", "")
+		if !truthy(configured, ok) {
+			continue
+		}
+		if configured != AutoRuntime && !runtimeSet[configured] {
+			add("launch.%s.runtime names runtime %s outside metasystem.runtimes", lane, pyRepr(configured))
+			continue
+		}
+		if model, present := resolved("launch."+lane+".model", ""); truthy(model, present) {
+			continue
+		}
+		laneCandidates := []string{configured}
+		if configured == AutoRuntime {
+			laneCandidates = laneRuntimes
+		}
+		for _, runtime := range laneCandidates {
+			if model, present := resolved("launch."+lane+".model."+runtime, ""); !truthy(model, present) {
+				add("launch.%s resolves to %s but has neither launch.%s.model nor launch.%s.model.%s", lane, runtime, lane, lane, runtime)
 			}
 		}
 	}
