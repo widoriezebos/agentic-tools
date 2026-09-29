@@ -237,7 +237,7 @@ func SweepDiskStores(ctx context.Context, top string, pass DiskPass) (DiskPassRe
 			attemptRetention(top, pass.Now, settings.Bytes(config.DiskProofTargetKey), settings.Duration(config.DiskProofKeepKey)))
 		if layout, err := stateroot.ResolveLayout(top); err == nil {
 			if pass.Clones {
-				checkoutOptions.Classes = append(checkoutOptions.Classes, clonesReport(layout.GitRoot))
+				checkoutOptions.Classes = append(checkoutOptions.Classes, clonesReport(layout.GitRoot, layout.InstallationRoot, pass.Now))
 			}
 			checkoutOptions.Classes = append(checkoutOptions.Classes, LandingReleaseSets{Installation: layout.InstallationRoot,
 				StateRoot: top, GitRoot: layout.GitRoot, Git: ExecWorkspaceGit})
@@ -740,9 +740,22 @@ func diskSettingsFor(checkout string) (diskstore.Settings, error) {
 }
 
 // clonesReport is the unowned-clone report's class, with the git roots of
-// the host's armed checkouts; an unreadable host registry holds it.
-func clonesReport(gitRoot string) UnownedClones {
+// the host's armed checkouts and the landing lane (read through the host
+// lane resolver); an unreadable host registry or an unresolvable lane
+// holds it.
+func clonesReport(gitRoot, installation string, now time.Time) UnownedClones {
 	report := UnownedClones{GitRoot: gitRoot, Git: ExecWorkspaceGit}
+	lane, laneErr := landingLaneRoots(installation, now)
+	if laneErr != nil {
+		report.LaneErr = laneErr
+		return report
+	}
+	for _, root := range lane {
+		report.Lane = append(report.Lane, root)
+		if layout, err := stateroot.ResolveLayout(root); err == nil && layout.GitRoot != root {
+			report.Lane = append(report.Lane, layout.GitRoot)
+		}
+	}
 	path, err := registry.DefaultPath()
 	var checkouts []string
 	if err == nil {

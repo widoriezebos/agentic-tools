@@ -18,7 +18,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
@@ -390,21 +389,33 @@ func LandingAttemptNamers(batchRoots []string, installation string, keep time.Du
 	return []proofrun.AttemptNamer{landingBatchNamer{Roots: batchRoots}, landingReceiptNamer{Installation: installation, Keep: keep}}
 }
 
-// landingLaneRoots are the landing lane's checkout (landing.batch-root) and
-// its installation, whose landing batches can name this checkout's
-// attempts; none when no lane is configured.
+// landingLaneRoots are the landing lane's checkout, resolved through the
+// host lane resolver the command layer binds (LandingLaneRoot: the seat's
+// setting against the host's one lane record, U12), and its installation,
+// whose landing batches can name this checkout's attempts; none when the
+// host has no lane for this seat.
 func landingLaneRoots(installation string, now time.Time) ([]string, error) {
-	confPath := filepath.Join(installation, "metasystem.conf")
-	raw, _, err := config.Get(config.GetParams{Key: config.BatchRootKey, ConfPath: confPath, Default: "", DefaultSet: true})
-	if err != nil || strings.TrimSpace(raw) == "" {
-		return nil, err
+	return landingLaneRootsWith(LandingLaneRoot, installation, now)
+}
+
+// landingLaneRootsWith fails closed: an unbound resolver, an unresolvable
+// lane, or a configured lane without a root is an error, never "no lane".
+func landingLaneRootsWith(resolve func(string, time.Time) (string, bool, error), installation string, now time.Time) ([]string, error) {
+	if resolve == nil {
+		return nil, errors.New("no landing lane resolver is bound in this process")
 	}
-	settings, err := config.ResolveBatchLanding(confPath, installation, func() time.Time { return now })
+	root, configured, err := resolve(installation, now)
 	if err != nil {
 		return nil, err
 	}
-	roots := []string{settings.Root}
-	if layout, err := stateroot.ResolveLayout(settings.Root); err == nil {
+	if !configured {
+		return nil, nil
+	}
+	if strings.TrimSpace(root) == "" {
+		return nil, errors.New("the landing lane is configured but names no checkout")
+	}
+	roots := []string{root}
+	if layout, err := stateroot.ResolveLayout(root); err == nil {
 		roots = append(roots, layout.InstallationRoot)
 	}
 	return roots, nil

@@ -24,6 +24,11 @@ type UnownedClones struct {
 	// why the host registry could not be read, which holds the report.
 	Armed    []string
 	ArmedErr error
+	// Lane are the landing lane's checkout and installation, read through
+	// the host lane resolver; the lane is owned, never listed. LaneErr is
+	// why the lane could not be resolved, which holds the report.
+	Lane    []string
+	LaneErr error
 }
 
 func (UnownedClones) Name() string { return "clones beside the checkout" }
@@ -36,6 +41,10 @@ func (c UnownedClones) Plan(ctx context.Context, pass *diskstore.Pass) ([]diskst
 		return []diskstore.Item{{Class: c.Name(), Key: "~armed", Path: c.GitRoot, Verdict: diskstore.Verdict{Decision: diskstore.Pending,
 			Reason: "the host registry of armed checkouts cannot be read (" + c.ArmedErr.Error() + "), so clones are not listed", Command: "metasystem system check"}}}, nil
 	}
+	if c.LaneErr != nil {
+		return []diskstore.Item{{Class: c.Name(), Key: "~lane", Path: c.GitRoot, Verdict: diskstore.Verdict{Decision: diskstore.Pending,
+			Reason: "the landing lane cannot be resolved (" + c.LaneErr.Error() + "), so clones are not listed", Command: "metasystem landing status"}}}, nil
+	}
 	parent := filepath.Dir(c.GitRoot)
 	entries, err := os.ReadDir(parent)
 	if err != nil {
@@ -44,7 +53,7 @@ func (c UnownedClones) Plan(ctx context.Context, pass *diskstore.Pass) ([]diskst
 	var candidates []string
 	for _, entry := range entries {
 		path := filepath.Join(parent, entry.Name())
-		if !entry.IsDir() || path == c.GitRoot || containsPath(c.Armed, path) {
+		if !entry.IsDir() || path == c.GitRoot || containsPath(c.Armed, path) || containsPath(c.Lane, path) {
 			continue
 		}
 		if info, err := os.Lstat(filepath.Join(path, ".git")); err == nil && info.IsDir() {

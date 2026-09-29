@@ -233,7 +233,8 @@ func TestLandingBatchNamerHoldsOnAnUnresolvableLane(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(installation, "metasystem.conf"), []byte("metasystem.template=true\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if roots, err := landingLaneRoots(installation, attemptsNow); err != nil || len(roots) != 0 {
+	unconfigured := func(string, time.Time) (string, bool, error) { return "", false, nil }
+	if roots, err := landingLaneRootsWith(unconfigured, installation, attemptsNow); err != nil || len(roots) != 0 {
 		t.Fatalf("no lane configured reads no lane: %v %v", roots, err)
 	}
 }
