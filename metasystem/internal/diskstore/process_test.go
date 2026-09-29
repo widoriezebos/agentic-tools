@@ -3,7 +3,6 @@ package diskstore
 import (
 	"bufio"
 	"context"
-	"crypto/rand"
 	"errors"
 	"fmt"
 	"os"
@@ -35,6 +34,12 @@ func processScratchHelper() (code int, handled bool) {
 	fail := func(err error) (int, bool) {
 		fmt.Fprintln(os.Stderr, "helper:", err)
 		return 3, true
+	}
+	if name, ok := strings.CutPrefix(mode, "scenario-"); ok {
+		if err := ownerScenario(name); err != nil {
+			return fail(err)
+		}
+		return 0, true
 	}
 	root, err := ProcessScratch()
 	if err != nil {
@@ -104,6 +109,39 @@ func processScratchHelper() (code int, handled bool) {
 				fmt.Printf("parent-release=%v\n", err)
 			}
 		}
+		return 0, true
+	case "grand-bare":
+		// As grand-extra, but the grandchild is started without the seam
+		// in a process group of its own: nothing but the session ties it
+		// to the child's root (the reader's parent-extra probe).
+		child := exec.Command(os.Args[0])
+		child.Stdin = os.Stdin
+		if err := PrepareChild(child); err != nil {
+			return fail(err)
+		}
+		child.Env = append(child.Env, processScratchHelperEnv+"=grand-child-bare")
+		output, err := child.Output()
+		if err != nil {
+			return fail(fmt.Errorf("nested child: %v: %s", err, output))
+		}
+		fmt.Printf("child-%s", output)
+		os.Exit(0)
+	case "grand-child-bare":
+		dir, _, err := ScratchDir("grandchild-")
+		if err != nil {
+			return fail(err)
+		}
+		read, _, err := os.Pipe()
+		if err != nil {
+			return fail(err)
+		}
+		grandchild := exec.Command("cat")
+		grandchild.Stdin, grandchild.Dir, grandchild.ExtraFiles = os.Stdin, "/", []*os.File{read}
+		grandchild.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		if err := grandchild.Start(); err != nil {
+			return fail(err)
+		}
+		fmt.Printf("grandchild=%d\ngrandchild-dir=%s\n", grandchild.Process.Pid, dir)
 		return 0, true
 	case "grand-child-prep", "grand-child-extra":
 		dir, _, err := ScratchDir("grandchild-")
@@ -199,6 +237,9 @@ func (b scratchBed) helper(mode string) *exec.Cmd {
 	command := exec.Command(os.Args[0], "-test.run=^$")
 	command.Env = append(os.Environ(), processScratchHelperEnv+"="+mode, "TMPDIR="+b.temp,
 		"METASYSTEM_SUPERVISION_REGISTRY_HOME="+b.home)
+	// A session of its own, as a launched engine's: the owner's group and
+	// session are then its own and its descendants', never this test's.
+	command.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	return command
 }
 
@@ -229,7 +270,12 @@ func (b scratchBed) onlyRecord(t *testing.T) Record {
 func (b scratchBed) sweep(t *testing.T, prober identity.Prober) Report {
 	t.Helper()
 	reader := KernelCensusReader(uint32(os.Getuid()))
+	// No process of a test bed is the metasystem's, so by the census's
+	// ancestry rule every unreadable process (a zombie another test has
+	// not reaped yet, whose parent chain the kernel no longer answers) is
+	// "unreadable, not ours"; every readable one is judged as ever.
 	reader.Ours = func(int64) bool { return false }
+	reader.Parent = func(int64) (int64, bool) { return 1, true }
 	return b.sweepWith(t, prober, &reader)
 }
 
@@ -313,6 +359,7 @@ func TestProcessScratchOfAKilledOwnerIsKeptWhileItsChildLives(t *testing.T) {
 	if err := unix.Flock(int(waiter.Fd()), unix.LOCK_EX); err != nil {
 		t.Fatal(err)
 	}
+	_ = unix.Flock(int(waiter.Fd()), unix.LOCK_UN)
 	_ = waiter.Close()
 	if free, err := ProbeWriterLock(record); err != nil || !free {
 		t.Fatalf("after the child exited the writer lock probe = free %v, %v; want free", free, err)
@@ -426,19 +473,20 @@ func (p fixedProber) Probe(int64) (identity.Exact, identity.Liveness, error) {
 	return identity.Exact{}, p.state, nil
 }
 
-// ownScratch makes a process scratch of this test process in a bed of its
-// own; its writer lock is closed, as a dead owner's is.
-func ownScratch(t *testing.T) (scratchBed, *processScratch) {
+// deadScratch is a process scratch root whose owner, a helper in a session
+// of its own, exited without releasing it: a dead owner with no process
+// left in its group or session, as the sweeper meets one.
+func deadScratch(t *testing.T) (scratchBed, Record) {
 	t.Helper()
 	bed := newScratchBed(t)
-	created, err := newProcessScratch(bed.temp, bed.registry, rand.Reader)
-	if err != nil {
+	if output, err := bed.helper("exit").CombinedOutput(); err != nil {
+		t.Fatalf("helper: %v\n%s", err, output)
+	}
+	record := bed.onlyRecord(t)
+	if err := os.WriteFile(filepath.Join(record.Path, "payload"), []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(created.record.Path, "payload"), []byte("x"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	return bed, created
+	return bed, record
 }
 
 // The owner's release waits for its in-process users: a directory handed
@@ -446,25 +494,7 @@ func ownScratch(t *testing.T) (scratchBed, *processScratch) {
 // it.
 func TestProcessScratchReleaseLeavesARootWithAnInProcessUser(t *testing.T) {
 	t.Parallel()
-	_, created := ownScratch(t)
-	dir, done, err := created.mkdir("busy-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if released, err := created.releaseIfIdle(context.Background()); released || err != nil {
-		t.Fatalf("a release with a user in flight = %v, %v; want kept", released, err)
-	}
-	if _, err := os.Lstat(dir); err != nil {
-		t.Fatalf("the user's directory went: %v", err)
-	}
-	done()
-	done()
-	if released, err := created.releaseIfIdle(context.Background()); !released || err != nil {
-		t.Fatalf("the release after done = %v, %v", released, err)
-	}
-	if _, err := os.Lstat(created.record.Path); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("the root outlived its release: %v", err)
-	}
+	runOwnerScenario(t, "users")
 }
 
 // Fail-closed rule 1: an unreadable owner reference, an unknown liveness, a
@@ -498,11 +528,10 @@ func TestProcessProofHoldsOnAnyUnreadableInput(t *testing.T) {
 	for name, spoil := range cases {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			bed, created := ownScratch(t)
-			created.closeWriter()
-			prober := spoil(t, bed, created.record)
+			bed, record := deadScratch(t)
+			prober := spoil(t, bed, record)
 			bed.sweep(t, prober)
-			if _, err := os.Lstat(filepath.Join(created.record.Path, "payload")); err != nil {
+			if _, err := os.Lstat(filepath.Join(record.Path, "payload")); err != nil {
 				t.Fatalf("an unreadable %s removed the root's content: %v", name, err)
 			}
 		})
@@ -517,9 +546,8 @@ func TestProcessProofKnowsTheRootByDeviceAndInode(t *testing.T) {
 	for _, swap := range []string{"copy", "symlink"} {
 		t.Run(swap, func(t *testing.T) {
 			t.Parallel()
-			bed, created := ownScratch(t)
-			created.closeWriter()
-			root := created.record.Path
+			bed, record := deadScratch(t)
+			root := record.Path
 			moved := root + ".moved"
 			if err := os.Rename(root, moved); err != nil {
 				t.Fatal(err)
@@ -546,14 +574,13 @@ func TestProcessProofKnowsTheRootByDeviceAndInode(t *testing.T) {
 // record stays as history and nothing beside the root is touched.
 func TestProcessProofKeepsTheRecordAndEverythingBesideTheRoot(t *testing.T) {
 	t.Parallel()
-	bed, created := ownScratch(t)
-	created.closeWriter()
-	beside := filepath.Join(filepath.Dir(created.record.Path), "beside")
+	bed, record := deadScratch(t)
+	beside := filepath.Join(filepath.Dir(record.Path), "beside")
 	if err := os.WriteFile(beside, []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	bed.sweep(t, fixedProber{state: identity.Dead})
-	if _, err := os.Lstat(created.record.Path); !errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Lstat(record.Path); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("the dead owner's root stayed: %v", err)
 	}
 	if record := bed.onlyRecord(t); record.State != StateReleased || record.ReleasedBy != "sweeper" {
@@ -569,10 +596,9 @@ func TestProcessProofKeepsTheRecordAndEverythingBesideTheRoot(t *testing.T) {
 // it, and only a free lock and a dead owner finish it.
 func TestProcessProofRetryRechecksUse(t *testing.T) {
 	t.Parallel()
-	bed, created := ownScratch(t)
-	created.closeWriter()
-	rewriteRecord(t, bed.registry, created.record.ID, func(r *Record) { r.State = StateReleasing })
-	holder, err := os.OpenFile(filepath.Join(created.record.Path, WriterLockName), os.O_RDWR, 0)
+	bed, record := deadScratch(t)
+	rewriteRecord(t, bed.registry, record.ID, func(r *Record) { r.State = StateReleasing })
+	holder, err := os.OpenFile(filepath.Join(record.Path, WriterLockName), os.O_RDWR, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -580,16 +606,42 @@ func TestProcessProofRetryRechecksUse(t *testing.T) {
 		t.Fatal(err)
 	}
 	bed.sweep(t, fixedProber{state: identity.Dead})
-	if _, err := os.Lstat(filepath.Join(created.record.Path, "payload")); err != nil {
+	if _, err := os.Lstat(filepath.Join(record.Path, "payload")); err != nil {
 		t.Fatalf("a releasing root whose writer lock is held again was removed: %v", err)
 	}
+	// Unlocked before it is closed: a fork in flight elsewhere in this test
+	// binary may hold a copy of the description until its exec.
+	_ = unix.Flock(int(holder.Fd()), unix.LOCK_UN)
 	_ = holder.Close()
+	// A fork in flight elsewhere in this test binary may still hold a copy
+	// of the holder until its exec; a blocking lock through a description
+	// of the test's own returns once every copy is gone.
+	waiter, err := os.Open(filepath.Join(record.Path, WriterLockName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := unix.Flock(int(waiter.Fd()), unix.LOCK_EX); err != nil {
+		t.Fatal(err)
+	}
+	_ = unix.Flock(int(waiter.Fd()), unix.LOCK_UN)
+	_ = waiter.Close()
+	self, _, err := (identity.KernelProber{}).Probe(int64(os.Getpid()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref, err := identity.EncodeRef(self.Ref())
+	if err != nil {
+		t.Fatal(err)
+	}
+	dead := record.Owner.Ref
+	rewriteRecord(t, bed.registry, record.ID, func(r *Record) { r.Owner.Ref = ref })
 	bed.sweep(t, identity.KernelProber{})
-	if _, err := os.Lstat(filepath.Join(created.record.Path, "payload")); err != nil {
+	if _, err := os.Lstat(filepath.Join(record.Path, "payload")); err != nil {
 		t.Fatalf("a releasing root whose owner runs was removed: %v", err)
 	}
+	rewriteRecord(t, bed.registry, record.ID, func(r *Record) { r.Owner.Ref = dead })
 	bed.sweep(t, fixedProber{state: identity.Dead})
-	if _, err := os.Lstat(created.record.Path); !errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Lstat(record.Path); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("the retry did not finish the release: %v", err)
 	}
 }
@@ -711,10 +763,9 @@ func TestProcessProofKeepsARootTheCensusCannotClear(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			bed, created := ownScratch(t)
-			created.closeWriter()
-			bed.sweepWith(t, fixedProber{state: identity.Dead}, reader(created.record.Path))
-			if _, err := os.Lstat(filepath.Join(created.record.Path, "payload")); err != nil {
+			bed, record := deadScratch(t)
+			bed.sweepWith(t, fixedProber{state: identity.Dead}, reader(record.Path))
+			if _, err := os.Lstat(filepath.Join(record.Path, "payload")); err != nil {
 				t.Fatalf("%s: the root lost its content: %v", name, err)
 			}
 			if record := bed.onlyRecord(t); record.State != StateAccepted {

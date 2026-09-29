@@ -396,9 +396,14 @@ func newProcessScratch(tempRoot string, registry Registry, entropy io.Reader) (*
 		return nil, errors.Join(fmt.Errorf("process scratch: %w", err), os.Remove(staging))
 	}
 	device, inode, _ := fileID(info)
+	session, err := unix.Getsid(0)
+	if err != nil {
+		return nil, errors.Join(fmt.Errorf("process scratch: this process's session is unreadable: %w", err), os.Remove(root))
+	}
 	record, err := registry.Register(Registration{Path: root, Class: ProcessScratchClass, Owner: Owner{Kind: OwnerProcess, Ref: ref},
 		Lifetime: LifetimeOwner, CapKind: CapTarget, CapBytes: Settings{}.Bytes(config.DiskProcessScratchKey),
-		RootDevice: device, RootInode: inode, RootGeneration: pathGeneration(root)}, now, entropy)
+		RootDevice: device, RootInode: inode, RootGeneration: pathGeneration(root),
+		OwnerGroup: int64(unix.Getpgrp()), OwnerSession: int64(session)}, now, entropy)
 	if err != nil {
 		// Unregistered and still empty: os.Remove removes only an empty
 		// directory.
@@ -488,6 +493,9 @@ func (p ProcessProof) Observe(_ context.Context, record Record) Verdict {
 	case identity.Unknown:
 		return pending("its process's liveness cannot be read")
 	}
+	if verdict := ownerGroupVerdict(record); verdict.Decision != Release {
+		return verdict
+	}
 	free, err := ProbeWriterLock(record)
 	switch {
 	case err != nil:
@@ -511,10 +519,48 @@ func (ProcessProof) Apply(context.Context, *Critical) error {
 // incomplete, keeps the root, pending, for the next pass (fail-closed
 // rules 1 and 4).
 func (ProcessProof) Release(ctx context.Context, critical *Critical, census *UseCensus) Verdict {
+	if verdict := ownerGroupVerdict(critical.Record()); verdict.Decision != Release {
+		return verdict
+	}
 	if verdict := useVerdict(census, critical.Record()); verdict.Decision != Release {
 		return verdict
 	}
 	return releaseScratchRoot(ctx, critical, "sweeper")
+}
+
+// ownerGroupVerdict keeps a dead owner's root while any live process is in
+// the owner's recorded process group or session: a child the owner started
+// that was reparented to pid 1 keeps both, whatever it holds (Round D1). A
+// record without them, an unreadable process table or an unreadable id
+// keeps the root (fail-closed rule 1). A grandchild that left both (setsid)
+// is out of this rule's reach; the use census still sees it if it holds
+// anything in the root.
+func ownerGroupVerdict(record Record) Verdict {
+	pending := func(reason string) Verdict {
+		return Verdict{Decision: Pending, Reason: reason, Command: "metasystem disk show"}
+	}
+	if record.OwnerGroup <= 0 || record.OwnerSession <= 0 {
+		return pending("its owner's process group and session are not recorded")
+	}
+	pids, err := identity.AllPids()
+	if err != nil {
+		return pending("the process table is unreadable: " + err.Error())
+	}
+	for _, pid := range pids {
+		group, groupErr := unix.Getpgid(int(pid))
+		session, sessionErr := unix.Getsid(int(pid))
+		if errors.Is(groupErr, unix.ESRCH) || errors.Is(sessionErr, unix.ESRCH) {
+			continue
+		}
+		if groupErr != nil || sessionErr != nil {
+			return pending(fmt.Sprintf("the process group or session of pid %d is unreadable", pid))
+		}
+		if int64(group) == record.OwnerGroup || int64(session) == record.OwnerSession {
+			return Verdict{Decision: Keep, Reason: fmt.Sprintf("pid %d of its owner's process group or session is alive", pid),
+				Command: fmt.Sprintf("metasystem disk clean, once pid %d has ended", pid)}
+		}
+	}
+	return Verdict{Decision: Release, Reason: "no process of its owner's group or session is alive"}
 }
 
 // releaseScratchRoot removes a process scratch root inside its critical
