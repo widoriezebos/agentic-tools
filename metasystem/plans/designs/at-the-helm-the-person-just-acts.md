@@ -82,3 +82,7 @@ No change to `helm take`'s proof, to `helm return` beyond the help clause, to th
 | HA-01 | Astra 1 | yes | Folded (revision 2): D-scope tests git dir = common dir instead of comparing the toplevel with `Seat.Checkout`, which names the metadata directory for a submodule (`helm.go:68-70`, verified). Simpler seam: `Helm` returns only the state. Submodule leg added to test 2. |
 | HA-02 | Astra 1 | no | Folded as wording: test 3 says which fixture yields no line; the guard's order is kept. |
 | HA-03 | Astra 2 (failsafe) | yes | Folded (revision 3): D-scope also requires the work tree's on-disk `.git` entry (`--resolve-git-dir`) to resolve to the same directory, so `GIT_DIR`/`GIT_WORK_TREE` steering cannot make a linked worktree or a foreign repository pass. Verified with read-only git. Same predicate size, no new mechanism. Fixture obligations: the steered and foreign legs of test 2. Loop closes at round 2 under the skill's principled exit; one scoped confirmation read follows. |
+
+## 8. Built
+
+Slice 1 built by Claude on Opus 5.5 on branch `helm-acts-s1`: `7c8ba19af` (the guard yields at the helm in the seat's primary checkout, seven guard tests), `6f7393dfe` (production wiring, the help clause, the end-to-end with no controlling terminal), `cca1d4801` (this page's Status line). Checks: landpath coverage 87.2 (floor 85.5), helm, the end-to-end, the wall-time audit, `devgate static`, all green. Sol's code read: zero material findings (`at-the-helm-the-person-just-acts-sol-read.md`). Lands through m1e's batch.
