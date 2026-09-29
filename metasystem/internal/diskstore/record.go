@@ -89,6 +89,13 @@ type Identity struct {
 	// file system reports one (Linux: ext4, btrfs, xfs), which a file
 	// created at a freed inode number does not share; 0 where it does not.
 	GitFileGeneration uint64 `json:"gitFileGeneration,omitempty"`
+	// RootDevice, RootInode and RootGeneration are a marker store's root
+	// directory as it was made, where its producer records them (process
+	// scratch): a path names the store only while it is that directory
+	// (fail-closed rule 2).
+	RootDevice     uint64 `json:"rootDevice,omitempty"`
+	RootInode      uint64 `json:"rootInode,omitempty"`
+	RootGeneration uint64 `json:"rootGeneration,omitempty"`
 }
 
 // RebuildFrom is the commit and the command that rebuild a rebuildable
@@ -178,6 +185,9 @@ type Registration struct {
 	CopyOf      string
 	Adopted     bool
 	Notes       []string
+	// RootDevice, RootInode and RootGeneration identify a marker store's
+	// root made before registration (Identity's fields of the same names).
+	RootDevice, RootInode, RootGeneration uint64
 }
 
 func validID(id string) bool {
@@ -232,7 +242,7 @@ func (r Registry) Register(reg Registration, now time.Time, entropy io.Reader) (
 		}
 		identity = read
 	} else {
-		identity.Marker = true
+		identity = Identity{Marker: true, RootDevice: reg.RootDevice, RootInode: reg.RootInode, RootGeneration: reg.RootGeneration}
 	}
 	if err := os.MkdirAll(r.Dir, 0o700); err != nil {
 		return Record{}, fmt.Errorf("store registry %s: %w", r.Dir, err)

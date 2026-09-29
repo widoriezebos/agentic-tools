@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 )
 
 // DisjointMergeProofKind is the stable name of the only merge proof this
@@ -147,16 +149,22 @@ func flattenLines(lines [][]byte) []byte {
 // hunk-shaping input fixed. Exit one is the normal "different" result of
 // --no-index; every other nonzero result is a proof failure.
 func (w Workspace) canonicalBlobDiff(oldBlob, newBlob []byte) ([]byte, string, error) {
-	dir, err := os.MkdirTemp("", "metasystem-disjoint-diff.")
+	dir, done, err := diskstore.ScratchDir("metasystem-disjoint-diff.")
 	if err != nil {
 		return nil, "", err
 	}
-	defer os.RemoveAll(dir)
+	defer done()
+	return w.canonicalBlobDiffIn(dir, oldBlob, newBlob)
+}
+
+// canonicalBlobDiffIn is canonicalBlobDiff in the empty directory dir.
+func (w Workspace) canonicalBlobDiffIn(dir string, oldBlob, newBlob []byte) ([]byte, string, error) {
 	env := []string{
 		"LC_ALL=C", "LANG=C", "GIT_CONFIG_NOSYSTEM=1",
 		"GIT_CONFIG_SYSTEM=" + os.DevNull, "GIT_CONFIG_GLOBAL=" + os.DevNull,
 	}
-	// TMPDIR is operator-controlled. Refuse rather than let a temporary
+	// TMPDIR, and so the process scratch, is operator-controlled. Refuse
+	// rather than let a temporary
 	// directory beneath any repository discover repository-local config or
 	// attributes and thereby change the canonical hunk proof.
 	_, _, repositoryCode, runErr := w.gitProbe(dir, env, nil, "rev-parse", "--git-dir")

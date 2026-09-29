@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 )
@@ -285,11 +286,11 @@ func BuildCommit(e Endpoint, opid, tip string, changes []Change, message string)
 	if len(changes) == 0 {
 		return "", fmt.Errorf("a transaction mutates at least one path")
 	}
-	indexDir, err := os.MkdirTemp("", "goal-txn-*")
+	indexDir, done, err := diskstore.ScratchDir("goal-txn-*")
 	if err != nil {
 		return "", err
 	}
-	defer os.RemoveAll(indexDir)
+	defer done()
 	env := []string{
 		"GIT_INDEX_FILE=" + filepath.Join(indexDir, "index"),
 		"GIT_AUTHOR_NAME=metasystem", "GIT_AUTHOR_EMAIL=goals@metasystem.invalid",

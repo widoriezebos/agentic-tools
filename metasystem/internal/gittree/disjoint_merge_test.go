@@ -103,8 +103,11 @@ func TestDisjointMergeProof(t *testing.T) {
 
 	t.Run("temporary comparison directory inside repository", func(t *testing.T) {
 		w, _, _, _ := disjointFixtureTrees(t, []byte("a\nb\n"), []byte("A\nb\n"), []byte("a\nB\n"), 0o644, 0o644)
-		t.Setenv("TMPDIR", w.Dir)
-		_, _, err := w.canonicalBlobDiff([]byte("a\n"), []byte("A\n"))
+		inside, err := os.MkdirTemp(w.Dir, "comparison.")
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _, err = w.canonicalBlobDiffIn(inside, []byte("a\n"), []byte("A\n"))
 		if err == nil || !strings.Contains(err.Error(), "temporary directory is inside a Git repository") {
 			t.Fatalf("repository-local temporary comparison was not refused: %v", err)
 		}

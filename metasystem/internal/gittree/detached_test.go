@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/contractgit"
 	"golang.org/x/sys/unix"
 )
@@ -302,5 +303,41 @@ func TestDetachedCommitWorktreeConflictingRebaseCleansUp(t *testing.T) {
 	}
 	if count := strings.Count(f.git("worktree", "list", "--porcelain"), "worktree "); count != 1 {
 		t.Fatalf("private rebase left %d registered worktrees", count)
+	}
+}
+
+// A temporary detached worktree lives in the process's registered scratch
+// root (Part B R1), never loose in TMPDIR, and Close removes it.
+func TestDetachedWorktreeParentsLieInProcessScratch(t *testing.T) {
+	t.Parallel()
+	f, ws := nestedFixture(t)
+	head := f.headOID()
+	tree, err := ws.HeadTree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, err := diskstore.ProcessScratch()
+	if err != nil {
+		t.Fatal(err)
+	}
+	receipt, err := ws.NewDetachedWorktree(tree)
+	if err != nil {
+		t.Fatal(err)
+	}
+	advance, err := ws.NewDetachedCommitWorktree(head)
+	if err != nil {
+		_ = receipt.Close()
+		t.Fatal(err)
+	}
+	for _, detached := range []*DetachedWorktree{receipt, advance} {
+		if filepath.Dir(detached.parent) != root {
+			t.Errorf("detached worktree parent %s is not in the process scratch %s", detached.parent, root)
+		}
+		if err := detached.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := os.Lstat(detached.parent); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("Close left %s: %v", detached.parent, err)
+		}
 	}
 }

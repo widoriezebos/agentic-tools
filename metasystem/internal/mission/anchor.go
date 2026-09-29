@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"os"
@@ -325,11 +326,11 @@ func anchorWriteHeldWithOperations(ops anchorOperations, statePath, repo, ledger
 	if err != nil {
 		return "", stateErr("anchor cannot store the ledger blob: %v", err)
 	}
-	indexDir, err := os.MkdirTemp("", "metasystem-anchor.")
+	indexDir, done, err := diskstore.ScratchDir("metasystem-anchor.")
 	if err != nil {
 		return "", err
 	}
-	defer os.RemoveAll(indexDir)
+	defer done()
 	indexEnv := "GIT_INDEX_FILE=" + filepath.Join(indexDir, "index")
 	if _, err := ops.gitEnvOutput(repo, []string{indexEnv}, "read-tree", "--empty"); err != nil {
 		return "", stateErr("anchor cannot build its tree: %v", err)

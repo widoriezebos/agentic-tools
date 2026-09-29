@@ -25,6 +25,7 @@ import (
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 )
 
 // Workspace binds tree operations to one repository worktree. All index
@@ -373,11 +374,14 @@ func (w Workspace) HeadTree() (string, error) {
 
 // isolatedIndex returns the env for a throwaway index and its cleanup.
 func (w Workspace) isolatedIndex() ([]string, func(), error) {
-	parent := ""
-	if w.Materialize != nil {
-		parent = w.Materialize.TempDir
+	if w.Materialize == nil || w.Materialize.TempDir == "" {
+		dir, done, err := diskstore.ScratchDir("metasystem-gittree.")
+		if err != nil {
+			return nil, nil, fmt.Errorf("gittree: %w", err)
+		}
+		return []string{"GIT_INDEX_FILE=" + filepath.Join(dir, "index")}, done, nil
 	}
-	dir, err := os.MkdirTemp(parent, "metasystem-gittree.")
+	dir, err := os.MkdirTemp(w.Materialize.TempDir, "metasystem-gittree.")
 	if err != nil {
 		return nil, nil, fmt.Errorf("gittree: %w", err)
 	}

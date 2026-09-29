@@ -657,7 +657,7 @@ func registeredPaths(home string, checkouts, gitRoots []string) map[string]bool 
 // and session worktrees U5e, delegate workspaces U5f, workspaces U6b), and a
 // record whose kind has no proof yet is kept and reported pending.
 func diskOwnerProofs() map[diskstore.OwnerKind]diskstore.OwnerProof {
-	return map[diskstore.OwnerKind]diskstore.OwnerProof{}
+	return map[diskstore.OwnerKind]diskstore.OwnerProof{diskstore.OwnerProcess: diskstore.ProcessProof{Prober: identity.KernelProber{}}}
 }
 
 // KernelCensusReader is the production use census: the kernel's process

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/contractgit"
 )
@@ -22,6 +23,9 @@ type DetachedWorktree struct {
 	registered bool
 	closed     bool
 	afterClose func(error) error
+	// release ends the use of a parent handed out from process scratch;
+	// Close runs it last.
+	release func()
 	// common is set for a planned worktree: its admin entry must be gone
 	// before the recorded tuple may read closed.
 	common string
@@ -105,9 +109,9 @@ func (w Workspace) NewDetachedWorktree(tree string) (_ *DetachedWorktree, err er
 	if err != nil {
 		return nil, err
 	}
-	parent, err := temporaryWorktreeParent("", "metasystem-landing-receipt.")
+	parent, release, err := diskstore.ScratchDir("metasystem-landing-receipt.")
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("gittree detached worktree: %w", err)
 	}
 	// The worktree's basename is unique per receipt: git names the admin
 	// entry under .git/worktrees after it, and two concurrent adds with the
@@ -118,6 +122,7 @@ func (w Workspace) NewDetachedWorktree(tree string) (_ *DetachedWorktree, err er
 		control: w.at(top),
 		parent:  parent,
 		top:     filepath.Join(parent, "worktree-"+strings.TrimPrefix(filepath.Base(parent), "metasystem-landing-receipt.")),
+		release: release,
 	}
 	return detached.materialize(w, tree, prefix)
 }
@@ -316,25 +321,15 @@ func (w Workspace) NewDetachedCommitWorktree(commit string) (_ *DetachedWorktree
 	if err != nil {
 		return nil, err
 	}
-	rawParent, err := os.MkdirTemp("", "metasystem-landing-advance.")
+	parent, release, err := diskstore.ScratchDir("metasystem-landing-advance.")
 	if err != nil {
 		return nil, fmt.Errorf("gittree detached worktree: %w", err)
-	}
-	parent, err := filepath.Abs(rawParent)
-	if err == nil {
-		parent, err = filepath.EvalSymlinks(parent)
-	}
-	if err != nil {
-		cleanupErr := os.RemoveAll(rawParent)
-		if cleanupErr != nil {
-			cleanupErr = fmt.Errorf("remove temporary worktree directory: %w", cleanupErr)
-		}
-		return nil, errors.Join(fmt.Errorf("gittree detached worktree: resolve temporary directory: %w", err), cleanupErr)
 	}
 	detached := &DetachedWorktree{
 		control: w.at(top),
 		parent:  parent,
 		top:     filepath.Join(parent, "worktree-"+strings.TrimPrefix(filepath.Base(parent), "metasystem-landing-advance.")),
+		release: release,
 	}
 	defer func() {
 		if err != nil {
@@ -542,6 +537,9 @@ func (d *DetachedWorktree) Close() error {
 	err := errors.Join(cleanupErrs...)
 	if d.afterClose != nil {
 		err = errors.Join(err, d.afterClose(err))
+	}
+	if d.release != nil {
+		d.release()
 	}
 	return err
 }

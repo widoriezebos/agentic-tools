@@ -7,11 +7,13 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
 	"strings"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
@@ -242,7 +244,12 @@ func dispatch(args []string) int {
 	return dispatchWithFamilies(args, os.Stdout, os.Stderr, families())
 }
 
+// dispatchWithFamilies releases the process's scratch on the way to the exit
+// code, never in main (R2): a normal end leaves nothing, and a root a child
+// still holds, or that a goroutine still uses, stays for the sweeper's
+// process proof.
 func dispatchWithFamilies(args []string, stdout, stderr io.Writer, registered []family) int {
+	defer func() { _ = diskstore.ReleaseProcessScratch(context.Background()) }()
 	return dispatchWithFamiliesAndRepositoryTop(args, stdout, stderr, registered, stateroot.RepositoryTop)
 }
 
