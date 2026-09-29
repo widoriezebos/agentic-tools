@@ -151,7 +151,8 @@ func (f fixtureGit) tipOf(goal string) string {
 
 func (f fixtureGit) ResolveCommit(rev string) (string, error) {
 	switch {
-	case rev == "origin/main":
+	case rev == "origin/main", rev == "HEAD":
+		// HEAD is the checkout's, which a shaping remark keeps as provenance.
 		return commitMain, nil
 	case rev == "origin/"+review.Branch(reviewedGoal):
 		return f.tipOf(reviewedGoal), nil
@@ -308,7 +309,7 @@ var reviewAnswers = []fakeacp.Answer{
 			"publish and the reconcile.\n\n",
 		"## Proven\n\nOne test, `internal/owner/owner_test.go:5-13`, proves the happy path and assumes both calls " +
 			"return.\n\n",
-		"## Behaves\n\nNothing records it running; there is no evidence path on the design.\n",
+		"## Behaves\n\nThe build recorded evidence of it running; the Behaves walk puts it on the desk.\n",
 	}},
 	{When: reviewWalk, Chunks: []string{
 		"Built, in the order I am putting it on the desk.\n\n",

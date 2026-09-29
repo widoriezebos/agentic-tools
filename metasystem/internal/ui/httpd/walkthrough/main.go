@@ -550,6 +550,7 @@ func shutDown(server *http.Server, served <-chan error, serveErr error, cancelSe
 // notepad home and the Partner's conversations beside it.
 func removeFixture(checkout string) {
 	_ = os.RemoveAll(checkout)
+	_ = os.RemoveAll(evidenceDir(checkout))
 	_ = os.RemoveAll(filepath.Dir(fixtureStoreHome(checkout)))
 	_ = os.RemoveAll(fixtureConversations(checkout))
 }
@@ -706,6 +707,7 @@ func fixtureCheckout(calm bool, register string) (checkout string, err error) {
 	defer func() {
 		if err != nil {
 			_ = os.RemoveAll(directory)
+			_ = os.RemoveAll(evidenceDir(directory))
 		}
 	}()
 	for _, planted := range []struct{ relative, text string }{
@@ -749,6 +751,8 @@ func fixtureCheckout(calm bool, register string) (checkout string, err error) {
 		{shapingFile, shapingCode},
 		// The loop from the room's design (g1-s66).
 		{loopRecord, loopText},
+		// The design g1-s21's review copies its Evidence line from (g1-s71).
+		{whiteboardDesign, whiteboardDesignText(evidenceDir(directory))},
 	} {
 		full := filepath.Join(directory, filepath.FromSlash(planted.relative))
 		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
@@ -757,6 +761,9 @@ func fixtureCheckout(calm bool, register string) (checkout string, err error) {
 		if err := os.WriteFile(full, []byte(planted.text), 0o644); err != nil {
 			return "", fmt.Errorf("cannot plant %s: %v", planted.relative, err)
 		}
+	}
+	if err := plantEvidence(evidenceDir(directory)); err != nil {
+		return "", err
 	}
 	return directory, nil
 }
