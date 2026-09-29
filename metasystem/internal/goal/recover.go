@@ -514,6 +514,7 @@ func requestForEntry(e Endpoint, entry Entry, parkChecks ...func(string, string)
 		}
 		return answerSendBackRequest(r, target, answer), nil
 	case "done":
+		r.ForceBy = in.Args["force"]
 		return doneRequest(r, target, in.Args["conclusion"]), nil
 	case "park":
 		if cascade {
