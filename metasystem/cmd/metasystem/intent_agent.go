@@ -18,6 +18,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 )
 
 // agentOwners are the agent verbs' seams; the zero value is production.
@@ -30,6 +31,9 @@ type agentOwners struct {
 	lineage func() string
 	now     func() time.Time
 	publish func(home string, request board.Request, now time.Time) (board.Published, error)
+	// caller classifies who runs the command at the checkout: only the
+	// seat's own agent session (lease MAIN) marks what the inbox prints.
+	caller func(inv *intentInvocation, checkout string) string
 }
 
 func (o agentOwners) withDefaults() agentOwners {
@@ -57,6 +61,9 @@ func (o agentOwners) withDefaults() agentOwners {
 	if o.publish == nil {
 		o.publish = board.Publish
 	}
+	if o.caller == nil {
+		o.caller = agentCaller
+	}
 	return o
 }
 
@@ -73,6 +80,24 @@ func agentCheckout(inv *intentInvocation) (string, error) {
 		return "", fmt.Errorf("%s", notAnInstallation(path, err))
 	}
 	return layout.GitRoot, nil
+}
+
+// agentCaller is the lease class of this command's caller: a delegate job
+// by its marker, else the lease's classification of this process; "" when
+// it cannot be told.
+func agentCaller(inv *intentInvocation, checkout string) string {
+	if os.Getenv("METASYSTEM_HOOK_DELEGATE_JOB") != "" {
+		return lease.ClassDelegate
+	}
+	installation := checkout
+	if layout, err := inv.owners.resolver.ResolveLayout(checkout); err == nil {
+		installation = layout.InstallationRoot
+	}
+	result, err := lease.ClassifyVerbAt(checkout, installation, int64(os.Getpid()))
+	if err != nil {
+		return ""
+	}
+	return result.Class
 }
 
 // armedNicknames are the nicknames of the host registry's armed checkouts.
@@ -181,7 +206,7 @@ func agentIntentCommands() []intentCommand {
 		details: []string{
 			"I read what other agents asked this seat, or asked the goals it holds by the accepted ledger, and the replies to its own asks: each after its fixed preface. " + agentIsNotAPerson,
 			agentTextIsInformation,
-			"Printing a message marks it read for this seat, so running it again prints nothing pending; --all prints every message this seat has, read or not, and marks nothing. While the ledger cannot be read, goal messages are counted, not printed, and wait.",
+			"Run by this seat's own agent session, printing a message marks it read, so running it again prints nothing pending; run at a person's terminal or by a delegate job it shows them and marks nothing, so they still reach the agent. --all prints every message this seat has, read or not, and marks nothing. While the ledger cannot be read, goal messages are counted, not printed, and wait.",
 			"--verbose adds each message's time, thread and deadline.",
 		},
 		flags:    []intentFlag{{name: "all", usage: "print read messages too, and mark nothing"}, intentVerboseFlag, lineage},
@@ -437,10 +462,16 @@ func runAgentInbox(inv *intentInvocation) int {
 		shown = append(shown, item)
 	}
 	// Printed, then marked: a marker exists only for what this run showed,
-	// and nothing is marked when the output could not be written.
+	// nothing is marked when the output could not be written, and only the
+	// seat's own agent session marks: a person or a delegate job looking
+	// never swallows the agent's messages (the read's N-6).
 	printed := &agentWriteGuard{w: inv.stdout}
 	inv.stdout = printed
-	if !all {
+	marks := !all && seat.owners.caller(inv, seat.root) == lease.ClassMain
+	if !all && !marks && len(messages) > 0 {
+		result.text = append(result.text, "shown, not marked read: only this seat's own agent session marks its messages read, so they still reach it")
+	}
+	if marks {
 		defer func() {
 			if printed.err != nil {
 				return

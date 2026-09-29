@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 )
 
 // agentBed is one seat of a fixture host: its board home, its checkout, the
@@ -28,6 +29,7 @@ type agentBed struct {
 	ledger  board.Ownership
 	ledgerE error
 	reads   int
+	caller  string
 	publish func(home string, request board.Request, now time.Time) (board.Published, error)
 }
 
@@ -45,7 +47,7 @@ func newAgentBed(t *testing.T, self string) *agentBed {
 
 // as is the same host seen from another seat.
 func (b *agentBed) as(self string) *agentBed {
-	other := &agentBed{t: b.t, home: b.home, root: b.root, self: self, now: b.now, seats: b.seats, ledger: b.ledger, ledgerE: b.ledgerE}
+	other := &agentBed{t: b.t, home: b.home, root: b.root, self: self, now: b.now, seats: b.seats, ledger: b.ledger, ledgerE: b.ledgerE, caller: b.caller}
 	return other
 }
 
@@ -64,6 +66,12 @@ func (b *agentBed) owners() intentOwners {
 		lineage: func() string { return "lineage-" + b.self },
 		now:     func() time.Time { b.mu.Lock(); defer b.mu.Unlock(); return b.now },
 		publish: b.publish,
+		caller: func(*intentInvocation, string) string {
+			if b.caller == "" {
+				return lease.ClassMain
+			}
+			return b.caller
+		},
 	}}
 }
 
@@ -547,5 +555,33 @@ func TestIntentAgentConcludedGoalNotesTheAsker(t *testing.T) {
 	note := strings.TrimSuffix(entries[0].Name(), ".json")
 	if code, _, stderr := b.run("agent", "reply", note, "--text", "ok"); code != 2 || !strings.Contains(stderr, "takes no reply") {
 		t.Fatalf("a reply to a note = %d %q", code, stderr)
+	}
+}
+
+// TestIntentAgentInboxMarksOnlyForTheSeatsAgent (R26; the read's N-6): a
+// person at a terminal or a delegate job reading the inbox sees the pending
+// messages without marking them, and is told so; the seat's own agent
+// session then still receives them, and its read marks them.
+func TestIntentAgentInboxMarksOnlyForTheSeatsAgent(t *testing.T) {
+	t.Parallel()
+	b := newAgentBed(t, "m1a")
+	b.run("agent", "ask", "m1b", "--text", "is it green?")
+	for _, class := range []string{lease.ClassHuman, lease.ClassDelegate} {
+		looker := b.as("m1b")
+		looker.caller = class
+		code, stdout, _ := looker.run("agent", "inbox")
+		if code != 0 || !strings.Contains(stdout, "is it green?") || !strings.Contains(stdout, "not marked read") {
+			t.Fatalf("an inbox read by %s = %d %q", class, code, stdout)
+		}
+		if delivered, _ := filepath.Glob(filepath.Join(board.Dir(b.home), "m1b", "mailbox", "delivered", "*", "*")); len(delivered) != 0 {
+			t.Fatalf("an inbox read by %s marked %v", class, delivered)
+		}
+	}
+	agent := b.as("m1b")
+	if _, stdout, _ := agent.run("agent", "inbox"); !strings.Contains(stdout, "is it green?") || strings.Contains(stdout, "not marked read") {
+		t.Fatalf("the seat's agent inbox = %q", stdout)
+	}
+	if _, stdout, _ := agent.run("agent", "inbox"); !strings.Contains(stdout, "nothing pending") {
+		t.Fatalf("after the agent read it = %q", stdout)
 	}
 }
