@@ -38,6 +38,7 @@ func keysOf(t *testing.T, raw json.RawMessage) []string {
 
 // The API's shape is fixed: every key is present, absent values are null.
 func TestViewShapeWithoutALane(t *testing.T) {
+	t.Parallel()
 	home, _, _ := laneDirs(t)
 	view := BuildView(viewSources(home, false, nil))
 	data, err := json.Marshal(view)
@@ -68,6 +69,7 @@ func joinedUnit(goal, seat string) batch.Unit {
 
 // A running owner with one batch proving and the next collecting.
 func TestViewProvingBatchAndNext(t *testing.T) {
+	t.Parallel()
 	home, root, _ := laneDirs(t)
 	if _, err := Resolve(home, root, "m1e", laneNow, true); err != nil {
 		t.Fatal(err)
@@ -108,6 +110,7 @@ func TestViewProvingBatchAndNext(t *testing.T) {
 
 // A paused lane and a given-up keeper each say what a person runs.
 func TestViewPausedAndGivenUp(t *testing.T) {
+	t.Parallel()
 	home, root, _ := laneDirs(t)
 	if _, err := Resolve(home, root, "m1e", laneNow, true); err != nil {
 		t.Fatal(err)

@@ -25,6 +25,7 @@ func (o *fakeOwner) keeper(home string, clock *time.Time) Keeper {
 }
 
 func TestKeeperDoesNothingWithoutALane(t *testing.T) {
+	t.Parallel()
 	home, _, _ := laneDirs(t)
 	clock := laneNow
 	owner := &fakeOwner{}
@@ -37,6 +38,7 @@ func TestKeeperDoesNothingWithoutALane(t *testing.T) {
 
 // A dead owner is restarted on the next cycle; a running one is left alone.
 func TestKeeperRestartsDeadOwner(t *testing.T) {
+	t.Parallel()
 	home, root, _ := laneDirs(t)
 	if _, err := Resolve(home, root, "m1e", laneNow, true); err != nil {
 		t.Fatal(err)
@@ -63,6 +65,7 @@ func TestKeeperRestartsDeadOwner(t *testing.T) {
 
 // Two seats' stewards find the owner dead in the same minute: one starts it.
 func TestKeeperTwoStewardsStartOnce(t *testing.T) {
+	t.Parallel()
 	home, root, _ := laneDirs(t)
 	if _, err := Resolve(home, root, "m1e", laneNow, true); err != nil {
 		t.Fatal(err)
@@ -84,6 +87,7 @@ func TestKeeperTwoStewardsStartOnce(t *testing.T) {
 // on at the fifth death with a line a person can act on; landing start's
 // reset lets the keeper restart it again.
 func TestKeeperGivesUpAfterFiveAndRestartResets(t *testing.T) {
+	t.Parallel()
 	home, root, _ := laneDirs(t)
 	if _, err := Resolve(home, root, "m1e", laneNow, true); err != nil {
 		t.Fatal(err)
@@ -132,6 +136,7 @@ func TestKeeperGivesUpAfterFiveAndRestartResets(t *testing.T) {
 // A start that fails is a death like any other, and its error is kept for
 // the person.
 func TestKeeperKeepsStartError(t *testing.T) {
+	t.Parallel()
 	home, root, _ := laneDirs(t)
 	if _, err := Resolve(home, root, "m1e", laneNow, true); err != nil {
 		t.Fatal(err)
@@ -147,6 +152,7 @@ func TestKeeperKeepsStartError(t *testing.T) {
 
 // A person's pause holds the keeper until landing start resumes.
 func TestKeeperHonoursPause(t *testing.T) {
+	t.Parallel()
 	home, root, _ := laneDirs(t)
 	if _, err := Resolve(home, root, "m1e", laneNow, true); err != nil {
 		t.Fatal(err)

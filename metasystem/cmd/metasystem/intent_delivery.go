@@ -19,7 +19,6 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/authority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
@@ -27,6 +26,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/landpath"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/project"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
@@ -433,22 +433,11 @@ func intentBatchMember(unit batch.Unit, request batchJoinRequest, branchTip stri
 	return !unit.GoalLast && unit.Builds[len(unit.Builds)-1].Commit == request.Through
 }
 
-// productionIntentBatchRoot reports whether landing.batch-root is set and,
-// when it is, the checkout the existing resolver admits.
+// productionIntentBatchRoot reports whether this installation lands through
+// a lane and, when it does, the checkout: its own landing.batch-root against
+// the host's one landing lane (U12, landing_lane.go).
 func productionIntentBatchRoot(root string, now time.Time) (string, bool, error) {
-	confPath := filepath.Join(root, "metasystem.conf")
-	raw, _, err := config.Get(config.GetParams{Key: config.BatchRootKey, ConfPath: confPath, Default: "", DefaultSet: true})
-	if err != nil {
-		return "", false, err
-	}
-	if strings.TrimSpace(raw) == "" {
-		return "", false, nil
-	}
-	settings, err := config.ResolveBatchLanding(confPath, root, func() time.Time { return now })
-	if err != nil {
-		return "", true, err
-	}
-	return settings.Root, true, nil
+	return productionLandingLaneSeams().batchRoot(root, now)
 }
 
 // ---- shared job-store reads
@@ -1534,6 +1523,10 @@ func runIntentLand(inv *intentInvocation) int {
 func (inv *intentInvocation) landingBatchRoot(targets []intentTarget) (string, bool, *intentResult) {
 	owners := inv.delivery()
 	root, configured, err := owners.batchRoot(inv.layout.InstallationRoot, owners.now())
+	var laneRefusal *lane.Refusal
+	if errors.As(err, &laneRefusal) {
+		return "", configured, &intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: laneRefusal.Error(), Decision: laneRefusal.Fix}
+	}
 	if err != nil {
 		return "", configured, &intentResult{Targets: targets, Outcome: intentRefused, code: 1,
 			Summary: "the landing batch policy is unreadable: " + err.Error(), Decision: "correct landing.batch-root in metasystem.conf"}

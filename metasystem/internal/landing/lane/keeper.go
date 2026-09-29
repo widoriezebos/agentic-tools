@@ -192,7 +192,7 @@ func (k Keeper) launch(root string, state KeeperState, now time.Time) string {
 // owner: what died, how often, since when, what to read and what to run.
 func GiveUpLine(root string, state KeeperState) string {
 	line := fmt.Sprintf("the landing lane owner at %s died %d times since %s and was restarted %d times; restarts stopped at %s",
-		root, state.Failures, localText(state.Since), state.Restarts, localText(state.GaveUp))
+		root, state.Failures, LocalText(state.Since), state.Restarts, LocalText(state.GaveUp))
 	if state.LastError != "" {
 		line += "; the last start failed: " + state.LastError
 	}
@@ -205,12 +205,13 @@ func LastErrorPath(root string) string {
 }
 
 func pausedLine(root string, pause Pause) string {
-	return fmt.Sprintf("landing lane owner at %s is paused by %s at %s; metasystem landing start resumes it", root, pause.By, localText(pause.At))
+	return fmt.Sprintf("landing lane owner at %s is paused by %s at %s; metasystem landing start resumes it", root, pause.By, LocalText(pause.At))
 }
 
 func localClock(at time.Time) string { return at.Local().Format("15:04 MST") }
 
-func localText(stamp string) string {
+// LocalText is a recorded RFC 3339 time as a person reads it, in local time.
+func LocalText(stamp string) string {
 	at, err := time.Parse(time.RFC3339, stamp)
 	if err != nil {
 		return "an unrecorded time"

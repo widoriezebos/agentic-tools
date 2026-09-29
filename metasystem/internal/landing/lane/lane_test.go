@@ -28,6 +28,7 @@ func laneDirs(t *testing.T) (home, first, second string) {
 // Two seats whose settings name the same checkout: the first registers it,
 // the second uses the same record, and neither writes a second one.
 func TestResolveRegistersFirstSeatAndUsesItAfter(t *testing.T) {
+	t.Parallel()
 	home, root, _ := laneDirs(t)
 	first, err := Resolve(home, root, "m1e", laneNow, true)
 	if err != nil || first.Root != resolved(root) || !first.Registered {
@@ -54,6 +55,7 @@ func TestResolveRegistersFirstSeatAndUsesItAfter(t *testing.T) {
 // A seat whose setting names another checkout is refused in plain words
 // naming both paths and both ways out; the record is unchanged.
 func TestResolveRefusesAnotherSeatRoot(t *testing.T) {
+	t.Parallel()
 	home, first, second := laneDirs(t)
 	if _, err := Resolve(home, first, "m1e", laneNow, true); err != nil {
 		t.Fatal(err)
@@ -77,6 +79,7 @@ func TestResolveRefusesAnotherSeatRoot(t *testing.T) {
 
 // A seat without a setting (the UI seat) uses the host's lane.
 func TestResolveUnsetSeatUsesHostRecord(t *testing.T) {
+	t.Parallel()
 	home, root, _ := laneDirs(t)
 	none, err := Resolve(home, "", "ui", laneNow, true)
 	if err != nil || none.Root != "" {
@@ -94,6 +97,7 @@ func TestResolveUnsetSeatUsesHostRecord(t *testing.T) {
 // A registered checkout that is gone is reported, never replaced by a seat's
 // other setting.
 func TestResolveReportsGoneRoot(t *testing.T) {
+	t.Parallel()
 	home, first, second := laneDirs(t)
 	if _, err := Resolve(home, first, "m1e", laneNow, true); err != nil {
 		t.Fatal(err)
@@ -117,6 +121,7 @@ func TestResolveReportsGoneRoot(t *testing.T) {
 // Register moves the lane on a person's word, is unchanged on a repeat, and
 // refuses a path that is no directory.
 func TestRegisterMovesUnchangedAndRefuses(t *testing.T) {
+	t.Parallel()
 	home, first, second := laneDirs(t)
 	if _, changed, err := Register(home, first, "Wido", laneNow); err != nil || !changed {
 		t.Fatalf("first register = %v, %v", changed, err)
@@ -139,6 +144,7 @@ func TestRegisterMovesUnchangedAndRefuses(t *testing.T) {
 // One batch proves at a time on the host: the proving flock is exclusive,
 // even between two takes in one process, and names its holder.
 func TestProvingLockIsExclusiveAndNamesHolder(t *testing.T) {
+	t.Parallel()
 	home, _, _ := laneDirs(t)
 	release, holder, err := TryProving(home)
 	if err != nil || release == nil || holder != "" {
@@ -160,6 +166,7 @@ func TestProvingLockIsExclusiveAndNamesHolder(t *testing.T) {
 
 // The kernel releases the proving flock when its holder dies.
 func TestProvingLockReleasedWhenHolderDies(t *testing.T) {
+	t.Parallel()
 	home, _, _ := laneDirs(t)
 	executable, err := os.Executable()
 	if err != nil {

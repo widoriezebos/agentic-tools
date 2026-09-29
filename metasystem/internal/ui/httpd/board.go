@@ -19,6 +19,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/fleet"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/snapshot"
 )
@@ -41,6 +42,9 @@ type BoardSource struct {
 	Dial   func() (net.Conn, error)
 	Retry  func() (<-chan time.Time, func())
 	Silent func(time.Duration) <-chan time.Time
+	// Lane reads the host's landing lane (U12) at the server's clock; nil
+	// serves a lane with no root.
+	Lane func(now time.Time) lane.View
 }
 
 // boardPayload is the classified board, and each seat's line as a person
@@ -48,6 +52,8 @@ type BoardSource struct {
 type boardPayload struct {
 	board.View
 	Lines []boardLine `json:"lines"`
+	// Lane is the host's landing lane, the view landing status renders.
+	Lane lane.View `json:"lane"`
 }
 
 type boardLine struct {
@@ -69,11 +75,15 @@ func (h *handler) board(w http.ResponseWriter) {
 
 func (h *handler) boardView(source *BoardSource) boardPayload {
 	now := h.now()
+	laneView := lane.View{Owner: lane.OwnerView{State: lane.OwnerNotStarted}, Summary: "this engine was built without a landing lane reader"}
+	if source.Lane != nil {
+		laneView = source.Lane(now)
+	}
 	view := board.View{Bridge: board.BridgeState(source.Home), Seats: []board.SeatView{}}
 	seats, err := source.Seats()
 	if err != nil {
 		view.Reason = "registry: " + err.Error()
-		return boardPayload{View: view, Lines: []boardLine{}}
+		return boardPayload{View: view, Lines: []boardLine{}, Lane: laneView}
 	}
 	picture, _ := board.Read(source.Home, seats, source.Prober, now, source.Stall)
 	if claims, ok := h.boardClaims(); ok {
@@ -86,7 +96,7 @@ func (h *handler) boardView(source *BoardSource) boardPayload {
 	for _, seat := range view.Seats {
 		lines = append(lines, boardLine{Machine: seat.Machine, Text: seat.Text(now, time.Local)})
 	}
-	return boardPayload{View: view, Lines: lines}
+	return boardPayload{View: view, Lines: lines, Lane: laneView}
 }
 
 // boardClaims are the live claims of the accepted ledger this server reads;
