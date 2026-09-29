@@ -90,8 +90,12 @@ type intentCommand struct {
 var (
 	intentRepoFlag = intentFlag{name: "repo", aliases: []string{"root"}, value: "PATH",
 		usage: "the repository, or any directory or file inside it (default: the current directory)"}
-	intentJSONFlag   = intentFlag{name: "json", usage: "print one JSON result instead of text"}
-	intentTargetFlag = intentFlag{name: "id", aliases: []string{"goal"}, value: "G",
+	intentJSONFlag = intentFlag{name: "json", usage: "print one JSON result instead of text"}
+	// intentVerboseFlag is the one spelling of "every item, one line each"
+	// for a command whose text groups repeated findings; a command opts in
+	// by listing it.
+	intentVerboseFlag = intentFlag{name: "verbose", usage: "print every item on its own line instead of the grouped summary"}
+	intentTargetFlag  = intentFlag{name: "id", aliases: []string{"goal"}, value: "G",
 		usage: "the goal, as an alternative to naming it first", advanced: true}
 	intentByFlag = intentFlag{name: "by", value: "NAME", advanced: true,
 		usage: "the acting person's name; filled from the enrolled terminal's proof when omitted"}
