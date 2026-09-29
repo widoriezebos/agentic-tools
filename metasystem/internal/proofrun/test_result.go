@@ -417,22 +417,6 @@ type TestResult struct {
 	semanticNow                    time.Time
 }
 
-// FailingGroupSetComplete reports whether the result contains the terminal
-// outcome of every selected group. The group evidence fallback keeps
-// delivery results written before the run-level field was introduced
-// readable without mistaking a fail-fast run for a complete failing set.
-func FailingGroupSetComplete(result TestResult) bool {
-	if result.StoppedAtFirstFailure {
-		return false
-	}
-	for _, group := range result.Groups {
-		if group.Status == "not-run" {
-			return false
-		}
-	}
-	return true
-}
-
 func (result *TestResult) RecomputeDelivery() {
 	byID := map[string]GroupResult{}
 	for _, group := range result.Groups {
