@@ -150,6 +150,24 @@ func TestWalkthroughSIGTERMRemovesItsCheckout(t *testing.T) {
 	}
 }
 
+// With a Partner, the conversations directory beside the checkout goes too:
+// the walkthrough leaves nothing in its temp root (412 empty
+// metasystem-walkthrough-*-conversations directories were in the host temp
+// root on 2026-09-29).
+func TestWalkthroughWithAPartnerRemovesItsConversations(t *testing.T) {
+	t.Parallel()
+	run := startWalkthrough(t, "-partner", "fake", "-sat-before-rooms", "wido")
+	if _, err := os.Stat(run.checkout + "-conversations"); err != nil {
+		t.Fatalf("the Partner has no conversations directory to remove: %v", err)
+	}
+	if code := run.terminate(t); code != 0 {
+		t.Fatalf("exit %d, stderr %s", code, run.stderr.String())
+	}
+	if entries, err := os.ReadDir(run.temp); err != nil || len(entries) != 0 {
+		t.Fatalf("the temp root holds %v after the exit (%v)", entries, err)
+	}
+}
+
 // A connected event stream is ended by the server: the handler's context is
 // cancelled, the connection closes within the bound, the exit is 0 and the
 // checkout is gone.

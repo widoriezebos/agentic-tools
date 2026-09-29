@@ -1,11 +1,11 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { createServer, type ServerResponse } from "node:http";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { gunzipSync } from "node:zlib";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, onTestFinished } from "vitest";
 
 import { auditArgs, DECLARED_REGISTRY, runAudit } from "./bundle.mjs";
 
@@ -162,7 +162,10 @@ function ambientRegistry(): Promise<Recorder> {
  * and takes each node's dev, optional, and peer flag from its entry.
  */
 function fixtureProject(): string {
+  // Removed when the test ends, so a run leaves nothing in the temp root
+  // (cmd/metasystem TestAuditTestsWriteNoHostTemp).
   const dir = mkdtempSync(path.join(tmpdir(), "metasystem-audit-"));
+  onTestFinished(() => rmSync(dir, { recursive: true, force: true }));
   const entry = (name: string, extra: Record<string, unknown>) => ({
     version: "1.0.0",
     resolved: `${DECLARED_REGISTRY}${name}/-/${name}-1.0.0.tgz`,

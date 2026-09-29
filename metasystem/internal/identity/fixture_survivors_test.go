@@ -203,11 +203,10 @@ func TestFixtureScanUsesOwnershipRecordWhereTestRan(t *testing.T) {
 }
 func fixtureRecordExecutable(t *testing.T, directoryPrefix string, key FixtureKey) string {
 	t.Helper()
-	directory, err := os.MkdirTemp("/tmp", directoryPrefix)
+	directory, err := os.MkdirTemp(t.TempDir(), directoryPrefix)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = os.RemoveAll(directory) })
 	encoded, err := EncodeKey(key)
 	if err != nil {
 		t.Fatal(err)

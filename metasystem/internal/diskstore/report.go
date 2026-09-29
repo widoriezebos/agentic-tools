@@ -150,9 +150,15 @@ func MachineReportPath(homeStateRoot string) string {
 	return filepath.Join(homeStateRoot, "stores", "report.json")
 }
 
-// Lines renders the report for a person: short lines, each kept or pending
-// item with its reason and the command to run.
-func (r Report) Lines() []string {
+// Lines renders the report for a person: short lines, a finding repeated
+// for many items one line with its count and three of them, each with its
+// reason and the command to run.
+func (r Report) Lines() []string { return r.render(false) }
+
+// VerboseLines is Lines with every item on its own line (--verbose).
+func (r Report) VerboseLines() []string { return r.render(true) }
+
+func (r Report) render(verbose bool) []string {
 	var lines []string
 	title := "machine"
 	if r.Kind == "checkout" {
@@ -192,11 +198,11 @@ func (r Report) Lines() []string {
 	for _, item := range r.Planned {
 		planned = append(planned, [2]string{item.Path, item.Verdict.Reason})
 	}
-	lines = append(lines, groupedReleases("released", released)...)
-	lines = append(lines, groupedReleases("would release", planned)...)
-	lines = append(lines, groupedLines("kept", r.Kept)...)
-	lines = append(lines, groupedLines("pending", r.Pending)...)
-	lines = append(lines, groupedStrays(r.Strays)...)
+	lines = append(lines, groupedReleases("released", released, verbose)...)
+	lines = append(lines, groupedReleases("would release", planned, verbose)...)
+	lines = append(lines, groupedLines("kept", r.Kept, verbose)...)
+	lines = append(lines, groupedLines("pending", r.Pending, verbose)...)
+	lines = append(lines, groupedStrays(r.Strays, verbose)...)
 	for _, item := range r.Foreign {
 		lines = append(lines, fmt.Sprintf("  not the engine's: %s (%s)", item.Path, item.Verdict.Reason))
 	}
@@ -224,8 +230,9 @@ const examplePaths = 3
 
 // groupedLines renders kept or pending lines, one line per finding: lines
 // with the same class, reason and command are one line with their count and
-// at most three example paths, at the place of the first.
-func groupedLines(kind string, lines []Line) []string {
+// at most three example paths, at the place of the first. Verbose keeps
+// every line.
+func groupedLines(kind string, lines []Line, verbose bool) []string {
 	type group struct {
 		first Line
 		paths []string
@@ -235,6 +242,9 @@ func groupedLines(kind string, lines []Line) []string {
 	groups := map[string]*group{}
 	for _, line := range lines {
 		key := line.Class + "\x00" + line.Reason + "\x00" + line.Command
+		if verbose {
+			key += "\x00" + line.Path + "\x00" + fmt.Sprint(len(order))
+		}
 		if groups[key] == nil {
 			groups[key] = &group{first: line}
 			order = append(order, key)
@@ -261,19 +271,26 @@ func groupedLines(kind string, lines []Line) []string {
 }
 
 // groupedReleases renders released or planned paths with their reasons,
-// one line per reason with its count and three examples.
-func groupedReleases(kind string, releases [][2]string) []string {
+// one line per reason with its count and three examples; verbose, one line
+// per path.
+func groupedReleases(kind string, releases [][2]string, verbose bool) []string {
 	var order []string
 	paths := map[string][]string{}
-	for _, release := range releases {
-		if paths[release[1]] == nil {
-			order = append(order, release[1])
+	reasons := map[string]string{}
+	for index, release := range releases {
+		key := release[1]
+		if verbose {
+			key = fmt.Sprint(index)
 		}
-		paths[release[1]] = append(paths[release[1]], release[0])
+		if paths[key] == nil {
+			order = append(order, key)
+		}
+		paths[key] = append(paths[key], release[0])
+		reasons[key] = release[1]
 	}
 	var rendered []string
-	for _, reason := range order {
-		if group := paths[reason]; len(group) == 1 {
+	for _, key := range order {
+		if group, reason := paths[key], reasons[key]; len(group) == 1 {
 			rendered = append(rendered, fmt.Sprintf("  %s: %s (%s)", kind, group[0], reason))
 		} else {
 			rendered = append(rendered, fmt.Sprintf("  %s: %d items (%s)%s", kind, len(group), reason, examples(group)))
@@ -288,7 +305,8 @@ var strayAgePattern = regexp.MustCompile(`, written [0-9hms.]+ ago:`)
 // groupedStrays renders the strays, one line per finding: strays with the
 // same reason (whatever their ages) and command are one line with their
 // count, total size and the three largest, at the place of the first.
-func groupedStrays(strays []Item) []string {
+// Verbose gives each stray its own line.
+func groupedStrays(strays []Item, verbose bool) []string {
 	type group struct {
 		reason string
 		items  []Item
@@ -298,6 +316,9 @@ func groupedStrays(strays []Item) []string {
 	for _, stray := range strays {
 		reason := strayAgePattern.ReplaceAllString(stray.Verdict.Reason, ", written less than a day ago:")
 		key := reason + "\x00" + stray.Verdict.Command
+		if verbose {
+			key = stray.Path + "\x00" + fmt.Sprint(len(order))
+		}
 		if groups[key] == nil {
 			groups[key] = &group{reason: reason}
 			order = append(order, key)
@@ -409,4 +430,100 @@ func formatBytes(bytes int64) string {
 		return fmt.Sprintf("%.1f KiB", float64(bytes)/(1<<10))
 	}
 	return fmt.Sprintf("%d B", bytes)
+}
+
+// OutcomeLines renders a person's act for a person: one line per outcome
+// and finding with the count, the total size and the largest three (many
+// names the items: "strays"), done before kept; verbose, one line per item
+// with its own reason and command.
+func OutcomeLines(many string, outcomes []PersonOutcome, verbose bool) []string {
+	var lines []string
+	if verbose {
+		for _, outcome := range outcomes {
+			if outcome.Done {
+				lines = append(lines, fmt.Sprintf("%s: %s", outcome.Reason, outcome.Path))
+				continue
+			}
+			line := fmt.Sprintf("kept %s: %s", outcome.Path, outcome.Reason)
+			if outcome.Command != "" {
+				line += "; run " + outcome.Command
+			}
+			lines = append(lines, line)
+		}
+		return lines
+	}
+	type group struct{ items []PersonOutcome }
+	var order []string
+	groups := map[string]*group{}
+	for _, done := range []bool{true, false} {
+		for _, outcome := range outcomes {
+			if outcome.Done != done {
+				continue
+			}
+			key := fmt.Sprint(done) + "\x00" + outcome.Finding + "\x00" + outcome.FindingCommand
+			if groups[key] == nil {
+				groups[key] = &group{}
+				order = append(order, key)
+			}
+			groups[key].items = append(groups[key].items, outcome)
+		}
+	}
+	for _, key := range order {
+		items := groups[key].items
+		first := items[0]
+		if len(items) == 1 {
+			switch {
+			case first.Done && first.Bytes > 0:
+				lines = append(lines, fmt.Sprintf("  %s: %s, %s", first.Reason, first.Path, formatBytes(first.Bytes)))
+			case first.Done:
+				lines = append(lines, fmt.Sprintf("  %s: %s", first.Reason, first.Path))
+			default:
+				line := fmt.Sprintf("  kept: %s: %s", first.Path, first.Reason)
+				if first.Command != "" {
+					line += "; run " + first.Command
+				}
+				lines = append(lines, line)
+			}
+			continue
+		}
+		largest := append([]PersonOutcome(nil), items...)
+		sort.SliceStable(largest, func(i, j int) bool { return largest[i].Bytes > largest[j].Bytes })
+		var total int64
+		for _, item := range items {
+			total += item.Bytes
+		}
+		var named []string
+		for _, item := range largest[:min(len(largest), examplePaths)] {
+			if item.Bytes > 0 {
+				named = append(named, item.Path+" "+formatBytes(item.Bytes))
+			} else {
+				named = append(named, item.Path)
+			}
+		}
+		head := fmt.Sprintf("%d %s", len(items), many)
+		if total > 0 {
+			head += ", " + formatBytes(total)
+		}
+		line := fmt.Sprintf("  %s: %s", first.Finding, head)
+		if !first.Done {
+			line = fmt.Sprintf("  kept: %s: %s", head, first.Finding)
+			if first.FindingCommand != "" {
+				line += "; run " + first.FindingCommand
+			}
+		}
+		lines = append(lines, line+" (largest: "+strings.Join(named, ", ")+")")
+	}
+	return lines
+}
+
+// Freed is the space a person's act freed: what it removed or released
+// itself, never what was already gone.
+func Freed(outcomes []PersonOutcome) int64 {
+	var freed int64
+	for _, outcome := range outcomes {
+		if outcome.Done && outcome.Reason != "already gone" {
+			freed += outcome.Bytes
+		}
+	}
+	return freed
 }
