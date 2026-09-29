@@ -401,4 +401,8 @@ typecheck, the bundle rebuilt under Node 24; the whole `cmd/metasystem`
 package left to the batch's suite, with
 `TestEveryStatefulActionRepeatsAsSuccess/app_stop` named to it, which
 failed once under the builder's combined load and passed alone. The
-landing commit is the batch's.
+landing commit is the batch's: main `68a7453f4` (batch 18, 2026-09-29
+13:15, with g1-s73 and the D14 bridge Part 1; the batch added
+`TestJoinGatesFillsOnlyReviewRowsOfAKnownTree` to bring `internal/backlog`
+back over its 96.6 floor, which this slice had let slip to 95.6, and
+ran the nineteen named tests green on the host).
