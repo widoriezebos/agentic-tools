@@ -97,3 +97,28 @@ func TestAWordAtATipTheBranchLeftNeedsTheWordAgain(t *testing.T) {
 	unread := wordOf(reviewed(waitingToLand(), goal.VerdictClearToLand), nil)
 	testutil.Expect(t, "a word whose branch was not read", *unread, GateWord{Kind: goal.VerdictClearToLand, By: "Wido", Tip: verdictTip})
 }
+
+// JoinGates reads the gate only where it can and only where it applies
+// (batch 18, covering g1-s70's new JoinGates): with no tree it fills nothing,
+// and a row outside the Review lane carries no gate even when its goal is live.
+func TestJoinGatesFillsOnlyReviewRowsOfAKnownTree(t *testing.T) {
+	t.Parallel()
+	at := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	f := waitingToLand()
+	tree := treeOf(f)
+
+	rows := []Row{{ID: f.Id, Lane: LaneReview}}
+	JoinGates(rows, nil, cardSettings, at, nil)
+	if rows[0].Gate != nil {
+		t.Fatalf("no tree, yet a gate: %+v", rows[0].Gate)
+	}
+
+	rows = []Row{{ID: f.Id, Lane: LaneInProgress}, {ID: f.Id, Lane: LaneReview}}
+	JoinGates(rows, tree, cardSettings, at, nil)
+	if rows[0].Gate != nil {
+		t.Fatalf("an In Progress row carries a gate: %+v", rows[0].Gate)
+	}
+	if rows[1].Gate == nil {
+		t.Fatal("the Review row of the same live goal carries no gate")
+	}
+}
