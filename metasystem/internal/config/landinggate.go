@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -37,12 +38,16 @@ type LandingGate struct {
 // the default: a gate that silently ran on another threshold is the failure
 // the layered read exists to prevent.
 func ResolveLandingGate(confPath string) (LandingGate, error) {
+	return resolveLandingGate(confPath, os.LookupEnv)
+}
+
+func resolveLandingGate(confPath string, lookupEnv func(string) (string, bool)) (LandingGate, error) {
 	if confPath != "" && !isFile(confPath) && !isFile(confPath+".local") {
 		// No configuration file at all: the environment over the defaults.
 		confPath = ""
 	}
 	read := func(key string) (LandingGateFact, error) {
-		params := GetParams{Key: key, ConfPath: confPath}
+		params := GetParams{Key: key, ConfPath: confPath, LookupEnv: lookupEnv}
 		value, _, err := Get(params)
 		if err != nil {
 			return LandingGateFact{}, err
