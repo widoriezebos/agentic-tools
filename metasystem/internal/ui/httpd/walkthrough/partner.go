@@ -290,7 +290,7 @@ func fixtureConversations(checkout string) string {
 	return filepath.Join(filepath.Dir(checkout), filepath.Base(checkout)+"-conversations")
 }
 
-func fakePartner(checkout string, facts partner.Facts) *partner.Service {
+func fakePartner(checkout string, pause time.Duration, facts partner.Facts) *partner.Service {
 	runtime := partner.Runtime{
 		Name:  "fake",
 		Model: "fake-1",
@@ -314,7 +314,7 @@ func fakePartner(checkout string, facts partner.Facts) *partner.Service {
 		Permission:     "Write plans/goals/waiting.md",
 		PermissionKind: "edit",
 		Chunks:         fakeAnswer,
-		Pause:          450 * time.Millisecond,
+		Pause:          pause,
 	}))
 	conversations := fixtureConversations(checkout)
 	service := partner.NewService(runtime, host,

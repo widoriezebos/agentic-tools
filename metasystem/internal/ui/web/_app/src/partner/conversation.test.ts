@@ -77,6 +77,7 @@ describe("the conversation", () => {
     expect(busy(store)).toBe(true);
     expect(store.live).toEqual({
       turn: "t1",
+      startedAt: "",
       seq: 3,
       text: "half an ",
       activity: ["Read plans/goals/backlog.md"],
@@ -202,6 +203,7 @@ describe("the conversation", () => {
     store = asked(store, "t1", "k1", "which goals are ready?", { section: "Backlog", path: "/backlog" }, "");
     expect(store.live).toEqual({
       turn: "t1",
+      startedAt: "",
       seq: 2,
       text: "Two goals ",
       activity: ["Read plans/goals/backlog.md"],

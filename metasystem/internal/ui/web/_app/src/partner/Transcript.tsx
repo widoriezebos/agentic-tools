@@ -23,6 +23,7 @@ import { InterfaceLinks, Markdown } from "../project/Markdown";
 import { DrawingOrigin } from "../drawing/Drawing";
 import { Anchored, useDeskAnchors } from "../review/anchors";
 import { Chip } from "../shell/controls";
+import { LiveLine } from "../shell/LiveLine";
 import { Trouble } from "../shell/Trouble";
 import { chipLine } from "../shell/troubling";
 
@@ -383,11 +384,12 @@ function AskedFrom({ capture }: { capture: Page }) {
 /**
  * The turn that is running.
  *
- * Until the first words arrive, the answer's place holds one italic line saying
- * what the Partner is doing now, under a pulse a reduced-motion preference
- * turns off. What it looked at is an account of a turn that is over, so the
- * list waits for the end of it; Stop is in the composer, where every other
- * thing a human presses is.
+ * Until the first words arrive, the answer's place holds the live line: the
+ * breathing dot, what the Partner is doing now, how much it has read and how
+ * long it has been at it (g1-s74 D1). The first words replace the whole line.
+ * What it looked at is an account of a turn that is over, so the list waits
+ * for the end of it; Stop is in the composer, where every other thing a human
+ * presses is.
  */
 function Running() {
   const { store } = usePartner();
@@ -401,7 +403,9 @@ function Running() {
         {live.text !== "" ? (
           <Paragraphs text={live.text} />
         ) : (
-          <p className="ms-partner-working">{live.doing === "" ? "Thinking…" : live.doing}</p>
+          <p className="ms-partner-live">
+            <LiveLine live={live} />
+          </p>
         )}
         {/* A card arrives as the server admits it, which can be before the
             answer's last word. It is under the words either way. */}

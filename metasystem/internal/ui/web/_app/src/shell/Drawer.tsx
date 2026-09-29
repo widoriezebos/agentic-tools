@@ -1,9 +1,10 @@
-import { ChevronDown, ChevronUp, Maximize2 } from "lucide-react";
+import { ChevronDown, ChevronUp, Maximize2, Square } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { useNavigate } from "react-router";
 
 import { Composer, COMPOSER_HINT, COMPOSER_LABEL } from "./Composer";
-import { IconButton } from "./controls";
+import { Button, IconButton } from "./controls";
+import { LiveDot, LiveLine } from "./LiveLine";
 import { Help } from "../help/Help";
 import { draftChipIn } from "../partner/attachments";
 import { AttachmentChip } from "../partner/Chips";
@@ -119,7 +120,7 @@ export function Drawer({
   // one card at a time.
   const asked = useRef(false);
   const {
-    draft, setDraft, busy, attachments, detach, deposits,
+    draft, setDraft, busy, stop, store, attachments, detach, deposits,
     proposalsLine, proposalsWaiting, showProposals,
   } = usePartner();
   // The draft a sheet handed over, where a sheet has. Only the draft: the
@@ -163,27 +164,53 @@ export function Drawer({
       <div className="ms-drawer-bar">
         <span className="ms-drawer-who">
           <span className="ms-drawer-title">Project Partner</span>
+          {/* The dot alone while the drawer is open, for when the transcript
+              is scrolled away from the turn that is running; closed, the bar's
+              live line is the mark (g1-s74 D3b as amended). */}
+          {busy && open && <LiveDot className="ms-drawer-title-dot" />}
           <Help id="partner" />
           <FontControl />
         </span>
         {!open && (
           <>
-            <label className="ms-visually-hidden" htmlFor="drawer-composer">
-              {COMPOSER_LABEL}
-            </label>
-            <input
-              id="drawer-composer"
-              className="ms-drawer-field"
-              type="text"
-              placeholder={COMPOSER_HINT}
-              value={draft}
-              disabled={busy}
-              onChange={(event) => {
-                setDraft(event.target.value);
-                onCompose();
-              }}
-              onFocus={onCompose}
-            />
+            {/* While a turn runs the field has nothing to take, so the live
+                line stands in its place with the composer's own Stop beside
+                it; the draft is the store's and is there again when the turn
+                ends (g1-s74 D3c). */}
+            {busy ? (
+              <>
+                <span className="ms-drawer-live">
+                  <LiveLine live={store.live} />
+                </span>
+                <Button
+                  className="ms-drawer-stop"
+                  onClick={() => {
+                    void stop();
+                  }}
+                >
+                  <Square size={14} strokeWidth={1.75} aria-hidden="true" />
+                  Stop
+                </Button>
+              </>
+            ) : (
+              <>
+                <label className="ms-visually-hidden" htmlFor="drawer-composer">
+                  {COMPOSER_LABEL}
+                </label>
+                <input
+                  id="drawer-composer"
+                  className="ms-drawer-field"
+                  type="text"
+                  placeholder={COMPOSER_HINT}
+                  value={draft}
+                  onChange={(event) => {
+                    setDraft(event.target.value);
+                    onCompose();
+                  }}
+                  onFocus={onCompose}
+                />
+              </>
+            )}
             <Seeing />
             {/* What is waiting for this human in the conversation, counted
                 across answers: a proposal they have not answered is waiting

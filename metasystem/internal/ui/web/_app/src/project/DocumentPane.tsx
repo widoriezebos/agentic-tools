@@ -203,13 +203,23 @@ export function DocumentPane() {
   }, [attempt]);
 
   const name = document.state === "read" ? document.document.title : "";
+  const { busy: working } = usePartner();
+  // The write is passive so that it lands after the shell's, which is a layout
+  // effect: a turn starting or ending re-runs both, and the document's names
+  // more. Its undoing is a layout effect so that it runs before the shell's
+  // write on the way out: passive, it would land after it and leave "Project"
+  // on the section a human moved to (Sol S74-03). Going to the Project index
+  // changes nothing the shell's write depends on, so this is what puts
+  // "Project" back there.
   useEffect(() => {
+    globalThis.document.title = titleFor(name === "" ? "Project" : `${name} · Project`, identityOf(workspace), 0, working);
+  }, [name, workspace, working]);
+  useLayoutEffect(() => {
     const identity = identityOf(workspace);
-    globalThis.document.title = titleFor(name === "" ? "Project" : `${name} · Project`, identity);
     return () => {
-      globalThis.document.title = titleFor("Project", identity);
+      globalThis.document.title = titleFor("Project", identity, 0, working);
     };
-  }, [name, workspace]);
+  }, [workspace, working]);
 
   // A fragment on load scrolls its heading into view once the article is in
   // the tree, which a layout effect after the render guarantees without a timer.

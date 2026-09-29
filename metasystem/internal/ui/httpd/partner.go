@@ -239,7 +239,7 @@ func (h *handler) partnerRefusal() string {
 
 // partnerTurn admits one turn.
 //
-// 202 with the turn's id is acceptance, and the page clears its draft on it.
+// 202 with the turn's id and the instant it was admitted is acceptance, and the page clears its draft on it.
 // 409 is a turn already running, and the draft stays. 503 is a runtime that
 // cannot start — not installed, not signed in, refusing the configured model —
 // and it carries the runtime's own words and the line that installs it, so the
@@ -267,9 +267,12 @@ func (h *handler) partnerTurn(w http.ResponseWriter, r *http.Request) {
 	}
 	if err == nil {
 		w.WriteHeader(http.StatusAccepted)
+		// The instant the turn was admitted travels beside its id, so the
+		// page's clock counts from the server's start and never its own.
 		_ = json.NewEncoder(w).Encode(struct {
-			Turn string `json:"turn"`
-		}{Turn: id})
+			Turn      string `json:"turn"`
+			StartedAt string `json:"startedAt"`
+		}{Turn: id, StartedAt: h.info.Partner.StartedAt(id)})
 		return
 	}
 	// A question creates no draft, so there is none to offer again.

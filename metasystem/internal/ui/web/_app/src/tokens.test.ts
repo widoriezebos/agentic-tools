@@ -32,6 +32,7 @@ const COLOUR_TOKENS = [
   "ok",
   "ok-bg",
   "ok-fg",
+  "ok-halo",
   "danger",
   "scrim",
   "shadow",
