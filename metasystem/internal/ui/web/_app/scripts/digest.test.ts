@@ -1,7 +1,7 @@
-import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, onTestFinished } from "vitest";
 
 import { sourceDigest } from "./digest.mjs";
 
@@ -15,8 +15,16 @@ function write(dir: string, name: string, content: Buffer | string): void {
   writeFileSync(file, content);
 }
 
-function fixture(): string {
+// tempDir makes the test's directory and removes it when the test ends, so a
+// run leaves nothing in the temp root (cmd/metasystem TestAuditTestsWriteNoHostTemp).
+function tempDir(): string {
   const dir = mkdtempSync(path.join(tmpdir(), "metasystem-digest-"));
+  onTestFinished(() => rmSync(dir, { recursive: true, force: true }));
+  return dir;
+}
+
+function fixture(): string {
+  const dir = tempDir();
   write(dir, ".nvmrc", "24.21.0\n");
   write(dir, "a.txt", "x\r\n");
   write(dir, path.join("b", "c.txt"), "y\n");
@@ -39,7 +47,7 @@ describe("sourceDigest", () => {
   });
 
   it("normalises text by kind and never by content", () => {
-    const dir = mkdtempSync(path.join(tmpdir(), "metasystem-digest-"));
+    const dir = tempDir();
     write(dir, "same.bin", Buffer.from([0x0d, 0x0a]));
     write(dir, "same.txt", Buffer.from([0x0d, 0x0a]));
     const { files } = sourceDigest(dir);
@@ -50,14 +58,14 @@ describe("sourceDigest", () => {
   });
 
   it("refuses a symbolic link", () => {
-    const dir = mkdtempSync(path.join(tmpdir(), "metasystem-digest-"));
+    const dir = tempDir();
     write(dir, "a.txt", "x\n");
     symlinkSync(path.join(dir, "a.txt"), path.join(dir, "b.txt"));
     expect(() => sourceDigest(dir)).toThrow(/b\.txt is a symbolic link/);
   });
 
   it("does not reach a link inside node_modules", () => {
-    const dir = mkdtempSync(path.join(tmpdir(), "metasystem-digest-"));
+    const dir = tempDir();
     write(dir, "a.txt", "x\n");
     write(dir, path.join("node_modules", "p", "index.js"), "export {};\n");
     mkdirSync(path.join(dir, "node_modules", ".bin"), { recursive: true });
@@ -67,7 +75,7 @@ describe("sourceDigest", () => {
   });
 
   it("refuses a non-ASCII path", () => {
-    const dir = mkdtempSync(path.join(tmpdir(), "metasystem-digest-"));
+    const dir = tempDir();
     write(dir, "späce.txt", "x\n");
     expect(() => sourceDigest(dir)).toThrow(/is not an ASCII path/);
   });

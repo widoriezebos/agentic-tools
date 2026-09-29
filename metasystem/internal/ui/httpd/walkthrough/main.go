@@ -525,10 +525,11 @@ func shutDown(server *http.Server, served <-chan error, serveErr error, cancelSe
 }
 
 // removeFixture removes the fixture checkout this process made and the
-// notepad home beside it.
+// notepad home and the Partner's conversations beside it.
 func removeFixture(checkout string) {
 	_ = os.RemoveAll(checkout)
 	_ = os.RemoveAll(filepath.Dir(fixtureStoreHome(checkout)))
+	_ = os.RemoveAll(fixtureConversations(checkout))
 }
 
 // ledger is the canned tree the board reads, and the two acts change it the

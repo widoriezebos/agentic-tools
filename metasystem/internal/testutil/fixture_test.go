@@ -169,7 +169,7 @@ func TestCensusFindsAnUntaggedExecutableByRecord(t *testing.T) {
 
 func TestFixtureCleanupReadsOwnershipRecordBeforeTempDirRemoval(t *testing.T) {
 	recorder := &recordingTB{}
-	perTestDirectory, err := os.MkdirTemp("/tmp", t.Name())
+	perTestDirectory, err := os.MkdirTemp(t.TempDir(), t.Name())
 	failOnFixtureError(t, err)
 	t.Cleanup(func() { _ = os.RemoveAll(perTestDirectory) })
 	tempDirectory := filepath.Join(perTestDirectory, "001")
