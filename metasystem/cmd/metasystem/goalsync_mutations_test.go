@@ -19,11 +19,14 @@ import (
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/governance"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ledgerfence"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/metrics"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
@@ -214,7 +217,7 @@ func TestHolderSetBudgetRebindsEpochForProofAdmission(t *testing.T) {
 	reads := repository.reads()
 	dependencies := syncRequestDependencies{
 		authorityFacts: goalAuthorityReadFacts{
-			caller:        entryCallerIdentity(),
+			caller:        ownercall.EntryCaller(),
 			repositoryTop: repository.receiptTop,
 			ledgerIdentity: func(root string) string {
 				if root != repository.root {
@@ -2446,7 +2449,7 @@ func replaceFlagValue(args []string, flagName, value string) []string {
 func goalSyncMutationGit(t *testing.T, root string, args ...string) string {
 	t.Helper()
 	cmd := exec.Command("git", append([]string{"-C", root}, args...)...)
-	cmd.Env = environWithoutGitSteeringCLI()
+	cmd.Env = ledgerfence.EnvironWithoutGitSteering()
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("git %s: %v: %s", strings.Join(args, " "), err, output)
@@ -2632,7 +2635,7 @@ func (f *parkArcCommandFixture) dependencies() syncRequestDependencies {
 }
 
 func (f *parkArcCommandFixture) parkBranchCheck(root string, endpoint goal.Endpoint) func(string, string) (string, error) {
-	return goalParkBranchCheckWithReaders(root, endpoint,
+	return branch.ParkCheckWithReaders(root, endpoint,
 		func(repo, ref string) (string, bool, error) {
 			f.localCalls++
 			if repo != f.root() || ref != "refs/heads/goal/standing-validation" {

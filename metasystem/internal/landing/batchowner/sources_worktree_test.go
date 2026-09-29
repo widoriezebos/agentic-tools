@@ -1,4 +1,4 @@
-package main
+package batchowner
 
 import (
 	"os"
@@ -54,7 +54,7 @@ func TestBatchRetainedSourcesWorktreeLeftByAKilledOwnerIsSwept(t *testing.T) {
 	if err != nil || again.Workspace().Dir != left {
 		t.Fatalf("a second verification of the batch after a kill: dir=%v err=%v", again, err)
 	}
-	if err := batchOwnerSweepSources(repo); err != nil {
+	if err := BatchOwnerSweepSources(repo); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(left); !os.IsNotExist(err) || strings.Contains(git("worktree", "list"), left) {

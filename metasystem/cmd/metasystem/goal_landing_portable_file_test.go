@@ -16,12 +16,14 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/behaviorsurface"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/candidateengine"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/pathpattern"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 )
 
 type portableFile struct {
@@ -194,7 +196,7 @@ func (f *portableFileProof) execute(request proofrun.TestRunRequest, wantGreen b
 	f.t.Helper()
 	ids, prepared := f.prepare(request)
 	if request.FreshnessEpisode != "" {
-		request.FreshnessBinding = testingFreshnessBinding(request, ids, request.FreshnessEpisode)
+		request.FreshnessBinding = testrun.FreshnessBinding(request, ids, request.FreshnessEpisode)
 	}
 	launcher, err := proofrun.CurrentProcessIdentity(nil)
 	if err != nil {
@@ -250,7 +252,7 @@ func requirePortableCounts(t *testing.T, got, want map[string]int) {
 // The application snapshots contain no engine sources. This reader checks the
 // exact empty engine projection transcript; the verification owner still
 // recomputes group identities from the declared candidate bytes.
-func (f *portableFileProof) engineIO(tree string) (candidateEngineIO, func()) {
+func (f *portableFileProof) engineIO(tree string) (candidateengine.IO, func()) {
 	f.t.Helper()
 	policy, err := behaviorsurface.Load()
 	if err != nil {
@@ -332,7 +334,7 @@ func (f *portableFileProof) engineIO(tree string) (candidateEngineIO, func()) {
 		call++
 		return nil
 	}
-	return candidateEngineIO{runGit: run}, func() {
+	return candidateengine.IO{RunGit: run}, func() {
 		if call != 5 {
 			f.t.Fatalf("engine projection calls=%d want 5", call)
 		}
@@ -341,15 +343,15 @@ func (f *portableFileProof) engineIO(tree string) (candidateEngineIO, func()) {
 func (f *portableFileProof) engineIdentity(tree string, environment []string) string {
 	f.t.Helper()
 	dependency, check := f.engineIO(tree)
-	identity, err := candidateEngineBuildIdentityUsing(context.Background(), gittree.Workspace{Dir: f.root}, "", tree, environment, dependency)
+	identity, err := candidateengine.BuildIdentityUsing(context.Background(), gittree.Workspace{Dir: f.root}, "", tree, environment, dependency)
 	if err != nil {
 		f.t.Fatal(err)
 	}
 	check()
 	return identity
 }
-func (f *portableFileProof) prepared(request proofrun.TestRunRequest, result proofrun.TestResult) testingPreparation {
-	return testingPreparation{Installation: f.root, ControlRoot: f.root, ProjectRoot: f.root, ConfPath: filepath.Join(f.root, "metasystem.conf"),
+func (f *portableFileProof) prepared(request proofrun.TestRunRequest, result proofrun.TestResult) testrun.Preparation {
+	return testrun.Preparation{Installation: f.root, ControlRoot: f.root, ProjectRoot: f.root, ConfPath: filepath.Join(f.root, "metasystem.conf"),
 		GoalID: "portable", AccountingRevision: 2, BaseCommit: request.BaseCommit, PolicyBaseCommit: request.PolicyBaseCommit, CandidateTree: request.CandidateTree,
 		EffectiveContract: request.Contract, Plan: request.Plan, Environment: request.Environment,
 		ContractDigest: result.ContractDigest, BaseContractDigest: result.BaseContractDigest, PolicyEngineDigest: result.PolicyEngineDigest,
@@ -358,7 +360,7 @@ func (f *portableFileProof) prepared(request proofrun.TestRunRequest, result pro
 func (f *portableFileProof) verify(request proofrun.TestRunRequest, files map[string]portableFile, result proofrun.TestResult, at time.Time) (proofrun.TestResult, error) {
 	f.t.Helper()
 	dependency, checkEngine := f.engineIO(request.CandidateTree)
-	selected := testingSelectionRequest{Root: f.root, GoalID: "portable", Tree: request.CandidateTree, Mode: testpolicy.ModeAuto, Purpose: testpolicy.PurposeDelivery,
+	selected := testrun.SelectionRequest{Root: f.root, GoalID: "portable", Tree: request.CandidateTree, Mode: testpolicy.ModeAuto, Purpose: testpolicy.PurposeDelivery,
 		FreshEpisode: request.FreshnessEpisode, FreshExpiresAt: request.FreshnessExpiresAt}
 	workspace := gittree.Workspace{Dir: f.root}
 	checkProjection := func() {}
@@ -373,9 +375,9 @@ func (f *portableFileProof) verify(request proofrun.TestRunRequest, files map[st
 	if request.FreshnessEpisode != "" && !expired {
 		workspace, checkProjection = f.projection(request.CandidateTree)
 	}
-	verified, err := verifyRetainedTestingPrepared(selected, f.prepared(request, result), retainedTestingVerification{
-		clock: func() time.Time { return at }, revalidate: proofrun.RevalidateRetainedGroupExecutionIdentities,
-		workspace: workspace, candidateIO: dependency, openCandidate: f.open(request.CandidateTree, files)})
+	verified, err := testrun.VerifyPrepared(selected, f.prepared(request, result), testrun.Verification{
+		Clock: func() time.Time { return at }, Revalidate: proofrun.RevalidateRetainedGroupExecutionIdentities,
+		Workspace: workspace, CandidateIO: dependency, OpenCandidate: f.open(request.CandidateTree, files), WorkerPolicy: testingWorkerPolicy})
 	if !expired {
 		checkEngine()
 		checkProjection()
@@ -440,7 +442,7 @@ func (f *portableFileProof) projection(tree string) (gittree.Workspace, func()) 
 func (f *portableFileProof) bindFreshness(request *proofrun.TestRunRequest) {
 	f.t.Helper()
 	workspace, check := f.projection(request.CandidateTree)
-	if err := bindTestingFreshnessProjectionWithWorkspace(request, f.root, workspace); err != nil {
+	if err := testrun.BindFreshnessProjectionWithWorkspace(request, f.root, workspace); err != nil {
 		f.t.Fatal(err)
 	}
 	check()

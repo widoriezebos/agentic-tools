@@ -1,4 +1,4 @@
-package main
+package batchowner
 
 import (
 	"fmt"
@@ -10,23 +10,23 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 )
 
-var _ batch.FlakeLedgerOwner = ledgerTrunkRedOwner{}
+var _ batch.FlakeLedgerOwner = LedgerTrunkRedOwner{}
 
 // OpenByClass returns the open register entries of the named classes.
-func (owner ledgerTrunkRedOwner) OpenByClass(classes ...string) ([]batch.OpenEntry, error) {
+func (owner LedgerTrunkRedOwner) OpenByClass(classes ...string) ([]batch.OpenEntry, error) {
 	open, err := owner.Open()
 	return slices.DeleteFunc(open, func(entry batch.OpenEntry) bool { return !slices.Contains(classes, entry.Class) }), err
 }
 
 // RecordPending opens or sights a pending flake from a tip red and its passing rerun.
-func (owner ledgerTrunkRedOwner) RecordPending(opid string, sighting batch.FlakeSighting) ([]batch.EntryRef, error) {
+func (owner LedgerTrunkRedOwner) RecordPending(opid string, sighting batch.FlakeSighting) ([]batch.EntryRef, error) {
 	args := flakeRecordArgs(sighting)
 	args.Class, args.Where, args.Tree = goal.TrunkRedClassPendingFlake, "tip", sighting.TipTree
 	return owner.publishRecord(opid, func(request goal.VerbRequest) (goal.PublishResult, error) { return goal.RecordTrunkRed(request, args) })
 }
 
 // Promote records main's red-then-green: a known flake opens or a pending one is promoted.
-func (owner ledgerTrunkRedOwner) Promote(opid string, promotion batch.Promotion) ([]batch.EntryRef, error) {
+func (owner LedgerTrunkRedOwner) Promote(opid string, promotion batch.Promotion) ([]batch.EntryRef, error) {
 	args := flakeRecordArgs(promotion.FlakeSighting)
 	if promotion.TipTree != "" {
 		args.Where, args.Tree = "tip", promotion.TipTree
@@ -38,7 +38,7 @@ func (owner ledgerTrunkRedOwner) Promote(opid string, promotion batch.Promotion)
 }
 
 // RecordHang opens or sights a hang entry with the watchdog's evidence.
-func (owner ledgerTrunkRedOwner) RecordHang(opid string, hang batch.HangSighting) ([]batch.EntryRef, error) {
+func (owner LedgerTrunkRedOwner) RecordHang(opid string, hang batch.HangSighting) ([]batch.EntryRef, error) {
 	evidence := hang.Evidence
 	group := hang.Group
 	args := goal.TrunkRedRecordArgs{Class: goal.TrunkRedClassHang, Batch: hang.BatchID, Attempt: hang.AttemptID, BaseCommit: hang.BaseCommit,
@@ -74,8 +74,8 @@ func flakeRecordArgs(sighting batch.FlakeSighting) goal.TrunkRedRecordArgs {
 	return args
 }
 
-func (owner ledgerTrunkRedOwner) publishRecord(opid string, publish func(goal.VerbRequest) (goal.PublishResult, error)) ([]batch.EntryRef, error) {
-	request, err := owner.request(opid)
+func (owner LedgerTrunkRedOwner) publishRecord(opid string, publish func(goal.VerbRequest) (goal.PublishResult, error)) ([]batch.EntryRef, error) {
+	request, err := owner.Request(opid)
 	if err != nil {
 		return nil, err
 	}
@@ -83,7 +83,7 @@ func (owner ledgerTrunkRedOwner) publishRecord(opid string, publish func(goal.Ve
 	if err != nil {
 		return nil, err
 	}
-	projection, err := goal.ProjectAtEndpoint(owner.endpoint, result.Tip, request.Now)
+	projection, err := goal.ProjectAtEndpoint(owner.Endpoint, result.Tip, request.Now)
 	if err != nil {
 		return nil, err
 	}

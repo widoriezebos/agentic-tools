@@ -11,6 +11,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
@@ -461,7 +462,7 @@ func classificationDataRefusal(verb, checkout, retryCommand string, err error) *
 // missionFenceBeforeArmFor is the fence check with its caller and report
 // stream explicit: the process a human classification starts from (the
 // launching command supplies itself) and where refusals are written.
-func missionFenceBeforeArmFor(caller processIdentity, stderr io.Writer, root, mode string, repositoryTop func(string) (string, error), classify processCallerClassifier) (int64, int) {
+func missionFenceBeforeArmFor(caller ownercall.Process, stderr io.Writer, root, mode string, repositoryTop func(string) (string, error), classify processCallerClassifier) (int64, int) {
 	record, err := stopfence.Read(root)
 	if err != nil {
 		fmt.Fprintln(stderr, "mission "+mode+":", err)
@@ -479,7 +480,7 @@ func missionFenceBeforeArmFor(caller processIdentity, stderr io.Writer, root, mo
 	// Mission state and its stop fence remain application-owned. Only the
 	// process-control verbs move their supervision/accounting root to the
 	// authenticated installation.
-	classification, classifyErr := classify(scope.Checkout, scope.Installation, caller.pid)
+	classification, classifyErr := classify(scope.Checkout, scope.Installation, caller.Pid)
 	if classifyErr != nil {
 		if refusal := classificationDataRefusal("mission "+mode, scope.Checkout, retryCommand, classifyErr); refusal != nil {
 			refusal.printTo(stderr)

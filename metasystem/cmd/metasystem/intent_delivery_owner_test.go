@@ -15,8 +15,10 @@ import (
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
@@ -172,7 +174,7 @@ func (f *wholeOwnerLanding) assertLanded(t *testing.T, prepared branch.PreparedL
 	if fold := goalSyncMutationGit(t, f.mainRoot, "show", prepared.Landing+":metasystem/plans/fold.md"); fold != "folded plan" {
 		t.Fatalf("landed fold = %q", fold)
 	}
-	endpoint, err := goalBranchEndpoint(f.mainRoot)
+	endpoint, err := branch.MainEndpoint(f.mainRoot)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -349,25 +351,25 @@ func newBatchAdmissionLanding(t *testing.T) (*wholeOwnerLanding, string) {
 func TestIntentLandBatchAdmissionGitAdapter(t *testing.T) {
 	t.Parallel()
 	f, landingRoot := newBatchAdmissionLanding(t)
-	deps := productionBatchJoinDependencies()
-	deps.costForecast = nil
+	deps := batchowner.ProductionBatchJoinDependencies()
+	deps.CostForecast = nil
 	var handovers, admissions, ensures int
-	deps.handover = func(batchJoinRequest, string, batch.Claim) error { handovers++; return nil }
-	deps.admissionRun = func(_ string, _ string, unit batch.Unit) (batch.JoinAdmission, error) {
+	deps.Handover = func(batchowner.BatchJoinRequest, string, batch.Claim) error { handovers++; return nil }
+	deps.AdmissionRun = func(_ string, _ string, unit batch.Unit) (batch.JoinAdmission, error) {
 		admissions++
 		if unit.State != batch.UnitJoining || unit.Admission == nil || unit.Admission.Status != "handed-over" {
 			t.Fatalf("admission ran before handover: %+v", unit)
 		}
 		return batch.JoinAdmission{Tree: unit.Admission.Tree, Status: "verified", AttemptID: "batch-admission"}, nil
 	}
-	deps.plan = func(string, string, string) (testpolicy.Plan, error) {
+	deps.Plan = func(string, string, string) (testpolicy.Plan, error) {
 		return testpolicy.Plan{SelectedGroups: []string{"go-fixture"}, RequiredGroups: []string{"go-fixture"}}, nil
 	}
-	deps.ensure = func(string) error { ensures++; return nil }
+	deps.Ensure = func(string) error { ensures++; return nil }
 	// The claim/budget binding is a fixture fact: the goal's real projected
 	// file under this fixture claim, not the stop-authority owner.
-	deps.binding = func(root, goalID string, at time.Time) (dispatchcore.GoalBinding, error) {
-		endpoint, err := goalBranchEndpoint(root)
+	deps.Binding = func(root, goalID string, at time.Time) (dispatchcore.GoalBinding, error) {
+		endpoint, err := branch.MainEndpoint(root)
 		if err != nil {
 			return dispatchcore.GoalBinding{}, err
 		}
@@ -386,7 +388,9 @@ func TestIntentLandBatchAdmissionGitAdapter(t *testing.T) {
 	owners := defaultIntentOwners()
 	delivery := belowTheGate(defaultIntentDeliveryOwners())
 	delivery.batchRoot = func(string, time.Time) (string, bool, error) { return landingRoot, true, nil }
-	delivery.batchJoin = func(request batchJoinRequest) (batch.Record, error) { return executeBatchJoin(request, deps) }
+	delivery.batchJoin = func(request batchowner.BatchJoinRequest) (batch.Record, error) {
+		return batchowner.ExecuteBatchJoin(request, deps)
+	}
 	delivery.process = func(process intentProcess) intentProcessResult {
 		t.Fatalf("the batch route ran a subprocess %v", process.argv)
 		return intentProcessResult{}
@@ -438,10 +442,10 @@ func TestIntentLandProvesTheReceiptInThisProcess(t *testing.T) {
 		t.Errorf("an engine child ran: %v", process.argv)
 		return intentProcessResult{code: 1}
 	}
-	var supplied []processIdentity
+	var supplied []ownercall.Process
 	var reached [][]string
 	delivery.calls = defaultIntentOwnerCalls()
-	delivery.calls.landingTestReceipt = func(caller processIdentity, stdout, stderr io.Writer, dir string, args []string) int {
+	delivery.calls.landingTestReceipt = func(caller ownercall.Process, stdout, stderr io.Writer, dir string, args []string) int {
 		supplied, reached = append(supplied, caller), append(reached, args)
 		tree := flagValue(args, "--tree")
 		receipt, _ := json.Marshal(map[string]any{"schemaVersion": 3, "tree": tree, "exitStatus": 0,
@@ -459,7 +463,7 @@ func TestIntentLandProvesTheReceiptInThisProcess(t *testing.T) {
 	if len(reached) != 1 || !slices.Equal(reached[0], []string{"--root", f.mainRoot, "--tree", flagValue(reached[0], "--tree"), "--mode", "auto", "--goal", "standing-validation"}) {
 		t.Fatalf("receipt owner argv = %q", reached)
 	}
-	if len(supplied) != 1 || supplied[0].pid != int64(os.Getpid()) {
+	if len(supplied) != 1 || supplied[0].Pid != int64(os.Getpid()) {
 		t.Fatalf("the receipt owner was supplied %+v, want this process %d", supplied, os.Getpid())
 	}
 }

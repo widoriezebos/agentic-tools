@@ -12,6 +12,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/registry"
 )
 
@@ -74,12 +75,12 @@ func (host *pipelineHost) card(t *testing.T, machine, installation, goalID strin
 	}
 }
 
-func (host *pipelineHost) source(claims map[string]string) hostPipeline {
-	source := productionPipeline(20*time.Minute, func() (map[string]string, error) { return claims, nil })
-	source.registry = func() (string, error) { return host.registryPath, nil }
-	source.home = func() (string, error) { return host.home, nil }
-	source.prober = pipelineProber{}
-	source.machine = func(checkout string) (string, error) {
+func (host *pipelineHost) source(claims map[string]string) batchowner.HostPipeline {
+	source := batchowner.ProductionPipeline(20*time.Minute, func() (map[string]string, error) { return claims, nil })
+	source.Registry = func() (string, error) { return host.registryPath, nil }
+	source.Home = func() (string, error) { return host.home, nil }
+	source.Prober = pipelineProber{}
+	source.Machine = func(checkout string) (string, error) {
 		if machine, ok := host.nicknames[checkout]; ok && machine != "" {
 			return machine, nil
 		}

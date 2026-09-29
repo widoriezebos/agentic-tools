@@ -9,9 +9,11 @@ import (
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 )
 
 func TestGLEBatchEveryPrefixHasApplicablePolicyProof(t *testing.T) {
@@ -26,7 +28,7 @@ func TestGLEBatchEveryPrefixHasApplicablePolicyProof(t *testing.T) {
 		"tree-2": {"a.txt", "b.txt"},
 		"tree-3": {"a.txt", "b.txt", "c.txt"},
 	}
-	planner := func(_, _, tree string, mode testpolicy.Mode, admitted []string) (testingPlanOutput, error) {
+	planner := func(_, _, tree string, mode testpolicy.Mode, admitted []string) (testrun.PlanOutput, error) {
 		contract := testpolicy.Contract{Surfaces: []testpolicy.Surface{
 			{ID: "a", Paths: []string{"a.txt"}, Standard: []string{"first"}},
 			{ID: "b", Paths: []string{"b.txt"}, Standard: []string{"second"}},
@@ -37,12 +39,12 @@ func TestGLEBatchEveryPrefixHasApplicablePolicyProof(t *testing.T) {
 		}
 		selected, err := testpolicy.Select(contract, testpolicy.SelectionRequest{ChangedPaths: paths[tree], RequestedMode: mode, Purpose: testpolicy.PurposeDelivery,
 			BatchRequirements: admitted})
-		return testingPlanOutput{PolicyBaseCommit: "base-commit", CandidateTree: tree, ContractDigest: "candidate-policy-" + tree,
+		return testrun.PlanOutput{PolicyBaseCommit: "base-commit", CandidateTree: tree, ContractDigest: "candidate-policy-" + tree,
 			BaseContractDigest: "base-policy", Plan: selected, Groups: contract.Groups}, err
 	}
 	for index, want := range [][]string{{"first"}, {"first", "second"}, {"first", "second", "third"}} {
 		tree := []string{"tree-1", "tree-2", "tree-3"}[index]
-		decision, err := planPrefixDecisionWith("", units[:index+1], tree, planner)
+		decision, err := batchowner.PlanPrefixDecisionWith("", units[:index+1], tree, planner)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -60,7 +62,7 @@ func TestGLEBatchSupplementalFreshnessUsesTheSelectedPlan(t *testing.T) {
 		{ID: "admitted", Requires: []string{"prerequisite"}, Freshness: "episode", FreshnessMaxAgeMS: &maxAge},
 		{ID: "unselected-fresh", Freshness: "episode", FreshnessMaxAgeMS: &maxAge},
 	}, Always: testpolicy.Always{Canary: []string{"floor"}}}
-	planner := func(_, _, tree string, mode testpolicy.Mode, admitted []string) (testingPlanOutput, error) {
+	planner := func(_, _, tree string, mode testpolicy.Mode, admitted []string) (testrun.PlanOutput, error) {
 		selected, err := testpolicy.Select(contract, testpolicy.SelectionRequest{RequestedMode: mode, Purpose: testpolicy.PurposeDelivery,
 			BatchRequirements: admitted})
 		groups := []testpolicy.Group{}
@@ -69,13 +71,13 @@ func TestGLEBatchSupplementalFreshnessUsesTheSelectedPlan(t *testing.T) {
 				groups = append(groups, group)
 			}
 		}
-		return testingPlanOutput{PolicyBaseCommit: "base", CandidateTree: tree, ContractDigest: "contract", Plan: selected, Groups: groups}, err
+		return testrun.PlanOutput{PolicyBaseCommit: "base", CandidateTree: tree, ContractDigest: "contract", Plan: selected, Groups: groups}, err
 	}
-	plain, err := planPrefixDecisionWith("", []batch.Unit{{GoalID: "goal-a"}}, "tree", planner)
+	plain, err := batchowner.PlanPrefixDecisionWith("", []batch.Unit{{GoalID: "goal-a"}}, "tree", planner)
 	if err != nil || plain.FreshRequired {
 		t.Fatalf("unselected fresh group required episode: decision=%+v err=%v", plain, err)
 	}
-	selected, err := planPrefixDecisionWith("", []batch.Unit{{GoalID: "goal-a", SelectedGroups: []string{"admitted"}}}, "tree", planner)
+	selected, err := batchowner.PlanPrefixDecisionWith("", []batch.Unit{{GoalID: "goal-a", SelectedGroups: []string{"admitted"}}}, "tree", planner)
 	if err != nil || !selected.FreshRequired || selected.FreshMaxAgeMS != maxAge ||
 		!slices.Equal(selected.Groups, []string{"admitted", "floor", "prerequisite"}) {
 		t.Fatalf("supplemental fresh decision=%+v err=%v", selected, err)
@@ -90,10 +92,10 @@ func TestGLEBatchFencedTipAdmissionNamesMemberForReassembly(t *testing.T) {
 		t.Fatal(err)
 	}
 	dependencies := batchTestExecutionDependencies(t, root, tree, stub)
-	_, err := launchBatchTipProofWithDependencies(batchProofLaunch{Root: root, GoalID: "goal-c", Tree: tree, Mode: testpolicy.ModeAuto,
+	_, err := batchowner.LaunchBatchTipProofWithDependencies(batchowner.BatchProofLaunch{Root: root, GoalID: "goal-c", Tree: tree, Mode: testpolicy.ModeAuto,
 		ResultPath: filepath.Join(t.TempDir(), "result.json")}, dependencies)
-	var refusal *batchProofAdmissionRefusal
-	if !errors.As(err, &refusal) || refusal.kind != "fenced" {
+	var refusal *batchowner.BatchProofAdmissionRefusal
+	if !errors.As(err, &refusal) || refusal.Kind != "fenced" {
 		t.Fatalf("tip fence classified as %T %v", err, err)
 	}
 	if proofrun.ExitAdmissionRefused != 78 {
@@ -113,14 +115,14 @@ func TestGLEBatchRebasedPrefixTreesNamesEveryBoundary(t *testing.T) {
 		return strings.Join(expected, "\n"), nil
 	}
 	units := []batch.Unit{{GoalID: "a"}, {GoalID: "b", Builds: []batch.BranchBuild{{Commit: "one"}, {Commit: "two"}}}, {GoalID: "c"}}
-	trees, err := rebasedPrefixTreesWith(root, base, tip, units, readGit)
+	trees, err := batchowner.RebasedPrefixTreesWith(root, base, tip, units, readGit)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !slices.Equal(trees, []string{expected[0], expected[2], expected[3]}) {
 		t.Fatalf("prefix trees=%v, want selected cumulative trees", trees)
 	}
-	if _, err := rebasedPrefixTreesWith(root, base, tip, units[:2], readGit); err == nil {
+	if _, err := batchowner.RebasedPrefixTreesWith(root, base, tip, units[:2], readGit); err == nil {
 		t.Fatal("incomplete unit inventory accepted a rebased range")
 	}
 }
@@ -201,9 +203,9 @@ printf '%s\n' '{"schemaVersion":1,"candidateTree":"candidate","plan":{"purpose":
 	if err := testexec.WriteFile(engine, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	request := testingSelectionRequest{Mode: testpolicy.ModeAuto, Purpose: testpolicy.PurposeDelivery,
+	request := testrun.SelectionRequest{Mode: testpolicy.ModeAuto, Purpose: testpolicy.PurposeDelivery,
 		BatchPrefixReceipt: true, BatchRequirements: []string{"admitted"}}
-	trusted, err := planWithTrustedPolicyEngine(engine, trustedPolicyFloorRequest(request), t.TempDir(), "candidate")
+	trusted, err := testrun.PlanWithTrustedPolicyEngine(engine, testrun.TrustedPolicyFloorRequest(request), t.TempDir(), "candidate")
 	if err != nil {
 		t.Fatalf("legacy trusted policy child could not supply its floor: %v", err)
 	}
@@ -218,7 +220,7 @@ printf '%s\n' '{"schemaVersion":1,"candidateTree":"candidate","plan":{"purpose":
 func TestGLEBatchTipRetainsEveryAdmittedMemberObligation(t *testing.T) {
 	t.Parallel()
 	units := []batch.Unit{{GoalID: "a", SelectedGroups: []string{"accepted-a"}}, {GoalID: "b", SelectedGroups: []string{"accepted-b"}}}
-	plan, err := planBatchMemberUnion("", "tree", units, "", testpolicy.ModeAuto,
+	plan, err := batchowner.PlanBatchMemberUnion("", "tree", units, "", testpolicy.ModeAuto,
 		func(_, _, _ string, _ testpolicy.Mode) (testpolicy.Plan, error) {
 			return testpolicy.Plan{SelectedGroups: []string{"protected-floor"}, RequiredMode: testpolicy.ModeStandard, ExecutedMode: testpolicy.ModeStandard}, nil
 		})

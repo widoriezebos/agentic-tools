@@ -18,6 +18,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 )
 
 func TestGoalBranchReadDelegateUsesBinarySeamAndReturnsWithoutWaiting(t *testing.T) {
@@ -383,7 +384,7 @@ func dirtyGoalBranchLedgers(t *testing.T, root string) {
 
 func TestGoalBranchVerbsRunFromTheHoldersLinkedWorktree(t *testing.T) {
 	worktree, _, _ := goalBranchCLIFixture(t, "m1")
-	main, linked := linkedWorktreeMainCheckout(worktree)
+	main, linked := testrun.LinkedWorktreeMainCheckout(worktree)
 	if !linked {
 		t.Fatalf("fixture %s is not a linked worktree", worktree)
 	}
@@ -428,7 +429,7 @@ func TestGoalBranchHolderResolutionPreservesInstallationSubdirectory(t *testing.
 		return goalBranchTestCommand([]string{"commit", "--goal", "standing-validation", "--kind", "plan", "--root", worktree}, stdout, stderr)
 	})
 	if code != 0 || stderr != "" || len(strings.TrimSpace(stdout)) != 40 {
-		main, linked := linkedWorktreeMainCheckout(worktree)
+		main, linked := testrun.LinkedWorktreeMainCheckout(worktree)
 		holderRoot := goalBranchHolderRoot(worktree)
 		holder, holderErr := lease.CurrentHolder(holderRoot)
 		t.Fatalf("commit from nested installation: code=%d stdout=%q stderr=%q main=%q linked=%t holder-root=%q holder=%+v holder-err=%v",

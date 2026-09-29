@@ -487,22 +487,6 @@ func reassembleSurvivorsOnBase(store Store, id, actor string, at time.Time, deci
 	return err
 }
 
-// HoldUnclassified preserves a post-P2 diagnostic refusal without assigning
-// blame to a member or allowing another automatic attempt.
-func HoldUnclassified(store Store, id, actor, status, nextEvidence string, at time.Time) error {
-	if status == "" || nextEvidence == "" {
-		return fmt.Errorf("held-unclassified requires status and goal Next evidence")
-	}
-	return store.Update(id, func(record *Record) error {
-		if record.State != StateDiagnosing || record.Proof == nil {
-			return fmt.Errorf("held-unclassified requires a diagnosing batch with a recorded proof")
-		}
-		record.Proof.Status, record.Proof.Failure = "held-unclassified", status+"; "+nextEvidence
-		record.Transition(StateHeldUnclassified, at, "diagnose", actor, status+"; "+nextEvidence)
-		return nil
-	})
-}
-
 // stackedReturns returns every live change stacked (transitively, by its
 // parent commit) on a change that is leaving or has left the batch, with the
 // parent's reason, so reassembly never keeps a child without its parent

@@ -17,6 +17,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 )
@@ -619,7 +620,7 @@ func (inv *intentInvocation) hostBoardView(now time.Time) board.View {
 	if inv.owners.delivery != nil && inv.owners.delivery.boardView != nil {
 		return inv.owners.delivery.boardView(inv.layout.GitRoot, now)
 	}
-	return productionPipeline(pipelineStall(inv.layout.InstallationRoot), acceptedClaims(inv.layout.GitRoot)).View(now)
+	return batchowner.ProductionPipeline(batchowner.PipelineStall(inv.layout.InstallationRoot), batchowner.AcceptedClaims(inv.layout.GitRoot)).View(now)
 }
 
 func (inv *intentInvocation) boardNow() time.Time {

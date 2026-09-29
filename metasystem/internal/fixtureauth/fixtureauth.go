@@ -359,3 +359,13 @@ func GoalClock(root string, wall func() time.Time) (func() time.Time, bool, erro
 	}
 	return wall, false, nil
 }
+
+// GoalNow is one reading of root's goal clock: a fixture root's instant,
+// else the wall clock in UTC.
+func GoalNow(root string) (time.Time, error) {
+	clock, _, err := GoalClock(root, func() time.Time { return time.Now().UTC() })
+	if err != nil {
+		return time.Time{}, err
+	}
+	return clock(), nil
+}

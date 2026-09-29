@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ledgerfence"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/metrics"
 )
 
@@ -208,7 +209,7 @@ func TestGoalBranchEndpointTipUnreadableRemoteCleansTemporaryRef(t *testing.T) {
 func metricsVerbGit(t *testing.T, root string, args ...string) string {
 	t.Helper()
 	cmd := exec.Command("git", append([]string{"-C", root}, args...)...)
-	cmd.Env = environWithoutGitSteeringCLI()
+	cmd.Env = ledgerfence.EnvironWithoutGitSteering()
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("git %s: %v: %s", strings.Join(args, " "), err, output)

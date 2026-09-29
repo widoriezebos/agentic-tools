@@ -1,4 +1,4 @@
-package main
+package batchowner
 
 import (
 	"errors"
@@ -13,31 +13,33 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/strictjson"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/adapter"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 )
 
-var productionTrunkRedLedgerOwner = productionBatchLedgerOwner
-var batchDiagnosticLauncher = launchBatchDiagnostic
+var ProductionTrunkRedLedgerOwner = productionBatchLedgerOwner
+var BatchDiagnosticLauncher = LaunchBatchDiagnostic
 
-var batchDiagnosisSeams = struct {
-	commitForTree func(string, string, string) (string, error)
-	diagnose      func(batch.Store, string, string, []batch.RedGroup, string, time.Time, batch.RedSeams) error
-	redLanguage   func(string) func(batch.RedGroup) (adapter.Adapter, bool)
-	sources       func(string, batch.Record) (map[string]string, error)
-}{commitForTree, batch.DiagnoseRed, productionBatchRedLanguage, batchRetainedSources}
+var BatchDiagnosisSeams = struct {
+	CommitForTree func(string, string, string) (string, error)
+	Diagnose      func(batch.Store, string, string, []batch.RedGroup, string, time.Time, batch.RedSeams) error
+	RedLanguage   func(string) func(batch.RedGroup) (adapter.Adapter, bool)
+	Sources       func(string, batch.Record) (map[string]string, error)
+}{commitForTree, batch.DiagnoseRed, productionBatchRedLanguage, BatchRetainedSources}
 
 // batchRedAdapters names each red group's contract adapter, with a command
 // group's evidence format, so the lane judges identities from the record.
 func batchRedAdapters(root string, groups []batch.RedGroup) []batch.RedGroup {
-	_, contract, _, err := loadPhysicalTestingContract(batch.ModuleRoot(root))
+	_, contract, _, err := testrun.LoadContract(batch.ModuleRoot(root))
 	if err != nil {
 		return groups
 	}
-	return batchNameRedAdapters(contract, groups)
+	return BatchNameRedAdapters(contract, groups)
 }
 
-func batchNameRedAdapters(contract testpolicy.Contract, groups []batch.RedGroup) []batch.RedGroup {
+func BatchNameRedAdapters(contract testpolicy.Contract, groups []batch.RedGroup) []batch.RedGroup {
 	named := slices.Clone(groups)
 	for index := range named {
 		if group, _, found := batchContractGroup(contract, named[index].ID); found {
@@ -73,17 +75,17 @@ func batchContractGroup(contract testpolicy.Contract, id string) (testpolicy.Gro
 // installation's testing contract; an unreadable contract binds none, so
 // naming falls back on declared manifests alone.
 func productionBatchRedLanguage(root string) func(batch.RedGroup) (adapter.Adapter, bool) {
-	_, contract, _, err := loadPhysicalTestingContract(batch.ModuleRoot(root))
+	_, contract, _, err := testrun.LoadContract(batch.ModuleRoot(root))
 	if err != nil {
 		return nil
 	}
-	return batchRedLanguageFromContract(contract)
+	return BatchRedLanguageFromContract(contract)
 }
 
-// batchRedLanguageFromContract resolves a red group to its adapter; a group
+// BatchRedLanguageFromContract resolves a red group to its adapter; a group
 // named TEMPLATE/PACKAGE whose template is a packageSelection selector is an
 // expansion, whose manifest is the whole module. An unknown group has none.
-func batchRedLanguageFromContract(contract testpolicy.Contract) func(batch.RedGroup) (adapter.Adapter, bool) {
+func BatchRedLanguageFromContract(contract testpolicy.Contract) func(batch.RedGroup) (adapter.Adapter, bool) {
 	return func(red batch.RedGroup) (adapter.Adapter, bool) {
 		group, expansion, found := batchContractGroup(contract, red.ID)
 		if !found {
@@ -97,13 +99,13 @@ func batchRedLanguageFromContract(contract testpolicy.Contract) func(batch.RedGr
 	}
 }
 
-func executeBatchDiagnosis(root, id, actor string, at time.Time) error {
-	return executeBatchDiagnosisWithConfig(root, id, actor, at, nil)
+func ExecuteBatchDiagnosis(root, id, actor string, at time.Time) error {
+	return ExecuteBatchDiagnosisWithConfig(root, id, actor, at, nil)
 }
 
-func executeBatchDiagnosisWithConfig(root, id, actor string, at time.Time, lookup func(string, string) (string, error)) error {
+func ExecuteBatchDiagnosisWithConfig(root, id, actor string, at time.Time, lookup func(string, string) (string, error)) error {
 	controlRoot := batch.ModuleRoot(root)
-	ledgerOwner, err := productionTrunkRedLedgerOwner(controlRoot)
+	ledgerOwner, err := ProductionTrunkRedLedgerOwner(controlRoot)
 	if err != nil {
 		return err
 	}
@@ -116,24 +118,24 @@ func executeBatchDiagnosisWithConfig(root, id, actor string, at time.Time, looku
 	if len(joined) == 0 || record.Proof == nil {
 		return fmt.Errorf("batch %s has no diagnostic authority member or proof", id)
 	}
-	baseCommit, err := batchDiagnosisSeams.commitForTree(root, "origin/main", record.BaseTree)
+	baseCommit, err := BatchDiagnosisSeams.CommitForTree(root, "origin/main", record.BaseTree)
 	if err != nil {
 		return err
 	}
-	return batchDiagnosisSeams.diagnose(store, id, actor, batchRedAdapters(root, record.Proof.RedGroups), record.Proof.PrefixGoal, at, batch.RedSeams{
+	return BatchDiagnosisSeams.Diagnose(store, id, actor, batchRedAdapters(root, record.Proof.RedGroups), record.Proof.PrefixGoal, at, batch.RedSeams{
 		Run: func(request batch.DiagnosticRequest) (batch.DiagnosticResult, error) {
-			result, err := batchDiagnosticLauncher(controlRoot, id, request)
+			result, err := BatchDiagnosticLauncher(controlRoot, id, request)
 			result.Groups = batchRedAdapters(root, result.Groups)
 			return result, err
 		},
-		Sources:  func(record batch.Record) (map[string]string, error) { return batchDiagnosisSeams.sources(root, record) },
+		Sources:  func(record batch.Record) (map[string]string, error) { return BatchDiagnosisSeams.Sources(root, record) },
 		Location: time.Local,
 		ConfirmFenced: func(unit batch.Unit) (string, bool, error) {
 			liveRoot, liveAt, projection, err := batchAuthorityProjection(root)
 			if err != nil {
 				return "", false, err
 			}
-			err = authorizeBatchMemberInProjection(liveRoot, liveAt, record, unit, projection)
+			err = AuthorizeBatchMemberInProjection(liveRoot, liveAt, record, unit, projection)
 			var fenced *batch.PrefixFencedRefusal
 			if errors.As(err, &fenced) {
 				return fenced.Error(), true, nil
@@ -153,11 +155,11 @@ func executeBatchDiagnosisWithConfig(root, id, actor string, at time.Time, looku
 			if err != nil {
 				return "", err
 			}
-			return goal.Opid(ulid, machine, landingOwnerLineage), nil
+			return goal.Opid(ulid, machine, LandingOwnerLineage), nil
 		},
 		Ledger:     ledgerOwner,
 		BaseCommit: baseCommit,
-		Adapter:    batchDiagnosisSeams.redLanguage(root),
+		Adapter:    BatchDiagnosisSeams.RedLanguage(root),
 		UpdateNext: func(goalID, status string) error {
 			return batchEditNext(controlRoot, goalID, status)
 		},
@@ -171,8 +173,8 @@ func batchDiagnosticArgs(root string, request batch.DiagnosticRequest, resultPat
 	return append(args, accountRevisions(request.GoalID, request.Claim)...)
 }
 
-var batchDiagnosticExecute = func(binary string, args []string, dir string, environment []string) ([]byte, int, error) {
-	command := batchProofCommand(binary, args, false)
+var BatchDiagnosticExecute = func(binary string, args []string, dir string, environment []string) ([]byte, int, error) {
+	command := BatchProofCommand(binary, args, false)
 	command.Dir, command.Env = dir, environment
 	output, err := command.CombinedOutput()
 	status := -1
@@ -185,10 +187,10 @@ var batchDiagnosticExecute = func(binary string, args []string, dir string, envi
 // clearingDiagnostic is the owner's trunk-red clearing run. That path hands the member's claim beside the
 // request, and the launcher reads the expected revisions from the request, so the claim goes in first.
 func clearingDiagnostic(root string) func(string, batch.DiagnosticRequest, batch.Claim) (batch.DiagnosticResult, error) {
-	return clearingDiagnosticWithLaunch(root, launchBatchDiagnostic)
+	return ClearingDiagnosticWithLaunch(root, LaunchBatchDiagnostic)
 }
 
-func clearingDiagnosticWithLaunch(root string,
+func ClearingDiagnosticWithLaunch(root string,
 	launch func(string, string, batch.DiagnosticRequest) (batch.DiagnosticResult, error),
 ) func(string, batch.DiagnosticRequest, batch.Claim) (batch.DiagnosticResult, error) {
 	controlRoot := batch.ModuleRoot(root)
@@ -198,11 +200,11 @@ func clearingDiagnosticWithLaunch(root string,
 	}
 }
 
-func launchBatchDiagnostic(root, batchID string, request batch.DiagnosticRequest) (batch.DiagnosticResult, error) {
-	return launchBatchDiagnosticWithExecute(root, batchID, request, batchDiagnosticExecute)
+func LaunchBatchDiagnostic(root, batchID string, request batch.DiagnosticRequest) (batch.DiagnosticResult, error) {
+	return LaunchBatchDiagnosticWithExecute(root, batchID, request, BatchDiagnosticExecute)
 }
 
-func launchBatchDiagnosticWithExecute(root, batchID string, request batch.DiagnosticRequest,
+func LaunchBatchDiagnosticWithExecute(root, batchID string, request batch.DiagnosticRequest,
 	execute func(string, []string, string, []string) ([]byte, int, error),
 ) (batch.DiagnosticResult, error) {
 	binary, err := os.Executable()
@@ -220,12 +222,12 @@ func launchBatchDiagnosticWithExecute(root, batchID string, request batch.Diagno
 	args := batchDiagnosticArgs(root, request, resultPath)
 	// The host load when the run starts, recorded with a flake's sightings.
 	sample := proofrun.SampleLoad(root, "", int64(os.Getpid()), time.Now())
-	output, status, runErr := execute(binary, args, root, append(gittree.ScrubbedEnviron(), "METASYSTEM_OWNER_LINEAGE="+landingOwnerLineage))
+	output, status, runErr := execute(binary, args, root, append(gittree.ScrubbedEnviron(), "METASYSTEM_OWNER_LINEAGE="+LandingOwnerLineage))
 	if runErr != nil && status == proofrun.ExitAdmissionRefused {
 		return batch.DiagnosticResult{}, &batch.DiagnosticRefusal{Status: strings.TrimSpace(string(output))}
 	}
 	var result proofrun.TestResult
-	if readErr := readStrictJSON(resultPath, &result); readErr != nil {
+	if readErr := strictjson.Read(resultPath, &result); readErr != nil {
 		if runErr != nil {
 			return batch.DiagnosticResult{}, fmt.Errorf("batch diagnostic: %s: %w", strings.TrimSpace(string(output)), errors.Join(runErr, readErr))
 		}

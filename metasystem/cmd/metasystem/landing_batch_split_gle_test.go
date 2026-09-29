@@ -13,6 +13,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 )
 
 func TestGLEBatchSplitNativeRedReprovesAndPublishesIndependentSurvivor(t *testing.T) {
@@ -65,7 +66,7 @@ func TestGLEBatchSplitNativeRedReprovesAndPublishesIndependentSurvivor(t *testin
 	const batchID = "01j5x00000000000000000ba01"
 	tipPath := filepath.Join(t.TempDir(), "tip.json")
 	status, output := fixture.command("internal", "test", "run", "--root", fixture.root, "--goal", "goal-b", "--tree", tipTree,
-		"--mode", "auto", "--purpose", "delivery", "--batch-prefix", "--batch-requirements", batchRequirementsArgument([]string{"app-a", "app-b"}), "--result", tipPath)
+		"--mode", "auto", "--purpose", "delivery", "--batch-prefix", "--batch-requirements", testrun.BatchRequirementsArgument([]string{"app-a", "app-b"}), "--result", tipPath)
 	if status == 0 {
 		t.Fatalf("native red tip passed: %s", output)
 	}
@@ -117,9 +118,9 @@ func TestGLEBatchSplitNativeRedReprovesAndPublishesIndependentSurvivor(t *testin
 	fixture.git("apply", "--index", "--binary", patchPath)
 	survivorPath := filepath.Join(t.TempDir(), "survivor.json")
 	fixture.requireCommand("internal", "test", "run", "--root", fixture.root, "--goal", "goal-b", "--tree", reassembled.TipTree,
-		"--mode", "auto", "--purpose", "delivery", "--batch-prefix", "--batch-requirements", batchRequirementsArgument([]string{"app-b"}), "--result", survivorPath)
+		"--mode", "auto", "--purpose", "delivery", "--batch-prefix", "--batch-requirements", testrun.BatchRequirementsArgument([]string{"app-b"}), "--result", survivorPath)
 	fixture.requireCommand("test", "verify", "--root", fixture.root, "--goal", "goal-b", "--tree", reassembled.TipTree,
-		"--mode", "auto", "--purpose", "delivery", "--batch-prefix", "--batch-requirements", batchRequirementsArgument([]string{"app-b"}))
+		"--mode", "auto", "--purpose", "delivery", "--batch-prefix", "--batch-requirements", testrun.BatchRequirementsArgument([]string{"app-b"}))
 	survivor := readResult(survivorPath)
 	if !survivor.Delivery.Sufficient {
 		t.Fatalf("survivor native proof was insufficient: %+v", survivor.Delivery)

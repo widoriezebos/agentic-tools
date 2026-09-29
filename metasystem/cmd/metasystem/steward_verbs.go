@@ -27,6 +27,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hooks"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat/launch"
@@ -307,7 +308,7 @@ func runStewardRun(args []string, stdout, stderr io.Writer) int {
 	tickConfig.BreachStop = delegateBreachStop(*repo)
 	tickConfig.BreachStopReady = stewardRunnerCustodianReady(*repo, productionStewardCustodianFacts())
 	// The steward keeps the host landing lane's owner alive (U12).
-	tickConfig.KeepLandingLane = landingLaneKeeper(landingLaneHome)
+	tickConfig.KeepLandingLane = batchowner.LandingLaneKeeper(batchowner.LandingLaneHome)
 	interval := time.Duration(steward.TickSeconds(*repo)) * time.Second
 	err := steward.RunLoop(*repo, stewardCensusFor(*repo), func() error {
 		out, err := stewardReviveOwner(*repo)

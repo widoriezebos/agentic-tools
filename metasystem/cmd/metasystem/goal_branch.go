@@ -21,6 +21,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 )
 
 // The four raw readers below moved into internal/goal/branch, where the
@@ -56,7 +57,7 @@ type goalBranchRawDependencies struct {
 
 func (d *goalBranchRawDependencies) endpoint(root string) (goal.Endpoint, error) {
 	if d == nil {
-		return goalBranchEndpoint(root)
+		return branch.MainEndpoint(root)
 	}
 	if d.Config == nil || d.GoalRepository == nil || d.EndpointTip == nil || d.OriginTip == nil || d.ResolveCommit == nil || d.HolderRoot == nil || d.Linked == nil || d.ReadRepository == nil || d.ReadInputs == nil || d.Transport == nil {
 		return goal.Endpoint{}, fmt.Errorf("goal branch raw inputs are incomplete")
@@ -312,7 +313,7 @@ func goalBranchLandPushRun(args []string) (branch.PreparedLanding, string, int, 
 	if parseErr != nil || *goalID == "" || *prepared == "" || flags.NArg() != 0 {
 		return branch.PreparedLanding{}, "", 2, fmt.Errorf("goal branch land-push needs --goal and --prepared")
 	}
-	endpoint, err := goalBranchEndpoint(*root)
+	endpoint, err := branch.MainEndpoint(*root)
 	if err != nil {
 		return branch.PreparedLanding{}, "", 1, err
 	}
@@ -367,7 +368,7 @@ func goalBranchLandPrepRun(args []string, dependencies goalBranchLandPrepDepende
 	if parseErr != nil || *goalID == "" || !dependencies.CandidateOnly && (*out == "" || *receipt == "") || *last == (*through != "") || flags.NArg() != 0 {
 		return goalBranchLandPrepOutcome{}, 2, fmt.Errorf("goal branch land-prep needs --goal, --out, --test-receipt, and exactly one of --last or --through")
 	}
-	endpoint, err := goalBranchEndpoint(*root)
+	endpoint, err := branch.MainEndpoint(*root)
 	if err != nil {
 		return goalBranchLandPrepOutcome{}, 1, err
 	}
@@ -445,17 +446,6 @@ func goalBranchLandPrepRun(args []string, dependencies goalBranchLandPrepDepende
 	return goalBranchLandPrepOutcome{Result: result}, 0, nil
 }
 
-func goalBranchEndpoint(root string) (goal.Endpoint, error) {
-	endpoint, err := goal.ResolveEndpoint(root)
-	if err != nil {
-		return goal.Endpoint{}, err
-	}
-	if endpoint.Branch != "refs/heads/main" {
-		return goal.Endpoint{}, fmt.Errorf("GOAL_BRANCH_ENDPOINT_UNSUPPORTED: endpoint %s is not refs/heads/main", endpoint.Branch)
-	}
-	return endpoint, nil
-}
-
 func goalBranchEndpointTip(root string, endpoint goal.Endpoint) (tip string, err error) {
 	return branch.EndpointTip(root, endpoint)
 }
@@ -495,7 +485,7 @@ func goalBranchClaimCheckWith(root, goalID string, endpoint goal.Endpoint, confi
 }
 
 func goalBranchHolderRoot(root string) string {
-	if main, linked := linkedWorktreeMainCheckout(root); linked {
+	if main, linked := testrun.LinkedWorktreeMainCheckout(root); linked {
 		top, topErr := goalBranchGit(root, "rev-parse", "--show-toplevel")
 		installation, rootErr := filepath.Abs(root)
 		if rootErr == nil {
@@ -563,7 +553,7 @@ func branchOperationID() (string, error) { return branch.OperationID() }
 // goalBranchSweepLanded sweeps the merged goal branch after its last landing
 // was pushed: the sweep land-push runs, repeatable after it failed.
 func goalBranchSweepLanded(root, goalID, landing string) error {
-	endpoint, err := goalBranchEndpoint(root)
+	endpoint, err := branch.MainEndpoint(root)
 	if err != nil {
 		return err
 	}
@@ -586,7 +576,7 @@ func goalBranchSweepLandedAt(root, goalID, landing string, endpoint goal.Endpoin
 // goalBranchPublishRead publishes a collected read's attestation through the
 // goal-branch push owner and returns the remote tip that now contains it.
 func goalBranchPublishRead(root, goalID, unit string) (branch.PublishReadResult, error) {
-	endpoint, err := goalBranchEndpoint(root)
+	endpoint, err := branch.MainEndpoint(root)
 	if err != nil {
 		return branch.PublishReadResult{}, err
 	}

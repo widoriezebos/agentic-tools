@@ -17,13 +17,10 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ledgerfence"
 )
 
-// ensureGuardEnrolled and environWithoutGitSteeringCLI are the command
-// edge's names for what internal/ledgerfence now owns. The fence moved there
-// when the interface server began publishing to the ledger in-process: one
-// enrollment, one scrub, two callers.
+// ensureGuardEnrolled is the command edge's name for the fence enrollment
+// internal/ledgerfence owns, which the interface server's in-process ledger
+// publications share.
 func ensureGuardEnrolled(root string) error { return ledgerfence.Ensure(root) }
-
-func environWithoutGitSteeringCLI() []string { return ledgerfence.EnvironWithoutGitSteering() }
 
 // goalActorFromDependencies is the actor from request dependencies: their
 // machine reader and the lineage they carry.

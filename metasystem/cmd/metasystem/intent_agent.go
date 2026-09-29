@@ -18,6 +18,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 )
 
@@ -102,7 +103,7 @@ func agentCaller(inv *intentInvocation, checkout string) string {
 
 // armedNicknames are the nicknames of the host registry's armed checkouts.
 func armedNicknames() ([]string, error) {
-	seats, err := productionPipeline(0, nil).seats()
+	seats, err := batchowner.ProductionPipeline(0, nil).Seats()
 	if err != nil {
 		return nil, err
 	}

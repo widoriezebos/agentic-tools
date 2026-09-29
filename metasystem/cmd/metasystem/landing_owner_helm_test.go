@@ -14,6 +14,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 )
 
@@ -113,9 +114,9 @@ func newOwnerHelmBed(t *testing.T) *ownerHelmBed {
 }
 
 func (bed *ownerHelmBed) pass() {
-	batchOwnerPassWith(bed.owner, bed.landing, batchOwnerPassSeams{helm: helm.Active,
-		resume: func(owner *batch.Owner) { bed.resumes++; owner.Resume() }, cadence: func() { bed.cadences++ },
-		out: &bed.out, now: func() time.Time { return bed.now }})
+	batchowner.BatchOwnerPassWith(bed.owner, bed.landing, batchowner.BatchOwnerPassSeams{Helm: helm.Active,
+		Resume: func(owner *batch.Owner) { bed.resumes++; owner.Resume() }, Cadence: func() { bed.cadences++ },
+		Out: &bed.out, Now: func() time.Time { return bed.now }})
 }
 
 func (bed *ownerHelmBed) queue(t *testing.T) []string {

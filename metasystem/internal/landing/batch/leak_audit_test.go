@@ -50,6 +50,9 @@ func laneAuditFiles(module string) ([]string, error) {
 	if err := walk(filepath.Join("internal", "landing", "batch"), "goadapter"); err != nil {
 		return nil, err
 	}
+	if err := walk(filepath.Join("internal", "landing", "batchowner"), ""); err != nil {
+		return nil, err
+	}
 	if err := walk(filepath.Join("internal", "quality"), ""); err != nil {
 		return nil, err
 	}
@@ -142,7 +145,7 @@ func TestLaneImportsNoGoToolchainPackages(t *testing.T) {
 		}
 	}
 	for _, required := range []string{"internal/landing/batch/gate.go", "internal/landing/batch/red.go",
-		"internal/landing/batch/leak_audit_test.go", "cmd/metasystem/landing_batch_red.go"} {
+		"internal/landing/batch/leak_audit_test.go", "internal/landing/batchowner/red.go", "cmd/metasystem/landing_batch_engine.go"} {
 		if !seen[required] {
 			t.Errorf("the audit scope misses %s", required)
 		}

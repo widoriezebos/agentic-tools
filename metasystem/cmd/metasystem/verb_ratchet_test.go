@@ -73,11 +73,16 @@ const (
 	// use.Executable), another process's executable read from the kernel,
 	// which the field-name rule counts; nothing is launched there.
 	// Batch 21 (U12): measured 95. The one site added is batchProofCommand's
-	// exec.Command (cmd/metasystem/landing_lane.go), the single launcher of
+	// exec.Command (internal/landing/batchowner/lane.go), the single launcher of
 	// a batch's proof children that asks each child to hold the host's
 	// proving flock; the tip proof and the diagnostic now call it instead of
 	// starting the engine themselves, so it launches nothing new.
-	verbRatchetSelfSubprocessCeiling = 95
+	// C8a (the batch owner moves to internal/landing/batchowner): measured
+	// 97. The two sites added are the prefix receipt's and the tip proof's
+	// keyed Executable seams (land.go, prove.go), which the field-name rule
+	// counts once the fields are exported for the command's tests; they
+	// hold the same os.Executable values as before, so nothing new launches.
+	verbRatchetSelfSubprocessCeiling = 97
 	// R6: instruction text naming a form whose first word is not public, over
 	// the vocabulary frozen when the witness landed. Batch 9 (u9a's public
 	// homes, c3's plan deletions, distill's record removal): measured 12.

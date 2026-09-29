@@ -62,7 +62,7 @@ func goalBranchTestCommit(args []string, stdout, stderr io.Writer) int {
 	if flags.Parse(args) != nil || *goalID == "" || *kind == "" || flags.NArg() != 0 {
 		return 2
 	}
-	endpoint, err := goalBranchEndpoint(*root)
+	endpoint, err := branch.MainEndpoint(*root)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return 1
@@ -107,7 +107,7 @@ func goalBranchTestPush(args []string, stdout, stderr io.Writer) int {
 	if flags.Parse(args) != nil || *goalID == "" || flags.NArg() != 0 {
 		return 2
 	}
-	endpoint, err := goalBranchEndpoint(*root)
+	endpoint, err := branch.MainEndpoint(*root)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return 1
