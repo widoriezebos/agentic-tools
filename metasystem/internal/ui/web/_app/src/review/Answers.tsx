@@ -7,6 +7,7 @@ import { usePartner } from "../partner/store";
 import { answerOf } from "../partner/sitting";
 import { Button } from "../shell/controls";
 import { Sheet } from "../shell/Sheet";
+import { Trouble } from "../shell/Trouble";
 
 /**
  * The files that changed on the branch since the tip the review names, while
@@ -78,9 +79,7 @@ export function FindingAnswers({ mark, text, answer, moved }: { mark: string; te
         ))}
       </ul>
       {refusal !== "" && (
-        <p className="ms-deposit-refusal" role="status">
-          {refusal}
-        </p>
+        <Trouble text={refusal} role="status" variant="small" />
       )}
       {opening && (
         <FollowUp
@@ -172,9 +171,7 @@ function AcceptSheet({
         </p>
       )}
       {refusal !== "" && (
-        <p className="ms-deposit-refusal" role="status">
-          {refusal}
-        </p>
+        <Trouble text={refusal} role="status" variant="small" />
       )}
       <div className="ms-sitting-foot">
         <Button primary disabled={busy || reason.trim() === ""} onClick={onAccept}>
@@ -207,9 +204,7 @@ function FollowUp({ intent, onClose, onOpened }: { intent: string; onClose: () =
   }, []);
   if (refusal !== "") {
     return (
-      <p className="ms-deposit-refusal" role="status">
-        The board could not be read, so no goal can be opened from here: {refusal}
-      </p>
+      <Trouble text={`The board could not be read, so no goal can be opened from here: ${refusal}`} role="status" variant="small" />
     );
   }
   if (backlog === null) {

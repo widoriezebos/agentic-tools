@@ -31,6 +31,7 @@ import {
 import { aboutLine, useAbout } from "../shell/about";
 import { Button } from "../shell/controls";
 import { useOffersRefresh } from "../shell/refresh";
+import { Trouble } from "../shell/Trouble";
 
 /**
  * How many goals of one lane travel with a question. It is the server's own
@@ -97,11 +98,11 @@ export function BacklogPane() {
     return (
       <Pane title="Backlog">
         <div className="ms-backlog">
-          <div className="ms-error">
-            <p className="ms-error-heading">The backlog could not be read</p>
-            <p className="ms-error-detail">{backlog.message}</p>
-            <Button onClick={refresh}>Retry</Button>
-          </div>
+          <Trouble text={`The backlog could not be read: ${backlog.message}`} as="div" variant="pane">
+            <p className="ms-trouble-heading">The backlog could not be read</p>
+            <p className="ms-trouble-detail">{backlog.message}</p>
+          </Trouble>
+          <Button onClick={refresh}>Retry</Button>
         </div>
       </Pane>
     );
@@ -326,14 +327,10 @@ function Read({
           the banner is for the one wrong this page can otherwise only whisper:
           a read that worked and a fetch that did not. */}
       {sync.state === "wrong" && ledger.state === "read" && (
-        <p className="ms-board-problem" role="status">
-          {sync.wrong}
-        </p>
+        <Trouble text={sync.wrong} role="status" variant="boxed" />
       )}
       {problem !== undefined && (
-        <p className="ms-board-problem" role="status">
-          The backlog could not be read again, so what is on screen is the last reading: {problem}
-        </p>
+        <Trouble text={`The backlog could not be read again, so what is on screen is the last reading: ${problem}`} role="status" variant="boxed" />
       )}
       {/* What the landing had to change to show the goal it was sent for, or
           that it could not find one. It stands above the lanes because it is

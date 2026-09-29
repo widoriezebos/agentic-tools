@@ -20,6 +20,7 @@ import {
 import { Button, Hint } from "../shell/controls";
 import { useSession } from "../shell/identity";
 import { failureMessage } from "../shell/workspace";
+import { Trouble } from "../shell/Trouble";
 
 /**
  * The launch card: what is being made, how far it got, and what to do next.
@@ -191,9 +192,9 @@ function Retry({ record, onStarted }: { record: Launch; onStarted: (started: Lau
             setReviewBy(event.target.value);
           }}
         />
-        {dateRefused !== "" && <p className="ms-launch-refusal">{dateRefused}</p>}
+        {dateRefused !== "" && <Trouble text={dateRefused} variant="small" />}
       </div>
-      {refusal !== "" && <p className="ms-launch-refusal">{refusal}</p>}
+      {refusal !== "" && <Trouble text={refusal} variant="small" />}
       <div className="ms-launch-actions">
         <Button primary disabled={blocked || sending} onClick={send}>
           Retry

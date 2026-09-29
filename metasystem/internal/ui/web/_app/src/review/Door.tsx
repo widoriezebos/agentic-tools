@@ -8,6 +8,7 @@ import { draftOf } from "../partner/api";
 import { usePartner } from "../partner/store";
 import { reviewPath } from "../routes";
 import { Button } from "../shell/controls";
+import { Trouble } from "../shell/Trouble";
 
 /**
  * Review it, and the door back (g1-s65 D2, D9).
@@ -77,9 +78,7 @@ export function ReviewItOrDoor({ goal, doors, now = new Date() }: { goal: string
       </Button>
       <Help id="review-room" />
       {refusal !== "" && (
-        <span className="ms-deposit-refusal" role="status">
-          {refusal}
-        </span>
+        <Trouble text={refusal} role="status" as="span" variant="small" />
       )}
     </p>
   );

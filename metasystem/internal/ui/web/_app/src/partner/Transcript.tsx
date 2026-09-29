@@ -21,6 +21,9 @@ import "./partner.css";
 import { previewDocument, type Block } from "../project/api";
 import { Markdown } from "../project/Markdown";
 import { Anchored, useDeskAnchors } from "../review/anchors";
+import { Chip } from "../shell/controls";
+import { Trouble } from "../shell/Trouble";
+import { chipLine } from "../shell/troubling";
 
 /**
  * The conversation, as a human reads it.
@@ -228,6 +231,13 @@ function Said({
           {message.interface === true && <span className="ms-turn-by">{interfaceLine(message.text)}</span>}
           {message.page !== undefined && <AskedFrom capture={message.page} />}
         </TurnHead>
+        {/* What a press on Ask what happened asked about: the act or the
+            pane, the code, the time — the fields that travelled (g1-s68 D2). */}
+        {message.trouble !== undefined && (
+          <p className="ms-trouble-chip">
+            <Chip>{chipLine(message.trouble)}</Chip>
+          </p>
+        )}
         <div className="ms-turn-body">
           <Paragraphs text={message.text} />
         </div>
@@ -242,7 +252,7 @@ function Said({
         {message.text !== "" &&
           (rendered ? <Answer text={message.text} names={names} /> : <Paragraphs text={message.text} />)}
         {message.outcome === "stopped" && <p className="ms-partner-note">Stopped.</p>}
-        {failed && <p className="ms-partner-failed">{message.detail ?? "The turn did not finish."}</p>}
+        {failed && <Trouble text={message.detail ?? "The turn did not finish."} />}
         {/* What this answer offered, under the words that offered it. The card
             is where the human decides; nothing has been written anywhere. */}
         {(message.suggestions ?? []).map((suggestion, at) => (
@@ -390,10 +400,12 @@ function Refusal({ reason, install }: { reason: string; install: string }) {
     <div className="ms-turn ms-turn--partner">
       <TurnHead who="partner" name={PARTNER} at="" />
       <div className="ms-turn-body">
-        <p className="ms-partner-failed">
+        {/* The conversation's own refusal to take a turn: a press here would
+            meet it again, so the line offers no Ask (g1-s68 D2). */}
+        <Trouble text={reason} askable={false}>
           <AlertTriangle size={14} strokeWidth={1.75} aria-hidden="true" />
           {reason}
-        </p>
+        </Trouble>
         {install !== "" && (
           <pre className="ms-partner-install">
             <code>{install}</code>

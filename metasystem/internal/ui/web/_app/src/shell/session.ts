@@ -191,3 +191,22 @@ export function blockedForSignIn(code: string, handle: string, needsHandle: bool
   return "";
 }
 
+
+/**
+ * The act the sheet runs once a sign-in lands, when it is opened again.
+ *
+ * A new act's retry is the one. Opened from the header's control after the
+ * sheet handed off to Ask what happened (g1-s68 D2), the retry it was holding
+ * is kept, because the human stepped away to ask and did not give up on the
+ * act; closed any other way, it is forgotten, as it always was.
+ */
+export function retryOnReopen(
+  held: (() => void) | null,
+  again: (() => void) | undefined,
+  handedOff: boolean,
+): (() => void) | null {
+  if (again !== undefined) {
+    return again;
+  }
+  return handedOff ? held : null;
+}

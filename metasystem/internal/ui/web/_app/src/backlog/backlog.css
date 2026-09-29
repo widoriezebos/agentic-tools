@@ -284,18 +284,6 @@
  * The one line the toolbar puts on the page, and only for something a human
  * can do something about: a read that worked and a fetch that did not.
  */
-.ms-board-problem {
-  margin: 0;
-  padding: 8px 10px;
-  box-sizing: border-box;
-  width: 100%;
-  border: 1px solid var(--ms-danger);
-  border-radius: 8px;
-  color: var(--ms-danger);
-  font-size: 13px;
-  line-height: 18px;
-  overflow-wrap: anywhere;
-}
 
 .ms-board-frame {
   display: flex;
@@ -423,13 +411,6 @@
   color: var(--ms-text-3);
 }
 
-.ms-column-refusal {
-  margin: 0;
-  font-size: 12px;
-  line-height: 16px;
-  color: var(--ms-danger);
-  overflow-wrap: anywhere;
-}
 
 .ms-column-cards {
   display: flex;
@@ -755,13 +736,6 @@
   overflow-wrap: anywhere;
 }
 
-.ms-act-refusal {
-  margin: 0;
-  font-size: 13px;
-  line-height: 18px;
-  color: var(--ms-danger);
-  overflow-wrap: anywhere;
-}
 
 /* ------------------------------------------ narrowing, and what cannot be -- */
 

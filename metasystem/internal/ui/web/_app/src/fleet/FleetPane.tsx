@@ -61,6 +61,7 @@ import { captureOfFleet } from "./capture";
 import { LaunchCard } from "./LaunchCard";
 import { LaunchSheet } from "./LaunchSheet";
 import { cardFor } from "./launching";
+import { Trouble } from "../shell/Trouble";
 
 /**
  * Fleet: who is doing what, and whether execution is healthy.
@@ -163,9 +164,7 @@ export function FleetPane() {
       {read.state === "loading" && <Loading />}
       {read.state === "failed" && <Failure message={read.message} onRetry={reload} />}
       {read.state === "read" && read.problem !== undefined && (
-        <p className="ms-fleet-problem" role="status">
-          The fleet could not be read again, so what is on screen is the last reading: {read.problem}
-        </p>
+        <Trouble text={`The fleet could not be read again, so what is on screen is the last reading: ${read.problem}`} role="status" />
       )}
       {read.state === "read" && <Blocks page={read.page} />}
     </Pane>
@@ -184,7 +183,7 @@ function Failure({ message, onRetry }: { message: string; onRetry: () => void })
   return (
     <section className="ms-fleet">
       <h2 className="ms-fleet-heading">The fleet could not be read</h2>
-      <p className="ms-fleet-problem">{message}</p>
+      <Trouble text={`The fleet could not be read: ${message}`}>{message}</Trouble>
       <Button onClick={onRetry}>Try again</Button>
     </section>
   );
@@ -424,7 +423,7 @@ function TheFleet({
         </table>
       )}
       <p className="ms-fleet-provenance">{copyLine(page, now)}</p>
-      {problem !== "" && <p className="ms-fleet-problem">{problem}</p>}
+      {problem !== "" && <Trouble text={problem} />}
       {/* The Partner's own file, where this server could not write it. The
           page is fine and the tool's reading of it is not, which is a
           different fact and says so quietly rather than as a failure. */}
@@ -538,7 +537,7 @@ function MachineRow({
  */
 function Work({ machine, now }: { machine: Machine; now: Date }) {
   if (machine.workingProblem !== "") {
-    return <p className="ms-fleet-problem">{machine.workingProblem}</p>;
+    return <Trouble text={machine.workingProblem} />;
   }
   if (machine.working.length === 0) {
     return <p className="ms-fleet-quiet">This machine is running nothing.</p>;

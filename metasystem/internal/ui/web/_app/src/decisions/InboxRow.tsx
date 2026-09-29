@@ -11,6 +11,7 @@ import { ASK_THE_PARTNER, DISMISS, lineState } from "../partner/proposing";
 import { Help } from "../help/Help";
 import { useNotifications } from "../notifications/store";
 import { Button, Chip } from "../shell/controls";
+import { Trouble } from "../shell/Trouble";
 
 /**
  * One row of the inbox: a line, and what is under it when it is open.
@@ -142,9 +143,7 @@ function OpenRow({ need, now, acts }: { need: Need; now: Date; acts: Acts }) {
       <p className="ms-decisions-open-muted">{askedLine(need, now)}</p>
       {need.recommend !== "" && <p className="ms-decisions-open-recommend">Recommended: {need.recommend}</p>}
       {acts.refusedAt === need.id && acts.refusal !== "" && (
-        <p className="ms-decisions-refusal" role="alert">
-          {acts.refusal}
-        </p>
+        <Trouble text={acts.refusal} role="alert" variant="small" />
       )}
       <ActRow need={need} acts={acts} />
     </div>

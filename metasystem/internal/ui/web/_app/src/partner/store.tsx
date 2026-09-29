@@ -9,6 +9,7 @@ import {
   keepRoom,
   loadPartner,
   PartnerError,
+  sendTrouble,
   sendTurn,
   startSitting,
   stopTurn,
@@ -126,6 +127,8 @@ import type { Chosen } from "./subject";
 import { onPartnerEvent, onStreamOpen } from "../notifications/stream";
 import { useAboutLine, useSubject } from "../shell/about";
 import { useSession } from "../shell/identity";
+import { useTroubles, type TroubleAsk } from "../shell/troubles";
+import { pendingIn, sendChoice, TROUBLE_REQUEST, waitingLine as troubleWaits, type Pending } from "../shell/troubling";
 import { editDocument, isStale, loadDocument } from "../project/api";
 import { captured } from "../stickies/stickies";
 import { useStickies } from "../stickies/store";
@@ -199,6 +202,15 @@ type Partner = {
   stop: () => Promise<string>;
   /** True while a send is in flight, so Send cannot be pressed twice. */
   sending: boolean;
+  /**
+   * The press on Ask what happened that waits in the conversation on screen,
+   * or null (g1-s68 D2). It stands as a chip above the composer beside the
+   * draft, and the next Send here sends it first; a trouble held in another
+   * conversation is never this one's.
+   */
+  pendingTrouble: Pending | null;
+  /** Take a waiting trouble back, which is what its chip's × does. */
+  dropTrouble: (id: string) => void;
 
   /**
    * Everything above the composer, in the order it was attached. It is what
@@ -618,6 +630,8 @@ type Partner = {
 const nothing: Partner = {
   store: emptyStore,
   busy: false,
+  pendingTrouble: null,
+  dropTrouble: () => {},
   draft: "",
   setDraft: () => {},
   send: () => {},
@@ -910,6 +924,10 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
   const subject = useSubject();
   const stickies = useStickies();
   const label = useAboutLine("");
+  // What every trouble line presses, above every provider (g1-s68 D2): this
+  // store registers its ask there, and holds there what waits for an answer.
+  const { register: registerTrouble, hold: holdTrouble, release: releaseTrouble, pending: troubles } = useTroubles();
+  const pendingTrouble = useMemo(() => pendingIn(troubles, where), [troubles, where]);
 
   const read = useCallback((signal?: AbortSignal) => {
     const asked = whereNow.current;
@@ -1011,6 +1029,13 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
   const running = busy(store);
   const send = useCallback((written?: string) => {
     const text = (written ?? draft).trim();
+    // A trouble asked while this conversation was answering is sent first, by
+    // its own path: the draft and everything above it stay as they are.
+    const choice = sendChoice(troubles, where, text, { busy: running, sending });
+    if (choice.kind === "trouble") {
+      askTroubleNow.current(choice.pending);
+      return;
+    }
     if (text === "" || running || sending) {
       return;
     }
@@ -1050,7 +1075,45 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
       .finally(() => {
         setSending(false);
       });
-  }, [draft, running, sending, capture, attachments, compose, refreshed, where]);
+  }, [draft, running, sending, capture, attachments, compose, refreshed, where, troubles]);
+
+  /**
+   * Ask what happened, sent (g1-s68 D2): its own send path, which takes no
+   * draft and clears none. The question is the server's fixed sentence and the
+   * trouble travels beside the page — the page alone, since the attachments
+   * above the composer are the human's and stay exactly where they are.
+   * Refused for any reason, the trouble is held rather than lost: a busy
+   * conversation is waited for, and any other refusal is said in words and
+   * the trouble stays to be sent again.
+   */
+  const askTroubleNow = useRef<(entry: Pending) => void>(() => {});
+  askTroubleNow.current = (entry: Pending) => {
+    const taken = compose([]);
+    setSending(true);
+    setStore(retrying);
+    sendTrouble(entry.key, entry.trouble, taken, entry.conversation)
+      .then((accepted) => {
+        releaseTrouble(entry.id);
+        setBaseline(taken);
+        setStore((held) =>
+          held.conversation === entry.conversation
+            ? asked(held, accepted.turn, entry.key, TROUBLE_REQUEST, taken, new Date().toISOString(), {
+                interface: true,
+                trouble: entry.trouble,
+              })
+            : held,
+        );
+      })
+      .catch((error: unknown) => {
+        holdTrouble(entry);
+        if (!isBusy(error)) {
+          setStore((held) => refused(held, reasonOf(error), installOf(error)));
+        }
+      })
+      .finally(() => {
+        setSending(false);
+      });
+  };
 
   const turn = store.live.turn;
   const stop = useCallback(async (): Promise<string> => {
@@ -1077,6 +1140,48 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
     cameFrom.current = active instanceof HTMLElement ? active : null;
     setWanted((at) => at + 1);
   }, []);
+
+  /**
+   * The ask every trouble line presses (g1-s68 D2). It reads the conversation
+   * on screen, as every send does, so a press from the bell while a room is on
+   * screen reaches the room's conversation. The conversation is opened to the
+   * human; a press while it answers is held for it and never refused.
+   */
+  const askTrouble = useCallback<TroubleAsk>((trouble, origin) => {
+    const conversation = whereNow.current;
+    const filled = {
+      ...trouble,
+      where:
+        trouble.where.subject === undefined && subject.subject !== undefined && subject.subject !== ""
+          ? { ...trouble.where, subject: subject.subject, ...(subject.kind === undefined ? {} : { kind: subject.kind }) }
+          : trouble.where,
+      ...(trouble.tip === undefined && capture.tip !== undefined && capture.tip !== "" ? { tip: capture.tip } : {}),
+    };
+    const entry: Pending = {
+      id: origin,
+      origin,
+      key: keyFor(""),
+      conversation,
+      trouble: filled,
+      label: troubleWaits(conversation, ""),
+    };
+    wantComposer();
+    if (running || sending) {
+      holdTrouble(entry);
+      return;
+    }
+    askTroubleNow.current(entry);
+  }, [subject, capture, running, sending, holdTrouble, wantComposer]);
+  useEffect(() => {
+    registerTrouble(askTrouble);
+    return () => {
+      registerTrouble(null);
+    };
+  }, [registerTrouble, askTrouble]);
+
+  const dropTrouble = useCallback((id: string) => {
+    releaseTrouble(id);
+  }, [releaseTrouble]);
 
   const detach = useCallback((id: string) => {
     setAttachments((held) => remove(held, id));
@@ -2363,7 +2468,7 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo(
     () => ({
-      store, busy: running, draft, setDraft, send, stop, sending,
+      store, busy: running, draft, setDraft, send, stop, sending, pendingTrouble, dropTrouble,
       attachments, detach, chosen, ask, clearChosen, passage, askPassage,
       sheetDraft, askAbout, handOver, noteDraft, dropDraft, offerFields, noteSheet,
       offered, use, useAndSave, undo, dismiss, reopen, show, showing, clearShowing, noteField, revealed,
@@ -2382,7 +2487,7 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
       proposalsWaiting: waitingAcross(proposals), proposalsLine: barLine(proposals),
       showProposals, showProposedFor, offerReread, noteCovered,
     }),
-    [store, running, draft, send, stop, sending, attachments, detach, chosen, ask,
+    [store, running, draft, send, stop, sending, pendingTrouble, dropTrouble, attachments, detach, chosen, ask,
       clearChosen, passage, askPassage, sheetDraft, askAbout, handOver, noteDraft,
       dropDraft, offerFields, noteSheet,
       offered, use, useAndSave, undo, dismiss, reopen, show, showing, clearShowing, noteField, revealed,

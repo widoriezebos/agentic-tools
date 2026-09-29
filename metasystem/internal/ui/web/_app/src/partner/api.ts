@@ -15,6 +15,7 @@
  */
 
 import type { SheetDraft } from "./drafting";
+import type { Trouble } from "../shell/troubling";
 
 const PARTNER = "/api/partner";
 const TURNS = "/api/partner/turns";
@@ -435,6 +436,8 @@ export type Message = {
    * it into the human's own words.
    */
   interface?: boolean;
+  /** What a press on Ask what happened asked about, on that turn's question only (g1-s68). */
+  trouble?: Trouble;
 };
 
 /** Everything the page needs to render the conversation from cold. */
@@ -619,6 +622,20 @@ export async function loadPartner(signal?: AbortSignal, conversation = ""): Prom
  */
 export async function sendTurn(key: string, text: string, about: Page, conversation = ""): Promise<{ turn: string }> {
   return request<{ turn: string }>(TURNS, { key, text, about, conversation });
+}
+
+/**
+ * Ask what happened (g1-s68 D2): the same turn route, with the trouble beside
+ * the page. The server composes the question from its own fixed sentence, so
+ * no text travels; the same key twice is the same turn once.
+ */
+export async function sendTrouble(
+  key: string,
+  trouble: Trouble,
+  about: Page,
+  conversation = "",
+): Promise<{ turn: string }> {
+  return request<{ turn: string }>(TURNS, { key, text: "", about, conversation, trouble });
 }
 
 /**

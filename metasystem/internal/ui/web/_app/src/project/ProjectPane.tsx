@@ -99,6 +99,7 @@ import {
   writeProjectScope,
   writeProjectTab,
 } from "../storage";
+import { Trouble } from "../shell/Trouble";
 
 /**
  * Project: a briefing on what this project is, not a list of its files.
@@ -251,9 +252,10 @@ function Briefed({ goal }: { goal: string | null }) {
       {read.state === "loading" && <LoadingCards />}
       {read.state === "failed" && <FailureCard message={read.message} onRetry={reload} />}
       {read.state === "read" && read.problem !== undefined && (
-        <p className="ms-project-reason" role="status">
-          Project could not be read again, so what is on screen is the last reading: {read.problem}
-        </p>
+        <Trouble
+          text={`Project could not be read again, so what is on screen is the last reading: ${read.problem}`}
+          role="status"
+        />
       )}
       {read.state === "read" && (
         <Columns
@@ -1334,7 +1336,7 @@ function FailureCard({ message, onRetry }: { message: string; onRetry: () => voi
     <div className="ms-pane-stack">
       <section className="ms-card">
         <h2 className="ms-card-title">Project could not be read</h2>
-        <p className="ms-project-reason">{message}</p>
+        <Trouble text={`Project could not be read: ${message}`}>{message}</Trouble>
         <Button onClick={onRetry}>Retry</Button>
       </section>
     </div>
@@ -1351,12 +1353,17 @@ function Problems({ problems }: { problems: Problem[] }) {
       </div>
       <ul className="ms-project-rows">
         {problems.map((problem) => (
-          <li key={`${problem.path}:${String(problem.line)}:${problem.message}`} className="ms-project-problem">
-            <span className="ms-mono ms-project-problem-at">
+          <Trouble
+            key={`${problem.path}:${String(problem.line)}:${problem.message}`}
+            as="li"
+            text={`${problem.path}:${String(problem.line)}: ${problem.message}`}
+            subject={{ id: problem.path, kind: "document" }}
+          >
+            <span className="ms-mono ms-trouble-at">
               {problem.path}:{problem.line}
-            </span>
-            <span>{problem.message}</span>
-          </li>
+            </span>{" "}
+            {problem.message}
+          </Trouble>
         ))}
       </ul>
     </section>

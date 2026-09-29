@@ -5,6 +5,7 @@ import { NotificationsProvider } from "./notifications/store";
 import { TOOLTIP_DELAY } from "./shell/controls";
 import { IdentityProvider } from "./shell/identity";
 import { Shell } from "./shell/Shell";
+import { TroubleProvider } from "./shell/troubles";
 import { StickiesProvider } from "./stickies/store";
 
 /**
@@ -22,18 +23,26 @@ import { StickiesProvider } from "./stickies/store";
  * stand above every route. Its PANEL does not stand here — it is rendered
  * inside the shell, where the page's subject, the conversation and the work
  * area are, because it needs all three and this is above them.
+ *
+ * The trouble context stands above all of them (g1-s68 D2). The bell's panel
+ * and the sign-in sheet are drawn by providers above the Partner's, so a
+ * trouble line there can only reach the colleague through something above
+ * both: the Partner's store registers its ask on it, and every line presses
+ * that.
  */
 export function App() {
   return (
     <BrowserRouter>
       <Tooltip.Provider delayDuration={TOOLTIP_DELAY}>
-        <IdentityProvider>
-          <NotificationsProvider>
-            <StickiesProvider>
-              <Shell />
-            </StickiesProvider>
-          </NotificationsProvider>
-        </IdentityProvider>
+        <TroubleProvider>
+          <IdentityProvider>
+            <NotificationsProvider>
+              <StickiesProvider>
+                <Shell />
+              </StickiesProvider>
+            </NotificationsProvider>
+          </IdentityProvider>
+        </TroubleProvider>
       </Tooltip.Provider>
     </BrowserRouter>
   );

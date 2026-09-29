@@ -226,15 +226,6 @@
   color: var(--ms-text-3);
 }
 
-.ms-partner-failed {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin: 0;
-  font-size: 13px;
-  line-height: 1.5;
-  color: var(--ms-danger);
-}
 
 .ms-partner-install {
   margin: 0;
@@ -769,12 +760,6 @@
   color: var(--ms-text-3);
 }
 
-.ms-font-refusal {
-  margin: 0;
-  font-size: 12px;
-  line-height: 16px;
-  color: var(--ms-danger);
-}
 
 .ms-font-stepper {
   display: flex;

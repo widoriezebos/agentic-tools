@@ -5,6 +5,7 @@ import { seeingLine } from "./capture";
 import { AttachmentChip, DraftQuestions } from "./Chips";
 import { usePartner } from "./store";
 import { Sheet } from "../shell/Sheet";
+import { Trouble } from "../shell/Trouble";
 
 /**
  * What the Partner will see, said in one line and opened in full.
@@ -172,7 +173,7 @@ function SeeingSheet({ onClose }: { onClose: () => void }) {
         </>
       )}
       {read === null && failed === "" && <p className="ms-seeing-note">Composing…</p>}
-      {failed !== "" && <p className="ms-partner-failed">{failed}</p>}
+      {failed !== "" && <Trouble text={failed} onAsked={onClose} />}
     </Sheet>
   );
 }

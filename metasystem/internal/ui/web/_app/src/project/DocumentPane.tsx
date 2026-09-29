@@ -73,6 +73,7 @@ import { GoalPicker, type PickableGoal } from "../shell/GoalPicker";
 import { StickiesBlock } from "../stickies/Block";
 import { useWorkspaceState, type WorkspaceState } from "../shell/identity";
 import { titleFor, type Identity } from "../title";
+import { Trouble } from "../shell/Trouble";
 
 /**
  * One document, read as a chapter of a book rather than as a file.
@@ -300,7 +301,7 @@ function FailureCard({ message, onRetry }: { message: string; onRetry: () => voi
   return (
     <div className="ms-reading-absent">
       <h1 className="ms-md-h1">This document could not be read</h1>
-      <p className="ms-project-reason">{message}</p>
+      <Trouble text={`This document could not be read: ${message}`}>{message}</Trouble>
       <Button onClick={onRetry}>Retry</Button>
     </div>
   );
@@ -797,11 +798,16 @@ function Editing({
  */
 function Problems({ problems }: { problems: Problem[] }) {
   return (
-    <ul className="ms-editor-problems">
+    <ul className="ms-editor-refused">
       {problems.map((problem, index) => (
-        <li key={`${problem.path}-${String(problem.line)}-${String(index)}`}>
+        <Trouble
+          key={`${problem.path}-${String(problem.line)}-${String(index)}`}
+          as="li"
+          text={`${problem.path} line ${String(problem.line)}: ${problem.message}`}
+          subject={{ id: problem.path, kind: "document" }}
+        >
           <span className="ms-mono">line {problem.line}</span> {problem.message}
-        </li>
+        </Trouble>
       ))}
     </ul>
   );

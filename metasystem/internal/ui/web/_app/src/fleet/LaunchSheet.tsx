@@ -23,6 +23,8 @@ import { Button } from "../shell/controls";
 import { useSession } from "../shell/identity";
 import { Sheet } from "../shell/Sheet";
 import { failureMessage } from "../shell/workspace";
+import { Trouble } from "../shell/Trouble";
+import { useSecret } from "../shell/troubles";
 
 /**
  * Launch a machine: the form, before the act.
@@ -63,6 +65,9 @@ export function LaunchSheet({
     word: "",
     reviewBy: proposedReviewBy(now),
   }));
+  // The authorization is the one field that travels nowhere but the verb: a
+  // trouble composed while it is typed has it replaced (g1-s68 D1).
+  useSecret(draft.word);
   // Whether the human has taken the path over. Until they do, the proposal
   // follows the nickname, because a path named for another nickname is a
   // machine landing in the wrong directory.
@@ -203,7 +208,7 @@ export function LaunchSheet({
         </div>
       </section>
 
-      {refusal !== "" && <p className="ms-launch-refusal">{refusal}</p>}
+      {refusal !== "" && <Trouble text={refusal} variant="small" />}
       {blocked !== "" && <p className="ms-launch-hint">{blocked}</p>}
       <div className="ms-launch-actions">
         <Button primary disabled={blocked !== "" || sending} onClick={send}>
@@ -218,5 +223,5 @@ function Refused({ said }: { said: string }) {
   if (said === "") {
     return null;
   }
-  return <p className="ms-launch-refusal">{said}</p>;
+  return <Trouble text={said} variant="small" />;
 }

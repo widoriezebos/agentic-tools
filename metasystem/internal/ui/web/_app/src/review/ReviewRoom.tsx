@@ -48,6 +48,7 @@ import { Composer } from "../shell/Composer";
 import { Button } from "../shell/controls";
 import { Sheet } from "../shell/Sheet";
 import "./room.css";
+import { Trouble } from "../shell/Trouble";
 
 /**
  * The room (g1-s65 §3), for every sitting (g1-s67 D1): one screen, two panes.
@@ -320,7 +321,7 @@ export function Room({ record }: { record: string }) {
           >
             Review the new tip
           </Button>
-          {retipRefusal !== "" && <span className="ms-deposit-refusal">{retipRefusal}</span>}
+          {retipRefusal !== "" && <Trouble text={retipRefusal} as="span" variant="small" />}
         </p>
       )}
       {store.state === "ready" && sitting === null && !stood.current && (
@@ -483,9 +484,7 @@ function EndSheet({ open, onOpenChange }: { open: boolean; onOpenChange: (open: 
       )}
       {chosen !== "" && sittingBusy && <p className="ms-desk-loading">Drafting the Outcome…</p>}
       {sittingRefusal !== "" && (
-        <p className="ms-deposit-refusal" role="status">
-          {sittingRefusal}
-        </p>
+        <Trouble text={sittingRefusal} role="status" variant="small" />
       )}
     </Sheet>
   );
@@ -651,9 +650,7 @@ function ShapingEndSheet({ open, onOpenChange }: { open: boolean; onOpenChange: 
         <Help id="the-outcome" />
       </p>
       {sittingRefusal !== "" && (
-        <p className="ms-sitting-refusal" role="status">
-          {sittingRefusal}
-        </p>
+        <Trouble text={sittingRefusal} role="status" />
       )}
       <EndShapingWays
         busy={sittingBusy}

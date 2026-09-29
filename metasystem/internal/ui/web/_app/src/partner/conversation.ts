@@ -350,8 +350,16 @@ function settled(store: Store, live: Live, outcome: Outcome, event: PartnerEvent
  * would throw those away, and the refusal among them, so a turn that has
  * already begun is left exactly as it is.
  */
-export function asked(store: Store, turn: string, key: string, text: string, page: Page, at: string): Store {
-  const question: Message = { id: `${turn}-human`, turn, role: "human", text, at, key, page };
+export function asked(
+  store: Store,
+  turn: string,
+  key: string,
+  text: string,
+  page: Page,
+  at: string,
+  asking: Pick<Message, "interface" | "trouble"> = {},
+): Store {
+  const question: Message = { id: `${turn}-human`, turn, role: "human", text, at, key, page, ...asking };
   const already = store.messages.some((message) => message.turn === turn && message.role === "human");
   // The answer can even have finished by now, on a short turn over a fast
   // runtime. Then the question belongs in front of it rather than after it,

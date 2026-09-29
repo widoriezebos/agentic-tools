@@ -42,8 +42,8 @@ describe("the identity control's own notice", () => {
     const markup = acting({ trouble: MOVED });
 
     expect(markup).toContain(MOVED);
-    // In the class this control already says a refusal in, and announced.
-    expect(markup).toContain('class="ms-signin-refusal"');
+    // As a trouble line (g1-s68 D1), and announced.
+    expect(markup).toContain('class="ms-trouble ms-trouble--small"');
     expect(markup).toContain('role="alert"');
     // And the handle is still there: the sign-in succeeded.
     expect(markup).toContain("Wido");
@@ -52,7 +52,7 @@ describe("the identity control's own notice", () => {
   it("shows no notice where the sign-in answered none", () => {
     const markup = acting();
 
-    expect(markup).not.toContain("ms-signin-refusal");
+    expect(markup).not.toContain("ms-trouble");
     expect(markup).not.toContain('role="alert"');
     expect(markup).toContain("Wido");
   });

@@ -23,6 +23,7 @@ import { Button } from "../shell/controls";
 import { GoalPicker, type PickableGoal } from "../shell/GoalPicker";
 import { Sheet } from "../shell/Sheet";
 import { useSubject } from "../shell/about";
+import { Trouble } from "../shell/Trouble";
 
 /**
  * The notepad, as a sheet from the right.
@@ -69,9 +70,7 @@ export function StickiesPanel() {
       <Composer />
       {notepad.human === "" && loaded && <p className="ms-stickies-seat">{SIGN_IN_LINE}</p>}
       {problem !== "" && (
-        <p className="ms-stickies-problem" role="alert">
-          {problem}
-        </p>
+        <Trouble text={problem} role="alert" variant="small" />
       )}
       {loaded && problem === "" && notepad.stickies.length === 0 && (
         <p className="ms-stickies-empty">{NOTHING_YET}</p>
@@ -238,9 +237,7 @@ function Composer() {
         <span className="ms-stickies-hint">Enter saves · Shift+Enter breaks a line</span>
       </div>
       {refusal !== "" && (
-        <p className="ms-stickies-problem" role="alert">
-          {refusal}
-        </p>
+        <Trouble text={refusal} role="alert" variant="small" />
       )}
     </div>
   );
@@ -370,9 +367,7 @@ function Card({ sticky }: { sticky: Sticky }) {
         )}
       </div>
       {refusal !== "" && (
-        <p className="ms-stickies-problem" role="alert">
-          {refusal}
-        </p>
+        <Trouble text={refusal} role="alert" variant="small" />
       )}
     </li>
   );

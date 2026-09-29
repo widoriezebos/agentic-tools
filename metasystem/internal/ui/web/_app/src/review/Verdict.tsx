@@ -4,6 +4,7 @@ import { verdictLine, type ToPerform } from "./room";
 import { BacklogError, reviewGoal, type Backlog, type Row } from "../backlog/api";
 import { useSession } from "../shell/identity";
 import { Button } from "../shell/controls";
+import { Trouble } from "../shell/Trouble";
 
 /** What the board does with the ledger a card's act answered: the board it now is. */
 export const VerdictActed = createContext<(after: Backlog) => void>(() => {});
@@ -61,9 +62,7 @@ export function CardVerdict({ row }: { row: Row }) {
         </p>
       )}
       {refusal !== "" && (
-        <p className="ms-deposit-refusal" role="status">
-          {refusal}
-        </p>
+        <Trouble text={refusal} role="status" variant="small" />
       )}
     </div>
   );

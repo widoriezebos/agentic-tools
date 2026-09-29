@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { blockedForSignIn, controlFor, isCode, needsAHandle, type SessionStatus } from "./session";
+import { blockedForSignIn, controlFor, isCode, needsAHandle, retryOnReopen, type SessionStatus } from "./session";
 
 /**
  * The identity control, and the one rule the sign-in sheet has of its own.
@@ -86,5 +86,19 @@ describe("what counts as a code", () => {
     expect(isCode("1234567")).toBe(false);
     expect(isCode("")).toBe(false);
     expect(isCode("12 456")).toBe(false);
+  });
+});
+
+describe("the sign-in sheet handing off to Ask what happened (g1-s68 D2)", () => {
+  const retry = () => {};
+  const other = () => {};
+  it("keeps the retry it was waiting on when the control reopens it after a hand-off", () => {
+    expect(retryOnReopen(retry, undefined, true)).toBe(retry);
+  });
+  it("takes a new act's retry over the one it held", () => {
+    expect(retryOnReopen(retry, other, true)).toBe(other);
+  });
+  it("and forgets it where the sheet was closed rather than handed off", () => {
+    expect(retryOnReopen(retry, undefined, false)).toBeNull();
   });
 });

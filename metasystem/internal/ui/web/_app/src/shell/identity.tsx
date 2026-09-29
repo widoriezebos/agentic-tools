@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
-import { loadSession, needsAHandle, type SessionState, type SessionStatus } from "./session";
+import { loadSession, needsAHandle, retryOnReopen, type SessionState, type SessionStatus } from "./session";
 import { SignInSheet } from "./SignInSheet";
 import { failureMessage, loadWorkspace, type Workspace } from "./workspace";
 
@@ -76,6 +76,9 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
   // The act waiting on a sign-in. It is a ref rather than state because it is
   // never rendered and must not make the sheet render again when it changes.
   const waiting = useRef<(() => void) | null>(null);
+  // Whether the sheet last closed by handing off to Ask what happened, which
+  // keeps the act it was waiting on for when it is opened again (g1-s68 D2).
+  const handedOff = useRef(false);
 
   useEffect(() => {
     const aborter = new AbortController();
@@ -116,7 +119,8 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const askToSignIn = useCallback((again?: () => void) => {
-    waiting.current = again ?? null;
+    waiting.current = retryOnReopen(waiting.current, again, handedOff.current);
+    handedOff.current = false;
     setAsking(true);
   }, []);
 
@@ -144,8 +148,13 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
         onOpenChange={(next) => {
           if (!next) {
             waiting.current = null;
+            handedOff.current = false;
           }
           setAsking(next);
+        }}
+        onHandOff={() => {
+          handedOff.current = true;
+          setAsking(false);
         }}
         onSignedIn={settled}
       />

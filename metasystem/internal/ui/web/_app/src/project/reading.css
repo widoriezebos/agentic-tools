@@ -918,19 +918,7 @@
   list-style: none;
 }
 
-.ms-project-problem {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 8px;
-  padding: 2px 0;
-  font-size: 13px;
-  line-height: 18px;
-  color: var(--ms-danger);
-}
 
-.ms-project-problem-at {
-  font-size: 12px;
-}
 
 /*
  * A row is a grid, never a wrapping line: the title takes what is left, the
@@ -1285,15 +1273,6 @@
 }
 
 /* What the project refused the save over, above the text a human has to fix. */
-.ms-editor-problems {
-  margin: 0;
-  padding: 12px 12px 12px 28px;
-  border: 1px solid var(--ms-danger);
-  border-radius: 6px;
-  color: var(--ms-danger);
-  font-size: 13px;
-  line-height: 20px;
-}
 
 /* ------------------------------------------------------------- the sheet -- */
 
@@ -1421,12 +1400,6 @@
   color: var(--ms-text-3);
 }
 
-.ms-writing-refusal {
-  margin: 0;
-  font-size: 13px;
-  line-height: 18px;
-  color: var(--ms-danger);
-}
 
 /*
  * The aside is the first thing to go: the main column's measure is what the

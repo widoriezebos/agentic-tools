@@ -395,7 +395,7 @@ function Frame() {
     [workarea],
   );
   const drawer = (
-    <ErrorBoundary>
+    <ErrorBoundary conversation="drawer">
       <Drawer
         open={drawn}
         caret={caret}
@@ -420,7 +420,7 @@ function Frame() {
       <WorkAreaProvider layer={null} under={null}>
         <Rereading />
         <main id="content" className="ms-room-shell" tabIndex={-1}>
-          <ErrorBoundary>
+          <ErrorBoundary conversation="room">
             <Room record={reviewing} />
           </ErrorBoundary>
         </main>

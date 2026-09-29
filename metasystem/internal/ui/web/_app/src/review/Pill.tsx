@@ -5,6 +5,7 @@ import { candidateHref, pillOf, pressSignedIn } from "./room";
 import { Help } from "../help/Help";
 import { Button } from "../shell/controls";
 import { useSession } from "../shell/identity";
+import { Trouble } from "../shell/Trouble";
 
 /**
  * The candidate's pill in the room's header (g1-s69 D3): what app status says
@@ -84,9 +85,7 @@ export function CandidatePill({ goal, reviewed }: { goal: string; reviewed: stri
       )}
       <Help id="the-candidate" />
       {refusal !== "" && (
-        <span className="ms-deposit-refusal" role="status">
-          {refusal}
-        </span>
+        <Trouble text={refusal} role="status" as="span" variant="small" />
       )}
     </span>
   );
