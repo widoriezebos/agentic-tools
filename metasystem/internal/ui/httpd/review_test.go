@@ -70,6 +70,8 @@ func (deskGit) PathDiff(string, string, string) ([]byte, error) {
 
 func (deskGit) CommitsCarrying(string, string) ([]string, error) { return nil, errors.New("none") }
 
+func (deskGit) FetchBranch(string) error { return nil }
+
 func (deskGit) LineCommits(string, string) ([]string, error) { return nil, errors.New("no blame") }
 
 // withALanding is the board with one goal built and waiting to land.

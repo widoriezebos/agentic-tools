@@ -3,7 +3,10 @@ package gittree
 import (
 	"bytes"
 	"fmt"
+	"path/filepath"
 	"strings"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
 )
 
 // The reads a human's review of a goal's built work makes (g1-s65 D4): what
@@ -69,6 +72,19 @@ func (w Workspace) PathDiff(from, to, path string) ([]byte, error) {
 		return nil, fmt.Errorf("gittree path diff: %w", err)
 	}
 	return patch, nil
+}
+
+// FetchBranch brings one branch at origin into its remote-tracking ref, so a
+// read of origin/BRANCH that follows says what origin holds now. It is network
+// work and bounded as such, and never prompts.
+func (w Workspace) FetchBranch(branch string) error {
+	request := w.rawRequest(w.Dir, []string{"GIT_TERMINAL_PROMPT=0"}, nil, "git fetch origin "+branch,
+		"fetch", "--quiet", "--no-tags", "origin", "+refs/heads/"+branch+":refs/remotes/origin/"+branch)
+	request.Timeout = boundedexec.Timeout(filepath.Join(w.Dir, "metasystem.conf"), boundedexec.Network)
+	if result := w.runRaw(request, nil, nil); result.Err != nil || result.ExitCode != 0 {
+		return fmt.Errorf("gittree fetch of %s: %s", branch, strings.TrimSpace(string(result.Stderr)))
+	}
+	return nil
 }
 
 // CommitsCarrying answers the commits reachable from ref whose message carries

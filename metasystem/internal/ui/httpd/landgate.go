@@ -48,10 +48,11 @@ func (h *handler) joinGates(observed snapshot.Observation, payload *backlogPaylo
 		return
 	}
 	// A word to land is read against the goal branch's tip at origin, the tip
-	// the engine's gate binds it to.
+	// the engine's gate binds it to, fetched first: JoinGates asks only for a
+	// goal whose newest word is a landing word, once per goal.
 	var branchTip func(string) (string, error)
 	if h.info.Review != nil {
-		branchTip = h.info.Review.BranchTip
+		branchTip = h.info.Review.BranchTipAtOrigin
 	}
 	rows := plainRows(payload.Rows)
 	backlog.JoinGates(rows, observed.Tree, settings, h.now(), branchTip)

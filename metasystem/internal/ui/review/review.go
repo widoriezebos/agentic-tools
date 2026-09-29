@@ -42,6 +42,8 @@ type Git interface {
 	PathDiff(from, to, path string) ([]byte, error)
 	CommitsCarrying(ref, line string) ([]string, error)
 	LineCommits(rev, path string) ([]string, error)
+	// FetchBranch brings one branch at origin into origin/BRANCH.
+	FetchBranch(branch string) error
 }
 
 // Owner reads one checkout's candidates, and the checkout as it stands for a
@@ -772,4 +774,13 @@ var _ Git = gittree.Workspace{}
 func (o Owner) BranchTip(goal string) (string, error) {
 	tip, _, err := o.resolved(Branch(goal))
 	return tip, err
+}
+
+// BranchTipAtOrigin is BranchTip read after fetching the branch from origin,
+// for the gate's reading of a word to land (g1-s70 G5): a branch that moved at
+// origin since this checkout last fetched reads as moved. A fetch that fails
+// reads the local ref as BranchTip does.
+func (o Owner) BranchTipAtOrigin(goal string) (string, error) {
+	_ = o.Git.FetchBranch(Branch(goal))
+	return o.BranchTip(goal)
 }
