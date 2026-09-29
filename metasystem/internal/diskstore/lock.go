@@ -18,6 +18,18 @@ type HeldError struct{ Path string }
 
 func (e *HeldError) Error() string { return "store record lock is held: " + e.Path }
 
+// recordLockAcquired runs each time a record lock is taken; tests stand a
+// fork's duplicate descriptor in at that moment.
+var recordLockAcquired = func(*os.File) {}
+
+// unlockAndClose ends a record-lock hold: the flock is released on the open
+// file description first, so a duplicate a concurrent fork made before its
+// exec cannot keep the lock after the holder has ended.
+func unlockAndClose(file *os.File) error {
+	unlockErr := unix.Flock(int(file.Fd()), unix.LOCK_UN)
+	return errors.Join(unlockErr, file.Close())
+}
+
 // Entrant is an engine verb inside a store: it holds the record lock shared
 // from before it resolves the path until it leaves (3.1, "Entrants").
 type Entrant struct {
@@ -40,13 +52,14 @@ func (r Registry) Enter(id string) (*Entrant, error) {
 		_ = file.Close()
 		return nil, fmt.Errorf("store record lock %s: %w", id, err)
 	}
+	recordLockAcquired(file)
 	record, err := r.Load(id)
 	if errors.Is(err, ErrNotFound) || err == nil && (record.State == StateReleasing || record.State == StateReleased) {
-		_ = file.Close()
+		_ = unlockAndClose(file)
 		return nil, ErrStoreGone
 	}
 	if err != nil {
-		_ = file.Close()
+		_ = unlockAndClose(file)
 		return nil, err
 	}
 	return &Entrant{file: file, Record: record}, nil
@@ -57,7 +70,7 @@ func (e *Entrant) Leave() error {
 	if e == nil || e.file == nil {
 		return nil
 	}
-	err := e.file.Close()
+	err := unlockAndClose(e.file)
 	e.file = nil
 	return err
 }
@@ -92,9 +105,10 @@ func (r Registry) TryCritical(id string) (*Critical, error) {
 		}
 		return nil, fmt.Errorf("store record lock %s: %w", id, err)
 	}
+	recordLockAcquired(file)
 	record, err := r.Load(id)
 	if err != nil {
-		_ = file.Close()
+		_ = unlockAndClose(file)
 		return nil, err
 	}
 	return &Critical{registry: r, file: file, record: record}, nil
@@ -128,7 +142,7 @@ func (c *Critical) Release() error {
 	if c == nil || c.file == nil {
 		return nil
 	}
-	err := c.file.Close()
+	err := unlockAndClose(c.file)
 	c.file = nil
 	return err
 }
@@ -145,10 +159,12 @@ func (r Registry) Transition(id string, from []State, to State, mutate func(*Rec
 	if err != nil {
 		return Record{}, err
 	}
-	defer file.Close()
 	if err := flockRetry(file, unix.LOCK_EX); err != nil {
+		_ = file.Close()
 		return Record{}, err
 	}
+	defer unlockAndClose(file)
+	recordLockAcquired(file)
 	record, err := r.Load(id)
 	if err != nil {
 		return Record{}, err
@@ -192,11 +208,15 @@ func (r Registry) ProbeRecordLock(id string) (free bool, err error) {
 	if err != nil {
 		return false, err
 	}
-	defer file.Close()
 	if err := unix.Flock(int(file.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
+		_ = file.Close()
 		if errors.Is(err, unix.EWOULDBLOCK) || errors.Is(err, unix.EAGAIN) {
 			return false, nil
 		}
+		return false, err
+	}
+	recordLockAcquired(file)
+	if err := unlockAndClose(file); err != nil {
 		return false, err
 	}
 	return true, nil

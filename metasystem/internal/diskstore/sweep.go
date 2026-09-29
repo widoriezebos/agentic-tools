@@ -394,7 +394,7 @@ func takeSweepLock(options PassOptions) (release func(), running bool, err error
 		}
 		return nil, false, err
 	}
-	return func() { _ = file.Close() }, false, nil
+	return func() { _ = unlockAndClose(file) }, false, nil
 }
 
 func writeJSON(path string, value any) error {

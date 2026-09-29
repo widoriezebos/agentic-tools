@@ -195,10 +195,12 @@ func (r Registry) setDiscard(id string, discard Discard) (Record, error) {
 	if err != nil {
 		return Record{}, err
 	}
-	defer file.Close()
 	if err := flockRetry(file, unix.LOCK_EX); err != nil {
+		_ = file.Close()
 		return Record{}, err
 	}
+	defer unlockAndClose(file)
+	recordLockAcquired(file)
 	record, err := r.Load(id)
 	if err != nil {
 		return Record{}, err
