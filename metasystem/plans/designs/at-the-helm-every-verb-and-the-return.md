@@ -82,3 +82,7 @@ No change to `helm take`'s proof, `ProveTerminal`, `ClassifyAt`, `ClassifyVerbAt
 | HB-04 | Astra 1 | yes | Folded: return writes a three-line brief beside the patch and passes both (verified at `intent_manual_review.go:40`). |
 | Round 2 | Astra 2 (failsafe) | none | HB-01..04 FIXED, zero material; the stale-wording note folded as prose. Loop closed. |
 | Deferred | Astra 1 | no | Amend/rebase attribution, pre-existing goal-state refusals, yield dedup, goal inference on main: §6. |
+
+## 9. Built
+
+Slices 2 and 3 built by Claude on Opus 5.5 on branch `helm-acts-s23`: `0d558dbb6` (library: the person proof yields to the helm, `lease.MachineryAncestor`, `landpath.PrimaryCheckout`), `70f3f6225` (wiring, `resolveGoalHuman`, the end-to-end), `2e6048ef6` (helm return catches up), `5b674c32c` (batch 22's stream rule), `a0b4f817f` (yields name the act's target); eight departures in the build report, all accepted by Sol. Checks: humanauthority 82.0, landpath 87.2, lease 81.2, helm 83.0, goal 82.8, ui/act 75.5, refusal, the cmd/metasystem helm and structural filters, wall-time and stream audits, `devgate static`, all green. Sol's code read: zero material (`at-the-helm-every-verb-and-the-return-sol-read.md`). Lands through m1e's batch.
