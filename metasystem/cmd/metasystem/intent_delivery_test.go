@@ -730,6 +730,21 @@ func TestWorkLandRoutesEverySelectionThroughTheLane(t *testing.T) {
 		t.Fatalf("the refusal says what happened and the other way through: %+v", result)
 	}
 
+	// Once the named critic read is collected the branch attests the unit
+	// through a critic root, and the same work land joins the lane.
+	reread := newDeliveryBed(t)
+	readAgain := &landingOwners{configured: true, status: readBranch(2, "critic-root", "reader-record")}
+	readAgain.install(reread)
+	if code, result = reread.do("work", "land", "standing-validation"); result.Outcome != intentRefused {
+		t.Fatalf("the reader-record unit was not refused first: %+v", result)
+	}
+	readAgain.status = readBranch(2, "critic-root", "critic-root")
+	code, result = reread.do("work", "land", "standing-validation")
+	expectOutcome(t, "after the critic re-read", code, result, intentInProgress)
+	if len(readAgain.joins) != 1 || readAgain.candidates != 0 {
+		t.Fatalf("the re-read unit did not join the lane: %+v", result)
+	}
+
 	owners.redFix = "tr-0001"
 	code, result = b.do("work", "land", "standing-validation")
 	expectOutcome(t, "a red-on-main fix read by a reader record", code, result, intentConfirmed)
