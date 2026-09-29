@@ -356,6 +356,7 @@ export function DecisionsPane() {
         }
       },
       onReturn: returnToQueue,
+      onLanded: reload,
       onWrite: writeStatus,
       writing: busy,
       refusedAt: refused.at,

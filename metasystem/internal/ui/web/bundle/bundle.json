@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceDigest": "sha256:accb216e426f1a89a7e0c51f65e560659a2859de349fafdaf0562bbbc7657fa2",
+  "sourceDigest": "sha256:d54e6dc5eacadadde9d8b97feb87316726dc889132aebf6668949c9d0e1ad445",
   "source": [
     {
       "path": ".npmrc",
@@ -108,7 +108,7 @@
     },
     {
       "path": "src/backlog/Board.tsx",
-      "sha256": "913a1842d5ca9285e424d8304d96c65cc0227b873600ab476f0b03be6ece6768"
+      "sha256": "ee8e54fd3e7beedbeacdf9a85c41e49763f6ad624bd073dc20c4a751f0fed565"
     },
     {
       "path": "src/backlog/CardMenu.tsx",
@@ -172,7 +172,7 @@
     },
     {
       "path": "src/backlog/api.ts",
-      "sha256": "dc9313e885de08d193398441abddf9adee5cbf0511c1544a042da3e683e877a0"
+      "sha256": "f132b949b5d7bd72089ea3111f380759192ea4fe00d2e312c4d75ea8d88d3535"
     },
     {
       "path": "src/backlog/backlog.css",
@@ -292,7 +292,7 @@
     },
     {
       "path": "src/cuts.test.ts",
-      "sha256": "25ccc2388032dba39e2a724e99aeaa916a763058267159a5225717f4116fb498"
+      "sha256": "c8279caf8189d5c27302246f09fb319d02649fe8c81acb77c1e5d562325f0433"
     },
     {
       "path": "src/decisions/BulkSheet.tsx",
@@ -300,11 +300,11 @@
     },
     {
       "path": "src/decisions/DecisionsPane.test.tsx",
-      "sha256": "2315b638577c0f054408bf21c7190510d17179be622e6174acbee97719ca3d11"
+      "sha256": "52b81a43420f6bc5fec2cb8692aa4b78bc9b3b0cd4c5776f55755bdb23988aac"
     },
     {
       "path": "src/decisions/DecisionsPane.tsx",
-      "sha256": "810a6aee99d8c0fba0c0da2b83fe71bb84d72ec5e5d1bbf07b0f17f35333713b"
+      "sha256": "48926df3722c9abb7573409d322e2d2aecef8195c6a2b223674538e5ab3243d6"
     },
     {
       "path": "src/decisions/Inbox.tsx",
@@ -312,11 +312,11 @@
     },
     {
       "path": "src/decisions/InboxRow.tsx",
-      "sha256": "d0c1b8aa1b5a3a36b030eb6d64b46092a17cf01bf750be27edead00cd3718efc"
+      "sha256": "26d948f586531c9ae5832202b2840e5fa139db4b288d6e0d7a0b168c7c5b1ef2"
     },
     {
       "path": "src/decisions/ProposalBlock.test.tsx",
-      "sha256": "f2d8819b9e0e0e7245706865ac8ea034fcaa4c33f5b8f6ad882832d14e2bd251"
+      "sha256": "2564e148525490a919ea2f1b4426a968ac6545c02e2c74c95b80869d46eea2a5"
     },
     {
       "path": "src/decisions/ProposalBlock.tsx",
@@ -328,7 +328,7 @@
     },
     {
       "path": "src/decisions/api.ts",
-      "sha256": "b3b838c8e5562770471f9d3a6ac3dbea1a087798732e686af720105993f4f103"
+      "sha256": "be357d5ec7ee4f3376461b948a51984fd6f57f4ebcb74f34739007fc29c264c3"
     },
     {
       "path": "src/decisions/decisions.css",
@@ -348,7 +348,7 @@
     },
     {
       "path": "src/decisions/groups.ts",
-      "sha256": "6722e603ca456aa72650e796ee732826f724e5ee53fb6fdadaf2db3fe04cd593"
+      "sha256": "3619b7fb0c5f710b7fa785ae946454ff964bca6e06531e34244b37d1ef11f2c3"
     },
     {
       "path": "src/decisions/proposals.test.ts",
@@ -440,7 +440,7 @@
     },
     {
       "path": "src/help/terms.ts",
-      "sha256": "a6d949b492a9e3cc6d3104a2a6087304ddab0eb9d7f7a0d59969cc966370b29e"
+      "sha256": "6f2076c3712ac9af1552e54baa91a39de3d3add371e9eb98e107f60750f91272"
     },
     {
       "path": "src/index.css",
@@ -536,7 +536,7 @@
     },
     {
       "path": "src/panes/Settings.tsx",
-      "sha256": "7d6b01034a56b43973e2f3fc4f8cdc169d74c9e8588775553503730a289d8478"
+      "sha256": "f3c5daa684fae3538af59e801375d59478563f9d273d3443444c475cb6181a90"
     },
     {
       "path": "src/panes/Tabs.test.ts",
@@ -636,11 +636,11 @@
     },
     {
       "path": "src/partner/api.ts",
-      "sha256": "84765971d0f844cd61d4e4fbab0d430c0703286476e2da00af0e3a288e7a57d3"
+      "sha256": "22b992d8af28a01f7de6d3cd05b889d7ff16a90bc2cbf3da18a25a47edaf8c96"
     },
     {
       "path": "src/partner/applying.ts",
-      "sha256": "1741e5d2a692016a569b1dd419885e8d75d173d578580ef7d0d8471e6e6ae961"
+      "sha256": "b55162ee4ef93d7691f05c2b90117fbe272ca5a54d91d6e786e71b21f2c67341"
     },
     {
       "path": "src/partner/asking.test.ts",
@@ -728,11 +728,11 @@
     },
     {
       "path": "src/partner/proposing.test.ts",
-      "sha256": "24e141f099cbaea5dad249b3a987b9cc718d083641438edfa4958e71eb8d6fce"
+      "sha256": "df1c9f254b0425f54294685a45429387fd11653136f3e920d9de7e6cf20a5434"
     },
     {
       "path": "src/partner/proposing.ts",
-      "sha256": "9e2396cb82111615778fdad338ee15d187a6b346a8c0f08161e955e692d131dd"
+      "sha256": "46195904dcdff789c9317d9dedceebd16ff2077027a7022496b4cb9478c5b1f0"
     },
     {
       "path": "src/partner/proposing.verdicts.test.ts",
@@ -784,7 +784,7 @@
     },
     {
       "path": "src/partner/store.tsx",
-      "sha256": "ccfba3a634d4a62c31d3dae7650f3efb9541b950fc78562b2309a4f3f3b2037e"
+      "sha256": "0dbfd22027a8c1dd84c24c700073bc84ffc876436879a164d6b11ea101e8f0ad"
     },
     {
       "path": "src/partner/subject.test.ts",
@@ -956,7 +956,11 @@
     },
     {
       "path": "src/review/Door.tsx",
-      "sha256": "54275a95a1a8466b2228568114fd80ed1cda6454ea3f5f54e9c413fd0662339f"
+      "sha256": "e0a8d14d3c73a8a356d0b70be539d8e61876219c52616aa86c7f80f027e4197e"
+    },
+    {
+      "path": "src/review/Gate.tsx",
+      "sha256": "e6c0943d15122b6b892fd68349c4fe8500ef7edc9de7cea9773d02b68bf46b4c"
     },
     {
       "path": "src/review/Pill.tsx",
@@ -968,7 +972,7 @@
     },
     {
       "path": "src/review/Verdict.tsx",
-      "sha256": "bb35ca045056b5b2a3f795831855b34f24782dc03a1f2b7462826fcbcf17d119"
+      "sha256": "eb31f633053a52a607386889f9a4be92d485ca392e3e395d41c5ea5f33996fdc"
     },
     {
       "path": "src/review/anchors.tsx",
@@ -991,6 +995,18 @@
       "sha256": "39fb90d3e0f49b0d094e41cdabff88e0cebac04c81a74258c1ec681929990ce0"
     },
     {
+      "path": "src/review/gate.screens.test.tsx",
+      "sha256": "0b81c34e4898e721e55ca7fa8429e76df2c7feee163f2c7663c84a40936b4a18"
+    },
+    {
+      "path": "src/review/gating.test.ts",
+      "sha256": "82ebbab18a074170e61b340ab52abbdbbf075d32bbca7f8aa85235096f26981e"
+    },
+    {
+      "path": "src/review/gating.ts",
+      "sha256": "fb59b2bbd007c5dc289d0e572b1c1420aa56b45dd8dcc3b1b1d11213bb96a5c8"
+    },
+    {
       "path": "src/review/room.css",
       "sha256": "fc273cee623d659075ce9ad4e24c042b5f3a464d411c0d8d6c92a4ee502b0002"
     },
@@ -1000,7 +1016,7 @@
     },
     {
       "path": "src/review/room.ts",
-      "sha256": "bc46bb815be5636e7c8cddfbfe321eb9376dadfba1c5ac71a5f7a2b58ce8243e"
+      "sha256": "212dba9472487f4c397e3a2507e9d22c775eb8ab84a2608564df39fe3cc6e8a9"
     },
     {
       "path": "src/review/screens.test.tsx",
@@ -1016,11 +1032,11 @@
     },
     {
       "path": "src/review/verdicts.screens.test.tsx",
-      "sha256": "7cdf721a9de9b95f2e95b718bf0b5a728861b55350bc10ae4b57b1b720186a90"
+      "sha256": "f9ce368e4fc006410d401fcd452c858a158c74e448884720b2808fd685da3ac7"
     },
     {
       "path": "src/review/verdicts.test.ts",
-      "sha256": "5767c19e11088a656ca3c3534b35040a6309dc0d708f3f10c8ae862178078a20"
+      "sha256": "d4374fdf828331a66d215734e4b7c70bc153b3d3bb680bbc0f153c3efcaeb362"
     },
     {
       "path": "src/routes.test.ts",
@@ -1172,7 +1188,7 @@
     },
     {
       "path": "src/shell/workspace.ts",
-      "sha256": "2b0ed56225c82e4ec8190cf2ca67521945b87a63b1c5da4f7a8c7756674ef531"
+      "sha256": "7356d84a94001eb38f3e983bbcbe1680b7d5233785550a2e56891c9c265d9223"
     },
     {
       "path": "src/stickies/Block.tsx",
@@ -1270,7 +1286,7 @@
     },
     {
       "path": "assets/index.js",
-      "sha256": "a95c4f36251521e1583af2b5945b7991463fe0f56cb38f10b5aff8d8b17ba037"
+      "sha256": "12151fbab42f1272f72cf1c0a9e99f0b9c963119537de9480b95170f14003407"
     },
     {
       "path": "assets/inter-latin-ext-wght-normal.woff2",
@@ -1294,7 +1310,7 @@
     },
     {
       "path": "interface.json",
-      "sha256": "596b603181f71abcf7b355dbf417f44ba2b132b2894dda5f0e6888b7a94eaa5c"
+      "sha256": "f1c90be9604614efdd4ac83e1492d1eb37b179ad6aab882f73fdfc97c85478b3"
     },
     {
       "path": "theme.js",

@@ -112,6 +112,8 @@ var Rows = []Row{
 	{Code: "BATCH_PROOF_TREE_MOVED", Owner: "cmd/metasystem", Site: "landing_batch_prove.go#executeBatchProof", Shape: Question, H1: StandingInput},
 	{Code: "BATCH_PROOF_STATE_MOVED", Owner: "cmd/metasystem", Site: "landing_batch_prove.go#executeBatchProof", Shape: Question, H1: StandingInput},
 	{Code: "BATCH_MEMBER_BUDGET_UNKNOWN", Owner: "cmd/metasystem", Site: "landing_batch_prefix.go#authorizeBatchMemberInProjection", Shape: Question, H1: StandingInput},
+	{Code: "LANDING_WAITS_FOR_HUMAN", Owner: "internal/goal", Site: "landgate.go#Gate", Shape: Agent, Override: "goal land-without-sitting", Commands: 1, H1: StandingGuide, Forward: "goal land-without-sitting"},
+	{Code: "LANDING_HELD_BY_SITTING", Owner: "internal/goal", Site: "landgate.go#Gate", Shape: Question, H1: StandingGuide, Forward: "goal review"},
 	{Code: "BATCH_PREFIX_AUTHORITY_REFUSED", Owner: "cmd/metasystem", Site: "landing_batch_prefix.go#authorizeBatchMemberInProjection", Shape: Question, H1: StandingInput},
 	{Code: "BATCH_PREFIX_PLAN_REFUSED", Owner: "cmd/metasystem", Site: "landing_batch_prefix.go#planPrefixDecisionWith", Shape: Question, H1: StandingInput},
 	{Code: "BATCH_PREFIX_PROOF_REFUSED", Owner: "cmd/metasystem", Site: "landing_batch_prefix.go#verifyBatchPrefix", Shape: Question, H1: StandingInput},

@@ -222,6 +222,10 @@ var coreSettings = []Setting{
 		Meaning: "the stage estimates while the lane has no recorded spans of a stage; every pre-join stage named once"},
 	{Key: PipelineHistoryNKey, Default: "8",
 		Meaning: "how many recent completed spans, and same-runner batch proofs, a median is taken over"},
+	{Key: LandingHumanFromTierKey, Default: "2",
+		Meaning: "the lowest goal tier whose landing waits for a person's review or word (g1-s70); 4 lets every tier land by itself"},
+	{Key: LandingAutoAfterKey, Default: "4h",
+		Meaning: "how long a goal below that tier waits in Review before it is eligible to land by itself"},
 	{Key: IntentReviewToolCallsKey, Default: "48", ProofInput: true,
 		Meaning: "the independent read's tool calls for a public build whose brief names none"},
 

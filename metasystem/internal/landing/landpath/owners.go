@@ -122,8 +122,14 @@ type Owners struct {
 	// it as a judge with its cleanup; build output goes to stderr.
 	BuildBaseJudge func(toplevel, prefix string, stderr io.Writer) (Judge, func(), error)
 	Held           func(root, base, commit, remote, ref string, stdout, stderr io.Writer) int
-	WeightAdd      func(root, commit, prefix, goal string, numstat []byte, stdout, stderr io.Writer) int
-	SyncTransport  func(root, branch string, stdout, stderr io.Writer) int
+	// LandingGate reads a goal's landing gate (g1-s70 D2) against a freshly
+	// fetched ledger, immediately before each push of a landing in that
+	// goal's name: nil lets the push go, an error is the refusal a person
+	// reads, its register code and the human verb that carries past it. A
+	// nil owner reads no gate.
+	LandingGate   func(root, goal string) error
+	WeightAdd     func(root, commit, prefix, goal string, numstat []byte, stdout, stderr io.Writer) int
+	SyncTransport func(root, branch string, stdout, stderr io.Writer) int
 
 	// The land driver's owners.
 	Drift                func(root string, requireEmptyIndex bool, stdout, stderr io.Writer) int

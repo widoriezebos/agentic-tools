@@ -71,6 +71,16 @@ func authorizeBatchMemberInProjection(controlRoot string, now time.Time, record 
 	if !file.IsLandingClaim() && (budget.ElapsedState == dispatchcore.AdmissionClosedElapsed || budget.ElapsedState == dispatchcore.ElapsedBreach) {
 		return &batch.PrefixBudgetRefusal{Reason: "BATCH_MEMBER_BUDGET_REFUSED: member " + unit.GoalID + " elapsed admission budget closed; a person raises it with metasystem goal budget " + unit.GoalID + " BOX"}
 	}
+	// The landing gate is read again at every publication and retry against
+	// this fresh ledger (g1-s70 D2): a hold published while the batch proved,
+	// or a word given at another tip, takes the member out of the batch.
+	settings, err := landingGateSettings(controlRoot)
+	if err != nil {
+		return err
+	}
+	if _, err := goal.Gate(file, unit.BranchTip, settings); err != nil {
+		return &batch.PrefixRevisionRefusal{Reason: "BATCH_PREFIX_AUTHORITY_REFUSED: member " + unit.GoalID + " " + err.Error()}
+	}
 	return nil
 }
 

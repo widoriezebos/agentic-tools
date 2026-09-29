@@ -21,8 +21,10 @@ func TestGLEBatchMovedRetryRejectsRevisedMemberBeforePublication(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Tier 1: below the landing gate's default threshold, so the gate proceeds
+	// and the retry authority is what this bed reads (g1-s70 D2).
 	file := &goal.GoalFile{Id: "goal-a", State: goal.StateClaimed, Intent: "land goal-a", Origin: goal.OriginHuman,
-		OpenedAt: opened, Revision: 2, Budget: &budget,
+		OpenedAt: opened, Revision: 2, Budget: &budget, Tier: 1,
 		Claimed: &goal.ClaimRecord{Machine: "landing", Lineage: "owner", At: opened, Revision: 2,
 			AccountingRevision: 2, EpisodeAt: opened, EpisodeRevision: 2,
 			HandedOver: goal.HandedOver{FromMachine: "seat", FromLineage: "seat-lineage", FromEpoch: 1, Batch: id}},

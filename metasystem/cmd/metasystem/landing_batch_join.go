@@ -25,8 +25,12 @@ import (
 
 type batchJoinRequest struct {
 	SeatRoot, LandingRoot, GoalID, ChainID, Through string
-	Last                                            bool
-	At                                              time.Time
+	// ChainHead is the commit a certified chain publishes, the head of its
+	// candidate branch: the tip the human's word on the chain is bound to,
+	// which the batch's publication gate reads again (g1-s70 D2).
+	ChainHead string
+	Last      bool
+	At        time.Time
 }
 
 type batchJoinDependencies struct {
@@ -192,6 +196,10 @@ func executeBatchJoin(request batchJoinRequest, dependencies batchJoinDependenci
 	}
 	if len(member.Builds) != 0 {
 		unit = batch.BindBranchMember(unit, member)
+	} else {
+		// A chain member has no builds; its tip is the commit the chain
+		// publishes, which the publication gate binds the human's word to.
+		unit.BranchTip = request.ChainHead
 	}
 	for path := range batch.ChangedPaths(patch) {
 		unit.ChangedPaths = append(unit.ChangedPaths, path)

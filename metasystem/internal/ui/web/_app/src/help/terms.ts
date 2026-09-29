@@ -108,6 +108,7 @@ export type HelpId =
   | "no-recommendation"
   | "reviews"
   | "review-room"
+  | "landing-gate"
   | "the-desk"
   | "the-finding"
   | "the-walks"
@@ -509,6 +510,11 @@ export const HELP: Record<HelpId, Term> = {
     text:
       "Where you examine one goal's work before it lands, with your Project Partner beside it. The desk on the left shows one thing at a time — a file of the candidate, the change, a section of a record — and the conversation stays on the right. The Partner was not in the room that shaped this work, and it never says whether to accept it: it brings what the records hold, points at the code, and names what nobody tried. Step out whenever you like; the room keeps the desk, the conversation and your unfinished words, and the goal's card becomes the door back.",
   },
+  "landing-gate": {
+    term: "The landing gate",
+    text:
+      "Whether a goal in Review lands by itself or waits for you. Below landing.review.human-from-tier it becomes eligible once landing.review.auto-after has passed since it reached Review or since the last thing a person did on it, and the seat that holds it lands it on its next turn; the card counts the time down and says when it is only waiting for that seat. At or above that tier it lands only on your word at its branch's current tip: a review sitting that ends clear to land, or Land without a sitting with your reason, which the Decide sheet asks for. While a review sitting stands, nothing lands, whatever the tier, and the card says whose sitting holds it.",
+  },
   "the-desk": {
     term: "The desk",
     text:
@@ -527,7 +533,7 @@ export const HELP: Record<HelpId, Term> = {
   "the-verdict": {
     term: "The verdict",
     text:
-      "How this review ends, recorded as the first line of its Outcome, with the tip it was drafted for under it: Clear to land, Send back, or End without a verdict. Clear to land waits until every finding is answered. Once you record the Outcome, Clear to land and Send back are recorded on the goal itself, bound to this record and the tip you reviewed, and the record is committed beside that line. Clear to land is your recorded word: nothing lands because of it. Send back takes the goal out of Review, and the seat that holds it revises from your brief.",
+      "How this review ends, recorded as the first line of its Outcome, with the tip it was drafted for under it: Clear to land, Send back, or End without a verdict. Clear to land waits until every finding is answered. Once you record the Outcome, Clear to land and Send back are recorded on the goal itself, bound to this record and the tip you reviewed, and the record is committed beside that line. Clear to land is the word the landing gate waits for: the seat that holds the goal lands it on its next turn, at the tip you reviewed, and a moved tip needs your word again. Send back takes the goal out of Review, and the seat that holds it revises from your brief on its next turn.",
   },
   "the-candidate": {
     term: "The candidate",

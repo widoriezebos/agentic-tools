@@ -5,7 +5,7 @@ import { EmptyState, Pane } from "./Pane";
 import { Help } from "../help/Help";
 import { Button, Skeleton } from "../shell/controls";
 import { useWorkspaceState } from "../shell/identity";
-import type { Store, Workspace } from "../shell/workspace";
+import type { LandingGate, Store, Workspace } from "../shell/workspace";
 import type { ThemePreference } from "../theme";
 import { ThemeControl } from "../shell/ThemeControl";
 
@@ -26,6 +26,7 @@ export function SettingsPane({
       <div className="ms-pane-stack">
         <AboutCard />
         <StoreCard />
+        <LandingGateCard />
         <section className="ms-card">
           <h2 className="ms-card-title">Appearance</h2>
           <ThemeControl preference={theme} onChange={onTheme} labelled />
@@ -81,6 +82,70 @@ function StoreCard() {
       </h2>
       <StoreFacts store={workspace.workspace.store} />
     </section>
+  );
+}
+
+/**
+ * The landing gate's two settings (g1-s70 D1), each with the source the layered
+ * resolution reports: the environment, this seat's .local file, the committed
+ * metasystem.conf, or the compiled default. It is the same resolution the
+ * engine's gate and clock read, so what this card says is what binds them.
+ */
+function LandingGateCard() {
+  const { workspace } = useWorkspaceState();
+  if (workspace.state !== "known" || workspace.workspace.landingGate === undefined) {
+    return null;
+  }
+  return (
+    <section className="ms-card">
+      <h2 className="ms-card-title">
+        Landing gate <Help id="landing-gate" />
+      </h2>
+      <LandingGateFacts gate={workspace.workspace.landingGate} />
+    </section>
+  );
+}
+
+/** Where a setting's value came from, in words. */
+export function sourceWords(source: string): string {
+  switch (source) {
+    case "env":
+      return "from the environment";
+    case "conf-local":
+      return "from metasystem.conf.local";
+    case "conf":
+      return "from metasystem.conf";
+    case "default":
+      return "the default";
+    default:
+      return source;
+  }
+}
+
+/** What each of the two settings decides, as the card names it. */
+const GATE_NAMES: Readonly<Record<string, string>> = {
+  "landing.review.human-from-tier": "Waits for a person from tier",
+  "landing.review.auto-after": "Lands by itself after",
+};
+
+/** The two lines. Exported because the card reads the workspace from context. */
+export function LandingGateFacts({ gate }: { gate: LandingGate }) {
+  if (gate.problem !== undefined && gate.problem !== "") {
+    return (
+      <dl className="ms-facts">
+        <Fact name="Settings">{gate.problem}</Fact>
+      </dl>
+    );
+  }
+  return (
+    <dl className="ms-facts">
+      {(gate.facts ?? []).map((fact) => (
+        <Fact key={fact.key} name={GATE_NAMES[fact.key] ?? fact.key}>
+          <span className="ms-mono">{fact.value}</span> · {sourceWords(fact.source)} ·{" "}
+          <span className="ms-mono">{fact.key}</span>
+        </Fact>
+      ))}
+    </dl>
   );
 }
 

@@ -21,6 +21,7 @@ import { GOAL_ATTRIBUTE } from "../partner/ringing";
 import { ProposedChip } from "../partner/ProposedChip";
 import { ReviewDoors, ReviewItOrDoor } from "../review/Door";
 import { CardVerdict, VerdictActed } from "../review/Verdict";
+import { CardGate } from "../review/Gate";
 import { usePartner } from "../partner/store";
 import { returnAddress } from "./returning";
 import { Help } from "../help/Help";
@@ -818,6 +819,9 @@ function Card({
           }}
         >
           <ReviewItOrDoor goal={row.ref.id} />
+          {/* The landing gate's words, and its press where the goal waits for
+              this human (g1-s70 D5). */}
+          <CardGate row={row} />
         </div>
       )}
       {/* The verdict the goal's history carries since its Landing (g1-s69):

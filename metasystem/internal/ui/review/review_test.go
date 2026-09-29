@@ -69,6 +69,8 @@ func (f fakeGit) LineCommits(rev, path string) ([]string, error) {
 	return nil, fmt.Errorf("no blame for %s at %s", path, rev)
 }
 
+func (fakeGit) FetchBranch(string) error { return nil }
+
 // A goal waiting to land: goal/g1-s64 at origin, its merge base with main, one
 // changed file and one added binary.
 func waiting() fakeGit {

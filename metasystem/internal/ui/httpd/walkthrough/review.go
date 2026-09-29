@@ -197,6 +197,9 @@ func (fixtureGit) PathDiff(from, to, path string) ([]byte, error) {
 
 func (fixtureGit) CommitsCarrying(string, string) ([]string, error) { return nil, nil }
 
+// FetchBranch fetches nothing: the fixture's branches are its table.
+func (fixtureGit) FetchBranch(string) error { return nil }
+
 // LineCommits is never asked: the fixture's goals are reviewed at a tip.
 func (fixtureGit) LineCommits(string, string) ([]string, error) {
 	return nil, fmt.Errorf("the fixture has no blame")

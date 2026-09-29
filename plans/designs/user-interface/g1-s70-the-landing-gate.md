@@ -304,3 +304,101 @@ alternative and changes no other decision. The loop is CLOSED. One
 residual for Wido: unattended landing while the holder is idle for
 hours would need a delivery route the steward does not have; "later,
 when it hurts".
+
+## Built (2026-09-29)
+
+Step 1 built by Claude on Opus 5.5 in worktree `agentic-tools-gate`,
+branch `landing-gate` from main `8d04e59d5`, in six commits: the
+engine core (`54a981524`: the two layered settings with their sources,
+`goal.Gate` reading the history alone, the hold and release lines, the
+clock, `goal land-without-sitting`, the holder's `landed` line), the
+gate at every `work land` form and again at the batch's publication and
+the hand route's push, with `goal review --hold|--release` and the
+register rows (`c1449414f`), the server side (`06fa93100`: the board's
+Review rows carrying the gate's reading, the land-without-sitting
+route, the hold at Start and the release at the sitting's end), the
+interface (`a8e164248`: the card's four wordings, Land without a
+sitting with its Decide sheet, the inbox's "Waiting for your review",
+the Settings card), the retry-authority bed put below the tier
+(`9401147ff`) and the staged form reading the synced ledger where one
+exists (`6c4d4bde5`). Report:
+`~/LocalStorage/agentic-tools-evidence/review-room-20260928/
+opus-build-report-landing-gate.md`; screenshots under `landing-gate/`.
+
+One input was not as the brief said: the hold and release forms of
+`goal review` were not on main, so the builder made them here.
+Departures, each honest and recorded there: the reading rides
+`/api/backlog`, where the cards are, not `/api/project`; the threshold
+accepts 4 so that "no tier waits" can be said; the governed turn and
+the Stop path are one place, the turn verdict the Stop hook evaluates;
+the room holds only where a build wires the gate's acts, which
+production and the walkthrough do; the release matches a hold by the
+record path's tail, since the ledger and the room name records from
+different roots.
+
+**Sol's read** (`g1-s70-sol-read.md`, verbatim): four material
+findings, all agreed by the design's author. SOL-S70-01, the staged
+and exceptional forms met the gate at admission only, while their
+landing driver proves, rebases, pushes and retries; SOL-S70-02, the
+holder's Stop was told to land or revise and blocked once, and nothing
+took the step; SOL-S70-03, `work land j2:J` had no tip a human word
+could bind to, so a certified chain at or above the tier could never
+land; SOL-S70-04, a moved branch tip left the card saying cleared and
+the inbox empty while the engine refused. **Fix round 1**
+(`25a338ad4`, `7a6749471`, `f0d148ace`, `71c911c9e`, `b9514f031`, on
+the branch merged with main `49914fec8`): the landing driver is handed
+the invocation's own gate and reads it against a fresh ledger
+immediately before every push, retries and the carried form included;
+the holder's Stop takes its due step itself through the public `work
+land G` or `work revise G` under the session's identity, shows what it
+did, shows a refusal at every Stop while it stands and never blocks
+for a taken step, and a send-back is revised once; the chain form
+binds the word to the commit the chain publishes, its candidate
+branch's head, carried to the publication gate as the member's tip;
+the server reads the newest word against the goal branch's tip at
+origin, and a moved tip puts the goal back under "Waiting for your
+review" with "cleared by Wido at 9c1f0a2, but the branch moved to
+a1b2c3d: needs the word again" and Land without a sitting offered.
+One rule changed with the second fix: a held goal that carries the
+human's word is due to its holder, so the Stop takes it and shows the
+hold's refusal with the release verb, where before a held goal was
+never due; below the tier nothing changes, since the clock does not
+run under a hold. **Sol's re-read**: SOL-S70-01 fixed; SOL-S70-02 held, the step
+taken only on an idle Stop, while a holder with open work is the
+ordinary case; SOL-S70-04 held, the interface's tip read from the
+checkout's own unfetched ref; SOL-S70-03 held on a chain's word passing
+after the goal branch moved beyond the chain's head, which the design's
+author rules not material: the gate protects what is published, a
+chain publishes its head, and the word at that commit is the word at
+this tip for that publication; nothing unreviewed lands. **Fix round
+2** (`0f5e05acd`, `84a67f3a6`): the holder's steps are taken on every
+Stop, before and independent of the scan's verdict, a Stop with open
+work or a busy checkout included; the gate reading fetches the goal
+branch from origin for the goals that carry a landing word, once per
+reading through the review owner's Git seam, and falls back to the
+local ref where the fetch fails. **Sol's re-read 2**: both fixed, no new
+finding; one note kept as a residual, the fetch's network timeout can
+delay a board reading while origin is unreachable, for the goals that
+carry a word only.
+
+Residuals, none material at first use: a chain's word applies only
+when the chain's head is the goal branch's tip at origin, since the
+word is recorded there, and the chain's head is read at landing time;
+on the hand route with no batch root the holder's Stop runs the proof
+and the push synchronously, as the public command does; the staged
+form is gated only where the synced ledger exists, and no governed
+goal can exist without one; the Stop path's identity under the
+session's lineage was established by reading, not run live; the
+steward-refusal test pins behaviour that predates the slice.
+
+Handed to the engine seat's integration batch as `origin/g1-s70` on
+2026-09-29 under the one-batch-per-machine rule of that morning (the
+ui lane hands a reviewed branch, the batch runs one VM suite), the
+branch merged with main `49914fec8` and the landing checks green at
+`84a67f3a6`: every touched package, the structural tests, the static
+gate with its dead-code check, the fast build gate, vitest and
+typecheck, the bundle rebuilt under Node 24; the whole `cmd/metasystem`
+package left to the batch's suite, with
+`TestEveryStatefulActionRepeatsAsSuccess/app_stop` named to it, which
+failed once under the builder's combined load and passed alone. The
+landing commit is the batch's.

@@ -67,6 +67,13 @@ type Store struct {
 	PrepareIdleContinuation func(IdleEscalationEvent) (string, error)
 	RecordIdleIncident      func(IdleEscalationEvent) (string, error)
 	RaiseIdleAlarm          func(IdleEscalationEvent) error
+	// TakeHolderStep takes one of the holder's due steps on its Stop path
+	// under the session's own identity, through the public command (g1-s70
+	// D3), and answers the line the Stop shows: what was done, or the refusal
+	// with its code and the human verb. The command layer supplies it so the
+	// goal package does not reach the landing and dispatch owners; nil takes
+	// nothing and shows the due step.
+	TakeHolderStep func(HolderStep) string
 }
 
 func (s *Store) prober() identity.Prober {
