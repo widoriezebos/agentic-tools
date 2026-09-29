@@ -70,7 +70,7 @@ func newCarriedDeliveryBed(t *testing.T) *carriedDeliveryBed {
 		t.Setenv(name, value)
 	}
 	b.owners = defaultIntentOwners()
-	delivery := defaultIntentDeliveryOwners()
+	delivery := belowTheGate(defaultIntentDeliveryOwners())
 	delivery.executable = func() (string, error) { return b.engine, nil }
 	delivery.calls = recordingOwnerCalls([]string{b.engine, "internal"}, func(argv []string) { b.calls = append(b.calls, argv) })
 	// The carry owner runs in this process (design 6.2): the bed records the

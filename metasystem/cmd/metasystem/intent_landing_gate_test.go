@@ -178,3 +178,12 @@ func TestQueueOnlyStillEntersReviewPastTheGate(t *testing.T) {
 		t.Fatalf("--queue-only met the landing gate: %+v", result)
 	}
 }
+
+// belowTheGate stubs the landing gate and the landed line on a bed that
+// proves a landing's mechanics rather than the gate: its fixture goal is tier
+// 3, which with the default settings waits for a person.
+func belowTheGate(delivery *intentDeliveryOwners) *intentDeliveryOwners {
+	delivery.landingGate = func(*intentInvocation, string, string) (string, error) { return "the bed's landing", nil }
+	delivery.recordLanded = func(*intentInvocation, string) error { return nil }
+	return delivery
+}

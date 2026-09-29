@@ -79,6 +79,9 @@ func Acts() []manifest.Act {
 		// The review's verdict and the goal's candidate (g1-s69).
 		{ID: routeReview, Title: "Record a review's verdict", Requires: sessionHand,
 			Does: "Records clear to land or send back on a goal waiting to land, bound to its review record and the tip it reviewed, and publishes the record — and a send-back's correction brief — beside the ledger's line. Nothing lands because of it."},
+		// The landing gate's decision (g1-s70 D4).
+		{ID: routeLandWithoutSitting, Title: "Land a goal without a sitting", Requires: sessionHand,
+			Does: "Records your decision that a goal at or above the landing gate's tier lands without a review sitting, with your reason, bound to the tip its branch has now; the seat that holds it lands it on its next turn, and a moved tip needs the word again."},
 		{ID: routeAppStart, Title: "Run a goal's candidate", Requires: sessionHand,
 			Does: "Starts the goal's branch from its own worktree on its own port beside the standing run, and answers where it runs and the commit it runs."},
 		{ID: routeAppStop, Title: "Stop a goal's candidate", Requires: sessionHand,

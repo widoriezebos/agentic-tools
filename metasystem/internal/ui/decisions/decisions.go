@@ -85,6 +85,10 @@ const (
 	// where it WAITS is here, beside every other choice that waits on a human
 	// (g1-s60 D2).
 	KindProposal = "proposal"
+	// KindLanding is a goal waiting to land at or above the landing gate's
+	// tier, which lands only on this human's word (g1-s70 D5): a sitting that
+	// ends clear to land, or a decision to land it without one.
+	KindLanding = "landing"
 )
 
 // The acts this page offers. Two are the board's own; two are this page's,
@@ -101,6 +105,10 @@ const (
 	// the human's own sign-in; this page names the press and not the act,
 	// because one row can carry any of the ten.
 	ActApply = "apply"
+	// ActLandWithoutSitting is the Decide sheet's press on a landing row: the
+	// decision to land a goal without a sitting, with the reason typed there.
+	// The row's other answer is Review it, which opens the goal's room.
+	ActLandWithoutSitting = "land-without-sitting"
 )
 
 // The kinds a Where can name. A destination is said as what kind of thing it
@@ -587,6 +595,7 @@ func needsYou(in Inputs, now time.Time) []Need {
 	needs = append(needs, questions(in.Project.Questions)...)
 	needs = append(needs, parked(in.Rows)...)
 	needs = append(needs, stopped(in.Rows)...)
+	needs = append(needs, landings(in.Rows)...)
 	needs = append(needs, drafts(in.Project.Records)...)
 	needs = append(needs, landed(in.Project)...)
 	needs = append(needs, rulingReviews(in.Register, registerOf(in), now)...)
@@ -985,6 +994,51 @@ func parked(rows []backlog.Row) []Need {
 		})
 	}
 	return needs
+}
+
+// landings is the goals in Review that wait for this human's word before
+// they land (g1-s70 D5): at or above the gate's tier, not held by a sitting,
+// and with no clear-to-land or land-without-sitting word standing on the
+// landing. A word at a tip the branch has since left is the holder's landing
+// to refuse; the card says so once the holder has tried.
+//
+// Silence: no seat lands a goal at or above the tier without the human's word
+// at its current tip (goal.Gate, at every land form and every publication),
+// so it stays in Review.
+func landings(rows []backlog.Row) []Need {
+	needs := []Need{}
+	for index := range rows {
+		row := rows[index]
+		gate := row.Gate
+		if row.Lane != backlog.LaneReview || gate == nil || !gate.WaitsForHuman || gate.Landed || len(gate.HeldBy) > 0 {
+			continue
+		}
+		if gate.Reviewed != nil && gate.Reviewed.Kind != goal.VerdictSendBack {
+			continue
+		}
+		since := ""
+		if row.Claim != nil {
+			since = row.Claim.LandingAt
+		}
+		needs = append(needs, Need{
+			Kind: KindLanding, ID: row.ID, Title: titleOf(row),
+			Asked:   row.ID + " waits for your review",
+			By:      holderOf(row),
+			Since:   since,
+			Silence: "it stays in Review; nothing lands until a sitting ends clear to land or you land it without one",
+			Where:   Where{Kind: WhereGoal, ID: row.ID},
+			Act:     ActLandWithoutSitting,
+			Row:     &rows[index],
+		})
+	}
+	return needs
+}
+
+func holderOf(row backlog.Row) string {
+	if row.Claim == nil {
+		return "the seat that holds it"
+	}
+	return row.Claim.Machine + "+" + row.Claim.Lineage
 }
 
 // stopped is the goals a breach fence closed.

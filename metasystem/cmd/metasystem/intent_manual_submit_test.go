@@ -497,7 +497,7 @@ func TestIntentManualWorkLandsOnEndpoint(t *testing.T) {
 		t.Fatalf("decisions, close, collection and publication: code=%d %+v", code, result)
 	}
 	owners := j.owners
-	delivery := defaultIntentDeliveryOwners()
+	delivery := belowTheGate(defaultIntentDeliveryOwners())
 	delivery.branchRead = owners.delivery.branchRead
 	realProcess := owners.delivery.process
 	var proved []string

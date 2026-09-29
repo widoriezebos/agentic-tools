@@ -699,6 +699,36 @@ func runUIServe(args []string) int {
 				BudgetDefaults: func() (map[string]goalbudget.Budget, error) {
 					return tierBudgets(roots.Installation)
 				},
+				// The landing gate (g1-s70 §6): the two settings through the
+				// layered resolution the engine reads, the room's hold and
+				// release, and the Decide sheet's decision, under the sign-in.
+				LandingGate: func() (config.LandingGate, error) {
+					return config.ResolveLandingGate(filepath.Join(roots.Installation, "metasystem.conf"))
+				},
+				Sitting: func(signed *session.Session, id, record string, open bool) error {
+					hand, err := acting(signed)
+					if err != nil {
+						return err
+					}
+					// The room names the record from the checkout; the act
+					// resolves it in the installation's review home.
+					if err := hand.Sitting(id, filepath.Join(roots.Checkout, filepath.FromSlash(record)), open); err != nil {
+						return err
+					}
+					advance()
+					return nil
+				},
+				LandWithoutSitting: func(signed *session.Session, id, tip, reason string) error {
+					hand, err := acting(signed)
+					if err != nil {
+						return err
+					}
+					if err := hand.LandWithoutSitting(id, tip, reason); err != nil {
+						return err
+					}
+					advance()
+					return nil
+				},
 				// The steward's notification journal, in this checkout.
 				// The steward writes it as a side effect of reaching the
 				// operator; the interface reads it and nothing else of

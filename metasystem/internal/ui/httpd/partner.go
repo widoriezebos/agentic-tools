@@ -490,6 +490,12 @@ func (h *handler) partnerRise(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	where := strings.TrimSpace(body.Conversation)
+	// Every way a review sitting ends releases its hold (g1-s70 D2): a
+	// verdict has released it already, and No verdict and End without
+	// recording release it here, before the sitting ends.
+	if !h.releaseForSitting(w, r, where) {
+		return
+	}
 	if err := h.info.Partner.RiseIn(h.partnerHuman(r), where); err != nil {
 		writeFailure(w, err.Error())
 		return

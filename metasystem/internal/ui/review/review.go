@@ -765,3 +765,11 @@ func binary(body []byte) bool {
 
 // The workspace every run reads through is a Git of this owner's shape.
 var _ Git = gittree.Workspace{}
+
+// BranchTip is the commit a goal's branch holds, origin first, as a review of
+// it would record it: the tip a decision to land without a sitting binds
+// (g1-s70 D4).
+func (o Owner) BranchTip(goal string) (string, error) {
+	tip, _, err := o.resolved(Branch(goal))
+	return tip, err
+}

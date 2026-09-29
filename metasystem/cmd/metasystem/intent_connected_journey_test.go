@@ -461,7 +461,7 @@ func journeyLandOwners(t *testing.T, j *journeyBed) (intentOwners, *journeyLandC
 		return binding, nil
 	}
 	landOwners := owners
-	delivery := defaultIntentDeliveryOwners()
+	delivery := belowTheGate(defaultIntentDeliveryOwners())
 	delivery.branchRead, delivery.process = owners.delivery.branchRead, owners.delivery.process
 	delivery.batchRoot = func(string, time.Time) (string, bool, error) { return j.landingRoot, true, nil }
 	delivery.batchJoin = func(request batchJoinRequest) (batch.Record, error) { return executeBatchJoin(request, deps) }

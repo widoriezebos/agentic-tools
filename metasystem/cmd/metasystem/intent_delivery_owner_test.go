@@ -100,7 +100,7 @@ func newWholeOwnerLanding(t *testing.T) *wholeOwnerLanding {
 func (f *wholeOwnerLanding) land(t *testing.T) (int, intentResult) {
 	t.Helper()
 	owners := defaultIntentOwners()
-	delivery := defaultIntentDeliveryOwners()
+	delivery := belowTheGate(defaultIntentDeliveryOwners())
 	delivery.process = func(process intentProcess) intentProcessResult {
 		want := []string{"landing", "test-receipt", "--root", f.mainRoot, "--tree", flagValue(process.argv, "--tree"), "--mode", "auto", "--goal", "standing-validation"}
 		if len(process.argv) < 2 || !slices.Equal(process.argv[1:], want) {
@@ -384,7 +384,7 @@ func TestIntentLandBatchAdmissionGitAdapter(t *testing.T) {
 		return binding, nil
 	}
 	owners := defaultIntentOwners()
-	delivery := defaultIntentDeliveryOwners()
+	delivery := belowTheGate(defaultIntentDeliveryOwners())
 	delivery.batchRoot = func(string, time.Time) (string, bool, error) { return landingRoot, true, nil }
 	delivery.batchJoin = func(request batchJoinRequest) (batch.Record, error) { return executeBatchJoin(request, deps) }
 	delivery.process = func(process intentProcess) intentProcessResult {
@@ -433,7 +433,7 @@ func TestIntentLandProvesTheReceiptInThisProcess(t *testing.T) {
 	t.Parallel()
 	f := newWholeOwnerLanding(t)
 	owners := defaultIntentOwners()
-	delivery := defaultIntentDeliveryOwners()
+	delivery := belowTheGate(defaultIntentDeliveryOwners())
 	delivery.process = func(process intentProcess) intentProcessResult {
 		t.Errorf("an engine child ran: %v", process.argv)
 		return intentProcessResult{code: 1}

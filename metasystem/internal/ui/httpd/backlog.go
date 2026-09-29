@@ -199,6 +199,7 @@ func (h *handler) backlogPayload(r *http.Request) backlogPayload {
 	payload := backlogOf(observed)
 	payload.Reviews = h.reviewDoors(r)
 	h.joinHolders(observed, &payload)
+	h.joinGates(observed, &payload)
 	payload.Authority = authorityPayload{
 		Proven: h.info.Authority.Proven,
 		Human:  h.info.Authority.Human,

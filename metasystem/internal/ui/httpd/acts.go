@@ -274,6 +274,8 @@ func actRouteOf(path string) (written, bool) {
 		abandonSuffix:  routeAbandon,
 		editGoalSuffix: routeEditGoal,
 		reviewSuffix:   routeReview,
+		// The landing gate's decision (g1-s70 D4).
+		landWithoutSittingSuffix: routeLandWithoutSitting,
 	}
 	for suffix, route := range suffixes {
 		if id, ok := actID(path, suffix); ok {

@@ -584,6 +584,10 @@ func (a Authority) Unblock(dependent, blocker string) error {
 //   - open: the goal the id already names reads exactly what this open states —
 //     the same intent, next step, tier and labels, the same goals it waits for,
 //     and the edge on every goal it names with --blocks (verbs.go).
+//   - a sitting's hold and release: this human's sitting already holds the
+//     goal on this record, or no sitting of this human's stands (landgate.go);
+//   - land without a sitting: this human's decision already stands at this
+//     tip (landgate.go).
 //
 // Park, unpark and abandon used to be excluded: park and abandon answered
 // LostToCompetitor, naming the operation that got there first, and unpark
@@ -614,6 +618,10 @@ var alreadyCarried = map[string]bool{
 	"goal unapprove":    true,
 	"goal open":         true,
 	"goal review":       true,
+	// The landing gate's acts (g1-s70).
+	"goal review --hold":        true,
+	"goal review --release":     true,
+	"goal land-without-sitting": true,
 }
 
 // settle turns one publication into the answer a route gives, and records the
