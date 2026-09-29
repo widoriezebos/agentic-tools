@@ -149,13 +149,15 @@ type Candidate struct {
 }
 
 // Evidence is the listing the Behaves walk is handed: the path the record
-// names, each entry as "path (kind, size)", bounded and saying the whole, or
-// the words a read of it was refused with.
+// names, each entry as "path (kind, size)", bounded and saying the whole — or,
+// where its walk stopped at its bound, that it is a part — or the words a read
+// of it was refused with.
 type Evidence struct {
 	Path     string
 	Entries  []string
 	Supplied int
 	Total    int
+	Cut      bool
 	Refusal  string
 }
 
@@ -170,7 +172,10 @@ func EvidenceNote(evidence Evidence) string {
 		return "The evidence path " + evidence.Path + " holds no image or text; say that nothing is recorded there."
 	}
 	said := "The evidence recorded under " + evidence.Path + " holds these files"
-	if evidence.Supplied < evidence.Total {
+	switch {
+	case evidence.Cut:
+		said += fmt.Sprintf(", the first %d found listed; the listing stopped at its bound, so the path may hold more", evidence.Supplied)
+	case evidence.Supplied < evidence.Total:
 		said += fmt.Sprintf(", %d of %d listed", evidence.Supplied, evidence.Total)
 	}
 	said += ":\n- " + strings.Join(evidence.Entries, "\n- ") + "\n\n" +

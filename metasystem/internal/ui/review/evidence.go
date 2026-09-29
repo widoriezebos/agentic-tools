@@ -32,11 +32,14 @@ const (
 	EvidenceText  = "text"
 )
 
-// The evidence bounds: how many entries a listing carries, how large one file
-// may be, and how many lines of a text are shown — the desk's diff bound, the
-// largest a desk shows.
+// The evidence bounds: how many entries a listing carries, how many entries
+// and how many directories deep its walk reads before it stops, how large one
+// file may be, and how many lines of a text are shown — the desk's diff bound,
+// the largest a desk shows.
 const (
 	MaxEvidenceEntries = 500
+	MaxEvidenceVisited = 5000
+	MaxEvidenceDepth   = 16
 	MaxEvidenceBytes   = 4 << 20
 	MaxEvidenceLines   = MaxDiffLines
 )
@@ -56,12 +59,15 @@ type EvidenceEntry struct {
 }
 
 // EvidenceListing is what the evidence path holds, images and text only, in
-// path order, bounded, saying the whole.
+// path order, bounded, saying the whole: Total is every file the walk found,
+// and Cut says the walk stopped at its bound before the end of the path, so
+// Total is what was found rather than all there is.
 type EvidenceListing struct {
 	Root     string          `json:"root"`
 	Entries  []EvidenceEntry `json:"entries"`
 	Supplied int             `json:"supplied"`
 	Total    int             `json:"total"`
+	Cut      bool            `json:"cut,omitempty"`
 }
 
 // EvidenceFile is one file: an image's bytes and type, or a text's lines within
@@ -139,32 +145,89 @@ func (o Owner) EvidenceList(named string) (EvidenceListing, error) {
 		return EvidenceListing{}, err
 	}
 	defer func() { _ = root.Close() }()
-	entries := []EvidenceEntry{}
-	err = fs.WalkDir(root.FS(), ".", func(name string, entry fs.DirEntry, err error) error {
-		if err != nil || !entry.Type().IsRegular() {
-			// A link is not listed: what it names may lie outside the path.
-			return nil
-		}
-		kind, _, known := evidenceKind(name)
-		if !known {
-			return nil
-		}
-		info, err := entry.Info()
-		if err != nil {
-			return nil
-		}
-		entries = append(entries, EvidenceEntry{Path: name, Kind: kind, Size: info.Size()})
-		return nil
-	})
-	if err != nil {
+	walk := evidenceWalk{root: root, entries: []EvidenceEntry{}}
+	if err := walk.dir(".", 0); err != nil {
 		return EvidenceListing{}, fmt.Errorf("cannot list the evidence at %s: %w", dir, err)
 	}
-	sort.Slice(entries, func(a, b int) bool { return entries[a].Path < entries[b].Path })
-	total := len(entries)
-	if len(entries) > MaxEvidenceEntries {
-		entries = entries[:MaxEvidenceEntries]
+	sort.Slice(walk.entries, func(a, b int) bool { return walk.entries[a].Path < walk.entries[b].Path })
+	return EvidenceListing{Root: named, Entries: walk.entries, Supplied: len(walk.entries), Total: walk.found, Cut: walk.cut}, nil
+}
+
+// evidenceWalk is one listing's walk, bounded in its work and not only in its
+// answer: it reads a directory a part at a time, keeps the first entries it
+// finds up to the listing's bound and only counts the rest, and stops once it
+// has read the visited bound's entries, not descending past the depth bound.
+type evidenceWalk struct {
+	root    *os.Root
+	entries []EvidenceEntry
+	found   int
+	visited int
+	cut     bool
+}
+
+// evidenceReadPart is how many entries of a directory one read takes.
+const evidenceReadPart = 256
+
+// dir walks one directory of the evidence, name relative to its root.
+func (w *evidenceWalk) dir(name string, depth int) error {
+	if depth > MaxEvidenceDepth {
+		w.cut = true
+		return nil
 	}
-	return EvidenceListing{Root: named, Entries: entries, Supplied: len(entries), Total: total}, nil
+	file, err := w.root.Open(name)
+	if err != nil {
+		if name == "." {
+			return err
+		}
+		return nil
+	}
+	below := []string{}
+	for !w.cut {
+		part, err := file.ReadDir(evidenceReadPart)
+		for _, entry := range part {
+			if w.visited == MaxEvidenceVisited {
+				w.cut = true
+				break
+			}
+			w.visited++
+			below = w.visit(name, entry, below)
+		}
+		if err != nil {
+			break
+		}
+	}
+	_ = file.Close()
+	sort.Strings(below)
+	for _, sub := range below {
+		if err := w.dir(sub, depth+1); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// visit takes one entry of a directory: a directory is walked after its
+// parent's reading closes, an image or text file is found, and anything else —
+// a link among them, since what it names may lie outside the path — is not
+// listed.
+func (w *evidenceWalk) visit(parent string, entry fs.DirEntry, below []string) []string {
+	name := path.Join(parent, entry.Name())
+	if entry.IsDir() {
+		return append(below, name)
+	}
+	kind, _, known := evidenceKind(name)
+	if !entry.Type().IsRegular() || !known {
+		return below
+	}
+	info, err := entry.Info()
+	if err != nil {
+		return below
+	}
+	w.found++
+	if len(w.entries) < MaxEvidenceEntries {
+		w.entries = append(w.entries, EvidenceEntry{Path: name, Kind: kind, Size: info.Size()})
+	}
+	return below
 }
 
 // evidenceKind is a file's kind and content type by its extension.

@@ -125,6 +125,10 @@ func TestTheBehavesWalkCarriesTheEvidenceListing(t *testing.T) {
 	bounded := asked(&partner.Candidate{Reviewed: closingTip, Evidence: &partner.Evidence{
 		Path: "~/e/", Entries: []string{"a.png (image, 1 KB)"}, Supplied: 1, Total: 700}})
 	testutil.Expect(t, "a bounded listing says the whole", strings.Contains(bounded, "1 of 700"), true)
+	cut := asked(&partner.Candidate{Reviewed: closingTip, Evidence: &partner.Evidence{
+		Path: "~/e/", Entries: []string{"a.png (image, 1 KB)"}, Supplied: 1, Total: 700, Cut: true}})
+	testutil.Expect(t, "a cut listing says it is a part", strings.Contains(cut, "the first 1 found listed; the listing stopped at its bound, so the path may hold more"), true)
+	testutil.Expect(t, "and claims no whole", strings.Contains(cut, "1 of 700"), false)
 	refused := asked(&partner.Candidate{Reviewed: closingTip, Evidence: &partner.Evidence{
 		Refusal: "this review's record names no Evidence path, so there is no evidence to read"}})
 	testutil.Expect(t, "no evidence is said in words", strings.Contains(refused, "names no Evidence path"), true)

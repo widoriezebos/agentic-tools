@@ -90,8 +90,10 @@ export type Reading = { purpose: string; tip: string; read: Source | null };
 /**
  * Where the board says a remark is: "on lines 41-46 of owner.go" while the desk
  * reads it where it was made, "on lines 41-46 at 9c1f0a2" once it reads another
- * commit, and in a shaping room "on lines 41-46 at an earlier reading" once a
- * read of those lines shows other bytes.
+ * commit, and in a shaping room "on lines 41-46 at an earlier reading" unless a
+ * read of those lines in this session shows the same bytes — the checkout may
+ * have changed under the same head while the room was away, so without that
+ * read the board claims no currency.
  */
 export function remarkWhere(about: About, reading: Reading): string {
   if (about.kind === "section") {
@@ -104,16 +106,13 @@ export function remarkWhere(about: About, reading: Reading): string {
     return commit !== "" && commit !== reading.tip ? `${lines} at ${commit.slice(0, 7)}` : here;
   }
   const read = reading.read;
-  if (read === null || read.checkout !== true) {
+  if (read !== null && remarkDrawn(about, read, reading.purpose)) {
     return here;
   }
-  if (commit !== "" && (read.head ?? "") !== "" && read.head !== commit) {
+  if (read !== null && read.checkout === true && commit !== "" && (read.head ?? "") !== "" && read.head !== commit) {
     return `${lines} at ${commit.slice(0, 7)}`;
   }
-  if (read.path === about.path && linesOf(read, about.from ?? 0, about.to ?? 0) !== null && !remarkDrawn(about, read, reading.purpose)) {
-    return `${lines} ${EARLIER_READING}`;
-  }
-  return here;
+  return `${lines} ${EARLIER_READING}`;
 }
 
 function linesWords(about: About): string {

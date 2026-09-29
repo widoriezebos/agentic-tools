@@ -48,6 +48,7 @@ func TestTheListingNamesImagesAndTextUnderTheEvidencePathOnly(t *testing.T) {
 		{Path: "room-1280-light.png", Kind: EvidenceImage, Size: 28},
 	})
 	testutil.Expect(t, "the counts", []int{listing.Supplied, listing.Total}, []int{3, 3})
+	testutil.Expect(t, "a tree under the bounds is the whole", listing.Cut, false)
 }
 
 func TestTheListingIsBoundedAtFiveHundredEntries(t *testing.T) {
@@ -61,6 +62,37 @@ func TestTheListingIsBoundedAtFiveHundredEntries(t *testing.T) {
 	testutil.Require(t, "the listing", err, nil)
 	testutil.Expect(t, "bounded, and says the whole", []int{len(listing.Entries), listing.Supplied, listing.Total},
 		[]int{MaxEvidenceEntries, MaxEvidenceEntries, MaxEvidenceEntries + 3})
+	testutil.Expect(t, "the whole walked, so no cut", listing.Cut, false)
+}
+
+// The walk's work is bounded, not only its answer: a tree wider than the
+// visited bound and deeper than the depth bound is answered within both, with
+// the cut named, and nothing past the depth bound is listed.
+func TestTheListingsWalkStopsAtItsBoundsAndSaysItIsAPart(t *testing.T) {
+	t.Parallel()
+	home := t.TempDir()
+	dir := filepath.Join(home, "wide")
+	for at := range MaxEvidenceVisited + 50 {
+		writeFile(t, filepath.Join(dir, "d"+itoa(at%10), "shot-"+itoa(at)+".png"), "x")
+	}
+	deep := filepath.Join(home, "deep")
+	for depth := range MaxEvidenceDepth + 3 {
+		deep = filepath.Join(deep, "level-"+itoa(depth))
+	}
+	writeFile(t, filepath.Join(deep, "bottom.txt"), "the bottom\n")
+	writeFile(t, filepath.Join(home, "deep", "top.txt"), "the top\n")
+
+	listing, err := Owner{Home: home}.EvidenceList("~/wide")
+	testutil.Require(t, "the wide listing", err, nil)
+	testutil.Expect(t, "the walk stopped within the visited bound", listing.Total <= MaxEvidenceVisited, true)
+	testutil.Expect(t, "the answer bounded", []int{len(listing.Entries), listing.Supplied}, []int{MaxEvidenceEntries, MaxEvidenceEntries})
+	testutil.Expect(t, "the wide cut named", listing.Cut, true)
+
+	listing, err = Owner{Home: home}.EvidenceList("~/deep")
+	testutil.Require(t, "the deep listing", err, nil)
+	testutil.Expect(t, "the top listed, the bottom past the depth bound not", listing.Entries,
+		[]EvidenceEntry{{Path: "top.txt", Kind: EvidenceText, Size: 8}})
+	testutil.Expect(t, "the deep cut named", listing.Cut, true)
 }
 
 func itoa(n int) string {

@@ -66,8 +66,11 @@ export type FileDiff = {
 /** One file the review's evidence holds, by its evidence-relative path. */
 export type EvidenceEntry = { path: string; kind: "image" | "text"; size: number };
 
-/** What the review's Evidence path holds: images and text, bounded, saying the whole. */
-export type EvidenceListing = { root: string; entries: EvidenceEntry[]; supplied: number; total: number };
+/**
+ * What the review's Evidence path holds: images and text, bounded, saying the
+ * whole — or, where the walk stopped at its bound (cut), that it is a part.
+ */
+export type EvidenceListing = { root: string; entries: EvidenceEntry[]; supplied: number; total: number; cut?: boolean };
 
 /** One text file of the evidence, within the desk's line bound. */
 export type EvidenceText = { path: string; kind: "text"; text: string; blocks?: Block[]; supplied: number; total: number };

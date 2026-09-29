@@ -147,6 +147,13 @@ describe("shaping_remark_after_uncommitted_edit", () => {
     expect(remarkWhere(remark, { purpose: "shape a design", tip: "", read: moved })).toBe("on lines 41-42 at aaaaaaa");
   });
 
+  it("claims no currency on the board without a read of its lines in this session", () => {
+    expect(remarkWhere(remark, { purpose: "shape a design", tip: "", read: null })).toBe(`on lines 41-42 ${EARLIER_READING}`);
+    const elsewhere = read({ commit: "", checkout: true, head: HEAD_A, path: "internal/other.go" });
+    expect(remarkWhere(remark, { purpose: "shape a design", tip: "", read: elsewhere })).toBe(`on lines 41-42 ${EARLIER_READING}`);
+    expect(remarkWhere(remarkAbout(RECORD, read({}), 41, 42), { purpose: "review", tip: TIP, read: null })).toBe("on lines 41-42 of owner.go");
+  });
+
   it("is not drawn on lines the read does not show whole", () => {
     expect(remarkDrawn(remark, read({ commit: "", checkout: true, head: HEAD_A, from: 42, to: 43, lines: [{ number: 42, text: "\tmu.Lock()" }, { number: 43, text: "}" }] }), "shape a design")).toBe(false);
   });

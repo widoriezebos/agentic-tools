@@ -453,7 +453,7 @@ func (h *handler) evidenceFor(source string) *partner.Evidence {
 	for _, entry := range listing.Entries {
 		entries = append(entries, entry.Path+" ("+entry.Kind+", "+sizeWords(entry.Size)+")")
 	}
-	return &partner.Evidence{Path: named, Entries: entries, Supplied: listing.Supplied, Total: listing.Total}
+	return &partner.Evidence{Path: named, Entries: entries, Supplied: listing.Supplied, Total: listing.Total, Cut: listing.Cut}
 }
 
 // sizeWords is a file's size as a person reads it.

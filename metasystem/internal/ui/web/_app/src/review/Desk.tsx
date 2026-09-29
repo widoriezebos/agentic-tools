@@ -563,10 +563,16 @@ export function EvidenceListingShown({ listing, record, put }: { listing: Eviden
           ))}
         </ul>
       )}
-      {listing.supplied < listing.total && (
+      {listing.cut === true ? (
         <p className="ms-desk-bound">
-          {listing.supplied} of {listing.total} files are listed.
+          The first {listing.supplied} files found are listed; the listing stopped at its bound, so the evidence may hold more.
         </p>
+      ) : (
+        listing.supplied < listing.total && (
+          <p className="ms-desk-bound">
+            {listing.supplied} of {listing.total} files are listed.
+          </p>
+        )
       )}
     </section>
   );
