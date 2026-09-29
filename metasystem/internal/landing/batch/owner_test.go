@@ -95,6 +95,8 @@ func newOwnerBed(t *testing.T, record Record, now time.Time) *ownerBed {
 		Pipeline: &scriptedBoard{picture: BoardPicture{Readable: true}},
 		// The early acts do nothing unless a witness scripts them.
 		Early: EarlySeams{Cheap: func(Record) (EarlyResult, error) { return EarlyResult{}, nil },
+			Prove:   func(Record) (EarlyResult, error) { return EarlyResult{}, nil },
+			Budget:  func(Record) (bool, string) { return true, "" },
 			Adapter: func(RedGroup) (adapter.Adapter, bool) { return nil, false }}})
 	must(t, err)
 	return bed

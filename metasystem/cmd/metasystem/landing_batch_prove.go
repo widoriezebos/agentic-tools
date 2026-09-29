@@ -30,6 +30,12 @@ type batchProofLaunch struct {
 	Mode                                                  testpolicy.Mode
 	Groups                                                []string
 	GoalRevision, AccountingRevision                      uint64
+	// Early is a waiting batch's early proof (D14, R27): launched as the tip
+	// proof is, but nobody's tip, so it reserves no diagnostic headroom.
+	Early bool
+	// RetryDecision is the accountable decision to re-execute what an early
+	// proof of this very tree failed (U3-03); empty when there is none.
+	RetryDecision string
 }
 
 type batchProofDependencies struct {
@@ -326,6 +332,9 @@ func executeBatchProof(root, id, actor, window, token string, sample proofrun.Lo
 	sealed := admitted.Seal[head.GoalID]
 	request := batchProofLaunch{Root: controlRoot, BatchID: id, GoalID: head.GoalID, Tree: admitted.TipTree, CandidateTip: admitted.Proof.CandidateTip, ResultPath: resultPath, Token: token,
 		Mode: plan.ExecutedMode, Groups: slices.Clone(plan.SelectedGroups), GoalRevision: sealed.Revision, AccountingRevision: sealed.AccountingRevision}
+	if request.RetryDecision, err = earlyRetryDecision(controlRoot, admitted); err != nil {
+		return err
+	}
 	if dependencies.freshDecision != nil {
 		joined := make([]batch.Unit, 0, len(admitted.Units))
 		for _, unit := range admitted.Units {
@@ -444,10 +453,15 @@ func launchBatchTipProofWithDependencies(request batchProofLaunch, dependencies 
 	executionRoot := batch.ModuleRoot(detachedRoot)
 	args := []string{"internal", "test", "run", "--root", executionRoot, "--control-root", request.Root, "--batch-tip",
 		"--goal", request.GoalID, "--tree", request.Tree,
-		"--mode", string(request.Mode), "--purpose", "delivery", "--result", request.ResultPath,
-		"--require-diagnostic-headroom",
-		"--expected-goal-revision", fmt.Sprint(request.GoalRevision),
-		"--expected-accounting-revision", fmt.Sprint(request.AccountingRevision)}
+		"--mode", string(request.Mode), "--purpose", "delivery", "--result", request.ResultPath}
+	if !request.Early {
+		args = append(args, "--require-diagnostic-headroom")
+	}
+	args = append(args, "--expected-goal-revision", fmt.Sprint(request.GoalRevision),
+		"--expected-accounting-revision", fmt.Sprint(request.AccountingRevision))
+	if request.RetryDecision != "" {
+		args = append(args, "--retry-decision", request.RetryDecision)
+	}
 	if len(request.Groups) != 0 {
 		args = append(args, "--batch-prefix", "--batch-requirements", batchRequirementsArgument(request.Groups))
 	}

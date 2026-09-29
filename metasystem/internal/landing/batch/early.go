@@ -1,6 +1,7 @@
 package batch
 
 import (
+	"cmp"
 	"fmt"
 	"reflect"
 	"slices"
@@ -12,14 +13,19 @@ import (
 )
 
 // Early is what the owner did with a batch's wait (D14, R27; U10b-3): the
-// join's cheap phase on the tip the joins recorded, and the red judged by
-// D1's first two steps. Shape is the joined members that tip holds, in join
-// order: a red is judged against them alone, never against a member that
-// joined later (U3-02).
+// join's cheap phase on the tip the joins recorded, then at most one early
+// delivery proof of it on spare capacity, and a red judged by D1's first two
+// steps. Shape is the joined members that tip holds, in join order: a red is
+// judged against them alone, never against a member that joined later
+// (U3-02). The early proof is an ordinary retained attempt: the batch proof
+// takes from it only what identity-exact reuse takes from any attempt, and
+// it is never the batch's own tip attempt.
 type Early struct {
 	Shape   []string      `json:"shape"`
 	Tree    string        `json:"tree"`
 	Cheap   string        `json:"cheap,omitempty"`
+	Proof   string        `json:"proof,omitempty"`
+	Attempt string        `json:"attempt,omitempty"`
 	Finding *EarlyFinding `json:"finding,omitempty"`
 	// Idle says why nothing more runs meanwhile, in the line's words.
 	Idle string `json:"idle,omitempty"`
@@ -42,19 +48,40 @@ type EarlyResult struct {
 }
 
 // EarlySeams are the early acts' effects outside the record. Cheap runs the
-// join's cheap phase on the record's tip tree; Adapter names a red group's
-// language adapter for naming by owner unit (nil: unknown).
+// join's cheap phase on the record's tip tree; Prove runs one delivery proof
+// of it, launched as the tip proof is but reserving no diagnostic headroom,
+// since it is nobody's tip; Budget says whether the head member's budget
+// keeps the batch proof's attempts and headroom after one more attempt
+// (U3-01), and in words why not; Adapter names a red group's language
+// adapter for naming by owner unit (nil: unknown).
 type EarlySeams struct {
 	Cheap   func(Record) (EarlyResult, error)
+	Prove   func(Record) (EarlyResult, error)
+	Budget  func(Record) (bool, string)
 	Adapter func(RedGroup) (adapter.Adapter, bool)
 }
 
-const earlyGreen, earlyRed = "green", "red"
+// EarlyCompletion is an early proof as it returns to the owner's loop.
+type EarlyCompletion struct {
+	ID, Tree string
+	Result   EarlyResult
+	Err      error
+}
+
+const earlyGreen, earlyRed, earlyRunning, earlyUnavailable = "green", "red", "running", "unavailable"
+
+const noSpareSlot = "no spare proof slot"
 
 // useWait uses a wait the start rule just recorded, after it decided and
-// holding none of its locks: the cheap phase on the tip, when the host is
-// not loaded. It never changes the decision.
+// holding none of its locks, when the host is not loaded: the cheap phase on
+// the tip, then one early proof of it when the runner would still admit a
+// real proof beside it. While an early proof of the batch runs, nothing new
+// starts; a join grows the shape and the acts start again once it ends. It
+// never changes the decision.
 func (owner *Owner) useWait(record Record, sample proofrun.LoadSample, at time.Time) error {
+	if _, running := owner.earlyRuns[record.BatchID]; running {
+		return nil
+	}
 	if record.State != StateOpen || record.Wait == nil || record.TipTree == "" || record.TipTree == record.BaseTree ||
 		slices.ContainsFunc(record.Units, func(unit Unit) bool { return unit.State == UnitJoining }) {
 		return nil
@@ -75,22 +102,108 @@ func (owner *Owner) useWait(record Record, sample proofrun.LoadSample, at time.T
 		return owner.writeEarly(record.BatchID, early, at)
 	}
 	early.Idle = ""
-	if early.Cheap != "" {
+	if early.Cheap == "" {
+		result, err := owner.early.Cheap(record)
+		if err != nil {
+			early.Cheap, early.Idle = earlyUnavailable, "cheap checks unavailable: "+err.Error()
+			return owner.writeEarly(record.BatchID, early, at)
+		}
+		early.Cheap = earlyGreen
+		if len(result.Failing) != 0 {
+			early.Cheap = earlyRed
+		}
+		if early.Cheap == earlyRed {
+			if err := owner.writeEarly(record.BatchID, early, at); err != nil {
+				return err
+			}
+			return owner.judgeEarlyRed(record.BatchID, early, result, at)
+		}
+	}
+	if early.Cheap != earlyGreen || early.Proof != "" || early.Finding != nil {
 		return owner.writeEarly(record.BatchID, early, at)
 	}
-	result, err := owner.early.Cheap(record)
-	if err != nil {
-		early.Idle = "cheap checks unavailable: " + err.Error()
+	if early.Idle = owner.earlyProofRefusal(record, sample); early.Idle != "" {
 		return owner.writeEarly(record.BatchID, early, at)
 	}
-	early.Cheap = earlyGreen
-	if len(result.Failing) != 0 {
-		early.Cheap = earlyRed
-	}
-	if err := owner.writeEarly(record.BatchID, early, at); err != nil || early.Cheap == earlyGreen {
+	early.Proof = earlyRunning
+	if err := owner.writeEarly(record.BatchID, early, at); err != nil {
 		return err
 	}
-	return owner.judgeEarlyRed(record.BatchID, early, result, at)
+	owner.earlyRuns[record.BatchID] = early.Tree
+	go func() {
+		result, err := owner.early.Prove(record)
+		owner.earlyDone <- EarlyCompletion{ID: record.BatchID, Tree: early.Tree, Result: result, Err: err}
+	}()
+	return nil
+}
+
+// earlyProofRefusal says why no early proof starts now, or nothing: one per
+// owner at a time, only when the host runner would still admit one more real
+// proof beside it and every run of this owner, and only when the head
+// member's budget keeps the batch proof's headroom (U3-01).
+func (owner *Owner) earlyProofRefusal(record Record, sample proofrun.LoadSample) string {
+	if len(owner.earlyRuns) != 0 {
+		return noSpareSlot
+	}
+	room := false
+	for _, runner := range owner.runners(sample, owner.admission(sample)) {
+		if runner.Runner == "host" {
+			room = runner.admits(owner.ownRuns(runner.Runner) + 1)
+		}
+	}
+	if !room {
+		return noSpareSlot
+	}
+	if ok, why := owner.early.Budget(record); !ok {
+		return cmp.Or(why, "no early proof: the budget keeps its attempts for the batch proof")
+	}
+	return ""
+}
+
+// EarlyCompletions is where the owner's early proofs finish; a loop
+// selecting on it hands each to CompleteEarly.
+func (owner *Owner) EarlyCompletions() <-chan EarlyCompletion {
+	if owner == nil {
+		return nil
+	}
+	return owner.earlyDone
+}
+
+// CompleteEarly applies one finished early proof. An early proof whose
+// inputs moved (the base, a member, the start) was abandoned: it ended on
+// its own, its results stay retained, and nothing here reads them.
+func (owner *Owner) CompleteEarly(done EarlyCompletion) {
+	delete(owner.earlyRuns, done.ID)
+	if err := owner.completeEarly(done); err != nil {
+		owner.report(done.ID, err)
+	}
+}
+
+func (owner *Owner) completeEarly(done EarlyCompletion) error {
+	record, err := owner.store.Load(done.ID)
+	if err != nil || record.State != StateOpen || owner.inflight[done.ID] != nil ||
+		record.Early == nil || record.Early.Tree != done.Tree || record.Early.Proof != earlyRunning {
+		return err
+	}
+	early, at := *record.Early, owner.now()
+	early.Attempt = done.Result.Attempt
+	switch {
+	case len(done.Result.Failing) != 0:
+		early.Proof = earlyRed
+	case done.Err != nil:
+		early.Proof, early.Idle = earlyUnavailable, "early proof unavailable: "+done.Err.Error()
+	default:
+		early.Proof = earlyGreen
+	}
+	if early.Proof == earlyRed && early.Ended != "" {
+		// The batch started while it ran: nothing is judged any more, and
+		// the red is kept for its batch proof (U3-03).
+		early.Finding = &EarlyFinding{Group: done.Result.Failing[0].ID, Attempt: done.Result.Attempt, Log: done.Result.Failing[0].LogPath}
+	}
+	if err := owner.writeEarly(done.ID, early, at); err != nil || early.Proof != earlyRed || early.Ended != "" {
+		return err
+	}
+	return owner.judgeEarlyRed(done.ID, early, done.Result, at)
 }
 
 func goalIDs(units []Unit) []string {
@@ -117,7 +230,9 @@ func idleKind(idle string) string {
 func (owner *Owner) writeEarly(id string, early Early, at time.Time) error {
 	var line string
 	err := owner.store.Update(id, func(current *Record) error {
-		if current.State != StateOpen || current.TipTree != early.Tree {
+		// A join may have grown the tip under an early proof of its prefix:
+		// that proof's own record is still written.
+		if current.State != StateOpen || current.TipTree != early.Tree && (current.Early == nil || current.Early.Tree != early.Tree) {
 			return nil
 		}
 		previous := current.Early
@@ -263,10 +378,13 @@ func earlyClause(early *Early) string {
 	switch {
 	case early.Finding != nil:
 		return fmt.Sprintf("partial red: %s on %s, nobody named; decided at the batch proof", early.Finding.Group, members)
-	case early.Cheap == "":
+	case early.Cheap == "" || early.Cheap == earlyUnavailable:
 		return early.Idle
 	}
 	clause := members + ": cheap checks " + early.Cheap
+	if early.Proof != "" && early.Proof != earlyUnavailable {
+		clause += ", early proof " + early.Proof
+	}
 	if early.Idle != "" {
 		clause += "; " + early.Idle
 	}

@@ -28,6 +28,9 @@ func WaitLine(record Record, now time.Time, location *time.Location) string {
 		if lastHistory(record).Verb == "cap" {
 			line += "; first in line for a slot"
 		}
+		if reused, of, ok := earlyReuse(record); ok {
+			line += fmt.Sprintf("; reusing %d of %d groups from the early proof", reused, of)
+		}
 		return line
 	}
 	return ""
@@ -68,4 +71,18 @@ func lastHistory(record Record) HistoryEntry {
 		return HistoryEntry{}
 	}
 	return record.History[len(record.History)-1]
+}
+
+// earlyReuse counts the batch proof's groups the retained verifier resolved
+// to the early proof's attempt; ok once the proof's sources are recorded.
+func earlyReuse(record Record) (reused, of int, ok bool) {
+	if record.Early == nil || record.Early.Attempt == "" || record.Proof == nil || record.Proof.Sources == nil {
+		return 0, 0, false
+	}
+	for _, source := range record.Proof.Sources {
+		if source.Kind == SourceReused && source.Attempt == record.Early.Attempt {
+			reused++
+		}
+	}
+	return reused, len(record.Proof.SelectedGroups), true
 }
