@@ -719,12 +719,12 @@ exec "${CLBM_REAL_GIT:-/usr/bin/git}" "$@"
 		}
 	}
 	fixtureEnvironment = append(fixtureEnvironment, "CLBM_REAL_GIT="+realGit)
-	testReceiptArgs := []string{"landing", "test-receipt", "--root", root}
+	testReceiptArgs := []string{landingTestReceiptHelperCommand, "--root", root}
 	if !omitTree {
 		testReceiptArgs = append(testReceiptArgs, "--tree", candidateTree)
 	}
 	testReceiptArgs = append(testReceiptArgs, "--mode", "auto", "--goal", "landing-goal", "--cap-min", "1")
-	testReceiptCommand := proofFixture.command(fixtureEnvironment, filepath.Join(root, "bin", "metasystem"), testReceiptArgs...)
+	testReceiptCommand := landingTestReceiptChild(proofFixture, fixtureEnvironment, testReceiptArgs...)
 	testReceiptCommand.Env = append(testReceiptCommand.Env, "METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="+identityTable)
 	if !moveOrigin {
 		started, ok := lease.StartedAt(int64(os.Getpid()), nil)
@@ -1462,7 +1462,7 @@ printf '{"suite":"landing-receipt","section":"tiny","event":"end","at":"%s","dep
 	resourceRelease := filepath.Join(t.TempDir(), "resource-release")
 	t.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", admissionDir)
 	t.Setenv("METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT", root)
-	command := proofFixture.command(receiptCanaryEnvironmentForRoot(t, root), engine, "landing", "test-receipt", "--root", root, "--tree", tree,
+	command := landingTestReceiptChild(proofFixture, receiptCanaryEnvironmentForRoot(t, root), landingTestReceiptHelperCommand, "--root", root, "--tree", tree,
 		"--command", landing.CanonicalValidatorCommand, "--goal", "receipt-goal", "--cap-min", "1", "--result", resultPath)
 	command.Env = append(command.Env, "RECEIPT_CANARY_ENGINE="+engine, "RECEIPT_CANARY_LAUNCH_COUNT="+launchCount,
 		"RECEIPT_CANARY_DEVGATE="+devgate, "RECEIPT_CANARY_REAL_GO="+realGo, "RECEIPT_CANARY_SNAPSHOT_PATH="+snapshotPath,
@@ -1536,7 +1536,7 @@ printf '{"suite":"landing-receipt","section":"tiny","event":"end","at":"%s","dep
 		t.Fatal(err)
 	}
 	repeatResult := filepath.Join(t.TempDir(), "repeat-result.json")
-	repeat := proofFixture.command(receiptCanaryEnvironmentForRoot(t, root), engine, "landing", "test-receipt", "--root", root, "--tree", tree,
+	repeat := landingTestReceiptChild(proofFixture, receiptCanaryEnvironmentForRoot(t, root), landingTestReceiptHelperCommand, "--root", root, "--tree", tree,
 		"--command", landing.CanonicalValidatorCommand, "--goal", "receipt-goal", "--cap-min", "1", "--result", repeatResult)
 	repeat.Env = append(repeat.Env, "RECEIPT_CANARY_ENGINE="+engine, "RECEIPT_CANARY_LAUNCH_COUNT="+launchCount,
 		"RECEIPT_CANARY_DEVGATE="+devgate, "RECEIPT_CANARY_REAL_GO="+realGo, "RECEIPT_CANARY_SNAPSHOT_PATH="+snapshotPath,
@@ -1581,7 +1581,7 @@ printf '{"suite":"landing-receipt","section":"tiny","event":"end","at":"%s","dep
 		{"terminal-parent", []string{"METASYSTEM_PROOF_CONTROL_ROOT=" + root, "METASYSTEM_PROOF_ATTEMPT=" + attempts[0].AttemptID}, "proof parent context is not live"},
 	} {
 		t.Run(refusal.name, func(t *testing.T) {
-			probe := proofFixture.command(repeat.Env, engine, "landing", "test-receipt", "--root", root, "--tree", tree,
+			probe := landingTestReceiptChild(proofFixture, repeat.Env, landingTestReceiptHelperCommand, "--root", root, "--tree", tree,
 				"--command", landing.CanonicalValidatorCommand, "--goal", "receipt-goal", "--cap-min", "1")
 			probe.Env = append(probe.Env, refusal.env...)
 			out, err := probe.CombinedOutput()
@@ -1765,7 +1765,7 @@ func runSharedTestingReceiptRecovery(t *testing.T, prefix string) {
 	}
 	admissionDir := filepath.Join(t.TempDir(), "host-admission")
 	runPublic := func() ([]byte, error) {
-		command := proofFixture.command(receiptCanaryEnvironmentForRoot(t, root), engine, "landing", "test-receipt", "--root", root, "--tree", tree, "--mode", "auto", "--goal", "receipt-goal", "--cap-min", "1")
+		command := landingTestReceiptChild(proofFixture, receiptCanaryEnvironmentForRoot(t, root), landingTestReceiptHelperCommand, "--root", root, "--tree", tree, "--mode", "auto", "--goal", "receipt-goal", "--cap-min", "1")
 		command.Env = append(command.Env, "SHARED_TEST_LAUNCH_COUNT="+launchCount, "METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="+identityTable,
 			"METASYSTEM_CENSUS_PROCESS_FILE="+processTable,
 			"METASYSTEM_PROOF_ADMISSION_TEST_DIR="+admissionDir, "METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT="+root)
@@ -2243,4 +2243,20 @@ func TestCanonicalValidatorEnvironmentOwnsTheGateGoFlags(t *testing.T) {
 	if strings.Join(owned, "\x00") != strings.Join(want, "\x00") {
 		t.Fatalf("validator owned environment = %q, want %q", owned, want)
 	}
+}
+
+// landingTestReceiptHelperCommand runs the landing test-receipt owner in a
+// child of this test binary. The engine has no landing test-receipt entry
+// any more (work land proves its receipt in process); these beds keep the
+// receipt in a process of its own so its environment and PATH are the
+// child's, as the former entry's were.
+const landingTestReceiptHelperCommand = "test-helper-landing-test-receipt"
+
+func init() { testHelperCommands[landingTestReceiptHelperCommand] = runLandingTestReceipt }
+
+func landingTestReceiptChild(fixture proofBinaryFixture, environment []string, args ...string) *exec.Cmd {
+	fixture.t.Helper()
+	command := fixture.command(environment, commandTestExecutable(fixture.t), args...)
+	command.Env = append(command.Env, "GO_WANT_BATCH_E2E_COMMAND=1")
+	return command
 }
