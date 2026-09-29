@@ -310,7 +310,7 @@ func (s *Service) admitProposal(running *turn, prepared Action) {
 			Index: index, Verb: boundedGoal(prepared.Verb), Goal: boundedGoal(prepared.Goal),
 			State: ProposalWaiting, Version: 1,
 			At: s.now().UTC().Format(time.RFC3339),
-		}, "this is not one of the ten acts a proposal can be; say the press and give the place as a link")
+		}, "this is not an act a proposal can be; say the press and give the place as a link")
 		return
 	}
 
