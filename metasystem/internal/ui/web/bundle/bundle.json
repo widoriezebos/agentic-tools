@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceDigest": "sha256:3895ec10b0a83800b019f6198046fed553fe8ac8c341555023d9f2d0bb4048a1",
+  "sourceDigest": "sha256:c6254041caf64e38c1d221959b608c7f51c455fb2554bb87087394b66f4a7fda",
   "source": [
     {
       "path": ".npmrc",
@@ -372,7 +372,7 @@
     },
     {
       "path": "src/drawing/csp.test.ts",
-      "sha256": "fa74c9e863739b7c98dc85a2222118949cec5b385f06542fd2133f320c44dd1b"
+      "sha256": "0373d26314a63c6d5e2e9fcc4663449259cf47e7393ddddca10ac8585e96208f"
     },
     {
       "path": "src/drawing/drawing.css",

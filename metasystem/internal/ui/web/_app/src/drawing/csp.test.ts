@@ -5,7 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium, type Browser } from "playwright";
 import { build } from "vite";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { describe, expect, it, onTestFinished } from "vitest";
 
 /**
  * D2's proof, first (g1-s71): a mermaid render under the policy header this
@@ -55,9 +55,31 @@ let server: Server | null = null;
 let browser: Browser | null = null;
 let address = "";
 
-beforeAll(async () => {
+/**
+ * Builds the drawing chunk, serves it under the policy and launches Chromium,
+ * all for the one test that draws: each is undone when that test finishes, the
+ * built chunk's directory with it, so nothing outlives the test in the host
+ * temp root.
+ */
+async function serve(): Promise<void> {
   const { head, tail } = policyOf(readFileSync(HTTPD, "utf8"));
   dir = mkdtempSync(path.join(tmpdir(), "drawing-csp-"));
+  onTestFinished(async () => {
+    await browser?.close();
+    browser = null;
+    await new Promise<void>((done) => {
+      if (server === null) {
+        done();
+        return;
+      }
+      server.close(() => {
+        done();
+      });
+    });
+    server = null;
+    rmSync(dir, { recursive: true, force: true });
+    dir = "";
+  });
   const out = path.join(dir, "dist");
   await build({
     configFile: false,
@@ -122,23 +144,7 @@ beforeAll(async () => {
   const bound = server.address();
   address = typeof bound === "object" && bound !== null ? `http://127.0.0.1:${String(bound.port)}/` : "";
   browser = await chromium.launch();
-}, 180_000);
-
-afterAll(async () => {
-  await browser?.close();
-  await new Promise<void>((done) => {
-    if (server === null) {
-      done();
-      return;
-    }
-    server.close(() => {
-      done();
-    });
-  });
-  if (dir !== "") {
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
+}
 
 type Drawn = {
   violations: string[];
@@ -207,6 +213,7 @@ describe("a drawing under the policy the server sends (g1-s71 D2)", () => {
   });
 
   it("draws with the page's nonce on every style it writes, and is refused nothing", async () => {
+    await serve();
     const seen = await drawn();
     expect(seen.failed).toBe("");
     expect(seen.svgs).toBe(2);
@@ -220,5 +227,5 @@ describe("a drawing under the policy the server sends (g1-s71 D2)", () => {
     // the picture itself.
     expect(seen.releaseFill).toBe("rgb(255, 153, 255)");
     expect(seen.maxWidth).not.toBe("none");
-  }, 120_000);
+  }, 300_000);
 });
