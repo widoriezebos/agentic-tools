@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/evidence"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gocache"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
@@ -44,6 +45,9 @@ type diskOwners struct {
 	stateDir     string
 	// trimPass replaces one trim pass (fixtures); nil is the steward's.
 	trimPass steward.CacheTrimPass
+	// evidenceEnv builds a person's evidence verb's environment (fixtures);
+	// nil is steward.EvidenceEnv.
+	evidenceEnv func(ctx context.Context, top, by string) (evidence.Env, error)
 }
 
 func (o diskOwners) withDefaults() diskOwners {

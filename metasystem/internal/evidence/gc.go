@@ -142,58 +142,78 @@ func collectChains(checkoutRoot, agents, jobsDir, evidenceRoot string) ([]string
 			continue
 		}
 		chain := entry.Name()
-		chainDir := filepath.Join(agents, chain)
-		records, err := chainRecords(jobsDir, chain)
+		done, reason, err := collectChain(checkoutRoot, agents, jobsDir, evidenceRoot, chain)
 		if err != nil {
 			return nil, nil, err
 		}
-		if len(records) == 0 {
-			kept = append(kept, keptChain{chain, "no job records; not this tool's to judge"})
-			continue
+		if done {
+			collected = append(collected, chain)
+		} else {
+			kept = append(kept, keptChain{chain, reason})
 		}
-		if anyLive(records) {
-			kept = append(kept, keptChain{chain, "a round is still live"})
-			continue
-		}
-		// An OPEN chain is working state even when every round is terminal:
-		// the orchestrator is adjudicating between rounds, and the collector
-		// once ate an active critique chain mid-conversation because this
-		// check was missing. Only an explicitly closed chain is history.
-		root := rootRecord(records, chain)
-		if root == nil || root["chainClosed"] != true {
-			kept = append(kept, keptChain{chain, "chain not closed; working state"})
-			continue
-		}
-		manifestPath := chainManifestPath(evidenceRoot, checkoutRoot, chain, mirroredPath(root))
-		if !fileExists(manifestPath) {
-			kept = append(kept, keptChain{chain, "no mirror manifest"})
-			continue
-		}
-		files, err := manifestFiles(manifestPath)
-		if err != nil {
-			return nil, nil, err
-		}
-		unaccounted, err := unaccountedFiles(chainDir, files)
-		if err != nil {
-			return nil, nil, err
-		}
-		if len(unaccounted) > 0 {
-			sample := unaccounted
-			if len(sample) > 3 {
-				sample = sample[:3]
-			}
-			kept = append(kept, keptChain{chain, "mirror does not account for: " + strings.Join(sample, ", ")})
-			continue
-		}
-		if err := os.RemoveAll(chainDir); err != nil {
-			return nil, nil, err
-		}
-		if err := removeMirroredLogs(jobsDir, chain, files); err != nil {
-			return nil, nil, err
-		}
-		collected = append(collected, chain)
 	}
 	return collected, kept, nil
+}
+
+// CollectChain is the collector's own payload collection narrowed to one
+// chain (engine-owns-disk-lifetimes 3.12, evidence.Settle): it removes the
+// chain's payload once every job is terminal, the chain is closed and the
+// mirror accounts for every file, and keeps the job records (they are the
+// registry). A payload already gone is success.
+func CollectChain(checkoutRoot, evidenceRoot, chain string) (collected bool, reason string, err error) {
+	agents := filepath.Join(checkoutRoot, "artifacts", "agents")
+	if _, err := os.Stat(filepath.Join(agents, chain)); os.IsNotExist(err) {
+		return true, "", nil
+	}
+	return collectChain(checkoutRoot, agents, filepath.Join(agents, "jobs"), evidenceRoot, chain)
+}
+
+func collectChain(checkoutRoot, agents, jobsDir, evidenceRoot, chain string) (bool, string, error) {
+	chainDir := filepath.Join(agents, chain)
+	records, err := chainRecords(jobsDir, chain)
+	if err != nil {
+		return false, "", err
+	}
+	if len(records) == 0 {
+		return false, "no job records; not this tool's to judge", nil
+	}
+	if anyLive(records) {
+		return false, "a round is still live", nil
+	}
+	// An OPEN chain is working state even when every round is terminal:
+	// the orchestrator is adjudicating between rounds, and the collector
+	// once ate an active critique chain mid-conversation because this
+	// check was missing. Only an explicitly closed chain is history.
+	root := rootRecord(records, chain)
+	if root == nil || root["chainClosed"] != true {
+		return false, "chain not closed; working state", nil
+	}
+	manifestPath := chainManifestPath(evidenceRoot, checkoutRoot, chain, mirroredPath(root))
+	if !fileExists(manifestPath) {
+		return false, "no mirror manifest", nil
+	}
+	files, err := manifestFiles(manifestPath)
+	if err != nil {
+		return false, "", err
+	}
+	unaccounted, err := unaccountedFiles(chainDir, files)
+	if err != nil {
+		return false, "", err
+	}
+	if len(unaccounted) > 0 {
+		sample := unaccounted
+		if len(sample) > 3 {
+			sample = sample[:3]
+		}
+		return false, "mirror does not account for: " + strings.Join(sample, ", "), nil
+	}
+	if err := os.RemoveAll(chainDir); err != nil {
+		return false, "", err
+	}
+	if err := removeMirroredLogs(jobsDir, chain, files); err != nil {
+		return false, "", err
+	}
+	return true, "", nil
 }
 
 // chainRecords parses every job record belonging to a chain: the root record

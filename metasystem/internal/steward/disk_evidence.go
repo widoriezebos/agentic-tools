@@ -192,7 +192,11 @@ func evidenceBoundClass(ctx context.Context, home, top string, checkouts []strin
 		if index < len(participants) {
 			entry.Settings, entry.SettingsErr = participants[index].Settings, participants[index].Err
 		}
-		entry.Facts, entry.FactsErr = readFacts(ctx, installation)
+		// The checkout's facts need git; they are read only when its evidence
+		// root holds something the bound could act on.
+		if entry.SettingsErr == nil && evidenceRootHoldsSegments(entry.Settings.EvidenceRoot.Path) {
+			entry.Facts, entry.FactsErr = readFacts(ctx, installation)
+		}
 		if entry.Facts.GitRoot == "" {
 			entry.Facts.GitRoot = gitRootAbove(installation)
 		}
@@ -228,4 +232,74 @@ func evidenceBoundClass(ctx context.Context, home, top string, checkouts []strin
 		pass.EvidenceSeams(class)
 	}
 	return class, nil
+}
+
+// EvidenceEnv is what a person's evidence verb sees for the checkout top:
+// the host's armed checkouts with their settings and facts, the goal
+// ledger observer, the citation index, the lifecycle locks with the
+// reaper's bound, and the host's blob store. pass carries the fixture
+// seams (Home, UserHome, Checkouts, Facts); by names the actor.
+func EvidenceEnv(ctx context.Context, top string, pass DiskPass, by string) (evidence.Env, error) {
+	if pass.Clock == nil {
+		pass.Clock = time.Now
+	}
+	if pass.Now.IsZero() {
+		pass.Now = pass.Clock().UTC()
+	}
+	home := pass.Home
+	if home == "" {
+		var err error
+		if home, err = HomeStateRoot(); err != nil {
+			return evidence.Env{}, err
+		}
+	}
+	userHome, err := pass.userHome()
+	if err != nil {
+		return evidence.Env{}, err
+	}
+	checkouts := pass.Checkouts
+	if checkouts == nil {
+		checkouts = armedCheckouts()
+	}
+	if !containsPath(checkouts, top) {
+		checkouts = append(checkouts, top)
+	}
+	var participants []diskstore.Participant
+	var live []string
+	for _, checkout := range checkouts {
+		if checkout != top && checkoutRemoved(checkout) {
+			continue
+		}
+		settings, err := diskSettingsFor(checkout)
+		participants = append(participants, diskstore.Participant{Checkout: checkout, Settings: settings, Err: err})
+		live = append(live, checkout)
+	}
+	class, err := evidenceBoundClass(ctx, home, top, live, participants, diskstore.HostSettings{}, pass)
+	if err != nil {
+		return evidence.Env{}, err
+	}
+	env := evidence.Env{UserHome: userHome, HomeStateRoot: home, Checkouts: class.Checkouts, Now: pass.Now, Entropy: rand.Reader,
+		Observe: class.Observe, Citations: class.Citations, Blobs: class.Bound.Blobs, By: by,
+		Locks: evidence.OwnerLocks(int64(os.Getpid()), os.Args[0], pass.Clock, time.Sleep)}
+	installation := installationOf(top)
+	for _, checkout := range class.Checkouts {
+		if checkout.Installation == installation {
+			env.This = checkout
+		}
+	}
+	return env, nil
+}
+
+// evidenceRootHoldsSegments reports an evidence root with any segment
+// directory in it.
+func evidenceRootHoldsSegments(root string) bool {
+	if root == "" {
+		return false
+	}
+	for _, name := range []string{"agents", "suite-failures", "events"} {
+		if info, err := os.Stat(filepath.Join(root, name)); err == nil && info.IsDir() {
+			return true
+		}
+	}
+	return false
 }

@@ -751,6 +751,12 @@ func TestAuditDiskReceiptLedgerHasOneAppender(t *testing.T) {
 // and mirrorRecord, which takes the lock itself.
 var auditMirrorLockHolders = map[string]bool{"mirrorRecord": true, "reapOneLocked": true, "recollectLostReturn": true, "internalCancel": true}
 
+// auditMirrorSettlers call dispatch.Mirror besides mirrorRecordLocked, each
+// with every job's lifecycle lock held: evidence's settle runs inside a
+// person's disposal step, which takes the chain's locks first (3.12
+// settlement).
+var auditMirrorSettlers = map[string]bool{"mirrorRecordLocked": true, "settle": true}
+
 // TestAuditDiskEveryMirrorHoldsTheLifecycleLock is the static witness of
 // design engine-owns-disk-lifetimes 3.12 (DL4E-02, DL4F-01): dispatch.Mirror
 // has one production caller, mirrorRecordLocked, and mirrorRecordLocked is
@@ -775,7 +781,7 @@ func TestAuditDiskEveryMirrorHoldsTheLifecycleLock(t *testing.T) {
 				if !ok {
 					return true
 				}
-				if ident, ok := selector.X.(*ast.Ident); ok && dispatchNames[ident.Name] && selector.Sel.Name == "Mirror" && function.Name.Name != "mirrorRecordLocked" {
+				if ident, ok := selector.X.(*ast.Ident); ok && dispatchNames[ident.Name] && selector.Sel.Name == "Mirror" && !auditMirrorSettlers[function.Name.Name] {
 					lines = append(lines, fileSet.Position(call.Pos()).Line)
 				}
 				if selector.Sel.Name == "mirrorRecordLocked" && !auditMirrorLockHolders[function.Name.Name] {

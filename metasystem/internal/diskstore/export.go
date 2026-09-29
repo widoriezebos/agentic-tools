@@ -130,7 +130,7 @@ func Export(ctx context.Context, request ExportRequest) (ExportResult, error) {
 		}
 	}
 	if err := os.MkdirAll(filepath.Dir(archive), 0o755); err != nil {
-		return result, err
+		return result, fmt.Errorf("not exported: %w", err)
 	}
 	partial := archive + PartialSuffix + request.Stage
 	partialManifest := manifestPath + PartialSuffix + request.Stage
