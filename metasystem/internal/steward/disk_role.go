@@ -26,6 +26,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gocache"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/janitor"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/registry"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
@@ -306,6 +307,7 @@ func machinePass(ctx context.Context, home, top string, own diskstore.Settings, 
 	}
 	options.Classes = []diskstore.Class{
 		diskstore.RegisteredStores{Registry: diskstore.MachineRegistry(home), Proofs: pass.proofs()},
+		launchRetention(home, host),
 		diskstore.TempStrays{Roots: tempRoots},
 	}
 	options.Volumes = pass.Volumes
@@ -333,6 +335,17 @@ func machinePass(ctx context.Context, home, top string, own diskstore.Settings, 
 	}
 	report, err := diskstore.RunPass(ctx, options)
 	return report, forgotten, err
+}
+
+// launchRetention is the launch store's class: ~/.metasystem/launch with
+// the unit store beside it, the kernel's prober and process groups, and
+// the host's launch target and window.
+func launchRetention(home string, host diskstore.HostSettings) *launch.Retention {
+	prober := identity.KernelProber{}
+	manager := &launch.Manager{Store: launch.Store{Root: filepath.Join(home, "launch")}, Prober: prober,
+		Processes: launch.OSProcesses{Prober: prober}}
+	return &launch.Retention{Manager: manager, UnitRoot: filepath.Join(home, "unit"),
+		Target: host.Bytes(config.DiskLaunchTargetKey), Keep: host.Duration(config.DiskLaunchKeepKey)}
 }
 
 // checkoutRemoved reports whether the checkout directory itself no longer

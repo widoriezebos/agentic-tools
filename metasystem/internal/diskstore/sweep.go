@@ -66,6 +66,12 @@ type Class interface {
 	Apply(ctx context.Context, pass *Pass, item Item) Verdict
 }
 
+// Totaller is a class whose plan names only the items it acts on or
+// reports, and which counts its whole store for the class line.
+type Totaller interface {
+	Totals() (items int, bytes int64)
+}
+
 // PassOptions configure one pass.
 type PassOptions struct {
 	// Kind is "checkout" or "machine"; Name the checkout path or "machine".
@@ -273,6 +279,9 @@ func (p *Pass) visit(ctx context.Context, class Class, report *Report, positions
 		default:
 			releasable = append(releasable, item)
 		}
+	}
+	if totals, ok := class.(Totaller); ok {
+		summary.Items, summary.Bytes = totals.Totals()
 	}
 	if resume := positions[name]; resume != "" {
 		for index, item := range releasable {
