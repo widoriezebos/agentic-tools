@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"golang.org/x/sys/unix"
 )
 
 // A native grandchild can close every inherited lease descriptor and standard
@@ -40,8 +41,17 @@ func TestGLEHostResourceKilledLauncherAndWorkerKeepOrdinaryGrandchildInCustody(t
 	launcher.Env = append(os.Environ(),
 		"METASYSTEM_HOST_CUSTODY_HELPER=1")
 	launcher.Stdout, launcher.Stderr = launcherLog, launcherLog
-	if err := launcher.Start(); err != nil {
-		t.Fatal(err)
+	// A suite runner's flock descriptor reaches this binary open and without
+	// close-on-exec (flock(1) without -o; Go never marks descriptors it
+	// inherited), and so reaches every helper started here. The ancestor lock
+	// stands for it: once this test's copy is closed, only a helper or a
+	// descendant still holding the inherited copy can keep it locked.
+	ancestorLockPath := filepath.Join(directory, "ancestor-suite.lock")
+	ancestorLock := inheritableAncestorLock(t, ancestorLockPath)
+	startErr := launcher.Start()
+	_ = ancestorLock.Close()
+	if startErr != nil {
+		t.Fatal(startErr)
 	}
 	prober := identity.KernelProber{}
 	launcherExact, state, err := prober.Probe(int64(launcher.Process.Pid))
@@ -65,6 +75,12 @@ func TestGLEHostResourceKilledLauncherAndWorkerKeepOrdinaryGrandchildInCustody(t
 	worker = waitCustodyRef(t, prober, workerPID, 0)
 	grandchild = waitCustodyRef(t, prober, grandPID, 0)
 	watchdogProcess = waitCustodyRecordWatchdog(t, directory, "custody-killed-launcher")
+	// The helper drops inherited descriptors before it starts anything, and
+	// the grandchild is ready only after the helper, custodian and worker
+	// exist, so a held lock now is a leak, not a race.
+	if held := ancestorLockHeld(t, ancestorLockPath); held {
+		t.Fatal("the launcher helper or one of its descendants holds a descriptor inherited from this test's ancestors")
+	}
 	assertDurableSpools := func() {
 		if liveCustodyRef(prober, watchdogProcess) {
 			t.Fatal("resource custodian returned to a live state after its terminal witness")
@@ -184,6 +200,74 @@ func TestGLEHostResourceKilledLauncherAndWorkerKeepOrdinaryGrandchildInCustody(t
 	}
 	defer lease.Close()
 	assertDurableSpools()
+}
+
+// inheritableAncestorLock opens path, locks it exclusively and clears
+// close-on-exec, as a shell's flock descriptor arrives in a test binary.
+func inheritableAncestorLock(t *testing.T, path string) *os.File {
+	t.Helper()
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := unix.Flock(int(file.Fd()), unix.LOCK_EX); err != nil {
+		file.Close()
+		t.Fatal(err)
+	}
+	if _, err := unix.FcntlInt(file.Fd(), unix.F_SETFD, 0); err != nil {
+		file.Close()
+		t.Fatal(err)
+	}
+	return file
+}
+
+// ancestorLockHeld reports whether any process still holds path's flock.
+func ancestorLockHeld(t *testing.T, path string) bool {
+	t.Helper()
+	probe, err := os.OpenFile(path, os.O_RDWR, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer probe.Close()
+	if err := unix.Flock(int(probe.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
+		if errors.Is(err, unix.EWOULDBLOCK) {
+			return true
+		}
+		t.Fatal(err)
+	}
+	_ = unix.Flock(int(probe.Fd()), unix.LOCK_UN)
+	return false
+}
+
+// closeInheritedTestDescriptors closes every descriptor above stderr that
+// lacks close-on-exec. The helper is started with stdio and no ExtraFiles, and
+// Go opens its own descriptors close-on-exec, so such a descriptor came from
+// an ancestor by accident; the helper, custodian, worker and grandchild would
+// otherwise hold it for as long as any of them lives.
+func closeInheritedTestDescriptors() error {
+	entries, err := os.ReadDir("/dev/fd")
+	if err != nil {
+		return fmt.Errorf("list open descriptors: %w", err)
+	}
+	for _, entry := range entries {
+		descriptor, parseErr := strconv.Atoi(entry.Name())
+		if parseErr != nil || descriptor <= 2 {
+			continue
+		}
+		flags, flagErr := unix.FcntlInt(uintptr(descriptor), unix.F_GETFD, 0)
+		if flagErr == unix.EBADF {
+			continue
+		}
+		if flagErr != nil {
+			return fmt.Errorf("inspect descriptor %d: %w", descriptor, flagErr)
+		}
+		if flags&unix.FD_CLOEXEC == 0 {
+			if err := unix.Close(descriptor); err != nil && err != unix.EBADF {
+				return fmt.Errorf("close inherited descriptor %d: %w", descriptor, err)
+			}
+		}
+	}
+	return nil
 }
 
 func liveCustodyRef(prober identity.Prober, ref identity.Ref) bool {
@@ -329,6 +413,9 @@ func TestGLEHostResourceCustodyProcessHelper(t *testing.T) {
 	}
 	if separator < 0 || len(os.Args)-separator != 9 || os.Args[separator+1] != "launcher" {
 		t.Fatal("invalid custody helper arguments")
+	}
+	if err := closeInheritedTestDescriptors(); err != nil {
+		t.Fatal(err)
 	}
 	directory, conf, watchdog, workerPID, grandPID, ready, grandRelease := os.Args[separator+2], os.Args[separator+3], os.Args[separator+4], os.Args[separator+5], os.Args[separator+6], os.Args[separator+7], os.Args[separator+8]
 	hostAdmissionDirectoryForTest = directory
