@@ -220,7 +220,7 @@ func TestContextStatusVerbPrintsTheRoleLine(t *testing.T) {
 	if err := os.MkdirAll(installation, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(installation, "metasystem.conf"), []byte("metasystem.runtimes=claude\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(installation, "metasystem.conf"), []byte("metasystem.runtimes=claude\nmetasystem.template=true\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	writeDerivedContextCommandTranscript(t, templateRoot, "template", 125000, 1, true)
@@ -1219,7 +1219,7 @@ func contextHandoffCommandRoot(t *testing.T) (string, string) {
 	contextMust(t, os.Mkdir(filepath.Join(root, ".git"), 0o700))
 	noteDirectory := filepath.Join(root, ".handoff-memory")
 	files := map[string]string{
-		"metasystem.conf": "metasystem.runtimes=fake,claude,codex\ncontext.handoff.note-directory.fake=" + noteDirectory + "\nrole.steward-continuation.runtime=fake\nrole.steward-continuation.model.fake=fixture\n",
+		"metasystem.conf": "metasystem.template=true\nmetasystem.runtimes=fake,claude,codex\ncontext.handoff.note-directory.fake=" + noteDirectory + "\nrole.steward-continuation.runtime=fake\nrole.steward-continuation.model.fake=fixture\n",
 		"internal/protocol/roles/steward-continuation.md":                "# Role\n",
 		"internal/protocol/roles/steward-continuation.requirements.json": "{\"required\":[]}\n",
 		"internal/protocol/schemas/steward-continuation.schema.json":     "{\"type\":\"object\"}\n",

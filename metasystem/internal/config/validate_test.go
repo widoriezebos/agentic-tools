@@ -11,7 +11,7 @@ import (
 )
 
 // validateRepo prepares a repository whose registration checks are gated off
-// (the template carries development/metasystem-design.md) with the given conf
+// (the template declares metasystem.template=true) with the given conf
 // body and an evidence root outside the tree, and returns the problems.
 func validateRepo(t *testing.T, confBody string, localBody ...string) []string {
 	t.Helper()
@@ -28,6 +28,9 @@ func validateRepo(t *testing.T, confBody string, localBody ...string) []string {
 	body = strings.ReplaceAll(body, "@BATCH@", batch)
 	if !strings.Contains(body, "testing.contract=") {
 		body += "testing.contract=testing.json\n"
+	}
+	if !strings.Contains(body, TemplateModeKey+"=") {
+		body += TemplateModeKey + "=true\n"
 	}
 	putFile(t, conf, body)
 	putFile(t, conf+".local", strings.Join(localBody, ""))
@@ -93,6 +96,8 @@ func hasProblem(problems []string, substr string) bool {
 }
 
 const validConf = "metasystem.version=1\n" +
+	// The template signal gates the registration checks off.
+	"metasystem.template=true\n" +
 	"metasystem.runtimes=claude,codex,fake\n" +
 	"testing.contract=testing.json\n" +
 	"runtime.claude.maximal-models=claude-fable-5-1\n" +
@@ -197,7 +202,7 @@ func TestValidateTiersAbsentInfo(t *testing.T) {
 	evidence := t.TempDir()
 	conf := filepath.Join(repo, "metasystem.conf")
 	putFile(t, filepath.Join(repo, "testing.json"), minimalTestingContract)
-	putFile(t, conf, "metasystem.runtimes=fake\n"+
+	putFile(t, conf, "metasystem.template=true\nmetasystem.runtimes=fake\n"+
 		"testing.contract=testing.json\n"+
 		"evidence.root="+evidence+"\n"+
 		"role.default.runtime=fake\n"+
@@ -360,7 +365,7 @@ func TestValidateJudgesTheCandidateConfOnItsOwnRoot(t *testing.T) {
 	}
 	putFile(t, filepath.Join(repo, "development", "metasystem-design.md"), "template\n")
 	putFile(t, filepath.Join(repo, "testing.json"), minimalTestingContract)
-	body := "metasystem.runtimes=fake\nrole.default.runtime=fake\nrole.default.model.fake=fake-model\ntesting.contract=testing.json\n"
+	body := "metasystem.template=true\nmetasystem.runtimes=fake\nrole.default.runtime=fake\nrole.default.model.fake=fake-model\ntesting.contract=testing.json\n"
 	putFile(t, filepath.Join(repo, "metasystem.conf"), body+"evidence.root="+t.TempDir()+"\n")
 	candidate := filepath.Join(repo, "candidate.conf")
 	putFile(t, candidate, body+"evidence.root=relative\n")
@@ -544,6 +549,9 @@ func TestValidateBudgetLawOverrideSources(t *testing.T) {
 			putFile(t, filepath.Join(repo, "development", "metasystem-design.md"), "template\n")
 			conf := filepath.Join(repo, "metasystem.conf")
 			body := strings.ReplaceAll(test.conf, "@EVIDENCE@", t.TempDir())
+			if !strings.Contains(body, TemplateModeKey+"=") {
+				body = TemplateModeKey + "=true\n" + body
+			}
 			putFile(t, conf, body)
 			if test.local != "" {
 				putFile(t, conf+".local", test.local)

@@ -336,6 +336,11 @@ func Adopt(options Options) (Result, error) {
 	if err := validate.TailorConf(conf, selected); err != nil {
 		return Result{}, refuse(CodeRefused, fmt.Sprintf("could not tailor metasystem.conf: %v", err), "repair the template's metasystem.conf")
 	}
+	// The template-mode signal is the template's own: an adopted
+	// installation is never the template.
+	if err := dropTemplateMode(conf); err != nil {
+		return Result{}, refuse(CodeRefused, fmt.Sprintf("could not tailor metasystem.conf: %v", err), "repair the template's metasystem.conf")
+	}
 	incomplete, err := testpolicy.IncompleteTemplate()
 	if err != nil {
 		return Result{}, err
@@ -680,6 +685,28 @@ func stagePayload(d Deps, options Options, source, prefix, stage, target string)
 		return refuse(CodeRefused, err.Error(), "retry")
 	}
 	return nil
+}
+
+// dropTemplateMode removes the template-mode declaration (and the comment
+// lines directly above it) from a staged metasystem.conf.
+func dropTemplateMode(conf string) error {
+	data, err := os.ReadFile(conf)
+	if err != nil {
+		return err
+	}
+	lines := strings.Split(string(data), "\n")
+	var kept []string
+	for _, line := range lines {
+		key, _, found := strings.Cut(line, "=")
+		if found && strings.TrimSpace(key) == config.TemplateModeKey {
+			for len(kept) > 0 && strings.HasPrefix(strings.TrimSpace(kept[len(kept)-1]), "#") {
+				kept = kept[:len(kept)-1]
+			}
+			continue
+		}
+		kept = append(kept, line)
+	}
+	return os.WriteFile(conf, []byte(strings.Join(kept, "\n")), 0o644)
 }
 
 // templateProjectDocs are the template repository's own project state under

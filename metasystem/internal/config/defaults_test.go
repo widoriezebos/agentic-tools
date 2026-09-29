@@ -176,3 +176,23 @@ func TestCompiledModeRoleDefaultsAreTheDesignAuthor(t *testing.T) {
 		t.Fatalf("compiled mode role defaults %q, want %q", got, want)
 	}
 }
+
+// Template mode reads the committed file alone: the uncommitted .local file
+// cannot make a checkout the template (and no environment variable is read).
+func TestTemplateModeReadsOnlyTheCommittedKey(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	conf := filepath.Join(root, "metasystem.conf")
+	putFile(t, conf, "# overrides only\n")
+	putFile(t, conf+".local", TemplateModeKey+"=true\n")
+	if TemplateMode(root) {
+		t.Fatal("a .local value made the checkout the template")
+	}
+	putFile(t, conf, TemplateModeKey+"=true\n")
+	if !TemplateMode(root) {
+		t.Fatal("the committed key did not declare the template")
+	}
+	if value, ok := CompiledDefault(TemplateModeKey); !ok || value != "false" {
+		t.Fatalf("compiled template default = %q", value)
+	}
+}

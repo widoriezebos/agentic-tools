@@ -44,6 +44,8 @@ var compiledSettings = []Setting{
 		Meaning: "the committed application testing contract, relative to the installation; delivery reads only this path"},
 	{Key: "launch.contract", Default: "launch.json", ProofInput: true,
 		Meaning: "the application launch contract the app verbs start, probe and stop; a project without the file has no app verbs"},
+	{Key: TemplateModeKey, Default: "false", ProofInput: true,
+		Meaning: "true only in the template repository's committed metasystem.conf (read there alone); adoption never ships it"},
 	{Key: EvidenceRootKey, Computed: "config.ResolveEvidenceRoot", ProofInput: false,
 		Meaning: "where durable evidence is mirrored; defaults to ~/metasystem-evidence/<checkout name>, outside the repository"},
 	{Key: "proof.admission.top-level-max", Computed: "proofrun.ResolveAdmissionCap", ProofInput: false,

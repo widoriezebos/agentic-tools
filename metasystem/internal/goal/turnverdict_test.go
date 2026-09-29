@@ -829,14 +829,11 @@ func TestInfrastructureVerdictNeverBlocks(t *testing.T) {
 	t.Run("state root", func(t *testing.T) {
 		t.Parallel()
 		root := t.TempDir()
-		if err := os.MkdirAll(filepath.Join(root, "development"), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(root, "development", "metasystem-design.md"), []byte("fixture\n"), 0o644); err != nil {
+		if err := os.MkdirAll(filepath.Join(root, "metasystem", "metasystem.conf"), 0o755); err != nil {
 			t.Fatal(err)
 		}
 		verdict, err := (&Store{Root: root}).TurnVerdict(ScanResult{}, "state-root", "", "")
-		assertInfrastructure(t, verdict, err, "state-root", "missing metasystem.conf")
+		assertInfrastructure(t, verdict, err, "state-root", "metasystem.conf must be a file")
 	})
 	t.Run("goal fence", func(t *testing.T) {
 		t.Parallel()

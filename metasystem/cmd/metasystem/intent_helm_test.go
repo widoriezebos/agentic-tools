@@ -64,7 +64,7 @@ func newHelmBed(t *testing.T, invoker int64, enrolled bool) *helmBed {
 		helmMust(t, os.MkdirAll(dir, 0o755))
 	}
 	helmMust(t, os.WriteFile(filepath.Join(root, "development", "metasystem-design.md"), []byte("x\n"), 0o644),
-		os.WriteFile(filepath.Join(inst, "metasystem.conf"), []byte(""), 0o644))
+		os.WriteFile(filepath.Join(inst, "metasystem.conf"), []byte("metasystem.template=true\n"), 0o644))
 	if enrolled {
 		_, err := humanauthority.Enroll(inst, 20, person(), "Wido", helmNow)
 		helmMust(t, err)

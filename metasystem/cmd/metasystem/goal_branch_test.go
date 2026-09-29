@@ -269,6 +269,13 @@ func (f *commandLandingProgress) RecordLandingProgress(line, next string) error 
 
 func goalBranchMainCLIFixtureBelow(t *testing.T, lineage, subdir string) (string, string, string) {
 	t.Helper()
+	return goalBranchMainFixture(t, lineage, subdir, false)
+}
+
+// goalBranchMainFixture builds the main checkout; template declares the
+// nested installation the template (metasystem.template=true, committed).
+func goalBranchMainFixture(t *testing.T, lineage, subdir string, template bool) (string, string, string) {
+	t.Helper()
 	repo := syncedClaimedGoalFixture(t)
 	root := repo
 	if subdir != "." {
@@ -298,6 +305,13 @@ func goalBranchMainCLIFixtureBelow(t *testing.T, lineage, subdir string) (string
 	writeTestingFixtureFile(t, filepath.Join(repo, "metasystem", "memory", "receipts.log"), []byte("seed receipt\n"), 0o644)
 	writeTestingFixtureFile(t, filepath.Join(repo, "metasystem", "records", "narrator-digest.log"), []byte("seed digest\n"), 0o644)
 	writeTestingFixtureFile(t, filepath.Join(root, ".gitignore"), []byte("artifacts/\nbin/\n"), 0o644)
+	if template {
+		conf, err := os.ReadFile(filepath.Join(root, "metasystem.conf"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		writeTestingFixtureFile(t, filepath.Join(root, "metasystem.conf"), append(conf, []byte("metasystem.template=true\n")...), 0o644)
+	}
 	goalSyncMutationGit(t, repo, "add", ".")
 	goalSyncMutationGit(t, root, "commit", "-qm", "remote goal fixture")
 	goalSyncMutationGit(t, root, "update-ref", goal.LocalLedgerBranch, "HEAD")
@@ -324,7 +338,19 @@ func goalBranchCLIFixture(t *testing.T, lineage string) (string, string, string)
 
 func goalBranchCLIFixtureBelow(t *testing.T, lineage, subdir string) (string, string, string) {
 	t.Helper()
-	main, upstream, base := goalBranchMainCLIFixtureBelow(t, lineage, subdir)
+	return goalBranchCLIFixtureAt(t, lineage, subdir, false)
+}
+
+// goalBranchTemplateCLIFixture is the self-hosted template layout: the
+// installation nested at metasystem/ declares itself the template.
+func goalBranchTemplateCLIFixture(t *testing.T, lineage string) (string, string, string) {
+	t.Helper()
+	return goalBranchCLIFixtureAt(t, lineage, "metasystem", true)
+}
+
+func goalBranchCLIFixtureAt(t *testing.T, lineage, subdir string, template bool) (string, string, string) {
+	t.Helper()
+	main, upstream, base := goalBranchMainFixture(t, lineage, subdir, template)
 	worktreeTop := filepath.Join(t.TempDir(), "goal-worktree")
 	goalSyncMutationGit(t, main, "worktree", "add", "-q", "-b", "goal/standing-validation", worktreeTop, base)
 	return filepath.Join(worktreeTop, subdir), upstream, base

@@ -70,12 +70,11 @@ func TestDescribeAcrossLayoutsAndRecords(t *testing.T) {
 				repository := testRepository(t)
 				installation := filepath.Clean(filepath.Join(repository, layout.installation))
 				testutil.Require(t, "create the installation", os.MkdirAll(filepath.Join(installation, "scripts", "agents"), 0o755), nil)
-				testutil.Require(t, "write the installation's configuration", os.WriteFile(filepath.Join(installation, "metasystem.conf"), []byte("metasystem.version=1\n"), 0o644), nil)
+				conf := "metasystem.version=1\n"
 				if layout.selfHosted {
-					design := filepath.Join(repository, "development", "metasystem-design.md")
-					testutil.Require(t, "create the development directory", os.MkdirAll(filepath.Dir(design), 0o755), nil)
-					testutil.Require(t, "write the design document", os.WriteFile(design, []byte("# design\n"), 0o644), nil)
+					conf += "metasystem.template=true\n"
 				}
+				testutil.Require(t, "write the installation's configuration", os.WriteFile(filepath.Join(installation, "metasystem.conf"), []byte(conf), 0o644), nil)
 				if !adoption.omit {
 					document := filepath.Join(installation, "docs", "project-rules.md")
 					testutil.Require(t, "create the docs directory", os.MkdirAll(filepath.Dir(document), 0o755), nil)
@@ -126,14 +125,13 @@ func TestDescribeUsesTheConfiguredSubject(t *testing.T) {
 
 			repository := testRepository(t)
 			installation := repository
+			conf := "metasystem.version=1\n"
 			if tc.selfHosted {
 				installation = filepath.Join(repository, "metasystem")
-				design := filepath.Join(repository, "development", "metasystem-design.md")
-				testutil.Require(t, "create the development directory", os.MkdirAll(filepath.Dir(design), 0o755), nil)
-				testutil.Require(t, "write the design document", os.WriteFile(design, []byte("# design\n"), 0o644), nil)
+				conf += "metasystem.template=true\n"
 			}
 			testutil.Require(t, "create the installation", os.MkdirAll(filepath.Join(installation, "scripts", "agents"), 0o755), nil)
-			testutil.Require(t, "write the installation's configuration", os.WriteFile(filepath.Join(installation, "metasystem.conf"), []byte("metasystem.version=1\n"), 0o644), nil)
+			testutil.Require(t, "write the installation's configuration", os.WriteFile(filepath.Join(installation, "metasystem.conf"), []byte(conf), 0o644), nil)
 			roots := rootsOf(t, installation)
 
 			described, err := Describe(roots, record(), tc.configured)

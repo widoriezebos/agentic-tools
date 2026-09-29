@@ -20,7 +20,7 @@ func setupCLIFixture(t *testing.T) (repo, installation string) {
 		t.Fatal(err)
 	}
 	setupCLIWrite(t, filepath.Join(repo, "development", "metasystem-design.md"), "design\n", 0o644)
-	setupCLIWrite(t, filepath.Join(installation, "metasystem.conf"), "metasystem.runtimes=claude\n", 0o644)
+	setupCLIWrite(t, filepath.Join(installation, "metasystem.conf"), "metasystem.runtimes=claude\nmetasystem.template=true\n", 0o644)
 	if err := os.MkdirAll(installation, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -165,7 +165,7 @@ func TestFreshAdoptionSeparatesRuntimeAndTestingReadiness(t *testing.T) {
 	recorder := newRuntimeLayoutRecorder(t, repo)
 	contract := filepath.Join(installation, "testing.json")
 	conf := filepath.Join(installation, "metasystem.conf")
-	if err := os.WriteFile(conf, []byte("metasystem.runtimes=claude\ntesting.contract=testing.json\n"), 0o644); err != nil {
+	if err := os.WriteFile(conf, []byte("metasystem.template=true\nmetasystem.runtimes=claude\ntesting.contract=testing.json\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	// Adoption's owners: the configuration tailored to no runtime and the
@@ -196,9 +196,8 @@ func TestFreshAdoptionSeparatesRuntimeAndTestingReadiness(t *testing.T) {
 func TestRuntimeSetupCLISupportsNestedAdoptedInstallationAndSubdirectory(t *testing.T) {
 	app, installation := setupCLIFixture(t)
 	recorder := newRuntimeLayoutRecorder(t, app)
-	if err := os.Remove(filepath.Join(app, "development", "metasystem-design.md")); err != nil {
-		t.Fatal(err)
-	}
+	// Without the template signal the nested installation is an adopted one.
+	setupCLIWrite(t, filepath.Join(installation, "metasystem.conf"), "metasystem.runtimes=claude\n", 0o644)
 	recorder.expect(installation)
 	output, code := captureStdout(t, func() int {
 		return runRuntimeSetupWithResolver([]string{"--repo", installation, "--runtimes", "claude,codex,devin"}, recorder.resolve)

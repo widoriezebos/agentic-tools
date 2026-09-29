@@ -228,7 +228,7 @@ func TestTemplateToplevelResolvesToTheInstallationDigest(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(toplevel, "development", "metasystem-design.md"), []byte("# template\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(installation, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(installation, "metasystem.conf"), []byte("metasystem.runtimes=fake\nmetasystem.template=true\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if output, err := exec.Command("git", "-C", toplevel, "init", "-q").CombinedOutput(); err != nil {

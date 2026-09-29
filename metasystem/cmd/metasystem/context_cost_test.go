@@ -570,7 +570,7 @@ func newContextCostBed(t *testing.T, runtimeName, candidate, readerHelper string
 		t.Fatal(err)
 	}
 	copyContextCostFile(t, candidate, filepath.Join(installation, "bin", "metasystem"), 0o755)
-	config := "metasystem.version=1\nmetasystem.engine-delivery=source\nmetasystem.runtimes=claude,codex\nsteward.stop-slow-sec=15\n"
+	config := "metasystem.version=1\nmetasystem.template=true\nmetasystem.runtimes=claude,codex\nsteward.stop-slow-sec=15\n"
 	if err := os.WriteFile(filepath.Join(installation, "metasystem.conf"), []byte(config), 0o644); err != nil {
 		t.Fatal(err)
 	}

@@ -12,6 +12,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"os"
 	"path/filepath"
 	"sort"
@@ -331,27 +332,16 @@ func ResolveStateRoot(root string) (string, error) {
 	if filepath.Base(absRoot) == "metasystem" {
 		return absRoot, nil
 	}
-	developmentMarker := filepath.Join(absRoot, "development", "metasystem-design.md")
-	info, err := os.Stat(developmentMarker)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return absRoot, nil
-		}
-		return "", fmt.Errorf("resolve goal state root: template marker unreadable: %w", err)
-	}
-	if info.IsDir() {
-		return absRoot, nil
-	}
+	// The template's containing checkout declares itself with the one
+	// template signal in its installation's committed metasystem.conf.
 	installation := filepath.Join(absRoot, "metasystem")
-	conf, err := os.Stat(filepath.Join(installation, "metasystem.conf"))
-	if err != nil {
-		if os.IsNotExist(err) {
-			return "", fmt.Errorf("resolve goal state root: template installation is missing metasystem.conf")
-		}
+	if info, err := os.Stat(filepath.Join(installation, "metasystem.conf")); err == nil && info.IsDir() {
+		return "", fmt.Errorf("resolve goal state root: template installation has a directory where metasystem.conf must be a file")
+	} else if err != nil && !os.IsNotExist(err) {
 		return "", fmt.Errorf("resolve goal state root: template installation unreadable: %w", err)
 	}
-	if conf.IsDir() {
-		return "", fmt.Errorf("resolve goal state root: template installation has a directory where metasystem.conf must be a file")
+	if !config.TemplateMode(installation) {
+		return absRoot, nil
 	}
 	return installation, nil
 }

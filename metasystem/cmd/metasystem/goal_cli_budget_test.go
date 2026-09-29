@@ -146,7 +146,7 @@ func gcliBudgetAnnounceParent(t *testing.T, bed *goalCLIBed) {
 }
 
 // gcliBudgetTemplateRoot moves the bed's checkout into the template layout
-// (<top>/metasystem beside development/metasystem-design.md) so the state
+// (<top>/metasystem, declared by metasystem.template=true) so the state
 // root resolves without Git, as the receipt ledger's path needs.
 func gcliBudgetTemplateRoot(t *testing.T, bed *goalCLIBed) {
 	t.Helper()
@@ -162,6 +162,13 @@ func gcliBudgetTemplateRoot(t *testing.T, bed *goalCLIBed) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(top, "development", "metasystem-design.md"), []byte("fixture template marker\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	conf, err := os.ReadFile(filepath.Join(root, "metasystem.conf"))
+	if err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), append(conf, []byte("metasystem.template=true\n")...), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	bed.root = root

@@ -451,6 +451,18 @@ func TestAdoptGitIntegrationDefaultInstallsTheWholePayload(t *testing.T) {
 	if !hasLine(lines, "metasystem.runtimes=claude") {
 		t.Fatal("tailored configuration lacks metasystem.runtimes=claude")
 	}
+	// The template-mode signal is the template's own; adoption drops it.
+	for _, line := range lines {
+		if strings.HasPrefix(strings.TrimSpace(line), config.TemplateModeKey+"=") {
+			t.Fatalf("adoption shipped the template-mode signal: %s", line)
+		}
+	}
+	if config.TemplateMode(target) {
+		t.Fatal("the adopted installation reads as the template")
+	}
+	if conf := readText(t, filepath.Join(target, "metasystem.conf")); !strings.Contains(conf, "holds this project's OVERRIDES only") || strings.Contains(conf, "template-mode") {
+		t.Fatalf("adoption lost the conf's header or kept the template-mode comment:\n%s", conf)
+	}
 	// The conf holds overrides only; the rest resolves to compiled defaults.
 	for key, want := range map[string]string{"role.default.runtime": "claude", "suite.progress-silence-min": "30",
 		"suite.section-cap-min": "45", "suite.evidence-copy-timeout-sec": "60", "suite.evidence-copy-max-mb": "512"} {

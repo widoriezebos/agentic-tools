@@ -30,10 +30,10 @@ type wholeOwnerLanding struct {
 
 func newWholeOwnerLanding(t *testing.T) *wholeOwnerLanding {
 	t.Helper()
-	root, upstream, _ := goalBranchCLIFixtureBelow(t, "m1", "metasystem")
+	root, upstream, _ := goalBranchTemplateCLIFixture(t, "m1")
 	f := &wholeOwnerLanding{goalRoot: root, upstream: upstream, mainRoot: goalBranchHolderRoot(root)}
 	// The public commands resolve a self-hosted checkout by its template
-	// marker beside the installation (stateroot templateMode).
+	// signal (metasystem.template=true); the design page is ordinary content.
 	writeTestingFixtureFile(t, filepath.Join(filepath.Dir(f.mainRoot), "development", "metasystem-design.md"), []byte("# fixture\n"), 0o644)
 	goalSyncMutationGit(t, root, "config", "goal.human.Wido", "Wido Approver <wido@example.invalid>")
 	pagePath := filepath.Join(root, "plans", "goals", "standing-validation.md")
@@ -271,7 +271,7 @@ func TestIntentLandWholeOwnerGitAdapter(t *testing.T) {
 // addBatchBranchUnit; public close is proved separately.
 func newBatchAdmissionLanding(t *testing.T) (*wholeOwnerLanding, string) {
 	t.Helper()
-	root, upstream, _ := goalBranchCLIFixtureBelow(t, "m1", "metasystem")
+	root, upstream, _ := goalBranchTemplateCLIFixture(t, "m1")
 	f := &wholeOwnerLanding{goalRoot: root, upstream: upstream, mainRoot: goalBranchHolderRoot(root)}
 	writeTestingFixtureFile(t, filepath.Join(filepath.Dir(f.mainRoot), "development", "metasystem-design.md"), []byte("# fixture\n"), 0o644)
 	goalSyncMutationGit(t, root, "config", "goal.human.Wido", "Wido Approver <wido@example.invalid>")

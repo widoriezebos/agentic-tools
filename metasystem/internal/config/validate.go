@@ -665,9 +665,9 @@ func validateWithRunner(confPath, repoRoot string, runner gitRunner) (tiersAbsen
 	}
 
 	// Registration is adopted-repository state, not a template invariant (the
-	// template carries development/metasystem-design.md). The fake runtime is a
+	// template declares metasystem.template=true). The fake runtime is a
 	// fixture adapter with no external registration.
-	if !isFile(filepath.Join(repo, "development", "metasystem-design.md")) {
+	if !TemplateMode(filepath.Dir(confPath)) {
 		for _, runtime := range sortedKeysOf(runtimeSet) {
 			declaration, _ := runtimereg.Lookup(runtime)
 			for _, relative := range declaration.RegistrationDirs {

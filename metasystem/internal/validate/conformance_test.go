@@ -761,7 +761,7 @@ func TestMergeWaiverResolvesPathsByLocation(t *testing.T) {
 	if err := os.MkdirAll(installation, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(top, "development", "metasystem-design.md"), []byte("template marker\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(installation, "metasystem.conf"), []byte("metasystem.template=true\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	r := &conformanceRun{root: installation, rootJob: "fixture", installPrefix: "metasystem"}

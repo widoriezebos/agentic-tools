@@ -1051,15 +1051,12 @@ func TestUnreadableTurnVerdictStateAllowsAsInfrastructure(t *testing.T) {
 func TestMissingTemplateStateRootAllowsAsInfrastructure(t *testing.T) {
 	t.Parallel()
 	outer := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(outer, "development"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(outer, "development", "metasystem-design.md"), []byte("template marker\n"), 0o644); err != nil {
+	if err := os.MkdirAll(filepath.Join(outer, "metasystem", "metasystem.conf"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	verdict, err := (&Store{Root: outer}).TurnVerdict(ScanResult{}, "missing-template-state", "", "main-1")
 	if err != nil || verdict.ShouldBlock || verdict.Class != "infrastructure" ||
-		!strings.Contains(verdict.Display, "template installation is missing") {
+		!strings.Contains(verdict.Display, "template installation has a directory") {
 		t.Fatalf("missing template state root did not allow as infrastructure: %+v %v", verdict, err)
 	}
 }
@@ -1071,17 +1068,11 @@ func TestTemplateCheckoutTurnVerdictUsesTheMetasystemStateRoot(t *testing.T) {
 	})
 	standalone := store.Root
 	outer := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(outer, "development"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(outer, "development", "metasystem-design.md"), []byte("template marker\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
 	stateRoot := filepath.Join(outer, "metasystem")
 	if err := os.Rename(standalone, stateRoot); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(stateRoot, "metasystem.conf"), nil, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(stateRoot, "metasystem.conf"), []byte("metasystem.template=true\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	resolved, err := ResolveStateRoot(outer)

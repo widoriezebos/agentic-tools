@@ -13,17 +13,11 @@ import (
 func templateAdmissionBed(t *testing.T, bed *goalAdmissionBed) {
 	t.Helper()
 	parent := filepath.Dir(bed.root)
-	marker := filepath.Join(parent, "development", "metasystem-design.md")
-	if err := os.MkdirAll(filepath.Dir(marker), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(marker, []byte("# template\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
 	root := filepath.Join(parent, "metasystem")
 	if err := os.Rename(bed.root, root); err != nil {
 		t.Fatal(err)
 	}
+	declareTemplate(t, root)
 	bed.root = root
 	bed.reads.NewWorld = func(got string) bool {
 		if got != root {
@@ -76,4 +70,18 @@ func countGoalAdmissionFacts(t *testing.T, bed *goalAdmissionBed, wantWorld, wan
 			t.Errorf("goal fact calls world/endpoint/machine=%d/%d/%d, want %d/%d/%d", world, endpoint, machine, wantWorld, wantEndpoint, wantMachine)
 		}
 	})
+}
+
+// declareTemplate adds the one template-mode signal to an installation's
+// committed metasystem.conf.
+func declareTemplate(t *testing.T, installation string) {
+	t.Helper()
+	conf := filepath.Join(installation, "metasystem.conf")
+	existing, err := os.ReadFile(conf)
+	if err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(conf, append(existing, []byte("metasystem.template=true\n")...), 0o644); err != nil {
+		t.Fatal(err)
+	}
 }

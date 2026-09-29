@@ -5,6 +5,7 @@ package stateroot
 
 import (
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -313,10 +314,9 @@ func validateInstallationShape(root string) error {
 	return nil
 }
 
+// templateMode is the template layout: a nested metasystem installation
+// whose committed metasystem.conf declares the template (config.TemplateMode,
+// the one signal).
 func templateMode(installationRoot string) bool {
-	if filepath.Base(installationRoot) != "metasystem" {
-		return false
-	}
-	info, err := os.Stat(filepath.Join(filepath.Dir(installationRoot), "development", "metasystem-design.md"))
-	return err == nil && !info.IsDir()
+	return filepath.Base(installationRoot) == "metasystem" && config.TemplateMode(installationRoot)
 }

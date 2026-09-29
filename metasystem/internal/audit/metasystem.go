@@ -2,6 +2,7 @@ package audit
 
 import (
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -143,11 +144,10 @@ func AuditMetasystem(root string, opts AuditOptions) (*AuditResult, error) {
 		return result, nil
 	}
 
-	// Template detection uses a positive marker: only the template checkout
-	// is a folder literally named metasystem with the development docs
-	// beside it. Everywhere else project-rules.md must be filled in.
-	isTemplate := filepath.Base(absRoot) == "metasystem" &&
-		fileExists(filepath.Join(filepath.Dir(absRoot), "development", "metasystem-design.md"))
+	// Template detection is the one explicit signal (config.TemplateMode):
+	// the template's committed metasystem.conf declares it. Everywhere else
+	// project-rules.md must be filled in.
+	isTemplate := config.TemplateMode(absRoot)
 	if !isTemplate && !opts.AllowPlaceholders {
 		placeholderHits, err := auditScanFiles(absRoot,
 			[]string{"docs/project-rules.md", "metasystem.conf"}, auditPlaceholderRe)
@@ -453,9 +453,9 @@ func auditGoalSystem(root string) []string {
 	}
 	// README ships only with the TEMPLATE (adoption's payload excludes
 	// it — an adopted project's README is the project's own and owes
-	// the metasystem nothing). Same marker the registration presence
+	// the metasystem nothing). Same signal the registration presence
 	// checks ride.
-	if fileExists(filepath.Join(root, "development", "metasystem-design.md")) {
+	if config.TemplateMode(root) {
 		pointerDocs["README.md"] = "`internal/runtimes`"
 	}
 	for doc, marker := range pointerDocs {
