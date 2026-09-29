@@ -150,6 +150,12 @@ type DiskPass struct {
 	// processes have all ended: `metasystem disk clean`. The steward's own
 	// pass only counts them.
 	ForgetRemoved bool
+	// UserHome replaces the user's home directory, where the blob store and
+	// the default evidence roots live (fixtures); empty is os.UserHomeDir.
+	UserHome string
+	// SuiteFailureSeams adjusts the checkout pass's suite-failure class
+	// (fixtures stub its git reads); nil is production.
+	SuiteFailureSeams func(*diskstore.SuiteFailures)
 }
 
 func (p DiskPass) registryPath() (string, error) {
@@ -214,6 +220,11 @@ func SweepDiskStores(ctx context.Context, top string, pass DiskPass) (DiskPassRe
 			diskstore.RegisteredStores{Registry: diskstore.CheckoutRegistry(top), Proofs: pass.proofs()},
 			HandoffClass{Root: top, Keep: settings.Duration(config.DiskContextKeepKey)},
 			UsageClass{StateRoot: top, Limit: settings.Count(config.DiskSweepItemsPerLockKey)},
+		}
+		if suiteFailures, err := suiteFailureClass(top, settings, pass); err == nil {
+			checkoutOptions.Classes = append(checkoutOptions.Classes, suiteFailures)
+		} else {
+			checkoutOptions.Notes = append(checkoutOptions.Notes, "suite-failure bundles are not aged this pass: "+err.Error())
 		}
 		checkoutOptions.CensusMinBudget = settings.Duration(config.DiskCensusMinBudgetKey)
 		checkoutOptions.CensusReader = KernelCensusReader(home, append(armedCheckouts(), top))

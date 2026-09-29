@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"io/fs"
 	"os"
@@ -307,8 +308,7 @@ func runtimesConfigured(repoRoot string) string {
 // checkout's segment — a shared derivation is the
 // only way the two sides cannot drift.
 func CheckoutSegment(checkoutRoot string) string {
-	sum := sha256.Sum256([]byte(realpath.Resolve(checkoutRoot)))
-	return hex.EncodeToString(sum[:])[:12]
+	return diskstore.Segment(checkoutRoot)
 }
 
 // SemanticRecordHash digests a job record with its mirror field blanked: the

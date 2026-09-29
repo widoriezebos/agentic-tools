@@ -262,6 +262,7 @@ func (p *Pass) visit(ctx context.Context, class Class, report *Report, positions
 		summary.Items++
 		summary.Bytes += item.Bytes
 		switch {
+		case item.Verdict.Decision == Wait:
 		case item.Stray:
 			report.Strays = append(report.Strays, item)
 		case item.Foreign:

@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
@@ -194,7 +195,14 @@ func stopStalledSuite(options WatchdogOptions, section, reason string, run Progr
 	// the reason with it; this line survives that.
 	fmt.Fprintf(options.ErrorOutput, "suite watchdog: stalling suite in section %s (%s)\n", section, reason)
 	evidenceDir := filepath.Join(options.Root, "artifacts", "agents", "suite-failures",
-		watchdogNow(options)().UTC().Format("20060102T150405Z")+"-watchdog-"+strconv.FormatInt(options.SuiteIdentity.Pid, 10))
+		watchdogNow(options)().UTC().Format("20060102T150405Z")+"-watchdog-"+diskstore.BundleRunName(options.AttemptID, int(options.SuiteIdentity.Pid)))
+	attemptRoot := options.ControlRoot
+	if attemptRoot == "" {
+		attemptRoot = options.Root
+	}
+	if err := WriteBundleOwner(evidenceDir, options.Root, attemptRoot, options.AttemptID, watchdogNow(options)()); err != nil {
+		fmt.Fprintf(options.ErrorOutput, "suite watchdog: the bundle's owner file could not be written: %v\n", err)
+	}
 	sources := append([]string{}, run.Header.TmpPaths...)
 	sources = append(sources, run.Header.LogPaths...)
 	if len(sources) == 0 {

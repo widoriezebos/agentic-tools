@@ -55,6 +55,9 @@ const (
 	// unreadable record, an incomplete census); never a refusal, never a
 	// deletion.
 	Pending Decision = "pending"
+	// Wait: nothing is due yet (a bundle not idle long enough to distil);
+	// counted in its class's totals and reported nowhere else.
+	Wait Decision = "wait"
 )
 
 // Verdict is a proof's answer for one store.

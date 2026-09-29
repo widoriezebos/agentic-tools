@@ -5,6 +5,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 )
 
 func TestPreserveEvidenceCapsBytesAndNotesDroppedContent(t *testing.T) {
@@ -170,5 +173,52 @@ func writeEvidenceFixture(t *testing.T, path, data string) {
 	}
 	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// Every suite-failure bundle is written with OWNER.json before its first
+// byte (design engine-owns-disk-lifetimes 3.5, DL4D-06): under an attempt it
+// names the attempt and the attempt's accounted goal; standalone it names
+// goal none; an attempt whose record cannot be read names goal unknown.
+func TestBundleOwnerNamesTheAttemptsAccountedGoal(t *testing.T) {
+	t.Parallel()
+	root, attempt, _ := reconcileFixture(t, time.Unix(1_700_000_000, 0))
+	bundle := filepath.Join(root, "artifacts", "agents", "suite-failures", "20260929T101010Z-watchdog-"+attempt.AttemptID)
+	if err := WriteBundleOwner(bundle, root, root, attempt.AttemptID, time.Unix(1_700_000_000, 0)); err != nil {
+		t.Fatal(err)
+	}
+	owner, err := diskstore.ReadBundleOwner(bundle)
+	if err != nil || owner.Attempt != attempt.AttemptID || owner.Goal != attempt.AccountedGoal() || owner.Goal == "" || owner.Installation != root {
+		t.Fatalf("owner=%+v err=%v want goal %q", owner, err, attempt.AccountedGoal())
+	}
+	standalone := filepath.Join(root, "artifacts", "agents", "suite-failures", "standalone")
+	if err := WriteBundleOwner(standalone, root, root, "", time.Unix(1_700_000_000, 0)); err != nil {
+		t.Fatal(err)
+	}
+	if owner, err := diskstore.ReadBundleOwner(standalone); err != nil || owner.Attempt != diskstore.AttemptStandalone || owner.Goal != diskstore.GoalNone {
+		t.Fatalf("standalone owner=%+v err=%v", owner, err)
+	}
+	gone := filepath.Join(root, "artifacts", "agents", "suite-failures", "gone")
+	if err := WriteBundleOwner(gone, root, root, "proof-gone0000-0000000000000000", time.Unix(1_700_000_000, 0)); err != nil {
+		t.Fatal(err)
+	}
+	if owner, err := diskstore.ReadBundleOwner(gone); err != nil || owner.Goal != diskstore.GoalUnknown {
+		t.Fatalf("an unreadable attempt names goal unknown: %+v %v", owner, err)
+	}
+}
+
+func TestPreserveDetachedSuiteFailuresWritesTheOwnerFirst(t *testing.T) {
+	t.Parallel()
+	control, candidate := t.TempDir(), t.TempDir()
+	writeEvidenceFixture(t, filepath.Join(candidate, "artifacts", "agents", "suite-failures", "failure.log"), "log\n")
+	_, bundle, err := PreserveDetachedSuiteFailures(control, candidate, "group", 0, DetachedEvidenceGroupMaxBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(filepath.Base(bundle), "-detached-group-") {
+		t.Fatalf("bundle name %s", bundle)
+	}
+	if _, err := diskstore.ReadBundleOwner(bundle); err != nil {
+		t.Fatalf("the detached bundle carries its owner file: %v", err)
 	}
 }
