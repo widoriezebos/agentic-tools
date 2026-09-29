@@ -509,8 +509,8 @@ func TestTestRunKeepsProofRecordsUnderTheControlRoot(t *testing.T) {
 	// The call and the position of its control-root argument.
 	wantFirstArgument := map[string]int{
 		"proofrun.ReadAttempts":        0,
-		"publishTestingResultTo":       1,
-		"retainIncompleteProofAttempt": 0,
+		"publishTestingResultTo":       2, // after the invocation's stdout and stderr
+		"retainIncompleteProofAttempt": 1, // after the invocation's stderr
 	}
 	ast.Inspect(body, func(node ast.Node) bool {
 		switch typed := node.(type) {
