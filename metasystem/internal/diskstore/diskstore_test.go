@@ -35,7 +35,7 @@ func realDir(t *testing.T) string {
 }
 
 func plainRegistration(path string) Registration {
-	return Registration{Path: path, Class: "process-scratch", Owner: Owner{Kind: OwnerProcess, Ref: "pid:1"},
+	return Registration{Path: path, Class: "fixture-store", Owner: Owner{Kind: OwnerProcess, Ref: "pid:1"},
 		Lifetime: LifetimeOwner, CapKind: CapTarget, CapBytes: 4 << 30}
 }
 

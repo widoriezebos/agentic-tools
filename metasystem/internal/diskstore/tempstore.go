@@ -30,7 +30,7 @@ func CreateTempStore(name, class string, owner Owner) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return createTempStore(os.TempDir(), registry, name, class, owner, rand.Reader)
+	return createTempStore(scratchTempRoot(), registry, name, class, owner, rand.Reader)
 }
 
 // ReleaseTempStore is the owner's release of its temporary store at path,
@@ -159,7 +159,9 @@ func releaseTempStore(ctx context.Context, registry Registry, path, class string
 		if err := sameRoot(record, info); err != nil {
 			return err
 		}
-		if record.State == StateReleasing {
+		// A reserved store (its creation cut short) is its own only while it
+		// carries its marker or is empty (Round D1 F-6).
+		if record.State == StateReleasing || record.State == StateReserved {
 			err = revalidateReleasing(record)
 		} else {
 			err = Revalidate(record)

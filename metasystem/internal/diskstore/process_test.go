@@ -85,6 +85,53 @@ func processScratchHelper() (code int, handled bool) {
 		signal.Notify(wait, syscall.SIGTERM)
 		<-wait
 		return 0, true
+	case "grand-prep", "grand-extra":
+		// P starts C, a nested engine child, through the seam; C starts
+		// G and ends while G runs.
+		child := exec.Command(os.Args[0])
+		child.Stdin = os.Stdin
+		if err := PrepareChild(child); err != nil {
+			return fail(err)
+		}
+		child.Env = append(child.Env, processScratchHelperEnv+"=grand-child-"+strings.TrimPrefix(mode, "grand-"))
+		output, err := child.Output()
+		if err != nil {
+			return fail(fmt.Errorf("nested child: %v: %s", err, output))
+		}
+		fmt.Printf("child-%s", output)
+		if os.Getenv("DISKSTORE_SCRATCH_EXIT") == "" {
+			if err := ReleaseProcessScratch(context.Background()); err != nil {
+				fmt.Printf("parent-release=%v\n", err)
+			}
+		}
+		return 0, true
+	case "grand-child-prep", "grand-child-extra":
+		dir, _, err := ScratchDir("grandchild-")
+		if err != nil {
+			return fail(err)
+		}
+		grandchild := exec.Command("cat")
+		grandchild.Stdin, grandchild.Dir = os.Stdin, "/"
+		if mode == "grand-child-extra" {
+			// A launcher's own descriptor comes first; the writer lock
+			// follows it.
+			read, _, err := os.Pipe()
+			if err != nil {
+				return fail(err)
+			}
+			grandchild.ExtraFiles = []*os.File{read}
+		}
+		if err := PrepareChild(grandchild); err != nil {
+			return fail(err)
+		}
+		if err := grandchild.Start(); err != nil {
+			return fail(err)
+		}
+		fmt.Printf("grandchild=%d\ngrandchild-dir=%s\n", grandchild.Process.Pid, dir)
+		if err := ReleaseProcessScratch(context.Background()); err != nil {
+			fmt.Printf("child-release=%v\n", err)
+		}
+		return 0, true
 	case "exit":
 		if _, _, err := ScratchDir("left-"); err != nil {
 			return fail(err)
@@ -317,8 +364,9 @@ func TestProcessScratchNormalReleaseLeavesNothing(t *testing.T) {
 }
 
 // A nested engine child gets the parent's root as TMPDIR and the writer
-// lock through ExtraFiles; its own root lies under the parent's.
-func TestProcessScratchOfANestedChildLiesUnderItsParents(t *testing.T) {
+// lock through ExtraFiles; its own root lies flat beside the parent's,
+// never inside it (Round D1 F-1(a)).
+func TestProcessScratchOfANestedChildLiesBesideItsParents(t *testing.T) {
 	t.Parallel()
 	bed := newScratchBed(t)
 	output, err := bed.helper("nested").CombinedOutput()
@@ -330,8 +378,8 @@ func TestProcessScratchOfANestedChildLiesUnderItsParents(t *testing.T) {
 	if helperValue(t, string(output), "tmpdir") != parent {
 		t.Fatalf("the child's TMPDIR is not its parent's root:\n%s", output)
 	}
-	if filepath.Dir(child) != filepath.Join(parent, "metasystem") {
-		t.Fatalf("the nested root %s does not lie under the parent's %s", child, parent)
+	if filepath.Dir(child) != filepath.Dir(parent) || child == parent {
+		t.Fatalf("the nested root %s does not lie flat beside the parent's %s", child, parent)
 	}
 	for _, root := range []string{parent, child} {
 		if _, err := os.Lstat(root); !errors.Is(err, os.ErrNotExist) {

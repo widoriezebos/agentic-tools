@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -35,6 +36,15 @@ const (
 	WriterLockName = ".writer-lock"
 	// processScratchParent is the one entry process scratch makes in TMPDIR.
 	processScratchParent = "metasystem"
+	// scratchRootsEnv names, for a child started through the seam, the
+	// directory its parent's root lies in: every process's root lies
+	// directly there, flat, never inside its parent's root (Round D1 F-1).
+	scratchRootsEnv = "METASYSTEM_SCRATCH_ROOTS"
+	// scratchLockFDEnv names, comma separated, the descriptors at which a
+	// child started through the seam holds its parent's writer lock and the
+	// ancestors' locks its parent held; the child keeps them and passes
+	// them on to the children it starts.
+	scratchLockFDEnv = "METASYSTEM_SCRATCH_LOCK_FD"
 )
 
 // processScratch is one process's root. users counts the directories and
@@ -47,6 +57,15 @@ type processScratch struct {
 	writer   *os.File
 	users    int
 	released bool
+	// inherited are the ancestors' writer locks this process was given.
+	inherited []*os.File
+	// children are the commands prepared through the seam; the owner's
+	// release keeps the root while one of them runs (Round D1 F-1(c)).
+	children []*exec.Cmd
+	// fallback is an unregistered private directory, used when the root
+	// cannot be registered (Round D1 F-10): the command still works, and
+	// the directory is a stray `disk clean --strays` reports.
+	fallback bool
 }
 
 var (
@@ -62,14 +81,73 @@ func ensureScratch() (*processScratch, error) {
 	}
 	registry, err := machineRegistry()
 	if err != nil {
-		return nil, fmt.Errorf("process scratch: %w", err)
+		registry = Registry{}
 	}
-	created, err := newProcessScratch(os.TempDir(), registry, rand.Reader)
-	if err != nil {
-		return nil, err
+	created := openScratch(scratchTempRoot(), registry, os.Stderr)
+	if created == nil {
+		return nil, fmt.Errorf("process scratch: no temporary directory can be made in %s", scratchTempRoot())
 	}
+	created.inherited = inheritedLocks()
 	currentScratch = created
 	return created, nil
+}
+
+// openScratch makes a registered root, or, when the registry cannot be
+// written or this process's identity cannot be read, an unregistered
+// private directory with one warning: a command never fails for want of
+// its scratch's registration. Nil only when no directory can be made.
+func openScratch(tempRoot string, registry Registry, warn io.Writer) *processScratch {
+	cause := errors.New("the store registry cannot be resolved")
+	if registry.Dir != "" {
+		created, err := newProcessScratch(tempRoot, registry, rand.Reader)
+		if err == nil {
+			return created
+		}
+		cause = err
+	}
+	dir, err := os.MkdirTemp(tempRoot, "metasystem-unregistered-")
+	if err != nil {
+		return nil
+	}
+	fmt.Fprintf(warn, "metasystem: this process's scratch is unregistered (%v); %s stays until metasystem disk clean --strays removes it\n", cause, dir)
+	return &processScratch{record: Record{Path: dir}, fallback: true}
+}
+
+// scratchTempRoot is the directory whose metasystem/ holds the roots: the
+// one a parent named through the seam, else TMPDIR made absolute.
+func scratchTempRoot() string {
+	if roots := os.Getenv(scratchRootsEnv); filepath.IsAbs(roots) && filepath.Base(roots) == processScratchParent {
+		if info, err := os.Stat(roots); err == nil && info.IsDir() {
+			return filepath.Dir(roots)
+		}
+	}
+	return absoluteTemp(os.TempDir())
+}
+
+// absoluteTemp makes a relative TMPDIR absolute (Round D1 F-10).
+func absoluteTemp(path string) string {
+	if absolute, err := filepath.Abs(path); err == nil {
+		return absolute
+	}
+	return path
+}
+
+// inheritedLocks are the descriptors a parent named in scratchLockFDEnv
+// that are open regular files; any other entry is ignored.
+func inheritedLocks() []*os.File {
+	var files []*os.File
+	for _, field := range strings.Split(os.Getenv(scratchLockFDEnv), ",") {
+		fd, err := strconv.Atoi(field)
+		if err != nil || fd < 3 {
+			continue
+		}
+		var stat unix.Stat_t
+		if unix.Fstat(fd, &stat) != nil || stat.Mode&unix.S_IFMT != unix.S_IFREG {
+			continue
+		}
+		files = append(files, os.NewFile(uintptr(fd), "inherited-writer-lock"))
+	}
+	return files
 }
 
 // ProcessScratch is this process's scratch root, created and registered on
@@ -147,9 +225,12 @@ func (s *processScratch) use(remove func()) func() {
 }
 
 // PrepareChild is the launcher seam: the child inherits the writer lock
-// through ExtraFiles, and its TMPDIR, TMP, TEMP and GOTMPDIR are the root,
-// so an engine child makes its own root nested under this one and nothing
-// a child writes lands outside a registered store.
+// (and the ancestors' locks this process holds) through ExtraFiles, after
+// every descriptor the launcher set, with their numbers in
+// METASYSTEM_SCRATCH_LOCK_FD; its TMPDIR, TMP, TEMP and GOTMPDIR are the
+// root, and an engine child makes its own root flat beside this one. A
+// launcher that sets ExtraFiles sets them before this call. The owner's
+// release keeps the root while a prepared child runs.
 func PrepareChild(cmd *exec.Cmd) error {
 	scratchMu.Lock()
 	defer scratchMu.Unlock()
@@ -157,22 +238,58 @@ func PrepareChild(cmd *exec.Cmd) error {
 	if err != nil {
 		return err
 	}
-	cmd.ExtraFiles = append(cmd.ExtraFiles, scratch.writer)
+	return scratch.prepareLocked(cmd)
+}
+
+func (s *processScratch) prepare(cmd *exec.Cmd) error {
+	scratchMu.Lock()
+	defer scratchMu.Unlock()
+	return s.prepareLocked(cmd)
+}
+
+// prepareLocked is PrepareChild for s; scratchMu is held.
+func (s *processScratch) prepareLocked(cmd *exec.Cmd) error {
+	if s.fallback {
+		return nil
+	}
+	if s.released {
+		return fmt.Errorf("process scratch %s is released", s.record.Path)
+	}
+	var fds []string
+	for index := 0; index <= len(s.inherited); index++ {
+		fds = append(fds, strconv.Itoa(3+len(cmd.ExtraFiles)+index))
+	}
+	cmd.ExtraFiles = append(append(cmd.ExtraFiles, s.writer), s.inherited...)
 	env := cmd.Env
 	if env == nil {
 		env = os.Environ()
 	}
-	kept := make([]string, 0, len(env)+4)
+	kept := make([]string, 0, len(env)+6)
 	for _, entry := range env {
 		switch name, _, _ := strings.Cut(entry, "="); name {
-		case "TMPDIR", "TMP", "TEMP", "GOTMPDIR":
+		case "TMPDIR", "TMP", "TEMP", "GOTMPDIR", scratchRootsEnv, scratchLockFDEnv:
 			continue
 		}
 		kept = append(kept, entry)
 	}
-	root := scratch.record.Path
-	cmd.Env = append(kept, "TMPDIR="+root, "TMP="+root, "TEMP="+root, "GOTMPDIR="+root)
+	root := s.record.Path
+	cmd.Env = append(kept, "TMPDIR="+root, "TMP="+root, "TEMP="+root, "GOTMPDIR="+root,
+		scratchRootsEnv+"="+filepath.Dir(root), scratchLockFDEnv+"="+strings.Join(fds, ","))
+	running := s.children[:0]
+	for _, child := range s.children {
+		if childRunning(child) || child.Process == nil {
+			running = append(running, child)
+		}
+	}
+	s.children = append(running, cmd)
 	return nil
+}
+
+// childRunning reports a prepared child that was started and has not been
+// waited for and is still in the process table (an unwaited exit is a
+// zombie whose pid is not reused, so it reads as running: kept).
+func childRunning(cmd *exec.Cmd) bool {
+	return cmd.Process != nil && cmd.ProcessState == nil && unix.Kill(cmd.Process.Pid, 0) == nil
 }
 
 // ReleaseProcessScratch is the owner's release at the end of dispatch. A
@@ -198,7 +315,19 @@ func (s *processScratch) releaseIfIdle(ctx context.Context) (bool, error) {
 	if s.users > 0 {
 		return false, nil
 	}
+	for _, child := range s.children {
+		if childRunning(child) {
+			return false, nil
+		}
+	}
 	s.released = true
+	if s.fallback {
+		// Unregistered: machinery never removes it; it is a stray.
+		if currentScratch == s {
+			currentScratch = nil
+		}
+		return true, nil
+	}
 	if currentScratch == s {
 		currentScratch = nil
 	}
@@ -242,7 +371,7 @@ func newProcessScratch(tempRoot string, registry Registry, entropy io.Reader) (*
 	if err != nil {
 		return nil, fmt.Errorf("process scratch: %w", err)
 	}
-	parent := filepath.Join(tempRoot, processScratchParent)
+	parent := filepath.Join(absoluteTemp(tempRoot), processScratchParent)
 	if err := os.MkdirAll(parent, 0o700); err != nil {
 		return nil, fmt.Errorf("process scratch: %w", err)
 	}
@@ -278,15 +407,17 @@ func newProcessScratch(tempRoot string, registry Registry, entropy io.Reader) (*
 	// From here a failure leaves the record for the sweeper's process
 	// proof; the writer lock is closed so that proof can take it once this
 	// process has ended.
+	// The marker comes before the writer lock: a reserved root without its
+	// marker is empty, and one without its lock holds nothing.
+	if err := WriteMarker(record); err != nil {
+		return nil, err
+	}
 	writer, err := os.OpenFile(filepath.Join(root, WriterLockName), os.O_CREATE|os.O_EXCL|os.O_RDWR, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("process scratch writer lock: %w", err)
 	}
 	if err := unix.Flock(int(writer.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
 		return nil, errors.Join(fmt.Errorf("process scratch writer lock: %w", err), writer.Close())
-	}
-	if err := WriteMarker(record); err != nil {
-		return nil, errors.Join(err, writer.Close())
 	}
 	if record, err = registry.Accept(record.ID); err != nil {
 		return nil, errors.Join(err, writer.Close())
@@ -322,7 +453,8 @@ func openWriterLock(record Record) (*os.File, error) {
 	if !errors.Is(err, os.ErrNotExist) {
 		return file, err
 	}
-	if _, statErr := os.Lstat(record.Path); errors.Is(statErr, os.ErrNotExist) || statErr == nil && record.State == StateReleasing {
+	if _, statErr := os.Lstat(record.Path); errors.Is(statErr, os.ErrNotExist) ||
+		statErr == nil && (record.State == StateReleasing || record.State == StateReserved) {
 		return nil, nil
 	}
 	return nil, fmt.Errorf("process scratch %s has no writer lock", record.Path)
@@ -415,7 +547,9 @@ func releaseScratchRoot(ctx context.Context, critical *Critical, by string) Verd
 	if err := sameRoot(record, info); err != nil {
 		return pending(err.Error())
 	}
-	if record.State == StateReleasing {
+	// A reserved root (its creation cut short) is its own only while it
+	// carries its marker or is empty, as a releasing one (Round D1 F-6).
+	if record.State == StateReleasing || record.State == StateReserved {
 		err = revalidateReleasing(record)
 	} else {
 		err = Revalidate(record)
