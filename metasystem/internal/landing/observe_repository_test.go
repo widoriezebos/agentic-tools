@@ -165,7 +165,6 @@ func (c *observationCase) exactRevert(targetPaths ...string) {
 	c.expectExact("tree:"+c.exact.revertCommit, 1)
 	c.expectExact("paths:"+c.exact.preimageTree+":"+c.exact.postimageTree, 1)
 	c.expectExact("file:"+observeBaseTree+":internal/landing/landing-classes.json", 1)
-	c.expectExact("file:"+observeBaseTree+":memory/rulings.md", 1)
 	c.expectExact("file:"+observeBaseTree+":"+"internal/pathclass/path-classes.txt", 1)
 	c.expectExact("prefix", 1)
 	for _, path := range exactRevertPaths(c.changed, targetPaths) {

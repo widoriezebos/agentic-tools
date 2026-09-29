@@ -25,7 +25,7 @@ type goalRepositoryFixture struct {
 func newGoalRepositoryFixture(t *testing.T, now time.Time) *goalRepositoryFixture {
 	t.Helper()
 	bed := &goalRepositoryFixture{root: t.TempDir()}
-	if err := os.WriteFile(filepath.Join(bed.root, "metasystem.conf"), []byte("metasystem.runtimes=fake\nmetasystem.budget.elapsed-grace-percent=25\nmetasystem.governance.correlation-policy=C\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(bed.root, "metasystem.conf"), []byte("metasystem.runtimes=fake\nmetasystem.budget.elapsed-grace-percent=25\nmetasystem.governance.correlation-policy=C\ntesting.contract=\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	path := filepath.Join(bed.root, "plans", "goals", "backlog.md")

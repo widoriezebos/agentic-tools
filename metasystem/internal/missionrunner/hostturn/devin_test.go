@@ -199,7 +199,7 @@ func TestDevinHostTransportRefusals(t *testing.T) {
 
 func TestDevinHostStaleNamedReturnRefused(t *testing.T) {
 	t.Parallel()
-	f := newHostFixture(t, "# legacy by absence\n")
+	f := newHostFixture(t, "dispatch.transport.devin=legacy\n")
 	dir := filepath.Join(f.root, "turns", "t1")
 	f.write(filepath.Join(dir, "devin-return.json"), "{}")
 	code, _ := f.turn("t1", "")
@@ -220,7 +220,7 @@ func (f *hostFixture) legacyTurn(session string, prompt, steps int) {
 // resumed turn with no stored predecessor publishes unavailable.
 func TestDevinHostLegacyTurnsAndSessionUsageStore(t *testing.T) {
 	t.Parallel()
-	f := newHostFixture(t, "# legacy by absence\n")
+	f := newHostFixture(t, "dispatch.transport.devin=legacy\n")
 	f.legacyTurn("sess-h", 10, 1)
 	code, dir := f.turn("t1", "")
 	if code != 0 {
@@ -276,7 +276,7 @@ func TestDevinHostLegacyTurnsAndSessionUsageStore(t *testing.T) {
 
 func TestDevinHostLegacyEmptyReplyFails(t *testing.T) {
 	t.Parallel()
-	f := newHostFixture(t, "# legacy by absence\n")
+	f := newHostFixture(t, "dispatch.transport.devin=legacy\n")
 	f.write(filepath.Join(f.stubDir, "transcript"), `{"session_id":"sess-e"}`)
 	code, dir := f.turn("t1", "")
 	if code != 3 {
@@ -421,7 +421,7 @@ func TestDevinHostRunsInTheCheckout(t *testing.T) {
 		}
 	}
 
-	legacy := newHostFixture(t, "# legacy by absence\n")
+	legacy := newHostFixture(t, "dispatch.transport.devin=legacy\n")
 	recordCwd(legacy)
 	legacy.legacyTurn("sess-cwd", 10, 1)
 	if code, dir := legacy.turn("t1", ""); code != 0 {

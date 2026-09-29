@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"strings"
 	"time"
@@ -144,16 +145,16 @@ var shapingReads = []fakeacp.Read{
 // plantBeforeRooms marks the human's ordinary conversation with a shaping
 // sitting on beforeRoomsRecord and a transcript, as a sitting started before
 // D16 left it: no record-keyed files beside it (g1-s67 D6).
-func plantBeforeRooms(conversations, human string) {
+func plantBeforeRooms(conversations, human string) error {
 	at := time.Now().UTC().Add(-26 * time.Hour)
 	stamp := at.Format(time.RFC3339)
 	ordinary, err := partner.OpenConversation(conversations, human)
 	if err != nil {
-		log.Fatalf("cannot open the ordinary conversation to plant: %v", err)
+		return fmt.Errorf("cannot open the ordinary conversation to plant: %v", err)
 	}
 	subject := partner.Subject{Kind: partner.SubjectRecord, ID: beforeRoomsRecord, Title: "Session limits, the first draft"}
 	if err := ordinary.Sit(partner.Sitting{Subject: subject, Purpose: partner.PurposeShapeDesign, StartedAt: stamp}, at); err != nil {
-		log.Fatalf("cannot plant the sitting: %v", err)
+		return fmt.Errorf("cannot plant the sitting: %v", err)
 	}
 	for _, message := range []partner.Message{
 		{ID: "before-1", Turn: "before-t1", Role: partner.RoleHuman, At: stamp,
@@ -165,8 +166,9 @@ func plantBeforeRooms(conversations, human string) {
 			}, " ")},
 	} {
 		if err := ordinary.Append(message); err != nil {
-			log.Fatalf("cannot plant the transcript: %v", err)
+			return fmt.Errorf("cannot plant the transcript: %v", err)
 		}
 	}
 	log.Printf("Project Partner: a sitting on %s planted on %s's ordinary conversation, as before D16", beforeRoomsRecord, human)
+	return nil
 }

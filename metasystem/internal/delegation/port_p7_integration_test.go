@@ -136,6 +136,7 @@ func TestP7MissionScopedDispatchIntegration(t *testing.T) {
 	// The investigator is assigned to main; a runtime override resolves its
 	// implied model from the role's own key.
 	conf := b.readText("metasystem.conf")
+	conf = strings.Replace(conf, "role.investigator.runtime=fake\n", "", 1)
 	b.writeFile("metasystem.conf", conf+"role.investigator.runtime=main\nrole.investigator.model.fake=fake-implied-model\n")
 	b.writeMission("mission-alpha", p7MissionContract(2, 10, 20, 8, true), nil)
 	b.publishToOrigin()

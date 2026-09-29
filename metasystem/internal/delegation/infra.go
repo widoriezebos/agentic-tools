@@ -3,6 +3,7 @@ package delegation
 import (
 	"errors"
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -422,11 +423,11 @@ func (s *session) releaseCapAuthorityLock() error {
 // guardAcquire is checkout_execution_guard_acquire: wait for exclusive
 // checkout execution (or join an owning chain) bounded by watch.cap-min.
 func (s *session) guardAcquire(owner string) error {
-	waitMin, err := s.configGet("watch.cap-min", "180")
+	waitMin, err := s.configGet("watch.cap-min", config.MustDefault("watch.cap-min"))
 	if err != nil {
 		return err
 	}
-	progressSec, err := s.configGet("watch.interval-sec", "60")
+	progressSec, err := s.configGet("watch.interval-sec", config.MustDefault("watch.interval-sec"))
 	if err != nil {
 		return err
 	}

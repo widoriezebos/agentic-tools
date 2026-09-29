@@ -467,7 +467,7 @@ func (s *session) selectSnapshot(runtime, role, envelope, output string) error {
 	if err != nil {
 		return s.die(1, fmt.Sprintf("could not read %s adapter configuration identity", runtime))
 	}
-	maxAgeText, err := s.configGet("capability.snapshot-max-age-days", "30")
+	maxAgeText, err := s.configGet("capability.snapshot-max-age-days", config.MustDefault("capability.snapshot-max-age-days"))
 	if err != nil {
 		return err
 	}
@@ -530,7 +530,7 @@ func readSnapshotFields(path string) (snapshotFields, error) {
 
 // enforceInlineInputLimit is enforce_inline_input_limit.
 func (s *session) enforceInlineInputLimit(content, hint string) (int64, error) {
-	maxKB, err := s.configGet("dispatch.max-inline-input-kb", "64")
+	maxKB, err := s.configGet("dispatch.max-inline-input-kb", config.MustDefault("dispatch.max-inline-input-kb"))
 	if err != nil {
 		return 0, err
 	}

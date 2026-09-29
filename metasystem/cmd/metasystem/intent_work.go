@@ -134,17 +134,22 @@ func (inv *intentInvocation) work() intentWorkOwners {
 		}
 	}
 	if owners.config == nil {
-		owners.config = func(key, confPath string) (string, string, int, error) {
-			params := config.GetParams{Key: key, ConfPath: confPath}
-			value, code, err := config.Get(params)
-			if err != nil || code != 0 {
-				return "", "", code, err
-			}
-			source, err := config.KeyOrigin(params)
-			return value, source, 0, err
-		}
+		owners.config = configSettingWithDefault
 	}
 	return owners
+}
+
+// configSettingWithDefault resolves one key with its source. A key with a
+// compiled-in default that no source holds (the one table, defaults.go, the
+// disk-lifetime settings included) answers that default, source "default".
+func configSettingWithDefault(key, confPath string) (string, string, int, error) {
+	params := config.GetParams{Key: key, ConfPath: confPath}
+	value, code, err := config.Get(params)
+	if err != nil || code != 0 {
+		return "", "", code, err
+	}
+	source, err := config.KeyOrigin(params)
+	return value, source, 0, err
 }
 
 var intentBriefFlag = intentFlag{name: "brief", value: "FILE", usage: "the brief, relative to the directory the command runs in"}

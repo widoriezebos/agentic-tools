@@ -89,7 +89,7 @@ func (r *rawConformanceFixture) fact() rawConformanceFact {
 	r.f.t.Helper()
 	base := map[string]string{
 		".gitignore": "artifacts/\nlocal.conf\n", "source.txt": "base\n",
-		"docs/note.md": "base\n", "metasystem.conf": "metasystem.version=1\nrole.code-critic.runtime=fake\n",
+		"docs/note.md": "base\n", "metasystem.conf": "metasystem.version=1\nrole.code-critic.runtime=fake\ntesting.contract=\n",
 	}
 	classes, err := os.ReadFile(filepath.Join(r.f.controller, "internal", "pathclass", "path-classes.txt"))
 	if err != nil {

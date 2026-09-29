@@ -570,7 +570,7 @@ func newContextCostBed(t *testing.T, runtimeName, candidate, readerHelper string
 		t.Fatal(err)
 	}
 	copyContextCostFile(t, candidate, filepath.Join(installation, "bin", "metasystem"), 0o755)
-	config := "metasystem.version=1\nmetasystem.engine-delivery=source\nmetasystem.runtimes=claude,codex\nsteward.stop-slow-sec=15\n"
+	config := "metasystem.version=1\nmetasystem.template=true\nmetasystem.runtimes=claude,codex\nsteward.stop-slow-sec=15\n"
 	if err := os.WriteFile(filepath.Join(installation, "metasystem.conf"), []byte(config), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -927,7 +927,7 @@ func (bed *contextCostBed) runDiagnosticOverrides(live contextCostSnapshot) {
 	}
 	for _, diagnostic := range []string{empty, distinct} {
 		output, code, err := runContextCostCommand(bed.outer, bed.environment(false), nil, bed.engine,
-			"context", "status", "--root", bed.outer, "--runtime", bed.runtime,
+			"session", "handoff", "--status", "--root", bed.outer, "--runtime", bed.runtime,
 			"--session", bed.session, "--transcript", diagnostic)
 		if err != nil || code != 0 || !strings.Contains(output, "diagnostic transcript override") {
 			bed.t.Fatalf("%s diagnostic %s: code=%d err=%v output=%s", bed.runtime, filepath.Base(diagnostic), code, err, output)

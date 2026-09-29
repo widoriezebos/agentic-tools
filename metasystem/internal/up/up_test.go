@@ -154,6 +154,11 @@ func TestRuntimeSignatureAbsenceFailsBeforeArmingWithTheFallbackRemedy(t *testin
 		t.Fatal(err)
 	}
 	stageEnrollment(t, root, binary, 1)
+	// metasystem.runtimes has a compiled default; an installation that
+	// selects none names it empty.
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	result := ordinary(Options{Root: root, MetasystemRoot: root, Scope: root, Binary: binary, WaitScaleMilli: 1})
 	if result.Outcome != "failed" || result.Failed != "session-identity" ||
 		!strings.Contains(result.Components[len(result.Components)-1].Detail, "lists no metasystem.runtimes") ||

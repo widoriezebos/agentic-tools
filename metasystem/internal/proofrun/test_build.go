@@ -28,6 +28,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gocache"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/pathpattern"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
@@ -54,6 +55,11 @@ const (
 type TestRunRequest struct {
 	ProjectRoot   string
 	openCandidate func(projectRoot, candidateTree string) (candidateWorkspace, error)
+	// cacheDomain decides the v2 run's cache pair for the installation
+	// root; nil resolves this process's own environment (which carries the
+	// delegate markers and the cache context the filtered Environment
+	// drops) through cachedomain (disk-lifetimes A8).
+	cacheDomain func(installationRoot string) (gocache.Resolution, error)
 	// Scratch is the serialized binding of a managed run's scratch root;
 	// scratch is the authenticated handle bound in this process.
 	Scratch            *ScratchLocator `json:",omitempty"`

@@ -25,12 +25,12 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/behaviorsurface"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/cachedomain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginecause"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/gocache"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/output"
@@ -568,7 +568,7 @@ func prepareTestingOnce(request testingSelectionRequest) (testingPreparation, er
 		}
 	}
 	confPath := filepath.Join(installation, "metasystem.conf")
-	contractRel, present, err := config.ConfLookup(confPath, "testing.contract")
+	contractRel, present, err := config.CommittedLookup(confPath, "testing.contract")
 	if err != nil || !present {
 		return testingPreparation{}, fmt.Errorf("testing.contract is required in committed metasystem.conf")
 	}
@@ -1589,7 +1589,11 @@ func buildCandidateEngine(ctx context.Context, workspace gittree.Workspace, inst
 	command.Dir = installationRoot
 	// The compiler caches are the resolved machine engine cache, set
 	// explicitly; module and user caches stay inherited.
-	command.Env = gocache.Carry(candidateEngineBuildEnvironment(environment, candidateCommit))
+	carried, err := cachedomain.Carry(candidateEngineBuildEnvironment(environment, candidateCommit), "")
+	if err != nil {
+		return nil, fmt.Errorf("candidate engine build at commit %s: %w", candidateCommit, err)
+	}
+	command.Env = carried
 	if scratch != nil {
 		// The run's temp lives in its root.
 		command.Env = append(command.Env, "GOTMPDIR="+scratch.Dir("engine"), "TMPDIR="+scratch.Dir("engine"))
@@ -2845,7 +2849,7 @@ func loadPhysicalTestingContract(root string) (string, testpolicy.Contract, stri
 		return "", testpolicy.Contract{}, "", err
 	}
 	confPath := filepath.Join(installation, "metasystem.conf")
-	contractRel, found, err := config.ConfLookup(confPath, "testing.contract")
+	contractRel, found, err := config.CommittedLookup(confPath, "testing.contract")
 	if err != nil || !found {
 		return "", testpolicy.Contract{}, "", fmt.Errorf("testing.contract is required in committed metasystem.conf")
 	}

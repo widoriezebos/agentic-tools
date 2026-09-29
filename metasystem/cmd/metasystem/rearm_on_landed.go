@@ -16,9 +16,9 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/behaviorsurface"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/cachedomain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginecause"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/gocache"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
@@ -406,7 +406,11 @@ var (
 		argv := devgateBootstrapBuildArgv()
 		command := exec.CommandContext(ctx, argv[0], argv[1:]...)
 		command.Dir = installation
-		command.Env = gocache.Carry(os.Environ())
+		environment, err := cachedomain.Carry(os.Environ(), installation)
+		if err != nil {
+			return fmt.Errorf("landed engine rebuild: %w", err)
+		}
+		command.Env = environment
 		var output bytes.Buffer
 		command.Stdout, command.Stderr = &output, &output
 		err = proofrun.RunResourceCommand(ctx, command, lease)

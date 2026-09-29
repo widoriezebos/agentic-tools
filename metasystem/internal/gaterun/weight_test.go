@@ -390,7 +390,8 @@ func TestFocusedProofCannotDischargeCadence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(conf, append(data, []byte("testing.contract=testing.json\n")...), 0o644); err != nil {
+	// The bed names no contract (testing.contract=); this proof names one.
+	if err := os.WriteFile(conf, []byte(strings.Replace(string(data), "testing.contract=\n", "testing.contract=testing.json\n", 1)), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := WeightAdd(root, "landing-one", []byte("1\t0\tdirect.go\n"), "", 1); err != nil {

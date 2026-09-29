@@ -36,7 +36,7 @@ const appContractKey = "launch.contract"
 // errNoLaunchContract is the refusal a project without a contract gets. It
 // names the file to write, because a refusal that does not say what to do
 // next is a dead end.
-var errNoLaunchContract = errors.New("this project has no launch contract: write launch.json and name it with launch.contract=launch.json in metasystem.conf")
+var errNoLaunchContract = errors.New("this project has no launch contract: write launch.json beside metasystem.conf (launch.contract=launch.json is the default; set launch.contract to name another path)")
 
 // loadPhysicalLaunchContract reads the committed launch contract the
 // settings name, exactly as the testing contract is read.
@@ -50,7 +50,15 @@ func loadPhysicalLaunchContract(root string) (string, applaunch.Contract, string
 	if err != nil {
 		return "", applaunch.Contract{}, "", err
 	}
-	if !found || strings.TrimSpace(relative) == "" {
+	if !found {
+		// The compiled default names launch.json; a project that has not
+		// written it has no launch contract, not a broken one.
+		relative = config.MustDefault(appContractKey)
+		if _, statErr := os.Lstat(filepath.Join(installation, filepath.FromSlash(relative))); os.IsNotExist(statErr) {
+			return "", applaunch.Contract{}, "", errNoLaunchContract
+		}
+	}
+	if strings.TrimSpace(relative) == "" {
 		return "", applaunch.Contract{}, "", errNoLaunchContract
 	}
 	if filepath.IsAbs(relative) || filepath.ToSlash(filepath.Clean(relative)) != relative || strings.HasPrefix(relative, "../") {

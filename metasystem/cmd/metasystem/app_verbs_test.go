@@ -107,7 +107,7 @@ func newAppBed(t *testing.T, contract map[string]any) *appBed {
 	if err := os.WriteFile(filepath.Join(root, ".gitignore"), []byte("metasystem/artifacts/\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	conf := "metasystem.version=1\nmetasystem.engine-delivery=source\ntesting.contract=testing.json\n"
+	conf := "metasystem.version=1\nmetasystem.template=true\ntesting.contract=testing.json\n"
 	if contract != nil {
 		conf += "launch.contract=launch.json\n"
 	}

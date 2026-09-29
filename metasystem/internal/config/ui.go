@@ -9,14 +9,12 @@ import (
 )
 
 const (
-	UIListenKey     = "ui.listen"
-	DefaultUIListen = "127.0.0.1:7878"
-	UISubjectKey    = "ui.subject"
+	UIListenKey  = "ui.listen"
+	UISubjectKey = "ui.subject"
 	// UISessionHoursKey is how long a browser session the human signed into
 	// lasts. Twelve hours is a working day and the evening after it; a seat
 	// that wants a shorter leash sets its own.
-	UISessionHoursKey     = "ui.session.hours"
-	DefaultUISessionHours = 12
+	UISessionHoursKey = "ui.session.hours"
 	// UIHumanKey is the handle this seat signs in as when no enrolled
 	// terminal started the server. Unset, the sign-in sheet asks once.
 	UIHumanKey = "ui.human"
@@ -42,16 +40,22 @@ const (
 	//
 	// UIStoreWireMBKey is how large the Partner's wire journal may grow
 	// before its own writer rotates it, keeping one previous.
-	UIStoreWireMBKey     = "ui.store.wire-mb"
-	DefaultUIStoreWireMB = 8
+	UIStoreWireMBKey = "ui.store.wire-mb"
 	// UIStoreConversationMBKey is how large one human's transcript may grow
 	// before its head is trimmed.
-	UIStoreConversationMBKey     = "ui.store.conversation-mb"
-	DefaultUIStoreConversationMB = 2
+	UIStoreConversationMBKey = "ui.store.conversation-mb"
 	// UIStoreConversationDaysKey is how old the oldest message of a
 	// transcript may be before its head is trimmed.
-	UIStoreConversationDaysKey     = "ui.store.conversation-days"
-	DefaultUIStoreConversationDays = 90
+	UIStoreConversationDaysKey = "ui.store.conversation-days"
+)
+
+// The interface's compiled defaults (defaults.go).
+var (
+	DefaultUIListen                = MustDefault(UIListenKey)
+	DefaultUISessionHours          = intDefault(UISessionHoursKey)
+	DefaultUIStoreWireMB           = intDefault(UIStoreWireMBKey)
+	DefaultUIStoreConversationMB   = intDefault(UIStoreConversationMBKey)
+	DefaultUIStoreConversationDays = intDefault(UIStoreConversationDaysKey)
 )
 
 // UIStore is the private store's three bounds as this seat resolves them: the

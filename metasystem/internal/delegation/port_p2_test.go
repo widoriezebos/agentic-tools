@@ -74,7 +74,9 @@ func TestPortP2EngineSkewPreflight(t *testing.T) {
 func TestPortP2DispatchWithoutAnyRosterRefuses(t *testing.T) {
 	t.Parallel()
 	b := newBed(t)
-	b.writeFile("metasystem.conf", "metasystem.runtimes=fake\nevidence.root="+b.root+"/../evidence\n")
+	// The verifier's compiled default is main; this installation names no
+	// runtime for it, so neither a role entry nor a default runtime exists.
+	b.writeFile("metasystem.conf", "metasystem.runtimes=fake\nrole.verifier.runtime=\nevidence.root="+b.root+"/../evidence\n")
 	brief := b.writeFile("verifier.md", "Working Mode: verify\n")
 	result := b.run("dispatch", "--role", "verifier", "--brief", brief, "--permissions", "none",
 		"--destructive-reach", "MECHANICAL", "--job-id", "no-role-default")

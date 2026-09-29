@@ -5,17 +5,16 @@ import (
 	"strconv"
 )
 
-const (
-	LedgerAttentionStaleMinutesKey     = "steward.ledger-attention-stale-minutes"
-	DefaultLedgerAttentionStaleMinutes = uint64(30)
-)
+const LedgerAttentionStaleMinutesKey = "steward.ledger-attention-stale-minutes"
+
+// DefaultLedgerAttentionStaleMinutes is the compiled default (defaults.go).
+var DefaultLedgerAttentionStaleMinutes = uintDefault(LedgerAttentionStaleMinutesKey)
 
 // LedgerAttentionStaleMinutes resolves the maximum age of a shared-ledger
 // movement that this machine has not examined. The threshold is operational
 // law, so production reads accept only the committed repository value.
 func LedgerAttentionStaleMinutes(confPath string) (uint64, error) {
-	value, err := budgetLawValue(confPath, LedgerAttentionStaleMinutesKey,
-		strconv.FormatUint(DefaultLedgerAttentionStaleMinutes, 10))
+	value, err := budgetLawValue(confPath, LedgerAttentionStaleMinutesKey, MustDefault(LedgerAttentionStaleMinutesKey))
 	if err != nil {
 		return 0, fmt.Errorf("resolve %s: %w", LedgerAttentionStaleMinutesKey, err)
 	}

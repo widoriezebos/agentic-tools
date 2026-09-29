@@ -27,6 +27,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/covenant"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
@@ -1367,6 +1368,7 @@ func runIntentDoctor(inv *intentInvocation) int {
 			code = max(code, 1)
 		}
 	}
+	lines = append(lines, diskCheckLine(scope.Root))
 	adapters, refused := adapterReport(scope.Installation)
 	lines = append(lines, adapters...)
 	if refused > 0 {
@@ -1559,6 +1561,11 @@ func publicHealthRemedy(role steward.RoleVerdict, stopped bool) ([]string, strin
 		return nil, "a person raises the spend ceiling in metasystem.conf"
 	case steward.RoleProofAttempts:
 		return []string{"metasystem", "test", "run"}, ""
+	case steward.RoleDisk:
+		if strings.HasPrefix(role.Remedy, "metasystem ") {
+			return strings.Fields(role.Remedy), ""
+		}
+		return []string{"metasystem", "disk", "show"}, ""
 	}
 	return nil, reasonRemedy(role.Reason)
 }
@@ -2152,4 +2159,19 @@ func runIntentSystemSetup(inv *intentInvocation) int {
 	}
 	return inv.render(intentResult{Outcome: outcome, Targets: targets, Summary: summary, text: lines,
 		Data: map[string]any{"engine": report.Engine, "runtimes": nonNilLines(report.Runtimes), "changed": nonNilLines(report.Changed), "fence": report.Fence, "fenceHook": report.FenceHook, "mergeDriver": report.MergeDriver}})
+}
+
+// diskCheckLine is system check's one line about this checkout's disk pass
+// (Part B 3.3): when it last ran and what it released, kept and left
+// pending, and where the whole report is.
+func diskCheckLine(root string) string {
+	report, err := diskstore.ReadReport(diskstore.CheckoutReportPath(root))
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		return "disk: no pass has run for this checkout yet; metasystem disk clean --preview shows what one would do"
+	case err != nil:
+		return "disk: the last report is unreadable (" + err.Error() + "); metasystem disk clean writes a fresh one"
+	}
+	return fmt.Sprintf("disk: last pass %s released %d, kept %d, left %d pending; metasystem disk show prints the report",
+		report.At.Format(time.RFC3339), len(report.Actions), len(report.Kept), len(report.Pending))
 }

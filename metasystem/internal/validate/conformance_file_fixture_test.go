@@ -27,7 +27,7 @@ func newFileConformanceFixture(t *testing.T) *conformanceFixture {
 		".gitignore":                          []byte("artifacts/\nlocal.conf\n"),
 		"source.txt":                          []byte("base\n"),
 		"docs/note.md":                        []byte("base\n"),
-		"metasystem.conf":                     []byte("metasystem.version=1\nrole.code-critic.runtime=fake\n"),
+		"metasystem.conf":                     []byte("metasystem.version=1\nrole.code-critic.runtime=fake\ntesting.contract=\n"),
 	}
 	for _, dir := range []string{f.controller, f.worktree} {
 		for name, data := range files {

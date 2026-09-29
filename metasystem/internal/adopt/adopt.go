@@ -52,12 +52,12 @@ const (
 // and go.sum are the engine source: the payload ships source and the target
 // rebuilds, and the engine's data (the agent protocol, the landing and path
 // policy, the runtime hook settings and this workflow) is compiled into it.
-// The coverage floors are the template's own development test policy and
-// stay home.
+// The coverage floors and the parallel ratchet (testing-parallel-ratchet.json)
+// are the template's own development test policy and stay home.
 var PayloadAllow = []string{
 	".gitattributes", ".gitignore", "AGENTS.md", "CLAUDE.md", "cmd", "docs", "go.mod", "go.sum",
 	"internal", "memory", "metasystem.conf", "optional-skills", "plans", "records",
-	"skills", "testing-parallel-ratchet.json", "testing.json", "wow.md",
+	"skills", "testing.json", "wow.md",
 }
 
 // githubActionsWorkflow is the runtime-neutral CI enforcement adoption
@@ -334,6 +334,11 @@ func Adopt(options Options) (Result, error) {
 	// The selected-runtime list is durable state; no unselected runtime's
 	// model placeholder or mode override may reach the adopted repository.
 	if err := validate.TailorConf(conf, selected); err != nil {
+		return Result{}, refuse(CodeRefused, fmt.Sprintf("could not tailor metasystem.conf: %v", err), "repair the template's metasystem.conf")
+	}
+	// The template-mode signal is the template's own: an adopted
+	// installation is never the template.
+	if err := dropTemplateMode(conf); err != nil {
 		return Result{}, refuse(CodeRefused, fmt.Sprintf("could not tailor metasystem.conf: %v", err), "repair the template's metasystem.conf")
 	}
 	incomplete, err := testpolicy.IncompleteTemplate()
@@ -618,20 +623,8 @@ func stagePayload(d Deps, options Options, source, prefix, stage, target string)
 		return refuse(CodeRefused, fmt.Sprintf("cannot unpack the template payload: %v", err), "repair the template checkout")
 	}
 
-	// The brain's role packet lives under records/; keep it without
-	// shipping the template's history.
-	kept := map[string][]byte{}
-	for _, rel := range []string{"records/misc/fleet-coordinator-brain-role-packet.md"} {
-		path := filepath.Join(stage, filepath.FromSlash(rel))
-		if !regularFile(path) {
-			return refuse(CodeRefused, "the payload is missing "+rel, "restore it in the template, commit, then run the same command again")
-		}
-		data, readErr := os.ReadFile(path)
-		if readErr != nil {
-			return refuse(CodeRefused, readErr.Error(), "repair the template checkout")
-		}
-		kept[rel] = data
-	}
+	// records/ is the template's history; the brain's role packet is
+	// compiled into the engine, so nothing under it ships.
 	if err := os.RemoveAll(filepath.Join(stage, "records")); err != nil {
 		return refuse(CodeRefused, err.Error(), "retry")
 	}
@@ -640,7 +633,7 @@ func stagePayload(d Deps, options Options, source, prefix, stage, target string)
 	}
 	// The landing owner selects required authority and preserves the
 	// application's own rulings.
-	rulings, err := landing.AdoptionRulings(stage, target)
+	rulings, err := landing.AdoptionRulings(target)
 	if err != nil {
 		return refuse(CodeRefused, fmt.Sprintf("could not prepare the adopted landing authority: %v", err), "repair the target's memory/rulings.md or the template's landing classes")
 	}
@@ -669,9 +662,6 @@ func stagePayload(d Deps, options Options, source, prefix, stage, target string)
 		"records/README.md":            []byte(recordsReadme),
 		"plans/goals.md":               []byte(GoalFreeLedger(options.Deps.Now())),
 	}
-	for rel, data := range kept {
-		files[rel] = data
-	}
 	for rel, data := range files {
 		if err := writeFile(filepath.Join(stage, filepath.FromSlash(rel)), data, 0o644); err != nil {
 			return refuse(CodeRefused, err.Error(), "retry")
@@ -695,6 +685,28 @@ func stagePayload(d Deps, options Options, source, prefix, stage, target string)
 		return refuse(CodeRefused, err.Error(), "retry")
 	}
 	return nil
+}
+
+// dropTemplateMode removes the template-mode declaration (and the comment
+// lines directly above it) from a staged metasystem.conf.
+func dropTemplateMode(conf string) error {
+	data, err := os.ReadFile(conf)
+	if err != nil {
+		return err
+	}
+	lines := strings.Split(string(data), "\n")
+	var kept []string
+	for _, line := range lines {
+		key, _, found := strings.Cut(line, "=")
+		if found && strings.TrimSpace(key) == config.TemplateModeKey {
+			for len(kept) > 0 && strings.HasPrefix(strings.TrimSpace(kept[len(kept)-1]), "#") {
+				kept = kept[:len(kept)-1]
+			}
+			continue
+		}
+		kept = append(kept, line)
+	}
+	return os.WriteFile(conf, []byte(strings.Join(kept, "\n")), 0o644)
 }
 
 // templateProjectDocs are the template repository's own project state under

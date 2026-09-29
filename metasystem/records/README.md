@@ -5,9 +5,9 @@ This tree holds three things:
 - the goal ledger: concluded goals under records/goals/, which the goal
   engine alone mutates under its ledger rules;
 - live registers and engine inputs: records/counselor/*.jsonl,
-  records/narrator-digest.log, and the two files the engine reads
-  (records/misc/fleet-coordinator-brain-role-packet.md and
-  records/misc/goals-migration-manifest.md);
+  records/narrator-digest.log, and the one file the engine reads
+  (records/misc/goals-migration-manifest.md); the brain seat's role packet
+  is compiled into the engine (internal/brain/role-packet.md);
 - the working records of goals that are still open (critique rounds, code
   reads, dispositions, facts, designs), plus the few finished records a
   live document or code comment still cites.

@@ -399,7 +399,6 @@ func preflightCommands() error {
 func watchInterval(root string) (int, error) {
 	value, _, err := config.Get(config.GetParams{
 		Key: "watch.interval-sec", ConfPath: filepath.Join(root, "metasystem.conf"),
-		Default: "60", DefaultSet: true,
 	})
 	if err != nil {
 		return 0, err

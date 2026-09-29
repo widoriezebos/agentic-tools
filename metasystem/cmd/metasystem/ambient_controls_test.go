@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 
@@ -51,47 +52,71 @@ func TestMain(m *testing.M) {
 		declaredContextCostCandidateEngine = os.Getenv("METASYSTEM_BIN")
 	}
 	_, proofCommandChild := proofCommandFixtureArguments()
-	waitCandidateDir := ""
 	waitCandidate := os.Getenv("METASYSTEM_WAIT_BINARY")
-	if !proofCommandChild && (waitCandidate == "" || os.Getenv("METASYSTEM_WAIT_BINARY_SOURCE") != waitCandidate) {
-		waitCandidateDir, err = os.MkdirTemp("", "metasystem-wait-candidate-")
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "create wait candidate directory:", err)
-			os.Exit(2)
-		}
-		waitCandidate = filepath.Join(waitCandidateDir, "metasystem")
-		build := exec.Command("go", "build", "-trimpath", "-o", waitCandidate, ".")
-		build.Stdout, build.Stderr = os.Stderr, os.Stderr
-		if err := build.Run(); err != nil {
-			_ = os.RemoveAll(waitCandidateDir)
-			fmt.Fprintln(os.Stderr, "build wait candidate:", err)
-			os.Exit(2)
-		}
-		if err := os.Setenv("METASYSTEM_WAIT_BINARY", waitCandidate); err != nil {
-			_ = os.RemoveAll(waitCandidateDir)
-			fmt.Fprintln(os.Stderr, "publish wait candidate:", err)
-			os.Exit(2)
-		}
-		if err := os.Setenv("METASYSTEM_WAIT_BINARY_SOURCE", waitCandidate); err != nil {
-			_ = os.RemoveAll(waitCandidateDir)
-			fmt.Fprintln(os.Stderr, "bind wait candidate to package source:", err)
-			os.Exit(2)
-		}
-	}
+	buildWaitCandidate := !proofCommandChild && (waitCandidate == "" || os.Getenv("METASYSTEM_WAIT_BINARY_SOURCE") != waitCandidate)
 	var declarations []testenv.Declaration
 	if os.Getenv("GO_WANT_FIXTURE_RECEIPT_CLOCK_CHILD") != "" || proofCommandChild {
 		// The parent constructs this helper's private fixture selectors. Preserve
 		// only that child process's declared controls through the package scrub.
 		declarations = testenv.DeclareInheritedControls()
 	}
-	status := testenv.Main(m, declarations...)
-	if waitCandidateDir != "" {
-		_ = os.RemoveAll(waitCandidateDir)
+	var setup func() error
+	if buildWaitCandidate {
+		setup = setUpWaitCandidate
 	}
+	status := testenv.MainWithSetup(m, setup, declarations...)
 	if proofCommandChild && status == 0 {
 		os.Exit(proofCommandFixtureChildStatus)
 	}
 	os.Exit(status)
+}
+
+// waitCandidateBuiltHere names the wait candidate this package built in its
+// setup, empty when it reuses a parent's.
+var waitCandidateBuiltHere string
+
+// setUpWaitCandidate builds the package's wait candidate inside the test
+// namespace, under custody (disk-lifetimes A9, DL3A-08): the build runs
+// after the fixture custodian exists, its directory lands in the owned
+// TMPDIR and goes with the namespace, and the go command and every compile
+// and link it starts carry this binary's fixture tag, so a kill of the test
+// binary during the build leaves no writer the custodian does not end.
+func setUpWaitCandidate() error {
+	_, tag, err := testenv.SetupFixtureTag("wait-candidate")
+	if err != nil {
+		return fmt.Errorf("tag the wait candidate build: %w", err)
+	}
+	directory, err := os.MkdirTemp("", "metasystem-wait-candidate-")
+	if err != nil {
+		return fmt.Errorf("create wait candidate directory: %w", err)
+	}
+	candidate := filepath.Join(directory, "metasystem")
+	build := exec.Command("go", "build", "-trimpath", "-o", candidate, ".")
+	build.Env = append(os.Environ(), tag)
+	build.Stdout, build.Stderr = os.Stderr, os.Stderr
+	if err := build.Run(); err != nil {
+		return fmt.Errorf("build wait candidate: %w", err)
+	}
+	if err := os.Setenv("METASYSTEM_WAIT_BINARY", candidate); err != nil {
+		return fmt.Errorf("publish wait candidate: %w", err)
+	}
+	if err := os.Setenv("METASYSTEM_WAIT_BINARY_SOURCE", candidate); err != nil {
+		return fmt.Errorf("bind wait candidate to package source: %w", err)
+	}
+	waitCandidateBuiltHere = candidate
+	return nil
+}
+
+// The wait candidate this package builds lives in its own namespace's
+// TMPDIR, never in the host temp root (disk-lifetimes A9).
+func TestWaitCandidateIsBuiltInsideTheNamespace(t *testing.T) {
+	t.Parallel()
+	if waitCandidateBuiltHere == "" {
+		t.Skip("this process reuses its parent's wait candidate")
+	}
+	if !strings.HasPrefix(waitCandidateBuiltHere, os.TempDir()+string(filepath.Separator)) || os.Getenv("METASYSTEM_WAIT_BINARY") != waitCandidateBuiltHere {
+		t.Fatalf("wait candidate %s is outside the namespace TMPDIR %s", waitCandidateBuiltHere, os.TempDir())
+	}
 }
 
 func TestGoTestHarnessRejectsHostileInheritedEngine(t *testing.T) {

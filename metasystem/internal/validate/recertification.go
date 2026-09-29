@@ -516,7 +516,7 @@ func commandForWidth(root string, rootRecord map[string]any, supplied string) (s
 			return "", "", 0, fmt.Errorf("root chain gate width is malformed")
 		}
 	}
-	contractPath, migrated, configErr := config.ConfLookup(filepath.Join(root, "metasystem.conf"), "testing.contract")
+	contractPath, migrated, configErr := config.CommittedLookup(filepath.Join(root, "metasystem.conf"), "testing.contract")
 	if configErr != nil {
 		return "", "", 0, configErr
 	}

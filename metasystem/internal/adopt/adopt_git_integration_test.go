@@ -13,6 +13,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"io"
 	"io/fs"
 	"os"
@@ -94,7 +95,7 @@ func moduleRoot(t *testing.T) string {
 // entries only: adoption drops it, and the tests prove it is dropped.
 func copyModule(from, to string) error {
 	history := map[string]bool{"plans/README.md": true, "plans/designs/verbs-object-action.md": true,
-		"records/misc/fleet-coordinator-brain-role-packet.md": true, "records/README.md": true}
+		"records/README.md": true}
 	return filepath.WalkDir(from, func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -415,10 +416,19 @@ func TestAdoptGitIntegrationDefaultInstallsTheWholePayload(t *testing.T) {
 		t.Fatalf("first adoption result: %+v", result)
 	}
 	for _, path := range []string{".github/workflows/metasystem.yml", ".claude/agents/verify.md", ".claude/agents/code-critique.md",
-		"metasystem.conf", "go.mod", "cmd/metasystem/main.go", "testing-parallel-ratchet.json", "bin/metasystem"} {
+		"metasystem.conf", "go.mod", "cmd/metasystem/main.go", "bin/metasystem"} {
 		if !exists(filepath.Join(target, path)) {
 			t.Fatalf("adoption did not install %s", path)
 		}
+	}
+	// The parallel ratchet is the template's own development test policy,
+	// like the coverage floors: it stays home.
+	if exists(filepath.Join(target, "testing-parallel-ratchet.json")) {
+		t.Fatal("adoption shipped the template's parallel ratchet")
+	}
+	// The brain's role packet is compiled into the engine; no copy ships.
+	if exists(filepath.Join(target, "records", "misc")) {
+		t.Fatal("adoption shipped a records/misc tree")
 	}
 	for _, dir := range []string{"internal", "cmd", "artifacts"} {
 		if info, err := os.Stat(filepath.Join(target, dir)); err != nil || !info.IsDir() {
@@ -439,10 +449,28 @@ func TestAdoptGitIntegrationDefaultInstallsTheWholePayload(t *testing.T) {
 		}
 	}
 	lines := confLines(t, target)
-	for _, want := range []string{"metasystem.runtimes=claude", "role.default.runtime=claude", "suite.progress-silence-min=30",
-		"suite.section-cap-min=45", "suite.evidence-copy-timeout-sec=60", "suite.evidence-copy-max-mb=512"} {
-		if !hasLine(lines, want) {
-			t.Fatalf("tailored configuration lacks %s", want)
+	if !hasLine(lines, "metasystem.runtimes=claude") {
+		t.Fatal("tailored configuration lacks metasystem.runtimes=claude")
+	}
+	// The template-mode signal is the template's own; adoption drops it.
+	for _, line := range lines {
+		if strings.HasPrefix(strings.TrimSpace(line), config.TemplateModeKey+"=") {
+			t.Fatalf("adoption shipped the template-mode signal: %s", line)
+		}
+	}
+	if config.TemplateMode(target) {
+		t.Fatal("the adopted installation reads as the template")
+	}
+	if conf := readText(t, filepath.Join(target, "metasystem.conf")); !strings.Contains(conf, "holds this project's OVERRIDES only") || strings.Contains(conf, "template-mode") {
+		t.Fatalf("adoption lost the conf's header or kept the template-mode comment:\n%s", conf)
+	}
+	// The conf holds overrides only; the rest resolves to compiled defaults.
+	for key, want := range map[string]string{"role.default.runtime": "claude", "suite.progress-silence-min": "30",
+		"suite.section-cap-min": "45", "suite.evidence-copy-timeout-sec": "60", "suite.evidence-copy-max-mb": "512"} {
+		value, _, err := config.Get(config.GetParams{Key: key, ConfPath: filepath.Join(target, "metasystem.conf"),
+			LookupEnv: func(string) (string, bool) { return "", false }})
+		if err != nil || value != want {
+			t.Fatalf("tailored configuration resolves %s=%q (%v), want %q", key, value, err, want)
 		}
 	}
 	unselected := regexp.MustCompile(`(^|\.)model\.(codex|devin)=|\.runtime=(codex|devin)$`)
@@ -1081,7 +1109,6 @@ func TestAdoptGitIntegrationWritesOnlyTheDeclaredInventory(t *testing.T) {
 		"metasystem.conf": true, "plans/goals-accepted.json": true, "bin/metasystem": true, ".github/workflows/metasystem.yml": true,
 		"memory/known-issues.md": true, "memory/instruction-ledger.md": true, "memory/rulings.md": true,
 		"plans/goals.md": true, "plans/README.md": true, "memory/README.md": true, "records/README.md": true,
-		"records/misc/fleet-coordinator-brain-role-packet.md": true,
 	}
 	for _, runtime := range []string{"claude", "codex"} {
 		t.Run(runtime, func(t *testing.T) {

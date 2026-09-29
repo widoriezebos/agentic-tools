@@ -34,12 +34,13 @@ func newReceiptLineFixture(t *testing.T, adopted bool) *receiptLineFixture {
 		t: t, repo: repo, root: filepath.Join(repo, filepath.FromSlash(prefix)), prefix: prefix,
 		ledger: path.Join(prefix, "memory/receipts.log"),
 	}
+	conf := "metasystem.runtimes=\n"
 	if adopted {
 		f.ledger = "memory/receipts.log"
 	} else {
-		f.writeTop("development/metasystem-design.md", "fixture\n")
+		conf += "metasystem.template=true\n"
 	}
-	f.writeInstall("metasystem.conf", "metasystem.runtimes=\n")
+	f.writeInstall("metasystem.conf", conf)
 	ownerRoot, err := filepath.EvalSymlinks(f.root)
 	if err != nil {
 		t.Fatalf("resolve receipt-line installation: %v", err)

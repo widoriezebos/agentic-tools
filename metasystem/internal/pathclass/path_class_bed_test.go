@@ -30,10 +30,11 @@ func pathClassBedInstallation(t *testing.T, installationName string, template bo
 		t.Fatal(err)
 	}
 	installation = filepath.Join(repository, installationName)
+	conf := ""
 	if template {
-		pathClassBedWrite(t, filepath.Join(repository, "development", "metasystem-design.md"), "template marker\n")
+		conf = "metasystem.template=true\n"
 	}
-	pathClassBedWrite(t, filepath.Join(installation, "metasystem.conf"), "")
+	pathClassBedWrite(t, filepath.Join(installation, "metasystem.conf"), conf)
 	return repository, installation
 }
 

@@ -89,7 +89,7 @@ func composeBrainBootModeWithIdentity(root, repo string, bound, deadlineMS int, 
 
 func composeBrainBootWith(root, repo string, bound, deadlineMS int, readOnly bool, deps brainBootDependencies) (brainBootOutput, error) {
 	started := deps.now()
-	state, phaseOne := brain.PhaseOne(root, repo, deps.ledgerIdentity(root), bound)
+	state, phaseOne := brain.PhaseOne(root, deps.ledgerIdentity(root), bound)
 	if state.State == brain.Undeclared {
 		return brainBootOutput{Declared: false}, nil
 	}

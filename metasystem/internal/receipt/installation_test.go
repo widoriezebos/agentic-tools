@@ -19,10 +19,7 @@ func templateInstallation(t *testing.T) string {
 			t.Fatal(err)
 		}
 	}
-	if err := os.WriteFile(filepath.Join(repo, "development", "metasystem-design.md"), []byte("design\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(installation, "metasystem.conf"), nil, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(installation, "metasystem.conf"), []byte("metasystem.template=true\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	return installation

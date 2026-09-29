@@ -621,13 +621,19 @@ func legacyTestingReceiptPayload(t *testing.T, receipt TestReceipt) []byte {
 
 func TestAdoptionRulingsPreserveApplicationAndLandingAuthority(t *testing.T) {
 	t.Parallel()
-	source := newRepositoryObservationFixture(t)
 	target := t.TempDir()
-	data, err := AdoptionRulings(source.root, target)
+	// The rows come from the compiled landing policy, never from a
+	// template's memory/rulings.md: no source register is read.
+	data, err := AdoptionRulings(target)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(data), "| R-1 |") || !strings.Contains(string(data), "| R-35-m0 |") || !strings.Contains(string(data), "| R-54-m1 |") {
+	for _, ruling := range PolicyRulings() {
+		if strings.Count(string(data), ruling.Row+"\n") != 1 {
+			t.Fatalf("fresh register lacks the compiled row %s: %s", ruling.ID, data)
+		}
+	}
+	if !strings.Contains(string(data), "| R-35-m0 |") || !strings.Contains(string(data), "| R-54-m1 |") {
 		t.Fatalf("fresh register has incorrect authority rows: %s", data)
 	}
 	path := filepath.Join(target, "memory", "rulings.md")
@@ -638,14 +644,14 @@ func TestAdoptionRulingsPreserveApplicationAndLandingAuthority(t *testing.T) {
 	if err := os.WriteFile(path, []byte(custom), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	data, err = AdoptionRulings(source.root, target)
+	data, err = AdoptionRulings(target)
 	if err != nil || !strings.HasPrefix(string(data), custom) {
 		t.Fatalf("existing application memory changed: %s, %v", data, err)
 	}
 	if err := os.WriteFile(path, data, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	repeated, err := AdoptionRulings(source.root, target)
+	repeated, err := AdoptionRulings(target)
 	if err != nil || string(repeated) != string(data) {
 		t.Fatalf("re-adoption duplicates or changes rulings: %s, %v", repeated, err)
 	}
@@ -653,12 +659,36 @@ func TestAdoptionRulingsPreserveApplicationAndLandingAuthority(t *testing.T) {
 	if err := os.WriteFile(path, []byte(conflict), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := AdoptionRulings(source.root, target); err == nil {
+	if _, err := AdoptionRulings(target); err == nil {
 		t.Fatal("conflicting authority was accepted")
 	}
 	after, err := os.ReadFile(path)
 	if err != nil || string(after) != conflict {
 		t.Fatalf("conflicting target was modified: %s, %v", after, err)
+	}
+}
+
+// The compiled policy rulings are exactly the authorities the compiled
+// landing classes cite, each one well-formed.
+func TestPolicyRulingsCoverEveryLandingClassAuthority(t *testing.T) {
+	t.Parallel()
+	var manifest landingClassManifest
+	if err := json.Unmarshal(landingClassesSource, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	cited := map[string]bool{}
+	for _, class := range manifest.Classes {
+		cited[class.AuthorizedBy] = true
+	}
+	compiled := map[string]bool{}
+	for _, ruling := range PolicyRulings() {
+		if id, ok := rulingRowID(ruling.Row); !ok || id != ruling.ID {
+			t.Fatalf("compiled ruling %s has a malformed row %q", ruling.ID, ruling.Row)
+		}
+		compiled[ruling.ID] = true
+	}
+	if !reflect.DeepEqual(cited, compiled) {
+		t.Fatalf("compiled rulings %v, landing classes cite %v", compiled, cited)
 	}
 }
 

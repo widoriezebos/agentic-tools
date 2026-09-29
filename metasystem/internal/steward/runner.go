@@ -24,6 +24,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	channelphase "github.com/widoriezebos/agentic-tools/metasystem/internal/channel/phase"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
@@ -135,18 +136,37 @@ func runnerContext(repoRoot, lineage string) *seat.RunnerContext {
 func RunLoop(repoRoot string, census WorkerCensus, revive func() error, interval time.Duration, cfg TickConfig) error {
 	return runLoopWithDependencies(repoRoot, census, revive, interval, cfg, runnerLoopDependencies{
 		Tick: RunTick, DeliverPending: DeliverPending, Resumable: ResumableIntent, Channel: channelphase.Run,
-		Now: runnerNow, Sleep: runnerSleep, AfterRecordPublished: runnerAfterRecordPublished,
+		TrimCaches: machineCacheTrimmer(nil, ""),
+		Now:        runnerNow, Sleep: runnerSleep, AfterRecordPublished: runnerAfterRecordPublished, SweepDisk: runnerSweepDisk,
 	})
 }
 
 type runnerLoopDependencies struct {
-	Tick                 func(string, TickConfig, WorkerCensus) (TickResult, error)
-	DeliverPending       func(string) (int, error)
-	Resumable            func(string) (string, bool, error)
-	Channel              func(context.Context, string) (int, error)
+	Tick           func(string, TickConfig, WorkerCensus) (TickResult, error)
+	DeliverPending func(string) (int, error)
+	Resumable      func(string) (string, bool, error)
+	Channel        func(context.Context, string) (int, error)
+	// TrimCaches trims the machine caches as the cycle's last step; nil
+	// trims nothing.
+	TrimCaches           func(context.Context, string, TickConfig) error
 	Now                  func() time.Time
 	Sleep                func(time.Duration)
 	AfterRecordPublished func()
+	// SweepDisk runs the disk sweeper's passes after the tick has returned
+	// and released arbitration (Part B 3.3); helm reports without acting.
+	SweepDisk func(top string, now time.Time, helm bool)
+}
+
+// runnerSweepDisk is the production sweep: both passes under the budget,
+// failures reported on stderr and never fatal to the loop.
+func runnerSweepDisk(top string, now time.Time, helmActive bool) {
+	mode := diskstore.ModeApply
+	if helmActive {
+		mode = diskstore.ModeReport
+	}
+	if _, err := SweepDiskStores(context.Background(), top, DiskPass{Mode: mode, Now: now, Clock: time.Now}); err != nil {
+		fmt.Fprintf(os.Stderr, "disk sweep: %v\n", err)
+	}
 }
 
 func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func() error, interval time.Duration, cfg TickConfig, deps runnerLoopDependencies) error {
@@ -222,6 +242,12 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "tick failed: %v\n", err)
 		}
+		// The disk sweep runs after the tick released arbitration and before
+		// the helm check: disk space belongs to the whole machine, so at the
+		// helm it still reports (the 2026-09-29 amendment) and acts on nothing.
+		if deps.SweepDisk != nil {
+			deps.SweepDisk(top, deps.Now(), helm.Active(top).Active)
+		}
 		// The helm is resolved here, after the tick returned and before any
 		// post-tick act, whatever the tick's outcome: a take that lands during
 		// the tick holds this pass, and the tick's decision stays on disk for
@@ -268,6 +294,14 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 			fmt.Fprintf(os.Stderr, "channel pending: %d undelivered: %v\n", undelivered, channelErr)
 		}
 		cancelChannel()
+		// The machine caches are trimmed last, after the tick released
+		// arbitration; the trim holds only its own per-cache flock, runs
+		// under its budget and ends at the stop file.
+		if deps.TrimCaches != nil {
+			if trimErr := deps.TrimCaches(context.Background(), top, cfg); trimErr != nil {
+				fmt.Fprintf(os.Stderr, "cache trim: %v\n", trimErr)
+			}
+		}
 		if stopped := runnerWait(top, interval, deps); stopped {
 			return nil
 		}

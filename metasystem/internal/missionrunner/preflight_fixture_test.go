@@ -190,18 +190,22 @@ func buildPreflightBed(t *testing.T, directive string, nested bool) *Engine {
 		os.MkdirAll(filepath.Join(gitInitDir, "docs"), 0o755)
 		os.WriteFile(filepath.Join(gitInitDir, "docs", "project-rules.md"), rules, 0o644)
 	}
-	os.WriteFile(filepath.Join(root, "metasystem.conf"),
-		[]byte("metasystem.runtimes=fake\nrole.default.runtime=fake\n"), 0o644)
+	conf := "metasystem.runtimes=fake\nrole.default.runtime=fake\n"
+	if nested {
+		// The nested template layout (stateroot's templateMode) is declared
+		// by the one signal, metasystem.template=true in the installation's
+		// metasystem.conf.
+		conf += "metasystem.template=true\n"
+	}
+	os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte(conf), 0o644)
 
 	fixtureGit(t, gitInitDir, "init", "-q", "-b", "main")
 	if nested {
-		// The nested template layout (stateroot's templateMode): the
-		// public mission actions keep this installation's state in it,
-		// as the runner's own root. The marker is excluded, never
-		// committed, so the projection sees only the installation.
-		os.MkdirAll(filepath.Join(gitInitDir, "development"), 0o755)
-		os.WriteFile(filepath.Join(gitInitDir, "development", "metasystem-design.md"), []byte("fixture template marker\n"), 0o644)
-		os.WriteFile(filepath.Join(gitInitDir, ".git", "info", "exclude"), []byte("/development/\n/docs/\n"), 0o644)
+		// The nested template layout: the public mission actions keep
+		// this installation's state in it, as the runner's own root. The
+		// rules copy is excluded, never committed, so the projection sees
+		// only the installation.
+		os.WriteFile(filepath.Join(gitInitDir, ".git", "info", "exclude"), []byte("/docs/\n"), 0o644)
 	}
 	fixtureGit(t, root, "config", "user.name", "fixture")
 	fixtureGit(t, root, "config", "user.email", "fixture@example.invalid")

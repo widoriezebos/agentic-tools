@@ -1310,3 +1310,46 @@ func TestProofConfigurationDigestIgnoresTheEvidenceRoot(t *testing.T) {
 		t.Fatalf("digest differs only by evidence root: %s vs %s", a, b)
 	}
 }
+
+// The proof configuration digest reads every key through the compiled table:
+// an overrides-only conf proves what the conf that spelled every default out
+// proved, a key the table marks as no proof input (a machine's interface
+// port, the admission cap) never moves it, and a proof input does.
+func TestProofConfigurationDigestDecidesPerKeyFromTheCompiledTable(t *testing.T) {
+	t.Parallel()
+	digest := func(committed, local string) string {
+		t.Helper()
+		conf := filepath.Join(t.TempDir(), "metasystem.conf")
+		if err := os.WriteFile(conf, []byte(committed), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if local != "" {
+			if err := os.WriteFile(conf+".local", []byte(local), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		value, err := effectiveProofConfigurationDigest(conf, []string{"HOME=" + t.TempDir()})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return value
+	}
+	var spelled strings.Builder
+	for _, setting := range config.CompiledSettings() {
+		if setting.Computed == "" {
+			spelled.WriteString(setting.Key + "=" + setting.Default + "\n")
+		}
+	}
+	base := digest("# overrides only\n", "")
+	if full := digest(spelled.String(), ""); full != base {
+		t.Fatalf("an overrides-only conf and the spelled-out defaults have different digests: %s vs %s", base, full)
+	}
+	for _, local := range []string{config.UIListenKey + "=127.0.0.1:9999\n", AdmissionCapKey + "=7\n"} {
+		if moved := digest("# overrides only\n", local); moved != base {
+			t.Fatalf("a key that is no proof input moved the digest: %q", local)
+		}
+	}
+	if moved := digest("suite.section-cap-min=30\n", ""); moved == base {
+		t.Fatal("a proof input override did not move the digest")
+	}
+}

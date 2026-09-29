@@ -10,19 +10,23 @@ import (
 )
 
 const (
-	ElapsedGracePercentKey     = "metasystem.budget.elapsed-grace-percent"
-	DefaultElapsedGracePercent = uint64(50)
-	MaxElapsedGracePercent     = uint64(200)
-	SliceNormHoursKey          = "metasystem.budget.slice-norm-hours"
-	DefaultSliceNormHours      = uint64(4)
-	GoalNormJobMinutesKey      = "metasystem.budget.goal-norm-job-minutes" // retired tombstone only
-	ReviewRoundMaxKey          = "metasystem.budget.review-round-max"
-	DefaultReviewRoundMax      = uint64(3)
-	Tier1BudgetKey             = "metasystem.budget.tier-1"
-	Tier2BudgetKey             = "metasystem.budget.tier-2"
-	Tier3BudgetKey             = "metasystem.budget.tier-3"
-	CarryOpenMaxKey            = "metasystem.budget.carry-open-max"
-	DefaultCarryOpenMax        = uint64(1)
+	ElapsedGracePercentKey = "metasystem.budget.elapsed-grace-percent"
+	MaxElapsedGracePercent = uint64(200)
+	SliceNormHoursKey      = "metasystem.budget.slice-norm-hours"
+	GoalNormJobMinutesKey  = "metasystem.budget.goal-norm-job-minutes" // retired tombstone only
+	ReviewRoundMaxKey      = "metasystem.budget.review-round-max"
+	Tier1BudgetKey         = "metasystem.budget.tier-1"
+	Tier2BudgetKey         = "metasystem.budget.tier-2"
+	Tier3BudgetKey         = "metasystem.budget.tier-3"
+	CarryOpenMaxKey        = "metasystem.budget.carry-open-max"
+)
+
+// The compiled budget-law defaults (defaults.go).
+var (
+	DefaultElapsedGracePercent = uintDefault(ElapsedGracePercentKey)
+	DefaultSliceNormHours      = uintDefault(SliceNormHoursKey)
+	DefaultReviewRoundMax      = uintDefault(ReviewRoundMaxKey)
+	DefaultCarryOpenMax        = uintDefault(CarryOpenMaxKey)
 )
 
 // CarryOpenMax is the committed budget-law ceiling for simultaneous open
@@ -32,7 +36,7 @@ func CarryOpenMax(confPath string) (uint64, error) {
 	if err != nil {
 		return 0, err
 	}
-	value, err := set.lawValue(CarryOpenMaxKey, strconv.FormatUint(DefaultCarryOpenMax, 10))
+	value, err := set.lawValue(CarryOpenMaxKey, MustDefault(CarryOpenMaxKey))
 	if err != nil {
 		return 0, fmt.Errorf("resolve %s: %w", CarryOpenMaxKey, err)
 	}
@@ -50,7 +54,7 @@ var retiredKeys = map[string]string{
 
 // ReviewRoundMax is the ceiling applied independently to each critique class.
 func ReviewRoundMax(confPath string) (uint64, error) {
-	value, err := budgetLawValue(confPath, ReviewRoundMaxKey, strconv.FormatUint(DefaultReviewRoundMax, 10))
+	value, err := budgetLawValue(confPath, ReviewRoundMaxKey, MustDefault(ReviewRoundMaxKey))
 	if err != nil {
 		return 0, fmt.Errorf("resolve %s: %w", ReviewRoundMaxKey, err)
 	}
@@ -126,15 +130,14 @@ func LoadTierBoxSet(confPath string) (*TierBoxSet, error) {
 }
 
 func loadTierBoxSet(confPath string, readFile func(string) ([]byte, error)) (*TierBoxSet, error) {
-	committed := strictBudgetSettings{}
 	content, err := readFile(confPath)
 	if err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
 			return nil, fmt.Errorf("cannot read metasystem configuration: %s: %w", confPath, err)
 		}
-	} else {
-		committed = parseStrictBudgetSettings(content)
 	}
+	// The committed layer is the file over the compiled defaults.
+	committed := parseStrictBudgetSettings([]byte(EffectiveCommittedContent(string(content))))
 
 	set := &TierBoxSet{confPath: confPath, fixture: committed.last("metasystem.runtimes") == "fake", committed: committed}
 	localPath := confPath + ".local"
@@ -210,7 +213,7 @@ func (s *TierBoxSet) lawValue(key, fallback string) (string, error) {
 }
 
 func (s *TierBoxSet) reviewRoundMax() (uint64, error) {
-	value, err := s.lawValue(ReviewRoundMaxKey, strconv.FormatUint(DefaultReviewRoundMax, 10))
+	value, err := s.lawValue(ReviewRoundMaxKey, MustDefault(ReviewRoundMaxKey))
 	if err != nil {
 		return 0, fmt.Errorf("resolve %s: %w", ReviewRoundMaxKey, err)
 	}
@@ -231,8 +234,7 @@ func (s *TierBoxSet) TierBox(tier uint8) (goalbudget.Budget, error) {
 	if err != nil {
 		return goalbudget.Budget{}, err
 	}
-	defaults := map[uint8]string{1: "1h/3/360m/1/0", 2: "4h/6/720m/1/2", 3: "8h/10/1200m/1/3"}
-	value, err := s.lawValue(key, defaults[tier])
+	value, err := s.lawValue(key, MustDefault(key))
 	if err != nil {
 		return goalbudget.Budget{}, fmt.Errorf("resolve %s: %w", key, err)
 	}
@@ -262,8 +264,7 @@ func TierBox(confPath string, tier uint8) (goalbudget.Budget, error) {
 // ElapsedGracePercent resolves the grace band from the committed root. A root
 // that explicitly declares the fake runtime may use fixture overrides.
 func ElapsedGracePercent(confPath string) (uint64, error) {
-	value, err := budgetLawValue(confPath, ElapsedGracePercentKey,
-		strconv.FormatUint(DefaultElapsedGracePercent, 10))
+	value, err := budgetLawValue(confPath, ElapsedGracePercentKey, MustDefault(ElapsedGracePercentKey))
 	if err != nil {
 		return 0, fmt.Errorf("resolve %s: %w", ElapsedGracePercentKey, err)
 	}
@@ -287,8 +288,7 @@ func parseElapsedGracePercent(value string) (uint64, error) {
 // admission boundary, so a malformed configured value refuses loudly instead
 // of silently replacing the human's word with the default.
 func SliceNormHours(confPath string) (uint64, error) {
-	value, err := budgetLawValue(confPath, SliceNormHoursKey,
-		strconv.FormatUint(DefaultSliceNormHours, 10))
+	value, err := budgetLawValue(confPath, SliceNormHoursKey, MustDefault(SliceNormHoursKey))
 	if err != nil {
 		return 0, fmt.Errorf("resolve %s: %w", SliceNormHoursKey, err)
 	}
@@ -328,9 +328,12 @@ func budgetLawValue(confPath, key, fallback string) (string, error) {
 				key, localPath)
 		}
 	}
-	value, present, err := ConfLookup(confPath, key)
+	value, present, err := CommittedLookup(confPath, key)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
+			if compiled, ok := CompiledDefault(key); ok {
+				return compiled, nil
+			}
 			return fallback, nil
 		}
 		return "", err
@@ -350,14 +353,16 @@ func fixtureBudgetLawRoot(confPath string) bool {
 // IntentReviewToolCallsKey is the independent read's tool-call allowance a
 // public build uses when neither its brief nor its caller names one.
 const (
-	IntentReviewToolCallsKey     = "intent.review.tool-calls"
-	DefaultIntentReviewToolCalls = 48
+	IntentReviewToolCallsKey = "intent.review.tool-calls"
 )
+
+// DefaultIntentReviewToolCalls is the compiled default (defaults.go).
+var DefaultIntentReviewToolCalls = intDefault(IntentReviewToolCallsKey)
 
 // IntentReviewToolCalls resolves the read allowance through the ordinary
 // configuration layers.
 func IntentReviewToolCalls(confPath string) (int, error) {
-	value, _, err := Get(GetParams{Key: IntentReviewToolCallsKey, ConfPath: confPath, Default: strconv.Itoa(DefaultIntentReviewToolCalls), DefaultSet: true})
+	value, _, err := Get(GetParams{Key: IntentReviewToolCallsKey, ConfPath: confPath})
 	if err != nil {
 		return 0, fmt.Errorf("resolve %s: %w", IntentReviewToolCallsKey, err)
 	}

@@ -33,6 +33,24 @@ type CustodyDeathDependencies struct {
 	PGID       func(pid int64) (int64, error)
 	TaggedScan func(tag string) census.TaggedProcessCensus
 	MatchesTag func(argv []string, tag string) bool
+	// ExpireMarker expires a pre-fork marker the proof found bound to a dead
+	// supervisor; nil removes it. The observation form (ObserveMarkerExpiry)
+	// records the path and removes nothing, so a plan changes nothing.
+	ExpireMarker func(path string) error
+}
+
+// errMarkerNotExpired is the observation form's answer: the marker would
+// expire, and was left in place.
+var errMarkerNotExpired = errors.New("pre-fork marker observed, not expired")
+
+// ObserveMarkerExpiry is the ExpireMarker of an observation: it appends the
+// marker's path to paths and leaves the marker, and the proof then answers
+// DEFERRED with "prefork-marker-would-expire".
+func ObserveMarkerExpiry(paths *[]string) func(string) error {
+	return func(path string) error {
+		*paths = append(*paths, path)
+		return errMarkerNotExpired
+	}
 }
 
 func custodyDeathDependenciesWithDefaults(dependencies CustodyDeathDependencies) CustodyDeathDependencies {
@@ -133,7 +151,13 @@ func ProveCustodyDeath(root string, record map[string]any, dependencies CustodyD
 			if !clear {
 				return CustodyDeathResult{Outcome: CustodyDeathDeferred, Reason: reason}
 			}
-			if removeErr := os.Remove(marker.path); removeErr != nil && !os.IsNotExist(removeErr) {
+			expire := dependencies.ExpireMarker
+			if expire == nil {
+				expire = os.Remove
+			}
+			if removeErr := expire(marker.path); errors.Is(removeErr, errMarkerNotExpired) {
+				return CustodyDeathResult{Outcome: CustodyDeathDeferred, Reason: "prefork-marker-would-expire"}
+			} else if removeErr != nil && !os.IsNotExist(removeErr) {
 				return CustodyDeathResult{Outcome: CustodyDeathDeferred, Reason: "prefork-marker-expiry-failed"}
 			}
 			// This pass began with advance-written evidence standing, so it

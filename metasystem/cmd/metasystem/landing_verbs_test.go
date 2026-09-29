@@ -113,7 +113,7 @@ func TestChainLandingRecertifiesAfterBaseMove(t *testing.T) {
 	baseSource := "base-one\nkeep-two\nuntested-three\nkeep-four\nbase-five\nkeep-six\n"
 	writeReceiptFixture(t, project, "internal/app/source.txt", baseSource)
 	writeReceiptFixture(t, project, ".gitignore", "artifacts/\n")
-	writeReceiptFixture(t, project, "metasystem.conf", "metasystem.version=1\nrole.code-critic.runtime=fake\n")
+	writeReceiptFixture(t, project, "metasystem.conf", "metasystem.version=1\nrole.code-critic.runtime=fake\ntesting.contract=\n")
 	writeReceiptFixture(t, top, "sibling.txt", "base sibling\n")
 	runReceiptGit(t, top, "init", "-q", "-b", "main")
 	runReceiptGit(t, top, "config", "user.name", "recertification fixture")
@@ -2234,7 +2234,11 @@ func TestCanonicalValidatorEnvironmentOwnsTheGateGoFlags(t *testing.T) {
 	inherited := []string{"PATH=/usr/bin:/bin", "GOCACHE=/fixture/cache/go-build", "STATICCHECK_CACHE=/fixture/cache/staticcheck",
 		"GOFLAGS=-mod=mod -tags=ambient", "METASYSTEM_GATE_FROZEN_TOOLCHAIN=0"}
 	var owned []string
-	for _, entry := range canonicalValidatorEnvironmentFrom(inherited) {
+	environment, err := canonicalValidatorEnvironmentFrom(inherited, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range environment {
 		if strings.HasPrefix(entry, "GOFLAGS=") || strings.HasPrefix(entry, "METASYSTEM_GATE_FROZEN_TOOLCHAIN=") {
 			owned = append(owned, entry)
 		}

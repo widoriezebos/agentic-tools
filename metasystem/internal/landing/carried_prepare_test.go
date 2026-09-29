@@ -41,7 +41,7 @@ func newCarriedStageFixture(t *testing.T) *carriedStageFixture {
 	}
 	runAdvanceGit(t, seed, "init", "-q", "-b", "main")
 	configureAdvanceGit(t, seed)
-	writeAdvanceFile(t, seed, "development/metasystem-design.md", "# design\n")
+	writeAdvanceFile(t, seed, "metasystem/metasystem.conf", "metasystem.template=true\n")
 	writeAdvanceFile(t, seed, "benchmark/run.sh", "seed\n")
 	writeAdvanceFile(t, seed, "metasystem/.gitignore", "artifacts/\n")
 	writeAdvanceFile(t, seed, "metasystem/product.txt", "one\ntwo\nthree\n")

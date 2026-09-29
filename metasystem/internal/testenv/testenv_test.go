@@ -19,6 +19,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gocache"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
@@ -123,7 +124,9 @@ func processNamespaceCacheCaseEnvironment(environment []string, mode, base strin
 	for _, entry := range environment {
 		name, _, _ := strings.Cut(entry, "=")
 		switch name {
-		case "GOCACHE", "STATICCHECK_CACHE", "GOMODCACHE", "GOPATH", "GOTOOLCHAIN", "GOPROXY", "HOME", "XDG_CACHE_HOME", "TESTENV_PROCESS_NAMESPACE_HELPER_MODE", "TEST_TELEMETRY_DIR":
+		// The cache context is its own case
+		// (TestANestedChildUnderAReplacedHomeResolvesTheOuterPairThroughTheContext).
+		case "GOCACHE", "STATICCHECK_CACHE", "GOMODCACHE", "GOPATH", "GOTOOLCHAIN", "GOPROXY", "HOME", "XDG_CACHE_HOME", "TESTENV_PROCESS_NAMESPACE_HELPER_MODE", "TEST_TELEMETRY_DIR", gocache.ContextEnv:
 			continue
 		}
 		filtered = append(filtered, entry)

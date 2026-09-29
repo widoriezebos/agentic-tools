@@ -32,14 +32,15 @@ func parseSettings(content string, visit func(lineNo int, key, value string, ok 
 	}
 }
 
-// ConfValue returns the value of key from the given metasystem.conf path, or
-// def when the file is unreadable or the key is absent. A line is a setting
-// when it is non-blank, not a comment, and contains '='; the LAST such line
-// for a key wins.
+// ConfValue returns the value of key from the given metasystem.conf path,
+// else the key's compiled default (defaults.go) when it holds under the
+// file's runtime selection, else def. A line is a setting when it is
+// non-blank, not a comment, and contains '='; the LAST such line for a key
+// wins.
 func ConfValue(confPath, key, def string) string {
 	content, err := os.ReadFile(confPath)
 	if err != nil {
-		return def
+		content = nil
 	}
 	value := def
 	found := false
@@ -52,8 +53,11 @@ func ConfValue(confPath, key, def string) string {
 			found = true
 		}
 	})
-	if !found {
-		return def
+	if found {
+		return value
 	}
-	return value
+	if compiled, ok := applicableDefault(key, fileRuntimes(string(content))); ok {
+		return compiled
+	}
+	return def
 }

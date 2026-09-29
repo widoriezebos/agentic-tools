@@ -3,6 +3,7 @@ package adapter
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
@@ -169,7 +170,7 @@ func CodexPermissionSettings(permissionsPath, recordPath string) (sandbox, netwo
 // the workspace — the worktree git metadata a commit needs (issue #5) —
 // for explicit sandbox grants. Roots inside the workspace are already
 // covered by workspace-write; an empty workspace grants nothing extra.
-func CodexExtraWriteRoots(permissionsPath, recordPath, workspace string) ([]string, error) {
+func CodexExtraWriteRoots(permissionsPath, recordPath, workspace string, cacheDirs []string) ([]string, error) {
 	var envelope map[string]any
 	if recordPath != "" {
 		record, err := readObject(recordPath)
@@ -186,8 +187,8 @@ func CodexExtraWriteRoots(permissionsPath, recordPath, workspace string) ([]stri
 		envelope = value
 	}
 	var outside []string
-	for _, root := range stringList(envelope["writeRoots"]) {
-		if workspace == "" || !strings.HasPrefix(root+"/", workspace+"/") {
+	for _, root := range append(stringList(envelope["writeRoots"]), cacheDirs...) {
+		if (workspace == "" || !strings.HasPrefix(root+"/", workspace+"/")) && !slices.Contains(outside, root) {
 			outside = append(outside, root)
 		}
 	}

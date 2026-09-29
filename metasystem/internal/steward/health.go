@@ -92,6 +92,7 @@ var healthRoleOrder = []HealthRole{
 	RoleProofAttempts,
 	RoleProofAdmission,
 	RoleCapabilitySnapshots,
+	RoleDisk,
 }
 
 // KnownHealthRole reports whether role belongs to the closed health schema.
@@ -489,6 +490,7 @@ func evaluateHealthRolesWithMeasure(repoRoot, metasystemRoot string, now time.Ti
 		timed(func() RoleVerdict { return checkProofAttempts(repoRoot, prober) }),
 		timed(func() RoleVerdict { return checkProofAdmission(repoRoot, now, inspectHostLeases) }),
 		timed(func() RoleVerdict { return checkCapabilitySnapshots(repoRoot, metasystemRoot, now) }),
+		timed(func() RoleVerdict { return checkDisk(repoRoot) }),
 	}, spendObservation
 }
 
@@ -648,7 +650,7 @@ func checkHookFreshnessAt(repoRoot string, now time.Time, currentAttempt bool) R
 // templates under metasystem/internal/runtimes/enforcement.
 const stopHookBudgetSeconds = 60
 
-const defaultStopHookSlowSeconds = 15
+var defaultStopHookSlowSeconds = config.MustIntDefault("steward.stop-slow-sec")
 
 func checkStopHookDuration(repoRoot string) RoleVerdict {
 	reread := fmt.Sprintf("metasystem system check --repo %q", repoRoot)
@@ -898,7 +900,7 @@ func checkStewardRunnerWithCadence(repoRoot string, now time.Time, prober identi
 }
 
 func runnerTickPatience(repoRoot string, lastDurationMillis int64) (time.Duration, error) {
-	floorSeconds := 120
+	floorSeconds := config.MustIntDefault("steward.tick-patience-sec")
 	if _, statErr := os.Stat(filepath.Join(repoRoot, "metasystem.conf")); statErr == nil || !os.IsNotExist(statErr) {
 		configured, err := boundedConfig(repoRoot, "steward.tick-patience-sec", floorSeconds, 1)
 		if err != nil {
@@ -1518,7 +1520,7 @@ func checkCapabilitySnapshots(repoRoot, metasystemRoot string, now time.Time) Ro
 	if runtimeValue == "none" {
 		return roleAlive(RoleCapabilitySnapshots, "no runtime capability snapshots are configured")
 	}
-	maxAgeDays, err := nonnegativeConfig(metasystemRoot, "capability.snapshot-max-age-days", 30)
+	maxAgeDays, err := nonnegativeConfig(metasystemRoot, "capability.snapshot-max-age-days", config.MustIntDefault("capability.snapshot-max-age-days"))
 	if err != nil {
 		return roleUnknown(RoleCapabilitySnapshots, "capability.snapshot-max-age-days is unreadable", "metasystem settings check --repo "+strconv.Quote(metasystemRoot))
 	}

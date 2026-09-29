@@ -32,9 +32,11 @@ func hostFixture(t *testing.T, nested bool) (repo, installation string) {
 	installation = repo
 	if nested {
 		installation = filepath.Join(repo, "metasystem")
-		writeHostFile(t, filepath.Join(repo, "development", "metasystem-design.md"), "design\n", 0o644)
 	}
 	populateHostInstallation(t, installation)
+	if nested {
+		writeHostFile(t, filepath.Join(installation, "metasystem.conf"), "metasystem.runtimes=claude\nmetasystem.template=true\n", 0o644)
+	}
 	return repo, installation
 }
 
@@ -44,8 +46,8 @@ func hostGitFreeNestedFixture(t *testing.T, allowedPaths ...string) (string, sta
 	if err := os.MkdirAll(repo, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	writeHostFile(t, filepath.Join(repo, "development", "metasystem-design.md"), "design\n", 0o644)
 	populateHostInstallation(t, filepath.Join(repo, "metasystem"))
+	writeHostFile(t, filepath.Join(repo, "metasystem", "metasystem.conf"), "metasystem.runtimes=claude\nmetasystem.template=true\n", 0o644)
 	canonicalRepo, err := filepath.EvalSymlinks(repo)
 	if err != nil {
 		t.Fatal(err)

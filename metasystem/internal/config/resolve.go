@@ -201,8 +201,11 @@ func Get(p GetParams) (value string, code int, err error) {
 		return env, 0, nil
 	}
 
+	// An empty ConfPath is no configuration file: the compiled defaults
+	// under the environment and the flag, nothing read from disk.
+	hasFile := p.ConfPath != ""
 	localPath := p.ConfPath + ".local"
-	if p.Mode != "" && (roleRuntimeKey.MatchString(p.Key) || roleModelKey.MatchString(p.Key)) && isFile(localPath) {
+	if hasFile && p.Mode != "" && (roleRuntimeKey.MatchString(p.Key) || roleModelKey.MatchString(p.Key)) && isFile(localPath) {
 		// The local overlay outranks the committed file for MODE-scoped
 		// role keys exactly as it does for base keys: a machine carrying
 		// its model lanes by hand (R-25) writes mode.<m>.role.<r>.* into
@@ -217,7 +220,7 @@ func Get(p GetParams) (value string, code int, err error) {
 			return v, 0, nil
 		}
 	}
-	if isFile(localPath) {
+	if hasFile && isFile(localPath) {
 		v, found, err := ConfLookup(localPath, p.Key)
 		if err != nil {
 			return "", 1, err
@@ -227,8 +230,27 @@ func Get(p GetParams) (value string, code int, err error) {
 		}
 	}
 
+	// The committed layer is the file over the compiled defaults
+	// (defaults.go): a mode-scoped key, file then default, outranks the
+	// base key, file then default, as the same lines in the shipped file did.
+	runtimes := effectiveRuntimes(p.ConfPath, lookupEnv)
 	if p.Mode != "" && (roleRuntimeKey.MatchString(p.Key) || roleModelKey.MatchString(p.Key)) {
-		v, found, err := ConfLookup(p.ConfPath, "mode."+p.Mode+"."+p.Key)
+		if hasFile {
+			v, found, err := ConfLookup(p.ConfPath, "mode."+p.Mode+"."+p.Key)
+			if err != nil {
+				return "", 1, err
+			}
+			if found {
+				return v, 0, nil
+			}
+		}
+		if v, ok := applicableDefault("mode."+p.Mode+"."+p.Key, runtimes); ok {
+			return v, 0, nil
+		}
+	}
+
+	if hasFile {
+		v, found, err := ConfLookup(p.ConfPath, p.Key)
 		if err != nil {
 			return "", 1, err
 		}
@@ -236,12 +258,9 @@ func Get(p GetParams) (value string, code int, err error) {
 			return v, 0, nil
 		}
 	}
-
-	v, found, err := ConfLookup(p.ConfPath, p.Key)
-	if err != nil {
-		return "", 1, err
-	}
-	if found {
+	// A compiled default outranks a caller's fallback: each default lives
+	// once, in the table.
+	if v, ok := applicableDefault(p.Key, runtimes); ok {
 		return v, 0, nil
 	}
 
@@ -276,6 +295,25 @@ func ConfLookup(path, key string) (value string, found bool, err error) {
 	}
 	if len(matches) == 1 {
 		return matches[0], true, nil
+	}
+	return "", false, nil
+}
+
+// CommittedLookup reads one key of the committed layer: the file's own line,
+// else the key's compiled default when it holds under the file's runtime
+// selection (defaults.go). It is strict on duplicates and on an unreadable
+// file, as ConfLookup is.
+func CommittedLookup(confPath, key string) (value string, found bool, err error) {
+	value, found, err = ConfLookup(confPath, key)
+	if err != nil || found {
+		return value, found, err
+	}
+	content, readErr := os.ReadFile(confPath)
+	if readErr != nil {
+		return "", false, fmt.Errorf("cannot read metasystem configuration: %s: %w", confPath, readErr)
+	}
+	if compiled, ok := applicableDefault(key, fileRuntimes(string(content))); ok {
+		return compiled, true, nil
 	}
 	return "", false, nil
 }
@@ -327,6 +365,24 @@ func Keys(confPath, prefix string, environ []string) []string {
 	if strings.HasPrefix(EvidenceRootKey, prefix) {
 		add(EvidenceRootKey)
 	}
+	// Every applicable compiled default is a configured key too.
+	lookup := func(name string) (string, bool) {
+		for index := len(environ) - 1; index >= 0; index-- {
+			if key, value, ok := strings.Cut(environ[index], "="); ok && key == name {
+				return value, true
+			}
+		}
+		return "", false
+	}
+	runtimes := effectiveRuntimes(confPath, lookup)
+	for _, setting := range compiledSettings {
+		if !strings.HasPrefix(setting.Key, prefix) {
+			continue
+		}
+		if _, ok := applicableDefault(setting.Key, runtimes); ok {
+			add(setting.Key)
+		}
+	}
 	return keys
 }
 
@@ -371,6 +427,11 @@ func KeyOrigin(p GetParams) (string, error) {
 	if _, ok := lookupEnv(EnvName(p.Key)); ok {
 		return "env", nil
 	}
+	if p.ConfPath == "" {
+		// No configuration file: what the environment does not set is
+		// the compiled default.
+		return "default", nil
+	}
 	localPath := p.ConfPath + ".local"
 	if isFile(localPath) {
 		_, found, err := ConfLookup(localPath, p.Key)
@@ -381,6 +442,7 @@ func KeyOrigin(p GetParams) (string, error) {
 			return "conf-local", nil
 		}
 	}
+	runtimes := effectiveRuntimes(p.ConfPath, lookupEnv)
 	if p.Mode != "" && (roleRuntimeKey.MatchString(p.Key) || roleModelKey.MatchString(p.Key)) {
 		_, found, err := ConfLookup(p.ConfPath, "mode."+p.Mode+"."+p.Key)
 		if err != nil {
@@ -388,6 +450,9 @@ func KeyOrigin(p GetParams) (string, error) {
 		}
 		if found {
 			return "conf", nil
+		}
+		if _, ok := applicableDefault("mode."+p.Mode+"."+p.Key, runtimes); ok {
+			return "default", nil
 		}
 	}
 	_, found, err := ConfLookup(p.ConfPath, p.Key)

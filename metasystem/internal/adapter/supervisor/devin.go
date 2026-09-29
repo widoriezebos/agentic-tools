@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -105,7 +106,7 @@ func devinProbe(d Deps, args []string) int {
 // config must never fail open into D61's dangerous path. The second result
 // is false on a refusal, whose reason is the first.
 func devinTransport(d Deps) (string, bool) {
-	value, err := d.configValue("dispatch.transport.devin", "legacy")
+	value, err := d.configValue("dispatch.transport.devin", config.MustDefault("dispatch.transport.devin"))
 	if err != nil {
 		return "transport-config-unreadable", false
 	}
@@ -252,7 +253,7 @@ func (devinOps) prepareLegacy(t *Turn, p *devinTurn) (Launch, error) {
 	}
 	// Existing Devin hooks can backfill the signal file from their stable
 	// session_id payload; the baseline remains `devin list`.
-	env := withEnv([]string{"METASYSTEM_DEVIN_SESSION_SIGNAL=" + p.signal}, jobGitQuarantineEnv(d.git(), t.Workspace)...)
+	env := withEnv([]string{"METASYSTEM_DEVIN_SESSION_SIGNAL=" + p.signal}, delegateRoundEnv(d, t.Workspace)...)
 	return Launch{Argv: command, Env: env, StdoutPath: raw, Private: p,
 		BeforeLaunch: func() (*Refusal, error) {
 			// --config REPLACES the user configuration, so the job's config
@@ -293,7 +294,7 @@ func (devinOps) prepareACP(t *Turn, p *devinTurn) (Launch, error) {
 	// delegate-side server from the host CLI's internal raw `devin acp`
 	// helper (issue #12).
 	return Launch{Argv: []string{"devin", "acp"}, Argv0: "devin-delegate-acp",
-		Env: jobGitQuarantineEnv(d.git(), t.Workspace), Protocol: protocol, Private: p}, nil
+		Env: delegateRoundEnv(d, t.Workspace), Protocol: protocol, Private: p}, nil
 }
 
 // devinProtocol is the ACP launch for an envelope: the pre-launch envelope
@@ -623,7 +624,7 @@ func repairInvoke(t *Turn, p *devinTurn, promptFile, outputFile string) int {
 		"--export", filepath.Join(t.Dir, "transcript.repair-1.atif.json"))
 	command.Args[0] = "devin"
 	command.Dir = t.Workspace
-	command.Env = withEnv(t.Env, jobGitQuarantineEnv(d.git(), t.Workspace)...)
+	command.Env = withEnv(t.Env, delegateRoundEnv(d, t.Workspace)...)
 	command.Stdout = output
 	command.Stderr = t.Log
 	return exitStatus(command.Run())

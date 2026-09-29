@@ -73,6 +73,20 @@ func validateWithRunner(confPath, repoRoot string, runner gitRunner) (tiersAbsen
 		}
 	})
 
+	// The committed layer is the file over the compiled defaults
+	// (defaults.go): a key the file does not name validates as its
+	// applicable default, exactly as the full shipped file did.
+	fileSelection := fileRuntimes(string(content))
+	for _, setting := range compiledSettings {
+		if _, present := values[setting.Key]; present {
+			continue
+		}
+		if value, ok := applicableDefault(setting.Key, fileSelection); ok {
+			values[setting.Key] = value
+			order = append(order, setting.Key)
+		}
+	}
+
 	// The .local override contributes capability floors here. Budget settings
 	// are checked with the other numeric knobs below; other keys are the
 	// developer's own and not template invariants.
@@ -129,14 +143,10 @@ func validateWithRunner(confPath, repoRoot string, runner gitRunner) (tiersAbsen
 		}
 	}
 
-	// The runtime roster gates almost everything else.
-	if _, ok := values["metasystem.runtimes"]; !ok {
-		add("metasystem.runtimes is required")
-	}
-	contractRel, hasTestingContract := values["testing.contract"]
-	if !hasTestingContract {
-		add("testing.contract is required")
-	} else if filepath.IsAbs(contractRel) || filepath.ToSlash(filepath.Clean(contractRel)) != contractRel || strings.HasPrefix(contractRel, "../") {
+	// The runtime roster gates almost everything else. It and the testing
+	// contract always have a value: the file's, else the compiled default.
+	contractRel := values["testing.contract"]
+	if filepath.IsAbs(contractRel) || filepath.ToSlash(filepath.Clean(contractRel)) != contractRel || strings.HasPrefix(contractRel, "../") {
 		add("testing.contract must be a relative normalized path")
 	} else {
 		contractPath := filepath.Join(filepath.Dir(confPath), filepath.FromSlash(contractRel))
@@ -521,6 +531,7 @@ func validateWithRunner(confPath, repoRoot string, runner gitRunner) (tiersAbsen
 		"watch.interval-sec", "watch.stale-min", "watch.cap-min",
 		"census.log-max-bytes", "metasystem.counselor.brief-cadence-hours", "dispatch.cap-max",
 		"steward.tick-patience-sec", "steward.stop-slow-sec", IntentReviewToolCallsKey,
+		DiskGoCacheCapGiBKey, DiskDelegateGoCacheCapGiBKey, DiskStaticcheckCacheCapGiBKey, DiskGoCacheKeepHoursKey, DiskCacheTrimBudgetSecKey,
 	} {
 		if raw, present := values[knob]; present {
 			if parsed, parseErr := strconv.Atoi(raw); parseErr != nil || parsed < 1 {
@@ -528,6 +539,8 @@ func validateWithRunner(confPath, repoRoot string, runner gitRunner) (tiersAbsen
 			}
 		}
 	}
+	// The disk-lifetime settings of Part B 3.13, in every source.
+	errs = append(errs, validateDiskSettings(confPath, values, os.LookupEnv)...)
 	if raw, present := values["dispatch.return-margin-min"]; present {
 		if parsed, parseErr := strconv.Atoi(raw); parseErr != nil || parsed < 0 {
 			add("dispatch.return-margin-min must be a non-negative integer, got %s", pyRepr(raw))
@@ -655,9 +668,9 @@ func validateWithRunner(confPath, repoRoot string, runner gitRunner) (tiersAbsen
 	}
 
 	// Registration is adopted-repository state, not a template invariant (the
-	// template carries development/metasystem-design.md). The fake runtime is a
+	// template declares metasystem.template=true). The fake runtime is a
 	// fixture adapter with no external registration.
-	if !isFile(filepath.Join(repo, "development", "metasystem-design.md")) {
+	if !TemplateMode(filepath.Dir(confPath)) {
 		for _, runtime := range sortedKeysOf(runtimeSet) {
 			declaration, _ := runtimereg.Lookup(runtime)
 			for _, relative := range declaration.RegistrationDirs {

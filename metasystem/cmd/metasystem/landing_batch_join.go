@@ -334,7 +334,7 @@ func productionBatchProtectedTestsWithRawSource(root, baseTree, candidateTree st
 		return err
 	}
 	confPath := filepath.Join(installationRoot, "metasystem.conf")
-	contractRel, present, err := config.ConfLookup(confPath, "testing.contract")
+	contractRel, present, err := config.CommittedLookup(confPath, "testing.contract")
 	if err != nil {
 		return err
 	}

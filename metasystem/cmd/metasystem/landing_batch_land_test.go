@@ -46,7 +46,7 @@ func TestBatchLandReceiptsRunFromNestedModuleRoot(t *testing.T) {
 	}
 	for path, content := range map[string]string{
 		filepath.Join(module, "go.mod"):                                  "module fixture\n",
-		filepath.Join(module, "metasystem.conf"):                         "",
+		filepath.Join(module, "metasystem.conf"):                         "metasystem.template=true\n",
 		filepath.Join(repository, "development", "metasystem-design.md"): "template\n",
 	} {
 		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {

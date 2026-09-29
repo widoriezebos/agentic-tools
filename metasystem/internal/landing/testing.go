@@ -136,7 +136,7 @@ func createTestingReceiptAtWithWorkspace(installationRoot, tree string, result p
 }
 
 func testingContractEnabled(root string) bool {
-	value, present, err := config.ConfLookup(filepath.Join(root, "metasystem.conf"), "testing.contract")
+	value, present, err := config.CommittedLookup(filepath.Join(root, "metasystem.conf"), "testing.contract")
 	return err == nil && present && value != ""
 }
 
@@ -282,7 +282,7 @@ func testingReceiptPostureWithWorkspace(installationRoot string, result proofrun
 		return "", "", err
 	}
 	confPath := filepath.Join(installationRoot, "metasystem.conf")
-	contract, _, err := config.ConfLookup(confPath, "testing.contract")
+	contract, _, err := config.CommittedLookup(confPath, "testing.contract")
 	if err != nil {
 		return "", "", err
 	}

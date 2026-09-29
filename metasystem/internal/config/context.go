@@ -9,14 +9,18 @@ import (
 )
 
 const (
-	ContextCeilingTokensKey                 = "context.ceiling.tokens"
-	ContextHandoffMarginTokensKey           = "context.handoff.margin.tokens"
-	ContextHandoffNoteDirectoryPrefix       = "context.handoff.note-directory."
-	ContextToolGateModeKey                  = "context.toolgate.mode"
-	DefaultContextCeilingTokens       int64 = 250000
-	DefaultContextHandoffMarginTokens int64 = 145000
+	ContextCeilingTokensKey           = "context.ceiling.tokens"
+	ContextHandoffMarginTokensKey     = "context.handoff.margin.tokens"
+	ContextHandoffNoteDirectoryPrefix = "context.handoff.note-directory."
+	ContextToolGateModeKey            = "context.toolgate.mode"
 	// The construction line is 150000 proof tokens minus 3 handoff calls of at most 14454 tokens.
 	ContextConstructionLineTokens int64 = 106638
+)
+
+// The compiled context defaults (defaults.go).
+var (
+	DefaultContextCeilingTokens       = int64Default(ContextCeilingTokensKey)
+	DefaultContextHandoffMarginTokens = int64Default(ContextHandoffMarginTokensKey)
 )
 
 type Budget struct{ Ceiling, Margin, Trigger int64 }
@@ -73,7 +77,7 @@ func ToolGateMode(root string) (string, error) {
 	if err := validateContextKeys(confPath); err != nil {
 		return "", err
 	}
-	mode, err := budgetLawValue(confPath, ContextToolGateModeKey, "observe")
+	mode, err := budgetLawValue(confPath, ContextToolGateModeKey, MustDefault(ContextToolGateModeKey))
 	if err != nil {
 		return "", contextConfigInvalid(ContextToolGateModeKey, "%v", err)
 	}

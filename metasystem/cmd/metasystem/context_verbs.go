@@ -149,7 +149,7 @@ func contextWindow(root string) (contextWindowView, error) {
 			break
 		}
 	}
-	ceilingParams := config.GetParams{Key: config.ContextCeilingTokensKey, ConfPath: confPath, Default: strconv.FormatInt(config.DefaultContextCeilingTokens, 10), DefaultSet: true}
+	ceilingParams := config.GetParams{Key: config.ContextCeilingTokensKey, ConfPath: confPath}
 	ceilingSource := "default"
 	if confExists {
 		ceilingSource, err = config.KeyOrigin(ceilingParams)

@@ -3,6 +3,7 @@ package supervisor
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -192,7 +193,8 @@ func (claudeOps) Prepare(t *Turn) (Launch, error) {
 		return Launch{Argv: command, StdinPath: t.Prompt, StdoutPath: filepath.Join(t.Dir, "claude-result.json"),
 			TruncateLog: true, Private: claudeLaunch{resultFile: filepath.Join(t.Dir, "claude-result.json")}}, nil
 	}
-	recordBuildCachePath(d.git(), d.agents(), t.Workspace, t.Dir)
+	caches := d.delegateCaches()
+	recordBuildCachePath(d.git(), d.agents(), t.Workspace, t.Dir, caches)
 	private := claudeLaunch{
 		signalFile: filepath.Join(t.Dir, "claude-session-signal.json"),
 		streamFile: filepath.Join(t.Dir, "claude-stream.jsonl"),
@@ -214,7 +216,8 @@ func (claudeOps) Prepare(t *Turn) (Launch, error) {
 	}
 	// The emitted SessionStart hook runs the engine's session-signal
 	// entry, which signals session establishment back to this supervisor.
-	if err := adapter.BuildClaudeSettings(t.Record, settingsFile, d.Engine, scratch); err != nil {
+	sandboxCaches := adapter.SandboxCaches{Grant: caches.Directories(), Deny: d.engineCaches().Directories()}
+	if err := adapter.BuildClaudeSettings(t.Record, settingsFile, d.Engine, scratch, sandboxCaches); err != nil {
 		return Launch{}, err
 	}
 	// The dispatch turn streams: the probe's nativeEvents declaration
@@ -227,31 +230,25 @@ func (claudeOps) Prepare(t *Turn) (Launch, error) {
 	if failure != "" {
 		return Launch{Refusal: &Refusal{Error: failure, Phase: "handshake"}}, nil
 	}
-	// Claude's sandbox cannot write the user's caches or the system
-	// temporary directory itself; the settings allow only this private
-	// scratch directory. The chain's cache overrides the per-round one when
-	// the job runs in a worktree, so follow-up rounds start warm.
-	// Both caches sit in the granted scratch (disk-lifetimes A5.0, DL4A-02):
-	// a nested engine inherits absolute GOCACHE and STATICCHECK_CACHE and
-	// never resolves the machine cache the sandbox refuses. Transitional
-	// until A7's one delegate cache.
+	// Claude's sandbox cannot write the system temporary directory itself;
+	// the settings allow this private scratch directory for TMPDIR and
+	// GOTMPDIR, and the machine delegate cache for GOCACHE and
+	// STATICCHECK_CACHE (disk-lifetimes A7): one cache for every round and
+	// chain, so follow-ups start warm, and a nested engine inherits the
+	// absolute pair and never resolves the engine cache the sandbox denies.
+	// A job worktree's GOTMPDIR moves into its git dir.
 	env := []string{
 		"TMPDIR=" + scratch,
-		"GOCACHE=" + filepath.Join(scratch, "go-cache"),
 		"GOTMPDIR=" + filepath.Join(scratch, "go-tmp"),
-		"STATICCHECK_CACHE=" + filepath.Join(scratch, "staticcheck"),
 	}
-	env = withEnv(env, jobBuildCacheEnv(d.git(), d.agents(), t.Workspace)...)
+	env = withEnv(env, jobBuildCacheEnv(d.git(), d.agents(), t.Workspace, caches)...)
 	env = withEnv(env,
 		"METASYSTEM_CLAUDE_SESSION_SIGNAL="+private.signalFile,
 		"METASYSTEM_CLAUDE_EVENTS="+t.Events)
 	env = withEnv(env, jobGitQuarantineEnv(d.git(), t.Workspace)...)
 	setup := os.MkdirAll(filepath.Join(scratch, "go-tmp"), 0o755)
-	if setup == nil {
-		setup = os.MkdirAll(envValue(env, "GOCACHE"), 0o755)
-	}
-	if setup == nil {
-		setup = os.MkdirAll(envValue(env, "STATICCHECK_CACHE"), 0o755)
+	if setup == nil && (envValue(env, "GOCACHE") == "" || envValue(env, "STATICCHECK_CACHE") == "") {
+		setup = errors.New("the delegate build cache did not resolve under the user cache directory")
 	}
 	return Launch{Argv: command, Env: env, StdinPath: t.Prompt, StdoutPath: private.streamFile,
 		SetupError: setup, Private: private}, nil

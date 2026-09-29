@@ -19,10 +19,10 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/adapter"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/cachedomain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/gocache"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hooks"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
@@ -636,8 +636,14 @@ func (o hookOwners) StartEngineRebuild(installation string) error {
 		command = o.engineBuild()
 	}
 	command.Dir = installation
-	// The engine cache is set explicitly, never guessed by a nested go.
-	command.Env = gocache.Carry(os.Environ())
+	// The engine cache is set explicitly from the authenticated domain,
+	// never guessed by a nested go.
+	environment, err := cachedomain.Carry(os.Environ(), installation)
+	if err != nil {
+		fmt.Fprintf(logFile, "hook bootstrap: %v\n", err)
+		return err
+	}
+	command.Env = environment
 	command.Stdout, command.Stderr = logFile, logFile
 	command.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	locked := lock.Handoff()

@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/cachedomain"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gocache"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"io"
 	"os"
 	"os/exec"
@@ -118,12 +121,16 @@ func (f *buildFixture) deps() deps {
 			f.fenceHits++
 			return f.fence(root, selfPid)
 		},
-		selfPid:      f.selfPid,
-		getenv:       func(key string) string { return f.env[key] },
-		environ:      func() []string { return append([]string(nil), f.environ...) },
-		userCacheDir: func() (string, error) { return f.cacheDir() },
-		stdout:       &f.stdout,
-		stderr:       &f.stderr,
+		selfPid: f.selfPid,
+		getenv:  func(key string) string { return f.env[key] },
+		environ: func() []string { return append([]string(nil), f.environ...) },
+		cacheDomain: func(environ []string, root string) (gocache.Resolution, error) {
+			return cachedomain.Seams{UserCacheDir: f.cacheDir, Git: func(string, ...string) (string, error) {
+				return "", errors.New("no worktree in this fixture")
+			}}.Resolve(environ, root)
+		},
+		stdout: &f.stdout,
+		stderr: &f.stderr,
 	}
 }
 
@@ -192,17 +199,33 @@ func TestBuildCleanTreeInstallsEngineStampedWithHead(t *testing.T) {
 	}
 }
 
-// Both branches set the engine cache explicitly: an inherited absolute value
-// is kept, else it is computed from the user cache directory seam.
+// Both branches set the cache pair and its context explicitly, from the
+// authenticated domain (disk-lifetimes A8): an outermost build computes the
+// engine cache from the user cache dir and discards an inherited GOCACHE; a
+// build whose context an ancestor issued takes the context's pair.
 func TestBuildCarriesTheEngineCacheOnBothBranches(t *testing.T) {
 	t.Parallel()
+	self, state, err := identity.KernelProber{}.Probe(int64(os.Getpid()))
+	if err != nil || state != identity.Alive {
+		t.Fatal(err)
+	}
+	issuer, err := identity.EncodeRef(self.Ref())
+	if err != nil {
+		t.Fatal(err)
+	}
+	context, err := gocache.EncodeContext(gocache.Context{Domain: gocache.DomainEngine, GoCache: "/outer/go-build", StaticcheckCache: "/outer/staticcheck", Issuer: issuer})
+	if err != nil {
+		t.Fatal(err)
+	}
+	computed := []string{"GOCACHE=/fixture/user-cache/go-build", "STATICCHECK_CACHE=/fixture/user-cache/staticcheck"}
 	for _, test := range []struct {
 		name    string
 		environ []string
 		want    []string
 	}{
-		{"computed", []string{"PATH=/fixture/bin", "GOCACHE=relative"}, []string{"GOCACHE=/fixture/user-cache/go-build", "STATICCHECK_CACHE=/fixture/user-cache/staticcheck"}},
-		{"inherited", []string{"PATH=/fixture/bin", "GOCACHE=/outer/go-build", "STATICCHECK_CACHE=/outer/staticcheck"}, []string{"GOCACHE=/outer/go-build", "STATICCHECK_CACHE=/outer/staticcheck"}},
+		{"computed", []string{"PATH=/fixture/bin", "GOCACHE=relative"}, computed},
+		{"inherited is discarded", []string{"PATH=/fixture/bin", "GOCACHE=/outer/go-build", "STATICCHECK_CACHE=/outer/staticcheck"}, computed},
+		{"authenticated context", []string{"PATH=/fixture/bin", "GOCACHE=/stale", gocache.ContextEnv + "=" + context}, []string{"GOCACHE=/outer/go-build", "STATICCHECK_CACHE=/outer/staticcheck"}},
 	} {
 		for _, args := range [][]string{nil, {"--out", filepath.Join(t.TempDir(), "proof-engine")}} {
 			f := newBuildFixture(t)
@@ -211,8 +234,11 @@ func TestBuildCarriesTheEngineCacheOnBothBranches(t *testing.T) {
 				t.Fatalf("%s %q: exit %d; stderr:\n%s", test.name, args, code, f.stderr.String())
 			}
 			env := f.onlyGoCall().env
-			if got := env[len(env)-4 : len(env)-2]; !slices.Equal(got, test.want) {
-				t.Fatalf("%s %q: go env = %q, want the engine cache %q before GOMAXPROCS and CGO_ENABLED", test.name, args, env, test.want)
+			if got := env[len(env)-5 : len(env)-3]; !slices.Equal(got, test.want) {
+				t.Fatalf("%s %q: go env = %q, want the cache pair %q before the context, GOMAXPROCS and CGO_ENABLED", test.name, args, env, test.want)
+			}
+			if !strings.HasPrefix(env[len(env)-3], gocache.ContextEnv+"=") || slices.Contains(env, "GOCACHE=/stale") {
+				t.Fatalf("%s %q: the child context is missing or a stale pair survived: %q", test.name, args, env)
 			}
 		}
 	}
