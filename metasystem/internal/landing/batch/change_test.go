@@ -309,3 +309,35 @@ func TestHeldRefusalEjectsTheChangeAndTheGoalMembersLand(t *testing.T) {
 		t.Fatalf("survivor landing events=%v want %v", events, want)
 	}
 }
+
+// TestChangeOnlyBatchLands (U11b): a batch of changes alone, proved on the
+// lane's account, replays its change, pushes once and is recognized after the
+// push by its Landing-Change trailer.
+func TestChangeOnlyBatchLands(t *testing.T) {
+	t.Parallel()
+	store := NewStore(t.TempDir(), nil)
+	change := changeMemberUnit()
+	change.State = UnitJoined
+	must(t, store.Create(Record{Schema: 1, BatchID: testBatchID, State: StateLanding, Units: []Unit{change},
+		TipTree: testCommit(104), Proof: &Proof{Status: "green", AttemptID: "lane-attempt"},
+		History:           []HistoryEntry{{At: ten.Format(time.RFC3339Nano), Verb: "prove", From: StateProving, To: StateLanding, Actor: "owner"}},
+		batchRecordFields: batchRecordFields{BaseTree: testCommit(101), PrefixTrees: []string{testCommit(104)}}}))
+	var events []string
+	seams := greenLandSeams(&events)
+	seams.ReplayChange = func(unit Unit) (string, error) {
+		events = append(events, "replay:"+unit.GoalID)
+		return "replayed", nil
+	}
+	must(t, LandSeries(store, testBatchID, "owner", ten.Add(time.Minute), seams))
+	if want := []string{"replay:change:abcdef012345", "held", "push", "cleanup"}; !slices.Equal(events, want) {
+		t.Fatalf("events=%v", events)
+	}
+	must(t, RecoverPushedSeries(store, testBatchID, "owner", ten.Add(2*time.Minute), RecoverySeams{
+		OriginChange: func(Unit) (string, bool, error) { return "on-main", true, nil },
+		Finalize:     func(Unit, string) error { t.Fatal("a change finalized a goal"); return nil },
+		Rearm:        func(string) error { return nil },
+	}))
+	if landed := load(t, store); landed.State != StateLanded || landed.Units[0].LandedCommit != "on-main" {
+		t.Fatalf("landed=%+v", landed)
+	}
+}

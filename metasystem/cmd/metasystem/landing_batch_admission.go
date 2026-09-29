@@ -128,9 +128,8 @@ func runBatchAdmissionOnTree(root, batchID, baseTree, goalID string, claim batch
 	result.ResultPath = projection.Name()
 	_ = projection.Close()
 	_ = os.Remove(result.ResultPath)
-	args := []string{"internal", "test", "run", "--root", executionRoot, "--control-root", controlRoot, "--batch-admission",
-		"--goal", goalID, "--tree", tree, "--mode", "auto", "--purpose", "delivery", "--result", result.ResultPath,
-		"--expected-goal-revision", fmt.Sprint(claim.Revision), "--expected-accounting-revision", fmt.Sprint(claim.AccountingRevision)}
+	args := append([]string{"internal", "test", "run", "--root", executionRoot, "--control-root", controlRoot, "--batch-admission",
+		"--tree", tree, "--mode", "auto", "--purpose", "delivery", "--result", result.ResultPath}, accountArgs(goalID, claim)...)
 	if result.FreshEpisode != "" {
 		args = append(args, "--fresh-episode", result.FreshEpisode, "--fresh-expires-at", result.FreshExpiresAt)
 	}

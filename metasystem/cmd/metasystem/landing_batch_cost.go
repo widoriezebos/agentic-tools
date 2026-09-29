@@ -87,9 +87,9 @@ func forecastBatchCostWith(root string, candidate batch.Record, incoming *batch.
 	var requests []costSelection
 	// A change takes no prefix proof and has no budget: the tip is charged
 	// to the last goal member, as the tip proof is (U11b).
-	charge, ok := batch.ChargeMember(units)
-	if !ok {
-		return batch.CostForecast{}, fmt.Errorf("BATCH_COST_INPUT_MOVED: the series has no goal member to charge its proof to")
+	charge, err := batchChargeID(root, batch.ChargeUnit(units), nil)
+	if err != nil {
+		return batch.CostForecast{}, err
 	}
 	order := []int{len(units) - 1}
 	for index := 0; index < len(units)-1; index++ {
@@ -101,7 +101,7 @@ func forecastBatchCostWith(root string, candidate batch.Record, incoming *batch.
 		unit := units[index]
 		kind, id, chargeGoal := "prefix", "prefix:"+unit.GoalID, unit.GoalID
 		if index == len(units)-1 {
-			kind, id, chargeGoal = "tip", "tip:"+unit.GoalID, charge.GoalID
+			kind, id, chargeGoal = "tip", "tip:"+unit.GoalID, charge
 		}
 		planned, err := decision(root, units[:index+1], candidate.PrefixTrees[index])
 		if err != nil {

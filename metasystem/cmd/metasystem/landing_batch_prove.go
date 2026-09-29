@@ -19,6 +19,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
@@ -49,6 +50,9 @@ type batchProofDependencies struct {
 	// attempts reads the retained proof store for the tip's retry decision;
 	// nil reads it through batchTipRetryAttempts.
 	attempts func(string) ([]proofrun.Attempt, error)
+	// laneAccount resolves the lane a batch of changes is charged to; nil
+	// reads the host's lane record (U11b).
+	laneAccount func(string) (string, error)
 }
 
 var productionBatchProofDependencies = batchProofDependencies{
@@ -85,13 +89,13 @@ func batchRetainedSources(root string, record batch.Record) (map[string]string, 
 	}
 	defer detached.Close()
 	head := joined[len(joined)-1]
-	charge, ok := batch.ChargeMember(joined)
-	if !ok {
-		return nil, fmt.Errorf("batch %s has no goal member its proof is charged to", record.BatchID)
+	charge, err := batchChargeID(root, batch.ChargeUnit(joined), nil)
+	if err != nil {
+		return nil, err
 	}
 	episode := record.PrefixEpisodes[head.GoalID]
 	result, err := verifyRetainedTesting(testingSelectionRequest{Root: batch.ModuleRoot(detached.Workspace().Dir), ControlRoot: batch.ModuleRoot(root),
-		GoalID: charge.GoalID, Tree: record.TipTree, Mode: testpolicy.ModeAuto, Purpose: testpolicy.PurposeDelivery,
+		GoalID: charge, Tree: record.TipTree, Mode: testpolicy.ModeAuto, Purpose: testpolicy.PurposeDelivery,
 		BatchRequirements: slices.Clone(record.Proof.SelectedGroups), BatchPrefixReceipt: true, FreshEpisode: episode.Token, FreshExpiresAt: episode.ExpiresAt})
 	return batchSourcesFromVerification(result), err
 }
@@ -314,19 +318,25 @@ func executeBatchProof(root, id, actor, window, token string, sample proofrun.Lo
 		}
 	}
 	// The tip's keys are its last member's; its proof is charged to the last
-	// goal member, since every proof is accounted to a goal and a change has
-	// none (U11b).
+	// goal member, or, when every member is a change, to the lane (U11b).
 	head := joined[len(joined)-1]
-	charge, ok := batch.ChargeMember(joined)
-	if !ok {
-		return fmt.Errorf("BATCH_PROOF_STATE_REFUSED: batch %s has no goal member its proof is charged to", id)
+	charge := batch.ChargeUnit(joined)
+	chargeID, chargeErr := batchChargeID(root, charge, dependencies.laneAccount)
+	if chargeErr != nil {
+		// Fail closed: nothing launches, and the batch holds on the sealed
+		// edge with the plain reason until the lane can be named.
+		if _, err := batch.RequireProofPlan(store, id, actor, window, token, sample, testpolicy.Plan{}, at); err != nil {
+			return errors.Join(chargeErr, err)
+		}
+		return batch.RefuseProofAdmission(store, id, actor, token, "lane-unresolved",
+			"the batch's changes are charged to the landing lane, whose identity cannot be resolved: "+chargeErr.Error()+"; the batch holds until it can", at)
 	}
-	plan, err := planBatchMemberUnion(root, record.TipTree, joined, testpolicy.ModeAuto, dependencies.plan)
+	plan, err := planBatchMemberUnion(root, record.TipTree, joined, chargeID, testpolicy.ModeAuto, dependencies.plan)
 	if err != nil {
 		return err
 	}
 	if plan.RequiredMode == testpolicy.ModeDeep || !proofPlanCovers(plan, record.SelectedGroups) {
-		plan, err = planBatchMemberUnion(root, record.TipTree, joined, testpolicy.ModeDeep, dependencies.plan)
+		plan, err = planBatchMemberUnion(root, record.TipTree, joined, chargeID, testpolicy.ModeDeep, dependencies.plan)
 		if err != nil {
 			return err
 		}
@@ -344,13 +354,13 @@ func executeBatchProof(root, id, actor, window, token string, sample proofrun.Lo
 	}
 	resultPath := batchProofResultPath(controlRoot, id)
 	sealed := admitted.Seal[charge.GoalID]
-	request := batchProofLaunch{Root: controlRoot, BatchID: id, GoalID: charge.GoalID, Tree: admitted.TipTree, CandidateTip: admitted.Proof.CandidateTip, ResultPath: resultPath, Token: token,
+	request := batchProofLaunch{Root: controlRoot, BatchID: id, GoalID: chargeID, Tree: admitted.TipTree, CandidateTip: admitted.Proof.CandidateTip, ResultPath: resultPath, Token: token,
 		Mode: plan.ExecutedMode, Groups: slices.Clone(plan.SelectedGroups), GoalRevision: sealed.Revision, AccountingRevision: sealed.AccountingRevision}
 	attempts := batchTipRetryAttempts
 	if dependencies.attempts != nil {
 		attempts = dependencies.attempts
 	}
-	if request.RetryDecision, err = tipRetryDecision(controlRoot, admitted, charge, attempts); err != nil {
+	if request.RetryDecision, err = tipRetryDecision(controlRoot, admitted, chargeID, attempts); err != nil {
 		return err
 	}
 	if dependencies.freshDecision != nil {
@@ -401,14 +411,33 @@ func executeBatchProof(root, id, actor, window, token string, sample proofrun.Lo
 	return launchErr
 }
 
-func planBatchMemberUnion(root, tree string, units []batch.Unit, mode testpolicy.Mode, plan func(string, string, string, testpolicy.Mode) (testpolicy.Plan, error)) (testpolicy.Plan, error) {
+// batchTipProofArgs is the tip (or early) proof's argv up to its optional
+// flags: charged to a goal at its sealed revisions with the diagnostic
+// headroom reserved, or to the lane, which has neither (U11b).
+func batchTipProofArgs(request batchProofLaunch, executionRoot string) []string {
+	args := []string{"internal", "test", "run", "--root", executionRoot, "--control-root", request.Root, "--batch-tip",
+		"--tree", request.Tree, "--mode", string(request.Mode), "--purpose", "delivery", "--result", request.ResultPath}
+	args = append(args, accountArgs(request.GoalID, batch.Claim{Revision: request.GoalRevision, AccountingRevision: request.AccountingRevision})...)
+	if !request.Early && !lane.IsAccount(request.GoalID) {
+		args = append(args, "--require-diagnostic-headroom")
+	}
+	return args
+}
+
+func planBatchMemberUnion(root, tree string, units []batch.Unit, charge string, mode testpolicy.Mode, plan func(string, string, string, testpolicy.Mode) (testpolicy.Plan, error)) (testpolicy.Plan, error) {
 	union := testpolicy.Plan{RequestedMode: mode, ExecutedMode: testpolicy.ModeStandard, RequiredMode: testpolicy.ModeStandard}
+	planned := []batch.Unit{}
 	for _, unit := range units {
-		if unit.IsChange() {
-			// A change is planned by no goal: the goal members' plans on the
-			// tip tree hold its paths.
-			continue
+		// A change is planned by no goal: the goal members' plans on the tip
+		// tree hold its paths; a batch of changes is planned by the lane.
+		if !unit.IsChange() {
+			planned = append(planned, unit)
 		}
+	}
+	if len(planned) == 0 {
+		planned = []batch.Unit{{GoalID: charge}}
+	}
+	for _, unit := range planned {
 		member, err := plan(root, unit.GoalID, tree, mode)
 		if err != nil {
 			return testpolicy.Plan{}, err
@@ -474,14 +503,7 @@ func launchBatchTipProofWithDependencies(request batchProofLaunch, dependencies 
 	}
 	defer closeDetached()
 	executionRoot := batch.ModuleRoot(detachedRoot)
-	args := []string{"internal", "test", "run", "--root", executionRoot, "--control-root", request.Root, "--batch-tip",
-		"--goal", request.GoalID, "--tree", request.Tree,
-		"--mode", string(request.Mode), "--purpose", "delivery", "--result", request.ResultPath}
-	if !request.Early {
-		args = append(args, "--require-diagnostic-headroom")
-	}
-	args = append(args, "--expected-goal-revision", fmt.Sprint(request.GoalRevision),
-		"--expected-accounting-revision", fmt.Sprint(request.AccountingRevision))
+	args := batchTipProofArgs(request, executionRoot)
 	if request.RetryDecision != "" {
 		args = append(args, "--retry-decision", request.RetryDecision)
 	}

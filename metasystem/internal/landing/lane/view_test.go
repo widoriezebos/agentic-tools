@@ -46,12 +46,12 @@ func TestViewShapeWithoutALane(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, want := keysOf(t, data), []string{"batch", "next", "owner", "registered_at", "registered_by", "root", "summary"}; !reflect.DeepEqual(got, want) {
+	if got, want := keysOf(t, data), []string{"batch", "next", "owner", "registered_at", "registered_by", "root", "spend", "summary"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("lane keys = %v, want %v", got, want)
 	}
 	var object map[string]json.RawMessage
 	_ = json.Unmarshal(data, &object)
-	for _, key := range []string{"root", "registered_by", "registered_at", "batch", "next"} {
+	for _, key := range []string{"root", "registered_by", "registered_at", "batch", "next", "spend"} {
 		if string(object[key]) != "null" {
 			t.Errorf("%s = %s; want null", key, object[key])
 		}
@@ -222,5 +222,26 @@ func TestLaneViewUnreadableRecordIsNotFewerMembers(t *testing.T) {
 	view := BuildView(sources)
 	if !strings.Contains(view.Summary, "its batches are unreadable") {
 		t.Fatalf("an unreadable record read as fewer members: %q", view.Summary)
+	}
+}
+
+// TestLaneViewShowsTheLanesSpend (U11b): the proofs a lane charged to its own
+// account (batches of changes) are its spend, shown beside the lane, with no
+// goal named; without a lane the key is null.
+func TestLaneViewShowsTheLanesSpend(t *testing.T) {
+	t.Parallel()
+	home, root, _ := laneDirs(t)
+	if _, err := Resolve(home, root, "m1e", laneNow, true); err != nil {
+		t.Fatal(err)
+	}
+	sources := viewSources(home, true, nil)
+	var asked string
+	sources.Spend = func(laneRoot, account string) (Spend, error) {
+		asked = laneRoot + "|" + account
+		return Spend{Account: account, Attempts: 2, ReservedMinutes: 90}, nil
+	}
+	view := BuildView(sources)
+	if asked != resolved(root)+"|"+AccountID(root) || view.Spend == nil || *view.Spend != (Spend{Account: AccountID(root), Attempts: 2, ReservedMinutes: 90}) {
+		t.Fatalf("asked=%q spend=%+v", asked, view.Spend)
 	}
 }

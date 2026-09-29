@@ -155,9 +155,18 @@ func planPrefixDecisionWith(root string, units []batch.Unit, tree string, plan f
 	}
 	// A change is planned by no goal of its own: the goal members' plans on
 	// the prefix tree hold every change before them (U11b).
-	units = slices.DeleteFunc(slices.Clone(units), func(unit batch.Unit) bool { return unit.IsChange() })
+	planned := slices.DeleteFunc(slices.Clone(units), func(unit batch.Unit) bool { return unit.IsChange() })
+	if len(planned) == 0 && len(units) != 0 {
+		// A prefix of changes alone is planned on the lane's account.
+		charge, err := batchChargeID(root, units[len(units)-1], nil)
+		if err != nil {
+			return batch.PrefixDecision{}, err
+		}
+		planned = []batch.Unit{{GoalID: charge}}
+	}
+	units = planned
 	if len(units) == 0 {
-		return batch.PrefixDecision{}, fmt.Errorf("BATCH_PREFIX_PLAN_REFUSED: the prefix holds no goal member")
+		return batch.PrefixDecision{}, fmt.Errorf("BATCH_PREFIX_PLAN_REFUSED: no joined members")
 	}
 	outputs := make([]testingPlanOutput, 0, len(units))
 	deep := false
@@ -249,7 +258,11 @@ func verifyBatchPrefix(root string, unit batch.Unit, tree string, decision batch
 		return err
 	}
 	defer detached.Close()
-	request := testingSelectionRequest{Root: batch.ModuleRoot(detached.Workspace().Dir), ControlRoot: batch.ModuleRoot(root), GoalID: unit.GoalID,
+	charge, err := batchChargeID(root, unit, nil)
+	if err != nil {
+		return err
+	}
+	request := testingSelectionRequest{Root: batch.ModuleRoot(detached.Workspace().Dir), ControlRoot: batch.ModuleRoot(root), GoalID: charge,
 		Tree: tree, Mode: testpolicy.ModeAuto, Purpose: testpolicy.PurposeDelivery, BatchRequirements: slices.Clone(decision.Groups), BatchPrefixReceipt: true,
 		FreshEpisode: decision.FreshEpisode, FreshExpiresAt: decision.FreshExpiresAt}
 	result, err := verifyRetainedTesting(request)
@@ -289,10 +302,7 @@ func verifyBatchSeriesWith(root string, record batch.Record, trees []string,
 			// A replayed change carries no receipt of its own.
 			continue
 		}
-		charge, ok := batch.ChargeMember(units[:index+1])
-		if !ok {
-			return fmt.Errorf("BATCH_PREFIX_PROOF_REFUSED: prefix %s has no goal member", unit.GoalID)
-		}
+		charge := batch.ChargeUnit(units[:index+1])
 		decision, err := decide(root, units[:index+1], trees[index])
 		if err != nil {
 			return err
@@ -353,10 +363,7 @@ func verifyBatchCommittedSeries(root string, record batch.Record, units []batch.
 			// A replayed change carries no receipt of its own.
 			continue
 		}
-		charge, ok := batch.ChargeMember(units[:index+1])
-		if !ok {
-			return fmt.Errorf("BATCH_PREFIX_PROOF_REFUSED: prefix %s has no goal member", unit.GoalID)
-		}
+		charge := batch.ChargeUnit(units[:index+1])
 		tree, err := gitOutput(root, "rev-parse", commit+"^{tree}")
 		if err != nil {
 			return err

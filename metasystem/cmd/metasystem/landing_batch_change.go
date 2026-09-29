@@ -7,10 +7,13 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/adapter"
 )
 
@@ -125,4 +128,53 @@ func executeChangeJoin(request changeJoinRequest, dependencies changeJoinDepende
 		return batch.Record{}, err
 	}
 	return record, dependencies.ensure(lane)
+}
+
+// batchLaneAccount resolves the accounting identity of the host lane whose
+// checkout is root: what a batch of changes is charged to (U11b). An
+// unresolvable lane is LANE_ACCOUNT_UNRESOLVED.
+func batchLaneAccount(root string) (string, error) {
+	home, err := board.Home()
+	if err != nil {
+		return "", fmt.Errorf("LANE_ACCOUNT_UNRESOLVED: %w", err)
+	}
+	return lane.ResolveAccount(home, batch.ModuleRoot(root))
+}
+
+// batchChargeID is the identity a proof keyed to unit is accounted to: a
+// goal member's goal, or, for a change (every member a change), the lane.
+func batchChargeID(root string, unit batch.Unit, account func(string) (string, error)) (string, error) {
+	if !unit.IsChange() && !strings.HasPrefix(unit.GoalID, "change:") {
+		return unit.GoalID, nil
+	}
+	if account == nil {
+		account = batchLaneAccount
+	}
+	return account(root)
+}
+
+// accountArgs names who a batch proof is charged to on its argv: a goal at
+// its sealed revisions, or the lane, which has none (U11b).
+func accountArgs(id string, claim batch.Claim) []string {
+	if lane.IsAccount(id) {
+		return []string{"--lane", id}
+	}
+	return []string{"--goal", id, "--expected-goal-revision", fmt.Sprint(claim.Revision), "--expected-accounting-revision", fmt.Sprint(claim.AccountingRevision)}
+}
+
+// laneSpend is what the lane at root charged to its own account: every
+// retained attempt accounted to it (U11b).
+func laneSpend(root, account string) (lane.Spend, error) {
+	attempts, err := proofrun.ReadAttempts(batch.ModuleRoot(root))
+	if err != nil {
+		return lane.Spend{}, err
+	}
+	spend := lane.Spend{Account: account}
+	for _, attempt := range attempts {
+		if attempt.AccountedGoal() == account {
+			spend.Attempts++
+			spend.ReservedMinutes += attempt.ReservedMinutes
+		}
+	}
+	return spend, nil
 }

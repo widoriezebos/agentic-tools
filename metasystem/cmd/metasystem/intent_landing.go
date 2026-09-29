@@ -152,7 +152,7 @@ func (inv *intentInvocation) laneContext(needLane bool) (owners laneVerbOwners, 
 }
 
 func (inv *intentInvocation) laneView(owners laneVerbOwners, home string) lane.View {
-	return lane.BuildView(lane.ViewSources{Home: home, Now: owners.now(), Owner: owners.probe, Records: owners.records})
+	return lane.BuildView(lane.ViewSources{Home: home, Now: owners.now(), Owner: owners.probe, Records: owners.records, Spend: laneSpend})
 }
 
 func laneTargets(root string) []intentTarget {
@@ -219,6 +219,10 @@ func landingViewDetail(view lane.View) []string {
 		for _, change := range view.Batch.Returned {
 			lines = append(lines, "  "+change.Outcome+" "+change.Goal+" from "+change.Seat+": "+change.Reason)
 		}
+	}
+	if view.Spend != nil {
+		lines = append(lines, fmt.Sprintf("lane spend (%s, batches of changes; no goal's budget): %d attempts, %d reserved minutes",
+			view.Spend.Account, view.Spend.Attempts, view.Spend.ReservedMinutes))
 	}
 	if view.Next != nil {
 		lines = append(lines, "next batch "+view.Next.ID+" collecting:")

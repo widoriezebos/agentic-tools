@@ -601,6 +601,10 @@ func prepareTestingOnce(request testingSelectionRequest) (testingPreparation, er
 	if err != nil || unborn {
 		return testingPreparation{}, fmt.Errorf("testing requires a committed project HEAD")
 	}
+	if landinglane.IsAccount(request.GoalID) {
+		// An in-process caller names the lane where a goal would go (U11b).
+		request.LaneID, request.GoalID = request.GoalID, ""
+	}
 	goalID := request.GoalID
 	accountToGoal, err := testingPreparationAccountsToGoal(request)
 	if err != nil {

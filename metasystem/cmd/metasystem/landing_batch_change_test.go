@@ -129,8 +129,10 @@ func TestBatchChangePrefixDecisionPlansGoalMembersOnly(t *testing.T) {
 	if err != nil || !slices.Equal(plans, []string{"goal-a"}) || !slices.Equal(decision.Groups, []string{"app-a"}) {
 		t.Fatalf("decision=%+v plans=%v err=%v", decision, plans, err)
 	}
-	if _, err := planPrefixDecisionWith("", []batch.Unit{change}, "tip-tree", nil); err == nil || !strings.Contains(err.Error(), "BATCH_PREFIX_PLAN_REFUSED") {
-		t.Fatalf("a change-only prefix planned: %v", err)
+	// A prefix of changes alone is planned on the lane's account; a lane that
+	// cannot be named plans nothing (fail closed).
+	if _, err := planPrefixDecisionWith(t.TempDir(), []batch.Unit{change}, "tip-tree", nil); err == nil || !strings.Contains(err.Error(), "LANE_ACCOUNT_UNRESOLVED") {
+		t.Fatalf("a change-only prefix without a lane: %v", err)
 	}
 	record := batch.Record{BatchID: "01j5x00000000000000000ba79", BaseTree: "base-tree", TipTree: "tip-tree", SelectedGroups: []string{"app-a"},
 		Units:    []batch.Unit{change, laneGoalUnit(), change},
@@ -299,9 +301,77 @@ func TestChangeJoinGitAdapterFetchesThePinnedChangeAndJoins(t *testing.T) {
 func TestLandingStatusVerbosePrintsReturnedChanges(t *testing.T) {
 	t.Parallel()
 	view := lane.View{Batch: &lane.BatchView{ID: "b1", State: lane.BatchCollecting, Members: []lane.Member{{Goal: "change:abcdef012345", Seat: "m1e"}},
-		Returned: []lane.Returned{{Goal: "change:1234567890ab", Seat: "ui", Outcome: batch.UnitEjected, Reason: "EJECTED from landing batch b1: TestNotes failed"}}}}
+		Returned: []lane.Returned{{Goal: "change:1234567890ab", Seat: "ui", Outcome: batch.UnitEjected, Reason: "EJECTED from landing batch b1: TestNotes failed"}}},
+		Spend: &lane.Spend{Account: "lane:0123456789ab", Attempts: 3, ReservedMinutes: 120}}
 	lines := strings.Join(landingViewDetail(view), "\n")
+	if !strings.Contains(lines, "lane spend (lane:0123456789ab, batches of changes; no goal's budget): 3 attempts, 120 reserved minutes") {
+		t.Fatalf("verbose status names no lane spend:\n%s", lines)
+	}
 	if !strings.Contains(lines, "  member change:abcdef012345 from m1e") || !strings.Contains(lines, "  ejected change:1234567890ab from ui: EJECTED from landing batch b1: TestNotes failed") {
 		t.Fatalf("verbose status:\n%s", lines)
+	}
+}
+
+// TestBatchChangeOnlyProofIsChargedToTheLane (U11b, the coordinator's
+// ruling): a sealed batch whose members are all changes plans and launches
+// its tip proof charged to the lane, with no goal and no revisions, and
+// lands; when the lane's identity cannot be resolved nothing launches and
+// the batch holds with a plain reason.
+func TestBatchChangeOnlyProofIsChargedToTheLane(t *testing.T) {
+	t.Parallel()
+	const account = "lane:0123456789ab"
+	for _, resolvable := range []bool{true, false} {
+		root := t.TempDir()
+		const id = "01j5x00000000000000000ba83"
+		change := laneChangeUnit()
+		record := batch.Record{Schema: 1, BatchID: id, State: batch.StateSealed, BaseTree: "base-tree", TipTree: "tip-tree",
+			PrefixTrees: []string{"tip-tree"}, Units: []batch.Unit{change}, Seal: map[string]batch.Claim{change.GoalID: {}}}
+		store := batch.NewStore(root, nil)
+		if err := store.Create(record); err != nil {
+			t.Fatal(err)
+		}
+		var planned []string
+		var launched []batchProofLaunch
+		dependencies := batchProofDependencies{
+			rearm:    func(string, string) error { return nil },
+			attempts: func(string) ([]proofrun.Attempt, error) { return nil, nil },
+			laneAccount: func(string) (string, error) {
+				if !resolvable {
+					return "", errors.New("LANE_ACCOUNT_UNRESOLVED: no landing lane is registered on this host")
+				}
+				return account, nil
+			},
+			plan: func(_, goalID, tree string, _ testpolicy.Mode) (testpolicy.Plan, error) {
+				planned = append(planned, goalID+"@"+tree)
+				return testpolicy.Plan{SelectedGroups: []string{"docs-static"}, ExecutedMode: testpolicy.ModeStandard, RequiredMode: testpolicy.ModeStandard}, nil
+			},
+			launch: func(request batchProofLaunch) (proofrun.TestResult, error) {
+				launched = append(launched, request)
+				return proofrun.TestResult{AttemptID: "lane-attempt", CandidateTree: request.Tree, Delivery: proofrun.DeliveryJudgment{Sufficient: true}}, nil
+			},
+		}
+		err := executeBatchProof(root, id, "landing+owner", "window", "token", proofrun.LoadSample{}, time.Unix(10, 0), dependencies)
+		after, loadErr := store.Load(id)
+		if loadErr != nil {
+			t.Fatal(loadErr)
+		}
+		if !resolvable {
+			if err != nil || len(launched) != 0 || after.State != batch.StateSealed || after.Proof == nil || after.Proof.Status != "lane-unresolved" ||
+				!strings.Contains(after.Proof.Failure, "LANE_ACCOUNT_UNRESOLVED") {
+				t.Fatalf("unresolved lane: err=%v launched=%d state=%s proof=%+v", err, len(launched), after.State, after.Proof)
+			}
+			continue
+		}
+		if err != nil || !slices.Equal(planned, []string{account + "@tip-tree"}) || len(launched) != 1 || after.State != batch.StateLanding {
+			t.Fatalf("lane proof: err=%v planned=%v launched=%+v state=%s", err, planned, launched, after.State)
+		}
+		if got := launched[0]; got.GoalID != account || got.GoalRevision != 0 || got.AccountingRevision != 0 {
+			t.Fatalf("launch=%+v", got)
+		}
+		args := batchTipProofArgs(launched[0], "/exec")
+		joined := strings.Join(args, " ")
+		if !strings.Contains(joined, "--lane "+account) || strings.Contains(joined, "--goal") || strings.Contains(joined, "--expected-") || strings.Contains(joined, "--require-diagnostic-headroom") {
+			t.Fatalf("lane tip argv=%v", args)
+		}
 	}
 }

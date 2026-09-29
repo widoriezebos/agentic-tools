@@ -517,7 +517,7 @@ func TestBatchProofUnionUsesRealMemberRiskSelection(t *testing.T) {
 		Groups:   []testpolicy.Group{{ID: "base"}, {ID: "cross", Obligations: []string{"cross"}}},
 	}
 	units := []batch.Unit{{GoalID: "risk-a"}, {GoalID: "tip-b"}}
-	plan, err := planBatchMemberUnion("root", "tree", units, testpolicy.ModeAuto, func(_, goalID, _ string, mode testpolicy.Mode) (testpolicy.Plan, error) {
+	plan, err := planBatchMemberUnion("root", "tree", units, "", testpolicy.ModeAuto, func(_, goalID, _ string, mode testpolicy.Mode) (testpolicy.Plan, error) {
 		risk := testpolicy.GoalRisk{}
 		if goalID == "risk-a" {
 			risk.Accumulation = 2

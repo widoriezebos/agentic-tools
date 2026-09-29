@@ -48,7 +48,11 @@ func earlyCheapPhase(root string, record batch.Record, run batchAdmissionRun) (b
 	if err != nil {
 		return batch.EarlyResult{}, err
 	}
-	result, proof, _, err := run(root, record.BatchID, record.BaseTree, head.GoalID, head.Claim, record.TipTree, "early-cheap",
+	charge, err := batchChargeID(root, head, nil)
+	if err != nil {
+		return batch.EarlyResult{}, err
+	}
+	result, proof, _, err := run(root, record.BatchID, record.BaseTree, charge, head.Claim, record.TipTree, "early-cheap",
 		func(decision batch.JoinAdmission, maxAgeMS int64) (batch.JoinAdmission, error) {
 			token, err := newTestingFreshEpisode()
 			if err != nil {
@@ -74,13 +78,12 @@ func earlyCheapPhase(root string, record batch.Record, run batchAdmissionRun) (b
 
 func earlyHead(record batch.Record) (batch.Unit, []batch.Unit, error) {
 	joined := slices.DeleteFunc(slices.Clone(record.Units), func(unit batch.Unit) bool { return unit.State != batch.UnitJoined })
-	// The early acts are charged to the last goal member, as the tip proof
-	// is; a change has no goal to charge (U11b).
-	charge, ok := batch.ChargeMember(joined)
-	if !ok {
-		return batch.Unit{}, nil, fmt.Errorf("batch %s has no joined goal member", record.BatchID)
+	if len(joined) == 0 {
+		return batch.Unit{}, nil, fmt.Errorf("batch %s has no joined member", record.BatchID)
 	}
-	return charge, joined, nil
+	// The early acts are charged as the tip proof is: to the last goal
+	// member, or, for a batch of changes, to the lane (U11b).
+	return batch.ChargeUnit(joined), joined, nil
 }
 
 // earlyProof is one delivery attempt on the waiting batch's recorded tip,
@@ -94,9 +97,13 @@ func earlyProof(root string, record batch.Record, plan func(string, string, stri
 	if err != nil {
 		return batch.EarlyResult{}, err
 	}
-	union, err := planBatchMemberUnion(root, record.TipTree, joined, testpolicy.ModeAuto, plan)
+	charge, err := batchChargeID(root, head, nil)
+	if err != nil {
+		return batch.EarlyResult{}, err
+	}
+	union, err := planBatchMemberUnion(root, record.TipTree, joined, charge, testpolicy.ModeAuto, plan)
 	if err == nil && union.RequiredMode == testpolicy.ModeDeep {
-		union, err = planBatchMemberUnion(root, record.TipTree, joined, testpolicy.ModeDeep, plan)
+		union, err = planBatchMemberUnion(root, record.TipTree, joined, charge, testpolicy.ModeDeep, plan)
 	}
 	if err != nil {
 		return batch.EarlyResult{}, err
@@ -109,7 +116,7 @@ func earlyProof(root string, record batch.Record, plan func(string, string, stri
 	if err := os.Remove(resultPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return batch.EarlyResult{}, err
 	}
-	result, launchErr := launch(batchProofLaunch{Root: controlRoot, BatchID: record.BatchID, GoalID: head.GoalID, Tree: record.TipTree,
+	result, launchErr := launch(batchProofLaunch{Root: controlRoot, BatchID: record.BatchID, GoalID: charge, Tree: record.TipTree,
 		ResultPath: resultPath, Mode: union.ExecutedMode, Groups: slices.Clone(union.SelectedGroups),
 		GoalRevision: head.Claim.Revision, AccountingRevision: head.Claim.AccountingRevision, Early: true})
 	early := batch.EarlyResult{Attempt: result.AttemptID, Failing: batchRedAdapters(root, batch.ResultToRedGroups(result))}
@@ -129,6 +136,10 @@ func earlyBudget(root string, record batch.Record, at time.Time, project func(st
 	head, _, err := earlyHead(record)
 	if err != nil {
 		return false, "no early work: " + err.Error()
+	}
+	if head.IsChange() {
+		// A batch of changes is charged to the lane, which has no box.
+		return true, ""
 	}
 	view, err := project(root, head, nil, at)
 	if err != nil {
@@ -164,7 +175,7 @@ var batchTipRetryAttempts = proofrun.ReadAttempts
 // reuses the red. It is read from the retained proof store, the newest such
 // attempt, so it holds whatever the batch record kept (a red that ended after
 // the start, an owner restart). Empty when no attempt on the tree failed.
-func tipRetryDecision(controlRoot string, record batch.Record, head batch.Unit, readAttempts func(string) ([]proofrun.Attempt, error)) (string, error) {
+func tipRetryDecision(controlRoot string, record batch.Record, charge string, readAttempts func(string) ([]proofrun.Attempt, error)) (string, error) {
 	attempts, err := readAttempts(controlRoot)
 	if err != nil {
 		return "", err
@@ -173,7 +184,7 @@ func tipRetryDecision(controlRoot string, record batch.Record, head batch.Unit, 
 	group := ""
 	for _, attempt := range attempts {
 		tree, known := attempt.CandidateTreeDigest()
-		if !known || tree != record.TipTree || attempt.AccountedGoal() != head.GoalID || attempt.Terminal == nil || attempt.TestResult == nil ||
+		if !known || tree != record.TipTree || attempt.AccountedGoal() != charge || attempt.Terminal == nil || attempt.TestResult == nil ||
 			prior.AttemptID != "" && attempt.TestAdmission <= prior.TestAdmission {
 			continue
 		}

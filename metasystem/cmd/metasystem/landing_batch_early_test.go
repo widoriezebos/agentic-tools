@@ -254,7 +254,7 @@ func TestBatchProofRetriesWhatTheEarlyProofOfItsTreeFailed(t *testing.T) {
 		t.Fatalf("without a decision: %+v decided %t err %v", decision, decided, err)
 	}
 
-	path, err := tipRetryDecision(fixture.root, record, head, proofrun.ReadAttempts)
+	path, err := tipRetryDecision(fixture.root, record, head.GoalID, proofrun.ReadAttempts)
 	if err != nil || path == "" {
 		t.Fatalf("no retry decision for the early tree: %q %v", path, err)
 	}
@@ -281,7 +281,7 @@ func TestBatchProofRetriesWhatTheEarlyProofOfItsTreeFailed(t *testing.T) {
 	// A member joined after the early proof: the batch proof's tree is not the
 	// early tree, and nothing is retried.
 	record.TipTree = strings.Repeat("f", 40)
-	if path, err := tipRetryDecision(fixture.root, record, head, proofrun.ReadAttempts); err != nil || path != "" {
+	if path, err := tipRetryDecision(fixture.root, record, head.GoalID, proofrun.ReadAttempts); err != nil || path != "" {
 		t.Fatalf("a grown batch carried a retry decision: %q %v", path, err)
 	}
 }

@@ -113,7 +113,7 @@ func DiagnoseRed(store Store, id, actor string, failing []RedGroup, prefixGoal s
 				}
 			}
 		}
-		if seams.UpdateNext != nil {
+		if seams.UpdateNext != nil && !authority.IsChange() {
 			next := "diagnostic unavailable: " + status + "; the landing batch stays diagnosing and runs it again at its next tick"
 			if editErr := seams.UpdateNext(authority.GoalID, next); editErr != nil {
 				return DiagnosticResult{}, true, errors.Join(runErr, editErr)

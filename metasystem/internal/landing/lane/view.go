@@ -38,7 +38,18 @@ type View struct {
 	Owner        OwnerView  `json:"owner"`
 	Batch        *BatchView `json:"batch"`
 	Next         *NextView  `json:"next"`
-	Summary      string     `json:"summary"`
+	// Spend is what the lane charged to its own account: the proofs of
+	// batches whose members are all changes (U11b).
+	Spend   *Spend `json:"spend"`
+	Summary string `json:"summary"`
+}
+
+// Spend is the lane's own proof spend: its accounting identity, the attempts
+// charged to it and their reserved minutes. No goal's budget holds them.
+type Spend struct {
+	Account         string `json:"account"`
+	Attempts        int    `json:"attempts"`
+	ReservedMinutes uint64 `json:"reserved_minutes"`
 }
 
 // OwnerView is the lane owner and its keep-alive.
@@ -107,6 +118,8 @@ type ViewSources struct {
 	Now     time.Time
 	Owner   func(root string) (OwnerProbe, error)
 	Records func(root string) ([]batch.Record, error)
+	// Spend reads what the lane at root charged to account; nil shows none.
+	Spend func(root, account string) (Spend, error)
 }
 
 // BuildView reads the lane once and says it for a person and a page.
@@ -129,6 +142,11 @@ func BuildView(sources ViewSources) View {
 		return view
 	}
 	view.Owner = ownerView(sources, record.Root)
+	if sources.Spend != nil {
+		if spend, err := sources.Spend(record.Root, AccountID(record.Root)); err == nil {
+			view.Spend = &spend
+		}
+	}
 	records, recordsErr := readRecords(sources, record.Root)
 	view.Batch, view.Next = currentBatches(records)
 	view.Summary = summary(record.Root, view, recordsErr)
