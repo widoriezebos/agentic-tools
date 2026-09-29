@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/contractmerge"
 )
 
@@ -274,20 +275,20 @@ func patchAttributeOverlay(repo, before string, patch []byte, paths []string) (s
 }
 
 func temporaryIndex() (string, func(), error) {
-	index, err := os.CreateTemp("", "metasystem-testing-attrs-*.index")
+	index, done, err := diskstore.ScratchFile("metasystem-testing-attrs-*.index")
 	if err != nil {
 		return "", nil, err
 	}
 	name := index.Name()
 	if err := index.Close(); err != nil {
-		_ = os.Remove(name)
+		done()
 		return "", nil, err
 	}
 	if err := os.Remove(name); err != nil && !os.IsNotExist(err) {
+		done()
 		return "", nil, err
 	}
-	cleanup := func() { _ = os.Remove(name) }
-	return name, cleanup, nil
+	return name, done, nil
 }
 
 func treeFile(repo, tree, path string) ([]byte, error) {

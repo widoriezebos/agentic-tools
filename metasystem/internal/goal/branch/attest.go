@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
 )
@@ -350,11 +351,11 @@ func withClosureBundle(r attestationReads, repo, snapshot, goalID, commit string
 	if err != nil || !bytes.Equal(data, append(canonical, '\n')) {
 		return operationRefusal(ReadInvalidCode, "critic closure bundle for %s is not in its canonical form", commit)
 	}
-	temporary, err := os.MkdirTemp("", "goal-read-closure-*")
+	temporary, done, err := diskstore.ScratchDir("goal-read-closure-*")
 	if err != nil {
 		return err
 	}
-	defer os.RemoveAll(temporary)
+	defer done()
 	for path, content := range bundle.Files {
 		if !safeClosureBundlePath(path) {
 			return operationRefusal(ReadInvalidCode, "critic closure bundle for %s has unsafe path %q", commit, path)
@@ -643,11 +644,11 @@ func unitCommitInRangeWithReads(r attestationReads, repo, endpointTip, tip, goal
 }
 
 func prospectiveReadPatch(repo string, generated map[string][]byte, readerRecord string) ([]byte, error) {
-	scratch, err := os.MkdirTemp("", "goal-read-index-*")
+	scratch, done, err := diskstore.ScratchDir("goal-read-index-*")
 	if err != nil {
 		return nil, err
 	}
-	defer os.RemoveAll(scratch)
+	defer done()
 	env := []string{"GIT_INDEX_FILE=" + filepath.Join(scratch, "index")}
 	tree, err := gitOutput(repo, "write-tree")
 	if err != nil {

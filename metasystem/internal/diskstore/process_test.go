@@ -516,3 +516,24 @@ func rewriteRecord(t *testing.T, registry Registry, id string, change func(*Reco
 		t.Fatal(err)
 	}
 }
+
+// A scratch file lies in the process's scratch root, and done removes it.
+func TestScratchFileLiesInTheProcessScratch(t *testing.T) {
+	t.Parallel()
+	file, done, err := ScratchFile("witness-*.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = file.Close()
+	root, err := ProcessScratch()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filepath.Dir(file.Name()) != root || !strings.HasSuffix(file.Name(), ".json") {
+		t.Fatalf("scratch file %s is not in the process scratch %s", file.Name(), root)
+	}
+	done()
+	if _, err := os.Lstat(file.Name()); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("done left the file: %v", err)
+	}
+}

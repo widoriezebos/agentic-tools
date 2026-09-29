@@ -3,12 +3,12 @@ package branch
 import (
 	"bytes"
 	"fmt"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"unicode"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 )
 
@@ -483,11 +483,11 @@ func treeWithoutPaths(repo, tree string, paths []string) (string, error) {
 	if len(paths) == 0 {
 		return tree, nil
 	}
-	scratch, err := os.MkdirTemp("", "goal-branch-tree-*")
+	scratch, done, err := diskstore.ScratchDir("goal-branch-tree-*")
 	if err != nil {
 		return "", err
 	}
-	defer os.RemoveAll(scratch)
+	defer done()
 	env := []string{"GIT_INDEX_FILE=" + filepath.Join(scratch, "index")}
 	if _, err := gitInputEnv(repo, env, nil, "read-tree", tree); err != nil {
 		return "", err

@@ -14,7 +14,6 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
-	armed "github.com/widoriezebos/agentic-tools/metasystem/internal/registry"
 	"golang.org/x/sys/unix"
 )
 
@@ -60,14 +59,11 @@ func ensureScratch() (*processScratch, error) {
 	if currentScratch != nil {
 		return currentScratch, nil
 	}
-	path, err := armed.DefaultPath()
+	registry, err := machineRegistry()
 	if err != nil {
 		return nil, fmt.Errorf("process scratch: %w", err)
 	}
-	if !filepath.IsAbs(path) {
-		return nil, fmt.Errorf("process scratch: the home state root %q is not absolute", filepath.Dir(path))
-	}
-	created, err := newProcessScratch(os.TempDir(), MachineRegistry(filepath.Dir(path)), rand.Reader)
+	created, err := newProcessScratch(os.TempDir(), registry, rand.Reader)
 	if err != nil {
 		return nil, err
 	}
@@ -116,6 +112,23 @@ func (s *processScratch) mkdirLocked(pattern string) (string, func(), error) {
 		return "", nil, fmt.Errorf("process scratch: %w", err)
 	}
 	return dir, s.use(func() { _ = os.RemoveAll(dir) }), nil
+}
+
+// ScratchFile creates a new file in the process's scratch root, as
+// os.CreateTemp does in TMPDIR. done removes it and ends its use; closing
+// the file stays the caller's.
+func ScratchFile(pattern string) (*os.File, func(), error) {
+	scratchMu.Lock()
+	defer scratchMu.Unlock()
+	scratch, err := ensureScratch()
+	if err != nil {
+		return nil, nil, err
+	}
+	file, err := os.CreateTemp(scratch.record.Path, pattern)
+	if err != nil {
+		return nil, nil, fmt.Errorf("process scratch: %w", err)
+	}
+	return file, scratch.use(func() { _ = os.Remove(file.Name()) }), nil
 }
 
 // use counts one user and returns its done. scratchMu is held.
