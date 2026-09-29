@@ -173,6 +173,36 @@ func TestWorkLandMessageJoinsTheLaneAsAChange(t *testing.T) {
 		t.Fatalf("refused join: head=%s result=%+v", refusing.seatGit("rev-parse", "HEAD"), result)
 	}
 
+	// A change stacked on a change another batch holds is refused and the
+	// seat keeps both commits (B-1a); a join whose owner could not be started
+	// is joined, nothing given back (N-a).
+	stackedBed := newChangeLaneBed(t, true)
+	stackedBed.owners.changeJoin = func(request changeJoinRequest) (batch.Record, error) {
+		return batch.Record{}, &batch.StackedChangeRefusal{Reason: "BATCH_CHANGE_STACKED_ELSEWHERE: change " + batch.ChangeID(request.Commit) +
+			" is stacked on change change:aaaaaaaaaaaa, which is in batch b-9 (proving); run the same command after change:aaaaaaaaaaaa lands"}
+	}
+	stackedBed.edit("one\nstacked\n")
+	code, result = stackedBed.land()
+	expectOutcome(t, "stacked elsewhere", code, result, intentRefused)
+	stackedHead := stackedBed.seatGit("rev-parse", "HEAD")
+	if !strings.Contains(result.Summary, "which is in batch b-9 (proving); run the same command after") || !changePinned(stackedBed.install, stackedHead) ||
+		stackedBed.seatGit("log", "-1", "--format=%s") != "record: notes" {
+		t.Fatalf("stacked: result=%+v", result)
+	}
+	ownerless := newChangeLaneBed(t, true)
+	ownerless.owners.changeJoin = func(request changeJoinRequest) (batch.Record, error) {
+		record := batch.Record{BatchID: "b-3", State: batch.StateOpen}
+		return record, &changeOwnerStartError{Record: record, Cause: errors.New("BATCH_OWNER_INDETERMINATE: supervision refused")}
+	}
+	ownerless.edit("one\nownerless\n")
+	code, result = ownerless.land()
+	expectOutcome(t, "joined without an owner", code, result, intentInProgress)
+	ownerlessHead := ownerless.seatGit("rev-parse", "HEAD")
+	if !strings.Contains(result.Summary, "joined landing batch b-3; the lane owner could not be started: BATCH_OWNER_INDETERMINATE") ||
+		!strings.Contains(result.Summary, "metasystem landing start") || !changePinned(ownerless.install, ownerlessHead) {
+		t.Fatalf("ownerless: result=%+v", result)
+	}
+
 	hand := newChangeLaneBed(t, false)
 	hand.edit("one\nthree\n")
 	code, result = hand.land()

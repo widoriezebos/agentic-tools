@@ -100,10 +100,21 @@ func landingHeld(root, base, commit, remote, ref string) error {
 	if status == 0 {
 		return nil
 	}
-	err := fmt.Errorf("%s: landing held exited %d", strings.TrimSpace(output.String()), status)
-	if verdict.Refusal != nil && verdict.Refusal.Commit != "" {
-		// The refused commit is named, so the landing can eject the member
-		// that made it (U11b).
+	return heldRefusalError(verdict, fmt.Errorf("%s: landing held exited %d", strings.TrimSpace(output.String()), status))
+}
+
+// heldRefusalError types a held refusal for the landing (U11b): about the
+// series or the lane's configuration the batch holds; naming one member's
+// commit, that member is ejected.
+func heldRefusalError(verdict landing.HeldVerdict, err error) error {
+	if verdict.Refusal == nil {
+		return err
+	}
+	switch verdict.Refusal.Code {
+	case "endpoint-mismatch", "range-not-linear":
+		return &batch.HeldSeriesRefusal{Cause: err}
+	}
+	if verdict.Refusal.Commit != "" {
 		return &batch.HeldCommitRefusal{Commit: verdict.Refusal.Commit, Cause: err}
 	}
 	return err

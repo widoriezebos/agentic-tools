@@ -115,6 +115,20 @@ func JoinChange(store Store, join ChangeJoin) (Record, error) {
 			}
 		}
 		record, found := JoinableOpen(records, join.BaseTree)
+		// A change stacked on a live change of another batch cannot land
+		// before its parent: refused, naming the parent and its batch.
+		for _, other := range records {
+			if found && other.BatchID == record.BatchID {
+				continue
+			}
+			for _, member := range other.Units {
+				if member.IsChange() && member.Change.Commit == unit.Change.Parent &&
+					(member.State == UnitJoining || member.State == UnitJoined || member.State == UnitReturnPending) {
+					return &StackedChangeRefusal{Reason: fmt.Sprintf("BATCH_CHANGE_STACKED_ELSEWHERE: change %s is stacked on change %s, which is in batch %s (%s); run the same command after %s lands",
+						unit.GoalID, member.GoalID, other.BatchID, other.State, member.GoalID)}
+				}
+			}
+		}
 		if !found {
 			record = Record{Schema: 1, BatchID: join.NewID, BaseTree: join.BaseTree, TipTree: join.BaseTree}
 			record.Transition(StateOpen, join.At, "open", join.Actor, "")
@@ -307,3 +321,16 @@ func HoldReason(record Record) string {
 	}
 	return ""
 }
+
+// StackedChangeRefusal refuses a change stacked on a live change of another
+// batch: it can land only after its parent (U11b B-1a).
+type StackedChangeRefusal struct{ Reason string }
+
+func (refusal *StackedChangeRefusal) Error() string { return refusal.Reason }
+
+// HeldSeriesRefusal is held's refusal of the series or the lane's
+// configuration rather than of one member's commit: the batch holds.
+type HeldSeriesRefusal struct{ Cause error }
+
+func (refusal *HeldSeriesRefusal) Error() string { return refusal.Cause.Error() }
+func (refusal *HeldSeriesRefusal) Unwrap() error { return refusal.Cause }

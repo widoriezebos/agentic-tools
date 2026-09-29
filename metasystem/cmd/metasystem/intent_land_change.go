@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -192,6 +193,22 @@ func (inv *intentInvocation) joinChangeToLane(request landpath.LandRequest, land
 	}
 	owners := inv.delivery()
 	record, err := owners.joinChange(changeJoinRequest{SeatRoot: request.Root, LandingRoot: landingRoot, Commit: head, GateTip: gateTip, At: owners.now()})
+	var ownerless *changeOwnerStartError
+	if errors.As(err, &ownerless) {
+		// Joined; only the lane's owner did not start: nothing is given back.
+		record = ownerless.Record
+		targets = append(targets, intentTarget{Kind: "batch", ID: record.BatchID})
+		return intentResult{Outcome: intentInProgress, Targets: targets,
+			Data:    map[string]any{"route": "lane", "change": id, "batchId": record.BatchID, "batchState": record.State, "unitState": batch.UnitJoined, "joinedNow": true},
+			Summary: fmt.Sprintf("change %s joined landing batch %s; the lane owner could not be started: %v — metasystem landing start", id, record.BatchID, ownerless.Cause),
+			next:    inv.publicArgv("landing", "start"), nextReason: "starts the lane's owner, which proves and pushes the batch"}
+	}
+	var stacked *batch.StackedChangeRefusal
+	if errors.As(err, &stacked) {
+		// The parent lands first; the seat keeps both commits and the pin.
+		return intentResult{Outcome: intentRefused, code: 1, Targets: targets, Data: map[string]any{"route": "lane", "change": id},
+			Summary: stacked.Reason}
+	}
 	if err != nil {
 		// A refused join gives the commit back, as an ejection does: the
 		// same commit would be refused again (N-2).

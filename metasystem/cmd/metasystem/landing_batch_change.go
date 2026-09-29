@@ -178,8 +178,22 @@ func executeChangeJoin(request changeJoinRequest, dependencies changeJoinDepende
 	if err != nil {
 		return batch.Record{}, err
 	}
-	return record, dependencies.ensure(lane)
+	if err := dependencies.ensure(lane); err != nil {
+		// The change is the lane's now; only its owner did not start (N-a).
+		return record, &changeOwnerStartError{Record: record, Cause: err}
+	}
+	return record, nil
 }
+
+// changeOwnerStartError is a join that wrote the member but could not start
+// the lane's owner: the change is joined and nothing is given back.
+type changeOwnerStartError struct {
+	Record batch.Record
+	Cause  error
+}
+
+func (err *changeOwnerStartError) Error() string { return err.Cause.Error() }
+func (err *changeOwnerStartError) Unwrap() error { return err.Cause }
 
 // batchLaneAccount resolves the accounting identity of the host lane whose
 // checkout is root: what a batch of changes is charged to (U11b). An

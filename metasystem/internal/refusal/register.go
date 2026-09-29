@@ -116,6 +116,7 @@ var Rows = []Row{
 	{Code: "LANE_ACCOUNT_UNRESOLVED", Owner: "internal/landing/lane", Site: "account.go#ResolveAccount", Shape: Question, H1: StandingInput},
 	{Code: "LANE_ENGINE_TOO_OLD", Owner: "cmd/metasystem", Site: "test.go#planWithTrustedPolicyEngine", Shape: Question, H1: StandingGuide, Forward: "landing restart"},
 	{Code: "BATCH_CHANGE_PARENT_UNKNOWN", Owner: "cmd/metasystem", Site: "landing_batch_change.go#executeChangeJoin", Shape: Question, H1: StandingInput},
+	{Code: "BATCH_CHANGE_STACKED_ELSEWHERE", Owner: "internal/landing/batch", Site: "change.go#JoinChange", Shape: Question, H1: StandingInput},
 	{Code: "BATCH_CHANGE_UNREADABLE", Owner: "internal/landing/batch", Site: "change.go#JoinChange", Shape: Question, H1: StandingInput},
 	{Code: "BATCH_JOIN_AUTHOR_UNBOUND", Owner: "cmd/metasystem", Site: "landing_batch_join.go#productionBatchAuthor", Shape: Question, H1: StandingInput},
 	{Code: "BATCH_JOIN_REVISION_MOVED", Owner: "cmd/metasystem", Site: "landing_batch_join.go#executeBatchJoin", Shape: Question, H1: StandingInput},

@@ -403,3 +403,90 @@ func TestHeldRefusalEjectsTheGoalMemberItNames(t *testing.T) {
 		t.Fatalf("record=%+v", record)
 	}
 }
+
+func stackedChange(parent Unit) Unit {
+	child := NewChangeUnit(ChangeMember{Commit: "c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0", Parent: parent.Change.Commit, AskedBy: "m1e+human", Subject: "record: more"},
+		"/seats/m1e/metasystem", "m1e", "human", []string{"records/notes.md"}, nil)
+	child.State = UnitJoined
+	return child
+}
+
+// TestStackedChangeInAnotherBatchIsRefused (U11b B-1a): a change stacked on
+// a live change of another batch is refused at the join, naming the parent
+// and its batch; nothing is assembled or written.
+func TestStackedChangeInAnotherBatchIsRefused(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	base := testCommit(101)
+	store := NewStore(root, nil)
+	strictReassembly(t, &store)
+	parent := changeMemberUnit()
+	parent.State = UnitJoined
+	proving := Record{Schema: 1, BatchID: "01j5x00000000000000000ba71", State: StateProving, TipTree: testCommit(104),
+		Units: []Unit{parent}, History: []HistoryEntry{{At: ten.Format(time.RFC3339Nano), Verb: "join", Detail: parent.GoalID + " joined"}},
+		batchRecordFields: batchRecordFields{BaseTree: base, PrefixTrees: []string{testCommit(104)}}}
+	must(t, store.Create(proving))
+	child := stackedChange(parent)
+	child.State = UnitJoining
+	_, err := JoinChange(store, ChangeJoin{Unit: child, BaseTree: base, NewID: "01j5x00000000000000000ba72", Actor: "m1e+human", At: ten})
+	if err == nil || !strings.Contains(err.Error(), "change "+child.GoalID+" is stacked on change "+parent.GoalID+", which is in batch 01j5x00000000000000000ba71 (proving); run the same command after "+parent.GoalID+" lands") {
+		t.Fatalf("join=%v", err)
+	}
+	var stacked *StackedChangeRefusal
+	if !errors.As(err, &stacked) {
+		t.Fatalf("not typed: %v", err)
+	}
+	if records, _ := store.Records(); len(records) != 1 {
+		t.Fatalf("records=%d", len(records))
+	}
+}
+
+// TestParentChangeLeavingTakesItsChildren (U11b B-1b): when a change leaves
+// its batch, every live change stacked on it leaves in the same step with
+// the parent's reason; reassembly never keeps a child without its parent.
+func TestParentChangeLeavingTakesItsChildren(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	base := testCommit(101)
+	store := NewStore(root, nil)
+	strictReassembly(t, &store, expectedAssembly(base, []string{"goal-a"}, []string{"chain-a"}, []string{testCommit(103)}))
+	record := openBatchWithGoalMember(base)
+	parent := changeMemberUnit()
+	parent.State = UnitJoined
+	child := stackedChange(parent)
+	grandchild := NewChangeUnit(ChangeMember{Commit: "d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0", Parent: child.Change.Commit, AskedBy: "m1e+human"}, "/s", "m1e", "human", nil, nil)
+	grandchild.State = UnitJoined
+	record.Units = append(record.Units, parent, child, grandchild)
+	record.PrefixTrees = []string{testCommit(103), testCommit(104), testCommit(105), testCommit(106)}
+	must(t, store.Create(record))
+	must(t, ReassembleSurvivorsWithReturns(store, testBatchID, "owner", ten, []ReturnDecision{{GoalID: parent.GoalID, Outcome: UnitEjected, Reason: "EJECTED: TestNotes failed"}}))
+	after := load(t, store)
+	for _, unit := range after.Units[2:] {
+		if unit.State != UnitReturnPending || unit.Outcome != UnitEjected || !strings.Contains(unit.Failure, "EJECTED: TestNotes failed") {
+			t.Fatalf("stacked %s stayed or lost the reason: %+v", unit.GoalID, unit)
+		}
+	}
+	if !strings.Contains(after.Units[2].Failure, "its parent change "+parent.GoalID+" left the batch") || after.Units[0].State != UnitJoined {
+		t.Fatalf("child=%+v goal=%+v", after.Units[2], after.Units[0])
+	}
+}
+
+// TestSeriesHeldRefusalHoldsTheBatch (U11b N-b): a held refusal about the
+// series or the lane's configuration holds the batch with the refusal as its
+// visible reason and ejects nobody.
+func TestSeriesHeldRefusalHoldsTheBatch(t *testing.T) {
+	t.Parallel()
+	bed := newLandingBed(t)
+	store := NewStore(bed.root, nil)
+	strictReassembly(t, &store)
+	must(t, store.Create(bed.record))
+	seams := greenLandSeams(&[]string{})
+	seams.Held = func(string, string) error {
+		return &HeldSeriesRefusal{Cause: errors.New("held refused: endpoint-mismatch: c1: this landing pushes origin refs/heads/main; the goal ledger is transport refs/heads/goals")}
+	}
+	must(t, LandSeries(store, testBatchID, "owner", time.Unix(4, 0), seams))
+	record := load(t, store)
+	if record.State != StateLanding || record.Units[0].State != UnitJoined || record.Units[1].State != UnitJoined || !strings.Contains(HoldReason(record), "endpoint-mismatch") {
+		t.Fatalf("state=%s hold=%q units=%+v", record.State, HoldReason(record), record.Units)
+	}
+}

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
@@ -478,3 +479,19 @@ func TestChangeGateRecheckRereadsTheGoalBranchTip(t *testing.T) {
 }
 
 func noBranchTip(string, string) (string, error) { return "", nil }
+
+// TestHeldRefusalKindsForTheLanding (U11b N-b): held's refusal of the series
+// or the lane's configuration is a series refusal (the batch holds); one
+// naming a member's commit ejects that member.
+func TestHeldRefusalKindsForTheLanding(t *testing.T) {
+	t.Parallel()
+	cause := errors.New("held refused")
+	for code, series := range map[string]bool{"endpoint-mismatch": true, "range-not-linear": true, "goal-item-not-held": false, "machine-trailer-malformed": false} {
+		err := heldRefusalError(landing.HeldVerdict{Outcome: "refused", Refusal: &landing.HeldRefusal{Code: code, Commit: "c1"}}, cause)
+		var held *batch.HeldSeriesRefusal
+		var member *batch.HeldCommitRefusal
+		if series != errors.As(err, &held) || series == errors.As(err, &member) {
+			t.Fatalf("%s: %T %v", code, err, err)
+		}
+	}
+}

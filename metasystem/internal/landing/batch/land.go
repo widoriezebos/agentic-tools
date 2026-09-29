@@ -536,6 +536,12 @@ func LandSeries(store Store, id, actor string, at time.Time, seams LandSeams) er
 			// A refusal naming one member's commit ejects that member (a
 			// change or a goal) and reopens the rest; the refused step is
 			// never tried again as it was (U11b).
+			var series *HeldSeriesRefusal
+			if errors.As(heldErr, &series) {
+				// About the series or the lane's configuration, not one
+				// member: the batch holds with the refusal as its reason.
+				return RecordHold(store, id, actor, "held refused the series: "+heldErr.Error(), at)
+			}
 			var refused *HeldCommitRefusal
 			if errors.As(heldErr, &refused) && refused.Commit != "" {
 				for _, unit := range units {

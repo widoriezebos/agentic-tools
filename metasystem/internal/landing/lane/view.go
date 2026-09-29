@@ -325,9 +325,9 @@ func batchView(record batch.Record) *BatchView {
 		if wait, waiting := batch.ProvingWait(record); waiting {
 			view.State, view.Reason = BatchWaiting, wait.Detail
 		}
-		if reason := batch.HoldReason(record); reason != "" {
-			view.State, view.Reason = BatchWaiting, "holds: "+reason
-		}
+	}
+	if reason := batch.HoldReason(record); reason != "" {
+		view.State, view.Reason = BatchWaiting, "holds: "+reason
 	}
 	return view
 }
