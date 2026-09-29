@@ -362,3 +362,59 @@ S66-08 confirmed answered as design obligations, no new finding, zero
 material; the read says, rightly, that it certifies the design and not
 the implementation, which Sol's read of the build will. The loop is
 CLOSED.
+
+## Built (2026-09-29)
+
+Step 1 built by Claude on Opus 5.5 in worktree `agentic-tools-loop`,
+branch `loop-from-the-room` from main `afaf50271`, in six commits:
+`e639b0c4d` the engine (a design's decisions reach the register, the
+final round closes by the engine's classification, the appendix from
+every answered round), `5f39cc0f5` the server (the three routes, design
+review in the Partner's grammar, suggest by section), `2e920e5b4` the
+page (Send to critique, the round's cards, the section card, Answer the
+round, Open a goal from this design), `383c9c2a0`, `6b7ea46fc` and
+`a8f1ac2bd` the parallel ratchet, the routes' refusals under test and
+the model named from the round's composition. Report: `~/LocalStorage/
+agentic-tools-evidence/review-room-20260928/opus-build-report-loop-from
+-the-room.md`; screenshots under `loop-from-the-room/`. Thirteen
+recorded choices where the design left room, among them: the decisions
+write is a POST like every write this server serves; an acceptance
+reaches the register only for an earlier round's finding the follow-up
+did not raise again; the final answered round goes to the close, which
+classifies it; a card's change and tests are read from labelled prose
+in the finding; Open a goal from this design replaces New goal for this
+design once an Outcome exists; a decisions row is written once, with no
+un-decide in step 1.
+
+**Sol's read** (`g1-s66-sol-read.md`, verbatim): four material
+findings. A fold's association kept by heading rather than by finding,
+so two findings on one section could swap rows; a repeated Send that
+rewrote the running critique's brief before the rejoin check; a section
+replacement that admitted a draft under another heading; an End-sheet
+link that opened the goal sheet before the Outcome was recorded. **Fix
+round 1** (`224bfdfec`, `606b59d6f`, `c022db5c3`, `382ae755e`): the fold
+request carries chain, round, finding and amendment and a drafted
+section binds to its own request, with the row owed again after a
+reload; the chain is decided before any generated input is written and
+a rejoin writes nothing; Use keeps the document's own heading; the End
+sheet's link is gone and the room offers the handoff once the Outcome
+is recorded, the page opening the sheet only when the design it read
+carries one. **Sol's re-read**: three fixed, one held on a corner, a
+draft that opens with prose and carries a heading on a later line.
+**Fix round 2** (`e303c8acb`): a draft whose body carries a heading line is
+refused in words, keeping the draft on the card; read by the design's
+author under Wido's rule of 2026-09-28 to stop a loop at one class's
+root.
+
+Residuals, none material at first use: the comparison shows the draft
+as the Partner wrote it, so a dropped opening heading is seen in the
+comparison and not in the result; a fold request sent before this
+build uses the old wording and stands unbound; the verb-level fixture
+exit test simulates ledger publication while the production close calls
+the real owner.
+
+Landed through `loop-landing3`, merged with main (the engine's batch
+14 with the fast gate's dead-code check), the bundle rebuilt, every
+landing check green including the whole `cmd/metasystem` package run to
+completion on the fix-round-1 tree, which fix round 2 leaves untouched
+on the Go side; the standing interface restarted onto it.
