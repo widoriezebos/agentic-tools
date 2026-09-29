@@ -37,13 +37,6 @@ func classifyEndpointPushError(text string, cause error) error {
 		RemoteRejected: strings.Contains(text, "[rejected]") || strings.Contains(text, "[remote rejected]")}
 }
 
-// CommandSpec is one explicit landing transport boundary.
-type CommandSpec struct {
-	Dir, Name string
-	Args      []string
-	Env       []string
-}
-
 func landingBranchRef(id string) string { return "refs/heads/landing/" + id }
 
 // PrepareLandingBranch rebuilds the local assembly branch at the exact base.
@@ -243,17 +236,6 @@ func runLandingGit(root, code string, args ...string) error {
 	command.Env = gittree.ScrubbedEnviron()
 	if output, err := command.CombinedOutput(); err != nil {
 		return fmt.Errorf("%s: %s: %w", code, strings.TrimSpace(string(output)), err)
-	}
-	return nil
-}
-
-// RunCommand executes a landing boundary without a shell.
-func RunCommand(spec CommandSpec) error {
-	command := exec.Command(spec.Name, spec.Args...)
-	command.Dir = spec.Dir
-	command.Env = append(os.Environ(), spec.Env...)
-	if output, err := command.CombinedOutput(); err != nil {
-		return fmt.Errorf("%s %v: %s: %w", spec.Name, spec.Args, output, err)
 	}
 	return nil
 }

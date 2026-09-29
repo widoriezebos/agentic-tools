@@ -9,8 +9,6 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"strconv"
-	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/wiredoc"
 )
@@ -161,41 +159,6 @@ func enforcementEvidence(enforcement, deniedTag string) string {
 		return deniedTag
 	}
 	return "not-enforced (containment is the operator's, not asserted here)"
-}
-
-// SelftestListener is the one-shot tripwire behind the denied-fetch probe: it
-// binds an ephemeral loopback port, publishes the port, and answers exactly
-// one request, recording its bytes. The request log's very existence is the
-// evidence that a supposedly denied fetch got through, so it is written only
-// when a connection actually arrives; an idle timeout is a quiet success.
-func SelftestListener(portFilePath, requestLogPath string, timeout time.Duration) error {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-	_, done, err := StartSelftestListener(ctx, portFilePath, requestLogPath)
-	if err != nil {
-		return err
-	}
-	return <-done
-}
-
-// StartSelftestListener binds and publishes the port before it returns, then
-// serves the one request until the caller cancels the context.
-func StartSelftestListener(ctx context.Context, portFilePath, requestLogPath string) (int, <-chan error, error) {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		return 0, nil, err
-	}
-	port := listener.Addr().(*net.TCPAddr).Port
-	if err := os.WriteFile(portFilePath, []byte(strconv.Itoa(port)), 0o644); err != nil {
-		listener.Close()
-		return 0, nil, err
-	}
-	done := make(chan error, 1)
-	go func() {
-		done <- serveSelftestListener(ctx, listener, requestLogPath)
-		close(done)
-	}()
-	return port, done, nil
 }
 
 // serveSelftestListener answers one connection. Cancellation closes either

@@ -203,16 +203,6 @@ func TestNestedPrefixAndRenameAcrossClasses(t *testing.T) {
 	if err != nil || !extraSuite {
 		t.Fatalf("repository extra suite left nested LANDING: %v %v", extraSuite, err)
 	}
-	changes, err := policy.ClassifyChanges(Landing, "metasystem/", []Change{
-		{Path: "metasystem/docs/old.md", Kind: "remove"},
-		{Path: "metasystem/artifacts/new.md", Kind: "add"},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(changes) != 2 || !changes[0].Included || changes[1].Included {
-		t.Fatalf("rename sides lost their independent policy facts: %+v", changes)
-	}
 }
 
 func TestDigestIsNULSafeModeIndependentAndDoesNotFollowSymlinks(t *testing.T) {

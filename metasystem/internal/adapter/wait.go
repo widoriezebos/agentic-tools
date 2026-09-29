@@ -31,16 +31,11 @@ func WaitDeliveryAccepted(waitID, nonce, deadline, session string) bool {
 	return waitID != "" && nonce != "" && session != "" && rfc3339UTC.MatchString(deadline)
 }
 
-// DeliverWait asks a runtime's adapter whether its session can hold the
+// DeliverWaitAt asks a runtime's adapter whether its session can hold the
 // foreground command. The answer is deliberately a one-word protocol so
-// provider output can never become wait evidence.
-func DeliverWait(ctx context.Context, runtime string, request WaitDeliveryRequest) (string, error) {
-	return DeliverWaitAt(ctx, "", runtime, request)
-}
-
-// DeliverWaitAt is DeliverWait for an installation root: the runtime is
-// looked up in the installation's runtime registry, so an external runtime
-// whose describe declares wait delivery answers too.
+// provider output can never become wait evidence. The runtime is looked up
+// in the installation's runtime registry (an empty root is the built-ins),
+// so an external runtime whose describe declares wait delivery answers too.
 func DeliverWaitAt(_ context.Context, root, runtime string, request WaitDeliveryRequest) (string, error) {
 	if runtime == "" || request.WaitID == "" || request.Nonce == "" || request.Deadline.IsZero() || request.Session == "" {
 		return "", fmt.Errorf("wait delivery requires an adapter, wait identifier, nonce, deadline, and session")

@@ -95,7 +95,7 @@ func TestBriefAdmissionAtRootModesBoundsAndAuthority(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Count(string(source), "os.ReadFile(briefPath)") != 3 || !strings.Contains(string(source), "validateBriefAuthority(admitted, bounds") {
+	if strings.Count(string(source), "os.ReadFile(briefPath)") != 2 || !strings.Contains(string(source), "validateBriefAuthority(admitted, bounds") {
 		t.Fatal("brief admission can reread authority bytes")
 	}
 }

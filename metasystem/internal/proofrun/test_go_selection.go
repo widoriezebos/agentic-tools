@@ -3,20 +3,12 @@ package proofrun
 import (
 	"crypto/sha256"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gopackages"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
-
-// ExpandGoPackageGroups turns protected package-selection templates into
-// ordinary, stable one-package groups. It must run after contract protection
-// and before selection, against the exact change base and candidate tree.
-func ExpandGoPackageGroups(contract testpolicy.Contract, projectRoot, baseTree, candidateTree string) (testpolicy.Contract, error) {
-	return ExpandGoPackageGroupsWithEnvironment(contract, projectRoot, baseTree, candidateTree, os.Environ())
-}
 
 func ExpandGoPackageGroupsWithEnvironment(contract testpolicy.Contract, projectRoot, baseTree, candidateTree string, baseEnvironment []string) (testpolicy.Contract, error) {
 	return expandGoPackageGroupsWithSelector(contract, projectRoot, baseTree, candidateTree, baseEnvironment, gopackages.SelectWithEnvironment)

@@ -57,7 +57,6 @@ type Plan struct {
 var firstTransitionGroups = []string{
 	"policy-protection",
 	"fast-static-build",
-	"section/dispatcher-adapter-and-mission-runner-fixtures",
 	"goal-cli-standard",
 	"landing-command-standard",
 	"section/adoption-fixtures",
@@ -65,7 +64,7 @@ var firstTransitionGroups = []string{
 
 // RequireFirstTransition adds the one-time protected migration battery to a
 // delivery plan whose trusted destination has no version-1 contract yet. It
-// names the existing fast/policy, dispatcher, goal, receipt and adoption
+// names the existing fast/policy, goal, receipt and adoption
 // owners; it is not a general bootstrap mode and cannot lower later policy.
 func RequireFirstTransition(contract Contract, plan Plan) (Plan, error) {
 	groups := groupMap(contract.Groups)

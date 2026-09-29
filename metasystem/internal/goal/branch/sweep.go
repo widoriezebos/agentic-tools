@@ -324,15 +324,6 @@ func (p SweepPlanResult) Nothing() bool {
 	return p.Refusal == nil && p.LocalTip == "" && len(p.RemoteTips) == 0 && len(p.Worktrees) == 0
 }
 
-// SweepPlan is Sweep's observation half (Part B 3.3, DL2-13): the same
-// dirty-worktree and unlanded-commit checks with no mutation. It reads the
-// remote tips without fetching, runs status without optional locks, deletes
-// nothing and moves no ref; the claim check is left to the apply. Its git
-// runs under req.Context.
-func SweepPlan(req SweepRequest) (SweepPlanResult, error) {
-	return sweepPlanWithDependencies(req, sweepDependenciesFor(req.context()))
-}
-
 func sweepPlanWithDependencies(req SweepRequest, deps sweepDependencies) (SweepPlanResult, error) {
 	ctx := req.context()
 	if req.PushTransport == nil {

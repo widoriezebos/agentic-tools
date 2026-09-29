@@ -109,12 +109,6 @@ func ProjectWorkspaceTreeWith(root, tree string, a ProjectionAccess) (string, er
 	return a.FilterPrefixes(top, tree, paths)
 }
 
-// InstallationWorkspaceTree removes workspace exclusions from a tree already
-// scoped to the installation subtree.
-func InstallationWorkspaceTree(root, tree string) (string, error) {
-	return installationWorkspaceTreeWithWorkspace(root, tree, gittree.Workspace{Dir: root})
-}
-
 func installationWorkspaceTreeWithWorkspace(root, tree string, workspace gittree.Workspace) (string, error) {
 	top, err := (gittree.Workspace{Dir: root, RawSource: workspace.RawSource}).TopLevel()
 	if err != nil {

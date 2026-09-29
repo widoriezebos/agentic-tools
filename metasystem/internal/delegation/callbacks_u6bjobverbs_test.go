@@ -148,9 +148,14 @@ func TestCritiqueReadAdmissionWritesItsResultInEveryOutcome(t *testing.T) {
 			result.CriticRoot != "prior" || result.Round != 1 || result.EventID == "" || !result.EventRecorded || !result.EventDurable {
 			t.Fatalf("redundant = %+v result %+v", got, result)
 		}
-		events, err := dispatch.LoadReadRefusals(filepath.Join(repo, "artifacts", "agents", "prior", "reads-refused.jsonl"))
-		if err != nil || len(events) != 1 || events[0].ID != result.EventID {
-			t.Fatalf("recorded event = %+v, %v; result id %q", events, err, result.EventID)
+		logged, err := os.ReadFile(filepath.Join(repo, "artifacts", "agents", "prior", "reads-refused.jsonl"))
+		lines := strings.Split(strings.TrimSpace(string(logged)), "\n")
+		var event dispatch.ReadRefusal
+		if err == nil && len(lines) == 1 {
+			err = json.Unmarshal([]byte(lines[0]), &event)
+		}
+		if err != nil || len(lines) != 1 || event.ID != result.EventID {
+			t.Fatalf("recorded events = %q, %v; result id %q", logged, err, result.EventID)
 		}
 	})
 

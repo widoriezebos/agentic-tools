@@ -32,7 +32,7 @@ func TestDegradedStopFormsMatchTheGoldenContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if list := DegradedStopFormList(); list != string(golden) {
+	if list := degradedStopFormList(); list != string(golden) {
 		t.Fatalf("rendered forms differ from the golden:\n%s", list)
 	}
 	rows := parseDegradedRows(t, golden)
@@ -201,4 +201,36 @@ func degradedClaudeStopCommand(t *testing.T, path string) string {
 		t.Fatalf("%s has no single Claude Stop command", path)
 	}
 	return config.Hooks.Stop[0].Hooks[0].Command
+}
+
+// degradedStopFormList renders every admitted form, one tab-separated row
+// per form (outcome, cause, comma-joined qualifiers, payload), in the order
+// of the golden contract.
+func degradedStopFormList() string {
+	var out strings.Builder
+	for _, cause := range degradedCauses {
+		if cause.key == "bare" {
+			fmt.Fprintf(&out, "allowed\tbare\t\t%s\n", mustDegradedStopForm("allowed", "bare"))
+			fmt.Fprintf(&out, "blocked\tbare\t\t%s\n", mustDegradedStopForm("blocked", "bare"))
+			continue
+		}
+		var admitted []string
+		for _, qualifier := range degradedQualifiers {
+			for _, allowed := range cause.qualifiers {
+				if allowed == qualifier.key {
+					admitted = append(admitted, qualifier.key)
+				}
+			}
+		}
+		for mask := 0; mask < 1<<len(admitted); mask++ {
+			var selected []string
+			for bit, qualifier := range admitted {
+				if mask&(1<<bit) != 0 {
+					selected = append(selected, qualifier)
+				}
+			}
+			fmt.Fprintf(&out, "allowed\t%s\t%s\t%s\n", cause.key, strings.Join(selected, ","), mustDegradedStopForm("allowed", cause.key, selected...))
+		}
+	}
+	return out.String()
 }

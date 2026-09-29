@@ -1,7 +1,6 @@
 package jsonedit
 
 import (
-	"errors"
 	"strings"
 	"testing"
 )
@@ -68,32 +67,6 @@ func TestGetShellStringKeepsTextAndRefusesLossyValues(t *testing.T) {
 				t.Fatalf("GetShellString() = (%q, %v), want (%q, %v)", got, ok, test.want, test.ok)
 			}
 		})
-	}
-}
-
-func TestSetFieldsEditsAndClassifies(t *testing.T) {
-	object, err := SetFields([]byte(`{"keep":true}`), []string{"name=x"}, []string{"count=42"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if object["keep"] != true || object["name"] != "x" || object["count"] != int64(42) {
-		t.Fatalf("edits not applied: %+v", object)
-	}
-	if _, err := SetFields([]byte(`{broken`), nil, nil); err == nil || errors.Is(err, ErrUsage) {
-		t.Fatalf("unparsable content is a data error, not usage: %v", err)
-	}
-	for _, c := range []struct {
-		strings, ints []string
-		wantText      string
-	}{
-		{strings: []string{"novalue"}, wantText: `--field "novalue" is not KEY=VALUE`},
-		{ints: []string{"novalue"}, wantText: `--int "novalue" is not KEY=VALUE`},
-		{ints: []string{"n=x"}, wantText: `--int "n=x" is not an integer`},
-	} {
-		_, err := SetFields([]byte(`{}`), c.strings, c.ints)
-		if err == nil || !errors.Is(err, ErrUsage) || err.Error() != c.wantText {
-			t.Fatalf("want usage error %q, got %v", c.wantText, err)
-		}
 	}
 }
 

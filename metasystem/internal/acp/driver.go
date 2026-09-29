@@ -90,27 +90,6 @@ type nativeSession struct {
 	claimed   atomic.Bool
 }
 
-// Quiescer is the evidence owner's finalization surface: after the
-// owner closes the pipes, Quiesce waits for the connection's read
-// loop to stop (bounded by ctx) and reports journal health — the
-// same Done-wait + JournalErr sampling the ACP file turn (RunFileTurn) performs.
-// The native session implements it; the owner type-asserts.
-type Quiescer interface {
-	Quiesce(ctx context.Context) error
-}
-
-// Quiesce waits for the connection to stop and returns the journal's
-// health. Call AFTER closing the endpoint's pipes; evidence is final
-// only when Quiesce has returned.
-func (s *nativeSession) Quiesce(ctx context.Context) error {
-	select {
-	case <-s.conn.Done():
-	case <-ctx.Done():
-		return ctx.Err()
-	}
-	return s.conn.JournalErr()
-}
-
 // PromptTurn claims the session (consumed by entry, not by success),
 // refuses ineligible envelopes and unset timeouts before any wire
 // traffic, resolves the mode, and starts the one pump goroutine.

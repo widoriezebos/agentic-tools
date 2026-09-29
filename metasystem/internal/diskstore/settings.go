@@ -56,16 +56,6 @@ func LoadSettings(confPath string, lookupEnv func(string) (string, bool)) (Setti
 	return settings, nil
 }
 
-// DefaultSettings are the compiled-in values alone, for a pass that has no
-// checkout of its own and for tests.
-func DefaultSettings() Settings {
-	settings := Settings{Values: map[string]string{}, Sources: map[string]string{}}
-	for _, row := range config.DiskSettings() {
-		settings.Values[row.Key], settings.Sources[row.Key] = row.Default, "default"
-	}
-	return settings
-}
-
 // number reads a numeric key. Values come only from LoadSettings, which
 // validated them, or from the compiled defaults; a key missing from a
 // hand-built Settings reads as its compiled default.

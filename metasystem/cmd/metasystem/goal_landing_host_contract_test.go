@@ -138,6 +138,22 @@ var retiredWithDeletedVerb = map[string]string{
 // retiredWithDeletedBed names legacy mandatory tests whose only subject was a
 // deleted shell fixture bed; the bed's scenarios moved to named Go tests
 // (verbs-object-action 6.7, U5).
+// retiredWithDeletedLibrary names legacy mandatory tests whose only subject
+// was library code deleted for having no caller (C5, repo hygiene): the
+// parked fleet-channel-gateway receive library, recoverable from 444eda07c
+// and 57c310a1e. Each maps to what was deleted.
+var retiredWithDeletedLibrary = map[string]string{
+	"authority-standard/TestVerifyOrderAndStep":               "channel/inbox.go Verify",
+	"authority-standard/TestVerifyMasksTextForEveryOutcome":   "channel/inbox.go Verify",
+	"authority-standard/TestVerifyUsesNowForZeroSentAt":       "channel/inbox.go Verify",
+	"authority-standard/TestInboundRecordMapsProviderFields":  "channel/inbox.go InboundRecord",
+	"authority-standard/TestStripCode":                        "channel/totp.go StripCode",
+	"authority-standard/TestMaskCodesPreservesEveryOtherByte": "channel/totp.go MaskCodes",
+	// Its record half went with InboundRecord; its git-window half is
+	// TestGitWindowRemainsUTC in the same group.
+	"authority-standard/TestChannelRecordTimesAndGitWindowRemainUTC": "channel/inbox.go InboundRecord",
+}
+
 var retiredWithDeletedBed = map[string]string{
 	"batch-buildcd-standard/TestLandFixtureConfigurationsPinProofAdmission": "land-fixtures.sh",
 	"batch-buildcd-standard/TestLandFixtureScenarioRegistryMatchesCount":    "land-fixtures.sh",
@@ -284,6 +300,24 @@ func assertLegacyHostContractCoverage(t *testing.T, current testpolicy.Contract)
 		"section/enumeration-mode-fixtures": {reason: "enumeration mode was deleted with validate-metasystem.sh"},
 		// goal-cli-fixtures.sh moved into the goal CLI Go tests (verbs-object-action U7b part 2).
 		"section/goal-cli-fixtures": {replacement: "goal-cli-standard"},
+		// C6 (repo hygiene): tombstones that only printed their retirement.
+		// Their scenarios run as Go tests in the owners' packages, which the
+		// package-selected go-affected group discovers.
+		"section/supervision-go-fixtures":                        {reason: "retired to Go tests in internal/supervise (verbs-object-action U7c)"},
+		"section/gate-fence-fixtures":                            {reason: "retired to Go tests in internal/gaterun"},
+		"section/telemetry-census-fixtures":                      {reason: "retired to Go tests in internal/census and internal/adapter/supervisor"},
+		"section/config-identity-fixtures":                       {reason: "retired to Go tests in internal/config (verbs-object-action U7c)"},
+		"section/authority-regression-fixtures":                  {reason: "retired to Go tests in internal/delegation and the owners' packages (verbs-object-action U6b)"},
+		"section/record-protocol-fixtures":                       {reason: "retired to Go tests in internal/delegation and the owners' packages (verbs-object-action U6b)"},
+		"section/evidence-segment-fixtures":                      {reason: "retired to Go tests in internal/evidence and internal/delegation (verbs-object-action U7c)"},
+		"section/lease-succession-fixtures":                      {reason: "retired to Go tests in internal/lease and internal/missionrunner (verbs-object-action U7c)"},
+		"section/flight-recorder-fixtures":                       {reason: "retired to Go tests in internal/lease and internal/events (verbs-object-action U7c)"},
+		"section/acp-fixtures":                                   {reason: "retired to Go tests in internal/adapter/supervisor, internal/missionrunner/hostturn and internal/acp"},
+		"section/delegate-caps-fixtures":                         {reason: "retired to Go tests in internal/delegation and the owners' packages (verbs-object-action U6b)"},
+		"section/adapter-deadline-fixtures":                      {reason: "retired to Go tests in internal/adapter/supervisor"},
+		"section/dispatcher-adapter-and-mission-runner-fixtures": {reason: "retired to Go tests in internal/delegation and the owners' packages"},
+		"section/project-extra-suites":                           {reason: "its one suite went with the benchmark kit's drivers (verbs-object-action U8b)"},
+		"section/shell-and-dependency-audits":                    {reason: "it parsed metasystem/scripts/, which is deleted; the static gate's shell parse judges every .sh file"},
 	}
 	currentGroupIDs := map[string]bool{}
 	for _, group := range current.Groups {
@@ -411,11 +445,17 @@ func assertLegacyHostContractCoverage(t *testing.T, current testpolicy.Contract)
 			}
 			requiredInputs = append(requiredInputs, "metasystem/internal/landing/landpath/**")
 		}
-		// A single-file script input leaves only with its deleted script.
+		// A single-file input leaves only with its deleted file (a script, or
+		// a Go source such as the retired proofrun test_section.go), and a
+		// whole-directory input (dir/**) only with its deleted directory.
 		var liveInputs []string
 		for _, input := range requiredInputs {
-			if strings.HasPrefix(input, "metasystem/scripts/") && !strings.ContainsAny(input, "*?[") {
-				if _, statErr := os.Stat(filepath.Join(projectRoot, filepath.FromSlash(input))); os.IsNotExist(statErr) {
+			path := input
+			if directory, whole := strings.CutSuffix(input, "/**"); whole {
+				path = directory
+			}
+			if !strings.ContainsAny(path, "*?[") {
+				if _, statErr := os.Stat(filepath.Join(projectRoot, filepath.FromSlash(path))); os.IsNotExist(statErr) {
 					continue
 				}
 			}
@@ -445,6 +485,10 @@ func assertLegacyHostContractCoverage(t *testing.T, current testpolicy.Contract)
 			}
 			if bed, retired := retiredWithDeletedBed[old.ID+"/"+name]; retired {
 				t.Logf("%s %s retired with the deleted bed %s", old.ID, name, bed)
+				continue
+			}
+			if library, retired := retiredWithDeletedLibrary[old.ID+"/"+name]; retired {
+				t.Logf("%s %s retired with the deleted library %s", old.ID, name, library)
 				continue
 			}
 			if replacement, retired := retiredWithDeletedScript[old.ID+"/"+name]; retired {

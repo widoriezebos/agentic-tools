@@ -32,9 +32,6 @@ func (r *RecordedProcesses) Add(pid, start int64) {
 	r.starts[pid] = append(r.starts[pid], start)
 }
 
-// Len is how many pids are recorded.
-func (r *RecordedProcesses) Len() int { return len(r.starts) }
-
 // Ours reports whether pid is a recorded process or runs an engine binary.
 func (r *RecordedProcesses) Ours(pid int64) bool {
 	if r.Engine != nil && r.Engine(pid) {

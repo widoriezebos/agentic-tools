@@ -1503,14 +1503,6 @@ func claimRequest(r VerbRequest, id string, supplied *Budget) PublishRequest {
 	}
 }
 
-// SetBudget without human proof is retired. SetBudgetApproved replaces the
-// whole tuple under the same authority boundary as approval. On claimed work
-// it advances the claim and spending boundary while preserving the ownership
-// episode used by the elapsed clock.
-func SetBudget(r VerbRequest, id string, budget Budget) (PublishResult, error) {
-	return PublishResult{}, fmt.Errorf("the budget was bound by the human's approval; goal budget requires the human authority proof")
-}
-
 // BudgetExtensionOffer is the exact read-only admission offer journaled by
 // extend-budget. Recovery replays these coordinates instead of rediscovering
 // evidence whose two-hour window may have moved on.
@@ -1837,17 +1829,6 @@ func recordAttorney(f *GoalFile, entryID string) {
 	h := &f.History[len(f.History)-1]
 	h.AuthorityOutcome = AuthorityOutcomePowerOfAttorney
 	h.AuthorityRuling = entryID
-}
-
-// ResolveAttorney reads the accepted tree offline and returns the entry a
-// seat may act under for the verb, or the refusal that names the grant
-// command.
-func ResolveAttorney(root, id, verb string, now time.Time) (PowerOfAttorneyEntry, error) {
-	e, err := ResolveEndpoint(root)
-	if err != nil {
-		return PowerOfAttorneyEntry{}, err
-	}
-	return resolveAttorneyForEndpoint(e, id, verb, now)
 }
 
 // ResolveAttorneyForEndpoint reads the named power of attorney from an
@@ -2537,10 +2518,6 @@ func AcceptedRiskDecision(r VerbRequest, id, finding, chain, by, why string, pro
 			}
 			return []Change{{Path: path, Content: RenderFile(f)}}, nil
 		}, Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) }})
-}
-
-func AcceptedRiskDecisionOpID(repoRoot, id, finding, chain string, now time.Time) (string, error) {
-	return AcceptedRiskDecisionOpIDWithResolver(repoRoot, id, finding, chain, now, ResolveEndpoint)
 }
 
 func AcceptedRiskDecisionOpIDWithResolver(repoRoot, id, finding, chain string, now time.Time, resolve func(string) (Endpoint, error)) (string, error) {

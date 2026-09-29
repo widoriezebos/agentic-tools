@@ -331,9 +331,10 @@ func auditDiskSelectorCalls(fileSet *token.FileSet, file *ast.File, importPath s
 	return found
 }
 
-// internal/gocache reads time only in its seam file (rule A9) and removes
-// nothing by path (rule A12, DL3A-09): every removal is an Unlinkat or a
-// directory Unlinkat relative to a verified shard handle.
+// internal/gocache reads no wall clock: every trimmer takes now from its
+// caller (rule A9; the unused clock.go seam left under the dead-code
+// check). It removes nothing by path (rule A12, DL3A-09): every removal is
+// an Unlinkat or a directory Unlinkat relative to a verified shard handle.
 func TestAuditDiskGocacheClockAndHandleRelativeRemoval(t *testing.T) {
 	t.Parallel()
 	root := filepath.Join("..", "..", "internal", "gocache")
@@ -353,10 +354,8 @@ func TestAuditDiskGocacheClockAndHandleRelativeRemoval(t *testing.T) {
 			t.Fatal(err)
 		}
 		checked++
-		if name != "clock.go" {
-			if found := auditDiskSelectorCalls(fileSet, parsed, "time", "Now", "Sleep", "Since", "Until", "After", "Tick", "NewTimer", "NewTicker"); len(found) != 0 {
-				t.Errorf("internal/gocache/%s reads the wall clock outside clock.go: %v", name, found)
-			}
+		if found := auditDiskSelectorCalls(fileSet, parsed, "time", "Now", "Sleep", "Since", "Until", "After", "Tick", "NewTimer", "NewTicker"); len(found) != 0 {
+			t.Errorf("internal/gocache/%s reads the wall clock: %v", name, found)
 		}
 		removals := auditDiskSelectorCalls(fileSet, parsed, "os", "Remove", "RemoveAll")
 		removals = append(removals, auditDiskSelectorCalls(fileSet, parsed, "golang.org/x/sys/unix", "Unlink", "Rmdir")...)

@@ -308,12 +308,15 @@ func (w *gateWorld) deps() deps {
 				return nil
 			case "vet":
 				return w.respond("vet", stdout)
+			case "install":
+				return w.respond("deadcode-install", stdout)
 			case "run":
 				switch {
 				case slices.Contains(args, staticcheckModule):
 					return w.respond("staticcheck", stdout)
 				case slices.Contains(args, govulncheckModule):
 					return w.respond("govulncheck", stdout)
+
 				}
 			case "test":
 				return w.respond("refusal", stdout)
@@ -361,6 +364,8 @@ func (w *gateWorld) deps() deps {
 		tool: func(_ context.Context, call toolCall) error {
 			w.note(worldCall{dir: call.dir, name: call.name, args: call.args, env: call.env})
 			switch {
+			case filepath.Base(call.name) == "deadcode":
+				return w.respond("deadcode-"+envValue(call.env, "GOOS"), call.stdout)
 			case call.name == "gofmt":
 				w.mu.Lock()
 				w.gofmtDir = append(w.gofmtDir, call.dir)

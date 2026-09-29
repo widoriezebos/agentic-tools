@@ -9,25 +9,10 @@ package jsonedit
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 	"unicode/utf8"
 )
-
-// ErrUsage marks a caller mistake (malformed KEY=VALUE, non-integer --int):
-// the verb exits 2 with a prefixed message instead of 1. Match with
-// errors.Is; the message itself carries no sentinel text.
-var ErrUsage = errors.New("usage")
-
-type usageError struct{ msg string }
-
-func (e usageError) Error() string      { return e.msg }
-func (usageError) Is(target error) bool { return target == ErrUsage }
-func usagef(format string, args ...any) error {
-	return usageError{msg: fmt.Sprintf(format, args...)}
-}
 
 // GetShellString resolves a string field for a shell variable. Unlike Get, it
 // refuses numbers, booleans, objects, invalid UTF-8 and NUL because Bash would
@@ -89,35 +74,6 @@ func FieldAbsent(content []byte, field string) bool {
 		current = value
 	}
 	return false
-}
-
-// SetFields applies top-level edits to a decoded JSON object: --field pairs
-// set strings, --int pairs set parsed int64s. The returned object is the
-// caller's to write atomically.
-func SetFields(data []byte, stringFields, intFields []string) (map[string]any, error) {
-	var object map[string]any
-	if err := json.Unmarshal(data, &object); err != nil {
-		return nil, err
-	}
-	for _, pair := range stringFields {
-		key, value, ok := strings.Cut(pair, "=")
-		if !ok {
-			return nil, usagef("--field %q is not KEY=VALUE", pair)
-		}
-		object[key] = value
-	}
-	for _, pair := range intFields {
-		key, raw, ok := strings.Cut(pair, "=")
-		if !ok {
-			return nil, usagef("--int %q is not KEY=VALUE", pair)
-		}
-		value, err := strconv.ParseInt(raw, 10, 64)
-		if err != nil {
-			return nil, usagef("--int %q is not an integer", pair)
-		}
-		object[key] = value
-	}
-	return object, nil
 }
 
 // Object builds the one-line compact JSON object from key=value arguments:

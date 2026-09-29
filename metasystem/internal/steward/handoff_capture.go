@@ -379,14 +379,6 @@ type handoffGoalSnapshot struct {
 
 type handoffGoalReader func(string, time.Time) (handoffGoalSnapshot, error)
 
-func readHandoffGoalSnapshot(root string, now time.Time) (handoffGoalSnapshot, error) {
-	work, err := goal.ReadClaimableBudgetedWork(root, now)
-	if err != nil {
-		return handoffGoalSnapshot{}, err
-	}
-	return handoffSnapshotFromWork(work), nil
-}
-
 func handoffSnapshotFromWork(work goal.ClaimableBudgetedWork) handoffGoalSnapshot {
 	snapshot := handoffGoalSnapshot{claimed: work.Claimed, landing: work.Landing, accepted: make(map[string]*goal.GoalFile)}
 	ids := work.Claimed
@@ -1064,13 +1056,6 @@ func readLiveHandoffIntents(root string) ([]Intent, error) {
 		intents = append(intents, intent)
 	}
 	return liveHandoffIntents(intents)
-}
-
-// Handoff captures a bounded immutable continuation state and publishes one
-// replacement authorization. Every refusal before directory creation leaves
-// no nonce state or intent.
-func Handoff(stateRoot string, caller HandoffCaller, record HandoffRecord, now time.Time, receiptFile string) (HandoffResult, error) {
-	return handoffWithGoalReader(stateRoot, caller, record, now, receiptFile, readHandoffGoalSnapshot)
 }
 
 // HandoffWithWorkReader uses a supplied claimable-work read while retaining

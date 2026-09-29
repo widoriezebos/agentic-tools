@@ -341,7 +341,7 @@ func TestTokenNeverAppearsInErrors(t *testing.T) {
 			base, cleanup := tc.base()
 			defer cleanup()
 			d := channel.DestinationConfig{Token: token, APIBase: base, Secrets: []string{token}}
-			_, err := telegram.New(nil).Peek(context.Background(), d)
+			_, err := telegram.New(nil).Credential(context.Background(), d)
 			if err == nil || strings.Contains(err.Error(), token) || strings.Contains(err.Error(), "/bot"+token+"/") {
 				t.Fatalf("unscrubbed or absent error: %v", err)
 			}

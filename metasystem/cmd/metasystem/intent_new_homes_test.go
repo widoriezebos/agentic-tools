@@ -21,8 +21,8 @@ import (
 )
 
 func init() {
-	registerIdempotency("test add", idemStateful, "tests already in the group: success, the contract's bytes unchanged", witnessTestAddRepeat)
-	registerIdempotency("test remove", idemStateful, "tests already absent from the group: success, the contract's bytes unchanged", witnessTestRemoveRepeat)
+	registerIdempotency("test add", idemStateful, "tests, inputs or surface paths already present: success, the contract's bytes unchanged", witnessTestAddRepeat)
+	registerIdempotency("test remove", idemStateful, "tests, inputs, surface paths or a surface already absent: success, the contract's bytes unchanged", witnessTestRemoveRepeat)
 	registerIdempotency("test baseline", idemCreation, "--gate records that the gate passed at this moment, so the baseline's age restarts from each call; --check only reads", nil)
 	registerIdempotency("settings set", idemStateful, "a key already holding the value: success, the local configuration unchanged", witnessSettingsSetRepeat)
 }
@@ -83,6 +83,18 @@ func witnessTestAddRepeat(t *testing.T) {
 	}
 	if second, err := os.ReadFile(path); err != nil || !bytes.Equal(first, second) {
 		t.Fatalf("a repeated test add changed the contract: err=%v", err)
+	}
+	// Inputs and surface paths already present: success, the same bytes.
+	for _, args := range [][]string{
+		{"test", "add", "--file", path, "--group", "app-group", "--inputs", "go.mod"},
+		{"test", "add", "--file", path, "--surface", "app", "--paths", "app/**"},
+	} {
+		if code := dispatch(args); code != 0 {
+			t.Fatalf("%v exit = %d", args, code)
+		}
+		if again, err := os.ReadFile(path); err != nil || !bytes.Equal(first, again) {
+			t.Fatalf("%v changed the contract: err=%v", args, err)
+		}
 	}
 }
 
@@ -221,6 +233,27 @@ func witnessTestRemoveRepeat(t *testing.T) {
 	if second, err := os.ReadFile(path); err != nil || !bytes.Equal(first, second) {
 		t.Fatalf("a repeated test remove changed the contract: err=%v", err)
 	}
+	// Inputs, surface paths and a whole surface already gone: success, the
+	// same bytes.
+	for _, args := range [][]string{
+		{"test", "remove", "--file", path, "--group", "app-group", "--inputs", "go.mod"},
+		{"test", "remove", "--file", path, "--surface", "app", "--paths", "app/**"},
+		{"test", "remove", "--file", path, "--surface", "no-longer-there"},
+	} {
+		if code := dispatch(args); code != 0 {
+			t.Fatalf("first %v exit = %d", args, code)
+		}
+		once, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if code := dispatch(args); code != 0 {
+			t.Fatalf("repeated %v exit = %d", args, code)
+		}
+		if twice, err := os.ReadFile(path); err != nil || !bytes.Equal(once, twice) {
+			t.Fatalf("a repeated %v changed the contract: err=%v", args, err)
+		}
+	}
 }
 
 // TestTestRemoveWithoutTestsTakesAWholeGroupOut: a group whose tests are all
@@ -256,5 +289,57 @@ func TestTestRemoveWithoutTestsTakesAWholeGroupOut(t *testing.T) {
 	}
 	if code := dispatch([]string{"test", "remove", "--file", path, "--group", "spare-group"}); code != 0 {
 		t.Fatalf("a repeated group removal exit = %d", code)
+	}
+}
+
+// TestTestRemoveAndAddEditGroupInputsAndSurfacePaths: a deleted or moved file
+// leaves the contract's inputs and surface paths through the same two verbs,
+// and a moved file is re-pointed by removing the old path and adding the new;
+// a surface whose paths all went leaves with every dependsOn naming it.
+func TestTestRemoveAndAddEditGroupInputsAndSurfacePaths(t *testing.T) {
+	contract := testingMergeFixture()
+	contract.Groups[0].Inputs = []string{"go.mod", "scripts/old.json", "scripts/gone.sh"}
+	contract.Surfaces = append(contract.Surfaces, testpolicy.Surface{ID: "fixture", Paths: []string{"scripts/fixture.sh"}, DependsOn: []string{}, Standard: []string{"app-group"}, Deep: []string{}, Critical: []string{}})
+	contract.Surfaces[0].DependsOn = []string{"fixture"}
+	contract.Surfaces[0].Paths = []string{"app/**", "scripts/old.json"}
+	path := filepath.Join(t.TempDir(), "testing.json")
+	data, err := contractmerge.Render(contract)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{
+		{"test", "remove", "--file", path, "--group", "app-group", "--inputs", "scripts/old.json,scripts/gone.sh"},
+		{"test", "add", "--file", path, "--group", "app-group", "--inputs", "floors.json"},
+		{"test", "remove", "--file", path, "--surface", "app", "--paths", "scripts/old.json"},
+		{"test", "add", "--file", path, "--surface", "app", "--paths", "floors.json"},
+		{"test", "remove", "--file", path, "--surface", "fixture"},
+	} {
+		if code := dispatch(args); code != 0 {
+			t.Fatalf("%v exit = %d", args, code)
+		}
+	}
+	loaded, err := testpolicy.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := loaded.Groups[0].Inputs; !reflect.DeepEqual(got, []string{"go.mod", "floors.json"}) {
+		t.Fatalf("group inputs = %v", got)
+	}
+	if len(loaded.Surfaces) != 2 || !reflect.DeepEqual(loaded.Surfaces[0].Paths, []string{"app/**", "floors.json"}) || len(loaded.Surfaces[0].DependsOn) != 0 {
+		t.Fatalf("surfaces = %+v", loaded.Surfaces)
+	}
+	for _, args := range [][]string{
+		{"test", "remove", "--file", path, "--group", "no-such-group", "--inputs", "go.mod"},
+		{"test", "add", "--file", path, "--surface", "no-such-surface", "--paths", "x"},
+		{"test", "add", "--file", path, "--group", "app-group", "--surface", "app", "--paths", "x"},
+		{"test", "add", "--file", path, "--group", "app-group", "--tests", "TestBase", "--inputs", "x"},
+		{"test", "remove", "--file", path, "--surface", "app", "--inputs", "x"},
+	} {
+		if code := dispatch(args); code == 0 {
+			t.Fatalf("%v succeeded", args)
+		}
 	}
 }

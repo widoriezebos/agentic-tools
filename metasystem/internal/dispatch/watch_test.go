@@ -8,69 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 )
-
-// The job waiter blocks to terminal with pinned codes, holds a
-// waiter record while waiting, and removes it on exit.
-func TestJobWatchRoundTrip(t *testing.T) {
-	root := t.TempDir()
-	jobs := filepath.Join(root, "artifacts", "agents", "jobs")
-	os.MkdirAll(jobs, 0o755)
-	record := filepath.Join(jobs, "j-watch.json")
-	// Records are rewritten the way the engine writes them: whole, by
-	// rename. os.WriteFile truncates first, and a poll landing in that gap
-	// reads an empty file, which is "no record" (exit 4), not a status.
-	writeRecord := func(status string) {
-		t.Helper()
-		temp := record + ".tmp"
-		if err := os.WriteFile(temp, []byte(`{"jobId":"j-watch","status":"`+status+`","startedAt":"2026-08-15T10:00:00Z"}`), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.Rename(temp, record); err != nil {
-			t.Fatal(err)
-		}
-	}
-	writeRecord("running")
-
-	caller := run.Caller{Class: "MAIN", MainId: "main-w", SessionId: "s"}
-	done := make(chan int, 1)
-	waiting := make(chan struct{})
-	advance := make(chan struct{})
-	go func() {
-		done <- JobWatch(root, "j-watch", caller, 20*time.Millisecond, func(time.Duration) {
-			waiting <- struct{}{}
-			<-advance
-		})
-	}()
-
-	// The first requested poll happens only after waiter registration, so it
-	// is the completion signal for the state this assertion observes.
-	<-waiting
-	target := run.WaiterTarget{StartedAt: "2026-08-15T10:00:00Z"}
-	if !run.LiveWaiter(root, identity.KernelProber{}, "job", "j-watch", "main-w", target) {
-		t.Fatal("the waiting watch holds no live waiter record")
-	}
-	if run.LiveWaiter(root, identity.KernelProber{}, "job", "j-watch", "main-other", target) {
-		t.Fatal("a foreign owner saw the waiter as its own")
-	}
-
-	writeRecord("completed")
-	advance <- struct{}{}
-	if code := <-done; code != 0 {
-		t.Fatalf("completed job watch exit %d", code)
-	}
-
-	// Failed maps to 1; missing maps to 4.
-	writeRecord("failed")
-	if code := JobWatch(root, "j-watch", caller, time.Millisecond); code != 1 {
-		t.Fatalf("failed job watch exit %d", code)
-	}
-	if code := JobWatch(root, "ghost", caller, time.Millisecond); code != run.ExitNoRecord {
-		t.Fatalf("missing job watch exit %d", code)
-	}
-}
 
 func TestWaitJobTerminals(t *testing.T) {
 	root := t.TempDir()

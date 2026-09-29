@@ -81,7 +81,6 @@ type fingerprintWireField struct {
 	Value   []byte
 }
 
-var launchFingerprintV1Preamble = []byte{'C', 'L', 'M', '-', 'F', 'P', 0, 1}
 var launchFingerprintV2Preamble = []byte{'C', 'L', 'M', '-', 'F', 'P', 0, 2}
 
 // CanonicalizeLaunchFingerprint resolves the whole request before hashing.
@@ -200,48 +199,6 @@ func excludedProductRoot(gitRoot, root string) bool {
 	return true
 }
 
-// LaunchFingerprintV1 hashes the pinned v1 wire tuple. Every scalar is a
-// presence byte, an unsigned 64-bit big-endian byte length, and its UTF-8
-// bytes. The roots field is present and carries an unsigned 64-bit count,
-// followed by the same unsigned 64-bit length plus UTF-8 bytes for each root.
-func LaunchFingerprintV1(request CanonicalLaunchRequest) (LaunchFingerprint, error) {
-	if err := validateCanonicalLaunchRequest(request, 1); err != nil {
-		return LaunchFingerprint{}, err
-	}
-	capMinutes := strconv.FormatInt(request.CapMinutes, 10)
-	roots, err := encodeFingerprintRoots(request.ProductRoots)
-	if err != nil {
-		return LaunchFingerprint{}, err
-	}
-	values := [][]byte{
-		[]byte(request.SessionKey),
-		[]byte(request.DispatchMode),
-		[]byte(request.ResumedSessionID),
-		[]byte(request.Runtime),
-		[]byte(request.CanonicalModelKey),
-		[]byte(request.Role),
-		[]byte(request.LaunchMode),
-		[]byte(request.PermissionEnvelopeDigest),
-		roots,
-		[]byte(capMinutes),
-		[]byte(request.InputHash),
-	}
-	fields := make([]fingerprintWireField, 0, len(values))
-	for _, value := range values {
-		fields = append(fields, fingerprintWireField{Present: true, Value: value})
-	}
-	wire, err := encodeLaunchFingerprintV1(fields)
-	if err != nil {
-		return LaunchFingerprint{}, err
-	}
-	sum := sha256.Sum256(wire)
-	return LaunchFingerprint{
-		Version: 1,
-		Digest:  hex.EncodeToString(sum[:]),
-		Request: request,
-	}, nil
-}
-
 // LaunchFingerprintV2 adds the exact goal revision to the v1 request and
 // uses a distinct preamble so a legacy digest can never compare equal.
 func LaunchFingerprintV2(request CanonicalLaunchRequest) (LaunchFingerprint, error) {
@@ -345,10 +302,6 @@ func encodeFingerprintRoots(roots []string) ([]byte, error) {
 		buffer.WriteString(root)
 	}
 	return buffer.Bytes(), nil
-}
-
-func encodeLaunchFingerprintV1(fields []fingerprintWireField) ([]byte, error) {
-	return encodeLaunchFingerprint(launchFingerprintV1Preamble, fields)
 }
 
 func encodeLaunchFingerprint(preamble []byte, fields []fingerprintWireField) ([]byte, error) {

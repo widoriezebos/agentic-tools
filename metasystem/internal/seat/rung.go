@@ -96,15 +96,6 @@ func Ladder(start Rung, pinned string) []Rung {
 	return rungs
 }
 
-// ValidatePinnedNamespace accepts only the two prefixes presence knows.
-func ValidatePinnedNamespace(value string) error {
-	switch strings.TrimSuffix(strings.TrimSpace(value), "/") {
-	case "", MetasystemNamespace, BranchNamespace:
-		return nil
-	}
-	return fmt.Errorf("%s must be %s or %s, got %q", PresenceNamespaceKey, MetasystemNamespace, BranchNamespace, value)
-}
-
 // PresenceNamespaceKey is the configuration key that pins the ladder. It is
 // declared here so the package that reads configuration and the package that
 // uses it cannot drift apart.

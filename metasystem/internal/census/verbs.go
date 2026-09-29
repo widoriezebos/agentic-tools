@@ -18,15 +18,6 @@ func Alive(pid, expectedStart int64, probe identity.FixtureProbe) bool {
 	return identityAlive(pid, expectedStart, probe)
 }
 
-// AlivePair is Alive with the clock-step-immune pair: when
-// expectedTicks>0 and expectedBootID!="" and the live process carries them,
-// the pair decides and a btime step cannot false-death the process; otherwise
-// the seconds comparison stands (darwin, legacy records). The pair is
-// both-or-neither — callers reject exactly-one before reaching here.
-func AlivePair(pid, expectedStart, expectedTicks int64, expectedBootID string, probe identity.FixtureProbe) bool {
-	return alivePair(pid, expectedStart, expectedTicks, expectedBootID, probe)
-}
-
 // ProcIdentity is a live process's identity from the one authoritative
 // source: its start second and command line. Command is never empty on
 // success, so a caller's error check is its only absence check.
@@ -62,27 +53,6 @@ func kernelIdentity(pid int64) (ProcIdentity, error) {
 	}
 	return ProcIdentity{Pid: pid, PidStartedAt: exact.StartedAt.Unix(), Command: command,
 		PidStartTicks: exact.StartTicks, BootID: exact.BootID}, nil
-}
-
-// SignatureCheck is the positive/lookalike contract of one runtime's
-// registry signature: the positive argv must classify as the runtime and
-// the lookalike must NOT — the proof that a signature is neither too loose
-// nor too tight. Returns an error when the contract fails.
-func SignatureCheck(runtime, positive, lookalike string) error {
-	sig, _, err := RuntimeSignature(runtime)
-	if err != nil {
-		return err
-	}
-	return signatureContract(runtime, sig, positive, lookalike)
-}
-
-func signatureContract(runtime string, sig Signature, positive, lookalike string) error {
-	positiveOK := sig.matches(positive)
-	lookalikeOK := sig.matches(lookalike)
-	if !positiveOK || lookalikeOK {
-		return fmt.Errorf("signature positive/lookalike contract failed for %s", runtime)
-	}
-	return nil
 }
 
 // probeFixture is the nil-safe fixture read (a nil probe refuses).

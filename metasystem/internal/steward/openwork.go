@@ -15,19 +15,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 )
 
-// ReadOpenWork answers whether delegated work is open on THIS
-// machine, routing on the checkout's world: a converted checkout
-// judges from the synced ledger by this machine's enrolled
-// nickname, and a legacy checkout keeps the single-file reading
-// byte-identical. The verdict feeds the dead-man's decision, so
-// absence of a readable ledger is degraded-honest, never no-work.
-func ReadOpenWork(repoRoot string) (OpenWork, string, error) {
-	return readOpenWorkWithDependencies(repoRoot, openWorkDependencies{
-		NewWorld:                  goal.NewWorld,
-		ReadClaimableBudgetedWork: goal.ReadClaimableBudgetedWork,
-	})
-}
-
 type openWorkDependencies struct {
 	NewWorld                  func(string) bool
 	ReadClaimableBudgetedWork func(string, time.Time) (goal.ClaimableBudgetedWork, error)

@@ -157,23 +157,6 @@ func budgetExceedsBox(budget, box Budget) bool {
 		budget.ReviewRoundLimit > box.ReviewRoundLimit
 }
 
-func requireWithinGoalNorm(repoRoot string, tier uint8, budget Budget, id, context string) error {
-	if tier == 0 {
-		tier = 3
-	}
-	box, err := config.TierBox(filepath.Join(repoRoot, "metasystem.conf"), tier)
-	if err != nil {
-		return err
-	}
-	if budget.ReservedJobMinutesLimit <= box.ReservedJobMinutesLimit && budget.ReviewRoundLimit <= box.ReviewRoundLimit {
-		return nil
-	}
-	if context != "" {
-		return fmt.Errorf("GOAL_NORM_REFUSED: goal %s %s with an over-norm tuple; set-budget it within the norm first, or rejoin after release", id, context)
-	}
-	return refuseGoalNorm(id, budget, box)
-}
-
 func sameGoalNormApproval(left, right *GoalNormApprovalClaim) bool {
 	if left == nil || right == nil {
 		return left == right

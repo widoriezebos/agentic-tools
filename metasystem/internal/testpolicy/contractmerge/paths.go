@@ -1,0 +1,118 @@
+package contractmerge
+
+import (
+	"fmt"
+	"strings"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
+)
+
+// AddInputs adds paths to a group's inputs, after the ones it lists; a path
+// the group already lists is already added.
+func AddInputs(contract testpolicy.Contract, groupID string, paths []string) (testpolicy.Contract, error) {
+	return editGroupInputs(contract, groupID, paths, func(inputs, paths []string) []string { return appendUnique(inputs, paths...) })
+}
+
+// RemoveInputs takes paths out of a group's inputs, the follow-up of deleting
+// or moving a file; a path the group no longer lists is already removed.
+func RemoveInputs(contract testpolicy.Contract, groupID string, paths []string) (testpolicy.Contract, error) {
+	return editGroupInputs(contract, groupID, paths, without)
+}
+
+// AddSurfacePaths adds paths to a surface, after the ones it lists; a path
+// the surface already lists is already added.
+func AddSurfacePaths(contract testpolicy.Contract, surfaceID string, paths []string) (testpolicy.Contract, error) {
+	return editSurfacePaths(contract, surfaceID, paths, func(current, paths []string) []string { return appendUnique(current, paths...) })
+}
+
+// RemoveSurfacePaths takes paths out of a surface; a path the surface no
+// longer lists is already removed.
+func RemoveSurfacePaths(contract testpolicy.Contract, surfaceID string, paths []string) (testpolicy.Contract, error) {
+	return editSurfacePaths(contract, surfaceID, paths, without)
+}
+
+// RemoveSurface takes a whole surface out of the contract, with every
+// dependsOn naming it. A surface the contract no longer has is already
+// removed.
+func RemoveSurface(contract testpolicy.Contract, surfaceID string) (testpolicy.Contract, error) {
+	surfaces := make([]testpolicy.Surface, 0, len(contract.Surfaces))
+	for _, surface := range contract.Surfaces {
+		if surface.ID == surfaceID {
+			continue
+		}
+		surface.DependsOn = without(surface.DependsOn, []string{surfaceID})
+		surfaces = append(surfaces, surface)
+	}
+	contract.Surfaces = surfaces
+	if err := contract.Validate(); err != nil {
+		return testpolicy.Contract{}, invalid(err.Error())
+	}
+	return contract, nil
+}
+
+func editGroupInputs(contract testpolicy.Contract, groupID string, paths []string, edit func([]string, []string) []string) (testpolicy.Contract, error) {
+	entity := fmt.Sprintf("group %q", groupID)
+	clean, err := cleanPaths(entity, "inputs", paths)
+	if err != nil {
+		return testpolicy.Contract{}, err
+	}
+	for i := range contract.Groups {
+		if contract.Groups[i].ID != groupID {
+			continue
+		}
+		contract.Groups[i].Inputs = edit(append([]string{}, contract.Groups[i].Inputs...), clean)
+		if err := contract.Validate(); err != nil {
+			return testpolicy.Contract{}, invalid(err.Error())
+		}
+		return contract, nil
+	}
+	return testpolicy.Contract{}, addTestsRefusal(entity, "id", "unknown group")
+}
+
+func editSurfacePaths(contract testpolicy.Contract, surfaceID string, paths []string, edit func([]string, []string) []string) (testpolicy.Contract, error) {
+	entity := fmt.Sprintf("surface %q", surfaceID)
+	clean, err := cleanPaths(entity, "paths", paths)
+	if err != nil {
+		return testpolicy.Contract{}, err
+	}
+	for i := range contract.Surfaces {
+		if contract.Surfaces[i].ID != surfaceID {
+			continue
+		}
+		contract.Surfaces[i].Paths = edit(append([]string{}, contract.Surfaces[i].Paths...), clean)
+		if err := contract.Validate(); err != nil {
+			return testpolicy.Contract{}, invalid(err.Error())
+		}
+		return contract, nil
+	}
+	return testpolicy.Contract{}, addTestsRefusal(entity, "id", "unknown surface")
+}
+
+func cleanPaths(entity, field string, paths []string) ([]string, error) {
+	var clean []string
+	for _, path := range paths {
+		path = strings.TrimSpace(path)
+		if path == "" {
+			return nil, addTestsRefusal(entity, field, "paths must be nonempty and comma-separated")
+		}
+		clean = append(clean, path)
+	}
+	if len(clean) == 0 {
+		return nil, addTestsRefusal(entity, field, "at least one path is required")
+	}
+	return clean, nil
+}
+
+func without(values, drop []string) []string {
+	dropped := map[string]bool{}
+	for _, value := range drop {
+		dropped[value] = true
+	}
+	kept := make([]string, 0, len(values))
+	for _, value := range values {
+		if !dropped[value] {
+			kept = append(kept, value)
+		}
+	}
+	return kept
+}

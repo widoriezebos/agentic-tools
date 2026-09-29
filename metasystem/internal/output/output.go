@@ -12,7 +12,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
 	"strings"
 	"time"
 )
@@ -139,46 +138,4 @@ func Detect(data []byte) (Reference, bool) {
 func (r Reference) Line() string {
 	digest := strings.TrimPrefix(r.Digest, "sha256:")
 	return fmt.Sprintf("output-reference verb=%s path=%s bytes=%d sha256=%s format=%s", r.Verb, r.Path, r.Bytes, digest, r.Format)
-}
-
-func Prune(root string, olderThan time.Duration, now time.Time) ([]string, error) {
-	if olderThan < 0 {
-		return nil, fmt.Errorf("output retention window must not be negative")
-	}
-	dir, err := filepath.Abs(filepath.Join(root, filepath.FromSlash(Dir)))
-	if err != nil {
-		return nil, fmt.Errorf("resolve output directory: %w", err)
-	}
-	dirInfo, err := os.Lstat(dir)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("inspect output directory: %w", err)
-	}
-	if dirInfo.Mode()&os.ModeSymlink != 0 {
-		return nil, fmt.Errorf("output directory must not be a symlink: %s", dir)
-	}
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return nil, fmt.Errorf("list output directory: %w", err)
-	}
-	cutoff := now.Add(-olderThan)
-	removed := make([]string, 0)
-	for _, entry := range entries {
-		path := filepath.Join(dir, entry.Name())
-		info, err := os.Lstat(path)
-		if err != nil {
-			return nil, fmt.Errorf("inspect output path %s: %w", path, err)
-		}
-		if !info.Mode().IsRegular() || !info.ModTime().Before(cutoff) {
-			continue
-		}
-		if err := os.Remove(path); err != nil {
-			return nil, fmt.Errorf("remove output file %s: %w", path, err)
-		}
-		removed = append(removed, path)
-	}
-	sort.Strings(removed)
-	return removed, nil
 }

@@ -57,11 +57,11 @@ func TestDeliverWaitRefusesAnIncompleteRequest(t *testing.T) {
 		"no deadline": {WaitID: "w", Nonce: "n", Session: "s"},
 		"no session":  {WaitID: "w", Nonce: "n", Deadline: complete.Deadline},
 	} {
-		if _, err := DeliverWait(context.Background(), "claude", request); err == nil || !strings.Contains(err.Error(), "requires an adapter") {
+		if _, err := DeliverWaitAt(context.Background(), "", "claude", request); err == nil || !strings.Contains(err.Error(), "requires an adapter") {
 			t.Errorf("%s: incomplete request = %v, want the named refusal", name, err)
 		}
 	}
-	if _, err := DeliverWait(context.Background(), "", complete); err == nil || !strings.Contains(err.Error(), "requires an adapter") {
+	if _, err := DeliverWaitAt(context.Background(), "", "", complete); err == nil || !strings.Contains(err.Error(), "requires an adapter") {
 		t.Errorf("no runtime = %v, want the named refusal", err)
 	}
 }

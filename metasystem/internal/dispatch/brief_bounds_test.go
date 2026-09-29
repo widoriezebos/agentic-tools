@@ -115,20 +115,14 @@ func TestBriefAdmission(t *testing.T) {
 	partial := t.TempDir() + "/partial"
 	require(t, os.WriteFile(partial, []byte("Working Mode: implement\nBoundary: []"), 0o600) == nil, "write partial brief")
 	t.Run("brief-mode-paired-bounds", func(t *testing.T) {
-		_, err := BriefMode(partial)
+		data, err := os.ReadFile(partial)
+		require(t, err == nil, "read partial brief: %v", err)
+		_, err = admitBriefBytes(data, func() (string, error) { return "", nil }, true, nil)
 		requireBoundsRefusal(t, err, "Ceiling", "required with Boundary")
 	})
 	t.Run("brief-authority-paired-bounds", func(t *testing.T) {
 		err := ValidateBriefAuthority(partial, t.TempDir(), t.TempDir())
 		requireBoundsRefusal(t, err, "Ceiling", "required with Boundary")
-	})
-	t.Run("read-failure", func(t *testing.T) {
-		_, err := ReadBriefAdmission(t.TempDir()+"/missing", "", true, nil)
-		require(t, err != nil, "missing brief admitted")
-	})
-	t.Run("authority-read-failure", func(t *testing.T) {
-		_, err := ReadBriefAdmission(t.TempDir()+"/missing", "", false, func([]byte, BriefBounds) error { return nil })
-		require(t, err != nil, "missing authority brief admitted")
 	})
 	t.Run("exact-bytes", func(t *testing.T) {
 		data := []byte("Working Mode: implement\nBoundary: []\nCeiling: 0")
@@ -143,7 +137,7 @@ func TestBriefAdmission(t *testing.T) {
 	t.Run("parser-ownership", func(t *testing.T) {
 		file, err := parser.ParseFile(token.NewFileSet(), "brief.go", nil, 0)
 		require(t, err == nil, "parse brief.go: %v", err)
-		require(t, boundsParserCalls(file, "admitBriefBytes") == 1 && boundsParserCalls(file, "BriefModeOnly") == 0 && boundsParserCalls(file, "ReadBriefAdmission") == 0 && boundsParserCalls(file, "ReadBriefAdmissionAtRoot") == 0, "bounds parser ownership changed")
+		require(t, boundsParserCalls(file, "admitBriefBytes") == 1 && boundsParserCalls(file, "BriefModeOnly") == 0 && boundsParserCalls(file, "ReadBriefAdmissionAtRoot") == 0, "bounds parser ownership changed")
 	})
 }
 func boundsParserCalls(file *ast.File, functionName string) (calls int) {

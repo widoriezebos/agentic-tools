@@ -184,7 +184,7 @@ func TestExpandedGoGroupIdentityTracksOnlyRelevantInputs(t *testing.T) {
 		"metasystem/base/base.go":         testSnapshotFile("package base\nconst Value = 1\n", 0o644),
 		"metasystem/base/base_test.go":    testSnapshotFile("package base\nimport \"testing\"\nfunc TestBase(t *testing.T) {}\n", 0o644),
 		"metasystem/consumer/consumer.go": testSnapshotFile("package consumer\n", 0o644),
-		"metasystem/scripts/shared.sh":    testSnapshotFile("echo original\n", 0o644),
+		"metasystem/docs/shared.md":       testSnapshotFile("original\n", 0o644),
 	}
 	copyFiles := func() map[string]testSnapshotEntry {
 		copy := make(map[string]testSnapshotEntry, len(files)+1)
@@ -196,7 +196,7 @@ func TestExpandedGoGroupIdentityTracksOnlyRelevantInputs(t *testing.T) {
 	unrelatedFiles := copyFiles()
 	unrelatedFiles["metasystem/added/added.go"] = testSnapshotFile("package added\n", 0o644)
 	sharedFiles := copyFiles()
-	sharedFiles["metasystem/scripts/shared.sh"] = testSnapshotFile("echo changed\n", 0o644)
+	sharedFiles["metasystem/docs/shared.md"] = testSnapshotFile("changed\n", 0o644)
 	baseFiles := copyFiles()
 	baseFiles["metasystem/base/base.go"] = testSnapshotFile("package base\nconst Value = 2\n", 0o644)
 	snapshots := []*testSnapshotFactory{
@@ -223,7 +223,7 @@ func TestExpandedGoGroupIdentityTracksOnlyRelevantInputs(t *testing.T) {
 		identities[i] = result[group.ID]
 	}
 	if identities[0] != identities[1] || identities[0] == identities[2] || identities[0] == identities[3] {
-		t.Fatalf("base identities across original, unrelated package, shared script, and base source = %v", identities)
+		t.Fatalf("base identities across original, unrelated package, shared input, and base source = %v", identities)
 	}
 }
 

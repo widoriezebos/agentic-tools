@@ -106,12 +106,6 @@ func absentExternal(root, runtime string) bool {
 	return refused
 }
 
-// ExternalAdapters reports the external adapters an installation declares
-// and the executables it refused, without executing any of them.
-func ExternalAdapters(root string) ([]external.Adapter, []external.Refusal, error) {
-	return external.Discover(root)
-}
-
 // FixtureSignatureRuntimesEnv narrows the adapter signature universe in a
 // fixture-mode root (metasystem.runtimes=fake) to the named runtimes, so a
 // process fixture's ancestry is agent-free although the test runner itself
@@ -119,16 +113,6 @@ func ExternalAdapters(root string) ([]external.Adapter, []external.Refusal, erro
 // the signatures were scripts: delete the unrelated adapter scripts from the
 // scratch installation. Outside a fixture-mode root it is ignored.
 const FixtureSignatureRuntimesEnv = "METASYSTEM_FIXTURE_SIGNATURE_RUNTIMES"
-
-// AllAdapterSignatures compiles the delegate signature of every runtime
-// that declares an adapter (all of them, not only the configured runtimes: a
-// delegate of any installed runtime must be recognised as a delegate). The
-// order is the runtime names' sort order, the order the adapter scripts'
-// directory listing used to give.
-func AllAdapterSignatures() ([]Signature, error) {
-	sigs, _, err := adapterSignatures(runtimes.WithAdapter())
-	return sigs, err
-}
 
 // InstalledAdapterSignatures is AllAdapterSignatures for an installation
 // root: every runtime of its registry (built-ins, overrides as one
@@ -183,22 +167,6 @@ func registered(reg external.Registry, names []string) []string {
 		}
 	}
 	return kept
-}
-
-func adapterSignatures(names []string) ([]Signature, []string, error) {
-	names = append([]string(nil), names...)
-	sort.Strings(names)
-	var sigs []Signature
-	var texts []string
-	for _, runtime := range names {
-		sig, text, err := RuntimeSignature(runtime)
-		if err != nil {
-			return nil, nil, err
-		}
-		sigs = append(sigs, sig)
-		texts = append(texts, text)
-	}
-	return sigs, texts, nil
 }
 
 // Fingerprint computes the supervision fingerprint for a repo, hashing files
