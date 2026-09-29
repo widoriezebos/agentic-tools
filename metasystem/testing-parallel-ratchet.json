@@ -103,6 +103,11 @@
   },
   "exempt": [
     {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/testenv",
+      "test": "TestARegistrySweepLeavesNoLockAForkDuplicated",
+      "reason": "replaces the package's registryLockTaken seam to stand a fork's duplicate in at every registry lock a sweep takes"
+    },
+    {
       "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/steward",
       "test": "TestInspectHandoffsObservesWithoutALock",
       "reason": "mints handoff nonces through the package's mintHandoffNonce seam (useHandoffNonces)"
