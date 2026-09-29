@@ -9,11 +9,13 @@ import {
   openGoal,
   parkGoal,
   rankGoal,
+  reviewGoal,
   unblockGoal,
   unparkGoal,
   withdrawGoal,
   type Backlog,
 } from "../backlog/api";
+import { startCandidate } from "../review/candidate";
 
 /**
  * The impure half of applying what the Partner proposed: the read before a run,
@@ -23,7 +25,7 @@ import {
  * These three are what that run needs of the world, and they are HERE rather
  * than in either caller because there are two callers: the card in the
  * transcript and the row in the Decisions inbox (g1-s60 D4). Two copies of the
- * dispatch would be two lists of ten acts, and the day an eleventh is added one
+ * dispatch would be two lists of acts, and the day one more is added one
  * of them would be right.
  *
  * Nothing here reaches the network itself. The act goes through the clients
@@ -105,6 +107,13 @@ async function actOf(line: Line): Promise<Backlog | null> {
       return openGoal(dispatch.goal);
     case "abandon":
       return abandonGoal(dispatch.id, dispatch.because, dispatch.successor);
+    case "review":
+      return (await reviewGoal(dispatch.id, { record: dispatch.record, verdict: dispatch.verdict, brief: "", work: dispatch.work })).backlog;
+    // Run answers where the candidate runs, not a backlog: the ledger did not
+    // move, so the board as it stands is what the page reads next.
+    case "run":
+      await startCandidate(dispatch.goal);
+      return loadBacklog();
     default:
       return null;
   }

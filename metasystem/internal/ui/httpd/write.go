@@ -121,6 +121,9 @@ func writeRouteOf(path string) (written, bool) {
 	if route, ok := partnerRouteOf(path); ok {
 		return route, true
 	}
+	if route, ok := appRouteOf(path); ok {
+		return route, true
+	}
 	// The backlog's acts are writes under the same policy, and are routed
 	// here so that the method, the host, the site and the origin are judged
 	// for them exactly as they are for the Project's four. A goal's own
@@ -250,6 +253,12 @@ func (h *handler) write(w http.ResponseWriter, r *http.Request, route written) {
 		h.unparkGoal(w, r, route.id)
 	case routeEditGoal:
 		h.editGoal(w, r, route.id)
+	case routeReview:
+		h.reviewGoal(w, r, route.id)
+	case routeAppStart:
+		h.appAct(w, r, route.id, "start")
+	case routeAppStop:
+		h.appAct(w, r, route.id, "stop")
 	case routeSignIn:
 		h.signIn(w, r)
 	case routeSignOut:

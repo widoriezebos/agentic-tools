@@ -266,6 +266,12 @@ export type Deposit = {
    * after a reload records under it.
    */
   verdict?: string;
+  /**
+   * The tip the review's record named when its closing turn was asked, stamped
+   * by the server beside the verdict (g1-s69 D1): the Outcome is bound to it,
+   * and Record it refuses once the record names another.
+   */
+  tip?: string;
   /** Whether the human was shown it as something to record. */
   offered: boolean;
   /**

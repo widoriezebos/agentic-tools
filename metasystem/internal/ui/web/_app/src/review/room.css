@@ -574,3 +574,97 @@
 .ms-table-finding .ms-anchor-chip {
   align-self: flex-start;
 }
+
+/* ---------------------------------------- the verdict and the candidate -- */
+
+/* The candidate's pill in the header (g1-s69 D3): its words, the address it
+   opens, and Run and Stop. The moved case wears the moved-tip banner's marker,
+   and a goal with no launch contract is greyed with its reason. */
+.ms-candidate {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 1px 8px;
+  border: 1px solid var(--ms-border);
+  border-radius: 999px;
+  background: var(--ms-surface-2);
+  color: var(--ms-text);
+}
+
+.ms-candidate[data-state="moved"] {
+  background: var(--ms-marker-bg);
+  color: var(--ms-marker-fg);
+}
+
+.ms-candidate[data-state="no-contract"] {
+  color: var(--ms-text-3);
+}
+
+.ms-candidate-open {
+  color: inherit;
+}
+
+.ms-room-banner--verdict {
+  font-weight: 600;
+}
+
+/* Send back's own step on the End sheet (D2): the fix findings, and the brief
+   to read and edit. */
+.ms-send-back {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ms-send-back-fixes {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.ms-send-back-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--ms-text-2);
+}
+
+.ms-send-back-brief {
+  width: 100%;
+  min-height: 160px;
+  padding: 8px;
+  border: 1px solid var(--ms-border);
+  border-radius: 6px;
+  background: var(--ms-surface);
+  color: var(--ms-text);
+  font-size: 12px;
+  resize: vertical;
+}
+
+/* The verdict on the lane card (§3, D2). */
+.ms-card-verdict-line {
+  margin: 0;
+  color: var(--ms-text-2);
+  font-size: 12px;
+}
+
+.ms-card-verdict-work {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 4px 0 0;
+}
+
+/* The pill stands in the header on its own, beside the facts. */
+.ms-room-candidate {
+  font-size: 13px;
+}
+
+/* The brief a stranded send-back will carry, read back rather than edited. */
+pre.ms-send-back-brief {
+  min-height: 0;
+  margin: 0;
+  white-space: pre-wrap;
+  resize: none;
+}

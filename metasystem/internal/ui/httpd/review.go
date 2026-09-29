@@ -289,7 +289,7 @@ func (h *handler) partnerWalk(w http.ResponseWriter, r *http.Request) {
 	if !decodeDocument(w, r, &body) {
 		return
 	}
-	if _, err := h.info.Partner.Walk(r.Context(), h.partnerHuman(r), body.Conversation, body.Part, body.About); err != nil {
+	if _, err := h.info.Partner.WalkWith(r.Context(), h.partnerHuman(r), body.Conversation, body.Part, body.About, h.candidateFor(body.Conversation, body.Part)); err != nil {
 		h.refuseTurn(w, err, "")
 		return
 	}

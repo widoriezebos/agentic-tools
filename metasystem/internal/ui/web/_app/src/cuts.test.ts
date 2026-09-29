@@ -119,6 +119,9 @@ const CALL_SITES: readonly (readonly [string, number, readonly string[]])[] = [
       "/unpark",
       "/edit",
       "/abandon",
+      // The review's verdict (g1-s69 D1): the same collection, the same call
+      // site, the goal's id between the prefix and its own suffix.
+      "/review",
     ],
   ],
   // The Project section's writes join its two reads at the one call site it
@@ -244,6 +247,12 @@ const CALL_SITES: readonly (readonly [string, number, readonly string[]])[] = [
   // and the same source read, answered for a record a sitting shapes from the
   // checkout as it stands; no read is added, and /changes is refused there.
   ["review/api.ts", 1, ["/api/review/", "/source", "/changes"]],
+  // The goal's candidate, from the room's pill (g1-s69 D3): app status, start and
+  // stop --goal G, three routes through one call site. Status is read when the
+  // room opens on a goal and after each press of Run or Stop, and at no other
+  // time: a candidate changes because a human pressed something, and the page
+  // holds no timer to watch it.
+  ["review/candidate.ts", 1, ["/api/app/", "/status", "/start", "/stop"]],
 ];
 
 /**

@@ -613,6 +613,7 @@ var alreadyCarried = map[string]bool{
 	"goal abandon":      true,
 	"goal unapprove":    true,
 	"goal open":         true,
+	"goal review":       true,
 }
 
 // settle turns one publication into the answer a route gives, and records the

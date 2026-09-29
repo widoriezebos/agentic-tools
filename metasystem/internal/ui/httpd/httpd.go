@@ -173,6 +173,12 @@ type Info struct {
 	// untouched field survives the save; the state the goal must be in is the
 	// mutation's own allowlist rather than this server's check.
 	Edit func(signed *session.Session, id string, edited act.Edited) error
+	// Verdict performs goal review for one goal under a signed-in session
+	// (g1-s69 D1, D2): the verdict line, and the review record and a
+	// send-back's brief published beside it. Candidate runs one of the three
+	// app forms for a goal's candidate (D3). A nil one refuses its own routes.
+	Verdict   func(signed *session.Session, id string, asked act.Reviewed) (act.Recorded, error)
+	Candidate func(goal, action string) (Candidate, error)
 	// BudgetDefaults is the project's budget law by tier, read per request
 	// for the reason the readers are: what the browser prefills from is what
 	// the next read of the configuration will say.
@@ -468,6 +474,10 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if id, beneath := strings.CutPrefix(r.URL.Path, documentPrefix); beneath && id != "" {
 		h.document(w, r, id)
+		return
+	}
+	if goal, ok := appGoal(r.URL.Path, appStatusPart); ok {
+		h.appStatus(w, goal)
 		return
 	}
 	if rest, beneath := strings.CutPrefix(r.URL.Path, reviewPrefix); beneath && rest != "" {

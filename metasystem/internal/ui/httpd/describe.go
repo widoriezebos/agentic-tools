@@ -40,6 +40,10 @@ const (
 	// table telling them the one thing about their own notes that is not
 	// true.
 	notepadHand = "a request from this browser to this loopback server; the write lands in this account's own notepad, outside every checkout, and records no ledger authority"
+	// sessionHand is the launch route's stronger rule, which the verdict and
+	// the candidate's run take (g1-s69 §6): a live session whose proof stands
+	// for this checkout, and never the boot proof.
+	sessionHand = "a signed-in human whose session stands for this checkout; the boot proof of the terminal that started the server never answers"
 )
 
 // Acts is every act this interface offers, with the hand each one needs.
@@ -72,6 +76,13 @@ func Acts() []manifest.Act {
 		// to a goal is answered from this table.
 		{ID: routeAbandon, Title: "Abandon a goal", Requires: ledgerHand,
 			Does: "Records that a goal will never be worked, with the reason, and the live goal carrying its work where there is one."},
+		// The review's verdict and the goal's candidate (g1-s69).
+		{ID: routeReview, Title: "Record a review's verdict", Requires: sessionHand,
+			Does: "Records clear to land or send back on a goal waiting to land, bound to its review record and the tip it reviewed, and publishes the record — and a send-back's correction brief — beside the ledger's line. Nothing lands because of it."},
+		{ID: routeAppStart, Title: "Run a goal's candidate", Requires: sessionHand,
+			Does: "Starts the goal's branch from its own worktree on its own port beside the standing run, and answers where it runs and the commit it runs."},
+		{ID: routeAppStop, Title: "Stop a goal's candidate", Requires: sessionHand,
+			Does: "Stops the goal's candidate run and proves it stopped."},
 		{ID: routeCreateRecord, Title: "Write a record", Requires: checkoutHand,
 			Does: "Creates one decision, design, doctrine or intent record in the home its kind names."},
 		{ID: routeRecordStatus, Title: "Set a record's status", Requires: checkoutHand,
