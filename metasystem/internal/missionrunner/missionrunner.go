@@ -15,7 +15,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -47,25 +46,6 @@ var legalStreamTransitions = map[string]map[string]bool{
 	"parked-reserved":  {"parked-reserved": true},
 	"parked-stop-loss": {"parked-stop-loss": true},
 	"done":             {"done": true},
-}
-
-// ScaledSeconds scales a base duration in seconds by the fixture cap scale
-// (METASYSTEM_FIXTURE_CAP_SCALE_MILLI, permille, default 1000), rounding up
-// and never below one second. Fixtures shrink real-time caps with it.
-func ScaledSeconds(base int) (int, error) {
-	raw := os.Getenv("METASYSTEM_FIXTURE_CAP_SCALE_MILLI")
-	if raw == "" {
-		raw = "1000"
-	}
-	scale, err := strconv.Atoi(raw)
-	if err != nil || scale < 1 {
-		return 0, fmt.Errorf("METASYSTEM_FIXTURE_CAP_SCALE_MILLI must be a positive integer")
-	}
-	seconds := int(math.Ceil(float64(base) * float64(scale) / 1000))
-	if seconds < 1 {
-		seconds = 1
-	}
-	return seconds, nil
 }
 
 // ScaledWait scales a base duration in seconds by the same fixture cap

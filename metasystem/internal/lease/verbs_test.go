@@ -255,16 +255,13 @@ func TestRenewBumpsRevision(t *testing.T) {
 	}
 }
 
-func TestRunHeldRunsForHolder(t *testing.T) {
+func TestHeldRunsForHolder(t *testing.T) {
 	root := t.TempDir()
 	announceSelf(t, root)
 	self := int64(os.Getpid())
-	code, err := RunHeld(root, self, nil, []string{"/bin/sh", "-c", "exit 7"})
-	if err != nil {
-		t.Fatalf("run-held errored: %v", err)
-	}
-	if code != 7 {
-		t.Fatalf("run-held should return the child's exit code, got %d", code)
+	ran := false
+	if err := Held(root, self, nil, func() error { ran = true; return nil }); err != nil || !ran {
+		t.Fatalf("the holder's work must run under the lease: ran=%v err=%v", ran, err)
 	}
 }
 
@@ -439,10 +436,10 @@ func TestProtocolGrowthAndAdvance(t *testing.T) {
 	}
 }
 
-// WithHeld gates an in-process write exactly as RunHeld gates a command: the
+// WithHeld gates an in-process write exactly as Held does: the
 // holder runs it under the lease lock, a MAIN that is not the holder is
 // refused before it runs, and a stale expected epoch refuses.
-func TestWithHeldGatesAnInProcessWriteLikeRunHeld(t *testing.T) {
+func TestWithHeldGatesAnInProcessWriteLikeHeld(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	announceSelf(t, root)

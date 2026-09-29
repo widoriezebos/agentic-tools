@@ -26,24 +26,3 @@ func (r TurnRecord) text(key string) string {
 
 // Runtime is the host runtime the turn launches under.
 func (r TurnRecord) Runtime() string { return r.text("runtime") }
-
-// Status is the turn's lifecycle status.
-func (r TurnRecord) Status() string { return r.text("status") }
-
-// Outcome is the turn's terminal outcome ("" while running).
-func (r TurnRecord) Outcome() string { return r.text("outcome") }
-
-// HostSession is the announced resume session ("" when none).
-func (r TurnRecord) HostSession() string { return r.text("hostSession") }
-
-// InstanceTag is the minted host tag ("" before launch).
-func (r TurnRecord) InstanceTag() string { return r.text("instanceTag") }
-
-// TurnCapMin is the wall-clock allowance (0, false when absent/ill-typed).
-func (r TurnRecord) TurnCapMin() (int64, bool) {
-	value, _ := r.doc.Get("turnCapMin")
-	return jsonInt(value)
-}
-
-// Raw is the underlying document for the permissive paths.
-func (r TurnRecord) Raw() map[string]any { return r.doc.Raw() }

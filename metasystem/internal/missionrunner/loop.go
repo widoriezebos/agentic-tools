@@ -28,18 +28,6 @@ import (
 // proposal is anchored, so the state's single-writer discipline survives the
 // runner's crash at any point.
 
-// RunLoop is the detached runner process's whole life. It establishes the
-// runner's recorded identity, then hands off to the loop; the exit code is
-// the process exit code.
-func (e *Engine) RunLoop(mode, tag, startSignal string) int {
-	record, err := e.readFence()
-	if err != nil {
-		_ = writeStartSignal(startSignal, false, nil, err.Error())
-		return exitFor(err)
-	}
-	return e.RunLoopAtGeneration(mode, tag, startSignal, record.Generation, false)
-}
-
 // RunLoopAtGeneration starts the loop under the launcher's open fence
 // generation. The fixture-only ignore switch exists solely to exercise the
 // stop caller's escalation path.

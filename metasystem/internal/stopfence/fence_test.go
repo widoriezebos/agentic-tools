@@ -4,16 +4,9 @@ import (
 	"os"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
-
-type claimProber struct{ state identity.Liveness }
-
-func (p claimProber) Probe(pid int64) (identity.Exact, identity.Liveness, error) {
-	return identity.Exact{Pid: pid, StartedAt: time.Unix(20, 0)}, p.state, nil
-}
 
 func TestFenceRecordAndCreationClaims(t *testing.T) {
 	root := t.TempDir()
@@ -35,9 +28,6 @@ func TestFenceRecordAndCreationClaims(t *testing.T) {
 	claims, err := Claims(root, 1)
 	if err != nil || len(claims) != 1 {
 		t.Fatalf("claims = %d, %v", len(claims), err)
-	}
-	if removed, err := RemoveStale(claims[0], claimProber{state: identity.Alive}); err != nil || removed {
-		t.Fatalf("live claim removed = %v, %v", removed, err)
 	}
 	if err := claim.Close(); err != nil {
 		t.Fatal(err)

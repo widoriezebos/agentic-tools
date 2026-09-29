@@ -684,3 +684,30 @@ func TestDelegateAncestorAboveStewardChainDoesNotPreempt(t *testing.T) {
 		t.Fatalf("the steward plumbing is the nearest recognised ancestor, got %+v", got)
 	}
 }
+
+// The signature universe is every declared adapter runtime in the registry,
+// independent of metasystem.runtimes: a root configured for claude only still
+// recognizes the fake runtime's argv as a delegate, and an unreadable
+// registry is a classification failure, never an empty answer.
+func TestAdapterSignaturesUseTheInstalledNotTheConfiguredUniverse(t *testing.T) {
+	staged := t.TempDir()
+	if err := os.WriteFile(filepath.Join(staged, "metasystem.conf"), []byte("metasystem.runtimes=claude\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	signatures, err := allAdapterSignatures(staged)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runtime := census.Runtime("metasystem-fake-agent worker", signatures); runtime != "fake" {
+		t.Fatalf("a declared-but-unconfigured runtime must be recognized, got %q", runtime)
+	}
+	if runtime := census.Runtime("bash -c ls", signatures); runtime != "" {
+		t.Fatalf("a shell argv read as runtime %q", runtime)
+	}
+	prior := delegateSignatures
+	t.Cleanup(func() { delegateSignatures = prior })
+	delegateSignatures = func(string) ([]census.Signature, error) { return nil, errors.New("registry unreadable") }
+	if _, err := allAdapterSignatures(staged); err == nil {
+		t.Fatal("an unreadable signature set must error, not answer")
+	}
+}

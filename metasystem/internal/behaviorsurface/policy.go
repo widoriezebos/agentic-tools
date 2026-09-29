@@ -166,17 +166,6 @@ func ParseProjection(value string) (Projection, error) {
 	}
 }
 
-// ParseSkipScope validates the proof scope named by a skip consumer.
-func ParseSkipScope(value string) (SkipScope, error) {
-	scope := SkipScope(strings.ToUpper(value))
-	switch scope {
-	case WitnessScope, DeliveryScope:
-		return scope, nil
-	default:
-		return "", fmt.Errorf("unknown behavior-surface skip scope %q", value)
-	}
-}
-
 // NormalizePath maps a Git-toplevel-relative path into the policy owner's
 // path space. prefix is Git's slash-terminated --show-prefix result and may
 // be empty when the metasystem is itself the repository root.

@@ -116,43 +116,6 @@ func RegistrationRows(runtime string) []RegistrationRow {
 	return out
 }
 
-// RegistrationV1 encodes a runtime's rows in the pinned wire format:
-// header line `registration/v1`, one row per line, twelve
-// tab-separated columns [id, operation, templateSource,
-// adoptedDestination, destination, policy, collisionClass,
-// uncoveredException, source, mode, key, handlerId], `-` for unused,
-// trailing newline; zero rows = header only.
-func RegistrationV1(runtime string) string {
-	var b strings.Builder
-	b.WriteString("registration/v1\n")
-	for _, row := range registrationRows[runtime] {
-		class := "plain"
-		if row.InstructionBearing {
-			class = "instruction-bearing"
-		}
-		exception := "false"
-		if row.UncoveredException {
-			exception = "true"
-		}
-		columns := []string{
-			row.ID, string(row.Operation),
-			row.Requiredness.TemplateSource, row.Requiredness.AdoptedDestination,
-			row.Destination, string(row.Policy), class, exception,
-			dash(row.Source), dash(row.Mode), dash(row.Key), "-",
-		}
-		b.WriteString(strings.Join(columns, "\t"))
-		b.WriteString("\n")
-	}
-	return b.String()
-}
-
-func dash(value string) string {
-	if value == "" {
-		return "-"
-	}
-	return value
-}
-
 // ValidateRegistration checks the row invariants: unique
 // (runtime, id), clean fields with no tabs/newlines, legal
 // operation/policy combinations, and the collision-root proof — every

@@ -33,27 +33,6 @@ func TestLandingMessageAcceptsAttestedBranchProvenance(t *testing.T) {
 	}
 }
 
-func TestGitAdapterLandingAtReadsCommitMessage(t *testing.T) {
-	t.Parallel()
-	repo := t.TempDir()
-	mustGit(t, repo, "init", "-q", "-b", "main")
-	if err := os.WriteFile(filepath.Join(repo, "README.md"), []byte("seed\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	mustGit(t, repo, "add", "README.md")
-	mustGit(t, repo, "commit", "-qm", "seed")
-	change := strings.Repeat("a", 64)
-	mustGit(t, repo, "commit", "--allow-empty", "-qm", "land wait fixture", "--trailer", "Goal-Item: goal-a", "--trailer", "Landing-Provenance: chain=root-job change="+change, "--trailer", "Landing-Provenance-Verdict: pass bar=a")
-	tip := mustGit(t, repo, "rev-parse", "HEAD")
-	matched, provenance, err := landingAt(context.Background(), repo, tip, "goal-a", "root-job")
-	if err != nil || !matched || provenance != "chain=root-job change="+change {
-		t.Fatalf("landing match=%t provenance=%q err=%v", matched, provenance, err)
-	}
-	if matched, _, _ := landingAt(context.Background(), repo, tip, "goal-a", "other-chain"); matched {
-		t.Fatal("landing from another chain matched")
-	}
-}
-
 func TestGitAdapterInstalledGoalWaits(t *testing.T) {
 	t.Parallel()
 	binary := os.Getenv("METASYSTEM_WAIT_BINARY")
