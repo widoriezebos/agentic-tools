@@ -294,3 +294,71 @@ S69-07 alone.
 **Confirmation read (2026-09-28, at `6fd19e052`):** S69-05, S69-06 and
 S69-07 confirmed answered, no new material finding. The loop is
 CLOSED.
+
+## Built (2026-09-29)
+
+Step 1 built by Claude on Opus 5.5 in worktree `agentic-tools-verdicts`,
+branch `verdicts-from-the-room` from main `30a09a012`: the engine part
+(`0c4dbf13c`: the `goal review` act with its ledger line, the record
+bound by its `Goals:` line and its `Reviewed:` head, the Outcome's
+`Verdict:` and `Reviewed at:` lines, create-only publication of the
+record and the brief inside the transaction's rebuild, the Landing
+record untouched and the board reading a newer send-back as sent back,
+the holder's step reachable as `work revise G` with no `--brief`), the
+room part (`cc60baba9`: Clear to land and Send back performing the act
+after Record it, the correction card from the fix findings, the
+candidate's pill with the running commit beside the reviewed tip, Run
+and Stop as acts under a live session, the Behaves walk carrying both
+commits) and the grammar's words with the bundle (`5a3d91fe5`). Report:
+`~/LocalStorage/agentic-tools-evidence/review-room-20260928/
+opus-build-report-verdicts.md`; screenshots under `g1-s69/`.
+
+Departures, each honest and recorded there: the route lives under
+`/api/backlog/goals/<id>/review`, where the act table is; the brief is
+published as `<record>.brief.md` beside the record; a Partner cannot
+propose a first send-back, since the brief is the room's; and the
+mechanism that takes the holder's step unprompted is not here: the
+design gave it to "the holder's next activity over its claims, as
+slice D has it", and slice D (g1-s70) now carries it as an obligation
+in its brief, so until D lands a send-back waits for the holder to run
+`work revise G`, which the card and the room say in those words.
+
+**Sol's read** (`g1-s69-sol-read.md`, verbatim): four material
+findings. SOL-S69-01, the holder never prompted, answered by the words
+above and slice D's obligation; SOL-S69-02, the act admitted a
+send-back whose record answers no finding fix; SOL-S69-03, a verdict or
+Run press refused for sign-in could not reach the sign-in sheet from
+the room; SOL-S69-04, a recorded Outcome whose act failed was stranded
+after a reload. **Fix round 1** (`2b93ba6ac`, `b39dc300e`): the act
+counts the record's fix answers and refuses without one; `pressSignedIn`
+opens the sheet and presses again once; `strandedVerdict` rebuilds the
+pending verdict on load from the Outcome's two lines and the goal's
+history, with the edited brief kept in the room's drafts. **Sol's
+re-read**: SOL-S69-03 and SOL-S69-04 fixed, the wording honest,
+SOL-S69-02 held on one corner, an orphan Answer line with no finding
+entry above it still counted. **Fix round 2** (`6db709858`): an Answer
+counts only under the finding entry it belongs to, as the room reads
+the section; read by the design's author under Wido's rule of
+2026-09-28 to stop a loop once the remaining defects are one class at
+its root.
+
+Residuals, none material at first use: the reviewer's checkout keeps
+the review record untracked after the act published it, and a later
+pull into that checkout may refuse to overwrite it (the room wrote the
+file there first); the engine does not prove that an edited brief
+still names every fix finding; the walkthrough's publication is in
+memory, while the engine's tests hold the real transaction.
+
+Landed through `verdicts-landing2`, merged with main (the engine's
+batches 11 and 12; one trivial conflict in the intent table, both new
+hooks kept), the bundle rebuilt, every landing check green, including
+the whole `cmd/metasystem` package run to completion twice, which the
+builder's own runs had timed out on. That whole run found one failure
+of this slice's, the command router's suggestion test that did not yet
+expect `goal review` beside `work review` and `design review`, fixed on
+the branch (`785fba7c7`); and two failures that are main's own at
+`fb68d0d6c`, `TestGLEBatchPortableOwnerLandsRealCommandApplication`
+and `TestGLEBatchPortableNativeCapacityWaitEjectsElapsedFencedMember`,
+which still start the engine with a verb family batch 12 removed; the
+engine seat confirmed them as its red and is fixing them apart from
+this landing. The standing interface restarted onto the landed build.
