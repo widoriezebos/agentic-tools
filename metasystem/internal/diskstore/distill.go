@@ -195,6 +195,13 @@ func Distill(ctx context.Context, bundle string, rules DistillRules, now time.Ti
 		if errors.Is(err, errInterrupted) {
 			return result, err
 		}
+		if errors.Is(err, errOriginalChanged) {
+			// The line is published and its replacement stands: the
+			// manifest keeps it.
+			lines = updated
+			result.Kept = append(result.Kept, line.Path+": "+err.Error())
+			continue
+		}
 		if err != nil {
 			result.Kept = append(result.Kept, line.Path+": "+err.Error())
 			continue
@@ -520,6 +527,9 @@ func (rules DistillRules) transact(ctx context.Context, bundle string, header Di
 		return nil, errInterrupted
 	}
 	if err := rules.finish(ctx, bundle, line, stage); err != nil {
+		if errors.Is(err, errOriginalChanged) {
+			return updated, err
+		}
 		return nil, err
 	}
 	return updated, nil
@@ -555,6 +565,12 @@ func (rules DistillRules) finish(ctx context.Context, bundle string, line Recipe
 	if rules.stop("renamed", line.Path) {
 		return errInterrupted
 	}
+	// The original is re-checked just before its unlink (Round B2-4, F-3):
+	// one written to after its stage verified is kept beside its
+	// replacement and reported.
+	if matches, err := originalMatches(ctx, original, line); err != nil || !matches {
+		return errOriginalChanged
+	}
 	if line.Kind == RecipeGit {
 		if err := RemoveTree(ctx, original); err != nil {
 			return err
@@ -564,6 +580,10 @@ func (rules DistillRules) finish(ctx context.Context, bundle string, line Recipe
 	}
 	return rules.Sync.SyncDir(filepath.Dir(original))
 }
+
+// errOriginalChanged is an original that no longer matches its published
+// line when it is about to be unlinked: both are kept and reported.
+var errOriginalChanged = errors.New("it changed after its replacement was verified; the original and its replacement are both kept for a person")
 
 func (rules DistillRules) stop(step, path string) bool {
 	return rules.interrupt != nil && rules.interrupt(step, path)

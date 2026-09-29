@@ -108,6 +108,9 @@ type ExportRef struct {
 	ArchiveSHA256 string    `json:"archiveSha256"`
 	Manifest      string    `json:"manifest"`
 	VerifiedAt    time.Time `json:"verifiedAt"`
+	// InventoryDigest is the inventory the export holds; a removal goes
+	// only when it equals the planned inventory and the one removed.
+	InventoryDigest string `json:"inventoryDigest,omitempty"`
 }
 
 // Tombstone is the durable disposal state of one item.
@@ -290,6 +293,9 @@ type DisposalStep struct {
 	Receipt DisposalReceipt
 	// Ledger is the segment's disposals ledger.
 	Ledger string
+	// PlannedDigest is the inventory digest the person previewed; with an
+	// export, the export must hold exactly it and what is removed.
+	PlannedDigest string
 	// Commit runs immediately before the receipt append (the commit point);
 	// an error rolls the step back with no receipt and is reported.
 	Commit func() error
@@ -354,6 +360,16 @@ func Dispose(ctx context.Context, step DisposalStep) (DisposalResult, error) {
 	if err != nil {
 		return DisposalResult{}, err
 	}
+	// A removal with an export removes only what the export holds (Round
+	// B2-4, F-1b): the export's inventory, the planned one and the one
+	// taken now are the same.
+	if export := step.Receipt.Export; export != nil {
+		now := InventoryDigest(files)
+		if export.InventoryDigest == "" || export.InventoryDigest != now || export.InventoryDigest != step.PlannedDigest {
+			return DisposalResult{}, fmt.Errorf("the export %s does not hold what would be removed (export %s, planned %s, now %s); nothing was removed, run --preview again",
+				export.Archive, short(export.InventoryDigest), short(step.PlannedDigest), short(now))
+		}
+	}
 	before, _, _ := Measure(ctx, step.Item)
 	tombstone := step.newTombstone(files, before)
 	tombstone.Disposing = filepath.Base(step.Item) + disposingMark + step.Stage
@@ -394,6 +410,16 @@ func Dispose(ctx context.Context, step DisposalStep) (DisposalResult, error) {
 		return DisposalResult{}, err
 	}
 	return DisposalResult{Receipt: receipt, Tombstone: path}, nil
+}
+
+func short(digest string) string {
+	if len(digest) > 12 {
+		return digest[:12]
+	}
+	if digest == "" {
+		return "none"
+	}
+	return digest
 }
 
 func physical(files []InventoryFile) []InventoryFile {

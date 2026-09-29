@@ -133,6 +133,16 @@ func MoveBundle(ctx context.Context, source string, rules MoveRules) (MoveResult
 	if rules.stop("set-aside") {
 		return result, errInterrupted
 	}
+	// The source is re-checked just before its removal (Round B2-4, F-3):
+	// one written to after its copy verified is renamed back and kept
+	// beside the copy for a person.
+	if now, _, err := treeDigest(ctx, moved); err != nil || now != want {
+		if renameErr := os.Rename(moved, source); renameErr != nil {
+			return result, fmt.Errorf("the source %s changed after its copy verified and could not be renamed back from %s: %w", source, moved, renameErr)
+		}
+		result.Kept = fmt.Sprintf("%s changed after its copy verified; the source and its copy %s are both kept for a person", source, destination)
+		return result, rules.Sync.SyncDir(filepath.Dir(source))
+	}
 	return result, RemoveTree(ctx, moved)
 }
 

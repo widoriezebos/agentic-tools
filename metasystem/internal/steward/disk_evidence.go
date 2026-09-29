@@ -271,9 +271,13 @@ func EvidenceEnv(ctx context.Context, top string, pass DiskPass, by string) (evi
 		checkouts = append(checkouts, top)
 	}
 	var participants []diskstore.Participant
-	var live []string
+	var live, missing []string
 	for _, checkout := range checkouts {
+		// An armed checkout missing from disk (an unmounted volume) is
+		// unreadable to the union, never left out: only the armed registry
+		// decides that a checkout is gone (Round B2-4, F-2).
 		if checkout != top && checkoutRemoved(checkout) {
+			missing = append(missing, checkout)
 			continue
 		}
 		settings, err := diskSettingsFor(checkout)
@@ -284,7 +288,12 @@ func EvidenceEnv(ctx context.Context, top string, pass DiskPass, by string) (evi
 	if err != nil {
 		return evidence.Env{}, err
 	}
-	env := evidence.Env{UserHome: userHome, HomeStateRoot: home, Checkouts: class.Checkouts, Now: pass.Now, Entropy: rand.Reader,
+	hostCheckouts := class.Checkouts
+	for _, checkout := range missing {
+		unreadable := fmt.Errorf("the armed checkout %s is missing from disk (an unmounted volume?); it is unreadable until it is back or disarmed", checkout)
+		hostCheckouts = append(hostCheckouts, evidence.HostCheckout{Installation: checkout, FactsErr: unreadable, SettingsErr: unreadable})
+	}
+	env := evidence.Env{UserHome: userHome, HomeStateRoot: home, Checkouts: hostCheckouts, Now: pass.Now, Entropy: rand.Reader,
 		Observe: evidence.GoalLedgerObserver(pass.Clock), Tip: evidence.AcceptedTipReader(), Citations: class.Citations, Blobs: class.Bound.Blobs, By: by,
 		Locks: evidence.OwnerLocks(int64(os.Getpid()), os.Args[0], pass.Clock, time.Sleep)}
 	installation := installationOf(top)

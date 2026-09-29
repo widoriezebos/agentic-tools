@@ -84,7 +84,7 @@ type ExportResult struct {
 
 // Ref is the export block a tombstone and a receipt carry.
 func (r ExportResult) Ref(dir string) *ExportRef {
-	return &ExportRef{Dir: dir, Archive: r.Archive, ArchiveSHA256: r.ArchiveSHA256, Manifest: r.Manifest, VerifiedAt: r.VerifiedAt}
+	return &ExportRef{Dir: dir, Archive: r.Archive, ArchiveSHA256: r.ArchiveSHA256, Manifest: r.Manifest, VerifiedAt: r.VerifiedAt, InventoryDigest: r.InventoryDigest}
 }
 
 // ExportPaths are where an item with this inventory digest exports.
@@ -98,6 +98,13 @@ func Export(ctx context.Context, request ExportRequest) (ExportResult, error) {
 	if !filepath.IsAbs(request.Dir) {
 		return ExportResult{}, fmt.Errorf("the export directory must be absolute, got %q", request.Dir)
 	}
+	// The export never lies inside its item, whatever the directory's
+	// spelling (Round B2-4, F-1): judged by file identity.
+	if inside, err := sameAsAncestor(request.Dir, []string{request.Item}); err != nil {
+		return ExportResult{}, fmt.Errorf("not exported: the export directory cannot be judged: %w", err)
+	} else if inside != "" {
+		return ExportResult{}, fmt.Errorf("not exported: the export directory %s is inside the item %s", request.Dir, request.Item)
+	}
 	files, err := InventoryComplete(ctx, request.Item)
 	if err != nil {
 		return ExportResult{}, fmt.Errorf("not exported: %w", err)
@@ -106,11 +113,13 @@ func Export(ctx context.Context, request ExportRequest) (ExportResult, error) {
 	name := filepath.Base(request.Item)
 	archive, manifestPath := ExportPaths(request.Dir, request.Segment, name, digest)
 	result := ExportResult{Archive: archive, Manifest: manifestPath, InventoryDigest: digest}
-	if existing, err := readExportManifest(manifestPath); err == nil && existing.VerifiedAt != nil {
+	// Reuse compares the manifest's whole inventory and item, never the
+	// path's twelve-digit prefix (Round B2-4, F-4).
+	if existing, err := readExportManifest(manifestPath); err == nil && existing.VerifiedAt != nil && existing.InventoryDigest == digest && existing.Item == name {
 		// Reuse re-establishes durability before it authorizes anything
 		// (DL4F-02): both files and the directory chain synced, the archive
 		// re-opened by its final name and re-hashed.
-		if err := request.barrier(ctx, archive, manifestPath, existing.ArchiveSHA256); err == nil {
+		if err := request.barrier(ctx, archive, manifestPath, existing.ArchiveSHA256); err == nil && !archiveInside(archive, request.Item) {
 			result.Already, result.ArchiveSHA256, result.VerifiedAt, result.Bytes = true, existing.ArchiveSHA256, *existing.VerifiedAt, existing.ArchiveBytes
 			return result, nil
 		}
@@ -178,8 +187,76 @@ func Export(ctx context.Context, request ExportRequest) (ExportResult, error) {
 		_ = os.Remove(manifestPath)
 		return result, fmt.Errorf("not exported: %w", err)
 	}
+	if archiveInside(archive, request.Item) {
+		_ = os.Remove(archive)
+		_ = os.Remove(manifestPath)
+		return result, fmt.Errorf("not exported: the archive %s lies inside the item %s", archive, request.Item)
+	}
 	result.ArchiveSHA256, result.VerifiedAt, result.Bytes = sum, verified, size
 	return result, nil
+}
+
+// archiveInside reports an archive one of whose parent directories is the
+// item (device and inode, never a string); an archive whose parents
+// cannot be read counts as inside.
+func archiveInside(archive, item string) bool {
+	inside, err := sameAsAncestor(filepath.Dir(archive), []string{item})
+	return err != nil || inside != ""
+}
+
+// sameAsAncestor reports the first of others (by device and inode) that
+// dir or one of its parents is: the parents as spelled and, from the
+// nearest existing ancestor with its symbolic links resolved, the physical
+// parents. Nonexistent others are skipped; a read error is returned.
+func sameAsAncestor(dir string, others []string) (string, error) {
+	var ids []os.FileInfo
+	var names []string
+	for _, other := range others {
+		if other == "" {
+			continue
+		}
+		info, err := os.Stat(other)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return "", err
+		}
+		ids, names = append(ids, info), append(names, other)
+	}
+	chains := []string{filepath.Clean(dir)}
+	for current := filepath.Clean(dir); ; current = filepath.Dir(current) {
+		if _, err := os.Lstat(current); err == nil {
+			resolved, err := filepath.EvalSymlinks(current)
+			if err != nil {
+				return "", err
+			}
+			chains = append(chains, resolved)
+			break
+		}
+		if filepath.Dir(current) == current {
+			break
+		}
+	}
+	for _, chain := range chains {
+		for current := chain; ; current = filepath.Dir(current) {
+			info, err := os.Stat(current)
+			switch {
+			case err == nil:
+				for index, id := range ids {
+					if os.SameFile(info, id) {
+						return names[index], nil
+					}
+				}
+			case !errors.Is(err, os.ErrNotExist):
+				return "", err
+			}
+			if filepath.Dir(current) == current {
+				break
+			}
+		}
+	}
+	return "", nil
 }
 
 func hasBlob(blobs []ExportBlob, digest string) bool {
@@ -401,14 +478,18 @@ func flipByte(path string) {
 // ExportDirProblem is the damage an export directory would do (H1: the
 // only refusal): inside an evidence root it would be measured and disposed
 // of as evidence; inside a checkout or a registered store it would be
-// removed with them. roots, checkouts and stores are absolute paths.
+// removed with them. roots, checkouts and stores are absolute paths; the
+// directory and each of its existing parents are compared with them by
+// device and inode, never by string (Round B2-4, F-1a).
 func ExportDirProblem(dir string, roots, checkouts, stores []string) string {
 	for _, group := range [][]string{roots, checkouts, stores} {
-		for _, inside := range group {
-			if under(dir, inside) {
-				return "an export must live outside every evidence root and checkout; " + dir + " is inside " + inside +
-					"; choose an external volume or a directory such as /Volumes/Backup/metasystem-exports and set " + config.DiskEvidenceExportDirKey + " in metasystem.conf.local so --to can be omitted"
-			}
+		inside, err := sameAsAncestor(dir, group)
+		if err != nil {
+			return "the export directory " + dir + " cannot be judged (" + err.Error() + "); choose another"
+		}
+		if inside != "" {
+			return "an export must live outside every evidence root and checkout; " + dir + " is inside " + inside +
+				"; choose an external volume or a directory such as /Volumes/Backup/metasystem-exports and set " + config.DiskEvidenceExportDirKey + " in metasystem.conf.local so --to can be omitted"
 		}
 	}
 	return ""

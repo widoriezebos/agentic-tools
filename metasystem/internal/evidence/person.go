@@ -673,7 +673,7 @@ func (e Env) executeOne(ctx context.Context, plan DisposePlan, planned PlannedDi
 		outcome.Export = exported.Archive
 	}
 	result, err := diskstore.Dispose(ctx, diskstore.DisposalStep{Item: planned.Path, Receipt: receipt, Ledger: disposalLedger(target), Commit: judgement.Commit,
-		Stage: stage, Sync: e.Sync})
+		PlannedDigest: planned.InventoryDigest, Stage: stage, Sync: e.Sync})
 	switch {
 	case err != nil:
 		outcome.Line = planned.Path + ": stopped: " + err.Error() + "; run --preview again"
