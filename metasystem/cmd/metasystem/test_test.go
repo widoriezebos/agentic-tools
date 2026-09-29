@@ -2211,6 +2211,86 @@ func TestProtectedCoverageFloorCannotFallOrDisappear(t *testing.T) {
 	}
 }
 
+// A floor leaves with its package: deleting a package takes its floors out of
+// both files, and that is no lowered floor, since nothing is left to measure.
+// A floor dropped while its package still has Go files stays refused.
+func TestProtectedCoverageFloorLeavesWithItsPackage(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	root := t.TempDir()
+	const baseTree = "1111111111111111111111111111111111111111"
+	const candidateTree = "2222222222222222222222222222222222222222"
+	const baseOID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	const candidateOID = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	const baselinePath = "testing-coverage-floors.json"
+	const linuxPath = "testing-coverage-floors-linux.json"
+	baseJSON := []byte(`{"floors":{"internal/app":80.0,"internal/gone":70.0}}`)
+	candidateJSON := []byte(`{"floors":{"internal/app":80.0}}`)
+	type rawFact struct {
+		args   []string
+		output []byte
+	}
+	var facts []rawFact
+	addFile := func(tree, path, oid string, content []byte) {
+		facts = append(facts,
+			rawFact{args: []string{"--literal-pathspecs", "ls-tree", "-r", "-z", "--full-tree", tree, "--", path},
+				output: []byte(fmt.Sprintf("100644 blob %s\t%s\x00", oid, path))},
+			rawFact{args: []string{"cat-file", "blob", oid}, output: content},
+		)
+	}
+	addListing := func(tree, path string, files ...string) {
+		var output []byte
+		for _, file := range files {
+			output = append(output, []byte(fmt.Sprintf("100644 blob %s\t%s\x00", candidateOID, file))...)
+		}
+		facts = append(facts, rawFact{args: []string{"--literal-pathspecs", "ls-tree", "-r", "-z", "--full-tree", tree, "--", path}, output: output})
+	}
+	pins := []string{"-C", root, "-c", "core.fileMode=true", "-c", "diff.noprefix=false", "-c", "diff.mnemonicPrefix=false",
+		"-c", "apply.ignoreWhitespace=no", "-c", "core.logAllRefUpdates=false", "-c", "core.useReplaceRefs=false",
+		"-c", "gc.auto=0", "-c", "maintenance.auto=false"}
+	next := 0
+	workspace := gittree.Workspace{Dir: root, RawSource: func(request gittree.RawRequest) gittree.RawResult {
+		if next >= len(facts) {
+			t.Fatalf("unexpected raw Git request: %v", request.Args)
+		}
+		fact := facts[next]
+		next++
+		if wantArgs := append(append([]string(nil), pins...), fact.args...); !reflect.DeepEqual(request.Args, wantArgs) {
+			t.Fatalf("raw Git request %d = %v, want %v", next, request.Args, wantArgs)
+		}
+		return gittree.RawResult{Stdout: fact.output}
+	}}
+
+	addFile(baseTree, baselinePath, baseOID, baseJSON)
+	addFile(candidateTree, baselinePath, candidateOID, candidateJSON)
+	addListing(candidateTree, "internal/gone")
+	addListing(baseTree, linuxPath)
+	addListing(baseTree, "scripts/agents/coverage-ratchet-linux.json")
+	if err := protectCoverageRatchets(workspace, baseTree, candidateTree, ""); err != nil {
+		t.Fatalf("a floor that left with its deleted package was refused: %v", err)
+	}
+	if next != len(facts) {
+		t.Fatalf("the deletion consumed %d of %d raw Git requests", next, len(facts))
+	}
+
+	facts, next = nil, 0
+	addFile(baseTree, baselinePath, baseOID, baseJSON)
+	addFile(candidateTree, baselinePath, candidateOID, candidateJSON)
+	addListing(candidateTree, "internal/gone", "internal/gone/testdata/fixture.txt", "internal/gone/gone.go")
+	if err := protectCoverageRatchets(workspace, baseTree, candidateTree, ""); err == nil || !strings.Contains(err.Error(), "TEST_POLICY_COVERAGE_FLOOR_LOWERED") {
+		t.Fatalf("a floor dropped from a package that still exists was accepted: %v", err)
+	}
+
+	facts, next = nil, 0
+	addFile(baseTree, baselinePath, baseOID, baseJSON)
+	addFile(candidateTree, baselinePath, candidateOID, candidateJSON)
+	addListing(candidateTree, "internal/gone", "internal/gone/sub/other.go")
+	addListing(baseTree, linuxPath)
+	addListing(baseTree, "scripts/agents/coverage-ratchet-linux.json")
+	if err := protectCoverageRatchets(workspace, baseTree, candidateTree, ""); err != nil {
+		t.Fatalf("a nested package's files kept the deleted package's floor: %v", err)
+	}
+}
+
 func TestFrozenPublicVersionOneProtectionCorpusIsComplete(t *testing.T) {
 	cases := testpolicy.FrozenProtectionProbeCases()
 	want := []string{"remove-required-provider", "shrink-dependency-graph", "lower-coverage-floor", "remove-required-test", "emit-zero-tests", "forge-component-reuse"}

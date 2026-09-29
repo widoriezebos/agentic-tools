@@ -14,6 +14,7 @@ import (
 	"io/fs"
 	"os"
 	"os/exec"
+	pathpkg "path"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -918,12 +919,40 @@ func protectCoverageRatchets(workspace gittree.Workspace, baseTree, candidateTre
 		}
 		for packageName, floor := range base.Floors {
 			candidateFloor, present := candidate.Floors[packageName]
+			if !present {
+				// A floor leaves with its package: once the candidate tree
+				// holds no Go file in the package's directory there is
+				// nothing to measure, and the floor may go too.
+				gone, err := coveragePackageGone(workspace, candidateTree, inTree(packageName))
+				if err != nil {
+					return fmt.Errorf("TEST_POLICY_COVERAGE_FLOOR_LOWERED: %s floor %s was removed and its package could not be read in the candidate tree: %v; restore the floor in %s and rerun metasystem test run", path, packageName, err, path)
+				}
+				if gone {
+					continue
+				}
+			}
 			if !present || candidateFloor < floor {
 				return fmt.Errorf("TEST_POLICY_COVERAGE_FLOOR_LOWERED: %s floor %s changed from %.1f to %.1f; a proof against a lowered floor would certify lost coverage, so restore the floor in %s (floors only rise) and rerun metasystem test run", path, packageName, floor, candidateFloor, path)
 			}
 		}
 	}
 	return nil
+}
+
+// coveragePackageGone reports whether a tree holds no Go file directly in a
+// package directory: the package was deleted, so its coverage floor has
+// nothing left to measure.
+func coveragePackageGone(workspace gittree.Workspace, tree, directory string) (bool, error) {
+	entries, err := workspace.Entries(tree, []string{directory})
+	if err != nil {
+		return false, err
+	}
+	for path := range entries {
+		if pathpkg.Dir(path) == directory && strings.HasSuffix(path, ".go") {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 func trustedPolicyEngine(installation, policyBaseCommit string, firstTransition bool) (string, string, bool, error) {
