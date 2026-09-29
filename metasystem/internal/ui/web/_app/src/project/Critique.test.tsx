@@ -56,7 +56,7 @@ function block(of: DesignLoop, words: string[] = []): string {
       busy={false}
       onAnswer={noop}
       renderRound={(one, live) => (
-        <RoundCards key={one.round} round={one} live={live} headings={[]} pressing={null} busy={false} asked={{}}
+        <RoundCards key={one.round} round={one} live={live} headings={[]} pressing={null} busy={false} asked={[]}
           onOpen={noop} onChange={noop} onCancel={noop} onWrite={noop} onFold={noop} />
       )}
     />,
@@ -163,7 +163,7 @@ describe("the section card", () => {
 
   it("shows old and new side by side with the changed lines marked, Use and Not this", () => {
     const markup = rendered(<SectionCard fold={foldOpened("4. Decisions", DRAFT, SOURCE, "blob:1")} settled={false}
-      owed={{ round: 1, finding: "S66-01", amendment: "§4 D1" }} onUse={noop} onRow={noop} onDismiss={noop} />);
+      asked={{ design: "plans/designs/g1-s66.md", chain: "rev1", round: 1, finding: "S66-01", heading: "4. Decisions", amendment: "§4 D1" }} onUse={noop} onRow={noop} onDismiss={noop} />);
     expect(markup).toContain("As it stands");
     expect(markup).toContain("As drafted");
     expect(markup).toMatch(/data-changed="yes">▍ - D1\. Old\./u);
@@ -175,7 +175,7 @@ describe("the section card", () => {
 
   it("refuses a heading it cannot tell apart, in words, keeping the draft and offering no Use", () => {
     const refused = foldUse(foldOpened("4. Decisions", DRAFT, `${SOURCE}\n## 4. Decisions\n`, "blob:1")).fold;
-    const markup = rendered(<SectionCard fold={refused} settled={false} owed={undefined} onUse={noop} onRow={noop} onDismiss={noop} />);
+    const markup = rendered(<SectionCard fold={refused} settled={false} asked={undefined} onUse={noop} onRow={noop} onDismiss={noop} />);
     expect(markup).toContain("occurs 2 times in this document");
     expect(markup).toContain("- D1. New.");
     expect(markup).toMatch(/<button[^>]*disabled=""[^>]*>Use</u);
@@ -184,14 +184,14 @@ describe("the section card", () => {
   it("says the design changed and compares against it as it is now", () => {
     const writing = foldUse(foldOpened("4. Decisions", DRAFT, SOURCE, "blob:1")).fold;
     const markup = rendered(<SectionCard fold={foldConflicted(writing, SOURCE.replace("Old", "Other"), "blob:2")} settled={false}
-      owed={undefined} onUse={noop} onRow={noop} onDismiss={noop} />);
+      asked={undefined} onUse={noop} onRow={noop} onDismiss={noop} />);
     expect(markup).toContain("The design changed since it was read");
     expect(markup).toContain("- D1. Other.");
   });
 
   it("offers the decision again when the section was written without it", () => {
     const owing = { ...foldOpened("4. Decisions", DRAFT, SOURCE, "blob:1"), phase: "row" as const, said: "The section is written; its decision is not: gone. Write the decision again." };
-    const markup = rendered(<SectionCard fold={owing} settled={false} owed={{ round: 1, finding: "S66-01", amendment: "a" }}
+    const markup = rendered(<SectionCard fold={owing} settled={false} asked={{ design: "plans/designs/g1-s66.md", chain: "rev1", round: 1, finding: "S66-01", heading: "4. Decisions", amendment: "a" }}
       onUse={noop} onRow={noop} onDismiss={noop} />);
     expect(markup).toMatch(/<button[^>]*>Write the decision</u);
     expect(markup).toContain("its decision is not");

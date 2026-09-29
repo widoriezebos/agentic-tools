@@ -245,15 +245,39 @@ export function sectionFor(finding: DesignFinding, headings: readonly string[]):
   return headings.find((heading) => heading.length > 3 && said.includes(heading)) ?? "";
 }
 
-/** What Fold asks the Partner: that section anew, with the finding folded in. */
-export function foldAsk(design: string, heading: string, finding: DesignFinding, round: number): string {
+/**
+ * What Fold asks the Partner: that section anew, with the finding folded in.
+ *
+ * The request names the chain, the round, the finding and the amendment, and it
+ * stays in the conversation, so the section the Partner drafts in answer is
+ * bound to the one finding it was asked for even after a reload (foldAskedIn).
+ */
+export function foldAsk(design: string, heading: string, finding: DesignFinding, round: number, chain: string, amendment: string): string {
   return [
-    `Fold finding ${finding.id} of round ${String(round)} into the section “${heading}” of ${design}.`,
+    `Fold finding ${finding.id} of round ${String(round)} of critique ${chain} into the section “${heading}” of ${design}.`,
+    `${AMENDMENT}${amendment.trim()}`,
     `The finding (${finding.material ? "material" : "not material"}, ${finding.severity}): ${finding.claim}`,
     finding.evidence === "" ? "" : `Its evidence: ${finding.evidence}`,
     finding.change === undefined || finding.change === "" ? "" : `The change it asks for: ${finding.change}`,
     "Draft that one section anew, heading line and all, and offer it with suggest with document and section; change nothing else.",
   ].filter((line) => line !== "").join("\n");
+}
+
+const AMENDMENT = "The amendment: ";
+const FOLD_ASKED = /^Fold finding (\S+) of round (\d+) of critique (\S+) into the section “(.*)” of (.+)\.$/u;
+
+/** A fold asked of the Partner, as its request says it. */
+export type FoldAsked = { design: string; chain: string; round: number; finding: string; heading: string; amendment: string };
+
+/** The fold a message of the human's asked for, or null for any other message. */
+export function foldAskedIn(text: string): FoldAsked | null {
+  const [first = "", second = ""] = text.split("\n");
+  const asked = FOLD_ASKED.exec(first);
+  if (asked === null || !second.startsWith(AMENDMENT)) {
+    return null;
+  }
+  return { finding: asked[1], round: Number(asked[2]), chain: asked[3], heading: asked[4], design: asked[5],
+    amendment: second.slice(AMENDMENT.length).trim() };
 }
 
 /** The engine's words, as said: the sentence, what it says is next, and its lines. */

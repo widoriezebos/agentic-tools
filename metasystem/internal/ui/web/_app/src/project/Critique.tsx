@@ -12,6 +12,7 @@ import {
   DEFER,
   FOLD,
   foldAsk,
+  foldAskedIn,
   fundingGoal,
   loadCritique,
   NOT_THIS,
@@ -28,17 +29,20 @@ import {
   type DesignLoop,
   type DesignRound,
   type Draft,
+  type FoldAsked,
   type Press,
 } from "./critiquing";
 import {
   comparisonOf,
+  foldAt,
   foldConflicted,
-  foldOpened,
+  foldRow,
   foldRowFailed,
   foldRowWritten,
   foldUse,
   foldWritten,
   inTheDesign,
+  offersFor,
   type Fold,
 } from "./folding";
 import { headingsOf } from "./sections";
@@ -68,9 +72,6 @@ import { Trouble } from "../shell/Trouble";
 /** The press open on one card, with what has been typed for it. */
 type Pressing = { key: string; press: Press; draft: Draft; heading: string; refusal: string };
 
-/** A fold asked for, by the heading it was asked for, waiting for its section. */
-type Asked = { round: number; finding: string; amendment: string };
-
 function keyOf(card: Card): string {
   return `${String(card.round)}:${card.finding.id}`;
 }
@@ -97,9 +98,8 @@ export function Critique({
   const [words, setWords] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [pressing, setPressing] = useState<Pressing | null>(null);
-  const [asked, setAsked] = useState<Readonly<Record<string, Asked>>>({});
   const [folds, setFolds] = useState<Readonly<Record<string, Fold>>>({});
-  const { offered, send, dismiss } = usePartner();
+  const { offered, send, dismiss, store } = usePartner();
   const { askToSignIn } = useSession();
   const retried = useRef(false);
   const headings = useMemo(() => headingsOf(document.source), [document.source]);
@@ -184,36 +184,33 @@ export function Critique({
   };
 
   const askFold = (card: Card, heading: string, amendment: string) => {
-    setAsked((held) => ({ ...held, [heading]: { round: card.round, finding: card.finding.id, amendment } }));
     setPressing(null);
-    send(foldAsk(document.id, heading, card.finding, card.round));
+    send(foldAsk(document.id, heading, card.finding, card.round, loop?.chain ?? "", amendment));
   };
 
-  // The sections the Partner drafted for this design, newest per heading.
-  const sections = useMemo(() => {
-    const latest = new Map<string, { id: string; heading: string; text: string }>();
-    for (const card of offered) {
-      if (card.document === document.id && card.offered && !card.mark.dismissed && (card.section ?? "") !== "") {
-        latest.set(card.section ?? "", { id: card.id, heading: card.section ?? "", text: card.text });
-      }
-    }
-    return [...latest.values()];
-  }, [offered, document.id]);
-
-  const foldOf = (id: string, heading: string, text: string): Fold =>
-    folds[id] ?? foldOpened(heading, text, document.source, document.revision);
+  // The sections the Partner drafted for this design, each bound to the finding
+  // its request named, the newest per finding.
+  const sections = useMemo(() => offersFor(document.id, offered, store.messages), [offered, store.messages, document.id]);
+  // The folds asked of the Partner on this chain, which their cards say.
+  const asking = useMemo(
+    () => store.messages.flatMap((message) => {
+      const fold = message.role === "human" ? foldAskedIn(message.text) : null;
+      return fold !== null && fold.design === document.id && fold.chain === loop?.chain ? [fold] : [];
+    }),
+    [store.messages, document.id, loop?.chain],
+  );
 
   const setFold = (id: string, fold: Fold) => {
     setFolds((held) => ({ ...held, [id]: fold }));
   };
 
-  const writeRow = (id: string, fold: Fold, waiting: Asked) => {
-    const card = findCard(loop, waiting);
-    if (card === undefined) {
+  const writeRow = (id: string, fold: Fold, asked: FoldAsked | undefined) => {
+    const owed = foldRow(loop, asked);
+    if (owed === undefined) {
       setFold(id, foldRowFailed(fold, "the finding is not on this page any more"));
       return;
     }
-    decideFinding(document.id, card.round, rowFor("fold", card.finding, { reasoning: "", amendment: waiting.amendment }))
+    decideFinding(document.id, owed.round, owed.row)
       .then((answered) => {
         setLoop(answered);
         setFold(id, foldRowWritten(fold));
@@ -223,20 +220,21 @@ export function Critique({
       });
   };
 
-  const use = (id: string, fold: Fold) => {
+  // A Use writes the row only for the finding the draft was asked for.
+  const use = (id: string, fold: Fold, asked: FoldAsked | undefined) => {
     const step = foldUse(fold);
     setFold(id, step.fold);
     if (step.save === undefined) {
       return;
     }
-    const waiting = asked[fold.heading];
+    const owes = foldRow(loop, asked) !== undefined;
     editDocument(document.id, step.save.source, step.save.revision)
       .then((payload) => {
         onSaved(payload);
-        const written = foldWritten(step.fold, waiting !== undefined);
+        const written = foldWritten(step.fold, owes);
         setFold(id, written);
-        if (waiting !== undefined) {
-          writeRow(id, written, waiting);
+        if (owes) {
+          writeRow(id, written, asked);
         }
       })
       .catch((error: unknown) => {
@@ -280,7 +278,7 @@ export function Critique({
             headings={headings}
             pressing={pressing}
             busy={busy}
-            asked={asked}
+            asked={asking}
             onOpen={(card, press) => {
               setPressing({ key: keyOf(card), press, draft: { reasoning: "", amendment: "" },
                 heading: sectionFor(card.finding, headings), refusal: "" });
@@ -311,22 +309,19 @@ export function Critique({
         )}
       />
       {sections.map((section) => {
-        const fold = foldOf(section.id, section.heading, section.text);
+        const fold = folds[section.id] ?? foldAt(section, loop, document.source, document.revision);
         const settled = fold.phase === "comparing" && folds[section.id] === undefined && inTheDesign(document.source, section.heading, section.text);
         return (
           <SectionCard
             key={section.id}
             fold={fold}
             settled={settled}
-            owed={asked[section.heading]}
+            asked={section.asked}
             onUse={() => {
-              use(section.id, fold);
+              use(section.id, fold, section.asked);
             }}
             onRow={() => {
-              const waiting = asked[section.heading];
-              if (waiting !== undefined) {
-                writeRow(section.id, fold, waiting);
-              }
+              writeRow(section.id, fold, section.asked);
             }}
             onDismiss={() => {
               dismiss(section.id);
@@ -349,11 +344,6 @@ export function Critique({
       )}
     </>
   );
-}
-
-function findCard(loop: DesignLoop | null, waiting: Asked): Card | undefined {
-  const round = loop?.rounds.find((one) => one.round === waiting.round);
-  return round === undefined ? undefined : cardsOf(round).find((card) => card.finding.id === waiting.finding);
 }
 
 /**
@@ -432,7 +422,8 @@ export function RoundCards({
   headings: readonly string[];
   pressing: Pressing | null;
   busy: boolean;
-  asked: Readonly<Record<string, Asked>>;
+  /** The folds asked of the Partner on this chain. */
+  asked: readonly FoldAsked[];
   onOpen: (card: Card, press: Press) => void;
   onChange: (next: Partial<Pick<Pressing, "draft" | "heading">>) => void;
   onCancel: () => void;
@@ -450,7 +441,7 @@ export function RoundCards({
         <ul className="ms-critique-cards">
           {cardsOf(round).map((card) => {
             const open = pressing !== null && pressing.key === keyOf(card) ? pressing : null;
-            const folding = Object.values(asked).some((one) => one.round === card.round && one.finding === card.finding.id);
+            const folding = asked.some((one) => one.round === card.round && one.finding === card.finding.id);
             return (
               <FindingCard
                 key={keyOf(card)}
@@ -649,7 +640,7 @@ export function FindingCard({
 export function SectionCard({
   fold,
   settled,
-  owed,
+  asked,
   onUse,
   onRow,
   onDismiss,
@@ -657,8 +648,8 @@ export function SectionCard({
   fold: Fold;
   /** Whether the design already carries the section as drafted. */
   settled: boolean;
-  /** The finding this fold was asked for, whose accepted row a Use writes. */
-  owed: Asked | undefined;
+  /** The fold whose request this draft answers: the one finding whose accepted row a Use writes. */
+  asked: FoldAsked | undefined;
   onUse: () => void;
   onRow: () => void;
   onDismiss: () => void;
@@ -668,7 +659,7 @@ export function SectionCard({
     <section className="ms-section-card" aria-label={`The section ${fold.heading}, drafted anew`}>
       <p className="ms-critique-card-head">
         <span>
-          “{fold.heading}”, drafted anew{owed === undefined ? "" : ` for ${owed.finding}`}
+          “{fold.heading}”, drafted anew{asked === undefined ? "" : ` for ${asked.finding} of round ${String(asked.round)}`}
         </span>
         <Help id="section-card" />
       </p>

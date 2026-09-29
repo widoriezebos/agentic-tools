@@ -5,6 +5,7 @@ import {
   answerable,
   cardsOf,
   foldAsk,
+  foldAskedIn,
   fundingGoal,
   pressRefusal,
   rowFor,
@@ -110,8 +111,11 @@ describe("the fold (D3)", () => {
   });
 
   it("asks the Partner for that section anew, with the finding", () => {
-    const asked = foldAsk("plans/designs/g1-s66.md", "4. Decisions", round.findings[0], 1);
-    expect(asked).toContain("Fold finding S66-01 of round 1");
+    const asked = foldAsk("plans/designs/g1-s66.md", "4. Decisions", round.findings[0], 1, "rev1", "§4 D1 names it");
+    expect(asked).toContain("Fold finding S66-01 of round 1 of critique rev1");
+    expect(foldAskedIn(asked)).toEqual({ design: "plans/designs/g1-s66.md", chain: "rev1", round: 1, finding: "S66-01",
+      heading: "4. Decisions", amendment: "§4 D1 names it" });
+    expect(foldAskedIn("Fold finding S66-01 into §4, please.")).toBeNull();
     expect(asked).toContain("“4. Decisions” of plans/designs/g1-s66.md");
     expect(asked).toContain("the act cannot start a review");
     expect(asked).toContain("suggest with document and section");

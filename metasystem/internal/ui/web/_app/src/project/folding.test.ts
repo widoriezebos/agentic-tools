@@ -8,9 +8,13 @@ import {
   foldRowFailed,
   foldRowWritten,
   foldUse,
+  foldAt,
+  foldRow,
   foldWritten,
   inTheDesign,
+  offersFor,
 } from "./folding";
+import { foldAsk, type DesignLoop, type DesignRound } from "./critiquing";
 
 /**
  * The section card's steps (g1-s66 D3): Use writes exactly the section, under
@@ -76,5 +80,63 @@ describe("the section card", () => {
   it("knows a section the design already carries as drafted", () => {
     expect(inTheDesign(SOURCE.replace("- D1. Old.", "- D1. New, with the budget."), "4. Decisions", DRAFT)).toBe(true);
     expect(inTheDesign(SOURCE, "4. Decisions", DRAFT)).toBe(false);
+  });
+});
+
+describe("two findings folded into one section", () => {
+  const DESIGN = "plans/designs/g1-s66.md";
+  const round: DesignRound = {
+    round: 1,
+    findings: [
+      { id: "S66-01", severity: "high", material: true, claim: "the budget is not stated", evidence: "§4" },
+      { id: "S66-02", severity: "high", material: true, claim: "the brief can change", evidence: "§4" },
+    ],
+    decisions: [],
+    answerable: false,
+  };
+  const loop = (decisions: DesignRound["decisions"] = []): DesignLoop => ({
+    design: DESIGN, toolCalls: 30, chain: "rev1", goal: "g", state: "deciding", status: "completed", round: 1, limit: 2,
+    rounds: [{ ...round, decisions }],
+  });
+  const FIRST = "## 4. Decisions\n\n- D1. The budget, stated.";
+  const SECOND = "## 4. Decisions\n\n- D1. Old.\n- D2. The brief, kept.";
+  const messages = [
+    { turn: "t1", role: "human", text: foldAsk(DESIGN, "4. Decisions", round.findings[0], 1, "rev1", "§4 D1 states the budget") },
+    { turn: "t1", role: "partner", text: "Drafted." },
+    { turn: "t2", role: "human", text: foldAsk(DESIGN, "4. Decisions", round.findings[1], 1, "rev1", "§4 D2 keeps the brief") },
+  ];
+  const offered = [
+    { id: "t1#0", document: DESIGN, section: "4. Decisions", text: FIRST, offered: true, mark: { dismissed: false } },
+    { id: "t2#0", document: DESIGN, section: "4. Decisions", text: SECOND, offered: true, mark: { dismissed: false } },
+  ];
+
+  it("stand beside each other, each bound to the finding its request named", () => {
+    const offers = offersFor(DESIGN, offered, messages);
+    expect(offers.map((offer) => [offer.id, offer.asked?.finding, offer.asked?.chain, offer.asked?.round])).toEqual([
+      ["t1#0", "S66-01", "rev1", 1],
+      ["t2#0", "S66-02", "rev1", 1],
+    ]);
+  });
+
+  it("each write the accepted row for their own finding, folded one after the other", () => {
+    const [first, second] = offersFor(DESIGN, offered, messages);
+    expect(foldRow(loop(), first.asked)).toEqual({
+      round: 1, row: { finding: "S66-01", disposition: "accepted", reasoning: "", amendment: "§4 D1 states the budget" },
+    });
+    const afterFirst = loop([{ finding: "S66-01", disposition: "accepted", reasoning: "", amendment: "§4 D1 states the budget" }]);
+    expect(foldRow(afterFirst, first.asked)).toBeUndefined();
+    expect(foldRow(afterFirst, second.asked)).toEqual({
+      round: 1, row: { finding: "S66-02", disposition: "accepted", reasoning: "", amendment: "§4 D2 keeps the brief" },
+    });
+    expect(foldRow({ ...afterFirst, chain: "rev9" }, second.asked)).toBeUndefined();
+  });
+
+  it("offer the row again after a reload when the section is the draft's and the file has no row", () => {
+    const [first, second] = offersFor(DESIGN, offered, messages);
+    const used = SOURCE.replace("- D1. Old.", "- D1. The budget, stated.");
+    expect(foldAt(first, loop(), used, "blob:2").phase).toBe("row");
+    expect(foldAt(second, loop(), used, "blob:2").phase).toBe("comparing");
+    const written = loop([{ finding: "S66-01", disposition: "accepted", reasoning: "", amendment: "§4 D1 states the budget" }]);
+    expect(foldAt(first, written, used, "blob:2").phase).toBe("comparing");
   });
 });
