@@ -660,3 +660,11 @@
 .ms-room-candidate {
   font-size: 13px;
 }
+
+/* The brief a stranded send-back will carry, read back rather than edited. */
+pre.ms-send-back-brief {
+  min-height: 0;
+  margin: 0;
+  white-space: pre-wrap;
+  resize: none;
+}

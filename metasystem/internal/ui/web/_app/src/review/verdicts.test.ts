@@ -121,20 +121,22 @@ describe("the correction brief", () => {
 
 describe("what the room and the card say once the verdict is on the goal", () => {
   it("says the verdict at its tip and by whom, and a send-back with its findings", () => {
-    expect(recordedLine({ verdict: "clear-to-land", tip: TIP, by: "Wido" }, 0))
+    expect(recordedLine({ verdict: "clear-to-land", tip: TIP, by: "Wido" }, 0, "g"))
       .toBe("Recorded. The goal now carries your verdict: clear to land at 9c1f0a2, reviewed by Wido.");
-    expect(recordedLine({ verdict: "send-back", tip: TIP, by: "Wido" }, 3))
-      .toBe("Sent back with your three findings; the goal has left Review and the seat that holds it revises.");
+    expect(recordedLine({ verdict: "send-back", tip: TIP, by: "Wido" }, 3, "g"))
+      .toBe("Sent back with your three findings; the goal has left Review, and the holder takes it with work revise g.");
   });
 
   it("reads the card's line from the goal's own history", () => {
     const base: Verdict = { verdict: "clear-to-land", by: "Wido", at: "", tip: TIP, record: RECORD, answered: false };
-    expect(verdictLine(base)).toBe("reviewed by Wido · clear to land");
-    expect(verdictLine({ ...base, verdict: "send-back" })).toBe("sent back by Wido · awaiting the holder");
-    expect(verdictLine({ ...base, verdict: "send-back", answered: true, attempt: 3 })).toBe("attempt 3 started from your brief");
-    expect(verdictLine({ ...base, verdict: "send-back", answered: true, candidates: ["discovery", "writer"] }))
+    expect(verdictLine(base, "g")).toBe("reviewed by Wido · clear to land");
+    // Nothing takes the holder's step unprompted until slice D, so the card says
+    // who takes it and with what (Sol SOL-S69-01).
+    expect(verdictLine({ ...base, verdict: "send-back" }, "g")).toBe("sent back by Wido · the holder takes it with work revise g");
+    expect(verdictLine({ ...base, verdict: "send-back", answered: true, attempt: 3 }, "g")).toBe("attempt 3 started from your brief");
+    expect(verdictLine({ ...base, verdict: "send-back", answered: true, candidates: ["discovery", "writer"] }, "g"))
       .toBe("the holder needs to know which work: discovery or writer");
-    expect(verdictLine(undefined)).toBe("");
+    expect(verdictLine(undefined, "g")).toBe("");
   });
 
   it("asks for End again where a retip leaves an Outcome card unrecorded", () => {

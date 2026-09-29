@@ -75,6 +75,12 @@ describe("the card's verdict", () => {
     expect(markup).toMatch(/<button[^>]*>writer</u);
   });
 
+  it("says who takes a send-back and with what, since nothing takes it unprompted yet", () => {
+    const markup = rendered(<CardVerdict row={row({ ...sent, answered: false })} />);
+    expect(markup).toContain("sent back by Wido · the holder takes it with work revise g");
+    expect(markup).not.toContain("awaiting the holder");
+  });
+
   it("says a clear to land by whom, and nothing where no verdict stands", () => {
     expect(rendered(<CardVerdict row={row({ ...sent, verdict: "clear-to-land", answered: false })} />)).toContain("reviewed by Wido · clear to land");
     expect(rendered(<CardVerdict row={row(undefined)} />)).toBe("");

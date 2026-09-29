@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 
 import { CandidateError, loadCandidate, startCandidate, stopCandidate, type Candidate } from "./candidate";
-import { candidateHref, pillOf } from "./room";
+import { candidateHref, pillOf, pressSignedIn } from "./room";
 import { Help } from "../help/Help";
 import { Button } from "../shell/controls";
+import { useSession } from "../shell/identity";
 
 /**
  * The candidate's pill in the room's header (g1-s69 D3): what app status says
@@ -15,6 +16,7 @@ export function CandidatePill({ goal, reviewed }: { goal: string; reviewed: stri
   const [read, setRead] = useState<Candidate | { refusal: string; code: string } | null>(null);
   const [acting, setActing] = useState(false);
   const [refusal, setRefusal] = useState("");
+  const { askToSignIn } = useSession();
 
   useEffect(() => {
     if (goal === "") {
@@ -31,21 +33,31 @@ export function CandidatePill({ goal, reviewed }: { goal: string; reviewed: stri
     };
   }, [goal]);
 
+  // Run and Stop are the human's own acts: a press refused for want of a
+  // sign-in opens the sign-in sheet, and signing in presses it again, once
+  // (Sol SOL-S69-03).
   const press = (act: (goal: string) => Promise<Candidate>) => {
-    setActing(true);
-    setRefusal("");
-    act(goal)
-      .then(
-        () => loadCandidate(goal).then(setRead, (error: unknown) => {
-          setRead(refusalOf(error));
-        }),
-        (error: unknown) => {
-          setRefusal(refusalOf(error).refusal);
-        },
-      )
-      .finally(() => {
+    void pressSignedIn({
+      act: () => {
+        setActing(true);
+        setRefusal("");
+        return act(goal);
+      },
+      done: () => {
+        void loadCandidate(goal)
+          .then(setRead, (error: unknown) => {
+            setRead(refusalOf(error));
+          })
+          .finally(() => {
+            setActing(false);
+          });
+      },
+      refused: (error) => {
         setActing(false);
-      });
+        setRefusal(refusalOf(error).refusal);
+      },
+      signIn: askToSignIn,
+    });
   };
 
   const pill = pillOf(read, reviewed);

@@ -8,6 +8,7 @@ import { MovedFiles } from "./Answers";
 import { Board } from "./Board";
 import { Desk } from "./Desk";
 import { CandidatePill } from "./Pill";
+import { PendingVerdict } from "./Verdict";
 import {
   BRIEF_SAID,
   CLEAR_REFUSED,
@@ -61,7 +62,7 @@ import "./room.css";
 export function Room({ record }: { record: string }) {
   const partner = usePartner();
   const { store, sitting, table, room, setFace, putOnDesk, openDesk, busy, keepRoomNow, stop, conversation,
-    verdictSaid, verdictRefusal, retryVerdict } = partner;
+    verdictSaid, verdictRefusal, retryVerdict, stranded, recordStranded, verdictBusy } = partner;
   const navigate = useNavigate();
   const location = useLocation();
   // What the sitting is for, which the mark says; before the mark has been read
@@ -277,6 +278,9 @@ export function Room({ record }: { record: string }) {
             Back to the board
           </Button>
         </p>
+      )}
+      {stranded !== null && verdictRefusal === "" && (
+        <PendingVerdict pending={stranded} busy={verdictBusy} onPress={recordStranded} />
       )}
       {verdictRefusal !== "" && (
         <p className="ms-room-banner" role="status">

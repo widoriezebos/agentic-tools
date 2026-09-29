@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceDigest": "sha256:72bc0a1f936d381b2c2694d3a034259bfe00587572c2f41a164c88f77fcb9061",
+  "sourceDigest": "sha256:6d5e256fa035377c0aa13efc8c0f85c0e58b3aa6cd73b1e134e19349b13cfcea",
   "source": [
     {
       "path": ".npmrc",
@@ -764,7 +764,7 @@
     },
     {
       "path": "src/partner/store.tsx",
-      "sha256": "51582a4ab8980350964aed72e37609916cf4796710cabc809c260c5ea140b3de"
+      "sha256": "35da220e2b6aa19a779a5962ad61c0efec2bcd60ea65041ac9a1b862e720702c"
     },
     {
       "path": "src/partner/subject.test.ts",
@@ -904,15 +904,15 @@
     },
     {
       "path": "src/review/Pill.tsx",
-      "sha256": "2ba4980ce16d950eb57207819fb8389e5f63741246b92de69db0396ba6a26c63"
+      "sha256": "10d0acc1586685024c6a87f97016d758e0644a6e938f56e78c80d163ade05453"
     },
     {
       "path": "src/review/ReviewRoom.tsx",
-      "sha256": "7a30e7fee764e465d6645ff9dba68a11b0d8315af4379320da2f52074abcd32c"
+      "sha256": "0f4e6607910db2596eb1cd4a1545f41dd40c9a737d1b713cf9f02a7bd926a4c4"
     },
     {
       "path": "src/review/Verdict.tsx",
-      "sha256": "d17500557411e1003395e50b537ae167aad399a952787e3d47874ffcaa5e0ede"
+      "sha256": "ab2dfebe0ae67752f04f34b60525278a1eb041d9c74ad2af294dfbbc3311fe1a"
     },
     {
       "path": "src/review/anchors.tsx",
@@ -936,7 +936,7 @@
     },
     {
       "path": "src/review/room.css",
-      "sha256": "6abc78785b03c16083f66dd467848482784dbe84d67a8ed3e232b4dec33f8761"
+      "sha256": "b034373cd7e587cb758ada3575a1893533cfaa93b3debffc03098f241504c460"
     },
     {
       "path": "src/review/room.test.ts",
@@ -944,7 +944,7 @@
     },
     {
       "path": "src/review/room.ts",
-      "sha256": "37afed84094c5a9272b27101c6d44c2a94a8326c9b7e404c1a289aef3f167a7f"
+      "sha256": "3cf6b5bd8bdeaf312c47bd069462636a9f09d19422dba8047c906961d98e8261"
     },
     {
       "path": "src/review/screens.test.tsx",
@@ -955,12 +955,16 @@
       "sha256": "77b529f07b0888a95eb5380933aa5f031bc31d7c6237b892b262cfd3d5b6666a"
     },
     {
+      "path": "src/review/verdicts.recovery.test.tsx",
+      "sha256": "d75029d795bb1e7343542a788e06b1180931765f2133a83bdc5f03fc23ed1365"
+    },
+    {
       "path": "src/review/verdicts.screens.test.tsx",
-      "sha256": "9101085da8fd70ac5400ea9e91185f91316c837e6e333a0f16ce45f154a6f705"
+      "sha256": "7cdf721a9de9b95f2e95b718bf0b5a728861b55350bc10ae4b57b1b720186a90"
     },
     {
       "path": "src/review/verdicts.test.ts",
-      "sha256": "a6c7ba01b53cfc7b3085d4292104d18ec46a341722a0a06bc6d3541cb8bd2bc7"
+      "sha256": "5767c19e11088a656ca3c3534b35040a6309dc0d708f3f10c8ae862178078a20"
     },
     {
       "path": "src/routes.test.ts",
@@ -1174,11 +1178,11 @@
     },
     {
       "path": "assets/index.css",
-      "sha256": "26a1a6f75eb22e65ef0b68987197c9465726ab0537635f15fd9408d712b937c7"
+      "sha256": "6d26b796ffbc5ff97f50015d9c82c419b17010a3455c618bf60a37b15c0e5fa5"
     },
     {
       "path": "assets/index.js",
-      "sha256": "336b34a3fde23fca7782fe31ce861727a69f43a573c32949967687ab354802f7"
+      "sha256": "e14672a9da753533f545f6d6f0acd4b040eee3d93692a9bccc855c87879ec9cb"
     },
     {
       "path": "assets/inter-latin-ext-wght-normal.woff2",

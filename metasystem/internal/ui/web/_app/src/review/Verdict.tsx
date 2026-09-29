@@ -1,6 +1,6 @@
 import { createContext, useContext, useState } from "react";
 
-import { verdictLine } from "./room";
+import { verdictLine, type ToPerform } from "./room";
 import { BacklogError, reviewGoal, type Backlog, type Row } from "../backlog/api";
 import { useSession } from "../shell/identity";
 import { Button } from "../shell/controls";
@@ -10,8 +10,8 @@ export const VerdictActed = createContext<(after: Backlog) => void>(() => {});
 
 /**
  * The goal's verdict on its card (g1-s69 §3, D2): "reviewed by Wido · clear to
- * land", "sent back by Wido · awaiting the holder", "attempt 3 started from
- * your brief", or the holder asking which work — with a press per name that
+ * land", "sent back by Wido · the holder takes it with work revise G",
+ * "attempt 3 started from your brief", or the holder asking which work — with a press per name that
  * performs the send-back again naming it. Everything it says is the goal's own
  * history, read as every seat reads it.
  */
@@ -21,7 +21,7 @@ export function CardVerdict({ row }: { row: Row }) {
   const [pressing, setPressing] = useState("");
   const [refusal, setRefusal] = useState("");
   const verdict = row.verdict;
-  const said = verdictLine(verdict);
+  const said = verdictLine(verdict, row.ref.id);
   if (verdict === undefined || said === "") {
     return null;
   }
@@ -65,6 +65,32 @@ export function CardVerdict({ row }: { row: Row }) {
           {refusal}
         </p>
       )}
+    </div>
+  );
+}
+
+/**
+ * A verdict the record's Outcome carries and the goal does not, offered again
+ * after a reload stranded the act Record it began (Sol SOL-S69-04): the
+ * verdict, a send-back's brief as it will travel, and the press that records it
+ * on the goal. A refusal is said by the room's refusal line, with the engine's
+ * words.
+ */
+export function PendingVerdict({ pending, busy, onPress }: { pending: ToPerform; busy: boolean; onPress: () => void }) {
+  const words = pending.asked.verdict === "send-back" ? "send back" : "clear to land";
+  return (
+    <div className="ms-room-banner ms-send-back" role="status">
+      <p className="ms-sitting-said">The Outcome is recorded, and the verdict is not yet on the goal: {words}.</p>
+      {pending.asked.brief !== "" && (
+        <pre className="ms-send-back-brief" aria-label="The correction brief">
+          {pending.asked.brief}
+        </pre>
+      )}
+      <p>
+        <Button primary disabled={busy} onClick={onPress}>
+          Record the verdict on the goal
+        </Button>
+      </p>
     </div>
   );
 }

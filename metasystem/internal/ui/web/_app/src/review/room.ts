@@ -1,6 +1,6 @@
 import type { Deposit, Subject } from "../partner/api";
 import type { Store } from "../partner/conversation";
-import { ACCEPTED, answerOf, entriesIn, FIX, followUp, LEFT_OPEN, pressable, type Entry, type Standing } from "../partner/sitting";
+import { ACCEPTED, answerOf, entriesIn, FIX, followUp, LEFT_OPEN, outcomeIn, pressable, type Entry, type Standing } from "../partner/sitting";
 import type { Recorded, Verdict as RowVerdict } from "../backlog/api";
 import type { Candidate } from "./candidate";
 
@@ -509,6 +509,58 @@ export function verdictToPerform(
   };
 }
 
+/**
+ * The verdict a record's recorded Outcome carries that the goal does not (Sol
+ * SOL-S69-04): the Outcome opens with an acting verdict and a Reviewed at line
+ * naming the record's own tip, and the goal's standing verdict is not this one
+ * from this record at this tip. It is what the room offers again after a
+ * reload stranded the act that Record it began, with the brief the human
+ * edited, kept in the room's drafts, else the one composed from the findings
+ * answered fix. Anything else answers null.
+ */
+export function strandedVerdict(source: string, record: string, standing: RowVerdict | undefined, brief: string | null): ToPerform | null {
+  const said = (outcomeIn(source)?.text ?? "").split("\n").map((line) => line.trim()).filter((line) => line !== "");
+  const verdict = /^Verdict:\s*(.*)$/u.exec(said[0] ?? "")?.[1].trim() ?? "";
+  const at = said[1]?.startsWith(REVIEWED_AT) === true ? said[1].slice(REVIEWED_AT.length).trim() : "";
+  const tip = reviewedOf(source).tip;
+  if (actingVerdict(verdict) === "" || tip === "" || at !== tip) {
+    return null;
+  }
+  if (standing !== undefined && standing.verdict === actingVerdict(verdict) && standing.tip === tip && sameRecord(standing.record, record)) {
+    return null;
+  }
+  return verdictToPerform({ kind: "outcome", verdict }, "review", record, source, brief);
+}
+
+/** Whether two names of a review record are the same record: the ledger names it from its own root. */
+function sameRecord(one: string, other: string): boolean {
+  return one === other || one.endsWith(`/${other}`) || other.endsWith(`/${one}`);
+}
+
+/**
+ * One of the room's acts under the human's session (Sol SOL-S69-03): a refusal
+ * for want of a sign-in opens the sign-in sheet and, once the human has signed
+ * in, the same press is made again — once, as the board's acts do it. Every
+ * refusal is also said, so a sheet closed without signing in leaves the words
+ * and the press to try again.
+ */
+export function pressSignedIn<T>(
+  ports: {
+    act: () => Promise<T>;
+    done: (answer: T) => void;
+    refused: (error: unknown) => void;
+    signIn: (again: () => Promise<void>) => void;
+  },
+  again = true,
+): Promise<void> {
+  return ports.act().then(ports.done, (error: unknown) => {
+    ports.refused(error);
+    if (again && (error as { signIn?: unknown } | null)?.signIn === true) {
+      ports.signIn(() => pressSignedIn(ports, false));
+    }
+  });
+}
+
 /** Every recorded finding the human answered fix, in the order the record carries them. */
 export function fixFindings(entries: readonly Entry[]): Entry[] {
   return entries.filter((entry) => entry.section === "Findings" && answerOf(entry.answer ?? "") === "fix");
@@ -546,9 +598,9 @@ function counted(count: number, one: string, many: string): string {
 }
 
 /** What the room says once the verdict is on the goal (g1-s69 §3). */
-export function recordedLine(recorded: Pick<Recorded, "verdict" | "tip" | "by">, fixes: number): string {
+export function recordedLine(recorded: Pick<Recorded, "verdict" | "tip" | "by">, fixes: number, goal: string): string {
   if (recorded.verdict === "send-back") {
-    return `Sent back with your ${counted(fixes, "finding", "findings")}; the goal has left Review and the seat that holds it revises.`;
+    return `Sent back with your ${counted(fixes, "finding", "findings")}; the goal has left Review, and the holder takes it with work revise ${goal}.`;
   }
   return `Recorded. The goal now carries your verdict: clear to land at ${recorded.tip.slice(0, 7)}, reviewed by ${recorded.by}.`;
 }
@@ -557,7 +609,7 @@ export function recordedLine(recorded: Pick<Recorded, "verdict" | "tip" | "by">,
  * The Review lane card's verdict line (g1-s69 §3, D2), read from the goal's own
  * history as every seat reads it, or "" where no verdict stands.
  */
-export function verdictLine(verdict: RowVerdict | undefined): string {
+export function verdictLine(verdict: RowVerdict | undefined, goal: string): string {
   if (verdict === undefined) {
     return "";
   }
@@ -570,7 +622,9 @@ export function verdictLine(verdict: RowVerdict | undefined): string {
   if ((verdict.attempt ?? 0) > 0) {
     return `attempt ${String(verdict.attempt)} started from your brief`;
   }
-  return `sent back by ${verdict.by} · awaiting the holder`;
+  // Nothing takes the holder's step unprompted until slice D's holder
+  // activity, so the card says who takes it and with what (Sol SOL-S69-01).
+  return `sent back by ${verdict.by} · the holder takes it with work revise ${goal}`;
 }
 
 function orList(names: readonly string[]): string {
