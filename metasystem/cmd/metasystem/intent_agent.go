@@ -329,6 +329,8 @@ func agentPublishRefusal(err error, id string) intentResult {
 	case errors.Is(err, board.ErrTextTooLong):
 		return intentResult{Outcome: intentRefused, code: 1,
 			Summary: fmt.Sprintf("AGENT_ASK_TEXT_TOO_LONG: %v; nothing was sent; shorten --text (at most %d bytes) or --if-silent", err, board.MaxTextBytes)}
+	case errors.Is(err, board.ErrIfSilentInvalid), errors.Is(err, board.ErrTextInvalid):
+		return intentResult{Outcome: intentRefused, code: 2, Summary: err.Error() + "; nothing was sent"}
 	case errors.Is(err, board.ErrIDTaken):
 		return intentResult{Outcome: intentRefused, code: 1,
 			Summary:  fmt.Sprintf("AGENT_ASK_ID_TAKEN: the id %s already names another message on this host; nothing was sent and that message is unchanged", id),
@@ -500,6 +502,13 @@ func runAgentInbox(inv *intentInvocation) int {
 		result.Summary = fmt.Sprintf("%s for %s, read and unread:", peerMessageCount(len(messages)), seat.machine)
 	default:
 		result.Summary = fmt.Sprintf("%s for %s:", peerMessageCount(len(messages)), seat.machine)
+	}
+	if n := len(inbox.Malformed); n > 0 {
+		noun := "messages were"
+		if n == 1 {
+			noun = "message was"
+		}
+		result.text = append(result.text, fmt.Sprintf("%d malformed %s not shown: %s", n, noun, strings.Join(inbox.Malformed, ", ")))
 	}
 	if inbox.GoalWaiting > 0 {
 		reason := "a handover of their goal is in progress"

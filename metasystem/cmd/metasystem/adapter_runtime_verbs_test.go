@@ -134,7 +134,7 @@ func TestToolGatePeerOffersTheSeatsOldestMessage(t *testing.T) {
 	}
 	peer, release = toolGatePeer(home, "/repo", resolve, claims, 10000, io.Discard, now)
 	text, mark := peer()
-	if !strings.HasPrefix(text, "[peer message from m1a to m1b, id "+published.Message.ID+":") || !strings.HasSuffix(text, "\nis it green?") || mark == nil {
+	if !strings.HasPrefix(text, "[peer message from m1a to m1b, id "+published.Message.ID+":") || !strings.HasSuffix(text, "\n> is it green?\n[end of peer message "+published.Message.ID+"]") || mark == nil {
 		t.Fatalf("the offer = %q", text)
 	}
 	if err := mark(); err != nil {
