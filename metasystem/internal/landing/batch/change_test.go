@@ -281,7 +281,10 @@ func TestHeldRefusalEjectsTheChangeAndTheGoalMembersLand(t *testing.T) {
 	must(t, store.Create(record))
 	var events []string
 	seams := greenLandSeams(&events)
-	seams.ReplayChange = func(unit Unit) (string, error) { events = append(events, "replay:"+unit.GoalID); return "replayed-change", nil }
+	seams.ReplayChange = func(unit Unit) (string, error) {
+		events = append(events, "replay:"+unit.GoalID)
+		return "replayed-change", nil
+	}
 	seams.Held = func(_, tip string) error {
 		events = append(events, "held:"+tip)
 		return &HeldCommitRefusal{Commit: "replayed-change", Cause: errors.New("held refused: goal-item-not-held: replayed-change: goal goal-g is released at abc")}

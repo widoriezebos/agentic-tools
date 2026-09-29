@@ -255,13 +255,13 @@ type testingSelectionRequest struct {
 	Root, ControlRoot, GoalID, AuthorityGoalID, Tree, CapMin, RetryDecision, ResultPath string
 	// LaneID charges the run to the landing lane instead of a goal: a batch
 	// whose members are all changes (U11b).
-	LaneID                                           string
-	ExpectedGoalRevision, ExpectedAccountingRevision uint64
-	Mode                                                                                testpolicy.Mode
-	Purpose                                                                             testpolicy.Purpose
-	Groups, BatchRequirements                                                           []string
-	Carried                                                                             bool
-	NoReuse, ForceGroups, RequireDiagnosticHeadroom, AllGroups                          bool
+	LaneID                                                     string
+	ExpectedGoalRevision, ExpectedAccountingRevision           uint64
+	Mode                                                       testpolicy.Mode
+	Purpose                                                    testpolicy.Purpose
+	Groups, BatchRequirements                                  []string
+	Carried                                                    bool
+	NoReuse, ForceGroups, RequireDiagnosticHeadroom, AllGroups bool
 	// AppAddress is the launch contract's check: the address of the
 	// application run the named group is run against.
 	AppAddress                                        string
