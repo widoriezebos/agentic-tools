@@ -33,8 +33,30 @@ type Setting struct {
 	Computed string
 }
 
-// compiledSettings is the one table of compiled-in configuration defaults.
-var compiledSettings = []Setting{
+// compiledSettings is the one table of compiled-in configuration defaults:
+// the rows below, then every disk-lifetime row of disksettings.go that has a
+// default (those rows carry their unit, scope and conservative direction
+// beside the default, so they are spelled there and registered here).
+var compiledSettings = append(coreSettings, diskCompiledSettings()...)
+
+// diskCompiledSettings registers the disk-lifetime rows (design
+// engine-owns-disk-lifetimes 3.13) into the one table. A row without a
+// default ("none") stays out: it has no value to show. None is a proof
+// input: they bound what the machine keeps on disk, never what a proof
+// proves.
+func diskCompiledSettings() []Setting {
+	var rows []Setting
+	for _, row := range diskSettings {
+		if row.Default == "" || row.Key == EvidenceRootKey {
+			continue
+		}
+		rows = append(rows, Setting{Key: row.Key, Default: row.Default, ProofInput: false,
+			Meaning: row.Meaning + " (" + string(row.Unit) + ")"})
+	}
+	return rows
+}
+
+var coreSettings = []Setting{
 	// Installation shape.
 	{Key: "metasystem.engine-delivery", Default: "source", ProofInput: true,
 		Meaning: "how the engine ships (D17/D33): source, rebuilt by the target and by CI; declared, never inferred"},
@@ -120,6 +142,18 @@ var compiledSettings = []Setting{
 		Meaning: "seconds a steward tick may take before the resident runner is considered stuck"},
 	{Key: "steward.stop-slow-sec", Default: "15", ProofInput: true,
 		Meaning: "a Stop using this many seconds of its sixty-second budget is unhealthy"},
+	// The steward's machine cache trimmer (disk-lifetimes A12). Not proof
+	// inputs: they bound the machine's caches, never what a proof proves.
+	{Key: DiskGoCacheCapGiBKey, Default: "30", ProofInput: false,
+		Meaning: "GiB the engine's Go build cache is trimmed to by last use"},
+	{Key: DiskDelegateGoCacheCapGiBKey, Default: "10", ProofInput: false,
+		Meaning: "GiB the one machine delegate Go cache is trimmed to by last use"},
+	{Key: DiskStaticcheckCacheCapGiBKey, Default: "2", ProofInput: false,
+		Meaning: "GiB each staticcheck cache is trimmed to by last use"},
+	{Key: DiskGoCacheKeepHoursKey, Default: "12", ProofInput: false,
+		Meaning: "hours within which a used cache entry is never trimmed, whatever the cap"},
+	{Key: DiskCacheTrimBudgetSecKey, Default: "10", ProofInput: false,
+		Meaning: "seconds one trim pass over all caches may take; a cut pass resumes where it ended"},
 	{Key: ContextCeilingTokensKey, Default: "250000", ProofInput: true,
 		Meaning: "the context ceiling in tokens; the handoff trigger is the ceiling minus the margin (trigger 105000), and construction refuses a trigger above 106638"},
 	{Key: ContextHandoffMarginTokensKey, Default: "145000", ProofInput: true,

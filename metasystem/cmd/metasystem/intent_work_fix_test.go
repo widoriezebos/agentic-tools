@@ -443,7 +443,8 @@ func TestIntentSettingsShowAndKeysAnswerCompiledDefaults(t *testing.T) {
 		code := runIntentIn(mustIntentCommand(t, "settings show"), []string{key, "--repo", root}, &stdout, &stderr, root, owners)
 		return code, stdout.String()
 	}
-	for key, want := range map[string]string{"watch.stale-min": "20", "suite.section-cap-min": "45", "testing.contract": "testing.json"} {
+	for key, want := range map[string]string{"watch.stale-min": "20", "suite.section-cap-min": "45", "testing.contract": "testing.json",
+		"disk.go-cache-cap-gib": "30", "disk.floor-gib": "50"} {
 		code, text := show(key)
 		if code != 0 || !strings.Contains(text, key+"="+want+" (default)") {
 			t.Fatalf("settings show %s: code=%d %q; want %s=%s (default)", key, code, text, key, want)
@@ -453,5 +454,12 @@ func TestIntentSettingsShowAndKeysAnswerCompiledDefaults(t *testing.T) {
 	if code := configKeysTo(&stdout, filepath.Join(root, "metasystem.conf"), "watch.", nil); code != 0 ||
 		!strings.Contains(stdout.String(), "watch.stale-min\n") || !strings.Contains(stdout.String(), "watch.cap-min\n") {
 		t.Fatalf("settings keys watch.: code=%d %q", code, stdout.String())
+	}
+	// The disk-lifetime rows and the cache trimmer's keys are in the one
+	// table: `settings keys` lists them with the others.
+	stdout.Reset()
+	if code := configKeysTo(&stdout, filepath.Join(root, "metasystem.conf"), "disk.", nil); code != 0 ||
+		!strings.Contains(stdout.String(), "disk.go-cache-cap-gib\n") || !strings.Contains(stdout.String(), "disk.floor-gib\n") {
+		t.Fatalf("settings keys disk.: code=%d %q", code, stdout.String())
 	}
 }

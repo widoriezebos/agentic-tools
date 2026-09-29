@@ -61,7 +61,7 @@ func newDiskBed(t *testing.T) *diskBed {
 		helmMust(t, os.MkdirAll(dir, 0o755))
 	}
 	helmMust(t, os.WriteFile(filepath.Join(root, "development", "metasystem-design.md"), []byte("x\n"), 0o644),
-		os.WriteFile(filepath.Join(inst, "metasystem.conf"), []byte("disk.floor-gib=1\n"), 0o644))
+		os.WriteFile(filepath.Join(inst, "metasystem.conf"), []byte("metasystem.template=true\ndisk.floor-gib=1\n"), 0o644))
 	bed := &diskBed{t: t, root: root, inst: inst, home: filepath.Join(root, "home", ".metasystem"), tmp: filepath.Join(root, "tmp")}
 	helmMust(t, os.MkdirAll(bed.home, 0o700), os.MkdirAll(bed.tmp, 0o700))
 	bed.census = &diskstore.UseCensus{Taken: true}

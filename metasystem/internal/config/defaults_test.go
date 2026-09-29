@@ -196,3 +196,47 @@ func TestTemplateModeReadsOnlyTheCommittedKey(t *testing.T) {
 		t.Fatalf("compiled template default = %q", value)
 	}
 }
+
+// The disk-lifetime settings and the cache trimmer's five keys have their
+// defaults in the one compiled table: an overrides-only file answers each
+// from source "default", lists it, and none is a proof input (they meter
+// the machine's disk, never what a proof proves).
+func TestDiskDefaultsAreInTheOneCompiledTable(t *testing.T) {
+	t.Parallel()
+	conf := filepath.Join(t.TempDir(), "metasystem.conf")
+	putFile(t, conf, "# overrides only\n")
+	want := map[string]string{
+		DiskGoCacheCapGiBKey: "30", DiskDelegateGoCacheCapGiBKey: "10", DiskStaticcheckCacheCapGiBKey: "2",
+		DiskGoCacheKeepHoursKey: "12", DiskCacheTrimBudgetSecKey: "10",
+	}
+	for _, row := range DiskSettings() {
+		if row.Default != "" {
+			want[row.Key] = row.Default
+		}
+	}
+	if len(want) != 31 {
+		t.Fatalf("disk keys with a default = %d, want 31 (26 of 3.13 and the trimmer's five)", len(want))
+	}
+	for key, value := range want {
+		if compiled, ok := CompiledDefault(key); !ok || compiled != value {
+			t.Errorf("compiled default of %s = %q, %v; want %q", key, compiled, ok, value)
+		}
+		params := GetParams{Key: key, ConfPath: conf, LookupEnv: noEnv}
+		if got, code, err := Get(params); err != nil || code != 0 || got != value {
+			t.Errorf("Get(%s) = %q, %d, %v; want %q", key, got, code, err, value)
+		}
+		if origin, err := KeyOrigin(params); err != nil || origin != "default" {
+			t.Errorf("KeyOrigin(%s) = %q, %v; want default", key, origin, err)
+		}
+		if keys := Keys(conf, key, nil); !slices.Contains(keys, key) {
+			t.Errorf("Keys(%s) does not list it", key)
+		}
+		if ProofInput(key) {
+			t.Errorf("%s is a proof input", key)
+		}
+	}
+	trim, err := CacheTrimSettings(conf)
+	if err != nil || trim.EngineGoCapBytes != 30<<30 || trim.Budget.Seconds() != 10 {
+		t.Fatalf("CacheTrimSettings over an overrides-only file = %+v, %v", trim, err)
+	}
+}

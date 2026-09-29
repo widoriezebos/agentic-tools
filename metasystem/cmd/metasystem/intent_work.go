@@ -140,13 +140,10 @@ func (inv *intentInvocation) work() intentWorkOwners {
 }
 
 // configSettingWithDefault resolves one key with its source. A key with a
-// compiled-in default that no source holds (the disk-lifetime settings of
-// engine-owns-disk-lifetimes 3.13) answers that default, source "default".
+// compiled-in default that no source holds (the one table, defaults.go, the
+// disk-lifetime settings included) answers that default, source "default".
 func configSettingWithDefault(key, confPath string) (string, string, int, error) {
 	params := config.GetParams{Key: key, ConfPath: confPath}
-	if row, ok := config.DiskSettingFor(key); ok && row.Default != "" {
-		params.Default, params.DefaultSet = row.Default, true
-	}
 	value, code, err := config.Get(params)
 	if err != nil || code != 0 {
 		return "", "", code, err
