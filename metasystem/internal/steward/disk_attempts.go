@@ -15,8 +15,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
@@ -175,11 +177,19 @@ type landingBatchRecord struct {
 // landingBatchNamer: a landing batch that has not landed or dissolved
 // names the attempts of its admissions, its proof and its sources, its
 // trunk-red hold and its prefix receipts.
-type landingBatchNamer struct{ Roots []string }
+type landingBatchNamer struct {
+	Roots []string
+	// LaneErr is why the landing lane's checkout could not be resolved,
+	// which holds the kind.
+	LaneErr error
+}
 
 func (landingBatchNamer) Kind() string { return "landing batches" }
 
 func (n landingBatchNamer) Named(context.Context, time.Time) ([]string, error) {
+	if n.LaneErr != nil {
+		return nil, fmt.Errorf("the landing lane's checkout cannot be resolved: %w", n.LaneErr)
+	}
 	var paths []string
 	for _, root := range n.Roots {
 		found, err := filepath.Glob(filepath.Join(root, "artifacts", "agents", "landing-batches", "*.json"))
@@ -343,6 +353,7 @@ func attemptRetention(top string, now time.Time, target int64, keep time.Duratio
 		installation = layout.InstallationRoot
 	}
 	ledger := checkoutLedger(top, now)
+	lane, laneErr := landingLaneRoots(installation, now)
 	prober := identity.KernelProber{}
 	return &proofrun.Retention{Control: top, Target: target, Keep: keep,
 		Alive: func(ref identity.Ref) identity.Liveness { return identity.AliveRef(prober, ref) },
@@ -350,7 +361,7 @@ func attemptRetention(top string, now time.Time, target int64, keep time.Duratio
 			proofrun.ScratchNamer{Control: top},
 			stopBatchNamer{Root: top, Ledger: ledger},
 			trunkRedNamer{Ledger: ledger},
-			landingBatchNamer{Roots: nonEmpty(dedupe(top, installation)...)},
+			landingBatchNamer{Roots: nonEmpty(dedupe(append([]string{top, installation}, lane...)...)...), LaneErr: laneErr},
 			landingReceiptNamer{Installation: installation, Keep: keep},
 			validationWindowNamer{Root: top},
 		}}
@@ -360,4 +371,24 @@ func attemptRetention(top string, now time.Time, target int64, keep time.Duratio
 // conformance test that marshals the landing packages' own types.
 func LandingAttemptNamers(batchRoots []string, installation string, keep time.Duration) []proofrun.AttemptNamer {
 	return []proofrun.AttemptNamer{landingBatchNamer{Roots: batchRoots}, landingReceiptNamer{Installation: installation, Keep: keep}}
+}
+
+// landingLaneRoots are the landing lane's checkout (landing.batch-root) and
+// its installation, whose landing batches can name this checkout's
+// attempts; none when no lane is configured.
+func landingLaneRoots(installation string, now time.Time) ([]string, error) {
+	confPath := filepath.Join(installation, "metasystem.conf")
+	raw, _, err := config.Get(config.GetParams{Key: config.BatchRootKey, ConfPath: confPath, Default: "", DefaultSet: true})
+	if err != nil || strings.TrimSpace(raw) == "" {
+		return nil, err
+	}
+	settings, err := config.ResolveBatchLanding(confPath, installation, func() time.Time { return now })
+	if err != nil {
+		return nil, err
+	}
+	roots := []string{settings.Root}
+	if layout, err := stateroot.ResolveLayout(settings.Root); err == nil {
+		roots = append(roots, layout.InstallationRoot)
+	}
+	return roots, nil
 }

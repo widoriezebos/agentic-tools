@@ -45,8 +45,6 @@ type LandingReleaseSets struct {
 	// store registry; GitRoot the repository.
 	Installation, StateRoot, GitRoot string
 	Git                              diskstore.WorkspaceGit
-	// IgnoredReleaseBytes is disk.workspace-ignored-release-mib in bytes.
-	IgnoredReleaseBytes int64
 }
 
 func (LandingReleaseSets) Name() string { return "landing release sets" }
@@ -122,7 +120,7 @@ func (c LandingReleaseSets) Apply(ctx context.Context, pass *diskstore.Pass, ite
 	}
 	registry := diskstore.CheckoutRegistry(c.StateRoot)
 	request := diskstore.WorkspaceReleaseRequest{Registry: registry, GitRoot: c.GitRoot, Git: c.Git,
-		By: "the sweeper, for the landing of " + record.Landing, Now: pass.Now, IgnoredReleaseBytes: c.IgnoredReleaseBytes,
+		By: "the sweeper, for the landing of " + record.Landing, Now: pass.Now,
 		TakeCensus: func() *diskstore.UseCensus {
 			census := pass.Census(ctx)
 			if census != nil && census.Taken && pass.CensusReader() != nil {
@@ -159,7 +157,7 @@ func (c LandingReleaseSets) Apply(ctx context.Context, pass *diskstore.Pass, ite
 // checkoutProofs are the owner-kind proofs of one checkout's pass: the
 // engine's, plus the workspace proof over this checkout's repository and
 // goal ledger. Fixtures that name their own proofs get exactly those.
-func checkoutProofs(top string, pass DiskPass, ignored int64) map[diskstore.OwnerKind]diskstore.OwnerProof {
+func checkoutProofs(top string, pass DiskPass) map[diskstore.OwnerKind]diskstore.OwnerProof {
 	if pass.Proofs != nil {
 		return pass.Proofs
 	}
@@ -169,7 +167,7 @@ func checkoutProofs(top string, pass DiskPass, ignored int64) map[diskstore.Owne
 		return proofs
 	}
 	proofs[diskstore.OwnerGoal] = diskstore.WorkspaceProof{GitRoot: layout.GitRoot, Git: ExecWorkspaceGit, Ended: goalEnded(checkoutLedger(top, pass.Now)),
-		Now: pass.Now, IgnoredReleaseBytes: ignored}
+		Now: pass.Now}
 	return proofs
 }
 

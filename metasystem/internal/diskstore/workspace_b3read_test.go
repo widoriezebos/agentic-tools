@@ -69,7 +69,7 @@ func (r *realRepo) obtain(name, copyOf string) Workspace {
 func (r *realRepo) release(id string) WorkspaceRelease {
 	r.t.Helper()
 	outcome, err := ReleaseWorkspace(context.Background(), WorkspaceReleaseRequest{Registry: r.registry, GitRoot: r.repo, ID: id, Git: realWorkspaceGit,
-		Census: &UseCensus{Taken: true}, By: "t", Now: testNow, IgnoredReleaseBytes: 1 << 20})
+		Census: &UseCensus{Taken: true}, By: "t", Now: testNow})
 	if err != nil {
 		r.t.Fatal(err)
 	}
@@ -226,33 +226,21 @@ func TestWorkspaceRealGitCopyTmpNeverCollidesWithANamedWorkspace(t *testing.T) {
 	}
 }
 
-// F6: ignored content is content: a little is released with the copy, more
-// than disk.workspace-ignored-release-mib keeps it naming the size and the
-// person's discard.
-func TestWorkspaceRealGitKeepsLargeIgnoredContent(t *testing.T) {
+// F6, as cut in Round B3-3: ignored files are content, and any at all
+// keeps the copy, naming them and the person's discard.
+func TestWorkspaceRealGitKeepsAnyIgnoredContent(t *testing.T) {
 	t.Parallel()
 	r := newRealRepo(t)
 	small := r.obtain("small", r.base)
 	if err := os.WriteFile(filepath.Join(small.Record.Path, "local.env"), []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if outcome := r.release(small.Record.ID); !outcome.Done {
-		t.Fatalf("a little ignored content is released: %+v", outcome)
+	outcome := r.release(small.Record.ID)
+	if !outcome.Kept || !strings.Contains(outcome.Reason, "local.env") || !strings.Contains(outcome.Command, "--discard") {
+		t.Fatalf("one ignored byte keeps the copy: %+v", outcome)
 	}
-	large := r.obtain("large", r.base)
-	evidence := filepath.Join(large.Record.Path, "metasystem", "artifacts", "evidence")
-	if err := os.MkdirAll(evidence, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(evidence, "proof.log"), make([]byte, 2<<20), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	outcome := r.release(large.Record.ID)
-	if !outcome.Kept || !strings.Contains(outcome.Reason, "ignored") || !strings.Contains(outcome.Reason, "proof.log") || !strings.Contains(outcome.Command, "--discard") {
-		t.Fatalf("large ignored content keeps the copy: %+v", outcome)
-	}
-	if _, err := os.Stat(filepath.Join(evidence, "proof.log")); err != nil {
-		t.Fatalf("the ignored evidence survives: %v", err)
+	if _, err := os.Stat(filepath.Join(small.Record.Path, "local.env")); err != nil {
+		t.Fatalf("the ignored file survives: %v", err)
 	}
 }
 

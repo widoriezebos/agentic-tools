@@ -16,12 +16,14 @@ package proofrun
 // class for the pass. The window alone never releases a payload.
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -146,6 +148,38 @@ func (r *Retention) root() string {
 
 func (r *Retention) payload(id string) string { return filepath.Join(r.root(), id) }
 
+// payloads are the attempt ids whose payload directory may be released:
+// an entry of proof-runs/ found by listing it, named like an engine
+// attempt id, a real directory (never a symlink or a file, read with
+// Lstat), and equal to an attempt record's id. Nothing else under the
+// store (its structure directories, a symlink, a stray) is ever a payload
+// (Round B3-3).
+func (r *Retention) payloads() (map[string]bool, error) {
+	entries, err := os.ReadDir(r.root())
+	if err != nil {
+		return nil, fmt.Errorf("the proof-run store cannot be listed: %w", err)
+	}
+	found := map[string]bool{}
+	for _, entry := range entries {
+		name := entry.Name()
+		if !attemptIDPattern.MatchString(name) || r.units[name] == nil {
+			continue
+		}
+		info, err := os.Lstat(filepath.Join(r.root(), name))
+		if err != nil {
+			return nil, fmt.Errorf("payload %s cannot be read: %w", name, err)
+		}
+		if info.IsDir() && info.Mode()&os.ModeSymlink == 0 {
+			found[name] = true
+		}
+	}
+	return found, nil
+}
+
+// attemptIDPattern is the shape of the ids the engine mints
+// (newAttemptID): only a payload named so is ever released.
+var attemptIDPattern = regexp.MustCompile(`^proof-[0-9a-z]+-[0-9a-f]{16}$`)
+
 // hold is the one item a class that cannot judge reports: nothing is
 // released this pass.
 func (r *Retention) hold(reason string) []diskstore.Item {
@@ -181,9 +215,16 @@ func (r *Retention) Plan(ctx context.Context, pass *diskstore.Pass) ([]diskstore
 		if err != nil {
 			return r.hold("attempt record " + id + " cannot be read (" + err.Error() + "), so what it needs is unknown"), nil
 		}
-		unit := &attemptUnit{attempt: attempt, records: records[id], ended: attemptEnded(attempt)}
-		unit.bytes = payloadBytes(ctx, r.payload(id))
-		r.units[id] = unit
+		r.units[id] = &attemptUnit{attempt: attempt, records: records[id], ended: attemptEnded(attempt)}
+	}
+	payloads, err := r.payloads()
+	if err != nil {
+		return r.hold(err.Error()), nil
+	}
+	for id, unit := range r.units {
+		if payloads[id] {
+			unit.bytes = payloadBytes(ctx, r.payload(id))
+		}
 	}
 	if r.bytes <= r.Target {
 		return nil, nil
@@ -303,21 +344,28 @@ func (r *Retention) processesAlive(unit *attemptUnit) string {
 }
 
 // attemptRecords indexes the process and suite records by the attempt they
-// name; a record that cannot be read is an error.
+// name. Each directory is listed with ReadDir: a listing that fails, or a
+// record that does not decode strictly into the record type (an unknown
+// field included), is an error that holds the class.
 func (r *Retention) attemptRecords() (map[string][]string, error) {
 	byAttempt := map[string][]string{}
-	for _, pattern := range []string{filepath.Join(r.root(), "processes", "*.json"), filepath.Join(r.root(), "*.json")} {
-		paths, _ := filepath.Glob(pattern)
-		for _, path := range paths {
-			data, err := os.ReadFile(path)
-			if errors.Is(err, os.ErrNotExist) {
+	for _, dir := range []string{filepath.Join(r.root(), "processes"), r.root()} {
+		entries, err := os.ReadDir(dir)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("%s cannot be listed: %w", dir, err)
+		}
+		for _, entry := range entries {
+			if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
 				continue
 			}
-			var record struct {
-				AttemptID string `json:"attemptId"`
-			}
+			path := filepath.Join(dir, entry.Name())
+			data, err := os.ReadFile(path)
+			var record Record
 			if err == nil {
-				err = json.Unmarshal(data, &record)
+				err = decodeStrict(data, &record)
 			}
 			if err != nil {
 				return nil, fmt.Errorf("proof-run record %s cannot be read: %w", path, err)
@@ -328,6 +376,20 @@ func (r *Retention) attemptRecords() (map[string][]string, error) {
 		}
 	}
 	return byAttempt, nil
+}
+
+// decodeStrict decodes one JSON value, refusing a field the type does not
+// know: a newer engine's field may carry a reference this one would miss.
+func decodeStrict(data []byte, value any) error {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(value); err != nil {
+		return err
+	}
+	if decoder.More() {
+		return errors.New("trailing JSON")
+	}
+	return nil
 }
 
 // payloadBytes is the payload's size without its note.
@@ -393,6 +455,9 @@ func (r *Retention) Apply(ctx context.Context, pass *diskstore.Pass, item diskst
 	if referrer := r.newerReferrer(id); referrer != "" {
 		return diskstore.Verdict{Decision: diskstore.Keep, Reason: "attempt " + referrer + " written since the plan names it or cannot be read", Command: "metasystem disk show"}
 	}
+	if payloads, err := r.payloads(); err != nil || !payloads[id] {
+		return diskstore.Verdict{Decision: diskstore.Keep, Reason: "no payload directory of this attempt is found by listing the store", Command: "metasystem disk show"}
+	}
 	dir := r.payload(id)
 	note, _ := json.Marshal(map[string]any{"attempt": id, "payloadReleasedAt": pass.Now.UTC().Format(time.RFC3339), "bytes": item.Bytes})
 	if _, err := atomicfile.WriteFile(filepath.Join(dir, PayloadNote), append(note, '\n'), 0o600, dir); err != nil {
@@ -438,9 +503,9 @@ func (r *Retention) newerReferrer(id string) string {
 
 // readRetainedAttempt decodes an attempt record for its retention facts
 // (terminal, times, freshness, references, process keys). A record that
-// does not decode into the attempt type, names another attempt, or carries
-// a schema this engine does not know is unreadable: what it needs is then
-// unknown.
+// does not decode strictly into the attempt type (an unknown field
+// included), names another attempt, or carries a schema this engine does
+// not know is unreadable: what it needs is then unknown.
 func readRetainedAttempt(control, id string) (Attempt, error) {
 	path, err := AttemptPath(control, id)
 	if err != nil {
@@ -451,7 +516,7 @@ func readRetainedAttempt(control, id string) (Attempt, error) {
 		return Attempt{}, err
 	}
 	var attempt Attempt
-	if err := json.Unmarshal(data, &attempt); err != nil {
+	if err := decodeStrict(data, &attempt); err != nil {
 		return Attempt{}, fmt.Errorf("proof attempt %s: %w", id, err)
 	}
 	if attempt.AttemptID != id {

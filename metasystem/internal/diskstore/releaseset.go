@@ -13,7 +13,6 @@ import (
 	"errors"
 	"path/filepath"
 	"sort"
-	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 )
@@ -82,7 +81,7 @@ func SelectReleaseSet(ctx context.Context, registry Registry, gitRoot, goalID, t
 		if !landed {
 			continue
 		}
-		if status, err := git(ctx, record.Path, "status", "--porcelain=v1", "--untracked-files=all"); err != nil || strings.TrimSpace(string(status)) != "" {
+		if status, err := git(ctx, record.Path, "status", "--porcelain=v1", "-z", "--ignored=matching", "--untracked-files=all"); err != nil || len(status) != 0 {
 			continue
 		}
 		set.Stores = append(set.Stores, ReleaseEntry{ID: record.ID, Path: record.Path, State: ReleasePending})

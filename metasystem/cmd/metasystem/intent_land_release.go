@@ -15,7 +15,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 )
 
@@ -65,8 +64,7 @@ func (inv *intentInvocation) runReleaseSet(landedPath string) (intentLanded, err
 	}
 	owners := inv.owners.disk.withDefaults()
 	request := diskstore.WorkspaceReleaseRequest{Registry: diskstore.CheckoutRegistry(inv.stateRoot), GitRoot: inv.layout.GitRoot,
-		Git: owners.git, TakeCensus: owners.census, By: "the landing of " + landed.Landing, Now: owners.now().UTC(),
-		IgnoredReleaseBytes: workspaceIgnoredBytes(inv.layout.InstallationRoot)}
+		Git: owners.git, TakeCensus: owners.census, By: "the landing of " + landed.Landing, Now: owners.now().UTC()}
 	if !diskstore.RunReleaseSet(context.Background(), request, landed.ReleaseSet) {
 		return landed, nil
 	}
@@ -99,11 +97,4 @@ func (inv *intentInvocation) finishReleaseSets(base string) {
 	for _, path := range entries {
 		_, _ = inv.runReleaseSet(path)
 	}
-}
-
-// workspaceIgnoredBytes is this checkout's disk.workspace-ignored-release-mib
-// in bytes; unreadable settings read the compiled default.
-func workspaceIgnoredBytes(installation string) int64 {
-	settings, _ := diskstore.LoadSettings(filepath.Join(installation, "metasystem.conf"), nil)
-	return settings.Bytes(config.DiskWorkspaceIgnoredKey)
 }

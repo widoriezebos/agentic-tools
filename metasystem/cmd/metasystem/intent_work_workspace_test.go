@@ -251,30 +251,3 @@ func init() {
 			}
 		})
 }
-
-// --release --path is a person's act: an agent is told who runs it and how;
-// a person naming something that is no clone of this project is refused
-// and nothing is removed.
-func TestWorkWorkspaceReleasePathIsAPersonsActOnAClone(t *testing.T) {
-	t.Parallel()
-	bed := newWorkspaceVerbBed(t)
-	target := filepath.Join(t.TempDir(), "not-a-clone")
-	if err := os.MkdirAll(target, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	bed.person = errors.New("not the enrolled terminal")
-	code, refused := bed.do("work", "workspace", "--release", "--path", target)
-	if code != 3 || !strings.Contains(refused.Decision, "metasystem system enroll") || !strings.Contains(refused.Decision, "--path "+target) {
-		t.Fatalf("an agent's clone release: %d %+v", code, refused)
-	}
-	bed.person = nil
-	if code, input := bed.do("work", "workspace", "--release", "--path", target); code != 2 || input.Outcome != intentRefused {
-		t.Fatalf("no clone: %d %+v", code, input)
-	}
-	if code, input := bed.do("work", "workspace", "--path", target); code != 2 {
-		t.Fatalf("--path without --release: %d %+v", code, input)
-	}
-	if _, err := os.Stat(target); err != nil {
-		t.Fatalf("nothing is removed: %v", err)
-	}
-}

@@ -49,7 +49,7 @@ func TestB3Read2ReleaseSetRunDoesNotRecheckLanded(t *testing.T) {
 	}
 	r.git(ws.Record.Path, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "--allow-empty", "-m", "slice 2, not landed")
 	RunReleaseSet(context.Background(), WorkspaceReleaseRequest{Registry: r.registry, GitRoot: r.repo, Git: realWorkspaceGit,
-		Census: &UseCensus{Taken: true}, By: "landing", Now: testNow, IgnoredReleaseBytes: 1 << 20}, &set)
+		Census: &UseCensus{Taken: true}, By: "landing", Now: testNow}, &set)
 	t.Logf("set after run: %+v", set.Stores)
 	if _, err := os.Stat(ws.Record.Path); err != nil {
 		t.Fatalf("workspace with an unlanded commit released by the recorded set (%s)", set.Stores[0].State)

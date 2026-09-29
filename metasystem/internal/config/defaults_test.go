@@ -215,8 +215,8 @@ func TestDiskDefaultsAreInTheOneCompiledTable(t *testing.T) {
 			want[row.Key] = row.Default
 		}
 	}
-	if len(want) != 33 {
-		t.Fatalf("disk keys with a default = %d, want 33 (26 of 3.13, the Round B3 ignored-content allowance and the trimmer's six)", len(want))
+	if len(want) != 32 {
+		t.Fatalf("disk keys with a default = %d, want 32 (26 of 3.13 and the trimmer's six)", len(want))
 	}
 	for key, value := range want {
 		if compiled, ok := CompiledDefault(key); !ok || compiled != value {

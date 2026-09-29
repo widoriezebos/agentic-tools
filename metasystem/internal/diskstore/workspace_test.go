@@ -57,8 +57,12 @@ func (g *fakeWorkspaceGit) run(_ context.Context, dir string, args ...string) ([
 		return nil, nil
 	case len(args) >= 3 && args[0] == "worktree" && args[1] == "remove":
 		return nil, os.RemoveAll(args[len(args)-1])
-	case len(args) == 2 && args[0] == "worktree" && args[1] == "prune":
-		return nil, nil
+	case len(args) == 3 && args[0] == "worktree" && args[1] == "list":
+		var out strings.Builder
+		for path := range g.worktrees {
+			out.WriteString("worktree " + path + "\n\n")
+		}
+		return []byte(out.String()), nil
 	case len(args) == 3 && args[0] == "branch" && args[1] == "-D":
 		if _, ok := g.refs["refs/heads/"+args[2]]; !ok {
 			return nil, fmt.Errorf("error: branch '%s' not found", args[2])
@@ -227,7 +231,8 @@ func TestCopyWorkspaceReleaseArchivesTheTipThenRemovesWorktreeAndBranch(t *testi
 }
 
 // A dirty copy is kept, naming work land and the person's discard; with a
-// person's discard it is archived and released and the record names who.
+// person's discard it is archived and released, and the notes name who
+// (the discard is never stored as authorization).
 func TestDirtyCopyIsKeptUntilAPersonDiscards(t *testing.T) {
 	t.Parallel()
 	bed := newWorkspaceBed(t)
@@ -246,8 +251,8 @@ func TestDirtyCopyIsKeptUntilAPersonDiscards(t *testing.T) {
 		t.Fatalf("discarded release: %+v", outcome)
 	}
 	record, _ := bed.registry.Load(workspace.Record.ID)
-	if record.AuthorizedDiscard == nil || record.AuthorizedDiscard.By != "Wido" {
-		t.Fatalf("the record names the person's discard: %+v", record)
+	if record.AuthorizedDiscard != nil || !strings.Contains(strings.Join(record.Notes, " "), "discarded by Wido") {
+		t.Fatalf("the discard is history in the notes, never a standing authorization: %+v", record)
 	}
 }
 

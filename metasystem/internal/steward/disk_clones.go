@@ -1,13 +1,14 @@
 package steward
 
-// The unowned-clone recognizer (design engine-owns-disk-lifetimes Part B,
-// 3.10): a git clone beside the checkout that holds the checkout's root
-// commit and that no store records is reported with the one act that
-// releases it, a person's work workspace --release --path. Machinery never
-// acts on it.
+// The unowned-clone report (design engine-owns-disk-lifetimes Part B, 3.10;
+// Round B3-3): a git clone beside the checkout that holds the checkout's
+// root commit and is no armed checkout is listed with its size, for a
+// person. It never acts and names no removal command: the engine offers no
+// clone release.
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,22 +16,26 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 )
 
-// UnownedClones is the recognizer's class in a checkout pass.
+// UnownedClones is the report's class in a person's disk pass.
 type UnownedClones struct {
 	GitRoot string
 	Git     diskstore.WorkspaceGit
-	// Armed are the git roots of the host's armed checkouts: another
-	// seat's checkout is never reported as a clone to remove.
-	Armed []string
+	// Armed are the git roots of the host's armed checkouts; ArmedErr is
+	// why the host registry could not be read, which holds the report.
+	Armed    []string
+	ArmedErr error
 }
 
 func (UnownedClones) Name() string { return "clones beside the checkout" }
 
 // Plan lists the siblings of the checkout that are clones of it: a
-// directory with a .git directory (not a linked worktree's .git file) in
-// which the checkout's root commits exist, and which is no armed
-// checkout. It reads only.
+// directory with a .git directory in which the checkout's root commit
+// exists, and which is no armed checkout. It reads only.
 func (c UnownedClones) Plan(ctx context.Context, pass *diskstore.Pass) ([]diskstore.Item, error) {
+	if c.ArmedErr != nil {
+		return []diskstore.Item{{Class: c.Name(), Key: "~armed", Path: c.GitRoot, Verdict: diskstore.Verdict{Decision: diskstore.Pending,
+			Reason: "the host registry of armed checkouts cannot be read (" + c.ArmedErr.Error() + "), so clones are not listed", Command: "metasystem system check"}}}, nil
+	}
 	parent := filepath.Dir(c.GitRoot)
 	entries, err := os.ReadDir(parent)
 	if err != nil {
@@ -62,9 +67,13 @@ func (c UnownedClones) Plan(ctx context.Context, pass *diskstore.Pass) ([]diskst
 		}
 		for _, root := range roots {
 			if _, err := c.Git(ctx, path, "cat-file", "-e", root+"^{commit}"); err == nil {
-				items = append(items, diskstore.Item{Class: c.Name(), Key: path, Path: path, Verdict: diskstore.Verdict{Decision: diskstore.Keep,
-					Reason:  "a clone of this project that no store records; machinery never removes it",
-					Command: "a person archives and removes it with metasystem work workspace --release --path <the clone>"}})
+				bytes, _, complete := diskstore.Measure(ctx, path)
+				size := fmt.Sprintf("%.1f GiB", float64(bytes)/(1<<30))
+				if !complete {
+					size = "at least " + size
+				}
+				items = append(items, diskstore.Item{Class: c.Name(), Key: path, Path: path, Bytes: bytes, Foreign: true,
+					Verdict: diskstore.Verdict{Reason: "a clone of this project, " + size + ", that no store records; the engine never acts on it: remove it yourself if you no longer need it"}})
 				break
 			}
 		}
@@ -72,6 +81,7 @@ func (c UnownedClones) Plan(ctx context.Context, pass *diskstore.Pass) ([]diskst
 	return items, nil
 }
 
+// Apply is never reached: every item is foreign.
 func (UnownedClones) Apply(context.Context, *diskstore.Pass, diskstore.Item) diskstore.Verdict {
-	return diskstore.Verdict{Decision: diskstore.Keep, Reason: "an unowned clone is released only by a person", Command: "metasystem work workspace --release --path <the clone>"}
+	return diskstore.Verdict{Decision: diskstore.Keep, Reason: "the engine never acts on a clone", Command: "metasystem disk show"}
 }

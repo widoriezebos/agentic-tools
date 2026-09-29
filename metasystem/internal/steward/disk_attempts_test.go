@@ -221,3 +221,19 @@ func TestAttemptKindsReadTheGoalRecordsOwnFields(t *testing.T) {
 		t.Fatalf("attempt fields no reader names:\n%s", strings.Join(missing, "\n"))
 	}
 }
+
+// N12: an unresolvable landing lane holds the landing batches' kind, so no
+// payload a lane batch may name is released.
+func TestLandingBatchNamerHoldsOnAnUnresolvableLane(t *testing.T) {
+	t.Parallel()
+	if _, err := (landingBatchNamer{Roots: []string{t.TempDir()}, LaneErr: errors.New("batch root unreadable")}).Named(context.Background(), attemptsNow); err == nil {
+		t.Fatal("an unresolvable lane is an error")
+	}
+	installation := t.TempDir()
+	if err := os.WriteFile(filepath.Join(installation, "metasystem.conf"), []byte("metasystem.template=true\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if roots, err := landingLaneRoots(installation, attemptsNow); err != nil || len(roots) != 0 {
+		t.Fatalf("no lane configured reads no lane: %v %v", roots, err)
+	}
+}

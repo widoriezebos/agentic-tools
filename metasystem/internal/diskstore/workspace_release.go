@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -29,13 +28,11 @@ type WorkspaceReleaseRequest struct {
 	// taken".
 	Census     *UseCensus
 	TakeCensus func() *UseCensus
-	// Discard is a person's authorised discard of a copy's uncommitted work.
+	// Discard is a person's discard of a copy's uncommitted work, valid
+	// for this invocation only.
 	Discard *Discard
 	By      string
 	Now     time.Time
-	// IgnoredReleaseBytes is disk.workspace-ignored-release-mib in bytes:
-	// ignored content up to it goes with a copy; more keeps the copy.
-	IgnoredReleaseBytes int64
 	// LandedTip, set by a landing's release set, is the tip every tip of
 	// the workspace must lie in at release time (Round B3-2 R8).
 	LandedTip string
@@ -109,9 +106,9 @@ func releaseInSection(ctx context.Context, critical *Critical, request Workspace
 			return keep(Verdict{Decision: Pending, Reason: "the workspace is not the recorded one: " + err.Error(), Command: "metasystem disk show"})
 		}
 	}
-	discard := request.Discard != nil || record.AuthorizedDiscard != nil
+	discard := request.Discard != nil
 	if record.Layout != LayoutCopy || workspaceTreeExists(record) {
-		if verdict := judgeContent(ctx, request.Git, record, request.IgnoredReleaseBytes, discard); verdict.Decision != Release {
+		if verdict := judgeContent(ctx, request.Git, record, discard); verdict.Decision != Release {
 			return keep(verdict)
 		}
 	}
@@ -139,7 +136,10 @@ func releaseInSection(ctx context.Context, critical *Critical, request Workspace
 	if record.State != StateReleasing {
 		record.State = StateReleasing
 		if request.Discard != nil {
-			record.AuthorizedDiscard = request.Discard
+			// The discard is this invocation's alone: kept as history, never
+			// as authority a later caller could release under.
+			record.Notes = append(record.Notes, fmt.Sprintf("uncommitted content discarded by %s at %s: %s", request.Discard.By,
+				request.Discard.At.UTC().Format(time.RFC3339), request.Discard.Reason))
 		}
 		if err := critical.Write(record); err != nil {
 			return outcome, err
@@ -240,52 +240,36 @@ func judgeUse(census *UseCensus, record Record) Verdict {
 	return Verdict{Decision: Release, Reason: "unused"}
 }
 
-// judgeContent reads a copy's status including ignored files.
-func judgeContent(ctx context.Context, git WorkspaceGit, record Record, ignoredLimit int64, discard bool) Verdict {
+// judgeContent is a copy's content rule (Round B3-3): the copy is
+// released only when `git status --porcelain=v1 -z --ignored=matching
+// --untracked-files=all` prints nothing. Any entry (modified, untracked or
+// ignored, of any size) or any failure to read keeps it. A person's
+// discard for this invocation is the only way past.
+func judgeContent(ctx context.Context, git WorkspaceGit, record Record, discard bool) Verdict {
 	if record.Layout != LayoutCopy || discard {
 		return Verdict{Decision: Release}
 	}
 	name := filepath.Base(record.Path)
-	status, err := git(ctx, record.Path, "status", "--porcelain=v1", "--untracked-files=all", "--ignored")
-	if err != nil {
-		return Verdict{Decision: Pending, Reason: "git status failed: " + err.Error(), Command: "git -C " + record.Path + " status"}
-	}
-	type sized struct {
-		path  string
-		bytes int64
-	}
-	var dirty []string
-	var ignored []sized
-	var ignoredBytes int64
-	for _, line := range strings.Split(strings.TrimRight(string(status), "\n"), "\n") {
-		if len(line) < 4 {
-			continue
-		}
-		path := strings.TrimSuffix(line[3:], "/")
-		if strings.HasPrefix(line, "!! ") {
-			bytes, _, _ := Measure(ctx, filepath.Join(record.Path, path))
-			ignored = append(ignored, sized{path, bytes})
-			ignoredBytes += bytes
-			continue
-		}
-		dirty = append(dirty, path)
-	}
 	land := "metasystem work land " + record.Owner.Ref + " for the work, or "
 	if record.Owner.Kind != OwnerGoal {
 		land = "commit the work, or "
 	}
-	if len(dirty) > 0 {
-		return Verdict{Decision: Keep, Reason: fmt.Sprintf("the workspace has %d uncommitted change(s): %s", len(dirty), firstPaths(dirty)),
-			Command: land + discardCommand(record.Owner, name)}
+	status, err := git(ctx, record.Path, "status", "--porcelain=v1", "-z", "--ignored=matching", "--untracked-files=all")
+	if err != nil {
+		return Verdict{Decision: Keep, Reason: "its status cannot be read (" + err.Error() + "); it is kept", Command: land + discardCommand(record.Owner, name)}
 	}
-	if ignoredBytes > ignoredLimit {
-		sort.Slice(ignored, func(i, j int) bool { return ignored[i].bytes > ignored[j].bytes })
-		var largest []string
-		for _, item := range ignored {
-			largest = append(largest, fmt.Sprintf("%s %s", item.path, formatBytes(item.bytes)))
+	var entries []string
+	for _, entry := range strings.Split(string(status), "\x00") {
+		if len(entry) > 3 {
+			entries = append(entries, entry)
 		}
-		return Verdict{Decision: Keep, Reason: fmt.Sprintf("the workspace holds %s of ignored files, over disk.workspace-ignored-release-mib: %s",
-			formatBytes(ignoredBytes), firstPaths(largest)), Command: "copy out what matters, then " + discardCommand(record.Owner, name)}
+	}
+	if len(status) > 0 {
+		if len(entries) == 0 {
+			entries = []string{strings.TrimSpace(string(status))}
+		}
+		return Verdict{Decision: Keep, Reason: fmt.Sprintf("the workspace holds %d uncommitted, untracked or ignored entries: %s", len(entries), firstPaths(entries)),
+			Command: land + discardCommand(record.Owner, name)}
 	}
 	return Verdict{Decision: Release}
 }
@@ -460,8 +444,6 @@ type WorkspaceProof struct {
 	// what it was read from (the ledger tip), for the release record.
 	Ended func(Owner) (ended, known bool, basis string)
 	Now   time.Time
-	// IgnoredReleaseBytes is disk.workspace-ignored-release-mib in bytes.
-	IgnoredReleaseBytes int64
 }
 
 func (WorkspaceProof) Kind() OwnerKind { return OwnerGoal }
@@ -487,7 +469,7 @@ func (p WorkspaceProof) Observe(ctx context.Context, record Record) Verdict {
 		}
 		return Verdict{Decision: Keep, Reason: "its " + string(record.Owner.Kind) + " is open; it ends with --release, the landing of its work, or the goal's conclusion", Command: command}
 	}
-	if verdict := judgeContent(ctx, p.Git, record, p.IgnoredReleaseBytes, false); verdict.Decision != Release {
+	if verdict := judgeContent(ctx, p.Git, record, false); verdict.Decision != Release {
 		return verdict
 	}
 	return Verdict{Decision: Release, Reason: string(record.Owner.Kind) + " " + record.Owner.Ref + " has ended (" + basis + ")"}
@@ -517,8 +499,7 @@ func (p WorkspaceProof) Release(ctx context.Context, critical *Critical, census 
 			}
 		}
 	}
-	outcome, err := releaseInSection(ctx, critical, WorkspaceReleaseRequest{GitRoot: p.GitRoot, Git: p.Git, Census: census, By: "sweeper", Now: p.Now,
-		IgnoredReleaseBytes: p.IgnoredReleaseBytes})
+	outcome, err := releaseInSection(ctx, critical, WorkspaceReleaseRequest{GitRoot: p.GitRoot, Git: p.Git, Census: census, By: "sweeper", Now: p.Now})
 	switch {
 	case err != nil:
 		return Verdict{Decision: Pending, Reason: err.Error(), Command: "metasystem disk show"}

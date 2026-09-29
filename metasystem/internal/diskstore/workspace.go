@@ -396,17 +396,18 @@ func discardPartialCopy(ctx context.Context, request WorkspaceRequest, record Re
 	if branchFound && tip != record.CopyOf {
 		return &WorkspaceUnproven{Path: record.Path, Reason: "has branch " + branch + " at " + tip + ", not the recorded " + record.CopyOf}
 	}
-	if _, err := os.Lstat(filepath.Join(record.Path, ".git")); err == nil {
+	listed, err := worktreeListed(ctx, request.Git, request.GitRoot, record.Path)
+	if err != nil {
+		return err
+	}
+	if _, statErr := os.Lstat(filepath.Join(record.Path, ".git")); statErr == nil {
 		head, err := os.ReadFile(filepath.Join(gitdirOf(record.Path), "HEAD"))
 		if err != nil || strings.TrimSpace(string(head)) != "ref: refs/heads/"+branch {
 			return &WorkspaceUnproven{Path: record.Path, Reason: "is a worktree, but not on the recorded branch " + branch}
 		}
-		status, err := request.Git(ctx, record.Path, "status", "--porcelain=v1", "--untracked-files=all", "--ignored")
-		if err != nil || strings.TrimSpace(string(status)) != "" {
-			return &WorkspaceUnproven{Path: record.Path, Reason: "is a worktree with changes the interrupted creation did not make"}
-		}
-		if _, err := request.Git(ctx, request.GitRoot, "worktree", "remove", record.Path); err != nil {
-			return err
+		status, err := request.Git(ctx, record.Path, "status", "--porcelain=v1", "-z", "--ignored=matching", "--untracked-files=all")
+		if err != nil || len(status) != 0 {
+			return &WorkspaceUnproven{Path: record.Path, Reason: "is a worktree with content the interrupted creation did not make"}
 		}
 	} else if _, err := os.Lstat(record.Path); err == nil {
 		if entries, err := os.ReadDir(record.Path); err != nil || len(entries) != 0 {
@@ -416,8 +417,12 @@ func discardPartialCopy(ctx context.Context, request WorkspaceRequest, record Re
 			return err
 		}
 	}
-	if _, err := request.Git(ctx, request.GitRoot, "worktree", "prune"); err != nil {
-		return err
+	// Exactly this worktree is removed; the checkout's other worktrees'
+	// entries are never pruned, whatever state their directories are in.
+	if listed {
+		if _, err := request.Git(ctx, request.GitRoot, "worktree", "remove", "--force", record.Path); err != nil {
+			return err
+		}
 	}
 	if branchFound {
 		if _, err := request.Git(ctx, request.GitRoot, "branch", "-D", branch); err != nil {
@@ -425,6 +430,20 @@ func discardPartialCopy(ctx context.Context, request WorkspaceRequest, record Re
 		}
 	}
 	return nil
+}
+
+// worktreeListed reports whether git lists a worktree at path.
+func worktreeListed(ctx context.Context, git WorkspaceGit, gitRoot, path string) (bool, error) {
+	out, err := git(ctx, gitRoot, "worktree", "list", "--porcelain")
+	if err != nil {
+		return false, err
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		if listed, ok := strings.CutPrefix(line, "worktree "); ok && filepath.Clean(listed) == path {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // gitdirOf is the gitdir a worktree's .git file names; empty when it names

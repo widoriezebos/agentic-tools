@@ -216,7 +216,7 @@ func SweepDiskStores(ctx context.Context, top string, pass DiskPass) (DiskPassRe
 		defer cancel()
 		ctx = budget
 		checkoutOptions.Classes = []diskstore.Class{
-			diskstore.RegisteredStores{Registry: diskstore.CheckoutRegistry(top), Proofs: checkoutProofs(top, pass, settings.Bytes(config.DiskWorkspaceIgnoredKey))},
+			diskstore.RegisteredStores{Registry: diskstore.CheckoutRegistry(top), Proofs: checkoutProofs(top, pass)},
 			HandoffClass{Root: top, Keep: settings.Duration(config.DiskContextKeepKey)},
 			UsageClass{StateRoot: top, Limit: settings.Count(config.DiskSweepItemsPerLockKey)},
 		}
@@ -224,10 +224,10 @@ func SweepDiskStores(ctx context.Context, top string, pass DiskPass) (DiskPassRe
 			attemptRetention(top, pass.Now, settings.Bytes(config.DiskProofTargetKey), settings.Duration(config.DiskProofKeepKey)))
 		if layout, err := stateroot.ResolveLayout(top); err == nil {
 			if pass.Clones {
-				checkoutOptions.Classes = append(checkoutOptions.Classes, UnownedClones{GitRoot: layout.GitRoot, Git: ExecWorkspaceGit, Armed: armedGitRoots()})
+				checkoutOptions.Classes = append(checkoutOptions.Classes, clonesReport(layout.GitRoot))
 			}
 			checkoutOptions.Classes = append(checkoutOptions.Classes, LandingReleaseSets{Installation: layout.InstallationRoot,
-				StateRoot: top, GitRoot: layout.GitRoot, Git: ExecWorkspaceGit, IgnoredReleaseBytes: settings.Bytes(config.DiskWorkspaceIgnoredKey)})
+				StateRoot: top, GitRoot: layout.GitRoot, Git: ExecWorkspaceGit})
 		}
 		checkoutOptions.CensusMinBudget = settings.Duration(config.DiskCensusMinBudgetKey)
 		checkoutOptions.CensusReader = KernelCensusReader(home, append(armedCheckouts(), top))
@@ -716,15 +716,25 @@ func diskSettingsFor(checkout string) (diskstore.Settings, error) {
 	return diskstore.LoadSettings(filepath.Join(layout.InstallationRoot, "metasystem.conf"), nil)
 }
 
-// armedGitRoots are the git roots of the host's armed checkouts.
-func armedGitRoots() []string {
-	var roots []string
-	for _, checkout := range armedCheckouts() {
-		if layout, err := stateroot.ResolveLayout(checkout); err == nil && !containsPath(roots, layout.GitRoot) {
-			roots = append(roots, layout.GitRoot)
+// clonesReport is the unowned-clone report's class, with the git roots of
+// the host's armed checkouts; an unreadable host registry holds it.
+func clonesReport(gitRoot string) UnownedClones {
+	report := UnownedClones{GitRoot: gitRoot, Git: ExecWorkspaceGit}
+	path, err := registry.DefaultPath()
+	var checkouts []string
+	if err == nil {
+		checkouts, err = registry.ArmedCheckouts(path)
+	}
+	if err != nil {
+		report.ArmedErr = err
+		return report
+	}
+	for _, checkout := range checkouts {
+		if layout, err := stateroot.ResolveLayout(checkout); err == nil && !containsPath(report.Armed, layout.GitRoot) {
+			report.Armed = append(report.Armed, layout.GitRoot)
 		}
 	}
-	return roots
+	return report
 }
 
 // armedCheckouts reads the host registry's open claims and owners.
@@ -841,6 +851,3 @@ func regularFileExists(path string) bool {
 
 // ArmedCheckouts are the checkouts the host registry names as armed.
 func ArmedCheckouts() []string { return armedCheckouts() }
-
-// ArmedGitRoots are the git roots of the host's armed checkouts.
-func ArmedGitRoots() []string { return armedGitRoots() }

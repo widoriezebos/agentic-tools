@@ -89,15 +89,15 @@ func TestCheckoutPassRetriesLandingReleaseSets(t *testing.T) {
 func TestCheckoutProofsCarryTheWorkspaceProof(t *testing.T) {
 	t.Parallel()
 	bed := newStaleBed(t)
-	proof, ok := checkoutProofs(bed.inst, DiskPass{Now: staleNow}, 1<<20)[diskstore.OwnerGoal].(diskstore.WorkspaceProof)
-	if !ok || proof.GitRoot == "" || proof.Git == nil || proof.Ended == nil || proof.IgnoredReleaseBytes != 1<<20 {
+	proof, ok := checkoutProofs(bed.inst, DiskPass{Now: staleNow})[diskstore.OwnerGoal].(diskstore.WorkspaceProof)
+	if !ok || proof.GitRoot == "" || proof.Git == nil || proof.Ended == nil {
 		t.Fatalf("proof = %+v", proof)
 	}
 	if ended, known, _ := proof.Ended(diskstore.Owner{Kind: diskstore.OwnerGoal, Ref: "g"}); ended || known {
 		t.Fatalf("no readable ledger: ended=%v known=%v", ended, known)
 	}
 	fixture := map[diskstore.OwnerKind]diskstore.OwnerProof{}
-	if proofs := checkoutProofs(bed.inst, DiskPass{Proofs: fixture}, 1<<20); len(proofs) != 0 {
+	if proofs := checkoutProofs(bed.inst, DiskPass{Proofs: fixture}); len(proofs) != 0 {
 		t.Fatal("a fixture's proofs are used as named")
 	}
 }

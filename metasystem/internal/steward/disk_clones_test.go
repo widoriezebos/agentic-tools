@@ -5,14 +5,15 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 )
 
-// A sibling holding the checkout's root commit is reported as an unowned
-// clone with the person's release command; another seat's armed checkout,
+// A sibling holding the checkout's root commit is reported, read-only, as
+// a clone with its size and no removal command (Round B3-3); another seat's armed checkout,
 // an unrelated repository, a plain directory and a linked worktree are not;
 // nothing is removed.
 func TestUnownedClonesAreReportedNeverRemoved(t *testing.T) {
@@ -46,8 +47,14 @@ func TestUnownedClonesAreReportedNeverRemoved(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(report.Kept) != 1 || report.Kept[0].Path != filepath.Join(parent, "clone") || len(report.Actions) != 0 {
+	if len(report.Foreign) != 1 || report.Foreign[0].Path != filepath.Join(parent, "clone") || len(report.Actions) != 0 ||
+		!strings.Contains(report.Foreign[0].Verdict.Reason, "remove it yourself if you no longer need it") ||
+		strings.Contains(report.Foreign[0].Verdict.Reason, "metasystem") {
 		t.Fatalf("report: %+v", report)
+	}
+	held := UnownedClones{GitRoot: checkout, Git: git, ArmedErr: errors.New("registry unreadable")}
+	if items, _ := held.Plan(context.Background(), nil); len(items) != 1 || items[0].Verdict.Decision != diskstore.Pending {
+		t.Fatalf("an unreadable armed registry holds the report: %+v", items)
 	}
 	if _, err := os.Stat(filepath.Join(parent, "clone")); err != nil {
 		t.Fatal("nothing is removed")
