@@ -201,7 +201,7 @@ exit 1
 			Claim: claim}}}); err != nil {
 		t.Fatal(err)
 	}
-	ledgerOwner, err := batchowner.NewLedgerTrunkRedOwner(landingRoot, "mac-cli", batchowner.LandingOwnerLineage)
+	ledgerOwner, err := batchowner.NewLedgerTrunkRedOwnerWithConfig(landingRoot, "mac-cli", batchowner.LandingOwnerLineage, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

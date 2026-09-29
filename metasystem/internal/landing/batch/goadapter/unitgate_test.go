@@ -16,67 +16,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 )
 
-func TestReverseDependentsIncludeDirectTransitiveTestAndTaggedImports(t *testing.T) {
-	t.Parallel()
-	root, files := dependencyModuleTree(t)
-	candidate := clonePackageFiles(files)
-	candidate["base/base.go"] = "package base\nconst Changed = true\n"
-	fixture := newPackageTreeFixture(t, root, files, candidate, "")
-	tree := fixture.baseTree
-
-	got, err := reverseDependentsWithSnapshot(fixture.workspace(), tree, []string{"./base"}, fixture.openSnapshot)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := []string{"./cmd/metasystem", "./direct", "./tagged", "./testonly", "./transitive"}
-	if !slices.Equal(got, want) {
-		t.Fatalf("reverse dependents = %v, want %v", got, want)
-	}
-	if err := os.WriteFile(filepath.Join(root, "base", "base.go"), []byte("package base\nconst Changed = true\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	candidateTree := fixture.candidateTree
-	selection, err := selectUnitPackagesWithSnapshot(fixture.workspace(), tree, candidateTree, fixture.openSnapshot)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if selection.Tree != candidateTree || !slices.Equal(selection.Changed, []string{"./base"}) ||
-		!slices.Equal(selection.Dependents, []string{"./cmd/metasystem", "./direct", "./tagged", "./testonly", "./transitive"}) {
-		t.Fatalf("exact-tree package closure=%+v", selection)
-	}
-}
-
-func TestReverseDependentsDefaultUsesDetachedTree(t *testing.T) {
-	t.Parallel()
-	root, _ := dependencyModuleTree(t)
-	bedGit(t, root, "init", "-q", "-b", "main")
-	bedGit(t, root, "config", "user.name", "Fixture")
-	bedGit(t, root, "config", "user.email", "fixture@example.invalid")
-	bedGit(t, root, "add", ".")
-	bedGit(t, root, "commit", "-qm", "fixture")
-	tree := bedGit(t, root, "rev-parse", "HEAD^{tree}")
-	got, err := ReverseDependents(root, tree, []string{"./base"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := []string{"./cmd/metasystem", "./direct", "./tagged", "./testonly", "./transitive"}
-	if !slices.Equal(got, want) {
-		t.Fatalf("native reverse dependents = %v, want %v", got, want)
-	}
-	if err := os.WriteFile(filepath.Join(root, "base", "base.go"), []byte("package base\nconst Changed = true\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	bedGit(t, root, "add", "base/base.go")
-	candidateTree := bedGit(t, root, "write-tree")
-	selection, err := SelectUnitPackages(root, tree, candidateTree)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if selection.Tree != candidateTree || !slices.Equal(selection.Changed, []string{"./base"}) || !slices.Equal(selection.Dependents, want) {
-		t.Fatalf("native exact-tree selection=%+v", selection)
-	}
-}
-
 func TestWorkingUnitSelectionIncludesTrackedAndUntrackedPackages(t *testing.T) {
 	t.Parallel()
 	root, files := dependencyModuleTree(t)
@@ -154,70 +93,11 @@ func TestWorkingUnitSelectionAcceptsNestedModuleTreeBase(t *testing.T) {
 	}
 }
 
-func TestUnitGatePackageStepsChangedThenSortedDependentsAndBatchTests(t *testing.T) {
-	t.Parallel()
-	selection := gateConsumerPackages()
-	steps := JoinGatePackageSteps(selection)
-	want := [][]string{
-		{"go", "test", "-trimpath", "-count=1", "-timeout", "900s", "./base"},
-		{"go", "test", "-trimpath", "-count=1", "-timeout", "40m", "./cmd/metasystem"},
-		{"go", "test", "-trimpath", "-count=1", "-timeout", "40m", "./direct"},
-		{"go", "test", "-trimpath", "-count=1", "-timeout", "40m", "./tagged"},
-		{"go", "test", "-trimpath", "-count=1", "-timeout", "40m", "./testonly"},
-		{"go", "test", "-trimpath", "-count=1", "-timeout", "40m", "./transitive"},
-		{"go", "test", "-trimpath", "-count=1", "-timeout", "40m", "-tags", "batchtest", "./cmd/metasystem"},
-	}
-	if len(steps) != len(want) {
-		t.Fatalf("unit gate steps=%v want %d", steps, len(want))
-	}
-	for index := range want {
-		if !slices.Equal(steps[index].Args, want[index]) {
-			t.Errorf("step %d=%v want %v", index, steps[index].Args, want[index])
-		}
-	}
-}
-
-func TestUnitGateFailureDetailNamesFailingDependentTests(t *testing.T) {
-	t.Parallel()
-	output := "--- FAIL: TestDirectContract (0.00s)\nFAIL\n"
-	if got := GateFailureDetail(output); !strings.Contains(got, "TestDirectContract") {
-		t.Fatalf("dependent test detail=%q", got)
-	}
-}
-
-func TestBatchJoinGateStepsChangedThenSortedDependentsAndBatchTests(t *testing.T) {
-	t.Parallel()
-	selection := gateConsumerPackages()
-	steps := JoinGatePackageSteps(selection)
-	want := []string{"package ./base", "dependent package ./cmd/metasystem", "dependent package ./direct",
-		"dependent package ./tagged", "dependent package ./testonly", "dependent package ./transitive", "package ./cmd/metasystem batchtest"}
-	if len(steps) != len(want) {
-		t.Fatalf("package steps=%v want names=%v", steps, want)
-	}
-	for i, name := range want {
-		if steps[i].Name != name {
-			t.Errorf("step %d=%q want %q", i, steps[i].Name, name)
-		}
-	}
-}
-
 func TestBatchJoinGateRedNamesFailingDependentTests(t *testing.T) {
 	t.Parallel()
 	selection := gateConsumerPackages()
-	var direct GateStep
-	for _, step := range JoinGatePackageSteps(selection) {
-		if step.Name == "dependent package ./direct" {
-			direct = step
-			break
-		}
-	}
-	if direct.Name == "" {
-		t.Fatalf("changed base omitted direct dependent: %+v", selection)
-	}
+	direct := GateStep{Name: "dependent package ./direct", Args: []string{"go", "test", "-trimpath", "-count=1", "-timeout", "40m", "./direct"}}
 	output := "--- FAIL: TestDirectContract (0.00s)\nFAIL\texample.invalid/unitgate/direct\t0.01s\n"
-	if detail := GateFailureDetail(output); !strings.Contains(detail, "TestDirectContract") {
-		t.Fatalf("dependent test name was lost: %q", detail)
-	}
 	reds := GateReds(direct, selection.ModulePath, output)
 	if !slices.Equal(reds, []GateRed{{Package: "./direct", Test: "TestDirectContract"}}) {
 		t.Fatalf("dependent refusal attribution=%v", reds)
@@ -393,28 +273,6 @@ func (f *packageTreeFixture) raw(request gittree.RawRequest) gittree.RawResult {
 	}
 	f.t.Fatalf("unexpected raw Git argv=%q", args)
 	return gittree.RawResult{}
-}
-
-func (f *packageTreeFixture) openSnapshot(tree string) (string, func() error, error) {
-	files, ok := f.treeFiles(tree)
-	if !ok || tree == "HEAD" || tree == f.topTree {
-		return "", nil, fmt.Errorf("unknown module snapshot %q", tree)
-	}
-	dir, err := os.MkdirTemp("", "package-tree-snapshot.")
-	if err != nil {
-		return "", nil, err
-	}
-	for path, content := range files {
-		absolute := filepath.Join(dir, filepath.FromSlash(path))
-		if err = os.MkdirAll(filepath.Dir(absolute), 0o755); err == nil {
-			err = os.WriteFile(absolute, []byte(content), 0o644)
-		}
-		if err != nil {
-			_ = os.RemoveAll(dir)
-			return "", nil, err
-		}
-	}
-	return dir, func() error { return os.RemoveAll(dir) }, nil
 }
 
 func packageWorkingGit(t *testing.T, root string, streams []string) func(*exec.Cmd) error {

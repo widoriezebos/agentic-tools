@@ -2,12 +2,9 @@ package goadapter
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strings"
 	"testing"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/adapter"
 )
@@ -54,15 +51,4 @@ func TestGoOwnerUnitAndIdentityFromTestJSONPackages(t *testing.T) {
 	if _, ok := (Adapter{}).Identity(build); ok {
 		t.Fatal("the package build terminal was accepted as a test identity")
 	}
-}
-
-func bedGit(t *testing.T, root string, args ...string) string {
-	t.Helper()
-	command := exec.Command("git", append([]string{"-C", root}, args...)...)
-	command.Env = gittree.ScrubbedEnviron()
-	output, err := command.Output()
-	if err != nil {
-		t.Fatalf("git %v: %v", args, err)
-	}
-	return strings.TrimSpace(string(output))
 }

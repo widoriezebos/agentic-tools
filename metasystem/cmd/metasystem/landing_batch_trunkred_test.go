@@ -24,7 +24,7 @@ func TestLedgerTrunkRedOwnerRecordsIdempotently(t *testing.T) {
 	root := repository.root
 	const machine, lineage = "mac-landing", "landing-lineage"
 	owner := proofLedgerTrunkRedOwner(t, repository, machine, lineage, time.Date(2026, 9, 17, 11, 0, 0, 0, time.UTC))
-	if !batchowner.IsLedgerTrunkRedOwner(owner) {
+	if !isLedgerTrunkRedOwner(owner) {
 		t.Fatalf("construct owner: %T", owner)
 	}
 	red := batch.TrunkRed{BatchID: "batch-1", AttemptID: "attempt-1", BaseCommit: "base-1", BaseTree: "tree-1",
@@ -146,7 +146,7 @@ func TestLedgerTrunkRedOwnerClearClassifiesFixCommit(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			root := syncedClaimedGoalFixture(t)
 			const machine, lineage = "mac-landing", "landing-lineage"
-			ownerValue, err := batchowner.NewLedgerTrunkRedOwner(root, machine, lineage)
+			ownerValue, err := batchowner.NewLedgerTrunkRedOwnerWithConfig(root, machine, lineage, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -344,7 +344,7 @@ func proofLedgerTrunkRedOwner(t *testing.T, repository *proofAdmissionRepository
 		reads++
 		return value, nil
 	})
-	if err != nil || !batchowner.IsLedgerTrunkRedOwner(ownerValue) || reads != 2 {
+	if err != nil || !isLedgerTrunkRedOwner(ownerValue) || reads != 2 {
 		t.Fatalf("construct proof owner: %T %v; config reads %d", ownerValue, err, reads)
 	}
 	owner := ownerValue.(*batchowner.LedgerTrunkRedOwner)
@@ -455,4 +455,14 @@ func TestBatchTrunkRedProjectionCarriesTheFixGoal(t *testing.T) {
 			t.Fatalf("%s on %s: open %+v %v", row.goal, row.branch, open, err)
 		}
 	}
+}
+
+// isLedgerTrunkRedOwner says whether owner is the ledger-backed trunk-red
+// register owner.
+func isLedgerTrunkRedOwner(owner batch.LedgerOwner) bool {
+	if _, ok := owner.(*batchowner.LedgerTrunkRedOwner); ok {
+		return true
+	}
+	_, ok := owner.(batchowner.LedgerTrunkRedOwner)
+	return ok
 }

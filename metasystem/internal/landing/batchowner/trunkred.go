@@ -22,10 +22,6 @@ type LedgerTrunkRedOwner struct {
 	BeforeClearTransaction func() error
 }
 
-func NewLedgerTrunkRedOwner(root, machine, lineage string) (batch.LedgerOwner, error) {
-	return NewLedgerTrunkRedOwnerWithConfig(root, machine, lineage, nil)
-}
-
 func NewLedgerTrunkRedOwnerWithConfig(root, machine, lineage string, lookup func(string, string) (string, error)) (batch.LedgerOwner, error) {
 	resolve := goal.ResolveEndpoint
 	if lookup != nil {
@@ -53,14 +49,6 @@ func ProductionBatchLedgerOwnerWithConfig(root string, lookup func(string, strin
 		return nil, err
 	}
 	return NewLedgerTrunkRedOwnerWithConfig(root, machine, LandingOwnerLineage, lookup)
-}
-
-func IsLedgerTrunkRedOwner(owner batch.LedgerOwner) bool {
-	if _, ok := owner.(*LedgerTrunkRedOwner); ok {
-		return true
-	}
-	_, ok := owner.(LedgerTrunkRedOwner)
-	return ok
 }
 
 func (owner LedgerTrunkRedOwner) Request(opid string) (goal.VerbRequest, error) {

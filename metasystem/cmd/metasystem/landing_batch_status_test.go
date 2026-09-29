@@ -320,7 +320,7 @@ func TestDiagnosticNoReuseForcesFreshRunsAndDeliveryRefuses(t *testing.T) {
 }
 
 func TestPrefixReceiptAllowsIdentityReuseAndBindsRevisions(t *testing.T) {
-	args := batchowner.BatchPrefixReceiptArgs("/prefix", "/landing", "goal-a", "tree-a", "result.json", []string{"same", "different"}, batch.Claim{Revision: 7, AccountingRevision: 5})
+	args := batchowner.BatchPrefixReceiptArgsWithFresh("/prefix", "/landing", "goal-a", "tree-a", "result.json", []string{"same", "different"}, batch.Claim{Revision: 7, AccountingRevision: 5}, "", "")
 	joined := strings.Join(args, " ")
 	if strings.Contains(joined, "--no-reuse") || !strings.Contains(joined, "--root /prefix --control-root /landing") || !strings.Contains(joined, `--purpose delivery --batch-requirements {"groups":["same","different"]}`) || !strings.Contains(joined, "--batch-prefix") ||
 		!strings.Contains(joined, "--expected-goal-revision 7 --expected-accounting-revision 5") {
@@ -767,7 +767,7 @@ func TestBatchLandProductionSeamsBoundRecoveryAndAbandon(t *testing.T) {
 
 func TestBatchProofInputsMovedIncludesEnginePaths(t *testing.T) {
 	record := batch.Record{Proof: &batch.Proof{SelectedGroups: []string{"docs"}, InputManifests: map[string][]string{"docs": {"metasystem/docs/**"}}}}
-	if !batchowner.BatchProofInputsMoved(record, []string{"metasystem/internal/other/x.go"}, "metasystem") {
+	if !batch.DecideMovedBase(record, []string{"metasystem/internal/other/x.go"}, "metasystem").Reopen {
 		t.Fatal("an engine path outside the selected manifest did not require a new proof")
 	}
 }

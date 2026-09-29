@@ -194,13 +194,13 @@ func (run *batchRehearsalRun) requireInputs() {
 	if sourceRoot, err = filepath.EvalSymlinks(sourceRoot); err != nil {
 		t.Fatalf("resolve source checkout symlinks: %v", err)
 	}
-	if batchowner.DirectoryTreesOverlap(run.work, sourceRoot) {
+	if directoryTreesOverlap(run.work, sourceRoot) {
 		t.Fatalf("METASYSTEM_REHEARSAL_WORK must not overlap the source checkout: work=%s source=%s", run.work, sourceRoot)
 	}
-	if batchowner.DirectoryTreesOverlap(run.work, run.origin) {
+	if directoryTreesOverlap(run.work, run.origin) {
 		t.Fatalf("METASYSTEM_REHEARSAL_WORK must not overlap METASYSTEM_REHEARSAL_ORIGIN: work=%s origin=%s", run.work, run.origin)
 	}
-	if batchowner.DirectoryTreesOverlap(run.origin, sourceRoot) {
+	if directoryTreesOverlap(run.origin, sourceRoot) {
 		t.Fatalf("METASYSTEM_REHEARSAL_ORIGIN must not overlap the source checkout: origin=%s source=%s", run.origin, sourceRoot)
 	}
 	if got := run.git(run.origin, "rev-parse", "--is-bare-repository"); got != "true" {

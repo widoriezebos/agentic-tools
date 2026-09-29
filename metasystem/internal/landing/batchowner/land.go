@@ -480,11 +480,6 @@ func FetchBatchOrigin(root string) (string, string, error) {
 	return commit, tree, err
 }
 
-// BatchProofInputsMoved is the moved-base decision's reopen answer.
-func BatchProofInputsMoved(record batch.Record, changed []string, installationPrefix string) bool {
-	return batch.DecideMovedBase(record, changed, installationPrefix).Reopen
-}
-
 func RebasedPrefixTreesWith(root, base, tip string, units []batch.Unit, readGit func(string, ...string) (string, error)) ([]string, error) {
 	output, err := readGit(root, "log", "--first-parent", "--reverse", "--format=%T", base+".."+tip)
 	if err != nil {
@@ -653,10 +648,6 @@ func batchAdmissionRefusalCode(reason string) string {
 		}
 	}
 	return ""
-}
-
-func BatchPrefixReceiptArgs(root, controlRoot, goalID, tree, resultPath string, groups []string, claim batch.Claim) []string {
-	return BatchPrefixReceiptArgsWithFresh(root, controlRoot, goalID, tree, resultPath, groups, claim, "", "")
 }
 
 func BatchPrefixReceiptArgsWithFresh(root, controlRoot, goalID, tree, resultPath string, groups []string, claim batch.Claim, episode, expiresAt string) []string {

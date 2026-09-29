@@ -159,7 +159,7 @@ func TestBatchProductionRegistryComplete(t *testing.T) {
 	facts := batchConfigFacts(root, true, false)
 	productionOwner, err := batchowner.ProductionBatchLedgerOwnerWithConfig(root, facts.config)
 	facts.assertConsumed(t, false)
-	if err != nil || !batchowner.IsLedgerTrunkRedOwner(productionOwner) {
+	if err != nil || !isLedgerTrunkRedOwner(productionOwner) {
 		t.Fatalf("production trunk-red owner type %T error=%v, want ledger adapter", productionOwner, err)
 	}
 }

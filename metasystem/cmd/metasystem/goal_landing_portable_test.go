@@ -829,7 +829,7 @@ func TestCommandApplicationThreePrefixReceiptConsumer(t *testing.T) {
 			fetchedCommit, fetchedTree, movedBaseCommit, movedBaseTree, err)
 	}
 	changed := strings.Fields(fixture.git("diff", "--name-only", baseCommit, movedBaseCommit))
-	if !batchowner.BatchProofInputsMoved(restarted, changed, "") {
+	if !batch.DecideMovedBase(restarted, changed, "").Reopen {
 		t.Fatalf("declared input move did not invalidate tip proof: changed=%v manifests=%v", changed, restarted.Proof.InputManifests)
 	}
 	movedTrees, err := batch.AssembleUnits(fixture.root, movedBaseTree, restarted.Units)

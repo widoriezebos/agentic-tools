@@ -496,53 +496,6 @@ func dependencyDirs(module, root string, imports map[string]map[string]bool) []s
 	return result
 }
 
-// ReverseDependents preserves the join gate's exact-tree consumer closure for
-// callers that already have a changed package pattern set.
-func ReverseDependents(moduleRoot, tree string, changed []string) (dependents []string, err error) {
-	workspace := gittree.Workspace{Dir: moduleRoot}
-	return ReverseDependentsWithWorkspaceSnapshot(workspace, tree, changed,
-		func(tree string) (string, func() error, error) {
-			detached, err := workspace.NewDetachedWorktree(tree)
-			if err != nil {
-				return "", nil, err
-			}
-			return detached.Workspace().Dir, detached.Close, nil
-		})
-}
-
-// ReverseDependentsWithWorkspaceSnapshot scans an exact-tree snapshot using
-// the same import parser and closure as the native detached-worktree path.
-func ReverseDependentsWithWorkspaceSnapshot(workspace gittree.Workspace, tree string, changed []string, openSnapshot func(string) (string, func() error, error)) (dependents []string, err error) {
-	resolved := tree
-	if _, present, readErr := workspace.FileAt(tree, "go.mod"); readErr != nil || !present {
-		resolved, err = workspace.TreeOf(tree)
-		if err != nil {
-			return nil, err
-		}
-	}
-	goMod, present, err := workspace.FileAt(resolved, "go.mod")
-	if err != nil {
-		return nil, err
-	}
-	if !present {
-		return nil, fmt.Errorf("reverse dependents: candidate has no go.mod")
-	}
-	module, err := modulePath(goMod)
-	if err != nil {
-		return nil, err
-	}
-	dir, closeSnapshot, err := openSnapshot(resolved)
-	if err != nil {
-		return nil, fmt.Errorf("reverse dependents: materialize tree: %w", err)
-	}
-	defer func() { err = errors.Join(err, closeSnapshot()) }()
-	imports, err := packageImports(dir, module)
-	if err != nil {
-		return nil, err
-	}
-	return reverseDependents(module, changed, imports), nil
-}
-
 // go list ./... does not enumerate packages under these directory names.
 // Keep their imports in the reverse-dependency graph, but do not try to run
 // their fixture sources as standalone package tests.

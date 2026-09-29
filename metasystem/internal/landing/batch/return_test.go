@@ -5,13 +5,14 @@ import (
 	"crypto/sha1"
 	"errors"
 	"fmt"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 )

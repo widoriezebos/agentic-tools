@@ -106,7 +106,7 @@ func TestDirectoryTreesOverlapRejectsAncestorsOnly(t *testing.T) {
 		test := test
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			if got := batchowner.DirectoryTreesOverlap(test.left, test.right); got != test.want {
+			if got := directoryTreesOverlap(test.left, test.right); got != test.want {
 				t.Fatalf("directoryTreesOverlap(%q, %q)=%t, want %t", test.left, test.right, got, test.want)
 			}
 		})
@@ -356,4 +356,17 @@ func TestAChainJoinsCarryingItsHeadForThePublicationGate(t *testing.T) {
 	if len(record.Units) != 1 || record.Units[0].BranchTip != request.ChainHead || len(record.Units[0].Builds) != 0 {
 		t.Fatalf("the chain member does not carry its head: %+v", record.Units)
 	}
+}
+
+// directoryTreesOverlap says whether one directory is the other or lies
+// beneath it, comparing whole path segments.
+func directoryTreesOverlap(left, right string) bool {
+	contains := func(parent, child string) bool {
+		relative, err := filepath.Rel(filepath.Clean(parent), filepath.Clean(child))
+		if err != nil {
+			return false
+		}
+		return relative == "." || relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator))
+	}
+	return contains(left, right) || contains(right, left)
 }

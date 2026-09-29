@@ -220,17 +220,6 @@ func changedWorkingGoPackages(moduleRoot string, changes gateChanges) ([]string,
 	return packages, nil
 }
 
-// ReverseDependents returns every package in moduleRoot that imports a
-// changed package directly or through another package. Every Go file in the
-// tree participates, including tests and files excluded by build tags.
-func ReverseDependents(moduleRoot, tree string, changed []string) (_ []string, err error) {
-	return gopackages.ReverseDependents(moduleRoot, tree, changed)
-}
-
-func reverseDependentsWithSnapshot(workspace gittree.Workspace, tree string, changed []string, openSnapshot func(string) (string, func() error, error)) ([]string, error) {
-	return gopackages.ReverseDependentsWithWorkspaceSnapshot(workspace, tree, changed, openSnapshot)
-}
-
 func reverseDependents(module string, changed []string, imports map[string]map[string]bool) []string {
 	changedSet := packagePatterns(module, changed)
 	dependentImports := map[string]bool{}
@@ -420,21 +409,6 @@ func packageImportPath(module, pkg string) string {
 	return module + "/" + strings.TrimPrefix(pkg, "./")
 }
 
-// JoinGatePackageSteps gives each package its own recorded batch-gate step.
-func JoinGatePackageSteps(selection UnitPackages) []GateStep {
-	steps := make([]GateStep, 0, len(selection.Changed)+len(selection.Dependents)+1)
-	for _, pkg := range selection.Changed {
-		steps = append(steps, GateStep{Name: "package " + pkg, Args: []string{"go", "test", "-trimpath", "-count=1", "-timeout", "900s", pkg}})
-	}
-	for _, pkg := range selection.Dependents {
-		steps = append(steps, GateStep{Name: "dependent package " + pkg, Args: []string{"go", "test", "-trimpath", "-count=1", "-timeout", "40m", pkg}})
-	}
-	if selectionContainsPackage(selection, "./cmd/metasystem") {
-		steps = append(steps, batchTestStep())
-	}
-	return steps
-}
-
 // AggregateUnitGateSteps lets go test schedule all ordinary packages in one
 // process while retaining the separately compiled cmd/metasystem batch tests.
 func AggregateUnitGateSteps(selection UnitPackages) []GateStep {
@@ -463,41 +437,6 @@ func batchTestStep() GateStep {
 func selectionContainsPackage(selection UnitPackages, wanted string) bool {
 	set := packagePatterns(selection.ModulePath, append(append([]string{}, selection.Changed...), selection.Dependents...))
 	return set.matchesPackage(wanted)
-}
-
-// FailingTests extracts the first Go test failure line for each failed test.
-func FailingTests(output string) []string {
-	var failures []string
-	seen := map[string]bool{}
-	for _, line := range strings.Split(output, "\n") {
-		line = strings.TrimSpace(line)
-		if !strings.HasPrefix(line, "--- FAIL: ") {
-			continue
-		}
-		name := strings.TrimPrefix(line, "--- FAIL: ")
-		if field := strings.Fields(name); len(field) != 0 {
-			name = field[0]
-		}
-		if name != "" && !seen[name] {
-			seen[name] = true
-			failures = append(failures, name)
-		}
-	}
-	return failures
-}
-
-// GateFailureDetail keeps test names at the refusal boundary and bounds the
-// ordinary command output used when no Go test failure line was printed.
-func GateFailureDetail(output string) string {
-	if failures := FailingTests(output); len(failures) != 0 {
-		return "failing tests: " + strings.Join(failures, ", ")
-	}
-	detail := strings.TrimSpace(output)
-	const maximum = 4 << 10
-	if len(detail) > maximum {
-		detail = detail[:maximum] + "..."
-	}
-	return detail
 }
 
 // GateReds maps one failed go test invocation back to package/test lines.

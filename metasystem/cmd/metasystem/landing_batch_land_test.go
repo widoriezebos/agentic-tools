@@ -235,7 +235,7 @@ func TestRecoveryFailureDoesNotAbortAmbientRebase(t *testing.T) {
 func TestBatchProofInputsMovedIgnoresSiblingEnginePaths(t *testing.T) {
 	record := batch.Record{Proof: &batch.Proof{SelectedGroups: []string{"docs"}, InputManifests: map[string][]string{"docs": {"metasystem/docs/**"}}}}
 	for _, outside := range []string{"internal/other/x.go", "cmd/metasystem/main.go", "go.mod"} {
-		if batchowner.BatchProofInputsMoved(record, []string{outside}, "metasystem") {
+		if batch.DecideMovedBase(record, []string{outside}, "metasystem").Reopen {
 			t.Fatalf("sibling path %q was mapped into the installation engine", outside)
 		}
 	}

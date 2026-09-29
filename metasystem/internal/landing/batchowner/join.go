@@ -318,17 +318,6 @@ func fetchLandingBaseTree(root string) (string, error) {
 	return (gittree.Workspace{Dir: root}).TreeOf("FETCH_HEAD")
 }
 
-func DirectoryTreesOverlap(left, right string) bool {
-	contains := func(parent, child string) bool {
-		relative, err := filepath.Rel(filepath.Clean(parent), filepath.Clean(child))
-		if err != nil {
-			return false
-		}
-		return relative == "." || relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator))
-	}
-	return contains(left, right) || contains(right, left)
-}
-
 // ProductionBatchProtectedTests asks the testing owner to check base-listed
 // Go tests before join hands the member to the batch owner. The installed
 // contract path and each group's cwd are independent of the repository root.
