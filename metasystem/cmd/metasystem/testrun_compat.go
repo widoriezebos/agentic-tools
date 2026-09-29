@@ -16,6 +16,8 @@ type (
 	testingSelectionRequest = testrun.SelectionRequest
 	testingPlanOutput       = testrun.PlanOutput
 	upOutcome               = testrun.UpOutcome
+	costSelection           = testrun.CostSelection
+	costSelectionEvidence   = testrun.CostEvidence
 )
 
 var (
@@ -26,4 +28,6 @@ var (
 	landedRearmRebuild          = testrun.RebuildLandedEngine
 	landedRearmUp               = testrun.UpLandedEngine
 	readStrictJSON              = strictjson.Read
+	costSelectionForPrefix      = testrun.PrefixCostSelection
+	proofCostCap                = testrun.ProofCostCap
 )

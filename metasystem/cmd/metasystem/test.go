@@ -10,7 +10,6 @@ import (
 	"io"
 	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -302,32 +301,6 @@ func testingWorkerPolicy(confPath string) (testrun.WorkerPolicy, error) {
 	}
 	return testrun.WorkerPolicy{Workers: limits.workers, AdmissionMaximum: limits.admissionMaximum,
 		Automatic: limits.automaticWorkers, AutomaticCeiling: limits.automaticWorkerCeiling}, nil
-}
-
-// candidateEngineIO is how the goal-landing and batch-cost tests still
-// spell the candidate engine's Git, worktree and build seams, with
-// unexported fields; production passes nativeCandidateEngineIO. C8a part 2
-// ports those tests to candidateengine.IO and deletes this type.
-type candidateEngineIO struct {
-	runGit    func(*exec.Cmd) error
-	open      func(gittree.Workspace, string) (candidateengine.DetachedWorkspace, error)
-	buildArgv func(output string) []string
-	native    bool
-}
-
-// nativeCandidateEngineIO is the real seams.
-func nativeCandidateEngineIO() candidateEngineIO { return candidateEngineIO{native: true} }
-
-// engine is the seams as the candidate engine owner takes them.
-func (seams candidateEngineIO) engine() candidateengine.IO {
-	if seams.native {
-		return candidateengine.Native()
-	}
-	return candidateengine.IO{RunGit: seams.runGit, Open: seams.open, BuildArgv: seams.buildArgv}
-}
-
-func candidateEngineBuildIdentityUsing(ctx context.Context, workspace gittree.Workspace, installationPrefix, candidateTree string, environment []string, seams candidateEngineIO) (string, error) {
-	return candidateengine.BuildIdentityUsing(ctx, workspace, installationPrefix, candidateTree, environment, seams.engine())
 }
 
 func runTestRun(args []string, stdout, stderr io.Writer) (exit int) {
