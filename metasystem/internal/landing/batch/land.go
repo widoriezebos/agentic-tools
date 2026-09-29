@@ -77,18 +77,18 @@ type LandSeams struct {
 	CommitBuild        func(Unit, BranchBuild, PrefixReceipt) (string, error)
 	// ReplayChange lands a change member's commit on the landing branch
 	// with its Landing-Change trailer and returns the new commit.
-	ReplayChange func(Unit) (string, error)
-	Held               func(base, tip string) error
-	VerifySeries       func(units []Unit, commits map[string]string) error
-	PublishBranch      func(expected, tip string) error
-	Push               func(base, tip string) error
-	Reset              func(base string) error
-	Cleanup            func() error
-	Origin             func() (string, error)
-	OriginTree         func(string) (string, error)
-	Abandon            func(tip, detachAt string) error
-	SeriesOnOrigin     func(origin, tip string) (bool, error)
-	LeaseBase          string
+	ReplayChange   func(Unit) (string, error)
+	Held           func(base, tip string) error
+	VerifySeries   func(units []Unit, commits map[string]string) error
+	PublishBranch  func(expected, tip string) error
+	Push           func(base, tip string) error
+	Reset          func(base string) error
+	Cleanup        func() error
+	Origin         func() (string, error)
+	OriginTree     func(string) (string, error)
+	Abandon        func(tip, detachAt string) error
+	SeriesOnOrigin func(origin, tip string) (bool, error)
+	LeaseBase      string
 	// RecoverPush rebases, re-verifies and pushes a refused series. It calls
 	// recheck immediately before its own endpoint push, so a known flake's
 	// allowance that expired while it rebased publishes nothing (BL3S-01).

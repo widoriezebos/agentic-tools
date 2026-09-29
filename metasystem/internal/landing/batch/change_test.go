@@ -22,8 +22,8 @@ func changeMemberUnit() Unit {
 
 func openBatchWithGoalMember(base string) Record {
 	return Record{Schema: 1, BatchID: testBatchID, State: StateOpen, TipTree: testCommit(103),
-		Units: []Unit{{GoalID: "goal-a", Chain: "chain-a", Claim: Claim{Machine: "landing", Lineage: "owner", Epoch: 1, Revision: 7, AccountingRevision: 5}, State: UnitJoined}},
-		History: []HistoryEntry{{At: ten.Format(time.RFC3339Nano), Verb: "join", Detail: "goal-a joined"}},
+		Units:             []Unit{{GoalID: "goal-a", Chain: "chain-a", Claim: Claim{Machine: "landing", Lineage: "owner", Epoch: 1, Revision: 7, AccountingRevision: 5}, State: UnitJoined}},
+		History:           []HistoryEntry{{At: ten.Format(time.RFC3339Nano), Verb: "join", Detail: "goal-a joined"}},
 		batchRecordFields: batchRecordFields{BaseTree: base, PrefixTrees: []string{testCommit(103)}}}
 }
 
@@ -241,10 +241,12 @@ func TestChangeRecoveryFindsLandingChangeTrailer(t *testing.T) {
 			}
 			return "origin-" + unit.Chain, true, nil
 		},
-		OriginChange: func(unit Unit) (string, bool, error) { return "origin-" + strings.TrimPrefix(unit.GoalID, "change:"), true, nil },
-		Finalize:     func(unit Unit, _ string) error { finalized[unit.GoalID]++; return nil },
-		Rearm:        func(string) error { return nil },
-		Cleanup:      func() error { return nil },
+		OriginChange: func(unit Unit) (string, bool, error) {
+			return "origin-" + strings.TrimPrefix(unit.GoalID, "change:"), true, nil
+		},
+		Finalize: func(unit Unit, _ string) error { finalized[unit.GoalID]++; return nil },
+		Rearm:    func(string) error { return nil },
+		Cleanup:  func() error { return nil },
 	}
 	must(t, RecoverPushedSeries(store, testBatchID, "owner", ten, seams))
 	must(t, RecoverPushedSeries(store, testBatchID, "owner", ten.Add(time.Minute), seams))
