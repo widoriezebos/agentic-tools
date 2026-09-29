@@ -146,3 +146,12 @@ All runs used `METASYSTEM_TESTING_WORKERS=9`, from `metasystem/`.
     answered 200 with the same timestamp.
   - In Chromium (Playwright): the stopped m1g card showed the leftover line, Retry, and
     "Discard launch". Pressing it removed the card at once, and it stayed gone after a reload.
+
+## Sol's code critique and its dispositions (2026-09-29)
+
+Sol: `metasystem/plans/discard-launch-sol-critique.md`, 2 material.
+
+| id | disposition | where |
+|---|---|---|
+| SOL-DL-01 | Deferred: no customer impact, and improbable. Discard and Retry on the same record would have to race from two tabs, since a discard hides the card in the first. Either order heals. If the retry saves last, the card comes back, which is what the retry asked for. If the discard saves last over a retry's `starting`, the launch verb rewrites the record from its own copy after its next step and the mark is gone. A record lock waits until someone falls into this. | `internal/seat/launch/record.go:Discard`; `cmd/metasystem/ui_launch.go:launchRecordFor` |
+| SOL-DL-02 | Fixed. A joined machine's card folds (and offers Dismiss) only once its launch is `done` or `armed`. A still-running launch keeps its full card. | `LaunchCard.tsx:LaunchCard`; test "keeps a still-running launch whole, with no Dismiss" |

@@ -171,4 +171,13 @@ describe("a machine that joined", () => {
     expect(markup).not.toContain("ms-launch-steps");
     expect(markup).toContain(">Dismiss</button>");
   });
+
+  // SOL-DL-02: a machine can join while its launch is still writing its last
+  // steps. Its card stays whole until the record has stopped changing, so no
+  // Dismiss is offered that the server would refuse.
+  it("keeps a still-running launch whole, with no Dismiss", () => {
+    const markup = rendered(launch({ outcome: "running" }), true);
+    expect(markup).toContain("ms-launch-steps");
+    expect(markup).not.toContain(">Dismiss</button>");
+  });
 });

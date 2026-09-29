@@ -56,7 +56,9 @@ export function LaunchCard({
   /** The record a discard answered with: the card goes. */
   onDiscarded: (discarded: Launch) => void;
 }) {
-  if (joined && record.outcome !== "failed") {
+  // A machine can join while its launch is still writing its last steps; the
+  // card folds only once the record has stopped changing (SOL-DL-02).
+  if (joined && (record.outcome === "done" || record.outcome === "armed")) {
     return <Folded record={record} now={now} onDiscarded={onDiscarded} />;
   }
   return <Full record={record} onStarted={onStarted} onDiscarded={onDiscarded} />;
