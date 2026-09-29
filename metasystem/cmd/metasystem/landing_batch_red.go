@@ -166,9 +166,9 @@ func executeBatchDiagnosisWithConfig(root, id, actor string, at time.Time, looku
 }
 
 func batchDiagnosticArgs(root string, request batch.DiagnosticRequest, resultPath string) []string {
-	return append([]string{"internal", "test", "run", "--root", root, "--tree", request.Tree, "--mode", "canary",
-		"--purpose", "diagnostic", "--groups", strings.Join(request.Groups, ","), "--no-reuse", "--result", resultPath},
-		accountArgs(request.GoalID, request.Claim)...)
+	args := append(append([]string{"internal", "test", "run", "--root", root}, accountFlag(request.GoalID)...), "--tree", request.Tree, "--mode", "canary",
+		"--purpose", "diagnostic", "--groups", strings.Join(request.Groups, ","), "--no-reuse", "--result", resultPath)
+	return append(args, accountRevisions(request.GoalID, request.Claim)...)
 }
 
 var batchDiagnosticExecute = func(binary string, args []string, dir string, environment []string) ([]byte, int, error) {

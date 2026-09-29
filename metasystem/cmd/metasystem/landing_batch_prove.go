@@ -427,13 +427,12 @@ func executeBatchProof(root, id, actor, window, token string, sample proofrun.Lo
 // flags: charged to a goal at its sealed revisions with the diagnostic
 // headroom reserved, or to the lane, which has neither (U11b).
 func batchTipProofArgs(request batchProofLaunch, executionRoot string) []string {
-	args := []string{"internal", "test", "run", "--root", executionRoot, "--control-root", request.Root, "--batch-tip",
-		"--tree", request.Tree, "--mode", string(request.Mode), "--purpose", "delivery", "--result", request.ResultPath}
-	args = append(args, accountArgs(request.GoalID, batch.Claim{Revision: request.GoalRevision, AccountingRevision: request.AccountingRevision})...)
+	args := append(append([]string{"internal", "test", "run", "--root", executionRoot, "--control-root", request.Root, "--batch-tip"},
+		accountFlag(request.GoalID)...), "--tree", request.Tree, "--mode", string(request.Mode), "--purpose", "delivery", "--result", request.ResultPath)
 	if !request.Early && !lane.IsAccount(request.GoalID) {
 		args = append(args, "--require-diagnostic-headroom")
 	}
-	return args
+	return append(args, accountRevisions(request.GoalID, batch.Claim{Revision: request.GoalRevision, AccountingRevision: request.AccountingRevision})...)
 }
 
 func planBatchMemberUnion(root, tree string, units []batch.Unit, charge string, mode testpolicy.Mode, plan func(string, string, string, testpolicy.Mode) (testpolicy.Plan, error)) (testpolicy.Plan, error) {

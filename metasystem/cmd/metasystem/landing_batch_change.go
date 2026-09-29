@@ -204,13 +204,22 @@ func batchChargeID(root string, unit batch.Unit, account func(string) (string, e
 	return account(root)
 }
 
-// accountArgs names who a batch proof is charged to on its argv: a goal at
-// its sealed revisions, or the lane, which has none (U11b).
-func accountArgs(id string, claim batch.Claim) []string {
+// accountFlag names who a batch proof is charged to on its argv: a goal, or
+// the lane (U11b).
+func accountFlag(id string) []string {
 	if lane.IsAccount(id) {
 		return []string{"--lane", id}
 	}
-	return []string{"--goal", id, "--expected-goal-revision", fmt.Sprint(claim.Revision), "--expected-accounting-revision", fmt.Sprint(claim.AccountingRevision)}
+	return []string{"--goal", id}
+}
+
+// accountRevisions are a goal's sealed revisions on the argv; the lane has
+// none.
+func accountRevisions(id string, claim batch.Claim) []string {
+	if lane.IsAccount(id) {
+		return nil
+	}
+	return []string{"--expected-goal-revision", fmt.Sprint(claim.Revision), "--expected-accounting-revision", fmt.Sprint(claim.AccountingRevision)}
 }
 
 // laneSpend is what the lane at root charged to its own account: every
