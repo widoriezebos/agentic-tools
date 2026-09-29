@@ -67,9 +67,9 @@ func SelectReleaseSet(ctx context.Context, registry Registry, gitRoot, goalID, t
 			record.Owner != (Owner{Kind: OwnerGoal, Ref: goalID}) {
 			continue
 		}
-		branchTip, branchFound := revParseIn(ctx, git, gitRoot, "refs/heads/"+WorkspaceBranch(record.Owner, filepath.Base(record.Path)))
-		head, headFound := revParseIn(ctx, git, record.Path, "HEAD")
-		if !branchFound || !headFound {
+		branchTip, branchFound, branchErr := revParseIn(ctx, git, gitRoot, "refs/heads/"+WorkspaceBranch(record.Owner, filepath.Base(record.Path)))
+		head, headFound, headErr := revParseIn(ctx, git, record.Path, "HEAD")
+		if branchErr != nil || headErr != nil || !branchFound || !headFound {
 			continue
 		}
 		landed := true

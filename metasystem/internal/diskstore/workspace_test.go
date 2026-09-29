@@ -86,6 +86,8 @@ func (g *fakeWorkspaceGit) run(_ context.Context, dir string, args ...string) ([
 		}
 		g.refs[args[1]] = args[2]
 		return nil, nil
+	case args[0] == "ls-files", args[0] == "for-each-ref":
+		return nil, nil
 	case len(args) >= 2 && args[0] == "log" && args[1] == "-g":
 		return nil, nil
 	case len(args) == 4 && args[0] == "merge-base" && args[1] == "--is-ancestor":

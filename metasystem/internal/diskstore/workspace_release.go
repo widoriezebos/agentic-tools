@@ -112,6 +112,10 @@ func releaseInSection(ctx context.Context, critical *Critical, request Workspace
 			return keep(verdict)
 		}
 	}
+	if unreadable := unreadableIn(record.Path); unreadable != "" {
+		return keep(Verdict{Decision: Keep, Reason: "the workspace holds what cannot be read, so its removal could stop halfway: " + unreadable,
+			Command: "metasystem disk show"})
+	}
 	census := request.Census
 	if request.TakeCensus != nil {
 		census = request.TakeCensus()
@@ -172,13 +176,18 @@ func judgeLanded(ctx context.Context, gitRoot string, git WorkspaceGit, record R
 		return Verdict{Decision: Keep, Reason: "a plain workspace is never released by a landing", Command: "metasystem work workspace " + record.Owner.Ref + " --release --name " + name}
 	}
 	var commits []string
-	if sha, found := revParseIn(ctx, git, gitRoot, "refs/heads/"+WorkspaceBranch(record.Owner, name)); found {
+	sha, found, err := revParseIn(ctx, git, gitRoot, "refs/heads/"+WorkspaceBranch(record.Owner, name))
+	if found {
 		commits = append(commits, sha)
 	}
-	if workspaceTreeExists(record) {
-		if sha, found := revParseIn(ctx, git, record.Path, "HEAD"); found {
+	if err == nil && workspaceTreeExists(record) {
+		sha, found, err = revParseIn(ctx, git, record.Path, "HEAD")
+		if found {
 			commits = append(commits, sha)
 		}
+	}
+	if err != nil {
+		return Verdict{Decision: Keep, Reason: "its tips cannot be read (" + err.Error() + "); it is kept", Command: "metasystem disk show"}
 	}
 	for _, commit := range commits {
 		if _, err := git(ctx, gitRoot, "merge-base", "--is-ancestor", commit, tip); err != nil {
@@ -271,7 +280,99 @@ func judgeContent(ctx context.Context, git WorkspaceGit, record Record, discard 
 		return Verdict{Decision: Keep, Reason: fmt.Sprintf("the workspace holds %d uncommitted, untracked or ignored entries: %s", len(entries), firstPaths(entries)),
 			Command: land + discardCommand(record.Owner, name)}
 	}
+	if reason := copyHidden(ctx, git, record); reason != "" {
+		return Verdict{Decision: Keep, Reason: reason + "; it is kept", Command: land + discardCommand(record.Owner, name)}
+	}
 	return Verdict{Decision: Release}
+}
+
+// copyHidden names what a clean status does not show (Round B3-4): a
+// submodule (a .gitmodules file or a gitlink in the index), an index entry
+// marked assume-unchanged or skip-worktree (git ls-files -v tags it
+// lowercase or S), or a reflog of the worktree or its branch that cannot
+// be read. Empty when there is none.
+func copyHidden(ctx context.Context, git WorkspaceGit, record Record) string {
+	if _, err := os.Lstat(filepath.Join(record.Path, ".gitmodules")); !errors.Is(err, os.ErrNotExist) {
+		return "it has submodules (a .gitmodules file)"
+	}
+	staged, err := git(ctx, record.Path, "ls-files", "-s")
+	if err != nil {
+		return "its index cannot be read (" + err.Error() + ")"
+	}
+	for _, line := range strings.Split(string(staged), "\n") {
+		if strings.HasPrefix(line, "160000 ") {
+			return "it has submodules (a gitlink in its index)"
+		}
+	}
+	tagged, err := git(ctx, record.Path, "ls-files", "-v")
+	if err != nil {
+		return "its index cannot be read (" + err.Error() + ")"
+	}
+	for _, line := range strings.Split(string(tagged), "\n") {
+		if line == "" {
+			continue
+		}
+		if tag := line[0]; tag == 'S' || tag >= 'a' && tag <= 'z' {
+			return "an index entry is marked assume-unchanged or skip-worktree: " + strings.TrimSpace(line[1:])
+		}
+	}
+	gitdir := record.Identity.Gitdir
+	if gitdir == "" {
+		return "its git directory is not recorded"
+	}
+	common := filepath.Dir(filepath.Dir(gitdir))
+	logs := []string{filepath.Join(common, "logs", "refs", "heads", filepath.FromSlash(WorkspaceBranch(record.Owner, filepath.Base(record.Path))))}
+	walkErr := filepath.WalkDir(filepath.Join(gitdir, "logs"), func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				return nil
+			}
+			return err
+		}
+		if !entry.IsDir() {
+			logs = append(logs, path)
+		}
+		return nil
+	})
+	if walkErr != nil {
+		return "its reflogs cannot be listed (" + walkErr.Error() + ")"
+	}
+	for _, path := range logs {
+		file, err := os.Open(path)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return "a reflog cannot be read (" + err.Error() + ")"
+		}
+		_ = file.Close()
+	}
+	return ""
+}
+
+// unreadableIn names the first directory or file under path that cannot
+// be read: a removal is never started that could stop halfway on it.
+func unreadableIn(path string) string {
+	found := ""
+	_ = filepath.WalkDir(path, func(entryPath string, entry os.DirEntry, err error) error {
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) && entryPath == path {
+				return filepath.SkipAll
+			}
+			found = entryPath + " (" + err.Error() + ")"
+			return filepath.SkipAll
+		}
+		if entry.Type().IsRegular() {
+			file, err := os.Open(entryPath)
+			if err != nil {
+				found = entryPath + " (" + err.Error() + ")"
+				return filepath.SkipAll
+			}
+			_ = file.Close()
+		}
+		return nil
+	})
+	return found
 }
 
 func firstPaths(paths []string) string {
@@ -301,14 +402,33 @@ func archiveWorkspace(ctx context.Context, gitRoot string, git WorkspaceGit, rec
 	base := WorkspaceArchiveRef(record.Owner, name)
 	type tip struct{ ref, sha string }
 	var tips []tip
-	if sha, found := revParseIn(ctx, git, gitRoot, "refs/heads/"+branch); found {
+	sha, found, err := revParseIn(ctx, git, gitRoot, "refs/heads/"+branch)
+	if err != nil {
+		return nil, 0, err
+	}
+	if found {
 		tips = append(tips, tip{base, sha})
 	}
 	worktree := false
 	if _, err := os.Lstat(filepath.Join(record.Path, ".git")); err == nil {
 		worktree = true
-		if sha, found := revParseIn(ctx, git, record.Path, "HEAD"); found {
+		sha, found, err := revParseIn(ctx, git, record.Path, "HEAD")
+		if err != nil {
+			return nil, 0, err
+		}
+		if found {
 			tips = append(tips, tip{base + "-head", sha})
+		}
+		// Per-worktree refs (refs/worktree/*) live with this worktree
+		// alone and go with it.
+		out, err := git(ctx, record.Path, "for-each-ref", "--format=%(objectname) %(refname)", "refs/worktree/")
+		if err != nil {
+			return nil, 0, fmt.Errorf("per-worktree refs: %w", err)
+		}
+		for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+			if sha, ref, ok := strings.Cut(line, " "); ok {
+				tips = append(tips, tip{base + "-worktree-" + strings.ReplaceAll(strings.TrimPrefix(ref, "refs/worktree/"), "/", "-"), sha})
+			}
 		}
 	}
 	var reflogs []string
@@ -353,7 +473,11 @@ func archiveWorkspace(ctx context.Context, gitRoot string, git WorkspaceGit, rec
 	args := append(append([]string{"rev-list", "--count"}, archivedSHAs...), "--not", "HEAD")
 	if record.Owner.Kind == OwnerGoal {
 		for _, ref := range []string{"refs/heads/goal/" + record.Owner.Ref, "refs/remotes/origin/goal/" + record.Owner.Ref} {
-			if _, ok := revParseIn(ctx, git, gitRoot, ref); ok {
+			_, ok, err := revParseIn(ctx, git, gitRoot, ref)
+			if err != nil {
+				return archived, 0, err
+			}
+			if ok {
 				args = append(args, ref)
 			}
 		}
@@ -382,7 +506,10 @@ func archiveRef(ctx context.Context, gitRoot string, git WorkspaceGit, ref, sha 
 		} else if attempt > 1 {
 			name = fmt.Sprintf("%s@%s-%d", ref, stamp, attempt)
 		}
-		existing, found := revParseIn(ctx, git, gitRoot, name)
+		existing, found, err := revParseIn(ctx, git, gitRoot, name)
+		if err != nil {
+			return "", err
+		}
 		if found && existing == sha {
 			return name, nil
 		}
@@ -392,7 +519,7 @@ func archiveRef(ctx context.Context, gitRoot string, git WorkspaceGit, ref, sha 
 		if _, err := git(ctx, gitRoot, "update-ref", name, sha, ""); err != nil {
 			return "", err
 		}
-		if readBack, ok := revParseIn(ctx, git, gitRoot, name); !ok || readBack != sha {
+		if readBack, ok, err := revParseIn(ctx, git, gitRoot, name); err != nil || !ok || readBack != sha {
 			return "", fmt.Errorf("%s does not read back as %s", name, sha)
 		}
 		return name, nil
@@ -420,7 +547,11 @@ func removeWorkspace(ctx context.Context, gitRoot string, git WorkspaceGit, reco
 			}
 		}
 		branch := WorkspaceBranch(record.Owner, filepath.Base(record.Path))
-		if _, found := revParseIn(ctx, git, gitRoot, "refs/heads/"+branch); found {
+		_, found, err := revParseIn(ctx, git, gitRoot, "refs/heads/"+branch)
+		if err != nil {
+			return err
+		}
+		if found {
 			if _, err := git(ctx, gitRoot, "branch", "-D", branch); err != nil {
 				return err
 			}

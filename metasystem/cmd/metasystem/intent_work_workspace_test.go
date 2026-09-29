@@ -62,7 +62,7 @@ func (g *workspaceGit) run(_ context.Context, dir string, args ...string) ([]byt
 	case args[0] == "update-ref":
 		g.refs[args[1]] = args[2]
 		return nil, nil
-	case args[0] == "log":
+	case args[0] == "log", args[0] == "ls-files", args[0] == "for-each-ref":
 		return nil, nil
 	case args[0] == "merge-base":
 		if args[2] == args[3] {

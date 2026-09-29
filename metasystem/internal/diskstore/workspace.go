@@ -235,7 +235,9 @@ func createWorkspace(ctx context.Context, request WorkspaceRequest, key, entry s
 		return Workspace{}, &WorkspaceUnproven{Path: path, Reason: "exists but no workspace record holds it"}
 	}
 	if layout == LayoutCopy {
-		if _, found := revParseIn(ctx, request.Git, request.GitRoot, "refs/heads/"+WorkspaceBranch(request.Owner, request.Name)); found {
+		if _, found, err := revParseIn(ctx, request.Git, request.GitRoot, "refs/heads/"+WorkspaceBranch(request.Owner, request.Name)); err != nil {
+			return Workspace{}, err
+		} else if found {
 			return Workspace{}, &WorkspaceUnproven{Path: path, Reason: "has no worktree, but its branch " + WorkspaceBranch(request.Owner, request.Name) + " exists without a record"}
 		}
 	}
@@ -392,7 +394,10 @@ func discardPartialPlain(ctx context.Context, record Record) error {
 }
 
 func discardPartialCopy(ctx context.Context, request WorkspaceRequest, record Record, branch string) error {
-	tip, branchFound := revParseIn(ctx, request.Git, request.GitRoot, "refs/heads/"+branch)
+	tip, branchFound, err := revParseIn(ctx, request.Git, request.GitRoot, "refs/heads/"+branch)
+	if err != nil {
+		return err
+	}
 	if branchFound && tip != record.CopyOf {
 		return &WorkspaceUnproven{Path: record.Path, Reason: "has branch " + branch + " at " + tip + ", not the recorded " + record.CopyOf}
 	}
@@ -456,11 +461,17 @@ func gitdirOf(worktree string) string {
 	return identity.Gitdir
 }
 
-func revParseIn(ctx context.Context, git WorkspaceGit, dir, ref string) (string, bool) {
+// revParseIn resolves ref in dir. A ref that does not exist (git exits 1
+// with nothing printed) is not found; any other failure is an error the
+// caller keeps the workspace for.
+func revParseIn(ctx context.Context, git WorkspaceGit, dir, ref string) (string, bool, error) {
 	out, err := git(ctx, dir, "rev-parse", "--verify", "-q", ref)
 	if err != nil {
-		return "", false
+		if strings.Contains(err.Error(), "exit status 1") && strings.TrimSpace(string(out)) == "" {
+			return "", false, nil
+		}
+		return "", false, fmt.Errorf("rev-parse %s: %w", ref, err)
 	}
 	sha := strings.TrimSpace(string(out))
-	return sha, sha != ""
+	return sha, sha != "", nil
 }
