@@ -571,6 +571,9 @@ type proofLaunchAdmission struct {
 	// laneAccount resolves the lane identity of a control root; nil reads the
 	// host's lane record.
 	laneAccount func(controlRoot string) (string, error)
+	// laneOwner proves the caller descends from the lane's owner process;
+	// nil proves it against the lane checkout's lease holder.
+	laneOwner func(controlRoot string, callerPID int64) error
 	// CallerPID is the supplied process the admission classifies and whose
 	// custody it authenticates (design 6.2); zero is this process's parent,
 	// the entry's own caller.
@@ -926,7 +929,7 @@ func admitProofLaunchWithReadsAndClassifier(request proofLaunchAdmission, makeRe
 				request.ExpectedGoalRevision, request.ExpectedAccountingRevision, attempt.GoalRevision, attempt.AccountingRevision)
 		}
 		if len(request.ComponentIdentities) > 0 {
-			heldGoal, lockErr := goalrevision.Acquire(request.ControlRoot, attempt.GoalID, attempt.GoalRevision, "joined-testing-admission")
+			heldGoal, lockErr := goalrevision.Acquire(request.ControlRoot, revisionLockCoordinate(attempt.GoalID), attempt.GoalRevision, "joined-testing-admission")
 			if lockErr != nil {
 				return proofrun.Attempt{}, proofrun.LaunchResult{}, false, lockErr
 			}
@@ -1370,8 +1373,14 @@ func admitLaneProofLaunch(request proofLaunchAdmission, caller lease.ClassifyRes
 	if account != request.LaneID {
 		return refuse("this checkout's landing lane is %s, not %s", account, request.LaneID)
 	}
-	if caller.Class != lease.ClassHuman && !(caller.Class == lease.ClassMain && caller.Holder) {
-		return refuse("only the lane's owner (its checkout's lease holder) or a person charges a proof to the lane")
+	if caller.Class != lease.ClassHuman {
+		prove := request.laneOwner
+		if prove == nil {
+			prove = proveLaneOwnerCaller
+		}
+		if err := prove(request.ControlRoot, request.callerPID()); err != nil {
+			return refuse("only the lane's owner process, proven by its identity, or a person charges a proof to the lane: %v", err)
+		}
 	}
 	capValue, _, _, err := dispatchcore.ResolveCap(request.ConfPath, "proof", "main", "proof", "", request.CapMin)
 	if err != nil || capValue < 1 {
@@ -1392,6 +1401,11 @@ func admitLaneProofLaunch(request proofLaunchAdmission, caller lease.ClassifyRes
 	}
 	proofIdentity := proofrun.BindIdentityInputs(proofrun.BuildProofIdentityForContext(context, request.ScopeClass,
 		request.CommandClass, request.Sections, behaviorsurface.SupportedVersion), request.IdentityInputs)
+	heldLane, err := goalrevision.Acquire(request.ControlRoot, revisionLockCoordinate(request.LaneID), 1, "proof-admission")
+	if err != nil {
+		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, err
+	}
+	defer heldLane.Release()
 	heldProof, err := proofrun.AcquireMutation(request.ControlRoot)
 	if err != nil {
 		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, err
@@ -1424,6 +1438,40 @@ func admitLaneProofLaunch(request proofLaunchAdmission, caller lease.ClassifyRes
 	}
 	attempt, decision, err := proofrun.ReserveLocked(reservation)
 	return attempt, decision, false, err
+}
+
+// proveLaneOwnerCaller proves the caller descends from the lane's owner: the
+// process the lane checkout's lease holder recorded under the landing
+// owner's lineage, matched by its exact identity (pid, start time, boot) as
+// landing restart matches it. A seat whose checkout happens to be the lane
+// is not its owner (U11b).
+func proveLaneOwnerCaller(controlRoot string, callerPID int64) error {
+	holder, err := lease.CurrentHolder(controlRoot)
+	if err != nil {
+		return err
+	}
+	if holder.OwnerLineage != landingOwnerLineage {
+		return fmt.Errorf("the lane checkout is held by lineage %s, not its landing owner", holder.OwnerLineage)
+	}
+	for _, announcement := range lease.AnnouncementsFor(controlRoot, holder.Pid) {
+		if announcement.MainId != holder.MainId {
+			continue
+		}
+		return proofrun.AuthenticateAncestor(callerPID, proofrun.ProcessIdentity{Pid: announcement.Pid, PidStartedAt: announcement.PidStartedAt,
+			PidStartTicks: announcement.PidStartTicks, BootID: announcement.BootID})
+	}
+	return fmt.Errorf("the landing owner pid %d has no announcement to prove its identity", holder.Pid)
+}
+
+// revisionLockCoordinate is the revision lock a proof's owner serializes
+// on: its goal's, or for a proof charged to the lane the lane's own lock,
+// kept beside the goals' in the lane's control root and keyed by the lane
+// id (U11b).
+func revisionLockCoordinate(owner string) string {
+	if landinglane.IsAccount(owner) {
+		return "lane-" + strings.TrimPrefix(owner, "lane:")
+	}
+	return owner
 }
 
 func proofAdmissionCandidateTree(request proofLaunchAdmission) string {
@@ -1598,7 +1646,7 @@ func tryTerminalLocks(root, goalID string, revision uint64, ref identity.Ref) (*
 	if err != nil {
 		return nil, err
 	}
-	heldGoal, err := terminalLocks.goalRevision(root, goalID, revision, "proof-finalize")
+	heldGoal, err := terminalLocks.goalRevision(root, revisionLockCoordinate(goalID), revision, "proof-finalize")
 	if err != nil {
 		_ = fence.Release()
 		return nil, err
@@ -1706,14 +1754,18 @@ func commitProofTerminalWithReasonAndReads(completion proofrun.CompletionContext
 	if err != nil {
 		return fmt.Errorf("proof terminal commit clock: %w", err)
 	}
-	var binding dispatchcore.GoalBinding
-	if reads == nil {
-		binding, err = dispatchcore.ResolveGoalBinding(completion.ControlRoot, attempt.GoalID, finalizedAt)
-	} else {
-		binding, err = dispatchcore.ResolveGoalBindingWithReads(completion.ControlRoot, attempt.GoalID, finalizedAt, *reads)
-	}
-	if err != nil || binding.Revision != attempt.GoalRevision || binding.Fence != nil {
-		return fmt.Errorf("proof terminal commit lost goal-revision authority")
+	// A proof charged to the lane has no goal binding: its authority is the
+	// lane's own lock, held above (U11b).
+	if !landinglane.IsAccount(attempt.GoalID) {
+		var binding dispatchcore.GoalBinding
+		if reads == nil {
+			binding, err = dispatchcore.ResolveGoalBinding(completion.ControlRoot, attempt.GoalID, finalizedAt)
+		} else {
+			binding, err = dispatchcore.ResolveGoalBindingWithReads(completion.ControlRoot, attempt.GoalID, finalizedAt, *reads)
+		}
+		if err != nil || binding.Revision != attempt.GoalRevision || binding.Fence != nil {
+			return fmt.Errorf("proof terminal commit lost goal-revision authority")
+		}
 	}
 	result := proofrun.TerminalFailed
 	if attempt.CancellationIntent != "" {

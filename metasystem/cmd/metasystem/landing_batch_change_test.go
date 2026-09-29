@@ -375,3 +375,53 @@ func TestBatchChangeOnlyProofIsChargedToTheLane(t *testing.T) {
 		}
 	}
 }
+
+// TestLaneHoldIsVisibleOnTheBatch (U11b N-8, F-3): a lane that cannot be
+// named at the seal's forecast, or a pinned engine without --lane at the
+// plan, holds the batch with its plain reason on the record, and the lane
+// view (landing status, /api/board) says it.
+func TestLaneHoldIsVisibleOnTheBatch(t *testing.T) {
+	t.Parallel()
+	for _, step := range []string{"seal", "plan"} {
+		root := t.TempDir()
+		const id = "01j5x00000000000000000ba84"
+		change := laneChangeUnit()
+		record := batch.Record{Schema: 1, BatchID: id, State: batch.StateOpen, BaseTree: "base-tree", TipTree: "tip-tree",
+			PrefixTrees: []string{"tip-tree"}, Units: []batch.Unit{change}}
+		store := batch.NewStore(root, nil)
+		if err := store.Create(record); err != nil {
+			t.Fatal(err)
+		}
+		reason := "LANE_ACCOUNT_UNRESOLVED: no landing lane is registered on this host"
+		dependencies := batchProofDependencies{
+			base:        func(string) (string, error) { return "base-tree", nil },
+			rearm:       func(string, string) error { return nil },
+			attempts:    func(string) ([]proofrun.Attempt, error) { return nil, nil },
+			laneAccount: func(string) (string, error) { return "lane:0123456789ab", nil },
+			seal: func(root, id, actor, base string, at time.Time) error {
+				if step == "seal" {
+					return errors.New(reason)
+				}
+				return store.Update(id, func(current *batch.Record) error {
+					current.Seal = map[string]batch.Claim{change.GoalID: {}}
+					current.Transition(batch.StateSealed, at, "seal", actor, "")
+					return nil
+				})
+			},
+			plan: func(string, string, string, testpolicy.Mode) (testpolicy.Plan, error) {
+				return testpolicy.Plan{}, errors.New("LANE_ENGINE_TOO_OLD: the pinned policy engine predates --lane; run: metasystem landing restart")
+			},
+			launch: func(batchProofLaunch) (proofrun.TestResult, error) { t.Fatal("a held batch launched"); return proofrun.TestResult{}, nil },
+		}
+		_ = executeBatchProof(root, id, "landing+owner", "window", "token", proofrun.LoadSample{}, time.Unix(10, 0), dependencies)
+		after, err := store.Load(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := map[string]string{"seal": "LANE_ACCOUNT_UNRESOLVED", "plan": "metasystem landing restart"}[step]
+		view := lane.BatchViewOf(after)
+		if !strings.Contains(view.Reason, want) || !strings.HasPrefix(view.Reason, "holds: ") {
+			t.Fatalf("%s hold: state=%s reason=%q history=%+v", step, after.State, view.Reason, after.History)
+		}
+	}
+}

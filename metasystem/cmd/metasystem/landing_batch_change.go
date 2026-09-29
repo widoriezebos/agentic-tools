@@ -3,11 +3,13 @@ package main
 import (
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
@@ -177,4 +179,24 @@ func laneSpend(root, account string) (lane.Spend, error) {
 		}
 	}
 	return spend, nil
+}
+
+// laneRegistrar names who registered the host lane and whether that is a
+// person: a name with a complete goal.human.<name> identity in the lane
+// checkout's metasystem.conf, as a goal's approver is bound (U11b).
+func laneRegistrar(controlRoot string) (string, bool) {
+	home, err := board.Home()
+	if err != nil {
+		return "", false
+	}
+	record, ok, err := lane.Read(home)
+	if err != nil || !ok {
+		return "", false
+	}
+	name := strings.TrimSpace(record.RegisteredBy)
+	if name == "" || strings.ContainsAny(name, " /+") {
+		return name, false
+	}
+	value, _, err := config.Get(config.GetParams{Key: "goal.human." + strings.ToLower(name), ConfPath: filepath.Join(controlRoot, "metasystem.conf")})
+	return name, err == nil && strings.Contains(value, "@")
 }

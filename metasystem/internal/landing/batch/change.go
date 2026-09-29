@@ -276,3 +276,25 @@ type HeldCommitRefusal struct {
 
 func (refusal *HeldCommitRefusal) Error() string { return refusal.Cause.Error() }
 func (refusal *HeldCommitRefusal) Unwrap() error { return refusal.Cause }
+
+// RecordHold writes why a batch cannot proceed now (a lane that cannot be
+// named, an engine that cannot plan on the lane) where every reader shows
+// it: one "hold" history entry per distinct reason, the batch's state kept.
+func RecordHold(store Store, id, actor, reason string, at time.Time) error {
+	return store.Update(id, func(record *Record) error {
+		if last := lastHistory(*record); last.Verb == "hold" && last.Detail == reason {
+			return nil
+		}
+		record.Transition(record.State, at, "hold", actor, reason)
+		return nil
+	})
+}
+
+// HoldReason is the plain reason a batch holds, when its last word is a hold
+// or a refused proof admission; empty otherwise.
+func HoldReason(record Record) string {
+	if last := lastHistory(record); last.Verb == "hold" || last.Verb == "prove-refused" {
+		return last.Detail
+	}
+	return ""
+}

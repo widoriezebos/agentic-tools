@@ -341,3 +341,65 @@ func TestChangeOnlyBatchLands(t *testing.T) {
 		t.Fatalf("landed=%+v", landed)
 	}
 }
+
+// TestChangeOnlyFlakeIsOwnedByTheLaneRegistrar (U11b F-2, the coordinator's
+// ruling): a known flake found on main while a batch of changes alone is
+// diagnosed is owned by the person who registered the lane; when the
+// registrar is not a person the flake is recorded pending, never promoted,
+// and the batch proceeds on the classification instead of looping.
+func TestChangeOnlyFlakeIsOwnedByTheLaneRegistrar(t *testing.T) {
+	t.Parallel()
+	for _, person := range []bool{true, false} {
+		red := knownRed()
+		store, ledger := flakeBedWith(t, func(record *Record) {
+			change := changeMemberUnit()
+			change.State = UnitJoined
+			change.Closure = &adapter.Closure{Tree: "tip-tree", Changed: []string{"unrelated-notes"}}
+			record.Units, record.PrefixTrees = []Unit{change}, []string{"tip-tree"}
+		}, red)
+		script := &flakeScript{base: []DiagnosticResult{{AttemptID: "base-red", Groups: []RedGroup{red}}, {AttemptID: "base-green",
+			Evidence: []GroupEvidence{{ID: red.ID, Status: "passed", LogPath: "logs/base-green.log"}}}}, tip: passedAt("identity-"+red.ID, red)}
+		seams := flakeSeams(script, ledger, map[string]string{red.ID: "class-attempt", "fake-other": "tip-attempt"})
+		seams.LaneOwner = func() (string, bool) {
+			if person {
+				return "Wido", true
+			}
+			return "landing owner of /lane", false
+		}
+		if err := DiagnoseRed(store, testBatchID, "owner", []RedGroup{red}, "", flakeNow, seams); err != nil {
+			t.Fatalf("person=%v: %v", person, err)
+		}
+		record := load(t, store)
+		if person {
+			if len(ledger.promotions) != 1 || ledger.promotions[0].Owner != "Wido" || ledger.promotions[0].OwnerMachine != "m1e" || record.State != StateLanding {
+				t.Fatalf("promotions=%+v state=%s", ledger.promotions, record.State)
+			}
+			continue
+		}
+		if len(ledger.promotions) != 0 || len(ledger.pendings) == 0 || record.State == StateDiagnosing {
+			t.Fatalf("not a person: promotions=%+v pendings=%d state=%s", ledger.promotions, len(ledger.pendings), record.State)
+		}
+	}
+}
+
+// TestHeldRefusalEjectsTheGoalMemberItNames (U11b N-9): a held refusal of a
+// goal member's commit at the push ejects that member with the refusal as
+// its reason and reopens the rest, instead of retrying the step every tick.
+func TestHeldRefusalEjectsTheGoalMemberItNames(t *testing.T) {
+	t.Parallel()
+	bed := newLandingBed(t)
+	store := NewStore(bed.root, nil)
+	strictReassembly(t, &store, expectedAssembly(bed.base, []string{"goal-a"}, []string{"chain-a"}, []string{testCommit(103)}))
+	must(t, store.Create(bed.record))
+	var events []string
+	seams := greenLandSeams(&events)
+	seams.Held = func(string, string) error {
+		return &HeldCommitRefusal{Commit: "commit-goal-b", Cause: errors.New("held refused: goal-item-not-held: commit-goal-b: goal goal-b is released")}
+	}
+	must(t, LandSeries(store, testBatchID, "owner", time.Unix(4, 0), seams))
+	record := load(t, store)
+	if record.State != StateOpen || record.Units[0].State != UnitJoined || record.Units[1].State != UnitReturnPending ||
+		!strings.Contains(record.Units[1].Failure, "held refused") || !strings.Contains(record.Units[1].Failure, "goal-item-not-held") {
+		t.Fatalf("record=%+v", record)
+	}
+}

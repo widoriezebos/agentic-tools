@@ -65,6 +65,9 @@ type RedSeams struct {
 	Sources func(Record) (map[string]string, error)
 	// Location is where a known flake's allowance is counted and shown.
 	Location *time.Location
+	// LaneOwner names who registered the lane and whether that is a person:
+	// the owner of a flake found in a batch of changes alone (U11b).
+	LaneOwner func() (name string, person bool)
 }
 
 // DiagnoseRed decides a red tip proof (D1): the failing groups run on the
@@ -339,8 +342,25 @@ func (d redDecision) recordMainEvidence(red, green DiagnosticResult) error {
 		if err != nil {
 			return err
 		}
+		approver := owner.Approver
+		if owner.IsChange() {
+			// A batch of changes alone: the flake is the lane's registrar's,
+			// when that is a person; else it stays pending and the batch goes
+			// on by its classification, never looping on a refused promotion.
+			name, person := "", false
+			if d.seams.LaneOwner != nil {
+				name, person = d.seams.LaneOwner()
+			}
+			if !person {
+				if _, err := ledger.RecordPending(opid, d.sighting(red, green, byOwner[owner.GoalID], "")); err != nil {
+					return err
+				}
+				continue
+			}
+			approver = name
+		}
 		if _, err := ledger.Promote(opid, Promotion{FlakeSighting: d.sighting(red, green, byOwner[owner.GoalID], ""),
-			Owner: owner.Approver, OwnerMachine: owner.Claim.Machine, Location: d.seams.Location}); err != nil {
+			Owner: approver, OwnerMachine: owner.Claim.Machine, Location: d.seams.Location}); err != nil {
 			return err
 		}
 	}

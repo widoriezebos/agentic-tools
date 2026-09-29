@@ -533,14 +533,14 @@ func LandSeries(store Store, id, actor string, at time.Time, seams LandSeams) er
 			return fmt.Errorf("BATCH_LAND_HELD_REFUSED: held helper is absent")
 		}
 		if heldErr := seams.Held(record.BaseTree, tip); heldErr != nil {
-			// A refusal of a change's replayed commit ejects that change and
-			// reopens the rest; the refused step is never tried again as it
-			// was (U11b).
+			// A refusal naming one member's commit ejects that member (a
+			// change or a goal) and reopens the rest; the refused step is
+			// never tried again as it was (U11b).
 			var refused *HeldCommitRefusal
-			if errors.As(heldErr, &refused) {
+			if errors.As(heldErr, &refused) && refused.Commit != "" {
 				for _, unit := range units {
-					if unit.IsChange() && refused.Commit != "" && progress.Commits[unit.GoalID] == refused.Commit {
-						return ejectHeldChange(store, id, actor, at, record.BaseTree, unit, heldErr, seams.Reset)
+					if landedCommitOf(progress, unit, refused.Commit) {
+						return ejectHeldMember(store, id, actor, at, record.BaseTree, unit, heldErr, seams.Reset)
 					}
 				}
 			}
@@ -711,15 +711,32 @@ func ejectRefusedMember(store Store, id, actor string, at time.Time, base string
 	return fmt.Errorf("%w; goal %s was ejected; fix and rejoin it, then re-prove before the next landing", refusal, unit.GoalID)
 }
 
-// ejectHeldChange returns a change held refused at the push, with the
+// landedCommitOf reports whether commit is one the landing made for unit.
+func landedCommitOf(progress LandingProgress, unit Unit, commit string) bool {
+	if progress.Commits[unit.GoalID] == commit {
+		return true
+	}
+	for _, build := range unit.Builds {
+		if progress.BuildCommits[build.Commit] == commit {
+			return true
+		}
+	}
+	return false
+}
+
+// ejectHeldMember returns a member held refused at the push, with the
 // refusal as its reason, and reassembles the survivors on the same base.
-func ejectHeldChange(store Store, id, actor string, at time.Time, base string, unit Unit, cause error, reset func(string) error) error {
+func ejectHeldMember(store Store, id, actor string, at time.Time, base string, unit Unit, cause error, reset func(string) error) error {
 	if reset != nil {
 		if err := reset(base); err != nil {
 			return fmt.Errorf("BATCH_LAND_HELD_REFUSED: change %s: reset: %w", unit.GoalID, err)
 		}
 	}
-	reason := "EJECTED from landing batch " + id + ": held refused change " + unit.GoalID + " at the push: " + cause.Error()
+	kind := "goal"
+	if unit.IsChange() {
+		kind = "change"
+	}
+	reason := "EJECTED from landing batch " + id + ": held refused " + kind + " " + unit.GoalID + " at the push: " + cause.Error()
 	return ReassembleSurvivorsWithReturns(store, id, actor, at, []ReturnDecision{{GoalID: unit.GoalID, Outcome: UnitEjected, Reason: reason}})
 }
 

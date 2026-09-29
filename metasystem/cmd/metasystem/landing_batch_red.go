@@ -161,6 +161,7 @@ func executeBatchDiagnosisWithConfig(root, id, actor string, at time.Time, looku
 		UpdateNext: func(goalID, status string) error {
 			return batchEditNext(controlRoot, goalID, status)
 		},
+		LaneOwner: func() (string, bool) { return laneRegistrar(controlRoot) },
 	})
 }
 

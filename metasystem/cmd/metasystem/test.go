@@ -1023,7 +1023,10 @@ func trustedPolicyEngine(installation, policyBaseCommit string, firstTransition 
 
 func planWithTrustedPolicyEngine(engine string, request testingSelectionRequest, installation, candidateTree string) (testingPlanOutput, error) {
 	args := []string{"test", "plan", "--root", installation, "--tree", candidateTree, "--mode", string(request.Mode), "--purpose", string(request.Purpose), "--json", "--policy-child"}
-	if request.GoalID != "" {
+	if request.LaneID != "" {
+		// A run charged to the lane is planned on the lane (U11b).
+		args = append(append([]string{"internal"}, args...), "--lane", request.LaneID)
+	} else if request.GoalID != "" {
 		args = append(args, "--goal", request.GoalID)
 	}
 	if len(request.Groups) > 0 {
@@ -1042,6 +1045,9 @@ func planWithTrustedPolicyEngine(engine string, request testingSelectionRequest,
 		command.Env = append(command.Env, policyProbeWorkerEnvironment+"=1")
 	}
 	data, err := command.CombinedOutput()
+	if err != nil && request.LaneID != "" && strings.Contains(string(data), "flag provided but not defined: -lane") {
+		return testingPlanOutput{}, fmt.Errorf("LANE_ENGINE_TOO_OLD: the pinned policy engine %s predates charging a batch of changes to the landing lane (it has no --lane), so the batch holds; once this checkout's engine has moved to one that has it, run: metasystem landing restart", engine)
+	}
 	if err != nil {
 		return testingPlanOutput{}, engineRefusal("child-failed", []enginecause.Fact{enginecause.Path("engine", engine)}, fmt.Sprintf("retained trusted-base engine could not decide version-1 policy: %v: %s", err, strings.TrimSpace(string(data))))
 	}

@@ -208,6 +208,12 @@ func batchSourcesFromVerification(result proofrun.TestResult) map[string]string 
 	return sources
 }
 
+// laneHold reports whether an error is one a batch charged to the lane holds
+// on with its plain reason, rather than a failure (U11b).
+func laneHold(err error) bool {
+	return err != nil && (strings.Contains(err.Error(), "LANE_ACCOUNT_UNRESOLVED") || strings.Contains(err.Error(), "LANE_ENGINE_TOO_OLD"))
+}
+
 func proofPlanCovers(plan testpolicy.Plan, union []string) bool {
 	selected := slices.Clone(plan.SelectedGroups)
 	slices.Sort(selected)
@@ -247,6 +253,9 @@ func executeBatchProof(root, id, actor, window, token string, sample proofrun.Lo
 			return fmt.Errorf("BATCH_PROOF_STATE_REFUSED: proof seal seam is absent")
 		}
 		if err := dependencies.seal(root, id, actor, baseTree, at); err != nil {
+			if laneHold(err) {
+				return batch.RecordHold(store, id, actor, err.Error(), at)
+			}
 			return err
 		}
 		record, err = store.Load(id)
@@ -333,6 +342,9 @@ func executeBatchProof(root, id, actor, window, token string, sample proofrun.Lo
 	}
 	plan, err := planBatchMemberUnion(root, record.TipTree, joined, chargeID, testpolicy.ModeAuto, dependencies.plan)
 	if err != nil {
+		if laneHold(err) {
+			return batch.RecordHold(store, id, actor, err.Error(), at)
+		}
 		return err
 	}
 	if plan.RequiredMode == testpolicy.ModeDeep || !proofPlanCovers(plan, record.SelectedGroups) {
