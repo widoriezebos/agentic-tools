@@ -247,7 +247,13 @@ carries `--launch-record` and no word for a session-enrolled record
 pair beside a session-enrolled record refused; a fresh launch with
 neither runs plain arm; a legacy record's resume with neither refuses by
 name at step 7 and spawns no arm (S72-02; `:241` keeps its shape with
-the new remedy). `ui_launch`: **the starter refuses a nil session and a
+the new remedy). A named record that carries a session enrollment
+is authoritative for machine and destination on a fresh invocation as on
+a resume (`seat_launch.go:88`, `:209`; `sequence.go:167`): conflicting
+`--machine`/`--destination` are refused before any write or step, and a
+fixture with a genuine session record for A and a fresh invocation asking
+for B asserts the refusal, an unchanged record and no enrollment
+(S72-01, round 2). `ui_launch`: **the starter refuses a nil session and a
 proof not `SessionValidFor` the state root**, beside the route's
 `TestLaunchingRefusesEveryHandButASignedInOne` and
 `TestALiveSessionWithNoProofLaunchesNothing` (`launch_test.go:58`, `:171`),
@@ -304,3 +310,14 @@ Astra also verified, and the design leans on, that the route already
 requires a live, root-bound session; that D3 names every reader the new
 kind needs; and that the detached `ui serve` → `seat launch` chain is
 neither a runtime signature nor a steward-family invocation.
+
+## Dispositions (Astra round 2, the failsafe, 2026-09-29)
+
+Read of revision 2 at `c51695f49`, verbatim in `g1-s72-astra-critique.md`.
+S72-02 and S72-03 closed. The loop closes here on one fixture obligation;
+no third round.
+
+| id | finding | fold |
+|---|---|---|
+| S72-01 (r2) | a fresh `seat launch` naming an existing browser record with a new machine and destination rewrites the record's destination (`sequence.go:167`) before D2 compares it, so a stale record path, not a forgery, enrolls another machine under the old session | folded as a fixture obligation in §8: a session-enrolled record's machine and destination are authoritative on a fresh invocation as on a resume; conflicting flags refused before any write; no token, no ancestry binding |
+| S72-04 (r2) | a CLI pair launch from this checkout shows "temporary enrollment, review due …" on the fleet card (`sequence.go:683`, `LaunchCard.tsx:143`) | not folded: that machine IS temporarily enrolled, and saying so is true; L4 and Wido's ruling are about the browser launch, which never writes those words. Hiding a true enrollment state would be the silent false answer. Reported to Wido as a residual |

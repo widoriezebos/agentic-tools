@@ -72,3 +72,48 @@ Commit reviewed: `7269ad21cf09c6d83bcbe74e5f4460cf3c3cdef0`. Limitations: static
 
 Codex session ID: 01a0ebff-d8a1-7f82-a7b0-7a56bfbd7395
 Resume in Codex: codex resume 01a0ebff-d8a1-7f82-a7b0-7a56bfbd7395
+
+## Round 2 (the failsafe)
+
+Read of revision 2 at `c51695f49`, brief `~/LocalStorage/agentic-tools-evidence/signed-in-launch-20260929/astra-design-brief-r2.md`. Verbatim.
+
+---
+
+Two material findings remain under round 2’s narrowed scope. Both have bounded fixes and can become implementation test obligations; no third critique round is needed.
+
+**S72-01 — High — material: yes — The launch verb can retarget a genuine session record**
+
+**Claim and evidence:** The remaining path does not require fabricated JSON. A named record is loaded even without `--resume` ([seat_launch.go:209](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/cmd/metasystem/seat_launch.go:209)). Only the resume branch takes the destination from that record ([seat_launch.go:88](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/cmd/metasystem/seat_launch.go:88)). For a fresh invocation, `Sequencer.Run` overwrites the record’s machine and destination from command arguments and persists it before running the steps ([sequence.go:167](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/seat/launch/sequence.go:167)).
+
+**Concrete failure:** A steward-owned launch invocation mistakenly retains a previous browser launch’s `--record` path while supplying a new machine and destination. The engine itself rewrites that genuine record’s destination, retaining its proposed session enrollment. D2 then compares the new clone with the already-rewritten destination and accepts the binding. The originating checkout’s steward need not be recognized against the fresh clone: recognition uses the target’s enrollment ([classify.go:513](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/lease/classify.go:513)). With no recognized ancestor or terminal, the caller becomes `UNTRUSTED`, which D2 admits.
+
+This grants a different machine permanent enrollment under the previous human’s session. The caller supplied a stale record path; it did not forge a record. That satisfies the round-two condition for reopening S72-01.
+
+**Change to the design:** Make a loaded session record’s destination authoritative for both named-record entry and resume. Reject conflicting command arguments before any write or launch step. Preserve that binding throughout the sequencer. Add a fixture using a genuine session record for destination A with a fresh invocation requesting B; assert refusal, no record mutation and no enrollment. This requires no token or ancestry-binding mechanism.
+
+**Test 1 — DIFFERENT/WRONG:** WRONG: the current record-loading and rewriting flow defeats D2’s destination invariant.  
+**Test 2 — WORKS/SAFE:** **SAFE fails:** authority for one machine can enroll another.
+
+**S72-04 — Medium — material: yes — Retaining the CLI pair creates new undiscarded records that show review dates**
+
+**Claim and evidence:** The S72-03 fold deliberately retains the temporary enrollment step’s words ([design:150–167](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/designs/user-interface/g1-s72-signed-in-is-enough.md:150)). Those words include the date ([sequence.go:683](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/seat/launch/sequence.go:683)). The fleet reads CLI and browser launches from the same record directory ([ui_fleet.go:79](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/cmd/metasystem/ui_fleet.go:79)); the full card renders `Step.Words` verbatim ([LaunchCard.tsx:143](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/ui/web/_app/src/fleet/LaunchCard.tsx:143)).
+
+**Concrete failure:** Run the retained CLI pair path from the UI checkout. If enrollment succeeds and supervision subsequently fails, its new, undiscarded record appears on the fleet page with “temporary enrollment, review due …”. The same text can appear while that launch is running. Discarding the sole historical record does not prevent this case.
+
+This meets the brief’s exception to S72-04’s deferral: an undiscarded record would display the words.
+
+**Change to the design:** Keep temporary provenance in the CLI output and durable record, but suppress the successful temporary enrollment narration in the fleet card. Add a fixture for a new pair-based launch with successful enrollment and failed supervision. Do not substitute a claim of session enrollment.
+
+**Test 1 — DIFFERENT/WRONG:** DIFFERENT: D5 must cover step narration as well as the dedicated review line.  
+**Test 2 — WORKS/SAFE:** **WORKS fails:** the fleet page still displays a review date.
+
+**Deferred and non-material:** Deliberate same-user record forgery remains outside the revised threat model. Verdict age, revocation, existing-machine migration and filtering discarded historical records remain deferred.
+
+**What I verified holds:** S72-02 prevents the new flag from reaching a legacy clone by keeping legacy records unstamped and retaining a named refusal when enrollment is needed. S72-03 restores the CLI flags, validation and forwarding path, with explicit exclusion beside session enrollment. The existing enrollment-skip behavior remains available. D3’s identity-reader and rebuild requirements remain intact. All four round-one IDs have explicit dispositions.
+
+Proposed receipt, unwritten: `g1-s72 design critique round 2 at c51695f49; S72-02/03 closed; S72-01/04 remain as destination-binding and fleet-rendering fixture obligations.`
+
+Reviewed commit: `c51695f491b3d2b664e9cc82b0a60de0b3fe1287`. Evidence was read; proposed failures were inferred, not executed. No files changed, tests ran or subagents launched. Prohibited configuration and artifact contents were not read; the historical-record inventory remains the design author’s stated evidence.
+
+**VERDICT: 2 material findings (fail test 2): S72-01, S72-04.**
+
