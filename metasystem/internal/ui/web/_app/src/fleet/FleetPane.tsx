@@ -60,7 +60,7 @@ import { readFleetOpen, writeFleetOpen } from "../storage";
 import { captureOfFleet } from "./capture";
 import { LaunchCard } from "./LaunchCard";
 import { LaunchSheet } from "./LaunchSheet";
-import { cardFor } from "./launching";
+import { visibleCard } from "./launching";
 import { Trouble } from "../shell/Trouble";
 
 /**
@@ -324,17 +324,18 @@ function TheFleet({
   // The launch this block shows, if any: the newest one still worth a card.
   // It is state rather than a derived value because two things change it —
   // the act's own answer, which arrives before the next read does, and a
-  // human dismissing a machine that has joined.
+  // human putting a card away.
   const [started, setStarted] = useState<Launch | null>(null);
   const [opening, setOpening] = useState(false);
-  const [dismissed, setDismissed] = useState("");
+  // The launches whose discard the server has answered. The record on disk
+  // carries the mark, so the next reading says the same; this only keeps the
+  // card from standing in the moment before that reading arrives.
+  const [hidden, setHidden] = useState<ReadonlySet<string>>(() => new Set());
   // The act's own answer is what the card is drawn from until the server's
   // reading catches up with it — and not one moment longer. A payload that
   // carries this launch replaces it, so the card follows the record the verb
   // is rewriting rather than the one the act answered with minutes ago.
-  const fromServer = page.launches.find((one) => one.launch === started?.launch) ?? null;
-  const shown = fromServer ?? started ?? cardFor(page.launches);
-  const card = shown === null || shown.launch === dismissed ? null : shown;
+  const card = visibleCard(page.launches, started, hidden);
   const joined = card !== null && page.machines.some((machine) => machine.machine === card.machine);
 
   return (
@@ -363,7 +364,6 @@ function TheFleet({
           }}
           onStarted={(record) => {
             setOpening(false);
-            setDismissed("");
             setStarted(record);
           }}
         />
@@ -374,8 +374,8 @@ function TheFleet({
           joined={joined}
           now={now}
           onStarted={setStarted}
-          onDismiss={() => {
-            setDismissed(card.launch);
+          onDiscarded={(discarded) => {
+            setHidden((held) => new Set(held).add(discarded.launch));
             setStarted(null);
           }}
         />

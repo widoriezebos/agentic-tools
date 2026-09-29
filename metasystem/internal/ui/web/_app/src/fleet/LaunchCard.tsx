@@ -1,15 +1,15 @@
 import { useRef, useState } from "react";
 
-import { launchMachine, ResourceError, type Launch, type LaunchStep } from "./api";
+import { discardLaunch, launchMachine, ResourceError, type Launch, type LaunchStep } from "./api";
 import {
   clientToday,
   earliestReviewBy,
-  failedRemedy,
   failedStep,
   foldedLine,
   healthCommand,
   IDLE_WARNING,
   launchHeadline,
+  leftoverLine,
   proposedReviewBy,
   RETRY_ASKS_AGAIN,
   reviewByRefusal,
@@ -19,7 +19,7 @@ import {
 } from "./launching";
 import { Button, Hint } from "../shell/controls";
 import { useSession } from "../shell/identity";
-import { failureMessage } from "../shell/workspace";
+import { failureCode, failureMessage } from "../shell/workspace";
 import { Trouble } from "../shell/Trouble";
 
 /**
@@ -34,13 +34,18 @@ import { Trouble } from "../shell/Trouble";
  * below and a card repeating it is a card a reader learns to skip. A launch
  * that armed is its own state and not a failure: the machine is enrolled and
  * running, and only the confirmation is missing.
+ *
+ * Putting a card away is one act in both shapes — Dismiss on a joined
+ * machine, Discard launch on a stopped one — and it is the server's: the
+ * record is marked and kept, nothing on disk is deleted, and so nothing asks
+ * for confirmation.
  */
 export function LaunchCard({
   record,
   joined,
   now,
   onStarted,
-  onDismiss,
+  onDiscarded,
 }: {
   record: Launch;
   /** Whether the machine's own row is in the table below. */
@@ -48,28 +53,64 @@ export function LaunchCard({
   now: Date;
   /** The record a retry answered with, which replaces this one. */
   onStarted: (started: Launch) => void;
-  onDismiss: () => void;
+  /** The record a discard answered with: the card goes. */
+  onDiscarded: (discarded: Launch) => void;
 }) {
   if (joined && record.outcome !== "failed") {
-    return <Folded record={record} now={now} onDismiss={onDismiss} />;
+    return <Folded record={record} now={now} onDiscarded={onDiscarded} />;
   }
-  return <Full record={record} onStarted={onStarted} />;
+  return <Full record={record} onStarted={onStarted} onDiscarded={onDiscarded} />;
+}
+
+/**
+ * The discard act, for either shape of the card. The button is never
+ * disabled: the act is idempotent, so a second press is only the same answer.
+ */
+function useDiscard(record: Launch, onDiscarded: (discarded: Launch) => void) {
+  const [refusal, setRefusal] = useState({ text: "", code: "" });
+  const discard = () => {
+    setRefusal({ text: "", code: "" });
+    discardLaunch(record.launch)
+      .then(onDiscarded)
+      .catch((error: unknown) => {
+        setRefusal({ text: failureMessage(error), code: failureCode(error) });
+      });
+  };
+  return { discard, refusal };
 }
 
 /** The one line a joined machine folds to, with the two commands beside it. */
-function Folded({ record, now, onDismiss }: { record: Launch; now: Date; onDismiss: () => void }) {
+function Folded({
+  record,
+  now,
+  onDiscarded,
+}: {
+  record: Launch;
+  now: Date;
+  onDiscarded: (discarded: Launch) => void;
+}) {
+  const { discard, refusal } = useDiscard(record, onDiscarded);
   return (
     <section className="ms-launch-card ms-launch-card--folded">
       <p className="ms-launch-folded">{foldedLine(record, now)}</p>
       <Commands record={record} />
+      {refusal.text !== "" && <Trouble text={refusal.text} code={refusal.code} variant="small" />}
       <div className="ms-launch-actions">
-        <Button onClick={onDismiss}>Dismiss</Button>
+        <Button onClick={discard}>Dismiss</Button>
       </div>
     </section>
   );
 }
 
-function Full({ record, onStarted }: { record: Launch; onStarted: (started: Launch) => void }) {
+function Full({
+  record,
+  onStarted,
+  onDiscarded,
+}: {
+  record: Launch;
+  onStarted: (started: Launch) => void;
+  onDiscarded: (discarded: Launch) => void;
+}) {
   const stopped = failedStep(record);
   return (
     <section className={`ms-launch-card ms-launch-card--${record.outcome}`}>
@@ -92,7 +133,7 @@ function Full({ record, onStarted }: { record: Launch; onStarted: (started: Laun
         <p className="ms-launch-hint">Temporary enrollment, review due {reviewDay(record.reviewBy)}.</p>
       )}
       {record.outcome !== "failed" && <Commands record={record} />}
-      {stopped !== null && <Retry record={record} onStarted={onStarted} />}
+      {stopped !== null && <Retry record={record} onStarted={onStarted} onDiscarded={onDiscarded} />}
     </section>
   );
 }
@@ -133,14 +174,30 @@ function Commands({ record }: { record: Launch }) {
  * authorization out of a file this page can read. Everything else the resume
  * verifies for itself: each done step's postcondition, and what this launch
  * created.
+ *
+ * Beside it, quietly, Discard launch: for the human who will not retry. It
+ * puts the card away and deletes nothing, which is why the clone's own line
+ * above it says what is left on disk.
  */
-function Retry({ record, onStarted }: { record: Launch; onStarted: (started: Launch) => void }) {
+function Retry({
+  record,
+  onStarted,
+  onDiscarded,
+}: {
+  record: Launch;
+  onStarted: (started: Launch) => void;
+  onDiscarded: (discarded: Launch) => void;
+}) {
   const now = useRef(new Date()).current;
   const [word, setWord] = useState("");
   const [reviewBy, setReviewBy] = useState(() => (record.reviewBy === "" ? proposedReviewBy(now) : record.reviewBy));
   const [sending, setSending] = useState(false);
   const [refusal, setRefusal] = useState("");
+  // The code the retry was refused under, as the sheet carries its own.
+  const [refusalCode, setRefusalCode] = useState("");
   const { askToSignIn } = useSession();
+  const discarding = useDiscard(record, onDiscarded);
+  const leftover = leftoverLine(record);
   const retried = useRef(false);
   const dateRefused = reviewByRefusal(reviewBy, now);
   const blocked = word.trim() === "" || reviewBy.trim() === "" || dateRefused !== "";
@@ -148,6 +205,7 @@ function Retry({ record, onStarted }: { record: Launch; onStarted: (started: Lau
   const send = () => {
     setSending(true);
     setRefusal("");
+    setRefusalCode("");
     launchMachine({ resume: record.launch, word, reviewBy, today: clientToday(new Date()) })
       .then((started) => {
         setSending(false);
@@ -161,12 +219,13 @@ function Retry({ record, onStarted }: { record: Launch; onStarted: (started: Lau
           return;
         }
         setRefusal(failureMessage(error));
+        setRefusalCode(failureCode(error));
       });
   };
 
   return (
     <div className="ms-launch-retry">
-      <p className="ms-launch-hint">{failedRemedy(record)}</p>
+      {leftover !== "" && <p className="ms-launch-hint">{leftover}</p>}
       <div className="ms-launch-field">
         <label htmlFor="ms-retry-word">Your authorization, again</label>
         <textarea
@@ -194,11 +253,15 @@ function Retry({ record, onStarted }: { record: Launch; onStarted: (started: Lau
         />
         {dateRefused !== "" && <Trouble text={dateRefused} variant="small" />}
       </div>
-      {refusal !== "" && <Trouble text={refusal} variant="small" />}
+      {refusal !== "" && <Trouble text={refusal} code={refusalCode} variant="small" />}
+      {discarding.refusal.text !== "" && (
+        <Trouble text={discarding.refusal.text} code={discarding.refusal.code} variant="small" />
+      )}
       <div className="ms-launch-actions">
         <Button primary disabled={blocked || sending} onClick={send}>
           Retry
         </Button>
+        <Button onClick={discarding.discard}>Discard launch</Button>
       </div>
     </div>
   );

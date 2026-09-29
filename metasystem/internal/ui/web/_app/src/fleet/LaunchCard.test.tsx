@@ -41,6 +41,8 @@ function launch(over: Partial<Launch> = {}): Launch {
       { step: "engine", outcome: "pending", at: "2026-09-25T10:57:41Z", words: "" },
     ],
     orientation: "",
+    discardedAt: null,
+    destinationPresent: false,
     next: {
       session: "cd /w/agentic-tools-m1f && claude",
       stop: "metasystem system stop --repo /w/agentic-tools-m1f/metasystem",
@@ -59,7 +61,7 @@ function rendered(record: Launch, joined = false): string {
         onStarted={() => {
           // nothing: this render never acts
         }}
-        onDismiss={() => {
+        onDiscarded={() => {
           // nothing: this render never acts
         }}
       />
@@ -110,10 +112,30 @@ describe("a launch that stopped", () => {
     expect(markup).toContain("The record never held your authorization");
   });
 
-  it("removes nothing, and says what the directory is", () => {
-    const markup = rendered(stopped);
+  it("removes nothing, and names the clone while it is still on disk", () => {
+    const markup = rendered({ ...stopped, destinationPresent: true });
     expect(markup).not.toContain(">Remove<");
-    expect(markup).toContain("is a directory you delete");
+    expect(markup).toContain("The clone at /w/agentic-tools-m1f stays on disk; delete it yourself.");
+    // No verb is named that this engine does not have.
+    expect(markup).not.toContain("machine remove");
+    expect(markup).not.toContain("is a directory you delete");
+  });
+
+  it("says nothing about a clone that is gone", () => {
+    const markup = rendered({ ...stopped, destinationPresent: false });
+    expect(markup).not.toContain("stays on disk");
+    expect(markup).not.toContain("is a directory you delete");
+  });
+
+  it("offers Discard launch beside Retry, always enabled", () => {
+    const markup = rendered(stopped);
+    const discard = /<button[^>]*>Discard launch<\/button>/u.exec(markup);
+    expect(discard).not.toBe(null);
+    expect(discard?.[0]).not.toContain("disabled");
+    // Beside Retry: in the same row of actions, after it.
+    const actions = /<div class="ms-launch-actions">(.*?)<\/div>/su.exec(markup)?.[1] ?? "";
+    expect(actions.indexOf("Retry")).toBeGreaterThan(-1);
+    expect(actions.indexOf("Discard launch")).toBeGreaterThan(actions.indexOf("Retry"));
   });
 });
 
@@ -147,5 +169,6 @@ describe("a machine that joined", () => {
     expect(markup).toContain("temporary enrollment, review due");
     // The steps are the table row's business now, not the card's.
     expect(markup).not.toContain("ms-launch-steps");
+    expect(markup).toContain(">Dismiss</button>");
   });
 });
