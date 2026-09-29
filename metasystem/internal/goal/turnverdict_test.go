@@ -1185,7 +1185,7 @@ func TestClaimedSessionReblocksOnceWhenTheSharedQueueChanges(t *testing.T) {
 	if result, err := Open(request, "queued-pin", "Wait in the queue.", OriginMain, "Claim later."); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("open queued goal: %+v %v", result, err)
 	}
-	store := &Store{Root: root, Now: func() time.Time { return request.Now }, Prober: installIdleLiveClaim(t, root, "lin-1"), projectionDeps: projectionDependencies{source: &projectionSource{endpoint: endpoint, machine: "mac-a"}}}
+	store := &Store{Root: root, Now: func() time.Time { return request.Now }, Prober: installIdleLiveClaim(t, root, "lin-1"), projectionDeps: fixtureProjection(&projectionSource{endpoint: endpoint, machine: "mac-a"})}
 	seat := TurnVerdictOptions{SeatActor: request.Actor}
 	first, err := store.TurnVerdict(ScanResult{}, "claimed-queue-session", "", "", seat)
 	if err != nil || !first.ShouldBlock {
@@ -1240,7 +1240,7 @@ func TestClaimedSessionBaselinesAnUnchangedQueueWithoutFalseChange(t *testing.T)
 	if result, err := claimApprovedForTest(t, request, "steady-claim", testBudget()); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim steady goal: %+v %v", result, err)
 	}
-	store := &Store{Root: root, Now: func() time.Time { return request.Now }, Prober: installIdleLiveClaim(t, root, "lin-1"), projectionDeps: projectionDependencies{source: &projectionSource{endpoint: endpoint, machine: "mac-a"}}}
+	store := &Store{Root: root, Now: func() time.Time { return request.Now }, Prober: installIdleLiveClaim(t, root, "lin-1"), projectionDeps: fixtureProjection(&projectionSource{endpoint: endpoint, machine: "mac-a"})}
 	seat := TurnVerdictOptions{SeatActor: request.Actor}
 	first, err := store.TurnVerdict(ScanResult{}, "fresh-steady-session", "", "", seat)
 	if err != nil || !first.ShouldBlock || strings.Contains(first.Display, "shared goal queue changed") {

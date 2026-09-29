@@ -35,7 +35,11 @@ import (
 )
 
 var batchE2EProcessEnvironment sync.Mutex
-var batchE2ESharedEngine = &batchE2EEngine{path: filepath.Join(os.TempDir(), "metasystem-batch-e2e-"+strconv.Itoa(os.Getpid()))}
+
+// batchE2ESharedEngine's path is set by its first user, inside the test
+// namespace's TMPDIR: an initializer runs before TestMain and would name the
+// host temp root.
+var batchE2ESharedEngine = &batchE2EEngine{}
 
 type batchE2EEngine struct {
 	sync.Mutex
@@ -391,6 +395,9 @@ func runBatchLandingLifecycleWithdraw(t *testing.T, harness *batchE2EHarness, en
 func retainBatchE2ESharedEngine(t *testing.T) {
 	t.Helper()
 	batchE2ESharedEngine.Lock()
+	if batchE2ESharedEngine.path == "" {
+		batchE2ESharedEngine.path = filepath.Join(os.TempDir(), "metasystem-batch-e2e-"+strconv.Itoa(os.Getpid()))
+	}
 	batchE2ESharedEngine.users++
 	batchE2ESharedEngine.Unlock()
 	t.Cleanup(func() {

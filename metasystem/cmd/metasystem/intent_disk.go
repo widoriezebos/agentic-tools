@@ -57,15 +57,7 @@ func (o diskOwners) withDefaults() diskOwners {
 		o.now = time.Now
 	}
 	if o.person == nil {
-		o.person = func(root string) (string, error) {
-			if _, err := humanauthority.Prove(root, int64(os.Getppid()), humanauthority.KernelReader{}, time.Now().UTC()); err != nil {
-				return "", err
-			}
-			if enrollment, readErr := humanauthority.ReadEnrollment(root); readErr == nil && enrollment.Human != "" {
-				return enrollment.Human, nil
-			}
-			return "the enrolled person", nil
-		}
+		o.person = provenPerson(humanauthority.KernelReader{}, func() int64 { return int64(os.Getppid()) }, func() time.Time { return time.Now().UTC() })
 	}
 	if o.census == nil {
 		o.census = func() *diskstore.UseCensus {
@@ -95,10 +87,10 @@ func diskIntentCommands() []intentCommand {
 			object: "disk", action: "show", audience: "both", summary: "what MetaSystem keeps on this computer's disk, changing nothing",
 			usage: []string{"metasystem disk show"},
 			details: []string{
-				"Prints the last report of this checkout's pass and of the machine pass: free space per volume, each kind of store, what was released, what is kept or pending and the command that settles each, strays, the machine caches as the last trim pass left them, and the evidence roots of this host. A finding repeated for many paths is one line with its count and three of them.",
+				"Prints the last report of this checkout's pass and of the machine pass: free space per volume, each kind of store, what was released, what is kept or pending and the command that settles each, strays, the machine caches as the last trim pass left them, and the evidence roots of this host. A finding repeated for many paths is one line with its count and three of them; --verbose prints every path on its own line.",
 				"The steward writes both reports every cycle; metasystem disk clean writes them now. This command only reads.",
 			},
-			flags:    []intentFlag{},
+			flags:    []intentFlag{intentVerboseFlag},
 			maxArgs:  0,
 			examples: []string{"metasystem disk show", "metasystem disk show --json"},
 			run:      runIntentDiskShow,
@@ -118,6 +110,7 @@ func diskIntentCommands() []intentCommand {
 				"--go-cache runs only the cache trim.",
 				"--preview changes nothing and writes one plan file whose id it prints. --strays, --release and --discard are a person's acts at the enrolled terminal: --strays removes the engine-named leftovers a preview listed, --release ID removes one registered store whose only obstacle is a use check the machine could not complete, --discard records that a chain's uncaptured work may be dropped.",
 				"Nothing unregistered is ever removed by the pass itself; nothing a live process uses is removed by anyone.",
+				"Output is a short summary: what was removed and the space freed, what was kept grouped by reason with its count and the three largest, and the command that settles it. --verbose prints every item on its own line; --json carries every item either way.",
 			},
 			flags: []intentFlag{
 				{name: "preview", usage: "plan only: change nothing and write the plan file"},
@@ -128,6 +121,7 @@ func diskIntentCommands() []intentCommand {
 				{name: "discard", value: "j2:ID", advanced: true, usage: "a person's act: record that chain ID's uncaptured work may be dropped"},
 				{name: "reason", value: "TEXT", advanced: true, usage: "why the work may be dropped (with --discard)"},
 				{name: "go-cache", usage: "only trim the Go and staticcheck caches to their caps"},
+				intentVerboseFlag,
 			},
 			maxArgs:  0,
 			examples: []string{"metasystem disk clean --preview", "metasystem disk clean", "metasystem disk clean --go-cache", "metasystem disk clean --strays --plan 01K2Z7Q3M8XW1V0P9D4J6S5R2T"},
@@ -165,7 +159,7 @@ func runIntentDiskShow(inv *intentInvocation) int {
 		case err != nil:
 			lines = append(lines, fmt.Sprintf("%s: %v; metasystem disk clean writes a fresh report", source.name, err))
 		default:
-			lines = append(lines, report.Lines()...)
+			lines = append(lines, diskReportLines(inv, report)...)
 			data[source.name] = report
 		}
 	}
@@ -285,7 +279,7 @@ func runIntentDiskClean(inv *intentInvocation) int {
 		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "disk clean stopped: " + err.Error(),
 			Decision: "metasystem disk show prints the last complete report; metasystem system check names what else is wrong"})
 	}
-	lines := append(result.Checkout.Lines(), result.Machine.Lines()...)
+	lines := append(diskReportLines(inv, result.Checkout), diskReportLines(inv, result.Machine)...)
 	data := map[string]any{"checkout": result.Checkout, "machine": result.Machine}
 	if pass.Mode == diskstore.ModePreview {
 		plans := []string{}
@@ -358,14 +352,28 @@ func diskPlural(count int, one, many string) string {
 	return many
 }
 
+// provenPerson proves the person at the enrolled terminal from the shell pid
+// names and returns the enrolled name to record.
+func provenPerson(reader humanauthority.Reader, pid func() int64, now func() time.Time) func(root string) (string, error) {
+	return func(root string) (string, error) {
+		if _, err := humanauthority.Prove(root, pid(), reader, now()); err != nil {
+			return "", err
+		}
+		if enrollment, readErr := humanauthority.ReadEnrollment(root); readErr == nil && enrollment.Human != "" {
+			return enrollment.Human, nil
+		}
+		return "the enrolled person", nil
+	}
+}
+
 // diskPerson proves the person at the enrolled terminal for the acts only a
 // person makes; an agent is told who runs it and how.
 func diskPerson(inv *intentInvocation, owners diskOwners, top, act string) (string, *intentResult) {
 	by, err := owners.person(top)
 	if err != nil {
 		return "", &intentResult{Outcome: intentRefused, code: 3,
-			Summary:  "disk clean " + act + " is a person's act at the enrolled terminal, and this terminal could not be proven as one: " + err.Error() + "; nothing was done",
-			Decision: "a person runs metasystem disk clean " + act + " at their enrolled terminal; metasystem disk clean --preview shows what it would act on"}
+			Summary:  "disk clean " + act + " is a person's act, and this shell was not proven to be one: " + humanauthority.PlainReason(err) + "; nothing was done",
+			Decision: humanauthority.PersonActRemedy("metasystem disk clean "+act) + "; metasystem disk clean --preview shows what it would act on"}
 	}
 	return by, nil
 }
@@ -398,7 +406,7 @@ func runDiskStrays(inv *intentInvocation, owners diskOwners, top string) int {
 		}
 		outcomes = append(outcomes, diskstore.ExecuteStrays(context.Background(), plan, owners.now().UTC(), owners.census(), owners.tempRoots())...)
 	}
-	return renderPersonOutcomes(inv, "strays", by, outcomes)
+	return renderPersonOutcomes(inv, "strays", "strays", by, outcomes)
 }
 
 // newestPlan is the newest plan file (plan ids sort by time) that lists a
@@ -423,31 +431,48 @@ func newestPlan(planDir string) string {
 	return ""
 }
 
-func renderPersonOutcomes(inv *intentInvocation, act, by string, outcomes []diskstore.PersonOutcome) int {
-	var lines []string
+// renderPersonOutcomes tells a person's act in a handful of lines: what was
+// done and the space it freed, what was kept grouped by finding with its
+// count, size and largest three, and the command that settles each; every
+// item with --verbose, and always in --json.
+func renderPersonOutcomes(inv *intentInvocation, act, many, by string, outcomes []diskstore.PersonOutcome) int {
+	verbose := inv.input.switched("verbose")
+	lines := diskstore.OutcomeLines(many, outcomes, verbose)
 	done, declined := 0, 0
 	for _, outcome := range outcomes {
 		if outcome.Done {
 			done++
-			lines = append(lines, fmt.Sprintf("%s: %s", outcome.Reason, outcome.Path))
-			continue
+		} else {
+			declined++
 		}
-		declined++
-		line := fmt.Sprintf("kept %s: %s", outcome.Path, outcome.Reason)
-		if outcome.Command != "" {
-			line += "; run " + outcome.Command
-		}
-		lines = append(lines, line)
 	}
 	data := map[string]any{"by": by, "outcomes": outcomes}
-	switch {
-	case len(outcomes) == 0:
-		return inv.render(intentResult{Outcome: intentUnchanged, Summary: "the plan lists no " + act + "; nothing to do", Data: data})
-	case declined == 0:
-		return inv.render(intentResult{Outcome: intentConfirmed, Summary: fmt.Sprintf("%s: %d done", act, done), text: lines, Data: data})
+	summary := fmt.Sprintf("%s: %d done", act, done)
+	if freed := diskstore.Freed(outcomes); freed > 0 {
+		summary += fmt.Sprintf(", %s freed", diskBytes(freed))
 	}
-	return inv.render(intentResult{Outcome: intentConfirmed, Summary: fmt.Sprintf("%s: %d done, %d kept with the reason and the command that settles each", act, done, declined),
-		text: lines, Data: data})
+	if declined > 0 {
+		summary = fmt.Sprintf("%s: %d done, %d kept with the reason and the command that settles each", act, done, declined)
+		if freed := diskstore.Freed(outcomes); freed > 0 {
+			summary += fmt.Sprintf("; %s freed", diskBytes(freed))
+		}
+	}
+	if !verbose && len(lines) < len(outcomes) {
+		summary += "; --verbose prints every item"
+	}
+	if len(outcomes) == 0 {
+		return inv.render(intentResult{Outcome: intentUnchanged, Summary: "the plan lists no " + act + "; nothing to do", Data: data})
+	}
+	return inv.render(intentResult{Outcome: intentConfirmed, Summary: summary, text: lines, Data: data})
+}
+
+// diskReportLines is a pass report for a person: grouped, or every item
+// with --verbose.
+func diskReportLines(inv *intentInvocation, report diskstore.Report) []string {
+	if inv.input.switched("verbose") {
+		return report.VerboseLines()
+	}
+	return report.Lines()
 }
 
 func runDiskRelease(inv *intentInvocation, owners diskOwners, top string) int {
@@ -474,11 +499,12 @@ func runDiskRelease(inv *intentInvocation, owners diskOwners, top string) int {
 	if err != nil {
 		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "releasing " + id + " stopped: " + err.Error(), Decision: "metasystem disk show"})
 	}
-	outcome := diskstore.PersonOutcome{Path: record.Path, Done: verdict.Decision == diskstore.Release, Reason: verdict.Reason, Command: verdict.Command}
+	outcome := diskstore.PersonOutcome{Path: record.Path, Done: verdict.Decision == diskstore.Release, Reason: verdict.Reason, Command: verdict.Command,
+		Finding: verdict.Reason, FindingCommand: verdict.Command, Bytes: record.Bytes}
 	if verdict.Reason == "already released" {
 		return inv.render(intentResult{Outcome: intentUnchanged, Summary: "store " + id + " is already released; nothing to do", Data: map[string]any{"by": by, "outcomes": []diskstore.PersonOutcome{outcome}}})
 	}
-	return renderPersonOutcomes(inv, "release", by, []diskstore.PersonOutcome{outcome})
+	return renderPersonOutcomes(inv, "release", "stores", by, []diskstore.PersonOutcome{outcome})
 }
 
 func runDiskDiscard(inv *intentInvocation, owners diskOwners, top string) int {

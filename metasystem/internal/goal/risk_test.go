@@ -57,7 +57,7 @@ func TestSTR4R1RaiseTransaction(t *testing.T) {
 	if result, err := SetObligation(obligationReq, "risk-raise", testGovernedObligation(ObligationDraft), proof); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("set governed obligation: %+v %v", result, err)
 	}
-	beforeStop, err := Project(endpoint, true, obligationReq.Now)
+	beforeStop, err := projectFetched(endpoint, obligationReq.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,7 +66,7 @@ func TestSTR4R1RaiseTransaction(t *testing.T) {
 	if result, err := CloseStop(stop); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("close launch fence: %+v %v", result, err)
 	}
-	stoppedProjection, err := Project(endpoint, true, stop.Now)
+	stoppedProjection, err := projectFetched(endpoint, stop.Now)
 	if err != nil {
 		t.Fatal(err)
 	}

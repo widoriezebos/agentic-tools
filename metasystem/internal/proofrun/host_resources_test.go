@@ -432,13 +432,26 @@ func (hostResourceLegacyProber) Probe(pid int64) (identity.Exact, identity.Liven
 	return exact, state, err
 }
 
+// The owner (hold) exits, the test kills the worker (middle) it launched, and
+// the worker's native grandchild keeps the slot until it releases. The three
+// helpers run without a testenv fixture custodian of their own (see
+// hostResourceChainHelperInvocation): each one's custodian watches its
+// parent and kills it one poll after that parent dies, so the owner's
+// deliberate exit killed the worker before the test could ("no such
+// process" under load) and the worker's death killed the grandchild whose
+// survival is the claim. This test owns them: the release file ends the
+// worker and the grandchild, and the parent's custodian reaps a leftover.
 func TestHostResourceChildRetainsSlotAfterOwnerDies(t *testing.T) {
 	directory, conf := isolatedHostResources(t)
+	if err := os.WriteFile(filepath.Join(directory, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	ready := filepath.Join(directory, "child-ready")
 	release := filepath.Join(directory, "release-child")
 	middlePID := filepath.Join(directory, "middle-pid")
 	defer os.WriteFile(release, []byte("release"), 0o600)
 	helper := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^TestHostResourceSubprocess$", "--", "hold", directory, conf, ready, release, middlePID)
+	helper.Env = append(os.Environ(), hostResourceChainHelperEnv+"=1")
 	if output, err := helper.CombinedOutput(); err != nil {
 		t.Fatalf("owner helper: %v: %s", err, output)
 	}
@@ -453,7 +466,14 @@ func TestHostResourceChildRetainsSlotAfterOwnerDies(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := syscall.Kill(pid, syscall.SIGKILL); err != nil {
+	// Nothing else ends the worker, so it is alive at its exact identity
+	// until the release file; the signal goes to that identity only.
+	prober := identity.KernelProber{}
+	worker, state, err := prober.Probe(int64(pid))
+	if err != nil || state != identity.Alive {
+		t.Fatalf("worker %d is not alive after its owner exited: state=%s err=%v", pid, state, err)
+	}
+	if err := identity.SignalExact(prober, worker.Ref(), syscall.SIGKILL, syscall.Kill); err != nil {
 		t.Fatal(err)
 	}
 	if active, err := activeHostResourceSlots(directory); err != nil || active != 1 {
@@ -697,8 +717,13 @@ func TestHostResourceSubprocess(t *testing.T) {
 		}
 		closeInherited()
 		publishCustodyFile(t, middlePID, strconv.Itoa(os.Getpid()))
+		// The test kills this worker; the release file ends it when the
+		// test failed before that.
 		for {
-			time.Sleep(time.Second)
+			if _, err := os.Stat(release); err == nil {
+				os.Exit(0)
+			}
+			time.Sleep(20 * time.Millisecond)
 		}
 	case "grandchild":
 		if err := os.WriteFile(ready, []byte("ready"), 0o600); err != nil {

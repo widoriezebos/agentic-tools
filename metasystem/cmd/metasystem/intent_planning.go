@@ -511,15 +511,15 @@ func (inv *intentInvocation) actingAs(verb, target string, actor intentActor) ([
 		// In the words the caller typed: the public command, who may run
 		// it, and the plain reason this shell is not that actor.
 		public := "metasystem " + inv.command.name
-		reason := strings.TrimPrefix(humanauthority.PlainReason(err), "only a person at the enrolled terminal may run this: ")
+		reason := strings.TrimPrefix(humanauthority.PlainReason(err), personOnlyPrefix)
 		summary := fmt.Sprintf("%s is a person's act, and %s; nothing was done", public, reason)
-		decision := "a person runs " + public + " at the terminal enrolled on this machine (metasystem system enroll enrolls one)"
+		decision := humanauthority.PersonActRemedy(public)
 		if actor == actorEither && typed == "" {
 			summary = fmt.Sprintf("cannot tell who runs %s: %s, and no agent session is named; nothing was done", public, reason)
-			decision = "a person runs it at the terminal enrolled on this machine; an agent runs it from the session its launcher started, which names itself in METASYSTEM_OWNER_LINEAGE, or passes --lineage LINEAGE"
+			decision = humanauthority.PersonActRemedy(public) + "; an agent runs it from the session its launcher started, which names itself in METASYSTEM_OWNER_LINEAGE, or passes --lineage LINEAGE"
 		}
 		if stopping && typed == "" {
-			decision = "a person names themself with --by NAME at a terminal no agent started, or runs it at the terminal enrolled on this machine; an agent passes --lineage LINEAGE"
+			decision = "a person names themself with --by NAME at a terminal no agent started, or: " + humanauthority.PersonActRemedy(public) + "; an agent passes --lineage LINEAGE"
 		}
 		return nil, nil, &intentResult{Outcome: intentRefused, code: 1, Targets: inv.targets(target), Summary: summary, Decision: decision}
 	}
@@ -1718,7 +1718,7 @@ func runIntentResolve(inv *intentInvocation) int {
 	}
 	if proof == nil {
 		if chain == goal.HumanCarriedChain {
-			return inv.refuse(id, "a human-carried finding is discharged by the person who carried it; nothing was done", "a person runs it at the enrolled terminal")
+			return inv.refuse(id, "a human-carried finding is discharged by the person who carried it; nothing was done", humanauthority.PersonActRemedy("metasystem "+inv.command.name+" "+id))
 		}
 		return inv.render(inv.goalAct(id, "resolve", func(dependencies syncRequestDependencies) int {
 			return inv.dischargeAsOwningSession(id, chain, actor, dependencies)

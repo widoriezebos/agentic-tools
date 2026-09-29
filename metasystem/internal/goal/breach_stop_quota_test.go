@@ -39,7 +39,7 @@ func TestBreachStoppedClaimLeavesMachineQuotaOpenButKeepsResumeFence(t *testing.
 	if result, err := claimApprovedForTest(t, claimA, "fenced-a", budget); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim goal A: %+v %v", result, err)
 	}
-	projection, err := Project(endpoint, true, claimA.Now)
+	projection, err := projectFetched(endpoint, claimA.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +64,7 @@ func TestBreachStoppedClaimLeavesMachineQuotaOpenButKeepsResumeFence(t *testing.
 	if result, err := claimApprovedForTest(t, claimB, "working-b", budget); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim goal B while goal A is fenced: %+v %v", result, err)
 	}
-	projection, err = Project(endpoint, true, claimB.Now)
+	projection, err = projectFetched(endpoint, claimB.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,7 +111,7 @@ func TestResumeWaitsUntilMachinesOtherLiveClaimIsReleased(t *testing.T) {
 	if result, err := claimApprovedForTest(t, claimA, "fenced-a", budget); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim stopped goal: %+v %v", result, err)
 	}
-	projection, err := Project(endpoint, true, claimA.Now)
+	projection, err := projectFetched(endpoint, claimA.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +127,7 @@ func TestResumeWaitsUntilMachinesOtherLiveClaimIsReleased(t *testing.T) {
 	if result, err := CloseStop(stop); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("breach-stop goal A: %+v %v", result, err)
 	}
-	projection, err = Project(endpoint, true, stop.Now)
+	projection, err = projectFetched(endpoint, stop.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -164,7 +164,7 @@ func TestResumeWaitsUntilMachinesOtherLiveClaimIsReleased(t *testing.T) {
 	if result, err := Resume(resume); err != nil || result.Outcome != OutcomeRejected || result.Detail != wantRefusal {
 		t.Fatalf("resume with another live claim mismatch: %+v %v", result, err)
 	}
-	projection, err = Project(endpoint, true, resume.Now)
+	projection, err = projectFetched(endpoint, resume.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -180,7 +180,7 @@ func TestResumeWaitsUntilMachinesOtherLiveClaimIsReleased(t *testing.T) {
 	if result, err := Resume(resume); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("resume after release: %+v %v", result, err)
 	}
-	projection, err = Project(endpoint, true, resume.Now)
+	projection, err = projectFetched(endpoint, resume.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -195,7 +195,7 @@ func TestResumeAllowsAnotherLiveClaimInTheSameArc(t *testing.T) {
 	endpoint, _ := fakeGoalEndpoint(t)
 	arcBedFor(t, endpoint, "resume-together", "resume-arc", "RA")
 
-	projection, err := Project(endpoint, true, time.Now().UTC())
+	projection, err := projectFetched(endpoint, time.Now().UTC())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -211,7 +211,7 @@ func TestResumeAllowsAnotherLiveClaimInTheSameArc(t *testing.T) {
 	if result, err := CloseStop(stop); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("breach-stop arc member: %+v %v", result, err)
 	}
-	projection, err = Project(endpoint, true, stop.Now)
+	projection, err = projectFetched(endpoint, stop.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -238,7 +238,7 @@ func TestResumeAllowsAnotherLiveClaimInTheSameArc(t *testing.T) {
 	if result, err := Resume(resume); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("resume stopped member beside its live arc sibling: %+v %v", result, err)
 	}
-	projection, err = Project(endpoint, true, resume.Now)
+	projection, err = projectFetched(endpoint, resume.Now)
 	if err != nil {
 		t.Fatal(err)
 	}

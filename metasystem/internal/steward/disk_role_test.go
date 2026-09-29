@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -136,30 +137,62 @@ func TestArbitrationDuringASweepCompletesWithinOneNonce(t *testing.T) {
 // The stop-path composition (DL3B-04): a hook capturing a handoff (which
 // takes arbitration) against a sweep over two hundred old handoffs: the
 // capture completes, serialized per nonce, and when the budget ends (the
-// cancel stands in for the pass deadline) the sweep returns.
+// cancel stands in for the pass deadline) the sweep returns with a backlog.
+// The interleaving is driven, not raced: the capture queues while the
+// sweeper holds its first nonce, and the pass is held after that nonce until
+// the capture has completed, so the capture provably finishes inside the
+// running pass and the budget ends with 199 nonces left.
 func TestHookCaptureCompletesDuringALargeHandoffSweep(t *testing.T) {
 	fixture, _ := oldHandoffs(t, 200)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	swept := make(chan diskstore.Report, 1)
-	go func() {
-		report, err := diskstore.RunPass(ctx, handoffPass(fixture.root, time.Now))
-		if err != nil {
-			t.Error(err)
-		}
-		swept <- report
-	}()
-	captured, err := fixture.handoff(fixture.root, handoffMainCaller(), handoffTestRecord(t, fixture.root, nil), handoffCaptureNow, filepath.Join(fixture.root, "memory", "receipts.log"))
-	if err != nil {
-		t.Fatalf("the hook's capture failed during the sweep: %v", err)
+	type capture struct {
+		state string
+		err   error
 	}
-	if _, err := os.Stat(captured.StatePath); err != nil {
+	queued, captured := make(chan struct{}), make(chan capture, 1)
+	previousWait, previousRemove := beforeArbitrationWait, beforeHandoffPruneRemove
+	t.Cleanup(func() { beforeArbitrationWait, beforeHandoffPruneRemove = previousWait, previousRemove })
+	var queuedOnce sync.Once
+	beforeArbitrationWait = func() { queuedOnce.Do(func() { close(queued) }) }
+	removals := 0
+	beforeHandoffPruneRemove = func(string) {
+		removals++
+		if removals != 1 {
+			return
+		}
+		// The hook fires while the sweeper holds nonce one and queues.
+		go func() {
+			handoff, err := fixture.handoff(fixture.root, handoffMainCaller(), handoffTestRecord(t, fixture.root, nil), handoffCaptureNow, filepath.Join(fixture.root, "memory", "receipts.log"))
+			captured <- capture{state: handoff.StatePath, err: err}
+		}()
+		<-queued
+	}
+	var hook capture
+	applied := 0
+	pass := handoffPass(fixture.root, time.Now)
+	pass.Classes = []diskstore.Class{afterApply{Class: pass.Classes[0], after: func() {
+		applied++
+		if applied != 1 {
+			return
+		}
+		// The sweeper released nonce one; the queued capture takes
+		// arbitration and completes while the pass is still running.
+		hook = <-captured
+		cancel()
+	}}}
+	report, err := diskstore.RunPass(ctx, pass)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hook.err != nil {
+		t.Fatalf("the hook's capture failed during the sweep: %v", hook.err)
+	}
+	if _, err := os.Stat(hook.state); err != nil {
 		t.Fatalf("the capture's state is missing: %v", err)
 	}
-	cancel()
-	report := <-swept
-	if len(report.Actions) != 200 && len(report.Backlog) == 0 {
-		t.Fatalf("a cut-short sweep left no backlog: %d actions, pending %v", len(report.Actions), report.Pending)
+	if len(report.Actions) != 1 || len(report.Pending) != 0 || len(report.Backlog) != 1 || !strings.Contains(report.Backlog[0], "199 item(s) left") {
+		t.Fatalf("the cut-short sweep = %d actions, pending %v, backlog %v; want one removal and 199 left", len(report.Actions), report.Pending, report.Backlog)
 	}
 	// The next pass resumes and finishes; the capture's fresh handoff stays.
 	next, err := diskstore.RunPass(context.Background(), handoffPass(fixture.root, time.Now))
@@ -169,9 +202,22 @@ func TestHookCaptureCompletesDuringALargeHandoffSweep(t *testing.T) {
 	if len(report.Actions)+len(next.Actions) != 200 {
 		t.Fatalf("two passes removed %d+%d of 200 old handoffs", len(report.Actions), len(next.Actions))
 	}
-	if _, err := os.Stat(captured.StatePath); err != nil {
+	if _, err := os.Stat(hook.state); err != nil {
 		t.Fatalf("the sweep removed the capture's fresh handoff: %v", err)
 	}
+}
+
+// afterApply runs after once each item of the wrapped class was applied: the
+// test's hold point between two nonces of a running pass.
+type afterApply struct {
+	diskstore.Class
+	after func()
+}
+
+func (a afterApply) Apply(ctx context.Context, pass *diskstore.Pass, item diskstore.Item) diskstore.Verdict {
+	verdict := a.Class.Apply(ctx, pass, item)
+	a.after()
+	return verdict
 }
 
 // The disk role reads the last reports: none is alive, a floor breach raises

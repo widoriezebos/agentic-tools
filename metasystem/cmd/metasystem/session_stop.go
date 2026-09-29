@@ -42,13 +42,13 @@ func authorizeSessionStop(stateRoot, by string) (goal.SessionStop, string, int) 
 		return goal.SessionStop{}, fmt.Sprintf("session stop refused: caller classification failed: %v", err), 3
 	}
 	if classification.Class != lease.ClassHuman {
-		return goal.SessionStop{}, "session stop refused: only a person at the enrolled terminal can stop a session quietly; this shell was started by an agent; nothing was done", 3
+		return goal.SessionStop{}, sessionStopRefusal(fmt.Errorf("%s", humanauthority.OutcomeAgent)), 3
 	}
 
 	now := sessionStopNow().UTC()
 	humanProof, err := proveSessionStopHuman(stateRoot, int64(os.Getppid()), now)
 	if err != nil {
-		return goal.SessionStop{}, fmt.Sprintf("session stop refused: only a person at the enrolled terminal can stop a session quietly; %s; nothing was done", humanauthority.PlainReason(err)), 3
+		return goal.SessionStop{}, sessionStopRefusal(err), 3
 	}
 	holder, err := currentSessionStopHolder(stateRoot)
 	if err != nil {
@@ -83,4 +83,11 @@ func authorizeSessionStop(stateRoot, by string) (goal.SessionStop, string, int) 
 		return goal.SessionStop{}, fmt.Sprintf("session stop: %v", err), 1
 	}
 	return marker, "", 0
+}
+
+// sessionStopRefusal says why this shell may not stop the session quietly and
+// what a person does instead: enroll the terminal, then stop from it.
+func sessionStopRefusal(err error) string {
+	return fmt.Sprintf("session stop refused: only a person can stop a session quietly, and %s; nothing was done; %s",
+		humanauthority.PlainReason(err), humanauthority.PersonActRemedy("metasystem session stop --by NAME"))
 }

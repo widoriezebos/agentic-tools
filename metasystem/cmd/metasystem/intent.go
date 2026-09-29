@@ -90,8 +90,12 @@ type intentCommand struct {
 var (
 	intentRepoFlag = intentFlag{name: "repo", aliases: []string{"root"}, value: "PATH",
 		usage: "the repository, or any directory or file inside it (default: the current directory)"}
-	intentJSONFlag   = intentFlag{name: "json", usage: "print one JSON result instead of text"}
-	intentTargetFlag = intentFlag{name: "id", aliases: []string{"goal"}, value: "G",
+	intentJSONFlag = intentFlag{name: "json", usage: "print one JSON result instead of text"}
+	// intentVerboseFlag is the one spelling of "every item, one line each"
+	// for a command whose text groups repeated findings; a command opts in
+	// by listing it.
+	intentVerboseFlag = intentFlag{name: "verbose", usage: "print every item on its own line instead of the grouped summary"}
+	intentTargetFlag  = intentFlag{name: "id", aliases: []string{"goal"}, value: "G",
 		usage: "the goal, as an alternative to naming it first", advanced: true}
 	intentByFlag = intentFlag{name: "by", value: "NAME", advanced: true,
 		usage: "the acting person's name; filled from the enrolled terminal's proof when omitted"}
@@ -176,7 +180,7 @@ func goalIntentCommands() []intentCommand {
 			details: []string{
 				"Without --budget each goal is approved under its own tier's norm box, all goals in one act.",
 				"BOX is norm or the complete compact box, for example 1d/10/720m/1/3 (elapsed/attempts/job minutes/active jobs/review rounds).",
-				"Run it at the enrolled terminal; --under GRANT is a seat's act under a recorded power of attorney.",
+				"Run it at your enrolled terminal (metasystem system enroll --name NAME enrolls one); --under GRANT is a seat's act under a recorded power of attorney.",
 			},
 			flags: []intentFlag{
 				{name: "id", aliases: []string{"goal"}, value: "G", repeat: true, advanced: true, usage: "a goal to approve (repeatable)"},

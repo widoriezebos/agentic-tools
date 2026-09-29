@@ -1032,3 +1032,18 @@ func PlainReason(err error) string {
 	}
 	return text
 }
+
+// EnrollCommand enrolls the terminal it is run at as the named person's.
+const EnrollCommand = "metasystem system enroll --name NAME"
+
+// PersonActRemedy is the remedy of every refusal that needs a person at the
+// enrolled terminal (H1: a refusal names a working remedy): the command that
+// enrolls a terminal, then the retry. "At the enrolled terminal" alone leaves
+// a person at a terminal that is not enrolled with no way forward. An empty
+// retry reads "the same command".
+func PersonActRemedy(retry string) string {
+	if strings.TrimSpace(retry) == "" {
+		retry = "the same command"
+	}
+	return "a person, at a terminal no agent started, enrolls it once with " + EnrollCommand + ", then runs " + retry + " there"
+}

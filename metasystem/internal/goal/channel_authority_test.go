@@ -72,7 +72,7 @@ func TestAskedAppendsTheAskedMarkerOnce(t *testing.T) {
 					t.Fatalf("asked attempt %d: %+v %v", attempt+1, result, err)
 				}
 			}
-			projection, err := Project(endpoint, true, req.Now)
+			projection, err := projectFetched(endpoint, req.Now)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -121,7 +121,7 @@ func TestAnswerRecordsAuthenticatedChannelWordOnce(t *testing.T) {
 			t.Fatalf("answer attempt %d: %+v %v", attempt+1, result, err)
 		}
 	}
-	projection, err := Project(endpoint, true, req.Now)
+	projection, err := projectFetched(endpoint, req.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -198,13 +198,13 @@ func TestAuthenticatedChannelApprovalRequiresTheTokenOnce(t *testing.T) {
 		if result, err := Claim(claim, "resume-goal"); err != nil || result.Outcome != OutcomeConfirmed {
 			t.Fatalf("claim: %+v %v", result, err)
 		}
-		projection, _ := Project(endpoint, true, claim.Now)
+		projection, _ := projectFetched(endpoint, claim.Now)
 		file := projection.Tree.Live["resume-goal"]
 		stop := CloseStopRequest{VerbRequest: VerbRequest{Endpoint: endpoint, Actor: Actor{Machine: "mac-a", Lineage: "goal-stop-custodian"}, Ulid: "01J5X0000000000000000000G3", Now: claim.Now.Add(time.Minute), ClaimEpoch: 9}, GoalID: "resume-goal", StopID: "stop-resume-goal-r3-f1", Reason: StopReasonElapsedLimit, Capability: *file.StopCapability}
 		if result, err := CloseStop(stop); err != nil || result.Outcome != OutcomeConfirmed {
 			t.Fatalf("stop: %+v %v", result, err)
 		}
-		projection, _ = Project(endpoint, true, stop.Now)
+		projection, _ = projectFetched(endpoint, stop.Now)
 		stopped := projection.Tree.Live["resume-goal"]
 		stamp := stop.Now.Add(time.Minute).UTC().Format(time.RFC3339)
 		if err := WriteStopBatch(root, StopBatch{StopID: stop.StopID, GoalID: "resume-goal", GoalRevision: stopped.Claimed.Revision, FenceEpoch: stopped.StopFence.Epoch, CapabilityGeneration: stopped.StopCapability.Generation, Machine: "mac-a", ClaimEpoch: 9, Reason: StopReasonElapsedLimit, State: StopBatchComplete, OpenedAt: stop.Now.UTC().Format(time.RFC3339), UpdatedAt: stamp, CompletedAt: stamp, Pass: 1}); err != nil {

@@ -372,8 +372,8 @@ func requireApprovedForClaimWithContext(context *claimAdmissionContext, t *TreeG
 		return Budget{}, refuseGoalAdmission(refuseGoalNorm(f.Id, *f.Budget, box))
 	}
 	if expired, why := f.ApprovalExpired(approvalHorizon(t, now)); expired {
-		return Budget{}, refuseGoalAdmission(fmt.Errorf("APPROVAL_EXPIRED: goal %s was approved by a relayed word (review by %s, approved %s); that approval no longer admits new work because %s; a fresh approval is required at the enrolled terminal",
-			f.Id, f.Approved.ReviewBy, f.Approved.At, why))
+		return Budget{}, refuseGoalAdmission(fmt.Errorf("APPROVAL_EXPIRED: goal %s was approved by a relayed word (review by %s, approved %s); that approval no longer admits new work because %s; a fresh approval is required: %s",
+			f.Id, f.Approved.ReviewBy, f.Approved.At, why, humanauthority.PersonActRemedy("metasystem goal approve "+f.Id)))
 	}
 	return *f.Budget, nil
 }
@@ -821,7 +821,7 @@ func ApproveSweep(r VerbRequest, confirm string, proof *humanauthority.Proof) (P
 			if temporary {
 				for _, f := range t.Live {
 					if f.Approved != nil {
-						return nil, fmt.Errorf("a relayed sweep refuses after any approval exists; use the enrolled terminal to ratify the fleet")
+						return nil, fmt.Errorf("a relayed sweep refuses after any approval exists; to ratify the fleet, %s", humanauthority.PersonActRemedy("the sweep"))
 					}
 				}
 				if first, ok := firstRecordedRelayedActIn(t.Root.History, "", "approve", proof.Departure); ok {

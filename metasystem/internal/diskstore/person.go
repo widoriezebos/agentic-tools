@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"time"
@@ -17,12 +18,17 @@ import (
 // never waives a content proof, and completes the rest. A repeat whose
 // effect holds writes nothing (R-129).
 
-// PersonOutcome is one item of a person's act.
+// PersonOutcome is one item of a person's act. Reason and Command are the
+// item's own; Finding and FindingCommand are the same without the item's
+// values (its age, its holder's pid), so outcomes group by them.
 type PersonOutcome struct {
-	Path    string `json:"path"`
-	Done    bool   `json:"done"`
-	Reason  string `json:"reason"`
-	Command string `json:"command,omitempty"`
+	Path           string `json:"path"`
+	Done           bool   `json:"done"`
+	Reason         string `json:"reason"`
+	Command        string `json:"command,omitempty"`
+	Finding        string `json:"finding,omitempty"`
+	FindingCommand string `json:"findingCommand,omitempty"`
+	Bytes          int64  `json:"bytes,omitempty"`
 }
 
 // ExecuteStrays removes exactly the stray items of a plan: each still lies
@@ -50,7 +56,15 @@ func ExecuteStrays(ctx context.Context, plan Plan, now time.Time, census *UseCen
 }
 
 func executeStray(ctx context.Context, item Item, now time.Time, census *UseCensus, allowed map[string]bool) PersonOutcome {
-	outcome := PersonOutcome{Path: item.Path}
+	outcome := judgeStray(ctx, item, now, census, allowed)
+	if outcome.Finding == "" {
+		outcome.Finding, outcome.FindingCommand = outcome.Reason, outcome.Command
+	}
+	return outcome
+}
+
+func judgeStray(ctx context.Context, item Item, now time.Time, census *UseCensus, allowed map[string]bool) PersonOutcome {
+	outcome := PersonOutcome{Path: item.Path, Bytes: item.Bytes}
 	name := filepath.Base(item.Path)
 	if !allowed[filepath.Dir(item.Path)] || !hasAnyPrefix(name, strayPrefixes) || hasAnyPrefix(name, notStrays) || name == "metasystem" {
 		outcome.Reason = "not an engine stray in a temporary root; it is never removed by this command"
@@ -63,23 +77,26 @@ func executeStray(ctx context.Context, item Item, now time.Time, census *UseCens
 	}
 	if err != nil {
 		outcome.Reason, outcome.Command = "cannot be read: "+err.Error(), "metasystem disk clean --preview"
+		outcome.Finding, outcome.FindingCommand = "cannot be read", outcome.Command
 		return outcome
 	}
 	if device, inode, _ := fileID(info); device != item.Device || inode != item.Inode || pathGeneration(item.Path) != item.Generation {
 		outcome.Reason, outcome.Command = "replaced since the preview", "metasystem disk clean --preview, then --strays with the new plan"
 		return outcome
 	}
-	_, newest, complete := Measure(ctx, item.Path)
+	bytes, newest, complete := Measure(ctx, item.Path)
 	if !complete {
 		outcome.Reason, outcome.Command = "could not be walked to the end", "metasystem disk clean --strays again"
 		return outcome
 	}
+	outcome.Bytes = bytes
 	if newest.IsZero() {
 		newest = info.ModTime()
 	}
 	if idle := now.Sub(newest); idle < StrayIdle {
 		outcome.Reason = fmt.Sprintf("written %s ago; a stray is removed once it has been idle a day", idle.Round(time.Minute))
 		outcome.Command = "metasystem disk clean --preview tomorrow, then --strays"
+		outcome.Finding, outcome.FindingCommand = "written less than a day ago; a stray is removed once it has been idle a day", outcome.Command
 		return outcome
 	}
 	if census != nil {
@@ -87,11 +104,17 @@ func executeStray(ctx context.Context, item Item, now time.Time, census *UseCens
 			holder := holders[0]
 			outcome.Reason = fmt.Sprintf("in use by pid %d (uid %d, %s)", holder.Pid, holder.UID, holder.Command)
 			outcome.Command = fmt.Sprintf("metasystem disk clean --strays once pid %d has ended", holder.Pid)
+			outcome.Finding, outcome.FindingCommand = "in use by a live process", "metasystem disk clean --strays once each holder has ended (--verbose names them)"
 			return outcome
 		}
 	}
 	if err := RemoveTree(ctx, item.Path); err != nil {
-		outcome.Reason, outcome.Command = "removal stopped: "+err.Error(), "metasystem disk clean --strays again"
+		outcome.Reason, outcome.Command = removalStopped(item.Path, err)
+		outcome.Finding, outcome.FindingCommand = "removal stopped", "metasystem disk clean --strays again"
+		if errors.Is(err, fs.ErrPermission) {
+			outcome.Finding = "removal stopped at a permission the engine cannot lift (another user's entry or an immutable flag)"
+			outcome.FindingCommand = "ls -ld the entry --verbose names, and remove it as its owner"
+		}
 		return outcome
 	}
 	outcome.Done, outcome.Reason = true, "removed"
@@ -207,4 +230,24 @@ func (r Registry) setDiscard(id string, discard Discard) (Record, error) {
 	}
 	record.AuthorizedDiscard = &discard
 	return record, r.write(record)
+}
+
+// removalStopped is a stopped removal's reason and the command that truly
+// settles it. RemoveTree already lifted every read-only directory this user
+// owns inside the item, so a permission error left is one the engine cannot
+// lift (an entry another user owns, or an immutable flag): running again
+// fails the same way, and the person inspects it and removes it as its
+// owner. Anything else (a cut-short walk, a busy entry) is finished by the
+// next run.
+func removalStopped(path string, err error) (string, string) {
+	if errors.Is(err, fs.ErrPermission) {
+		entry := path
+		var pathErr *fs.PathError
+		if errors.As(err, &pathErr) {
+			entry = pathErr.Path
+		}
+		return "removal stopped: " + err.Error() + "; the engine lifts read-only directories you own, so this entry is another user's or flagged immutable",
+			"ls -ld " + entry + " to see its owner, and remove it as that owner"
+	}
+	return "removal stopped: " + err.Error(), "metasystem disk clean --strays again"
 }

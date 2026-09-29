@@ -14,6 +14,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"sort"
 	"strconv"
@@ -285,13 +286,13 @@ func TestDiskStraysArePersonsActFromAPreview(t *testing.T) {
 		t.Fatalf("preview = %d:\n%s", code, out)
 	}
 	bed.person = errors.New("an agent runs this terminal")
-	if code, out := bed.run("disk", "clean", "--strays"); code != 3 || !strings.Contains(out, "a person runs metasystem disk clean --strays at their enrolled terminal") {
+	if code, out := bed.run("disk", "clean", "--strays"); code != 3 || !strings.Contains(out, "enrolls it once with metasystem system enroll --name NAME, then runs metasystem disk clean --strays there") {
 		t.Fatalf("strays by an agent = %d:\n%s", code, out)
 	}
 	bed.person = nil
 	bed.census = &diskstore.UseCensus{Taken: true, Processes: []diskstore.CensusProcess{{Pid: 4242, UID: 501, Command: "bash bed.sh", Cwd: held}}}
 	code, out := bed.run("disk", "clean", "--strays")
-	if code != 0 || !strings.Contains(out, "removed: "+idle) || !strings.Contains(out, "kept "+held+": in use by pid 4242") ||
+	if code != 0 || !strings.Contains(out, "removed: "+idle) || !strings.Contains(out, "kept: "+held+": in use by pid 4242") ||
 		!strings.Contains(out, "run metasystem disk clean --strays once pid 4242 has ended") {
 		t.Fatalf("strays = %d:\n%s", code, out)
 	}
@@ -310,6 +311,67 @@ func TestDiskStraysArePersonsActFromAPreview(t *testing.T) {
 	}
 }
 
+// Many strays print one line per outcome and reason with the count, the
+// total size and the three largest, never one line per item (Wido's run of
+// 2026-09-29 printed 2,371) and the space freed; --verbose prints every
+// item, and --json carries every item whatever the flag.
+func TestDiskStraysGroupTheirOutcomes(t *testing.T) {
+	t.Parallel()
+	bed := newDiskBed(t)
+	var idle, young []string
+	for index := range 5 {
+		idle = append(idle, bed.stray(fmt.Sprintf("metasystem-audit.idle%d", index), 72*time.Hour))
+		young = append(young, bed.stray(fmt.Sprintf("metasystem-wait-candidate-%d", index), time.Duration(index+1)*time.Hour))
+	}
+	helmMust(t, os.WriteFile(filepath.Join(idle[3], "big"), bytes.Repeat([]byte("x"), 1<<20), 0o600))
+	helmMust(t, os.Chtimes(filepath.Join(idle[3], "big"), diskNow.Add(-72*time.Hour), diskNow.Add(-72*time.Hour)))
+	helmMust(t, os.Chtimes(idle[3], diskNow.Add(-72*time.Hour), diskNow.Add(-72*time.Hour)))
+	if code, out := bed.run("disk", "clean", "--preview"); code != 0 || strings.Count(out, "metasystem-audit.idle") != 3 {
+		t.Fatalf("preview = %d, want the idle strays grouped with three named:\n%s", code, out)
+	}
+	if code, out := bed.run("disk", "clean", "--preview", "--verbose"); code != 0 || strings.Count(out, "  stray: ") != 10 {
+		t.Fatalf("preview --verbose = %d, want one line per stray:\n%s", code, out)
+	}
+	code, out := bed.run("disk", "clean", "--strays")
+	if code != 0 || !strings.Contains(out, "strays: 5 done, 5 kept") || !strings.Contains(out, "MiB freed") || !strings.Contains(out, "--verbose prints every item") {
+		t.Fatalf("strays = %d:\n%s", code, out)
+	}
+	removed := regexp.MustCompile(`(?m)^  removed: 5 strays, [0-9.]+ [KM]iB \(largest: ` + regexp.QuoteMeta(idle[3]) + ` `).FindString(out)
+	kept := regexp.MustCompile(`(?m)^  kept: 5 strays, [0-9.]+ [KM]?i?B: written less than a day ago; a stray is removed once it has been idle a day; run metasystem disk clean --preview tomorrow, then --strays \(largest: `).FindString(out)
+	if removed == "" || kept == "" {
+		t.Fatalf("the strays were not grouped with their count, size and largest:\n%s", out)
+	}
+	named := 0
+	for _, path := range append(append([]string{}, idle...), young...) {
+		named += strings.Count(out, path)
+	}
+	if named != 6 {
+		t.Fatalf("the grouped output named %d paths, want the three largest of each group:\n%s", named, out)
+	}
+	code, out = bed.run("disk", "clean", "--strays", "--verbose")
+	if code != 0 || !strings.Contains(out, "already gone: "+idle[0]) || !strings.Contains(out, "kept "+young[4]+": written ") {
+		t.Fatalf("strays --verbose = %d:\n%s", code, out)
+	}
+	for _, path := range append(append([]string{}, idle...), young...) {
+		if !strings.Contains(out, path) {
+			t.Fatalf("--verbose did not name %s:\n%s", path, out)
+		}
+	}
+	code, out = bed.run("disk", "clean", "--strays", "--json")
+	if code != 0 || strings.Count(out, `"path"`) != 10 {
+		t.Fatalf("strays --json does not carry every item = %d:\n%s", code, out)
+	}
+	if code, out := bed.run("disk", "clean"); code != 0 {
+		t.Fatalf("clean = %d:\n%s", code, out)
+	}
+	if code, out := bed.run("disk", "show"); code != 0 || !strings.Contains(out, "  strays: 5 items") || strings.Contains(out, "  stray: ") {
+		t.Fatalf("show = %d, want the five young strays on one line:\n%s", code, out)
+	}
+	if code, out := bed.run("disk", "show", "--verbose"); code != 0 || strings.Count(out, "  stray: ") != 5 {
+		t.Fatalf("show --verbose = %d, want one line per stray:\n%s", code, out)
+	}
+}
+
 // --release (DL3B-12): an incomplete use check alone keeps a store; the
 // person releases it; a readable holder declines it; a repeat succeeds.
 func TestDiskReleaseByAPerson(t *testing.T) {
@@ -324,7 +386,7 @@ func TestDiskReleaseByAPerson(t *testing.T) {
 	helmMust(t, err, critical.Write(loaded), critical.Release())
 	bed.census = &diskstore.UseCensus{Taken: true, Processes: []diskstore.CensusProcess{{Pid: 5151, UID: 501, Command: "vim notes", Cwd: record.Path}}}
 	code, out := bed.run("disk", "clean", "--release", record.ID)
-	if code != 0 || !strings.Contains(out, "kept "+record.Path+": in use by pid 5151") || !strings.Contains(out, "--release "+record.ID+" once pid 5151 has ended") {
+	if code != 0 || !strings.Contains(out, "kept: "+record.Path+": in use by pid 5151") || !strings.Contains(out, "--release "+record.ID+" once pid 5151 has ended") {
 		t.Fatalf("a held release = %d:\n%s", code, out)
 	}
 	bed.census = &diskstore.UseCensus{Taken: true, Unreadable: []diskstore.CensusGap{{Pid: 7, Reason: "unreadable"}}}

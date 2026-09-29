@@ -371,7 +371,7 @@ func TestNextAndIdleRefusalIgnoreAnAbandonedGoal(t *testing.T) {
 	t.Parallel()
 	endpoint, _ := fakeGoalEndpoint(t)
 	root := endpoint.Root
-	dependencies := projectionDependencies{source: &projectionSource{endpoint: endpoint, machine: "bed-m1"}}
+	dependencies := fixtureProjection(&projectionSource{endpoint: endpoint, machine: "bed-m1"})
 	if result, err := Open(verbReqFor(endpoint, "01J5X00000000000000000J000", "bed-m1"), "only-work", "intent", "main", "next"); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("open: %+v %v", result, err)
 	}

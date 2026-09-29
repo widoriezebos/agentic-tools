@@ -1823,15 +1823,18 @@ func TestPendingWaitFromChildShell(t *testing.T) {
 	hostileSession := "never-associated-hostile"
 	assertUnwatchedWaitVerdict(t, pendingWaitVerdict(t, root, hostileSession, mainID))
 
-	sleepSource, err := exec.LookPath("sleep")
+	// The dead waiter's process is a shell whose own argv carries the tag and
+	// which reports readiness from its running image, then blocks reading a
+	// pipe this test holds. A sleep started through a tagged symlink carried
+	// the tag only in argv, and Linux can read a just-exec'd process's argv
+	// empty until the new image publishes it ("executable=/usr/bin/sleep
+	// argv=[] does not carry fixture tag", batch 12 VM).
+	sleepTag := "metasystem-child-wait-dead-sleeper"
+	sleepReadyRead, sleepReadyWrite, err := os.Pipe()
 	if err != nil {
 		t.Fatal(err)
 	}
-	sleepTag := "metasystem-child-wait-dead-sleeper"
-	sleepBinary := filepath.Join(t.TempDir(), sleepTag)
-	if err := os.Symlink(sleepSource, sleepBinary); err != nil {
-		t.Fatal(err)
-	}
+	defer sleepReadyRead.Close()
 	sleepOutputDir := t.TempDir()
 	sleepOutput, err := os.Create(filepath.Join(sleepOutputDir, "sleep.stdout"))
 	if err != nil {
@@ -1842,13 +1845,24 @@ func TestPendingWaitFromChildShell(t *testing.T) {
 		_ = sleepOutput.Close()
 		t.Fatal(err)
 	}
-	sleeper := exec.Command(sleepBinary, "60")
+	sleeper := exec.Command("/bin/sh", "-c", `printf 'ready\n' >&3; exec 3>&-; read -r _`, sleepTag)
 	sleeper.Stdout, sleeper.Stderr = sleepOutput, sleepProblem
-	if err := sleeper.Start(); err != nil {
+	sleeper.ExtraFiles = []*os.File{sleepReadyWrite}
+	sleepHold, err := sleeper.StdinPipe()
+	if err != nil {
+		_ = sleepReadyWrite.Close()
 		_ = sleepOutput.Close()
 		_ = sleepProblem.Close()
 		t.Fatal(err)
 	}
+	defer sleepHold.Close()
+	if err := sleeper.Start(); err != nil {
+		_ = sleepReadyWrite.Close()
+		_ = sleepOutput.Close()
+		_ = sleepProblem.Close()
+		t.Fatal(err)
+	}
+	_ = sleepReadyWrite.Close()
 	sleeperReaped := false
 	t.Cleanup(func() {
 		if sleeperReaped {
@@ -1861,6 +1875,9 @@ func TestPendingWaitFromChildShell(t *testing.T) {
 		_ = sleepOutput.Close()
 		_ = sleepProblem.Close()
 	})
+	if line, readErr := bufio.NewReader(sleepReadyRead).ReadString('\n'); readErr != nil || line != "ready\n" {
+		t.Fatalf("dead-row sleeper readiness = %q, %v", line, readErr)
+	}
 	sleeperExact, sleeperState, err := (identity.KernelProber{}).Probe(int64(sleeper.Process.Pid))
 	if err != nil || sleeperState != identity.Alive {
 		t.Fatalf("dead-row sleeper identity=%+v state=%s err=%v", sleeperExact, sleeperState, err)
