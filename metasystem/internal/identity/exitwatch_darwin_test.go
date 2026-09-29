@@ -34,6 +34,7 @@ func armExitWatch(pid int) (*exitWatch, error) {
 func (watch *exitWatch) wait() error {
 	var info [darwinSiginfoSize]byte
 	for {
+		//lint:ignore SA1019 x/sys/unix has no libSystem waitid wrapper for darwin, and wait4 there ignores WNOWAIT and reaps
 		_, _, errno := unix.Syscall6(unix.SYS_WAITID, darwinPPID, uintptr(watch.pid),
 			uintptr(unsafe.Pointer(&info[0])), unix.WEXITED|unix.WNOWAIT, 0, 0)
 		// EINTR reissues the system call; it does not retry an assertion.
