@@ -203,7 +203,13 @@ func Main(m *testing.M, declarations ...Declaration) int {
 // registered fixture key is ended by the custodian and the exit scan. A setup
 // error is printed and the package exits 2 after the namespace cleanup. A
 // TestMain allocates nothing before this call (cmd/metasystem audit_disk_test).
+// An invocation whose first argument is not a flag exits 2 before anything
+// else (RefuseUnclaimedInvocation): a TestMain claims its engine verbs before
+// this call, and whatever reaches it unclaimed never runs the package.
 func MainWithSetup(m *testing.M, setup func() error, declarations ...Declaration) (code int) {
+	if code, refused := RefuseUnclaimedInvocation(os.Args, os.Stderr); refused {
+		return code
+	}
 	if os.Getenv(identity.FixtureCustodianEnv) == "1" {
 		owner, err := identity.ParseRef(os.Getenv(identity.FixtureCustodianOwnerEnv))
 		if err != nil {
@@ -1200,4 +1206,24 @@ func rejectsInheritedControl(name string) bool {
 		}
 	}
 	return false
+}
+
+// RefuseUnclaimedInvocation ends a test binary that was run as an engine with
+// a verb its TestMain did not claim. go test and every helper start a test
+// binary with flags first (-test.*, or a helper's own -- flag); a leading
+// positional argument means production code ran the binary as the engine,
+// launcher, watchdog or custodian executable a test handed it (os.Args[0]).
+// Flag parsing stops at that argument, so without this the binary ran its
+// whole package as a nested run, and the caller's bound then killed it
+// mid-test: no Cleanup ran, and every process a real-process test had started
+// outlived it holding the descriptors it inherited (proofrun, batch 24,
+// 2026-09-29: the VM suite lock for about 20 minutes). MainWithSetup calls it
+// first, so every TestMain that ends in testenv.Main has the rule; a TestMain
+// with a path that runs m.Run itself calls it before that path.
+func RefuseUnclaimedInvocation(args []string, stderr io.Writer) (int, bool) {
+	if len(args) < 2 || strings.HasPrefix(args[1], "-") {
+		return 0, false
+	}
+	fmt.Fprintf(stderr, "%s: %q is an engine invocation no test entrypoint claims; the package's tests do not run for it\n", filepath.Base(args[0]), args[1:])
+	return 2, true
 }

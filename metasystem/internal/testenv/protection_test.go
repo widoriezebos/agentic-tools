@@ -731,6 +731,81 @@ func importedAliases(file *ast.File, importPath, defaultName string) map[string]
 }
 
 func validateTestMain(function *ast.FuncDecl, testenvAliases, osAliases map[string]bool, localTestenv bool) string {
+	if problem := validateTestMainExit(function, testenvAliases, osAliases, localTestenv); problem != "" {
+		return problem
+	}
+	return validateDirectRuns(function.Body, testMainParameter(function), testenvAliases, localTestenv)
+}
+
+// validateDirectRuns refuses a TestMain that calls m.Run itself (a helper path
+// outside testenv.Main) unless a top-level statement before it calls
+// testenv.RefuseUnclaimedInvocation: MainWithSetup refuses an unclaimed engine
+// verb, but a direct m.Run path never reaches it.
+func validateDirectRuns(body *ast.BlockStmt, parameter string, testenvAliases map[string]bool, localTestenv bool) string {
+	refused := false
+	for _, statement := range body.List {
+		if !refused && refusalStatement(statement, testenvAliases, localTestenv) {
+			refused = true
+			continue
+		}
+		if !refused && callsDirectRun(statement, parameter) {
+			return "has a TestMain that runs m.Run before testenv.RefuseUnclaimedInvocation; refuse unclaimed engine verbs first"
+		}
+	}
+	return ""
+}
+
+// refusalStatement reports whether statement is an unconditional call of
+// RefuseUnclaimedInvocation: the init of an if statement, an assignment, or
+// an expression statement.
+func refusalStatement(statement ast.Stmt, testenvAliases map[string]bool, localTestenv bool) bool {
+	var expressions []ast.Expr
+	switch statement := statement.(type) {
+	case *ast.IfStmt:
+		if assignment, ok := statement.Init.(*ast.AssignStmt); ok {
+			expressions = assignment.Rhs
+		}
+	case *ast.AssignStmt:
+		expressions = statement.Rhs
+	case *ast.ExprStmt:
+		expressions = []ast.Expr{statement.X}
+	}
+	for _, expression := range expressions {
+		call, ok := expression.(*ast.CallExpr)
+		if !ok {
+			continue
+		}
+		if localTestenv {
+			if identifier, ok := call.Fun.(*ast.Ident); ok && identifier.Name == "RefuseUnclaimedInvocation" {
+				return true
+			}
+		}
+		if qualifiedCall(call.Fun, testenvAliases, "RefuseUnclaimedInvocation") {
+			return true
+		}
+	}
+	return false
+}
+
+func callsDirectRun(node ast.Node, parameter string) bool {
+	found := false
+	ast.Inspect(node, func(node ast.Node) bool {
+		if _, nested := node.(*ast.FuncLit); nested {
+			return false
+		}
+		if call, ok := node.(*ast.CallExpr); ok {
+			if selector, ok := call.Fun.(*ast.SelectorExpr); ok && selector.Sel.Name == "Run" {
+				if identifier, ok := selector.X.(*ast.Ident); ok && identifier.Name == parameter {
+					found = true
+				}
+			}
+		}
+		return !found
+	})
+	return found
+}
+
+func validateTestMainExit(function *ast.FuncDecl, testenvAliases, osAliases map[string]bool, localTestenv bool) string {
 	parameter := testMainParameter(function)
 	if parameter == "" {
 		return "has a TestMain whose testing.M parameter cannot be identified"
@@ -888,6 +963,9 @@ import (
     "github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 )
 func TestMain(m *testing.M) {
+    if code, refused := testenv.RefuseUnclaimedInvocation(os.Args, os.Stderr); refused {
+        os.Exit(code)
+    }
     if os.Getenv("GO_WANT_HELPER") == "1" {
         os.Exit(m.Run())
     }
@@ -896,6 +974,57 @@ func TestMain(m *testing.M) {
 `)
 	if problem := group.sharedMainProblem(false); problem != "" {
 		t.Fatal(problem)
+	}
+}
+
+// A path that runs m.Run itself never reaches MainWithSetup's refusal, so an
+// unclaimed engine verb on that path would run the whole package nested. The
+// audit requires the TestMain to refuse before any such path, as a statement
+// of its own rather than under a condition.
+func TestBoundaryAuditRequiresTheRefusalBeforeADirectRun(t *testing.T) {
+	t.Parallel()
+	for _, fixture := range []struct {
+		label string
+		body  string
+	}{
+		{"no refusal", `
+    if os.Getenv("GO_WANT_HELPER") == "1" {
+        os.Exit(m.Run())
+    }
+    os.Exit(testenv.Main(m))`},
+		{"refusal after the direct run", `
+    if os.Getenv("GO_WANT_HELPER") == "1" {
+        os.Exit(m.Run())
+    }
+    if code, refused := testenv.RefuseUnclaimedInvocation(os.Args, os.Stderr); refused {
+        os.Exit(code)
+    }
+    os.Exit(testenv.Main(m))`},
+		{"refusal under a condition", `
+    if os.Getenv("GO_WANT_OTHER") == "1" {
+        if code, refused := testenv.RefuseUnclaimedInvocation(os.Args, os.Stderr); refused {
+            os.Exit(code)
+        }
+    }
+    if os.Getenv("GO_WANT_HELPER") == "1" {
+        os.Exit(m.Run())
+    }
+    os.Exit(testenv.Main(m))`},
+	} {
+		t.Run(fixture.label, func(t *testing.T) {
+			group := parsePackageSource(t, `package fixture
+import (
+    "os"
+    "testing"
+    "github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
+)
+func TestMain(m *testing.M) {`+fixture.body+`
+}
+`)
+			if problem := group.sharedMainProblem(false); !strings.Contains(problem, "runs m.Run before testenv.RefuseUnclaimedInvocation") {
+				t.Fatalf("direct-run problem = %q", problem)
+			}
+		})
 	}
 }
 
