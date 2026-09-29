@@ -572,8 +572,8 @@ func TestAdoptGitIntegrationRuntimeSelections(t *testing.T) {
 		if exists(filepath.Join(target, ".devin", "skills")) {
 			t.Fatal("devin skills were registered twice, under .devin/skills too")
 		}
-		if !hasLine(confLines(t, target), "metasystem.runtimes=devin") || !hasLine(confLines(t, target), "role.default.runtime=devin") {
-			t.Fatal("the devin selection was not recorded as the default")
+		if !hasLine(confLines(t, target), "metasystem.runtimes=devin") || pinsDefaultRuntime(confLines(t, target)) {
+			t.Fatal("the devin selection was not recorded, or the default runtime was pinned instead of auto")
 		}
 		if !regexp.MustCompile(`internal hook devin start;`).MatchString(readText(t, filepath.Join(target, ".devin", "config.json"))) || exists(filepath.Join(target, ".claude")) {
 			t.Fatal("a devin-only target has the wrong hook configuration")
@@ -593,8 +593,8 @@ func TestAdoptGitIntegrationRuntimeSelections(t *testing.T) {
 				t.Fatalf("codex skill registration %s is missing", link)
 			}
 		}
-		if !hasLine(confLines(t, target), "metasystem.runtimes=codex") || !hasLine(confLines(t, target), "role.default.runtime=codex") {
-			t.Fatal("the codex selection was not recorded as the default")
+		if !hasLine(confLines(t, target), "metasystem.runtimes=codex") || pinsDefaultRuntime(confLines(t, target)) {
+			t.Fatal("the codex selection was not recorded, or the default runtime was pinned instead of auto")
 		}
 		if !regexp.MustCompile(`internal hook codex start;`).MatchString(readText(t, filepath.Join(target, ".codex", "hooks.json"))) {
 			t.Fatal("the Codex session-start hook is missing")
@@ -640,8 +640,10 @@ func TestAdoptGitIntegrationRuntimeSelections(t *testing.T) {
 		if _, err := hostsetup.Setup(hostsetup.Options{RepositoryPath: target, Runtimes: []string{"claude", "codex"}, CopySkills: true, Check: true}); err != nil {
 			t.Fatalf("copied registrations fail the shared setup check: %v", err)
 		}
-		if !hasLine(confLines(t, target), "metasystem.runtimes=claude,codex") || !hasLine(confLines(t, target), "role.default.runtime=codex") {
-			t.Fatal("the multi-runtime selection or the codex, devin, claude precedence was not recorded")
+		// The selection is recorded in the preference order claude, codex,
+		// devin, and the default runtime stays auto over it.
+		if !hasLine(confLines(t, target), "metasystem.runtimes=claude,codex") || pinsDefaultRuntime(confLines(t, target)) {
+			t.Fatal("the multi-runtime selection in preference order was not recorded, or the default runtime was pinned")
 		}
 	})
 	t.Run("enable an optional skill", func(t *testing.T) {
@@ -1170,4 +1172,15 @@ func writeExecutable(path string, data []byte, mode fs.FileMode) error {
 		return err
 	}
 	return testexec.WriteFile(path, data, mode)
+}
+
+// pinsDefaultRuntime reports whether an adopted configuration names a
+// runtime for role.default.runtime instead of leaving it auto.
+func pinsDefaultRuntime(lines []string) bool {
+	for _, line := range lines {
+		if strings.HasPrefix(line, "role.default.runtime=") && line != "role.default.runtime=auto" {
+			return true
+		}
+	}
+	return false
 }

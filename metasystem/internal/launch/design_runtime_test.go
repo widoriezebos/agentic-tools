@@ -38,7 +38,8 @@ func TestDesignAdapterFollowsTheResolvedModel(t *testing.T) {
 		{name: "adapter data changes the model, not the agent", kind: "design", useSettings: true, runtime: "claude", settings: "claude-opus-5-5[1m]", adapterData: "gpt-6-astra", want: "claude-headless"},
 		{name: "spec changes the model, not the agent", kind: "design", useSettings: true, runtime: "codex", settings: "gpt-6-astra", model: "claude-opus-5-5[1m]", want: "codex-exec"},
 		{name: "default design", kind: "design", want: "claude-headless"},
-		{name: "an agent this engine cannot launch is refused", kind: "design", useSettings: true, runtime: "devin", settings: "claude-opus-5-5", refused: true},
+		{name: "Devin from settings", kind: "design", useSettings: true, runtime: "devin", settings: "claude-opus-5-5", want: "devin-print"},
+		{name: "an agent this engine cannot launch is refused", kind: "design", useSettings: true, runtime: "ghost", settings: "claude-opus-5-5", refused: true},
 	})
 }
 
@@ -49,6 +50,7 @@ func TestLaneAdapterFollowsItsRuntimeSetting(t *testing.T) {
 	runLaneAdapterCases(t, "read-runtime-", []laneAdapterCase{
 		{name: "read defaults to Claude", kind: "read", want: "claude-headless"},
 		{name: "read on Codex by its setting", kind: "read", useSettings: true, runtime: "codex", settings: "gpt-6-sol", want: "codex-exec"},
+		{name: "read on Devin by its setting", kind: "read", useSettings: true, runtime: "devin", settings: "gpt-6-astra", want: "devin-print"},
 	})
 }
 
@@ -60,7 +62,7 @@ func runLaneAdapterCases(t *testing.T, idPrefix string, cases []laneAdapterCase)
 			t.Parallel()
 			m, _, _, _ := manager(t)
 			m.Supervisor = childStarter(m)
-			m.Adapters["claude-headless"] = fakeAdapter{}
+			m.Adapters["claude-headless"], m.Adapters["devin-print"] = fakeAdapter{}, fakeAdapter{}
 			if row.useSettings {
 				m.Settings = DefaultSettings()
 				if row.kind == "read" {

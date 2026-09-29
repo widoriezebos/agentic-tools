@@ -18,7 +18,7 @@ func TestCompiledDefaultsAnswerEveryReader(t *testing.T) {
 	for key, want := range map[string]string{
 		"watch.stale-min": "20", "suite.section-cap-min": "45", "metasystem.runtimes": "claude,codex,devin",
 		"testing.contract": "testing.json", "dispatch.max-inline-input-kb": "80", "dispatch.transport.devin": "acp",
-		"launch.build.model": "claude-opus-5-5", "role.default.model.claude": "claude-opus-5-5",
+		"launch.build.model.claude": "claude-opus-5-5", "role.default.model.claude": "claude-opus-5-5",
 	} {
 		params := GetParams{Key: key, ConfPath: conf, LookupEnv: noEnv}
 		if value, code, err := Get(params); err != nil || code != 0 || value != want {
@@ -50,12 +50,13 @@ func TestCompiledDefaultsAnswerEveryReader(t *testing.T) {
 }
 
 // A default that binds a runtime holds only while that runtime is selected,
-// so an installation without Claude inherits no Claude roster.
+// so an installation without Claude inherits no Claude roster, and an auto
+// runtime resolves among the selected runtimes alone.
 func TestRuntimeBoundDefaultsFollowTheSelectedRuntimes(t *testing.T) {
 	t.Parallel()
 	conf := filepath.Join(t.TempDir(), "metasystem.conf")
 	putFile(t, conf, "metasystem.runtimes=codex\n")
-	for _, key := range []string{"role.default.runtime", "role.default.model.claude", "runtime.claude.maximal-models", "dispatch.transport.devin"} {
+	for _, key := range []string{"role.default.model.claude", "runtime.claude.maximal-models", "dispatch.transport.devin"} {
 		if value, code, err := Get(GetParams{Key: key, ConfPath: conf, LookupEnv: noEnv}); err == nil || code != 1 {
 			t.Fatalf("Get(%s) without its runtime = %q, %d, %v; want no value", key, value, code, err)
 		}
@@ -65,6 +66,9 @@ func TestRuntimeBoundDefaultsFollowTheSelectedRuntimes(t *testing.T) {
 		if got := ConfValue(conf, key, ""); got != "" {
 			t.Fatalf("ConfValue(%s) without its runtime = %q", key, got)
 		}
+	}
+	if value, _, err := Get(GetParams{Key: "role.default.runtime", ConfPath: conf, LookupEnv: noEnv}); err != nil || value != "codex" {
+		t.Fatalf("role.default.runtime with only Codex selected = %q, %v; want codex", value, err)
 	}
 	if value, _, err := Get(GetParams{Key: "role.verifier.runtime", ConfPath: conf, LookupEnv: noEnv}); err != nil || value != "main" {
 		t.Fatalf("a runtime-neutral default did not hold: %q, %v", value, err)
@@ -162,8 +166,8 @@ func TestShippedConfigurationHoldsNoCompiledDefault(t *testing.T) {
 	})
 }
 
-// The only compiled mode-scoped role defaults are the shared Claude/Fable
-// design-author pair.
+// The only compiled mode-scoped role defaults are the design author's: its
+// auto runtime and its model on each runtime.
 func TestCompiledModeRoleDefaultsAreTheDesignAuthor(t *testing.T) {
 	t.Parallel()
 	var got []string
@@ -172,7 +176,8 @@ func TestCompiledModeRoleDefaultsAreTheDesignAuthor(t *testing.T) {
 			got = append(got, setting.Key+"="+setting.Default)
 		}
 	}
-	want := []string{"mode.design.role.implementer.runtime=claude", "mode.design.role.implementer.model.claude=claude-fable-5-1"}
+	want := []string{"mode.design.role.implementer.runtime=auto", "mode.design.role.implementer.model.claude=claude-fable-5-1",
+		"mode.design.role.implementer.model.codex=gpt-6-astra", "mode.design.role.implementer.model.devin=claude-opus-5-5-xhigh"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("compiled mode role defaults %q, want %q", got, want)
 	}

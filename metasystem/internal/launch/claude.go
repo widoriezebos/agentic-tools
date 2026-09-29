@@ -36,14 +36,7 @@ func (adapter ClaudeHeadless) Command(record Record, stateDir string) (Command, 
 	brief = appendReadPacket(brief, record)
 	model := readString(record.AdapterData, "model")
 	if model == "" {
-		switch record.Kind {
-		case "design":
-			model = "claude-fable-5-1"
-		case "build":
-			model = "claude-opus-5-5"
-		case "read":
-			model = "claude-opus-5-5[1m]"
-		}
+		return Command{}, fmt.Errorf("a claude %s lane needs a model; set launch.%s.model.claude", record.Kind, record.Kind)
 	}
 	args := []string{"-p", "--model", model}
 	// The launch's recorded effort reaches the CLI; a record without one

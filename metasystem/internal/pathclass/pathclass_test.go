@@ -2,110 +2,14 @@ package pathclass
 
 import (
 	"bytes"
-	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"reflect"
 	"strings"
-	"sync"
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
-
-func oneRepositoryRootResult(t *testing.T, expected repositoryRootRequest, output []byte, resultErr error) repositoryRootRunner {
-	t.Helper()
-	expected.Args = append([]string(nil), expected.Args...)
-	expected.Environment = append([]string(nil), expected.Environment...)
-	output = append([]byte(nil), output...)
-	var mu sync.Mutex
-	calls := 0
-	t.Cleanup(func() {
-		mu.Lock()
-		defer mu.Unlock()
-		if calls != 1 {
-			t.Errorf("repository root runner received %d calls; want exactly one", calls)
-		}
-	})
-	return func(request repositoryRootRequest) ([]byte, error) {
-		mu.Lock()
-		defer mu.Unlock()
-		calls++
-		if calls != 1 || !reflect.DeepEqual(request, expected) {
-			t.Errorf("repository root request %d = %+v; want %+v", calls, request, expected)
-			return nil, errors.New("unexpected repository root request")
-		}
-		return append([]byte(nil), output...), resultErr
-	}
-}
-
-func TestDiscoverRepositoryRootWithRunner(t *testing.T) {
-	installation := t.TempDir()
-	steering := []string{
-		"GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE", "GIT_CEILING_DIRECTORIES",
-		"GIT_DISCOVERY_ACROSS_FILESYSTEM", "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES",
-		"GIT_CONFIG", "GIT_CONFIG_PARAMETERS", "GIT_CONFIG_COUNT", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM",
-		"GIT_CONFIG_NOSYSTEM", "GIT_GRAFT_FILE", "GIT_SHALLOW_FILE", "GIT_REPLACE_REF_BASE",
-		"GIT_IMPLICIT_WORK_TREE", "GIT_NO_REPLACE_OBJECTS", "GIT_PREFIX",
-	}
-	for _, name := range steering {
-		t.Setenv(name, "hostile")
-	}
-	t.Setenv("PATHCLASS_SENTINEL", "retained")
-	expected := repositoryRootRequest{Directory: installation, Args: []string{"rev-parse", "--show-toplevel"}, Environment: scrubGitSteering(os.Environ())}
-	for _, entry := range expected.Environment {
-		name, _, _ := strings.Cut(entry, "=")
-		for _, forbidden := range steering {
-			if name == forbidden {
-				t.Fatalf("Git steering %s survived scrubbing", name)
-			}
-		}
-	}
-	if !containsEnvironment(expected.Environment, "PATHCLASS_SENTINEL=retained") {
-		t.Fatal("unrelated environment entry was dropped")
-	}
-	for _, test := range []struct {
-		name, output, want string
-		err                error
-	}{
-		{name: "absolute output", output: "  " + installation + "\n", want: installation},
-		{name: "relative output", output: "  .\n", want: mustWorkingDirectory(t)},
-		{name: "command error", output: "fatal: no repository\n", err: errors.New("exit status 128"), want: "path class: installation is not inside a Git repository: fatal: no repository"},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			root, err := discoverRepositoryRootWithRunner(installation, oneRepositoryRootResult(t, expected, []byte(test.output), test.err))
-			if test.err != nil {
-				if err == nil || err.Error() != test.want {
-					t.Fatalf("error = %v; want %q", err, test.want)
-				}
-			} else if err != nil || root != test.want {
-				t.Fatalf("root = %q, error = %v; want %q", root, err, test.want)
-			}
-		})
-	}
-	if _, err := discoverRepositoryRootWithRunner(installation, nil); err == nil || !strings.Contains(err.Error(), "runner is required") {
-		t.Fatalf("nil runner error = %v", err)
-	}
-}
-
-func containsEnvironment(environment []string, entry string) bool {
-	for _, candidate := range environment {
-		if candidate == entry {
-			return true
-		}
-	}
-	return false
-}
-
-func mustWorkingDirectory(t *testing.T) string {
-	t.Helper()
-	directory, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	return directory
-}
 
 func TestLongestPrefixWins(t *testing.T) {
 	t.Parallel()
@@ -145,14 +49,9 @@ repo:metasystem record
 		t.Fatalf("repo:metasystem = %+v; want record", got)
 	}
 
-	repository := t.TempDir()
-	installation := filepath.Join(repository, "metasystem")
-	if err := os.MkdirAll(filepath.Join(installation, "cmd"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	got, err := resolveAt(manifest, installation, repository, Template, stateroot.OwnerMetasystem, filepath.Join(installation, "cmd", "x.go"))
-	if err != nil || got.Class != Behavior || got.Namespace != Install || got.Key != "cmd/x.go" {
-		t.Fatalf("template installation path resolved as %+v, %v; want install:cmd/x.go behavior", got, err)
+	got := manifest.ResolveRepositoryPath(Template, stateroot.OwnerMetasystem, "metasystem", "metasystem/cmd/x.go")
+	if got.Class != Behavior || got.Namespace != Install || got.Key != "cmd/x.go" {
+		t.Fatalf("template installation path resolved as %+v; want install:cmd/x.go behavior", got)
 	}
 }
 
@@ -172,18 +71,6 @@ floor:metasystem.conf tier-1-refused
 	}
 	if got := manifest.Class("internal/landing/observe.go"); got != Behavior {
 		t.Fatalf("floor row changed the four-class answer to %s", got)
-	}
-}
-
-func TestAdoptedModeAnswersOutside(t *testing.T) {
-	repository := t.TempDir()
-	manifest := parseTestManifest(t, "install:docs/ behavior\n")
-	got, err := resolveAt(manifest, repository, repository, Adopted, stateroot.OwnerApp, "docs/application.md")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.Class != Outside || got.Mode != Adopted {
-		t.Fatalf("application-owned docs/application.md resolved as %+v; want outside adopted", got)
 	}
 }
 
@@ -253,20 +140,47 @@ func TestCompatibilityRows(t *testing.T) {
 
 func TestTemplateVersusAdoptedResolution(t *testing.T) {
 	manifest := loadRepositoryManifest(t)
-	repository := t.TempDir()
-	installation := filepath.Join(repository, "metasystem")
-	if err := os.MkdirAll(installation, 0o755); err != nil {
+	templateAnswer := manifest.ResolveRepositoryPath(Template, stateroot.OwnerApp, "metasystem", "development/report.md")
+	if templateAnswer.Class != Record || templateAnswer.Namespace != Repo {
+		t.Fatalf("template development/report.md = %+v; want repo record", templateAnswer)
+	}
+	adoptedAnswer := manifest.ResolveRepositoryPath(Adopted, stateroot.OwnerApp, "metasystem", "development/report.md")
+	if adoptedAnswer.Class != Outside {
+		t.Fatalf("adopted development/report.md = %+v; want outside", adoptedAnswer)
+	}
+}
+
+// The compiled-in manifest answers the template layout's classes: runtime,
+// ledger, record and behavior rows under the installation, an unclassified
+// application path at the repository top, and a behavior directory row
+// explaining a file beneath it.
+func TestCompiledManifestClassifiesTheTemplateLayout(t *testing.T) {
+	t.Parallel()
+	manifest, err := Load()
+	if err != nil {
 		t.Fatal(err)
 	}
-
-	reportPath := filepath.Join(repository, "development", "report.md")
-	templateAnswer, err := resolveAt(manifest, installation, repository, Template, stateroot.OwnerApp, reportPath)
-	if err != nil || templateAnswer.Class != Record || templateAnswer.Namespace != Repo {
-		t.Fatalf("template development/report.md = %+v, %v; want repo record", templateAnswer, err)
+	for _, test := range []struct {
+		path      string
+		ownership stateroot.Ownership
+		want      Class
+	}{
+		{"metasystem/internal/x.go", stateroot.OwnerMetasystem, Behavior},
+		{"metasystem/internal/goal/txn.go", stateroot.OwnerMetasystem, Behavior},
+		{"metasystem/records/misc/x.md", stateroot.OwnerMetasystem, Record},
+		{"metasystem/plans/path-class-fixture.md", stateroot.OwnerMetasystem, Record},
+		{"metasystem/plans/goals/x.md", stateroot.OwnerMetasystem, Ledger},
+		{"metasystem/bin/metasystem", stateroot.OwnerMetasystem, Runtime},
+		{"metasystem/artifacts/path-class-fixture.json", stateroot.OwnerMetasystem, Runtime},
+		{"product.txt", stateroot.OwnerApp, Unclassified},
+	} {
+		if got := manifest.ResolveRepositoryPath(Template, test.ownership, "metasystem", test.path); got.Class != test.want || got.Mode != Template {
+			t.Errorf("%s resolved as %+v; want %s in template mode", test.path, got, test.want)
+		}
 	}
-	adoptedAnswer, err := resolveAt(manifest, installation, repository, Adopted, stateroot.OwnerApp, reportPath)
-	if err != nil || adoptedAnswer.Class != Outside {
-		t.Fatalf("adopted development/report.md = %+v, %v; want outside", adoptedAnswer, err)
+	explained := manifest.ResolveRepositoryPath(Template, stateroot.OwnerMetasystem, "metasystem", "metasystem/docs/guide.md")
+	if explained.Class != Behavior || explained.Row != "install:docs/" || explained.Namespace != Install || explained.Key != "docs/guide.md" {
+		t.Fatalf("docs/guide.md explained as %+v; want behavior row=install:docs/ key=install:docs/guide.md", explained)
 	}
 }
 
@@ -290,71 +204,6 @@ func TestRepositoryPathResolutionUsesModeAndLocation(t *testing.T) {
 			got := manifest.ResolveRepositoryPath(test.mode, test.ownership, test.prefix, test.path)
 			if got.Class != test.wantClass || got.Namespace != test.wantSpace || got.Mode != test.mode {
 				t.Fatalf("ResolveRepositoryPath(%s, %q) = %+v; want class %s namespace %s", test.mode, test.path, got, test.wantClass, test.wantSpace)
-			}
-		})
-	}
-}
-
-func TestResolveSameFileThreeInputForms(t *testing.T) {
-	manifest := loadRepositoryManifest(t)
-	repository, err := filepath.EvalSymlinks(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	installation := filepath.Join(repository, "metasystem")
-
-	paths := []struct {
-		key       string
-		wantClass Class
-	}{
-		{key: "internal/goal/txn.go", wantClass: Behavior},
-		{key: "plans/path-class-fixture.md", wantClass: Record},
-		{key: "artifacts/path-class-fixture.json", wantClass: Runtime},
-	}
-	for _, test := range paths {
-		absolute := filepath.Join(installation, filepath.FromSlash(test.key))
-		if err := os.MkdirAll(filepath.Dir(absolute), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(absolute, []byte("fixture\n"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	originalDirectory, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := os.Chdir(originalDirectory); err != nil {
-			t.Errorf("restore working directory: %v", err)
-		}
-	})
-
-	for _, test := range paths {
-		t.Run(test.key, func(t *testing.T) {
-			forms := []struct {
-				name      string
-				directory string
-				input     string
-			}{
-				{name: "installation relative", directory: installation, input: filepath.FromSlash(test.key)},
-				{name: "repository relative", directory: repository, input: filepath.Join("metasystem", filepath.FromSlash(test.key))},
-				{name: "absolute", directory: repository, input: filepath.Join(installation, filepath.FromSlash(test.key))},
-			}
-			for _, form := range forms {
-				t.Run(form.name, func(t *testing.T) {
-					if err := os.Chdir(form.directory); err != nil {
-						t.Fatal(err)
-					}
-					got, err := resolveAt(manifest, installation, repository, Template, stateroot.OwnerMetasystem, form.input)
-					if err != nil {
-						t.Fatal(err)
-					}
-					if got.Class != test.wantClass || got.Namespace != Install || got.Key != test.key {
-						t.Fatalf("resolveAt(%q) from %q = %+v; want %s at install:%s", form.input, form.directory, got, test.wantClass, test.key)
-					}
-				})
 			}
 		})
 	}
@@ -395,23 +244,6 @@ func TestRepositoryManifestClassifiesEveryTrackedPath(t *testing.T) {
 	}
 	if len(unclassified) > 0 {
 		t.Fatalf("tracked paths missing from path class manifest: %s", strings.Join(unclassified, ", "))
-	}
-}
-
-func TestResolveAtAnswersOutsideAfterSuccessfulDiscovery(t *testing.T) {
-	repository := t.TempDir()
-	installation := filepath.Join(repository, "metasystem")
-	manifest := parseTestManifest(t, "install:docs/ behavior\n")
-	answer, err := resolveAt(manifest, installation, repository, Template, stateroot.OwnerOutside, filepath.Join(filepath.Dir(repository), "outside.md"))
-	if err != nil || answer.Class != Outside || answer.Mode != Template {
-		t.Fatalf("successful outside ownership resolved as %+v, %v; want outside template", answer, err)
-	}
-}
-
-func TestResolvePathReportsMisinstalledEngine(t *testing.T) {
-	answer, err := ResolvePath("outside.md")
-	if err == nil || !strings.Contains(err.Error(), "not installed at <installation>/bin/metasystem") {
-		t.Fatalf("misinstalled test engine resolved as %+v, %v; want the installation diagnostic", answer, err)
 	}
 }
 

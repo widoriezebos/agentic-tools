@@ -108,7 +108,10 @@ const validConf = "metasystem.version=1\n" +
 	// Claude is selected, so its compiled role models are configured
 	// models and each needs its tier.
 	"model.tier.2=claude:claude-fable-5-1\n" +
-	"model.tier.3=claude:claude-opus-5-5\n"
+	"model.tier.3=claude:claude-opus-5-5\n" +
+	// So are Codex's.
+	"model.tier.4=codex:gpt-6-sol\n" +
+	"model.tier.5=codex:gpt-6-astra\n"
 
 func TestValidateAccepts(t *testing.T) {
 	if problems := validateRepo(t, validConf); len(problems) != 0 {

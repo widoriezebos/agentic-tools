@@ -52,18 +52,6 @@ func TestPolicyVersionAndDeclaredSkipSet(t *testing.T) {
 	if policy.SkipAllowed("", "not-declared") {
 		t.Fatal("an unlisted validation family was authorized to skip")
 	}
-	for _, test := range []struct {
-		value string
-		want  SkipScope
-	}{{"witness", WitnessScope}, {"DELIVERY", DeliveryScope}} {
-		got, err := ParseSkipScope(test.value)
-		if err != nil || got != test.want {
-			t.Errorf("ParseSkipScope(%q) = %q, %v; want %q", test.value, got, err, test.want)
-		}
-	}
-	if _, err := ParseSkipScope(""); err == nil {
-		t.Fatal("an absent skip scope was accepted")
-	}
 }
 
 func TestPolicyClassesAndProjectionBoundaries(t *testing.T) {

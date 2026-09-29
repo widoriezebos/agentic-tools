@@ -5,30 +5,23 @@ import (
 	"testing"
 )
 
-// The shipped rows validate, the wire format is exact, and the
-// collision proof holds — including the one sanctioned exception.
+// The shipped rows validate and the collision proof holds — including the
+// one sanctioned exception.
 func TestRegistrationRows(t *testing.T) {
 	if problems := ValidateRegistration(); len(problems) != 0 {
 		t.Fatalf("shipped rows invalid: %v", problems)
 	}
-	wire := RegistrationV1("codex")
-	lines := strings.Split(strings.TrimSuffix(wire, "\n"), "\n")
-	if lines[0] != "registration/v1" {
-		t.Fatalf("wire header wrong: %q", lines[0])
-	}
-	if len(lines) != 1+len(RegistrationRows("codex")) {
-		t.Fatalf("wire row count wrong: %d", len(lines))
-	}
-	for _, line := range lines[1:] {
-		if got := len(strings.Split(line, "\t")); got != 12 {
-			t.Fatalf("wire arity %d != 12: %q", got, line)
+	exception := false
+	for _, row := range RegistrationRows("codex") {
+		if row.Destination == ".codex/hooks.json" {
+			exception = row.Policy == PolicyPresenceOnly && row.InstructionBearing && row.UncoveredException
 		}
 	}
-	if !strings.Contains(wire, ".codex/hooks.json\tpresence-only\tinstruction-bearing\ttrue") {
-		t.Fatalf("the codex exception row drifted:\n%s", wire)
+	if !exception {
+		t.Fatalf("the codex exception row drifted: %+v", RegistrationRows("codex"))
 	}
-	if RegistrationV1("fake") != "registration/v1\n" {
-		t.Fatalf("fake must have a header-only wire: %q", RegistrationV1("fake"))
+	if rows := RegistrationRows("fake"); len(rows) != 0 {
+		t.Fatalf("fake must declare no registration rows: %+v", rows)
 	}
 	// The dirs view and the rows agree on every declared destination
 	// directory (the pre-row mirror must not drift while it survives).

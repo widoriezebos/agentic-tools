@@ -1050,25 +1050,6 @@ func assertBanner(path, banner string) error {
 	}
 }
 
-func ReadSelectorSections(path string) ([]string, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-	var sections []string
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := scanner.Text()
-		id, _, found := strings.Cut(line, "\t")
-		if !found || id == "" {
-			return nil, fmt.Errorf("selector row is invalid: %q", line)
-		}
-		sections = append(sections, id)
-	}
-	return sections, scanner.Err()
-}
-
 // proofCardFollow is what the launcher knows about a goal-bound proof: the
 // planned sections and the progress file the suite appends to.
 type proofCardFollow struct {
