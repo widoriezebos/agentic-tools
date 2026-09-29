@@ -212,7 +212,7 @@ func registeredFamilies() []family {
 		{
 			name: "run", summary: "the cadence run's detached leader",
 			verbs: []verb{
-				{name: "wrap", summary: "the detached leader of the landing owner's cadence run", run: runRunWrap, launcher: "cmd/metasystem/gate_cadence.go", evidence: "\"run\", \"wrap\""},
+				{name: "wrap", summary: "the detached leader of the landing owner's cadence run", run: runRunWrap, launcher: "internal/cadence/tick.go", evidence: "\"run\", \"wrap\""},
 			},
 		},
 		{
