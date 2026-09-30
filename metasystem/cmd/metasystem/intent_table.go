@@ -19,6 +19,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 )
 
@@ -724,16 +725,37 @@ func runIntentDesignCheck(inv *intentInvocation) int {
 	data := map[string]any{"files": files, "complete": inv.input.switched("complete"), "lines": nonNilLines(out), "problems": nonNilLines(problems)}
 	switch {
 	case code == 0:
+		gate := map[bool]string{true: "completion", false: "default"}[inv.input.switched("complete")]
 		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, text: out, Data: data,
-			Summary: fmt.Sprintf("%d obligation matrix(es) pass the %s gate", len(files), map[bool]string{true: "completion", false: "default"}[inv.input.switched("complete")])})
+			Summary: fmt.Sprintf("%d obligation matrix(es) pass the %s gate", len(files), gate),
+			view: func(page *textui.Page) {
+				// Each plan is named as the person named it.
+				named := inv.input.args
+				if len(named) == 1 {
+					page.Done(named[0] + " passes the " + gate + " gate")
+				} else {
+					page.Done(textui.Count(len(named), "plan passes", "plans pass") + " the " + gate + " gate")
+					section := page.Section("", "")
+					for _, name := range named {
+						section.Item(textui.Done, name)
+					}
+				}
+				if page.Verbose() {
+					section := page.Section("Checked", "")
+					for _, line := range out {
+						section.Text(line)
+					}
+				}
+			}})
 	case code == 2:
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: targets, text: problems, Data: data,
 			Summary: strings.Join(nonNilLines(problems), "; ") + "; nothing was checked", next: inv.sameCommand(), nextReason: "once that is corrected"})
 	}
-	summary := "the obligation matrix does not pass"
+	summary, rest := "the obligation matrix does not pass", problems
 	if len(problems) > 0 {
-		summary = problems[0]
+		// The first problem is the summary; the text is the rest.
+		summary, rest = problems[0], problems[1:]
 	}
-	return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, text: problems, Data: data, Summary: summary,
+	return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, text: rest, Data: data, Summary: summary,
 		next: inv.sameCommand(), nextReason: "after meeting or re-stating the named obligations in the plan"})
 }

@@ -36,6 +36,9 @@ func g1aLayoutCases() []layoutCase {
 		{name: "system-setup-again", args: []string{"system", "setup"}, bed: setupLayoutBed(true)},
 		{name: "system-setup-refusal", args: []string{"system", "setup", "--runtimes", ""}, bed: setupLayoutBed(false)},
 		{name: "system-check", args: []string{"system", "check"}, bed: checkLayoutBed, measured: "each health role's durationMillis"},
+		{name: "design-check", args: []string{"design", "check", "docs/examples/design-obligation-matrix.md"}, bed: designCheckLayoutBed},
+		{name: "design-check-both", args: []string{"design", "check", "docs/examples/design-obligation-matrix.md", "docs/examples/design-obligation-matrix.md"}, bed: designCheckLayoutBed},
+		{name: "design-check-refusal", args: []string{"design", "check"}, bed: designCheckLayoutBed},
 		{name: "question-list-empty", args: []string{"question", "list"}, bed: processLayoutBed()},
 		{name: "question-list", args: []string{"question", "list"}, bed: questionsLayoutBed},
 		{name: "helm-take", args: []string{"helm", "take", "--reason", "coordinating the verb batches"}, bed: helmLayoutBed(true)},
@@ -169,6 +172,16 @@ func checkLayoutBed(t *testing.T) layoutBed {
 	}
 	root := realpath.Resolve(b.root())
 	return layoutBed{owners: owners, cwd: b.root(), replace: processLayoutPaths(b, root)}
+}
+
+// designCheckLayoutBed runs from this module, where the example plan is.
+func designCheckLayoutBed(t *testing.T) layoutBed {
+	b := newIntentBed(t, false, nil)
+	module, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return layoutBed{owners: b.owners(), cwd: module, replace: layoutPaths(module, realpath.Resolve(module), "/Users/wido/GitHub/agentic-tools-m1e/metasystem")}
 }
 
 func processLayoutOwners(t *testing.T) (*processBed, intentOwners) {

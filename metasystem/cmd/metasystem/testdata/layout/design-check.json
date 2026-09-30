@@ -1,0 +1,26 @@
+exit 0
+--
+{
+  "schemaVersion": 1,
+  "verb": "design check",
+  "targets": [
+    {
+      "kind": "design",
+      "id": "/Users/wido/GitHub/agentic-tools-m1e/metasystem/docs/examples/design-obligation-matrix.md"
+    }
+  ],
+  "outcome": "confirmed",
+  "summary": "1 obligation matrix(es) pass the default gate",
+  "data": {
+    "complete": false,
+    "files": [
+      "/Users/wido/GitHub/agentic-tools-m1e/metasystem/docs/examples/design-obligation-matrix.md"
+    ],
+    "lines": [
+      "design obligation gate passed (1 file(s), runtime_required=0)"
+    ],
+    "problems": []
+  }
+}
+
+--

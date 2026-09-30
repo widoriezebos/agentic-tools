@@ -1,0 +1,21 @@
+exit 2
+--
+{
+  "schemaVersion": 1,
+  "verb": "design check",
+  "targets": [],
+  "outcome": "refused",
+  "summary": "design check needs the plan to check; nothing was checked",
+  "next": {
+    "argv": [
+      "metasystem",
+      "design",
+      "check",
+      "FILE",
+      "--json"
+    ],
+    "reason": "FILE is the plan; several may be named"
+  }
+}
+
+--
