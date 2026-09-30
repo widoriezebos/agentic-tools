@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gaterun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
@@ -66,6 +67,8 @@ type laneVerbOwners struct {
 	// laneHeld lists the goals the ledger, read from an installation,
 	// shows held by the landing lane.
 	laneHeld func(installation string) ([]string, error)
+	// validation runs one landing validate.
+	validation func(laneValidateRequest) (gaterun.ValidateOutcome, error)
 }
 
 func (inv *intentInvocation) landing() laneVerbOwners {
@@ -117,6 +120,9 @@ func (inv *intentInvocation) landing() laneVerbOwners {
 			return laneengine.Advance(request, laneengine.ProductionConditions(request.Home, request.Checkout),
 				laneengine.ProductionSteps(request.Checkout, request.Installation))
 		}
+	}
+	if owners.validation == nil {
+		owners.validation = productionLaneValidate
 	}
 	if owners.laneHeld == nil {
 		now := owners.now
@@ -204,6 +210,7 @@ func landingIntentCommands() []intentCommand {
 			run:      runIntentLandingRestart,
 		},
 		landingEngineCommand(),
+		landingValidateCommand(),
 	}
 }
 

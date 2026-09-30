@@ -167,11 +167,19 @@ const (
 	CodeValidatePending        = "LANDING_VALIDATE_FINALIZE_PENDING"
 )
 
+// ValidateGap is why the standing validation authority can't carry a run:
+// the plain reason and the one command that closes it.
+type ValidateGap struct{ Reason, Command string }
+
+func (gap *ValidateGap) Error() string { return gap.Reason }
+
 // ValidateOutcome is what one landing validate call did.
 type ValidateOutcome struct {
-	Result string               `json:"result"`
-	Code   string               `json:"code,omitempty"`
-	Reason string               `json:"reason,omitempty"`
+	Result string `json:"result"`
+	Code   string `json:"code,omitempty"`
+	Reason string `json:"reason,omitempty"`
+	// Fix is the one command that closes an authority gap.
+	Fix    string               `json:"fix,omitempty"`
 	Key    goal.CadenceClaimKey `json:"key"`
 	RunID  string               `json:"runId,omitempty"`
 	Status *goal.CadenceStatus  `json:"status,omitempty"`
@@ -328,7 +336,12 @@ func discharge(reserved Validation, now time.Time, seams ValidateSeams) (bool, s
 // fresh runs when nothing is reserved.
 func fresh(force bool, seams ValidateSeams) (ValidateOutcome, error) {
 	if gap := seams.Gap(); gap != nil {
-		return ValidateOutcome{Result: ValidateUnavailable, Code: CodeValidateAuthority, Reason: gap.Error()}, nil
+		outcome := ValidateOutcome{Result: ValidateUnavailable, Code: CodeValidateAuthority, Reason: gap.Error()}
+		var named *ValidateGap
+		if errors.As(gap, &named) {
+			outcome.Fix = named.Command
+		}
+		return outcome, nil
 	}
 	plan, err := seams.Plan()
 	if err != nil {

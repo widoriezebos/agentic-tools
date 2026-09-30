@@ -307,8 +307,9 @@ func TestValidateFinalizeAcrossDischargeCrash(t *testing.T) {
 func TestValidateUnavailableWritesNothing(t *testing.T) {
 	t.Parallel()
 	gap := newValidateBed(t)
-	gap.gap = errors.New("goal standing-validation is not approved, so no validation runs; run: metasystem goal approve standing-validation")
-	if outcome := gap.validate(false); outcome.Result != ValidateUnavailable || outcome.Code != CodeValidateAuthority || !strings.Contains(outcome.Reason, "metasystem goal approve standing-validation") {
+	gap.gap = &ValidateGap{Reason: "goal standing-validation is not approved, so no landing validation runs", Command: "metasystem goal approve standing-validation"}
+	if outcome := gap.validate(false); outcome.Result != ValidateUnavailable || outcome.Code != CodeValidateAuthority ||
+		outcome.Reason != "goal standing-validation is not approved, so no landing validation runs" || outcome.Fix != "metasystem goal approve standing-validation" {
 		t.Fatalf("gap: outcome = %+v", outcome)
 	}
 	gap.wrote(t)

@@ -206,6 +206,10 @@ type ValidateLane struct {
 	// Publish publishes a finalized status (K-c routes it through the lane
 	// publication boundary); nil uses the ledger's claim and publish.
 	Publish func(goal.CadenceClaimKey, goal.CadenceStatus, []goal.TrunkRedRecordGroup) error
+	// Gate admits a launch and a publication under the lane's pause (K2):
+	// it runs start under the host flock when the lane admits validate.
+	// nil admits.
+	Gate func(start func() error) error
 }
 
 // Seams binds gaterun.Validate to production.
@@ -227,6 +231,10 @@ func (v ValidateLane) Seams() (gaterun.ValidateSeams, error) {
 	}
 	if sleep == nil {
 		sleep = time.Sleep
+	}
+	gate := v.Gate
+	if gate == nil {
+		gate = func(start func() error) error { return start() }
 	}
 	publish := v.Publish
 	if publish == nil {
@@ -286,7 +294,7 @@ func (v ValidateLane) Seams() (gaterun.ValidateSeams, error) {
 				return fmt.Errorf("the goal ledger can't be read, so the standing validation authority is unknown: %w", err)
 			}
 			if gap := goal.StandingAuthorityGap(projection.Tree, AuthorityGoal, actor); gap != nil {
-				return fmt.Errorf("%s, so no validation runs; run: %s", gap.Reason, gap.Command)
+				return &gaterun.ValidateGap{Reason: gap.Reason + ", so no landing validation runs", Command: gap.Command}
 			}
 			return nil
 		},
@@ -300,7 +308,13 @@ func (v ValidateLane) Seams() (gaterun.ValidateSeams, error) {
 			return "cadence-" + strings.ToLower(ulid), err
 		},
 		Launch: func(reservation gaterun.Validation) (string, error) {
-			return launchValidation(home, root, v.Owner, clock, store, reservation)
+			id := ""
+			err := gate(func() error {
+				var err error
+				id, err = launchValidation(home, root, v.Owner, clock, store, reservation)
+				return err
+			})
+			return id, err
 		},
 		Weight: func() (gaterun.WeightState, error) {
 			state, _, err := gaterun.WeightCheckAt(root, v.Owner.WeightThreshold(root), clock().UTC())
@@ -310,7 +324,9 @@ func (v ValidateLane) Seams() (gaterun.ValidateSeams, error) {
 			_, err := gaterun.WeightDischargeAt(root, authority.GoalID, authority.ObligationRevision, runID, at)
 			return err
 		},
-		Publish: publish,
+		Publish: func(key goal.CadenceClaimKey, status goal.CadenceStatus, red []goal.TrunkRedRecordGroup) error {
+			return gate(func() error { return publish(key, status, red) })
+		},
 	}, nil
 }
 
