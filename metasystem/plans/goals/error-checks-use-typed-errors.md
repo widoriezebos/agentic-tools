@@ -9,11 +9,12 @@
 - Origin: main
 - Next step: Next: Convert the remaining places that decide on error text (about ten; list them with a grep at ec495cbc8) to errors.Is or errors.As on refusal.Coded; give the closed trunk-red record a code field instead of the text match in IsTrunkRedClosed; land the error-text audit test at zero. Builder verbs-typederr is on it; hand work. Done when: the audit passes with no allowed exceptions and rewording a message changes no decision.
 - OpenedAt: 2026-09-30T12:03:35Z
-- Revision: 12
+- Revision: 13
 - Pinned: m1e
-- Budget: elapsedLimit=1h attemptLimit=3 reservedJobMinutesLimit=360 activeJobLimit=1 reviewRoundLimit=0
+- Budget: elapsedLimit=6h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
-- Approved: by=human:wido at=2026-09-30T19:05:20Z revision=12 opid=EHRDT2NB82CWFV1Y5TWP35KJQ3-m1e-b6a4eb0a authority=proven digest=91a2ca47fe117e2d9389710efa0b67b85a86c62018b5f73b80327fcbcff020c5 episode=12
+- NormApproval: approvedRef=A5FME3QF47S23WX90MHQVXKS63-m1e-b6a4eb0a minutes=720 reviewRounds=2 goalRevision=12
+- Approved: by=human:wido at=2026-09-30T19:05:58Z revision=13 opid=A5FME3QF47S23WX90MHQVXKS63-m1e-b6a4eb0a authority=proven digest=75f5b05136ee24963bbfbefd9ee978639fbb163c684e087eda090cea79c74f03 episode=13
 
 History:
 - 2026-09-30T12:03:35Z JMRCDJGB10YRZKEABA5JT58418-m1e-b6a4eb0a open actor=human:wido targets=error-checks-use-typed-errors,processes-read-structured-results
@@ -28,4 +29,5 @@ History:
 - 2026-09-30T19:05:10Z H2X0YVHJPXD3F2YMZDZG5F7KDD-m1e-b6a4eb0a unapprove actor=human:wido targets=error-checks-use-typed-errors reason=Unapproved only to rewrite its intent in plain English (backlog sync 2026-09-30); approved again right after
 - 2026-09-30T19:05:15Z 7A1J1RP2EBFKX6AFPM1TWM9E1Z-m1e-b6a4eb0a edit actor=human:wido targets=error-checks-use-typed-errors
 - 2026-09-30T19:05:20Z EHRDT2NB82CWFV1Y5TWP35KJQ3-m1e-b6a4eb0a approve actor=human:wido targets=error-checks-use-typed-errors
-Integrity: sha256=a651a851b46b3ec550c9607be969022c75a9b322e559451b74fa17c0a2df6c60
+- 2026-09-30T19:05:58Z A5FME3QF47S23WX90MHQVXKS63-m1e-b6a4eb0a approve actor=human:wido targets=error-checks-use-typed-errors
+Integrity: sha256=e82f496c4076944b6640e0eb32cc0da1e6ac2df40989d5e91892c3d62c8e856f
