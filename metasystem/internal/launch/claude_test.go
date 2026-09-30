@@ -451,3 +451,28 @@ func TestDesignCommonTemplateContract(t *testing.T) {
 		}
 	}
 }
+
+// TestLandingSessionRunsWithItsToolGate (unit A-b): a record that carries a
+// settings file runs Claude with it, which is how the landing agent's
+// fail-closed tool gate reaches the runtime; a landing session without one
+// is refused rather than started ungated.
+func TestLandingSessionRunsWithItsToolGate(t *testing.T) {
+	t.Parallel()
+	record, _ := claudeRecord(t, "landing")
+	if _, err := (ClaudeHeadless{Binary: "claude"}).Command(record, t.TempDir()); err == nil {
+		t.Fatal("a landing session without its tool gate settings was started")
+	}
+	record.AdapterData["settings"] = rawString("/lane/state/landing-settings.json")
+	command, err := (ClaudeHeadless{Binary: "claude"}).Command(record, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	index := slices.Index(command.Args, "--settings")
+	if index < 0 || index+1 >= len(command.Args) || command.Args[index+1] != "/lane/state/landing-settings.json" {
+		t.Fatalf("argv=%v, want --settings /lane/state/landing-settings.json", command.Args)
+	}
+	build, _ := claudeRecord(t, "build")
+	if command, err := (ClaudeHeadless{Binary: "claude"}).Command(build, t.TempDir()); err != nil || slices.Contains(command.Args, "--settings") {
+		t.Fatalf("a build without settings: argv=%v err=%v", command.Args, err)
+	}
+}

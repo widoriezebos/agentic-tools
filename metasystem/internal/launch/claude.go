@@ -45,6 +45,16 @@ func (adapter ClaudeHeadless) Command(record Record, stateDir string) (Command, 
 		args = append(args, "--effort", effort)
 	}
 	args = append(args, "--dangerously-skip-permissions", "--output-format", "json", "--name", record.Kind+"-"+record.Tag)
+	// A settings file joins the checkout's own settings; the landing agent's
+	// fail-closed tool gate arrives this way (agentgate.ClaudeSettings), and
+	// a landing session never starts without it.
+	settings := readString(record.AdapterData, "settings")
+	if settings == "" && record.Kind == "landing" {
+		return Command{}, fmt.Errorf("a landing session needs its tool gate settings; the launch records them under AdapterData \"settings\"")
+	}
+	if settings != "" {
+		args = append(args, "--settings", settings)
+	}
 	if session := readString(record.AdapterData, "resumeSession"); session != "" {
 		args = append(args, "--resume", session)
 	}
