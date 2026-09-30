@@ -285,6 +285,7 @@ func intentWorkCommands() []intentCommand {
 				{name: "goal", value: "G", usage: "the accepted goal owning the delivery"},
 				{name: "authority", value: "H", advanced: true, usage: "the claimed goal authorizing the proof reservation"},
 				{name: "mode", value: "MODE", usage: "auto (default), standard or deep"},
+				testVerboseFlag,
 			},
 			maxArgs:  0,
 			examples: []string{"metasystem test run", "metasystem test run --goal verbs-match-intent --mode standard"},
@@ -1519,6 +1520,10 @@ func (inv *intentInvocation) waitUnit(run string, timeout time.Duration, targets
 
 // test
 
+// testVerboseFlag is test run, plan and status's --verbose: a refusal's two
+// lines, then the code, cause and facts behind it.
+var testVerboseFlag = intentFlag{name: "verbose", usage: "also print the details behind a refusal: its code, cause and facts"}
+
 // runIntentTest runs the selected installation's test runner in this process
 // and reports the structured result it prints; its progress goes to standard
 // error unchanged.
@@ -1532,6 +1537,9 @@ func runIntentTest(inv *intentInvocation) int {
 		if inv.input.has(name) {
 			argv = append(argv, "--"+name, inv.input.text(name))
 		}
+	}
+	if inv.input.switched("verbose") {
+		argv = append(argv, "--verbose")
 	}
 	if inv.input.has("goal") {
 		targets = append(targets, intentTarget{Kind: "goal", ID: inv.input.text("goal")})

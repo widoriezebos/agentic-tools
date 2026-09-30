@@ -367,8 +367,8 @@ func practiceIntentCommands() []intentCommand {
 			[]intentFlag{documented("root", "INSTALLATION", "the installation whose checkout the session isolates from")},
 			[]string{"metasystem session isolate"}, runSessionIsolate),
 		passthroughAction("test", "plan", "both", "preview the risk-selected tests and their reasons without running them",
-			[]string{"metasystem test plan [--goal G] [--root INSTALLATION] [--json]"},
-			[]intentFlag{documented("root", "INSTALLATION", "the installation"), documented("goal", "G", "the goal owning the delivery")},
+			[]string{"metasystem test plan [--goal G] [--root INSTALLATION] [--json] [--verbose]"},
+			[]intentFlag{documented("root", "INSTALLATION", "the installation"), documented("goal", "G", "the goal owning the delivery"), testVerboseFlag},
 			[]string{"metasystem test plan", "metasystem test plan --goal verbs-match-intent --json"}, runTestPlan),
 		passthroughAction("test", "add", "agent", "add verified Go tests, group inputs or surface paths to the testing contract",
 			[]string{"metasystem test add --file FILE --group ID --tests NAME,NAME", "metasystem test add --file FILE --group ID --inputs PATH,PATH",
@@ -414,9 +414,10 @@ func practiceIntentCommands() []intentCommand {
 			[]string{"metasystem test list [--root INSTALLATION] [--json]"}, []intentFlag{documented("root", "INSTALLATION", "the installation")},
 			[]string{"metasystem test list --root ."}, runTestList),
 		passthroughAction("test", "status", "both", "whether an exact tree is already proven, and what its tests cost; nothing is run",
-			[]string{"metasystem test status --tree TREE [--goal G] [--root INSTALLATION] [--json]", "metasystem test status --result FILE --expensive-ms N"},
+			[]string{"metasystem test status --tree TREE [--goal G] [--root INSTALLATION] [--json] [--verbose]", "metasystem test status --result FILE --expensive-ms N"},
 			[]intentFlag{documented("root", "INSTALLATION", "the installation"), documented("tree", "TREE", "the exact tree"), documented("goal", "G", "the goal"),
-				documented("result", "FILE", "a recorded test result whose measured cost is summarized"), documented("expensive-ms", "N", "with --result: the positive threshold for expensive tests")},
+				documented("result", "FILE", "a recorded test result whose measured cost is summarized"), documented("expensive-ms", "N", "with --result: the positive threshold for expensive tests"),
+				testVerboseFlag},
 			[]string{"metasystem test status --tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904 --root . --json", "metasystem test status --result result.json --expensive-ms 5000"}, runTestStatus),
 	}
 }
