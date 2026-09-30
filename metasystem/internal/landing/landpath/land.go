@@ -725,7 +725,7 @@ func (d *driver) commitRequest() CommitRequest {
 	commit := CommitRequest{Root: request.Root, Chain: request.Chain, DirectFix: request.DirectFix, RevertOf: request.RevertOf,
 		Goal: request.Goal, GoalSet: request.GoalSet, RootJob: request.RootJob, TestReceipt: request.TestReceipt,
 		Recertification: request.Recertification, MessageFile: d.messageFile, OwnerLineage: request.OwnerLineage,
-		AllowNewPlan: request.AllowNewPlan}
+		AllowNewPlan: request.AllowNewPlan, LaneJoin: request.CommitOnly}
 	if request.Carried != "" {
 		commit.HeldEpoch = request.HeldEpoch
 		commit.Carried, commit.LedgerTip, commit.CarriedBy, commit.CarriedPast = request.Carried, d.carriedLedgerTip, d.carriedBy, d.carriedPast
