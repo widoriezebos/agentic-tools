@@ -837,6 +837,11 @@
     },
     {
       "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/up",
+      "test": "TestUpAdoptsTheLaunchersLineageForAMain",
+      "reason": "sets the process environment a seat launch hands its child (METASYSTEM_OWNER_LINEAGE, METASYSTEM_SESSION_ID, METASYSTEM_DELEGATE_ROOT); up's adoption of that variable is the rule under test"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/up",
       "test": "TestSupCOmittedIdentityIsInferredFromTheRuntimeAncestor",
       "reason": "sets the process session environment (METASYSTEM_SESSION_ID, METASYSTEM_AGENT_RUNTIME) the identity inference reads"
     },

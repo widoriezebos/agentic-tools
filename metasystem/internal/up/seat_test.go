@@ -118,9 +118,9 @@ func readLease(t *testing.T, root string) lease.Lease {
 // holds the lease, a person's session announced beside it under another
 // lineage is "advisor", and the lease stays the seat's.
 func TestPersonBesideASeatMainIsAdvisor(t *testing.T) {
-	t.Setenv("METASYSTEM_OWNER_LINEAGE", "person-terminal")
-	t.Setenv("METASYSTEM_SESSION_ID", "")
+	t.Parallel()
 	options := seatUpOptions(t)
+	options.OwnerLineage, options.Session = "person-terminal", "person-session"
 	seat := heldSeat(t, options.Root, "seat-one")
 	before := readLease(t, options.Root)
 	if before.OwnerLineage != seatLineage || before.Pid != int64(seat.Command.Process.Pid) {
@@ -142,10 +142,11 @@ func TestPersonBesideASeatMainIsAdvisor(t *testing.T) {
 // takeover recorded. A person's session under another lineage, after the
 // successor dies too, takes the lease over with the epoch plus one.
 func TestSuccessorSeatInheritsADeadPredecessorsLease(t *testing.T) {
-	t.Setenv("METASYSTEM_SESSION_ID", "")
+	t.Parallel()
 	t.Run("successor by up", func(t *testing.T) {
-		t.Setenv("METASYSTEM_OWNER_LINEAGE", seatLineage)
+		t.Parallel()
 		options := seatUpOptions(t)
+		options.OwnerLineage, options.Session = seatLineage, "seat-two"
 		one := heldSeat(t, options.Root, "seat-one")
 		first := readLease(t, options.Root)
 		_ = one.Kill()
@@ -159,8 +160,9 @@ func TestSuccessorSeatInheritsADeadPredecessorsLease(t *testing.T) {
 		}
 	})
 	t.Run("a person takes over", func(t *testing.T) {
-		t.Setenv("METASYSTEM_OWNER_LINEAGE", "person-terminal")
+		t.Parallel()
 		options := seatUpOptions(t)
+		options.OwnerLineage, options.Session = "person-terminal", "person-session"
 		one := heldSeat(t, options.Root, "seat-one")
 		first := readLease(t, options.Root)
 		_ = one.Kill()

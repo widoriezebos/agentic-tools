@@ -125,6 +125,9 @@ func ResolveSettings(confPath string, lookupEnv func(string) (string, bool)) (Se
 var laneModelKeys = map[string]string{BuildRuntimeKey: BuildModelKey, CritiqueRuntimeKey: CritiqueModelKey,
 	DesignRuntimeKey: DesignModelKey, ReadRuntimeKey: ReadModelKey, SeatRuntimeKey: SeatModelKey}
 
+// laneModelOrder is the order the lanes' models resolve in.
+var laneModelOrder = []string{BuildRuntimeKey, CritiqueRuntimeKey, DesignRuntimeKey, ReadRuntimeKey, SeatRuntimeKey}
+
 // boundModelPrefix is the key whose runtime-bound form a lane's empty model
 // takes, when it is not the lane's own: the seat has no per-runtime model
 // keys and runs the build lane's model for its runtime (claude on Opus by
@@ -165,8 +168,11 @@ func resolveSettings(confPath string, lookupEnv func(string) (string, bool)) (Se
 		resolved[definition.Key] = Setting{Key: definition.Key, Value: value, Source: source}
 	}
 	// A lane's model follows the lane's resolved runtime unless the
-	// runtime-independent key names one for every runtime.
-	for runtimeKey, modelKey := range laneModelKeys {
+	// runtime-independent key names one for every runtime. The lanes resolve
+	// in a fixed order, the seat last, so a model missing for the build lane
+	// is refused under the build lane's key even though the seat borrows it.
+	for _, runtimeKey := range laneModelOrder {
+		modelKey := laneModelKeys[runtimeKey]
 		value, source, err := resolve(modelKey)
 		if err != nil {
 			return Settings{}, err

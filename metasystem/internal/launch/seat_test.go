@@ -49,6 +49,7 @@ func environmentValue(environment []string, key string) (string, bool) {
 // session id, and inherits the rest; the record carries the supervisor, the
 // child and the process group.
 func TestSeatLaunchIsSessionShapedAndNamesItsLineage(t *testing.T) {
+	t.Parallel()
 	m, processes, _, _ := manager(t)
 	m.Adapters = map[string]Adapter{"claude-headless": ClaudeHeadless{Binary: "/fixture/bin/claude"}}
 	m.Supervisor = supervisingStarter(t, m)
@@ -128,6 +129,7 @@ func TestSeatLaunchIsSessionShapedAndNamesItsLineage(t *testing.T) {
 // runtime unless the runtime-independent key pins one, every layer's source
 // is named; an unknown runtime refuses at the start.
 func TestSeatLaunchSettingsResolveLikeALane(t *testing.T) {
+	t.Parallel()
 	onPath := func(names ...string) func(string) (string, bool) {
 		dir := t.TempDir()
 		for _, name := range names {
@@ -234,6 +236,7 @@ func writeFence(t *testing.T, root, state, phase string, generation int64) stopf
 // and the record fails with the fence's own description. A fence already
 // closed refuses the start itself and the supervisor alike.
 func TestSeatStartDuringStopIsEnded(t *testing.T) {
+	t.Parallel()
 	m, processes, _, _ := manager(t)
 	m.Adapters = map[string]Adapter{"claude-headless": ClaudeHeadless{Binary: "/fixture/bin/claude"}}
 	m.Supervisor = supervisingStarter(t, m)
