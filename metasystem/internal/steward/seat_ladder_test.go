@@ -251,6 +251,7 @@ func pendingMessages(t *testing.T, root string) []string {
 
 // Test 1.
 func TestReadyWorkWithNoSeatStartsOne(t *testing.T) {
+	t.Parallel()
 	bed := newSeatBed(t, seatReadyGoal("alpha", "Build it."))
 	result := bed.tick(deadWorkers)
 	if result.Decision.Action != ActRevive || result.Seat == nil || result.Seat.Goal != "alpha" || result.Seat.Held {
@@ -264,6 +265,7 @@ func TestReadyWorkWithNoSeatStartsOne(t *testing.T) {
 
 // Test 2.
 func TestReadyWorkNeverSpawnsOnDoubt(t *testing.T) {
+	t.Parallel()
 	for name, workers := range map[string]Workers{
 		"incomplete census": {},
 		"one untracked":     {Untracked: 1, CensusComplete: true},
@@ -296,6 +298,7 @@ func capSeats(t *testing.T, bed *seatBed, id string, n int) {
 
 // Test 3.
 func TestReadyWorkHonoursTheGuardsInOrder(t *testing.T) {
+	t.Parallel()
 	t.Run("an unreaped seat launch holds before everything", func(t *testing.T) {
 		bed := newSeatBed(t, seatReadyGoal("alpha", "Build it."))
 		bed.start(&SeatSelection{Goal: "alpha", Ready: []string{"alpha"}})
@@ -370,6 +373,7 @@ func TestReadyWorkHonoursTheGuardsInOrder(t *testing.T) {
 
 // Test 4.
 func TestAForeignClaimOnThisMachineStartsNoSeatAndOursStartsASuccessor(t *testing.T) {
+	t.Parallel()
 	t.Run("a person's claim beside ready work notifies naming it", func(t *testing.T) {
 		bed := newSeatBed(t, seatReadyGoal("alpha", "Build it."), seatClaimedGoal("held", "coordinator"))
 		result := bed.tick(deadWorkers)
@@ -409,6 +413,7 @@ func TestAForeignClaimOnThisMachineStartsNoSeatAndOursStartsASuccessor(t *testin
 
 // Test 5.
 func TestOnlyHumanWordGoalsStartNoSeat(t *testing.T) {
+	t.Parallel()
 	bed := newSeatBed(t,
 		seatReadyGoal("first", "WAITING ON THE HUMAN: which design."),
 		seatReadyGoal("second", "RULING NEEDED on the scope."))
@@ -434,6 +439,7 @@ func TestOnlyHumanWordGoalsStartNoSeat(t *testing.T) {
 
 // Test 6.
 func TestTickReadsTheCensusForClaimableWork(t *testing.T) {
+	t.Parallel()
 	bed := newSeatBed(t, seatReadyGoal("alpha", "Build it."))
 	calls := &atomic.Int32{}
 	result := bed.tickWith(countingCensus{calls: calls})
@@ -448,6 +454,7 @@ const seatUsageLimitResult = `{"type":"result","is_error":true,"result":"API Err
 // today; the usage-limit class joins classifyLine in internal/outage (test
 // 18), and ClassifyProviderResult is the one API this ladder calls.
 func TestProviderLimitAfterClaimRecoversWithoutAPerson(t *testing.T) {
+	t.Parallel()
 	bed := newSeatBed(t, seatReadyGoal("held", "Build it."))
 	result := bed.tick(deadWorkers)
 	record := bed.start(result.Seat)
@@ -520,6 +527,7 @@ func seatCycle(t *testing.T, bed *seatBed, want string, blocker string) SeatReco
 // Test 17. The reset by goal unapprove then goal approve is proven over the
 // real verbs in cmd/metasystem (TestSeatCapResetsOnlyOnUnapproveThenApprove).
 func TestClaimBlockerReleaseCyclesStopAtTheCap(t *testing.T) {
+	t.Parallel()
 	bed := newSeatBed(t, seatReadyGoal("a-stuck", "Build it."), seatReadyGoal("b-next", "Build it."))
 	for i := 0; i < 3; i++ {
 		seatCycle(t, bed, "a-stuck", "Blocked: the fixture is missing.")
@@ -559,6 +567,7 @@ func TestClaimBlockerReleaseCyclesStopAtTheCap(t *testing.T) {
 
 // Test 19.
 func TestStartNoticeNamesTheStops(t *testing.T) {
+	t.Parallel()
 	bed := newSeatBed(t, seatReadyGoal("alpha", "Build it."))
 	result := bed.tick(deadWorkers)
 	record := bed.start(result.Seat)
@@ -589,6 +598,7 @@ func TestStartNoticeNamesTheStops(t *testing.T) {
 
 // Test 21, with the leg of Astra's confirmation read: cleared, then held.
 func TestALandingClaimWaitingOnReviewStartsNoSuccessor(t *testing.T) {
+	t.Parallel()
 	waits := func(t *testing.T, file *goal.GoalFile, settings ...goal.GateSettings) {
 		t.Helper()
 		bed := newSeatBed(t, file)
@@ -650,6 +660,7 @@ func TestALandingClaimWaitingOnReviewStartsNoSuccessor(t *testing.T) {
 // The runner's pass starts the seat the tick selected, instead of the
 // delegate revival.
 func TestRunnerStartsTheSelectedSeatInsteadOfARevival(t *testing.T) {
+	t.Parallel()
 	loop := newHelmLoop(t)
 	var started []SeatSelection
 	now := time.Date(2026, 9, 28, 19, 0, 0, 0, time.UTC)

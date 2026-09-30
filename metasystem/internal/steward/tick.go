@@ -557,11 +557,6 @@ func degradedTick(repoRoot, reason string) (TickResult, error) {
 	return TickResult{Decision: d}, nil
 }
 
-func decideNowWithDependencies(repoRoot string, cfg TickConfig, census WorkerCensus, ev Evidence, providerOutage bool, dependencies openWorkDependencies) (Decision, string, error) {
-	d, _, workReason, err := decideNowWithSeat(repoRoot, cfg, census, ev, providerOutage, dependencies, nil)
-	return d, workReason, err
-}
-
 // decideNowWithSeat is the ladder with the seat ladder in it (g1-s77): the
 // census is read for claimable work as for owned work, and with the seat
 // wiring present claimable work, and owned work under the seat lineage, are
