@@ -502,3 +502,71 @@ func TestMachineStopRefusals(t *testing.T) {
 		t.Fatalf("a refused stop cancelled a launch: %+v", record)
 	}
 }
+
+// register adds one checkout to the bed's host registry, armed or stopped.
+func (b *machineBed) register(checkout, tag string, armed bool) {
+	b.t.Helper()
+	payload, _ := json.Marshal(map[string]any{"schemaVersion": 1, "event": registry.EventRelaunched, "checkoutPath": checkout, "ownerTag": tag,
+		"at": "2026-09-30T08:00:00Z", "generation": 1, "watcherTag": tag + "-w", "reaperTag": tag + "-r", "retiredThrough": 0})
+	if err := registry.AppendFrame(b.registry, payload); err != nil {
+		b.t.Fatal(err)
+	}
+	if armed {
+		return
+	}
+	exited, _ := json.Marshal(map[string]any{"schemaVersion": 1, "event": registry.EventExited, "checkoutPath": checkout, "ownerTag": tag,
+		"at": "2026-09-30T09:00:00Z", "reason": "shutdown", "teardownComplete": true})
+	if err := registry.AppendFrame(b.registry, exited); err != nil {
+		b.t.Fatal(err)
+	}
+}
+
+// TestMachineListCountsOnlyTheFleetsMachines: a machine is a checkout with
+// a nickname that is armed, in the fleet's presence or the landing lane's
+// record. The host registry's other registrations (test beds, scratch and
+// builder clones, gone fixtures: fifty stopped and nameless, one armed and
+// nameless, one nicknamed but neither armed nor in the fleet) are not
+// machines: machine list does not count them, --verbose names only their
+// number, and machine stop --all never acts on them. A real machine that
+// cannot be read stays listed, unknown.
+func TestMachineListCountsOnlyTheFleetsMachines(t *testing.T) {
+	t.Parallel()
+	b := newMachineBed(t)
+	scratch := t.TempDir()
+	for index := range 50 {
+		b.register(filepath.Join(scratch, fmt.Sprintf("bed-%02d", index)), fmt.Sprintf("tag-bed-%02d", index), false)
+	}
+	b.register(filepath.Join(scratch, "armed-nameless"), "tag-armed-nameless", true)
+	stray := filepath.Join(scratch, "nicknamed-stray")
+	b.register(stray, "tag-stray", false)
+	b.nicknames[stray] = "m9q"
+
+	code, stdout, stderr := b.run("machine", "list")
+	lines := strings.Split(strings.TrimSpace(stdout), "\n")
+	if code != 0 || lines[0] != "3 machines on this computer: 2 running, 1 stopped; 2 jobs running; 1 on another computer" {
+		t.Fatalf("machine list with 52 other registrations = %d %q %q", code, stdout, stderr)
+	}
+	if strings.Contains(stdout, "other registered") || strings.Contains(stdout, "bed-") {
+		t.Fatalf("the default output names the registrations that are not machines: %q", stdout)
+	}
+	code, verbose, _ := b.run("machine", "list", "--verbose")
+	if code != 0 || !strings.Contains(verbose, "52 other registered checkouts (not machines); metasystem disk clean forgets those whose directories are gone\n") ||
+		strings.Contains(verbose, "bed-") || strings.Contains(verbose, "nicknamed-stray") || strings.Contains(verbose, "armed-nameless") {
+		t.Fatalf("machine list --verbose = %d:\n%s", code, verbose)
+	}
+
+	code, result, _ := b.runJSON("machine", "stop", "--all")
+	if code != 0 || result.Outcome != intentConfirmed ||
+		result.Summary != "stopped MetaSystem on 3 machines of this computer (1 already stopped); 1 launch cancelled" || len(result.Targets) != 3 {
+		t.Fatalf("machine stop --all with 52 other registrations = %d %+v", code, result)
+	}
+
+	// A nicknamed armed checkout that cannot be read is a machine, unknown.
+	broken := filepath.Join(scratch, "armed-unreadable")
+	b.register(broken, "tag-broken", true)
+	b.nicknames[broken] = "m1z"
+	code, result, _ = b.runJSON("machine", "list")
+	if code != 0 || !strings.HasPrefix(result.Summary, "4 machines on this computer: ") || !strings.Contains(result.Summary, ", 1 unknown;") {
+		t.Fatalf("an unreadable armed machine = %d %+v", code, result)
+	}
+}

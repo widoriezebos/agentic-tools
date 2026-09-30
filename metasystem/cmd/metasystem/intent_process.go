@@ -244,7 +244,7 @@ func processIntentCommands() []intentCommand {
 			usage: []string{"metasystem machine list [--refresh] [--verbose]"},
 			details: []string{
 				"The first line counts this computer's machines, running and stopped, its running jobs and the machines on other computers; one line per machine of the fleet follows.",
-				"This computer's machines are the checkouts the host registry of armed checkouts records, the landing lane's checkout and this checkout; a registry that cannot be read is reported, never read as no machines.",
+				"This computer's machines are the fleet's: of the checkouts the host registry of armed checkouts records and this checkout, those with a machine nickname that are armed now or appear in the fleet's presence; and the landing lane's checkout. The registry's other registrations (test beds, scratch clones) are not machines; --verbose counts them. A registry that cannot be read is reported, never read as no machines.",
 				"--verbose adds each machine of this computer with its checkout, its helpers with pid and start in local time, its running jobs and launches and the landing lane's owner; each machine on another computer with its last report; and the processes that are not MetaSystem's, which nothing touches.",
 				"Each checkout is read exactly as metasystem system status reads it.",
 			},

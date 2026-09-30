@@ -6,7 +6,11 @@ package main
 // same stop transition status reads, and stopped by system stop itself.
 // The machines come from the host registry of armed checkouts, the landing
 // lane record and the checkout the command runs in; a registry that cannot
-// be read is reported, never read as no machines.
+// be read is reported, never read as no machines. A machine is a fleet
+// machine (Wido, 2026-09-30): a checkout with a machine nickname that is
+// armed now or appears in the fleet's presence, and the landing lane's
+// checkout. The registry's other registrations (test beds, scratch and
+// builder clones, gone fixtures) are not machines: they are only counted.
 
 import (
 	"encoding/json"
@@ -97,8 +101,14 @@ type hostReading struct {
 	Machines        []*hostMachine `json:"machines"`
 	Registry        string         `json:"registry"`
 	RegistryProblem string         `json:"registryProblem,omitempty"`
-	LaneProblem     string         `json:"laneProblem,omitempty"`
-	LaunchProblem   string         `json:"launchProblem,omitempty"`
+	// OtherRegistered counts the host registry's checkouts that are not
+	// machines: no nickname, or neither armed nor in the fleet.
+	OtherRegistered int `json:"otherRegistered"`
+	// FleetProblem says the fleet's presence could not be read, so a
+	// stopped machine only it names may be missing.
+	FleetProblem  string `json:"fleetProblem,omitempty"`
+	LaneProblem   string `json:"laneProblem,omitempty"`
+	LaunchProblem string `json:"launchProblem,omitempty"`
 	// LaunchesElsewhere are this user's running launches outside every
 	// machine's checkout.
 	LaunchesElsewhere []machineLaunch  `json:"launchesElsewhere"`
@@ -125,10 +135,25 @@ func (inv *intentInvocation) checkoutInvocation(checkout string) *intentInvocati
 	return &child
 }
 
-// discoverHostMachines names this computer's machines: the checkouts the
-// host registry records, the landing lane's checkout and this checkout, each
-// once by its Git root, this checkout first, then by name.
-func (inv *intentInvocation) discoverHostMachines() hostReading {
+// fleetNames are the nicknames the fleet's presence names, the reader's own
+// included.
+func fleetNames(report seat.Report) map[string]bool {
+	names := map[string]bool{}
+	if report.This != "" {
+		names[report.This] = true
+	}
+	for _, standing := range report.Machines {
+		names[standing.Machine] = true
+	}
+	return names
+}
+
+// discoverHostMachines names this computer's machines: of the checkouts the
+// host registry records and this checkout, each once by its Git root, those
+// with a nickname that are armed or that fleet names; and the landing lane's
+// checkout. This checkout comes first, then by name. The other registered
+// checkouts are counted in OtherRegistered, never listed or stopped.
+func (inv *intentInvocation) discoverHostMachines(fleet map[string]bool) hostReading {
 	owners := inv.machineSeams()
 	reading := hostReading{LaunchesElsewhere: []machineLaunch{}, NotOurs: []machineProcess{}}
 	type candidate struct{ path, source string }
@@ -186,13 +211,23 @@ func (inv *intentInvocation) discoverHostMachines() hostReading {
 		machine.This = machine.This || current.source == "this checkout"
 		machine.Lane = machine.Lane || current.source == "landing lane"
 	}
+	machines := reading.Machines[:0]
 	for _, machine := range reading.Machines {
 		if name, ok := owners.nickname(machine.Checkout); ok {
 			machine.Name, machine.Nickname = name, true
 		} else {
 			machine.Name = filepath.Base(machine.Checkout)
 		}
+		armed := slices.Contains(machine.Sources, "registry: armed")
+		if machine.Lane || (machine.Nickname && (armed || fleet[machine.Name])) {
+			machines = append(machines, machine)
+			continue
+		}
+		if armed || slices.Contains(machine.Sources, "registry: stopped") {
+			reading.OtherRegistered++
+		}
 	}
+	reading.Machines = machines
 	sort.SliceStable(reading.Machines, func(i, j int) bool {
 		left, right := reading.Machines[i], reading.Machines[j]
 		if left.This != right.This {
@@ -206,8 +241,8 @@ func (inv *intentInvocation) discoverHostMachines() hostReading {
 // readHostMachines is discoverHostMachines with each machine's status read
 // by the stop transition status uses, this user's running launches placed
 // in the checkout they work in, and the lane owner's view.
-func (inv *intentInvocation) readHostMachines() hostReading {
-	reading := inv.discoverHostMachines()
+func (inv *intentInvocation) readHostMachines(fleet map[string]bool) hostReading {
+	reading := inv.discoverHostMachines(fleet)
 	notOurs := map[int64]bool{}
 	for _, machine := range reading.Machines {
 		if machine.State == "unknown" {
@@ -451,7 +486,10 @@ func machineListDetail(reading hostReading, others []otherComputerMachine) []str
 			lines = append(lines, "  launch "+launched.Reference+": "+launched.Purpose)
 		}
 	}
-	for _, problem := range []string{reading.RegistryProblem, reading.LaneProblem, reading.LaunchProblem} {
+	if reading.OtherRegistered > 0 {
+		lines = append(lines, plural(reading.OtherRegistered, "other registered checkout", "other registered checkouts")+" (not machines); metasystem disk clean forgets those whose directories are gone")
+	}
+	for _, problem := range []string{reading.RegistryProblem, reading.FleetProblem, reading.LaneProblem, reading.LaunchProblem} {
 		if problem != "" {
 			lines = append(lines, problem)
 		}
@@ -497,7 +535,7 @@ func runIntentMachineList(inv *intentInvocation) int {
 	if err := json.Unmarshal(encoded, &data); err != nil {
 		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "fleet: " + err.Error()})
 	}
-	reading := inv.readHostMachines()
+	reading := inv.readHostMachines(fleetNames(report))
 	others := otherComputers(report, reading)
 	data["thisComputer"], data["otherComputers"] = reading, others
 	text := intentOwnerLines(report.Text())
@@ -524,7 +562,15 @@ func runIntentMachineStop(inv *intentInvocation) int {
 	if problem := inv.selectLayoutRoot(); problem != nil {
 		return inv.render(*problem)
 	}
-	reading := inv.discoverHostMachines()
+	fleet := map[string]bool{}
+	fleetProblem := ""
+	if report, err := inv.owners.processes.fleet(inv.layout.GitRoot, false, seatFleetNow()); err != nil {
+		fleetProblem = "the fleet's presence cannot be read (" + err.Error() + "), so a stopped machine only it names is not listed"
+	} else {
+		fleet = fleetNames(report)
+	}
+	reading := inv.discoverHostMachines(fleet)
+	reading.FleetProblem = fleetProblem
 	targets := reading.Machines
 	if !all {
 		name := inv.input.args[0]
@@ -661,6 +707,9 @@ func (inv *intentInvocation) stopHostMachines(reading hostReading, targets []*ho
 	if reading.RegistryProblem != "" && all {
 		lines = append(lines, reading.RegistryProblem+"; a machine only it names may still run")
 	}
+	if reading.FleetProblem != "" && all {
+		lines = append(lines, reading.FleetProblem+"; it may still run")
+	}
 	data := map[string]any{"machines": views, "launchesCancelled": cancelled, "registryProblem": reading.RegistryProblem}
 	targetsOut := []intentTarget{}
 	for _, machine := range targets {
@@ -675,7 +724,7 @@ func (inv *intentInvocation) stopHostMachines(reading hostReading, targets []*ho
 	if cancelled > 0 {
 		launchWords = "; " + plural(cancelled, "launch", "launches") + " cancelled"
 	}
-	incomplete := unfinished > 0 || cancelFailed > 0 || len(skipped) > 0 || (all && reading.RegistryProblem != "")
+	incomplete := unfinished > 0 || cancelFailed > 0 || len(skipped) > 0 || (all && (reading.RegistryProblem != "" || reading.FleetProblem != ""))
 	switch {
 	case incomplete:
 		result.Outcome, result.code = intentPartial, 1
