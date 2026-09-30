@@ -1,7 +1,6 @@
 package batchowner
 
 import (
-	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,9 +17,8 @@ import (
 // only. The production join's admission starts no test run: its execution
 // moved behind landing prove, and the member joins with its admission tree
 // recorded and deferred.
-//
-// Not parallel: it replaces the join admission's test executable.
 func TestJoinRunsNoTests(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	checkout := filepath.Join(dir, "lane")
 	git := func(args ...string) string {
@@ -69,14 +67,6 @@ func TestJoinRunsNoTests(t *testing.T) {
 		Claim: batch.Claim{Machine: "m1e", Lineage: "seat", Epoch: 1, Revision: 2, AccountingRevision: 2}},
 		batch.BranchMember{GoalID: "joiner", Tip: build, Last: true, Builds: []batch.BranchBuild{{Units: []string{"u1"}, Commit: build, Digest: digest}}})
 
-	executed := 0
-	saved := batchJoinAdmissionExecutable
-	batchJoinAdmissionExecutable = func() (string, error) {
-		executed++
-		return "", errors.New("the join started a test run")
-	}
-	t.Cleanup(func() { batchJoinAdmissionExecutable = saved })
-
 	dependencies := ProductionBatchJoinDependencies()
 	// The selection is recorded at join (a plan, not a test run); the
 	// handover is the source seat's (K7).
@@ -84,8 +74,11 @@ func TestJoinRunsNoTests(t *testing.T) {
 		return testpolicy.Plan{SelectedGroups: []string{"app-standard"}}, nil
 	}
 	handedOver := false
+	// The admission is handed a lane root that does not exist: anything it
+	// would run (a tree projected, a plan, a test run, a ledger read) fails
+	// there, so only an admission that runs nothing joins the member.
 	run := func(batchID string, joined batch.Unit) (batch.JoinAdmission, error) {
-		return dependencies.AdmissionRun(checkout, batchID, joined)
+		return dependencies.AdmissionRun(filepath.Join(dir, "no-lane-here"), batchID, joined)
 	}
 	if err := dependencies.PublishAdmission(store, id, unit, "m1e+seat", time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC), plan,
 		func() error { handedOver = true; return nil }, run); err != nil {
@@ -94,9 +87,6 @@ func TestJoinRunsNoTests(t *testing.T) {
 	record, err := store.Load(id)
 	if err != nil {
 		t.Fatal(err)
-	}
-	if executed != 0 {
-		t.Fatalf("the join started %d test runs; want none", executed)
 	}
 	if len(record.Units) != 1 || record.Units[0].State != batch.UnitJoined || record.Units[0].Admission == nil ||
 		record.Units[0].Admission.Status != batch.AdmissionDeferred || record.Units[0].Admission.Tree == "" || !handedOver {
