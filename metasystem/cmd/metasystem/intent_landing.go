@@ -538,13 +538,21 @@ func runIntentLandingRestart(inv *intentInvocation) int {
 // statusLaneLine is the lane's line in status's board block: landing
 // status's headline, when this computer has a lane.
 func (inv *intentInvocation) statusLaneLine() string {
-	owners := inv.landing()
-	home, err := owners.home()
-	if err != nil {
-		return ""
-	}
-	if view := inv.laneView(owners, home); view.Root != nil {
+	if view := inv.statusLane(); view != nil {
 		return view.Summary
 	}
 	return ""
+}
+
+// statusLane is the lane's view for status, when this computer has a lane.
+func (inv *intentInvocation) statusLane() *lane.View {
+	owners := inv.landing()
+	home, err := owners.home()
+	if err != nil {
+		return nil
+	}
+	if view := inv.laneView(owners, home); view.Root != nil {
+		return &view
+	}
+	return nil
 }

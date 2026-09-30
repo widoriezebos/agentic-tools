@@ -961,9 +961,9 @@ func runIntentCheckoutStatus(inv *intentInvocation) int {
 			retry: "try again", Details: []string{"status: " + err.Error()}}, scope.Checkout))
 	}
 	result := processReportResult(inv.checkoutTarget(scope), "status of "+scope.Checkout, report)
-	lines, view := inv.statusBoardLines()
-	result.text = append(result.text, lines...)
-	result.Data.(map[string]any)["board"] = view
+	reading := inv.readStatusBoard()
+	result.Data.(map[string]any)["board"] = reading.view
+	result.view = inv.statusView(scope.Checkout, report, reading)
 	return inv.render(inv.withHelm(result, scope.Checkout))
 }
 

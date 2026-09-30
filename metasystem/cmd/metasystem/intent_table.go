@@ -575,7 +575,7 @@ func hiddenIntentEntries() []intentCommand {
 // this checkout, or one goal's work.
 func topLevelStatus() intentCommand {
 	return intentCommand{
-		object: "status", audience: "both", primary: true, summary: "the overview of this checkout, or one goal's live work",
+		object: "status", audience: "both", primary: true, laidOut: true, summary: "the overview of this checkout, or one goal's live work",
 		usage: []string{"metasystem status", "metasystem status G [--work NAME]"},
 		details: []string{
 			"Without G: this checkout's MetaSystem, its running work, open questions and what needs attention.",
@@ -608,24 +608,6 @@ func runIntentTopStatus(inv *intentInvocation) int {
 			next: inv.typedArgvFor("GOAL"), nextReason: "names the goal"})
 	}
 	return runIntentCheckoutStatus(inv)
-}
-
-// statusBoardLines are status's board block (D14-r2, R23, U10d): the host
-// board from a direct read (one line per armed seat of this host, saying
-// bridge live or absent; --verbose one more per goal), then one line per
-// unfinished batch of the configured lane. It never connects to the bridge.
-func (inv *intentInvocation) statusBoardLines() ([]string, board.View) {
-	now := inv.boardNow()
-	view := inv.hostBoardView(now)
-	lines := view.Lines(now, time.Local, inv.input.switched("verbose"))
-	if line := inv.statusLaneLine(); line != "" {
-		lines = append(lines, line)
-	}
-	for _, record := range inv.unfinishedBatches() {
-		lines = append(lines, batchStatusLine(record, now))
-	}
-	lines = append(lines, inv.peerStatusLines(inv.layout.GitRoot)...)
-	return lines, view
 }
 
 // hostBoardView is the board as this checkout's one-shot views show it.
@@ -672,15 +654,6 @@ func (inv *intentInvocation) unfinishedBatches() []batch.Record {
 		}
 	}
 	return records
-}
-
-// batchStatusLine is one unfinished batch's line: why it waits or started,
-// or its state and size when it records neither.
-func batchStatusLine(record batch.Record, now time.Time) string {
-	if line := batch.WaitLine(record, now, time.Local); line != "" {
-		return line
-	}
-	return fmt.Sprintf("batch %s %s, %d unit%s", record.BatchID, record.State, len(record.Units), map[bool]string{true: "", false: "s"}[len(record.Units) == 1])
 }
 
 // runTestBaseline is test baseline: --gate records the trusted refactor

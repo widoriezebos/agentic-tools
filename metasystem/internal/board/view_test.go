@@ -117,3 +117,19 @@ func contains(lines []string, want string) bool {
 	}
 	return false
 }
+
+// A goal's Text is the line --verbose prints under its seat, in the zone
+// the reader names.
+func TestGoalViewTextIsItsVerboseLine(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 9, 30, 8, 58, 0, 0, time.UTC)
+	zone := time.FixedZone("CEST", 2*3600)
+	entry := GoalView{Goal: "goal-l", Stage: StageLanded, Since: now.Add(-30 * time.Minute)}
+	if got := entry.Text(now, zone); got != "goal-l, landed since 10:28" {
+		t.Errorf("Text = %q", got)
+	}
+	view := View{Readable: true, Bridge: "absent", Seats: []SeatView{{Machine: "m1e", Goals: []GoalView{entry}}}}
+	if lines := view.Lines(now, zone, true); lines[len(lines)-1] != "    "+entry.Text(now, zone) {
+		t.Errorf("verbose lines = %q", lines)
+	}
+}

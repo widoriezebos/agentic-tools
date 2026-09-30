@@ -59,12 +59,12 @@ func packageFilesExcept(dir, prefix string, except ...string) []string {
 func TestAuditProofsGroupEnforcesItsPackages(t *testing.T) {
 	t.Parallel()
 	for _, want := range []string{"internal/proofrun/attempt.go", "internal/testrun/prepare.go", "cmd/metasystem/proof_run.go", "cmd/metasystem/test.go"} {
-		if messageModes[want] != messageModeEnforce {
+		if auditModes[want].messages != messageModeEnforce {
 			t.Errorf("%s is not enforced", want)
 		}
 	}
 	for _, protocol := range []string{"internal/proofrun/protocol.go", "internal/testrun/protocol.go", "cmd/metasystem/proof_run_protocol.go"} {
-		if _, ok := messageModes[protocol]; ok {
+		if auditModes[protocol].messages != "" {
 			t.Errorf("%s holds machine protocol and is enforced", protocol)
 		}
 	}

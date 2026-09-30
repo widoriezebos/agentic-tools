@@ -1,0 +1,65 @@
+exit 0
+--
+{
+  "schemaVersion": 1,
+  "verb": "status",
+  "targets": [
+    {
+      "kind": "checkout",
+      "id": "/Users/wido/GitHub/agentic-tools-m1e"
+    }
+  ],
+  "outcome": "confirmed",
+  "summary": "HUMAN AT THE HELM since 12:39 CEST (2026-09-28) by wido: coordinating the verb and machinery batches — metasystem helm return ends it",
+  "data": {
+    "board": {
+      "readable": true,
+      "bridge": "live",
+      "seats": [
+        {
+          "machine": "landing",
+          "installation": "",
+          "goals": []
+        },
+        {
+          "machine": "m1e",
+          "installation": "",
+          "goals": [
+            {
+              "goal": "switch-on-trial",
+              "lastProgressAt": "2026-09-30T08:57:00Z",
+              "unknown": "not claimed"
+            }
+          ]
+        },
+        {
+          "machine": "ui",
+          "installation": "",
+          "goals": []
+        }
+      ]
+    },
+    "exitCode": 0,
+    "helm": [
+      "HUMAN AT THE HELM since 12:39 CEST (2026-09-28) by wido: coordinating the verb and machinery batches — metasystem helm return ends it",
+      "the helm holder's terminal is not enrolled (session leader login (34285@1790591981); the enrolled terminal is another): a person's acts there are refused until you run there metasystem system enroll --name wido",
+      "yields since the take: 0",
+      "running dispatch jobs: 0 (metasystem work status lists them; the helm stops none)",
+      "landing batches carrying this seat's work: none",
+      "POWER OF ATTORNEY: m1e acts for wido until 10:56 CEST (2026-10-01) (grant YY6RQ7765HX224V3NT4TN67JFR-m1e-b6a4eb0a) — metasystem grant revoke YY6RQ7765HX224V3NT4TN67JFR-m1e-b6a4eb0a ends it"
+    ],
+    "lines": [
+      "checkout /Users/wido/GitHub/agentic-tools-m1e",
+      "steward-runner pid 39052 started 1790758391: running",
+      "supervision-owner pid 39060 tag metasystem-supervision-owner-m1e-1790758391-38939 generation 205: running",
+      "repo-watcher pid 39061: running",
+      "job-reaper pid 39062: running",
+      "landing-batch-owner pid 39063: running",
+      "untracked pid 2878 claude claude --allow-dangerously-skip-permissions: running",
+      "untracked pid 10947 codex codex app-server: running"
+    ],
+    "powerOfAttorney": "POWER OF ATTORNEY: m1e acts for wido until 10:56 CEST (2026-10-01) (grant YY6RQ7765HX224V3NT4TN67JFR-m1e-b6a4eb0a) — metasystem grant revoke YY6RQ7765HX224V3NT4TN67JFR-m1e-b6a4eb0a ends it"
+  }
+}
+
+--

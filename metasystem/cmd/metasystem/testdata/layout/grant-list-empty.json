@@ -1,0 +1,14 @@
+exit 0
+--
+{
+  "schemaVersion": 1,
+  "verb": "grant list",
+  "targets": [],
+  "outcome": "confirmed",
+  "summary": "0 power(s) of attorney",
+  "data": {
+    "grants": []
+  }
+}
+
+--

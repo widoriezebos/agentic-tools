@@ -1,0 +1,6 @@
+m1e has nothing running · no jobs
+
+Seats on this host  bridge live
+  ○ landing   nothing underway
+  ? m1e       switch-on-trial unknown: not claimed since 10:57
+  ○ ui        nothing underway

@@ -238,6 +238,11 @@ func seatText(seat SeatView, now time.Time, location *time.Location) string {
 	return text
 }
 
+// Text is the goal's own line, as --verbose prints it under its seat.
+func (entry GoalView) Text(now time.Time, location *time.Location) string {
+	return goalText(entry, now, location)
+}
+
 // goalText is one goal as a person reads it: goal-x, review round 2 of 3
 // since 10:12; goal-z unknown: writer dead (pid 77) since 09:40.
 func goalText(entry GoalView, now time.Time, location *time.Location) string {

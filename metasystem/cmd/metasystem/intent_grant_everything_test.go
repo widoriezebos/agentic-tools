@@ -111,7 +111,8 @@ func TestGrantEverythingAtTheEnrolledTerminal(t *testing.T) {
 	}
 
 	code, stdout, _ := b.run(b.owners(), "grant", "list")
-	if code != 0 || !strings.Contains(stdout, id+"  everything  by Wido  for the main session of "+checkout) || !strings.Contains(stdout, "24h00m left") {
+	if listed := strings.Join(strings.Fields(stdout), " "); code != 0 || !strings.Contains(listed, "● everything · by Wido · until tomorrow") ||
+		!strings.Contains(listed, "(24h00m left) for the main session of mac-cli ("+checkout+") id "+id) {
 		t.Fatalf("grant list = %d %q", code, stdout)
 	}
 

@@ -28,21 +28,19 @@ import (
 // (the test passes and the inventory lists it) or enforced (the test fails).
 
 // messageModeEnforce fails the audit on any violation of the path; every
-// other path is reported only.
-const messageModeEnforce = "enforce"
+// other path is reported only. The per-path modes are the messages column
+// of auditModes, the table this audit shares with the layout audit.
+const messageModeEnforce = auditEnforce
 
-// messageModes is the per-path mode: a package directory, a file, or a
-// file#Function (file#Type.Method); the longest matching key wins, and a path
-// no key names is reported. Each rewrite group enforces its paths from a file
-// of its own (message_modes_<group>_test.go) through enforceMessages, so
-// parallel builders never edit one table.
-var messageModes = map[string]string{}
-
-// enforceMessages moves paths to enforce mode; a package-level
-// "var _ = enforceMessages(...)" in each group's file calls it.
+// enforceMessages moves paths to enforce mode in the messages column of
+// auditModes; a package-level "var _ = enforceMessages(...)" in each rewrite
+// group's file (message_modes_<group>_test.go) calls it, so parallel
+// builders never edit one table.
 func enforceMessages(paths ...string) bool {
 	for _, path := range paths {
-		messageModes[path] = messageModeEnforce
+		mode := auditModes[path]
+		mode.messages = messageModeEnforce
+		auditModes[path] = mode
 	}
 	return true
 }
@@ -145,8 +143,8 @@ func messageModeFor(file, function string) string {
 		candidates = append(candidates, dir)
 	}
 	for _, key := range candidates {
-		if mode, ok := messageModes[key]; ok {
-			return mode
+		if mode, ok := auditModes[key]; ok && mode.messages != "" {
+			return mode.messages
 		}
 	}
 	return "report"
@@ -520,7 +518,11 @@ func TestAuditMessageModesNameRealPaths(t *testing.T) {
 	for _, source := range sources {
 		functions[source.File+"#"+source.Function] = true
 	}
-	for key, mode := range messageModes {
+	for key, modes := range auditModes {
+		mode := modes.messages
+		if mode == "" {
+			continue
+		}
 		if mode != messageModeEnforce {
 			t.Errorf("%s: mode %q; the table holds only enforced paths", key, mode)
 		}

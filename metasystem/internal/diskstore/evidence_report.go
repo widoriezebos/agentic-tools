@@ -2,6 +2,7 @@ package diskstore
 
 import (
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 	"time"
 )
 
@@ -35,7 +36,7 @@ func (e EvidenceSegment) Lines(verbose bool) []string {
 	}
 	var lines []string
 	if e.Unknown != "" {
-		lines = append(lines, fmt.Sprintf("  evidence %s: %s of %s; Unknown: %s", name, formatBytes(e.TotalBytes), formatBytes(e.CapBytes), e.Unknown))
+		lines = append(lines, fmt.Sprintf("  evidence %s: %s of %s; Unknown: %s", name, textui.Bytes(e.TotalBytes), textui.Bytes(e.CapBytes), e.Unknown))
 	}
 	pending := e.Pending
 	if !verbose && len(pending) > examplePaths {
@@ -45,9 +46,9 @@ func (e EvidenceSegment) Lines(verbose bool) []string {
 		lines = append(lines, "  evidence "+name+": pending: "+line)
 	}
 	if e.Over {
-		line := fmt.Sprintf("  over the bound: %s: %s of %s, over by %s", name, formatBytes(e.TotalBytes), formatBytes(e.CapBytes), formatBytes(e.TotalBytes-e.CapBytes))
+		line := fmt.Sprintf("  over the bound: %s: %s of %s, over by %s", name, textui.Bytes(e.TotalBytes), textui.Bytes(e.CapBytes), textui.Bytes(e.TotalBytes-e.CapBytes))
 		if e.BlobChargeBytes > 0 {
-			line += fmt.Sprintf(" (blob charges %s)", formatBytes(e.BlobChargeBytes))
+			line += fmt.Sprintf(" (blob charges %s)", textui.Bytes(e.BlobChargeBytes))
 		}
 		if !e.Oldest.IsZero() {
 			line += ", oldest item " + e.Oldest.UTC().Format("2006-01-02")

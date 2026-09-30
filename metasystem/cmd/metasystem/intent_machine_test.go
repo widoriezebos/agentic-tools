@@ -25,6 +25,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stoptransition"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
 
 // machineBedNow is the bed's clock: the fleet's reader and the lane's.
@@ -299,8 +300,10 @@ func (b *machineBed) fence(checkout string) stopfence.Record {
 	return record
 }
 
+// machineLocal is a helper's start as machine list --verbose tells it: the
+// local time, as short as its distance from now allows (textui.Env.Time).
 func machineLocal(epoch int64) string {
-	return time.Unix(epoch, 0).Local().Format("2006-01-02 15:04 MST")
+	return textui.Env{Now: time.Now(), Zone: time.Local}.Time(time.Unix(epoch, 0))
 }
 
 // TestMachineListSummarizesThisComputerFirst: the default is one summary

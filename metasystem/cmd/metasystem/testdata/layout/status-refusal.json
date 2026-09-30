@@ -1,0 +1,12 @@
+exit 2
+--
+{
+  "schemaVersion": 1,
+  "verb": "status",
+  "targets": [],
+  "outcome": "refused",
+  "summary": "status takes one goal at most; unexpected goal-b; nothing was done",
+  "decision": "one goal's work is metasystem status G; a job, run or read is metasystem work status REF; every other status is metasystem OBJECT status"
+}
+
+--

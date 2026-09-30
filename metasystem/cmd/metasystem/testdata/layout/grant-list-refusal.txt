@@ -1,0 +1,2 @@
+✗ / is not inside a Git repository; nothing was done
+  → run this inside the repository, or name it with --repo PATH

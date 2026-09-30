@@ -639,7 +639,7 @@ func TestIntentWorkStatusSaysWhatTheWaitIsUsedFor(t *testing.T) {
 	owners.delivery.now = func() time.Time { return now }
 	owners.delivery.batchRoot = func(string, time.Time) (string, bool, error) { return landing, true, nil }
 	owners.delivery.boardView = func(string, time.Time) board.View { return board.View{} }
-	if code, stdout, _ := p.run(owners, "status"); code != 0 || !slices.Contains(strings.Split(strings.TrimRight(stdout, "\n"), "\n"), want) {
+	if code, stdout, _ := p.run(owners, "status"); code != 0 || !strings.Contains(strings.Join(strings.Fields(stdout), " "), "● open "+want) {
 		t.Fatalf("status = %d:\n%s", code, stdout)
 	}
 }
@@ -688,25 +688,27 @@ func TestStatusShowsTheBoardAndEachUnfinishedBatch(t *testing.T) {
 		owners.delivery.batchRoot = func(string, time.Time) (string, bool, error) { return landing, true, nil }
 		owners.delivery.boardView = view
 		code, stdout, _ := b.run(owners, "status")
-		printed := strings.Split(strings.TrimRight(stdout, "\n"), "\n")
-		want := []string{
-			"board: 2 seats on this host (bridge absent)",
-			"  m1b: goal-x, build since " + local(now.Add(-10*time.Minute)) + " (1 finished)",
-			"  m1c: standing-validation, joined since " + local(now.Add(-5*time.Minute)) + "; goal-q unknown: no card",
-			"batch 01j5x00000000000000000wa01 waits for goal-x on m1b (build, ~8 min); a separate proof costs ~40 min (default)",
-			"batch 01j5x00000000000000000wa02 started: nothing within reach",
-		}
-		if code != 0 || !slices.Equal(tailLines(printed, len(want)), want) {
-			t.Fatalf("status = %d:\n%s\nwant the tail:\n%s", code, stdout, strings.Join(want, "\n"))
-		}
-		for _, line := range printed {
-			if strings.Contains(line, "wa03") || strings.Contains(line, "{") {
-				t.Errorf("status printed a finished batch or JSON: %q", line)
+		// The board and the batches as status's page lays them out; the
+		// words are the board's and the batch's own, wrapped to the width.
+		printed := strings.Join(strings.Fields(stdout), " ")
+		for _, want := range []string{
+			"Seats on this host bridge absent",
+			"● m1b goal-x, build since " + local(now.Add(-10*time.Minute)) + " (1 finished)",
+			"? m1c standing-validation, joined since " + local(now.Add(-5*time.Minute)) + "; goal-q unknown: no card",
+			"Landing lane",
+			"● open batch 01j5x00000000000000000wa01 waits for goal-x on m1b (build, ~8 min); a separate proof costs ~40 min (default)",
+			"● proving batch 01j5x00000000000000000wa02 started: nothing within reach",
+		} {
+			if code != 0 || !strings.Contains(printed, want) {
+				t.Errorf("status = %d:\n%s\nlacks %q", code, stdout, want)
 			}
 		}
+		if strings.Contains(stdout, "wa03") || strings.Contains(stdout, "{") {
+			t.Errorf("status printed a finished batch or JSON:\n%s", stdout)
+		}
 		_, verbose, _ := b.run(owners, "status", "--verbose")
-		if !slices.Contains(strings.Split(verbose, "\n"), "    goal-l, landed since "+local(now.Add(-30*time.Minute))) {
-			t.Errorf("status --verbose lacks the finished card's own line:\n%s", verbose)
+		if !strings.Contains(verbose, "goal-l, landed since "+local(now.Add(-30*time.Minute))) || strings.Count(verbose, "goal-x, build") != 1 {
+			t.Errorf("status --verbose lacks the finished card's own line or repeats an underway one:\n%s", verbose)
 		}
 		if _, data := b.runJSON(owners, "status"); data.Data.(map[string]any)["board"] == nil {
 			t.Errorf("status --json carries no board: %+v", data.Data)
@@ -726,7 +728,7 @@ func TestStatusShowsTheBoardAndEachUnfinishedBatch(t *testing.T) {
 		owners.agent = peers.as("m1b").owners().agent
 		code, stdout, _ := b.run(owners, "status")
 		lines := strings.Split(strings.TrimRight(stdout, "\n"), "\n")
-		if code != 0 || !slices.Contains(lines, "open peer messages: 1 (metasystem agent inbox)") || !slices.Contains(lines, "peer messages waiting for a holder: 1 (goal-z)") {
+		if code != 0 || !slices.Contains(lines, "  open peer messages: 1 (metasystem agent inbox)") || !slices.Contains(lines, "  peer messages waiting for a holder: 1 (goal-z)") {
 			t.Fatalf("status = %d:\n%s", code, stdout)
 		}
 		_, verbose, _ := b.run(owners, "status", "--verbose")
@@ -754,11 +756,4 @@ func TestStatusShowsTheBoardAndEachUnfinishedBatch(t *testing.T) {
 			t.Fatalf("work status = %d:\n%s", code, stdout)
 		}
 	})
-}
-
-func tailLines(lines []string, n int) []string {
-	if len(lines) < n {
-		return lines
-	}
-	return lines[len(lines)-n:]
 }

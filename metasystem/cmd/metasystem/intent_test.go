@@ -545,11 +545,11 @@ func TestIntentArgumentsAndRemedies(t *testing.T) {
 	}
 	// Text output: the refusal and its remedy on standard error, quoted.
 	code, stdout, stderr := bed.run(bed.owners(), "goal", "show", "no-such-goal")
-	if code != 1 || stdout != "" || !strings.Contains(stderr, "run: metasystem goal list --all") {
+	if code != 1 || stdout != "" || !strings.Contains(stderr, "  → metasystem goal list --all") {
 		t.Fatalf("unknown goal text = %d %q %q", code, stdout, stderr)
 	}
 	code, stdout, _ = bed.run(bed.owners(), "goal", "show", bedGoal)
-	if code != 0 || !strings.Contains(stdout, bedGoal+"  parked  tier 3") || !strings.Contains(stdout, "next: metasystem goal resume "+bedGoal) {
+	if code != 0 || !strings.Contains(stdout, bedGoal+"  parked  tier 3") || !strings.Contains(stdout, "→ metasystem goal resume "+bedGoal) {
 		t.Fatalf("show text = %d %q", code, stdout)
 	}
 	if got := shellWords(shellCommand([]string{"metasystem", "goal", "budget", "--by", "it's me", "", "1d/2/3m/1/0"})); !slices.Equal(got, []string{"metasystem", "goal", "budget", "--by", "it's me", "", "1d/2/3m/1/0"}) {

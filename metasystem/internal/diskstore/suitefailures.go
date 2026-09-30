@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 	"io"
 	"os"
 	"path/filepath"
@@ -126,7 +127,7 @@ func (s SuiteFailures) Plan(ctx context.Context, pass *Pass) ([]Item, error) {
 	}
 	if s.Target > 0 && total > s.Target {
 		items = append(items, Item{Class: s.Name(), Key: "over-target", Path: s.Dir, Verdict: Verdict{Decision: Keep,
-			Reason:  fmt.Sprintf("suite-failure bundles hold %s, over their target of %s; each is distilled when idle and moved into the evidence root when old enough", formatBytes(total), formatBytes(s.Target)),
+			Reason:  fmt.Sprintf("suite-failure bundles hold %s, over their target of %s; each is distilled when idle and moved into the evidence root when old enough", textui.Bytes(total), textui.Bytes(s.Target)),
 			Command: "metasystem disk show"}})
 	}
 	return items, nil
