@@ -564,7 +564,7 @@ func hiddenIntentEntries() []intentCommand {
 // this checkout, or one goal's work.
 func topLevelStatus() intentCommand {
 	return intentCommand{
-		object: "status", audience: "both", primary: true, summary: "the overview of this checkout, or one goal's live work",
+		object: "status", audience: "both", primary: true, laidOut: true, summary: "the overview of this checkout, or one goal's live work",
 		usage: []string{"metasystem status", "metasystem status G [--work NAME]"},
 		details: []string{
 			"Without G: this checkout's MetaSystem, its running work, open questions and what needs attention.",
@@ -595,24 +595,6 @@ func runIntentTopStatus(inv *intentInvocation) int {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--work names a goal's work: status G --work NAME; nothing was done"})
 	}
 	return runIntentCheckoutStatus(inv)
-}
-
-// statusBoardLines are status's board block (D14-r2, R23, U10d): the host
-// board from a direct read (one line per armed seat of this host, saying
-// bridge live or absent; --verbose one more per goal), then one line per
-// unfinished batch of the configured lane. It never connects to the bridge.
-func (inv *intentInvocation) statusBoardLines() ([]string, board.View) {
-	now := inv.boardNow()
-	view := inv.hostBoardView(now)
-	lines := view.Lines(now, time.Local, inv.input.switched("verbose"))
-	if line := inv.statusLaneLine(); line != "" {
-		lines = append(lines, line)
-	}
-	for _, record := range inv.unfinishedBatches() {
-		lines = append(lines, batchStatusLine(record, now))
-	}
-	lines = append(lines, inv.peerStatusLines(inv.layout.GitRoot)...)
-	return lines, view
 }
 
 // hostBoardView is the board as this checkout's one-shot views show it.

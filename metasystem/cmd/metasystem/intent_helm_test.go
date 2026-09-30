@@ -13,6 +13,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
 
 var helmNow = time.Date(2026, 9, 28, 19, 14, 3, 0, time.UTC)
@@ -320,7 +321,16 @@ func TestHelmStatusLinesInLocalTime(t *testing.T) {
 	inv := &intentInvocation{owners: b.owners}
 	result := inv.withHelm(intentResult{Summary: "status of " + b.root, text: []string{"machinery: stopped"}, Data: map[string]any{}}, b.root)
 	want := "HUMAN AT THE HELM since 21:14 CEST (2026-09-28) by Wido: by hand — metasystem helm return ends it"
-	if result.Summary != want || !strings.HasPrefix(result.text[0], "the helm holder's terminal is enrolled as Wido (session leader sshd") || result.text[len(result.text)-1] != "machinery: stopped" {
-		t.Fatalf("status lines: %q %q", result.Summary, result.text)
+	lines, _ := result.Data.(map[string]any)["helm"].([]string)
+	if result.Summary != want || len(lines) < 2 || !strings.HasPrefix(lines[1], "the helm holder's terminal is enrolled as Wido (session leader sshd") ||
+		result.headline == nil || *result.headline != "status of "+b.root || result.text[0] != "machinery: stopped" {
+		t.Fatalf("status lines: %q %q %q", result.Summary, lines, result.text)
+	}
+	// The text banner tells the same in the reader's local time; an
+	// enrolled holder's terminal needs no line of its own.
+	env := textui.Env{Now: helmNow, Zone: b.owners.helm.zone}
+	banner := result.attention(env)
+	if len(banner) != 1 || banner[0].Text != "Wido has the helm since 21:14: by hand" || banner[0].Hint.Argv[1] != "helm" {
+		t.Fatalf("banner: %+v", banner)
 	}
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
 
 // attorneyIntentOwners are the general grant's seams in the public verbs;
@@ -187,34 +188,34 @@ func runGoalGrantGeneralWithInputs(args []string, grant goal.GeneralGrant, prove
 	return dependencies.publishGrant(res, opid)
 }
 
-// generalGrantLine is one general grant as grant list shows it.
-func generalGrantLine(entry goal.PowerOfAttorneyEntry, now time.Time, zone *time.Location) (string, bool) {
-	until, _ := time.Parse(time.RFC3339, entry.Until)
-	live, why := entry.LiveAt(now)
-	state := "closed: " + why
-	if live {
-		state = shortDuration(until.Sub(now)) + " left"
-	}
-	return fmt.Sprintf("  %s  everything  by %s  for the main session of %s on %s  until %s  %s", entry.ID, strings.TrimPrefix(entry.By, "human:"),
-		entry.Checkout, entry.For, until.In(zone).Format("15:04 MST (2006-01-02)"), state), live
-}
-
-// shortDuration is 23h12m, 5d3h or 42m.
-func shortDuration(d time.Duration) string {
-	d = d.Truncate(time.Minute)
-	switch {
-	case d >= 48*time.Hour:
-		return fmt.Sprintf("%dd%dh", int(d/(24*time.Hour)), int(d%(24*time.Hour)/time.Hour))
-	case d >= time.Hour:
-		return fmt.Sprintf("%dh%02dm", int(d/time.Hour), int(d%time.Hour/time.Minute))
-	default:
-		return fmt.Sprintf("%dm", int(d/time.Minute))
-	}
-}
-
 // attorneyStatusLine is the first line of status while a general grant for
 // this checkout is live; empty otherwise, or when nothing can be read.
 func (inv *intentInvocation) attorneyStatusLine(paths ...string) string {
+	entry, live := inv.liveGeneralGrant(paths...)
+	if !live {
+		return ""
+	}
+	return attorneyLine(entry, inv.owners.helm.withDefaults().zone)
+}
+
+// attorneyLine is a live general grant as --json's status carries it.
+func attorneyLine(entry goal.PowerOfAttorneyEntry, zone *time.Location) string {
+	until, _ := time.Parse(time.RFC3339, entry.Until)
+	return fmt.Sprintf("POWER OF ATTORNEY: %s acts for %s until %s (grant %s) — metasystem grant revoke %s ends it",
+		entry.For, strings.TrimPrefix(entry.By, "human:"), until.In(zone).Format("15:04 MST (2006-01-02)"), entry.ID, entry.ID)
+}
+
+// grantAttention is a live general grant in the banner: informational,
+// since it widens what the seat may do rather than asking anything.
+func grantAttention(entry goal.PowerOfAttorneyEntry, env textui.Env) textui.Attention {
+	until, _ := time.Parse(time.RFC3339, entry.Until)
+	return textui.Attention{State: textui.Live, Text: fmt.Sprintf("%s's grant is live: everything, %s", strings.TrimPrefix(entry.By, "human:"), env.Until(until)),
+		Detail: []string{"for the main session of " + entry.For + " · grant " + entry.ID}}
+}
+
+// liveGeneralGrant is the live general grant for this checkout, when one
+// can be read.
+func (inv *intentInvocation) liveGeneralGrant(paths ...string) (goal.PowerOfAttorneyEntry, bool) {
 	owners := inv.owners.attorney.withDefaults()
 	var candidates []string
 	first := ""
@@ -230,17 +231,16 @@ func (inv *intentInvocation) attorneyStatusLine(paths ...string) string {
 		}
 	}
 	if len(candidates) == 0 || inv.owners.commandNow == nil {
-		return ""
+		return goal.PowerOfAttorneyEntry{}, false
 	}
 	entries, err := owners.entries(first)
 	if err != nil {
-		return ""
+		return goal.PowerOfAttorneyEntry{}, false
 	}
 	now, err := inv.owners.commandNow(first)
 	if err != nil {
-		return ""
+		return goal.PowerOfAttorneyEntry{}, false
 	}
-	zone := inv.owners.helm.withDefaults().zone
 	for _, entry := range entries {
 		if !entry.General() {
 			continue
@@ -250,13 +250,11 @@ func (inv *intentInvocation) attorneyStatusLine(paths ...string) string {
 		}
 		for _, candidate := range candidates {
 			if entry.Checkout == filepath.Clean(candidate) {
-				until, _ := time.Parse(time.RFC3339, entry.Until)
-				return fmt.Sprintf("POWER OF ATTORNEY: %s acts for %s until %s (grant %s) — metasystem grant revoke %s ends it",
-					entry.For, strings.TrimPrefix(entry.By, "human:"), until.In(zone).Format("15:04 MST (2006-01-02)"), entry.ID, entry.ID)
+				return entry, true
 			}
 		}
 	}
-	return ""
+	return goal.PowerOfAttorneyEntry{}, false
 }
 
 // attorneyActor is M6: before an agent's lineage shortcut, a live grant

@@ -8,12 +8,14 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/report"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
 
 // The planning commands author, claim and steer goals: open and edit a goal,
@@ -406,7 +408,7 @@ func intentPlanningCommands() []intentCommand {
 			run:      runIntentGoalSync,
 		},
 		{
-			object: "grant", action: "list", audience: "both", summary: "the recorded powers of attorney, live and closed",
+			object: "grant", action: "list", audience: "both", laidOut: true, summary: "the recorded powers of attorney, live and closed",
 			usage:    []string{"metasystem grant list [--all]"},
 			flags:    []intentFlag{{name: "all", usage: "include revoked and expired grants"}},
 			maxArgs:  0,
@@ -2045,35 +2047,95 @@ func runIntentGrantList(inv *intentInvocation) int {
 	if projection.Tree != nil && projection.Tree.Root != nil {
 		entries = projection.Tree.Root.PowerOfAttorney
 	}
-	lines, views := []string{}, []map[string]any{}
-	zone := inv.owners.helm.withDefaults().zone
+	views := []map[string]any{}
+	var shown []grantShown
 	for _, entry := range entries {
-		if entry.General() {
-			line, live := generalGrantLine(entry, now, zone)
-			if !live && !inv.input.switched("all") {
-				continue
-			}
-			lines = append(lines, line)
-			views = append(views, map[string]any{"grant": entry.ID, "by": entry.By, "acts": entry.Verbs, "for": entry.For, "checkout": entry.Checkout,
-				"lineage": entry.Lineage, "since": entry.Since, "until": entry.Until, "revoked": entry.Revoked, "live": live})
-			continue
-		}
 		live, why := entry.LiveAt(now)
 		if !live && !inv.input.switched("all") {
 			continue
 		}
-		state := "live"
-		if !live {
-			state = "closed: " + why
+		shown = append(shown, grantShown{entry: entry, live: live, why: why})
+		if entry.General() {
+			views = append(views, map[string]any{"grant": entry.ID, "by": entry.By, "acts": entry.Verbs, "for": entry.For, "checkout": entry.Checkout,
+				"lineage": entry.Lineage, "since": entry.Since, "until": entry.Until, "revoked": entry.Revoked, "live": live})
+			continue
 		}
-		tiers := make([]string, 0, len(entry.Tiers))
-		for _, tier := range entry.Tiers {
-			tiers = append(tiers, fmt.Sprint(tier))
-		}
-		lines = append(lines, fmt.Sprintf("  %s  by %s  tiers %s  acts %s  until %s  %s", entry.ID, entry.By, strings.Join(tiers, ","), strings.Join(entry.Verbs, ","), entry.Expires, state))
 		views = append(views, map[string]any{"grant": entry.ID, "by": entry.By, "tiers": entry.Tiers, "acts": entry.Verbs, "since": entry.Since,
 			"until": entry.Expires, "revoked": entry.Revoked, "live": live})
 	}
-	return inv.render(intentResult{Outcome: intentConfirmed, text: lines, Data: map[string]any{"grants": views},
-		Summary: fmt.Sprintf("%d power(s) of attorney", len(views))})
+	return inv.render(intentResult{Outcome: intentConfirmed, Data: map[string]any{"grants": views},
+		Summary: fmt.Sprintf("%d power(s) of attorney", len(views)), view: grantListView(shown, inv.input.switched("all"))})
+}
+
+// grantShown is one grant grant list shows, with whether it is live and,
+// when it is not, why.
+type grantShown struct {
+	entry goal.PowerOfAttorneyEntry
+	live  bool
+	why   string
+}
+
+// grantClosed says why a grant no longer holds, in local time: revoked
+// when and by whom, ended when, or the ledger's own reason.
+func grantClosed(entry goal.PowerOfAttorneyEntry, why string, env textui.Env) string {
+	if revoked, err := time.Parse(time.RFC3339, entry.Revoked); err == nil {
+		return "revoked " + env.Time(revoked) + " by " + strings.TrimPrefix(entry.RevokedBy, "human:")
+	}
+	if until, err := time.Parse(time.RFC3339, entry.Until); err == nil && entry.General() && !until.After(env.Now) {
+		return "ended " + env.Time(until)
+	}
+	return "closed: " + why
+}
+
+// grantListView is grant list's page (output-style §6.6): how many grants
+// are live, then one card per grant, its id whole on a row of its own.
+func grantListView(grants []grantShown, all bool) func(*textui.Page) {
+	return func(page *textui.Page) {
+		env := page.Env()
+		live := 0
+		for _, grant := range grants {
+			if grant.live {
+				live++
+			}
+		}
+		switch {
+		case all && len(grants) > 0:
+			page.Headline(textui.Count(len(grants), "grant", "grants"), textui.Number(int64(live))+" live", textui.Number(int64(len(grants)-live))+" closed")
+		case len(grants) == 0 && all:
+			page.Headline("No grants recorded")
+		case len(grants) == 0:
+			page.Headline("No live grants")
+			page.Hint(textui.Hint{Argv: []string{"metasystem", "grant", "list", "--all"}, Reason: "also lists revoked and expired grants"})
+		default:
+			page.Headline(textui.Count(len(grants), "grant", "grants") + ", live")
+		}
+		section := page.Section("", "")
+		for _, grant := range grants {
+			entry := grant.entry
+			by := strings.TrimPrefix(entry.By, "human:")
+			state, end := textui.Live, ""
+			if !grant.live {
+				state, end = textui.Stopped, grantClosed(entry, grant.why, env)
+			}
+			if entry.General() {
+				if grant.live {
+					until, _ := time.Parse(time.RFC3339, entry.Until)
+					end = env.Until(until)
+				}
+				card := section.Item(state, strings.Join([]string{goal.GeneralAct, "by " + by, end}, " · "))
+				card.KV("for", textui.Plain("the main session of "+entry.For+" ("+env.Path(entry.Checkout)+")"))
+				card.KV("id", textui.Plain(entry.ID))
+				continue
+			}
+			tiers := make([]string, 0, len(entry.Tiers))
+			for _, tier := range entry.Tiers {
+				tiers = append(tiers, fmt.Sprint(tier))
+			}
+			if grant.live {
+				end = "until " + entry.Expires
+			}
+			card := section.Item(state, strings.Join([]string{strings.Join(entry.Verbs, ", "), "tiers " + strings.Join(tiers, ", "), "by " + by, end}, " · "))
+			card.KV("id", textui.Plain(entry.ID))
+		}
+	}
 }

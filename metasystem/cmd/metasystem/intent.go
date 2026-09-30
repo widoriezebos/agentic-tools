@@ -21,6 +21,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hookswitch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
 
 // The public command surface is object then action: "goal approve G",
@@ -86,6 +87,9 @@ type intentCommand struct {
 	group string
 	// primary actions appear on the root orientation page.
 	primary bool
+	// laidOut commands print through textui (output-style): their refusals
+	// wrap to the width as their pages do.
+	laidOut bool
 }
 
 var (
@@ -569,6 +573,9 @@ type intentOwners struct {
 	landing laneVerbOwners
 	// machines are the machine verbs' seams; the zero value is production.
 	machines machineOwners
+	// textEnv is the text layout of one output stream; nil detects it
+	// (inv.textEnv).
+	textEnv func(stream io.Writer) textui.Env
 }
 
 func defaultIntentOwners() intentOwners {
@@ -736,6 +743,15 @@ type intentResult struct {
 	next       []string
 	nextReason string
 	code       int
+	// view draws a converted verb's text page; nil renders the legacy
+	// shape. --json never reads it.
+	view func(*textui.Page)
+	// attention is the banner above the headline (P12): the standing
+	// conditions that change what the person may do.
+	attention func(textui.Env) []textui.Attention
+	// headline is the text headline when --json's Summary carries another
+	// line (withHelm keeps the helm line there).
+	headline *string
 }
 
 func (inv *intentInvocation) render(result intentResult) int {
@@ -760,34 +776,118 @@ func (inv *intentInvocation) render(result intentResult) int {
 		fmt.Fprintln(inv.stdout, string(encoded))
 		return code
 	}
-	if result.Outcome == intentConfirmed || result.Outcome == intentUnchanged {
-		if result.Summary != "" {
-			fmt.Fprintln(inv.stdout, result.Summary)
-		}
-		for _, line := range result.text {
-			fmt.Fprintln(inv.stdout, line)
-		}
-		if result.Next != nil {
-			fmt.Fprintf(inv.stdout, "next: %s  (%s)\n", shellCommand(result.Next.Argv), result.Next.Reason)
-		}
-		return code
+	succeeded := result.Outcome == intentConfirmed || result.Outcome == intentUnchanged
+	stream := inv.stdout
+	if !succeeded {
+		stream = inv.stderr
 	}
-	fmt.Fprintf(inv.stderr, "metasystem %s: %s\n", inv.command.name, strings.TrimSpace(result.Summary))
-	for _, line := range result.text {
-		fmt.Fprintln(inv.stderr, line)
+	env := inv.textEnv(stream)
+	page := textui.NewLegacy(env)
+	if result.view != nil && succeeded || inv.command.laidOut {
+		page = textui.New(env)
+	}
+	if result.attention != nil {
+		page.Banner(result.attention(env)...)
 	}
 	switch {
-	case result.Next != nil:
-		fmt.Fprintf(inv.stderr, "run: %s\n", shellCommand(result.Next.Argv))
-		if result.Next.Reason != "" {
-			fmt.Fprintf(inv.stderr, "     (%s)\n", result.Next.Reason)
+	case result.view != nil && succeeded:
+		if result.Next != nil {
+			page.Hint(textui.Hint{Argv: result.Next.Argv, Reason: result.Next.Reason})
 		}
-	case result.Decision != "":
-		fmt.Fprintf(inv.stderr, "needed first: %s\n", result.Decision)
-	case result.nextReason != "":
-		fmt.Fprintf(inv.stderr, "hint: %s\n", result.nextReason)
+		result.view(page)
+	case succeeded:
+		inv.legacyConfirmed(page, result)
+	default:
+		inv.legacyRefused(page, result)
 	}
+	_, _ = io.WriteString(stream, page.String())
 	return code
+}
+
+// legacyConfirmed is an unconverted verb's result (§4 step 4): its Summary
+// is the headline, its lines print as they are, its next step is the hint.
+func (inv *intentInvocation) legacyConfirmed(page *textui.Page, result intentResult) {
+	summary := result.Summary
+	if result.headline != nil {
+		summary = *result.headline
+	}
+	if summary != "" {
+		page.Headline(summary)
+	}
+	page.Legacy(result.text...)
+	if result.Next != nil {
+		page.Hint(textui.Hint{Argv: result.Next.Argv, Reason: result.Next.Reason})
+	}
+}
+
+// legacyRefused is an unconverted verb's refusal or failure: its sentence
+// behind ✗ (D2: the verb's name only with --verbose), its lines, and the
+// remedy as the indented hint.
+func (inv *intentInvocation) legacyRefused(page *textui.Page, result intentResult) {
+	summary := strings.TrimSpace(result.Summary)
+	if result.headline != nil {
+		summary = strings.TrimSpace(*result.headline)
+	}
+	if inv.input.switched("verbose") {
+		summary = "metasystem " + inv.command.name + ": " + summary
+	}
+	var hint textui.Hint
+	switch {
+	case result.Next != nil:
+		hint = textui.Hint{Argv: result.Next.Argv, Reason: result.Next.Reason}
+	case result.Decision != "":
+		hint = textui.Hint{Reason: result.Decision}
+	case result.nextReason != "":
+		hint = textui.Hint{Reason: result.nextReason}
+	}
+	switch {
+	case result.Outcome == intentPartial:
+		page.Mark(textui.Alert, summary)
+	case result.Outcome == intentInProgress:
+		page.Mark(textui.Running, summary)
+	case len(result.text) == 0:
+		page.Refusal(summary, hint)
+		return
+	default:
+		page.Refusal(summary, textui.Hint{})
+	}
+	page.Legacy(result.text...)
+	page.Hint(hint)
+}
+
+// textEnv is the layout of one output stream: its width, colour and
+// symbols, the invocation's clock and zone, and the paths it shortens. A
+// stream that is not a file (a test's or an in-process caller's buffer) is
+// laid out the same everywhere: full width, no colour, the symbols.
+func (inv *intentInvocation) textEnv(stream io.Writer) textui.Env {
+	var env textui.Env
+	if inv.owners.textEnv != nil {
+		env = inv.owners.textEnv(stream)
+	} else {
+		now := time.Now()
+		if inv.owners.commandNow != nil && inv.stateRoot != "" {
+			if at, err := inv.owners.commandNow(inv.stateRoot); err == nil {
+				now = at
+			}
+		}
+		zone := inv.owners.helm.withDefaults().zone
+		if file, ok := stream.(*os.File); ok {
+			env = textui.Detect(file.Fd(), os.Getenv, now, zone)
+		} else {
+			env = textui.DetectWith(false, 0, func(string) string { return "" }, now, zone)
+		}
+		env.Home, _ = os.UserHomeDir()
+		env.Repo = inv.layout.GitRoot
+		env.InRepo = env.Repo != "" && withinDirectory(inv.cwd, env.Repo)
+	}
+	env.Verbose = env.Verbose || inv.input.switched("verbose")
+	return env
+}
+
+// withinDirectory reports whether path is dir or lies below it.
+func withinDirectory(path, dir string) bool {
+	relative, err := filepath.Rel(dir, path)
+	return err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator))
 }
 
 // ownerReport receives one goal owner's typed outcome for a public command,

@@ -934,9 +934,9 @@ func runIntentCheckoutStatus(inv *intentInvocation) int {
 		return inv.render(inv.withHelm(intentResult{Outcome: intentFailed, code: 1, Targets: inv.checkoutTarget(scope), Summary: "status is unknown: " + err.Error()}, scope.Checkout))
 	}
 	result := processReportResult(inv.checkoutTarget(scope), "status of "+scope.Checkout, report)
-	lines, view := inv.statusBoardLines()
-	result.text = append(result.text, lines...)
-	result.Data.(map[string]any)["board"] = view
+	reading := inv.readStatusBoard()
+	result.Data.(map[string]any)["board"] = reading.view
+	result.view = inv.statusView(scope.Checkout, report, reading)
 	return inv.render(inv.withHelm(result, scope.Checkout))
 }
 

@@ -318,7 +318,7 @@ func TestLandingStartRefusesALaneWhoseSupervisionIsNotArmed(t *testing.T) {
 	bed.ready = lane.UnarmedRefusal(bed.landingA)
 	for _, verb := range []string{"start", "restart"} {
 		code, stdout, stderr := bed.run(t, "landing", verb)
-		for _, want := range []string{lane.CodeUnarmed, "supervision is not armed", "run: metasystem system start --repo " + bed.landingA, "nothing was started"} {
+		for _, want := range []string{lane.CodeUnarmed, "supervision is not armed", "  → metasystem system start --repo " + bed.landingA, "nothing was started"} {
 			if !strings.Contains(stderr, want) {
 				t.Errorf("%s = %d %q; lacks %q", verb, code, stderr, want)
 			}
@@ -363,7 +363,7 @@ func TestLandingSetRefusesACheckoutWithoutAMachineNickname(t *testing.T) {
 	bed := newLaneVerbBed(t)
 	bed.noMachine = true
 	code, _, stderr := bed.run(t, "landing", "set", bed.landingA)
-	for _, want := range []string{lane.CodeNoMachine, "no machine nickname", "run: git -C " + bed.landingA + " config metasystem.goal.machine landing", "nothing was registered"} {
+	for _, want := range []string{lane.CodeNoMachine, "no machine nickname", "  → git -C " + bed.landingA + " config metasystem.goal.machine landing", "nothing was registered"} {
 		if code == 0 || !strings.Contains(stderr, want) {
 			t.Errorf("set without a nickname = %d %q; lacks %q", code, stderr, want)
 		}
@@ -384,11 +384,11 @@ func TestLandingStatusSaysWhyTheOwnerCannotRun(t *testing.T) {
 	bed := newLaneVerbBed(t)
 	bed.ready = lane.UnarmedRefusal(bed.landingA)
 	code, stdout, stderr := bed.run(t, "landing", "set", bed.landingA)
-	if code != 0 || !strings.Contains(stdout, "next: metasystem system start --repo "+bed.landingA) {
+	if code != 0 || !strings.Contains(stdout, "→ metasystem system start --repo "+bed.landingA) {
 		t.Fatalf("set on an unarmed checkout = %d %q %q; want the arming named next", code, stdout, stderr)
 	}
 	code, stdout, _ = bed.run(t, "landing", "status")
-	for _, want := range []string{"owner not-started", "supervision is not armed", "next: metasystem system start --repo " + bed.landingA} {
+	for _, want := range []string{"owner not-started", "supervision is not armed", "→ metasystem system start --repo " + bed.landingA} {
 		if code != 0 || !strings.Contains(stdout, want) {
 			t.Errorf("status = %d %q; lacks %q", code, stdout, want)
 		}

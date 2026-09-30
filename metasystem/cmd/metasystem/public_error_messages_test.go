@@ -108,7 +108,7 @@ func TestHelmTakeRefusalSaysWhyInPlainTerms(t *testing.T) {
 	} {
 		bed := newHelmBed(t, test.invoker, true)
 		code, out := bed.run("helm", "take", "--reason", "by hand")
-		want := "metasystem helm take: only a person at a terminal no agent started can take the helm, and this shell is not one (" + test.reason + "); nothing was done"
+		want := "✗ only a person at a terminal no agent started can take the helm, and this shell is not one (" + test.reason + "); nothing was done"
 		if code != 3 || !strings.Contains(out, want) || strings.Contains(out, "helm take refused") {
 			t.Errorf("invoker %d: exit %d, output:\n%s\nwant %q", test.invoker, code, out, want)
 		}
