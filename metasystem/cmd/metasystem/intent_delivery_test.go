@@ -303,7 +303,7 @@ func TestIntentReviewEvidenceKinds(t *testing.T) {
 	pending, reads = true, nil
 	code, result = b.do("work", "review", "--commit", "abc1234", "--goal", "standing-validation")
 	expectOutcome(t, "pending read dispatch", code, result, intentInProgress)
-	if len(reads) != 1 || result.Decision == "" {
+	if len(reads) != 1 || result.Next == nil {
 		t.Fatalf("a pending read dispatch is reported, not retried: %v %+v", reads, result)
 	}
 }

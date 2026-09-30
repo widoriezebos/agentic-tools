@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -37,25 +38,50 @@ func (inv *intentInvocation) reviewUnit(run string) intentResult {
 		return result
 	}
 	message := err.Error()
+	details := []string{message}
 	switch {
 	case strings.HasPrefix(message, "UNIT_RUN_BUSY"):
-		return intentResult{Targets: targets, Outcome: intentInProgress, code: 3, Summary: message,
-			next: inv.sameCommand(), nextReason: "another call holds this run; the same command continues it"}
+		return intentResult{Targets: targets, Outcome: intentInProgress, code: 3, Summary: "another command is working on this run right now",
+			next: inv.sameCommand(), nextReason: "the same command continues once it is done", Details: details}
 	case strings.HasPrefix(message, "UNIT_RUN_UNKNOWN"):
-		return intentResult{Targets: targets, Outcome: intentRefused, code: 2, Summary: message}
+		return intentResult{Targets: targets, Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("no run %s is recorded; nothing was done", run),
+			next: inv.publicArgv("work", "status", "--all"), nextReason: "lists the runs with their references", Details: details}
 	case strings.HasPrefix(message, "UNIT_REVIEW_NOT_READY") && strings.Contains(message, "still running"):
 		record, _ := runner.Status(run)
 		record.ID = run
-		return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: message + "; nothing was committed",
-			next: inv.workArgv(record, "wait"), nextReason: "the attempt must finish before its result is committed"}
+		return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: "the build is still running; nothing was committed",
+			next: inv.workArgv(record, "wait"), nextReason: "the attempt must finish before its result is committed", Details: details}
 	case strings.HasPrefix(message, "UNIT_REVIEW_NOT_READY"):
 		record, _ := runner.Status(run)
 		record.ID = run
-		return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: message + "; nothing was committed",
-			next: inv.workArgv(record, "revise", "--after", strconv.Itoa(len(record.Rounds)), "--brief", "FILE"), nextReason: "correct the attempt; a correction brief starts one new attempt"}
+		return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: unitRoundEnded(message) + ", so there is nothing to commit; nothing was committed",
+			next: inv.workArgv(record, "revise", "--after", strconv.Itoa(len(record.Rounds)), "--brief", "FILE"), nextReason: "a correction brief starts one new attempt", Details: details}
 	}
-	return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: message + "; nothing was committed"}
+	return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: "the run's result can't be committed; nothing was committed",
+		next: inv.publicArgv("work", "status", unitRunPrefix+run), nextReason: "shows the run; --verbose shows the cause", Details: details}
 }
+
+// unitRoundEnded is how the newest build round ended, in plain words, read
+// from the runner's UNIT_REVIEW_NOT_READY account.
+func unitRoundEnded(message string) string {
+	_, rest, _ := strings.Cut(message, "outcome=")
+	outcome, _, _ := strings.Cut(rest, ":")
+	switch outcome {
+	case "build-failed":
+		return "the build failed"
+	case "proof-red":
+		return "the build's checks failed"
+	case "proof-wrote":
+		return "the build's checks changed its files"
+	case "":
+		return "the build has no passing result"
+	}
+	return "the build ended " + outcome
+}
+
+// unitRefusalCode is an owner's refusal code at the head of its account,
+// such as UNIT_RESULT_CHANGED; the result keeps it as data.
+var unitRefusalCode = regexp.MustCompile(`^[A-Z][A-Z0-9]+(_[A-Z0-9]+)+$`)
 
 func splitNUL(data []byte) []string {
 	var items []string
@@ -72,15 +98,25 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 	goalID, unit := record.Goal, record.Unit
 	if named := inv.input.text("goal"); named != "" && named != goalID {
 		return intentResult{Targets: targets, Outcome: intentRefused, code: 2,
-			Summary: fmt.Sprintf("unit run %s builds goal %s, not %s; nothing was committed", record.ID, goalID, named)}
+			Summary: fmt.Sprintf("run %s builds goal %s, not %s; nothing was committed", record.ID, goalID, named),
+			next:    inv.typedArgvLess("goal"), nextReason: "reviews it for goal " + goalID}
 	}
 	targets = append(targets, intentTarget{Kind: "goal", ID: goalID})
 	worktree, original := record.Worktree, inv.layout.InstallationRoot
 	install := inv.goalWorktreeInstallation(worktree)
 	data := map[string]any{"run": record.ID, "unit": unit, "goal": goalID, "round": review.Round.Number,
 		"outcome": review.Round.Outcome, "worktree": worktree, "expectedParent": review.Head}
-	refuse := func(format string, args ...any) intentResult {
-		return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Data: data, Summary: fmt.Sprintf(format, args...)}
+	// refuse says what stopped the commit in plain words and runs next;
+	// the owner's own account, codes included, is the detail.
+	retry := inv.sameCommand()
+	revise := inv.workArgv(record, "revise", "--after", strconv.Itoa(review.Round.Number), "--brief", "FILE")
+	refuse := func(next []string, then, plain, format string, args ...any) intentResult {
+		detail := fmt.Sprintf(format, args...)
+		if code, _, found := strings.Cut(detail, ":"); found && unitRefusalCode.MatchString(code) {
+			data["code"] = code
+		}
+		return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Data: data, Summary: plain,
+			next: next, nextReason: then, Details: []string{detail}}
 	}
 	conn, git := inv.connection(), inv.work().git
 	// The selected installation's endpoint and claim authorize every
@@ -88,15 +124,15 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 	// read and publication owners resolve there.
 	endpoint, err := conn.endpoint(original)
 	if err != nil {
-		return refuse("the goal branch endpoint is unavailable: %v; nothing was committed", err)
+		return refuse(retry, "try again; --verbose shows the cause", "the goal branch can't be reached, so nothing was committed", "the goal branch endpoint is unavailable: %v", err)
 	}
 	if local, err := conn.endpoint(install); err != nil || local.Remote != endpoint.Remote || local.Branch != endpoint.Branch {
-		return refuse("goal worktree %s resolves goal branch endpoint %s %s (%v), not the selected installation's %s %s; nothing was committed",
-			install, local.Remote, local.Branch, err, endpoint.Remote, endpoint.Branch)
+		return refuse(inv.publicArgv("system", "check"), "shows both configurations", "the goal worktree points at another goal branch than this checkout, so nothing was committed",
+			"goal worktree %s resolves goal branch endpoint %s %s (%v), not the selected installation's %s %s", install, local.Remote, local.Branch, err, endpoint.Remote, endpoint.Branch)
 	}
 	check := conn.claimCheck(original, goalID, endpoint)
 	if err := branch.CheckCommitAccess(goalID, check); err != nil {
-		return refuse("%v; nothing was committed", err)
+		return refuse(inv.publicArgv("goal", "show", goalID), "shows who holds the goal", fmt.Sprintf("this session can't commit to goal %s's branch, so nothing was committed", goalID), "%v", err)
 	}
 	endpointTip := ""
 	tip := func() (string, error) {
@@ -113,11 +149,11 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 	if subject == nil || subject.Commit == "" {
 		base, err := tip()
 		if err != nil {
-			return refuse("cannot resolve the landing endpoint's tip: %v; nothing was committed", err)
+			return refuse(retry, "try again; --verbose shows the cause", "the goal branch's newest commit can't be read, so nothing was committed", "cannot resolve the landing endpoint's tip: %v", err)
 		}
 		head, current, err := runner.WorktreeResult(worktree)
 		if err != nil {
-			return refuse("cannot read goal worktree %s: %v; nothing was committed", worktree, err)
+			return refuse(retry, "try again; --verbose shows the cause", "the goal worktree can't be read, so nothing was committed", "cannot read goal worktree %s: %v", worktree, err)
 		}
 		if subject != nil && subject.StagedTree != "" && head != review.Head {
 			// A commit may have been made without being recorded; only
@@ -125,35 +161,40 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 			commit, conflict := resolveUnitCommit(git, install, base, goalID, unit, *subject, head)
 			if conflict != nil {
 				data["subject"] = subject
-				return refuse("UNIT_SUBJECT_CONFLICT: %v; nothing was committed again", conflict)
+				return refuse(inv.publicArgv("work", "status", unitRunPrefix+record.ID), "shows the run and its recorded commit",
+					"a commit of this work exists that doesn't match its result, so nothing was committed again", "UNIT_SUBJECT_CONFLICT: %v", conflict)
 			}
 			subject.Commit, subject.Tip = commit, head
 		} else {
 			diff, err := runner.WorktreeDiff(worktree, review.Base)
 			if err != nil {
-				return refuse("cannot read goal worktree %s: %v; nothing was committed", worktree, err)
+				return refuse(retry, "try again; --verbose shows the cause", "the goal worktree can't be read, so nothing was committed", "cannot read goal worktree %s: %v", worktree, err)
 			}
 			if head != review.Head || !bytes.Equal(diff, review.Diff) || (!review.Legacy && current != review.Result) {
-				return refuse("UNIT_RESULT_CHANGED: goal worktree %s no longer holds round %d's result (HEAD %.12s, expected %.12s); nothing was staged",
-					worktree, review.Round.Number, head, review.Head)
+				return refuse(revise, "builds the result again; or put the worktree back as the build left it and repeat",
+					fmt.Sprintf("the goal worktree changed after build round %d, so nothing was staged", review.Round.Number),
+					"UNIT_RESULT_CHANGED: goal worktree %s no longer holds round %d's result (HEAD %.12s, expected %.12s)", worktree, review.Round.Number, head, review.Head)
 			}
 			paths, err := launch.UnitResultPaths(current)
 			if err != nil || len(paths) == 0 {
-				return refuse("round %d of run %s has no committable result (%v)", review.Round.Number, record.ID, err)
+				return refuse(revise, "a correction brief starts one new attempt", fmt.Sprintf("build round %d left nothing to commit", review.Round.Number),
+					"round %d of run %s has no committable result (%v)", review.Round.Number, record.ID, err)
 			}
 			staged, err := git(worktree, "diff", "--cached", "--name-only", "-z")
 			if err != nil {
-				return refuse("cannot read the goal worktree's index: %v", err)
+				return refuse(retry, "try again; --verbose shows the cause", "the goal worktree's staged changes can't be read, so nothing was committed", "cannot read the goal worktree's index: %v", err)
 			}
 			for _, path := range splitNUL(staged) {
 				if !slices.Contains(paths, path) {
-					return refuse("UNIT_RESULT_CHANGED: %q is staged but is not part of round %d's result; nothing was staged", path, review.Round.Number)
+					return refuse([]string{"git", "-C", worktree, "restore", "--staged", "--", path}, "unstages it; then repeat this command",
+						fmt.Sprintf("%s is staged in the goal worktree but isn't part of the build's result; nothing was staged", path),
+						"UNIT_RESULT_CHANGED: %q is staged but is not part of round %d's result", path, review.Round.Number)
 				}
 			}
 			if subject == nil {
 				operation, err := conn.operationID()
 				if err != nil {
-					return refuse("%v", err)
+					return refuse(retry, "try again; --verbose shows the cause", "the commit can't be prepared, so nothing was committed", "%v", err)
 				}
 				subject = &launch.UnitSubject{Round: review.Round.Number, Operation: operation}
 			}
@@ -162,24 +203,26 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 			if review.Prior != nil {
 				parent, err := git(worktree, "rev-parse", review.Prior.Commit+"^")
 				if err != nil {
-					return refuse("cannot read the parent of unit %s's earlier commit %s: %v", unit, review.Prior.Commit, err)
+					return refuse(retry, "try again; --verbose shows the cause", "this work's earlier commit can't be read, so nothing was committed",
+						"cannot read the parent of unit %s's earlier commit %s: %v", unit, review.Prior.Commit, err)
 				}
 				subject.Amends, subject.AmendsParent = review.Prior.Commit, strings.TrimSpace(string(parent))
 			}
 			if _, err := git(worktree, append([]string{"--literal-pathspecs", "add", "-A", "--"}, paths...)...); err != nil {
-				return refuse("cannot stage round %d's result: %v", review.Round.Number, err)
+				return refuse(retry, "try again; --verbose shows the cause", "the build's result can't be staged, so nothing was committed", "cannot stage round %d's result: %v", review.Round.Number, err)
 			}
 			stagedResult, err := git(worktree, "diff", "--cached", "--raw", "-z", "--no-abbrev", "HEAD", "--", ".")
 			if err != nil || string(stagedResult) != current {
-				return refuse("UNIT_RESULT_CHANGED: the staged tree is not round %d's result; the frozen paths are staged and nothing was committed", review.Round.Number)
+				return refuse(revise, "builds the result again", "what got staged isn't the build's result, so nothing was committed",
+					"UNIT_RESULT_CHANGED: the staged tree is not round %d's result; the frozen paths are staged", review.Round.Number)
 			}
 			tree, err := git(worktree, "write-tree")
 			if err != nil {
-				return refuse("cannot write the staged tree: %v", err)
+				return refuse(retry, "try again; --verbose shows the cause", "the staged result can't be written, so nothing was committed", "cannot write the staged tree: %v", err)
 			}
 			subject.StagedTree = strings.TrimSpace(string(tree))
 			if err := retain(*subject); err != nil {
-				return refuse("cannot retain the unit subject before committing: %v; nothing was committed", err)
+				return refuse(retry, "try again; --verbose shows the cause", "the commit can't be recorded before it is made, so nothing was committed", "cannot retain the unit subject before committing: %v", err)
 			}
 			var installed string
 			commitErr := conn.commitToken(install, func() error {
@@ -433,16 +476,17 @@ func (inv *intentInvocation) commitReview(targets []intentTarget, root, goalID, 
 		var neverLaunched *branch.ReadNeverLaunchedError
 		switch {
 		case errors.As(err, &refusal) && refusal.Code == branch.ReadDispatchPendingCode:
-			return intentResult{Targets: targets, Outcome: intentInProgress, Summary: err.Error(),
-				Data:     map[string]any{"code": refusal.Code},
-				Decision: "the read's dispatch outcome is unknown; its record is reconciled from the job store, never dispatched again"}
+			return intentResult{Targets: targets, Outcome: intentInProgress, Summary: "whether the review's critic started isn't known yet; it is never started twice",
+				Data: map[string]any{"code": refusal.Code}, next: inv.sameCommand(), nextReason: "finds out and continues", Details: []string{err.Error()}}
 		case errors.As(err, &neverLaunched):
 			return intentResult{Targets: targets, Outcome: intentRefused, code: max(code, 1), Summary: err.Error(),
 				next: inv.sameCommand(), nextReason: "no critic was started; the read may be requested again"}
 		case errors.As(err, &refusal):
-			return intentResult{Targets: targets, Outcome: intentRefused, code: max(code, 1), Summary: err.Error(), Data: map[string]any{"code": refusal.Code}}
+			return intentResult{Targets: targets, Outcome: intentRefused, code: max(code, 1), Summary: refusal.Message, Data: map[string]any{"code": refusal.Code},
+				next: inv.sameCommand(), nextReason: "once that is settled", Details: []string{err.Error()}}
 		}
-		return intentResult{Targets: targets, Outcome: intentRefused, code: max(code, 1), Summary: err.Error()}
+		return intentResult{Targets: targets, Outcome: intentRefused, code: max(code, 1), Summary: "the review couldn't be requested",
+			next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}
 	}
 	data := map[string]any{"state": result.State, "rootJob": result.RootJob, "gateRun": result.GateRunID, "attestation": result.AttestationCommit}
 	if result.RootJob != "" {

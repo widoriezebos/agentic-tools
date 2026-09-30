@@ -442,14 +442,14 @@ func TestIntentBuiltUnitToLanding(t *testing.T) {
 	late := filepath.Join(c.worktree, "late.txt")
 	os.WriteFile(late, []byte("typed after the build\n"), 0o644)
 	code, result = c.do("work", "review", "run:"+run)
-	if result.Outcome != intentRefused || !strings.Contains(result.Summary, "UNIT_RESULT_CHANGED") ||
+	if result.Outcome != intentRefused || !strings.Contains(strings.Join(result.Details, " "), "UNIT_RESULT_CHANGED") ||
 		connectionGit(t, c.worktree, "diff", "--cached", "--name-only") != "" || c.commits != 0 {
 		t.Fatalf("stale result: code=%d %+v", code, result)
 	}
 	os.Remove(late)
 	// The same path with other bytes is refused too.
 	os.WriteFile(filepath.Join(c.worktree, "café.txt"), []byte("accentuated\n"), 0o644)
-	if _, result = c.do("work", "review", "run:"+run); !strings.Contains(result.Summary, "UNIT_RESULT_CHANGED") || c.commits != 0 {
+	if _, result = c.do("work", "review", "run:"+run); !strings.Contains(strings.Join(result.Details, " "), "UNIT_RESULT_CHANGED") || c.commits != 0 {
 		t.Fatalf("changed bytes at a result path: %+v", result)
 	}
 	os.WriteFile(filepath.Join(c.worktree, "café.txt"), []byte("accented\n"), 0o644)
@@ -594,7 +594,7 @@ func TestIntentBuiltUnitToLanding(t *testing.T) {
 	_, result = c.do(append([]string{"work", "build", c.id, "wrote", "--brief", c.brief("wrote.md", "Another unit.\n"), "--lines", "5"}, workCheck...)...)
 	wrote := resultData(t, result)["run"].(string)
 	code, result = c.do("work", "review", "run:"+wrote)
-	if result.Outcome != intentRefused || !strings.Contains(result.Summary, "proof-wrote") ||
+	if result.Outcome != intentRefused || !strings.Contains(result.Summary, "checks changed its files") || !strings.Contains(strings.Join(result.Details, " "), "proof-wrote") ||
 		connectionGit(t, c.worktree, "diff", "--cached", "--name-only") != "" {
 		t.Fatalf("proof-wrote: code=%d %+v", code, result)
 	}
