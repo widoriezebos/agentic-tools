@@ -13,19 +13,19 @@ import (
 
 // coldBuildBudgetRefusal is a performance preflight, never a reservation.
 // The final locked proof admission remains the authority for starting work.
-// Its leading BUDGET_REFUSED is kept by decision: the landing batch owner
-// reads it from a test run's refusal to tell a budget refusal from others.
+// Its code, BUDGET_REFUSED, reaches the landing batch owner through the
+// test run's --json envelope; its words are only for a person.
 type coldBuildBudgetRefusal struct{ goal, detail string }
 
 func (refusal *coldBuildBudgetRefusal) Error() string {
-	return "BUDGET_REFUSED: the goal's budget has no room for this test run, so nothing was built (" + refusal.detail + ")\n" +
+	return "the goal's budget has no room for this test run, so nothing was built\n" +
 		"run: metasystem goal budget " + refusal.goal
 }
 
-// RefusalCode and RefusalDetail carry the code into the run's --json
-// envelope, where a parent reads it.
+// RefusalCode and RefusalDetail carry the code and the admission's detail
+// into the run's --json envelope, where a parent reads the code.
 func (refusal *coldBuildBudgetRefusal) RefusalCode() string   { return "BUDGET_REFUSED" }
-func (refusal *coldBuildBudgetRefusal) RefusalDetail() string { return refusal.Error() }
+func (refusal *coldBuildBudgetRefusal) RefusalDetail() string { return refusal.detail }
 
 // refuseKnownColdBuildBudget only stops a cold candidate-engine build when a
 // selected group has no retained successful observation at all. In that case

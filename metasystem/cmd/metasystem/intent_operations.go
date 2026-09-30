@@ -63,12 +63,11 @@ func ownerEnvelopeResult(owner verbresult.Result, readErr error, targets []inten
 	if owner.Outcome == verbresult.Confirmed {
 		return intentResult{Outcome: intentConfirmed, Targets: targets, Data: data, Summary: done}
 	}
+	// The owner's own command, when it named one, replaces the retry.
 	result := intentResult{Outcome: intentRefused, Targets: targets, Data: data, code: max(owner.Exit, 1), Summary: owner.Summary,
-		Details: refusalCodeDetails(owner.Code)}
+		Details: refusalCodeDetails(owner.Code), retry: "once the cause above is fixed"}
 	if owner.Next != nil && len(owner.Next.Argv) > 0 {
 		result.next, result.nextReason = owner.Next.Argv, owner.Next.Reason
-	} else {
-		result.retry = "once the cause above is fixed"
 	}
 	return result
 }
