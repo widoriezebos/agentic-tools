@@ -356,6 +356,7 @@ func (d *driver) finishCarriedPublication(commit string) {
 	d.seam("before-push")
 	d.requiredStep("landing gate before push", d.gateBeforePush)
 	d.sampleBoot()
+	d.recordCarriedRelease(commit)
 	if status := d.runStep("push carried commit to origin (single attempt)", d.pushOrigin); status != 0 {
 		if d.movingOriginRejection() {
 			d.carryAsk("origin moved during the push; rerun " + d.usingException())
@@ -367,8 +368,22 @@ func (d *driver) finishCarriedPublication(commit string) {
 	d.seam("after-push")
 	d.carriedStep("complete carried goal record", CarriedRequest{Entry: d.carriedEntry})
 	d.seam("after-record")
+	d.releaseLanded(commit)
 	if !d.request.SkipTransport {
 		d.requiredStep("sync transport", d.syncTransport)
+	}
+}
+
+// recordCarriedRelease records, before the carried commit's single push,
+// the commit about to be pushed for the goal's release set (the exception
+// route of disk-lifetimes Part B 3.6); a failure to record is reported and
+// never stops the landing.
+func (d *driver) recordCarriedRelease(commit string) {
+	if d.owners.RecordRelease == nil || d.request.Goal == "" {
+		return
+	}
+	if err := d.owners.RecordRelease(commit, d.branch); err != nil {
+		fmt.Fprintf(d.stdout, "-- the goal's workspaces were not recorded for release (%v); they stay until metasystem work workspace --release or the goal's end\n", err)
 	}
 }
 
