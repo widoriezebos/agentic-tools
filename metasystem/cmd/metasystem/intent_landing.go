@@ -767,7 +767,7 @@ func runIntentLandingUnset(inv *intentInvocation) int {
 		return inv.render(intentResult{Outcome: intentUnchanged, Targets: targets, Data: report,
 			Summary: "no landing lane is registered on this computer; each seat lands its own work"})
 	case report.Unregistered && report.CheckoutGone:
-		summary := "unset this computer's landing lane " + report.Record.Root + ", whose checkout no longer exists; each seat lands its own work now"
+		summary := "unset the landing lane " + report.Record.Root + "; its checkout was gone. Each seat lands its own work now"
 		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: report, Summary: summary,
 			Details: []string{"no batch of the lane could be read, so none was returned; a goal the ledger still shows held by the lane is released with metasystem goal release"},
 			view:    landingDone(summary, report.Record.Root)})

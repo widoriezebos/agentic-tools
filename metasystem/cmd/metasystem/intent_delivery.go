@@ -1666,14 +1666,13 @@ func (inv *intentInvocation) landingBatchRoot(targets []intentTarget) (string, b
 // on line 1, its one command on line 2 when it has one (else its fix in
 // words), and its code only under --verbose and --json.
 func laneRefusalResult(targets []intentTarget, refusal *lane.Refusal) *intentResult {
-	result := &intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: refusal.Message,
+	result := &intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: refusal.Message, Decision: refusal.Fix,
 		Details: []string{"refused because: " + refusal.Code}}
 	if len(refusal.Argv) == 0 {
-		result.Decision = refusal.Fix
 		return result
 	}
 	reason, _, _ := strings.Cut(refusal.Fix, ": metasystem ")
-	result.next, result.nextReason = refusal.Argv, reason
+	result.Decision, result.next, result.nextReason = "", refusal.Argv, reason
 	return result
 }
 
