@@ -28,8 +28,6 @@ import (
 // errorTextExceptions are the narrow file:function decisions on an error's
 // text that are not our own error's words. Each names its reason.
 var errorTextExceptions = map[string]string{
-	"internal/adopt/adopt.go:hookPreflight":                               "git's own words, \"not a git repository\" (the structured-output design's U2 makes it an exit-code check)",
-	"internal/goal/genesis.go:headTracksLedgerWithEnvironment":            "git's own words, \"not a git repository\" (the structured-output design's U2 makes it an exit-code check)",
 	"internal/launch/unit_plan.go:readUnitPlan":                           "encoding/json names an unknown field only in its words; the field is shown, nothing is decided",
 	"cmd/metasystem/intent_exception.go:intentInvocation.landException":   "a child process's output, not an error of this process: the structured-output design's U2 reads its envelope",
 	"cmd/metasystem/test.go:printTestingRefusalAs":                        "splits a two-line message at its run: line to lay it out; decides no cause",
