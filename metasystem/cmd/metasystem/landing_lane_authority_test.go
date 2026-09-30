@@ -532,7 +532,9 @@ func TestBeginRenewsTheLanesClaimsToItsCustodyEpoch(t *testing.T) {
 	// The lane's goal acts run in its own installation, whose machine is
 	// the lane's; this bed's one ledger stands in for it.
 	goalSyncMutationGit(t, bed.seat, "config", "metasystem.goal.machine", "lane-host")
-	tree := func() string { return strings.TrimSpace(goalSyncMutationGit(t, bed.seat, "rev-parse", goal.AcceptedRef+"^{tree}")) }
+	tree := func() string {
+		return strings.TrimSpace(goalSyncMutationGit(t, bed.seat, "rev-parse", goal.AcceptedRef+"^{tree}"))
+	}
 	if err := batchowner.RenewLaneClaims(bed.home, bed.lane, bed.seat, laneAuthorityBatch, tree(), &batchowner.BatchOwnerCalls); err != nil {
 		t.Fatalf("renewal: %v", err)
 	}
