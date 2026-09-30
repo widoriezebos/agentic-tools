@@ -121,13 +121,15 @@ func InspectBatchOwnerWith(root string, prober identity.Prober, readHolder func(
 		}
 		ref := identity.Ref{Pid: announcement.Pid, StartedAtSec: announcement.PidStartedAt,
 			StartTicks: announcement.PidStartTicks, BootID: announcement.BootID}
-		return holder.Pid, identity.AliveRef(prober, ref), nil
+		// An exited owner its parent has not reaped yet is a zombie and
+		// holds nothing: it reads dead, so a restart or ensure replaces it.
+		return holder.Pid, identity.LiveRef(prober, ref), nil
 	}
 	// No announcement names the holder: a holder pid the kernel reports as
-	// gone is a dead owner (its lease is stale), so a person's start can take
-	// over; any other reading stays unknown.
+	// gone, or as a zombie, is a dead owner (its lease is stale), so a
+	// person's start can take over; any other reading stays unknown.
 	if holder.Pid > 0 {
-		if _, state, probeErr := prober.Probe(holder.Pid); probeErr == nil && state == identity.Dead {
+		if exact, state, probeErr := prober.Probe(holder.Pid); probeErr == nil && (state == identity.Dead || state == identity.Alive && exact.Zombie) {
 			return holder.Pid, identity.Dead, nil
 		}
 	}
