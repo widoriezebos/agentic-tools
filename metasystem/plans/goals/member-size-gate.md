@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 2
-- Sequence: 62
+- Sequence: 61
 - Risk: severity=1 novelty=2 exposure=2 accumulation=1 basis="severity 1: a refused slice is re-sliced, nothing lands wrongly; novelty 2: goal slice gains a measured refusal; exposure 2: every slice; accumulation 1: nothing builds on the count"
 - Tier: 2
 - Intent: Delivery-efficiency phase D, delegate loop. Goal slice refuses a member whose design names more than a set number of files or moves more than one owner, with the count in the refusal, so a member is split before its build rather than after nineteen rounds. Why: the stop-decisions member touched twenty-two files and five thousand lines and replaced the deadline parent in one build; Wido's rule of 2026-09-10 is one mechanism per member. DONE: a fixture slices an oversized member draft and is refused with the count; a compliant draft passes; the limits live in metasystem.conf. every mechanism in this goal lives in the Go engine, the ledger verbs and the adapter contract, never in one runtime; it is proven on at least two runtimes.
 - Origin: human
 - Next step: Design page: the two limits, where they are read, the refusal text, the fixture; then build.
 - OpenedAt: 2026-09-14T15:31:38Z
-- Revision: 97
+- Revision: 98
 - BudgetExceptions: 0
 
 History:
@@ -110,4 +110,5 @@ History:
 - 2026-09-17T06:22:00Z AF17KZN0EH6PNS80FHY0QDPW76-m1e-c6925449 set-priority actor=human:Wido targets=cross-cutting-change-inventories-its-readers,deep-sections-cannot-stay-red-unseen,degraded-stop-forms-have-one-source,failures-show-observed-against-expected,member-size-gate,stop-capability-follows-the-lease-epoch,stop-decision-surface-is-a-gate,stop-response-carries-a-structured-report-reference,test-environment-edges-are-closed,testing-surfaces-declare-their-mirror,trunk-versus-candidate-is-a-verification-step reason=priority-order subject=trunk-versus-candidate-is-a-verification-step from=1:44 to=1:43 requested-sequence=61
 - 2026-09-17T06:22:06Z 1ZQV32H218CFWZRG7K6HJSWBDY-m1e-c6925449 set-priority actor=human:Wido targets=cross-cutting-change-inventories-its-readers,degraded-stop-forms-have-one-source,member-size-gate,stop-decision-surface-is-a-gate,testing-surfaces-declare-their-mirror reason=priority-order subject=member-size-gate from=1:43 to=2:62 requested-sequence=62
 - 2026-09-17T06:23:07Z KD02ZZRJ9GMFQ4YHTDQB43WY19-m1e-c6925449 unapprove actor=human:Wido targets=member-size-gate reason=Wido 2026-09-17 06:22Z: held until goals-live-on-branches lands; a goal becomes one branch and one proof at the merge, and this goal's landing shape changes with it. Re-scope in one pass after that landing; approval then, not before.
-Integrity: sha256=e5d27ab882968b9ee27814d1ea8965073803800ca51e152614e19ebd8282669f
+- 2026-09-30T18:48:44Z DRV2G3ER650PC3GDMSYHQN3111-ui-bc2fda53 done actor=human:Wido targets=actionable-metrics,arming-binds-the-installed-engine-identity,census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,critique-launch-verb-enforces-the-round-cap,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,dispatch-bases-chains-on-the-remote-tip,failed-job-attention,first-headless-run,fixture-repo-copies-exclude-the-artifacts-store,fixture-waits-name-their-producer,fleet-join-bootstrap,headless-continuous-delivery-proof,headless-fleet-coordination-proof,human-authority-surface-runs-its-cmd-tests,human-break-glass-commit-keeps-the-ledger-valid,human-wait-does-not-consume-goal-budget,job-record-birth-token,land-verb-writes-the-receipt,law-keys-read-committed-bytes,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,member-size-gate,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,never-idle-ironclad,new-elapsed-budgets-use-explicit-hours,one-goal-act-one-ledger-commit,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged,run-scoped-build-caches-have-a-janitor,runtime-limit-is-not-a-protocol-error,seat-landings-run-the-selected-sections,skipped-test-fails-its-group-on-the-other-os,small-change-lane,steward-revivals-leave-the-receipt-stream,stop-batch-strands-a-resumable-goal,token-spend-fence,trunk-versus-candidate-is-a-verification-step,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=2:62 to=2:61
+Integrity: sha256=b93baa1c2b535c9737b8f47a2d10c03e65c36b1108a625297735503a2f30bfe1

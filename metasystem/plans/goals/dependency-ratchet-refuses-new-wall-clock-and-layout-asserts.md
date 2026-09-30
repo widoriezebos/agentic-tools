@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 2
-- Sequence: 55
+- Sequence: 54
 - Risk: severity=2 novelty=2 exposure=3 accumulation=3 basis="The audit changes fixture rules repository-wide; misses repeatedly leave main red, while false positives block tests rather than production behavior."
 - Tier: 2
 - Intent: What: One test in the suite refuses any new test that relies on the real clock or on sleeping. Why: Tests that depend on real time fail when the computer is busy, and those failures have turned main red again and again. About 190 test files use the real clock today, and nothing stops that number from growing. The shell-bed part of the old goal is obsolete: those beds are gone. Pros: The number of timing-fragile tests can only go down. Cons: Legitimate uses must be declared as allowed clock seams.
 - Origin: human
 - Next step: Next: Write one Go test that counts _test.go files calling time.Now, time.Sleep or time.After outside the declared clock seams, records today's count as the baseline, and fails on any rise. Done when: adding a sleep to a new test file fails the suite with a message naming that file.
 - OpenedAt: 2026-09-16T21:02:59Z
-- Revision: 3
+- Revision: 4
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 
@@ -17,4 +17,5 @@ History:
 - 2026-09-16T21:02:59Z 30SKF3XM8D5E9482JHBHYCKREP-m1e-c6925449 open actor=human:Wido targets=dependency-ratchet-refuses-new-wall-clock-and-layout-asserts
 - 2026-09-16T21:03:03Z 9MBPZS7H2VFER36MZQ5G1AJ13D-m1e-c6925449 set-priority actor=human:Wido targets=dependency-ratchet-refuses-new-wall-clock-and-layout-asserts reason=priority-order subject=dependency-ratchet-refuses-new-wall-clock-and-layout-asserts from=unranked to=2:55 requested-sequence=55
 - 2026-09-30T18:48:32Z P67ZPRWH3RQQ14Y9S79D6WEB09-m1e-b6a4eb0a edit actor=human:wido targets=dependency-ratchet-refuses-new-wall-clock-and-layout-asserts
-Integrity: sha256=adaf38260e0cc578a18148f891c3352b1f9577b50f4414ea0253cb2a5a06ced2
+- 2026-09-30T18:48:44Z DRV2G3ER650PC3GDMSYHQN3111-ui-bc2fda53 done actor=human:Wido targets=actionable-metrics,arming-binds-the-installed-engine-identity,census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,critique-launch-verb-enforces-the-round-cap,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,dispatch-bases-chains-on-the-remote-tip,failed-job-attention,first-headless-run,fixture-repo-copies-exclude-the-artifacts-store,fixture-waits-name-their-producer,fleet-join-bootstrap,headless-continuous-delivery-proof,headless-fleet-coordination-proof,human-authority-surface-runs-its-cmd-tests,human-break-glass-commit-keeps-the-ledger-valid,human-wait-does-not-consume-goal-budget,job-record-birth-token,land-verb-writes-the-receipt,law-keys-read-committed-bytes,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,member-size-gate,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,never-idle-ironclad,new-elapsed-budgets-use-explicit-hours,one-goal-act-one-ledger-commit,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged,run-scoped-build-caches-have-a-janitor,runtime-limit-is-not-a-protocol-error,seat-landings-run-the-selected-sections,skipped-test-fails-its-group-on-the-other-os,small-change-lane,steward-revivals-leave-the-receipt-stream,stop-batch-strands-a-resumable-goal,token-spend-fence,trunk-versus-candidate-is-a-verification-step,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=2:55 to=2:54
+Integrity: sha256=4c00ec01a3edd2e77701b9ea0113cd7cd1d4ec64a9397965609832e192155dc5

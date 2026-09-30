@@ -2,12 +2,12 @@
 
 - State: queued
 - Priority: 2
-- Sequence: 21
+- Sequence: 20
 - Intent: What: the first real delivery of one small approved goal with no person watching: a steward-started seat claims it, builds it, has it reviewed and lands it, and the whole run is recorded. The old plan (a separate mission runner on one pinned machine) is replaced by the steward-started seat from seat-works-without-a-person, which is now on main. Why: we have never had a recorded, real, unattended delivery; the 2026-09-06 attempt aborted. Until one exists, 'the machines can work alone' is a claim, not a fact. Pros: one concrete receipt that unattended delivery works end to end, and a list of real defects to fix. Cons: an unwatched run can fail in new ways and spend budget; it depends on seat-works-without-a-person's own live proof first.
 - Origin: main
 - Next step: Next: after seat-works-without-a-person passes its live proof, approve one small goal and let a steward-started seat (launch switched on for that seat only) deliver it without a person, recording its claim, build, review and landing. Done when: that goal is landed on main and its claim, review and landing records show no human act between approval and landing.
 - OpenedAt: 2026-09-03T12:10:50Z
-- Revision: 42
+- Revision: 43
 - Labels: headless-fleet, headless-proof
 - Arc: headless-fleet
 - Pinned: m1
@@ -56,4 +56,5 @@ History:
 - 2026-09-13T08:23:10Z R328E6Y43B7EEREMEA8T0MVQWG-m1-c6925449 done actor=human:Wido targets=first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,headless-continuous-delivery-proof,headless-fleet-coordination-proof,idle-every-runtime-enforcement,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,recovery-rehearsal,recovery-to-good-state,role-lane-packets,seat-mutual-awareness reason=priority-order from=2:22 to=2:21
 - 2026-09-16T20:33:17Z 4MCR019941D9SZHR8GD2SAR97E-m1e-c6925449 unapprove actor=human:Wido targets=first-headless-run reason=Wido 2026-09-16 22:40 CEST: clean house on priority 1 first, then a few human convenience features; every priority 2+ goal is unapproved until then
 - 2026-09-30T18:48:11Z SS1RZ00A41XEVBM5FZ9BB72N3Y-ui-bc2fda53 edit actor=human:Wido targets=first-headless-run
-Integrity: sha256=ed6be538d7ede115fd4ef6c858af13955ea1aa07460ee5c05e2c7f7e75e99b87
+- 2026-09-30T18:48:44Z DRV2G3ER650PC3GDMSYHQN3111-ui-bc2fda53 done actor=human:Wido targets=actionable-metrics,arming-binds-the-installed-engine-identity,census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,critique-launch-verb-enforces-the-round-cap,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,dispatch-bases-chains-on-the-remote-tip,failed-job-attention,first-headless-run,fixture-repo-copies-exclude-the-artifacts-store,fixture-waits-name-their-producer,fleet-join-bootstrap,headless-continuous-delivery-proof,headless-fleet-coordination-proof,human-authority-surface-runs-its-cmd-tests,human-break-glass-commit-keeps-the-ledger-valid,human-wait-does-not-consume-goal-budget,job-record-birth-token,land-verb-writes-the-receipt,law-keys-read-committed-bytes,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,member-size-gate,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,never-idle-ironclad,new-elapsed-budgets-use-explicit-hours,one-goal-act-one-ledger-commit,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged,run-scoped-build-caches-have-a-janitor,runtime-limit-is-not-a-protocol-error,seat-landings-run-the-selected-sections,skipped-test-fails-its-group-on-the-other-os,small-change-lane,steward-revivals-leave-the-receipt-stream,stop-batch-strands-a-resumable-goal,token-spend-fence,trunk-versus-candidate-is-a-verification-step,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=2:21 to=2:20
+Integrity: sha256=3c297cb83f87eb14d50fc621f8e753ead93a1bf08afa690c89281f999fd9d5ab
