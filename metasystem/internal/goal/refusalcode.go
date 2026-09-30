@@ -28,12 +28,15 @@ func Coded(code string, err error) error { return coded(code, err) }
 // RefusalCode is the code of the outermost coded refusal in err's chain, or
 // empty when err carries none.
 func RefusalCode(err error) string {
-	var refusal *codedRefusal
+	var refusal interface{ RefusalCode() string }
 	if errors.As(err, &refusal) {
-		return refusal.code
+		return refusal.RefusalCode()
 	}
 	return ""
 }
+
+// RefusalCode is the refusal's code.
+func (r *codedRefusal) RefusalCode() string { return r.code }
 
 // RecordText is err as a record keeps it: its code, when it has one, before
 // its words. Records are read by machinery and --verbose, never by default.

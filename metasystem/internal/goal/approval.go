@@ -259,12 +259,10 @@ func approvalHorizon(t *TreeGoals, now time.Time) ApprovalHorizon {
 }
 
 func approvalRequired(f *GoalFile, verb string) error {
-	state := "missing"
-	id := "unknown"
-	if f != nil {
-		state, id = f.State, f.Id
+	if f == nil {
+		return coded("APPROVAL_REQUIRED", fmt.Errorf("that goal isn't open, so the %s was refused\nrun: metasystem goal list", verb))
 	}
-	return coded("APPROVAL_REQUIRED", fmt.Errorf("goal %s isn't approved yet (it is %s), so the %s was refused\nrun: metasystem goal approve %s", id, state, verb, id))
+	return coded("APPROVAL_REQUIRED", fmt.Errorf("goal %s isn't approved yet (it is %s), so the %s was refused\nrun: metasystem goal approve %s", f.Id, f.State, verb, f.Id))
 }
 
 // goalAdmissionRefusal marks a judgement about one goal. Configuration and

@@ -1,6 +1,7 @@
 package branch_test
 
 import (
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -90,7 +91,7 @@ func TestUnitDigestIgnoresDiffConfiguration(t *testing.T) {
 	if err != nil || c == a {
 		t.Fatalf("one-byte change: digest=%s err=%v", c, err)
 	}
-	if _, err := branch.UnitDigest(f.root, f.base); err == nil || !strings.Contains(err.Error(), "GOAL_BRANCH_RANGE") {
+	if _, err := branch.UnitDigest(f.root, f.base); err == nil || !strings.Contains(goal.RecordText(err), "GOAL_BRANCH_RANGE") {
 		t.Fatalf("root commit: %v", err)
 	}
 }

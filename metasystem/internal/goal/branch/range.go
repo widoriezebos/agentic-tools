@@ -46,8 +46,11 @@ const RangeCode = "GOAL_BRANCH_RANGE"
 type RangeError struct{ Code, Commit, Reason string }
 
 func (e *RangeError) Error() string {
-	return fmt.Sprintf("%s: commit %s: %s", e.Code, e.Commit, e.Reason)
+	return fmt.Sprintf("commit %s: %s", e.Commit, e.Reason)
 }
+
+// RefusalCode is the refusal's code.
+func (e *RangeError) RefusalCode() string { return e.Code }
 func refuse(commit, reason string) error { return &RangeError{RangeCode, commit, reason} }
 
 func parseUnits(value string) ([]string, bool) {

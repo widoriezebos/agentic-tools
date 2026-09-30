@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
 	"os"
 	"path/filepath"
@@ -391,18 +392,18 @@ func TestAttestationRequiresFastGateAndNamesChangedTests(t *testing.T) {
 	f.writeReaderRecord()
 	req := f.request(false)
 	f.expect("Inspect")
-	if _, _, err := commitRead(func() CommitReadRequest { copy := req; copy.GateRunID = ""; return copy }(), f, f.effects()); err == nil || !strings.Contains(err.Error(), ReadUngatedCode) {
+	if _, _, err := commitRead(func() CommitReadRequest { copy := req; copy.GateRunID = ""; return copy }(), f, f.effects()); err == nil || !strings.Contains(goal.RecordText(err), ReadUngatedCode) {
 		t.Fatalf("ungated read: %v", err)
 	}
 	f.expectStart(f.root)
 	wrong := req
 	wrong.GateTree = f.base
-	if _, _, err := commitRead(wrong, f, f.effects()); err == nil || !strings.Contains(err.Error(), ReadUngatedCode) {
+	if _, _, err := commitRead(wrong, f, f.effects()); err == nil || !strings.Contains(goal.RecordText(err), ReadUngatedCode) {
 		t.Fatalf("wrong-tree gate: %v", err)
 	}
 	f.expectStart(f.root)
 	f.expect("RawEntries", f.root, f.unit)
-	if _, _, err := commitRead(req, f, f.effects()); err == nil || !strings.Contains(err.Error(), ReadTestsUnnamedCode) {
+	if _, _, err := commitRead(req, f, f.effects()); err == nil || !strings.Contains(goal.RecordText(err), ReadTestsUnnamedCode) {
 		t.Fatalf("unnamed changed test: %v", err)
 	}
 	req.TestsChanged = []TestChange{{Path: f.path, ReaderWord: "assertions still prove the intended behavior"}}
@@ -473,7 +474,7 @@ func TestGoalBranchReadRedGateAndUncleanClosureDispatchNothingFurther(t *testing
 				return "go gate: staticcheck red", errors.New("exit 1")
 			},
 			Delegate: func(string, string, string, string, string) (string, error) { delegates++; return f.job, nil }})
-		if err == nil || !strings.Contains(err.Error(), ReadUngatedCode) || !strings.Contains(err.Error(), "staticcheck red") || delegates != 0 {
+		if err == nil || !strings.Contains(goal.RecordText(err), ReadUngatedCode) || !strings.Contains(err.Error(), "staticcheck red") || delegates != 0 {
 			t.Fatalf("red gate err=%v delegates=%d", err, delegates)
 		}
 		if _, statErr := os.Stat(f.detached); !os.IsNotExist(statErr) {
