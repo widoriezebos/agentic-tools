@@ -3055,7 +3055,7 @@ func explicitEnvironmentCommand(ctx context.Context, cwd string, environment, ar
 			}
 		}
 		if resolved == "" {
-			return nil, fmt.Errorf("executable %s is absent from the explicit PATH", argv[0])
+			return nil, fmt.Errorf("executable %s is not on the search path given for the build", argv[0])
 		}
 		executable = resolved
 	}

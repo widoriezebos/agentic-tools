@@ -216,7 +216,7 @@ func TestHostResourceCapacityWaitsWithoutOwningSlot(t *testing.T) {
 				t.Fatalf("escape target exists before test: %v", err)
 			}
 			t.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", selected)
-			if _, err := hostAdmissionDirectory(); err == nil || !strings.Contains(err.Error(), "temporary path") {
+			if _, err := hostAdmissionDirectory(); err == nil || !strings.Contains(err.Error(), "must be temporary") {
 				t.Fatalf("symlink ancestor escaped temporary admission boundary: %v", err)
 			}
 			if _, err := os.Lstat(selected); !os.IsNotExist(err) {
@@ -365,14 +365,14 @@ func TestHostResourceNestedLeaseRequiresHeldSubset(t *testing.T) {
 			t.Fatalf("nested %s/%s did not return %q: err=%v output=%s", class, resource, expectedError, err, output)
 		}
 	}
-	runChild(nil, "heavy", "", false, "proof parent has no active resource lease or counted legacy launcher")
+	runChild(nil, "heavy", "", false, "the parent test run holds no resource lease and no counted launcher")
 	runChild(nil, "heavy", "", true, "")
-	runChild(nil, "heavy", "fixture-db", true, "legacy proof parent has no named resource lease")
+	runChild(nil, "heavy", "fixture-db", true, "the older parent test run holds no named resource lease")
 	cheap, err := AcquireHostResources(context.Background(), directory, conf, "cheap", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	runChild(cheap, "heavy", "", false, "proof parent lease claim does not match inherited capacity or resources")
+	runChild(cheap, "heavy", "", false, "the parent test run's lease does not match the capacity or resources passed down")
 	if err := MarkHostResourcesClean(cheap.Files()); err != nil {
 		t.Fatal(err)
 	}
@@ -385,7 +385,7 @@ func TestHostResourceNestedLeaseRequiresHeldSubset(t *testing.T) {
 	}
 	defer func() { _ = MarkHostResourcesClean(heavy.Files()); _ = heavy.Close() }()
 	runChild(heavy, "heavy", "fixture-db", false, "")
-	runChild(heavy, "heavy", "new-db", false, `proof parent lease does not cover named resource "new-db"`)
+	runChild(heavy, "heavy", "new-db", false, `the parent test run's lease does not cover resource "new-db"`)
 	active, err := activeHostResourceSlots(directory)
 	if err != nil || active != 1 {
 		t.Fatalf("nested borrowing double-counted or lost capacity: %d %v", active, err)

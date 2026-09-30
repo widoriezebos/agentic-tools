@@ -715,7 +715,7 @@ func LaunchSuite(options LaunchOptions) int {
 				parityIdentity = current.IdentityDigest
 			}
 			if parityErr == nil && parityIdentity != launchInputIdentity {
-				parityErr = fmt.Errorf("relevant proof inputs changed during execution")
+				parityErr = fmt.Errorf("files the tests depend on changed while they ran")
 			}
 		}
 		if parityErr != nil {

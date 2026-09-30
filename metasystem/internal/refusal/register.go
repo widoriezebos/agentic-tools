@@ -307,7 +307,7 @@ var Rows = []Row{
 	{Code: "PARALLEL_RATCHET_REFUSED", Owner: "cmd/devgate", Site: "owners.go#parallelRatchet", Shape: Question, H1: StandingInput},
 	{Code: "TEST_CONTRACT_REQUIRED", Owner: "internal/testpolicy", Site: "contract.go#Contract.Validate", Shape: Question, H1: StandingInput},
 	{Code: "TEST_GROUP_SELECTION_REFUSED", Owner: "internal/testpolicy", Site: "select.go#Select", Shape: Question, H1: StandingInput},
-	{Code: "RETRY_PRIOR_OUTSIDE_TREE", Owner: "internal/proofrun", Site: "attempt.go#readRetryDecision", Shape: Question, H1: StandingInput},
+	{Code: "RETRY_PRIOR_OUTSIDE_TREE", Owner: "internal/proofrun", Site: "protocol.go#retryPriorOutsideTree", Shape: Question, H1: StandingInput},
 	{Code: "ADMISSION_OVERLAP_UNKNOWN", Owner: "internal/proofrun", Site: "admission.go#AdmissionCap.RefusalReason", Shape: Question, H1: StandingInput},
 	{Code: "ADMISSION_NESTING_UNKNOWN", Owner: "internal/proofrun", Site: "admission.go#AdmissionCap.RefusalReason", Shape: Question, H1: StandingInput},
 	{Code: "TEST_POLICY_COVERAGE_FLOOR_LOWERED", Owner: "internal/testrun", Site: "prepare.go#protectCoverageRatchets", Shape: Question, H1: StandingGuide, Forward: "test run"},

@@ -408,7 +408,7 @@ func TestAttemptSchemaTwoAtomicallyRetainsTestingAndReadsSchemaOne(t *testing.T)
 	if err := os.WriteFile(path, data, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ReadAttempt(root, attempt.AttemptID); err == nil || !strings.Contains(err.Error(), "unsupported future attempt schema") {
+	if _, err := ReadAttempt(root, attempt.AttemptID); err == nil || !strings.Contains(err.Error(), "written by a newer engine (record schema") {
 		t.Fatalf("future attempt schema did not get a named refusal: %v", err)
 	}
 	future["schemaVersion"] = float64(IdentityAttemptSchemaVersion)
@@ -417,7 +417,7 @@ func TestAttemptSchemaTwoAtomicallyRetainsTestingAndReadsSchemaOne(t *testing.T)
 	if err := os.WriteFile(path, data, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ReadAttempt(root, attempt.AttemptID); err == nil || !strings.Contains(err.Error(), "unsupported future test result schema") {
+	if _, err := ReadAttempt(root, attempt.AttemptID); err == nil || !strings.Contains(err.Error(), "written by a newer engine (result schema") {
 		t.Fatalf("future test result schema did not get a named refusal: %v", err)
 	}
 	if err := os.WriteFile(path, versioned, 0o600); err != nil {
@@ -570,12 +570,12 @@ func TestAttemptSchemaThreeCarriesTheCandidateTupleAtomically(t *testing.T) {
 
 	missingGoal := request
 	missingGoal.AttemptID, missingGoal.CandidateGoalID = "missing-candidate-goal", ""
-	if _, _, err := ReserveLocked(missingGoal); err == nil || !strings.Contains(err.Error(), "reservation requires a complete candidate tuple") {
+	if _, _, err := ReserveLocked(missingGoal); err == nil || !strings.Contains(err.Error(), "needs its whole candidate named to be reserved") {
 		t.Fatalf("reservation without candidate goal was not refused at its boundary: %v", err)
 	}
 	missingRevision := request
 	missingRevision.AttemptID, missingRevision.CandidateRevision = "missing-candidate-revision", 0
-	if _, _, err := ReserveLocked(missingRevision); err == nil || !strings.Contains(err.Error(), "reservation requires a complete candidate tuple") {
+	if _, _, err := ReserveLocked(missingRevision); err == nil || !strings.Contains(err.Error(), "needs its whole candidate named to be reserved") {
 		t.Fatalf("reservation without candidate revision was not refused at its boundary: %v", err)
 	}
 
@@ -630,7 +630,7 @@ func TestCandidateTreeFieldsMustAgree(t *testing.T) {
 	}
 	withIdentity := attempt
 	withIdentity.ProofIdentity = BindIdentityInputs(identity, []string{candidateTreeIdentityPrefix + other})
-	want := "proof attempt candidate tree " + tree + " disagrees with proof identity tree " + other
+	want := "test run candidate tree " + tree + " differs from its identity tree " + other
 	if err := validateAttempt(withIdentity); err == nil || err.Error() != want {
 		t.Fatalf("candidate field disagreed with identity without refusal: %v", err)
 	}
@@ -639,7 +639,7 @@ func TestCandidateTreeFieldsMustAgree(t *testing.T) {
 	result.CandidateTree = other
 	result.RecomputeDelivery()
 	withResult.TestResult = &result
-	if err := validateAttempt(withResult); err == nil || !strings.Contains(err.Error(), "testing evidence names candidate tree") {
+	if err := validateAttempt(withResult); err == nil || !strings.Contains(err.Error(), "results name candidate tree") {
 		t.Fatalf("candidate field disagreed with result without refusal: %v", err)
 	}
 }
@@ -948,7 +948,7 @@ func TestAttemptRejectsCandidateTreeDisagreement(t *testing.T) {
 	result.CandidateTree = strings.Repeat("2", 40)
 	result.RecomputeDelivery()
 	if _, err := FinalizeAttemptWithTestResultLocked(root, attempt.AttemptID, TerminalFailed, 23, "red", nil, &result, now.Add(time.Second)); err == nil ||
-		!strings.Contains(err.Error(), "testing evidence names candidate tree") {
+		!strings.Contains(err.Error(), "results name candidate tree") {
 		t.Fatalf("candidate-tree disagreement was retained: %v", err)
 	}
 	stored, err := ReadAttempt(root, attempt.AttemptID)

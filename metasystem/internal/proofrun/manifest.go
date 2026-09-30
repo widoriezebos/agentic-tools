@@ -23,7 +23,7 @@ import (
 
 const recordLengthBytes = 8
 
-var ErrDigestMismatch = errors.New("proof-run manifest digest mismatch")
+var ErrDigestMismatch = errors.New("the tested files' manifest hash does not match")
 
 type entry struct {
 	path       string
@@ -180,7 +180,7 @@ func readManifestAtWithHook(root, installationPrefix, stateRootPrefix string, co
 		return nil
 	})
 	if err != nil {
-		return manifest{}, fmt.Errorf("walk proof-run manifest: %w", err)
+		return manifest{}, fmt.Errorf("list the tested files: %w", err)
 	}
 	sort.Slice(entries, func(i, j int) bool {
 		return bytes.Compare([]byte(entries[i].path), []byte(entries[j].path)) < 0
@@ -446,10 +446,10 @@ func FullDigest(root string) (string, error) {
 
 func Verify(root, expected string) (string, error) {
 	if len(expected) != sha256.Size*2 {
-		return "", fmt.Errorf("expected manifest digest must be 64 lowercase hexadecimal characters")
+		return "", fmt.Errorf("the expected manifest hash must be 64 lowercase hexadecimal characters")
 	}
 	if _, err := hex.DecodeString(expected); err != nil || strings.ToLower(expected) != expected {
-		return "", fmt.Errorf("expected manifest digest must be 64 lowercase hexadecimal characters")
+		return "", fmt.Errorf("the expected manifest hash must be 64 lowercase hexadecimal characters")
 	}
 	actual, err := FullDigest(root)
 	if err != nil {

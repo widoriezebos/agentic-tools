@@ -298,7 +298,7 @@ func TestHCL03ProofAdmissionRowsNameEmissions(t *testing.T) {
 		"PROOF_AUTHORITY_REQUIRED":         {Owner: "cmd/metasystem", Site: "proof_run.go#proofAuthorityRefusal", Shape: Question},
 		"PROOF_AUTHORITY_ARC_MATE_REFUSED": {Owner: "cmd/metasystem", Site: "proof_run.go#resolveProofGoalRolesWithReads", Shape: Question},
 		"CANDIDATE_EXTENSION_REFUSED":      {Owner: "internal/dispatch", Site: "admission.go#evaluateCandidateConsumptionAdmissionWithReads", Shape: Question},
-		"RETRY_PRIOR_OUTSIDE_TREE":         {Owner: "internal/proofrun", Site: "attempt.go#readRetryDecision", Shape: Question},
+		"RETRY_PRIOR_OUTSIDE_TREE":         {Owner: "internal/proofrun", Site: "protocol.go#retryPriorOutsideTree", Shape: Question},
 		"SET_BUDGET_FENCED_SAME_TUPLE":     {Owner: "internal/goal", Site: "verbs.go#setBudgetRequest", Shape: Question},
 		"REBIND_EPOCH_UNAUTHENTICATED":     {Owner: "internal/goal", Site: "verbs.go#ClaimEpochForRebind", Shape: Identity},
 	}

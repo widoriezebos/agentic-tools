@@ -1583,7 +1583,7 @@ printf '{"suite":"landing-receipt","section":"tiny","event":"end","at":"%s","dep
 		{"overlay", []string{"GOFLAGS=-overlay=foreign.json"}, "canonical validator refuses GOFLAGS"},
 		{"modfile", []string{"GOFLAGS=-modfile=foreign.mod"}, "canonical validator refuses GOFLAGS"},
 		{"partial-parent", []string{"METASYSTEM_PROOF_CONTROL_ROOT=" + root}, "proof parent locator is incomplete"},
-		{"terminal-parent", []string{"METASYSTEM_PROOF_CONTROL_ROOT=" + root, "METASYSTEM_PROOF_ATTEMPT=" + attempts[0].AttemptID}, "proof parent context is not live"},
+		{"terminal-parent", []string{"METASYSTEM_PROOF_CONTROL_ROOT=" + root, "METASYSTEM_PROOF_ATTEMPT=" + attempts[0].AttemptID}, "the parent test run is no longer running"},
 	} {
 		t.Run(refusal.name, func(t *testing.T) {
 			probe := landingTestReceiptChild(proofFixture, repeat.Env, landingTestReceiptHelperCommand, "--root", root, "--tree", tree,

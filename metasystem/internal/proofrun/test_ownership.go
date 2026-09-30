@@ -198,7 +198,7 @@ func BindJoinedTestOwnershipLocked(root, attemptID string, request AdmissionRequ
 	}
 	if !testingAttemptSchema(attempt.SchemaVersion) || attempt.Terminal != nil || attempt.CancellationIntent != "" ||
 		attempt.TestResult != nil || len(attempt.PendingTestGroups) != 0 || len(attempt.TestInventory) != 0 {
-		return Attempt{}, fmt.Errorf("live proof attempt without an existing testing owner is required")
+		return Attempt{}, fmt.Errorf("only a live test run that no other run owns can take these tests")
 	}
 	if attempt.SchemaVersion == CandidateAttemptSchemaVersion {
 		attempt.SchemaVersion = IdentityAttemptSchemaVersion

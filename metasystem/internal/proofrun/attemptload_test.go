@@ -452,7 +452,7 @@ func TestUnreadableAttemptRecordsAreSkippedNotFatal(t *testing.T) {
 		t.Fatal(err)
 	}
 	attempts, unreadable := readAttemptsSkippingUnreadable(root)
-	if len(attempts) != 1 || attempts[0].AttemptID != good.AttemptID || len(unreadable) != 1 || !strings.Contains(unreadable[0], "contradicts its path") {
+	if len(attempts) != 1 || attempts[0].AttemptID != good.AttemptID || len(unreadable) != 1 || !strings.Contains(unreadable[0], "names a different run than its file") {
 		t.Fatalf("attempts = %d, unreadable = %v", len(attempts), unreadable)
 	}
 	live, err := LiveAttempts(root, nil)

@@ -10,7 +10,7 @@ import (
 
 // ErrMutationHeld is TryAcquireMutation's answer while another holder has
 // the proof mutation lock.
-var ErrMutationHeld = errors.New("the proof mutation lock is held")
+var ErrMutationHeld = errors.New("another process is changing the test run records")
 
 // TryAcquireMutation takes the proof mutation lock without waiting: a caller
 // with a budget (a runtime hook) must never queue behind a proof run.
@@ -28,7 +28,7 @@ func TryAcquireMutation(root string) (*MutationLock, error) {
 		if errors.Is(err, syscall.EWOULDBLOCK) {
 			return nil, ErrMutationHeld
 		}
-		return nil, fmt.Errorf("lock proof mutation for %s: %w", root, err)
+		return nil, fmt.Errorf("lock the test run records of %s: %w", root, err)
 	}
 	return &MutationLock{file: file}, nil
 }

@@ -513,7 +513,7 @@ func TestRecycledSuiteIdentityAuthorizesNoKillAction(t *testing.T) {
 		Shutdown: func() error { shutdowns++; return nil },
 	}
 	err := stopStalledSuite(options, "fixture-section", "fixture stall", ProgressRun{})
-	if err == nil || !strings.Contains(err.Error(), "kill refused") {
+	if err == nil || !strings.Contains(err.Error(), "so it was not killed") {
 		t.Fatalf("error = %v", err)
 	}
 	if signals != 0 || shutdowns != 0 {
