@@ -198,7 +198,7 @@ func (inv *intentInvocation) actorArgs(id string, names ...string) ([]string, *i
 	}
 	proof, err := dependencies.proveHuman(inv.stateRoot, int64(os.Getppid()), nil, now)
 	if err == nil && !proof.EnrolledTerminalFor(inv.stateRoot) {
-		err = fmt.Errorf("%s: the terminal check ended %s", humanauthority.OutcomeTerminalMissing, proof.Outcome)
+		err = humanauthority.Refusedf(humanauthority.OutcomeTerminalMissing, "the terminal check ended %s", proof.Outcome)
 	}
 	if err != nil {
 		return nil, refused(err)

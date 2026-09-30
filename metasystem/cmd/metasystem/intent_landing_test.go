@@ -263,7 +263,7 @@ func TestLandingRestartGivesAFreshOwner(t *testing.T) {
 func TestLandingSetMoveIsAPersonsAct(t *testing.T) {
 	t.Parallel()
 	bed := newLaneVerbBed(t)
-	bed.person = errors.New(humanauthority.OutcomeNotEnrolled + ": human authority has no readable terminal enrollment")
+	bed.person = humanauthority.Refusedf(humanauthority.OutcomeNotEnrolled, "human authority has no readable terminal enrollment")
 	if code, _, stderr := bed.run(t, "landing", "set", bed.landingA); code != 0 {
 		t.Fatalf("first registration by anyone = %d %q", code, stderr)
 	}

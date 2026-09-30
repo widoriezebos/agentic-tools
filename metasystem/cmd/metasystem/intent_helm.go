@@ -595,14 +595,13 @@ func (inv *intentInvocation) withHelm(result intentResult, path string) intentRe
 // terminal, in the reader's terms rather than the proof's outcome code; an
 // error the proof does not classify is kept as it is.
 func actorProofReason(err error) string {
-	text := err.Error()
-	switch {
-	case strings.Contains(text, humanauthority.OutcomeAgent):
+	switch outcome, _ := humanauthority.OutcomeOf(err); outcome {
+	case humanauthority.OutcomeAgent:
 		return "an agent started this shell"
-	case strings.Contains(text, humanauthority.OutcomeTerminalMissing):
+	case humanauthority.OutcomeTerminalMissing:
 		return "this shell isn't attached to a terminal"
-	case strings.Contains(text, humanauthority.OutcomeNotEnrolled):
+	case humanauthority.OutcomeNotEnrolled:
 		return "this terminal is not the enrolled one"
 	}
-	return text
+	return err.Error()
 }

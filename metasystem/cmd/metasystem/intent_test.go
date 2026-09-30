@@ -386,7 +386,7 @@ func TestIntentGoalAuthorityAndState(t *testing.T) {
 		bed := newIntentBed(t, false, makeQueued)
 		wrong := bed.owners()
 		wrong.prove = func(string, int64, humanauthority.Reader, string, string, time.Time) (humanauthority.Proof, error) {
-			return humanauthority.Proof{}, errors.New("process 42 is not the enrolled terminal")
+			return humanauthority.Proof{}, humanauthority.Refusedf(humanauthority.OutcomeTerminalMissing, "process 42 is not the enrolled terminal")
 		}
 		code, result := bed.runJSON(wrong, "goal", "approve", bedGoal, "--lineage", "m1")
 		if code != 1 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "not the enrolled terminal") || result.Next == nil || strings.Join(result.Next.Argv[:3], " ") != "metasystem system enroll" {

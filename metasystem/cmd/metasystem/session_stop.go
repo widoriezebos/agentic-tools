@@ -56,7 +56,7 @@ func authorizeSessionStop(stateRoot, by string) (goal.SessionStop, string, int) 
 		return goal.SessionStop{}, fmt.Sprintf("session stop refused: caller classification failed: %v", err), 3
 	}
 	if classification.Class != lease.ClassHuman {
-		return goal.SessionStop{}, sessionStopRefusal(stateRoot, by, fmt.Errorf("%s", humanauthority.OutcomeAgent)), 3
+		return goal.SessionStop{}, sessionStopRefusal(stateRoot, by, humanauthority.Refused(humanauthority.OutcomeAgent, nil)), 3
 	}
 
 	now := sessionStopNow().UTC()

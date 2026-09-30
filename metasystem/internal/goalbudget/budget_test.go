@@ -1,6 +1,7 @@
 package goalbudget
 
 import (
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -93,7 +94,7 @@ func TestParseBoxSharesTheTupleGrammarAndFillsEmptyMembers(t *testing.T) {
 			t.Fatalf("malformed box %q was accepted", value)
 		}
 	}
-	if _, err := ParseBox("1d/10/720m/1/4", nil, 3); err == nil || !strings.Contains(err.Error(), "exceeds configured maximum 3") {
+	if _, err := ParseBox("1d/10/720m/1/4", nil, 3); !errors.Is(err, ErrOverMaximum) || !strings.Contains(err.Error(), "exceeds configured maximum 3") {
 		t.Fatalf("a box above the three-round ceiling was not refused during parsing: %v", err)
 	}
 }

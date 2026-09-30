@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"io"
 	"path/filepath"
 	"slices"
@@ -40,7 +39,7 @@ func TestAnActorRefusalSaysWhoMayActInPublicWords(t *testing.T) {
 	bed.facts.reader = &unenrolled
 	owners := bed.owners()
 	owners.prove = func(string, int64, humanauthority.Reader, string, string, time.Time) (humanauthority.Proof, error) {
-		return humanauthority.Proof{}, errors.New(humanauthority.OutcomeTerminalMissing)
+		return humanauthority.Proof{}, humanauthority.Refused(humanauthority.OutcomeTerminalMissing, nil)
 	}
 	for _, row := range []struct {
 		args  []string

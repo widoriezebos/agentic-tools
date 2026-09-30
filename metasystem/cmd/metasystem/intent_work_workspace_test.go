@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,6 +11,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 )
 
 // workspaceGit is one test's git for the workspace verb: a worktree is a
@@ -172,7 +172,7 @@ func TestWorkWorkspaceCopyRefusalsAndDiscard(t *testing.T) {
 	if code == 0 || !strings.Contains(kept.Decision, "metasystem work land standing-validation") || !strings.Contains(kept.Decision, "--release --discard --name bed") {
 		t.Fatalf("dirty release: %d %+v", code, kept)
 	}
-	bed.person = errors.New("not the enrolled terminal")
+	bed.person = humanauthority.Refusedf(humanauthority.OutcomeTerminalMissing, "not the enrolled terminal")
 	if code, refused := bed.do("work", "workspace", "standing-validation", "--release", "--discard", "--name", "bed", "--reason", "scratch"); code != 3 || refused.Outcome != intentRefused {
 		t.Fatalf("an agent's discard: %d %+v", code, refused)
 	}

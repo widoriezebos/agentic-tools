@@ -1818,7 +1818,7 @@ func attorneyActRequest(r VerbRequest, proof *humanauthority.Proof) error {
 		return errors.New("an act under a grant is the seat's own; drop --by")
 	}
 	if r.ApprovedRef != "" {
-		return fmt.Errorf("an act under power of attorney stays within the tier box; --approved-ref is the human's own act")
+		return coded(ApprovedRefRefusedCode, errors.New("an act under power of attorney stays within the tier box; --approved-ref is the human's own act"))
 	}
 	return nil
 }
