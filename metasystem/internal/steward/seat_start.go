@@ -24,12 +24,14 @@ import (
 
 // SeatLaunchSpec is the seat start the steward asks for: the launch lane's
 // seat kind in the checkout, the brief on stdin, the id chosen here so the
-// record exists before the launch does.
+// record exists before the launch does. StateRoot is the steward's own root,
+// the installation whose fence the seat binds to; the launcher runs the seat
+// at the top of the checkout that holds it.
 type SeatLaunchSpec struct {
-	ID               string
-	WorkingDirectory string
-	Brief            string
-	Tag              string
+	ID        string
+	StateRoot string
+	Brief     string
+	Tag       string
 }
 
 // SeatLaunchState is one seat launch as its launch record says.
@@ -474,7 +476,7 @@ func startSeatWithDependencies(repoRoot string, selection SeatSelection, depende
 	if err := writeSeatRecord(repoRoot, record); err != nil {
 		return SeatRecord{}, err
 	}
-	if err := dependencies.Launcher.StartSeat(SeatLaunchSpec{ID: id, WorkingDirectory: repoRoot, Brief: briefPath, Tag: nonce}); err != nil {
+	if err := dependencies.Launcher.StartSeat(SeatLaunchSpec{ID: id, StateRoot: repoRoot, Brief: briefPath, Tag: nonce}); err != nil {
 		record.ReapedAt = dependencies.Now().UTC().Format(time.RFC3339)
 		record.Outcome, record.Evidence = SeatStartFailed, err.Error()
 		if writeErr := writeSeatRecord(repoRoot, record); writeErr != nil {

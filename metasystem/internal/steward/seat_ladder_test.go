@@ -596,7 +596,7 @@ func TestStartNoticeNamesTheStops(t *testing.T) {
 	bed := newSeatBed(t, seatReadyGoal("alpha", "Build it."))
 	result := bed.tick(deadWorkers)
 	record := bed.start(result.Seat)
-	if len(bed.launcher.starts) != 1 || bed.launcher.starts[0].ID != record.LaunchID || bed.launcher.starts[0].WorkingDirectory == "" {
+	if len(bed.launcher.starts) != 1 || bed.launcher.starts[0].ID != record.LaunchID || bed.launcher.starts[0].StateRoot != bed.root {
 		t.Fatalf("one seat launch in the checkout: %+v", bed.launcher.starts)
 	}
 	want := "steward: started seat " + record.LaunchID + " on " + seatBedMachine + " for alpha; `metasystem work stop " + record.LaunchID +

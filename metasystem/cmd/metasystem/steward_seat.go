@@ -7,10 +7,12 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"path/filepath"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 )
 
@@ -22,22 +24,30 @@ type stewardSeatLauncher struct {
 	manager func() *launch.Manager
 	// start is the manager's Start; a test records the spec instead.
 	start func(launch.StartSpec) (launch.Record, error)
+	// repositoryTop is the Git top of the checkout that holds a path.
+	repositoryTop func(string) (string, error)
 }
 
 func newStewardSeatLauncher() stewardSeatLauncher {
-	return stewardSeatLauncher{manager: func() *launch.Manager { return launchManager() }}
+	return stewardSeatLauncher{manager: func() *launch.Manager { return launchManager() }, repositoryTop: stateroot.RepositoryTop}
 }
 
 // StartSeat starts the seat kind with the id, brief and tag the steward
-// chose, in the checkout; the launch names no goal, for a goal id names no
-// checkout.
+// chose. The seat runs at the top of the checkout that holds the steward's
+// state root, where a person starts a session (the hooks find the
+// installation from there), and binds to the fence that state root keeps.
+// The launch names no goal, for a goal id names no checkout.
 func (l stewardSeatLauncher) StartSeat(spec steward.SeatLaunchSpec) error {
+	top, err := l.repositoryTop(spec.StateRoot)
+	if err != nil {
+		return fmt.Errorf("the checkout that holds %s cannot be read: %w", spec.StateRoot, err)
+	}
 	start := l.start
 	if start == nil {
 		start = l.manager().Start
 	}
-	_, err := start(launch.StartSpec{ID: spec.ID, Kind: stewardSeatKind,
-		WorkingDirectory: spec.WorkingDirectory, Brief: spec.Brief, Tag: spec.Tag})
+	_, err = start(launch.StartSpec{ID: spec.ID, Kind: stewardSeatKind,
+		WorkingDirectory: top, FenceRoot: spec.StateRoot, Brief: spec.Brief, Tag: spec.Tag})
 	return err
 }
 

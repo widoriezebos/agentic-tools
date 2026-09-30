@@ -5,6 +5,8 @@ package main
 // review's clear-to-land or send-back starting the successor (test 22).
 
 import (
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -178,14 +180,28 @@ func TestStewardSeatLauncherStartsTheSeatKindInTheCheckout(t *testing.T) {
 			asked = append(asked, spec)
 			return launch.Record{ID: spec.ID}, nil
 		},
+		repositoryTop: func(path string) (string, error) {
+			if path != "/checkout/metasystem" {
+				return "", fmt.Errorf("the checkout top is read from the state root, not %q", path)
+			}
+			return "/checkout", nil
+		},
 	}
-	spec := steward.SeatLaunchSpec{ID: "seat-0011223344556677", WorkingDirectory: "/checkout", Brief: "/checkout/brief.md", Tag: "0011223344556677"}
+	// The steward names its state root, the installation; the seat runs at
+	// the checkout's top, where a person starts a session, and binds to the
+	// fence the installation keeps.
+	spec := steward.SeatLaunchSpec{ID: "seat-0011223344556677", StateRoot: "/checkout/metasystem", Brief: "/checkout/metasystem/brief.md", Tag: "0011223344556677"}
 	if err := launcher.StartSeat(spec); err != nil {
 		t.Fatal(err)
 	}
-	if len(asked) != 1 || asked[0].Kind != "seat" || asked[0].ID != spec.ID || asked[0].WorkingDirectory != spec.WorkingDirectory ||
-		asked[0].Brief != spec.Brief || asked[0].Tag != spec.Tag || asked[0].Goal != "" {
-		t.Fatalf("the seat start is the seat kind in the checkout, naming no goal: %+v", asked)
+	if len(asked) != 1 || asked[0].Kind != "seat" || asked[0].ID != spec.ID || asked[0].WorkingDirectory != "/checkout" ||
+		asked[0].FenceRoot != spec.StateRoot || asked[0].Brief != spec.Brief || asked[0].Tag != spec.Tag || asked[0].Goal != "" {
+		t.Fatalf("the seat start is the seat kind at the checkout top, fenced by the state root, naming no goal: %+v", asked)
+	}
+	unreadable := launcher
+	unreadable.repositoryTop = func(string) (string, error) { return "", errors.New("not a git checkout") }
+	if err := unreadable.StartSeat(spec); err == nil || len(asked) != 1 {
+		t.Fatalf("a state root outside a checkout starts no seat: %v %+v", err, asked)
 	}
 	state, err := launcher.SeatLaunch(spec.ID)
 	if err != nil || state.Found {
@@ -206,7 +222,8 @@ func TestStewardRunIsArmedWithTheSeatLauncher(t *testing.T) {
 	t.Parallel()
 	var config steward.TickConfig
 	wireStewardSeat(&config)
-	if _, ok := config.Seat.(stewardSeatLauncher); !ok {
-		t.Fatalf("steward run starts seats through the launch lane: %#v", config.Seat)
+	launcher, ok := config.Seat.(stewardSeatLauncher)
+	if !ok || launcher.repositoryTop == nil {
+		t.Fatalf("steward run starts seats through the launch lane, at the checkout top: %#v", config.Seat)
 	}
 }
