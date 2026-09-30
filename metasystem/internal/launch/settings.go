@@ -50,6 +50,11 @@ const SeatOwnerLineage = "steward-seat"
 // seat until an installation turns it on (Amendment 1).
 const SeatRuntimeOff = config.SeatRuntimeOff
 
+// LandingModelUnbound is launch.landing.model where the installation binds
+// no model for the landing agent's runtime: a landing start there is
+// refused, and every other setting still resolves.
+const LandingModelUnbound = "unbound"
+
 type Setting struct {
 	Key, Value, Source     string
 	ShippedDiffersFromConf *bool `json:"shippedDiffersFromConf,omitempty"`
@@ -203,7 +208,15 @@ func resolveSettings(confPath string, lookupEnv func(string) (string, bool)) (Se
 				prefix = other
 			}
 			bound := prefix + "." + resolved[runtimeKey].Value
-			if value, source, err = resolve(bound); err != nil {
+			boundValue, boundSource, boundErr := resolve(bound)
+			// The landing agent is not every installation's: one whose
+			// runtimes bind no model for it keeps its other settings, and a
+			// landing start there is refused (LandingModelUnbound).
+			if runtimeKey == LandingRuntimeKey && (boundErr != nil || strings.TrimSpace(boundValue) == "") {
+				resolved[modelKey] = Setting{Key: modelKey, Value: LandingModelUnbound, Source: source + "; " + bound + " is not set here"}
+				continue
+			}
+			if value, source, err = boundValue, boundSource, boundErr; err != nil {
 				return Settings{}, err
 			}
 			source += " via " + bound

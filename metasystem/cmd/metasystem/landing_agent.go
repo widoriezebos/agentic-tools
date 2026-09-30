@@ -51,6 +51,13 @@ type landingAgent struct {
 	settings func(stateRoot string) (launch.Settings, error)
 	now      func() time.Time
 	nonce    func() (string, error)
+	// gateSettings writes the Claude settings file that holds the landing
+	// agent's tool gate for the lane installation at module and returns its
+	// path, which the launch records as "settings" (the launcher refuses a
+	// landing launch without it). The gate is unit A-b's
+	// (internal/landing/agentgate); the integration wires it here. nil
+	// passes none.
+	gateSettings func(module string) (string, error)
 }
 
 func newLandingAgent() landingAgent {
@@ -123,8 +130,8 @@ func (a landingAgent) start(root string, wake lane.Wake) (string, error) {
 	manager := *a.manager()
 	manager.Settings, manager.SettingsError = settings, nil
 	spec := launch.StartSpec{ID: id, Kind: launch.LandingKind, WorkingDirectory: root, FenceRoot: module, Brief: brief, Tag: nonce}
-	if landingAgentSettings != nil {
-		path, err := landingAgentSettings(module)
+	if a.gateSettings != nil {
+		path, err := a.gateSettings(module)
 		if err != nil {
 			return "", errors.Join(err, os.Remove(brief))
 		}
@@ -140,13 +147,6 @@ func (a landingAgent) start(root string, wake lane.Wake) (string, error) {
 	}
 	return record.ID, nil
 }
-
-// landingAgentSettings names the runtime settings file (the tool gate) the
-// landing agent's launch passes as the record's "settings", for the lane
-// installation at module; nil or empty passes none. The gate and its
-// settings are unit A-b's, whose launcher refuses a landing launch without
-// them.
-var landingAgentSettings func(module string) (string, error)
 
 // cancel stops a landing launch that started as the lane was paused.
 func (a landingAgent) cancel(id string) error {

@@ -325,6 +325,15 @@ func WeightThreshold(root string) int64 {
 	return parsed
 }
 
+// WeightDueRead reads whether the validation weight is over its threshold
+// without the weight lock and without writing anything: a reader's view (a
+// wake, a status), which a concurrent add may overtake. The weight file is
+// replaced atomically, so it is never read torn.
+func WeightDueRead(root string, threshold int64, now time.Time) (bool, error) {
+	state, err := loadWeight(root, now)
+	return err == nil && threshold > 0 && state.Accumulated >= threshold, err
+}
+
 // WeightCheckAt reads cadence weight using its caller's clock.
 func WeightCheckAt(root string, threshold int64, now time.Time) (WeightState, bool, error) {
 	lock, err := acquireWeightLock(root)

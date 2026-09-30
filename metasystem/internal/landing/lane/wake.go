@@ -102,11 +102,17 @@ func batchReasons(records []batch.Record) (queued, unfinished bool) {
 // ValidationDue is the production due read of the lane checkout at root: by
 // its module's goal ledger (the latest cadence status) and validation
 // weight, the cadence's own clock and weight rules (gaterun.CadenceDueByClock).
-// Whether the trunk's deep-only groups changed identity needs a fetch and a
-// revalidation, which validate judges when it runs.
+// A ledger with no cadence status yet is due, by the cadence's rule. It
+// writes nothing and takes no lock. Whether the trunk's deep-only groups
+// changed identity needs a fetch and a revalidation, which validate judges
+// when it runs.
 func ValidationDue(root string, now time.Time) (bool, error) {
+	return validationDueWith(root, now, goal.ResolveEndpoint)
+}
+
+func validationDueWith(root string, now time.Time, resolve func(string) (goal.Endpoint, error)) (bool, error) {
 	module := batch.ModuleRoot(root)
-	endpoint, err := goal.ResolveEndpoint(module)
+	endpoint, err := resolve(module)
 	if err != nil {
 		return false, fmt.Errorf("the goal ledger of %s cannot be read: %w", module, err)
 	}
@@ -114,13 +120,12 @@ func ValidationDue(root string, now time.Time) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("the goal ledger of %s cannot be read: %w", module, err)
 	}
-	var latest *goal.CadenceStatus
-	if projection.Tree != nil {
-		latest = projection.Tree.Cadence
+	if projection.Tree == nil {
+		return false, fmt.Errorf("the goal ledger of %s holds no goals tree", module)
 	}
-	_, weightDue, err := gaterun.WeightCheckAt(module, gaterun.WeightThreshold(module), now)
+	weightDue, err := gaterun.WeightDueRead(module, gaterun.WeightThreshold(module), now)
 	if err != nil {
 		return false, fmt.Errorf("the validation weight of %s cannot be read: %w", module, err)
 	}
-	return gaterun.CadenceDueByClock(now, latest, weightDue)
+	return gaterun.CadenceDueByClock(now, projection.Tree.Cadence, weightDue)
 }

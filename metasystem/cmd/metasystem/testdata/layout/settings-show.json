@@ -127,13 +127,13 @@ exit 0
       },
       {
         "Key": "launch.landing.runtime",
-        "Value": "fake",
-        "Source": "default; auto: none of fake on PATH, first listed"
+        "Value": "claude",
+        "Source": "default"
       },
       {
         "Key": "launch.landing.model",
-        "Value": "fake-model",
-        "Source": "conf via launch.build.model.fake"
+        "Value": "unbound",
+        "Source": "default; launch.build.model.claude is not set here"
       },
       {
         "Key": "launch.landing.effort",

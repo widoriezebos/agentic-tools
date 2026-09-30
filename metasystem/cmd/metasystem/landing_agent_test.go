@@ -64,7 +64,13 @@ func TestLandingAgentStartsOnTheLaneWithItsRoster(t *testing.T) {
 		Supervisor: recordingSupervisor{store}, Now: func() time.Time { return now }, Sleep: func(time.Duration) {}, Poll: time.Second, StartCap: time.Minute,
 		Lane: landingLaneCheckout(func() (string, error) { return home, nil })}
 	agent := landingAgent{manager: func() *launch.Manager { return manager }, settings: installationSettings, now: func() time.Time { return now },
-		nonce: func() (string, error) { return "0011223344556677", nil }}
+		nonce: func() (string, error) { return "0011223344556677", nil },
+		gateSettings: func(asked string) (string, error) {
+			if asked != module {
+				t.Errorf("the gate settings were asked for %s, want the lane installation %s", asked, module)
+			}
+			return filepath.Join(base, "gate", "landing-settings.json"), nil
+		}}
 	keeper := newLandingAgentKeeper(module, home, agent)
 	keeper.Sources.Validation = func(string, time.Time) (bool, error) { return true, nil }
 
@@ -74,14 +80,17 @@ func TestLandingAgentStartsOnTheLaneWithItsRoster(t *testing.T) {
 		t.Fatalf("after a due validation: line %q, launches %+v %v; want one", line, records, err)
 	}
 	record := records[0]
-	var model, effort, fence, briefPath string
-	for key, into := range map[string]*string{"model": &model, "effort": &effort, "fenceRoot": &fence, "brief": &briefPath} {
+	var model, effort, fence, briefPath, gate string
+	for key, into := range map[string]*string{"model": &model, "effort": &effort, "fenceRoot": &fence, "brief": &briefPath, "settings": &gate} {
 		_ = json.Unmarshal(record.AdapterData[key], into)
 	}
 	if record.Kind != launch.LandingKind || record.WorkingDirectory != checkout || fence != module || record.Adapter != "claude-headless" ||
 		model != "claude-roster-model" || effort != "high" {
 		t.Fatalf("landing launch = kind %q dir %q fence %q adapter %q model %q effort %q; want landing in %s fenced to %s on the roster",
 			record.Kind, record.WorkingDirectory, fence, record.Adapter, model, effort, checkout, module)
+	}
+	if gate != filepath.Join(base, "gate", "landing-settings.json") {
+		t.Fatalf("the landing launch record carries settings %q; want the tool gate's settings file", gate)
 	}
 	brief, err := os.ReadFile(briefPath)
 	if err != nil || !strings.Contains(string(brief), lane.WakeValidationDue) || !strings.HasPrefix(briefPath, module+string(filepath.Separator)) {

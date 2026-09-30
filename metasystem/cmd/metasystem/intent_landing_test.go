@@ -49,7 +49,9 @@ func newLaneVerbBed(t *testing.T) *laneVerbBed {
 func (bed *laneVerbBed) owners() intentOwners {
 	notARepository := func(string) (string, error) { return "", errors.New("not a repository") }
 	return intentOwners{resolver: stateroot.NewResolver(notARepository, os.Executable), landing: laneVerbOwners{
-		home: func() (string, error) { return bed.home, nil },
+		// The lane beds keep no goal ledger: validation is never due.
+		validation: func(string, time.Time) (bool, error) { return false, nil },
+		home:       func() (string, error) { return bed.home, nil },
 		probe: func(string) (lane.OwnerProbe, error) {
 			if !bed.alive {
 				return lane.OwnerProbe{}, nil

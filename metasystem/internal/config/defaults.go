@@ -323,10 +323,11 @@ var coreSettings = []Setting{
 	// The landing agent the keeper wakes in the host's landing lane (one per
 	// computer, started on demand): its runtime, model and effort are roster
 	// keys (landing-lane-runtime-redesign D2), named in the lane checkout's
-	// metasystem.conf.local. The documented default is the first runtime on
-	// PATH, the build lane's model for that runtime, and effort xhigh.
-	{Key: "launch.landing.runtime", Default: AutoRuntime, ProofInput: true,
-		Meaning: "the landing agent's runtime; auto (the default) is the first of metasystem.runtimes on PATH"},
+	// metasystem.conf.local. The documented default is claude (the only
+	// runtime its tool gate, a Claude hook, can hold), the build lane's model
+	// for it, and effort xhigh.
+	{Key: "launch.landing.runtime", Default: "claude", ProofInput: true,
+		Meaning: "the landing agent's runtime; claude, the default, is the only one its tool gate holds"},
 	{Key: "launch.landing.model", Default: "", ProofInput: true,
 		Meaning: "the landing agent's model on any runtime; empty (the default) takes launch.build.model.<runtime>"},
 	{Key: "launch.landing.effort", Default: "xhigh", ProofInput: true,

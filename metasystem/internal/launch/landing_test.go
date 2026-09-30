@@ -163,12 +163,13 @@ func TestLandingLaunchOneAtATime(t *testing.T) {
 
 // TestLandingSettingsAreRosterKeys (A-a, D2): launch.landing.runtime, .model
 // and .effort resolve as a lane's from the layered settings, with the
-// documented default: the first runtime on PATH, the build lane's model for
-// it, effort xhigh; metasystem.conf.local names them.
+// documented default: claude, the build lane's model for it, effort xhigh;
+// metasystem.conf.local names them, and a runtime other than claude is
+// refused at the start (the tool gate is a Claude hook).
 func TestLandingSettingsAreRosterKeys(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	for _, name := range []string{"codex", "claude"} {
+	for _, name := range []string{"codex"} {
 		if err := testexec.WriteFile(filepath.Join(dir, name), []byte("#!/bin/sh\n"), 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -187,7 +188,9 @@ func TestLandingSettingsAreRosterKeys(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if settings.LandingRuntime != "claude" || settings.LandingModel != settings.BuildModel || settings.LandingEffort != "xhigh" {
+	// Only codex is on PATH: the build lane takes it, the landing agent
+	// stays on claude, with the build lane's claude model.
+	if settings.LandingRuntime != "claude" || settings.BuildRuntime != "codex" || settings.LandingModel != "claude-opus-5-5" || settings.LandingEffort != "xhigh" {
 		t.Fatalf("default landing settings: runtime=%q model=%q effort=%q (build model %q)", settings.LandingRuntime, settings.LandingModel, settings.LandingEffort, settings.BuildModel)
 	}
 	if model, effort, window := settings.launchValues("landing"); model != settings.LandingModel || effort != "xhigh" || window != 0 {
@@ -207,8 +210,38 @@ func TestLandingSettingsAreRosterKeys(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if settings.LandingRuntime != "codex" || settings.LandingModel != "gpt-6-sol" || settings.LandingEffort != "high" ||
-		adapterForLane("landing", settings.launchRuntime("landing")) != "codex-exec" {
+	if settings.LandingRuntime != "codex" || settings.LandingModel != "gpt-6-sol" || settings.LandingEffort != "high" {
 		t.Fatalf("roster landing settings = %q %q %q", settings.LandingRuntime, settings.LandingModel, settings.LandingEffort)
+	}
+	// The tool gate is a Claude hook: a roster naming another runtime is
+	// refused at the start, plainly, and leaves no record.
+	checkout, module := nestedLane(t)
+	m, _ := laneManager(t, checkout, module)
+	m.Adapters["codex-exec"] = CodexExec{Binary: "/fixture/bin/codex"}
+	m.Settings = settings
+	if _, err := m.Start(StartSpec{Kind: "landing", WorkingDirectory: checkout, FenceRoot: module, Brief: landingBrief(t), Tag: "w4ke"}); err == nil ||
+		!strings.Contains(err.Error(), "runs only on claude") {
+		t.Fatalf("a landing agent on codex = %v; want refused", err)
+	}
+	if records, _ := m.Store.List(); len(records) != 0 {
+		t.Fatalf("a refused landing start left records: %+v", records)
+	}
+
+	// An installation whose runtimes hold no claude still resolves every
+	// other setting; the landing agent has no model there and is refused.
+	if err := os.Remove(conf + ".local"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(conf, []byte("metasystem.runtimes=codex\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	settings, err = ResolveSettings(conf, lookup)
+	if err != nil || settings.BuildRuntime != "codex" || settings.LandingModel != LandingModelUnbound {
+		t.Fatalf("no claude here: build %q landing model %q err %v; want the settings resolved and the landing model unbound", settings.BuildRuntime, settings.LandingModel, err)
+	}
+	m.Settings = settings
+	if _, err := m.Start(StartSpec{Kind: "landing", WorkingDirectory: checkout, FenceRoot: module, Brief: landingBrief(t), Tag: "w4ke"}); err == nil ||
+		!strings.Contains(err.Error(), LandingModelKey) {
+		t.Fatalf("a landing agent with no model = %v; want refused naming %s", err, LandingModelKey)
 	}
 }

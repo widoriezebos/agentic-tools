@@ -277,7 +277,9 @@ func (b *machineBed) owners() intentOwners {
 			},
 		},
 		landing: laneVerbOwners{
-			home: func() (string, error) { return b.home, nil },
+			// The lane beds keep no goal ledger: validation is never due.
+			validation: func(string, time.Time) (bool, error) { return false, nil },
+			home:       func() (string, error) { return b.home, nil },
 			probe: func(string) (lane.OwnerProbe, error) {
 				if !b.laneAlive {
 					return lane.OwnerProbe{}, nil

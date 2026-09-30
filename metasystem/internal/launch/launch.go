@@ -126,7 +126,13 @@ func (m *Manager) Start(spec StartSpec) (Record, error) {
 	if adapterName == "" {
 		return Record{}, fmt.Errorf("launch kind %q is not available", spec.Kind)
 	}
-	if spec.Kind == "design" && m.Adapters[adapterName] == nil {
+	if spec.Kind == LandingKind && adapterName != "claude-headless" {
+		return Record{}, fmt.Errorf("the landing agent runs only on claude, because its tool gate is a Claude hook; set %s=claude in metasystem.conf.local", LandingRuntimeKey)
+	}
+	if spec.Kind == LandingKind && model == LandingModelUnbound {
+		return Record{}, fmt.Errorf("no model is set for the landing agent here; set %s in metasystem.conf.local", LandingModelKey)
+	}
+		if spec.Kind == "design" && m.Adapters[adapterName] == nil {
 		return Record{}, errors.New("adapter-unavailable")
 	}
 	absDir, err := filepath.Abs(spec.WorkingDirectory)

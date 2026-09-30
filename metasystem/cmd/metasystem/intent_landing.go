@@ -49,6 +49,9 @@ type laneVerbOwners struct {
 	// helm reads whether a joined unit's seat is at the helm, which holds
 	// its batch whole.
 	helm func(seatRoot string) helm.State
+	// validation reads whether the standing validation is due, one of the
+	// landing agent's wake reasons (A-a).
+	validation func(root string, now time.Time) (bool, error)
 }
 
 func (inv *intentInvocation) landing() laneVerbOwners {
@@ -85,6 +88,9 @@ func (inv *intentInvocation) landing() laneVerbOwners {
 	}
 	if owners.helm == nil {
 		owners.helm = helm.Active
+	}
+	if owners.validation == nil {
+		owners.validation = lane.ValidationDue
 	}
 	return owners
 }
@@ -180,7 +186,8 @@ func (inv *intentInvocation) laneContext(needLane bool) (owners laneVerbOwners, 
 }
 
 func (inv *intentInvocation) laneView(owners laneVerbOwners, home string) lane.View {
-	sources := lane.ViewSources{Home: home, Now: owners.now(), Owner: owners.probe, Records: owners.records, Ready: owners.ready, Helm: owners.helm}
+	sources := lane.ViewSources{Home: home, Now: owners.now(), Owner: owners.probe, Records: owners.records, Ready: owners.ready, Helm: owners.helm,
+		Validation: owners.validation}
 	if inv.input.switched("verbose") {
 		// The lane's spend is a full read of its proof store: only --verbose
 		// pays for it (N-5).
