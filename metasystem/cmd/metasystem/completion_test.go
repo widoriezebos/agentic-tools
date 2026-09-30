@@ -599,7 +599,7 @@ func TestCompletionScriptsCallBackThroughTheTypedCommand(t *testing.T) {
 	if code != 0 || problem != "" {
 		t.Fatalf("system completion bash: code %d stderr %q", code, problem)
 	}
-	for _, want := range []string{`"${COMP_WORDS[0]}" __complete --`, "complete -o filenames -F _metasystem metasystem"} {
+	for _, want := range []string{`"${COMP_WORDS[0]}" __complete --`, "complete -o default -F _metasystem metasystem"} {
 		if !strings.Contains(bash, want) {
 			t.Errorf("the bash script lacks %q:\n%s", want, bash)
 		}
@@ -745,9 +745,11 @@ func TestZshCompletionPreservesEqualsInPaths(t *testing.T) {
 	}
 }
 
-// TestBashGlueCompletesPathsWithSpaces (SOL-TC-01): on :files the bash glue
-// looks up the current word unquoted and keeps each file name one candidate,
-// and registers with -o filenames so bash escapes what it inserts.
+// TestBashGlueCompletesPathsWithSpaces (SOL-TC-01, SOL-TC-02): the bash glue
+// registers with -o default and not -o filenames, so a command word the
+// engine offers is inserted as it is, never as a directory; on :files it
+// offers nothing and readline's own file-name completion handles spaces,
+// quotes and directories.
 func TestBashGlueCompletesPathsWithSpaces(t *testing.T) {
 	t.Parallel()
 	bash, err := exec.LookPath("bash")
@@ -757,23 +759,27 @@ func TestBashGlueCompletesPathsWithSpaces(t *testing.T) {
 	dir := completionTemp(t)
 	engine := filepath.Join(dir, "bin", "metasystem")
 	completionEngineStub(t, engine, dir)
-	answer := completeLines(t, completionOwnersIn(dir), "work", "build", "G", "--brief", "dir wi")
-	if !slices.Equal(answer, []string{":files"}) {
+	if answer := completeLines(t, completionOwnersIn(dir), "work", "build", "G", "--brief", "dir wi"); !slices.Equal(answer, []string{":files"}) {
 		t.Fatalf("the Go walk answers %q, want :files", answer)
 	}
-	completionWrite(t, filepath.Join(dir, "answer"), ":files\n")
+	completionWrite(t, filepath.Join(dir, "files.answer"), ":files\n")
+	internal := completeLines(t, completionOwnersIn(dir), "inte")
+	if words := completedWords(internal); !slices.Equal(words, []string{"internal"}) {
+		t.Fatalf("the Go walk answers %q for inte, want internal", internal)
+	}
+	completionWrite(t, filepath.Join(dir, "words.answer"), strings.Join(internal, "\n")+"\n")
 	completionWrite(t, filepath.Join(dir, "dir with space", "file.md"), "")
-	completionWrite(t, filepath.Join(dir, "dirt.md"), "")
+	if err := os.MkdirAll(filepath.Join(dir, "internal"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	_, glue, _ := routeWith((&sentinelFamilies{}).registry(), "system", "completion", "bash")
 	completionWrite(t, filepath.Join(dir, "glue.bash"), glue)
 	driver := `source ./glue.bash
 complete -p metasystem
-export ANSWER=./answer
-try() { COMP_WORDS=('` + engine + `' work build G --brief "$1"); COMP_CWORD=5; _metasystem; echo "case ${#COMPREPLY[@]}:$(printf '[%s]\n' "${COMPREPLY[@]}" | sort | tr -d '\n')"; }
-try 'dir\ wi'
-try '"dir wi'
-try "'dir wi"
-try 'dir'
+try() { export ANSWER=$1; shift; COMP_WORDS=('` + engine + `' "$@"); COMP_CWORD=$(( ${#COMP_WORDS[@]} - 1 )); _metasystem; echo "case ${#COMPREPLY[@]}:$(printf '[%s]' "${COMPREPLY[@]}")"; }
+try ./files.answer work build G --brief 'dir\ wi'
+try ./files.answer work build G --brief '"dir wi'
+try ./words.answer inte
 `
 	completionWrite(t, filepath.Join(dir, "driver.bash"), driver)
 	command := exec.Command(bash, "--norc", "--noprofile", "./driver.bash")
@@ -783,9 +789,11 @@ try 'dir'
 		t.Fatalf("bash driver: %v\n%s", err, out)
 	}
 	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
-	want := []string{"complete -o filenames -F _metasystem metasystem",
-		"case 1:[dir with space]", "case 1:[dir with space]", "case 1:[dir with space]", "case 2:[dir with space][dirt.md]"}
+	want := []string{"complete -o default -F _metasystem metasystem", "case 0:[]", "case 0:[]", "case 1:[internal]"}
 	if !slices.Equal(lines, want) {
 		t.Errorf("bash glue answers\n%s\nwant\n%s", strings.Join(lines, "\n"), strings.Join(want, "\n"))
+	}
+	if strings.Contains(glue, "-o filenames") {
+		t.Errorf("the bash glue registers -o filenames, which turns command words into directories")
 	}
 }
