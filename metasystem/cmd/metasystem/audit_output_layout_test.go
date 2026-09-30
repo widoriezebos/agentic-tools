@@ -58,6 +58,20 @@ type layoutCase struct {
 	measured string
 	// noJSON is a passthrough action that takes no --json.
 	noJSON bool
+	// fileSystem names why a case's goldens hold what the macOS file system
+	// allocates and reports (st_blocks sizes, no file generation): on
+	// another system the bytes are not compared; the shape rules still run.
+	fileSystem string
+}
+
+// layoutBytesCompared says whether this system prints a case's goldens
+// byte for byte.
+func layoutBytesCompared(t *testing.T, c layoutCase) bool {
+	if c.fileSystem != "" && runtime.GOOS != "darwin" {
+		t.Logf("%s: goldens not compared on %s: %s", c.name, runtime.GOOS, c.fileSystem)
+		return false
+	}
+	return true
 }
 
 // addLayoutCases adds a group's cases from its own file through the group
@@ -345,7 +359,7 @@ func TestAuditOutputLayoutJSONUnchanged(t *testing.T) {
 			if err != nil {
 				t.Fatalf("%v (write main's with -update-layout-json)", err)
 			}
-			if got != string(want) {
+			if got != string(want) && layoutBytesCompared(t, c) {
 				t.Errorf("%s --json moved:\n%s\nmain printed:\n%s", c.name, got, want)
 			}
 		})
@@ -386,7 +400,7 @@ func TestAuditOutputLayout(t *testing.T) {
 				if err := os.WriteFile(path, []byte(got), 0o644); err != nil {
 					t.Fatal(err)
 				}
-			} else if want, err := os.ReadFile(path); err != nil || got != string(want) {
+			} else if want, err := os.ReadFile(path); (err != nil || got != string(want)) && layoutBytesCompared(t, c) {
 				t.Errorf("%s printed:\n%s\nthe golden %s holds:\n%s (%v)", c.name, got, path, want, err)
 			}
 			problems := layoutProblems(got, textui.MaxWidth, bed.replace)

@@ -893,7 +893,7 @@ func TestHandoffRecordsDeclaredTasksFromTheTranscript(t *testing.T) {
 		t.Fatalf("declared task handoff = code %d stdout %q stderr %q", code, output, problem)
 	}
 	fields := strings.Fields(output)
-	state := readContextHandoffState(t, fields[5])
+	state := readContextHandoffState(t, contextHandoffStatePath(root, fields[3]))
 	if len(state.Delegates) != 2 || state.Delegates[0].ID != contextAgentTaskID || state.Delegates[0].Kind != "agent" ||
 		state.Delegates[0].Asked != "Token diagnosis for 2026-09-15" || state.Delegates[0].Output != contextAgentTaskOutput || state.Delegates[0].Terminal ||
 		state.Delegates[1].ID != contextBashTaskID || state.Delegates[1].Kind != "bash" || state.Delegates[1].Output != contextBashTaskOutput || !state.Delegates[1].Terminal {
@@ -930,7 +930,7 @@ func TestHandoffRecordsNoEmptyDelegateField(t *testing.T) {
 		t.Fatalf("complete delegate handoff = code %d stderr %q", code, problem)
 	}
 	fields := strings.Fields(output)
-	state := readContextHandoffState(t, fields[5])
+	state := readContextHandoffState(t, contextHandoffStatePath(root, fields[3]))
 	if len(state.Delegates) != 1 || state.Delegates[0].Asked == "" || state.Delegates[0].Output == "" {
 		t.Fatalf("recorded delegate has an empty field: %+v", state.Delegates)
 	}
@@ -967,7 +967,7 @@ func TestHandoffNoteDirectoryIsPerRuntime(t *testing.T) {
 		t.Fatalf("Codex note handoff = code %d stderr %q", code, problem)
 	}
 	fields := strings.Fields(output)
-	state := readContextHandoffState(t, fields[5])
+	state := readContextHandoffState(t, contextHandoffStatePath(root, fields[3]))
 	canonicalNote, err := filepath.EvalSymlinks(note)
 	if err != nil {
 		t.Fatal(err)
@@ -1301,6 +1301,13 @@ func writeContextHandoffNote(t *testing.T, path, body string, modified time.Time
 	t.Helper()
 	writeTestingFixtureFile(t, path, []byte(body), 0o600)
 	contextMust(t, os.Chtimes(path, modified, modified))
+}
+
+// contextHandoffStatePath is where the handoff a verb recorded keeps its
+// state: the page prints the path shortened for a person, so a test reads
+// the record by its id under the root, never the printed words.
+func contextHandoffStatePath(root, id string) string {
+	return filepath.Join(root, "artifacts", "agents", "context", "handoffs", id, "state.json")
 }
 
 func readContextHandoffState(t *testing.T, path string) steward.HandoffState {

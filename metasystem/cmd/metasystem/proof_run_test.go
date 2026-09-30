@@ -507,10 +507,14 @@ func TestProofAdmissionAcquireWaitZeroNamesBothGoalsAndBusyPath(t *testing.T) {
 		ControlRoot: root, ExecutionRoot: root, ConfPath: filepath.Join(root, "metasystem.conf"), GoalID: candidate.Id,
 		AuthorityGoalID: "standing-validation", CapMin: "1", ScopeClass: "full", CommandClass: "testing",
 	})
-	for _, want := range []string{candidate.Id, "standing-validation", "LOCK_BUSY", candidate.Id + "/r2"} {
+	for _, want := range []string{candidate.Id, "standing-validation", candidate.Id + "/r2"} {
 		if err == nil || !strings.Contains(err.Error(), want) {
 			t.Fatalf("zero-wait refusal did not name %q: attempt=%+v err=%v", want, attempt, err)
 		}
+	}
+	// The code is data beside the words, never in them.
+	if code := goal.RefusalCode(err); code != goalrevision.BusyCode {
+		t.Fatalf("zero-wait refusal code = %q, want %s: %v", code, goalrevision.BusyCode, err)
 	}
 }
 

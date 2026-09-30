@@ -1495,7 +1495,7 @@ func TestCandidateBuiltCommitPassesDispatchSkewPreflight(t *testing.T) {
 	}
 	preflight := func(stamp string) ([]byte, int) { return preflightAt(candidateRoot, installedEngine, stamp) }
 	oldOutput, oldCode := preflight(fixture.baseCommit)
-	if oldCode != 1 || !strings.Contains(string(oldOutput), "is older than checkout commit") {
+	if oldCode != 1 || !strings.Contains(string(oldOutput), "is older than this checkout") {
 		t.Fatalf("untouched refusal was not reproduced with the enrolled engine stamp: exit=%d output=%s", oldCode, oldOutput)
 	}
 	if output, code := preflight(""); code != 0 {

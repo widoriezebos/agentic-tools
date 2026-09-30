@@ -126,7 +126,7 @@ func TestHelmTakeAdmitsThePersonsActsAtThatTerminal(t *testing.T) {
 	if code, out := bed.run("helm", "take", "--reason", "cleaning by hand"); code != 0 || !strings.Contains(out, "enrolled now, as Wido") {
 		t.Fatalf("helm take = %d:\n%s", code, out)
 	}
-	if code, out := bed.run("disk", "clean", "--strays"); code != 0 || !strings.Contains(out, "removed: "+idle) {
+	if code, out := bed.run("disk", "clean", "--strays"); code != 0 || !strings.Contains(out, "removed: ") || !strings.Contains(out, filepath.Base(idle)) {
 		t.Fatalf("strays after helm take = %d:\n%s", code, out)
 	}
 	if _, err := os.Stat(idle); !errors.Is(err, os.ErrNotExist) {

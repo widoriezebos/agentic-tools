@@ -10,6 +10,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stoptransition"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/contractgit"
 )
@@ -179,6 +180,18 @@ func checkLayoutBed(t *testing.T) layoutBed {
 	git := func(args ...string) (string, error) { return systemSetupGit(t, b.root(), args...) }
 	if _, err := contractgit.Register(b.root(), "testing.json", filepath.Join(realpath.Resolve(b.root()), "bin", "metasystem"), git); err != nil {
 		t.Fatal(err)
+	}
+	// The disk role reads the machine's disk report under the test
+	// process's home, which another test's pass may have written: the bed
+	// reads it as no pass has run, as on a fresh machine.
+	owners.processes.health = func(repo, installation string, now time.Time) steward.HealthVerdict {
+		verdict := steward.PreviewHealthAt(repo, installation, now, nil)
+		for index, role := range verdict.Roles {
+			if role.Role == steward.RoleDisk {
+				verdict.Roles[index] = steward.RoleVerdict{Role: steward.RoleDisk, Status: steward.HealthAlive, Reason: "no disk pass has run yet"}
+			}
+		}
+		return verdict
 	}
 	root := realpath.Resolve(b.root())
 	return layoutBed{owners: owners, cwd: b.root(), replace: processLayoutPaths(b, root)}

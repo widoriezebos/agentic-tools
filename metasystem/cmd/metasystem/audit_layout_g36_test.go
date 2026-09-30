@@ -27,14 +27,14 @@ import (
 // passthroughs): each verb driven in-process on a fixture whose output is
 // the same on every run (no measured volume, no random id in the words).
 var _ = addLayoutCases(
-	layoutCase{name: "disk-show", args: []string{"disk", "show"}, bed: diskLayoutBed(true)},
-	layoutCase{name: "disk-show-verbose", args: []string{"disk", "show", "--verbose"}, bed: diskLayoutBed(true)},
+	layoutCase{name: "disk-show", args: []string{"disk", "show"}, bed: diskLayoutBed(true), fileSystem: layoutAllocatedSizes},
+	layoutCase{name: "disk-show-verbose", args: []string{"disk", "show", "--verbose"}, bed: diskLayoutBed(true), fileSystem: layoutAllocatedSizes},
 	layoutCase{name: "disk-show-empty", args: []string{"disk", "show"}, bed: diskLayoutBed(false)},
 	layoutCase{name: "disk-show-refusal", args: []string{"disk", "show"}, bed: outsideLayoutBed},
-	layoutCase{name: "disk-clean", args: []string{"disk", "clean"}, bed: diskLayoutBed(false)},
+	layoutCase{name: "disk-clean", args: []string{"disk", "clean"}, bed: diskLayoutBed(false), fileSystem: layoutAllocatedSizes},
 	layoutCase{name: "disk-clean-refusal", args: []string{"disk", "clean", "--preview", "--strays"}, bed: diskLayoutBed(false)},
-	layoutCase{name: "evidence-show", args: []string{"evidence", "show"}, bed: evidenceLayoutBed},
-	layoutCase{name: "evidence-show-all", args: []string{"evidence", "show", "--all"}, bed: evidenceLayoutBed},
+	layoutCase{name: "evidence-show", args: []string{"evidence", "show"}, bed: evidenceLayoutBed, fileSystem: layoutAllocatedSizes},
+	layoutCase{name: "evidence-show-all", args: []string{"evidence", "show", "--all"}, bed: evidenceLayoutBed, fileSystem: layoutAllocatedSizes},
 	layoutCase{name: "evidence-export", args: []string{"evidence", "export", "old-chain", "--to", "EXPORTS"}, bed: evidenceLayoutBed},
 	layoutCase{name: "evidence-export-refusal", args: []string{"evidence", "export", "old-chain"}, bed: evidenceLayoutBed},
 	layoutCase{name: "evidence-dispose-refusal", args: []string{"evidence", "dispose", "old-chain"}, bed: evidenceLayoutBed},
@@ -73,6 +73,10 @@ var _ = addLayoutCases(
 // diskLayoutBed is a checkout with one idle stray and one entry that is not
 // the engine's in its temporary root; with passed, one pass has run, so
 // disk show has both reports to read.
+// layoutAllocatedSizes: the disk and evidence verbs measure allocated
+// blocks, and Linux adds a file generation to a stray's identity.
+const layoutAllocatedSizes = "sizes are the file system's allocated blocks, and a stray's identity differs"
+
 func diskLayoutBed(passed bool) func(t *testing.T) layoutBed {
 	return func(t *testing.T) layoutBed {
 		bed := newDiskBed(t)

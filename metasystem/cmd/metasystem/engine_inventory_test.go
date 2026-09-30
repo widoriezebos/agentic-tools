@@ -20,6 +20,7 @@ import (
 
 var engineBindingStandardTests = []string{
 	"TestAmbientTrustedPolicyDecisionCannotBypassRetainedEngine",
+	"TestBaseMovedNoticeIsPlainUnlessVerbose",
 	"TestBaseMovedToAnEngineChangeReArmsOnce",
 	"TestBaseMovedUnderTheRunRestartsPreparationOnce",
 	"TestCandidateBuiltCommitPassesDispatchSkewPreflight",
