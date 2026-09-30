@@ -201,6 +201,7 @@ func TestWriteFilePublishesTheCanonicalRendering(t *testing.T) {
 
 // A document that parses but is not an object is ErrNotObject by type.
 func TestDecodeNotAnObjectIsTyped(t *testing.T) {
+	t.Parallel()
 	for _, data := range []string{`[1]`, `"text"`, `3`} {
 		if _, err := Decode([]byte(data)); !errors.Is(err, ErrNotObject) {
 			t.Fatalf("Decode(%s) = %v, want ErrNotObject", data, err)
