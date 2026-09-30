@@ -366,8 +366,11 @@ func TestUnsetSettleRereadsTheOwnerAfterEndingIt(t *testing.T) {
 	t.Parallel()
 	bed := newUnsetBed(t)
 	steps := UnsetLane{Home: bed.home, By: "Wido", Now: func() time.Time { return unsetNow },
-		Probe: func(string) (lane.OwnerProbe, error) { bed.probes++; return lane.OwnerProbe{Alive: true, PID: 4242}, nil },
-		End:   func(string) (int64, error) { bed.ends++; return 4242, nil }}
+		Probe: func(string) (lane.OwnerProbe, error) {
+			bed.probes++
+			return lane.OwnerProbe{Alive: true, PID: 4242}, nil
+		},
+		End: func(string) (int64, error) { bed.ends++; return 4242, nil }}
 	settlement, err := steps.settle(bed.layout)
 	if err != nil || settlement.Settled(true) || bed.ends != 1 || bed.probes != 2 {
 		t.Fatalf("settle with an owner that outlives its end = %+v %v (ends %d, probes %d); want live work", settlement, err, bed.ends, bed.probes)
