@@ -46,11 +46,13 @@ func TestPackCheckRefusesAnUnfilledBrief(t *testing.T) {
 			packTemplates(t, m, row.template, "review\n")
 			brief := writeLaunchFile(t, "brief.md", row.brief)
 			_, err := m.Start(StartSpec{ID: "unfilled", Kind: "design", Brief: brief, WorkingDirectory: t.TempDir()})
-			want := "LAUNCH_BRIEF_PACK_UNFILLED kind=design\nplaceholder=" + row.want + " line=" + map[int]string{1: "1", 2: "2"}[row.line]
+			line := map[int]string{1: "1", 2: "2"}[row.line]
+			want := "LAUNCH_BRIEF_PACK_UNFILLED kind=design: the brief still holds its template's placeholder " + row.want + " on line " + line +
+				"; fill in every one: placeholder=" + row.want + " line=" + line
 			if row.name == "template itself" {
 				want += "\nplaceholder=<N> line=2"
 			}
-			if err == nil || err.Error() != want {
+			if err == nil || ErrorDetail(err) != want || strings.Contains(err.Error(), "LAUNCH_") {
 				t.Fatalf("error=%v", err)
 			}
 			if _, statErr := os.Stat(filepath.Join(m.Store.Root, "unfilled")); !os.IsNotExist(statErr) {
@@ -68,7 +70,7 @@ func TestPackCheckRefusesADriftedExcerpt(t *testing.T) {
 	rows := []struct {
 		name, kind, file, content, brief, want string
 	}{
-		{name: "changed byte", kind: "design", file: "source.txt", content: "one\ntwo\n", brief: "1. `source.txt:1-2`\n\n   ```text\n   one\n   too\n   ```\n", want: "line 2 differs source_bytes=3 excerpt_bytes=3"},
+		{name: "changed byte", kind: "design", file: "source.txt", content: "one\ntwo\n", brief: "1. `source.txt:1-2`\n\n   ```text\n   one\n   too\n   ```\n", want: "line 2 differs: 3 bytes in the file, 3 quoted"},
 		{name: "short file", kind: "design", file: "short.txt", content: "one\n", brief: "`short.txt:1-2`\n", want: "past end (1 lines)"},
 		{name: "missing file", kind: "design", brief: "`missing.txt:1-1`\n", want: "missing file"},
 		{name: "review past end", kind: "read", file: "review.txt", content: "one\ntwo", brief: "Check `review.txt:2-3` here.\n", want: "past end (2 lines)"},
@@ -151,13 +153,13 @@ func TestPackCheckChecksEveryShippedTemplatePlaceholder(t *testing.T) {
 			m.Templates = nil
 			brief := writeLaunchFile(t, row.kind+"-unfilled.md", string(template))
 			_, err = m.CheckPack(StartSpec{Kind: row.kind, Brief: brief, WorkingDirectory: t.TempDir()})
-			want := []string{"LAUNCH_BRIEF_PACK_UNFILLED kind=" + row.kind}
+			var want []string
 			for _, match := range matches {
 				token := strings.Join(strings.Fields(string(template[match[0]:match[1]])), " ")
 				line := 1 + strings.Count(string(template[:match[0]]), "\n")
 				want = append(want, "placeholder="+token+" line="+fmt.Sprint(line))
 			}
-			if err == nil || err.Error() != strings.Join(want, "\n") {
+			if err == nil || ErrorCode(err) != "LAUNCH_BRIEF_PACK_UNFILLED" || !strings.HasSuffix(ErrorDetail(err), ": "+strings.Join(want, "\n")) {
 				t.Fatalf("unfilled shipped template error:\n%v\nwant:\n%s", err, strings.Join(want, "\n"))
 			}
 
@@ -180,8 +182,8 @@ func TestPackCheckChecksEveryShippedTemplatePlaceholder(t *testing.T) {
 				rewrapped := strings.Replace(collapsed, " ", "\n       ", 1)
 				brief = writeLaunchFile(t, row.kind+"-rewrapped.md", rewrapped+"\n")
 				_, err := m.CheckPack(StartSpec{Kind: row.kind, Brief: brief, WorkingDirectory: t.TempDir()})
-				want := "LAUNCH_BRIEF_PACK_UNFILLED kind=" + row.kind + "\nplaceholder=" + collapsed + " line=1"
-				if err == nil || err.Error() != want {
+				want := ": placeholder=" + collapsed + " line=1"
+				if err == nil || ErrorCode(err) != "LAUNCH_BRIEF_PACK_UNFILLED" || !strings.HasSuffix(ErrorDetail(err), want) {
 					t.Fatalf("rewrapped placeholder error=%v want=%q", err, want)
 				}
 				return

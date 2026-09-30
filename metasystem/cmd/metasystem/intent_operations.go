@@ -10,12 +10,14 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/brain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/missionrunner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/project"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
 
 // Administrative operations name one explicit human choice and hand it to
@@ -68,6 +70,42 @@ func ownerVerbResult(ran intentProcessResult, targets []intentTarget, done strin
 	problem = slices.DeleteFunc(problem, func(line string) bool { return line == summary })
 	return intentResult{Outcome: intentRefused, Targets: targets, Data: data, code: max(ran.code, 1), Summary: summary, text: problem,
 		retry: ownerRetry(problem)}
+}
+
+// ownerViewed gives an owner verb's act its page: ✓ what it did, then the
+// owner's own lines unless they were its structured output, which --json
+// carries. A refusal keeps the legacy shape.
+func ownerViewed(result intentResult) intentResult {
+	data, _ := result.Data.(map[string]any)
+	_, lines := data["owner"].([]string)
+	summary, text := result.Summary, result.text
+	result.view = func(page *textui.Page) {
+		page.Done(sentence(summary))
+		if !lines {
+			return
+		}
+		section := page.Section("", "")
+		for _, line := range text {
+			section.Text(strings.TrimSpace(line))
+		}
+	}
+	return result
+}
+
+// joinFacts joins a headline's facts with the page's separator.
+func joinFacts(page *textui.Page, parts ...string) string {
+	if page.Env().ASCII {
+		return strings.Join(parts, ", ")
+	}
+	return strings.Join(parts, " · ")
+}
+
+// sentence is a text as a headline: its first letter upper case.
+func sentence(text string) string {
+	if text == "" {
+		return text
+	}
+	return strings.ToUpper(text[:1]) + text[1:]
 }
 
 // ownerRetry is line 2 of an owner verb's refusal: nothing when the owner's
@@ -237,10 +275,17 @@ func runIntentGoalSync(inv *intentInvocation) int {
 		scope["entries"] = entries
 		if len(reports) == 0 {
 			return inv.render(intentResult{Outcome: intentUnchanged, Targets: targets, Data: scope,
-				Summary: "no goal change was left unfinished in this whole installation; nothing was recovered"})
+				Summary: "no goal change was left unfinished in this whole installation; nothing was recovered",
+				view: func(page *textui.Page) {
+					page.Headline("No goal change was left unfinished in this installation", "nothing to recover")
+				}})
 		}
 		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: scope, Details: lines,
-			Summary: fmt.Sprintf("finished %d unfinished goal change(s) across this whole installation; running ones were left alone", len(reports))})
+			Summary: fmt.Sprintf("finished %d unfinished goal change(s) across this whole installation; running ones were left alone", len(reports)),
+			view: func(page *textui.Page) {
+				page.Done("Finished " + textui.Count(len(reports), "unfinished goal change", "unfinished goal changes") + " across this installation")
+				page.Section("", "").Text("Changes still running were left alone.")
+			}})
 	case "publish":
 		goals := inv.input.values["goal"]
 		args := []string{"--root", inv.stateRoot, "--by", inv.input.text("by")}
@@ -249,16 +294,16 @@ func runIntentGoalSync(inv *intentInvocation) int {
 		}
 		ran := inv.goalOwnerCall(inv.ownerCalls().goalReconcile, args...)
 		scope["goals"] = goals
-		return inv.render(ownerVerbResult(ran, targets, fmt.Sprintf("the reviewed edits of %s were reconciled against their base and republished", strings.Join(goals, ", ")), scope))
+		return inv.render(ownerViewed(ownerVerbResult(ran, targets, fmt.Sprintf("the reviewed edits of %s were reconciled against their base and republished", strings.Join(goals, ", ")), scope)))
 	case "refresh":
 		ran := inv.goalOwnerCall(inv.ownerCalls().goalReconcile, "--root", inv.stateRoot, "--refresh-only")
-		return inv.render(ownerVerbResult(ran, targets, "the published view's interrupted refresh was completed; no edit was read as new authority", scope))
+		return inv.render(ownerViewed(ownerVerbResult(ran, targets, "the published view's interrupted refresh was completed; no edit was read as new authority", scope)))
 	case "accept-remote-history":
 		caller, by := ownercall.CurrentProcess(), inv.input.text("by")
 		ran := ownerCall(func(stdout, stderr io.Writer) int {
 			return inv.ownerCalls().goalRepair(caller, stdout, stderr, inv.stateRoot, by)
 		})
-		return inv.render(ownerVerbResult(ran, targets, "the fetched remote history of the same ledger was accepted locally; nothing was pushed", scope))
+		return inv.render(ownerViewed(ownerVerbResult(ran, targets, "the fetched remote history of the same ledger was accepted locally; nothing was pushed", scope)))
 	}
 	return runIntentRepairUpgrade(inv, targets, scope)
 }
@@ -298,7 +343,7 @@ func runIntentRepairUpgrade(inv *intentInvocation, targets []intentTarget, scope
 		}
 	}
 	ran := inv.goalOwnerCall(inv.ownerCalls().goalMigrate, args...)
-	return inv.render(ownerVerbResult(ran, targets, "the legacy goals file was upgraded to the synced ledger", scope))
+	return inv.render(ownerViewed(ownerVerbResult(ran, targets, "the legacy goals file was upgraded to the synced ledger", scope)))
 }
 
 // runIntentRepairMission applies a person's typed resolution of one recorded
@@ -402,7 +447,7 @@ func runIntentSettingsCoordinator(inv *intentInvocation) int {
 				result.Summary = summary
 			}
 		}
-		return inv.render(result)
+		return inv.render(ownerViewed(result))
 	}
 	state := brain.Read(inv.stateRoot, goal.ExistingLedgerIdentity(inv.stateRoot))
 	data := map[string]any{"state": state.State}
@@ -411,12 +456,22 @@ func runIntentSettingsCoordinator(inv *intentInvocation) int {
 	}
 	switch state.State {
 	case brain.Declared:
+		record := state.Record
 		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: data,
-			Summary: fmt.Sprintf("this checkout is the coordinator of ledger %s, declared by %s at %s", state.Record.Ledger, state.Record.DeclaredBy, state.Record.DeclaredAt)})
+			Summary: fmt.Sprintf("this checkout is the coordinator of ledger %s, declared by %s at %s", record.Ledger, record.DeclaredBy, record.DeclaredAt),
+			view: func(page *textui.Page) {
+				declared := record.DeclaredAt
+				if at, err := time.Parse(time.RFC3339, record.DeclaredAt); err == nil {
+					declared = page.Env().Time(at)
+				}
+				page.Headline("This checkout is its ledger's coordinator", "declared by "+record.DeclaredBy, declared)
+				page.Facts(textui.KV{Key: "ledger", Value: []textui.Span{textui.Plain(record.Ledger)}})
+			}})
 	case brain.Undeclared:
 		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: data,
 			Summary: "no coordinator is declared for this checkout", next: inv.publicArgv("settings", "coordinator", "--declare", "--by", inv.knownPerson()),
-			nextReason: "a person at an agent-free terminal declares it"})
+			nextReason: "a person at an agent-free terminal declares it",
+			view:       func(page *textui.Page) { page.Headline("No coordinator is declared for this checkout") }})
 	}
 	data["reason"] = state.Reason
 	return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Data: data,
@@ -452,7 +507,10 @@ func runIntentGoalSyncPreview(inv *intentInvocation) int {
 	}
 	data := map[string]any{"base": base, "edits": deltas, "goals": edited}
 	if len(deltas) == 0 {
-		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: data, Summary: "the goal files match their published base; there are no hand edits"})
+		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: data, Summary: "the goal files match their published base; there are no hand edits",
+			view: func(page *textui.Page) {
+				page.Headline("The goal files match their published base", "no hand edits", "base "+textui.SHA(base))
+			}})
 	}
 	publish := []string{"goal", "sync", "--publish"}
 	for _, id := range edited {
@@ -460,7 +518,14 @@ func runIntentGoalSyncPreview(inv *intentInvocation) int {
 	}
 	return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: data, text: lines,
 		Summary: fmt.Sprintf("%d goal file(s) differ from their published base %s; nothing was changed", len(deltas), shortSHA(base)),
-		next:    inv.publicArgv(append(publish, "--by", inv.knownPerson())...), nextReason: "a person publishes these reviewed edits, naming each goal"})
+		next:    inv.publicArgv(append(publish, "--by", inv.knownPerson())...), nextReason: "a person publishes these reviewed edits, naming each goal",
+		view: func(page *textui.Page) {
+			page.Headline(textui.Count(len(deltas), "goal file differs", "goal files differ")+" from the published base", "base "+textui.SHA(base), "nothing was changed")
+			table := page.Section("", "").Table(textui.Column{}, textui.Column{})
+			for _, delta := range deltas {
+				table.Row(textui.Plain(string(delta.Kind)), textui.Plain(delta.Path))
+			}
+		}})
 }
 
 // goalFileID is the goal a ledger file path belongs to, or empty.
@@ -469,6 +534,23 @@ func goalFileID(path string) string {
 		return ""
 	}
 	return strings.TrimSuffix(filepath.Base(path), ".md")
+}
+
+// The record verbs: design show and list, decision list and show.
+func runIntentDesignShow(inv *intentInvocation) int {
+	return runIntentShowRecords(inv, "design", inv.input.args)
+}
+
+func runIntentDesignList(inv *intentInvocation) int {
+	return runIntentShowRecords(inv, "designs", inv.input.args)
+}
+
+func runIntentDecisionList(inv *intentInvocation) int {
+	return runIntentShowRecords(inv, "decisions", inv.input.args)
+}
+
+func runIntentDecisionShow(inv *intentInvocation) int {
+	return runIntentShowRecords(inv, "record", inv.input.args)
 }
 
 // runIntentShowRecords shows the project's own records through the project
@@ -524,10 +606,22 @@ func runIntentShowRecords(inv *intentInvocation, kind string, args []string) int
 				Summary: fmt.Sprintf("the project has no record %s; nothing was read", shellCommand(args[:1])), next: inv.publicArgv("decision", "list"), nextReason: "lists the decision records with their ids"})
 		}
 		referencedBy := read.ReferencedBy(record.ID)
+		shown := *record
 		return inv.render(intentResult{Outcome: intentConfirmed, Targets: []intentTarget{{Kind: "record", ID: record.ID}},
 			Summary: fmt.Sprintf("%s %s (%s): %s", record.Kind, record.ID, record.Status, record.Title),
 			text:    []string{"path: " + record.Path, "goals: " + strings.Join(record.Goals, ", ")},
-			Data:    map[string]any{"record": recordView(*record), "referencedBy": referencedBy}})
+			Data:    map[string]any{"record": recordView(*record), "referencedBy": referencedBy},
+			view: func(page *textui.Page) {
+				page.Headline(sentence(string(shown.Kind))+" "+shown.ID+" is "+string(shown.Status), shown.Title)
+				rows := []textui.KV{{Key: "path", Value: []textui.Span{textui.Plain(page.Env().Path(shown.Path))}}}
+				if len(shown.Goals) > 0 {
+					rows = append(rows, textui.KV{Key: "goals", Value: []textui.Span{textui.Plain(strings.Join(shown.Goals, ", "))}})
+				}
+				if len(referencedBy) > 0 {
+					rows = append(rows, textui.KV{Key: "referenced by", Value: []textui.Span{textui.Plain(textui.Count(len(referencedBy), "record", "records"))}})
+				}
+				page.Facts(rows...)
+			}})
 	}
 	recordKind := project.KindDesign
 	if kind == "decisions" {
@@ -543,7 +637,8 @@ func runIntentShowRecords(inv *intentInvocation, kind string, args []string) int
 	if goalID != "" {
 		summary += " for goal " + goalID
 	}
-	result := intentResult{Outcome: intentConfirmed, Data: map[string]any{"kind": recordKind, "goal": goalID, "records": views}, text: lines, Summary: summary}
+	result := intentResult{Outcome: intentConfirmed, Data: map[string]any{"kind": recordKind, "goal": goalID, "records": views}, text: lines, Summary: summary,
+		view: recordListView(records, string(recordKind), goalID)}
 	if kind == "design" && len(records) == 0 {
 		// A goal the ledger does not know is named as unknown, not as a
 		// goal without designs.
@@ -557,6 +652,36 @@ func runIntentShowRecords(inv *intentInvocation, kind string, args []string) int
 		result.Summary = fmt.Sprintf("goal %s has no design record", goalID)
 	}
 	return inv.render(result)
+}
+
+// recordListView is a list of project records: the count, then one row per
+// record, its id and status, its path and its title.
+func recordListView(records []project.Record, kind, goalID string) func(*textui.Page) {
+	return func(page *textui.Page) {
+		switch {
+		case len(records) == 0 && goalID != "":
+			page.Headline("Goal " + goalID + " has no " + kind + " record")
+			return
+		case len(records) == 0:
+			page.Headline("No " + kind + " records")
+			return
+		}
+		count := textui.Count(len(records), kind+" record", kind+" records")
+		if goalID != "" {
+			count += " for goal " + goalID
+		}
+		page.Headline(sentence(count))
+		table := page.Section("", "").Table(textui.Column{}, textui.Column{}, textui.Column{Flex: true, Wrap: true})
+		for _, record := range records {
+			table.Row(textui.Plain(record.ID), textui.Dim(string(record.Status)), textui.Plain(record.Title))
+		}
+		if page.Verbose() {
+			paths := page.Section("Files", "")
+			for _, record := range records {
+				paths.KV(record.ID, textui.Plain(page.Env().Path(record.Path)))
+			}
+		}
+	}
 }
 
 func recordView(record project.Record) map[string]any {

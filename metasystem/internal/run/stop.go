@@ -85,7 +85,7 @@ type RearmedError struct {
 }
 
 func (e *RearmedError) Error() string {
-	return fmt.Sprintf("the checkout %s was stopped and armed again while %s started; %s has been ended; the caller may retry", e.Root, e.Thing, e.Thing)
+	return fmt.Sprintf("the checkout %s was stopped and armed again while %s started, so %s was ended; start it again", e.Root, e.Thing, e.Thing)
 }
 
 func (s *Store) readFence() (stopfence.Record, error) {

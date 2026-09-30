@@ -1,0 +1,53 @@
+exit 0
+--
+{
+  "schemaVersion": 1,
+  "verb": "question show",
+  "targets": [
+    {
+      "kind": "question",
+      "id": "q1"
+    }
+  ],
+  "outcome": "confirmed",
+  "summary": "channel question q1 is not delivered yet (2 failed deliveries)",
+  "data": {
+    "kind": "channel",
+    "question": {
+      "id": "q1",
+      "goal": "standing-validation",
+      "kind": "other",
+      "machine": "",
+      "openedAt": "0001-01-01T00:00:00Z",
+      "facts": [
+        "Land it?"
+      ],
+      "options": [
+        {
+          "label": "yes",
+          "consequence": "land"
+        }
+      ],
+      "recommendation": "",
+      "wants": "",
+      "thread": null,
+      "state": "open",
+      "undelivered": 2,
+      "answer": null,
+      "rejected": null,
+      "factsDigest": ""
+    },
+    "replyInstructions": "Reply in this thread with your answer followed by your code"
+  },
+  "next": {
+    "argv": [
+      "metasystem",
+      "question",
+      "retry",
+      "q1"
+    ],
+    "reason": "retry delivering exactly this question; check the channel settings first when it keeps failing"
+  }
+}
+
+--

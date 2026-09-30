@@ -99,11 +99,14 @@ func (m *Manager) admit(spec StartSpec, settings Settings) error {
 	}
 	if total > settings.BriefCap {
 		sort.SliceStable(values, func(i, j int) bool { return values[i].tokens > values[j].tokens })
-		lines := []string{fmt.Sprintf("LAUNCH_BRIEF_OVERSIZE total=%d cap=%d", total, settings.BriefCap)}
+		var lines []string
 		for _, value := range values {
 			lines = append(lines, fmt.Sprintf("input=%s tokens=%d", value.path, value.tokens))
 		}
-		return fmt.Errorf("%s", strings.Join(lines, "\n"))
+		return &CodedError{Code: "LAUNCH_BRIEF_OVERSIZE", Facts: fmt.Sprintf("total=%d cap=%d", total, settings.BriefCap),
+			Reason: fmt.Errorf("the brief and its inputs come to about %d tokens, over the cap of %d; the largest is %s",
+				total, settings.BriefCap, values[0].path),
+			Background: strings.Join(lines, "\n")}
 	}
 	if spec.Kind == "build" {
 		units, size, sizeErr := buildSize(spec)
@@ -111,11 +114,9 @@ func (m *Manager) admit(spec StartSpec, settings Settings) error {
 			return sizeErr
 		}
 		if size > settings.BuildLinesCap {
-			lines := []string{fmt.Sprintf("LAUNCH_BUILD_OVERSIZE size=%d cap=%d", size, settings.BuildLinesCap)}
-			if len(units) > 0 {
-				lines = append(lines, serialSplit(units, settings.BuildLinesCap)...)
-			}
-			return fmt.Errorf("%s", strings.Join(lines, "\n"))
+			return &CodedError{Code: "LAUNCH_BUILD_OVERSIZE", Facts: fmt.Sprintf("size=%d cap=%d", size, settings.BuildLinesCap),
+				Reason:     fmt.Errorf("the build is about %d changed lines, over the cap of %d; split it into smaller builds", size, settings.BuildLinesCap),
+				Background: strings.Join(serialSplit(units, settings.BuildLinesCap), "\n")}
 		}
 	}
 	if spec.Kind == "read" {
@@ -136,7 +137,7 @@ func (m *Manager) admit(spec StartSpec, settings Settings) error {
 			follows = spec.Package != "" && spec.File != "" && filepath.Dir(spec.File) == spec.Package && fileExists && !spec.Wide
 		}
 		if !follows {
-			lines := []string{fmt.Sprintf("LAUNCH_READ_UNSPLIT choice=%s", choice.Mode)}
+			var lines []string
 			type pair struct {
 				name  string
 				lines int64
@@ -154,7 +155,9 @@ func (m *Manager) admit(spec StartSpec, settings Settings) error {
 			for _, pair := range pairs {
 				lines = append(lines, fmt.Sprintf("directory=%s lines=%d", pair.name, pair.lines))
 			}
-			return fmt.Errorf("%s", strings.Join(lines, "\n"))
+			return &CodedError{Code: "LAUNCH_READ_UNSPLIT", Facts: "choice=" + choice.Mode,
+				Reason:     fmt.Errorf("this diff's size calls for a %s read, which the launch does not ask for", choice.Mode),
+				Background: strings.Join(lines, "\n")}
 		}
 	}
 	return nil
@@ -410,7 +413,7 @@ func readDiff(path, mode, share string) ([]byte, int64, error) {
 func refusalNumbers(message string) map[string]int64 {
 	result := map[string]int64{}
 	for _, field := range strings.Fields(strings.Split(message, "\n")[0]) {
-		key, raw, ok := strings.Cut(field, "=")
+		key, raw, ok := strings.Cut(strings.TrimSuffix(field, ":"), "=")
 		if !ok {
 			continue
 		}

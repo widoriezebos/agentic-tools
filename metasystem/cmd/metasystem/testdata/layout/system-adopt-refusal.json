@@ -1,0 +1,20 @@
+exit 2
+--
+{
+  "schemaVersion": 1,
+  "verb": "system adopt",
+  "targets": [],
+  "outcome": "refused",
+  "summary": "name the repository to adopt into",
+  "next": {
+    "argv": [
+      "metasystem",
+      "system",
+      "adopt",
+      "TARGET"
+    ],
+    "reason": "TARGET is the application's directory"
+  }
+}
+
+--

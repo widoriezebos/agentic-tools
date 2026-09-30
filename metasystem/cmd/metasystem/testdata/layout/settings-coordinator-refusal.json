@@ -1,0 +1,20 @@
+exit 2
+--
+{
+  "schemaVersion": 1,
+  "verb": "settings coordinator",
+  "targets": [],
+  "outcome": "refused",
+  "summary": "--by names who declares or withdraws; showing takes none; nothing was done",
+  "next": {
+    "argv": [
+      "metasystem",
+      "settings",
+      "coordinator",
+      "--json"
+    ],
+    "reason": "shows the coordinator"
+  }
+}
+
+--

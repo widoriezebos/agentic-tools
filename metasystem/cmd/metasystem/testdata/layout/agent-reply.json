@@ -1,0 +1,27 @@
+exit 0
+--
+{
+  "schemaVersion": 1,
+  "verb": "agent reply",
+  "targets": [
+    {
+      "kind": "message",
+      "id": "d-4003d0b28542e0f071534bd572"
+    }
+  ],
+  "outcome": "confirmed",
+  "summary": "replied to m1b in thread q-batch-19: message d-4003d0b28542e0f071534bd572",
+  "data": {
+    "at": "2026-09-30T08:58:00Z",
+    "durable": true,
+    "existing": false,
+    "id": "d-4003d0b28542e0f071534bd572",
+    "kind": "reply",
+    "thread": "q-batch-19",
+    "to": {
+      "machine": "m1b"
+    }
+  }
+}
+
+--

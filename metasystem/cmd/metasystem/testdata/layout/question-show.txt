@@ -1,0 +1,7 @@
+Channel question q1 is not delivered yet · 2 failed deliveries
+
+  goal   standing-validation
+  asks   Land it?
+
+→ metasystem question retry q1
+  retry delivering exactly this question; check the channel settings first when it keeps failing

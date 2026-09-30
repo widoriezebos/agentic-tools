@@ -1,0 +1,25 @@
+exit 1
+--
+{
+  "schemaVersion": 1,
+  "verb": "app start",
+  "targets": [
+    {
+      "kind": "app",
+      "id": "at-goal-nosuch-7a904f16"
+    }
+  ],
+  "outcome": "refused",
+  "summary": "goal nosuch has no work branch here or at origin; nothing was started",
+  "next": {
+    "argv": [
+      "metasystem",
+      "goal",
+      "show",
+      "nosuch"
+    ],
+    "reason": "shows whether the goal exists and where its work stands"
+  }
+}
+
+--

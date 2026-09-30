@@ -331,7 +331,7 @@ func Adopt(options Options) (Result, error) {
 	// own code, or the payload would be tailored by another version's rules.
 	if d.EngineStamp != sha {
 		return Result{}, refuse(CodeRefused,
-			fmt.Sprintf("this engine was built from %s, not from the template's HEAD %s; adopting with it could tailor the payload by other rules", displayStamp(d.EngineStamp), sha),
+			fmt.Sprintf("this engine was built from %s, not from the template's HEAD %s", displayStamp(d.EngineStamp), sha),
 			"the template's engine is now rebuilt; run the adoption with it",
 			append([]string{filepath.Join(source, "bin", "metasystem"), "system", "adopt", target, "--repo", source}, adoptFlags(options)...)...)
 	}

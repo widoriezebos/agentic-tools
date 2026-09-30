@@ -85,7 +85,7 @@ type Refusal struct {
 }
 
 func (r Refusal) Error() string {
-	return fmt.Sprintf("external adapter %s (%s) is refused: %s", r.Name, r.Path, r.Reason)
+	return fmt.Sprintf("external adapter %s (%s) is refused: %s\nrun: metasystem system check", r.Name, r.Path, r.Reason)
 }
 
 // Discover lists the external adapters of an installation root, sorted by

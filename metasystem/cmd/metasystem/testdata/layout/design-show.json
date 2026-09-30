@@ -1,0 +1,27 @@
+exit 0
+--
+{
+  "schemaVersion": 1,
+  "verb": "design show",
+  "targets": [],
+  "outcome": "confirmed",
+  "summary": "1 design record(s) for goal standing-validation",
+  "data": {
+    "goal": "standing-validation",
+    "kind": "design",
+    "records": [
+      {
+        "goals": [
+          "standing-validation"
+        ],
+        "id": "01M3FDYDMV0G5V9YC1M9XAKGZR",
+        "kind": "design",
+        "path": "plans/designs/agent-help.md",
+        "status": "done",
+        "title": "Help an agent choose and complete the right task"
+      }
+    ]
+  }
+}
+
+--

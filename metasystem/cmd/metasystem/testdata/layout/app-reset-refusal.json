@@ -1,0 +1,22 @@
+exit 2
+--
+{
+  "schemaVersion": 1,
+  "verb": "app reset",
+  "targets": [],
+  "outcome": "refused",
+  "summary": "--at and --goal name the same run; give one of them. Nothing was done",
+  "next": {
+    "argv": [
+      "metasystem",
+      "app",
+      "reset",
+      "--goal",
+      "nosuch",
+      "--json"
+    ],
+    "reason": "the goal's run"
+  }
+}
+
+--

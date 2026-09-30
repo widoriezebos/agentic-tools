@@ -1,0 +1,2 @@
+✗ nothing was done: there is no question nosuch
+  → metasystem question list  lists the open questions with their ids

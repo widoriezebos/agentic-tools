@@ -161,8 +161,8 @@ func TestOversizeBriefRefusesAndListsInputsLargestFirst(t *testing.T) {
 	if err == nil || !strings.HasPrefix(ErrorDetail(err), "LAUNCH_BRIEF_OVERSIZE total=") {
 		t.Fatalf("error=%v", err)
 	}
-	lines := strings.Split(err.Error(), "\n")
-	if len(lines) < 3 || !strings.Contains(lines[1], input) || !strings.Contains(lines[2], brief) {
+	lines := strings.Split(ErrorDetail(err), "\n")
+	if len(lines) < 2 || !strings.Contains(lines[0], input) || !strings.Contains(lines[1], brief) || !strings.Contains(err.Error(), "the largest is "+input) {
 		t.Fatalf("lines=%q", lines)
 	}
 }

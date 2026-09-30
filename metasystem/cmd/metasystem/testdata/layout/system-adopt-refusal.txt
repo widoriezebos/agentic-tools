@@ -1,0 +1,2 @@
+✗ name the repository to adopt into
+  → metasystem system adopt TARGET  TARGET is the application's directory

@@ -92,7 +92,7 @@ func TestBatteryContractGrammars(t *testing.T) {
 	doc = loadableDoc(t)
 	doc["battery"].(map[string]any)["command"] = " bash gate.sh "
 	if _, err := Load(writeDoc(t, doc)); err == nil ||
-		!strings.Contains(err.Error(), "rejects padded values") {
+		!strings.Contains(err.Error(), "starts or ends with whitespace") {
 		t.Fatalf("a padded command must refuse: %v", err)
 	}
 }

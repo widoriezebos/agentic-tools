@@ -97,7 +97,8 @@ func TestCorruptBrainTurnVerdictKeepsItsRemedyAfterTheBrainSummary(t *testing.T)
 		t.Fatal(err)
 	}
 	lines := strings.Split(verdict.Display, "\n")
-	if len(lines) < 3 || !strings.HasPrefix(lines[0], "BRAIN SEAT:") || !strings.HasPrefix(lines[1], "this checkout's brain declaration is unreadable") || !strings.HasPrefix(lines[2], "NOTHING LEFT TO WORK ON") {
+	if len(lines) < 4 || !strings.HasPrefix(lines[0], "BRAIN SEAT:") || !strings.HasPrefix(lines[1], "this checkout's brain declaration is unreadable") ||
+		!strings.HasPrefix(lines[2], "run: metasystem settings coordinator --withdraw") || !strings.HasPrefix(lines[3], "NOTHING LEFT TO WORK ON") {
 		t.Fatalf("corrupt brain prefix order wrong: %q", verdict.Display)
 	}
 	if verdict.ShouldBlock || verdict.IdleRefusal {

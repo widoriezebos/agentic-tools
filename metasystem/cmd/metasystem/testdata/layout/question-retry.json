@@ -1,0 +1,46 @@
+exit 0
+--
+{
+  "schemaVersion": 1,
+  "verb": "question retry",
+  "targets": [
+    {
+      "kind": "question",
+      "id": "q1"
+    }
+  ],
+  "outcome": "confirmed",
+  "summary": "question q1 is delivered to its channel; no other question was touched",
+  "data": {
+    "outcome": "delivered",
+    "question": {
+      "id": "q1",
+      "goal": "standing-validation",
+      "kind": "other",
+      "machine": "",
+      "openedAt": "0001-01-01T00:00:00Z",
+      "facts": [
+        "Land it?"
+      ],
+      "options": [
+        {
+          "label": "yes",
+          "consequence": "land"
+        }
+      ],
+      "recommendation": "",
+      "wants": "",
+      "thread": {
+        "id": "m1",
+        "threadID": "thread-1"
+      },
+      "state": "open",
+      "undelivered": 2,
+      "answer": null,
+      "rejected": null,
+      "factsDigest": ""
+    }
+  }
+}
+
+--

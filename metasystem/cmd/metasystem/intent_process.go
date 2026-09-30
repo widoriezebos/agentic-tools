@@ -363,13 +363,7 @@ func processIntentCommands() []intentCommand {
 			details:  []string{"It never asks a new question and touches no other."},
 			maxArgs:  1,
 			examples: []string{"metasystem question retry q-20260925-1"},
-			run: func(inv *intentInvocation) int {
-				if len(inv.input.args) != 1 {
-					return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "question retry needs the question's id, so nothing was done",
-						next: inv.publicArgv("question", "list"), nextReason: "lists the open questions with their ids"})
-				}
-				return runIntentAskRetry(inv, inv.input.args[0])
-			},
+			run:      runIntentQuestionRetry,
 		},
 		{
 			object: "question", action: "withdraw", audience: "agent", summary: "withdraw one question, with a reason",
@@ -377,13 +371,7 @@ func processIntentCommands() []intentCommand {
 			flags:    []intentFlag{reasonFlag("because", "why the question is withdrawn")},
 			maxArgs:  1,
 			examples: []string{"metasystem question withdraw q-20260925-1 --reason 'decided in the review'"},
-			run: func(inv *intentInvocation) int {
-				if len(inv.input.args) != 1 {
-					return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "question withdraw needs the question's id, so nothing was done",
-						next: inv.publicArgv("question", "list"), nextReason: "lists the open questions with their ids"})
-				}
-				return runIntentAskWithdraw(inv, inv.input.args[0])
-			},
+			run:      runIntentQuestionWithdraw,
 		},
 		{
 			object: "question", action: "answer", audience: "human", summary: "answer a question, or see where a channel question is answered",
@@ -405,7 +393,7 @@ func processIntentCommands() []intentCommand {
 			usage:    []string{"metasystem question show Q"},
 			maxArgs:  1,
 			examples: []string{"metasystem question show q-20260925-1", "metasystem question show demo/host-failure"},
-			run:      func(inv *intentInvocation) int { return runIntentShowQuestion(inv, inv.input.args) },
+			run:      runIntentQuestionShow,
 		},
 		{
 			object: "question", action: "list", audience: "both", summary: "the channel questions still open",
@@ -420,13 +408,7 @@ func processIntentCommands() []intentCommand {
 			flags:    []intentFlag{{name: "timeout", value: "DURATION", usage: "how long this invocation waits (for example 20s or 10m)"}},
 			maxArgs:  1,
 			examples: []string{"metasystem question wait channel:q-20260925-1 --timeout 10m"},
-			run: func(inv *intentInvocation) int {
-				if len(inv.input.args) != 1 {
-					return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "question wait needs the question's id, so nothing was done",
-						next: inv.publicArgv("question", "list"), nextReason: "lists the open questions with their ids"})
-				}
-				return inv.render(inv.waitQuestion(inv.input.args[0]))
-			},
+			run:      runIntentQuestionWait,
 		},
 	}
 }

@@ -809,6 +809,9 @@ type intentResult struct {
 	// view draws a converted verb's text page; nil renders the legacy
 	// shape. --json never reads it.
 	view func(*textui.Page)
+	// viewsRefusal lets view draw a refusal or failure as well: its words
+	// differ from --json's (a path shortened), and it draws both lines.
+	viewsRefusal bool
 	// attention is the banner above the headline (P12): the standing
 	// conditions that change what the person may do.
 	attention func(textui.Env) []textui.Attention
@@ -853,16 +856,18 @@ func (inv *intentInvocation) render(result intentResult) int {
 		stream = inv.stderr
 	}
 	env := inv.textEnv(stream)
+	viewed := result.view != nil && (succeeded || result.viewsRefusal)
 	page := textui.NewLegacy(env)
-	if result.view != nil && succeeded || inv.command.laidOut {
+	if viewed || inv.command.laidOut {
 		page = textui.New(env)
 	}
 	if result.attention != nil {
 		page.Banner(result.attention(env)...)
 	}
 	switch {
-	case result.view != nil && succeeded:
-		if result.Next != nil {
+	case viewed:
+		// A refusal's view draws its own two lines, the hint among them.
+		if result.Next != nil && succeeded {
 			page.Hint(textui.Hint{Argv: result.Next.Argv, Reason: result.Next.Reason})
 		}
 		result.view(page)

@@ -155,7 +155,7 @@ type TerminalGovernedRunIDReuseError struct {
 }
 
 func (err *TerminalGovernedRunIDReuseError) Error() string {
-	return fmt.Sprintf("REFUSED-TERMINAL-GOVERNED-ID: run id %s already owns terminal governed state in %s", err.RunID, err.Record)
+	return fmt.Sprintf("run %s already ended a governed attempt (recorded in %s); a new run needs a new name", err.RunID, err.Record)
 }
 
 // GovernedAdmissionRequest and Result keep policy outside this package. The

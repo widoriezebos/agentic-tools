@@ -1,0 +1,21 @@
+exit 0
+--
+{
+  "schemaVersion": 1,
+  "verb": "goal sync",
+  "targets": [
+    {
+      "kind": "installation",
+      "id": "/Users/wido/GitHub/agentic-tools-m1e"
+    }
+  ],
+  "outcome": "confirmed",
+  "summary": "the goal files match their published base; there are no hand edits",
+  "data": {
+    "base": "5e1f0c2a9d3b7e6f4a8c1d0b2e9f7a6c5d4b3a21",
+    "edits": null,
+    "goals": null
+  }
+}
+
+--

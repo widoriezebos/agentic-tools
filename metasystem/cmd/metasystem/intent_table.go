@@ -154,7 +154,7 @@ func designIntentCommands() []intentCommand {
 			flags:    []intentFlag{{name: "goal", value: "G", advanced: true, usage: "the goal, as an alternative to naming it first"}, {name: "attempt", value: "N", usage: "one design attempt and its proposal"}, {name: "out", value: "FILE", usage: "the design document, when the goal has several"}},
 			maxArgs:  1,
 			examples: []string{"metasystem design show verbs-match-intent"},
-			run:      func(inv *intentInvocation) int { return runIntentShowRecords(inv, "design", inv.input.args) },
+			run:      runIntentDesignShow,
 		},
 		{
 			object: "design", action: "list", audience: "both", summary: "the project's design records",
@@ -162,7 +162,7 @@ func designIntentCommands() []intentCommand {
 			flags:    []intentFlag{{name: "goal", value: "G", usage: "only the designs naming this goal"}},
 			maxArgs:  0,
 			examples: []string{"metasystem design list", "metasystem design list --goal verbs-match-intent"},
-			run:      func(inv *intentInvocation) int { return runIntentShowRecords(inv, "designs", inv.input.args) },
+			run:      runIntentDesignList,
 		},
 		{
 			object: "design", action: "check", audience: "both", summary: "check a plan's obligation matrix: is every critical or high obligation proven",
@@ -220,14 +220,14 @@ func designIntentCommands() []intentCommand {
 			usage:    []string{"metasystem decision list"},
 			maxArgs:  0,
 			examples: []string{"metasystem decision list"},
-			run:      func(inv *intentInvocation) int { return runIntentShowRecords(inv, "decisions", inv.input.args) },
+			run:      runIntentDecisionList,
 		},
 		{
 			object: "decision", action: "show", audience: "both", summary: "one project record by id, its references and what references it",
 			usage:    []string{"metasystem decision show ID"},
 			maxArgs:  1,
 			examples: []string{"metasystem decision show 01M3EC3QT7M2TC36P7ZVNRF0RW"},
-			run:      func(inv *intentInvocation) int { return runIntentShowRecords(inv, "record", inv.input.args) },
+			run:      runIntentDecisionShow,
 		},
 	}
 }
