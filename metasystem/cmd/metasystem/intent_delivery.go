@@ -166,9 +166,10 @@ func intentDeliveryCommands() []intentCommand {
 				"A repeat reuses the retained receipt and prepared landing; a moved endpoint starts from a new proof. The goal is not concluded: that stays goal done G.",
 				"--message lands a hand-made change instead: the named paths (or the staged set) are staged and committed through the commit",
 				"boundary with the landing's declarations. With a landing lane the commit is pinned and joins the lane as a change member",
-				"(change:<first 12 of the commit>), proved on a goal member's proof, since every proof is charged to a goal, and landed with a",
-				"Landing-Change trailer; the same command reads its membership until it lands, and an ejected change's commit is undone with",
-				"its changes kept, to fix and land again. Without a lane, and with --local or --recertification, it is rebased onto origin,",
+				"(change:<first 12 of the commit>): it rides on the proof of the goal members it joins, a batch of changes alone is proved on",
+				"the lane's account, and it lands with a Landing-Change trailer; the same command reads its membership until it lands, and",
+				"an ejected change is given back: its commit is undone with its changes kept, to fix and land again.",
+				"Without a lane, and with --local or --recertification, it is rebased onto origin,",
 				"proved against retained delivery proof, and pushed by hand.",
 			},
 			flags: append([]intentFlag{
