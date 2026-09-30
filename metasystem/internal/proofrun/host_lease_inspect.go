@@ -22,8 +22,11 @@ const (
 // HostLeaseReport is one dirty heavy admission lease as the steward sees it.
 // Since is the marker's last write, which is when it was marked dirty.
 type HostLeaseReport struct {
-	Lease  string
-	Owner  ProcessIdentity
+	Lease string
+	Owner ProcessIdentity
+	// Conf is the installation configuration the lease was taken for; ""
+	// on a lease an older engine took.
+	Conf   string
 	Since  time.Time
 	State  string
 	Reason string
@@ -47,6 +50,37 @@ func InspectHostLeases(controlRoot string) ([]HostLeaseReport, error) {
 	reclaimer := leaseReclaimerFromContext(context.Background(), controlRoot)
 	reclaimer.report = nil
 	return inspectHostLeasesIn(directory, reclaimer)
+}
+
+// ReadHostLeases classifies every dirty heavy lease on this host and
+// reclaims none: a reader (the landing lane's custody barrier) that must not
+// change what it reads. A dead lease reads HostLeaseDead.
+func ReadHostLeases(controlRoot string) ([]HostLeaseReport, error) {
+	if os.Getenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR") == "" && fixtureauth.FixtureModeRoot(controlRoot) {
+		return nil, nil
+	}
+	directory, err := hostAdmissionDirectory()
+	if err != nil {
+		return nil, err
+	}
+	reclaimer := leaseReclaimerFromContext(context.Background(), controlRoot)
+	reclaimer.report = nil
+	paths, err := filepath.Glob(filepath.Join(directory, "lease-heavy-*"))
+	if err != nil {
+		return nil, err
+	}
+	sort.Strings(paths)
+	var reports []HostLeaseReport
+	for _, path := range paths {
+		report, include, err := inspectHostLease(directory, path, false, reclaimer)
+		if err != nil {
+			return reports, err
+		}
+		if include {
+			reports = append(reports, report)
+		}
+	}
+	return reports, nil
 }
 
 // SettleHostLeases is a person's disk clean --leases (disk-lifetimes Part
@@ -129,7 +163,7 @@ func inspectHostLease(directory, path string, locked bool, reclaimer *leaseRecla
 		report.Remedy = fmt.Sprintf("no metasystem verb settles an unreadable lease; inspect %s by hand", path)
 		return report, true, nil
 	}
-	report.Owner = record.Owner
+	report.Owner, report.Conf = record.Owner, record.ConfPath
 	if record.Cleared {
 		return report, false, nil
 	}

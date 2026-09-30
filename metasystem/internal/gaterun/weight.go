@@ -339,7 +339,7 @@ func weightDischargeAtWith(root, goalID string, obligationRevision uint64, runID
 	}
 	for _, proof := range state.ConsumedProofs {
 		if proof.RunID == runID && proof.GoalID == goalID && proof.ObligationRevision == obligationRevision {
-			return WeightDischargeResult{}, fmt.Errorf("run %s already reset the validation weight (at count %d); a run resets it once", runID, proof.WeightGeneration)
+			return WeightDischargeResult{}, weightRefusal(WeightAlreadyReset, "run %s already reset the validation weight (at count %d); a run resets it once", runID, proof.WeightGeneration)
 		}
 	}
 	binding, err := reads.ResolveGoalBinding(root, goalID, now)
@@ -347,7 +347,7 @@ func weightDischargeAtWith(root, goalID string, obligationRevision uint64, runID
 		return WeightDischargeResult{}, fmt.Errorf("weight discharge requires the exact accepted obligation revision: %w", err)
 	}
 	if binding.File.Obligation == nil || binding.File.Obligation.Revision != obligationRevision {
-		return WeightDischargeResult{}, fmt.Errorf("weight discharge requires accepted obligation revision %d", obligationRevision)
+		return WeightDischargeResult{}, weightRefusal(WeightResetNotAllowed, "weight discharge requires accepted obligation revision %d", obligationRevision)
 	}
 	obligation := binding.File.Obligation
 	resetDecision := obligation.Decide(goal.EffectResetWeight)
@@ -365,7 +365,7 @@ func weightDischargeAtWith(root, goalID string, obligationRevision uint64, runID
 	policy, policyErr := config.CorrelationPolicy(root)
 	if policyErr != nil || policy == "" || obligation.ReviewPolicy != policy ||
 		!resetDecision.Apply || !dischargeDecision.Apply {
-		return result, fmt.Errorf("the validation weight was not reset: the goal's obligation and the review policy do not allow it")
+		return result, weightRefusal(WeightResetNotAllowed, "the validation weight was not reset: the goal's obligation and the review policy do not allow it")
 	}
 	projection := dispatch.ProjectBudget(root, binding.File, now)
 	if projection.Status != dispatch.BudgetKnown {
@@ -375,13 +375,13 @@ func weightDischargeAtWith(root, goalID string, obligationRevision uint64, runID
 	if err != nil || record == nil || record.Status != run.StatusGreen || record.GoalId != goalID || record.Governed == nil ||
 		record.Governed.ObligationRevision != obligationRevision || record.Governed.WeightGeneration == nil ||
 		record.Governed.Observation == nil || record.Governed.Observation.AssumptionState != run.AssumptionMatch || record.Governed.Exhausted {
-		return result, fmt.Errorf("the validation weight was not reset: run %s is not a green validation run of this goal", runID)
+		return result, weightRefusal(WeightRunNotGreen, "the validation weight was not reset: run %s is not a green validation run of this goal", runID)
 	}
 	if *record.Governed.WeightGeneration != state.Generation {
-		return result, fmt.Errorf("the validation weight was not reset: run %s validated count %d, and the count is now %d", runID, *record.Governed.WeightGeneration, state.Generation)
+		return result, weightRefusal(WeightGenerationMoved, "the validation weight was not reset: run %s validated count %d, and the count is now %d", runID, *record.Governed.WeightGeneration, state.Generation)
 	}
 	if !sameWeightEpoch(record.Governed.BudgetEpoch, projection.WeightEpoch) {
-		return result, fmt.Errorf("the validation weight was not reset: run %s ran under an earlier budget of the obligation", runID)
+		return result, weightRefusal(WeightResetNotAllowed, "the validation weight was not reset: run %s ran under an earlier budget of the obligation", runID)
 	}
 	// The compiled default names testing.json; an installation that names
 	// no contract (an explicit empty value) is not migrated.
@@ -392,10 +392,10 @@ func weightDischargeAtWith(root, goalID string, obligationRevision uint64, runID
 		if proofErr != nil || attempt.GoalID != goalID || attempt.GoalRevision != binding.Revision || attempt.ReservationOwner == nil ||
 			attempt.ReservationOwner.RunGeneration != record.Generation || attempt.ReservationOwner.ObligationRevision != obligationRevision ||
 			testingResult.Purpose != testpolicy.PurposeCadence || testingResult.RequiredMode != testpolicy.ModeDeep || testingResult.ExecutedMode != testpolicy.ModeDeep {
-			return result, fmt.Errorf("the validation weight was not reset: run %s did not run the full deep test set for this goal: %v", runID, proofErr)
+			return result, weightRefusal(WeightRunNotGreen, "the validation weight was not reset: run %s did not run the full deep test set for this goal: %v", runID, proofErr)
 		}
 		if err := proofrun.RequireResultGroups(testingResult, testpolicy.CadenceCatchGroupIDs()); err != nil {
-			return result, fmt.Errorf("the validation weight was not reset: %w", err)
+			return result, weightRefusal(WeightRunNotGreen, "the validation weight was not reset: %v", err)
 		}
 	}
 	source := fmt.Sprintf("%s-r%d-weight-g%d-%s", goalID, obligationRevision, state.Generation, runID)
@@ -413,6 +413,25 @@ func weightDischargeAtWith(root, goalID string, obligationRevision uint64, runID
 	state.LastDecision = &result.Decision
 	result.State = state
 	return result, writeWeight(root, state)
+}
+
+// The typed refusals of a weight discharge: the run or the policy says no,
+// as opposed to a read that failed. A caller reads them with errors.As; any
+// other error is a read that may succeed later.
+const (
+	WeightGenerationMoved = "WEIGHT_GENERATION_MOVED"
+	WeightResetNotAllowed = "WEIGHT_RESET_NOT_ALLOWED"
+	WeightRunNotGreen     = "WEIGHT_RUN_NOT_GREEN"
+	WeightAlreadyReset    = "WEIGHT_ALREADY_RESET"
+)
+
+// WeightRefusal is a discharge the run or the policy refused, by code.
+type WeightRefusal struct{ Code, Message string }
+
+func (refusal *WeightRefusal) Error() string { return refusal.Message }
+
+func weightRefusal(code, format string, args ...any) error {
+	return &WeightRefusal{Code: code, Message: fmt.Sprintf(format, args...)}
 }
 
 func sameWeightEpoch(left, right *uint64) bool {

@@ -15,6 +15,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/custody"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 )
 
@@ -30,6 +31,9 @@ type UnsetLane struct {
 	// recorded identity.
 	Probe func(root string) (lane.OwnerProbe, error)
 	End   func(root string) (int64, error)
+	// Custody are the custody barrier's reads for a layout; nil reads the
+	// host.
+	Custody func(lane.Layout) custody.Probes
 }
 
 // ProductionUnsetLane is landing unset for the person by, on this host.
@@ -52,7 +56,8 @@ func (u UnsetLane) records(layout lane.Layout) ([]batch.Record, error) {
 }
 
 // settle lets a publication the owner is making finish, then ends the
-// owner, and reads the host's proving flock, which a running proof holds.
+// owner, and reads the lane's custody store, proof leases and the host's
+// proving flock, which a running proof holds.
 // The pause the fence set keeps the keeper from starting another.
 func (u UnsetLane) settle(layout lane.Layout) (lane.Settlement, error) {
 	var settlement lane.Settlement
@@ -84,13 +89,21 @@ func (u UnsetLane) settle(layout lane.Layout) (lane.Settlement, error) {
 			// it, member by member.
 		}
 	}
-	holder, busy, err := lane.ProbeProving(u.Home)
-	switch {
-	case err != nil:
-		settlement.Unknown = append(settlement.Unknown, "whether a proof runs is unknown: "+err.Error())
-	case busy:
-		settlement.Live = append(settlement.Live, "a proof runs ("+holder+")")
+	// The lane's one custody barrier (K9): every execution the kernel
+	// launched, the installation's proof leases, and the host proving lock
+	// the batch owner's proofs hold.
+	probes := u.Custody
+	if probes == nil {
+		probes = func(layout lane.Layout) custody.Probes {
+			return custody.ProductionProbes(u.Home, string(layout.Install), true)
+		}
 	}
+	held, err := custody.Settle(u.Home, probes(layout))
+	if err != nil {
+		settlement.Unknown = append(settlement.Unknown, "whether landing work runs is unknown: "+err.Error())
+	}
+	settlement.Live = append(settlement.Live, held.Live...)
+	settlement.Unknown = append(settlement.Unknown, held.Unknown...)
 	return settlement, nil
 }
 
