@@ -19,6 +19,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/kernel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/laneengine"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
@@ -61,6 +62,10 @@ type laneVerbOwners struct {
 	engine func(checkout, installation string, retry []string) (laneengine.Identity, error)
 	// advance moves the lane to landed main's engine.
 	advance func(laneengine.AdvanceRequest) (laneengine.AdvanceOutcome, error)
+	// begin records a batch's canonical series (K4); prove runs one
+	// subject of it (K6).
+	begin func(kernel.BeginRequest) (kernel.BeginOutcome, error)
+	prove func(kernel.ProveRequest) (batch.ProofAttempt, error)
 	// unset runs landing unset's journaled steps for the person by.
 	unset func(home, by string, force bool) (lane.UnsetReport, error)
 	// laneHeld lists the goals the ledger, read from an installation,
@@ -116,6 +121,16 @@ func (inv *intentInvocation) landing() laneVerbOwners {
 		owners.advance = func(request laneengine.AdvanceRequest) (laneengine.AdvanceOutcome, error) {
 			return laneengine.Advance(request, laneengine.ProductionConditions(request.Home, request.Checkout),
 				laneengine.ProductionSteps(request.Checkout, request.Installation))
+		}
+	}
+	if owners.begin == nil {
+		owners.begin = func(request kernel.BeginRequest) (kernel.BeginOutcome, error) {
+			return kernel.Begin(request, kernel.ProductionBeginSeams())
+		}
+	}
+	if owners.prove == nil {
+		owners.prove = func(request kernel.ProveRequest) (batch.ProofAttempt, error) {
+			return kernel.Prove(request, kernel.ProductionProveSeams())
 		}
 	}
 	if owners.laneHeld == nil {
@@ -204,6 +219,8 @@ func landingIntentCommands() []intentCommand {
 			run:      runIntentLandingRestart,
 		},
 		landingEngineCommand(),
+		landingBeginCommand(),
+		landingProveCommand(),
 	}
 }
 
