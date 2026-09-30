@@ -91,11 +91,11 @@ func TestGateAdmitsTheListedCallsOnly(t *testing.T) {
 		"read-only verb":            bash(t, bed.checkout, "metasystem goal show some-goal"),
 		"git read with a filter":    bash(t, bed.checkout, "git log --oneline -5 | head -3"),
 		"git fetch":                 bash(t, bed.checkout, "git fetch origin"),
-		"checkout a lane branch":    bash(t, bed.checkout, "git checkout -b lane/b2 origin/main"),
-		"cherry-pick on lane":       bash(t, bed.checkout, "git cherry-pick -x abc123"),
+		"checkout a lane branch":    bash(t, bed.checkout, "git checkout -b lane/b2 main"),
+		"cherry-pick on lane":       bash(t, bed.checkout, "git cherry-pick -x main"),
 		"commit on lane":            bash(t, bed.checkout, "git commit -m 'Lane-Integration: seam'"),
 		"add then continue":         bash(t, bed.module, "git add internal/a.go && git cherry-pick --continue"),
-		"rebase on lane":            bash(t, bed.checkout, "git rebase --onto origin/main HEAD~2"),
+		"rebase on lane":            bash(t, bed.checkout, "git rebase main"),
 		"branch listing":            bash(t, bed.checkout, "git branch --list 'lane/*'"),
 		"quoted multi-line message": bash(t, bed.checkout, "git commit -m 'first line\n\nLane-Resolved: m1'"),
 		"skill tool":                payload(t, bed.checkout, "Skill", map[string]any{"skill": "landing-agent"}),
@@ -211,7 +211,7 @@ func TestGateMutatesOnlyLaneBranches(t *testing.T) {
 			t.Errorf("%q on main allowed", command)
 		}
 	}
-	if got := decide(t, bed, bash(t, bed.checkout, "git checkout lane/b1")); !got.Allow {
+	if got := decide(t, bed, bash(t, bed.checkout, "git checkout -b lane/b1")); !got.Allow {
 		t.Errorf("switching to a lane branch denied: %q", got.Reason)
 	}
 	bed.git(t, "checkout", "-q", "-b", "lane/b1")

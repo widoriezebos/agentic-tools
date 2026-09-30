@@ -105,7 +105,7 @@ func sampleCall(t *testing.T, bed directBed, entry agentgate.Entry) (string, boo
 			command += " --list"
 		}
 	case "git-lane":
-		command = map[string]string{"fetch": "git fetch origin", "checkout": "git checkout lane/b2", "add": "git add metasystem/README",
+		command = map[string]string{"fetch": "git fetch origin", "checkout": "git checkout -b lane/b2", "add": "git add metasystem/README",
 			"cherry-pick": "git cherry-pick --abort", "rebase": "git rebase --abort", "commit": "git commit -m 'Lane-Integration: seam'"}[entry.Name]
 	case "shell":
 		command = entry.Name

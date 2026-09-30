@@ -1,6 +1,7 @@
 package agentgate
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -114,6 +115,128 @@ func TestGateRefusesEveryBypassClass(t *testing.T) {
 		lines := strings.Split(got.Reason, "\n")
 		if len(lines) != 2 || strings.TrimSpace(lines[0]) == "" || !strings.HasPrefix(lines[1], "run: ") || len(lines[1]) <= len("run: ") {
 			t.Errorf("%s: reason is not two plain lines: %q", row.class, got.Reason)
+		}
+	}
+}
+
+// commitOn commits one file on a new branch from main and returns to the
+// lane branch.
+func (b laneBed) commitOn(t *testing.T, branch, path, content string) {
+	t.Helper()
+	b.git(t, "checkout", "-q", "-b", branch, "main")
+	full := filepath.Join(b.checkout, path)
+	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(full, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	b.git(t, "add", "-f", path)
+	b.git(t, "-c", "user.name=f", "-c", "user.email=f@invalid", "commit", "-qm", branch)
+	b.git(t, "checkout", "-q", "lane/b1")
+}
+
+// TestGateRefusesPathAndReplayBypasses (coverage review of the table): case
+// variants of protected names on a case-insensitive volume, pathspecs that
+// cover a protected path, replays and switches that would write one,
+// symbolic links, every edit tool, and the parser's refusals.
+func TestGateRefusesPathAndReplayBypasses(t *testing.T) {
+	t.Parallel()
+	bed := newLaneBed(t, "lane/b1")
+	bed.commitOn(t, "evil", ".claude/settings.json", "{}\n")
+	bed.commitOn(t, "hooks", ".githooks/pre-commit", "#!/bin/sh\n")
+	bed.commitOn(t, "good", "metasystem/internal/b.go", "package a\n")
+	outside := filepath.Join(filepath.Dir(bed.checkout), "outside")
+	for link, target := range map[string]string{
+		filepath.Join(bed.module, "internal", "out"):      filepath.Join(outside, "x"),
+		filepath.Join(bed.module, "internal", "conf"):     filepath.Join(bed.module, "metasystem.conf.local"),
+		filepath.Join(bed.module, "internal", "settings"): filepath.Join(bed.checkout, ".claude"),
+	} {
+		if err := os.Symlink(target, link); err != nil {
+			t.Fatal(err)
+		}
+	}
+	type row struct {
+		class string
+		call  []byte
+		allow bool
+	}
+	var rows []row
+	deny := func(class string, commands ...string) {
+		for _, command := range commands {
+			rows = append(rows, row{class: class + ": " + command, call: bash(t, bed.checkout, command)})
+		}
+	}
+	allow := func(class string, commands ...string) {
+		for _, command := range commands {
+			rows = append(rows, row{class: class + ": " + command, call: bash(t, bed.checkout, command), allow: true})
+		}
+	}
+	tool := func(class, name string, input map[string]any, allowed bool) {
+		rows = append(rows, row{class: class, call: payload(t, bed.checkout, name, input), allow: allowed})
+	}
+	edit := func(class, path string) {
+		tool("Write "+class, "Write", map[string]any{"file_path": path, "content": "x"}, false)
+		tool("MultiEdit "+class, "MultiEdit", map[string]any{"file_path": path, "edits": []any{}}, false)
+		tool("NotebookEdit "+class, "NotebookEdit", map[string]any{"notebook_path": path, "new_source": "x"}, false)
+	}
+
+	// (1) Case variants: macOS volumes do not tell them apart.
+	for class, path := range map[string]string{
+		"upper-case Claude settings": filepath.Join(bed.checkout, ".CLAUDE", "settings.json"),
+		"capitalised local config":   filepath.Join(bed.module, "Metasystem.conf.local"),
+		"upper-case hook directory":  filepath.Join(bed.checkout, ".GITHOOKS", "pre-commit"),
+		"upper-case engine":          filepath.Join(bed.module, "BIN", "metasystem"),
+		"capitalised artifacts":      filepath.Join(bed.module, "Artifacts", "agents", "x"),
+		"upper-case Git directory":   filepath.Join(bed.checkout, ".Git", "hooks", "pre-push"),
+		"capitalised goals":          filepath.Join(bed.module, "Plans", "Goals", "g.md"),
+	} {
+		edit(class, path)
+	}
+	deny("case variants in pathspecs", "git checkout HEAD -- .CLAUDE/settings.json", "git checkout HEAD -- metasystem/Metasystem.conf.local")
+
+	// (2) Pathspecs that cover a protected path, and pathspec magic.
+	deny("directory pathspecs", "git checkout HEAD -- .", "git checkout HEAD -- metasystem", "git checkout HEAD -- metasystem/bin", "git checkout HEAD -- metasystem/internal")
+	deny("pathspec magic and patterns", "git checkout HEAD -- ':(top).claude/settings.json'", "git checkout HEAD -- ':/.githooks'", "git checkout HEAD -- '*.json'", "git add ':(top).claude'", "git add 'metasystem/*.local'")
+	allow("a file pathspec", "git checkout HEAD -- metasystem/internal/a.go", "git checkout --theirs -- metasystem/internal/a.go")
+
+	// Replays and switches write every path their commits touch.
+	deny("replaying a protected path", "git cherry-pick evil", "git cherry-pick main..evil", "git cherry-pick good evil", "git cherry-pick hooks")
+	allow("replaying ordinary paths", "git cherry-pick -x good", "git cherry-pick main..good", "git cherry-pick --continue --no-edit", "git cherry-pick --abort")
+	deny("switching onto a protected change", "git checkout -b lane/b3 evil", "git checkout -B lane/b3 hooks")
+	allow("switching onto ordinary changes", "git checkout -b lane/b3 good", "git checkout -b lane/b4")
+	deny("rebasing onto or over a protected change", "git rebase evil", "git rebase --onto evil main", "git rebase --onto=hooks main", "git rebase")
+	allow("rebasing over ordinary changes", "git rebase main", "git rebase --onto good main", "git rebase --continue")
+	deny("an unresolvable revision", "git cherry-pick no-such-commit", "git checkout -b lane/b5 no-such-commit")
+
+	// (3) Symbolic links resolve before the checks, and the other edit
+	// directories and tools.
+	edit("through a link to outside", filepath.Join(bed.module, "internal", "out"))
+	edit("through a link to local config", filepath.Join(bed.module, "internal", "conf"))
+	edit("through a link to the Claude directory", filepath.Join(bed.module, "internal", "settings", "settings.json"))
+	edit("into .agents", filepath.Join(bed.checkout, ".agents", "skills", "x", "SKILL.md"))
+	edit("into .devin", filepath.Join(bed.checkout, ".devin", "config.json"))
+	tool("MultiEdit an ordinary file", "MultiEdit", map[string]any{"file_path": filepath.Join(bed.module, "internal", "a.go"), "edits": []any{}}, true)
+	tool("NotebookEdit an ordinary notebook", "NotebookEdit", map[string]any{"notebook_path": filepath.Join(bed.module, "internal", "n.ipynb"), "new_source": "x"}, true)
+	deny("checking out through a link", "git checkout HEAD -- metasystem/internal/conf")
+
+	// Parser refusals, and what it admits.
+	deny("parser refusals", "git status # push", "! git status", "git log |& cat", "echo \"$HOME\"", "echo \"`git push`\"", "echo \"a\\b\"", "git status ;; git log")
+	allow("parser admits", "git log HEAD~1", "ls", "pwd", "echo hi", "git status && git log -1", "git status;")
+	// Decided: reads outside the checkout through git are not needed.
+	deny("git reads outside the checkout", "git diff --no-index /etc/hosts x", "git blame --contents /etc/hosts metasystem/internal/a.go")
+
+	for _, row := range rows {
+		got := Decide(Request{Payload: row.call, Installation: bed.module})
+		if row.allow != got.Allow {
+			t.Errorf("%s: allow=%t, want %t (%q)", row.class, got.Allow, row.allow, got.Reason)
+			continue
+		}
+		if !got.Allow {
+			lines := strings.Split(got.Reason, "\n")
+			if len(lines) != 2 || strings.TrimSpace(lines[0]) == "" || !strings.HasPrefix(lines[1], "run: ") || len(lines[1]) <= len("run: ") {
+				t.Errorf("%s: reason is not two plain lines: %q", row.class, got.Reason)
+			}
 		}
 	}
 }

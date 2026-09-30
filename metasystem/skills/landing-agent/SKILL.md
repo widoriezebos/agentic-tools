@@ -71,6 +71,10 @@ step by hand.
    one aggregate cap of about 40 lines (D3). Fix only what the combination breaks: a moved call
    site, a renamed helper, an import both members added. A member's own bug is the member's.
    Over the cap, `begin` refuses, and the member goes back as `seam-too-large`.
+   The gate refuses a pick, rebase or branch switch that would write runtime settings, hooks,
+   configuration, the engine or runtime state (`.claude`, `.githooks`, `metasystem.conf*`, `bin/`,
+   `artifacts/` and the like), and a restore of a directory or by pattern: name files one by one.
+   A member that changes such a path is for a person: stop and ask.
    A conflict you cannot resolve within the cap: abort the pick, record it with
    `metasystem landing begin --record-conflict`, and return the member as `conflict`.
 4. **Begin.** `metasystem landing begin --members M1,M2 --base B --head C` durably records the

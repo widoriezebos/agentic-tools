@@ -298,27 +298,45 @@ func (g gate) pathInside(resolved, what string) Decision {
 	return allow()
 }
 
+// protected reports a checkout-relative path the agent may not write. Names
+// compare without case: macOS volumes do not tell .CLAUDE from .claude.
 func (g gate) protected(relative string) bool {
+	return g.replayProtected(relative) || g.editOnlyProtected(relative)
+}
+
+// replayProtected is the part of the protection that also holds against a
+// replay or a branch switch writing the path: Git internals, runtime
+// settings and hooks, configuration, the engine and runtime state. A
+// member's own goal-file change is its work, so goals are protected from
+// the agent's edits only.
+func (g gate) replayProtected(relative string) bool {
+	relative = strings.ToLower(filepath.ToSlash(relative))
 	segments := strings.Split(relative, "/")
 	for index, segment := range segments {
 		for _, name := range g.list.Protected.Segments {
-			if segment == name {
+			if segment == strings.ToLower(name) {
 				return true
 			}
 		}
 		for _, name := range g.list.Protected.ShallowDirs {
-			if segment == name && index <= 1 && index < len(segments)-1 {
+			if segment == strings.ToLower(name) && index <= 1 {
 				return true
 			}
 		}
 	}
 	base := segments[len(segments)-1]
 	for _, name := range g.list.Protected.Names {
-		if base == name {
+		if base == strings.ToLower(name) {
 			return true
 		}
 	}
+	return false
+}
+
+func (g gate) editOnlyProtected(relative string) bool {
+	relative = strings.ToLower(filepath.ToSlash(relative))
 	for _, pair := range g.list.Protected.Pairs {
+		pair = strings.ToLower(pair)
 		if relative == pair || strings.HasPrefix(relative, pair+"/") || strings.Contains(relative, "/"+pair+"/") || strings.HasSuffix(relative, "/"+pair) {
 			return true
 		}
@@ -441,7 +459,9 @@ func isLaneBranch(name string) bool {
 // readDenied are long options that make a read-only git subcommand write a
 // file or run a program. Git accepts any unambiguous prefix of a long
 // option, so a word is denied when its name is a prefix of one of these.
-var readDenied = []string{"--output", "--open-files-in-pager", "--ext-diff", "--textconv", "--filters", "--exec", "--upload-pack"}
+// --no-index and --contents read files outside the repository through
+// git, which composition never needs.
+var readDenied = []string{"--output", "--open-files-in-pager", "--ext-diff", "--textconv", "--filters", "--exec", "--upload-pack", "--no-index", "--contents"}
 
 // deniedReadOption reports a word that names, abbreviates or clusters an
 // option in readDenied, or clusters git grep's -O (open in a pager).
@@ -538,6 +558,7 @@ var laneFlags = map[string]struct{ plain, value []string }{
 func (g gate) gitLane(sub string, args []string) Decision {
 	flags := laneFlags[sub]
 	var positional []string
+	onto, control := "", false
 	afterSeparator := false
 	for index := 0; index < len(args); index++ {
 		word := args[index]
@@ -549,13 +570,20 @@ func (g gate) gitLane(sub string, args []string) Decision {
 			afterSeparator = true
 		}
 		if contains(flags.plain, word) {
+			control = control || contains(sequencerControls, word)
 			continue
 		}
 		if contains(flags.value, word) {
 			index++
+			if word == "--onto" && index < len(args) {
+				onto = args[index]
+			}
 			continue
 		}
-		if name, _, found := strings.Cut(word, "="); found && contains(flags.value, name) {
+		if name, value, found := strings.Cut(word, "="); found && contains(flags.value, name) {
+			if name == "--onto" {
+				onto = value
+			}
 			continue
 		}
 		return notListed("run git " + sub + " " + word)
@@ -577,21 +605,73 @@ func (g gate) gitLane(sub string, args []string) Decision {
 	switch sub {
 	case "add":
 		for _, path := range positional {
+			if decision := literalPathspec(path); !decision.Allow {
+				return decision
+			}
 			if decision := g.relativePath(path, "stage "+path); !decision.Allow {
 				return decision
 			}
 		}
+	case "cherry-pick":
+		if control {
+			return allow()
+		}
+		if len(positional) == 0 {
+			return notListed("run git cherry-pick without commits")
+		}
+		return g.replayWrites("replay", append([]string{"log", "--no-walk", "--format=", "--name-only", "-m", "--no-renames"}, positional...))
 	case "rebase":
-		if len(positional) > 2 {
-			return notListed("pass git rebase more than an upstream and a branch")
+		if control {
+			return allow()
+		}
+		if len(positional) == 0 || len(positional) > 2 {
+			return deny("the landing agent rebases onto a named upstream, and names at most a lane/* branch after it", "git rebase UPSTREAM")
 		}
 		if len(positional) == 2 && !isLaneBranch(positional[1]) {
 			return deny("the landing agent rebases only lane/* branches, not "+positional[1], "git checkout lane/BATCH")
 		}
+		tip, base := "HEAD", positional[0]
+		if len(positional) == 2 {
+			tip = positional[1]
+		}
+		if onto != "" {
+			base = onto
+		}
+		if decision := g.replayWrites("rebase over", []string{"log", "--format=", "--name-only", "-m", "--no-renames", positional[0] + ".." + tip}); !decision.Allow {
+			return decision
+		}
+		return g.replayWrites("rebase onto", []string{"diff", "--name-only", "--no-renames", "HEAD", base})
 	case "commit":
 		if len(positional) != 0 {
 			return notListed("commit named paths; stage them with git add first")
 		}
+	}
+	return allow()
+}
+
+// sequencerControls continue, skip or end a replay already admitted.
+var sequencerControls = []string{"--continue", "--abort", "--skip", "--quit"}
+
+// replayWrites runs a Git listing of the paths an operation would write and
+// denies it when any is replay-protected; a listing that fails denies.
+func (g gate) replayWrites(what string, listing []string) Decision {
+	output, err := runGit(g.checkout, listing...)
+	if err != nil {
+		return undecided(err)
+	}
+	for _, path := range strings.Split(output, "\n") {
+		if path != "" && g.replayProtected(path) {
+			return deny("the landing agent may not "+what+" a change that writes "+path+": runtime settings, hooks, configuration and the engine change only by a person", stopCommand)
+		}
+	}
+	return allow()
+}
+
+// literalPathspec admits a plain path only: pathspec magic (:(top), :/)
+// and patterns could reach a protected path the gate never saw.
+func literalPathspec(path string) Decision {
+	if strings.HasPrefix(path, ":") || strings.ContainsAny(path, "*?[\\") {
+		return deny("the landing agent names files by plain path, not by pattern or pathspec magic ("+path+")", "git status")
 	}
 	return allow()
 }
@@ -649,8 +729,20 @@ func (g gate) gitCheckout(args []string) Decision {
 		if len(args[separator+1:]) == 0 {
 			return notListed("run git checkout -- without paths")
 		}
+		source := "HEAD"
+		for _, word := range args[:separator] {
+			if !strings.HasPrefix(word, "-") {
+				source = word
+			}
+		}
 		for _, path := range args[separator+1:] {
+			if decision := literalPathspec(path); !decision.Allow {
+				return decision
+			}
 			if decision := g.relativePath(path, "restore "+path); !decision.Allow {
+				return decision
+			}
+			if decision := g.restoresOneFile(source, path); !decision.Allow {
 				return decision
 			}
 		}
@@ -672,6 +764,41 @@ func (g gate) gitCheckout(args []string) Decision {
 	}
 	if len(positional) == 0 || !isLaneBranch(positional[0]) || (!create && len(positional) != 1) || len(positional) > 2 {
 		return deny("the landing agent checks out only lane/* branches", "git checkout lane/BATCH")
+	}
+	target := positional[0]
+	if create {
+		if len(positional) == 1 {
+			return allow()
+		}
+		target = positional[1]
+	}
+	return g.replayWrites("switch to", []string{"diff", "--name-only", "--no-renames", "HEAD", target})
+}
+
+// restoresOneFile admits a restore pathspec that names one file, neither a
+// directory on disk nor a tree in the source revision, since either may
+// hold protected files the gate never listed.
+func (g gate) restoresOneFile(source, path string) Decision {
+	full := path
+	if !filepath.IsAbs(full) {
+		full = filepath.Join(g.cwd, full)
+	}
+	refuse := deny("the landing agent restores files one by one, and "+path+" is a directory that may hold protected files", "git status")
+	if info, err := os.Stat(full); path == "." || (err == nil && info.IsDir()) {
+		return refuse
+	}
+	relative, err := filepath.Rel(g.checkout, filepath.Clean(full))
+	if err != nil {
+		return undecided(err)
+	}
+	listed, err := runGit(g.checkout, "ls-tree", "-r", "--name-only", source, "--", filepath.ToSlash(relative))
+	if err != nil {
+		return undecided(err)
+	}
+	for _, name := range strings.Split(listed, "\n") {
+		if name != "" && name != filepath.ToSlash(relative) {
+			return refuse
+		}
 	}
 	return allow()
 }
