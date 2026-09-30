@@ -247,9 +247,11 @@ func stewardRevive(repo string, stdout, stderr io.Writer) int {
 			// classifies STEWARD identically whether the tick came
 			// from the runner, a cron, or an operator's shell.
 			cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-			out, err := cmd.CombinedOutput()
-			if err != nil {
-				return fmt.Errorf("delegate revival: %v (%s)", err, strings.TrimSpace(string(out)))
+			// The revival's exit decides; what it says goes to this
+			// caller's stderr, never read here.
+			cmd.Stdout, cmd.Stderr = stderr, stderr
+			if err := cmd.Run(); err != nil {
+				return fmt.Errorf("delegate revival: %v", err)
 			}
 			return nil
 		})

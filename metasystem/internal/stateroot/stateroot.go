@@ -4,6 +4,7 @@
 package stateroot
 
 import (
+	"errors"
 	"fmt"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"os"
@@ -49,16 +50,23 @@ func NewResolver(top func(string) (string, error), executable func() (string, er
 
 func defaultResolver() Resolver { return NewResolver(osRepositoryTop, os.Executable) }
 
+// commandRequest is one git command: its arguments and environment.
 type commandRequest struct {
-	name string
 	args []string
 	env  []string
 }
 
+// runCommand runs git and answers its stdout; when git fails, its stderr,
+// for the error a person reads.
 func runCommand(request commandRequest) ([]byte, error) {
-	command := exec.Command(request.name, request.args...)
+	command := exec.Command("git", request.args...)
 	command.Env = request.env
-	return command.CombinedOutput()
+	output, err := command.Output()
+	var exit *exec.ExitError
+	if errors.As(err, &exit) {
+		return exit.Stderr, err
+	}
+	return output, err
 }
 
 func isGitSteeringVariable(name string) bool {
@@ -80,7 +88,7 @@ func osRepositoryTop(path string) (string, error) {
 }
 
 func repositoryTopWith(path string, environment []string, run func(commandRequest) ([]byte, error)) (string, error) {
-	request := commandRequest{name: "git", args: []string{"-C", path, "rev-parse", "--show-toplevel"}, env: scrubGitSteering(environment)}
+	request := commandRequest{args: []string{"-C", path, "rev-parse", "--show-toplevel"}, env: scrubGitSteering(environment)}
 	output, err := run(request)
 	if err != nil {
 		return "", fmt.Errorf("state root: installation is not inside a Git repository: %s", strings.TrimSpace(string(output)))

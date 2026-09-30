@@ -171,6 +171,15 @@ const stderrQuote = 2048
 // permit. No path turns Unknown into success. A child that ran and reported
 // is no error: its Outcome and Code say what happened.
 func Run(cmd *exec.Cmd, verb string) (Result, error) {
+	read := Capture(cmd, verb)
+	return read(cmd.Run())
+}
+
+// Capture is Run for a caller that runs cmd itself (under a bound, or with
+// a kill on its own timer): it points cmd's streams as Run does, and the
+// returned function reads the envelope once the caller's run of cmd ended
+// with runErr. A run that did not start or end by an exit reads as Unknown.
+func Capture(cmd *exec.Cmd, verb string) func(runErr error) (Result, error) {
 	var stdout bytes.Buffer
 	tail := &tailBuffer{limit: stderrQuote}
 	cmd.Stdout = &stdout
@@ -179,16 +188,17 @@ func Run(cmd *exec.Cmd, verb string) (Result, error) {
 	} else {
 		cmd.Stderr = io.MultiWriter(cmd.Stderr, tail)
 	}
-	runErr := cmd.Run()
-	status := -1
-	if cmd.ProcessState != nil {
-		status = cmd.ProcessState.ExitCode()
+	return func(runErr error) (Result, error) {
+		status := -1
+		if cmd.ProcessState != nil {
+			status = cmd.ProcessState.ExitCode()
+		}
+		var exit *exec.ExitError
+		if runErr != nil && !errors.As(runErr, &exit) {
+			return unknown(verb, status, fmt.Errorf("%s did not run: %w", verb, runErr), tail)
+		}
+		return Read(stdout.Bytes(), verb, status, tail.String())
 	}
-	var exit *exec.ExitError
-	if runErr != nil && !errors.As(runErr, &exit) {
-		return unknown(verb, status, fmt.Errorf("%s did not run: %w", verb, runErr), tail)
-	}
-	return Read(stdout.Bytes(), verb, status, tail.String())
 }
 
 // Read judges a child's stdout and exit status as Run does; stderr is only

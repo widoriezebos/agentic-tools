@@ -149,3 +149,30 @@ func TestOutcomeForExitIsAlwaysPermitted(t *testing.T) {
 		}
 	}
 }
+
+// Capture is Run for a caller that starts and waits for the child itself
+// (a bound, a kill on timeout): the envelope is read after the wait, with
+// the same fail-closed reading.
+func TestCaptureReadsTheEnvelopeTheCallersRunLeft(t *testing.T) {
+	t.Parallel()
+	printed := envelope(t, Result{Verb: "up", Outcome: Confirmed, Summary: "armed"})
+	command := child(t, printed, "a note\n", 0)
+	read := Capture(command, "up")
+	runErr := command.Run()
+	result, err := read(runErr)
+	if err != nil || result.Outcome != Confirmed || result.Summary != "armed" || result.Exit != 0 {
+		t.Fatalf("result = %+v, %v", result, err)
+	}
+	broken := child(t, "up outcome=armed\n", "", 0)
+	readBroken := Capture(broken, "up")
+	result, err = readBroken(broken.Run())
+	if err == nil || result.Outcome != Unknown {
+		t.Fatalf("a text answer read as %+v, %v", result, err)
+	}
+	neverRan := exec.Command("/nonexistent/metasystem-verbresult-child")
+	readNever := Capture(neverRan, "up")
+	result, err = readNever(neverRan.Run())
+	if err == nil || result.Outcome != Unknown {
+		t.Fatalf("a child that never ran read as %+v, %v", result, err)
+	}
+}

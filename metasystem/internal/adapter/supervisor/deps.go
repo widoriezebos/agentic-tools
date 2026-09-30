@@ -23,9 +23,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/verbresult"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/wallclock"
 )
 
@@ -135,14 +135,23 @@ func groupMembers(pgid int, except ...int) ([]int, error) {
 	return out, nil
 }
 
-// lifecycleStatus is the delegate lifecycle's status of one job (its record
-// status line), empty when the lifecycle refuses or fails.
+// delegateStatusVerb is the envelope verb of the lifecycle's status --json.
+const delegateStatusVerb = "internal delegate status"
+
+// lifecycleStatus is the delegate lifecycle's status of one job, read
+// from its status --json envelope; empty when the lifecycle refuses, fails
+// or answers with anything but that envelope.
 func (d Deps) lifecycleStatus(job string) string {
 	var out bytes.Buffer
-	if d.Dispatch.Run(&out, io.Discard, "status", "--job", job) != 0 {
+	code := d.Dispatch.Run(&out, io.Discard, "status", "--job", job, "--json")
+	result, err := verbresult.Read(out.Bytes(), delegateStatusVerb, code, "")
+	var data struct {
+		Status string `json:"status"`
+	}
+	if err != nil || result.Outcome != verbresult.Confirmed || result.DecodeData(&data) != nil {
 		return ""
 	}
-	return strings.TrimSpace(out.String())
+	return data.Status
 }
 
 // lifecycleReap is the delegate lifecycle's single-job reap; its outcome is

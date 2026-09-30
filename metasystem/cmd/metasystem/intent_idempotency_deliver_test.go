@@ -6,6 +6,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -17,6 +18,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/missionrunner"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/verbresult"
 )
 
 func init() {
@@ -262,9 +264,9 @@ func witnessMissionLaunch(mode string) func(*testing.T) {
 		}
 		mustWrite("state.json", `{"status":"running"}`)
 		mustWrite("lease.json", `{"missionId":"mr-idem","pid":`+strconv.Itoa(os.Getpid())+`,"pgid":1,"instanceTag":"`+selfCommand+`","startedAt":"x","renewedAt":"x"}`)
-		engine.ArmSupervision = func([]string) (string, string, int) {
+		engine.ArmSupervision = func([]string) (verbresult.Result, error) {
 			t.Error("an already running mission was armed")
-			return "", "", 1
+			return verbresult.Result{Outcome: verbresult.Unknown}, errors.New("not armed")
 		}
 		snapshot := func() map[string]string { return snapshotTree(t, root) }
 		if code := engine.Launch(mode, false); code != 0 {

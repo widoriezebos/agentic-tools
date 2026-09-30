@@ -88,6 +88,19 @@ type Result struct {
 	Remedy            string
 }
 
+// Data is what up's --json envelope carries for a parent to branch on:
+// up's outcome, the component it stopped at, and what it re-armed.
+type Data struct {
+	Outcome string `json:"outcome"`
+	Failed  string `json:"failed,omitempty"`
+	ReArmed string `json:"reArmed,omitempty"`
+}
+
+// Data is the result's typed facts for the envelope.
+func (r Result) Data() Data {
+	return Data{Outcome: r.Outcome, Failed: r.Failed, ReArmed: r.ReArmed}
+}
+
 // ExitCode is zero for armed, advisor, and successful recovery outcomes.
 func (r Result) ExitCode() int {
 	if r.Outcome == "failed" || r.Outcome == "recovery-partial" || r.Outcome == "ENROLLMENT_DRIFT" {

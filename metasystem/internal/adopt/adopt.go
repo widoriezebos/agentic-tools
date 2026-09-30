@@ -30,6 +30,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/audit"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostsetup"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
@@ -558,7 +559,8 @@ func markerLine(rules string) (string, bool) {
 func hookPreflight(d Deps, target string) *Refusal {
 	out, err := d.Git(target, true, "rev-parse", "--is-inside-work-tree")
 	if err != nil {
-		if strings.Contains(err.Error(), "not a git repository") {
+		var ran *exec.ExitError
+		if errors.As(err, &ran) && gittree.OutsideRepository(target) {
 			return nil
 		}
 		// A malformed configuration in a valid repository fails the same

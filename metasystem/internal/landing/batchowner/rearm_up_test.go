@@ -11,8 +11,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
-// writeUpStub installs a bin/metasystem under root that prints lines as the
-// rebuilt engine's up would and exits with status.
+// writeUpStub installs a bin/metasystem under root that prints lines (the
+// rebuilt engine's up --json envelope) and exits with status.
 func writeUpStub(t *testing.T, root string, status int, lines ...string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Join(root, "bin"), 0o755); err != nil {
@@ -44,10 +44,8 @@ func TestLandingOwnerRearmFailsWhenSupervisionIsNotArmedAfterwards(t *testing.T)
 	}
 	root := t.TempDir()
 	writeUpStub(t, root, 1,
-		`component=host-preflight outcome=verified`,
-		`component=accepted-engine outcome=re-armed detail="generation=4 previous=3 engine=7db15ce landed=7db15ce ref=refs/remotes/origin/main"`,
-		`component=session-identity outcome=failed detail="runtime-signature ancestry proof failed: no agent ancestor"`,
-		`up outcome=failed re-armed="generation=4 previous=3 engine=7db15ce landed=7db15ce" component=session-identity remedy="pass --pid <session-pid> and --start-time <epoch-seconds>, or configure a runtime signature and invoke up from that session"`)
+		`{"schemaVersion":1,"verb":"up","targets":[],"outcome":"failed","summary":"starting supervision stopped at session-identity",`+
+			`"data":{"outcome":"failed","failed":"session-identity","reArmed":"generation=4 previous=3 engine=7db15ce landed=7db15ce"}}`)
 	_, err := OwnerUpLandedEngine(context.Background(), root, root)
 	if err == nil || !strings.Contains(err.Error(), "the lane's engine is not re-armed") {
 		t.Fatalf("owner re-arm that left nothing armed = %v; want it refused", err)

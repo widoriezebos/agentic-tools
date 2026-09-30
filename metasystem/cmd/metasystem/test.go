@@ -1103,10 +1103,37 @@ func runTestVerifyAs(name string, args []string, stdout, stderr io.Writer) int {
 		printPage(stderr, page)
 		return 2
 	}
-	if _, public := publicCommand(name); public && !jsonOutput {
+	_, public := publicCommand(name)
+	if public && !jsonOutput {
 		return testStatusTo(stdout, stderr, request)
 	}
+	if !public && jsonOutput {
+		return testVerifyEnvelope(stdout, stderr, request)
+	}
 	return testVerifyTo(stdout, stderr, request, jsonOutput)
+}
+
+// testVerifyEnvelope is the internal verify a base judge calls: one
+// envelope on stdout whose data is the delivery verdict, the words on
+// stderr.
+func testVerifyEnvelope(stdout, stderr io.Writer, request testrun.SelectionRequest) int {
+	var verdict bytes.Buffer
+	status := testVerifyTo(&verdict, stderr, request, true)
+	var data any
+	if payload := bytes.TrimSpace(verdict.Bytes()); len(payload) > 0 && json.Valid(payload) {
+		data = json.RawMessage(payload)
+	}
+	result := verbresult.FromError(testVerifyVerb, status, nil, data)
+	switch {
+	case data == nil:
+		result.Summary = "the retained test runs could not be verified"
+	case status == 0:
+		result.Summary = "passing test runs cover this tree"
+	default:
+		result.Summary = "no passing test run covers every group on this tree"
+	}
+	_ = verbresult.Write(stdout, result)
+	return status
 }
 
 // testVerifyTo verifies retained delivery proof for request.Tree and prints

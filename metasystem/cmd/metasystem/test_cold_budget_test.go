@@ -13,6 +13,7 @@ import (
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/verbresult"
 )
 
 func TestColdCandidateBuildRefusalRunsBeforeNativeBuilder(t *testing.T) {
@@ -102,5 +103,20 @@ func TestColdBudgetScreenPreservesPossibleReuseAndExtension(t *testing.T) {
 	breach.Refusal.Breaches = []dispatchcore.BudgetBreach{{Field: "activeJobLimit"}}
 	if permanentBudgetRefusal(breach) {
 		t.Fatal("transient active capacity was treated as permanent exhaustion")
+	}
+}
+
+// The cold-build budget refusal is two plain lines; its code reaches a
+// parent through the test run's --json envelope, never through its words.
+func TestColdBudgetRefusalCarriesItsCodeOutsideItsWords(t *testing.T) {
+	t.Parallel()
+	refusal := &coldBuildBudgetRefusal{goal: "g1", detail: "goal g1 before candidate-engine build: attemptLimit"}
+	lines := strings.Split(refusal.Error(), "\n")
+	if len(lines) != 2 || strings.Contains(lines[0], "BUDGET_REFUSED") || lines[1] != "run: metasystem goal budget g1" {
+		t.Fatalf("refusal words = %q", refusal.Error())
+	}
+	envelope := verbresult.FromError("internal test run", 78, refusal, nil)
+	if envelope.Code != "BUDGET_REFUSED" || envelope.Outcome != verbresult.Refused {
+		t.Fatalf("envelope = %+v", envelope)
 	}
 }

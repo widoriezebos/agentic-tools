@@ -73,11 +73,9 @@ var messageTraceKept = map[string]string{
 
 // messageTraceKeptCodes are protocol codes kept in a person's message by
 // decision: the code is not reported, the rest of the text is.
-// BUDGET_REFUSED leads a test run's cold-build refusal because the landing
-// batch owner reads it to tell a budget refusal from the others;
 // BRIEF_BOUNDS_UNREADABLE is the refusal register's anchor at its Error.
 var messageTraceKeptCodes = map[string]string{"CONTEXT_CONFIG_INVALID": "internal/config/context.go",
-	"BUDGET_REFUSED": "cmd/metasystem/test_cold_budget.go", "BRIEF_BOUNDS_UNREADABLE": "internal/validate/brief_bounds_source.go"}
+	"BRIEF_BOUNDS_UNREADABLE": "internal/validate/brief_bounds_source.go"}
 
 // messageTraceFixtureDir names the packages that serve tests (fakes,
 // fixtures, the interface walkthrough): nothing a person reads in use.

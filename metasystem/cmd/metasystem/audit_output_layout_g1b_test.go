@@ -13,6 +13,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/verbresult"
 )
 
 // The group's goldens join layoutCases through its hook.
@@ -155,7 +156,9 @@ func machineStartLayoutBed(already bool) func(t *testing.T) layoutBed {
 			t.Fatal(err)
 		}
 		bed.owners.delivery = &intentDeliveryOwners{executable: func() (string, error) { return "/fake/metasystem", nil },
-			process: func(intentProcess) intentProcessResult { return intentProcessResult{stdout: append(encoded, '\n')} }}
+			ownerEnvelope: func(_ intentProcess, verb string) (verbresult.Result, error) {
+				return verbresult.Result{SchemaVersion: 1, Verb: verb, Outcome: verbresult.Confirmed, Data: encoded}, nil
+			}}
 		return bed
 	}
 }

@@ -246,7 +246,7 @@ if [ "${1:-}" = "--trimpath" ]; then
   printf '#!/bin/sh\n# candidate %%s\nexec %%s "$@"\n' "${METASYSTEM_BUILD_STAMP:-$(git rev-parse HEAD)}" %s > "$out"
 else
   mkdir -p bin
-  printf '#!/bin/sh\nif [ "${1:-}" = up ]; then exit 0; fi\nexec %%s "$@"\n' %s > bin/metasystem
+  printf '#!/bin/sh\nif [ "${1:-}" = up ]; then echo \047{"schemaVersion":1,"verb":"up","targets":[],"outcome":"confirmed","summary":"supervision is armed","data":{"outcome":"armed"}}\047; exit 0; fi\nexec %%s "$@"\n' %s > bin/metasystem
 fi
 chmod +x "${out:-bin/metasystem}"
 `, strconv.Quote(portable.buildCounter), strconv.Quote(portable.engine), strconv.Quote(portable.engine))
@@ -591,7 +591,7 @@ if [ "${1:-}" = "--trimpath" ]; then
   printf '#!/bin/sh\n# candidate %%s\nexec %%s "$@"\n' "${METASYSTEM_BUILD_STAMP:-$(git rev-parse HEAD)}" %s > "$out"
 else
   mkdir -p bin
-  printf '#!/bin/sh\nif [ "${1:-}" = up ]; then exit 0; fi\nexec %%s "$@"\n' %s > bin/metasystem
+  printf '#!/bin/sh\nif [ "${1:-}" = up ]; then echo \047{"schemaVersion":1,"verb":"up","targets":[],"outcome":"confirmed","summary":"supervision is armed","data":{"outcome":"armed"}}\047; exit 0; fi\nexec %%s "$@"\n' %s > bin/metasystem
 fi
 chmod +x "${out:-bin/metasystem}"
 `, strconv.Quote(portable.buildCounter), strconv.Quote(portable.engine), strconv.Quote(portable.engine))

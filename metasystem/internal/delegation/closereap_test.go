@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/delegation"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/verbresult"
 )
 
 func TestStatusPrintsTheRecordAndTheCensusVerdict(t *testing.T) {
@@ -28,6 +29,28 @@ func TestStatusPrintsTheRecordAndTheCensusVerdict(t *testing.T) {
 	b.writeRecord("job-b", map[string]any{"status": "pending-setup"})
 	requireExit(t, b.run("status", "--job", "job-b"), 7, b.stderr.String())
 	requireExit(t, b.run("status", "--job", "Bad_Id"), 2, b.stderr.String())
+}
+
+// status --json (structured-output U2, T10): one envelope whose data
+// carries the status; a job without a record is a failed envelope.
+func TestStatusJSONAnswersWithOneEnvelope(t *testing.T) {
+	t.Parallel()
+	b := newBed(t)
+	b.writeRecord("job-a", map[string]any{"status": "running"})
+	result := b.run("status", "--job", "job-a", "--json")
+	requireExit(t, result, 0, b.stderr.String())
+	read, err := verbresult.Read(result.Stdout, "internal delegate status", 0, b.stderr.String())
+	var data struct {
+		Status string `json:"status"`
+	}
+	if err != nil || read.Outcome != verbresult.Confirmed || read.DecodeData(&data) != nil || data.Status != "running" {
+		t.Fatalf("status --json = %+v (%v) stdout %q", read, err, result.Stdout)
+	}
+	missing := b.run("status", "--job", "never-was", "--json")
+	requireExit(t, missing, 6, b.stderr.String())
+	if read, err := verbresult.Read(missing.Stdout, "internal delegate status", 6, ""); err != nil || read.Outcome != verbresult.Failed {
+		t.Fatalf("status --json of a missing job = %+v (%v)", read, err)
+	}
 }
 
 func TestWatchKnowsAVanishedJobNowAndOtherwiseRidesTheWatcher(t *testing.T) {

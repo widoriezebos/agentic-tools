@@ -7,6 +7,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/lifecycle"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/verbresult"
 )
 
 // TestIntentProcessTargets: start, stop and status name the interface and a
@@ -26,9 +27,9 @@ func TestIntentProcessTargets(t *testing.T) {
 	}
 	var engine [][]string
 	owners.delivery = &intentDeliveryOwners{executable: func() (string, error) { return "/fake/metasystem", nil },
-		process: func(process intentProcess) intentProcessResult {
+		ownerEnvelope: func(process intentProcess, verb string) (verbresult.Result, error) {
 			engine = append(engine, process.argv)
-			return intentProcessResult{stdout: []byte(`{"state":"supervised"}`)}
+			return verbresult.Result{SchemaVersion: 1, Verb: verb, Outcome: verbresult.Confirmed, Data: []byte(`{"state":"supervised"}`)}, nil
 		}}
 	for _, args := range [][]string{{"ui", "start"}, {"ui", "stop"}, {"ui", "status"}} {
 		if code, result := b.runJSON(owners, args...); code != 0 || result.Outcome != intentConfirmed {

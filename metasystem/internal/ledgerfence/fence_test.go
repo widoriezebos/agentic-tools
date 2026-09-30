@@ -400,3 +400,35 @@ func TestEnsureLeavesAnEnrolledFenceAloneGitAdapter(t *testing.T) {
 		t.Fatalf("a person's enrolled hook was moved aside: %v", err)
 	}
 }
+
+// A target without a repository has no fence to enroll, and that is told by
+// the filesystem, never by git's words: a checkout whose .git git cannot
+// follow is a repository whose shape cannot be proven, and Ensure refuses.
+func TestEnsureTellsNoRepositoryFromAnUnreadableOne(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name    string
+		gitFile bool
+	}{{"no repository", false}, {"unreadable repository", true}} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			engine := filepath.Join(root, "bin", "metasystem")
+			if err := os.MkdirAll(filepath.Dir(engine), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := testexec.WriteFile(engine, []byte("#!/usr/bin/env bash\nexit 0\n"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if tc.gitFile {
+				if err := os.WriteFile(filepath.Join(root, ".git"), []byte("gitdir: "+filepath.Join(root, "missing")+"\n"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			err := Ensure(root)
+			if tc.gitFile != (err != nil) || tc.gitFile && !strings.Contains(err.Error(), "cannot be proven") {
+				t.Fatalf("Ensure = %v", err)
+			}
+		})
+	}
+}

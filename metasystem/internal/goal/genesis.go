@@ -70,7 +70,8 @@ func adoptionShapedWithProbe(root string, ledgerBytes []byte, headTracks func(st
 func headTracksLedgerWithEnvironment(root string, environment []string) (bool, error) {
 	out, err := gitInWithEnvironment(root, environment, "rev-parse", "--is-inside-work-tree")
 	if err != nil {
-		if strings.Contains(strings.ToLower(err.Error()), "not a git repository") {
+		var ran *gitError
+		if errors.As(err, &ran) && gittree.OutsideRepository(root) {
 			return false, nil
 		}
 		return false, err
