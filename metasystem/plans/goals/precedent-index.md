@@ -2,12 +2,12 @@
 
 - State: parked
 - Priority: 3
-- Sequence: 21
+- Sequence: 20
 - Intent: Rulings become citable law: a first-class precedent index the counselor cites at sittings, so settled questions are distinguished, not re-litigated (Wido 2026-08-25, common-law study area)
 - Origin: human
 - Next step: Appetite: 1d design-first. The legal insight redesigned: a ruling binds by its PRINCIPLE, not its circumstances, and the discipline is distinguishing a new case from an old precedent rather than re-arguing. Design questions: the record shape (principle, circumstances, who ruled, what it superseded), the app-owned home (seeded at inception from harvested design decisions; this repo's D-numbers are the template's own instance), the citing surfaces (the counselor's sitting and the dispatch delegate's intake ask 'is this the same case?'), and supersession (a precedent is overturned by a new ruling that names it, never silently). Queue: after reconciliation-guards.
 - OpenedAt: 2026-08-25T06:54:54Z
-- Revision: 91
+- Revision: 92
 - BudgetExceptions: 0
 - Parked: by=human:Wido at=2026-09-13T08:24:06Z because=Not now (2026-09-13 backlog consolidation, Wido's word): Not-now: rulings live in memory/rulings.md as an append-only table (R-107 and counting) and no counselor sitting exists to cite an index; queued after reconciliation-guards, itself deferred; Wido's 08-25 study-area vision, unpark on his word.
 
@@ -103,4 +103,5 @@ History:
 - 2026-09-30T19:00:30Z 05DDEYJ4CQMXX9QH823EW2S9HB-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,claude-delegate-scratch-cleanup,claude-denywrite-list-is-a-snapshot,continuous-self-improvement,counselor,cross-repo-guardrails,delegate-sandbox-cannot-run-the-beds,design-prohibition-is-role-scoped,human-carried-landing,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,narrator-digests,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,seam-declaration-convergence,set-priority-treats-an-oversize-sequence-as-last,standing-validation,uncapped-delegate-fanout,watchdog-kill-observation-gap reason=priority-order from=3:24 to=3:23
 - 2026-09-30T19:01:02Z Q28ZFJP6FHWSVGMG3R2GVEP7BX-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:23 to=3:22
 - 2026-09-30T19:01:13Z DN3ERWTSCYYGJTN9EFDHJT67Y4-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,paid-proof-authorization,precedent-index,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:22 to=3:21
-Integrity: sha256=d820effc5b1772ad86a5398541bdd36df165fd4df5762f5cfced197d0670b351
+- 2026-09-30T19:03:07Z JDM7B50MEP0PRANP3DT763E93H-m1e-b6a4eb0a abandon actor=human:wido targets=delegate-sandbox-cannot-run-the-beds,uncapped-delegate-fanout,claude-denywrite-list-is-a-snapshot,claude-delegate-scratch-cleanup,seam-declaration-convergence,human-carried-landing,standing-validation,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,incident-proposal-drafting,counselor,precedent-index,reconciliation-guards,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:21 to=3:20
+Integrity: sha256=ccbb6be7287eb812da354be6e91d9b4a736a39244f46417d747a72725b105916

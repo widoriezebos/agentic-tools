@@ -2,13 +2,13 @@
 
 - State: parked
 - Priority: 3
-- Sequence: 14
+- Sequence: 13
 - Tier: 3
 - Intent: What: You can fast-track a landing under your own close scrutiny, and the machine never refuses you. The command for this exists and works; what is left is bookkeeping in the list of refusals. Why: One landing refusal has no entry in that list, and eleven landing refusals have no recorded ruling on whether they may ever refuse a person. Pros: Closes the goal cleanly and makes "a person is never refused" checkable for landings. Cons: Needs your ruling on the eleven refusals.
 - Origin: human
 - Next step: Next: Add the missing register row for the tier-1 refusal (internal/landing/tierone.go) in internal/refusal/register.go; ask you to rule on the eleven landing codes in light of "humans are never denied a verb"; drop the old land.sh item (the script is gone). Then conclude, citing ce59b313 and ef296c39. Done when: the refusal-register audit has no open notes.
 - OpenedAt: 2026-09-04T10:56:02Z
-- Revision: 66
+- Revision: 67
 - Labels: governance
 - BudgetExceptions: 0
 - Sliced: machine=m3 lineage=mac-m3 revision=5 at=2026-09-04T14:47:24Z
@@ -81,4 +81,5 @@ History:
 - 2026-09-30T18:50:13Z 4JCZN52NZS59Y57E43JWH9X4W7-m1e-b6a4eb0a edit actor=human:wido targets=human-carried-landing
 - 2026-09-30T18:57:42Z EATDFDHH90W17M050BRZTK9FJ8-m1e-b6a4eb0a done actor=human:wido targets=answer-archive,app-doctrine,app-guardrail-custody,app-guardrail-program,claude-delegate-scratch-cleanup,claude-denywrite-list-is-a-snapshot,continuous-self-improvement,counselor,cross-repo-guardrails,defect-analysis-gate,delegate-sandbox-cannot-run-the-beds,design-prohibition-is-role-scoped,goal-scope-bounds,goal-suite-sits-on-the-default-test-timeout,hook-demands-what-landing-forbids,host-health-role,human-carried-landing,incident-proposal-drafting,integration-branch,land-verb-pruning,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,narrator-digests,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,same-process-succession,seam-declaration-convergence,set-priority-treats-an-oversize-sequence-as-last,standing-validation,steward-owned-execution,stop-message-truth,uncapped-delegate-fanout,verbs-match-intent,watchdog-kill-observation-gap reason=priority-order from=3:16 to=3:15
 - 2026-09-30T19:00:30Z 05DDEYJ4CQMXX9QH823EW2S9HB-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,claude-delegate-scratch-cleanup,claude-denywrite-list-is-a-snapshot,continuous-self-improvement,counselor,cross-repo-guardrails,delegate-sandbox-cannot-run-the-beds,design-prohibition-is-role-scoped,human-carried-landing,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,narrator-digests,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,seam-declaration-convergence,set-priority-treats-an-oversize-sequence-as-last,standing-validation,uncapped-delegate-fanout,watchdog-kill-observation-gap reason=priority-order from=3:15 to=3:14
-Integrity: sha256=706359a0efce804ff79b425dd5eacb5c8ab1f3d33f73170c0443df2d008e1090
+- 2026-09-30T19:03:07Z JDM7B50MEP0PRANP3DT763E93H-m1e-b6a4eb0a abandon actor=human:wido targets=delegate-sandbox-cannot-run-the-beds,uncapped-delegate-fanout,claude-denywrite-list-is-a-snapshot,claude-delegate-scratch-cleanup,seam-declaration-convergence,human-carried-landing,standing-validation,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,incident-proposal-drafting,counselor,precedent-index,reconciliation-guards,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:14 to=3:13
+Integrity: sha256=8af28f232b72e1d8e97c8e623ba1b67ca7168fc2dcfe12ce4524265200f1a883

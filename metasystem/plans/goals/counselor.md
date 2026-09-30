@@ -2,12 +2,12 @@
 
 - State: queued
 - Priority: 3
-- Sequence: 20
+- Sequence: 19
 - Intent: What: The counselor is an advisory role that watches the gap between what the app is becoming and what its checks actually cover, and tells the person in short briefs and review sittings; it never blocks anything and never edits anything itself. Built so far: the drift brief from existing records, its delivery on a schedule, and a register of accepted risks grouped by kind. Left: the review sitting itself, and noticing problems while work is in progress. Why: Risks we knowingly accept, and drift between effort and result, pile up unseen unless something collects them and puts them in front of a person. Pros: Recurring risk patterns get a regular, structured look instead of being noticed by accident. Cons: More reports for the person to read, and advice nobody acts on is wasted effort.
 - Origin: human
 - Next step: Next: Build the review sitting on top of the accepted-risk register: for each risk class, ask why it happened (five whys), whether the pattern applies elsewhere, and whether it applies to the counselor itself; then build in-progress noticings as a separate step. Done when: Running a sitting produces a written sitting record that covers every class in the register with those three questions answered.
 - OpenedAt: 2026-08-24T13:49:17Z
-- Revision: 105
+- Revision: 106
 - Arc: app-guardrail-program
 - Budget: elapsedLimit=9d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=2 reviewRoundLimit=3
 - BudgetExceptions: 0
@@ -118,4 +118,5 @@ History:
 - 2026-09-30T19:00:30Z 05DDEYJ4CQMXX9QH823EW2S9HB-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,claude-delegate-scratch-cleanup,claude-denywrite-list-is-a-snapshot,continuous-self-improvement,counselor,cross-repo-guardrails,delegate-sandbox-cannot-run-the-beds,design-prohibition-is-role-scoped,human-carried-landing,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,narrator-digests,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,seam-declaration-convergence,set-priority-treats-an-oversize-sequence-as-last,standing-validation,uncapped-delegate-fanout,watchdog-kill-observation-gap reason=priority-order from=3:23 to=3:22
 - 2026-09-30T19:01:02Z Q28ZFJP6FHWSVGMG3R2GVEP7BX-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:22 to=3:21
 - 2026-09-30T19:01:13Z DN3ERWTSCYYGJTN9EFDHJT67Y4-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,paid-proof-authorization,precedent-index,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:21 to=3:20
-Integrity: sha256=cd1d384f6aa3ed23181ea1048556a11e2d73da4ff1fd4a1973ad79ea8ea8d901
+- 2026-09-30T19:03:07Z JDM7B50MEP0PRANP3DT763E93H-m1e-b6a4eb0a abandon actor=human:wido targets=delegate-sandbox-cannot-run-the-beds,uncapped-delegate-fanout,claude-denywrite-list-is-a-snapshot,claude-delegate-scratch-cleanup,seam-declaration-convergence,human-carried-landing,standing-validation,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,incident-proposal-drafting,counselor,precedent-index,reconciliation-guards,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:20 to=3:19
+Integrity: sha256=06a86d064ae875575160385ae5d8fe909e331c3a8a2e1131ba0f57032fce0555

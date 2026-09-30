@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 3
-- Sequence: 12
+- Sequence: 11
 - Risk: severity=1 novelty=1 exposure=2 accumulation=2 basis="severity 1: disk usage and a missing test, nothing unsafe ships; novelty 1: a cleanup trap and one assertion; exposure 2: every claude delegate round on every seat; accumulation 2: the directories pile up per round and a suite day multiplies them"
 - Tier: 2
 - Intent: What: When a Claude helper finishes a round, its temporary scratch folder is deleted, and a test pins the sandbox's safety switches. Why: Each round leaves a scratch folder in the system temp directory and nothing deletes it. The biggest part, the Go build cache, was already moved out by the disk work, but the folders still pile up. Separately, no test would notice if the sandbox were switched to allow unsandboxed commands. Pros: No slow disk leak; a silent weakening of the sandbox fails the tests. Cons: Small; the scratch must stay until the round has really ended, or evidence is lost.
 - Origin: main
 - Next step: Next: In internal/adapter/supervisor/claude.go delete the round's scratch folder on every way a round can end, with a test; in internal/adapter/runtime_test.go pin the four sandbox switches. Done when: a test run leaves no metasystem-claude/<job>-<round> folder behind, and flipping any sandbox switch fails a test.
 - OpenedAt: 2026-09-06T19:57:39Z
-- Revision: 51
+- Revision: 52
 - BudgetExceptions: 0
 - Sliced: machine=m1c lineage=main-1788680061-17829-64951c revision=5 at=2026-09-06T23:39:16Z
 
@@ -65,4 +65,5 @@ History:
 - 2026-09-30T18:47:53Z CADW5GKFNW2K89A0JN5XKA57WA-m1e-b6a4eb0a edit actor=human:wido targets=claude-delegate-scratch-cleanup
 - 2026-09-30T18:57:42Z EATDFDHH90W17M050BRZTK9FJ8-m1e-b6a4eb0a done actor=human:wido targets=answer-archive,app-doctrine,app-guardrail-custody,app-guardrail-program,claude-delegate-scratch-cleanup,claude-denywrite-list-is-a-snapshot,continuous-self-improvement,counselor,cross-repo-guardrails,defect-analysis-gate,delegate-sandbox-cannot-run-the-beds,design-prohibition-is-role-scoped,goal-scope-bounds,goal-suite-sits-on-the-default-test-timeout,hook-demands-what-landing-forbids,host-health-role,human-carried-landing,incident-proposal-drafting,integration-branch,land-verb-pruning,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,narrator-digests,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,same-process-succession,seam-declaration-convergence,set-priority-treats-an-oversize-sequence-as-last,standing-validation,steward-owned-execution,stop-message-truth,uncapped-delegate-fanout,verbs-match-intent,watchdog-kill-observation-gap reason=priority-order from=3:14 to=3:13
 - 2026-09-30T19:00:30Z 05DDEYJ4CQMXX9QH823EW2S9HB-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,claude-delegate-scratch-cleanup,claude-denywrite-list-is-a-snapshot,continuous-self-improvement,counselor,cross-repo-guardrails,delegate-sandbox-cannot-run-the-beds,design-prohibition-is-role-scoped,human-carried-landing,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,narrator-digests,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,seam-declaration-convergence,set-priority-treats-an-oversize-sequence-as-last,standing-validation,uncapped-delegate-fanout,watchdog-kill-observation-gap reason=priority-order from=3:13 to=3:12
-Integrity: sha256=2835da6e238ba95f9c7b6bc4e222984f85a9da38ab83307c1bf81e313bec803f
+- 2026-09-30T19:03:07Z JDM7B50MEP0PRANP3DT763E93H-m1e-b6a4eb0a abandon actor=human:wido targets=delegate-sandbox-cannot-run-the-beds,uncapped-delegate-fanout,claude-denywrite-list-is-a-snapshot,claude-delegate-scratch-cleanup,seam-declaration-convergence,human-carried-landing,standing-validation,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,incident-proposal-drafting,counselor,precedent-index,reconciliation-guards,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:12 to=3:11
+Integrity: sha256=5e8b7c5856216d9f844f585b832f8484b1988ccccbab0cfb415d6996fedc3ee2
