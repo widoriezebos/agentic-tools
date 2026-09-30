@@ -746,14 +746,20 @@ func registryHomeForProcess(mkdirTemp func(string, string) (string, error)) (*re
 }
 
 func createRegistryHome(mkdirTemp func(string, string) (string, error)) (*registryHomeLease, error) {
-	// Both roots are swept whichever one this run publishes in: a home made
-	// under the TMPDIR fallback, kept by its owner for a joined child that
-	// outlived it, would otherwise wait for another run whose /tmp fails.
-	removeDeadRegistryHomes("/tmp", os.Stderr)
-	if fallbackRoot := os.TempDir(); fallbackRoot != "/tmp" {
+	return createRegistryHomeIn(mkdirTemp, "/tmp", os.TempDir())
+}
+
+// createRegistryHomeIn publishes a home under primary, else under TMPDIR
+// (MkdirTemp's empty directory). Both roots are swept first whichever one
+// this run publishes in: a home made under the TMPDIR fallback, kept by its
+// owner for a joined child that outlived it, would otherwise wait for
+// another run whose primary root fails.
+func createRegistryHomeIn(mkdirTemp func(string, string) (string, error), primary, fallbackRoot string) (*registryHomeLease, error) {
+	removeDeadRegistryHomes(primary, os.Stderr)
+	if fallbackRoot != primary {
 		removeDeadRegistryHomes(fallbackRoot, os.Stderr)
 	}
-	registry, primaryErr := createRegistryHomeUnder(mkdirTemp, "/tmp")
+	registry, primaryErr := createRegistryHomeUnder(mkdirTemp, primary)
 	if primaryErr == nil {
 		return registry, nil
 	}
@@ -762,7 +768,7 @@ func createRegistryHome(mkdirTemp func(string, string) (string, error)) (*regist
 	if fallbackErr == nil {
 		return registry, nil
 	}
-	return nil, fmt.Errorf("in /tmp: %v; in TMPDIR: %w", primaryErr, fallbackErr)
+	return nil, fmt.Errorf("in %s: %v; in TMPDIR: %w", primary, primaryErr, fallbackErr)
 }
 
 func createRegistryHomeUnder(mkdirTemp func(string, string) (string, error), root string) (*registryHomeLease, error) {

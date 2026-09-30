@@ -18,6 +18,7 @@ import (
 // knows: each port `go tool dist list` prints, and the historical names
 // go/build still treats as constraints though no port ships them.
 func TestBuildConstraintAuditKnowsEveryToolchainName(t *testing.T) {
+	t.Parallel()
 	output, err := exec.Command("go", "tool", "dist", "list").Output()
 	if err != nil {
 		t.Fatalf("go tool dist list: %v", err)
@@ -57,6 +58,7 @@ func TestBuildConstraintAuditKnowsEveryToolchainName(t *testing.T) {
 // Only a build constraint line before the package clause constrains a file:
 // a //go:build or // +build comment after it is plain text to the toolchain.
 func TestBuildConstraintAuditReadsOnlyTheHeader(t *testing.T) {
+	t.Parallel()
 	for _, fixture := range []struct {
 		label  string
 		source string
@@ -71,6 +73,7 @@ func TestBuildConstraintAuditReadsOnlyTheHeader(t *testing.T) {
 		{label: "go_build_prefix_word", source: "//go:buildx darwin\n\n" + sharedMainFixtureSource, want: ""},
 	} {
 		t.Run(fixture.label, func(t *testing.T) {
+			t.Parallel()
 			file := parseTestFile(t, "testmain_test.go", fixture.source)
 			if got := testMainConstraint(file); got != fixture.want {
 				t.Fatalf("testMainConstraint = %q, want %q", got, fixture.want)
@@ -94,6 +97,7 @@ func writeStagingOwner(t *testing.T, root, name, contents string) string {
 // dot-named staging directory; the next sweep removes it once its owner lock
 // is free, and keeps every staging directory it cannot prove dead.
 func TestSweepRemovesStaleStagingDirectoryOnly(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	nonce := strings.Repeat("a", 2*registryNonceSize)
 	stale := writeStagingOwner(t, root, "."+registryHomePrefix+"1234567", nonce)
@@ -142,11 +146,11 @@ func TestSweepRemovesStaleStagingDirectoryOnly(t *testing.T) {
 // A home an exited owner kept because a joined helper child still held it
 // is orphaned once that child exits. The next Main sweeps its TMPDIR as well
 // as /tmp, so a home made under the TMPDIR fallback is removed even when
-// /tmp now works.
+// /tmp now works (primary stands in for /tmp, fallback for TMPDIR).
 func TestCreateRegistryHomeSweepsFallbackRootForOrphanedJoinedHome(t *testing.T) {
+	t.Parallel()
 	primary := t.TempDir()
 	fallback := t.TempDir()
-	t.Setenv("TMPDIR", fallback)
 
 	orphan, err := createRegistryHomeUnder(os.MkdirTemp, fallback)
 	checkTestenv(t, err)
@@ -179,12 +183,7 @@ func TestCreateRegistryHomeSweepsFallbackRootForOrphanedJoinedHome(t *testing.T)
 	// The first child exits; the second lives on.
 	checkTestenv(t, unlockAndClose(children[0]))
 
-	registry, err := createRegistryHome(func(directory, pattern string) (string, error) {
-		if directory == "/tmp" {
-			directory = primary
-		}
-		return os.MkdirTemp(directory, pattern)
-	})
+	registry, err := createRegistryHomeIn(os.MkdirTemp, primary, fallback)
 	checkTestenv(t, err)
 	t.Cleanup(func() { _ = registry.cleanupReporting(io.Discard) })
 	if filepath.Dir(registry.path) != primary {
