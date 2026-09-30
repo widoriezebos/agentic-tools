@@ -68,6 +68,16 @@
           "logDigest": "",
           "seenAt": "2026-09-30T16:19:28Z",
           "opid": "KM0MXGB3BPB76H7FMDQHM4ZZ0K-landing-2b626e27"
+        },
+        {
+          "attempt": "cadence-unavailable",
+          "batch": "",
+          "baseCommit": "10af904c661617b024b23902adfcc57aafb3e448",
+          "baseTree": "8b69d92b7f618e3cea3b46a0337fd5d4922c132c",
+          "logPath": "",
+          "logDigest": "",
+          "seenAt": "2026-09-30T16:20:25Z",
+          "opid": "JTNMNXDGQD259WVVSN8X39ZQ09-landing-2b626e27"
         }
       ],
       "owner": {
@@ -153,6 +163,16 @@
           "logDigest": "",
           "seenAt": "2026-09-30T16:19:28Z",
           "opid": "KM0MXGB3BPB76H7FMDQHM4ZZ0K-landing-2b626e27"
+        },
+        {
+          "attempt": "cadence-unavailable",
+          "batch": "",
+          "baseCommit": "10af904c661617b024b23902adfcc57aafb3e448",
+          "baseTree": "8b69d92b7f618e3cea3b46a0337fd5d4922c132c",
+          "logPath": "",
+          "logDigest": "",
+          "seenAt": "2026-09-30T16:20:25Z",
+          "opid": "JTNMNXDGQD259WVVSN8X39ZQ09-landing-2b626e27"
         }
       ],
       "owner": {
@@ -173,40 +193,29 @@
     }
   ],
   "cadence": {
-    "trunkCommit": "42c1012f006fc4682f5e64532f911d3bd6d93865",
-    "trunkTree": "849d1e619b10ba8e95a16ec184f739a5663050bb",
+    "trunkCommit": "10af904c661617b024b23902adfcc57aafb3e448",
+    "trunkTree": "8b69d92b7f618e3cea3b46a0337fd5d4922c132c",
     "trigger": "identity-changed",
     "runId": "cadence-unavailable",
     "attemptId": "cadence-unavailable",
-    "startedAt": "2026-09-30T16:19:28Z",
-    "endedAt": "2026-09-30T16:19:28Z",
+    "startedAt": "2026-09-30T16:20:25Z",
+    "endedAt": "2026-09-30T16:20:25Z",
     "weightGeneration": 0,
     "forcedWindowStart": "2026-09-30T16:14:14Z",
     "groups": [
       {
         "group": "section/gate-fail-open-tripwire",
-        "executionIdentity": "bab3d6c4e2b3441ca7f528d17697526779de7ef1097609624ae93e6a1078fa47",
+        "executionIdentity": "975d89c892d75a9ff3e4f676d35514c1cb6fc6d68d7ef02f42e7a25f1896824a",
         "status": "unavailable",
-        "evidenceDigest": "53a7eff5b2406be166708f13f84eab0efb0c8b112154db578ccd1ea7d7df495e"
+        "evidenceDigest": "db7da065ddebc3542325a0abe2feda5d57917466775aee17c974a73d6bed1be9"
       },
       {
         "group": "section/go-engine-gate",
-        "executionIdentity": "3b73826b985454b9e3fb859055f281c9e3269eb019b56a9efb8f1053c52dcb60",
+        "executionIdentity": "402e968429503ec8d54511f2e114b6daa3071e97d1f9cffa3fd6f9e3eccf66fb",
         "status": "unavailable",
-        "evidenceDigest": "49a0b2aeeaec67fb1b328380f334a6bf852be41fc6da7394da236e787363740e"
+        "evidenceDigest": "147a996fd69b4daf0bf9d2d550600ebd76e66fc95519fdc96c57d6b759dadd58"
       }
     ],
-    "opid": "KM0MXGB3BPB76H7FMDQHM4ZZ0K-landing-2b626e27"
-  },
-  "cadenceClaim": {
-    "key": {
-      "trunkTree": "8b69d92b7f618e3cea3b46a0337fd5d4922c132c",
-      "weightGeneration": 0,
-      "forcedWindowStart": "2026-09-30T16:14:14Z"
-    },
-    "ownerMachine": "landing",
-    "opid": "56DC8R52JJPZGWT10FMQP6RYZ1-landing-2b626e27",
-    "claimedAt": "2026-09-30T16:20:25Z",
-    "leaseUntil": "2026-09-30T22:20:25Z"
+    "opid": "JTNMNXDGQD259WVVSN8X39ZQ09-landing-2b626e27"
   }
 }
