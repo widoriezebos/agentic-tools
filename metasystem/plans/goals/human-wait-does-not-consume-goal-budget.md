@@ -9,9 +9,8 @@
 - Origin: main
 - Next step: Next: Clear the pin to the removed seat m1c. Write a short design: which recorded events start and end a wait, how the elapsed-time check subtracts them, and how reports show them; one Astra round, then build. Done when: a test shows a goal that waited two hours on a recorded question is not stopped for those two hours, and the report shows the wait.
 - OpenedAt: 2026-09-11T05:37:49Z
-- Revision: 131
+- Revision: 132
 - Labels: breach-clock-successor
-- Pinned: m1c
 - BudgetExceptions: 0
 
 History:
@@ -146,4 +145,5 @@ History:
 - 2026-09-16T20:34:52Z E228MDDBP4YXJY5EFW2S2DJV4J-m1e-c6925449 unapprove actor=human:Wido targets=human-wait-does-not-consume-goal-budget reason=Wido 2026-09-16 22:40 CEST: clean house on priority 1 first, then a few human convenience features; every priority 2+ goal is unapproved until then
 - 2026-09-30T18:48:44Z DRV2G3ER650PC3GDMSYHQN3111-ui-bc2fda53 done actor=human:Wido targets=actionable-metrics,arming-binds-the-installed-engine-identity,census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,critique-launch-verb-enforces-the-round-cap,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,dispatch-bases-chains-on-the-remote-tip,failed-job-attention,first-headless-run,fixture-repo-copies-exclude-the-artifacts-store,fixture-waits-name-their-producer,fleet-join-bootstrap,headless-continuous-delivery-proof,headless-fleet-coordination-proof,human-authority-surface-runs-its-cmd-tests,human-break-glass-commit-keeps-the-ledger-valid,human-wait-does-not-consume-goal-budget,job-record-birth-token,land-verb-writes-the-receipt,law-keys-read-committed-bytes,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,member-size-gate,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,never-idle-ironclad,new-elapsed-budgets-use-explicit-hours,one-goal-act-one-ledger-commit,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged,run-scoped-build-caches-have-a-janitor,runtime-limit-is-not-a-protocol-error,seat-landings-run-the-selected-sections,skipped-test-fails-its-group-on-the-other-os,small-change-lane,steward-revivals-leave-the-receipt-stream,stop-batch-strands-a-resumable-goal,token-spend-fence,trunk-versus-candidate-is-a-verification-step,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=2:48 to=2:47
 - 2026-09-30T18:50:17Z B6HE9S884J64YKB66GPTRTV3Y7-m1e-b6a4eb0a edit actor=human:wido targets=human-wait-does-not-consume-goal-budget
-Integrity: sha256=6088c62140b2ce831b2dae73dc72d5779c2c3951d33c74e2f72198995cabc0b9
+- 2026-09-30T18:52:02Z RZF0877WB0AJBYKRAKK0BD23SR-m1e-b6a4eb0a set-pin actor=human:wido targets=human-wait-does-not-consume-goal-budget
+Integrity: sha256=0e63dfee500c934e9b23e1bff7e839237af902e2353cff0f24372f18ba0e5604
