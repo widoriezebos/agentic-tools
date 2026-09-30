@@ -88,9 +88,12 @@ func (inv *intentInvocation) landException(goalID string, validateOnly ...bool) 
 	if _, problem := inv.carriedRefresh(primary, targets, data); problem != nil {
 		return *problem
 	}
+	// A pushed exception landing whose release was cut short is finished
+	// first (disk-lifetimes Part B 3.6).
+	inv.finishReleaseSets(filepath.Join(primary, "artifacts", "agents", "landing-intent", goalID))
 	var subject landing.CarriedSubject
 	if opid == "" {
-		composed, problem := inv.composeCarriedSubject(root, primary, goalID, targets, data)
+		composed, composedTip, problem := inv.composeCarriedSubject(root, primary, goalID, targets, data)
 		if problem != nil {
 			return *problem
 		}
@@ -137,6 +140,9 @@ func (inv *intentInvocation) landException(goalID string, validateOnly ...bool) 
 		if err := landing.BindCarriedSubject(subjects, opid, subject); err != nil {
 			return inv.carriedStopped(goalID, opid, targets, data, "its composition cannot be bound: "+err.Error())
 		}
+		if subject.Workspace == composed.Workspace {
+			inv.noteExceptionRelease(primary, goalID, opid, composedTip, data)
+		}
 	}
 	data["exception"] = opid
 	// The word's own state decides the path: a consumed word resumes
@@ -175,7 +181,7 @@ func (inv *intentInvocation) landException(goalID string, validateOnly ...bool) 
 			if !present {
 				// A word recorded elsewhere (a channel answer) is adopted
 				// only when the goal composes to exactly its workspace now.
-				composed, problem := inv.composeCarriedSubject(root, primary, goalID, targets, data)
+				composed, composedTip, problem := inv.composeCarriedSubject(root, primary, goalID, targets, data)
 				if problem != nil {
 					return inv.carriedStopped(goalID, opid, targets, data, "its candidate cannot be composed: "+problem.Summary)
 				}
@@ -189,6 +195,7 @@ func (inv *intentInvocation) landException(goalID string, validateOnly ...bool) 
 				if bindErr != nil {
 					return inv.carriedStopped(goalID, opid, targets, data, "its composition cannot be bound: "+bindErr.Error())
 				}
+				inv.noteExceptionRelease(primary, goalID, opid, composedTip, data)
 				bound = composed
 			}
 			subject = bound
@@ -231,8 +238,21 @@ func (inv *intentInvocation) landException(goalID string, validateOnly ...bool) 
 	// The carried transaction runs in this process (landpath.Land); the
 	// seat's lineage is read once here, at the entry, and named on it.
 	ran := inv.delivery().landCarried(landpath.LandRequest{Root: primary, MessageFile: message, Goal: goalID, GoalSet: true,
-		Carried: opid, StagedOnly: true, AllowNewPlan: acknowledgePlans, OwnerLineage: os.Getenv("METASYSTEM_OWNER_LINEAGE")}, inv.pushGate())
-	result := ownerVerbResult(ran, targets, fmt.Sprintf("goal %s landed under exception %s", goalID, opid), data)
+		Carried: opid, StagedOnly: true, AllowNewPlan: acknowledgePlans, OwnerLineage: os.Getenv("METASYSTEM_OWNER_LINEAGE")}, inv.pushGate(),
+		inv.exceptionRelease(primary, goalID, opid))
+	// A landing recovered from its recorded consumption pushed nothing in
+	// this process: once the carried transaction completed, its set is
+	// finished here when the pushed commit is on the remote-tracking ref. A
+	// transaction that stopped leaves it to the next work land of the goal
+	// and the sweeper's retry.
+	var released intentLanded
+	if ran.code == 0 {
+		var recorded bool
+		if released, recorded = inv.finishExceptionRelease(primary, goalID, opid); recorded {
+			data["releaseSet"] = released.ReleaseSet
+		}
+	}
+	result := ownerVerbResult(ran, targets, fmt.Sprintf("goal %s landed under exception %s%s", goalID, opid, releaseSummary(released.ReleaseSet)), data)
 	if result.Outcome != intentConfirmed {
 		stopped := inv.carriedStopped(goalID, opid, targets, result.Data.(map[string]any), "the carried landing did not complete: "+result.Summary)
 		refusal := string(ran.stderr)
@@ -310,10 +330,14 @@ func (inv *intentInvocation) carriedRefresh(primary string, targets []intentTarg
 
 // composeCarriedSubject composes the goal's canonical landing candidate on
 // the live code endpoint and names it with that endpoint's product.
-func (inv *intentInvocation) composeCarriedSubject(root, primary, goalID string, targets []intentTarget, data map[string]any) (landing.CarriedSubject, *intentResult) {
+// The goal branch tip it was composed from is returned too, read before
+// and after the composition; a tip that moved meanwhile, or could not be
+// read, is empty.
+func (inv *intentInvocation) composeCarriedSubject(root, primary, goalID string, targets []intentTarget, data map[string]any) (landing.CarriedSubject, string, *intentResult) {
+	before := inv.intentBranchTip(goalID)
 	candidate, code, err := inv.delivery().landCandidate([]string{"--root", root, "--goal", goalID, "--last"})
 	if err != nil {
-		return landing.CarriedSubject{}, &intentResult{Outcome: intentRefused, code: max(code, 1), Targets: targets, Data: data, Summary: "the landing candidate cannot be composed: " + err.Error() + "; nothing was recorded"}
+		return landing.CarriedSubject{}, "", &intentResult{Outcome: intentRefused, code: max(code, 1), Targets: targets, Data: data, Summary: "the landing candidate cannot be composed: " + err.Error() + "; nothing was recorded"}
 	}
 	workspace, err := landing.ProjectWorkspaceTree(primary, candidate.Result.Candidate)
 	var endpointWorkspace string
@@ -324,9 +348,22 @@ func (inv *intentInvocation) composeCarriedSubject(root, primary, goalID string,
 		}
 	}
 	if err != nil {
-		return landing.CarriedSubject{}, &intentResult{Outcome: intentFailed, code: 1, Targets: targets, Data: data, Summary: "the candidate's workspace cannot be read: " + err.Error() + "; nothing was recorded"}
+		return landing.CarriedSubject{}, "", &intentResult{Outcome: intentFailed, code: 1, Targets: targets, Data: data, Summary: "the candidate's workspace cannot be read: " + err.Error() + "; nothing was recorded"}
 	}
-	return landing.CarriedSubject{Goal: goalID, Endpoint: candidate.Result.Endpoint, EndpointWorkspace: endpointWorkspace, Workspace: workspace}, nil
+	tip := ""
+	if after := inv.intentBranchTip(goalID); before != "" && after == before {
+		tip = before
+	}
+	return landing.CarriedSubject{Goal: goalID, Endpoint: candidate.Result.Endpoint, EndpointWorkspace: endpointWorkspace, Workspace: workspace}, tip, nil
+}
+
+// noteExceptionRelease records the exception's release set at its
+// selection; a set that cannot be recorded is reported and the landing goes
+// on, releasing nothing.
+func (inv *intentInvocation) noteExceptionRelease(primary, goalID, opid, tip string, data map[string]any) {
+	if err := inv.recordExceptionRelease(primary, goalID, opid, tip); err != nil {
+		data["releaseError"] = err.Error()
+	}
 }
 
 // recordedException is the open exception already recorded for this goal

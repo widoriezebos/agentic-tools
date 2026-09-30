@@ -22,6 +22,14 @@ import (
 // selecting and writing the set when the record has none yet, under the
 // record's lock.
 func (inv *intentInvocation) recordReleaseSet(dir, landedPath, goalID, subject string) (intentLanded, error) {
+	return inv.recordReleaseSetAt(dir, landedPath, goalID, subject, func(landed *intentLanded) { landed.Subject = subject })
+}
+
+// recordReleaseSetAt is recordReleaseSet for a landing whose selected tip
+// is not the commit it pushes (the exception route's carried commit is
+// composed onto main from the goal branch tip): the set is selected at tip,
+// and fill completes the new record.
+func (inv *intentInvocation) recordReleaseSetAt(dir, landedPath, goalID, tip string, fill func(*intentLanded)) (intentLanded, error) {
 	var landed intentLanded
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return landed, err
@@ -35,11 +43,12 @@ func (inv *intentInvocation) recordReleaseSet(dir, landedPath, goalID, subject s
 		return landed, nil
 	}
 	owners := inv.owners.disk.withDefaults()
-	set, err := diskstore.SelectReleaseSet(context.Background(), diskstore.CheckoutRegistry(inv.stateRoot), inv.layout.GitRoot, goalID, subject, owners.git)
+	set, err := diskstore.SelectReleaseSet(context.Background(), diskstore.CheckoutRegistry(inv.stateRoot), inv.layout.GitRoot, goalID, tip, owners.git)
 	if err != nil {
 		return landed, err
 	}
-	landed.Subject, landed.ReleaseSet = subject, &set
+	fill(&landed)
+	landed.ReleaseSet = &set
 	return landed, writeIntentInputs(dir, map[string]string{landedPath: mustJSON(landed)})
 }
 

@@ -231,9 +231,9 @@ type intentDeliveryOwners struct {
 	recordWriter func(root, job string) (cause string, err error)
 	process      func(intentProcess) intentProcessResult
 	// landCarried runs one carried landing through the landing path, which
-	// reads gate immediately before its push, and returns what it printed and
-	// its exit status.
-	landCarried func(request landpath.LandRequest, gate func(root, goalID string) error) intentProcessResult
+	// reads gate immediately before its push and records and runs release
+	// around it, and returns what it printed and its exit status.
+	landCarried func(request landpath.LandRequest, gate func(root, goalID string) error, release carriedRelease) intentProcessResult
 	// closeOwner runs the delegate lifecycle's close command (the whole
 	// chain close) for an installation root.
 	closeOwner  func(root string, args []string) intentProcessResult
@@ -300,10 +300,25 @@ type intentBranchState struct {
 	Sources []string
 }
 
+// carriedRelease is the exception route's release set around the carried
+// push (disk-lifetimes Part B 3.6): record names the commit about to be
+// pushed, landed releases the set once the push succeeded; nil records and
+// releases nothing.
+type carriedRelease struct {
+	record func(commit, branch string) error
+	landed func(commit string)
+}
+
+// apply gives the landing path the release owners.
+func (r carriedRelease) apply(owners *landpath.Owners) {
+	owners.RecordRelease, owners.ReleaseLanded = r.record, r.landed
+}
+
 // landCarriedInProcess runs one carried landing in this process.
-func landCarriedInProcess(request landpath.LandRequest, gate func(root, goalID string) error) intentProcessResult {
+func landCarriedInProcess(request landpath.LandRequest, gate func(root, goalID string) error, release carriedRelease) intentProcessResult {
 	owners := landingPathOwners()
 	owners.LandingGate = gate
+	release.apply(&owners)
 	return landCarriedWithOwners(owners, request)
 }
 
@@ -1669,8 +1684,13 @@ type intentLanded struct {
 	ReleaseSet *diskstore.ReleaseSet `json:",omitempty"`
 	// Staged marks a staged landing's record (work land --staged): its
 	// Endpoint is the remote-tracking ref the commit was pushed to, and it
-	// has no branch to sweep, so Swept says the push succeeded.
+	// has no branch to sweep, so Swept says the push succeeded. The
+	// exception route's record is of the same shape and carries it too, so
+	// every engine's retry finishes it the same way.
 	Staged bool `json:",omitempty"`
+	// Exception names the recorded exception an exception route's record
+	// belongs to (work land G --exception / --using-exception).
+	Exception string `json:",omitempty"`
 }
 
 func (inv *intentInvocation) landGoal(goalID, through string) intentResult {
