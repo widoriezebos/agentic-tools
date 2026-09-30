@@ -478,3 +478,43 @@ func pushWithRepository(req PushRequest, repository pushRepository) (PushResult,
 	}
 	return PushResult{State: "pushed", Tip: localTip}, nil
 }
+
+// LocalTrackingTransport answers a remote's refs from this repository's
+// remote-tracking refs alone (refs/remotes/<remote>/<branch>), reading no
+// network: the disk sweeper's plan (Round D3 N2). A branch whose
+// remote-tracking ref is absent is not known locally, which is an error the
+// plan keeps the worktree for, never an absence. It fetches and pushes
+// nothing.
+type LocalTrackingTransport struct{ Context context.Context }
+
+// ErrRemoteNotKnownLocally is a remote ref no local remote-tracking ref
+// answers for.
+var ErrRemoteNotKnownLocally = errors.New("the remote's state is not known locally")
+
+func (t LocalTrackingTransport) RemoteTip(repo, remote, ref string) (string, bool, error) {
+	ctx := t.Context
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	branch, ok := strings.CutPrefix(ref, "refs/heads/")
+	if !ok {
+		return "", false, fmt.Errorf("%s is not a branch", ref)
+	}
+	tracking := "refs/remotes/" + remote + "/" + branch
+	out, err := gitOutputContext(ctx, repo, "rev-parse", "--verify", "--quiet", tracking+"^{commit}")
+	if err != nil {
+		if ctx.Err() != nil {
+			return "", false, ctx.Err()
+		}
+		return "", false, fmt.Errorf("%s: %w (no %s; git fetch %s, then the next pass judges it)", ref, ErrRemoteNotKnownLocally, tracking, remote)
+	}
+	return strings.TrimSpace(string(out)), true, nil
+}
+
+func (LocalTrackingTransport) Fetch(string, string, string, string) error {
+	return errors.New("a local-refs plan fetches nothing")
+}
+
+func (LocalTrackingTransport) Push(string, string, string, string, string) (CASOutcome, error) {
+	return CASUnknown, errors.New("a local-refs plan pushes nothing")
+}

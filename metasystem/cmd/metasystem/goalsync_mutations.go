@@ -3431,11 +3431,26 @@ func goalSweepRequest(ctx context.Context, root, goalID, dropped string) (goalbr
 		Dropped: dropped, CheckClaim: func() error { return nil }, Context: ctx}, nil
 }
 
+// goalSweepPlan reads goal done's sweep plan from local refs alone (Round
+// D3 N2): the endpoint's main and the goal branch from their
+// remote-tracking refs, nothing fetched and no remote asked; a remote state
+// not known locally is an error, which keeps the worktree.
 func goalSweepPlan(ctx context.Context, root, goalID, dropped string) (string, error) {
-	request, err := goalSweepRequest(ctx, root, goalID, dropped)
+	endpoint, err := goal.ResolveEndpoint(root)
 	if err != nil {
 		return "", err
 	}
+	transport := goalbranch.LocalTrackingTransport{Context: ctx}
+	tip, _, err := transport.RemoteTip(root, endpoint.Remote, "refs/heads/main")
+	if err != nil {
+		return "", err
+	}
+	remotes := ""
+	if _, remoteErr := goalBranchGit(root, "remote", "get-url", "transport"); remoteErr == nil {
+		remotes = "transport"
+	}
+	request := goalbranch.SweepRequest{Repo: root, Remote: endpoint.Remote, Transport: remotes, EndpointTip: tip, GoalID: goalID,
+		Dropped: dropped, CheckClaim: func() error { return nil }, Context: ctx, PushTransport: transport}
 	plan, err := goalbranch.SweepPlan(request)
 	if err != nil {
 		return "", err

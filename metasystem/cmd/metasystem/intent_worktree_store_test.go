@@ -119,3 +119,25 @@ func TestGoalWorktreePreparationRecordsTheCopiedLocalConfiguration(t *testing.T)
 		t.Fatalf("engine content = %+v, %v", content, err)
 	}
 }
+
+// Round D3 N2: the steward's goal-worktree plan reads the goal branch and
+// the endpoint from local refs only: with the remote unreachable it still
+// answers from the remote-tracking refs, and a goal whose remote state is
+// not known locally (no tracking ref) is unknown, never guessed.
+func TestTheGoalWorktreePlanNeverFetches(t *testing.T) {
+	c := newConnectionBed(t)
+	root := c.root()
+	connectionGit(t, root, "branch", "goal/"+c.id, "HEAD")
+	connectionGit(t, root, "push", "-q", "origin", "goal/"+c.id)
+	connectionGit(t, root, "fetch", "-q", "origin")
+	unreachable := filepath.Join(t.TempDir(), "gone.git")
+	connectionGit(t, root, "remote", "set-url", "origin", unreachable)
+	refusal, err := goalSweepPlan(context.Background(), root, c.id, "")
+	if err != nil || refusal != "" {
+		t.Fatalf("a plan with the remote unreachable = %q, %v; want it read from local refs", refusal, err)
+	}
+	connectionGit(t, root, "update-ref", "-d", "refs/remotes/origin/goal/"+c.id)
+	if _, err := goalSweepPlan(context.Background(), root, c.id, ""); err == nil || !strings.Contains(err.Error(), "not known locally") {
+		t.Fatalf("a goal with no remote-tracking ref = %v; want unknown", err)
+	}
+}
