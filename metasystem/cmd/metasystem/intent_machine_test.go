@@ -49,6 +49,11 @@ type machineBed struct {
 	laneAlive            bool
 	registryUnreadable   bool
 	stopped              map[string]*int
+	// extra are further checkouts a test adds; fleetErr fails the fleet
+	// read, and fleetEdit changes the report it answers.
+	extra     []string
+	fleetErr  error
+	fleetEdit func(*seat.Report)
 }
 
 // machineItem is one fixture process: live until its family stops it.
@@ -172,7 +177,7 @@ func newMachineBed(t *testing.T) *machineBed {
 
 // top answers the repository top of each fixture checkout, as Git would.
 func (b *machineBed) top(path string) (string, error) {
-	for _, checkout := range []string{b.this, b.other, b.landing} {
+	for _, checkout := range append([]string{b.this, b.other, b.landing}, b.extra...) {
 		if path == checkout || strings.HasPrefix(path, checkout+string(filepath.Separator)) {
 			return checkout, nil
 		}
@@ -227,6 +232,12 @@ func (b *machineBed) owners() intentOwners {
 					{Machine: "m1e", Standing: seat.Reachable, This: true, Record: &seat.Record{Machine: "m1e", TickAt: machineBedNow.Format(time.RFC3339)}},
 					{Machine: "m1x", Standing: seat.Reachable, Record: &seat.Record{Machine: "m1x", TickAt: machineBedNow.Add(-time.Hour).Format(time.RFC3339)}},
 					{Machine: "m2a", Standing: seat.Reachable, Record: &seat.Record{Machine: "m2a", TickAt: tickAt}},
+				}
+				if b.fleetErr != nil {
+					return seat.Report{}, b.fleetErr
+				}
+				if b.fleetEdit != nil {
+					b.fleetEdit(&report)
 				}
 				return report, nil
 			},

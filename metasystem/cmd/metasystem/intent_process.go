@@ -1688,6 +1688,9 @@ type uiIntentOptions struct {
 	listen      string
 	listenSet   bool
 	waitSeconds int64
+	// seats reads the other machines of this computer, only when a verb
+	// needs them.
+	seats func() uiSeatInventory
 }
 
 func (inv *intentInvocation) uiOptions() (uiIntentOptions, *intentResult) {

@@ -56,7 +56,7 @@ func init() {
 	registerIdempotency("machine stop", idemStateful, "every machine already stopped with nothing of MetaSystem's running: success, no fence generation, no launch touched", witnessMachineStopRepeat)
 	registerIdempotency("machine start", idemStateful, "a machine already launched and supervised from here: success, no launch record", witnessMachineStartRepeat)
 	registerIdempotency("ui start", idemStateful, "the interface already runs at the address asked for: success, nothing launched", witnessUIStartRepeat)
-	registerIdempotency("ui stop", idemStateful, "the interface is not running: success, nothing signalled", witnessUIStopRepeat)
+	registerIdempotency("ui stop", idemStateful, "no interface runs on this seat, nor alone on another machine of this computer: success, nothing signalled", witnessUIStopRepeat)
 	registerIdempotency("settings coordinator", idemStateful, "--declare of a declared or --withdraw of an undeclared checkout: success, nothing touched", witnessCoordinatorRepeat)
 	registerIdempotency("session stop", idemStateful, "the same person's unspent authorization for this session holds: success, no second authorization", witnessSessionStopRepeat)
 	registerIdempotency("session handoff", idemStateful, "--cancel of a cancelled handoff: success, nothing written; --note is a new handoff and --status/--verify are reads", witnessSessionHandoffCancelRepeat)
@@ -298,6 +298,21 @@ func witnessUIStopRepeat(t *testing.T) {
 		t.Fatalf("repeated stop = %+v", second)
 	}
 	idemSameTree(t, "a repeated interface stop", before, idemTreeDigest(t, roots.StateRoot))
+
+	// Another machine of this computer running the one interface: the stop
+	// stops it, so it is no repeat; the stop after it is.
+	seats := newUISeatsBed(t)
+	other := seats.seat("ui")
+	seats.live(other, 5401, "127.0.0.1:7878", identity.Alive)
+	across := seats.effects(uiSeatsOf("m1e", other))
+	if first := uiLifecycleRunWith("stop", roots, "", 0, across); first.Result.Code != 0 || first.Unchanged || len(seats.sent) != 1 {
+		t.Fatalf("stop of the other seat's interface = %+v, signals %v", first, seats.sent)
+	}
+	before = idemTreeDigest(t, other.Roots.StateRoot)
+	if second := uiLifecycleRunWith("stop", roots, "", 0, across); second.Result.Code != 0 || !second.Unchanged || len(seats.sent) != 1 {
+		t.Fatalf("repeated stop across seats = %+v, signals %v", second, seats.sent)
+	}
+	idemSameTree(t, "a repeated stop across seats", before, idemTreeDigest(t, other.Roots.StateRoot))
 }
 
 func witnessCoordinatorRepeat(t *testing.T) {

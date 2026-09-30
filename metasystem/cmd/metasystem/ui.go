@@ -1095,6 +1095,13 @@ type uiLifecycleResult struct {
 	Restart *lifecycle.RestartReport // restart only
 	// Unchanged is a start or stop whose effect already held (R-129-ui).
 	Unchanged bool
+	// Seat is another machine of this computer whose interface the verb
+	// acted on; nil when it acted on this seat only.
+	Seat *uiSeat
+	// Seats are the other machines of this computer the verb names, and
+	// SeatsProblems why that list may be incomplete.
+	Seats         []uiSeatView
+	SeatsProblems []string
 }
 
 // uiLifecycleEffects are the process effects of the interface lifecycle:
@@ -1104,6 +1111,12 @@ type uiLifecycleEffects struct {
 	prober     identity.Prober
 	spawn      lifecycle.Spawn
 	executable func() (string, error)
+	// send signals the recorded server (nil is syscall.Kill) and after is
+	// the stop's lock-wait timer (nil is time.After).
+	send  identity.SignalFunc
+	after func(time.Duration) <-chan time.Time
+	// seats reads the other machines of this computer; nil is none.
+	seats func() uiSeatInventory
 }
 
 // uiLifecycleRun runs start, status, stop or restart through the lifecycle
