@@ -208,6 +208,29 @@ func (request SelectionRequest) noteStream() io.Writer {
 	return os.Stderr
 }
 
+// notices tells what a run does while it runs: one plain line each, and
+// with --verbose the facts it saw on the line below.
+type notices struct {
+	w       io.Writer
+	verbose bool
+}
+
+func (request SelectionRequest) notices() notices {
+	return notices{w: request.noteStream(), verbose: request.Verbose}
+}
+
+func (n notices) say(line string, facts ...enginecause.Fact) {
+	text := "test run: " + line + "\n"
+	if n.verbose && len(facts) > 0 {
+		pairs := make([]string, 0, len(facts))
+		for _, fact := range facts {
+			pairs = append(pairs, fact.Key+"="+fact.Value)
+		}
+		text += "  " + strings.Join(pairs, " ") + "\n"
+	}
+	_, _ = io.WriteString(n.w, text)
+}
+
 func (move *baseMove) Error() string {
 	return fmt.Sprintf("the landing ref moved under preparation from %s to %s", move.ours, move.engine)
 }
@@ -234,7 +257,8 @@ func prepareWith(request SelectionRequest, attempt preparationAttempt) (Preparat
 				enginecause.Value("ours", move.ours), enginecause.Value("engine", move.engine), enginecause.Value("restarts", "1"),
 			}, "the landing branch moved twice while this test run was starting")
 		}
-		fmt.Fprintf(request.noteStream(), "metasystem test run: the landing ref moved under the run (ours=%s engine=%s); restarting preparation once\n", move.ours, move.engine)
+		request.notices().say("the landing branch moved while the run was starting; starting over once",
+			enginecause.Value("ours", move.ours), enginecause.Value("engine", move.engine))
 		state.restarted = true
 	}
 }
@@ -305,7 +329,7 @@ func prepareOnce(request SelectionRequest) (Preparation, error) {
 	// delivery still enters re-arm so missing landing authority is a refusal.
 	if request.LandedRearm && (request.Purpose == testpolicy.PurposeDelivery || policyBaseBeforeRearmErr == nil) {
 		namedDeliveryTree := request.Tree != "" && request.Purpose == testpolicy.PurposeDelivery
-		rearm, rearmErr := landedRearm(request.noteStream(), installation, projectRoot, prefix, namedDeliveryTree)
+		rearm, rearmErr := landedRearm(request.notices(), installation, projectRoot, prefix, namedDeliveryTree)
 		if rearmErr != nil {
 			return Preparation{}, rearmErr
 		}

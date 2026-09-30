@@ -23,6 +23,11 @@ func TestBriefAuthorityRefusesMissingBasePathThenAdmitsCommittedPath(t *testing.
 		!strings.Contains(err.Error(), "records/two-bars/missing.md") {
 		t.Fatalf("missing record refusal = %+v, %q", refusal, err)
 	}
+	// Two plain lines; the code is the refusal's detail only.
+	if lines := strings.Split(err.Error(), "\n"); len(lines) != 2 || strings.Contains(err.Error(), "BRIEF_AUTHORITY_REFUSED") ||
+		!strings.Contains(lines[1], "metasystem") || refusal.RefusalCode() != "BRIEF_AUTHORITY_REFUSED" {
+		t.Fatalf("missing record refusal text = %q", err)
+	}
 
 	path := filepath.Join(repo.root, "records", "two-bars", "missing.md")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

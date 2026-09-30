@@ -801,6 +801,13 @@ func traceReaches(expr ast.Expr, tainted map[string]bool) (format, reaches bool)
 		if e.Op != token.ADD {
 			return false, false
 		}
+		// A name written after "metasystem " is a command a person
+		// types, as the direct scan's command span holds: not words.
+		if prefix, ok := e.X.(*ast.BasicLit); ok && prefix.Kind == token.STRING && traceIsIdentOf(e.Y, tainted) {
+			if text, err := strconv.Unquote(prefix.Value); err == nil && (strings.HasSuffix(text, "metasystem ") || strings.HasSuffix(text, "metasystem internal ")) {
+				return false, false
+			}
+		}
 		_, left := traceReaches(e.X, tainted)
 		_, right := traceReaches(e.Y, tainted)
 		return false, left || right

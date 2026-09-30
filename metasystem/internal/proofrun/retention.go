@@ -137,7 +137,7 @@ type attemptUnit struct {
 	ended   time.Time
 }
 
-func (*Retention) Name() string { return "proof attempt payloads" }
+func (*Retention) Name() string { return "test run attempt records" }
 
 // Totals are every attempt and the bytes of the whole proof-run store.
 func (r *Retention) Totals() (int, int64) { return r.count, r.bytes }

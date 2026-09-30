@@ -959,7 +959,7 @@ func TestCritiqueSevereTerminalBoundary(t *testing.T) {
 	named := filepath.Join(dir, "named.md")
 	os.WriteFile(named, []byte("Addressing F-1 head-on.\n"), 0o644)
 	_, err = CritiqueExhaustionAdvance(repo, "crit", "code-critic", named, "crit-r4")
-	want := "reason=cap-exhausted-human-raise the review-round limit is exhausted with a severe or unproven finding; waiting on the human is the only remedy at terminal round 3 with open finding identifiers: F-1"
+	want := "reason=cap-exhausted-human-raise the review rounds are used up with a severe or unproven finding open; only a person can go on at terminal round 3 with open finding identifiers: F-1"
 	if err == nil || err.Error() != want {
 		t.Fatalf("severe terminal boundary = %v, want %q", err, want)
 	}
@@ -1118,7 +1118,7 @@ func TestCritiqueExhaustionCodeCriticChain(t *testing.T) {
 	// A severe entry at the frozen boundary is a human raise; no successor
 	// reopens the chain implicitly.
 	_, err := CritiqueExhaustionAdvance(repo, "critic", "code-critic", message, "critic-r4")
-	if err == nil || !strings.Contains(err.Error(), "review-round limit is exhausted") {
+	if err == nil || !strings.Contains(err.Error(), "review rounds are used up") {
 		t.Fatalf("code-critic terminal boundary = %v", err)
 	}
 }

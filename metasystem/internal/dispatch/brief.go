@@ -34,18 +34,39 @@ type BriefAuthorityRefusal struct {
 	MissingPaths []string
 }
 
+// briefRemedy is a brief refusal's second line: the brief is the caller's
+// file, so the fix is an edit, then the same command again.
+const briefRemedy = "fix the brief, then repeat the metasystem command that sent it"
+
+// Error is the refusal's two plain lines; its code is RefusalCode.
 func (e *BriefAuthorityRefusal) Error() string {
-	return fmt.Sprintf("BRIEF_AUTHORITY_REFUSED: missing repository paths: %s", strings.Join(e.MissingPaths, ", "))
+	return "the brief cites paths the delegate's tree does not hold: " + strings.Join(e.MissingPaths, ", ") + "\n" + briefRemedy
+}
+
+// RefusalCode and RefusalDetail are the code and the code-first line
+// --verbose and the refusal records keep.
+func (e *BriefAuthorityRefusal) RefusalCode() string { return "BRIEF_AUTHORITY_REFUSED" }
+func (e *BriefAuthorityRefusal) RefusalDetail() string {
+	return e.RefusalCode() + ": missing repository paths: " + strings.Join(e.MissingPaths, ", ")
 }
 
 type BriefBounds struct {
 	Boundary []string
 	Ceiling  *int64
 }
-type BriefBoundsRefusal struct{ Header, Detail string }
+type BriefBoundsRefusal struct {
+	Header, Detail string
+	// Remedy is line 2: how the brief's author resolves it.
+	Remedy string
+}
 
 func (e *BriefBoundsRefusal) Error() string {
-	return fmt.Sprintf("BRIEF_BOUNDS_INVALID: %s: %s", e.Header, e.Detail)
+	return "the brief's " + e.Header + " header " + e.Detail + "\n" + e.Remedy
+}
+
+func (e *BriefBoundsRefusal) RefusalCode() string { return "BRIEF_BOUNDS_INVALID" }
+func (e *BriefBoundsRefusal) RefusalDetail() string {
+	return e.RefusalCode() + ": " + e.Header + ": " + e.Detail
 }
 
 type BriefAdmission struct {
@@ -56,7 +77,7 @@ type BriefAdmission struct {
 type briefHeaders struct{ mode, boundary, ceiling []string }
 type briefInstallPrefix func() (string, error)
 
-const briefCeilingDetail = "expected a nonnegative decimal integer no greater than 9223372036854775807"
+const briefCeilingDetail = "must be a whole number from 0 to 9223372036854775807"
 
 func scanBriefHeaders(data []byte) briefHeaders {
 	var headers briefHeaders
@@ -173,10 +194,10 @@ func ParseBriefBounds(data []byte, installPrefix string) (BriefBounds, error) {
 }
 func parseBriefBounds(headers briefHeaders, resolveInstallPrefix briefInstallPrefix) (BriefBounds, error) {
 	if len(headers.boundary) > 1 {
-		return BriefBounds{}, boundsRefusal("Boundary", "header occurs more than once")
+		return BriefBounds{}, boundsRefusal("Boundary", "is written more than once")
 	}
 	if len(headers.ceiling) > 1 {
-		return BriefBounds{}, boundsRefusal("Ceiling", "header occurs more than once")
+		return BriefBounds{}, boundsRefusal("Ceiling", "is written more than once")
 	}
 	if err := validateBriefBoundsPair(len(headers.boundary) == 1, len(headers.ceiling) == 1); err != nil {
 		return BriefBounds{}, err
@@ -186,7 +207,7 @@ func parseBriefBounds(headers briefHeaders, resolveInstallPrefix briefInstallPre
 	}
 	var boundary []string
 	if err := json.Unmarshal([]byte(headers.boundary[0]), &boundary); err != nil || boundary == nil {
-		return BriefBounds{}, boundsRefusal("Boundary", "expected a JSON array of paths")
+		return BriefBounds{}, boundsRefusal("Boundary", "must be a JSON array of paths")
 	}
 	for _, member := range boundary {
 		if err := validateBriefMember(member); err != nil {
@@ -239,9 +260,9 @@ func validateBriefBoundsPair(boundary, ceiling bool) error {
 		return nil
 	}
 	if boundary {
-		return boundsRefusal("Ceiling", "required with Boundary")
+		return boundsRefusal("Ceiling", "is needed with a Boundary header")
 	}
-	return boundsRefusal("Boundary", "required with Ceiling")
+	return boundsRefusal("Boundary", "is needed with a Ceiling header")
 }
 func ProjectBriefBoundary(member, installPrefix string) (string, bool, error) {
 	if err := validateBriefInstallPrefix(installPrefix); err != nil {
@@ -259,7 +280,7 @@ func ProjectBriefBoundary(member, installPrefix string) (string, bool, error) {
 }
 func validateBriefInstallPrefix(installPrefix string) error {
 	if strings.ContainsAny(installPrefix, "*?[]\\") {
-		return boundsRefusal("Boundary", "installation prefix contains unsupported pattern bytes")
+		return boundsRefusal("Boundary", "cannot be used: the installation folder's name holds a pattern character")
 	}
 	return nil
 }
@@ -279,10 +300,10 @@ func validateBriefMember(member string) error {
 func briefBoundaryIsPattern(member string) bool { return strings.ContainsAny(member, "*?[]\\") }
 func invalidBriefMember(member string) error {
 	encoded, _ := json.Marshal(member)
-	return boundsRefusal("Boundary", "invalid path or pattern "+string(encoded))
+	return boundsRefusal("Boundary", "names a path or pattern that is not valid: "+string(encoded))
 }
 func boundsRefusal(header, detail string) error {
-	return &BriefBoundsRefusal{Header: header, Detail: detail}
+	return &BriefBoundsRefusal{Header: header, Detail: detail, Remedy: briefRemedy}
 }
 
 // ValidateBriefAuthority checks explicit repository paths against the exact

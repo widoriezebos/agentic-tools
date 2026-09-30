@@ -46,9 +46,11 @@ type reviewBinding struct {
 
 var reviewBindingLine = regexp.MustCompile(`(?m)^Review binding: goal=(\S+) work=(\S+) attempt=(\d+) subject=([0-9a-f]+) examination=(\S+) round=(\d+) return=([0-9a-f]{64})\s*$`)
 
+// line is the binding as the decisions file carries it: a machine line
+// reviewBindingLine parses back, one key=value field per bound fact.
 func (b reviewBinding) line() string {
-	return fmt.Sprintf("Review binding: goal=%s work=%s attempt=%d subject=%s examination=%s round=%d return=%s",
-		b.Goal, b.Work, b.Attempt, b.Subject, b.Examination, b.Round, b.Return)
+	return "Review binding: " + strings.Join([]string{"goal=" + b.Goal, "work=" + b.Work, "attempt=" + strconv.Itoa(b.Attempt),
+		"subject=" + b.Subject, "examination=" + b.Examination, "round=" + strconv.FormatInt(b.Round, 10), "return=" + b.Return}, " ")
 }
 
 // readReviewBinding finds the one binding line of a decisions file.
@@ -70,9 +72,10 @@ func decisionsDocument(binding reviewBinding, findings []intentFinding) string {
 	var text strings.Builder
 	text.WriteString("# Review decisions\n\n")
 	text.WriteString(binding.line() + "\n\n")
-	text.WriteString("Written by metasystem work review; keep the binding line unchanged. Decide every finding: accepted (a fix is\n")
-	text.WriteString("required, sent with revise), refuted (with evidence), out-of-scope (citing the brief's declared scope) or\n")
-	text.WriteString("noted (not material).\n\n")
+	text.WriteString("Written by metasystem work review; keep the binding line unchanged.\n")
+	text.WriteString("Decide every finding: accepted (a fix is required, sent with revise),\n")
+	text.WriteString("refuted (with evidence), out-of-scope (citing the brief's declared scope)\n")
+	text.WriteString("or noted (not material).\n\n")
 	header := validate.DispositionsHeader()
 	text.WriteString("| " + strings.Join(header, " | ") + " |\n")
 	text.WriteString("|" + strings.Repeat(" --- |", len(header)) + "\n")

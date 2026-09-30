@@ -66,7 +66,7 @@ func editGroupInputs(contract testpolicy.Contract, groupID string, paths []strin
 		}
 		return contract, nil
 	}
-	return testpolicy.Contract{}, addTestsRefusal(entity, "id", "unknown group")
+	return testpolicy.Contract{}, unknownGroup(entity)
 }
 
 func editSurfacePaths(contract testpolicy.Contract, surfaceID string, paths []string, edit func([]string, []string) []string) (testpolicy.Contract, error) {
@@ -85,7 +85,7 @@ func editSurfacePaths(contract testpolicy.Contract, surfaceID string, paths []st
 		}
 		return contract, nil
 	}
-	return testpolicy.Contract{}, addTestsRefusal(entity, "id", "unknown surface")
+	return testpolicy.Contract{}, addTestsRefusal(entity, "id", "the testing contract has no such surface")
 }
 
 func cleanPaths(entity, field string, paths []string) ([]string, error) {
@@ -93,12 +93,12 @@ func cleanPaths(entity, field string, paths []string) ([]string, error) {
 	for _, path := range paths {
 		path = strings.TrimSpace(path)
 		if path == "" {
-			return nil, addTestsRefusal(entity, field, "paths must be nonempty and comma-separated")
+			return nil, addTestsRefusal(entity, field, "name each path once, with commas between paths")
 		}
 		clean = append(clean, path)
 	}
 	if len(clean) == 0 {
-		return nil, addTestsRefusal(entity, field, "at least one path is required")
+		return nil, addTestsRefusal(entity, field, "name at least one path")
 	}
 	return clean, nil
 }

@@ -44,7 +44,7 @@ func TestBriefAdmissionAtRootModesBoundsAndAuthority(t *testing.T) {
 	if _, err := briefAdmissionOutcome(t, repo, repo.root, "Boundary: []\nCeiling: 1", true, false); err != nil {
 		t.Fatalf("authority-only valid pair = %v", err)
 	}
-	if _, err := briefAdmissionOutcome(t, repo, repo.root, "Boundary: []", true, false); err == nil || !strings.Contains(err.Error(), "BRIEF_BOUNDS_INVALID") {
+	if _, err := briefAdmissionOutcome(t, repo, repo.root, "Boundary: []", true, false); err == nil || !strings.Contains(err.Error(), "the brief's Ceiling header") {
 		t.Fatalf("authority-only partial pair = %v", err)
 	}
 
@@ -54,12 +54,12 @@ func TestBriefAdmissionAtRootModesBoundsAndAuthority(t *testing.T) {
 		wantMode, wantErr       string
 		silent                  bool
 	}{
-		{name: "partial-pair", body: "Working Mode: implement\nBoundary: []", installRoot: repo.root, wantErr: "BRIEF_BOUNDS_INVALID"},
+		{name: "partial-pair", body: "Working Mode: implement\nBoundary: []", installRoot: repo.root, wantErr: "the brief's"},
 		{name: "mode", body: "Working Mode: implement\nBoundary: []\nCeiling: 1", installRoot: repo.root, wantMode: "implement"},
 		{name: "empty-mode", body: "Working Mode:", installRoot: repo.root, silent: true},
 		{name: "authority-before-mode", body: "Boundary: []\nCeiling: 1\nRead metasystem/internal/u1b-missing", installRoot: repo.root, authority: true, wantErr: "u1b-missing"},
 		{name: "authority-before-mode-required", body: "Boundary: []\nCeiling: 1", installRoot: repo.root, authority: true, silent: true},
-		{name: "boundary-without-installation-prefix", body: "Working Mode: implement\nBoundary: [\"internal/dispatch/brief.go\"]\nCeiling: 1", installRoot: repo.root, wantErr: "BRIEF_BOUNDS_INVALID"},
+		{name: "boundary-without-installation-prefix", body: "Working Mode: implement\nBoundary: [\"internal/dispatch/brief.go\"]\nCeiling: 1", installRoot: repo.root, wantErr: "the brief's"},
 		{name: "boundary-with-installation-prefix", body: "Working Mode: implement\nBoundary: [\"metasystem/internal/dispatch/brief.go\"]\nCeiling: 1", installRoot: repo.root, wantMode: "implement"},
 		{name: "headerless-needs-no-prefix", body: "Working Mode: implement", installRoot: absent, wantMode: "implement"},
 	} {
@@ -111,10 +111,10 @@ func TestBriefAdmissionAtRootReportsHeadersBeforePrefixLookup(t *testing.T) {
 		silent           bool
 	}{
 		{"mode-before-prefix", "Boundary: []\nCeiling: 1", "", true},
-		{"partial-before-prefix", "Working Mode: implement\nBoundary: []", "BRIEF_BOUNDS_INVALID: Ceiling: required with Boundary", false},
-		{"malformed-before-prefix", "Working Mode: implement\nBoundary: bad\nCeiling: 1", "BRIEF_BOUNDS_INVALID: Boundary: expected a JSON array of paths", false},
-		{"malformed-ceiling-before-prefix", "Working Mode: implement\nBoundary: []\nCeiling: -1", "BRIEF_BOUNDS_INVALID: Ceiling: expected a nonnegative decimal integer", false},
-		{"invalid-member-before-prefix", "Working Mode: implement\nBoundary: [\"/abs\"]\nCeiling: 1", "BRIEF_BOUNDS_INVALID: Boundary: invalid path or pattern \"/abs\"", false},
+		{"partial-before-prefix", "Working Mode: implement\nBoundary: []", "the brief's Ceiling header is needed with a Boundary header", false},
+		{"malformed-before-prefix", "Working Mode: implement\nBoundary: bad\nCeiling: 1", "the brief's Boundary header must be a JSON array of paths", false},
+		{"malformed-ceiling-before-prefix", "Working Mode: implement\nBoundary: []\nCeiling: -1", "the brief's Ceiling header must be a whole number", false},
+		{"invalid-member-before-prefix", "Working Mode: implement\nBoundary: [\"/abs\"]\nCeiling: 1", "the brief's Boundary header names a path or pattern that is not valid: \"/abs\"", false},
 		{"valid-pair-uses-prefix", "Working Mode: implement\nBoundary: []\nCeiling: 1", "brief admission cannot resolve installation prefix", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

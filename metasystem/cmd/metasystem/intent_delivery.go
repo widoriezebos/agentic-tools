@@ -870,7 +870,8 @@ func reviewBrief(mode, chain, goalID string, rounds int64, calls int, threat, sc
 		"",
 		"# Review brief: " + chain,
 		"",
-		fmt.Sprintf("Round budget: %d focused rounds, goal %s's approved review-round limit; exhaustion follows the critique skills' budget rules.", rounds, goalID),
+		fmt.Sprintf("Round budget: %d focused rounds, goal %s's approved review-round limit;", rounds, goalID),
+		"exhaustion follows the critique skills' budget rules.",
 		"",
 		"Threat model: " + threat,
 		"",
@@ -884,9 +885,12 @@ func reviewBrief(mode, chain, goalID string, rounds int64, calls int, threat, sc
 		"",
 		"## Checklist",
 		"",
-		"Batch independent reads: when several files or ranges are needed and none depends on another's content, request them all in one turn, never one per turn.",
+		"Batch independent reads: when several files or ranges are needed and none depends on",
+		"another's content, request them all in one turn, never one per turn.",
 		"",
-		"No single command may wait longer than 240 seconds; run a longer one in the background with its output to a file and poll the file. A wait that outlives the host turn continues with the wait command its result prints.",
+		"No single command may wait longer than 240 seconds; run a longer one in the background",
+		"with its output to a file and poll the file. A wait that outlives the host turn continues",
+		"with the wait command its result prints.",
 		"",
 	}
 	for index, item := range checklist {
@@ -897,13 +901,16 @@ func reviewBrief(mode, chain, goalID string, rounds int64, calls int, threat, sc
 		"",
 		fmt.Sprintf("Maximum reader tool calls: %d", calls),
 		"",
-		"Stop when this number is reached. In the findings file, list every checklist item or part of an item that the budget did not allow you to check.",
+		"Stop when this number is reached. In the findings file, list every checklist item or part",
+		"of an item that the budget did not allow you to check.",
 		"",
 		"## Findings artifact and return shape",
 		"",
 		"Write findings to: "+findings,
 		"",
-		"Inside that file, number findings from most severe to least severe. Each finding names the file, rule, and concrete failure it causes. If there are no material findings, record AGREE and any non-gating observations there.",
+		"Inside that file, number findings from most severe to least severe. Each finding names",
+		"the file, rule, and concrete failure it causes. If there are no material findings,",
+		"record AGREE and any non-gating observations there.",
 		"")
 	return strings.Join(lines, "\n")
 }

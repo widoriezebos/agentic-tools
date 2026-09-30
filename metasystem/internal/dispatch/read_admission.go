@@ -161,7 +161,7 @@ func CritiqueReadAdmissionForGoal(repoRoot, role, rootJob, goalID string, round 
 			result.EventDurable = durable
 			detail := ""
 			if !durable {
-				detail = "the refusal event is published, but its crash durability is not proven; mirror the prior root to repair durable evidence"
+				detail = "the refusal is published but not yet known to survive a crash; mirror the prior root"
 			}
 			return "", redundantReadError(result, prior, detail)
 		}
@@ -248,18 +248,19 @@ func CritiqueReadAdmissionForGoal(repoRoot, role, rootJob, goalID string, round 
 }
 
 func redundantReadError(result ReadAdmissionResult, prior cleanReadCandidate, detail string) error {
-	next := fmt.Sprintf("next: metasystem work finish j2:%s", prior.root)
+	next := fmt.Sprintf("run: metasystem work finish j2:%s", prior.root)
 	if prior.closedLive {
-		next = fmt.Sprintf("next: metasystem work finish j2:%s --evidence %s; completion still checks terminal coverage and required evidence", prior.read.Subject.ImplementerRoot, prior.root)
+		next = fmt.Sprintf("run: metasystem work finish j2:%s --evidence %s", prior.read.Subject.ImplementerRoot, prior.root)
 	} else if prior.latestRound > prior.read.Round {
-		next = fmt.Sprintf("critic root %s now has later round %d, so clean read round %d cannot close that newer state; resolve and revise the later work before dispatching another equal read", prior.root, prior.latestRound, prior.read.Round)
+		next = fmt.Sprintf("round %d is newer than the clean one; revise that work with metasystem work revise first", prior.latestRound)
 	} else if !prior.closeable {
-		next = fmt.Sprintf("critic root %s cannot presently close from read round %d; inspect its current closure and evidence before dispatching another equal read", prior.root, prior.read.Round)
+		next = fmt.Sprintf("it cannot close from round %d yet; see why with metasystem work status j2:%s", prior.read.Round, prior.root)
 	}
-	message := fmt.Sprintf("REDUNDANT_READ: critic root %s already proved a clean critic read at round %d for subject %s; %s", prior.root, prior.read.Round, result.SubjectDigest, next)
+	message := fmt.Sprintf("critic root %s already read subject %s clean at round %d; an equal read changes nothing", prior.root, result.SubjectDigest, prior.read.Round)
 	if detail != "" {
 		message += "; " + detail
 	}
+	message += "\n" + next
 	return &OpError{
 		Code:    11,
 		Reason:  redundantReadRefusal,
