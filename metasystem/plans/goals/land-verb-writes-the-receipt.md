@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 2
-- Sequence: 55
+- Sequence: 54
 - Risk: severity=3 novelty=2 exposure=3 accumulation=3 basis="The land verb sits on every code delivery and writes audit evidence; a wrong transaction can block delivery or misstate the repository's rework history."
 - Tier: 3
 - Intent: What: Every landing writes its own receipt (outcome, builder, goal, proof), so shipped work and rework are counted without anyone typing rows. Why: The lane already writes receipts for its batches, but nobody has measured how complete they are. Also missing is a "Repairs:" line that marks a fix as rework of an earlier commit. Pros: Truthful records of what shipped and what had to be redone. Cons: While the lane is paused, landings happen by hand and write no lane receipt, so the measurement must cover lane landings only.
 - Origin: human
 - Next step: Next: Measure receipt coverage over the lane's landings since 09-26. If at least 90 percent carry a receipt with the right outcome, conclude; otherwise add the Repairs: trailer to the lane's receipt writer. Done when: the coverage figure is recorded, and either the goal is concluded or a test shows a commit with a Repairs: trailer is recorded as reworked.
 - OpenedAt: 2026-09-16T21:03:07Z
-- Revision: 4
+- Revision: 5
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 
@@ -18,4 +18,5 @@ History:
 - 2026-09-16T21:03:11Z MM00FK7YYR8R1XV7AZT3EW2FRJ-m1e-c6925449 set-priority actor=human:Wido targets=land-verb-writes-the-receipt reason=priority-order subject=land-verb-writes-the-receipt from=unranked to=2:56 requested-sequence=56
 - 2026-09-30T18:48:44Z DRV2G3ER650PC3GDMSYHQN3111-ui-bc2fda53 done actor=human:Wido targets=actionable-metrics,arming-binds-the-installed-engine-identity,census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,critique-launch-verb-enforces-the-round-cap,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,dispatch-bases-chains-on-the-remote-tip,failed-job-attention,first-headless-run,fixture-repo-copies-exclude-the-artifacts-store,fixture-waits-name-their-producer,fleet-join-bootstrap,headless-continuous-delivery-proof,headless-fleet-coordination-proof,human-authority-surface-runs-its-cmd-tests,human-break-glass-commit-keeps-the-ledger-valid,human-wait-does-not-consume-goal-budget,job-record-birth-token,land-verb-writes-the-receipt,law-keys-read-committed-bytes,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,member-size-gate,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,never-idle-ironclad,new-elapsed-budgets-use-explicit-hours,one-goal-act-one-ledger-commit,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged,run-scoped-build-caches-have-a-janitor,runtime-limit-is-not-a-protocol-error,seat-landings-run-the-selected-sections,skipped-test-fails-its-group-on-the-other-os,small-change-lane,steward-revivals-leave-the-receipt-stream,stop-batch-strands-a-resumable-goal,token-spend-fence,trunk-versus-candidate-is-a-verification-step,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=2:56 to=2:55
 - 2026-09-30T18:50:39Z MSGGVXQ3VYNGSA8ZGTW9TEW0E6-m1e-b6a4eb0a edit actor=human:wido targets=land-verb-writes-the-receipt
-Integrity: sha256=84679014f6aa5aebd720a9d5f55bfe39375f963a07d2ecb64b8c9bc892466211
+- 2026-09-30T18:52:51Z DSKBKSA2PGXJ2Z2Q7AE5PC46AC-ui-bc2fda53 done actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,critique-launch-verb-enforces-the-round-cap,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,dispatch-bases-chains-on-the-remote-tip,fixture-repo-copies-exclude-the-artifacts-store,fixture-waits-name-their-producer,human-authority-surface-runs-its-cmd-tests,human-break-glass-commit-keeps-the-ledger-valid,human-wait-does-not-consume-goal-budget,land-verb-writes-the-receipt,member-size-gate,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,one-goal-act-one-ledger-commit,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged,run-scoped-build-caches-have-a-janitor,runtime-limit-is-not-a-protocol-error,seat-landings-run-the-selected-sections,skipped-test-fails-its-group-on-the-other-os,small-change-lane,steward-revivals-leave-the-receipt-stream,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:55 to=2:54
+Integrity: sha256=085dcc8bc2554bf8a9ebf258440c06cc468b78e4e18cc348262c95794fb56e6d

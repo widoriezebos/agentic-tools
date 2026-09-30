@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 2
-- Sequence: 47
+- Sequence: 46
 - Risk: severity=3 novelty=2 exposure=3 accumulation=1 basis="severity 3: budget enforcement can stop lawful work or permit unbounded time; novelty 2: a bounded change to existing ledger and elapsed projection; exposure 3: shared goal execution across seats; accumulation 1: each episode is evaluated independently, with no new aggregate accounting"
 - Tier: 3
 - Intent: What: Time a goal spends waiting on you does not count against its time budget, and is shown separately. Why: Goals get stopped for running over time when much of that time was spent waiting for your answer, and restarting them then needs another act from you. Pros: Budgets measure work, not waiting; fewer needless stops. Cons: A wait must be marked by a recorded event (a goal question, a refused person-only command), never by an agent's say-so, or it becomes free time.
 - Origin: main
 - Next step: Next: Clear the pin to the removed seat m1c. Write a short design: which recorded events start and end a wait, how the elapsed-time check subtracts them, and how reports show them; one Astra round, then build. Done when: a test shows a goal that waited two hours on a recorded question is not stopped for those two hours, and the report shows the wait.
 - OpenedAt: 2026-09-11T05:37:49Z
-- Revision: 132
+- Revision: 133
 - Labels: breach-clock-successor
 - BudgetExceptions: 0
 
@@ -146,4 +146,5 @@ History:
 - 2026-09-30T18:48:44Z DRV2G3ER650PC3GDMSYHQN3111-ui-bc2fda53 done actor=human:Wido targets=actionable-metrics,arming-binds-the-installed-engine-identity,census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,critique-launch-verb-enforces-the-round-cap,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,dispatch-bases-chains-on-the-remote-tip,failed-job-attention,first-headless-run,fixture-repo-copies-exclude-the-artifacts-store,fixture-waits-name-their-producer,fleet-join-bootstrap,headless-continuous-delivery-proof,headless-fleet-coordination-proof,human-authority-surface-runs-its-cmd-tests,human-break-glass-commit-keeps-the-ledger-valid,human-wait-does-not-consume-goal-budget,job-record-birth-token,land-verb-writes-the-receipt,law-keys-read-committed-bytes,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,member-size-gate,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,never-idle-ironclad,new-elapsed-budgets-use-explicit-hours,one-goal-act-one-ledger-commit,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged,run-scoped-build-caches-have-a-janitor,runtime-limit-is-not-a-protocol-error,seat-landings-run-the-selected-sections,skipped-test-fails-its-group-on-the-other-os,small-change-lane,steward-revivals-leave-the-receipt-stream,stop-batch-strands-a-resumable-goal,token-spend-fence,trunk-versus-candidate-is-a-verification-step,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=2:48 to=2:47
 - 2026-09-30T18:50:17Z B6HE9S884J64YKB66GPTRTV3Y7-m1e-b6a4eb0a edit actor=human:wido targets=human-wait-does-not-consume-goal-budget
 - 2026-09-30T18:52:02Z RZF0877WB0AJBYKRAKK0BD23SR-m1e-b6a4eb0a set-pin actor=human:wido targets=human-wait-does-not-consume-goal-budget
-Integrity: sha256=0e63dfee500c934e9b23e1bff7e839237af902e2353cff0f24372f18ba0e5604
+- 2026-09-30T18:52:51Z DSKBKSA2PGXJ2Z2Q7AE5PC46AC-ui-bc2fda53 done actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,critique-launch-verb-enforces-the-round-cap,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,dispatch-bases-chains-on-the-remote-tip,fixture-repo-copies-exclude-the-artifacts-store,fixture-waits-name-their-producer,human-authority-surface-runs-its-cmd-tests,human-break-glass-commit-keeps-the-ledger-valid,human-wait-does-not-consume-goal-budget,land-verb-writes-the-receipt,member-size-gate,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,one-goal-act-one-ledger-commit,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged,run-scoped-build-caches-have-a-janitor,runtime-limit-is-not-a-protocol-error,seat-landings-run-the-selected-sections,skipped-test-fails-its-group-on-the-other-os,small-change-lane,steward-revivals-leave-the-receipt-stream,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:47 to=2:46
+Integrity: sha256=148abfe86b9cce1cb19f21c889a994bec17611bbada0403c5c2b6ecc561e6a1a

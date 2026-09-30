@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 2
-- Sequence: 56
+- Sequence: 55
 - Risk: severity=2 novelty=2 exposure=3 accumulation=3 basis="Goal publication affects every program and preserves human-act history; defects create ledger churn or lose provenance without changing product code directly."
 - Tier: 2
 - Intent: What: When several goal actions are taken together (for example open, approve and pin), they go to main as one commit that lists every action, instead of one commit per action. Why: About three of every four commits on main are goal-ledger actions, roughly twelve per code commit. That buries the code history and makes main churn. Pros: A readable history, less push traffic and fewer collisions between seats. Cons: Publishing several actions at once must be all-or-nothing, and the history view must still show each action inside the combined commit.
 - Origin: human
 - Next step: Next: Write a short design: how several goal actions are published as one commit, what the commit message lists, and how goal history still shows each action separately; one critique round; build. Done when: a batch of goal actions lands as one commit whose message names each action, and a goal's history still lists them one by one.
 - OpenedAt: 2026-09-16T21:03:14Z
-- Revision: 4
+- Revision: 5
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 
@@ -18,4 +18,5 @@ History:
 - 2026-09-16T21:03:18Z 4TQYVD3VDEN3BEE4TK32A2HEAK-m1e-c6925449 set-priority actor=human:Wido targets=one-goal-act-one-ledger-commit reason=priority-order subject=one-goal-act-one-ledger-commit from=unranked to=2:57 requested-sequence=57
 - 2026-09-30T18:45:02Z 7RXT15WZMNZF3B1WDMS9T8G62K-m1e-b6a4eb0a edit actor=human:wido targets=one-goal-act-one-ledger-commit
 - 2026-09-30T18:48:44Z DRV2G3ER650PC3GDMSYHQN3111-ui-bc2fda53 done actor=human:Wido targets=actionable-metrics,arming-binds-the-installed-engine-identity,census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,critique-launch-verb-enforces-the-round-cap,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,dispatch-bases-chains-on-the-remote-tip,failed-job-attention,first-headless-run,fixture-repo-copies-exclude-the-artifacts-store,fixture-waits-name-their-producer,fleet-join-bootstrap,headless-continuous-delivery-proof,headless-fleet-coordination-proof,human-authority-surface-runs-its-cmd-tests,human-break-glass-commit-keeps-the-ledger-valid,human-wait-does-not-consume-goal-budget,job-record-birth-token,land-verb-writes-the-receipt,law-keys-read-committed-bytes,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,member-size-gate,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,never-idle-ironclad,new-elapsed-budgets-use-explicit-hours,one-goal-act-one-ledger-commit,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged,run-scoped-build-caches-have-a-janitor,runtime-limit-is-not-a-protocol-error,seat-landings-run-the-selected-sections,skipped-test-fails-its-group-on-the-other-os,small-change-lane,steward-revivals-leave-the-receipt-stream,stop-batch-strands-a-resumable-goal,token-spend-fence,trunk-versus-candidate-is-a-verification-step,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=2:57 to=2:56
-Integrity: sha256=74b67da446e0a927dec062283513f9d980d63c39d264c689882d243484a251b4
+- 2026-09-30T18:52:51Z DSKBKSA2PGXJ2Z2Q7AE5PC46AC-ui-bc2fda53 done actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,critique-launch-verb-enforces-the-round-cap,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,dispatch-bases-chains-on-the-remote-tip,fixture-repo-copies-exclude-the-artifacts-store,fixture-waits-name-their-producer,human-authority-surface-runs-its-cmd-tests,human-break-glass-commit-keeps-the-ledger-valid,human-wait-does-not-consume-goal-budget,land-verb-writes-the-receipt,member-size-gate,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,one-goal-act-one-ledger-commit,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged,run-scoped-build-caches-have-a-janitor,runtime-limit-is-not-a-protocol-error,seat-landings-run-the-selected-sections,skipped-test-fails-its-group-on-the-other-os,small-change-lane,steward-revivals-leave-the-receipt-stream,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:56 to=2:55
+Integrity: sha256=5952d365a8fc03cad12d6a9cf152ada30d5f40930f4d577ca114c9f8553fd479

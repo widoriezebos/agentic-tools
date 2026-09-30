@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 2
-- Sequence: 42
+- Sequence: 41
 - Risk: severity=1 novelty=1 exposure=2 accumulation=1 basis="severity 1: a gate runs fewer tests than it could, nothing granted or destroyed; novelty 1: one more group in the shape the contract already uses; exposure 2: every landing that touches the three command files; accumulation 1: one group, no compounding"
 - Tier: 2
 - Intent: What: When a file changes, that file's own tests always run before it lands. Why: Some files, such as the session-stop command, have tests that no test group runs when the file changes; the internal/events package was found the same way. Fixing one file is a list edit; a general check closes the whole class. Pros: No file can change with its own tests skipped. Cons: The general check may turn up several more uncovered packages to sort out at once.
 - Origin: main
 - Next step: Next: Clear the pin to the removed seat m1c. Add a check when the test policy loads: every Go package with tests is run by a group of the surface that owns it; then add the missing groups it finds, session_stop.go first (testing.json is generated: register with metasystem testing add-tests). Done when: the check passes on main and a test package with no owning group fails it.
 - OpenedAt: 2026-09-10T08:53:23Z
-- Revision: 130
+- Revision: 131
 - BudgetExceptions: 0
 
 History:
@@ -143,4 +143,5 @@ History:
 - 2026-09-30T18:48:44Z DRV2G3ER650PC3GDMSYHQN3111-ui-bc2fda53 done actor=human:Wido targets=actionable-metrics,arming-binds-the-installed-engine-identity,census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,critique-launch-verb-enforces-the-round-cap,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,dispatch-bases-chains-on-the-remote-tip,failed-job-attention,first-headless-run,fixture-repo-copies-exclude-the-artifacts-store,fixture-waits-name-their-producer,fleet-join-bootstrap,headless-continuous-delivery-proof,headless-fleet-coordination-proof,human-authority-surface-runs-its-cmd-tests,human-break-glass-commit-keeps-the-ledger-valid,human-wait-does-not-consume-goal-budget,job-record-birth-token,land-verb-writes-the-receipt,law-keys-read-committed-bytes,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,member-size-gate,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,never-idle-ironclad,new-elapsed-budgets-use-explicit-hours,one-goal-act-one-ledger-commit,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged,run-scoped-build-caches-have-a-janitor,runtime-limit-is-not-a-protocol-error,seat-landings-run-the-selected-sections,skipped-test-fails-its-group-on-the-other-os,small-change-lane,steward-revivals-leave-the-receipt-stream,stop-batch-strands-a-resumable-goal,token-spend-fence,trunk-versus-candidate-is-a-verification-step,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=2:43 to=2:42
 - 2026-09-30T18:49:35Z 4XCCT21R49PHD514FP1SD2MC0X-m1e-b6a4eb0a edit actor=human:wido targets=human-authority-surface-runs-its-cmd-tests
 - 2026-09-30T18:51:58Z BMVV9F3H545N41DC76D5RB2P3T-m1e-b6a4eb0a set-pin actor=human:wido targets=human-authority-surface-runs-its-cmd-tests
-Integrity: sha256=c00fcc5fcced0d92b6769701335d8fba2fcb9c3da601ab4083d626a75cb3a9b1
+- 2026-09-30T18:52:51Z DSKBKSA2PGXJ2Z2Q7AE5PC46AC-ui-bc2fda53 done actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,critique-launch-verb-enforces-the-round-cap,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,dispatch-bases-chains-on-the-remote-tip,fixture-repo-copies-exclude-the-artifacts-store,fixture-waits-name-their-producer,human-authority-surface-runs-its-cmd-tests,human-break-glass-commit-keeps-the-ledger-valid,human-wait-does-not-consume-goal-budget,land-verb-writes-the-receipt,member-size-gate,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,one-goal-act-one-ledger-commit,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged,run-scoped-build-caches-have-a-janitor,runtime-limit-is-not-a-protocol-error,seat-landings-run-the-selected-sections,skipped-test-fails-its-group-on-the-other-os,small-change-lane,steward-revivals-leave-the-receipt-stream,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:42 to=2:41
+Integrity: sha256=9229db6bdb888305be9e3e90ae469cde610350ebf9fb1c7cec10b0ca9122164a

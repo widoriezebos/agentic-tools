@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 2
-- Sequence: 52
+- Sequence: 51
 - Risk: severity=2 novelty=2 exposure=2 accumulation=2 basis="The change gates paid design launches on every seat; a defect wastes rounds and spend but does not land incorrect code by itself."
 - Tier: 2
 - Intent: The critique launch verb enforces the two-round cap. DONE: (1) every critique launch path reads the goal round count; (2) round 3 is refused unless the goal records a human ruling; (3) next retro has zero third critique rounds without a ruling and no goal spends more than three Fable design runs.
 - Origin: human
 - Next step: Evidence: after the cap landed, blb ran three more critiques, sgh-r3 and bss-r3 launched, seven S5 designs reached round 3, and breach-clock reached round 5. Blocked on delegate-launchers-become-go-verbs. No separate design first: use that goal's launcher design; then brief the cap check, build, read.
 - OpenedAt: 2026-09-16T21:02:43Z
-- Revision: 3
+- Revision: 4
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 
@@ -17,4 +17,5 @@ History:
 - 2026-09-16T21:02:43Z BY7S3WFX5N0M4TYGP2SZ9NHY1E-m1e-c6925449 open actor=human:Wido targets=critique-launch-verb-enforces-the-round-cap
 - 2026-09-16T21:02:47Z F713P1ETV14RZHRMER1M69C24K-m1e-c6925449 set-priority actor=human:Wido targets=critique-launch-verb-enforces-the-round-cap reason=priority-order subject=critique-launch-verb-enforces-the-round-cap from=unranked to=2:53 requested-sequence=53
 - 2026-09-30T18:48:44Z DRV2G3ER650PC3GDMSYHQN3111-ui-bc2fda53 done actor=human:Wido targets=actionable-metrics,arming-binds-the-installed-engine-identity,census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,critique-launch-verb-enforces-the-round-cap,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,dispatch-bases-chains-on-the-remote-tip,failed-job-attention,first-headless-run,fixture-repo-copies-exclude-the-artifacts-store,fixture-waits-name-their-producer,fleet-join-bootstrap,headless-continuous-delivery-proof,headless-fleet-coordination-proof,human-authority-surface-runs-its-cmd-tests,human-break-glass-commit-keeps-the-ledger-valid,human-wait-does-not-consume-goal-budget,job-record-birth-token,land-verb-writes-the-receipt,law-keys-read-committed-bytes,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,member-size-gate,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,never-idle-ironclad,new-elapsed-budgets-use-explicit-hours,one-goal-act-one-ledger-commit,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged,run-scoped-build-caches-have-a-janitor,runtime-limit-is-not-a-protocol-error,seat-landings-run-the-selected-sections,skipped-test-fails-its-group-on-the-other-os,small-change-lane,steward-revivals-leave-the-receipt-stream,stop-batch-strands-a-resumable-goal,token-spend-fence,trunk-versus-candidate-is-a-verification-step,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=2:53 to=2:52
-Integrity: sha256=7f87dcdb17cb1da7ef9e5ab91160def10fb4b40cf73250d27bbed39956e7c141
+- 2026-09-30T18:52:51Z DSKBKSA2PGXJ2Z2Q7AE5PC46AC-ui-bc2fda53 done actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,critique-launch-verb-enforces-the-round-cap,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,dispatch-bases-chains-on-the-remote-tip,fixture-repo-copies-exclude-the-artifacts-store,fixture-waits-name-their-producer,human-authority-surface-runs-its-cmd-tests,human-break-glass-commit-keeps-the-ledger-valid,human-wait-does-not-consume-goal-budget,land-verb-writes-the-receipt,member-size-gate,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,one-goal-act-one-ledger-commit,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged,run-scoped-build-caches-have-a-janitor,runtime-limit-is-not-a-protocol-error,seat-landings-run-the-selected-sections,skipped-test-fails-its-group-on-the-other-os,small-change-lane,steward-revivals-leave-the-receipt-stream,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:52 to=2:51
+Integrity: sha256=6730fba740a59377be176c6934c4e5e976dfd319344b441c265f897f726662a7
