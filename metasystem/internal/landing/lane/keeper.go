@@ -130,6 +130,11 @@ type Keeper struct {
 	Inspect func(root string) (bool, error)
 	Start   func(root string) error
 	Ready   func(root string) error
+	// Hold names why no owner may start now, empty when one may: a landing
+	// agent launch that has not ended is the lane's one composition owner,
+	// and no batch owner starts beside it. An error holds too. nil holds
+	// nothing.
+	Hold func(root string) (string, error)
 }
 
 // UnarmedRefusal is a lane whose checkout's supervision is not armed:
@@ -203,6 +208,15 @@ func (k Keeper) step(record Record) string {
 	if k.Ready != nil {
 		if err := k.Ready(root); err != nil {
 			return notReadyLine(root, err)
+		}
+	}
+	if k.Hold != nil {
+		reason, err := k.Hold(root)
+		if err != nil {
+			return fmt.Sprintf("landing lane owner at %s is down and was not restarted: whether a landing agent runs can't be read (%v)", root, err)
+		}
+		if reason != "" {
+			return fmt.Sprintf("landing lane owner at %s is down and was not restarted: %s, and no batch owner runs beside it", root, reason)
 		}
 	}
 	if state.GaveUp != "" {

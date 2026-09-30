@@ -305,7 +305,14 @@ func setupLandingOwnerWithInputs(stderr io.Writer, metasystemRoot, repo string, 
 		}
 		inputs.Log, inputs.TickErrors = stderr, ticks
 		if held == nil {
-			acquired, err := batchowner.AcquireBatchOwnerForComponent(repo)
+			// A landing agent that runs or is starting holds the lane: the
+			// owner takes no lease beside it and stands down this pass.
+			acquired, yielded, err := batchowner.AcquireBatchOwnerUnlessAgent(repo, batchowner.LandingAgentLive, batchowner.AcquireBatchOwnerForComponent)
+			if err == nil && yielded != "" {
+				line, _ := json.Marshal(map[string]any{"component": "landing-owner", "yield": yielded})
+				fmt.Fprintln(stderr, string(line))
+				return nil
+			}
 			if acquired.Announced {
 				announced = &acquired
 			}

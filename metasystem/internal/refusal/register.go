@@ -161,7 +161,7 @@ var Rows = []Row{
 	{Code: "BATCH_PREFIX_DECISION_MOVED", Owner: "internal/landing/batchowner", Site: "prefix.go#VerifyBatchSeriesWith", Shape: Question, H1: StandingInput},
 	{Code: "BATCH_MEMBER_BUDGET_REFUSED", Owner: "cmd/metasystem", Site: "proof_run.go#batchMemberBudgetRefused", Shape: Question, H1: StandingGuide, Forward: "goal budget"},
 	{Code: "BATCH_OWNER_IDENTITY_UNKNOWN", Owner: "internal/landing/batchowner", Site: "owner.go#acquireBatchOwnerWithRetention", Shape: Question, H1: StandingAgent},
-	{Code: "BATCH_OWNER_INDETERMINATE", Owner: "internal/landing/batchowner", Site: "owner.go#EnsureBatchOwner", Shape: Question, H1: StandingAgent},
+	{Code: "BATCH_OWNER_INDETERMINATE", Owner: "internal/landing/batchowner", Site: "owner.go#ensureBatchOwnerWith", Shape: Question, H1: StandingAgent},
 	{Code: "BATCH_OWNER_OWNED_ELSEWHERE", Owner: "internal/landing/batchowner", Site: "owner.go#acquireBatchOwnerWithRetention", Shape: Question, H1: StandingAgent},
 	{Code: "CADENCE_FETCH_REFUSED", Owner: "internal/cadence", Site: "tick.go#RunTick", Shape: Question, H1: StandingAgent},
 	{Code: "CADENCE_LEDGER_UNREADABLE", Owner: "internal/cadence", Site: "tick.go#RunTick", Shape: Question, H1: StandingAgent},

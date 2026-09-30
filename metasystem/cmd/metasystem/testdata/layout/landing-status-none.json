@@ -24,6 +24,7 @@ exit 0
     "batch": null,
     "next": null,
     "spend": null,
+    "wake": null,
     "summary": "no landing lane is registered on this computer; metasystem landing set registers one"
   }
 }

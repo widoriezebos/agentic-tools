@@ -238,7 +238,25 @@ func landingLaneKeeper(laneHome string) lane.Keeper {
 			probe, err := LandingLaneOwnerProbe(root)
 			return probe.Alive, err
 		},
-		Start: EnsureBatchOwner, Ready: LandingLaneReady}
+		Start: EnsureBatchOwner, Ready: LandingLaneReady, Hold: func(string) (string, error) { return landingAgentHoldWith(LandingAgentLive) }}
+}
+
+// LandingAgentLive names a landing agent launch on this computer that has
+// not ended; the engine supplies it (the launch store is the command
+// layer's). nil is none.
+var LandingAgentLive func() (id string, live bool, err error)
+
+// landingAgentHoldWith holds the owner while a landing agent runs: the lane
+// has one composition owner.
+func landingAgentHoldWith(agentLive func() (string, bool, error)) (string, error) {
+	if agentLive == nil {
+		return "", nil
+	}
+	id, live, err := agentLive()
+	if err != nil || !live {
+		return "", err
+	}
+	return "landing agent " + id + " is running", nil
 }
 
 // LandingLaneReady says whether an owner could run in the landing checkout
@@ -313,7 +331,10 @@ func landingLaneView(home func() (string, error), now time.Time) lane.View {
 	return lane.BuildView(LandingLaneViewSources(laneHome, now))
 }
 
-// LandingLaneViewSources are the production reads of the lane's view.
+// LandingLaneViewSources are the production reads of the lane's view as the
+// board shows it. Its wake omits validation due on purpose: that read
+// projects the goal ledger, which a page polled every few seconds does not
+// pay for; landing status --json carries the whole wake.
 func LandingLaneViewSources(laneHome string, now time.Time) lane.ViewSources {
 	return lane.ViewSources{Home: laneHome, Now: now, Owner: LandingLaneOwnerProbe, Ready: LandingLaneReady, Helm: helm.Active}
 }

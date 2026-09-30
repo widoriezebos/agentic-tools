@@ -114,7 +114,10 @@ func landingLayoutBed(kind int) func(t *testing.T) layoutBed {
 		const pid = 38928
 		notARepository := func(string) (string, error) { return "", errors.New("not a repository") }
 		owners := intentOwners{resolver: stateroot.NewResolver(notARepository, os.Executable), landing: laneVerbOwners{
-			home: func() (string, error) { return home, nil },
+			// The lane beds keep no goal ledger: validation is never due.
+			validation: func(string, time.Time) (bool, error) { return false, nil },
+			agent:      func() (string, bool, error) { return "", false, nil },
+			home:       func() (string, error) { return home, nil },
 			probe: func(string) (lane.OwnerProbe, error) {
 				if !alive {
 					return lane.OwnerProbe{}, nil

@@ -310,8 +310,9 @@ func runStewardRun(args []string, stdout, stderr io.Writer) int {
 	tickConfig.ArmedLineage = *lineage
 	tickConfig.BreachStop = delegateBreachStop(*repo)
 	tickConfig.BreachStopReady = stewardRunnerCustodianReady(*repo, productionStewardCustodianFacts())
-	// The steward keeps the host landing lane's owner alive (U12).
-	tickConfig.KeepLandingLane = batchowner.LandingLaneKeeper(batchowner.LandingLaneHome)
+	// The steward keeps the host landing lane's owner alive (U12), and the
+	// lane checkout's own steward wakes its landing agent on demand (A-a).
+	tickConfig.KeepLandingLane = landingLaneSteps(batchowner.LandingLaneKeeper(batchowner.LandingLaneHome), landingAgentStep(*repo))
 	// The lane's steward reports behaviour patterns; every other steward's
 	// pass finds it is not the lane's and does nothing (D6).
 	tickConfig.Patterns = pattern.Pass{Home: batchowner.LandingLaneHome}.Run

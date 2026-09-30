@@ -63,6 +63,12 @@ type laneVerbOwners struct {
 	// laneHeld lists the goals the ledger, read from an installation,
 	// shows held by the landing lane.
 	laneHeld func(installation string) ([]string, error)
+	// validation reads whether the standing validation is due, one of the
+	// landing agent's wake reasons (A-a).
+	validation func(root string, now time.Time) (bool, error)
+	// agent names a landing agent that runs or is starting; no batch owner
+	// starts beside it (A-a).
+	agent func() (string, bool, error)
 }
 
 func (inv *intentInvocation) landing() laneVerbOwners {
@@ -120,6 +126,12 @@ func (inv *intentInvocation) landing() laneVerbOwners {
 			steps.Probe, steps.End, steps.Now = probe, end, now
 			return lane.Unset(home, by, now(), force, steps.Seams())
 		}
+	}
+	if owners.validation == nil {
+		owners.validation = lane.ValidationDue
+	}
+	if owners.agent == nil {
+		owners.agent = batchowner.LandingAgentLive
 	}
 	return owners
 }
@@ -229,7 +241,8 @@ func (inv *intentInvocation) laneContext(needLane bool) (owners laneVerbOwners, 
 }
 
 func (inv *intentInvocation) laneView(owners laneVerbOwners, home string) lane.View {
-	sources := lane.ViewSources{Home: home, Now: owners.now(), Owner: owners.probe, Records: owners.records, Ready: owners.ready, Helm: owners.helm}
+	sources := lane.ViewSources{Home: home, Now: owners.now(), Owner: owners.probe, Records: owners.records, Ready: owners.ready, Helm: owners.helm,
+		Validation: owners.validation}
 	if inv.input.switched("verbose") {
 		// The lane's spend is a full read of its proof store: only --verbose
 		// pays for it (N-5).
@@ -661,6 +674,27 @@ func (inv *intentInvocation) startLane(owners laneVerbOwners, home string, recor
 	if err != nil {
 		return intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "the landing lane's state couldn't be saved, so nothing was started",
 			next: inv.sameCommand(), nextReason: "tries again", Details: []string{"the landing lane's state could not be written: " + err.Error()}}
+	}
+	// A person's start wakes the landing agent at once when work is there:
+	// the last agent's cooldown is forgotten.
+	if err := lane.ClearAgentCooldown(home); err != nil {
+		return intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "the landing lane's state couldn't be saved, so nothing was started",
+			next: inv.sameCommand(), nextReason: "tries again", Details: []string{"the landing agent's keeper record could not be written: " + err.Error()}}
+	}
+	if !probe.Alive && owners.agent != nil {
+		id, live, err := owners.agent()
+		if err != nil {
+			return intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "whether the landing agent runs is unknown, so no owner was started",
+				next: inv.publicArgv("landing", "status", "--verbose"), nextReason: "shows the lane's state", Details: []string{err.Error()}}
+		}
+		if live {
+			summary := "the landing agent " + id + " runs on the lane at " + record.Root + ", so no batch owner was started beside it"
+			if !strings.HasPrefix(id, "landing-") {
+				summary = id + " holds the lane at " + record.Root + ", so no batch owner was started beside it"
+			}
+			return intentResult{Outcome: intentConfirmed, Targets: targets, Data: inv.laneView(owners, home), Summary: summary,
+				view: landingDone(summary, record.Root)}
+		}
 	}
 	started := false
 	if !probe.Alive {

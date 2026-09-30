@@ -35,6 +35,8 @@ type laneVerbBed struct {
 	unset func(home, by string, force bool) (lane.UnsetReport, error)
 	// held are the goals the ledger shows the lane holding.
 	held []string
+	// agent is a landing agent that runs on the lane; empty is none.
+	agent string
 }
 
 func newLaneVerbBed(t *testing.T) *laneVerbBed {
@@ -55,6 +57,14 @@ func newLaneVerbBed(t *testing.T) *laneVerbBed {
 func (bed *laneVerbBed) owners() intentOwners {
 	notARepository := func(string) (string, error) { return "", errors.New("not a repository") }
 	return intentOwners{resolver: stateroot.NewResolver(notARepository, os.Executable), landing: laneVerbOwners{
+		// The lane beds keep no goal ledger: validation is never due.
+		validation: func(string, time.Time) (bool, error) { return false, nil },
+		agent: func() (string, bool, error) {
+			if bed.agent != "" {
+				return bed.agent, true, nil
+			}
+			return "", false, nil
+		},
 		home: func() (string, error) { return bed.home, nil },
 		probe: func(string) (lane.OwnerProbe, error) {
 			if !bed.alive {
@@ -642,5 +652,34 @@ func TestLandingUnsetOfAnUnreachableOrGoneCheckout(t *testing.T) {
 	}
 	if _, ok, _ := lane.Read(bed.home); ok {
 		t.Fatalf("the gone lane is still registered")
+	}
+}
+
+// TestLandingStartWithALandingAgentRunning (A-a, re-review 2 and 3): a
+// person's landing start while a landing agent runs starts no batch owner
+// beside it and says the agent runs, not that an owner was asked for; and
+// the start forgets the last agent's cooldown, so work wakes one at once.
+func TestLandingStartWithALandingAgentRunning(t *testing.T) {
+	t.Parallel()
+	bed := newLaneVerbBed(t)
+	if code, _, stderr := bed.run(t, "landing", "set", bed.landingA); code != 0 {
+		t.Fatalf("landing set = %d %q", code, stderr)
+	}
+	bed.alive, bed.agent = false, "landing-0011"
+	if _, err := lane.SetPause(bed.home, "Wido", laneTestNow); err != nil {
+		t.Fatal(err)
+	}
+	cooled := filepath.Join(lane.HostDir(bed.home), "landing-agent-keeper.json")
+	if err := os.WriteFile(cooled, []byte(`{"launch":"landing-0010","reasons":["validation-due"],"reapedAt":"2026-09-30T12:00:00Z"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	starts := bed.starts
+	code, stdout, stderr := bed.run(t, "landing", "start")
+	if code != 0 || bed.starts != starts || !strings.Contains(stdout, "landing agent landing-0011 runs") || strings.Contains(stdout, "asked the supervision") {
+		t.Fatalf("landing start with an agent running = %d %q %q, owner starts %d -> %d", code, stdout, stderr, starts, bed.starts)
+	}
+	state, err := lane.ReadAgentState(bed.home)
+	if err != nil || len(state.Reasons) != 0 || state.Launch != "landing-0010" {
+		t.Fatalf("after a person's start the keeper record is %+v %v; want the cooldown reasons forgotten, the launch kept", state, err)
 	}
 }

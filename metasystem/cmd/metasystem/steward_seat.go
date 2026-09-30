@@ -77,8 +77,17 @@ func hostLandingLaneRoot() (string, bool, error) {
 	if err != nil {
 		return "", false, err
 	}
-	record, ok, err := lane.Read(home)
-	return record.Root, ok, err
+	return laneRootAt(home)()
+}
+
+// laneRootAt reads the checkout the lane record under home names; a record
+// an older engine wrote still names it, so the lane starts no seat whoever
+// registered it.
+func laneRootAt(home string) func() (string, bool, error) {
+	return func() (string, bool, error) {
+		record, ok, _, err := lane.ReadGuarded(home)
+		return record.Root, ok, err
+	}
 }
 
 func newStewardSeatLauncher() stewardSeatLauncher {

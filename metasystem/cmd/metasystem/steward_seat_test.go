@@ -15,6 +15,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 )
@@ -286,4 +287,50 @@ func TestStewardSeatLauncherStartsNoSeatWhenOffOrInTheLandingLane(t *testing.T) 
 			t.Fatalf("a seat turned on outside the landing lane is allowed: %t %q %v", allowed, reason, err)
 		}
 	})
+}
+
+// TestSeatGuardsReadEveryLaneRecordFormat (integration of K-a and A-a): both
+// readers of the host lane record behind "the landing lane never starts a
+// seat" (the steward's seat decision and the launcher's guard) read the
+// record K-a writes, and one an older engine wrote: either way the lane
+// checkout starts no seat while every other checkout's seat is decided as
+// before; once the record is gone (landing unset) there is no guard.
+func TestSeatGuardsReadEveryLaneRecordFormat(t *testing.T) {
+	t.Parallel()
+	base := resolvedPath(t.TempDir())
+	home, landing, other := filepath.Join(base, "home"), filepath.Join(base, "landing"), filepath.Join(base, "other")
+	registerLane(t, home, landing, "Wido", time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC))
+	landingCheckout(t, other)
+	on := launch.DefaultSettings()
+	on.SeatRuntime, on.SeatModel = "claude", "claude-opus-5-5"
+	launcher := stewardSeatLauncher{repositoryTop: func(root string) (string, error) { return filepath.Dir(root), nil },
+		settings: func(string) (launch.Settings, error) { return on, nil }, laneRoot: laneRootAt(home)}
+	guard := landingLaneCheckout(func() (string, error) { return home, nil })
+	check := func(state string, laneRefused bool) {
+		t.Helper()
+		allowed, reason, err := launcher.SeatAllowed(filepath.Join(landing, "metasystem"))
+		if err != nil || allowed == laneRefused {
+			t.Fatalf("%s: the lane checkout's seat decision = %t %q %v; want refused %t", state, allowed, reason, err, laneRefused)
+		}
+		if allowed, reason, err := launcher.SeatAllowed(filepath.Join(other, "metasystem")); err != nil || !allowed {
+			t.Fatalf("%s: another checkout's seat decision = %t %q %v; want allowed", state, allowed, reason, err)
+		}
+		read, err := guard()
+		if err != nil || read.Registered != laneRefused || (laneRefused && (read.Checkout != landing || read.Module != filepath.Join(landing, "metasystem"))) {
+			t.Fatalf("%s: the launcher's lane read = %+v %v", state, read, err)
+		}
+	}
+	check("a record landing set wrote", true)
+	record := lane.RecordPath(home)
+	if err := os.WriteFile(record, []byte(`{"root":"`+landing+`","registeredBy":"Wido","at":"2026-09-01T00:00:00Z"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	check("a record an older engine wrote", true)
+	if read, _ := guard(); read.Incomplete == nil {
+		t.Fatalf("the launcher's read of an older record = %+v; want it marked incomplete so the landing agent is refused", read)
+	}
+	if err := os.Remove(record); err != nil {
+		t.Fatal(err)
+	}
+	check("no record after landing unset", false)
 }

@@ -154,6 +154,21 @@ func Read(home string) (Record, bool, error) {
 	return record, ok, err
 }
 
+// ReadGuarded is Read for a guard that must hold on the lane whoever wrote
+// its record, such as "the landing lane never starts a seat": a record an
+// older engine wrote still names its checkout, so it is returned registered,
+// with its CodeRecordIncomplete refusal as incomplete for the readers that
+// act on the lane (the landing agent is not started on it). Any other error
+// is returned as Read returns it.
+func ReadGuarded(home string) (record Record, registered bool, incomplete *Refusal, err error) {
+	record, registered, err = Read(home)
+	var refusal *Refusal
+	if errors.As(err, &refusal) && refusal.Code == CodeRecordIncomplete && record.Root != "" {
+		return record, true, refusal, nil
+	}
+	return record, registered, nil, err
+}
+
 func incompleteRefusal(record Record) *Refusal {
 	return &Refusal{Code: CodeRecordIncomplete,
 		Message: fmt.Sprintf("this computer's landing lane record for %s names no installation or custody epoch (an older engine wrote it), so nothing was done", record.Root),

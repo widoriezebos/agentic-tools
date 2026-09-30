@@ -339,6 +339,18 @@ var coreSettings = []Setting{
 		Meaning: "a steward-started seat main's model on any runtime; empty takes launch.build.model.<runtime>"},
 	{Key: "launch.seat.effort", Default: "xhigh", ProofInput: true,
 		Meaning: "a steward-started seat main's effort, translated by the runtime adapter"},
+	// The landing agent the keeper wakes in the host's landing lane (one per
+	// computer, started on demand): its runtime, model and effort are roster
+	// keys (landing-lane-runtime-redesign D2), named in the lane checkout's
+	// metasystem.conf.local. The documented default is claude (the only
+	// runtime its tool gate, a Claude hook, can hold), the build lane's model
+	// for it, and effort xhigh.
+	{Key: "launch.landing.runtime", Default: "claude", ProofInput: true,
+		Meaning: "the landing agent's runtime; claude, the default, is the only one its tool gate holds"},
+	{Key: "launch.landing.model", Default: "", ProofInput: true,
+		Meaning: "the landing agent's model on any runtime; empty (the default) takes launch.build.model.<runtime>"},
+	{Key: "launch.landing.effort", Default: "xhigh", ProofInput: true,
+		Meaning: "the landing agent's effort, translated by the runtime adapter"},
 	{Key: "launch.build.window.tokens", Default: "0", ProofInput: true,
 		Meaning: "the build lane's context window cap in tokens; 0 imposes none"},
 	{Key: "launch.design.window.tokens", Default: "0", ProofInput: true,

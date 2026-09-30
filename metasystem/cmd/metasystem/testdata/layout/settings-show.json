@@ -5,7 +5,7 @@ exit 0
   "verb": "settings show",
   "targets": [],
   "outcome": "confirmed",
-  "summary": "23 setting(s) of /Users/wido/GitHub/agentic-tools-m1e",
+  "summary": "26 setting(s) of /Users/wido/GitHub/agentic-tools-m1e",
   "data": {
     "adapters": null,
     "conf": "/Users/wido/GitHub/agentic-tools-m1e/metasystem.conf",
@@ -122,6 +122,21 @@ exit 0
       },
       {
         "Key": "launch.seat.effort",
+        "Value": "xhigh",
+        "Source": "default"
+      },
+      {
+        "Key": "launch.landing.runtime",
+        "Value": "claude",
+        "Source": "default"
+      },
+      {
+        "Key": "launch.landing.model",
+        "Value": "unbound",
+        "Source": "default; launch.build.model.claude is not set here"
+      },
+      {
+        "Key": "launch.landing.effort",
         "Value": "xhigh",
         "Source": "default"
       }
