@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	goalbranch "github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 )
 
@@ -83,39 +82,6 @@ func (bed *laneBed) commit(message string) string {
 func (bed *laneBed) tree(rev string) string {
 	bed.t.Helper()
 	return bed.git("rev-parse", rev+"^{tree}")
-}
-
-// publishMain makes commit origin's main, as a landing of main would.
-func (bed *laneBed) publishMain(commit string) {
-	bed.t.Helper()
-	bed.git("push", "-q", "-f", "origin", commit+":refs/heads/main")
-	bed.git("fetch", "-q", "origin")
-}
-
-// claimGoal commits the ledger entry of goal claimed by the lane at
-// revision on main.
-func (bed *laneBed) claimGoal(id string, revision uint64) string {
-	bed.t.Helper()
-	bed.git("checkout", "-q", "main")
-	machine, lineage, _ := strings.Cut(laneActor, "+")
-	history := make([]goal.HistoryLine, revision)
-	for index := range history {
-		at := fmt.Sprintf("2026-09-30T08:%02d:00Z", index)
-		history[index] = goal.HistoryLine{At: at, Opid: fmt.Sprintf("01ARZ3NDEKTSV4RRFFQ69G5FAW-%s-%08x", machine, index+1),
-			Verb: "edit", Actor: laneActor, Targets: []string{id}, Keep: -1}
-	}
-	history[revision-1].Verb = "claim"
-	record := goal.RenderFile(&goal.GoalFile{Id: id, State: goal.StateClaimed, Intent: "Fixture goal.", Origin: goal.OriginMain,
-		NextStep: "Land it.", OpenedAt: "2026-09-30T08:00:00Z", Revision: revision,
-		Claimed: &goal.ClaimRecord{Machine: machine, Lineage: lineage, At: history[revision-1].At, Revision: revision, AccountingRevision: revision},
-		History: history})
-	if _, problems := goal.ParseFile(record); len(problems) != 0 {
-		bed.t.Fatalf("invalid claimed goal: %v", problems)
-	}
-	bed.write("metasystem/plans/goals/"+id+".md", string(record))
-	bed.base = bed.commit("claim " + id + " for the lane")
-	bed.publishMain(bed.base)
-	return bed.base
 }
 
 // change makes a change member's commit on main's tip, in the seat's name.

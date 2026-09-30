@@ -169,7 +169,7 @@ func landingKernelRefusal(inv *intentInvocation, targets []intentTarget, err err
 			next:    inv.publicArgv("landing", "status", "--verbose"), nextReason: "shows the batch and what its members return on",
 			Details: []string{"refused because: " + composition.Code}}
 	}
-	code, reason, fix := "", err.Error(), ""
+	var code, reason, fix string
 	var begin *batch.BeginRefusal
 	var refusal *kernel.Refusal
 	switch {
