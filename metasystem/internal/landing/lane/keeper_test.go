@@ -40,9 +40,7 @@ func TestKeeperDoesNothingWithoutALane(t *testing.T) {
 func TestKeeperRestartsDeadOwner(t *testing.T) {
 	t.Parallel()
 	home, root, _ := laneDirs(t)
-	if _, err := Resolve(home, root, "m1e", laneNow, true); err != nil {
-		t.Fatal(err)
-	}
+	register(t, home, root)
 	clock := laneNow
 	owner := &fakeOwner{alive: true}
 	keeper := owner.keeper(home, &clock)
@@ -67,9 +65,7 @@ func TestKeeperRestartsDeadOwner(t *testing.T) {
 func TestKeeperTwoStewardsStartOnce(t *testing.T) {
 	t.Parallel()
 	home, root, _ := laneDirs(t)
-	if _, err := Resolve(home, root, "m1e", laneNow, true); err != nil {
-		t.Fatal(err)
-	}
+	register(t, home, root)
 	clock := laneNow
 	owner := &fakeOwner{}
 	first, second := owner.keeper(home, &clock), owner.keeper(home, &clock)
@@ -89,9 +85,7 @@ func TestKeeperTwoStewardsStartOnce(t *testing.T) {
 func TestKeeperGivesUpAfterFiveAndRestartResets(t *testing.T) {
 	t.Parallel()
 	home, root, _ := laneDirs(t)
-	if _, err := Resolve(home, root, "m1e", laneNow, true); err != nil {
-		t.Fatal(err)
-	}
+	register(t, home, root)
 	clock := laneNow
 	owner := &fakeOwner{}
 	keeper := owner.keeper(home, &clock)
@@ -138,9 +132,7 @@ func TestKeeperGivesUpAfterFiveAndRestartResets(t *testing.T) {
 func TestKeeperKeepsStartError(t *testing.T) {
 	t.Parallel()
 	home, root, _ := laneDirs(t)
-	if _, err := Resolve(home, root, "m1e", laneNow, true); err != nil {
-		t.Fatal(err)
-	}
+	register(t, home, root)
 	clock := laneNow
 	owner := &fakeOwner{fail: errors.New("up refused")}
 	keeper := owner.keeper(home, &clock)
@@ -154,9 +146,7 @@ func TestKeeperKeepsStartError(t *testing.T) {
 func TestKeeperHonoursPause(t *testing.T) {
 	t.Parallel()
 	home, root, _ := laneDirs(t)
-	if _, err := Resolve(home, root, "m1e", laneNow, true); err != nil {
-		t.Fatal(err)
-	}
+	register(t, home, root)
 	clock := laneNow
 	owner := &fakeOwner{}
 	keeper := owner.keeper(home, &clock)

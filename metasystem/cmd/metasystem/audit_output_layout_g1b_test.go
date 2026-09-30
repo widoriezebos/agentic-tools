@@ -43,6 +43,7 @@ func g1bLayoutCases() []layoutCase {
 		{name: "landing-start-refusal", args: []string{"landing", "start"}, bed: landingLayoutBed(landingLayoutNone)},
 		{name: "landing-stop-refusal", args: []string{"landing", "stop"}, bed: landingLayoutBed(landingLayoutPushing)},
 		{name: "landing-restart", args: []string{"landing", "restart"}, bed: landingLayoutBed(landingLayoutRunning)},
+		{name: "landing-unset", args: []string{"landing", "unset"}, bed: landingLayoutBed(landingLayoutNone)},
 	}
 }
 
@@ -92,9 +93,7 @@ func landingLayoutBed(kind int) func(t *testing.T) layoutBed {
 		alive := kind != landingLayoutNone
 		records := []batch.Record{}
 		if kind != landingLayoutNone {
-			if _, _, err := lane.Register(home, landing, "Wido", now.Add(-2*time.Hour)); err != nil {
-				t.Fatal(err)
-			}
+			registerLane(t, home, landing, "Wido", now.Add(-2*time.Hour))
 			records = []batch.Record{
 				{Schema: 1, BatchID: "4gr18nm8t3nyev9sssda9jgtsq", State: map[bool]string{true: batch.StateLanding, false: batch.StateProving}[kind == landingLayoutPushing],
 					Units: []batch.Unit{{GoalID: "verbs-match-intent", Chain: "c1", State: batch.UnitJoined, Claim: batch.Claim{Machine: "m1e"}},

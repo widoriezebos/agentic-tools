@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -36,7 +37,14 @@ func newAlertBed(t *testing.T) alertBed {
 		helmMust(t, os.MkdirAll(filepath.Join(top, ".git"), 0o755), os.MkdirAll(filepath.Join(top, "metasystem"), 0o755),
 			os.WriteFile(filepath.Join(top, "metasystem", "metasystem.conf"), []byte("metasystem.template=true\n"), 0o644))
 	}
-	if _, _, err := lane.Register(bed.home, bed.landing, "Wido", alertTestNow); err != nil {
+	if out, err := exec.Command("git", "init", "--quiet", "-b", "main", bed.landing).CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v %s", err, out)
+	}
+	layout, err := lane.NewLayout(bed.landing)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := lane.Register(bed.home, layout, "Wido", alertTestNow); err != nil {
 		t.Fatal(err)
 	}
 	return bed

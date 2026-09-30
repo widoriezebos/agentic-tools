@@ -54,9 +54,7 @@ func TestViewOfARestartingOwnerSaysWhy(t *testing.T) {
 	t.Parallel()
 	home, root, _ := laneDirs(t)
 	nestedLane(t, root)
-	if _, err := Resolve(home, root, "m1e", laneNow, true); err != nil {
-		t.Fatal(err)
-	}
+	register(t, home, root)
 	if err := writeJSON(home, keeperPath(home), KeeperState{Failures: 1, Restarts: 1, Since: laneNow.Format(time.RFC3339)}); err != nil {
 		t.Fatal(err)
 	}
@@ -80,9 +78,7 @@ func TestViewOfARestartingOwnerSaysWhy(t *testing.T) {
 func TestViewOfALaneThatCannotStartNamesTheFix(t *testing.T) {
 	t.Parallel()
 	home, root, _ := laneDirs(t)
-	if _, err := Resolve(home, root, "m1e", laneNow, true); err != nil {
-		t.Fatal(err)
-	}
+	register(t, home, root)
 	if err := writeJSON(home, keeperPath(home), KeeperState{Failures: 1, Restarts: 1, Since: laneNow.Format(time.RFC3339)}); err != nil {
 		t.Fatal(err)
 	}
@@ -115,9 +111,7 @@ func TestViewOfALaneThatCannotStartNamesTheFix(t *testing.T) {
 func TestKeeperDoesNotRestartAnOwnerThatCannotStart(t *testing.T) {
 	t.Parallel()
 	home, root, _ := laneDirs(t)
-	if _, err := Resolve(home, root, "m1e", laneNow, true); err != nil {
-		t.Fatal(err)
-	}
+	register(t, home, root)
 	clock := laneNow
 	owner := &fakeOwner{}
 	keeper := owner.keeper(home, &clock)
@@ -142,9 +136,7 @@ func TestKeeperDoesNotRestartAnOwnerThatCannotStart(t *testing.T) {
 func TestKeeperLineNeverClaimsTheOwnerRuns(t *testing.T) {
 	t.Parallel()
 	home, root, _ := laneDirs(t)
-	if _, err := Resolve(home, root, "m1e", laneNow, true); err != nil {
-		t.Fatal(err)
-	}
+	register(t, home, root)
 	clock := laneNow
 	owner := &fakeOwner{}
 	keeper := owner.keeper(home, &clock)
