@@ -7,8 +7,7 @@
 - Origin: main
 - Next step: Next: When unparked, find where the switched-on machinery starts builders and put the check there: refuse a design-bearing build that names no accepted design with a closed critique. Done when: a test refuses such a build and admits one with a matching accepted design.
 - OpenedAt: 2026-09-01T07:18:50Z
-- Revision: 18
-- BlockedBy: design-chain-has-no-lawful-close
+- Revision: 19
 - Labels: headless-fleet, headless-process
 - BudgetExceptions: 0
 
@@ -31,4 +30,5 @@ History:
 - 2026-09-11T22:00:17Z ZACQ95ADETGNC6PSNQESWF9MHH-m1-c6925449 done actor=human:Wido targets=adoption-inventory-from-install-set,chain-landing-carries-the-reviewed-diff,closing-read-follows-the-change-not-the-label,commit-goal-binding,design-gate-at-dispatch,first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,hook-enrollment-per-checkout,host-implementer-wall,human-approval-for-execution,idle-every-runtime-enforcement,landing-design-provenance,manifest-floor-at-dispatch,merge-stage-critic-close,metasystem-stop-escalation-proofs,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,one-approval-gate,recovery-rehearsal,recovery-to-good-state,repo-root-paths-ride-agent-commits-unjudged,role-context-composition,role-lane-packets,role-liveness-watchdog,seat-mutual-awareness,two-bars-for-changes reason=priority-order from=2:9 to=2:8
 - 2026-09-11T22:09:00Z C3BMZ7DRFM4AWMATVMSXQZHBTQ-m1-c6925449 done actor=human:Wido targets=adoption-inventory-from-install-set,chain-landing-carries-the-reviewed-diff,commit-goal-binding,design-gate-at-dispatch,first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,hook-enrollment-per-checkout,human-approval-for-execution,idle-every-runtime-enforcement,landing-design-provenance,manifest-floor-at-dispatch,merge-stage-critic-close,metasystem-stop-escalation-proofs,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,one-approval-gate,recovery-rehearsal,recovery-to-good-state,repo-root-paths-ride-agent-commits-unjudged,role-context-composition,role-lane-packets,seat-mutual-awareness reason=priority-order from=2:8 to=2:7
 - 2026-09-30T18:48:42Z GRRG19CVXGCVVX9XCWGFFZ8XAC-m1e-b6a4eb0a edit actor=human:wido targets=design-gate-at-dispatch
-Integrity: sha256=217555ecd9d4195dbfe8002c6c3314f98405d907972318a933267bbd408f445a
+- 2026-09-30T18:52:06Z NP8E5ZEG1V6TH0HVFDZT1ZARVG-m1e-b6a4eb0a unblock actor=human:wido targets=design-gate-at-dispatch,design-chain-has-no-lawful-close reason=blockedBy drops design-chain-has-no-lawful-close
+Integrity: sha256=ea5c64f22c48f14195ceea08c64105eba32184617d04aa8cec96c99539af8ddf
