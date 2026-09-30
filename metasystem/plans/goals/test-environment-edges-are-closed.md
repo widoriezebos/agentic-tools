@@ -1,6 +1,6 @@
 # test-environment-edges-are-closed
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 23
 - Risk: severity=1 novelty=1 exposure=2 accumulation=1 basis="severity 1: each gap is a rare edge of the shared Go test environment, none changes a result today; novelty 1: small follow-ups to go-tests-never-inherit-a-candidate-engine; exposure 2: every Go test package now goes through testenv.Main; accumulation 1: they do not compound"
@@ -9,10 +9,12 @@
 - Origin: human
 - Next step: Free, tier 1. Build after go-tests-never-inherit-a-candidate-engine lands.
 - OpenedAt: 2026-09-15T06:23:47Z
-- Revision: 96
+- Revision: 97
 - Budget: elapsedLimit=1h attemptLimit=3 reservedJobMinutesLimit=360 activeJobLimit=1 reviewRoundLimit=0
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-15T06:23:53Z revision=2 opid=AATRE9N7Q7941KP3WHJZZ8AQ0S-m1e-c6925449 authority=proven digest=ef0453e037f7cc31a67cbfd72ec16adde1707ac6525f8155e591750cc7ae0fb3
+- Claimed: machine=m1e lineage=main-1790454088-93948-21671b at=2026-09-30T11:10:23Z revision=97 accountingRevision=97 episodeAt=2026-09-30T11:10:23Z episodeRevision=97
+- StopCapability: generation=97 revision=97 machine=m1e claimEpoch=9 fenceEpoch=0
 
 History:
 - 2026-09-15T06:23:47Z GKX4CJXWVF6MA2F09R54BKWGNQ-m1e-c6925449 open actor=human:Wido targets=test-environment-edges-are-closed
@@ -111,4 +113,5 @@ History:
 - 2026-09-19T20:34:59Z M3J6T6NBT1TSWPJ8KPNQR5BVQV-m1e-c6925449 done actor=human:Wido targets=adoption-filled-delivery-passes-on-trunk,beds-run-under-the-oldest-supported-bash,busy-seat-shells-are-ended,codex-jobs-run-through-a-metasystem-verb,cross-cutting-change-inventories-its-readers,delegate-sandbox-runs-the-beds,every-round-gets-an-independent-read,evidence-and-build-output-have-retention-and-stay-unindexed,failures-show-observed-against-expected,follow-up-brief-cannot-cite-fresh-trunk-files,round-proof-feeds-the-next-brief,test-environment-edges-are-closed,testing-surfaces-declare-their-mirror reason=priority-order from=1:26 to=1:25
 - 2026-09-19T20:35:12Z XNVJJMS2D50NY5FBXEQ3GYGD9K-m1e-c6925449 done actor=human:Wido targets=adoption-filled-delivery-passes-on-trunk,beds-run-under-the-oldest-supported-bash,brief-declares-the-round-boundary,build-jobs-fit-one-builder-context,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,delegate-sandbox-runs-the-beds,design-rounds-read-less-and-repeat-less,every-round-gets-an-independent-read,evidence-and-build-output-have-retention-and-stay-unindexed,failures-show-observed-against-expected,fixture-runners-and-fakes-bound-their-own-life,fleet-doctor-repairs-what-stops-other-seats,follow-up-brief-cannot-cite-fresh-trunk-files,one-steward-per-checkout-on-its-own-root,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,reads-keep-the-whole-diff-in-context,receipt-writer-follows-the-worktree-it-runs-in,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,stop-hook-never-forces-an-empty-turn,test-environment-edges-are-closed,testing-surfaces-declare-their-mirror reason=priority-order from=1:25 to=1:24
 - 2026-09-19T20:35:24Z SE7MVESZ9GX9CRAYCQHDDBR3V2-m1e-c6925449 done actor=human:Wido targets=adoption-filled-delivery-passes-on-trunk,beds-run-under-the-oldest-supported-bash,brief-declares-the-round-boundary,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,delegate-sandbox-runs-the-beds,design-rounds-read-less-and-repeat-less,every-round-gets-an-independent-read,evidence-and-build-output-have-retention-and-stay-unindexed,failures-show-observed-against-expected,fixture-runners-and-fakes-bound-their-own-life,fleet-doctor-repairs-what-stops-other-seats,follow-up-brief-cannot-cite-fresh-trunk-files,one-steward-per-checkout-on-its-own-root,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,reads-keep-the-whole-diff-in-context,receipt-writer-follows-the-worktree-it-runs-in,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,stop-hook-never-forces-an-empty-turn,test-environment-edges-are-closed,testing-surfaces-declare-their-mirror reason=priority-order from=1:24 to=1:23
-Integrity: sha256=d4864fb63f2d0560240d3828cf3c93c77bc21ac5d9e9657afc5d05d7568bbca1
+- 2026-09-30T11:10:23Z DAP62A53BA0H4YDMBDPT3T7D0S-m1e-f456f182 claim actor=m1e+main-1790454088-93948-21671b targets=test-environment-edges-are-closed
+Integrity: sha256=9296954abd8b80014e78d207f9564ce8929576744b2d9782acac90c0648b13ee
