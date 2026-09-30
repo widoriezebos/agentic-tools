@@ -482,6 +482,14 @@ func (inv *intentInvocation) actingAs(verb, target string, actor intentActor) ([
 	if stopping {
 		actor = actorEither
 	}
+	if typed == "" && actor == actorEither && agent && !inv.input.has("lineage") {
+		// A live general grant that admits this session makes a dual act
+		// the granting person's, before the session's own shortcut (M6),
+		// as pause and done already do; the owner proves it again.
+		if by, ok := inv.attorneyActor(); ok {
+			return append(args, "--by", by), nil, nil
+		}
+	}
 	if typed == "" && (actor == actorAgent || actor == actorEither && agent) {
 		if !agent {
 			return nil, nil, &intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(target),

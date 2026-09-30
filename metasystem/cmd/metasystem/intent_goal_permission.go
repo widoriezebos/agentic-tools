@@ -55,7 +55,11 @@ func runIntentAllow(inv *intentInvocation) int {
 	// the refusal names the command the person runs.
 	agent := inv.input.has("lineage") || inv.owners.dependencies.ownerLineage != nil && inv.owners.dependencies.ownerLineage() != ""
 	if agent && inv.input.text("by") == "" {
-		return personAct(" and this command runs as an agent session")
+		// A live general grant that admits this session makes the act the
+		// granting person's (M6); the person's proof below answers under it.
+		if _, granted := inv.attorneyActor(); !granted || inv.input.has("lineage") {
+			return personAct(" and this command runs as an agent session")
+		}
 	}
 	actor, proof, refused := inv.actingAs("allow", id, actorHuman)
 	if refused != nil {

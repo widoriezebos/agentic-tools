@@ -332,3 +332,59 @@ func TestGrantStatusLineReadsTheLedgerWhereGrantListDoes(t *testing.T) {
 		t.Fatalf("status line from the repository top = %q (ledger read at %v); grant list shows %q", line, read, listed)
 	}
 }
+
+// The trial: with METASYSTEM_OWNER_LINEAGE set, goal open --origin human
+// (and every other dual person/seat act chosen by actingAs) took the
+// session's shortcut without asking the general grant; only pause and done
+// asked it. Every dual act asks the grant first; a session that names
+// itself with --lineage, or no grant, keeps the shortcut.
+func TestDualActsAskTheGrantBeforeTheSessionShortcut(t *testing.T) {
+	t.Parallel()
+	for _, row := range []struct {
+		command string
+		actor   intentActor
+	}{
+		{"goal open", actorEither},
+		{"goal edit", actorEither},
+		{"goal claim", actorEither},
+		{"goal release", actorEitherStopping},
+		{"goal disallow", actorEither},
+	} {
+		b := newGrantEverythingBed(t)
+		b.lineage = "lin-main"
+		inv := &intentInvocation{command: mustIntentCommand(t, row.command), owners: b.owners(), stateRoot: b.root(),
+			input: intentInput{values: map[string][]string{"origin": {"human"}}}}
+		args, proof, problem := inv.actingAs("open", "g1", row.actor)
+		if problem != nil || proof != nil || slices.Contains(args, "--by") {
+			t.Fatalf("%s without a grant: the session acts as itself: %v %+v", row.command, args, problem)
+		}
+		b.admitted = &humanauthority.HelmGrant{By: "Wido", Class: lease.ClassMain, Grant: "01M-grant"}
+		inv.owners = b.owners()
+		args, _, problem = inv.actingAs("open", "g1", row.actor)
+		if problem != nil || !slices.Equal(args, []string{"--by", "Wido"}) {
+			t.Fatalf("%s under a grant: the act is the person's: %v %+v", row.command, args, problem)
+		}
+		named := &intentInvocation{command: inv.command, owners: b.owners(), stateRoot: b.root(),
+			input: intentInput{values: map[string][]string{"lineage": {"lin-main"}}}}
+		if args, _, _ = named.actingAs("open", "g1", row.actor); slices.Contains(args, "--by") {
+			t.Fatalf("%s: a session naming itself with --lineage acts as itself: %v", row.command, args)
+		}
+	}
+}
+
+// goal allow refused every caller carrying a session lineage as an agent
+// before asking the grant; under a live grant that admits the session the
+// act is the granting person's and goes on to the person's proof.
+func TestAllowAsksTheGrantBeforeRefusingTheSession(t *testing.T) {
+	t.Parallel()
+	b := newGrantEverythingBed(t)
+	b.lineage = "lin-main"
+	allow := []string{"goal", "allow", bedGoal, "stop-test-changes", "--reason", "the hook entry moved"}
+	if _, result := b.runJSON(b.owners(), allow...); !strings.Contains(result.Summary, "runs as an agent session") {
+		t.Fatalf("without a grant the session is refused as an agent: %+v", result)
+	}
+	b.admitted = &humanauthority.HelmGrant{By: "Wido", Class: lease.ClassMain, Grant: "01M-grant"}
+	if code, result := b.runJSON(b.owners(), allow...); strings.Contains(result.Summary, "runs as an agent session") {
+		t.Fatalf("under a grant the session was refused as an agent: %d %+v", code, result)
+	}
+}
