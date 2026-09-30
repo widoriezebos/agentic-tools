@@ -278,7 +278,7 @@ func TestReturnRemovesFirstUnreadable(t *testing.T) {
 			t.Fatal("a mode-000 signature was not removed")
 		}
 		helmMust(t, os.MkdirAll(filepath.Join(seat.Signature, "blocker"), 0o700))
-		b.wantReturn(1, seat.Signature+" cannot be removed")
+		b.wantReturn(1, "remove "+seat.Signature+" by hand")
 		if b.log() != "" && strings.Count(b.log(), "\n") != 1 {
 			t.Fatalf("a failed removal went on to log:\n%s", b.log())
 		}
@@ -304,7 +304,7 @@ func TestReturnRemovesOnlySignature(t *testing.T) {
 		seat := helm.Seat{Yields: filepath.Join(b.root, ".git", "metasystem", "helm-yields.log")}
 		b.wantTake(nil, 0, "proven", "Wido")
 		helm.RecordYield(b.root, helm.Yield{At: helmNow, Boundary: "stop-hook"})
-		b.wantReturn(0, "yields since the take: 1")
+		b.wantReturn(0, "acts the helm let through since the take: 1")
 		for _, path := range []string{seat.Yields, filepath.Join(b.root, ".git", "metasystem", "helm.log"), filepath.Join(b.inst, "metasystem.conf")} {
 			if _, err := os.Stat(path); err != nil {
 				t.Fatalf("return removed %s: %v", path, err)

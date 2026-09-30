@@ -113,7 +113,7 @@ func TestHelmAdmitsOnlyInThePrimaryCheckoutOfTheHeldSeat(t *testing.T) {
 		primary.yields[0].Would != "refuse" || primary.yields[0].Subject != "verb=goal open class=DELEGATE cwd="+root {
 		t.Fatalf("yields %+v", primary.yields)
 	}
-	line := "HUMAN AT THE HELM (wido): the person proof yields to the helm for goal open; caller DELEGATE; recorded in " + filepath.Join(common, "metasystem", "helm-yields.log") + "\n"
+	line := "HUMAN AT THE HELM (wido): goal open runs as wido's act\n"
 	if primary.stderr.String() != line {
 		t.Fatalf("stderr %q", primary.stderr.String())
 	}
@@ -197,7 +197,7 @@ func TestHelmPersonProofYieldsForTheGoalVerbs(t *testing.T) {
 
 	fake := act()
 	code, out, errOut := bed.public("goal", "done", "ship-widget", "--reason", "x")
-	if code == 0 || !strings.Contains(out+errOut, "cannot tell who runs") || len(fake.yields) != 0 {
+	if code == 0 || !strings.Contains(out+errOut, "this terminal isn't enrolled") || len(fake.yields) != 0 {
 		t.Fatalf("done before the take: %d %q %q", code, out, errOut)
 	}
 

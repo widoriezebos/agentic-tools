@@ -147,12 +147,14 @@ func (inv *intentInvocation) helmPath() string {
 func runIntentHelmTake(inv *intentInvocation) int {
 	reason := strings.TrimSpace(inv.input.text("reason"))
 	if reason == "" {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "helm take needs a reason: --reason TEXT; nothing was done"})
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "helm take needs a reason; nothing was done",
+			next: append(inv.typedArgv(), "--reason", "TEXT"), nextReason: "TEXT says why you take the helm"})
 	}
 	owners, path := inv.owners.helm.withDefaults(), inv.helmPath()
 	seat, err := helm.Locate(path)
 	if err != nil {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "helm take: " + err.Error()})
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: err.Error() + "; nothing was done",
+			Decision: "run metasystem helm take inside the seat's checkout"})
 	}
 	layout, err := inv.owners.resolver.ResolveLayout(path)
 	root := layout.InstallationRoot
@@ -160,7 +162,8 @@ func runIntentHelmTake(inv *intentInvocation) int {
 		root, err = inv.owners.resolver.RootForInstallation(root)
 	}
 	if err != nil {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "helm take: the installation cannot be found: " + err.Error()})
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "this checkout has no MetaSystem installation; nothing was done",
+			Decision: "run metasystem helm take inside a checkout MetaSystem is set up in", Details: []string{err.Error()}})
 	}
 	now, pid := owners.now().UTC(), owners.pid()
 	proof, err := humanauthority.ProveTerminal(root, pid, owners.reader, now)
@@ -169,8 +172,9 @@ func runIntentHelmTake(inv *intentInvocation) int {
 	}
 	if err != nil {
 		return inv.render(intentResult{Outcome: intentRefused, code: 3,
-			Summary:  "only a person at a terminal no agent started can take the helm, and this shell is not one (" + actorProofReason(err) + "); nothing was done",
-			Decision: "run metasystem helm take yourself, at a terminal no agent started"})
+			Summary: actorProofReason(err) + ", so the helm wasn't taken",
+			next:    inv.typedArgv(), nextReason: "in a terminal you opened yourself",
+			Details: []string{"refused because: " + err.Error()}})
 	}
 	record := helm.Record{By: strings.TrimSpace(inv.input.text("name")), At: now.Format(time.RFC3339), Reason: reason, Checkout: seat.Checkout, Enrollment: "unreadable"}
 	enrollment, readErr := humanauthority.ReadEnrollment(root)
@@ -226,8 +230,8 @@ func runIntentHelmTake(inv *intentInvocation) int {
 		entry.Replaced = standing.By
 	}
 	if _, err := helm.Write(path, record); err != nil {
-		return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "helm take: the signature cannot be written: " + err.Error(),
-			Decision: "make " + seat.Dir + " writable by you (chmod u+w), then take the helm again"})
+		return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "the helm signature can't be written, so the helm wasn't taken",
+			next: []string{"chmod", "u+w", seat.Dir}, nextReason: "then take the helm again", Details: []string{err.Error()}})
 	}
 	lines := withLine(helmTerminalLines(record), enrollmentLine)
 	if enrolledNow {
@@ -304,10 +308,12 @@ func runIntentHelmReturn(inv *intentInvocation) int {
 	removal, err := helm.Remove(path)
 	switch {
 	case removal.Seat.CommonDir == "":
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "helm return: " + err.Error()})
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: err.Error() + "; nothing was done",
+			Decision: "run metasystem helm return inside the seat's checkout"})
 	case err != nil:
-		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "helm return: " + err.Error(),
-			Decision: "make " + removal.Seat.Dir + " writable by you (chmod u+w) and remove what is at the signature path, then return again"})
+		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the helm signature can't be removed, so the helm is still taken",
+			Decision: "remove " + removal.Seat.Signature + " by hand (chmod u+w " + removal.Seat.Dir + " if needed), then run metasystem helm return again",
+			Details:  []string{err.Error()}})
 	case !removal.Present:
 		return inv.render(intentResult{Outcome: intentUnchanged, Summary: "the machinery is at the helm; nothing to return"})
 	}
@@ -338,7 +344,7 @@ func runIntentHelmReturn(inv *intentInvocation) int {
 // since the take, running work, and the landing batches holding the seat's
 // work. Each source that fails says so in its place.
 func (inv *intentInvocation) helmReport(seat helm.Seat, since time.Time) []string {
-	lines := []string{fmt.Sprintf("yields since the take: %s", helmYieldCount(seat, since))}
+	lines := []string{fmt.Sprintf("acts the helm let through since the take: %s", helmYieldCount(seat, since))}
 	layout, err := inv.owners.resolver.ResolveLayout(seat.Checkout)
 	if err != nil {
 		return append(lines, "running work: unavailable: "+err.Error(), "landing batches: unavailable: "+err.Error())
@@ -456,7 +462,7 @@ func actorProofReason(err error) string {
 	case strings.Contains(text, humanauthority.OutcomeAgent):
 		return "an agent started this shell"
 	case strings.Contains(text, humanauthority.OutcomeTerminalMissing):
-		return "no terminal was found above this shell"
+		return "this shell isn't attached to a terminal"
 	case strings.Contains(text, humanauthority.OutcomeNotEnrolled):
 		return "this terminal is not the enrolled one"
 	}

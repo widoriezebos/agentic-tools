@@ -167,13 +167,9 @@ func (inv *intentInvocation) actorArgs(id string, names ...string) ([]string, *i
 		}
 		return forwarded, nil
 	}
-	refused := func(err error) *intentResult {
-		return &intentResult{Outcome: intentRefused, code: 1, Targets: inv.targets(id),
-			Summary:  "cannot tell who runs metasystem " + inv.command.name + ": " + humanauthority.PlainReason(err) + ", and no agent session is named; nothing was done",
-			Decision: humanauthority.PersonActRemedy("metasystem "+inv.command.name+" "+id) + "; an agent runs it from the session its launcher started, which names itself in METASYSTEM_OWNER_LINEAGE, or passes --lineage LINEAGE"}
-	}
+	refused := func(err error) *intentResult { return inv.eitherRefusal(id, err, false) }
 	if dependencies.proveHuman == nil {
-		return nil, refused(fmt.Errorf("no human proof reader is available"))
+		return nil, refused(fmt.Errorf("who started this shell can't be checked here"))
 	}
 	now, err := inv.owners.commandNow(inv.stateRoot)
 	if err != nil {
@@ -181,7 +177,7 @@ func (inv *intentInvocation) actorArgs(id string, names ...string) ([]string, *i
 	}
 	proof, err := dependencies.proveHuman(inv.stateRoot, int64(os.Getppid()), nil, now)
 	if err == nil && !proof.EnrolledTerminalFor(inv.stateRoot) {
-		err = fmt.Errorf("this shell does not descend from the enrolled terminal (%s)", proof.Outcome)
+		err = fmt.Errorf("%s: the terminal check ended %s", humanauthority.OutcomeTerminalMissing, proof.Outcome)
 	}
 	if err != nil {
 		return nil, refused(err)

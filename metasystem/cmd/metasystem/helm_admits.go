@@ -43,6 +43,9 @@ type helmAdmitOwners struct {
 	yield     func(root string, y helm.Yield)
 	verb      func() string
 	stderr    io.Writer
+	// notice tells the person what the helm admitted; nil holds it on the
+	// process's admission board until the act's outcome is known.
+	notice func(admissionNotice)
 }
 
 func (o helmAdmitOwners) withDefaults() helmAdmitOwners {
@@ -71,6 +74,9 @@ func (o helmAdmitOwners) withDefaults() helmAdmitOwners {
 	}
 	if o.stderr == nil {
 		o.stderr = os.Stderr
+	}
+	if o.notice == nil {
+		o.notice = processAdmissionNotices.say
 	}
 	return o
 }
@@ -128,12 +134,14 @@ func (a *helmAdmitter) admit(root string, pid int64) (humanauthority.HelmGrant, 
 	verb := o.verb()
 	o.yield(cwd, helm.Yield{Boundary: "person-proof", Gate: "human-proof", Would: "refuse",
 		Subject: fmt.Sprintf("verb=%s class=%s cwd=%s", verb, class, cwd)})
-	who := state.By
-	if state.Malformed != "" {
-		who = "signature unreadable"
+	who, as := state.By, state.By+"'s act"
+	if state.Malformed != "" || state.By == "" {
+		who, as = "signature unreadable", "the helm holder's act"
 	}
-	fmt.Fprintf(o.stderr, "HUMAN AT THE HELM (%s): the person proof yields to the helm for %s; caller %s; recorded in %s\n",
-		who, verb, class, filepath.Join(common, "metasystem", "helm-yields.log"))
+	o.notice(admissionNotice{w: o.stderr,
+		line: fmt.Sprintf("HUMAN AT THE HELM (%s): %s runs as %s", who, verb, as),
+		detail: fmt.Sprintf("the enrolled-terminal check gave way to the helm for this shell (class %s); logged in %s",
+			class, filepath.Join(common, "metasystem", "helm-yields.log"))})
 	grant := humanauthority.HelmGrant{By: state.By, Since: state.Record.At, Class: class, Checkout: common}
 	if a.admitted == nil {
 		a.admitted = map[string]humanauthority.HelmGrant{}

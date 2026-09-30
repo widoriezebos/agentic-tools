@@ -10,9 +10,13 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 )
 
-// grantEndExamples are the easy forms of a general grant's end, printed with
+// grantEndExamples are the easy forms of a general grant's end, the detail of
 // every refusal of one.
 const grantEndExamples = "metasystem grant add --acts everything --for 24h (or 8h, 7d, 1w), --until 18:00, --until tomorrow, or a date within the next 7 days, --until YYYY-MM-DD"
+
+// grantEndOthers are the other easy ends, beside the --for 24h a refusal
+// names.
+const grantEndOthers = "or 8h, 7d, 1w; or --until 18:00, --until tomorrow, --until a date within 7 days"
 
 var grantForPattern = regexp.MustCompile(`^([1-9][0-9]{0,3})([hdw])$`)
 var grantClockPattern = regexp.MustCompile(`^([01]?[0-9]|2[0-3]):([0-5][0-9])$`)
@@ -26,17 +30,17 @@ var grantClockPattern = regexp.MustCompile(`^([01]?[0-9]|2[0-3]):([0-5][0-9])$`)
 func parseGrantEnd(now time.Time, zone *time.Location, forValue, until string) (time.Time, error) {
 	forValue, until = strings.TrimSpace(forValue), strings.TrimSpace(until)
 	if now.IsZero() || zone == nil {
-		return time.Time{}, fmt.Errorf("the clock is unreadable; nothing was done")
+		return time.Time{}, fmt.Errorf("the clock can't be read")
 	}
 	if forValue != "" && until != "" {
-		return time.Time{}, fmt.Errorf("a general grant takes one of --for and --until, not both; %s", grantEndExamples)
+		return time.Time{}, fmt.Errorf("a general grant takes --for or --until, not both")
 	}
 	var end time.Time
 	switch {
 	case forValue != "":
 		match := grantForPattern.FindStringSubmatch(forValue)
 		if match == nil {
-			return time.Time{}, fmt.Errorf("--for %s is not a duration like 8h, 24h, 7d or 1w; %s", forValue, grantEndExamples)
+			return time.Time{}, fmt.Errorf("--for %s isn't a duration like 8h, 24h, 7d or 1w", forValue)
 		}
 		n, _ := strconv.Atoi(match[1])
 		unit := map[string]time.Duration{"h": time.Hour, "d": 24 * time.Hour, "w": 168 * time.Hour}[match[2]]
@@ -59,7 +63,7 @@ func parseGrantEnd(now time.Time, zone *time.Location, forValue, until string) (
 		default:
 			date, parseErr := time.ParseInLocation("2006-01-02", until, zone)
 			if parseErr != nil {
-				return time.Time{}, fmt.Errorf("--until %s is not a time like 18:00, tomorrow or a date like 2026-10-07; %s", until, grantEndExamples)
+				return time.Time{}, fmt.Errorf("--until %s isn't a time like 18:00, tomorrow or a date like 2026-10-07", until)
 			}
 			end, err = localInstant(date.Year(), date.Month(), date.Day()+1, 0, 0, zone)
 		}
@@ -67,10 +71,10 @@ func parseGrantEnd(now time.Time, zone *time.Location, forValue, until string) (
 			return time.Time{}, err
 		}
 	default:
-		return time.Time{}, fmt.Errorf("a general grant needs its end; %s", grantEndExamples)
+		return time.Time{}, fmt.Errorf("a general grant needs its end, like --for 24h")
 	}
 	if !end.After(now) {
-		return time.Time{}, fmt.Errorf("the grant's end %s is not after now; %s", end.In(zone).Format("15:04 MST (2006-01-02)"), grantEndExamples)
+		return time.Time{}, fmt.Errorf("the grant's end %s is already past", end.In(zone).Format("15:04 MST (2006-01-02)"))
 	}
 	if latest := now.Add(goal.GeneralAttorneyMax).Truncate(time.Minute); end.After(latest) {
 		return time.Time{}, fmt.Errorf("a general grant lasts at most one week; the latest end is %s (--for 1w)", latest.In(zone).Format("15:04 MST (2006-01-02)"))

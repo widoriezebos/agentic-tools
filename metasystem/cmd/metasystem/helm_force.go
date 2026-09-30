@@ -13,14 +13,10 @@ import (
 // session lineage (no proof) never force.
 func forceAdmission(state helm.State, proof *humanauthority.Proof, root string) error {
 	if !state.Active {
-		return errors.New("goal done --force works only at the helm: take it first (metasystem helm take --reason TEXT), or close what blocks the conclusion")
+		return errors.New("goal done --force works only while you hold the helm: metasystem helm take --reason TEXT")
 	}
 	if proof == nil || proof.Helm != nil || proof.FixtureOnly || !proof.TerminalValidFor(root) {
-		why := "no person proof"
-		if proof != nil && proof.Helm != nil {
-			why = "admitted by the helm"
-		}
-		return errors.New("goal done --force is the person's own act: this shell was not proven at the enrolled terminal (" + why + "); run it yourself at the terminal you took the helm at (a terminal is enrolled once with " + humanauthority.EnrollCommand + ")")
+		return errors.New("goal done --force is your own act, in the terminal you took the helm in; this shell isn't it")
 	}
 	return nil
 }

@@ -166,8 +166,8 @@ func TestIntentProcessAndAnswerTargets(t *testing.T) {
 		b := newProcessBed(t)
 		b.class = lease.ClassDelegate
 		code, result := b.runJSON(b.owners(), "system", "stop")
-		if code != 1 || result.Outcome != intentRefused || !strings.Contains(result.Decision, "agent-free terminal") ||
-			!strings.Contains(result.Summary, "human act at a terminal") {
+		if code != 1 || result.Outcome != intentRefused || result.Next == nil || result.Next.Reason != "in a terminal you opened yourself" ||
+			result.Summary != "an agent started this shell, so nothing was changed" {
 			t.Fatalf("agent stop = %d %+v", code, result)
 		}
 		if record := b.fence(); record.State != stopfence.StateOpen || record.Generation != 0 {

@@ -527,7 +527,7 @@ func TestIntentArgumentsAndRemedies(t *testing.T) {
 	unenrolled := goalSyncTerminalReader(t, bed.root(), "ttys:not_enrolled")
 	bed.facts.reader = &unenrolled
 	code, result = bed.runJSON(bed.owners(), "goal", "pause", bedGoal, "--reason", "x")
-	if code != 1 || !strings.Contains(result.Decision, "--lineage") {
+	if code != 1 || !strings.Contains(strings.Join(result.Details, "\n"), "--lineage") {
 		t.Fatalf("unknown actor = %d %+v", code, result)
 	}
 	reason := "it's -waiting"

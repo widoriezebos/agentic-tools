@@ -77,8 +77,8 @@ func TestU6bPortDelegateStopIsRefusedAndStatusIsReadOnly(t *testing.T) {
 	stdout, stderr, code := captureRelay(t, func(stdout, stderr io.Writer) int {
 		return runProcessStopWith([]string{"--repo", repo}, repositoryTop, classify, stdout, stderr)
 	})
-	want := "metasystem system stop: system stop is a human act at a terminal; this caller is DELEGATE.\n" +
-		"at an agent-free terminal, run: metasystem system stop --repo " + repo + "\n"
+	want := "metasystem system stop: an agent started this shell.\n" +
+		"in a terminal you opened yourself, run: metasystem system stop --repo " + repo + "\n"
 	if code != 1 || stdout != "" || stderr != want {
 		t.Fatalf("delegate stop = code %d stdout %q stderr %q, want exit 1 and %q", code, stdout, stderr, want)
 	}

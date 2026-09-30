@@ -109,8 +109,8 @@ func TestProcessVerbsShareTheNamedSeparateInstallation(t *testing.T) {
 				return verb.run([]string{"--repo", repo, "--installation", installation}, stdout, stderr)
 			})
 			public := publicProcessVerb(verb.name)
-			want := "metasystem " + public + ": " + public + " is a human act at a terminal; this caller is DELEGATE.\n" +
-				"at an agent-free terminal, run: metasystem " + public + " --repo " + repo + " --installation " + installation + "\n"
+			want := "metasystem " + public + ": an agent started this shell.\n" +
+				"in a terminal you opened yourself, run: metasystem " + public + " --repo " + repo + " --installation " + installation + "\n"
 			if code != 1 || stdout != "" || stderr != want || strings.Contains(stderr, "--metasystem-root") {
 				t.Fatalf("separate-installation %s = code %d stdout %q stderr %q, want stderr %q", verb.name, code, stdout, stderr, want)
 			}
@@ -180,8 +180,8 @@ func TestArmTemporaryWordStillRequiresHumanCallerAndLeavesFenceUnchanged(t *test
 			"--temporary-human-word", "Wido authorizes this temporary arm", "--review-by", "2026-09-09",
 		}, repositoryTop, classify, stdout, stderr)
 	})
-	want := "metasystem system start: system start is a human act at a terminal; this caller is DELEGATE.\n" +
-		"at an agent-free terminal, run: metasystem system start --repo " + repo + " --installation " + installation + "\n"
+	want := "metasystem system start: an agent started this shell.\n" +
+		"in a terminal you opened yourself, run: metasystem system start --repo " + repo + " --installation " + installation + "\n"
 	if code != 1 || stdout != "" || stderr != want {
 		t.Fatalf("temporary arm refusal = code %d stdout %q stderr %q, want code 1 stderr %q", code, stdout, stderr, want)
 	}
@@ -229,8 +229,8 @@ func TestProcessClassifierDataFailureRepairsThenRetriesTheRequestedVerb(t *testi
 				}
 				return 1
 			})
-			want := "metasystem " + publicProcessVerb(test.verb) + ": caller classification is blocked by job record " + jobPath + ": invalid JSON: unexpected end of JSON input.\n" +
-				"repair " + jobPath + ", then at an agent-free terminal, run: metasystem " + publicProcessVerb(test.verb) + " --repo " + repo + " --installation " + installation + "\n"
+			want := "metasystem " + publicProcessVerb(test.verb) + ": who started this shell can't be told: job record " + jobPath + " is damaged (invalid JSON: unexpected end of JSON input).\n" +
+				"repair " + jobPath + ", then in a terminal you opened yourself, run: metasystem " + publicProcessVerb(test.verb) + " --repo " + repo + " --installation " + installation + "\n"
 			if code != 1 || stderr != want {
 				t.Fatalf("%s classification refusal = code %d stderr %q, want code 1 stderr %q", test.verb, code, stderr, want)
 			}
@@ -259,8 +259,8 @@ func TestProcessClassifierDataFailureRepairsThenRetriesTheRequestedVerb(t *testi
 		}
 		return 1
 	})
-	want := "metasystem system start: caller classification is blocked by job record " + jobPath + ": jobId is missing.\n" +
-		"repair " + jobPath + ", then at an agent-free terminal, run: metasystem system start --repo " + repo + " --installation " + installation + "\n"
+	want := "metasystem system start: who started this shell can't be told: job record " + jobPath + " is damaged (jobId is missing).\n" +
+		"repair " + jobPath + ", then in a terminal you opened yourself, run: metasystem system start --repo " + repo + " --installation " + installation + "\n"
 	if code != 1 || stderr != want || strings.Contains(stderr, "fixture-remote") {
 		t.Fatalf("unidentifiable-job refusal = code %d stderr %q, want %q without guessed identity", code, stderr, want)
 	}

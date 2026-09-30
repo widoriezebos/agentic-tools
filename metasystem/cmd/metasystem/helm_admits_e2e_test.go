@@ -128,7 +128,7 @@ func TestHelmPersonProofEndToEnd(t *testing.T) {
 	yields := filepath.Join(root, ".git", "metasystem", "helm-yields.log")
 
 	code, out := helmEngine(t, root, "goal", "done", "helm-done", "--reason", "x")
-	if code != 1 || !strings.Contains(out, "cannot tell who runs") || strings.Contains(out, "HUMAN AT THE HELM") {
+	if code != 1 || !strings.Contains(out, "this terminal isn't enrolled") || strings.Contains(out, "HUMAN AT THE HELM") {
 		t.Fatalf("done before the take: %d\n%s", code, out)
 	}
 
@@ -138,7 +138,7 @@ func TestHelmPersonProofEndToEnd(t *testing.T) {
 	helmMust(t, err)
 
 	code, out = helmEngine(t, root, "goal", "done", "helm-done", "--reason", "landed at the helm")
-	if code != 0 || strings.Count(out, "HUMAN AT THE HELM (wido): the person proof yields to the helm for goal done helm-done; caller UNTRUSTED; recorded in "+yields) != 1 {
+	if code != 0 || strings.Count(out, "HUMAN AT THE HELM (wido): goal done helm-done runs as wido's act") != 1 {
 		t.Fatalf("done at the helm: %d\n%s", code, out)
 	}
 	if record := helmLedgerRecord(t, root, "records/goals/helm-done.md"); !strings.Contains(record, " done actor=human:wido ") {
@@ -183,7 +183,7 @@ func TestHelmPersonProofEndToEnd(t *testing.T) {
 	refused := func(leg, dir string, args ...string) {
 		t.Helper()
 		code, out := helmEngine(t, dir, args...)
-		if code != 1 || !strings.Contains(out, "cannot tell who runs") || strings.Contains(out, "HUMAN AT THE HELM") || len(yieldLines(t, yields)) != admitted {
+		if code != 1 || !strings.Contains(out, "this terminal isn't enrolled") || strings.Contains(out, "HUMAN AT THE HELM") || len(yieldLines(t, yields)) != admitted {
 			t.Fatalf("%s: %d\n%s", leg, code, out)
 		}
 	}

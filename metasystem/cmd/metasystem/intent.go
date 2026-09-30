@@ -285,9 +285,17 @@ func (c intentCommand) words() []string {
 	return strings.Fields(c.name)
 }
 
-// allFlags is the command's own options plus the two every command takes.
+// allFlags is the command's own options plus those every command takes:
+// --repo, --json, and --verbose, which shows a result's details ("Messages a
+// Person Reads"); a command that groups findings documents its own --verbose.
 func (c intentCommand) allFlags() []intentFlag {
-	return append(append([]intentFlag(nil), c.flags...), intentRepoFlag, intentJSONFlag)
+	flags := append(append([]intentFlag(nil), c.flags...), intentRepoFlag, intentJSONFlag)
+	if !slices.ContainsFunc(c.flags, func(flag intentFlag) bool { return flag.name == intentVerboseFlag.name }) {
+		details := intentVerboseFlag
+		details.hidden, details.usage = true, "also print the details behind the result"
+		flags = append(flags, details)
+	}
+	return flags
 }
 
 func (c intentCommand) lookupFlag(name string) (intentFlag, bool) {
@@ -603,6 +611,9 @@ type intentInvocation struct {
 	// entrants are the registered stores this verb is inside, each held
 	// shared until the verb ends (Part B 3.1 "Entrants").
 	entrants []*diskstore.Entrant
+	// notices holds the helm and grant admission notices until the result
+	// says whether the act proceeded; nil prints them at once.
+	notices *admissionNotices
 }
 
 // runIntent routes one public command. Help needs no repository, identity or
@@ -626,6 +637,10 @@ func runIntentIn(command intentCommand, raw []string, stdout, stderr io.Writer, 
 		owners.dependencies.stderr = stderr
 	}
 	inv := &intentInvocation{command: command, raw: raw, stdout: stdout, stderr: stderr, cwd: cwd, owners: owners}
+	if release, held := processAdmissionNotices.hold(); held {
+		inv.notices = processAdmissionNotices
+		defer release()
+	}
 	input, inputErr := parseIntentArgs(command, raw)
 	inv.input = input
 	if inputErr == nil && input.help {
@@ -731,6 +746,9 @@ type intentResult struct {
 	Data          any            `json:"data,omitempty"`
 	Next          *intentNext    `json:"next,omitempty"`
 	Decision      string         `json:"decision,omitempty"`
+	// Details are what only --verbose prints: refusal codes, paths the fix
+	// does not need, background ("Messages a Person Reads").
+	Details []string `json:"details,omitempty"`
 
 	text       []string
 	next       []string
@@ -748,8 +766,13 @@ func (inv *intentInvocation) render(result intentResult) int {
 		result.Next = &intentNext{Argv: result.next, Reason: result.nextReason}
 	}
 	code := result.code
+	proceeded := result.Outcome == intentConfirmed || result.Outcome == intentUnchanged || result.Outcome == intentPartial || result.Outcome == intentInProgress
 	if code == 0 && result.Outcome != intentConfirmed && result.Outcome != intentUnchanged {
 		code = 1
+	}
+	verbose := inv.input.switched("verbose")
+	if inv.notices != nil {
+		result.Details = append(result.Details, inv.notices.settle(!proceeded, verbose && !inv.input.switched("json"))...)
 	}
 	if inv.input.switched("json") {
 		encoded, err := json.MarshalIndent(result, "", "  ")
@@ -770,6 +793,7 @@ func (inv *intentInvocation) render(result intentResult) int {
 		if result.Next != nil {
 			fmt.Fprintf(inv.stdout, "next: %s  (%s)\n", shellCommand(result.Next.Argv), result.Next.Reason)
 		}
+		inv.writeDetails(inv.stdout, result.Details, verbose)
 		return code
 	}
 	fmt.Fprintf(inv.stderr, "metasystem %s: %s\n", inv.command.name, strings.TrimSpace(result.Summary))
@@ -777,17 +801,29 @@ func (inv *intentInvocation) render(result intentResult) int {
 		fmt.Fprintln(inv.stderr, line)
 	}
 	switch {
+	case result.Next != nil && result.Next.Reason != "":
+		fmt.Fprintf(inv.stderr, "run: %s  (%s)\n", shellCommand(result.Next.Argv), result.Next.Reason)
 	case result.Next != nil:
 		fmt.Fprintf(inv.stderr, "run: %s\n", shellCommand(result.Next.Argv))
-		if result.Next.Reason != "" {
-			fmt.Fprintf(inv.stderr, "     (%s)\n", result.Next.Reason)
-		}
 	case result.Decision != "":
 		fmt.Fprintf(inv.stderr, "needed first: %s\n", result.Decision)
 	case result.nextReason != "":
 		fmt.Fprintf(inv.stderr, "hint: %s\n", result.nextReason)
 	}
+	inv.writeDetails(inv.stderr, result.Details, verbose)
 	return code
+}
+
+// writeDetails prints a result's details, only when --verbose asked.
+func (inv *intentInvocation) writeDetails(w io.Writer, details []string, verbose bool) {
+	if !verbose {
+		return
+	}
+	for _, line := range details {
+		if strings.TrimSpace(line) != "" {
+			fmt.Fprintln(w, "  "+line)
+		}
+	}
 }
 
 // ownerReport receives one goal owner's typed outcome for a public command,
@@ -906,7 +942,6 @@ func ownerResult(report *ownerReport, code int, confirmed intentResult) intentRe
 		}
 		if report.refusal.remedy.command != "" {
 			result.next = shellWords(report.refusal.remedy.command)
-			result.nextReason = "the goal owner's remedy"
 		} else if words := strings.TrimSpace(report.refusal.remedy.words); words != "" {
 			result.Decision = words
 		}

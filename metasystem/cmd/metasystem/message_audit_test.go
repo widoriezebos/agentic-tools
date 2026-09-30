@@ -34,7 +34,38 @@ const messageModeEnforce = "enforce"
 // file#Function (file#Type.Method); the longest matching key wins, and a path
 // no key names is reported. A rewrite builder moves its paths here as it
 // fixes them.
-var messageModes = map[string]string{}
+var messageModes = map[string]string{
+	// The person, helm and grant family: the reference rewrite.
+	"cmd/metasystem/admission_notice.go":                                         messageModeEnforce,
+	"cmd/metasystem/attorney_admits.go":                                          messageModeEnforce,
+	"cmd/metasystem/grant_everything.go":                                         messageModeEnforce,
+	"cmd/metasystem/helm_admits.go":                                              messageModeEnforce,
+	"cmd/metasystem/helm_force.go":                                               messageModeEnforce,
+	"cmd/metasystem/helm_return.go":                                              messageModeEnforce,
+	"cmd/metasystem/intent_grant_everything.go":                                  messageModeEnforce,
+	"cmd/metasystem/intent_helm.go":                                              messageModeEnforce,
+	"cmd/metasystem/person_refusal.go":                                           messageModeEnforce,
+	"cmd/metasystem/intent_goals.go#intentInvocation.actorArgs":                  messageModeEnforce,
+	"cmd/metasystem/intent_planning.go#intentInvocation.actingAs":                messageModeEnforce,
+	"cmd/metasystem/intent_planning.go#runIntentGrant":                           messageModeEnforce,
+	"cmd/metasystem/intent_planning.go#runIntentRevoke":                          messageModeEnforce,
+	"cmd/metasystem/intent_planning.go#runIntentGrantList":                       messageModeEnforce,
+	"cmd/metasystem/intent_process.go#intentInvocation.startRefusal":             messageModeEnforce,
+	"cmd/metasystem/intent_process.go#processRefusalResult":                      messageModeEnforce,
+	"cmd/metasystem/intent_process.go#runIntentEnroll":                           messageModeEnforce,
+	"cmd/metasystem/intent_process.go#runIntentSystemRestart":                    messageModeEnforce,
+	"cmd/metasystem/intent_process.go#runIntentSystemStart":                      messageModeEnforce,
+	"cmd/metasystem/intent_process.go#systemStopResult":                          messageModeEnforce,
+	"cmd/metasystem/process_verbs.go#classificationDataRefusal":                  messageModeEnforce,
+	"cmd/metasystem/process_verbs.go#humanTerminalCheck":                         messageModeEnforce,
+	"cmd/metasystem/process_verbs.go#processOwners.arm":                          messageModeEnforce,
+	"cmd/metasystem/process_verbs.go#processOwners.stop":                         messageModeEnforce,
+	"cmd/metasystem/goalsync_mutations.go#runGoalEnrollTerminalWithDependencies": messageModeEnforce,
+	"internal/helm":                               messageModeEnforce,
+	"internal/humanauthority/remedy.go":           messageModeEnforce,
+	"internal/humanauthority/authority.go#Enroll": messageModeEnforce,
+	"internal/humanauthority/authority.go#Prove":  messageModeEnforce,
+}
 
 // messageLineBudget is the first line's length the rule aims at.
 const messageLineBudget = 100
@@ -337,6 +368,16 @@ func messageScanLiteral(lit *ast.CompositeLit, add func(ast.Node, string, ast.Ex
 		if words, ok := fields["words"]; ok {
 			add(lit, messageDecision, words, false)
 		}
+	case "processRefusal":
+		if sentence, ok := fields["sentence"]; ok {
+			add(lit, messageSummary, sentence, false)
+		}
+		if second, ok := fields["second"]; ok {
+			add(lit, messageDecision, second, false)
+		}
+		if plain, ok := fields["plain"]; ok {
+			add(lit, messagePrint, plain, false)
+		}
 	case "Prose":
 		if prose, ok := fields["Prose"]; ok {
 			add(lit, messageProse, prose, false)
@@ -408,6 +449,27 @@ func TestAuditMessagesAPersonReads(t *testing.T) {
 	t.Logf("%d message sources, %d with violations in report mode", len(sources), reported)
 	if dir := os.Getenv("METASYSTEM_MESSAGE_INVENTORY"); dir != "" {
 		writeMessageInventory(t, dir, sources)
+	}
+}
+
+// TestAuditAdmissionNoticesWaitForTheOutcome: the helm and grant admitters
+// never print; their notice goes through the admission board, which prints it
+// only when the act proceeds (no helm notice before a refusal it does not
+// cover).
+func TestAuditAdmissionNoticesWaitForTheOutcome(t *testing.T) {
+	t.Parallel()
+	for _, file := range []string{"helm_admits.go", "attorney_admits.go"} {
+		fset := token.NewFileSet()
+		parsed, err := parser.ParseFile(fset, file, nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ast.Inspect(parsed, func(node ast.Node) bool {
+			if call, ok := node.(*ast.CallExpr); ok && strings.HasPrefix(messageCallName(call), "fmt.Fprint") {
+				t.Errorf("%s:%d prints directly; an admission notice goes through admissionNotices.say", file, fset.Position(call.Pos()).Line)
+			}
+			return true
+		})
 	}
 }
 

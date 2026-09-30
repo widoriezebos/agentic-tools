@@ -125,8 +125,8 @@ func TestMissionLaunchClassificationDataFailureNamesRepairBeforeRetry(t *testing
 		_, code := missionFenceBeforeArmWith(stderr, root, "resume", repositoryTop, lease.ClassifyAt)
 		return code
 	})
-	want := "metasystem mission resume: caller classification is blocked by job record " + printedJobPath + ": invalid JSON: unexpected end of JSON input.\n" +
-		"repair " + printedJobPath + ", then at an agent-free terminal, run: metasystem mission resume --root " + root + " --mission <id>\n"
+	want := "metasystem mission resume: who started this shell can't be told: job record " + printedJobPath + " is damaged (invalid JSON: unexpected end of JSON input).\n" +
+		"repair " + printedJobPath + ", then in a terminal you opened yourself, run: metasystem mission resume --root " + root + " --mission <id>\n"
 	if code != 1 || output != want {
 		t.Fatalf("mission classification refusal = code %d output %q, want %q", code, output, want)
 	}

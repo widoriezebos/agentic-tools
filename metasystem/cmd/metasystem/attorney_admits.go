@@ -38,13 +38,16 @@ type attorneyAdmitter struct {
 // attorneyAdmitOwners are the facts the admitter reads; zero values are the
 // production readers.
 type attorneyAdmitOwners struct {
-	grants     func(root string) ([]goal.PowerOfAttorneyEntry, error)
-	machine    func(root string) (string, error)
-	classify   func(root string, pid int64) (lease.Classification, error)
-	holder     func(root string) (lease.CurrentHolderView, error)
-	fixture    func(root string) bool
-	verb       func() string
-	stderr     io.Writer
+	grants   func(root string) ([]goal.PowerOfAttorneyEntry, error)
+	machine  func(root string) (string, error)
+	classify func(root string, pid int64) (lease.Classification, error)
+	holder   func(root string) (lease.CurrentHolderView, error)
+	fixture  func(root string) bool
+	verb     func() string
+	stderr   io.Writer
+	// notice tells the person what the grant admitted; nil holds it on the
+	// process's admission board until the act's outcome is known.
+	notice     func(admissionNotice)
 	appendLog  func(root, line string) error
 	lockShared func(root string) error
 }
@@ -70,6 +73,9 @@ func (o attorneyAdmitOwners) withDefaults() attorneyAdmitOwners {
 	}
 	if o.stderr == nil {
 		o.stderr = os.Stderr
+	}
+	if o.notice == nil {
+		o.notice = processAdmissionNotices.say
 	}
 	if o.appendLog == nil {
 		o.appendLog = humanauthority.AppendAttorneyLog
@@ -166,7 +172,9 @@ func (a *attorneyAdmitter) admit(root string, pid int64, now time.Time) (humanau
 		if err := o.appendLog(checkout, line); err != nil {
 			return humanauthority.HelmGrant{}, false
 		}
-		fmt.Fprintf(o.stderr, "POWER OF ATTORNEY (%s, grant %s): answers the person check of %s for the seat's main session; recorded in %s\n", person, entry.ID, verb, attorneyLogPath(checkout))
+		o.notice(admissionNotice{w: o.stderr,
+			line:   fmt.Sprintf("POWER OF ATTORNEY (%s, grant %s): %s runs as %s's act", person, entry.ID, verb, person),
+			detail: "the grant stood in for the enrolled-terminal check of this seat's main session; logged in " + attorneyLogPath(checkout)})
 		if a.logged == nil {
 			a.logged = map[string]bool{}
 		}
