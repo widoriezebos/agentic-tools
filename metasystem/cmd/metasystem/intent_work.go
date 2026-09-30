@@ -78,9 +78,9 @@ type intentWorkOwners struct {
 // intentConfPath is the selected installation's configuration file.
 
 // unitReadFindingsClass is the class of the temporary store a unit's read
-// writes its findings into (Part B R1): it outlives the command that makes
-// it, so it is registered, owned by the unit's named inputs.
-const unitReadFindingsClass = "unit-read-findings"
+// writes its findings into (Part B R1): owned by the unit's named inputs,
+// released with its unit (Round D3 N4).
+const unitReadFindingsClass = diskstore.UnitReadFindingsClass
 
 func intentConfPath(layout stateroot.Layout) string {
 	return filepath.Join(layout.InstallationRoot, "metasystem.conf")
