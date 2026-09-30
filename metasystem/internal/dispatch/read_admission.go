@@ -184,8 +184,9 @@ func CritiqueReadAdmissionForGoal(repoRoot, role, rootJob, goalID string, round 
 					return "", &OpError{
 						Code:   11,
 						Reason: designChainOpenRefusal,
-						Message: fmt.Sprintf("goal %s already has critique chain %s of design %s (newest round %d, %s), so subject %s cannot start a fresh one\nrun: metasystem work finish j2:%s to close it, or continue that chain",
-							goalID, criticRoot, subject.DesignPath, latestRound, asString(latest["status"]), result.SubjectDigest, criticRoot),
+						Message: fmt.Sprintf("goal %s already has critique chain %s of design %s (newest round %d, %s), so subject %s cannot start a fresh one; continue that chain, or close it",
+							goalID, criticRoot, subject.DesignPath, latestRound, asString(latest["status"]), result.SubjectDigest),
+						Run: "metasystem work finish j2:" + criticRoot,
 					}
 				}
 			}
@@ -235,7 +236,8 @@ func CritiqueReadAdmissionForGoal(repoRoot, role, rootJob, goalID string, round 
 				return "", &OpError{
 					Code:    11,
 					Reason:  concurrentReadRefusal,
-					Message: fmt.Sprintf("critic root %s still has round %d outstanding for subject %s, and a second read would race its fold; let it finish, or stop it and review again\nrun: metasystem work stop j2:%s", criticRoot, latestRound, result.SubjectDigest, asString(latest["jobId"])),
+					Message: fmt.Sprintf("critic root %s still has round %d outstanding for subject %s, and a second read would race its fold; let it finish, or stop it and review again", criticRoot, latestRound, result.SubjectDigest),
+					Run:     "metasystem work stop j2:" + asString(latest["jobId"]),
 				}
 			}
 		}

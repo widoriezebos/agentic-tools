@@ -47,9 +47,9 @@ type Refusal struct{ Code, Detail string }
 // Reads"), and RefusalDetail the code-first line records keep.
 func (refusal Refusal) Error() string {
 	if refusal.Code == FetchRefused {
-		return "the cadence tick could not fetch the trunk: " + refusal.Detail
+		return "the cadence tick could not fetch the trunk: " + refusal.Detail + "\nnothing to do now; the next tick fetches again"
 	}
-	return "the cadence tick could not read its ledger: " + refusal.Detail
+	return "the cadence tick could not read its ledger: " + refusal.Detail + "\nnothing to do by command: repair the named ledger record; the next tick reads it again"
 }
 func (refusal Refusal) RefusalCode() string   { return refusal.Code }
 func (refusal Refusal) RefusalDetail() string { return refusal.Code + ": " + refusal.Detail }

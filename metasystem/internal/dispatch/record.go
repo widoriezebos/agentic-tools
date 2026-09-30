@@ -134,14 +134,21 @@ type OpError struct {
 	Code    int
 	Reason  string
 	Message string
+	// Run is the one command that resolves the refusal, printed as line 2;
+	// empty when the words already say what to do.
+	Run string
 }
 
-// Error is the refusal's words alone.
+// Error is the refusal's words alone, then its command on a "run:" line.
 func (e *OpError) Error() string {
-	if e.Message != "" {
-		return e.Message
+	words := e.Message
+	if words == "" {
+		words = fmt.Sprintf("dispatch record operation refused with code %d", e.Code)
 	}
-	return fmt.Sprintf("dispatch record operation refused with code %d", e.Code)
+	if e.Run == "" {
+		return words
+	}
+	return words + "\nrun: " + e.Run
 }
 
 // RefusalCode is the refusal's code (its Reason), or "" when it has none.
