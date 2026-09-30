@@ -27,21 +27,18 @@ func writeUpStub(t *testing.T, root string, status int, lines ...string) {
 	}
 }
 
-// The landing owner is machinery, not a session: the rebuilt engine's
-// ordinary up re-arms a landed build (its accepted-engine step, whose
-// authority is the landed bytes, never the caller) and then ends at
-// component=session-identity because no session is there to announce. That
-// ending is the owner's re-arm done, not a failed tick; any other failed
-// component still fails it. The stub is the rebuilt engine's up, run through
-// the owner's production re-arm edge.
-func TestLandingOwnerRearmSucceedsWhenUpEndsOnlyAtSessionIdentity(t *testing.T) {
+// The landing owner is machinery, not a session, so the rebuilt engine's
+// ordinary up it runs ends with a non-zero exit at its session step. The
+// owner judges that run by the state it must leave, never by up's words: the
+// enrolled engine is current and the lane's supervision is armed. A run that
+// leaves the supervision down fails the re-arm, whatever step up stopped at.
+// Here the stub up stops exactly where the live one does, and the lane has
+// neither an enrolled engine nor a supervision owner: the re-arm must not
+// read as done (on 982fcdc00 it did, from up's stop point alone).
+func TestLandingOwnerRearmFailsWhenSupervisionIsNotArmedAfterwards(t *testing.T) {
 	t.Parallel()
 	if reflect.ValueOf(BatchBaseRearm.Up).Pointer() != reflect.ValueOf(OwnerUpLandedEngine).Pointer() {
 		t.Fatal("the owner's re-arm does not run up through OwnerUpLandedEngine")
-	}
-	up := func(root string) error {
-		_, err := OwnerUpLandedEngine(context.Background(), root, root)
-		return err
 	}
 	root := t.TempDir()
 	writeUpStub(t, root, 1,
@@ -49,38 +46,8 @@ func TestLandingOwnerRearmSucceedsWhenUpEndsOnlyAtSessionIdentity(t *testing.T) 
 		`component=accepted-engine outcome=re-armed detail="generation=4 previous=3 engine=7db15ce landed=7db15ce ref=refs/remotes/origin/main"`,
 		`component=session-identity outcome=failed detail="runtime-signature ancestry proof failed: no agent ancestor"`,
 		`up outcome=failed re-armed="generation=4 previous=3 engine=7db15ce landed=7db15ce" component=session-identity remedy="pass --pid <session-pid> and --start-time <epoch-seconds>, or configure a runtime signature and invoke up from that session"`)
-	if err := up(root); err != nil {
-		t.Fatalf("owner re-arm ending only at session-identity = %v, want the re-arm accepted", err)
-	}
-
-	// The steady state on every later tick: the engine is already current,
-	// so up re-arms nothing and still ends at session-identity.
-	current := t.TempDir()
-	writeUpStub(t, current, 1,
-		`component=host-preflight outcome=verified`,
-		`component=accepted-engine outcome=verified detail="generation=5 path=/lanes/landing/metasystem/bin/metasystem"`,
-		`component=session-identity outcome=failed detail="runtime-signature ancestry proof failed: no agent ancestor"`,
-		`up outcome=failed component=session-identity remedy="pass --pid <session-pid> and --start-time <epoch-seconds>, or configure a runtime signature and invoke up from that session"`)
-	if err := up(current); err != nil {
-		t.Fatalf("owner re-arm on a current engine ending only at session-identity = %v, want the re-arm accepted", err)
-	}
-
-	refused := t.TempDir()
-	writeUpStub(t, refused, 1,
-		`component=host-preflight outcome=verified`,
-		`component=accepted-engine outcome=ENROLLMENT_DRIFT detail="rebuilt engine is not landed"`,
-		`up outcome=ENROLLMENT_DRIFT component=accepted-engine remedy="run metasystem system start"`)
-	if err := up(refused); err == nil || !strings.Contains(err.Error(), "ENROLLMENT_DRIFT") {
-		t.Fatalf("owner re-arm refused at the accepted engine = %v, want the refusal", err)
-	}
-
-	later := t.TempDir()
-	writeUpStub(t, later, 1,
-		`component=accepted-engine outcome=verified detail="generation=4"`,
-		`component=session-identity outcome=verified`,
-		`component=supervision outcome=failed`,
-		`up outcome=failed component=supervision remedy="inspect supervision"`)
-	if err := up(later); err == nil {
-		t.Fatal("owner re-arm that failed after session identity was accepted")
+	_, err := OwnerUpLandedEngine(context.Background(), root, root)
+	if err == nil || !strings.Contains(err.Error(), "the lane's engine is not re-armed") {
+		t.Fatalf("owner re-arm that left nothing armed = %v; want it refused", err)
 	}
 }
