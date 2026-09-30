@@ -64,11 +64,6 @@ func New(code, facts string, reason error) error {
 	return &Coded{Code: code, Facts: facts, Reason: reason}
 }
 
-// Plain is a coded refusal from a plain reason sentence.
-func Plain(code, reason string) *Coded {
-	return &Coded{Code: code, Reason: errors.New(reason)}
-}
-
 // Detailed is an error that carries a detail beside its plain text.
 type Detailed interface {
 	error
