@@ -52,6 +52,35 @@ func (p goalRecoveryPolicy) ParkBranchCheck(endpoint goal.Endpoint) func(string,
 	return goalParkBranchCheck(p.root, endpoint)
 }
 
+// blockedRecoveryAtCommandClock is goalRecoveryPolicy bound to a request
+// before its clock is read: a publish that meets a dead owner's pushed entry
+// resolves the command's clock then, so a request that never recovers reads
+// no clock for it.
+type blockedRecoveryAtCommandClock struct {
+	root       string
+	commandNow func(string) (time.Time, error)
+}
+
+func (p blockedRecoveryAtCommandClock) policy() (goalRecoveryPolicy, error) {
+	now, err := p.commandNow(p.root)
+	if err != nil {
+		return goalRecoveryPolicy{}, fmt.Errorf("recover the dead owner's pushed entry: %w", err)
+	}
+	return goalRecoveryPolicy{GoalRecoveryPolicy: dispatchcore.GoalRecoveryPolicy{Now: now}, root: p.root}, nil
+}
+
+func (p blockedRecoveryAtCommandClock) BreachStop(endpoint goal.Endpoint, entry goal.Entry) (goal.PublishRequest, func(), error) {
+	policy, err := p.policy()
+	if err != nil {
+		return goal.PublishRequest{}, nil, err
+	}
+	return policy.BreachStop(endpoint, entry)
+}
+
+func (p blockedRecoveryAtCommandClock) ParkBranchCheck(endpoint goal.Endpoint) func(string, string) (string, error) {
+	return goalParkBranchCheck(p.root, endpoint)
+}
+
 // goalParkBranchCheck is the command edge's name for the park branch check
 // internal/goal/branch owns, where the interface's own park reaches it too.
 func goalParkBranchCheck(root string, endpoint goal.Endpoint) func(string, string) (string, error) {
@@ -605,10 +634,9 @@ func syncReqClassifiedWithTerminalGradeAtWithDependencies(root, by, lineageFlag 
 	configureCarriedCounselor(&e)
 	// A publish blocked by a provably dead owner's pushed entry recovers it
 	// (the batch owner's handover included) under the same live policy
-	// `goal sync --recover` carries, at the command's clock.
-	if recoveryNow, nowErr := commandNow(root); nowErr == nil {
-		e.ConfigureBlockedRecovery(goalRecoveryPolicy{GoalRecoveryPolicy: dispatchcore.GoalRecoveryPolicy{Now: recoveryNow}, root: root})
-	}
+	// `goal sync --recover` carries, at the command's clock, read only when
+	// that recovery runs.
+	e.ConfigureBlockedRecovery(blockedRecoveryAtCommandClock{root: root, commandNow: commandNow})
 	machine, err := dependencies.machine(root)
 	if err != nil {
 		return goal.VerbRequest{}, err
