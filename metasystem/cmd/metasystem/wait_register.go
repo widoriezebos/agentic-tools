@@ -105,8 +105,14 @@ func runWaitRegister(args []string, stdout, stderr io.Writer) int {
 			return metarun.ExitInvalidWait
 		}
 	} else {
-		if *pid <= 0 || strings.TrimSpace(*label) == "" || *question != "" {
-			fmt.Fprintln(stderr, "local wait requires --pid and --label and accepts no --question")
+		if *pid < 0 || strings.TrimSpace(*label) == "" || *question != "" {
+			fmt.Fprintln(stderr, "local wait requires --label and accepts no --question")
+			return metarun.ExitInvalidWait
+		}
+		if *pid == 0 && (!timeoutExplicit || *timeout > metarun.MaxPidlessLocalWaitTimeout) {
+			// Work with no process of its own (in-session sub-agents) waits
+			// a bounded time; a later session wait renews it.
+			fmt.Fprintln(stderr, "a wait with no --pid lasts at most 2 hours; give --timeout DURATION (2h or less)")
 			return metarun.ExitInvalidWait
 		}
 		if *jobID != "" {

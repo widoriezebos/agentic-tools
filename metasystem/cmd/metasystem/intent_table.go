@@ -399,6 +399,7 @@ func practiceIntentCommands() []intentCommand {
 			[]string{"metasystem test baseline --gate 'go test ./...'", "metasystem test baseline --check"}, runTestBaseline),
 		passthroughAction("session", "wait", "agent", "say this session waits for a running process or a person's answer, so it may stop",
 			[]string{"metasystem session wait --pid PID --label TEXT [--job J] [--timeout DURATION]",
+				"metasystem session wait --label TEXT --timeout DURATION",
 				"metasystem session wait --question TEXT --timeout DURATION",
 				"metasystem session wait --end WAIT-ID"},
 			[]intentFlag{documented("pid", "PID", "the running process this session waits for"), documented("label", "TEXT", "what that process is doing"),

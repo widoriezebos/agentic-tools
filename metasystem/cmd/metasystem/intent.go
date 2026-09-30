@@ -1178,8 +1178,15 @@ func ownerResult(report *ownerReport, code int, confirmed intentResult) intentRe
 	case unchanged:
 		return intentResult{Outcome: intentUnchanged, Summary: report.result.Detail, text: lines, Data: map[string]any{"owner": ownerPublication(*report.result)}}
 	case report.result != nil:
-		return intentResult{Outcome: intentRefused, Summary: report.result.Detail, text: lines, code: max(code, 1), retry: "the goals changed meanwhile; try again",
+		result := intentResult{Outcome: intentRefused, Summary: report.result.Detail, text: lines, code: max(code, 1), retry: "the goals changed meanwhile; try again",
 			Data: map[string]any{"owner": ownerPublication(*report.result)}, Details: refusalCodeDetails(report.result.Code)}
+		// A rejection whose second line names the command that clears it
+		// ("run: CMD  (why)") carries that command as the next step.
+		if first, second, found := strings.Cut(report.result.Detail, "\nrun: "); found && !strings.Contains(second, "\n") {
+			command, why, _ := strings.Cut(second, "  (")
+			result.Summary, result.next, result.nextReason, result.retry = first, shellWords(command), strings.TrimSuffix(why, ")"), ""
+		}
+		return result
 	}
 	return intentResult{Outcome: intentFailed, code: max(code, 1), text: lines,
 		Summary: "the command stopped without saying whether it was done", next: []string{"metasystem", "system", "check"},

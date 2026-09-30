@@ -585,7 +585,7 @@ func rebindClaimKeepEpisode(f *GoalFile, at string, revision uint64, claimEpoch 
 
 func clearClaimBinding(f *GoalFile) error {
 	if f.StopFence != nil {
-		return fmt.Errorf("goal %s is breach-stopped by %s; only goal resume may clear its launch fence", f.Id, f.StopFence.StopID)
+		return fmt.Errorf("goal %s is breach-stopped by %s; only goal resume may clear its launch fence\nrun: metasystem goal resume %s  (then repeat this command)", f.Id, f.StopFence.StopID, f.Id)
 	}
 	f.Claimed = nil
 	f.StopCapability = nil
