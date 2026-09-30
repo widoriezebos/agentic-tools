@@ -55,7 +55,7 @@ func TestSeatLaunchIsSessionShapedAndNamesItsLineage(t *testing.T) {
 	m.Supervisor = supervisingStarter(t, m)
 	checkout := t.TempDir()
 	briefPath := seatBrief(t)
-	record, err := m.Start(StartSpec{Kind: "seat", WorkingDirectory: checkout, Brief: briefPath, Tag: "n0nce"})
+	record, err := m.Start(StartSpec{Kind: "seat", WorkingDirectory: checkout, FenceRoot: checkout, Brief: briefPath, Tag: "n0nce"})
 	if err != nil {
 		t.Fatalf("a seat launch without a goal was refused: %v", err)
 	}
@@ -285,7 +285,7 @@ func TestSeatStartDuringStopIsEnded(t *testing.T) {
 	closedCheckout := t.TempDir()
 	closed := writeFence(t, closedCheckout, stopfence.StateClosed, stopfence.PhaseStopped, 2)
 	want, _ = stopfence.ClosedDescription(closed, closedCheckout)
-	if _, err := m2.Start(StartSpec{Kind: "seat", WorkingDirectory: closedCheckout, Brief: seatBrief(t), Tag: "n0nce"}); err == nil || err.Error() != want || started {
+	if _, err := m2.Start(StartSpec{Kind: "seat", WorkingDirectory: closedCheckout, FenceRoot: closedCheckout, Brief: seatBrief(t), Tag: "n0nce"}); err == nil || err.Error() != want || started {
 		t.Fatalf("a seat start under a closed fence = %v started=%t, want %q", err, started, want)
 	}
 	// The fence lives at the installation's state root, which need not be
@@ -302,6 +302,7 @@ func TestSeatStartDuringStopIsEnded(t *testing.T) {
 	if _, err := m2.Store.Update(seeded.ID, func(r *Record) error {
 		r.Kind, r.Adapter, r.WorkingDirectory = "seat", "claude-headless", closedCheckout
 		setString(r.AdapterData, "brief", seatBrief(t))
+		setString(r.AdapterData, "fenceRoot", closedCheckout)
 		setString(r.AdapterData, "model", "claude-opus-5-5")
 		return nil
 	}); err != nil {
@@ -313,5 +314,38 @@ func TestSeatStartDuringStopIsEnded(t *testing.T) {
 	}
 	if claims, err := stopfence.Claims(closedCheckout, 2); err != nil || len(claims) != 0 {
 		t.Fatalf("a refused seat supervisor left a creation claim: %+v %v", claims, err)
+	}
+}
+
+// TestSeatStartWithoutAFenceRootIsRefused (SOL-B-01): a seat binds to the
+// fence of the state root its start names; with none named it would read the
+// working directory, where a vendored installation keeps no fence, and take
+// a closed fence for an open one. The start refuses and leaves no record, and
+// a supervisor handed a seat record naming no fence root starts no child.
+func TestSeatStartWithoutAFenceRootIsRefused(t *testing.T) {
+	t.Parallel()
+	m, processes, _, _ := manager(t)
+	m.Adapters = map[string]Adapter{"claude-headless": ClaudeHeadless{Binary: "/fixture/bin/claude"}}
+	started := false
+	m.Supervisor = fakeStarter{func(string) { started = true }}
+	checkout := t.TempDir()
+	writeFence(t, filepath.Join(checkout, "metasystem"), stopfence.StateClosed, stopfence.PhaseStopped, 2)
+	if _, err := m.Start(StartSpec{Kind: "seat", WorkingDirectory: checkout, Brief: seatBrief(t), Tag: "n0nce"}); err == nil || started {
+		t.Fatalf("a seat start naming no fence root = %v started=%t", err, started)
+	}
+	if records, _ := m.Store.List(); len(records) != 0 {
+		t.Fatalf("a seat start naming no fence root left a record: %+v", records)
+	}
+	seeded := seed(t, m, "seat-unfenced", Starting)
+	if _, err := m.Store.Update(seeded.ID, func(r *Record) error {
+		r.Kind, r.Adapter, r.WorkingDirectory = "seat", "claude-headless", checkout
+		setString(r.AdapterData, "brief", seatBrief(t))
+		setString(r.AdapterData, "model", "claude-opus-5-5")
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := m.Supervise(seeded.ID); err == nil || got.State != Failed || got.Child != nil || processes.command.Program != "" {
+		t.Fatalf("a seat supervisor naming no fence root = %+v err=%v command=%+v", got, err, processes.command)
 	}
 }

@@ -125,11 +125,13 @@ func (m *Manager) Start(spec StartSpec) (Record, error) {
 	}
 	fenceRoot := ""
 	if spec.Kind == "seat" {
-		fenceRoot = absDir
-		if spec.FenceRoot != "" {
-			if fenceRoot, err = filepath.Abs(spec.FenceRoot); err != nil {
-				return Record{}, err
-			}
+		// A seat binds to the fence of the state root its start names; the
+		// working directory need not keep one (SOL-B-01).
+		if spec.FenceRoot == "" {
+			return Record{}, errors.New(seatNoFenceRoot)
+		}
+		if fenceRoot, err = filepath.Abs(spec.FenceRoot); err != nil {
+			return Record{}, err
 		}
 		// The steward's pre-start read: a seat is never started into a
 		// checkout whose process-creation fence is closed (D-fence).
@@ -314,7 +316,10 @@ func (m *Manager) Supervise(id string) (Record, error) {
 		// The seat binds to the checkout's process-creation fence as the
 		// steward runner does: read it, open a creation claim before the
 		// child, re-read it once the child is recorded (D-fence).
-		fenceRoot = seatFenceRoot(record)
+		fenceRoot = readString(record.AdapterData, "fenceRoot")
+		if fenceRoot == "" {
+			return m.failCause(id, seatNoFenceRoot, nil)
+		}
 		if reason := seatFenceClosed(fenceRoot); reason != "" {
 			return m.failCause(id, reason, nil)
 		}

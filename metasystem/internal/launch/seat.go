@@ -18,14 +18,9 @@ func SeatEnvironment() []string {
 	return []string{"METASYSTEM_OWNER_LINEAGE=" + SeatOwnerLineage, "METASYSTEM_DELEGATE_ROOT=", "METASYSTEM_SESSION_ID="}
 }
 
-// seatFenceRoot is the state root whose fence a seat record binds to: the
-// root its start named, else its working directory.
-func seatFenceRoot(record Record) string {
-	if root := readString(record.AdapterData, "fenceRoot"); root != "" {
-		return root
-	}
-	return record.WorkingDirectory
-}
+// seatNoFenceRoot refuses a seat that names no state root to bind its
+// process-creation fence to.
+const seatNoFenceRoot = "a seat launch names the installation state root whose stop fence it binds to, and this one names none"
 
 // seatFenceClosed reads the checkout's process-creation fence once and
 // returns the fence's own description when it is closed, or why it could not
