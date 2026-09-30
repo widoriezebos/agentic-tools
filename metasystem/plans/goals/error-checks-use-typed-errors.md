@@ -5,11 +5,11 @@
 - Sequence: 7
 - Risk: severity=1 novelty=1 exposure=1 accumulation=1 basis="In-process refactor with no process boundary; behaviour preserved; tests pin each decision; reverts cleanly"
 - Tier: 1
-- Intent: Go code decides on errors with errors.Is/As and typed errors, never by searching an error's text for a code or phrase
+- Intent: What: Go code decides what an error means by its type or code, never by searching the error's text. Why: Wording changes, as the message rewrite (round 2) just showed. When code searches for a phrase and the wording changes, the decision silently goes wrong. The rewrite already moved the unit and launch checks to codes; about ten places still match on text. Pros: Messages can be reworded freely without changing behaviour; a test stops new text matching. Cons: Small; each place needs a code on the error it checks.
 - Origin: main
-- Next step: Replace the 35 in-process error-text decision points (24 sites) inventoried in /Users/wido/LocalStorage/agentic-tools-evidence/structured-output-20260930/structured-output.md with typed errors; extend the static audit to refuse new ones. Priority 2 per Wido 2026-09-30 (D4)
+- Next step: Next: Convert the remaining places that decide on error text (about ten; list them with a grep at ec495cbc8) to errors.Is or errors.As on refusal.Coded; give the closed trunk-red record a code field instead of the text match in IsTrunkRedClosed; land the error-text audit test at zero. Builder verbs-typederr is on it; hand work. Done when: the audit passes with no allowed exceptions and rewording a message changes no decision.
 - OpenedAt: 2026-09-30T12:03:35Z
-- Revision: 10
+- Revision: 11
 - Pinned: m1e
 - BudgetExceptions: 0
 
@@ -24,4 +24,5 @@ History:
 - 2026-09-30T18:20:06Z 2GQ24Q6P44VCMNFMQBHM5J4F00-m1e-b6a4eb0a unblock actor=human:wido targets=error-checks-use-typed-errors,processes-read-structured-results reason=blockedBy drops processes-read-structured-results; every remaining blocker is done and the park lifts
 - 2026-09-30T18:20:16Z 2T4MM23JH8NHKEGQNME50HKJMV-m1e-b6a4eb0a approve actor=human:wido targets=error-checks-use-typed-errors
 - 2026-09-30T19:05:10Z H2X0YVHJPXD3F2YMZDZG5F7KDD-m1e-b6a4eb0a unapprove actor=human:wido targets=error-checks-use-typed-errors reason=Unapproved only to rewrite its intent in plain English (backlog sync 2026-09-30); approved again right after
-Integrity: sha256=f639b911671472604451fa0c37bfb05eac076fca238ffcdabeb2c3756a741bc7
+- 2026-09-30T19:05:15Z 7A1J1RP2EBFKX6AFPM1TWM9E1Z-m1e-b6a4eb0a edit actor=human:wido targets=error-checks-use-typed-errors
+Integrity: sha256=deb7296666df80f7178e33a32b40eaeba8b9dbdcb67621ff96fc0bf4cc7f5654
