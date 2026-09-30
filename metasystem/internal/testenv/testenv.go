@@ -238,7 +238,7 @@ func MainWithSetup(m *testing.M, setup func() error, declarations ...Declaration
 		statErr := unix.Fstat(4, &readyStat)
 		readyFlags, err := unix.FcntlInt(uintptr(4), unix.F_GETFL, 0)
 		if statErr != nil || readyStat.Mode&unix.S_IFMT != unix.S_IFIFO || err != nil || readyFlags&unix.O_ACCMODE != unix.O_WRONLY {
-			fmt.Fprintf(os.Stderr, "run fixture custodian: ready descriptor 4 is not a pipe opened for writing: mode=%#o flags=%#x stat=%v flags-error=%v\n", readyStat.Mode&unix.S_IFMT, readyFlags, statErr, err)
+			fmt.Fprintf(os.Stderr, "fixture custodian: descriptor 4 must be a pipe open for writing (mode=%#o flags=%#x stat=%v err=%v)\n", readyStat.Mode&unix.S_IFMT, readyFlags, statErr, err)
 			return 2
 		}
 		watch := os.NewFile(3, "fixture-owner-watch")
@@ -584,7 +584,7 @@ func MkdirTemp(pattern string) (string, error) {
 	dir := namespaceTemp.dir
 	namespaceTemp.Unlock()
 	if dir == "" {
-		return "", errors.New("testenv.MkdirTemp: this process has no test namespace; call it from a test of a package whose TestMain runs testenv.Main")
+		return "", errors.New("testenv.MkdirTemp needs a test namespace: call it from a package whose TestMain runs testenv.Main")
 	}
 	return os.MkdirTemp(dir, pattern)
 }

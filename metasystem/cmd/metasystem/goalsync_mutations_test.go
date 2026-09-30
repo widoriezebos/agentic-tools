@@ -2346,7 +2346,7 @@ func TestProofGoalResolutionNamesTheOnlyBreachStoppedClaim(t *testing.T) {
 	root, reads := repository.root, repository.reads()
 	t.Setenv("METASYSTEM_PROOF_CONTROL_ROOT", "")
 	t.Setenv("METASYSTEM_PROOF_ATTEMPT", "")
-	want := "proof accounting has no live claimed goal for machine mac-cli; the only claim here is breach-stopped: standing-validation (stop stop-standing-validation-r2-f1); pass --goal"
+	want := "machine mac-cli holds only goal standing-validation, which is stopped (stop-standing-validation-r2-f1); name a goal with --goal GOAL"
 
 	for _, test := range []struct {
 		name    string

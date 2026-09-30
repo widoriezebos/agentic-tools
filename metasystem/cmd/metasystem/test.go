@@ -26,6 +26,7 @@ import (
 	landinglane "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/output"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/strictjson"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
@@ -87,7 +88,12 @@ func runTestPlanAs(name string, args []string, stdout, stderr io.Writer) int {
 	request.LandedRearm = !request.PolicyChild
 	prepared, err := prepareTestingForCommand(request)
 	if err != nil {
-		fmt.Fprintln(stderr, "metasystem test plan:", err)
+		// The refusal a person reads; --json adds its detail (code, cause
+		// and facts), which a planning child's parent reads.
+		fmt.Fprintln(stderr, err)
+		if jsonOutput {
+			writeJSONLine(stdout, stderr, map[string]string{"error": err.Error(), "detail": refusal.Detail(err)})
+		}
 		return 1
 	}
 	output := testrun.PlanOutputOf(prepared)

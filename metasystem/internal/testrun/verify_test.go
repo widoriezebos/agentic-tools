@@ -2,6 +2,7 @@ package testrun
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -135,7 +136,7 @@ func TestVerifyDoesNotKeyLegacyCandidateDigestByWholeTreeReceipt(t *testing.T) {
 		t.Fatal(err)
 	}
 	recovered, err := RetainedCandidateEngineDigest(prepared, nil, strings.Repeat("d", 40), false)
-	if err == nil || recovered != "" || !strings.Contains(err.Error(), "candidate engine digest is absent") {
+	if err == nil || recovered != "" || !errors.Is(err, ErrRetainedCandidateEngineAbsent) {
 		t.Fatalf("legacy whole-tree receipt unexpectedly supplied a cross-tip engine identity: digest=%s err=%v", recovered, err)
 	}
 }

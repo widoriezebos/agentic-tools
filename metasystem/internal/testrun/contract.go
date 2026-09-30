@@ -135,11 +135,11 @@ func ResolveGoalWithCaller(root, requested string, resolveMachine func(string) (
 	parentRoot, parentAttempt := os.Getenv("METASYSTEM_PROOF_CONTROL_ROOT"), os.Getenv("METASYSTEM_PROOF_ATTEMPT")
 	if parentRoot != "" || parentAttempt != "" {
 		if parentRoot == "" || parentAttempt == "" {
-			return "", fmt.Errorf("proof parent locator is incomplete")
+			return "", errors.New("this process inherited only half of its parent test run's settings, so it cannot be charged")
 		}
 		canonicalParent, err := realpath.Canonical(parentRoot)
 		if err != nil || canonicalParent != root {
-			return "", fmt.Errorf("proof parent control root does not match testing root")
+			return "", fmt.Errorf("the parent test run belongs to another installation than %s", root)
 		}
 		attempt, err := proofrun.AuthenticateContext(root, parentAttempt, callerPID)
 		if err != nil {
@@ -150,6 +150,11 @@ func ResolveGoalWithCaller(root, requested string, resolveMachine func(string) (
 	return UniqueActiveProofGoal(root, now().UTC(), resolveMachine, resolveEndpoint)
 }
 
+// errNoLandingRef refuses a checkout that names no landing branch: the
+// tests are chosen against it, and the command names the usual one.
+var errNoLandingRef = errors.New("this checkout names no landing branch to test against\n" +
+	"run: git config --local metasystem.steward.landing-ref refs/remotes/origin/main")
+
 func TrustedPolicyBase(projectRoot string, workspace gittree.Workspace) (string, error) {
 	data, err := landingRef(projectRoot, "--worktree")
 	if err != nil {
@@ -159,11 +164,11 @@ func TrustedPolicyBase(projectRoot string, workspace gittree.Workspace) (string,
 	tail := strings.TrimPrefix(ref, "refs/remotes/")
 	remote, branch, qualified := strings.Cut(tail, "/")
 	if err != nil || tail == ref || !qualified || remote == "" || branch == "" {
-		return "", fmt.Errorf("trusted testing policy base requires local metasystem.steward.landing-ref shaped refs/remotes/<remote>/<branch>")
+		return "", errNoLandingRef
 	}
 	commit, err := workspace.ResolveCommit(ref)
 	if err != nil {
-		return "", fmt.Errorf("resolve trusted testing policy base %s: %w", ref, err)
+		return "", fmt.Errorf("the landing branch %s cannot be read: %w", ref, err)
 	}
 	return commit, nil
 }
@@ -235,10 +240,10 @@ func UniqueActiveProofGoal(root string, now time.Time, resolveMachine func(strin
 	}
 	projection, err := goal.Project(endpoint, false, now)
 	if err != nil {
-		return "", fmt.Errorf("resolve active claimed goal for proof: %w", err)
+		return "", fmt.Errorf("the goals cannot be read to find the one this test run is charged to: %w", err)
 	}
 	if projection.Tree == nil {
-		return "", fmt.Errorf("resolve active claimed goal for proof: accepted goal projection is empty")
+		return "", fmt.Errorf("no goals are recorded, so this test run has no goal to be charged to")
 	}
 	selected := ""
 	fenced := make([]*goal.GoalFile, 0)
@@ -252,18 +257,16 @@ func UniqueActiveProofGoal(root string, now time.Time, resolveMachine func(strin
 			continue
 		}
 		if selected != "" {
-			return "", fmt.Errorf("proof accounting is ambiguous: machine %s has multiple claimed goals; pass --goal", machine)
+			return "", fmt.Errorf("machine %s holds several claimed goals; name the one to charge with --goal GOAL", machine)
 		}
 		selected = id
 	}
 	if selected == "" {
 		if len(fenced) == 1 {
-			return "", fmt.Errorf(
-				"proof accounting has no live claimed goal for machine %s; the only claim here is breach-stopped: %s (stop %s); pass --goal",
-				machine, fenced[0].Id, fenced[0].StopFence.StopID,
-			)
+			return "", fmt.Errorf("machine %s holds only goal %s, which is stopped (%s); name a goal with --goal GOAL",
+				machine, fenced[0].Id, fenced[0].StopFence.StopID)
 		}
-		return "", fmt.Errorf("proof accounting is ambiguous: machine %s has no claimed goal; pass --goal", machine)
+		return "", fmt.Errorf("machine %s holds no claimed goal to charge this test run to; name one with --goal GOAL", machine)
 	}
 	return selected, nil
 }

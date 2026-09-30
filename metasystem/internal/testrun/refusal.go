@@ -13,10 +13,10 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 )
 
-const engineRefusalCode = "TEST_POLICY_ENGINE_REQUIRED"
-
-func engineRefusal(token string, facts []enginecause.Fact, detail string) error {
-	return enginecause.Refuse(token, facts, detail)
+// engineRefusal is a policy-engine refusal: reason is the plain first line a
+// person reads, background what only its detail shows.
+func engineRefusal(token string, facts []enginecause.Fact, reason string, background ...string) error {
+	return enginecause.RefuseWith(token, facts, reason, strings.Join(background, ": "))
 }
 
 func engineCheckoutFacts(checkout string) []enginecause.Fact {
@@ -83,16 +83,16 @@ func linkedWorktreeMainInstallation(installation string) (string, bool) {
 func batchPrefixProofControlRoot(installation, requested string) (string, error) {
 	controlRoot, err := realpath.Canonical(requested)
 	if err != nil {
-		return "", fmt.Errorf("resolve batch prefix proof control root: %w", err)
+		return "", fmt.Errorf("the batch's control checkout cannot be resolved: %w", err)
 	}
 	_, linked := linkedWorktreeMainInstallation(installation)
 	if !linked {
-		return "", fmt.Errorf("batch prefix proof execution root is not a linked worktree")
+		return "", fmt.Errorf("a batch runs its tests in a linked worktree, and this checkout is not one")
 	}
 	controlCommon, controlPrefix, controlErr := gitOwnership(controlRoot)
 	executionCommon, executionPrefix, executionErr := gitOwnership(installation)
 	if controlErr != nil || executionErr != nil || controlCommon != executionCommon || controlPrefix != executionPrefix {
-		return "", fmt.Errorf("batch prefix proof control root %s does not own execution installation %s", controlRoot, installation)
+		return "", fmt.Errorf("the batch's control checkout %s does not own the checkout %s it runs in", controlRoot, installation)
 	}
 	return controlRoot, nil
 }
@@ -121,10 +121,10 @@ func enrollmentRefusal(installation string, cause error) error {
 	if checkout, linked := LinkedWorktreeMainCheckout(installation); linked {
 		facts = append(facts, enginecause.Path("linked-worktree", checkout))
 	}
-	return engineRefusal("not-enrolled", facts, fmt.Sprintf("retained destination engine is not authenticated: %v", cause))
+	return engineRefusal("not-enrolled", facts, "this checkout has no enrolled engine to choose the tests with", cause.Error())
 }
 
-func judgmentRefusal(cause error, facts []enginecause.Fact, detail string) error {
+func judgmentRefusal(cause error, facts []enginecause.Fact, reason string) error {
 	token := "judgment-failed"
 	switch {
 	case errors.Is(cause, steward.ErrJudgmentStalled):
@@ -135,7 +135,7 @@ func judgmentRefusal(cause error, facts []enginecause.Fact, detail string) error
 	case errors.Is(cause, steward.ErrNotOwned):
 		token = "engine-behind-tip"
 	}
-	return engineRefusal(token, facts, detail+": "+cause.Error())
+	return engineRefusal(token, facts, reason, cause.Error())
 }
 
 func decisionMismatchRefusal(candidateTree, policyBaseCommit, baseContractDigest string, decision PlanOutput) error {
@@ -148,7 +148,7 @@ func decisionMismatchRefusal(candidateTree, policyBaseCommit, baseContractDigest
 		if field.ours != field.engine {
 			return engineRefusal("decision-mismatch", []enginecause.Fact{
 				enginecause.Value("field", field.name), enginecause.Value("ours", field.ours), enginecause.Value("engine", field.engine),
-			}, "retained trusted-base engine returned a mismatched policy decision")
+			}, "the pinned engine chose tests for a different "+strings.ReplaceAll(field.name, "-", " ")+" than this run")
 		}
 	}
 	return nil

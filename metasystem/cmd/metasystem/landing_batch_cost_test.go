@@ -733,8 +733,7 @@ func TestBatchCostFreshForecastMatchesRetainedVerificationAtExpiry(t *testing.T)
 				forecast.Groups[0].Status != "missing" || forecast.Groups[0].Reason != "missing-proof" {
 				t.Fatalf("expired forecast at %s: %+v err=%v", boundary.at, forecast, forecastErr)
 			}
-			const expired = "freshness episode has expired; renew the proof decision"
-			if verifyErr == nil || verifyErr.Error() != expired {
+			if !errors.Is(verifyErr, proofrun.ErrFreshnessExpired) {
 				t.Fatalf("retained verification at %s: %v", boundary.at, verifyErr)
 			}
 		})

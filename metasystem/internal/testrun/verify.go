@@ -206,7 +206,7 @@ func VerifyPrepared(request SelectionRequest, prepared Preparation, dependencies
 	if request.FreshExpiresAt != "" {
 		expires, parseErr := time.Parse(time.RFC3339Nano, request.FreshExpiresAt)
 		if parseErr != nil || !expires.After(initialFreshnessCheckAt) {
-			return proofrun.TestResult{}, fmt.Errorf("freshness episode has expired; renew the proof decision")
+			return proofrun.TestResult{}, proofrun.ErrFreshnessExpired
 		}
 	}
 	// The limits are read for their validity; the retained-result checks
@@ -299,7 +299,7 @@ func InputManifestContains(manifest []string, candidate string) bool {
 
 // ErrRetainedCandidateEngineAbsent is RetainedCandidateEngineDigest's answer
 // when no retained evidence names the candidate engine's digest.
-var ErrRetainedCandidateEngineAbsent = errors.New("candidate engine digest is absent from retained evidence")
+var ErrRetainedCandidateEngineAbsent = errors.New("no earlier test run recorded the candidate engine's hash")
 
 // RetainedCandidateEngineDigest is the candidate engine digest the newest
 // retained measurement of buildIdentity recorded, from an attempt or else a

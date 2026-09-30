@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 	"io"
 	"os"
 	"path/filepath"
@@ -251,9 +252,9 @@ func (contract Contract) Validate() error {
 	if contract.TailoringRequired {
 		if len(contract.Surfaces) != 0 || len(contract.Groups) != 0 || len(contract.Unknown) != 0 ||
 			len(contract.Always.Canary) != 0 || len(contract.Always.Standard) != 0 || len(contract.Cadence) != 0 {
-			return fmt.Errorf("TEST_CONTRACT_REQUIRED: the incomplete adoption template cannot contain executable groups or policy")
+			return &refusal.Coded{Code: "TEST_CONTRACT_REQUIRED", Reason: "testing.json is still the adoption template, which may not hold test groups or policy yet"}
 		}
-		return fmt.Errorf("TEST_CONTRACT_REQUIRED: replace the incomplete adoption template with reviewed application test groups")
+		return &refusal.Coded{Code: "TEST_CONTRACT_REQUIRED", Reason: "testing.json is still the adoption template; replace it with this project's reviewed test groups"}
 	}
 	if err := validateProjectRisk(contract.ProjectRisk); err != nil {
 		return err
@@ -560,7 +561,7 @@ func validateGroup(group Group) error {
 			return fmt.Errorf("blanket success commands are not testing evidence")
 		}
 		if group.Format != "" || len(group.Reports) != 0 || len(group.ExpectedTests) != 0 {
-			return fmt.Errorf("section adapter judges its script bed by exit status; format, reports and expectedTests belong to the command adapter")
+			return fmt.Errorf("a section group is judged by exit status; format, reports and expectedTests are for command groups")
 		}
 	case "command":
 		if group.PackageSelection != "" {

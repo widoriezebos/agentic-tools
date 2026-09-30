@@ -168,7 +168,7 @@ func TestSecondBaseMoveRefusesBaseMoved(t *testing.T) {
 		}
 		return Preparation{}, &baseMove{ours: "base-b", engine: "base-c"}
 	})
-	if err == nil || calls != 2 || !strings.Contains(err.Error(), "cause=base-moved ours=base-b engine=base-c restarts=1") {
+	if err == nil || calls != 2 || !strings.Contains(fullRefusal(err), "cause=base-moved ours=base-b engine=base-c restarts=1") {
 		t.Fatalf("second move did not refuse with the guarded base-moved cause: calls=%d err=%v", calls, err)
 	}
 }
@@ -208,7 +208,7 @@ func TestPreparationRestartAllowanceIsInvocationLocal(t *testing.T) {
 			t.Fatalf("first preparation of the invocation: %v", err)
 		}
 		_, err := prepareWith(SelectionRequest{Preparation: shared, Notes: stderr}, onceMoved(&second))
-		if err == nil || second != 1 || !strings.Contains(err.Error(), "cause=base-moved") {
+		if err == nil || second != 1 || !strings.Contains(fullRefusal(err), "cause=base-moved") {
 			t.Fatalf("a second movement within one invocation was admitted: calls=%d err=%v", second, err)
 		}
 		return 0
@@ -221,7 +221,7 @@ func TestUnexplainedPolicyFieldRefusesDecisionMismatch(t *testing.T) {
 	err := compareTrustedPolicyDecisionWithReaders("candidate", old, "digest", PlanOutput{
 		CandidateTree: "other-candidate", PolicyBaseCommit: moved, BaseContractDigest: "other-digest",
 	}, fixture.root, fixture.readers())
-	if err == nil || !strings.Contains(err.Error(), "cause=decision-mismatch field=candidate-tree") {
+	if err == nil || !strings.Contains(fullRefusal(err), "cause=decision-mismatch field=candidate-tree") {
 		t.Fatalf("candidate mismatch was incorrectly explained by the base move: %v", err)
 	}
 }
@@ -233,14 +233,14 @@ func TestNonDescendantPolicyBaseRefusesDecisionMismatch(t *testing.T) {
 	err := compareTrustedPolicyDecisionWithReaders("candidate", ours, "digest", PlanOutput{
 		CandidateTree: "candidate", PolicyBaseCommit: sibling, BaseContractDigest: "digest",
 	}, fixture.root, fixture.readers())
-	if err == nil || !strings.Contains(err.Error(), "cause=decision-mismatch field=policy-base-commit") {
+	if err == nil || !strings.Contains(fullRefusal(err), "cause=decision-mismatch field=policy-base-commit") {
 		t.Fatalf("non-descendant base was incorrectly restarted: %v", err)
 	}
 }
 
 func TestTrustedPolicyEngineIsRequiredWithoutBuildingDuringReadOnlySelection(t *testing.T) {
 	root := t.TempDir()
-	if _, _, _, err := TrustedPolicyEngine(root, strings.Repeat("a", 40), false); err == nil || !strings.Contains(err.Error(), "TEST_POLICY_ENGINE_REQUIRED") {
+	if _, _, _, err := TrustedPolicyEngine(root, strings.Repeat("a", 40), false); err == nil || !strings.Contains(fullRefusal(err), "TEST_POLICY_ENGINE_REQUIRED") {
 		t.Fatalf("missing retained policy engine was accepted: %v", err)
 	}
 	if entries, err := os.ReadDir(root); err != nil || len(entries) != 0 {
@@ -388,7 +388,7 @@ func TestProtectedCoverageFloorCannotFallOrDisappear(t *testing.T) {
 	}}
 	addFile(baseTree, baselinePath, baseOID, baseJSON)
 	addFile(loweredTree, baselinePath, loweredOID, loweredJSON)
-	if err := protectCoverageRatchets(workspace, baseTree, loweredTree, ""); err == nil || !strings.Contains(err.Error(), "TEST_POLICY_COVERAGE_FLOOR_LOWERED") {
+	if err := protectCoverageRatchets(workspace, baseTree, loweredTree, ""); err == nil || !strings.Contains(fullRefusal(err), "TEST_POLICY_COVERAGE_FLOOR_LOWERED") {
 		t.Fatalf("lowered base floor was accepted: %v", err)
 	}
 	if next != len(facts) {
@@ -414,7 +414,7 @@ func TestProtectedCoverageFloorCannotFallOrDisappear(t *testing.T) {
 	addAbsent(baseTree, baselinePath)
 	addFile(baseTree, legacyPath, baseOID, baseJSON)
 	addFile(loweredTree, baselinePath, loweredOID, loweredJSON)
-	if err := protectCoverageRatchets(workspace, baseTree, loweredTree, ""); err == nil || !strings.Contains(err.Error(), "TEST_POLICY_COVERAGE_FLOOR_LOWERED") {
+	if err := protectCoverageRatchets(workspace, baseTree, loweredTree, ""); err == nil || !strings.Contains(fullRefusal(err), "TEST_POLICY_COVERAGE_FLOOR_LOWERED") {
 		t.Fatalf("a floor lowered while moving was accepted: %v", err)
 	}
 	facts = nil
@@ -498,7 +498,7 @@ func TestProtectedCoverageFloorLeavesWithItsPackage(t *testing.T) {
 	addFile(baseTree, baselinePath, baseOID, baseJSON)
 	addFile(candidateTree, baselinePath, candidateOID, candidateJSON)
 	addListing(candidateTree, "internal/gone", "internal/gone/testdata/fixture.txt", "internal/gone/gone.go")
-	if err := protectCoverageRatchets(workspace, baseTree, candidateTree, ""); err == nil || !strings.Contains(err.Error(), "TEST_POLICY_COVERAGE_FLOOR_LOWERED") {
+	if err := protectCoverageRatchets(workspace, baseTree, candidateTree, ""); err == nil || !strings.Contains(fullRefusal(err), "TEST_POLICY_COVERAGE_FLOOR_LOWERED") {
 		t.Fatalf("a floor dropped from a package that still exists was accepted: %v", err)
 	}
 
@@ -516,7 +516,7 @@ func TestProtectedCoverageFloorLeavesWithItsPackage(t *testing.T) {
 func TestAmbientTrustedPolicyDecisionCannotBypassRetainedEngine(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("METASYSTEM_TRUSTED_POLICY_DECISION", "1")
-	if _, _, _, err := TrustedPolicyEngine(root, strings.Repeat("a", 40), false); err == nil || !strings.Contains(err.Error(), "TEST_POLICY_ENGINE_REQUIRED") {
+	if _, _, _, err := TrustedPolicyEngine(root, strings.Repeat("a", 40), false); err == nil || !strings.Contains(fullRefusal(err), "TEST_POLICY_ENGINE_REQUIRED") {
 		t.Fatalf("ambient flag bypassed retained engine authentication: %v", err)
 	}
 	if entries, err := os.ReadDir(root); err != nil || len(entries) != 0 {

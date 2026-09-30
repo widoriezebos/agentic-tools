@@ -1885,7 +1885,7 @@ func runSharedTestingReceiptRecovery(t *testing.T, prefix string) {
 		"SHARED_TEST_LAUNCH_COUNT="+launchCount, "METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="+identityTable)
 	environmentOutput, environmentErr := environmentVerify.CombinedOutput()
 	if exit, ok := environmentErr.(*exec.ExitError); !ok || exit.ExitCode() != 1 ||
-		!strings.Contains(string(environmentOutput), "candidate engine digest is absent from retained evidence for build identity ") ||
+		!strings.Contains(string(environmentOutput), "no earlier test run recorded the candidate engine's hash for build identity ") ||
 		!strings.Contains(string(environmentOutput), "run metasystem test run") {
 		t.Fatalf("changed build environment reused a prior engine measurement: err=%v\n%s", environmentErr, environmentOutput)
 	}

@@ -2595,7 +2595,7 @@ func TestPublicTestingPlanAmbientTrustedPolicyDecisionCannotBypassRetainedEngine
 	public := proofFixture.command(nil, engine, "test", "plan", "--root", root, "--tree", tree, "--mode", "standard", "--purpose", "diagnostic")
 	public.Env = append(public.Env, "METASYSTEM_TRUSTED_POLICY_DECISION=1")
 	output, publicErr := public.CombinedOutput()
-	if publicErr == nil || !strings.Contains(string(output), "TEST_POLICY_ENGINE_REQUIRED") {
+	if publicErr == nil || !strings.Contains(string(output), "no enrolled engine") || strings.Contains(string(output), "TEST_POLICY_ENGINE_REQUIRED") {
 		t.Fatalf("public caller bypassed retained engine authentication with an ambient flag: err=%v output=%s", publicErr, output)
 	}
 }

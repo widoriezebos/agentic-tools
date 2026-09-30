@@ -2,6 +2,7 @@ package testpolicy
 
 import (
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 	"sort"
 	"strings"
 
@@ -121,7 +122,7 @@ func Select(contract Contract, request SelectionRequest) (Plan, error) {
 		return Plan{}, fmt.Errorf("diagnostic groups cannot be combined with batch delivery requirements")
 	}
 	if len(request.Groups) > 0 && request.RequestedMode != ModeCanary {
-		return Plan{}, fmt.Errorf("TEST_GROUP_SELECTION_REFUSED: --groups requires diagnostic canary mode; use --mode canary --groups <ids>")
+		return Plan{}, &refusal.Coded{Code: "TEST_GROUP_SELECTION_REFUSED", Reason: "named test groups run only in canary mode; add --mode canary to the command"}
 	}
 	if len(request.Groups) > 0 {
 		request.Purpose = PurposeDiagnostic

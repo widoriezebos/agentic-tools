@@ -2,6 +2,7 @@ package testpolicy
 
 import (
 	"encoding/json"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -886,7 +887,7 @@ func TestIncompleteAdoptionTemplateCannotReportReady(t *testing.T) {
 	if err := json.Unmarshal(data, &value); err != nil || value["tailoringRequired"] != true {
 		t.Fatalf("incomplete template is not explicit: value=%v err=%v", value, err)
 	}
-	if _, err := Decode(data); err == nil || !strings.Contains(err.Error(), "TEST_CONTRACT_REQUIRED") {
+	if _, err := Decode(data); err == nil || refusal.CodeOf(err) != "TEST_CONTRACT_REQUIRED" {
 		t.Fatalf("incomplete template reported ready: %v", err)
 	}
 }
@@ -915,7 +916,7 @@ func TestSectionArgvDeclarationsValidate(t *testing.T) {
 		{name: "retired selector section", edit: func(*Group) {}, want: "section adapter requires the argv of its script bed"},
 		{name: "empty executable", edit: func(g *Group) { g.Argv = []string{"", "scripts/bed.sh"} }, want: "section adapter requires the argv of its script bed"},
 		{name: "blanket success", edit: func(g *Group) { g.Argv = []string{"bash", "-c", " true "} }, want: "blanket success commands are not testing evidence"},
-		{name: "junit format", edit: func(g *Group) { g.Argv = []string{"bash", "scripts/bed.sh"}; g.Format = "junit-xml" }, want: "judges its script bed by exit status"},
+		{name: "junit format", edit: func(g *Group) { g.Argv = []string{"bash", "scripts/bed.sh"}; g.Format = "junit-xml" }, want: "is judged by exit status"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			group := base
