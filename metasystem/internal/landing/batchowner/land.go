@@ -16,6 +16,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	goalbranch "github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
@@ -636,7 +637,7 @@ func RecoverBatchLanding(root string, store batch.Store, id, actor string, at ti
 }
 
 func BatchRecoverySeamsWithGit(root string, store batch.Store, id string, at time.Time, gitRead func(string, ...string) (string, error)) batch.RecoverySeams {
-	return recoverySeamsAt(root, batch.ModuleRoot(root), "", store, id, at, gitRead, &BatchOwnerCalls)
+	return recoverySeamsAt(root, batch.ModuleRoot(root), "", store, id, at, gitRead, &BatchOwnerCalls, LandingOwnerInvocation)
 }
 
 // recoverySeamsAt are the landed-trailer recovery seams of the lane whose
@@ -646,7 +647,7 @@ func BatchRecoverySeamsWithGit(root string, store batch.Store, id string, at tim
 // whose tree is baseTree (the batch's base): an earlier landing of the same
 // source, chain or change, reverted since, is never taken for this batch's.
 // A base that is not on main finds nothing.
-func recoverySeamsAt(root, controlRoot, baseTree string, store batch.Store, id string, at time.Time, gitRead func(string, ...string) (string, error), calls *BatchOwnerCallSet) batch.RecoverySeams {
+func recoverySeamsAt(root, controlRoot, baseTree string, store batch.Store, id string, at time.Time, gitRead func(string, ...string) (string, error), calls *BatchOwnerCallSet, invoke func() ownercall.Invocation) batch.RecoverySeams {
 	findTrailer := func(matches func(string) bool) (string, bool, error) {
 		// Each commit is its hash, its tree when bounded, and its message.
 		format, width := "%H%x00%B%x00", 2
@@ -720,7 +721,7 @@ func recoverySeamsAt(root, controlRoot, baseTree string, store batch.Store, id s
 			if current == next {
 				return nil
 			}
-			return calls.EditNext(LandingOwnerInvocation(), controlRoot, unit.GoalID, next)
+			return calls.EditNext(invoke(), controlRoot, unit.GoalID, next)
 		},
 		Rearm: func(tip string) error {
 			return BatchRecoveryRearm(root, tip)

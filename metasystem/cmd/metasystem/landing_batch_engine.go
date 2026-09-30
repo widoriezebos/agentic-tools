@@ -29,5 +29,5 @@ func init() {
 func runProductionCadenceTick(root string, held batchowner.BatchOwnerLease, clock func() time.Time) (cadence.TickOutput, error) {
 	return cadence.RunTick(root, cadence.Owner{Epoch: held.Epoch, Lineage: batchowner.LandingOwnerLineage,
 		Require: func() error { return batchowner.BatchOwnerRequire(held) }, FetchOrigin: batchowner.FetchBatchOrigin, WeightThreshold: weightThreshold,
-		Prepare: prepareTestingForCommand, WorkerPolicy: testingWorkerPolicy}, clock)
+		Prepare: prepareTestingForCommand, WorkerPolicy: testingWorkerPolicy, Ledger: batchowner.LaneLedger()}, clock)
 }

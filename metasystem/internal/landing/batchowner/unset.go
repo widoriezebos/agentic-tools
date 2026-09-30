@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
@@ -124,7 +125,8 @@ func (u UnsetLane) reconcile(layout lane.Layout, record batch.Record) ([]lane.Un
 	store := u.store(layout)
 	// Only commits after the batch's base count: an earlier landing of the
 	// same member, reverted since, is not this batch's push.
-	seams := recoverySeamsAt(string(layout.Checkout), string(layout.Install), record.Landing.Base, store, record.BatchID, u.Now(), GitOutput, &u.Calls)
+	seams := recoverySeamsAt(string(layout.Checkout), string(layout.Install), record.Landing.Base, store, record.BatchID, u.Now(), GitOutput, &u.Calls,
+		func() ownercall.Invocation { return personCleanupInvocation(u.Home) })
 	// The lane is going away: its checkout's engine is left as it is.
 	seams.Rearm = func(string) error { return nil }
 	if record.Landing != nil && record.Landing.PushComplete {
@@ -218,7 +220,8 @@ func (u UnsetLane) returnBatch(layout lane.Layout, record batch.Record, reason s
 	if err != nil {
 		return nil, err
 	}
-	seams := returnSeamsAt(string(layout.Checkout), string(layout.Install), func() string { return tree }, &u.Calls)
+	seams := returnSeamsAt(string(layout.Checkout), string(layout.Install), func() string { return tree }, &u.Calls,
+		func() ownercall.Invocation { return personCleanupInvocation(u.Home) })
 	failures, returnErr := batch.ReturnUnits(store, record.BatchID, tree, u.By, at, seams)
 	var unresolved []lane.Unresolved
 	for _, failure := range failures {

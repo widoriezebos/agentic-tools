@@ -23,11 +23,12 @@ func LedgerEndpoint(home string, endpoint goal.Endpoint, op Operation, authority
 }
 
 // LedgerPublisher is the lane's goal CAS publisher. A ledger that does not
-// live on main (single-machine mode, another sync branch) is not a write to
-// main and pushes as before.
+// live on main (single-machine mode, another sync branch), or that an
+// in-process repository owns instead of git, is not a push to main and
+// publishes as before.
 func LedgerPublisher(home string, op Operation, authority Authority) goal.CASPublisher {
 	return func(endpoint goal.Endpoint, tip, commit string) (goal.CASOutcome, error) {
-		if endpoint.LocalMode() || endpoint.Branch != MainRef {
+		if endpoint.Repository != nil || endpoint.LocalMode() || endpoint.Branch != MainRef {
 			return goal.PublishCAS(endpoint.WithCASPublisher(nil), tip, commit)
 		}
 		tuple, err := ledgerTuple(home, endpoint, tip, commit)

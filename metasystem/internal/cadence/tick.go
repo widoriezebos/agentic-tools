@@ -72,6 +72,10 @@ type Owner struct {
 	WeightThreshold func(root string) int64
 	Prepare         func(testrun.SelectionRequest) (testrun.Preparation, error)
 	WorkerPolicy    func(confPath string) (testrun.WorkerPolicy, error)
+	// Ledger is the publication boundary the cadence's goal writes go
+	// through: the landing lane's (lane runtime design r10, K3); nil
+	// publishes as the checkout's own.
+	Ledger func(goal.Endpoint) goal.Endpoint
 }
 
 var cadenceBuildIdentity = candidateengine.BuildIdentity
@@ -105,6 +109,9 @@ func RunTick(root string, owner Owner, clock func() time.Time) (TickOutput, erro
 	endpoint, err := goal.ResolveEndpoint(root)
 	if err != nil {
 		return TickOutput{}, Refusal{cadenceLedgerUnreadable, err.Error()}
+	}
+	if owner.Ledger != nil {
+		endpoint = owner.Ledger(endpoint)
 	}
 	projection, err := goal.Project(endpoint, false, now)
 	if err != nil {
