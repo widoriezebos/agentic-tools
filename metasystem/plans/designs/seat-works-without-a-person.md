@@ -124,3 +124,18 @@ Astra's confirmation read of revision 6 (`0f4dcb4e0`): (c) and (d) confirmed; (a
 | --- | --- | --- |
 | (a) `LandingDue` ignores a hold placed after clear-to-land, so the rule alone could start a successor under a hold | accepted | The selection rule also requires that no review hold stands (`HoldsOf`, `landgate.go:126`); test 21 gains the "cleared, then held" leg; a Later row asks `LandingDue` itself to honour a hold as shared engine code |
 | (b) "the next tick" after clear-to-land is not universal: below the tier the word restarts the `auto-after` grace | accepted | (b) now says: at or above the tier the next tick; below it the first tick after the restarted grace (`landgate.go:325-334`, `:355-361`), four hours by default |
+
+## Built (2026-09-30, branch g1-s77)
+
+Built by Claude on Opus 5.5 in three parallel lanes and one integration pass: lane A the steward's decisions (`internal/steward/seat_ladder.go`, `seat_start.go`, `tick.go`, `runner.go`, `cmd/metasystem/steward_seat.go`), lane B the `seat` launch kind and its authority (`internal/launch/seat.go`, `launch.go`, `internal/config` `launch.seat.*`; the authority path needed no production change and is proven by tests 9-11, 15, 16), lane C the stop side and provider weather (`cmd/metasystem/intent_process.go`, `intent_machine.go`, `intent_worktree.go`, `internal/outage/outage.go`). Tests 1-19, 21, 22 and `TestStewardTickStartsASeatLaunch` (a dry end-to-end tick to a seat launch record) exist; each was seen red first or red with its rule alone removed. Reports: `~/LocalStorage/agentic-tools-evidence/seat-works-without-a-person-20260930/opus-build-report-{a,b,c}.md`, `opus-integration-report.md`.
+
+Code critique by Codex on Sol, one read per lane and one confirmation read of the integration (`sol-read-{a,b,c}.md`, `sol-confirm-integration-result.md` in the same folder). Fixed: SOL-A-01 (a held goal waiting on a human word starts no successor), SOL-A-02 (a clear-to-land word must be at the branch's current tip), SOL-A-03 (the decision is re-read under the start lock), SOL-B-01 (a seat start without a fence root is refused), SOL-C-02 (an unreadable worktree list makes `system stop` partial), SOL-C-03 (the observed "You've hit your session limit" wording classifies as provider weather). Beyond the design: `StartSpec.FenceRoot` (the fence lives under the installation, not the checkout top the seat runs in).
+
+Residuals, later when it hurts:
+- SOL-A-03's advisor half: a person who announces between the recheck and the child's `up` makes the seat an advisor; it idles and ends at its Stop.
+- SOL-C-01: `system stop` may place a launch of an undiscovered sibling checkout that shares this repository as a worktree; on this host the seats are separate clones.
+- A claim under another lineage, a person's landing claim waiting on review included, holds every seat start on this machine.
+- The mission runner and the delegate adapter share the classifier and now also mark an outage on a usage limit or a 429.
+- `launch.seat.*` keys are not checked by config validation; an unknown seat runtime is refused at start.
+- A breach-stop's batch is written under the stopping steward's checkout (`internal/dispatch/stop.go:279`, `internal/goal/stop.go:105-109`) and `goal resume` reads only the caller's root; a claim stopped by another seat's steward is cleared only from that seat's checkout (observed 2026-09-30 on `ask-what-happened-follow-ups`, cleared by Wido from the landing checkout).
+- Test 20, the runtime proof, runs on this seat after the landing: rebuild, `helm return`, one steward-started seat claims an approved goal, commits on its branch and exits at idle.
