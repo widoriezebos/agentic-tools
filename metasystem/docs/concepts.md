@@ -177,6 +177,21 @@ its seat, reads each return back, and only then removes the record. When
 something is still running or a return is not confirmed, it stops and
 lists what is left, and the same command continues.
 
+**Only a publication moves main from the lane.** `metasystem landing set`
+puts a pre-push hook in the lane's checkout, never in a seat's, and
+`landing unset` takes it away. From that checkout, main moves only
+through the lane's one publication boundary. It publishes an exact update
+(this commit, this tree, on top of this main), and git's pushes pass the
+hook only for that update. `metasystem landing publish --batch ID` puts a
+proven batch on main: exactly the series the batch began with, each commit
+with a `Landing-Proof` trailer and its tree unchanged. It publishes only
+when the batch's latest tests passed on that series and were judged by
+the lane's enrolled engine. The lane's own goal-list writes go through
+the same boundary. When main moved in the meantime nothing is published,
+and the lane composes again on the new main; it never pushes the old
+series on top by itself. A seat's own goal writes and landings are
+unchanged.
+
 **Without a lane**, the seat lands it itself. `metasystem work land`
 proves the work on the seat and pushes it from there. This is correct,
 but not optimal:
