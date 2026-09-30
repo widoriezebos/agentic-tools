@@ -1415,15 +1415,31 @@ func admitLaneProofLaunch(request proofLaunchAdmission, caller lease.ClassifyRes
 // owner's lineage, matched by its exact identity (pid, start time, boot) as
 // landing restart matches it. A seat whose checkout happens to be the lane
 // is not its owner (U11b).
+//
+// The lease is read where the owner holds it: the registered lane checkout
+// (the toplevel the owner component runs on), not the control root, which on
+// a checkout that nests the module is the module inside it.
 func proveLaneOwnerCaller(controlRoot string, callerPID int64) error {
-	holder, err := lease.CurrentHolder(controlRoot)
+	home, err := board.Home()
+	if err != nil {
+		return err
+	}
+	record, ok, err := landinglane.Read(home)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("no landing lane is registered on this computer")
+	}
+	laneRoot := record.Root
+	holder, err := lease.CurrentHolder(laneRoot)
 	if err != nil {
 		return err
 	}
 	if holder.OwnerLineage != batchowner.LandingOwnerLineage {
 		return fmt.Errorf("the lane checkout is held by session %s, not by its landing owner", holder.OwnerLineage)
 	}
-	for _, announcement := range lease.AnnouncementsFor(controlRoot, holder.Pid) {
+	for _, announcement := range lease.AnnouncementsFor(laneRoot, holder.Pid) {
 		if announcement.MainId != holder.MainId {
 			continue
 		}
