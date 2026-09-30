@@ -939,7 +939,7 @@ func (e Env) ExportDirFor(to string, stores []string) (string, string) {
 		dir = e.This.Settings.Values[config.DiskEvidenceExportDirKey]
 	}
 	if dir == "" {
-		return "", "name where the copies go: --to DIR (or --export DIR), or set " + config.DiskEvidenceExportDirKey + " in metasystem.conf.local; nothing was done"
+		return "", "the copies need a directory: --to DIR, or " + config.DiskEvidenceExportDirKey + " in the settings; nothing was done"
 	}
 	var roots, checkouts []string
 	for _, root := range e.Roots() {

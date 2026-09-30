@@ -150,3 +150,42 @@ func TestReportLinesGroupReleases(t *testing.T) {
 		t.Fatalf("report lines:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
 }
+
+// Rows are the report as a person's terminal shows it under a heading the
+// caller prints: no title, no indent, counted nouns, ages as durations,
+// only the classes that hold something, and an incomplete use census as a
+// count, its processes named only with --verbose.
+func TestReportRowsForAPerson(t *testing.T) {
+	t.Parallel()
+	report := Report{Schema: ReportSchema, Kind: "machine", Name: "machine", At: testNow, Mode: ModeApply,
+		Volumes: []Volume{{Path: "/Users/wido", FreeBytes: 277 << 20, FloorBytes: 50 << 30, BelowFloor: true}},
+		Floor: &FloorReport{Active: true, MinAge: "1h0m0s", Trim: "the caches are trimmed to their caps each cycle",
+			Consumers: []Consumer{{Path: "/Users/wido/evidence/gocache-x", Kind: "evidence root", Bytes: 60 << 30, Measured: true, AgeSecs: 7200,
+				Use: "no live process has it open", Command: "a person removes it once nothing needs it: rm -rf -- '/Users/wido/evidence/gocache-x'"}}},
+		Classes: []ClassReport{{Name: "context handoffs", Items: 3, Released: 2}, {Name: "tmpdir strays", Items: 1, Bytes: 4 << 20}, {Name: "engine pins"}},
+		Strays: []Item{{Path: "/var/folders/T/metasystem-audit.x", Bytes: 4 << 20, IdleSecs: 90000,
+			Verdict: Verdict{Decision: Keep, Reason: "engine-prefixed entry no store owns", Command: "metasystem disk clean --strays"}}},
+		Backlog: []string{"usage call sessions: 2 item(s) left for the next pass", "unit records: 1 item(s) left for the next pass"},
+		Census: &UseCensus{Taken: true, Unreadable: []CensusGap{{Pid: 7, UID: 0, Command: "launchd", Reason: "descriptor list unreadable"},
+			{Pid: 8, UID: 0, Reason: "descriptor list unreadable"}}},
+	}
+	want := []string{
+		"free: 277.0 MiB on /Users/wido, below the floor of 50.0 GiB",
+		"floor mode: ageing lowered to 1h00m; the caches are trimmed to their caps each cycle",
+		"consumer: /Users/wido/evidence/gocache-x (evidence root): 60.0 GiB, last written 2h00m ago, no live process has it open; a person removes it once nothing needs it: rm -rf -- '/Users/wido/evidence/gocache-x'",
+		"context handoffs: 3 items, 2 released",
+		"tmpdir strays: 1 item, 4.0 MiB",
+		"stray: /var/folders/T/metasystem-audit.x, 4.0 MiB, idle 25h00m: engine-prefixed entry no store owns; run metasystem disk clean --strays",
+		"backlog: usage call sessions: 2 items left for the next pass",
+		"backlog: unit records: 1 item left for the next pass",
+		"use census: 2 processes could not be inspected (--verbose names them)",
+	}
+	if got := report.Rows(false); strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("rows:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+	verbose := report.Rows(true)
+	if !strings.Contains(strings.Join(verbose, "\n"), "engine pins: no items") ||
+		!strings.Contains(strings.Join(verbose, "\n"), "use census incomplete: pid 7 (uid 0, launchd): descriptor list unreadable; pid 8 (uid 0): descriptor list unreadable") {
+		t.Fatalf("verbose rows:\n%s", strings.Join(verbose, "\n"))
+	}
+}

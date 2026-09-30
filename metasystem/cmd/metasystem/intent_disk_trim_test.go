@@ -270,7 +270,7 @@ func TestDiskShowTellsTheCaches(t *testing.T) {
 	bed.entry(t, "go-build", "00/kept-d", 100, 3*24*time.Hour)
 	var stdout, stderr bytes.Buffer
 	if code := runIntentIn(mustIntentCommand(t, "disk show"), nil, &stdout, &stderr, bed.root, bed.owners); code != 0 ||
-		!strings.Contains(stdout.String()+stderr.String(), "caches: no trim pass has run yet") {
+		!strings.Contains(stdout.String()+stderr.String(), "no trim pass has run yet") {
 		t.Fatalf("show before a trim = %d:\n%s%s", code, stdout.String(), stderr.String())
 	}
 	if code, _, printed := bed.run(t, "--go-cache"); code != 0 {
@@ -281,7 +281,7 @@ func TestDiskShowTellsTheCaches(t *testing.T) {
 	stderr.Reset()
 	code := runIntentIn(mustIntentCommand(t, "disk show"), nil, &stdout, &stderr, bed.root, bed.owners)
 	printed := stdout.String() + stderr.String()
-	if code != 0 || !strings.Contains(printed, "caches, as the last trim pass left them: the machine caches are within their caps") || !strings.Contains(printed, "engine-go-build: complete") {
+	if code != 0 || !strings.Contains(printed, "Caches\n  the machine caches are within their caps") || !strings.Contains(printed, "engine Go cache: complete") {
 		t.Fatalf("show after a trim = %d:\n%s", code, printed)
 	}
 	idemSameTree(t, "disk show", before, idemTreeDigest(t, bed.state))

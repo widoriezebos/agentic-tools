@@ -1,2 +1,3 @@
-1 evidence root(s) on this host
-/Users/wido/GitHub/agentic-tools-m1e/evidence: root of /Users/wido/GitHub/agentic-tools-m1e, 0.00 GiB
+1 evidence root on this computer
+
+evidence   36.0 KiB   root of ~/GitHub/agentic-tools-m1e

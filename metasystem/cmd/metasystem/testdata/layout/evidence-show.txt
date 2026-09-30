@@ -1,2 +1,6 @@
-evidence of /Users/wido/GitHub/agentic-tools-m1e: segment 0a5c41b756db in /Users/wido/GitHub/agentic-tools-m1e/evidence: 0.00 GiB of the 10.00 GiB cap; age floor 90 days
-  1 item(s): 1 past the age floor and clear, 0 held by an exclusion; judged on the accepted ledger 9498700a9
+This checkout keeps 1 evidence item · 32.0 KiB of its 10.0 GiB cap
+
+  root        evidence  segment 0a5c41b756db
+  age floor   90 days
+  items       1 past the age floor and clear · 0 held by an exclusion
+  ledger      judged on the accepted ledger 9498700a9

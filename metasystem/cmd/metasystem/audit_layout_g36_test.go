@@ -104,7 +104,9 @@ func diskLayoutBed(passed bool) func(t *testing.T) layoutBed {
 		}
 		return layoutBed{owners: bed.owners, cwd: bed.root, now: diskNow.Add(time.Hour),
 			replace: layoutPaths(bed.root, bed.root, "/Users/wido/GitHub/agentic-tools-m1e",
-				fmt.Sprintf(`"device": %d,`, identity.Dev), `"device": 16777233,`, fmt.Sprintf(`"inode": %d,`, identity.Ino), `"inode": 1622845050,`, evidenceRoot, "/Volumes/Evidence/metasystem-evidence")}
+				fmt.Sprintf(`"device": %d,`, identity.Dev), `"device": 16777233,`, fmt.Sprintf(`"inode": %d,`, identity.Ino), `"inode": 1622845050,`, evidenceRoot, "/Volumes/Evidence/metasystem-evidence",
+				// The text shortens the root under the golden's home first.
+				"~/"+filepath.Base(evidenceRoot), "/Volumes/Evidence/metasystem-evidence")}
 	}
 }
 
@@ -115,10 +117,16 @@ func evidenceLayoutBed(t *testing.T) layoutBed {
 	bed := newEvidenceVerbBed(t)
 	// The segment is named by a digest of the checkout's temporary path.
 	segment := diskstore.Segment(bed.gitRoot)
+	// The exports go beside the checkout, where the golden's text shortens
+	// them under its home before the stable name replaces them.
+	exports, err := filepath.EvalSymlinks(t.TempDir())
+	helmMust(t, err)
+	shortened := "~/" + filepath.Base(exports) + "/exports"
+	exports = filepath.Join(exports, "exports")
 	return layoutBed{owners: bed.owners, cwd: bed.diskBed.root, now: diskNow.Add(time.Hour),
-		replace: layoutPaths(bed.diskBed.root, bed.diskBed.root, "/Users/wido/GitHub/agentic-tools-m1e", bed.export, "/Volumes/Backup/metasystem-exports",
-			segment, "0a5c41b756db"),
-		words:   map[string]string{"EXPORTS": bed.export}}
+		replace: layoutPaths(bed.diskBed.root, bed.diskBed.root, "/Users/wido/GitHub/agentic-tools-m1e", exports, "/Volumes/Backup/metasystem-exports",
+			shortened, "/Volumes/Backup/metasystem-exports", segment, "0a5c41b756db"),
+		words: map[string]string{"EXPORTS": exports}}
 }
 
 // passthroughLayoutBed is an installation the passthrough actions name
@@ -282,3 +290,12 @@ func TestTestStatusResultJSONIsMainsDefault(t *testing.T) {
 		t.Fatalf("test status --result --json = %d:\n%s%s\nmain printed:\n%s (%v)", code, stdout, stderr, want, err)
 	}
 }
+
+// flatPage is a laid-out page as one line: a row the width wrapped reads
+// whole again, so a test asserts a phrase wherever the page broke it.
+func flatPage(out string) string {
+	return strings.Join(strings.Fields(out), " ")
+}
+
+// shown is a bed path as the page names it: repo-relative.
+func (b *diskBed) shown(path string) string { return strings.TrimPrefix(path, b.root+"/") }

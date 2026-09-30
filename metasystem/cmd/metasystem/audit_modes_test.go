@@ -58,6 +58,13 @@ var auditModes = map[string]auditMode{
 	"cmd/metasystem/intent_evidence.go": {group: "G3"},
 	"internal/diskstore/report.go":      {group: "G3"},
 	"internal/evidence/bound.go":        {group: "G3"},
+	// Their run functions print through textui; diskTrim's progress notes
+	// stay on stderr beside the page.
+	"cmd/metasystem/intent_disk.go#runIntentDiskShow":            {layout: auditEnforce},
+	"cmd/metasystem/intent_disk.go#runIntentDiskClean":           {layout: auditEnforce},
+	"cmd/metasystem/intent_evidence.go#runIntentEvidenceShow":    {layout: auditEnforce},
+	"cmd/metasystem/intent_evidence.go#runIntentEvidenceExport":  {layout: auditEnforce},
+	"cmd/metasystem/intent_evidence.go#runIntentEvidenceDispose": {layout: auditEnforce},
 	// G4 delivery.
 	"cmd/metasystem/intent_work.go":           {group: "G4"},
 	"cmd/metasystem/intent_delivery.go":       {group: "G4"},

@@ -5,7 +5,7 @@ exit 2
   "verb": "evidence export",
   "targets": [],
   "outcome": "refused",
-  "summary": "name where the copies go: --to DIR (or --export DIR), or set evidence.export-dir in metasystem.conf.local; nothing was done",
+  "summary": "the copies need a directory: --to DIR, or evidence.export-dir in the settings; nothing was done",
   "next": {
     "argv": [
       "metasystem",
@@ -16,7 +16,7 @@ exit 2
       "--to",
       "DIR"
     ],
-    "reason": "with another directory"
+    "reason": "DIR is where the copies go"
   }
 }
 

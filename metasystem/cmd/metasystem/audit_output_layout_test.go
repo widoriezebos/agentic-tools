@@ -354,11 +354,15 @@ func TestAuditOutputLayout(t *testing.T) {
 			}
 
 			// On a terminal the same page is coloured; with colour off not
-			// one escape is printed.
-			tty := env
+			// one escape is printed. An act runs on a bed of its own, so its
+			// second run is not its repeat.
+			again := c.bed(t)
+			againRoot := realpath.Resolve(again.cwd)
+			tty := layoutEnv(t, again.now, filepath.Dir(againRoot), againRoot)
 			tty.TTY, tty.Color = true, true
-			bed.owners.textEnv = func(io.Writer) textui.Env { return tty }
-			_, coloured, colouredErr := runLayoutCase(t, c, bed)
+			again.owners.textEnv = func(io.Writer) textui.Env { return tty }
+			again.replace = append([]string{"~/" + filepath.Base(againRoot), "~/GitHub/" + layoutStableBase(again.replace, againRoot)}, again.replace...)
+			_, coloured, colouredErr := runLayoutCase(t, c, again)
 			if plain := layoutStripANSI(coloured + colouredErr); plain != got && layoutModeOf(t, c.args) == auditEnforce {
 				t.Errorf("%s: the coloured page is not the plain page in colour:\n%s", c.name, plain)
 			}

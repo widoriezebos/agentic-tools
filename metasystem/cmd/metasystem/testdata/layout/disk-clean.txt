@@ -1,26 +1,21 @@
-nothing to release; every store is kept, pending or in use; the machine caches are within their caps: nothing removed
-checkout /Users/wido/GitHub/agentic-tools-m1e/metasystem: apply pass at 2026-09-28T21:00:00Z
-  stores in /Users/wido/GitHub/agentic-tools-m1e/metasystem/artifacts/agents/stores: 0 item(s)
-  context handoffs: 0 item(s)
-  usage call sessions: 0 item(s)
-  engine pins: 0 item(s)
-  unregistered job worktrees: 0 item(s)
-  legacy candidate engines: 0 item(s)
-  proof attempt payloads: 0 item(s)
-  clones beside the checkout: 0 item(s)
-  landing release sets: 0 item(s)
-  batch release sets: 0 item(s)
-  suite-failure bundles: 0 item(s)
-machine: apply pass at 2026-09-28T21:00:00Z
-  stores in /Users/wido/GitHub/agentic-tools-m1e/home/.metasystem/stores: 0 item(s)
-  unit records: 0 item(s)
-  launch store: 0 item(s)
-  tmpdir strays: 2 item(s), 4.0 KiB
-  evidence bound: 3 item(s)
-  stray: /Users/wido/GitHub/agentic-tools-m1e/tmp/metasystem-audit.old, 4.0 KiB, idle 72h0m0s: engine-prefixed entry no store owns; run metasystem disk clean --preview, then metasystem disk clean --strays
-  evidence root /Volumes/Evidence/metasystem-evidence: root of /Users/wido/GitHub/agentic-tools-m1e, 0.00 GiB
-  not the engine's: /Users/wido/GitHub/agentic-tools-m1e/tmp/tmp.* (1 bare tmp.* entries: not engine-named, never touched)
-engine-go-build: absent (/Users/wido/GitHub/agentic-tools-m1e/user-cache/go-build does not exist)
-engine-staticcheck: absent (/Users/wido/GitHub/agentic-tools-m1e/user-cache/staticcheck does not exist)
-delegate-go-build: absent (/Users/wido/GitHub/agentic-tools-m1e/user-cache/metasystem-delegate-go-build does not exist)
-delegate-staticcheck: absent (/Users/wido/GitHub/agentic-tools-m1e/user-cache/metasystem-delegate-staticcheck does not exist)
+nothing to release; every store is kept, pending or in use
+
+This checkout  metasystem · last pass Mon 23:00
+  nothing kept
+
+This machine  last pass Mon 23:00
+  tmpdir strays: 2 items, 4.0 KiB
+  evidence bound: 3 items
+  stray: tmp/metasystem-audit.old, 4.0 KiB, idle 3d00h: engine-prefixed entry no store owns; run
+    metasystem disk clean --preview, then metasystem disk clean --strays
+  evidence root /Volumes/Evidence/metasystem-evidence: root of ~/GitHub/agentic-tools-m1e, 0.00 GiB
+  not the engine's: tmp/tmp.* (1 bare tmp.* entries: not engine-named, never touched)
+
+Caches
+  the machine caches are within their caps: nothing removed
+  engine Go cache: absent (user-cache/go-build does not exist)
+  engine staticcheck cache: absent (user-cache/staticcheck does not exist)
+  delegate Go cache: absent (user-cache/metasystem-delegate-go-build does not exist)
+  delegate staticcheck cache: absent (user-cache/metasystem-delegate-staticcheck does not exist)
+
+→ metasystem disk clean --preview  shows what a pass would release

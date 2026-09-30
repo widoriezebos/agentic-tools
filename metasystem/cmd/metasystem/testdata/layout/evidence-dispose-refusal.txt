@@ -1,2 +1,3 @@
 ✗ a disposal removes only what a preview planned, so nothing was removed
-  → metasystem evidence dispose old-chain --preview  plans it; then metasystem evidence dispose carries the plan out
+  → metasystem evidence dispose old-chain --preview
+    plans it; then metasystem evidence dispose carries the plan out

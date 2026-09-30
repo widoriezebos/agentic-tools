@@ -36,6 +36,7 @@ func evidenceIntentCommands() []intentCommand {
 			maxArgs:  1,
 			examples: []string{"metasystem evidence show", "metasystem evidence show --all", "metasystem evidence show /Users/me/metasystem-evidence/project/agents/107e72c67539/stopverb-design1/jobs/stopverb-design1.log"},
 			run:      runIntentEvidenceShow,
+			laidOut:  true,
 		},
 		{
 			object: "evidence", action: "export", audience: "both", summary: "copy evidence items into verified, self-contained archives outside every evidence root",
@@ -48,6 +49,7 @@ func evidenceIntentCommands() []intentCommand {
 			maxArgs:  -1,
 			examples: []string{"metasystem evidence export stopverb-design1 --to /Volumes/Backup/metasystem-exports", "metasystem evidence export --over-bound"},
 			run:      runIntentEvidenceExport,
+			laidOut:  true,
 		},
 		{
 			object: "evidence", action: "dispose", audience: "human", summary: "a person's removal of evidence items from a previewed plan, exported first when asked",
@@ -73,6 +75,7 @@ func evidenceIntentCommands() []intentCommand {
 			maxArgs:  -1,
 			examples: []string{"metasystem evidence dispose --over-bound --export /Volumes/Backup/metasystem-exports --preview", "metasystem evidence dispose --plan 01K2Z7Q3M8XW1V0P9D4J6S5R2T"},
 			run:      runIntentEvidenceDispose,
+			laidOut:  true,
 		},
 	}
 }
@@ -117,13 +120,18 @@ func runIntentEvidenceShow(inv *intentInvocation) int {
 			}
 		}
 		answer := evidence.Pointer(ctx, argument)
-		return inv.render(intentResult{Outcome: intentConfirmed, Summary: answer.Line, Data: answer})
+		return inv.render(intentResult{Outcome: intentConfirmed, Summary: answer.Line, Data: answer, view: func(page *textui.Page) {
+			page.Headline(shortPaths(page.Env(), answer.Line))
+		}})
 	}
 	if inv.input.switched("all") {
 		var lines []string
 		var data []map[string]any
-		lines = append(lines, env.OpenDisposals()...)
-		for _, root := range env.Roots() {
+		open := env.OpenDisposals()
+		lines = append(lines, open...)
+		roots := env.Roots()
+		var items []string
+		for _, root := range roots {
 			bytes, _, _ := diskstore.Measure(ctx, root.Path)
 			line := fmt.Sprintf("%s: %s, %s", root.Path, root.Owner, textui.GiB(bytes))
 			if len(root.NotManaged) > 0 {
@@ -146,14 +154,82 @@ func runIntentEvidenceShow(inv *intentInvocation) int {
 			}
 			for _, target := range targets {
 				lines = append(lines, fmt.Sprintf("  %s %s, %s", target.Item.Kind, target.Item.Path, textui.GiB(target.Item.Bytes)))
+				items = append(items, fmt.Sprintf("%s %s, %s", target.Item.Kind, target.Item.Path, textui.Bytes(target.Item.Bytes)))
+			}
+			if err != nil {
+				items = append(items, "the items cannot be listed: "+err.Error())
 			}
 		}
 		summary := fmt.Sprintf("%d evidence root(s) on this host", len(data))
-		return inv.render(intentResult{Outcome: intentConfirmed, Summary: summary, text: lines, Data: data})
+		return inv.render(intentResult{Outcome: intentConfirmed, Summary: summary, text: lines, Data: data, view: func(page *textui.Page) {
+			pageEnv := page.Env()
+			page.Headline(textui.Count(len(data), "evidence root", "evidence roots") + " on this computer")
+			if len(open) > 0 {
+				section := page.Section("Cut short", "")
+				for _, line := range open {
+					section.Text(shortPaths(pageEnv, line))
+				}
+			}
+			table := page.Section("", "").Table(textui.Column{}, textui.Column{Right: true}, textui.Column{Flex: true, Wrap: true})
+			for index, root := range roots {
+				bytes, _ := data[index]["bytes"].(int64)
+				owner := root.Owner
+				if len(root.NotManaged) > 0 {
+					owner += fmt.Sprintf("; %s outside every segment: %s", textui.Count(len(root.NotManaged), "entry", "entries"), evidence.NotManagedLine)
+				}
+				table.Row(textui.Plain(pageEnv.Path(root.Path)), textui.Plain(textui.Bytes(bytes)), textui.Dim(shortPaths(pageEnv, owner)))
+			}
+			if page.Verbose() {
+				section := page.Section("Items", "what evidence dispose accepts")
+				for _, item := range items {
+					section.Text(shortPaths(pageEnv, item))
+				}
+			}
+		}})
 	}
 	view := env.Show(ctx)
 	lines := view.Lines(inv.input.switched("verbose"))
-	return inv.render(intentResult{Outcome: intentConfirmed, Summary: lines[0], text: lines[1:], Data: view})
+	return inv.render(intentResult{Outcome: intentConfirmed, Summary: lines[0], text: lines[1:], Data: view, view: func(page *textui.Page) {
+		evidenceShowView(page, view, lines)
+	}})
+}
+
+// evidenceShowView lays out this checkout's segment: its items against the
+// cap as the headline, then where it lives, the age floor, how the items
+// stand and the ledger they were judged on.
+func evidenceShowView(page *textui.Page, view evidence.SegmentView, lines []string) {
+	env := page.Env()
+	if view.Root == "" {
+		page.Headline("This checkout keeps no evidence yet")
+		page.Section("", "").Text(shortPaths(env, view.Unknown))
+		return
+	}
+	position := view.Position
+	var held, removable int
+	for _, item := range view.Items {
+		if len(item.Held) > 0 {
+			held++
+		} else if item.Removable {
+			removable++
+		}
+	}
+	page.Headline("This checkout keeps "+textui.Count(len(view.Items), "evidence item", "evidence items"),
+		textui.Bytes(position.TotalBytes)+" of its "+textui.Bytes(position.CapBytes)+" cap")
+	page.Facts(
+		textui.KV{Key: "root", Value: []textui.Span{textui.Plain(env.Path(view.Root)), textui.Dim("  segment " + position.Segment)}},
+		textui.KV{Key: "age floor", Value: []textui.Span{textui.Plain(textui.Count(int(view.AgeFloor.Hours()/24), "day", "days"))}},
+		textui.KV{Key: "items", Value: []textui.Span{textui.Plain(fmt.Sprintf("%d past the age floor and clear · %d held by an exclusion", removable, held))}},
+		textui.KV{Key: "ledger", Value: []textui.Span{textui.Plain(shortPaths(env, view.Ledger))}},
+	)
+	// The lines after the counts: the unknowns, pending removals, the
+	// bound's position and the entries outside every segment, as the owner
+	// words them (every item, with --verbose).
+	if len(lines) > 2 {
+		section := page.Section("", "")
+		for _, line := range lines[2:] {
+			section.Text(shortPaths(env, diskstore.CountedNouns(strings.TrimSpace(line))))
+		}
+	}
 }
 
 // evidenceTargets are the items the words name, or with --over-bound the
@@ -224,7 +300,7 @@ func runIntentEvidenceExport(inv *intentInvocation) int {
 	dir, refusal := env.ExportDirFor(inv.input.text("to"), registeredStorePaths(top))
 	if refusal != "" {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: refusal,
-			next: append(withoutOption(inv.typedArgv(), "to"), "--to", "DIR"), nextReason: "with another directory"})
+			next: append(withoutOption(inv.typedArgv(), "to"), "--to", "DIR"), nextReason: "DIR is where the copies go"})
 	}
 	targets, stillOver, problem := evidenceTargets(inv, env, false)
 	if problem != nil {
@@ -250,7 +326,35 @@ func runIntentEvidenceExport(inv *intentInvocation) int {
 	if done == already {
 		outcome = intentUnchanged
 	}
-	return inv.render(intentResult{Outcome: outcome, Summary: summary, text: lines, Data: outcomes})
+	return inv.render(intentResult{Outcome: outcome, Summary: summary, text: lines, Data: outcomes, view: func(page *textui.Page) {
+		env := page.Env()
+		headline := fmt.Sprintf("Exported %d of %s to %s", done-already, textui.Count(len(outcomes), "item", "items"), env.Path(dir))
+		facts := []string{}
+		if already > 0 {
+			facts = append(facts, fmt.Sprintf("%d already exported and verified", already))
+		}
+		if done < len(outcomes) {
+			facts = append(facts, fmt.Sprintf("%d not exported", len(outcomes)-done))
+		}
+		if outcome == intentConfirmed {
+			page.Done(strings.Join(append([]string{headline}, facts...), " · "))
+		} else {
+			page.Headline(headline, facts...)
+		}
+		evidenceOutcomeSection(page, lines)
+	}})
+}
+
+// evidenceOutcomeSection lists what an act did not do (and, with --verbose,
+// what it did), each with what settles it.
+func evidenceOutcomeSection(page *textui.Page, lines []string) {
+	if len(lines) == 0 {
+		return
+	}
+	section := page.Section("", "")
+	for _, line := range lines {
+		section.Text(shortPaths(page.Env(), strings.TrimSpace(line)))
+	}
 }
 
 // registeredStorePaths are this checkout's registered stores: an export
@@ -283,6 +387,15 @@ func runIntentEvidenceDispose(inv *intentInvocation) int {
 	}
 	render := func(result intentResult) int {
 		result.text = append(append([]string(nil), settled...), result.text...)
+		if view := result.view; view != nil && len(settled) > 0 {
+			result.view = func(page *textui.Page) {
+				view(page)
+				section := page.Section("Settled first", "a removal that was cut short")
+				for _, line := range settled {
+					section.Text(shortPaths(page.Env(), strings.TrimPrefix(strings.TrimSpace(line), "settled first: ")))
+				}
+			}
+		}
 		return inv.render(result)
 	}
 	owners := inv.owners.disk.withDefaults()
@@ -361,7 +474,22 @@ func runIntentEvidenceDispose(inv *intentInvocation) int {
 	if done == already {
 		result = intentUnchanged
 	}
-	return render(intentResult{Outcome: result, Summary: summary, text: lines, Data: outcomes})
+	return render(intentResult{Outcome: result, Summary: summary, text: lines, Data: outcomes, view: func(page *textui.Page) {
+		headline := fmt.Sprintf("Plan %s: disposed %d of %s, %s freed", plan.ID, done-already, textui.Count(len(outcomes), "item", "items"), textui.Bytes(freed))
+		var facts []string
+		if already > 0 {
+			facts = append(facts, fmt.Sprintf("%d already disposed", already))
+		}
+		if done < len(outcomes) {
+			facts = append(facts, fmt.Sprintf("%d not disposed", len(outcomes)-done))
+		}
+		if result == intentConfirmed {
+			page.Done(strings.Join(append([]string{headline}, facts...), " · "))
+		} else {
+			page.Headline(headline, facts...)
+		}
+		evidenceOutcomeSection(page, lines)
+	}})
 }
 
 func evidencePlanResult(inv *intentInvocation, plan evidence.DisposePlan) intentResult {
@@ -398,8 +526,23 @@ func evidencePlanResult(inv *intentInvocation, plan evidence.DisposePlan) intent
 	if plan.Export != "" {
 		summary += "; each exported to " + plan.Export + " first"
 	}
+	shown := append([]string(nil), lines...)
 	lines = append(lines, "  a person executes it: metasystem evidence dispose --plan "+plan.ID)
-	return intentResult{Outcome: intentConfirmed, Summary: summary, text: lines, Data: plan}
+	return intentResult{Outcome: intentConfirmed, Summary: summary, text: lines, Data: plan, view: func(page *textui.Page) {
+		env := page.Env()
+		page.Headline("Preview: nothing was changed", "plan "+plan.ID)
+		facts := []textui.KV{
+			{Key: "clear", Value: []textui.Span{textui.Plain(fmt.Sprintf("%s, %s, %s", textui.Count(clear, "item", "items"), textui.Count(files, "file", "files"), textui.Bytes(bytes)))}},
+			{Key: "held", Value: []textui.Span{textui.Plain(textui.Count(held, "item", "items"))}},
+			{Key: "declined", Value: []textui.Span{textui.Plain(textui.Count(declined, "item", "items"))}},
+		}
+		if plan.Export != "" {
+			facts = append(facts, textui.KV{Key: "export", Value: []textui.Span{textui.Plain("each item to " + env.Path(plan.Export) + " first")}})
+		}
+		page.Facts(facts...)
+		evidenceOutcomeSection(page, shown)
+		page.Hint(textui.Hint{Argv: []string{"metasystem", "evidence", "dispose", "--plan", plan.ID}, Reason: "a person carries it out"})
+	}}
 }
 
 // terminalSession is the invoking terminal's session id: a preview and its
