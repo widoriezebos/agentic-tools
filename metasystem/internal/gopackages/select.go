@@ -258,7 +258,7 @@ func runnablePackageInventory(root string, buildTags, environment []string) (map
 				continue
 			}
 			if value != "0" && value != "1" {
-				return nil, fmt.Errorf("go package selector cannot resolve CGO_ENABLED=%q", value)
+				return nil, fmt.Errorf("the Go setting %s cannot be %q (0 or 1)", "CGO_ENABLED", value)
 			}
 			context.CgoEnabled = value == "1"
 		case "GOEXPERIMENT":

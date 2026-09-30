@@ -263,7 +263,7 @@ func (p Proof) channelValidFor(root string) bool {
 // or status thread whose exact token it answered.
 func VerifiedChannelAnswerProof(root string, recorded governance.RecordedChannelAuthority, now time.Time) (Proof, error) {
 	if recorded.Outcome != governance.AuthorityOutcomeVerifiedChannelAnswer {
-		return Proof{}, fmt.Errorf("verified channel answer proof has the wrong outcome")
+		return Proof{}, fmt.Errorf("the channel answer is not a verified answer")
 	}
 	if err := recorded.ValidateRecorded(); err != nil {
 		return Proof{}, err
@@ -276,7 +276,7 @@ func VerifiedChannelAnswerProof(root string, recorded governance.RecordedChannel
 }
 func AuthenticatedChannelProof(root string, recorded governance.RecordedChannelAuthority, now time.Time) (Proof, error) {
 	if recorded.Outcome != governance.AuthorityOutcomeAuthenticatedChannelWord {
-		return Proof{}, fmt.Errorf("authenticated channel proof has the wrong outcome")
+		return Proof{}, fmt.Errorf("the channel word is not an authenticated word")
 	}
 	if err := recorded.ValidateRecorded(); err != nil {
 		return Proof{}, err
@@ -295,13 +295,13 @@ func AuthenticatedChannelProof(root string, recorded governance.RecordedChannelA
 // key unchanged.
 func SignedInSessionProof(root string, user, sessionRef, issuer string, now time.Time) (Proof, error) {
 	if now.IsZero() {
-		return Proof{}, fmt.Errorf("a signed-in session proof requires a non-zero observation time")
+		return Proof{}, fmt.Errorf("a signed-in session needs the time it was seen")
 	}
 	for _, field := range []struct{ name, value string }{
 		{"issuer", issuer}, {"user", user}, {"session reference", sessionRef},
 	} {
 		if field.value == "" || strings.ContainsAny(field.value, " \t\r\n") {
-			return Proof{}, fmt.Errorf("a signed-in session proof requires a %s with no whitespace", field.name)
+			return Proof{}, fmt.Errorf("a signed-in session needs a %s with no spaces", field.name)
 		}
 	}
 	abs, err := filepath.Abs(root)
@@ -358,7 +358,7 @@ func validateTemporaryGoalAuthority(humanWord, reviewBy string, checkedAt time.T
 		return err
 	}
 	if len(strings.Fields(humanWord)) < 3 {
-		return fmt.Errorf("--temporary-human-word must contain at least three words; this is a minimum-of-substance guard, not proof of human provenance")
+		return fmt.Errorf("--temporary-human-word needs at least three words; it guards substance, not who wrote it")
 	}
 	if checkedAt.IsZero() {
 		return fmt.Errorf("temporary human authority requires a non-zero observation time")
@@ -604,7 +604,7 @@ func protectedSystemImage(path string) (os.FileInfo, error) {
 	}
 	stat, ok := info.Sys().(*syscall.Stat_t)
 	if !ok || stat.Uid != 0 || !info.Mode().IsRegular() || info.Mode().Perm()&0o022 != 0 {
-		return nil, fmt.Errorf("the operating system withholds this process's arguments and its executable is not a root-owned regular file protected from group and other writes")
+		return nil, fmt.Errorf("the system hides this process's arguments, and its program is not a protected system file")
 	}
 	return info, nil
 }
@@ -901,10 +901,10 @@ var AtAttorney func(root string, invokerPID int64, now time.Time) (HelmGrant, bo
 // terminal, when readable, is the terminal the holder's take enrolled.
 func HelmProof(root string, grant HelmGrant, now time.Time) (Proof, error) {
 	if strings.TrimSpace(grant.By) == "" {
-		return Proof{}, fmt.Errorf("a helm proof requires the holder's name")
+		return Proof{}, fmt.Errorf("the helm needs its holder's name")
 	}
 	if now.IsZero() {
-		return Proof{}, fmt.Errorf("a helm proof requires a non-zero observation time")
+		return Proof{}, fmt.Errorf("the helm needs the time it was seen")
 	}
 	abs, err := filepath.Abs(root)
 	if err != nil {
@@ -1066,7 +1066,7 @@ func RecordCarryProof(root, operationID string, proof Proof) error {
 
 func recordProof(root, operationID, action string, proof Proof, recordable bool) error {
 	if operationID == "" || filepath.Base(operationID) != operationID || action == "" || !recordable {
-		return fmt.Errorf("cannot record an incomplete human authority proof")
+		return fmt.Errorf("an incomplete record of the person's authority cannot be written")
 	}
 	record := struct {
 		Schema      int    `json:"schema"`
@@ -1084,7 +1084,7 @@ func recordProof(root, operationID, action string, proof Proof, recordable bool)
 		return err
 	}
 	if !durable {
-		return fmt.Errorf("human authority proof was written but its durability is unknown")
+		return fmt.Errorf("the person's authority was recorded, but whether it reached the disk is unknown")
 	}
 	return nil
 }

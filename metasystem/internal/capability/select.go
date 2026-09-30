@@ -153,12 +153,10 @@ func selectWith(root, runtime, role string, requirementBytes []byte, identityJSO
 		// policy, by design.
 		residual := runtimes.ResidualFor(runtime, field)
 		if residual == "" {
-			return fmt.Errorf("runtime %s reports permission field %s unverified but declares no residual for it; "+
-				"refusing (no waiver can apply)", runtime, field)
+			return fmt.Errorf("runtime %s cannot enforce %s and names no gap a role may waive, so it is refused", runtime, field)
 		}
 		if !waived(waivers, field, residual) {
-			return fmt.Errorf("runtime %s cannot enforce restrictive permission field %s (requested %v); "+
-				"record a role waiver for %s in %s or choose another runtime",
+			return fmt.Errorf("runtime %s cannot enforce restrictive permission field %s (%v); choose another runtime, or waive %s in %s",
 				runtime, field, envelope[field], residual, "internal/protocol/roles/"+role+".requirements.json")
 		}
 	}

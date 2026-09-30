@@ -4,7 +4,10 @@
 // naming why when it is not.
 package authority
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // Modes returns the closed set of control-plane write modes the matrix
 // understands, as a fresh slice: importers must not be able to mutate the
@@ -43,7 +46,7 @@ func Authorize(mode string, classification map[string]any, job string) error {
 		if class == "STEWARD" || (class == "MAIN" && holder) {
 			return nil
 		}
-		return fmt.Errorf("breach-stop requires the authenticated lease holder, the enrolled steward custodian, or a person at an agent-free terminal")
+		return fmt.Errorf("a budget stop needs the session holding the work, the steward, or a person at their own terminal")
 	}
 
 	switch {
@@ -72,7 +75,7 @@ func Authorize(mode string, classification map[string]any, job string) error {
 			// The adoption shape widens genesis to every WORKING
 			// caller class; an unrecognized headless process and the
 			// steward's one-action authority are not that.
-			return fmt.Errorf("genesis refuses %s callers regardless of adoption shape", class)
+			return fmt.Errorf("%s may not start a goal ledger, even in a new project", describeClass(class))
 		}
 		if shaped, _ := classification["adoptionShaped"].(bool); shaped {
 			return nil
@@ -122,5 +125,24 @@ func Authorize(mode string, classification map[string]any, job string) error {
 		}
 		return nil
 	}
-	return fmt.Errorf("control-plane write refused for caller class %v", classification["class"])
+	return fmt.Errorf("%s may not change the goal records", describeClass(class))
+}
+
+// describeClass is a classified process in a person's words.
+func describeClass(class string) string {
+	switch class {
+	case "MAIN":
+		return "an agent session that does not hold the work"
+	case "DELEGATE":
+		return "a delegated agent"
+	case "STEWARD":
+		return "the steward"
+	case "SUPERVISION":
+		return "supervision"
+	case "UNTRUSTED":
+		return "an unrecognized process"
+	case "":
+		return "a process that could not be classified"
+	}
+	return "this process (" + strings.ToLower(class) + ")"
 }

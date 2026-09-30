@@ -379,8 +379,7 @@ func TestTheRouteRefusesARunningTurn(t *testing.T) {
 	refused := post(t, served, proposalPath(turn.Turn, 0), `{"version":1,"state":"applying"}`, nil)
 	testutil.Expect(t, "a running turn is refused", refused.Code, http.StatusBadRequest)
 	testutil.Expect(t, "in words", messageOf(t, refused),
-		"the Partner is still answering this turn, so its actions cannot be applied yet; "+
-			"they wake when the answer ends")
+		"the Partner is still answering this turn; its actions can be applied when the answer ends")
 	drain(t, events)
 }
 

@@ -43,7 +43,7 @@ func (r reads) reconcile(root string, endpoint goal.Endpoint) error {
 	blocking, blocked, err := goal.PushedBlocking(root)
 	if err != nil {
 		return refuse(KindFailed, "journal-unreadable",
-			"this clone's transaction journal could not be read ("+err.Error()+
+			"this clone's record of pending acts could not be read ("+err.Error()+
 				"); check the goal before acting again")
 	}
 	if !blocked {
@@ -52,21 +52,21 @@ func (r reads) reconcile(root string, endpoint goal.Endpoint) error {
 	reports, recoverErr := goal.RecoverWithPolicy(endpoint, recovering{root: root, reads: r})
 	if recoverErr != nil {
 		return refuse(KindFailed, "pushed-unknown",
-			"journal entry "+blocking.Opid+" is pushed with its outcome unknown and could not be classified: "+
+			"act "+blocking.Opid+" was sent with its outcome unknown and could not be settled: "+
 				recoverErr.Error())
 	}
 	left, stands, err := goal.PushedBlocking(root)
 	if err != nil {
 		return refuse(KindFailed, "journal-unreadable",
-			"this clone's transaction journal could not be read after recovery ("+err.Error()+
+			"the pending acts could not be read after recovery ("+err.Error()+
 				"); check the goal before acting again")
 	}
 	if !stands {
 		return nil
 	}
 	return refuse(KindFailed, "pushed-unknown",
-		"journal entry "+left.Opid+" is pushed with its outcome unknown and recovery left it: "+
-			recoveryDetail(reports, left.Opid)+"; this clone mutates nothing until it is classified")
+		"act "+left.Opid+" was sent, its outcome unknown, and recovery left it: "+
+			recoveryDetail(reports, left.Opid)+"; nothing changes until it is settled")
 }
 
 // recoveryDetail is the engine's own word about one entry, taken from the
@@ -103,5 +103,5 @@ func (p recovering) ParkBranchCheck(endpoint goal.Endpoint) func(goalID, next st
 
 func (p recovering) BreachStop(goal.Endpoint, goal.Entry) (goal.PublishRequest, func(), error) {
 	return goal.PublishRequest{}, nil, fmt.Errorf(
-		"a breach-stop is not recovered from the interface: it needs the live budget projection under the goal-revision lock; run metasystem goal sync --recover from your own terminal")
+		"a budget stop is not recovered from the browser; run metasystem goal sync --recover in your terminal")
 }

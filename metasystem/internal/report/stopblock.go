@@ -162,7 +162,7 @@ func StopRefusal(path, session, cause, remedy, detail, systemMessage string, cla
 	stamp := now.UTC().Format(time.RFC3339)
 	entry, repeated := record.Causes[digest]
 	if repeated && entry.Cause != cause {
-		return nil, fmt.Errorf("read stop-refusal record: cause digest does not match its cause")
+		return nil, fmt.Errorf("read stop-refusal record: a cause's checksum does not match the cause")
 	}
 	if !repeated {
 		entry = stopRefusalCause{Cause: cause, FirstAt: stamp}

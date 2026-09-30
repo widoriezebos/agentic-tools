@@ -145,11 +145,11 @@ func ParseRecord(raw map[string]any) (*Record, error) {
 			return nil, fmt.Errorf("armed %s: invalid ownerPidStartedAt", record.OwnerTag)
 		}
 		if record.Generation, ok = number(raw["generation"]); !ok || record.Generation < 0 {
-			return nil, fmt.Errorf("armed %s: invalid generation", record.OwnerTag)
+			return nil, fmt.Errorf("armed %s: invalid run number", record.OwnerTag)
 		}
 	case EventRelaunched:
 		if record.Generation, ok = number(raw["generation"]); !ok || record.Generation < 1 {
-			return nil, fmt.Errorf("relaunched %s: invalid generation", record.OwnerTag)
+			return nil, fmt.Errorf("relaunched %s: invalid run number", record.OwnerTag)
 		}
 		record.WatcherTag, _ = raw["watcherTag"].(string)
 		record.ReaperTag, _ = raw["reaperTag"].(string)
@@ -166,7 +166,7 @@ func ParseRecord(raw map[string]any) (*Record, error) {
 		}
 	case EventLaunched:
 		if record.Generation, ok = number(raw["generation"]); !ok || record.Generation < 1 {
-			return nil, fmt.Errorf("launched %s: invalid generation", record.OwnerTag)
+			return nil, fmt.Errorf("launched %s: invalid run number", record.OwnerTag)
 		}
 		record.Component, _ = raw["component"].(string)
 		if !Components[record.Component] {
