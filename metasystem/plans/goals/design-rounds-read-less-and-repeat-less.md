@@ -2,14 +2,14 @@
 
 - State: parked
 - Priority: 1
-- Sequence: 12
+- Sequence: 13
 - Risk: severity=2 novelty=2 exposure=3 accumulation=2 basis="severity 2: a wrong context-pack check can refuse a design launch or admit an unfilled brief, and a wrong receipt field misstates spend; no process is signalled and no ledger or landing path changes; novelty 2: the context pack, call budget, page ceiling and receipt token fields exist (fb6839a44, e700328e1), while the excerpt check, the batching instruction, the per-request usage fields and the recurring-findings section are new; exposure 3: every design and code-read round on every seat; accumulation 2: re-read context adds up per round and per day but leaves no state behind"
 - Tier: 2
 - Intent: What: A report that shows whether design helpers now read less and repeat fewer findings. Why: Three of the four parts are done: briefs carry pre-filled excerpts, reads are batched, and first briefs list findings that keep recurring. Only the measurement over three real design rounds is left. Pros: Shows whether the token saving is real. Cons: Needs design rounds started through the launcher, which waits for switch-on.
 - Origin: human
 - Next step: Next: After switch-on, take the first three design rounds started through the launcher and write the report comparing their tokens and repeated findings with the 09-15 measurement. Done when: the report exists; conclude if it shows the saving, otherwise open one fix.
 - OpenedAt: 2026-09-15T15:21:21Z
-- Revision: 66
+- Revision: 67
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:wido at=2026-09-30T19:05:04Z revision=66 opid=HHV7XSEE1CKWSEDRSY7AHFAHPQ-m1e-b6a4eb0a authority=proven digest=390e823764461b06b474fbbcbe11131f600971007e2d39132427626a59de97b0 episode=66
@@ -82,4 +82,5 @@ History:
 - 2026-09-30T19:04:54Z H184RVB2WMWS0VEDTSK4KA8ATA-m1e-b6a4eb0a unapprove actor=human:wido targets=design-rounds-read-less-and-repeat-less reason=Unapproved only to rewrite its intent in plain English (backlog sync 2026-09-30); approved again right after
 - 2026-09-30T19:04:58Z HY30BK2P9TSN37XCCPY4P1EJ3J-m1e-b6a4eb0a edit actor=human:wido targets=design-rounds-read-less-and-repeat-less
 - 2026-09-30T19:05:04Z HHV7XSEE1CKWSEDRSY7AHFAHPQ-m1e-b6a4eb0a approve actor=human:wido targets=design-rounds-read-less-and-repeat-less
-Integrity: sha256=70ac3f6530b18610f7c50d22218c068e169d52061ec82feabcfd8a0f11cfae9b
+- 2026-09-30T20:40:12Z HNA3K23WT2SC30HEBK32FHM4JJ-ui-bc2fda53 set-priority actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,cross-cutting-change-inventories-its-readers,design-rounds-read-less-and-repeat-less,error-checks-use-typed-errors,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,host-setup-from-scratch,landing-lane-runtime-redesign,one-steward-per-checkout-on-its-own-root,processes-read-structured-results,receipt-writer-follows-the-worktree-it-runs-in,reviewers-check-the-rulings,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,steward-acts-on-behaviour-patterns,stop-hook-never-forces-an-empty-turn,system-start-launches-your-agent,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror reason=priority-order subject=reviewers-check-the-rulings from=1:12 to=1:13 requested-sequence=1
+Integrity: sha256=5f75ac10c2c6ae7d3552e1708d28fea46ef8d4cc5885583be69c462c732937c4
