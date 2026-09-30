@@ -53,9 +53,6 @@ type laneVerbOwners struct {
 	// helm reads whether a joined unit's seat is at the helm, which holds
 	// its batch whole.
 	helm func(seatRoot string) helm.State
-	// installation is the metasystem installation of a lane checkout: the
-	// module root, where the lane's enrollment lives.
-	installation func(root string) (string, error)
 	// engine admits this process as the lane's enrolled engine (K5): every
 	// kernel verb calls it first.
 	engine func(checkout, installation string, retry []string) (laneengine.Identity, error)
@@ -102,12 +99,6 @@ func (inv *intentInvocation) landing() laneVerbOwners {
 	}
 	if owners.helm == nil {
 		owners.helm = helm.Active
-	}
-	if owners.installation == nil {
-		owners.installation = func(root string) (string, error) {
-			layout, err := inv.owners.resolver.ResolveLayout(root)
-			return layout.InstallationRoot, err
-		}
 	}
 	if owners.engine == nil {
 		owners.engine = laneengine.RequireSelf

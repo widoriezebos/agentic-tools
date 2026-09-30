@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -51,9 +50,11 @@ type Conditions struct {
 	// re-arm all run inside one Hold, so no proof or begin starts on either
 	// engine while the engine changes.
 	Hold func() (release func(), err error)
-	// Paused reads the person's pause; it runs with the host flock already
-	// held. An unreadable pause is paused. Unit K-a's lane gate replaces it.
-	Paused func() (bool, error)
+	// Admit is the lane gate's reading for an advance (lane.AdmitHeld): the
+	// lane record, the unset fence and the person's pause, each failing
+	// closed; it runs with the host flock already held. A *lane.Refusal
+	// names what holds the lane.
+	Admit func() error
 	// BatchInFlight names a batch that has begun and not finished.
 	BatchInFlight func() (string, error)
 }
@@ -70,12 +71,6 @@ type Steps struct {
 	// ReArm re-enrolls the engine now at installPath (the steward's machine
 	// rebuild re-arm, which itself refuses a build not landed).
 	ReArm func(installPath string) (steward.ReArmOutcome, error)
-}
-
-// pausePath is the lane's pause record. It is lane's own file, read here
-// fail-closed until unit K-a's gate owns the read.
-func pausePath(home string) string {
-	return filepath.Join(lane.HostDir(home), "landing-lane-paused.json")
 }
 
 // ProductionConditions holds the host's proving lock and flock, and reads the
@@ -107,12 +102,9 @@ func ProductionConditions(home, checkout string) Conditions {
 			}
 			return func() { _ = host.Release(); _ = proving.Release() }, nil
 		},
-		Paused: func() (bool, error) {
-			_, err := os.ReadFile(pausePath(home))
-			if errors.Is(err, fs.ErrNotExist) {
-				return false, nil
-			}
-			return true, err
+		Admit: func() error {
+			_, err := lane.AdmitHeld(home, lane.OpAdvance, lane.AuthorityAgent)
+			return err
 		},
 		BatchInFlight: func() (string, error) {
 			records, err := batch.NewStore(checkout, identity.KernelProber{}).Records()
@@ -214,16 +206,30 @@ func gate(conditions Conditions, again []string) (func(), error) {
 	return release, nil
 }
 
-func check(conditions Conditions) error {
-	paused, err := conditions.Paused()
-	if paused || err != nil {
-		refusal := &Refusal{Code: CodeAdvancePaused, Message: "the landing lane is stopped, so its engine wasn't changed",
-			Argv: []string{"metasystem", "landing", "status"}, Detail: "metasystem landing status shows who stopped it; only a person resumes it"}
-		if err != nil {
-			refusal.Message = "whether the landing lane is stopped can't be read, so its engine wasn't changed"
-			refusal.Detail = err.Error()
+// admitRefusal is the lane gate's refusal as the advance's: a pause (a
+// readable one or not) is CodeAdvancePaused, any other lane refusal keeps
+// the lane's code and fix, and a lane that can't be read refuses too.
+func admitRefusal(err error) *Refusal {
+	status := []string{"metasystem", "landing", "status"}
+	var held *lane.Refusal
+	switch {
+	case errors.As(err, &held) && held.Code == lane.CodePaused:
+		return &Refusal{Code: CodeAdvancePaused, Message: "the landing lane is stopped, so its engine wasn't changed",
+			Argv: status, Detail: "metasystem landing status shows who stopped it; only a person resumes it"}
+	case errors.As(err, &held):
+		argv := held.Argv
+		if len(argv) == 0 {
+			argv = status
 		}
-		return refusal
+		return &Refusal{Code: held.Code, Message: held.Message, Argv: argv, Detail: held.Fix}
+	}
+	return &Refusal{Code: CodeAdvancePaused, Message: "whether the landing lane is stopped can't be read, so its engine wasn't changed",
+		Argv: status, Detail: err.Error()}
+}
+
+func check(conditions Conditions) error {
+	if err := conditions.Admit(); err != nil {
+		return admitRefusal(err)
 	}
 	busy, err := conditions.BatchInFlight()
 	if busy != "" || err != nil {

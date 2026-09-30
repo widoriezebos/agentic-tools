@@ -58,33 +58,49 @@ func knownOperation(op Operation) bool {
 // without starting anything.
 func Gate(home string, op Operation, authority Authority, start func(Record) error) error {
 	if !knownOperation(op) {
-		return &Refusal{Code: CodeUnknownOperation, Message: fmt.Sprintf("the landing lane does not know the operation %q, so nothing was started", op),
-			Fix: "run one of the landing verbs: metasystem landing status lists them"}
+		return unknownOperationRefusal(op)
 	}
-	cleanup := authority == AuthorityPerson && op == OpReturn
 	return withLock(home, func() error {
-		record, ok, err := Read(home)
-		var refusal *Refusal
-		if err != nil && !(cleanup && errors.As(err, &refusal) && refusal.Code == CodeRecordIncomplete) {
-			// A person's cleanup still returns the members of a lane an
-			// older engine registered: that is how its unset ends.
+		record, err := AdmitHeld(home, op, authority)
+		if err != nil || start == nil {
 			return err
-		}
-		if !ok {
-			return &Refusal{Code: CodeNotRegistered, Message: "no landing lane is registered on this computer, so nothing was started",
-				Fix: "a person registers the landing checkout: metasystem landing set PATH"}
-		}
-		if journal, fenced, _ := ReadUnset(home); fenced && !cleanup {
-			return unsettingRefusal(journal)
-		}
-		if pause, paused := ReadPause(home); paused && !cleanup && op != OpJoin {
-			return pausedRefusal(pause, op)
-		}
-		if start == nil {
-			return nil
 		}
 		return start(record)
 	})
+}
+
+// AdmitHeld is Gate's reading for a caller that already holds the host lane
+// flock (LockPath) and keeps it while op acts, as landing engine advance
+// does: the lane record, the unset fence and the pause, each failing closed.
+// It returns the record op acts on, or the refusal.
+func AdmitHeld(home string, op Operation, authority Authority) (Record, error) {
+	if !knownOperation(op) {
+		return Record{}, unknownOperationRefusal(op)
+	}
+	cleanup := authority == AuthorityPerson && op == OpReturn
+	record, ok, err := Read(home)
+	var refusal *Refusal
+	if err != nil && !(cleanup && errors.As(err, &refusal) && refusal.Code == CodeRecordIncomplete) {
+		// A person's cleanup still returns the members of a lane an
+		// older engine registered: that is how its unset ends.
+		return Record{}, err
+	}
+	if !ok {
+		return Record{}, &Refusal{Code: CodeNotRegistered, Message: "no landing lane is registered on this computer, so nothing was started",
+			Fix: "a person registers the landing checkout: metasystem landing set PATH"}
+	}
+	if journal, fenced, _ := ReadUnset(home); fenced && !cleanup {
+		return Record{}, unsettingRefusal(journal)
+	}
+	if pause, paused := ReadPause(home); paused && !cleanup && op != OpJoin {
+		return Record{}, pausedRefusal(pause, op)
+	}
+	return record, nil
+}
+
+func unknownOperationRefusal(op Operation) *Refusal {
+	return &Refusal{Code: CodeUnknownOperation, Message: fmt.Sprintf("the landing lane does not know the operation %q, so nothing was started", op),
+		Fix: "run one of the landing verbs: metasystem landing status lists them"}
 }
 
 func pausedRefusal(pause Pause, op Operation) *Refusal {

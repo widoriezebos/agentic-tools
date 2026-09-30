@@ -62,6 +62,14 @@ func newAdvanceBed(t *testing.T) *advanceBed {
 	gitIn(t, bed.checkout, "remote", "add", "origin", "file://"+bed.origin)
 	gitIn(t, bed.checkout, "push", "--quiet", "origin", "main")
 	bed.main = gitIn(t, bed.checkout, "rev-parse", "HEAD")
+	// A person registered the lane: the advance goes through its gate.
+	layout, err := lane.NewLayout(bed.checkout)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := lane.Register(bed.home, layout, "Wido", fixedNow); err != nil {
+		t.Fatal(err)
+	}
 	return bed
 }
 
@@ -316,6 +324,35 @@ func TestAdvanceHoldsWhilePaused(t *testing.T) {
 	}
 	_, err = bed.advance(t)
 	bed.untouched(t, err, CodeAdvancePaused)
+}
+
+// The advance reads the lane through its gate (K-a K2), under the host
+// flock it already holds: an unset under way, a record an older engine
+// wrote, and no registered lane each refuse it, with the lane's own code.
+func TestAdvanceGoesThroughTheLaneGate(t *testing.T) {
+	t.Parallel()
+	bed := newAdvanceBed(t)
+	bed.enrollOld(t)
+	journal := filepath.Join(lane.HostDir(bed.home), "landing-lane-unset.json")
+	if err := os.WriteFile(journal, []byte(`{"by":"Wido","root":"`+bed.checkout+`"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := bed.advance(t)
+	bed.untouched(t, err, lane.CodeUnsetting)
+	if err := os.Remove(journal); err != nil {
+		t.Fatal(err)
+	}
+	record := filepath.Join(lane.HostDir(bed.home), "landing-lane.json")
+	if err := os.WriteFile(record, []byte(`{"root":"`+bed.checkout+`","registeredBy":"Wido"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err = bed.advance(t)
+	bed.untouched(t, err, lane.CodeRecordIncomplete)
+	if err := os.Remove(record); err != nil {
+		t.Fatal(err)
+	}
+	_, err = bed.advance(t)
+	bed.untouched(t, err, lane.CodeNotRegistered)
 }
 
 // Custody must be settled (K9): while a proof holds the host's proving

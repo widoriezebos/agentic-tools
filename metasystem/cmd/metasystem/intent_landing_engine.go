@@ -10,6 +10,7 @@ import (
 	"errors"
 	"path/filepath"
 	"slices"
+	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/laneengine"
@@ -53,7 +54,10 @@ func (inv *intentInvocation) admitLaneKernel() (laneKernel, *intentResult) {
 		return laneKernel{}, problem
 	}
 	targets := laneTargets(record.Root)
-	installation, err := owners.installation(record.Root)
+	// The installation is the one landing set recorded (K-a), never
+	// guessed from the checkout again.
+	layout, err := record.Layout()
+	installation := string(layout.Install)
 	if err != nil {
 		return laneKernel{}, &intentResult{Outcome: intentFailed, code: 1, Targets: targets,
 			Summary: "the landing lane's installation can't be found, so nothing was done",
@@ -107,6 +111,12 @@ func laneEngineFixReason(refusal *laneengine.Refusal) string {
 		return "runs it on the lane's enrolled engine"
 	case refusal.Code == laneengine.CodeAdvanceCustodyLive:
 		return "tries again once the tests have ended"
+	case strings.HasPrefix(refusal.Code, "LANDING_LANE_"):
+		// The lane gate's refusal (K-a) carries the lane's own fix.
+		if reason, _, found := strings.Cut(refusal.Detail, ": metasystem "); found {
+			return reason
+		}
+		return "then run metasystem landing engine advance again"
 	}
 	return "a person at a terminal no agent started arms the lane checkout"
 }

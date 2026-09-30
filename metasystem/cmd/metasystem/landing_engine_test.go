@@ -247,7 +247,6 @@ func landingEngineLayoutCases() []layoutCase {
 func landingEngineLayoutBed(unenrolled bool) func(t *testing.T) layoutBed {
 	return func(t *testing.T) layoutBed {
 		bed := landingLayoutBed(landingLayoutRunning)(t)
-		bed.owners.landing.installation = func(root string) (string, error) { return filepath.Join(root, "metasystem"), nil }
 		bed.owners.landing.engine = func(checkout, installation string, retry []string) (laneengine.Identity, error) {
 			if unenrolled {
 				return laneengine.Identity{}, &laneengine.Refusal{Code: laneengine.CodeNotEnrolled,
@@ -325,5 +324,19 @@ func TestLandingStopSaysWhyItWaitsForTheHostLock(t *testing.T) {
 	}
 	if _, paused := lane.ReadPause(bed.home); !paused {
 		t.Fatal("the lane is not paused after the stop")
+	}
+}
+
+// An advance the lane gate refuses (K-a) names the lane's own fix, never
+// the engine-enrollment fix: a lane record an older engine wrote asks a
+// person to register the lane again.
+func TestLandingEngineRefusalNamesTheLaneFix(t *testing.T) {
+	t.Parallel()
+	refusal := &laneengine.Refusal{Code: lane.CodeRecordIncomplete,
+		Message: "this computer's landing lane record for /lane names no installation or custody epoch (an older engine wrote it), so nothing was done",
+		Argv:    []string{"metasystem", "landing", "set", "/lane"}, Detail: "a person registers the lane again: metasystem landing set /lane"}
+	result := laneEngineResult(refusal, laneTargets("/lane"))
+	if result.Outcome != intentRefused || result.nextReason != "a person registers the lane again" {
+		t.Fatalf("lane refusal renders %+v; want the lane's fix", result)
 	}
 }
