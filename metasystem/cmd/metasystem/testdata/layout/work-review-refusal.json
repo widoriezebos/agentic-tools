@@ -1,0 +1,21 @@
+exit 2
+--
+{
+  "schemaVersion": 1,
+  "verb": "work review",
+  "targets": [],
+  "outcome": "refused",
+  "summary": "work review needs what to review; nothing was done",
+  "next": {
+    "argv": [
+      "metasystem",
+      "work",
+      "review",
+      "GOAL",
+      "--json"
+    ],
+    "reason": "a goal's work; or j2:JOB, run:RUN, --commit SHA, or --changes for feedback"
+  }
+}
+
+--

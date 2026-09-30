@@ -772,7 +772,7 @@ func TestDevinACPPreflightRefused(t *testing.T) {
 		t.Fatalf("exit %d", code)
 	}
 	f.expectTerminal("failed", "acp_preflight_refused")
-	if !strings.Contains(f.jobLog(), "network=ask is unsupported on ACP v1") {
+	if !strings.Contains(f.jobLog(), "network must be deny or allow, not ask") {
 		t.Fatalf("log: %s", f.jobLog())
 	}
 	if left := fifosLeft(t, f.roundDir); len(left) != 0 {

@@ -16,7 +16,7 @@ const (
 	CritiqueCapExhaustedReason   = "cap-exhausted-human-raise"
 )
 
-const secondExhaustionRefused = "the review-round limit is exhausted with a severe or unproven finding; waiting on the human is the only remedy"
+const secondExhaustionRefused = "the review-round limit is exhausted with a severe or unproven finding open; only a person can go on"
 const boundedExhaustionRefused = "the review-round limit is exhausted with bounded findings; close the critique register to defer them"
 
 // critiqueState is the record table one critique decision reads: every
@@ -82,7 +82,7 @@ func exhaustions(record map[string]any) ([]map[string]any, error) {
 	}
 	list, ok := value.([]any)
 	if !ok {
-		return nil, fmt.Errorf("critiqueExhaustions is malformed; waiting on the human is the only remedy")
+		return nil, fmt.Errorf("critiqueExhaustions is malformed; only a person can go on")
 	}
 	if len(list) > 1 {
 		return nil, errors.New(secondExhaustionRefused)

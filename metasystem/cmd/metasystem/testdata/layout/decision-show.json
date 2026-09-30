@@ -1,0 +1,27 @@
+exit 0
+--
+{
+  "schemaVersion": 1,
+  "verb": "decision show",
+  "targets": [
+    {
+      "kind": "record",
+      "id": "01M3MKDZKHW0X90ERJ2M3YS36V"
+    }
+  ],
+  "outcome": "confirmed",
+  "summary": "decision 01M3MKDZKHW0X90ERJ2M3YS36V (accepted): Checkout lease: decisions",
+  "data": {
+    "record": {
+      "goals": [],
+      "id": "01M3MKDZKHW0X90ERJ2M3YS36V",
+      "kind": "decision",
+      "path": "docs/decisions/checkout-lease.md",
+      "status": "accepted",
+      "title": "Checkout lease: decisions"
+    },
+    "referencedBy": null
+  }
+}
+
+--

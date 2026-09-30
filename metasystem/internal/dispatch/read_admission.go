@@ -161,7 +161,7 @@ func CritiqueReadAdmissionForGoal(repoRoot, role, rootJob, goalID string, round 
 			result.EventDurable = durable
 			detail := ""
 			if !durable {
-				detail = "the refusal event is published, but its crash durability is not proven; mirror the prior root to repair durable evidence"
+				detail = "the refusal is published but not yet known to survive a crash; mirror the prior root"
 			}
 			return "", redundantReadError(result, prior, detail)
 		}
@@ -184,8 +184,9 @@ func CritiqueReadAdmissionForGoal(repoRoot, role, rootJob, goalID string, round 
 					return "", &OpError{
 						Code:   11,
 						Reason: designChainOpenRefusal,
-						Message: fmt.Sprintf("%s: goal %s already has critique chain %s of design %s (newest round %d, %s); the requested subject %s does not start a fresh chain: continue that chain with its follow-up or retry, or close it first",
-							designChainOpenRefusal, goalID, criticRoot, subject.DesignPath, latestRound, asString(latest["status"]), result.SubjectDigest),
+						Message: fmt.Sprintf("goal %s already has critique chain %s of design %s (newest round %d, %s), so subject %s cannot start a fresh one; continue that chain, or close it",
+							goalID, criticRoot, subject.DesignPath, latestRound, asString(latest["status"]), result.SubjectDigest),
+						Run: "metasystem work finish j2:" + criticRoot,
 					}
 				}
 			}
@@ -235,7 +236,8 @@ func CritiqueReadAdmissionForGoal(repoRoot, role, rootJob, goalID string, round 
 				return "", &OpError{
 					Code:    11,
 					Reason:  concurrentReadRefusal,
-					Message: fmt.Sprintf("CONCURRENT_READ: critic root %s has outstanding round %d for subject %s, and a second read would race its fold; let that read finish, or stop it with metasystem work stop j2:%s, then metasystem work review again", criticRoot, latestRound, result.SubjectDigest, asString(latest["jobId"])),
+					Message: fmt.Sprintf("critic root %s still has round %d outstanding for subject %s, and a second read would race its fold; let it finish, or stop it and review again", criticRoot, latestRound, result.SubjectDigest),
+					Run:     "metasystem work stop j2:" + asString(latest["jobId"]),
 				}
 			}
 		}
@@ -248,18 +250,19 @@ func CritiqueReadAdmissionForGoal(repoRoot, role, rootJob, goalID string, round 
 }
 
 func redundantReadError(result ReadAdmissionResult, prior cleanReadCandidate, detail string) error {
-	next := fmt.Sprintf("next: metasystem work finish j2:%s", prior.root)
+	next := fmt.Sprintf("run: metasystem work finish j2:%s", prior.root)
 	if prior.closedLive {
-		next = fmt.Sprintf("next: metasystem work finish j2:%s --evidence %s; completion still checks terminal coverage and required evidence", prior.read.Subject.ImplementerRoot, prior.root)
+		next = fmt.Sprintf("run: metasystem work finish j2:%s --evidence %s", prior.read.Subject.ImplementerRoot, prior.root)
 	} else if prior.latestRound > prior.read.Round {
-		next = fmt.Sprintf("critic root %s now has later round %d, so clean read round %d cannot close that newer state; resolve and revise the later work before dispatching another equal read", prior.root, prior.latestRound, prior.read.Round)
+		next = fmt.Sprintf("round %d is newer than the clean one; revise that work with metasystem work revise first", prior.latestRound)
 	} else if !prior.closeable {
-		next = fmt.Sprintf("critic root %s cannot presently close from read round %d; inspect its current closure and evidence before dispatching another equal read", prior.root, prior.read.Round)
+		next = fmt.Sprintf("it cannot close from round %d yet; see why with metasystem work status j2:%s", prior.read.Round, prior.root)
 	}
-	message := fmt.Sprintf("REDUNDANT_READ: critic root %s already proved a clean critic read at round %d for subject %s; %s", prior.root, prior.read.Round, result.SubjectDigest, next)
+	message := fmt.Sprintf("critic root %s already read subject %s clean at round %d; an equal read changes nothing", prior.root, result.SubjectDigest, prior.read.Round)
 	if detail != "" {
 		message += "; " + detail
 	}
+	message += "\n" + next
 	return &OpError{
 		Code:    11,
 		Reason:  redundantReadRefusal,

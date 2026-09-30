@@ -9,7 +9,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
+	landinglane "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
@@ -64,12 +68,12 @@ func TestLaneProofChargesTheLaneNotAGoal(t *testing.T) {
 	unresolved.laneAccount = func(string) (string, error) {
 		return "", errors.New("LANE_ACCOUNT_UNRESOLVED: no landing lane is registered on this host")
 	}
-	if _, _, _, err := admitAsLaneOwner(t, repository, unresolved, lease.ClassMain); err == nil || !strings.Contains(err.Error(), "LANE_ACCOUNT_UNRESOLVED") {
+	if _, _, _, err := admitAsLaneOwner(t, repository, unresolved, lease.ClassMain); err == nil || !strings.Contains(refusalDetail(err), "LANE_ACCOUNT_UNRESOLVED") {
 		t.Fatalf("unresolved lane: %v", err)
 	}
 	other := request
 	other.laneAccount = func(string) (string, error) { return "lane:ffffffffffff", nil }
-	if _, _, _, err := admitAsLaneOwner(t, repository, other, lease.ClassMain); err == nil || !strings.Contains(err.Error(), "LANE_ACCOUNT_UNRESOLVED") {
+	if _, _, _, err := admitAsLaneOwner(t, repository, other, lease.ClassMain); err == nil || !strings.Contains(refusalDetail(err), "LANE_ACCOUNT_UNRESOLVED") {
 		t.Fatalf("another lane's identity: %v", err)
 	}
 	both := request
@@ -90,12 +94,12 @@ func TestLaneProofChargesTheLaneNotAGoal(t *testing.T) {
 
 // TestTrustedPolicyEngineForwardsTheLane (U11b F-3): the pinned trusted-base
 // engine plans a lane-charged run on the lane, never on some goal; an engine
-// that predates --lane is refused with the fix named, never asked with a goal.
+// that answers without its envelope is refused, never asked with a goal.
 func TestTrustedPolicyEngineForwardsTheLane(t *testing.T) {
 	t.Parallel()
 	argsFile := filepath.Join(t.TempDir(), "args")
 	engine := filepath.Join(t.TempDir(), "policy-engine")
-	script := "#!/bin/sh\nprintf '%s\\n' \"$@\" > '" + argsFile + "'\nprintf '%s\\n' '{\"schemaVersion\":1}'\n"
+	script := "#!/bin/sh\nprintf '%s\\n' \"$@\" > '" + argsFile + "'\nprintf '%s\\n' '{\"schemaVersion\":1,\"verb\":\"internal test plan\",\"targets\":[],\"outcome\":\"confirmed\",\"summary\":\"\",\"data\":{\"schemaVersion\":1}}'\n"
 	if err := testexec.WriteFile(engine, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -111,12 +115,61 @@ func TestTrustedPolicyEngineForwardsTheLane(t *testing.T) {
 	if strings.Join(args[:3], " ") != "internal test plan" || !slices.Contains(args, "--lane") || !slices.Contains(args, "lane:0123456789ab") || slices.Contains(args, "--goal") {
 		t.Fatalf("policy child argv=%v", args)
 	}
+	// An engine that answers in words, not the envelope, is read as unknown:
+	// the plan is refused, never guessed from its text (structured-output U1).
 	old := filepath.Join(t.TempDir(), "old-engine")
 	if err := testexec.WriteFile(old, []byte("#!/bin/sh\necho 'flag provided but not defined: -lane' >&2\nexit 2\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := testrun.PlanWithTrustedPolicyEngine(old, request, t.TempDir(), "candidate"); err == nil || !strings.Contains(err.Error(), "LANE_ENGINE_TOO_OLD") ||
-		!strings.Contains(err.Error(), "metasystem landing restart") {
-		t.Fatalf("an engine without --lane: %v", err)
+	if _, err := testrun.PlanWithTrustedPolicyEngine(old, request, t.TempDir(), "candidate"); err == nil || !strings.Contains(err.Error(), "could not be read") {
+		t.Fatalf("an engine answering in words: %v", err)
+	}
+}
+
+// TestLaneOwnerProofReadsTheLeaseTheOwnerHoldsOnANestedCheckout drives the
+// owner-to-proof-child identity path with no seam doubled: on a checkout that
+// nests the module, the supervised owner takes the checkout lease at the
+// lane's toplevel (landingOwnerCheckoutRoot), while its tip proof runs with
+// --control-root at the module root (batch.ModuleRoot). The proof's owner
+// check must find the owner's lease there, and still refuse a process that
+// does not descend from the owner.
+func TestLaneOwnerProofReadsTheLeaseTheOwnerHoldsOnANestedCheckout(t *testing.T) {
+	t.Setenv("METASYSTEM_OWNER_LINEAGE", "")
+	t.Setenv("METASYSTEM_SUPERVISION_REGISTRY_HOME", t.TempDir())
+	home, err := board.Home()
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkout := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(checkout, "metasystem"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(checkout, "metasystem", "go.mod"), []byte("module example\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := landinglane.Register(home, checkout, "test", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	held, err := batchowner.AcquireBatchOwnerForComponent(checkout)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := held.Retire(); err != nil {
+			t.Errorf("retire owner: %v", err)
+		}
+	})
+	controlRoot := batch.ModuleRoot(checkout)
+	if controlRoot == checkout {
+		t.Fatalf("fixture is not nested: control root %s", controlRoot)
+	}
+	if _, err := landinglane.ResolveAccount(home, controlRoot); err != nil {
+		t.Fatalf("the proof's control root is not in the lane: %v", err)
+	}
+	if err := proveLaneOwnerCaller(controlRoot, int64(os.Getpid())); err != nil {
+		t.Fatalf("the owner's own proof was refused: %v", err)
+	}
+	if err := proveLaneOwnerCaller(controlRoot, 1); err == nil || !strings.Contains(err.Error(), "does not descend") {
+		t.Fatalf("a process outside the owner's lineage was accepted: %v", err)
 	}
 }

@@ -36,10 +36,10 @@ func (e *Engine) ResolveTaint(taintID int64, variant, tree, resolvedBy, reason s
 	// DELEGATE, supervision, or adapter never resolves taint — the whole
 	// point of the taint is that the machines stop until a human rules.
 	if view, err := lease.ClassifyPersonAt(e.Root, e.Root, e.callerPid(), e.now()); err != nil {
-		fmt.Fprintf(e.answerErrors(), "resolve refused: caller classification failed: %v\n", err)
+		fmt.Fprintf(e.answerErrors(), "resolve refused: this process could not be identified: %v\n", err)
 		return 3
 	} else if view.Class != lease.ClassHuman {
-		fmt.Fprintf(e.answerErrors(), "resolve refused: taint resolution is a human-reserved act; this caller classifies %s\n", view.Class)
+		fmt.Fprintf(e.answerErrors(), "resolve refused: taint resolution is a human-reserved act, and this process is %s\n", view.Class)
 		return 3
 	}
 	resolvedBy = strings.TrimSpace(resolvedBy)
@@ -98,7 +98,7 @@ func (e *Engine) ResolveTaint(taintID int64, variant, tree, resolvedBy, reason s
 	// holds. The repair is byte-restoration from the anchor ref, then
 	// this verb; the one-step lag-heal bridges the deferred anchor.
 	if _, _, _, lerr := mission.ParseLedger(ledgerPath); lerr != nil {
-		fmt.Fprintf(e.answerErrors(), "resolve refused: the mission ledger is unparsable (%v); restore its bytes from the anchor ref (git show <anchor>:%s), then re-run\n", lerr, missionLedgerRel(e.Mission))
+		fmt.Fprintf(e.answerErrors(), "resolve refused: the mission ledger cannot be read (%v)\nrestore its bytes from the anchor ref (git show <anchor>:%s), then repair again\n", lerr, missionLedgerRel(e.Mission))
 		return 3
 	}
 	// The starting state must be ANCHOR-VERIFIED: a
@@ -162,7 +162,7 @@ func (e *Engine) ResolveTaint(taintID int64, variant, tree, resolvedBy, reason s
 			// (R-129-ui): success, and nothing is written or anchored.
 			// Another resolution of a resolved taint stays refused.
 			if sameTaintResolution(recorded, variant, tree, waived) {
-				fmt.Fprintf(e.answerOutput(), "mission=%s taint=%d %s(%s by %s); nothing was recorded\n",
+				fmt.Fprintf(e.answerOutput(), "mission %s: problem %d %s(%s by %s); nothing was recorded\n",
 					e.Mission, taintID, TaintAlreadyResolved, recorded["variant"], recorded["resolvedBy"])
 				return 0
 			}
@@ -206,7 +206,7 @@ func (e *Engine) ResolveTaint(taintID int64, variant, tree, resolvedBy, reason s
 			fmt.Fprintln(e.answerErrors(), err)
 			return exitFor(err)
 		}
-		fmt.Fprintf(e.answerOutput(), "mission=%s taint=%d resolution tail completed (recorded %s by %s)\n",
+		fmt.Fprintf(e.answerOutput(), "mission %s: problem %d resolution completed (recorded %s by %s)\n",
 			e.Mission, taintID, recorded["variant"], recorded["resolvedBy"])
 		return 0
 	}
@@ -233,7 +233,7 @@ func (e *Engine) ResolveTaint(taintID int64, variant, tree, resolvedBy, reason s
 		// disputed file. Adoption — with its named waivers and its
 		// re-baselined anchored truth — is the one lawful closure.
 		if reason, _ := entry["reason"].(string); strings.HasPrefix(reason, ledgerViolationPrefix) {
-			fmt.Fprintf(e.answerErrors(), "resolve refused: taint %d disputes the mission ledger, which sits outside the restorable tree projection; use adopt-disputed-tree\n", taintID)
+			fmt.Fprintf(e.answerErrors(), "resolve refused: problem %d disputes the mission ledger, which a restore cannot put back\nuse --accept-workspace instead of --confirm-restored\n", taintID)
 			return 3
 		}
 		// The named tree must BE a recorded SAFE tree
@@ -242,7 +242,7 @@ func (e *Engine) ResolveTaint(taintID int64, variant, tree, resolvedBy, reason s
 		// its named waivers). Safe = the violated turn's pre-tree, an
 		// accepted expected-tree point, or an earlier resolution's tree.
 		if !e.recordedSafeTree(state, entry, tree) {
-			fmt.Fprintf(e.answerErrors(), "resolve refused: %s is not a recorded safe tree for taint %d (the violated pre-tree, an accepted point, or an earlier resolution); to keep the disputed tree use adopt-disputed-tree\n", tree, taintID)
+			fmt.Fprintf(e.answerErrors(), "resolve refused: %s is not a recorded safe tree for problem %d\nname the violated pre-tree, an accepted point or an earlier resolution, or use --accept-workspace to keep the disputed tree\n", tree, taintID)
 			return 3
 		}
 		// Exact equality, verified — never trusted: the human restores
@@ -356,7 +356,7 @@ func (e *Engine) ResolveTaint(taintID int64, variant, tree, resolvedBy, reason s
 			return 3
 		}
 		if capture.StagedTree != tree {
-			fmt.Fprintf(e.answerErrors(), "resolve refused: the staged projection (%s) does not equal the named safe tree (%s); restore the index too\n", capture.StagedTree, tree)
+			fmt.Fprintf(e.answerErrors(), "resolve refused: the staged index (%s) does not equal the named safe tree (%s)\nrestore the index too, then repair again\n", capture.StagedTree, tree)
 			return 3
 		}
 		restoreOrigin := lastAcceptancePosture(state)
@@ -379,7 +379,7 @@ func (e *Engine) ResolveTaint(taintID int64, variant, tree, resolvedBy, reason s
 			return 3
 		}
 		if carrierViolation != "" {
-			fmt.Fprintf(e.answerErrors(), "restore refused: a carrier still fails accounting (%s); adopt the disputed tree or repair the carrier by hand first\n", carrierViolation)
+			fmt.Fprintf(e.answerErrors(), "restore refused: a carrier still fails accounting (%s)\nuse --accept-workspace, or repair the carrier by hand first\n", carrierViolation)
 			return 3
 		}
 	}
@@ -492,7 +492,7 @@ func (e *Engine) ResolveTaint(taintID int64, variant, tree, resolvedBy, reason s
 		"missionId": e.Mission, "taintId": fmt.Sprintf("%d", taintID),
 		"variant": variant, "resolvedBy": resolvedBy,
 	})
-	fmt.Fprintf(e.answerOutput(), "mission=%s taint=%d resolved=%s segment=%d tree=%s remaining=%d\n",
+	fmt.Fprintf(e.answerOutput(), "mission %s: problem %d resolved (%s, segment %d, tree %s); %d problems remain\n",
 		e.Mission, taintID, variant, segment+1, resolvedTree, remaining)
 	return 0
 }

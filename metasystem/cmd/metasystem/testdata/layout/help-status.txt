@@ -1,0 +1,28 @@
+metasystem status · the overview of this checkout, or one goal's live work
+
+  usage   metasystem status
+          metasystem status G [--work NAME]
+
+Without G: this checkout's MetaSystem, its running work, open questions and what needs attention.
+With G: every named work item of the goal with its stage and the command that continues it; goal
+  show G is the goal's record.
+Unknown and stale readings are reported as such; a read failure is never shown as stopped or
+  healthy.
+The board block names each seat of this host with what it works on and how far it is, then one line
+  per unfinished landing batch; --verbose adds one line per goal.
+
+Options  before or after the target; -- ends them
+  --work NAME          with G: only this named work
+  --verbose            print every item on its own line instead of the grouped summary
+  --repo PATH          the repository, or any directory or file inside it (default: the current
+                       directory) (also --root)
+  --json               print one JSON result instead of text
+
+Advanced
+  --installation DIR   the metasystem installation of this checkout, when it is not the one found
+                       from --repo
+
+Examples
+  metasystem status
+  metasystem status verbs-match-intent
+  metasystem status --verbose

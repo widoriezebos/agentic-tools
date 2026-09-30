@@ -9,7 +9,7 @@ The metasystem improves itself the same way improve mode improves code: changes 
 
 ## Inputs
 
-- Receipts this retro has not yet read: run `metasystem receipt status --uncovered` first. It prints exactly the ledger lines no earlier retro covered, in ledger order, and a token; mine exactly those lines (never a position or a time) and keep the token for Step 4. `metasystem receipt status` gives the period numbers, including the critique-waiver count; the raw `critique_waived` plus `waiver_stream` fields give per-stream waiver patterns.
+- Receipts this retro has not yet read: run `metasystem receipt status --uncovered --verbose` first. It prints exactly the ledger lines no earlier retro covered, in ledger order, and a token (without `--verbose` it summarizes each line); mine exactly those lines (never a position or a time) and keep the token for Step 4. `metasystem receipt status` gives the period numbers, including the critique-waiver count; the raw `critique_waived` plus `waiver_stream` fields give per-stream waiver patterns.
 - Launch usage for the same period: in the receipt ledger used by `metasystem receipt status`, read the final `RETRO` row and use its second pipe-separated field as the previous retro's RFC3339 time. Run `metasystem work status --history --since <the previous retro's time> --json` and record these four numbers in the retro record: builds over the cap, compactions per build job, compacted reads, and calls above 200K context.
 - Git history for the same period, cross-checked against receipts. A "shipped" receipt followed by fix commits is hidden rework, and it counts as rework.
 - The instruction ledger at `memory/instruction-ledger.md`: every change previous retros adopted, each with its expected effect.

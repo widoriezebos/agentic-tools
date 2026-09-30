@@ -1,0 +1,2 @@
+✗ design show needs the goal whose designs it shows; nothing was done
+  → metasystem design list  lists the design records with their goals

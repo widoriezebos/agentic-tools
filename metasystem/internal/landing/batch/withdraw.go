@@ -38,33 +38,33 @@ func RequestWithdrawal(store Store, goalID, machine, lineage, seatRoot, actor st
 		if len(active) == 0 {
 			if len(historical) != 0 {
 				unit := historical[len(historical)-1].record.Units[historical[len(historical)-1].index]
-				return refuseBatch("BATCH_WITHDRAW_REFUSED", fmt.Sprintf("goal %s is already %s", goalID, unit.State))
+				return refuseBatch("BATCH_WITHDRAW_REFUSED", fmt.Sprintf("goal %s is already %s; nothing to do", goalID, unit.State))
 			}
-			return refuseBatch("BATCH_WITHDRAW_REFUSED", "goal "+goalID+" is not in a landing batch")
+			return refuseBatch("BATCH_WITHDRAW_REFUSED", "goal "+goalID+" is not in a landing batch; nothing to do")
 		}
 		if len(active) != 1 {
-			return refuseBatch("BATCH_WITHDRAW_REFUSED", fmt.Sprintf("goal %s has %d active batch entries", goalID, len(active)))
+			return refuseBatch("BATCH_WITHDRAW_REFUSED", fmt.Sprintf("goal %s is in %d batches at once; metasystem landing status --verbose shows them", goalID, len(active)))
 		}
 		selected := active[0]
 		if selected.record.State != StateOpen {
 			switch selected.record.State {
 			case StateSealed, StateProving, StateDiagnosing, StateLanding:
-				return refuseBatch("BATCH_SEALED", fmt.Sprintf("batch %s is %s; wait for it with metasystem work wait %s --for landing, then requeue follow-up work after it finishes", selected.record.BatchID, selected.record.State, goalID))
+				return refuseBatch("BATCH_SEALED", fmt.Sprintf("batch %s is %s, too late to leave; metasystem work wait %s --for landing waits for it", selected.record.BatchID, selected.record.State, goalID))
 			default:
-				return refuseBatch("BATCH_WITHDRAW_REFUSED", fmt.Sprintf("goal %s cannot withdraw while batch %s is %s", goalID, selected.record.BatchID, selected.record.State))
+				return refuseBatch("BATCH_WITHDRAW_REFUSED", fmt.Sprintf("goal %s can't leave batch %s while it is %s; metasystem landing status shows it", goalID, selected.record.BatchID, selected.record.State))
 			}
 		}
 		unit := selected.record.Units[selected.index]
 		if unit.State != UnitJoined {
-			return refuseBatch("BATCH_WITHDRAW_REFUSED", fmt.Sprintf("goal %s cannot withdraw from unit state %s", goalID, unit.State))
+			return refuseBatch("BATCH_WITHDRAW_REFUSED", fmt.Sprintf("goal %s can't leave its batch while it is %s; metasystem landing status shows it", goalID, unit.State))
 		}
 		if unit.Claim.Machine != machine || unit.Claim.Lineage != lineage || unit.SeatRoot != seatRoot {
-			return refuseBatch("BATCH_WITHDRAW_REFUSED", fmt.Sprintf("goal %s can be withdrawn only by its recorded joiner %s+%s in %s", goalID, unit.Claim.Machine, unit.Claim.Lineage, unit.SeatRoot))
+			return refuseBatch("BATCH_WITHDRAW_REFUSED", fmt.Sprintf("only machine %s, which queued goal %s from %s, may take it out; nothing to do here", unit.Claim.Machine, goalID, unit.SeatRoot))
 		}
 		if err := store.updateLocked(selected.record.BatchID, func(record *Record) error {
 			current := &record.Units[selected.index]
 			if record.State != StateOpen || current.State != UnitJoined {
-				return refuseBatch("BATCH_WITHDRAW_REFUSED", "batch membership changed before withdrawal")
+				return refuseBatch("BATCH_WITHDRAW_REFUSED", "batch "+selected.record.BatchID+" changed meanwhile; metasystem landing status shows where goal "+goalID+" is")
 			}
 			current.State, current.Outcome = UnitReturnPending, UnitWithdrawn
 			current.Failure, current.ReturnDisposition = "withdraw requested by the recorded joiner", ""

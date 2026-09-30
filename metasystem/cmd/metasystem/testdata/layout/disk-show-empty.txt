@@ -1,0 +1,15 @@
+What MetaSystem keeps on this computer's disk
+
+This checkout
+  no pass has run yet
+
+This machine
+  no pass has run yet
+
+Caches
+  no trim pass has run yet; metasystem disk clean --go-cache trims them now
+
+Evidence
+  root   /Volumes/Evidence/metasystem-evidence  set in metasystem.conf.local
+
+→ metasystem disk clean --preview  shows what a pass would release

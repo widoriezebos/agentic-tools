@@ -1130,3 +1130,34 @@ func TestWorkLandHelpStatesTheLaneRouting(t *testing.T) {
 		t.Errorf("work land help still says every proof is charged to a goal:\n%s", page)
 	}
 }
+
+// A batch owner's refusal to take the goal reads as words on line 1; its
+// code is a detail --verbose and --json show, never the headline.
+func TestIntentLandBatchRefusalSpeaksWordsNotItsCode(t *testing.T) {
+	t.Parallel()
+	b := newDeliveryBed(t)
+	landingRoot := t.TempDir()
+	store := batch.NewStore(landingRoot, identity.KernelProber{})
+	sealed := batch.Record{Schema: 1, BatchID: "01k0000000000000000000000e", State: batch.StateSealed}
+	if err := store.Create(sealed); err != nil {
+		t.Fatal(err)
+	}
+	b.owners.batchRoot = func(string, time.Time) (string, bool, error) { return landingRoot, true, nil }
+	b.owners.batchUnit = productionIntentBatchUnit
+	b.owners.batchJoin = func(batchowner.BatchJoinRequest) (batch.Record, error) {
+		return batch.Record{}, batch.CloseAdmissionForCost(store, sealed.BatchID, "owner", time.Unix(1, 0), batch.CostForecast{})
+	}
+	fresh := strings.Repeat("7", 40)
+	b.owners.branchState = func(string, string) (intentBranchState, error) {
+		return intentBranchState{EndpointTip: strings.Repeat("e", 40), BranchTip: fresh, Sources: []string{"critic-root"},
+			Status: branch.Status{Tip: fresh, Prefix: 1, Units: []branch.UnitStatus{{Unit: "u9", Commit: fresh}}}}, nil
+	}
+	code, result := b.do("work", "land", "standing-validation")
+	expectOutcome(t, "sealed batch", code, result, intentRefused)
+	if strings.Contains(result.Summary, "BATCH_SEALED") || !strings.Contains(result.Summary, "takes no more changes") {
+		t.Fatalf("line 1 is the batch owner's words, without its code: %q", result.Summary)
+	}
+	if !slices.Contains(result.Details, "refusal code: BATCH_SEALED") {
+		t.Fatalf("the code is a detail for --verbose and --json: %q", result.Details)
+	}
+}

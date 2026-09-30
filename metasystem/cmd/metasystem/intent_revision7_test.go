@@ -143,7 +143,7 @@ func TestIntentReviewCheckOnlyRefusesReviewOptions(t *testing.T) {
 		{design, []string{"page.md", "--check-only", "--tool-calls", "4"}},
 	} {
 		var stdout, stderr bytes.Buffer
-		if code := runIntentIn(row.command, row.args, &stdout, &stderr, t.TempDir(), intentOwners{}); code != 2 || !strings.Contains(stdout.String()+stderr.String(), "nothing was done") {
+		if code := runIntentIn(row.command, row.args, &stdout, &stderr, t.TempDir(), intentOwners{}); code != 2 || !strings.Contains(strings.Join(strings.Fields(stdout.String()+stderr.String()), " "), "nothing was done") {
 			t.Errorf("%s %q = %d %q %q; want a refusal", row.command.name, row.args, code, stdout.String(), stderr.String())
 		}
 	}

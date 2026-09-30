@@ -1,0 +1,2 @@
+✓ New frontier: 0.9 beats 0.82 by more than 0.01 (direction max); preserve this exact state before
+  iterating

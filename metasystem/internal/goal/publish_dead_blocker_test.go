@@ -71,7 +71,7 @@ func TestAPublishLeavesALiveOrUnprovenOwnersPushedBlockerAlone(t *testing.T) {
 				}
 			}
 			_, err := Open(verbReqFor(endpoint, "01J5X00000000000000000DB11", "mac-a"), "blocked-out", "Waits.", "main", "Go.")
-			if err == nil || !strings.Contains(err.Error(), "journal entry "+blocker+" is pushed with its outcome unknown") {
+			if err == nil || !strings.Contains(err.Error(), "an earlier goal change ("+blocker+") was pushed, but whether it took effect is unknown") {
 				t.Fatalf("a %s owner's pushed entry did not refuse: %v", name, err)
 			}
 			if entry, readErr := ReadEntry(endpoint.Root, blocker); readErr != nil || entry.Phase != PhasePushed {
@@ -100,7 +100,7 @@ func TestADeadOwnersBreachStopRecoversOnlyThroughTheBoundPolicy(t *testing.T) {
 	_, _ = cmd.Process.Wait()
 
 	_, err := Open(verbReqFor(endpoint, "01J5X00000000000000000DB21", "mac-a"), "unbound", "Waits.", "main", "Go.")
-	if err == nil || !strings.Contains(err.Error(), "is pushed with its outcome unknown") || !strings.Contains(err.Error(), "goal sync --recover") {
+	if err == nil || !strings.Contains(err.Error(), "whether it took effect is unknown") || !strings.Contains(err.Error(), "\nrun: metasystem goal sync --recover") {
 		t.Fatalf("an unbound publish did not refuse the breach-stop by name: %v", err)
 	}
 	if entry, readErr := ReadEntry(endpoint.Root, blocker); readErr != nil || entry.Phase != PhasePushed {

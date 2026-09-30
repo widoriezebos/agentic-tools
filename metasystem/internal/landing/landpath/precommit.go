@@ -119,8 +119,8 @@ func guard(owners GuardOwners, root, workTree string, stderr io.Writer, notices 
 		if !fullTree.MatchString(tree) {
 			tree = "unknown"
 		}
-		line := fmt.Sprintf("schemaVersion=1 boundary=pre-commit tree=%s verdict=would-refuse code=classifier-unavailable", tree)
-		if appendErr := owners.AppendObservation(root, line); appendErr != nil {
+		// A record of the observation log, never a person's message.
+		if appendErr := owners.AppendObservation(root, fmt.Sprintf("schemaVersion=1 boundary=pre-commit tree=%s verdict=would-refuse code=classifier-unavailable", tree)); appendErr != nil {
 			fmt.Fprintf(stderr, "the commit hook couldn't tell who is committing, nor log that (%v); the commit goes ahead\n", appendErr)
 		}
 	} else if class != "HUMAN" {

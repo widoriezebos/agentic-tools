@@ -18,6 +18,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/adapter"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/adapter/fakeadapter"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/verbresult"
 )
 
 func TestBatchDiagnosticDiscardsStaleResultAfterFailedRun(t *testing.T) {
@@ -32,8 +33,8 @@ func TestBatchDiagnosticDiscardsStaleResultAfterFailedRun(t *testing.T) {
 	}
 	original := batchowner.BatchDiagnosticExecute
 	t.Cleanup(func() { batchowner.BatchDiagnosticExecute = original })
-	batchowner.BatchDiagnosticExecute = func(string, []string, string, []string) ([]byte, int, error) {
-		return []byte("runner failed"), 1, errors.New("runner failed")
+	batchowner.BatchDiagnosticExecute = func(string, []string, string, []string) (verbresult.Result, error) {
+		return verbresult.Result{Outcome: verbresult.Unknown}, errors.New("runner failed")
 	}
 
 	result, err := batchowner.LaunchBatchDiagnostic(root, "batch-stale", batch.DiagnosticRequest{GoalID: "goal-a", Tree: "tree-a", Groups: []string{"fast"}})
@@ -189,7 +190,7 @@ func TestBatchRedGroupLanguageFromTheTestingContract(t *testing.T) {
 func TestBatchDiagnosticCarriesCompleteRedEvidence(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	execute := func(_ string, args []string, _ string, _ []string) ([]byte, int, error) {
+	execute := func(_ string, args []string, _ string, _ []string) (verbresult.Result, error) {
 		exit := 1
 		result := proofrun.TestResult{AttemptID: "class", Groups: []proofrun.GroupResult{
 			{ID: "fake-green", Status: "passed", ExecutionIdentity: "id-green", NativeLaunched: true, CollectionComplete: true, LogPath: "green.log"},
@@ -198,7 +199,7 @@ func TestBatchDiagnosticCarriesCompleteRedEvidence(t *testing.T) {
 				Missing:  []proofrun.NativeTestIdentity{{Classname: "com.example.PaymentTest", Name: "settles", Status: "missing-terminal"}}}}}
 		data, _ := json.Marshal(result)
 		path := args[slices.Index(args, "--result")+1]
-		return nil, 1, errors.Join(errors.New("exit 1"), os.MkdirAll(filepath.Dir(path), 0o755), os.WriteFile(path, data, 0o644))
+		return fakeTestRunResult(1, "", nil), errors.Join(os.MkdirAll(filepath.Dir(path), 0o755), os.WriteFile(path, data, 0o644))
 	}
 	result, err := batchowner.LaunchBatchDiagnosticWithExecute(root, "batch-evidence", batch.DiagnosticRequest{GoalID: "goal-a", Tree: "tip",
 		Groups: []string{"fake-green", "fake-red"}}, execute)

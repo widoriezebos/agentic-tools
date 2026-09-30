@@ -1,0 +1,22 @@
+metasystem system stop · stop MetaSystem for this checkout
+
+  usage   metasystem system stop
+
+MetaSystem administration: this action manages the work system itself.
+Done by a person at their enrolled terminal. Every job and helper of this checkout stops, and no new
+  work starts until system start.
+If something keeps running, stop says what, and nothing is reported as stopped that is not.
+This user's running launches of the checkout, in it or in one of its registered worktrees, are
+  cancelled as work stop cancels them, a line each.
+
+Options  before or after the target; -- ends them
+  --repo PATH          the repository, or any directory or file inside it (default: the current
+                       directory) (also --root)
+  --json               print one JSON result instead of text
+
+Advanced
+  --installation DIR   the metasystem installation of this checkout, when it is not the one found
+                       from --repo
+
+Examples
+  metasystem system stop

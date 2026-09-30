@@ -1868,7 +1868,7 @@ func runSharedTestingReceiptRecovery(t *testing.T, prefix string) {
 	movedOutput, movedErr := movedVerify.CombinedOutput()
 	if exit, ok := movedErr.(*exec.ExitError); !ok || exit.ExitCode() != 1 ||
 		!strings.Contains(string(movedOutput), "group policy-protection passed on tree ") ||
-		!strings.Contains(string(movedOutput), "files it depends on changed since: payload.txt\n  code proof-input-moved-after-receipt") {
+		!strings.Contains(string(movedOutput), "files it depends on changed since: payload.txt\n  proof-input-moved-after-receipt") {
 		t.Fatalf("moved declared input lacked the refusal code, group, or path: err=%v\n%s", movedErr, movedOutput)
 	}
 	writeReceiptFixture(t, projectRoot, "payload.txt", "public shared testing input\n")
@@ -1905,7 +1905,7 @@ func runSharedTestingReceiptRecovery(t *testing.T, prefix string) {
 	engineInputOutput, engineInputErr := engineInputVerify.CombinedOutput()
 	if exit, ok := engineInputErr.(*exec.ExitError); !ok || exit.ExitCode() != 1 ||
 		!strings.Contains(string(engineInputOutput), "group policy-protection passed on tree ") ||
-		!strings.Contains(string(engineInputOutput), "files it depends on changed since: "+engineDeclaredInput+"\n  code proof-input-moved-after-receipt") {
+		!strings.Contains(string(engineInputOutput), "files it depends on changed since: "+engineDeclaredInput+"\n  proof-input-moved-after-receipt") {
 		t.Fatalf("engine-build input move lacked the refusal code, group, or path: err=%v\n%s", engineInputErr, engineInputOutput)
 	}
 	writeReceiptFixture(t, root, "testing-coverage-floors.json", `{"floors":{"fixture/application":80.0}}`)

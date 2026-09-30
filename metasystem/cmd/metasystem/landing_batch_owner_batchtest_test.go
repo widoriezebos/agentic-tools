@@ -359,7 +359,7 @@ func TestBatchProofDurableUnionRefusalSkipsSecondRearm(t *testing.T) {
 			return proofrun.TestResult{}, nil
 		},
 	}
-	if err := batchowner.ExecuteBatchProof(root, batchID, "owner", "full", "token", proofrun.LoadSample{}, time.Unix(1, 0), deps); err == nil || !strings.Contains(err.Error(), "BATCH_PROOF_UNION_UNCOVERED") {
+	if err := batchowner.ExecuteBatchProof(root, batchID, "owner", "full", "token", proofrun.LoadSample{}, time.Unix(1, 0), deps); err == nil || !strings.Contains(err.Error(), "the tests chosen for the batch miss some of its changes") {
 		t.Fatalf("first union refusal=%v", err)
 	}
 	firstRearms, firstPlans := rearms, plans
@@ -458,7 +458,7 @@ func TestBatchProofRefusalTransitions(t *testing.T) {
 				refusals++
 			}
 		}
-		if err == nil || !strings.Contains(err.Error(), "BATCH_PROOF_UNION_UNCOVERED") || loadErr != nil || launches != 0 ||
+		if err == nil || !strings.Contains(err.Error(), "the tests chosen for the batch miss some of its changes") || loadErr != nil || launches != 0 ||
 			record.Proof == nil || record.Proof.Status != "union-uncovered" || refusals != 1 {
 			t.Fatalf("error=%v load=%v launches=%d refusals=%d record=%+v", err, loadErr, launches, refusals, record)
 		}
@@ -518,10 +518,12 @@ func TestBatchProofRefusalTransitions(t *testing.T) {
 }
 
 func TestBatchProofAcceptsReusableSuccess(t *testing.T) {
-	if !batchowner.BatchProofExitAccepted(proofrun.ExitReusableSuccess, proofrun.TestResult{Delivery: proofrun.DeliveryJudgment{Sufficient: true}}) {
+	sufficient := proofrun.TestResult{Delivery: proofrun.DeliveryJudgment{Sufficient: true}}
+	if !batchowner.BatchProofOutcomeAccepted(fakeTestRunResult(proofrun.ExitReusableSuccess, "", nil), sufficient) {
 		t.Fatal("reusable sufficient proof was classified red")
 	}
-	if batchowner.BatchProofExitAccepted(proofrun.ExitReusableSuccess, proofrun.TestResult{}) || batchowner.BatchProofExitAccepted(1, proofrun.TestResult{Delivery: proofrun.DeliveryJudgment{Sufficient: true}}) {
+	if batchowner.BatchProofOutcomeAccepted(fakeTestRunResult(proofrun.ExitReusableSuccess, "", nil), proofrun.TestResult{}) ||
+		batchowner.BatchProofOutcomeAccepted(fakeTestRunResult(1, "", nil), sufficient) {
 		t.Fatal("insufficient reuse or an ordinary failure was classified green")
 	}
 }
@@ -807,7 +809,7 @@ func TestBatchSupervisorTakeoverRebindsJoinedClaims(t *testing.T) {
 	attempt, _, _, err = admitProofLaunch(proofLaunchAdmission{ControlRoot: canonicalRoot, ExecutionRoot: canonicalRoot, ConfPath: filepath.Join(canonicalRoot, "metasystem.conf"),
 		GoalID: "standing-validation", CapMin: "1", ScopeClass: "selected", CommandClass: "testing", ExpectedGoalRevision: 3, ExpectedAccountingRevision: 2})
 	after, readErr := proofrun.ReadAttempts(canonicalRoot)
-	if err == nil || !strings.Contains(err.Error(), "GOAL_REVISION_MOVED") || attempt.AttemptID != "" || readErr != nil || len(after) != len(before) {
+	if err == nil || !strings.Contains(refusalDetail(err), "GOAL_REVISION_MOVED") || attempt.AttemptID != "" || readErr != nil || len(after) != len(before) {
 		t.Fatalf("parent revision admission attempt=%+v error=%v attempts=%d->%d read=%v", attempt, err, len(before), len(after), readErr)
 	}
 }

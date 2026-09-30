@@ -1,0 +1,2 @@
+✗ ~/GitHub/metasystem is not inside a git checkout: exit status 128
+  → metasystem session isolate --repo PATH  PATH is a checkout MetaSystem is set up in

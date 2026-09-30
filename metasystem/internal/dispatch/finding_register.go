@@ -673,21 +673,21 @@ func critiqueRegisterClose(repoRoot, rootJob string, deferFindings deferReviewOb
 				if f.Status == "open" || f.Status == "disputed" {
 					unresolved = append(unresolved, i)
 					if f.RigorClass == critiqueModel.Severe || f.RigorClass == critiqueModel.Unproven {
-						blockers = append(blockers, fmt.Sprintf("finding %s artifact=%s is %s and blocks close", f.FindingID, f.Artifact, f.RigorClass))
+						blockers = append(blockers, fmt.Sprintf("finding %s (in %s) is %s and blocks close", f.FindingID, f.Artifact, f.RigorClass))
 						blockerIDs = append(blockerIDs, f.FindingID)
 					}
 				}
 				if f.Resolution == "out-of-scope" && (f.RigorClass == critiqueModel.Severe || f.RigorClass == critiqueModel.Unproven) {
-					blockers = append(blockers, fmt.Sprintf("finding %s artifact=%s is illegally resolved out-of-scope", f.FindingID, f.Artifact))
+					blockers = append(blockers, fmt.Sprintf("finding %s (in %s) is severe or unproven, so it cannot be out-of-scope", f.FindingID, f.Artifact))
 					blockerIDs = append(blockerIDs, f.FindingID)
 				}
 			}
 			if len(blockers) > 0 {
 				foldedRound, roundOK := numInt(root[findingRegisterRoundField])
 				if asString(root["role"]) == "design-critic" && roundOK && foldedRound == 2 {
-					return roundTwoHumanRaise(roundTwoHumanFindingIDs(root, register, unresolved, blockerIDs))
+					return roundTwoHumanRaise(asString(root["goalId"]), roundTwoHumanFindingIDs(root, register, unresolved, blockerIDs))
 				}
-				return fmt.Errorf("%s\na person accepts each risk (metasystem goal accept-risk --finding <id> --chain <root> --by <human> --why) or raises the goal's budget", strings.Join(blockers, "\n"))
+				return fmt.Errorf("%s\na person accepts each risk with metasystem goal accept-risk, or raises the goal's budget with metasystem goal budget", strings.Join(blockers, "\n"))
 			}
 			if len(unresolved) == 0 {
 				// Section 4 bullet 3 closes a clean folded second round.
@@ -704,7 +704,7 @@ func critiqueRegisterClose(repoRoot, rootJob string, deferFindings deferReviewOb
 				// bullet 5 sends every other non-clean row to the human without another automatic round.
 				humanIDs := roundTwoHumanFindingIDs(root, register, unresolved, nil)
 				if len(humanIDs) > 0 {
-					return roundTwoHumanRaise(humanIDs)
+					return roundTwoHumanRaise(asString(root["goalId"]), humanIDs)
 				}
 				useFixture = true
 			}
@@ -773,7 +773,7 @@ func deferReviewObligationsWithReads(repoRoot, rootJob, goalID, machine, lineage
 	return goal.Opid(req.Ulid, machine, lineage), nil
 }
 
-func roundTwoHumanRaise(findingIDs []string) error {
+func roundTwoHumanRaise(goalID string, findingIDs []string) error {
 	unique := map[string]bool{}
 	for _, id := range findingIDs {
 		unique[id] = true
@@ -783,7 +783,13 @@ func roundTwoHumanRaise(findingIDs []string) error {
 		ids = append(ids, id)
 	}
 	sort.Strings(ids)
-	return refuse(CritiqueCapExhaustedExitCode, "%s: findings %s require human action; next: goal accept-risk --finding <id> --chain <root> --by <human> --why, or a re-scope by goal edit", CritiqueCapExhaustedReason, strings.Join(ids, ", "))
+	first := "F"
+	if len(ids) > 0 {
+		first = ids[0]
+	}
+	return &OpError{Code: CritiqueCapExhaustedExitCode, Reason: CritiqueCapExhaustedReason,
+		Message: fmt.Sprintf("design round 2 left findings %s for a person to decide\nrun: metasystem goal accept-risk %s --finding %s --reason TEXT, or re-scope it with metasystem goal edit %s",
+			strings.Join(ids, ", "), goalID, first, goalID)}
 }
 
 func roundTwoHumanFindingIDs(root map[string]any, register []registerFinding, unresolved []int, ids []string) []string {

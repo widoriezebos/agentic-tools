@@ -26,7 +26,7 @@ import (
 
 func designCommand() intentCommand {
 	return intentCommand{
-		object: "design", action: "write", audience: "agent", summary: "have a design author write a goal's design as a draft",
+		object: "design", action: "write", laidOut: true, audience: "agent", summary: "have a design author write a goal's design as a draft",
 		usage: []string{"metasystem design write G --brief FILE [--out FILE] [--after N]"},
 		details: []string{
 			"The design author works in this checkout and writes a staged draft; the goal's design document is updated only",

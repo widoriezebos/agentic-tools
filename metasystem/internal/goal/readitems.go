@@ -311,14 +311,18 @@ type DoneReadItemsOpenError struct {
 	ItemIDs []string
 }
 
+// Error is the refusal's words: line 1 names the open findings, line 2 the
+// command that lists them with how each closes (--fixed, --moved or
+// --accepted). Its code is data (RefusalCode).
 func (e *DoneReadItemsOpenError) Error() string {
-	remedies := make([]string, 0, len(e.ItemIDs))
-	for _, itemID := range e.ItemIDs {
-		command := fmt.Sprintf("metasystem goal notes %s --close %s", e.Goal, itemID)
-		remedies = append(remedies, command+" --fixed <commit> | "+command+" --moved <goal-id> | "+command+` --accepted "<reason>"`)
-	}
-	return fmt.Sprintf("GOAL_DONE_READ_ITEMS_OPEN: goal %s has open read items %s; close each with one of:\n%s", e.Goal, strings.Join(e.ItemIDs, ", "), strings.Join(remedies, "\n"))
+	return fmt.Sprintf("goal %s has open review notes %s, so it can't be concluded yet\nrun: metasystem goal notes %s", e.Goal, strings.Join(e.ItemIDs, ", "), e.Goal)
 }
+
+// DoneReadItemsOpenCode is the refusal code of a conclusion with open notes.
+const DoneReadItemsOpenCode = "GOAL_DONE_READ_ITEMS_OPEN"
+
+// RefusalCode is the refusal's code, for --verbose, --json and records.
+func (e *DoneReadItemsOpenError) RefusalCode() string { return DoneReadItemsOpenCode }
 
 func refuseOpenReadItems(goalID string, file *GoalFile) error {
 	var open []string

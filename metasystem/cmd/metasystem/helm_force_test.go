@@ -94,7 +94,7 @@ func TestHelmForceIsThePersonsOwnActAtTheHelm(t *testing.T) {
 	// person's --force is refused as outside the helm.
 	invoker.Store(20)
 	code, out, errOut := bed.public("goal", "done", "ship-widget", "--reason", "landed by hand")
-	if code == 0 || !strings.Contains(out+errOut, "GOAL_DONE_READ_ITEMS_OPEN: goal ship-widget has open read items r1-1") || strings.Contains(out+errOut, "at the helm you may") {
+	if code == 0 || !strings.Contains(out+errOut, "goal ship-widget has open review notes r1-1, so it can't be concluded yet") || strings.Contains(out+errOut, "at the helm you may") {
 		t.Fatalf("plain done outside the helm: %d %q %q", code, out, errOut)
 	}
 	code, out, errOut = bed.public("goal", "done", "ship-widget", "--reason", "landed by hand", "--force")
@@ -105,7 +105,7 @@ func TestHelmForceIsThePersonsOwnActAtTheHelm(t *testing.T) {
 	takeHelmAt(t, bed.root)
 	// At the helm the plain refusal proposes the force.
 	code, out, errOut = bed.public("goal", "done", "ship-widget", "--reason", "landed by hand")
-	if code == 0 || !strings.Contains(out+errOut, "--accepted \"<reason>\""+proposal) {
+	if code == 0 || !strings.Contains(out+errOut, "→ metasystem goal notes ship-widget"+proposal) {
 		t.Fatalf("plain done at the helm: %d %q %q", code, out, errOut)
 	}
 
@@ -128,7 +128,7 @@ func TestHelmForceIsThePersonsOwnActAtTheHelm(t *testing.T) {
 }
 
 const (
-	forceReadRefusal = "GOAL_DONE_READ_ITEMS_OPEN: goal g1 has open read items r1-1; close each with one of:\nmetasystem goal notes g1 --close r1-1 --fixed <commit>"
+	forceReadRefusal = "goal g1 has open review notes r1-1, so it can't be concluded yet\nrun: metasystem goal notes g1"
 	forceQuestion    = "Conclude anyway and record what was overridden? [y/N] "
 	forcedCommand    = "metasystem goal done g1 --reason 'landed at the helm by Wido: 2 commits 1111111, 2222222' --force"
 )
@@ -150,7 +150,7 @@ func TestHelmReturnAsksToForceAnOverridableRefusal(t *testing.T) {
 	}
 	// The reason is printed when the question is asked, before the forced
 	// conclusion's own line.
-	if reason := strings.Index(out, "goal done g1: refused: GOAL_DONE_READ_ITEMS_OPEN"); reason < 0 || reason > strings.Index(out, "goal done g1: confirmed") {
+	if reason := strings.Index(out, "goal done g1: refused: goal g1 has open review notes r1-1"); reason < 0 || reason > strings.Index(out, "goal done g1: confirmed") {
 		t.Fatalf("the reason does not precede the question:\n%s", out)
 	}
 }
@@ -161,7 +161,7 @@ func TestHelmReturnKeepsTheGoalOpenWhenTheForceIsDeclined(t *testing.T) {
 	b.refuse = forceReadRefusal
 	b.answers = []string{"y", "", "n", "n"}
 	out := b.wantReturn(0, "goal g1 stays open; to conclude anyway, take the helm again at your terminal and run: "+forcedCommand+"\n")
-	if len(b.done) != 1 || !strings.Contains(out, "goal done g1: refused: GOAL_DONE_READ_ITEMS_OPEN") {
+	if len(b.done) != 1 || !strings.Contains(out, "goal done g1: refused: goal g1 has open review notes r1-1") {
 		t.Fatalf("done %+v\n%s", b.done, out)
 	}
 }
@@ -173,7 +173,7 @@ func TestHelmReturnDoesNotAskToForceFromAShellThatIsNotThePersons(t *testing.T) 
 	b.refuse = forceReadRefusal
 	b.answers = []string{"y", "", "n"}
 	out := b.wantReturn(0, "to conclude anyway, take the helm again at your terminal and run: "+forcedCommand+"\n")
-	if len(b.done) != 1 || slices.Contains(b.asked, forceQuestion) || !strings.Contains(out, "goal done g1: refused: GOAL_DONE_READ_ITEMS_OPEN") {
+	if len(b.done) != 1 || slices.Contains(b.asked, forceQuestion) || !strings.Contains(out, "goal done g1: refused: goal g1 has open review notes r1-1") {
 		t.Fatalf("done %+v asked %q\n%s", b.done, b.asked, out)
 	}
 }
@@ -217,7 +217,7 @@ func TestHelmReturnForcesThroughTheRealDoneOwner(t *testing.T) {
 	command, rest, _ := resolveIntentArgv([]string{"helm", "return"})
 	code := runIntentIn(command, rest, &stdout, &stderr, bed.root, owners)
 	archived := bed.accepted("records/goals/ship-widget.md")
-	if code != 0 || len(asked) != 3 || asked[2] != forceQuestion || !strings.Contains(stdout.String(), "goal done ship-widget: refused: GOAL_DONE_READ_ITEMS_OPEN") ||
+	if code != 0 || len(asked) != 3 || asked[2] != forceQuestion || !strings.Contains(stdout.String(), "goal done ship-widget: refused: goal ship-widget has open review notes r1-1") ||
 		!strings.Contains(archived, "landed by hand — overridden by wido at the helm: read items r1-1") {
 		t.Fatalf("return: %d asked %q\n%s\n%s\n%s", code, asked, stdout.String(), stderr.String(), archived)
 	}

@@ -34,7 +34,7 @@ func TestPublishCollectedReadReconcilesTheSamePush(t *testing.T) {
 	request := PublishReadRequest{Repo: f.repo, Remote: "origin", EndpointTip: f.endpoint, GoalID: "goal-a", UnitCommit: policySecond,
 		CheckClaim: func() error { f.take(pushEvent{operation: "claim", repo: f.repo}); return nil }, Transport: f, Repository: repository}
 
-	if _, err := publishCollectedReadWith(request, f.repository()); err == nil || !strings.Contains(err.Error(), "no collected read") {
+	if _, err := publishCollectedReadWith(request, f.repository()); err == nil || !strings.Contains(err.Error(), "no finished review to publish") {
 		t.Fatalf("publishing before collection = %v", err)
 	}
 	common, recordPath, _, err := branchReadPathsWithRepository(repository, f.repo, "goal-a", policySecond)

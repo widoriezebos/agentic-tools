@@ -32,7 +32,7 @@ func TestReceiptAddFillsUsageFromTheLaunchRecord(t *testing.T) {
 	code, stdout, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
 		return runReceipt([]string{"add", "--root", receiptRoot, "--file", ledger, "--type", "design", "--outcome", "shipped", "--launch", record.ID}, stdout, stderr)
 	})
-	if code != 0 || stderr != "" || !strings.Contains(stdout, "receipt recorded") {
+	if code != 0 || stderr != "" || !strings.Contains(stdout, "Receipt recorded") {
 		t.Fatalf("code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
 	data, err := os.ReadFile(ledger)
@@ -58,7 +58,7 @@ func TestReceiptAddFillsUsageFromTheLaunchRecord(t *testing.T) {
 	code, _, stderr = runOnOwnStreams(func(stdout, stderr io.Writer) int {
 		return runReceipt([]string{"add", "--root", receiptRoot, "--file", ledger, "--type", "design", "--outcome", "shipped", "--launch", running.ID}, stdout, stderr)
 	})
-	if code != 2 || !strings.Contains(stderr, running.ID) || !strings.Contains(stderr, "not terminal") {
+	if code != 2 || !strings.Contains(stderr, running.ID) || !strings.Contains(stderr, "has not ended") {
 		t.Fatalf("running launch code=%d stderr=%q", code, stderr)
 	}
 
@@ -99,7 +99,7 @@ func TestReceiptCorrectVerbRejectsInvalidProvenanceValues(t *testing.T) {
 				"--field", test.field, "--was", test.was, "--now", test.now, "--reason", "corrupt",
 			}, stdout, stderr)
 		})
-		if code != 2 || strings.TrimSpace(stderr) != test.want {
+		if code != 2 || strings.SplitN(stderr, "\n", 2)[0] != "✗ "+test.want {
 			t.Fatalf("invalid %s correction returned code=%d stderr=%q", test.field, code, stderr)
 		}
 	}

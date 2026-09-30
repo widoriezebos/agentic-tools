@@ -501,6 +501,12 @@ func stopReasonFor(file *goal.GoalFile, projection BudgetProjection) string {
 	if !file.IsLandingClaim() {
 		return liveStopReason(projection)
 	}
+	return landingStopReason(projection)
+}
+
+// landingStopReason is the stop reason of a claim waiting to land: every
+// breach but the elapsed one.
+func landingStopReason(projection BudgetProjection) string {
 	for _, breach := range projection.Breaches {
 		if breach.Field != "elapsedLimit" {
 			return goal.StopReasonCorruptOverLimit

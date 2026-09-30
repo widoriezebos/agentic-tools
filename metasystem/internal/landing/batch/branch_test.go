@@ -197,17 +197,17 @@ func TestAssembleUnitsKeepsBranchAndChainMembersInJoinOrder(t *testing.T) {
 
 func TestBatchBranchReaderRefusesReaderRecord(t *testing.T) {
 	readerRecord := goalbranch.Attestation{Source: goalbranch.AttestationSource{Kind: "reader-record"}}
-	err := requireCriticRootSource("2", readerRecord)
+	err := requireCriticRootSource("goal-a", "2", readerRecord)
 	refusal, ok := err.(*boundaryRefusal)
 	if !ok {
 		t.Fatalf("reader-record refusal type = %T, error = %v", err, err)
 	}
-	if refusal.Code != "BATCH_JOIN_UNREAD" || refusal.Detail != "build 2 was read outside a critic-root job" ||
-		refusal.Error() != "BATCH_JOIN_UNREAD: build 2 was read outside a critic-root job" {
+	want := "build 2 of goal goal-a was not read by its review; metasystem work review goal-a reads it"
+	if refusal.Code != "BATCH_JOIN_UNREAD" || refusal.Detail != want || refusal.Error() != "BATCH_JOIN_UNREAD: "+want {
 		t.Fatalf("reader-record refusal = %+v", refusal)
 	}
 	criticRoot := goalbranch.Attestation{Source: goalbranch.AttestationSource{Kind: "critic-root"}}
-	if err := requireCriticRootSource("2", criticRoot); err != nil {
+	if err := requireCriticRootSource("goal-a", "2", criticRoot); err != nil {
 		t.Fatalf("critic-root refusal = %v", err)
 	}
 }
@@ -250,7 +250,7 @@ func TestBatchCompositionRefusesNamedTestingContractConflictCleanly(t *testing.T
 	baseTree := branchGit(t, bed.root, "rev-parse", bed.base+"^{tree}")
 	_, err := AssembleBranchMembers(bed.root, baseTree, []BranchMember{memberA, memberB})
 	if err == nil || !strings.Contains(err.Error(), "BATCH_JOIN_REREAD:") ||
-		!strings.Contains(err.Error(), `TESTING_MERGE_CONFLICT: group "shared-group" field targetMs`) {
+		!strings.Contains(err.Error(), `group "shared-group" field targetMs`) {
 		t.Fatalf("named testing contract conflict = %v", err)
 	}
 	if status := branchGit(t, bed.root, "status", "--porcelain=v1", "--untracked-files=all"); status != "" {

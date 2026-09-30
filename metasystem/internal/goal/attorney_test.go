@@ -401,7 +401,7 @@ func TestUnparkUnderPowerOfAttorney(t *testing.T) {
 	seat := attorneyReq(endpoint, 46, "mac-a")
 	// A bare seat unpark still refuses; an entry without the verb refuses;
 	// an empty reason refuses at the edge.
-	expectRefusal(t, "bare unpark", mustPublish(Unpark(seat, "paused-one")), nil, "lifting a human's pause is a human act")
+	expectRefusal(t, "bare unpark", mustPublish(Unpark(seat, "paused-one")), nil, "only a person, or a grant naming resume-parked, lifts that")
 	wrong := withUlid(seat, 47)
 	wrong.Attorney = &approveEntry
 	expectRefusal(t, "entry without unpark", mustPublish(UnparkUnderAttorney(wrong, "paused-one", "1.2 shipped")), nil, "covers approve, not unpark")

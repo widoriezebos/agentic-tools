@@ -1,0 +1,20 @@
+exit 2
+--
+{
+  "schemaVersion": 1,
+  "verb": "work finish",
+  "targets": [],
+  "outcome": "refused",
+  "summary": "work finish needs the job to finish; nothing was done",
+  "next": {
+    "argv": [
+      "metasystem",
+      "work",
+      "status",
+      "--all"
+    ],
+    "reason": "lists the jobs with their j2: references"
+  }
+}
+
+--

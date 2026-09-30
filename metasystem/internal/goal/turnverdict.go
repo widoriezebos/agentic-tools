@@ -315,6 +315,10 @@ func (watches authenticatedWatches) watchesRun(fact RunFact) bool {
 func (waits registeredWaits) lines() []string {
 	lines := make([]string, 0, len(waits))
 	for _, wait := range waits {
+		if wait.row.Kind == "local" && wait.row.Pid == 0 {
+			lines = append(lines, fmt.Sprintf("WAITING: %s until %s", wait.row.Label, wait.row.Deadline))
+			continue
+		}
 		if wait.row.Kind == "local" {
 			lines = append(lines, fmt.Sprintf("WAITING: %s (pid %d) until %s", wait.row.Label, wait.row.Pid, wait.row.Deadline))
 			continue
@@ -897,6 +901,19 @@ func (s *Store) registeredWaitEligible(row run.Waiter, sessionID, mainID, lineag
 		if row.Kind == "human" {
 			return true
 		}
+		if row.Pid == 0 {
+			// A pidless local wait (in-session sub-agents) holds until its
+			// bounded deadline, on the boot it was registered on.
+			if deadline.Sub(registeredAt) > run.MaxPidlessLocalWaitTimeout || row.PidStartedAt != 0 || row.PidStartTicks != 0 || row.BootID != "" {
+				*reason = waitDrop("row-wall-clock", "pid", row.Pid, "registeredAt", row.RegisteredAt, "deadline", row.Deadline)
+				return false
+			}
+			if row.RegisteredBootID == "" || row.RegisteredBootID != bootID {
+				*reason = waitDrop("row-boot-clock", "registeredBootId", row.RegisteredBootID, "bootId", bootID)
+				return false
+			}
+			return true
+		}
 		liveness, mode := identity.AliveRefComparison(s.prober(), identity.Ref{
 			Pid: row.Pid, StartedAtSec: row.PidStartedAt, StartedAtUnixMicro: row.PidStartedAtMicro,
 			StartTicks: row.PidStartTicks, BootID: row.BootID,
@@ -922,7 +939,7 @@ func (s *Store) registeredWaitEligible(row run.Waiter, sessionID, mainID, lineag
 	lastObserved, observedErr := time.Parse(time.RFC3339Nano, row.LastObservedAt)
 	if registeredErr != nil || deadlineErr != nil || observedErr != nil || registeredAt.After(lastObserved) ||
 		lastObserved.After(now) || now.Sub(lastObserved) > 30*time.Second || !now.Before(deadline) ||
-		!deadline.After(registeredAt) || deadline.Sub(registeredAt) > 24*time.Hour || row.RemainingNanos <= 0 {
+		!deadline.After(registeredAt) || deadline.Sub(registeredAt) > run.MaxRegisteredWaitTimeout || row.RemainingNanos <= 0 {
 		*reason = waitDrop("row-wall-clock", "registeredAt", row.RegisteredAt, "lastObservedAt", row.LastObservedAt, "deadline", row.Deadline, "now", now.Format(time.RFC3339Nano), "now-lastObserved", now.Sub(lastObserved), "remainingNanos", row.RemainingNanos, "registeredError", registeredErr, "lastObservedError", observedErr, "deadlineError", deadlineErr)
 		return false
 	}

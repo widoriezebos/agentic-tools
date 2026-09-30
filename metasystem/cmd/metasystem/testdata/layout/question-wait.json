@@ -1,0 +1,25 @@
+exit 0
+--
+{
+  "schemaVersion": 1,
+  "verb": "question wait",
+  "targets": [
+    {
+      "kind": "question",
+      "id": "demo/done-ask"
+    }
+  ],
+  "outcome": "confirmed",
+  "summary": "mission demo's question done-ask is answered",
+  "data": {
+    "ask": {
+      "answer": "yes",
+      "answeredAt": "2026-09-30T08:40:00Z",
+      "askId": "done-ask"
+    },
+    "kind": "mission",
+    "mission": "demo"
+  }
+}
+
+--

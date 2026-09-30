@@ -1,0 +1,131 @@
+exit 0
+--
+{
+  "schemaVersion": 1,
+  "verb": "goal pause",
+  "targets": [
+    {
+      "kind": "goal",
+      "id": "standing-validation"
+    }
+  ],
+  "outcome": "confirmed",
+  "summary": "pause: standing-validation is parked under 4h/4/240m/2/3",
+  "data": {
+    "budget": {
+      "box": "4h/4/240m/2/3",
+      "lens": "episode",
+      "projection": {
+        "Status": "KNOWN",
+        "GoalID": "standing-validation",
+        "GoalRevision": 4,
+        "Limits": {
+          "elapsedLimit": "4h",
+          "attemptLimit": 4,
+          "reservedJobMinutesLimit": 240,
+          "activeJobLimit": 2,
+          "reviewRoundLimit": 3
+        },
+        "StartedAt": "0001-01-01T00:00:00Z",
+        "WeightEpoch": null,
+        "Attempts": 0,
+        "ReservedJobMinutes": 0,
+        "ObservedJobMinutes": 0,
+        "OpenCapMinutes": 0,
+        "ProofReservationMinutes": 0,
+        "ActiveJobs": 0,
+        "DesignCritiques": 0,
+        "CodeCritiques": 0,
+        "Elapsed": 0,
+        "ElapsedGracePercent": 0,
+        "ElapsedBreachLimit": 0,
+        "ElapsedState": "",
+        "Breaches": null,
+        "Unknown": null
+      }
+    },
+    "goal": {
+      "Id": "standing-validation",
+      "State": "parked",
+      "Priority": 1,
+      "Sequence": 1,
+      "Tier": 3,
+      "Risk": {
+        "Severity": 3,
+        "Novelty": 3,
+        "Exposure": 1,
+        "Accumulation": 1,
+        "Basis": "The fixture exercises an admitted tier-three goal."
+      },
+      "Intent": "Govern validation.",
+      "Origin": "main",
+      "StopSurfaceMoves": false,
+      "NextStep": "Push 17 landed the batch lane; confirm the ledger tip after the next sync. Then close the goal.",
+      "Conclude": "",
+      "OpenedAt": "2026-08-30T08:00:00Z",
+      "Revision": 4,
+      "Blocked": null,
+      "Labels": null,
+      "Arc": "",
+      "Pinned": "",
+      "Budget": {
+        "elapsedLimit": "4h",
+        "attemptLimit": 4,
+        "reservedJobMinutesLimit": 240,
+        "activeJobLimit": 2,
+        "reviewRoundLimit": 3
+      },
+      "BudgetExtension": null,
+      "BudgetExceptions": 0,
+      "NormApproval": null,
+      "Approved": {
+        "By": "human:Wido",
+        "At": "2026-08-30T08:06:00Z",
+        "Revision": 3,
+        "EpisodeRevision": 0,
+        "Opid": "01ARZ3NDEKTSV4RRFFQ69G5FAZ-mac-cli-ca0df2c9",
+        "Authority": "proven",
+        "Digest": "3214812b6fbbb188e296382f475fb1b22d4da38249886dddf8fff71f0f3dd2e9",
+        "ReviewBy": ""
+      },
+      "Sliced": null,
+      "Ratified": null,
+      "Claimed": null,
+      "Obligation": null,
+      "ReviewObligations": null,
+      "AcceptedRisks": null,
+      "ReadItems": null,
+      "StopCapability": null,
+      "StopFence": null,
+      "Landing": null,
+      "Episode": {
+        "Machine": "mac-cli",
+        "Lineage": "m1",
+        "AccountingRevision": 2,
+        "EpisodeAt": "2026-08-30T08:05:00Z",
+        "EpisodeRevision": 2,
+        "EpisodeObligationRevision": 0,
+        "IdleSeconds": 0,
+        "Released": "2026-09-01T10:00:00Z"
+      },
+      "Parked": {
+        "By": "mac-cli+m1",
+        "At": "2026-09-01T10:00:00Z",
+        "Because": "wait for the vendor's 1.2 release",
+        "Displaced": "",
+        "Blocker": ""
+      },
+      "Abandoned": null,
+      "Legacy": null,
+      "History": []
+    },
+    "owner": {
+      "detail": "",
+      "outcome": "confirmed",
+      "tip": "0000000000000000000000000000000000000002"
+    },
+    "where": "live"
+  }
+}
+
+--

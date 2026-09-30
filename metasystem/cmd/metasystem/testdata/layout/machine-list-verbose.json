@@ -1,0 +1,212 @@
+exit 0
+--
+{
+  "schemaVersion": 1,
+  "verb": "machine list",
+  "targets": [],
+  "outcome": "confirmed",
+  "summary": "3 machines on this computer: 2 running, 1 stopped; 2 jobs running; 1 on another computer",
+  "data": {
+    "machines": [
+      {
+        "machine": "m1e",
+        "reason": "",
+        "record": {
+          "armedLineage": "",
+          "chain": null,
+          "diskFreeBytes": 248463380480,
+          "engine": "330eb33af4c99d8f1e2a",
+          "generation": 0,
+          "machine": "m1e",
+          "presenceSchema": 0,
+          "repoIdentity": "",
+          "tickAt": "2026-09-30T09:58:00Z",
+          "tickSeconds": 0,
+          "working": null
+        },
+        "standing": "reachable",
+        "this": true
+      },
+      {
+        "machine": "m1x",
+        "reason": "",
+        "record": {
+          "armedLineage": "",
+          "chain": null,
+          "diskFreeBytes": 248463380480,
+          "engine": "330eb33af4c99d8f1e2a",
+          "generation": 0,
+          "machine": "m1x",
+          "presenceSchema": 0,
+          "repoIdentity": "",
+          "tickAt": "2026-09-30T09:00:00Z",
+          "tickSeconds": 0,
+          "working": null
+        },
+        "standing": "reachable"
+      },
+      {
+        "machine": "m2a",
+        "reason": "no presence for 3 h, past 30 min",
+        "record": {
+          "armedLineage": "",
+          "chain": null,
+          "diskFreeBytes": 78700000000,
+          "engine": "4f4c5101e7d2a9b3c6f0",
+          "generation": 0,
+          "machine": "m2a",
+          "presenceSchema": 0,
+          "repoIdentity": "",
+          "tickAt": "2026-09-30T07:00:00Z",
+          "tickSeconds": 0,
+          "working": null
+        },
+        "standing": "unreachable"
+      }
+    ],
+    "now": "2026-09-30T10:00:00Z",
+    "otherComputers": [
+      {
+        "machine": "m2a",
+        "lastReported": "2026-09-30T07:00:00Z",
+        "standing": "unreachable",
+        "onAnotherComputer": true
+      }
+    ],
+    "this": "m1e",
+    "thisComputer": {
+      "machines": [
+        {
+          "name": "m1e",
+          "nickname": true,
+          "checkout": "/Users/wido/GitHub/agentic-tools-m1e",
+          "sources": [
+            "this checkout",
+            "registry: armed"
+          ],
+          "thisCheckout": true,
+          "state": "running",
+          "fence": "open",
+          "components": [
+            {
+              "family": "steward",
+              "component": "steward-runner",
+              "pid": 101,
+              "since": "2026-09-21T14:15:01Z",
+              "line": "steward-runner pid 101 started 1790000101: running"
+            },
+            {
+              "family": "supervision",
+              "component": "supervision-owner",
+              "pid": 102,
+              "since": "2026-09-21T14:15:02Z",
+              "line": "supervision-owner pid 102 tag t generation 1: running"
+            },
+            {
+              "family": "supervision",
+              "component": "watcher",
+              "pid": 103,
+              "since": "2026-09-21T14:15:03Z",
+              "line": "watcher pid 103: running"
+            }
+          ],
+          "work": [
+            {
+              "family": "job",
+              "component": "job",
+              "id": "j-7",
+              "pid": 104,
+              "since": "2026-09-21T14:15:04Z",
+              "line": "job j-7 running pid 104 implementer: running"
+            }
+          ],
+          "launches": [
+            {
+              "reference": "j1:l-1",
+              "purpose": "build launch, running, goal g-1, in /Users/wido/GitHub/agentic-tools-m1e/work"
+            }
+          ],
+          "statusLines": [
+            "checkout /Users/wido/GitHub/agentic-tools-m1e",
+            "job j-7 running pid 104 implementer: running",
+            "steward-runner pid 101 started 1790000101: running",
+            "supervision-owner pid 102 tag t generation 1: running",
+            "watcher pid 103: running",
+            "untracked pid 900 codex app-server: running"
+          ]
+        },
+        {
+          "name": "agentic-tools-landing",
+          "nickname": false,
+          "checkout": "/Users/wido/GitHub/agentic-tools-landing",
+          "sources": [
+            "landing lane"
+          ],
+          "landingLane": true,
+          "state": "running",
+          "fence": "open",
+          "components": [
+            {
+              "family": "supervision",
+              "component": "landing-owner",
+              "pid": 301,
+              "since": "2026-09-21T14:18:21Z",
+              "line": "landing-owner pid 301: running"
+            }
+          ],
+          "work": [],
+          "launches": [],
+          "landingOwner": {
+            "state": "running",
+            "pid": 4242,
+            "since": "2026-09-30T08:00:00Z",
+            "restarts": 0,
+            "last_exit": null,
+            "stopped_by": null,
+            "retry_hint": null,
+            "last_tick_error": null,
+            "last_tick_problem": null
+          },
+          "statusLines": [
+            "checkout /Users/wido/GitHub/agentic-tools-landing",
+            "landing-owner pid 301: running",
+            "untracked pid 900 codex app-server: running"
+          ]
+        },
+        {
+          "name": "m1x",
+          "nickname": true,
+          "checkout": "/Users/wido/GitHub/agentic-tools-m1x",
+          "sources": [
+            "registry: stopped"
+          ],
+          "state": "stopped",
+          "fence": "closed",
+          "fenceChangedAt": "2026-09-30T09:00:00Z",
+          "components": [],
+          "work": [],
+          "launches": [],
+          "statusLines": [
+            "checkout /Users/wido/GitHub/agentic-tools-m1x",
+            "nothing is running",
+            "stopped since 2026-09-30T09:00:00Z by stop pid 7; start again: metasystem system start --repo /Users/wido/GitHub/agentic-tools-m1x"
+          ]
+        }
+      ],
+      "registry": "/Users/wido/.metasystem-home/.metasystem/armed-checkouts.jsonl",
+      "otherRegistered": 0,
+      "launchesElsewhere": [],
+      "notOurs": [
+        {
+          "family": "untracked",
+          "component": "untracked",
+          "pid": 900,
+          "since": "2026-09-21T14:28:20Z",
+          "line": "untracked pid 900 codex app-server: running"
+        }
+      ]
+    }
+  }
+}
+
+--

@@ -112,7 +112,8 @@ func TestUnavailableTerminalObservationFailsClosedAndFencesGovernedID(t *testing
 	assertTypedFence := func(err error) {
 		t.Helper()
 		var typed *TerminalGovernedRunIDReuseError
-		if !errors.As(err, &typed) || typed.RunID != "governed-proof" || !strings.Contains(err.Error(), "REFUSED-TERMINAL-GOVERNED-ID") {
+		if !errors.As(err, &typed) || typed.RunID != "governed-proof" || !strings.Contains(err.Error(), "already ended a governed attempt") ||
+			strings.Contains(err.Error(), "REFUSED-TERMINAL-GOVERNED-ID") || typed.RefusalCode() != "REFUSED-TERMINAL-GOVERNED-ID" {
 			t.Fatalf("governed ID refusal was not typed: %#v", err)
 		}
 	}

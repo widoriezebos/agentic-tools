@@ -29,12 +29,12 @@ func TestDiskLeasesByAPerson(t *testing.T) {
 			Remedy: "stop pid 13, then metasystem disk clean --leases (or the next admission pass) reclaims it", Owner: proofrun.ProcessIdentity{Pid: 14}},
 	}
 	code, out := bed.run("disk", "clean", "--leases", "--verbose")
-	if code != 0 || !strings.Contains(out, "leases: 1 done, 2 kept") || !strings.Contains(out, "end owner pid 12 and what it started, then metasystem disk clean --leases") ||
-		!strings.Contains(out, "pid 13 unreadable") || !strings.Contains(out, "stop pid 13, then metasystem disk clean --leases") {
+	if flat := flatPage(out); code != 0 || !strings.Contains(flat, "leases: 1 done, 2 kept") || !strings.Contains(flat, "end owner pid 12 and what it started, then metasystem disk clean --leases") ||
+		!strings.Contains(flat, "pid 13 unreadable") || !strings.Contains(flat, "stop pid 13, then metasystem disk clean --leases") {
 		t.Fatalf("--leases = %d:\n%s", code, out)
 	}
 	reports, busy = []proofrun.HostLeaseReport{{Lease: "lease-heavy-d", State: proofrun.HostLeaseDead, Reason: "pid 15 is not running"}}, true
-	if code, out := bed.run("disk", "clean", "--leases", "--verbose"); code != 0 || !strings.Contains(out, "a proof holds admission.lock") || strings.Contains(out, "1 done") {
+	if code, out := bed.run("disk", "clean", "--leases", "--verbose"); code != 0 || !strings.Contains(flatPage(out), "a proof holds admission.lock") || strings.Contains(out, "1 done") {
 		t.Fatalf("a busy admission lock = %d:\n%s", code, out)
 	}
 	reports, busy = nil, false

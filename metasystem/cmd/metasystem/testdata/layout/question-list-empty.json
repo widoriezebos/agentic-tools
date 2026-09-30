@@ -1,0 +1,15 @@
+exit 0
+--
+{
+  "schemaVersion": 1,
+  "verb": "question list",
+  "targets": [],
+  "outcome": "confirmed",
+  "summary": "0 open channel question(s)",
+  "data": {
+    "questions": [],
+    "unreadable": []
+  }
+}
+
+--

@@ -1,0 +1,158 @@
+exit 0
+--
+{
+  "schemaVersion": 1,
+  "verb": "goal show",
+  "targets": [
+    {
+      "kind": "goal",
+      "id": "standing-validation"
+    }
+  ],
+  "outcome": "confirmed",
+  "summary": "standing-validation  claimed  tier 3",
+  "data": {
+    "budget": {
+      "box": "4h/4/240m/2/3",
+      "lens": "claim",
+      "projection": {
+        "Status": "KNOWN",
+        "GoalID": "standing-validation",
+        "GoalRevision": 2,
+        "Limits": {
+          "elapsedLimit": "4h",
+          "attemptLimit": 4,
+          "reservedJobMinutesLimit": 240,
+          "activeJobLimit": 2,
+          "reviewRoundLimit": 3
+        },
+        "StartedAt": "2026-08-30T08:05:00Z",
+        "WeightEpoch": null,
+        "Attempts": 0,
+        "ReservedJobMinutes": 0,
+        "ObservedJobMinutes": 0,
+        "OpenCapMinutes": 0,
+        "ProofReservationMinutes": 0,
+        "ActiveJobs": 0,
+        "DesignCritiques": 0,
+        "CodeCritiques": 0,
+        "Elapsed": 179700000000000,
+        "ElapsedGracePercent": 50,
+        "ElapsedBreachLimit": 21600000000000,
+        "ElapsedState": "ELAPSED_BREACH",
+        "Breaches": [
+          {
+            "Field": "elapsedLimit",
+            "Used": "49h55m0s",
+            "Limit": "6h0m0s",
+            "State": "ELAPSED_BREACH"
+          }
+        ],
+        "Unknown": null
+      }
+    },
+    "designs": null,
+    "goal": {
+      "Id": "standing-validation",
+      "State": "claimed",
+      "Priority": 0,
+      "Sequence": 0,
+      "Tier": 3,
+      "Risk": {
+        "Severity": 3,
+        "Novelty": 3,
+        "Exposure": 1,
+        "Accumulation": 1,
+        "Basis": "The fixture exercises an admitted tier-three goal."
+      },
+      "Intent": "Govern validation.",
+      "Origin": "main",
+      "StopSurfaceMoves": false,
+      "NextStep": "Run it.",
+      "Conclude": "",
+      "OpenedAt": "2026-08-30T08:00:00Z",
+      "Revision": 4,
+      "Blocked": null,
+      "Labels": null,
+      "Arc": "",
+      "Pinned": "",
+      "Budget": {
+        "elapsedLimit": "4h",
+        "attemptLimit": 4,
+        "reservedJobMinutesLimit": 240,
+        "activeJobLimit": 2,
+        "reviewRoundLimit": 3
+      },
+      "BudgetExtension": null,
+      "BudgetExceptions": 0,
+      "NormApproval": null,
+      "Approved": {
+        "By": "human:Wido",
+        "At": "2026-08-30T08:06:00Z",
+        "Revision": 3,
+        "EpisodeRevision": 0,
+        "Opid": "01ARZ3NDEKTSV4RRFFQ69G5FAZ-mac-cli-ca0df2c9",
+        "Authority": "proven",
+        "Digest": "3214812b6fbbb188e296382f475fb1b22d4da38249886dddf8fff71f0f3dd2e9",
+        "ReviewBy": ""
+      },
+      "Sliced": null,
+      "Ratified": null,
+      "Claimed": {
+        "Machine": "mac-cli",
+        "Lineage": "m1",
+        "At": "2026-08-30T08:05:00Z",
+        "HandedOver": {
+          "FromMachine": "",
+          "FromLineage": "",
+          "FromEpoch": 0,
+          "Batch": ""
+        },
+        "Revision": 2,
+        "AccountingRevision": 2,
+        "EpisodeAt": "",
+        "EpisodeRevision": 0,
+        "EpisodeObligationRevision": 0,
+        "IdleSeconds": 0
+      },
+      "Obligation": null,
+      "ReviewObligations": null,
+      "AcceptedRisks": null,
+      "ReadItems": null,
+      "StopCapability": {
+        "Generation": 2,
+        "Revision": 2,
+        "Machine": "mac-cli",
+        "ClaimEpoch": 1,
+        "FenceEpoch": 1
+      },
+      "StopFence": {
+        "StopID": "stop-standing-validation-r2-f1",
+        "Revision": 2,
+        "Epoch": 1,
+        "CapabilityGeneration": 2,
+        "ClosedAt": "2026-09-01T09:00:00Z",
+        "Reason": "ELAPSED_LIMIT"
+      },
+      "Landing": null,
+      "Episode": null,
+      "Parked": null,
+      "Abandoned": null,
+      "Legacy": null,
+      "History": []
+    },
+    "tip": "0000000000000000000000000000000000000001",
+    "where": "live"
+  },
+  "next": {
+    "argv": [
+      "metasystem",
+      "goal",
+      "resume",
+      "standing-validation"
+    ],
+    "reason": "the goal was stopped by its budget and resumes under its standing box"
+  }
+}
+
+--

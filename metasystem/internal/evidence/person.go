@@ -122,7 +122,7 @@ func segmentName12(name string) bool {
 }
 
 // NotAnItem is the refusal for any word that is not an enumerated item.
-const NotAnItem = "not an item; metasystem evidence show --verbose lists this checkout's items, and --all --verbose every root's"
+const NotAnItem = "not an item; metasystem evidence show --all --verbose lists every item"
 
 // NotManagedLine is how a not-managed entry is named (Round B2-3, rule 3).
 const NotManagedLine = "not managed: remove by hand if unneeded"
@@ -939,7 +939,7 @@ func (e Env) ExportDirFor(to string, stores []string) (string, string) {
 		dir = e.This.Settings.Values[config.DiskEvidenceExportDirKey]
 	}
 	if dir == "" {
-		return "", "name where the copies go: --to DIR (or --export DIR), or set " + config.DiskEvidenceExportDirKey + " in metasystem.conf.local; nothing was done"
+		return "", "the copies need a directory: --to DIR, or " + config.DiskEvidenceExportDirKey + " in the settings; nothing was done"
 	}
 	var roots, checkouts []string
 	for _, root := range e.Roots() {

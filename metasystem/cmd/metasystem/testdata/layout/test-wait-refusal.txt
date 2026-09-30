@@ -1,0 +1,2 @@
+✗ test wait needs the test run to wait on; nothing was done
+  → nothing to wait on yet; metasystem test run prints the reference to wait on

@@ -221,7 +221,7 @@ func TestRunFileTurnRefusesBeforeAnyWireOpen(t *testing.T) {
 		}, "envelope " + "%DIR%/envelope.json"},
 		{"preflight refusal", func(t *testing.T, b *fileTurnBed) {
 			b.write(t, "envelope.json", `{"readRoots":[],"writeRoots":[],"network":"deny","approvals":"allow","tools":"read-only"}`)
-		}, "preflight refused: approvals=allow is unsupported"},
+		}, "preflight refused: the ACP transport cannot ask for approval yet"},
 		{"missing prompt", func(t *testing.T, b *fileTurnBed) {
 			b.cfg.PromptFile = filepath.Join(b.dir, "no-prompt.txt")
 		}, "no-prompt.txt"},

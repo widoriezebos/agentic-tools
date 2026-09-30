@@ -180,7 +180,7 @@ func Dir(checkout string) string {
 // rather than reaching the filesystem with it.
 func Path(checkout, id string) (string, error) {
 	if !ValidLaunchID(id) {
-		return "", refuse(CodeIDInvalid, "%q is not a launch id", id)
+		return "", refuse(CodeIDInvalid, "%q is not a launch id", id).run("metasystem machine list --verbose")
 	}
 	return filepath.Join(Dir(checkout), id+".json"), nil
 }
@@ -425,7 +425,7 @@ func Discard(checkout, id string, now time.Time) (Record, error) {
 	record, err := LoadAt(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return Record{}, refuse(CodeUnknown, "no launch %s is recorded on this host", id)
+			return Record{}, refuse(CodeUnknown, "no launch %s is recorded on this host", id).run("metasystem machine list --verbose")
 		}
 		return Record{}, err
 	}
@@ -433,7 +433,7 @@ func Discard(checkout, id string, now time.Time) (Record, error) {
 		return record, nil
 	}
 	if record.Outcome == OutcomeStarting || record.Outcome == OutcomeRunning {
-		return Record{}, refuse(CodeDiscardRunning, "the launch of %s is still %s; it can be discarded once it has stopped", record.Machine, record.Outcome)
+		return Record{}, refuse(CodeDiscardRunning, "the launch of %s is still %s, so it cannot be discarded yet", record.Machine, record.Outcome).run("metasystem machine list --verbose")
 	}
 	at := now.UTC().Format(time.RFC3339)
 	record.DiscardedAt = &at

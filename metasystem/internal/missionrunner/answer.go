@@ -58,7 +58,7 @@ func (e *Engine) Answer(askID, answer string) int {
 		return 3
 	}
 	if reason == "wall-violation" {
-		fmt.Fprintf(e.answerErrors(), "answer refused: a generic answer never clears taint; resolve it with metasystem mission repair %s --problem N (--confirm-restored TREE | --accept-workspace --waive CLAIM...) --by NAME --reason TEXT\n", e.Mission)
+		fmt.Fprintf(e.answerErrors(), "answer refused: a workspace problem is resolved with a mission repair, not an answer\nrun: metasystem mission repair %s --problem N (--confirm-restored TREE | --accept-workspace --waive CLAIM...) --by <name> --reason <text>\n", e.Mission)
 		return 3
 	}
 	if !turnvocab.OrchestratorMayRaise(reason) && reason != "fence" {
@@ -151,7 +151,7 @@ func (e *Engine) Answer(askID, answer string) int {
 		return 3
 	}
 	e.LastAnswer.StateAdvanced = true
-	fmt.Fprintf(e.answerOutput(), "mission=%s ask=%s applied=yes status=%s\n", e.Mission, askID, valueString(updated["status"]))
+	fmt.Fprintf(e.answerOutput(), "mission %s: the answer to %s is applied; the mission is %s\n", e.Mission, askID, valueString(updated["status"]))
 	return 0
 }
 
@@ -174,10 +174,10 @@ func (e *Engine) answerStopLoss(statePath string, state, ask map[string]any, ask
 	case mission.StopLossKindStagnation:
 		// The one park the vocal reset applies to.
 	case mission.StopLossKindCycleBudget:
-		fmt.Fprintln(e.answerErrors(), "answer refused: reset: applies to a stagnation park only; this park is an exhausted sealed cycle budget — amend, price, reseal, and sign the mission budget")
+		fmt.Fprintln(e.answerErrors(), "answer refused: reset: applies to a stagnation park; this one ran out of its sealed cycle budget\namend, price, reseal and sign the mission budget, then resume the mission")
 		return 3
 	default:
-		fmt.Fprintln(e.answerErrors(), "answer refused: reset: applies to a stagnation park only; amend, price, reseal, and sign the mission budget")
+		fmt.Fprintln(e.answerErrors(), "answer refused: reset: applies to a stagnation park only\namend, price, reseal and sign the mission budget, then resume the mission")
 		return 3
 	}
 	if state["status"] != "parked" || state["parkReason"] != "stop-loss" {
@@ -200,7 +200,7 @@ func (e *Engine) answerStopLoss(statePath string, state, ask map[string]any, ask
 	answered["answeredAt"] = nowISO()
 	answered["answer"] = answer
 	if err := atomicWriteJSON(askPath, answered); err != nil {
-		fmt.Fprintf(e.answerErrors(), "stop-loss reset is recorded but the ask could not be marked answered: %v; answer it again — a second reset line is lawful and harmless\n", err)
+		fmt.Fprintf(e.answerErrors(), "stop-loss reset is recorded, but the ask could not be marked answered: %v\nanswer it again; a second reset line is harmless\n", err)
 		return 3
 	}
 	e.LastAnswer.AskAnswered = true
@@ -221,11 +221,11 @@ func (e *Engine) answerStopLoss(statePath string, state, ask map[string]any, ask
 		err = e.anchor(statePath, ledgerPath, e.Mission)
 	}
 	if err != nil {
-		fmt.Fprintf(e.answerErrors(), "stop-loss reset is recorded and the ask is answered, but the unpark did not apply: %v; the next resume applies it\n", err)
+		fmt.Fprintf(e.answerErrors(), "stop-loss reset is recorded and the ask answered, but the mission is still parked: %v\nrun: metasystem mission resume %s\n", err, e.Mission)
 		return 3
 	}
 	e.LastAnswer.StateAdvanced = true
-	fmt.Fprintf(e.answerOutput(), "mission=%s ask=%s applied=yes status=%s\n", e.Mission, askID, valueString(updated["status"]))
+	fmt.Fprintf(e.answerOutput(), "mission %s: the answer to %s is applied; the mission is %s\n", e.Mission, askID, valueString(updated["status"]))
 	return 0
 }
 
@@ -242,7 +242,7 @@ func (e *Engine) answerStopLoss(statePath string, state, ask map[string]any, ask
 // answered ask.
 func (e *Engine) answerDrainStalled(statePath string, state, ask map[string]any, askPath, askID, answer string) int {
 	if !strings.HasPrefix(answer, "resume:") {
-		fmt.Fprintln(e.answerErrors(), "answer refused: a drain-stalled park is answered with resume:<note> once the named jobs are verified or cleared")
+		fmt.Fprintln(e.answerErrors(), "answer refused: a drain-stalled park is answered with resume: and a note\nverify or clear the named jobs first, then answer resume: <note>")
 		return 3
 	}
 	if strings.TrimSpace(strings.TrimPrefix(answer, "resume:")) == "" {
@@ -255,17 +255,17 @@ func (e *Engine) answerDrainStalled(statePath string, state, ask map[string]any,
 	}
 	stall, ok := ask["drainStall"].(map[string]any)
 	if !ok {
-		fmt.Fprintln(e.answerErrors(), "answer refused: drain-stalled ask carries no survivor snapshot; delete the ask file and run mission-runner resume to re-raise it")
+		fmt.Fprintf(e.answerErrors(), "answer refused: the drain-stalled ask carries no survivor snapshot\ndelete the ask file, then run: metasystem mission resume %s\n", e.Mission)
 		return 3
 	}
 	cycle, ok := jsonInt(stall["cycle"])
 	if !ok || cycle < 1 {
-		fmt.Fprintln(e.answerErrors(), "answer refused: drain-stalled ask names an invalid cycle; delete the ask file and run mission-runner resume to re-raise it")
+		fmt.Fprintf(e.answerErrors(), "answer refused: the drain-stalled ask names an invalid cycle\ndelete the ask file, then run: metasystem mission resume %s\n", e.Mission)
 		return 3
 	}
 	survivors, ok := stall["survivors"].([]any)
 	if !ok {
-		fmt.Fprintln(e.answerErrors(), "answer refused: drain-stalled ask carries no survivor list; delete the ask file and run mission-runner resume to re-raise it")
+		fmt.Fprintf(e.answerErrors(), "answer refused: the drain-stalled ask carries no survivor list\ndelete the ask file, then run: metasystem mission resume %s\n", e.Mission)
 		return 3
 	}
 	proposed := deepCopyDoc(state)
@@ -306,7 +306,7 @@ func (e *Engine) answerDrainStalled(statePath string, state, ask map[string]any,
 		"missionId": e.Mission, "askId": askID, "cycle": fmt.Sprintf("%d", cycle),
 	})
 	e.LastAnswer.StateAdvanced = true
-	fmt.Fprintf(e.answerOutput(), "mission=%s ask=%s applied=yes status=%s\n", e.Mission, askID, valueString(updated["status"]))
+	fmt.Fprintf(e.answerOutput(), "mission %s: the answer to %s is applied; the mission is %s\n", e.Mission, askID, valueString(updated["status"]))
 	return 0
 }
 

@@ -1,0 +1,7 @@
+3 machines on this computer · 2 running, 1 stopped · 2 jobs running · 1 elsewhere
+
+Fleet
+  MACHINE   DOING     SEEN     ENGINE           FREE
+  ● m1e     idle      2m ago   330eb33af   231.4 GiB
+  ○ m1x     stopped   1h ago   330eb33af   231.4 GiB
+  ! m2a     idle      3h ago   4f4c5101e    73.3 GiB   no presence for 3 h, past 30 min

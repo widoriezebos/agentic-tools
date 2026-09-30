@@ -18,6 +18,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 	usagepkg "github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
 )
 
@@ -76,6 +77,7 @@ func runContextStatus(args []string, stdout, stderr io.Writer) int {
 	session := flags.String("session", "", "explicit session")
 	transcript := flags.String("transcript", "", "call transcript override")
 	asJSON := flags.Bool("json", false, "print structured status")
+	verbose := flags.Bool("verbose", false, "also the refusal's code and facts")
 	if flags.Parse(args) != nil {
 		return 2
 	}
@@ -86,19 +88,18 @@ func runContextStatus(args []string, stdout, stderr io.Writer) int {
 		}
 	})
 	if *root == "" || flags.NArg() != 0 || (*runtimeName == "") != (*session == "") || (transcriptSupplied && *transcript == "") {
-		fmt.Fprintln(stderr, "usage: metasystem session handoff --status --root <installation>\n  [--runtime R --session S] [--transcript <file>] [--json]")
-		return 2
+		return refusePassthrough(stderr, 2, "these options form no context budget reading (--runtime goes with --session); nothing was read",
+			textui.Hint{Argv: []string{"metasystem", "session", "handoff", "--help"}, Reason: "the --status form and its options"})
 	}
 	if *runtimeName != "" {
 		if _, ok := runtimes.Lookup(*runtimeName); !ok {
-			fmt.Fprintf(stderr, "metasystem session handoff --status: unknown runtime: %s\n", *runtimeName)
-			return 1
+			return refusePassthrough(stderr, 1, "there is no runtime "+*runtimeName+"; nothing was read",
+				textui.Hint{Argv: []string{"metasystem", "session", "handoff", "--status"}, Reason: "reads this session's own"})
 		}
 	}
 	stateRoot, err := goal.ResolveStateRoot(*root)
 	if err != nil {
-		fmt.Fprintln(stderr, "metasystem session handoff --status:", err)
-		return 1
+		return contextVerbError(stderr, "status", err, *verbose)
 	}
 	role, reading, readErr := steward.ContextBudgetLine(stateRoot, stateRoot, time.Now().UTC(), steward.ContextOptions{
 		Runtime: *runtimeName, Session: *session, Transcript: *transcript,
@@ -107,18 +108,22 @@ func runContextStatus(args []string, stdout, stderr io.Writer) int {
 	if *asJSON {
 		writeJSONLine(stdout, stderr, contextStatusOutput{Diagnostic: transcriptSupplied, Role: role, Reading: projectContextReading(reading), Window: window})
 	} else {
-		fmt.Fprintln(stdout, role.Line())
-		if windowErr == nil {
-			fmt.Fprintln(stdout, windowLine(window))
+		page := passthroughPage(stdout, stateRoot, *verbose)
+		page.Headline(fmt.Sprintf("The context budget is %s: %s", role.Status, role.Reason))
+		section := page.Section("", "")
+		if role.Remedy != "" {
+			section.KV("remedy", textui.Plain(role.Remedy))
 		}
+		if windowErr == nil {
+			section.Text(windowLine(window))
+		}
+		printPage(stdout, page)
 	}
 	if windowErr != nil {
-		fmt.Fprintln(stderr, "metasystem session handoff --status:", windowErr)
-		return 1
+		return contextVerbError(stderr, "status", windowErr, *verbose)
 	}
 	if readErr != nil {
-		fmt.Fprintln(stderr, "metasystem session handoff --status:", readErr)
-		return 1
+		return contextVerbError(stderr, "status", readErr, *verbose)
 	}
 	return 0
 }
@@ -210,6 +215,7 @@ func runContextHandoffWithInputs(args []string, inputs contextHandoffInputs, std
 	note := flags.String("note", "", "lessons note in the runtime's configured directory")
 	noDelegates := flags.Bool("no-delegates", false, "declare that no background task remains in flight")
 	asJSON := flags.Bool("json", false, "print a bounded result")
+	verbose := flags.Bool("verbose", false, "also a refusal's code and facts")
 	var scratchValues []string
 	var delegateValues []string
 	flags.Func("scratch", "purpose=P,path=REL[,required=true|false]", func(value string) error {
@@ -232,17 +238,17 @@ func runContextHandoffWithInputs(args []string, inputs contextHandoffInputs, std
 	})
 	if *root == "" || flags.NArg() != 0 || (cancelSupplied && (*cancel == "" || len(scratchValues) != 0 || len(delegateValues) != 0 || noteSupplied || noDelegatesSupplied)) ||
 		(bySupplied && (!cancelSupplied || strings.TrimSpace(*by) == "")) {
-		fmt.Fprintln(stderr, contextHandoffUsage)
-		return 2
+		reason, remedy, _ := strings.Cut(contextHandoffUsage, "\nrun: ")
+		return refusePassthrough(stderr, 2, reason, textui.Hint{Argv: strings.Fields(remedy), Reason: "its forms and what each needs"})
 	}
 	stateRoot, err := goal.ResolveStateRoot(*root)
 	if err != nil {
-		return contextVerbError(stderr, "handoff", err)
+		return contextVerbError(stderr, "handoff", err, *verbose)
 	}
 	if cancelSupplied {
 		caller, err := contextHandoffCallerWithMachine(stateRoot, inputs.resolveMachine)
 		if err != nil {
-			return contextVerbError(stderr, "handoff", err)
+			return contextVerbError(stderr, "handoff", err, *verbose)
 		}
 		canceller := steward.HandoffCanceller{Caller: caller}
 		if bySupplied {
@@ -252,7 +258,7 @@ func runContextHandoffWithInputs(args []string, inputs contextHandoffInputs, std
 				act.Proof, _ = proveSessionStopHuman(stateRoot, int64(os.Getppid()), time.Now().UTC())
 				holder, err := currentContextHandoffHolder(stateRoot)
 				if err != nil {
-					return contextVerbError(stderr, "handoff", err)
+					return contextVerbError(stderr, "handoff", err, *verbose)
 				}
 				act.HolderMainId, act.HolderSession, act.ClaimEpoch = holder.MainId, holder.SessionId, holder.ClaimEpoch
 			}
@@ -261,38 +267,41 @@ func runContextHandoffWithInputs(args []string, inputs contextHandoffInputs, std
 		var already *steward.HandoffAlreadyCancelled
 		if errors.As(err, &already) {
 			// The cancellation already held (R-129-ui).
-			fmt.Fprintf(stdout, "handoff already cancelled: %s\n", *cancel)
+			page := passthroughPage(stdout, stateRoot, *verbose)
+			page.Headline("Handoff " + *cancel + " is already cancelled; nothing to do")
+			printPage(stdout, page)
 			return 0
 		}
 		if err != nil {
-			return contextVerbError(stderr, "handoff", err)
+			return contextVerbError(stderr, "handoff", err, *verbose)
 		}
-		fmt.Fprintf(stdout, "handoff cancelled: %s\n", *cancel)
+		page := passthroughPage(stdout, stateRoot, *verbose)
+		page.Done("Handoff " + *cancel + " cancelled")
+		printPage(stdout, page)
 		return 0
 	}
+	help := textui.Hint{Argv: []string{"metasystem", "session", "handoff", "--help"}, Reason: "its forms and what each needs"}
 	scratch, err := parseContextScratch(scratchValues)
 	if err != nil {
-		fmt.Fprintln(stderr, "metasystem session handoff:", err)
-		return 2
+		return refusePassthrough(stderr, 2, err.Error()+"; nothing was handed off", help)
 	}
 	declarations, err := parseContextDelegates(delegateValues)
 	if err != nil || (len(delegateValues) != 0 && *noDelegates) {
 		if err == nil {
 			err = fmt.Errorf("--delegate and --no-delegates cannot be combined")
 		}
-		fmt.Fprintln(stderr, "metasystem session handoff:", err)
-		return 2
+		return refusePassthrough(stderr, 2, err.Error()+"; nothing was handed off", help)
 	}
 	if *note == "" {
-		return contextVerbError(stderr, "handoff", &steward.HandoffRefusal{Code: "HANDOFF_NOTE_MISSING"})
+		return contextVerbError(stderr, "handoff", &steward.HandoffRefusal{Code: "HANDOFF_NOTE_MISSING"}, *verbose)
 	}
 	caller, err := contextHandoffCallerWithMachine(stateRoot, inputs.resolveMachine)
 	if err != nil {
-		return contextVerbError(stderr, "handoff", err)
+		return contextVerbError(stderr, "handoff", err, *verbose)
 	}
 	caller, err = steward.ResolveHandoffCaller(stateRoot, caller)
 	if err != nil {
-		return contextVerbError(stderr, "handoff", err)
+		return contextVerbError(stderr, "handoff", err, *verbose)
 	}
 	toplevel := contextHandoffToplevel(stateRoot)
 	readOptions := usagepkg.ReadOptions{Toplevel: toplevel, Installation: stateRoot}
@@ -308,7 +317,7 @@ func runContextHandoffWithInputs(args []string, inputs contextHandoffInputs, std
 	}
 	tasks, notices, err := usagepkg.InFlightTasks(transcript, readOptions)
 	if err != nil {
-		return contextVerbError(stderr, "handoff", err)
+		return contextVerbError(stderr, "handoff", err, *verbose)
 	}
 	for _, notice := range notices {
 		fmt.Fprintln(stderr, notice.Text)
@@ -316,28 +325,34 @@ func runContextHandoffWithInputs(args []string, inputs contextHandoffInputs, std
 	now := contextHandoffNow()
 	delegates, err := contextHandoffDelegates(declarations, *noDelegates, transcriptResolved, tasks, now)
 	if err != nil {
-		return contextVerbError(stderr, "handoff", err)
+		return contextVerbError(stderr, "handoff", err, *verbose)
 	}
 	noteDirectory, err := config.ContextHandoffNoteDirectory(stateRoot, caller.Runtime, claudeMemory)
 	if err != nil {
-		return contextVerbError(stderr, "handoff", err)
+		return contextVerbError(stderr, "handoff", err, *verbose)
 	}
 	result, err := steward.HandoffWithWorkReader(stateRoot, caller, steward.HandoffRecord{
 		Scratch: scratch, Delegates: delegates, NotePath: *note, NoteDirectory: noteDirectory,
 	}, now, filepath.Join(stateRoot, "memory", "receipts.log"), inputs.readWork)
 	if err != nil {
-		return contextVerbError(stderr, "handoff", err)
+		return contextVerbError(stderr, "handoff", err, *verbose)
 	}
 	if *asJSON {
 		writeJSONLine(stdout, stderr, contextHandoffOutput{Nonce: result.Nonce, StatePath: result.StatePath, Digest: result.StateDigest,
 			IntentPath: result.IntentPath})
 	} else {
-		fmt.Fprintf(stdout, "handoff recorded: %s state=%s sha256=%s\n", result.Nonce, result.StatePath, result.StateDigest)
+		page := passthroughPage(stdout, stateRoot, *verbose)
+		page.Done("Handoff recorded: " + result.Nonce)
+		page.Facts(textui.KV{Key: "state", Value: []textui.Span{textui.Plain(page.Env().Path(result.StatePath)), textui.Dim("  sha256 " + result.StateDigest[:min(12, len(result.StateDigest))])}})
+		printPage(stdout, page)
 	}
 	return 0
 }
 
-const contextHandoffUsage = "usage: metasystem session handoff --root ROOT --note PATH (--no-delegates | --delegate id=ID[,asked=TEXT][,output=PATH]...) [--scratch purpose=P,path=REL[,required=true|false]]... [--json] | --root ROOT --cancel NONCE [--by HUMAN]"
+// contextHandoffUsage is the answer to a handoff whose options do not form
+// one of its forms; the help page lists them.
+const contextHandoffUsage = "a handoff takes --note with --no-delegates or --delegate, or --cancel alone; nothing was done\n" +
+	"run: metasystem session handoff --help"
 
 type contextDelegateArg struct {
 	id, asked, output   string
@@ -508,32 +523,48 @@ func runContextVerify(args []string, stdout, stderr io.Writer) int {
 	flags := newFlagSet("session handoff", stdout, stderr)
 	root := pathFlag(flags, "root", "", "installation or containing template root")
 	nonce := flags.String("nonce", "", "handoff nonce")
+	verbose := flags.Bool("verbose", false, "also a refusal's code and facts")
 	if flags.Parse(args) != nil {
 		return 2
 	}
 	if *root == "" || *nonce == "" || flags.NArg() != 0 {
-		fmt.Fprintln(stderr, "usage: metasystem session handoff --verify NONCE --root ROOT")
-		return 2
+		return refusePassthrough(stderr, 2, "verifying a handoff takes its nonce: --verify NONCE; nothing was verified",
+			textui.Hint{Argv: []string{"metasystem", "session", "handoff", "--help"}, Reason: "its forms and what each needs"})
 	}
 	stateRoot, err := goal.ResolveStateRoot(*root)
 	if err != nil {
-		return contextVerbError(stderr, "verify", err)
+		return contextVerbError(stderr, "verify", err, *verbose)
 	}
 	digest, err := steward.VerifyHandoffState(stateRoot, *nonce)
 	if err != nil {
-		return contextVerbError(stderr, "verify", err)
+		return contextVerbError(stderr, "verify", err, *verbose)
 	}
-	fmt.Fprintf(stdout, "ok sha256=%s\n", digest)
+	page := passthroughPage(stdout, stateRoot, *verbose)
+	page.Done("Handoff " + *nonce + " verified")
+	page.Facts(textui.KV{Key: "state", Value: []textui.Span{textui.Plain("sha256 " + digest)}})
+	printPage(stdout, page)
 	return 0
 }
 
-func contextVerbError(stderr io.Writer, verb string, err error) int {
+// contextVerbError prints a context verb's refusal: a handoff refusal's
+// code in words with the command that shows the forms, its code and facts
+// only with --verbose; any other failure with the check that names what is
+// wrong.
+func contextVerbError(stderr io.Writer, verb string, err error, verbose bool) int {
+	page := passthroughPage(stderr, "", verbose)
 	var refusal *steward.HandoffRefusal
 	if errors.As(err, &refusal) {
-		fmt.Fprintln(stderr, strings.NewReplacer("\r", " ", "\n", " ").Replace(refusal.Error()))
+		words := strings.ToLower(strings.ReplaceAll(strings.TrimPrefix(refusal.Code, "HANDOFF_"), "_", " "))
+		page.Refusal("the handoff was refused: "+words+"; nothing was done",
+			textui.Hint{Argv: []string{"metasystem", "session", "handoff", "--help"}, Reason: "its forms and what each needs"})
+		if verbose {
+			page.Section("Details", "").Text(strings.NewReplacer("\r", " ", "\n", " ").Replace(refusal.Error()))
+		}
+		printPage(stderr, page)
 		return 9
 	}
-	fmt.Fprintf(stderr, "metasystem %s: %v\n", contextPublicName(verb), err)
+	page.Refusal(fmt.Sprintf("%s stopped: %v", contextPublicName(verb), err), textui.Hint{Argv: []string{"metasystem", "system", "check"}, Reason: "names what is wrong here"})
+	printPage(stderr, page)
 	return 1
 }
 

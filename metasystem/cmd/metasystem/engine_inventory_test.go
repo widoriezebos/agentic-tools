@@ -20,6 +20,7 @@ import (
 
 var engineBindingStandardTests = []string{
 	"TestAmbientTrustedPolicyDecisionCannotBypassRetainedEngine",
+	"TestBaseMovedNoticeIsPlainUnlessVerbose",
 	"TestBaseMovedToAnEngineChangeReArmsOnce",
 	"TestBaseMovedUnderTheRunRestartsPreparationOnce",
 	"TestCandidateBuiltCommitPassesDispatchSkewPreflight",
@@ -96,6 +97,7 @@ var engineBindingStandardTests = []string{
 	"TestScratchEnvironmentV1WireAndReaderSupport",
 	"TestScratchEnvironmentPolicyAgainstABuiltWorker",
 	"TestRefusalReadsAsTwoLines",
+	"TestWorkerCapabilitiesReadStdoutOnly",
 }
 
 func TestGoalLandingGoManifestSelectionCoversCurrentPackages(t *testing.T) {

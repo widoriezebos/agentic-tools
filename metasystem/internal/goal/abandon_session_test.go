@@ -174,10 +174,8 @@ func TestAbandonUnderASessionRefusesALiveDependentInTheEnginesWords(t *testing.T
 	}
 	words := result.Detail
 	for _, wanted := range []string{
-		"goal ui-waiter is blocked by ui-abandon",
-		"re-point it with --successor",
-		"waive it with --waive ui-waiter=<reason>",
-		"abandon it with --also ui-waiter",
+		"goal ui-waiter still waits on ui-abandon, so it must be abandoned too, waived or re-pointed",
+		"\nrun: metasystem goal abandon ui-abandon --reason \"nobody will work it\" --also ui-waiter",
 	} {
 		if !strings.Contains(words, wanted) {
 			t.Fatalf("the refusal %q does not say %q", words, wanted)

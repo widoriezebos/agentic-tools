@@ -344,7 +344,7 @@ func TestGoalCLIBrainClaimRefuses(t *testing.T) {
 			return code
 		})
 	}
-	claimCommand := "this checkout is declared the brain; the brain never claims. A node claims: metasystem goal claim --root <checkout> --id <id>"
+	claimCommand := "this checkout is declared the brain; the brain never claims\nrun on a node: metasystem goal claim --root <checkout> --id <id>"
 	if code, said := claim(); code == 0 || !strings.Contains(said, claimCommand) {
 		t.Errorf("goal claim: brain goal fence wanted %q, got rc=%d: %s", claimCommand, code, said)
 	}
@@ -548,9 +548,10 @@ func TestGoalCLIBrainStopCorrupt(t *testing.T) {
 	bed := gcliBrainStopBed(t, true)
 	gcliBrainWrite(t, brain.Path(bed.root()), []byte("{broken\n"))
 	verdict := bed.verdict("brain-corrupt", true)
-	lines := gcliBrainLines(verdict.Display, 4)
+	lines := gcliBrainLines(verdict.Display, 5)
 	if !strings.HasPrefix(lines[0], "BRAIN SEAT:") || !strings.HasPrefix(lines[1], "this checkout's brain declaration is unreadable") ||
-		lines[2] != "OPEN WORK (1)" || lines[3] != "OPEN-WORK plans/brain-open-plan.md: Finish the local note." {
+		!strings.HasPrefix(lines[2], "run: metasystem settings coordinator --withdraw") ||
+		lines[3] != "OPEN WORK (1)" || lines[4] != "OPEN-WORK plans/brain-open-plan.md: Finish the local note." {
 		t.Fatalf("corrupt brain lost its leading summary, remedy, or following action: %s", verdict.Display)
 	}
 	if verdict.IdleRefusal {

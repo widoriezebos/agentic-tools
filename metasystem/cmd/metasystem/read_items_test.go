@@ -133,13 +133,13 @@ func TestDoneReadItemRefusalRemedyExecutes(t *testing.T) {
 	if fixture.projection().Tip != before || fixture.reports != 0 {
 		t.Fatalf("refused done changed accepted tip or ran metrics: reports=%d", fixture.reports)
 	}
-	template := "metasystem goal notes standing-validation --close critic-1 --fixed <commit>"
-	if !strings.Contains(refusal.Detail, template) {
-		t.Fatalf("done refusal lacks executable fixed remedy %q: %s", template, refusal.Detail)
+	// Line 2 names the goal's notes, which point at their close form; that
+	// public form (goal notes G --close ITEM --fixed COMMIT) closes the item.
+	remedy := "run: metasystem goal notes standing-validation"
+	if !strings.Contains(refusal.Detail, remedy) || !strings.Contains(refusal.Detail, "critic-1") {
+		t.Fatalf("done refusal lacks its notes remedy %q: %s", remedy, refusal.Detail)
 	}
-	printed := refusal.Detail[strings.Index(refusal.Detail, template):]
-	printed = strings.SplitN(printed, " | ", 2)[0]
-	command := strings.Replace(printed, "<commit>", fixture.codeCommit, 1)
+	command := "metasystem goal notes standing-validation --close critic-1 --fixed " + fixture.codeCommit
 	fields := strings.Fields(command)
 	// The printed public form (goal notes G --close ITEM --fixed COMMIT) runs
 	// the read-items close owner with the same goal, item and closure.

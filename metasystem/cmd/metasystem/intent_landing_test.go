@@ -121,16 +121,16 @@ func (bed *laneVerbBed) status(t *testing.T) lane.View {
 func TestLandingVerbsSetStartStopRestart(t *testing.T) {
 	t.Parallel()
 	bed := newLaneVerbBed(t)
-	if code, stdout, _ := bed.run(t, "landing", "status"); code != 0 || !strings.Contains(stdout, "no landing lane is registered") {
+	if code, stdout, _ := bed.run(t, "landing", "status"); code != 0 || !strings.Contains(stdout, "No landing lane is registered") {
 		t.Fatalf("status without a lane = %d %q", code, stdout)
 	}
 	if code, _, stderr := bed.run(t, "landing", "start"); code == 0 || !strings.Contains(stderr, "metasystem landing set PATH") {
 		t.Fatalf("start without a lane = %d %q", code, stderr)
 	}
-	if code, stdout, stderr := bed.run(t, "landing", "set", bed.landingA, "--by", "Wido"); code != 0 || !strings.Contains(stdout, "is now "+bed.landingA) {
+	if code, stdout, stderr := bed.run(t, "landing", "set", bed.landingA, "--by", "Wido"); code != 0 || !strings.Contains(oneSpaced(stdout), "is now "+bed.landingA) {
 		t.Fatalf("set = %d %q %q", code, stdout, stderr)
 	}
-	if code, stdout, _ := bed.run(t, "landing", "set", bed.landingA); code != 0 || !strings.Contains(stdout, "already "+bed.landingA) {
+	if code, stdout, _ := bed.run(t, "landing", "set", bed.landingA); code != 0 || !strings.Contains(oneSpaced(stdout), "already "+bed.landingA) {
 		t.Fatalf("set again = %d %q", code, stdout)
 	}
 	if view := bed.status(t); view.Root == nil || *view.Root != bed.landingA || *view.RegisteredBy != "Wido" || view.Owner.State != lane.OwnerNotStarted {
@@ -155,7 +155,7 @@ func TestLandingVerbsSetStartStopRestart(t *testing.T) {
 	if code, stdout, _ := bed.run(t, "landing", "start"); code != 0 {
 		t.Fatalf("start after stop = %d %q", code, stdout)
 	}
-	if code, stdout, _ := bed.run(t, "landing", "status", "--verbose"); code != 0 || !strings.Contains(stdout, "registered by Wido") || !strings.Contains(stdout, "pid 4243") {
+	if code, stdout, _ := bed.run(t, "landing", "status", "--verbose"); code != 0 || !strings.Contains(stdout, "registered   by Wido") || !strings.Contains(stdout, "pid 4243") {
 		t.Fatalf("status --verbose = %d %q", code, stdout)
 	}
 }
@@ -187,7 +187,7 @@ func TestLandingSetRefusesAMoveWhileABatchProves(t *testing.T) {
 	if code, _, stderr := bed.run(t, "landing", "stop"); code != 0 {
 		t.Fatalf("stop = %d %q", code, stderr)
 	}
-	if code, stdout, stderr := bed.run(t, "landing", "set", bed.landingB); code != 0 || !strings.Contains(stdout, "it was "+bed.landingA) {
+	if code, stdout, stderr := bed.run(t, "landing", "set", bed.landingB); code != 0 || !strings.Contains(oneSpaced(stdout), "it was "+bed.landingA) {
 		t.Fatalf("move after the pause = %d %q %q", code, stdout, stderr)
 	}
 }
@@ -278,7 +278,7 @@ func TestLandingSetMoveIsAPersonsAct(t *testing.T) {
 		t.Fatalf("the refused move moved the lane")
 	}
 	bed.person = nil
-	if code, stdout, stderr := bed.run(t, "landing", "set", bed.landingB); code != 0 || !strings.Contains(stdout, "is now "+bed.landingB) {
+	if code, stdout, stderr := bed.run(t, "landing", "set", bed.landingB); code != 0 || !strings.Contains(oneSpaced(stdout), "is now "+bed.landingB) {
 		t.Fatalf("move by the person = %d %q %q", code, stdout, stderr)
 	}
 	if record, _, _ := lane.Read(bed.home); record.RegisteredBy != "Wido" {
@@ -296,7 +296,7 @@ func TestLandingSetReplacesACorruptRecord(t *testing.T) {
 	if err := os.WriteFile(lane.RecordPath(bed.home), []byte("{not json"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if code, stdout, stderr := bed.run(t, "landing", "set", bed.landingA); code != 0 || !strings.Contains(stdout, "is now "+bed.landingA) {
+	if code, stdout, stderr := bed.run(t, "landing", "set", bed.landingA); code != 0 || !strings.Contains(oneSpaced(stdout), "is now "+bed.landingA) {
 		t.Fatalf("set over a corrupt record = %d %q %q", code, stdout, stderr)
 	}
 	if record, ok, err := lane.Read(bed.home); err != nil || !ok || record.Root != bed.landingA {
@@ -373,7 +373,7 @@ func TestLandingSetRefusesACheckoutWithoutAMachineNickname(t *testing.T) {
 		t.Fatalf("a checkout without a nickname was registered")
 	}
 	bed.noMachine = false
-	if code, stdout, stderr := bed.run(t, "landing", "set", bed.landingA); code != 0 || !strings.Contains(stdout, "is now "+bed.landingA) {
+	if code, stdout, stderr := bed.run(t, "landing", "set", bed.landingA); code != 0 || !strings.Contains(oneSpaced(stdout), "is now "+bed.landingA) {
 		t.Fatalf("set once named = %d %q %q", code, stdout, stderr)
 	}
 }
@@ -389,8 +389,8 @@ func TestLandingStatusSaysWhyTheOwnerCannotRun(t *testing.T) {
 		t.Fatalf("set on an unarmed checkout = %d %q %q; want the arming named next", code, stdout, stderr)
 	}
 	code, stdout, _ = bed.run(t, "landing", "status")
-	for _, want := range []string{"owner not-started", "supervision is not armed", "→ metasystem system start --repo " + bed.landingA} {
-		if code != 0 || !strings.Contains(stdout, want) {
+	for _, want := range []string{"! The landing lane's owner is not running", "supervision is not armed", "→ metasystem system start --repo " + bed.landingA} {
+		if code != 0 || !strings.Contains(oneSpaced(stdout), want) {
 			t.Errorf("status = %d %q; lacks %q", code, stdout, want)
 		}
 	}
@@ -434,22 +434,15 @@ func TestLandingStatusSaysAFailingTickInPlainWords(t *testing.T) {
 				t.Fatal(err)
 			}
 			code, stdout, _ := bed.run(t, "landing", "status")
-			lines := strings.Split(strings.TrimRight(stdout, "\n"), "\n")
-			if code != 0 || len(lines) != 2 {
-				t.Fatalf("status = %d %q; want two lines", code, stdout)
-			}
-			if !strings.HasPrefix(lines[0], test.want+"; ") {
-				t.Errorf("line 1 = %q; want it to start with %q", lines[0], test.want)
+			if code != 0 || !strings.HasPrefix(oneSpaced(stdout), "! "+test.want+" → metasystem landing status --verbose ") {
+				t.Fatalf("status = %d %q; want the situation, then the one command", code, stdout)
 			}
 			raw := strings.SplitN(test.raw, ": ", 2)[1]
 			if strings.Contains(stdout, raw) {
 				t.Errorf("status without --verbose carries the raw error: %q", stdout)
 			}
-			if !strings.HasPrefix(strings.TrimSpace(lines[1]), "→ metasystem landing status --verbose") {
-				t.Errorf("line 2 = %q; want the verbose status as the one command", lines[1])
-			}
 			_, verbose, _ := bed.run(t, "landing", "status", "--verbose")
-			if !strings.Contains(verbose, "last tick failed: "+test.raw) || !strings.Contains(verbose, "owner log: ") {
+			if !strings.Contains(oneSpaced(verbose), "last tick "+test.raw) || !strings.Contains(verbose, "owner log ") {
 				t.Errorf("verbose status lacks the raw error and the log: %q", verbose)
 			}
 			_, encoded, _ := bed.run(t, "landing", "status", "--json")
@@ -460,3 +453,7 @@ func TestLandingStatusSaysAFailingTickInPlainWords(t *testing.T) {
 		})
 	}
 }
+
+// oneSpaced is a page with every run of spaces and line breaks one space:
+// what it says, however its lines wrapped.
+func oneSpaced(page string) string { return strings.Join(strings.Fields(page), " ") }

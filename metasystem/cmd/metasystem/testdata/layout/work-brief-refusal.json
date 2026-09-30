@@ -1,0 +1,23 @@
+exit 2
+--
+{
+  "schemaVersion": 1,
+  "verb": "work brief",
+  "targets": [],
+  "outcome": "refused",
+  "summary": "a brief needs the goal and the file to write it to; nothing was written",
+  "next": {
+    "argv": [
+      "metasystem",
+      "work",
+      "brief",
+      "standing-validation",
+      "--json",
+      "--out",
+      "FILE"
+    ],
+    "reason": "FILE is where the brief is written"
+  }
+}
+
+--

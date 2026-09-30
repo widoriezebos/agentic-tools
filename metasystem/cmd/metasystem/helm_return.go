@@ -162,9 +162,10 @@ func helmYes(answer string) bool {
 	return answer == "y" || answer == "yes"
 }
 
-// helmActLine is one answer's own confirmation, or its reason in one line.
+// helmActLine is one answer's own confirmation, or its reason; an owner's
+// own line 2 (its remedy) stays under it, indented.
 func helmActLine(act string, result intentResult) string {
-	summary := strings.TrimSpace(result.Summary)
+	summary := strings.ReplaceAll(strings.TrimSpace(result.Summary), "\n", "\n  ")
 	if result.Outcome == intentConfirmed || result.Outcome == intentUnchanged {
 		if summary == "" {
 			summary = result.Outcome

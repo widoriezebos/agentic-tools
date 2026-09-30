@@ -1,0 +1,11 @@
+2 incidents on main · 1 nobody fixes · 1 tracked flake or hang
+
+On main
+  ● tr-deep-main000003   deep   goal standing-validation fixes it · failing since 07:58
+  ! tr-fast-main000001   fast   nobody fixes it · failing since 07:58
+
+Tracked  they never hold a landing
+  ○ tr-fast-tip0000002   fast   pending flake, seen on a batch tip, not on main
+
+→ metasystem incident claim tr-fast-main000001 --goal G
+  an unowned incident needs a goal that fixes it

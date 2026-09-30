@@ -1,0 +1,26 @@
+exit 0
+--
+{
+  "schemaVersion": 1,
+  "verb": "goal list",
+  "targets": [],
+  "outcome": "confirmed",
+  "summary": "8 open goal(s) with a risk record at 0000000000000000000000000000000000000001",
+  "data": {
+    "derived": {
+      "2": 2,
+      "3": 6
+    },
+    "lowerable": [],
+    "open": 8,
+    "recorded": {
+      "2": 2,
+      "3": 6
+    },
+    "tier3ShareDerived": 75,
+    "tier3ShareRecorded": 75,
+    "tip": "0000000000000000000000000000000000000001"
+  }
+}
+
+--

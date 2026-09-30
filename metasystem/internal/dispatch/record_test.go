@@ -602,7 +602,7 @@ func TestRecordCreateRefusesFreshLaterRoundNames(t *testing.T) {
 	}
 	if err := RecordCreate(root, "demo-c1-critique-r2", write("demo-c1-critique-r2", nil)); err == nil {
 		t.Fatal("a fresh job named -r2 must refuse")
-	} else if !strings.Contains(err.Error(), "must not claim round 2") {
+	} else if !strings.Contains(err.Error(), "may not claim round 2") {
 		t.Fatalf("refusal must name the rule: %v", err)
 	}
 	if err := RecordCreate(root, "demo-c1-critique-r1", write("demo-c1-critique-r1", nil)); err != nil {

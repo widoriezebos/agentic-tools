@@ -270,12 +270,12 @@ func TestCritiqueClosePrintsEveryBlockingFinding(t *testing.T) {
 		if err == nil {
 			t.Fatalf("%s accepted two blocking findings", name)
 		}
-		for _, want := range []string{"S-1 artifact=metasystem/one.go", "U-2 artifact=metasystem/two.go"} {
+		for _, want := range []string{"S-1 (in metasystem/one.go)", "U-2 (in metasystem/two.go)"} {
 			if !strings.Contains(err.Error(), want) {
 				t.Fatalf("%s did not print %q: %v", name, want, err)
 			}
 		}
-		wantNext := "a person accepts each risk (metasystem goal accept-risk --finding <id> --chain <root> --by <human> --why) or raises the goal's budget"
+		wantNext := "a person accepts each risk with metasystem goal accept-risk, or raises the goal's budget with metasystem goal budget"
 		if !strings.HasSuffix(err.Error(), wantNext) {
 			t.Fatalf("%s next step = %v", name, err)
 		}

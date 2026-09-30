@@ -1,0 +1,14 @@
+! retro due: 26 receipts since the last retro (max 25)
+
+Since the last retro
+  receipts              26
+  shipped               18
+  reworked              8
+  type implement        26
+  corrections           26
+  caught by verify      26
+  stop-loss triggered   0
+  critique waivers      0
+  span in days          1.0
+
+→ metasystem receipt status --uncovered  the lines the retro reads first

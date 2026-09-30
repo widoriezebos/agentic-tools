@@ -1,0 +1,21 @@
+exit 1
+--
+{
+  "schemaVersion": 1,
+  "verb": "app check",
+  "targets": [
+    {
+      "kind": "app",
+      "id": "standing"
+    }
+  ],
+  "outcome": "refused",
+  "summary": "the launch contract declares no check; nothing was checked",
+  "data": {
+    "check": null,
+    "run": "standing"
+  },
+  "decision": "name a testing group as \"check\" in the launch contract at /Users/wido/GitHub/agentic-tools-m1e/metasystem/launch.json to give the application a check"
+}
+
+--

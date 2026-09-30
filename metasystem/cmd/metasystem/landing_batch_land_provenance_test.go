@@ -207,7 +207,7 @@ func TestBatchBranchCommitRequiresPassingProvenance(t *testing.T) {
 		}
 		want := "BATCH_LAND_UNPROVENANCED: goal goal-a commit "
 		if record.Units[0].Outcome != batch.UnitEjected || !strings.Contains(record.Units[0].Failure, want) ||
-			!strings.Contains(record.Units[0].Failure, "verdict would-refuse code=chain-not-implementation") || record.State != batch.StateDissolved {
+			!strings.Contains(record.Units[0].Failure, "would-refuse code=chain-not-implementation") || record.State != batch.StateDissolved {
 			t.Fatalf("would-refuse branch member was not ejected with provenance failure: %+v", record.Units[0])
 		}
 		if head := batchProvenanceGit(t, "-C", bed.root, "rev-parse", "HEAD"); head != bed.baseCommit {

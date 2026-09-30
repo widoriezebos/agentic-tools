@@ -166,7 +166,7 @@ type CorruptionError struct {
 
 func (e *CorruptionError) Error() string {
 	return fmt.Sprintf(
-		"registry corrupt: non-JSON line %d is followed by a valid record on line %d with no torn marker between them; arming and reaping must fail closed (REG-5)",
+		"the process registry is damaged at line %d (a record follows on line %d), so arming and reaping stop",
 		e.GarbageLine, e.RecordLine)
 }
 

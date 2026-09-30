@@ -1,0 +1,2 @@
+✗ no machine m9z on this computer or in the fleet; nothing was done
+  → metasystem machine list --verbose  names every machine of this computer

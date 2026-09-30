@@ -2,10 +2,13 @@ package dispatch
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 )
 
 // CritiqueExhaustionAdvance's guard paths and the small value helpers.
@@ -38,8 +41,23 @@ func TestOpErrorRenderings(t *testing.T) {
 		t.Fatalf("bare code not rendered: %q", bare.Error())
 	}
 	typed := &OpError{Code: CritiqueCapExhaustedExitCode, Reason: CritiqueCapExhaustedReason, Message: "terminal"}
-	if got := typed.Error(); got != "reason=cap-exhausted-human-raise terminal" {
-		t.Fatalf("machine-readable reason lost: %q", got)
+	// The words are what a person reads; the reason is the refusal's code,
+	// read by --verbose, --json and records ("Messages a Person Reads").
+	if got := typed.Error(); got != "terminal" {
+		t.Fatalf("default text carries more than the words: %q", got)
+	}
+	if typed.RefusalCode() != CritiqueCapExhaustedReason || refusal.CodeOf(fmt.Errorf("wrapped: %w", typed)) != CritiqueCapExhaustedReason {
+		t.Fatalf("the reason is not the refusal code: %q", typed.RefusalCode())
+	}
+	if got := refusal.DetailOf(typed); got != "cap-exhausted-human-raise: terminal" {
+		t.Fatalf("detail = %q", got)
+	}
+	reasonOnly := &OpError{Code: 9, Reason: "REFUSED-X"}
+	if got := reasonOnly.Error(); strings.Contains(got, "REFUSED-X") || got == "" {
+		t.Fatalf("a reason-only refusal prints its code by default: %q", got)
+	}
+	if withMessage.RefusalCode() != "" || refusal.DetailOf(withMessage) != "named refusal" {
+		t.Fatalf("an uncoded refusal gained a code: %q %q", withMessage.RefusalCode(), refusal.DetailOf(withMessage))
 	}
 }
 

@@ -30,11 +30,33 @@ func (s *session) recordOutcome(outcome, headline, detail, job string) {
 	if !s.env.RecordOutcome {
 		return
 	}
-	line, err := jsonedit.Object([]string{"outcome=" + outcome, "headline=" + headline, "detail=" + detail, "jobId=" + job})
+	s.recordOutcomeCoded(outcome, headline, detail, job, "")
+}
+
+// recordOutcomeCoded is recordOutcome with the refusal's code as a fifth
+// field when there is one: data for --json and records, which the words on
+// stderr do not carry ("Messages a Person Reads").
+func (s *session) recordOutcomeCoded(outcome, headline, detail, job, code string) {
+	if !s.env.RecordOutcome {
+		return
+	}
+	fields := []string{"outcome=" + outcome, "headline=" + headline, "detail=" + detail, "jobId=" + job}
+	if code != "" {
+		fields = append(fields, "code="+code)
+	}
+	line, err := jsonedit.Object(fields)
 	if err != nil {
 		return
 	}
 	s.outcome = []byte(line + "\n")
+}
+
+// noteRefusal remembers the code of an owner refusal err carries.
+func (s *session) noteRefusal(err error) {
+	var op *dispatch.OpError
+	if asOpError(err, &op) && op.Reason != "" {
+		s.refusalCode = op.Reason
+	}
 }
 
 // recordOutcomeRaw is record_delegate_outcome_raw: an already encoded line.
@@ -214,6 +236,7 @@ func (s *session) verbFailure(err error) error {
 	}
 	var op *dispatch.OpError
 	if asOpError(err, &op) {
+		s.noteRefusal(err)
 		if op.Message != "" || op.Reason != "" {
 			s.eprintln(op.Error())
 		}

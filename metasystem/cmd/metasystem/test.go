@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"encoding/json"
@@ -19,6 +20,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/candidateengine"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/digest"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginecause"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
@@ -30,6 +32,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/strictjson"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/verbresult"
 )
 
 func runTestWorkerCapabilities(args []string, stdout, stderr io.Writer) int {
@@ -57,20 +61,27 @@ func runTestList(args []string, stdout, stderr io.Writer) int {
 	}
 	installation, contract, path, err := testrun.LoadContract(*root)
 	if err != nil {
+		page := passthroughPage(stderr, *root, false)
 		if _, statErr := os.Stat(*root); errors.Is(statErr, fs.ErrNotExist) {
-			fmt.Fprintf(stderr, "metasystem test list: %s does not exist; nothing was listed\n", *root)
-			return 1
+			page.Refusal(page.Env().Path(*root)+" does not exist; nothing was listed",
+				textui.Hint{Argv: []string{"metasystem", "test", "list"}, Reason: "run it inside the checkout, or name it with --repo"})
+		} else {
+			page.Refusal("the testing contract cannot be read: "+err.Error(), textui.Hint{Argv: []string{"metasystem", "settings", "check"}, Reason: "names what is wrong"})
 		}
-		fmt.Fprintln(stderr, "metasystem test list:", err)
+		printPage(stderr, page)
 		return 1
 	}
 	if *jsonOutput {
 		writeJSONLine(stdout, stderr, map[string]any{"schemaVersion": 1, "installation": installation, "contract": path, "groups": contract.Groups})
 		return 0
 	}
+	page := passthroughPage(stdout, installation, false)
+	page.Headline(textui.Count(len(contract.Groups), "test group", "test groups")+" in the testing contract", page.Env().Path(path))
+	table := page.Section("", "").Table(textui.Column{Title: "GROUP"}, textui.Column{Title: "KIND"}, textui.Column{Title: "ADAPTER", Flex: true})
 	for _, group := range contract.Groups {
-		fmt.Fprintf(stdout, "%s\t%s\t%s\n", group.ID, group.Kind, group.Adapter)
+		table.Row(textui.Plain(group.ID), textui.Plain(group.Kind), textui.Plain(group.Adapter))
 	}
+	printPage(stdout, page)
 	return 0
 }
 
@@ -89,23 +100,75 @@ func runTestPlanAs(name string, args []string, stdout, stderr io.Writer) int {
 	prepared, err := prepareTestingForCommand(request)
 	if err != nil {
 		// The refusal a person reads; --verbose adds its detail (code, cause
-		// and facts), and --json a line with it that a planning child's
-		// parent reads.
-		printTestingRefusal(stderr, err, request.Verbose)
+		// and facts), and --json the envelope a planning child's parent
+		// reads its code from.
+		printTestingRefusalAs(stderr, err, request, jsonOutput)
 		if jsonOutput {
-			writeJSONLine(stdout, stderr, map[string]string{"error": err.Error(), "detail": refusal.Detail(err)})
+			_ = verbresult.Write(stdout, verbresult.FromError(name, 1, err, nil))
 		}
 		return 1
 	}
 	output := testrun.PlanOutputOf(prepared)
 	if jsonOutput {
-		writeJSONLine(stdout, stderr, output)
+		// The plan is the envelope's data (R1).
+		result := verbresult.FromError(name, 0, nil, output)
+		result.Summary = "the tests to run are chosen"
+		_ = verbresult.Write(stdout, result)
 	} else {
-		fmt.Fprintf(stdout, "TEST-PLAN mode=%s required=%s tree=%s groups=%s\n", prepared.Plan.ExecutedMode,
-			prepared.Plan.RequiredMode, prepared.CandidateTree, strings.Join(prepared.Plan.SelectedGroups, ","))
-		printUnmatchedInputsTo(stderr, prepared.UnmatchedInputs)
+		page := passthroughPage(stdout, prepared.Installation, request.Verbose)
+		layTestPlan(page, output)
+		printPage(stdout, page)
 	}
 	return 0
+}
+
+// layTestPlan is a test plan as a person reads it: the groups that would
+// run on the tree and in which mode, the ones it must run, why others are
+// left out (--verbose), and the inputs that match no file.
+func layTestPlan(page *textui.Page, output testrun.PlanOutput) {
+	plan := output.Plan
+	mode := "mode " + string(plan.ExecutedMode)
+	if plan.RequiredMode != "" && plan.RequiredMode != plan.ExecutedMode {
+		mode += " (" + string(plan.RequiredMode) + " required)"
+	}
+	page.Headline(textui.Count(len(plan.SelectedGroups), "test group", "test groups")+" would run on tree "+textui.SHA(output.CandidateTree), mode)
+	required := map[string]bool{}
+	for _, id := range plan.RequiredGroups {
+		required[id] = true
+	}
+	var must, also []string
+	for _, id := range plan.SelectedGroups {
+		if required[id] {
+			must = append(must, id)
+		} else {
+			also = append(also, id)
+		}
+	}
+	section := page.Section("Groups", "")
+	if len(must) > 0 {
+		section.KV("required", textui.Plain(strings.Join(must, ", ")))
+	}
+	if len(also) > 0 {
+		section.KV("also", textui.Plain(strings.Join(also, ", ")))
+	}
+	if len(plan.AffectedSurfaces) > 0 {
+		section.KV("surfaces", textui.Plain(strings.Join(plan.AffectedSurfaces, ", ")))
+	}
+	for _, uncertain := range plan.Uncertainty {
+		section.KV("unsure", textui.Plain(uncertain))
+	}
+	if page.Verbose() && len(plan.Omissions) > 0 {
+		left := page.Section("Left out", "")
+		for _, omission := range plan.Omissions {
+			left.KV(omission.Group, textui.Plain(omission.Reason))
+		}
+	}
+	if len(output.UnmatchedInputs) > 0 {
+		unmatched := page.Section("Inputs that match no file", "")
+		for _, item := range output.UnmatchedInputs {
+			unmatched.KV(item.Group, textui.Plain(item.Pattern))
+		}
+	}
 }
 
 func admitTestingRun(request testrun.SelectionRequest, admission proofLaunchAdmission) (proofrun.Attempt, proofrun.LaunchResult, bool, error) {
@@ -296,6 +359,8 @@ func parseTestingSelection(name string, args []string, execution bool, stdout, s
 
 var prepareTestingForCommand = testrun.Prepare
 
+// printUnmatchedInputsTo names, for a test run, the group inputs that match
+// no file.
 func printUnmatchedInputsTo(stderr io.Writer, values []testrun.UnmatchedInput) {
 	for _, item := range values {
 		fmt.Fprintf(stderr, "TEST-INPUT-NO-MATCH group=%q pattern=%q\n", item.Group, item.Pattern)
@@ -323,15 +388,18 @@ func testingWorkerPolicy(confPath string) (testrun.WorkerPolicy, error) {
 }
 
 func runTestRun(args []string, stdout, stderr io.Writer) (exit int) {
+	invocation := testRunInvocation{callerPID: int64(os.Getppid()), stdout: stdout, stderr: stderr, name: "internal test run"}
+	finish := invocation.envelope(invocation.name, args)
+	defer func() { finish(exit) }()
 	// A batch's proof child holds the host's proving flock for its life (U12).
 	args, release, err := batchowner.HoldHostProvingFor(batchowner.LandingLaneHome, args)
 	if err != nil {
-		fmt.Fprintln(stderr, "metasystem internal test run:", err)
+		invocation.fail("metasystem internal test run:", err)
 		return 1
 	}
 	defer release()
 	// The entry supplies its own caller, as it always did.
-	return runTestRunWith(testRunInvocation{callerPID: int64(os.Getppid()), stdout: stdout, stderr: stderr, name: "internal test run"}, args)
+	return runTestRunWith(invocation, args)
 }
 
 // testRunInvocation is the explicit context of one test run (design 6.2): the
@@ -344,6 +412,126 @@ type testRunInvocation struct {
 	stdout, stderr io.Writer
 	// name is the command it answers as (default: test run).
 	name string
+	// outcome collects what the --json envelope reports; nil without --json.
+	outcome *testRunOutcome
+}
+
+// testRunOutcome is what a test run under --json reports in its one
+// envelope: the error it ended on (its code and plain reason), and its data,
+// the result it would have printed.
+type testRunOutcome struct {
+	err     error
+	data    any
+	results bytes.Buffer
+}
+
+// testRunFailure is a line the run printed for a person, kept with the
+// error behind it so the envelope carries that error's code.
+type testRunFailure struct {
+	text  string
+	cause error
+}
+
+func (failure *testRunFailure) Error() string { return failure.text }
+func (failure *testRunFailure) Unwrap() error { return failure.cause }
+
+// envelope makes the invocation answer with one --json envelope when args
+// ask for it: the run's own stream (banner, the suite's output, the result
+// summary) goes to stderr, and stdout holds only the envelope, written by
+// the returned function with the exit status. Without --json, or when an
+// outer call already answers, it does nothing.
+func (invocation *testRunInvocation) envelope(name string, args []string) func(int) {
+	if invocation.outcome != nil || !testRunWantsJSON(args) {
+		return func(int) {}
+	}
+	outcome := &testRunOutcome{}
+	stdout := invocation.stdout
+	invocation.stdout, invocation.outcome = invocation.stderr, outcome
+	return func(exit int) {
+		data := outcome.data
+		if data == nil && json.Valid(bytes.TrimSpace(outcome.results.Bytes())) {
+			data = json.RawMessage(bytes.TrimSpace(outcome.results.Bytes()))
+		}
+		result := verbresult.FromError(name, exit, outcome.err, data)
+		if result.Summary == "" {
+			result.Summary = testRunSummary(exit)
+		}
+		_ = verbresult.Write(stdout, result)
+	}
+}
+
+// testRunWantsJSON reports whether the run's arguments ask for --json.
+func testRunWantsJSON(args []string) bool {
+	for _, arg := range args {
+		switch arg {
+		case "--json", "-json", "--json=true", "-json=true":
+			return true
+		case "--":
+			return false
+		}
+	}
+	return false
+}
+
+// testRunSummary is the envelope's plain line for a run that recorded no
+// error of its own.
+func testRunSummary(exit int) string {
+	switch exit {
+	case 0:
+		return "the selected tests passed"
+	case proofrun.ExitReusableSuccess:
+		return "the selected tests passed before on this tree; that result stands"
+	case proofrun.ExitLiveDuplicate:
+		return "the same test run is already running"
+	case 2:
+		return "the test run's options were refused; the reason is on stderr"
+	}
+	return fmt.Sprintf("the test run ended with status %d; the reason is on stderr", exit)
+}
+
+// fail prints a line for a person on stderr and, under --json, keeps it
+// (with the error it ends on) as the envelope's reason.
+func (invocation testRunInvocation) fail(words ...any) {
+	fmt.Fprintln(invocation.stderr, words...)
+	if invocation.outcome == nil || len(words) == 0 {
+		return
+	}
+	cause, _ := words[len(words)-1].(error)
+	invocation.outcome.err = &testRunFailure{text: strings.TrimSpace(fmt.Sprintln(words...)), cause: cause}
+}
+
+// record keeps err as the envelope's reason under --json.
+func (invocation testRunInvocation) record(err error) {
+	if invocation.outcome != nil && err != nil {
+		invocation.outcome.err = err
+	}
+}
+
+// results is where the run prints its result: stdout, or under --json the
+// envelope's data.
+func (invocation testRunInvocation) results() io.Writer {
+	if invocation.outcome != nil {
+		return &invocation.outcome.results
+	}
+	return invocation.stdout
+}
+
+// noChildResult is where a run that started nothing prints its decision's
+// PROOF-RESULT line: stdout, or under --json nowhere but the result file,
+// the decision being the envelope's data (R2).
+func (invocation testRunInvocation) noChildResult(decision proofrun.LaunchResult) io.Writer {
+	if invocation.outcome != nil {
+		invocation.outcome.data = decision
+		return nil
+	}
+	return invocation.stdout
+}
+
+// testRunRetryRequired refuses a run whose earlier attempt on the same
+// inputs failed: a retry names that attempt with a decision (R3).
+func testRunRetryRequired(decision proofrun.LaunchResult) error {
+	return &refusal.Coded{Code: "TEST_RETRY_REQUIRED", Facts: "prior=" + decision.PriorAttempt,
+		Reason: fmt.Errorf("the same tests failed in run %s; a retry names that run with a retry decision", decision.PriorAttempt)}
 }
 
 func runTestRunWith(invocation testRunInvocation, args []string) (exit int) {
@@ -352,6 +540,8 @@ func runTestRunWith(invocation testRunInvocation, args []string) (exit int) {
 	if name == "" {
 		name = "test run"
 	}
+	finish := invocation.envelope(name, args)
+	defer func() { finish(exit) }()
 	request, _, status := parseTestingSelection(name, args, true, invocation.stdout, invocation.stderr)
 	if status != 0 {
 		return status
@@ -361,7 +551,8 @@ func runTestRunWith(invocation testRunInvocation, args []string) (exit int) {
 	request.CallerPID = invocation.callerPID
 	prepared, err := prepareTestingForCommand(request)
 	if err != nil {
-		printTestingRefusal(invocation.stderr, err, request.Verbose)
+		printTestingRefusal(invocation.stderr, err, request)
+		invocation.record(err)
 		if errors.Is(err, testrun.ErrWorkerPolicyUnsupported) {
 			return proofrun.ExitAdmissionRefused
 		}
@@ -371,7 +562,7 @@ func runTestRunWith(invocation testRunInvocation, args []string) (exit int) {
 	controlRoot := prepared.ProofControlRoot()
 	commandClock, fixtureClock, err := goalCommandClock(controlRoot)
 	if err != nil {
-		fmt.Fprintln(invocation.stderr, "metasystem test run:", err)
+		invocation.fail("metasystem test run:", err)
 		return proofrun.ExitAdmissionRefused
 	}
 	// Every disposable byte of this invocation lands in one recorded root,
@@ -379,7 +570,7 @@ func runTestRunWith(invocation testRunInvocation, args []string) (exit int) {
 	// recovered first, never this run's own.
 	scratch, err := proofrun.CreateScratchRun(controlRoot)
 	if err != nil {
-		fmt.Fprintln(invocation.stderr, "metasystem test run: scratch root:", err)
+		invocation.fail("metasystem test run: scratch root:", err)
 		return 1
 	}
 	defer func() { exit = finishTestingScratch(invocation.stderr, scratch, exit) }()
@@ -393,12 +584,12 @@ func runTestRunWith(invocation testRunInvocation, args []string) (exit int) {
 	commandAdmission := testingCommandAdmission{now: commandClock, admitRun: admitTestingRun, admitProof: admitProofLaunch}
 	limits, err := resolveTestingPreparationWorkerPolicy(&prepared)
 	if err != nil {
-		fmt.Fprintln(invocation.stderr, "metasystem test run:", err)
+		invocation.fail("metasystem test run:", err)
 		return 1
 	}
 	engine, err := os.Executable()
 	if err != nil {
-		fmt.Fprintln(invocation.stderr, "metasystem test run:", err)
+		invocation.fail("metasystem test run:", err)
 		return 1
 	}
 	workerEngine := engine
@@ -410,7 +601,7 @@ func runTestRunWith(invocation testRunInvocation, args []string) (exit int) {
 		workerCapabilities, capabilityErr := testrun.ReadWorkerCapabilities(capabilityContext, prepared, engine)
 		cancelCapabilities()
 		if capabilityErr != nil {
-			fmt.Fprintln(invocation.stderr, "metasystem test run:", capabilityErr)
+			invocation.fail("metasystem test run:", capabilityErr)
 			return proofrun.ExitAdmissionRefused
 		}
 		prepared.WorkerCapabilitiesChecked, prepared.WorkerScratchPolicies = true, workerCapabilities.ScratchEnvironmentPolicies
@@ -418,7 +609,7 @@ func runTestRunWith(invocation testRunInvocation, args []string) (exit int) {
 	}
 	unmark, markErr := proofrun.MarkManagedProofProcess()
 	if markErr != nil {
-		fmt.Fprintln(invocation.stderr, "metasystem test run: mark host admission process:", markErr)
+		invocation.fail("metasystem test run: mark host admission process:", markErr)
 		return proofrun.ExitAdmissionRefused
 	}
 	defer unmark()
@@ -431,7 +622,7 @@ func runTestRunWith(invocation testRunInvocation, args []string) (exit int) {
 		}, engineIO)
 	cancelBuild()
 	if err != nil {
-		fmt.Fprintln(invocation.stderr, "metasystem test run:", err)
+		invocation.fail("metasystem test run:", err)
 		var budgetRefusal *coldBuildBudgetRefusal
 		if errors.As(err, &budgetRefusal) {
 			return proofrun.ExitAdmissionRefused
@@ -442,12 +633,12 @@ func runTestRunWith(invocation testRunInvocation, args []string) (exit int) {
 	planDigest := proofrun.TestPlanDigest(prepared.EffectiveContract, prepared.Plan, prepared.CandidateTree)
 	manifestDigest, err := testrun.CandidateManifest(gittree.Workspace{Dir: prepared.ProjectRoot}, prepared.CandidateTree, scratch)
 	if err != nil {
-		fmt.Fprintln(invocation.stderr, "metasystem test run: capture candidate manifest:", err)
+		invocation.fail("metasystem test run: capture candidate manifest:", err)
 		return proofrun.ExitAdmissionRefused
 	}
 	preRequest := testrun.RunRequest(prepared, "", "", candidateEngine.Path, candidateEngine.Digest, candidateEngine.Commit)
 	if err := testrun.PrepareScratch(context.Background(), &preRequest, scratch, prepared); err != nil {
-		fmt.Fprintln(invocation.stderr, "metasystem test run: scratch environment:", err)
+		invocation.fail("metasystem test run: scratch environment:", err)
 		return proofrun.ExitAdmissionRefused
 	}
 	scratchEnvironment := preRequest.ScratchEnvironment
@@ -455,7 +646,7 @@ func runTestRunWith(invocation testRunInvocation, args []string) (exit int) {
 	metadataLease, leaseErr := proofrun.AcquireHostResources(metadataContext, controlRoot, prepared.ConfPath, "heavy", nil)
 	if leaseErr != nil {
 		cancelMetadata()
-		fmt.Fprintln(invocation.stderr, "metasystem test run: admit testing metadata preparation:", leaseErr)
+		invocation.fail("metasystem test run: admit testing metadata preparation:", leaseErr)
 		return proofrun.ExitAdmissionRefused
 	}
 	queueDurationMS := candidateEngine.QueueDurationMS + metadataLease.Waited().Milliseconds()
@@ -481,14 +672,14 @@ func runTestRunWith(invocation testRunInvocation, args []string) (exit int) {
 		identityInputs = append(identityInputs, "group-identity-unavailable:"+identityErr.Error())
 	}
 	if identityErr != nil {
-		fmt.Fprintln(invocation.stderr, "metasystem test run: bounded testing metadata preparation:", identityErr)
+		invocation.fail("metasystem test run: bounded testing metadata preparation:", identityErr)
 		return proofrun.ExitAdmissionRefused
 	}
 	freshGroups, maxFreshAge := testrun.FreshGroups(prepared, request)
 	if request.FreshEpisode == "" && len(freshGroups) != 0 {
 		request.FreshEpisode, err = testrun.NewFreshEpisode()
 		if err != nil {
-			fmt.Fprintln(invocation.stderr, "metasystem test run: create freshness episode:", err)
+			invocation.fail("metasystem test run: create freshness episode:", err)
 			return proofrun.ExitAdmissionRefused
 		}
 		if maxFreshAge > 0 && request.FreshExpiresAt == "" {
@@ -496,13 +687,13 @@ func runTestRunWith(invocation testRunInvocation, args []string) (exit int) {
 		}
 	}
 	if maxFreshAge > 0 && request.FreshExpiresAt == "" {
-		fmt.Fprintln(invocation.stderr, "metasystem test run: selected fresh group requires --fresh-expires-at")
+		invocation.fail("metasystem test run: selected fresh group requires --fresh-expires-at")
 		return proofrun.ExitAdmissionRefused
 	}
 	preRequest.FreshnessEpisode, preRequest.FreshnessExpiresAt = request.FreshEpisode, request.FreshExpiresAt
 	preRequest.FreshGroups = freshGroups
 	if err := testrun.BindFreshnessProjection(&preRequest, prepared.Installation); err != nil {
-		fmt.Fprintln(invocation.stderr, "metasystem test run: project freshness candidate:", err)
+		invocation.fail("metasystem test run: project freshness candidate:", err)
 		return proofrun.ExitAdmissionRefused
 	}
 	freshnessProjection := preRequest.FreshnessCandidateProjection
@@ -526,13 +717,13 @@ func runTestRunWith(invocation testRunInvocation, args []string) (exit int) {
 		CallerPID:                 invocation.callerPID}
 	attempt, decision, joined, err := commandAdmission.initial(request, admission)
 	if err != nil {
-		fmt.Fprintln(invocation.stderr, "metasystem test run:", err)
+		invocation.fail("metasystem test run:", err)
 		return proofrun.ExitAdmissionRefused
 	}
 	if decision.Disposition == proofrun.DispositionReusableSuccess {
 		attempts, readErr := proofrun.ReadAttempts(controlRoot)
 		if readErr != nil || identityErr != nil {
-			fmt.Fprintln(invocation.stderr, "metasystem test run: reusable component evidence is unreadable")
+			invocation.fail("metasystem test run: reusable component evidence is unreadable")
 			return 1
 		}
 		template := proofrun.NewTestResultAt(preRequest, commandClock())
@@ -541,8 +732,8 @@ func runTestRunWith(invocation testRunInvocation, args []string) (exit int) {
 			projection = proofrun.ReusedTestResult(template, attempts, identities, prepared.EffectiveContract)
 		}
 		if projection.Delivery.Sufficient {
-			if err := publishTestingResultTo(invocation.stdout, invocation.stderr, controlRoot, request.ResultPath, projection); err != nil {
-				fmt.Fprintln(invocation.stderr, "metasystem test run:", err)
+			if err := publishTestingResultTo(invocation.results(), invocation.stderr, controlRoot, request.ResultPath, projection); err != nil {
+				invocation.fail("metasystem test run:", err)
 				return 1
 			}
 			return decision.ExitStatus
@@ -552,28 +743,33 @@ func runTestRunWith(invocation testRunInvocation, args []string) (exit int) {
 		// under another goal). Run afresh instead of stranding the caller.
 		attempt, decision, joined, err = commandAdmission.forced(admission)
 		if err != nil {
-			fmt.Fprintln(invocation.stderr, "metasystem test run:", err)
+			invocation.fail("metasystem test run:", err)
 			return proofrun.ExitAdmissionRefused
 		}
 	}
 	if decision.Disposition != proofrun.DispositionExecuted {
 		if decision.Reason != "" {
-			fmt.Fprintln(invocation.stderr, decision.Reason)
+			invocation.fail(decision.Reason)
 		}
-		if err := proofrun.EncodeResult(invocation.stdout, request.ResultPath, decision); err != nil {
-			fmt.Fprintln(invocation.stderr, "metasystem test run: publish no-child result:", err)
+		if decision.Disposition == proofrun.DispositionRetryRequired {
+			invocation.record(testRunRetryRequired(decision))
+		}
+		// Under --json the decision is the envelope's data and PROOF-RESULT
+		// goes only to the result file, never stdout (R2).
+		if err := proofrun.EncodeResult(invocation.noChildResult(decision), request.ResultPath, decision); err != nil {
+			invocation.fail("metasystem test run: publish no-child result:", err)
 			return 1
 		}
 		return decision.ExitStatus
 	}
 	prepared.GoalID, prepared.AccountingRevision = attempt.AccountedGoal(), attempt.AccountedRevision()
 	if err := scratch.RecordAttempt(attempt.AttemptID); err != nil {
-		fmt.Fprintln(invocation.stderr, "metasystem test run: record scratch attempt:", err)
+		invocation.fail("metasystem test run: record scratch attempt:", err)
 		return retainIncompleteProofAttempt(invocation.stderr, controlRoot, attempt.AttemptID, joined, 1)
 	}
 	preRequest = testrun.RunRequest(prepared, "", "", candidateEngine.Path, candidateEngine.Digest, candidateEngine.Commit)
 	if err := testrun.BindScratch(&preRequest, scratch, nil, scratchEnvironment); err != nil {
-		fmt.Fprintln(invocation.stderr, "metasystem test run: scratch environment:", err)
+		invocation.fail("metasystem test run: scratch environment:", err)
 		return retainIncompleteProofAttempt(invocation.stderr, controlRoot, attempt.AttemptID, joined, 1)
 	}
 	preRequest.FreshnessEpisode, preRequest.FreshnessBinding, preRequest.FreshnessExpiresAt = request.FreshEpisode, freshBinding, request.FreshExpiresAt
@@ -586,7 +782,7 @@ func runTestRunWith(invocation testRunInvocation, args []string) (exit int) {
 	if identityErr == nil {
 		attempts, readErr := proofrun.ReadAttempts(controlRoot)
 		if readErr != nil {
-			fmt.Fprintln(invocation.stderr, "metasystem test run: read reusable component evidence:", readErr)
+			invocation.fail("metasystem test run: read reusable component evidence:", readErr)
 			return retainIncompleteProofAttempt(invocation.stderr, controlRoot, attempt.AttemptID, joined, 1)
 		}
 		reused := proofrun.ReusedTestResultExcludingWithPolicy(proofrun.NewTestResultAt(preRequest, commandClock()), attempts, identities,
@@ -599,7 +795,7 @@ func runTestRunWith(invocation testRunInvocation, args []string) (exit int) {
 	}
 	pathsRoot := filepath.Join(controlRoot, "artifacts", "agents", "proof-runs", attempt.AttemptID, "testing", planDigest)
 	if err := os.MkdirAll(pathsRoot, 0o700); err != nil {
-		fmt.Fprintln(invocation.stderr, "metasystem test run:", err)
+		invocation.fail("metasystem test run:", err)
 		return retainIncompleteProofAttempt(invocation.stderr, controlRoot, attempt.AttemptID, joined, 1)
 	}
 	runRequest := testrun.RunRequest(prepared, attempt.AttemptID, filepath.Join(pathsRoot, "groups"), candidateEngine.Path, candidateEngine.Digest, candidateEngine.Commit)
@@ -616,7 +812,7 @@ func runTestRunWith(invocation testRunInvocation, args []string) (exit int) {
 	packetPath, workerResultPath := filepath.Join(pathsRoot, "request.json"), filepath.Join(pathsRoot, "result.json")
 	deadline, deadlineCheck, err := proofDeadline(attempt.Deadline, commandClock)
 	if err != nil {
-		fmt.Fprintln(invocation.stderr, "metasystem test run: admit native testing:", err)
+		invocation.fail("metasystem test run: admit native testing:", err)
 		return retainIncompleteProofAttempt(invocation.stderr, controlRoot, attempt.AttemptID, joined, proofrun.ExitAdmissionRefused)
 	}
 	nativeContext, cancelNative := proofDeadlineContext(context.Background(), deadline, fixtureClock)
@@ -624,12 +820,12 @@ func runTestRunWith(invocation testRunInvocation, args []string) (exit int) {
 	var retained *proofrun.TestResult
 	workerEnvironment, err := testingWorkerEnvironment(prepared.Environment)
 	if err != nil {
-		fmt.Fprintln(invocation.stderr, "metasystem test run: export run owner:", err)
+		invocation.fail("metasystem test run: export run owner:", err)
 		return retainIncompleteProofAttempt(invocation.stderr, controlRoot, attempt.AttemptID, joined, 1)
 	}
 	workerEnvironment, err = authorizedFixtureClockEnvironment(controlRoot, workerEnvironment)
 	if err != nil {
-		fmt.Fprintln(invocation.stderr, "metasystem test run: export fixture clock:", err)
+		invocation.fail("metasystem test run: export fixture clock:", err)
 		return retainIncompleteProofAttempt(invocation.stderr, controlRoot, attempt.AttemptID, joined, 1)
 	}
 	workerEnvironment = resolvedTestWorkerEnvironment(workerEnvironment, limits.workers)
@@ -639,7 +835,7 @@ func runTestRunWith(invocation testRunInvocation, args []string) (exit int) {
 			continue
 		}
 		if _, err := proofrun.WaitForTestProducerWithWaitCheck(nativeContext, controlRoot, attempt, id, deadlineCheck); err != nil {
-			fmt.Fprintln(invocation.stderr, "metasystem test run: await shared producer:", err)
+			invocation.fail("metasystem test run: await shared producer:", err)
 			return retainIncompleteProofAttempt(invocation.stderr, controlRoot, attempt.AttemptID, joined, 1)
 		}
 	}
@@ -649,7 +845,7 @@ func runTestRunWith(invocation testRunInvocation, args []string) (exit int) {
 	if resourceClass != "" {
 		nativeLease, err = proofrun.AcquireHostResourcesWithWaitCheck(nativeContext, controlRoot, prepared.ConfPath, resourceClass, exclusive, deadlineCheck)
 		if err != nil {
-			fmt.Fprintln(invocation.stderr, "metasystem test run: admit native testing:", err)
+			invocation.fail("metasystem test run: admit native testing:", err)
 			return retainIncompleteProofAttempt(invocation.stderr, controlRoot, attempt.AttemptID, joined, 1)
 		}
 		defer nativeLease.Close()
@@ -657,16 +853,16 @@ func runTestRunWith(invocation testRunInvocation, args []string) (exit int) {
 	}
 	// The worker sees the writer after the host lease files (LaunchSuite).
 	if err := testrun.BindScratch(&runRequest, scratch, scratch.Locator(proofrun.ScratchWriterFD(nativeLease.Files())), scratchEnvironment); err != nil {
-		fmt.Fprintln(invocation.stderr, "metasystem test run: scratch environment:", err)
+		invocation.fail("metasystem test run: scratch environment:", err)
 		return retainIncompleteProofAttempt(invocation.stderr, controlRoot, attempt.AttemptID, joined, 1)
 	}
 	if err := writePrivateJSON(packetPath, runRequest); err != nil {
-		fmt.Fprintln(invocation.stderr, "metasystem test run:", err)
+		invocation.fail("metasystem test run:", err)
 		return retainIncompleteProofAttempt(invocation.stderr, controlRoot, attempt.AttemptID, joined, 1)
 	}
 	packetDigest, err := fileSHA256(packetPath)
 	if err != nil {
-		fmt.Fprintln(invocation.stderr, "metasystem test run:", err)
+		invocation.fail("metasystem test run:", err)
 		return retainIncompleteProofAttempt(invocation.stderr, controlRoot, attempt.AttemptID, joined, 1)
 	}
 	launchStatus := proofrun.LaunchSuite(proofrun.LaunchOptions{Suite: "testing", Root: prepared.ProjectRoot,
@@ -704,12 +900,12 @@ func runTestRunWith(invocation testRunInvocation, args []string) (exit int) {
 	if retained != nil {
 		if joined {
 			if _, err := proofrun.RecordTestResultAt(controlRoot, attempt.AttemptID, *retained, commandClock()); err != nil {
-				fmt.Fprintln(invocation.stderr, "metasystem test run: retain joined result:", err)
+				invocation.fail("metasystem test run: retain joined result:", err)
 				return 1
 			}
 		}
-		if err := publishTestingResultTo(invocation.stdout, invocation.stderr, controlRoot, request.ResultPath, *retained); err != nil {
-			fmt.Fprintln(invocation.stderr, "metasystem test run:", err)
+		if err := publishTestingResultTo(invocation.results(), invocation.stderr, controlRoot, request.ResultPath, *retained); err != nil {
+			invocation.fail("metasystem test run:", err)
 			return 1
 		}
 	}
@@ -871,19 +1067,19 @@ func runTestWorkerWithCandidateOpener(args []string, opener func(string, string)
 func frozenPolicyProbeRefusal(request proofrun.TestRunRequest, resultPath string) string {
 	switch {
 	case request.Contract.SchemaVersion != 1:
-		return fmt.Sprintf("contract schema=%d, want 1", request.Contract.SchemaVersion)
+		return fmt.Sprintf("its contract has schema %d, not 1", request.Contract.SchemaVersion)
 	case len(request.Contract.Groups) != 1:
-		return fmt.Sprintf("contract group count=%d, want 1", len(request.Contract.Groups))
+		return fmt.Sprintf("its contract has %d groups, not 1", len(request.Contract.Groups))
 	case request.Contract.Groups[0].ID != "literal":
-		return fmt.Sprintf("contract group=%q, want literal", request.Contract.Groups[0].ID)
+		return fmt.Sprintf("its contract's group is %q, not literal", request.Contract.Groups[0].ID)
 	case len(request.Plan.SelectedGroups) != 1:
-		return fmt.Sprintf("selected group count=%d, want 1", len(request.Plan.SelectedGroups))
+		return fmt.Sprintf("its plan selects %d groups, not 1", len(request.Plan.SelectedGroups))
 	case request.Plan.SelectedGroups[0] != "literal":
-		return fmt.Sprintf("selected group=%q, want literal", request.Plan.SelectedGroups[0])
+		return fmt.Sprintf("its plan selects %q, not literal", request.Plan.SelectedGroups[0])
 	case !strings.HasPrefix(filepath.Base(request.ProjectRoot), "metasystem-policy-probe."):
-		return fmt.Sprintf("project root base=%q lacks metasystem-policy-probe prefix", filepath.Base(request.ProjectRoot))
+		return fmt.Sprintf("its project directory %q is not named metasystem-policy-probe.*", filepath.Base(request.ProjectRoot))
 	case filepath.Dir(resultPath) != request.ProjectRoot:
-		return fmt.Sprintf("result directory=%q differs from project root=%q", filepath.Dir(resultPath), request.ProjectRoot)
+		return fmt.Sprintf("its result goes to %q, outside its project directory %q", filepath.Dir(resultPath), request.ProjectRoot)
 	default:
 		return ""
 	}
@@ -901,8 +1097,14 @@ func runTestVerifyAs(name string, args []string, stdout, stderr io.Writer) int {
 		return status
 	}
 	if request.Tree == "" {
-		fmt.Fprintf(stderr, "%s needs the tree to check; nothing was read\nrun: metasystem test status --tree TREE\n", commandLabel(name))
+		page := passthroughPage(stderr, request.Root, request.Verbose)
+		page.Refusal(commandLabel(name)+" needs the tree to check; nothing was read",
+			textui.Hint{Argv: []string{"metasystem", "test", "status", "--tree", "TREE"}, Reason: "TREE is the exact tree, as git write-tree prints it"})
+		printPage(stderr, page)
 		return 2
+	}
+	if _, public := publicCommand(name); public && !jsonOutput {
+		return testStatusTo(stdout, stderr, request)
 	}
 	return testVerifyTo(stdout, stderr, request, jsonOutput)
 }
@@ -913,7 +1115,9 @@ func testVerifyTo(stdout, stderr io.Writer, request testrun.SelectionRequest, js
 	result, err := verifyRetainedTesting(request)
 	if err != nil {
 		printMovedProofInputsWithoutCandidateEngine(stderr, request)
-		printTestingRefusal(stderr, err, request.Verbose)
+		// The internal verify and the landing path read these two lines as
+		// they always were.
+		printTestingRefusalAs(stderr, err, request, true)
 		return 1
 	}
 	if jsonOutput {
@@ -927,6 +1131,36 @@ func testVerifyTo(stdout, stderr io.Writer, request testrun.SelectionRequest, js
 			strings.Join(result.Delivery.MissingGroups, ","), request.Root, request.GoalID, result.CandidateTree)
 		return 1
 	}
+	return 0
+}
+
+// testStatusTo is test status for a person: whether the tree is proven for
+// delivery, or which groups no passing run covers and the run that covers
+// them; it launches nothing.
+func testStatusTo(stdout, stderr io.Writer, request testrun.SelectionRequest) int {
+	result, err := verifyRetainedTesting(request)
+	if err != nil {
+		printMovedProofInputsWithoutCandidateEngine(stderr, request)
+		printTestingRefusal(stderr, err, request)
+		return 1
+	}
+	if !result.Delivery.Sufficient {
+		printMovedProofInputs(stderr, request, result)
+		retry := []string{"metasystem", "test", "run", "--root", request.Root}
+		if request.GoalID != "" {
+			retry = append(retry, "--goal", request.GoalID)
+		}
+		page := passthroughPage(stderr, request.Root, request.Verbose)
+		page.Refusal(fmt.Sprintf("no passing test run covers %s on tree %s: %s", textui.Count(len(result.Delivery.MissingGroups), "group", "groups"),
+			textui.SHA(result.CandidateTree), strings.Join(result.Delivery.MissingGroups, ", ")),
+			textui.Hint{Argv: append(retry, "--tree", result.CandidateTree, "--mode", "auto"), Reason: "runs them"})
+		printPage(stderr, page)
+		return 1
+	}
+	page := passthroughPage(stdout, request.Root, request.Verbose)
+	page.Mark(textui.Done, fmt.Sprintf("Tree %s is proven for delivery", textui.SHA(result.CandidateTree)))
+	page.Facts(textui.KV{Key: "groups", Value: []textui.Span{textui.Plain(strings.Join(result.SelectedGroups, ", "))}})
+	printPage(stdout, page)
 	return 0
 }
 
@@ -1033,17 +1267,56 @@ const movedInputsCode = "proof-input-moved-after-receipt"
 
 func printMovedInputsCode(stderr io.Writer, verbose bool) {
 	if verbose {
-		fmt.Fprintln(stderr, "  code "+movedInputsCode)
+		fmt.Fprintln(stderr, "  "+movedInputsCode)
 	}
 }
 
 // printTestingRefusal prints a testing refusal as a person reads it, and
-// with verbose the detail behind it: the code, the cause and its facts.
-func printTestingRefusal(stderr io.Writer, err error, verbose bool) {
-	fmt.Fprintln(stderr, err)
-	if detail := refusal.Detail(err); verbose && detail != "" {
-		fmt.Fprintln(stderr, "  "+detail)
+// with --verbose the detail behind it: the code, the cause and its facts.
+// When the pinned engine that chooses the tests failed, its remedy is that
+// engine's internal command; a person runs the public test plan with
+// --verbose instead, which shows the engine's own words and names the
+// internal command.
+func printTestingRefusal(stderr io.Writer, err error, request testrun.SelectionRequest) {
+	printTestingRefusalAs(stderr, err, request, false)
+}
+
+// printTestingRefusalAs is printTestingRefusal; with plain it is the two
+// lines --json has always printed beside its JSON line.
+func printTestingRefusalAs(stderr io.Writer, err error, request testrun.SelectionRequest, plain bool) {
+	text, detail := err.Error(), refusal.Detail(err)
+	var engine *enginecause.Refusal
+	if errors.As(err, &engine) && (engine.Token == "child-failed" || engine.Token == "child-output") {
+		// An engine that refused in its own two lines already names what
+		// resolves it; otherwise the public plan shows why.
+		text = engine.Reason
+		if !strings.Contains(text, "\nrun: ") {
+			retry := []string{"metasystem", "test", "plan", "--verbose"}
+			if request.GoalID != "" {
+				retry = append(retry, "--goal", request.GoalID)
+			}
+			if request.Tree != "" {
+				retry = append(retry, "--tree", request.Tree)
+			}
+			text += "\nrun: " + shellCommand(retry)
+		}
+		// The detail names the engine and the command it ran.
+		detail = engine.Detail()
 	}
+	if plain {
+		fmt.Fprintln(stderr, text)
+		if request.Verbose && detail != "" {
+			fmt.Fprintln(stderr, "  "+detail)
+		}
+		return
+	}
+	reason, remedy, _ := strings.Cut(text, "\nrun: ")
+	page := passthroughPage(stderr, request.Root, request.Verbose)
+	page.Refusal(reason, textui.Hint{Reason: remedy})
+	if request.Verbose && detail != "" {
+		page.Section("Details", "").Text(detail)
+	}
+	printPage(stderr, page)
 }
 
 func printMovedProofInputsWithoutCandidateEngine(stderr io.Writer, request testrun.SelectionRequest) {

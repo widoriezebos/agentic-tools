@@ -75,7 +75,7 @@ func runMissionRunnerRunLoop(args []string, stdout, stderr io.Writer) int {
 			case "--root", "--mission", "--mode", "--instance-tag", "--start-signal", "--fence-generation", "--ignore-term":
 			default:
 				if strings.HasPrefix(arg, "--") {
-					return refuseUnknownOption(stdout, stderr, "mission run-loop", arg, "it takes --root, --mission, --mode, --instance-tag, --start-signal, --fence-generation, --ignore-term")
+					return refuseUnknownOption(stdout, stderr, "mission run-loop", arg, "options: --root --mission --mode --instance-tag --start-signal --fence-generation --ignore-term")
 				}
 			}
 		}

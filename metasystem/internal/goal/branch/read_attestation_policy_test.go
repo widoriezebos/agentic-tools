@@ -706,7 +706,7 @@ func TestCriticAttestationSurvivesFreshCloneWithoutJobStore(t *testing.T) {
 	f.snapshots[tampered] = policySnapshotCopy(f.snapshots[f.tip])
 	f.snapshots[tampered][bundlePath] = append(f.snapshots[tampered][bundlePath], ' ')
 	f.expectValidation(f.clone, tampered, true)
-	if _, err := validateAttestation(f, f.clone, tampered, f.base, "goal-a", "u1", f.unit, map[string]bool{}); err == nil || !strings.Contains(err.Error(), "fails its digest") {
+	if _, err := validateAttestation(f, f.clone, tampered, f.base, "goal-a", "u1", f.unit, map[string]bool{}); err == nil || !strings.Contains(err.Error(), "changed after the review") {
 		t.Fatalf("tampered bundle: %v", err)
 	}
 	for i, unsafe := range []string{"../escape.json", "/absolute.json", "C:/absolute.json"} {
@@ -728,7 +728,7 @@ func TestCriticAttestationSurvivesFreshCloneWithoutJobStore(t *testing.T) {
 		}
 		f.snapshots[snapshot][attPath] = policyCanonical(t, changed)
 		f.expectValidation(f.clone, snapshot, true)
-		if _, err := validateAttestation(f, f.clone, snapshot, f.base, "goal-a", "u1", f.unit, map[string]bool{}); err == nil || !strings.Contains(err.Error(), "unsafe path") {
+		if _, err := validateAttestation(f, f.clone, snapshot, f.base, "goal-a", "u1", f.unit, map[string]bool{}); err == nil || !strings.Contains(err.Error(), "name a path outside them") {
 			t.Fatalf("unsafe path %q: %v", unsafe, err)
 		}
 	}

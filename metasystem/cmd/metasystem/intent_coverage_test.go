@@ -28,7 +28,7 @@ var publicPairs = []string{
 	"agent ask", "agent reply", "agent inbox",
 	"incident list", "incident claim", "incident close",
 	"status",
-	"helm take", "helm return",
+	"helm take", "helm return", "helm status",
 	"session start", "session stop", "session status", "session handoff", "session isolate", "session wait",
 	"mission start", "mission status", "mission resume", "mission seal", "mission repair",
 	"system start", "system stop", "system restart", "system status", "system check", "system enroll", "system setup", "system adopt", "system completion",

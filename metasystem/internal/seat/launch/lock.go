@@ -52,7 +52,7 @@ func Take(path, machine, id string) (*Lock, error) {
 		_ = file.Close()
 		if err == syscall.EWOULDBLOCK || err == syscall.EAGAIN {
 			return nil, refuse(CodeRunning,
-				"another launch is running on this host%s; one machine joins at a time", held)
+				"another launch is running on this host%s, and one machine joins at a time", held).run("metasystem machine list --verbose")
 		}
 		return nil, err
 	}

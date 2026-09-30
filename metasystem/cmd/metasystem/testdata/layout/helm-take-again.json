@@ -1,0 +1,30 @@
+exit 0
+--
+{
+  "schemaVersion": 1,
+  "verb": "helm take",
+  "targets": [
+    {
+      "kind": "seat",
+      "id": "/Users/wido/GitHub/agentic-tools-m1e"
+    }
+  ],
+  "outcome": "unchanged",
+  "summary": "applied: HUMAN AT THE HELM since 21:14 CEST (2026-09-28) by Wido: coordinating the verb batches — metasystem helm return ends it",
+  "data": {
+    "helm": {
+      "schema": 1,
+      "by": "Wido",
+      "at": "2026-09-28T19:14:03Z",
+      "reason": "coordinating the verb batches",
+      "machine": "m1e",
+      "checkout": "/Users/wido/GitHub/agentic-tools-m1e",
+      "enrollment": "proven",
+      "enrolledAs": "Wido",
+      "leader": "login",
+      "leaderRef": "10@100"
+    }
+  }
+}
+
+--

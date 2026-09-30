@@ -1,0 +1,2 @@
+✗ design check needs the plan to check; nothing was checked
+  → metasystem design check FILE  FILE is the plan; several may be named

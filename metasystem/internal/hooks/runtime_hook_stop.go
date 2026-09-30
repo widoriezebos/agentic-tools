@@ -373,7 +373,7 @@ func (l *lifecycle) end() {
 		}
 	}
 	if ops.SessionEnd(l.repo, l.session) != 0 {
-		_ = writeLine(inv.Stdout, l.surface("Metasystem could not durably retire this session's unused stop authorization; later stops must treat it as unsafe."))
+		_ = writeLine(inv.Stdout, l.surface("MetaSystem could not withdraw this session's unused stop permission; later stops treat it as unsafe\nrun: metasystem system check"))
 	}
 	if l.identity == "" {
 		_ = writeLine(inv.Stdout, l.surface("Metasystem supervision could not identify the immediate "+inv.Runtime+" agent process; arming was refused."))
@@ -689,7 +689,7 @@ func (s *stopRun) decide() {
 	// that is not the one holding it. An unidentified caller is not an
 	// advisor.
 	if s.mainClass == "MAIN" && s.mainHolder != "true" {
-		message := "OWNED-ELSEWHERE: this main is a read-only advisor in this checkout. To write independently, run metasystem session isolate."
+		message := "This session only advises here: another main session holds this checkout\nrun: metasystem session isolate  (to write on your own)"
 		if s.upFailure != "" {
 			message += "\n" + s.upFailure
 		}
@@ -828,7 +828,7 @@ func (s *stopRun) decide() {
 		s.appendStopCondition("infrastructure", cause, component, "degraded-allow")
 		// The verdict's own state could not be read or written: the notice
 		// says so in fixed words, names the owner and carries the detail.
-		display = "turn-verdict degraded: stopping is allowed on degraded infrastructure; the steward owns repair. Cause: " + cause + ". Component: " + component + ".\n" + display
+		display = "The stop check could not read its own state, so this stop is allowed\nnothing to do; the steward repairs it (cause " + cause + ", part " + component + ")\n" + display
 	}
 	if verdictReadable && verdictClass == "idle-with-backlog" && shouldBlock == "true" && countSpent == "false" {
 		s.appendStopCondition("idle-with-backlog", "idle-refusal-count-not-spent", "verdict-state", "refused-uncounted")

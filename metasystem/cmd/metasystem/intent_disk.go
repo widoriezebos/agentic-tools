@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/evidence"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gocache"
@@ -126,6 +127,7 @@ func diskIntentCommands() []intentCommand {
 			maxArgs:  0,
 			examples: []string{"metasystem disk show", "metasystem disk show --json"},
 			run:      runIntentDiskShow,
+			laidOut:  true,
 		},
 		{
 			object: "disk", action: "clean", audience: "both", summary: "reclaim disk space MetaSystem can prove is no longer needed, and trim its caches, now",
@@ -160,6 +162,7 @@ func diskIntentCommands() []intentCommand {
 			maxArgs:  0,
 			examples: []string{"metasystem disk clean --preview", "metasystem disk clean", "metasystem disk clean --go-cache", "metasystem disk clean --strays --plan 01K2Z7Q3M8XW1V0P9D4J6S5R2T"},
 			run:      runIntentDiskClean,
+			laidOut:  true,
 		},
 	}
 }
@@ -183,28 +186,183 @@ func runIntentDiskShow(inv *intentInvocation) int {
 		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "disk show: the home state root cannot be found: " + err.Error(),
 			Decision: "set HOME to your home directory and run metasystem disk show again"})
 	}
-	var lines []string
 	data := map[string]any{}
+	var passes []diskPassView
 	for _, source := range []struct{ name, path string }{{"checkout", diskstore.CheckoutReportPath(top)}, {"machine", diskstore.MachineReportPath(home)}} {
 		report, err := diskstore.ReadReport(source.path)
+		pass := diskPassView{kind: source.name}
 		switch {
 		case errors.Is(err, os.ErrNotExist):
-			lines = append(lines, fmt.Sprintf("%s: no pass has run yet; metasystem disk clean --preview shows what one would do", source.name))
+			pass.missing = "no pass has run yet"
 		case err != nil:
-			lines = append(lines, fmt.Sprintf("%s: %v; metasystem disk clean writes a fresh report", source.name, err))
+			pass.missing = err.Error() + "; metasystem disk clean writes a fresh report"
 		default:
-			lines = append(lines, diskReportLines(inv, report)...)
 			data[source.name] = report
+			pass.report = &report
 		}
+		passes = append(passes, pass)
 	}
 	cacheLines, caches := diskCacheLines(owners)
-	lines = append(lines, cacheLines...)
 	if caches != nil {
 		data["caches"] = caches
 	}
-	lines = append(lines, diskEvidenceRootLines(inv.layout.InstallationRoot, home)...)
-	return inv.render(intentResult{Outcome: intentConfirmed, Summary: "what MetaSystem keeps on this computer's disk", text: lines, Data: data,
-		Targets: []intentTarget{{Kind: "checkout", ID: top}}})
+	root, rootProblem := diskEvidenceRoot(inv.layout.InstallationRoot)
+	return inv.render(intentResult{Outcome: intentConfirmed, Summary: "what MetaSystem keeps on this computer's disk", Data: data,
+		Targets: []intentTarget{{Kind: "checkout", ID: top}},
+		view: func(page *textui.Page) {
+			page.Headline("What MetaSystem keeps on this computer's disk", diskFreeFact(passes))
+			diskPassSections(page, passes)
+			diskCacheSection(page, caches, cacheLines)
+			section := page.Section("Evidence", "")
+			if rootProblem != "" {
+				section.Text(shortPaths(page.Env(), rootProblem))
+			} else {
+				section.KV("root", textui.Plain(page.Env().Path(root.Path)), textui.Dim("  "+diskOrigin(root.Origin)))
+			}
+			if hint, ok := diskPreviewHint(passes); ok {
+				page.Hint(hint)
+			}
+		}})
+}
+
+// diskPassView is one pass report as disk show and disk clean lay it out:
+// the report, or why there is none.
+type diskPassView struct {
+	kind    string // checkout or machine
+	report  *diskstore.Report
+	missing string
+}
+
+// diskFreeFact is the headline's free space: the fullest volume a report
+// measured, against the floor.
+func diskFreeFact(passes []diskPassView) string {
+	var least *diskstore.Volume
+	for _, pass := range passes {
+		if pass.report == nil {
+			continue
+		}
+		for index := range pass.report.Volumes {
+			volume := pass.report.Volumes[index]
+			if least == nil || volume.FreeBytes < least.FreeBytes {
+				least = &volume
+			}
+		}
+	}
+	if least == nil {
+		return ""
+	}
+	fact := textui.Bytes(least.FreeBytes) + " free, floor " + textui.Bytes(least.FloorBytes)
+	if least.BelowFloor {
+		fact = textui.Bytes(least.FreeBytes) + " free, below the " + textui.Bytes(least.FloorBytes) + " floor"
+	}
+	return fact
+}
+
+// diskPassSections lays out each pass report under its own heading: the
+// checkout's and the machine's.
+func diskPassSections(page *textui.Page, passes []diskPassView) {
+	env := page.Env()
+	for _, pass := range passes {
+		title, aside := "This checkout", ""
+		if pass.kind == "machine" {
+			title = "This machine"
+		}
+		if pass.report == nil {
+			page.Section(title, "").Text(shortPaths(env, pass.missing))
+			continue
+		}
+		var facts []string
+		if pass.kind == "checkout" && pass.report.Name != "" {
+			facts = append(facts, env.Path(pass.report.Name))
+		}
+		if !pass.report.At.IsZero() {
+			when := "last pass " + env.Time(pass.report.At)
+			if pass.report.Mode != "" && pass.report.Mode != diskstore.ModeApply {
+				when += " (" + string(pass.report.Mode) + ")"
+			}
+			facts = append(facts, when)
+		}
+		aside = strings.Join(facts, " · ")
+		section := page.Section(title, aside)
+		rows := pass.report.Rows(page.Verbose())
+		if len(rows) == 0 {
+			section.Text("nothing kept")
+		}
+		for _, row := range rows {
+			section.Text(shortPaths(env, row))
+		}
+	}
+}
+
+// diskPreviewHint is the one next command after a report: a preview, when
+// a pass is missing or a report holds what a person may act on.
+func diskPreviewHint(passes []diskPassView) (textui.Hint, bool) {
+	for _, pass := range passes {
+		if pass.report == nil || len(pass.report.Strays) > 0 || len(pass.report.Planned) > 0 || len(pass.report.Pending) > 0 {
+			return textui.Hint{Argv: []string{"metasystem", "disk", "clean", "--preview"}, Reason: "shows what a pass would release"}, true
+		}
+	}
+	return textui.Hint{}, false
+}
+
+// diskCacheSection lays out the machine caches as the last trim left them.
+func diskCacheSection(page *textui.Page, caches []gocache.TrimReport, lines []string) {
+	env := page.Env()
+	if caches == nil {
+		section := page.Section("Caches", "")
+		for _, line := range lines {
+			section.Text(shortPaths(env, strings.TrimPrefix(line, "caches: ")))
+		}
+		return
+	}
+	summary, _ := diskTrimSummary(caches)
+	section := page.Section("Caches", "")
+	section.Text(summary)
+	for _, report := range caches {
+		section.Text(shortPaths(env, diskTrimPersonLine(report)))
+	}
+}
+
+// diskTrimPersonLine is one cache's line under the person's name for it.
+func diskTrimPersonLine(report gocache.TrimReport) string {
+	line := diskTrimLine(report)
+	return strings.TrimPrefix(diskCacheName(report.Cache), "the ") + strings.TrimPrefix(line, report.Cache)
+}
+
+// diskEvidenceRoot is this checkout's evidence root, or why the settings
+// cannot name it.
+func diskEvidenceRoot(installation string) (config.EvidenceRoot, string) {
+	settings, err := diskstore.LoadSettings(filepath.Join(installation, "metasystem.conf"), nil)
+	if err != nil {
+		return config.EvidenceRoot{}, "unknown: the settings cannot be read (" + err.Error() + "); metasystem settings check names the fix"
+	}
+	return settings.EvidenceRoot, ""
+}
+
+// diskOrigin says where a setting's value comes from.
+func diskOrigin(origin string) string {
+	switch origin {
+	case "conf-local":
+		return "set in metasystem.conf.local"
+	case "conf":
+		return "set in metasystem.conf"
+	case "default":
+		return "the default"
+	}
+	return origin
+}
+
+// shortPaths spells the paths a line names as a person reads them:
+// repo-relative inside this checkout, ~/ elsewhere under the home
+// directory (P6). A line keeps its words; only the path prefixes change.
+func shortPaths(env textui.Env, text string) string {
+	if repo := strings.TrimSuffix(env.Repo, "/"); repo != "" {
+		text = strings.ReplaceAll(text, repo+"/", "")
+	}
+	if home := strings.TrimSuffix(env.Home, "/"); home != "" {
+		text = strings.ReplaceAll(text, home+"/", "~/")
+	}
+	return text
 }
 
 // diskCacheLines are the machine caches as the last trim pass left them,
@@ -230,17 +388,6 @@ func diskCacheLines(owners diskOwners) ([]string, []gocache.TrimReport) {
 		lines = append(lines, "  "+diskTrimLine(report))
 	}
 	return lines, reports
-}
-
-// diskEvidenceRootLines names this checkout's evidence root. Every root of
-// the host, with its owner, is in the machine pass's report above (the
-// evidence bound, 3.12).
-func diskEvidenceRootLines(installation, home string) []string {
-	settings, err := diskstore.LoadSettings(filepath.Join(installation, "metasystem.conf"), nil)
-	if err != nil {
-		return []string{"evidence root of this checkout: unknown, the settings cannot be read: " + err.Error() + "; run metasystem settings check"}
-	}
-	return []string{"evidence root of this checkout: " + settings.EvidenceRoot.Path + " (" + settings.EvidenceRoot.Origin + ")"}
 }
 
 func runIntentDiskClean(inv *intentInvocation) int {
@@ -311,7 +458,19 @@ func runIntentDiskClean(inv *intentInvocation) int {
 		if len(plans) > 0 {
 			summary += "; plan " + strings.Join(plans, ", ")
 		}
-		return inv.render(intentResult{Outcome: intentConfirmed, Summary: summary, text: lines, Data: data})
+		passes := []diskPassView{{kind: "checkout", report: &result.Checkout}, {kind: "machine", report: &result.Machine}}
+		return inv.render(intentResult{Outcome: intentConfirmed, Summary: summary, text: lines, Data: data, view: func(page *textui.Page) {
+			fact := ""
+			if len(plans) > 0 {
+				fact = "plan " + strings.Join(plans, ", ")
+			}
+			page.Headline("Preview: nothing was changed", fact)
+			diskPassSections(page, passes)
+			if len(result.Machine.Strays) > 0 && result.Machine.Plan != "" {
+				page.Hint(textui.Hint{Argv: []string{"metasystem", "disk", "clean", "--strays", "--plan", result.Machine.Plan},
+					Reason: "a person removes the strays it lists"})
+			}
+		}})
 	}
 	released := len(result.Checkout.Actions) + len(result.Machine.Actions)
 	trimmed, trimLines, trimData, trimProblem := diskTrim(inv, owners)
@@ -322,24 +481,40 @@ func runIntentDiskClean(inv *intentInvocation) int {
 		trimProblem.Data = data
 		return inv.render(*trimProblem)
 	}
-	summary := diskCleanStoresSummary(result, released)
+	summary := diskCleanStoresSummary(result, released, func(n int) string { return fmt.Sprintf("%d store(s)", n) })
+	headline := diskCleanStoresSummary(result, released, func(n int) string { return textui.Count(n, "store", "stores") })
 	if len(result.Forgotten) > 0 {
 		data["forgotten"] = result.Forgotten
-		summary += fmt.Sprintf("; forgot the stale registrations of %d removed %s", len(result.Forgotten), diskPlural(len(result.Forgotten), "checkout", "checkouts"))
+		forgot := fmt.Sprintf("; forgot the stale registrations of %d removed %s", len(result.Forgotten), diskPlural(len(result.Forgotten), "checkout", "checkouts"))
+		summary += forgot
+		headline += forgot
 	}
 	trimSummary, _ := diskTrimSummary(trimData)
 	summary += "; " + trimSummary
+	outcome := intentConfirmed
 	if released == 0 && trimmed == 0 && len(result.Forgotten) == 0 {
-		return inv.render(intentResult{Outcome: intentUnchanged, Summary: summary, text: lines, Data: data})
+		outcome = intentUnchanged
 	}
-	return inv.render(intentResult{Outcome: intentConfirmed, Summary: summary, text: lines, Data: data})
+	passes := []diskPassView{{kind: "checkout", report: &result.Checkout}, {kind: "machine", report: &result.Machine}}
+	return inv.render(intentResult{Outcome: outcome, Summary: summary, text: lines, Data: data, view: func(page *textui.Page) {
+		if outcome == intentConfirmed {
+			page.Done(headline)
+		} else {
+			page.Headline(headline)
+		}
+		diskPassSections(page, passes)
+		diskCacheSection(page, trimData, nil)
+		if hint, ok := diskPreviewHint(passes); ok {
+			page.Hint(hint)
+		}
+	}})
 }
 
 // diskCleanStoresSummary tells what the passes did with the stores, never
 // more than they did: a pass whose settings are unknown acted on nothing,
 // and a machine pass another steward is running is not this one's.
-func diskCleanStoresSummary(result steward.DiskPassResult, released int) string {
-	summary := fmt.Sprintf("released %d store(s)", released)
+func diskCleanStoresSummary(result steward.DiskPassResult, released int, stores func(int) string) string {
+	summary := "released " + stores(released)
 	if released == 0 {
 		summary = "nothing to release; every store is kept, pending or in use"
 	}
@@ -351,7 +526,7 @@ func diskCleanStoresSummary(result steward.DiskPassResult, released int) string 
 		unknown = append(unknown, "the machine pass acted on nothing: the host settings are unknown")
 	}
 	if len(unknown) > 0 {
-		lead := fmt.Sprintf("released %d store(s); ", released)
+		lead := "released " + stores(released) + "; "
 		if released == 0 {
 			lead = ""
 		}
@@ -477,23 +652,35 @@ func renderPersonOutcomes(inv *intentInvocation, act, many, by string, outcomes 
 		}
 	}
 	data := map[string]any{"by": by, "outcomes": outcomes}
-	summary := fmt.Sprintf("%s: %d done", act, done)
-	if freed := diskstore.Freed(outcomes); freed > 0 {
-		summary += fmt.Sprintf(", %s freed", textui.BytesMiB(freed))
-	}
-	if declined > 0 {
-		summary = fmt.Sprintf("%s: %d done, %d kept with the reason and the command that settles each", act, done, declined)
+	// The summary carries its size as --json always did; the page's
+	// headline in a person's units.
+	told := func(size func(int64) string) string {
+		summary := fmt.Sprintf("%s: %d done", act, done)
 		if freed := diskstore.Freed(outcomes); freed > 0 {
-			summary += fmt.Sprintf("; %s freed", textui.BytesMiB(freed))
+			summary += fmt.Sprintf(", %s freed", size(freed))
 		}
+		if declined > 0 {
+			summary = fmt.Sprintf("%s: %d done, %d kept with the reason and the command that settles each", act, done, declined)
+			if freed := diskstore.Freed(outcomes); freed > 0 {
+				summary += fmt.Sprintf("; %s freed", size(freed))
+			}
+		}
+		if !verbose && len(lines) < len(outcomes) {
+			summary += "; --verbose prints every item"
+		}
+		return summary
 	}
-	if !verbose && len(lines) < len(outcomes) {
-		summary += "; --verbose prints every item"
-	}
+	summary, headline := told(textui.BytesMiB), told(textui.Bytes)
 	if len(outcomes) == 0 {
 		return inv.render(intentResult{Outcome: intentUnchanged, Summary: "the plan lists no " + act + "; nothing to do", Data: data})
 	}
-	return inv.render(intentResult{Outcome: intentConfirmed, Summary: summary, text: lines, Data: data})
+	return inv.render(intentResult{Outcome: intentConfirmed, Summary: summary, text: lines, Data: data, view: func(page *textui.Page) {
+		page.Done(headline)
+		section := page.Section("", "")
+		for _, line := range lines {
+			section.Text(shortPaths(page.Env(), strings.TrimSpace(line)))
+		}
+	}})
 }
 
 // diskReportLines is a pass report for a person: grouped, or every item
@@ -594,7 +781,14 @@ func runDiskGoCache(inv *intentInvocation, owners diskOwners) int {
 		return inv.render(*problem)
 	}
 	summary, _ := diskTrimSummary(reports)
-	return inv.render(intentResult{Outcome: intentConfirmed, Summary: summary, text: lines, Data: map[string]any{"caches": reports}})
+	return inv.render(intentResult{Outcome: intentConfirmed, Summary: summary, text: lines, Data: map[string]any{"caches": reports},
+		view: func(page *textui.Page) {
+			page.Done(summary)
+			section := page.Section("Caches", "")
+			for _, report := range reports {
+				section.Text(shortPaths(page.Env(), diskTrimPersonLine(report)))
+			}
+		}})
 }
 
 // diskCacheNames are the machine caches as a person names them.

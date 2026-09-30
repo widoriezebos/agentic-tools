@@ -416,7 +416,7 @@ func intentPlanningCommands() []intentCommand {
 			run:      runIntentGrantList,
 		},
 		{
-			object: "incident", action: "list", audience: "both", summary: "the broken-main incidents",
+			object: "incident", action: "list", audience: "both", laidOut: true, summary: "the broken-main incidents",
 			usage:    []string{"metasystem incident list [--all]"},
 			details:  []string{"An incident is a failure on main that someone must own."},
 			flags:    []intentFlag{{name: "all", usage: "include closed incidents"}},
@@ -484,7 +484,9 @@ func (inv *intentInvocation) actingAs(verb, target string, actor intentActor) ([
 	if stopping {
 		actor = actorEither
 	}
-	if typed == "" && actor == actorEither && agent && !inv.input.has("lineage") {
+	// A claim binds the session that works the goal, so the grant never
+	// makes it the person's: the granted session claims as itself.
+	if typed == "" && actor == actorEither && agent && !inv.input.has("lineage") && verb != "claim" {
 		// A live general grant that admits this session makes a dual act
 		// the granting person's, before the session's own shortcut (M6),
 		// as pause and done already do; the owner proves it again.
@@ -807,7 +809,7 @@ func runIntentGoalViews(inv *intentInvocation) int {
 		for _, lower := range probe.Lowerable {
 			lines = append(lines, fmt.Sprintf("lowerable: %s %s recorded=%d derived=%d", lower.ID, lower.State, lower.Recorded, lower.Derived))
 		}
-		return inv.render(intentResult{Outcome: intentConfirmed, text: lines,
+		return inv.render(intentResult{Outcome: intentConfirmed, text: lines, view: goalTiersView(probe, recorded, derived),
 			Summary: fmt.Sprintf("%d open goal(s) with a risk record at %s", probe.Open, projection.Tip),
 			Data: map[string]any{"tip": projection.Tip, "open": probe.Open, "recorded": probe.Recorded, "derived": probe.Derived,
 				"tier3ShareRecorded": recorded, "tier3ShareDerived": derived, "lowerable": probe.Lowerable}})
@@ -1561,6 +1563,8 @@ func runIntentAbandon(inv *intentInvocation) int {
 	})
 	if abandoned.Outcome == intentConfirmed && successor != "" {
 		abandoned.Summary = fmt.Sprintf("abandoned %s; %s carries its work", id, successor)
+		summary := abandoned.Summary
+		abandoned.view = goalDoneView(summary)
 	}
 	return inv.render(abandoned)
 }
@@ -2075,7 +2079,7 @@ func runIntentIncidents(inv *intentInvocation) int {
 		summary += fmt.Sprintf("; %d tracked flake or hang entr%s", len(tracked), map[bool]string{true: "y", false: "ies"}[len(tracked) == 1])
 	}
 	result := intentResult{Outcome: intentConfirmed, text: lines, Data: map[string]any{"incidents": listed, "trackedDefects": tracked},
-		Summary: summary}
+		Summary: summary, view: incidentListView(listed, tracked, inv.input.switched("all"))}
 	for _, entry := range listed {
 		if entry.Closed == nil && entry.FixGoal == "" {
 			result.next, result.nextReason = []string{"metasystem", "incident", "claim", entry.ID, "--goal", "G"}, "an unowned incident needs a goal that fixes it"

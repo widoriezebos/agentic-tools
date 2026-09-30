@@ -278,8 +278,8 @@ func ForecastCostRefusal(forecast batch.CostForecast) error {
 	var reasons []string
 	for _, budget := range forecast.Budgets {
 		if !budget.Fits {
-			reasons = append(reasons, fmt.Sprintf("%s %s demand=%d attempts/%d reserved-minutes remaining=%d/%d", budget.GoalID,
-				budget.Reason, budget.AttemptDemand, budget.ReservationMinutes, budget.AttemptsLeft, budget.ReservedMinutesLeft))
+			reasons = append(reasons, fmt.Sprintf("%s needs %d attempts and %d reserved minutes but has %d and %d left (%s)", budget.GoalID,
+				budget.AttemptDemand, budget.ReservationMinutes, budget.AttemptsLeft, budget.ReservedMinutesLeft, budget.Reason))
 		}
 	}
 	if len(reasons) == 0 {

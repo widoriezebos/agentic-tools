@@ -17,8 +17,11 @@ type advanceRefusal struct {
 }
 
 func (r *advanceRefusal) Error() string {
-	return fmt.Sprintf("advance refused: %s: %s", r.code, r.detail)
+	return fmt.Sprintf("this checkout could not move onto main (%s); clear that, then metasystem work land again", r.detail)
 }
+
+// Code is the refusal's code, for tests and --verbose.
+func (r *advanceRefusal) Code() string { return r.code }
 
 func (r *advanceRefusal) IsAdvanceRefusal() {}
 

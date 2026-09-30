@@ -225,7 +225,7 @@ func (s *session) reapOneLocked(job string) error {
 		if casErr == nil && missionID != "" && missionID != "null" {
 			if reason, ask := mission.BudgetCapReason(recordCapResolution(record)); ask {
 				if err := s.missionRefuse(missionID, reason); err != nil {
-					s.eprintf("MISSION-FENCE-ASK-FAILED mission=%s job=%s error=%s\n", missionID, job, strings.ReplaceAll(err.Error(), "\n", " "))
+					s.eprintf("mission %s: the question for capped job %s could not be raised: %s\n", missionID, job, strings.ReplaceAll(err.Error(), "\n", " "))
 				}
 			}
 			_ = s.aggregateMissionUsage(record)
@@ -305,7 +305,7 @@ func (s *session) windDownOneGroup(record string, pgid int64) bool {
 	waitGone()
 	if process.GroupExists(pgid) {
 		if !process.GroupOwned(record, pgid, tag) {
-			s.eprintf("lost ownership proof for process group %d\n", pgid)
+			s.eprintf("process group %d can no longer be shown to be this job's, so it was not killed\n", pgid)
 			return false
 		}
 		_ = process.SignalGroup(pgid, SignalKill)

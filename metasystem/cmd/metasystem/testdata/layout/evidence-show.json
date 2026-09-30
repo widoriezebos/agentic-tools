@@ -1,0 +1,36 @@
+exit 0
+--
+{
+  "schemaVersion": 1,
+  "verb": "evidence show",
+  "targets": [],
+  "outcome": "confirmed",
+  "summary": "evidence of /Users/wido/GitHub/agentic-tools-m1e: segment 0a5c41b756db in /Users/wido/GitHub/agentic-tools-m1e/evidence: 0.00 GiB of the 10.00 GiB cap; age floor 90 days",
+  "data": {
+    "checkout": "/Users/wido/GitHub/agentic-tools-m1e",
+    "root": "/Users/wido/GitHub/agentic-tools-m1e/evidence",
+    "position": {
+      "segment": "0a5c41b756db",
+      "root": "/Users/wido/GitHub/agentic-tools-m1e/evidence",
+      "checkout": "/Users/wido/GitHub/agentic-tools-m1e",
+      "totalBytes": 32768,
+      "capBytes": 10737418240,
+      "oldest": "0001-01-01T00:00:00Z"
+    },
+    "ageFloor": 7776000000000000,
+    "items": [
+      {
+        "name": "old-chain",
+        "kind": "chain",
+        "path": "/Users/wido/GitHub/agentic-tools-m1e/evidence/agents/0a5c41b756db/old-chain",
+        "state": "live",
+        "endedAt": "2026-01-01T00:00:00Z",
+        "bytes": 32768,
+        "removable": true
+      }
+    ],
+    "ledger": "judged on the accepted ledger 9498700a9"
+  }
+}
+
+--

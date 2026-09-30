@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
+	"io"
 	"io/fs"
 	"os/signal"
 	"strconv"
@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/applaunch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/lifecycle"
 )
 
@@ -177,7 +178,7 @@ func (inv *intentInvocation) appVerb(verb string) int {
 		}
 		return inv.render(inv.appStop(run, targets, wait, inv.input.has("clean")))
 	case "start":
-		return inv.render(inv.appStart(run, targets, false))
+		return inv.render(inv.appStart(run, targets, false, nil))
 	case "restart", "reset":
 		wait, problem := inv.appWait()
 		if problem != nil {
@@ -189,7 +190,7 @@ func (inv *intentInvocation) appVerb(verb string) int {
 			stopped.next, stopped.nextReason = inv.publicArgv("app", "status"), "what the application is doing now"
 			return inv.render(stopped)
 		}
-		started := inv.appStart(run, targets, verb == "reset")
+		started := inv.appStart(run, targets, verb == "reset", stopped.text)
 		started.text = append(stopped.text, started.text...)
 		return inv.render(started)
 	}
@@ -241,7 +242,112 @@ func (inv *intentInvocation) appStatus(run appRun, targets []intentTarget) inten
 	if status.State == applaunch.Unreadable {
 		outcome = intentFailed
 	}
-	return intentResult{Outcome: outcome, Targets: targets, Summary: summary, text: status.Lines(), Data: appData(run, status)}
+	return intentResult{Outcome: outcome, Targets: targets, Summary: summary, text: status.Lines(), Data: appData(run, status),
+		view: func(page *textui.Page) {
+			page.Headline(sentence(summary), appSince(page.Env(), status))
+			page.Facts(appFacts(page, status)...)
+		}}
+}
+
+// appSince is when a run started, as a person reads it.
+func appSince(env textui.Env, status applaunch.Status) string {
+	if status.Record == nil || status.Record.StartedAt == "" {
+		return ""
+	}
+	if at, err := time.Parse(time.RFC3339, status.Record.StartedAt); err == nil {
+		return env.Since(at)
+	}
+	return "since " + status.Record.StartedAt
+}
+
+// appFacts are one run's facts: its readiness, address, commit, data, log
+// and check; --verbose adds the processes an inspection of its group finds.
+func appFacts(page *textui.Page, status applaunch.Status) []textui.KV {
+	env := page.Env()
+	var rows []textui.KV
+	add := func(key, value string) {
+		if value != "" {
+			rows = append(rows, textui.KV{Key: key, Value: []textui.Span{textui.Plain(value)}})
+		}
+	}
+	if status.Problem != "" {
+		add("problem", status.Problem)
+	}
+	switch status.Readiness {
+	case applaunch.Answering:
+		add("readiness", "answering")
+	case applaunch.NotAnswering:
+		add("readiness", "not answering "+strings.TrimSpace("since "+status.Since))
+	case applaunch.ObservedOnce:
+		add("readiness", "ready, observed at startup")
+	case applaunch.NotYet:
+		add("readiness", "not yet ready")
+	}
+	record := status.Record
+	if record == nil {
+		return rows
+	}
+	add("address", record.Address)
+	add("ref", record.Ref)
+	if record.Commit != "" {
+		commit := textui.SHA(record.Commit)
+		if record.ResolvedFrom != "" {
+			commit += " (from " + record.ResolvedFrom + ")"
+		}
+		add("commit", commit)
+	}
+	add("goal", record.Goal)
+	add("data", strings.TrimPrefix(record.DataSentence(), "data: "))
+	add("log", env.Path(record.Log))
+	for _, tool := range record.Tools {
+		add("tool", tool.Line())
+	}
+	if record.Ended != nil {
+		add("ended", record.Ended.At+" ("+record.Ended.ExitStatus+")")
+	}
+	if record.Check != nil {
+		checked := record.Check.At
+		if at, err := time.Parse(time.RFC3339, record.Check.At); err == nil {
+			checked = env.Time(at)
+		}
+		add("check", record.Check.Group+" "+record.Check.Verdict+" at "+checked)
+	} else {
+		add("check", "none recorded for this run")
+	}
+	if page.Verbose() {
+		for _, line := range status.Lines() {
+			if member, ok := strings.CutPrefix(line, "group member "); ok {
+				add("member", member)
+			}
+		}
+	}
+	return rows
+}
+
+// appActView is a start, stop, restart or reset that went through: ✓ what
+// happened, the narration of how (what was signalled, built, prepared), and
+// the run as it now stands.
+func appActView(summary string, narration []string, after *applaunch.Status) func(*textui.Page) {
+	return func(page *textui.Page) {
+		facts := ""
+		if after != nil {
+			facts = appSince(page.Env(), *after)
+		}
+		if facts != "" {
+			page.Done(joinFacts(page, sentence(summary), facts))
+		} else {
+			page.Done(sentence(summary))
+		}
+		if len(narration) > 0 {
+			section := page.Section("", "")
+			for _, line := range narration {
+				section.Text(strings.TrimSpace(line))
+			}
+		}
+		if after != nil {
+			page.Facts(appFacts(page, *after)...)
+		}
+	}
 }
 
 func (inv *intentInvocation) appLog(run appRun, targets []intentTarget) intentResult {
@@ -271,15 +377,23 @@ func (inv *intentInvocation) appLog(run appRun, targets []intentTarget) intentRe
 	}
 	if !inv.input.has("follow") {
 		return intentResult{Outcome: intentConfirmed, Targets: targets, Summary: "the last " + strconv.Itoa(len(tail)) + " line(s) of " + path,
-			text: tail, Data: map[string]any{"run": run.key, "log": path, "lines": nonNilLines(tail)}}
+			text: tail, Data: map[string]any{"run": run.key, "log": path, "lines": nonNilLines(tail)},
+			view: func(page *textui.Page) {
+				page.Headline("The last "+textui.Count(len(tail), "line", "lines")+" of the application's log", page.Env().Path(path))
+				section := page.Section("", "")
+				for _, line := range tail {
+					section.Text(line)
+				}
+			}}
 	}
 	if inv.input.has("json") {
 		return intentResult{Outcome: intentRefused, code: 2, Targets: targets,
 			Summary: "--follow prints a stream, which is not one JSON result; nothing was done",
 			next:    inv.retryWith([]string{"json"}), nextReason: "without --json"}
 	}
+	// A followed log is the application's own stream, printed as it is.
 	for _, line := range tail {
-		fmt.Fprintln(inv.stdout, line)
+		_, _ = io.WriteString(inv.stdout, line+"\n")
 	}
 	ctx, stop := appFollowContext()
 	defer stop()
@@ -306,7 +420,7 @@ var appFollowContext = func() (context.Context, context.CancelFunc) {
 // appStart starts one run: it rejoins a live one, ends a finished one into
 // its evidence, takes the run's tree and data where the ref asks for them,
 // and only then launches the supervisor.
-func (inv *intentInvocation) appStart(run appRun, targets []intentTarget, reset bool) intentResult {
+func (inv *intentInvocation) appStart(run appRun, targets []intentTarget, reset bool, stopped []string) intentResult {
 	status, err := run.status()
 	if err != nil {
 		return appRecordUnreadable(targets, nil, err)
@@ -336,7 +450,8 @@ func (inv *intentInvocation) appStart(run appRun, targets []intentTarget, reset 
 				Summary: "the application is already running but did not become ready: " + err.Error()}
 		}
 		return intentResult{Outcome: intentConfirmed, Targets: targets, text: rejoined.Lines(), Data: appData(run, rejoined),
-			Summary: "the application is already running at " + rejoined.Record.Address}
+			Summary: "the application is already running at " + rejoined.Record.Address,
+			view:    appActView("the application is already running at "+rejoined.Record.Address, append(stopped, lines...), &rejoined)}
 	case applaunch.Orphaned, applaunch.Stale, applaunch.Uninspectable, applaunch.ChildEnded:
 		return intentResult{Outcome: intentRefused, code: 1, Targets: targets, text: status.Lines(), Data: appData(run, status),
 			Summary: "run " + run.key + " is " + string(status.State) + " and was not started again",
@@ -406,7 +521,7 @@ func (inv *intentInvocation) appStart(run appRun, targets []intentTarget, reset 
 		where = "at " + where
 	}
 	return intentResult{Outcome: intentConfirmed, Targets: targets, text: append(lines, after.Lines()...), Data: appData(run, after),
-		Summary: "the application is started " + where}
+		Summary: "the application is started " + where, view: appActView("the application is started "+where, append(stopped, lines...), &after)}
 }
 
 // tipMoved reports a live run at a ref that now names another commit.
@@ -435,10 +550,10 @@ func (inv *intentInvocation) appStop(run appRun, targets []intentTarget, wait ti
 				return intentResult{Outcome: intentFailed, code: 1, Targets: targets, text: lines, Summary: err.Error(), retry: "try again"}
 			}
 			return intentResult{Outcome: intentConfirmed, Targets: targets, text: lines, Data: appData(run, before),
-				Summary: "no application run is recorded for " + run.key}
+				Summary: "no application run is recorded for " + run.key, view: appActView("no application run is recorded for "+run.key, lines, nil)}
 		}
 		return intentResult{Outcome: intentConfirmed, Targets: targets, Data: appData(run, before),
-			Summary: "no application run is recorded for " + run.key}
+			Summary: "no application run is recorded for " + run.key, view: appActView("no application run is recorded for "+run.key, nil, nil)}
 	}
 	result, err := applaunch.Stop(run.roots.StateRoot, run.key, run.contract, applaunch.StopOptions{
 		Probe: applaunch.ProbeOnce, Wait: wait, ProjectRoot: run.tree, Environment: run.environment()})
@@ -458,7 +573,8 @@ func (inv *intentInvocation) appStop(run appRun, targets []intentTarget, wait ti
 	}
 	after, _ := run.status()
 	return intentResult{Outcome: intentConfirmed, Targets: targets, text: lines, Data: appData(run, after),
-		Summary: "the application is stopped and every recorded process is proven dead"}
+		Summary: "the application is stopped and every recorded process is proven dead",
+		view:    appActView("the application is stopped and every recorded process is proven dead", lines, nil)}
 }
 
 // appCheck runs the contract's named testing group through the testing
@@ -468,7 +584,11 @@ func (inv *intentInvocation) appCheck(run appRun, targets []intentTarget) intent
 		return intentResult{Outcome: intentRefused, code: 1, Targets: targets,
 			Summary:  "the launch contract declares no check; nothing was checked",
 			Decision: "name a testing group as \"check\" in the launch contract at " + run.contractPath + " to give the application a check",
-			Data:     map[string]any{"run": run.key, "check": nil}}
+			Data:     map[string]any{"run": run.key, "check": nil}, viewsRefusal: true,
+			view: func(page *textui.Page) {
+				page.Refusal("the launch contract declares no check; nothing was checked", textui.Hint{
+					Reason: "name a testing group as \"check\" in " + page.Env().Path(run.contractPath) + " to give the application a check"})
+			}}
 	}
 	status, err := run.status()
 	if err != nil {
@@ -497,8 +617,8 @@ func (inv *intentInvocation) appCheck(run appRun, targets []intentTarget) intent
 	_ = applaunch.UpdateRecord(run.roots.StateRoot, run.key, func(record *applaunch.Record) {
 		record.Check = &applaunch.Check{Group: run.contract.Check, Verdict: verdict, At: at, Address: address}
 	})
-	result := ownerVerbResult(ran, targets, "check "+run.contract.Check+" passed against "+address,
-		map[string]any{"run": run.key, "group": run.contract.Check, "address": address, "verdict": verdict, "at": at})
+	result := ownerViewed(ownerVerbResult(ran, targets, "check "+run.contract.Check+" passed against "+address,
+		map[string]any{"run": run.key, "group": run.contract.Check, "address": address, "verdict": verdict, "at": at}))
 	if result.Outcome != intentConfirmed {
 		result.Summary = "check " + run.contract.Check + " did not pass against " + address + ": " + result.Summary
 	}

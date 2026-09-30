@@ -165,7 +165,7 @@ func (f *SessionFault) Error() string {
 	if f.Witnessed {
 		return "orchestrator return session identity matches neither the announced nor the observed session"
 	}
-	return "orchestrator return session identity matches neither the announced session nor any harness-observed session"
+	return "the orchestrator's return names a session that is neither the announced one nor one the harness saw"
 }
 
 // sessionIdentityFault applies the honesty-proof session rule: echoing the

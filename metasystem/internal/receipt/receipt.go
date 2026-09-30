@@ -635,7 +635,15 @@ func Check(opts Options) Result {
 	if ageDays > maxAgeDays {
 		return fail(1, "metasystem retro due: %d days since the last retro (max %d)", ageDays, maxAgeDays)
 	}
-	return ok(fmt.Sprintf("retro not due: %d receipts, %d days since last retro", receipts, ageDays))
+	return ok(fmt.Sprintf("retro not due: %s, %s since the last retro", counted(receipts, "receipt", "receipts"), counted(ageDays, "day", "days")))
+}
+
+// counted is a count with its noun: 1 receipt, 2 receipts.
+func counted(n int64, one, many string) string {
+	if n == 1 {
+		return "1 " + one
+	}
+	return strconv.FormatInt(n, 10) + " " + many
 }
 
 // appendLine appends one record line. Durability is claimed only after the

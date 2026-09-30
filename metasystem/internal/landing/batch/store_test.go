@@ -282,18 +282,18 @@ func TestBatchJoinRefusesOpenChain(t *testing.T) {
 		name, want string
 		change     func(map[string]any, map[string]any)
 	}{
-		{"open", "BATCH_JOIN_CHAIN_UNCLOSED: implementation chain is open", func(i, _ map[string]any) { i["chainClosed"] = false }},
-		{"implementation closure invalid", "BATCH_JOIN_CHAIN_UNREAD: implementation chain closure is invalid", func(i, _ map[string]any) { i["status"] = "running" }},
-		{"wrong implementation role", "BATCH_JOIN_CHAIN_NOT_IMPLEMENTATION: chain root is not an implementer job", func(i, _ map[string]any) { i["role"] = "observer" }},
-		{"wrong goal", "BATCH_JOIN_CHAIN_UNREAD: implementation chain does not bind the named goal", func(i, _ map[string]any) { i["goalId"] = "goal-b" }},
-		{"revision moved", "BATCH_JOIN_CHAIN_REVISION_MOVED: chain goal revision is 1, claim revision is 2", func(i, _ map[string]any) { i["goalRevision"] = 1 }},
-		{"critic missing", "BATCH_JOIN_CHAIN_UNREAD: closed code-critic root is unreadable", func(i, _ map[string]any) { delete(i, "independentCritiqueJobRef") }},
-		{"wrong critic role", "BATCH_JOIN_CHAIN_UNREAD: critic chain root is not a code-critic job", func(_, c map[string]any) { c["role"] = "observer" }},
-		{"critic closure invalid", "BATCH_JOIN_CHAIN_UNREAD: code-critic chain closure is invalid", func(_, c map[string]any) { c["status"] = "running" }},
-		{"non-live subject", "BATCH_JOIN_CHAIN_UNREAD: code-critic closure subject is not live", func(_, c map[string]any) { chainSubject(c)["kind"] = "commit" }},
-		{"other implementation", "BATCH_JOIN_CHAIN_UNREAD: code-critic closure certifies another implementation chain", func(_, c map[string]any) { chainSubject(c)["implementerRoot"] = "outsider" }},
-		{"member outside chain", "BATCH_JOIN_CHAIN_UNREAD: certified implementer is outside implementation chain", func(_, c map[string]any) { chainSubject(c)["reviewedMember"] = "outsider" }},
-		{"digest changed", "BATCH_JOIN_CHAIN_UNREAD: certified diff is unreadable or changed", func(_, c map[string]any) { chainSubject(c)["diffDigest"] = strings.Repeat("b", 64) }},
+		{"open", "BATCH_JOIN_CHAIN_UNCLOSED: the build of goal goal-a is not reviewed yet; metasystem work review goal-a reviews it", func(i, _ map[string]any) { i["chainClosed"] = false }},
+		{"implementation closure invalid", "BATCH_JOIN_CHAIN_UNREAD: the build of goal goal-a did not close cleanly; metasystem work review goal-a reviews it", func(i, _ map[string]any) { i["status"] = "running" }},
+		{"wrong implementation role", "BATCH_JOIN_CHAIN_NOT_IMPLEMENTATION: job implementation is not a build; metasystem work status goal-a names the goal's builds", func(i, _ map[string]any) { i["role"] = "observer" }},
+		{"wrong goal", "BATCH_JOIN_CHAIN_UNREAD: job implementation is not a build of goal goal-a; metasystem work status goal-a names its builds", func(i, _ map[string]any) { i["goalId"] = "goal-b" }},
+		{"revision moved", "BATCH_JOIN_CHAIN_REVISION_MOVED: goal goal-a changed after its build (revision 1, now 2); metasystem work build goal-a builds it again", func(i, _ map[string]any) { i["goalRevision"] = 1 }},
+		{"critic missing", "BATCH_JOIN_CHAIN_UNREAD: the review of goal goal-a can't be read; metasystem work review goal-a reviews it again", func(i, _ map[string]any) { delete(i, "independentCritiqueJobRef") }},
+		{"wrong critic role", "BATCH_JOIN_CHAIN_UNREAD: the review of goal goal-a is not a code review; metasystem work review goal-a reviews it", func(_, c map[string]any) { c["role"] = "observer" }},
+		{"critic closure invalid", "BATCH_JOIN_CHAIN_UNREAD: the review of goal goal-a did not close cleanly; metasystem work review goal-a reviews it again", func(_, c map[string]any) { c["status"] = "running" }},
+		{"non-live subject", "BATCH_JOIN_CHAIN_UNREAD: the review of goal goal-a read no live build; metasystem work review goal-a reviews the build", func(_, c map[string]any) { chainSubject(c)["kind"] = "commit" }},
+		{"other implementation", "BATCH_JOIN_CHAIN_UNREAD: the review of goal goal-a certifies another build; metasystem work review goal-a reviews this one", func(_, c map[string]any) { chainSubject(c)["implementerRoot"] = "outsider" }},
+		{"member outside chain", "BATCH_JOIN_CHAIN_UNREAD: the reviewed round of goal goal-a is not part of its build; metasystem work review goal-a reviews it again", func(_, c map[string]any) { chainSubject(c)["reviewedMember"] = "outsider" }},
+		{"digest changed", "BATCH_JOIN_CHAIN_UNREAD: the reviewed change of goal goal-a is missing or changed; metasystem work review goal-a reviews it again", func(_, c map[string]any) { chainSubject(c)["diffDigest"] = strings.Repeat("b", 64) }},
 	}
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
@@ -316,7 +316,7 @@ func TestBatchJoinDerivesDiffFromChain(t *testing.T) {
 func TestBatchJoinRequiresJobDomainChain(t *testing.T) {
 	root := t.TempDir()
 	_, err := readCertifiedChain(root, "goal-a", "codex-rescue", 2)
-	if err == nil || !strings.HasPrefix(err.Error(), "BATCH_JOIN_CHAIN_REQUIRED:") || !strings.Contains(err.Error(), "delegate --role implementer") {
+	if err == nil || !strings.HasPrefix(err.Error(), "BATCH_JOIN_CHAIN_REQUIRED:") || !strings.Contains(err.Error(), "metasystem work build goal-a") {
 		t.Fatalf("job-domain refusal=%v", err)
 	}
 }

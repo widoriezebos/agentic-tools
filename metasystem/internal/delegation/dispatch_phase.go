@@ -211,7 +211,7 @@ func (s *session) dispatchJob(args []string) error {
 		return s.die(2, "--workspace and --worktree are mutually exclusive")
 	}
 	if a.approveEscalation && (!s.request.StdinTTY || !s.request.StderrTTY) {
-		return s.die(1, "--approve-escalation requires an interactive TTY; remove the flag or re-run the same dispatch from a TTY")
+		return s.die(1, "--approve-escalation needs an interactive terminal; nothing was dispatched\nremove the flag, or run the same dispatch from a terminal")
 	}
 	mode, modeErr := dispatch.BriefModeOnly(a.brief)
 	if modeErr != nil {
@@ -273,7 +273,7 @@ func (s *session) dispatchJob(args []string) error {
 	}
 	if missionID != "" {
 		if missionTurn == "" {
-			return s.die(2, "mission dispatch requires a runner turn (METASYSTEM_MISSION_TURN is not set); dispatch from inside the mission host turn")
+			return s.die(2, "mission dispatch needs a mission runner turn, and none is set here\ndispatch from inside the mission's host turn")
 		}
 		if a.stream == "" {
 			return s.die(2, "mission dispatch requires --stream <mission-stream-id> naming the stream this job serves")
@@ -290,12 +290,12 @@ func (s *session) dispatchJob(args []string) error {
 			approvalName, approvedAt = name, s.nowISO()
 		case missionID != "" && s.signedEnvelopeAllows(missionID, roster.RequestedPair):
 		case !roster.TiersPresent:
-			return s.die(1, fmt.Sprintf("dispatch escalation refused: roster resolves to %s, requested pair is %s, and model tiers are absent. Configure model.tier.* to rank both pairs, add %s to a signed envelope.dispatch-allow mission contract, or re-run from a TTY with --approve-escalation.", roster.RosterPair, roster.RequestedPair, roster.RequestedPair))
+			return s.die(1, fmt.Sprintf("dispatch escalation refused: %s is requested, the roster gives %s, and no model tiers rank them\nconfigure model.tier.* to rank both, add %s to a signed envelope.dispatch-allow mission contract, or run again from a terminal with --approve-escalation", roster.RequestedPair, roster.RosterPair, roster.RequestedPair))
 		default:
-			return s.die(1, fmt.Sprintf("dispatch escalation refused: roster resolves to %s, requested pair is %s, cost direction is %s. Remove the override to use %s, add %s to a signed envelope.dispatch-allow mission contract, or re-run from a TTY with --approve-escalation.", roster.RosterPair, roster.RequestedPair, roster.CostDirection, roster.RosterPair, roster.RequestedPair))
+			return s.die(1, fmt.Sprintf("dispatch escalation refused: %s is requested, the roster gives %s (cost %s)\nremove the override to use %s, add %s to a signed envelope.dispatch-allow mission contract, or run again from a terminal with --approve-escalation", roster.RequestedPair, roster.RosterPair, roster.CostDirection, roster.RosterPair, roster.RequestedPair))
 		}
 	} else if a.approveEscalation {
-		return s.die(1, "--approve-escalation is unnecessary because the requested pair does not require escalation approval; remove the flag")
+		return s.die(1, "--approve-escalation is not needed: the requested pair needs no escalation approval\nremove the flag")
 	}
 
 	permissionName := "none"
@@ -339,7 +339,7 @@ func (s *session) dispatchJob(args []string) error {
 		goalMachine = binding.Machine
 		goalClaimEpoch = strconv.FormatInt(binding.Capability.ClaimEpoch, 10)
 		if current := s.currentEpoch(); current != "" && current != goalClaimEpoch {
-			return s.die(1, fmt.Sprintf("goal %s revision %d belongs to claim epoch %s, not current epoch %s", a.goal, subj.goalRevision, goalClaimEpoch, current))
+			return s.die(1, staleClaimMessage(a.goal, subj.goalRevision, goalClaimEpoch, current))
 		}
 		if err := s.requireGoalTierLadder(subj); err != nil {
 			return err
@@ -478,7 +478,7 @@ func (s *session) dispatchJob(args []string) error {
 		brief = composed
 	}
 	if isReviewRole(a.role) && !a.useWorktree && workspace == s.repoScope && s.permissionEnvelopeRequestsWrites(permissionName) {
-		return s.die(2, a.role+" live-checkout write refusal (incident class: critic-workspace-custody): a review role could modify product bytes in the coordinator's tree; pass --worktree to keep its writes quarantined")
+		return s.die(2, a.role+" refused: a review role could write in the coordinator's checkout\npass --worktree to keep its writes in a worktree of its own")
 	}
 	permissionJSON, err := s.mustTemp(s.recordLocks, "permissions")
 	if err != nil {
@@ -793,11 +793,11 @@ func (s *session) confirmEscalation(rosterPair, requestedPair, costDirection str
 	s.eprintf("Type APPROVE <name> to confirm: ")
 	confirmation := readLine(s.request.Stdin)
 	if !strings.HasPrefix(confirmation, "APPROVE ") {
-		return "", s.die(1, "escalation approval declined; re-run without the override, or repeat from an interactive TTY with --approve-escalation and type APPROVE <name>")
+		return "", s.die(1, "escalation approval declined; nothing was dispatched\nrun again without the override, or from a terminal with --approve-escalation and type APPROVE and your name")
 	}
 	name := strings.TrimPrefix(confirmation, "APPROVE ")
 	if name == "" || strings.TrimLeft(name, " \t\n\v\f\r") != name || strings.TrimRight(name, " \t\n\v\f\r") != name || strings.ContainsFunc(name, isControl) {
-		return "", s.die(1, "escalation approval declined; type APPROVE followed by a non-empty name without leading, trailing, or control characters")
+		return "", s.die(1, "escalation approval declined: the name after APPROVE is empty or badly formed\ntype APPROVE followed by a name without leading, trailing or control characters")
 	}
 	return name, nil
 }
@@ -807,16 +807,16 @@ func (s *session) confirmEscalation(rosterPair, requestedPair, costDirection str
 func (s *session) resolveMission(explicit string) (string, string, string, error) {
 	envID, envLease, envTurn := s.env.MissionID, s.env.MissionLease, s.env.MissionTurn
 	if (envID != "" || envLease != "") && (envID == "" || envLease == "") {
-		return "", "", "", s.die(1, "ambiguous inherited mission context: both METASYSTEM_MISSION_ID and METASYSTEM_MISSION_LEASE are required")
+		return "", "", "", s.die(1, "the inherited mission context is incomplete: it names a mission or a lease, not both\nrun it from the mission's own turn, or pass --mission")
 	}
 	if envTurn != "" && envID == "" && explicit == "" {
-		return "", "", "", s.die(1, "ambiguous inherited mission context: METASYSTEM_MISSION_TURN requires a mission (METASYSTEM_MISSION_ID with METASYSTEM_MISSION_LEASE, or --mission)")
+		return "", "", "", s.die(1, "the inherited mission context names a runner turn but no mission\npass --mission, or run it from the mission's own turn")
 	}
 	if envTurn != "" && !validID(envTurn) {
 		return "", "", "", s.die(1, "invalid inherited mission turn id")
 	}
 	if explicit != "" && envID != "" && explicit != envID {
-		return "", "", "", s.die(1, "ambiguous mission context: --mission and METASYSTEM_MISSION_ID disagree")
+		return "", "", "", s.die(1, "--mission names another mission than the one this process runs in\ndrop --mission, or run it outside that mission")
 	}
 	missionID := explicit
 	if missionID == "" {
@@ -841,6 +841,7 @@ func (s *session) resolveMission(explicit string) (string, string, string, error
 func (s *session) readSubject(request dispatch.ReadSubjectRequest, output string) (bool, int, string) {
 	subject, present, err := dispatch.ComputeReadSubject(request)
 	if err != nil {
+		s.noteRefusal(err)
 		code := verbCode(err)
 		message := err.Error()
 		var op *dispatch.OpError

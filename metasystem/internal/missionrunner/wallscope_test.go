@@ -656,7 +656,7 @@ func TestScopeAdmissionRefusesReplaceNamespace(t *testing.T) {
 	f.add("RefMap", map[string]string{"refs/heads/main": recoveryHead,
 		"refs/replace/" + recoveryHead: recoveryPost})
 	if _, aerr := bed.e.admittedBaseline(values, []byte(approvedText)); aerr == nil ||
-		!strings.Contains(aerr.Error(), "replacement namespace is not empty") {
+		!strings.Contains(aerr.Error(), "a replacement ref exists") {
 		t.Fatalf("admission must refuse a nonempty replacement namespace, got %v", aerr)
 	}
 	bed.checkAnchors(0)

@@ -258,7 +258,7 @@ func TestAResumeThatHasToArmAgainAsksForTheWord(t *testing.T) {
 	if !named || refusal.Code != CodeWordRequired {
 		t.Fatalf("error = %v, want %s", err, CodeWordRequired)
 	}
-	for _, words := range []string{"Discard launch", "launch it again"} {
+	for _, words := range []string{"Discard launch", "launch again"} {
 		if !strings.Contains(refusal.Message, words) {
 			t.Fatalf("refusal %q does not name %q", refusal.Message, words)
 		}
@@ -312,7 +312,8 @@ func TestTheEvidenceRootRefusesThisSeatsOwnRoot(t *testing.T) {
 	built.host.evidenceRoots[destInstall()] = config.EvidenceRoot{Path: sourceEvidence, Origin: "conf"}
 	_, err := built.sequencer.Run(fresh())
 	refusal, named := err.(*Refusal)
-	if !named || refusal.Code != CodeEvidenceRootUnsafe {
+	if !named || refusal.Code != CodeEvidenceRootUnsafe || refusal.RefusalCode() != CodeEvidenceRootUnsafe ||
+		strings.Contains(err.Error(), CodeEvidenceRootUnsafe) || !strings.Contains(err.Error(), "metasystem machine start") {
 		t.Fatalf("error = %v, want %s", err, CodeEvidenceRootUnsafe)
 	}
 	if len(built.host.madeDirs) != 0 {

@@ -1,0 +1,7 @@
+2 questions wait for a person
+
+! channel:q-20260930-1 · goal verbs-match-intent · asked 10:31
+  asks   Land slice 2 of the verb redesign now, or wait for the second read?
+! channel:q-20260929-4 · goal switch-on-trial · asked Tue 21:05
+  asks   The trial run found one flaky test in the landing lane; quarantine it and continue, or stop
+         the trial until it is fixed?

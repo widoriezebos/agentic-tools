@@ -438,8 +438,12 @@ func findBreachStopsWithReads(root string, now time.Time, reads goalAdmissionRea
 			continue
 		}
 		// A claim waiting to land is not stopped for elapsed time; its wait
-		// prints as overdue instead (goal land-ready).
+		// prints as overdue instead (goal land-ready). A claim whose change
+		// waits in a landing batch waits to land the same way.
 		reason := stopReasonFor(file, budget)
+		if reason == goal.StopReasonElapsedLimit && reads.LandingBatched != nil && reads.LandingBatched(root, id, now) {
+			reason = landingStopReason(budget)
+		}
 		if reason == "" {
 			continue
 		}

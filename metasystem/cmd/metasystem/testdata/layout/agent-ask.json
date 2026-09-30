@@ -1,0 +1,28 @@
+exit 0
+--
+{
+  "schemaVersion": 1,
+  "verb": "agent ask",
+  "targets": [
+    {
+      "kind": "message",
+      "id": "d-e3b2c5d32bc065015443445dab"
+    }
+  ],
+  "outcome": "confirmed",
+  "summary": "asked m1b: message d-e3b2c5d32bc065015443445dab; the reply comes to this seat's inbox (metasystem agent inbox)",
+  "data": {
+    "at": "2026-09-30T08:58:00Z",
+    "deadlineAt": "2026-09-30T09:28:00Z",
+    "durable": true,
+    "existing": false,
+    "id": "d-e3b2c5d32bc065015443445dab",
+    "kind": "ask",
+    "thread": "d-e3b2c5d32bc065015443445dab",
+    "to": {
+      "machine": "m1b"
+    }
+  }
+}
+
+--

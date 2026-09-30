@@ -1,0 +1,2 @@
+✗ --sync-mode is remote or local; nothing was done
+  → metasystem goal sync --upgrade --by Wido --sync-mode remote  or local

@@ -1,0 +1,20 @@
+exit 1
+--
+{
+  "schemaVersion": 1,
+  "verb": "landing start",
+  "targets": [],
+  "outcome": "refused",
+  "summary": "no landing lane is registered on this computer; nothing was done",
+  "next": {
+    "argv": [
+      "metasystem",
+      "landing",
+      "set",
+      "PATH"
+    ],
+    "reason": "register the landing checkout every seat lands through"
+  }
+}
+
+--

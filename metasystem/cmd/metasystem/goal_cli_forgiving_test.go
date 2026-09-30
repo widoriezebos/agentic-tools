@@ -350,7 +350,7 @@ func gcliForgivingReleaseIfClaimed(t *testing.T, bed *goalCLIBed, id string) {
 func gcliForgivingClaim(t *testing.T, bed *goalCLIBed, id string) {
 	t.Helper()
 	stdout := gcliForgivingMust(t, bed, "goal", "claim", id)
-	if !strings.HasPrefix(stdout, "claim: "+id+" is claimed") {
+	if !strings.HasPrefix(stdout, "✓ claim: "+id+" is claimed") {
 		t.Fatalf("claiming %s did not confirm: %q", id, stdout)
 	}
 }

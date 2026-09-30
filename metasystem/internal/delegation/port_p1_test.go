@@ -101,7 +101,7 @@ func TestPortP1CorruptBrainDeclarationFencesEveryActWithoutTouchingRecords(t *te
 			requireExit(t, result, 2, b.stderr.String())
 			line := strings.TrimSpace(string(result.Stdout))
 			if !strings.HasPrefix(line, `{`) || !strings.Contains(line, `"outcome":"BRAIN_REFUSED"`) ||
-				!strings.Contains(line, `"headline":"refused"`) || !strings.Contains(line, "until a human repairs it") {
+				!strings.Contains(line, `"headline":"refused"`) || !strings.Contains(line, "so nothing here dispatches, lands or claims") {
 				t.Fatalf("%s %s: stdout %q", act.name, env.name, result.Stdout)
 			}
 			if env.env.RecordOutcome && strings.TrimSpace(string(result.Outcome)) != line {
@@ -137,7 +137,7 @@ func TestPortP1BreachStopCallbackIsNotBrainFenced(t *testing.T) {
 		t.Fatalf("breach-stop succeeded without authority: stdout %q", result.Stdout)
 	}
 	combined := string(result.Stdout) + string(result.Outcome) + b.stderr.String()
-	if strings.Contains(combined, "BRAIN_REFUSED") || strings.Contains(combined, "brain never") || strings.Contains(combined, "until a human repairs it") {
+	if strings.Contains(combined, "BRAIN_REFUSED") || strings.Contains(combined, "brain never") || strings.Contains(combined, "so nothing here dispatches, lands or claims") {
 		t.Fatalf("breach-stop was caught by the brain fence: %q", combined)
 	}
 	if calls := b.calls("lease.Authorize"); len(calls) != 1 || !strings.Contains(calls[0], "mode=stop-custodian") {

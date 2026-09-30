@@ -209,18 +209,18 @@ func landingUnits(status Status, count int) []landUnit {
 
 type landingIdentity struct{ Name, Email string }
 
-func resolveLandingIdentityWith(repo, approvedBy string, human func(string, string) ([]byte, error)) (landingIdentity, error) {
+func resolveLandingIdentityWith(repo, goalID, approvedBy string, human func(string, string) ([]byte, error)) (landingIdentity, error) {
 	name := strings.TrimPrefix(approvedBy, "human:")
 	if name == approvedBy || !validName(name) {
-		return landingIdentity{}, operationRefusal(LandAuthorUnboundCode, "goal approver %q does not name a human", approvedBy)
+		return landingIdentity{}, operationRefusal(LandAuthorUnboundCode, "goal %s was approved by %q, not by a person, so its landing has no author\nrun: metasystem goal approve %s", goalID, approvedBy, goalID)
 	}
 	out, err := human(repo, name)
 	if err != nil {
-		return landingIdentity{}, operationRefusal(LandAuthorUnboundCode, "goal approver %s has no goal.human.%s identity", approvedBy, name)
+		return landingIdentity{}, operationRefusal(LandAuthorUnboundCode, "%s approved goal %s, but git has no name and email for %s to author its landing\nrun: git config goal.human.%s 'Name <email>', then metasystem work land %s", name, goalID, name, name, goalID)
 	}
 	address, err := mail.ParseAddress(strings.TrimSpace(string(out)))
 	if err != nil || address.Name == "" || address.Address == "" || strings.ContainsAny(address.Name+address.Address, "\r\n") {
-		return landingIdentity{}, operationRefusal(LandAuthorUnboundCode, "goal.human.%s must be Name <email>", name)
+		return landingIdentity{}, operationRefusal(LandAuthorUnboundCode, "git's goal.human.%s is not a name and email, so it can't author the landing\nrun: git config goal.human.%s 'Name <email>', then metasystem work land %s", name, name, goalID)
 	}
 	return landingIdentity{Name: address.Name, Email: address.Address}, nil
 }
@@ -241,7 +241,7 @@ func treeEntry(repo, tree, path string) (mode, blob string, present bool, err er
 	return fields[0], fields[2], true, nil
 }
 
-func verifyUnitPreimagesWith(r landingRepository, repo, tree string, unit UnitStatus) error {
+func verifyUnitPreimagesWith(r landingRepository, repo, goalID, tree string, unit UnitStatus) error {
 	raw, err := r.reads.RawEntries(repo, unit.Commit)
 	if err != nil {
 		return err
@@ -266,12 +266,12 @@ func verifyUnitPreimagesWith(r landingRepository, repo, tree string, unit UnitSt
 		}
 	}
 	if len(changed) != 0 {
-		return operationRefusal(UnitRereadCode, "unit %s no longer applies to the endpoint at paths %s", unit.Unit, strings.Join(changed, ", "))
+		return operationRefusal(UnitRereadCode, "build %s no longer applies to main: %s changed there\nrun: metasystem work review %s", unit.Unit, strings.Join(changed, ", "), goalID)
 	}
 	return nil
 }
 
-func verifyFoldPreimagesWith(r landingRepository, repo, tree string, fold Commit) error {
+func verifyFoldPreimagesWith(r landingRepository, repo, goalID, tree string, fold Commit) error {
 	raw, err := r.reads.RawEntries(repo, fold.ID)
 	if err != nil {
 		return err
@@ -292,7 +292,7 @@ func verifyFoldPreimagesWith(r landingRepository, repo, tree string, fold Commit
 		}
 	}
 	if len(changed) != 0 {
-		return operationRefusal(UnitRereadCode, "fold %s has stale preimage at paths %s", fold.ID, strings.Join(changed, ", "))
+		return operationRefusal(UnitRereadCode, "the goal's commit %s no longer applies to main: %s changed there\nrun: metasystem work status %s", fold.ID, strings.Join(changed, ", "), goalID)
 	}
 	return nil
 }
@@ -431,14 +431,14 @@ type landingReceiptEvidence struct {
 	failingGroups  []string
 }
 
-func readLandingReceiptWith(r landingRepository, repo, path, candidate string) (landingReceiptEvidence, error) {
+func readLandingReceiptWith(r landingRepository, repo, goalID, path, candidate string) (landingReceiptEvidence, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return landingReceiptEvidence{}, operationRefusal(LandUnprovenCode, "read landing receipt: %v", err)
+		return landingReceiptEvidence{}, operationRefusal(LandUnprovenCode, "the landing's test record can't be read: %v\nrun: metasystem work land %s", err, goalID)
 	}
 	var receipt landing.TestReceipt
 	if err := json.Unmarshal(data, &receipt); err != nil || receipt.SchemaVersion != 3 {
-		return landingReceiptEvidence{}, operationRefusal(LandUnprovenCode, "landing receipt is not a schema-3 receipt")
+		return landingReceiptEvidence{}, operationRefusal(LandUnprovenCode, "the landing's test record is in an old or unknown format\nrun: metasystem work land %s", goalID)
 	}
 	matched := receipt.Tree == candidate
 	if !matched && hex40(receipt.Tree) {
@@ -446,7 +446,7 @@ func readLandingReceiptWith(r landingRepository, repo, path, candidate string) (
 		matched = projectErr == nil && projected == candidate
 	}
 	if !matched {
-		return landingReceiptEvidence{}, operationRefusal(LandUnprovenCode, "receipt proves %s, not candidate workspace %s", receipt.Tree, candidate)
+		return landingReceiptEvidence{}, operationRefusal(LandUnprovenCode, "the landing's tests ran on tree %s, not on the tree to land, %s\nrun: metasystem work land %s", receipt.Tree, candidate, goalID)
 	}
 	evidence := landingReceiptEvidence{}
 	if receipt.Proof != nil {
@@ -459,15 +459,15 @@ func readLandingReceiptWith(r landingRepository, repo, path, candidate string) (
 		evidence.attempt = receipt.AttemptIDs[0]
 	}
 	if evidence.attempt == "" {
-		return landingReceiptEvidence{}, operationRefusal(LandUnprovenCode, "landing receipt names no single proof attempt")
+		return landingReceiptEvidence{}, operationRefusal(LandUnprovenCode, "the landing's test record names no single test run\nrun: metasystem work land %s", goalID)
 	}
 	evidence.stamp = receipt.Time
 	if _, err := time.Parse(time.RFC3339Nano, evidence.stamp); err != nil {
-		return landingReceiptEvidence{}, operationRefusal(LandUnprovenCode, "landing receipt has no valid proof time")
+		return landingReceiptEvidence{}, operationRefusal(LandUnprovenCode, "the landing's test record has no readable time\nrun: metasystem work land %s", goalID)
 	}
 	if receipt.ExitStatus != 0 {
 		if receipt.Testing == nil || len(receipt.Testing.Delivery.FailingGroups) == 0 {
-			return landingReceiptEvidence{}, operationRefusal(LandUnprovenCode, "red landing receipt names no failing groups")
+			return landingReceiptEvidence{}, operationRefusal(LandUnprovenCode, "the landing's tests failed, but the record names no failing test group\nrun: metasystem work land %s", goalID)
 		}
 		evidence.failingGroups = append([]string(nil), receipt.Testing.Delivery.FailingGroups...)
 	}
@@ -595,7 +595,7 @@ func prepareLanding(req LandRequest, r landingRepository) (LandResult, error) {
 	if err := checkClaim(req.CheckClaim); err != nil {
 		return LandResult{}, err
 	}
-	identity, err := resolveLandingIdentityWith(req.Repo, req.ApprovedBy, r.human)
+	identity, err := resolveLandingIdentityWith(req.Repo, req.GoalID, req.ApprovedBy, r.human)
 	if err != nil {
 		return LandResult{}, err
 	}
@@ -608,13 +608,13 @@ func prepareLanding(req LandRequest, r landingRepository) (LandResult, error) {
 	}
 	count := status.Prefix
 	if count == 0 {
-		return LandResult{}, operationRefusal(LandUnprovenCode, "goal %s has no land-ready unit", req.GoalID)
+		return LandResult{}, operationRefusal(LandUnprovenCode, "goal %s has no reviewed build ready to land\nrun: metasystem work review %s", req.GoalID, req.GoalID)
 	}
 	if req.Last && !req.LandingReady {
 		return LandResult{}, operationRefusal(LandPartialCode, "--last requires the goal queued to land (metasystem work land %s --queue-only)", req.GoalID)
 	}
 	if req.Last && status.Prefix != len(status.Units) {
-		return LandResult{}, operationRefusal(LandPartialCode, "--last found a unit beyond the land-ready prefix on %s", req.GoalID)
+		return LandResult{}, operationRefusal(LandPartialCode, "goal %s has a build that isn't reviewed yet, so it can't land as a whole\nrun: metasystem work review %s", req.GoalID, req.GoalID)
 	}
 	if req.Through != "" {
 		count = 0
@@ -625,10 +625,10 @@ func prepareLanding(req LandRequest, r landingRepository) (LandResult, error) {
 			}
 		}
 		if count == 0 {
-			return LandResult{}, operationRefusal(LandPartialCode, "--through %s is outside the land-ready prefix", req.Through)
+			return LandResult{}, operationRefusal(LandPartialCode, "--through %s names a commit past the reviewed builds of goal %s\nrun: metasystem work status %s", req.Through, req.GoalID, req.GoalID)
 		}
 		if !goalPageNamesCommit(req.GoalPage, req.Through) {
-			return LandResult{}, operationRefusal(LandPartialCode, "goal page has no human word naming partial tip %s", req.Through)
+			return LandResult{}, operationRefusal(LandPartialCode, "landing goal %s only up to %s needs a person's word on the goal naming that commit\nrun: metasystem goal edit %s", req.GoalID, req.Through, req.GoalID)
 		}
 	}
 	groups := landingUnits(status, count)
@@ -664,22 +664,22 @@ func prepareLanding(req LandRequest, r landingRepository) (LandResult, error) {
 				if err != nil {
 					return nil, nil, err
 				}
-				if err := verifyFoldPreimagesWith(r, req.Repo, foldTree, fold); err != nil {
+				if err := verifyFoldPreimagesWith(r, req.Repo, req.GoalID, foldTree, fold); err != nil {
 					return nil, nil, err
 				}
 				if err := applyCommitModeWith(r, worktree, fold.ID, false); err != nil {
-					return nil, nil, operationRefusal(UnitRereadCode, "fold %s no longer applies to the endpoint: %v", fold.ID, err)
+					return nil, nil, operationRefusal(UnitRereadCode, "the goal's commit %s no longer applies to main: %v\nrun: metasystem work status %s", fold.ID, err, req.GoalID)
 				}
 			}
 			tree, err := r.index(worktree)
 			if err != nil {
 				return nil, nil, err
 			}
-			if err := verifyUnitPreimagesWith(r, req.Repo, tree, group.status); err != nil {
+			if err := verifyUnitPreimagesWith(r, req.Repo, req.GoalID, tree, group.status); err != nil {
 				return nil, nil, err
 			}
 			if err := applyCommitModeWith(r, worktree, group.status.Commit, true); err != nil {
-				return nil, nil, operationRefusal(UnitRereadCode, "unit %s no longer applies to the endpoint: %v", group.status.Unit, err)
+				return nil, nil, operationRefusal(UnitRereadCode, "build %s no longer applies to main: %v\nrun: metasystem work review %s", group.status.Unit, err, req.GoalID)
 			}
 			applied, err := r.index(worktree)
 			if err != nil {
@@ -690,7 +690,7 @@ func prepareLanding(req LandRequest, r landingRepository) (LandResult, error) {
 				return nil, nil, err
 			}
 			if !matches {
-				return nil, nil, operationRefusal(UnitRereadCode, "unit %s applies with digest %s, not attested digest %s", group.status.Unit, digest, group.status.Digest)
+				return nil, nil, operationRefusal(UnitRereadCode, "build %s lands on main as other changes than were reviewed (%s, reviewed %s)\nrun: metasystem work review %s", group.status.Unit, digest, group.status.Digest, req.GoalID)
 			}
 			message, _, err := landingMessageWith(r, req.Repo, group, req.GoalID, req.Seat, req.Last && index == len(groups)-1)
 			if err != nil {
@@ -728,7 +728,7 @@ func prepareLanding(req LandRequest, r landingRepository) (LandResult, error) {
 	if req.CandidateOnly {
 		return LandResult{Endpoint: req.EndpointTip, Candidate: projected, LastUnit: lastUnit}, nil
 	}
-	evidence, err := readLandingReceiptWith(r, req.Repo, req.TestReceipt, projected)
+	evidence, err := readLandingReceiptWith(r, req.Repo, req.GoalID, req.TestReceipt, projected)
 	if err != nil {
 		return LandResult{}, err
 	}
@@ -746,7 +746,7 @@ func prepareLanding(req LandRequest, r landingRepository) (LandResult, error) {
 	}
 	finalProjected, err := projectLandingWorkspaceWith(r, req.Repo, candidate)
 	if err != nil || finalProjected != projected {
-		return LandResult{}, operationRefusal(LandUnprovenCode, "receipt projection moved while binding the landing rows")
+		return LandResult{}, operationRefusal(LandUnprovenCode, "the tree to land changed while its test record was written into it\nrun: metasystem work land %s", req.GoalID)
 	}
 	proofs, err := readLandingRecordWith(r, req.Repo, req.BranchTip, req.GoalID)
 	if err != nil {
@@ -765,13 +765,13 @@ func prepareLanding(req LandRequest, r landingRepository) (LandResult, error) {
 			}
 		}
 		if proof.Verdict == "red" && proofIdentity == candidateIdentity {
-			return LandResult{}, operationRefusal(LandRetryCode, "candidate %s was already recorded red in proof %d", candidate, proof.Number)
+			return LandResult{}, operationRefusal(LandRetryCode, "this exact landing of goal %s already failed its tests (attempt %d)\nrun: metasystem work status %s", req.GoalID, proof.Number, req.GoalID)
 		}
 	}
 	if len(proofs) != 0 {
 		last := proofs[len(proofs)-1]
 		if last.Verdict == "red" && !redProofChecked(r, req.Repo, req.BranchTip, req.GoalID, last) {
-			return LandResult{}, operationRefusal(LandUncheckedCode, "proof %d is red without a clean canary on the fixed branch tip", last.Number)
+			return LandResult{}, operationRefusal(LandUncheckedCode, "landing attempt %d failed its tests, and no clean check on the fixed branch shows it is fixed\nrun: metasystem work status %s", last.Number, req.GoalID)
 		}
 	}
 	result := LandResult{Endpoint: req.EndpointTip, Candidate: candidate, Landing: landingTip,
@@ -787,12 +787,12 @@ func prepareLanding(req LandRequest, r landingRepository) (LandResult, error) {
 	}
 	outcome, pushErr := req.PushTransport.Push(req.Repo, req.Remote, remoteRef, expected, landingTip)
 	if outcome == CASRefused {
-		return LandResult{}, operationRefusal(LandBranchMovedCode, "landing branch moved after %s was observed: %v", expected, pushErr)
+		return LandResult{}, operationRefusal(LandBranchMovedCode, "goal %s's landing branch moved on origin while it was prepared: %v\nrun: metasystem work land %s", req.GoalID, pushErr, req.GoalID)
 	}
 	if outcome == CASUnknown {
 		observed, present, err := req.PushTransport.RemoteTip(req.Repo, req.Remote, remoteRef)
 		if err != nil || !present || observed != landingTip {
-			return LandResult{}, operationRefusal(LandBranchMovedCode, "landing branch outcome is unknown: %v", pushErr)
+			return LandResult{}, operationRefusal(LandBranchMovedCode, "whether goal %s's landing branch was pushed is unknown: %v\nrun: metasystem work land %s", req.GoalID, pushErr, req.GoalID)
 		}
 	}
 	draft := LandingProof{Number: result.ProofNumber, Endpoint: result.Endpoint, Candidate: result.Candidate,

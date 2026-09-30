@@ -1,0 +1,2 @@
+✗ a design needs one goal and a brief; nothing was done
+  → metasystem design write GOAL --brief FILE  FILE is the brief the design author works from

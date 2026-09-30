@@ -1,0 +1,25 @@
+exit 2
+--
+{
+  "schemaVersion": 1,
+  "verb": "work build",
+  "targets": [],
+  "outcome": "refused",
+  "summary": "work build needs one goal, a brief and the checks to run; nothing was done",
+  "next": {
+    "argv": [
+      "metasystem",
+      "work",
+      "build",
+      "standing-validation",
+      "--json",
+      "--brief",
+      "FILE",
+      "--check",
+      "COMMAND"
+    ],
+    "reason": "FILE is the brief; COMMAND is the check that must pass (metasystem work build --help)"
+  }
+}
+
+--

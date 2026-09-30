@@ -1,0 +1,23 @@
+exit 2
+--
+{
+  "schemaVersion": 1,
+  "verb": "test declare-moves",
+  "targets": [],
+  "outcome": "refused",
+  "summary": "declare-moves needs the one goal whose change moves Stop decisions; nothing was done",
+  "next": {
+    "argv": [
+      "metasystem",
+      "test",
+      "declare-moves",
+      "GOAL",
+      "--json",
+      "--reason",
+      "TEXT"
+    ],
+    "reason": "names the goal"
+  }
+}
+
+--

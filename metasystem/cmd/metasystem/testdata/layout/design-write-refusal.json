@@ -1,0 +1,23 @@
+exit 2
+--
+{
+  "schemaVersion": 1,
+  "verb": "design write",
+  "targets": [],
+  "outcome": "refused",
+  "summary": "a design needs one goal and a brief; nothing was done",
+  "next": {
+    "argv": [
+      "metasystem",
+      "design",
+      "write",
+      "GOAL",
+      "--json",
+      "--brief",
+      "FILE"
+    ],
+    "reason": "FILE is the brief the design author works from"
+  }
+}
+
+--

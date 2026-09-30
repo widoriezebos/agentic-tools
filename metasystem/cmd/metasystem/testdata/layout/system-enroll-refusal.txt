@@ -1,0 +1,2 @@
+✗ enroll needs your name; nothing was done
+  → metasystem system enroll --name wido  in a terminal you opened yourself, with your own name

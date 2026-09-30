@@ -1,0 +1,7 @@
+4 jobs known in m1e
+
+JOB                      GOAL                 KIND              STATE       SINCE
+○ j1:build-trial-91e2    switch-on-trial      build launch      completed   07:58
+● j1:review-verbs-3a7c   verbs-match-intent   review launch     running     10:46
+● j2:design-r2-4f1c      verbs-match-intent   builder job       running     10:46
+○ j2:impl-01             switch-on-trial      implementer job   completed   Tue 17:02

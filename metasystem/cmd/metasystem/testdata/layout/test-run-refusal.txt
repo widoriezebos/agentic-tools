@@ -1,0 +1,3 @@
+✗ / is not inside a Git repository; nothing was done
+  → metasystem test run --repo REPOSITORY
+    REPOSITORY is a checkout MetaSystem is set up in; or run it inside one

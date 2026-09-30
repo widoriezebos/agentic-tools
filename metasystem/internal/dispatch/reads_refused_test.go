@@ -155,7 +155,7 @@ func TestReadRefusalAppendPublicationOutcomes(t *testing.T) {
 		seedProvenCleanRead(t, repo, "critic", "code-critic", 1, subject, true)
 		result, err := CritiqueReadAdmission(repo, "code-critic", "candidate", 1, subject)
 		assertReadRefusal(t, result, err, redundantReadRefusal, "critic", 1)
-		if !result.EventRecorded || result.EventDurable || result.EventID == "" || !strings.Contains(err.Error(), "durability") {
+		if !result.EventRecorded || result.EventDurable || result.EventID == "" || !strings.Contains(err.Error(), "survive a crash") {
 			t.Fatalf("doubted publication = %+v, %v", result, err)
 		}
 		path := filepath.Join(repo, "artifacts", "agents", "critic", "reads-refused.jsonl")

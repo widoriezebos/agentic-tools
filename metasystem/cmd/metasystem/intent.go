@@ -20,6 +20,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hookswitch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
@@ -149,15 +150,15 @@ func intentCommands() []intentCommand {
 func goalIntentCommands() []intentCommand {
 	return []intentCommand{
 		{
-			object: "goal", action: "list", primary: true, audience: "both", summary: "list the open goals",
+			object: "goal", action: "list", primary: true, audience: "both", laidOut: true, summary: "list the open goals",
 			usage: []string{"metasystem goal list [--all] [--label LABEL]... [--history]", "metasystem goal list --ready [--label LABEL]... [--machine NAME]", "metasystem goal list --tiers"},
 			details: []string{
-				"Lists the accepted goals. --all adds the done and abandoned goals.",
+				"Lists the active goals: claimed, approved, and queued at priority 1. --all lists every goal, the done and abandoned ones too; --label lists every open goal carrying the labels.",
 				"--fetch checks the latest shared goal history before listing it and may update the local copy; it works with every view.",
 				"--ready takes --label and --machine; --tiers takes no filter; --history belongs to the listing. A filter a view cannot honor is refused.",
 			},
 			flags: []intentFlag{
-				{name: "all", aliases: []string{"done"}, usage: "include done and abandoned goals"},
+				{name: "all", aliases: []string{"done"}, usage: "every goal: queued and parked ones too, and the done and abandoned"},
 				{name: "label", value: "LABEL", repeat: true, usage: "only goals carrying every named label"},
 				{name: "ready", usage: "the ready frontier: the goal this machine continues or claims next"},
 				{name: "tiers", usage: "the recorded and derived tiers, and the goals a person may lower"},
@@ -171,7 +172,7 @@ func goalIntentCommands() []intentCommand {
 			run:      runIntentGoalViews,
 		},
 		{
-			object: "goal", action: "show", audience: "both", summary: "one goal's record: intent, next step, budget and designs",
+			object: "goal", action: "show", audience: "both", laidOut: true, summary: "one goal's record: intent, next step, budget and designs",
 			usage:    []string{"metasystem goal show G [--history]"},
 			details:  []string{"goal show G is the goal's record; status G is its live work."},
 			flags:    []intentFlag{intentTargetFlag, {name: "history", advanced: true, usage: "include the goal's ledger history"}},
@@ -180,7 +181,7 @@ func goalIntentCommands() []intentCommand {
 			run:      runIntentShow,
 		},
 		{
-			object: "goal", action: "approve", primary: true, audience: "human", summary: "approve goals for execution",
+			object: "goal", action: "approve", primary: true, audience: "human", laidOut: true, summary: "approve goals for execution",
 			usage: []string{"metasystem goal approve G... [--budget BOX]"},
 			details: []string{
 				"Without --budget each goal is approved under its own tier's norm box, all goals in one act.",
@@ -219,7 +220,7 @@ func goalIntentCommands() []intentCommand {
 			run:      runIntentBudgetWithLimits,
 		},
 		{
-			object: "goal", action: "pause", audience: "both", summary: "park a goal with a reason",
+			object: "goal", action: "pause", audience: "both", laidOut: true, summary: "park a goal with a reason",
 			usage: []string{"metasystem goal pause G --reason TEXT"},
 			flags: []intentFlag{
 				intentTargetFlag,
@@ -809,6 +810,9 @@ type intentResult struct {
 	// view draws a converted verb's text page; nil renders the legacy
 	// shape. --json never reads it.
 	view func(*textui.Page)
+	// viewsRefusal lets view draw a refusal or failure as well: its words
+	// differ from --json's (a path shortened), and it draws both lines.
+	viewsRefusal bool
 	// attention is the banner above the headline (P12): the standing
 	// conditions that change what the person may do.
 	attention func(textui.Env) []textui.Attention
@@ -853,17 +857,19 @@ func (inv *intentInvocation) render(result intentResult) int {
 		stream = inv.stderr
 	}
 	env := inv.textEnv(stream)
+	viewed := result.view != nil && (succeeded || result.viewsRefusal)
 	page := textui.NewLegacy(env)
-	if result.view != nil && succeeded || inv.command.laidOut {
+	if viewed || inv.command.laidOut {
 		page = textui.New(env)
 	}
 	if result.attention != nil {
 		page.Banner(result.attention(env)...)
 	}
 	switch {
-	case result.view != nil && succeeded:
-		if result.Next != nil {
-			page.Hint(textui.Hint{Argv: result.Next.Argv, Reason: result.Next.Reason})
+	case viewed:
+		// A refusal's view draws its own two lines, the hint among them.
+		if result.Next != nil && succeeded {
+			page.Hint(inv.hintFor(result.Next))
 		}
 		result.view(page)
 	case succeeded:
@@ -890,7 +896,7 @@ func (inv *intentInvocation) legacyConfirmed(page *textui.Page, result intentRes
 	}
 	page.Legacy(result.text...)
 	if result.Next != nil {
-		page.Hint(textui.Hint{Argv: result.Next.Argv, Reason: result.Next.Reason})
+		page.Hint(inv.hintFor(result.Next))
 	}
 }
 
@@ -906,9 +912,17 @@ func (inv *intentInvocation) legacyRefused(page *textui.Page, result intentResul
 		summary = "metasystem " + inv.command.name + ": " + summary
 	}
 	var hint textui.Hint
+	// An owner's message brings its own line 2 ("Messages a Person Reads");
+	// it is the hint unless the verb named a remedy of its own.
+	retried := result.retry != "" && result.Next != nil && slices.Equal(result.Next.Argv, inv.typedArgv())
+	var middle []string
+	if first, between, owned, ok := ownerRemedy(summary); ok && result.Decision == "" && (result.Next == nil || retried) {
+		summary, middle, hint = first, between, owned
+	}
 	switch {
+	case len(hint.Argv) > 0 || hint.Reason != "":
 	case result.Next != nil:
-		hint = textui.Hint{Argv: result.Next.Argv, Reason: result.Next.Reason}
+		hint = inv.hintFor(result.Next)
 	case result.Decision != "":
 		hint = textui.Hint{Reason: result.Decision}
 	case result.nextReason != "":
@@ -919,14 +933,38 @@ func (inv *intentInvocation) legacyRefused(page *textui.Page, result intentResul
 		page.Mark(textui.Alert, summary)
 	case result.Outcome == intentInProgress:
 		page.Mark(textui.Running, summary)
-	case len(result.text) == 0:
+	case len(result.text) == 0 && (len(middle) == 0 || !inv.input.switched("verbose")):
 		page.Refusal(summary, hint)
 		return
 	default:
 		page.Refusal(summary, textui.Hint{})
 	}
+	if inv.input.switched("verbose") {
+		page.Legacy(middle...)
+	}
 	page.Legacy(result.text...)
 	page.Hint(hint)
+}
+
+// ownerRemedy splits an owner's message that ends in its own line 2 (a
+// "run: C" line, or a "nothing to do; why" line) into its line 1, the lines
+// between (which only --verbose prints) and that line 2 as a hint.
+func ownerRemedy(text string) (string, []string, textui.Hint, bool) {
+	lines := strings.Split(text, "\n")
+	if len(lines) < 2 {
+		return text, nil, textui.Hint{}, false
+	}
+	first, middle, last := lines[0], lines[1:len(lines)-1], lines[len(lines)-1]
+	if command, isRun := strings.CutPrefix(last, "run: "); isRun {
+		if strings.HasPrefix(command, "metasystem ") && !strings.ContainsAny(command, ",;()'\"") {
+			return first, middle, textui.Hint{Argv: strings.Fields(command)}, true
+		}
+		return first, middle, textui.Hint{Reason: command}, true
+	}
+	if strings.HasPrefix(last, "nothing to do") {
+		return first, middle, textui.Hint{Reason: last}, true
+	}
+	return text, nil, textui.Hint{}, false
 }
 
 // textEnv is the layout of one output stream: its width, colour and
@@ -971,6 +1009,20 @@ func detailLines(details []string) []string {
 }
 
 // withinDirectory reports whether path is dir or lies below it.
+// hintFor is a result's next step as the page prints it: a --repo naming
+// the checkout the command already runs in is dropped from the text, while
+// the result's argv, which --json prints, keeps it.
+func (inv *intentInvocation) hintFor(next *intentNext) textui.Hint {
+	argv := next.Argv
+	if at := slices.Index(argv, "--repo"); at >= 0 && at+1 < len(argv) && inv.layout.GitRoot != "" && inv.cwd != "" {
+		checkout := realpath.Resolve(inv.layout.GitRoot)
+		if realpath.Resolve(argv[at+1]) == checkout && withinDirectory(realpath.Resolve(inv.cwd), checkout) {
+			argv = append(slices.Clone(argv[:at]), argv[at+2:]...)
+		}
+	}
+	return textui.Hint{Argv: argv, Reason: next.Reason}
+}
+
 func withinDirectory(path, dir string) bool {
 	relative, err := filepath.Rel(dir, path)
 	return err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator))
@@ -1126,8 +1178,18 @@ func ownerResult(report *ownerReport, code int, confirmed intentResult) intentRe
 	case unchanged:
 		return intentResult{Outcome: intentUnchanged, Summary: report.result.Detail, text: lines, Data: map[string]any{"owner": ownerPublication(*report.result)}}
 	case report.result != nil:
-		return intentResult{Outcome: intentRefused, Summary: report.result.Detail, text: lines, code: max(code, 1), retry: "the goals changed meanwhile; try again",
+		result := intentResult{Outcome: intentRefused, Summary: report.result.Detail, text: lines, code: max(code, 1), retry: "the goals changed meanwhile; try again",
 			Data: map[string]any{"owner": ownerPublication(*report.result)}, Details: refusalCodeDetails(report.result.Code)}
+		// A rejection whose second line names the command that clears it
+		// ("run: CMD  (why)") carries that command as the next step. A
+		// second line in another form (the helm's force proposal appended
+		// to a remedy) is printed as the owner wrote it.
+		if first, second, found := strings.Cut(report.result.Detail, "\nrun: "); found && !strings.Contains(second, "\n") && strings.HasSuffix(second, ")") {
+			if command, why, reasoned := strings.Cut(second, "  ("); reasoned {
+				result.Summary, result.next, result.nextReason, result.retry = first, shellWords(command), strings.TrimSuffix(why, ")"), ""
+			}
+		}
+		return result
 	}
 	return intentResult{Outcome: intentFailed, code: max(code, 1), text: lines,
 		Summary: "the command stopped without saying whether it was done", next: []string{"metasystem", "system", "check"},
@@ -1310,37 +1372,155 @@ func objectActions(object string) []intentCommand {
 	return actions
 }
 
-func writeIntentRootHelp(w io.Writer) {
-	fmt.Fprintln(w, "usage: metasystem OBJECT ACTION [TARGET...] [OPTIONS]")
-	fmt.Fprintln(w, "Say what you want done to what; metasystem prepares, runs, collects and recovers the work.")
-	for _, group := range intentGroups {
-		fmt.Fprintf(w, "\n%s:\n", group.heading)
-		for _, object := range group.objects {
-			fmt.Fprintf(w, "  %-11s %s\n", object, intentObjectSummaries[object])
-		}
+// helpEnv is the layout of a help page written to w: a terminal's width,
+// colour and symbols, and for anything else the full width without colour.
+func helpEnv(w io.Writer) textui.Env {
+	if file, ok := w.(*os.File); ok {
+		return textui.Detect(file.Fd(), os.Getenv, time.Now(), time.Local)
 	}
-	fmt.Fprintln(w)
-	fmt.Fprintln(w, "A typical delivery:")
-	fmt.Fprintln(w, "  metasystem work build my-goal --brief brief.md --check go test ./...")
-	fmt.Fprintln(w, "  metasystem work review my-goal")
-	fmt.Fprintln(w, "  metasystem work land my-goal")
-	fmt.Fprintln(w)
-	fmt.Fprintln(w, "More:")
-	fmt.Fprintln(w, "  metasystem OBJECT                  that object's actions")
-	fmt.Fprintln(w, "  metasystem OBJECT ACTION --help    one action's forms, options and examples")
-	fmt.Fprintln(w, "  metasystem help [OBJECT [ACTION]]  the same pages; help agent, help human and help all by audience")
-	fmt.Fprintln(w, "Options go before or after the target; --repo PATH selects the repository from any path inside it.")
+	return textui.DetectWith(false, 0, func(string) string { return "" }, time.Now(), time.Local)
 }
 
-// writeIntentObjectHelp lists one object's actions, one line each.
-func writeIntentObjectHelp(w io.Writer, object string) {
-	fmt.Fprintf(w, "usage: metasystem %s ACTION [TARGET...] [OPTIONS]\n", object)
-	fmt.Fprintf(w, "%s: %s\n", object, intentObjectSummaries[object])
-	fmt.Fprintln(w, "actions:")
-	for _, command := range objectActions(object) {
-		fmt.Fprintf(w, "  %-15s %s\n", command.action, command.summary)
+// helpRows are a help list's name and summary rows, the names padded to the
+// widest so the summaries align across every section of the page.
+type helpRow struct{ name, summary string }
+
+func helpColumn(rows []helpRow) int {
+	widest := 0
+	for _, row := range rows {
+		widest = max(widest, len([]rune(row.name)))
 	}
-	fmt.Fprintf(w, "metasystem %s ACTION --help shows one action's forms, options and examples.\n", object)
+	return widest
+}
+
+func addHelpRows(section *textui.Section, column int, rows []helpRow) {
+	for _, row := range rows {
+		section.KV(row.name+strings.Repeat(" ", column-len([]rune(row.name))), textui.Plain(row.summary))
+	}
+}
+
+func writeIntentRootHelp(w io.Writer) {
+	_, _ = io.WriteString(w, intentRootHelpPage(helpEnv(w)).String())
+}
+
+// intentRootHelpPage is the top-level help (output-style §6.13): the
+// objects by area, a typical delivery, where the other pages are, and the
+// one command to start with.
+func intentRootHelpPage(env textui.Env) *textui.Page {
+	page := textui.New(env)
+	page.Headline("metasystem", "say what you want done to what; it prepares, runs, collects and recovers the work")
+	var all []helpRow
+	for _, group := range intentGroups {
+		for _, object := range group.objects {
+			all = append(all, helpRow{object, intentObjectSummaries[object]})
+		}
+	}
+	column := helpColumn(all)
+	for _, group := range intentGroups {
+		var rows []helpRow
+		for _, object := range group.objects {
+			rows = append(rows, helpRow{object, intentObjectSummaries[object]})
+		}
+		addHelpRows(page.Section(group.heading, ""), column, rows)
+	}
+	delivery := page.Section("A typical delivery", "")
+	for _, example := range []string{
+		"metasystem work build my-goal --brief brief.md --check go test ./...",
+		"metasystem work review my-goal",
+		"metasystem work land my-goal",
+	} {
+		delivery.Text(example)
+	}
+	more := []helpRow{
+		{"metasystem OBJECT", "that object's actions"},
+		{"metasystem OBJECT ACTION --help", "one action's forms, options and examples"},
+		{"metasystem help [OBJECT [ACTION]]", "the same pages; help agent, help human, help all by audience"},
+	}
+	addHelpRows(page.Section("More", ""), helpColumn(more), more)
+	page.Facts(textui.KV{Key: "usage", Value: []textui.Span{textui.Plain("metasystem OBJECT ACTION [TARGET...] [OPTIONS]")}},
+		textui.KV{Value: []textui.Span{textui.Plain("options go before or after the target; --repo PATH selects the repository from any path inside it")}})
+	page.Hint(textui.Hint{Argv: []string{"metasystem", "status"}, Reason: "what is going on in this checkout"})
+	return page
+}
+
+// intentActionIntents group the actions of an object with more than
+// intentHelpGroupAbove of them by what a person does with them (output-style
+// D4): read, decide, work, shape. An object with fewer is one list.
+const intentHelpGroupAbove = 8
+
+var intentActionIntents = map[string][]struct {
+	heading string
+	actions []string
+}{
+	"goal": {
+		{"Read", []string{"list", "show", "notes"}},
+		{"Decide", []string{"open", "approve", "unapprove", "budget", "prioritize", "pin", "allow", "disallow", "accept-risk", "review", "land-without-sitting"}},
+		{"Work", []string{"claim", "release", "pause", "resume", "done", "reopen", "abandon"}},
+		{"Shape", []string{"edit", "split", "group", "ungroup", "block", "unblock", "sync"}},
+	},
+	"work": {
+		{"Read", []string{"status", "wait"}},
+		{"Work", []string{"brief", "build", "workspace", "review", "revise", "land", "finish", "stop"}},
+	},
+	"test": {
+		{"Read", []string{"plan", "list", "status", "wait"}},
+		{"Work", []string{"run", "declare-moves", "baseline"}},
+		{"Shape", []string{"add", "remove"}},
+	},
+	"system": {
+		{"Read", []string{"status", "check"}},
+		{"Decide", []string{"enroll"}},
+		{"Work", []string{"start", "stop", "restart"}},
+		{"Shape", []string{"setup", "adopt", "completion"}},
+	},
+}
+
+// writeIntentObjectHelp lists one object's actions.
+func writeIntentObjectHelp(w io.Writer, object string) {
+	_, _ = io.WriteString(w, intentObjectHelpPage(helpEnv(w), object).String())
+}
+
+// intentObjectHelpPage is one object's page (output-style §6.12): its
+// actions in one aligned column, grouped by intent when there are many.
+func intentObjectHelpPage(env textui.Env, object string) *textui.Page {
+	page := textui.New(env)
+	page.Headline("metasystem "+object, intentObjectSummaries[object])
+	actions := objectActions(object)
+	var all []helpRow
+	summaries := map[string]string{}
+	for _, command := range actions {
+		all = append(all, helpRow{command.action, command.summary})
+		summaries[command.action] = command.summary
+	}
+	column := helpColumn(all)
+	if len(actions) <= intentHelpGroupAbove || intentActionIntents[object] == nil {
+		var rows []textui.KV
+		for _, row := range all {
+			rows = append(rows, textui.KV{Key: row.name, Value: []textui.Span{textui.Plain(row.summary)}})
+		}
+		page.Facts(rows...)
+	} else {
+		listed := map[string]bool{}
+		for _, group := range intentActionIntents[object] {
+			var rows []helpRow
+			for _, action := range group.actions {
+				if summary, ok := summaries[action]; ok {
+					rows = append(rows, helpRow{action, summary})
+					listed[action] = true
+				}
+			}
+			addHelpRows(page.Section(group.heading, ""), column, rows)
+		}
+		var rest []helpRow
+		for _, row := range all {
+			if !listed[row.name] {
+				rest = append(rest, row)
+			}
+		}
+		addHelpRows(page.Section("More", ""), column, rest)
+	}
+	page.Hint(textui.Hint{Argv: []string{"metasystem", object, "ACTION", "--help"}, Reason: "one action's forms, options and examples"})
+	return page
 }
 
 // writeIntentLong lists commands with every usage, the summary and the first
@@ -1409,65 +1589,108 @@ func writeIntentHelp(w io.Writer, command intentCommand) {
 }
 
 func writeIntentCommandHelp(w io.Writer, command intentCommand) {
-	fmt.Fprintf(w, "%s - %s\n", command.name, command.summary)
-	if slices.Contains(intentAdministrationObjects, command.object) {
-		fmt.Fprintln(w, "MetaSystem administration: this action manages the work system itself.")
+	_, _ = io.WriteString(w, intentCommandHelpPage(helpEnv(w), command).String())
+}
+
+// intentCommandHelpPage is one action's page: what it does, its forms, what
+// else a person should know, its options and examples.
+func intentCommandHelpPage(env textui.Env, command intentCommand) *textui.Page {
+	page := textui.New(env)
+	page.Headline("metasystem "+command.name, command.summary)
+	// A form or an example is a command a person pastes: a table cell,
+	// never broken across lines (P9).
+	forms := page.Section("", "").Table(textui.Column{}, textui.Column{})
+	for index, form := range command.usage {
+		key := ""
+		if index == 0 {
+			key = "  usage"
+		}
+		forms.Row(textui.Plain(key), textui.Plain(form))
 	}
-	fmt.Fprintln(w, "usage:")
-	for _, usage := range command.usage {
-		fmt.Fprintf(w, "  %s\n", usage)
+	about := page.Section("", "")
+	if slices.Contains(intentAdministrationObjects, command.object) {
+		about.Text("MetaSystem administration: this action manages the work system itself.")
+	}
+	for _, paragraph := range helpParagraphs(command.details) {
+		about.Text(paragraph)
 	}
 	if len(command.administrationUsage) > 0 {
-		fmt.Fprintln(w, "MetaSystem administration:")
-		for _, usage := range command.administrationUsage {
-			fmt.Fprintf(w, "  %s\n", usage)
+		admin := page.Section("MetaSystem administration", "").Table(textui.Column{})
+		for _, form := range command.administrationUsage {
+			admin.Row(textui.Plain(form))
 		}
 	}
-	for _, detail := range command.details {
-		fmt.Fprintf(w, "%s\n", detail)
+	type option struct{ spelling, usage string }
+	options := map[bool][]option{}
+	widest := 0
+	for _, definition := range command.helpFlags() {
+		if definition.hidden {
+			continue
+		}
+		spelling := "--" + definition.name
+		if definition.value != "" {
+			spelling += " " + definition.value
+		}
+		if definition.repeat {
+			spelling += " (repeatable)"
+		}
+		usage := definition.usage
+		if len(definition.aliases) > 0 {
+			aliases := make([]string, len(definition.aliases))
+			for index, alias := range definition.aliases {
+				aliases[index] = "--" + alias
+			}
+			usage += " (also " + strings.Join(aliases, ", ") + ")"
+		}
+		options[definition.advanced] = append(options[definition.advanced], option{spelling, usage})
+		widest = max(widest, len([]rune(spelling)))
 	}
-	writeFlags := func(heading string, advanced bool) {
-		var rows []string
-		for _, definition := range command.helpFlags() {
-			if definition.advanced != advanced || definition.hidden {
-				continue
-			}
-			spelling := "--" + definition.name
-			if definition.value != "" {
-				spelling += " " + definition.value
-			}
-			if definition.repeat {
-				spelling += " (repeatable)"
-			}
-			line := fmt.Sprintf("  %-34s %s", spelling, definition.usage)
-			if len(definition.aliases) > 0 {
-				aliases := make([]string, len(definition.aliases))
-				for index, alias := range definition.aliases {
-					aliases[index] = "--" + alias
-				}
-				line += " (also " + strings.Join(aliases, ", ") + ")"
-			}
-			rows = append(rows, line)
-		}
-		if len(rows) == 0 {
-			return
-		}
-		fmt.Fprintln(w, heading)
-		for _, row := range rows {
-			fmt.Fprintln(w, row)
-		}
-	}
-	writeFlags("options:", false)
-	writeFlags("advanced:", true)
-	if len(command.examples) > 0 {
-		fmt.Fprintln(w, "examples:")
-		for _, example := range command.examples {
-			fmt.Fprintf(w, "  %s\n", example)
-		}
-	}
+	aside := ""
 	if command.passthrough == nil {
-		fmt.Fprintln(w, "Options go before or after the target; `--` ends the options.")
+		aside = "before or after the target; -- ends them"
 	}
+	for _, advanced := range []bool{false, true} {
+		title := "Options"
+		if advanced {
+			title = "Advanced"
+		}
+		var rows []helpRow
+		for _, option := range options[advanced] {
+			rows = append(rows, helpRow{option.spelling, option.usage})
+		}
+		if len(rows) > 0 {
+			addHelpRows(page.Section(title, aside), widest, rows)
+			aside = ""
+		}
+	}
+	if len(command.examples) > 0 {
+		examples := page.Section("Examples", "").Table(textui.Column{})
+		for _, example := range command.examples {
+			examples.Row(textui.Plain(example))
+		}
+	}
+	return page
+}
+
+// helpParagraphs joins an action's detail lines into paragraphs: a line
+// that does not end a sentence runs on into the next, so the page wraps
+// whole sentences at its own width.
+func helpParagraphs(details []string) []string {
+	var paragraphs []string
+	open := false
+	for _, detail := range details {
+		detail = strings.TrimSpace(detail)
+		if detail == "" {
+			continue
+		}
+		if open {
+			paragraphs[len(paragraphs)-1] += " " + detail
+		} else {
+			paragraphs = append(paragraphs, detail)
+		}
+		open = !strings.ContainsAny(detail[len(detail)-1:], ".!?:;")
+	}
+	return paragraphs
 }
 
 // helpFlags are the options help shows: a parsed action's own options plus

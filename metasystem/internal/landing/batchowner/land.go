@@ -23,6 +23,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/strictjson"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/verbresult"
 )
 
 // ExecuteBatchLanding lands one batch with the lane checkout held: concurrent
@@ -563,33 +564,22 @@ func ExecuteBatchPrefixReceiptWithDependencies(root, id string, record batch.Rec
 	args := BatchPrefixReceiptArgsWithFresh(executionRoot, controlRoot, goalID, tree, resultPath, decision.Groups, unit.Claim, decision.FreshEpisode, decision.FreshExpiresAt)
 	command := exec.Command(binary, args...)
 	command.Dir, command.Env = executionRoot, append(gittree.ScrubbedEnviron(), "METASYSTEM_OWNER_LINEAGE="+LandingOwnerLineage)
-	output, runErr := command.CombinedOutput()
-	if runErr != nil && command.ProcessState != nil && command.ProcessState.ExitCode() == proofrun.ExitAdmissionRefused {
-		reason := strings.TrimSpace(string(output))
-		code := batchAdmissionRefusalCode(reason)
-		switch code {
-		case "GOAL_REVISION_MOVED":
-			return batch.PrefixRunResult{}, &batch.PrefixRevisionRefusal{Reason: reason}
-		case "BATCH_MEMBER_BUDGET_REFUSED", "BUDGET_REFUSED":
-			return batch.PrefixRunResult{}, &batch.PrefixBudgetRefusal{Reason: reason}
-		case "CANDIDATE_GOAL_REFUSED":
-			if strings.Contains(reason, "state=fenced") {
-				return batch.PrefixRunResult{}, &batch.PrefixFencedRefusal{Reason: reason}
-			}
-			return batch.PrefixRunResult{}, &batch.PrefixAdmissionRefusal{Code: code, Reason: reason}
-		default:
-			return batch.PrefixRunResult{}, &batch.PrefixAdmissionRefusal{Code: code, Reason: reason}
-		}
+	child, err := runTestRunChild(command)
+	if err != nil {
+		return batch.PrefixRunResult{}, fmt.Errorf("run the batch's test run: %w", err)
+	}
+	if child.Outcome == verbresult.Refused {
+		return batch.PrefixRunResult{}, admissionRefusal(child)
 	}
 	var result proofrun.TestResult
 	if err := strictjson.Read(resultPath, &result); err != nil {
-		if runErr != nil {
-			return batch.PrefixRunResult{}, fmt.Errorf("run the batch's test run: %s: %w", strings.TrimSpace(string(output)), runErr)
+		if child.Outcome != verbresult.Confirmed {
+			return batch.PrefixRunResult{}, fmt.Errorf("run the batch's test run: %w", child.Err())
 		}
 		return batch.PrefixRunResult{}, err
 	}
 	out := batch.PrefixRunResult{AttemptID: result.AttemptID, ResultPath: resultPath, Reused: map[string]string{}}
-	reusableExit := command.ProcessState != nil && command.ProcessState.ExitCode() == proofrun.ExitReusableSuccess
+	reusableExit := child.Outcome == verbresult.Unchanged
 	for _, group := range result.Groups {
 		switch PrefixGroupExecution(group, reusableExit) {
 		case "cached":
@@ -609,13 +599,10 @@ func ExecuteBatchPrefixReceiptWithDependencies(root, id string, record batch.Rec
 			out.Red = append(out.Red, batch.RedGroup{ID: group.ID, Status: group.Status, LogPath: group.LogPath, LogDigest: group.LogDigest, InputManifest: slices.Clone(group.InputManifest)})
 		}
 	}
-	if command.ProcessState != nil && BatchProofExitAccepted(command.ProcessState.ExitCode(), result) {
-		runErr = nil
-	}
-	if len(out.Red) != 0 {
+	if len(out.Red) != 0 || BatchProofOutcomeAccepted(child, result) {
 		return out, nil
 	}
-	return out, runErr
+	return out, fmt.Errorf("run the batch's test run: %w", child.Err())
 }
 
 // PrefixGroupExecution is how a prefix proof's group counts: "executed"
@@ -632,29 +619,9 @@ func PrefixGroupExecution(group proofrun.GroupResult, reusableExit bool) string 
 	return "executed"
 }
 
-func batchAdmissionRefusalCode(reason string) string {
-	for _, field := range strings.Fields(reason) {
-		candidate := strings.Trim(field, ":,;()[]")
-		if candidate == "" {
-			continue
-		}
-		valid := true
-		for _, char := range candidate {
-			if char != '_' && (char < 'A' || char > 'Z') && (char < '0' || char > '9') {
-				valid = false
-				break
-			}
-		}
-		if valid && (strings.HasSuffix(candidate, "_REFUSED") || strings.HasSuffix(candidate, "_MOVED")) {
-			return candidate
-		}
-	}
-	return ""
-}
-
 func BatchPrefixReceiptArgsWithFresh(root, controlRoot, goalID, tree, resultPath string, groups []string, claim batch.Claim, episode, expiresAt string) []string {
 	args := []string{"internal", "test", "run", "--root", root, "--control-root", controlRoot, "--goal", goalID, "--tree", tree, "--mode", "auto", "--purpose", "delivery", "--batch-requirements", testrun.BatchRequirementsArgument(groups), "--result", resultPath,
-		"--expected-goal-revision", fmt.Sprint(claim.Revision), "--expected-accounting-revision", fmt.Sprint(claim.AccountingRevision), "--batch-prefix"}
+		"--expected-goal-revision", fmt.Sprint(claim.Revision), "--expected-accounting-revision", fmt.Sprint(claim.AccountingRevision), "--batch-prefix", "--json"}
 	if episode != "" {
 		args = append(args, "--fresh-episode", episode)
 		if expiresAt != "" {

@@ -63,9 +63,10 @@ func TailorConf(confPath string, requested []string) error {
 		defaultRuntime = config.AutoRuntime
 	}
 	// stale is a runtime binding this selection cannot keep. Auto never is:
-	// it resolves among the selected runtimes on every host.
+	// it resolves among the selected runtimes on every host; nor is off (a
+	// seat lane that starts nothing names no runtime).
 	stale := func(value string) bool {
-		return value != "main" && value != config.AutoRuntime && !selectedSet[value]
+		return value != "main" && value != config.AutoRuntime && value != config.SeatRuntimeOff && !selectedSet[value]
 	}
 
 	original, err := os.ReadFile(confPath)

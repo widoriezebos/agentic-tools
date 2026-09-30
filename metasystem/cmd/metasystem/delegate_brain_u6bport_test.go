@@ -45,7 +45,7 @@ func TestU6bPortDelegateBoundaryFencesACorruptBrainDeclaration(t *testing.T) {
 		if err := json.Unmarshal(bytes.TrimSpace(stdout.Bytes()), &outcome); err != nil {
 			t.Fatalf("%v: stdout %q is not one typed line: %v", args, stdout.String(), err)
 		}
-		if code != 2 || outcome.Outcome != "BRAIN_REFUSED" || outcome.Headline != "refused" || !strings.Contains(outcome.Detail, "until a human repairs it") {
+		if code != 2 || outcome.Outcome != "BRAIN_REFUSED" || outcome.Headline != "refused" || !strings.Contains(outcome.Detail, "so nothing here dispatches, lands or claims") {
 			t.Fatalf("%v: code %d outcome %+v stderr %q", args, code, outcome, stderr.String())
 		}
 	}

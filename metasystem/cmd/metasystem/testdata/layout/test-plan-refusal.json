@@ -1,0 +1,6 @@
+exit 1
+--
+{"schemaVersion":1,"verb":"test plan","targets":[],"outcome":"failed","summary":"the goals cannot be read to find the one this test run is charged to: this checkout has not fetched the goal ledger yet; metasystem goal list --fetch fetches it"}
+
+--
+the goals cannot be read to find the one this test run is charged to: this checkout has not fetched the goal ledger yet; metasystem goal list --fetch fetches it

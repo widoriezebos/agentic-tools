@@ -369,7 +369,7 @@ func (s *Sequencer) room(destination string) error {
 	if free < 2*size {
 		return refuse(CodeDiskShort,
 			"%s has %d MB free and a clone of %s needs about %d MB",
-			filepath.Dir(destination), free/(1<<20), s.Request.From, (2*size)/(1<<20))
+			filepath.Dir(destination), free/(1<<20), s.Request.From, (2*size)/(1<<20)).run("metasystem disk clean --preview")
 	}
 	return nil
 }
@@ -559,31 +559,31 @@ func (s *Sequencer) configuration(record *Record) (stepRun, error) {
 func (s *Sequencer) evidenceRoot(record *Record) (config.EvidenceRoot, error) {
 	mine, err := s.Host.EvidenceRoot(s.install(s.Request.From))
 	if err != nil {
-		return config.EvidenceRoot{}, refuse(CodeEvidenceRootUnsafe, "this seat's evidence root could not be resolved: %v", err)
+		return config.EvidenceRoot{}, refuse(CodeEvidenceRootUnsafe, "this seat's evidence root could not be resolved (%v)", err).run(evidenceRootCommand)
 	}
 	theirs, err := s.Host.EvidenceRoot(s.install(record.Destination))
 	if err != nil {
-		return config.EvidenceRoot{}, refuse(CodeEvidenceRootUnsafe, "the new machine's evidence root could not be resolved: %v", err)
+		return config.EvidenceRoot{}, refuse(CodeEvidenceRootUnsafe, "the new machine's evidence root could not be resolved (%v)", err).run(evidenceRootCommand)
 	}
 	mineCanonical, err := s.Host.Canonical(mine.Path)
 	if err != nil {
-		return config.EvidenceRoot{}, refuse(CodeEvidenceRootUnsafe, "this seat's evidence root %s could not be resolved: %v", mine.Path, err)
+		return config.EvidenceRoot{}, refuse(CodeEvidenceRootUnsafe, "this seat's evidence root %s could not be resolved (%v)", mine.Path, err).run(evidenceRootCommand)
 	}
 	theirsCanonical, err := s.Host.Canonical(theirs.Path)
 	if err != nil {
-		return config.EvidenceRoot{}, refuse(CodeEvidenceRootUnsafe, "%s could not be resolved: %v", theirs.Path, err)
+		return config.EvidenceRoot{}, refuse(CodeEvidenceRootUnsafe, "the new machine's evidence root %s could not be resolved (%v)", theirs.Path, err).run(evidenceRootCommand)
 	}
 	if mineCanonical == theirsCanonical {
 		return config.EvidenceRoot{}, refuse(CodeEvidenceRootUnsafe,
-			"the evidence root for %s would be this seat's own root %s", s.Request.Machine, mineCanonical)
+			"the evidence root for %s would be this seat's own root %s", s.Request.Machine, mineCanonical).run(evidenceRootCommand)
 	}
 	created, err := s.Host.MakeDir(theirs.Path)
 	if err != nil {
-		return config.EvidenceRoot{}, refuse(CodeEvidenceRootUnsafe, "%s could not be created: %v", theirs.Path, err)
+		return config.EvidenceRoot{}, refuse(CodeEvidenceRootUnsafe, "the new machine's evidence root %s could not be created (%v)", theirs.Path, err).run(evidenceRootCommand)
 	}
 	if !created && !record.Created.EvidenceRoot {
 		return config.EvidenceRoot{}, refuse(CodeEvidenceRootUnsafe,
-			"%s is already there and this launch did not create it", theirs.Path)
+			"the new machine's evidence root %s is already there and this launch did not create it", theirs.Path).run(evidenceRootCommand)
 	}
 	// A leaf that resolves somewhere other than beneath its own resolved
 	// parent is a symlink pointing out of the evidence tree, which would put
@@ -593,12 +593,12 @@ func (s *Sequencer) evidenceRoot(record *Record) (config.EvidenceRoot, error) {
 	// refused.
 	parent, err := s.Host.Canonical(filepath.Dir(theirs.Path))
 	if err != nil {
-		return config.EvidenceRoot{}, refuse(CodeEvidenceRootUnsafe, "%s could not be resolved: %v", filepath.Dir(theirs.Path), err)
+		return config.EvidenceRoot{}, refuse(CodeEvidenceRootUnsafe, "the folder above the new machine's evidence root, %s, could not be resolved (%v)", filepath.Dir(theirs.Path), err).run(evidenceRootCommand)
 	}
 	resolved, err := s.Host.Canonical(theirs.Path)
 	if err != nil || resolved != filepath.Join(parent, filepath.Base(theirs.Path)) {
 		return config.EvidenceRoot{}, refuse(CodeEvidenceRootUnsafe,
-			"%s resolves to %s; an evidence root that is a link elsewhere is refused", theirs.Path, resolved)
+			"the new machine's evidence root %s is a link to %s, and a root must be a folder of its own", theirs.Path, resolved).run(evidenceRootCommand)
 	}
 	// The record says this launch made the directory before anything else in
 	// this step can fail, so a retry meets a directory its own record
@@ -628,8 +628,8 @@ func (s *Sequencer) nickname(record *Record) (stepRun, error) {
 	}
 	if err == nil && strings.TrimSpace(held) != "" {
 		return stepRun{}, refuse(CodeNicknameTaken,
-			"%s already carries the nickname %s, which is not this launch's %s",
-			record.Destination, strings.TrimSpace(held), s.Request.Machine)
+			"%s is already the machine %s, not this launch's %s",
+			record.Destination, strings.TrimSpace(held), s.Request.Machine).run("metasystem machine start " + s.Request.Machine + " --destination <an empty place>")
 	}
 	if _, err := s.git(record.Destination, "config", "metasystem.goal.machine", s.Request.Machine); err != nil {
 		return stepRun{}, err
@@ -690,7 +690,7 @@ func (s *Sequencer) enrollment(record *Record) (stepRun, error) {
 	case record.SessionEnrolled():
 		if s.Request.Word != "" {
 			return stepRun{}, refuse(CodeWordInvalid,
-				"launch %s was enrolled by a signed-in browser session; the temporary word does not travel beside it", record.Launch)
+				"launch %s was approved in the browser, so it takes no temporary word", record.Launch).run(resumeCommand(record.Machine, record.Launch))
 		}
 		if s.RecordPath == "" {
 			return stepRun{}, fmt.Errorf("launch %s carries a signed-in enrollment and this run has no record file to hand the arm", record.Launch)
@@ -702,7 +702,7 @@ func (s *Sequencer) enrollment(record *Record) (stepRun, error) {
 		words = "temporary enrollment, review due " + s.Request.ReviewBy
 	case s.Request.Resuming():
 		return stepRun{}, refuse(CodeWordRequired,
-			"%s cannot be enrolled: this launch has no signed-in approval\npress Discard launch on the fleet page and launch it again", record.Machine)
+			"%s has no signed-in approval: press Discard launch on the fleet page and launch again", record.Machine).run("metasystem ui start")
 	}
 	if _, err := s.run(Command{Dir: install, Name: s.binary(record.Destination), Args: args, Budget: s.GitBudget}); err != nil {
 		return stepRun{}, err
@@ -741,7 +741,7 @@ func (s *Sequencer) supervision(record *Record) (stepRun, error) {
 	// lock must now name a live process.
 	if !s.Host.SupervisionUp(install) {
 		return stepRun{}, refuse(CodeSupervisionDown,
-			"up --recover-only --if-down returned at %s and no live process holds the supervision owner lock", install)
+			"the new machine's helpers at %s did not start", install).run("metasystem system start --repo " + install)
 	}
 	return stepRun{outcome: StepDone}, nil
 }
@@ -769,8 +769,8 @@ func (s *Sequencer) presence(record *Record) (stepRun, error) {
 	enrolled, ok := s.Host.Enrolled(s.install(record.Destination))
 	if !ok {
 		return stepRun{}, refuse(CodeIdentityUnreadable,
-			"%s has no enrolled engine identity, so its presence cannot be recognised",
-			s.install(record.Destination))
+			"%s has no enrolled identity, so this launch cannot recognise the machine in the fleet",
+			s.install(record.Destination)).run(resumeCommand(record.Machine, record.Launch))
 	}
 	tick := s.cadence(record)
 	for look := 0; ; look++ {

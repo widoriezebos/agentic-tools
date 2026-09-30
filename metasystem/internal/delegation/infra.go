@@ -74,7 +74,7 @@ func (s *session) engineSkewPreflight(stamp string) error {
 		}
 	}
 	if checkoutCommit != "" && relevant {
-		return s.die(1, fmt.Sprintf("dispatch refused: engine commit %s is older than checkout commit %s and engine or agent scripts changed; run go run ./cmd/devgate build, then steward arm", stamp, checkoutCommit))
+		return s.die(1, fmt.Sprintf("dispatch refused: the engine (%s) is older than this checkout (%s), and engine scripts changed\nrebuild with go run ./cmd/devgate build, then arm the steward again", stamp, checkoutCommit))
 	}
 	return nil
 }
@@ -218,6 +218,40 @@ func lockHolder(directory string) string {
 	return "pid=" + pid + ",tag=" + tag
 }
 
+// holderWords names a lock's recorded holder for a person: its process
+// and instance tag, or that the record cannot be read.
+func holderWords(directory string) string {
+	owner := filepath.Join(directory, "owner.json")
+	pid := fieldOr(owner, "pid")
+	tag := fieldOr(owner, "instanceTag")
+	switch {
+	case pid == "" && tag == "":
+		return "a holder whose record cannot be read"
+	case tag == "":
+		return "process " + pid
+	case pid == "":
+		return "instance " + tag
+	}
+	return "process " + pid + " (" + tag + ")"
+}
+
+// lockBusyMessage is the two lines a busy lock shows a person: what is
+// held and by whom (and how long this waited, when it did), then what to
+// do. The ranked LOCK_BUSY detail stays in the outcome record.
+func lockBusyMessage(what, holder string, waited int64) string {
+	line := what + " is busy: " + holder + " holds it"
+	if waited >= 0 {
+		line += fmt.Sprintf(" (waited %ds)", waited)
+	}
+	return line + "\nnothing was done; run the same command again once it is released"
+}
+
+// staleClaimMessage refuses a goal revision bound under another claim than
+// the goal's current one.
+func staleClaimMessage(goalID string, revision uint64, bound, current string) string {
+	return fmt.Sprintf("goal %s revision %d was bound under claim %s, but the goal's current claim is %s\nnothing was dispatched; dispatch again under the current claim", goalID, revision, bound, current)
+}
+
 // acquireChainLock is acquire_chain_lock: one attempt; a live holder refuses.
 func (s *session) acquireChainLock(chain string) error {
 	dir := filepath.Join(s.locks, chain+".d")
@@ -286,9 +320,8 @@ func (s *session) acquireLaunchChainLock(chain string) error {
 	case 0:
 		return nil
 	case 3:
-		line := fmt.Sprintf("LOCK_BUSY rank=chain key=%s holder=%s retry=retry-after-the-named-holder-releases", chain, lockHolder(dir))
-		s.recordOutcome("LOCK_BUSY", "refused", strings.TrimPrefix(line, "LOCK_BUSY "), s.outcomeJob())
-		return s.die(1, line)
+		s.recordOutcome("LOCK_BUSY", "refused", fmt.Sprintf("rank=chain key=%s holder=%s retry=retry-after-the-named-holder-releases", chain, lockHolder(dir)), s.outcomeJob())
+		return s.die(1, lockBusyMessage("launch chain "+chain, holderWords(dir), -1))
 	}
 	return s.die(1, "cannot acquire launch chain lock: "+chain)
 }
@@ -327,7 +360,7 @@ func (s *session) acquireGoalRevisionLock(goalID string, revision uint64) error 
 	if status != 0 {
 		detail := fmt.Sprintf("rank=goal-revision key=%s/r%d holder=%s retry=retry-after-the-named-holder-releases elapsed=%ds cap=%ds", goalID, revision, lockHolder(dir), elapsed, maximum)
 		s.recordOutcome("LOCK_BUSY", "refused", detail, s.outcomeJob())
-		return s.die(1, "LOCK_BUSY "+detail)
+		return s.die(1, lockBusyMessage(fmt.Sprintf("goal %s revision %d", goalID, revision), holderWords(dir), elapsed))
 	}
 	s.goalLockHeld = true
 	return nil
@@ -351,14 +384,14 @@ func (s *session) lifecycleLockDir(job string) string {
 }
 
 // acquireLifecycleLockUntil is acquire_lifecycle_lock_until; false with the
-// LOCK_BUSY line on stderr when the holder outlasts the scaled cap.
+// busy-lock message on stderr when the holder outlasts the scaled cap.
 func (s *session) acquireLifecycleLockUntil(job string, base int64) (bool, error) {
 	if err := os.MkdirAll(s.recordLocks, 0o755); err != nil {
 		s.eprintln(err.Error())
 		return false, nil
 	}
 	dir := s.lifecycleLockDir(job)
-	status, elapsed, maximum, err := s.waitForLock(dir, base)
+	status, elapsed, _, err := s.waitForLock(dir, base)
 	if err != nil {
 		return false, err
 	}
@@ -366,7 +399,7 @@ func (s *session) acquireLifecycleLockUntil(job string, base int64) (bool, error
 		return true, nil
 	}
 	if status == 3 {
-		s.eprintf("LOCK_BUSY rank=job-lifecycle key=%s holder=%s retry=retry-after-the-named-holder-releases elapsed=%ds cap=%ds\n", job, lockHolder(dir), elapsed, maximum)
+		s.eprintln(lockBusyMessage("job "+job, holderWords(dir), elapsed))
 	}
 	return false, nil
 }
@@ -400,7 +433,7 @@ func (s *session) acquireCapAuthorityLock() error {
 	if status != 0 {
 		detail := fmt.Sprintf("rank=cap-authority key=repository holder=%s retry=retry-after-the-named-holder-releases elapsed=%ds cap=%ds", lockHolder(dir), elapsed, maximum)
 		s.recordOutcome("LOCK_BUSY", "refused", detail, s.outcomeJob())
-		return s.die(1, "LOCK_BUSY "+detail)
+		return s.die(1, lockBusyMessage("the repository's cap authority", holderWords(dir), elapsed))
 	}
 	s.capAuthorityHeld = true
 	return nil

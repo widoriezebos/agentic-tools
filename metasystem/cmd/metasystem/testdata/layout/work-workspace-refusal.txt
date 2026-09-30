@@ -1,0 +1,2 @@
+✗ a workspace needs the goal it belongs to; nothing was done
+  → metasystem work workspace GOAL  names the goal

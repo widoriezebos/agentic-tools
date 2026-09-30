@@ -1,0 +1,15 @@
+exit 1
+--
+{
+  "schemaVersion": 1,
+  "verb": "agent ask",
+  "targets": [],
+  "outcome": "refused",
+  "summary": "nothing was sent: no running seat on this host is named m1z (running: m1b, m1c, m1e)",
+  "decision": "name one of those seats, or ask a goal's worker: metasystem agent ask --goal \u003cgoal\u003e --text \u003cmessage\u003e",
+  "details": [
+    "code: AGENT_ASK_TARGET_UNKNOWN"
+  ]
+}
+
+--

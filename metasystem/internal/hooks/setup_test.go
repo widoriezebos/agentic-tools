@@ -306,6 +306,32 @@ func TestClaudeMergeReplacesTheBlockFallbackLauncher(t *testing.T) {
 	}
 }
 
+// A seat whose SessionStart launcher was rendered before the engine-missing
+// notice took its two-line wording carries the old notice in its fallback: it
+// is this installation's launcher, so readiness fails on it and setup
+// replaces it with the current one rather than refusing it as unrecognized.
+func TestClaudeMergeReplacesTheOldEngineMissingStartLauncher(t *testing.T) {
+	old := strings.Replace(renderCommand("claude", "start", "metasystem", ""),
+		shellSingleQuoteLiteral(StartEngineMissingNotice()), shellSingleQuoteLiteral(legacyStartEngineMissingNotice), 1)
+	if old == renderCommand("claude", "start", "metasystem", "") {
+		t.Fatal("the fixture did not put the old notice in the launcher")
+	}
+	live := []byte(`{"hooks":{"SessionStart":[{"matcher":"startup|resume|clear","hooks":[{"type":"command","command":` + jsonString(t, old) + `,"timeout":15}]}]}}`)
+	if err := CheckSettings(live, []byte(claudeShipped), "claude", "metasystem", false); err == nil {
+		t.Fatal("a launcher with the old engine-missing notice passed readiness")
+	}
+	merged, err := MergeSettings(live, []byte(claudeShipped), "claude", "metasystem", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckSettings(merged, []byte(claudeShipped), "claude", "metasystem", false); err != nil {
+		t.Fatal(err)
+	}
+	if text := string(merged); strings.Count(text, "internal hook claude start;") != 1 || strings.Contains(text, "Metasystem engine missing") {
+		t.Fatalf("the old start launcher was not replaced: %s", text)
+	}
+}
+
 func jsonString(t *testing.T, value string) string {
 	t.Helper()
 	encoded, err := json.Marshal(value)

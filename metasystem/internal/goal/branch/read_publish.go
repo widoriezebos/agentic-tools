@@ -37,7 +37,7 @@ func publishCollectedReadWith(req PublishReadRequest, pushes pushRepository) (Pu
 	if err != nil {
 		return PublishReadResult{}, err
 	}
-	lock, err := lockBranchRead(recordPath)
+	lock, err := lockBranchRead(req.GoalID, recordPath)
 	if err != nil {
 		return PublishReadResult{}, err
 	}
@@ -48,7 +48,7 @@ func publishCollectedReadWith(req PublishReadRequest, pushes pushRepository) (Pu
 		return PublishReadResult{}, err
 	}
 	if record.AttestationCommit == "" || record.GateRunID == "" || record.Goal != req.GoalID || record.UnitCommit != req.UnitCommit {
-		return PublishReadResult{}, operationRefusal(ReadInvalidCode, "unit %s has no collected read attestation to publish", req.UnitCommit)
+		return PublishReadResult{}, operationRefusal(ReadInvalidCode, "build %s has no finished review to publish\nrun: metasystem work review %s", req.UnitCommit, req.GoalID)
 	}
 	if req.Transport == nil {
 		req.Transport = GitPushTransport{}

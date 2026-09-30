@@ -23,7 +23,7 @@ func reopenHeldAfterDiagnostic(store Store, id, newBaseTree, newBaseCommit, acto
 		return fmt.Errorf("batch %s is not held-trunk-red", id)
 	}
 	if newBaseTree == record.BaseTree || newBaseTree == record.TrunkRed.Red.BaseTree {
-		return refuseBatch("BATCH_REOPEN_SAME_TREE", "held batch requires a new base tree")
+		return refuseBatch("BATCH_REOPEN_SAME_TREE", "batch "+id+" is held until main changes; metasystem landing status shows why it is held")
 	}
 	joined := joinedUnits(record.Units)
 	if len(joined) == 0 || seams.run == nil || seams.mint == nil || seams.ledger == nil || seams.descendsFrom == nil {

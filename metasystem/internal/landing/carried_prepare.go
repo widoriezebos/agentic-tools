@@ -74,8 +74,8 @@ func BindCarriedSubject(dir, opid string, subject CarriedSubject) error {
 		return err
 	} else if present {
 		if existing != subject {
-			return carriedRefuse("carried-subject-ambiguous", "exception %s is bound to endpoint %s workspace %s, not endpoint %s workspace %s",
-				opid, existing.Endpoint, existing.Workspace, subject.Endpoint, subject.Workspace)
+			return carriedRefuse("carried-subject-ambiguous", "exception %s covers another version of goal %s's work (%s); metasystem work land %s offers a replacement",
+				opid, subject.Goal, existing.Workspace, subject.Goal)
 		}
 		return nil
 	}
@@ -109,14 +109,14 @@ func RetainedCarriedSubject(dir, goalID, workspace string) (CarriedSubject, erro
 	case 1:
 		return found[0], nil
 	case 0:
-		return CarriedSubject{}, carriedRefuse("carried-subject-missing", "no retained composition of goal %s has workspace %s", goalID, workspace)
+		return CarriedSubject{}, carriedRefuse("carried-subject-missing", "no version of goal %s's work %s is kept; metasystem work land %s composes it again", goalID, workspace, goalID)
 	default:
 		endpoints := []string{}
 		for _, subject := range found {
 			endpoints = append(endpoints, subject.Endpoint)
 		}
 		sort.Strings(endpoints)
-		return CarriedSubject{}, carriedRefuse("carried-subject-ambiguous", "workspace %s of goal %s was composed on endpoints %s", workspace, goalID, strings.Join(endpoints, ", "))
+		return CarriedSubject{}, carriedRefuse("carried-subject-ambiguous", "goal %s's work was composed on several mains (%s); metasystem work land %s offers a replacement", goalID, strings.Join(endpoints, ", "), goalID)
 	}
 }
 
@@ -125,7 +125,7 @@ func writeCarriedSubject(path string, subject CarriedSubject) error {
 		return err
 	} else if present {
 		if existing != subject {
-			return carriedRefuse("carried-subject-ambiguous", "%s already holds a different subject", path)
+			return carriedRefuse("carried-subject-ambiguous", "%s holds another version of goal %s's work; metasystem work land %s offers a replacement", path, subject.Goal, subject.Goal)
 		}
 		return nil
 	}
@@ -163,7 +163,7 @@ func readCarriedSubject(path string) (CarriedSubject, bool, error) {
 // commits the origin lacks are never rebased here.
 func CarriedAdvance(root, upstream string, subject CarriedSubject) error {
 	workspace := gittree.Workspace{Dir: root}
-	if err := carriedOnMain(workspace); err != nil {
+	if err := carriedOnMain(workspace, subject.Goal); err != nil {
 		return err
 	}
 	fetched, err := workspace.ResolveCommit(upstream)
@@ -196,7 +196,7 @@ func CarriedAdvance(root, upstream string, subject CarriedSubject) error {
 		return err
 	}
 	if !behind {
-		return carriedRefuse("carried-local-diverged", "local main %s has commits origin main %s does not; publish or remove them by hand", head, fetched)
+		return carriedRefuse("carried-local-diverged", "local main %s has commits origin main %s lacks; push or drop them, then metasystem work land %s", head, fetched, subject.Goal)
 	}
 	var stdout, stderr bytes.Buffer
 	if err := Advance(root, upstream, &stdout, &stderr); err != nil {
@@ -205,13 +205,13 @@ func CarriedAdvance(root, upstream string, subject CarriedSubject) error {
 	return nil
 }
 
-func carriedOnMain(workspace gittree.Workspace) error {
+func carriedOnMain(workspace gittree.Workspace, goalID string) error {
 	branch, detached, err := workspace.SymbolicHead()
 	if err != nil {
 		return err
 	}
 	if detached || branch != "refs/heads/main" {
-		return carriedRefuse("carried-not-on-main", "the main checkout is on %q, not main", branch)
+		return carriedRefuse("carried-not-on-main", "the main checkout is on %q, not main; switch it to main, then metasystem work land %s", branch, goalID)
 	}
 	return nil
 }
@@ -226,8 +226,8 @@ func carriedOriginProduct(root string, workspace gittree.Workspace, fetched stri
 		return err
 	}
 	if product != subject.EndpointWorkspace {
-		return carriedRefuse("carried-origin-moved", "origin main %s has product %s, not the endpoint %s the exception's candidate was composed on",
-			fetched, product, subject.Endpoint)
+		return carriedRefuse("carried-origin-moved", "origin main %s moved since goal %s's exception (%s); metasystem work land %s offers a replacement",
+			fetched, subject.Goal, subject.Endpoint, subject.Goal)
 	}
 	return nil
 }
@@ -274,7 +274,7 @@ func stageCarriedCandidate(request CarriedStage, apply func(top string, patch []
 	}
 	defer release()
 	workspace := gittree.Workspace{Dir: root}
-	if err := carriedOnMain(workspace); err != nil {
+	if err := carriedOnMain(workspace, subject.Goal); err != nil {
 		return CarriedStaged{}, err
 	}
 	top, err := workspace.TopLevel()
@@ -287,7 +287,7 @@ func stageCarriedCandidate(request CarriedStage, apply func(top string, patch []
 		return CarriedStaged{}, err
 	}
 	if unborn {
-		return CarriedStaged{}, carriedRefuse("carried-not-on-main", "main is unborn")
+		return CarriedStaged{}, carriedRefuse("carried-not-on-main", "main has no commit yet, so nothing can land on it; nothing to do")
 	}
 	fetched, err := workspace.ResolveCommit(request.Upstream)
 	if err != nil {
@@ -299,7 +299,7 @@ func stageCarriedCandidate(request CarriedStage, apply func(top string, patch []
 	if contained, err := workspace.IsAncestor(head, fetched); err != nil {
 		return CarriedStaged{}, err
 	} else if !contained {
-		return CarriedStaged{}, carriedRefuse("carried-local-diverged", "local main %s has commits origin main %s does not", head, fetched)
+		return CarriedStaged{}, carriedRefuse("carried-local-diverged", "local main %s has commits origin main %s lacks; push or drop them, then metasystem work land %s", head, fetched, subject.Goal)
 	}
 	headTree, err := workspace.ResolveRef(head + "^{tree}")
 	if err != nil {
@@ -308,7 +308,7 @@ func stageCarriedCandidate(request CarriedStage, apply func(top string, patch []
 	if product, err := ProjectWorkspaceTree(root, headTree); err != nil {
 		return CarriedStaged{}, err
 	} else if product != subject.EndpointWorkspace {
-		return CarriedStaged{}, carriedRefuse("carried-main-behind", "main %s has product %s, not the candidate's endpoint product; advance main to origin first", head, product)
+		return CarriedStaged{}, carriedRefuse("carried-main-behind", "main %s (%s) is behind what goal %s's exception covers; metasystem work land %s moves it forward", head, product, subject.Goal, subject.Goal)
 	}
 	patch, err := topWorkspace.Diff(subject.EndpointWorkspace, subject.Workspace)
 	if err != nil {
@@ -316,12 +316,12 @@ func stageCarriedCandidate(request CarriedStage, apply func(top string, patch []
 	}
 	expected, err := topWorkspace.Apply(headTree, patch)
 	if err != nil {
-		return CarriedStaged{}, carriedRefuse("carried-patch-conflict", "the candidate does not apply to main %s: %v", head, err)
+		return CarriedStaged{}, carriedRefuse("carried-patch-conflict", "goal %s's work does not apply to main %s (%v); rebase it, then metasystem work land %s", subject.Goal, head, err, subject.Goal)
 	}
 	if product, err := ProjectWorkspaceTree(root, expected); err != nil {
 		return CarriedStaged{}, err
 	} else if product != subject.Workspace {
-		return CarriedStaged{}, carriedRefuse("carried-patch-conflict", "main %s with the candidate applied has product %s, not the exception's workspace %s", head, product, subject.Workspace)
+		return CarriedStaged{}, carriedRefuse("carried-patch-conflict", "goal %s's work on main %s is %s, not what the exception covers; rebase it, then metasystem work land %s", subject.Goal, head, product, subject.Goal)
 	}
 	ledger, err := deliveryReceiptLedger(root)
 	if err != nil {
@@ -332,12 +332,12 @@ func stageCarriedCandidate(request CarriedStage, apply func(top string, patch []
 		return CarriedStaged{}, err
 	}
 	if len(posture.Unmerged) != 0 {
-		return CarriedStaged{}, carriedRefuse("carried-index-unmerged", "the index has unmerged entries: %s", strings.Join(posture.Unmerged, "; "))
+		return CarriedStaged{}, carriedRefuse("carried-index-unmerged", "the index has unmerged entries (%s); resolve them, then metasystem work land %s", strings.Join(posture.Unmerged, "; "), subject.Goal)
 	}
 	staged := CarriedStaged{}
 	switch {
 	case posture.Tree == headTree:
-		if err := carriedDriftClean(root, true); err != nil {
+		if err := carriedDriftClean(root, subject.Goal, true); err != nil {
 			return CarriedStaged{}, err
 		}
 		if err := apply(top, patch); err != nil {
@@ -350,16 +350,16 @@ func stageCarriedCandidate(request CarriedStage, apply func(top string, patch []
 			return CarriedStaged{}, err
 		}
 		if !matches {
-			return CarriedStaged{}, carriedRefuse("carried-index-not-candidate", "the index %s is neither main %s nor the exception's candidate %s", posture.Tree, headTree, expected)
+			return CarriedStaged{}, carriedRefuse("carried-index-not-candidate", "the index %s holds more than goal %s's work (%s); unstage it, then metasystem work land %s", posture.Tree, subject.Goal, expected, subject.Goal)
 		}
 	}
-	if err := carriedDriftClean(root, false); err != nil {
+	if err := carriedDriftClean(root, subject.Goal, false); err != nil {
 		return CarriedStaged{}, err
 	}
 	if after, err := workspace.TopStagedPosture(); err != nil {
 		return CarriedStaged{}, err
 	} else if matches, err := carriedIndexIsCandidate(topWorkspace, expected, after.Tree, ledger); err != nil || !matches || len(after.Unmerged) != 0 {
-		return CarriedStaged{}, errors.Join(err, carriedRefuse("carried-index-not-candidate", "the staged index %s is not the candidate %s", after.Tree, expected))
+		return CarriedStaged{}, errors.Join(err, carriedRefuse("carried-index-not-candidate", "the staged index %s is not goal %s's work (%s); unstage it, then metasystem work land %s", after.Tree, subject.Goal, expected, subject.Goal))
 	}
 	resolution, tree, err := carriedReceiptLine(request, workspace, top, ledger)
 	if err != nil {
@@ -383,7 +383,7 @@ func carriedApplyIndex(top string, patch []byte) error {
 
 // carriedDriftClean refuses unrelated staged, unstaged and untracked paths,
 // keeping append-shaped register drift the landing rules already tolerate.
-func carriedDriftClean(root string, requireEmptyIndex bool) error {
+func carriedDriftClean(root, goalID string, requireEmptyIndex bool) error {
 	drift, _, err := WorktreeDrift(root, requireEmptyIndex)
 	if err != nil {
 		return err
@@ -415,7 +415,7 @@ func carriedDriftClean(root string, requireEmptyIndex bool) error {
 	if len(lines) == 0 {
 		return nil
 	}
-	return carriedRefuse("carried-checkout-dirty", "the main checkout has changes the candidate does not own: %s", strings.Join(lines, ", "))
+	return carriedRefuse("carried-checkout-dirty", "the main checkout has changes that are not goal %s's (%s); clear them, then metasystem work land %s", goalID, strings.Join(lines, ", "), goalID)
 }
 
 // carriedIndexIsCandidate accepts the staged candidate itself or the

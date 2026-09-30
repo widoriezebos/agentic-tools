@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,9 +17,11 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/adapter"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
 
 const laneChangeCommit = "abcdef0123456789abcdef0123456789abcdef01"
@@ -134,7 +137,7 @@ func TestBatchChangePrefixDecisionPlansGoalMembersOnly(t *testing.T) {
 	}
 	// A prefix of changes alone is planned on the lane's account; a lane that
 	// cannot be named plans nothing (fail closed).
-	if _, err := batchowner.PlanPrefixDecisionWith(t.TempDir(), []batch.Unit{change}, "tip-tree", nil); err == nil || !strings.Contains(err.Error(), "LANE_ACCOUNT_UNRESOLVED") {
+	if _, err := batchowner.PlanPrefixDecisionWith(t.TempDir(), []batch.Unit{change}, "tip-tree", nil); err == nil || !strings.Contains(refusalDetail(err), "LANE_ACCOUNT_UNRESOLVED") {
 		t.Fatalf("a change-only prefix without a lane: %v", err)
 	}
 	record := batch.Record{BatchID: "01j5x00000000000000000ba79", BaseTree: "base-tree", TipTree: "tip-tree", SelectedGroups: []string{"app-a"},
@@ -328,11 +331,13 @@ func TestLandingStatusVerbosePrintsReturnedChanges(t *testing.T) {
 	view := lane.View{Batch: &lane.BatchView{ID: "b1", State: lane.BatchCollecting, Members: []lane.Member{{Goal: "change:abcdef012345", Seat: "m1e"}},
 		Returned: []lane.Returned{{Goal: "change:1234567890ab", Seat: "ui", Outcome: batch.UnitEjected, Reason: "EJECTED from landing batch b1: TestNotes failed"}}},
 		Spend: &lane.Spend{Account: "lane:0123456789ab", Attempts: 3, ReservedMinutes: 120}}
-	lines := strings.Join(landingViewDetail(view), "\n")
-	if !strings.Contains(lines, "lane spend (lane:0123456789ab, batches of changes; no goal's budget): 3 attempts, 120 reserved minutes") {
+	root := "/lanes/landing"
+	view.Root, view.Owner = &root, lane.OwnerView{State: lane.OwnerRunning}
+	lines := oneSpaced(landingStatusPage(view, true))
+	if !strings.Contains(lines, "spend 3 attempts · 120 reserved minutes · lane:0123456789ab, charged to no goal") {
 		t.Fatalf("verbose status names no lane spend:\n%s", lines)
 	}
-	if !strings.Contains(lines, "  member change:abcdef012345 from m1e") || !strings.Contains(lines, "  ejected change:1234567890ab from ui: EJECTED from landing batch b1: TestNotes failed") {
+	if !strings.Contains(lines, "change:abcdef012345 from m1e") || !strings.Contains(lines, "ejected change:1234567890ab from ui: EJECTED from landing batch b1: TestNotes failed") {
 		t.Fatalf("verbose status:\n%s", lines)
 	}
 }
@@ -382,7 +387,7 @@ func TestBatchChangeOnlyProofIsChargedToTheLane(t *testing.T) {
 		}
 		if !resolvable {
 			if err != nil || len(launched) != 0 || after.State != batch.StateSealed || after.Proof == nil || after.Proof.Status != "lane-unresolved" ||
-				!strings.Contains(after.Proof.Failure, "LANE_ACCOUNT_UNRESOLVED") {
+				!strings.Contains(after.Proof.Failure, "no landing lane is registered") {
 				t.Fatalf("unresolved lane: err=%v launched=%d state=%s proof=%+v", err, len(launched), after.State, after.Proof)
 			}
 			continue
@@ -402,12 +407,14 @@ func TestBatchChangeOnlyProofIsChargedToTheLane(t *testing.T) {
 }
 
 // TestLaneHoldIsVisibleOnTheBatch (U11b N-8, F-3): a lane that cannot be
-// named at the seal's forecast, or a pinned engine without --lane at the
-// plan, holds the batch with its plain reason on the record, and the lane
-// view (landing status, /api/board) says it.
+// named, at the seal's forecast or behind the plan, holds the batch with
+// its plain reason on the record, and the lane view (landing status,
+// /api/board) says it. The hold is read from the error's code
+// (errors.As), never its words: a plain error that merely says the code
+// is a failure, not a hold (structured-output U1).
 func TestLaneHoldIsVisibleOnTheBatch(t *testing.T) {
 	t.Parallel()
-	for _, step := range []string{"seal", "plan"} {
+	for _, step := range []string{"seal", "plan", "words"} {
 		root := t.TempDir()
 		const id = "01j5x00000000000000000ba84"
 		change := laneChangeUnit()
@@ -417,15 +424,18 @@ func TestLaneHoldIsVisibleOnTheBatch(t *testing.T) {
 		if err := store.Create(record); err != nil {
 			t.Fatal(err)
 		}
-		reason := "LANE_ACCOUNT_UNRESOLVED: no landing lane is registered on this host"
+		unresolved := &refusal.Coded{Code: lane.CodeAccountUnresolved, Reason: errors.New("no landing lane is registered on this host")}
 		dependencies := batchowner.BatchProofDependencies{
 			Base:        func(string) (string, error) { return "base-tree", nil },
 			Rearm:       func(string, string) error { return nil },
 			Attempts:    func(string) ([]proofrun.Attempt, error) { return nil, nil },
 			LaneAccount: func(string) (string, error) { return "lane:0123456789ab", nil },
 			Seal: func(root, id, actor, base string, at time.Time) error {
-				if step == "seal" {
-					return errors.New(reason)
+				switch step {
+				case "seal":
+					return unresolved
+				case "words":
+					return errors.New("LANE_ACCOUNT_UNRESOLVED: said, not coded")
 				}
 				return store.Update(id, func(current *batch.Record) error {
 					current.Seal = map[string]batch.Claim{change.GoalID: {}}
@@ -434,20 +444,26 @@ func TestLaneHoldIsVisibleOnTheBatch(t *testing.T) {
 				})
 			},
 			Plan: func(string, string, string, testpolicy.Mode) (testpolicy.Plan, error) {
-				return testpolicy.Plan{}, errors.New("LANE_ENGINE_TOO_OLD: the pinned policy engine predates --lane; run: metasystem landing restart")
+				return testpolicy.Plan{}, fmt.Errorf("plan joined unit: %w", unresolved)
 			},
 			Launch: func(batchowner.BatchProofLaunch) (proofrun.TestResult, error) {
 				t.Fatal("a held batch launched")
 				return proofrun.TestResult{}, nil
 			},
 		}
-		_ = batchowner.ExecuteBatchProof(root, id, "landing+owner", "window", "token", proofrun.LoadSample{}, time.Unix(10, 0), dependencies)
+		proofErr := batchowner.ExecuteBatchProof(root, id, "landing+owner", "window", "token", proofrun.LoadSample{}, time.Unix(10, 0), dependencies)
 		after, err := store.Load(id)
 		if err != nil {
 			t.Fatal(err)
 		}
-		want := map[string]string{"seal": "LANE_ACCOUNT_UNRESOLVED", "plan": "metasystem landing restart"}[step]
 		view := lane.BatchViewOf(after)
+		if step == "words" {
+			if proofErr == nil || strings.HasPrefix(view.Reason, "holds: ") {
+				t.Fatalf("an uncoded error held the batch: err=%v reason=%q", proofErr, view.Reason)
+			}
+			continue
+		}
+		want := "no landing lane is registered on this host"
 		if !strings.Contains(view.Reason, want) || !strings.HasPrefix(view.Reason, "holds: ") {
 			t.Fatalf("%s hold: state=%s reason=%q history=%+v", step, after.State, view.Reason, after.History)
 		}
@@ -504,8 +520,15 @@ func TestLandingStatusVerboseNamesTheLastTickErrorAndTheOwnerLog(t *testing.T) {
 	t.Parallel()
 	root, failure := "/lanes/landing", "batch b1: read joined goal change:5555 before rebind: absent"
 	view := lane.View{Root: &root, Owner: lane.OwnerView{State: lane.OwnerRunning, LastTickError: &failure}}
-	lines := strings.Join(landingViewDetail(view), "\n")
-	if !strings.Contains(lines, "last tick failed: "+failure) || !strings.Contains(lines, "owner log: "+batchowner.OwnerLogPath(root)) {
+	lines := landingStatusPage(view, true)
+	if !strings.Contains(lines, "last tick    "+failure) || !strings.Contains(lines, "owner log    "+batchowner.OwnerLogPath(root)) {
 		t.Fatalf("verbose status:\n%s", lines)
 	}
+}
+
+// landingStatusPage is landing status's page of view, at the full width.
+func landingStatusPage(view lane.View, verbose bool) string {
+	page := textui.New(textui.Env{Width: textui.MaxWidth, Now: time.Now(), Zone: time.UTC, Verbose: verbose})
+	(&intentInvocation{}).landingStatusView(view, false)(page)
+	return page.String()
 }

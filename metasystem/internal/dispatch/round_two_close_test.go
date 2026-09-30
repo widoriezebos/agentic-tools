@@ -144,9 +144,9 @@ func assertHumanRaise(t *testing.T, err error, findingIDs ...string) {
 	t.Helper()
 	var opErr *OpError
 	check(t, errors.As(err, &opErr), "close did not return the cap-exhausted refusal: %T %v", err, err)
-	check(t, opErr.Code == CritiqueCapExhaustedExitCode && strings.Contains(err.Error(), CritiqueCapExhaustedReason), "close refusal carried code=%d reason=%q: %+v", opErr.Code, opErr.Reason, opErr)
+	check(t, opErr.Code == CritiqueCapExhaustedExitCode && opErr.RefusalCode() == CritiqueCapExhaustedReason && !strings.Contains(err.Error(), CritiqueCapExhaustedReason), "close refusal carried code=%d reason=%q: %+v", opErr.Code, opErr.Reason, opErr)
 	message := err.Error()
-	for _, want := range append(findingIDs, "goal accept-risk --finding <id> --chain <root> --by <human> --why", "goal edit") {
+	for _, want := range append(findingIDs, "\nrun: metasystem goal accept-risk", "--finding", "metasystem goal edit") {
 		check(t, strings.Contains(message, want), "human refusal did not name %q: %v", want, err)
 	}
 }

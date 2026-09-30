@@ -34,10 +34,13 @@ type TrunkRedRecordFailed struct {
 // Error names the transaction outcome and its evidence.
 func (failure *TrunkRedRecordFailed) Error() string {
 	if failure == nil {
-		return "TRUNK_RED_RECORD_FAILED : "
+		return "the red on main could not be recorded; metasystem landing status shows the held batch"
 	}
-	return fmt.Sprintf("TRUNK_RED_RECORD_FAILED %s: %s", failure.Outcome, failure.Evidence)
+	return fmt.Sprintf("the red on main could not be recorded (%s: %s); metasystem landing status shows the held batch", failure.Outcome, failure.Evidence)
 }
+
+// RefusalCode is the registered code, for --json and the register.
+func (failure *TrunkRedRecordFailed) RefusalCode() string { return "TRUNK_RED_RECORD_FAILED" }
 
 // IsTrunkRedClosed reports whether a ledger transaction refused a clear
 // because another writer had already closed the entry.

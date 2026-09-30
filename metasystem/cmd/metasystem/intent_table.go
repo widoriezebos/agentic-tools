@@ -19,6 +19,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 )
 
@@ -133,13 +134,6 @@ func runPassthrough(command intentCommand, run command, args []string, stdout, s
 	return run(slices.Concat(rest[:at], extra, rest[at:]), stdout, stderr)
 }
 
-// withLead gives a handler that takes its action word first the same words.
-func withLead(lead string, run command) command {
-	return func(args []string, stdout, stderr io.Writer) int {
-		return run(append([]string{lead}, args...), stdout, stderr)
-	}
-}
-
 func documented(name, value, usage string) intentFlag {
 	return intentFlag{name: name, value: value, usage: usage}
 }
@@ -154,7 +148,7 @@ func designIntentCommands() []intentCommand {
 			flags:    []intentFlag{{name: "goal", value: "G", advanced: true, usage: "the goal, as an alternative to naming it first"}, {name: "attempt", value: "N", usage: "one design attempt and its proposal"}, {name: "out", value: "FILE", usage: "the design document, when the goal has several"}},
 			maxArgs:  1,
 			examples: []string{"metasystem design show verbs-match-intent"},
-			run:      func(inv *intentInvocation) int { return runIntentShowRecords(inv, "design", inv.input.args) },
+			run:      runIntentDesignShow,
 		},
 		{
 			object: "design", action: "list", audience: "both", summary: "the project's design records",
@@ -162,7 +156,7 @@ func designIntentCommands() []intentCommand {
 			flags:    []intentFlag{{name: "goal", value: "G", usage: "only the designs naming this goal"}},
 			maxArgs:  0,
 			examples: []string{"metasystem design list", "metasystem design list --goal verbs-match-intent"},
-			run:      func(inv *intentInvocation) int { return runIntentShowRecords(inv, "designs", inv.input.args) },
+			run:      runIntentDesignList,
 		},
 		{
 			object: "design", action: "check", audience: "both", summary: "check a plan's obligation matrix: is every critical or high obligation proven",
@@ -220,14 +214,14 @@ func designIntentCommands() []intentCommand {
 			usage:    []string{"metasystem decision list"},
 			maxArgs:  0,
 			examples: []string{"metasystem decision list"},
-			run:      func(inv *intentInvocation) int { return runIntentShowRecords(inv, "decisions", inv.input.args) },
+			run:      runIntentDecisionList,
 		},
 		{
 			object: "decision", action: "show", audience: "both", summary: "one project record by id, its references and what references it",
 			usage:    []string{"metasystem decision show ID"},
 			maxArgs:  1,
 			examples: []string{"metasystem decision show 01M3EC3QT7M2TC36P7ZVNRF0RW"},
-			run:      func(inv *intentInvocation) int { return runIntentShowRecords(inv, "record", inv.input.args) },
+			run:      runIntentDecisionShow,
 		},
 	}
 }
@@ -330,29 +324,31 @@ func practiceIntentCommands() []intentCommand {
 			[]string{"metasystem receipt add --type implementation --outcome done --goal verbs-match-intent",
 				"metasystem receipt add --corrects 1788441779:3f2a9c1e0d4b5a6978695a4b3c2d1e0f98765432 --field outcome --was done --now rework --reason 'reopened'"}, runReceiptAdd),
 		passthroughAction("receipt", "status", "both", "whether a metasystem retro is due, and the period's numbers; exit 1 when due; with --uncovered the lines no retro has read",
-			[]string{"metasystem receipt status [--all] [--root CHECKOUT]", "metasystem receipt status --uncovered [--json] [--root CHECKOUT]"},
+			[]string{"metasystem receipt status [--all] [--root CHECKOUT]", "metasystem receipt status --uncovered [--json] [--verbose] [--root CHECKOUT]"},
 			[]intentFlag{receiptFlags[0], {name: "all", usage: "count the whole ledger, not only the period since the last retro"},
 				{name: "uncovered", usage: "print exactly the lines no retro has covered, in ledger order, and the token the retro marker takes"},
-				{name: "json", usage: "with --uncovered: print the lines, their digests and the token as JSON"}},
+				{name: "json", usage: "with --uncovered: print the lines, their digests and the token as JSON"},
+				{name: "verbose", usage: "with --uncovered: the ledger lines exactly as they stand"}},
 			[]string{"metasystem receipt status", "metasystem receipt status --uncovered"}, runReceiptStatus),
 		passthroughAction("receipt", "retro", "agent", "record that a retro ran and reset the cadence, and which lines it read",
 			[]string{"metasystem receipt retro SUMMARY [--covered TOKEN] [--root CHECKOUT]"},
 			[]intentFlag{receiptFlags[0], documented("covered", "TOKEN", "the token receipt status --uncovered printed: the lines this retro read")},
-			[]string{"metasystem receipt retro 'kept 3, reverted 1' --covered 12:4f1a2b3c4d5e"}, withLead("retro", runReceipt)),
+			[]string{"metasystem receipt retro 'kept 3, reverted 1' --covered 12:4f1a2b3c4d5e"}, runReceiptRetro),
 		passthroughAction("experiment", "record", "agent", "record the measured-improvement frontier",
 			[]string{"metasystem experiment record --score SCORE --eval COMMAND --artifact PATH [--direction max|min] [--force]"}, frontierFlags,
-			[]string{"metasystem experiment record --score 0.82 --eval 'go test ./bench/...' --artifact runs/1.json"}, withLead("record", runReportFrontier)),
+			[]string{"metasystem experiment record --score 0.82 --eval 'go test ./bench/...' --artifact runs/1.json"}, runExperimentRecord),
 		passthroughAction("experiment", "challenge", "agent", "test a run against the recorded frontier and its noise floor",
 			[]string{"metasystem experiment challenge --score SCORE --eval COMMAND --artifact PATH --min-delta N"}, frontierFlags,
-			[]string{"metasystem experiment challenge --score 0.85 --eval 'go test ./bench/...' --artifact runs/2.json --min-delta 0.01"}, withLead("challenge", runReportFrontier)),
+			[]string{"metasystem experiment challenge --score 0.85 --eval 'go test ./bench/...' --artifact runs/2.json --min-delta 0.01"}, runExperimentChallenge),
 		passthroughAction("experiment", "status", "both", "the recorded frontier",
-			[]string{"metasystem experiment status [--file FILE]"}, frontierFlags[:1], []string{"metasystem experiment status"}, withLead("status", runReportFrontier)),
+			[]string{"metasystem experiment status [--file FILE]"}, frontierFlags[:1], []string{"metasystem experiment status"}, runExperimentStatus),
 		passthroughAction("experiment", "check", "agent", "block another investigation cycle when the ledger's stop-loss fired",
 			[]string{"metasystem experiment check --file LEDGER"}, []intentFlag{documented("file", "LEDGER", "the investigation ledger")},
 			[]string{"metasystem experiment check --file plans/investigation.md"}, runValidateStopLoss),
 		passthroughAction("session", "status", "agent", "why this session may or may not stop: one exact Stop report",
 			[]string{"metasystem session status --id ID [--root INSTALLATION]"},
-			[]intentFlag{documented("id", "ID", "the Stop report's short alias, as the Stop line printed it"), documented("root", "INSTALLATION", "the installation")},
+			[]intentFlag{documented("id", "ID", "the Stop report's short alias, as the Stop line printed it"), documented("root", "INSTALLATION", "the installation"),
+				{name: "verbose", usage: "also the plan lines older than a week, every health role and where the whole report is"}},
 			[]string{"metasystem session status --id 7f3a"}, runReportStopStatus),
 		passthroughAction("session", "handoff", "agent", "hand this session's work to a successor, cancel a handoff, or read the session's context budget",
 			[]string{"metasystem session handoff --root ROOT --note FILE [--no-delegates]", "metasystem session handoff --root ROOT --cancel NONCE",
@@ -360,7 +356,8 @@ func practiceIntentCommands() []intentCommand {
 			[]intentFlag{contextRoot, documented("note", "FILE", "the lessons note"), documented("cancel", "NONCE", "the live handoff to cancel"),
 				{name: "no-delegates", usage: "no background task remains in flight"},
 				{name: "status", usage: "the session's recorded context-budget evidence; nothing is handed off"},
-				documented("verify", "NONCE", "a successor verifies the immutable handoff it continues")},
+				documented("verify", "NONCE", "a successor verifies the immutable handoff it continues"),
+				{name: "verbose", usage: "also a refusal's code and facts"}},
 			[]string{"metasystem session handoff --root . --note memory/handoff.md", "metasystem session handoff --status --root .", "metasystem session handoff --verify 3f2a9c --root ."}, runSessionHandoff),
 		passthroughAction("session", "isolate", "both", "create an isolated writer worktree for a second session in this checkout",
 			[]string{"metasystem session isolate [--root INSTALLATION] [NAME]"},
@@ -402,6 +399,7 @@ func practiceIntentCommands() []intentCommand {
 			[]string{"metasystem test baseline --gate 'go test ./...'", "metasystem test baseline --check"}, runTestBaseline),
 		passthroughAction("session", "wait", "agent", "say this session waits for a running process or a person's answer, so it may stop",
 			[]string{"metasystem session wait --pid PID --label TEXT [--job J] [--timeout DURATION]",
+				"metasystem session wait --label TEXT --timeout DURATION",
 				"metasystem session wait --question TEXT --timeout DURATION",
 				"metasystem session wait --end WAIT-ID"},
 			[]intentFlag{documented("pid", "PID", "the running process this session waits for"), documented("label", "TEXT", "what that process is doing"),
@@ -458,8 +456,7 @@ func takeIntentFlag(args []string, name string, takesValue bool) (string, bool, 
 func runReceiptAdd(args []string, stdout, stderr io.Writer) int {
 	words, problem := receiptAddWords(args)
 	if problem != "" {
-		fmt.Fprintln(stderr, "metasystem receipt add: "+problem)
-		return 2
+		return refusePassthrough(stderr, 2, problem, textui.Hint{Argv: []string{"metasystem", "receipt", "add", "--help"}, Reason: "its forms"})
 	}
 	return runReceipt(words, stdout, stderr)
 }
@@ -481,31 +478,7 @@ func receiptAddWords(args []string) ([]string, string) {
 // runReceiptStatus says whether a retro is due and prints the period's
 // numbers; its exit code is the due check's (1 when a retro is due).
 func runReceiptStatus(args []string, stdout, stderr io.Writer) int {
-	if _, uncovered, rest := takeIntentFlag(args, "uncovered", false); uncovered {
-		return runReceipt(append([]string{"uncovered"}, rest...), stdout, stderr)
-	}
-	all, _, checkArgs := takeIntentFlag(args, "all", false)
-	if _, named, _ := takeIntentFlag(checkArgs, "file", true); !named {
-		// Both reads use the one ledger, resolved once.
-		root, err := stateroot.StateRoot(stateroot.Receipts)
-		if err != nil {
-			fmt.Fprintln(stderr, "receipt:", err)
-			return 1
-		}
-		checkArgs = append(slices.Clone(checkArgs), "--file", filepath.Join(root, "receipts.log"))
-	}
-	due := runReceipt(append([]string{"check"}, checkArgs...), stdout, stderr)
-	if due > 1 {
-		return due
-	}
-	statsArgs := checkArgs
-	if all == "true" {
-		statsArgs = append(slices.Clone(checkArgs), "--all")
-	}
-	if stats := runReceipt(append([]string{"stats"}, statsArgs...), stdout, stderr); stats != 0 {
-		return stats
-	}
-	return due
+	return receiptStatus(args, stdout, stderr)
 }
 
 // runSessionHandoff hands off, cancels, reads the context budget (--status)
@@ -683,8 +656,7 @@ func runTestBaseline(args []string, stdout, stderr io.Writer) int {
 	}
 	words, err := testBaselineArgs(args)
 	if err != nil {
-		fmt.Fprintln(stderr, "metasystem test baseline:", err)
-		return 2
+		return printOwnerLines(nil, stderr, "", nil, []string{err.Error()}, 2, textui.Hint{Argv: []string{"metasystem", "test", "baseline", "--help"}, Reason: "its two forms"})
 	}
 	return runValidateRefactorBaseline(words, stdout, stderr)
 }
@@ -724,16 +696,37 @@ func runIntentDesignCheck(inv *intentInvocation) int {
 	data := map[string]any{"files": files, "complete": inv.input.switched("complete"), "lines": nonNilLines(out), "problems": nonNilLines(problems)}
 	switch {
 	case code == 0:
+		gate := map[bool]string{true: "completion", false: "default"}[inv.input.switched("complete")]
 		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, text: out, Data: data,
-			Summary: fmt.Sprintf("%d obligation matrix(es) pass the %s gate", len(files), map[bool]string{true: "completion", false: "default"}[inv.input.switched("complete")])})
+			Summary: fmt.Sprintf("%d obligation matrix(es) pass the %s gate", len(files), gate),
+			view: func(page *textui.Page) {
+				// Each plan is named as the person named it.
+				named := inv.input.args
+				if len(named) == 1 {
+					page.Done(named[0] + " passes the " + gate + " gate")
+				} else {
+					page.Done(textui.Count(len(named), "plan passes", "plans pass") + " the " + gate + " gate")
+					section := page.Section("", "")
+					for _, name := range named {
+						section.Item(textui.Done, name)
+					}
+				}
+				if page.Verbose() {
+					section := page.Section("Checked", "")
+					for _, line := range out {
+						section.Text(line)
+					}
+				}
+			}})
 	case code == 2:
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: targets, text: problems, Data: data,
 			Summary: strings.Join(nonNilLines(problems), "; ") + "; nothing was checked", next: inv.sameCommand(), nextReason: "once that is corrected"})
 	}
-	summary := "the obligation matrix does not pass"
+	summary, rest := "the obligation matrix does not pass", problems
 	if len(problems) > 0 {
-		summary = problems[0]
+		// The first problem is the summary; the text is the rest.
+		summary, rest = problems[0], problems[1:]
 	}
-	return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, text: problems, Data: data, Summary: summary,
+	return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, text: rest, Data: data, Summary: summary,
 		next: inv.sameCommand(), nextReason: "after meeting or re-stating the named obligations in the plan"})
 }

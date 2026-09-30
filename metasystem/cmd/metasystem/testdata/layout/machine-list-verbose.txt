@@ -1,0 +1,25 @@
+3 machines on this computer · 2 running, 1 stopped · 2 jobs running · 1 elsewhere
+
+Fleet
+  MACHINE   DOING     SEEN     ENGINE           FREE
+  ● m1e     idle      2m ago   330eb33af   231.4 GiB
+  ○ m1x     stopped   1h ago   330eb33af   231.4 GiB
+  ! m2a     idle      3h ago   4f4c5101e    73.3 GiB   no presence for 3 h, past 30 min
+
+m1e  ~/GitHub/agentic-tools-m1e · this checkout · running · since 21 Sep 16:15
+  pids     steward runner 101 · supervision owner 102 · repo watcher 103
+  job      job j-7 running pid 104 implementer since 21 Sep 16:15
+  launch   j1:l-1: build launch, running, goal g-1, in ~/GitHub/agentic-tools-m1e/work
+
+agentic-tools-landing  ~/GitHub/agentic-tools-landing · landing lane · running · since 21 Sep 16:18
+  pids         landing batch owner 301
+  lane owner   running, pid 4242, since 10:00
+
+m1x  ~/GitHub/agentic-tools-m1x · stopped
+  stopped   since 11:00
+
+On other computers
+  m2a   last reported 09:00
+
+Not ours, left alone
+  900   codex   app-server   since 21 Sep 16:28

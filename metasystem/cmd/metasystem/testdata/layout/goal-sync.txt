@@ -1,0 +1,6 @@
+1 goal file differs from the published base · base 5e1f0c2a9 · nothing was changed
+
+changed   plans/goals/standing-validation.md
+
+→ metasystem goal sync --publish --goal standing-validation --by NAME
+  a person publishes these reviewed edits, naming each goal

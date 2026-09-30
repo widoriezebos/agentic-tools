@@ -245,7 +245,7 @@ func TestTierOverrideOnOpenUnderASignedInSession(t *testing.T) {
 	// A --by with nothing behind it is a seat, whatever --origin says, so it
 	// never reaches the tier gate: it is refused as a seat's open first.
 	if _, err := OpenRisked(request, "session-open", "Work opened below its derived tier.", OriginHuman, "Run it.", nil, nil, risk, 1, "the human judged it smaller", nil, nil); err == nil ||
-		!strings.Contains(err.Error(), "R-93-m1e") {
+		!strings.Contains(err.Error(), "a seat opens only a defect that blocks its claimed goal") {
 		t.Fatalf("a tier override without proof opened: %v", err)
 	}
 	result, err := OpenRisked(request, "session-open", "Work opened below its derived tier.", OriginHuman, "Run it.", nil, nil, risk, 1, "the human judged it smaller", nil, sessionProofForTest(t, root, request.Now))

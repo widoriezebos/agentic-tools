@@ -1,0 +1,50 @@
+metasystem · say what you want done to what; it prepares, runs, collects and recovers the work
+
+Plan
+  goal         the backlog: open, approve, budget, claim and conclude goals
+  design       a goal's design: write, review, list and read designs
+  decision     the project's recorded decisions
+  grant        powers of attorney a seat acts under
+
+Deliver
+  work         a goal's work: brief, build, review, revise, land, finish, wait and stop
+  test         risk-selected tests and their proof
+  question     questions for a person, and their answers
+  agent        messages between the agents on this host: ask, reply and read, never a person
+  incident     failures on main that someone must own
+
+Run
+  status       the overview of this checkout, or one goal's work
+  helm         human at the helm: take the whole seat out of the machinery's hands, and give it back
+  session      this agent session: start, stop, whether it may stop, and its handoff
+  mission      autonomous missions
+  system       MetaSystem for this checkout: set up, start, stop, restart, status, check, enroll,
+               adopt, completion
+  landing      the landing lane on this computer: where every seat's work is proved and pushed
+  machine      the fleet's machines
+  disk         what MetaSystem keeps on this computer's disk, and reclaiming it
+  evidence     durable evidence outside the checkout: its bound, verified exports, and a person's
+               disposal
+  app          the application this project builds, under its launch contract
+  ui           the browser interface
+  settings     MetaSystem settings and coordination
+
+Practice
+  receipt      task receipts and the retro cadence
+  experiment   measured-improvement experiments and their stop-loss
+
+A typical delivery
+  metasystem work build my-goal --brief brief.md --check go test ./...
+  metasystem work review my-goal
+  metasystem work land my-goal
+
+More
+  metasystem OBJECT                   that object's actions
+  metasystem OBJECT ACTION --help     one action's forms, options and examples
+  metasystem help [OBJECT [ACTION]]   the same pages; help agent, help human, help all by audience
+
+  usage   metasystem OBJECT ACTION [TARGET...] [OPTIONS]
+          options go before or after the target; --repo PATH selects the repository from any path
+          inside it
+
+→ metasystem status  what is going on in this checkout

@@ -1,0 +1,17 @@
+exit 0
+--
+{
+  "schemaVersion": 1,
+  "verb": "disk show",
+  "targets": [
+    {
+      "kind": "checkout",
+      "id": "/Users/wido/GitHub/agentic-tools-m1e/metasystem"
+    }
+  ],
+  "outcome": "confirmed",
+  "summary": "what MetaSystem keeps on this computer's disk",
+  "data": {}
+}
+
+--

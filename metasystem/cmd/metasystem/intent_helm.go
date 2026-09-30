@@ -129,7 +129,30 @@ func helmIntentCommands() []intentCommand {
 			"Anyone in the seat may run it; returning a helm nobody holds is fine."},
 		examples: []string{"metasystem helm return"},
 		run:      runIntentHelmReturn,
+	}, {
+		object: "helm", action: "status", audience: "both", summary: "who holds this seat's helm, since when and why",
+		usage:    []string{"metasystem helm status"},
+		details:  []string{"Reads the helm as status's banner shows it; it changes nothing."},
+		examples: []string{"metasystem helm status"},
+		run:      runIntentHelmStatus,
 	}}
+}
+
+// runIntentHelmStatus reads the helm and changes nothing: the holder, since
+// when and why, as status's banner shows it, or the machinery at the helm.
+func runIntentHelmStatus(inv *intentInvocation) int {
+	path := inv.helmPath()
+	if _, err := helm.Locate(path); err != nil {
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: err.Error() + "; nothing was read",
+			Decision: "run metasystem helm status inside the seat's checkout"})
+	}
+	reading, active := inv.readHelm(path)
+	if !active {
+		return inv.render(intentResult{Outcome: intentUnchanged, Summary: "the machinery is at the helm"})
+	}
+	result := intentResult{Outcome: intentUnchanged, Summary: reading.lines[0], text: reading.lines[1:],
+		Data: map[string]any{"helm": reading.lines}}
+	return inv.render(result)
 }
 
 func (inv *intentInvocation) helmPath() string {
@@ -224,7 +247,8 @@ func runIntentHelmTake(inv *intentInvocation) int {
 	switch {
 	case standing.Active && standing.Malformed == "" && standing.By == record.By && standing.Reason == reason && standing.Enrollment == record.Enrollment && !enrolledNow:
 		return inv.render(intentResult{Outcome: intentUnchanged, Targets: targets, Summary: "applied: " + helmLine(standing.Record, standing.Since, owners.zone),
-			text: withLine(helmTerminalLines(standing.Record), enrollmentLine), Data: map[string]any{"helm": standing.Record}})
+			text: withLine(helmTerminalLines(standing.Record), enrollmentLine), Data: map[string]any{"helm": standing.Record},
+			view: helmTakeView(standing.Record, standing.Since, true, false, enrollmentLine, nil)})
 	case standing.Active && standing.Malformed == "" && standing.By == record.By:
 		record.At = standing.Record.At
 	case standing.Active:
@@ -238,14 +262,59 @@ func runIntentHelmTake(inv *intentInvocation) int {
 	if enrolledNow {
 		lines = []string{enrollmentLine}
 	}
+	var notes []string
 	if err := helm.Log(path, entry); err != nil {
 		lines = append(lines, "helm.log was not appended: "+err.Error())
+		notes = append(notes, "the helm log was not written ("+err.Error()+")")
 	}
 	if entry.Replaced != "" {
 		lines = append(lines, "replaces "+entry.Replaced+" at the helm; both names are in "+seat.Log)
+		notes = append(notes, "it was "+entry.Replaced+"'s; both names are in the helm log")
 	}
 	since, _ := time.Parse(time.RFC3339, record.At)
-	return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Summary: helmLine(record, since, owners.zone), text: lines, Data: map[string]any{"helm": record}})
+	return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Summary: helmLine(record, since, owners.zone), text: lines, Data: map[string]any{"helm": record},
+		view: helmTakeView(record, since, false, enrolledNow, enrollmentLine, notes)})
+}
+
+// helmTakeView is a take's page: who has the helm since when and why, the
+// terminal it was taken at, and the command that gives it back. The
+// session leader's identity is --verbose's.
+func helmTakeView(record helm.Record, since time.Time, already, enrolledNow bool, enrollment string, notes []string) func(*textui.Page) {
+	return func(page *textui.Page) {
+		env := page.Env()
+		headline := fmt.Sprintf("%s has the helm %s: %s", record.By, env.Since(since), record.Reason)
+		if already {
+			headline = fmt.Sprintf("%s already has the helm %s: %s", record.By, env.Since(since), record.Reason)
+		}
+		page.Done(headline)
+		terminal := "a terminal whose enrollment could not be read"
+		switch record.Enrollment {
+		case "proven":
+			terminal = "the enrolled one"
+			if record.EnrolledAs != "" {
+				terminal += ", as " + record.EnrolledAs
+			}
+			if enrolledNow {
+				terminal = "enrolled now, as " + record.EnrolledAs + ", so a person's acts here are admitted"
+			}
+		case "other-terminal":
+			terminal = "not the enrolled one, so a person's acts there are refused"
+		}
+		facts := []textui.KV{{Key: "terminal", Value: []textui.Span{textui.Plain(terminal)}}}
+		if enrollment != "" && record.Enrollment != "proven" {
+			facts = append(facts, textui.KV{Key: "enrollment", Value: []textui.Span{textui.Plain(enrollment)}})
+		}
+		for _, note := range notes {
+			facts = append(facts, textui.KV{Key: "note", Value: []textui.Span{textui.Plain(note)}})
+		}
+		if page.Verbose() {
+			pid, _, _ := strings.Cut(record.LeaderRef, "@")
+			facts = append(facts, textui.KV{Key: "leader", Value: []textui.Span{textui.Plain("session leader " + cmpOr(record.Leader, "unknown") + ", pid " + pid)}},
+				textui.KV{Key: "seat", Value: []textui.Span{textui.Plain(env.Path(record.Checkout))}})
+		}
+		page.Facts(facts...)
+		page.Hint(textui.Hint{Argv: []string{"metasystem", "helm", "return"}, Reason: "gives the seat back to the machinery"})
+	}
 }
 
 // helmLeaderName is the session leader's executable name, or unknown.

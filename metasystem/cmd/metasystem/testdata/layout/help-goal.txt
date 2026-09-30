@@ -1,0 +1,39 @@
+metasystem goal · the backlog: open, approve, budget, claim and conclude goals
+
+Read
+  list                   list the open goals
+  show                   one goal's record: intent, next step, budget and designs
+  notes                  read, add or close a goal's non-breaking read findings
+
+Decide
+  open                   declare a new goal
+  approve                approve goals for execution
+  unapprove              withdraw a goal's execution approval
+  budget                 read a goal's budget, or give it a box
+  prioritize             place an open goal in priority 1, 2 or 3
+  pin                    pin a goal to one machine, or clear its pin
+  allow                  allow a goal something it may not do by default
+  disallow               withdraw something a goal was allowed
+  accept-risk            accept the risk of one severe or unproven review finding
+  review                 record your verdict on a goal waiting to land
+  land-without-sitting   let a goal that waits for your review land without a sitting
+
+Work
+  claim                  claim a goal for this session, or the next ready goal
+  release                release a claim this session holds
+  pause                  park a goal with a reason
+  resume                 resume a parked goal, or a stopped goal under its standing box
+  done                   conclude a goal
+  reopen                 return a done or abandoned goal to the queue with a fresh next step
+  abandon                record that a goal will never be worked, and why
+
+Shape
+  edit                   change a goal's intent, next step, risk or labels in place
+  split                  split a goal into independently claimable related goals
+  group                  put a goal into a group of related goals
+  ungroup                take a goal out of its group of related goals
+  block                  record that a goal waits for another
+  unblock                remove one blocker from a goal
+  sync                   bring the goal files and the published ledger into agreement
+
+→ metasystem goal ACTION --help  one action's forms, options and examples

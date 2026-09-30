@@ -89,7 +89,7 @@ func TestParseFormatRefusals(t *testing.T) {
 		{"missing separator", strings.Replace(canonicalExample, "| --- | --- | --- | --- | --- | --- | --- | --- |\n", "", 1), "followed immediately by"},
 		{"short separator", strings.Replace(canonicalExample, "| --- | --- | --- | --- | --- | --- | --- | --- |", "| --- | --- |", 1), "8-cell separator"},
 		{"second separator", strings.Replace(canonicalExample, "| 2 | Costs", "| --- | --- | --- | --- | --- | --- | --- | --- |\n| 2 | Costs", 1), "second separator"},
-		{"misplaced separator behind the count line", strings.Replace(canonicalExample, "| --- | --- | --- | --- | --- | --- | --- | --- |\n", "Wired: 2. Floating: 1.\n| --- | --- | --- | --- | --- | --- | --- | --- |\n", 1), "not the count line"},
+		{"misplaced separator behind the count line", strings.Replace(canonicalExample, "| --- | --- | --- | --- | --- | --- | --- | --- |\n", "Wired: 2. Floating: 1.\n| --- | --- | --- | --- | --- | --- | --- | --- |\n", 1), "the count line sits between the header and its separator row"},
 		{"blank line where the separator belongs", canonicalExample[:strings.Index(canonicalExample, "| --- |")], "followed immediately by its separator"},
 		{"header as the file's last byte", strings.TrimRight(canonicalExample[:strings.Index(canonicalExample, "| --- |")], "\n"), "followed immediately by its separator"},
 		{"count overflow", strings.Replace(canonicalExample, "Wired: 2.", "Wired: 99999999999999999999.", 1), "does not fit a number"},

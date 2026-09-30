@@ -1,0 +1,136 @@
+exit 0
+--
+{
+  "schemaVersion": 1,
+  "verb": "incident list",
+  "targets": [],
+  "outcome": "confirmed",
+  "summary": "2 incident(s) on main; 1 tracked flake or hang entry",
+  "data": {
+    "incidents": [
+      {
+        "id": "tr-deep-main000003",
+        "identity": "tr-deep-main000003",
+        "group": "deep",
+        "status": "failed",
+        "failures": [],
+        "notRunReason": "",
+        "sightings": [
+          {
+            "attempt": "attempt-1",
+            "batch": "batch-1",
+            "baseCommit": "base-1",
+            "baseTree": "",
+            "logPath": "",
+            "logDigest": "",
+            "seenAt": "2026-09-30T05:58:00Z",
+            "opid": "01J5X0000000000000000000X1-mac-cli-ca0df2c9"
+          }
+        ],
+        "owner": {
+          "machine": "mac-other",
+          "since": "2026-09-30T05:58:00Z",
+          "how": "joiner",
+          "by": ""
+        },
+        "fixGoal": "standing-validation",
+        "fixBranch": {
+          "name": "",
+          "commit": "",
+          "state": ""
+        },
+        "holds": [],
+        "opened": "2026-09-30T05:58:00Z",
+        "closed": null
+      },
+      {
+        "id": "tr-fast-main000001",
+        "identity": "tr-fast-main000001",
+        "group": "fast",
+        "status": "failed",
+        "failures": [],
+        "notRunReason": "",
+        "sightings": [
+          {
+            "attempt": "attempt-1",
+            "batch": "batch-1",
+            "baseCommit": "base-1",
+            "baseTree": "",
+            "logPath": "",
+            "logDigest": "",
+            "seenAt": "2026-09-30T05:58:00Z",
+            "opid": "01J5X0000000000000000000X1-mac-cli-ca0df2c9"
+          }
+        ],
+        "owner": {
+          "machine": "",
+          "since": "",
+          "how": "",
+          "by": ""
+        },
+        "fixGoal": "",
+        "fixBranch": {
+          "name": "",
+          "commit": "",
+          "state": ""
+        },
+        "holds": [
+          "batch-1"
+        ],
+        "opened": "2026-09-30T05:58:00Z",
+        "closed": null
+      }
+    ],
+    "trackedDefects": [
+      {
+        "id": "tr-fast-tip0000002",
+        "identity": "tr-fast-tip0000002",
+        "group": "fast",
+        "status": "failed",
+        "failures": [],
+        "notRunReason": "",
+        "sightings": [
+          {
+            "attempt": "attempt-1",
+            "batch": "batch-1",
+            "baseCommit": "base-1",
+            "baseTree": "",
+            "logPath": "",
+            "logDigest": "",
+            "seenAt": "2026-09-30T05:58:00Z",
+            "opid": "01J5X0000000000000000000X1-mac-cli-ca0df2c9"
+          }
+        ],
+        "owner": {
+          "machine": "",
+          "since": "",
+          "how": "",
+          "by": ""
+        },
+        "fixGoal": "",
+        "fixBranch": {
+          "name": "",
+          "commit": "",
+          "state": ""
+        },
+        "holds": [],
+        "opened": "2026-09-30T05:58:00Z",
+        "closed": null,
+        "class": "pending-flake"
+      }
+    ]
+  },
+  "next": {
+    "argv": [
+      "metasystem",
+      "incident",
+      "claim",
+      "tr-fast-main000001",
+      "--goal",
+      "G"
+    ],
+    "reason": "an unowned incident needs a goal that fixes it"
+  }
+}
+
+--

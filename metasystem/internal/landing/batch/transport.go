@@ -306,11 +306,11 @@ func CommitWithWrapperWithRead(root string, declaration CommitDeclaration, goalI
 		return err
 	}
 	if after == before {
-		return refuseBatch("BATCH_LAND_UNPROVENANCED", fmt.Sprintf("goal %s commit boundary did not advance HEAD by exactly one commit", goalID))
+		return refuseBatch("BATCH_LAND_UNPROVENANCED", fmt.Sprintf("landing goal %s did not add exactly one commit; metasystem landing status shows the batch", goalID))
 	}
 	parent, err := readGit(root, "rev-parse", after+"^")
 	if err != nil || parent != before {
-		return refuseBatch("BATCH_LAND_UNPROVENANCED", fmt.Sprintf("goal %s commit boundary did not advance HEAD by exactly one commit", goalID))
+		return refuseBatch("BATCH_LAND_UNPROVENANCED", fmt.Sprintf("landing goal %s did not add exactly one commit; metasystem landing status shows the batch", goalID))
 	}
 	return nil
 }
@@ -329,7 +329,7 @@ func RequirePassingCommitVerdictWithRead(root, goalID, commit string, readGit fu
 		verdict = "unreadable"
 	}
 	if verdict != "pass" && !strings.HasPrefix(verdict, "pass ") {
-		return refuseBatch("BATCH_LAND_UNPROVENANCED", fmt.Sprintf("goal %s commit %s verdict %s", goalID, commit, verdict))
+		return refuseBatch("BATCH_LAND_UNPROVENANCED", fmt.Sprintf("goal %s commit %s was not checked as landable (%s); metasystem landing status shows the batch", goalID, commit, verdict))
 	}
 	return nil
 }

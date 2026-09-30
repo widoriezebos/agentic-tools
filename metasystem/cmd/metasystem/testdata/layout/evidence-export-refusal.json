@@ -1,0 +1,23 @@
+exit 2
+--
+{
+  "schemaVersion": 1,
+  "verb": "evidence export",
+  "targets": [],
+  "outcome": "refused",
+  "summary": "the copies need a directory: --to DIR, or evidence.export-dir in the settings; nothing was done",
+  "next": {
+    "argv": [
+      "metasystem",
+      "evidence",
+      "export",
+      "old-chain",
+      "--json",
+      "--to",
+      "DIR"
+    ],
+    "reason": "DIR is where the copies go"
+  }
+}
+
+--

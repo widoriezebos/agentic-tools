@@ -1,0 +1,25 @@
+exit 0
+--
+{
+  "schemaVersion": 1,
+  "verb": "app log",
+  "targets": [
+    {
+      "kind": "app",
+      "id": "standing"
+    }
+  ],
+  "outcome": "confirmed",
+  "summary": "the last 3 line(s) of /Users/wido/GitHub/agentic-tools-m1e/app.log",
+  "data": {
+    "lines": [
+      "fixture: listening on 127.0.0.1:4100",
+      "fixture: ready",
+      "fixture: served /-/health"
+    ],
+    "log": "/Users/wido/GitHub/agentic-tools-m1e/app.log",
+    "run": "standing"
+  }
+}
+
+--

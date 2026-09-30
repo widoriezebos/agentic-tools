@@ -43,8 +43,8 @@ func assertDispatchFollowUpCloseFixture(t *testing.T, repo string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantRecovery := "next: metasystem work close j2:" + implementation + " --evidence " + critic + ";"
-	if refusalCode != 11 || !strings.Contains(string(refusal), "REDUNDANT_READ") || !strings.Contains(string(refusal), wantRecovery) {
+	wantRecovery := "run: metasystem work finish j2:" + implementation + " --evidence " + critic
+	if refusalCode != 11 || strings.Contains(string(refusal), "REDUNDANT_READ") || !strings.Contains(string(refusal), "an equal read changes nothing") || !strings.Contains(string(refusal), wantRecovery) {
 		t.Fatalf("fresh equal read = exit %d output %q", refusalCode, refusal)
 	}
 	for _, path := range []string{filepath.Join(jobs, candidate+".json"), filepath.Join(agents, candidate)} {

@@ -1,0 +1,4 @@
+✓ Machine m1f is already launched and supervised · nothing was done
+
+launch   01K5ZZZZZZZZZZZZZZZZZZZZZZ
+clone    /Users/wido/GitHub/agentic-tools-m1f

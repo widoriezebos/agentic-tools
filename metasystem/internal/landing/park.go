@@ -76,9 +76,12 @@ type ParkFailure struct {
 }
 
 func (e *ParkFailure) Error() string {
-	return fmt.Sprintf("chain-recertification-park-failed cause=%s: %v", e.Cause, e.Err)
+	return fmt.Sprintf("the change could not be set aside for its re-check (%s: %v); metasystem work land retries it", e.Cause, e.Err)
 }
-func (e *ParkFailure) Unwrap() error { return e.Err }
+
+// RefusalCode is the registered code, for --json and the register.
+func (e *ParkFailure) RefusalCode() string { return "chain-recertification-park-failed" }
+func (e *ParkFailure) Unwrap() error       { return e.Err }
 
 func parkDigest(record ParkRecord) (string, error) {
 	record.RecordDigest = ""

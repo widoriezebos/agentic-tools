@@ -1,0 +1,36 @@
+exit 0
+--
+{
+  "schemaVersion": 1,
+  "verb": "system restart",
+  "targets": [
+    {
+      "kind": "checkout",
+      "id": "/Users/wido/GitHub/agentic-tools-m1e"
+    }
+  ],
+  "outcome": "confirmed",
+  "summary": "restarted /Users/wido/GitHub/agentic-tools-m1e",
+  "data": {
+    "reached": "started",
+    "start": {
+      "exitCode": 0,
+      "lines": [
+        "evidence root: /Users/wido/metasystem-evidence/001 (default; set evidence.root in metasystem.conf.local to change)",
+        "checkout /Users/wido/GitHub/agentic-tools-m1e",
+        "already armed (runner pid 4242)",
+        "armed /Users/wido/GitHub/agentic-tools-m1e generation 3"
+      ]
+    },
+    "stop": {
+      "exitCode": 0,
+      "lines": [
+        "checkout /Users/wido/GitHub/agentic-tools-m1e",
+        "nothing is running",
+        "stopped /Users/wido/GitHub/agentic-tools-m1e; start again: metasystem system start --repo /Users/wido/GitHub/agentic-tools-m1e"
+      ]
+    }
+  }
+}
+
+--

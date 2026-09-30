@@ -539,9 +539,9 @@ func contractShapeRefusal(contractAbs string) error {
 		return nil
 	}
 	if info.Mode()&os.ModeSymlink != 0 {
-		return failf(3, "wall preflight refused: the mission contract is a symlink; the signed contract must be a regular committed file")
+		return failf(3, "wall preflight refused: the mission contract is a symlink\nthe signed contract must be a regular committed file")
 	}
-	return failf(3, "wall preflight refused: the mission contract path is occupied by a non-regular object (%s); the signed contract must be a regular committed file", info.Mode())
+	return failf(3, "wall preflight refused: the mission contract path holds a non-regular object (%s)\nthe signed contract must be a regular committed file", info.Mode())
 }
 
 func (e *Engine) checkFileModePinned() error {
@@ -552,7 +552,7 @@ func (e *Engine) checkFileModePinned() error {
 	// the pin itself.
 	stdout, _, code := e.wallReads().Git(e.Root, "config", "--local", "--type=bool", "--get", "core.fileMode")
 	if code != 0 || strings.TrimSpace(stdout) != "true" {
-		return failf(3, "wall preflight refused: core.fileMode is not pinned true in this repository; run `git config core.fileMode true` (mode-bit drift must be visible to the tree equation)")
+		return failf(3, "wall preflight refused: core.fileMode is not pinned true here, so mode changes go unseen\nrun: git config core.fileMode true")
 	}
 	return nil
 }
@@ -605,7 +605,7 @@ func (e *Engine) admittedBaseline(values map[string]string, approved []byte) (st
 	}
 	live, liveExists := contractEntries[contractRel]
 	if !liveExists {
-		return "", failf(3, "wall preflight refused: the mission contract is absent from the workspace snapshot; the signed contract must be a regular committed file")
+		return "", failf(3, "wall preflight refused: the mission contract is absent from the workspace snapshot\nthe signed contract must be a regular committed file")
 	}
 	// A SYMLINK is never the signed contract: the snapshot records it as
 	// a 120000 entry whose blob is the target path, which E0 would then
@@ -613,11 +613,11 @@ func (e *Engine) admittedBaseline(values map[string]string, approved []byte) (st
 	// record uses; the public ladder names it even earlier
 	// (lstatContractRefusingSymlink).
 	if live.Mode == "120000" {
-		return "", failf(3, "wall preflight refused: the mission contract is a symlink; the signed contract must be a regular committed file")
+		return "", failf(3, "wall preflight refused: the mission contract is a symlink\nthe signed contract must be a regular committed file")
 	}
 	want := committedContract[contractRel]
 	if want.OID != live.OID || want.Mode != live.Mode {
-		return "", failf(3, "wall preflight refused: the mission contract differs from its committed form (bytes or mode); commit the signed contract exactly as approved")
+		return "", failf(3, "wall preflight refused: the mission contract differs from its committed form (bytes or mode)\ncommit the signed contract exactly as approved")
 	}
 	// Local HEAD alone cannot vouch for the contract: a different
 	// contract committed over HEAD after the pin would satisfy the
@@ -630,7 +630,7 @@ func (e *Engine) admittedBaseline(values map[string]string, approved []byte) (st
 		return "", failf(3, "wall preflight cannot hash the approved contract bytes: %v", err)
 	}
 	if live.OID != approvedOID {
-		return "", failf(3, "wall preflight refused: the workspace contract does not match the approved contract bytes; the mission must run exactly the contract that was pinned")
+		return "", failf(3, "wall preflight refused: the workspace contract does not match the approved contract bytes\nthe mission runs exactly the contract that was pinned; restore those bytes")
 	}
 	// The EFFECTIVE replacement namespace must be empty at admission and
 	// stay empty: an active mapping re-routes later unpinned git
@@ -644,7 +644,7 @@ func (e *Engine) admittedBaseline(values map[string]string, approved []byte) (st
 	}
 	for name := range refs {
 		if strings.HasPrefix(name, "refs/replace/") {
-			return "", failf(3, "wall preflight refused: the replacement namespace is not empty (%s); remove the replace refs before any mission runs", name)
+			return "", failf(3, "wall preflight refused: a replacement ref exists (%s)\nremove the replace refs before any mission runs", name)
 		}
 	}
 	// The DECISION compares contract-excluded projections (the fixpoint
@@ -677,7 +677,7 @@ func (e *Engine) admittedBaseline(values map[string]string, approved []byte) (st
 		return "", failf(3, "wall preflight cannot project the committed identity: %v", err)
 	}
 	if stagedIdentity != committedIdentity && stagedIdentity != record {
-		return "", failf(3, "wall preflight refused: the staged projection %s equals neither HEAD's tree nor the admitted baseline; commit or reset the index", stagedIdentity)
+		return "", failf(3, "wall preflight refused: the staged index %s equals neither HEAD's tree nor the admitted baseline\ncommit or reset the index", stagedIdentity)
 	}
 	if observed == committed {
 		return record, nil
@@ -685,7 +685,7 @@ func (e *Engine) admittedBaseline(values map[string]string, approved []byte) (st
 	if sealed := values["wall.sealed-baseline"]; sealed == observed {
 		return record, nil
 	}
-	return "", failf(3, "wall preflight refused: the initial baseline is dirty (filtered projection %s does not equal HEAD's %s); commit the difference, or seal wall.sealed-baseline=%s in the signed contract", observed, committed, observed)
+	return "", failf(3, "wall preflight refused: the initial baseline is dirty (the workspace %s is not HEAD's %s)\ncommit the difference, or set wall.sealed-baseline to %s in the signed contract", observed, committed, observed)
 }
 
 func (e *Engine) wallPreflight(mode string, values map[string]string, approved []byte) error {
@@ -842,7 +842,7 @@ func (e *Engine) wallGate(statePath, ledger, turnID, turnDir string, cycle int64
 	var recoveryNote string
 	openTurn, ok := diskState["openTurn"].(map[string]any)
 	if !ok {
-		return nil, nil, false, failf(3, "wall inspection needs the open-turn marker; this turn was opened by a pre-wall runner — conclude it with that runner or re-provision the mission")
+		return nil, nil, false, failf(3, "wall inspection needs the open-turn marker, and a pre-wall runner opened this turn\nconclude the turn with that runner, or re-provision the mission")
 	}
 	preTree, _ := openTurn["preTree"].(string)
 	_, values, _, err := e.parseContract(true)

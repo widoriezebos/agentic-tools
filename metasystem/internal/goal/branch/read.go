@@ -138,14 +138,14 @@ func saveBranchReadRecord(common, path string, record branchReadRecord) error {
 	return nil
 }
 
-func lockBranchRead(path string) (*os.File, error) {
+func lockBranchRead(goalID, path string) (*os.File, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, err
 	}
 	held, err := lock.File(path+".lock", 0o600, lock.TryExclusive)
 	var lockErr *lock.LockError
 	if errors.As(err, &lockErr) {
-		return nil, operationRefusal(ReadDispatchPendingCode, "another read of this unit is in progress")
+		return nil, operationRefusal(ReadDispatchPendingCode, "another review of this build of goal %s is running\nrun: metasystem work wait %s", goalID, goalID)
 	}
 	if err != nil {
 		return nil, err
@@ -196,7 +196,7 @@ func ResolveReadGate(request ReadGateRequest) (GateObservation, error) {
 	if err != nil {
 		return GateObservation{}, err
 	}
-	lock, err := lockBranchRead(recordPath)
+	lock, err := lockBranchRead(request.GoalID, recordPath)
 	if err != nil {
 		return GateObservation{}, err
 	}
@@ -234,7 +234,7 @@ func branchUnitWithRepository(repository BranchReadRepository, repo, endpoint, t
 			return KindInfo{Kind: Unit, Units: candidate.Units, Unit: candidate.Unit, CommitID: candidate.ID}, nil
 		}
 	}
-	return KindInfo{}, operationRefusal(ReadInvalidCode, "commit %s is not a Goal-Unit commit of goal %s's branch", commit, goal)
+	return KindInfo{}, operationRefusal(ReadInvalidCode, "commit %s is not a build on goal %s's branch\nrun: metasystem work status %s", commit, goal, goal)
 }
 
 // branchReadDefaultMode is the Working Mode header of a critic brief whose
@@ -276,7 +276,7 @@ func branchReadBriefWithRepository(repository BranchReadRepository, repo, endpoi
 	case declared == 0:
 		brief = branchReadDefaultMode + "\n\n" + brief
 	case err != nil:
-		return "", operationRefusal(ReadInvalidCode, "goal branch brief for unit %s must declare exactly one filled Working Mode header", commit)
+		return "", operationRefusal(ReadInvalidCode, "the brief for build %s needs exactly one filled Working Mode header\nrun: metasystem work review %s --brief FILE", commit, goal)
 	}
 	return brief, nil
 }
@@ -345,7 +345,7 @@ func RunBranchRead(request BranchReadRequest) (result BranchReadResult, err erro
 	if err != nil {
 		return result, err
 	}
-	lock, err := lockBranchRead(recordPath)
+	lock, err := lockBranchRead(request.GoalID, recordPath)
 	if err != nil {
 		return result, err
 	}
@@ -366,10 +366,10 @@ func RunBranchRead(request BranchReadRequest) (result BranchReadResult, err erro
 	}
 	if (record.RootJob != "" || record.DispatchPending || record.DispatchRetryable) && (inputSHA256 != "" && inputSHA256 != record.BriefInputSHA256 ||
 		request.Runtime != "" && request.Runtime != record.Runtime || request.Model != "" && request.Model != record.Model) {
-		return result, operationRefusal(ReadInvalidCode, "goal branch read already dispatched with different brief or runtime/model overrides")
+		return result, operationRefusal(ReadInvalidCode, "this build's review already started with another brief, runtime or model\nrun: metasystem work review %s", request.GoalID)
 	}
 	if record.DispatchPending && record.RootJob == "" {
-		return result, operationRefusal(ReadDispatchPendingCode, "critic dispatch outcome is unknown for unit %s; inspect the job store before recovery", request.UnitCommit)
+		return result, operationRefusal(ReadDispatchPendingCode, "whether the reviewer of build %s started is unknown\nrun: metasystem work status %s", request.UnitCommit, request.GoalID)
 	}
 	record.Goal, record.UnitCommit, record.Tree = request.GoalID, request.UnitCommit, subject.Tree
 	result.GateRunID, result.RootJob, result.AttestationCommit = record.GateRunID, record.RootJob, record.AttestationCommit
@@ -429,7 +429,7 @@ func RunBranchRead(request BranchReadRequest) (result BranchReadResult, err erro
 		return result, nil
 	}
 	if request.Collect {
-		return result, operationRefusal(ReadInvalidCode, "no critic root has been dispatched for unit %s", request.UnitCommit)
+		return result, operationRefusal(ReadInvalidCode, "no reviewer has started on build %s, so there is nothing to collect\nrun: metasystem work review %s", request.UnitCommit, request.GoalID)
 	}
 	record, _, err = resolveReadGate(ReadGateRequest{Repo: request.Repo, GoalID: request.GoalID,
 		UnitCommit: request.UnitCommit, Gate: request.Gate, NewID: request.NewID, Repository: repository}, common, recordPath, record, subject)
@@ -443,15 +443,15 @@ func RunBranchRead(request BranchReadRequest) (result BranchReadResult, err erro
 	effectiveRuntime, effectiveModel := request.Runtime, request.Model
 	if record.DispatchRetryable {
 		if record.Brief != briefPath || record.FrozenBriefSHA256 == "" || record.GateRunID == "" {
-			return result, operationRefusal(ReadDispatchPendingCode, "frozen critic dispatch intent is incomplete for unit %s", request.UnitCommit)
+			return result, operationRefusal(ReadDispatchPendingCode, "the saved start of build %s's review is incomplete\nrun: metasystem work status %s", request.UnitCommit, request.GoalID)
 		}
 		frozen, readErr := os.ReadFile(briefPath)
 		if readErr != nil {
-			return result, operationRefusal(ReadDispatchPendingCode, "frozen critic brief for unit %s is unreadable: %v", request.UnitCommit, readErr)
+			return result, operationRefusal(ReadDispatchPendingCode, "the saved review brief of build %s can't be read: %v\nrun: metasystem work status %s", request.UnitCommit, readErr, request.GoalID)
 		}
 		sum := sha256.Sum256(frozen)
 		if hex.EncodeToString(sum[:]) != record.FrozenBriefSHA256 {
-			return result, operationRefusal(ReadDispatchPendingCode, "frozen critic brief for unit %s changed", request.UnitCommit)
+			return result, operationRefusal(ReadDispatchPendingCode, "the saved review brief of build %s changed after the review started\nrun: metasystem work status %s", request.UnitCommit, request.GoalID)
 		}
 		effectiveRuntime, effectiveModel = record.Runtime, record.Model
 	} else {
@@ -464,7 +464,7 @@ func RunBranchRead(request BranchReadRequest) (result BranchReadResult, err erro
 			return result, writeErr
 		}
 		if !durable {
-			return result, operationRefusal(ReadDispatchPendingCode, "frozen read brief durability is unknown; no critic was launched")
+			return result, operationRefusal(ReadDispatchPendingCode, "the review brief may not be saved to disk, so no reviewer was started\nrun: metasystem work review %s", request.GoalID)
 		}
 		record.Brief, record.BriefInputSHA256 = briefPath, inputSHA256
 		record.Runtime, record.Model = effectiveRuntime, effectiveModel
@@ -522,14 +522,14 @@ func installedBranchRead(request BranchReadRequest, info KindInfo, record branch
 		}
 		att, err := ValidateAttestation(request.Repo, request.EndpointTip, request.GoalID, unitList(info.Units), request.UnitCommit)
 		if err != nil {
-			return "", false, operationRefusal(ReadInvalidCode, "installed read %s of %s does not validate: %v", commit.ID, request.UnitCommit, err)
+			return "", false, operationRefusal(ReadInvalidCode, "the recorded review %s of build %s doesn't hold up: %s\nrun: metasystem work review %s", commit.ID, request.UnitCommit, firstLine(err), request.GoalID)
 		}
 		if att.Source.Kind == "reader-record" {
 			return "", false, nil
 		}
 		if att.Source.RootJob != record.RootJob || att.Gate.RunID != record.GateRunID || att.Subject.Tree != record.Tree {
-			return "", false, operationRefusal(ReadInvalidCode, "installed read %s of %s binds critic %s gate %s, not this record's %s %s",
-				commit.ID, request.UnitCommit, att.Source.RootJob, att.Gate.RunID, record.RootJob, record.GateRunID)
+			return "", false, operationRefusal(ReadInvalidCode, "the recorded review %s of build %s came from reviewer %s and check %s, not %s and %s\nrun: metasystem work status %s",
+				commit.ID, request.UnitCommit, att.Source.RootJob, att.Gate.RunID, record.RootJob, record.GateRunID, request.GoalID)
 		}
 		return commit.ID, true, nil
 	}
@@ -550,10 +550,10 @@ func installedBranchReadFor(request BranchReadRequest, info KindInfo, record bra
 // policy decides whether the failed round may be retried at all.
 func retryBranchRead(request BranchReadRequest, common, recordPath string, record branchReadRecord, result BranchReadResult) (BranchReadResult, error) {
 	if record.RootJob == "" {
-		return result, operationRefusal(ReadInvalidCode, "no examination of unit %s has been dispatched, so there is nothing to retry", request.UnitCommit)
+		return result, operationRefusal(ReadInvalidCode, "no review of build %s has started, so there is nothing to retry\nrun: metasystem work review %s", request.UnitCommit, request.GoalID)
 	}
 	if record.AttestationCommit != "" {
-		return result, operationRefusal(ReadInvalidCode, "the read of unit %s is collected; its examination is not retried", request.UnitCommit)
+		return result, operationRefusal(ReadInvalidCode, "build %s's review is finished and collected, so it isn't retried\nnothing to do; its result stands", request.UnitCommit)
 	}
 	key := strconv.FormatInt(request.Retry, 10)
 	records, err := dispatch.ChainRecords(request.Repo, record.RootJob)
@@ -581,7 +581,7 @@ func retryBranchRead(request BranchReadRequest, common, recordPath string, recor
 		return result, nil
 	}
 	if newest == nil || newestRound != request.Retry {
-		return result, operationRefusal(ReadInvalidCode, "examination round %d is not the newest round of %s (the newest is %d)", request.Retry, record.RootJob, newestRound)
+		return result, operationRefusal(ReadInvalidCode, "round %d is not the newest round of this review; the newest is %d\nrun: metasystem work review %s --retry %d", request.Retry, newestRound, request.GoalID, newestRound)
 	}
 	if err := dispatch.ExaminationRetryAdmissible(request.Repo, newest); err != nil {
 		return result, operationRefusal(ReadInvalidCode, "%v", err)

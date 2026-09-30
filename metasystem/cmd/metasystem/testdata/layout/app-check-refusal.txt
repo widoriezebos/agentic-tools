@@ -1,0 +1,2 @@
+✗ the launch contract declares no check; nothing was checked
+  → name a testing group as "check" in metasystem/launch.json to give the application a check

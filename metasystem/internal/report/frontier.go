@@ -238,14 +238,14 @@ func frontierRecordWithGit(opts FrontierOptions, gitRead func(repo string, args 
 			effectiveStored = "max"
 		}
 		if direction != effectiveStored {
-			return nil, frontierFail(1, "direction %s differs from the recorded frontier's %s; a direction change re-baselines the frontier, so use --force and record the reason in the owning plan", direction, effectiveStored)
+			return nil, frontierFail(1, "direction %s differs from the recorded frontier's %s, and a new direction starts a new baseline\nrun: metasystem experiment record --score %s --direction %s --force  (note why in the owning plan)", direction, effectiveStored, opts.Score, direction)
 		}
 		expired, ferr := opts.frontierExpired(window, fields, opts.File)
 		if ferr != nil {
 			return nil, ferr
 		}
 		if expired {
-			return nil, frontierFail(1, "recorded frontier is older than its measurement window; the environment may have shifted. Re-baseline with --force and record the reason in the owning plan")
+			return nil, frontierFail(1, "the recorded frontier is older than its measurement window, so the environment may have shifted\nrun: metasystem experiment record --score %s --force  (note why in the owning plan)", opts.Score)
 		}
 		old := fields["score"]
 		if !frontierNumericRe.MatchString(old) {
@@ -253,8 +253,8 @@ func frontierRecordWithGit(opts FrontierOptions, gitRead func(repo string, args 
 		}
 		oldScore, _ := strconv.ParseFloat(old, 64)
 		if !frontierBeats(score, oldScore, minDelta, direction) {
-			return nil, frontierFail(1, "score %s does not beat the recorded frontier %s by more than %s (direction %s); use challenge first, or --force only to re-baseline after an evaluation change",
-				opts.Score, old, formatFloat(minDelta), direction)
+			return nil, frontierFail(1, "score %s does not beat the recorded frontier %s by more than %s (direction %s)\nrun: metasystem experiment challenge --score %s  (--force only re-baselines after an evaluation change)",
+				opts.Score, old, formatFloat(minDelta), direction, opts.Score)
 		}
 	}
 	sha, err := gitRead(opts.Repo, "rev-parse", "HEAD")
@@ -347,7 +347,7 @@ func FrontierChallenge(opts FrontierOptions) ([]string, *FrontierError) {
 		return nil, ferr
 	}
 	if expired {
-		return nil, frontierFail(1, "frontier expired: recorded score %s is outside its measurement window; the environment may have shifted. Re-baseline with record --force before comparing candidates", old)
+		return nil, frontierFail(1, "frontier expired: recorded score %s is outside its measurement window\nrun: metasystem experiment record --score <a fresh baseline score> --force", old)
 	}
 	minDelta, ferr := opts.resolveMinDelta(fields["min_delta"])
 	if ferr != nil {
@@ -387,7 +387,7 @@ func frontierStatusWithGit(opts FrontierOptions, gitRead func(repo string, args 
 			if absolute, absErr := filepath.Abs(where); absErr == nil {
 				where = absolute
 			}
-			return nil, frontierFail(2, "%s is not inside a Git repository, so there is no frontier to read; run this inside the repository; nothing was read", where)
+			return nil, frontierFail(2, "%s is not inside a Git repository, so there is no frontier to read\nrun: cd <the repository> && metasystem experiment status", where)
 		}
 		if !os.IsNotExist(err) {
 			return nil, frontierFail(1, "cannot read the frontier at %s: %v; nothing was read", opts.File, err)

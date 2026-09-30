@@ -367,3 +367,24 @@ Landing lane
     goal-x on m1b
 `)
 }
+
+// A fixed text is printed whole on one line however wide: a protocol line
+// another agent reads verbatim, such as a peer message's preface.
+func TestAFixedTextIsNeverWrapped(t *testing.T) {
+	t.Parallel()
+	env := fixedEnv()
+	env.Width = 20
+	page := New(env)
+	page.Headline("One message")
+	section := page.Section("", "")
+	section.Fixed("[peer ask from m1b: a fixed preface longer than the width]")
+	section.Text("prose that is longer than the width wraps")
+	expectPage(t, page, `
+One message
+
+[peer ask from m1b: a fixed preface longer than the width]
+prose that is longer
+  than the width
+  wraps
+`)
+}

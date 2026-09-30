@@ -538,7 +538,7 @@ func TestAmendDroppingReadStillChecksReplayedTree(t *testing.T) {
 	f.expect(append(calls, "close")...)
 	_, e := f.run(f.amendRequest("amend-tree-check"))
 	requireCode(t, e, RangeCode)
-	if !strings.Contains(e.Error(), "replayed branch") {
+	if !strings.Contains(e.Error(), "doesn't hold what was staged") {
 		t.Fatal(e)
 	}
 	f.observe(before, map[string]*string{path: strptr("{}"), "metasystem/code.go": strptr("two")})

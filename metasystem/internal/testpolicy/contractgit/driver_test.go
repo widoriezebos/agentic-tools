@@ -1,6 +1,7 @@
 package contractgit
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -60,8 +61,15 @@ func testDriverArgsUnresolvableExecutableRefuses(t *testing.T) {
 	t.Helper()
 	missing := filepath.Join(t.TempDir(), "missing", "metasystem")
 	args, err := DriverArgs(func() (string, error) { return missing, nil })
-	if err == nil || len(args) != 0 || !strings.Contains(err.Error(), DriverUnresolvedCode) || !strings.Contains(err.Error(), "installed metasystem binary") {
+	if err == nil || len(args) != 0 || strings.Contains(err.Error(), DriverUnresolvedCode) || !strings.Contains(err.Error(), "installed metasystem binary") {
 		t.Fatalf("unresolvable executable args=%v err=%v", args, err)
+	}
+	var coded interface {
+		RefusalCode() string
+		RefusalDetail() string
+	}
+	if !errors.As(err, &coded) || coded.RefusalCode() != DriverUnresolvedCode || !strings.HasPrefix(coded.RefusalDetail(), DriverUnresolvedCode+": ") {
+		t.Fatalf("the code is not the refusal's data: %v", err)
 	}
 }
 

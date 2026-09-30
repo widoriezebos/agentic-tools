@@ -165,7 +165,7 @@ func completeRevivalWithDependencies(repoRoot string, cfg TickConfig, census Wor
 	if _, standing := outage.StandingAt(repoRoot, time.Now()); standing {
 		reason := "the model provider is overloaded; holding revival until the provider recovers"
 		if it.Reason == seatHandoffReason {
-			reason = fmt.Sprintf("handoff %s held after predecessor pid %d was observed dead because the model provider became overloaded before launch", it.Nonce, it.Handoff.Predecessor.Pid)
+			reason = fmt.Sprintf("handoff %s waits: the model provider became overloaded before launch (session pid %d ended)", it.Nonce, it.Handoff.Predecessor.Pid)
 			return holdHandoff(repoRoot, *it, reason)
 		}
 		if err := CancelIntent(repoRoot, it.Nonce, reason); err != nil {

@@ -1,0 +1,23 @@
+exit 0
+--
+{
+  "schemaVersion": 1,
+  "verb": "system stop",
+  "targets": [
+    {
+      "kind": "checkout",
+      "id": "/Users/wido/GitHub/agentic-tools-m1e"
+    }
+  ],
+  "outcome": "unchanged",
+  "summary": "MetaSystem is already stopped for /Users/wido/GitHub/agentic-tools-m1e (since 2026-09-30T08:53:00Z); nothing is running; start again: metasystem system start --repo /Users/wido/GitHub/agentic-tools-m1e",
+  "data": {
+    "exitCode": 0,
+    "lines": [
+      "MetaSystem is already stopped for /Users/wido/GitHub/agentic-tools-m1e (since 2026-09-30T08:53:00Z); nothing is running; start again: metasystem system start --repo /Users/wido/GitHub/agentic-tools-m1e"
+    ],
+    "since": "2026-09-30T08:53:00Z"
+  }
+}
+
+--

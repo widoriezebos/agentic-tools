@@ -1,0 +1,4 @@
+2 design records
+
+01M3FDYDMV0G5V9YC1M9XAKGZR   done       Help an agent choose and complete the right task
+01M3QQ5T6Y7Z8A9B0C1D2E3F4G   accepted   Output style: one shape for every metasystem command

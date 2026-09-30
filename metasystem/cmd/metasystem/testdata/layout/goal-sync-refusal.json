@@ -1,0 +1,25 @@
+exit 2
+--
+{
+  "schemaVersion": 1,
+  "verb": "goal sync",
+  "targets": [],
+  "outcome": "refused",
+  "summary": "--sync-mode is remote or local; nothing was done",
+  "next": {
+    "argv": [
+      "metasystem",
+      "goal",
+      "sync",
+      "--upgrade",
+      "--by",
+      "Wido",
+      "--json",
+      "--sync-mode",
+      "remote"
+    ],
+    "reason": "or local"
+  }
+}
+
+--

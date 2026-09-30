@@ -1,0 +1,2 @@
+✗ declare-moves needs the one goal whose change moves Stop decisions; nothing was done
+  → metasystem test declare-moves GOAL --reason TEXT  names the goal

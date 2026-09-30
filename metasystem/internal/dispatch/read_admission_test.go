@@ -636,8 +636,7 @@ func TestReadAdmissionDirectsClosedLiveRootToImplementationClose(t *testing.T) {
 		result, err := CritiqueReadAdmission(repo, "code-critic", "candidate", 1, subject)
 		assertReadRefusal(t, result, err, redundantReadRefusal, "critic", 1)
 		for _, text := range []string{
-			"next: metasystem work finish j2:implementer --evidence critic",
-			"completion still checks terminal coverage and required evidence",
+			"\nrun: metasystem work finish j2:implementer --evidence critic",
 		} {
 			if !strings.Contains(err.Error(), text) {
 				t.Fatalf("closed-root recovery %q does not contain %q", err, text)
@@ -651,7 +650,7 @@ func TestReadAdmissionDirectsClosedLiveRootToImplementationClose(t *testing.T) {
 		closeReadyCriticChain(t, repo, "critic", "critic")
 		result, err := CritiqueReadAdmission(repo, "code-critic", "candidate", 1, subject)
 		assertReadRefusal(t, result, err, redundantReadRefusal, "critic", 1)
-		if !strings.Contains(err.Error(), "next: metasystem work finish j2:critic") || strings.Contains(err.Error(), "--evidence") {
+		if !strings.Contains(err.Error(), "\nrun: metasystem work finish j2:critic") || strings.Contains(err.Error(), "--evidence") {
 			t.Fatalf("open-root recovery changed: %v", err)
 		}
 	})
@@ -665,7 +664,7 @@ func TestReadAdmissionDirectsClosedLiveRootToImplementationClose(t *testing.T) {
 		})
 		result, err := CritiqueReadAdmission(repo, "code-critic", "candidate", 1, subject)
 		assertReadRefusal(t, result, err, redundantReadRefusal, "critic", 1)
-		if !strings.Contains(err.Error(), "later round 2") || strings.Contains(err.Error(), "--evidence") {
+		if !strings.Contains(err.Error(), "round 2 is newer") || strings.Contains(err.Error(), "--evidence") {
 			t.Fatalf("historical recovery changed: %v", err)
 		}
 	})
@@ -905,6 +904,9 @@ func assertReadRefusal(t *testing.T, result ReadAdmissionResult, err error, reas
 	}
 	if !strings.Contains(err.Error(), root) || !strings.Contains(err.Error(), result.SubjectDigest) {
 		t.Fatalf("diagnostic lacks root or digest: %v", err)
+	}
+	if strings.Contains(err.Error(), reason) || !strings.Contains(err.Error(), "\n") {
+		t.Fatalf("the words carry the code or lack the command: %q", err.Error())
 	}
 }
 

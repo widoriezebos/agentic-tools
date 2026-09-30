@@ -37,7 +37,7 @@ func (s *session) statusJob(args []string) error {
 func (s *session) censusVerdictLine() string {
 	verdict := filepath.Join(s.agents, "supervision", "last-census.json")
 	if !isFile(verdict) {
-		return "CENSUS verdict=ABSENT"
+		return "last census: none recorded"
 	}
 	value, ok := field(verdict, "verdict")
 	if !ok {
@@ -52,7 +52,7 @@ func (s *session) censusVerdictLine() string {
 	if !ok {
 		fingerprint = "unavailable"
 	}
-	return fmt.Sprintf("CENSUS verdict=%s age=%ds fingerprint=%s", value, s.nowUnix()-completed, fingerprint)
+	return fmt.Sprintf("last census: %s, %ds ago (fingerprint %s)", value, s.nowUnix()-completed, fingerprint)
 }
 
 // watchJob is watch_job: a job with no record is knowable now (vanished,
@@ -276,7 +276,7 @@ func (s *session) breachStopRun(stopID string) error {
 			}
 			if err := s.cancelStopProof(stopID, attempt); err != nil {
 				_ = s.verbFailure(err)
-				return s.die(1, fmt.Sprintf("breach-stop %s could not cancel proof attempt %s", stopID, attempt))
+				return s.die(1, fmt.Sprintf("breach-stop %s could not cancel the running check %s", stopID, attempt))
 			}
 		}
 	}

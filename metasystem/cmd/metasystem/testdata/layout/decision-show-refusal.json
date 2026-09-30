@@ -1,0 +1,24 @@
+exit 1
+--
+{
+  "schemaVersion": 1,
+  "verb": "decision show",
+  "targets": [
+    {
+      "kind": "record",
+      "id": "NOSUCH"
+    }
+  ],
+  "outcome": "refused",
+  "summary": "the project has no record NOSUCH; nothing was read",
+  "next": {
+    "argv": [
+      "metasystem",
+      "decision",
+      "list"
+    ],
+    "reason": "lists the decision records with their ids"
+  }
+}
+
+--

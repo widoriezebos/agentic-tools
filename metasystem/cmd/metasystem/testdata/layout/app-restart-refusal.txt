@@ -1,0 +1,2 @@
+✗ --wait-seconds needs a whole number of seconds, 0 or more; nothing was done
+  → metasystem app restart --wait-seconds 15  or the number you want

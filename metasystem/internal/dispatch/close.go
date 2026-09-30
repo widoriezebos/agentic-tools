@@ -62,18 +62,18 @@ func CloseCheck(repoRoot, root string) error {
 		var severeBlocker bool
 		for _, finding := range register {
 			if finding.Status == "open" || finding.Status == "disputed" {
-				blockers = append(blockers, fmt.Sprintf("cannot close with unresolved finding %s artifact=%s", finding.FindingID, finding.Artifact))
+				blockers = append(blockers, fmt.Sprintf("cannot close with unresolved finding %s (in %s)", finding.FindingID, finding.Artifact))
 				severeBlocker = severeBlocker || finding.RigorClass == "severe" || finding.RigorClass == "unproven"
 			}
 			if finding.Resolution == "out-of-scope" && (finding.RigorClass == "severe" || finding.RigorClass == "unproven") {
-				blockers = append(blockers, fmt.Sprintf("cannot close severe or unproven finding %s artifact=%s as out-of-scope", finding.FindingID, finding.Artifact))
+				blockers = append(blockers, fmt.Sprintf("cannot close severe or unproven finding %s (in %s) as out-of-scope", finding.FindingID, finding.Artifact))
 				severeBlocker = true
 			}
 		}
 		if len(blockers) > 0 {
 			next := ""
 			if severeBlocker {
-				next = "\na person accepts each risk (metasystem goal accept-risk --finding <id> --chain <root> --by <human> --why) or raises the goal's budget"
+				next = "\na person accepts each risk with metasystem goal accept-risk, or raises the goal's budget with metasystem goal budget"
 			}
 			return fmt.Errorf("%s%s", strings.Join(blockers, "\n"), next)
 		}

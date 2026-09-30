@@ -1,0 +1,3 @@
+Decision 01M3MKDZKHW0X90ERJ2M3YS36V is accepted · Checkout lease: decisions
+
+  path   docs/decisions/checkout-lease.md

@@ -213,3 +213,14 @@ func TestHelmReturnSucceedsWhateverEachStepSays(t *testing.T) {
 	}
 	g.wantReturn(0, "the machinery is at the helm; nothing to return")
 }
+
+// An answer's refusal that brings its own line 2 keeps it under the act,
+// indented, so the return's list stays one entry per act.
+func TestHelmActLineIndentsAnOwnersSecondLine(t *testing.T) {
+	t.Parallel()
+	got := helmActLine("goal done g1", intentResult{Outcome: intentRefused, Summary: "goal g1 has an open read item\nrun: metasystem goal notes g1"})
+	want := "goal done g1: refused: goal g1 has an open read item\n  run: metasystem goal notes g1"
+	if got != want {
+		t.Fatalf("helmActLine = %q, want %q", got, want)
+	}
+}

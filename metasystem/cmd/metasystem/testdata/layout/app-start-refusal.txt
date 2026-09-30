@@ -1,0 +1,2 @@
+✗ goal nosuch has no work branch here or at origin; nothing was started
+  → metasystem goal show nosuch  shows whether the goal exists and where its work stands

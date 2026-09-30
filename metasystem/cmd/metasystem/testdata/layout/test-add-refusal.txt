@@ -1,0 +1,2 @@
+✗ test add takes --file with --group and what the group gains or loses; nothing was changed
+  → metasystem test add --help  its forms: --tests, --inputs, or --surface with --paths

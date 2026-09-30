@@ -693,7 +693,7 @@ func TestANameWithoutAProofIsASeatOnAMultiTargetOpen(t *testing.T) {
 	if _, err := OpenRisked(namedOnly(root, "01J5X00000000000000000BY04", "mac-a"), "unblocked-fix",
 		"An open with no blocker at all.", OriginHuman, "Fix it.",
 		nil, []string{"not-mine"}, edgeRisk(), 0, "", &budget, nil); err == nil ||
-		!strings.Contains(err.Error(), "R-93-m1e") || !strings.Contains(err.Error(), "--blocks") {
+		!strings.Contains(err.Error(), "a seat opens only a defect that blocks its claimed goal") || !strings.Contains(err.Error(), "--blocks") {
 		t.Fatalf("a seat opened as a person because it typed the origin: %v", err)
 	}
 	if acceptedTip(t, root) != before {

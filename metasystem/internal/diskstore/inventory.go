@@ -56,12 +56,17 @@ type Consumer struct {
 
 // Line renders a consumer for a person.
 func (c Consumer) Line() string {
+	return c.line(func(age time.Duration) string { return age.String() })
+}
+
+// line is the consumer's line with its age spelled by age.
+func (c Consumer) line(age func(time.Duration) string) string {
 	size := textui.Bytes(c.Bytes)
 	if !c.Measured {
 		size = "at least " + size + " (not fully measured within the pass budget)"
 	}
 	return fmt.Sprintf("%s (%s): %s, last written %s ago, %s; %s", c.Path, c.Kind, size,
-		(time.Duration(c.AgeSecs) * time.Second).Round(time.Minute), c.Use, c.Command)
+		age((time.Duration(c.AgeSecs) * time.Second).Round(time.Minute)), c.Use, c.Command)
 }
 
 // ConsumerRoot is a place the floor looks: the root itself (Children

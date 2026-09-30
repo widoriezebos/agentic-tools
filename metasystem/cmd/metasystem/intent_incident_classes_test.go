@@ -36,8 +36,8 @@ func TestIncidentListCountsOnlyTrunkRedsAsOnMain(t *testing.T) {
 		t.Fatal(err)
 	}
 	code, stdout, stderr := b.run(b.owners(), "incident", "list")
-	if code != 0 || !strings.Contains(stdout, "1 incident(s) on main; 1 tracked flake or hang entry") ||
-		!strings.Contains(stdout, "tr-fast-tip0000002  fast  pending flake, seen on a batch tip, not on main, open") {
+	if code != 0 || !strings.Contains(stdout, "1 incident on main · 1 nobody fixes · 1 tracked flake or hang") ||
+		!strings.Contains(stdout, "○ tr-fast-tip0000002   fast   pending flake, seen on a batch tip, not on main") {
 		t.Fatalf("incident list = %d stdout=%q stderr=%q", code, stdout, stderr)
 	}
 	if strings.Contains(stdout, "incident claim tr-fast-tip0000002") {

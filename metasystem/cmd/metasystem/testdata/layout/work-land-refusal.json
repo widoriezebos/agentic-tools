@@ -1,0 +1,21 @@
+exit 2
+--
+{
+  "schemaVersion": 1,
+  "verb": "work land",
+  "targets": [],
+  "outcome": "refused",
+  "summary": "work land needs one goal, or one dispatch job; nothing was landed",
+  "next": {
+    "argv": [
+      "metasystem",
+      "work",
+      "land",
+      "GOAL",
+      "--json"
+    ],
+    "reason": "names the goal; a job is named as j2:JOB"
+  }
+}
+
+--

@@ -1,0 +1,25 @@
+exit 0
+--
+{
+  "schemaVersion": 1,
+  "verb": "decision list",
+  "targets": [],
+  "outcome": "confirmed",
+  "summary": "1 decision record(s)",
+  "data": {
+    "goal": "",
+    "kind": "decision",
+    "records": [
+      {
+        "goals": [],
+        "id": "01M3MKDZKHW0X90ERJ2M3YS36V",
+        "kind": "decision",
+        "path": "docs/decisions/checkout-lease.md",
+        "status": "accepted",
+        "title": "Checkout lease: decisions"
+      }
+    ]
+  }
+}
+
+--

@@ -3,7 +3,6 @@
 package contractgit
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 )
@@ -19,11 +18,18 @@ const (
 )
 
 // Refusal reports a transition that cannot safely enter a content merge.
+// Its text is the plain detail a person reads; the code is data
+// ("Messages a Person Reads"): RefusalCode, and RefusalDetail for records.
 type Refusal struct {
 	Code, Detail string
 }
 
-func (r *Refusal) Error() string { return fmt.Sprintf("%s: %s", r.Code, r.Detail) }
+func (r *Refusal) Error() string { return r.Detail }
+
+// RefusalCode and RefusalDetail are the code and the code-first line
+// --verbose and the refusal records keep.
+func (r *Refusal) RefusalCode() string   { return r.Code }
+func (r *Refusal) RefusalDetail() string { return r.Code + ": " + r.Detail }
 
 // DriverArgs returns command-line Git configuration for the running
 // metasystem binary. Content-merging verbs must stop when the executable
@@ -51,7 +57,7 @@ func DriverArgs(executable func() (string, error)) ([]string, error) {
 func RuntimeDriverArgs() ([]string, error) { return DriverArgs(os.Executable) }
 
 func unresolved(cause error) error {
-	detail := "cannot resolve the metasystem merge-driver executable; run the verb from an installed metasystem binary"
+	detail := "cannot find the metasystem merge driver; run the verb from an installed metasystem binary"
 	if cause != nil {
 		detail += ": " + cause.Error()
 	}

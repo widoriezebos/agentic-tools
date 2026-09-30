@@ -132,7 +132,8 @@ func recordCounselorRenderFailure(repoRoot string, cursor counselorBriefCursor, 
 		return nil
 	}
 	sourceID := counselorBriefSourceID(periodStart, cadenceHours)
-	line := fmt.Sprintf("HEALTH unhealthy — counselor=dead (brief render failed for the period beginning %s: %v; remedy: repair the counselor renderer; the armed steward retries the brief on its next tick, and metasystem system check shows the result)",
+	// The armed steward retries the brief on its next tick.
+	line := fmt.Sprintf("HEALTH unhealthy — the counselor's brief for %s failed (%v); metasystem system check shows it",
 		periodStart.Format(time.RFC3339), renderErr)
 	if err := narratordigest.Append(repoRoot, []narratordigest.Entry{{
 		Kind: "lowlight", Text: line, SourceType: "counselor-brief-health", SourceID: sourceID,

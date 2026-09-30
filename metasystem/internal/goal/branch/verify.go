@@ -45,14 +45,14 @@ func landedManifestWithGit(repo, commit string, gitRead landingGitReader) (goalI
 		}
 	}
 	if len(unitValues) != 1 || len(digestValues) != 1 || len(digestValues[0]) != 64 {
-		return "", "", "", nil, operationRefusal(LandVerifyCode, "commit %s has no single landing manifest", commit)
+		return "", "", "", nil, operationRefusal(LandVerifyCode, "commit %s doesn't say once which goal build it lands\nrun: metasystem system check", commit)
 	}
 	goalID, parsed, ok := splitGoalUnits(unitValues[0])
 	if !ok {
-		return "", "", "", nil, operationRefusal(LandVerifyCode, "commit %s has a malformed Goal-Unit", commit)
+		return "", "", "", nil, operationRefusal(LandVerifyCode, "commit %s names its goal build in a damaged line\nrun: metasystem system check", commit)
 	}
 	if _, decodeErr := hex.DecodeString(digestValues[0]); decodeErr != nil {
-		return "", "", "", nil, operationRefusal(LandVerifyCode, "commit %s has a malformed Goal-Digest", commit)
+		return "", "", "", nil, operationRefusal(LandVerifyCode, "commit %s records its landed changes in a damaged line\nrun: metasystem system check", commit)
 	}
 	return goalID, unitList(parsed), digestValues[0], folds, nil
 }
@@ -98,7 +98,7 @@ func verifyLandedWithGit(repo, commit string, gitRead landingGitReader) (Verific
 	}
 	result := Verification{Commit: commit, Goal: goalID, Units: units, Expected: expected, Actual: actual}
 	if actual != expected {
-		return result, operationRefusal(LandVerifyCode, "commit %s digest is %s, want %s", commit, actual, expected)
+		return result, operationRefusal(LandVerifyCode, "commit %s landed other changes than goal %s's reviewed build (%s, recorded %s)\nrun: metasystem work status %s", commit, goalID, actual, expected, goalID)
 	}
 	return result, nil
 }

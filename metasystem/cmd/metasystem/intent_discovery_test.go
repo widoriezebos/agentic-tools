@@ -27,13 +27,13 @@ func TestIntentPublicDiscovery(t *testing.T) {
 			t.Errorf("the root page mentions %q", leak)
 		}
 	}
-	for _, want := range []string{"Plan:", "Deliver:", "Run:", "Practice:", "metasystem OBJECT ACTION --help", "metasystem work review my-goal", "metasystem work land my-goal"} {
+	for _, want := range []string{"\nPlan\n", "\nDeliver\n", "\nRun\n", "\nPractice\n", "metasystem OBJECT ACTION --help", "metasystem work review my-goal", "metasystem work land my-goal"} {
 		if !strings.Contains(root, want) {
 			t.Errorf("the root page lacks %q", want)
 		}
 	}
 	for index, group := range intentGroups {
-		heading := strings.Index(root, group.heading+":")
+		heading := strings.Index(root, "\n"+group.heading+"\n")
 		if heading < 0 {
 			t.Fatalf("the root page has no %s group", group.heading)
 		}
@@ -41,7 +41,7 @@ func TestIntentPublicDiscovery(t *testing.T) {
 			at := strings.Index(root, "\n  "+object+" ")
 			next := len(root)
 			if index+1 < len(intentGroups) {
-				next = strings.Index(root, intentGroups[index+1].heading+":")
+				next = strings.Index(root, "\n"+intentGroups[index+1].heading+"\n")
 			}
 			if at < heading || at > next {
 				t.Errorf("%s is not listed under %s", object, group.heading)

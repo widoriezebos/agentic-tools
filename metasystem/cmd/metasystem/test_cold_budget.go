@@ -13,9 +13,19 @@ import (
 
 // coldBuildBudgetRefusal is a performance preflight, never a reservation.
 // The final locked proof admission remains the authority for starting work.
-type coldBuildBudgetRefusal struct{ detail string }
+// Its leading BUDGET_REFUSED is kept by decision: the landing batch owner
+// reads it from a test run's refusal to tell a budget refusal from others.
+type coldBuildBudgetRefusal struct{ goal, detail string }
 
-func (refusal *coldBuildBudgetRefusal) Error() string { return "BUDGET_REFUSED: " + refusal.detail }
+func (refusal *coldBuildBudgetRefusal) Error() string {
+	return "BUDGET_REFUSED: the goal's budget has no room for this test run, so nothing was built (" + refusal.detail + ")\n" +
+		"run: metasystem goal budget " + refusal.goal
+}
+
+// RefusalCode and RefusalDetail carry the code into the run's --json
+// envelope, where a parent reads it.
+func (refusal *coldBuildBudgetRefusal) RefusalCode() string   { return "BUDGET_REFUSED" }
+func (refusal *coldBuildBudgetRefusal) RefusalDetail() string { return refusal.Error() }
 
 // refuseKnownColdBuildBudget only stops a cold candidate-engine build when a
 // selected group has no retained successful observation at all. In that case
@@ -65,7 +75,7 @@ func refuseKnownColdBuildBudget(prepared testrun.Preparation, request testrun.Se
 	if err != nil || !permanentBudgetRefusal(verdict.Authority) && !permanentBudgetRefusal(verdict.Candidate) {
 		return nil
 	}
-	return &coldBuildBudgetRefusal{detail: fmt.Sprintf("goal %s before candidate-engine build: %s",
+	return &coldBuildBudgetRefusal{goal: prepared.GoalID, detail: fmt.Sprintf("goal %s before candidate-engine build: %s",
 		prepared.GoalID, strings.Join(dispatchcore.FormatProofAdmission(verdict), "; "))}
 }
 

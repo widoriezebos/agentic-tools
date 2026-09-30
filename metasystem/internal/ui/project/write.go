@@ -160,7 +160,7 @@ func CreateRecord(roots Roots, asked NewRecord, now time.Time) (Written, error) 
 	}
 	name := slug(title)
 	if name == "" {
-		return Written{}, refuse(RefusalBad, "the title "+quoted(title)+" yields no file name")
+		return Written{}, refuse(RefusalBad, "the title "+quoted(title)+" has no letters or digits to name its file")
 	}
 
 	read, err := resolver.Read(resolver.Roots(roots))

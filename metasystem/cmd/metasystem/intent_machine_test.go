@@ -55,6 +55,11 @@ type machineBed struct {
 	extra     []string
 	fleetErr  error
 	fleetEdit func(*seat.Report)
+	// worktrees are the further worktrees Git registers for a checkout;
+	// every checkout lists itself first, as git worktree list does.
+	worktrees map[string][]string
+	// worktreesErr fails git worktree list for every checkout.
+	worktreesErr error
 }
 
 // machineItem is one fixture process: live until its family stops it.
@@ -104,7 +109,7 @@ func newMachineBed(t *testing.T) *machineBed {
 	t.Helper()
 	base := t.TempDir()
 	b := &machineBed{t: t, class: lease.ClassHuman, home: filepath.Join(base, "home"), launchDir: filepath.Join(base, "launches"),
-		dead: map[int64]bool{}, laneAlive: true, stopped: map[string]*int{}}
+		dead: map[int64]bool{}, laneAlive: true, stopped: map[string]*int{}, worktrees: map[string][]string{}}
 	for _, dir := range []string{b.home, b.launchDir} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatal(err)
@@ -186,6 +191,26 @@ func (b *machineBed) top(path string) (string, error) {
 	return "", fmt.Errorf("fatal: not a git repository: %s", path)
 }
 
+// git answers git worktree list --porcelain for each fixture checkout: the
+// checkout itself, then the worktrees the test registered; no Git runs.
+func (b *machineBed) git(dir string, args ...string) ([]byte, error) {
+	if strings.Join(args, " ") != "worktree list --porcelain" {
+		return nil, fmt.Errorf("the machine bed runs no git %s", strings.Join(args, " "))
+	}
+	if b.worktreesErr != nil {
+		return nil, b.worktreesErr
+	}
+	top, err := b.top(dir)
+	if err != nil {
+		return nil, err
+	}
+	blocks := []string{"worktree " + top + "\nHEAD 0123456789abcdef0123456789abcdef01234567\nbranch refs/heads/main\n"}
+	for _, worktree := range b.worktrees[top] {
+		blocks = append(blocks, "worktree "+worktree+"\nHEAD 0123456789abcdef0123456789abcdef01234567\nbranch refs/heads/goal/"+filepath.Base(worktree)+"\n")
+	}
+	return []byte(strings.Join(blocks, "\n")), nil
+}
+
 type machineProber struct{ dead map[int64]bool }
 
 func (p machineProber) Probe(pid int64) (identity.Exact, identity.Liveness, error) {
@@ -262,6 +287,7 @@ func (b *machineBed) owners() intentOwners {
 			records: func(string) ([]batch.Record, error) { return nil, nil },
 			now:     func() time.Time { return machineBedNow },
 		},
+		work: intentWorkOwners{git: b.git},
 		machines: machineOwners{
 			registryPath: func() (string, error) {
 				if b.registryUnreadable {
@@ -328,13 +354,13 @@ func TestMachineListSummarizesThisComputerFirst(t *testing.T) {
 	b := newMachineBed(t)
 	code, stdout, stderr := b.run("machine", "list")
 	lines := strings.Split(strings.TrimSpace(stdout), "\n")
-	if code != 0 || lines[0] != "3 machines on this computer: 2 running, 1 stopped; 2 jobs running; 1 on another computer" {
+	if code != 0 || lines[0] != "3 machines on this computer · 2 running, 1 stopped · 2 jobs running · 1 elsewhere" {
 		t.Fatalf("machine list = %d %q %q", code, stdout, stderr)
 	}
-	if len(lines) < 4 || !strings.HasPrefix(lines[1], "m1e") || !strings.HasPrefix(lines[2], "m1x") || !strings.HasPrefix(lines[3], "m2a") {
-		t.Fatalf("the fleet's lines are not kept after the summary: %q", stdout)
+	if len(lines) < 7 || !strings.HasPrefix(lines[4], "  ● m1e ") || !strings.HasPrefix(lines[5], "  ○ m1x ") || !strings.HasPrefix(lines[6], "  ● m2a ") {
+		t.Fatalf("the fleet's rows do not follow the headline: %q", stdout)
 	}
-	if strings.Contains(stdout, "steward runner") || strings.Contains(stdout, "not ours") {
+	if strings.Contains(stdout, "steward runner") || strings.Contains(stdout, "Not ours") {
 		t.Fatalf("the default printed the verbose detail: %q", stdout)
 	}
 
@@ -342,29 +368,25 @@ func TestMachineListSummarizesThisComputerFirst(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("machine list --verbose = %d %q %q", code, verbose, stderr)
 	}
+	local := func(at time.Time) string { return textui.Env{Now: time.Now(), Zone: time.Local}.Time(at) }
 	for _, want := range []string{
-		"on this computer:",
-		"m1e  running  " + b.this + " (this checkout)",
-		"  steward runner pid 101 since " + machineLocal(1790000101),
-		"  supervision owner pid 102 since " + machineLocal(1790000102),
-		"  repo watcher pid 103 since " + machineLocal(1790000103),
-		"  job j-7 running pid 104 implementer since " + machineLocal(1790000104),
-		"  launch j1:l-1: build launch, running, goal g-1, in " + filepath.Join(b.this, "work"),
-		"m1x  stopped  " + b.other,
-		"  stopped since " + lane.LocalText("2026-09-30T09:00:00Z"),
-		"agentic-tools-landing  running  " + b.landing + " (landing lane)",
-		"  landing batch owner pid 301 since " + machineLocal(1790000301),
-		"  landing lane owner: running, pid 4242, since " + lane.LocalText(machineBedNow.Add(-2*time.Hour).Format(time.RFC3339)),
-		"on other computers:",
-		"m2a  on another computer: last reported " + lane.LocalText(machineBedNow.Add(-3*time.Hour).Format(time.RFC3339)),
-		"not ours, not touched:",
-		"  pid 900 codex app-server since " + machineLocal(1790000900),
+		"m1e " + b.this + " · this checkout · running · since " + machineLocal(1790000101),
+		"pids steward runner 101 · supervision owner 102 · repo watcher 103",
+		"job job j-7 running pid 104 implementer since " + machineLocal(1790000104),
+		"launch j1:l-1: build launch, running, goal g-1, in " + filepath.Join(b.this, "work"),
+		"m1x " + b.other + " · stopped",
+		"stopped since " + local(time.Date(2026, 9, 30, 9, 0, 0, 0, time.UTC)),
+		"agentic-tools-landing " + b.landing + " · landing lane · running · since " + machineLocal(1790000301),
+		"pids landing batch owner 301",
+		"lane owner running, pid 4242, since " + local(machineBedNow.Add(-2*time.Hour)),
+		"On other computers m2a last reported " + local(machineBedNow.Add(-3*time.Hour)),
+		"Not ours, left alone 900 codex app-server since " + machineLocal(1790000900),
 	} {
-		if !strings.Contains(verbose, want+"\n") {
+		if !strings.Contains(oneSpaced(verbose), want) {
 			t.Errorf("--verbose lacks %q:\n%s", want, verbose)
 		}
 	}
-	if strings.Count(verbose, "pid 900") != 1 {
+	if strings.Count(verbose, "app-server") != 1 {
 		t.Errorf("a process that is not ours is listed more than once:\n%s", verbose)
 	}
 
@@ -558,14 +580,15 @@ func TestMachineListCountsOnlyTheFleetsMachines(t *testing.T) {
 
 	code, stdout, stderr := b.run("machine", "list")
 	lines := strings.Split(strings.TrimSpace(stdout), "\n")
-	if code != 0 || lines[0] != "3 machines on this computer: 2 running, 1 stopped; 2 jobs running; 1 on another computer" {
+	if code != 0 || lines[0] != "3 machines on this computer · 2 running, 1 stopped · 2 jobs running · 1 elsewhere" {
 		t.Fatalf("machine list with 52 other registrations = %d %q %q", code, stdout, stderr)
 	}
 	if strings.Contains(stdout, "other registered") || strings.Contains(stdout, "bed-") {
 		t.Fatalf("the default output names the registrations that are not machines: %q", stdout)
 	}
 	code, verbose, _ := b.run("machine", "list", "--verbose")
-	if code != 0 || !strings.Contains(verbose, "52 other registered checkouts (not machines); metasystem disk clean forgets those whose directories are gone\n") ||
+	if code != 0 || !strings.Contains(verbose, "52 other registered checkouts are not machines\n") ||
+		!strings.Contains(verbose, "→ metasystem disk clean  forgets those whose directories are gone\n") ||
 		strings.Contains(verbose, "bed-") || strings.Contains(verbose, "nicknamed-stray") || strings.Contains(verbose, "armed-nameless") {
 		t.Fatalf("machine list --verbose = %d:\n%s", code, verbose)
 	}

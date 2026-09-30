@@ -149,7 +149,7 @@ func TestCreatorRaceAfterStopAndArmPrintsRetryInsteadOfIncompleteStop(t *testing
 	stopSignal = func(int64, syscall.Signal) error { probe.alive = false; return nil }
 	t.Cleanup(func() { stopSignal = originalSignal })
 	err = s.CompleteLaunch("rearmed-launch", creation.Generation)
-	if err == nil || !strings.Contains(err.Error(), "was stopped and armed again") || !strings.Contains(err.Error(), "caller may retry") || strings.Contains(err.Error(), "stop incomplete") {
+	if err == nil || !strings.Contains(err.Error(), "was stopped and armed again") || !strings.Contains(err.Error(), "start it again") || strings.Contains(err.Error(), "stop incomplete") {
 		t.Fatalf("rearmed creator refusal = %v", err)
 	}
 	if probe.alive {

@@ -1,0 +1,5 @@
+✓ This checkout was already set up to work with its engine; nothing changed
+
+  runtimes          claude
+  commit fence      already runs the engine
+  contract merges   already through the engine's merge driver

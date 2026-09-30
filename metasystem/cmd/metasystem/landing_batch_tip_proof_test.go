@@ -87,7 +87,8 @@ func TestBatchTipProofRunsWhereTheIndexIsTheTipTree(t *testing.T) {
 		"  esac\n" +
 		"done\n" +
 		"printf '%s %s\\n' \"$tree\" \"$(git -C \"$root\" write-tree)\" > " + observed + "\n" +
-		"printf '{}' > \"$result\"\n"
+		"printf '{}' > \"$result\"\nexit 0\n"
+	script = withTestRunEnvelope(t, script)
 	if err := testexec.WriteFile(stub, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}

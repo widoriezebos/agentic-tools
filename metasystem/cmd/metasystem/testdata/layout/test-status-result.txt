@@ -1,0 +1,4 @@
+Tree ccccccccc: 2 test groups · 2 ran · 0 reused · 1s in all
+
+Expensive  observed over 500ms
+  slow   1s   passed

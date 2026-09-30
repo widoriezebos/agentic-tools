@@ -8,6 +8,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
 
 func readHelpJSON(t *testing.T, words ...string) (intentResult, intentHelpDocument) {
@@ -162,7 +164,7 @@ func TestIntentAdministrationHelp(t *testing.T) {
 			t.Errorf("%s loses the workflow/administration distinction: %+v", row.name, doc.Command)
 		}
 		code, page, problem := runCLIHelp(append([]string{"help"}, strings.Fields(row.name)...), families())
-		heading := strings.Index(page, "MetaSystem administration:")
+		heading := strings.Index(page, "\nMetaSystem administration\n")
 		work, admin := strings.Index(page, row.work), strings.Index(page, row.admin)
 		if code != 0 || problem != "" || work < 0 || work >= heading || admin <= heading {
 			t.Errorf("%s text does not separate forms: %d %d %d / %s", row.name, work, heading, admin, problem)
@@ -417,5 +419,43 @@ func TestIntentAgentResultProtocol(t *testing.T) {
 	}
 	if len(page.Protocol.Outcomes) != 6 {
 		t.Errorf("incomplete outcome protocol: %+v", page.Protocol.Outcomes)
+	}
+}
+
+// Object help groups by intent (output-style D4): an object with more than
+// intentHelpGroupAbove actions names each of them in exactly one intent,
+// and every named action is one of the object's; a smaller object is one
+// list.
+func TestIntentObjectHelpGroupsEveryActionOnce(t *testing.T) {
+	t.Parallel()
+	for _, object := range intentObjects() {
+		actions := map[string]int{}
+		for _, command := range objectActions(object) {
+			actions[command.action] = 0
+		}
+		groups, grouped := intentActionIntents[object]
+		if len(actions) > intentHelpGroupAbove && !grouped {
+			t.Errorf("%s has %d actions and no intent groups", object, len(actions))
+		}
+		if len(actions) <= intentHelpGroupAbove && grouped {
+			t.Errorf("%s has %d actions; it is one list", object, len(actions))
+		}
+		for _, group := range groups {
+			for _, action := range group.actions {
+				if _, ok := actions[action]; !ok {
+					t.Errorf("%s groups %s under %s, which is not one of its actions", object, action, group.heading)
+				}
+				actions[action]++
+			}
+		}
+		for action, count := range actions {
+			if grouped && count != 1 {
+				t.Errorf("%s %s is in %d intent groups", object, action, count)
+			}
+		}
+		page := intentObjectHelpPage(textui.Env{Width: textui.MaxWidth}, object).String()
+		if strings.Contains(page, "\nMore\n") {
+			t.Errorf("%s help lists actions no intent names:\n%s", object, page)
+		}
 	}
 }

@@ -171,13 +171,13 @@ func (s *session) followUp(args []string) error {
 		continuationWorkspace := fieldOr(latest, "workspaceRoot")
 		continuationLaunch := fieldOr(latest, "launchMode")
 		if continuationRole != "implementer" {
-			return s.die(1, fmt.Sprintf("follow-up after a cap continues implementer worktree chains only; the newest record is a %s round cut off at its cap: start a fresh %s round (a critique re-runs under its critique cap)", continuationRole, continuationRole))
+			return s.die(1, fmt.Sprintf("follow-up refused: the newest round is a %s round cut off at its cap\nonly implementer worktree chains continue; start a fresh %s round (a critique re-runs under its critique cap)", continuationRole, continuationRole))
 		}
 		if continuationLaunch != "worktree" || continuationWorkspace == "" || continuationWorkspace == "null" {
-			return s.die(1, "follow-up after a cap continues a job worktree (launchMode=worktree on the capped record); this chain does not record one, use a fresh dispatch")
+			return s.die(1, "follow-up refused: the capped round did not run in a job worktree, so nothing is left to continue\nuse a fresh dispatch")
 		}
 		if !isDir(continuationWorkspace) {
-			return s.die(1, fmt.Sprintf("follow-up after a cap needs the chain's worktree %s, which is gone; nothing is left to continue, use a fresh dispatch", continuationWorkspace))
+			return s.die(1, fmt.Sprintf("follow-up refused: the chain's worktree %s is gone, so nothing is left to continue\nuse a fresh dispatch", continuationWorkspace))
 		}
 		continuation = "after-cap"
 		if err := nextRound(); err != nil {
@@ -190,7 +190,7 @@ func (s *session) followUp(args []string) error {
 			if reason == "" {
 				reason = "not admitted"
 			}
-			return s.die(1, fmt.Sprintf("follow-up requires the newest record to be completed, failed with protocol_error, an implementer worktree round cut off at its cap (timeout with budget-cap), or a critic round the examination retry admits (%s); use a fresh dispatch after pending, running, process-lost or cancelled rounds it does not admit", reason))
+			return s.die(1, fmt.Sprintf("follow-up refused: a follow-up does not continue the newest round (%s)\nuse a fresh dispatch; a follow-up continues a completed round, a protocol_error failure, an implementer worktree round cut off at its cap, or a critic round the examination retry admits", reason))
 		}
 		// A critic round that ended without a return is examined once more
 		// in the same chain, under the chain's own round cap.
@@ -305,7 +305,7 @@ func (s *session) followUp(args []string) error {
 		goalMachine = binding.Machine
 		goalClaimEpoch = strconv.FormatInt(binding.Capability.ClaimEpoch, 10)
 		if current := s.currentEpoch(); current != "" && current != goalClaimEpoch {
-			return s.die(1, fmt.Sprintf("goal %s revision %d belongs to claim epoch %s, not current epoch %s", subj.goal, subj.goalRevision, goalClaimEpoch, current))
+			return s.die(1, staleClaimMessage(subj.goal, subj.goalRevision, goalClaimEpoch, current))
 		}
 		if err := s.requireGoalTierLadder(subj); err != nil {
 			return err
@@ -363,7 +363,7 @@ func (s *session) followUp(args []string) error {
 			return s.die(1, message)
 		}
 		if missionTurn == "" {
-			return s.die(2, "mission follow-up requires a runner turn (METASYSTEM_MISSION_TURN is not set); follow up from inside the mission host turn")
+			return s.die(2, "mission follow-up needs a mission runner turn, and none is set here\nfollow up from inside the mission's host turn")
 		}
 	}
 	s.mission = missionID

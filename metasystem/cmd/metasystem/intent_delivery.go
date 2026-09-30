@@ -50,7 +50,7 @@ func intentDeliveryCommands() []intentCommand {
 	goalFlag := intentFlag{name: "goal", value: "G", usage: "with --commit, or feedback on changes: the goal the subject serves"}
 	return []intentCommand{
 		{
-			object: "work", action: "review", primary: true, audience: "both", summary: "independently review a goal's built work, a job, a run or a commit",
+			object: "work", action: "review", laidOut: true, primary: true, audience: "both", summary: "independently review a goal's built work, a job, a run or a commit",
 			usage: []string{reviewGoalUsage, reviewSubmitUsage, reviewFindingUsage,
 				reviewJobUsage, reviewCommitUsage, reviewRunUsage, reviewChangesUsage, reviewDiffUsage, reviewCheckUsage},
 			helpForms: reviewHelpForms(),
@@ -116,7 +116,7 @@ func intentDeliveryCommands() []intentCommand {
 			run: runIntentReview,
 		},
 		{
-			object: "work", action: "revise", audience: "agent", summary: "correct a goal's work with a brief: one new attempt, reviewed again",
+			object: "work", action: "revise", laidOut: true, audience: "agent", summary: "correct a goal's work with a brief: one new attempt, reviewed again",
 			usage: []string{"metasystem work revise G [--work NAME] [--after N] --brief FILE [--dispositions FILE]", "metasystem work revise j2:R --dispositions FILE --brief FILE", "metasystem work revise run:RUN --brief FILE"},
 			details: []string{
 				"Every attempt of a work item has a number N, whether it passed or failed; --after N names the attempt being corrected.",
@@ -144,7 +144,7 @@ func intentDeliveryCommands() []intentCommand {
 			run:      runIntentReviseSentBack,
 		},
 		{
-			object: "work", action: "land", primary: true, audience: "both", summary: "land a goal's reviewed work",
+			object: "work", action: "land", laidOut: true, primary: true, audience: "both", summary: "land a goal's reviewed work",
 			usage: []string{"metasystem work land G [--through COMMIT]", "metasystem work land G --queue-only", "metasystem work land j2:J",
 				"metasystem work land G --exception CODE --reason TEXT --by NAME [--expires 2h] [--replace-exception ID [--transfer]]",
 				"metasystem work land G --using-exception ID",
@@ -157,10 +157,10 @@ func intentDeliveryCommands() []intentCommand {
 				"landing delivers it from this checkout's main. Repeating the request rejoins the recorded exception; a changed candidate",
 				"needs --replace-exception. --using-exception ID lands under an exception already recorded, locally or through the channel.",
 				"The claim leaves the one-claim quota and its elapsed fence until it lands; each machine has one landing slot.",
-				"With landing.batch-root configured, the goal branch (or the certified chain) joins the landing batch, which proves and pushes it.",
-				"Without it, the read-clean goal branch is proved on its landing candidate, prepared and pushed by hand.",
-				"With the batch configured, a selection holding a unit read from a reader record is refused with the critic read that admits it",
-				"(metasystem work review --commit SHA --goal G); it lands by hand only when G is the fix goal of an open trunk red on main",
+				"With a landing lane on this computer (metasystem landing status shows it), the goal branch (or the certified chain) joins the lane's batch, which proves and pushes it.",
+				"Without a lane, the read-clean goal branch is proved on its landing candidate and pushed from this checkout.",
+				"With a lane, a selection holding a unit read from a reader record is refused with the critic read that admits it",
+				"(metasystem work review --commit SHA --goal G); it lands from this checkout only when G is the fix goal of an open trunk red on main",
 				"(metasystem incident list names it; metasystem incident claim E --goal G).",
 				"Missing reads, proof or approval refuse with the missing input; no other route is tried instead.",
 				"A repeat reuses the retained receipt and prepared landing; a moved endpoint starts from a new proof. The goal is not concluded: that stays goal done G.",
@@ -170,7 +170,7 @@ func intentDeliveryCommands() []intentCommand {
 				"the lane's account, and it lands with a Landing-Change trailer; the same command reads its membership until it lands, and",
 				"an ejected change is given back: its commit is undone with its changes kept, to fix and land again.",
 				"Without a lane, and with --local or --recertification, it is rebased onto origin,",
-				"proved against retained delivery proof, and pushed by hand.",
+				"proved against retained delivery proof, and pushed from this checkout.",
 			},
 			flags: append([]intentFlag{
 				{name: "through", value: "COMMIT", usage: "land a human-approved prefix ending at this unit commit"},
@@ -191,7 +191,7 @@ func intentDeliveryCommands() []intentCommand {
 			run:      runIntentLand,
 		},
 		{
-			object: "work", action: "finish", audience: "both", summary: "record a finished job with nothing to review or land as complete",
+			object: "work", action: "finish", laidOut: true, audience: "both", summary: "record a finished job with nothing to review or land as complete",
 			usage: []string{"metasystem work finish j2:J", "metasystem work finish j2:J --evidence R", "metasystem work finish j2:J --dispositions FILE"},
 			details: []string{
 				"For a job whose result is findings, not code: an investigation, or a read that is not reviewed further. Use the reference work status printed.",
@@ -870,7 +870,8 @@ func reviewBrief(mode, chain, goalID string, rounds int64, calls int, threat, sc
 		"",
 		"# Review brief: " + chain,
 		"",
-		fmt.Sprintf("Round budget: %d focused rounds, goal %s's approved review-round limit; exhaustion follows the critique skills' budget rules.", rounds, goalID),
+		fmt.Sprintf("Round budget: %d focused rounds, goal %s's approved review-round limit;", rounds, goalID),
+		"exhaustion follows the critique skills' budget rules.",
 		"",
 		"Threat model: " + threat,
 		"",
@@ -884,9 +885,12 @@ func reviewBrief(mode, chain, goalID string, rounds int64, calls int, threat, sc
 		"",
 		"## Checklist",
 		"",
-		"Batch independent reads: when several files or ranges are needed and none depends on another's content, request them all in one turn, never one per turn.",
+		"Batch independent reads: when several files or ranges are needed and none depends on",
+		"another's content, request them all in one turn, never one per turn.",
 		"",
-		"No single command may wait longer than 240 seconds; run a longer one in the background with its output to a file and poll the file. A wait that outlives the host turn continues with the wait command its result prints.",
+		"No single command may wait longer than 240 seconds; run a longer one in the background",
+		"with its output to a file and poll the file. A wait that outlives the host turn continues",
+		"with the wait command its result prints.",
 		"",
 	}
 	for index, item := range checklist {
@@ -897,13 +901,16 @@ func reviewBrief(mode, chain, goalID string, rounds int64, calls int, threat, sc
 		"",
 		fmt.Sprintf("Maximum reader tool calls: %d", calls),
 		"",
-		"Stop when this number is reached. In the findings file, list every checklist item or part of an item that the budget did not allow you to check.",
+		"Stop when this number is reached. In the findings file, list every checklist item or part",
+		"of an item that the budget did not allow you to check.",
 		"",
 		"## Findings artifact and return shape",
 		"",
 		"Write findings to: "+findings,
 		"",
-		"Inside that file, number findings from most severe to least severe. Each finding names the file, rule, and concrete failure it causes. If there are no material findings, record AGREE and any non-gating observations there.",
+		"Inside that file, number findings from most severe to least severe. Each finding names",
+		"the file, rule, and concrete failure it causes. If there are no material findings,",
+		"record AGREE and any non-gating observations there.",
 		"")
 	return strings.Join(lines, "\n")
 }
@@ -1723,8 +1730,9 @@ func (inv *intentInvocation) joinBatch(targets []intentTarget, request batchowne
 		request.At = owners.now()
 		record, err = owners.batchJoin(request)
 		if err != nil {
-			return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: err.Error(), Data: map[string]any{"route": "batch"},
-				next: inv.publicArgv("landing", "status"), nextReason: "shows the landing batches"}
+			words, code := refusalWordsAndCode(err)
+			return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: words, Data: map[string]any{"route": "batch"},
+				next: inv.publicArgv("landing", "status"), nextReason: "shows the landing batches", Details: refusalCodeDetails(code)}
 		}
 		joined, unit = true, batch.Unit{GoalID: request.GoalID, Chain: request.ChainID, State: batch.UnitJoined}
 	}
@@ -2228,4 +2236,18 @@ func replaceWord(argv []string, ref, with string) []string {
 		out = append(out, word)
 	}
 	return out
+}
+
+// refusalWordsAndCode splits an owner's coded refusal into the words a
+// person reads on line 1 and the code --verbose and --json show; an error
+// without a code is its own words.
+func refusalWordsAndCode(err error) (words, code string) {
+	var coded interface {
+		RefusalCode() string
+		RefusalWords() string
+	}
+	if errors.As(err, &coded) {
+		return coded.RefusalWords(), coded.RefusalCode()
+	}
+	return err.Error(), ""
 }

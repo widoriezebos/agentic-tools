@@ -1,0 +1,2 @@
+✗ a brief needs the goal and the file to write it to; nothing was written
+  → metasystem work brief standing-validation --out FILE  FILE is where the brief is written

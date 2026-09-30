@@ -1,0 +1,22 @@
+exit 0
+--
+{
+  "schemaVersion": 1,
+  "verb": "work stop",
+  "targets": [
+    {
+      "kind": "job",
+      "id": "j2:design-r2-4f1c"
+    }
+  ],
+  "outcome": "confirmed",
+  "summary": "dispatch job design-r2-4f1c cancelled",
+  "data": {
+    "kind": "dispatch",
+    "owner": {
+      "outcome": "CANCELLED"
+    }
+  }
+}
+
+--

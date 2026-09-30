@@ -1,0 +1,7 @@
+Frontier: score 0.82 · higher is better
+
+  recorded      Mon 12:00 at 9498700a9
+  noise floor   0.01
+  window        none
+  evaluation    go test ./bench/...
+  artifact      runs/1.json

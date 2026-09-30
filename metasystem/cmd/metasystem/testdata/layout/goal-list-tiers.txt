@@ -1,0 +1,4 @@
+8 open goals with a risk record
+
+  recorded   tier 1: 0 · tier 2: 2 · tier 3: 6 (tier 3 is 75%)
+  derived    tier 1: 0 · tier 2: 2 · tier 3: 6 (tier 3 is 75%)

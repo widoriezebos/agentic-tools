@@ -26,6 +26,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostload"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
@@ -1648,4 +1649,11 @@ func EncodeResult(writer io.Writer, path string, result LaunchResult) error {
 		}
 	}
 	return nil
+}
+
+// retryPriorOutsideTree refuses a retry whose earlier run tested another
+// candidate tree.
+func retryPriorOutsideTree(tree string) error {
+	return &refusal.Coded{Code: "RETRY_PRIOR_OUTSIDE_TREE", Facts: "tree=" + tree,
+		Reason: errors.New("the earlier run this retry names tested another tree, so it cannot be retried here")}
 }

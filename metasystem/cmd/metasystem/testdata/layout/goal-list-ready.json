@@ -1,0 +1,44 @@
+exit 0
+--
+{
+  "schemaVersion": 1,
+  "verb": "goal list",
+  "targets": [
+    {
+      "kind": "goal",
+      "id": "standing-validation"
+    }
+  ],
+  "outcome": "confirmed",
+  "summary": "continue your claimed goal: standing-validation",
+  "data": {
+    "frontier": {
+      "Claimed": [
+        "standing-validation"
+      ],
+      "Fenced": null,
+      "Landing": null,
+      "Ready": [
+        "test-environment-edges-are-closed",
+        "ask-what-happened-follow-ups"
+      ],
+      "Blocked": null,
+      "Awaiting": [
+        "one-steward-per-checkout-on-its-own-root",
+        "receipt-writer-follows-the-worktree",
+        "fleet-doctor-repairs-what-stops-other-seats"
+      ],
+      "Refused": null,
+      "TrunkRedOwned": null,
+      "TrunkRedElsewhere": null
+    },
+    "machine": "mac-cli",
+    "selection": {
+      "Kind": "continue",
+      "GoalID": "standing-validation"
+    },
+    "tip": "0000000000000000000000000000000000000001"
+  }
+}
+
+--

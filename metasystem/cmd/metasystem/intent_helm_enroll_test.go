@@ -31,14 +31,14 @@ func TestHelmTakeEnrollsTheTerminalItIsTakenAt(t *testing.T) {
 	if code != 0 || !ok || enrollment.TerminalID != "tty-2" || enrollment.Human != "Wido" || enrollment.Generation != 2 {
 		t.Fatalf("take at an unenrolled terminal = %d, enrollment %+v:\n%s", code, enrollment, out)
 	}
-	if !strings.Contains(out, "this terminal is now enrolled as Wido") || record.Enrollment != "proven" || record.By != "Wido" {
+	if !strings.Contains(out, "enrolled now, as Wido") || record.Enrollment != "proven" || record.By != "Wido" {
 		t.Fatalf("the take must say the terminal is now enrolled and record it (%+v):\n%s", record, out)
 	}
 	// A repeat is applied: the enrollment and signature are left as they are.
 	before, _ := os.ReadFile(filepath.Join(b.inst, "artifacts", "agents", "authority", "human-terminal.json"))
 	code, out = b.run("helm", "take", "--reason", "by hand")
 	after, _ := os.ReadFile(filepath.Join(b.inst, "artifacts", "agents", "authority", "human-terminal.json"))
-	if code != 0 || !strings.HasPrefix(out, "applied: ") || strings.Contains(out, "now enrolled") || string(before) != string(after) {
+	if code != 0 || !strings.Contains(out, "Wido already has the helm since") || strings.Contains(out, "enrolled now") || string(before) != string(after) {
 		t.Fatalf("a repeat take = %d, enrollment changed %v:\n%s", code, string(before) != string(after), out)
 	}
 }
@@ -50,11 +50,11 @@ func TestHelmTakeEnrollsWithTheNameGiven(t *testing.T) {
 	b := newHelmBed(t, 20, false)
 	code, out := b.run("helm", "take", "--reason", "by hand", "--name", "Ann")
 	enrollment, ok := b.enrollment()
-	if record, _ := b.signature(); code != 0 || !ok || enrollment.Human != "Ann" || record.By != "Ann" || !strings.Contains(out, "this terminal is now enrolled as Ann") {
+	if record, _ := b.signature(); code != 0 || !ok || enrollment.Human != "Ann" || record.By != "Ann" || !strings.Contains(out, "enrolled now, as Ann") {
 		t.Fatalf("take --name Ann = %d, enrollment %+v, record %+v:\n%s", code, enrollment, record, out)
 	}
 	b = newHelmBed(t, 20, false)
-	if code, out := b.run("helm", "take", "--reason", "by hand"); code != 0 || !strings.Contains(out, "this terminal is now enrolled as wido") {
+	if code, out := b.run("helm", "take", "--reason", "by hand"); code != 0 || !strings.Contains(out, "enrolled now, as wido") {
 		t.Fatalf("take without a name = %d:\n%s", code, out)
 	}
 }
@@ -67,7 +67,7 @@ func TestHelmTakeLeavesAnEnrolledTerminalAsItIs(t *testing.T) {
 	before, _ := b.enrollment()
 	code, out := b.run("helm", "take", "--reason", "by hand", "--by", "Ann")
 	after, _ := b.enrollment()
-	if code != 0 || after != before || strings.Contains(out, "now enrolled") {
+	if code != 0 || after != before || strings.Contains(out, "enrolled now") {
 		t.Fatalf("take at the enrolled terminal = %d, enrollment %+v -> %+v:\n%s", code, before, after, out)
 	}
 }
@@ -123,10 +123,10 @@ func TestHelmTakeAdmitsThePersonsActsAtThatTerminal(t *testing.T) {
 		strings.Contains(out, humanauthority.OutcomeTerminalMissing) {
 		t.Fatalf("strays at an unenrolled terminal = %d:\n%s", code, out)
 	}
-	if code, out := bed.run("helm", "take", "--reason", "cleaning by hand"); code != 0 || !strings.Contains(out, "now enrolled as Wido") {
+	if code, out := bed.run("helm", "take", "--reason", "cleaning by hand"); code != 0 || !strings.Contains(out, "enrolled now, as Wido") {
 		t.Fatalf("helm take = %d:\n%s", code, out)
 	}
-	if code, out := bed.run("disk", "clean", "--strays"); code != 0 || !strings.Contains(out, "removed: "+idle) {
+	if code, out := bed.run("disk", "clean", "--strays"); code != 0 || !strings.Contains(out, "removed: ") || !strings.Contains(out, filepath.Base(idle)) {
 		t.Fatalf("strays after helm take = %d:\n%s", code, out)
 	}
 	if _, err := os.Stat(idle); !errors.Is(err, os.ErrNotExist) {

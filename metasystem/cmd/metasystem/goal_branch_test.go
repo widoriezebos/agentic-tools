@@ -475,7 +475,7 @@ func goalBranchCommitRefusalPreservesCheckout(t *testing.T) {
 	code, stdout, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
 		return goalBranchTestCommitWith([]string{"--goal", "standing-validation", "--kind", "unit", "--unit", "u1", "--root", f.installation}, dependencies, stdout, stderr)
 	})
-	if code != 1 || stdout != "" || !strings.Contains(stderr, "which kind unit does not allow") || !staged {
+	if code != 1 || stdout != "" || !strings.Contains(stderr, "a build may not change") || !staged {
 		t.Fatalf("class refusal: code=%d stdout=%q stderr=%q staged=%t", code, stdout, stderr, staged)
 	}
 	assertUnchanged()
@@ -859,12 +859,12 @@ func TestGoalBranchLandPrepRoutesLocalRedCandidate(t *testing.T) {
 		BranchTip: branchTip, GoalID: "standing-validation", Out: filepath.Join(t.TempDir(), "discovery"),
 		TestReceipt: discoveryReceipt, Last: true, LandingReady: true, GoalPage: string(goal.RenderFile(file)), ApprovedBy: file.Approved.By,
 		Seat: "mac-cli", CheckClaim: claim})
-	const marker = "candidate workspace "
+	const marker = "not on the tree to land, "
 	markerAt := strings.LastIndex(fmt.Sprint(discoveryErr), marker)
 	if markerAt < 0 {
 		t.Fatalf("candidate identity discovery = %v", discoveryErr)
 	}
-	projected := strings.TrimSpace(fmt.Sprint(discoveryErr)[markerAt+len(marker):])
+	projected, _, _ := strings.Cut(fmt.Sprint(discoveryErr)[markerAt+len(marker):], "\n")
 	if len(projected) != 40 {
 		t.Fatalf("candidate identity = %q", projected)
 	}

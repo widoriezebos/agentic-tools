@@ -10,15 +10,13 @@ import (
 )
 
 // Group 4 of the message rewrite: proofs, tests and gates. Each path below
-// speaks in the two lines of "Messages a Person Reads". The files left out
-// hold machine protocol a parent process reads by its leading code: the
-// landing owner reads the codes of internal/testrun/protocol.go,
-// internal/proofrun/protocol.go and cmd/metasystem/proof_run_protocol.go
-// from a child's output. Each says so at its top.
+// speaks in the two lines of "Messages a Person Reads". No file is left out:
+// the landing owner reads a child's --json envelope (internal/verbresult),
+// never its words, so no message is machine protocol.
 var _ = enforceMessages(slices.Concat(
-	packageFilesExcept("internal/testrun", "", "protocol.go"),
-	packageFilesExcept("internal/proofrun", "", "protocol.go"),
-	packageFilesExcept("cmd/metasystem", "^(proof_run|test|testing|validate_verbs)", "proof_run_protocol.go"),
+	packageFilesExcept("internal/testrun", ""),
+	packageFilesExcept("internal/proofrun", ""),
+	packageFilesExcept("cmd/metasystem", "^(proof_run|test|testing|validate_verbs)"),
 	[]string{
 		"cmd/devgate",
 		"internal/audit",
@@ -63,9 +61,11 @@ func TestAuditProofsGroupEnforcesItsPackages(t *testing.T) {
 			t.Errorf("%s is not enforced", want)
 		}
 	}
+	// The frozen protocol files are gone (structured-output U1): their
+	// refusals are ordinary messages, read by a parent through the envelope.
 	for _, protocol := range []string{"internal/proofrun/protocol.go", "internal/testrun/protocol.go", "cmd/metasystem/proof_run_protocol.go"} {
-		if auditModes[protocol].messages != "" {
-			t.Errorf("%s holds machine protocol and is enforced", protocol)
+		if _, err := os.Stat(path.Join("..", "..", protocol)); err == nil {
+			t.Errorf("%s still holds frozen protocol text", protocol)
 		}
 	}
 }

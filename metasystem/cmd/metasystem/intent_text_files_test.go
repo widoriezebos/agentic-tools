@@ -60,7 +60,7 @@ func TestIntentTextFilesReachOwners(t *testing.T) {
 
 		// show --history reads the same record back, in text and JSON.
 		code, stdout, _ := bed.run(bed.owners(), "goal", "show", bedGoal, "--history")
-		if code != 0 || !strings.Contains(stdout, "history: ") || !strings.Contains(stdout, " release by ") || !strings.Contains(stdout, reason) {
+		if code != 0 || !strings.Contains(stdout, "History\n") || !strings.Contains(stdout, " release by ") || !strings.Contains(stdout, reason) {
 			t.Fatalf("show --history text = %d %q", code, stdout)
 		}
 		_, shown := bed.runJSON(bed.owners(), "goal", "show", bedGoal, "--history")
@@ -73,7 +73,7 @@ func TestIntentTextFilesReachOwners(t *testing.T) {
 			t.Fatalf("show without --history carries history: %s", encoded)
 		}
 		code, stdout, _ = bed.run(bed.owners(), "goal", "list", "--all", "--history")
-		if code != 0 || !strings.Contains(stdout, "history: ") {
+		if code != 0 || !strings.Contains(stdout, bedGoal+"  history") || !strings.Contains(stdout, " release by ") {
 			t.Fatalf("goals --history = %d %q", code, stdout)
 		}
 	})
@@ -140,12 +140,12 @@ func TestIntentGoalsArchivedHistory(t *testing.T) {
 		t.Fatalf("fixture completion: %d %+v", code, result)
 	}
 	code, stdout, stderr := bed.run(bed.owners(), "goal", "list", "--all", "--history")
-	if code != 0 || !strings.Contains(stdout, bedGoal+" history: ") || !strings.Contains(stdout, concluded) {
+	if code != 0 || !strings.Contains(stdout, bedGoal+"  history") || !strings.Contains(stdout, " done by ") || !strings.Contains(stdout, concluded) {
 		t.Fatalf("goals --all --history = %d %q %q; want the done goal's history", code, stdout, stderr)
 	}
 	for _, args := range [][]string{{"goal", "list", "--all"}, {"goal", "list", "--history"}, {"goal", "list", "--all", "--history", "--label", "absent-label"}} {
 		code, stdout, _ := bed.run(bed.owners(), args...)
-		if code != 0 || strings.Contains(stdout, concluded) {
+		if code != 0 || strings.Contains(stdout, " done by ") {
 			t.Fatalf("%v = %d %q; archived history must not be printed", args, code, stdout)
 		}
 	}

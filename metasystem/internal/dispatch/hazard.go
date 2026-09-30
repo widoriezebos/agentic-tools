@@ -365,7 +365,7 @@ func validateIndependentCritiqueReference(repoRoot, jobsDir string, rootRecord m
 		asString(configuration["builderReasoningEffort"]) != required.IndependentCritiqueReasoningEffort ||
 		asString(critic["reasoningEffort"]) != required.IndependentCritiqueReasoningEffort {
 		return hazardClosureRefusal(hazardCritiqueClosureRefusal, fmt.Sprintf(
-			"independent-critique job %q does not prove the required maximum critic effort: its builder rows are %s/%s and its reasoning effort %s, the critique requires %s/%s; dispatch the critic at a class whose builder rows are the critique's (DESIGN-BEARING)",
+			"critic job %q ran below the required maximum critic effort (%s/%s, %s; needs %s/%s)\ndispatch the critic at a class whose builder rows are the critique's (DESIGN-BEARING)",
 			ref, asString(configuration["builderEffortTier"]), asString(configuration["builderReasoningEffort"]), asString(critic["reasoningEffort"]),
 			required.IndependentCritiqueEffortTier, required.IndependentCritiqueReasoningEffort))
 	}
@@ -398,10 +398,10 @@ func validateIndependentCritiqueReference(repoRoot, jobsDir string, rootRecord m
 			if subjectErr != nil {
 				detail = subjectErr.Error()
 			}
-			return hazardClosureRefusal(hazardCritiqueStaleRefusal, fmt.Sprintf("independent-critique closure root %q round %d has no readable live subject for terminal work round %q: %s", closure.CriticRoot, closure.Round, finalState.job, detail))
+			return hazardClosureRefusal(hazardCritiqueStaleRefusal, fmt.Sprintf("critic root %q round %d has no readable live subject for final work round %q: %s", closure.CriticRoot, closure.Round, finalState.job, detail))
 		}
 		if closure.Subject.Kind != readsubject.SubjectLive || !closure.Subject.Equal(terminalSubject) {
-			return hazardClosureRefusal(hazardCritiqueStaleRefusal, fmt.Sprintf("independent-critique closure root %q round %d subject %s is not the live subject %s of terminal work round %q", closure.CriticRoot, closure.Round, closure.Subject.Digest(), terminalSubject.Digest(), finalState.job))
+			return hazardClosureRefusal(hazardCritiqueStaleRefusal, fmt.Sprintf("critic root %q round %d read subject %s, not the live subject %s of final work round %q", closure.CriticRoot, closure.Round, closure.Subject.Digest(), terminalSubject.Digest(), finalState.job))
 		}
 		return nil
 	}
@@ -550,24 +550,24 @@ func validateClosureProvingCritic(repoRoot, jobsDir, criticRoot, criticRole stri
 func validateLiveProofReference(jobsDir string, rootRecord map[string]any, finalState hazardFinalWorkState) error {
 	ref := asString(rootRecord["liveProofEvidenceRef"])
 	if !validJobID.MatchString(ref) {
-		return hazardClosureRefusal(hazardLiveProofClosureRefusal, "chain completion requires a live-proof evidence reference")
+		return hazardClosureRefusal(hazardLiveProofClosureRefusal, "the chain completes only with a live verification job named")
 	}
 	proof, err := readObject(filepath.Join(jobsDir, ref+".json"))
 	if err != nil || asString(proof["jobId"]) != ref || asString(proof["status"]) != "completed" {
-		return hazardClosureRefusal(hazardLiveProofClosureRefusal, fmt.Sprintf("live-proof evidence reference %q does not point at a completed job record", ref))
+		return hazardClosureRefusal(hazardLiveProofClosureRefusal, fmt.Sprintf("live verification job %q has no completed job record", ref))
 	}
 	if detail := validateHazardEvidenceAdmissionProvenance(proof, ref); detail != "" {
 		return hazardClosureRefusal(hazardEvidenceProvenanceRefusal, detail)
 	}
 	if asString(proof["role"]) != "verifier" {
-		return hazardClosureRefusal(hazardLiveProofClosureRefusal, fmt.Sprintf("live-proof evidence job %q is not a verifier linked to this chain", ref))
+		return hazardClosureRefusal(hazardLiveProofClosureRefusal, fmt.Sprintf("live verification job %q is not a verifier linked to this chain", ref))
 	}
 	if asString(proof["reviews"]) != finalState.job {
-		return hazardClosureRefusal(hazardLiveProofStaleRefusal, fmt.Sprintf("live-proof evidence job %q reviews %q instead of final work round %q", ref, asString(proof["reviews"]), finalState.job))
+		return hazardClosureRefusal(hazardLiveProofStaleRefusal, fmt.Sprintf("live verification job %q reviews %q instead of final work round %q", ref, asString(proof["reviews"]), finalState.job))
 	}
 	endedAt, err := parseRecordTime(asString(proof["endedAt"]))
 	if err != nil || endedAt.Before(finalState.endedAt) {
-		return hazardClosureRefusal(hazardLiveProofStaleRefusal, fmt.Sprintf("live-proof evidence job %q did not end at or after final work round %q", ref, finalState.job))
+		return hazardClosureRefusal(hazardLiveProofStaleRefusal, fmt.Sprintf("live verification job %q ended before final work round %q", ref, finalState.job))
 	}
 	return nil
 }
