@@ -1,16 +1,17 @@
 # fleet-pull
 
-- State: queued
+- State: parked
 - Priority: 2
 - Sequence: 17
 - Intent: What: an idle machine picks up approved shared work by itself: it selects an eligible goal, claims it, works it, and moves on to the next, without a person. This is now built as seat-works-without-a-person (on main since batch 3): the steward starts a seat when approved work waits and none is live, and picks up newly ready goals on the next check. Only its live proof is still open. Why: keeping machines busy should be the steward's job, not something a person has to remember. Pros: no idle machines while approved work waits. Cons: nothing new to build here; keeping this goal open duplicates seat-works-without-a-person.
 - Origin: main
 - Next step: Next: when seat-works-without-a-person's live proof passes, conclude this goal as delivered by it. Done when: seat-works-without-a-person is done and this goal is concluded citing it.
 - OpenedAt: 2026-08-23T08:06:12Z
-- Revision: 36
+- Revision: 37
 - BlockedBy: one-approval-gate
 - Labels: headless-execution, headless-fleet
 - BudgetExceptions: 0
+- Parked: by=human:Wido at=2026-09-30T18:49:13Z because=Parked until seat-works-without-a-person passes its live seat proof and is concluded. Its code already delivers this goal; only that proof is outstanding.
 
 History:
 - 2026-08-23T08:06:12Z B9R7HVR9Z1H2XQ1C9GGHX63018-widos-m5-pro-bf243850 open actor=widos-m5-pro+coordinator targets=fleet-pull
@@ -49,4 +50,5 @@ History:
 - 2026-09-13T08:21:48Z NRD0NSKR47C7ESV46MD65VP4V0-m1-c6925449 done actor=human:Wido targets=commit-goal-binding,first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,idle-every-runtime-enforcement,landing-design-provenance,merge-stage-critic-close,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,recovery-rehearsal,recovery-to-good-state,role-context-composition,role-lane-packets,seat-mutual-awareness reason=priority-order from=2:19 to=2:18
 - 2026-09-13T08:23:10Z R328E6Y43B7EEREMEA8T0MVQWG-m1-c6925449 done actor=human:Wido targets=first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,headless-continuous-delivery-proof,headless-fleet-coordination-proof,idle-every-runtime-enforcement,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,recovery-rehearsal,recovery-to-good-state,role-lane-packets,seat-mutual-awareness reason=priority-order from=2:18 to=2:17
 - 2026-09-30T18:49:07Z JKK4VNC6Y7N1VF3ZZ3R5TT0HEM-ui-bc2fda53 edit actor=human:Wido targets=fleet-pull
-Integrity: sha256=78db6086c248daef2bb89f9ccd83025170f82889f53dad5ae90a12321243c2ab
+- 2026-09-30T18:49:13Z J7WBXEGFHXFJCB5RCCA838HZ9B-ui-bc2fda53 park actor=human:Wido targets=fleet-pull reason=Parked until seat-works-without-a-person passes its live seat proof and is concluded. Its code already delivers this goal; only that proof is outstanding.
+Integrity: sha256=76f30f594ba4aa60446124ada498dc96d97180e35bb70a41512d39eb3568b8b0
