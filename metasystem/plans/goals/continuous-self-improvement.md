@@ -2,12 +2,12 @@
 
 - State: queued
 - Priority: 3
-- Sequence: 27
+- Sequence: 26
 - Intent: What: The system turns what it observes about its own work into written improvement proposals, discusses them with the person, and ends each one as either a new backlog goal or a recorded drop with its reason. Why: Improvement ideas today depend on someone remembering them in a chat; they get lost, or the same idea is raised again and again. Pros: Ideas become visible, get a clear yes or no, and a dropped idea is not raised again. Cons: A proposal queue can grow faster than the person can review it, so the threshold between small items (straight to the backlog) and big ones (proposal first) must be sharp.
 - Origin: human
 - Next step: Next: Write a short design for the loop only: what feeds the proposal queue, what a proposal contains, where the person sees and answers it, and the two endings (scheduled as a goal, or dropped with a reason); reuse the existing drafts folder and leave metric computation to actionable-metrics. Done when: The design page is in plans/designs and a person has accepted it.
 - OpenedAt: 2026-08-24T13:27:11Z
-- Revision: 84
+- Revision: 85
 - Labels: custody
 - BudgetExceptions: 0
 
@@ -96,4 +96,5 @@ History:
 - 2026-09-15T05:59:02Z G1CSAQJCKM1B4YG6KPG6MAFYNN-m1e-c6925449 set-priority actor=human:Wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,claude-delegate-scratch-cleanup,claude-denywrite-list-is-a-snapshot,continuous-self-improvement,counselor,cross-repo-guardrails,delegate-sandbox-cannot-run-the-beds,design-prohibition-is-role-scoped,effort-by-complexity-per-model,fixture-default-branch-assumption,follow-up-brief-cannot-cite-fresh-trunk-files,goal-suite-sits-on-the-default-test-timeout,human-carried-landing,incident-proposal-drafting,integration-branch,land-verb-pruning,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,seam-declaration-convergence,standing-validation,uncapped-delegate-fanout,watchdog-kill-observation-gap reason=priority-order subject=follow-up-brief-cannot-cite-fresh-trunk-files from=3:29 to=3:28 requested-sequence=67
 - 2026-09-16T21:02:51Z HE021GFD8V1YPVBEXGSBFRHWV0-m1e-c6925449 set-priority actor=human:Wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,claude-delegate-scratch-cleanup,claude-denywrite-list-is-a-snapshot,continuous-self-improvement,counselor,cross-repo-guardrails,delegate-sandbox-cannot-run-the-beds,design-prohibition-is-role-scoped,effort-by-complexity-per-model,fixture-default-branch-assumption,goal-suite-sits-on-the-default-test-timeout,human-carried-landing,incident-proposal-drafting,integration-branch,land-verb-pruning,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,runtime-limit-is-not-a-protocol-error,seam-declaration-convergence,set-priority-treats-an-oversize-sequence-as-last,standing-validation,uncapped-delegate-fanout,watchdog-kill-observation-gap reason=priority-order subject=runtime-limit-is-not-a-protocol-error from=3:28 to=3:27 requested-sequence=54
 - 2026-09-30T18:46:47Z 5QH8C243C1NYW1YYCE0HV0MVS4-ui-bc2fda53 edit actor=human:Wido targets=continuous-self-improvement
-Integrity: sha256=278bc8f80c364ba953d34cdb50b0da8437aab6ab7729027662b71737b2a3506b
+- 2026-09-30T18:55:56Z KTY8C75R4XFK9MCX3EV1BKHF1E-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,effort-by-complexity-per-model,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,paid-proof-authorization,precedent-index,reconciliation-guards,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:27 to=3:26
+Integrity: sha256=0f6a8085e79923fb35b2909536461ef7b097d6a27b31d569a6509c97d009447d

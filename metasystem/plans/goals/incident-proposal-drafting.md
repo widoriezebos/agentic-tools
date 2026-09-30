@@ -2,12 +2,12 @@
 
 - State: parked
 - Priority: 3
-- Sequence: 28
+- Sequence: 27
 - Intent: What: When the system notices a problem you would notice (a dead test suite, lost jobs, repeated refusals), it drafts a proposed fix and brings it to you. Why: Detection alone is not enough; you asked for drafted proposals to reach you. Pros: Problems arrive with a suggested remedy, not only an alert. Cons: It needs a recorded stream of incidents to draft from, which is being designed now in steward-acts-on-behaviour-patterns.
 - Origin: human
 - Next step: Next: When the steward records typed incidents, add one drafting step per incident kind: evidence, suspected cause, candidate remedy, size. Rewrite this step on unpark against what steward-acts-on-behaviour-patterns built. Done when: replaying a known incident produces a drafted proposal waiting for you.
 - OpenedAt: 2026-08-24T13:26:02Z
-- Revision: 84
+- Revision: 85
 - Labels: custody
 - BudgetExceptions: 0
 - Parked: by=human:Wido at=2026-09-13T08:23:35Z because=Not now (2026-09-13 backlog consolidation, Wido's word): Wido 2026-08-24; its detection layer suite-outcomes-as-steward-incidents was absorbed into program goal 3 (hung-proof-attempts-end-at-their-deadline) on 2026-09-11, so the incident stream it would draft from is still forming; no new ask since; revive when that stream exists; 3h appetite.
@@ -97,4 +97,5 @@ History:
 - 2026-09-15T05:59:02Z G1CSAQJCKM1B4YG6KPG6MAFYNN-m1e-c6925449 set-priority actor=human:Wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,claude-delegate-scratch-cleanup,claude-denywrite-list-is-a-snapshot,continuous-self-improvement,counselor,cross-repo-guardrails,delegate-sandbox-cannot-run-the-beds,design-prohibition-is-role-scoped,effort-by-complexity-per-model,fixture-default-branch-assumption,follow-up-brief-cannot-cite-fresh-trunk-files,goal-suite-sits-on-the-default-test-timeout,human-carried-landing,incident-proposal-drafting,integration-branch,land-verb-pruning,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,seam-declaration-convergence,standing-validation,uncapped-delegate-fanout,watchdog-kill-observation-gap reason=priority-order subject=follow-up-brief-cannot-cite-fresh-trunk-files from=3:30 to=3:29 requested-sequence=67
 - 2026-09-16T21:02:51Z HE021GFD8V1YPVBEXGSBFRHWV0-m1e-c6925449 set-priority actor=human:Wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,claude-delegate-scratch-cleanup,claude-denywrite-list-is-a-snapshot,continuous-self-improvement,counselor,cross-repo-guardrails,delegate-sandbox-cannot-run-the-beds,design-prohibition-is-role-scoped,effort-by-complexity-per-model,fixture-default-branch-assumption,goal-suite-sits-on-the-default-test-timeout,human-carried-landing,incident-proposal-drafting,integration-branch,land-verb-pruning,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,runtime-limit-is-not-a-protocol-error,seam-declaration-convergence,set-priority-treats-an-oversize-sequence-as-last,standing-validation,uncapped-delegate-fanout,watchdog-kill-observation-gap reason=priority-order subject=runtime-limit-is-not-a-protocol-error from=3:29 to=3:28 requested-sequence=54
 - 2026-09-30T18:50:22Z HHT517D8D09HM9BM58N8DNVQ5X-m1e-b6a4eb0a edit actor=human:wido targets=incident-proposal-drafting
-Integrity: sha256=94ad02a6d22b4191c94387657b2a49c0210945047852236be51e1f4deaea893e
+- 2026-09-30T18:55:56Z KTY8C75R4XFK9MCX3EV1BKHF1E-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,effort-by-complexity-per-model,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,paid-proof-authorization,precedent-index,reconciliation-guards,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:28 to=3:27
+Integrity: sha256=5b465dd059b8707ba225d75183c9feb7054f507645c7bc99a3279c6f928ac745

@@ -2,12 +2,12 @@
 
 - State: parked
 - Priority: 3
-- Sequence: 38
+- Sequence: 37
 - Intent: What: You can name the branch all work lands in, instead of it always being the repository's default branch. Why: Repositories with a protected main branch allow merges only through pull requests, which would block MetaSystem's own landing. Pros: MetaSystem can work in organisation repositories with protected branches, and promotion to main stays a person's decision. Cons: Needs a proper design; the goal ledger has to move with the chosen branch or the two drift apart.
 - Origin: human
 - Next step: Next: When an adopted repository with protected branches comes up, design it (four to six hours): list every place that assumes the default branch, and cover the five recorded points (two governance systems, person-led promotion, the ledger follows the branch, the setting belongs to the app, inception). Done when: the design is accepted.
 - OpenedAt: 2026-08-23T19:32:07Z
-- Revision: 84
+- Revision: 85
 - BudgetExceptions: 0
 - Parked: by=human:Wido at=2026-09-13T08:23:39Z because=Not now (2026-09-13 backlog consolidation, Wido's word): Wido 2026-08-24: 'low priority, queued behind the app-guardrail program'; no protected-branch incident since; pull forward when inception targets an org repo with protected branches; needs the recorded design loop carrying the five considerations (two governance systems, human promotion, ledger foll
 
@@ -96,4 +96,5 @@ History:
 - 2026-09-15T05:59:02Z G1CSAQJCKM1B4YG6KPG6MAFYNN-m1e-c6925449 set-priority actor=human:Wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,claude-delegate-scratch-cleanup,claude-denywrite-list-is-a-snapshot,continuous-self-improvement,counselor,cross-repo-guardrails,delegate-sandbox-cannot-run-the-beds,design-prohibition-is-role-scoped,effort-by-complexity-per-model,fixture-default-branch-assumption,follow-up-brief-cannot-cite-fresh-trunk-files,goal-suite-sits-on-the-default-test-timeout,human-carried-landing,incident-proposal-drafting,integration-branch,land-verb-pruning,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,seam-declaration-convergence,standing-validation,uncapped-delegate-fanout,watchdog-kill-observation-gap reason=priority-order subject=follow-up-brief-cannot-cite-fresh-trunk-files from=3:40 to=3:39 requested-sequence=67
 - 2026-09-16T21:02:51Z HE021GFD8V1YPVBEXGSBFRHWV0-m1e-c6925449 set-priority actor=human:Wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,claude-delegate-scratch-cleanup,claude-denywrite-list-is-a-snapshot,continuous-self-improvement,counselor,cross-repo-guardrails,delegate-sandbox-cannot-run-the-beds,design-prohibition-is-role-scoped,effort-by-complexity-per-model,fixture-default-branch-assumption,goal-suite-sits-on-the-default-test-timeout,human-carried-landing,incident-proposal-drafting,integration-branch,land-verb-pruning,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,runtime-limit-is-not-a-protocol-error,seam-declaration-convergence,set-priority-treats-an-oversize-sequence-as-last,standing-validation,uncapped-delegate-fanout,watchdog-kill-observation-gap reason=priority-order subject=runtime-limit-is-not-a-protocol-error from=3:39 to=3:38 requested-sequence=54
 - 2026-09-30T18:50:35Z 4C2QS3XZH82TG1Q3AF9XKT3C3C-m1e-b6a4eb0a edit actor=human:wido targets=integration-branch
-Integrity: sha256=0d0b255cb1db291f1de104e331ec347de39247bb2bd835420a03b67be95fffe4
+- 2026-09-30T18:55:56Z KTY8C75R4XFK9MCX3EV1BKHF1E-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,effort-by-complexity-per-model,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,paid-proof-authorization,precedent-index,reconciliation-guards,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:38 to=3:37
+Integrity: sha256=4496716dfcb852f49124b4c41a8e79308e7e8c124785a41e3f3d6421e7ddff06

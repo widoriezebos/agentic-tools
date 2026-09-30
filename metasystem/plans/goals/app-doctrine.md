@@ -2,12 +2,12 @@
 
 - State: parked
 - Priority: 3
-- Sequence: 36
+- Sequence: 35
 - Intent: What: An adopted app's own patterns, architecture choices and conventions are written down as its doctrine and keep evolving as the app grows. The first version exists: the inception interview writes a starting doctrine file. What is left: make the doctrine a binding input to every critique of changes to the app, let the counselor flag when the doctrine no longer matches the code, and decide who changes it (any seat proposes and a person ratifies, or a dedicated architect role). Why: Today the doctrine is written once and then nothing reads or updates it, so it goes stale and critics ignore the app's own rules. Pros: Critiques judge against the app's own rules, and drift gets noticed. Cons: One more input to maintain, the ownership question may add a new role, and there is nothing to test against until an app has lived past inception.
 - Origin: human
 - Next step: Next: Write the design: how the doctrine enters every critique brief automatically, how the counselor detects drift, and who owns doctrine changes, with that last answer brought to Wido. Done when: Wido has accepted a design that answers all three.
 - OpenedAt: 2026-08-23T16:30:15Z
-- Revision: 85
+- Revision: 86
 - BudgetExceptions: 0
 - Parked: by=human:Wido at=2026-09-30T18:45:20Z because=Parked until an adopted app has lived past inception and its doctrine needs its first change. This goal was always meant to come last, and without such an app there is nothing real to design against.
 
@@ -97,4 +97,5 @@ History:
 - 2026-09-16T21:02:51Z HE021GFD8V1YPVBEXGSBFRHWV0-m1e-c6925449 set-priority actor=human:Wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,claude-delegate-scratch-cleanup,claude-denywrite-list-is-a-snapshot,continuous-self-improvement,counselor,cross-repo-guardrails,delegate-sandbox-cannot-run-the-beds,design-prohibition-is-role-scoped,effort-by-complexity-per-model,fixture-default-branch-assumption,goal-suite-sits-on-the-default-test-timeout,human-carried-landing,incident-proposal-drafting,integration-branch,land-verb-pruning,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,runtime-limit-is-not-a-protocol-error,seam-declaration-convergence,set-priority-treats-an-oversize-sequence-as-last,standing-validation,uncapped-delegate-fanout,watchdog-kill-observation-gap reason=priority-order subject=runtime-limit-is-not-a-protocol-error from=3:37 to=3:36 requested-sequence=54
 - 2026-09-30T18:45:16Z 2MAHFJX36DZD8X8VXNF5CCYWZ7-ui-bc2fda53 edit actor=human:Wido targets=app-doctrine
 - 2026-09-30T18:45:20Z BCBXRRDEQF2W9D946DKWQBQGCP-ui-bc2fda53 park actor=human:Wido targets=app-doctrine reason=Parked until an adopted app has lived past inception and its doctrine needs its first change. This goal was always meant to come last, and without such an app there is nothing real to design against.
-Integrity: sha256=def8d883a795ead746a89d65326a355d88defdb577882ff53342862d36d231e4
+- 2026-09-30T18:55:56Z KTY8C75R4XFK9MCX3EV1BKHF1E-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,effort-by-complexity-per-model,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,paid-proof-authorization,precedent-index,reconciliation-guards,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:36 to=3:35
+Integrity: sha256=7f4ecef1e81394ce1f078683131a2ef9e45f43e855c79e1ff43e963d4eba5323
