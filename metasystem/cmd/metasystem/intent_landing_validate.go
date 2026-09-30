@@ -113,9 +113,7 @@ func landingValidateResult(inv *intentInvocation, outcome gaterun.ValidateOutcom
 	if outcome.Code != "" {
 		result.Details = append(result.Details, "code: "+outcome.Code)
 	}
-	for _, entry := range append(append([]string{}, outcome.Live...), outcome.Unknown...) {
-		result.Details = append(result.Details, entry)
-	}
+	result.Details = append(append(result.Details, outcome.Live...), outcome.Unknown...)
 	tree := shortLandingID(outcome.Key.TrunkTree)
 	switch outcome.Result {
 	case gaterun.ValidateFinalized:

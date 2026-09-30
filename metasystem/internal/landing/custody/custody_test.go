@@ -282,3 +282,33 @@ func TestClearHoldsNewWorkWhileCustodyIsLiveOrUnknown(t *testing.T) {
 		}
 	}
 }
+
+// A group bound after the start (work the execution runs in a session of
+// its own) holds custody after the child has ended.
+func TestBoundGroupHoldsAfterTheChildEnds(t *testing.T) {
+	t.Parallel()
+	home := testHome(t)
+	record, err := Open(home, KindVerify, "publish b1", custodyNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := BindGroup(home, record.ID, 1); err == nil {
+		t.Fatal("process group 1 was bound")
+	}
+	if err := BindSelf(home, record.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := BindGroup(home, record.ID, 4242); err != nil {
+		t.Fatal(err)
+	}
+	if err := End(home, record.ID); err != nil {
+		t.Fatal(err)
+	}
+	busy := Probes{Group: groupProbe(map[int64]bool{4242: true}, nil)}
+	if state, _ := Probe(home, record.ID, busy); state.State != Live {
+		t.Fatalf("ended in-process work whose bound group runs = %+v; want live", state)
+	}
+	if state, _ := Probe(home, record.ID, Probes{Group: groupProbe(nil, nil)}); state.State != Dead {
+		t.Fatalf("ended in-process work with an empty group = %+v; want dead", state)
+	}
+}
