@@ -394,3 +394,68 @@ func TestLandingStatusSaysWhyTheOwnerCannotRun(t *testing.T) {
 		}
 	}
 }
+
+// landing status says a failing owner tick the way a person reads it: line 1
+// the plain situation (which batch cannot advance and why, in plain words),
+// line 2 the one command that shows more; the owner's raw error is only in
+// --verbose and --json. Known failure classes get their own words; an
+// unknown one gets a generic line.
+func TestLandingStatusSaysAFailingTickInPlainWords(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name, raw, want string
+	}{
+		{"re-arm asks for a session",
+			`batch 4gr18nm8t3nyev9sssda9jgtsq: bin/metasystem up --repo /lanes/landing/metasystem: exit status 1: up outcome=failed component=session-identity remedy="pass --pid <session-pid> and --start-time <epoch-seconds>, or configure a runtime signature and invoke up from that session"`,
+			"batch 4gr18nm8t3nyev9sssda9jgtsq can't advance: the lane owner could not re-arm the lane's engine for its proof"},
+		{"engine rebuild",
+			`batch b1: go run -trimpath ./cmd/devgate build: exit status 1: compile error`,
+			"batch b1 can't advance: the lane owner could not rebuild the lane's engine for its proof"},
+		{"fetch",
+			`batch b1: BATCH_LAND_PUSH_REFUSED: fetch origin/main: could not resolve host: exit status 128`,
+			"batch b1 can't advance: the lane owner could not fetch main"},
+		{"unknown",
+			`batch b1: something new broke: detail`,
+			"batch b1 can't advance: the lane owner's last tick failed"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			bed := newLaneVerbBed(t)
+			bed.alive = true
+			if code, _, stderr := bed.run(t, "landing", "set", bed.landingA); code != 0 {
+				t.Fatalf("set = %d %q", code, stderr)
+			}
+			path := lane.TickErrorPath(bed.landingA)
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, []byte(test.raw+"\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			code, stdout, _ := bed.run(t, "landing", "status")
+			lines := strings.Split(strings.TrimRight(stdout, "\n"), "\n")
+			if code != 0 || len(lines) != 2 {
+				t.Fatalf("status = %d %q; want two lines", code, stdout)
+			}
+			if !strings.HasPrefix(lines[0], test.want+"; ") {
+				t.Errorf("line 1 = %q; want it to start with %q", lines[0], test.want)
+			}
+			raw := strings.SplitN(test.raw, ": ", 2)[1]
+			if strings.Contains(stdout, raw) {
+				t.Errorf("status without --verbose carries the raw error: %q", stdout)
+			}
+			if !strings.HasPrefix(lines[1], "next: metasystem landing status --verbose") {
+				t.Errorf("line 2 = %q; want the verbose status as the one command", lines[1])
+			}
+			_, verbose, _ := bed.run(t, "landing", "status", "--verbose")
+			if !strings.Contains(verbose, "last tick failed: "+test.raw) || !strings.Contains(verbose, "owner log: ") {
+				t.Errorf("verbose status lacks the raw error and the log: %q", verbose)
+			}
+			_, encoded, _ := bed.run(t, "landing", "status", "--json")
+			var result struct{ Data lane.View }
+			if err := json.Unmarshal([]byte(encoded), &result); err != nil || result.Data.Owner.LastTickError == nil || *result.Data.Owner.LastTickError != test.raw {
+				t.Errorf("json status lacks the raw error: %v %q", err, encoded)
+			}
+		})
+	}
+}

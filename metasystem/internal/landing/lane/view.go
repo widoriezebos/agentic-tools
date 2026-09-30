@@ -64,6 +64,9 @@ type OwnerView struct {
 	// LastTickError is the running owner's last failed batch tick, in its
 	// words; null when its last pass ticked clean.
 	LastTickError *string `json:"last_tick_error"`
+	// LastTickProblem is LastTickError as a person reads it: which batch
+	// cannot advance and why, in plain words; null with it.
+	LastTickProblem *string `json:"last_tick_problem"`
 	// Fix is RetryHint as one command a person runs, when it is one; the
 	// verbs print it as their next step, the page shows RetryHint.
 	Fix []string `json:"-"`
@@ -175,6 +178,9 @@ func ownerView(sources ViewSources, root string) OwnerView {
 	owner.Restarts = state.Restarts
 	owner.LastExit = text(state.LastError)
 	owner.LastTickError = text(LastTickErrorLine(root))
+	if owner.LastTickError != nil {
+		owner.LastTickProblem = text(TickProblem(*owner.LastTickError))
+	}
 	if owner.LastExit == nil {
 		owner.LastExit = text(LastErrorLine(root))
 	}
@@ -376,9 +382,6 @@ func summary(root string, view View, recordsErr error) string {
 	switch view.Owner.State {
 	case OwnerRunning:
 		owner += fmt.Sprintf(" (pid %d)", *view.Owner.PID)
-		if view.Owner.LastTickError != nil {
-			owner += "; its last tick failed: " + *view.Owner.LastTickError
-		}
 	case OwnerStopped:
 		owner += " by " + *view.Owner.StoppedBy + "; metasystem landing start resumes it"
 	case OwnerGivenUp:
@@ -397,6 +400,11 @@ func summary(root string, view View, recordsErr error) string {
 		}
 	}
 	line := "landing lane " + root + ": " + owner
+	if view.Owner.State == OwnerRunning && view.Owner.LastTickProblem != nil {
+		// The situation a person acts on comes first; the raw error is
+		// --verbose's and --json's.
+		line = *view.Owner.LastTickProblem + "; " + line
+	}
 	var unreadable *unreadableRecords
 	partial := errors.As(recordsErr, &unreadable)
 	switch {
@@ -425,3 +433,32 @@ func plural(n int) string {
 
 // BatchViewOf is one batch as every reader shows it.
 func BatchViewOf(record batch.Record) BatchView { return *batchView(record) }
+
+// tickProblemClasses are the owner's known tick failures in plain words, by a
+// fragment of the error the owner reports.
+var tickProblemClasses = []struct{ fragment, plain string }{
+	{"bin/metasystem up --repo", "the lane owner could not re-arm the lane's engine for its proof"},
+	{"cmd/devgate build", "the lane owner could not rebuild the lane's engine for its proof"},
+	{"fetch origin/main", "the lane owner could not fetch main"},
+	{"before rebind", "the lane owner could not hand its members' claims to the lane"},
+}
+
+// TickProblem says the owner's last failed tick for a person: the batch it
+// could not advance and the cause in plain words, or a generic line for a
+// failure it does not know. The raw error stays the owner's log's.
+func TickProblem(raw string) string {
+	subject := "the landing lane"
+	if rest, found := strings.CutPrefix(raw, "batch "); found {
+		if id, _, cut := strings.Cut(rest, ": "); cut && id != "" && !strings.ContainsAny(id, " \t") {
+			subject = "batch " + id
+		}
+	}
+	cause := "the lane owner's last tick failed"
+	for _, class := range tickProblemClasses {
+		if strings.Contains(raw, class.fragment) {
+			cause = class.plain
+			break
+		}
+	}
+	return subject + " can't advance: " + cause
+}

@@ -200,7 +200,7 @@ func runIntentLandingStatus(inv *intentInvocation) int {
 	case view.Owner.RetryHint != nil && view.Owner.State == lane.OwnerGivenUp:
 		result.next, result.nextReason = inv.publicArgv("landing", "start"), "the keep-alive gave up; "+*view.Owner.RetryHint
 	case view.Owner.LastTickError != nil && !inv.input.switched("verbose"):
-		result.next, result.nextReason = inv.publicArgv("landing", "status", "--verbose"), "names the owner's log with every error it reported"
+		result.next, result.nextReason = inv.publicArgv("landing", "status", "--verbose"), "shows the owner's error and the log that holds it"
 	}
 	return inv.render(result)
 }
