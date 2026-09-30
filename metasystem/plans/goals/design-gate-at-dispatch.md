@@ -1,15 +1,16 @@
 # design-gate-at-dispatch
 
-- State: queued
+- State: parked
 - Priority: 2
 - Sequence: 7
 - Intent: What: Work that needs a design cannot start as a build unless an accepted, critiqued design stands behind it. Why: "Design first" is checked only at the end of the work, not when it starts. The gate was aimed at the old dispatch path, and builds today go through the launch lane by hand. Pros: Stops builds that skip their design. Cons: Building a gate at a door nobody uses now would be wasted work.
 - Origin: main
 - Next step: Next: When unparked, find where the switched-on machinery starts builders and put the check there: refuse a design-bearing build that names no accepted design with a closed critique. Done when: a test refuses such a build and admits one with a matching accepted design.
 - OpenedAt: 2026-09-01T07:18:50Z
-- Revision: 19
+- Revision: 20
 - Labels: headless-fleet, headless-process
 - BudgetExceptions: 0
+- Parked: by=human:wido at=2026-09-30T18:52:29Z because=Parked until the machinery is switched on again and is seen starting builders through the delegate path; the gate belongs where that happens. Its blocker design-chain-has-no-lawful-close is done, so the block is cleared.
 
 History:
 - 2026-09-01T07:18:50Z 3RTT4KMZ952E33CTVRQD5Y89JY-m2-bc1be9cb open actor=m2+mac-coordinator targets=design-gate-at-dispatch
@@ -31,4 +32,5 @@ History:
 - 2026-09-11T22:09:00Z C3BMZ7DRFM4AWMATVMSXQZHBTQ-m1-c6925449 done actor=human:Wido targets=adoption-inventory-from-install-set,chain-landing-carries-the-reviewed-diff,commit-goal-binding,design-gate-at-dispatch,first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,hook-enrollment-per-checkout,human-approval-for-execution,idle-every-runtime-enforcement,landing-design-provenance,manifest-floor-at-dispatch,merge-stage-critic-close,metasystem-stop-escalation-proofs,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,one-approval-gate,recovery-rehearsal,recovery-to-good-state,repo-root-paths-ride-agent-commits-unjudged,role-context-composition,role-lane-packets,seat-mutual-awareness reason=priority-order from=2:8 to=2:7
 - 2026-09-30T18:48:42Z GRRG19CVXGCVVX9XCWGFFZ8XAC-m1e-b6a4eb0a edit actor=human:wido targets=design-gate-at-dispatch
 - 2026-09-30T18:52:06Z NP8E5ZEG1V6TH0HVFDZT1ZARVG-m1e-b6a4eb0a unblock actor=human:wido targets=design-gate-at-dispatch,design-chain-has-no-lawful-close reason=blockedBy drops design-chain-has-no-lawful-close
-Integrity: sha256=ea5c64f22c48f14195ceea08c64105eba32184617d04aa8cec96c99539af8ddf
+- 2026-09-30T18:52:29Z CN2SMFX57KE9H4Z75DZJ52A10Q-m1e-b6a4eb0a park actor=human:wido targets=design-gate-at-dispatch reason=Parked until the machinery is switched on again and is seen starting builders through the delegate path; the gate belongs where that happens. Its blocker design-chain-has-no-lawful-close is done, so the block is cleared.
+Integrity: sha256=1432ecd709095f7118aaf29c29a40a25b24b1b365fc3eab53dfebabe363a1ba2
