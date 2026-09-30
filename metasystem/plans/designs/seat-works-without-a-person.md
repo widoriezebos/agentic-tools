@@ -2,7 +2,7 @@
 
 - Kind: design
 - Status: draft
-- Goals: seat-works-without-a-person (opened 2026-09-30 from Wido's enrolled terminal, queued, awaiting his approval)
+- Goals: seat-works-without-a-person
 
 Revision 7: Astra's confirmation read of revision 6 folded (`0f4dcb4e0`; (c) and (d) confirmed, (a) and (b) held): the review-gate rule also requires that no review hold stands, and the timing after clear-to-land is stated by tier. Two edits, section 6 row.
 
