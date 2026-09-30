@@ -284,7 +284,7 @@ func AgentStarting(home string, now time.Time) (time.Time, bool, error) {
 // UnreadableAgentRecord says, for a person, that the landing agent's keeper
 // record cannot be read and what repairs it.
 func UnreadableAgentRecord(home string) string {
-	return "the landing agent's keeper record " + agentStatePath(home) + " can't be read, so no landing agent or batch owner starts; run: metasystem landing start"
+	return "the landing agent's keeper record " + agentStatePath(home) + " can't be read, so nothing starts\nrun: metasystem landing start"
 }
 
 // ClearAgentCooldown forgets the reasons the last agent ended with: a
