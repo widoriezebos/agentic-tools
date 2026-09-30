@@ -49,6 +49,18 @@ func TestLandingOwnerRearmSucceedsWhenUpEndsOnlyAtSessionIdentity(t *testing.T) 
 		t.Fatalf("owner re-arm ending only at session-identity = %v, want the re-arm accepted", err)
 	}
 
+	// The steady state on every later tick: the engine is already current,
+	// so up re-arms nothing and still ends at session-identity.
+	current := t.TempDir()
+	writeUpStub(t, current, 1,
+		`component=host-preflight outcome=verified`,
+		`component=accepted-engine outcome=verified detail="generation=5 path=/lanes/landing/metasystem/bin/metasystem"`,
+		`component=session-identity outcome=failed detail="runtime-signature ancestry proof failed: no agent ancestor"`,
+		`up outcome=failed component=session-identity remedy="pass --pid <session-pid> and --start-time <epoch-seconds>, or configure a runtime signature and invoke up from that session"`)
+	if err := RearmBatchTip(current, "7db15cec3fa6fdfbfbf969c534599f14a8f718ae"); err != nil {
+		t.Fatalf("owner re-arm on a current engine ending only at session-identity = %v, want the re-arm accepted", err)
+	}
+
 	refused := t.TempDir()
 	writeUpStub(t, refused, 1,
 		`component=host-preflight outcome=verified`,
