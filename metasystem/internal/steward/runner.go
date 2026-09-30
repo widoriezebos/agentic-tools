@@ -165,7 +165,7 @@ type runnerLoopDependencies struct {
 	StopSignals stopSignalSource
 	// StartSeat starts the seat a revive decision selected (g1-s77); nil is
 	// StartSeat.
-	StartSeat func(string, TickConfig, SeatSelection) (SeatRecord, error)
+	StartSeat func(string, TickConfig, WorkerCensus, SeatSelection) (SeatRecord, error)
 }
 
 // bridgeStepper is the bridge role as the runner drives it: one step per
@@ -317,7 +317,7 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 			if startSeat == nil {
 				startSeat = StartSeat
 			}
-			if _, startErr := startSeat(top, cfg, *result.Seat); startErr != nil {
+			if _, startErr := startSeat(top, cfg, census, *result.Seat); startErr != nil {
 				fmt.Fprintf(os.Stderr, "seat start failed: %v\n", startErr)
 				if qErr := QueueNotification(top, PendingNotification{
 					Nonce:   "seat-start-failure",

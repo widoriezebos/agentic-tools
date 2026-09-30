@@ -30,6 +30,13 @@ func (seatTickCensus) Workers(string) (steward.Workers, error) {
 	return steward.Workers{CensusComplete: true}, nil
 }
 
+// seatTickLiveMain is the census once a main has announced itself.
+type seatTickLiveMain struct{}
+
+func (seatTickLiveMain) Workers(string) (steward.Workers, error) {
+	return steward.Workers{Live: 1, LiveSeatMains: 1, CensusComplete: true}, nil
+}
+
 // seatTickProber answers the supervisor (10) and the child (20) alive.
 type seatTickProber struct{}
 
@@ -155,8 +162,16 @@ func TestStewardTickStartsASeatLaunch(t *testing.T) {
 	if result.Decision.Action != steward.ActRevive || result.Seat == nil || result.Seat.Goal != "fix-docs" {
 		t.Fatalf("ready work with no seat selects the goal: %+v %+v", result.Decision, result.Seat)
 	}
-	// The runner's pass starts the selected seat (runner.go, StartSeat).
-	seat, err := steward.StartSeat(install, config, *result.Seat)
+	// The runner's pass starts the selected seat (runner.go, StartSeat),
+	// reading the census again under the start's lock: a main that appeared
+	// since the tick withdraws the start (SOL-A-03).
+	if withdrawn, err := steward.StartSeat(install, config, seatTickLiveMain{}, *result.Seat); err == nil || withdrawn.LaunchID != "" {
+		t.Fatalf("a seat start after a main appeared went ahead: %+v %v", withdrawn, err)
+	}
+	if records, _ := manager.Store.List(); len(records) != 0 || len(processes.commands) != 0 {
+		t.Fatalf("a withdrawn seat start launched: %+v", records)
+	}
+	seat, err := steward.StartSeat(install, config, seatTickCensus{}, *result.Seat)
 	if err != nil {
 		t.Fatal(err)
 	}

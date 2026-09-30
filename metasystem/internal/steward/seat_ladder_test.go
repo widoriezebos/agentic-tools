@@ -174,6 +174,17 @@ func (b *seatBed) start(selection *SeatSelection) SeatRecord {
 	return record
 }
 
+// startUnder starts the selection as the runner's pass does, re-reading the
+// tick's grounds under the start's lock with the census given (SOL-A-03).
+func (b *seatBed) startUnder(selection SeatSelection, census WorkerCensus) (SeatRecord, error) {
+	b.t.Helper()
+	dependencies := *b.seatDependencies()
+	dependencies.Recheck = func(records []SeatRecord) (Decision, *SeatSelection, error) {
+		return seatRecheck(b.root, TickConfig{Now: b.now}, census, b.dependencies(), records)
+	}
+	return startSeatWithDependencies(b.root, selection, dependencies)
+}
+
 // end declares a seat launch terminal with the result document given.
 func (b *seatBed) end(id, state, result string) {
 	b.t.Helper()
@@ -639,9 +650,12 @@ func TestALandingClaimWaitingOnReviewStartsNoSuccessor(t *testing.T) {
 			t.Fatal("a waiting landing starts nothing and counts nothing")
 		}
 	}
-	starts := func(t *testing.T, file *goal.GoalFile) {
+	starts := func(t *testing.T, file *goal.GoalFile, tip string) {
 		t.Helper()
 		bed := newSeatBed(t, file)
+		if tip != "" {
+			bed.tips[file.Id] = tip
+		}
 		result := bed.tick(deadWorkers)
 		if result.Decision.Action != ActRevive || result.Seat == nil || result.Seat.Goal != file.Id {
 			t.Fatalf("a due landing starts the successor naming it: %+v %+v", result.Decision, result.Seat)
@@ -666,12 +680,27 @@ func TestALandingClaimWaitingOnReviewStartsNoSuccessor(t *testing.T) {
 		waits(t, seatLandingGoal("held", 1, now.Add(-time.Hour)))
 	})
 	t.Run("below the tier and eligible", func(t *testing.T) {
-		starts(t, seatLandingGoal("held", 1, now.Add(-5*time.Hour)))
+		starts(t, seatLandingGoal("held", 1, now.Add(-5*time.Hour)), "")
 	})
 	t.Run("cleared at the tip", func(t *testing.T) {
 		file := seatLandingGoal("held", 3, now.Add(-time.Hour))
 		seatCleared(file, now.Add(-30*time.Minute))
-		starts(t, file)
+		starts(t, file, seatReviewTip)
+	})
+	// SOL-A-02: the word binds to the tip it was given at, as the gate
+	// itself requires; a branch moved since waits for the word again.
+	t.Run("cleared at a tip the branch has moved from", func(t *testing.T) {
+		file := seatLandingGoal("held", 3, now.Add(-time.Hour))
+		seatCleared(file, now.Add(-30*time.Minute))
+		bed := newSeatBed(t, file)
+		bed.tips["held"] = "0badc0de0badc0de0badc0de0badc0de0badc0de"
+		result := bed.tick(deadWorkers)
+		if result.Decision.Action != ActNotify || result.Seat != nil || !strings.Contains(result.Decision.Reason, "a moved tip needs the word again") {
+			t.Fatalf("a word given at an older tip starts no successor: %+v %+v", result.Decision, result.Seat)
+		}
+		if len(bed.records()) != 0 || len(bed.launcher.starts) != 0 {
+			t.Fatal("a stale word starts nothing and counts nothing")
+		}
 	})
 	t.Run("a waiting landing beside ready work names the ready goal", func(t *testing.T) {
 		bed := newSeatBed(t, seatLandingGoal("held", 3, now.Add(-time.Hour)), seatReadyGoal("alpha", "Build it."))
@@ -704,7 +733,7 @@ func TestRunnerStartsTheSelectedSeatInsteadOfARevival(t *testing.T) {
 				t.Fatal(err)
 			}
 		},
-		StartSeat: func(_ string, _ TickConfig, selection SeatSelection) (SeatRecord, error) {
+		StartSeat: func(_ string, _ TickConfig, _ WorkerCensus, selection SeatSelection) (SeatRecord, error) {
 			started = append(started, selection)
 			return SeatRecord{}, nil
 		},
@@ -715,4 +744,93 @@ func TestRunnerStartsTheSelectedSeatInsteadOfARevival(t *testing.T) {
 	if len(started) != 1 || started[0].Goal != "alpha" || revives != 0 {
 		t.Fatalf("the runner starts the selected seat once and no delegate: %+v revives=%d", started, revives)
 	}
+}
+
+// SOL-A-01: a held goal of the seat lineage whose next step waits on a human
+// word is the Stop path's wait (goal.idleBacklogContinuation): no successor
+// starts for it, nor for other ready work beside the working claim, and
+// nothing counts.
+func TestAHeldGoalWaitingOnAHumanWordStartsNoSuccessor(t *testing.T) {
+	t.Parallel()
+	waiting := func() *goal.GoalFile {
+		file := seatClaimedGoal("held", SeatLineage)
+		file.NextStep = "WAITING ON THE HUMAN: which store does it read?"
+		return file
+	}
+	for _, leg := range []struct {
+		name  string
+		goals []*goal.GoalFile
+	}{
+		{"alone", []*goal.GoalFile{waiting()}},
+		{"beside ready work", []*goal.GoalFile{waiting(), seatReadyGoal("alpha", "Build it.")}},
+	} {
+		t.Run(leg.name, func(t *testing.T) {
+			t.Parallel()
+			bed := newSeatBed(t, leg.goals...)
+			result := bed.tick(deadWorkers)
+			if result.Decision.Action != ActNotify || result.Seat != nil ||
+				!strings.Contains(result.Decision.Reason, "held") || !strings.Contains(result.Decision.Reason, "human word") {
+				t.Fatalf("a held goal waiting on a human word starts no successor: %+v %+v", result.Decision, result.Seat)
+			}
+			if len(bed.records()) != 0 || len(bed.launcher.starts) != 0 {
+				t.Fatal("a held goal waiting on a human word starts nothing and counts nothing")
+			}
+		})
+	}
+}
+
+// SOL-A-03: the start re-reads, under its lock, the census, the outage mark
+// and the ladder over the fresh ledger; a selection they no longer hold up
+// starts nothing and leaves no record.
+func TestASeatStartRereadsItsGroundsUnderTheLock(t *testing.T) {
+	t.Parallel()
+	selected := func(t *testing.T) (*seatBed, SeatSelection) {
+		t.Helper()
+		bed := newSeatBed(t, seatReadyGoal("alpha", "Build it."))
+		result := bed.tick(deadWorkers)
+		if result.Decision.Action != ActRevive || result.Seat == nil || result.Seat.Goal != "alpha" {
+			t.Fatalf("the tick selects alpha: %+v %+v", result.Decision, result.Seat)
+		}
+		return bed, *result.Seat
+	}
+	refused := func(t *testing.T, bed *seatBed, selection SeatSelection, census WorkerCensus) {
+		t.Helper()
+		if record, err := bed.startUnder(selection, census); err == nil || record.LaunchID != "" {
+			t.Fatalf("a start whose grounds changed went ahead: %+v %v", record, err)
+		}
+		if len(bed.launcher.starts) != 0 || len(bed.records()) != 0 {
+			t.Fatalf("a withdrawn start launched or recorded: %+v %+v", bed.launcher.starts, bed.records())
+		}
+	}
+	t.Run("a live main appeared", func(t *testing.T) {
+		t.Parallel()
+		bed, selection := selected(t)
+		refused(t, bed, selection, fakeCensus{workers: Workers{Live: 1, LiveSeatMains: 1, CensusComplete: true}})
+	})
+	t.Run("the census became unprovable", func(t *testing.T) {
+		t.Parallel()
+		bed, selection := selected(t)
+		refused(t, bed, selection, fakeCensus{workers: Workers{Unprovable: 1, CensusComplete: true}})
+	})
+	t.Run("an outage began", func(t *testing.T) {
+		t.Parallel()
+		bed, selection := selected(t)
+		if _, err := outage.Record(bed.root, "overloaded", "API Error: 529", "test", bed.now); err != nil {
+			t.Fatal(err)
+		}
+		refused(t, bed, selection, fakeCensus{workers: deadWorkers})
+	})
+	t.Run("the goal now waits on a human word", func(t *testing.T) {
+		t.Parallel()
+		bed, selection := selected(t)
+		bed.goals["alpha"].NextStep = "WAITING ON THE HUMAN: which one."
+		refused(t, bed, selection, fakeCensus{workers: deadWorkers})
+	})
+	t.Run("nothing changed", func(t *testing.T) {
+		t.Parallel()
+		bed, selection := selected(t)
+		if record, err := bed.startUnder(selection, fakeCensus{workers: deadWorkers}); err != nil || record.Goal != "alpha" || len(bed.launcher.starts) != 1 {
+			t.Fatalf("an unchanged selection starts its seat: %+v %v", record, err)
+		}
+	})
 }

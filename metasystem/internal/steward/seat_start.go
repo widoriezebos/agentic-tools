@@ -332,7 +332,11 @@ func decideSeat(repoRoot string, cfg TickConfig, work OpenWork, shared goal.Clai
 	if projection.Tree != nil {
 		live = projection.Tree.Live
 	}
-	world := SeatWorldFrom(shared, live, settings, now)
+	tips, err := dependencies.Tips(repoRoot, shared.Landing)
+	if err != nil {
+		return Decision{VerdictDegraded, ActNotify, "the goal branch tips cannot be read for the landing gate: " + err.Error()}, nil, true
+	}
+	world := SeatWorldFrom(shared, live, settings, tips, now)
 	if owned && !seatStepDue(world) && holdsForeign(world) {
 		return Decision{}, nil, false
 	}
@@ -395,12 +399,20 @@ func holdsForeign(world SeatWorld) bool {
 }
 
 // StartSeat starts one seat main naming the selected goal, through the
-// launcher the runner was given.
-func StartSeat(repoRoot string, cfg TickConfig, selection SeatSelection) (SeatRecord, error) {
+// launcher the runner was given, once the census given, the outage mark and
+// the ladder over the ledger read again still select it.
+func StartSeat(repoRoot string, cfg TickConfig, census WorkerCensus, selection SeatSelection) (SeatRecord, error) {
 	if cfg.Seat == nil {
 		return SeatRecord{}, errors.New("no seat launcher is wired to this steward")
 	}
-	return startSeatWithDependencies(canonicalPath(repoRoot), selection, defaultSeatDependencies(cfg.Seat))
+	root := canonicalPath(repoRoot)
+	dependencies := defaultSeatDependencies(cfg.Seat)
+	openWork := defaultTickContinuationDependencies().openWork
+	openWork.Seat = &dependencies
+	dependencies.Recheck = func(records []SeatRecord) (Decision, *SeatSelection, error) {
+		return seatRecheck(root, cfg, census, openWork, records)
+	}
+	return startSeatWithDependencies(root, selection, dependencies)
 }
 
 // seatBrief is what the seat main reads on stdin.
@@ -443,6 +455,18 @@ func startSeatWithDependencies(repoRoot string, selection SeatSelection, depende
 	for _, record := range records {
 		if record.ReapedAt == "" {
 			return SeatRecord{}, nil
+		}
+	}
+	// The tick decided before the runner's other work; under this lock the
+	// census, the outage mark and the goal's eligibility are read again and
+	// must still select this goal (SOL-A-03).
+	if dependencies.Recheck != nil {
+		d, now, err := dependencies.Recheck(records)
+		if err != nil {
+			return SeatRecord{}, fmt.Errorf("no seat starts for %s: its grounds cannot be read again: %w", selection.Goal, err)
+		}
+		if d.Action != ActRevive || now == nil || now.Goal != selection.Goal || now.Held != selection.Held {
+			return SeatRecord{}, fmt.Errorf("no seat starts for %s: its grounds changed since the tick: %s", selection.Goal, d.Reason)
 		}
 	}
 	raw := make([]byte, 8)
@@ -504,4 +528,17 @@ type seatDependencies struct {
 	Fence    func(root string) (closed bool, reason string, err error)
 	Classify func(path string) (class, evidence string, ok bool)
 	Now      func() time.Time
+	// Recheck re-reads, under the start's lock, what the tick's decision
+	// rested on and answers the decision now (SOL-A-03); nil re-reads
+	// nothing.
+	Recheck func(records []SeatRecord) (Decision, *SeatSelection, error)
+}
+
+// seatRecheck is the tick's seat decision again over fresh readings: the
+// census, the outage mark and the ladder over the ledger read now. The
+// records are the seat records the start just read, none unreaped.
+func seatRecheck(repoRoot string, cfg TickConfig, census WorkerCensus, openWork openWorkDependencies, records []SeatRecord) (Decision, *SeatSelection, error) {
+	_, providerOutage := outage.StandingAt(repoRoot, cfg.now())
+	d, selection, _, err := decideNowWithSeat(repoRoot, cfg, census, Evidence{}, providerOutage, openWork, &seatTickState{Records: records})
+	return d, selection, err
 }

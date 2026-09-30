@@ -41,7 +41,8 @@ func seatPlan(t *testing.T, bed *intentBed, records []steward.SeatRecord, owned 
 	if err != nil {
 		t.Fatal(err)
 	}
-	world := steward.SeatWorldFrom(work, projection.Tree.Live, settings, now)
+	// The bed's goal branch stands at the tip its review record names.
+	world := steward.SeatWorldFrom(work, projection.Tree.Live, settings, map[string]string{bedGoal: reviewBedTip}, now)
 	decision, selection := steward.PlanSeat(world, records, 3, owned)
 	var steps []goal.HolderStep
 	if file := projection.Tree.Live[bedGoal]; file != nil && file.Claimed != nil {

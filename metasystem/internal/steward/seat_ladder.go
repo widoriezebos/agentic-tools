@@ -5,6 +5,7 @@ package steward
 // of that lineage holding a claim is succeeded by the next one.
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -60,15 +61,23 @@ type SeatSelection struct {
 }
 
 // SeatWorldFrom reads one claimable-work snapshot and its accepted goal files
-// into the seat ladder's world. A landing claim is held work for a successor
-// only when HolderStepsDue names a step for it and no review hold stands on
-// the goal (the gate's own reading of holds): LandingDue does not see a hold
-// placed after a clear-to-land, while the gate refuses to land under it.
-func SeatWorldFrom(work goal.ClaimableBudgetedWork, live map[string]*goal.GoalFile, settings goal.GateSettings, now time.Time) SeatWorld {
+// into the seat ladder's world. A working claim whose next step waits on a
+// human word is not due, as the Stop path reads a held goal (SOL-A-01). A
+// landing claim is held work for a successor only when HolderStepsDue names a
+// step for it and no review hold stands on the goal (the gate's own reading
+// of holds): LandingDue does not see a hold placed after a clear-to-land,
+// while the gate refuses to land under it; and a due landing is held work
+// only when the gate admits it at the goal branch's tip now (tips, by goal),
+// since a word binds to the tip it was given at (SOL-A-02).
+func SeatWorldFrom(work goal.ClaimableBudgetedWork, live map[string]*goal.GoalFile, settings goal.GateSettings, tips map[string]string, now time.Time) SeatWorld {
 	var world SeatWorld
 	for _, id := range work.Claimed {
 		file, _ := work.OwnedClaim(id)
-		world.Held = append(world.Held, SeatHeld{Goal: id, Lineage: claimLineage(file), StepDue: true, ApprovalOpid: approvalOpid(file)})
+		held := SeatHeld{Goal: id, Lineage: claimLineage(file), StepDue: true, ApprovalOpid: approvalOpid(file)}
+		if goal.NextStepNamesAPendingHumanWord(work.GoalFacts[id].NextStep) {
+			held.StepDue, held.Wait = false, "its next step waits on a human word"
+		}
+		world.Held = append(world.Held, held)
 	}
 	for _, id := range work.Landing {
 		file, _ := work.OwnedClaim(id)
@@ -82,6 +91,17 @@ func SeatWorldFrom(work goal.ClaimableBudgetedWork, live map[string]*goal.GoalFi
 			held.Wait = "it waits under a review sitting by " + holds[0].By
 		case len(steps) == 0:
 			held.Wait = gateWait(file, settings, now)
+		case !steps[0].Revise:
+			if _, err := goal.Gate(file, tips[id], settings); err != nil {
+				var refusal *goal.GateRefusal
+				if errors.As(err, &refusal) {
+					held.Wait = refusal.Reason
+				} else {
+					held.Wait = err.Error()
+				}
+				break
+			}
+			held.StepDue = true
 		default:
 			held.StepDue = true
 		}
@@ -136,7 +156,7 @@ func PlanSeat(world SeatWorld, records []SeatRecord, maxRevivals int, owned bool
 		verdict = VerdictStalledDead
 	}
 	selection := SeatSelection{}
-	var foreign, waits []string
+	var foreign, waits, working []string
 	var candidate *SeatHeld
 	for i := range world.Held {
 		held := world.Held[i]
@@ -147,6 +167,9 @@ func PlanSeat(world SeatWorld, records []SeatRecord, maxRevivals int, owned bool
 		selection.SeatHeld = append(selection.SeatHeld, held.Goal)
 		if !held.StepDue {
 			waits = append(waits, held.Goal+": "+held.Wait)
+			if !held.Landing {
+				working = append(working, held.Goal)
+			}
 			continue
 		}
 		if candidate == nil {
@@ -163,12 +186,18 @@ func PlanSeat(world SeatWorld, records []SeatRecord, maxRevivals int, owned bool
 		selection.Goal, selection.Held, selection.ApprovalOpid = candidate.Goal, true, candidate.ApprovalOpid
 		return Decision{verdict, ActRevive, fmt.Sprintf("this seat's main is dead holding %s; starting its successor", candidate.Goal)}, &selection
 	}
+	// A working claim that waits keeps the seat's one working claim: a
+	// successor could take no other goal beside it (SOL-A-01).
+	if len(working) > 0 {
+		return Decision{verdict, ActNotify, "this seat holds " + strings.Join(working, ", ") + " and waits: " + strings.Join(waits, "; ") +
+			"; no successor starts until a person answers"}, nil
+	}
 	waiting := ""
 	if len(waits) > 0 {
 		waiting = "; " + strings.Join(waits, "; ") + ", and no successor starts until a step is due"
 	}
 	if owned {
-		return Decision{verdict, ActNotify, "the claims of this seat wait at the landing gate: " + strings.Join(waits, "; ") + "; no successor starts until a step is due"}, nil
+		return Decision{verdict, ActNotify, "the claims of this seat wait: " + strings.Join(waits, "; ") + "; no successor starts until a step is due"}, nil
 	}
 	if len(foreign) > 0 {
 		return Decision{verdict, ActNotify, fmt.Sprintf(
