@@ -25,8 +25,8 @@ func TestAUnitsFindingsStoreEndsWithItsUnit(t *testing.T) {
 		}
 	}
 	registry := MachineRegistry(filepath.Join(root, "home"))
-	path, err := createTempStore(filepath.Join(root, "tmp"), registry, "metasystem-unit-read.key1", UnitReadFindingsClass,
-		Owner{Kind: OwnerUnit, Ref: "key1"}, rand.Reader)
+	path, err := createTempStore(filepath.Join(root, "tmp"), registry, "metasystem-unit-read.key10", UnitReadFindingsClass,
+		Owner{Kind: OwnerUnit, Ref: "key10"}, rand.Reader)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,7 +42,7 @@ func TestAUnitsFindingsStoreEndsWithItsUnit(t *testing.T) {
 		}
 		return report
 	}
-	entry := filepath.Join(named, "key1.json")
+	entry := filepath.Join(named, "key10.json")
 	if err := os.WriteFile(entry, []byte(`{"run":"r1"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +52,7 @@ func TestAUnitsFindingsStoreEndsWithItsUnit(t *testing.T) {
 	if err := os.Remove(entry); err != nil {
 		t.Fatal(err)
 	}
-	held, err := lock.File(filepath.Join(named, "key1.lock"), 0o600, lock.Exclusive)
+	held, err := lock.File(filepath.Join(named, "key10.lock"), 0o600, lock.Exclusive)
 	if err != nil {
 		t.Fatal(err)
 	}

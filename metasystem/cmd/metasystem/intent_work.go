@@ -705,7 +705,7 @@ func (inv *intentInvocation) unitRequest(runner *launch.UnitRunner, id, unit str
 		// It outlives this command (a later round's read writes into it),
 		// so it is a registered temporary store the unit's named inputs own
 		// (Part B R1), never an unowned TMPDIR entry.
-		findingsDirectory, err := diskstore.CreateTempStore("metasystem-unit-read."+filepath.Base(directory), unitReadFindingsClass,
+		findingsDirectory, err := diskstore.CreateTempStore(diskstore.UnitReadFindingsName(filepath.Base(directory)), unitReadFindingsClass,
 			diskstore.Owner{Kind: diskstore.OwnerUnit, Ref: filepath.Base(directory)})
 		if err != nil {
 			return "", fmt.Errorf("cannot create the read's findings directory: %w", err)
