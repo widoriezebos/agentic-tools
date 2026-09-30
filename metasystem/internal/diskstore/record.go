@@ -346,9 +346,14 @@ type Unreadable struct {
 }
 
 // Inventory lists every record of the registry. It observes only: an absent
-// registry is empty, and nothing is created or adopted.
+// registry is empty, and nothing is created or adopted. A record removed
+// between the listing and its load is absent, never unreadable.
 func (r Registry) Inventory() ([]Record, []Unreadable) {
-	entries, err := os.ReadDir(r.Dir)
+	return r.inventory(os.ReadDir)
+}
+
+func (r Registry) inventory(readDir func(string) ([]os.DirEntry, error)) ([]Record, []Unreadable) {
+	entries, err := readDir(r.Dir)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
 	}
@@ -363,6 +368,11 @@ func (r Registry) Inventory() ([]Record, []Unreadable) {
 			continue
 		}
 		record, err := r.Load(id)
+		if errors.Is(err, ErrNotFound) {
+			// Removed since the listing (a process scratch owner removes
+			// its own record at its end): absent, not unreadable.
+			continue
+		}
 		if err != nil {
 			unreadable = append(unreadable, Unreadable{Path: r.RecordPath(id), Reason: err.Error()})
 			continue
