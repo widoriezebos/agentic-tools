@@ -20,6 +20,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/digest"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginecause"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gaterun"
 	runpkg "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 
@@ -36,6 +37,9 @@ const (
 	// FetchRefused is a tick that could not fetch the trunk.
 	FetchRefused            = "CADENCE_FETCH_REFUSED"
 	cadenceLedgerUnreadable = "CADENCE_LEDGER_UNREADABLE"
+	// cadencePreparationRefused is a tick whose testing preparation of the
+	// fetched trunk refused: its policy engine, contract or checkout.
+	cadencePreparationRefused = "CADENCE_PREPARATION_REFUSED"
 	// AuthorityGoal is the standing goal a cadence run is claimed under.
 	AuthorityGoal = "standing-validation"
 )
@@ -63,6 +67,9 @@ type Owner struct {
 	WeightThreshold func(root string) int64
 	Prepare         func(testrun.SelectionRequest) (testrun.Preparation, error)
 	WorkerPolicy    func(confPath string) (testrun.WorkerPolicy, error)
+	// Rearm brings the lane checkout and its engine to the fetched trunk
+	// commit, as a batch proof re-arms its base; nil re-arms nothing.
+	Rearm func(root, commit string) error
 }
 
 var cadenceBuildIdentity = candidateengine.BuildIdentity
@@ -101,13 +108,13 @@ func RunTick(root string, owner Owner, clock func() time.Time) (TickOutput, erro
 	if err != nil {
 		return TickOutput{}, Refusal{cadenceLedgerUnreadable, err.Error()}
 	}
-	prepared, err := owner.Prepare(cadencePreparationRequest(root, tree))
+	prepared, err := prepareCadence(root, commit, tree, owner)
 	if err != nil {
-		return TickOutput{}, Refusal{cadenceLedgerUnreadable, err.Error()}
+		return TickOutput{}, err
 	}
 	deepOnly, err := testpolicy.DeepOnlySectionGroupIDs(prepared.EffectiveContract)
 	if err != nil {
-		return TickOutput{}, Refusal{cadenceLedgerUnreadable, err.Error()}
+		return TickOutput{}, Refusal{cadencePreparationRefused, err.Error()}
 	}
 	weight, due, err := gaterun.WeightCheckAt(root, owner.WeightThreshold(root), now)
 	if err != nil {
@@ -200,6 +207,43 @@ func cadenceCandidateEngineIdentityWith(prepared testrun.Preparation, trunk gate
 	// probe. The marker forces a claimed native run; that run's exact group
 	// identities replace these deliberately non-green probe identities.
 	return buildIdentity, digest.SHA256([]byte("cadence-missing-engine-evidence\x00" + buildIdentity)), false, nil
+}
+
+// prepareCadence prepares the fetched trunk for the tick. A lane engine
+// behind that trunk is re-armed at its commit and the preparation asked
+// once more, instead of refusing every tick until a landing re-arms it.
+func prepareCadence(root, commit, tree string, owner Owner) (testrun.Preparation, error) {
+	prepared, err := owner.Prepare(cadencePreparationRequest(root, tree))
+	var engine *enginecause.Refusal
+	if err != nil && owner.Rearm != nil && errors.As(err, &engine) && engine.Token == "engine-behind-tip" && !engineFactSet(engine) {
+		if rearmErr := owner.Rearm(root, commit); rearmErr != nil {
+			return testrun.Preparation{}, Refusal{cadencePreparationRefused, cadencePreparationDetail(err) + "; the re-arm at " + commit + " failed: " + rearmErr.Error()}
+		}
+		prepared, err = owner.Prepare(cadencePreparationRequest(root, tree))
+	}
+	if err != nil {
+		return testrun.Preparation{}, Refusal{cadencePreparationRefused, cadencePreparationDetail(err)}
+	}
+	return prepared, nil
+}
+
+// engineFactSet says the engine-behind-tip refusal names a branch (fetch
+// failed, head diverged, dirty engine paths, a live attempt) that a re-arm
+// at the trunk does not resolve.
+func engineFactSet(refusal *enginecause.Refusal) bool {
+	for _, fact := range refusal.Facts {
+		if fact.Key == "fact" {
+			return true
+		}
+	}
+	return false
+}
+
+func cadencePreparationDetail(err error) string {
+	if detail := enginecause.Detail(err); detail != "" {
+		return detail
+	}
+	return err.Error()
 }
 
 func cadencePreparationRequest(root, tree string) testrun.SelectionRequest {

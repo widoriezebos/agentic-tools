@@ -152,6 +152,7 @@ var Rows = []Row{
 	{Code: "BATCH_OWNER_OWNED_ELSEWHERE", Owner: "internal/landing/batchowner", Site: "owner.go#acquireBatchOwnerWithRetention", Shape: Question, H1: StandingAgent},
 	{Code: "CADENCE_FETCH_REFUSED", Owner: "internal/cadence", Site: "tick.go#RunTick", Shape: Question, H1: StandingAgent},
 	{Code: "CADENCE_LEDGER_UNREADABLE", Owner: "internal/cadence", Site: "tick.go#RunTick", Shape: Question, H1: StandingAgent},
+	{Code: "CADENCE_PREPARATION_REFUSED", Owner: "internal/cadence", Site: "tick.go#prepareCadence", Shape: Question, H1: StandingAgent},
 	{Code: "BATCH_PROOF_INPUT_MOVED", Owner: "internal/landing/batch", Site: "prove.go#RecordSources", Shape: Question, H1: StandingAgent},
 	{Code: "BATCH_PROOF_NOT_ADMITTED", Owner: "internal/landing/batch", Site: "prove.go#RefuseProofAdmission", Shape: Question, H1: StandingAgent},
 	{Code: "BATCH_PROOF_STATE_REFUSED", Owner: "internal/landing/batch", Site: "prove.go#RequireProofPlan", Shape: Question, H1: StandingAgent},

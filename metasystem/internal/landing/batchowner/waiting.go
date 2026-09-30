@@ -46,3 +46,19 @@ func goalInBatchesAt(landingRoot, goalID string) bool {
 }
 
 func init() { dispatch.GoalInLandingBatch = GoalInLandingBatch }
+
+// RearmLaneAtTrunk re-arms the lane checkout whose module root is
+// controlRoot at the fetched trunk commit, the way a landing re-arms at its
+// pushed tip, holding the lane checkout like every checkout-moving step. The
+// cadence asks it when the lane's engine is behind the trunk it validates.
+func RearmLaneAtTrunk(controlRoot, commit string) error {
+	return rearmLaneAtTrunkWith(controlRoot, commit, RearmBatchTip)
+}
+
+func rearmLaneAtTrunkWith(controlRoot, commit string, rearmTip func(root, tip string) error) error {
+	root := controlRoot
+	if parent := filepath.Dir(controlRoot); batch.ModuleRoot(parent) == controlRoot {
+		root = parent
+	}
+	return WithLaneCheckout(root, func() error { return rearmTip(root, commit) })
+}

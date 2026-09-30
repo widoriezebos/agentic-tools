@@ -500,6 +500,11 @@ func accountsToGoal(request SelectionRequest) (bool, error) {
 		}
 		return false, nil
 	}
+	if request.PolicyChild && request.Purpose == testpolicy.PurposeCadence && request.GoalID == "" {
+		// The pinned child of a cadence preflight: its parent accounts to no
+		// goal and passes none, so neither does the child.
+		return false, nil
+	}
 	return request.GoalID != "" || request.Purpose == testpolicy.PurposeDelivery || request.Purpose == testpolicy.PurposeCadence, nil
 }
 
