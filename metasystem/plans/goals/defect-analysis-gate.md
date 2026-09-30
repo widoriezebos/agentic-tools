@@ -9,8 +9,7 @@
 - Origin: main
 - Next step: Next: Clear the pin to the removed seat m1b. After landing-lane-runtime-redesign lands, move the design's check to where work now enters the landing lane (batch-lane admission), update the design page once (plans/defect-analysis-gate-design.md), then build its first member (section 6). Done when: the revised design is accepted and a test refuses a fix goal with no attached analysis.
 - OpenedAt: 2026-09-02T11:36:02Z
-- Revision: 25
-- Pinned: m1b
+- Revision: 26
 - BudgetExceptions: 0
 - Sliced: machine=m1b lineage=main-1789191336-90295-e4b24b revision=12 at=2026-09-13T06:34:01Z
 
@@ -40,4 +39,5 @@ History:
 - 2026-09-13T09:37:11Z 3ME78ZMNCQ0R9J29HZYR4Z5ANT-m1b-c6925449 approve actor=human:Wido targets=defect-analysis-gate
 - 2026-09-16T20:35:14Z M1VX8E8JTXAKPJ929KMTY173Y3-m1e-c6925449 unapprove actor=human:Wido targets=defect-analysis-gate reason=Wido 2026-09-16 22:40 CEST: clean house on priority 1 first, then a few human convenience features; every priority 2+ goal is unapproved until then
 - 2026-09-30T18:48:28Z 4ZTR8GV2P9CFAFWFPETQA60ZSC-m1e-b6a4eb0a edit actor=human:wido targets=defect-analysis-gate
-Integrity: sha256=e2fc1069012ee3653f717f358ef8e169254375f9c8811fd6f350496857a07c9b
+- 2026-09-30T18:51:44Z NQKJ0RXS1VX3V4S1SSRTT9Q0Q5-m1e-b6a4eb0a set-pin actor=human:wido targets=defect-analysis-gate
+Integrity: sha256=f0ff18c7f4d4c899221b7c8a7aa1fc0d733c4aea31b537fabe465958ecac9ec3
