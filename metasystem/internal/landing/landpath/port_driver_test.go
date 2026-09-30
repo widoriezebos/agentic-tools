@@ -458,7 +458,7 @@ func TestDriverBrainFenceRefusesEveryLandingAct(t *testing.T) {
 	t.Parallel()
 	for _, detail := range []string{
 		"land refused: this checkout is declared the brain; the brain never lands",
-		"this checkout's brain declaration is unreadable (not JSON); until a human repairs it nothing here dispatches, lands",
+		"this checkout's brain declaration is unreadable (not JSON), so nothing here dispatches, lands or claims",
 	} {
 		fence := func(b *bed) {
 			b.owners.BrainFence = func(_, act string) (string, error) {

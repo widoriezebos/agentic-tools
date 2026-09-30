@@ -29,23 +29,23 @@ func PreflightACP(envelope Envelope) string {
 	// anything, and a bogus grade must never reach Decide where an
 	// exact-match check could read it as permissive.
 	if envelope.Tools != "read-only" && envelope.Tools != "runtime-default" {
-		return fmt.Sprintf("tools=%s is not on the ordinal scale", envelope.Tools)
+		return fmt.Sprintf("the tools grade %q is neither read-only nor runtime-default", envelope.Tools)
 	}
 	switch envelope.Network {
 	case "deny", "ask", "allow":
 	default:
-		return fmt.Sprintf("network=%s is not on the ordinal scale", envelope.Network)
+		return fmt.Sprintf("the network grade %q is none of deny, ask or allow", envelope.Network)
 	}
 	switch envelope.Approvals {
 	case "deny", "ask", "allow":
 	default:
-		return fmt.Sprintf("approvals=%s is not on the ordinal scale", envelope.Approvals)
+		return fmt.Sprintf("the approvals grade %q is none of deny, ask or allow", envelope.Approvals)
 	}
 	if envelope.Approvals != "deny" {
-		return fmt.Sprintf("approvals=%s is unsupported on ACP v1 (no escalation lifecycle)", envelope.Approvals)
+		return fmt.Sprintf("the ACP transport cannot ask for approval yet, so approvals must be deny, not %q", envelope.Approvals)
 	}
 	if envelope.Network == "ask" {
-		return "network=ask is unsupported on ACP v1 (no escalation lifecycle)"
+		return "the ACP transport cannot ask before using the network yet, so network must be deny or allow, not ask"
 	}
 	return ""
 }

@@ -308,7 +308,7 @@ func TestCreateRecordRefusesWhatItCannotWrite(t *testing.T) {
 			"a record needs a title"},
 		{"a title that is no file name",
 			NewRecord{Kind: "decision", Title: "!!!", Goals: []string{"ledger-sync"}},
-			`the title "!!!" yields no file name`},
+			`the title "!!!" has no letters or digits to name its file`},
 	} {
 		t.Run(refused.what, func(t *testing.T) {
 			_, err := CreateRecord(roots, refused.asked, wroteAt)

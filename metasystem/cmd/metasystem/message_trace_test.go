@@ -57,13 +57,18 @@ func enforceTracedMessages(paths ...string) bool {
 	return true
 }
 
-// messageTraceKept are the files whose texts are machine protocol a parent
-// process reads by its leading code (the kept exceptions of the direct
-// scan); their sources are listed as kept, never reported.
+// messageTraceKept are the files (or file#Function) whose texts are machine
+// protocol a parent process reads by its leading code (the kept exceptions
+// of the direct scan), or records a parser reads back; their sources are
+// listed as kept, never reported.
 var messageTraceKept = map[string]string{
 	"cmd/metasystem/proof_run_protocol.go": "proof-run protocol codes a parent reads",
 	"internal/proofrun/protocol.go":        "proof-run protocol codes a parent reads",
 	"internal/testrun/protocol.go":         "test-run protocol codes a parent reads",
+	// A mission ledger's cycle and reset lines are the record its parser
+	// (ParseLedger, the prompt's cycle table) reads back, not a message.
+	"internal/mission/ledger.go#AppendCycle": "mission ledger record lines its parser reads",
+	"internal/mission/ledger.go#AppendReset": "mission ledger record lines its parser reads",
 }
 
 // messageTraceKeptCodes are protocol codes kept in a person's message by
@@ -947,8 +952,10 @@ func (index *traceIndex) emit(sink traceSink) []messageTraced {
 // messageTracedModeFor is a traced source's mode: kept for machine
 // protocol, enforce where a group enforced it, report otherwise.
 func messageTracedModeFor(file, function string) string {
-	if _, kept := messageTraceKept[file]; kept {
-		return "kept"
+	for _, key := range []string{file + "#" + function, file} {
+		if _, kept := messageTraceKept[key]; kept {
+			return "kept"
+		}
 	}
 	for _, key := range auditKeys(file, function) {
 		if mode, ok := messageTracedModes[key]; ok {

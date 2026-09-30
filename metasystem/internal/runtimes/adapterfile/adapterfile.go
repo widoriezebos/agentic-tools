@@ -65,5 +65,5 @@ func Unsafe(path string, info os.FileInfo) string {
 
 // Unnamed is the refusal of an executable the configuration does not name.
 func Unnamed(name string) string {
-	return fmt.Sprintf("an external adapter runs only when the configuration names it; add %s=%s to metasystem.conf (or metasystem.conf.local)", UseKey(name), UseValue)
+	return fmt.Sprintf("the configuration does not name the external adapter %s, so it does not run\nadd %s=%s to metasystem.conf or metasystem.conf.local", name, UseKey(name), UseValue)
 }

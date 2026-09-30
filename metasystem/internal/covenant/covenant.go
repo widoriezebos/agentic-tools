@@ -284,7 +284,7 @@ func Parse(data []byte, label string) (*Covenant, error) {
 		// table, matched exactly by the traceability gate — so it
 		// carries the shared identity grammar, not free text.
 		if !requirementIDPattern.MatchString(r.ID) {
-			return nil, fail("requirement id %q is outside the identity grammar [A-Za-z0-9._-]+; the id is the criterion id the evidence table matches", r.ID)
+			return nil, fail("requirement id %q breaks the identity grammar: letters, digits, dot, underscore, hyphen", r.ID)
 		}
 		if seen[r.ID] {
 			return nil, fail("requirement id %q appears twice; every row is one distinct promise", r.ID)
@@ -321,10 +321,10 @@ func Parse(data []byte, label string) (*Covenant, error) {
 		return nil, err
 	}
 	if !contract.ValidThreshold(c.Battery.Threshold) {
-		return nil, fail("battery.threshold %q is not in the contract's threshold grammar (a comparator then a number, no spaces); a mission contract could never carry it", c.Battery.Threshold)
+		return nil, fail("battery.threshold %q breaks the threshold grammar: a comparator, then a number, no spaces", c.Battery.Threshold)
 	}
 	if !contract.ValidMetricID(c.Battery.Metric) {
-		return nil, fail("battery.metric %q is not in the contract's metric grammar (a lowercase letter or digit first, then lowercase letters, digits, or hyphens); the gate.threshold key it forms could never parse", c.Battery.Metric)
+		return nil, fail("battery.metric %q breaks the metric grammar: lowercase letters, digits, hyphens, no hyphen first", c.Battery.Metric)
 	}
 	// The command must be carryable as a contract value: one line, no
 	// NUL, no padding the contract's key/value parser would strip or
@@ -336,7 +336,7 @@ func Parse(data []byte, label string) (*Covenant, error) {
 	case strings.ContainsRune(c.Battery.Command, 0):
 		return nil, fail("battery.command must not contain NUL; a mission contract value could never carry it")
 	case strings.TrimSpace(c.Battery.Command) != c.Battery.Command:
-		return nil, fail("battery.command must not carry leading or trailing whitespace; the contract's value parser rejects padded values")
+		return nil, fail("battery.command starts or ends with whitespace, which a mission contract cannot carry")
 	}
 
 	budgets, ok := doc["budgets"].([]any)

@@ -438,7 +438,8 @@ func standingInstruction(packet []byte) string {
 }
 
 func RemedialRefusal(reason, checkout string) string {
-	return fmt.Sprintf("this checkout's brain declaration is unreadable (%s); until a human repairs it nothing here dispatches, lands, claims, cancels, closes, reaps, or carries a human's word: metasystem settings coordinator --withdraw --by <name> --repo %s, then metasystem settings coordinator --declare --by <name> --repo %s if this seat is the brain", reason, checkout, checkout)
+	return fmt.Sprintf("this checkout's brain declaration is unreadable (%s), so nothing here dispatches, lands or claims\n"+
+		"run: metasystem settings coordinator --withdraw --by <name> --repo %s (then --declare, if this seat is the brain)", reason, checkout)
 }
 
 func Fence(stateRoot, act, ledgerIdentity string) string {
@@ -451,17 +452,17 @@ func Fence(stateRoot, act, ledgerIdentity string) string {
 	}
 	switch act {
 	case "dispatch", "follow-up":
-		return "this checkout is declared the brain; the brain never dispatches. A node starts the work from its own checkout, for example: metasystem work build <goal>"
+		return "this checkout is declared the brain; the brain never dispatches, a node does\nrun on the node's own checkout: metasystem work build <goal>"
 	case "cancel":
-		return "this checkout is declared the brain; the brain never cancels a node's job. The node that owns it runs: metasystem work stop j2:<job id>"
+		return "this checkout is declared the brain; the brain never cancels a node's job\nrun on the node that owns it: metasystem work stop j2:<job id>"
 	case "close":
-		return "this checkout is declared the brain; the brain never closes or reaps dispatcher records. The node that owns the chain runs: metasystem work finish j2:<root job>"
+		return "this checkout is declared the brain; the brain never closes or reaps dispatcher records\nrun on the node that owns the chain: metasystem work finish j2:<root job>"
 	case "reap":
-		return "this checkout is declared the brain; the brain never closes or reaps dispatcher records. The node that owns the chain reaps its records itself; metasystem work status there lists them"
+		return "this checkout is declared the brain; the brain never closes or reaps dispatcher records\nrun on the node that owns the chain, which reaps them itself: metasystem work status"
 	case "land":
-		return "land refused: this checkout is declared the brain; the brain never lands. A node lands from its own checkout: metasystem work land <goal> --message <file> --chain <root-job> --path <path>"
+		return "land refused: this checkout is declared the brain; the brain never lands\nrun on the node's own checkout: metasystem work land <goal> --message <file> --chain <root-job> --path <path>"
 	case "claim":
-		return "this checkout is declared the brain; the brain never claims. A node claims: metasystem goal claim --root <checkout> --id <id>"
+		return "this checkout is declared the brain; the brain never claims\nrun on a node: metasystem goal claim --root <checkout> --id <id>"
 	default:
 		return fmt.Sprintf("this checkout is declared the brain; act %s is fenced", act)
 	}

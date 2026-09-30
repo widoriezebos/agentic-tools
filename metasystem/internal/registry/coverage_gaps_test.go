@@ -15,7 +15,7 @@ import (
 func TestCorruptionErrorNamesBothLines(t *testing.T) {
 	err := &CorruptionError{GarbageLine: 3, RecordLine: 7}
 	text := err.Error()
-	if !strings.Contains(text, "line 3") || !strings.Contains(text, "line 7") || !strings.Contains(text, "fail closed") {
+	if !strings.Contains(text, "line 3") || !strings.Contains(text, "line 7") || !strings.Contains(text, "arming and reaping stop") {
 		t.Fatalf("corruption error must name both lines and the fail-closed duty: %q", text)
 	}
 }

@@ -46,11 +46,13 @@ func (m *Manager) CheckPack(spec StartSpec) (int, error) {
 		return 0, err
 	}
 	if kept := keptPlaceholders(template, brief); len(kept) > 0 {
-		lines := []string{fmt.Sprintf("LAUNCH_BRIEF_PACK_UNFILLED kind=%s", spec.Kind)}
+		var lines []string
 		for _, item := range kept {
 			lines = append(lines, fmt.Sprintf("placeholder=%s line=%d", item.token, item.line))
 		}
-		return 0, fmt.Errorf("%s", strings.Join(lines, "\n"))
+		return 0, &CodedError{Code: "LAUNCH_BRIEF_PACK_UNFILLED", Facts: "kind=" + spec.Kind,
+			Reason:     fmt.Errorf("the brief still holds its template's placeholder %s on line %d; fill in every one", kept[0].token, kept[0].line),
+			Background: strings.Join(lines, "\n")}
 	}
 
 	ranges := citedRanges(brief)
@@ -81,7 +83,7 @@ func (m *Manager) CheckPack(spec StartSpec) (int, error) {
 				got = excerpt[offset]
 			}
 			if !bytes.Equal(source, got) {
-				return 0, packDrift(item, fmt.Sprintf("line %d differs source_bytes=%d excerpt_bytes=%d", item.start+offset, len(source), len(got)))
+				return 0, packDrift(item, fmt.Sprintf("line %d differs: %d bytes in the file, %d quoted", item.start+offset, len(source), len(got)))
 			}
 		}
 	}
