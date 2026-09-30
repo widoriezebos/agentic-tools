@@ -1,6 +1,6 @@
 # every-round-gets-an-independent-read
 
-- State: queued
+- State: done
 - Priority: 1
 - Sequence: 23
 - Risk: severity=2 novelty=1 exposure=3 accumulation=3 basis="severity 2: a builder that writes a test accepting its own bug passes its own verification and the defect reaches the bed or trunk; novelty 1: the independent read exists as a role, only its timing changes; exposure 3: every build round; accumulation 3: undetected rounds compound into the nineteen-round member"
@@ -8,8 +8,9 @@
 - Intent: Delivery-efficiency phase D. Model strength goes where judgment pays: after every build round, before its beds run, an independent reader with a fresh context checks the round against its brief and attacks the implementation, and the next brief carries its findings. Why: on 2026-09-14 one independent read of a build found eleven material defects in a single pass, including a literal newline that would have broken every provider launch and a new stop allowance the build had quietly given one runtime; the same day a builder's own test accepted the malformed object it should have refused, and only a later bed caught it. A reader after each round catches 'the test accepts the bug' before a bed does. DONE: the dispatcher runs the code-critique role on each round's diff with the round's brief, the read is recorded on the findings record round-proof-feeds-the-next-brief composes from, a round whose read is missing or unread cannot be proved, and a fixture proves a planted test-accepts-the-bug defect is named by the read before any bed runs. The reader is a different model from the builder, as the lanes already require.
 - Origin: human
 - Next step: Design in the verification-loop program page: where in the round the read sits, what it receives, where its findings land, and its cost bound. Then build the dispatcher step and the record.
+- Concluded: Every launch unit round now has its own independent read by a separate model, and its findings feed the next round. Feeding red proof output into the next round is left to round-proof-feeds-the-next-brief.
 - OpenedAt: 2026-09-14T19:26:27Z
-- Revision: 127
+- Revision: 128
 - BudgetExceptions: 0
 
 History:
@@ -140,4 +141,5 @@ History:
 - 2026-09-30T18:54:04Z F039APNCSYVNCBGW0MAVJXXSR6-m1e-b6a4eb0a done actor=human:wido targets=brief-declares-the-round-boundary,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,delegate-sandbox-runs-the-beds,every-round-gets-an-independent-read,evidence-and-build-output-have-retention-and-stay-unindexed,failures-show-observed-against-expected,fixture-runners-and-fakes-bound-their-own-life,follow-up-brief-cannot-cite-fresh-trunk-files,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,round-proof-feeds-the-next-brief,testing-surfaces-declare-their-mirror reason=priority-order from=1:26 to=1:25
 - 2026-09-30T18:54:44Z Y6G0ABX98N5SW2MKYHX9J3922E-m1e-b6a4eb0a done actor=human:wido targets=busy-seat-shells-are-ended,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,delegate-sandbox-runs-the-beds,every-round-gets-an-independent-read,evidence-and-build-output-have-retention-and-stay-unindexed,failures-show-observed-against-expected,fixture-runners-and-fakes-bound-their-own-life,follow-up-brief-cannot-cite-fresh-trunk-files,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,round-proof-feeds-the-next-brief,testing-surfaces-declare-their-mirror reason=priority-order from=1:25 to=1:24
 - 2026-09-30T18:55:11Z JJ0ZP8DJNS0WWGYRKN65YRQMHH-m1e-b6a4eb0a done actor=human:wido targets=cross-cutting-change-inventories-its-readers,delegate-sandbox-runs-the-beds,every-round-gets-an-independent-read,failures-show-observed-against-expected,testing-surfaces-declare-their-mirror reason=priority-order from=1:24 to=1:23
-Integrity: sha256=eb6ca116db860877af09b98e59f46f445ff21fbabd3e04de3f3b531e72fc8fd4
+- 2026-09-30T18:56:08Z 9M9METEPW54CBJ0M0X57VPP77N-m1e-b6a4eb0a done actor=human:wido targets=cross-cutting-change-inventories-its-readers,every-round-gets-an-independent-read,failures-show-observed-against-expected,testing-surfaces-declare-their-mirror
+Integrity: sha256=9462c00b463128a167a8df558c76842bf8230f5126ccf40becb056c1c077db8e
