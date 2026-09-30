@@ -261,6 +261,7 @@ var Rows = []Row{
 	{Code: "GOAL_READ_STALE", Owner: "internal/goal/branch", Site: "attest.go#validateAttestation", Shape: Question, H1: StandingInput},
 	{Code: "GOAL_READ_DISPATCH_PENDING", Owner: "internal/goal/branch", Site: "read.go#saveBranchReadRecord", Shape: Question, H1: StandingInput},
 	{Code: "GOAL_READ_INVALID", Owner: "internal/goal/branch", Site: "attest.go#foldRangeWithReads", Shape: Question, H1: StandingInput},
+	{Code: "GOAL_READ_BRIEF_CHANGED", Owner: "internal/goal/branch", Site: "read.go#RunBranchRead", Shape: Question, H1: StandingInput},
 	{Code: "attested-malformed-id", Owner: "internal/landing", Site: "attested.go#observeAttestedWithFacts", Shape: Question, H1: StandingInput},
 	{Code: "attested-unreadable", Owner: "internal/landing", Site: "attested.go#attestedBindingCode", Shape: Question, H1: StandingInput},
 	{Code: "attested-invalid", Owner: "internal/landing", Site: "attested.go#attestedBindingCode", Shape: Question, H1: StandingInput},

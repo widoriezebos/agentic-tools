@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 )
 
 const (
@@ -65,7 +67,7 @@ func validateContextKeys(confPath string) error {
 		_, known := contextKeys[key]
 		runtime := strings.TrimPrefix(key, ContextHandoffNoteDirectoryPrefix)
 		if !known && (!strings.HasPrefix(key, ContextHandoffNoteDirectoryPrefix) || !contextRuntimeName.MatchString(runtime)) {
-			return contextConfigInvalid(key, "unknown context key")
+			return contextConfigInvalid(key, "is not a known context setting")
 		}
 	}
 	return nil
@@ -92,7 +94,7 @@ func ToolGateMode(root string) (string, error) {
 // when the committed configuration does not name a different directory.
 func ContextHandoffNoteDirectory(root, runtime, claudeDefault string) (string, error) {
 	if !contextRuntimeName.MatchString(runtime) {
-		return "", contextConfigInvalid(ContextHandoffNoteDirectoryPrefix+runtime, "invalid runtime")
+		return "", contextConfigInvalid(ContextHandoffNoteDirectoryPrefix+runtime, "names an unknown runtime")
 	}
 	key := ContextHandoffNoteDirectoryPrefix + runtime
 	fallback := ""
@@ -124,6 +126,11 @@ func contextPositiveValue(confPath, key string, fallback int64) (int64, error) {
 	return value, nil
 }
 
+// contextConfigInvalid refuses a context setting: the words name the
+// setting and what is wrong with it; the code CONTEXT_CONFIG_INVALID and the
+// key are data a reader takes with refusal.CodeOf and refusal.DetailOf.
 func contextConfigInvalid(key, format string, args ...any) error {
-	return fmt.Errorf("CONTEXT_CONFIG_INVALID key=%s reason=%s", key, fmt.Sprintf(format, args...))
+	reason := fmt.Sprintf(format, args...)
+	return &refusal.Coded{Code: "CONTEXT_CONFIG_INVALID", Facts: "key=" + key + " reason=" + reason,
+		Reason: fmt.Errorf("context setting %s %s", key, reason)}
 }

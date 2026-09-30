@@ -74,10 +74,8 @@ var messageTraceKept = map[string]string{
 // messageTraceKeptCodes are protocol codes kept in a person's message by
 // decision: the code is not reported, the rest of the text is.
 // BUDGET_REFUSED leads a test run's cold-build refusal because the landing
-// batch owner reads it to tell a budget refusal from the others;
-// BRIEF_BOUNDS_UNREADABLE is the refusal register's anchor at its Error.
-var messageTraceKeptCodes = map[string]string{"CONTEXT_CONFIG_INVALID": "internal/config/context.go",
-	"BUDGET_REFUSED": "cmd/metasystem/test_cold_budget.go", "BRIEF_BOUNDS_UNREADABLE": "internal/validate/brief_bounds_source.go"}
+// batch owner reads it to tell a budget refusal from the others.
+var messageTraceKeptCodes = map[string]string{"BUDGET_REFUSED": "cmd/metasystem/test_cold_budget.go"}
 
 // messageTraceFixtureDir names the packages that serve tests (fakes,
 // fixtures, the interface walkthrough): nothing a person reads in use.
@@ -1163,8 +1161,8 @@ func messageTraceMarkdown(traced []messageTraced) string {
 	b.WriteString("What it leaves out, so internal strings are not reported: an argument filled into a format's hole (an id, a path) is not " +
 		"taken for the message; a text without two words (a code, a key, an id) is skipped; a Code field, a log line, a map key and " +
 		"a JSON field other than a hook's systemMessage, stopReason or block reason are no sinks; fakes, fixtures and the interface " +
-		"walkthrough are skipped; the protocol files the direct scan keeps are listed as kept, and CONTEXT_CONFIG_INVALID is not counted " +
-		"in internal/config/context.go; a browser refusal is not judged for a command, since the page offers the action; a shell script " +
+		"walkthrough are skipped; the protocol files the direct scan keeps are listed as kept, and BUDGET_REFUSED is not counted " +
+		"in cmd/metasystem/test_cold_budget.go; a browser refusal is not judged for a command, since the page offers the action; a shell script " +
 		"a function assembles is skipped. no-command is judged only for a refusal type (a RefusalCode method, or a name ending in Refusal) " +
 		"with no remedy field. field is an internal key=value pair in default text. Limits: a method is followed only when its name is " +
 		"unique in its package; a text written to a plain w, out or writer is not read; a producer's piece is judged alone, so a long " +
