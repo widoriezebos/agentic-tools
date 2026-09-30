@@ -144,3 +144,36 @@ func TestAnUnreadableEngineContentRecordKeepsTheWorktree(t *testing.T) {
 		t.Fatalf("outcome = %+v, %v", outcome, err)
 	}
 }
+
+// A goal worktree whose installation's state root holds the engine's own
+// records (a capability snapshot a verb wrote there) is released by the
+// sweep as it was before U5e, with that state root recorded as the
+// engine's; a file outside it still keeps the worktree.
+func TestTheWorktreeInstallationsStateRootIsTheEngines(t *testing.T) {
+	t.Parallel()
+	for _, outside := range []bool{false, true} {
+		bed := newLinkedBed(t)
+		bed.ignoreLocalConfig()
+		record := bed.goalWorktree("g")
+		if err := bed.registry.RecordEngineContent(record.ID, record.Path, nil, []EngineDir{EngineStateDir("metasystem")}); err != nil {
+			t.Fatal(err)
+		}
+		state := filepath.Join(record.Path, "metasystem", "artifacts", "agents", "capabilities")
+		if err := os.MkdirAll(state, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(state, "close.json"), []byte("{}"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if outside {
+			if err := os.WriteFile(filepath.Join(record.Path, ".claude-notes"), []byte("mine"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		outcome, err := ReleaseLinkedWorktrees(context.Background(), bed.registry, []string{record.ID}, LinkedRelease{GitRoot: bed.repo, Git: realWorkspaceGit,
+			Census: &UseCensus{Taken: true}, Now: testNow, By: "goal done", Remove: func(ctx context.Context) error { return bed.goalSweep(ctx, "g") }})
+		if err != nil || outcome.Done == outside {
+			t.Fatalf("outside=%v: outcome = %+v, %v", outside, outcome, err)
+		}
+	}
+}

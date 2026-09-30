@@ -115,7 +115,8 @@ func TestGoalWorktreePreparationRecordsTheCopiedLocalConfiguration(t *testing.T)
 		t.Fatalf("records = %+v, %v", records, err)
 	}
 	content, err := registry.ReadEngineContent(records[0].ID)
-	if err != nil || len(content.Files) != 1 || content.Files[0].Path != filepath.FromSlash(manifest[0]) || content.Files[0].SHA256 == "" {
+	if err != nil || len(content.Files) != 1 || content.Files[0].Path != filepath.FromSlash(manifest[0]) || content.Files[0].SHA256 == "" ||
+		len(content.Dirs) != 1 || content.Dirs[0] != diskstore.EngineStateDir(".") {
 		t.Fatalf("engine content = %+v, %v", content, err)
 	}
 }

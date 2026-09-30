@@ -37,7 +37,7 @@ func TestSecondSessionRegistersItsWorktreeBeforeGitMakesIt(t *testing.T) {
 	// recorded as the engine's (Round D3 F-1).
 	content, err := registry.ReadEngineContent(atAdd[0].ID)
 	if err != nil || len(content.Files) != 1 || content.Files[0].Path != filepath.Join(".claude", "settings.local.json") ||
-		len(content.Dirs) != 1 || content.Dirs[0] != diskstore.MainAnnouncementsDir("metasystem") {
+		len(content.Dirs) != 2 || content.Dirs[0] != diskstore.EngineStateDir("metasystem") || content.Dirs[1] != diskstore.MainAnnouncementsDir("metasystem") {
 		t.Fatalf("engine content = %+v, %v", content, err)
 	}
 

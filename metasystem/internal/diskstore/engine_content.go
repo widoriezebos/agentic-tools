@@ -62,6 +62,12 @@ type EngineContent struct {
 // FormatJSONObject is an owned directory whose entries are JSON objects.
 const FormatJSONObject = "json-object"
 
+// FormatEngineState is a worktree installation's own state root
+// (<installation>/artifacts), which only the engine writes: every regular
+// file anywhere beneath it is the engine's (Round D3 F-1 as built; see the
+// build's return).
+const FormatEngineState = "engine-state"
+
 // EngineContentPath is where a store's engine-content record lives.
 func (r Registry) EngineContentPath(id string) string {
 	return filepath.Join(r.Dir, id+".engine.json")
@@ -204,6 +210,12 @@ func (c EngineContent) engineAccepts(root, rel string) (bool, string) {
 		return true, ""
 	}
 	for _, dir := range c.Dirs {
+		if dir.Format == FormatEngineState {
+			if inside, err := filepath.Rel(dir.Path, rel); err == nil && inside != "." && !strings.HasPrefix(inside, "..") {
+				return true, ""
+			}
+			continue
+		}
 		if filepath.Dir(rel) != dir.Path {
 			continue
 		}
@@ -238,7 +250,7 @@ func (c EngineContent) foreignEntries(root string, entries []string) []string {
 			continue
 		}
 		status, rel := entry[:3], entry[3:]
-		if status != "?? " && status != "!! " || len(c.Files) == 0 && len(c.Dirs) == 0 {
+		if status != "?? " && status != "!! " {
 			foreign = append(foreign, entry)
 			continue
 		}
@@ -296,6 +308,12 @@ func PresentPaths(root string, relatives []string) map[string]bool {
 		present[relative] = err == nil
 	}
 	return present
+}
+
+// EngineStateDir is a worktree installation's state root, which only the
+// engine writes.
+func EngineStateDir(installation string) EngineDir {
+	return EngineDir{Path: filepath.Join(installation, "artifacts"), Pattern: "*", Format: FormatEngineState}
 }
 
 // MainAnnouncementsDir is the engine-owned directory of main announcements

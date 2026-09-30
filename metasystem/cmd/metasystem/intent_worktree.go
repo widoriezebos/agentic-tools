@@ -165,10 +165,8 @@ func (inv *intentInvocation) prepareGoalWorktree(id string) (string, *intentResu
 			Summary: fmt.Sprintf("goal worktree %s is kept, but the adapters' local configuration is not complete in it: %v; nothing was built", path, err),
 			next:    inv.sameCommand(), nextReason: "the same command completes the configuration and continues"}
 	}
-	if placed := diskstore.Placed(path, manifest, before); len(placed) > 0 {
-		if problem := inv.recordGoalWorktreeContent(id, path, placed); problem != nil {
-			return "", problem
-		}
+	if problem := inv.recordGoalWorktreeContent(id, path, diskstore.Placed(path, manifest, before)); problem != nil {
+		return "", problem
 	}
 	return path, nil
 }
@@ -411,13 +409,18 @@ func (inv *intentInvocation) enterGoalWorktree(id, path string) *intentResult {
 }
 
 // recordGoalWorktreeContent records the files the engine just placed in
-// goal id's registered worktree at path.
+// goal id's registered worktree at path, and the worktree installation's
+// state root, which only the engine writes.
 func (inv *intentInvocation) recordGoalWorktreeContent(id, path string, placed []string) *intentResult {
+	installation, err := filepath.Rel(path, inv.goalWorktreeInstallation(path))
+	if err != nil || strings.HasPrefix(installation, "..") {
+		installation = "."
+	}
 	for _, entrant := range inv.entrants {
 		if entrant.Record.Path != path {
 			continue
 		}
-		if err := inv.goalWorktreeRegistry().RecordEngineContent(entrant.Record.ID, path, placed, nil); err != nil {
+		if err := inv.goalWorktreeRegistry().RecordEngineContent(entrant.Record.ID, path, placed, []diskstore.EngineDir{diskstore.EngineStateDir(installation)}); err != nil {
 			return &intentResult{Outcome: intentFailed, code: 1, Summary: fmt.Sprintf("the local configuration placed in goal/%s's worktree cannot be recorded: %v; nothing was built", id, err)}
 		}
 	}

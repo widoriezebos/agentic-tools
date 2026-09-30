@@ -174,7 +174,7 @@ func SecondSession(o SecondSessionOptions) (string, error) {
 		installation = "."
 	}
 	if err := registry.RecordEngineContent(record.ID, destination, diskstore.Placed(destination, LocalConfigPaths, before),
-		[]diskstore.EngineDir{diskstore.MainAnnouncementsDir(installation)}); err != nil {
+		[]diskstore.EngineDir{diskstore.EngineStateDir(installation), diskstore.MainAnnouncementsDir(installation)}); err != nil {
 		return "", fmt.Errorf("second-session: what the engine placed in the worktree cannot be recorded: %w", err)
 	}
 
