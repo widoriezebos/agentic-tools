@@ -50,11 +50,12 @@ const (
 	CompositionSeamTooLarge = "seam-too-large"
 )
 
-// Codes of begin's refusals.
+// Codes of begin's refusals: a series it cannot take, and the two
+// composition refusals it records as evidence.
 const (
-	codeLaneBeginRefused      = "LANE_BEGIN_REFUSED"
-	codeLaneBeginConflict     = "LANE_BEGIN_CONFLICT"
-	codeLaneBeginSeamTooLarge = "LANE_BEGIN_SEAM_TOO_LARGE"
+	CodeBeginRefused      = "LANE_BEGIN_REFUSED"
+	CodeBeginConflict     = "LANE_BEGIN_CONFLICT"
+	CodeBeginSeamTooLarge = "LANE_BEGIN_SEAM_TOO_LARGE"
 )
 
 // Opening is one durable landing begin: the canonical series of a batch.
@@ -146,7 +147,7 @@ func (refusal *CompositionRefusal) Error() string { return refusal.Evidence.Deta
 func (refusal *CompositionRefusal) RefusalCode() string { return refusal.Code }
 
 func beginRefused(reason, fix string) error {
-	return &BeginRefusal{Code: codeLaneBeginRefused, Reason: reason, Fix: fix}
+	return &BeginRefusal{Code: CodeBeginRefused, Reason: reason, Fix: fix}
 }
 
 // pinStep is one pinned step of a member's admitted contribution: one
@@ -372,7 +373,7 @@ func PlanOpening(root string, record Record, request BeginRequest) (Opening, err
 		trees, err := composeMember(root, baseTree, unit)
 		var conflict *memberConflict
 		if errors.As(err, &conflict) {
-			return Opening{}, &CompositionRefusal{Code: codeLaneBeginConflict, Evidence: CompositionEvidence{OpID: request.OpID, At: opening.At, Actor: request.Actor,
+			return Opening{}, &CompositionRefusal{Code: CodeBeginConflict, Evidence: CompositionEvidence{OpID: request.OpID, At: opening.At, Actor: request.Actor,
 				Kind: CompositionConflict, Members: []string{unit.GoalID}, Base: base, Paths: conflict.paths,
 				Detail: fmt.Sprintf("%s does not apply on main %s (%s)", unit.GoalID, short(base), pathsWord(conflict.paths))}}
 		}
@@ -447,7 +448,7 @@ func PlanOpening(root string, record Record, request BeginRequest) (Opening, err
 		if integration && opening.Series[len(opening.Series)-1].Deviation != 0 {
 			named = slices.Clone(request.Members)
 		}
-		return Opening{}, &CompositionRefusal{Code: codeLaneBeginSeamTooLarge, Evidence: CompositionEvidence{OpID: request.OpID, At: opening.At, Actor: request.Actor,
+		return Opening{}, &CompositionRefusal{Code: CodeBeginSeamTooLarge, Evidence: CompositionEvidence{OpID: request.OpID, At: opening.At, Actor: request.Actor,
 			Kind: CompositionSeamTooLarge, Members: named, Base: base, Deviation: opening.Deviation,
 			Detail: fmt.Sprintf("the lane's own edits come to %d lines, over the %d-line cap", opening.Deviation, SeamCapLines)}}
 	}
@@ -835,7 +836,7 @@ func RecordOpening(store Store, id string, opening Opening, at time.Time) (Recor
 func RecordComposition(store Store, id string, evidence CompositionEvidence, at time.Time) error {
 	return store.Update(id, func(record *Record) error {
 		record.Compositions = append(record.Compositions, evidence)
-		record.Transition(record.State, at, "begin-refused", evidence.Actor, evidence.Kind+" "+strings.Join(evidence.Members, ",")+": "+evidence.Detail)
+		record.Transition(record.State, at, "composition", evidence.Actor, evidence.Kind+" "+strings.Join(evidence.Members, ",")+": "+evidence.Detail)
 		return nil
 	})
 }
