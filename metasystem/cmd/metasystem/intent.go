@@ -1181,10 +1181,13 @@ func ownerResult(report *ownerReport, code int, confirmed intentResult) intentRe
 		result := intentResult{Outcome: intentRefused, Summary: report.result.Detail, text: lines, code: max(code, 1), retry: "the goals changed meanwhile; try again",
 			Data: map[string]any{"owner": ownerPublication(*report.result)}, Details: refusalCodeDetails(report.result.Code)}
 		// A rejection whose second line names the command that clears it
-		// ("run: CMD  (why)") carries that command as the next step.
-		if first, second, found := strings.Cut(report.result.Detail, "\nrun: "); found && !strings.Contains(second, "\n") {
-			command, why, _ := strings.Cut(second, "  (")
-			result.Summary, result.next, result.nextReason, result.retry = first, shellWords(command), strings.TrimSuffix(why, ")"), ""
+		// ("run: CMD  (why)") carries that command as the next step. A
+		// second line in another form (the helm's force proposal appended
+		// to a remedy) is printed as the owner wrote it.
+		if first, second, found := strings.Cut(report.result.Detail, "\nrun: "); found && !strings.Contains(second, "\n") && strings.HasSuffix(second, ")") {
+			if command, why, reasoned := strings.Cut(second, "  ("); reasoned {
+				result.Summary, result.next, result.nextReason, result.retry = first, shellWords(command), strings.TrimSuffix(why, ")"), ""
+			}
 		}
 		return result
 	}
