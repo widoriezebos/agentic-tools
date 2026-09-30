@@ -140,6 +140,7 @@ func TestStewardRunFinishesItsPushedGoalTransactionOnSIGTERM(t *testing.T) {
 // above: the production loop and its production signal handling, with a
 // tick that publishes one goal per pass.
 func TestStewardRunSignalHelperProcess(t *testing.T) {
+	t.Parallel()
 	if os.Getenv(stewardSignalHelperEnv) != "1" {
 		return
 	}
