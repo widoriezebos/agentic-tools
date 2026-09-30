@@ -939,7 +939,7 @@ func (s *Store) registeredWaitEligible(row run.Waiter, sessionID, mainID, lineag
 	lastObserved, observedErr := time.Parse(time.RFC3339Nano, row.LastObservedAt)
 	if registeredErr != nil || deadlineErr != nil || observedErr != nil || registeredAt.After(lastObserved) ||
 		lastObserved.After(now) || now.Sub(lastObserved) > 30*time.Second || !now.Before(deadline) ||
-		!deadline.After(registeredAt) || deadline.Sub(registeredAt) > run.MaxPidlessLocalWaitTimeout || row.RemainingNanos <= 0 {
+		!deadline.After(registeredAt) || deadline.Sub(registeredAt) > run.MaxRegisteredWaitTimeout || row.RemainingNanos <= 0 {
 		*reason = waitDrop("row-wall-clock", "registeredAt", row.RegisteredAt, "lastObservedAt", row.LastObservedAt, "deadline", row.Deadline, "now", now.Format(time.RFC3339Nano), "now-lastObserved", now.Sub(lastObserved), "remainingNanos", row.RemainingNanos, "registeredError", registeredErr, "lastObservedError", observedErr, "deadlineError", deadlineErr)
 		return false
 	}
