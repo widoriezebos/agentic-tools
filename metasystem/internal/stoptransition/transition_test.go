@@ -1545,3 +1545,45 @@ func TestStatusShowsPhaseSurvivorsAndPartialInventoryTruth(t *testing.T) {
 		}
 	})
 }
+
+// TestStatusCarriesEachLiveItemAndTheFenceTyped is machine list's reading
+// of one checkout: the same inventory status prints, each live item with
+// its family, component, pid and start, and the fence's state and change
+// time, so a caller never parses the printed lines.
+func TestStatusCarriesEachLiveItemAndTheFenceTyped(t *testing.T) {
+	transition := testTransition(t, &scriptedFamily{name: "supervision", inventories: [][]Item{{
+		{Key: "supervision:watcher:1:41", StatusLine: "watcher pid 41: running", Survivor: stopfence.Survivor{Component: "watcher", Pid: 41, PidStartedAt: 1790000000}},
+	}}})
+	transition.Families = append(transition.Families,
+		&scriptedFamily{name: "job", inventories: [][]Item{{
+			{Key: "job:j-1", StatusLine: "job j-1 running pid 52: running", Survivor: stopfence.Survivor{Component: "job", ID: "j-1", Pid: 52, PidStartedAt: 1790000100}},
+		}}},
+		&scriptedFamily{name: "untracked", inventories: [][]Item{{
+			{Key: "untracked:63:1", StatusLine: "untracked pid 63 codex app-server: running", ObserveOnly: true, Survivor: stopfence.Survivor{Component: "untracked", Pid: 63, PidStartedAt: 1790000200}},
+		}}})
+	report, err := transition.Status()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []StatusItem{
+		{Family: "supervision", Line: "watcher pid 41: running", Component: "watcher", Pid: 41, PidStartedAt: 1790000000},
+		{Family: "job", Line: "job j-1 running pid 52: running", Component: "job", ID: "j-1", Pid: 52, PidStartedAt: 1790000100},
+		{Family: "untracked", Line: "untracked pid 63 codex app-server: running", Component: "untracked", Pid: 63, PidStartedAt: 1790000200, ObserveOnly: true},
+	}
+	if fmt.Sprint(report.Items) != fmt.Sprint(want) {
+		t.Fatalf("items = %+v, want %+v", report.Items, want)
+	}
+	if report.FenceState != stopfence.StateOpen || report.FenceChangedAt != "" {
+		t.Fatalf("an unwritten fence reads %q since %q, want open", report.FenceState, report.FenceChangedAt)
+	}
+
+	stopped := testTransition(t, &scriptedFamily{name: "run", inventories: [][]Item{nil}})
+	if err := stopfence.Write(stopped.Root, stopfence.Record{State: stopfence.StateClosed, Phase: stopfence.PhaseStopped, Generation: 1,
+		ChangedAt: "2026-09-30T08:00:00Z", Checkout: stopped.Checkout, By: stopfence.Actor{Verb: "stop", Process: stopfence.Process{Pid: 7}}}); err != nil {
+		t.Fatal(err)
+	}
+	report, err = stopped.Status()
+	if err != nil || len(report.Items) != 0 || report.FenceState != stopfence.StateClosed || report.FenceChangedAt != "2026-09-30T08:00:00Z" {
+		t.Fatalf("stopped status = %+v err=%v", report, err)
+	}
+}
