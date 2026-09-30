@@ -204,18 +204,40 @@ func RunCadenceTick(input CadenceTickInput, deps CadenceDependencies) (result Ca
 	return result, err
 }
 
+// cadenceForcedWindow is the forced-window rule: no cadence status yet, or a
+// window that has run CadenceForcedInterval, forces a run in a window that
+// starts now; otherwise the latest window holds.
+func cadenceForcedWindow(now time.Time, latest *goal.CadenceStatus) (forced bool, window string, err error) {
+	if latest == nil {
+		return true, now.Format(time.RFC3339), nil
+	}
+	start, err := time.Parse(time.RFC3339, latest.ForcedWindowStart)
+	if err != nil {
+		return false, "", err
+	}
+	if !now.Before(start.Add(CadenceForcedInterval)) {
+		return true, now.Format(time.RFC3339), nil
+	}
+	return false, start.UTC().Format(time.RFC3339), nil
+}
+
+// CadenceDueByClock says whether validation is due by what local state alone
+// shows: the forced window ran out (or none was ever validated), or the
+// validation weight is over its threshold. The landing keeper wakes the
+// agent on it; an identity change of the trunk's deep-only groups needs a
+// fetch and a revalidation, which the validation itself judges.
+func CadenceDueByClock(now time.Time, latest *goal.CadenceStatus, weightDue bool) (bool, error) {
+	forced, _, err := cadenceForcedWindow(now.UTC(), latest)
+	if err != nil {
+		return false, err
+	}
+	return forced || weightDue, nil
+}
+
 func cadenceTrigger(now time.Time, latest *goal.CadenceStatus, weightDue bool, ids []string, probes map[string]proofrun.GroupResult) (goal.CadenceTrigger, bool, string, bool, error) {
-	window := now.Format(time.RFC3339)
-	forced := latest == nil
-	if latest != nil {
-		start, err := time.Parse(time.RFC3339, latest.ForcedWindowStart)
-		if err != nil {
-			return "", false, "", false, err
-		}
-		window = start.UTC().Format(time.RFC3339)
-		if !now.Before(start.Add(CadenceForcedInterval)) {
-			forced, window = true, now.Format(time.RFC3339)
-		}
+	forced, window, err := cadenceForcedWindow(now, latest)
+	if err != nil {
+		return "", false, "", false, err
 	}
 	if forced {
 		return goal.CadenceTriggerForcedWindow, true, window, true, nil

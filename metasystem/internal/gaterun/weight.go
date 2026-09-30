@@ -306,6 +306,25 @@ func WeightAddScaled(root, commit string, numstat []byte, prefix string, thresho
 	return state, threshold > 0 && state.Accumulated >= threshold, nil
 }
 
+// WeightThresholdKey is the setting that names the validation weight
+// threshold.
+const WeightThresholdKey = "validation.weight-threshold"
+
+// WeightThreshold is the installation at root's validation weight threshold:
+// its metasystem.conf layers, else the compiled default; an unusable value
+// reads as 60.
+func WeightThreshold(root string) int64 {
+	value, code, _ := config.Get(config.GetParams{Key: WeightThresholdKey, ConfPath: filepath.Join(root, "metasystem.conf")})
+	if code != 0 {
+		return int64(config.MustIntDefault(WeightThresholdKey))
+	}
+	parsed, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || parsed < 0 {
+		return 60
+	}
+	return parsed
+}
+
 // WeightCheckAt reads cadence weight using its caller's clock.
 func WeightCheckAt(root string, threshold int64, now time.Time) (WeightState, bool, error) {
 	lock, err := acquireWeightLock(root)

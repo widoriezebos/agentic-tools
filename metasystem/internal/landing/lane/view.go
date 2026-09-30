@@ -44,7 +44,10 @@ type View struct {
 	Next         *NextView  `json:"next"`
 	// Spend is what the lane charged to its own account: the proofs of
 	// batches whose members are all changes (U11b).
-	Spend   *Spend `json:"spend"`
+	Spend *Spend `json:"spend"`
+	// Wake is why the landing agent would run now (§3 Wake): the reasons the
+	// keeper wakes it on, read the same way; null with no lane.
+	Wake    *Wake  `json:"wake"`
 	Summary string `json:"summary"`
 }
 
@@ -139,6 +142,10 @@ type ViewSources struct {
 	// Helm reads whether a unit's seat is at the helm, the same read the
 	// owner holds a batch on (batch.HelmHeldSeat); nil asks nothing.
 	Helm func(seatRoot string) helm.State
+	// Validation and Finalization are the wake's reads beyond the batches
+	// (WakeSources); nil reads nothing for that reason.
+	Validation   func(root string, now time.Time) (bool, error)
+	Finalization func(root string) (bool, error)
 }
 
 // BuildView reads the lane once and says it for a person and a page.
@@ -167,6 +174,9 @@ func BuildView(sources ViewSources) View {
 		}
 	}
 	records, recordsErr := readRecords(sources, record.Root)
+	wake := wakeOf(record.Root, sources.Now, records, recordsErr,
+		WakeSources{Validation: sources.Validation, Finalization: sources.Finalization})
+	view.Wake = &wake
 	view.Batch, view.Next = currentBatches(records, sources.Helm)
 	view.Summary = summary(record.Root, view, recordsErr)
 	return view
