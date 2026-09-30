@@ -58,15 +58,23 @@ func (inv *intentInvocation) reviseSentBack(id string) (intentResult, bool) {
 	targets := inv.targets(id)
 	request, err := syncReqWithProofAtWithDependencies("send-back", inv.stateRoot, "", "", nil, inv.owners.commandNow, inv.owners.dependencies)
 	if err != nil {
-		return intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "cannot tell which seat acts: " + err.Error() + "; nothing was done"}, true
+		return intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "which session is acting can't be told, so nothing was done",
+			next: inv.publicArgv("system", "check"), nextReason: "shows what the setup is missing", Details: []string{err.Error()}}, true
 	}
-	if file.Claimed == nil || file.Claimed.Machine != request.Actor.Machine || file.Claimed.Lineage != request.Actor.Lineage {
+	if file.Claimed == nil {
 		return intentResult{Outcome: intentRefused, code: 1, Targets: targets,
-			Summary: fmt.Sprintf("goal %s was sent back from review by %s, and the seat that holds it revises; this session does not hold it; nothing was done", id, line.By)}, true
+			Summary: fmt.Sprintf("goal %s was sent back by %s and nobody holds it; nothing was done", id, line.By),
+			next:    inv.publicArgv("goal", "claim", id), nextReason: "the session that claims it revises it"}, true
+	}
+	if file.Claimed.Machine != request.Actor.Machine || file.Claimed.Lineage != request.Actor.Lineage {
+		return intentResult{Outcome: intentRefused, code: 1, Targets: targets,
+			Summary:  fmt.Sprintf("goal %s was sent back by %s, and another session holds it; nothing was done", id, line.By),
+			Decision: "nothing to do here; the session holding it on " + file.Claimed.Machine + " revises it"}, true
 	}
 	brief, err := goal.ReadPublished(request.Endpoint, line.Brief)
 	if err != nil {
-		return intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "cannot read the brief the review published: " + err.Error() + "; nothing was done"}, true
+		return intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "the brief the review sent back can't be read, so nothing was done",
+			next: inv.publicArgv("goal", "sync"), nextReason: "fetches the goal ledger; then repeat this command", Details: []string{err.Error()}}, true
 	}
 	path := filepath.Join(inv.stateRoot, "artifacts", "agents", "sent-back", id+"-"+line.Opid+".md")
 	err = os.MkdirAll(filepath.Dir(path), 0o755)
@@ -74,7 +82,8 @@ func (inv *intentInvocation) reviseSentBack(id string) (intentResult, bool) {
 		err = os.WriteFile(path, brief, 0o644)
 	}
 	if err != nil {
-		return intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "cannot keep the published brief for the revision: " + err.Error() + "; nothing was done"}, true
+		return intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "the sent-back brief can't be saved for the revision, so nothing was done",
+			next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}, true
 	}
 	raw := []string{id, "--brief", path, "--json", "--repo", inv.stateRoot}
 	if line.Work != "" {
@@ -120,7 +129,8 @@ func reviseInProcess(inv *intentInvocation, raw []string) intentResult {
 	runIntentIn(inv.command, raw, &stdout, &stderr, inv.cwd, inv.owners)
 	var result intentResult
 	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
-		return intentResult{Outcome: intentFailed, code: 1, Summary: "work revise answered nothing this step can read: " + strings.TrimSpace(stderr.String())}
+		return intentResult{Outcome: intentFailed, code: 1, Summary: "the revision gave no readable answer",
+			next: append([]string{"metasystem", "work", "revise"}, withoutSwitch(raw, "json")...), nextReason: "runs the revision directly", Details: []string{strings.TrimSpace(stderr.String())}}
 	}
 	if result.Outcome != intentConfirmed && result.Outcome != intentUnchanged {
 		result.code = 1

@@ -497,7 +497,7 @@ func (inv *intentInvocation) jobRecordAt(installation, id string) (map[string]an
 	}
 	record, err := dispatchcore.ReadRecordObject(filepath.Join(installation, "artifacts", "agents", "jobs", id+".json"))
 	if err != nil {
-		return nil, fmt.Errorf("job %s has no readable record: %v", id, err)
+		return nil, fmt.Errorf("job %s has no readable record (%v)", id, err)
 	}
 	return record, nil
 }
@@ -604,7 +604,8 @@ func (inv *intentInvocation) dispatchJobID(ref, verb string) (string, *intentRes
 		return ref, nil
 	case job.kind == "launch":
 		return "", &intentResult{Outcome: intentRefused, code: 2, Targets: []intentTarget{{Kind: "job", ID: jobReference(job)}},
-			Summary: fmt.Sprintf("%s is a launch; %s job reads a dispatch job (j2:ID); nothing was done", jobReference(job), verb)}
+			Summary: fmt.Sprintf("%s is a launch, and %s takes a dispatch job; nothing was done", jobReference(job), verb),
+			next:    inv.publicArgv("work", "status", "--all"), nextReason: "lists the dispatch jobs with their j2: references"}
 	}
 	return job.id, nil
 }
@@ -624,13 +625,16 @@ func runIntentReview(inv *intentInvocation) int {
 	}
 	for _, only := range []string{"stage", "test-command", "recertification", "findings"} {
 		if inv.input.has(only) {
-			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("--%s belongs to work review --check-only; nothing was done", only)})
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("--%s only goes with --check-only; nothing was done", only),
+				next: inv.typedArgvWith("--check-only"), nextReason: "checks without asking a critic"})
 		}
 	}
 	manual := inv.input.has("changes") || inv.input.has("patch")
 	if inv.input.has("commit") {
 		if len(inv.input.args) > 0 || manual {
-			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--commit SHA names the subject itself: work review --commit SHA --goal G; nothing was done"})
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--commit names the subject itself, so it takes no other subject; nothing was done",
+				next:       inv.publicArgv("work", "review", "--commit", inv.input.text("commit"), "--goal", chooseUnitValue(inv.input.text("goal"), "GOAL")),
+				nextReason: "reviews the commit alone"})
 		}
 		if problem := inv.reviewCommonChecks("commit"); problem != nil {
 			return inv.render(*problem)
@@ -643,11 +647,12 @@ func runIntentReview(inv *intentInvocation) int {
 	if len(inv.input.args) == 0 {
 		if !manual {
 			return inv.render(intentResult{Outcome: intentRefused, code: 2,
-				Summary:    "work review needs what to review: G, j2:J, run:RUN, --commit SHA --goal G, or --changes|--patch PATCH for feedback; nothing was done",
-				nextReason: "for example: metasystem work review verbs-match-intent"})
+				Summary: "work review needs what to review; nothing was done",
+				next:    inv.typedArgvFor("GOAL"), nextReason: "a goal's work; or j2:JOB, run:RUN, --commit SHA, or --changes for feedback"})
 		}
 		if inv.input.has("changes") && inv.input.has("patch") {
-			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "give --changes or --patch PATCH, not both; nothing was done"})
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "give --changes or --patch, not both; nothing was done",
+				next: withoutSwitch(inv.sameCommand(), "changes"), nextReason: "reviews the patch"})
 		}
 		return runIntentReviewDiagnostic(inv, inv.input.text("patch"))
 	}
@@ -668,7 +673,8 @@ func runIntentReview(inv *intentInvocation) int {
 		return runIntentReviewGoal(inv, ref.id)
 	}
 	if manual || inv.input.has("work") {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("--changes, --patch and --work belong to a goal's review; work review %s takes none; nothing was done", ref.qualified())})
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("--changes, --patch and --work are for a goal's review, not %s; nothing was done", ref.qualified()),
+			next: inv.typedArgvLess("changes", "patch", "work"), nextReason: "reviews " + ref.qualified()})
 	}
 	if problem := inv.reviewCommonChecks(ref.kind); problem != nil {
 		return inv.render(*problem)
@@ -695,18 +701,19 @@ func runIntentReview(inv *intentInvocation) int {
 func (inv *intentInvocation) reviewCommonChecks(kind string) *intentResult {
 	for _, number := range []string{"retry"} {
 		if value, err := strconv.Atoi(inv.input.text(number)); inv.input.has(number) && (err != nil || value < 1) {
-			return &intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("--%s takes an examination number such as 1; nothing was done", number)}
+			return &intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("--%s takes a review round number such as 1; nothing was done", number),
+				next: append(inv.typedArgvLess(number), "--"+number, "1"), nextReason: "the round that failed"}
 		}
 	}
 	if inv.input.has("effort") {
 		return &intentResult{Outcome: intentRefused, code: 2,
-			Summary:  "no review owner accepts a reasoning-effort override: dispatch sets it from the hazard class's configuration obligations",
-			Decision: "omit --effort; the roster and the destructive-reach class decide the critic's effort"}
+			Summary: "a critic's effort is set by the project's configuration, not by --effort; nothing was done",
+			next:    inv.typedArgvLess("effort"), nextReason: "the roster and the change's reach decide the effort"}
 	}
 	if inv.input.has("model") && kind != "commit" && kind != refRun {
 		return &intentResult{Outcome: intentRefused, code: 2,
-			Summary:  "a job review takes no --model: the delegate accepts a critic model override only for a run or commit read's code critic",
-			Decision: "omit --model, or review the built run with metasystem work review run:RUN --model MODEL"}
+			Summary: "a job review's critic is chosen by the roster, not by --model; nothing was done",
+			next:    inv.typedArgvLess("model"), nextReason: "--model is only for reviewing a run or a commit"}
 	}
 	return nil
 }
@@ -720,7 +727,8 @@ func runIntentReviewCheckOnly(inv *intentInvocation) int {
 	allowed := []string{"check-only", "stage", "test-command", "recertification", "findings", "dispositions", "repo", "json"}
 	for name := range inv.input.values {
 		if !slices.Contains(allowed, name) {
-			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("work review --check-only asks no critic; --%s belongs to a review; nothing was done", name)})
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("--check-only asks no critic, so --%s doesn't apply; nothing was done", name),
+				next: inv.typedArgvLess(name), nextReason: "checks without --" + name})
 		}
 	}
 	root := inv.cwd
@@ -731,7 +739,8 @@ func runIntentReviewCheckOnly(inv *intentInvocation) int {
 	if len(inv.input.args) == 1 {
 		kind, id := splitReference(inv.input.args[0])
 		if kind != "" && kind != refJ2 {
-			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("work review --check-only checks a dispatch job (j2:J), not %s; nothing was done", inv.input.args[0])})
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("--check-only checks a dispatch job, not %s; nothing was done", inv.input.args[0]),
+				next: inv.publicArgv("work", "status", "--all"), nextReason: "lists the dispatch jobs with their j2: references"})
 		}
 		job = id
 		if kind == "" {
@@ -741,7 +750,8 @@ func runIntentReviewCheckOnly(inv *intentInvocation) int {
 	if inv.input.has("findings") || inv.input.has("dispositions") {
 		for _, other := range []string{"stage", "test-command", "recertification"} {
 			if inv.input.has(other) {
-				return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("--%s checks a job's boundary; --findings and --dispositions check a round's decisions; give one; nothing was done", other)})
+				return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("--%s checks a job, and --findings with --dispositions checks decisions; give one; nothing was done", other),
+					next: inv.typedArgvLess(other), nextReason: "checks the decisions"})
 			}
 		}
 		args := []string{"--findings", inv.flagPath("findings"), "--dispositions", inv.flagPath("dispositions")}
@@ -751,8 +761,15 @@ func runIntentReviewCheckOnly(inv *intentInvocation) int {
 		return runValidateCritiqueClosed(args, inv.stdout, inv.stderr)
 	}
 	if job == "" || !inv.input.has("stage") {
+		retry := inv.sameCommand()
+		if job == "" {
+			retry = append(inv.typedArgvFor("j2:JOB"), "--stage", "review")
+		} else if !inv.input.has("stage") {
+			retry = append(retry, "--stage", "review")
+		}
 		return inv.render(intentResult{Outcome: intentRefused, code: 2,
-			Summary: "work review --check-only needs j2:J --stage review|recertify|merge, or --findings RETURN --dispositions FILE; nothing was done"})
+			Summary: "--check-only needs a job and a stage, or --findings and --dispositions; nothing was done",
+			next:    retry, nextReason: "the stage is review, recertify or merge"})
 	}
 	args := []string{"--root", root, "--stage", inv.input.text("stage"), "--job", job}
 	for _, name := range []string{"test-command", "recertification"} {
@@ -767,7 +784,8 @@ func runIntentReviewCheckOnly(inv *intentInvocation) int {
 // the close owner, with its authority and durability checks.
 func runIntentWorkFinish(inv *intentInvocation) int {
 	if len(inv.input.args) != 1 {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "work finish needs the job reference: metasystem work finish j2:J; nothing was done"})
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "work finish needs the job to finish; nothing was done",
+			next: inv.publicArgv("work", "status", "--all"), nextReason: "lists the jobs with their j2: references"})
 	}
 	ref, problem := inv.resolveWorkRef(inv.input.args[0], inv.command.accepts)
 	if problem != nil {
@@ -812,7 +830,7 @@ func readIntentDesignRecord(path string) (intentDesignRecord, []byte, error) {
 		}
 	}
 	if kind != "design" || record.ID == "" {
-		return record, data, fmt.Errorf("%s is not a design document of a goal; metasystem design G writes one, or name the goal's existing design", path)
+		return record, data, fmt.Errorf("%s is not a goal's design document; metasystem design write writes one", path)
 	}
 	return record, data, nil
 }
@@ -823,8 +841,8 @@ func (inv *intentInvocation) reviewBriefFacts(targets []intentTarget, goalID str
 	calls := 0
 	if _, err := fmt.Sscanf(inv.input.text("tool-calls"), "%d", &calls); err != nil || calls < 1 {
 		return 0, 0, &intentResult{Targets: targets, Outcome: intentRefused, code: 2,
-			Summary:  "a review brief states the reader's tool-call budget, and none is configured",
-			Decision: "name it with --tool-calls N"}
+			Summary: "the review needs the critic's tool-call budget, and none is configured; nothing was done",
+			next:    append(inv.typedArgvLess("tool-calls"), "--tool-calls", "30"), nextReason: "30 is an example budget"}
 	}
 	projection, _, failed := inv.projection()
 	if failed != nil {
@@ -834,8 +852,8 @@ func (inv *intentInvocation) reviewBriefFacts(targets []intentTarget, goalID str
 	file := projection.Tree.Live[goalID]
 	if file == nil || file.Approved == nil || file.Budget == nil || file.Budget.ReviewRoundLimit < 1 {
 		return 0, 0, &intentResult{Targets: targets, Outcome: intentRefused, code: 1,
-			Summary:  fmt.Sprintf("goal %s has no approved review-round budget for this review", goalID),
-			Decision: fmt.Sprintf("approve goal %s with a budget first: metasystem goal approve %s", goalID, goalID)}
+			Summary: fmt.Sprintf("goal %s has no approved budget for review rounds; nothing was reviewed", goalID),
+			next:    inv.publicArgv("goal", "approve", goalID), nextReason: "a person approves it with a budget; then repeat this command"}
 	}
 	return file.Budget.ReviewRoundLimit, calls, nil
 }
@@ -897,7 +915,8 @@ func (inv *intentInvocation) reviewDesign(file string) intentResult {
 	target := []intentTarget{{Kind: "design", ID: file}}
 	roots, err := project.ResolveRoots(inv.layout.InstallationRoot)
 	if err != nil {
-		return intentResult{Targets: target, Outcome: intentRefused, code: 1, Summary: "the project's design homes are unreadable: " + err.Error()}
+		return intentResult{Targets: target, Outcome: intentRefused, code: 1, Summary: "the project's design folders can't be read, so nothing was reviewed",
+			next: inv.publicArgv("settings", "check"), nextReason: "checks the project's configuration", Details: []string{err.Error()}}
 	}
 	resolved, err := filepath.EvalSymlinks(path)
 	checkout, checkoutErr := filepath.EvalSymlinks(roots.Checkout)
@@ -919,22 +938,25 @@ func (inv *intentInvocation) reviewDesign(file string) intentResult {
 			}
 		}
 		return intentResult{Targets: target, Outcome: intentRefused, code: 2,
-			Summary: fmt.Sprintf("%s is not in one of this project's design homes (%s)", file, strings.Join(homes, ", "))}
+			Summary:  fmt.Sprintf("%s is not in one of this project's design folders (%s); nothing was reviewed", file, strings.Join(homes, ", ")),
+			Decision: "move the page into " + strings.Join(homes, " or ") + ", then run metasystem design review on it"}
 	}
 	if !strings.HasPrefix(gitRel, "metasystem/") && !dispatchcore.RepositoryDesignPath(gitRel) {
 		return intentResult{Targets: target, Outcome: intentRefused, code: 2,
-			Summary: fmt.Sprintf("design %s is outside the paths the design-critic subject admits (metasystem/ or plans/designs/)", gitRel)}
+			Summary:  fmt.Sprintf("design %s lies outside metasystem/ and plans/designs/; nothing was reviewed", gitRel),
+			Decision: "move the page under plans/designs/, then run metasystem design review on it"}
 	}
 	record, data, err := readIntentDesignRecord(resolved)
 	if err != nil {
-		return intentResult{Targets: target, Outcome: intentRefused, code: 2, Summary: err.Error()}
+		return intentResult{Targets: target, Outcome: intentRefused, code: 2, Summary: err.Error(),
+			Decision: "nothing to do; name a page whose head says Kind: design and names its goal"}
 	}
 	goalID := inv.input.text("goal")
 	if goalID == "" {
 		if len(record.Goals) != 1 {
 			return intentResult{Targets: target, Outcome: intentRefused, code: 2,
-				Summary:  fmt.Sprintf("design %s names %d goals; the review serves one", record.ID, len(record.Goals)),
-				Decision: "name the goal with --goal G"}
+				Summary: fmt.Sprintf("design %s names %d goals, and a review serves one; nothing was reviewed", record.ID, len(record.Goals)),
+				next:    append(inv.typedArgvLess("goal"), "--goal", firstOr(record.Goals, "GOAL")), nextReason: "or another goal the design names"}
 		}
 		goalID = record.Goals[0]
 	}
@@ -971,7 +993,8 @@ func (inv *intentInvocation) reviewDesign(file string) intentResult {
 		return *decided
 	}
 	if err := writeIntentInputs(dir, plan.inputs); err != nil {
-		return intentResult{Targets: target, Outcome: intentFailed, Summary: err.Error()}
+		return intentResult{Targets: target, Outcome: intentFailed, Summary: "the review's brief can't be written, so nothing was reviewed",
+			next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}
 	}
 	if len(dispatchcore.DesignCritiqueChains(inv.layout.InstallationRoot, goalID, designPath)) == 0 {
 		// The first paid critique needs the goal's claim; an approved goal
@@ -1024,11 +1047,13 @@ func (inv *intentInvocation) reviewJob(job string) intentResult {
 	target := []intentTarget{jobTarget(job)}
 	record, err := inv.jobRecord(job)
 	if err != nil {
-		return intentResult{Targets: target, Outcome: intentRefused, code: 2, Summary: err.Error()}
+		return intentResult{Targets: target, Outcome: intentRefused, code: 2, Summary: err.Error() + "; nothing was reviewed",
+			next: inv.publicArgv("work", "status", "--all"), nextReason: "lists the jobs with their references"}
 	}
 	if role := recordText(record, "role"); role != "implementer" {
 		return intentResult{Targets: target, Outcome: intentRefused, code: 2,
-			Summary: fmt.Sprintf("job %s is a %s job; review job names an implementer job", job, role)}
+			Summary:  fmt.Sprintf("job %s is a %s job, and only a builder's job is reviewed; nothing was reviewed", job, role),
+			Decision: "nothing to do; review the job that built the change instead"}
 	}
 	if status := recordText(record, "status"); status != "completed" {
 		outcome := intentRefused
@@ -1044,7 +1069,8 @@ func (inv *intentInvocation) reviewJob(job string) intentResult {
 	}
 	if goalID == "" {
 		return intentResult{Targets: target, Outcome: intentRefused, code: 2,
-			Summary: fmt.Sprintf("job %s records no goal", job), Decision: "name the goal with --goal G"}
+			Summary: fmt.Sprintf("job %s records no goal; nothing was reviewed", job),
+			next:    inv.typedArgvWith("--goal", "GOAL"), nextReason: "names the goal the job serves"}
 	}
 	rounds, calls, refused := inv.reviewBriefFacts(target, goalID)
 	if refused != nil {
@@ -1060,7 +1086,8 @@ func (inv *intentInvocation) reviewJob(job string) intentResult {
 		filepath.Join(dir, "findings.md"),
 		[]string{"`artifacts/agents/jobs/" + job + ".json` and the job's round diff — brief conformance first, then defects, under skills/code-critique/SKILL.md"})
 	if err := writeIntentInputs(dir, map[string]string{brief: briefText}); err != nil {
-		return intentResult{Targets: target, Outcome: intentFailed, Summary: err.Error()}
+		return intentResult{Targets: target, Outcome: intentFailed, Summary: "the review's brief can't be written, so nothing was reviewed",
+			next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}
 	}
 	return inv.dispatchReview(target, []string{"--role", "code-critic", "--reviews", job, "--brief", brief, "--goal", goalID,
 		"--destructive-reach", "MECHANICAL"})
@@ -1085,7 +1112,8 @@ func (inv *intentInvocation) delegate(targets []intentTarget, args []string) (de
 	owners := inv.delivery()
 	binary, err := owners.executable()
 	if err != nil {
-		return delegateOutcome{}, &intentResult{Targets: targets, Outcome: intentFailed, Summary: err.Error()}
+		return delegateOutcome{}, &intentResult{Targets: targets, Outcome: intentFailed, Summary: "the running metasystem program can't be found, so no critic was started",
+			next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}
 	}
 	if len(args) > 1 && args[0] == "--follow-up" {
 		if problem := inv.rebindCritiqueBudget(targets, args[1]); problem != nil {
@@ -1101,10 +1129,10 @@ func (inv *intentInvocation) delegate(targets []intentTarget, args []string) (de
 			detail = ran.err.Error()
 		}
 		return outcome, &intentResult{Targets: targets, Outcome: intentInProgress,
-			Summary:    "the dispatch outcome is unknown: " + detail,
+			Summary:    "whether the critic started isn't known yet; it is never started twice",
 			Data:       map[string]any{"exitCode": ran.code},
 			next:       inv.sameCommand(),
-			nextReason: "the same request is recovered under its recorded dispatch identity; it is not dispatched again"}
+			nextReason: "recovers the same request; it is not dispatched again", Details: []string{detail}}
 	}
 	switch {
 	case outcome.JobID != "" && !strings.HasPrefix(outcome.Outcome, "REFUSED"):
@@ -1114,8 +1142,13 @@ func (inv *intentInvocation) delegate(targets []intentTarget, args []string) (de
 			Summary: "the dispatch is " + strings.ToLower(outcome.Outcome) + " and names no job yet", Data: map[string]any{"delegate": outcome},
 			next: inv.sameCommand(), nextReason: "collects the same dispatch once it names its job"}
 	}
+	summary := strings.TrimSpace(outcome.Detail)
+	if summary == "" {
+		summary = "the critic was not started"
+	}
 	return outcome, &intentResult{Targets: targets, Outcome: intentRefused, code: max(ran.code, 1),
-		Summary: strings.TrimSpace(outcome.Outcome + ": " + outcome.Detail), Data: map[string]any{"delegate": outcome}}
+		Summary: summary, Data: map[string]any{"delegate": outcome}, next: inv.sameCommand(), nextReason: "once that is settled",
+		Details: []string{strings.TrimSpace(outcome.Outcome + ": " + outcome.Detail)}}
 }
 
 // rebindCritiqueBudget carries the goal's current review-round limit onto
@@ -1131,7 +1164,8 @@ func (inv *intentInvocation) rebindCritiqueBudget(targets []intentTarget, root s
 	}
 	if _, err := rebind(inv.layout.InstallationRoot, root); err != nil {
 		return &intentResult{Targets: targets, Outcome: intentRefused, code: 1,
-			Summary: fmt.Sprintf("the review-round limit of chain %s could not be carried onto its critic registers: %v; nothing was continued or closed", root, err)}
+			Summary: "the goal's review-round limit can't be applied to this review, so nothing was continued or closed",
+			next:    inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{fmt.Sprintf("chain %s: %v", root, err)}}
 	}
 	return nil
 }
@@ -1155,12 +1189,14 @@ func (inv *intentInvocation) collectReview(targets []intentTarget, outcome deleg
 		return intentResult{Targets: targets, Outcome: intentInProgress, Summary: fmt.Sprintf("review job %s is %s", job, status),
 			Data: data, next: inv.sameCommand(), nextReason: "collects the review when its round is finished"}
 	case status != "completed":
-		return intentResult{Targets: targets, Outcome: intentFailed, Summary: fmt.Sprintf("review job %s ended %s (%s)", job, status, recordText(record, "reason")), Data: data}
+		return intentResult{Targets: targets, Outcome: intentFailed, Summary: fmt.Sprintf("review job %s ended %s (%s)", job, status, recordText(record, "reason")), Data: data,
+			next: inv.sameCommand(), nextReason: "asks for the review again"}
 	}
 	path := inv.returnPath(root, recordRound(record))
 	findings, verdict, err := readIntentFindings(path)
 	if err != nil {
-		return intentResult{Targets: targets, Outcome: intentFailed, Summary: fmt.Sprintf("review job %s completed without a readable return: %v", job, err), Data: data}
+		return intentResult{Targets: targets, Outcome: intentFailed, Summary: fmt.Sprintf("review job %s finished, but its findings can't be read", job), Data: data,
+			next: inv.publicArgv("work", "status", qualifiedJob(job)), nextReason: "shows the job", Details: []string{err.Error()}}
 	}
 	material := 0
 	for _, finding := range findings {
@@ -1191,7 +1227,8 @@ func (inv *intentInvocation) reviewCommit(unit string) intentResult {
 	targets := []intentTarget{{Kind: "commit", ID: unit}}
 	if goalID == "" {
 		return intentResult{Targets: targets, Outcome: intentRefused, code: 2,
-			Summary: "a commit review reads a unit on one goal branch", Decision: "name the goal with --goal G"}
+			Summary: "a commit review needs the goal whose branch holds the commit; nothing was reviewed",
+			next:    inv.typedArgvWith("--goal", "GOAL"), nextReason: "names the goal"}
 	}
 	targets = append(targets, intentTarget{Kind: "goal", ID: goalID})
 	args := []string{"--root", inv.layout.InstallationRoot, "--goal", goalID, "--unit", unit}
@@ -1213,10 +1250,12 @@ func (inv *intentInvocation) criticClosure(targets []intentTarget, root, unit, g
 	targets = append(targets, jobTarget(rootJob))
 	record, err := inv.jobRecordAt(root, rootJob)
 	if err != nil {
-		return &intentResult{Targets: targets, Outcome: intentFailed, Summary: err.Error()}
+		return &intentResult{Targets: targets, Outcome: intentFailed, Summary: err.Error(),
+			next: inv.sameCommand(), nextReason: "try again"}
 	}
 	if _, closed, err := dispatchcore.ReadClosure(record); err != nil {
-		return &intentResult{Targets: targets, Outcome: intentFailed, Summary: fmt.Sprintf("critic %s has a malformed closure: %v", rootJob, err)}
+		return &intentResult{Targets: targets, Outcome: intentFailed, Summary: fmt.Sprintf("the record of critic %s is damaged, so the review can't continue", rootJob),
+			next: inv.publicArgv("system", "check"), nextReason: "diagnoses the record store", Details: []string{err.Error()}}
 	} else if closed {
 		return nil
 	}
@@ -1228,8 +1267,8 @@ func (inv *intentInvocation) criticClosure(targets []intentTarget, root, unit, g
 			again := append(inv.canonicalReviewArgv(targets, goalID, unit), "--retry", fmt.Sprint(recordRound(round)))
 			data["failedRound"] = recordRound(round)
 			return &intentResult{Targets: targets, Outcome: intentFailed, code: 1, Data: data,
-				Summary:  fmt.Sprintf("examination round %d of critic %s ended without findings to decide", recordRound(round), rootJob),
-				Decision: "examine the subject once more in the same chain, once the old round is proven stopped: " + shellCommand(again)}
+				Summary: fmt.Sprintf("review round %d of critic %s ended without findings to decide", recordRound(round), rootJob),
+				next:    again, nextReason: "reviews once more, once the old round has stopped"}
 		}
 		if findings, verdict, err := readIntentFindings(inv.returnPathAt(root, rootJob, recordRound(round))); err == nil {
 			material := 0
@@ -1242,9 +1281,9 @@ func (inv *intentInvocation) criticClosure(targets []intentTarget, root, unit, g
 		}
 	}
 	return &intentResult{Targets: targets, Outcome: intentInProgress, Data: data,
-		Summary: fmt.Sprintf("critic %s has finished reading unit %s, but its chain is not closed", rootJob, unit),
-		Decision: fmt.Sprintf("the author decides every finding of %s in a dispositions file, then runs %s",
-			rootJob, shellCommand(append(slices.DeleteFunc(inv.sameCommand(), func(word string) bool { return word == "--json" }), "--dispositions", "FILE")))}
+		Summary:    fmt.Sprintf("critic %s has read unit %s; its findings await your decisions", rootJob, unit),
+		next:       append(slices.DeleteFunc(inv.sameCommand(), func(word string) bool { return word == "--json" }), "--dispositions", "FILE"),
+		nextReason: "FILE decides every finding of " + rootJob}
 }
 
 // ---- revise job
@@ -1252,8 +1291,16 @@ func (inv *intentInvocation) criticClosure(targets []intentTarget, root, unit, g
 func (inv *intentInvocation) foldReview(review string) intentResult {
 	targets := []intentTarget{{Kind: "review", ID: review}}
 	if !inv.input.has("dispositions") || !inv.input.has("brief") {
+		retry := inv.sameCommand()
+		if !inv.input.has("dispositions") {
+			retry = append(retry, "--dispositions", "FILE")
+		}
+		if !inv.input.has("brief") {
+			retry = append(retry, "--brief", "BRIEF")
+		}
 		return intentResult{Targets: targets, Outcome: intentRefused, code: 2,
-			Summary: "revise job R needs the author's --dispositions FILE and the follow-up --brief FILE"}
+			Summary: "revising after a review needs your decisions and the follow-up brief; nothing was done",
+			next:    retry, nextReason: "FILE decides the findings; BRIEF says what the follow-up does"}
 	}
 	round, result := inv.finishedReview(targets, review)
 	if result != nil {
@@ -1261,23 +1308,24 @@ func (inv *intentInvocation) foldReview(review string) intentResult {
 	}
 	returnPath := inv.returnPath(review, recordRound(round))
 	if violations := validate.CritiqueClosed(returnPath, inv.flagPath("dispositions")); len(violations) > 0 {
-		return joinRefusal(targets, review, violations)
+		return joinRefusal(targets, review, violations, inv.sameCommand())
 	}
 	root, _ := inv.jobRecord(review)
 	subject := recordText(root, "reviews")
 	if recordText(root, "role") == "design-critic" || subject == "" {
 		return intentResult{Targets: targets, Outcome: intentRefused, code: 2,
-			Summary:  fmt.Sprintf("review %s reviewed a design, which has no implementer chain to follow up", review),
-			Decision: "the design's author revises the design with these dispositions, then runs metasystem design review FILE again"}
+			Summary:  fmt.Sprintf("review %s reviewed a design, and a design has no build to follow up; nothing was done", review),
+			Decision: "revise the design with these decisions yourself, then run metasystem design review on it again"}
 	}
 	if strings.HasPrefix(subject, "commit:") {
 		return intentResult{Targets: targets, Outcome: intentRefused, code: 2,
-			Summary:  fmt.Sprintf("review %s read a goal-branch commit; a unit fix is a new unit commit on the branch", review),
-			Decision: "commit the fix on the goal branch and read it with metasystem work review --commit SHA --goal G"}
+			Summary:  fmt.Sprintf("review %s read a commit, and its fix is a new commit on the goal branch; nothing was done", review),
+			Decision: "commit the fix on the goal branch, then run metasystem work review --commit SHA --goal " + chooseUnitValue(inv.input.text("goal"), "GOAL")}
 	}
 	implementer, err := inv.jobRecord(subject)
 	if err != nil {
-		return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: err.Error()}
+		return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: err.Error() + "; nothing was done",
+			next: inv.publicArgv("work", "status", "--all"), nextReason: "lists the jobs with their references"}
 	}
 	subjectRoot := subject
 	if parent := recordText(implementer, "parentJob"); parent != "" {
@@ -1286,7 +1334,8 @@ func (inv *intentInvocation) foldReview(review string) intentResult {
 	targets = append(targets, jobTarget(subjectRoot))
 	message, err := inv.composeFoldMessage(review, recordRound(round), subject, subjectRoot, returnPath)
 	if err != nil {
-		return intentResult{Targets: targets, Outcome: intentFailed, Summary: err.Error()}
+		return intentResult{Targets: targets, Outcome: intentFailed, Summary: "the follow-up brief can't be put together, so nothing was done",
+			next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}
 	}
 	outcome, refused := inv.delegate(targets, []string{"--follow-up", subjectRoot, "--brief", message})
 	if refused != nil {
@@ -1366,37 +1415,48 @@ func (inv *intentInvocation) flagPath(name string) string {
 func (inv *intentInvocation) finishedReview(targets []intentTarget, review string) (map[string]any, *intentResult) {
 	root, err := inv.jobRecord(review)
 	if err != nil {
-		return nil, &intentResult{Targets: targets, Outcome: intentRefused, code: 2, Summary: err.Error()}
+		return nil, &intentResult{Targets: targets, Outcome: intentRefused, code: 2, Summary: err.Error() + "; nothing was done",
+			next: inv.publicArgv("work", "status", "--all"), nextReason: "lists the jobs with their references"}
 	}
 	if !criticRole(recordText(root, "role")) {
 		return nil, &intentResult{Targets: targets, Outcome: intentRefused, code: 2,
-			Summary: fmt.Sprintf("job %s is a %s job, not a review chain", review, recordText(root, "role"))}
+			Summary:  fmt.Sprintf("job %s is a %s job, not a review; nothing was done", review, recordText(root, "role")),
+			Decision: "nothing to do; name the review's job instead (metasystem work status --all lists them)"}
 	}
 	if parent := recordText(root, "parentJob"); parent != "" {
 		return nil, &intentResult{Targets: targets, Outcome: intentRefused, code: 2,
-			Summary: fmt.Sprintf("job %s is a round of review %s; name the review's root", review, parent)}
+			Summary:    fmt.Sprintf("job %s is one round of review %s; nothing was done", review, parent),
+			next:       replaceWord(inv.sameCommand(), review, qualifiedJob(parent)),
+			nextReason: "names the review itself"}
 	}
 	round, err := inv.newestRound(review)
 	if err != nil {
-		return nil, &intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: err.Error()}
+		return nil, &intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: "the review's newest round can't be read; nothing was done",
+			next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}
 	}
 	if status := recordText(round, "status"); status != "completed" {
 		outcome := intentRefused
 		if !dispatchcore.TerminalStatus(status) {
 			outcome = intentInProgress
 		}
-		return nil, &intentResult{Targets: targets, Outcome: outcome,
-			Summary: fmt.Sprintf("review %s round %d is %s; dispositions answer a completed round", review, recordRound(round), status)}
+		result := &intentResult{Targets: targets, Outcome: outcome,
+			Summary: fmt.Sprintf("review %s round %d is %s, and decisions answer a finished round; nothing was done", review, recordRound(round), status),
+			next:    inv.publicArgv("work", "wait", qualifiedJob(review)), nextReason: "waits for the round to finish"}
+		if outcome == intentRefused {
+			result.next, result.nextReason = inv.publicArgv("work", "status", qualifiedJob(review)), "shows how the round ended"
+		}
+		return nil, result
 	}
 	return round, nil
 }
 
-func joinRefusal(targets []intentTarget, review string, violations []string) intentResult {
+func joinRefusal(targets []intentTarget, review string, violations []string, retry []string) intentResult {
 	return intentResult{Targets: targets, Outcome: intentRefused, code: 1,
-		Summary:  fmt.Sprintf("the dispositions do not join review %s's findings (%d problems)", review, len(violations)),
-		text:     violations,
-		Data:     map[string]any{"violations": violations},
-		Decision: "the author gives every finding exactly one disposition row"}
+		Summary:    fmt.Sprintf("the decisions don't match review %s's findings (%d problems, listed above); nothing was done", review, len(violations)),
+		text:       violations,
+		Data:       map[string]any{"violations": violations},
+		next:       retry,
+		nextReason: "after giving every finding exactly one decision row"}
 }
 
 // ---- close
@@ -1405,7 +1465,8 @@ func (inv *intentInvocation) closeChain(job string) intentResult {
 	targets := []intentTarget{jobTarget(job)}
 	root, err := inv.jobRecord(job)
 	if err != nil {
-		return intentResult{Targets: targets, Outcome: intentRefused, code: 2, Summary: err.Error()}
+		return intentResult{Targets: targets, Outcome: intentRefused, code: 2, Summary: err.Error() + "; nothing was closed",
+			next: inv.publicArgv("work", "status", "--all"), nextReason: "lists the jobs with their references"}
 	}
 	if parent := recordText(root, "parentJob"); parent != "" {
 		return intentResult{Targets: targets, Outcome: intentRefused, code: 2,
@@ -1415,26 +1476,29 @@ func (inv *intentInvocation) closeChain(job string) intentResult {
 		return intentResult{Targets: targets, Outcome: intentUnchanged, Summary: fmt.Sprintf("chain %s is already closed", job), Data: map[string]any{"chainClosed": true}}
 	}
 	if evidence := inv.input.text("evidence"); evidence != "" && !validIntentJobID(evidence) {
-		return intentResult{Targets: targets, Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("%q is not a review evidence job id", evidence)}
+		return intentResult{Targets: targets, Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("--evidence %q is not a job id; nothing was closed", evidence),
+			next: inv.typedArgvLess("evidence"), nextReason: "or --evidence with the id of the job that holds the review evidence"}
 	}
 	writer := inv.delivery().recordWriter
 	if writer == nil {
 		writer = recordWriterPreflight
 	}
 	if cause, err := writer(inv.layout.InstallationRoot, job); err != nil {
-		result := intentResult{Targets: targets, Outcome: intentRefused, code: 1, Data: map[string]any{"cause": cause},
-			Summary: fmt.Sprintf("the close of %s was not started: %v", job, err)}
 		if cause == "record-writer-refused" {
-			result.Decision = "the close writes the review's records, which only a person, the checkout's lease holder or the chain's own job may do; one of them runs the same command"
-		} else {
-			result.Decision = "the caller's authority could not be established; nothing was written; run the same command where the checkout's authority can be read"
+			return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Data: map[string]any{"cause": cause},
+				Summary:  fmt.Sprintf("closing %s writes its records, which this shell may not do; nothing was closed", job),
+				Decision: "a person, the checkout's lease holder or the job itself runs " + shellCommand(inv.sameCommand()),
+				Details:  []string{err.Error()}}
 		}
-		return result
+		return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Data: map[string]any{"cause": cause},
+			Summary: fmt.Sprintf("who may close %s can't be told from this shell; nothing was closed", job),
+			next:    inv.sameCommand(), nextReason: "try again where the checkout's owner can be read", Details: []string{err.Error()}}
 	}
 	if criticRole(recordText(root, "role")) {
 		if !inv.input.has("dispositions") {
 			return intentResult{Targets: targets, Outcome: intentRefused, code: 2,
-				Summary: fmt.Sprintf("review chain %s closes against its author's dispositions", job), Decision: "supply --dispositions FILE"}
+				Summary: fmt.Sprintf("review %s closes only with your decisions on its findings; nothing was closed", job),
+				next:    inv.typedArgvWith("--dispositions", "FILE"), nextReason: "FILE decides every finding"}
 		}
 		round, result := inv.finishedReview(targets, job)
 		if result != nil {
@@ -1442,14 +1506,16 @@ func (inv *intentInvocation) closeChain(job string) intentResult {
 		}
 		if violations := validate.CritiqueClosedWithRegister(inv.returnPath(job, recordRound(round)), inv.flagPath("dispositions"),
 			inv.layout.InstallationRoot, job); len(violations) > 0 {
-			return joinRefusal(targets, job, violations)
+			return joinRefusal(targets, job, violations, inv.sameCommand())
 		}
 	} else if inv.input.has("dispositions") {
 		return intentResult{Targets: targets, Outcome: intentRefused, code: 2,
-			Summary: fmt.Sprintf("chain %s is a %s chain with no findings of its own; dispositions close its review chain", job, recordText(root, "role"))}
+			Summary: fmt.Sprintf("%s is a %s job with no findings to decide; nothing was closed", job, recordText(root, "role")),
+			next:    inv.typedArgvLess("dispositions"), nextReason: "closes it; the decisions go with its review's job"}
 	} else if newest, err := inv.newestRound(job); err == nil && !dispatchcore.TerminalStatus(recordText(newest, "status")) {
 		return intentResult{Targets: targets, Outcome: intentInProgress,
-			Summary: fmt.Sprintf("chain %s still has round %s %s", job, recordText(newest, "jobId"), recordText(newest, "status"))}
+			Summary: fmt.Sprintf("chain %s still has round %s %s", job, recordText(newest, "jobId"), recordText(newest, "status")),
+			next:    inv.publicArgv("work", "wait", qualifiedJob(job)), nextReason: "waits for it; then close again"}
 	}
 	if problem := inv.rebindCritiqueBudget(targets, job); problem != nil {
 		return *problem
@@ -1476,7 +1542,8 @@ func (inv *intentInvocation) closeChain(job string) intentResult {
 	if json.Unmarshal(bytes.TrimSpace(ran.stdout), &fenced) == nil && fenced.Outcome != "" {
 		data["owner"] = fenced
 		return intentResult{Targets: targets, Outcome: intentRefused, code: max(ran.code, 1), Data: data,
-			Summary: fmt.Sprintf("the close was refused before it started: %s %s", fenced.Outcome, fenced.Detail)}
+			Summary: "the close was refused before it started: " + chooseUnitValue(fenced.Detail, "see --verbose"),
+			next:    inv.sameCommand(), nextReason: "once that is settled", Details: []string{fenced.Outcome + " " + fenced.Detail}}
 	}
 	summary := fmt.Sprintf("the close owner stopped (exit %d) and chain %s is not closed", ran.code, job)
 	if ran.err != nil {
@@ -1484,8 +1551,8 @@ func (inv *intentInvocation) closeChain(job string) intentResult {
 	}
 	data["ownerMessage"] = nonEmptyLines(string(ran.stderr))
 	return intentResult{Targets: targets, Outcome: intentRefused, code: max(ran.code, 1), Data: data, Summary: summary,
-		text:     nonEmptyLines(string(ran.stderr)),
-		Decision: "resolve what the close owner names above, then run the same close again"}
+		text: nonEmptyLines(string(ran.stderr)),
+		next: inv.sameCommand(), nextReason: "after resolving what is named above"}
 }
 
 func nonEmptyLines(text string) []string {
@@ -1506,12 +1573,13 @@ func runIntentLand(inv *intentInvocation) int {
 	}
 	for _, option := range stagedLandingOptions {
 		if inv.input.has(option) {
-			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--" + option + " belongs to landing a hand-made change with --message FILE; nothing was done"})
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--" + option + " only goes with landing a hand-made change (--message); nothing was done",
+				next: inv.typedArgvLess(option), nextReason: "lands without --" + option})
 		}
 	}
 	if len(inv.input.args) != 1 {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "work land names a goal, or a dispatch job j2:J",
-			nextReason: "for example: metasystem work land verbs-match-intent"})
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "work land needs one goal, or one dispatch job; nothing was landed",
+			next: inv.typedArgvFor("GOAL"), nextReason: "names the goal; a job is named as j2:JOB"})
 	}
 	ref, problem := inv.resolveWorkRef(inv.input.args[0], inv.command.accepts)
 	if problem != nil {
@@ -1519,14 +1587,17 @@ func runIntentLand(inv *intentInvocation) int {
 	}
 	if ref.kind == refJ2 {
 		if inv.input.switched("queue-only") || inv.input.has("lineage") {
-			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--queue-only and --lineage queue a goal's landing; work land j2:J lands its whole certified chain; nothing was done"})
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--queue-only and --lineage are for a goal, and a job lands whole; nothing was done",
+				next: inv.typedArgvLess("queue-only", "lineage"), nextReason: "lands the job"})
 		}
 		if inv.input.has("through") {
-			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--through selects goal-branch units; work land j2:J lands its whole certified chain"})
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--through is for a goal, and a job lands whole; nothing was landed",
+				next: inv.typedArgvLess("through"), nextReason: "lands the job"})
 		}
 		for _, other := range append([]string{"using-exception"}, exceptionOptions...) {
 			if inv.input.has(other) {
-				return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "an exception lands a goal, not a job chain; nothing was done"})
+				return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "an exception lands a goal, not a job; nothing was done",
+					next: inv.typedArgvLess(append([]string{"using-exception"}, exceptionOptions...)...), nextReason: "lands the job without an exception"})
 			}
 		}
 		if result := inv.selectRoot(); result != nil {
@@ -1538,13 +1609,15 @@ func runIntentLand(inv *intentInvocation) int {
 	if inv.input.switched("queue-only") {
 		if len(args) != 1 || inv.input.has("through") || inv.input.has("using-exception") || slices.ContainsFunc(exceptionOptions, inv.input.has) {
 			return inv.render(intentResult{Outcome: intentRefused, code: 2,
-				Summary: "--queue-only takes one goal and no other choice; nothing was done", Decision: "metasystem work land G --queue-only"})
+				Summary: "--queue-only takes one goal and no other option; nothing was done", next: inv.publicArgv("work", "land", args[0], "--queue-only"),
+				nextReason: "queues the goal's landing"})
 		}
 		return runIntentQueueOnly(inv, args[0])
 	}
 	if inv.input.has("lineage") {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2,
-			Summary: "--lineage names the session that queues a landing; it is taken only with --queue-only; nothing was done"})
+			Summary: "--lineage only goes with --queue-only; nothing was done",
+			next:    inv.typedArgvWith("--queue-only"), nextReason: "queues the landing as that session"})
 	}
 	if len(args) == 1 && (inv.input.has("exception") || inv.input.has("using-exception")) {
 		if problem := inv.landExceptionInput(args[0]); problem != nil {
@@ -1559,7 +1632,8 @@ func runIntentLand(inv *intentInvocation) int {
 	}
 	for _, other := range exceptionOptions {
 		if inv.input.has(other) {
-			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("--%s belongs to an exceptional landing with --exception CODE; nothing was done", other)})
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("--%s only goes with an exceptional landing (--exception); nothing was done", other),
+				next: inv.typedArgvLess(other), nextReason: "an ordinary landing"})
 		}
 	}
 	return inv.render(inv.landGoal(args[0], inv.input.text("through")))
@@ -1574,7 +1648,8 @@ func (inv *intentInvocation) landingBatchRoot(targets []intentTarget) (string, b
 	}
 	if err != nil {
 		return "", configured, &intentResult{Targets: targets, Outcome: intentRefused, code: 1,
-			Summary: "the landing batch policy is unreadable: " + err.Error(), Decision: "correct landing.batch-root in metasystem.conf"}
+			Summary: "the landing checkout setting can't be read, so nothing was landed",
+			next:    inv.publicArgv("settings", "check"), nextReason: "names what is wrong with landing.batch-root", Details: []string{err.Error()}}
 	}
 	return root, configured, nil
 }
@@ -1583,11 +1658,13 @@ func (inv *intentInvocation) landJob(job string) intentResult {
 	targets := []intentTarget{jobTarget(job)}
 	record, err := inv.jobRecord(job)
 	if err != nil {
-		return intentResult{Targets: targets, Outcome: intentRefused, code: 2, Summary: err.Error()}
+		return intentResult{Targets: targets, Outcome: intentRefused, code: 2, Summary: err.Error() + "; nothing was landed",
+			next: inv.publicArgv("work", "status", "--all"), nextReason: "lists the jobs with their references"}
 	}
 	goalID := recordText(record, "goalId")
 	if goalID == "" {
-		return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: fmt.Sprintf("chain %s serves no goal, so it has nothing to land", job)}
+		return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: fmt.Sprintf("job %s serves no goal, so it has nothing to land", job),
+			Decision: "nothing to do; only a goal's work lands"}
 	}
 	targets = append(targets, intentTarget{Kind: "goal", ID: goalID})
 	landingRoot, configured, refused := inv.landingBatchRoot(targets)
@@ -1596,8 +1673,8 @@ func (inv *intentInvocation) landJob(job string) intentResult {
 	}
 	if !configured {
 		return intentResult{Targets: targets, Outcome: intentRefused, code: 1,
-			Summary:  fmt.Sprintf("certified chain %s lands only through the landing batch, and landing.batch-root is not set", job),
-			Decision: "set landing.batch-root to a dedicated landing checkout"}
+			Summary: fmt.Sprintf("job %s lands through a landing checkout, and none is set; nothing was landed", job),
+			next:    inv.publicArgv("settings", "set", "landing.batch-root", "DIR"), nextReason: "DIR is a checkout used only for landing"}
 	}
 	request := batchowner.BatchJoinRequest{SeatRoot: inv.layout.InstallationRoot, LandingRoot: landingRoot, GoalID: goalID, ChainID: job}
 	if _, _, member, err := inv.delivery().batchUnit(landingRoot, request, ""); err != nil || member {
@@ -1637,14 +1714,16 @@ func (inv *intentInvocation) joinBatch(targets []intentTarget, request batchowne
 	owners := inv.delivery()
 	record, unit, member, err := owners.batchUnit(request.LandingRoot, request, branchTip)
 	if err != nil {
-		return intentResult{Targets: targets, Outcome: intentFailed, Summary: "the landing batches are unreadable: " + err.Error(), Data: map[string]any{"route": "batch"}}
+		return intentResult{Targets: targets, Outcome: intentFailed, Summary: "the landing batches can't be read, so nothing was landed", Data: map[string]any{"route": "batch"},
+			next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}
 	}
 	joined := false
 	if !member {
 		request.At = owners.now()
 		record, err = owners.batchJoin(request)
 		if err != nil {
-			return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: err.Error(), Data: map[string]any{"route": "batch"}}
+			return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: err.Error(), Data: map[string]any{"route": "batch"},
+				next: inv.publicArgv("landing", "status"), nextReason: "shows the landing batches"}
 		}
 		joined, unit = true, batch.Unit{GoalID: request.GoalID, Chain: request.ChainID, State: batch.UnitJoined}
 	}
@@ -1665,7 +1744,8 @@ func (inv *intentInvocation) joinBatch(targets []intentTarget, request batchowne
 			Summary: fmt.Sprintf("goal %s already landed%s through batch %s; the goal stays open until done", request.GoalID, landed, record.BatchID)}
 	case batch.UnitEjected, batch.UnitWithdrawn, batch.UnitWithdrawnBudget:
 		return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Data: data,
-			Summary: fmt.Sprintf("goal %s left batch %s as %s", request.GoalID, record.BatchID, unit.State)}
+			Summary: fmt.Sprintf("goal %s left landing batch %s (%s) and did not land", request.GoalID, record.BatchID, unit.State),
+			next:    inv.publicArgv("landing", "status"), nextReason: "shows why it left the batch"}
 	}
 	summary := fmt.Sprintf("goal %s is %s in landing batch %s; the batch owner proves and pushes it", request.GoalID, unit.State, record.BatchID)
 	if joined {
@@ -1701,7 +1781,8 @@ func (inv *intentInvocation) landGoal(goalID, through string) intentResult {
 func (inv *intentInvocation) landGoalRoute(goalID, through string) intentResult {
 	targets := []intentTarget{{Kind: "goal", ID: goalID}}
 	if !validIntentJobID(goalID) {
-		return intentResult{Targets: targets, Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("%q is not a goal id", goalID)}
+		return intentResult{Targets: targets, Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("%q is not a goal id; nothing was landed", goalID),
+			next: inv.publicArgv("goal", "list"), nextReason: "lists the goals"}
 	}
 	root := inv.layout.InstallationRoot
 	owners := inv.delivery()
@@ -1716,7 +1797,8 @@ func (inv *intentInvocation) landGoalRoute(goalID, through string) intentResult 
 	}
 	state, err := owners.branchState(root, goalID)
 	if err != nil {
-		return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: "the goal branch is unreadable: " + err.Error()}
+		return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: "the goal branch can't be read, so nothing was landed",
+			next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}
 	}
 	if configured {
 		// The batch may already hold, or have landed and swept, exactly this
@@ -1732,7 +1814,8 @@ func (inv *intentInvocation) landGoalRoute(goalID, through string) intentResult 
 			return intentResult{Targets: targets, Outcome: intentUnchanged, Data: map[string]any{"route": "hand", "landing": landed},
 				Summary: fmt.Sprintf("goal %s landed %s on %s and its branch is swept", goalID, landed.Landing, landed.Endpoint)}
 		}
-		return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: fmt.Sprintf("origin has no goal/%s to land", goalID)}
+		return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: fmt.Sprintf("origin has no goal/%s to land", goalID),
+			next: inv.publicArgv("status", goalID), nextReason: "shows the goal's work"}
 	}
 	subject, count, refusal := handLandingSubject(targets, goalID, through, state)
 	if refusal != nil {
@@ -1754,16 +1837,17 @@ func (inv *intentInvocation) landGoalRoute(goalID, through string) intentResult 
 	entry, err := inv.redOnMainFixed(goalID)
 	if err != nil {
 		return intentResult{Targets: targets, Outcome: intentRefused, code: 1,
-			Summary:  fmt.Sprintf("the red-on-main register cannot be read, so work land cannot tell whether goal %s may land by hand: %v; nothing was landed; metasystem goal list --fetch fetches and checks the goal ledger, then run the same work land again", goalID, err),
-			Decision: "metasystem goal list --fetch"}
+			Summary: fmt.Sprintf("whether goal %s fixes a red on main can't be told, so nothing was landed", goalID),
+			next:    inv.publicArgv("goal", "list", "--fetch"), nextReason: "fetches and checks the goal ledger; then repeat this command",
+			Details: []string{err.Error()}}
 	}
 	if entry == "" {
 		commit := state.Status.Units[unread].Commit
 		return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Data: map[string]any{"route": "batch", "unit": commit, "source": state.Sources[unread]},
-			Summary: fmt.Sprintf("unit %s of goal %s was read from a reader record, and the landing lane takes only units read by a critic; nothing was landed", commit, goalID),
+			Summary: fmt.Sprintf("unit %s has no critic's read, which the landing lane needs; nothing was landed", commit),
 			next:    []string{"metasystem", "work", "review", "--commit", commit, "--goal", goalID}, nextReason: "reads that unit through a critic, after which work land joins the lane",
-			Decision: "if this goal fixes a red on main, find the incident with metasystem incident list and claim it for the goal (metasystem incident claim E --goal " + goalID +
-				"); only the fix of an open trunk red lands by hand, not a flake or a closed incident"}
+			Details: []string{"if this goal fixes a red on main, find the incident with metasystem incident list and claim it for the goal (metasystem incident claim E --goal " + goalID +
+				"); only the fix of an open trunk red lands by hand, not a flake or a closed incident"}}
 	}
 	result := inv.landByHand(targets, goalID, through, subject, state, base, configured)
 	if data, ok := result.Data.(map[string]any); ok {
@@ -1868,7 +1952,8 @@ func (inv *intentInvocation) landByHand(targets []intentTarget, goalID, through,
 	if _, err := os.Stat(prepared); err != nil {
 		candidate, code, err := owners.landCandidate(append([]string{"--root", root, "--goal", goalID}, selection...))
 		if err != nil {
-			return intentResult{Targets: targets, Outcome: intentRefused, code: max(code, 1), Data: data, Summary: "the landing candidate cannot be composed: " + err.Error()}
+			return intentResult{Targets: targets, Outcome: intentRefused, code: max(code, 1), Data: data, Summary: "the landing can't be put together: " + err.Error(),
+				next: inv.sameCommand(), nextReason: "once that is settled"}
 		}
 		data["candidate"] = candidate.Result.Candidate
 		receipt := filepath.Join(dir, "receipt-"+shortCommit(candidate.Result.Candidate)+".json")
@@ -1880,14 +1965,15 @@ func (inv *intentInvocation) landByHand(targets []intentTarget, goalID, through,
 		data["receipt"] = receipt
 		outcome, code, err := owners.landPrep(append([]string{"--root", root, "--goal", goalID, "--out", prepared, "--test-receipt", receipt}, selection...))
 		if err != nil {
-			return intentResult{Targets: targets, Outcome: intentRefused, code: max(code, 1), Data: data, Summary: "land-prep refused: " + err.Error()}
+			return intentResult{Targets: targets, Outcome: intentRefused, code: max(code, 1), Data: data, Summary: "the landing couldn't be prepared: " + err.Error(),
+				next: inv.sameCommand(), nextReason: "once that is settled"}
 		}
 		data["prepared"] = outcome.Result
 		if outcome.Classification != "" {
 			data["classification"] = outcome.Classification
 			return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Data: data,
-				Summary:  fmt.Sprintf("the landing proof of %s is red (%s); nothing was pushed", goalID, outcome.Classification),
-				Decision: "fix the failing groups on the goal branch; a new branch tip gets a new proof"}
+				Summary: fmt.Sprintf("the landing checks of %s failed (%s); nothing was pushed", goalID, outcome.Classification),
+				next:    inv.sameCommand(), nextReason: "after fixing the failing checks on the goal branch; the new tip is checked again"}
 		}
 	}
 	// The proof took its time; the gate is read again against the fresh
@@ -1905,7 +1991,7 @@ func (inv *intentInvocation) landByHand(targets []intentTarget, goalID, through,
 		data["pushError"] = fmt.Sprint(err)
 		return intentResult{Targets: targets, Outcome: intentPartial, code: max(code, 1), Data: data,
 			Summary: fmt.Sprintf("the landing of %s is proved and prepared in %s but not pushed: %v", goalID, prepared, err),
-			next:    inv.sameCommand(), nextReason: "pushes the retained prepared landing; its proof is reused"}
+			next:    inv.sameCommand(), nextReason: "pushes the prepared landing; its checks are reused"}
 	}
 	landed = intentLanded{Landing: pushed.Landing, Endpoint: endpoint, Branch: pushed.Branch, Subject: subject, Swept: err == nil, ReleaseSet: selected.ReleaseSet}
 	data["landing"] = landed
@@ -1975,10 +2061,13 @@ func handLandingSubject(targets []intentTarget, goalID, through string, state in
 			next:    []string{"metasystem", "work", "review", "--commit", units[index].Commit, "--goal", goalID}, nextReason: "reads that unit"}
 	}
 	if len(units) == 0 {
-		return "", 0, &intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: fmt.Sprintf("goal/%s has no units to land", goalID)}
+		return "", 0, &intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: fmt.Sprintf("goal/%s has no committed work to land", goalID),
+			Decision: "nothing to do; build and review the goal's work first"}
 	}
 	if len(state.Sources) < state.Status.Prefix {
-		return "", 0, &intentResult{Targets: targets, Outcome: intentFailed, Summary: "the branch reader returned no attestation source for a read unit"}
+		return "", 0, &intentResult{Targets: targets, Outcome: intentFailed, Summary: "the goal branch's reviews can't be matched to its commits, so nothing was landed",
+			next: []string{"metasystem", "status", goalID}, nextReason: "shows the goal's work and its reviews",
+			Details: []string{"the branch reader returned no attestation source for a read unit"}}
 	}
 	if through == "" {
 		if state.Status.Prefix != len(units) {
@@ -1994,7 +2083,8 @@ func handLandingSubject(targets []intentTarget, goalID, through string, state in
 			return unit.Commit, index + 1, nil
 		}
 	}
-	return "", 0, &intentResult{Targets: targets, Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("%s is not a unit commit on goal/%s; --through takes the full commit", through, goalID)}
+	return "", 0, &intentResult{Targets: targets, Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("--through %s is not a work commit on goal/%s; nothing was landed", through, goalID),
+		next: []string{"metasystem", "status", goalID}, nextReason: "lists the goal's commits; --through takes one in full"}
 }
 
 // prepareReceipt runs the landing proof on the subject tree through the
@@ -2013,11 +2103,12 @@ func (inv *intentInvocation) prepareReceipt(targets []intentTarget, data map[str
 	if ran.err != nil || ran.code != 0 || json.Unmarshal(encoded, &parsed) != nil || parsed.SchemaVersion != 3 {
 		data["exitCode"] = ran.code
 		return &intentResult{Targets: targets, Outcome: intentRefused, code: max(ran.code, 1), Data: data,
-			Summary: fmt.Sprintf("the landing proof of %s produced no schema-3 receipt (exit %d); nothing was prepared", goalID, ran.code),
-			text:    nonEmptyLines(string(ran.stderr)), next: inv.sameCommand(), nextReason: "the proof owner reuses a matching completed proof"}
+			Summary: fmt.Sprintf("the landing checks of %s gave no usable result (exit %d); nothing was prepared", goalID, ran.code),
+			text:    nonEmptyLines(string(ran.stderr)), next: inv.sameCommand(), nextReason: "tries again; a matching finished run is reused"}
 	}
 	if err := writeIntentInputs(dir, map[string]string{receipt: string(encoded) + "\n"}); err != nil {
-		return &intentResult{Targets: targets, Outcome: intentFailed, Summary: err.Error(), Data: data}
+		return &intentResult{Targets: targets, Outcome: intentFailed, Summary: "the landing checks' result can't be saved, so nothing was prepared", Data: data,
+			next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}
 	}
 	data["receipt"] = receipt
 	return nil
@@ -2089,8 +2180,8 @@ func recordWriterPreflight(root, job string) (string, error) {
 func (inv *intentInvocation) closeCriticJob(job string) intentResult {
 	if !inv.input.has("dispositions") {
 		return intentResult{Targets: []intentTarget{jobTarget(job)}, Outcome: intentRefused, code: 2,
-			Summary:  fmt.Sprintf("job %s is a review chain; its findings are decided, not reviewed again; nothing was done", job),
-			Decision: "decide every finding in a dispositions file, then run " + shellCommand(inv.publicArgv("work", "review", dispatchJobPrefix+job, "--dispositions", "FILE"))}
+			Summary: fmt.Sprintf("job %s is a review; its findings are decided, not reviewed again; nothing was done", job),
+			next:    inv.publicArgv("work", "review", dispatchJobPrefix+job, "--dispositions", "FILE"), nextReason: "FILE decides every finding"}
 	}
 	closed := inv.closeChain(job)
 	if closed.Outcome == intentConfirmed || closed.Outcome == intentUnchanged {
@@ -2115,4 +2206,25 @@ func (inv *intentInvocation) canonicalReviewArgv(targets []intentTarget, goalID,
 		}
 	}
 	return inv.publicArgv("work", "review", "--commit", unit, "--goal", goalID)
+}
+
+// firstOr is the first value, or fallback when there is none.
+func firstOr(values []string, fallback string) string {
+	if len(values) > 0 {
+		return values[0]
+	}
+	return fallback
+}
+
+// replaceWord is argv with every word that names ref, bare or qualified,
+// replaced by with.
+func replaceWord(argv []string, ref, with string) []string {
+	out := make([]string, 0, len(argv))
+	for _, word := range argv {
+		if _, id := splitReference(word); word == ref || id == ref {
+			word = with
+		}
+		out = append(out, word)
+	}
+	return out
 }

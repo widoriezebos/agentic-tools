@@ -40,7 +40,7 @@ func TestSendToCritiqueRunsTheVerbWithTheGoalAndTheBudget(t *testing.T) {
 	roots, id, owners := b.page()
 	missing, err := designReviewRunWith(roots, id, httpd.DesignAsked{Goal: bedGoal}, owners)
 	if err != nil || missing.Outcome != intentRefused || b.fresh != 0 ||
-		missing.Summary != "a review brief states the reader's tool-call budget, and none is configured" || missing.Decision != "name it with --tool-calls N" {
+		missing.Summary != "the review needs the critic's tool-call budget, and none is configured; nothing was done" || !strings.Contains(missing.Decision, "--tool-calls 30") {
 		t.Fatalf("a send without a budget: %+v %v fresh=%d", missing, err, b.fresh)
 	}
 	sent, err := designReviewRunWith(roots, id, httpd.DesignAsked{Goal: bedGoal, ToolCalls: 17}, owners)

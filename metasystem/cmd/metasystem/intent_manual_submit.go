@@ -304,6 +304,7 @@ func (inv *intentInvocation) submitManualWork(id string) intentResult {
 		// read with; a new brief is a new version, never the same read.
 		result.Decision = fmt.Sprintf("version %s of work %s is read against the brief it was first submitted with: repeat with that brief, or correct the work so the new version is read against this brief: %s",
 			shortSHA(commit), work, shellCommand(inv.manualArgv(id, work, commit)))
+		result.next, result.nextReason = nil, ""
 	}
 	if merged, ok := result.Data.(map[string]any); ok {
 		for key, value := range data {

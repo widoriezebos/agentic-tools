@@ -61,8 +61,11 @@ func holderStepLine(step goal.HolderStep, result intentResult) string {
 		line += " [" + code + "]"
 	}
 	line += ": " + result.Summary
-	if result.Decision != "" {
+	switch {
+	case result.Decision != "":
 		line += "; a person carries past it: " + result.Decision
+	case len(result.next) > 0:
+		line += "; a person carries past it: " + shellCommand(result.next)
 	}
 	return line
 }

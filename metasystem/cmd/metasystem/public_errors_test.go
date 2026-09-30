@@ -170,7 +170,7 @@ func TestTestBaselineNamesWhatItNeeds(t *testing.T) {
 		args []string
 		want string
 	}{
-		{[]string{"test", "baseline"}, "e.g. metasystem test baseline --gate 'go test ./...'"},
+		{[]string{"test", "baseline"}, "\nrun: metasystem test baseline --gate 'go test ./...'"},
 		{[]string{"test", "baseline", "--gate"}, "--gate needs a value: the gate command that passed, e.g."},
 	} {
 		code, stdout, stderr := runPublic(t, row.args...)

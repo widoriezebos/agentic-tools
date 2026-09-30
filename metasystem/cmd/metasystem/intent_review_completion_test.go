@@ -45,7 +45,7 @@ func TestIntentGoalReviewCompletion(t *testing.T) {
 	template, _ := resultData(t, result)["template"].(string)
 	body, _ := os.ReadFile(template)
 	if result.Outcome != intentInProgress || !strings.Contains(string(body), "Review binding: goal="+c.id+" work=connect attempt=1 subject="+first) ||
-		!strings.Contains(string(body), "| F1 | DECIDE |") || !strings.Contains(result.Decision, "--dispositions") || len(c.closes) != 0 {
+		!strings.Contains(string(body), "| F1 | DECIDE |") || result.Next == nil || !slices.Contains(result.Next.Argv, "--dispositions") || len(c.closes) != 0 {
 		t.Fatalf("findings stop at the author's bound decision: %+v %q", result, body)
 	}
 	if subjects := c.runRecord(run).Subjects; subjects[0].Examination != "crit1" || subjects[0].ExaminationRound != 1 {
@@ -55,7 +55,7 @@ func TestIntentGoalReviewCompletion(t *testing.T) {
 	// A file bound to another subject is refused before any close.
 	stale := filepath.Join(c.root(), "stale.md")
 	os.WriteFile(stale, []byte(strings.Replace(strings.Replace(string(body), "subject="+first, "subject="+strings.Repeat("0", 40), 1), "DECIDE", "noted", 1)), 0o600)
-	if _, result = c.do("work", "review", c.id, "--dispositions", stale); result.Outcome != intentRefused || !strings.Contains(result.Summary, "not the current examination") || len(c.closes) != 0 {
+	if _, result = c.do("work", "review", c.id, "--dispositions", stale); result.Outcome != intentRefused || !strings.Contains(result.Summary, "not the current one") || !strings.Contains(strings.Join(result.Details, " "), "not the current examination") || len(c.closes) != 0 {
 		t.Fatalf("a stale decisions file: %+v", result)
 	}
 	// An accepted material finding requires a correction, never a close.
@@ -176,7 +176,7 @@ func TestIntentGoalReviewEmptyJoinRealClose(t *testing.T) {
 	if pending := invocation(map[string][]string{"dispositions": {stale}}).closeWorkReview(nil, b.install, subject, "crit9"); pending == nil ||
 		pending.Outcome != intentRefused || len(b.calls) != 0 {
 		t.Fatalf("a stale binding reaches the close owner: %+v calls=%v", pending, b.calls)
-	} else if !strings.Contains(pending.Decision, "metasystem work review design --work main --dispositions ") {
+	} else if !strings.Contains(shellCommand(pending.next), "metasystem work review design --work main --dispositions ") {
 		t.Fatalf("the decisions continuation changed the selected goal into a design subject: %+v", pending)
 	}
 	// Before the whole close mirrors it, the owner's own check calls the

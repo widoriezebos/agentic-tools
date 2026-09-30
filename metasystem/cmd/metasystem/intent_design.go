@@ -112,13 +112,15 @@ func (inv *intentInvocation) designDestinationPath(id string, creating bool) (st
 			}
 		}
 		if !inside || filepath.Ext(path) != ".md" {
-			return "", "", &intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("--out %s is not a Markdown file inside a design home (%s); nothing was done", shellCommand([]string{out}), home)}
+			return "", "", &intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("--out %s is not a Markdown file inside %s; nothing was done", shellCommand([]string{out}), home),
+				next: inv.typedArgvLess("out"), nextReason: "writes the goal's draft in " + home}
 		}
 		return path, "", nil
 	}
 	read, err := project.Read(roots)
 	if err != nil {
-		return "", "", &intentResult{Outcome: intentFailed, code: 1, Summary: "the project's design records cannot be read: " + err.Error()}
+		return "", "", &intentResult{Outcome: intentFailed, code: 1, Summary: "the project's design records can't be read, so nothing was done",
+			next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}
 	}
 	var drafts, others []project.Record
 	seen := map[string]bool{}
@@ -143,7 +145,8 @@ func (inv *intentInvocation) designDestinationPath(id string, creating bool) (st
 			lines = append(lines, "  "+shellCommand(append(inv.sameCommand(), "--out", record.Path)))
 		}
 		return "", "", &intentResult{Outcome: intentRefused, code: 2, text: lines,
-			Summary: fmt.Sprintf("goal %s has %d draft designs; name one with --out; nothing was done", id, len(drafts))}
+			Summary: fmt.Sprintf("goal %s has %d draft designs; nothing was done", id, len(drafts)),
+			next:    append(inv.sameCommand(), "--out", drafts[0].Path), nextReason: "or another draft listed above"}
 	}
 	if !creating && len(others) == 0 {
 		// A first attempt still writing has no record yet: its retained
@@ -165,8 +168,8 @@ func (inv *intentInvocation) designDestinationPath(id string, creating bool) (st
 			}
 		}
 		return "", "", &intentResult{Outcome: intentRefused, code: 2,
-			Summary:  fmt.Sprintf("%s already exists and is not this goal's draft design; nothing was done", path),
-			Decision: "name a new draft file with --out FILE inside " + home}
+			Summary: fmt.Sprintf("%s already exists and is not this goal's draft design; nothing was done", path),
+			next:    append(inv.typedArgvLess("out"), "--out", filepath.Join(home, id+"-draft.md")), nextReason: "a new draft file; any new name inside " + home + " will do"}
 	}
 	return path, "", nil
 }
@@ -182,24 +185,35 @@ func slicesContains(values []string, value string) bool {
 
 func runIntentDesign(inv *intentInvocation) int {
 	if len(inv.input.args) != 1 || !inv.input.has("brief") {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "design needs the goal and --brief FILE; nothing was done", Decision: "metasystem design write G --brief FILE"})
+		retry := inv.sameCommand()
+		if len(inv.input.args) == 0 {
+			retry = inv.typedArgvFor("GOAL")
+		}
+		if !inv.input.has("brief") {
+			retry = append(retry, "--brief", "FILE")
+		}
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "a design needs one goal and a brief; nothing was done",
+			next: retry, nextReason: "FILE is the brief the design author works from"})
 	}
 	id := inv.input.args[0]
 	after := 0
 	if inv.input.has("after") {
 		value, err := strconv.Atoi(inv.input.text("after"))
 		if err != nil || value < 1 {
-			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--after is an attempt number such as 1; nothing was done"})
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--after is an attempt number such as 1; nothing was done",
+				next: append(inv.typedArgvLess("after"), "--after", "1"), nextReason: "the attempt the new one follows"})
 		}
 		after = value
 	}
 	briefPath := inv.callerPath(inv.input.text("brief"))
 	brief, err := os.ReadFile(briefPath)
 	if err != nil {
-		return inv.render(intentResult{Outcome: intentRefused, code: 1, Summary: fileProblem("brief", briefPath, err) + "; nothing was done"})
+		return inv.render(intentResult{Outcome: intentRefused, code: 1, Summary: fileProblem("brief", briefPath, err) + "; nothing was done",
+			next: inv.sameCommand(), nextReason: "once --brief names a readable file"})
 	}
 	if len(strings.TrimSpace(string(brief))) == 0 {
-		return inv.render(intentResult{Outcome: intentRefused, code: 1, Summary: "the brief at " + briefPath + " is empty; nothing was done"})
+		return inv.render(intentResult{Outcome: intentRefused, code: 1, Summary: "the brief at " + briefPath + " is empty; nothing was done",
+			next: inv.sameCommand(), nextReason: "once the brief says what to design"})
 	}
 	if problem := inv.selectRoot(); problem != nil {
 		return inv.render(*problem)
@@ -214,11 +228,12 @@ func runIntentDesign(inv *intentInvocation) int {
 	case file == nil:
 		return unknownGoal(inv, id)
 	case where != "live":
-		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: fmt.Sprintf("goal %s is %s; nothing was done", id, where)})
+		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: fmt.Sprintf("goal %s is %s; nothing was done", id, where),
+			Decision: "nothing to do; only an open goal gets a design"})
 	case file.State == goal.StateQueued || file.State == goal.StateParked || file.Budget == nil || file.Budget.ReviewRoundLimit <= 0:
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets,
-			Summary:  fmt.Sprintf("goal %s is not approved with a review allowance; nothing was done", id),
-			Decision: "a person approves the goal with its box: metasystem goal approve " + id})
+			Summary: fmt.Sprintf("goal %s is not approved with review rounds in its budget; nothing was done", id),
+			next:    inv.publicArgv("goal", "approve", id), nextReason: "a person approves it; then repeat this command"})
 	}
 	destination, recordID, problem := inv.designDestination(id, true)
 	if problem != nil {
@@ -227,7 +242,8 @@ func runIntentDesign(inv *intentInvocation) int {
 	}
 	manager := inv.designManager()
 	if manager == nil {
-		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the launch owner is unavailable"})
+		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "design authors can't be started from this checkout, so nothing was done",
+			next: inv.publicArgv("system", "check"), nextReason: "shows what the setup is missing"})
 	}
 	if retainedID, _, err := manager.DesignDocument(destination); err == nil && retainedID != "" {
 		recordID = retainedID
@@ -241,14 +257,15 @@ func runIntentDesign(inv *intentInvocation) int {
 	}
 	if recordID == "" {
 		if recordID, err = project.NewID(); err != nil {
-			return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: err.Error()})
+			return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "a new design id can't be made, so nothing was done",
+				next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}})
 		}
 	}
 	if data, readErr := os.ReadFile(destination); readErr == nil {
 		if record, _, ok := project.ParseRecord(filepath.Base(destination), string(data)); ok && record.Status != "draft" {
 			return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets,
-				Summary:  fmt.Sprintf("%s is %s; an accepted or done design is not rewritten; nothing was done", destination, record.Status),
-				Decision: "ask for a new draft file: metasystem design " + id + " --brief FILE --out NEW-FILE"})
+				Summary: fmt.Sprintf("%s is %s, and an accepted or done design is never rewritten; nothing was done", destination, record.Status),
+				next:    append(inv.typedArgvLess("out"), "--out", strings.TrimSuffix(destination, ".md")+"-next.md"), nextReason: "writes a new draft beside it"})
 		}
 	}
 	header := fmt.Sprintf("# Design for %s\n\n- Kind: design\n- Id: %s\n- Status: draft\n- Goals: %s\n", id, recordID, id)
@@ -285,7 +302,8 @@ func (inv *intentInvocation) designOutcome(id, destination string, result launch
 		return intentResult{Details: launchDetails(err), Outcome: intentInProgress, Targets: targets, Data: data, Summary: err.Error() + "; nothing was launched",
 			next: inv.publicArgv("work", "wait", id), nextReason: "the current author is still writing"}
 	case err != nil && result.Attempt.Attempt == 0:
-		return intentResult{Details: launchDetails(err), Outcome: intentRefused, code: 1, Targets: targets, Data: data, Summary: err.Error() + "; nothing was launched"}
+		return intentResult{Details: launchDetails(err), Outcome: intentRefused, code: 1, Targets: targets, Data: data, Summary: err.Error() + "; nothing was launched",
+			next: inv.sameCommand(), nextReason: "once that is settled"}
 	}
 	record := result.Record
 	if err != nil && record.ID == "" {
@@ -341,10 +359,12 @@ func (inv *intentInvocation) designOutcome(id, destination string, result launch
 			next:    inv.publicArgv("design", "review", rel, "--goal", id), nextReason: "an independent critique examines the draft"}
 	case "conflict", "invalid", "superseded":
 		return intentResult{Outcome: intentRefused, code: 1, Targets: targets, Data: data,
-			Summary:  fmt.Sprintf("design attempt %d was not written to %s (%s): %s; the document is unchanged and the proposal is kept", attempt.Attempt, rel, attempt.Outcome, attempt.Detail),
-			Decision: fmt.Sprintf("merge the proposal (%s) into the document yourself, or ask for a new attempt against the current version: metasystem design write %s --brief FILE --after %d", attempt.Draft, id, attempt.Attempt)}
+			Summary: fmt.Sprintf("design attempt %d was not written to %s (%s); the document is unchanged and the proposal is kept", attempt.Attempt, rel, attempt.Outcome),
+			next:    inv.publicArgv("design", "write", id, "--brief", "FILE", "--after", strconv.Itoa(attempt.Attempt)), nextReason: "a new attempt against the current version, or merge the proposal by hand",
+			Details: []string{attempt.Detail, "the proposal: " + attempt.Draft}}
 	}
-	return intentResult{Outcome: intentFailed, code: 1, Targets: targets, Data: data, Summary: "the attempt has no recorded outcome"}
+	return intentResult{Outcome: intentFailed, code: 1, Targets: targets, Data: data, Summary: fmt.Sprintf("design attempt %d ended without an outcome", attempt.Attempt),
+		next: inv.publicArgv("design", "write", id, "--brief", "FILE", "--after", strconv.Itoa(attempt.Attempt)), nextReason: "asks for a new attempt"}
 }
 
 func designRecordID(destination string, attempt launch.DesignAttempt, inv *intentInvocation) string {
@@ -374,7 +394,8 @@ func (inv *intentInvocation) showDesignAttempts(id string) intentResult {
 	manager := inv.designManager()
 	_, attempts, err := manager.DesignDocument(destination)
 	if err != nil {
-		return intentResult{Outcome: intentFailed, code: 1, Summary: err.Error()}
+		return intentResult{Outcome: intentFailed, code: 1, Summary: "the design attempts can't be read, so nothing was read",
+			next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}
 	}
 	rel := relativeOrSame(inv.layout.GitRoot, destination)
 	views, lines := []map[string]any{}, []string{}
@@ -389,7 +410,8 @@ func (inv *intentInvocation) showDesignAttempts(id string) intentResult {
 	if n := inv.input.text("attempt"); n != "" {
 		number, convErr := strconv.Atoi(n)
 		if convErr != nil || number < 1 || number > len(attempts) {
-			return intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("%s has no attempt %s; nothing was read", rel, n)}
+			return intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("%s has no attempt %s; nothing was read", rel, n),
+				next: inv.typedArgvLess("attempt"), nextReason: "lists its attempts"}
 		}
 		attempt := attempts[number-1]
 		draft, _ := os.ReadFile(attempt.Draft)
@@ -413,13 +435,15 @@ func runIntentStopDesign(inv *intentInvocation, id string) int {
 	manager := inv.designManager()
 	_, attempts, err := manager.DesignDocument(destination)
 	if err != nil || len(attempts) == 0 {
-		return inv.render(intentResult{Outcome: intentRefused, code: 1, Summary: fmt.Sprintf("%s has no design attempt to stop; nothing was done", destination)})
+		return inv.render(intentResult{Outcome: intentRefused, code: 1, Summary: fmt.Sprintf("%s has no design attempt to stop; nothing was done", destination),
+			Decision: "nothing to do; no design author is writing it"})
 	}
 	attempt := attempts[len(attempts)-1]
 	if n := inv.input.text("attempt"); n != "" {
 		number, convErr := strconv.Atoi(n)
 		if convErr != nil || number < 1 || number > len(attempts) {
-			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--attempt names a recorded attempt; nothing was done"})
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("there is no attempt %s; nothing was done", n),
+				next: inv.typedArgvLess("attempt"), nextReason: fmt.Sprintf("stops the newest attempt, %d", attempts[len(attempts)-1].Attempt)})
 		}
 		attempt = attempts[number-1]
 	}
@@ -434,7 +458,8 @@ func runIntentStopDesign(inv *intentInvocation, id string) int {
 	}
 	record, err := manager.Cancel(attempt.LaunchID)
 	if err != nil {
-		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: "the design author was not stopped: " + err.Error()})
+		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: "the design author couldn't be stopped: " + err.Error(),
+			next: inv.sameCommand(), nextReason: "try again once its processes have ended"})
 	}
 	return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: map[string]any{"attempt": attempt.Attempt, "state": record.State},
 		Summary: fmt.Sprintf("design attempt %d is %s", attempt.Attempt, record.State)})
@@ -532,7 +557,8 @@ func (inv *intentInvocation) waitDesign(id string, timeout time.Duration) (inten
 	}
 	record, _, err := inv.designManager().Wait(view.Attempt.LaunchID, timeout)
 	if err != nil {
-		return intentResult{Outcome: intentFailed, code: 1, Summary: "the design author cannot be observed: " + err.Error()}, true
+		return intentResult{Outcome: intentFailed, code: 1, Summary: "the design author's progress can't be read",
+			next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}, true
 	}
 	return inv.designOutcome(id, view.Destination, launch.DesignResult{Attempt: view.Attempt, Record: record, Current: view.Attempt.Attempt}, nil), true
 }

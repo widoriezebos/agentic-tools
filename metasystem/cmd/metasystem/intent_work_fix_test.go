@@ -60,7 +60,7 @@ func TestIntentBuildRetainedRequest(t *testing.T) {
 				t.Fatalf("both competing requests ran: %+v", results)
 			}
 			winner = index
-		case strings.HasPrefix(strings.Join(result.Details, "\n"), "UNIT_RUN_BUSY") || strings.HasPrefix(strings.Join(result.Details, "\n"), "UNIT_NAMED_INPUT_CHANGED"):
+		case strings.Contains(resultWords(result), "UNIT_RUN_BUSY") || strings.Contains(resultWords(result), "UNIT_NAMED_INPUT_CHANGED"):
 		default:
 			t.Fatalf("competing request %d: %+v", index, result)
 		}
@@ -79,7 +79,7 @@ func TestIntentBuildRetainedRequest(t *testing.T) {
 	launched := len(bed.starter.launched())
 
 	code, refused, _ := bed.work(argsFor(loserBrief)...)
-	if code != 1 || refused.Outcome != intentRefused || !strings.Contains(strings.Join(refused.Details, "\n"), "UNIT_NAMED_INPUT_CHANGED") || !strings.Contains(strings.Join(refused.Details, "\n"), "run="+run) {
+	if code != 1 || refused.Outcome != intentRefused || !strings.Contains(resultWords(refused), "UNIT_NAMED_INPUT_CHANGED") || !strings.Contains(resultWords(refused), "run="+run) {
 		t.Fatalf("different request: code=%d %+v", code, refused)
 	}
 	bed.head = "moved-commit"
@@ -252,14 +252,14 @@ func TestIntentBuildRoundLimitAndReadBudget(t *testing.T) {
 	}
 	launched := len(bed.starter.launched())
 	code, result, _ = bed.work("work", "revise", "run:"+run, "--brief", followUp)
-	if code != 1 || result.Outcome != intentRefused || !strings.Contains(strings.Join(result.Details, "\n"), "UNIT_ROUND_LIMIT") || len(bed.starter.launched()) != launched {
+	if code != 1 || result.Outcome != intentRefused || !strings.Contains(resultWords(result), "UNIT_ROUND_LIMIT") || len(bed.starter.launched()) != launched {
 		t.Fatalf("third round: code=%d %+v", code, result)
 	}
 
 	unapproved := newWorkBed(t)
 	unapproved.intentBed = newIntentBed(t, false, func(file *goal.GoalFile) { file.Budget, file.Approved = nil, nil })
 	code, result, _ = unapproved.work(append([]string{"work", "build", unapproved.id, "u", "--brief", unapproved.brief("b.md", "B.\n"), "--lines", "5"}, workCheck...)...)
-	if code != 1 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "no approved box") || !strings.Contains(result.Decision, "metasystem goal approve") {
+	if code != 1 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "not approved with a budget") || result.Next == nil || !strings.HasPrefix(shellCommand(result.Next.Argv), "metasystem goal approve") {
 		t.Fatalf("unapproved goal: code=%d %+v", code, result)
 	}
 }
@@ -288,7 +288,7 @@ func TestIntentBuildModelOverride(t *testing.T) {
 	if code, result, _ = bed.work("work", "build", "run:"+run); code != 0 || resultData(t, result)["buildModel"] != "claude-sonnet-5" {
 		t.Fatalf("resume: code=%d %+v", code, result)
 	}
-	if code, result, _ = bed.work(args("claude-opus-5-5")...); code != 1 || !strings.Contains(strings.Join(result.Details, "\n"), "UNIT_NAMED_INPUT_CHANGED") {
+	if code, result, _ = bed.work(args("claude-opus-5-5")...); code != 1 || !strings.Contains(resultWords(result), "UNIT_NAMED_INPUT_CHANGED") {
 		t.Fatalf("another model for the same unit: code=%d %+v", code, result)
 	}
 	if code, result, _ = bed.work(append([]string{"work", "build", bed.id, "bad", "--brief", brief, "--lines", "5", "--effort", "extreme"}, workCheck...)...); code != 2 || result.Outcome != intentRefused {
@@ -358,7 +358,7 @@ func TestIntentBriefCarriesAcceptedDesign(t *testing.T) {
 		append([]string{"work", "build", broken.id, "u", "--brief", broken.brief("x.md", "X.\n"), "--lines", "5"}, workCheck...),
 	} {
 		code, result, _ := broken.work(args...)
-		if code != 1 || result.Outcome != intentFailed || !strings.Contains(result.Summary, "cannot read the project's design records") {
+		if code != 1 || result.Outcome != intentFailed || !strings.Contains(result.Summary, "design records can't be read") {
 			t.Fatalf("%v with an unreadable project: code=%d %+v", args[0], code, result)
 		}
 	}

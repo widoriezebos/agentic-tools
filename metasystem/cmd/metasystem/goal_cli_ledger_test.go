@@ -153,7 +153,7 @@ func TestGoalCLILedgerLabelsAndFiltering(t *testing.T) {
 	gcliLedgerRefused(t, bed, "must match ^[a-z][a-z0-9-]{0,31}$", append([]string{"goal", "open", "bad-label", "--origin", "human",
 		"--intent", "Must refuse.", "--next", "Stop.", "--risk", "severity=1,novelty=1,exposure=1,accumulation=1", "--basis", "fixture risk",
 		"--label", "Bad_Label"}, gcliLedgerHuman...)...)
-	gcliLedgerRefused(t, bed, "--label chooses among ready goals; a named goal takes none", "goal", "claim", "plain-goal", "--label", "x")
+	gcliLedgerRefused(t, bed, "--label picks among ready goals, and a goal is named", "goal", "claim", "plain-goal", "--label", "x")
 
 	gcliLedgerHumanOpen(t, bed, "labeled-two", "--label", "shared", "--label", "alpha")
 	contains := func(ids []string, id string) bool {
