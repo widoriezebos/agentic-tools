@@ -2,12 +2,12 @@
 
 - State: parked
 - Priority: 3
-- Sequence: 26
+- Sequence: 25
 - Intent: What: An app's guardrails can include files that live in another repository at a fixed commit, such as a frozen set of reference answers in a separate corpus repository, or a pinned upstream the app depends on. Why: For apps like morpheus and yoda the most valuable checks live outside their own repository; today the metasystem can only describe them, not enforce them. Pros: Those checks become enforced, and moving a pin becomes a reviewed guardrail change. Cons: Real design work (how to name and prove the pinned files without trusting the network, what happens when the other repository is missing on a machine), and no adopted app needs it yet.
 - Origin: human
 - Next step: Next: Design first, about a day: how a guardrail names another repository, commit and paths; how a run proves it has the right files offline; how moving a pin is reviewed; and what happens when that repository is missing. Done when: a design is accepted and a test app can declare one guardrail from another repository at a pinned commit that a run checks.
 - OpenedAt: 2026-08-25T06:41:14Z
-- Revision: 90
+- Revision: 91
 - BudgetExceptions: 0
 - Parked: by=human:Wido at=2026-09-30T18:47:26Z because=Parked until morpheus, yoda, or another app whose reference data lives in a separate repository at a pinned commit is adopted under the metasystem. Until then nothing needs it.
 
@@ -102,4 +102,5 @@ History:
 - 2026-09-30T19:00:17Z 7J15GYNCZB96SRZHJ9QXQJ6RNZ-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,set-priority-treats-an-oversize-sequence-as-last,watchdog-kill-observation-gap reason=priority-order from=3:29 to=3:28
 - 2026-09-30T19:00:30Z 05DDEYJ4CQMXX9QH823EW2S9HB-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,claude-delegate-scratch-cleanup,claude-denywrite-list-is-a-snapshot,continuous-self-improvement,counselor,cross-repo-guardrails,delegate-sandbox-cannot-run-the-beds,design-prohibition-is-role-scoped,human-carried-landing,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,narrator-digests,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,seam-declaration-convergence,set-priority-treats-an-oversize-sequence-as-last,standing-validation,uncapped-delegate-fanout,watchdog-kill-observation-gap reason=priority-order from=3:28 to=3:27
 - 2026-09-30T19:01:02Z Q28ZFJP6FHWSVGMG3R2GVEP7BX-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:27 to=3:26
-Integrity: sha256=005e0e4979ae2a04596c08fc4f82f2b9863873259e0ae85807ce52ce63b713bd
+- 2026-09-30T19:01:13Z DN3ERWTSCYYGJTN9EFDHJT67Y4-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,paid-proof-authorization,precedent-index,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:26 to=3:25
+Integrity: sha256=85870ebab9479a1a4c0cd71b17c8370da9fd0aa58be6ef450560c508b173d46a

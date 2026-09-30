@@ -2,12 +2,12 @@
 
 - State: parked
 - Priority: 3
-- Sequence: 27
+- Sequence: 26
 - Intent: What: The files that act as an app's guardrails (its budgets, its expected reference outputs, its checks) cannot be changed by the same work they judge; changes to them go through their own review with the warden, the reviewer that guards the guardrails, and the riskiest changes need a person. The first half exists: the warden follows the same "stop when the critique is exhausted" rules as the code critic, and changes to the app's covenant escalate. What is left is the person's part: loosening a budget, replacing an expected reference output, or waiving a check needs a person's approval. Why: Without it, an agent could make failing work pass by quietly loosening a budget or rewriting the expected output. Pros: The safety net cannot be weakened by the work it judges. Cons: Adds a human step to every such change, and no adopted app declares budgets or reference outputs yet, so there is nothing real to build it against.
 - Origin: human
 - Next step: Next: Design the person's approval for budget loosening, reference-output replacement and check waivers on top of the app covenant (the covenant decision it used to wait for is done). Done when: in a test app, loosening a budget declared in its covenant is refused without a person's approval and accepted with it.
 - OpenedAt: 2026-08-23T16:29:41Z
-- Revision: 97
+- Revision: 98
 - BudgetExceptions: 0
 - Parked: by=human:Wido at=2026-09-30T18:45:47Z because=Parked until the first adopted app declares budgets or expected reference outputs in its covenant that need a change. Until then there is no real surface to design against.
 
@@ -109,4 +109,5 @@ History:
 - 2026-09-30T19:00:17Z 7J15GYNCZB96SRZHJ9QXQJ6RNZ-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,set-priority-treats-an-oversize-sequence-as-last,watchdog-kill-observation-gap reason=priority-order from=3:30 to=3:29
 - 2026-09-30T19:00:30Z 05DDEYJ4CQMXX9QH823EW2S9HB-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,claude-delegate-scratch-cleanup,claude-denywrite-list-is-a-snapshot,continuous-self-improvement,counselor,cross-repo-guardrails,delegate-sandbox-cannot-run-the-beds,design-prohibition-is-role-scoped,human-carried-landing,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,narrator-digests,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,seam-declaration-convergence,set-priority-treats-an-oversize-sequence-as-last,standing-validation,uncapped-delegate-fanout,watchdog-kill-observation-gap reason=priority-order from=3:29 to=3:28
 - 2026-09-30T19:01:02Z Q28ZFJP6FHWSVGMG3R2GVEP7BX-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:28 to=3:27
-Integrity: sha256=63e3cd6567ffee3f5bb1387d36b0a52b5921b9a6cf1a4aa7bde307ab0129b70d
+- 2026-09-30T19:01:13Z DN3ERWTSCYYGJTN9EFDHJT67Y4-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,paid-proof-authorization,precedent-index,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:27 to=3:26
+Integrity: sha256=fc3cbf8803073608ec08c717324790fa166628da70a13ea4988237e37c49f16d

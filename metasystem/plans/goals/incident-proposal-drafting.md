@@ -2,12 +2,12 @@
 
 - State: parked
 - Priority: 3
-- Sequence: 20
+- Sequence: 19
 - Intent: What: When the system notices a problem you would notice (a dead test suite, lost jobs, repeated refusals), it drafts a proposed fix and brings it to you. Why: Detection alone is not enough; you asked for drafted proposals to reach you. Pros: Problems arrive with a suggested remedy, not only an alert. Cons: It needs a recorded stream of incidents to draft from, which is being designed now in steward-acts-on-behaviour-patterns.
 - Origin: human
 - Next step: Next: When the steward records typed incidents, add one drafting step per incident kind: evidence, suspected cause, candidate remedy, size. Rewrite this step on unpark against what steward-acts-on-behaviour-patterns built. Done when: replaying a known incident produces a drafted proposal waiting for you.
 - OpenedAt: 2026-08-24T13:26:02Z
-- Revision: 92
+- Revision: 93
 - Labels: custody
 - BudgetExceptions: 0
 - Parked: by=human:Wido at=2026-09-13T08:23:35Z because=Not now (2026-09-13 backlog consolidation, Wido's word): Wido 2026-08-24; its detection layer suite-outcomes-as-steward-incidents was absorbed into program goal 3 (hung-proof-attempts-end-at-their-deadline) on 2026-09-11, so the incident stream it would draft from is still forming; no new ask since; revive when that stream exists; 3h appetite.
@@ -105,4 +105,5 @@ History:
 - 2026-09-30T19:00:17Z 7J15GYNCZB96SRZHJ9QXQJ6RNZ-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,set-priority-treats-an-oversize-sequence-as-last,watchdog-kill-observation-gap reason=priority-order from=3:23 to=3:22
 - 2026-09-30T19:00:30Z 05DDEYJ4CQMXX9QH823EW2S9HB-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,claude-delegate-scratch-cleanup,claude-denywrite-list-is-a-snapshot,continuous-self-improvement,counselor,cross-repo-guardrails,delegate-sandbox-cannot-run-the-beds,design-prohibition-is-role-scoped,human-carried-landing,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,narrator-digests,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,seam-declaration-convergence,set-priority-treats-an-oversize-sequence-as-last,standing-validation,uncapped-delegate-fanout,watchdog-kill-observation-gap reason=priority-order from=3:22 to=3:21
 - 2026-09-30T19:01:02Z Q28ZFJP6FHWSVGMG3R2GVEP7BX-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:21 to=3:20
-Integrity: sha256=a5f9202f0be81a5c1774801d5f1e4e0bcdb858ed9993238859059aaff1eb72ab
+- 2026-09-30T19:01:13Z DN3ERWTSCYYGJTN9EFDHJT67Y4-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,paid-proof-authorization,precedent-index,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:20 to=3:19
+Integrity: sha256=340d34ae33a5ff3aef717c5c97a41d808828b93ab4ab3ab3ede1cbcbaba6d27f

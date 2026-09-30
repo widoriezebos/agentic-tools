@@ -2,12 +2,12 @@
 
 - State: parked
 - Priority: 3
-- Sequence: 29
+- Sequence: 28
 - Intent: What: An umbrella goal: the metasystem can build someone else's app safely and largely on its own, with the app bringing its guardrails (specs, reference outputs, budgets, test batteries) and the metasystem bringing the discipline around them. Four of its six parts are done (the app covenant, the inception interview, guardrail adequacy checks, and the first evolution of guardrails). Left are app-guardrail-custody (the person's approval for weakening guardrails) and app-doctrine (the app's living rules). Why: It keeps the vision in one place and says when the whole program is finished. Pros: One place to see the program's state. Cons: The umbrella has no work of its own; it stays open only as long as its two members wait.
 - Origin: human
 - Next step: Next: Conclude this goal when app-guardrail-custody and app-doctrine have both concluded. Done when: both are done and the empty-repository walkthrough (adopt into an empty repository, go through the interview, receive covenant, doctrine and a starter backlog) still runs end to end.
 - OpenedAt: 2026-08-23T16:29:12Z
-- Revision: 92
+- Revision: 93
 - BudgetExceptions: 0
 - Parked: by=human:Wido at=2026-09-30T18:46:12Z because=Parked until app-guardrail-custody and app-doctrine are both done. It has no work of its own left.
 
@@ -104,4 +104,5 @@ History:
 - 2026-09-30T19:00:17Z 7J15GYNCZB96SRZHJ9QXQJ6RNZ-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,set-priority-treats-an-oversize-sequence-as-last,watchdog-kill-observation-gap reason=priority-order from=3:32 to=3:31
 - 2026-09-30T19:00:30Z 05DDEYJ4CQMXX9QH823EW2S9HB-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,claude-delegate-scratch-cleanup,claude-denywrite-list-is-a-snapshot,continuous-self-improvement,counselor,cross-repo-guardrails,delegate-sandbox-cannot-run-the-beds,design-prohibition-is-role-scoped,human-carried-landing,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,narrator-digests,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,seam-declaration-convergence,set-priority-treats-an-oversize-sequence-as-last,standing-validation,uncapped-delegate-fanout,watchdog-kill-observation-gap reason=priority-order from=3:31 to=3:30
 - 2026-09-30T19:01:02Z Q28ZFJP6FHWSVGMG3R2GVEP7BX-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:30 to=3:29
-Integrity: sha256=90309faaec109cb1617293377888fcfc48c10bb0dbeff56841ddb9623c2cb360
+- 2026-09-30T19:01:13Z DN3ERWTSCYYGJTN9EFDHJT67Y4-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,paid-proof-authorization,precedent-index,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:29 to=3:28
+Integrity: sha256=2aa61117b12d20140bc0648766a6140e6c9dbe0afd7ce939ddf96d78e18e5a35
