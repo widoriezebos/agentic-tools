@@ -568,7 +568,7 @@ func (w Workspace) DisjointMerge(baseTree, chainTree, targetTree string) (Disjoi
 			return DisjointMergeResult{}, &DisjointMergeError{Kind: "unproven", Detail: "malformed-hunks", Path: path, Err: err}
 		}
 		if version != gitVersion {
-			return DisjointMergeResult{}, &DisjointMergeError{Kind: "unproven", Detail: "git-version-moved", Path: path, Err: fmt.Errorf("git version changed during proof")}
+			return DisjointMergeResult{}, &DisjointMergeError{Kind: "unproven", Detail: "git-version-moved", Path: path, Err: fmt.Errorf("git's version changed while the merge was checked")}
 		}
 		for _, chainEdit := range chainEdits {
 			for _, mainEdit := range mainEdits {

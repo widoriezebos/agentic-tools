@@ -147,7 +147,10 @@ func (inv *intentInvocation) laneContext(needLane bool) (owners laneVerbOwners, 
 	owners = inv.landing()
 	home, err := owners.home()
 	if err != nil {
-		return owners, "", lane.Record{}, &intentResult{Outcome: intentFailed, code: 1, Summary: "the landing lane cannot be read: this computer has no home for it: " + err.Error()}
+		return owners, "", lane.Record{}, &intentResult{Outcome: intentFailed, code: 1,
+			Summary: "the landing lane can't be read: this shell's home directory isn't known",
+			next:    []string{"export", "HOME=PATH"}, nextReason: "then repeat this command",
+			Details: []string{"no home for the landing lane: " + err.Error()}}
 	}
 	record, ok, err := lane.Read(home)
 	if err != nil && !needLane {
@@ -156,8 +159,9 @@ func (inv *intentInvocation) laneContext(needLane bool) (owners laneVerbOwners, 
 		return owners, home, lane.Record{}, nil
 	}
 	if err != nil {
-		return owners, home, record, &intentResult{Outcome: intentFailed, code: 1, Summary: err.Error(),
-			next: inv.publicArgv("landing", "set", "PATH"), nextReason: "a person registers the lane again, which replaces the unreadable record"}
+		return owners, home, record, &intentResult{Outcome: intentFailed, code: 1, Summary: "this computer's landing lane record can't be read",
+			next: inv.publicArgv("landing", "set", "PATH"), nextReason: "registers the landing checkout again, which replaces the record",
+			Details: []string{err.Error()}}
 	}
 	if needLane && !ok {
 		return owners, home, record, &intentResult{Outcome: intentRefused, code: 1,
@@ -281,7 +285,8 @@ func laneBusy(view lane.View, pushingOnly bool) string {
 
 func runIntentLandingSet(inv *intentInvocation) int {
 	if len(inv.input.args) != 1 {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "landing set needs the landing checkout: metasystem landing set PATH; nothing was done"})
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "landing set takes the landing checkout's path, and none was named; nothing was done",
+			next: inv.publicArgv("landing", "set", "PATH")})
 	}
 	owners, home, record, problem := inv.laneContext(false)
 	if problem != nil {
@@ -295,23 +300,27 @@ func runIntentLandingSet(inv *intentInvocation) int {
 	root, err := owners.validate(path, seat, owners.now())
 	if err != nil {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: laneTargets(path),
-			Summary:  fmt.Sprintf("%s: %s is not a landing checkout: %v; nothing was registered", lane.CodeRegisterInvalid, path, err),
-			Decision: "name a dedicated landing checkout (a clone of this repository that no seat works in)"})
+			Summary: fmt.Sprintf("%s can't be the landing lane (%s); nothing was registered", path, oneLine(err.Error())),
+			next:    inv.publicArgv("landing", "set", "PATH"), nextReason: "with a clone of this repository that no seat works in",
+			Details: []string{"refused because: " + lane.CodeRegisterInvalid + ": " + err.Error()}})
 	}
 	// An owner cannot run in a checkout without a machine nickname: it
 	// would die at every start, so the lane is never registered there.
 	if _, err := owners.machine(root); err != nil {
 		refusal := lane.NoMachineRefusal(root)
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: laneTargets(root),
-			Summary: refusal.Code + ": " + refusal.Message + "; nothing was registered",
-			next:    refusal.Argv, nextReason: "name its machine once (any one word; landing reads well), then run metasystem landing set " + root + " again"})
+			Summary: "the landing checkout has no machine nickname yet, so nothing was registered",
+			next:    refusal.Argv, nextReason: "any one word, landing reads well; then run metasystem landing set " + root + " again",
+			Details: []string{"refused because: " + refusal.Code + ": " + refusal.Message}})
 	}
 	actor := ""
 	if record.Root != "" && record.Root != root {
 		if busy := laneBusy(inv.laneView(owners, home), false); busy != "" {
 			return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: laneTargets(record.Root),
-				Summary:  fmt.Sprintf("%s: batch %s in the current lane %s; moving the lane now would leave that batch without its owner, so nothing was changed", codeLandingLaneBusy, busy, record.Root),
-				Decision: "wait until it lands (metasystem landing status shows it), or pause the lane first with metasystem landing stop, then run metasystem landing set " + root + " again"})
+				Summary: "the current landing lane is busy (batch " + busy + "), so it wasn't moved",
+				next:    inv.publicArgv("landing", "stop"), nextReason: "pauses it; then run metasystem landing set " + root + " again",
+				Details: []string{fmt.Sprintf("refused because: %s: batch %s in the current lane %s; moving the lane now would leave that batch without its owner", codeLandingLaneBusy, busy, record.Root),
+					"metasystem landing stop pauses the lane; or wait until the batch lands (metasystem landing status shows it)"}})
 		}
 		// Moving the host's lane changes where every seat lands: a
 		// person's act at an enrolled terminal. The first registration and
@@ -323,9 +332,12 @@ func runIntentLandingSet(inv *intentInvocation) int {
 		}
 		person, err := owners.person(proveAt)
 		if err != nil {
-			return inv.render(intentResult{Outcome: intentRefused, code: 3, Targets: laneTargets(record.Root),
-				Summary:  "moving this computer's landing lane from " + record.Root + " to " + root + " is a person's act, and this shell was not proven to be one: " + humanauthority.PlainReason(err) + "; nothing was changed",
-				Decision: humanauthority.PersonActRemedy(retry)})
+			refused := inv.personRefusal("", err, inv.input.text("by"))
+			refused.Targets = laneTargets(record.Root)
+			refused.code = 3
+			refused.Summary = "only a person may move the landing lane, and " + strings.TrimSuffix(refused.Summary, ", so nothing was done") + "; nothing was changed"
+			refused.Details = append(refused.Details, "moving the lane from "+record.Root+" to "+root+"; the retry is "+retry)
+			return inv.render(*refused)
 		}
 		actor = person
 	}
@@ -338,7 +350,8 @@ func runIntentLandingSet(inv *intentInvocation) int {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: laneTargets(path), Summary: refusal.Error(), Decision: refusal.Fix})
 	}
 	if err != nil {
-		return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: laneTargets(root), Summary: "the landing lane could not be registered: " + err.Error()})
+		return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: laneTargets(root), Summary: "the landing lane couldn't be saved, so nothing was registered",
+			next: inv.sameCommand(), nextReason: "tries again", Details: []string{"the landing lane could not be registered: " + err.Error()}})
 	}
 	view := inv.laneView(owners, home)
 	if !changed {
@@ -375,8 +388,9 @@ func (inv *intentInvocation) laneNotReady(owners laneVerbOwners, root string) *i
 	var refusal *lane.Refusal
 	if !errors.As(err, &refusal) {
 		return &intentResult{Outcome: intentFailed, code: 1, Targets: laneTargets(root),
-			Summary: "whether the landing lane's owner at " + root + " can run is unknown: " + err.Error() + "; nothing was started",
-			next:    inv.publicArgv("landing", "status", "--verbose"), nextReason: "read the owner's state"}
+			Summary: "whether the landing lane can run is unknown, so nothing was started",
+			next:    inv.publicArgv("landing", "status", "--verbose"), nextReason: "shows the lane's state",
+			Details: []string{"the lane at " + root + " could not be checked: " + err.Error()}}
 	}
 	code := 1
 	if refusal.Code == lane.CodeUnarmed {
@@ -384,8 +398,9 @@ func (inv *intentInvocation) laneNotReady(owners laneVerbOwners, root string) *i
 		code = 3
 	}
 	return &intentResult{Outcome: intentRefused, code: code, Targets: laneTargets(root),
-		Summary: refusal.Code + ": " + refusal.Message + "; nothing was started or changed",
-		next:    refusal.Argv, nextReason: laneFixReason(refusal.Argv)}
+		Summary: refusal.Message + "; nothing was started",
+		next:    refusal.Argv, nextReason: laneFixReason(refusal.Argv),
+		Details: []string{"refused because: " + refusal.Code + ": " + refusal.Message}}
 }
 
 func runIntentLandingStart(inv *intentInvocation) int {
@@ -402,8 +417,9 @@ func (inv *intentInvocation) startLane(owners laneVerbOwners, home string, recor
 	targets := laneTargets(record.Root)
 	probe, err := owners.probe(record.Root)
 	if err != nil {
-		return intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "whether the landing lane's owner runs is unknown: " + err.Error() + "; nothing was started",
-			next: inv.publicArgv("landing", "status", "--verbose"), nextReason: "read the owner's state"}
+		return intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "whether the landing lane runs is unknown, so nothing was started",
+			next: inv.publicArgv("landing", "status", "--verbose"), nextReason: "shows the lane's state",
+			Details: []string{"the lane's owner could not be probed: " + err.Error()}}
 	}
 	if !probe.Alive {
 		// Nothing is written before the lane is known to be startable: a
@@ -418,13 +434,15 @@ func (inv *intentInvocation) startLane(owners laneVerbOwners, home string, recor
 		err = lane.ResetKeeper(home)
 	}
 	if err != nil {
-		return intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "the landing lane's state could not be written: " + err.Error()}
+		return intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "the landing lane's state couldn't be saved, so nothing was started",
+			next: inv.sameCommand(), nextReason: "tries again", Details: []string{"the landing lane's state could not be written: " + err.Error()}}
 	}
 	started := false
 	if !probe.Alive {
 		if err := owners.start(record.Root); err != nil {
-			return intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "the landing lane's owner at " + record.Root + " did not start: " + err.Error(),
-				next: inv.publicArgv("landing", "status", "--verbose"), nextReason: "read its last exit"}
+			return intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "the landing lane didn't start: " + oneLine(err.Error()),
+				next: inv.publicArgv("landing", "status", "--verbose"), nextReason: "shows its last exit",
+				Details: []string{"the lane's owner at " + record.Root + " did not start: " + err.Error()}}
 		}
 		started = true
 	}
@@ -462,15 +480,18 @@ func (inv *intentInvocation) stopLane(owners laneVerbOwners, home string, record
 	}
 	if busy := laneBusy(inv.laneView(owners, home), true); busy != "" {
 		return intentResult{Outcome: intentRefused, code: 1, Targets: targets,
-			Summary:  fmt.Sprintf("%s: batch %s to main now; stopping mid-push would leave main and the batch's record out of step, so nothing was stopped", codeLandingLanePushing, busy),
-			Decision: "wait for it to land (metasystem landing status shows it), then run metasystem landing stop again"}, false
+			Summary: "the landing lane is busy (batch " + busy + " to main), so it wasn't stopped",
+			next:    inv.publicArgv("landing", "status"), nextReason: "shows when it has landed; then run metasystem landing stop again",
+			Details: []string{fmt.Sprintf("refused because: %s: batch %s to main now; stopping mid-push would leave main and the batch's record out of step", codeLandingLanePushing, busy)}}, false
 	}
 	by := inv.landingActor(owners)
 	if _, err := lane.SetPause(home, by, owners.now()); err != nil {
-		return intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "the landing lane could not be stopped: " + err.Error()}, false
+		return intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "the landing lane couldn't be stopped",
+			next: inv.sameCommand(), nextReason: "tries again", Details: []string{"the landing lane could not be stopped: " + err.Error()}}, false
 	}
 	return intentResult{Outcome: intentConfirmed, Targets: targets, Data: inv.laneView(owners, home),
-		Summary: "stopped the landing lane at " + record.Root + " for " + by + ": its owner advances no batch and is not restarted until metasystem landing start"}, true
+		Summary: "stopped the landing lane for " + by + "; it lands nothing until metasystem landing start",
+		Details: []string{"the lane at " + record.Root + " advances no batch and its owner is not restarted until metasystem landing start"}}, true
 }
 
 // runIntentLandingRestart gives the lane a fresh owner process (a person

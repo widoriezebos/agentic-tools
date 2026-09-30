@@ -26,19 +26,22 @@ func IsAccount(id string) bool { return strings.HasPrefix(id, accountPrefix) }
 // lane when controlRoot lies inside its checkout. No record, an unreadable
 // or gone lane, or a control root outside it is an error: a proof is never
 // charged to a lane that cannot be named.
+//
+// Its refusals lead with CodeAccountUnresolved, the code machines match; a
+// person's command shows the words after it and the code with --verbose.
 func ResolveAccount(home, controlRoot string) (string, error) {
 	record, ok, err := Read(home)
 	switch {
 	case err != nil:
-		return "", fmt.Errorf("LANE_ACCOUNT_UNRESOLVED: the landing lane record is unreadable: %w", err)
+		return "", fmt.Errorf("%s: this computer's landing lane record can't be read: %w", CodeAccountUnresolved, err)
 	case !ok:
-		return "", fmt.Errorf("LANE_ACCOUNT_UNRESOLVED: no landing lane is registered on this host")
+		return "", fmt.Errorf("%s: no landing lane is registered on this computer", CodeAccountUnresolved)
 	case gone(record.Root):
-		return "", fmt.Errorf("LANE_ACCOUNT_UNRESOLVED: the landing lane %s no longer exists", record.Root)
+		return "", fmt.Errorf("%s: the landing lane %s no longer exists", CodeAccountUnresolved, record.Root)
 	}
 	relative, err := filepath.Rel(resolved(record.Root), resolved(controlRoot))
 	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
-		return "", fmt.Errorf("LANE_ACCOUNT_UNRESOLVED: %s is not the landing lane %s", controlRoot, record.Root)
+		return "", fmt.Errorf("%s: %s is not inside the landing lane %s", CodeAccountUnresolved, controlRoot, record.Root)
 	}
 	return AccountID(record.Root), nil
 }

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
@@ -174,7 +175,7 @@ func TestLandingSetRefusesAMoveWhileABatchProves(t *testing.T) {
 		t.Fatalf("set = %d %q", code, stderr)
 	}
 	bed.records = []batch.Record{provingRecord("b1", batch.StateProving)}
-	code, _, stderr := bed.run(t, "landing", "set", bed.landingB)
+	code, _, stderr := bed.run(t, "landing", "set", bed.landingB, "--verbose")
 	for _, want := range []string{codeLandingLaneBusy, "b1 proving", bed.landingA, "metasystem landing stop", "metasystem landing set " + bed.landingB} {
 		if code == 0 || !strings.Contains(stderr, want) {
 			t.Errorf("move while proving = %d %q; lacks %q", code, stderr, want)
@@ -201,7 +202,7 @@ func TestLandingStopRefusesWhileABatchPushes(t *testing.T) {
 	}
 	bed.records = []batch.Record{provingRecord("b1", batch.StateLanding)}
 	for _, verb := range []string{"stop", "restart"} {
-		code, _, stderr := bed.run(t, "landing", verb)
+		code, _, stderr := bed.run(t, "landing", verb, "--verbose")
 		if code == 0 || !strings.Contains(stderr, codeLandingLanePushing) || !strings.Contains(stderr, "metasystem landing stop again") {
 			t.Fatalf("%s while pushing = %d %q", verb, code, stderr)
 		}
@@ -262,7 +263,7 @@ func TestLandingRestartGivesAFreshOwner(t *testing.T) {
 func TestLandingSetMoveIsAPersonsAct(t *testing.T) {
 	t.Parallel()
 	bed := newLaneVerbBed(t)
-	bed.person = errors.New("human authority has no readable terminal enrollment")
+	bed.person = errors.New(humanauthority.OutcomeNotEnrolled + ": human authority has no readable terminal enrollment")
 	if code, _, stderr := bed.run(t, "landing", "set", bed.landingA); code != 0 {
 		t.Fatalf("first registration by anyone = %d %q", code, stderr)
 	}
@@ -270,7 +271,7 @@ func TestLandingSetMoveIsAPersonsAct(t *testing.T) {
 		t.Fatalf("repeat by anyone = %d %q", code, stderr)
 	}
 	code, _, stderr := bed.run(t, "landing", "set", bed.landingB)
-	if code == 0 || !strings.Contains(stderr, "a person's act") || !strings.Contains(stderr, "metasystem system enroll") {
+	if code == 0 || !strings.Contains(stderr, "only a person may move the landing lane") || !strings.Contains(stderr, "metasystem system enroll") {
 		t.Fatalf("move by no person = %d %q", code, stderr)
 	}
 	if record, _, _ := lane.Read(bed.home); record.Root != bed.landingA {
@@ -317,7 +318,7 @@ func TestLandingStartRefusesALaneWhoseSupervisionIsNotArmed(t *testing.T) {
 	}
 	bed.ready = lane.UnarmedRefusal(bed.landingA)
 	for _, verb := range []string{"start", "restart"} {
-		code, stdout, stderr := bed.run(t, "landing", verb)
+		code, stdout, stderr := bed.run(t, "landing", verb, "--verbose")
 		for _, want := range []string{lane.CodeUnarmed, "supervision is not armed", "run: metasystem system start --repo " + bed.landingA, "nothing was started"} {
 			if !strings.Contains(stderr, want) {
 				t.Errorf("%s = %d %q; lacks %q", verb, code, stderr, want)
@@ -362,7 +363,7 @@ func TestLandingSetRefusesACheckoutWithoutAMachineNickname(t *testing.T) {
 	t.Parallel()
 	bed := newLaneVerbBed(t)
 	bed.noMachine = true
-	code, _, stderr := bed.run(t, "landing", "set", bed.landingA)
+	code, _, stderr := bed.run(t, "landing", "set", bed.landingA, "--verbose")
 	for _, want := range []string{lane.CodeNoMachine, "no machine nickname", "run: git -C " + bed.landingA + " config metasystem.goal.machine landing", "nothing was registered"} {
 		if code == 0 || !strings.Contains(stderr, want) {
 			t.Errorf("set without a nickname = %d %q; lacks %q", code, stderr, want)

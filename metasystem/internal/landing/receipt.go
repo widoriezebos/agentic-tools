@@ -111,7 +111,7 @@ func PrepareTestReceiptWithWorkspace(root, tree, command string, workspace gittr
 		return nil, err
 	}
 	if indexBefore != tree || worktreeBefore != identity {
-		return nil, fmt.Errorf("test receipt refused: supplied tree %s differs from the real index tree %s or working-tree projection %s", tree, indexBefore, worktreeBefore)
+		return nil, fmt.Errorf("test receipt refused: tree %s is not what is staged (%s) or on disk (%s)", tree, indexBefore, worktreeBefore)
 	}
 	frozen, err := freeze(root, tree)
 	if err != nil {
@@ -179,7 +179,7 @@ func (preparation *ReceiptPreparation) Complete(attempt proofrun.Attempt, comple
 		if err == nil {
 			changed, _ = preparation.candidate.ChangedPaths(preparation.identity, worktreeAfter)
 		}
-		return TestReceipt{}, fmt.Errorf("test receipt refused: the candidate changed while the command ran (index=%s worktree=%s expected=%s paths=%v cause=%v)",
+		return TestReceipt{}, fmt.Errorf("test receipt refused: files changed while the tests ran (index=%s disk=%s want=%s paths=%v cause=%v)",
 			indexAfter, worktreeAfter, preparation.tree, changed, err)
 	}
 	if err := preparation.Close(); err != nil {
@@ -221,7 +221,7 @@ func publishCommittedReceiptAtWithWorkspace(root, attemptID, acceptedIndexTree s
 	attempt, err := proofrun.ReadAttempt(root, attemptID)
 	payload := proofrun.CommittedDeliveryReceipt(attempt)
 	if err != nil || attempt.Terminal == nil || attempt.Terminal.Result != proofrun.TerminalSuccess || len(payload) == 0 {
-		return TestReceipt{}, fmt.Errorf("successful proof attempt has no committed delivery receipt")
+		return TestReceipt{}, fmt.Errorf("the passing test run has no saved delivery receipt")
 	}
 	var version struct {
 		SchemaVersion int `json:"schemaVersion"`
@@ -239,7 +239,7 @@ func publishCommittedReceiptAtWithWorkspace(root, attemptID, acceptedIndexTree s
 		}
 		if decodeErr != nil || receipt.Testing.AttemptID != attempt.AttemptID || attempt.TestResult == nil ||
 			!reflect.DeepEqual(*attempt.TestResult, *receipt.Testing) {
-			return TestReceipt{}, fmt.Errorf("committed schema-2 delivery receipt contradicts its proof attempt: %v", decodeErr)
+			return TestReceipt{}, fmt.Errorf("the saved delivery receipt contradicts its test run: %v", decodeErr)
 		}
 		_, timeErr := time.Parse(time.RFC3339Nano, receipt.Time)
 		ownerIDs, ownerErr := validateTestingAttemptOwnersAt(root, *receipt.Testing, false, now.UTC())
@@ -268,7 +268,7 @@ func publishCommittedReceiptAtWithWorkspace(root, attemptID, acceptedIndexTree s
 	if err := decoder.Decode(&struct{}{}); err != io.EOF || receipt.Proof == nil || receipt.Proof.AttemptID != attempt.AttemptID ||
 		receipt.Proof.ControlRoot != root || receipt.Proof.GoalID != attempt.GoalID || receipt.Proof.AccountingRevision != attempt.AccountingRevision ||
 		receipt.Proof.Deadline != attempt.Deadline {
-		return TestReceipt{}, fmt.Errorf("committed delivery receipt contradicts its proof attempt")
+		return TestReceipt{}, fmt.Errorf("the saved delivery receipt contradicts its test run")
 	}
 	workspace.Dir = root
 	indexTree, worktreeTree, postureErr := rawReceiptPosture(workspace)
@@ -336,7 +336,7 @@ func createTestReceiptWithInputs(root, tree, command string, stdout, stderr io.W
 		return receipt, err
 	}
 	if indexBefore != tree || worktreeBefore != identity {
-		return receipt, fmt.Errorf("test receipt refused: supplied tree %s differs from the real index tree %s or working-tree projection %s", tree, indexBefore, worktreeBefore)
+		return receipt, fmt.Errorf("test receipt refused: tree %s is not what is staged (%s) or on disk (%s)", tree, indexBefore, worktreeBefore)
 	}
 	if err := receiptInterrupted(interrupts); err != nil {
 		return receipt, err
@@ -387,7 +387,7 @@ func createTestReceiptWithInputs(root, tree, command string, stdout, stderr io.W
 		return receipt, err
 	}
 	if candidateIndexAfter != tree || candidateWorktreeAfter != identity {
-		return receipt, fmt.Errorf("test receipt refused: the candidate changed while the command ran")
+		return receipt, fmt.Errorf("test receipt refused: files changed while the tests ran")
 	}
 	if err := closeCandidate(); err != nil {
 		return receipt, fmt.Errorf("cleanup isolated candidate: %w", err)
@@ -748,7 +748,7 @@ func readTestReceiptWithWorkspace(params ObserveParams, workspace gittree.Worksp
 			receipt.Proof.SchemaVersion != 1 || receipt.Proof.ControlRoot != params.RepoRoot ||
 			receipt.Proof.GoalID != attempt.GoalID || receipt.Proof.AccountingRevision != attempt.AccountingRevision ||
 			receipt.Proof.Deadline != attempt.Deadline || !bytes.Equal(bytes.TrimSpace(data), bytes.TrimSpace(proofrun.CommittedDeliveryReceipt(attempt))) {
-			return TestReceipt{}, fmt.Errorf("test receipt proof binding does not equal a successful retained attempt payload")
+			return TestReceipt{}, fmt.Errorf("the test receipt matches no passing test run it names")
 		}
 		if receipt.Command == CanonicalValidatorCommand {
 			if receipt.Coverage == nil || attempt.PendingCoverage == nil || attempt.PendingCoverage.Evidence == nil {
@@ -763,7 +763,7 @@ func readTestReceiptWithWorkspace(params ObserveParams, workspace gittree.Worksp
 			_, found, reuseErr := proofrun.ReusableCoverageForAttempt(params.RepoRoot, params.RepoRoot, baseline,
 				attempt.AttemptID, receipt.Coverage.PackageInventory)
 			if reuseErr != nil || !found {
-				return TestReceipt{}, fmt.Errorf("canonical validator coverage no longer matches current project inputs, engine, toolchain, platform, policy, or floors")
+				return TestReceipt{}, fmt.Errorf("the test run no longer covers the current inputs, engine, toolchain, platform or policy")
 			}
 		}
 	}

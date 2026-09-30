@@ -45,7 +45,7 @@ func TestEnsureRefusesACheckoutWithoutAnExecutableEngine(t *testing.T) {
 			if err == nil {
 				t.Fatal("Ensure enrolled a fence with no executable engine")
 			}
-			if !strings.Contains(err.Error(), "has no executable engine at "+engine) || !strings.Contains(err.Error(), "go run ./cmd/devgate build") {
+			if !strings.Contains(err.Error(), "no built metasystem at "+engine+" runs the commit hook") || !strings.Contains(err.Error(), "go run ./cmd/devgate build") {
 				t.Fatalf("refusal does not name the engine and its build: %v", err)
 			}
 			// Refusing before any probe means nothing was written: no
