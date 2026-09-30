@@ -90,6 +90,11 @@ func registeredTopLevelEntries() []topLevelEntry {
 			run: func(args []string, stdout, stderr io.Writer, _ func(string) (string, error)) int {
 				return runDelegate(args, stdout, stderr)
 			}},
+		{name: "__complete", usage: "__complete -- WORD...",
+			launcher: "cmd/metasystem/completion.go", evidence: "__complete",
+			run: func(args []string, stdout, stderr io.Writer, _ func(string) (string, error)) int {
+				return runCompleteEntry(args, stdout, stderr)
+			}},
 	}
 }
 

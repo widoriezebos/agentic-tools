@@ -29,7 +29,9 @@ var completionFixtureGoals = map[string]string{"first-goal": "queued", "fix-late
 
 // completionNoExecutable is the executable seam of a completion test's
 // resolver: completion never reads it.
-func completionNoExecutable() (string, error) { return "", errors.New("completion reads no executable") }
+func completionNoExecutable() (string, error) {
+	return "", errors.New("completion reads no executable")
+}
 
 // completionTemp is a temporary directory with its symbolic links resolved,
 // as git and the resolver name it.
@@ -193,7 +195,17 @@ func TestCompleteOffersEveryRoutableWordAndNothingElse(t *testing.T) {
 		t.Errorf("internal does not offer __complete: %v", internal)
 	}
 	for _, word := range internal {
-		routes("", "internal", word, "--help")
+		if isTopLevelEntry(word) {
+			// An entry answers help as TestEveryInternalEntrypointAnswersHelp
+			// holds it: exit 0 and its usage on stdout. pre-commit's parser
+			// also repeats its usage on stderr, which this slice leaves alone.
+			code, page, problem := routeWith(registered, "internal", word, "--help")
+			if code != 0 || !strings.Contains(page, "usage: metasystem internal "+word) {
+				t.Errorf("internal %s --help is offered but does not route: code %d stdout %q stderr %q", word, code, page, problem)
+			}
+		} else {
+			routes("", "internal", word, "--help")
+		}
 		var verbs []string
 		for _, fam := range families() {
 			if fam.name == word {
@@ -314,6 +326,11 @@ func TestCompleteValuesFollowTheParser(t *testing.T) {
 		{[]string{"work", "build", "G", "--brief", "--draft=v1/de"}, []string{":files"}},
 		{[]string{"goal", "show", "G", ""}, nil},
 		{[]string{"goal", "budget", "G", ""}, nil},
+		// A passthrough row's owner parses for itself: an option the row does
+		// not document is read as a switch, and the walk goes on.
+		{[]string{"test", "plan", "--json", "--goal", "fi"}, fi},
+		// A parsed row refuses an unknown option, so nothing follows it.
+		{[]string{"goal", "approve", "--nosuch", ""}, nil},
 	} {
 		if got := completeLines(t, owners, row.words...); !slices.Equal(got, row.want) {
 			t.Errorf("%q offers %q, want %q", row.words, got, row.want)
@@ -455,6 +472,7 @@ func TestCompletionRootWalkMatchesGitToplevel(t *testing.T) {
 	if err != nil {
 		t.Skipf("git is not on PATH: %v", err)
 	}
+	initialized := map[string]bool{}
 	for _, fixture := range completionCheckoutFixtures(t) {
 		top := fixture.cwd
 		for {
@@ -463,11 +481,14 @@ func TestCompletionRootWalkMatchesGitToplevel(t *testing.T) {
 			}
 			top = filepath.Dir(top)
 		}
-		if err := os.Remove(filepath.Join(top, ".git")); err != nil {
-			t.Fatal(err)
-		}
-		if out, err := exec.Command(gitPath, "init", "-q", top).CombinedOutput(); err != nil {
-			t.Fatalf("git init %s: %v %s", top, err, out)
+		if !initialized[top] {
+			initialized[top] = true
+			if err := os.Remove(filepath.Join(top, ".git")); err != nil {
+				t.Fatal(err)
+			}
+			if out, err := exec.Command(gitPath, "init", "-q", top).CombinedOutput(); err != nil {
+				t.Fatalf("git init %s: %v %s", top, err, out)
+			}
 		}
 		for _, path := range []string{fixture.cwd, top, fixture.goals} {
 			pure, pureErr := nearestGitTop(path)
