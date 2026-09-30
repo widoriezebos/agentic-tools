@@ -1988,6 +1988,11 @@ func runIntentMission(inv *intentInvocation, verb, mission string) int {
 	var ran intentProcessResult
 	if verb == "status" {
 		root := inv.stateRoot
+		// EM-08: a mission with no state here is not a status record; exit
+		// 0 would tell a script the mission exists.
+		if !missionrunner.HasState(cleanOwnerRoot(root), mission) {
+			return inv.render(inv.missionStatusWithoutState(mission))
+		}
 		ran = ownerCall(func(stdout, stderr io.Writer) int {
 			return inv.ownerCalls().missionStatus(stdout, stderr, root, mission)
 		})
@@ -2004,11 +2009,6 @@ func runIntentMission(inv *intentInvocation, verb, mission string) int {
 		result.Summary = strings.TrimSpace(string(ran.stdout))
 		if result.Summary == "" {
 			result.Summary = done
-		}
-		// EM-08: a mission with no state here is not a status record; exit
-		// 0 would tell a script the mission exists.
-		if strings.Contains(result.Summary, " status=unreadable reason=missing-state") {
-			result = inv.missionStatusWithoutState(mission)
 		}
 	}
 	return inv.render(result)

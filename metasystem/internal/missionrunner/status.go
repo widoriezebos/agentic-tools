@@ -13,6 +13,13 @@ import (
 // Status is the driver-facing view of a mission. It prints one status line
 // and returns the exit code drivers branch on: 0 running, 10 completed, 11
 // parked, 7 unreadable, 13 abandoned or runner-failed.
+// HasState reports whether a mission has runner state under root: a caller
+// decides "never started or unknown" from this, never from the words of
+// the status line.
+func HasState(root, mission string) bool {
+	return pathExists(filepath.Join(missionDirPath(root, mission), "state.json"))
+}
+
 func (e *Engine) Status() int {
 	statePath := filepath.Join(e.missionDir(), "state.json")
 	if !pathExists(statePath) {
