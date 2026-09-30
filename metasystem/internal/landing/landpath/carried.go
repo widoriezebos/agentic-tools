@@ -427,6 +427,7 @@ func (d *driver) runCarried() {
 	if d.carriedConsumption != "none" {
 		d.carryAsk("word " + d.request.Carried + " has unsupported consumption state " + d.carriedConsumption)
 	}
+	d.holdIndex()
 	d.requiredStep("stage caller paths", d.stageChanges)
 	d.requiredStep("receipt line for the landing", d.checkReceiptLine)
 	d.carryForwardStaged("")
