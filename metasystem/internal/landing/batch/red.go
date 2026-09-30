@@ -396,26 +396,22 @@ func (d redDecision) recordHang(ledger FlakeLedgerOwner, mint func() (string, er
 	return err
 }
 
-// stalled reports whether the watchdog stalled the group: a hang, never a flake.
+// stalled reports whether the watchdog stalled the group: a hang, never a
+// flake. It is the result's typed stall, never the words of its reason.
 func stalled(group RedGroup) bool {
-	return group.Status == "unavailable" && strings.Contains(group.NotRunReason, "suite stalled in section ")
+	return group.Stall != nil
 }
 
-// hangEvidence reads the watchdog's stall text ("suite stalled in section S
-// (reason); evidence preserved before kill at DIR (note)") and the group's
-// silence figures; the last started test is the one without a terminal.
+// hangEvidence is the watchdog's typed stall and the group's silence
+// figures; the last started test is the one without a terminal.
 func hangEvidence(group RedGroup) HangEvidence {
 	evidence := HangEvidence{Dump: "dump: unavailable (not requested)", LongestSilentSeconds: group.LongestSilentSeconds,
 		LongestZeroCPUSeconds: group.LongestZeroCPUSeconds}
-	_, rest, _ := strings.Cut(group.NotRunReason, "suite stalled in section ")
-	evidence.Section, _, _ = strings.Cut(rest, " (")
-	if _, preserved, found := strings.Cut(rest, "preserved before kill at "); found {
-		evidence.EvidenceDir, rest, _ = strings.Cut(preserved, " (")
-	} else if _, preserved, found := strings.Cut(rest, "; evidence: "); found {
-		evidence.EvidenceDir, _, _ = strings.Cut(preserved, ";")
-	}
-	if _, dump, found := strings.Cut(rest, "dump: "); found {
-		evidence.Dump = "dump: " + strings.TrimSuffix(dump, ")")
+	if group.Stall != nil {
+		evidence.Section, evidence.EvidenceDir = group.Stall.Section, group.Stall.EvidenceDir
+		if group.Stall.Dump != "" {
+			evidence.Dump = group.Stall.Dump
+		}
 	}
 	for _, missing := range group.Missing {
 		if missing.Status == "missing-terminal" {

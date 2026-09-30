@@ -69,6 +69,15 @@ type RerunFinding struct {
 	Reason string `json:"reason,omitempty"`
 }
 
+// GroupStall is a group the watchdog stalled: the section it stalled in,
+// why, where the evidence was preserved before the kill, and the dump.
+type GroupStall struct {
+	Section     string `json:"section"`
+	Reason      string `json:"reason"`
+	EvidenceDir string `json:"evidenceDir"`
+	Dump        string `json:"dump,omitempty"`
+}
+
 // GroupResult is one group's outcome. NativeLaunched says this attempt
 // launched the native command; for a go group it does not say the tests
 // executed: Execution does, per package and shard.
@@ -109,9 +118,12 @@ type GroupResult struct {
 	DurationMS            int64                `json:"durationMs"`
 	ReuseAttempt          string               `json:"reuseAttempt,omitempty"`
 	NotRunReason          string               `json:"notRunReason,omitempty"`
-	BlockingGroups        []string             `json:"blockingGroups,omitempty"`
-	Reruns                []RerunFinding       `json:"reruns,omitempty"`
-	RerunNote             string               `json:"rerunNote,omitempty"`
+	// Stall is the watchdog's stall of the group, as typed facts: a reader
+	// tells a hang by it, never by the words of NotRunReason.
+	Stall          *GroupStall    `json:"stall,omitempty"`
+	BlockingGroups []string       `json:"blockingGroups,omitempty"`
+	Reruns         []RerunFinding `json:"reruns,omitempty"`
+	RerunNote      string         `json:"rerunNote,omitempty"`
 	// NativeContext digests everything that changes a native Go execution
 	// except its test selection. CoveredByGroups names the same-result groups
 	// whose native terminals supplied CoveredTests, the expected identities
