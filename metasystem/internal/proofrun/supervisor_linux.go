@@ -68,7 +68,7 @@ func parseAuxClockTicks(data []byte) (float64, error) {
 			return float64(value), nil
 		}
 	}
-	return 0, fmt.Errorf("AT_CLKTCK is absent from /proc/self/auxv")
+	return 0, fmt.Errorf("the kernel's clock tick rate is missing from /proc/self/auxv")
 }
 
 func (reader *linuxProcessTreeReader) Sample(rootPID int) (processTreeSample, error) {

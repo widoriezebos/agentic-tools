@@ -73,7 +73,7 @@ func TestGLEOwnershipFreshExpiryIsBoundAtWriteReadAndReuse(t *testing.T) {
 	if err := os.WriteFile(path, append(encoded, '\n'), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ReadAttempt(f.root, attempt.AttemptID); err == nil || !strings.Contains(err.Error(), "freshness") {
+	if _, err := ReadAttempt(f.root, attempt.AttemptID); err == nil || !strings.Contains(err.Error(), "reuse go-ahead") {
 		t.Fatalf("serialized reader accepted a changed expiry: %v", err)
 	}
 	template := result

@@ -290,7 +290,7 @@ func drainCustodyFixtureScansWith(options ResourceCustodyOptions, prober identit
 		}
 		pause()
 	}
-	return observed, fmt.Errorf("declared fixture custody did not drain: owned fixtures stayed live through %d censuses after SIGKILL (%s)",
+	return observed, fmt.Errorf("owned fixtures stayed alive through %d checks after SIGKILL (%s)",
 		fixtureDrainCensuses, now().Sub(started).Round(time.Millisecond))
 }
 

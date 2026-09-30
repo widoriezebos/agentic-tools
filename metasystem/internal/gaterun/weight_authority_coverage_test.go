@@ -113,7 +113,7 @@ func TestWeightDischargeRefusesWrongRevisionAndPolicy(t *testing.T) {
 			t.Fatal(err)
 		}
 		if _, err := bed.discharge("bounded", 3, "policy-proof", *now); err == nil ||
-			!strings.Contains(err.Error(), "current recorded authority and policy") {
+			!strings.Contains(err.Error(), "the review policy do not allow it") {
 			t.Fatalf("policy mismatch did not refuse discharge: %v", err)
 		}
 	})
@@ -124,7 +124,7 @@ func TestWeightDischargeRefusesNonGreenAndStaleBudgetEpoch(t *testing.T) {
 		bed, now := weightAuthorityBed(t)
 		completeWeightProof(t, bed, "red-proof", now, 1, nil)
 		if _, err := bed.discharge("bounded", 3, "red-proof", *now); err == nil ||
-			!strings.Contains(err.Error(), "not an exact green governed proof") {
+			!strings.Contains(err.Error(), "is not a green validation run of this goal") {
 			t.Fatalf("non-green proof did not refuse discharge: %v", err)
 		}
 	})
@@ -140,7 +140,7 @@ func TestWeightDischargeRefusesNonGreenAndStaleBudgetEpoch(t *testing.T) {
 			admission.Attempt.AttemptOrdinal = 2
 		})
 		if _, err := bed.discharge("bounded", 3, "wrong-epoch-proof", *now); err == nil ||
-			!strings.Contains(err.Error(), "not bound to the current obligation budget epoch") {
+			!strings.Contains(err.Error(), "ran under an earlier budget of the obligation") {
 			t.Fatalf("stale budget epoch did not receive typed refusal: %v", err)
 		}
 	})

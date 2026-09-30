@@ -126,28 +126,28 @@ func validateWeight(state WeightState) error {
 		}
 		if decision.Applied {
 			if decision.WeightGeneration >= state.Generation {
-				return fmt.Errorf("applied validation weight decision has no predecessor generation")
+				return fmt.Errorf("validation weight record: its applied reset is not older than the current count")
 			}
 			if !decision.ResetDecision.Apply || decision.ResetDecision.WouldRefuse ||
 				!decision.DischargeDecision.Apply || decision.DischargeDecision.WouldRefuse {
 				return fmt.Errorf("applied validation weight decision lacks both consequences")
 			}
 		} else if !decision.ResetDecision.WouldRefuse && !decision.DischargeDecision.WouldRefuse {
-			return fmt.Errorf("inert validation weight decision has no would-refuse outcome")
+			return fmt.Errorf("validation weight record: a reset that was held back names no reason")
 		}
 	}
 	seenProofs := map[string]bool{}
 	for _, proof := range state.ConsumedProofs {
 		if proof.RunID == "" || proof.GoalID == "" || proof.GoalRevision == 0 || proof.ObligationRevision == 0 || proof.ConsumedAt == "" ||
 			!proof.ResetDecision.Apply || proof.ResetDecision.WouldRefuse || !proof.DischargeDecision.Apply || proof.DischargeDecision.WouldRefuse {
-			return fmt.Errorf("consumed validation proof is incomplete")
+			return fmt.Errorf("validation weight record: a used-up validation run is incomplete")
 		}
 		if _, err := time.Parse(time.RFC3339, proof.ConsumedAt); err != nil {
-			return fmt.Errorf("consumed validation proof timestamp is invalid")
+			return fmt.Errorf("validation weight record: a used-up validation run has an invalid time")
 		}
 		key := fmt.Sprintf("%s\x00%s\x00%d\x00%d", proof.RunID, proof.GoalID, proof.ObligationRevision, proof.WeightGeneration)
 		if seenProofs[key] {
-			return fmt.Errorf("consumed validation proof is duplicated")
+			return fmt.Errorf("validation weight record: one validation run is used up twice")
 		}
 		seenProofs[key] = true
 	}
@@ -161,7 +161,7 @@ func validateWeight(state WeightState) error {
 			}
 		}
 		if !matched {
-			return fmt.Errorf("applied validation weight decision has no exact consumed proof")
+			return fmt.Errorf("validation weight record: its applied reset names no used-up validation run")
 		}
 	}
 	return nil
@@ -339,7 +339,7 @@ func weightDischargeAtWith(root, goalID string, obligationRevision uint64, runID
 	}
 	for _, proof := range state.ConsumedProofs {
 		if proof.RunID == runID && proof.GoalID == goalID && proof.ObligationRevision == obligationRevision {
-			return WeightDischargeResult{}, fmt.Errorf("REFUSED-PROOF-CONSUMED: run %s already discharged weight generation %d", runID, proof.WeightGeneration)
+			return WeightDischargeResult{}, fmt.Errorf("run %s already reset the validation weight (at count %d); a run resets it once", runID, proof.WeightGeneration)
 		}
 	}
 	binding, err := reads.ResolveGoalBinding(root, goalID, now)
@@ -365,42 +365,42 @@ func weightDischargeAtWith(root, goalID string, obligationRevision uint64, runID
 	policy, policyErr := config.CorrelationPolicy(root)
 	if policyErr != nil || policy == "" || obligation.ReviewPolicy != policy ||
 		!resetDecision.Apply || !dischargeDecision.Apply {
-		return result, fmt.Errorf("weight discharge refused: current recorded authority and policy do not permit reset-weight")
+		return result, fmt.Errorf("the validation weight was not reset: the goal's obligation and the review policy do not allow it")
 	}
 	projection := dispatch.ProjectBudget(root, binding.File, now)
 	if projection.Status != dispatch.BudgetKnown {
-		return result, fmt.Errorf("weight discharge refused: governed proof accounting is unknown: record=%s reason=%s", projection.Unknown.Record, projection.Unknown.Reason)
+		return result, fmt.Errorf("the validation weight was not reset: the goal's test-run budget cannot be read (%s: %s)", projection.Unknown.Record, projection.Unknown.Reason)
 	}
 	record, err := (&run.Store{Root: root}).Read(runID)
 	if err != nil || record == nil || record.Status != run.StatusGreen || record.GoalId != goalID || record.Governed == nil ||
 		record.Governed.ObligationRevision != obligationRevision || record.Governed.WeightGeneration == nil ||
 		record.Governed.Observation == nil || record.Governed.Observation.AssumptionState != run.AssumptionMatch || record.Governed.Exhausted {
-		return result, fmt.Errorf("weight discharge refused: run %s is not an exact green governed proof", runID)
+		return result, fmt.Errorf("the validation weight was not reset: run %s is not a green validation run of this goal", runID)
 	}
 	if *record.Governed.WeightGeneration != state.Generation {
-		return result, fmt.Errorf("REFUSED-PROOF-STALE: run %s proves weight generation %d, current generation is %d", runID, *record.Governed.WeightGeneration, state.Generation)
+		return result, fmt.Errorf("the validation weight was not reset: run %s validated count %d, and the count is now %d", runID, *record.Governed.WeightGeneration, state.Generation)
 	}
 	if !sameWeightEpoch(record.Governed.BudgetEpoch, projection.WeightEpoch) {
-		return result, fmt.Errorf("REFUSED-PROOF-STALE: run %s is not bound to the current obligation budget epoch", runID)
+		return result, fmt.Errorf("the validation weight was not reset: run %s ran under an earlier budget of the obligation", runID)
 	}
 	// The compiled default names testing.json; an installation that names
 	// no contract (an explicit empty value) is not migrated.
 	if contract, present, lookupErr := config.CommittedLookup(filepath.Join(root, "metasystem.conf"), "testing.contract"); lookupErr != nil {
-		return result, fmt.Errorf("weight discharge refused: testing contract migration state is unreadable: %w", lookupErr)
+		return result, fmt.Errorf("the validation weight was not reset: metasystem.conf cannot say which testing contract applies: %w", lookupErr)
 	} else if present && strings.TrimSpace(contract) != "" {
 		attempt, testingResult, proofErr := proofrun.GovernedTestResult(root, runID)
 		if proofErr != nil || attempt.GoalID != goalID || attempt.GoalRevision != binding.Revision || attempt.ReservationOwner == nil ||
 			attempt.ReservationOwner.RunGeneration != record.Generation || attempt.ReservationOwner.ObligationRevision != obligationRevision ||
 			testingResult.Purpose != testpolicy.PurposeCadence || testingResult.RequiredMode != testpolicy.ModeDeep || testingResult.ExecutedMode != testpolicy.ModeDeep {
-			return result, fmt.Errorf("weight discharge refused: governed run %s lacks exact sufficient deep cadence evidence: %v", runID, proofErr)
+			return result, fmt.Errorf("the validation weight was not reset: run %s did not run the full deep test set for this goal: %v", runID, proofErr)
 		}
 		if err := proofrun.RequireResultGroups(testingResult, testpolicy.CadenceCatchGroupIDs()); err != nil {
-			return result, fmt.Errorf("weight discharge refused: %w", err)
+			return result, fmt.Errorf("the validation weight was not reset: %w", err)
 		}
 	}
 	source := fmt.Sprintf("%s-r%d-weight-g%d-%s", goalID, obligationRevision, state.Generation, runID)
 	if _, err := retrodebt.Raise(root, retrodebt.KindObligation, source, now); err != nil {
-		return result, fmt.Errorf("weight discharge refused: retro obligation could not be raised: %w", err)
+		return result, fmt.Errorf("the validation weight was not reset: the retro obligation could not be raised: %w", err)
 	}
 	result.Decision.Applied = true
 	state.ConsumedProofs = append(state.ConsumedProofs, ConsumedProof{RunID: runID, GoalID: goalID,

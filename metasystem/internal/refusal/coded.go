@@ -5,17 +5,32 @@ import (
 	"strings"
 )
 
-// Coded is a refusal as "Messages a Person Reads" shapes it: Error is the
-// plain reason a person reads by default; the register code and the
-// key=value facts are details, read by the register, refusal records,
-// --verbose and --json (DetailOf), never printed by default.
+// Coded is a refusal as "Messages a Person Reads" (docs/design/
+// design-principles.md) shapes it: Error is the plain reason a person reads
+// by default and, when a command resolves it, that command on a second
+// "run:" line. The register code, the key=value facts and any background
+// are details, read by the register, refusal records, --verbose and --json
+// (DetailOf), never printed by default.
 type Coded struct {
-	Code   string
-	Facts  string // key=value words, space separated; may be empty
-	Reason error  // the plain reason; it may wrap the cause
+	Code       string
+	Facts      string // key=value words, space separated; may be empty
+	Reason     error  // the plain reason; it may wrap the cause
+	Run        string // the command that resolves it; may be empty
+	Background string // more about the cause, for the detail only
 }
 
-func (e *Coded) Error() string { return e.Reason.Error() }
+// Error is the refusal's plain reason, then its command on a "run:" line.
+func (e *Coded) Error() string {
+	reason := ""
+	if e.Reason != nil {
+		reason = e.Reason.Error()
+	}
+	if e.Run == "" {
+		return reason
+	}
+	return reason + "\nrun: " + e.Run
+}
+
 func (e *Coded) Unwrap() error { return e.Reason }
 
 // RefusalCode and RefusalDetail make Coded a Coder.
@@ -31,14 +46,43 @@ type Coder interface {
 }
 
 // Detail is the code-first line records and --verbose keep:
-// "CODE facts: reason".
+// "CODE facts: reason", then ": background" when there is one.
 func (e *Coded) Detail() string {
-	return strings.TrimSpace(e.Code+" "+e.Facts) + ": " + e.Reason.Error()
+	reason := ""
+	if e.Reason != nil {
+		reason = e.Reason.Error()
+	}
+	detail := strings.TrimSpace(e.Code+" "+e.Facts) + ": " + reason
+	if e.Background != "" {
+		detail += ": " + e.Background
+	}
+	return detail
 }
 
 // New is a coded refusal whose reason is a plain sentence.
 func New(code, facts string, reason error) error {
 	return &Coded{Code: code, Facts: facts, Reason: reason}
+}
+
+// Plain is a coded refusal from a plain reason sentence.
+func Plain(code, reason string) *Coded {
+	return &Coded{Code: code, Reason: errors.New(reason)}
+}
+
+// Detailed is an error that carries a detail beside its plain text.
+type Detailed interface {
+	error
+	Detail() string
+}
+
+// Detail is the detail of the first detailed error in err's chain, or ""
+// when it holds none.
+func Detail(err error) string {
+	var detailed Detailed
+	if errors.As(err, &detailed) {
+		return detailed.Detail()
+	}
+	return ""
 }
 
 // CodeOf is the refusal code err carries, or the code-first token of a

@@ -15,7 +15,7 @@ func TestStaticPublishesTheCollectedBuildWithoutRecompiling(t *testing.T) {
 	t.Parallel()
 	w := newGateWorld(t)
 	proof := filepath.Join(w.tmp, "proof-engine")
-	if code := w.static("--proof-out", proof); code != 0 {
+	if code := w.static("--proof-out", proof, "--verbose"); code != 0 {
 		t.Fatalf("exit %d:\n%s", code, w.output())
 	}
 	builds := w.called("go build")
@@ -32,7 +32,8 @@ func TestStaticPublishesTheCollectedBuildWithoutRecompiling(t *testing.T) {
 	if data, _ := os.ReadFile(filepath.Join(w.root, "bin", "metasystem")); string(data) != "#!/bin/sh\nexit 0\n" {
 		t.Fatalf("--proof-out touched bin/metasystem: %q", data)
 	}
-	want := "go gate: fast mode passed (dependency ratchet, parallel ratchet, gofmt, shell parse, vet, staticcheck, dead code, refusal register, SessionStart exit audit, Stop decision surface audit, build); the full gate remains the landing requirement\n"
+	want := "go gate: fast checks passed; landing still needs the full gate\nrun: go run ./cmd/devgate gate\n" +
+		"  checked: dependency ratchet, parallel ratchet, gofmt, shell parse, vet, staticcheck, dead code, refusal register, SessionStart exit audit, Stop decision surface audit, build\n"
 	if !strings.HasSuffix(w.stdout.String(), want) {
 		t.Fatalf("stdout does not end with the fast pass line:\n%s", w.stdout.String())
 	}
@@ -184,7 +185,7 @@ func TestStaticFenceRefusesAForeignLiveGate(t *testing.T) {
 		t.Fatalf("exit %d, want 1:\n%s", code, w.output())
 	}
 	if !strings.Contains(w.stderr.String(), "gate fence-fixture is running as pid ") ||
-		!strings.Contains(w.stderr.String(), "rebuilding now would swap its binary mid-run (METASYSTEM_ALLOW_CONCURRENT_GATE=1 overrides)") {
+		!strings.Contains(w.stderr.String(), "rebuilding now would swap its binary mid-run\nrun: METASYSTEM_ALLOW_CONCURRENT_GATE=1 go run ./cmd/devgate static") {
 		t.Fatalf("fence refusal not named:\n%s", w.stderr.String())
 	}
 	if len(w.called("gofmt")) != 0 {
@@ -216,7 +217,7 @@ func TestStaticScriptFixtureScopeSkipsTheInstallationAudits(t *testing.T) {
 	}
 	for _, line := range []string{"go gate: SessionStart exit audit not applicable to this script fixture\n",
 		"go gate: Stop decision surface audit not applicable to this tree\n",
-		"go gate: fast mode passed (dependency ratchet, parallel ratchet, gofmt, shell parse, vet, staticcheck, dead code, refusal register, build); the full gate remains the landing requirement\n"} {
+		"go gate: fast checks passed; landing still needs the full gate\nrun: go run ./cmd/devgate gate\n"} {
 		if !strings.Contains(w.stdout.String(), line) {
 			t.Fatalf("stdout lacks %q:\n%s", line, w.stdout.String())
 		}
@@ -241,7 +242,7 @@ func TestStaticScriptFixtureScopeSkipsTheInstallationAudits(t *testing.T) {
 	if err := os.Symlink(filepath.Join(w2.root, "missing"), filepath.Join(w2.root, "internal", "audit", "hookstartexits.go")); err != nil {
 		t.Fatal(err)
 	}
-	if code := w2.static(); code != 0 || !strings.Contains(w2.stdout.String(), "SessionStart exit audit, Stop decision surface audit, build)") {
+	if code := w2.static("--verbose"); code != 0 || !strings.Contains(w2.stdout.String(), "SessionStart exit audit, Stop decision surface audit, build\n") {
 		t.Fatalf("dangling audit signal: exit %d\n%s", code, w2.output())
 	}
 }
@@ -286,7 +287,7 @@ func TestStaticUsageAndWorkerRefusals(t *testing.T) {
 	}{
 		{name: "unknown argument", args: []string{"--fast"}, code: 2, stderr: "go gate: unknown argument --fast"},
 		{name: "proof out without path", args: []string{"--proof-out"}, code: 2, stderr: "go gate: --proof-out needs a path"},
-		{name: "invalid workers", env: "METASYSTEM_TEST_WORKERS=0", code: 1, stderr: "go gate: METASYSTEM_TEST_WORKERS must be a positive integer"},
+		{name: "invalid workers", env: "METASYSTEM_TEST_WORKERS=0", code: 1, stderr: "go gate: the test worker count \"0\" is not a positive integer\nrun: unset METASYSTEM_TEST_WORKERS"},
 	} {
 		w := newGateWorld(t)
 		if test.env != "" {

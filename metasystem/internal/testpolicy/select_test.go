@@ -1,6 +1,7 @@
 package testpolicy
 
 import (
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 	"os"
 	"reflect"
 	"strings"
@@ -178,8 +179,8 @@ func TestExplicitGroupsRequireDiagnosticCanaryMode(t *testing.T) {
 					}
 					return
 				}
-				if err == nil || !strings.Contains(err.Error(), "TEST_GROUP_SELECTION_REFUSED") ||
-					!strings.Contains(err.Error(), "--mode canary --groups <ids>") {
+				if err == nil || refusal.CodeOf(err) != "TEST_GROUP_SELECTION_REFUSED" ||
+					!strings.Contains(err.Error(), "add --mode canary") {
 					t.Fatalf("explicit groups were not refused with the canary fix-it: plan=%+v err=%v", plan, err)
 				}
 			})
@@ -222,7 +223,7 @@ func TestMetaSystemGroupSelectionScenario(t *testing.T) {
 			t.Logf("mode=%s selected=%d of %d groups", mode, len(plan.SelectedGroups), len(contract.Groups))
 			continue
 		}
-		if selectErr == nil || !strings.Contains(selectErr.Error(), "TEST_GROUP_SELECTION_REFUSED") {
+		if selectErr == nil || refusal.CodeOf(selectErr) != "TEST_GROUP_SELECTION_REFUSED" {
 			t.Fatalf("mode=%s selected %d of %d groups instead of refusing: %v", mode, len(plan.SelectedGroups), len(contract.Groups), selectErr)
 		}
 		t.Logf("mode=%s refused: %v", mode, selectErr)

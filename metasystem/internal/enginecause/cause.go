@@ -2,6 +2,7 @@
 package enginecause
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"unicode"
@@ -93,6 +94,27 @@ func rearm(facts []Fact) []string {
 	tip := fact(facts, "tip", remote+"/main")
 	checkout := fact(facts, "checkout", ".")
 	return []string{"git fetch " + quoted(remote), "git merge --ff-only " + quoted(tip), "go run ./cmd/devgate build", "bin/metasystem session start --repo " + quoted(checkout)}
+}
+
+// Command is argv as one shell command, each word quoted where it needs it:
+// the "command" fact a remedy runs.
+func Command(argv ...string) string {
+	words := make([]string, len(argv))
+	for index, word := range argv {
+		words[index] = word
+		if word == "" || strings.ContainsFunc(word, func(r rune) bool {
+			return !(unicode.IsLetter(r) || unicode.IsDigit(r) || strings.ContainsRune("-_./=:,@+", r))
+		}) {
+			words[index] = quoted(word)
+		}
+	}
+	return strings.Join(words, " ")
+}
+
+// engineCommand runs the pinned engine's own command, so its failure is
+// seen first hand; without one it falls back to the words.
+func engineCommand(words string) func([]Fact) []string {
+	return func(facts []Fact) []string { return []string{fact(facts, "command", words)} }
 }
 
 func one(command string) func([]Fact) []string {
@@ -196,8 +218,8 @@ var Table = []Cause{
 	{Token: TokenEngineUnavailable, Commands: 2, remedy: func(f []Fact) []string {
 		return []string{"go run ./cmd/devgate build", "bin/metasystem session start --repo " + quoted(fact(f, "checkout", "."))}
 	}},
-	{Token: "child-failed", Commands: 1, remedy: one("run the named enrolled policy engine directly and repair its reported failure")},
-	{Token: "child-output", Commands: 1, remedy: one("repair the named enrolled policy engine's policy output, then rerun the same metasystem test run command")},
+	{Token: "child-failed", Commands: 1, remedy: engineCommand("run the named enrolled policy engine directly and repair its reported failure")},
+	{Token: "child-output", Commands: 1, remedy: engineCommand("repair the named enrolled policy engine's policy output, then rerun the same metasystem test run command")},
 }
 
 func outcome(token string, facts []Fact) (Cause, bool) {
@@ -227,8 +249,58 @@ func Render(token string, facts []Fact) (Rendered, error) {
 	return Rendered{Remedy: strings.Join(commands, " && "), Commands: len(commands)}, nil
 }
 
-// Refuse renders one complete policy-engine refusal.
-func Refuse(token string, facts []Fact, detail string) error {
+// Code is the refusal register code every policy-engine refusal carries; it
+// is a detail, never the refusal's first line ("Messages a Person Reads").
+const Code = "TEST_POLICY_ENGINE_REQUIRED"
+
+// Refusal is one policy-engine refusal. Its text is the two lines a person
+// reads: the plain reason the site observed, and the one command that
+// resolves it. The code, the cause token and the observed facts are its
+// Detail, for --verbose, --json and tests.
+type Refusal struct {
+	Token      string
+	Facts      []Fact
+	Reason     string
+	Background string
+	Remedy     string
+	Commands   int
+	observed   string
+}
+
+// Error is the refusal's two lines: the reason, then the command.
+func (r *Refusal) Error() string {
+	return r.Reason + "\nrun: " + r.Remedy
+}
+
+// Detail is the refusal's code, cause and observed facts, with the site's
+// background when it has one.
+func (r *Refusal) Detail() string {
+	detail := Code + ": cause=" + r.Token + r.observed + ": " + r.Reason
+	if r.Background != "" {
+		detail += ": " + r.Background
+	}
+	return detail
+}
+
+// Detail is the detail of the policy-engine refusal inside err, or "" when
+// err holds none.
+func Detail(err error) string {
+	var refusal *Refusal
+	if errors.As(err, &refusal) {
+		return refusal.Detail()
+	}
+	return ""
+}
+
+// Refuse renders one complete policy-engine refusal: reason is the plain
+// first line a person reads.
+func Refuse(token string, facts []Fact, reason string) error {
+	return RefuseWith(token, facts, reason, "")
+}
+
+// RefuseWith is Refuse with background (such as a child's own output) that
+// only the refusal's Detail shows.
+func RefuseWith(token string, facts []Fact, reason, background string) error {
 	rendered, err := Render(token, facts)
 	if err != nil {
 		return err
@@ -249,5 +321,6 @@ func Refuse(token string, facts []Fact, detail string) error {
 	if unprintable > 0 {
 		fmt.Fprintf(&observed, " unprintable=%d see=git-status--porcelain-z", unprintable)
 	}
-	return fmt.Errorf("TEST_POLICY_ENGINE_REQUIRED: cause=%s%s: %s; run: %s", token, observed.String(), detail, rendered.Remedy)
+	return &Refusal{Token: token, Facts: facts, Reason: reason, Background: background, Remedy: rendered.Remedy,
+		Commands: rendered.Commands, observed: observed.String()}
 }

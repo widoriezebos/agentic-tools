@@ -49,7 +49,7 @@ func TestIntentTestRunRunsTheTestingRunnerInThisProcess(t *testing.T) {
 	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
 		t.Fatalf("no JSON result: %v; stdout=%q stderr=%q", err, stdout.String(), stderr.String())
 	}
-	if code != 1 || !strings.Contains(stderr.String(), "metasystem test run: testing.contract must be a relative normalized path") {
+	if code != 1 || !strings.Contains(stderr.String(), "testing.contract must be a relative normalized path") {
 		t.Fatalf("test run with an absolute contract path = %d %+v; stderr=%q", code, result, stderr.String())
 	}
 }

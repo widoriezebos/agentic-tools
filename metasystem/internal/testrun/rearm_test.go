@@ -28,26 +28,26 @@ func TestLandedRearmDecidesFromTheThreeFacts(t *testing.T) {
 	base := landedRearmFacts{LandingRef: "refs/remotes/origin/main", Tip: strings.Repeat("b", 40), Head: strings.Repeat("a", 40), Source: strings.Repeat("a", 40)}
 	owns := base
 	owns.SourceOwnsTip = true
-	if d := decideLandedRearm(owns, "/c"); d.Rearm || d.Refusal != "" {
+	if d := decideLandedRearm(owns, "/c"); d.Rearm || d.Refusal != nil {
 		t.Fatalf("an engine that owns the tip was not left alone: %+v", d)
 	}
 	landed := base
 	landed.HeadIsAncestor = true
-	if d := decideLandedRearm(landed, "/c"); !d.Rearm || d.Refusal != "" {
+	if d := decideLandedRearm(landed, "/c"); !d.Rearm || d.Refusal != nil {
 		t.Fatalf("a landed-only skew was not re-armed: %+v", d)
 	}
 	diverged := base
 	diverged.HeadIsAncestor = false
 	d := decideLandedRearm(diverged, "/c")
-	if d.Rearm || !strings.Contains(d.Refusal, "TEST_POLICY_ENGINE_REQUIRED") || !strings.Contains(d.Refusal, base.Source) ||
-		!strings.Contains(d.Refusal, base.Tip) || !strings.Contains(d.Refusal, "cause=engine-behind-tip") || !strings.Contains(d.Refusal, "fact=head-diverged") ||
-		!strings.Contains(d.Refusal, "not an ancestor") || !strings.Contains(d.Refusal, landedRearmCommand("/c")) {
+	if d.Rearm || !strings.Contains(fullRefusal(d.Refusal), "TEST_POLICY_ENGINE_REQUIRED") || !strings.Contains(fullRefusal(d.Refusal), base.Source) ||
+		!strings.Contains(fullRefusal(d.Refusal), base.Tip) || !strings.Contains(fullRefusal(d.Refusal), "cause=engine-behind-tip") || !strings.Contains(fullRefusal(d.Refusal), "fact=head-diverged") ||
+		!strings.Contains(fullRefusal(d.Refusal), "HEAD has commits it lacks") || !strings.Contains(fullRefusal(d.Refusal), landedRearmCommand("/c")) {
 		t.Fatalf("a diverged checkout was not refused with the two commits and the command: %+v", d)
 	}
 	dirty := landed
 	dirty.DirtyEnginePaths = []string{"metasystem/cmd/metasystem/main.go"}
 	d = decideLandedRearm(dirty, "/c")
-	if d.Rearm || !strings.Contains(d.Refusal, "fact=dirty-engine-paths") || !strings.Contains(d.Refusal, "dirty in engine inputs (metasystem/cmd/metasystem/main.go)") || !strings.Contains(d.Refusal, landedRearmCommand("/c")) {
+	if d.Rearm || !strings.Contains(fullRefusal(d.Refusal), "fact=dirty-engine-paths") || !strings.Contains(fullRefusal(d.Refusal), "has local edits") || !strings.Contains(fullRefusal(d.Refusal), landedRearmCommand("/c")) {
 		t.Fatalf("a checkout dirty in an engine input was not refused naming the path and the command: %+v", d)
 	}
 	// A delivery run that names the exact index it proves keeps the manual
@@ -55,14 +55,14 @@ func TestLandedRearmDecidesFromTheThreeFacts(t *testing.T) {
 	named := landed
 	named.NamedDeliveryTree = true
 	d = decideLandedRearm(named, "/c")
-	if d.Rearm || !strings.Contains(d.Refusal, "fact=named-delivery-tree") || !strings.Contains(d.Refusal, "names the exact index it proves") || !strings.Contains(d.Refusal, landedRearmCommand("/c")) {
+	if d.Rearm || !strings.Contains(fullRefusal(d.Refusal), "fact=named-delivery-tree") || !strings.Contains(fullRefusal(d.Refusal), "would move the tested tree") || !strings.Contains(fullRefusal(d.Refusal), landedRearmCommand("/c")) {
 		t.Fatalf("a delivery run naming its tree was not kept on the manual path: %+v", d)
 	}
 	// The engine is never rebuilt under a live attempt of this installation.
 	busy := landed
 	busy.LiveAttempts = []string{"proof-live-1"}
 	d = decideLandedRearm(busy, "/c")
-	if d.Rearm || !strings.Contains(d.Refusal, "fact=live-attempt") || !strings.Contains(d.Refusal, "live (proof-live-1)") {
+	if d.Rearm || !strings.Contains(fullRefusal(d.Refusal), "fact=live-attempt") || !strings.Contains(fullRefusal(d.Refusal), "proof-live-1") {
 		t.Fatalf("a rebuild under a live attempt was not refused: %+v", d)
 	}
 }
@@ -453,7 +453,7 @@ func TestLandedRearmReadsTheCheckoutAgainstItsRemote(t *testing.T) {
 	if err != nil || facts.FetchErr == nil || facts.Tip != remoteTip {
 		t.Fatalf("a failed fetch was not recorded against the last fetched tip: %+v %v", facts, err)
 	}
-	if d := decideLandedRearm(facts, fixture.projectRoot); d.Rearm || !strings.Contains(d.Refusal, "fact=fetch-failed") || !strings.Contains(d.Refusal, "could not be fetched") {
+	if d := decideLandedRearm(facts, fixture.projectRoot); d.Rearm || !strings.Contains(fullRefusal(d.Refusal), "fact=fetch-failed") || !strings.Contains(fullRefusal(d.Refusal), "could not be fetched") {
 		t.Fatalf("a re-arm from an unfetchable tip was not refused: %+v", d)
 	}
 	if owned, err := readLandedRearmFactsForTest(context.Background(), fixture.installation, fixture.projectRoot, "metasystem", head, func(string) bool { return true }); err != nil || !owned.SourceOwnsTip {
@@ -488,7 +488,7 @@ func TestLandedRearmRefusesARepositoryFailureReadingTheLandingRefWithGitDetail(t
 	t.Parallel()
 	t.Run("negative and malformed values keep the shape message", func(t *testing.T) {
 		projectRoot, _ := landedScriptPaths(t)
-		want := "trusted testing policy base requires local metasystem.steward.landing-ref shaped refs/remotes/<remote>/<branch>"
+		want := errNoLandingRef.Error()
 		for _, value := range []string{"", "refs/heads/main"} {
 			response := landedResponse(projectRoot, "config", "--local", "--no-includes", "--get", "metasystem.steward.landing-ref")
 			if value == "" {
@@ -510,9 +510,9 @@ func TestLandedRearmRefusesARepositoryFailureReadingTheLandingRefWithGitDetail(t
 		ctx, _, _ := scriptedLandedGit(t, response)
 		_, err := readLandedRearmFactsForTest(ctx, installation, projectRoot, "metasystem", strings.Repeat("a", 40), func(string) bool { return false })
 		refusal := judgmentRefusal(err, engineCheckoutFacts(projectRoot), "judging the enrolled engine against the landed tip failed")
-		if err == nil || !strings.Contains(refusal.Error(), "cause=judgment-failed") || !strings.Contains(refusal.Error(), "git config") ||
-			!strings.Contains(refusal.Error(), "fatal: not a git repository (or any of the parent directories)") ||
-			strings.Contains(refusal.Error(), "trusted testing policy base requires local metasystem.steward.landing-ref shaped refs/remotes/<remote>/<branch>") {
+		if err == nil || !strings.Contains(fullRefusal(refusal), "cause=judgment-failed") || !strings.Contains(fullRefusal(refusal), "git config") ||
+			!strings.Contains(fullRefusal(refusal), "fatal: not a git repository (or any of the parent directories)") ||
+			strings.Contains(fullRefusal(refusal), "names no landing branch") {
 			t.Fatalf("landing-ref repository failure became a landing-ref shape judgment: %v", refusal)
 		}
 	})
@@ -542,8 +542,8 @@ func TestLandedRearmRefusesARepositoryFailureReadingTheLandingRefWithGitDetail(t
 		<-settled
 		refusal := judgmentRefusal(err, engineCheckoutFacts(projectRoot), "judging the enrolled engine against the landed tip failed")
 		if err == nil || !errors.Is(err, steward.ErrJudgmentStalled) ||
-			!strings.Contains(refusal.Error(), "cause=judgment-stalled step=read-landing-ref seconds=20") ||
-			strings.Contains(refusal.Error(), "trusted testing policy base requires local metasystem.steward.landing-ref shaped refs/remotes/<remote>/<branch>") {
+			!strings.Contains(fullRefusal(refusal), "cause=judgment-stalled step=read-landing-ref seconds=20") ||
+			strings.Contains(fullRefusal(refusal), "names no landing branch") {
 			t.Fatalf("landing-ref stall became a landing-ref shape judgment: %v", refusal)
 		}
 	})
@@ -571,10 +571,10 @@ func TestLandedRearmRefusesARepositoryFailureResolvingCheckoutHeadWithGitDetail(
 		ctx, _, _ := scriptedLandedGit(t, append(responses, headResponse)...)
 		_, err := readLandedRearmFactsForTest(ctx, installation, projectRoot, "metasystem", strings.Repeat("a", 40), func(string) bool { return false })
 		refusal := judgmentRefusal(err, engineCheckoutFacts(projectRoot), "judging the enrolled engine against the landed tip failed")
-		if err == nil || !strings.Contains(refusal.Error(), "cause=judgment-failed") || !strings.Contains(refusal.Error(), "resolve-checkout-head") ||
-			!strings.Contains(refusal.Error(), "git rev-parse --verify HEAD^{commit}") ||
-			!strings.Contains(refusal.Error(), "fatal: not a git repository (or any of the parent directories)") ||
-			strings.Contains(refusal.Error(), "testing requires a committed project HEAD") {
+		if err == nil || !strings.Contains(fullRefusal(refusal), "cause=judgment-failed") || !strings.Contains(fullRefusal(refusal), "resolve-checkout-head") ||
+			!strings.Contains(fullRefusal(refusal), "git rev-parse --verify HEAD^{commit}") ||
+			!strings.Contains(fullRefusal(refusal), "fatal: not a git repository (or any of the parent directories)") ||
+			strings.Contains(fullRefusal(refusal), "testing requires a committed project HEAD") {
 			t.Fatalf("checkout-HEAD repository failure became a no-HEAD judgment: %v", refusal)
 		}
 	})
@@ -605,8 +605,8 @@ func TestLandedRearmRefusesARepositoryFailureResolvingCheckoutHeadWithGitDetail(
 		<-settled
 		refusal := judgmentRefusal(err, engineCheckoutFacts(projectRoot), "judging the enrolled engine against the landed tip failed")
 		if err == nil || !errors.Is(err, steward.ErrJudgmentStalled) ||
-			!strings.Contains(refusal.Error(), "cause=judgment-stalled step=resolve-checkout-head seconds=20") ||
-			strings.Contains(refusal.Error(), "testing requires a committed project HEAD") {
+			!strings.Contains(fullRefusal(refusal), "cause=judgment-stalled step=resolve-checkout-head seconds=20") ||
+			strings.Contains(fullRefusal(refusal), "testing requires a committed project HEAD") {
 			t.Fatalf("checkout-HEAD stall became a no-HEAD judgment: %v", refusal)
 		}
 	})
@@ -670,28 +670,28 @@ func TestLandedRearmFastForwardsRebuildsAndReArms(t *testing.T) {
 	}
 	// An enrollment that did not advance is a refusal with up's own words.
 	enrolledGeneration = 3
-	if _, err := landedRearmAct(context.Background(), fixture.installation, fixture.projectRoot, facts, 3); err == nil || !strings.Contains(err.Error(), "cause=rearm-failed") || !strings.Contains(err.Error(), "no runtime ancestor") {
+	if _, err := landedRearmAct(context.Background(), fixture.installation, fixture.projectRoot, facts, 3); err == nil || !strings.Contains(fullRefusal(err), "cause=rearm-failed") || !strings.Contains(fullRefusal(err), "no runtime ancestor") {
 		t.Fatalf("an enrollment that did not advance was not refused with up's words: %v", err)
 	}
 	// A refused decision runs none of the three acts and takes no lock.
 	rebuiltIn, upInstallation, locked = "", "", 0
 	diverged := facts
 	diverged.HeadIsAncestor = false
-	if _, err := landedRearmAct(context.Background(), fixture.installation, fixture.projectRoot, diverged, 3); err == nil || !strings.Contains(err.Error(), "cause=engine-behind-tip") || rebuiltIn != "" || upInstallation != "" || locked != 0 {
+	if _, err := landedRearmAct(context.Background(), fixture.installation, fixture.projectRoot, diverged, 3); err == nil || !strings.Contains(fullRefusal(err), "cause=engine-behind-tip") || rebuiltIn != "" || upInstallation != "" || locked != 0 {
 		t.Fatalf("a refusal reached the acts: err=%v rebuild=%s up=%s locked=%d", err, rebuiltIn, upInstallation, locked)
 	}
 	landedRearmFastForward = func(context.Context, string, string) error { return errors.New("blocked") }
-	if _, err := performLandedRearm(context.Background(), fixture.installation, fixture.projectRoot, facts, 3); err == nil || !strings.Contains(err.Error(), "cause=fast-forward-blocked") {
+	if _, err := performLandedRearm(context.Background(), fixture.installation, fixture.projectRoot, facts, 3); err == nil || !strings.Contains(fullRefusal(err), "cause=fast-forward-blocked") {
 		t.Fatalf("fast-forward failure lost its cause: %v", err)
 	}
 	landedRearmFastForward = func(context.Context, string, string) error { return nil }
 	landedRearmRebuild = func(context.Context, string) error { return errors.New("compiler failed") }
-	if _, err := performLandedRearm(context.Background(), fixture.installation, fixture.projectRoot, facts, 3); err == nil || !strings.Contains(err.Error(), "cause=rebuild-failed") {
+	if _, err := performLandedRearm(context.Background(), fixture.installation, fixture.projectRoot, facts, 3); err == nil || !strings.Contains(fullRefusal(err), "cause=rebuild-failed") {
 		t.Fatalf("rebuild failure lost its cause: %v", err)
 	}
 	landedRearmRebuild = previousRebuild
 	landedRearmMutationLock = func(string) (func(), error) { return nil, errors.New("busy") }
-	if _, err := landedRearmAct(context.Background(), fixture.installation, fixture.projectRoot, facts, 3); err == nil || !strings.Contains(err.Error(), "cause=mutation-lock") {
+	if _, err := landedRearmAct(context.Background(), fixture.installation, fixture.projectRoot, facts, 3); err == nil || !strings.Contains(fullRefusal(err), "cause=mutation-lock") {
 		t.Fatalf("mutation-lock failure lost its cause: %v", err)
 	}
 }
@@ -732,12 +732,12 @@ func TestLandedRearmRefusesAFastForwardBlockedByDirtyLedgers(t *testing.T) {
 			t.Cleanup(func() { landedRearmFastForward = previous })
 			_, err = landedRearmAct(context.Background(), fixture.installation, fixture.projectRoot, facts, 1)
 			ledgerPath := strings.TrimPrefix(test.path, "metasystem/")
-			if err == nil || fastForwards != 0 || !strings.Contains(err.Error(), "cause=fast-forward-blocked") ||
-				!strings.Contains(err.Error(), "ledger-path='"+test.path+"'") || !strings.Contains(err.Error(), "cp -p -n --") ||
-				!strings.Contains(err.Error(), "$(git rev-parse --short HEAD)") || !strings.Contains(err.Error(), "while test -e") ||
-				!strings.Contains(err.Error(), "git restore --staged --worktree --source=HEAD --") ||
-				!strings.Contains(err.Error(), "append only the missing saved lines") || strings.Contains(err.Error(), "reset --hard") ||
-				strings.Contains(err.Error(), "git checkout --") || !strings.Contains(err.Error(), ledgerPath) {
+			if err == nil || fastForwards != 0 || !strings.Contains(fullRefusal(err), "cause=fast-forward-blocked") ||
+				!strings.Contains(fullRefusal(err), "ledger-path='"+test.path+"'") || !strings.Contains(fullRefusal(err), "cp -p -n --") ||
+				!strings.Contains(fullRefusal(err), "$(git rev-parse --short HEAD)") || !strings.Contains(fullRefusal(err), "while test -e") ||
+				!strings.Contains(fullRefusal(err), "git restore --staged --worktree --source=HEAD --") ||
+				!strings.Contains(fullRefusal(err), "append only the missing saved lines") || strings.Contains(fullRefusal(err), "reset --hard") ||
+				strings.Contains(fullRefusal(err), "git checkout --") || !strings.Contains(fullRefusal(err), ledgerPath) {
 				t.Fatalf("dirty ledger was not refused before the fast-forward with a preserving unique remedy: err=%v fast-forwards=%d", err, fastForwards)
 			}
 		})
@@ -771,7 +771,7 @@ func TestLandedRearmRefusesAncestorPathCollisionsBeforeFastForward(t *testing.T)
 			landedRearmFastForward = func(context.Context, string, string) error { fastForwards++; return nil }
 			t.Cleanup(func() { landedRearmFastForward = previous })
 			_, err = landedRearmAct(context.Background(), fixture.installation, fixture.projectRoot, facts, 1)
-			if err == nil || fastForwards != 0 || !strings.Contains(err.Error(), "cause=fast-forward-blocked") || !strings.Contains(err.Error(), test.local) {
+			if err == nil || fastForwards != 0 || !strings.Contains(fullRefusal(err), "cause=fast-forward-blocked") || !strings.Contains(fullRefusal(err), test.local) {
 				t.Fatalf("ancestor collision reached the fast-forward or lost its blocker: err=%v fast-forwards=%d facts=%+v", err, fastForwards, facts)
 			}
 		})
@@ -875,7 +875,7 @@ func TestLandedRearmRefusesAStalledTipCompareByName(t *testing.T) {
 		return false, stall
 	})
 	refusal := judgmentRefusal(err, engineCheckoutFacts(projectRoot), "compare the enrolled engine with the landed tip")
-	if err == nil || !strings.Contains(refusal.Error(), "cause=judgment-stalled step=compare seconds=20") || ancestryCalls != 0 || dirtyCalls != 0 {
+	if err == nil || !strings.Contains(fullRefusal(refusal), "cause=judgment-stalled step=compare seconds=20") || ancestryCalls != 0 || dirtyCalls != 0 {
 		t.Fatalf("stalled compare did not refuse before later probes: err=%v refusal=%v ancestry=%d dirty=%d", err, refusal, ancestryCalls, dirtyCalls)
 	}
 
@@ -884,7 +884,7 @@ func TestLandedRearmRefusesAStalledTipCompareByName(t *testing.T) {
 		return false, errors.New("compare process failed")
 	})
 	refusal = judgmentRefusal(err, engineCheckoutFacts(projectRoot), "compare the enrolled engine with the landed tip")
-	if err == nil || !strings.Contains(refusal.Error(), "cause=judgment-failed") || ancestryCalls != 0 || dirtyCalls != 0 {
+	if err == nil || !strings.Contains(fullRefusal(refusal), "cause=judgment-failed") || ancestryCalls != 0 || dirtyCalls != 0 {
 		t.Fatalf("failed compare did not refuse before later probes: err=%v refusal=%v ancestry=%d dirty=%d", err, refusal, ancestryCalls, dirtyCalls)
 	}
 }

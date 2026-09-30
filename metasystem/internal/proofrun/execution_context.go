@@ -39,10 +39,10 @@ func CaptureSharedExecutionContext(executionRoot, configurationPath string, envi
 	var err error
 	if preparedManifest != "" {
 		if len(preparedManifest) != sha256.Size*2 {
-			return ExecutionContext{}, fmt.Errorf("prepared testing manifest must be a SHA-256 digest")
+			return ExecutionContext{}, fmt.Errorf("the prepared test manifest must be a SHA-256 hash")
 		}
 		if _, err := hex.DecodeString(preparedManifest); err != nil {
-			return ExecutionContext{}, fmt.Errorf("prepared testing manifest must be a SHA-256 digest")
+			return ExecutionContext{}, fmt.Errorf("the prepared test manifest must be a SHA-256 hash")
 		}
 		context.ManifestDigest = preparedManifest
 	} else if context.ManifestDigest, err = FullDigest(executionRoot); err != nil {

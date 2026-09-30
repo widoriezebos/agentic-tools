@@ -478,7 +478,7 @@ func TestHostResourceLockedEmptyMarkerRefusesAdmission(t *testing.T) {
 		_ = lease.Close()
 		t.Fatal("locked empty marker was ignored")
 	}
-	if err == nil || !strings.Contains(err.Error(), "unreconciled proof resource marker") {
+	if err == nil || !strings.Contains(err.Error(), "leftover test-run resource marker") {
 		t.Fatalf("locked unknown marker should refuse immediately: %v", err)
 	}
 }

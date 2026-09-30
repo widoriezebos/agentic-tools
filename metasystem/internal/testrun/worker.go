@@ -9,14 +9,16 @@ import (
 	"io"
 	"os/exec"
 	"slices"
-	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 )
 
 const testWorkerProtocol = "metasystem.test-worker"
 
-var ErrWorkerPolicyUnsupported = errors.New("TEST_WORKER_POLICY_UNSUPPORTED")
+// ErrWorkerPolicyUnsupported refuses a pinned engine whose test workers
+// this engine cannot drive.
+var ErrWorkerPolicyUnsupported error = &refusal.Coded{Code: "TEST_WORKER_POLICY_UNSUPPORTED", Reason: errors.New("the pinned engine cannot run this engine's test workers")}
 
 type WorkerCapabilities struct {
 	SchemaVersion                 int    `json:"schemaVersion"`
@@ -56,21 +58,21 @@ func RequireWorkerCapabilities(ctx context.Context, engine string, environment [
 	command.Env = Environment(environment)
 	data, err := command.CombinedOutput()
 	if err != nil {
-		return WorkerCapabilities{}, fmt.Errorf("%w: trusted destination engine %q does not support test worker protocol %d (%v: %s); stage, prove, and install the backend compatibility release matching this frontend first", ErrWorkerPolicyUnsupported,
-			engine, proofrun.TestWorkerProtocolVersion, err, strings.TrimSpace(string(data)))
+		return WorkerCapabilities{}, fmt.Errorf("%w: %s did not answer the worker handshake (%v); install a matching engine release first", ErrWorkerPolicyUnsupported,
+			engine, err)
 	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	var capabilities WorkerCapabilities
 	if err := decoder.Decode(&capabilities); err != nil {
-		return WorkerCapabilities{}, fmt.Errorf("%w: trusted destination engine %q returned malformed worker capabilities: %v; stage, prove, and install the backend compatibility release first", ErrWorkerPolicyUnsupported, engine, err)
+		return WorkerCapabilities{}, fmt.Errorf("%w: %s gave an unreadable handshake answer (%v); install a matching engine release first", ErrWorkerPolicyUnsupported, engine, err)
 	}
 	if err := decoder.Decode(&struct{}{}); err != io.EOF {
-		return WorkerCapabilities{}, fmt.Errorf("%w: trusted destination engine %q returned trailing worker capability data; stage, prove, and install the backend compatibility release first", ErrWorkerPolicyUnsupported, engine)
+		return WorkerCapabilities{}, fmt.Errorf("%w: %s added data after its handshake answer; install a matching engine release first", ErrWorkerPolicyUnsupported, engine)
 	}
 	want := CurrentWorkerCapabilities()
 	if !sameKnownWorkerCapabilities(capabilities, want) {
-		return WorkerCapabilities{}, fmt.Errorf("%w: trusted destination engine %q reports incompatible worker capabilities %+v, require %+v; stage, prove, and install the matching backend compatibility release first",
-			ErrWorkerPolicyUnsupported, engine, capabilities, want)
+		return WorkerCapabilities{}, fmt.Errorf("%w: %s drives workers differently from this engine; install a matching engine release first",
+			ErrWorkerPolicyUnsupported, engine)
 	}
 	return capabilities, nil
 }

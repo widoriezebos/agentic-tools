@@ -61,14 +61,34 @@ func TestFastForwardBlockerRemediesPreserveCheckout(t *testing.T) {
 
 func TestUnprintableBlockerPathsAreCountedNotRendered(t *testing.T) {
 	err := Refuse("fast-forward-blocked", []Fact{Path("untracked-path", "dir/line\nbreak")}, "blocked")
-	if err == nil || strings.Contains(err.Error(), "line\nbreak") || !strings.Contains(err.Error(), "unprintable=1 see=git-status--porcelain-z") {
+	if err == nil || strings.Contains(err.Error()+Detail(err), "line\nbreak") || !strings.Contains(Detail(err), "unprintable=1 see=git-status--porcelain-z") {
 		t.Fatalf("unprintable blocker path was not counted and hidden: %v", err)
 	}
 }
 
 func TestRefusalQuotesPathFacts(t *testing.T) {
 	err := Refuse("not-enrolled", []Fact{Path("linked-worktree", "/tmp/a'b")}, "enrollment absent")
-	if err == nil || !strings.Contains(err.Error(), `linked-worktree='/tmp/a'\''b'`) || !strings.Contains(err.Error(), `cd '/tmp/a'\''b'`) {
+	if err == nil || !strings.Contains(Detail(err), `linked-worktree='/tmp/a'\''b'`) || !strings.Contains(err.Error(), `cd '/tmp/a'\''b'`) {
 		t.Fatalf("path fact was not shell-quoted in the refusal and remedy: %v", err)
+	}
+}
+
+// TestRefusalReadsAsTwoLines holds "Messages a Person Reads": the reason a
+// person reads first, the command second, and the code, cause and facts only
+// in the detail.
+func TestRefusalReadsAsTwoLines(t *testing.T) {
+	t.Parallel()
+	err := RefuseWith("child-failed", []Fact{Path("engine", "/pins/engine"), Value("command", Command("/pins/engine", "test", "plan", "--root", "/a b"))},
+		"the pinned engine failed while choosing which tests to run (exit status 1)", "panic: boom")
+	lines := strings.Split(err.Error(), "\n")
+	if len(lines) != 2 || lines[0] != "the pinned engine failed while choosing which tests to run (exit status 1)" ||
+		lines[1] != "run: /pins/engine test plan --root '/a b'" {
+		t.Fatalf("refusal is not the reason and the command: %q", err.Error())
+	}
+	if strings.Contains(err.Error(), Code) || strings.Contains(err.Error(), "cause=") || strings.Contains(err.Error(), "panic") {
+		t.Fatalf("refusal shows a detail by default: %q", err.Error())
+	}
+	if detail := Detail(err); !strings.HasPrefix(detail, Code+": cause=child-failed engine='/pins/engine'") || !strings.HasSuffix(detail, ": panic: boom") {
+		t.Fatalf("detail lost the code, cause, facts or background: %q", detail)
 	}
 }

@@ -1033,7 +1033,7 @@ func verifyRecertificationWithRaw(root, chain, suppliedPath string, raw func(git
 		return fail("record-digest", err)
 	}
 	if gittree.ManifestDigest(record.HunkManifest) != record.HunkManifestDigest {
-		return fail("manifest-digest", fmt.Errorf("hunk manifest digest differs"))
+		return fail("manifest-digest", fmt.Errorf("hunk manifest hash differs"))
 	}
 	if record.GateWidth != "area" && record.GateWidth != "full" {
 		return fail("gate-width", fmt.Errorf("recorded gate width is invalid"))

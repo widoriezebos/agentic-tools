@@ -99,7 +99,7 @@ func controllerDescendant(prober identity.Prober, parentPID parentPIDLookup, con
 		}
 		current = parent
 	}
-	return fmt.Errorf("consumer ancestry exceeds the %d-process proof bound", maxControllerAncestryDepth)
+	return fmt.Errorf("the controller is more than %d parent processes above this one, the most the check follows", maxControllerAncestryDepth)
 }
 
 func probeAncestryIdentity(prober identity.Prober, pid int64) (ancestryIdentity, error) {
@@ -155,7 +155,7 @@ func confirmAncestryChain(prober identity.Prober, parentPID parentPIDLookup, cha
 		return fmt.Errorf("controller identity confirmation: %w", err)
 	}
 	if !terminal.sameProcess(current) || !current.matchesRef(controller) {
-		return fmt.Errorf("controller identity changed during the ancestry proof")
+		return fmt.Errorf("the controller process changed while its ancestry was being checked")
 	}
 	return nil
 }
@@ -166,7 +166,7 @@ func confirmAncestryEdge(prober identity.Prober, parentPID parentPIDLookup, chil
 		return fmt.Errorf("ancestry child pid %d confirmation: %w", child.ref.Pid, err)
 	}
 	if !child.sameProcess(currentChild) {
-		return fmt.Errorf("ancestry child pid %d died or was reused during the proof", child.ref.Pid)
+		return fmt.Errorf("process %d exited or was reused while its ancestry was being checked", child.ref.Pid)
 	}
 	if err := confirmParentPID(parentPID, child.ref.Pid, parent.ref.Pid); err != nil {
 		return err
@@ -176,7 +176,7 @@ func confirmAncestryEdge(prober identity.Prober, parentPID parentPIDLookup, chil
 		return fmt.Errorf("ancestry parent pid %d confirmation: %w", parent.ref.Pid, err)
 	}
 	if !parent.sameProcess(currentParent) {
-		return fmt.Errorf("ancestry parent pid %d died or was reused during the proof", parent.ref.Pid)
+		return fmt.Errorf("parent process %d exited or was reused while its ancestry was being checked", parent.ref.Pid)
 	}
 	currentChild, err = probeAncestryIdentity(prober, child.ref.Pid)
 	if err != nil {

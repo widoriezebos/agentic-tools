@@ -2347,7 +2347,7 @@ func TestProofGoalResolutionNamesTheOnlyBreachStoppedClaim(t *testing.T) {
 	root, reads := repository.root, repository.reads()
 	t.Setenv("METASYSTEM_PROOF_CONTROL_ROOT", "")
 	t.Setenv("METASYSTEM_PROOF_ATTEMPT", "")
-	want := "proof accounting has no live claimed goal for machine mac-cli; the only claim here is breach-stopped: standing-validation (stop stop-standing-validation-r2-f1); pass --goal"
+	want := "machine mac-cli holds only goal standing-validation, which is stopped (stop-standing-validation-r2-f1); name a goal with --goal GOAL"
 
 	for _, test := range []struct {
 		name    string
@@ -2583,7 +2583,7 @@ func TestProofGoalResolutionStaysAmbiguousBesideALandingClaim(t *testing.T) {
 	// Beside a working claim both are live proof targets, so the seat names one.
 	addProofSelectorLiveGoal(t, repository)
 	got, err := uniqueActiveProofGoalWithReads(root, now, reads.ResolveMachine, reads.ResolveEndpoint)
-	if err == nil || got != "" || !strings.Contains(err.Error(), "ambiguous") || !strings.Contains(err.Error(), "--goal") {
+	if err == nil || got != "" || !strings.Contains(err.Error(), "several claimed goals") || !strings.Contains(err.Error(), "--goal") {
 		t.Fatalf("a working claim beside a landing claim did not stay ambiguous: %q %v", got, err)
 	}
 }

@@ -179,8 +179,8 @@ func TestSuiteProgressBedRecycledIdentityRefusesEveryKillAction(t *testing.T) {
 	options.PreserveEvidence = func(string, []string) string { preservations++; return "bounded copy completed" }
 
 	err := RunWatchdog(options)
-	if err == nil || !strings.Contains(err.Error(), "kill refused because suite pid 999970") ||
-		!strings.Contains(err.Error(), "no longer has its recorded start identity") {
+	if err == nil || !strings.Contains(err.Error(), "pid 999970 is no longer the suite, so it was not killed") ||
+		!strings.Contains(err.Error(), "(dead)") {
 		t.Fatalf("recycled-identity refusal = %v", err)
 	}
 	if signals != 0 || shutdowns != 0 {

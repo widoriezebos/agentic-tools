@@ -110,14 +110,14 @@ func (record Record) Key() string {
 // RecordPath returns the durable record path for a suite.
 func RecordPath(root, suite string) (string, error) {
 	if suite == "" || suite == "." || suite == ".." || filepath.Base(suite) != suite || strings.ContainsAny(suite, `/\`) {
-		return "", errors.New("proof-run suite must be one path-safe name")
+		return "", errors.New("a suite name must be one path-safe word")
 	}
 	return filepath.Join(root, "artifacts", "agents", "proof-runs", suite+".json"), nil
 }
 
 func ProcessRecordPath(root, attemptID, launchID string) (string, error) {
 	if !safeAttemptID(attemptID) || !safeAttemptID(launchID) {
-		return "", errors.New("proof-run attempt and launch identifiers must be path-safe")
+		return "", errors.New("test run and launch ids must be path-safe")
 	}
 	return filepath.Join(root, "artifacts", "agents", "proof-runs", "processes", attemptID+"-"+launchID+".json"), nil
 }
@@ -141,13 +141,13 @@ func ReadRecord(root, suite string) (Record, error) {
 	}
 	var record Record
 	if err := json.Unmarshal(data, &record); err != nil {
-		return Record{}, fmt.Errorf("read proof-run record %s: %w", path, err)
+		return Record{}, fmt.Errorf("read suite run record %s: %w", path, err)
 	}
 	if err := validateRecord(record); err != nil {
-		return Record{}, fmt.Errorf("read proof-run record %s: %w", path, err)
+		return Record{}, fmt.Errorf("read suite run record %s: %w", path, err)
 	}
 	if record.Root != root || record.Suite != suite {
-		return Record{}, fmt.Errorf("read proof-run record %s: record identity does not match its path", path)
+		return Record{}, fmt.Errorf("read suite run record %s: it names a different run than its file", path)
 	}
 	return record, nil
 }
@@ -165,16 +165,16 @@ func ReadProcessRecord(root, key string) (Record, error) {
 		}
 		var record Record
 		if err := json.Unmarshal(data, &record); err != nil {
-			return Record{}, fmt.Errorf("read proof-run record %s: %w", path, err)
+			return Record{}, fmt.Errorf("read suite run record %s: %w", path, err)
 		}
 		if record.Key() != key {
 			continue
 		}
 		if err := validateRecord(record); err != nil {
-			return Record{}, fmt.Errorf("read proof-run record %s: %w", path, err)
+			return Record{}, fmt.Errorf("read suite run record %s: %w", path, err)
 		}
 		if expected, _ := recordPath(record); expected != path || record.ControlRoot != root {
-			return Record{}, fmt.Errorf("read proof-run record %s: record identity does not match its path", path)
+			return Record{}, fmt.Errorf("read suite run record %s: it names a different run than its file", path)
 		}
 		return record, nil
 	}
@@ -212,7 +212,7 @@ func AuthenticateWorker(controlRoot, attemptID, recordKey, claimPath string, cal
 			}
 		}
 	}
-	return errors.New("caller is not inside an authenticated proof worker")
+	return errors.New("this process does not run inside a test worker")
 }
 
 // ReadRecords reads the proof-run inventory in stable suite-name order.
@@ -235,14 +235,14 @@ func ReadRecords(root string) ([]Record, error) {
 		}
 		var record Record
 		if err := json.Unmarshal(data, &record); err != nil {
-			return nil, fmt.Errorf("read proof-run record %s: %w", path, err)
+			return nil, fmt.Errorf("read suite run record %s: %w", path, err)
 		}
 		if err := validateRecord(record); err != nil {
-			return nil, fmt.Errorf("read proof-run record %s: %w", path, err)
+			return nil, fmt.Errorf("read suite run record %s: %w", path, err)
 		}
 		expected, pathErr := recordPath(record)
 		if pathErr != nil || expected != path || record.ControlRoot != "" && record.ControlRoot != root || record.ControlRoot == "" && record.Root != root {
-			return nil, fmt.Errorf("read proof-run record %s: record identity does not match its path", path)
+			return nil, fmt.Errorf("read suite run record %s: it names a different run than its file", path)
 		}
 		records = append(records, record)
 	}
@@ -281,7 +281,7 @@ func markDone(root string, expected Record, launcher identity.Ref) error {
 		return err
 	}
 	if record.Launcher.Ref() != launcher {
-		return errors.New("proof-run record now belongs to another launcher")
+		return errors.New("the suite run record now belongs to another launcher")
 	}
 	record.Status = StatusDone
 	return writeRecord(record)
@@ -289,25 +289,25 @@ func markDone(root string, expected Record, launcher identity.Ref) error {
 
 func validateRecord(record Record) error {
 	if record.Suite == "" || record.Root == "" || record.FenceGeneration < 0 {
-		return errors.New("proof-run record requires suite, root, and a non-negative fence generation")
+		return errors.New("a suite run record needs a suite, a root and a fence number of zero or more")
 	}
 	if record.Status != StatusRunning && record.Status != StatusDone {
-		return fmt.Errorf("proof-run status %q is invalid", record.Status)
+		return fmt.Errorf("suite run status %q is invalid", record.Status)
 	}
 	if record.AttemptID != "" {
 		if !safeAttemptID(record.AttemptID) || !safeAttemptID(record.LaunchID) || record.ControlRoot == "" {
-			return errors.New("attempt-scoped proof-run record requires path-safe attempt and launch identifiers and a control root")
+			return errors.New("a suite run of a test run needs path-safe ids and a control root")
 		}
 	}
 	for name, process := range map[string]ProcessIdentity{
 		"launcher": record.Launcher, "suite": record.SuiteProcess, "watchdog": record.Watchdog,
 	} {
 		if process.Pid < 1 || process.Ref().Mode() == identity.CompareInvalid {
-			return fmt.Errorf("proof-run %s identity is invalid", name)
+			return fmt.Errorf("suite run %s identity is invalid", name)
 		}
 	}
 	if record.SuiteProcess.Pgid < 1 {
-		return errors.New("proof-run suite process group is invalid")
+		return errors.New("the suite's process group is invalid")
 	}
 	return nil
 }

@@ -225,7 +225,7 @@ func TestArmSnapshotFailureIsTerminalAndARefusalFallsBack(t *testing.T) {
 	native := newGateWorld(t)
 	native.statuses["native"] = 1
 	if code, _ := native.arm("none"); code != 1 || !strings.Contains(native.stderr.String(), "native red output") ||
-		!strings.Contains(native.stderr.String(), "proof-run go-gate-tests: native selection failed") {
+		!strings.Contains(native.stderr.String(), "go gate tests: native selection failed") {
 		t.Fatalf("native diagnostic lost: exit %d\n%s", code, native.output())
 	}
 	if values, _ := readArmState(t, state); values["witness_state"] != "" {

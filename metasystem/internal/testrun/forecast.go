@@ -160,7 +160,7 @@ func PrefixCostSelection(id, kind, tree, goalID string, requirements []string) C
 func ProofCostCap(root string) (uint64, error) {
 	capMinutes, _, _, err := dispatchcore.ResolveCap(filepath.Join(batch.ModuleRoot(root), "metasystem.conf"), "proof", "main", "proof", "", "")
 	if err != nil || capMinutes < 1 {
-		return 0, fmt.Errorf("resolve declared proof cap: %w", err)
+		return 0, fmt.Errorf("the test-run time cap in metasystem.conf cannot be read: %w", err)
 	}
 	return uint64(capMinutes), nil
 }

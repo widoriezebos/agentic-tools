@@ -81,7 +81,7 @@ func run(ctx context.Context, args []string, root string, deps deps) int {
 	}
 }
 
-const usage = "usage: go run ./cmd/devgate build [--out PATH] [--trimpath] | static [--proof-out PATH] | gate [--goal G] [--cap-min N] [--witness-check-only] [--arm plain|none --controller-pid PID --state-out FILE [--delivery]]"
+const usage = "usage: go run ./cmd/devgate build [--out PATH] [--trimpath] | static [--proof-out PATH] [--verbose] | gate [--goal GOAL] [--cap-min N] [--witness-check-only] [--arm plain|none --controller-pid PID --state-out FILE [--delivery]]"
 
 // deps is every effect the build has on the world, so a test drives the
 // whole action against stubbed Git, a stubbed Go toolchain and a chosen fence.

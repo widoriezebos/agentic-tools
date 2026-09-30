@@ -212,7 +212,7 @@ func TestExperimentCheckNamesTheMissingLedger(t *testing.T) {
 		t.Errorf("experiment check --file absent: code %d stderr %q", code, stderr)
 	}
 	code, _, stderr = runPublic(t, "experiment", "check")
-	if code != 2 || !strings.Contains(stderr, "needs the ledger: metasystem experiment check --file LEDGER") {
+	if code != 2 || !strings.Contains(stderr, "needs the ledger to check; nothing was checked\nrun: metasystem experiment check --file LEDGER") {
 		t.Errorf("bare experiment check: code %d stderr %q", code, stderr)
 	}
 	if _, _, stderr := runPublic(t, "experiment", "check", "--bogus"); strings.Contains(stderr, "Exit codes") {

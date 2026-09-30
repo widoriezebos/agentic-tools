@@ -157,7 +157,7 @@ func (r *Retention) payload(id string) string { return filepath.Join(r.root(), i
 func (r *Retention) payloads() (map[string]bool, error) {
 	entries, err := os.ReadDir(r.root())
 	if err != nil {
-		return nil, fmt.Errorf("the proof-run store cannot be listed: %w", err)
+		return nil, fmt.Errorf("the suite run records cannot be listed: %w", err)
 	}
 	found := map[string]bool{}
 	for _, entry := range entries {
@@ -368,7 +368,7 @@ func (r *Retention) attemptRecords() (map[string][]string, error) {
 				err = decodeStrict(data, &record)
 			}
 			if err != nil {
-				return nil, fmt.Errorf("proof-run record %s cannot be read: %w", path, err)
+				return nil, fmt.Errorf("suite run record %s cannot be read: %w", path, err)
 			}
 			if record.AttemptID != "" {
 				byAttempt[record.AttemptID] = append(byAttempt[record.AttemptID], path)
@@ -521,15 +521,15 @@ func readRetainedAttempt(control, id string) (Attempt, error) {
 	}
 	var attempt Attempt
 	if err := decodeStrict(data, &attempt); err != nil {
-		return Attempt{}, fmt.Errorf("proof attempt %s: %w", id, err)
+		return Attempt{}, fmt.Errorf("test run %s: %w", id, err)
 	}
 	if attempt.AttemptID != id {
-		return Attempt{}, fmt.Errorf("proof attempt %s names %q", id, attempt.AttemptID)
+		return Attempt{}, fmt.Errorf("test run %s names %q", id, attempt.AttemptID)
 	}
 	switch attempt.SchemaVersion {
 	case LegacyAttemptSchemaVersion, AttemptSchemaVersion, CandidateAttemptSchemaVersion, IdentityAttemptSchemaVersion:
 	default:
-		return Attempt{}, fmt.Errorf("proof attempt %s has schema %d, which this engine does not know", id, attempt.SchemaVersion)
+		return Attempt{}, fmt.Errorf("test run %s has schema %d, which this engine does not know", id, attempt.SchemaVersion)
 	}
 	return attempt, nil
 }

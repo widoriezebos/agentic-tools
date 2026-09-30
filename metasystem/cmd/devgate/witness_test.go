@@ -315,7 +315,7 @@ func TestWitnessPolicyWithoutTheSkipFamilyRunsTheFullGate(t *testing.T) {
 	}
 	w.setenv(wit.env("ENGINE")...)
 	if code := w.gateAt(consumer); !w.reachedFullProof(code) ||
-		!strings.Contains(w.stderr.String(), "go gate: witness acceptable, but the prospective behavior-surface policy does not authorize witness-engine-gate; running the full gate") {
+		!strings.Contains(w.stderr.String(), "go gate: the witness holds, but the surface policy does not let it stand in; running the full gate") {
 		t.Fatalf("exit %d\n%s", code, w.output())
 	}
 	probe := brokenProofWorld(t)

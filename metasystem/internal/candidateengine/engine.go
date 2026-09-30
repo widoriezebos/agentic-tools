@@ -158,7 +158,7 @@ func Prepare(ctx context.Context, controlRoot string, workspace gittree.Workspac
 		// the v2 namespace; the legacy candidate-engines/<identity> branch is
 		// gone (engine-owns-disk-lifetimes 3.5, DL2-11), and its entries are
 		// strays a person removes.
-		return nil, fmt.Errorf("a candidate engine is prepared only inside a proof run's scratch (metasystem test run creates one)")
+		return nil, fmt.Errorf("a candidate engine is built only inside a test run's scratch space (metasystem test run makes one)")
 	}
 	return prepareScratch(ctx, scratch, controlRoot, workspace, installationPrefix, candidateTree, environment, beforeColdBuild, io, buildIdentity)
 }
@@ -449,7 +449,7 @@ func Build(ctx context.Context, workspace gittree.Workspace, installationPrefix,
 	build.Digest, err = digest.FileSHA256(build.Path)
 	if err != nil {
 		_ = build.Close()
-		return nil, fmt.Errorf("candidate engine build failed while hashing its proof output: %w", err)
+		return nil, fmt.Errorf("the built candidate engine could not be hashed: %w", err)
 	}
 	return build, nil
 }

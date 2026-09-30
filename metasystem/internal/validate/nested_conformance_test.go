@@ -123,7 +123,7 @@ func TestUnnamedBaseKeepsTheGenericRefusal(t *testing.T) {
 
 	for _, base := range []string{firstUnnamedBase, secondUnnamedBase} {
 		if _, _, err := missionBaseSequencePoint(root, "m1", base); err == nil ||
-			!strings.Contains(err.Error(), "not a named expected-tree sequence point") {
+			!strings.Contains(err.Error(), "is not a sequence point of mission") {
 			t.Fatalf("an unnamed base (%s) keeps the generic refusal: %v", base, err)
 		}
 	}
