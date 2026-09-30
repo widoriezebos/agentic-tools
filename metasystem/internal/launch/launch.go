@@ -115,6 +115,9 @@ func (m *Manager) Start(spec StartSpec) (Record, error) {
 	if spec.Kind == "seat" && settings.SeatRuntime == SeatRuntimeOff {
 		return Record{}, fmt.Errorf("seats are off here (%s=%s); set claude, codex or auto in metasystem.conf.local", SeatRuntimeKey, SeatRuntimeOff)
 	}
+	if err := landingRuntimeRefusal(spec.Kind, settings.launchRuntime(spec.Kind)); err != nil {
+		return Record{}, err
+	}
 	adapterName := adapterForLane(spec.Kind, settings.launchRuntime(spec.Kind))
 	if adapterName == "" {
 		return Record{}, fmt.Errorf("launch kind %q is not available", spec.Kind)
@@ -307,6 +310,9 @@ func (m *Manager) Supervise(id string) (Record, error) {
 		return m.failCause(id, "declared-outputs: "+err.Error(), nil)
 	}
 	defer releaseOutputs()
+	if record.Kind == LandingKind && record.Adapter != "claude-headless" {
+		return m.failCause(id, "command: "+refuseUngatedLanding(record, record.Adapter).Error(), nil)
+	}
 	command, err := adapter.Command(record, stateDir)
 	if err != nil {
 		return m.failCause(id, "command: "+err.Error(), nil)

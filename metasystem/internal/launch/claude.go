@@ -49,7 +49,7 @@ func (adapter ClaudeHeadless) Command(record Record, stateDir string) (Command, 
 	// fail-closed tool gate arrives this way (agentgate.ClaudeSettings), and
 	// a landing session never starts without it.
 	settings := readString(record.AdapterData, "settings")
-	if settings == "" && record.Kind == "landing" {
+	if settings == "" && record.Kind == LandingKind {
 		return Command{}, fmt.Errorf("a landing session needs its tool gate settings; the launch records them under AdapterData \"settings\"")
 	}
 	if settings != "" {

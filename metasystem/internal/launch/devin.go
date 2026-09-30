@@ -46,6 +46,9 @@ func devinModel(model, effort string) string {
 }
 
 func (adapter DevinPrint) Command(record Record, stateDir string) (Command, error) {
+	if err := refuseUngatedLanding(record, "devin-print"); err != nil {
+		return Command{}, err
+	}
 	if window := readInt64(record.AdapterData, "window"); window != 0 {
 		return Command{}, fmt.Errorf("devin has no context-window cap to enforce window=%d; set launch.%s.window.tokens=0", window, windowLane(record.Kind))
 	}
