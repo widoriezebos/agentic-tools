@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 1
-- Sequence: 21
+- Sequence: 20
 - Risk: severity=2 novelty=2 exposure=2 accumulation=2 basis="severity 2: a narrowed proof selection silently under-tests; novelty 2: a new contract feature; exposure 2: every change to a mirrored surface; accumulation 2: grows with each mirrored surface"
 - Tier: 2
 - Intent: What: When one test area must always run the same tests as another, testing.json says so, and a missing test group is refused when the file is read instead of being found later in a long test run. Why: On 09-14 a new test group was added to one area and not to its twin; it surfaced only in a full package run. Pros: The mistake cannot be written, and no long run is needed to find it. Cons: It adds a field to the test configuration format, and the tool that generates testing.json must support it.
 - Origin: human
 - Next step: Next: testing.json is generated, so add a "mirrors" field to the test-area schema that metasystem testing add-tests and the contract reader both honour; move context-budget to it; refuse a mirror with a missing group when the file is loaded. Done when: repeating the 09-14 mistake is refused when testing.json is loaded, naming the group and the area.
 - OpenedAt: 2026-09-14T16:16:33Z
-- Revision: 150
+- Revision: 151
 - BudgetExceptions: 0
 
 History:
@@ -163,4 +163,5 @@ History:
 - 2026-09-30T18:56:19Z 1D3RXJ4CDWBR9TP5CP8AE5CN86-m1e-b6a4eb0a done actor=human:wido targets=cross-cutting-change-inventories-its-readers,failures-show-observed-against-expected,testing-surfaces-declare-their-mirror reason=priority-order from=1:24 to=1:23
 - 2026-09-30T18:57:08Z 1M12F43HHGZ10728PZ82TG2YWG-m1e-b6a4eb0a done actor=human:wido targets=busy-seat-shells-are-ended,cross-cutting-change-inventories-its-readers,evidence-and-build-output-have-retention-and-stay-unindexed,fixture-runners-and-fakes-bound-their-own-life,follow-up-brief-cannot-cite-fresh-trunk-files,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,round-proof-feeds-the-next-brief,testing-surfaces-declare-their-mirror reason=priority-order from=1:23 to=1:22
 - 2026-09-30T18:57:20Z 96YGY7PSQV1SVDGAZ9A5SGV49F-m1e-b6a4eb0a done actor=human:wido targets=busy-seat-shells-are-ended,cross-cutting-change-inventories-its-readers,evidence-and-build-output-have-retention-and-stay-unindexed,follow-up-brief-cannot-cite-fresh-trunk-files,round-proof-feeds-the-next-brief,testing-surfaces-declare-their-mirror reason=priority-order from=1:22 to=1:21
-Integrity: sha256=29f72ad0b11476563e9a4f1a68b68aad8b6bb4b74daa6c4f5ad63a9ccc096fe7
+- 2026-09-30T19:00:52Z TF97FR2MH8T93BFVAAQEE4WWBY-m1e-b6a4eb0a done actor=human:wido targets=busy-seat-shells-are-ended,cross-cutting-change-inventories-its-readers,evidence-and-build-output-have-retention-and-stay-unindexed,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,round-proof-feeds-the-next-brief,testing-surfaces-declare-their-mirror reason=priority-order from=1:21 to=1:20
+Integrity: sha256=8ca03cdf90e4caa06194d102329697cda6bef02ac95e72d8dfaecbdc3bc09d5e
