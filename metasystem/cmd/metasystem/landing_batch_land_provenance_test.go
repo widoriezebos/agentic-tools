@@ -441,10 +441,6 @@ func TestBatchLandingVerdictPolicyWithoutGit(t *testing.T) {
 			seams.Cleanup = func() error { call("cleanup"); return nil }
 			seams.Abandon = func(string, string) error { t.Fatal("unexpected abandon"); return nil }
 			seams.SeriesOnOrigin = func(string, string) (bool, error) { t.Fatal("unexpected origin membership check"); return false, nil }
-			seams.RecoverPush = func(string, string, string, func() error) (batch.PushRecovery, error) {
-				t.Fatal("unexpected push recovery")
-				return batch.PushRecovery{}, nil
-			}
 
 			landErr := batch.LandSeries(store, batchProvenanceTestID, batchowner.LandingOwnerLineage, at, seams)
 			landedRecord, loadErr := store.Load(batchProvenanceTestID)

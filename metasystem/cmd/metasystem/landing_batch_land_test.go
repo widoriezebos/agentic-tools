@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -214,24 +213,6 @@ exit 2
 	}
 }
 
-func TestRecoveryFailureDoesNotAbortAmbientRebase(t *testing.T) {
-	root := t.TempDir()
-	marker := filepath.Join(root, ".git", "rebase-merge", "ambient-owner")
-	if err := os.MkdirAll(filepath.Dir(marker), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(marker, []byte("unrelated\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	recovery, err := batchowner.ReopenMovedBatchAfterRecoveryFailure(root, "batch", "tip", "origin", batch.PushRecovery{}, errors.New("landing recovery failed"))
-	if err != nil || !recovery.Reopen {
-		t.Fatalf("recovery=%+v error=%v", recovery, err)
-	}
-	if data, err := os.ReadFile(marker); err != nil || string(data) != "unrelated\n" {
-		t.Fatalf("ambient rebase marker changed: data=%q error=%v", data, err)
-	}
-}
-
 func TestBatchProofInputsMovedIgnoresSiblingEnginePaths(t *testing.T) {
 	record := batch.Record{Proof: &batch.Proof{SelectedGroups: []string{"docs"}, InputManifests: map[string][]string{"docs": {"metasystem/docs/**"}}}}
 	for _, outside := range []string{"internal/other/x.go", "cmd/metasystem/main.go", "go.mod"} {
@@ -256,87 +237,6 @@ func TestPrefixGroupExecutionListsCachedPassesApart(t *testing.T) {
 		if got := batchowner.PrefixGroupExecution(row.group, row.reusable); got != row.want {
 			t.Errorf("prefixGroupExecution(%+v, %t) = %q, want %q", row.group.Execution, row.reusable, got, row.want)
 		}
-	}
-}
-
-// R6 (a): batch A landed a records commit while B waited to land. B's landing
-// run meets the moved base at its one push: nothing B's proof selected moved,
-// so the series rebases once, the retained verifier runs once on the rebased
-// tip, and B lands on the proof it has, with no new proof attempt.
-func TestFirstGreenLandsOthersRebaseWhenNoInputMoved(t *testing.T) {
-	t.Parallel()
-	root, id := t.TempDir(), "01j5x00000000000000000ba22"
-	claim := batch.Claim{Machine: "landing", Lineage: "owner", Epoch: 1, Revision: 1, AccountingRevision: 1}
-	record := batch.Record{Schema: 1, BatchID: id, State: batch.StateLanding, BaseTree: "base-1", PrefixTrees: []string{"tip-1"}, TipTree: "tip-1",
-		Units: []batch.Unit{{GoalID: "goal-b", Chain: "chain-b", Claim: claim, State: batch.UnitJoined}},
-		Proof: &batch.Proof{Status: "green", AttemptID: "tip-proof", BaseCommit: "commit-1", SelectedGroups: []string{"unit-standard"},
-			InputManifests: map[string][]string{"unit-standard": {"internal/**"}}},
-		History: []batch.HistoryEntry{{At: time.Unix(1, 0).UTC().Format(time.RFC3339Nano), To: batch.StateLanding, Actor: "owner"}}}
-	store := batch.NewStore(root, nil).WithReassembly(func(string, []batch.Unit) ([]string, error) { return []string{"tip-2"}, nil },
-		func(string, string) error { return nil }, nil)
-	if err := store.Create(record); err != nil {
-		t.Fatal(err)
-	}
-	var calls []string
-	var verified [][]string
-	edges := batchowner.MovedBaseEdges{
-		ReadGit: func(_ string, args ...string) (string, error) {
-			switch strings.Join(args, " ") {
-			case "rev-parse commit-2^{tree}":
-				return "base-2", nil
-			case "rev-parse HEAD":
-				return "rebased-tip", nil
-			case "log --first-parent --reverse --format=%T commit-2..rebased-tip":
-				return "rebased-tree", nil
-			}
-			return "", errors.New("unstubbed git " + strings.Join(args, " "))
-		},
-		OnEndpoint: func(string, string, string) (bool, error) { return false, nil },
-		Paths: func(_, from, to string) ([]string, string, error) {
-			calls = append(calls, "paths "+from+".."+to)
-			return []string{"records/2026-09-28.md"}, "", nil
-		},
-		Advance:   func(string) error { calls = append(calls, "advance"); return nil },
-		Held:      func(_, base, commit, _, _ string) error { calls = append(calls, "held "+base+" "+commit); return nil },
-		Verify:    func(_ string, _ batch.Record, trees []string) error { verified = append(verified, trees); return nil },
-		Authorize: func(string, batch.Store, batch.Record, string, time.Time) error { return nil },
-		Now:       func(string) (time.Time, error) { return time.Unix(3, 0), nil },
-		Publish:   func(_, _, expected, tip string) error { calls = append(calls, "publish "+expected+" "+tip); return nil },
-		Push:      func(_, _, base, tip string) error { calls = append(calls, "push "+base+" "+tip); return nil },
-		Fetch: func(string) (string, string, error) {
-			return "", "", errors.New("no fetch after a push that succeeded")
-		},
-	}
-	stalePushes := 0
-	seams := batch.LandSeams{Prepare: func(string) error { return nil }, Apply: func(batch.Unit) error { return nil },
-		AppendReceipt: func(batch.Unit, batch.PrefixReceipt) error { return nil },
-		Commit:        func(batch.Unit, batch.PrefixReceipt) (string, error) { return "old-tip", nil },
-		Held:          func(string, string) error { return nil }, PublishBranch: func(string, string) error { return nil },
-		Push: func(string, string) error {
-			stalePushes++
-			return &batch.EndpointPushError{StaleLease: true, Cause: errors.New("stale info")}
-		},
-		Origin: func() (string, error) { return "commit-2", nil }, OriginTree: func(string) (string, error) { return "base-2", nil },
-		Abandon: func(string, string) error { return nil }, SeriesOnOrigin: func(string, string) (bool, error) { return false, nil },
-		LeaseBase: "commit-1",
-		RecoverPush: func(origin, baseTree, tip string, _ func() error) (batch.PushRecovery, error) {
-			return batchowner.RecoverMovedBatchPushWith(root, id, record, "owner", "commit-1", origin, baseTree, tip, edges)
-		},
-	}
-	if err := batch.LandSeries(store, id, "owner", time.Unix(2, 0), seams); err != nil {
-		t.Fatal(err)
-	}
-	landed, err := store.Load(id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := []string{"paths base-1..base-2", "advance", "held commit-2 rebased-tip", "publish old-tip rebased-tip", "push commit-2 rebased-tip"}
-	if stalePushes != 1 || !slices.Equal(calls, want) || len(verified) != 1 || !slices.Equal(verified[0], []string{"rebased-tree"}) {
-		t.Fatalf("rebase at the tick: stale pushes=%d calls=%q verified=%q", stalePushes, calls, verified)
-	}
-	if landed.State != batch.StateLanding || landed.Landing == nil || !landed.Landing.PushComplete || landed.Landing.PushedTip != "rebased-tip" ||
-		landed.Proof.AttemptID != "tip-proof" || landed.Proof.Status != "green" {
-		t.Fatalf("B did not land on its proof: %+v landing=%+v", landed, landed.Landing)
 	}
 }
 
@@ -459,93 +359,5 @@ func TestLandingsAndRearmsTakeTurnsOnTheLaneCheckout(t *testing.T) {
 	}
 	if checkout.Held() {
 		t.Fatal("the lane checkout stayed held after every step finished")
-	}
-}
-
-// BL3S-01 at the recovered push: a composed proof's known flake is carried
-// when the first push is refused and when recovery begins, but its allowance
-// expires while the series is rebased and re-verified. The recovery rechecks
-// immediately before its endpoint push, so nothing publishes to main and
-// every member returns.
-func TestBatchRecoveredPushRechecksTheFlakeAllowanceImmediatelyBeforeItsPush(t *testing.T) {
-	t.Parallel()
-	root, id := t.TempDir(), "01j5x00000000000000000ba23"
-	allowance := time.Date(2030, 1, 1, 12, 0, 0, 0, time.UTC)
-	claim := batch.Claim{Machine: "landing", Lineage: "owner", Epoch: 1, Revision: 1, AccountingRevision: 1}
-	record := batch.Record{Schema: 1, BatchID: id, State: batch.StateLanding, BaseTree: "base-1", PrefixTrees: []string{"tip-1"}, TipTree: "tip-1",
-		Units: []batch.Unit{{GoalID: "goal-b", Chain: "chain-b", Claim: claim, State: batch.UnitJoined}},
-		Proof: &batch.Proof{Status: "green", AttemptID: "tip-proof", BaseCommit: "commit-1", SelectedGroups: []string{"unit-standard"},
-			InputManifests: map[string][]string{"unit-standard": {"internal/**"}},
-			Flakes:         []batch.FlakeUse{{Identity: "tr-flaky", EntryID: "F", AllowanceUntil: allowance}}},
-		History: []batch.HistoryEntry{{At: time.Unix(1, 0).UTC().Format(time.RFC3339Nano), To: batch.StateLanding, Actor: "owner"}}}
-	store := batch.NewStore(root, nil).WithReassembly(func(string, []batch.Unit) ([]string, error) { return []string{"tip-2"}, nil },
-		func(string, string) error { return nil }, nil)
-	if err := store.Create(record); err != nil {
-		t.Fatal(err)
-	}
-	var calls []string
-	rebased := false
-	edges := batchowner.MovedBaseEdges{
-		ReadGit: func(_ string, args ...string) (string, error) {
-			switch strings.Join(args, " ") {
-			case "rev-parse commit-2^{tree}":
-				return "base-2", nil
-			case "rev-parse HEAD":
-				return "rebased-tip", nil
-			case "log --first-parent --reverse --format=%T commit-2..rebased-tip":
-				return "rebased-tree", nil
-			}
-			return "", errors.New("unstubbed git " + strings.Join(args, " "))
-		},
-		OnEndpoint: func(string, string, string) (bool, error) { return false, nil },
-		Paths:      func(_, _, _ string) ([]string, string, error) { return []string{"records/2026-09-28.md"}, "", nil },
-		Advance:    func(string) error { return nil },
-		Held:       func(string, string, string, string, string) error { return nil },
-		Verify:     func(string, batch.Record, []string) error { return nil },
-		Authorize:  func(string, batch.Store, batch.Record, string, time.Time) error { return nil },
-		Now:        func(string) (time.Time, error) { return allowance.Add(-time.Hour), nil },
-		// The rebase and re-verification take the clock past the allowance.
-		Publish: func(_, _, expected, tip string) error {
-			rebased = true
-			calls = append(calls, "publish "+expected+" "+tip)
-			return nil
-		},
-		Push:  func(_, _, base, tip string) error { calls = append(calls, "push "+base+" "+tip); return nil },
-		Fetch: func(string) (string, string, error) { return "", "", errors.New("no fetch") },
-	}
-	seams := batch.LandSeams{Prepare: func(string) error { return nil }, Apply: func(batch.Unit) error { return nil },
-		AppendReceipt: func(batch.Unit, batch.PrefixReceipt) error { return nil },
-		Commit:        func(batch.Unit, batch.PrefixReceipt) (string, error) { return "old-tip", nil },
-		Held:          func(string, string) error { return nil }, PublishBranch: func(string, string) error { return nil },
-		Push: func(string, string) error {
-			return &batch.EndpointPushError{StaleLease: true, Cause: errors.New("stale info")}
-		},
-		Origin: func() (string, error) { return "commit-2", nil }, OriginTree: func(string) (string, error) { return "base-2", nil },
-		Abandon: func(string, string) error { return nil }, SeriesOnOrigin: func(string, string) (bool, error) { return false, nil },
-		LeaseBase: "commit-1",
-		FlakeRegister: func() ([]batch.OpenEntry, error) {
-			return []batch.OpenEntry{{ID: "F", Identity: "tr-flaky", Class: batch.ClassKnownFlake, AllowanceUntil: allowance}}, nil
-		},
-		Now: func() (time.Time, error) {
-			if rebased {
-				return allowance.Add(time.Minute), nil
-			}
-			return allowance.Add(-time.Hour), nil
-		},
-		RecoverPush: func(origin, baseTree, tip string, recheck func() error) (batch.PushRecovery, error) {
-			recovery := edges
-			recovery.Recheck = recheck
-			return batchowner.RecoverMovedBatchPushWith(root, id, record, "owner", "commit-1", origin, baseTree, tip, recovery)
-		},
-	}
-	err := batch.LandSeries(store, id, "owner", time.Unix(2, 0), seams)
-	returned, loadErr := store.Load(id)
-	if loadErr != nil {
-		t.Fatal(loadErr)
-	}
-	if refusal := (*batch.FlakeAllowanceRefusal)(nil); !errors.As(err, &refusal) || refusal.Code != "BATCH_FLAKE_ALLOWANCE_REFUSED" || slices.Contains(calls, "push commit-2 rebased-tip") ||
-		returned.State != batch.StateDissolved || returned.Units[0].State != batch.UnitReturnPending || returned.Landing != nil {
-		t.Fatalf("an allowance that expired during recovery still published, or its landing progress overwrote the returned batch: err=%v calls=%q state=%s units=%+v landing=%+v",
-			err, calls, returned.State, returned.Units, returned.Landing)
 	}
 }

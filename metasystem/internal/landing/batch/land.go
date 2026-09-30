@@ -28,7 +28,6 @@ type LandingProgress struct {
 	CleanupDone   bool              `json:"cleanupDone,omitempty"`
 	RefusedOrigin string            `json:"refusedOrigin,omitempty"`
 	RefusedBase   string            `json:"refusedBase,omitempty"`
-	PushRounds    int               `json:"pushRounds,omitempty"`
 	PushRejection *PushRejection    `json:"pushRejection,omitempty"`
 }
 
@@ -89,10 +88,6 @@ type LandSeams struct {
 	Abandon        func(tip, detachAt string) error
 	SeriesOnOrigin func(origin, tip string) (bool, error)
 	LeaseBase      string
-	// RecoverPush rebases, re-verifies and pushes a refused series. It calls
-	// recheck immediately before its own endpoint push, so a known flake's
-	// allowance that expired while it rebased publishes nothing (BL3S-01).
-	RecoverPush func(refusedOrigin, base, tip string, recheck func() error) (PushRecovery, error)
 	// FlakeRegister and Now recheck, immediately before any publication, the
 	// known flakes a composed proof landed on (BL3S-01).
 	FlakeRegister func() ([]OpenEntry, error)
@@ -105,15 +100,9 @@ type FlakeAllowanceRefusal struct{ Code, Reason string }
 
 func (refusal *FlakeAllowanceRefusal) Error() string { return refusal.Reason }
 
-// PushRecovery is the one bounded decision after an endpoint lease refusal.
-// A changed proof input reopens the batch; otherwise the rebased, identity-
-// verified series is reported as one completed endpoint push.
-type PushRecovery struct {
-	Origin, BaseTree, Tip, LandedBy string
-	Reopen, Pushed                  bool
-}
-
-const maxRecoveryPushRounds = 3
+// A moved base is returned, never republished (lane runtime design r10,
+// K3): a lease the endpoint refuses because main moved abandons the
+// candidate and reopens the batch on the new main.
 
 // LandSeries creates every commit locally in original join order, checks the
 // whole range once, and pushes the complete series once.
@@ -179,7 +168,7 @@ func LandSeries(store Store, id, actor string, at time.Time, seams LandSeams) er
 		}
 		progress.PushComplete, progress.PushedTip = true, candidateTip
 		progress.recordReceiptTip(candidateTip)
-		progress.RefusedOrigin, progress.RefusedBase, progress.PushRounds, progress.PushRejection = "", "", 0, nil
+		progress.RefusedOrigin, progress.RefusedBase, progress.PushRejection = "", "", nil
 		return true, persistProgress(true)
 	}
 	holdPushRejection := func(rejectionOrigin string, pushErr error) error {
@@ -235,87 +224,6 @@ func LandSeries(store Store, id, actor string, at time.Time, seams LandSeams) er
 		}
 		return nil
 	}
-	recoverNow := func(recoveryOrigin, candidateTip string, pushErr error) (bool, error) {
-		if err := recheckFlakes(); err != nil {
-			return false, err
-		}
-		if seams.RecoverPush == nil {
-			return false, fmt.Errorf("%s: origin %s refused the complete series: %w", codeLandPushRefused, recoveryOrigin, pushErr)
-		}
-		recovery, recoveryErr := seams.RecoverPush(recoveryOrigin, record.BaseTree, candidateTip, recheckFlakes)
-		if recoveryErr != nil {
-			var fenced *PrefixFencedRefusal
-			var revision *PrefixRevisionRefusal
-			var budget *PrefixBudgetRefusal
-			var allowance *FlakeAllowanceRefusal
-			if errors.As(recoveryErr, &fenced) || errors.As(recoveryErr, &revision) || errors.As(recoveryErr, &budget) || errors.As(recoveryErr, &allowance) {
-				// The recovery owner has already requested return and
-				// reassembled survivors. Its old landing progress must not
-				// overwrite the new open or dissolved batch.
-				return false, recoveryErr
-			}
-		}
-		if recovery.Origin == "" {
-			recovery.Origin = recoveryOrigin
-		}
-		progress.PushRejection = nil
-		if recovery.Tip != "" {
-			// PublishLandingBranch completed. Preserve its lease tip even
-			// when the following endpoint transaction was refused.
-			progress.recordReceiptTip(recovery.Tip)
-		}
-		if recoveryErr != nil && IsNonLeaseEndpointRejection(recoveryErr) {
-			if storeErr := holdPushRejection(recovery.Origin, recoveryErr); storeErr != nil {
-				return false, errors.Join(pushErr, recoveryErr, storeErr)
-			}
-			return false, fmt.Errorf("%s: origin %s held after remote rejection: %w", codeLandPushRefused, recovery.Origin, recoveryErr)
-		}
-		progress.RefusedOrigin, progress.RefusedBase = recovery.Origin, recoveryOrigin
-		if recoveryErr != nil {
-			progress.PushRounds++
-		}
-		if storeErr := persistProgress(true); storeErr != nil {
-			return false, errors.Join(pushErr, recoveryErr, storeErr)
-		}
-		if recoveryErr != nil {
-			if progress.PushRounds >= maxRecoveryPushRounds {
-				baseTree := recovery.BaseTree
-				if baseTree == "" {
-					baseTree, err = originTree(recovery.Origin)
-					if err != nil {
-						return false, err
-					}
-				}
-				return abandonAndReopen(progress.publishedTip(), recovery.Origin, baseTree)
-			}
-			return false, fmt.Errorf("%s: origin %s recovery failed: %w", codeLandPushRefused, recoveryOrigin, errors.Join(pushErr, recoveryErr))
-		}
-		if recovery.Reopen {
-			if landed, checkErr := markAlreadyLanded(recovery.Origin, candidateTip); checkErr != nil || landed {
-				return landed, checkErr
-			}
-			if seams.SeriesOnOrigin == nil {
-				return false, fmt.Errorf("%s: already-landed helper is absent", codeLandUnwired)
-			}
-			if seams.Abandon == nil {
-				return false, fmt.Errorf("%s: abandon helper is absent", codeLandUnwired)
-			}
-			if abandonErr := seams.Abandon(candidateTip, recovery.Origin); abandonErr != nil {
-				return false, abandonErr
-			}
-			return false, ReopenMovedBase(store, id, recovery.BaseTree, recovery.LandedBy, actor, at)
-		}
-		if !recovery.Pushed || recovery.Tip == "" {
-			return false, fmt.Errorf("%s: origin %s is unchanged after the refused push: %w", codeLandPushRefused, recoveryOrigin, pushErr)
-		}
-		progress.PushComplete, progress.PushedTip = true, recovery.Tip
-		progress.recordReceiptTip(recovery.Tip)
-		progress.RefusedOrigin, progress.RefusedBase, progress.PushRounds = "", "", 0
-		if storeErr := persistProgress(true); storeErr != nil {
-			return false, storeErr
-		}
-		return true, nil
-	}
 	attemptPush := func(candidateTip string) (bool, error) {
 		if err := recheckFlakes(); err != nil {
 			return false, err
@@ -331,7 +239,7 @@ func LandSeries(store Store, id, actor string, at time.Time, seams LandSeams) er
 		pushErr := seams.Push(record.BaseTree, candidateTip)
 		if pushErr == nil {
 			progress.PushComplete, progress.PushedTip = true, candidateTip
-			progress.RefusedOrigin, progress.RefusedBase, progress.PushRounds, progress.PushRejection = "", "", 0, nil
+			progress.RefusedOrigin, progress.RefusedBase, progress.PushRejection = "", "", nil
 			return true, persistProgress(true)
 		}
 		// A retry after a durable non-lease hold must itself identify a stale
@@ -369,7 +277,11 @@ func LandSeries(store Store, id, actor string, at time.Time, seams LandSeams) er
 		if origin == progress.RefusedBase {
 			return false, fmt.Errorf("%s: origin %s is unchanged after the refused push: %w", codeLandPushRefused, origin, pushErr)
 		}
-		return recoverNow(origin, candidateTip, pushErr)
+		baseTree, treeErr := originTree(origin)
+		if treeErr != nil {
+			return false, errors.Join(pushErr, treeErr)
+		}
+		return abandonAndReopen(candidateTip, origin, baseTree)
 	}
 	if !progress.PushComplete && progress.publishedTip() != "" {
 		if landed, checkErr := markAlreadyLanded(origin, progress.publishedTip()); checkErr != nil {
@@ -405,21 +317,12 @@ func LandSeries(store Store, id, actor string, at time.Time, seams LandSeams) er
 		if candidateTip == "" {
 			return fmt.Errorf("%s: refused landing has no candidate tip", codeLandPushRefused)
 		}
-		if progress.RefusedBase == origin {
-			baseTree, treeErr := originTree(origin)
-			if treeErr != nil {
-				return treeErr
-			}
-			_, reopenErr := abandonAndReopen(candidateTip, origin, baseTree)
-			return reopenErr
+		baseTree, treeErr := originTree(origin)
+		if treeErr != nil {
+			return treeErr
 		}
-		pushed, recoveryErr := recoverNow(origin, candidateTip, errors.New("prior endpoint refusal"))
-		if recoveryErr != nil {
-			return recoveryErr
-		}
-		if !pushed {
-			return nil
-		}
+		_, reopenErr := abandonAndReopen(candidateTip, origin, baseTree)
+		return reopenErr
 	}
 	if !progress.PushComplete {
 		// A process may die after any local commit. Rebuild the complete local

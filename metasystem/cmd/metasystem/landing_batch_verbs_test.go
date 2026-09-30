@@ -117,12 +117,12 @@ func TestBatchRuntimeInputsCannotRegisterCapability(t *testing.T) {
 
 func TestBatchRolloutRequiresSealReceiptDiagnosisAndRecovery(t *testing.T) {
 	if batchowner.ProductionBatchProofDependencies.Seal == nil || batchowner.ProductionBatchProofDependencies.Launch == nil ||
-		batchowner.BatchDiagnosisSeams.Diagnose == nil || batchowner.BatchLandRecoverPush == nil {
+		batchowner.BatchDiagnosisSeams.Diagnose == nil {
 		t.Fatal("seal, proof, diagnosis, and moved-base recovery must be bound in every build")
 	}
 	seams := batchowner.BatchLandSeams("root", "batch", batch.Record{}, "base", "actor")
 	if seams.Prepare == nil || seams.AppendReceipt == nil || seams.Commit == nil || seams.Held == nil ||
-		seams.PublishBranch == nil || seams.Push == nil || seams.RecoverPush == nil || seams.Cleanup == nil {
+		seams.PublishBranch == nil || seams.Push == nil || seams.Cleanup == nil {
 		t.Fatal("receipt composition and atomic series landing must be bound in every build")
 	}
 }

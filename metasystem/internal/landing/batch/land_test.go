@@ -183,148 +183,46 @@ func TestBatchLandingDoesNotRepeatRefusedPushOnUnchangedOrigin(t *testing.T) {
 	}
 }
 
-func TestBatchLandingPersistsRecoveryBranchOnSecondRefusal(t *testing.T) {
-	_, store := landingBed(t)
-	pushes, recoveries, origins := 0, 0, 0
-	seams := greenLandSeams(&[]string{})
-	seams.LeaseBase = testCommit(1)
-	seams.SeriesOnOrigin = func(string, string) (bool, error) { return false, nil }
-	seams.Abandon = func(string, string) error { return nil }
-	seams.PublishBranch = func(string, string) error { return nil }
-	seams.Origin = func() (string, error) {
-		origins++
-		if origins > 2 {
-			return testCommit(3), nil
-		}
-		return testCommit(2), nil
-	}
-	seams.Push = func(_, _ string) error { pushes++; return staleLeaseRefusal("first endpoint refusal: stale info") }
-	var recoveryTips []string
-	seams.RecoverPush = func(origin, _, tip string, _ func() error) (PushRecovery, error) {
-		recoveries++
-		recoveryTips = append(recoveryTips, tip)
-		if recoveries == 1 {
-			return PushRecovery{Origin: testCommit(3), Tip: "rebased-tip"}, errors.New("second endpoint refusal")
-		}
-		return PushRecovery{Origin: origin, Tip: "landed-tip", Pushed: true}, nil
-	}
-	if err := LandSeries(store, testBatchID, "owner", time.Unix(4, 0), seams); err == nil {
-		t.Fatal("second endpoint refusal was accepted")
-	}
-	progress := load(t, store).Landing
-	if progress == nil || progress.RefusedOrigin != testCommit(3) || progress.BranchTip != "rebased-tip" {
-		t.Fatalf("second refusal progress=%+v", progress)
-	}
-	if err := LandSeries(store, testBatchID, "owner", time.Unix(5, 0), seams); err != nil {
-		t.Fatalf("moved origin did not resume from the persisted recovery branch: %v", err)
-	}
-	progress = load(t, store).Landing
-	if pushes != 1 || recoveries != 2 || !slices.Equal(recoveryTips, []string{"commit-goal-b", "rebased-tip"}) || progress == nil || progress.PushedTip != "landed-tip" {
-		t.Fatalf("pushes=%d recoveries=%d tips=%v progress=%+v", pushes, recoveries, recoveryTips, progress)
-	}
-}
-
-func TestBatchLandingOpensAfterThreeRecoveryPushRounds(t *testing.T) {
-	bed, store := landingBed(t)
-	publishedTip := "published-tip"
-	candidateRefTip := ""
-	strictReassembly(t, &store,
-		expectedAssembly(bed.moved, []string{"goal-a", "goal-b"}, []string{"chain-a", "chain-b"}, []string{testCommit(105), testCommit(106)}),
-		expectedReassembly{kind: "delete", batchID: testBatchID, leaseTip: publishedTip, onCall: func() {
-			if candidateRefTip != publishedTip {
-				t.Fatalf("candidate deletion lease=%q does not match current ref tip=%q", publishedTip, candidateRefTip)
-			}
-			candidateRefTip = ""
-		}},
-	)
-	refusals, originReads := 0, 0
-	seams := greenLandSeams(&[]string{})
-	seams.LeaseBase = testCommit(1)
-	seams.SeriesOnOrigin = func(string, string) (bool, error) { return false, nil }
-	abandons := 0
-	seams.PublishBranch = func(expected, tip string) error {
-		if expected != candidateRefTip || tip != "commit-goal-b" || candidateRefTip != "" {
-			return fmt.Errorf("unexpected candidate publication expected=%q tip=%q current=%q", expected, tip, candidateRefTip)
-		}
-		candidateRefTip = tip
-		return nil
-	}
-	seams.Abandon = func(tip, _ string) error {
-		if tip != publishedTip || tip != candidateRefTip {
-			return fmt.Errorf("unexpected candidate abandon tip=%q current=%q", tip, candidateRefTip)
-		}
-		abandons++
-		return nil
-	}
-	seams.Origin = func() (string, error) {
-		originReads++
-		return testCommit(originReads + 1), nil
-	}
-	seams.Push = func(_, _ string) error {
-		refusals++
-		return staleLeaseRefusal("initial endpoint refusal: stale info")
-	}
-	seams.RecoverPush = func(origin, _, tip string, _ func() error) (PushRecovery, error) {
-		refusals++
-		if tip != candidateRefTip {
-			return PushRecovery{}, fmt.Errorf("recovery candidate tip=%q does not match current ref tip=%q", tip, candidateRefTip)
-		}
-		candidateRefTip = publishedTip
-		return PushRecovery{Origin: origin, BaseTree: bed.moved, Tip: publishedTip}, errors.New("recovery endpoint refusal")
-	}
-	for tick := 0; tick < 4 && load(t, store).State == StateLanding; tick++ {
-		_ = LandSeries(store, testBatchID, "owner", time.Unix(int64(4+tick), 0), seams)
-	}
-	record := load(t, store)
-	if refusals != 4 || abandons != 1 || record.State != StateOpen || record.BaseTree != bed.moved || record.Landing != nil {
-		t.Fatalf("refusals=%d record=%+v, want four bounded refusals followed by reopen", refusals, record)
-	}
-	if candidateRefTip != "" || abandons != 1 {
-		t.Fatalf("bounded recovery left candidate ref tip=%q abandons=%d", candidateRefTip, abandons)
-	}
-}
-
-func TestBatchLandingResumesPendingMovedOriginRecovery(t *testing.T) {
-	_, store := landingBed(t)
-	must(t, store.Update(testBatchID, func(record *Record) error {
-		record.Landing = &LandingProgress{Base: record.BaseTree, Commits: map[string]string{"goal-a": "commit-goal-a", "goal-b": "commit-goal-b"}, BranchTip: "commit-goal-b", HeldChecked: true, RefusedOrigin: testCommit(2), RefusedBase: testCommit(1)}
-		return nil
-	}))
-	pushes, recoveries := 0, 0
-	seams := greenLandSeams(&[]string{})
-	seams.SeriesOnOrigin = func(string, string) (bool, error) { return false, nil }
-	seams.Origin = func() (string, error) { return testCommit(2), nil }
-	seams.Push = func(_, _ string) error { pushes++; return errors.New("old series repeated") }
-	seams.RecoverPush = func(origin, _, _ string, _ func() error) (PushRecovery, error) {
-		recoveries++
-		return PushRecovery{Origin: origin, Tip: "rebased-tip", Pushed: true}, nil
-	}
-	must(t, LandSeries(store, testBatchID, "owner", time.Unix(5, 0), seams))
-	record := load(t, store)
-	if record.State != StateLanding || record.Landing == nil || record.Landing.PushedTip != "rebased-tip" || pushes != 0 || recoveries != 1 {
-		t.Fatalf("resumed record=%+v pushes=%d recoveries=%d", record, pushes, recoveries)
-	}
-}
-
-func TestBatchLandingMovedInputReturnsOpenOnNewBase(t *testing.T) {
+// A moved base is returned, never republished (lane runtime design r10,
+// K3): a lease refused because main moved abandons the candidate and
+// reopens the batch on the new main after exactly one push, and a landing
+// left refused by an earlier tick reopens without pushing again.
+func TestBatchLandingMovedBaseReopensAndNeverRepublishes(t *testing.T) {
 	bed, store := landingBed(t)
 	strictReassembly(t, &store, expectedAssembly(bed.moved, []string{"goal-a", "goal-b"}, []string{"chain-a", "chain-b"}, []string{testCommit(105), testCommit(106)}))
 	seams := greenLandSeams(&[]string{})
 	seams.LeaseBase = testCommit(1)
 	seams.Origin = func() (string, error) { return testCommit(2), nil }
+	seams.OriginTree = func(string) (string, error) { return bed.moved, nil }
 	seams.SeriesOnOrigin = func(string, string) (bool, error) { return false, nil }
-	abandons := 0
+	abandons, pushes := 0, 0
 	seams.Abandon = func(string, string) error { abandons++; return nil }
-	seams.Push = func(_, _ string) error { return staleLeaseRefusal("endpoint lease refused: stale info") }
-	seams.RecoverPush = func(origin, _, _ string, _ func() error) (PushRecovery, error) {
-		return PushRecovery{Origin: origin, BaseTree: bed.moved, Reopen: true}, nil
-	}
+	seams.Push = func(_, _ string) error { pushes++; return staleLeaseRefusal("endpoint lease refused: stale info") }
 	if err := LandSeries(store, testBatchID, "owner", time.Unix(4, 0), seams); err != nil {
 		t.Fatal(err)
 	}
 	record := load(t, store)
-	if abandons != 1 || record.State != StateOpen || record.BaseTree != bed.moved || record.Proof != nil || record.Landing != nil {
-		t.Fatalf("moved input did not reopen on its new base: %+v", record)
+	if pushes != 1 || abandons != 1 || record.State != StateOpen || record.BaseTree != bed.moved || record.Proof != nil || record.Landing != nil {
+		t.Fatalf("a moved base: pushes=%d abandons=%d record=%+v; want one push, the candidate abandoned and the batch open on the new base", pushes, abandons, record)
+	}
+
+	resumed, resumedStore := landingBed(t)
+	strictReassembly(t, &resumedStore,
+		expectedAssembly(resumed.moved, []string{"goal-a", "goal-b"}, []string{"chain-a", "chain-b"}, []string{testCommit(105), testCommit(106)}),
+		expectedReassembly{kind: "delete", batchID: testBatchID, leaseTip: "commit-goal-b"})
+	must(t, resumedStore.Update(testBatchID, func(record *Record) error {
+		record.Landing = &LandingProgress{Base: record.BaseTree, Commits: map[string]string{"goal-a": "commit-goal-a", "goal-b": "commit-goal-b"}, BranchTip: "commit-goal-b", HeldChecked: true, RefusedOrigin: testCommit(2), RefusedBase: testCommit(1)}
+		return nil
+	}))
+	seams.Origin = func() (string, error) { return testCommit(3), nil }
+	seams.OriginTree = func(string) (string, error) { return resumed.moved, nil }
+	pushes, abandons = 0, 0
+	if err := LandSeries(resumedStore, testBatchID, "owner", time.Unix(5, 0), seams); err != nil {
+		t.Fatal(err)
+	}
+	record = load(t, resumedStore)
+	if pushes != 0 || abandons != 1 || record.State != StateOpen || record.BaseTree != resumed.moved {
+		t.Fatalf("a refused landing whose main moved again: pushes=%d abandons=%d record=%+v; want it reopened, nothing pushed", pushes, abandons, record)
 	}
 }
 
@@ -364,7 +262,8 @@ func TestBatchLandingLostAcknowledgementTakesP6Recovery(t *testing.T) {
 }
 
 func TestBatchLandingHoldsNonLeaseRejectionUntilOriginMoves(t *testing.T) {
-	_, store := landingBed(t)
+	bed, store := landingBed(t)
+	strictReassembly(t, &store, expectedAssembly(bed.moved, []string{"goal-a", "goal-b"}, []string{"chain-a", "chain-b"}, []string{testCommit(105), testCommit(106)}))
 	origin := testCommit(1)
 	pushes, recoveries, abandons := 0, 0, 0
 	pushFailure := nonLeaseRefusal("protected branch")
@@ -374,10 +273,7 @@ func TestBatchLandingHoldsNonLeaseRejectionUntilOriginMoves(t *testing.T) {
 	seams.SeriesOnOrigin = func(string, string) (bool, error) { return false, nil }
 	seams.Abandon = func(string, string) error { abandons++; return nil }
 	seams.Push = func(_, _ string) error { pushes++; return pushFailure }
-	seams.RecoverPush = func(origin, _, _ string, _ func() error) (PushRecovery, error) {
-		recoveries++
-		return PushRecovery{Origin: origin, Tip: "retried-tip", Pushed: true}, nil
-	}
+	seams.OriginTree = func(string) (string, error) { return bed.moved, nil }
 	firstAt := time.Unix(4, 0)
 	if err := LandSeries(store, testBatchID, "owner", firstAt, seams); err == nil || !strings.Contains(err.Error(), "protected branch") {
 		t.Fatalf("first non-lease refusal=%v", err)
@@ -406,38 +302,16 @@ func TestBatchLandingHoldsNonLeaseRejectionUntilOriginMoves(t *testing.T) {
 	if err := LandSeries(store, testBatchID, "owner", time.Unix(7, 0), seams); err != nil {
 		t.Fatalf("unchanged second hold repeated output: %v", err)
 	}
+	// Main moved while the rejection held: the lease is stale now, and a
+	// moved base is returned, never republished.
 	origin = testCommit(3)
 	pushFailure = staleLeaseRefusal("stale info")
 	if err := LandSeries(store, testBatchID, "owner", time.Unix(8, 0), seams); err != nil {
 		t.Fatal(err)
 	}
-	resumed := load(t, store)
-	if pushes != 3 || recoveries != 1 || abandons != 0 || resumed.Landing.PushRejection != nil || !resumed.Landing.PushComplete || resumed.Proof.Failure != "" {
-		t.Fatalf("resumed held record=%+v pushes=%d recoveries=%d abandons=%d", resumed, pushes, recoveries, abandons)
-	}
-}
-
-func TestBatchLandingCountsRecoveryFailureBeforeBranchPublication(t *testing.T) {
-	bed, store := landingBed(t)
-	strictReassembly(t, &store, expectedAssembly(bed.moved, []string{"goal-a", "goal-b"}, []string{"chain-a", "chain-b"}, []string{testCommit(105), testCommit(106)}))
-	originReads, recoveries, abandons := 0, 0, 0
-	seams := greenLandSeams(&[]string{})
-	seams.LeaseBase = testCommit(1)
-	seams.Origin = func() (string, error) { originReads++; return testCommit(originReads + 1), nil }
-	seams.OriginTree = func(string) (string, error) { return bed.moved, nil }
-	seams.SeriesOnOrigin = func(string, string) (bool, error) { return false, nil }
-	seams.Abandon = func(string, string) error { abandons++; return nil }
-	seams.Push = func(_, _ string) error { return staleLeaseRefusal("stale info") }
-	seams.RecoverPush = func(origin, _, _ string, _ func() error) (PushRecovery, error) {
-		recoveries++
-		return PushRecovery{Origin: origin, BaseTree: bed.moved}, errors.New("publish preparation failed")
-	}
-	for tick := 0; tick < 3 && load(t, store).State == StateLanding; tick++ {
-		_ = LandSeries(store, testBatchID, "owner", time.Unix(int64(4+tick), 0), seams)
-	}
-	record := load(t, store)
-	if recoveries != 3 || abandons != 1 || record.State != StateOpen || record.Landing != nil {
-		t.Fatalf("recoveries=%d abandons=%d record=%+v", recoveries, abandons, record)
+	reopened := load(t, store)
+	if pushes != 3 || recoveries != 0 || abandons != 1 || reopened.State != StateOpen || reopened.Landing != nil {
+		t.Fatalf("moved endpoint after a hold: record=%+v pushes=%d recoveries=%d abandons=%d; want it reopened", reopened, pushes, recoveries, abandons)
 	}
 }
 
