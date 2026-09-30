@@ -18,6 +18,7 @@ package main
 // the clone's arm reads the verdict from the record.
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -59,7 +60,7 @@ const launchProofAction = "seat launch"
 func launchStarterWith(roots lifecycle.Roots, seams launchSeams) func(*session.Session, launch.Request) (launch.Record, error) {
 	return func(signed *session.Session, asked launch.Request) (launch.Record, error) {
 		if signed == nil || !signed.Proof.SessionValidFor(roots.StateRoot) {
-			return launch.Record{}, fmt.Errorf("this launch carries no signed-in session proof for this checkout; sign in again here")
+			return launch.Record{}, errors.New("this launch comes from a browser that is not signed in for this checkout; sign in again here")
 		}
 		asked.From = roots.Checkout
 		// The interface never forwards a pair: a browser launch is enrolled
@@ -88,7 +89,7 @@ func launchStarterWith(roots lifecycle.Roots, seams launchSeams) func(*session.S
 		// recorded is a launch that does not start, with nothing on disk to
 		// say otherwise.
 		if err := humanauthority.RecordSessionProof(roots.StateRoot, launchProofOperation(record.Launch, now), launchProofAction, signed.Proof); err != nil {
-			return launch.Record{}, fmt.Errorf("the signed-in proof for this launch could not be recorded, so nothing was started: %w", err)
+			return launch.Record{}, fmt.Errorf("your sign-in for this launch could not be recorded, so nothing was started: %w", err)
 		}
 		// The record is written before anything runs, so a page opened a
 		// second later already has something to read — and it says `starting`

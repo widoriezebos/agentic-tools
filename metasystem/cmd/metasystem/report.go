@@ -17,20 +17,23 @@ func runReportStopStatus(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	if *id == "" || len(flags.Args()) != 0 {
-		fmt.Fprintln(stderr, "usage: metasystem session status --id ID [--root INSTALLATION]")
+		fmt.Fprintln(stderr, "session status needs the id from a Stop line, so nothing was read")
+		fmt.Fprintln(stderr, "run: metasystem session status --id <the id on the Stop line>")
 		return 2
 	}
 	if err := report.ValidateStopStatusID(*id); err != nil {
-		fmt.Fprintf(stderr, "metasystem session status: %s is not a Stop report id (the ids are lowercase hexadecimal); copy the id from the Stop line; nothing was read\n", *id)
+		fmt.Fprintf(stderr, "%s is not a Stop report id (those are lowercase hexadecimal); nothing was read\n", *id)
+		fmt.Fprintln(stderr, "run: metasystem session status --id <the id on the Stop line>")
 		return 2
 	}
 	data, _, err := report.ReadStopStatus(*root, *id)
 	if err != nil {
-		fmt.Fprintln(stderr, "metasystem session status:", err)
+		fmt.Fprintf(stderr, "Stop report %s could not be read: %v\n", *id, err)
+		fmt.Fprintln(stderr, "run: metasystem system check  (names what is wrong here)")
 		return 1
 	}
 	if _, err := stdout.Write(data); err != nil {
-		fmt.Fprintln(stderr, "metasystem session status:", err)
+		fmt.Fprintf(stderr, "Stop report %s could not be written out: %v\n", *id, err)
 		return 1
 	}
 	return 0

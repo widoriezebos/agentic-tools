@@ -389,8 +389,8 @@ func TestCrashStepRefusalPreservesTheNamedInstallation(t *testing.T) {
 	stderr, code := captureStderr(t, func(stdout, stderr io.Writer) int {
 		return runProcessStopWith([]string{"--repo", root, "--installation", root}, repositoryTop, lease.ClassifyAt, stdout, stderr)
 	})
-	want := "metasystem system stop: METASYSTEM_STOP_CRASH_AFTER must name a numbered section-4 step from 1 through 9.\n" +
-		"run: metasystem system stop --repo " + root + " --installation " + root + "\n"
+	want := "metasystem system stop: a test setting that crashes the stop names no stop step (1 through 9), so nothing was stopped.\n" +
+		"run: env -u METASYSTEM_STOP_CRASH_AFTER metasystem system stop --repo " + root + " --installation " + root + "\n"
 	if code != 1 || stderr != want {
 		t.Fatalf("crash-step refusal = code %d stderr %q, want %q", code, stderr, want)
 	}

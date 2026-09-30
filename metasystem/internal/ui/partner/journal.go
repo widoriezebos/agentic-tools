@@ -56,7 +56,7 @@ type Generation uint64
 // holds the journal answers. It is never a turn's failure: it says the runtime
 // that asked has been replaced, so the frame it still carries belongs to no
 // file this journal keeps, and the descriptor it would close is not its own.
-var ErrStaleJournal = errors.New("this wire journal was reopened by a newer runtime")
+var ErrStaleJournal = errors.New("this wire log was reopened by a newer runtime")
 
 // Sink is one generation's own writer, and the only thing that closes it: the
 // connection journals through it, and the endpoint's teardown closes it.
@@ -183,11 +183,11 @@ func (j *Journal) Rotate(limit int64) (bool, error) {
 		// The descriptor is gone either way; reopening is what keeps the
 		// runtime's remaining frames journalled.
 		_ = j.openLocked(false)
-		return false, fmt.Errorf("the Partner's wire journal could not be closed for rotation: %w", err)
+		return false, fmt.Errorf("the Partner's wire log could not be closed for rotation: %w", err)
 	}
 	if err := os.Rename(j.path, j.Previous()); err != nil {
 		_ = j.openLocked(false)
-		return false, fmt.Errorf("the Partner's wire journal could not be rotated: %w", err)
+		return false, fmt.Errorf("the Partner's wire log could not be rotated: %w", err)
 	}
 	j.written = 0
 	if err := j.openLocked(true); err != nil {
@@ -207,7 +207,7 @@ func (j *Journal) openLocked(truncate bool) error {
 	}
 	file, err := os.OpenFile(j.path, flags, 0o600)
 	if err != nil {
-		return fmt.Errorf("the Partner's wire journal at %s could not be opened: %w", j.path, err)
+		return fmt.Errorf("the Partner's wire log at %s could not be opened: %w", j.path, err)
 	}
 	j.file = file
 	if truncate {

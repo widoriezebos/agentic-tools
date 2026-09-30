@@ -136,7 +136,7 @@ func TestSelectionAcceptsQuotedModuleDirective(t *testing.T) {
 func TestInventoryRefusesUnresolvableGoEnvironment(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct{ entry, wantErr string }{
-		{"CGO_ENABLED=maybe", `cannot resolve CGO_ENABLED="maybe"`},
+		{"CGO_ENABLED=maybe", `CGO_ENABLED cannot be "maybe"`},
 		{"GOEXPERIMENT=arenas", `cannot resolve GOEXPERIMENT="arenas"`},
 		{"GOFLAGS=-tags='feature'", "cannot resolve quoted GOFLAGS tags"},
 		{"GOFLAGS=-modfile=alt.mod", "cannot resolve GOFLAGS -modfile=alt.mod"},

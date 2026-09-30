@@ -169,7 +169,7 @@ func Fixture(root, human, lineage string, now time.Time) (Authority, error) {
 		return Authority{}, err
 	}
 	if human == "" || lineage == "" {
-		return Authority{}, fmt.Errorf("a fixture authority carries the human and the lineage it acts under")
+		return Authority{}, fmt.Errorf("a test authority needs the person and the session it acts for")
 	}
 	return Authority{
 		proven: true, human: human, lineage: lineage, root: root, proof: proof,
@@ -197,14 +197,14 @@ func SignedIn(root, human, sessionRef string, proof humanauthority.Proof) (Autho
 		return Authority{}, fmt.Errorf("a signed-in session authority names its human and its session")
 	}
 	if !proof.SessionValidFor(root) {
-		return Authority{}, fmt.Errorf("a signed-in session authority requires a freshly minted session proof for this checkout")
+		return Authority{}, fmt.Errorf("this browser's sign-in is not current for this checkout; sign in again")
 	}
 	// The name and the session are not the caller's to assert. They are what
 	// the proof was minted for, and they are what the ledger records, so a
 	// caller that supplied either of them differently would be publishing
 	// under a name the proof does not carry.
 	if proof.ChannelUser != human || proof.ChannelRef != sessionRef {
-		return Authority{}, fmt.Errorf("a signed-in session authority must name the human and the session its proof was minted for")
+		return Authority{}, fmt.Errorf("the signed-in session names another person or session than the one that signed in")
 	}
 	return Authority{
 		proven: true, human: human, lineage: SessionLineage, root: root, proof: proof,
@@ -661,7 +661,7 @@ func (a Authority) settle(request goal.VerbRequest, result goal.PublishResult, p
 	}
 	if err := record(a.root, operation, action, a.proof); err != nil {
 		return refuse(KindFailed, "proof-not-recorded",
-			"the act landed at tip "+result.Tip+", but its authority proof did not: "+err.Error()+"; do not run it again")
+			"the act landed at tip "+result.Tip+", but the record of who allowed it did not: "+err.Error()+"; do not run it again")
 	}
 	return nil
 }
@@ -700,7 +700,7 @@ func (a Authority) unsettled(operation string, publishErr error) error {
 		return refuse(KindEngine, "refused", publishErr.Error())
 	case err != nil:
 		return refuse(KindFailed, "journal-unreadable",
-			"whether it landed is unresolved: this act's own journal entry could not be read ("+
+			"whether it landed is unknown: its record could not be read ("+
 				err.Error()+"); check the goal before acting again")
 	case entry.Phase == goal.PhasePushed && entry.Outcome == "":
 		return refuse(KindFailed, "pushed-unknown",

@@ -304,7 +304,7 @@ func readOpenWorkSeen(path string) (openWorkSeenRecord, string) {
 		for digest, entry := range entries {
 			expected := fmt.Sprintf("%x", sha256.Sum256([]byte(entry.Line)))
 			if digest != expected {
-				return empty, openWorkSeenWarning(path, fmt.Errorf("plan %s contains a line digest mismatch", plan))
+				return empty, openWorkSeenWarning(path, fmt.Errorf("plan %s has a line whose checksum does not match it", plan))
 			}
 		}
 	}

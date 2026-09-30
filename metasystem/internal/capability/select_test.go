@@ -150,12 +150,12 @@ func TestSelectRestrictiveFieldRefusedThenWaived(t *testing.T) {
 	// can change that.
 	e.writeRequirements(t, map[string]any{"required": []any{}, "optional": map[string]any{}, "waivers": map[string]any{}})
 	if err := selectFixture(e.root, e.runtime, e.role, e.identity("abc123"), 30, e.envelopePath, e.outputPath); err == nil ||
-		!strings.Contains(err.Error(), "declares no residual") {
+		!strings.Contains(err.Error(), "names no gap a role may waive") {
 		t.Fatalf("an undeclared residual should fail closed, got %v", err)
 	}
 	e.writeRequirements(t, map[string]any{"required": []any{}, "optional": map[string]any{}, "waivers": map[string]any{"network": []any{"codex"}}})
 	if err := selectFixture(e.root, e.runtime, e.role, e.identity("abc123"), 30, e.envelopePath, e.outputPath); err == nil ||
-		!strings.Contains(err.Error(), "declares no residual") {
+		!strings.Contains(err.Error(), "names no gap a role may waive") {
 		t.Fatalf("a name waiver bypassed the residual rule, got %v", err)
 	}
 	// Fake DOES declare a network residual: unwaived refuses naming the

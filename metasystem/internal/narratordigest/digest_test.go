@@ -179,7 +179,7 @@ func TestAdvanceRefusesCursorEdgesThatWereNotEmitted(t *testing.T) {
 		"wrong prefix":    {pending.Cursor, strings.Repeat("0", 64)},
 	} {
 		t.Run(name, func(t *testing.T) {
-			if err := Advance(root, cursor.cursor, cursor.prefix); err == nil || !strings.Contains(err.Error(), "does not name the emitted prefix") {
+			if err := Advance(root, cursor.cursor, cursor.prefix); err == nil || !strings.Contains(err.Error(), "may only advance over what was shown") {
 				t.Fatalf("unemitted cursor edge was accepted: %v", err)
 			}
 		})

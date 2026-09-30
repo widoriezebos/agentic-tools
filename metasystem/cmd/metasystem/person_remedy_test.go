@@ -31,16 +31,16 @@ func TestEveryPersonActRefusalNamesSystemEnroll(t *testing.T) {
 			if problem == nil {
 				return ""
 			}
-			return problem.Summary + "\n" + problem.Decision
+			return problem.Summary + "\n" + shellCommand(problem.next) + "  (" + problem.nextReason + ")"
 		}
 	}
 	for _, test := range []struct {
 		name, retry string
 		refusal     func() string
 	}{
-		{"disk clean --strays", "metasystem disk clean --strays", disk("--strays")},
-		{"disk clean --release", "metasystem disk clean --release s1", disk("--release s1")},
-		{"disk clean --discard", "metasystem disk clean --discard j2:c1", disk("--discard j2:c1")},
+		{"disk clean --strays", "then repeat this command", disk("--strays")},
+		{"disk clean --release", "then repeat this command", disk("--release s1")},
+		{"disk clean --discard", "then repeat this command", disk("--discard j2:c1")},
 		{"a human verb's proof", "", func() string {
 			return humanProofRemedy(newHumanVerbValues("park", nil), false, "", "", notReached).command
 		}},

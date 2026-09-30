@@ -598,7 +598,7 @@ func reapDeadOwner(owner Ref, log io.Writer, runtime custodianRuntime) error {
 			return nil
 		}
 		if remaining > 0 && passFinished.Sub(progressSince) >= runtime.bound {
-			return fmt.Errorf("identity: fixture custodian cleanup exceeded %s after %d scans: remaining=%d new=%d lowest=%d scan-error=%v",
+			return fmt.Errorf("fixture custodian cleanup exceeded %s after %d scans (%d left, %d new, lowest %d, scan error %v)",
 				runtime.bound, scanCount, remaining, newDescendants, lowestRemaining, err)
 		}
 		clock.Sleep(runtime.poll)

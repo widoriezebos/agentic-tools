@@ -68,7 +68,7 @@ func Home() (string, error) {
 	}
 	if !filepath.IsAbs(selected) {
 		return "", fmt.Errorf(
-			"the account's registry home resolved to %q, which is not an absolute path, so anything kept under it would land inside whatever directory this server was started in",
+			"the registry folder resolved to %q, which is not an absolute path, so nothing is kept under it",
 			selected)
 	}
 	return filepath.Dir(selected), nil

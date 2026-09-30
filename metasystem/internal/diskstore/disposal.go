@@ -366,7 +366,7 @@ func Dispose(ctx context.Context, step DisposalStep) (DisposalResult, error) {
 	if export := step.Receipt.Export; export != nil {
 		now := InventoryDigest(files)
 		if export.InventoryDigest == "" || export.InventoryDigest != now || export.InventoryDigest != step.PlannedDigest {
-			return DisposalResult{}, fmt.Errorf("the export %s does not hold what would be removed (export %s, planned %s, now %s); nothing was removed, run --preview again",
+			return DisposalResult{}, fmt.Errorf("export %s does not hold what would be removed (%s, planned %s, now %s): nothing removed; preview again",
 				export.Archive, short(export.InventoryDigest), short(step.PlannedDigest), short(now))
 		}
 	}
@@ -647,7 +647,7 @@ func AppendReceipt(ledger string, receipt DisposalReceipt, sync Syncer) error {
 	case statErr != nil && !created:
 		return statErr
 	case statErr == nil && !info.Mode().IsRegular():
-		return fmt.Errorf("the disposals ledger %s is not a regular file (a symbolic link or other entry); nothing is appended, a person decides", ledger)
+		return fmt.Errorf("the disposals record %s is not a regular file, so nothing was added to it; a person decides", ledger)
 	}
 	var prior int64
 	var missingNewline bool
@@ -658,7 +658,7 @@ func AppendReceipt(ledger string, receipt DisposalReceipt, sync Syncer) error {
 			return err
 		}
 		if tail.torn {
-			return fmt.Errorf("the disposals ledger %s ends in a torn line that is not a whole receipt; nothing is appended until a person repairs it: truncate -s %d %s (keeps every whole receipt)", ledger, tail.keep, ledger)
+			return fmt.Errorf("the disposals record %s ends in a broken line, so nothing was added; repair: truncate -s %d %s", ledger, tail.keep, ledger)
 		}
 		missingNewline = tail.missingNewline
 	}

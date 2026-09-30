@@ -209,6 +209,18 @@ func messageCallName(call *ast.CallExpr) string {
 	return ""
 }
 
+// messageIsKind says whether an expression names a refusal kind
+// (KindRequest, act.KindEngine): the interface's refuse(kind, code, message).
+func messageIsKind(expr ast.Expr) bool {
+	switch e := expr.(type) {
+	case *ast.Ident:
+		return strings.HasPrefix(e.Name, "Kind")
+	case *ast.SelectorExpr:
+		return strings.HasPrefix(e.Sel.Name, "Kind")
+	}
+	return false
+}
+
 // messageWriter says whether a writer expression is a person's stream.
 var messageWriter = regexp.MustCompile(`(?i)std(out|err)|errStream|outStream|noteWriter`)
 
@@ -353,9 +365,10 @@ func messageScanLiteral(lit *ast.CompositeLit, add func(ast.Node, string, ast.Ex
 			var extra []string
 			if refused {
 				_, hasNext := fields["next"]
+				_, hasRetry := fields["retry"] // line 2 is the typed command again
 				decision, hasDecision := fields["Decision"]
 				switch {
-				case hasNext:
+				case hasNext, hasRetry:
 				case !hasDecision:
 					extra = append(extra, "no-command")
 				default:
@@ -402,6 +415,10 @@ func messageScanLiteral(lit *ast.CompositeLit, add func(ast.Node, string, ast.Ex
 func messageScanCall(fset *token.FileSet, source []byte, call *ast.CallExpr, add func(ast.Node, string, ast.Expr, bool, ...string)) {
 	name := messageCallName(call)
 	switch {
+	case name == "refuse" && len(call.Args) == 3 && messageIsKind(call.Args[0]):
+		// The interface's refuse(kind, code, message): the message is what
+		// the page shows, the code routes it; the page offers the action.
+		add(call, messageError, call.Args[2], false)
 	case name == "refuse" && len(call.Args) == 3:
 		var extra []string
 		if text, complete := messageTextOf(call.Args[2], false); complete && !messageResolves(text) {
@@ -409,6 +426,10 @@ func messageScanCall(fset *token.FileSet, source []byte, call *ast.CallExpr, add
 		}
 		add(call, messageSummary, call.Args[1], false, extra...)
 		add(call, messageDecision, call.Args[2], false)
+	case name == "refuseAgain" && len(call.Args) == 3:
+		// Line 2 is the same command again; the third argument says when.
+		add(call, messageSummary, call.Args[1], false)
+		add(call, messageReason, call.Args[2], false)
 	case name == "refuseHumanVerb" && len(call.Args) == 4:
 		add(call, messageSummary, call.Args[2], false)
 	case name == "fmt.Errorf" && len(call.Args) > 0:

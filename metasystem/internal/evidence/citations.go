@@ -187,7 +187,7 @@ func (c *Citations) Newest() (Generation, error) {
 	var generation Generation
 	if err := json.Unmarshal(data, &generation); err != nil || generation.Schema != CitationSchema {
 		if err == nil {
-			err = errors.New("not a citation generation")
+			err = errors.New("not a citation record")
 		}
 		return Generation{}, fmt.Errorf("%s is unreadable: %w", c.generationPath(best), err)
 	}
@@ -282,7 +282,7 @@ func (c *Citations) readState() (generationState, error) {
 	}
 	var state generationState
 	if err := json.Unmarshal(data, &state); err != nil || state.Schema != CitationSchema {
-		return generationState{}, errors.New("unreadable running generation")
+		return generationState{}, errors.New("the citation record being written is unreadable")
 	}
 	if state.Hits == nil {
 		state.Hits = map[string][]string{}

@@ -39,7 +39,7 @@ func TestHCL12KindCarryRequiresWants(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			b := newProcessBed(t)
 			args := append([]string{"question", "ask", "goal-a", "--question", "Carry it?", "--option", "yes: carry"}, test.args...)
-			if code, result := b.runJSON(b.owners(), args...); code != 2 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "needs --wants exactly") || len(b.asked) != 0 {
+			if code, result := b.runJSON(b.owners(), args...); code != 2 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "needs --wants in its exact shape") || len(b.asked) != 0 {
 				t.Fatalf("carry channel question admitted invalid input: exit=%d %+v", code, result)
 			}
 		})

@@ -37,7 +37,7 @@ const appContractKey = "launch.contract"
 // errNoLaunchContract is the refusal a project without a contract gets. It
 // names the file to write, because a refusal that does not say what to do
 // next is a dead end.
-var errNoLaunchContract = errors.New("this project has no launch contract: write launch.json beside metasystem.conf (launch.contract=launch.json is the default; set launch.contract to name another path)")
+var errNoLaunchContract = errors.New("this project has no launch contract yet: write launch.json beside metasystem.conf")
 
 // loadPhysicalLaunchContract reads the committed launch contract the
 // settings name, exactly as the testing contract is read.
@@ -452,7 +452,7 @@ func (r appRun) preserveRunEvidence(record *applaunch.Record, out io.Writer) err
 	resolved, err := config.ResolveEvidenceRoot(config.EvidenceRootParams{
 		ConfPath: filepath.Join(r.roots.Installation, "metasystem.conf"), LookupEnv: r.lookupEnv})
 	if err != nil {
-		return fmt.Errorf("%v, so goal %s's run evidence was not copied and its record is kept; fix the evidence root, then stop or start again to close the run", err, goal)
+		return fmt.Errorf("goal %s's run evidence was not copied, so its run stays open: %v", goal, err)
 	}
 	root := resolved.Path
 	staging, done, err := diskstore.ScratchDir("app-evidence.")

@@ -397,13 +397,13 @@ func dispatchInternal(args []string, stdout, stderr io.Writer, registered []fami
 				fmt.Fprintf(stderr, "metasystem internal %s: %q is not one of its entrypoints; nothing was done\n", fam.name, args[1])
 			}
 		} else {
-			fmt.Fprintf(stderr, "metasystem internal %s: needs one of its entrypoints named; nothing was done\n", fam.name)
+			fmt.Fprintf(stderr, "internal %s needs one of its entrypoints named; nothing was done\n", fam.name)
 		}
 		writeFamilyHelp(stderr, fam)
 		return 2
 	}
-	fmt.Fprintf(stderr, "metasystem internal: no entrypoint is named %q; nothing was done\n", args[0])
-	fmt.Fprintln(stderr, "metasystem internal, with no further word, lists every entrypoint and the program that starts it; people and agents use metasystem help")
+	fmt.Fprintf(stderr, "no internal entrypoint is named %q; nothing was done\n", args[0])
+	fmt.Fprintln(stderr, "run: metasystem help  (the public commands; metasystem internal lists the entrypoints)")
 	return 2
 }
 

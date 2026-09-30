@@ -178,7 +178,7 @@ func TestAPublicationWhoseJournalCannotBeReadIsUnresolved(t *testing.T) {
 	testutil.Expect(t, "it is a failure", refusal.Kind, KindFailed)
 	testutil.Expect(t, "under its own code", refusal.Code, "journal-unreadable")
 	testutil.Expect(t, "it says nothing is proven",
-		strings.HasPrefix(refusal.Message, "whether it landed is unresolved: "), true)
+		strings.HasPrefix(refusal.Message, "whether it landed is unknown: "), true)
 	testutil.Expect(t, "in the read's own words", strings.Contains(refusal.Message, "is damaged"), true)
 	testutil.Expect(t, "and says what to do",
 		strings.HasSuffix(refusal.Message, "; check the goal before acting again"), true)

@@ -236,7 +236,7 @@ func ReadClosedClosure(agents string, root map[string]any, members []map[string]
 	}
 	foldedDigest, ok := root["findingRegisterSubjectDigest"].(string)
 	if !ok || foldedDigest == "" {
-		return closure, true, fmt.Errorf("closure root %s has no folded subject digest", rootID)
+		return closure, true, fmt.Errorf("closure root %s names no folded subject", rootID)
 	}
 	if persisted.Digest() != foldedDigest {
 		return closure, true, fmt.Errorf("persisted subject %s does not equal folded subject %s", persisted.Digest(), foldedDigest)
@@ -260,7 +260,7 @@ func readClosureAbsence(agents string, root map[string]any) (Closure, bool, erro
 	registerValue, registerPresent := root["findingRegister"]
 	if !registerPresent {
 		if _, digestPresent := root["findingRegisterSubjectDigest"]; digestPresent {
-			return Closure{}, false, fmt.Errorf("closure is absent while a folded subject digest has no finding register")
+			return Closure{}, false, fmt.Errorf("closure is absent while a folded subject has no finding register")
 		}
 		return Closure{}, false, nil
 	}
@@ -272,7 +272,7 @@ func readClosureAbsence(agents string, root map[string]any) (Closure, bool, erro
 	foldedValue, foldedPresent := root["findingRegisterRound"]
 	if !foldedPresent {
 		if _, digestPresent := root["findingRegisterSubjectDigest"]; digestPresent {
-			return Closure{}, false, fmt.Errorf("closure is absent while a folded subject digest has no folded round")
+			return Closure{}, false, fmt.Errorf("closure is absent while a folded subject has no folded round")
 		}
 		return Closure{}, false, nil
 	}
@@ -283,14 +283,14 @@ func readClosureAbsence(agents string, root map[string]any) (Closure, bool, erro
 	digestValue, digestPresent := root["findingRegisterSubjectDigest"]
 	foldedDigest, digestIsString := digestValue.(string)
 	if digestPresent && (!digestIsString || foldedDigest == "") {
-		return Closure{}, false, fmt.Errorf("closure is absent and the folded subject digest is invalid")
+		return Closure{}, false, fmt.Errorf("closure is absent and the folded subject's checksum is invalid")
 	}
 	if !clean && !digestPresent {
 		return Closure{}, false, nil
 	}
 	if foldedRound == 0 {
 		if digestPresent {
-			return Closure{}, false, fmt.Errorf("closure is absent while round zero carries a folded subject digest")
+			return Closure{}, false, fmt.Errorf("closure is absent while round zero names a folded subject")
 		}
 		return Closure{}, false, nil
 	}

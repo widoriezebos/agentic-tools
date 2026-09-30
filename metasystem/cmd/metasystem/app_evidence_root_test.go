@@ -42,7 +42,7 @@ func TestPreserveRunEvidenceUsesTheResolvedRoot(t *testing.T) {
 		t.Fatal(err)
 	}
 	err = run.preserveRunEvidence(record, io.Discard)
-	if err == nil || !strings.HasPrefix(err.Error(), `evidence.root must be absolute (metasystem.conf reads "relative")`) || !strings.Contains(err.Error(), "its record is kept") {
+	if err == nil || !strings.Contains(err.Error(), `evidence.root must be absolute (metasystem.conf reads "relative")`) || !strings.Contains(err.Error(), "its run stays open") {
 		t.Fatalf("relative root: got %v", err)
 	}
 }

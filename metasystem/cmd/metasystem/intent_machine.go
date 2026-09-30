@@ -517,6 +517,13 @@ func machineListDetail(reading hostReading, others []otherComputerMachine) []str
 	return lines
 }
 
+// machineListFailure is machine list's failure to read the fleet's
+// presence: the read may pass, so line 2 is the command again.
+func machineListFailure(err error) intentResult {
+	return intentResult{Outcome: intentFailed, code: 1, Summary: "the machines' presence could not be read", retry: "try again",
+		Details: []string{"fleet: " + err.Error()}}
+}
+
 // runIntentMachineList is every machine's presence, this computer's
 // machines summarized first.
 func runIntentMachineList(inv *intentInvocation) int {
@@ -525,15 +532,15 @@ func runIntentMachineList(inv *intentInvocation) int {
 	}
 	report, err := inv.owners.processes.fleet(inv.layout.GitRoot, inv.input.switched("refresh"), seatFleetNow())
 	if err != nil {
-		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "fleet: " + err.Error()})
+		return inv.render(machineListFailure(err))
 	}
 	encoded, err := report.JSON()
 	if err != nil {
-		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "fleet: " + err.Error()})
+		return inv.render(machineListFailure(err))
 	}
 	data := map[string]any{}
 	if err := json.Unmarshal(encoded, &data); err != nil {
-		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "fleet: " + err.Error()})
+		return inv.render(machineListFailure(err))
 	}
 	reading := inv.readHostMachines(fleetNames(report))
 	others := otherComputers(report, reading)
@@ -623,9 +630,12 @@ func (inv *intentInvocation) matchMachine(reading hostReading, name string) (*ho
 			if other.LastReported != "" {
 				reported = "it last reported " + lane.LocalText(other.LastReported)
 			}
+			// It is stopped on that computer: metasystem system stop there,
+			// with its checkout's path, which this computer cannot know.
 			return nil, &intentResult{Outcome: intentRefused, code: 1, Targets: []intentTarget{{Kind: "machine", ID: name}},
-				Summary:  fmt.Sprintf("%s: %s runs on another computer (%s), where this computer's stop cannot reach its processes; stop it on that computer: metasystem system stop --repo PATH; nothing was done", codeMachineOnAnotherComputer, name, reported),
-				Decision: "on that computer, run metasystem system stop --repo PATH with its checkout's path"}
+				Summary: fmt.Sprintf("%s runs on another computer (%s), which this one cannot stop; nothing was done", name, reported),
+				next:    []string{"metasystem", "system", "stop", "--repo", "PATH"}, nextReason: "on that computer, with its checkout's path",
+				Details: []string{"refusal " + codeMachineOnAnotherComputer + ": this computer's stop cannot reach another computer's processes"}}
 		}
 	}
 	if reading.RegistryProblem != "" {

@@ -583,7 +583,7 @@ func (rules DistillRules) finish(ctx context.Context, bundle string, line Recipe
 
 // errOriginalChanged is an original that no longer matches its published
 // line when it is about to be unlinked: both are kept and reported.
-var errOriginalChanged = errors.New("it changed after its replacement was verified; the original and its replacement are both kept for a person")
+var errOriginalChanged = errors.New("it changed after its replacement was verified; both are kept for a person to decide")
 
 func (rules DistillRules) stop(step, path string) bool {
 	return rules.interrupt != nil && rules.interrupt(step, path)

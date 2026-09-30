@@ -209,7 +209,7 @@ func TestRecordedChannelAuthorityRequiresACompleteWireTuple(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			authority := complete
 			test.change(&authority)
-			if err := authority.ValidateRecorded(); err == nil || err.Error() != "authenticated channel authority proof is incomplete" {
+			if err := authority.ValidateRecorded(); err == nil || err.Error() != "the recorded channel answer is incomplete (who, where or which message is missing)" {
 				t.Fatalf("invalid tuple error = %v", err)
 			}
 		})

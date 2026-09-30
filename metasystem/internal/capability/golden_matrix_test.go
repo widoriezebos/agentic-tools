@@ -70,7 +70,7 @@ func TestShippedRoleWaiverMatrixGolden(t *testing.T) {
 		}
 		t.Run(role+"/network-fails-closed", func(t *testing.T) {
 			err := stage(t, roleFile, []any{"network"}, map[string]any{"network": "deny"})
-			if err == nil || !strings.Contains(err.Error(), "declares no residual") {
+			if err == nil || !strings.Contains(err.Error(), "names no gap a role may waive") {
 				t.Fatalf("shipped %s allowed devin's undeclared network residual: %v", role, err)
 			}
 		})

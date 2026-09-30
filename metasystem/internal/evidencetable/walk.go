@@ -139,7 +139,7 @@ func CheckDep(rootFD int, path string, entrypoint bool) error {
 		return nil
 	case unix.S_IFDIR:
 		if entrypoint {
-			return fmt.Errorf("%s is a directory, and the first dep is the proof's entrypoint FILE", path)
+			return fmt.Errorf("%s is a directory, but the first dependency must be the test's entrypoint file", path)
 		}
 		return nil
 	default:

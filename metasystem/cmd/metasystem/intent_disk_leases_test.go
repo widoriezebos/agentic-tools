@@ -38,12 +38,12 @@ func TestDiskLeasesByAPerson(t *testing.T) {
 		t.Fatalf("a busy admission lock = %d:\n%s", code, out)
 	}
 	reports, busy = nil, false
-	if code, out := bed.run("disk", "clean", "--leases"); code != 0 || !strings.Contains(out, "no dirty proof-admission lease") {
+	if code, out := bed.run("disk", "clean", "--leases"); code != 0 || !strings.Contains(out, "no test-run lease is left over") {
 		t.Fatalf("a repeat with nothing left = %d:\n%s", code, out)
 	}
 	before := calls
 	bed.person = errors.New("this shell is an agent's")
-	if code, out := bed.run("disk", "clean", "--leases"); code != 3 || !strings.Contains(out, "is a person's act") || calls != before {
+	if code, out := bed.run("disk", "clean", "--leases"); code != 3 || !strings.Contains(out, "this shell is an agent's, so nothing was done") || !strings.Contains(out, "run: metasystem disk clean --leases") || calls != before {
 		t.Fatalf("an agent's --leases = %d (calls %d):\n%s", code, calls, out)
 	}
 	if code, out := bed.run("disk", "clean", "--leases", "--strays"); code != 2 || !strings.Contains(out, "one thing at a time") {

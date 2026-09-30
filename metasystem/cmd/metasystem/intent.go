@@ -684,16 +684,57 @@ func (inv *intentInvocation) selectRoot() *intentResult {
 		inv.stateRoot, err = inv.owners.resolver.RootForInstallation(layout.InstallationRoot)
 	}
 	if err != nil {
-		return &intentResult{Outcome: intentRefused, code: 2,
-			Summary:  notAnInstallation(path, err),
-			Decision: "run this inside the repository, or name it with --repo PATH"}
+		return inv.notARepository(path, err)
 	}
 	if !converted(inv.stateRoot) {
 		return &intentResult{Outcome: intentRefused, code: 1,
-			Summary:  fmt.Sprintf("the installation at %s has no synced goal ledger", shellCommand([]string{inv.stateRoot})),
-			Decision: "a person upgrades the legacy goals file to the synced ledger first: metasystem goal sync --upgrade --by NAME (it shows the digest to review)"}
+			Summary: "this repository's goals are still in the old goals file, so nothing was done",
+			next:    []string{"metasystem", "goal", "sync", "--upgrade", "--by", inv.knownPerson()}, nextReason: "a person converts it; it shows the file to review",
+			Details: []string{"the installation at " + shellCommand([]string{inv.stateRoot}) + " has no synced goal ledger"}}
 	}
 	return nil
+}
+
+// notARepository refuses a command run outside a repository with a
+// metasystem installation: line 2 is the command again, naming the
+// repository, whose path the engine cannot know.
+func (inv *intentInvocation) notARepository(path string, err error) *intentResult {
+	return &intentResult{Outcome: intentRefused, code: 2, Summary: notAnInstallation(path, err),
+		next: append(withoutOption(inv.typedArgv(), "repo"), "--repo", "PATH"), nextReason: "inside the repository, or naming its path",
+		Details: []string{"not an installation because: " + err.Error()}}
+}
+
+// retryWith is this command as the person typed it, less the options drop
+// names (a switch, or an option with its value), plus extra words: the line 2
+// of a refusal whose fix is a changed option.
+func (inv *intentInvocation) retryWith(drop []string, extra ...string) []string {
+	argv := append([]string{"metasystem"}, inv.command.words()...)
+	for index := 0; index < len(inv.raw); index++ {
+		token := inv.raw[index]
+		name, _, joined := strings.Cut(strings.TrimLeft(token, "-"), "=")
+		if strings.HasPrefix(token, "-") && slices.Contains(drop, name) {
+			if definition, known := inv.command.lookupFlag(name); known && definition.value != "" && !joined {
+				index++
+			}
+			continue
+		}
+		argv = append(argv, token)
+	}
+	return append(argv, extra...)
+}
+
+// knownPerson is the person a remedy names: the one at this seat's helm,
+// else the enrolled person, else NAME when nobody is known.
+func (inv *intentInvocation) knownPerson() string {
+	if name := inv.personName(""); name != "" {
+		return name
+	}
+	if inv.stateRoot != "" {
+		if enrollment, err := humanauthority.ReadEnrollment(inv.stateRoot); err == nil && enrollment.Human != "" {
+			return enrollment.Human
+		}
+	}
+	return "NAME"
 }
 
 // notAnInstallation says why path is not a metasystem installation in plain
@@ -712,7 +753,7 @@ func notAnInstallation(path string, err error) string {
 	case strings.Contains(text, "no metasystem installation"), strings.Contains(text, "not a metasystem installation"):
 		return shown + " is not inside a repository with a metasystem installation; nothing was done"
 	}
-	return fmt.Sprintf("%s is not inside one metasystem installation (%v); nothing was done", shown, err)
+	return shown + " is not inside a repository with a metasystem installation; nothing was done"
 }
 
 // The outcomes a public result can have.
@@ -753,7 +794,11 @@ type intentResult struct {
 	text       []string
 	next       []string
 	nextReason string
-	code       int
+	// retry, when no next is set, makes line 2 this command as the person
+	// typed it, with retry as its reason: the remedy of a failure whose
+	// cause may pass (an unreadable record, a lost race).
+	retry string
+	code  int
 }
 
 func (inv *intentInvocation) render(result intentResult) int {
@@ -761,6 +806,9 @@ func (inv *intentInvocation) render(result intentResult) int {
 	result.Verb = inv.command.name
 	if result.Targets == nil {
 		result.Targets = []intentTarget{}
+	}
+	if len(result.next) == 0 && result.retry != "" && result.Decision == "" && inv.command.name != "" {
+		result.next, result.nextReason = inv.typedArgv(), result.retry
 	}
 	if len(result.next) > 0 {
 		result.Next = &intentNext{Argv: result.next, Reason: result.nextReason}
@@ -949,7 +997,8 @@ func ownerResult(report *ownerReport, code int, confirmed intentResult) intentRe
 	}
 	switch {
 	case report.refusal != nil:
-		result := intentResult{Outcome: intentRefused, Summary: report.refusal.sentence, text: lines, code: report.refusal.code}
+		result := intentResult{Outcome: intentRefused, Summary: report.refusal.sentence, text: lines, code: report.refusal.code,
+			next: shellWords(report.refusal.remedy.command), Decision: strings.TrimSpace(report.refusal.remedy.words)}
 		if report.result != nil {
 			result.Details = refusalCodeDetails(report.refusal.refusalCode, report.result.Code)
 		} else {
@@ -958,17 +1007,16 @@ func ownerResult(report *ownerReport, code int, confirmed intentResult) intentRe
 		if unchanged {
 			result.Outcome, result.code = intentUnchanged, 0
 		}
-		if report.refusal.remedy.command != "" {
-			result.next = shellWords(report.refusal.remedy.command)
-		} else if words := strings.TrimSpace(report.refusal.remedy.words); words != "" {
-			result.Decision = words
+		if len(result.next) > 0 {
+			result.Decision = ""
 		}
 		if report.result != nil {
 			result.Data = map[string]any{"owner": ownerPublication(*report.result)}
 		}
 		return result
 	case report.failure != nil:
-		return intentResult{Outcome: intentRefused, Summary: report.failure.Error(), text: lines, code: max(code, 1), Details: refusalCodeDetails(goal.RefusalCode(report.failure))}
+		return intentResult{Outcome: intentRefused, Summary: report.failure.Error(), text: lines, code: max(code, 1), retry: "once the cause above is fixed",
+			Details: refusalCodeDetails(goal.RefusalCode(report.failure))}
 	case landed && code == 0:
 		confirmed.Outcome = intentConfirmed
 		confirmed.text = append(lines, confirmed.text...)
@@ -976,11 +1024,12 @@ func ownerResult(report *ownerReport, code int, confirmed intentResult) intentRe
 	case unchanged:
 		return intentResult{Outcome: intentUnchanged, Summary: report.result.Detail, text: lines, Data: map[string]any{"owner": ownerPublication(*report.result)}}
 	case report.result != nil:
-		return intentResult{Outcome: intentRefused, Summary: report.result.Detail, text: lines, code: max(code, 1), Data: map[string]any{"owner": ownerPublication(*report.result)},
-			Details: refusalCodeDetails(report.result.Code)}
+		return intentResult{Outcome: intentRefused, Summary: report.result.Detail, text: lines, code: max(code, 1), retry: "the goals changed meanwhile; try again",
+			Data: map[string]any{"owner": ownerPublication(*report.result)}, Details: refusalCodeDetails(report.result.Code)}
 	}
 	return intentResult{Outcome: intentFailed, code: max(code, 1), text: lines,
-		Summary: "the goal owner stopped without a recorded result; its message is on standard error"}
+		Summary: "the command stopped without saying whether it was done", next: []string{"metasystem", "system", "check"},
+		nextReason: "names what is wrong here"}
 }
 
 // partialResult reports a primary act that landed and later work that did

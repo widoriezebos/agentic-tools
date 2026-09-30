@@ -28,7 +28,8 @@ import (
 func (inv *intentInvocation) engineVerb(args ...string) (intentProcessResult, *intentResult) {
 	binary, err := inv.delivery().executable()
 	if err != nil {
-		return intentProcessResult{}, &intentResult{Outcome: intentFailed, code: 1, Summary: "the engine executable is unavailable: " + err.Error() + "; nothing was done"}
+		return intentProcessResult{}, &intentResult{Outcome: intentFailed, code: 1, Summary: "the running engine's own path could not be read, so nothing was done",
+			retry: "try again", Details: []string{"engine path: " + err.Error()}}
 	}
 	// Owner verbs are reached through the explicit internal entry.
 	return inv.delivery().process(intentProcess{argv: append([]string{binary, "internal"}, args...), dir: inv.layout.InstallationRoot}), nil
@@ -52,7 +53,7 @@ func ownerVerbResult(ran intentProcessResult, targets []intentTarget, done strin
 		return intentResult{Outcome: intentConfirmed, Targets: targets, Data: data, Summary: done, text: nonEmptyLines(output)}
 	}
 	problem := nonEmptyLines(string(ran.stderr))
-	summary := fmt.Sprintf("the owner exited %d without a reason; its output is under owner", ran.code)
+	summary := fmt.Sprintf("the command stopped (exit %d) without saying why; --json shows its output", ran.code)
 	if reason := ownerRejectionReason(parsed); reason != "" {
 		summary = reason
 	} else if len(problem) > 0 {
@@ -61,11 +62,24 @@ func ownerVerbResult(ran intentProcessResult, targets []intentTarget, done strin
 		summary = lines[len(lines)-1]
 	}
 	if ran.err != nil {
-		summary = "the owner could not run: " + ran.err.Error()
+		summary = "the command could not run: " + ran.err.Error()
 	}
 	// The summary is not repeated under itself.
 	problem = slices.DeleteFunc(problem, func(line string) bool { return line == summary })
-	return intentResult{Outcome: intentRefused, Targets: targets, Data: data, code: max(ran.code, 1), Summary: summary, text: problem}
+	return intentResult{Outcome: intentRefused, Targets: targets, Data: data, code: max(ran.code, 1), Summary: summary, text: problem,
+		retry: ownerRetry(problem)}
+}
+
+// ownerRetry is line 2 of an owner verb's refusal: nothing when the owner's
+// own lines already name the command that resolves it, else this command
+// again once its cause is fixed.
+func ownerRetry(lines []string) string {
+	for _, line := range lines {
+		if strings.Contains(line, "metasystem ") {
+			return ""
+		}
+	}
+	return "once the cause above is fixed"
 }
 
 // ownerRejectionReason is the reason an owner's own JSON result gives for
@@ -102,7 +116,8 @@ func (inv *intentInvocation) exclusiveChoice(names ...string) (string, *intentRe
 	}
 	if len(given) > 1 {
 		return "", &intentResult{Outcome: intentRefused, code: 2,
-			Summary: fmt.Sprintf("%s are separate decisions; give one; nothing was done", strings.Join(given, " and "))}
+			Summary: fmt.Sprintf("%s are separate decisions; give one; nothing was done", strings.Join(given, " and ")),
+			next:    inv.retryWith(stripDashes(given[1:])), nextReason: "keeps " + given[0] + "; one decision at a time"}
 	}
 	if len(given) == 1 {
 		return strings.TrimPrefix(given[0], "--"), nil
@@ -118,7 +133,16 @@ func (inv *intentInvocation) requireInputs(names ...string) *intentResult {
 		}
 	}
 	if len(missing) > 0 {
-		return &intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("this choice needs %s; nothing was done", strings.Join(missing, ", "))}
+		var extra []string
+		for _, flag := range missing {
+			value := strings.ToUpper(strings.TrimPrefix(flag, "--"))
+			if flag == "--by" {
+				value = inv.knownPerson()
+			}
+			extra = append(extra, flag, value)
+		}
+		return &intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("this choice needs %s; nothing was done", strings.Join(missing, ", ")),
+			next: inv.retryWith(stripDashes(missing), extra...), nextReason: "with your values"}
 	}
 	return nil
 }
@@ -127,10 +151,20 @@ func (inv *intentInvocation) requireInputs(names ...string) *intentResult {
 func (inv *intentInvocation) refuseOthers(allowed []string, names ...string) *intentResult {
 	for _, name := range names {
 		if inv.input.has(name) && !containsIntentValue(allowed, name) {
-			return &intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("--%s does not belong to this choice; nothing was done", name)}
+			return &intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("--%s does not belong to this choice; nothing was done", name),
+				next: inv.retryWith([]string{name}), nextReason: "without --" + name}
 		}
 	}
 	return nil
+}
+
+// stripDashes is option names less their leading dashes.
+func stripDashes(flags []string) []string {
+	names := make([]string, 0, len(flags))
+	for _, flag := range flags {
+		names = append(names, strings.TrimLeft(flag, "-"))
+	}
+	return names
 }
 
 var (
@@ -161,10 +195,12 @@ func runIntentGoalSync(inv *intentInvocation) int {
 				problem = inv.requireInputs("by")
 			}
 			if mode := inv.input.text("sync-mode"); problem == nil && mode != "" && mode != "remote" && mode != "local" {
-				problem = &intentResult{Outcome: intentRefused, code: 2, Summary: "--sync-mode is remote or local; nothing was done"}
+				problem = &intentResult{Outcome: intentRefused, code: 2, Summary: "--sync-mode is remote or local; nothing was done",
+					next: inv.retryWith([]string{"sync-mode"}, "--sync-mode", "remote"), nextReason: "or local"}
 			}
 			if digest := inv.input.text("source-digest"); problem == nil && digest != "" && !intentSHA256Pattern.MatchString(digest) {
-				problem = &intentResult{Outcome: intentRefused, code: 2, Summary: "--source-digest is the reviewed file's 64-character lowercase SHA-256; nothing was done"}
+				problem = &intentResult{Outcome: intentRefused, code: 2, Summary: "--source-digest is not a file checksum (64 lowercase hex characters); nothing was done",
+					next: inv.retryWith([]string{"source-digest"}), nextReason: "shows the file's checksum to review"}
 			}
 		}
 	}
@@ -191,7 +227,7 @@ func runIntentGoalSync(inv *intentInvocation) int {
 		reports, err := recoverGoalJournal(inv.stateRoot, inv.owners.commandNow, inv.owners.dependencies)
 		if err != nil {
 			return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Data: scope,
-				Summary: "the goal journal of this installation was not recovered: " + err.Error(), next: inv.publicArgv("system", "check"), nextReason: "diagnose what stops recovery"})
+				Summary: "the goal changes left unfinished here could not be finished: " + err.Error(), next: inv.publicArgv("system", "check"), nextReason: "diagnose what stops recovery"})
 		}
 		entries, lines := []map[string]string{}, []string{}
 		for _, report := range reports {
@@ -201,10 +237,10 @@ func runIntentGoalSync(inv *intentInvocation) int {
 		scope["entries"] = entries
 		if len(reports) == 0 {
 			return inv.render(intentResult{Outcome: intentUnchanged, Targets: targets, Data: scope,
-				Summary: "the goal journal of this whole installation is clean; nothing was recovered"})
+				Summary: "no goal change was left unfinished in this whole installation; nothing was recovered"})
 		}
-		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: scope, text: lines,
-			Summary: fmt.Sprintf("recovered %d stranded journal entr(ies) across this whole installation; live owners were left alone", len(reports))})
+		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: scope, Details: lines,
+			Summary: fmt.Sprintf("finished %d unfinished goal change(s) across this whole installation; running ones were left alone", len(reports))})
 	case "publish":
 		goals := inv.input.values["goal"]
 		args := []string{"--root", inv.stateRoot, "--by", inv.input.text("by")}
@@ -235,18 +271,22 @@ func runIntentRepairUpgrade(inv *intentInvocation, targets []intentTarget, scope
 	data, err := os.ReadFile(source)
 	if err != nil {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Data: scope,
-			Summary: fmt.Sprintf("there is no legacy goals file to upgrade at %s: %v; nothing was done", source, err)})
+			Summary: fmt.Sprintf("there is no old goals file to upgrade at %s; nothing was done", source),
+			next:    inv.publicArgv("goal", "sync"), nextReason: "shows whether the goals are already synced", Details: []string{err.Error()}})
 	}
 	current := goal.SourceDigestOf(data)
 	scope["sourceDigest"], scope["source"] = current, source
 	if !inv.input.has("source-digest") {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: targets, Data: scope,
-			Summary:  fmt.Sprintf("the upgrade runs only on reviewed bytes; %s now has SHA-256 %s; nothing was done", source, current),
-			Decision: "review that file, then repeat with --source-digest " + current + " (and --amendments FILE when goals must be added or amended; see metasystem help goal sync)"})
+			Summary: fmt.Sprintf("review %s first: the upgrade runs only on the file you reviewed; nothing was done", source),
+			next:    inv.retryWith([]string{"source-digest"}, "--source-digest", current), nextReason: "once you have reviewed it; its checksum now",
+			Details: []string{"--amendments FILE adds or amends goals in the same upgrade; see metasystem help goal sync"}})
 	}
 	if digest := inv.input.text("source-digest"); digest != current {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Data: scope,
-			Summary: fmt.Sprintf("the reviewed digest %s is not the file's current digest %s; the file changed after review; nothing was done", digest, current)})
+			Summary: "the goals file changed after your review; nothing was done",
+			next:    inv.retryWith([]string{"source-digest"}, "--source-digest", current), nextReason: "once you have reviewed it again",
+			Details: []string{fmt.Sprintf("reviewed checksum %s, current %s", digest, current)}})
 	}
 	args := []string{"--root", inv.stateRoot, "--source-digest", current, "--by", inv.input.text("by")}
 	if inv.input.has("amendments") {
@@ -267,25 +307,29 @@ func runIntentRepairMission(inv *intentInvocation, mission string) int {
 	choice, problem := inv.exclusiveChoice("confirm-restored", "accept-workspace")
 	if problem == nil && choice == "" {
 		problem = &intentResult{Outcome: intentRefused, code: 2,
-			Summary:  "repair mission needs the person's decision: --confirm-restored TREE or --accept-workspace --waive CLAIM...; nothing was done",
-			Decision: "see metasystem help mission repair"}
+			Summary: "mission repair needs your decision: files restored, or the workspace accepted; nothing was done",
+			next:    inv.retryWith(nil, "--confirm-restored", "TREE"), nextReason: "or --accept-workspace --waive CLAIM; metasystem help mission repair explains both"}
 	}
 	if problem == nil {
 		problem = inv.requireInputs("problem", "by", "reason")
 	}
 	if problem == nil && choice == "confirm-restored" {
 		if !intentTreePattern.MatchString(inv.input.text("confirm-restored")) {
-			problem = &intentResult{Outcome: intentRefused, code: 2, Summary: "--confirm-restored is the recorded safe tree's 40 to 64 lowercase hex id; nothing was done"}
+			problem = &intentResult{Outcome: intentRefused, code: 2, Summary: "--confirm-restored takes the recorded safe tree's id (40 to 64 hex characters); nothing was done",
+				next: inv.publicArgv("mission", "status", mission), nextReason: "names the recorded safe tree"}
 		} else if inv.input.has("waive") {
-			problem = &intentResult{Outcome: intentRefused, code: 2, Summary: "--waive belongs to --accept-workspace; nothing was done"}
+			problem = &intentResult{Outcome: intentRefused, code: 2, Summary: "--waive belongs to --accept-workspace; nothing was done",
+				next: inv.retryWith([]string{"waive"}), nextReason: "without --waive"}
 		}
 	}
 	if problem == nil && choice == "accept-workspace" && len(inv.input.values["waive"]) == 0 {
-		problem = &intentResult{Outcome: intentRefused, code: 2, Summary: "--accept-workspace names each attribution claim it waives with --waive CLAIM; none is waived automatically; nothing was done"}
+		problem = &intentResult{Outcome: intentRefused, code: 2, Summary: "--accept-workspace waives only the claims you name, and none was; nothing was done",
+			next: inv.retryWith(nil, "--waive", "CLAIM"), nextReason: "one --waive per claim; metasystem mission status names them"}
 	}
 	if problem == nil {
 		if value := inv.input.text("problem"); !regexp.MustCompile(`^[1-9][0-9]*$`).MatchString(value) {
-			problem = &intentResult{Outcome: intentRefused, code: 2, Summary: "--problem is the recorded problem's positive number; nothing was done"}
+			problem = &intentResult{Outcome: intentRefused, code: 2, Summary: "--problem takes the recorded problem's number; nothing was done",
+				next: inv.publicArgv("mission", "status", mission), nextReason: "lists the recorded problems with their numbers"}
 		}
 	}
 	if problem != nil {
@@ -296,7 +340,8 @@ func runIntentRepairMission(inv *intentInvocation, mission string) int {
 	}
 	root, err := inv.owners.resolver.RootForInstallation(inv.layout.InstallationRoot)
 	if err != nil {
-		return inv.render(intentResult{Outcome: intentRefused, code: 1, Summary: "the installation's state root is unavailable: " + err.Error()})
+		return inv.render(intentResult{Outcome: intentRefused, code: 1, Summary: "this installation's records cannot be found, so nothing was done",
+			next: []string{"metasystem", "system", "check"}, nextReason: "names what is wrong here", Details: []string{"state root: " + err.Error()}})
 	}
 	taint, _ := strconv.ParseInt(inv.input.text("problem"), 10, 64)
 	request := missionResolveRequest{root: root, mission: mission, taint: taint, variant: "restore", tree: inv.input.text("confirm-restored"),
@@ -333,7 +378,8 @@ func runIntentSettingsCoordinator(inv *intentInvocation) int {
 		problem = inv.requireInputs("by")
 	}
 	if problem == nil && choice == "" && inv.input.has("by") {
-		problem = &intentResult{Outcome: intentRefused, code: 2, Summary: "--by names the person declaring or withdrawing; reading takes none; nothing was done"}
+		problem = &intentResult{Outcome: intentRefused, code: 2, Summary: "--by names who declares or withdraws; showing takes none; nothing was done",
+			next: inv.retryWith([]string{"by"}), nextReason: "shows the coordinator"}
 	}
 	if problem != nil {
 		return inv.render(*problem)
@@ -369,7 +415,7 @@ func runIntentSettingsCoordinator(inv *intentInvocation) int {
 			Summary: fmt.Sprintf("this checkout is the coordinator of ledger %s, declared by %s at %s", state.Record.Ledger, state.Record.DeclaredBy, state.Record.DeclaredAt)})
 	case brain.Undeclared:
 		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: data,
-			Summary: "no coordinator is declared for this checkout", next: inv.publicArgv("settings", "coordinator", "--declare", "--by", "NAME"),
+			Summary: "no coordinator is declared for this checkout", next: inv.publicArgv("settings", "coordinator", "--declare", "--by", inv.knownPerson()),
 			nextReason: "a person at an agent-free terminal declares it"})
 	}
 	data["reason"] = state.Reason
@@ -393,7 +439,8 @@ func runIntentGoalSyncPreview(inv *intentInvocation) int {
 		}
 	}
 	if err != nil {
-		return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "the goal files cannot be compared with their published base: " + err.Error()})
+		return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "the goal files could not be compared with their published base",
+			next: []string{"metasystem", "system", "check"}, nextReason: "names what is wrong here", Details: []string{err.Error()}})
 	}
 	lines := make([]string, 0, len(deltas))
 	var edited []string
@@ -413,7 +460,7 @@ func runIntentGoalSyncPreview(inv *intentInvocation) int {
 	}
 	return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: data, text: lines,
 		Summary: fmt.Sprintf("%d goal file(s) differ from their published base %s; nothing was changed", len(deltas), shortSHA(base)),
-		next:    inv.publicArgv(append(publish, "--by", "NAME")...), nextReason: "a person publishes these reviewed edits, naming each goal"})
+		next:    inv.publicArgv(append(publish, "--by", inv.knownPerson())...), nextReason: "a person publishes these reviewed edits, naming each goal"})
 }
 
 // goalFileID is the goal a ledger file path belongs to, or empty.
@@ -428,12 +475,14 @@ func goalFileID(path string) string {
 // reader: designs, decisions, one record, or the designs of one goal.
 func runIntentShowRecords(inv *intentInvocation, kind string, args []string) int {
 	if inv.input.has("history") {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--history belongs to a goal's record; nothing was done"})
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--history belongs to a goal's record; nothing was done",
+			next: inv.retryWith([]string{"history"}), nextReason: "without --history"})
 	}
 	goalID := inv.input.text("goal")
 	if kind == "design" && len(args) == 1 {
 		if goalID != "" && goalID != args[0] {
-			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("design show names one goal, not %s and --goal %s; nothing was done", args[0], goalID)})
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("design show names one goal, not %s and --goal %s; nothing was done", args[0], goalID),
+				next: inv.publicArgv("design", "show", args[0]), nextReason: "or the other goal"})
 		}
 		goalID, args = args[0], nil
 	}
@@ -442,7 +491,7 @@ func runIntentShowRecords(inv *intentInvocation, kind string, args []string) int
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "decision show takes one record id; nothing was done",
 			next: inv.publicArgv("decision", "list"), nextReason: "lists the decision records with their ids"})
 	case kind == "design" && goalID == "":
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "design show needs its goal: metasystem design show G; nothing was done",
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "design show needs the goal whose designs it shows; nothing was done",
 			next: inv.publicArgv("design", "list"), nextReason: "lists the design records with their goals"})
 	case kind == "design" && (inv.input.has("attempt") || inv.input.has("out")):
 		if problem := inv.selectRoot(); problem != nil {
@@ -450,16 +499,19 @@ func runIntentShowRecords(inv *intentInvocation, kind string, args []string) int
 		}
 		return inv.render(inv.showDesignAttempts(goalID))
 	case kind != "design" && (inv.input.has("attempt") || inv.input.has("out")):
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--attempt and --out belong to design show G; nothing was done"})
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--attempt and --out belong to design show; nothing was done",
+			next: inv.retryWith([]string{"attempt", "out"}), nextReason: "without them"})
 	case (kind == "designs" || kind == "decisions") && len(args) != 0:
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: inv.command.name + " takes no further words; nothing was done"})
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: inv.command.name + " takes no further words; nothing was done",
+			next: inv.publicArgv(inv.command.words()...), nextReason: "without them"})
 	}
 	if problem := inv.resolveLayout(); problem != nil {
 		return inv.render(*problem)
 	}
 	stateRoot, err := inv.owners.resolver.RootForInstallation(inv.layout.InstallationRoot)
 	if err != nil {
-		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the installation's state root is unavailable: " + err.Error()})
+		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "this installation's records cannot be found, so nothing was read",
+			next: []string{"metasystem", "system", "check"}, nextReason: "names what is wrong here", Details: []string{"state root: " + err.Error()}})
 	}
 	read, err := project.Read(project.Roots{Checkout: inv.layout.GitRoot, Installation: inv.layout.InstallationRoot, StateRoot: stateRoot})
 	if err != nil {

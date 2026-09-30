@@ -78,7 +78,7 @@ func CarriedLandingLine(row goal.HistoryLine) (CarriedLanding, error) {
 		goalID = row.Targets[0]
 	}
 	if goalID == "" || row.Opid == "" {
-		return CarriedLanding{}, fmt.Errorf("carried row requires one goal target and an opid")
+		return CarriedLanding{}, fmt.Errorf("a carried landing row needs one goal and its operation id")
 	}
 	recordedAt, err := time.Parse(time.RFC3339, row.At)
 	if err != nil {

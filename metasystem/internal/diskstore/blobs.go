@@ -167,7 +167,7 @@ func (b BlobStore) publish(ctx context.Context, digest, partial string) error {
 // refs directory are synced before it returns.
 func (b BlobStore) WriteRef(digest string, ref BlobRef, stage string) error {
 	if !validDigest(digest) || ref.Referrer == "" || filepath.Base(ref.Referrer) != ref.Referrer {
-		return fmt.Errorf("a blob reference needs a digest and a plain referrer name")
+		return fmt.Errorf("a blob reference needs a valid checksum and a plain referrer name")
 	}
 	ref.Schema = BlobRefSchema
 	data, err := json.Marshal(ref)

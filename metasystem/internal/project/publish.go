@@ -13,11 +13,11 @@ import (
 
 // ErrDesignChanged is returned when a design document no longer holds the
 // bytes a proposal was made against: someone edited it since.
-var ErrDesignChanged = errors.New("DESIGN_DOCUMENT_CHANGED")
+var ErrDesignChanged = errors.New("the design document changed since the proposal was made")
 
 // ErrDesignInvalid is returned when a proposal is not the expected design
 // record: another kind, id, goal or status than a draft of this record.
-var ErrDesignInvalid = errors.New("DESIGN_PROPOSAL_INVALID")
+var ErrDesignInvalid = errors.New("the proposal is not a draft of this design record")
 
 // DesignPublication is one proposal for one design document.
 type DesignPublication struct {

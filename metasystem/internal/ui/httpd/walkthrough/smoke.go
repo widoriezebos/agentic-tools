@@ -119,7 +119,7 @@ func runSmoke(runtimeName, model, engine, kit, out string) {
 
 	fmt.Println()
 	fmt.Println("The smoke file is at " + out)
-	fmt.Println("A HUMAN READS IT. It is smoke and not certification: a dozen answers cannot")
+	fmt.Println("A PERSON READS IT. It is smoke and not certification: a dozen answers cannot")
 	fmt.Println("establish expertise. Read it for contradictions, for claims nothing supports,")
 	fmt.Println("for a citation that does not say what the answer says it says, and for any")
 	fmt.Println("page or act the Partner offered that this build does not have.")
