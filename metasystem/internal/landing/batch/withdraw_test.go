@@ -38,7 +38,7 @@ func TestBatchWithdrawBeforeSealAndRefusesAfterSeal(t *testing.T) {
 			t.Fatalf("withdrawn record=%+v want-prefixes=%v", record, want)
 		}
 		handBacks := 0
-		must(t, ReturnUnits(store, testBatchID, "tree", "owner", time.Unix(3, 0), ReturnSeams{
+		must(t, returnUnitsErr(store, testBatchID, "tree", "owner", time.Unix(3, 0), ReturnSeams{
 			Read: func(string, string, string) (ReturnLedgerGoal, error) {
 				return ReturnLedgerGoal{Claimed: true, Machine: "landing", Lineage: "owner", Batch: testBatchID}, nil
 			},

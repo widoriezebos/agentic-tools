@@ -74,9 +74,7 @@ func joinedUnit(goal, seat string) batch.Unit {
 func TestViewProvingBatchAndNext(t *testing.T) {
 	t.Parallel()
 	home, root, _ := laneDirs(t)
-	if _, err := Resolve(home, root, "m1e", laneNow, true); err != nil {
-		t.Fatal(err)
-	}
+	register(t, home, root)
 	started := laneNow.Add(-5 * time.Minute).Format(time.RFC3339Nano)
 	proving := batch.Record{BatchID: "b1", State: batch.StateProving, StartReason: "nothing else is underway",
 		Units:   []batch.Unit{joinedUnit("g1", "m1e"), joinedUnit("g2", "ui"), {GoalID: "g0", State: batch.UnitEjected}},
@@ -115,9 +113,7 @@ func TestViewProvingBatchAndNext(t *testing.T) {
 func TestViewPausedAndGivenUp(t *testing.T) {
 	t.Parallel()
 	home, root, _ := laneDirs(t)
-	if _, err := Resolve(home, root, "m1e", laneNow, true); err != nil {
-		t.Fatal(err)
-	}
+	register(t, home, root)
 	if _, err := SetPause(home, "Wido", laneNow); err != nil {
 		t.Fatal(err)
 	}
@@ -144,9 +140,7 @@ func TestViewPausedAndGivenUp(t *testing.T) {
 func TestViewShowsTheProvingWaitAcrossJoins(t *testing.T) {
 	t.Parallel()
 	home, root, _ := laneDirs(t)
-	if _, err := Resolve(home, root, "m1e", laneNow, true); err != nil {
-		t.Fatal(err)
-	}
+	register(t, home, root)
 	at := laneNow.Format(time.RFC3339Nano)
 	waiting := batch.Record{BatchID: "b2", State: batch.StateOpen, Units: []batch.Unit{joinedUnit("g3", "m1e"), joinedUnit("g4", "ui")},
 		History: []batch.HistoryEntry{
@@ -164,10 +158,8 @@ func TestViewShowsTheProvingWaitAcrossJoins(t *testing.T) {
 func TestViewOfAGoneLaneNamesTheFix(t *testing.T) {
 	t.Parallel()
 	home, root, _ := laneDirs(t)
-	if _, err := Resolve(home, root, "m1e", laneNow, true); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Remove(root); err != nil {
+	register(t, home, root)
+	if err := os.RemoveAll(root); err != nil {
 		t.Fatal(err)
 	}
 	view := BuildView(viewSources(home, false, nil))
@@ -182,9 +174,7 @@ func TestViewOfAGoneLaneNamesTheFix(t *testing.T) {
 func TestLaneViewShowsChangeMembers(t *testing.T) {
 	t.Parallel()
 	home, root, _ := laneDirs(t)
-	if _, err := Resolve(home, root, "m1e", laneNow, true); err != nil {
-		t.Fatal(err)
-	}
+	register(t, home, root)
 	change := batch.NewChangeUnit(batch.ChangeMember{Commit: "abcdef0123456789abcdef0123456789abcdef01", AskedBy: "m1e+human"}, "/seat", "m1e", "human", nil, nil)
 	change.State = batch.UnitJoined
 	ejected := batch.NewChangeUnit(batch.ChangeMember{Commit: "1234567890ab1234567890ab1234567890ab1234", AskedBy: "ui+human"}, "/ui", "ui", "human", nil, nil)
@@ -207,9 +197,7 @@ func TestLaneViewShowsChangeMembers(t *testing.T) {
 func TestLaneViewUnreadableRecordIsNotFewerMembers(t *testing.T) {
 	t.Parallel()
 	home, root, _ := laneDirs(t)
-	if _, err := Resolve(home, root, "m1e", laneNow, true); err != nil {
-		t.Fatal(err)
-	}
+	register(t, home, root)
 	store := batch.NewStore(root, nil)
 	if err := store.Create(batch.Record{Schema: 1, BatchID: "01j5x00000000000000000ba01", State: batch.StateOpen,
 		Units: []batch.Unit{{GoalID: "g1", Chain: "c1", State: batch.UnitJoined, Claim: batch.Claim{Machine: "m1e", Lineage: "l", Epoch: 1, Revision: 1, AccountingRevision: 1}}}}); err != nil {
@@ -233,9 +221,7 @@ func TestLaneViewUnreadableRecordIsNotFewerMembers(t *testing.T) {
 func TestLaneViewShowsTheLanesSpend(t *testing.T) {
 	t.Parallel()
 	home, root, _ := laneDirs(t)
-	if _, err := Resolve(home, root, "m1e", laneNow, true); err != nil {
-		t.Fatal(err)
-	}
+	register(t, home, root)
 	sources := viewSources(home, true, nil)
 	var asked string
 	sources.Spend = func(laneRoot, account string) (Spend, error) {
@@ -253,9 +239,7 @@ func TestLaneViewShowsTheLanesSpend(t *testing.T) {
 func TestViewShowsTheOwnersLastTickError(t *testing.T) {
 	t.Parallel()
 	home, root, _ := laneDirs(t)
-	if _, err := Resolve(home, root, "m1e", laneNow, true); err != nil {
-		t.Fatal(err)
-	}
+	register(t, home, root)
 	view := BuildView(viewSources(home, true, nil))
 	if view.Owner.LastTickError != nil || view.Owner.LastTickProblem != nil || strings.Contains(view.Summary, "can't advance") {
 		t.Fatalf("a clean owner shows a tick error: %+v %q", view.Owner, view.Summary)
@@ -281,9 +265,7 @@ func TestViewShowsTheOwnersLastTickError(t *testing.T) {
 func TestViewSaysABatchIsHeldForASeatAtTheHelm(t *testing.T) {
 	t.Parallel()
 	home, root, _ := laneDirs(t)
-	if _, err := Resolve(home, root, "m1e", laneNow, true); err != nil {
-		t.Fatal(err)
-	}
+	register(t, home, root)
 	unit := joinedUnit("change:abc", "m1e")
 	unit.SeatRoot = "/seats/m1e/metasystem"
 	record := batch.Record{BatchID: "b1", State: batch.StateOpen, Units: []batch.Unit{unit}}

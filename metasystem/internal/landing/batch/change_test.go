@@ -185,7 +185,7 @@ func TestRedChangeIsEjectedAndTheAskerIsTold(t *testing.T) {
 	reason := "EJECTED from landing batch " + testBatchID + ": TestNotes (records) failed on the batch tip and passes on main"
 	must(t, ReassembleSurvivorsWithReturns(store, testBatchID, "owner", ten, []ReturnDecision{{GoalID: change.GoalID, Outcome: UnitEjected, Reason: reason}}))
 	reads := 0
-	must(t, ReturnUnits(store, testBatchID, base, "owner", ten, ReturnSeams{
+	must(t, returnUnitsErr(store, testBatchID, base, "owner", ten, ReturnSeams{
 		Read: func(_, _, goalID string) (ReturnLedgerGoal, error) {
 			reads++
 			return ReturnLedgerGoal{}, errors.New("the goal ledger has no " + goalID)

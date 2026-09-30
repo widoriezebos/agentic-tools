@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
@@ -33,12 +32,13 @@ func newAlertBed(t *testing.T) alertBed {
 	base := realpath.Resolve(t.TempDir())
 	bed := alertBed{home: filepath.Join(base, "home"), seat: filepath.Join(base, "seat"), landing: filepath.Join(base, "landing")}
 	for _, top := range []string{bed.seat, bed.landing} {
-		helmMust(t, os.MkdirAll(filepath.Join(top, ".git"), 0o755), os.MkdirAll(filepath.Join(top, "metasystem"), 0o755),
+		helmMust(t, os.MkdirAll(filepath.Join(top, "metasystem"), 0o755),
 			os.WriteFile(filepath.Join(top, "metasystem", "metasystem.conf"), []byte("metasystem.template=true\n"), 0o644))
 	}
-	if _, _, err := lane.Register(bed.home, bed.landing, "Wido", alertTestNow); err != nil {
-		t.Fatal(err)
-	}
+	// The landing checkout is a real git checkout, since landing set
+	// resolves its layout from Git; the seat only needs its marker.
+	helmMust(t, os.MkdirAll(filepath.Join(bed.seat, ".git"), 0o755))
+	registerLane(t, bed.home, bed.landing, "Wido", alertTestNow)
 	return bed
 }
 

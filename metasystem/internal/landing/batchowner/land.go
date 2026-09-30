@@ -636,16 +636,43 @@ func RecoverBatchLanding(root string, store batch.Store, id, actor string, at ti
 }
 
 func BatchRecoverySeamsWithGit(root string, store batch.Store, id string, at time.Time, gitRead func(string, ...string) (string, error)) batch.RecoverySeams {
-	controlRoot := batch.ModuleRoot(root)
+	return recoverySeamsAt(root, batch.ModuleRoot(root), "", store, id, at, gitRead, &BatchOwnerCalls)
+}
+
+// recoverySeamsAt are the landed-trailer recovery seams of the lane whose
+// checkout is root and whose installation is controlRoot, editing goals
+// through calls, read when each edit is made. With baseTree set, a trailer
+// counts only on a first-parent commit of origin/main after the newest one
+// whose tree is baseTree (the batch's base): an earlier landing of the same
+// source, chain or change, reverted since, is never taken for this batch's.
+// A base that is not on main finds nothing.
+func recoverySeamsAt(root, controlRoot, baseTree string, store batch.Store, id string, at time.Time, gitRead func(string, ...string) (string, error), calls *BatchOwnerCallSet) batch.RecoverySeams {
 	findTrailer := func(matches func(string) bool) (string, bool, error) {
-		format := "%H%x00%B%x00"
+		// Each commit is its hash, its tree when bounded, and its message.
+		format, width := "%H%x00%B%x00", 2
+		if baseTree != "" {
+			format, width = "%H%x00%T%x00%B%x00", 3
+		}
 		output, err := gitRead(root, "log", "--first-parent", "origin/main", "--format="+format)
 		if err != nil {
 			return "", false, err
 		}
 		parts := strings.Split(output, "\x00")
-		for index := 0; index+1 < len(parts); index += 2 {
-			for _, line := range strings.Split(parts[index+1], "\n") {
+		limit := len(parts)
+		if baseTree != "" {
+			limit = -1
+			for index := 0; index+2 < len(parts); index += 3 {
+				if strings.TrimSpace(parts[index+1]) == baseTree {
+					limit = index
+					break
+				}
+			}
+			if limit < 0 {
+				return "", false, nil
+			}
+		}
+		for index := 0; index+width-1 < limit; index += width {
+			for _, line := range strings.Split(parts[index+width-1], "\n") {
 				if matches(strings.TrimSpace(line)) {
 					return strings.TrimSpace(parts[index]), true, nil
 				}
@@ -693,7 +720,7 @@ func BatchRecoverySeamsWithGit(root string, store batch.Store, id string, at tim
 			if current == next {
 				return nil
 			}
-			return batchEditNext(controlRoot, unit.GoalID, next)
+			return calls.EditNext(LandingOwnerInvocation(), controlRoot, unit.GoalID, next)
 		},
 		Rearm: func(tip string) error {
 			return BatchRecoveryRearm(root, tip)

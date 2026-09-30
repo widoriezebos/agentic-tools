@@ -11,6 +11,7 @@ func init() {
 	registerIdempotency("landing set", idemStateful, "the lane is already that checkout: success, the record untouched", witnessLandingSetRepeat)
 	registerIdempotency("landing start", idemStateful, "the owner already runs, unpaused and without restarts: success, nothing started or written", witnessLandingStartRepeat)
 	registerIdempotency("landing stop", idemStateful, "the lane is already stopped: success, the pause untouched", witnessLandingStopRepeat)
+	registerIdempotency("landing unset", idemStateful, "no lane is registered any more: success, nothing written", witnessLandingUnsetRepeat)
 }
 
 // witnessLandingRepeat runs one landing verb twice on a registered lane and asserts
@@ -43,4 +44,8 @@ func witnessLandingStartRepeat(t *testing.T) {
 
 func witnessLandingStopRepeat(t *testing.T) {
 	witnessLandingRepeat(t, func(*laneVerbBed) []string { return []string{"landing", "stop", "--by", "Wido"} })
+}
+
+func witnessLandingUnsetRepeat(t *testing.T) {
+	witnessLandingRepeat(t, func(*laneVerbBed) []string { return []string{"landing", "unset"} })
 }
