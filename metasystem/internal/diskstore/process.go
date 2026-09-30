@@ -575,7 +575,8 @@ func (ProcessProof) Release(ctx context.Context, critical *Critical, census *Use
 
 // ownerGroupVerdict keeps a dead owner's root while any live process is in
 // the owner's recorded process group or session: a child the owner started
-// that was reparented to pid 1 keeps both, whatever it holds (Round D1). A
+// that was reparented to pid 1 keeps both, whatever it holds (Round D1); an
+// exited member not yet collected (zombie or exiting) holds nothing. A
 // record without them, an unreadable process table or an unreadable id
 // keeps the root (fail-closed rule 1). A grandchild that left both (setsid)
 // is out of this rule's reach; the use census still sees it if it holds
@@ -601,6 +602,19 @@ func ownerGroupVerdict(record Record) Verdict {
 			return pending(fmt.Sprintf("the process group or session of pid %d is unreadable", pid))
 		}
 		if int64(group) == record.OwnerGroup || int64(session) == record.OwnerSession {
+			// An exited member awaiting collection holds nothing: only a
+			// live, non-zombie member keeps the root, as the proof lease
+			// reclaim counts group members. An unreadable one keeps it.
+			exact, state, probeErr := identity.KernelProber{}.Probe(int64(pid))
+			if state == identity.Dead {
+				continue
+			}
+			if probeErr != nil || state == identity.Unknown {
+				return pending(fmt.Sprintf("pid %d of its owner's process group or session is uninspectable", pid))
+			}
+			if exact.Zombie || exact.Exiting {
+				continue
+			}
 			return Verdict{Decision: Keep, Reason: fmt.Sprintf("pid %d of its owner's process group or session is alive", pid),
 				Command: fmt.Sprintf("metasystem disk clean, once pid %d has ended", pid)}
 		}
