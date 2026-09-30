@@ -583,7 +583,23 @@ var BatchBaseRearm = struct {
 	FastForward func(context.Context, string, string) error
 	Rebuild     func(context.Context, string) error
 	Up          func(context.Context, string, string) (testrun.UpOutcome, error)
-}{landing.FastForwardPreservingRegisters, testrun.RebuildLandedEngine, testrun.UpLandedEngine}
+}{landing.FastForwardPreservingRegisters, testrun.RebuildLandedEngine, OwnerUpLandedEngine}
+
+// OwnerUpLandedEngine is the landing owner's run of the rebuilt engine's
+// ordinary up. The owner is machinery, not a session: that up re-arms a
+// landed rebuild at its accepted-engine step, whose authority is the landed
+// bytes and never the caller (engine-rebuild-rearm design, Decision 1), and
+// then ends at component=session-identity because no session is there to
+// announce or take the checkout lease. That ending, and only that one, is the
+// owner's re-arm done: every step before it succeeded, and every step after it
+// belongs to a session. Any other failed component fails the re-arm.
+func OwnerUpLandedEngine(ctx context.Context, installation, projectRoot string) (testrun.UpOutcome, error) {
+	outcome, err := testrun.UpLandedEngine(ctx, installation, projectRoot)
+	if err != nil && outcome.Failed && outcome.Outcome == "failed" && outcome.FailedComponent == "session-identity" {
+		return outcome, nil
+	}
+	return outcome, err
+}
 
 // laneCheckout serializes every step that moves the one lane checkout
 // (settings.Root) across the owner's concurrent runs: a landing (branch prep,
