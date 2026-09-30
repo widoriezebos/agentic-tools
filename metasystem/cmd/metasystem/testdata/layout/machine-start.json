@@ -1,0 +1,27 @@
+exit 0
+--
+{
+  "schemaVersion": 1,
+  "verb": "machine start",
+  "targets": [
+    {
+      "kind": "machine",
+      "id": "m1f"
+    }
+  ],
+  "outcome": "confirmed",
+  "summary": "machine m1f is launched and supervised",
+  "data": {
+    "exitCode": 0,
+    "owner": {
+      "destination": "/Users/wido/GitHub/agentic-tools-m1f",
+      "launch": "01K5ZZZZZZZZZZZZZZZZZZZZZZ",
+      "machine": "m1f",
+      "outcome": "done",
+      "schemaVersion": 1,
+      "startedAt": "2026-09-30T08:50:00Z"
+    }
+  }
+}
+
+--

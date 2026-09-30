@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -30,6 +31,8 @@ func g1bLayoutCases() []layoutCase {
 		{name: "machine-list-verbose", args: []string{"machine", "list", "--verbose"}, bed: machineLayoutBed},
 		{name: "machine-stop", args: []string{"machine", "stop", "m1x"}, bed: machineLayoutBed},
 		{name: "machine-stop-refusal", args: []string{"machine", "stop", "m9z"}, bed: machineLayoutBed},
+		{name: "machine-start", args: []string{"machine", "start", "m1f"}, bed: machineStartLayoutBed(false)},
+		{name: "machine-start-repeat", args: []string{"machine", "start", "m1f"}, bed: machineStartLayoutBed(true)},
 		{name: "landing-status", args: []string{"landing", "status"}, bed: landingLayoutBed(landingLayoutRunning)},
 		{name: "landing-status-verbose", args: []string{"landing", "status", "--verbose"}, bed: landingLayoutBed(landingLayoutRunning)},
 		{name: "landing-status-stopped", args: []string{"landing", "status"}, bed: landingLayoutBed(landingLayoutPaused)},
@@ -133,5 +136,26 @@ func landingLayoutBed(kind int) func(t *testing.T) layoutBed {
 		return layoutBed{owners: owners, cwd: cwd, now: now, replace: layoutPaths(cwd, cwd, "/Users/wido/GitHub/agentic-tools-m1e",
 			lane.AccountID(landing), "lane:99af5acdbc67", home, "/Users/wido/.metasystem-home", landing, "/Users/wido/GitHub/agentic-tools-landing",
 			"~/agentic-tools-landing", "~/GitHub/agentic-tools-landing")}
+	}
+}
+
+// machineStartLayoutBed is the machine bed with the seat launch owner
+// answering machine start: a fresh launch of m1f, or (already) the launch
+// that was supervised before, printed as the owner's --json record.
+func machineStartLayoutBed(already bool) func(t *testing.T) layoutBed {
+	return func(t *testing.T) layoutBed {
+		bed := machineLayoutBed(t)
+		record := map[string]any{"schemaVersion": 1, "launch": "01K5ZZZZZZZZZZZZZZZZZZZZZZ", "machine": "m1f",
+			"destination": "/Users/wido/GitHub/agentic-tools-m1f", "startedAt": "2026-09-30T08:50:00Z", "outcome": "done"}
+		if already {
+			record["alreadyLaunched"] = true
+		}
+		encoded, err := json.MarshalIndent(record, "", "  ")
+		if err != nil {
+			t.Fatal(err)
+		}
+		bed.owners.delivery = &intentDeliveryOwners{executable: func() (string, error) { return "/fake/metasystem", nil },
+			process: func(intentProcess) intentProcessResult { return intentProcessResult{stdout: append(encoded, '\n')} }}
+		return bed
 	}
 }

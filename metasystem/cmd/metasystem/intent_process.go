@@ -297,13 +297,7 @@ func processIntentCommands() []intentCommand {
 				{name: "resume", value: "ID", advanced: true, usage: "continue this interrupted launch"}},
 			maxArgs:  1,
 			examples: []string{"metasystem machine start m1f"},
-			run: func(inv *intentInvocation) int {
-				if len(inv.input.args) != 1 {
-					return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "machine start needs the new machine's name, so nothing was done",
-						next: inv.retryWith(nil, "NAME"), nextReason: "with the new machine's name"})
-				}
-				return runIntentStartMachine(inv, inv.input.args[0])
-			},
+			run:      runIntentStartMachine,
 		},
 		{
 			object: "work", action: "status", primary: true, audience: "both", summary: "running work, or one goal's work, job, run or read",
@@ -2423,7 +2417,12 @@ func uiSeatsData(ran uiLifecycleResult) map[string]any {
 
 // runIntentStartMachine adds one machine to the fleet through the seat
 // launch owner: clone, build, configure, enroll and supervise.
-func runIntentStartMachine(inv *intentInvocation, name string) int {
+func runIntentStartMachine(inv *intentInvocation) int {
+	if len(inv.input.args) != 1 {
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "machine start needs the new machine's name, so nothing was done",
+			next: inv.retryWith(nil, "NAME"), nextReason: "with the new machine's name"})
+	}
+	name := inv.input.args[0]
 	for _, other := range []string{"lineage", "installation", "by"} {
 		if inv.input.has(other) {
 			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("machine start takes no --%s; nothing was done", other),
@@ -2450,8 +2449,30 @@ func runIntentStartMachine(inv *intentInvocation, name string) int {
 	}
 	if result.Outcome != intentConfirmed && result.Outcome != intentUnchanged {
 		result.next, result.nextReason = inv.publicArgv("machine", "list"), "every machine's presence"
+	} else {
+		owner, _ := result.Data.(map[string]any)["owner"].(map[string]any)
+		result.view = machineStartView(name, result.Outcome == intentUnchanged, owner)
 	}
 	return inv.render(result)
+}
+
+// machineStartView is machine start's page: what happened to the machine,
+// then its launch and where its clone is; the owner's record is --json's.
+func machineStartView(name string, already bool, owner map[string]any) func(*textui.Page) {
+	return func(page *textui.Page) {
+		if already {
+			page.Done(joinFacts(page, "Machine "+name+" is already launched and supervised", "nothing was done"))
+		} else {
+			page.Done("Machine " + name + " is launched and supervised")
+		}
+		section := page.Section("", "")
+		if launch, _ := owner["launch"].(string); launch != "" {
+			section.KV("launch", textui.Plain(launch))
+		}
+		if destination, _ := owner["destination"].(string); destination != "" {
+			section.KV("clone", textui.Plain(page.Env().Path(destination)))
+		}
+	}
 }
 
 // additiveData is an existing structured view with additional fields beside
