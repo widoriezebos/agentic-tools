@@ -28,6 +28,7 @@ The single routing layer. `AGENTS.md` owns always-on behavior; this table owns w
 | Reconciling an existing repository | `docs/metasystem-reconciliation.md` | Installing or upgrading where instructions or skills already exist |
 | App inception | `skills/inception/SKILL.md` | Birthing an app: covenant, doctrine, thread |
 | Answering in the browser | `skills/project-partner/SKILL.md` | Where a fact lives and what the Project Partner may claim about it |
+| Landing a batch as the lane's agent | `skills/landing-agent/SKILL.md` | A landing session the keeper started on the registered lane checkout |
 | Opt-in specialist skills | `optional-skills/` | Enabled during adaptation |
 | Metasystem maintenance and rationale | `development/` at the repository toplevel (template only) | Changing the metasystem template itself; absent in adopted projects |
 
