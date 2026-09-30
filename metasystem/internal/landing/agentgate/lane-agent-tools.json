@@ -1,0 +1,50 @@
+{
+  "_comment": "The landing agent's tool allowlist (goal landing-lane-runtime-redesign, design section 3). Everything not listed here is denied, and a gate that cannot decide denies. Test runners, builds, pushes, goal mutations and lane set/unset/start/restart are deliberately absent.",
+  "tools": {
+    "Read": "read",
+    "Grep": "read",
+    "Glob": "read",
+    "LS": "read",
+    "TodoWrite": "read",
+    "Edit": "edit",
+    "MultiEdit": "edit",
+    "Write": "edit",
+    "NotebookEdit": "edit",
+    "Bash": "command"
+  },
+  "verbs": [
+    ["landing", "status"],
+    ["landing", "begin"],
+    ["landing", "prove"],
+    ["landing", "publish"],
+    ["landing", "return"],
+    ["landing", "validate"],
+    ["landing", "engine", "advance"],
+    ["landing", "stop"],
+    ["status"],
+    ["help"],
+    ["goal", "list"],
+    ["goal", "show"],
+    ["work", "status"],
+    ["test", "plan"],
+    ["test", "list"],
+    ["test", "status"],
+    ["incident", "list"],
+    ["agent", "ask"],
+    ["agent", "reply"],
+    ["agent", "inbox"]
+  ],
+  "gitRead": [
+    "status", "log", "show", "diff", "rev-parse", "merge-base", "ls-files", "ls-tree",
+    "cat-file", "rev-list", "blame", "grep", "describe", "shortlog", "patch-id",
+    "range-diff", "show-ref", "for-each-ref", "name-rev", "cherry", "branch", "reflog"
+  ],
+  "gitLane": ["fetch", "checkout", "add", "cherry-pick", "rebase", "commit"],
+  "shell": ["cat", "ls", "head", "tail", "wc", "grep", "cut", "sort", "jq", "pwd", "echo", "date"],
+  "protected": {
+    "segments": [".git", ".claude", ".agents", ".codex", ".devin", ".githooks"],
+    "names": ["metasystem.conf", "metasystem.conf.local"],
+    "pairs": ["plans/goals", "records/goals"],
+    "shallowDirs": ["bin"]
+  }
+}
