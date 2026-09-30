@@ -33,7 +33,7 @@ func TestClassifiablePidRefusesAReusedPid(t *testing.T) {
 		t.Fatalf("the same process = %d, %v", pid, err)
 	}
 	reused := fixedProber{exact: identity.Exact{Pid: 42, StartedAt: started.Add(time.Second)}, state: identity.Alive}
-	if _, err := supplied.ClassifiablePid(reused); err == nil || !strings.Contains(err.Error(), "is no longer that process") {
+	if _, err := supplied.ClassifiablePid(reused); err == nil || !strings.Contains(err.Error(), "is gone or replaced") {
 		t.Fatalf("a reused pid = %v; want the refusal", err)
 	}
 	gone := fixedProber{state: identity.Dead}

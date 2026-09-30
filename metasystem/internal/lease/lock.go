@@ -59,9 +59,8 @@ func acquireBounded(path, what string) (*fileLock, error) {
 		return &fileLock{f: f}, nil
 	}
 	f.Close()
-	return nil, fmt.Errorf("checkout lease lock is busy for %s after %gs; "+
-		"another lease-gated operation holds it. If this call is nested inside "+
-		"one, pass --lease-held; otherwise retry in a moment", what, wait)
+	return nil, fmt.Errorf("this checkout is busy: another command holds it, so %s gave up after %gs; try again soon\n"+
+		"(a command run inside that one passes --lease-held)", what, wait)
 }
 
 // acquireBoundedExisting takes a lock only when its directory and lock file
@@ -79,9 +78,8 @@ func acquireBoundedExisting(path, what string) (*fileLock, bool, error) {
 		return &fileLock{f: f}, true, nil
 	}
 	f.Close()
-	return nil, true, fmt.Errorf("checkout lease lock is busy for %s after %gs; "+
-		"another lease-gated operation holds it. If this call is nested inside "+
-		"one, pass --lease-held; otherwise retry in a moment", what, wait)
+	return nil, true, fmt.Errorf("this checkout is busy: another command holds it, so %s gave up after %gs; try again soon\n"+
+		"(a command run inside that one passes --lease-held)", what, wait)
 }
 
 func (l *fileLock) release() {

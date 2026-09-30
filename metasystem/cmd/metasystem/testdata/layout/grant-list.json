@@ -1,0 +1,29 @@
+exit 0
+--
+{
+  "schemaVersion": 1,
+  "verb": "grant list",
+  "targets": [],
+  "outcome": "confirmed",
+  "summary": "1 power(s) of attorney",
+  "data": {
+    "grants": [
+      {
+        "acts": [
+          "everything"
+        ],
+        "by": "human:Wido",
+        "checkout": "/Users/wido/GitHub/agentic-tools-m1e",
+        "for": "mac-cli",
+        "grant": "YY6RQ7765HX224V3NT4TN67JFR-m1e-b6a4eb0a",
+        "lineage": "lin-main",
+        "live": true,
+        "revoked": "",
+        "since": "2026-09-01T10:00:00Z",
+        "until": "2026-09-02T10:00:00Z"
+      }
+    ]
+  }
+}
+
+--

@@ -3,6 +3,7 @@ package goal
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -40,7 +41,7 @@ type SplitRatification struct {
 
 func (r SplitRatification) Validate() error {
 	if !hexDigest(r.DraftSHA256) {
-		return fmt.Errorf("draftSha256 is not a lowercase sha256 digest")
+		return errors.New("the split draft's checksum isn't a lowercase sha256")
 	}
 	switch r.Tier {
 	case RatifierHuman:
@@ -242,7 +243,7 @@ func splitRequest(r VerbRequest, parentID string, members []MemberDraft, ratific
 					if strings.Join(sortedUnique(requested), ",") == strings.Join(existing, ",") {
 						return nil, AlreadyHolds{Reason: fmt.Sprintf("goal %s is already split into %s", parentID, strings.Join(existing, ", "))}
 					}
-					return nil, fmt.Errorf("goal %s is already split into %s; a split happens once, so change the members with metasystem goal open, goal group and goal done", parentID, strings.Join(existing, ", "))
+					return nil, fmt.Errorf("goal %s is already split into %s; change the members with metasystem goal open, group or done", parentID, strings.Join(existing, ", "))
 				}
 				return nil, fmt.Errorf("goal %s is in the archive; there is nothing to split", parentID)
 			}
@@ -254,7 +255,7 @@ func splitRequest(r VerbRequest, parentID string, members []MemberDraft, ratific
 				return nil, err
 			}
 			if parent.Sliced != nil {
-				return nil, fmt.Errorf("GOAL_SPLIT_REFUSED: goal %s recorded its first slice (machine %s, revision %d, %s); split is a before-slicing act and slicing has begun, so a split now would orphan the recorded slices — conclude it with metasystem goal done %s --reason TEXT and declare each successor with metasystem goal open G2", parentID, parent.Sliced.Machine, parent.Sliced.Revision, parent.Sliced.At, parentID)
+				return nil, coded("GOAL_SPLIT_REFUSED", fmt.Errorf("goal %s already has work on %s (%s), so it can't be split; finish it and open follow-ups\nrun: metasystem goal done %s --reason TEXT", parentID, parent.Sliced.Machine, parent.Sliced.At, parentID))
 			}
 			if _, retired := rootDecomposed(t.Root, parentID); retired {
 				return nil, fmt.Errorf("goal %s is registered as decomposed and cannot split again", parentID)
@@ -387,7 +388,7 @@ func validateSplitParent(parent *GoalFile, r VerbRequest) error {
 		if ownPair(parent.Claimed, r.Actor) {
 			return nil
 		}
-		return fmt.Errorf("goal %s is claimed by %s+%s; whether its slicing has started is that machine's job-record truth, and splitting under it could discard started work — park it with metasystem goal pause %s --reason TEXT or take it over with metasystem goal claim %s --take-over --reason TEXT, then split", parent.Id, parent.Claimed.Machine, parent.Claimed.Lineage, parent.Id, parent.Id)
+		return fmt.Errorf("goal %s is being worked on %s, and a split could lose that work; pause it first\nrun: metasystem goal pause %s --reason TEXT", parent.Id, parent.Claimed.Machine, parent.Id)
 	case StateParked:
 		if r.Actor.Human == "" {
 			return fmt.Errorf("goal %s is parked; splitting it is a human act", parent.Id)
@@ -400,20 +401,20 @@ func validateSplitParent(parent *GoalFile, r VerbRequest) error {
 
 func validateSplitRatification(r VerbRequest, parent *GoalFile, members []MemberDraft, ratification SplitRatification, proof *humanauthority.Proof) error {
 	if err := ratification.Validate(); err != nil {
-		return fmt.Errorf("SPLIT_RATIFY_REFUSED: %w", err)
+		return coded("SPLIT_RATIFY_REFUSED", fmt.Errorf("the split approval is incomplete: %w", err))
 	}
 	wantDigest := SplitDraftSHA256(parent.Id, members)
 	if ratification.DraftSHA256 != wantDigest {
-		return fmt.Errorf("SPLIT_RATIFY_REFUSED: the ratified draft digest %.8s does not match the member definitions being published (%.8s); re-run goal split with the ratified draft", ratification.DraftSHA256, wantDigest)
+		return coded("SPLIT_RATIFY_REFUSED", fmt.Errorf("the members differ from the approved split draft (%.8s, now %.8s); split with the approved draft", ratification.DraftSHA256, wantDigest))
 	}
 	if ratification.Tier == RatifierHuman {
 		if r.Actor.Human == "" || ratification.By != r.Actor.Human || proof == nil || !proof.ValidFor(r.Endpoint.Root) {
-			return fmt.Errorf("SPLIT_RATIFY_REFUSED: a human ratification requires --by and fresh enrolled-terminal proof")
+			return coded("SPLIT_RATIFY_REFUSED", errors.New("a person approves this split from their own terminal, naming themself with --by"))
 		}
 		return nil
 	}
 	if parent.Origin != OriginMain {
-		return fmt.Errorf("SPLIT_RATIFY_REFUSED: goal %s is human-origin; its split draft requires enrolled-human ratification", parent.Id)
+		return coded("SPLIT_RATIFY_REFUSED", fmt.Errorf("goal %s came from a person, so a person approves its split at their terminal", parent.Id))
 	}
 	return nil
 }
@@ -494,7 +495,7 @@ func raiseSplitOldArcDebt(e Endpoint, tip, parentID, opid string, now time.Time)
 	} else {
 		decomposed, found := rootDecomposed(tree.Root, parentID)
 		if !found || decomposed.Opid != opid {
-			return fmt.Errorf("classify split's old-arc retro debt: archived parent %s is absent and its decomposition registry entry does not authenticate split %s", parentID, opid)
+			return fmt.Errorf("the split of %s can't be confirmed: its archived goal is missing and the split record doesn't match %s", parentID, opid)
 		}
 		oldArc = decomposed.OldArc
 	}

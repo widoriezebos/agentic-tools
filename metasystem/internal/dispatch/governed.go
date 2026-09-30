@@ -7,10 +7,12 @@ import (
 	"sort"
 	"time"
 
+	"errors"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/behaviorsurface"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/obligationstate"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 )
 
@@ -160,33 +162,35 @@ func evaluateGovernedRunAdmissionWithReads(repoRoot string, request run.Governed
 	}
 	o := binding.File.Obligation
 	if o == nil || o.Revision != request.ObligationRevision {
-		return run.GovernedAdmissionResult{}, fmt.Errorf("OBLIGATION_REFUSED: goal %s has no accepted obligation revision %d, and a governed run without its obligation would spend unauthorized; a person binds one with metasystem goal edit %s --obligation STATE --owner NAME", request.GoalID, request.ObligationRevision, request.GoalID)
+		return run.GovernedAdmissionResult{}, refusal.New("OBLIGATION_REFUSED", fmt.Sprintf("goal=%s obligation=%d", request.GoalID, request.ObligationRevision),
+			fmt.Errorf("goal %s has no accepted obligation %d, so this run would spend without approval\na person sets one: metasystem goal edit %s --obligation STATE --owner <name>", request.GoalID, request.ObligationRevision, request.GoalID))
 	}
 	if request.StandingShared && o.Assumptions.Recurrence != goal.StandingSharedProcess {
-		return run.GovernedAdmissionResult{}, fmt.Errorf("OBLIGATION_REFUSED: revision %d is not authorized as a standing shared process", o.Revision)
+		return run.GovernedAdmissionResult{}, refusal.New("OBLIGATION_REFUSED", fmt.Sprintf("revision=%d", o.Revision), fmt.Errorf("obligation %d is not approved to run as a standing shared process", o.Revision))
 	}
 	decision := o.Decide(goal.EffectAuthorizeSpend)
 	active := o.State == goal.ObligationLimited || o.State == goal.ObligationEnforced
 	policy, err := config.CorrelationPolicy(repoRoot)
 	if err != nil {
-		return run.GovernedAdmissionResult{}, fmt.Errorf("OBLIGATION_REFUSED: correlation policy is unreadable: %w", err)
+		return run.GovernedAdmissionResult{}, refusal.New("OBLIGATION_REFUSED", "policy=unreadable", fmt.Errorf("the review policy setting cannot be read: %w", err))
 	}
 	if active && policy == "" {
-		return run.GovernedAdmissionResult{}, fmt.Errorf("OBLIGATION_REFUSED: correlation policy slot is empty; LIMITED and ENFORCED consequences are not active")
+		return run.GovernedAdmissionResult{}, refusal.New("OBLIGATION_REFUSED", "policy=empty", errors.New("no review policy is set, so limited and enforced obligations cannot run"))
 	}
 	if active && o.ReviewPolicy != policy {
-		return run.GovernedAdmissionResult{}, fmt.Errorf("OBLIGATION_REFUSED: authorization was not recorded under active policy %s", policy)
+		return run.GovernedAdmissionResult{}, refusal.New("OBLIGATION_REFUSED", "policy="+policy, fmt.Errorf("the obligation was approved under another review policy than the current one, %s", policy))
 	}
 	if active && !decision.Apply {
-		return run.GovernedAdmissionResult{}, fmt.Errorf("OBLIGATION_REFUSED: %s", decision.Reason)
+		return run.GovernedAdmissionResult{}, refusal.New("OBLIGATION_REFUSED", "", fmt.Errorf("the obligation does not allow this spend: %s", decision.Reason))
 	}
 	projection := ProjectBudget(repoRoot, binding.File, now)
 	if projection.Status != BudgetKnown {
-		return run.GovernedAdmissionResult{}, fmt.Errorf("BUDGET_UNKNOWN record=%s reason=%s", projection.Unknown.Record, projection.Unknown.Reason)
+		return run.GovernedAdmissionResult{}, refusal.New("BUDGET_UNKNOWN", "record="+projection.Unknown.Record+" reason="+projection.Unknown.Reason,
+			fmt.Errorf("the goal's budget cannot be worked out: %s cannot be read", projection.Unknown.Record))
 	}
 	states, err := obligationstate.LoadGoal(repoRoot, request.GoalID)
 	if err != nil {
-		return run.GovernedAdmissionResult{}, fmt.Errorf("BUDGET_UNKNOWN record=artifacts/agents/governed-obligations reason=%s", err)
+		return run.GovernedAdmissionResult{}, refusal.New("BUDGET_UNKNOWN", "record=artifacts/agents/governed-obligations reason="+err.Error(), fmt.Errorf("the record of earlier obligation runs cannot be read: %w", err))
 	}
 	for _, state := range states {
 		if state.GoalRevision != binding.Revision || state.ObligationRevision != request.ObligationRevision {
@@ -195,13 +199,14 @@ func evaluateGovernedRunAdmissionWithReads(repoRoot string, request run.Governed
 		for _, attempt := range state.Attempts {
 			inEpoch := sameUint64(attempt.BudgetEpoch, projection.WeightEpoch)
 			if active && inEpoch && (attempt.Exhausted || attempt.Breaker == run.BreakerAssumption) {
-				return run.GovernedAdmissionResult{}, fmt.Errorf("OBLIGATION_REFUSED: breaker=%s is already terminal on run %s; Wido must choose reduce, redesign, retire, or extend", attempt.Breaker, attempt.RunID)
+				return run.GovernedAdmissionResult{}, refusal.New("OBLIGATION_REFUSED", "breaker="+string(attempt.Breaker)+" run="+attempt.RunID,
+					fmt.Errorf("run %s already stopped this obligation (%s); a person decides to reduce, redesign, retire or extend it", attempt.RunID, attempt.Breaker))
 			}
 		}
 	}
 	weightGeneration, weightUnknown := currentWeightGeneration(repoRoot)
 	if weightUnknown != nil {
-		return run.GovernedAdmissionResult{}, fmt.Errorf("BUDGET_UNKNOWN record=%s reason=%s", weightUnknown.Record, weightUnknown.Reason)
+		return run.GovernedAdmissionResult{}, refusal.New("BUDGET_UNKNOWN", "record="+weightUnknown.Record+" reason="+weightUnknown.Reason, fmt.Errorf("the goal's budget cannot be worked out: %s cannot be read", weightUnknown.Record))
 	}
 	cost := (o.Assumptions.TimingEnvelopeSeconds + 59) / 60
 	breaches := budgetAdmissionBreaches(projection)
@@ -211,12 +216,13 @@ func evaluateGovernedRunAdmissionWithReads(repoRoot string, request run.Governed
 			Used: fmt.Sprintf("%d+%d proposed", projection.ReservedJobMinutes, cost), Limit: fmt.Sprint(projection.Limits.ReservedJobMinutesLimit)})
 	}
 	if active && len(breaches) > 0 {
-		return run.GovernedAdmissionResult{}, fmt.Errorf("BUDGET_REFUSED: goal %s revision=%d admission closed: %s",
-			request.GoalID, binding.Revision, formatRefusalDetail(breaches, reservedMinutesEvidence(projection)))
+		return run.GovernedAdmissionResult{}, refusal.New("BUDGET_REFUSED", fmt.Sprintf("goal=%s revision=%d %s", request.GoalID, binding.Revision, formatRefusalDetail(breaches, reservedMinutesEvidence(projection))),
+			fmt.Errorf("goal %s has used its budget, so this run does not start\na person raises it: metasystem goal budget %s", request.GoalID, request.GoalID))
 	}
 	observation := ObserveGovernedAssumptions(repoRoot, o.Assumptions, projection.ActiveJobs+1, 0, now)
 	if active && observation.AssumptionState != run.AssumptionMatch {
-		return run.GovernedAdmissionResult{}, fmt.Errorf("OBLIGATION_REFUSED: admission assumptionState=%s fields=%v", observation.AssumptionState, observation.DriftedFields)
+		return run.GovernedAdmissionResult{}, refusal.New("OBLIGATION_REFUSED", fmt.Sprintf("assumptionState=%s fields=%v", observation.AssumptionState, observation.DriftedFields),
+			fmt.Errorf("the obligation's assumptions no longer hold (%v changed), so this run does not start", observation.DriftedFields))
 	}
 	return run.GovernedAdmissionResult{Attempt: run.GovernedAttempt{
 		GoalRevision: binding.Revision, ObligationRevision: o.Revision, Recurrence: o.Assumptions.Recurrence,

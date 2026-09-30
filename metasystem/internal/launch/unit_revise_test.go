@@ -42,7 +42,7 @@ func TestRevisionRequestReplay(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := fixture.runner.Revise(UnitRevisionRequest{Run: run, After: 1, Brief: brief}); err == nil || !strings.HasPrefix(err.Error(), "UNIT_RUN_BUSY") {
+	if _, err := fixture.runner.Revise(UnitRevisionRequest{Run: run, After: 1, Brief: brief}); err == nil || !strings.HasPrefix(ErrorDetail(err), "UNIT_RUN_BUSY") {
 		t.Fatalf("a concurrent identical request = %v, want busy", err)
 	}
 	releaseUnitLock(held)
@@ -64,7 +64,7 @@ func TestRevisionRequestReplay(t *testing.T) {
 	}
 	// A different request for attempt 1 and a request against an older
 	// attempt are refused.
-	if _, err := fixture.runner.Revise(UnitRevisionRequest{Run: run, After: 1, Brief: []byte("another fix\n")}); err == nil || !strings.HasPrefix(err.Error(), "UNIT_REVISION_CONFLICT") {
+	if _, err := fixture.runner.Revise(UnitRevisionRequest{Run: run, After: 1, Brief: []byte("another fix\n")}); err == nil || !strings.HasPrefix(ErrorDetail(err), "UNIT_REVISION_CONFLICT") {
 		t.Fatalf("a different request for attempt 1 = %v", err)
 	}
 	if _, err := fixture.runner.Revise(UnitRevisionRequest{Run: run, After: 5, Brief: brief}); !errors.Is(err, ErrUnitRevisionStale) {
@@ -145,7 +145,7 @@ func TestNamedWorkListsOneGoalsWork(t *testing.T) {
 	if err := fixture.runner.save(record); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := fixture.runner.NamedWork(fixture.worktree, "goal"); err == nil || !strings.HasPrefix(err.Error(), "UNIT_NAMED_ENTRY_CORRUPT") {
+	if _, err := fixture.runner.NamedWork(fixture.worktree, "goal"); err == nil || !strings.HasPrefix(ErrorDetail(err), "UNIT_NAMED_ENTRY_CORRUPT") {
 		t.Fatalf("a run of another goal behind the entry = %v", err)
 	}
 }

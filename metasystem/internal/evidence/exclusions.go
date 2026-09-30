@@ -295,7 +295,7 @@ func (e *Exclusions) receipts(installation string) *receiptLedger {
 	ledger.digest = ledgerDigest(data)
 	for _, line := range strings.Split(string(data), "\n") {
 		if trimmed := strings.TrimSpace(line); trimmed != "" && !ledgerLine.MatchString(trimmed) {
-			ledger.err = fmt.Errorf("%s is malformed: a line does not start with its epoch", ledger.path)
+			ledger.err = fmt.Errorf("%s is malformed: a line does not start with its time", ledger.path)
 			return ledger
 		}
 	}

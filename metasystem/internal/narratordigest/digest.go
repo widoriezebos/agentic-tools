@@ -90,7 +90,7 @@ func cursorName(names []string) (string, error) {
 		return "human", nil
 	}
 	if len(names) != 1 || !cursorNameRE.MatchString(names[0]) {
-		return "", fmt.Errorf("narrator digest cursor name must be one shell-safe word")
+		return "", fmt.Errorf("the narrator's reader name must be one shell-safe word")
 	}
 	return names[0], nil
 }
@@ -175,7 +175,7 @@ func AppendWithLayoutReader(repoRoot string, entries []Entry, now time.Time, res
 		text := flatten(entry.Text)
 		marker := sourceMarker(entry)
 		if (kind != "HIGHLIGHT" && kind != "LOWLIGHT") || text == "" || entry.SourceType == "" || entry.SourceID == "" {
-			return fmt.Errorf("narrator digest entry requires highlight/lowlight text and a source")
+			return fmt.Errorf("a narrator entry needs highlight or lowlight text and a source")
 		}
 		signature := kind + " — " + text + " " + marker
 		if strings.Contains(body, signature) {
@@ -191,7 +191,7 @@ func AppendWithLayoutReader(repoRoot string, entries []Entry, now time.Time, res
 		return err
 	}
 	if !durable {
-		return fmt.Errorf("narrator digest published with directory durability unknown")
+		return fmt.Errorf("the narrator entry was written, but whether it reached the disk is unknown")
 	}
 	return nil
 }
@@ -204,7 +204,7 @@ func AppendPayload(repoRoot string, payload Payload, now time.Time) error {
 	marker := sourceMarker(Entry{SourceType: payload.SourceType, SourceID: payload.SourceID})
 	if (kind != "HIGHLIGHT" && kind != "LOWLIGHT") || len(payload.Body) == 0 ||
 		payload.SourceType == "" || payload.SourceID == "" {
-		return fmt.Errorf("narrator digest payload requires highlight/lowlight bytes and a source")
+		return fmt.Errorf("a narrator entry needs highlight or lowlight bytes and a source")
 	}
 
 	lock, err := acquire(repoRoot)
@@ -236,7 +236,7 @@ func AppendPayload(repoRoot string, payload Payload, now time.Time) error {
 		return err
 	}
 	if !durable {
-		return fmt.Errorf("narrator digest payload published with directory durability unknown")
+		return fmt.Errorf("the narrator entry was written, but whether it reached the disk is unknown")
 	}
 	return nil
 }
@@ -258,13 +258,13 @@ func loadCursorWithLayoutReader(repoRoot, name string, resolveLayout func(string
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&cursor); err != nil {
-		return cursorRecord{}, fmt.Errorf("malformed narrator digest cursor: %w", err)
+		return cursorRecord{}, fmt.Errorf("the narrator's read position is malformed: %w", err)
 	}
 	if err := decoder.Decode(&struct{}{}); err != io.EOF {
-		return cursorRecord{}, fmt.Errorf("malformed narrator digest cursor: trailing JSON content")
+		return cursorRecord{}, fmt.Errorf("the narrator's read position is malformed: trailing JSON content")
 	}
 	if cursor.Schema != 1 || cursor.Cursor < 0 || len(cursor.PrefixSHA256) != 64 {
-		return cursorRecord{}, fmt.Errorf("malformed narrator digest cursor")
+		return cursorRecord{}, fmt.Errorf("the narrator's read position is malformed")
 	}
 	return cursor, nil
 }
@@ -385,7 +385,7 @@ func AdvanceWithLayoutReader(repoRoot string, cursor int64, prefixSHA256 string,
 		return err
 	}
 	if cursor < 0 || (cursor < current.Cursor && !cursorStale(current, data)) || cursor > int64(len(data)) || len(prefixSHA256) != 64 || digest(data[:cursor]) != prefixSHA256 {
-		return fmt.Errorf("narrator digest cursor advance does not name the emitted prefix")
+		return fmt.Errorf("the narrator's read position may only advance over what was shown")
 	}
 	record := cursorRecord{Schema: 1, Cursor: cursor, PrefixSHA256: prefixSHA256}
 	encoded, err := json.MarshalIndent(record, "", "  ")
@@ -397,7 +397,7 @@ func AdvanceWithLayoutReader(repoRoot string, cursor int64, prefixSHA256 string,
 		return err
 	}
 	if !durable {
-		return fmt.Errorf("narrator digest cursor published with directory durability unknown")
+		return fmt.Errorf("the narrator's read position was written, but whether it reached the disk is unknown")
 	}
 	return nil
 }

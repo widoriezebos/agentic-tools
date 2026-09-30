@@ -38,8 +38,13 @@ func TestIntentProcessTargets(t *testing.T) {
 	if !slices.Equal(verbs, []string{"start", "stop", "status"}) {
 		t.Fatalf("interface verbs = %v", verbs)
 	}
+	// The options carry a closure, so they compare field by field; each
+	// verb is handed the reader of the other seats.
+	sameOptions := func(got, want uiIntentOptions) bool {
+		return got.listen == want.listen && got.listenSet == want.listenSet && got.waitSeconds == want.waitSeconds && got.seats != nil
+	}
 	for _, options := range received {
-		if options != (uiIntentOptions{waitSeconds: 15}) {
+		if !sameOptions(options, uiIntentOptions{waitSeconds: 15}) {
 			t.Fatalf("default interface options = %+v", options)
 		}
 	}
@@ -51,7 +56,7 @@ func TestIntentProcessTargets(t *testing.T) {
 		{[]string{"ui", "stop", "--wait-seconds", "0"}, uiIntentOptions{waitSeconds: 0}},
 		{[]string{"ui", "restart", "--listen", "[::1]:9876", "--wait-seconds", "40"}, uiIntentOptions{listen: "[::1]:9876", listenSet: true, waitSeconds: 40}},
 	} {
-		if code, result := b.runJSON(owners, test.args...); code != 0 || result.Outcome != intentConfirmed || received[len(received)-1] != test.want {
+		if code, result := b.runJSON(owners, test.args...); code != 0 || result.Outcome != intentConfirmed || !sameOptions(received[len(received)-1], test.want) {
 			t.Fatalf("%v = %d %+v options %+v", test.args, code, result, received)
 		}
 	}

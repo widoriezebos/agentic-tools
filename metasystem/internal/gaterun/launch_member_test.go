@@ -197,7 +197,7 @@ func TestLaunchDetachedRefusesRegistrationOutsideAHeldGuard(t *testing.T) {
 		GuardRoot:  root,
 		GuardOwner: "dispatch supervisor",
 	})
-	if err == nil || pid != 0 || !strings.Contains(err.Error(), "spawn registration refused") {
+	if err == nil || pid != 0 || !strings.Contains(err.Error(), "descends from no live member") {
 		t.Fatalf("pid=%d err=%v", pid, err)
 	}
 	if _, err := readExecutionGuardRecord(root); !os.IsNotExist(err) {

@@ -441,7 +441,7 @@ func enumerateFixture(metasystemRoot, processFile string) ([]Process, error) {
 	// The ProcessTableProbe authority: fixtureauth owns
 	// the one fixture-mode predicate.
 	if !fixtureauth.FixtureModeRoot(metasystemRoot) {
-		return nil, fmt.Errorf("METASYSTEM_CENSUS_PROCESS_FILE is allowed only when metasystem.runtimes=fake")
+		return nil, fmt.Errorf("a test process table is set, and is allowed only when metasystem.runtimes=fake")
 	}
 	data, err := os.ReadFile(processFile)
 	if err != nil {
@@ -485,7 +485,7 @@ func readSupervisionSnapshot(metasystemRoot string) (map[string]identityRecord, 
 		return nil, 0, "", fmt.Errorf("supervision state is unavailable: %w", err)
 	}
 	if state.Generation == nil || *state.Generation < 1 {
-		return nil, 0, "", fmt.Errorf("supervision state has an invalid generation")
+		return nil, 0, "", fmt.Errorf("supervision state names no valid run of supervision")
 	}
 	// The owner launches watcher, reaper and landing-owner. A state written by
 	// an owner from before the landing owner carries only the first two, so the

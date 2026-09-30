@@ -106,7 +106,7 @@ func TestRefusedLaunchLeavesNoRecordAndOneRefusalRow(t *testing.T) {
 	m, _, _, _ := manager(t)
 	m.Supervisor = childStarter(m)
 	_, err := m.Start(StartSpec{ID: "unsized", Kind: "build", Brief: writeLaunchFile(t, "brief", "no declaration\n"), WorkingDirectory: t.TempDir()})
-	if err == nil || !strings.HasPrefix(err.Error(), "LAUNCH_BUILD_UNSIZED") {
+	if err == nil || !strings.HasPrefix(ErrorDetail(err), "LAUNCH_BUILD_UNSIZED") {
 		t.Fatalf("error=%v", err)
 	}
 	if _, statErr := os.Stat(filepath.Join(m.Store.Root, "unsized")); !os.IsNotExist(statErr) {
@@ -158,7 +158,7 @@ func TestOversizeBriefRefusesAndListsInputsLargestFirst(t *testing.T) {
 	brief := writeLaunchFile(t, "brief", "Declared size: 1 changed lines\n")
 	input := writeLaunchFile(t, "large", strings.Repeat("x", 80))
 	err := m.Admit(StartSpec{Kind: "design", Brief: brief, Inputs: []string{input}})
-	if err == nil || !strings.HasPrefix(err.Error(), "LAUNCH_BRIEF_OVERSIZE total=") {
+	if err == nil || !strings.HasPrefix(ErrorDetail(err), "LAUNCH_BRIEF_OVERSIZE total=") {
 		t.Fatalf("error=%v", err)
 	}
 	lines := strings.Split(err.Error(), "\n")
@@ -174,7 +174,7 @@ func TestOversizeUnitsPageRefuses(t *testing.T) {
 	brief := writeLaunchFile(t, "brief", "x\n")
 	page := writeLaunchFile(t, "units", "| Unit | Size |\n|---|---|\n| a | 1 |\n"+strings.Repeat("x", 80))
 	err := m.Admit(StartSpec{Kind: "build", Brief: brief, UnitsPage: page, Units: []string{"a"}})
-	if err == nil || !strings.HasPrefix(err.Error(), "LAUNCH_BRIEF_OVERSIZE") || !strings.Contains(err.Error(), "input="+page) {
+	if err == nil || !strings.HasPrefix(ErrorDetail(err), "LAUNCH_BRIEF_OVERSIZE") || !strings.Contains(ErrorDetail(err), "input="+page) {
 		t.Fatalf("error=%v", err)
 	}
 }
@@ -194,7 +194,7 @@ func TestBuildSizeComesFromTheUnitRowsOrTheBriefLine(t *testing.T) {
 		t.Fatalf("brief units=%+v size=%d err=%v", units, size, err)
 	}
 	_, size, err = buildSize(StartSpec{Brief: writeLaunchFile(t, "brief", "Declared size: 71 changed lines\n")})
-	if err == nil || !strings.HasPrefix(err.Error(), "LAUNCH_BUILD_UNSIZED") {
+	if err == nil || !strings.HasPrefix(ErrorDetail(err), "LAUNCH_BUILD_UNSIZED") {
 		t.Fatalf("size=%d err=%v", size, err)
 	}
 }
@@ -226,7 +226,7 @@ func TestSizesFromTableStopsAtTheFirstNonTableLine(t *testing.T) {
 
 func TestUnsizedBuildRefuses(t *testing.T) {
 	_, _, err := buildSize(StartSpec{Brief: writeLaunchFile(t, "brief", "none\n")})
-	if err == nil || !strings.Contains(err.Error(), "LAUNCH_BUILD_UNSIZED missing=declared-size") {
+	if err == nil || !strings.Contains(ErrorDetail(err), "LAUNCH_BUILD_UNSIZED missing=declared-size") {
 		t.Fatalf("error=%v", err)
 	}
 }
@@ -237,7 +237,7 @@ func TestOversizeBuildRefusesAndPrintsTheSerialSplit(t *testing.T) {
 	m.Settings.BuildLinesCap = 100
 	page := writeLaunchFile(t, "page", "| Unit | Size |\n|---|---|\n| a | 70 |\n| b | 60 |\n| c | 140 |\n")
 	err := m.Admit(StartSpec{Kind: "build", Brief: writeLaunchFile(t, "brief", "brief\n"), UnitsPage: page, Units: []string{"a", "b", "c"}})
-	if err == nil || !strings.Contains(err.Error(), "LAUNCH_BUILD_OVERSIZE size=270 cap=100") || !strings.Contains(err.Error(), "units=c size=140 over-cap") {
+	if err == nil || !strings.Contains(ErrorDetail(err), "LAUNCH_BUILD_OVERSIZE size=270 cap=100") || !strings.Contains(ErrorDetail(err), "units=c size=140 over-cap") {
 		t.Fatalf("error=%v", err)
 	}
 }
@@ -252,7 +252,7 @@ func TestReadAboveTheSplitLineRefusesUnsplit(t *testing.T) {
 	m.Settings.ReadSplitLines = 2
 	diff := writeLaunchFile(t, "change.diff", sampleDiff())
 	err := m.Admit(StartSpec{Kind: "read", Brief: writeLaunchFile(t, "brief", "read\n"), DiffFile: diff})
-	if err == nil || !strings.Contains(err.Error(), "LAUNCH_READ_UNSPLIT choice=package") || !strings.Contains(err.Error(), "directory=pkg/a lines=2") {
+	if err == nil || !strings.Contains(ErrorDetail(err), "LAUNCH_READ_UNSPLIT choice=package") || !strings.Contains(ErrorDetail(err), "directory=pkg/a lines=2") {
 		t.Fatalf("error=%v", err)
 	}
 }

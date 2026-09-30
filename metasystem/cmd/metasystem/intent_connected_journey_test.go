@@ -201,8 +201,12 @@ func TestIntentConnectedJourneyRealClose(t *testing.T) {
 		critic, commit = "crit"+strconv.Itoa(len(c.delegates)), c.delegates[len(c.delegates)-1]
 		finish(c.worktree, critic, commit)
 		code, result = do(append([]string{"work", "review", "run:" + run}, extra...)...)
-		if result.Outcome != "in-progress" || !strings.Contains(result.Decision, "work review run:"+run) || !strings.Contains(result.Decision, "--dispositions FILE") ||
-			strings.Contains(result.Decision, "metasystem close") {
+		route := ""
+		if result.Next != nil {
+			route = shellCommand(result.Next.Argv)
+		}
+		if result.Outcome != "in-progress" || !strings.Contains(route, "work review run:"+run) || !strings.Contains(route, "--dispositions FILE") ||
+			strings.Contains(route, "metasystem close") {
 			t.Fatalf("an unclosed critic must print its public decision route: code=%d %+v", code, result)
 		}
 		calls := len(b.calls)

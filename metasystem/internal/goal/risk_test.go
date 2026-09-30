@@ -383,7 +383,7 @@ func TestSTR4R1SweepBackfill(t *testing.T) {
 	if tieredProposal == nil || tieredProposal.Tier != 3 {
 		t.Fatalf("confirmation proposal lowered incumbent tier: %+v", tieredProposal)
 	}
-	if _, err := classificationListing(tree, []byte("tierless 2 bare tier\ntiered 1,1,1,1 basis\n")); err == nil || !strings.Contains(err.Error(), "must be <goal-id> <severity>,<novelty>,<exposure>,<accumulation> <basis>") {
+	if _, err := classificationListing(tree, []byte("tierless 2 bare tier\ntiered 1,1,1,1 basis\n")); err == nil || !strings.Contains(err.Error(), "isn't \"<goal> <s>,<n>,<e>,<a> <basis>\"") {
 		t.Fatalf("bare tier row refusal = %v", err)
 	}
 

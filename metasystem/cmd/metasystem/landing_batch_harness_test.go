@@ -112,7 +112,7 @@ func loopBatchOwnerWithCadence(out io.Writer, owner *batch.Owner, held batchowne
 		if err := batchowner.BatchOwnerRequire(held); err != nil {
 			return err
 		}
-		batchowner.RunBatchOwnerPass(out, owner, held, root, clock, cadence)
+		batchowner.RunBatchOwnerPass(out, owner, held, root, clock, cadence, nil)
 		// The harness's loop advances on events only: a wake, a completion
 		// or the stop; the interval's passing is never a test's clock (the
 		// production owner loop is the supervised component's).

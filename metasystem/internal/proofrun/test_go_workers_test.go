@@ -710,10 +710,10 @@ func TestSupervisedGoExecFailureIsTerminalAndReleasesWorker(t *testing.T) {
 		t.Fatalf("supervised native exec failure outcome=%+v close=%v launch=%v", outcome, closeErr, launchErr)
 	}
 	diagnostic := output.String()
-	if !strings.Contains(diagnostic, "proof-run custody-exec: no such file or directory") {
+	if !strings.Contains(diagnostic, "fixture custody: no such file or directory") {
 		t.Fatalf("supervised native exec failure omitted its diagnostic:\n%s", diagnostic)
 	}
-	if retained := readFileText(logPath); !strings.Contains(retained, "proof-run custody-exec: no such file or directory") {
+	if retained := readFileText(logPath); !strings.Contains(retained, "fixture custody: no such file or directory") {
 		t.Fatalf("retained native exec failure omitted its diagnostic:\n%s", retained)
 	}
 	assertWorkerPoolFullyAvailable(t, ctx, 1)

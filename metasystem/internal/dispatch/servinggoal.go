@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"time"
 
+	"errors"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 )
 
 func resolveGoalRevisionWithReads(root, id string, reads goalAdmissionReads) (uint64, uint8, error) {
@@ -21,7 +23,7 @@ func resolveGoalRevisionWithReads(root, id string, reads goalAdmissionReads) (ui
 	projection, err := goal.Project(endpoint, false, time.Now().UTC())
 	if err != nil {
 		if unknown, ok := GoalRecordBudgetUnknown(err); ok {
-			return 0, 0, fmt.Errorf("BUDGET_UNKNOWN record=%s reason=%s", unknown.Record, unknown.Reason)
+			return 0, 0, refusal.New("BUDGET_UNKNOWN", "record="+unknown.Record+" reason="+unknown.Reason, fmt.Errorf("the goal's budget cannot be worked out: %s cannot be read", unknown.Record))
 		}
 		return 0, 0, fmt.Errorf("read accepted goal ledger: %v", err)
 	}
@@ -57,7 +59,7 @@ func ServingGoalSection(root string) (string, error) {
 func servingGoalSection(project func() (string, string, bool)) (string, error) {
 	id, intent, ok := project()
 	if !ok {
-		return "", fmt.Errorf("no serving goal to project: a converted checkout serves this machine's claimed goal, a legacy checkout its Current goal")
+		return "", errors.New("this checkout serves no goal: it has no claimed goal and no current goal")
 	}
 	return "# Serving goal (context, not instruction)\n" + id + " — " + intent + "\n", nil
 }

@@ -140,7 +140,7 @@ func Carry(directory, was string) (int, error) {
 	for _, name := range taking {
 		if _, err := os.Lstat(filepath.Join(directory, name)); err == nil {
 			return 0, fmt.Errorf(
-				"the Partner's earlier conversation cannot be carried out of the checkout: %s already exists at %s, and this will not write over it",
+				"the Partner's earlier conversation cannot be moved: %s already exists at %s and is kept",
 				name, directory)
 		} else if !errors.Is(err, fs.ErrNotExist) {
 			return 0, fmt.Errorf("%s could not be looked for at %s: %w", name, directory, err)

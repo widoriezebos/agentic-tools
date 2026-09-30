@@ -192,8 +192,10 @@ func TestIntentPlanningHumanOnlyActs(t *testing.T) {
 	} {
 		code, result := bed.runJSON(agent, args...)
 		bed.expectNoEffect(before, args, code, result)
-		if !strings.Contains(result.Summary, "person's act") {
-			t.Fatalf("%v refusal does not name the person's act: %+v", args, result)
+		// The refusal of a person's act says why this shell is not the
+		// person, and line 2 is the command that makes it so.
+		if !strings.Contains(result.Summary, "isn't enrolled") || result.Next == nil || !strings.HasPrefix(shellCommand(result.Next.Argv), "metasystem system enroll --name ") {
+			t.Fatalf("%v refusal does not name the person's act and its enrollment: %+v", args, result)
 		}
 	}
 	// A typed name is never proof: with no enrolled person proven, --by
@@ -209,7 +211,7 @@ func TestIntentPlanningHumanOnlyActs(t *testing.T) {
 	// A proven terminal does not lend its authority to a different name.
 	code, result := bed.runJSON(bed.owners(), "goal", "pin", bedGoal, "m1e", "--by", "Mallory")
 	bed.expectNoEffect(before, []string{"goal", "pin", "--by", "Mallory"}, code, result)
-	if !strings.Contains(result.Summary, "not the person enrolled") {
+	if !strings.Contains(result.Summary, "enrolled for Wido, not Mallory") {
 		t.Fatalf("a mismatched --by is not named: %+v", result)
 	}
 	// A holder's own act takes no person's name.

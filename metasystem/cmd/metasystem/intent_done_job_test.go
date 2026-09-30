@@ -80,7 +80,7 @@ func TestIntentDoneJobRefusesALaunch(t *testing.T) {
 	before := b.publications()
 	code, result := b.runJSON(owners, "work", "finish", "j1:solo-1")
 	if code != 2 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "does not take a launch reference") ||
-		!strings.Contains(result.Decision, "metasystem work stop") || len(b.calls) != 0 || b.publications() != before {
+		result.Next == nil || !strings.Contains(shellCommand(result.Next.Argv)+" "+result.Next.Reason, "metasystem work stop") || len(b.calls) != 0 || b.publications() != before {
 		t.Fatalf("work finish j1:solo-1 = code %d %+v", code, result)
 	}
 	// A bare launch id is not a dispatch job: it is read as a goal name and
@@ -118,7 +118,7 @@ func TestIntentCloseRebindsTheChainBudgetFirst(t *testing.T) {
 	}
 	failing = true
 	if code, result := b.do("work", "finish", "j2:inv1"); code != 1 || result.Outcome != intentRefused || len(b.calls) != 0 ||
-		!strings.Contains(result.Summary, "fixture rebind failure") {
+		!strings.Contains(strings.Join(result.Details, " "), "fixture rebind failure") {
 		t.Fatalf("a failed rebind = code %d %+v calls %v", code, result, b.calls)
 	}
 	failing, rebound = false, nil

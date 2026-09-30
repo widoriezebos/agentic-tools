@@ -111,7 +111,7 @@ func validateTerminal(attempt TerminalAttempt) error {
 		return fmt.Errorf("terminal attempt exhaustion contradicts breaker %q", attempt.Breaker)
 	}
 	if attempt.BudgetEpoch != nil && attempt.WeightGeneration <= *attempt.BudgetEpoch {
-		return fmt.Errorf("terminal attempt weight generation does not follow its budget epoch")
+		return fmt.Errorf("a finished attempt's weight predates the budget it was charged to")
 	}
 	if attempt.PrunedAt != "" {
 		pruned, err := time.Parse(time.RFC3339, attempt.PrunedAt)

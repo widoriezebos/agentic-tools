@@ -120,7 +120,7 @@ func TestGoalTrunkRedCommandsAndJSON(t *testing.T) {
 	stderr, code := captureStderr(t, func(stdout, stderr io.Writer) int {
 		return runGoalTrunkRedWithDependencies([]string{"close", "--root", root, "--id", id, "--why", "external outage", "--lineage", "m1"}, request, branchRead, withStreams(defaultSyncRequestDependencies(), stdout, stderr))
 	})
-	if code != 1 || !strings.Contains(stderr, "TRUNK_RED_CLOSE_IS_HUMAN") {
+	if code != 1 || !strings.Contains(stderr, "only a person closes an incident") {
 		t.Fatalf("close without human code=%d stderr=%q", code, stderr)
 	}
 

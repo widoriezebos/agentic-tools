@@ -70,7 +70,7 @@ func TestIntentManualWorkDelivery(t *testing.T) {
 	critic := "crit" + strconv.Itoa(len(c.delegates))
 	j.finish(c.worktree, critic, commit)
 	code, result = do(submit...)
-	if result.Outcome != intentInProgress || !strings.Contains(result.Decision, "review "+c.id+" --work main --dispositions FILE") ||
+	if result.Outcome != intentInProgress || result.Next == nil || !strings.Contains(shellCommand(result.Next.Argv), "review "+c.id+" --work main --dispositions FILE") ||
 		len(c.delegates) != delegates+1 {
 		t.Fatalf("the finished examination prints the public decision route and rejoins the version: code=%d %+v", code, result)
 	}
@@ -210,11 +210,11 @@ func TestManualSubmissionReplayAndAmend(t *testing.T) {
 
 	os.WriteFile(filepath.Join(worktree, "alpha.txt"), []byte("alpha v3\n"), 0o644)
 	code, result = manualDo(t, j, worktree, amend...)
-	if result.Outcome != intentRefused || !strings.Contains(result.Summary, "no longer current") || c.commits != 3 {
+	if result.Outcome != intentRefused || !strings.Contains(result.Summary, "is no longer the current one") || c.commits != 3 {
 		t.Fatalf("a different correction of a replaced version is refused: code=%d %+v", code, result)
 	}
 	code, result = manualDo(t, j, worktree, "work", "review", c.id, "--changes", "--brief", brief, "--work", "alpha", "--repo", root)
-	if result.Outcome != intentRefused || !strings.Contains(result.Decision, "--after "+alpha2) || c.commits != 3 {
+	if result.Outcome != intentRefused || result.Next == nil || !strings.Contains(shellCommand(result.Next.Argv), "--after "+alpha2) || c.commits != 3 {
 		t.Fatalf("an unnamed correction names the current version: code=%d %+v", code, result)
 	}
 
@@ -368,7 +368,7 @@ func TestManualCommitRefusalRestoresStaging(t *testing.T) {
 	}
 	before := state()
 	code, result := manualDo(t, j, worktree, "work", "review", c.id, "--changes", "--brief", brief, "--work", "alpha", "--after", resultCommit(t, c), "--repo", root)
-	if result.Outcome != intentRefused || !strings.Contains(result.Summary, "as it was before this submission") || c.commits != 1 {
+	if result.Outcome != intentRefused || !strings.Contains(result.Summary, "the goal worktree is as it was") || c.commits != 1 {
 		t.Fatalf("the commit owner's refusal: code=%d %+v", code, result)
 	}
 	if after := state(); after != before {
@@ -465,7 +465,7 @@ func TestManualPatchInGoalWorktreeAndChangedBrief(t *testing.T) {
 	os.WriteFile(changed, []byte("A different brief for the same change.\n"), 0o600)
 	delegates := len(c.delegates)
 	code, result = manualDo(t, j, root, "work", "review", c.id, "--changes", "--brief", changed, "--work", "alpha")
-	if result.Outcome != intentRefused || !strings.Contains(result.Summary, "GOAL_READ_INVALID") || resultData(t, result)["commit"] != alpha ||
+	if result.Outcome != intentRefused || resultData(t, result)["code"] != "GOAL_READ_INVALID" || strings.Contains(result.Summary, "GOAL_READ_INVALID") || resultData(t, result)["commit"] != alpha ||
 		len(c.delegates) != delegates || !strings.Contains(result.Decision, "--after "+alpha) {
 		t.Fatalf("a changed brief for an already-read version is the read owner's refusal, with no new read: code=%d %+v", code, result)
 	}
@@ -680,28 +680,27 @@ func TestManualReviewFailedExaminationRetries(t *testing.T) {
 		t.Fatalf("register advance of the failed round = %q, %v", outcome, err)
 	}
 	code, failed := manualDo(t, j, root, "work", "review", c.id, "--work", "alpha")
-	if failed.Outcome != intentFailed || strings.Contains(failed.Decision, "--dispositions") || !strings.Contains(failed.Decision, "--retry 1") ||
-		!strings.Contains(failed.Decision, "review "+c.id+" --work alpha") {
+	if failed.Outcome != intentFailed || failed.Next == nil || strings.Contains(shellCommand(failed.Next.Argv), "--dispositions") || !strings.Contains(shellCommand(failed.Next.Argv), "--retry 1") ||
+		!strings.Contains(shellCommand(failed.Next.Argv), "review "+c.id+" --work alpha") {
 		t.Fatalf("a failed examination offers its retry, not a decisions file: code=%d %+v", code, failed)
 	}
 	// The printed continuation is the canonical public review, whichever
 	// command printed it and whatever stale flags it carried.
 	printed := func(result intentResult) []string {
 		t.Helper()
-		at := strings.Index(result.Decision, "metasystem ")
-		if at < 0 {
-			t.Fatalf("no command in %q", result.Decision)
+		if result.Next == nil || len(result.Next.Argv) < 2 {
+			t.Fatalf("no command in %+v", result)
 		}
-		return strings.Fields(result.Decision[at:])[1:]
+		return slices.Clone(result.Next.Argv[1:])
 	}
 	want := []string{"work", "review", c.id, "--work", "alpha", "--retry", "1"}
 	for _, args := range [][]string{{"work", "review", c.id}, {"work", "review", c.id, "--work", "alpha", "--dispositions", j.dispositions}} {
 		if _, again := manualDo(t, j, root, args...); !slices.Equal(printed(again), want) {
-			t.Fatalf("%v printed %q, want %v", args, again.Decision, want)
+			t.Fatalf("%v printed %+v, want %v", args, again.Next, want)
 		}
 	}
 	if !slices.Equal(printed(failed), want) {
-		t.Fatalf("printed %q, want %v", failed.Decision, want)
+		t.Fatalf("printed %+v, want %v", failed.Next, want)
 	}
 	// Following it enters the branch read owner's retry: one follow-up round
 	// of the same chain with the frozen brief; a repeat rejoins it.
@@ -727,7 +726,7 @@ func TestManualReviewFailedExaminationRetries(t *testing.T) {
 	alphaCommit, _ := resultData(t, submitted)["commit"].(string)
 	j.finishRound(c.worktree, critic, critic+"-r2", alphaCommit, 2, []any{map[string]any{"id": "F1", "material": false}})
 	code, decide := manualDo(t, j, root, retried.Next.Argv[1:]...)
-	if decide.Outcome != intentInProgress || !strings.Contains(decide.Decision, "review "+c.id+" --work alpha --dispositions FILE") || strings.Contains(decide.Decision, "--retry") {
+	if decide.Outcome != intentInProgress || decide.Next == nil || !strings.Contains(shellCommand(decide.Next.Argv), "review "+c.id+" --work alpha --dispositions FILE") || strings.Contains(shellCommand(decide.Next.Argv), "--retry") {
 		t.Fatalf("the completed retried round: code=%d %+v", code, decide)
 	}
 	decided := append(slices.Clone(printed(decide)), j.dispositions)
@@ -809,12 +808,12 @@ func TestManualReviewProtocolFailureNeedsAcceptedRisk(t *testing.T) {
 		return strings.Fields(command)[1:]
 	}
 	_, failed := manualDo(t, j, root, "work", "review", c.id, "--work", "alpha")
-	if _, retried := manualDo(t, j, root, printed(failed.Decision, "metasystem work review")...); len(c.followUps) != 1 || retried.Next == nil {
+	if _, retried := manualDo(t, j, root, printed(shellCommand(failed.Next.Argv), "metasystem work review")...); len(c.followUps) != 1 || retried.Next == nil {
 		t.Fatalf("the retry: %+v followUps=%v", retried, c.followUps)
 	}
 	j.finishRound(c.worktree, critic, critic+"-r2", alphaCommit, 2, []any{map[string]any{"id": "F1", "material": false}})
 	_, decide := manualDo(t, j, root, "work", "review", c.id, "--work", "alpha")
-	decided := slices.DeleteFunc(printed(decide.Decision, "metasystem work review"), func(word string) bool { return word == "FILE" })
+	decided := slices.DeleteFunc(printed(shellCommand(decide.Next.Argv), "metasystem work review"), func(word string) bool { return word == "FILE" })
 	decided = append(decided, j.dispositions)
 	publications, reads := c.publications, c.commitReads
 	code, refused := manualDo(t, j, root, decided...)
@@ -846,7 +845,7 @@ func TestManualReviewProtocolFailureNeedsAcceptedRisk(t *testing.T) {
 	}
 	code, agent := acceptAtReview(acceptArgs...)
 	t.Logf("printed risk decision result: code=%d %+v", code, agent)
-	if code == 0 || agent.Outcome == intentConfirmed || !strings.Contains(agent.Summary, "a person's act") {
+	if code == 0 || agent.Outcome == intentConfirmed || !strings.Contains(strings.Join(agent.Details, " "), "refused because") {
 		t.Fatalf("the risk decision did not reach the authority guard: code=%d %+v", code, agent)
 	}
 	if still, err := dispatchcore.CritiqueOpenFindingIDs(c.worktree, critic); err != nil || !slices.Equal(still, open) {

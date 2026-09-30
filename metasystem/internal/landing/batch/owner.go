@@ -608,8 +608,16 @@ func (owner *Owner) recordDecision(record *Record, decision Decision, at time.Ti
 // helmSeat names the first unit's seat that is at the helm. A unit without a
 // SeatRoot (joined before the owner learned to hold) is never held.
 func (owner *Owner) helmSeat(record Record) (string, bool) {
+	return HelmHeldSeat(record, owner.helmActive)
+}
+
+// HelmHeldSeat is the one decision whether a batch is held whole because a
+// seat that joined it is at the helm: the owner stands the batch down on it
+// and every reader of the lane says so from it. It names the first such
+// unit's seat root; active nil holds nothing.
+func HelmHeldSeat(record Record, active func(seatRoot string) bool) (string, bool) {
 	for _, unit := range record.Units {
-		if owner.helmActive != nil && unit.SeatRoot != "" && owner.helmActive(unit.SeatRoot) {
+		if active != nil && unit.SeatRoot != "" && active(unit.SeatRoot) {
 			return unit.SeatRoot, true
 		}
 	}

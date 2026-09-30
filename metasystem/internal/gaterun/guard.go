@@ -51,7 +51,7 @@ func (codec executionGuardCodec) Encode(holder lock.Identity) ([]byte, error) {
 	record.Owner = holder.Label
 	generation, err := strconv.ParseInt(holder.Tag, 10, 64)
 	if err != nil || generation < 1 {
-		return nil, errors.New("checkout execution owner has an invalid generation")
+		return nil, errors.New("the checkout's execution owner has an invalid sequence number")
 	}
 	record.Generation = generation
 	if record.AcquiredAt == "" {
@@ -232,7 +232,7 @@ func RegisterSpawnedExecutionGuardMember(root string, pid int64, owner string) e
 		return err
 	}
 	if !joined {
-		return errors.New("checkout execution guard spawn registration refused: the process does not descend from a live registered member")
+		return errors.New("this process may not join the checkout's running gate: it descends from no live member")
 	}
 	return nil
 }

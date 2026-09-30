@@ -59,7 +59,7 @@ func TestAVerdictOnAnOutcomeDraftedForAnotherTipIsRefused(t *testing.T) {
 	record := waitingReview(t, bed, "ui-retipped", "4d2e7b1c3d4e5f60718293a4b5c6d7e8f9a0b1c2")
 	_, err := sessionFor(t, bed).Review("ui-retipped", Reviewed{Record: record, Verdict: goal.VerdictClearToLand})
 	refusal, ok := err.(*Refusal)
-	if !ok || !strings.Contains(refusal.Message, "the branch was retipped since; press End again") {
+	if !ok || !strings.Contains(refusal.Message, "but the branch moved to") {
 		t.Fatalf("an Outcome drafted for another tip = %v", err)
 	}
 	outside := filepath.Join(bed.root, "notes.md")

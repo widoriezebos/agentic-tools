@@ -148,7 +148,7 @@ func TestALiveOwnersEntryIsNeverTouched(t *testing.T) {
 	}
 	spawnForeignOwner(t, root, "op-5")
 	if err := MarkTerminal(root, "op-5", OutcomeAbandoned, "not ours"); err == nil ||
-		!strings.Contains(err.Error(), "live process") {
+		!strings.Contains(err.Error(), "running process") {
 		t.Fatalf("a live owner's entry is never advanced by a stranger: %v", err)
 	}
 	if _, err := TakeOver(root, "op-5"); err == nil ||

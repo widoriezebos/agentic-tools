@@ -235,7 +235,7 @@ func TestCheckSettingsReportsMissingPreToolUse(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err := CheckSettings(corrupt, []byte(claudeShipped), "claude", "metasystem", false); err == nil || !strings.Contains(err.Error(), "event PreToolUse") {
+			if err := CheckSettings(corrupt, []byte(claudeShipped), "claude", "metasystem", false); err == nil || !strings.Contains(err.Error(), "the hook for PreToolUse") {
 				t.Fatalf("%s PreToolUse group was not reported: %v", name, err)
 			}
 		})

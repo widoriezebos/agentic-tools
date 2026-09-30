@@ -95,6 +95,7 @@ var engineBindingStandardTests = []string{
 	"TestScratchEnvironmentPolicyFollowsTheWorkerCapabilities",
 	"TestScratchEnvironmentV1WireAndReaderSupport",
 	"TestScratchEnvironmentPolicyAgainstABuiltWorker",
+	"TestRefusalReadsAsTwoLines",
 }
 
 func TestGoalLandingGoManifestSelectionCoversCurrentPackages(t *testing.T) {

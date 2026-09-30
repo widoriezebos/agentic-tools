@@ -259,7 +259,7 @@ func TestGoalExtendBudgetRefusesSeamsThatAreNotExtendable(t *testing.T) {
 				return goalExtendBudgetTo(args, repository.commandNow(now), withStreams(dependencies, stdout, stderr), repository.reads(), stdout, stderr)
 			}()
 		})
-		if code != 2 || !strings.Contains(output, "positive --proposed-cap") {
+		if code != 2 || !strings.Contains(output, "--proposed-cap > 0") {
 			t.Fatalf("zero-cap extension refusal: code=%d output=%s", code, output)
 		}
 	})

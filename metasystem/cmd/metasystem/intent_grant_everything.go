@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
 
 // attorneyIntentOwners are the general grant's seams in the public verbs;
@@ -66,51 +68,65 @@ func isGeneralActs(acts string) bool {
 // runIntentGrantEverything records a general power of attorney: the main
 // session holding this checkout's lease acts for the person until the end.
 func runIntentGrantEverything(inv *intentInvocation) int {
+	retry := inv.typedArgv()
 	if strings.TrimSpace(inv.input.text("acts")) != goal.GeneralAct {
-		return inv.refuse("", "everything stands alone in --acts; nothing was done", grantEndExamples)
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--acts everything takes no other act beside it; nothing was done",
+			next: append(withoutOption(retry, "acts"), "--acts", goal.GeneralAct), nextReason: "everything already covers every act"})
 	}
 	if inv.input.has("tiers") {
-		return inv.refuse("", "everything covers every tier: drop --tiers; nothing was done", grantEndExamples)
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--acts everything covers every tier and takes no --tiers; nothing was done",
+			next: withoutOption(retry, "tiers")})
 	}
 	if problem := inv.selectRoot(); problem != nil {
 		return inv.render(*problem)
 	}
 	now, err := inv.owners.commandNow(inv.stateRoot)
 	if err != nil {
-		return inv.refuse("", "the clock is unreadable: "+err.Error()+"; nothing was done", "")
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "the clock can't be read, so nothing was done",
+			next: retry, nextReason: "try again", Details: []string{err.Error()}})
 	}
 	zone := inv.owners.helm.withDefaults().zone
 	end, err := parseGrantEnd(now, zone, inv.input.text("for"), inv.input.text("until"))
 	if err != nil {
-		return inv.refuse("", err.Error()+"; nothing was done", grantEndExamples)
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: err.Error() + ", so nothing was done",
+			next: append(withoutOption(withoutOption(retry, "for"), "until"), "--for", "24h"), nextReason: grantEndOthers})
 	}
 	actor, proof, problem := inv.actingAs("grant", "", actorHuman)
 	if problem != nil {
 		return inv.render(*problem)
 	}
 	if proof == nil || proof.Helm != nil || !proof.EnrolledTerminalFor(inv.stateRoot) {
+		cause := error(errors.New(humanauthority.OutcomeTerminalMissing))
 		if proof != nil {
 			_ = humanauthority.RecordAttorneyRefusal(inv.stateRoot, *proof, "grant add", "a grant is added only by the person's own proof", now)
+			if walk := proof.WalkRefusal(); walk != nil {
+				cause = walk
+			}
 		}
-		return inv.refuse("", "a general power of attorney is the person's own act at the enrolled terminal, never at the helm or under a grant; nothing was done",
-			humanauthority.PersonActRemedy("metasystem grant add --acts everything --for 24h"))
+		refusal := inv.personRefusal("", cause, "")
+		refusal.code = 2
+		refusal.Details = append(refusal.Details, "a general grant is only ever the person's own act; the helm and other grants never stand in for it")
+		return inv.render(*refusal)
 	}
 	owners := inv.owners.attorney.withDefaults()
 	checkout, err := canonicalCheckout(inv.stateRoot)
 	if err != nil {
-		return inv.refuse("", "cannot name this checkout: "+err.Error()+"; nothing was done", "")
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "this checkout's path can't be resolved, so nothing was done",
+			next: retry, nextReason: "try again", Details: []string{err.Error()}})
 	}
 	holder, err := owners.holder(checkout)
 	if err != nil || holder.MainId == "" || holder.OwnerLineage == "" {
-		reason := "no session holds this checkout's lease"
+		refusal := intentResult{Outcome: intentRefused, code: 2, Summary: "no session holds this checkout's lease, so there is no one to grant to; nothing was done",
+			Decision: "start the agent session in this checkout, then run " + shellCommand(retry) + " again"}
 		if err != nil {
-			reason += " (" + err.Error() + ")"
+			refusal.Details = []string{err.Error()}
 		}
-		return inv.refuse("", reason+"; the grant is for the session that holds it; nothing was done", "start the seat's session first, then grant")
+		return inv.render(refusal)
 	}
 	machine, err := inv.owners.dependencies.machine(inv.stateRoot)
 	if err != nil {
-		return inv.refuse("", "cannot name this machine: "+err.Error()+"; nothing was done", "")
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "this machine's name can't be read, so nothing was done",
+			Decision: "metasystem machine list shows this machine's name; then run " + shellCommand(retry) + " again", Details: []string{err.Error()}})
 	}
 	grant := goal.GeneralGrant{Machine: machine, Checkout: checkout, Lineage: holder.OwnerLineage, Until: end}
 	args := append([]string{"--root", inv.stateRoot}, actor...)
@@ -164,7 +180,7 @@ func runGoalGrantGeneralWithInputs(args []string, grant goal.GeneralGrant, prove
 		return 1
 	}
 	if proof.Helm != nil || !proof.EnrolledTerminalFor(f.root) {
-		dependencies.complain("a general power of attorney is the person's own act at the enrolled terminal, never at the helm or under a grant: " + humanauthority.PersonActRemedy("metasystem grant add --acts everything --for 24h"))
+		dependencies.complain("a general grant is added only at your own enrolled terminal, so nothing was done")
 		return 1
 	}
 	req, err := syncReqClassifiedWithTerminalGradeAtWithDependencies(f.root, f.by, f.lineage, &proof, classification, false, commandNow, dependencies)
@@ -180,41 +196,41 @@ func runGoalGrantGeneralWithInputs(args []string, grant goal.GeneralGrant, prove
 	opid := goal.Opid(req.Ulid, req.Actor.Machine, req.Actor.Lineage)
 	if res.Outcome == goal.OutcomeConfirmed {
 		if err := recordGoalApprovalProof(f.root, opid, "goal grant", proof); err != nil {
-			dependencies.complain("the general grant confirmed but could not record its authority proof:", err)
+			dependencies.complain("the grant is recorded, but the record of who granted it could not be written:", err)
 			return 1
 		}
 	}
 	return dependencies.publishGrant(res, opid)
 }
 
-// generalGrantLine is one general grant as grant list shows it.
-func generalGrantLine(entry goal.PowerOfAttorneyEntry, now time.Time, zone *time.Location) (string, bool) {
-	until, _ := time.Parse(time.RFC3339, entry.Until)
-	live, why := entry.LiveAt(now)
-	state := "closed: " + why
-	if live {
-		state = shortDuration(until.Sub(now)) + " left"
-	}
-	return fmt.Sprintf("  %s  everything  by %s  for the main session of %s on %s  until %s  %s", entry.ID, strings.TrimPrefix(entry.By, "human:"),
-		entry.Checkout, entry.For, until.In(zone).Format("15:04 MST (2006-01-02)"), state), live
-}
-
-// shortDuration is 23h12m, 5d3h or 42m.
-func shortDuration(d time.Duration) string {
-	d = d.Truncate(time.Minute)
-	switch {
-	case d >= 48*time.Hour:
-		return fmt.Sprintf("%dd%dh", int(d/(24*time.Hour)), int(d%(24*time.Hour)/time.Hour))
-	case d >= time.Hour:
-		return fmt.Sprintf("%dh%02dm", int(d/time.Hour), int(d%time.Hour/time.Minute))
-	default:
-		return fmt.Sprintf("%dm", int(d/time.Minute))
-	}
-}
-
 // attorneyStatusLine is the first line of status while a general grant for
 // this checkout is live; empty otherwise, or when nothing can be read.
 func (inv *intentInvocation) attorneyStatusLine(paths ...string) string {
+	entry, live := inv.liveGeneralGrant(paths...)
+	if !live {
+		return ""
+	}
+	return attorneyLine(entry, inv.owners.helm.withDefaults().zone)
+}
+
+// attorneyLine is a live general grant as --json's status carries it.
+func attorneyLine(entry goal.PowerOfAttorneyEntry, zone *time.Location) string {
+	until, _ := time.Parse(time.RFC3339, entry.Until)
+	return fmt.Sprintf("POWER OF ATTORNEY: %s acts for %s until %s (grant %s) — metasystem grant revoke %s ends it",
+		entry.For, strings.TrimPrefix(entry.By, "human:"), until.In(zone).Format("15:04 MST (2006-01-02)"), entry.ID, entry.ID)
+}
+
+// grantAttention is a live general grant in the banner: informational,
+// since it widens what the seat may do rather than asking anything.
+func grantAttention(entry goal.PowerOfAttorneyEntry, env textui.Env) textui.Attention {
+	until, _ := time.Parse(time.RFC3339, entry.Until)
+	return textui.Attention{State: textui.Live, Text: fmt.Sprintf("%s's grant is live: everything, %s", strings.TrimPrefix(entry.By, "human:"), env.Until(until)),
+		Detail: []string{"for the main session of " + entry.For + " · grant " + entry.ID}}
+}
+
+// liveGeneralGrant is the live general grant for this checkout, when one
+// can be read.
+func (inv *intentInvocation) liveGeneralGrant(paths ...string) (goal.PowerOfAttorneyEntry, bool) {
 	owners := inv.owners.attorney.withDefaults()
 	var candidates []string
 	first := ""
@@ -230,17 +246,22 @@ func (inv *intentInvocation) attorneyStatusLine(paths ...string) string {
 		}
 	}
 	if len(candidates) == 0 || inv.owners.commandNow == nil {
-		return ""
+		return goal.PowerOfAttorneyEntry{}, false
+	}
+	// The ledger is read where grant list reads it: at the state root. Its
+	// files are read relative to the root given, so a template checkout's
+	// repository top (status's path) finds no root record (F2).
+	if inv.stateRoot != "" {
+		first = inv.stateRoot
 	}
 	entries, err := owners.entries(first)
 	if err != nil {
-		return ""
+		return goal.PowerOfAttorneyEntry{}, false
 	}
 	now, err := inv.owners.commandNow(first)
 	if err != nil {
-		return ""
+		return goal.PowerOfAttorneyEntry{}, false
 	}
-	zone := inv.owners.helm.withDefaults().zone
 	for _, entry := range entries {
 		if !entry.General() {
 			continue
@@ -250,13 +271,11 @@ func (inv *intentInvocation) attorneyStatusLine(paths ...string) string {
 		}
 		for _, candidate := range candidates {
 			if entry.Checkout == filepath.Clean(candidate) {
-				until, _ := time.Parse(time.RFC3339, entry.Until)
-				return fmt.Sprintf("POWER OF ATTORNEY: %s acts for %s until %s (grant %s) — metasystem grant revoke %s ends it",
-					entry.For, strings.TrimPrefix(entry.By, "human:"), until.In(zone).Format("15:04 MST (2006-01-02)"), entry.ID, entry.ID)
+				return entry, true
 			}
 		}
 	}
-	return ""
+	return goal.PowerOfAttorneyEntry{}, false
 }
 
 // attorneyActor is M6: before an agent's lineage shortcut, a live grant

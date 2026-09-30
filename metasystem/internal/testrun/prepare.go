@@ -32,6 +32,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/pathpattern"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/shellquote"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
@@ -95,7 +97,9 @@ type SelectionRequest struct {
 	Root, ControlRoot, GoalID, AuthorityGoalID, Tree, CapMin, RetryDecision, ResultPath string
 	// LaneID charges the run to the landing lane instead of a goal: a batch
 	// whose members are all changes (U11b).
-	LaneID                                                     string
+	LaneID string
+	// Verbose asks for the details behind a refusal: its code and facts.
+	Verbose                                                    bool
 	ExpectedGoalRevision, ExpectedAccountingRevision           uint64
 	Mode                                                       testpolicy.Mode
 	Purpose                                                    testpolicy.Purpose
@@ -228,7 +232,7 @@ func prepareWith(request SelectionRequest, attempt preparationAttempt) (Preparat
 		if state.restarted {
 			return Preparation{}, engineRefusal("base-moved", []enginecause.Fact{
 				enginecause.Value("ours", move.ours), enginecause.Value("engine", move.engine), enginecause.Value("restarts", "1"),
-			}, "the landing ref moved a second time during one test invocation")
+			}, "the landing branch moved twice while this test run was starting")
 		}
 		fmt.Fprintf(request.noteStream(), "metasystem test run: the landing ref moved under the run (ours=%s engine=%s); restarting preparation once\n", move.ours, move.engine)
 		state.restarted = true
@@ -421,7 +425,7 @@ func prepareOnce(request SelectionRequest) (Preparation, error) {
 			return Preparation{}, basePlanErr
 		}
 		if afterDigest, digestErr := digest.FileSHA256(policyEngine); digestErr != nil || afterDigest != policyEngineDigest {
-			return Preparation{}, engineRefusal("enrollment-drift", engineCheckoutFacts(installation), "retained trusted-base engine changed during policy selection")
+			return Preparation{}, engineRefusal("enrollment-drift", engineCheckoutFacts(installation), "the pinned engine changed on disk while it chose the tests")
 		}
 		if mismatch := compareTrustedPolicyDecision(installation, projectRoot, candidateTree, policyBaseCommit, baseContractDigest, basePlan); mismatch != nil {
 			return Preparation{}, mismatch
@@ -589,6 +593,12 @@ func protectCoverageRatchets(workspace gittree.Workspace, baseTree, candidateTre
 	}
 	for _, relative := range testpolicy.CoverageFloorsFiles() {
 		path := inTree(relative)
+		// A lowered floor is refused in plain words; the command restores
+		// the file from the tree it is judged against.
+		lowered := func(reason, background string) error {
+			restore := "git -C " + shellquote.Word(workspace.Dir) + " restore --source=" + baseTree + " --staged --worktree -- " + shellquote.Word(path)
+			return &refusal.Coded{Code: "TEST_POLICY_COVERAGE_FLOOR_LOWERED", Reason: errors.New(reason), Run: restore + "  (then run metasystem test run again)", Background: background}
+		}
 		// A base from before the floors moved beside testing.json keeps them
 		// at the legacy path; the landing that moves them is judged by those.
 		baseBytes, basePresent, err := workspace.FileAt(baseTree, path)
@@ -600,11 +610,11 @@ func protectCoverageRatchets(workspace gittree.Workspace, baseTree, candidateTre
 		}
 		candidateBytes, candidatePresent, err := workspace.FileAt(candidateTree, path)
 		if err != nil || !candidatePresent {
-			return fmt.Errorf("TEST_POLICY_COVERAGE_FLOOR_LOWERED: protected coverage baseline %s is absent; a proof without it would certify unprotected coverage, so restore %s and rerun metasystem test run", path, path)
+			return lowered(fmt.Sprintf("this change deletes the coverage floors in %s; floors only rise", path), "")
 		}
 		var base, candidate CoverageBaseline
 		if json.Unmarshal(baseBytes, &base) != nil || json.Unmarshal(candidateBytes, &candidate) != nil || len(base.Floors) == 0 || len(candidate.Floors) == 0 {
-			return fmt.Errorf("TEST_POLICY_COVERAGE_FLOOR_LOWERED: protected coverage baseline %s is malformed; a proof against it would certify unprotected coverage, so restore %s and rerun metasystem test run", path, path)
+			return lowered(fmt.Sprintf("the coverage floors in %s cannot be read after this change", path), "")
 		}
 		for packageName, floor := range base.Floors {
 			candidateFloor, present := candidate.Floors[packageName]
@@ -614,14 +624,14 @@ func protectCoverageRatchets(workspace gittree.Workspace, baseTree, candidateTre
 				// nothing to measure, and the floor may go too.
 				gone, err := coveragePackageGone(workspace, candidateTree, inTree(packageName))
 				if err != nil {
-					return fmt.Errorf("TEST_POLICY_COVERAGE_FLOOR_LOWERED: %s floor %s was removed and its package could not be read in the candidate tree: %v; restore the floor in %s and rerun metasystem test run", path, packageName, err, path)
+					return lowered(fmt.Sprintf("this change removes the coverage floor of %s, whose package still exists", packageName), err.Error())
 				}
 				if gone {
 					continue
 				}
 			}
 			if !present || candidateFloor < floor {
-				return fmt.Errorf("TEST_POLICY_COVERAGE_FLOOR_LOWERED: %s floor %s changed from %.1f to %.1f; a proof against a lowered floor would certify lost coverage, so restore the floor in %s (floors only rise) and rerun metasystem test run", path, packageName, floor, candidateFloor, path)
+				return lowered(fmt.Sprintf("this change lowers the coverage floor of %s from %.1f to %.1f; floors only rise", packageName, floor, candidateFloor), path)
 			}
 		}
 	}
@@ -679,11 +689,11 @@ func TrustedPolicyEngine(installation, policyBaseCommit string, firstTransition 
 		if sourceErr := pinned.VerifySourceAtDestination(enrollmentRoot, policyBaseCommit); sourceErr != nil {
 			_ = pinned.Close()
 			facts := append(engineCheckoutFacts(installation), enginecause.Value("destination", policyBaseCommit))
-			return "", "", false, judgmentRefusal(sourceErr, facts, "retained destination engine does not bind the captured policy base")
+			return "", "", false, judgmentRefusal(sourceErr, facts, "the pinned engine was not built from the landing branch this run tests against")
 		}
 		if prepareErr := pinned.PrepareForExecution(); prepareErr != nil {
 			_ = pinned.Close()
-			return "", "", false, engineRefusal(enginecause.TokenEngineUnavailable, engineCheckoutFacts(installation), "retain destination engine descriptor: "+prepareErr.Error())
+			return "", "", false, engineRefusal(enginecause.TokenEngineUnavailable, engineCheckoutFacts(installation), "the pinned engine could not be opened to run", prepareErr.Error())
 		}
 		// The policy engine runs the plan and every worker of this run, long
 		// after this returns: its pin keeps the preparation lease until the
@@ -695,12 +705,12 @@ func TrustedPolicyEngine(installation, policyBaseCommit string, firstTransition 
 	engineInfo, err := os.Stat(engine)
 	if err != nil || !engineInfo.Mode().IsRegular() || engineInfo.Mode().Perm()&0o111 == 0 {
 		facts := append(engineCheckoutFacts(installation), enginecause.Path("engine", engine))
-		return "", "", false, engineRefusal(enginecause.TokenEngineUnavailable, facts, "retained immutable trusted-base engine is unavailable")
+		return "", "", false, engineRefusal(enginecause.TokenEngineUnavailable, facts, "the pinned engine is missing or not executable")
 	}
 	sum, err := digest.FileSHA256(engine)
 	if err != nil {
 		facts := append(engineCheckoutFacts(installation), enginecause.Path("engine", engine))
-		return "", "", false, engineRefusal(enginecause.TokenEngineUnavailable, facts, "hash retained trusted-base engine: "+err.Error())
+		return "", "", false, engineRefusal(enginecause.TokenEngineUnavailable, facts, "the pinned engine could not be read", err.Error())
 	}
 	currentInfo, currentErr := os.Stat(current)
 	return engine, sum, currentErr == nil && os.SameFile(engineInfo, currentInfo), nil
@@ -730,20 +740,28 @@ func PlanWithTrustedPolicyEngine(engine string, request SelectionRequest, instal
 		command.Env = append(command.Env, PolicyProbeWorkerEnvironment+"=1")
 	}
 	data, err := command.CombinedOutput()
+	// The refusals below name the command the pinned engine ran, as a fact.
+	commandFact := enginecause.Value("command", enginecause.Command(command.Args...))
 	if err != nil && request.LaneID != "" && strings.Contains(string(data), "flag provided but not defined: -lane") {
-		return PlanOutput{}, fmt.Errorf("LANE_ENGINE_TOO_OLD: the pinned policy engine %s predates charging a batch of changes to the landing lane (it has no --lane), so the batch holds; once this checkout's engine has moved to one that has it, run: metasystem landing restart", engine)
+		return PlanOutput{}, laneEngineTooOld(engine)
 	}
 	if err != nil {
-		return PlanOutput{}, engineRefusal("child-failed", []enginecause.Fact{enginecause.Path("engine", engine)}, fmt.Sprintf("retained trusted-base engine could not decide version-1 policy: %v: %s", err, strings.TrimSpace(string(data))))
+		reason := fmt.Sprintf("the pinned engine failed while choosing which tests to run (%v)", err)
+		if refused := childRefusalWords(data); refused != "" {
+			// The engine refused in words of its own: they are the reason.
+			reason = refused
+		}
+		return PlanOutput{}, engineRefusal("child-failed", []enginecause.Fact{enginecause.Path("engine", engine), commandFact},
+			reason, strings.TrimSpace(string(data)))
 	}
 	decoder := json.NewDecoder(strings.NewReader(string(data)))
 	decoder.DisallowUnknownFields()
 	var output PlanOutput
 	if err := decoder.Decode(&output); err != nil {
-		return PlanOutput{}, engineRefusal("child-output", []enginecause.Fact{enginecause.Path("engine", engine)}, "retained trusted-base engine returned malformed policy output: "+err.Error())
+		return PlanOutput{}, engineRefusal("child-output", []enginecause.Fact{enginecause.Path("engine", engine), commandFact}, "the pinned engine's choice of tests could not be read", err.Error())
 	}
 	if err := decoder.Decode(&struct{}{}); err != io.EOF {
-		return PlanOutput{}, engineRefusal("child-output", []enginecause.Fact{enginecause.Path("engine", engine)}, "retained trusted-base engine returned trailing policy output")
+		return PlanOutput{}, engineRefusal("child-output", []enginecause.Fact{enginecause.Path("engine", engine), commandFact}, "the pinned engine printed more than its choice of tests")
 	}
 	return output, nil
 }
@@ -878,4 +896,18 @@ func RunRequest(prepared Preparation, attemptID, logRoot, candidateEngine, candi
 	request.Workers, request.AdmissionMaximum = prepared.Workers, prepared.AdmissionMaximum
 	request.ResultSchemaVersion = chooseTestResultSchema(prepared)
 	return request
+}
+
+// childRefusalWords is the refusal a policy child printed as its JSON error
+// line ({"error": ...}), or "" when it printed none.
+func childRefusalWords(data []byte) string {
+	for _, line := range strings.Split(string(data), "\n") {
+		var printed struct {
+			Error string `json:"error"`
+		}
+		if json.Unmarshal([]byte(strings.TrimSpace(line)), &printed) == nil && strings.TrimSpace(printed.Error) != "" {
+			return strings.TrimSpace(printed.Error)
+		}
+	}
+	return ""
 }

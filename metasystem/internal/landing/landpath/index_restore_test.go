@@ -90,10 +90,10 @@ func TestARefusedPathModeLandingGivesTheIndexBackAsItFoundIt(t *testing.T) {
 	}{
 		{"unstaged changes remain", func(*bed) LandRequest {
 			return LandRequest{Pathspecs: []string{"a.txt"}, SkipTransport: true}
-		}, true, "land refused: unstaged changes remain after staging"},
+		}, true, "other changed files would stay behind uncommitted: b.txt"},
 		{"receipt names another tree", func(b *bed) LandRequest {
 			return LandRequest{Pathspecs: []string{"a.txt", "b.txt"}, Chain: "c1", TestReceipt: filepath.Join(b.root, "absent.json"), SkipTransport: true}
-		}, false, "cannot be read as a landing receipt (missing)"},
+		}, false, "the test receipt can't be read (missing)"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()

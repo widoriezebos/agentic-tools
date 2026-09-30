@@ -11,6 +11,8 @@ import (
 	"strings"
 
 	"golang.org/x/sys/unix"
+
+	"errors"
 )
 
 const sessionOccupancySchemaVersion = 1
@@ -402,7 +404,7 @@ func readSessionOccupancyIndexPath(indexPath, sessionKey string) (sessionOccupan
 
 func writeSessionOccupancyIndex(indexPath string, index sessionOccupancyIndex) error {
 	if index.SessionKey == "" || index.Generation < 1 {
-		return fmt.Errorf("session occupancy index requires a key and positive generation")
+		return errors.New("the session occupancy index needs a key and a positive counter")
 	}
 	occupants := append([]SessionOccupant(nil), index.Occupants...)
 	sortSessionOccupants(occupants)

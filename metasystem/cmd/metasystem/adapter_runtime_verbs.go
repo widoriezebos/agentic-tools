@@ -111,7 +111,7 @@ func runAdapterClaudeSessionSignal(args []string, stdout, stderr io.Writer) int 
 	signalPath := os.Getenv("METASYSTEM_CLAUDE_SESSION_SIGNAL")
 	eventsPath := os.Getenv("METASYSTEM_CLAUDE_EVENTS")
 	if signalPath == "" || eventsPath == "" {
-		fmt.Fprintln(stderr, "adapter claude-session-signal: METASYSTEM_CLAUDE_SESSION_SIGNAL and METASYSTEM_CLAUDE_EVENTS are required")
+		fmt.Fprintln(stderr, "the session signal hook is missing its signal or events file; only the Claude launcher runs it")
 		return 1
 	}
 	sessionID, err := adapter.ClaudeSessionSignal(os.Stdin, signalPath, eventsPath)

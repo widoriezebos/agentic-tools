@@ -57,7 +57,7 @@ func TestRegisterCatchUpRefusalNamesAdvanceVerb(t *testing.T) {
 			"critic-r2": {"jobId": "critic-r2", "round": 2, "parentJob": "critic"},
 		},
 	}
-	want := fmt.Sprintf("critic chain critic has folded through round 1 but its latest record is round 2; run job critique-register-advance --repo %s --root-job critic --round-job critic-r2 first", repo)
+	want := fmt.Sprintf("the findings of critique critic are recorded up to round 1, but round 2 exists\nfirst run job critique-register-advance --repo %s --root-job critic --round-job critic-r2", repo)
 	if err := requireRegisterCaughtUp(state, "critic", critiqueCapState{round: 1}); err == nil || err.Error() != want {
 		t.Fatalf("register catch-up refusal = %v, want %q", err, want)
 	}

@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"unicode/utf8"
 
+	"errors"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 )
@@ -92,7 +93,7 @@ func CanonicalizeLaunchFingerprint(gitRoot string, raw LaunchFingerprintRequest,
 		return LaunchFingerprint{}, fmt.Errorf("claim-launch requires the Git root")
 	}
 	if raw.ResumedSessionID == nil {
-		return LaunchFingerprint{}, fmt.Errorf("claim-launch resumed session must be explicitly present, including an explicit empty value for fresh dispatch")
+		return LaunchFingerprint{}, errors.New("the launch request must say which session it resumes, empty for a fresh one")
 	}
 	resumed := *raw.ResumedSessionID
 	if raw.DispatchMode != DispatchModeFresh && raw.DispatchMode != DispatchModeFollowUp {
@@ -112,7 +113,7 @@ func CanonicalizeLaunchFingerprint(gitRoot string, raw LaunchFingerprintRequest,
 		return LaunchFingerprint{}, fmt.Errorf("claim-launch session, runtime, model, and role must be non-empty")
 	}
 	if !incarnationRe.MatchString(raw.PermissionEnvelopeDigest) {
-		return LaunchFingerprint{}, fmt.Errorf("claim-launch permission envelope digest must be lowercase SHA-256")
+		return LaunchFingerprint{}, errors.New("the launch's permission checksum is not a lowercase SHA-256")
 	}
 	if !incarnationRe.MatchString(raw.InputHash) {
 		return LaunchFingerprint{}, fmt.Errorf("claim-launch input hash must be lowercase SHA-256")
@@ -250,7 +251,7 @@ func validateCanonicalLaunchRequest(request CanonicalLaunchRequest, version int)
 		return fmt.Errorf("fingerprint v%d model key is not canonical", version)
 	}
 	if !incarnationRe.MatchString(request.PermissionEnvelopeDigest) || !incarnationRe.MatchString(request.InputHash) {
-		return fmt.Errorf("fingerprint v%d digests must be lowercase SHA-256", version)
+		return fmt.Errorf("the launch fingerprint (version %d) holds a checksum that is not a lowercase SHA-256", version)
 	}
 	if version == 1 && (request.GoalID != "" || request.GoalRevision != 0) {
 		return fmt.Errorf("fingerprint v1 has no goal revision field")

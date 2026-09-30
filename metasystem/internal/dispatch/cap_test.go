@@ -130,7 +130,7 @@ func TestRefuseUnsignedMissionCap(t *testing.T) {
 	t.Run("env origin refuses by name", func(t *testing.T) {
 		t.Setenv("METASYSTEM_CAP_MIN_CODEX_GPT_5_6", "999")
 		err := RefuseUnsignedMissionCap(conf, "implementer", "codex", "gpt-5.6", "")
-		want := "mission dispatch refused: the mission fence is cap authority; unsigned env key cap.min.codex.gpt-5.6 cannot set a mission cap"
+		want := "nothing was dispatched: only the mission's own fence sets its limit, not the env setting cap.min.codex.gpt-5.6"
 		if err == nil || err.Error() != want {
 			t.Fatalf("want %q, got %v", want, err)
 		}
@@ -141,7 +141,7 @@ func TestRefuseUnsignedMissionCap(t *testing.T) {
 			t.Fatal(err)
 		}
 		err := RefuseUnsignedMissionCap(local, "implementer", "codex", "gpt-5.6", "")
-		want := "mission dispatch refused: the mission fence is cap authority; unsigned conf-local key cap.min.implementer.codex.gpt-5.6 cannot set a mission cap"
+		want := "nothing was dispatched: only the mission's own fence sets its limit, not the conf-local setting cap.min.implementer.codex.gpt-5.6"
 		if err == nil || err.Error() != want {
 			t.Fatalf("want %q, got %v", want, err)
 		}
@@ -152,7 +152,7 @@ func TestFMA_R2_MissionCapSourceBypassUnsigned(t *testing.T) {
 	conf := writeConf(t, "metasystem.runtimes=claude")
 	t.Setenv("METASYSTEM_CAP_MIN_CLAUDE_CLAUDE_FABLE_5", "30")
 	err := RefuseUnsignedMissionCap(conf, "implementer", "claude", "claude-fable-5-1", "claude-fable-5")
-	want := "unsigned env key cap.min.claude.claude-fable-5 cannot set a mission cap"
+	want := "not the env setting cap.min.claude.claude-fable-5"
 	if err == nil || !strings.Contains(err.Error(), want) {
 		t.Fatalf("want refusal containing %q, got %v", want, err)
 	}

@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"time"
 
+	"errors"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/delegatecustody"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
@@ -28,7 +29,7 @@ type HookDelegateResult struct {
 // scans local delegate jobs so older launchers still isolate their children.
 func HookDelegate(stateRoot, installationRoot, jobID string, callerPID int64) (HookDelegateResult, error) {
 	if stateRoot == "" || installationRoot == "" || callerPID < 1 {
-		return HookDelegateResult{}, fmt.Errorf("hook delegate query requires state root, installation root, and caller pid")
+		return HookDelegateResult{}, errors.New("the hook question needs the state root, the installation root and the asking process")
 	}
 	if jobID != "" && !hookDelegateJobID.MatchString(jobID) {
 		return HookDelegateResult{}, fmt.Errorf("hook delegate query received an invalid job identifier")

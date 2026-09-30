@@ -1,0 +1,19 @@
+exit 2
+--
+{
+  "schemaVersion": 1,
+  "verb": "status",
+  "targets": [],
+  "outcome": "refused",
+  "summary": "status takes one goal at most; unexpected goal-b; nothing was done",
+  "next": {
+    "argv": [
+      "metasystem",
+      "status",
+      "goal-a"
+    ],
+    "reason": "a job, run or read is metasystem work status REF"
+  }
+}
+
+--

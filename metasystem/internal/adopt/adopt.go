@@ -132,12 +132,27 @@ type Refusal struct {
 	// Argv is a command that achieves the intent the right way, when one
 	// exists.
 	Argv []string
+	// Again says the command that resolves the refusal is the adoption
+	// itself, run again; Remedy says when ("once Go is installed").
+	Again bool
 }
 
 func (r *Refusal) Error() string { return r.Message }
 
 func refuse(code int, message, remedy string, argv ...string) *Refusal {
 	return &Refusal{Code: code, Message: message, Remedy: remedy, Argv: argv}
+}
+
+// refuseAgain is a refusal whose second line is the same adoption again,
+// once the cause named by when is gone ("Messages a Person Reads").
+func refuseAgain(code int, message, when string) *Refusal {
+	return &Refusal{Code: code, Message: message, Remedy: when, Again: true}
+}
+
+// templateRepair is a refusal caused by the template checkout: line 2 is
+// git's own view of it.
+func templateRepair(message, source string) *Refusal {
+	return refuse(CodeUsage, message, "shows what is wrong with the template checkout", "git", "-C", source, "status")
 }
 
 // Result is a finished adoption.
@@ -241,25 +256,25 @@ func Adopt(options Options) (Result, error) {
 	// The engine is always rebuilt from the template source, never copied
 	// on trust, so a machine without Go refuses here, before any write.
 	if _, err := d.LookPath("go"); err != nil {
-		return Result{}, refuse(CodeRefused, "adoption requires the Go toolchain: the engine is always rebuilt from the template source",
-			"install Go, then run the same command again")
+		return Result{}, refuseAgain(CodeRefused, "adoption needs the Go toolchain, which this computer lacks: the engine is rebuilt from source",
+			"once Go is installed")
 	}
 	if missing := up.MissingProductionCommands(d.LookPath); len(missing) > 0 {
-		r := refuse(CodeRefused, "adoption refused: this host is missing production commands", "install the named commands, then run the same command again")
+		r := refuseAgain(CodeRefused, "this computer is missing production commands the adoption needs (listed below)", "once the listed commands are installed")
 		for _, command := range missing {
 			r.Detail = append(r.Detail, fmt.Sprintf("%s (package: %s)", command.Name, command.Package))
 		}
 		return Result{}, r
 	}
 	if err := os.MkdirAll(options.Target, 0o755); err != nil {
-		return Result{}, refuse(CodeUsage, fmt.Sprintf("cannot create the target %s: %v", options.Target, err), "name a directory you can write")
+		return Result{}, refuseAgain(CodeUsage, fmt.Sprintf("the target %s cannot be created: %v", options.Target, err), "naming a directory you can write")
 	}
 	target, err := filepath.EvalSymlinks(options.Target)
 	if err == nil {
 		target, err = filepath.Abs(target)
 	}
 	if err != nil {
-		return Result{}, refuse(CodeUsage, fmt.Sprintf("cannot resolve the target %s: %v", options.Target, err), "name an existing directory")
+		return Result{}, refuseAgain(CodeUsage, fmt.Sprintf("the target %s cannot be found: %v", options.Target, err), "naming an existing directory")
 	}
 	source := options.Source
 
@@ -267,11 +282,11 @@ func Adopt(options Options) (Result, error) {
 	// ignored or untracked content cannot ride along, and a dirty worktree
 	// is refused so the recorded SHA identifies the payload exactly.
 	if _, err := d.Git(source, false, "rev-parse", "--is-inside-work-tree"); err != nil {
-		return Result{}, refuse(CodeUsage, "the template source is not a git checkout: "+source, "adopt from a git checkout of the template")
+		return Result{}, refuseAgain(CodeUsage, "the template "+source+" is not a Git checkout", "from a Git checkout of the template, or name one with --repo")
 	}
 	status, err := d.Git(source, false, "status", "--porcelain", "--", ".")
 	if err != nil {
-		return Result{}, refuse(CodeUsage, fmt.Sprintf("cannot read the template's status: %v", err), "repair the template checkout")
+		return Result{}, templateRepair(fmt.Sprintf("the template checkout's status cannot be read: %v", err), source)
 	}
 	if strings.TrimSpace(string(status)) != "" {
 		return Result{}, refuse(CodeRefused, "the template worktree is dirty; the recorded SHA would not identify the copied payload",
@@ -279,16 +294,20 @@ func Adopt(options Options) (Result, error) {
 	}
 	sha, err := gitLine(d, source, false, "rev-parse", "HEAD")
 	if err != nil {
-		return Result{}, refuse(CodeUsage, fmt.Sprintf("cannot read the template's HEAD: %v", err), "repair the template checkout")
+		return Result{}, templateRepair(fmt.Sprintf("the template checkout's current commit cannot be read: %v", err), source)
 	}
 	prefixOut, err := d.Git(source, false, "rev-parse", "--show-prefix")
 	if err != nil {
-		return Result{}, refuse(CodeUsage, fmt.Sprintf("cannot read the template's prefix: %v", err), "repair the template checkout")
+		return Result{}, templateRepair(fmt.Sprintf("the template's place in its checkout cannot be read: %v", err), source)
 	}
 	prefix := strings.TrimRight(string(prefixOut), "\n")
 
 	already, refusal := recognize(target, sha)
 	if refusal != nil {
+		if len(refusal.Argv) == 2 && refusal.Argv[0] == "less" {
+			// The guide ships with the template: the one being adopted.
+			refusal.Argv[1] = filepath.Join(source, refusal.Argv[1])
+		}
 		return Result{}, refusal
 	}
 	if already {
@@ -329,18 +348,18 @@ func Adopt(options Options) (Result, error) {
 	contract := filepath.Join(stage, "testing.json")
 	for _, required := range []string{conf, contract} {
 		if !regularFile(required) {
-			return Result{}, refuse(CodeRefused, "the payload is missing "+filepath.Base(required), "restore it in the template, commit, then run the same command again")
+			return Result{}, refuseAgain(CodeRefused, "the template is missing "+filepath.Base(required), "once it is restored and committed in the template")
 		}
 	}
 	// The selected-runtime list is durable state; no unselected runtime's
 	// model placeholder or mode override may reach the adopted repository.
 	if err := validate.TailorConf(conf, selected); err != nil {
-		return Result{}, refuse(CodeRefused, fmt.Sprintf("could not tailor metasystem.conf: %v", err), "repair the template's metasystem.conf")
+		return Result{}, refuseAgain(CodeRefused, fmt.Sprintf("the template's metasystem.conf could not be tailored: %v", err), "once the template's metasystem.conf is fixed")
 	}
 	// The template-mode signal is the template's own: an adopted
 	// installation is never the template.
 	if err := dropTemplateMode(conf); err != nil {
-		return Result{}, refuse(CodeRefused, fmt.Sprintf("could not tailor metasystem.conf: %v", err), "repair the template's metasystem.conf")
+		return Result{}, refuseAgain(CodeRefused, fmt.Sprintf("the template's metasystem.conf could not be tailored: %v", err), "once the template's metasystem.conf is fixed")
 	}
 	incomplete, err := testpolicy.IncompleteTemplate()
 	if err != nil {
@@ -351,8 +370,8 @@ func Adopt(options Options) (Result, error) {
 	}
 
 	if collisions := collide(stage, target); len(collisions) > 0 {
-		r := refuse(CodeRefused, fmt.Sprintf("the target already contains %d differing payload path(s)", len(collisions)),
-			"resolve them, or follow docs/metasystem-reconciliation.md for a repository that already has content")
+		r := refuse(CodeRefused, fmt.Sprintf("the target already has %d file(s) the adoption would overwrite (listed below)", len(collisions)),
+			"merging into a repository that already has content: resolve them, or follow this guide", "less", filepath.Join(source, "docs", "metasystem-reconciliation.md"))
 		for _, path := range collisions {
 			r.Detail = append(r.Detail, "collision: "+path)
 		}
@@ -362,7 +381,7 @@ func Adopt(options Options) (Result, error) {
 		return Result{}, err
 	}
 	if !regularFile(filepath.Join(target, "metasystem.conf")) || !regularFile(filepath.Join(target, "cmd", "metasystem", "main.go")) {
-		return Result{}, refuse(CodeRefused, "the adopted payload is missing metasystem.conf or the engine source", "restore the template's payload, commit, then run the same command again")
+		return Result{}, refuseAgain(CodeRefused, "the copied files lack metasystem.conf or the engine source", "once the template's files are restored and committed")
 	}
 	if err := copyFile(filepath.Join(source, "bin", "metasystem"), filepath.Join(target, "bin", "metasystem"), 0o755); err != nil {
 		return Result{}, err
@@ -390,8 +409,8 @@ func Adopt(options Options) (Result, error) {
 			return Result{}, errors.New("adopt: no goal genesis supplied")
 		}
 		if err := d.Genesis(target); err != nil {
-			return Result{}, refuse(CodeRefused, fmt.Sprintf("the goal baseline genesis failed in the target: %v", err),
-				"fix the cause above, then run the same command again")
+			return Result{}, refuseAgain(CodeRefused, fmt.Sprintf("the target's first goal records could not be written: %v", err),
+				"once the cause above is fixed")
 		}
 	}
 
@@ -410,7 +429,7 @@ func Adopt(options Options) (Result, error) {
 	// and a retry converges.
 	registered, err := hostsetup.Setup(hostsetup.Options{RepositoryPath: target, Runtimes: selected, CopySkills: options.CopySkills})
 	if err != nil {
-		return Result{}, refuse(CodeRefused, fmt.Sprintf("runtime registration failed in the target: %v", err), "fix the cause above, then run the same command again")
+		return Result{}, refuseAgain(CodeRefused, fmt.Sprintf("the agent runtimes could not be registered in the target: %v", err), "once the cause above is fixed")
 	}
 	for _, changed := range registered.Changed {
 		result.Installed = append(result.Installed, filepath.Join(registered.Layout.RepositoryRoot, filepath.FromSlash(changed)))
@@ -424,7 +443,7 @@ func Adopt(options Options) (Result, error) {
 	// Structural check now; the placeholder check waits for the facts.
 	audited, err := audit.AuditMetasystem(target, audit.AuditOptions{AllowPlaceholders: true})
 	if err != nil || len(audited.Violations) > 0 {
-		r := refuse(CodeRefused, "the structural audit failed in the adopted target", "fix the violations named below, then run the same command again")
+		r := refuseAgain(CodeRefused, "the adopted target fails the structural check (listed below)", "once the listed problems are fixed")
 		if err != nil {
 			r.Detail = append(r.Detail, err.Error())
 		}
@@ -437,8 +456,8 @@ func Adopt(options Options) (Result, error) {
 	// target; this makes the enrollment explicit for the report.
 	if targetIsGit {
 		if err := ledgerfence.Ensure(target); err != nil {
-			return Result{}, refuse(CodeRefused, fmt.Sprintf("the pre-commit guard could not be enrolled: %v", err),
-				"compose or enroll the hook by hand, then run the same command again")
+			return Result{}, refuseAgain(CodeRefused, fmt.Sprintf("the pre-commit guard could not be enrolled: %v", err),
+				"once the hook is composed or enrolled by hand")
 		}
 		if regularFile(filepath.Join(hookDirectory(d, target), "pre-commit.local")) {
 			result.Notes = append(result.Notes, "the target's own pre-commit hook runs after the guard, as pre-commit.local")
@@ -498,22 +517,22 @@ func recognize(target, sha string) (bool, *Refusal) {
 						return true, nil
 					}
 				}
-				return false, refuse(CodeRefused, "the target carries this template's marker but is not a complete healthy installation (missing workflow, engine, or failing structural audit)",
-					"finish it by hand per docs/project-adaptation.md, or adopt into a clean target")
+				return false, refuse(CodeRefused, "the target has a half-finished installation of this template, so nothing was done",
+					"finish it by hand with this guide, or adopt into a clean target", "less", "docs/project-adaptation.md")
 			}
-			return false, refuse(CodeRefused, "the target carries an installation at another template SHA",
-				"follow the upgrade path in docs/metasystem-reconciliation.md")
+			return false, refuse(CodeRefused, "the target has an installation from another template SHA, so nothing was done",
+				"the upgrade path for it", "less", "docs/metasystem-reconciliation.md")
 		}
 	}
 	for _, asset := range ForeignAssets {
 		if _, err := os.Lstat(filepath.Join(target, filepath.FromSlash(asset))); err == nil {
-			return false, refuse(CodeRefused, fmt.Sprintf("the target contains an existing instruction asset (%s)", asset),
-				"follow docs/metasystem-reconciliation.md to merge the metasystem into a repository that already instructs agents")
+			return false, refuse(CodeRefused, fmt.Sprintf("the target already instructs agents (%s), so nothing was done", asset),
+				"how to merge the metasystem into it", "less", "docs/metasystem-reconciliation.md")
 		}
 	}
 	if _, err := os.Lstat(filepath.Join(target, filepath.FromSlash(workflowPath))); err == nil {
-		return false, refuse(CodeRefused, "the target already has "+workflowPath,
-			"follow docs/metasystem-reconciliation.md to merge the metasystem into a repository that already has it")
+		return false, refuse(CodeRefused, "the target already has "+workflowPath+", so nothing was done",
+			"how to merge the metasystem into it", "less", "docs/metasystem-reconciliation.md")
 	}
 	return false, nil
 }
@@ -544,7 +563,8 @@ func hookPreflight(d Deps, target string) *Refusal {
 		}
 		// A malformed configuration in a valid repository fails the same
 		// way; adopting through it would strand a half-adoption later.
-		return refuse(CodeRefused, fmt.Sprintf("the target's repository shape cannot be proven: %v", err), "repair the target repository's git configuration")
+		return refuse(CodeRefused, fmt.Sprintf("the target's Git setup cannot be read, so its repository shape cannot be proven: %v", err),
+			"shows what is wrong with its Git configuration", "git", "-C", target, "status")
 	}
 	_ = out
 	hooks := hookDirectory(d, target)
@@ -556,8 +576,8 @@ func hookPreflight(d Deps, target string) *Refusal {
 	if mainErr == nil && localErr == nil &&
 		!(bytes.Contains(main, []byte("git rev-parse --show-toplevel")) &&
 			(bytes.Contains(main, []byte("internal pre-commit")) || bytes.Contains(main, []byte("pre-commit-guard.sh")))) {
-		return refuse(CodeRefused, "the target carries both pre-commit and pre-commit.local and neither enrolls the guard",
-			"compose them by hand (the guard first, then your hook), then run the same command again")
+		return refuseAgain(CodeRefused, "the target has both pre-commit and pre-commit.local, and neither enrolls the guard",
+			"once you compose them by hand (the guard first, then your hook)")
 	}
 	return nil
 }
@@ -604,14 +624,14 @@ func stagePayload(d Deps, options Options, source, prefix, stage, target string)
 	if prefix != "" {
 		top, topErr := gitLine(d, source, false, "rev-parse", "--show-toplevel")
 		if topErr != nil {
-			return refuse(CodeUsage, fmt.Sprintf("cannot resolve the template's toplevel: %v", topErr), "repair the template checkout")
+			return templateRepair(fmt.Sprintf("the template checkout's top folder cannot be read: %v", topErr), source)
 		}
 		archive, err = d.Git(top, false, "archive", "HEAD:"+strings.TrimSuffix(prefix, "/"))
 	} else {
 		archive, err = d.Git(source, false, "archive", "HEAD")
 	}
 	if err != nil {
-		return refuse(CodeRefused, fmt.Sprintf("cannot export the template payload: %v", err), "repair the template checkout")
+		return templateRepair(fmt.Sprintf("the template's files cannot be exported: %v", err), source)
 	}
 	allowed := map[string]bool{}
 	for _, name := range PayloadAllow {
@@ -621,13 +641,13 @@ func stagePayload(d Deps, options Options, source, prefix, stage, target string)
 		first, _, _ := strings.Cut(name, "/")
 		return allowed[first]
 	}); err != nil {
-		return refuse(CodeRefused, fmt.Sprintf("cannot unpack the template payload: %v", err), "repair the template checkout")
+		return refuseAgain(CodeRefused, fmt.Sprintf("the template's files cannot be unpacked: %v", err), "try again")
 	}
 
 	// records/ is the template's history; the brain's role packet is
 	// compiled into the engine, so nothing under it ships.
 	if err := os.RemoveAll(filepath.Join(stage, "records")); err != nil {
-		return refuse(CodeRefused, err.Error(), "retry")
+		return stageFailure(err)
 	}
 	if refusal := dropTemplateProjectState(stage); refusal != nil {
 		return refusal
@@ -636,22 +656,23 @@ func stagePayload(d Deps, options Options, source, prefix, stage, target string)
 	// application's own rulings.
 	rulings, err := landing.AdoptionRulings(target)
 	if err != nil {
-		return refuse(CodeRefused, fmt.Sprintf("could not prepare the adopted landing authority: %v", err), "repair the target's memory/rulings.md or the template's landing classes")
+		return refuseAgain(CodeRefused, fmt.Sprintf("the target's landing rulings could not be prepared: %v", err),
+			"once the target's memory/rulings.md or the template's landing classes are fixed")
 	}
 	if err := os.RemoveAll(filepath.Join(stage, "memory")); err != nil {
-		return refuse(CodeRefused, err.Error(), "retry")
+		return stageFailure(err)
 	}
 	// plans/ ships its README and fresh goal ledgers; memory/ is rebuilt
 	// with fresh living registers: an adopted project starts with its own
 	// history.
 	entries, err := os.ReadDir(filepath.Join(stage, "plans"))
 	if err != nil && !os.IsNotExist(err) {
-		return refuse(CodeRefused, err.Error(), "repair the template checkout")
+		return stageFailure(err)
 	}
 	for _, entry := range entries {
 		if entry.Name() != "README.md" {
 			if err := os.RemoveAll(filepath.Join(stage, "plans", entry.Name())); err != nil {
-				return refuse(CodeRefused, err.Error(), "retry")
+				return stageFailure(err)
 			}
 		}
 	}
@@ -665,27 +686,34 @@ func stagePayload(d Deps, options Options, source, prefix, stage, target string)
 	}
 	for rel, data := range files {
 		if err := writeFile(filepath.Join(stage, filepath.FromSlash(rel)), data, 0o644); err != nil {
-			return refuse(CodeRefused, err.Error(), "retry")
+			return stageFailure(err)
 		}
 	}
 	// records/goals/ is the concluded-goal parser's directory; an empty
 	// directory needs no placeholder.
 	if err := os.MkdirAll(filepath.Join(stage, "records", "goals"), 0o755); err != nil {
-		return refuse(CodeRefused, err.Error(), "retry")
+		return stageFailure(err)
 	}
 	for _, skill := range options.Enable {
 		from := filepath.Join(stage, "optional-skills", skill)
 		if info, statErr := os.Stat(from); skill == "" || strings.ContainsAny(skill, `/\`) || statErr != nil || !info.IsDir() {
-			return refuse(CodeUsage, "unknown optional skill: "+skill, "name one of the template's optional-skills/ directories")
+			return refuse(CodeUsage, "the template has no optional skill "+skill+", so nothing was done",
+				"lists the optional skills; --enable takes one of them", "ls", filepath.Join(source, "optional-skills"))
 		}
 		if err := os.Rename(from, filepath.Join(stage, "skills", skill)); err != nil {
-			return refuse(CodeRefused, err.Error(), "retry")
+			return stageFailure(err)
 		}
 	}
 	if err := os.RemoveAll(filepath.Join(stage, "optional-skills")); err != nil {
-		return refuse(CodeRefused, err.Error(), "retry")
+		return stageFailure(err)
 	}
 	return nil
+}
+
+// stageFailure is a failure to shape the payload in its scratch folder:
+// nothing reached the target, and it may pass on a second try.
+func stageFailure(err error) *Refusal {
+	return refuseAgain(CodeRefused, "the template's files could not be prepared, so nothing reached the target: "+err.Error(), "try again")
 }
 
 // dropTemplateMode removes the template-mode declaration (and the comment
@@ -725,17 +753,17 @@ const stopMoveDocs = "docs/stop-decision-moves"
 func dropTemplateProjectState(stage string) *Refusal {
 	for _, rel := range templateProjectDocs {
 		if err := os.RemoveAll(filepath.Join(stage, filepath.FromSlash(rel))); err != nil {
-			return refuse(CodeRefused, err.Error(), "retry")
+			return stageFailure(err)
 		}
 	}
 	entries, err := os.ReadDir(filepath.Join(stage, filepath.FromSlash(stopMoveDocs)))
 	if err != nil && !os.IsNotExist(err) {
-		return refuse(CodeRefused, err.Error(), "repair the template checkout")
+		return stageFailure(err)
 	}
 	for _, entry := range entries {
 		if entry.Name() != "README.md" {
 			if err := os.RemoveAll(filepath.Join(stage, filepath.FromSlash(stopMoveDocs), entry.Name())); err != nil {
-				return refuse(CodeRefused, err.Error(), "retry")
+				return stageFailure(err)
 			}
 		}
 	}

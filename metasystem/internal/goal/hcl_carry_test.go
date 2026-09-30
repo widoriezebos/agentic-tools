@@ -204,11 +204,11 @@ func TestHCL60SupersedePreconditions(t *testing.T) {
 			tree, file := hclCarryTree("g", target, now.Add(time.Hour))
 			file.History = append(file.History, HistoryLine{At: now.Format(time.RFC3339), Opid: opening, Verb: "carrying", ApprovedRef: target, Reason: "open expires=" + now.Add(time.Hour).Format(time.RFC3339)})
 			return tree, CarryArgs{Supersede: target}, ""
-		}, want: "in flight on seat-a"},
+		}, want: "seat-a is landing under this exception"},
 		{name: "push before row", make: func() (*TreeGoals, CarryArgs, string) {
 			tree, _ := hclCarryTree("g", target, now.Add(time.Hour))
 			return tree, CarryArgs{Supersede: target}, carriedTip
-		}, want: "consumed on origin by "},
+		}, want: "the exception was used by "},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -232,7 +232,7 @@ func TestHCL60DoneRefusesOpenWordAndPassesExpiredWord(t *testing.T) {
 	now := time.Date(2026, 9, 11, 12, 0, 0, 0, time.UTC)
 	word := "01ARZ3NDEKTSV4RRFFQ69G5FAW-seat-a-1a2b3c4d"
 	openTree, openFile := hclCarryTree("g", word, now.Add(time.Hour))
-	if err := doneCarryRefusal("", openTree, "", "g", openFile, now); err == nil || !strings.Contains(err.Error(), "open carry word "+word) {
+	if err := doneCarryRefusal("", openTree, "", "g", openFile, now); err == nil || !strings.Contains(err.Error(), "an open exception ("+word) {
 		t.Fatalf("open word refusal = %v", err)
 	}
 	expiredTree, expiredFile := hclCarryTree("g", word, now.Add(-time.Minute))

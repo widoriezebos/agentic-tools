@@ -187,7 +187,7 @@ func TestCritiqueSubjectDiffRefusalsNameReviewedRoundAndPath(t *testing.T) {
 	})
 	state := loadCritiqueState(repo)
 	root := map[string]any{"reviews": "impl"}
-	wantMissing := "reviewed implementer round impl (round 1) has no diff.patch at artifacts/agents/impl/rounds/1/diff.patch; run validate conformance --stage review --job impl first"
+	wantMissing := "round 1 (impl) has no recorded changes at artifacts/agents/impl/rounds/1/diff.patch\nfirst run validate conformance --stage review --job impl"
 	missingFacts := newStrictCritiqueFacts(t)
 	if _, err := critiqueSubjectForRoundWithFacts(repo, state, root, "code-critic", map[string]any{}, missingFacts); err == nil || err.Error() != wantMissing {
 		t.Fatalf("missing diff refusal = %v, want %q", err, wantMissing)
@@ -200,7 +200,7 @@ func TestCritiqueSubjectDiffRefusalsNameReviewedRoundAndPath(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(diffDir, "diff.patch"), []byte(""), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	wantEmpty := "reviewed implementer round impl (round 1) has no changed paths in diff.patch at artifacts/agents/impl/rounds/1/diff.patch; run validate conformance --stage review --job impl first"
+	wantEmpty := "round 1 (impl) changes no file in artifacts/agents/impl/rounds/1/diff.patch\nfirst run validate conformance --stage review --job impl"
 	emptyFacts := newStrictCritiqueFacts(t, declaredPrefix(repo, ""))
 	if _, err := critiqueSubjectForRoundWithFacts(repo, state, root, "code-critic", map[string]any{}, emptyFacts); err == nil || err.Error() != wantEmpty {
 		t.Fatalf("empty diff refusal = %v, want %q", err, wantEmpty)
@@ -275,7 +275,7 @@ func TestCritiqueClosePrintsEveryBlockingFinding(t *testing.T) {
 				t.Fatalf("%s did not print %q: %v", name, want, err)
 			}
 		}
-		wantNext := "next: goal accept-risk --finding <id> --chain <root> --by <human> --why, or raise the goal budget: the chain's next follow-up or close (work revise, design review, work review --dispositions, work finish) carries the raised limit onto it first"
+		wantNext := "a person accepts each risk (metasystem goal accept-risk --finding <id> --chain <root> --by <human> --why) or raises the goal's budget"
 		if !strings.HasSuffix(err.Error(), wantNext) {
 			t.Fatalf("%s next step = %v", name, err)
 		}
@@ -294,7 +294,7 @@ func TestMalformedRoundAccountingNamesBudgetRebindNextStep(t *testing.T) {
 		findingRegisterRoundField: 1, reviewRoundLimitField: 3, criticRoundsConsumedField: "malformed",
 	})
 	_, err := CritiqueRegisterClose(repo, "critic")
-	want := "next: continue or close chain critic (work revise, design review, work review --dispositions, work finish), which rebinds its round accounting first"
+	want := "continuing or closing that work repairs it (work revise, design review, work review --dispositions, work finish)"
 	if err == nil || !strings.HasSuffix(err.Error(), want) {
 		t.Fatalf("malformed accounting refusal = %v, want suffix %q", err, want)
 	}

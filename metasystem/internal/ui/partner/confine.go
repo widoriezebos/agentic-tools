@@ -56,7 +56,7 @@ var sandboxExec = "/usr/bin/sandbox-exec"
 // itself and this platform cannot keep it for the runtime.
 func unconfined(name string) error {
 	return fmt.Errorf(
-		"the %s runtime does not enforce read-only by itself — asked to, it writes in the checkout — and %s offers no sandbox this seat can start it in; set ui.partner.runtime to a runtime that enforces read-only itself",
+		"the %s runtime is not read-only by itself and %s has no sandbox for it; set another ui.partner.runtime",
 		name, runtime.GOOS)
 }
 

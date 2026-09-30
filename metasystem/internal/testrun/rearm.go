@@ -69,7 +69,7 @@ type landedRearmBlocker struct {
 // in plain words.
 type landedRearmDecision struct {
 	Rearm   bool
-	Refusal string
+	Refusal error
 }
 
 // DevgateBootstrapBuildArgv is the engine's own bootstrap build of an
@@ -92,11 +92,11 @@ func decideLandedRearm(facts landedRearmFacts, checkout string) landedRearmDecis
 	}
 	if facts.FetchErr != nil {
 		outcomeFacts := append(observed, enginecause.Value("fact", "fetch-failed"))
-		return landedRearmDecision{Refusal: engineRefusal("engine-behind-tip", outcomeFacts, fmt.Sprintf("the landing ref could not be fetched (%v), so the run cannot bring the checkout to a landed tip", facts.FetchErr)).Error()}
+		return landedRearmDecision{Refusal: engineRefusal("engine-behind-tip", outcomeFacts, "this checkout's engine is behind the landing branch, which could not be fetched", facts.FetchErr.Error())}
 	}
 	if !facts.HeadIsAncestor {
 		observed = append(observed, enginecause.Value("fact", "head-diverged"), enginecause.Value("head", facts.Head))
-		return landedRearmDecision{Refusal: engineRefusal("engine-behind-tip", observed, "the checkout's HEAD is not an ancestor of that tip, so the run cannot bring the checkout to it").Error()}
+		return landedRearmDecision{Refusal: engineRefusal("engine-behind-tip", observed, "this checkout's engine is behind the landing branch, and HEAD has commits it lacks")}
 	}
 	if len(facts.BlockingPaths) > 0 {
 		blockerFacts := append([]enginecause.Fact(nil), observed...)
@@ -104,22 +104,22 @@ func decideLandedRearm(facts landedRearmFacts, checkout string) landedRearmDecis
 			blockerFacts = append(blockerFacts, enginecause.Path(blocker.Kind+"-path", blocker.Path))
 		}
 		return landedRearmDecision{Refusal: engineRefusal("fast-forward-blocked", blockerFacts,
-			"dirty or untracked checkout paths collide with paths changed by the landed tip, so the run refuses before changing the checkout").Error()}
+			"local changes collide with files the landing branch changed, so the engine cannot catch up")}
 	}
 	if len(facts.DirtyEnginePaths) > 0 {
 		observed = append(observed, enginecause.Value("fact", "dirty-engine-paths"))
 		for _, path := range facts.DirtyEnginePaths {
 			observed = append(observed, enginecause.Path("path", path))
 		}
-		return landedRearmDecision{Refusal: engineRefusal("engine-behind-tip", observed, "the checkout is dirty in engine inputs ("+strings.Join(facts.DirtyEnginePaths, ", ")+"), so the run does not rebuild under them").Error()}
+		return landedRearmDecision{Refusal: engineRefusal("engine-behind-tip", observed, "this checkout's engine is behind the landing branch, and its source has local edits")}
 	}
 	if facts.NamedDeliveryTree {
 		observed = append(observed, enginecause.Value("fact", "named-delivery-tree"))
-		return landedRearmDecision{Refusal: engineRefusal("engine-behind-tip", observed, "this delivery run names the exact index it proves, and bringing the checkout to the tip would move that index under it").Error()}
+		return landedRearmDecision{Refusal: engineRefusal("engine-behind-tip", observed, "this checkout's engine is behind the landing branch, and catching up would move the tested tree")}
 	}
 	if len(facts.LiveAttempts) > 0 {
 		observed = append(observed, enginecause.Value("fact", "live-attempt"), enginecause.Value("attempt", facts.LiveAttempts[0]))
-		return landedRearmDecision{Refusal: engineRefusal("engine-behind-tip", observed, "a proof attempt of this installation is live ("+strings.Join(facts.LiveAttempts, ", ")+") and the engine is never rebuilt under a live attempt").Error()}
+		return landedRearmDecision{Refusal: engineRefusal("engine-behind-tip", observed, "this checkout's engine is behind the landing branch, and a test run is still going", strings.Join(facts.LiveAttempts, ", "))}
 	}
 	return landedRearmDecision{Rearm: true}
 }
@@ -152,7 +152,7 @@ func parseLandingRefParts(ref string) (parsed, remote, branch string, err error)
 	tail := strings.TrimPrefix(ref, "refs/remotes/")
 	remote, branch, qualified := strings.Cut(tail, "/")
 	if tail == ref || !qualified || remote == "" || branch == "" {
-		return "", "", "", fmt.Errorf("trusted testing policy base requires local metasystem.steward.landing-ref shaped refs/remotes/<remote>/<branch>")
+		return "", "", "", errNoLandingRef
 	}
 	return ref, remote, branch, nil
 }
@@ -376,7 +376,7 @@ func readLandedRearmFacts(ctx context.Context, clock steward.RearmClock, seconds
 		return readErr
 	})
 	if err != nil {
-		return facts, fmt.Errorf("read this installation's proof attempts: %w", err)
+		return facts, fmt.Errorf("this installation's test runs cannot be read: %w", err)
 	}
 	for _, attempt := range attempts {
 		if attempt.Terminal == nil {
@@ -481,11 +481,11 @@ var upOutcomeField = regexp.MustCompile(`\boutcome=([A-Za-z_-]+)`)
 func performLandedRearm(ctx context.Context, installation, projectRoot string, facts landedRearmFacts, previousGeneration int) (*proofrun.EngineRearm, error) {
 	if err := landedRearmFastForward(ctx, installation, facts.Tip); err != nil {
 		facts := append(engineCheckoutFacts(projectRoot), enginecause.Value("tip", facts.Tip))
-		return nil, engineRefusal("fast-forward-blocked", facts, fmt.Sprintf("fast-forward the checkout to the landed tip: %v", err))
+		return nil, engineRefusal("fast-forward-blocked", facts, "this checkout could not be moved to the landing branch", err.Error())
 	}
 	if err := landedRearmRebuild(ctx, installation); err != nil {
 		facts := append(engineCheckoutFacts(projectRoot), enginecause.Value("tip", facts.Tip))
-		return nil, engineRefusal("rebuild-failed", facts, fmt.Sprintf("rebuild the engine at the landed tip: %v", err))
+		return nil, engineRefusal("rebuild-failed", facts, "rebuilding the engine on the landing branch failed", err.Error())
 	}
 	// up mints the generation first and proves the session and the
 	// components after; a run launched detached (no runtime ancestor) or
@@ -499,9 +499,10 @@ func performLandedRearm(ctx context.Context, installation, projectRoot string, f
 	pinned, openErr := landedRearmOpenEnrollment(installation)
 	if openErr != nil || pinned.Generation <= previousGeneration {
 		if upErr != nil {
-			return nil, engineRefusal("rearm-failed", engineCheckoutFacts(projectRoot), fmt.Sprintf("re-arm the enrollment on the landed tip %s: %v", facts.Tip, upErr))
+			return nil, engineRefusal("rearm-failed", engineCheckoutFacts(projectRoot), "the rebuilt engine could not restart this checkout's session", fmt.Sprintf("tip %s: %v", facts.Tip, upErr))
 		}
-		return nil, engineRefusal("rearm-failed", engineCheckoutFacts(projectRoot), fmt.Sprintf("re-arm the enrollment on the landed tip %s: the enrollment did not advance past generation %d (%v; up said: %s)", facts.Tip, previousGeneration, openErr, result.Line))
+		return nil, engineRefusal("rearm-failed", engineCheckoutFacts(projectRoot), "the rebuilt engine restarted, but this checkout still runs the old one",
+			fmt.Sprintf("tip %s: the enrollment did not advance past generation %d (%v; up said: %s)", facts.Tip, previousGeneration, openErr, result.Line))
 	}
 	record.Generation = pinned.Generation
 	return record, nil
@@ -513,26 +514,26 @@ func performLandedRearm(ctx context.Context, installation, projectRoot string, f
 // same lock admission takes).
 func landedRearmAct(ctx context.Context, installation, projectRoot string, facts landedRearmFacts, previousGeneration int) (*proofrun.EngineRearm, error) {
 	decision := decideLandedRearm(facts, projectRoot)
-	if decision.Refusal != "" {
-		return nil, errors.New(decision.Refusal)
+	if decision.Refusal != nil {
+		return nil, decision.Refusal
 	}
 	if !decision.Rearm {
 		return nil, nil
 	}
 	lock, err := landedRearmMutationLock(installation)
 	if err != nil {
-		return nil, engineRefusal("mutation-lock", engineCheckoutFacts(projectRoot), "take the proof mutation lock before rebuilding the engine: "+err.Error())
+		return nil, engineRefusal("mutation-lock", engineCheckoutFacts(projectRoot), "another test run holds the test records, so the engine was not rebuilt", err.Error())
 	}
 	defer lock()
 	// The live check is repeated under the lock: an attempt admitted
 	// between the first read and the lock would otherwise be rebuilt under.
 	attempts, err := proofrun.ReadAttempts(installation)
 	if err != nil {
-		return nil, fmt.Errorf("read this installation's proof attempts: %w", err)
+		return nil, fmt.Errorf("this installation's test runs cannot be read: %w", err)
 	}
 	for _, attempt := range attempts {
 		if attempt.Terminal == nil {
-			return nil, errors.New(decideLandedRearm(withLiveAttempt(facts, attempt.AttemptID), projectRoot).Refusal)
+			return nil, decideLandedRearm(withLiveAttempt(facts, attempt.AttemptID), projectRoot).Refusal
 		}
 	}
 	return performLandedRearm(ctx, installation, projectRoot, facts, previousGeneration)
@@ -605,7 +606,7 @@ func landedRearm(notes io.Writer, installation, projectRoot, prefix string, name
 	})
 	if err != nil {
 		facts := append(engineCheckoutFacts(projectRoot), enginecause.Value("source", source))
-		return nil, judgmentRefusal(err, facts, "judging the enrolled engine against the landed tip failed")
+		return nil, judgmentRefusal(err, facts, "comparing this checkout's engine with the landing branch failed")
 	}
 	facts.NamedDeliveryTree = namedDeliveryTree
 	if decision := decideLandedRearm(facts, projectRoot); decision.Rearm {

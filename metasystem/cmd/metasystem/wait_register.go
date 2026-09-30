@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"errors"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
@@ -28,10 +29,10 @@ type resolvedWaitCaller struct {
 func resolveWaitCaller(root string, callerPID int64) (resolvedWaitCaller, int, error) {
 	view, err := classifyVerbCaller(root, callerPID)
 	if err != nil {
-		return resolvedWaitCaller{}, metarun.ExitWaiterUnknown, fmt.Errorf("wait caller identity is uncertain: %w", err)
+		return resolvedWaitCaller{}, metarun.ExitWaiterUnknown, fmt.Errorf("who is asking to wait cannot be told: %w", err)
 	}
 	if view.Class != lease.ClassMain || !view.Holder || view.Announcement == nil {
-		return resolvedWaitCaller{}, metarun.ExitWaiterBusy, fmt.Errorf("only this checkout's main agent session can wait, so it may stop while it waits; this shell is not that session")
+		return resolvedWaitCaller{}, metarun.ExitWaiterBusy, errors.New("only this checkout's main agent session can wait (so it may stop meanwhile), and this is not it")
 	}
 	lineage := view.Announcement.OwnerLineage
 	if lineage == "" {

@@ -119,7 +119,7 @@ func TestHelmTakeAdmitsThePersonsActsAtThatTerminal(t *testing.T) {
 	if code, out := bed.run("disk", "clean", "--preview"); code != 0 {
 		t.Fatalf("preview = %d:\n%s", code, out)
 	}
-	if code, out := bed.run("disk", "clean", "--strays"); code != 3 || !strings.Contains(out, "metasystem system enroll --name NAME") ||
+	if code, out := bed.run("disk", "clean", "--strays"); code != 3 || !strings.Contains(out, "→ metasystem system enroll --name Wido") ||
 		strings.Contains(out, humanauthority.OutcomeTerminalMissing) {
 		t.Fatalf("strays at an unenrolled terminal = %d:\n%s", code, out)
 	}

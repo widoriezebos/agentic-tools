@@ -67,7 +67,11 @@ func runPassthrough(command intentCommand, run command, args []string, stdout, s
 	label := "metasystem " + command.object + " " + command.action
 	repo, repoGiven, rest := takeIntentFlag(args, "repo", true)
 	if repoGiven && repo == "" {
-		fmt.Fprintf(stderr, "%s: --repo needs a value (PATH); nothing was done\n", label)
+		retry := append(strings.Fields(label), args...)
+		if cwd, err := os.Getwd(); err == nil {
+			retry = append(append(strings.Fields(label), withoutOption(args, "repo")...), "--repo", cwd)
+		}
+		fmt.Fprintf(stderr, "--repo needs the repository's directory; nothing was done\nrun: %s\n", shellCommand(retry))
 		return 2
 	}
 	documentsRoot := slices.ContainsFunc(command.flags, func(flag intentFlag) bool { return flag.name == "repo" })
@@ -92,7 +96,8 @@ func runPassthrough(command intentCommand, run command, args []string, stdout, s
 	layout, err := resolver.ResolveLayout(path)
 	if err != nil {
 		if repoGiven {
-			fmt.Fprintf(stderr, "%s: %s is not inside a metasystem installation; name the repository with --repo PATH; nothing was done\n", label, path)
+			retry := append(append(strings.Fields(label), withoutOption(args, "repo")...), "--repo", "REPOSITORY")
+			fmt.Fprintf(stderr, "%s isn't inside a checkout MetaSystem is set up in; nothing was done\nrun: %s  (REPOSITORY is such a checkout)\n", path, shellCommand(retry))
 			return 2
 		}
 		// Outside a repository the owner answers for its own --root.
@@ -204,7 +209,8 @@ func designIntentCommands() []intentCommand {
 			examples: []string{"metasystem design stop verbs-match-intent"},
 			run: func(inv *intentInvocation) int {
 				if len(inv.input.args) != 1 {
-					return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "design stop needs the goal: metasystem design stop G; nothing was done"})
+					return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "design stop needs the goal whose design author to stop; nothing was done",
+						next: inv.typedArgvFor("GOAL"), nextReason: "names the goal"})
 				}
 				return runIntentStopDesign(inv, inv.input.args[0])
 			},
@@ -229,22 +235,24 @@ func designIntentCommands() []intentCommand {
 // runIntentDesignReview requests an independent critique of one design file.
 func runIntentDesignReview(inv *intentInvocation) int {
 	if len(inv.input.args) != 1 {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "design review needs the design file: " + reviewDesignUsage + "; nothing was done"})
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "design review needs the one design file to review; nothing was done",
+			next: inv.typedArgvFor("FILE"), nextReason: "FILE is the design page", Details: []string{"usage: " + reviewDesignUsage}})
 	}
 	for _, number := range []string{"retry", "after"} {
 		if value, err := strconv.Atoi(inv.input.text(number)); inv.input.has(number) && (err != nil || value < 1) {
-			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("--%s takes an examination number such as 1; nothing was done", number)})
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("--%s takes a review number such as 1; nothing was done", number),
+				next: append(inv.typedArgvLess(number), "--"+number, "1"), nextReason: "the review number that metasystem design show lists"})
 		}
 	}
 	if inv.input.has("effort") {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2,
-			Summary:  "no review owner accepts a reasoning-effort override: dispatch sets it from the hazard class's configuration obligations",
-			Decision: "omit --effort; the roster and the destructive-reach class decide the critic's effort"})
+			Summary: "a critic's effort is set by the project's configuration, not by --effort; nothing was done",
+			next:    inv.typedArgvLess("effort"), nextReason: "the roster and the change's reach decide the effort"})
 	}
 	if inv.input.has("model") {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2,
-			Summary:  "design review takes no --model: the delegate accepts a critic model override only for a run or commit read's code critic",
-			Decision: "omit --model; the roster decides the design critic"})
+			Summary: "a design critic is chosen by the roster, not by --model; nothing was done",
+			next:    inv.typedArgvLess("model"), nextReason: "--model is only for a code review's critic"})
 	}
 	if inv.input.switched("check-only") {
 		return runIntentDesignCheckOnly(inv, inv.input.args[0])
@@ -263,7 +271,8 @@ func runIntentDesignCheckOnly(inv *intentInvocation, file string) int {
 	for _, other := range []string{"goal", "dispositions", "after", "retry", "tool-calls"} {
 		if inv.input.has(other) {
 			return inv.render(intentResult{Outcome: intentRefused, code: 2,
-				Summary: fmt.Sprintf("--check-only asks no critic; --%s belongs to the critique; nothing was done", other)})
+				Summary: fmt.Sprintf("--check-only asks no critic, so --%s doesn't apply; nothing was done", other),
+				next:    inv.typedArgvLess(other), nextReason: "checks the page without --" + other})
 		}
 	}
 	if problem := inv.resolveLayout(); problem != nil {
@@ -273,13 +282,15 @@ func runIntentDesignCheckOnly(inv *intentInvocation, file string) int {
 	page, err := os.ReadFile(path)
 	target := []intentTarget{{Kind: "design", ID: file}}
 	if err != nil {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: target, Summary: fmt.Sprintf("the design page %s is unreadable: %v; nothing was checked", shellCommand([]string{file}), err)})
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: target, Summary: fileProblem("design page", path, err) + "; nothing was checked",
+			next: inv.sameCommand(), nextReason: "once it names a readable page"})
 	}
 	lines, problems := movedEffectsReport(page, inv.layout.GitRoot)
 	data := map[string]any{"problems": problems, "lines": lines}
 	if problems > 0 {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: target, Data: data, text: lines,
-			Summary: fmt.Sprintf("the moved-effect inventory of %s has %d problem(s)", file, problems)})
+			Summary: fmt.Sprintf("the moved-effect inventory of %s has %d problem(s), listed above", file, problems),
+			next:    inv.sameCommand(), nextReason: "after fixing them in the page"})
 	}
 	return inv.render(intentResult{Outcome: intentConfirmed, Targets: target, Data: data, text: lines,
 		Summary: fmt.Sprintf("the moved-effect inventory of %s checks against the code", file)})
@@ -356,8 +367,8 @@ func practiceIntentCommands() []intentCommand {
 			[]intentFlag{documented("root", "INSTALLATION", "the installation whose checkout the session isolates from")},
 			[]string{"metasystem session isolate"}, runSessionIsolate),
 		passthroughAction("test", "plan", "both", "preview the risk-selected tests and their reasons without running them",
-			[]string{"metasystem test plan [--goal G] [--root INSTALLATION] [--json]"},
-			[]intentFlag{documented("root", "INSTALLATION", "the installation"), documented("goal", "G", "the goal owning the delivery")},
+			[]string{"metasystem test plan [--goal G] [--root INSTALLATION] [--json] [--verbose]"},
+			[]intentFlag{documented("root", "INSTALLATION", "the installation"), documented("goal", "G", "the goal owning the delivery"), testVerboseFlag},
 			[]string{"metasystem test plan", "metasystem test plan --goal verbs-match-intent --json"}, runTestPlan),
 		passthroughAction("test", "add", "agent", "add verified Go tests, group inputs or surface paths to the testing contract",
 			[]string{"metasystem test add --file FILE --group ID --tests NAME,NAME", "metasystem test add --file FILE --group ID --inputs PATH,PATH",
@@ -403,9 +414,10 @@ func practiceIntentCommands() []intentCommand {
 			[]string{"metasystem test list [--root INSTALLATION] [--json]"}, []intentFlag{documented("root", "INSTALLATION", "the installation")},
 			[]string{"metasystem test list --root ."}, runTestList),
 		passthroughAction("test", "status", "both", "whether an exact tree is already proven, and what its tests cost; nothing is run",
-			[]string{"metasystem test status --tree TREE [--goal G] [--root INSTALLATION] [--json]", "metasystem test status --result FILE --expensive-ms N"},
+			[]string{"metasystem test status --tree TREE [--goal G] [--root INSTALLATION] [--json] [--verbose]", "metasystem test status --result FILE --expensive-ms N"},
 			[]intentFlag{documented("root", "INSTALLATION", "the installation"), documented("tree", "TREE", "the exact tree"), documented("goal", "G", "the goal"),
-				documented("result", "FILE", "a recorded test result whose measured cost is summarized"), documented("expensive-ms", "N", "with --result: the positive threshold for expensive tests")},
+				documented("result", "FILE", "a recorded test result whose measured cost is summarized"), documented("expensive-ms", "N", "with --result: the positive threshold for expensive tests"),
+				testVerboseFlag},
 			[]string{"metasystem test status --tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904 --root . --json", "metasystem test status --result result.json --expensive-ms 5000"}, runTestStatus),
 	}
 }
@@ -564,7 +576,7 @@ func hiddenIntentEntries() []intentCommand {
 // this checkout, or one goal's work.
 func topLevelStatus() intentCommand {
 	return intentCommand{
-		object: "status", audience: "both", primary: true, summary: "the overview of this checkout, or one goal's live work",
+		object: "status", audience: "both", primary: true, laidOut: true, summary: "the overview of this checkout, or one goal's live work",
 		usage: []string{"metasystem status", "metasystem status G [--work NAME]"},
 		details: []string{
 			"Without G: this checkout's MetaSystem, its running work, open questions and what needs attention.",
@@ -582,45 +594,36 @@ func topLevelStatus() intentCommand {
 func runIntentTopStatus(inv *intentInvocation) int {
 	if len(inv.input.args) > 1 {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2,
-			Summary:  fmt.Sprintf("status takes one goal at most; unexpected %s; nothing was done", shellCommand(inv.input.args[1:])),
-			Decision: "one goal's work is metasystem status G; a job, run or read is metasystem work status REF; every other status is metasystem OBJECT status"})
+			Summary: fmt.Sprintf("status takes one goal at most; unexpected %s; nothing was done", shellCommand(inv.input.args[1:])),
+			next:    inv.publicArgv("status", inv.input.args[0]), nextReason: "a job, run or read is metasystem work status REF"})
 	}
 	if len(inv.input.args) == 1 {
 		if inv.input.has("installation") {
-			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "status G reads the goal's work; --installation belongs to the overview; nothing was done"})
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--installation is for the overview, not one goal's status; nothing was done",
+				next: inv.typedArgvLess("installation"), nextReason: "the goal's status"})
 		}
 		return runIntentStatusGoal(inv, inv.input.args[0])
 	}
 	if inv.input.has("work") {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--work names a goal's work: status G --work NAME; nothing was done"})
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--work needs the goal whose work it names; nothing was done",
+			next: inv.typedArgvFor("GOAL"), nextReason: "names the goal"})
 	}
 	return runIntentCheckoutStatus(inv)
 }
 
-// statusBoardLines are status's board block (D14-r2, R23, U10d): the host
-// board from a direct read (one line per armed seat of this host, saying
-// bridge live or absent; --verbose one more per goal), then one line per
-// unfinished batch of the configured lane. It never connects to the bridge.
-func (inv *intentInvocation) statusBoardLines() ([]string, board.View) {
-	now := inv.boardNow()
-	view := inv.hostBoardView(now)
-	lines := view.Lines(now, time.Local, inv.input.switched("verbose"))
-	if line := inv.statusLaneLine(); line != "" {
-		lines = append(lines, line)
-	}
-	for _, record := range inv.unfinishedBatches() {
-		lines = append(lines, batchStatusLine(record, now))
-	}
-	lines = append(lines, inv.peerStatusLines(inv.layout.GitRoot)...)
-	return lines, view
-}
-
-// hostBoardView is the board as this checkout's one-shot views show it.
+// hostBoardView is the board as this checkout's one-shot views show it. Its
+// claim check reads the goal ledger at the state root, where goal list reads
+// it: the ledger's files are read relative to the root given, and a template
+// checkout's repository top has none, so every card read "not claimed" (F3).
 func (inv *intentInvocation) hostBoardView(now time.Time) board.View {
-	if inv.owners.delivery != nil && inv.owners.delivery.boardView != nil {
-		return inv.owners.delivery.boardView(inv.layout.GitRoot, now)
+	ledgerRoot := inv.stateRoot
+	if ledgerRoot == "" {
+		ledgerRoot = inv.layout.GitRoot
 	}
-	return batchowner.ProductionPipeline(batchowner.PipelineStall(inv.layout.InstallationRoot), batchowner.AcceptedClaims(inv.layout.GitRoot)).View(now)
+	if inv.owners.delivery != nil && inv.owners.delivery.boardView != nil {
+		return inv.owners.delivery.boardView(ledgerRoot, now)
+	}
+	return batchowner.ProductionPipeline(batchowner.PipelineStall(inv.layout.InstallationRoot), batchowner.AcceptedClaims(ledgerRoot)).View(now)
 }
 
 func (inv *intentInvocation) boardNow() time.Time {
@@ -661,15 +664,6 @@ func (inv *intentInvocation) unfinishedBatches() []batch.Record {
 	return records
 }
 
-// batchStatusLine is one unfinished batch's line: why it waits or started,
-// or its state and size when it records neither.
-func batchStatusLine(record batch.Record, now time.Time) string {
-	if line := batch.WaitLine(record, now, time.Local); line != "" {
-		return line
-	}
-	return fmt.Sprintf("batch %s %s, %d unit%s", record.BatchID, record.State, len(record.Units), map[bool]string{true: "", false: "s"}[len(record.Units) == 1])
-}
-
 // runTestBaseline is test baseline: --gate records the trusted refactor
 // baseline, --check asks whether another edit batch may start; both reach
 // the refactor baseline owner.
@@ -708,14 +702,16 @@ func testBaselineArgs(args []string) ([]string, error) {
 	case gate:
 		return append([]string{"record"}, rest...), nil
 	}
-	return nil, fmt.Errorf("needs --gate COMMAND to record the baseline (e.g. metasystem test baseline --gate 'go test ./...') or --check to check it; nothing was done")
+	return nil, errors.New("the baseline needs the gate command that passed; nothing was done\n" +
+		"run: metasystem test baseline --gate 'go test ./...'  (your gate command; --check checks the recorded baseline)")
 }
 
 // runIntentDesignCheck judges the obligation matrices of the named files
 // through the design-obligation owner in this process.
 func runIntentDesignCheck(inv *intentInvocation) int {
 	if len(inv.input.args) == 0 {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "design check needs the plan: metasystem design check FILE...; nothing was checked"})
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "design check needs the plan to check; nothing was checked",
+			next: inv.typedArgvFor("FILE"), nextReason: "FILE is the plan; several may be named"})
 	}
 	files := make([]string, 0, len(inv.input.args))
 	targets := make([]intentTarget, 0, len(inv.input.args))
@@ -732,12 +728,12 @@ func runIntentDesignCheck(inv *intentInvocation) int {
 			Summary: fmt.Sprintf("%d obligation matrix(es) pass the %s gate", len(files), map[bool]string{true: "completion", false: "default"}[inv.input.switched("complete")])})
 	case code == 2:
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: targets, text: problems, Data: data,
-			Summary: strings.Join(nonNilLines(problems), "; ") + "; nothing was checked"})
+			Summary: strings.Join(nonNilLines(problems), "; ") + "; nothing was checked", next: inv.sameCommand(), nextReason: "once that is corrected"})
 	}
 	summary := "the obligation matrix does not pass"
 	if len(problems) > 0 {
 		summary = problems[0]
 	}
 	return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, text: problems, Data: data, Summary: summary,
-		nextReason: "prove or re-state the named obligations in the plan, then check again"})
+		next: inv.sameCommand(), nextReason: "after meeting or re-stating the named obligations in the plan"})
 }

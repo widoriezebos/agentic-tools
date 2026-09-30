@@ -85,7 +85,7 @@ func RunFileTurn(ctx context.Context, cfg FileTurnConfig) (FileTurnOutcome, erro
 	// never append or truncate.
 	journal, err := os.OpenFile(cfg.JournalPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
 	if err != nil {
-		return FileTurnOutcome{}, fmt.Errorf("journal create: %w", err)
+		return FileTurnOutcome{}, fmt.Errorf("the turn's record file could not be created: %w", err)
 	}
 	// Open order is the launch contract: the read side first (the server
 	// opens its write side symmetrically), then the write side. Regular

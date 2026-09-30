@@ -72,6 +72,7 @@ func designReviewRunWith(roots lifecycle.Roots, id string, asked httpd.DesignAsk
 		Outcome  string         `json:"outcome"`
 		Summary  string         `json:"summary"`
 		Decision string         `json:"decision"`
+		Next     *intentNext    `json:"next"`
 		Data     map[string]any `json:"data"`
 	}
 	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
@@ -79,6 +80,13 @@ func designReviewRunWith(roots lifecycle.Roots, id string, asked httpd.DesignAsk
 			Message: "design review answered nothing the page can read: " + strings.TrimSpace(stderr.String())}
 	}
 	answer := httpd.DesignAnswer{Outcome: result.Outcome, Summary: result.Summary, Decision: result.Decision}
+	if answer.Decision == "" && result.Next != nil && result.Outcome != intentConfirmed && result.Outcome != intentUnchanged {
+		// A refusal's resolving command is the page's decision line.
+		answer.Decision = "run: " + shellCommand(result.Next.Argv)
+		if result.Next.Reason != "" {
+			answer.Decision += "  (" + result.Next.Reason + ")"
+		}
+	}
 	for _, key := range []string{"ownerMessage", "obligations"} {
 		lines, _ := result.Data[key].([]any)
 		for _, line := range lines {

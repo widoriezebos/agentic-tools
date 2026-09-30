@@ -260,6 +260,11 @@ func setupLandingOwnerWithInputs(stderr io.Writer, metasystemRoot, repo string, 
 	var settings config.BatchLanding
 	var inputs batchowner.ProductionBatchOwnerInputs
 	clock := batchowner.CadenceProductionClock
+	// Supervision discards the component's standard error: every owner line
+	// also goes to its bounded log, and its last tick error stays for
+	// landing status.
+	stderr = io.MultiWriter(stderr, batchowner.NewOwnerLog(repo))
+	ticks := batchowner.NewTickErrors(repo)
 	release = func() error {
 		cadence.Stop()
 		if announced != nil {
@@ -298,7 +303,7 @@ func setupLandingOwnerWithInputs(stderr io.Writer, metasystemRoot, repo string, 
 		if err != nil {
 			return err
 		}
-		inputs.Log = stderr
+		inputs.Log, inputs.TickErrors = stderr, ticks
 		if held == nil {
 			acquired, err := batchowner.AcquireBatchOwnerForComponent(repo)
 			if acquired.Announced {
@@ -326,7 +331,7 @@ func setupLandingOwnerWithInputs(stderr io.Writer, metasystemRoot, repo string, 
 				held = nil
 				return err
 			}
-			batchowner.RunBatchOwnerPass(stderr, owner, *held, repo, clock, cadence)
+			batchowner.RunBatchOwnerPass(stderr, owner, *held, repo, clock, cadence, ticks)
 			return nil
 		}
 		return activePass()
@@ -456,7 +461,7 @@ func requireSuccessfulWatcherCensus(supervisionDir string, generation int) error
 		return fmt.Errorf("watcher census completed with verdict %s", verdict.Verdict)
 	}
 	if verdict.Generation == nil || *verdict.Generation != int64(generation) {
-		return fmt.Errorf("watcher census does not belong to supervision generation %d", generation)
+		return fmt.Errorf("the watcher's process census is from another install (want %d)", generation)
 	}
 	return nil
 }
@@ -543,7 +548,7 @@ func setupReaper(stderr io.Writer, repo, metasystemRoot string) func() {
 		if _, err := proofrun.ReconcileAttempts(metasystemRoot, proofrun.ReconcileOptions{
 			Emit: func(line string) { fmt.Fprintln(stderr, "supervise component reaper:", line) },
 		}); err != nil {
-			fmt.Fprintln(stderr, "supervise component reaper: proof attempts:", err)
+			fmt.Fprintln(stderr, "supervise component reaper: check runs:", err)
 		}
 	}
 }

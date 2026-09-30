@@ -63,11 +63,13 @@ func (inv *intentInvocation) resolveQuestion(ref string) (questionRef, *intentRe
 	}
 	if mission, id, explicit := strings.Cut(ref, "/"); explicit {
 		if !missionIDRe.MatchString(mission) || !missionIDRe.MatchString(id) {
-			return questionRef{}, &intentResult{Outcome: intentRefused, code: 2, Targets: targets, Summary: "M/Q names a mission and its question with lowercase words and dashes; nothing was done"}
+			return questionRef{}, &intentResult{Outcome: intentRefused, code: 2, Targets: targets, Summary: "nothing was done: a mission question is named mission/question, in lowercase words and dashes",
+				next: inv.publicArgv("question", "list"), nextReason: "lists the open questions with their ids"}
 		}
 		ask, found := inv.missionAsk(mission, id)
 		if !found {
-			return questionRef{}, &intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: fmt.Sprintf("mission %s has no question %s; nothing was done", mission, id)}
+			return questionRef{}, &intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: fmt.Sprintf("nothing was done: mission %s has no question %s", mission, id),
+				next: inv.publicArgv("question", "list"), nextReason: "lists the open questions with their ids"}
 		}
 		return questionRef{kind: "mission", id: id, mission: mission, ask: ask}, nil
 	}
@@ -87,7 +89,8 @@ func (inv *intentInvocation) resolveQuestion(ref string) (questionRef, *intentRe
 	case 1:
 		return matches[0], nil
 	case 0:
-		return questionRef{}, &intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: fmt.Sprintf("no question %s in the channel or any mission; nothing was done", shellCommand([]string{ref}))}
+		return questionRef{}, &intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: fmt.Sprintf("nothing was done: there is no question %s", shellCommand([]string{ref})),
+			next: inv.publicArgv("question", "list"), nextReason: "lists the open questions with their ids"}
 	}
 	names, lines := []string{}, []string{}
 	for _, match := range matches {
@@ -99,8 +102,8 @@ func (inv *intentInvocation) resolveQuestion(ref string) (questionRef, *intentRe
 		lines = append(lines, fmt.Sprintf("  %s (%s question)", name, match.kind))
 	}
 	return questionRef{}, &intentResult{Outcome: intentRefused, code: 2, Targets: targets, text: lines, Data: map[string]any{"candidates": names},
-		Summary:  fmt.Sprintf("%s names %d questions; nothing was done", shellCommand([]string{ref}), len(matches)),
-		Decision: "name it explicitly: channel:Q for the channel question, M/Q for a mission's question"}
+		Summary:  fmt.Sprintf("nothing was done: %d questions are named %s", len(matches), shellCommand([]string{ref})),
+		Decision: "run the same metasystem command with one of the full names listed below"}
 }
 
 func (q questionRef) publicName() string {
@@ -238,7 +241,8 @@ func runIntentAskRetry(inv *intentInvocation, id string) int {
 func runIntentAskWithdraw(inv *intentInvocation, id string) int {
 	reason := strings.TrimSpace(inv.input.text("reason"))
 	if reason == "" {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "withdrawing a question says why: --reason TEXT; nothing was done"})
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "nothing was done: withdrawing a question needs the reason",
+			next: append(inv.typedArgv(), "--reason", "<why>")})
 	}
 	if problem := inv.selectLayoutRoot(); problem != nil {
 		return inv.render(*problem)
@@ -263,7 +267,8 @@ func runIntentAskWithdraw(inv *intentInvocation, id string) int {
 	case errors.Is(err, channel.ErrChannelBusy):
 		return inv.render(intentResult{Outcome: intentInProgress, Targets: targets, Summary: err.Error(), next: inv.sameCommand(), nextReason: "the same withdrawal runs once the poll finishes"})
 	case err != nil:
-		return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "question " + id + " was not withdrawn: " + err.Error()})
+		return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "question " + id + " was not withdrawn: " + err.Error(),
+			next: inv.sameCommand(), nextReason: "once the cause is fixed"})
 	}
 	summary := "question " + id + " is withdrawn"
 	if before.Answer != nil {

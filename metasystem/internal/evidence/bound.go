@@ -24,6 +24,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/placement"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
 
 // SegmentIndexSchema names a segment index's format.
@@ -431,7 +432,7 @@ func (b Bound) ReportSegment(ctx context.Context, segment Segment, settings Pass
 		position.Unknown = segment.Unknown
 		return position
 	case !complete:
-		position.Pending = append(position.Pending, fmt.Sprintf("measurement did not finish within %s (reached %s of %s)", config.DiskSweepBudgetKey, formatGiB(total), segment.Root))
+		position.Pending = append(position.Pending, fmt.Sprintf("measurement did not finish within %s (reached %s of %s)", config.DiskSweepBudgetKey, textui.GiB(total), segment.Root))
 		return position
 	case total <= settings.CapBytes:
 		return position
@@ -531,5 +532,3 @@ func CommandPair(exportDir string) []string {
 	}
 	return []string{"metasystem evidence dispose --over-bound --export " + exportDir + " --preview", "metasystem evidence dispose --plan ID"}
 }
-
-func formatGiB(bytes int64) string { return fmt.Sprintf("%.2f GiB", float64(bytes)/float64(1<<30)) }

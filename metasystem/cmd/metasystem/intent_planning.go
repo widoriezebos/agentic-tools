@@ -8,12 +8,14 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/report"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
 
 // The planning commands author, claim and steer goals: open and edit a goal,
@@ -406,7 +408,7 @@ func intentPlanningCommands() []intentCommand {
 			run:      runIntentGoalSync,
 		},
 		{
-			object: "grant", action: "list", audience: "both", summary: "the recorded powers of attorney, live and closed",
+			object: "grant", action: "list", audience: "both", laidOut: true, summary: "the recorded powers of attorney, live and closed",
 			usage:    []string{"metasystem grant list [--all]"},
 			flags:    []intentFlag{{name: "all", usage: "include revoked and expired grants"}},
 			maxArgs:  0,
@@ -475,18 +477,27 @@ func (inv *intentInvocation) actingAs(verb, target string, actor intentActor) ([
 	agent := inv.input.has("lineage") || inv.owners.dependencies.ownerLineage != nil && inv.owners.dependencies.ownerLineage() != ""
 	if typed != "" && actor == actorAgent {
 		return nil, nil, &intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(target),
-			Summary:  fmt.Sprintf("%s is the claim holder's own act and takes no --by; nothing was done", verb),
-			Decision: "the session holding the goal runs it, acting in its own name"}
+			Summary: fmt.Sprintf("%s is done by the session holding the goal, not by a named person; nothing was done", verb),
+			next:    withoutOption(inv.typedArgv(), "by"), nextReason: "from the session that holds the goal"}
 	}
 	stopping := actor == actorEitherStopping
 	if stopping {
 		actor = actorEither
 	}
+	if typed == "" && actor == actorEither && agent && !inv.input.has("lineage") {
+		// A live general grant that admits this session makes a dual act
+		// the granting person's, before the session's own shortcut (M6),
+		// as pause and done already do; the owner proves it again.
+		if by, ok := inv.attorneyActor(); ok {
+			return append(args, "--by", by), nil, nil
+		}
+	}
 	if typed == "" && (actor == actorAgent || actor == actorEither && agent) {
 		if !agent {
 			return nil, nil, &intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(target),
-				Summary:  "cannot tell which session acts: no --lineage and no METASYSTEM_OWNER_LINEAGE; nothing was done",
-				Decision: "the session holding the work passes its own lineage with --lineage LINEAGE (a session is started with metasystem session start)"}
+				Summary: "no session is named, so nothing was done",
+				next:    append(inv.typedArgv(), "--lineage", "LINEAGE"), nextReason: "as the session that holds the work",
+				Details: []string{"a session's launcher names it in METASYSTEM_OWNER_LINEAGE; metasystem session start prepares one"}}
 		}
 		return args, nil, nil
 	}
@@ -499,33 +510,30 @@ func (inv *intentInvocation) actingAs(verb, target string, actor intentActor) ([
 	case flags.temporaryWord != "":
 		// A recorded relayed word names the person it relays.
 		if typed == "" {
-			err = fmt.Errorf("a relayed word names its person with --by")
+			return nil, nil, &intentResult{Outcome: intentRefused, code: 1, Targets: inv.targets(target),
+				Summary: "a relayed word needs the name of the person whose word it is, so nothing was done",
+				next:    append(inv.typedArgv(), "--by", "NAME"), nextReason: "with the name of the person whose word it is"}
 		}
 		flags.by = typed
 	default:
 		if err = resolveGoalHuman(flags, proof); err == nil && typed != "" && typed != flags.by {
-			err, mismatch = fmt.Errorf("--by %s is not the person enrolled at this terminal", typed), true
+			mismatch = true
 		}
 	}
-	if err != nil && stopping && typed != "" && !mismatch && flags.temporaryWord == "" {
+	if mismatch {
+		return nil, nil, &intentResult{Outcome: intentRefused, code: 1, Targets: inv.targets(target),
+			Summary: fmt.Sprintf("this terminal is enrolled for %s, not %s, so nothing was done", flags.by, typed),
+			next:    withoutOption(inv.typedArgv(), "by"), nextReason: "the enrolled name is filled in"}
+	}
+	if err != nil && stopping && typed != "" && flags.temporaryWord == "" {
 		// The owner proves the terminal itself when the request is built.
 		return append(args, "--by", typed), nil, nil
 	}
 	if err != nil {
-		// In the words the caller typed: the public command, who may run
-		// it, and the plain reason this shell is not that actor.
-		public := "metasystem " + inv.command.name
-		reason := strings.TrimPrefix(humanauthority.PlainReason(err), personOnlyPrefix)
-		summary := fmt.Sprintf("%s is a person's act, and %s; nothing was done", public, reason)
-		decision := humanauthority.PersonActRemedy(public)
 		if actor == actorEither && typed == "" {
-			summary = fmt.Sprintf("cannot tell who runs %s: %s, and no agent session is named; nothing was done", public, reason)
-			decision = humanauthority.PersonActRemedy(public) + "; an agent runs it from the session its launcher started, which names itself in METASYSTEM_OWNER_LINEAGE, or passes --lineage LINEAGE"
+			return nil, nil, inv.eitherRefusal(target, err, stopping)
 		}
-		if stopping && typed == "" {
-			decision = "a person names themself with --by NAME at a terminal no agent started, or: " + humanauthority.PersonActRemedy(public) + "; an agent passes --lineage LINEAGE"
-		}
-		return nil, nil, &intentResult{Outcome: intentRefused, code: 1, Targets: inv.targets(target), Summary: summary, Decision: decision}
+		return nil, nil, inv.personRefusal(target, err, typed)
 	}
 	return append(args, "--by", flags.by), &proof, nil
 }
@@ -543,8 +551,8 @@ func (inv *intentInvocation) textValue(name string) (string, *intentResult) {
 	}
 	if inv.input.has(name) && value != text {
 		return "", &intentResult{Outcome: intentRefused, code: 2,
-			Summary:  fmt.Sprintf("--%s and --%s-file both give the %s; nothing was done", name, name, name),
-			Decision: "give it once"}
+			Summary: fmt.Sprintf("--%s and --%s-file say different things; nothing was done", name, name),
+			next:    inv.typedArgvLess(name), nextReason: "keeps the text of --" + name + "-file"}
 	}
 	return text, nil
 }
@@ -554,7 +562,8 @@ func (inv *intentInvocation) textValue(name string) (string, *intentResult) {
 func (inv *intentInvocation) readTextFile(option, path string) (string, *intentResult) {
 	data, err := os.ReadFile(inv.inputPath(path))
 	if err != nil {
-		return "", &intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("--%s: %s; nothing was done", option, fileProblem("file", inv.inputPath(path), err))}
+		return "", &intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("--%s: %s; nothing was done", option, fileProblem("file", inv.inputPath(path), err)),
+			next: inv.typedArgv(), nextReason: "once --" + option + " names a readable file", Details: []string{err.Error()}}
 	}
 	return strings.TrimRight(string(data), "\r\n"), nil
 }
@@ -690,7 +699,11 @@ func (inv *intentInvocation) mutation(name string, args []string) func(syncReque
 // alternative to a compact box, never mixed with one, and incomplete limits
 // are refused rather than filled in.
 func (inv *intentInvocation) longBudgetBox(compact string) (string, *intentResult) {
-	var given, missing []string
+	longNames := make([]string, 0, len(intentLongBudgetFlags))
+	for _, definition := range intentLongBudgetFlags {
+		longNames = append(longNames, definition.name)
+	}
+	var given, missing, missingValues []string
 	values := map[string]string{}
 	for _, definition := range intentLongBudgetFlags {
 		if inv.input.has(definition.name) {
@@ -698,6 +711,7 @@ func (inv *intentInvocation) longBudgetBox(compact string) (string, *intentResul
 			values[definition.name] = inv.input.text(definition.name)
 		} else {
 			missing = append(missing, "--"+definition.name)
+			missingValues = append(missingValues, "--"+definition.name, definition.value)
 		}
 	}
 	switch {
@@ -705,12 +719,12 @@ func (inv *intentInvocation) longBudgetBox(compact string) (string, *intentResul
 		return compact, nil
 	case compact != "":
 		return "", &intentResult{Outcome: intentRefused, code: 2,
-			Summary:  fmt.Sprintf("gives the box twice, as %s and as %s; nothing was done", shellCommand([]string{compact}), strings.Join(given, " ")),
-			Decision: "give either the compact box or all five long limits"}
+			Summary: fmt.Sprintf("the budget is given twice, as %s and as %s; nothing was done", shellCommand([]string{compact}), strings.Join(given, " ")),
+			next:    inv.typedArgvLess(longNames...), nextReason: "keeps the compact budget"}
 	case len(missing) > 0:
 		return "", &intentResult{Outcome: intentRefused, code: 2,
-			Summary:  fmt.Sprintf("the long limits are one box and %s are missing; nothing was done", strings.Join(missing, ", ")),
-			Decision: "give all five long limits, or the complete compact box such as 1d/10/720m/1/3"}
+			Summary: fmt.Sprintf("the budget needs all five limits, and %s are missing; nothing was done", strings.Join(missing, ", ")),
+			next:    append(inv.typedArgv(), missingValues...), nextReason: "with the missing limits filled in"}
 	}
 	return fmt.Sprintf("%s/%s/%sm/%s/%s", values["elapsed-limit"], values["attempt-limit"], values["reserved-job-minutes-limit"],
 		values["active-job-limit"], values["review-round-limit"]), nil
@@ -750,7 +764,8 @@ func runIntentBudgetWithLimits(inv *intentInvocation) int {
 func runIntentGoalViews(inv *intentInvocation) int {
 	ready, tiers := inv.input.switched("ready"), inv.input.switched("tiers")
 	if inv.input.switched("pretty") && !inv.input.switched("json") {
-		return inv.refuse("", "--pretty formats JSON; add --json; nothing was read", "metasystem goal list --json --pretty")
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--pretty only formats --json output; nothing was read",
+			next: inv.typedArgvWith("--json"), nextReason: "adds --json"})
 	}
 	if ready || tiers {
 		filters := []string{"history"}
@@ -759,18 +774,21 @@ func runIntentGoalViews(inv *intentInvocation) int {
 		}
 		for _, name := range filters {
 			if inv.input.has(name) && (name != "history" || inv.input.switched(name)) {
-				return inv.refuse("", fmt.Sprintf("--%s does not apply to this view; nothing was read", name), "drop --"+name+" or list with metasystem goal list")
+				return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("--%s does not apply to this view; nothing was read", name),
+					next: inv.typedArgvLess(name), nextReason: "without --" + name})
 			}
 		}
 	}
 	if !ready && !tiers {
 		if inv.input.has("machine") {
-			return inv.refuse("", "--machine selects whose ready frontier goals --ready shows; nothing was read", "add --ready")
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--machine only picks whose ready goals --ready shows; nothing was read",
+				next: inv.typedArgvWith("--ready"), nextReason: "adds --ready"})
 		}
 		return runIntentGoals(inv)
 	}
 	if ready && tiers || inv.input.switched("all") {
-		return inv.refuse("", "--ready, --tiers and --all are different views; give one; nothing was read", "for example metasystem goal list --ready")
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--ready, --tiers and --all are different views; nothing was read",
+			next: append(inv.typedArgvLess("tiers", "all"), "--ready"), nextReason: "or keep --tiers or --all alone instead"})
 	}
 	if problem := inv.selectRoot(); problem != nil {
 		return inv.render(*problem)
@@ -796,7 +814,9 @@ func runIntentGoalViews(inv *intentInvocation) int {
 	}
 	labels := inv.input.values["label"]
 	if err := goal.ValidateLabels(labels); err != nil {
-		return inv.refuse("", err.Error(), "use label tokens the ledger accepts")
+		return inv.render(intentResult{Outcome: intentRefused, code: 2,
+			Summary: "a label is a lowercase word of up to 32 letters, digits and dashes; nothing was read",
+			next:    inv.typedArgvLess("label"), nextReason: "without --label, or with a label of that shape", Details: []string{err.Error()}})
 	}
 	machine := inv.input.text("machine")
 	var err error
@@ -806,11 +826,14 @@ func runIntentGoalViews(inv *intentInvocation) int {
 		err = goal.ValidateMachineNickname(machine)
 	}
 	if err != nil {
-		return inv.render(intentResult{Outcome: intentRefused, code: 1, Summary: "cannot tell whose frontier to read: " + err.Error(), Decision: "name the machine with --machine NAME"})
+		return inv.render(intentResult{Outcome: intentRefused, code: 1, Summary: "this machine's name can't be told, so nothing was read",
+			next: append(inv.typedArgvLess("machine"), "--machine", "NAME"), nextReason: "metasystem machine list names the machines",
+			Details: []string{err.Error()}})
 	}
 	frontier, err := goal.Next(projection, machine, labels...)
 	if err != nil {
-		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the ready frontier could not be read: " + err.Error()})
+		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the ready goals can't be worked out, so nothing was read",
+			next: inv.typedArgv(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}})
 	}
 	selection := goal.SelectNext(frontier)
 	result := intentResult{Outcome: intentConfirmed,
@@ -857,13 +880,22 @@ func (inv *intentInvocation) openGoal(id, intent, next string) int {
 	}
 	slices.Sort(missing)
 	if strings.TrimSpace(id) == "" {
-		missing = append([]string{"G"}, missing...)
+		missing = append([]string{"a goal id"}, missing...)
 	}
 	if len(missing) > 0 {
+		retry := inv.typedArgv()
+		if strings.TrimSpace(id) == "" {
+			retry = inv.typedArgvFor("GOAL")
+		}
+		placeholders := map[string]string{"--intent": "TEXT", "--next": "TEXT", "--risk": "severity=N,novelty=N,exposure=N,accumulation=N", "--basis": "TEXT"}
+		for _, name := range missing {
+			if value, ok := placeholders[name]; ok {
+				retry = append(retry, name, value)
+			}
+		}
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id),
 			Summary: fmt.Sprintf("a new goal needs %s; nothing was done", strings.Join(missing, ", ")),
-			Decision: "metasystem goal open G --intent TEXT --next TEXT --risk severity=N,novelty=N,exposure=N,accumulation=N --basis TEXT; " +
-				"the four risk answers and their basis are a judgement about this goal, not a default",
+			next:    retry, nextReason: "the risk answers and their basis are your judgement of this goal, never a default",
 			Data: map[string]any{"missing": missing}})
 	}
 	actor, _, problem := inv.actingAs("open", id, actorEither)
@@ -901,15 +933,21 @@ func runIntentEdit(inv *intentInvocation) int {
 	}
 	if len(obligation) > 0 {
 		if !inv.input.has("obligation") {
-			return inv.refuse(id, fmt.Sprintf("%s belong to an obligation, which --obligation STATE binds; nothing was done", strings.Join(obligation, " ")), "add --obligation STATE with every obligation field")
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id),
+				Summary: fmt.Sprintf("%s only go with --obligation; nothing was done", strings.Join(obligation, " ")),
+				next:    inv.typedArgvWith("--obligation", "DRAFT"), nextReason: "or OBSERVE, LIMITED or ENFORCED, with every obligation field"})
 		}
 		if len(edits) > 0 {
-			return inv.refuse(id, fmt.Sprintf("binds an obligation and edits %s in one command; they are two acts; nothing was done", strings.Join(edits, " ")), "run the edit and the obligation as two commands")
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id),
+				Summary: fmt.Sprintf("an obligation and an edit of %s are two separate commands; nothing was done", strings.Join(edits, " ")),
+				next:    inv.typedArgvLess(editFields...), nextReason: "binds the obligation; then run the edit on its own"})
 		}
 		return inv.bindObligation(id)
 	}
 	if inv.input.has("approved-ref") {
-		return inv.refuse(id, "--approved-ref authorizes an obligation; an edit takes none; nothing was done", "add --obligation STATE with every obligation field, or drop --approved-ref")
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id),
+			Summary: "--approved-ref only goes with --obligation; nothing was done",
+			next:    inv.typedArgvLess("approved-ref"), nextReason: "the edit without it"})
 	}
 	intent, problem := inv.textValue("intent")
 	if problem != nil {
@@ -924,10 +962,14 @@ func runIntentEdit(inv *intentInvocation) int {
 		return inv.render(*problem)
 	}
 	if next != "" && appended != "" {
-		return inv.refuse(id, "--next replaces the next step and --next-append adds to it; give one; nothing was done", "")
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id),
+			Summary: "--next replaces the next step and --next-append adds to it; give one; nothing was done",
+			next:    inv.typedArgvLess("next-append", "next-append-file"), nextReason: "keeps --next"})
 	}
 	if len(edits) == 0 {
-		return inv.refuse(id, "names nothing to change; nothing was done", "give --intent, --next, --next-append, --risk with --basis, --tier, --label or --unlabel")
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id),
+			Summary: "nothing to change was named; nothing was done",
+			next:    inv.typedArgvWith("--next", "TEXT"), nextReason: "or --intent, --next-append, --risk with --basis, --tier, --label, --unlabel"})
 	}
 	actor, proof, problem := inv.actingAs("edit", id, actorEither)
 	if problem != nil {
@@ -981,7 +1023,7 @@ func (inv *intentInvocation) heldGoals(projection goal.Projection) ([]string, st
 		lineage = inv.owners.dependencies.ownerLineage()
 	}
 	if lineage == "" {
-		return nil, "", fmt.Errorf("no --lineage and no METASYSTEM_OWNER_LINEAGE")
+		return nil, "", errors.New("no session is named: the command has no --lineage and the shell names no session")
 	}
 	machine, err := inv.owners.dependencies.machine(inv.stateRoot)
 	if err != nil {
@@ -1017,17 +1059,18 @@ func (inv *intentInvocation) uniqueHeldGoal() (string, int, bool) {
 	switch {
 	case err != nil:
 		return "", inv.render(intentResult{Outcome: intentRefused, code: 2,
-			Summary:  "needs a goal: without G it acts on the one goal this session holds, and the session is unknown: " + err.Error() + "; nothing was done",
-			Decision: "name the goal, or pass the session's --lineage LINEAGE"}), false
+			Summary: "no goal is named and no session holding one is known, so nothing was done",
+			next:    inv.typedArgvFor("GOAL"), nextReason: "names the goal", Details: []string{err.Error()}}), false
 	case len(held) == 1:
 		return held[0], 0, true
 	case len(held) == 0:
 		return "", inv.render(intentResult{Outcome: intentRefused, code: 1,
-			Summary: fmt.Sprintf("this session holds no claimed goal on %s; nothing was done", machine), Decision: "name the goal"}), false
+			Summary: fmt.Sprintf("no goal is named and this session holds none on %s; nothing was done", machine),
+			next:    inv.typedArgvFor("GOAL"), nextReason: "names the goal"}), false
 	}
 	return "", inv.render(intentResult{Outcome: intentRefused, code: 2,
-		Summary:  fmt.Sprintf("this session holds %d goals (%s); nothing was done", len(held), strings.Join(held, " ")),
-		Decision: "name the goal", Data: map[string]any{"candidates": held}}), false
+		Summary: fmt.Sprintf("this session holds %d goals (%s); nothing was done", len(held), strings.Join(held, " ")),
+		next:    inv.typedArgvFor(held[0]), nextReason: "or name another of them", Data: map[string]any{"candidates": held}}), false
 }
 
 func runIntentClaim(inv *intentInvocation) int {
@@ -1035,7 +1078,8 @@ func runIntentClaim(inv *intentInvocation) int {
 		return inv.takeOver()
 	}
 	if inv.input.has("reason") {
-		return inv.refuse("", "--reason explains a take-over; an ordinary claim takes none; nothing was done", "add --take-over to displace another machine's claim, or drop --reason")
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--reason is only for taking over another machine's claim; nothing was done",
+			next: inv.typedArgvLess("reason"), nextReason: "an ordinary claim; add --take-over instead to take a claim over"})
 	}
 	id, problem := inv.singleTarget()
 	if problem != nil {
@@ -1054,15 +1098,18 @@ func runIntentClaim(inv *intentInvocation) int {
 	}
 	if id == "" {
 		if inv.input.switched("arc") {
-			return inv.refuse("", "--arc claims a named goal's arc; nothing was done", "name the goal: metasystem goal claim G --arc")
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--arc needs the goal whose arc to claim; nothing was done",
+				next: inv.typedArgvFor("GOAL"), nextReason: "names the goal"})
 		}
 		machine, err := inv.owners.dependencies.machine(inv.stateRoot)
 		if err != nil {
-			return inv.render(intentResult{Outcome: intentRefused, code: 1, Summary: "cannot tell this machine: " + err.Error() + "; nothing was done", Decision: "name the goal"})
+			return inv.render(intentResult{Outcome: intentRefused, code: 1, Summary: "this machine's name can't be told, so no ready goal could be picked; nothing was done",
+				next: inv.typedArgvFor("GOAL"), nextReason: "names the goal to claim", Details: []string{err.Error()}})
 		}
 		frontier, err := goal.Next(projection, machine, inv.input.values["label"]...)
 		if err != nil {
-			return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the ready frontier could not be read: " + err.Error()})
+			return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the ready goals can't be worked out, so nothing was claimed",
+				next: inv.typedArgvFor("GOAL"), nextReason: "names the goal to claim", Details: []string{err.Error()}})
 		}
 		selection := goal.SelectNext(frontier)
 		switch selection.Kind {
@@ -1076,11 +1123,13 @@ func runIntentClaim(inv *intentInvocation) int {
 			id = selection.GoalID
 		default:
 			return inv.render(intentResult{Outcome: intentRefused, code: 1,
-				Summary:  fmt.Sprintf("no ready goal for %s; nothing was claimed", machine),
-				Decision: "a goal becomes ready when a person approves it", Data: map[string]any{"machine": machine, "frontier": frontier}})
+				Summary: fmt.Sprintf("no goal is ready for %s; nothing was claimed", machine),
+				next:    inv.publicArgv("goal", "list"), nextReason: "a goal is ready once a person approves it",
+				Data: map[string]any{"machine": machine, "frontier": frontier}})
 		}
 	} else if inv.input.has("label") {
-		return inv.refuse(id, "--label chooses among ready goals; a named goal takes none; nothing was done", "drop --label, or omit G")
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id), Summary: "--label picks among ready goals, and a goal is named; nothing was done",
+			next: inv.typedArgvLess("label"), nextReason: "claims the named goal"})
 	}
 	if file, _ := goalRecord(projection, id); file == nil {
 		return unknownGoal(inv, id)
@@ -1139,16 +1188,19 @@ func (inv *intentInvocation) takeOver() int {
 	}
 	reason := strings.TrimSpace(inv.input.text("reason"))
 	if reason == "" {
-		return inv.refuse(id, "taking over another machine's claim needs its reason; nothing was done", "say why with --reason TEXT")
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id), Summary: "taking over another machine's claim needs a reason; nothing was done",
+			next: inv.typedArgvWith("--reason", "TEXT"), nextReason: "TEXT says why"})
 	}
 	for _, name := range []string{"arc", "budget", "label"} {
 		if inv.input.has(name) {
-			return inv.refuse(id, "--"+name+" does not apply to a take-over; nothing was done", "drop --"+name)
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id), Summary: "--" + name + " does not apply to a take-over; nothing was done",
+				next: inv.typedArgvLess(name), nextReason: "without --" + name})
 		}
 	}
 	for _, definition := range intentLongBudgetFlags {
 		if inv.input.has(definition.name) {
-			return inv.refuse(id, "--"+definition.name+" does not apply to a take-over; nothing was done", "drop --"+definition.name)
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id), Summary: "--" + definition.name + " does not apply to a take-over; nothing was done",
+				next: inv.typedArgvLess(definition.name), nextReason: "without --" + definition.name})
 		}
 	}
 	actor, proof, problem := inv.actingAs("steal", id, actorHuman)
@@ -1168,7 +1220,8 @@ func runIntentRelease(inv *intentInvocation) int {
 	}
 	reason := strings.TrimSpace(inv.input.text("reason"))
 	if reason == "" {
-		return inv.refuse(id, "a release is recorded with its reason; nothing was done", "say why with --reason TEXT")
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id), Summary: "a release needs a reason; nothing was done",
+			next: inv.typedArgvWith("--reason", "TEXT"), nextReason: "TEXT says why the goal is released"})
 	}
 	actor, proof, problem := inv.actingAs("release", id, actorEitherStopping)
 	if problem != nil {
@@ -1254,8 +1307,8 @@ func (inv *intentInvocation) reviewRoot(id, review string) (string, *intentResul
 	root, err := dispatchcore.ChainRootOf(inv.stateRoot, review)
 	if err != nil {
 		return "", &intentResult{Outcome: intentRefused, code: 1, Targets: inv.targets(id),
-			Summary:  fmt.Sprintf("review %s cannot be read: %v; nothing was done", shellCommand([]string{review}), err),
-			Decision: "name a recorded review job of this goal"}
+			Summary: fmt.Sprintf("no review %s of this goal can be read; nothing was done", shellCommand([]string{review})),
+			next:    inv.publicArgv("status", id), nextReason: "shows the goal's work and its reviews", Details: []string{err.Error()}}
 	}
 	return root, nil
 }
@@ -1296,7 +1349,13 @@ func runIntentDecide(inv *intentInvocation) int {
 		missing = append(missing, "--reason")
 	}
 	if len(missing) > 0 {
-		return inv.refuse(id, fmt.Sprintf("a risk decision needs %s; nothing was done", strings.Join(missing, ", ")), "name the finding, its review and why its risk is accepted")
+		retry := inv.typedArgv()
+		for _, name := range missing {
+			retry = append(retry, name, map[string]string{"--finding": "FINDING", "--review": "REVIEW", "--reason": "TEXT"}[name])
+		}
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id),
+			Summary: fmt.Sprintf("accepting a risk needs %s; nothing was done", strings.Join(missing, ", ")),
+			next:    retry, nextReason: "the finding, its review and why its risk is accepted"})
 	}
 	chain := inv.inferredChain
 	if chain == "" {
@@ -1336,11 +1395,13 @@ func runIntentPin(inv *intentInvocation) int {
 	clear := inv.input.switched("clear")
 	switch {
 	case clear && machine != "":
-		return inv.refuse(id, fmt.Sprintf("names machine %s and --clear; nothing was done", shellCommand([]string{machine})), "pin to the machine, or clear the pin")
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id), Summary: fmt.Sprintf("machine %s and --clear contradict each other; nothing was done", shellCommand([]string{machine})),
+			next: inv.typedArgvLess("clear"), nextReason: "pins the goal to " + machine + "; or clear the pin with --clear alone"})
 	case clear:
 		machine = "-"
 	case machine == "" || machine == "-":
-		return inv.refuse(id, "needs the machine to pin the goal to; nothing was done", "metasystem goal pin "+id+" MACHINE, or metasystem goal pin "+id+" --clear")
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id), Summary: "no machine is named to pin the goal to; nothing was done",
+			next: inv.publicArgv("goal", "pin", id, "MACHINE"), nextReason: "metasystem machine list names the machines; --clear removes a pin"})
 	}
 	actor, proof, problem := inv.actingAs("set-pin", id, actorHuman)
 	if problem != nil {
@@ -1360,12 +1421,14 @@ func runIntentPrioritize(inv *intentInvocation) int {
 	priority := inv.input.text("priority")
 	if len(inv.input.args) > 1 {
 		if priority != "" && priority != inv.input.args[1] {
-			return inv.refuse(id, fmt.Sprintf("names two priorities, %s and --priority %s; nothing was done", inv.input.args[1], priority), "give the priority once")
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id), Summary: fmt.Sprintf("two priorities are named, %s and --priority %s; nothing was done", inv.input.args[1], priority),
+				next: inv.typedArgvLess("priority"), nextReason: "keeps " + inv.input.args[1]})
 		}
 		priority = inv.input.args[1]
 	}
 	if priority != "1" && priority != "2" && priority != "3" {
-		return inv.refuse(id, fmt.Sprintf("the priority is 1, 2 or 3, not %s; nothing was done", shellCommand([]string{priority})), "metasystem goal prioritize "+id+" 1|2|3")
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id), Summary: fmt.Sprintf("the priority is 1, 2 or 3, not %s; nothing was done", shellCommand([]string{priority})),
+			next: inv.publicArgv("goal", "prioritize", id, "1"), nextReason: "or 2 or 3; 1 is the highest"})
 	}
 	actor, _, problem := inv.actingAs("set-priority", id, actorHuman)
 	if problem != nil {
@@ -1388,7 +1451,8 @@ func runIntentReopen(inv *intentInvocation) int {
 		return inv.render(*problem)
 	}
 	if strings.TrimSpace(next) == "" {
-		return inv.refuse(id, "a reopened goal needs its fresh next step; nothing was done", "say what happens next with --next TEXT")
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id), Summary: "a reopened goal needs its next step; nothing was done",
+			next: inv.typedArgvWith("--next", "TEXT"), nextReason: "TEXT says what happens next"})
 	}
 	projection, _, problem := inv.projection()
 	if problem != nil {
@@ -1451,11 +1515,13 @@ func runIntentAbandon(inv *intentInvocation) int {
 		return inv.render(*problem)
 	}
 	if strings.TrimSpace(reason) == "" {
-		return inv.refuse(id, "needs the reason the goal will never be worked; nothing was done", "say why with --reason TEXT")
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id), Summary: "abandoning a goal needs a reason; nothing was done",
+			next: inv.typedArgvWith("--reason", "TEXT"), nextReason: "TEXT says why it will never be worked"})
 	}
 	successor := inv.input.text("successor")
 	if successor == id {
-		return inv.refuse(id, "a goal cannot carry itself; nothing was done", "name the live goal carrying the work")
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id), Summary: "a goal cannot be its own successor; nothing was done",
+			next: append(inv.typedArgvLess("successor"), "--successor", "GOAL"), nextReason: "GOAL is the live goal that carries the work on"})
 	}
 	actor, _, problem := inv.actingAs("abandon", id, actorHuman)
 	if problem != nil {
@@ -1509,7 +1575,8 @@ func (inv *intentInvocation) edge(verb string) int {
 	}
 	on := inv.input.text("on")
 	if on == "" {
-		return inv.refuse(id, "needs the other goal: --on G2; nothing was done", "metasystem "+verb+" "+id+" --on G2")
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id), Summary: "no other goal is named with --on; nothing was done",
+			next: inv.typedArgvWith("--on", "GOAL"), nextReason: "GOAL is the other goal"})
 	}
 	actor, _, problem := inv.actingAs(verb, id, actorEither)
 	if problem != nil {
@@ -1534,7 +1601,8 @@ func runIntentUnapprove(inv *intentInvocation) int {
 		return inv.render(*problem)
 	}
 	if strings.TrimSpace(reason) == "" {
-		return inv.refuse(id, "needs the reason the approval is withdrawn; nothing was done", "say why with --reason TEXT")
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id), Summary: "withdrawing an approval needs a reason; nothing was done",
+			next: inv.typedArgvWith("--reason", "TEXT"), nextReason: "TEXT says why"})
 	}
 	actor, _, problem := inv.actingAs("unapprove", id, actorHuman)
 	if problem != nil {
@@ -1554,7 +1622,10 @@ func runIntentGrant(inv *intentInvocation) int {
 		return runIntentGrantEverything(inv)
 	}
 	if inv.input.has("for") {
-		return inv.refuse("", "--for goes with --acts everything; a scoped grant ends with --until YYYY-MM-DD; nothing was done", grantEndExamples)
+		tomorrow := time.Now().AddDate(0, 0, 1).Format("2006-01-02")
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "a grant of named acts ends on a date (--until), not after --for; nothing was done",
+			next: append(withoutOption(inv.typedArgv(), "for"), "--until", tomorrow), nextReason: "--for is for --acts everything",
+			Details: []string{grantEndExamples}})
 	}
 	var missing []string
 	for _, name := range []string{"tiers", "acts", "until"} {
@@ -1563,7 +1634,13 @@ func runIntentGrant(inv *intentInvocation) int {
 		}
 	}
 	if len(missing) > 0 {
-		return inv.refuse("", fmt.Sprintf("a power of attorney needs %s; nothing was done", strings.Join(missing, ", ")), "metasystem grant add --tiers 1 --acts approve,budget --until YYYY-MM-DD")
+		examples := map[string]string{"--tiers": "1", "--acts": "approve,budget", "--until": time.Now().AddDate(0, 0, 1).Format("2006-01-02")}
+		retry := inv.typedArgv()
+		for _, name := range missing {
+			retry = append(retry, name, examples[name])
+		}
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("a grant needs %s; nothing was done", strings.Join(missing, ", ")),
+			next: retry, nextReason: "the filled-in values are examples: pick the tiers, acts and end date you mean"})
 	}
 	var verbs []string
 	for _, act := range strings.Split(inv.input.text("acts"), ",") {
@@ -1573,7 +1650,9 @@ func runIntentGrant(inv *intentInvocation) int {
 		}
 		verb, known := grantActs[act]
 		if !known {
-			return inv.refuse("", fmt.Sprintf("%s is not an act a power of attorney covers; they are approve, budget and resume-parked; nothing was done", shellCommand([]string{act})), "")
+			return inv.render(intentResult{Outcome: intentRefused, code: 2,
+				Summary: fmt.Sprintf("%s isn't an act a grant covers; nothing was done", shellCommand([]string{act})),
+				next:    append(withoutOption(inv.typedArgv(), "acts"), "--acts", "approve,budget,resume-parked"), nextReason: "keep the acts you mean"})
 		}
 		if !slices.Contains(verbs, verb) {
 			verbs = append(verbs, verb)
@@ -1588,7 +1667,10 @@ func runIntentGrant(inv *intentInvocation) int {
 	}
 	if proof != nil && proof.Helm != nil && proof.Helm.Grant != "" {
 		_ = humanauthority.RecordAttorneyRefusal(inv.stateRoot, *proof, "grant add", "a grant is added only by the person's own proof", proof.CheckedAt)
-		return inv.refuse("", "a power of attorney is added only by the person's own proof, never under a grant; nothing was done", humanauthority.PersonActRemedy("metasystem grant add"))
+		refusal := inv.personRefusal("", proof.WalkRefusal(), "")
+		refusal.code = 2
+		refusal.Details = append(refusal.Details, "a grant is added only by the person, never under another grant ("+proof.Helm.Grant+")")
+		return inv.render(*refusal)
 	}
 	args := append([]string{"--root", inv.stateRoot, "--tiers", inv.input.text("tiers"), "--verbs", strings.Join(verbs, ","), "--expires", inv.input.text("until")}, actor...)
 	report := &ownerReport{}
@@ -1613,7 +1695,8 @@ func runIntentRevoke(inv *intentInvocation) int {
 	entry := inv.input.text("grant")
 	if len(inv.input.args) > 0 {
 		if entry != "" && entry != inv.input.args[0] {
-			return inv.refuse("", "names two grants; nothing was done", "name the grant once")
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "two different grants are named; nothing was done",
+				next: withoutOption(inv.typedArgv(), "grant"), nextReason: "name the grant once"})
 		}
 		entry = inv.input.args[0]
 	}
@@ -1653,7 +1736,8 @@ func runIntentSplit(inv *intentInvocation) int {
 	}
 	plan := inv.input.text("plan")
 	if plan == "" {
-		return inv.refuse(id, "needs the member draft: --plan FILE; nothing was done", "write the members in the draft format goal split reads")
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id), Summary: "a split needs the draft of its member goals; nothing was done",
+			next: inv.typedArgvWith("--plan", "FILE"), nextReason: "FILE lists the member goals in the draft format"})
 	}
 	actor, _, problem := inv.actingAs("split", id, actorEither)
 	if problem != nil {
@@ -1673,12 +1757,14 @@ func runIntentGroup(inv *intentInvocation) int {
 	arc := inv.input.text("arc")
 	if len(inv.input.args) > 1 {
 		if arc != "" && arc != inv.input.args[1] {
-			return inv.refuse(id, "names two arcs; nothing was done", "name the arc once")
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id), Summary: fmt.Sprintf("two arcs are named, %s and --arc %s; nothing was done", inv.input.args[1], arc),
+				next: inv.typedArgvLess("arc"), nextReason: "keeps " + inv.input.args[1]})
 		}
 		arc = inv.input.args[1]
 	}
 	if arc == "" {
-		return inv.refuse(id, "needs the arc: metasystem goal group G ARC; nothing was done", "")
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id), Summary: "no arc is named to group the goal into; nothing was done",
+			next: inv.publicArgv("goal", "group", id, "ARC"), nextReason: "ARC names the arc"})
 	}
 	actor, proof, problem := inv.actingAs("set-arc", id, actorEither)
 	if problem != nil {
@@ -1725,12 +1811,20 @@ func runIntentResolve(inv *intentInvocation) int {
 	}
 	switch {
 	case inv.input.has("test") && len(fixtureGiven) > 0:
-		return inv.refuse(id, fmt.Sprintf("gives both --test and the fixture proof %s; nothing was done", strings.Join(fixtureGiven, " ")), "a finding is discharged by its test, or a fixture obligation by its four proof fields")
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id), Summary: fmt.Sprintf("--test and %s are two different ways to resolve it; give one; nothing was done", strings.Join(fixtureGiven, " ")),
+			next: inv.typedArgvLess(fixture...), nextReason: "resolves the finding by its test; a fixture obligation takes the four fixture fields instead"})
 	case !inv.input.has("test") && len(fixtureGiven) < len(fixture):
 		missing = append(missing, "--test (or all of --implementation-chain, --artifact, --result, --critic)")
 	}
 	if len(missing) > 0 {
-		return inv.refuse(id, fmt.Sprintf("discharging a review obligation needs %s; nothing was done", strings.Join(missing, ", ")), "")
+		retry := inv.typedArgv()
+		for _, name := range missing {
+			if flag, _, _ := strings.Cut(name, " "); strings.HasPrefix(flag, "--") {
+				retry = append(retry, flag, strings.ToUpper(strings.TrimPrefix(flag, "--")))
+			}
+		}
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id), Summary: fmt.Sprintf("resolving a review finding needs %s; nothing was done", strings.Join(missing, ", ")),
+			next: retry, nextReason: "with the missing values filled in"})
 	}
 	chain, problem := inv.reviewRoot(id, inv.input.text("review"))
 	if problem != nil {
@@ -1742,7 +1836,8 @@ func runIntentResolve(inv *intentInvocation) int {
 	}
 	if proof == nil {
 		if chain == goal.HumanCarriedChain {
-			return inv.refuse(id, "a human-carried finding is discharged by the person who carried it; nothing was done", humanauthority.PersonActRemedy("metasystem "+inv.command.name+" "+id))
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id), Summary: "a finding a person carried is resolved by that person, not by a session; nothing was done",
+				next: inv.typedArgvLess("lineage"), nextReason: "in a terminal you opened yourself"})
 		}
 		return inv.render(inv.goalAct(id, "resolve", func(dependencies syncRequestDependencies) int {
 			return inv.dischargeAsOwningSession(id, chain, actor, dependencies)
@@ -1795,16 +1890,20 @@ func runIntentNotes(inv *intentInvocation) int {
 	}
 	switch {
 	case adding && closing:
-		return inv.refuse(id, "adds and closes notes in one command; they are two acts; nothing was done", "run them as two commands")
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id), Summary: "adding and closing notes are two separate commands; nothing was done",
+			next: inv.typedArgvLess("close", "fixed", "moved", "accepted"), nextReason: "adds the notes; then close with its own command"})
 	case adding:
 		if inv.input.text("read") == "" {
-			return inv.refuse(id, "added notes name the read they came from: --read LABEL; nothing was done", "")
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id), Summary: "added notes need the read they came from; nothing was done",
+				next: inv.typedArgvWith("--read", "LABEL"), nextReason: "LABEL names the read"})
 		}
 		if inv.input.has("add") && inv.input.has("add-file") {
-			return inv.refuse(id, "--add and --add-file both give the items; nothing was done", "give them one way")
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id), Summary: "--add and --add-file both give the notes; give them one way; nothing was done",
+				next: inv.typedArgvLess("add-file"), nextReason: "keeps --add"})
 		}
 		if len(closure) > 0 {
-			return inv.refuse(id, strings.Join(closure, " ")+" close a note; nothing was done", "")
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id), Summary: strings.Join(closure, " ") + " only go with closing a note; nothing was done",
+				next: inv.typedArgvLess("fixed", "moved", "accepted"), nextReason: "adds the notes"})
 		}
 		actor, proof, problem := inv.actingAs("read-items", id, actorEither)
 		if problem != nil {
@@ -1820,10 +1919,18 @@ func runIntentNotes(inv *intentInvocation) int {
 		}))
 	case closing:
 		if len(closure) != 1 {
-			return inv.refuse(id, "closing a note takes exactly one of --fixed COMMIT, --moved G2 or --accepted REASON; nothing was done", "")
+			retry := inv.typedArgvLess("fixed", "moved", "accepted")
+			if len(closure) == 0 {
+				retry = append(retry, "--fixed", "COMMIT")
+			} else {
+				retry = append(retry, closure[0], inv.input.text(strings.TrimPrefix(closure[0], "--")))
+			}
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id), Summary: "closing a note takes one of --fixed, --moved or --accepted; nothing was done",
+				next: retry, nextReason: "or --moved GOAL or --accepted REASON"})
 		}
 		if inv.input.has("read") {
-			return inv.refuse(id, "--read labels added notes; nothing was done", "drop --read")
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id), Summary: "--read only goes with adding notes; nothing was done",
+				next: inv.typedArgvLess("read"), nextReason: "closes the note"})
 		}
 		actor, proof, problem := inv.actingAs("read-items", id, actorEither)
 		if problem != nil {
@@ -1835,7 +1942,8 @@ func runIntentNotes(inv *intentInvocation) int {
 			return runGoalReadItemsCloseWithProof(args, proof, inv.owners.commandNow, dependencies, nil)
 		}))
 	case len(closure) > 0 || inv.input.has("read"):
-		return inv.refuse(id, "names how to add or close a note but not the note; nothing was done", "add --add TEXT or --close ITEM")
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id), Summary: "no note is named to add or close; nothing was done",
+			next: inv.typedArgvWith("--close", "ITEM"), nextReason: "or --add TEXT to add a note"})
 	}
 	projection, _, problem := inv.projection()
 	if problem != nil {
@@ -1981,7 +2089,8 @@ func runIntentIncidents(inv *intentInvocation) int {
 // entry through the register's owner.
 func runIntentIncidentAct(inv *intentInvocation, sub string) int {
 	if len(inv.input.args) != 1 {
-		return inv.refuse("", "needs the incident: metasystem incident "+inv.command.action+" I; nothing was done", "the incident ids are listed by metasystem incident list")
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "no incident is named; nothing was done",
+			next: inv.publicArgv("incident", "list"), nextReason: "names the incidents; then repeat with one of them"})
 	}
 	entry := inv.input.args[0]
 	if problem := inv.selectRoot(); problem != nil {
@@ -1992,10 +2101,12 @@ func runIntentIncidentAct(inv *intentInvocation, sub string) int {
 	var proof *humanauthority.Proof
 	if sub == "own" {
 		if inv.input.has("reason") {
-			return inv.refuse("", "--reason closes an incident; owning takes none; nothing was done", "drop --reason")
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--reason is for closing an incident, not owning it; nothing was done",
+				next: inv.typedArgvLess("reason"), nextReason: "owns the incident"})
 		}
 		if inv.input.text("goal") == "" {
-			return inv.refuse("", "owning an incident names the goal fixing it: --goal G; nothing was done", "")
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "owning an incident needs the goal that fixes it; nothing was done",
+				next: inv.typedArgvWith("--goal", "GOAL"), nextReason: "GOAL is the goal that fixes it"})
 		}
 		actorKind := actorEither
 		if inv.input.has("to") {
@@ -2010,12 +2121,14 @@ func runIntentIncidentAct(inv *intentInvocation, sub string) int {
 	} else {
 		for _, name := range []string{"goal", "branch", "to"} {
 			if inv.input.has(name) {
-				return inv.refuse("", "--"+name+" belongs to owning an incident; nothing was done", "drop --"+name)
+				return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--" + name + " is for owning an incident, not closing it; nothing was done",
+					next: inv.typedArgvLess(name), nextReason: "closes the incident"})
 			}
 		}
 		reason := strings.TrimSpace(inv.input.text("reason"))
 		if reason == "" {
-			return inv.refuse("", "closing an incident needs its reason; nothing was done", "say why with --reason TEXT")
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "closing an incident needs a reason; nothing was done",
+				next: inv.typedArgvWith("--reason", "TEXT"), nextReason: "TEXT says why"})
 		}
 		actor, observed, problem := inv.actingAs("trunk-red close", entry, actorHuman)
 		if problem != nil {
@@ -2045,35 +2158,99 @@ func runIntentGrantList(inv *intentInvocation) int {
 	if projection.Tree != nil && projection.Tree.Root != nil {
 		entries = projection.Tree.Root.PowerOfAttorney
 	}
-	lines, views := []string{}, []map[string]any{}
-	zone := inv.owners.helm.withDefaults().zone
+	views := []map[string]any{}
+	var shown []grantShown
 	for _, entry := range entries {
-		if entry.General() {
-			line, live := generalGrantLine(entry, now, zone)
-			if !live && !inv.input.switched("all") {
-				continue
-			}
-			lines = append(lines, line)
-			views = append(views, map[string]any{"grant": entry.ID, "by": entry.By, "acts": entry.Verbs, "for": entry.For, "checkout": entry.Checkout,
-				"lineage": entry.Lineage, "since": entry.Since, "until": entry.Until, "revoked": entry.Revoked, "live": live})
-			continue
-		}
 		live, why := entry.LiveAt(now)
 		if !live && !inv.input.switched("all") {
 			continue
 		}
-		state := "live"
-		if !live {
-			state = "closed: " + why
+		shown = append(shown, grantShown{entry: entry, live: live, why: why})
+		if entry.General() {
+			views = append(views, map[string]any{"grant": entry.ID, "by": entry.By, "acts": entry.Verbs, "for": entry.For, "checkout": entry.Checkout,
+				"lineage": entry.Lineage, "since": entry.Since, "until": entry.Until, "revoked": entry.Revoked, "live": live})
+			continue
 		}
-		tiers := make([]string, 0, len(entry.Tiers))
-		for _, tier := range entry.Tiers {
-			tiers = append(tiers, fmt.Sprint(tier))
-		}
-		lines = append(lines, fmt.Sprintf("  %s  by %s  tiers %s  acts %s  until %s  %s", entry.ID, entry.By, strings.Join(tiers, ","), strings.Join(entry.Verbs, ","), entry.Expires, state))
 		views = append(views, map[string]any{"grant": entry.ID, "by": entry.By, "tiers": entry.Tiers, "acts": entry.Verbs, "since": entry.Since,
 			"until": entry.Expires, "revoked": entry.Revoked, "live": live})
 	}
-	return inv.render(intentResult{Outcome: intentConfirmed, text: lines, Data: map[string]any{"grants": views},
-		Summary: fmt.Sprintf("%d power(s) of attorney", len(views))})
+	return inv.render(intentResult{Outcome: intentConfirmed, Data: map[string]any{"grants": views},
+		Summary: fmt.Sprintf("%d power(s) of attorney", len(views)), view: grantListView(shown, inv.input.switched("all"))})
+}
+
+// grantShown is one grant grant list shows, with whether it is live and,
+// when it is not, why.
+type grantShown struct {
+	entry goal.PowerOfAttorneyEntry
+	live  bool
+	why   string
+}
+
+// grantClosed says why a grant no longer holds, in local time: revoked
+// when and by whom, ended when, or the ledger's own reason.
+func grantClosed(entry goal.PowerOfAttorneyEntry, why string, env textui.Env) string {
+	if revoked, err := time.Parse(time.RFC3339, entry.Revoked); err == nil {
+		return "revoked " + env.Time(revoked) + " by " + strings.TrimPrefix(entry.RevokedBy, "human:")
+	}
+	if until, err := time.Parse(time.RFC3339, entry.Until); err == nil && entry.General() && !until.After(env.Now) {
+		return "ended " + env.Time(until)
+	}
+	return "closed: " + why
+}
+
+// grantListView is grant list's page (output-style §6.6): how many grants
+// are live, then one card per grant, its id whole on a row of its own.
+func grantListView(grants []grantShown, all bool) func(*textui.Page) {
+	return func(page *textui.Page) {
+		env := page.Env()
+		live := 0
+		for _, grant := range grants {
+			if grant.live {
+				live++
+			}
+		}
+		switch {
+		case all && len(grants) > 0:
+			page.Headline(textui.Count(len(grants), "grant", "grants"), textui.Number(int64(live))+" live", textui.Number(int64(len(grants)-live))+" closed")
+		case len(grants) == 0 && all:
+			page.Headline("No grants recorded")
+		case len(grants) == 0:
+			page.Headline("No live grants")
+			page.Hint(textui.Hint{Argv: []string{"metasystem", "grant", "list", "--all"}, Reason: "also lists revoked and expired grants"})
+		default:
+			page.Headline(textui.Count(len(grants), "grant", "grants") + ", live")
+		}
+		section := page.Section("", "")
+		for _, grant := range grants {
+			entry := grant.entry
+			by := strings.TrimPrefix(entry.By, "human:")
+			state, end := textui.Live, ""
+			if !grant.live {
+				state, end = textui.Stopped, grantClosed(entry, grant.why, env)
+			}
+			if entry.General() {
+				if grant.live {
+					until, _ := time.Parse(time.RFC3339, entry.Until)
+					end = env.Until(until)
+				}
+				card := section.Item(state, strings.Join([]string{goal.GeneralAct, "by " + by, end}, " · "))
+				// A checkout is named from the home directory, never
+				// relative to the repository it may itself be inside.
+				outside := env
+				outside.Repo = ""
+				card.KV("for", textui.Plain("the main session of "+entry.For+" ("+outside.Path(entry.Checkout)+")"))
+				card.KV("id", textui.Plain(entry.ID))
+				continue
+			}
+			tiers := make([]string, 0, len(entry.Tiers))
+			for _, tier := range entry.Tiers {
+				tiers = append(tiers, fmt.Sprint(tier))
+			}
+			if grant.live {
+				end = "until " + entry.Expires
+			}
+			card := section.Item(state, strings.Join([]string{strings.Join(entry.Verbs, ", "), "tiers " + strings.Join(tiers, ", "), "by " + by, end}, " · "))
+			card.KV("id", textui.Plain(entry.ID))
+		}
+	}
 }

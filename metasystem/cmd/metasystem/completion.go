@@ -117,10 +117,10 @@ func runComplete(args []string, stdout, stderr io.Writer, owners completeOwners)
 	switch {
 	case isHelpWord(args[0]):
 		fmt.Fprintln(stdout, completeEntryUsage)
-		fmt.Fprintln(stdout, "The shell's completion glue starts it with the words typed so far; metasystem system completion SHELL prints that glue.")
+		fmt.Fprintln(stdout, "Your shell's completion script calls it; metasystem system completion SHELL prints that script.")
 		return 0
 	case args[0] != "--":
-		fmt.Fprintf(stderr, "metasystem internal __complete: does not take %s; nothing was done\n", args[0])
+		fmt.Fprintf(stderr, "__complete does not take %s; nothing was done\n", args[0])
 		fmt.Fprintln(stderr, completeEntryUsage)
 		return 2
 	}

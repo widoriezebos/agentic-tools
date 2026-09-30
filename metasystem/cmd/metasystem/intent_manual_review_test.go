@@ -86,7 +86,7 @@ func TestIntentManualDiffReview(t *testing.T) {
 		t.Fatalf("review diff: %d %+v", code, supplied)
 	}
 	code, empty := run(root, "work", "review", "--changes")
-	if code != 2 || empty.Outcome != intentRefused || !strings.Contains(empty.Summary, "--brief") {
+	if code != 2 || empty.Outcome != intentRefused || !strings.Contains(empty.Summary, "needs a brief") || empty.Next == nil || !slices.Contains(empty.Next.Argv, "--brief") {
 		t.Fatalf("review changes without a brief: %d %+v", code, empty)
 	}
 	code, unknown := run(root, "work", "status", "read:read-000000000000000000000000")

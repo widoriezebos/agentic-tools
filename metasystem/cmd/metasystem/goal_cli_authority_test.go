@@ -166,8 +166,8 @@ func TestGoalCLIAuthorityWrongTerminal(t *testing.T) {
 		t.Fatal("a non-terminal caller was allowed to stop the metasystem")
 	} else {
 		got := "metasystem " + publicProcessVerb(refusal.verb) + ": " + strings.TrimSuffix(refusal.sentence, ".") + ".\n" + refusal.second + "\n"
-		want := "metasystem system stop: system stop is a human act at a terminal; this caller is DELEGATE.\n" +
-			"at an agent-free terminal, run: metasystem system stop --repo " + checkout + "\n"
+		want := "metasystem system stop: an agent started this shell.\n" +
+			"in a terminal you opened yourself, run: metasystem system stop --repo " + checkout + "\n"
 		if refusal.code != 1 || refusal.plain != "" || got != want {
 			t.Fatalf("wrong-terminal refusal did not match the process-verb grammar: code=%d plain=%q\n got %q\nwant %q", refusal.code, refusal.plain, got, want)
 		}

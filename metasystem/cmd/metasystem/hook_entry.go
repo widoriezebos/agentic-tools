@@ -339,7 +339,7 @@ func (o hookOwners) Up(request hooks.UpRequest, stdout, stderr io.Writer) int {
 	}
 	scale := upWaitScale()
 	if scale == 0 {
-		fmt.Fprintln(stderr, "up: METASYSTEM_FIXTURE_CAP_SCALE_MILLI must be a positive integer")
+		fmt.Fprintf(stderr, "the test time scale %s is not a whole number above zero\n", "METASYSTEM_FIXTURE_CAP_SCALE_MILLI")
 		return 2
 	}
 	// Supervision control, enrollment and accounting belong to the
@@ -498,12 +498,12 @@ func (o hookOwners) StopBlock(request hooks.StopBlockRequest) (string, int) {
 func (o hookOwners) StopInput(request hooks.StopInputRequest, stderr io.Writer) int {
 	claimEpoch, err := strconv.ParseInt(request.ClaimEpoch, 10, 64)
 	if err != nil && request.ClaimEpoch != "" {
-		fmt.Fprintln(stderr, "report stop-input: the claim epoch is not an integer")
+		fmt.Fprintln(stderr, "the stop report input is not valid: its checkout claim is not a whole number")
 		return 2
 	}
 	if request.Root == "" || request.Runtime == "" || request.Session == "" || request.Attempt == "" ||
 		request.OutputFile == "" || request.Advisor == (request.VerdictFile != "") {
-		fmt.Fprintln(stderr, "report stop-input: the presentation input needs its root, runtime, session, attempt, output, and exactly one of a verdict or the advisor form")
+		fmt.Fprintln(stderr, "the stop report input lacks one of root, runtime, session, attempt, output or its verdict")
 		return 2
 	}
 	err = report.ComposeStopPresentationInput(report.StopPresentationCollection{
@@ -652,11 +652,11 @@ func (o hookOwners) StartEngineRebuild(installation string) error {
 		return nil
 	}
 	if info, err := os.Stat(filepath.Join(installation, "cmd", "devgate")); err != nil || !info.IsDir() {
-		return fmt.Errorf("the installation carries no cmd/devgate, so its engine cannot be rebuilt here: build it with go run ./cmd/devgate build from a complete metasystem tree")
+		return errors.New("the engine cannot be rebuilt here: this installation has no cmd/devgate\nfrom a complete metasystem tree, run: go run ./cmd/devgate build")
 	}
 	lock, err := proofrun.TryAcquireMutation(installation)
 	if err != nil {
-		return fmt.Errorf("take the proof mutation lock: %w", err)
+		return fmt.Errorf("another engine build or check run holds the installation: %w", err)
 	}
 	defer func() { _ = lock.Release() }()
 	claimed, err := hooks.ClaimBootstrapFence(installation, os.Getpid(), hookProcessAlive)

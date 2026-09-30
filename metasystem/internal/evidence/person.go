@@ -34,6 +34,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/placement"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
 
 // statIDs are a file's device and inode.
@@ -397,7 +398,7 @@ func (e Env) OverBound(ctx context.Context, judge func(Segment, Item) Judgement)
 			}
 			if total > settings.CapBytes {
 				stillOver = append(stillOver, fmt.Sprintf("still over by %s after this plan in %s: held %s; younger than the age floor %s; end time unknown %s; not managed in its root %s (%s)",
-					formatGiB(total-settings.CapBytes), segment.Git, formatGiB(held), formatGiB(young), formatGiB(unknown), formatGiB(notManagedBytes(ctx, root)), NotManagedLine))
+					textui.GiB(total-settings.CapBytes), segment.Git, textui.GiB(held), textui.GiB(young), textui.GiB(unknown), textui.GiB(notManagedBytes(ctx, root)), NotManagedLine))
 			}
 		}
 	}
@@ -1057,7 +1058,7 @@ func (v SegmentView) Lines(verbose bool) []string {
 	}
 	position := v.Position
 	lines = append(lines, fmt.Sprintf("evidence of %s: segment %s in %s: %s of the %s cap%s; age floor %d days",
-		v.Checkout, position.Segment, v.Root, formatGiB(position.TotalBytes), formatGiB(position.CapBytes), charges(position.BlobChargeBytes), int(v.AgeFloor.Hours()/24)))
+		v.Checkout, position.Segment, v.Root, textui.GiB(position.TotalBytes), textui.GiB(position.CapBytes), charges(position.BlobChargeBytes), int(v.AgeFloor.Hours()/24)))
 	var heldCount, removable int
 	for _, item := range v.Items {
 		if len(item.Held) > 0 {
@@ -1082,16 +1083,16 @@ func (v SegmentView) Lines(verbose bool) []string {
 		for _, entry := range v.NotManaged {
 			bytes += entry.Bytes
 		}
-		lines = append(lines, fmt.Sprintf("  %d entr%s of %s outside every segment, %s: %s", count, plural(count, "y", "ies"), v.Root, formatGiB(bytes), NotManagedLine))
+		lines = append(lines, fmt.Sprintf("  %d entr%s of %s outside every segment, %s: %s", count, plural(count, "y", "ies"), v.Root, textui.GiB(bytes), NotManagedLine))
 		if verbose {
 			for _, entry := range v.NotManaged {
-				lines = append(lines, fmt.Sprintf("    %s, %s: %s", entry.Path, formatGiB(entry.Bytes), NotManagedLine))
+				lines = append(lines, fmt.Sprintf("    %s, %s: %s", entry.Path, textui.GiB(entry.Bytes), NotManagedLine))
 			}
 		}
 	}
 	if verbose {
 		for _, item := range v.Items {
-			line := fmt.Sprintf("    %s %s, ended %s, %s", item.Kind, item.Name, item.EndedAt.Format("2006-01-02"), formatGiB(item.Bytes))
+			line := fmt.Sprintf("    %s %s, ended %s, %s", item.Kind, item.Name, item.EndedAt.Format("2006-01-02"), textui.GiB(item.Bytes))
 			switch {
 			case len(item.Held) > 0:
 				line += "; held: " + strings.Join(item.Held, "; ")
@@ -1110,7 +1111,7 @@ func charges(bytes int64) string {
 	if bytes == 0 {
 		return ""
 	}
-	return " (blob charges " + formatGiB(bytes) + ")"
+	return " (blob charges " + textui.GiB(bytes) + ")"
 }
 
 // notManagedView names an entry that is not managed; a cache or a source

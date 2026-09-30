@@ -322,7 +322,7 @@ func attemptsDir(root string) string {
 
 func AttemptPath(root, id string) (string, error) {
 	if !safeAttemptID(id) {
-		return "", fmt.Errorf("invalid proof attempt id %q", id)
+		return "", fmt.Errorf("invalid test run id %q", id)
 	}
 	return filepath.Join(attemptsDir(root), id+".json"), nil
 }
@@ -355,7 +355,7 @@ func AcquireMutation(root string) (*MutationLock, error) {
 	// slice 2: the one-second ceiling refused under load).
 	if err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX); err != nil {
 		file.Close()
-		return nil, fmt.Errorf("lock proof mutation for %s: %w", root, err)
+		return nil, fmt.Errorf("lock the test run records of %s: %w", root, err)
 	}
 	return &MutationLock{file: file}, nil
 }
@@ -386,28 +386,28 @@ func ReadAttempt(root, id string) (Attempt, error) {
 		} `json:"testResult"`
 	}
 	if err := json.Unmarshal(data, &header); err != nil {
-		return Attempt{}, fmt.Errorf("read proof attempt %s: %w", id, err)
+		return Attempt{}, fmt.Errorf("read test run %s: %w", id, err)
 	}
 	if header.SchemaVersion > IdentityAttemptSchemaVersion {
-		return Attempt{}, fmt.Errorf("read proof attempt %s: unsupported future attempt schema %d", id, header.SchemaVersion)
+		return Attempt{}, fmt.Errorf("read test run %s: it was written by a newer engine (record schema %d)", id, header.SchemaVersion)
 	}
 	if header.TestResult != nil && header.TestResult.SchemaVersion > TestResultSchemaVersion {
-		return Attempt{}, fmt.Errorf("read proof attempt %s: unsupported future test result schema %d", id, header.TestResult.SchemaVersion)
+		return Attempt{}, fmt.Errorf("read test run %s: it was written by a newer engine (result schema %d)", id, header.TestResult.SchemaVersion)
 	}
 	var attempt Attempt
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&attempt); err != nil {
-		return Attempt{}, fmt.Errorf("read proof attempt %s: %w", id, err)
+		return Attempt{}, fmt.Errorf("read test run %s: %w", id, err)
 	}
 	if err := decoder.Decode(&struct{}{}); err != io.EOF {
-		return Attempt{}, fmt.Errorf("read proof attempt %s: trailing JSON", id)
+		return Attempt{}, fmt.Errorf("read test run %s: extra data after its record", id)
 	}
 	if attempt.AttemptID != id || attempt.ControlRoot != root {
-		return Attempt{}, fmt.Errorf("read proof attempt %s: record identity contradicts its path", id)
+		return Attempt{}, fmt.Errorf("read test run %s: the record names a different run than its file", id)
 	}
 	if err := validateAttempt(attempt); err != nil {
-		return Attempt{}, fmt.Errorf("read proof attempt %s: %w", id, err)
+		return Attempt{}, fmt.Errorf("read test run %s: %w", id, err)
 	}
 	return attempt, nil
 }
@@ -490,7 +490,7 @@ func writeAttempt(attempt Attempt) error {
 		return err
 	}
 	if !durable {
-		return fmt.Errorf("proof attempt %s durability is unknown", attempt.AttemptID)
+		return fmt.Errorf("test run %s may not have reached the disk", attempt.AttemptID)
 	}
 	return nil
 }
@@ -502,11 +502,11 @@ func validateAttempt(attempt Attempt) error {
 		attempt.AccountingRevision > attempt.GoalRevision || attempt.ReservedMinutes == 0 ||
 		attempt.ControlRoot == "" || attempt.ExecutionRoot == "" || attempt.ProofIdentity.IdentityDigest == "" ||
 		attempt.Launcher.Pid < 1 || attempt.Launcher.Ref().Mode() == identity.CompareInvalid {
-		return fmt.Errorf("proof attempt has incomplete accounting, identity, or launcher facts")
+		return fmt.Errorf("test run record lacks its accounting, identity or launcher")
 	}
 	if attempt.SchemaVersion >= CandidateAttemptSchemaVersion {
 		if attempt.CandidateGoalID == "" || attempt.CandidateRevision == 0 {
-			return fmt.Errorf("schema-3 proof attempt has an incomplete candidate tuple")
+			return fmt.Errorf("test run record names only part of its candidate")
 		}
 		if attempt.ProofIdentity.CommandClass == "testing" {
 			if !validTreeDigest(attempt.CandidateTree) {
@@ -517,30 +517,30 @@ func validateAttempt(attempt Attempt) error {
 		}
 	} else if attempt.CandidateGoalID != "" || attempt.CandidateRevision != 0 ||
 		attempt.CandidateBudgetEpoch != nil || attempt.CandidateTree != "" {
-		return fmt.Errorf("proof attempt schema %d cannot carry candidate fields", attempt.SchemaVersion)
+		return fmt.Errorf("test run record of schema %d cannot name a candidate", attempt.SchemaVersion)
 	}
 	if attempt.SchemaVersion == LegacyAttemptSchemaVersion && attempt.TestResult != nil {
-		return fmt.Errorf("legacy proof attempt cannot carry schema-2 testing evidence")
+		return fmt.Errorf("an old test run record cannot carry test results")
 	}
 	if attempt.TestResult != nil && identityBoundTestResultSchema(attempt.TestResult.SchemaVersion) && attempt.SchemaVersion != IdentityAttemptSchemaVersion {
 		return fmt.Errorf("test result schema %d requires attempt schema %d", attempt.TestResult.SchemaVersion, IdentityAttemptSchemaVersion)
 	}
 	if attempt.SchemaVersion != IdentityAttemptSchemaVersion && len(attempt.TestFreshGroups) > 0 {
-		return fmt.Errorf("proof attempt schema %d cannot carry fresh group claims", attempt.SchemaVersion)
+		return fmt.Errorf("test run record of schema %d cannot claim fresh groups", attempt.SchemaVersion)
 	}
 	if attempt.TestResult != nil {
 		if err := ValidateTestResult(*attempt.TestResult); err != nil {
-			return fmt.Errorf("proof attempt testing evidence: %w", err)
+			return fmt.Errorf("test run results: %w", err)
 		}
 		if attempt.TestResult.AttemptID != attempt.AttemptID {
-			return fmt.Errorf("proof attempt testing evidence names a different attempt")
+			return fmt.Errorf("test run results name a different run")
 		}
 		if candidateTree, ok := attempt.CandidateTreeDigest(); ok && candidateTree != attempt.TestResult.CandidateTree {
-			return fmt.Errorf("proof attempt testing evidence names candidate tree %s, want %s", attempt.TestResult.CandidateTree, candidateTree)
+			return fmt.Errorf("test run results name candidate tree %s, not %s", attempt.TestResult.CandidateTree, candidateTree)
 		}
 		if attempt.SchemaVersion == IdentityAttemptSchemaVersion && attempt.Terminal != nil && len(attempt.TestInventory) != 0 &&
 			!admittedTestFreshnessMatches(attempt, *attempt.TestResult) {
-			return fmt.Errorf("proof attempt testing evidence differs from admitted freshness expiry or binding")
+			return fmt.Errorf("test run results differ from the reuse go-ahead the run was admitted with")
 		}
 		if err := validateNativeProducerClaims(attempt); err != nil {
 			return err
@@ -548,7 +548,7 @@ func validateAttempt(attempt Attempt) error {
 	}
 	if identityTree, ok := CandidateTreeFromProofIdentity(attempt.ProofIdentity); ok {
 		if candidateTree, candidateOK := attempt.CandidateTreeDigest(); candidateOK && candidateTree != identityTree {
-			return fmt.Errorf("proof attempt candidate tree %s disagrees with proof identity tree %s", candidateTree, identityTree)
+			return fmt.Errorf("test run candidate tree %s differs from its identity tree %s", candidateTree, identityTree)
 		}
 	}
 	if err := validateProofIdentity(attempt.ProofIdentity); err != nil {
@@ -557,50 +557,50 @@ func validateAttempt(attempt Attempt) error {
 	started, startErr := time.Parse(time.RFC3339Nano, attempt.StartedAt)
 	deadline, deadlineErr := time.Parse(time.RFC3339Nano, attempt.Deadline)
 	if startErr != nil || deadlineErr != nil || !deadline.After(started) {
-		return fmt.Errorf("proof attempt has an invalid time bound")
+		return fmt.Errorf("test run record has an invalid time limit")
 	}
 	ended, endedErr := time.Parse(time.RFC3339Nano, attempt.EndedAt)
 	if attempt.Terminal != nil {
 		if attempt.EndedAt == "" || attempt.Terminal.At != attempt.EndedAt {
-			return fmt.Errorf("terminal proof attempt has contradictory end time")
+			return fmt.Errorf("finished test run has a contradictory end time")
 		}
 		if endedErr != nil || ended.Before(started) || attempt.ObservedMinutes == 0 {
-			return fmt.Errorf("terminal proof attempt has invalid observed time")
+			return fmt.Errorf("finished test run has an invalid observed time")
 		}
 		if attempt.Terminal.Result != TerminalSuccess && attempt.Terminal.Result != TerminalFailed &&
 			attempt.Terminal.Result != TerminalCancelled && attempt.Terminal.Result != TerminalUnknown {
-			return fmt.Errorf("proof attempt terminal result %q is invalid", attempt.Terminal.Result)
+			return fmt.Errorf("test run result %q is invalid", attempt.Terminal.Result)
 		}
 		if attempt.Terminal.Result == TerminalSuccess && attempt.Terminal.ExitStatus != 0 {
-			return fmt.Errorf("successful proof attempt has nonzero exit status")
+			return fmt.Errorf("passed test run has a nonzero exit status")
 		}
 		if attempt.Terminal.Result == TerminalFailed && attempt.Terminal.ExitStatus == 0 {
-			return fmt.Errorf("failed proof attempt has zero exit status")
+			return fmt.Errorf("failed test run has a zero exit status")
 		}
 		if attempt.Terminal.Result == TerminalSuccess && attempt.CancellationIntent != "" {
-			return fmt.Errorf("successful proof attempt contradicts cancellation intent")
+			return fmt.Errorf("passed test run was also asked to cancel")
 		}
 	} else if attempt.EndedAt != "" || attempt.ObservedMinutes != 0 || len(CommittedDeliveryReceipt(attempt)) > 0 {
-		return fmt.Errorf("nonterminal proof attempt carries terminal evidence")
+		return fmt.Errorf("unfinished test run carries a result")
 	}
 	seenProcesses := map[string]bool{}
 	for _, key := range attempt.ProcessKeys {
 		if !safeProcessKey(key) || seenProcesses[key] {
-			return fmt.Errorf("proof attempt has an invalid or duplicate process key")
+			return fmt.Errorf("test run record has an invalid or duplicate process key")
 		}
 		seenProcesses[key] = true
 	}
 	if attempt.PreviousAttempt != "" {
 		if !safeAttemptID(attempt.PreviousAttempt) || attempt.Retry == nil || attempt.Retry.PriorAttempt != attempt.PreviousAttempt {
-			return fmt.Errorf("proof retry does not bind its previous attempt")
+			return fmt.Errorf("test run retry does not name the run it retries")
 		}
 	} else if attempt.Retry != nil {
-		return fmt.Errorf("proof retry evidence has no previous attempt")
+		return fmt.Errorf("test run retry names no earlier run")
 	}
 	if retry := attempt.Retry; retry != nil {
 		if retry.SchemaVersion != 1 || retry.Automatic || retry.Cause == "" || retry.Rationale == "" ||
 			retry.EvidencePath == "" || !validSHA256(retry.EvidenceSHA256) {
-			return fmt.Errorf("proof retry evidence is incomplete")
+			return fmt.Errorf("test run retry record is incomplete")
 		}
 	}
 	if owner := attempt.ReservationOwner; owner != nil {
@@ -609,7 +609,7 @@ func validateAttempt(attempt Attempt) error {
 			owner.LaunchNonce == "" || owner.GoalRevision != attempt.GoalRevision || owner.ObligationRevision == 0 ||
 			owner.AttemptOrdinal == 0 || !sameUint64Value(owner.BudgetEpoch, attempt.BudgetEpoch) ||
 			ownerDeadlineErr != nil || ownerDeadline.UTC().Format(time.RFC3339Nano) != attempt.Deadline {
-			return fmt.Errorf("governed proof reservation owner is incomplete or contradictory")
+			return fmt.Errorf("governed test run names an incomplete or contradictory owner")
 		}
 	}
 	if pending := attempt.PendingCoverage; pending != nil {
@@ -646,11 +646,11 @@ func validateProofIdentity(value ProofIdentity) error {
 		!validSHA256(value.Configuration) || value.Platform == "" || !validSHA256(value.Toolchain) ||
 		(value.RatchetDigest != "" && !validSHA256(value.RatchetDigest)) || value.BehaviorPolicy < 1 ||
 		!validSHA256(value.IdentityDigest) || value.IdentityDigest != value.digest() {
-		return fmt.Errorf("proof identity is incomplete or has a contradictory digest")
+		return fmt.Errorf("test run identity is incomplete or its hash contradicts it")
 	}
 	for index, section := range value.Sections {
 		if section == "" || index > 0 && value.Sections[index-1] >= section {
-			return fmt.Errorf("proof identity sections are not a sorted unique set")
+			return fmt.Errorf("test run identity sections are not sorted and unique")
 		}
 	}
 	return nil
@@ -687,7 +687,7 @@ func WithdrawReservationLocked(root, id string) error {
 	if len(attempt.ProcessKeys) != 0 || attempt.Terminal != nil || attempt.TestResult != nil ||
 		attempt.ObservedMinutes != 0 || attempt.EndedAt != "" || attempt.CancellationIntent != "" ||
 		attempt.PendingCoverage != nil || len(attempt.PendingTestGroups) != 0 || len(CommittedDeliveryReceipt(attempt)) != 0 {
-		return fmt.Errorf("proof attempt %s has observations and cannot be withdrawn", id)
+		return fmt.Errorf("test run %s already observed work and cannot be withdrawn", id)
 	}
 	if len(attempt.TestInventory) != 0 {
 		attempts, readErr := ReadAttempts(root)
@@ -697,12 +697,12 @@ func WithdrawReservationLocked(root, id string) error {
 		for _, consumer := range attempts {
 			for group, owner := range consumer.TestWaits {
 				if owner == id {
-					return fmt.Errorf("proof attempt %s produces waited group %s for %s", id, group, consumer.AttemptID)
+					return fmt.Errorf("test run %s runs group %s that %s waits for", id, group, consumer.AttemptID)
 				}
 			}
 			for group, owner := range consumer.TestSources {
 				if owner == id {
-					return fmt.Errorf("proof attempt %s supplies retained group %s for %s", id, group, consumer.AttemptID)
+					return fmt.Errorf("test run %s supplies kept group %s to %s", id, group, consumer.AttemptID)
 				}
 			}
 		}
@@ -726,17 +726,17 @@ func ReserveLocked(request AdmissionRequest) (Attempt, LaunchResult, error) {
 		request.Identity.IdentityDigest = request.Identity.digest()
 	}
 	if request.ReservedMinutes == 0 || request.AccountingRevision == 0 || request.AccountingRevision > request.GoalRevision {
-		return Attempt{}, LaunchResult{}, fmt.Errorf("proof reservation requires positive bounded accounting facts")
+		return Attempt{}, LaunchResult{}, fmt.Errorf("a test run needs positive, bounded accounting to be reserved")
 	}
 	if request.CandidateGoalID == "" || request.CandidateRevision == 0 {
-		return Attempt{}, LaunchResult{}, fmt.Errorf("proof reservation requires a complete candidate tuple")
+		return Attempt{}, LaunchResult{}, fmt.Errorf("a test run needs its whole candidate named to be reserved")
 	}
 	if request.Identity.CommandClass == "testing" {
 		if !validTreeDigest(request.CandidateTree) {
-			return Attempt{}, LaunchResult{}, fmt.Errorf("testing proof reservation requires a valid candidate tree")
+			return Attempt{}, LaunchResult{}, fmt.Errorf("a test run needs a valid candidate tree to be reserved")
 		}
 	} else if request.CandidateTree != "" {
-		return Attempt{}, LaunchResult{}, fmt.Errorf("non-testing proof reservation cannot carry a candidate tree")
+		return Attempt{}, LaunchResult{}, fmt.Errorf("a run that tests nothing cannot name a candidate tree")
 	}
 	previous, decision, decided, err := repeatDecisionLocked(request)
 	if err != nil {
@@ -772,7 +772,7 @@ func ReserveLocked(request AdmissionRequest) (Attempt, LaunchResult, error) {
 	if path, pathErr := AttemptPath(request.ControlRoot, id); pathErr != nil {
 		return Attempt{}, LaunchResult{}, pathErr
 	} else if _, statErr := os.Lstat(path); statErr == nil || !os.IsNotExist(statErr) {
-		return Attempt{}, LaunchResult{}, fmt.Errorf("proof attempt id %s is already retained", id)
+		return Attempt{}, LaunchResult{}, fmt.Errorf("test run id %s is already taken", id)
 	}
 	if request.ManagedCapacity && (request.Identity.CommandClass != "testing" || !request.SharedComponents) {
 		return Attempt{}, LaunchResult{}, fmt.Errorf("managed capacity requires shared testing admission")
@@ -1051,7 +1051,7 @@ func BindJoinedTestComponentsLocked(root, attemptID string, identities map[strin
 		return Attempt{}, err
 	}
 	if !testingAttemptSchema(attempt.SchemaVersion) || attempt.Terminal != nil || attempt.CancellationIntent != "" || attempt.TestResult != nil || len(attempt.PendingTestGroups) != 0 {
-		return Attempt{}, fmt.Errorf("live testing-capable proof attempt without an existing testing owner is required")
+		return Attempt{}, fmt.Errorf("only a live test run that no other run owns can take these tests")
 	}
 	attempt.PendingTestGroups = make(map[string]string, len(identities))
 	for id, identity := range identities {
@@ -1236,7 +1236,7 @@ func readRetryDecision(path, root string, request AdmissionRequest, identityDige
 	}
 	if requestTree, requestTreeKnown := request.CandidateTree, validTreeDigest(request.CandidateTree); requestTreeKnown {
 		if priorTree, priorTreeKnown := priorAttempt.CandidateTreeDigest(); priorTreeKnown && priorTree != requestTree {
-			return nil, fmt.Errorf("RETRY_PRIOR_OUTSIDE_TREE: retry decision prior attempt is outside candidate tree %s", requestTree)
+			return nil, retryPriorOutsideTree(requestTree)
 		}
 	}
 	evidencePath := decision.EvidencePath
@@ -1347,7 +1347,7 @@ func effectiveProofConfigurationDigest(configurationPath string, environment []s
 		}
 		value, _, err := config.Get(config.GetParams{Key: key, ConfPath: configurationPath, LookupEnv: lookup})
 		if err != nil {
-			return "", fmt.Errorf("resolve effective proof configuration %s: %w", key, err)
+			return "", fmt.Errorf("read test run setting %s: %w", key, err)
 		}
 		for _, field := range []string{key, value} {
 			if err := binary.Write(hash, binary.BigEndian, uint64(len(field))); err != nil {
@@ -1390,7 +1390,7 @@ func updateAttemptProcessesLocked(root, id string, launcher identity.Ref, proces
 		return err
 	}
 	if !lineageContains(launcher.Pid, attempt.Launcher.Ref()) || attempt.Terminal != nil || attempt.CancellationIntent != "" {
-		return fmt.Errorf("proof attempt no longer authorizes process publication")
+		return fmt.Errorf("the test run may no longer record processes")
 	}
 	seen := make(map[string]bool, len(attempt.ProcessKeys)+len(processKeys))
 	for _, key := range attempt.ProcessKeys {
@@ -1417,7 +1417,7 @@ func attemptLaunchAllowedLocked(root, id string, launcher identity.Ref, now time
 	}
 	if attempt.Terminal != nil || attempt.CancellationIntent != "" ||
 		!lineageContains(launcher.Pid, attempt.Launcher.Ref()) {
-		return fmt.Errorf("proof attempt no longer authorizes child creation")
+		return fmt.Errorf("the test run may no longer start processes")
 	}
 	return nil
 }
@@ -1436,7 +1436,7 @@ func RequestCancellation(root, id, reason string) error {
 		return nil
 	}
 	if strings.TrimSpace(reason) == "" {
-		return fmt.Errorf("proof cancellation requires a reason")
+		return fmt.Errorf("cancelling a test run needs a reason")
 	}
 	attempt.CancellationIntent = reason
 	return writeAttempt(attempt)
@@ -1465,10 +1465,10 @@ func FinalizeAttemptWithTestResultLocked(root, id, result string, exitStatus int
 		return Attempt{}, err
 	}
 	if attempt.Terminal != nil {
-		return Attempt{}, fmt.Errorf("proof attempt is already terminal")
+		return Attempt{}, fmt.Errorf("the test run has already finished")
 	}
 	if result == TerminalSuccess && attempt.CancellationIntent != "" {
-		return Attempt{}, fmt.Errorf("proof attempt cancellation prevents success")
+		return Attempt{}, fmt.Errorf("the test run was cancelled, so it cannot pass")
 	}
 	if now.IsZero() {
 		now = time.Now().UTC()
@@ -1535,7 +1535,7 @@ func FinalizeAttemptWithTestResultLocked(root, id, result string, exitStatus int
 	// to it: a filing that cannot be written is reported, the terminal
 	// stands.
 	if _, err := filePatienceDefects(attempt, end); err != nil {
-		fmt.Fprintf(os.Stderr, "proof attempt %s: patience defects not filed: %v\n", id, err)
+		fmt.Fprintf(os.Stderr, "test run %s: its slow-step defects were not filed: %v\n", id, err)
 	}
 	return attempt, nil
 }
@@ -1559,7 +1559,7 @@ func RecordTestResultAt(root, id string, result TestResult, now time.Time) (Atte
 		return Attempt{}, err
 	}
 	if !testingAttemptSchema(attempt.SchemaVersion) || attempt.Terminal != nil || attempt.TestResult != nil {
-		return Attempt{}, fmt.Errorf("live testing-capable proof attempt without a retained test result is required")
+		return Attempt{}, fmt.Errorf("only a live test run without a kept result can record one")
 	}
 	result.AttemptID = attempt.AttemptID
 	if err := ValidateTestResult(result); err != nil {
@@ -1597,19 +1597,19 @@ func AuthenticateContext(root, id string, callerPID int64) (Attempt, error) {
 		return Attempt{}, err
 	}
 	if attempt.Terminal != nil || attempt.CancellationIntent != "" {
-		return Attempt{}, fmt.Errorf("proof parent context is not live")
+		return Attempt{}, fmt.Errorf("the parent test run is no longer running")
 	}
 	if lineageContains(callerPID, attempt.Launcher.Ref()) {
 		return attempt, nil
 	}
-	return Attempt{}, fmt.Errorf("proof parent context does not contain the recorded launcher")
+	return Attempt{}, fmt.Errorf("the parent test run does not hold the launcher it recorded")
 }
 
 // AuthenticateAncestor proves that callerPID descends from one exact durable
 // launcher identity.
 func AuthenticateAncestor(callerPID int64, ancestor ProcessIdentity) error {
 	if !lineageContains(callerPID, ancestor.Ref()) {
-		return fmt.Errorf("caller process does not descend from the recorded launcher")
+		return fmt.Errorf("this process does not descend from the test run's launcher")
 	}
 	return nil
 }

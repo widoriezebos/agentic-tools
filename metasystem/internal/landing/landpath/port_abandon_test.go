@@ -97,7 +97,7 @@ func TestAbandonRouteNormalRefusesAtTheFetchedParent(t *testing.T) {
 	a := newAbandonBed(t)
 	a.abandonAt("fetch", func(GitCall) GitResult { return ok("") })
 	status := a.landRecord("records/misc/abandonment-normal.md")
-	a.expect(status, 1, "== STEP: rebase onto origin/main", "== STEP: goal held at the rebased base",
+	a.expect(status, 1, "step: rebase onto origin/main", "step: goal held at the rebased base",
 		"held refused: goal-item-not-held:", "goal ship-widget is abandoned at ")
 	a.expectNoPush()
 	if a.git.commits != 1 || len(a.heldCalls) != 1 || a.heldCalls[0] != "refs/remotes/origin/main HEAD" {
@@ -117,8 +117,8 @@ func TestAbandonRouteRetryRechecksTheNewlyFetchedParent(t *testing.T) {
 		return failed(1, "To origin\n ! [rejected] main -> main (fetch first)\n")
 	})
 	status := a.landRecord("records/misc/abandonment-retry.md")
-	a.expect(status, 1, "== STEP: push origin (attempt 1 of 3)", "== STEP: fetch origin after push attempt 1",
-		"== STEP: rebase onto origin/main after push attempt 1", "== STEP: goal held at the rebased base",
+	a.expect(status, 1, "step: push origin (attempt 1 of 3)", "step: fetch origin after push attempt 1",
+		"step: rebase onto origin/main after push attempt 1", "step: goal held at the rebased base",
 		"held refused: goal-item-not-held:", "goal ship-widget is abandoned at ")
 	if a.pushes != 1 || strings.Contains(a.stdout.String(), "push origin (attempt 2 of 3)") {
 		t.Fatalf("the retry pushed again: pushes=%d\n%s", a.pushes, a.stdout.String())
@@ -136,14 +136,14 @@ func TestAbandonRouteWrapperRefusals(t *testing.T) {
 	t.Parallel()
 	a := newAbandonBed(t)
 	a.writeMessage("x\n\nMachine: forged+human\n")
-	a.expect(a.commit(CommitRequest{OwnerLineage: abandonLineage}), 2, "commit refused: Machine is stamped by the wrapper, never typed")
+	a.expect(a.commit(CommitRequest{OwnerLineage: abandonLineage}), 2, "the commit message types a line the landing adds itself (Machine:)")
 	if len(a.git.called("commit")) != 0 || a.log.has("token") {
 		t.Fatalf("a typed Machine trailer reached an effect: %v %v", a.git.calls, a.log.calls)
 	}
 
 	a = newAbandonBed(t)
 	a.expect(a.commit(CommitRequest{}), 2,
-		"agent commit refused: the lease holder has a claim epoch but no owner lineage; export METASYSTEM_OWNER_LINEAGE in the seat's shell")
+		"this agent shell doesn't say which session it is, so nothing was committed\nneeded first: export METASYSTEM_OWNER_LINEAGE in the session's shell, then repeat this command\n")
 	if len(a.git.called("commit")) != 0 {
 		t.Fatal("an agent commit without lineage was recorded")
 	}
@@ -162,7 +162,7 @@ func TestAbandonRouteWrapperRefusals(t *testing.T) {
 	}
 	status := a.land(LandRequest{Pathspecs: []string{"records/misc/abandonment-wrapper.md"}, DirectFix: "register-carriage",
 		SkipTransport: true, OwnerLineage: abandonLineage})
-	a.expect(status, 1, "agent commit refused: this landing names no goal and the ledger is not Goal-free")
+	a.expect(status, 1, "this change names no goal, and landings here need one")
 	if observed.Goal != "" || observed.DirectFix != "register-carriage" || observed.Actor != abandonActor || len(a.git.called("commit")) != 0 {
 		t.Fatalf("goal-less landing observed %+v, commits %v", observed, a.git.called("commit"))
 	}
@@ -213,7 +213,7 @@ func TestAbandonRouteCommitPushRejectedAfterHeld(t *testing.T) {
 	})
 	status := a.commit(CommitRequest{HeldEpoch: "5", Push: true, Goal: abandonGoal, GoalSet: true,
 		DirectFix: "register-carriage", OwnerLineage: abandonLineage})
-	a.expect(status, 1, "held: ok 1 commit(s)", "[rejected]", "landing push failed at origin; the commit stands locally")
+	a.expect(status, 1, "held: ok 1 commit(s)", "[rejected]", "committed, but origin refused the push")
 	held, pushed := -1, -1
 	for i, call := range a.log.calls {
 		switch {
@@ -318,8 +318,8 @@ func TestAbandonRouteRecertifiedHeldBeforePushAndParks(t *testing.T) {
 		status := a.land(request)
 		a.expect(status, 1, "held: ok 1 commit(s) above h0", "[rejected]", "PARKED", "chain-recertification-target-moved")
 		out := a.stdout.String()
-		held := strings.Index(out, "== STEP: goal held at the rebased base")
-		push := strings.Index(out, "== STEP: push recertified commit to origin (single attempt)")
+		held := strings.Index(out, "step: goal held at the rebased base")
+		push := strings.Index(out, "step: push recertified commit to origin (single attempt)")
 		if held < 0 || push < 0 || held > push || a.pushes != 1 {
 			t.Fatalf("held must precede the single push: pushes=%d\n%s", a.pushes, out)
 		}

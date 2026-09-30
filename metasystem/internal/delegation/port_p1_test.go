@@ -221,8 +221,8 @@ func TestPortP1RosterPlaceholderRefusesBeforeAnyJobState(t *testing.T) {
 	requireExit(t, result, 1, b.stderr.String())
 	stderr := b.stderr.String()
 	for _, want := range []string{
-		"role steward-continuation resolves to fake:<model>, a template placeholder from role.default.model.fake; set it with: metasystem settings set role.default.model.fake <the fake model this seat runs>, which writes",
-		"metasystem.conf.local",
+		"role steward-continuation has no model yet (fake:<model> is a template placeholder",
+		"\nrun: metasystem settings set role.default.model.fake <the fake model this seat runs>",
 	} {
 		if !strings.Contains(stderr, want) {
 			t.Fatalf("stderr %q lacks %q", stderr, want)

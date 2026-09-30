@@ -3,7 +3,6 @@ package batch
 import (
 	"crypto/sha256"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -175,7 +174,7 @@ type LedgerOwner interface {
 // UnboundLedgerOwner refuses operations until a ledger owner is supplied.
 type UnboundLedgerOwner struct{}
 
-var errLedgerOwnerUnbound = errors.New("TRUNK_RED_OWNER_UNBOUND: no ledger owner is bound")
+var errLedgerOwnerUnbound = fmt.Errorf("%s: no ledger owner is bound", codeTrunkRedOwnerUnbound)
 
 // Record refuses because no ledger owner is bound.
 func (UnboundLedgerOwner) Record(string, TrunkRed) ([]EntryRef, error) {

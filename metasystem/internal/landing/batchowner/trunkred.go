@@ -53,7 +53,7 @@ func ProductionBatchLedgerOwnerWithConfig(root string, lookup func(string, strin
 
 func (owner LedgerTrunkRedOwner) Request(opid string) (goal.VerbRequest, error) {
 	if len(opid) < 26 || opid != goal.Opid(opid[:26], owner.Actor.Machine, owner.Actor.Lineage) {
-		return goal.VerbRequest{}, fmt.Errorf("trunk-red opid %q does not derive from the landing owner", opid)
+		return goal.VerbRequest{}, fmt.Errorf("red-main operation id %q was not made by the landing lane", opid)
 	}
 	now := time.Now
 	if owner.Now != nil {

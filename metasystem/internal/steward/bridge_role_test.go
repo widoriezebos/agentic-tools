@@ -207,7 +207,7 @@ func TestOnlyTheStewardHoldingTheFlockRunsTheBridge(t *testing.T) {
 		t.Fatal(err)
 	}
 	third, _ := testRole(home, seat, now)
-	if line := third.Step(); !strings.Contains(line, "BRIDGE_SOCKET_PATH_OCCUPIED") {
+	if line := third.Step(); !strings.Contains(line, "a file or directory stands at its socket") {
 		t.Fatalf("a regular file at the path: %q", line)
 	}
 	held, err := lock.File(board.LockPath(home), 0o600, lock.TryExclusive)

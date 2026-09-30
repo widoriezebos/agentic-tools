@@ -128,7 +128,7 @@ func wallEntryPayload(root, mission, turnID string, state map[string]any) (map[s
 	// forward.
 	posture, _ := doc["posture"].(map[string]any)
 	if posture == nil {
-		return nil, nil, fmt.Errorf("turn %s wall evidence carries no recorded posture; the snapshot-scope inspection must run before any conclusion", turnID)
+		return nil, nil, fmt.Errorf("turn %s has no recorded snapshot check, and it must run before the turn is judged", turnID)
 	}
 	payload := map[string]any{
 		"verdict": "passed", "preTree": doc["preTree"], "expectedTree": doc["expectedTree"],

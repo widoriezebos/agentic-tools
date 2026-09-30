@@ -65,7 +65,7 @@ type proofLock struct {
 func newProofLock(store Store, lockDir, queueDir, key string, pid int64, now func() time.Time) *proofLock {
 	lock := &proofLock{lockDir: lockDir, queueDir: queueDir, purpose: "batch:" + key, key: key, pid: pid, now: now, prober: store.seams.prober}
 	if key == "" || strings.Contains(key, "-") {
-		lock.refused = fmt.Errorf("proof lock key %q must be non-empty and hold no \"-\"", key)
+		lock.refused = fmt.Errorf("test run lock key %q must be non-empty and hold no \"-\"", key)
 	}
 	return lock
 }

@@ -16,8 +16,8 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/evidence"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 	"golang.org/x/sys/unix"
 )
 
@@ -125,7 +125,7 @@ func runIntentEvidenceShow(inv *intentInvocation) int {
 		lines = append(lines, env.OpenDisposals()...)
 		for _, root := range env.Roots() {
 			bytes, _, _ := diskstore.Measure(ctx, root.Path)
-			line := fmt.Sprintf("%s: %s, %s", root.Path, root.Owner, evidenceBytes(bytes))
+			line := fmt.Sprintf("%s: %s, %s", root.Path, root.Owner, textui.GiB(bytes))
 			if len(root.NotManaged) > 0 {
 				line += fmt.Sprintf("; %d entries outside every segment, %s", len(root.NotManaged), evidence.NotManagedLine)
 			}
@@ -145,7 +145,7 @@ func runIntentEvidenceShow(inv *intentInvocation) int {
 				lines = append(lines, "the items cannot be listed: "+err.Error())
 			}
 			for _, target := range targets {
-				lines = append(lines, fmt.Sprintf("  %s %s, %s", target.Item.Kind, target.Item.Path, evidenceBytes(target.Item.Bytes)))
+				lines = append(lines, fmt.Sprintf("  %s %s, %s", target.Item.Kind, target.Item.Path, textui.GiB(target.Item.Bytes)))
 			}
 		}
 		summary := fmt.Sprintf("%d evidence root(s) on this host", len(data))
@@ -156,15 +156,15 @@ func runIntentEvidenceShow(inv *intentInvocation) int {
 	return inv.render(intentResult{Outcome: intentConfirmed, Summary: lines[0], text: lines[1:], Data: view})
 }
 
-func evidenceBytes(bytes int64) string { return fmt.Sprintf("%.2f GiB", float64(bytes)/float64(1<<30)) }
-
 // evidenceTargets are the items the words name, or with --over-bound the
 // removal set and its still-over lines.
 func evidenceTargets(inv *intentInvocation, env evidence.Env, fetch bool) ([]evidence.Target, []string, *intentResult) {
 	ctx := context.Background()
 	if inv.input.switched("over-bound") {
 		if len(inv.input.args) > 0 {
-			return nil, nil, &intentResult{Outcome: intentRefused, code: 2, Summary: "--over-bound selects the items itself; name items or pass --over-bound, not both; nothing was done"}
+			return nil, nil, &intentResult{Outcome: intentRefused, code: 2,
+				Summary: "--over-bound picks the items itself, so it takes no named items; nothing was done",
+				next:    withoutArgs(inv.typedArgv(), inv.input.args), nextReason: "or name the items without --over-bound"}
 		}
 		exclusions := env.Exclusions(fetch)
 		targets, stillOver := env.OverBound(ctx, func(segment evidence.Segment, item evidence.Item) evidence.Judgement {
@@ -223,7 +223,8 @@ func runIntentEvidenceExport(inv *intentInvocation) int {
 	}
 	dir, refusal := env.ExportDirFor(inv.input.text("to"), registeredStorePaths(top))
 	if refusal != "" {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: refusal})
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: refusal,
+			next: append(withoutOption(inv.typedArgv(), "to"), "--to", "DIR"), nextReason: "with another directory"})
 	}
 	targets, stillOver, problem := evidenceTargets(inv, env, false)
 	if problem != nil {
@@ -294,7 +295,8 @@ func runIntentEvidenceDispose(inv *intentInvocation) int {
 		if inv.input.has("export") {
 			var refusal string
 			if exportDir, refusal = env.ExportDirFor(inv.input.text("export"), registeredStorePaths(top)); refusal != "" {
-				return render(intentResult{Outcome: intentRefused, code: 2, Summary: refusal})
+				return render(intentResult{Outcome: intentRefused, code: 2, Summary: refusal,
+					next: append(withoutOption(inv.typedArgv(), "export"), "--export", "DIR"), nextReason: "with another directory"})
 			}
 		}
 		targets, stillOver, problem := evidenceTargets(inv, env, false)
@@ -303,20 +305,24 @@ func runIntentEvidenceDispose(inv *intentInvocation) int {
 		}
 		plan, err := env.Preview(context.Background(), targets, stillOver, exportDir)
 		if err != nil {
-			return render(intentResult{Outcome: intentFailed, code: 1, Summary: "the plan could not be written: " + err.Error()})
+			return render(intentResult{Outcome: intentFailed, code: 1, Summary: "the disposal plan couldn't be saved, so nothing was planned",
+				next: inv.sameCommand(), nextReason: "tries again", Details: []string{"the plan could not be written: " + err.Error()}})
 		}
 		return render(evidencePlanResult(inv, plan))
 	}
 	if len(inv.input.args) > 0 || inv.input.switched("over-bound") || inv.input.has("export") {
 		return render(intentResult{Outcome: intentRefused, code: 2,
-			Summary: "a disposal runs from a previewed plan: add --preview to plan these items, then run metasystem evidence dispose --plan ID; nothing was done",
-			next:    inv.publicArgv(append(append([]string{"evidence", "dispose"}, inv.raw...), "--preview")...), nextReason: "plan it first"})
+			Summary:    "a disposal removes only what a preview planned, so nothing was removed",
+			next:       inv.publicArgv(append(append([]string{"evidence", "dispose"}, inv.raw...), "--preview")...),
+			nextReason: "plans it; then metasystem evidence dispose carries the plan out"})
 	}
 	by, err := owners.person(top)
 	if err != nil {
-		return render(intentResult{Outcome: intentRefused, code: 3,
-			Summary:  "executing an evidence disposal is a person's act, and this shell was not proven to be one; nothing was done",
-			Decision: humanauthority.PersonActRemedy("metasystem evidence dispose --plan ID") + "; metasystem evidence dispose ... --preview shows what it would do"})
+		refused := inv.personRefusal("", err, "")
+		refused.code = 3
+		refused.Summary = "only a person may carry out an evidence disposal, and " + refused.Summary
+		refused.Details = append(refused.Details, "metasystem evidence dispose ... --preview shows what it would do; any shell may preview")
+		return render(*refused)
 	}
 	env, problem := evidenceEnv(inv, top, by)
 	if problem != nil {
@@ -328,12 +334,13 @@ func runIntentEvidenceDispose(inv *intentInvocation) int {
 	}
 	if id == "" {
 		return render(intentResult{Outcome: intentRefused, code: 2,
-			Summary: "this terminal session has previewed no evidence disposal in the last day; preview one here with --preview, or name a plan with --plan ID; nothing was done",
-			next:    inv.publicArgv("evidence", "dispose", "--over-bound", "--preview"), nextReason: "plan one first"})
+			Summary: "this terminal hasn't previewed an evidence disposal in the last day, so nothing was removed",
+			next:    inv.publicArgv("evidence", "dispose", "--over-bound", "--preview"), nextReason: "plans one; or name an earlier plan with --plan"})
 	}
 	plan, err := evidence.ReadDisposePlan(env.HomeStateRoot, id)
 	if err != nil {
-		return render(intentResult{Outcome: intentRefused, code: 2, Summary: err.Error()})
+		return render(intentResult{Outcome: intentRefused, code: 2, Summary: "disposal plan " + id + " can't be read, so nothing was removed",
+			next: inv.publicArgv("evidence", "dispose", "--over-bound", "--preview"), nextReason: "plans a new one", Details: []string{err.Error()}})
 	}
 	outcomes := env.Execute(context.Background(), plan, evidence.ExecuteOptions{Override: inv.input.switched("override"), Reason: inv.input.text("reason")})
 	done, freed, lines := evidenceOutcomeLines(outcomes, inv.input.switched("verbose"))
@@ -343,7 +350,7 @@ func runIntentEvidenceDispose(inv *intentInvocation) int {
 			already++
 		}
 	}
-	summary := fmt.Sprintf("plan %s: %d of %d item(s) disposed, %s freed", plan.ID, done-already, len(outcomes), evidenceBytes(freed))
+	summary := fmt.Sprintf("plan %s: %d of %d item(s) disposed, %s freed", plan.ID, done-already, len(outcomes), textui.GiB(freed))
 	if already > 0 {
 		summary += fmt.Sprintf("; %d already disposed", already)
 	}
@@ -373,7 +380,7 @@ func evidencePlanResult(inv *intentInvocation, plan evidence.DisposePlan) intent
 			declined++
 		}
 		if inv.input.switched("verbose") || item.State != "clear" {
-			line := fmt.Sprintf("  %s %s: %s, %d files, %s", item.State, item.Step, item.Path, item.Files, evidenceBytes(item.Bytes))
+			line := fmt.Sprintf("  %s %s: %s, %d files, %s", item.State, item.Step, item.Path, item.Files, textui.GiB(item.Bytes))
 			if len(item.Held) > 0 {
 				line += "; held: " + strings.Join(item.Held, "; ") + " (--override takes it anyway)"
 			}
@@ -387,7 +394,7 @@ func evidencePlanResult(inv *intentInvocation, plan evidence.DisposePlan) intent
 	for _, line := range plan.StillOver {
 		lines = append(lines, "  "+line)
 	}
-	summary := fmt.Sprintf("preview: nothing was changed; plan %s: %d clear (%d files, %s), %d held, %d declined", plan.ID, clear, files, evidenceBytes(bytes), held, declined)
+	summary := fmt.Sprintf("preview: nothing was changed; plan %s: %d clear (%d files, %s), %d held, %d declined", plan.ID, clear, files, textui.GiB(bytes), held, declined)
 	if plan.Export != "" {
 		summary += "; each exported to " + plan.Export + " first"
 	}

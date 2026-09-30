@@ -325,7 +325,7 @@ func TestReadyWorkerAdmissionPreservesRecordedStopCauseDuringCanceledAcquire(t *
 			run := <-done
 			if test.progressError {
 				if run.haltedBy != "" || run.err == nil || errors.Is(run.err, context.Canceled) ||
-					!strings.Contains(run.err.Error(), "open suite progress journal") ||
+					!strings.Contains(run.err.Error(), "open the suite progress log") ||
 					len(run.results) != len(ids) || run.results[0].Status != "not-run" || run.results[0].NativeLaunched ||
 					run.results[1].Status != "not-run" || run.results[1].NativeLaunched {
 					t.Fatalf("progress stop cause changed: haltedBy=%q results=%+v err=%v", run.haltedBy, run.results, run.err)

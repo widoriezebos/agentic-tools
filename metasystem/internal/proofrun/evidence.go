@@ -167,7 +167,7 @@ func PreserveDetachedSuiteFailures(controlRoot, candidateRoot, owner string, tim
 	// A zero timeout is no clock (the copy is bounded by bytes only); the
 	// byte bound stays positive.
 	if controlRoot == "" || candidateRoot == "" || owner == "" || maxBytes < 1 {
-		return EvidenceResult{}, "", errors.New("detached evidence preservation requires control root, candidate root, owner, and a positive byte bound")
+		return EvidenceResult{}, "", errors.New("keeping evidence needs a control root, a candidate root, an owner and a byte limit")
 	}
 	controlRoot, err := filepath.Abs(controlRoot)
 	if err != nil {

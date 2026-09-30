@@ -3,6 +3,7 @@ package diskstore
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -123,7 +124,7 @@ func healthOf(report Report) Health {
 		free := ""
 		for _, volume := range report.Volumes {
 			if volume.BelowFloor {
-				free = fmt.Sprintf(": %s has %s free, below the floor of %s", volume.Path, formatBytes(volume.FreeBytes), formatBytes(volume.FloorBytes))
+				free = fmt.Sprintf(": %s has %s free, below the floor of %s", volume.Path, textui.Bytes(volume.FreeBytes), textui.Bytes(volume.FloorBytes))
 				break
 			}
 		}
@@ -189,7 +190,7 @@ func (r Report) render(verbose bool) []string {
 		if volume.BelowFloor {
 			state = "BELOW the floor"
 		}
-		lines = append(lines, fmt.Sprintf("  free: %s on %s, %s of %s", formatBytes(volume.FreeBytes), volume.Path, state, formatBytes(volume.FloorBytes)))
+		lines = append(lines, fmt.Sprintf("  free: %s on %s, %s of %s", textui.Bytes(volume.FreeBytes), volume.Path, state, textui.Bytes(volume.FloorBytes)))
 	}
 	if r.Floor != nil && r.Floor.Active {
 		lines = append(lines, "  floor mode: ageing lowered to "+r.Floor.MinAge+"; "+r.Floor.Trim)
@@ -200,7 +201,7 @@ func (r Report) render(verbose bool) []string {
 	for _, class := range r.Classes {
 		line := fmt.Sprintf("  %s: %d item(s)", class.Name, class.Items)
 		if class.Bytes > 0 {
-			line += ", " + formatBytes(class.Bytes)
+			line += ", " + textui.Bytes(class.Bytes)
 		}
 		if class.Released > 0 {
 			line += fmt.Sprintf(", %d released", class.Released)
@@ -361,7 +362,7 @@ func groupedStrays(strays []Item, verbose bool) []string {
 		g := groups[key]
 		if len(g.items) == 1 {
 			stray := g.items[0]
-			rendered = append(rendered, fmt.Sprintf("  stray: %s, %s, idle %s: %s; run %s", stray.Path, formatBytes(stray.Bytes),
+			rendered = append(rendered, fmt.Sprintf("  stray: %s, %s, idle %s: %s; run %s", stray.Path, textui.Bytes(stray.Bytes),
 				(time.Duration(stray.IdleSecs)*time.Second).String(), stray.Verdict.Reason, stray.Verdict.Command))
 			continue
 		}
@@ -373,9 +374,9 @@ func groupedStrays(strays []Item, verbose bool) []string {
 		}
 		var named []string
 		for _, stray := range largest[:min(len(largest), examplePaths)] {
-			named = append(named, stray.Path+" "+formatBytes(stray.Bytes))
+			named = append(named, stray.Path+" "+textui.Bytes(stray.Bytes))
 		}
-		rendered = append(rendered, fmt.Sprintf("  strays: %d items, %s: %s; run %s (largest: %s)", len(g.items), formatBytes(total), g.reason,
+		rendered = append(rendered, fmt.Sprintf("  strays: %d items, %s: %s; run %s (largest: %s)", len(g.items), textui.Bytes(total), g.reason,
 			g.items[0].Verdict.Command, strings.Join(named, ", ")))
 	}
 	return rendered
@@ -451,18 +452,6 @@ func renderLine(kind string, line Line) string {
 	return text
 }
 
-func formatBytes(bytes int64) string {
-	switch {
-	case bytes >= 1<<30:
-		return fmt.Sprintf("%.1f GiB", float64(bytes)/(1<<30))
-	case bytes >= 1<<20:
-		return fmt.Sprintf("%.1f MiB", float64(bytes)/(1<<20))
-	case bytes >= 1<<10:
-		return fmt.Sprintf("%.1f KiB", float64(bytes)/(1<<10))
-	}
-	return fmt.Sprintf("%d B", bytes)
-}
-
 // OutcomeLines renders a person's act for a person: one line per outcome
 // and finding with the count, the total size and the largest three (many
 // names the items: "strays"), done before kept; verbose, one line per item
@@ -505,7 +494,7 @@ func OutcomeLines(many string, outcomes []PersonOutcome, verbose bool) []string 
 		if len(items) == 1 {
 			switch {
 			case first.Done && first.Bytes > 0:
-				lines = append(lines, fmt.Sprintf("  %s: %s, %s", first.Reason, first.Path, formatBytes(first.Bytes)))
+				lines = append(lines, fmt.Sprintf("  %s: %s, %s", first.Reason, first.Path, textui.Bytes(first.Bytes)))
 			case first.Done:
 				lines = append(lines, fmt.Sprintf("  %s: %s", first.Reason, first.Path))
 			default:
@@ -526,14 +515,14 @@ func OutcomeLines(many string, outcomes []PersonOutcome, verbose bool) []string 
 		var named []string
 		for _, item := range largest[:min(len(largest), examplePaths)] {
 			if item.Bytes > 0 {
-				named = append(named, item.Path+" "+formatBytes(item.Bytes))
+				named = append(named, item.Path+" "+textui.Bytes(item.Bytes))
 			} else {
 				named = append(named, item.Path)
 			}
 		}
 		head := fmt.Sprintf("%d %s", len(items), many)
 		if total > 0 {
-			head += ", " + formatBytes(total)
+			head += ", " + textui.Bytes(total)
 		}
 		line := fmt.Sprintf("  %s: %s", first.Finding, head)
 		if !first.Done {

@@ -80,7 +80,7 @@ func PrefixDecisionID(base, tree string, units []Unit, sealed map[string]Claim, 
 	for _, unit := range units {
 		claim, ok := sealed[unit.GoalID]
 		if !ok {
-			return "", fmt.Errorf("BATCH_PREFIX_AUTHORITY_REFUSED: %s has no sealed claim", unit.GoalID)
+			return "", fmt.Errorf("%s: %s has no sealed claim", codePrefixAuthorityRefused, unit.GoalID)
 		}
 		bound.Members = append(bound.Members, member{GoalID: unit.GoalID, Chain: unit.Chain, Claim: claim, Groups: slices.Clone(unit.SelectedGroups)})
 	}
@@ -127,7 +127,7 @@ func ComposePrefixReceipts(store Store, id, actor string, at time.Time, seams Pr
 		return err
 	}
 	if record.State != StateLanding || record.Proof == nil || record.Proof.Status != "green" {
-		return fmt.Errorf("batch %s has no green tip proof", id)
+		return fmt.Errorf("batch %s has no green test run of its tip", id)
 	}
 	joined := joinedUnits(record.Units)
 	if len(joined) == 0 || len(record.PrefixTrees) < len(joined) {
@@ -203,7 +203,7 @@ func ComposePrefixReceipts(store Store, id, actor string, at time.Time, seams Pr
 		}
 		if seams.Verify != nil {
 			if err := seams.Verify(unit, tree, decision); err != nil {
-				return fmt.Errorf("BATCH_PREFIX_PROOF_REFUSED: %s: %w", unit.GoalID, err)
+				return fmt.Errorf("%s: %s: %w", codePrefixProofRefused, unit.GoalID, err)
 			}
 		}
 		receipt.AttemptID, receipt.ResultPath, receipt.Executed, receipt.Reused = result.AttemptID, result.ResultPath, slices.Clone(result.Executed), result.Reused
@@ -231,7 +231,7 @@ func ensurePrefixEpisode(store Store, id string, snapshot Record, goalID string,
 			!slices.EqualFunc(current.Units, snapshot.Units, func(left, right Unit) bool {
 				return left.GoalID == right.GoalID && left.State == right.State && left.Claim == right.Claim
 			}) {
-			return fmt.Errorf("BATCH_PREFIX_DECISION_MOVED: %s changed before freshness episode retention", goalID)
+			return fmt.Errorf("%s: %s changed before freshness episode retention", codePrefixDecisionMoved, goalID)
 		}
 		if existing, ok := current.PrefixEpisodes[goalID]; ok && existing.DecisionID == decisionID && len(existing.Token) == 64 {
 			if existing.ExpiresAt == "" {

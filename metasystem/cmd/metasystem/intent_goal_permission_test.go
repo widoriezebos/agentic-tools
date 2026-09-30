@@ -29,7 +29,7 @@ func TestIntentGoalAllowAndDisallowStopTestChanges(t *testing.T) {
 	code, result := bed.runJSON(bed.owners(), allow...)
 	bed.expectNoEffect(before, allow, code, result)
 	if code != 1 || !strings.Contains(result.Summary, "allowing stop-test changes is a person's act") ||
-		!strings.Contains(result.Decision, "metasystem goal allow "+bedGoal+" stop-test-changes --reason TEXT") {
+		result.Next == nil || strings.Join(result.Next.Argv, " ") != "metasystem goal allow "+bedGoal+" stop-test-changes --reason TEXT" {
 		t.Fatalf("an agent's allow = %d %+v; want a person's-act refusal naming the command", code, result)
 	}
 	// The word itself is checked first: an unknown permission lists the known
@@ -128,7 +128,7 @@ func TestStopSurfaceAuditAdmitsADeclarationAfterGoalAllow(t *testing.T) {
 
 	options := audit.StopSurfaceOptions{GoalRecord: goal.StopSurfaceGoalReader}
 	_, err := audit.DeclareStopDecisionSurface(root, options, bedGoal, "the hook entry moved")
-	if err == nil || !strings.Contains(err.Error(), "goal "+bedGoal+" is not allowed stop-test changes; a person runs: metasystem goal allow "+bedGoal+" stop-test-changes --reason") {
+	if err == nil || !strings.Contains(err.Error(), "goal "+bedGoal+" is not allowed to change the stop tests\nrun: metasystem goal allow "+bedGoal+" stop-test-changes --reason") {
 		t.Fatalf("a declaration before the allow = %v; want the refusal naming goal allow", err)
 	}
 

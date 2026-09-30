@@ -54,7 +54,7 @@ func BeginCoverage(options CoverageBeginOptions) error {
 		return err
 	}
 	if options.ProducerClass != "full" || attempt.ProofIdentity.RatchetDigest == "" {
-		return fmt.Errorf("only an unseeded full proof can claim coverage production")
+		return fmt.Errorf("only a full, unseeded test run may measure coverage")
 	}
 	lock, err := AcquireMutation(options.ControlRoot)
 	if err != nil {
@@ -63,7 +63,7 @@ func BeginCoverage(options CoverageBeginOptions) error {
 	defer lock.Release()
 	attempt, err = ReadAttempt(options.ControlRoot, options.AttemptID)
 	if err != nil || attempt.Terminal != nil || attempt.CancellationIntent != "" {
-		return fmt.Errorf("coverage producer lost its live proof attempt")
+		return fmt.Errorf("the coverage measurement lost its live test run")
 	}
 	if attempt.PendingCoverage != nil {
 		if attempt.PendingCoverage.Producer.Ref() == producer.Ref() && attempt.PendingCoverage.ProducerClass == options.ProducerClass {
@@ -119,7 +119,7 @@ func CompleteCoverage(options CoverageCompleteOptions) (CoverageEvidence, error)
 	current, err := BuildProofIdentity(options.ExecutionRoot, filepath.Join(options.ExecutionRoot, "metasystem.conf"),
 		attempt.ProofIdentity.ScopeClass, attempt.ProofIdentity.CommandClass, attempt.ProofIdentity.Sections, attempt.ProofIdentity.BehaviorPolicy)
 	if err != nil || current.IdentityDigest != attempt.PendingCoverage.Expected.IdentityDigest {
-		return CoverageEvidence{}, fmt.Errorf("proof inputs changed while coverage was measured")
+		return CoverageEvidence{}, fmt.Errorf("the tested files changed while coverage was measured")
 	}
 	evidence.CompletedAt = nowStamp()
 	attempt.PendingCoverage.Evidence = &evidence
@@ -157,7 +157,7 @@ func authenticateCoverageCustody(options CoverageBeginOptions) (Attempt, Process
 		return Attempt{}, ProcessIdentity{}, fmt.Errorf("coverage handler is outside the producer process: %w", err)
 	}
 	if err := AuthenticateAncestor(options.ProducerPID, attempt.Launcher); err != nil {
-		return Attempt{}, ProcessIdentity{}, fmt.Errorf("coverage producer is outside the proof launcher: %w", err)
+		return Attempt{}, ProcessIdentity{}, fmt.Errorf("the coverage measurement runs outside the test run's launcher: %w", err)
 	}
 	return attempt, producer, nil
 }
@@ -170,7 +170,7 @@ func validateCoverageProducerInputs(options CoverageBeginOptions, attempt Attemp
 	current, err := BuildProofIdentity(options.ExecutionRoot, filepath.Join(options.ExecutionRoot, "metasystem.conf"),
 		attempt.ProofIdentity.ScopeClass, attempt.ProofIdentity.CommandClass, attempt.ProofIdentity.Sections, attempt.ProofIdentity.BehaviorPolicy)
 	if err != nil || current.IdentityDigest != attempt.ProofIdentity.IdentityDigest {
-		return fmt.Errorf("coverage producer source identity does not match the admitted proof")
+		return fmt.Errorf("the coverage measurement tests other sources than the admitted test run")
 	}
 	return nil
 }

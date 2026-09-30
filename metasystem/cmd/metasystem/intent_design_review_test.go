@@ -142,7 +142,7 @@ func TestDesignCritiqueReplayAndCap(t *testing.T) {
 	// never adopted.
 	b.writeJob(map[string]any{"jobId": "other-r2", "role": "design-critic", "status": "completed", "round": 2, "parentJob": "other", "operationId": "design-01designreader-retry-3"})
 	b.writeJob(map[string]any{"jobId": "other", "role": "code-critic", "status": "completed", "round": 1})
-	if result = review("--retry", "3"); result.Outcome != intentFailed || !strings.Contains(result.Summary, "nothing was adopted") || len(b.followUps) != 2 {
+	if result = review("--retry", "3"); result.Outcome != intentFailed || !strings.Contains(result.Summary, "belongs to another critique") || len(b.followUps) != 2 {
 		t.Fatalf("a foreign operation record: %+v", result)
 	}
 }

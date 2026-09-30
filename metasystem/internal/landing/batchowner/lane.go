@@ -22,6 +22,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
@@ -302,7 +303,7 @@ func landingLaneView(home func() (string, error), now time.Time) lane.View {
 
 // LandingLaneViewSources are the production reads of the lane's view.
 func LandingLaneViewSources(laneHome string, now time.Time) lane.ViewSources {
-	return lane.ViewSources{Home: laneHome, Now: now, Owner: LandingLaneOwnerProbe, Ready: LandingLaneReady}
+	return lane.ViewSources{Home: laneHome, Now: now, Owner: LandingLaneOwnerProbe, Ready: LandingLaneReady, Helm: helm.Active}
 }
 
 // EndLaneOwner ends the lane's running owner for a restart: the process the
@@ -321,7 +322,7 @@ func EndLaneOwner(root string) (int64, error) {
 		return 0, err
 	}
 	if holder.OwnerLineage != LandingOwnerLineage {
-		return 0, fmt.Errorf("the landing checkout is held by lineage %s, not its landing owner; nothing was ended", holder.OwnerLineage)
+		return 0, fmt.Errorf("the landing checkout is held by session %s, not by the landing lane; nothing was ended", holder.OwnerLineage)
 	}
 	prober := identity.KernelProber{}
 	for _, announcement := range lease.AnnouncementsFor(root, holder.Pid) {
@@ -334,10 +335,12 @@ func EndLaneOwner(root string) (int64, error) {
 		} else if err != nil {
 			return holder.Pid, fmt.Errorf("the landing owner pid %d could not be ended: %w", holder.Pid, err)
 		}
-		for deadline := time.Now().Add(15 * time.Second); identity.AliveRef(prober, ref) == identity.Alive && time.Now().Before(deadline); {
+		// A zombie is ended: it holds no lease or lock, and only its parent
+		// (the supervision owner) can reap it.
+		for deadline := time.Now().Add(15 * time.Second); identity.LiveRef(prober, ref) == identity.Alive && time.Now().Before(deadline); {
 			time.Sleep(100 * time.Millisecond)
 		}
-		if identity.AliveRef(prober, ref) == identity.Alive {
+		if identity.LiveRef(prober, ref) == identity.Alive {
 			return holder.Pid, fmt.Errorf("the landing owner pid %d is still running 15 seconds after it was asked to end", holder.Pid)
 		}
 		return holder.Pid, nil

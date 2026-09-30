@@ -3,6 +3,7 @@ package branch
 import (
 	"bytes"
 	"errors"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"os"
 	"path/filepath"
 	"strings"
@@ -116,7 +117,7 @@ func TestAttestationReaderRecordIntegrity(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.expect("TopLevel", f.root)
-	if _, err := validateAttestation(f, f.root, "", f.base, "goal-a", "u1", f.unit, map[string]bool{}); err == nil || !strings.Contains(err.Error(), ReadInvalidCode) {
+	if _, err := validateAttestation(f, f.root, "", f.base, "goal-a", "u1", f.unit, map[string]bool{}); err == nil || !strings.Contains(goal.RecordText(err), ReadInvalidCode) {
 		t.Fatalf("edited attestation = %v", err)
 	}
 	if err := os.WriteFile(path, original, 0o644); err != nil {
@@ -128,7 +129,7 @@ func TestAttestationReaderRecordIntegrity(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.expect("TopLevel", f.root)
-	if _, err := validateAttestation(f, f.root, "", f.base, "goal-a", "u2", second, map[string]bool{}); err == nil || !strings.Contains(err.Error(), ReadInvalidCode) {
+	if _, err := validateAttestation(f, f.root, "", f.base, "goal-a", "u2", second, map[string]bool{}); err == nil || !strings.Contains(goal.RecordText(err), ReadInvalidCode) {
 		t.Fatalf("copied attestation = %v", err)
 	}
 }

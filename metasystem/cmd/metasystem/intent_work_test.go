@@ -367,7 +367,7 @@ func TestIntentBuildConcurrentRepeat(t *testing.T) {
 		case intentConfirmed:
 			runs[resultData(t, result)["run"].(string)] = true
 		case intentInProgress:
-			if codes[index] != 3 || !strings.HasPrefix(result.Summary, "UNIT_RUN_BUSY") || result.Next == nil || !slices.Equal(result.Next.Argv, append([]string{"metasystem", "work", "build", "--json"}, args[2:]...)) {
+			if codes[index] != 3 || !strings.Contains(resultWords(result), "UNIT_RUN_BUSY") || result.Next == nil || !slices.Equal(result.Next.Argv, append([]string{"metasystem", "work", "build", "--json"}, args[2:]...)) {
 				t.Fatalf("busy caller: code=%d %+v", codes[index], result)
 			}
 		default:
@@ -392,7 +392,7 @@ func TestIntentBuildSizeInput(t *testing.T) {
 	bed := newWorkBed(t)
 	plain := bed.brief("plain.md", "Build the unit.\n")
 	code, result, _ := bed.work(append([]string{"work", "build", bed.id, "unsized", "--brief", plain}, workCheck...)...)
-	if code != 1 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "LAUNCH_BUILD_UNSIZED unit=unsized") || !strings.Contains(result.Decision, "--lines N") {
+	if code != 1 || result.Outcome != intentRefused || !strings.Contains(resultWords(result), "LAUNCH_BUILD_UNSIZED unit=unsized") || result.Next == nil || !slices.Contains(result.Next.Argv, "--lines") {
 		t.Fatalf("absent estimate: code=%d %+v", code, result)
 	}
 	if len(bed.starter.launched()) != 0 || len(bed.runDirectories()) != 0 {
@@ -520,7 +520,7 @@ func TestIntentBuildResume(t *testing.T) {
 	}
 	bed.brief("brief.md", "Build the unit, changed.\n")
 	code, result, _ = bed.work(args...)
-	if code != 1 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "UNIT_NAMED_INPUT_CHANGED") || !strings.Contains(result.Summary, "run="+run) || len(bed.starter.launched()) != 2 {
+	if code != 1 || result.Outcome != intentRefused || !strings.Contains(resultWords(result), "UNIT_NAMED_INPUT_CHANGED") || !strings.Contains(resultWords(result), "run="+run) || len(bed.starter.launched()) != 2 {
 		t.Fatalf("changed input: code=%d %+v", code, result)
 	}
 	delete(bed.starter.fail, "proof")
@@ -568,7 +568,7 @@ func TestIntentBuildRefusals(t *testing.T) {
 	// Without a goal worktree, build prepares one only under a verified
 	// claim; this fixture has no goal-branch endpoint, so it refuses before
 	// any Git effect and prints no manual preparation recipe.
-	if _, statErr := os.Stat(target); code != 1 || result.Outcome != intentRefused || result.Next != nil ||
+	if _, statErr := os.Stat(target); code != 1 || result.Outcome != intentRefused || result.Next != nil && result.Next.Argv[0] != "metasystem" ||
 		!strings.Contains(result.Summary, "nothing was built") || !os.IsNotExist(statErr) {
 		t.Fatalf("missing worktree: code=%d %+v next=%v", code, result, result.Next)
 	}

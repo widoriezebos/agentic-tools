@@ -131,13 +131,14 @@ func (inv *intentInvocation) agentSeat() (agentSeat, *intentResult) {
 	owners := inv.owners.agent.withDefaults()
 	root, err := owners.root(inv)
 	if err != nil {
-		return agentSeat{}, &intentResult{Outcome: intentRefused, code: 2, Summary: err.Error(), Decision: "run this inside the repository, or name it with --repo PATH"}
+		return agentSeat{}, &intentResult{Outcome: intentRefused, code: 2, Summary: "this is not inside a repository, so nothing was done",
+			next: append(inv.typedArgv(), "--repo", "<repository>"), nextReason: "or run it inside the repository", Details: []string{err.Error()}}
 	}
 	machine, err := owners.machine(root)
 	if err != nil || !board.SafeName(machine) {
 		return agentSeat{}, &intentResult{Outcome: intentRefused, code: 2,
-			Summary:  "this checkout has no enrolled seat nickname, so it can neither send nor receive peer messages; nothing was done",
-			Decision: "enroll one once: git config metasystem.goal.machine NAME (one word of letters, digits, '.', '_' and '-')"}
+			Summary: "this checkout has no nickname yet, so it cannot send or receive messages; nothing was done",
+			next:    []string{"git", "config", "metasystem.goal.machine", "<nickname>"}, nextReason: "one word of letters, digits, '.', '_' and '-'"}
 	}
 	home, err := owners.home()
 	if err != nil {
@@ -218,8 +219,9 @@ func agentIntentCommands() []intentCommand {
 
 func boardUnreadable(err error) *intentResult {
 	return &intentResult{Outcome: intentRefused, code: 1,
-		Summary:  "BOARD_UNREADABLE: the host board cannot be read (" + strings.TrimPrefix(err.Error(), "BOARD_UNREADABLE: ") + "); nothing was sent or read",
-		Decision: "repair the directory it names under ~/.metasystem/host, then run the command again"}
+		Summary:  "this host's message board cannot be read, so nothing was sent or read",
+		Decision: "repair the board under ~/.metasystem/host; metasystem agent inbox --verbose names the cause",
+		Details:  []string{"code: BOARD_UNREADABLE", "cause: " + err.Error()}}
 }
 
 func runAgentAsk(inv *intentInvocation) int {
@@ -230,15 +232,18 @@ func runAgentAsk(inv *intentInvocation) int {
 	goalID := inv.input.text("goal")
 	switch {
 	case strings.TrimSpace(inv.input.text("text")) == "":
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "agent ask needs the message: --text TEXT; nothing was sent"})
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "nothing was sent: the message is missing",
+			next: append(inv.typedArgv(), "--text", "<message>")})
 	case (machine == "") == (goalID == ""):
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "agent ask names one addressee: a seat (agent ask MACHINE) or a goal (agent ask --goal G); nothing was sent"})
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "nothing was sent: name one addressee, a seat or a goal",
+			Decision: "metasystem agent ask <seat> --text <message>, or metasystem agent ask --goal <goal> --text <message>"})
 	}
 	var deadline time.Duration
 	if inv.input.has("deadline") {
 		parsed, err := time.ParseDuration(inv.input.text("deadline"))
 		if err != nil || parsed <= 0 {
-			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("--deadline %s is not a positive duration such as 30m or 2h; nothing was sent", inv.input.text("deadline"))})
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("nothing was sent: --deadline %s is not a duration such as 30m or 2h", inv.input.text("deadline")),
+				next: append(withoutOption(inv.typedArgv(), "deadline"), "--deadline", "30m")})
 		}
 		deadline = parsed
 	}
@@ -262,8 +267,9 @@ func runAgentAsk(inv *intentInvocation) int {
 		ledger, err := seat.owners.ledger(seat.root)
 		if err != nil {
 			return inv.render(intentResult{Outcome: intentFailed, code: 1,
-				Summary:  "the accepted goal ledger cannot be read (" + err.Error() + "), so goal " + goalID + " cannot be checked; nothing was sent",
-				Decision: "run the command again once metasystem goal list reads the ledger, or ask a seat: metasystem agent ask MACHINE --text TEXT"})
+				Summary:  "the goal list cannot be read, so goal " + goalID + " cannot be checked; nothing was sent",
+				Decision: "retry once metasystem goal list works, or ask a seat: metasystem agent ask <seat> --text <message>",
+				Details:  []string{"cause: " + err.Error()}})
 		}
 		current, live := ledger.Live[goalID]
 		if !live {
@@ -289,8 +295,9 @@ func agentTargetUnknown(machine string, seats []string) intentResult {
 		armed = strings.Join(sorted, ", ")
 	}
 	return intentResult{Outcome: intentRefused, code: 1,
-		Summary:  fmt.Sprintf("AGENT_ASK_TARGET_UNKNOWN: no armed seat on this host is named %s (armed: %s); nothing was sent", machine, armed),
-		Decision: "name one of those seats, or ask whoever works on a goal: metasystem agent ask --goal G --text TEXT"}
+		Summary:  fmt.Sprintf("nothing was sent: no running seat on this host is named %s (running: %s)", machine, armed),
+		Decision: "name one of those seats, or ask a goal's worker: metasystem agent ask --goal <goal> --text <message>",
+		Details:  []string{"code: AGENT_ASK_TARGET_UNKNOWN"}}
 }
 
 // agentGoalUnknown refuses a goal that is not live on the accepted ledger:
@@ -301,7 +308,9 @@ func agentGoalUnknown(goalID string, ledger board.Ownership) intentResult {
 		fact = "no goal by that id"
 	}
 	return intentResult{Outcome: intentRefused, code: 1,
-		Summary: fmt.Sprintf("AGENT_ASK_GOAL_UNKNOWN: %s is not live on this checkout's accepted ledger (%s). To ask a machine instead, run: metasystem agent ask MACHINE --text TEXT", goalID, fact)}
+		Summary:  fmt.Sprintf("nothing was sent: goal %s is not open (%s), so nobody works on it", goalID, fact),
+		Decision: "to ask a seat instead: metasystem agent ask <seat> --text <message>",
+		Details:  []string{"code: AGENT_ASK_GOAL_UNKNOWN"}}
 }
 
 // agentPublishRefusal names why the mailbox refused a message.
@@ -309,13 +318,17 @@ func agentPublishRefusal(err error, id string) intentResult {
 	switch {
 	case errors.Is(err, board.ErrTextTooLong):
 		return intentResult{Outcome: intentRefused, code: 1,
-			Summary: fmt.Sprintf("AGENT_ASK_TEXT_TOO_LONG: %v; nothing was sent; shorten --text (at most %d bytes) or --if-silent", err, board.MaxTextBytes)}
+			Summary:  fmt.Sprintf("nothing was sent: the message is over %d bytes", board.MaxTextBytes),
+			Decision: "shorten --text or --if-silent, then run metasystem agent ask again",
+			Details:  []string{"code: AGENT_ASK_TEXT_TOO_LONG", "cause: " + err.Error()}}
 	case errors.Is(err, board.ErrIfSilentInvalid), errors.Is(err, board.ErrTextInvalid):
-		return intentResult{Outcome: intentRefused, code: 2, Summary: err.Error() + "; nothing was sent"}
+		return intentResult{Outcome: intentRefused, code: 2, Summary: "nothing was sent: " + err.Error(),
+			Decision: "correct the text, then run metasystem agent ask again"}
 	case errors.Is(err, board.ErrIDTaken):
 		return intentResult{Outcome: intentRefused, code: 1,
-			Summary:  fmt.Sprintf("AGENT_ASK_ID_TAKEN: the id %s already names another message on this host; nothing was sent and that message is unchanged", id),
-			Decision: "to send this as a new message, run the same command with --id NEW (a new id of your own)"}
+			Summary:  fmt.Sprintf("nothing was sent: another message on this host already has the id %s", id),
+			Decision: "to send this as a new message, run the same metasystem agent ask with --id <a new id of your own>",
+			Details:  []string{"code: AGENT_ASK_ID_TAKEN", "the other message is unchanged"}}
 	}
 	return *boardUnreadable(err)
 }
@@ -354,7 +367,7 @@ func agentAskResult(inv *intentInvocation, published board.Published, holder str
 // message exists, and the same command run again confirms it (D14D-02).
 func agentNotDurable(inv *intentInvocation, message board.Message) intentResult {
 	return intentResult{Outcome: intentPartial, code: 1, Targets: []intentTarget{{Kind: "message", ID: message.ID}},
-		Summary: fmt.Sprintf("published, not yet durable: message %s is written but the disk did not confirm it; run the same command again to confirm it", message.ID),
+		Summary: fmt.Sprintf("message %s is written, but the disk has not confirmed it is saved", message.ID),
 		Data:    agentMessageData(message, board.Published{Message: message}),
 		next:    append([]string{"metasystem"}, append(inv.command.words(), inv.raw...)...), nextReason: "the same request finds its message and confirms it"}
 }
@@ -382,7 +395,8 @@ func agentDetailLines(message board.Message) []string {
 
 func runAgentReply(inv *intentInvocation) int {
 	if len(inv.input.args) != 1 || strings.TrimSpace(inv.input.text("text")) == "" {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "agent reply needs the message it answers and the answer: agent reply ID --text TEXT; nothing was sent"})
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "nothing was sent: a reply names the message it answers and the answer",
+			Decision: "metasystem agent reply <message id> --text <answer>; the ids are in metasystem agent inbox --all"})
 	}
 	seat, problem := inv.agentSeat()
 	if problem != nil {
@@ -397,7 +411,7 @@ func runAgentReply(inv *intentInvocation) int {
 	}
 	if answered.Kind == board.KindNote {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2,
-			Summary: fmt.Sprintf("%s is a metasystem note, which takes no reply; nothing was sent", answered.ID)})
+			Summary: fmt.Sprintf("nothing was sent: %s is a note from the machinery, which takes no reply", answered.ID), Decision: "nothing to do"})
 	}
 	request := board.Request{Kind: board.KindReply, From: board.Sender{Machine: seat.machine, Lineage: seat.lineage},
 		To: board.Address{Machine: answered.From.Machine}, Thread: answered.Thread, Text: inv.input.text("text")}
@@ -423,13 +437,15 @@ func runAgentReply(inv *intentInvocation) int {
 // agentThreadUnknown refuses a reply to an id no mailbox holds.
 func agentThreadUnknown(id string) intentResult {
 	return intentResult{Outcome: intentRefused, code: 1,
-		Summary:  fmt.Sprintf("AGENT_REPLY_THREAD_UNKNOWN: no message on this host has the id %s; nothing was sent", id),
-		Decision: "the ids are in this seat's messages: metasystem agent inbox --all"}
+		Summary:  fmt.Sprintf("nothing was sent: no message on this host has the id %s", id),
+		Decision: "the ids are in this seat's messages: metasystem agent inbox --all",
+		Details:  []string{"code: AGENT_REPLY_THREAD_UNKNOWN"}}
 }
 
 func runAgentInbox(inv *intentInvocation) int {
 	if len(inv.input.args) > 0 {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "agent inbox takes no argument; nothing was read"})
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "nothing was read: agent inbox takes no argument",
+			next: []string{"metasystem", "agent", "inbox"}})
 	}
 	seat, problem := inv.agentSeat()
 	if problem != nil {

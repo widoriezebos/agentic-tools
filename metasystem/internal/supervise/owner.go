@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"errors"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
@@ -434,7 +435,7 @@ func (o *Owner) repairRequestedWatcher(now time.Time) (bool, error) {
 	for _, held := range o.currentGenerationHeld() {
 		if held.Component == Watcher {
 			if previous.Identity.Pid != 0 {
-				return false, fmt.Errorf("current generation has more than one watcher")
+				return false, errors.New("the running machinery has more than one watcher")
 			}
 			previous = held
 		}

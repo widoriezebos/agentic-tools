@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"errors"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
@@ -40,7 +41,7 @@ func validateRegisterWaitRequest(request RegisterWaitRequest) error {
 	}
 	if request.Owner.MainId == "" || request.Owner.OwnerLineage == "" || request.Owner.SessionId == "" ||
 		request.Owner.ClaimEpoch == nil || request.RuntimeSession == "" {
-		return fmt.Errorf("wait registration requires a classified owner, lineage, claim epoch, session, and runtime session")
+		return errors.New("a wait needs its owner, session, runtime session and checkout claim, and one is missing")
 	}
 	if request.Owner.SessionId != request.RuntimeSession {
 		return fmt.Errorf("wait registration session and runtime session must match")

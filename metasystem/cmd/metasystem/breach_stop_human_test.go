@@ -40,7 +40,7 @@ func TestBreachStopAdmitsThePersonAndNamesThem(t *testing.T) {
 	}
 	for _, by := range []string{"", "Wido"} {
 		name, err := breachStopOrderingHumanWith(root, human, by, now, unproven)
-		if err == nil || name != "" || !strings.Contains(err.Error(), "metasystem system enroll --name NAME") {
+		if err == nil || name != "" || !strings.Contains(err.Error(), "metasystem system enroll --name ") {
 			t.Fatalf("an unproven person (--by %q) was not guided to enrollment: %q %v", by, name, err)
 		}
 	}

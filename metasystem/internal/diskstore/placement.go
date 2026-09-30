@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/placement"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
 
 // The two misplacement kinds a report names.
@@ -33,7 +34,7 @@ func PlacementOf(path string) Placement { return placement.Of(path) }
 // Round B2-3 rule 3).
 func MisplacedLine(path string, misplaced Placement, bytes int64) Line {
 	return Line{Class: misplaced.Kind, Path: path,
-		Reason:  fmt.Sprintf("%s under an evidence root, %s: it is not evidence and is never counted or managed there", misplaced.Shape, formatBytes(bytes)),
+		Reason:  fmt.Sprintf("%s under an evidence root, %s: it is not evidence and is never counted or managed there", misplaced.Shape, textui.Bytes(bytes)),
 		Command: "a person removes it once nothing needs it: rm -rf -- " + shellQuote(path)}
 }
 

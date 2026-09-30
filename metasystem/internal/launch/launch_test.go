@@ -360,7 +360,7 @@ func TestTerminalStateIsFinal(t *testing.T) {
 	got, err := m.Cancel(record.ID)
 	require(t, err != nil || got.State != Completed, "cancel changed terminal: %+v %v", got, err)
 	_, err = m.Supervise(record.ID)
-	require(t, err == nil || !strings.Contains(err.Error(), "LAUNCH_ALREADY_SUPERVISED"), "second supervisor err=%v", err)
+	require(t, err == nil || !strings.Contains(ErrorDetail(err), "LAUNCH_ALREADY_SUPERVISED"), "second supervisor err=%v", err)
 }
 func TestWaitHonoursTheCapAndReportsTheTerminalState(t *testing.T) {
 	m, _, _, now := manager(t)

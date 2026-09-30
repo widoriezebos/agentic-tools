@@ -11,7 +11,7 @@ import (
 func TestResolveMachineWithoutANicknameNamesTheFix(t *testing.T) {
 	t.Parallel()
 	_, err := ResolveMachineWithConfig(t.TempDir(), func(string, string) (string, error) { return "", errors.New("exit status 1") })
-	want := "no machine nickname is enrolled on this machine; name it once with: git config metasystem.goal.machine NAME"
+	want := "this machine has no name yet; name it once\nrun: git config metasystem.goal.machine <name>"
 	if err == nil || err.Error() != want {
 		t.Fatalf("no nickname = %v, want %q", err, want)
 	}

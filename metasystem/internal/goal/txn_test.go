@@ -234,7 +234,7 @@ func TestWaitGoalLandingAndHumanAct(t *testing.T) {
 	rewindTranscript.rewind(editResult.Tip, landingTip)
 	rewindTranscript.cleanup()
 	rewind, err := observe(rewindTranscript, rewindSelector, metarun.WaiterTarget{}, editResult.Tip)
-	if err != nil || rewind.ExitCode != metarun.ExitNoRecord || !strings.Contains(rewind.Reason, "rewound") {
+	if err != nil || rewind.ExitCode != metarun.ExitNoRecord || !strings.Contains(rewind.Reason, "went back in history") {
 		t.Fatalf("rewind source failure = %+v %v", rewind, err)
 	}
 }

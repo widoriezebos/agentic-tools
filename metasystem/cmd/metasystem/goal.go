@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -141,7 +142,7 @@ func goalCallerWithRepositoryTop(root string, callerPid int64, verb string, repo
 
 	view, err := classifyVerbCallerWith(root, callerPid, repositoryTop)
 	if err != nil {
-		return goal.Caller{}, fmt.Errorf("caller classification failed: %v", err)
+		return goal.Caller{}, fmt.Errorf("who started this command couldn't be determined: %v", err)
 	}
 	classification := map[string]any{"class": view.Class, "holder": view.Holder}
 	var shapeErr error
@@ -476,7 +477,7 @@ func runGoalNextWithInputs(args []string, dependencies syncRequestDependencies, 
 		return nextSyncedWithInputs(stdout, stderr, *root, machine, *fetch, dependencies.endpoint, commandNow, goal.Project, dependencies.presence, labels...)
 	}
 	if len(labels) > 0 || machineProvided || *fetch {
-		fmt.Fprintln(stderr, "goal next --label, --machine, and --fetch read the synced backlog; this checkout still carries the legacy ledger and must migrate first")
+		fmt.Fprintln(stderr, "--label, --machine and --fetch need the upgraded goal list, and this checkout has the old one\nrun: metasystem goal sync --upgrade")
 		return 1
 	}
 	store := &goal.Store{Root: *root}
@@ -486,17 +487,17 @@ func runGoalNextWithInputs(args []string, dependencies syncRequestDependencies, 
 		fmt.Fprintln(stderr, err)
 		return 1
 	case ledger == nil && store.BaselinePresent():
-		fmt.Fprintln(stdout, "goal ledger degraded: goals.md was deleted after adoption; run `goal reconcile`")
+		fmt.Fprintln(stdout, "goals.md was deleted after it was set up\nrun: metasystem goal sync")
 	case ledger == nil:
-		fmt.Fprintln(stdout, "no goal ledger; `goal open` starts one")
+		fmt.Fprintln(stdout, "no goals yet; metasystem goal open starts one")
 	case len(problems) > 0:
-		fmt.Fprintln(stdout, "goal ledger degraded: "+string(problems[0]))
+		fmt.Fprintln(stdout, "the goal list has a problem: "+string(problems[0]))
 	case ledger.Current != nil:
 		fmt.Fprintf(stdout, "%s — %s; next: %s\n", ledger.Current.Id, ledger.Current.Intent, ledger.Current.NextStep)
 	case ledger.Free != nil:
 		fmt.Fprintln(stdout, "goal-free declared "+ledger.Free.Declared)
 	case len(ledger.Queued) > 0:
-		fmt.Fprintf(stdout, "no current goal; the queue holds %s; this legacy ledger converts with `metasystem goal sync --upgrade`\n", ledger.Queued[0].Id)
+		fmt.Fprintf(stdout, "no current goal; %s is next in the queue\nrun: metasystem goal sync --upgrade  (to upgrade this old goal list)\n", ledger.Queued[0].Id)
 	default:
 		fmt.Fprintln(stdout, "no current goal")
 	}
@@ -721,7 +722,7 @@ func resolveSeatIdleActorWithMachine(root, mainID string, resolveMachine func(st
 			return goal.Actor{}, 0, fmt.Errorf("the Stop main %q does not match the announced checkout holder %q", mainID, holder.MainId)
 		}
 		if holder.SessionId == "" || holder.OwnerLineage == "" {
-			return goal.Actor{}, 0, fmt.Errorf("the checkout holder has no readable main announcement and lineage")
+			return goal.Actor{}, 0, errors.New("the session holding this checkout hasn't announced itself; start it with metasystem session start")
 		}
 		return goal.Actor{Machine: machine, Lineage: holder.OwnerLineage}, holder.ClaimEpoch, nil
 	}

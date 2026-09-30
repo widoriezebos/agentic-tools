@@ -59,8 +59,8 @@ func TestBreachStopInsideTheBudgetGuidesThePerson(t *testing.T) {
 	bed := newGoalMutationBed(t)
 	inside := time.Date(2026, 8, 28, 17, 0, 0, 0, time.UTC)
 	_, err := bed.stopOrderedBy("bounded", 2, inside, "Wido")
-	if err == nil || !strings.Contains(err.Error(), "no live-stop breach") ||
-		!strings.Contains(err.Error(), "metasystem work stop") || !strings.Contains(err.Error(), "metasystem goal pause bounded") {
+	if err == nil || !strings.Contains(err.Error(), "no overspend to stop") ||
+		!strings.Contains(err.Error(), "\nrun: metasystem goal pause bounded") {
 		t.Fatalf("an in-budget stop did not guide to the public commands: %v", err)
 	}
 }
@@ -99,7 +99,7 @@ func TestStrandedHumanOrderedBreachStopIsNotReplayed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(reports) == 0 || !strings.Contains(reports[len(reports)-1].Detail, "re-run it from the human authority boundary") {
+	if len(reports) == 0 || !strings.Contains(reports[len(reports)-1].Detail, "the person runs it again") {
 		t.Fatalf("a stranded human-ordered stop was not closed for the person to order again: %+v", reports)
 	}
 	if binding, err := bed.binding("bounded", now); err != nil || binding.Fence != nil {

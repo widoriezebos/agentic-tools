@@ -15,15 +15,20 @@ import (
 
 var fullCommitID = regexp.MustCompile(`^[0-9a-f]{40}$`)
 
-func (d *driver) usingException() string {
-	return "metasystem work land " + d.request.Goal + " --using-exception " + d.request.Carried
+// usingException is the command that lands under this exception again.
+func (d *driver) usingException() []string {
+	return []string{"metasystem", "work", "land", d.request.Goal, "--using-exception", d.request.Carried}
+}
+
+// exceptionGone is the command that records a new exception for the goal.
+func (d *driver) exceptionGone() string {
+	return "record a new one with metasystem work land " + d.request.Goal + " --exception CODE --reason R"
 }
 
 func (d *driver) goalFetchForCarry() {
 	output, status := d.owners.GoalFetch(d.request.Root)
 	if status != 0 {
-		fmt.Fprintln(d.stderr, strings.TrimRight(output, "\n"))
-		exitLanding(3)
+		d.carryAsk("the goal records couldn't be fetched, so nothing was landed", d.usingException(), "once the goal remote answers", output)
 	}
 	output = strings.TrimRight(output, "\n")
 	tip := output
@@ -32,7 +37,8 @@ func (d *driver) goalFetchForCarry() {
 	}
 	tip, _, _ = strings.Cut(tip, " ")
 	if !fullCommitID.MatchString(tip) {
-		d.carryAsk("goal fetch returned no accepted ledger tip: " + output)
+		d.carryAsk("the goal records came back incomplete, so nothing was landed", d.usingException(), repeat,
+			"goal fetch returned no accepted ledger tip: "+output)
 	}
 	d.carriedLedgerTip = tip
 }
@@ -40,14 +46,15 @@ func (d *driver) goalFetchForCarry() {
 func (d *driver) readCarryStatus() {
 	status, output, code := d.owners.CarryStatus(d.request.Root, d.request.Carried, d.request.Goal, d.carriedLedgerTip)
 	if code != 0 {
-		fmt.Fprintln(d.stderr, strings.TrimRight(output, "\n"))
-		exitLanding(3)
+		d.carryAsk("exception "+d.request.Carried+" can't be read from the goal records, so nothing was landed", nil,
+			"check the exception id (metasystem goal show "+d.request.Goal+")", output)
 	}
 	d.carriedWord, d.carriedConsumption, d.carriedReservation = status.Word, status.Consumption, status.Reservation
 	d.carriedIntent, d.carriedCounselor, d.carriedPast = status.Intent, status.Counselor, status.Past
 	d.carriedBy, d.carriedWorkspace, d.carriedSource = status.By, status.Workspace, status.Source
 	if d.carriedWord == "" || d.carriedConsumption == "" || d.carriedReservation == "" {
-		d.carryAsk("carry status was incomplete; fetch the ledger and rerun")
+		d.carryAsk("exception "+d.request.Carried+" reads incomplete in the goal records, so nothing was landed",
+			[]string{"metasystem", "goal", "sync"}, "then repeat this command", "carry status was incomplete")
 	}
 }
 
@@ -58,11 +65,11 @@ func (d *driver) abandonReservation(row, why string) {
 func (d *driver) mustGit(args ...string) string {
 	result := d.git(args...)
 	if result.Code != 0 {
-		d.stderr.Write(result.Stderr)
 		code := result.Code
 		if code < 0 {
 			code = 1
 		}
+		d.stop(code, "git "+args[0]+" failed: "+oneLine(string(result.Stderr)), nil, "fix what git reports (--verbose shows it), then repeat this command", string(result.Stderr))
 		exitLanding(code)
 	}
 	return strings.TrimSpace(string(result.Stdout))
@@ -72,11 +79,13 @@ func (d *driver) atOriginMain() bool {
 	return d.mustGit("rev-parse", "HEAD") == d.mustGit("rev-parse", "refs/remotes/origin/main")
 }
 
-// workspaceAsk is the ask when the candidate's workspace is not the word's:
-// a person replaces the exception for the tree as it now is.
-func (d *driver) workspaceAsk(candidate, tree, why string) string {
-	return fmt.Sprintf("word workspace=%s candidate workspace=%s (tree %s); a person replaces the exception: metasystem work land %s --exception %s --replace-exception %s --reason '%s' --by %s",
-		d.carriedWorkspace, candidate, tree, d.request.Goal, d.carriedPast, d.request.Carried, why, strings.TrimPrefix(d.carriedBy, "human:"))
+// workspaceAsk stops when the candidate's files are not those the exception
+// covered: a person replaces the exception for the files as they now are.
+func (d *driver) workspaceAsk(candidate, tree, why string) {
+	d.carryAsk("the files changed since exception "+d.request.Carried+" was recorded ("+why+"), so it no longer covers them",
+		[]string{"metasystem", "work", "land", d.request.Goal, "--exception", d.carriedPast, "--replace-exception", d.request.Carried,
+			"--reason", why, "--by", strings.TrimPrefix(d.carriedBy, "human:")}, "a person replaces the exception",
+		fmt.Sprintf("word workspace=%s candidate workspace=%s (tree %s)", d.carriedWorkspace, candidate, tree))
 }
 
 // carryForwardStaged moves the staged candidate onto origin/main and refuses
@@ -99,7 +108,8 @@ func (d *driver) carryForwardStaged(release string) {
 			if conflicts == "" {
 				conflicts = "unknown paths"
 			}
-			d.carryAsk("rebase conflict on " + conflicts + "; resolve by hand against origin/main, stage, rerun")
+			d.carryAsk("the change conflicts with main in "+conflicts+", so nothing was landed", nil,
+				"merge origin/main by hand, stage the result, then repeat this command")
 		}
 		d.mustGit("reset", "--soft", "refs/remotes/origin/main")
 	}
@@ -117,7 +127,7 @@ func (d *driver) carryForwardStaged(release string) {
 				"carry workspace="+workspace+" goal="+d.request.Goal+" past="+d.carriedPast,
 				"origin moved the candidate workspace after the channel carry word")
 		}
-		d.carryAsk(d.workspaceAsk(workspace, tree, "origin moved the carried workspace"))
+		d.workspaceAsk(workspace, tree, "origin moved the carried workspace")
 	}
 }
 
@@ -126,8 +136,7 @@ func (d *driver) reserveCarry() {
 	output, status := d.owners.GoalCarrying(CarryingRequest{Root: d.request.Root, Goal: d.request.Goal, Ref: d.request.Carried,
 		Tree: tree, By: d.carriedBy, Lineage: d.request.OwnerLineage})
 	if status != 0 {
-		fmt.Fprintln(d.stderr, strings.TrimRight(output, "\n"))
-		exitLanding(3)
+		d.carryAsk("the goal couldn't be reserved for this exception landing, so nothing was landed", nil, "fix what the goal records report (--verbose shows it), then repeat this command", output)
 	}
 	output = strings.TrimRight(output, "\n")
 	row := strings.TrimPrefix(output, "carrying=")
@@ -137,7 +146,8 @@ func (d *driver) reserveCarry() {
 		tip = output[index+len(" ledger="):]
 	}
 	if row == "" || !fullCommitID.MatchString(tip) {
-		d.carryAsk("reservation returned an incomplete row: " + output)
+		d.carryAsk("the goal's reservation for this landing came back incomplete, so nothing was landed", d.usingException(), repeat,
+			"reservation returned an incomplete row: "+output)
 	}
 	d.carriedRow, d.carriedLedgerTip = row, tip
 	d.carryAbandonArmed = true
@@ -176,7 +186,7 @@ func (d *driver) verifyLocalCarriedCommit(commit string) {
 	}
 	workspace, err := d.owners.Live().Workspace(d.request.Root, tree)
 	if err != nil {
-		fmt.Fprintln(d.stderr, err)
+		d.failed(1, "the files of the unfinished exception commit can't be read, so nothing was landed", err)
 		exitLanding(1)
 	}
 	if workspace != d.carriedWorkspace {
@@ -185,15 +195,17 @@ func (d *driver) verifyLocalCarriedCommit(commit string) {
 				"carry workspace="+workspace+" goal="+d.request.Goal+" past="+d.carriedPast,
 				"the recovered commit workspace differs from the channel carry word")
 		}
-		d.carryAsk(d.workspaceAsk(workspace, tree, "the recovered carried workspace changed"))
+		d.workspaceAsk(workspace, tree, "the recovered carried workspace changed")
 	}
 	message, status := d.gitOut("log", "-1", "--format=%B", commit)
 	if status != 0 {
 		exitLanding(status)
 	}
+	unfinished := "the unfinished exception commit " + shortID(commit) + " at HEAD isn't the one this exception made"
+	undo := "undo it (git reset --soft HEAD^), then repeat this command"
 	for _, key := range carriedKeys {
 		if count := countLines(message, `(?m)^`+regexp.QuoteMeta(key)+`:`); count != 1 {
-			fmt.Fprintf(d.stderr, "land refused: local carried commit %s has %d %s trailers; expected exactly one\n", commit, count, key)
+			d.stop(1, unfinished, nil, undo, fmt.Sprintf("local carried commit %s has %d %s trailers; expected exactly one", commit, count, key))
 			exitLanding(1)
 		}
 	}
@@ -202,13 +214,21 @@ func (d *driver) verifyLocalCarriedCommit(commit string) {
 		exitLanding(1)
 	}
 	if carry != d.request.Carried {
-		fmt.Fprintf(d.stderr, "land refused: local carried commit names Carry: %s, not %s\n", carry, d.request.Carried)
+		d.stop(1, unfinished, nil, undo, fmt.Sprintf("local carried commit names Carry: %s, not %s", carry, d.request.Carried))
 		exitLanding(1)
 	}
 	if countExact(message, "Goal-Item: "+d.request.Goal) != 1 {
-		fmt.Fprintf(d.stderr, "land refused: local carried commit must have exactly one Goal-Item: %s\n", d.request.Goal)
+		d.stop(1, unfinished, nil, undo, "local carried commit must have exactly one Goal-Item: "+d.request.Goal)
 		exitLanding(1)
 	}
+}
+
+// shortID is a commit's short form for line 1.
+func shortID(commit string) string {
+	if len(commit) > 12 {
+		return commit[:12]
+	}
+	return commit
 }
 
 func (d *driver) rebaseRecovered() {
@@ -218,7 +238,8 @@ func (d *driver) rebaseRecovered() {
 	d.stepOutput.Reset()
 	if d.gitTo(&d.stepOutput, "rebase", "refs/remotes/origin/main") != 0 {
 		d.git("rebase", "--abort")
-		d.carryAsk("rebase conflict while recovering local carried commit; resolve by hand against origin/main and rerun")
+		d.carryAsk("the unfinished exception commit conflicts with main, so nothing was landed", nil,
+			"rebase it onto origin/main by hand, then repeat this command")
 	}
 }
 
@@ -227,12 +248,13 @@ func (d *driver) ensureRecoveryReservation() {
 	case strings.HasPrefix(d.carriedReservation, "reservation: open:"):
 		d.carriedRow = strings.TrimPrefix(d.carriedReservation, "reservation: open:")
 	case strings.HasPrefix(d.carriedReservation, "reservation: expired:"):
-		d.carryAsk("word " + d.request.Carried + " expired; record a new exception; the local commit remains at HEAD")
+		d.carryAsk("exception "+d.request.Carried+" has expired; its commit stays at HEAD", nil, d.exceptionGone())
 	default:
 		d.reserveCarry()
 		d.stepOutput.Reset()
 		if d.fetchOrigin(&d.stepOutput) != 0 {
-			d.carryAsk("origin fetch failed after restoring the carry reservation")
+			d.carryAsk("origin couldn't be fetched, so nothing was landed", d.usingException(), "once origin answers",
+				d.stepOutput.String())
 		}
 		d.rebaseRecovered()
 	}
@@ -284,13 +306,14 @@ func (d *driver) createCarriedIntent(commit string) {
 	}
 	output, status := d.owners.GoalCarrying(request)
 	if status != 0 {
-		fmt.Fprintln(d.stderr, strings.TrimRight(output, "\n"))
+		d.stop(status, "the exception landing couldn't be recorded before its push, so nothing was pushed", d.usingException(), repeat, output)
 		exitLanding(status)
 	}
 	entry := strings.TrimPrefix(strings.TrimRight(output, "\n"), "carrying=")
 	entry, _, _ = strings.Cut(entry, " ledger=")
 	if entry == "" {
-		fmt.Fprintln(d.stderr, "land refused: carried intent returned no entry")
+		d.stop(1, "the exception landing couldn't be recorded before its push, so nothing was pushed", d.usingException(), repeat,
+			"carried intent returned no entry")
 		exitLanding(1)
 	}
 	d.carriedEntry = entry
@@ -319,25 +342,22 @@ func (d *driver) printCarriedAdvisory(commit string) {
 	}
 	goalText := d.git("show", d.carriedLedgerTip+":./plans/goals/"+d.request.Goal+".md")
 	if goalText.Code != 0 {
-		d.stderr.Write(goalText.Stderr)
+		d.stop(goalText.Code, "goal "+d.request.Goal+" can't be read from the goal records, so nothing was pushed", d.usingException(), repeat,
+			string(goalText.Stderr))
 		exitLanding(goalText.Code)
 	}
 	exceptions := 0
 	if match := budgetExceptions.FindSubmatch(goalText.Stdout); match != nil {
 		exceptions, _ = strconv.Atoi(string(match[1]))
 	}
-	fmt.Fprintf(d.stdout, "carried reservation: %s\n", d.carriedRow)
-	fmt.Fprintf(d.stdout, "carried ledger: %s\n", d.carriedLedgerTip)
-	fmt.Fprintf(d.stdout, "carried judge: %s\n", judgeLine)
-	fmt.Fprintf(d.stdout, "carried live failure: %s\n", liveFailure)
-	fmt.Fprintf(d.stdout, "carried ordinary verdict: %s\n", ordinary)
-	fmt.Fprintf(d.stdout, "carried testing result: sufficient=%s missing=%s failing=%s uncovered=- discrepancies=-\n", sufficient, missing, failing)
 	finding := "carried:" + commit
 	if batteryLine != "green" {
 		finding += ":battery-red"
 	}
-	fmt.Fprintf(d.stdout, "carried obligation finding: %s\n", finding)
-	fmt.Fprintf(d.stdout, "carried exception count after this one: %d\n", exceptions+1)
+	writeDetails(d.details, "carried reservation: "+d.carriedRow, "carried ledger: "+d.carriedLedgerTip,
+		"carried judge: "+judgeLine, "carried live failure: "+liveFailure, "carried ordinary verdict: "+ordinary,
+		fmt.Sprintf("carried testing result: sufficient=%s missing=%s failing=%s uncovered=- discrepancies=-", sufficient, missing, failing),
+		"carried obligation finding: "+finding, fmt.Sprintf("carried exception count after this one: %d", exceptions+1))
 }
 
 func (d *driver) carriedStep(name string, request CarriedRequest) {
@@ -359,7 +379,8 @@ func (d *driver) finishCarriedPublication(commit string) {
 	d.recordCarriedRelease(commit)
 	if status := d.runStep("push carried commit to origin (single attempt)", d.pushOrigin); status != 0 {
 		if d.movingOriginRejection() {
-			d.carryAsk("origin moved during the push; rerun " + d.usingException())
+			d.carryAsk("main moved while this landed, so nothing was pushed", d.usingException(), "lands it on the new main",
+				d.stepOutput.String())
 		}
 		d.failStep(status)
 	}
@@ -383,20 +404,20 @@ func (d *driver) recordCarriedRelease(commit string) {
 		return
 	}
 	if err := d.owners.RecordRelease(commit, d.branch); err != nil {
-		fmt.Fprintf(d.stdout, "-- the goal's workspaces were not recorded for release (%v); they stay until metasystem work workspace --release or the goal's end\n", err)
+		writeDetails(d.details, fmt.Sprintf("the goal's workspaces were not recorded for release (%v); they stay until the goal ends or metasystem work workspace --release", err))
 	}
 }
 
 func (d *driver) runCarried() {
 	if d.runStep("fetch origin for carried landing", d.fetchOrigin) != 0 {
-		d.carryAsk("the code remote could not be fetched; repair origin and rerun " + d.usingException())
+		d.carryAsk("origin couldn't be fetched, so nothing was landed", d.usingException(), "once origin answers", d.stepOutput.String())
 	}
 	d.goalFetchForCarry()
 	d.readCarryStatus()
 	switch {
 	case strings.HasPrefix(d.carriedConsumption, "superseded:"):
 		replacement := strings.TrimPrefix(d.carriedConsumption, "superseded:")
-		d.carryAsk("word " + d.request.Carried + " was superseded by " + replacement + "; land under it: metasystem work land " + d.request.Goal + " --using-exception " + replacement)
+		d.carryAsk("exception "+d.request.Carried+" was replaced by "+replacement, []string{"metasystem", "work", "land", d.request.Goal, "--using-exception", replacement}, "")
 	case strings.HasPrefix(d.carriedConsumption, "ledger:"):
 		if d.carriedCounselor == "counselor: missing" {
 			d.carriedStep("repair carried counselor record", CarriedRequest{RepairCounselor: true, Ref: d.request.Carried})
@@ -404,11 +425,11 @@ func (d *driver) runCarried() {
 		if !d.request.SkipTransport {
 			d.requiredStep("sync transport", d.syncTransport)
 		}
-		fmt.Fprintf(d.stdout, "already recorded in the goal ledger as %s\n", strings.TrimPrefix(d.carriedConsumption, "ledger:"))
+		writeDetails(d.details, "already recorded in the goal ledger as "+strings.TrimPrefix(d.carriedConsumption, "ledger:"))
 		return
 	case strings.HasPrefix(d.carriedConsumption, "origin:"):
 		commit := strings.TrimPrefix(d.carriedConsumption, "origin:")
-		fmt.Fprintf(d.stdout, "already landed as %s; completing the record\n", commit)
+		writeDetails(d.details, "already landed as "+commit+"; completing the record")
 		if entry, found := strings.CutPrefix(d.carriedIntent, "carrying:"); found {
 			d.carriedEntry = entry
 			d.carriedStep("complete carried goal record", CarriedRequest{Entry: entry})
@@ -431,16 +452,20 @@ func (d *driver) runCarried() {
 	switch d.carriedWord {
 	case "ok":
 	case "expired":
-		d.carryAsk("word " + d.request.Carried + " expired; record a new exception")
+		d.carryAsk("exception "+d.request.Carried+" has expired, so nothing was landed", nil, d.exceptionGone())
 	case "missing":
-		d.carryAsk("carry word " + d.request.Carried + " is missing on goal " + d.request.Goal + "; fetch the ledger")
+		d.carryAsk("goal "+d.request.Goal+" has no exception "+d.request.Carried+", so nothing was landed", []string{"metasystem", "goal", "sync"},
+			"then repeat this command if the exception was recorded elsewhere")
 	case "unproven":
-		d.carryAsk("carry word " + d.request.Carried + " is not proven; issue it from a verified terminal")
+		d.carryAsk("exception "+d.request.Carried+" wasn't recorded by a person at an enrolled terminal, so nothing was landed", nil,
+			"record it again from your own terminal: metasystem work land "+d.request.Goal+" --exception CODE --reason R")
 	default:
-		d.carryAsk("carry word " + d.request.Carried + " has unknown state " + d.carriedWord)
+		d.carryAsk("exception "+d.request.Carried+" is in a state this landing doesn't know, so nothing was landed", nil,
+			d.exceptionGone()+" (--verbose shows its state)", "carry word state: "+d.carriedWord)
 	}
 	if d.carriedConsumption != "none" {
-		d.carryAsk("word " + d.request.Carried + " has unsupported consumption state " + d.carriedConsumption)
+		d.carryAsk("exception "+d.request.Carried+" is in a state this landing doesn't know, so nothing was landed", nil,
+			d.exceptionGone()+" (--verbose shows its state)", "consumption state: "+d.carriedConsumption)
 	}
 	d.holdIndex()
 	d.requiredStep("stage caller paths", d.stageChanges)

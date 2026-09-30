@@ -158,7 +158,7 @@ func ObtainWorkspace(ctx context.Context, request WorkspaceRequest) (Workspace, 
 		return Workspace{}, fmt.Errorf("a workspace belongs to a goal or a session, not %s", request.Owner.Kind)
 	}
 	if !ValidWorkspaceName(workspaceName(request.Name)) {
-		return Workspace{}, fmt.Errorf("%q is not a workspace name: letters, digits, dot, underscore and dash, not starting with a dot or dash", request.Name)
+		return Workspace{}, fmt.Errorf("%q is not a workspace name (letters, digits, . _ and -, not starting with . or -)", request.Name)
 	}
 	key, err := ReservationKey(request.Owner, request.Name)
 	if err != nil {
@@ -187,7 +187,7 @@ func ObtainWorkspace(ctx context.Context, request WorkspaceRequest) (Workspace, 
 				return Workspace{}, err
 			}
 		case StateReleasing:
-			return Workspace{}, fmt.Errorf("the earlier workspace at %s is still being released; metasystem disk clean finishes it, then repeat this request", existing.Path)
+			return Workspace{}, fmt.Errorf("the earlier workspace at %s is still being released; run metasystem disk clean, then repeat this", existing.Path)
 		}
 	}
 	return createWorkspace(ctx, request, key, entry)

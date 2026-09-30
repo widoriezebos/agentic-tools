@@ -2,6 +2,7 @@ package goal
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"path"
@@ -240,7 +241,7 @@ type SendBackAnswer struct {
 func (act ReviewAct) check(id string) (ReviewRecordHead, error) {
 	words := VerdictWords(act.Verdict)
 	if words == "" {
-		return ReviewRecordHead{}, fmt.Errorf("goal review records clear-to-land or send-back; %q is neither, and a review that ends without a verdict records nothing on the goal", act.Verdict)
+		return ReviewRecordHead{}, fmt.Errorf("the verdict is clear-to-land or send-back, not %q; nothing was recorded", act.Verdict)
 	}
 	if !reviewRecordPath.MatchString(act.Record) || strings.HasSuffix(act.Record, ".brief.md") || path.Clean(act.Record) != act.Record {
 		return ReviewRecordHead{}, fmt.Errorf("%s is not a review record in its home; a review record is %s<name>.md", act.Record, ReviewHome)
@@ -257,21 +258,21 @@ func (act ReviewAct) check(id string) (ReviewRecordHead, error) {
 		return ReviewRecordHead{}, fmt.Errorf("the review record %s is a review of %s, not of %s; a verdict is recorded on the goal its record reviews", act.Record, named, id)
 	}
 	if head.Tip == "" {
-		return ReviewRecordHead{}, fmt.Errorf("the review record %s names no branch tip on its Reviewed line; a verdict is recorded against the tip that was reviewed", act.Record)
+		return ReviewRecordHead{}, fmt.Errorf("review record %s doesn't say which commit was reviewed (its Reviewed line)", act.Record)
 	}
 	if head.Verdict != words {
-		return ReviewRecordHead{}, fmt.Errorf("the Outcome of %s does not open with \"Verdict: %s\"; record the Outcome End drafts for this verdict first", act.Record, words)
+		return ReviewRecordHead{}, fmt.Errorf("the Outcome of %s doesn't start with \"Verdict: %s\"; press End to draft it first", act.Record, words)
 	}
 	if head.ReviewedAt != head.Tip {
-		return ReviewRecordHead{}, fmt.Errorf("the Outcome of %s was drafted for %s, and the record now reviews %s: the branch was retipped since; press End again", act.Record, orNone(head.ReviewedAt), short(head.Tip))
+		return ReviewRecordHead{}, fmt.Errorf("the Outcome of %s was drafted for %s, but the branch moved to %s; press End again", act.Record, orNone(head.ReviewedAt), short(head.Tip))
 	}
 	switch act.Verdict {
 	case VerdictSendBack:
 		if head.Fixes == 0 {
-			return ReviewRecordHead{}, fmt.Errorf("the review record %s has no finding answered fix, and a send-back carries the findings answered fix as its correction brief; answer the findings the builder must fix, or end the review another way", act.Record)
+			return ReviewRecordHead{}, fmt.Errorf("review record %s has no finding marked fix, so a send-back has nothing to send; mark the fixes first", act.Record)
 		}
 		if len(bytes.TrimSpace(act.Brief)) == 0 {
-			return ReviewRecordHead{}, fmt.Errorf("a send-back carries its correction brief: the findings answered fix; mark at least one finding fix, or end the review another way")
+			return ReviewRecordHead{}, errors.New("a send-back needs at least one finding marked fix; mark one, or end the review another way")
 		}
 		if len(act.Brief) > maxBriefBytes || !utf8.Valid(act.Brief) {
 			return ReviewRecordHead{}, fmt.Errorf("the correction brief is not text, or is larger than a brief is")
@@ -318,10 +319,10 @@ func Review(r VerbRequest, id string, act ReviewAct, proof *humanauthority.Proof
 		return PublishResult{}, fmt.Errorf("goal review is a human act and names its human (--by)")
 	}
 	if proof == nil || !(proof.ValidFor(r.Endpoint.Root) || proof.SessionValidFor(r.Endpoint.Root)) {
-		return PublishResult{}, fmt.Errorf("goal review requires freshly observed enrolled-terminal human authority or a signed-in browser session")
+		return PublishResult{}, errors.New("only a person records a review, from their own terminal or signed in to the browser")
 	}
 	if named := humanOfProof(r.Endpoint.Root, proof); named != "" && named != r.Actor.Human {
-		return PublishResult{}, fmt.Errorf("the proof names %s and the act is attributed to %s; an act is recorded under the person who made it", named, r.Actor.Human)
+		return PublishResult{}, fmt.Errorf("this terminal belongs to %s, not %s; an act is recorded under the person who made it", named, r.Actor.Human)
 	}
 	head, err := act.check(id)
 	if err != nil {
@@ -370,7 +371,7 @@ func reviewRequest(r VerbRequest, id string, act ReviewAct, head ReviewRecordHea
 				case !present:
 					changes = append(changes, change)
 				case !bytes.Equal(held, change.Content):
-					return nil, fmt.Errorf("%s is already published with other words, another review's; recorded words are never overwritten, so start a new review of %s", change.Path, id)
+					return nil, fmt.Errorf("%s already holds another review's words, which are never overwritten; start a new review of %s", change.Path, id)
 				}
 			}
 			for _, recorded := range ReviewLinesOf(f) {
@@ -678,7 +679,7 @@ func ReadPublished(e Endpoint, file string) ([]byte, error) {
 		return nil, err
 	}
 	if !present {
-		return nil, fmt.Errorf("this clone has accepted no ledger tip yet; sync first")
+		return nil, errors.New("this checkout hasn't fetched the goal list yet\nrun: metasystem goal sync --refresh")
 	}
 	files, err := readCommitFiles(e, tip, file)
 	if err != nil {
@@ -697,7 +698,7 @@ func ReadPublished(e Endpoint, file string) ([]byte, error) {
 // path relative to root, which is the path the act publishes it at.
 func ResolveReviewRecord(root, given string) (string, []byte, error) {
 	if strings.TrimSpace(given) == "" {
-		return "", nil, fmt.Errorf("goal review names its review record with --record PATH")
+		return "", nil, errors.New("a review names its review record file with --record")
 	}
 	absolute := given
 	if !filepath.IsAbs(absolute) {

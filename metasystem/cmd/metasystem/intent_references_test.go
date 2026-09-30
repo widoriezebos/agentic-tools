@@ -83,7 +83,7 @@ func TestIntentReferenceCollisionAcrossStores(t *testing.T) {
 	code, result := b.runJSON(owners, "work", "status", "shared-1")
 	candidates, _ := result.Data.(map[string]any)["candidates"].([]any)
 	if code != 1 || result.Outcome != intentRefused || !slices.Equal(candidates, []any{"j1:shared-1", "run:shared-1"}) ||
-		!strings.Contains(result.Decision, "j1:shared-1 or run:shared-1") {
+		result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "work", "status", "j1:shared-1"}) {
 		t.Fatalf("colliding raw id = %d %+v", code, result)
 	}
 	choices, _ := json.Marshal(result.Data.(map[string]any)["choices"])
@@ -155,9 +155,10 @@ func TestIntentReferenceKindsPerAction(t *testing.T) {
 				t.Errorf("%s %s:rec-1 = %+v; a kind the action does not take is refused", command.name, kind, problem)
 				continue
 			}
+			said := shellCommand(problem.next) + " " + problem.nextReason
 			for _, name := range accepting[kind] {
-				if !strings.Contains(problem.Decision, "metasystem "+name) {
-					t.Errorf("%s %s:rec-1 refusal does not name %s: %q", command.name, kind, name, problem.Decision)
+				if !strings.Contains(said, "metasystem "+name) {
+					t.Errorf("%s %s:rec-1 refusal does not name %s: %q", command.name, kind, name, said)
 				}
 			}
 		}
@@ -169,7 +170,7 @@ func TestIntentReferenceKindsPerAction(t *testing.T) {
 		return nil, 0, nil
 	}
 	for _, args := range [][]string{{"work", "land", "run:rec-1"}, {"work", "stop", "run:rec-1"}, {"test", "wait", "j2:rec-1"}, {"work", "finish", "read:read-000000000000000000000000"}} {
-		if code, result := b.runJSON(owners, args...); code != 2 || result.Outcome != intentRefused || result.Decision == "" {
+		if code, result := b.runJSON(owners, args...); code != 2 || result.Outcome != intentRefused || result.Next == nil && result.Decision == "" {
 			t.Errorf("%v = %d %+v", args, code, result)
 		}
 	}

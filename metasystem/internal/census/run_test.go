@@ -61,7 +61,7 @@ func TestRunFixtureCensusFixtureGuard(t *testing.T) {
 	}
 	found := false
 	for _, e := range v.Errors {
-		if e == "enumeration:METASYSTEM_CENSUS_PROCESS_FILE is allowed only when metasystem.runtimes=fake" {
+		if e == "enumeration:a test process table is set, and is allowed only when metasystem.runtimes=fake" {
 			found = true
 		}
 	}

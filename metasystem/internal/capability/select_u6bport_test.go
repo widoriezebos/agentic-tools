@@ -39,7 +39,7 @@ func TestSelectEmptyWriteRootsOnAnUnenforcedBoundaryIsRestrictive(t *testing.T) 
 	if err := stage(t, "ghostrt", `{}`); err == nil || !strings.Contains(err.Error(), "writeRoots") {
 		t.Fatalf("an unregistered runtime's empty write scope was not refused by field: %v", err)
 	}
-	if err := stage(t, "ghostrt", `{"writeRoots":["ghostrt"]}`); err == nil || !strings.Contains(err.Error(), "declares no residual") {
+	if err := stage(t, "ghostrt", `{"writeRoots":["ghostrt"]}`); err == nil || !strings.Contains(err.Error(), "names no gap a role may waive") {
 		t.Fatalf("an unregistered runtime's name waiver bypassed the residual rule: %v", err)
 	}
 }

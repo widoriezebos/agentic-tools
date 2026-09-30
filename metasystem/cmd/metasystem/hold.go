@@ -152,7 +152,7 @@ func runUtilHoldWithDependencies(args []string, deps fixtureLifetimeDependencies
 		return 2
 	}
 	if *tag == "" || flags.NArg() != 0 {
-		fmt.Fprintln(deps.stderr, "usage: metasystem internal util hold --tag TAG [--stopped-file FILE] [--ready-file FILE] [--max-seconds N] [--ignore-term]")
+		fmt.Fprintln(deps.stderr, "usage: metasystem internal util hold --tag TAG [options]\n  options: --stopped-file FILE --ready-file FILE --max-seconds N --ignore-term")
 		return 2
 	}
 	maxSeconds, err := strconv.ParseInt(*maxSecondsText, 10, 64)

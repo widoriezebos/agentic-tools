@@ -201,7 +201,7 @@ func TestGuardObservationStorageFailureStaysNonRefusing(t *testing.T) {
 			g := newGuardBed(t)
 			g.stage("M", "tracked.txt")
 			g.owners.AppendObservation = func(string, string) error { return errors.New(cause) }
-			g.expect(g.run(), 0, "pre-commit guard: classifier unavailable and "+cause)
+			g.expect(g.run(), 0, "the commit hook couldn't tell who is committing, nor log that ("+cause+"); the commit goes ahead")
 		})
 	}
 }
@@ -213,7 +213,7 @@ func TestGuardRefusesPatchBackups(t *testing.T) {
 	for _, status := range []string{"A", "M"} {
 		g := newGuardBed(t)
 		g.stage(status, "scratch.orig", "ordinary.txt")
-		g.expect(g.run(), 1, "pre-commit guard: refusing scratch.orig: patch backups are never tracked")
+		g.expect(g.run(), 1, "scratch.orig is a patch backup (.orig), which is never committed\nrun: git restore --staged scratch.orig  (then repeat the commit)\n")
 		if strings.Contains(g.stderr.String(), "ordinary.txt") {
 			t.Fatalf("an ordinary path was named: %s", g.stderr.String())
 		}
@@ -238,7 +238,7 @@ func TestGuardNewPlanNeedsAcknowledgment(t *testing.T) {
 	t.Parallel()
 	g := newGuardBed(t)
 	g.stage("A", "plans/new.md")
-	g.expect(g.run(), 1, "pre-commit guard: refusing to commit NEW plan file(s):\n  plans/new.md\n", "METASYSTEM_ALLOW_NEW_PLAN=1 git commit ...")
+	g.expect(g.run(), 1, "this commit adds a new plan, plans/new.md, and a new plan is often another session's file taken along\n", "run: METASYSTEM_ALLOW_NEW_PLAN=1 git commit ...")
 
 	g = newGuardBed(t)
 	g.stage("M", "plans/existing.md")
@@ -260,13 +260,13 @@ func TestGuardLedgerFenceOutranksBothExceptions(t *testing.T) {
 		g := newGuardBed(t)
 		g.stage("A", path)
 		g.owners.AllowNewPlan = true
-		g.expect(g.run(), 1, "pre-commit guard: goal files change only through goal verbs", "  "+path+"\n")
+		g.expect(g.run(), 1, "goal files change only through goal commands, and this commit edits "+path+"\n", "run: git restore --staged "+path)
 	}
 
 	g := newGuardBed(t)
 	g.unborn = true
 	g.stage("A", "plans/goals/smuggled.md")
-	g.expect(g.run(), 1, "goal files change only through goal verbs")
+	g.expect(g.run(), 1, "goal files change only through goal commands")
 
 	g = newGuardBed(t)
 	g.unborn = true
@@ -296,7 +296,7 @@ func TestGuardProbeAndAgentWrapperProof(t *testing.T) {
 		return false
 	}
 	g.stage("A", "ordinary.txt")
-	g.expect(g.run(), 1, "the live wrapper ancestry token is missing")
+	g.expect(g.run(), 1, "an agent commits here only through metasystem work land")
 	if asked != TokenPath(g.root) || askedCaller != 900 || len(g.observations) != 0 {
 		t.Fatalf("token path %q caller %d observations %q", asked, askedCaller, g.observations)
 	}
@@ -391,7 +391,7 @@ func TestGuardAcceptsTheTokenCommitWrites(t *testing.T) {
 			if c.accepted {
 				b.expect(status, 0)
 			} else {
-				b.expect(status, 1, "the live wrapper ancestry token is missing")
+				b.expect(status, 1, "an agent commits here only through metasystem work land")
 			}
 			if (guardStatus == 0) != c.accepted {
 				t.Fatalf("guard status %d, want accepted=%t", guardStatus, c.accepted)
@@ -465,7 +465,7 @@ func TestGuardWrapperFenceCoversOnlyWhatItProtects(t *testing.T) {
 			if c.setup != nil {
 				c.setup(g)
 			}
-			g.expect(g.run(), 1, "the live wrapper ancestry token is missing", c.reason, "metasystem work land")
+			g.expect(g.run(), 1, "an agent commits here only through metasystem work land", c.reason, "metasystem work land")
 			if g.tokenChecks != 1 {
 				t.Fatalf("token checks %d, want 1", g.tokenChecks)
 			}
@@ -479,13 +479,13 @@ func TestGuardUnheldCloneKeepsTheOtherFences(t *testing.T) {
 	t.Parallel()
 	g := agentOn(t, "feature")
 	g.stage("A", "plans/goals/smuggled.md")
-	g.expect(g.run(), 1, "goal files change only through goal verbs")
+	g.expect(g.run(), 1, "goal files change only through goal commands")
 	g = agentOn(t, "feature")
 	g.stage("A", "scratch.orig")
-	g.expect(g.run(), 1, "patch backups are never tracked")
+	g.expect(g.run(), 1, "is a patch backup (.orig), which is never committed")
 	g = agentOn(t, "feature")
 	g.stage("A", "plans/new.md")
-	g.expect(g.run(), 1, "refusing to commit NEW plan file(s)")
+	g.expect(g.run(), 1, "this commit adds a new plan")
 }
 
 // atHelm puts the bed at the helm (By "wido") in its primary checkout: the
@@ -535,9 +535,14 @@ func (g *guardBed) expectYields(gates ...string) {
 	}
 }
 
-// helmLine is the one stderr line a yield prints.
-func helmLine(who, gate, commonDir string) string {
-	return "pre-commit guard: HUMAN AT THE HELM (" + who + "): the " + gate + " yields; recorded in " + filepath.Join(commonDir, "metasystem", "helm-yields.log") + "\n"
+// helmLine is the one stderr line a yield prints once the commit proceeds;
+// the yield itself is recorded in the helm's log under commonDir.
+func helmLine(who, gate, _ string) string {
+	actor := who + "'s"
+	if who == "signature unreadable" {
+		actor = "the helm's"
+	}
+	return "HUMAN AT THE HELM (" + who + "): this commit passed the " + guardChecks[gate] + " as " + actor + " act\n"
 }
 
 func resolved(t *testing.T, path string) string {
@@ -603,7 +608,7 @@ func TestGuardAtTheHelmReachesOnlyThePrimaryCheckout(t *testing.T) {
 			g := agentOn(t, "main")
 			g.atHelm()
 			c.setup(g)
-			g.expect(g.run(), 1, "the live wrapper ancestry token is missing", "refs/heads/main is the published line")
+			g.expect(g.run(), 1, "an agent commits here only through metasystem work land", "refs/heads/main is the published line")
 			g.expectYields()
 			if strings.Contains(g.stderr.String(), "HUMAN AT THE HELM") {
 				t.Fatalf("a refused commit printed the helm line: %s", g.stderr.String())
@@ -632,9 +637,9 @@ func TestGuardAtTheHelmKeepsTheDamageChecks(t *testing.T) {
 	for _, c := range []struct {
 		path, message string
 	}{
-		{"plans/goals/smuggled.md", "goal files change only through goal verbs"},
-		{"plans/channel/smuggled.json", "goal files change only through goal verbs"},
-		{"scratch.orig", "patch backups are never tracked"},
+		{"plans/goals/smuggled.md", "goal files change only through goal commands"},
+		{"plans/channel/smuggled.json", "goal files change only through goal commands"},
+		{"scratch.orig", "is a patch backup (.orig), which is never committed"},
 	} {
 		g := newGuardBed(t)
 		g.atHelm()
@@ -645,7 +650,10 @@ func TestGuardAtTheHelmKeepsTheDamageChecks(t *testing.T) {
 		g = agentOn(t, "main")
 		g.atHelm()
 		g.stage("A", c.path)
-		g.expect(g.run(), 1, c.message, "HUMAN AT THE HELM (wido): the wrapper-fence yields")
+		g.expect(g.run(), 1, c.message)
+		if strings.Contains(g.stderr.String(), "HUMAN AT THE HELM") {
+			t.Fatalf("a refused commit printed the helm notice: %q", g.stderr.String())
+		}
 		g.expectYields("wrapper-fence")
 	}
 }
@@ -656,18 +664,18 @@ func TestGuardAtTheHelmKeepsTheDamageChecks(t *testing.T) {
 func TestGuardWithoutTheHelmRefusesAsToday(t *testing.T) {
 	t.Parallel()
 	g := agentOn(t, "main")
-	g.expect(g.run(), 1, "the live wrapper ancestry token is missing")
+	g.expect(g.run(), 1, "an agent commits here only through metasystem work land")
 	g = agentOn(t, "main")
 	g.atHelm()
 	g.helmState = helm.State{}
-	g.expect(g.run(), 1, "the live wrapper ancestry token is missing")
+	g.expect(g.run(), 1, "an agent commits here only through metasystem work land")
 	g.expectYields()
 
 	g = newGuardBed(t)
 	g.atHelm()
 	g.helmState = helm.State{}
 	g.stage("A", "plans/new.md")
-	g.expect(g.run(), 1, "refusing to commit NEW plan file(s)")
+	g.expect(g.run(), 1, "this commit adds a new plan")
 	g.expectYields()
 }
 
@@ -700,11 +708,11 @@ func TestGuardYieldsTheNewPlanAcknowledgmentAtTheHelm(t *testing.T) {
 	g = agentOn(t, "feature")
 	g.atHelm()
 	g.stage("A", "plans/goals/smuggled.md")
-	g.expect(g.run(), 1, "goal files change only through goal verbs")
+	g.expect(g.run(), 1, "goal files change only through goal commands")
 	g = agentOn(t, "feature")
 	g.atHelm()
 	g.stage("A", "scratch.orig")
-	g.expect(g.run(), 1, "patch backups are never tracked")
+	g.expect(g.run(), 1, "is a patch backup (.orig), which is never committed")
 	g.expectYields()
 }
 

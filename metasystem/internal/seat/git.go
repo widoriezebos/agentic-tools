@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 )
 
 // TickNamespace is the clone's canonical local copy of the fleet's presence,
@@ -164,7 +165,7 @@ func (g Git) readPrefix(prefix string) (Copy, error) {
 		}
 		record, parseErr := ParseRecord([]byte(blob))
 		if parseErr != nil {
-			copied.Malformed[machine] = parseErr.Error()
+			copied.Malformed[machine] = refusal.DetailOf(parseErr)
 			continue
 		}
 		if record.Machine != machine {

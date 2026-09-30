@@ -227,7 +227,7 @@ func TestRunFileTurnRefusesBeforeAnyWireOpen(t *testing.T) {
 		}, "no-prompt.txt"},
 		{"journal collision", func(t *testing.T, b *fileTurnBed) {
 			b.write(t, "journal.log", "stale session\n")
-		}, "journal create"},
+		}, "record file could not be created"},
 		{"server-out unopenable", func(t *testing.T, b *fileTurnBed) {}, "server-out open"},
 		{"server-in unopenable", func(t *testing.T, b *fileTurnBed) {
 			b.write(t, "server-out", "")

@@ -62,12 +62,12 @@ func runBuild(ctx context.Context, args []string, root string, d deps) int {
 		workers = "1"
 	}
 	if !positiveInteger.MatchString(workers) {
-		fmt.Fprintln(d.stderr, "go-build: METASYSTEM_TEST_WORKERS must be a positive integer")
+		fmt.Fprintf(d.stderr, "go-build: the test worker count %q is not a positive integer\nrun: unset %s\n", workers, testWorkersVariable)
 		return 1
 	}
 
 	if d.lookGo() != nil {
-		fmt.Fprintln(d.stderr, "go-build: no go toolchain on PATH; the engine cannot be built")
+		fmt.Fprintln(d.stderr, "go-build: no go toolchain is on this shell's search path, so the engine cannot be built")
 		return 1
 	}
 
@@ -89,7 +89,8 @@ func runBuild(ctx context.Context, args []string, root string, d deps) int {
 			fmt.Fprintf(d.stderr, "gate %s is running as pid %d\n", holder.Gate, holder.Pid)
 		}
 		if len(holders) > 0 {
-			fmt.Fprintln(d.stderr, "go-build: a live gate run owns this checkout; rebuilding now would swap its binary mid-run (METASYSTEM_ALLOW_CONCURRENT_GATE=1 overrides)")
+			fmt.Fprintf(d.stderr, "go-build: a live gate run owns this checkout; rebuilding now would swap its binary mid-run\n"+
+				"run: %s=1 go run ./cmd/devgate build  (only to rebuild under that run anyway)\n", concurrentGateVariable)
 			return 1
 		}
 	}
@@ -118,7 +119,7 @@ func runBuild(ctx context.Context, args []string, root string, d deps) int {
 			fmt.Fprintln(d.stderr, "go-build: build failed")
 			return 1
 		}
-		fmt.Fprintf(d.stdout, "go-build: proof engine @ %s (CGO_ENABLED=0); bin/metasystem untouched\n", stamp)
+		fmt.Fprintf(d.stdout, "go-build: test engine @ %s (no cgo); bin/metasystem untouched\n", stamp)
 		return 0
 	}
 
@@ -141,7 +142,7 @@ func runBuild(ctx context.Context, args []string, root string, d deps) int {
 		fmt.Fprintf(d.stderr, "go-build: cannot install bin/metasystem: %v\n", err)
 		return 1
 	}
-	fmt.Fprintf(d.stdout, "go-build: bin/metasystem @ %s (CGO_ENABLED=0)\n", stamp)
+	fmt.Fprintf(d.stdout, "go-build: bin/metasystem @ %s (no cgo)\n", stamp)
 	return 0
 }
 

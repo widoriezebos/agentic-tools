@@ -443,7 +443,7 @@ func TestGoalBranchClaimRequiresMachineAndLineage(t *testing.T) {
 	code, stdout, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
 		return goalBranchTestCommitWith([]string{"--goal", "standing-validation", "--kind", "unit", "--unit", "u1", "--root", f.installation}, f.dependencies(), stdout, stderr)
 	})
-	if code != 1 || stdout != "" || !strings.Contains(stderr, branch.NotHolderCode) {
+	if code != 1 || stdout != "" || !strings.Contains(stderr, "is held by another session") || strings.Contains(stderr, branch.NotHolderCode) {
 		t.Fatalf("claim mismatch: code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
 	assertUnchanged()
@@ -475,7 +475,7 @@ func goalBranchCommitRefusalPreservesCheckout(t *testing.T) {
 	code, stdout, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
 		return goalBranchTestCommitWith([]string{"--goal", "standing-validation", "--kind", "unit", "--unit", "u1", "--root", f.installation}, dependencies, stdout, stderr)
 	})
-	if code != 1 || stdout != "" || !strings.Contains(stderr, branch.RangeCode) || !staged {
+	if code != 1 || stdout != "" || !strings.Contains(stderr, "which kind unit does not allow") || !staged {
 		t.Fatalf("class refusal: code=%d stdout=%q stderr=%q staged=%t", code, stdout, stderr, staged)
 	}
 	assertUnchanged()
@@ -736,7 +736,7 @@ func TestGoalBranchCommitIsTheGuardedCommitWrapper(t *testing.T) {
 	goalSyncMutationGit(t, root, "add", "metasystem/guarded.go")
 	raw := exec.Command("git", "-C", root, "commit", "-m", "raw commit must refuse")
 	output, rawErr := raw.CombinedOutput()
-	if rawErr == nil || !strings.Contains(string(output), "live wrapper ancestry token is missing") {
+	if rawErr == nil || !strings.Contains(string(output), "an agent commits here only through metasystem work land") {
 		t.Fatalf("raw git commit err=%v output=%q", rawErr, output)
 	}
 	goalSyncMutationGit(t, root, "add", "-u")

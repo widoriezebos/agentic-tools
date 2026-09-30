@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 )
 
 // fixtureClock is the one time every behaviour test in this package reads.
@@ -177,7 +179,7 @@ func TestComposeRefusesAnUnpublishableNicknameAndAnUnarmedGeneration(t *testing.
 	t.Parallel()
 	for _, name := range []string{"m1/e", "m1 e", "..", "a..b", "", "m1é"} {
 		if _, _, err := Compose(name, fixtureRunner(), JobSet{}, nil, fixtureClock); err == nil ||
-			!strings.Contains(err.Error(), "SEAT_MACHINE_NICKNAME_INVALID") {
+			!strings.Contains(refusal.DetailOf(err), "SEAT_MACHINE_NICKNAME_INVALID") {
 			t.Errorf("compose(%q) = %v; want the nickname refusal", name, err)
 		}
 	}
@@ -221,7 +223,7 @@ func TestParseRefusesEachMalformedShape(t *testing.T) {
 				body[name] = value
 			}
 		}
-		if _, err := ParseRecord(mustJSON(t, body)); err == nil || !strings.Contains(err.Error(), "SEAT_PRESENCE_MALFORMED") {
+		if _, err := ParseRecord(mustJSON(t, body)); err == nil || !strings.Contains(refusal.DetailOf(err), "SEAT_PRESENCE_MALFORMED") {
 			t.Errorf("a record with no %s parsed: %v", key, err)
 		}
 	}
@@ -248,7 +250,7 @@ func TestParseRefusesEachMalformedShape(t *testing.T) {
 			body[name] = value
 		}
 		body[test.key] = test.bad
-		if _, err := ParseRecord(mustJSON(t, body)); err == nil || !strings.Contains(err.Error(), "SEAT_PRESENCE_MALFORMED") {
+		if _, err := ParseRecord(mustJSON(t, body)); err == nil || !strings.Contains(refusal.DetailOf(err), "SEAT_PRESENCE_MALFORMED") {
 			t.Errorf("%s parsed: %v", test.name, err)
 		}
 	}
@@ -311,7 +313,7 @@ func TestAChainOfEmptyFieldsIsAMalformedRecord(t *testing.T) {
 	}
 	for _, test := range broken {
 		if _, err := ParseRecord(body(test.chain)); err == nil ||
-			!strings.Contains(err.Error(), "SEAT_PRESENCE_MALFORMED") {
+			!strings.Contains(refusal.DetailOf(err), "SEAT_PRESENCE_MALFORMED") {
 			t.Errorf("%s parsed: %v", test.name, err)
 		}
 	}

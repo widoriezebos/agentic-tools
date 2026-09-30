@@ -141,7 +141,7 @@ func nickname(request Request, facts Facts) error {
 	for _, held := range facts.Taken {
 		if held == request.Machine {
 			return refuse(CodeNicknameTaken,
-				"%s is already a machine of this fleet: a clone beside this checkout, a presence ref or a claim at the accepted tip names it",
+				"%s is already the name of a machine in this fleet; choose another name",
 				request.Machine)
 		}
 	}
@@ -163,7 +163,7 @@ func destination(request Request, facts Facts) error {
 		// to finish rather than somebody else's to be refused for.
 	case err == nil:
 		return refuse(CodeDestinationExists,
-			"%s already exists; a machine is a fresh clone and this verb writes into nothing that is already there", path)
+			"%s already exists; a new machine is a fresh clone, so choose an empty place", path)
 	case !os.IsNotExist(err):
 		return refuse(CodeDestinationExists, "%s could not be read: %v", path, err)
 	}

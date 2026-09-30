@@ -26,8 +26,10 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/obligationstate"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
@@ -84,7 +86,7 @@ func TestLandingOwnerComponentRetriesAfterEnrollmentAppears(t *testing.T) {
 	fixture := newLandingOwnerOrdinaryFixture(t, "", "mac-cli")
 	root, pass, release := fixture.root, fixture.pass, fixture.release
 	defer release()
-	if err := pass(); err == nil || !strings.Contains(err.Error(), "no machine nickname is enrolled") {
+	if err := pass(); err == nil || !strings.Contains(err.Error(), "this machine has no name yet") {
 		t.Fatalf("first setup error=%v, want missing machine enrollment", err)
 	}
 	if _, err := lease.CurrentHolder(root); !errors.Is(err, lease.ErrLeaseAbsent) {
@@ -101,7 +103,7 @@ func TestLandingOwnerComponentSetupFailureDoesNotReannounce(t *testing.T) {
 	root, pass, release := fixture.root, fixture.pass, fixture.release
 	defer release()
 	for attempt := 1; attempt <= 3; attempt++ {
-		if err := pass(); err == nil || !strings.Contains(err.Error(), "no machine nickname is enrolled") {
+		if err := pass(); err == nil || !strings.Contains(err.Error(), "this machine has no name yet") {
 			t.Fatalf("setup attempt %d error=%v, want missing machine enrollment", attempt, err)
 		}
 	}
@@ -146,7 +148,7 @@ func TestLandingOwnerComponentRecoversFromHolderProofFailure(t *testing.T) {
 	if err := os.WriteFile(bad, []byte("{not json"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := pass(); err == nil || !strings.Contains(err.Error(), "holder proof failed") {
+	if err := pass(); err == nil || !strings.Contains(err.Error(), "holder could not be checked") {
 		t.Fatalf("first pass error=%v, want holder proof failure after the lease claim", err)
 	}
 	if err := os.Remove(bad); err != nil {
@@ -233,7 +235,7 @@ func TestLandingOwnerComponentForeignHolderDoesNotReannounce(t *testing.T) {
 		t.Fatal(err)
 	}
 	for attempt := 1; attempt <= 3; attempt++ {
-		if err := pass(); err == nil || !strings.Contains(err.Error(), "OWNED-ELSEWHERE") {
+		if err := pass(); err == nil || !strings.Contains(refusal.DetailOf(err), "OWNED-ELSEWHERE") {
 			t.Fatalf("contended pass %d error=%v, want live foreign holder refusal", attempt, err)
 		}
 	}
@@ -362,7 +364,7 @@ func TestLandingOwnerComponentStopsActingAfterLeaseLoss(t *testing.T) {
 	if err := os.WriteFile(leasePath, changedLease, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := pass(); err == nil || !strings.Contains(err.Error(), "OWNED-ELSEWHERE") {
+	if err := pass(); err == nil || !strings.Contains(refusal.DetailOf(err), "OWNED-ELSEWHERE") {
 		t.Fatalf("pass after lease loss error=%v, want holder refusal", err)
 	}
 	if resumes != 1 {
@@ -773,7 +775,7 @@ func TestLandingOwnerResolvesItsBatchRootFromTheCheckoutNotTheInstallation(t *te
 	if err == nil {
 		t.Fatal("the landing owner treated the seats' batch root as someone else's and never activated")
 	}
-	if !strings.Contains(err.Error(), "no machine nickname is enrolled") {
+	if !strings.Contains(err.Error(), "this machine has no name yet") {
 		t.Fatalf("landing owner setup error=%v, want the enrollment error that only a resolved owner reaches", err)
 	}
 }
@@ -787,5 +789,49 @@ func TestLandingOwnerCheckoutRootFallsBackToTheRepoFlag(t *testing.T) {
 	}
 	if got := landingOwnerCheckoutRoot("/checkout/metasystem", "/checkout"); got != "/checkout" {
 		t.Fatalf("nested layout resolved to %q, want the checkout toplevel", got)
+	}
+}
+
+// The supervised owner's reports reach a log file in its supervision
+// directory, not only its standard error (which supervision discards), and
+// a pass whose tick reported an error leaves that error for landing status
+// until a clean pass clears it.
+func TestLandingOwnerComponentLogsReportsAndKeepsTheLastTickError(t *testing.T) {
+	fixture := newLandingOwnerOrdinaryFixture(t, "mac-cli")
+	root, pass, release := fixture.root, fixture.pass, fixture.release
+	defer release()
+	fixture.enroll("mac-cli")
+	originalConstruct, originalResume := batchowner.BatchOwnerConstruct, batchowner.BatchOwnerResume
+	t.Cleanup(func() {
+		batchowner.BatchOwnerConstruct, batchowner.BatchOwnerResume = originalConstruct, originalResume
+	})
+	var captured batchowner.ProductionBatchOwnerInputs
+	batchowner.BatchOwnerConstruct = func(settings config.BatchLanding, held batchowner.BatchOwnerLease, inputs batchowner.ProductionBatchOwnerInputs, now func() time.Time) (*batch.Owner, error) {
+		captured = inputs
+		return originalConstruct(settings, held, inputs, now)
+	}
+	failing := true
+	batchowner.BatchOwnerResume = func(*batch.Owner) {
+		if failing {
+			fmt.Fprintln(captured.Log, `{"component":"landing-owner","batch":"b1","error":"injected tick failure"}`)
+			captured.TickErrors.Note("b1", errors.New("injected tick failure"))
+		}
+	}
+	if err := pass(); err != nil {
+		t.Fatal(err)
+	}
+	logged, err := os.ReadFile(batchowner.OwnerLogPath(root))
+	if err != nil || !strings.Contains(string(logged), "injected tick failure") {
+		t.Fatalf("owner log=%q error=%v", logged, err)
+	}
+	if line := lane.LastTickErrorLine(root); line != "batch b1: injected tick failure" {
+		t.Fatalf("last tick error=%q", line)
+	}
+	failing = false
+	if err := pass(); err != nil {
+		t.Fatal(err)
+	}
+	if line := lane.LastTickErrorLine(root); line != "" {
+		t.Fatalf("a clean pass kept the tick error %q", line)
 	}
 }

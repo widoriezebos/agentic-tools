@@ -65,30 +65,30 @@ func validHostLeaseRecord(path string, record hostLeaseRecord) error {
 	// both come together, well formed.
 	switch {
 	case record.Schema != 1:
-		return fmt.Errorf("unreconciled proof resource marker %s has an unknown schema", name)
+		return fmt.Errorf("leftover test-run resource marker %s has an unknown schema", name)
 	case record.FixtureOwner == nil && record.ConfPath == "":
 	case record.FixtureOwner != nil && record.FixtureOwner.Pid > 0 && record.FixtureOwner.Ref().NativeExact() && filepath.IsAbs(record.ConfPath):
 	default:
-		return fmt.Errorf("unreconciled proof resource marker %s has an invalid fixture owner or conf path", name)
+		return fmt.Errorf("leftover test-run resource marker %s has an invalid fixture owner or conf path", name)
 	}
 	if record.Owner.Pid <= 0 || !record.Owner.Ref().NativeExact() ||
 		(record.Class != "cheap" && record.Class != "heavy") ||
 		!strings.HasPrefix(name, "lease-"+record.Class+"-") || len(strings.TrimPrefix(name, "lease-"+record.Class+"-")) != 32 {
-		return fmt.Errorf("unreconciled proof resource marker %s has an invalid claim", name)
+		return fmt.Errorf("leftover test-run resource marker %s has an invalid claim", name)
 	}
 	if _, err := hex.DecodeString(strings.TrimPrefix(name, "lease-"+record.Class+"-")); err != nil {
-		return fmt.Errorf("unreconciled proof resource marker %s has an invalid nonce", name)
+		return fmt.Errorf("leftover test-run resource marker %s has an invalid nonce", name)
 	}
 	if record.Class == "cheap" && record.Slot != "" || record.Slot != "" && !strings.HasPrefix(record.Slot, "slot-") {
-		return fmt.Errorf("unreconciled proof resource marker %s has an invalid slot", name)
+		return fmt.Errorf("leftover test-run resource marker %s has an invalid slot", name)
 	}
 	seen := map[string]bool{}
 	for _, resource := range record.Resources {
 		if seen[resource] || !strings.HasPrefix(resource, "resource-") || len(resource) != len("resource-")+64 {
-			return fmt.Errorf("unreconciled proof resource marker %s has an invalid resource", name)
+			return fmt.Errorf("leftover test-run resource marker %s has an invalid resource", name)
 		}
 		if _, err := hex.DecodeString(strings.TrimPrefix(resource, "resource-")); err != nil {
-			return fmt.Errorf("unreconciled proof resource marker %s has an invalid resource", name)
+			return fmt.Errorf("leftover test-run resource marker %s has an invalid resource", name)
 		}
 		seen[resource] = true
 	}
@@ -105,7 +105,7 @@ func readHostLeaseRecord(file *os.File) (hostLeaseRecord, []byte, error) {
 		return record, nil, err
 	}
 	if len(data) > hostLeaseRecordMaxBytes || json.Unmarshal(data, &record) != nil || validHostLeaseRecord(file.Name(), record) != nil {
-		return hostLeaseRecord{}, nil, fmt.Errorf("unreconciled proof resource marker %s is unreadable", filepath.Base(file.Name()))
+		return hostLeaseRecord{}, nil, fmt.Errorf("leftover test-run resource marker %s is unreadable", filepath.Base(file.Name()))
 	}
 	return record, data, nil
 }
@@ -117,15 +117,15 @@ func setHostLeaseCleared(file *os.File, data []byte, cleared bool) error {
 	needle := []byte(`"cleared":`)
 	index := bytes.Index(data, needle)
 	if index < 0 || bytes.Count(data, needle) != 1 {
-		return fmt.Errorf("proof resource marker has no unique cleared field")
+		return fmt.Errorf("test-run resource marker has no single cleared field")
 	}
 	index += len(needle)
 	if len(data)-index < 5 {
-		return fmt.Errorf("proof resource marker has no fixed-width state")
+		return fmt.Errorf("test-run resource marker has no fixed-width state")
 	}
 	current := data[index : index+5]
 	if !bytes.Equal(current, []byte("true ")) && !bytes.Equal(current, []byte("false")) {
-		return fmt.Errorf("proof resource marker state has invalid width")
+		return fmt.Errorf("test-run resource marker state has the wrong width")
 	}
 	state := []byte("false")
 	if cleared {
@@ -177,7 +177,7 @@ func hostAdmissionDirectory() (string, error) {
 	if path == "" {
 		account, err := user.Current()
 		if err != nil || account.HomeDir == "" {
-			return "", fmt.Errorf("locate durable proof admission home: %v", err)
+			return "", fmt.Errorf("the host's test-run admission directory cannot be found: %v", err)
 		}
 		owner := filepath.Join(account.HomeDir, ".metasystem")
 		if err := secureHostAdmissionDirectory(owner, 0o755); err != nil {
@@ -211,7 +211,7 @@ func hostAdmissionDirectoryForRequest(controlRoot, selected string) (string, err
 		}
 		parent := filepath.Dir(ancestor)
 		if parent == ancestor {
-			return "", fmt.Errorf("proof admission test directory has no existing ancestor")
+			return "", fmt.Errorf("the test-run admission directory for tests has no existing parent")
 		}
 		remainder = append(remainder, filepath.Base(ancestor))
 		ancestor = parent
@@ -229,7 +229,7 @@ func hostAdmissionDirectoryForRequest(controlRoot, selected string) (string, err
 		temporary = temporary || err == nil && relative != "." && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator))
 	}
 	if !temporary || !filepath.IsAbs(selected) || !fixtureauth.FixtureModeRoot(controlRoot) {
-		return "", fmt.Errorf("proof admission test directory requires a temporary path and fake-runtime root")
+		return "", fmt.Errorf("a test's admission directory must be temporary and under a fake runtime")
 	}
 	if err := secureHostAdmissionDirectory(selected, 0o700); err != nil {
 		return "", err
@@ -246,7 +246,7 @@ func FixtureHostAdmissionDirectory(checkoutRoot string) (string, bool, error) {
 		return "", false, nil
 	}
 	if !fixtureauth.FixtureModeRoot(checkoutRoot) {
-		return "", false, fmt.Errorf("proof admission fixture owner checkout must use the fake runtime")
+		return "", false, fmt.Errorf("a fixture owner checkout must use the fake runtime for admission")
 	}
 	path, err := hostAdmissionDirectory()
 	if err != nil {
@@ -261,11 +261,11 @@ func secureHostAdmissionDirectory(path string, maximum os.FileMode) error {
 	}
 	info, err := os.Lstat(path)
 	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-		return fmt.Errorf("host proof admission directory is not a directory: %v", err)
+		return fmt.Errorf("the host's test-run admission path is not a directory: %v", err)
 	}
 	stat, ok := info.Sys().(*syscall.Stat_t)
 	if !ok || int(stat.Uid) != os.Getuid() || info.Mode().Perm()&^maximum != 0 {
-		return fmt.Errorf("host proof admission directory has unsafe ownership or permissions")
+		return fmt.Errorf("the host's test-run admission directory has unsafe ownership or permissions")
 	}
 	return nil
 }
@@ -305,7 +305,7 @@ func validateHostLockFile(path string, file *os.File) error {
 	stat, ok := pathInfo.Sys().(*syscall.Stat_t)
 	if !ok || !pathInfo.Mode().IsRegular() || pathInfo.Mode().Perm()&0o077 != 0 ||
 		int(stat.Uid) != os.Getuid() || !os.SameFile(pathInfo, fileInfo) {
-		return fmt.Errorf("host proof lock file has unsafe ownership, permissions, or inode")
+		return fmt.Errorf("the host's test-run lock file has unsafe ownership, permissions or inode")
 	}
 	return nil
 }
@@ -314,12 +314,12 @@ func proveInheritedHostLock(file *os.File) error {
 	probe, acquired, err := tryHostFile(file.Name())
 	_ = releaseHostProbe(probe)
 	if err != nil || acquired {
-		return fmt.Errorf("proof resource lease is not live: %v", err)
+		return fmt.Errorf("the test run's resource lease has ended: %v", err)
 	}
 	// A peer's flock on the pathname does not prove this open-file
 	// description owns it. A separately opened descriptor fails this call.
 	if err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
-		return fmt.Errorf("proof resource descriptor does not hold its lock: %w", err)
+		return fmt.Errorf("the test run's resource descriptor does not hold its lock: %w", err)
 	}
 	return nil
 }
@@ -528,7 +528,7 @@ func markHostResources(files []*os.File, cleared bool, custodianParent *identity
 		}
 		return setHostLeaseCleared(file, data, cleared)
 	}
-	return fmt.Errorf("proof resource lease has no custody marker")
+	return fmt.Errorf("the test run's resource lease has no custody marker")
 }
 
 func hostResourceNames(exclusive []string) ([]string, error) {
@@ -536,7 +536,7 @@ func hostResourceNames(exclusive []string) ([]string, error) {
 	sort.Strings(resources)
 	for index, resource := range resources {
 		if resource == "" || index > 0 && resource == resources[index-1] {
-			return nil, fmt.Errorf("proof exclusive resource names must be nonempty and unique")
+			return nil, fmt.Errorf("a test run's exclusive resource names must be nonempty and unique")
 		}
 	}
 	return resources, nil
@@ -549,18 +549,18 @@ func borrowHostResources(directory string, parent Attempt, class string, exclusi
 	raw := os.Getenv(inheritedHostResourceFDs)
 	if raw == "" {
 		if len(exclusive) != 0 {
-			return nil, fmt.Errorf("legacy proof parent has no named resource lease")
+			return nil, fmt.Errorf("the older parent test run holds no named resource lease")
 		}
 		rows, known := readProcessRows()
 		if !known {
-			return nil, fmt.Errorf("legacy proof parent capacity census is unreadable")
+			return nil, fmt.Errorf("the older parent test run's capacity count is unreadable")
 		}
 		for _, row := range rows {
 			if row.pid == parent.Launcher.Pid && row.launcher {
 				return &HostResourceLease{borrowed: true}, nil
 			}
 		}
-		return nil, fmt.Errorf("proof parent has no active resource lease or counted legacy launcher")
+		return nil, fmt.Errorf("the parent test run holds no resource lease and no counted launcher")
 	}
 	var files []*os.File
 	covered := map[string]bool{}
@@ -573,12 +573,12 @@ func borrowHostResources(directory string, parent Attempt, class string, exclusi
 		if !ok || err != nil || fd < 3 || name == "" || filepath.Base(name) != name ||
 			!(strings.HasPrefix(name, "slot-") || strings.HasPrefix(name, "resource-") || strings.HasPrefix(name, "lease-")) || covered[name] {
 			closeHostFiles(files)
-			return nil, fmt.Errorf("nested proof resource lease manifest is invalid")
+			return nil, fmt.Errorf("the nested test run's lease manifest is invalid")
 		}
 		copyFD, err := syscall.Dup(fd)
 		if err != nil {
 			closeHostFiles(files)
-			return nil, fmt.Errorf("nested proof resource descriptor is absent: %w", err)
+			return nil, fmt.Errorf("the nested test run's resource descriptor is missing: %w", err)
 		}
 		path := filepath.Join(directory, name)
 		file := os.NewFile(uintptr(copyFD), path)
@@ -598,7 +598,7 @@ func borrowHostResources(directory string, parent Attempt, class string, exclusi
 		case strings.HasPrefix(name, "slot-"):
 			if slot != "" {
 				closeHostFiles(files)
-				return nil, fmt.Errorf("nested proof lease has multiple slots")
+				return nil, fmt.Errorf("the nested test run's lease has several slots")
 			}
 			slot = name
 		case strings.HasPrefix(name, "resource-"):
@@ -606,14 +606,14 @@ func borrowHostResources(directory string, parent Attempt, class string, exclusi
 		case strings.HasPrefix(name, "lease-"):
 			if marker != nil {
 				closeHostFiles(files)
-				return nil, fmt.Errorf("nested proof lease has multiple markers")
+				return nil, fmt.Errorf("the nested test run's lease has several markers")
 			}
 			marker = file
 		}
 	}
 	if marker == nil {
 		closeHostFiles(files)
-		return nil, fmt.Errorf("proof parent lease has no marker")
+		return nil, fmt.Errorf("the parent test run's lease has no marker")
 	}
 	record, _, err := readHostLeaseRecord(marker)
 	if err != nil {
@@ -622,22 +622,22 @@ func borrowHostResources(directory string, parent Attempt, class string, exclusi
 	}
 	if !lineageContains(int64(os.Getppid()), record.Owner.Ref()) || !lineageContains(record.Owner.Pid, parent.Launcher.Ref()) {
 		closeHostFiles(files)
-		return nil, fmt.Errorf("proof parent lease owner is outside the authenticated parent")
+		return nil, fmt.Errorf("the parent test run's lease belongs to another process")
 	}
 	if class == "heavy" && record.Class != "heavy" || record.Slot != slot || len(record.Resources) != len(declaredResources) {
 		closeHostFiles(files)
-		return nil, fmt.Errorf("proof parent lease claim does not match inherited capacity or resources")
+		return nil, fmt.Errorf("the parent test run's lease does not match the capacity or resources passed down")
 	}
 	for _, resource := range record.Resources {
 		if !declaredResources[resource] {
 			closeHostFiles(files)
-			return nil, fmt.Errorf("proof parent lease claim omits inherited resource %q", resource)
+			return nil, fmt.Errorf("the parent test run's lease leaves out resource %q", resource)
 		}
 	}
 	for _, resource := range exclusive {
 		if !covered[filepath.Base(hostResourcePath(directory, resource))] {
 			closeHostFiles(files)
-			return nil, fmt.Errorf("proof parent lease does not cover named resource %q", resource)
+			return nil, fmt.Errorf("the parent test run's lease does not cover resource %q", resource)
 		}
 	}
 	return &HostResourceLease{files: files, borrowed: true}, nil
@@ -712,7 +712,7 @@ func AcquireHostResourcesWithWaitCheck(ctx context.Context, controlRoot, confPat
 // parallel test owns its namespace without replacing the package default.
 func acquireHostResourcesIn(ctx context.Context, directory, controlRoot, confPath, class string, exclusive []string, check func() error) (*HostResourceLease, error) {
 	if class != "cheap" && class != "heavy" {
-		return nil, fmt.Errorf("unknown proof resource class %q", class)
+		return nil, fmt.Errorf("unknown test-run resource class %q", class)
 	}
 	resources, err := hostResourceNames(exclusive)
 	if err != nil {
@@ -720,11 +720,11 @@ func acquireHostResourcesIn(ctx context.Context, directory, controlRoot, confPat
 	}
 	if parentRoot, parentID := os.Getenv("METASYSTEM_PROOF_CONTROL_ROOT"), os.Getenv("METASYSTEM_PROOF_ATTEMPT"); parentRoot != "" || parentID != "" {
 		if parentRoot != controlRoot || parentID == "" {
-			return nil, fmt.Errorf("nested proof resource locator does not match its control root")
+			return nil, fmt.Errorf("the nested test run's resources belong to another control root")
 		}
 		parent, err := AuthenticateContext(controlRoot, parentID, int64(os.Getppid()))
 		if err != nil {
-			return nil, fmt.Errorf("nested proof resource custody: %w", err)
+			return nil, fmt.Errorf("the nested test run's resources: %w", err)
 		}
 		return borrowHostResources(directory, parent, class, resources)
 	}
@@ -789,7 +789,7 @@ func acquireHostResourcesIn(ctx context.Context, directory, controlRoot, confPat
 				if !known && censusErr == nil {
 					censusErr = errors.New("process rows are unknown")
 				}
-				return nil, fmt.Errorf("host proof admission census is unreadable: %w", errors.Join(censusErr, countErr))
+				return nil, fmt.Errorf("the host's count of running test runs is unreadable: %w", errors.Join(censusErr, countErr))
 			}
 			// Compare without adding a fixture-supplied launcher count to
 			// active slots: that sum can overflow before the cap check.
@@ -824,7 +824,7 @@ func acquireHostResourcesIn(ctx context.Context, directory, controlRoot, confPat
 			if markerErr != nil || !acquired {
 				closeHostFiles(files)
 				_ = releaseHostProbe(guard)
-				return nil, fmt.Errorf("create proof resource lease marker: %v", markerErr)
+				return nil, fmt.Errorf("create the test run's resource marker: %v", markerErr)
 			}
 			files = append(files, marker)
 			claimed := make([]string, len(resources))
@@ -869,13 +869,13 @@ func acquireHostResourcesIn(ctx context.Context, directory, controlRoot, confPat
 			if len(encoded) > hostLeaseRecordMaxBytes || validHostLeaseRecord(marker.Name(), record) != nil {
 				closeHostFiles(files)
 				_ = releaseHostProbe(guard)
-				return nil, fmt.Errorf("proof resource lease claim is invalid or too large")
+				return nil, fmt.Errorf("the test run's resource claim is invalid or too large")
 			}
 			info, statErr := marker.Stat()
 			if statErr != nil || info.Size() != 0 {
 				closeHostFiles(files)
 				_ = releaseHostProbe(guard)
-				return nil, fmt.Errorf("proof resource lease marker already contains a claim: %v", statErr)
+				return nil, fmt.Errorf("the test run's resource marker already holds a claim: %v", statErr)
 			}
 			if _, writeErr := marker.Write(encoded); writeErr != nil {
 				closeHostFiles(files)
@@ -977,12 +977,12 @@ func InheritHostResourceLease(command *exec.Cmd) (func(), error) {
 		fd, err := strconv.Atoi(fdText)
 		if !ok || err != nil || fd < 3 || filepath.Base(name) != name {
 			closeHostFiles(copied)
-			return nil, fmt.Errorf("inherited proof resource manifest is invalid")
+			return nil, fmt.Errorf("the resource manifest passed down to this test run is invalid")
 		}
 		duplicate, err := syscall.Dup(fd)
 		if err != nil {
 			closeHostFiles(copied)
-			return nil, fmt.Errorf("inherited proof resource descriptor is absent: %w", err)
+			return nil, fmt.Errorf("the resource descriptor passed down to this test run is missing: %w", err)
 		}
 		copied = append(copied, os.NewFile(uintptr(duplicate), name))
 	}

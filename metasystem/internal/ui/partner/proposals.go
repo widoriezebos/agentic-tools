@@ -809,8 +809,7 @@ func (s *Service) ProposedIn(human, where, turn string, index, version int, stat
 	running := s.current
 	s.mu.Unlock()
 	if running != nil && running.id == turn {
-		return Proposal{}, errors.New("the Partner is still answering this turn, so its actions cannot be " +
-			"applied yet; they wake when the answer ends")
+		return Proposal{}, errors.New("the Partner is still answering this turn; its actions can be applied when the answer ends")
 	}
 	conversation, err := s.conversationOf(human, where)
 	if err != nil {

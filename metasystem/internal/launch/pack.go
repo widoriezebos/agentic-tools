@@ -182,5 +182,6 @@ func followingIndentedFence(lines [][]byte, citedLine int) ([][]byte, bool) {
 }
 
 func packDrift(item citedRange, reason string) error {
-	return fmt.Errorf("LAUNCH_BRIEF_PACK_DRIFTED range=%s %s", item.label, reason)
+	return coded("LAUNCH_BRIEF_PACK_DRIFTED", "range="+item.label+" "+reason,
+		fmt.Errorf("the brief quotes %s, but that file no longer reads the same (%s); quote it again", item.label, reason))
 }

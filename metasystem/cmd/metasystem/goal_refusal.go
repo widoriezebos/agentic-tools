@@ -24,6 +24,8 @@ type humanVerbValues struct {
 	// person classifies the goal, so a remedy names the box itself.
 	tierless bool
 	rawArgs  []string
+	// refusalCode is the owner refusal's code, kept for --verbose and --json.
+	refusalCode string
 	// report, when set, receives the refusal for the public intent commands
 	// to render; the legacy calls print it below exactly as before.
 	report *ownerReport
@@ -59,14 +61,32 @@ type humanVerbRemedy struct {
 	words   string
 }
 
-func humanProofRemedy(values *humanVerbValues, fixture bool, temporaryWord, reviewBy string) humanVerbRemedy {
+func humanProofRemedy(values *humanVerbValues, fixture bool, temporaryWord, reviewBy string, cause error) humanVerbRemedy {
 	if fixture && (temporaryWord != "" || reviewBy != "") {
 		return humanVerbRemedy{command: values.sameCommandWithout("temporary-human-word", "review-by")}
 	}
 	if temporaryWord != "" || reviewBy != "" {
-		return humanVerbRemedy{words: "supply a valid temporary human word and review date together"}
+		return humanVerbRemedy{words: "nothing to do until the relayed word and its review date are given together"}
 	}
-	return humanVerbRemedy{words: humanauthority.PersonActRemedy("")}
+	return personRemedy(values, cause)
+}
+
+// personRemedy is the one command that resolves a refused person act
+// ("Messages a Person Reads"): enrolling this terminal with the name filled in
+// (the typed --by, else the enrolled person), or the same act in a terminal
+// the person opened themselves. cause is the proof's refusal.
+func personRemedy(values *humanVerbValues, cause error) humanVerbRemedy {
+	retry := shellWords(values.sameCommandWithout())
+	remedy := humanauthority.RemedyFor(values.root, cause, values.by, retry)
+	if remedy.Kind == "" {
+		// A cause the remedy cannot read is still this shell not proven to
+		// be the person: enrolling it is what resolves that.
+		remedy = humanauthority.RemedyFor(values.root, fmt.Errorf("%s: %w", humanauthority.OutcomeTerminalMissing, cause), values.by, retry)
+	}
+	if len(remedy.Argv) > 0 {
+		return humanVerbRemedy{command: shellCommand(remedy.Argv)}
+	}
+	return humanVerbRemedy{words: "nothing to do from this shell; " + remedy.Reason + ", and a person runs it in a terminal they opened"}
 }
 
 func newHumanVerbValues(verb string, args []string) *humanVerbValues {
@@ -96,6 +116,29 @@ func (values *humanVerbValues) bindGoalView(file *goal.GoalFile, tierBox goal.Bu
 
 // alreadyCarriesBox is the remedy that says a budget request completes to the
 // box the goal already carries.
+// nothingToDo is the second line when nothing needs doing: it says why.
+func nothingToDo(why string) humanVerbRemedy { return humanVerbRemedy{words: "nothing to do; " + why} }
+
+// runRemedy is the second line that runs argv.
+func runRemedy(argv ...string) humanVerbRemedy { return humanVerbRemedy{command: shellCommand(argv)} }
+
+// retryRemedy repeats the act in its public form; why stands in when the act
+// has none.
+func (values *humanVerbValues) retryRemedy(why string) humanVerbRemedy {
+	if command := values.sameCommandWithout(); command != "" {
+		return humanVerbRemedy{command: command}
+	}
+	return humanVerbRemedy{words: why}
+}
+
+// showRemedy shows the goal the act names, or the goal list when it names none.
+func (values *humanVerbValues) showRemedy() humanVerbRemedy {
+	if values.id != "" {
+		return runRemedy("metasystem", "goal", "show", values.id)
+	}
+	return runRemedy("metasystem", "goal", "list")
+}
+
 const alreadyCarriesBox = "the goal already carries that box, so there is no new act to record"
 
 func refuseHumanVerb(values *humanVerbValues, code int, sentence string, remedy humanVerbRemedy) int {
@@ -114,7 +157,7 @@ func refuseHumanVerb(values *humanVerbValues, code int, sentence string, remedy 
 	sentence = strings.Join(strings.Fields(strings.TrimSpace(sentence)), " ")
 	sentence = strings.TrimSuffix(sentence, ".") + "."
 	if values.report != nil {
-		values.report.refusal = &ownerRefusal{code: code, sentence: sentence, remedy: remedy}
+		values.report.refusal = &ownerRefusal{code: code, sentence: sentence, remedy: remedy, refusalCode: values.refusalCode}
 		return code
 	}
 	stderr := values.errStream()

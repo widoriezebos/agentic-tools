@@ -73,6 +73,51 @@ Two things these commands never do on your behalf. They never make a decision th
 
 Use `metasystem help administration` for MetaSystem setup and maintenance. Application work is listed separately in human, agent and command help.
 
+## Running the landing lane
+
+The landing lane is the one checkout per computer where every seat's work is proved and pushed (`docs/concepts.md`, "Landing lane", says why). A computer works without one, with each seat landing its work itself, but slower.
+
+**Set one up on a new computer.** Clone a checkout next to the seats' checkouts, give it a machine nickname, build its engine, set it up, register it as the lane and start it, at your own terminal:
+
+```sh
+git clone https://github.com/OWNER/REPO.git ~/src/repo-landing
+git -C ~/src/repo-landing config metasystem.goal.machine landing
+cd ~/src/repo-landing/metasystem && go run ./cmd/devgate build
+bin/metasystem system setup
+bin/metasystem landing set ~/src/repo-landing
+bin/metasystem system start --repo ~/src/repo-landing
+```
+
+`landing set` refuses a checkout without a machine nickname: the lane signs what it lands with that name. `system start` must be run by you, at a terminal no agent started; it starts the lane's supervision, and the lane's owner with it. No agent ever works in this checkout, and no seat needs a restart: each lands through the lane from its next `work land`.
+
+**Check it.**
+
+```sh
+metasystem landing status             # one line: where the lane is, whether its owner runs, the batch it proves, the next one collecting
+metasystem landing status --verbose   # adds who registered it, the owner's pid and restarts, and each batch's members
+metasystem machine list --verbose     # every machine of this computer, the lane's checkout and its owner included
+```
+
+The browser interface's Fleet page shows the same lane line.
+
+**Stop, restart or move it.**
+
+```sh
+metasystem landing stop                        # pause the owner for maintenance; nothing lands until landing start
+metasystem landing start                       # end the pause, clear the restart count, start the owner
+metasystem landing restart                     # stop and start the owner, for example when it seems stuck
+metasystem landing set ~/src/repo-landing-2    # move the lane to another checkout
+metasystem machine stop landing                # stop MetaSystem in the lane's checkout altogether
+```
+
+`landing stop` and `landing restart` are refused while a batch is pushing to main, and moving the lane is refused while a batch proves or pushes in it; each refusal says to wait, or to pause the lane with `landing stop` first. To put the lane on a newly built engine, rebuild it in the lane's checkout and run `metasystem system restart --repo PATH` there.
+
+**When it is down.** Seats keep going: `work land` still joins the lane's next batch, and the work waits there until the owner runs again. No seat quietly switches to landing the work itself. The steward restarts a dead owner on its own, with growing pauses in between, and gives up after five deaths in a row. `landing status` then reads, for example, `owner given-up after 5 restarts; last error: ...; to fix: ...`: the last error and the one command that fixes it. Typical causes and fixes:
+
+- the lane's checkout is not started: `metasystem system start --repo PATH` at your terminal;
+- it has no machine nickname: `git -C PATH config metasystem.goal.machine landing`, then `metasystem landing start`;
+- the owner keeps dying: read the error file `landing status` names, fix the cause, then `metasystem landing start`.
+
 ## Your recurring duties
 
 The system stays honest through a few small human acts:

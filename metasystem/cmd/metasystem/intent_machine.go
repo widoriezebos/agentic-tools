@@ -27,6 +27,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
 
 // codeMachineOnAnotherComputer refuses a stop of a machine this computer
@@ -350,15 +351,11 @@ var machineComponentNames = map[string]string{
 	"narrator":          "narrator",
 }
 
-func machineLocalTime(epoch int64) string {
-	return time.Unix(epoch, 0).Local().Format("2006-01-02 15:04 MST")
-}
-
 // processLine is one process of a machine as --verbose prints it.
-func (p machineProcess) processLine() string {
+func (p machineProcess) processLine(env textui.Env) string {
 	since := ""
 	if p.started > 0 {
-		since = " since " + machineLocalTime(p.started)
+		since = " " + env.Since(time.Unix(p.started, 0))
 	}
 	if name, ok := machineComponentNames[p.Component]; ok && p.Family != "untracked" {
 		return fmt.Sprintf("%s pid %d%s", name, p.Pid, since)
@@ -439,7 +436,7 @@ func machineListSummary(reading hostReading, others int) string {
 
 // machineListDetail is --verbose: each machine of this computer, the
 // machines on other computers, and what is not ours.
-func machineListDetail(reading hostReading, others []otherComputerMachine) []string {
+func machineListDetail(reading hostReading, others []otherComputerMachine, env textui.Env) []string {
 	lines := []string{"on this computer:"}
 	for _, machine := range reading.Machines {
 		header := fmt.Sprintf("%s  %s  %s", machine.Name, machine.State, machine.Checkout)
@@ -458,10 +455,10 @@ func machineListDetail(reading hostReading, others []otherComputerMachine) []str
 			lines = append(lines, "  "+machine.Reason)
 		}
 		for _, process := range machine.Components {
-			lines = append(lines, "  "+process.processLine())
+			lines = append(lines, "  "+process.processLine(env))
 		}
 		for _, process := range machine.Work {
-			lines = append(lines, "  "+process.processLine())
+			lines = append(lines, "  "+process.processLine(env))
 		}
 		for _, launched := range machine.Launches {
 			lines = append(lines, "  launch "+launched.Reference+": "+launched.Purpose)
@@ -511,10 +508,17 @@ func machineListDetail(reading hostReading, others []otherComputerMachine) []str
 	if len(reading.NotOurs) > 0 {
 		lines = append(lines, "not ours, not touched:")
 		for _, process := range reading.NotOurs {
-			lines = append(lines, "  "+process.processLine())
+			lines = append(lines, "  "+process.processLine(env))
 		}
 	}
 	return lines
+}
+
+// machineListFailure is machine list's failure to read the fleet's
+// presence: the read may pass, so line 2 is the command again.
+func machineListFailure(err error) intentResult {
+	return intentResult{Outcome: intentFailed, code: 1, Summary: "the machines' presence could not be read", retry: "try again",
+		Details: []string{"fleet: " + err.Error()}}
 }
 
 // runIntentMachineList is every machine's presence, this computer's
@@ -525,22 +529,22 @@ func runIntentMachineList(inv *intentInvocation) int {
 	}
 	report, err := inv.owners.processes.fleet(inv.layout.GitRoot, inv.input.switched("refresh"), seatFleetNow())
 	if err != nil {
-		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "fleet: " + err.Error()})
+		return inv.render(machineListFailure(err))
 	}
 	encoded, err := report.JSON()
 	if err != nil {
-		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "fleet: " + err.Error()})
+		return inv.render(machineListFailure(err))
 	}
 	data := map[string]any{}
 	if err := json.Unmarshal(encoded, &data); err != nil {
-		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "fleet: " + err.Error()})
+		return inv.render(machineListFailure(err))
 	}
 	reading := inv.readHostMachines(fleetNames(report))
 	others := otherComputers(report, reading)
 	data["thisComputer"], data["otherComputers"] = reading, others
 	text := intentOwnerLines(report.Text())
 	if inv.input.switched("verbose") {
-		text = append(text, machineListDetail(reading, others)...)
+		text = append(text, machineListDetail(reading, others, inv.textEnv(inv.stdout))...)
 	}
 	result := intentResult{Outcome: intentConfirmed, Summary: machineListSummary(reading, len(others)), text: text, Data: data}
 	if reading.RegistryProblem != "" {
@@ -623,9 +627,12 @@ func (inv *intentInvocation) matchMachine(reading hostReading, name string) (*ho
 			if other.LastReported != "" {
 				reported = "it last reported " + lane.LocalText(other.LastReported)
 			}
+			// It is stopped on that computer: metasystem system stop there,
+			// with its checkout's path, which this computer cannot know.
 			return nil, &intentResult{Outcome: intentRefused, code: 1, Targets: []intentTarget{{Kind: "machine", ID: name}},
-				Summary:  fmt.Sprintf("%s: %s runs on another computer (%s), where this computer's stop cannot reach its processes; stop it on that computer: metasystem system stop --repo PATH; nothing was done", codeMachineOnAnotherComputer, name, reported),
-				Decision: "on that computer, run metasystem system stop --repo PATH with its checkout's path"}
+				Summary: fmt.Sprintf("%s runs on another computer (%s), which this one cannot stop; nothing was done", name, reported),
+				next:    []string{"metasystem", "system", "stop", "--repo", "PATH"}, nextReason: "on that computer, with its checkout's path",
+				Details: []string{"refusal " + codeMachineOnAnotherComputer + ": this computer's stop cannot reach another computer's processes"}}
 		}
 	}
 	if reading.RegistryProblem != "" {

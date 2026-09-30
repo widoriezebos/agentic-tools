@@ -49,57 +49,57 @@ func TestCommitRefusesBeforeAnyEffect(t *testing.T) {
 		}, CommitRequest{Chain: "j1"}, 2, "declared the brain"},
 		{"brain fence failed", func(b *bed) {
 			b.owners.BrainFence = func(string, string) (string, error) { return "", fmt.Errorf("broken") }
-		}, CommitRequest{Chain: "j1"}, 1, "land refused: brain fence failed"},
+		}, CommitRequest{Chain: "j1"}, 1, "this checkout's role couldn't be read"},
 		{"not the holder", func(b *bed) {
 			b.owners.RequireHolder = func(string, int64, *int64) (*int64, error) { return nil, fmt.Errorf("OWNED-ELSEWHERE: held by x") }
 		}, CommitRequest{}, 1, "OWNED-ELSEWHERE"},
 		{"agent without lineage", func(b *bed) { b.epoch = epochOf(3) }, CommitRequest{}, 2,
-			"agent commit refused: the lease holder has a claim epoch but no owner lineage"},
+			"this agent shell doesn't say which session it is"},
 		{"carried without its facts", nil, CommitRequest{Carried: "op1", Goal: "g1", GoalSet: true}, 2,
-			"commit refused: --carried requires --goal, --ledger-tip, --carried-by, and --carried-past"},
+			"--carried requires --goal, --ledger-tip, --carried-by, and --carried-past"},
 		{"goal not kebab", nil, CommitRequest{Goal: "Bad_Goal", GoalSet: true}, 2,
-			"commit refused: --goal must be a lowercase kebab identifier of at most 100 characters"},
+			"\"Bad_Goal\" is not a goal id"},
 		{"message typed Goal-Item", func(b *bed) { b.writeMessage("x\n\ngoal-item: g1\n") }, CommitRequest{}, 2,
-			"commit refused: Goal-Item and carried trailers are stamped by the wrapper, never typed"},
+			"the commit message types a line the landing adds itself (Goal-Item:)"},
 		{"message typed Machine", func(b *bed) { b.writeMessage("x\n\nMachine: m9+x\n") }, CommitRequest{}, 2,
-			"commit refused: Machine is stamped by the wrapper, never typed"},
+			"the commit message types a line the landing adds itself (Machine:)"},
 		{"message typed Carry", func(b *bed) { b.writeMessage("x\n\nCarry: op\n") }, CommitRequest{}, 1,
-			"commit refused: Goal-Item and carried trailers are stamped by the wrapper, never typed"},
+			"the commit message types a line the landing adds itself (Carry:)"},
 		{"message unreadable", nil, CommitRequest{MessageFile: "/nonexistent/message"}, 2,
-			"commit refused: commit message file is not readable: /nonexistent/message"},
+			"the commit message file can't be read, so nothing was committed\nneeded first: check the file named by --message, then repeat this command\n"},
 		{"start time unreadable", func(b *bed) {
 			b.owners.StartedAt = func(int64) (int64, error) { return 0, fmt.Errorf("gone") }
-		}, CommitRequest{}, 1, "agent commit wrapper refused: wrapper process start time is unreadable"},
+		}, CommitRequest{}, 1, "this process couldn't be read"},
 		{"session trailer domain", func(b *bed) { b.writeMessageAt("claude.ac/x", "x\n") }, CommitRequest{}, 2,
-			"commit refused: the session trailer says claude.ac — the domain is claude.ai"},
+			"the commit message's session link says claude.ac; the domain is claude.ai"},
 		{"unmerged index", func(b *bed) { b.git.on("write-tree", func(GitCall) GitResult { return failed(128, "unmerged\n") }) }, CommitRequest{}, 1,
-			"agent commit refused: the index cannot be proved as a tree (unmerged entries?)"},
+			"the staged files still hold merge conflicts"},
 		{"no testing contract", func(b *bed) { b.owners.ConfValue = func(string, string) string { return "" } }, CommitRequest{}, 1,
-			"agent commit refused: testing.contract is required in committed metasystem.conf"},
+			"metasystem.conf names no test contract (testing.contract)"},
 		{"proof missing", func(b *bed) {
 			b.owners.Verify = func(_ VerifyRequest, _, stderr io.Writer) int {
 				fmt.Fprintln(stderr, "missing required proof")
 				return 1
 			}
-		}, CommitRequest{}, 1, "agent commit refused: required shared testing proof is missing or insufficient"},
+		}, CommitRequest{}, 1, "the change's tests haven't passed on this checkout yet"},
 		{"unbound working-tree bytes", func(b *bed) {
 			b.git.on("diff --no-renames --name-only -z --", func(GitCall) GitResult { return ok("internal/x.go\x00") })
-		}, CommitRequest{}, 1, "  internal/x.go\nstage, stash, or remove them"},
+		}, CommitRequest{}, 1, "files on disk differ from the staged change: internal/x.go\nrun: git status --short  (stage, stash or remove them"},
 		{"staged gitlink", func(b *bed) {
 			b.git.on("ls-files -s -z", func(GitCall) GitResult { return ok("160000 abc 0\tvendor/sub\x00") })
-		}, CommitRequest{}, 1, "a staged gitlink inside the proof scope"},
+		}, CommitRequest{}, 1, "a staged folder is a nested Git checkout the commit can't record: vendor/sub"},
 		{"critical symlink", func(b *bed) {
 			b.git.on("ls-files -s -z", func(GitCall) GitResult { return ok("120000 abc 0\tinternal/a.go\x00120000 abc 0\tskills/x\x00") })
-		}, CommitRequest{}, 1, "a critical proof input is a symlink"},
+		}, CommitRequest{}, 1, "a staged file the tests read is a symlink, which the landing refuses: internal/a.go"},
 		{"hidden entry", func(b *bed) {
 			b.git.on("ls-files -v -z", func(GitCall) GitResult { return ok("S cmd/a.go\x00H ok.go\x00") })
-		}, CommitRequest{}, 1, "assume-unchanged or skip-worktree entries hide proof inputs"},
+		}, CommitRequest{}, 1, "Git is told to ignore changes to a file the tests read: cmd/a.go"},
 		{"index moved during proof", func(b *bed) {
 			trees := []string{"t1\n", "t2\n"}
 			b.git.on("write-tree", func(GitCall) GitResult { tree := trees[0]; trees = trees[1:]; return ok(tree) })
-		}, CommitRequest{}, 1, "agent commit refused: the index or a gate input moved while the proof ran; re-stage and retry"},
+		}, CommitRequest{}, 1, "the staged files changed while the landing checked them"},
 		{"no machine nickname", func(b *bed) { b.git.machine = "" }, CommitRequest{}, 2,
-			"commit refused: no machine nickname is enrolled on this machine; name it once with: git config metasystem.goal.machine NAME"},
+			"this machine has no name yet, so nothing was committed\nrun: git config metasystem.goal.machine NAME  (then repeat this command)\n"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -142,19 +142,19 @@ func (b *bed) writeMessageAt(name, text string) {
 func TestCommitAgentRefusalNamesCauseAndExits(t *testing.T) {
 	t.Parallel()
 	cases := map[string]string{
-		"evaluator-unavailable":               "the landing evaluator failed or returned an incomplete decision",
-		"path-unclassified":                   "the landing contains an unclassified path",
-		"ledger-path-not-goal-verb":           "ledger paths change only through goal verbs",
-		"runtime-path-refused":                "runtime paths cannot be landed",
-		"exact-revert-record-refused":         "exact revert cannot delete or truncate records",
-		"goal-item-not-held":                  "the Goal-Item is not held by this machine and lineage",
-		"goal-revision-moved":                 "the Goal-Item's claim revision moved since this chain was dispatched",
-		"goal-binding-missing":                "this landing names no goal and the ledger is not Goal-free",
-		"goal-binding-mismatch":               "the chain was dispatched under a different goal than --goal names",
-		"record-not-owned":                    "the staged record is not owned by this landing",
-		"register-carriage-policy-unreadable": "the base path-class policy is unreadable",
-		"register-carriage-not-append-only":   "register carriage rewrote or deleted existing record bytes",
-		"something-else":                      "agent commit refused: landing verdict would-refuse code=something-else",
+		"evaluator-unavailable":               "the landing check crashed or gave no answer",
+		"path-unclassified":                   "the change has files no landing rule covers yet",
+		"ledger-path-not-goal-verb":           "the change edits goal files, which change only through goal commands",
+		"runtime-path-refused":                "the change includes files the running system writes",
+		"exact-revert-record-refused":         "a revert may not delete or shorten records",
+		"goal-item-not-held":                  "goal G is not claimed by this session",
+		"goal-revision-moved":                 "goal G was claimed again after this work started",
+		"goal-binding-missing":                "this change names no goal, and landings here need one",
+		"goal-binding-mismatch":               "this work was started for another goal than G",
+		"record-not-owned":                    "the change edits a record another goal owns",
+		"register-carriage-policy-unreadable": "the landing rules on this branch can't be read",
+		"register-carriage-not-append-only":   "the change rewrites or deletes lines of an append-only record",
+		"something-else":                      "the landing check refused this change, so nothing was committed",
 	}
 	for code, text := range cases {
 		t.Run(code, func(t *testing.T) {
@@ -163,7 +163,7 @@ func TestCommitAgentRefusalNamesCauseAndExits(t *testing.T) {
 			b.observed = landing.Observation{Mode: "refuse", RefusesAgent: true, Code: code, Provenance: "none change=x",
 				VerdictTrailer: "would-refuse code=" + code, Refusal: "detail of " + code}
 			b.git.on("diff --cached --name-only -z --", func(GitCall) GitResult { return ok("a b.go\x00") })
-			b.expect(b.commit(CommitRequest{OwnerLineage: "L", Chain: "j1"}), 1, text, "staged paths:\n  a\\ b.go\n", "lawful classification exits:")
+			b.expect(b.commit(CommitRequest{OwnerLineage: "L", Chain: "j1"}), 1, text, "verdict: would-refuse code="+code, "staged paths:\n  a\\ b.go\n", "an agent's change also lands when")
 			if len(b.git.called("commit")) != 0 {
 				t.Fatal("a refused agent commit was recorded")
 			}
@@ -172,7 +172,7 @@ func TestCommitAgentRefusalNamesCauseAndExits(t *testing.T) {
 	b := newBed(t)
 	b.epoch = epochOf(4)
 	b.observed = landing.Observation{Mode: "refuse", RefusesAgent: true, Code: "attested-x", Provenance: "p", VerdictTrailer: "would-refuse code=attested-x"}
-	b.expect(b.commit(CommitRequest{OwnerLineage: "L", Attested: "c1"}), 3, "landing verdict would-refuse code=attested-x")
+	b.expect(b.commit(CommitRequest{OwnerLineage: "L", Attested: "c1"}), 3, "verdict: would-refuse code=attested-x")
 }
 
 // TestCommitIncompleteObservationRefusesAgentAndAdmitsHuman: an evaluator
@@ -189,7 +189,7 @@ func TestCommitIncompleteObservationRefusesAgentAndAdmitsHuman(t *testing.T) {
 	b = newBed(t)
 	b.epoch = epochOf(2)
 	b.observed = landing.Observation{Mode: "observe"}
-	b.expect(b.commit(CommitRequest{OwnerLineage: "L"}), 1, "the landing evaluator failed or returned an incomplete decision")
+	b.expect(b.commit(CommitRequest{OwnerLineage: "L"}), 1, "the landing check crashed or gave no answer")
 	if b.log.count("require-holder epoch=true") != 1 {
 		t.Fatalf("the agent epoch was not re-proved under the lease: %v", b.log.calls)
 	}
@@ -206,16 +206,16 @@ func TestCommitPostconditionRollsBack(t *testing.T) {
 	}{
 		{"tree", func(b *bed) {
 			b.git.on("rev-parse HEAD^{tree}", func(GitCall) GitResult { return ok("other\n") })
-		}, "the commit recorded a tree the static re-proof never judged"},
+		}, "the commit was undone: it recorded other files than the ones checked"},
 		{"machine", func(b *bed) {
 			b.git.on("log -1 --format=%B", func(GitCall) GitResult { return ok(b.git.message + "\nMachine: m2+x\n") })
 		}, "expected exactly one Machine trailer, found 2"},
 		{"goal item", func(b *bed) {
 			b.git.on("log -1 --format=%B", func(GitCall) GitResult { return ok(b.git.message + "\nGoal-Item: g1\n") })
-		}, "did not contain exactly one byte-exact Goal-Item stamped by --goal; the commit was rolled back"},
+		}, "the commit was undone: its message didn't end up with exactly one Goal-Item: line"},
 		{"stray carried", func(b *bed) {
 			b.git.on("log -1 --format=%B", func(GitCall) GitResult { return ok(b.git.message + "\nCarry: op\n") })
-		}, "failed the carried-trailer postcondition (Carry must be absent)"},
+		}, "carried-trailer postcondition: Carry must be absent"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -263,13 +263,13 @@ func TestCommitPushLandsOriginThenTransport(t *testing.T) {
 		setup func(b *bed)
 		text  string
 	}{
-		{"detached", func(b *bed) { b.git.branch = "" }, "landing push refused: HEAD is not on a branch"},
-		{"fetch", func(b *bed) { b.git.on("fetch", func(GitCall) GitResult { return failed(1, "") }) }, "origin could not be fetched; the commit stands locally"},
-		{"push", func(b *bed) { b.git.on("push", func(GitCall) GitResult { return failed(1, "") }) }, "landing push failed at origin; the commit stands locally"},
+		{"detached", func(b *bed) { b.git.branch = "" }, "committed, but not pushed: this checkout isn't on a branch"},
+		{"fetch", func(b *bed) { b.git.on("fetch", func(GitCall) GitResult { return failed(1, "") }) }, "committed, but not pushed: origin couldn't be reached"},
+		{"push", func(b *bed) { b.git.on("push", func(GitCall) GitResult { return failed(1, "") }) }, "committed, but origin refused the push"},
 		{"transport", func(b *bed) {
 			b.git.on("remote", func(GitCall) GitResult { return ok("transport\n") })
 			b.owners.SyncTransport = func(string, string, io.Writer, io.Writer) int { return 1 }
-		}, "landing push failed at transport with origin already pushed"},
+		}, "pushed to origin, but the transport copy couldn't be updated"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			b := newBed(t)
@@ -314,7 +314,7 @@ func TestCommitCarriedStampsJudgeBatteryAndLedger(t *testing.T) {
 
 	b = newBed(t)
 	b.observed = landing.Observation{Mode: "observe", Code: "human-carried", Provenance: "carried opid=other past=group:unit ledger=L1 x", VerdictTrailer: "pass"}
-	b.expect(b.commit(request), 3, "carried landing asks: the deciding observation does not bind the requested word, refusal, and ledger")
+	b.expect(b.commit(request), 3, "the deciding observation does not bind the requested word, refusal, and ledger")
 
 	b = newBed(t)
 	b.observed = carriedObservation
@@ -323,7 +323,7 @@ func TestCommitCarriedStampsJudgeBatteryAndLedger(t *testing.T) {
 		judge.VerifyCarried = func(string, string, string) ([]byte, int) { return []byte("not json"), 1 }
 		return judge
 	}
-	b.expect(b.commit(request), 3, "test verify failed: no structured delivery result")
+	b.expect(b.commit(request), 3, "the test results for this change can't be read", "test verify gave no structured delivery result")
 }
 
 // TestCommitCarriedFallsBackToBaseJudge: when the live engine cannot decide
@@ -354,7 +354,7 @@ func TestCommitCarriedFallsBackToBaseJudge(t *testing.T) {
 	}
 	b = newBed(t)
 	b.observed = landing.Observation{}
-	b.expect(b.commit(request), 3, "no live or base judge decided; the base judge build failed")
+	b.expect(b.commit(request), 3, "neither this metasystem nor one built from HEAD could judge the landing")
 }
 
 // TestCommitRetiredComposerRefusalNamesTheFix: a pre-commit composer from
@@ -415,8 +415,8 @@ func TestCommitLocalProofFollowsTheLane(t *testing.T) {
 	}
 
 	b = laneProofBed(t, records)
-	b.expect(b.commit(CommitRequest{}), 1, "agent commit refused: required shared testing proof is missing or insufficient",
-		"a change landed without a landing lane needs its full delivery proof on this seat")
+	b.expect(b.commit(CommitRequest{}), 1, "the change's tests haven't passed on this checkout yet",
+		"without a landing lane the whole test plan must pass on this checkout")
 	if !b.log.has("verify scope=full") || len(b.git.called("commit")) != 0 {
 		t.Fatalf("no-lane change: %v", b.log.calls)
 	}
@@ -424,8 +424,8 @@ func TestCommitLocalProofFollowsTheLane(t *testing.T) {
 	for _, c := range []struct {
 		staged, scope, text string
 	}{
-		{records, "none", "a records-only change joining the landing lane needs no local proof, only a candidate that matches the working tree"},
-		{code, "admission", "a code change joining the landing lane needs its admission-phase groups proved on this seat"},
+		{records, "none", "files on disk differ from the staged change, so its test results don't apply to it"},
+		{code, "admission", "files on disk differ from the staged change, so its test results don't apply to it"},
 	} {
 		b = laneProofBed(t, c.staged)
 		b.owners.Verify = func(request VerifyRequest, _, stderr io.Writer) int {

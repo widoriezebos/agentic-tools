@@ -2,6 +2,7 @@ package proofrun
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -17,6 +18,10 @@ import (
 // Test ownership is written in the same transaction as the attempt. The
 // inventory is complete before any worker starts, and only TestOwned creates
 // a live observation. A consumer never becomes the producer of a wait edge.
+// ErrFreshnessExpired refuses a run whose go-ahead to reuse earlier results
+// has run out: the run is started again, which asks for a new one.
+var ErrFreshnessExpired = errors.New("the go-ahead to reuse earlier test results has expired; start the test run again")
+
 func validateTestOwnership(attempt Attempt) error {
 	if len(attempt.TestInventory) == 0 {
 		if len(attempt.TestOwned) != 0 || len(attempt.TestWaits) != 0 || len(attempt.TestSources) != 0 || len(attempt.TestFreshGroups) != 0 ||
@@ -108,7 +113,7 @@ func allocateTestOwnershipLocked(attempt *Attempt, request AdmissionRequest) err
 	if request.FreshnessExpiresAt != "" {
 		expires, err := time.Parse(time.RFC3339Nano, request.FreshnessExpiresAt)
 		if err != nil || !expires.After(request.Now) {
-			return fmt.Errorf("freshness episode has expired; renew the proof decision")
+			return ErrFreshnessExpired
 		}
 	}
 	sequencePath := filepath.Join(attemptsDir(request.ControlRoot), "test-admission-sequence")
@@ -193,7 +198,7 @@ func BindJoinedTestOwnershipLocked(root, attemptID string, request AdmissionRequ
 	}
 	if !testingAttemptSchema(attempt.SchemaVersion) || attempt.Terminal != nil || attempt.CancellationIntent != "" ||
 		attempt.TestResult != nil || len(attempt.PendingTestGroups) != 0 || len(attempt.TestInventory) != 0 {
-		return Attempt{}, fmt.Errorf("live proof attempt without an existing testing owner is required")
+		return Attempt{}, fmt.Errorf("only a live test run that no other run owns can take these tests")
 	}
 	if attempt.SchemaVersion == CandidateAttemptSchemaVersion {
 		attempt.SchemaVersion = IdentityAttemptSchemaVersion
@@ -447,7 +452,7 @@ func sharedComponentDecisionLocked(request AdmissionRequest) (*Attempt, LaunchRe
 		}
 		expires, err := time.Parse(time.RFC3339Nano, request.FreshnessExpiresAt)
 		if err != nil || !expires.After(now) {
-			return nil, LaunchResult{}, false, fmt.Errorf("freshness episode has expired; renew the proof decision")
+			return nil, LaunchResult{}, false, ErrFreshnessExpired
 		}
 	}
 	attempts, err := ReadAttempts(request.ControlRoot)

@@ -256,7 +256,7 @@ func recoverCallRetirement(stateRoot, cursorPath string) error {
 		return err
 	}
 	if retention.RetainedSince.Before(callRetentionBoundary(journal.Cutoff)) {
-		return fmt.Errorf("call retirement journal %s is not covered by retention boundary %s", journalPath, retention.RetainedSince.Format(time.RFC3339Nano))
+		return fmt.Errorf("call retirement record %s is not covered by retention boundary %s", journalPath, retention.RetainedSince.Format(time.RFC3339Nano))
 	}
 	if err := validateCallRetirementTargets(stateRoot, cursorPath, journal); err != nil {
 		return err
@@ -340,14 +340,14 @@ func validateRecoverableCallRetirement(stateRoot, cursorPath string) error {
 		return err
 	}
 	if !present {
-		return fmt.Errorf("call retirement journal disappeared before recovery: %s", callRetirementPath(cursorPath))
+		return fmt.Errorf("call retirement record disappeared before recovery: %s", callRetirementPath(cursorPath))
 	}
 	retention, err := readCallRetention(stateRoot)
 	if err != nil {
 		return err
 	}
 	if retention.RetainedSince.Before(callRetentionBoundary(journal.Cutoff)) {
-		return fmt.Errorf("call retirement journal %s is not covered by retention boundary %s", callRetirementPath(cursorPath), retention.RetainedSince.Format(time.RFC3339Nano))
+		return fmt.Errorf("call retirement record %s is not covered by retention boundary %s", callRetirementPath(cursorPath), retention.RetainedSince.Format(time.RFC3339Nano))
 	}
 	return validateCallRetirementTargets(stateRoot, cursorPath, journal)
 }
@@ -646,7 +646,7 @@ func validateCallRetirementTargets(stateRoot, cursorPath string, journal callRet
 		return err
 	}
 	if CursorPath(stateRoot, journal.Runtime, journal.Session) != cursorPath {
-		return fmt.Errorf("call retirement journal %s identity %s/%s does not map to its own stem", callRetirementPath(cursorPath), journal.Runtime, journal.Session)
+		return fmt.Errorf("call retirement record %s identity %s/%s does not map to its own stem", callRetirementPath(cursorPath), journal.Runtime, journal.Session)
 	}
 	samplesPath := SamplesPath(stateRoot, journal.Runtime, journal.Session)
 	if info, present, err := callStoreMember(cursorPath); err != nil {
@@ -677,7 +677,7 @@ func validateCallRetirementTargets(stateRoot, cursorPath string, journal callRet
 		}
 		digest, digestErr := digestCallStore(samplesPath)
 		if digestErr != nil {
-			return pairError(cursorPath, samplesPath, fmt.Errorf("cannot digest surviving samples: %w", digestErr))
+			return pairError(cursorPath, samplesPath, fmt.Errorf("cannot checksum the surviving samples: %w", digestErr))
 		}
 		if digest != journal.SamplesDigest {
 			return pairError(cursorPath, samplesPath, fmt.Errorf("surviving samples do not match retirement authorization"))
@@ -707,10 +707,10 @@ func completeCallRetirement(stateRoot, cursorPath string, journal callRetirement
 		}
 	}
 	if err := removeCallStorePath(journalPath); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("cannot remove completed call retirement journal %s: %w", journalPath, err)
+		return fmt.Errorf("cannot remove completed call retirement record %s: %w", journalPath, err)
 	}
 	if err := syncCallStoreDirectory(filepath.Dir(journalPath)); err != nil {
-		return &callRetirementCompletedError{err: fmt.Errorf("cannot sync completed call retirement journal directory %s: %w", filepath.Dir(journalPath), err)}
+		return &callRetirementCompletedError{err: fmt.Errorf("cannot sync completed call retirement record folder %s: %w", filepath.Dir(journalPath), err)}
 	}
 	return nil
 }
@@ -816,7 +816,7 @@ func readCallRetirementJournal(stateRoot, cursorPath string) (callRetirementJour
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return callRetirementJournal{}, true, fmt.Errorf("cannot read call retirement journal %s: %w", path, err)
+		return callRetirementJournal{}, true, fmt.Errorf("cannot read call retirement record %s: %w", path, err)
 	}
 	var journal callRetirementJournal
 	if !decodeOneStrictJSON(data, &journal) || journal.SchemaVersion != callRetentionSchema ||
@@ -824,10 +824,10 @@ func readCallRetirementJournal(stateRoot, cursorPath string) (callRetirementJour
 		!validDigest(journal.CursorDigest) || journal.CursorFileDev == 0 || journal.CursorFileInode == 0 ||
 		journal.SamplesPresent && (!validDigest(journal.SamplesDigest) || journal.SamplesFileDev == 0 || journal.SamplesFileInode == 0) ||
 		!journal.SamplesPresent && (journal.SamplesDigest != "" || journal.SamplesFileDev != 0 || journal.SamplesFileInode != 0) {
-		return callRetirementJournal{}, true, fmt.Errorf("call retirement journal is malformed: %s", path)
+		return callRetirementJournal{}, true, fmt.Errorf("call retirement record is malformed: %s", path)
 	}
 	if CursorPath(stateRoot, journal.Runtime, journal.Session) != cursorPath {
-		return callRetirementJournal{}, true, fmt.Errorf("call retirement journal %s identity does not map to its own stem", path)
+		return callRetirementJournal{}, true, fmt.Errorf("call retirement record %s identity does not map to its own stem", path)
 	}
 	return journal, true, nil
 }
@@ -842,7 +842,7 @@ func callRetirementCursorPaths(stateRoot string) ([]string, error) {
 		return nil, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("cannot list call retirement journals %s: %w", cursorDir, err)
+		return nil, fmt.Errorf("cannot list call retirement records %s: %w", cursorDir, err)
 	}
 	var paths []string
 	for _, entry := range entries {
@@ -890,9 +890,9 @@ func requireUnusedCallRetirementPath(path string) error {
 		return nil
 	}
 	if err != nil {
-		return fmt.Errorf("cannot inspect call retirement journal path %s: %w", path, err)
+		return fmt.Errorf("cannot inspect call retirement record path %s: %w", path, err)
 	}
-	return fmt.Errorf("call retirement journal path collides with an existing cursor or journal: %s", path)
+	return fmt.Errorf("call retirement record path collides with an existing cursor or record: %s", path)
 }
 
 func validateCallStorageDirectory(path string) error {

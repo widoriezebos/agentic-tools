@@ -95,9 +95,9 @@ func TestBrainBedActorSeamCoverage(t *testing.T) {
 	}
 }
 
-const expectedBrainActorSites = `cmd/metasystem/goal.go:			return goal.Actor{}, 0, fmt.Errorf("the Stop main %q does not match the announced checkout holder %q", mainID, holder.MainId)
+const expectedBrainActorSites = `cmd/metasystem/goal.go:			return goal.Actor{}, 0, errors.New("the session holding this checkout hasn't announced itself; start it with metasystem session start")
+cmd/metasystem/goal.go:			return goal.Actor{}, 0, fmt.Errorf("the Stop main %q does not match the announced checkout holder %q", mainID, holder.MainId)
 cmd/metasystem/goal.go:			return goal.Actor{}, 0, fmt.Errorf("the announced checkout holder could not be resolved: %w", err)
-cmd/metasystem/goal.go:			return goal.Actor{}, 0, fmt.Errorf("the checkout holder has no readable main announcement and lineage")
 cmd/metasystem/goal.go:			return goal.Actor{}, 0, fmt.Errorf("the seat machine could not be resolved: %w", err)
 cmd/metasystem/goal.go:		return goal.Actor{Machine: machine, Lineage: holder.OwnerLineage}, holder.ClaimEpoch, nil
 cmd/metasystem/goal.go:	view, err := classifyVerbCallerWith(root, callerPid, repositoryTop)

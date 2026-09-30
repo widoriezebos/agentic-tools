@@ -3,6 +3,7 @@ package goal
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"slices"
@@ -564,14 +565,14 @@ func validateTrunkRedRecordClass(args TrunkRedRecordArgs) error {
 		return nil
 	case TrunkRedClassKnownFlake:
 		if args.Where != "" || args.BaseCommit == "" || args.BaseTree == "" || !rerunOK {
-			return fmt.Errorf("TRUNK_RED_FLAKE_NEEDS_MAIN: a flake becomes known only from a red and an executed green run of one origin/main tree, never from a batch tip or a branch")
+			return coded("TRUNK_RED_FLAKE_NEEDS_MAIN", errors.New("a flake is known only from a red and a green run of one main tree, not a batch or a branch"))
 		}
 		if args.Approver == "" || !validTrunkRedTime(args.AllowanceUntil) {
-			return fmt.Errorf("TRUNK_RED_FLAKE_NEEDS_MAIN: a known flake needs an owner and an allowance")
+			return coded("TRUNK_RED_FLAKE_NEEDS_MAIN", errors.New("a known flake needs an owner and a date until which it is allowed"))
 		}
 	case TrunkRedClassPendingFlake:
 		if args.Where != "tip" || args.Tree == "" || !rerunOK {
-			return fmt.Errorf("TRUNK_RED_FLAKE_NEEDS_MAIN: a pending flake needs both tip attempts on one tip tree")
+			return coded("TRUNK_RED_FLAKE_NEEDS_MAIN", errors.New("a suspected flake needs both runs on the same batch tree"))
 		}
 	case TrunkRedClassHang:
 		for _, group := range args.Groups {
@@ -779,7 +780,7 @@ func trunkRedClearRequest(r VerbRequest, args TrunkRedClearArgs) PublishRequest 
 			}
 			entry := trunkRedByID(tree.TrunkRed, args.Entry)
 			if entry == nil {
-				return nil, fmt.Errorf("TRUNK_RED_UNKNOWN: entry %s is not in the register", args.Entry)
+				return nil, coded("TRUNK_RED_UNKNOWN", fmt.Errorf("incident %s doesn't exist; metasystem incident list shows them", args.Entry))
 			}
 			if entry.FixProof != nil && slices.ContainsFunc(entry.FixProof.Passes, func(pass TrunkRedPass) bool { return pass.Opid == r.opid() }) {
 				return nil, AlreadyApplied{}
@@ -788,12 +789,12 @@ func trunkRedClearRequest(r VerbRequest, args TrunkRedClearArgs) PublishRequest 
 				if entry.Closed.Opid == r.opid() {
 					return nil, AlreadyApplied{}
 				}
-				return nil, fmt.Errorf("TRUNK_RED_CLOSED: entry %s is closed", args.Entry)
+				return nil, coded("TRUNK_RED_CLOSED", fmt.Errorf("incident %s is already closed; nothing to do", args.Entry))
 			}
 			if !args.legacyUnbound {
 				currentEntry, _ := json.Marshal(entry)
 				if !bytes.Equal(currentEntry, expectedEntry) {
-					return nil, fmt.Errorf("TRUNK_RED_CHANGED: entry %s changed after its clear inputs were classified", args.Entry)
+					return nil, coded("TRUNK_RED_CHANGED", fmt.Errorf("incident %s changed while it was being cleared; try again", args.Entry))
 				}
 			}
 			if entry.EntryClass() != TrunkRedClassTrunkRed {
@@ -814,10 +815,10 @@ func trunkRedClearRequest(r VerbRequest, args TrunkRedClearArgs) PublishRequest 
 // entry's owner unit; the third closes the entry. Time never closes it.
 func countFlakePass(entry *TrunkRedEntry, args TrunkRedClearArgs, r VerbRequest) error {
 	if !args.Executed {
-		return fmt.Errorf("TRUNK_RED_PASS_NOT_EXECUTED: entry %s is a %s; a pass reused by identity never counts toward closing it", entry.ID, entry.Class)
+		return coded("TRUNK_RED_PASS_NOT_EXECUTED", fmt.Errorf("incident %s (%s) closes only on runs that really ran, not reused results", entry.ID, entry.Class))
 	}
 	if args.FixCommit == "" {
-		return fmt.Errorf("TRUNK_RED_FIX_UNPROVEN: entry %s is a %s; it closes after a main commit changing its owner unit and %d executed passes, or by a person's close", entry.ID, entry.Class, flakeClosingPasses)
+		return coded("TRUNK_RED_FIX_UNPROVEN", fmt.Errorf("incident %s (%s) closes after a fix on main and %d green runs, or by a person", entry.ID, entry.Class, flakeClosingPasses))
 	}
 	if entry.FixProof == nil || entry.FixProof.Commit != args.FixCommit {
 		entry.FixProof = &TrunkRedFixProof{Commit: args.FixCommit, Passes: []TrunkRedPass{}}
@@ -874,20 +875,20 @@ func trunkRedOwnRequest(r VerbRequest, args TrunkRedOwnArgs) PublishRequest {
 			}
 			entry := trunkRedByID(tree.TrunkRed, args.Entry)
 			if entry == nil {
-				return nil, fmt.Errorf("TRUNK_RED_UNKNOWN: entry %s is not in the register", args.Entry)
+				return nil, coded("TRUNK_RED_UNKNOWN", fmt.Errorf("incident %s doesn't exist; metasystem incident list shows them", args.Entry))
 			}
 			if entry.Closed != nil {
-				return nil, fmt.Errorf("TRUNK_RED_CLOSED: entry %s is closed", args.Entry)
+				return nil, coded("TRUNK_RED_CLOSED", fmt.Errorf("incident %s is already closed; nothing to do", args.Entry))
 			}
 			if tree.Live[args.Goal] == nil {
-				return nil, fmt.Errorf("TRUNK_RED_FIX_GOAL_UNKNOWN: goal %s is not live", args.Goal)
+				return nil, coded("TRUNK_RED_FIX_GOAL_UNKNOWN", fmt.Errorf("goal %s isn't open, so it can't own the incident", args.Goal))
 			}
 			if held := trunkRedOwnHolds(*entry, r.Actor.Machine, args); held != "" {
 				return nil, AlreadyHolds{Reason: held}
 			}
 			if args.By == "" {
 				if entry.Owner.Machine != "" && entry.Owner.Machine != r.Actor.Machine {
-					return nil, fmt.Errorf("TRUNK_RED_OWNED_ELSEWHERE: entry %s is owned by %s", args.Entry, entry.Owner.Machine)
+					return nil, coded("TRUNK_RED_OWNED_ELSEWHERE", fmt.Errorf("incident %s is owned by machine %s; a person may move it with --by", args.Entry, entry.Owner.Machine))
 				}
 				since := entry.Owner.Since
 				if since == "" {
@@ -946,7 +947,7 @@ type TrunkRedCloseArgs struct {
 // CloseTrunkRed records a person's explicit resolution of an open entry.
 func CloseTrunkRed(r VerbRequest, args TrunkRedCloseArgs) (PublishResult, error) {
 	if args.By == "" || r.Actor.Human == "" || args.By != r.Actor.Human {
-		return PublishResult{}, fmt.Errorf("TRUNK_RED_CLOSE_IS_HUMAN: close names its human with --by")
+		return PublishResult{}, coded("TRUNK_RED_CLOSE_IS_HUMAN", errors.New("only a person closes an incident, naming themself with --by"))
 	}
 	return Publish(r.Endpoint, trunkRedCloseRequest(r, args))
 }
@@ -963,7 +964,7 @@ func trunkRedCloseRequest(r VerbRequest, args TrunkRedCloseArgs) PublishRequest 
 			}
 			entry := trunkRedByID(tree.TrunkRed, args.Entry)
 			if entry == nil {
-				return nil, fmt.Errorf("TRUNK_RED_UNKNOWN: entry %s is not in the register", args.Entry)
+				return nil, coded("TRUNK_RED_UNKNOWN", fmt.Errorf("incident %s doesn't exist; metasystem incident list shows them", args.Entry))
 			}
 			if closed := entry.Closed; closed != nil {
 				// Closing a closed incident is the state already holding

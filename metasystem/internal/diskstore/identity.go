@@ -119,7 +119,7 @@ func Revalidate(record Record) error {
 		return err
 	}
 	if current != record.Identity {
-		return fmt.Errorf("worktree %s is not the recorded one (gitdir %s inode %d generation %d, recorded %s inode %d generation %d)",
+		return fmt.Errorf("worktree %s was replaced since it was recorded (git link %s, file %d.%d; recorded %s, file %d.%d)",
 			record.Path, current.Gitdir, current.GitFileInode, current.GitFileGeneration,
 			record.Identity.Gitdir, record.Identity.GitFileInode, record.Identity.GitFileGeneration)
 	}

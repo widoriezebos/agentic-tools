@@ -328,7 +328,7 @@ func TestIntentRepositorySelection(t *testing.T) {
 	}
 	outside := filepath.Join(base, "elsewhere")
 	writeTree(outside, "note.md")
-	if got, problem := selected(outside); problem == nil || problem.code != 2 || problem.Decision == "" || got != "" {
+	if got, problem := selected(outside); problem == nil || problem.code != 2 || len(problem.next) == 0 || got != "" {
 		t.Errorf("a path outside every installation selected %q problem %+v", got, problem)
 	}
 	var stdout, stderr bytes.Buffer
@@ -389,7 +389,7 @@ func TestIntentGoalAuthorityAndState(t *testing.T) {
 			return humanauthority.Proof{}, errors.New("process 42 is not the enrolled terminal")
 		}
 		code, result := bed.runJSON(wrong, "goal", "approve", bedGoal, "--lineage", "m1")
-		if code != 1 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "not the enrolled terminal") || result.Decision != humanauthority.PersonActRemedy("") {
+		if code != 1 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "not the enrolled terminal") || result.Next == nil || strings.Join(result.Next.Argv[:3], " ") != "metasystem system enroll" {
 			t.Fatalf("wrong terminal = %d %+v", code, result)
 		}
 		foreign := bed.owners()
@@ -465,7 +465,7 @@ func TestIntentGoalAuthorityAndState(t *testing.T) {
 	t.Run("done checks its obligations then concludes", func(t *testing.T) {
 		bed := newIntentBed(t, false, nil)
 		code, result := bed.runJSON(bed.owners(), "goal", "done", bedGoal, "--reason", "shipped; residue remains in the retry path", "--lineage", "m1")
-		if code != 1 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "residue") || bed.repo.publications != 0 {
+		if code != 1 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "left-over work without a goal") || bed.repo.publications != 0 {
 			t.Fatalf("done with unscheduled residue = %d %+v", code, result)
 		}
 		code, result = bed.runJSON(bed.owners(), "goal", "done", bedGoal, "--reason", "shipped and verified", "--lineage", "m1")
@@ -521,13 +521,13 @@ func TestIntentArgumentsAndRemedies(t *testing.T) {
 		t.Fatalf("extra positional = %d %+v", code, result)
 	}
 	code, result = bed.runJSON(bed.owners(), "goal", "pause", "--reason", "x", "--lineage", "m1")
-	if code != 2 || !strings.Contains(result.Summary, "needs a goal") || !strings.Contains(fmt.Sprint(result.Data), bedGoal) {
+	if code != 2 || !strings.Contains(result.Summary, "no goal was named") || !strings.Contains(fmt.Sprint(result.Data), bedGoal) {
 		t.Fatalf("missing target = %d %+v", code, result)
 	}
 	unenrolled := goalSyncTerminalReader(t, bed.root(), "ttys:not_enrolled")
 	bed.facts.reader = &unenrolled
 	code, result = bed.runJSON(bed.owners(), "goal", "pause", bedGoal, "--reason", "x")
-	if code != 1 || !strings.Contains(result.Decision, "--lineage") {
+	if code != 1 || !strings.Contains(strings.Join(result.Details, "\n"), "--lineage") {
 		t.Fatalf("unknown actor = %d %+v", code, result)
 	}
 	reason := "it's -waiting"
@@ -545,11 +545,11 @@ func TestIntentArgumentsAndRemedies(t *testing.T) {
 	}
 	// Text output: the refusal and its remedy on standard error, quoted.
 	code, stdout, stderr := bed.run(bed.owners(), "goal", "show", "no-such-goal")
-	if code != 1 || stdout != "" || !strings.Contains(stderr, "run: metasystem goal list --all") {
+	if code != 1 || stdout != "" || !strings.Contains(stderr, "  → metasystem goal list --all") {
 		t.Fatalf("unknown goal text = %d %q %q", code, stdout, stderr)
 	}
 	code, stdout, _ = bed.run(bed.owners(), "goal", "show", bedGoal)
-	if code != 0 || !strings.Contains(stdout, bedGoal+"  parked  tier 3") || !strings.Contains(stdout, "next: metasystem goal resume "+bedGoal) {
+	if code != 0 || !strings.Contains(stdout, bedGoal+"  parked  tier 3") || !strings.Contains(stdout, "→ metasystem goal resume "+bedGoal) {
 		t.Fatalf("show text = %d %q", code, stdout)
 	}
 	if got := shellWords(shellCommand([]string{"metasystem", "goal", "budget", "--by", "it's me", "", "1d/2/3m/1/0"})); !slices.Equal(got, []string{"metasystem", "goal", "budget", "--by", "it's me", "", "1d/2/3m/1/0"}) {
@@ -586,7 +586,7 @@ func TestIntentResumeAttorney(t *testing.T) {
 	stopped := newIntentBed(t, true, nil)
 	stopped.setRoot(grant)
 	code, result = stopped.runJSON(stopped.owners(), "goal", "resume", bedGoal, "--under", attorneyID, "--verified", "the review landed", "--lineage", "m1")
-	if code != 1 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "power of attorney") || !strings.Contains(result.Decision, "metasystem goal resume "+bedGoal) {
+	if code != 1 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "a grant can't resume") || result.Next == nil || !strings.Contains(strings.Join(result.Next.Argv, " "), "metasystem goal resume "+bedGoal) {
 		t.Fatalf("stopped resume under attorney = %d %+v", code, result)
 	}
 	if stopped.repo.publications != 0 || stopped.goalFile(bedGoal).StopFence == nil {
@@ -769,7 +769,7 @@ func TestIntentLandedActsReportPartialFollowUp(t *testing.T) {
 		}
 		code, result := bed.runJSON(bed.owners(), "goal", "approve", bedGoal, "--fixture-human-authority", "--lineage", "m1")
 		data, _ := result.Data.(map[string]any)
-		if code != 1 || result.Outcome != intentPartial || data["owner"] == nil || !strings.Contains(result.Decision, "do not run it again") ||
+		if code != 1 || result.Outcome != intentPartial || data["owner"] == nil || !strings.Contains(result.Decision, "don't run it again") ||
 			bed.goalFile(bedGoal).State != goal.StateApproved || bed.repo.publications != 1 {
 			t.Fatalf("approval whose proof record failed = %d %+v", code, result)
 		}
@@ -806,7 +806,7 @@ func TestIntentParkedResumeActors(t *testing.T) {
 		t.Run("stopped-only "+flags[0]+fmt.Sprint(len(flags)), func(t *testing.T) {
 			bed := newIntentBed(t, false, makeParked)
 			code, result := bed.runJSON(bed.owners(), append([]string{"goal", "resume", bedGoal, "--lineage", "m1"}, flags...)...)
-			if code != 2 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "parked goal's unpark takes neither") ||
+			if code != 2 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "a relayed word resumes only a goal stopped by its budget") ||
 				bed.repo.publications != 0 || bed.goalFile(bedGoal).State != goal.StateParked {
 				t.Fatalf("parked resume with %v = %d %+v", flags, code, result)
 			}

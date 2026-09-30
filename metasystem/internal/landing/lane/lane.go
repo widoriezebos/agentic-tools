@@ -30,6 +30,8 @@ const (
 	CodeRegisterInvalid = "LANDING_LANE_REGISTER_INVALID"
 	CodeUnarmed         = "LANDING_LANE_UNARMED"
 	CodeNoMachine       = "LANDING_LANE_NO_MACHINE"
+	// CodeAccountUnresolved leads ResolveAccount's refusals.
+	CodeAccountUnresolved = "LANE_ACCOUNT_UNRESOLVED"
 )
 
 // Record is the host's registration of its landing lane.
@@ -99,7 +101,7 @@ func Read(home string) (Record, bool, error) {
 	var record Record
 	ok, err := readJSON(RecordPath(home), &record)
 	if ok && record.Root == "" {
-		return Record{}, false, fmt.Errorf("the landing lane record %s names no root; register the lane again: metasystem landing set PATH", RecordPath(home))
+		return Record{}, false, fmt.Errorf("the landing lane record %s names no checkout; register it with metasystem landing set", RecordPath(home))
 	}
 	return record, ok, err
 }

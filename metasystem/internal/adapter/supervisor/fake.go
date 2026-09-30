@@ -229,7 +229,7 @@ func fakeHandshakeSeconds(d Deps) (int, error) {
 	if raw := d.Getenv("METASYSTEM_FIXTURE_CAP_SCALE_MILLI"); raw != "" {
 		value, err := strconv.ParseInt(raw, 10, 64)
 		if !positiveIntegerRE.MatchString(raw) || err != nil {
-			return 0, errors.New("METASYSTEM_FIXTURE_CAP_SCALE_MILLI must be a positive integer")
+			return 0, fmt.Errorf("the test time scale %s is not a whole number above zero", "METASYSTEM_FIXTURE_CAP_SCALE_MILLI")
 		}
 		milli = value
 	}

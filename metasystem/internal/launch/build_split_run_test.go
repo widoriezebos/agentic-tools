@@ -77,7 +77,7 @@ func TestOversizeDirectStartRecordsBuildOverCap(t *testing.T) {
 	m.Settings = DefaultSettings()
 	m.Settings.BuildLinesCap = 1
 	_, startErr := m.Start(StartSpec{ID: "direct-oversize", Kind: "build", Goal: "goal", Brief: writeLaunchFile(t, "brief.md", "| Unit | Lines |\n|---|---|\n| direct | 2 |\n"), WorkingDirectory: t.TempDir()})
-	if startErr == nil || !strings.HasPrefix(startErr.Error(), "LAUNCH_BUILD_OVERSIZE") {
+	if startErr == nil || !strings.HasPrefix(ErrorDetail(startErr), "LAUNCH_BUILD_OVERSIZE") {
 		t.Fatalf("start error=%v", startErr)
 	}
 	report, reportErr := m.Report("goal")

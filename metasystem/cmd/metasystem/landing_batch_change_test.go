@@ -315,7 +315,7 @@ func TestChangeJoinGitAdapterFetchesThePinnedChangeAndJoins(t *testing.T) {
 	bare := run(seat, "rev-parse", "HEAD")
 	run(seat, "update-ref", batchowner.ChangePinRef(bare), bare)
 	if _, err := batchowner.ExecuteChangeJoin(batchowner.ChangeJoinRequest{SeatRoot: seat, LandingRoot: lane, Commit: bare, At: time.Unix(11, 0)}, dependencies); err == nil ||
-		!strings.Contains(err.Error(), "BATCH_CHANGE_UNREADABLE") || !strings.Contains(err.Error(), "commit boundary") {
+		!strings.Contains(err.Error(), "BATCH_CHANGE_UNREADABLE") || !strings.Contains(err.Error(), "names no machine and session") {
 		t.Fatalf("a commit without a Machine trailer joined: %v", err)
 	}
 }
@@ -495,5 +495,17 @@ func TestHeldRefusalKindsForTheLanding(t *testing.T) {
 		if series != errors.As(err, &held) || series == errors.As(err, &member) {
 			t.Fatalf("%s: %T %v", code, err, err)
 		}
+	}
+}
+
+// landing status --verbose names the owner's last failed tick and the log
+// that holds every line it reported.
+func TestLandingStatusVerboseNamesTheLastTickErrorAndTheOwnerLog(t *testing.T) {
+	t.Parallel()
+	root, failure := "/lanes/landing", "batch b1: read joined goal change:5555 before rebind: absent"
+	view := lane.View{Root: &root, Owner: lane.OwnerView{State: lane.OwnerRunning, LastTickError: &failure}}
+	lines := strings.Join(landingViewDetail(view), "\n")
+	if !strings.Contains(lines, "last tick failed: "+failure) || !strings.Contains(lines, "owner log: "+batchowner.OwnerLogPath(root)) {
+		t.Fatalf("verbose status:\n%s", lines)
 	}
 }

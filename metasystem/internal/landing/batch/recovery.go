@@ -37,7 +37,7 @@ func RecoverPushedSeries(store Store, id, actor string, at time.Time, seams Reco
 		return err
 	}
 	if record.Landing == nil || !record.Landing.PushComplete {
-		return fmt.Errorf("BATCH_RECOVERY_NOT_PUSHED: batch %s has no completed push", id)
+		return fmt.Errorf("%s: batch %s has no completed push", codeRecoveryNotPushed, id)
 	}
 	for _, snapshot := range record.Units {
 		if snapshot.P6Done {
@@ -55,7 +55,7 @@ func RecoverPushedSeries(store Store, id, actor string, at time.Time, seams Reco
 		if snapshot.IsChange() {
 			var err error
 			if seams.OriginChange == nil {
-				return fmt.Errorf("BATCH_P6_REFUSED: change %s has no Landing-Change resolver", snapshot.GoalID)
+				return fmt.Errorf("%s: change %s has no Landing-Change resolver", codeP6Refused, snapshot.GoalID)
 			}
 			commit, found, err = seams.OriginChange(snapshot)
 			if err != nil {
@@ -65,7 +65,7 @@ func RecoverPushedSeries(store Store, id, actor string, at time.Time, seams Reco
 			found = true
 			for _, source := range snapshot.CommitIDs {
 				if seams.OriginSource == nil {
-					return fmt.Errorf("BATCH_P6_REFUSED: member %s has no Goal-Source resolver", snapshot.GoalID)
+					return fmt.Errorf("%s: member %s has no Goal-Source resolver", codeP6Refused, snapshot.GoalID)
 				}
 				landed, sourceFound, sourceErr := seams.OriginSource(snapshot, source)
 				if sourceErr != nil {
@@ -80,7 +80,7 @@ func RecoverPushedSeries(store Store, id, actor string, at time.Time, seams Reco
 		} else {
 			var err error
 			if seams.OriginCommit == nil {
-				return fmt.Errorf("BATCH_P6_REFUSED: unit %s has no provenance resolver", snapshot.GoalID)
+				return fmt.Errorf("%s: unit %s has no provenance resolver", codeP6Refused, snapshot.GoalID)
 			}
 			commit, found, err = seams.OriginCommit(snapshot)
 			if err != nil {
@@ -105,19 +105,19 @@ func RecoverPushedSeries(store Store, id, actor string, at time.Time, seams Reco
 		}
 		if unit.GoalLast && len(unit.CommitIDs) != 0 {
 			if seams.SweepGoalBranch == nil {
-				return fmt.Errorf("BATCH_P6_REFUSED: member %s goal branch sweep helper is absent", snapshot.GoalID)
+				return fmt.Errorf("%s: member %s goal branch sweep helper is absent", codeP6Refused, snapshot.GoalID)
 			}
 			if sweepErr := seams.SweepGoalBranch(unit, commit); sweepErr != nil {
-				return fmt.Errorf("BATCH_P6_REFUSED: member %s goal branch sweep failed: %w", snapshot.GoalID, sweepErr)
+				return fmt.Errorf("%s: member %s goal branch sweep failed: %w", codeP6Refused, snapshot.GoalID, sweepErr)
 			}
 		}
 		if seams.Finalize == nil {
-			return fmt.Errorf("BATCH_P6_REFUSED: unit %s finalization helper is absent", snapshot.GoalID)
+			return fmt.Errorf("%s: unit %s finalization helper is absent", codeP6Refused, snapshot.GoalID)
 		}
 		// A change has no goal whose Next records the landing.
 		if !unit.IsChange() {
 			if finalizeErr := seams.Finalize(unit, commit); finalizeErr != nil {
-				return fmt.Errorf("BATCH_P6_REFUSED: unit %s finalization failed: %w", snapshot.GoalID, finalizeErr)
+				return fmt.Errorf("%s: unit %s finalization failed: %w", codeP6Refused, snapshot.GoalID, finalizeErr)
 			}
 		}
 		if err := store.Update(id, func(next *Record) error {
@@ -148,10 +148,10 @@ func RecoverPushedSeries(store Store, id, actor string, at time.Time, seams Reco
 	}
 	if complete && record.Landing != nil && !record.Landing.RearmComplete {
 		if seams.Rearm == nil {
-			return fmt.Errorf("BATCH_P6_REFUSED: landing re-arm helper is absent")
+			return fmt.Errorf("%s: landing re-arm helper is absent", codeP6Refused)
 		}
 		if rearmErr := seams.Rearm(record.Landing.PushedTip); rearmErr != nil {
-			return fmt.Errorf("BATCH_P6_REFUSED: landing re-arm failed: %w", rearmErr)
+			return fmt.Errorf("%s: landing re-arm failed: %w", codeP6Refused, rearmErr)
 		}
 		if err := store.Update(id, func(next *Record) error { next.Landing.RearmComplete = true; return nil }); err != nil {
 			return err
@@ -163,10 +163,10 @@ func RecoverPushedSeries(store Store, id, actor string, at time.Time, seams Reco
 	}
 	if complete && record.Landing != nil && !record.Landing.CleanupDone {
 		if seams.Cleanup == nil {
-			return fmt.Errorf("BATCH_P6_REFUSED: landing cleanup helper is absent")
+			return fmt.Errorf("%s: landing cleanup helper is absent", codeP6Refused)
 		}
 		if cleanupErr := seams.Cleanup(); cleanupErr != nil {
-			return fmt.Errorf("BATCH_P6_REFUSED: landing cleanup failed: %w", cleanupErr)
+			return fmt.Errorf("%s: landing cleanup failed: %w", codeP6Refused, cleanupErr)
 		}
 		if err := store.Update(id, func(next *Record) error { next.Landing.CleanupDone = true; return nil }); err != nil {
 			return err

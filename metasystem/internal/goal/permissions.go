@@ -87,7 +87,7 @@ func permissionDelta(change PermissionChange) string {
 func parsePermissionDelta(value string) (PermissionChange, error) {
 	name, state, found := strings.Cut(value, "=")
 	if !found || (state != "allowed" && state != "disallowed") {
-		return PermissionChange{}, fmt.Errorf("the stored permission change %q is not NAME=allowed or NAME=disallowed", value)
+		return PermissionChange{}, fmt.Errorf("the recorded permission change %q isn't <permission>=allowed or <permission>=disallowed", value)
 	}
 	if _, err := LookupPermission(name); err != nil {
 		return PermissionChange{}, err

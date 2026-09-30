@@ -13,6 +13,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/obligationstate"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 )
 
@@ -34,7 +35,7 @@ func TestGovernedAdmissionRefusesAcceptedGoalWithoutObligationTuple(t *testing.T
 	_, err := evaluateGovernedRunAdmissionWithReads(root, run.GovernedAdmissionRequest{
 		GoalID: "bounded", ObligationRevision: 1, StandingShared: true,
 	}, time.Date(2026, 8, 28, 10, 30, 0, 0, time.UTC), bed.reads)
-	if err == nil || !strings.Contains(err.Error(), "has no accepted obligation revision 1") {
+	if err == nil || !strings.Contains(err.Error(), "has no accepted obligation 1") {
 		t.Fatalf("accepted goal without its obligation tuple was admitted: %v", err)
 	}
 }
@@ -198,7 +199,7 @@ func TestExhaustedObligationSurvivesIDOverlayAttemptAndGovernedRunPrune(t *testi
 		t.Fatal("pruning made a terminal governed ID reusable")
 	}
 	params.Id = "attempt-n-plus-one"
-	if _, err := store.Launch(run.Caller{Class: "HUMAN"}, params); err == nil || !strings.Contains(err.Error(), "OBLIGATION_REFUSED") {
+	if _, err := store.Launch(run.Caller{Class: "HUMAN"}, params); err == nil || !strings.Contains(refusal.DetailOf(err), "OBLIGATION_REFUSED") {
 		t.Fatalf("N+1 was not refused after terminal evidence pruning: %v", err)
 	}
 }
@@ -230,7 +231,7 @@ func TestMissingUnprunedRunEvidenceMakesDurableSpendFailClosed(t *testing.T) {
 	}
 	params := run.LaunchParams{Id: "after-loss", Kind: "suite", Display: "after loss", Log: "artifacts/after.log",
 		GoalId: "bounded", ObligationRevision: obligationRevision, StandingShared: true}
-	if _, err := store.Launch(run.Caller{Class: "HUMAN"}, params); err == nil || !strings.Contains(err.Error(), "BUDGET_UNKNOWN") {
+	if _, err := store.Launch(run.Caller{Class: "HUMAN"}, params); err == nil || !strings.Contains(refusal.DetailOf(err), "BUDGET_UNKNOWN") {
 		t.Fatalf("durable spend exceeding surviving unpruned evidence did not fail closed: %v", err)
 	}
 }

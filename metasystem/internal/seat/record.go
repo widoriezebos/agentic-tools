@@ -15,6 +15,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 )
 
 // RecordSchema is the schema this engine writes. A reader accepts this
@@ -40,7 +42,7 @@ var machineNickname = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 // whitespace (internal/goal/actor.go:34), which is not enough here.
 func ValidateMachineName(name string) error {
 	if !machineNickname.MatchString(name) || name == "." || strings.Contains(name, "..") {
-		return fmt.Errorf("SEAT_MACHINE_NICKNAME_INVALID: the machine nickname %q is not one word of [A-Za-z0-9._-] and cannot be a presence ref segment", name)
+		return refusal.New("SEAT_MACHINE_NICKNAME_INVALID", fmt.Sprintf("nickname=%q", name), fmt.Errorf("the machine name %q is not one word of letters, digits, '.', '_' and '-'", name))
 	}
 	return nil
 }
@@ -127,10 +129,10 @@ type rawRecord struct {
 func ParseRecord(data []byte) (Record, error) {
 	var raw rawRecord
 	if err := json.Unmarshal(data, &raw); err != nil {
-		return Record{}, fmt.Errorf("SEAT_PRESENCE_MALFORMED: the presence record is not the object this engine reads: %v", err)
+		return Record{}, refusal.New("SEAT_PRESENCE_MALFORMED", "", fmt.Errorf("a machine's presence record cannot be read: %v", err))
 	}
 	malformed := func(format string, args ...any) (Record, error) {
-		return Record{}, fmt.Errorf("SEAT_PRESENCE_MALFORMED: "+format, args...)
+		return Record{}, refusal.New("SEAT_PRESENCE_MALFORMED", "", fmt.Errorf(format, args...))
 	}
 	if raw.PresenceSchema == nil {
 		return malformed("the presence record has no presenceSchema")

@@ -19,6 +19,14 @@ func (d syncRequestDependencies) complain(parts ...any) {
 		fmt.Fprintln(d.errStream(), parts...)
 		return
 	}
+	// One error is kept as it is, so its refusal code reaches --verbose and
+	// --json; other words become the failure's text.
+	if len(parts) == 1 {
+		if err, ok := parts[0].(error); ok {
+			d.report.failure = err
+			return
+		}
+	}
 	d.report.failure = errors.New(strings.TrimSuffix(fmt.Sprintln(parts...), "\n"))
 }
 
@@ -45,7 +53,7 @@ func (d syncRequestDependencies) parseSyncFlags(name string, args []string) (*sy
 // its refusal sentence or kept for the public result.
 func (d syncRequestDependencies) outcomeBeforeRefusal(res goal.PublishResult) {
 	if d.report == nil {
-		writeJSONLine(d.outStream(), d.errStream(), map[string]any{"outcome": res.Outcome, "tip": res.Tip, "detail": res.Detail})
+		writeJSONLine(d.outStream(), d.errStream(), publicationRecord(res))
 		return
 	}
 	d.report.result = &res
@@ -63,4 +71,14 @@ func (d syncRequestDependencies) publishGrant(res goal.PublishResult, entry stri
 	}
 	d.report.entry = entry
 	return d.publish(res, nil)
+}
+
+// publicationRecord is an owner's publication as its JSON line and --json
+// data carry it: the refusal code beside the words, when it has one.
+func publicationRecord(res goal.PublishResult) map[string]any {
+	record := map[string]any{"outcome": res.Outcome, "tip": res.Tip, "detail": res.Detail}
+	if res.Code != "" {
+		record["code"] = res.Code
+	}
+	return record
 }

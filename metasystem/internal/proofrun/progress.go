@@ -73,11 +73,11 @@ func appendJSONLine(path string, value any) error {
 	}
 	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
 	if err != nil {
-		return fmt.Errorf("open suite progress journal: %w", err)
+		return fmt.Errorf("open the suite progress log: %w", err)
 	}
 	defer file.Close()
 	if _, err := file.Write(data); err != nil {
-		return fmt.Errorf("append suite progress journal: %w", err)
+		return fmt.Errorf("append to the suite progress log: %w", err)
 	}
 	return nil
 }
@@ -87,7 +87,7 @@ func appendJSONLine(path string, value any) error {
 func ReadLatestProgressRun(path string) (ProgressRun, error) {
 	file, err := os.Open(path)
 	if err != nil {
-		return ProgressRun{}, fmt.Errorf("open suite progress journal: %w", err)
+		return ProgressRun{}, fmt.Errorf("open the suite progress log: %w", err)
 	}
 	defer file.Close()
 
@@ -131,10 +131,10 @@ func ReadLatestProgressRun(path string) (ProgressRun, error) {
 		run.Events = append(run.Events, event)
 	}
 	if err := scanner.Err(); err != nil {
-		return ProgressRun{}, fmt.Errorf("read suite progress journal: %w", err)
+		return ProgressRun{}, fmt.Errorf("read the suite progress log: %w", err)
 	}
 	if !foundHeader {
-		return ProgressRun{}, errors.New("suite progress journal has no run header")
+		return ProgressRun{}, errors.New("the suite progress log has no run header")
 	}
 	return run, nil
 }

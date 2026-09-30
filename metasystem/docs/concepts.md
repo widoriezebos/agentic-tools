@@ -120,6 +120,83 @@ rename-born; **generations** only rise, so a stale verdict can never
 impersonate a fresh one; the **watchdog report** tells a session, once
 per change, what supervision knows.
 
+## Landing lane
+
+Every piece of work ends the same way: it is proved against the current
+main and pushed. The **landing lane** is where that happens for all
+seats of one computer.
+
+**What it is.** A separate checkout of the repository on the same
+computer, next to the seats' checkouts. It runs the same engine and has
+its own supervision, like any seat, but no agent works in it. The
+computer's lane record, `~/.metasystem/host/landing-lane.json`, names
+that checkout. The record is what makes it the lane: every checkout has
+the same batch owner component, and it runs only in the checkout the
+record names. In every other seat it stands idle.
+
+**Why a separate checkout.** Merging and pushing need a clean tree that
+nothing else touches. A seat's checkout is full of half-built work,
+worktrees and records in flight; the lane's checkout holds only what it
+is landing, so a landing never depends on the state of anyone's seat.
+
+**What it does.**
+
+- It collects finished goal work and hand-made changes from every seat
+  into a **batch**, in the order they joined.
+- It proves the batch once: one proof for the whole batch, not one per
+  piece of work. Only one proof runs at a time on the computer, so
+  batches never compete with each other for CPU.
+- On green it pushes the whole batch to main in one push, and each
+  member is recorded as landed.
+- On red it works out which member broke the proof, ejects that member
+  and gives it back to its seat to fix, and lands the rest in their
+  original order. When main itself is red, the batch is held until main
+  is fixed.
+- It uses its waits: while one batch proves, the next one collects, and
+  it can wait briefly for work that is almost ready rather than start a
+  proof that misses it, never longer in total than that work's own proof
+  would have taken. An early proof may run on spare CPU, never ahead
+  of a real one.
+- It is kept alive. The steward of every seat on the computer watches
+  the lane's owner and restarts it when it dies, waiting a minute and
+  then longer between tries (up to ten minutes). After the fifth death
+  in a row it gives up and says so, rather than restart a broken owner
+  forever; a person fixes the cause and runs `metasystem landing start`.
+
+**Without a lane**, the seat lands it itself. `metasystem work land`
+proves the work on the seat and pushes it from there. This is correct,
+but not optimal:
+
+- every landing is a full proof of its own;
+- seats on one computer run their proofs at the same time and compete
+  for CPU;
+- when two seats push at once, the loser rebases and proves again;
+- a change without a goal (`work land --message FILE`) needs a full
+  local proof on the seat before it may land.
+
+With a lane, the seat does less: a change that touches only records,
+memory or plans needs no local proof at all, a change to the engine or
+the shipped payload needs only the quick admission checks locally, and
+the lane proves the batch before anything is pushed.
+
+**When a lane appears.** A person registers it with
+`metasystem landing set PATH`. From its next `work land` on, every seat
+of the computer that has no lane setting of its own lands through it;
+no seat needs a restart. Three nuances:
+
+- The seat's engine must be new enough to read the computer's lane
+  record (landing batch 21 or later). An older engine knows only its own
+  `landing.batch-root` setting and keeps landing the work itself until
+  it is rebuilt and restarted with `metasystem system restart`.
+- A seat whose own `landing.batch-root` names a different checkout is
+  refused, not rerouted: a computer lands through one lane. The refusal
+  names both ways to align: point the seat's setting at the lane, or
+  have a person move the lane.
+- A landing already under way finishes on the route it started on.
+
+How to set one up, check it, and move or stop it is in
+`docs/working-with-agents.md`.
+
 ## Missions
 
 A **mission contract** is a human-authored document: intent, non-goals,

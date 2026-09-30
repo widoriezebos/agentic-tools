@@ -194,7 +194,7 @@ func emitToolGate(opts ToolGateOptions, decision Decision, enforced bool) error 
 	}
 	if peer != "" {
 		if err := delivered(); err != nil && opts.Stderr != nil {
-			fmt.Fprintf(opts.Stderr, "metasystem internal adapter claude-tool-gate: a peer message was delivered but not marked (%v); it is offered again\n", err)
+			fmt.Fprintf(opts.Stderr, "a peer message was delivered but not marked as read (%v), so it will be offered again\n", err)
 		}
 	}
 	return nil

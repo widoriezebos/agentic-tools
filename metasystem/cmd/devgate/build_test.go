@@ -191,7 +191,7 @@ func TestBuildCleanTreeInstallsEngineStampedWithHead(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(f.root, staging)); !os.IsNotExist(err) {
 		t.Fatalf("staging file survived: %v", err)
 	}
-	if got := f.stdout.String(); got != "go-build: bin/metasystem @ "+fixtureCommit+" (CGO_ENABLED=0)\n" {
+	if got := f.stdout.String(); got != "go-build: bin/metasystem @ "+fixtureCommit+" (no cgo)\n" {
 		t.Fatalf("stdout = %q", got)
 	}
 	if f.fenceHits != 0 {
@@ -287,7 +287,7 @@ func TestBuildStampWithoutHeadIsUnknownAndOverrideSkipsGit(t *testing.T) {
 	if got := stampOf(override.onlyGoCall().args); got != "witness-abcdef012345" || len(override.gitCalls) != 0 {
 		t.Fatalf("stamp %q after git %q; want the override and no Git", got, override.gitCalls)
 	}
-	if got := override.stdout.String(); got != "go-build: proof engine @ witness-abcdef012345 (CGO_ENABLED=0); bin/metasystem untouched\n" {
+	if got := override.stdout.String(); got != "go-build: test engine @ witness-abcdef012345 (no cgo); bin/metasystem untouched\n" {
 		t.Fatalf("stdout = %q", got)
 	}
 }
@@ -408,9 +408,9 @@ func TestBuildRefusalsBeforeAnyEffect(t *testing.T) {
 	}{
 		{name: "out without path", args: []string{"--out"}, code: 2, stderr: "go-build: --out needs a path"},
 		{name: "unknown argument", args: []string{"--fast"}, code: 2, stderr: "go-build: unknown argument: --fast"},
-		{name: "invalid workers", setup: func(f *buildFixture) { f.env["METASYSTEM_TEST_WORKERS"] = "nope" }, code: 1, stderr: "METASYSTEM_TEST_WORKERS must be a positive integer"},
-		{name: "zero workers", setup: func(f *buildFixture) { f.env["METASYSTEM_TEST_WORKERS"] = "0" }, code: 1, stderr: "METASYSTEM_TEST_WORKERS must be a positive integer"},
-		{name: "no toolchain", setup: func(f *buildFixture) { f.noGo = true }, code: 1, stderr: "no go toolchain on PATH"},
+		{name: "invalid workers", setup: func(f *buildFixture) { f.env["METASYSTEM_TEST_WORKERS"] = "nope" }, code: 1, stderr: "is not a positive integer\nrun: unset METASYSTEM_TEST_WORKERS"},
+		{name: "zero workers", setup: func(f *buildFixture) { f.env["METASYSTEM_TEST_WORKERS"] = "0" }, code: 1, stderr: "is not a positive integer\nrun: unset METASYSTEM_TEST_WORKERS"},
+		{name: "no toolchain", setup: func(f *buildFixture) { f.noGo = true }, code: 1, stderr: "no go toolchain is on this shell's search path"},
 		{name: "no engine cache", setup: func(f *buildFixture) {
 			f.cacheDir = func() (string, error) { return "", errors.New("$HOME is not defined") }
 		}, code: 1, stderr: "engine cache: cannot resolve the user cache directory"},

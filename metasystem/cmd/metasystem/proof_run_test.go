@@ -369,7 +369,7 @@ func TestCandidateLaunchStillNeedsTheClaimHolder(t *testing.T) {
 		ControlRoot: root, ExecutionRoot: root, ConfPath: filepath.Join(root, "metasystem.conf"),
 		GoalID: "candidate-holder", AuthorityGoalID: "standing-validation", CapMin: "1", ScopeClass: "full", CommandClass: "testing",
 	})
-	if err == nil || !strings.Contains(err.Error(), "active coordinator does not own the claimed goal reservation") || attempt.AttemptID != "" {
+	if err == nil || !strings.Contains(err.Error(), "this session does not hold the claim on goal standing-validation") || attempt.AttemptID != "" {
 		t.Fatalf("candidate bypassed the claim holder: attempt=%+v err=%v", attempt, err)
 	}
 }
@@ -1831,7 +1831,7 @@ while [[ ! -e "$done_path" ]]; do sleep 0.005; done
 		}, CommitTerminal: func(completion proofrun.CompletionContext, receipt json.RawMessage) error {
 			return commitProofTerminalWithReasonAndReads(completion, receipt, nil, "proof launcher completed", &reads)
 		}})
-	if result == 0 || !strings.Contains(launcherErrors.String(), "lost goal-revision authority") {
+	if result == 0 || !strings.Contains(launcherErrors.String(), "the goal changed before the test run's result was recorded") {
 		t.Fatalf("a terminal commit without goal-revision authority was not refused by name: result %d\n%s", result, launcherErrors.String())
 	}
 	// The launcher's fallback retains the attempt as incomplete once the
@@ -1903,7 +1903,7 @@ func testProofResourceWaitUsesSemanticDeadline(t *testing.T) {
 				}
 				_ = proofrun.MarkHostResourcesClean(lease.Files())
 				_ = lease.Close()
-			} else if err == nil || lease != nil || !strings.Contains(err.Error(), "has passed at semantic time") {
+			} else if err == nil || lease != nil || !strings.Contains(err.Error(), "has passed (now ") {
 				t.Fatalf("resource acquisition at offset %s: lease=%v err=%v", testCase.at, lease, err)
 			}
 		})
@@ -2099,7 +2099,7 @@ func TestSupervisorTakeoverRefusesStaleEpochProof(t *testing.T) {
 		CapMin: "1", ScopeClass: "full", CommandClass: "testing",
 	})
 
-	if err == nil || !strings.Contains(err.Error(), "native delegate proof custody changed before reservation") || attempt.AttemptID != "" {
+	if err == nil || !strings.Contains(err.Error(), "the delegate's custody changed before its test run was reserved") || attempt.AttemptID != "" {
 		t.Fatalf("stale epoch attempt=%+v err=%v", attempt, err)
 	}
 }
@@ -2132,10 +2132,8 @@ func TestProofGateAdmitsAfterTheStopCapabilityIsRestamped(t *testing.T) {
 		CapMin: "1", ScopeClass: "full", CommandClass: "testing",
 	}
 	attempt, _, _, err := admitCandidateProofLaunchWithRepository(t, repository, admission)
-	wantStart := "active coordinator does not own the claimed goal reservation"
-	if err == nil || !strings.HasPrefix(err.Error(), wantStart) || !strings.Contains(err.Error(), "lease claim epoch 5") ||
-		!strings.Contains(err.Error(), "stop capability claim epoch 1") ||
-		!strings.Contains(err.Error(), "run metasystem session start (it restamps goal standing-validation)") || attempt.AttemptID != "" {
+	want := "this session's claim on goal standing-validation is out of date (claim 5, stop capability 1)\nrun: metasystem session start  (it restamps the claim)"
+	if err == nil || err.Error() != want || attempt.AttemptID != "" {
 		t.Fatalf("stale capability refusal: attempt=%+v err=%v", attempt, err)
 	}
 
@@ -3195,7 +3193,7 @@ func TestCommitProofTerminalGivesUpAfterNamedTriesWithTheHolderInTheRecord(t *te
 	}
 	result, launcherErrors := launch([]string{"true"}, commit)
 	if result == 0 || !strings.Contains(launcherErrors,
-		"proof terminal commit refused 6 times; the last holder: lock fence is held by pid 0 (started 0) of unproven liveness (uninspectable is alive); owner file: owner.json: permission denied") {
+		"recording the test run's result was refused 6 times; the last holder: lock fence is held by pid 0 (started 0) of unproven liveness (uninspectable is alive); owner file: owner.json: permission denied") {
 		t.Fatalf("the last refusal was not reported by name with its cause: result %d\n%s", result, launcherErrors)
 	}
 	if calls != terminalCommitTries || strings.Count(launcherErrors, "waits behind") != terminalCommitTries-1 || len(*pauses) != terminalCommitTries-1 {

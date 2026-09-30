@@ -23,6 +23,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/missionrunner"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stoptransition"
@@ -166,8 +167,8 @@ func TestIntentProcessAndAnswerTargets(t *testing.T) {
 		b := newProcessBed(t)
 		b.class = lease.ClassDelegate
 		code, result := b.runJSON(b.owners(), "system", "stop")
-		if code != 1 || result.Outcome != intentRefused || !strings.Contains(result.Decision, "agent-free terminal") ||
-			!strings.Contains(result.Summary, "human act at a terminal") {
+		if code != 1 || result.Outcome != intentRefused || result.Next == nil || result.Next.Reason != "in a terminal you opened yourself" ||
+			result.Summary != "an agent started this shell, so nothing was changed" {
 			t.Fatalf("agent stop = %d %+v", code, result)
 		}
 		if record := b.fence(); record.State != stopfence.StateOpen || record.Generation != 0 {
@@ -310,7 +311,7 @@ func TestIntentProcessAndAnswerTargets(t *testing.T) {
 		}
 		owners := b.owners()
 		code, ambiguous := b.runJSON(owners, "work", "stop", "job-a")
-		if code != 1 || ambiguous.Outcome != intentRefused || !strings.Contains(ambiguous.Summary, "names 2 records (j1:job-a, j2:job-a)") ||
+		if code != 1 || ambiguous.Outcome != intentRefused || !strings.Contains(ambiguous.Summary, "could mean 2 records (j1:job-a, j2:job-a)") ||
 			strings.Contains(ambiguous.Decision, "internal") || !slices.Equal(ambiguous.Data.(map[string]any)["candidates"].([]any), []any{"j1:job-a", "j2:job-a"}) ||
 			!strings.Contains(fmt.Sprint(ambiguous.Data.(map[string]any)["choices"]), "[metasystem work stop j1:job-a]") {
 			t.Fatalf("ambiguous job = %d %+v", code, ambiguous)
@@ -425,8 +426,8 @@ func TestIntentProcessAndAnswerTargets(t *testing.T) {
 		b := newProcessBed(t)
 		b.question = channel.Question{ID: "q-7", Goal: "g", State: "open", Wants: "resume g 1d/10/720m/1/3"}
 		code, result := b.runJSON(b.owners(), "question", "answer", "q-7")
-		if code != 1 || result.Outcome != intentRefused || !strings.Contains(result.Decision, "Reply in this thread with this token verbatim") ||
-			!strings.Contains(result.Decision, b.question.Wants) {
+		if code != 1 || result.Outcome != intentRefused || !strings.Contains(strings.Join(result.Details, "\n"), "Reply in this thread with this token verbatim") ||
+			!strings.Contains(strings.Join(result.Details, "\n"), b.question.Wants) || !strings.Contains(resultLine2(result), "metasystem question show channel:q-7") {
 			t.Fatalf("channel answer = %d %+v", code, result)
 		}
 		b.question.Answer = &channel.Answer{}
@@ -639,7 +640,7 @@ func TestIntentWorkStatusSaysWhatTheWaitIsUsedFor(t *testing.T) {
 	owners.delivery.now = func() time.Time { return now }
 	owners.delivery.batchRoot = func(string, time.Time) (string, bool, error) { return landing, true, nil }
 	owners.delivery.boardView = func(string, time.Time) board.View { return board.View{} }
-	if code, stdout, _ := p.run(owners, "status"); code != 0 || !slices.Contains(strings.Split(strings.TrimRight(stdout, "\n"), "\n"), want) {
+	if code, stdout, _ := p.run(owners, "status"); code != 0 || !strings.Contains(strings.Join(strings.Fields(stdout), " "), "● open "+want) {
 		t.Fatalf("status = %d:\n%s", code, stdout)
 	}
 }
@@ -688,25 +689,27 @@ func TestStatusShowsTheBoardAndEachUnfinishedBatch(t *testing.T) {
 		owners.delivery.batchRoot = func(string, time.Time) (string, bool, error) { return landing, true, nil }
 		owners.delivery.boardView = view
 		code, stdout, _ := b.run(owners, "status")
-		printed := strings.Split(strings.TrimRight(stdout, "\n"), "\n")
-		want := []string{
-			"board: 2 seats on this host (bridge absent)",
-			"  m1b: goal-x, build since " + local(now.Add(-10*time.Minute)) + " (1 finished)",
-			"  m1c: standing-validation, joined since " + local(now.Add(-5*time.Minute)) + "; goal-q unknown: no card",
-			"batch 01j5x00000000000000000wa01 waits for goal-x on m1b (build, ~8 min); a separate proof costs ~40 min (default)",
-			"batch 01j5x00000000000000000wa02 started: nothing within reach",
-		}
-		if code != 0 || !slices.Equal(tailLines(printed, len(want)), want) {
-			t.Fatalf("status = %d:\n%s\nwant the tail:\n%s", code, stdout, strings.Join(want, "\n"))
-		}
-		for _, line := range printed {
-			if strings.Contains(line, "wa03") || strings.Contains(line, "{") {
-				t.Errorf("status printed a finished batch or JSON: %q", line)
+		// The board and the batches as status's page lays them out; the
+		// words are the board's and the batch's own, wrapped to the width.
+		printed := strings.Join(strings.Fields(stdout), " ")
+		for _, want := range []string{
+			"Seats on this host bridge absent",
+			"● m1b goal-x, build since " + local(now.Add(-10*time.Minute)) + " (1 finished)",
+			"? m1c standing-validation, joined since " + local(now.Add(-5*time.Minute)) + "; goal-q unknown: no card",
+			"Landing lane",
+			"● open batch 01j5x00000000000000000wa01 waits for goal-x on m1b (build, ~8 min); a separate proof costs ~40 min (default)",
+			"● proving batch 01j5x00000000000000000wa02 started: nothing within reach",
+		} {
+			if code != 0 || !strings.Contains(printed, want) {
+				t.Errorf("status = %d:\n%s\nlacks %q", code, stdout, want)
 			}
 		}
+		if strings.Contains(stdout, "wa03") || strings.Contains(stdout, "{") {
+			t.Errorf("status printed a finished batch or JSON:\n%s", stdout)
+		}
 		_, verbose, _ := b.run(owners, "status", "--verbose")
-		if !slices.Contains(strings.Split(verbose, "\n"), "    goal-l, landed since "+local(now.Add(-30*time.Minute))) {
-			t.Errorf("status --verbose lacks the finished card's own line:\n%s", verbose)
+		if !strings.Contains(verbose, "goal-l, landed since "+local(now.Add(-30*time.Minute))) || strings.Count(verbose, "goal-x, build") != 1 {
+			t.Errorf("status --verbose lacks the finished card's own line or repeats an underway one:\n%s", verbose)
 		}
 		if _, data := b.runJSON(owners, "status"); data.Data.(map[string]any)["board"] == nil {
 			t.Errorf("status --json carries no board: %+v", data.Data)
@@ -726,7 +729,7 @@ func TestStatusShowsTheBoardAndEachUnfinishedBatch(t *testing.T) {
 		owners.agent = peers.as("m1b").owners().agent
 		code, stdout, _ := b.run(owners, "status")
 		lines := strings.Split(strings.TrimRight(stdout, "\n"), "\n")
-		if code != 0 || !slices.Contains(lines, "open peer messages: 1 (metasystem agent inbox)") || !slices.Contains(lines, "peer messages waiting for a holder: 1 (goal-z)") {
+		if code != 0 || !slices.Contains(lines, "  open peer messages: 1 (metasystem agent inbox)") || !slices.Contains(lines, "  peer messages waiting for a holder: 1 (goal-z)") {
 			t.Fatalf("status = %d:\n%s", code, stdout)
 		}
 		_, verbose, _ := b.run(owners, "status", "--verbose")
@@ -756,9 +759,26 @@ func TestStatusShowsTheBoardAndEachUnfinishedBatch(t *testing.T) {
 	})
 }
 
-func tailLines(lines []string, n int) []string {
-	if len(lines) < n {
-		return lines
+// TestStatusBoardChecksClaimsAtTheStateRoot (F3): the board's claim check
+// reads the goal ledger, whose files are read relative to the root given; in
+// a template checkout the repository top carries no plans/goals, so a check
+// there sees no claim at all and every live card reads "not claimed". The
+// one-shot view reads the ledger at the state root, where goal list does.
+func TestStatusBoardChecksClaimsAtTheStateRoot(t *testing.T) {
+	t.Parallel()
+	top := t.TempDir()
+	installation := filepath.Join(top, "metasystem")
+	var read []string
+	inv := &intentInvocation{
+		layout:    stateroot.Layout{GitRoot: top, RepositoryRoot: top, InstallationRoot: installation, InstallationRel: "metasystem", Template: true},
+		stateRoot: installation,
+		owners: intentOwners{delivery: &intentDeliveryOwners{boardView: func(ledgerRoot string, _ time.Time) board.View {
+			read = append(read, ledgerRoot)
+			return board.View{}
+		}}},
 	}
-	return lines[len(lines)-n:]
+	inv.hostBoardView(time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC))
+	if !slices.Equal(read, []string{installation}) {
+		t.Fatalf("the board checked claims at %v, want the state root %s", read, installation)
+	}
 }

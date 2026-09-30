@@ -161,7 +161,7 @@ func TestRecoveryRebuildsADisallowAndRefusesAnAllow(t *testing.T) {
 	entry := func(value string) Entry {
 		return Entry{Opid: allowOpid, Machine: "mac-a", Lineage: "lin-1", Intent: stored(value)}
 	}
-	if _, err := requestForEntry(endpoint, entry("stop-test-changes=allowed")); err == nil || !strings.Contains(err.Error(), "proof-bearing") ||
+	if _, err := requestForEntry(endpoint, entry("stop-test-changes=allowed")); err == nil || !strings.Contains(err.Error(), "was a person's act") ||
 		!strings.Contains(err.Error(), "metasystem goal allow target stop-test-changes") {
 		t.Fatalf("a stored allow rebuilt: %v", err)
 	}

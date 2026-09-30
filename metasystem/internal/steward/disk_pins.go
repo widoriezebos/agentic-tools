@@ -75,7 +75,7 @@ func (c PinClass) keeps() (pinKeep, error) {
 	keep.installed = filepath.Base(EnrolledExecutionPath(c.Top, identityRecord))
 	keep.current = identityRecord.Generation
 	if keep.replacedAt, err = time.Parse(time.RFC3339, identityRecord.MintedAt); err != nil {
-		return keep, fmt.Errorf("the installed generation's minting time %q cannot be read", identityRecord.MintedAt)
+		return keep, fmt.Errorf("the install time %q of the installed engine cannot be read", identityRecord.MintedAt)
 	}
 	prober := c.Prober
 	if prober == nil {
@@ -131,6 +131,15 @@ func probePin(path string) (held bool, err error) {
 	return false, unix.Flock(int(file.Fd()), unix.LOCK_UN)
 }
 
+// installedAgo is how long ago the installed generation was minted, in
+// whole minutes; under a minute is said so rather than printed as zero.
+func installedAgo(elapsed time.Duration) string {
+	if elapsed < time.Minute {
+		return "under a minute ago"
+	}
+	return elapsed.Round(time.Minute).String() + " ago"
+}
+
 // judge is one pin's verdict against what keeps pins and the census.
 func judgePin(path string, keep pinKeep, census *diskstore.UseCensus, now time.Time, grace time.Duration) diskstore.Verdict {
 	match := pinName.FindStringSubmatch(filepath.Base(path))
@@ -144,7 +153,10 @@ func judgePin(path string, keep pinKeep, census *diskstore.UseCensus, now time.T
 	case now.Sub(keep.replacedAt) < grace:
 		// An older engine's run may still exec this pin without holding it
 		// (Round D2 F-2): it stays for the grace after the re-arm.
-		return diskstore.Verdict{Decision: diskstore.Keep, Reason: fmt.Sprintf("generation %d was replaced %s ago; it stays for disk.pin-grace-hours", generation, now.Sub(keep.replacedAt).Round(time.Minute)),
+		// Only the installed generation's minting time is known; an older
+		// generation's own replacement is not recorded, and a re-arm seconds
+		// ago is never printed as zero (F4).
+		return diskstore.Verdict{Decision: diskstore.Keep, Reason: fmt.Sprintf("generation %d was replaced (time unknown); it stays for disk.pin-grace-hours after generation %d was installed %s", generation, keep.current, installedAgo(now.Sub(keep.replacedAt))),
 			Command: "metasystem disk clean, after the grace"}
 	case keep.generation[generation] != "":
 		return diskstore.Verdict{Decision: diskstore.Keep, Reason: fmt.Sprintf("component %s runs generation %d", keep.generation[generation], generation),

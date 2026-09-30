@@ -150,7 +150,7 @@ func TestBreachStopFenceAndHumanResumeAreOneWayTransactions(t *testing.T) {
 	journalResume := p.Tree.Live["stop-me"]
 	entry, err := ReadEntry(root, resumeJournalOpid)
 	if err != nil || entry.Outcome != OutcomeRejected || journalResume.StopFence == nil || len(reports) == 0 ||
-		!strings.Contains(reports[len(reports)-1].Detail, "cannot be replayed from journal text") {
+		!strings.Contains(reports[len(reports)-1].Detail, "can't be finished for them") {
 		t.Fatalf("dead-owner resume journal crossed the human boundary: goal=%+v entry=%+v reports=%+v err=%v", journalResume, entry, reports, err)
 	}
 	park := verbReqFor(endpoint, "01J5X00000000000000000S025", "mac-a")
@@ -299,8 +299,8 @@ func TestSetBudgetFencedSameTupleRefusesWithoutMutation(t *testing.T) {
 	before := RenderFile(stopped)
 	beforeTip := acceptedTipForEndpoint(t, endpoint)
 	result, err := setBudgetApprovedForTest(t, set, stopped.Id, budget)
-	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "SET_BUDGET_FENCED_SAME_TUPLE") ||
-		!strings.Contains(result.Detail, "metasystem goal resume fenced-rebudget") {
+	if err != nil || result.Outcome != OutcomeRejected || !(result.Code == "SET_BUDGET_FENCED_SAME_TUPLE") ||
+		!strings.Contains(result.Detail, "run: metasystem goal resume fenced-rebudget") {
 		t.Fatalf("same-tuple fenced set-budget refusal: %+v %v", result, err)
 	}
 	if acceptedTipForEndpoint(t, endpoint) != beforeTip {
@@ -417,7 +417,7 @@ func TestAbandonOfABreachStoppedClaimKeepsTheFenceFreesTheQuotaAndEnforcesTheDep
 	}
 	for _, operation := range wedge {
 		result, operationErr := operation.run()
-		if operationErr != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "breach-stopped") || !(strings.Contains(result.Detail, "only goal resume") || strings.Contains(result.Detail, "metasystem goal resume stop-me")) {
+		if operationErr != nil || result.Outcome != OutcomeRejected || !(strings.Contains(result.Detail, "breach-stopped") || strings.Contains(result.Detail, "stopped at its budget")) || !(strings.Contains(result.Detail, "only goal resume") || strings.Contains(result.Detail, "metasystem goal resume stop-me")) {
 			t.Fatalf("%s crossed the breach-stop wedge: %+v %v", operation.name, result, operationErr)
 		}
 	}
@@ -775,7 +775,7 @@ func TestRelayedResumeIsBoundOncePerGoalPerRuling(t *testing.T) {
 	second.Now = secondAt
 	second.Authority = &secondProof
 	result, err := Resume(second)
-	want := `goal one-relayed-resume already used relayed resume authority on 2026-08-20T22:01:00Z with recorded word "Wido authorizes first resume"; a further resume needs freshly observed enrolled-terminal authority`
+	want := `goal one-relayed-resume already had one resume on a relayed word (2026-08-20T22:01:00Z, "Wido authorizes first resume"); the next resume is the person's, at their terminal`
 	if err != nil || result.Outcome != OutcomeRejected || result.Detail != want {
 		t.Fatalf("second relayed resume refusal mismatch: result=%+v err=%v", result, err)
 	}

@@ -100,18 +100,18 @@ func AcceptanceGates(root, accepted, fetched string) error {
 func acceptanceGatesFor(e Endpoint, accepted, fetched string) error {
 	acceptedIdentity, idErr := treeIdentityFor(e, accepted)
 	if idErr != nil {
-		return fmt.Errorf("the accepted tree's identity cannot be read: %w", idErr)
+		return fmt.Errorf("the goal list's identity can't be read: %w", idErr)
 	}
 	fetchedIdentity, _ := treeIdentityFor(e, fetched)
 	if fetchedIdentity != "" && fetchedIdentity != acceptedIdentity {
-		return fmt.Errorf("foreign ledger refused: the fetched tree's identity %s is not this ledger's %s — config cannot silently change what the ledger is", fetchedIdentity, acceptedIdentity)
+		return fmt.Errorf("the fetched goal list is a different one (%s, not %s); check the configured remote", fetchedIdentity, acceptedIdentity)
 	}
 	descends, ancErr := e.repository().IsAncestor(accepted, fetched)
 	if ancErr != nil {
 		return fmt.Errorf("the canonical branch's ancestry cannot be checked: %w", ancErr)
 	}
 	if !descends {
-		return fmt.Errorf("rewound canonical branch refused: %s does not descend from the accepted tip %s; the projection stays pinned — repair --accept-remote is the deliberate path", short(fetched), short(accepted))
+		return fmt.Errorf("the shared goal list went back in history (%s is not after %s); a person accepts it\nrun: metasystem goal sync --accept-remote-history", short(fetched), short(accepted))
 	}
 	if err := validateLegacyArchiveFor(e, accepted, fetched); err != nil {
 		return err

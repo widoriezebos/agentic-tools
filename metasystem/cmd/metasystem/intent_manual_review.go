@@ -34,11 +34,14 @@ func runIntentReviewDiagnostic(inv *intentInvocation, patch string) int {
 	for _, other := range []string{"work", "dispositions", "after", "finding", "test", "model", "tool-calls", "commit"} {
 		if inv.input.has(other) {
 			return inv.render(intentResult{Outcome: intentRefused, code: 2,
-				Summary: fmt.Sprintf("feedback on changes (work review --changes or --patch PATCH without a goal) takes --brief, --goal and --retry, not --%s; nothing was done", other)})
+				Summary: fmt.Sprintf("feedback on changes takes --brief, --goal and --retry, not --%s; nothing was done", other),
+				next:    withoutOption(inv.typedArgv(), other),
+				Details: []string{"feedback on changes is work review --changes, or --patch without a goal"}})
 		}
 	}
 	if !inv.input.has("brief") {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "diagnostic review needs --brief FILE: what the readers should examine; nothing was done"})
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "feedback on changes needs a brief saying what the readers should examine; nothing was done",
+			next: append(inv.typedArgv(), "--brief", "FILE"), nextReason: "FILE holds what to examine"})
 	}
 	retry := 0
 	if inv.input.has("retry") {
@@ -90,16 +93,16 @@ func runIntentReviewRef(inv *intentInvocation, verb, ref string) int {
 func (inv *intentInvocation) diagnosticReadResult(result launch.ReadResult, err error, subject string) intentResult {
 	targets := []intentTarget{{Kind: "read", ID: readRefPrefix + result.Ref}}
 	if err != nil {
-		message := err.Error()
-		code, _, _ := strings.Cut(message, ":")
-		code, _, _ = strings.Cut(code, " ")
-		out := intentResult{Outcome: intentRefused, code: 2, Targets: targets, Summary: message, Data: map[string]any{"cause": code}}
+		message, code := err.Error(), launch.ErrorCode(err)
+		out := intentResult{Outcome: intentRefused, code: 2, Targets: targets, Summary: message, Data: map[string]any{"cause": code}, Details: []string{launch.ErrorDetail(err)},
+			next: inv.sameCommand(), nextReason: "once the request is corrected"}
 		switch code {
 		case "READ_BUSY":
 			out.Outcome, out.code = intentInProgress, 124
+			out.next, out.nextReason = inv.sameCommand(), "tries again once the running read has ended"
 		case "READ_RETRY_RUNNING":
 			ref := ""
-			if _, rest, found := strings.Cut(message, "ref="); found {
+			if _, rest, found := strings.Cut(launch.ErrorDetail(err), "ref="); found {
 				ref, _, _ = strings.Cut(rest, " ")
 			}
 			out.code = 1
@@ -110,6 +113,7 @@ func (inv *intentInvocation) diagnosticReadResult(result launch.ReadResult, err 
 		case "READ_RETRY_UNKNOWN", "READ_REQUEST_INVALID", "READ_PATCH_UNREADABLE", "READ_BRIEF_MISSING", "READ_INPUT_MISSING", "READ_CHECKOUT_UNAVAILABLE":
 		default:
 			out.Outcome, out.code = intentFailed, 1
+			out.next, out.nextReason = inv.sameCommand(), "tries again"
 		}
 		return out
 	}

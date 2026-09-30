@@ -250,7 +250,7 @@ func TestAppVerbsRefuseWithoutAContract(t *testing.T) {
 		if code == 0 {
 			t.Fatalf("app %s must be refused without a contract:\n%s", verb, out)
 		}
-		if !strings.Contains(out, "launch.json") || !strings.Contains(out, "launch.contract=launch.json") {
+		if !strings.Contains(out, "write launch.json beside metasystem.conf") || !strings.Contains(out, "→ metasystem help app start") {
 			t.Fatalf("app %s must name the file to write:\n%s", verb, out)
 		}
 	}
@@ -316,7 +316,7 @@ func TestAppAtAndGoalAreOneThing(t *testing.T) {
 	address := appFreePort(t)
 	bed := newAppBed(t, appHTTPContract(appFixtureApp(t), address))
 	code, out := bed.run("app", "status", "--at", "main", "--goal", "g1")
-	if code == 0 || !strings.Contains(out, "use one of them") {
+	if code == 0 || !strings.Contains(out, "give one of them") {
 		t.Fatalf("naming both must be refused, not guessed:\n%s", out)
 	}
 	// EM-34: a goal without a branch is named as a goal, with the command

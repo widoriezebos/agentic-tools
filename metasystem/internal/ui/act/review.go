@@ -41,7 +41,7 @@ func (a Authority) Review(id string, asked Reviewed) (Recorded, error) {
 	}
 	if goal.VerdictWords(asked.Verdict) == "" {
 		return Recorded{}, refuse(KindRequest, "verdict",
-			"a verdict is clear-to-land or send-back; a review that ends without a verdict records nothing on the goal")
+			"a verdict is clear-to-land or send-back; without one, nothing is recorded on the goal")
 	}
 	path, content, err := goal.ResolveReviewRecord(a.root, asked.Record)
 	if err != nil {

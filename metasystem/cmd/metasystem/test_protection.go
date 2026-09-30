@@ -117,7 +117,7 @@ func runFrozenSelectionProbe(ctx context.Context, request proofrun.TestRunReques
 	}
 	actualPolicyBase, err := testrun.TrustedPolicyBase(projectRoot, gittree.Workspace{Dir: projectRoot})
 	if err != nil {
-		return fmt.Errorf("read protected probe destination without changing caller refs or configuration: %w", err)
+		return fmt.Errorf("the protection probe could not read its landing branch: %w", err)
 	}
 	if actualPolicyBase != policyBaseCommit {
 		return fmt.Errorf("protected probe destination changed: got %s want %s", actualPolicyBase, policyBaseCommit)

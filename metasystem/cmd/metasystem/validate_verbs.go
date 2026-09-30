@@ -64,7 +64,7 @@ func runValidateSessionIsolation(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	if *sourceRoot == "" || *destinationRoot == "" || *manifest == "" || *harnessRoot == "" {
-		fmt.Fprintln(stderr, "usage: metasystem internal validate session-isolation --source-root A --destination-root B --manifest F --harness-root H")
+		fmt.Fprintln(stderr, "usage: metasystem internal validate session-isolation --source-root A --destination-root B\n  --manifest F --harness-root H")
 		return 2
 	}
 	newHarness, err := validate.SessionIsolation(*sourceRoot, *destinationRoot, *manifest, *harnessRoot)
@@ -82,7 +82,8 @@ func runValidateSessionIsolation(args []string, stdout, stderr io.Writer) int {
 // usage.
 func runValidateConformance(args []string, stdout, stderr io.Writer) int {
 	usage := func() {
-		fmt.Fprint(stderr, `Usage: metasystem work review j2:<job-id> --check-only --stage review|recertify|merge [--test-command <command>] [--recertification <record>]
+		fmt.Fprint(stderr, `Usage: metasystem work review j2:<job-id> --check-only --stage review|recertify|merge
+         [--test-command <command>] [--recertification <record>]
 
 The review stage computes the implementer worktree's exact review object. A
 temporary index contains every tracked file plus every untracked, unignored
@@ -95,7 +96,7 @@ closed, independent code-critic chain over the branch's final committed tree.
 The recertify stage preserves those review bytes while mechanically merging
 disjoint text hunks onto the current target. Area-width chains require an
 explicit --test-command. The merge stage accepts --recertification only for
-the exact proof produced for the same implementer job.
+the exact recertification produced for the same implementer job.
 
 Exit codes: 0 conforming; 1 conformance failure; 2 usage.
 `)
@@ -197,7 +198,7 @@ Exit codes: 0 more cycles are allowed; 1 stop-loss triggered; 2 usage error.
 		return 2
 	}
 	if *file == "" {
-		fmt.Fprintln(stderr, "metasystem experiment check: needs the ledger: metasystem experiment check --file LEDGER; nothing was checked")
+		fmt.Fprintln(stderr, "experiment check needs the ledger to check; nothing was checked\nrun: metasystem experiment check --file LEDGER")
 		return 2
 	}
 	if _, err := os.Stat(*file); err != nil {

@@ -42,18 +42,22 @@ func runIntentReviewManual(inv *intentInvocation, id string) int {
 
 func (inv *intentInvocation) submitManualWork(id string) intentResult {
 	targets := inv.targets(id)
-	refuse := func(code int, format string, args ...any) intentResult {
-		return intentResult{Targets: targets, Outcome: intentRefused, code: code, Summary: fmt.Sprintf(format, args...)}
-	}
 	if inv.input.has("changes") == inv.input.has("patch") {
-		return refuse(2, "manual submission takes exactly one of --changes (this checkout's current changes) and --patch PATCH; nothing was done")
+		next := withoutOption(inv.typedArgv(), "patch")
+		if !inv.input.has("changes") {
+			next = append(next, "--changes")
+		}
+		return intentResult{Targets: targets, Outcome: intentRefused, code: 2, next: next,
+			Summary: "submitting work takes one of --changes (this checkout's changes) or --patch; nothing was done"}
 	}
 	if !inv.input.has("brief") {
-		return refuse(2, "manual submission needs --brief FILE: what the work is meant to do, frozen for its review; nothing was done")
+		return intentResult{Targets: targets, Outcome: intentRefused, code: 2, next: append(inv.typedArgv(), "--brief", "FILE"),
+			Summary: "submitting work needs a brief saying what the work is meant to do; nothing was done"}
 	}
 	for _, other := range []string{"retry", "finding", "test", "model", "tool-calls"} {
 		if inv.input.has(other) {
-			return refuse(2, "manual submission takes --changes or --patch, --brief, --work, --after and --dispositions, not --%s; nothing was done", other)
+			return intentResult{Targets: targets, Outcome: intentRefused, code: 2, next: withoutOption(inv.typedArgv(), other),
+				Summary: fmt.Sprintf("submitting work takes no --%s; nothing was done", other)}
 		}
 	}
 	if problem := inv.selectRoot(); problem != nil {
@@ -67,19 +71,24 @@ func (inv *intentInvocation) submitManualWork(id string) intentResult {
 	}
 	file, where := goalRecord(projection, id)
 	if file == nil {
-		return refuse(1, "no goal %s on the accepted ledger; nothing was done", id)
+		return intentResult{Targets: targets, Outcome: intentRefused, code: 1, next: inv.publicArgv("goal", "list"),
+			Summary: fmt.Sprintf("there is no goal %s; nothing was done", id)}
 	}
 	if where != "live" {
-		return refuse(1, "goal %s is %s; nothing was submitted", id, where)
+		return intentResult{Targets: targets, Outcome: intentRefused, code: 1, next: inv.publicArgv("goal", "show", id),
+			Summary: fmt.Sprintf("goal %s is %s, so no work can be submitted to it", id, where)}
 	}
 	briefPath := inv.flagPath("brief")
 	brief, err := os.ReadFile(briefPath)
 	if err != nil || len(bytes.TrimSpace(brief)) == 0 {
-		return refuse(2, "the brief %s cannot be read or is empty; nothing was done", briefPath)
+		return intentResult{Targets: targets, Outcome: intentRefused, code: 2,
+			Summary: fmt.Sprintf("the brief %s can't be read or is empty; nothing was done", briefPath),
+			next:    inv.sameCommand(), nextReason: "once the brief says what the work is meant to do"}
 	}
 	capture, err := inv.captureManual(briefPath)
 	if err != nil {
-		return refuse(2, "%v; nothing was done", err)
+		return intentResult{Targets: targets, Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("%v; nothing was done", err),
+			next: inv.sameCommand(), nextReason: "once that is fixed"}
 	}
 	// Custody of the inputs: the patch and brief are frozen by content
 	// before any effect; a repeat of the same inputs reaches the same files.
@@ -90,15 +99,20 @@ func (inv *intentInvocation) submitManualWork(id string) intentResult {
 	for path, content := range map[string][]byte{frozenPatch: capture.patch, frozenBrief: brief} {
 		if existing, readErr := os.ReadFile(path); readErr == nil {
 			if !bytes.Equal(existing, content) {
-				return intentResult{Targets: targets, Outcome: intentFailed, code: 1, Summary: fmt.Sprintf("the frozen input %s does not match its identity; nothing was done", path)}
+				return intentResult{Targets: targets, Outcome: intentFailed, code: 1,
+					Summary: "the saved copy of this submission was changed on disk, so nothing was done",
+					next:    []string{"mv", frozen, frozen + ".set-aside"}, nextReason: "then repeat this command",
+					Details: []string{fmt.Sprintf("the frozen input %s does not match its identity", path)}}
 			}
 			continue
 		}
 		if err := os.MkdirAll(frozen, 0o755); err != nil {
-			return intentResult{Targets: targets, Outcome: intentFailed, code: 1, Summary: err.Error()}
+			return intentResult{Targets: targets, Outcome: intentFailed, code: 1, Summary: "this submission's copy couldn't be saved, so nothing was done",
+				next: inv.sameCommand(), nextReason: "tries again", Details: []string{err.Error()}}
 		}
 		if _, err := atomicfile.WriteText(path, string(content), inv.layout.InstallationRoot); err != nil {
-			return intentResult{Targets: targets, Outcome: intentFailed, code: 1, Summary: err.Error()}
+			return intentResult{Targets: targets, Outcome: intentFailed, code: 1, Summary: "this submission's copy couldn't be saved, so nothing was done",
+				next: inv.sameCommand(), nextReason: "tries again", Details: []string{err.Error()}}
 		}
 	}
 	data := map[string]any{"goal": id, "source": capture.source, "sourceHead": capture.head, "patch": frozenPatch, "brief": frozenBrief}
@@ -111,7 +125,8 @@ func (inv *intentInvocation) submitManualWork(id string) intentResult {
 
 	if file.State != goal.StateClaimed {
 		if claimed := inv.acquireClaim(id); claimed.Outcome != intentConfirmed {
-			claimed.Summary = fmt.Sprintf("submitting work claims goal %s first, and the claim was not granted: %s; nothing was submitted", id, strings.TrimSpace(claimed.Summary))
+			claimed.Details = append(claimed.Details, "submitting work claims the goal first: "+strings.TrimSpace(claimed.Summary))
+			claimed.Summary = fmt.Sprintf("goal %s couldn't be claimed for this work, so nothing was submitted", id)
 			return claimed
 		}
 	}
@@ -119,12 +134,17 @@ func (inv *intentInvocation) submitManualWork(id string) intentResult {
 	original := inv.layout.InstallationRoot
 	endpoint, err := conn.endpoint(original)
 	if err != nil {
-		return refuse(1, "the goal branch endpoint is unavailable: %v; nothing was submitted", err)
+		return intentResult{Targets: targets, Outcome: intentRefused, code: 1,
+			Summary: "the goal branch's remote can't be reached, so nothing was submitted",
+			next:    inv.publicArgv("goal", "sync"), nextReason: "then repeat this command",
+			Details: []string{"the goal branch endpoint is unavailable: " + err.Error()}}
 	}
 	check := conn.claimCheck(original, id, endpoint)
 	if err := branch.CheckCommitAccess(id, check); err != nil {
-		return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: err.Error() + "; nothing was submitted",
-			Decision: "the session holding the goal submits its work, or a person takes the goal over: metasystem goal claim " + id + " --take-over --reason TEXT"}
+		return intentResult{Targets: targets, Outcome: intentRefused, code: 1,
+			Summary: fmt.Sprintf("another session holds goal %s, so this work wasn't submitted", id),
+			next:    inv.publicArgv("goal", "claim", id, "--take-over", "--reason", "TEXT"), nextReason: "a person takes it over; or submit from the session that holds it",
+			Details: []string{err.Error()}}
 	}
 	worktree, problem := inv.prepareGoalWorktree(id)
 	if problem != nil {
@@ -134,7 +154,10 @@ func (inv *intentInvocation) submitManualWork(id string) intentResult {
 	data["worktree"] = worktree
 	base, err := conn.endpointTip(original, endpoint)
 	if err != nil {
-		return refuse(1, "cannot resolve the landing endpoint's tip: %v; nothing was submitted", err)
+		return intentResult{Targets: targets, Outcome: intentRefused, code: 1,
+			Summary: "main's current commit can't be read, so nothing was submitted",
+			next:    []string{"git", "fetch", "origin"}, nextReason: "then repeat this command",
+			Details: []string{"cannot resolve the landing endpoint's tip: " + err.Error()}}
 	}
 	git := inv.work().git
 	line := func(dir string, args ...string) (string, error) {
@@ -175,7 +198,8 @@ func (inv *intentInvocation) submitManualWork(id string) intentResult {
 			info, err := branch.KindOf(install, resolved, id)
 			if err != nil || info.Kind != branch.Unit || !slices.Equal(info.Units, []string{work}) {
 				failure = &intentResult{Targets: targets, Outcome: intentRefused, code: 1, Data: data,
-					Summary: fmt.Sprintf("--after %s is not a version of work %s of goal %s; nothing was submitted", shortSHA(resolved), work, id)}
+					Summary: fmt.Sprintf("--after %s is not a version of work %s of goal %s; nothing was submitted", shortSHA(resolved), work, id),
+					next:    inv.publicArgv("status", id, "--work", work), nextReason: "the work's current version"}
 				return nil
 			}
 			after = resolved
@@ -200,8 +224,8 @@ func (inv *intentInvocation) submitManualWork(id string) intentResult {
 				return nil
 			}
 			failure = &intentResult{Targets: targets, Outcome: intentRefused, code: 1, Data: data,
-				Summary:  fmt.Sprintf("work %s of goal %s already has version %s, and this change is not it; nothing was submitted", work, id, shortSHA(current)),
-				Decision: "a correction of that version names it: " + shellCommand(inv.manualArgv(id, work, current))}
+				Summary: fmt.Sprintf("work %s of goal %s already has version %s, and this change is not it; nothing was submitted", work, id, shortSHA(current)),
+				next:    inv.manualArgv(id, work, current), nextReason: "submits it as a correction of that version"}
 			return nil
 		case after != "" && after != current:
 			if current != "" {
@@ -213,14 +237,15 @@ func (inv *intentInvocation) submitManualWork(id string) intentResult {
 				}
 			}
 			failure = &intentResult{Targets: targets, Outcome: intentRefused, code: 1, Data: data,
-				Summary: fmt.Sprintf("version %s of work %s is no longer current (current: %s), and the current version is not this correction of it; nothing was submitted",
+				Summary: fmt.Sprintf("version %s of work %s is no longer the current one (%s is), so nothing was submitted",
 					shortSHA(after), work, cmpOr(shortSHA(current), "none")),
 				next: inv.publicArgv("status", id, "--work", work), nextReason: "the work's current version"}
 			return nil
 		}
 		staged, stageErr := stageManual(git, worktree, same, capture)
 		if stageErr != nil {
-			failure = &intentResult{Targets: targets, Outcome: intentRefused, code: 1, Data: data, Summary: stageErr.Error() + "; nothing was committed"}
+			failure = &intentResult{Targets: targets, Outcome: intentRefused, code: 1, Data: data, Summary: stageErr.Error() + "; nothing was committed",
+				next: []string{"git", "-C", worktree, "status"}, nextReason: "shows the staging to sort out; then repeat this command"}
 			return nil
 		}
 		operation := "manual-" + digest
@@ -259,22 +284,28 @@ func (inv *intentInvocation) submitManualWork(id string) intentResult {
 			// what moved it is not proved to be this change: nothing is
 			// rolled back on a guess.
 			failure = &intentResult{Targets: targets, Outcome: intentPartial, code: 1, Data: data,
-				Summary: fmt.Sprintf("the branch commit owner did not commit work %s: %v; the goal worktree is now at %s, which does not hold this change, so its staging was left exactly as it is",
-					work, commitErr, cmpOr(shortSHA(tipAfter), "an unreadable HEAD")),
-				next: inv.publicArgv("status", id, "--work", work), nextReason: "the work's current version on the goal branch"}
+				Summary: fmt.Sprintf("work %s wasn't committed, and the goal worktree moved meanwhile, so its staging was left as is", work),
+				next:    inv.publicArgv("status", id, "--work", work), nextReason: "the work's current version on the goal branch",
+				Details: []string{fmt.Sprintf("the branch commit owner did not commit work %s: %v; the goal worktree is now at %s, which does not hold this change",
+					work, commitErr, cmpOr(shortSHA(tipAfter), "an unreadable HEAD"))}}
 			return nil
 		}
 		if undoErr := staged.undo(); undoErr != nil {
 			failure = &intentResult{Targets: targets, Outcome: intentPartial, code: 1, Data: data,
-				Summary: fmt.Sprintf("the branch commit owner did not commit work %s: %v; restoring the goal worktree's staging from before this submission failed: %v", work, commitErr, undoErr)}
+				Summary: fmt.Sprintf("work %s wasn't committed, and the goal worktree's earlier staging couldn't be put back", work),
+				next:    []string{"git", "-C", worktree, "status"}, nextReason: "check the staging; then repeat this command",
+				Details: []string{fmt.Sprintf("the branch commit owner did not commit work %s: %v; restoring the staging failed: %v", work, commitErr, undoErr)}}
 			return nil
 		}
 		failure = &intentResult{Targets: targets, Outcome: intentRefused, code: 1, Data: data,
-			Summary: fmt.Sprintf("the branch commit owner did not commit work %s: %v; the goal worktree's staging is as it was before this submission", work, commitErr)}
+			Summary: fmt.Sprintf("work %s wasn't committed: %s; the goal worktree is as it was", work, oneLine(commitErr.Error())),
+			next:    inv.sameCommand(), nextReason: "tries again once that is fixed",
+			Details: []string{fmt.Sprintf("the branch commit owner did not commit work %s: %v", work, commitErr)}}
 		return nil
 	})
 	if sectionErr != nil {
-		return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Data: data, Summary: sectionErr.Error() + "; nothing was submitted"}
+		return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Data: data, Summary: oneLine(sectionErr.Error()) + "; nothing was submitted",
+			next: inv.sameCommand(), nextReason: "once that is fixed (--verbose shows it whole)", Details: []string{sectionErr.Error()}}
 	}
 	if failure != nil {
 		if failure.Data == nil {
@@ -304,6 +335,7 @@ func (inv *intentInvocation) submitManualWork(id string) intentResult {
 		// read with; a new brief is a new version, never the same read.
 		result.Decision = fmt.Sprintf("version %s of work %s is read against the brief it was first submitted with: repeat with that brief, or correct the work so the new version is read against this brief: %s",
 			shortSHA(commit), work, shellCommand(inv.manualArgv(id, work, commit)))
+		result.next, result.nextReason = nil, ""
 	}
 	if merged, ok := result.Data.(map[string]any); ok {
 		for key, value := range data {
@@ -344,7 +376,8 @@ func (inv *intentInvocation) manualWorkName(id string, commits []branch.Commit) 
 	if inv.input.has("work") {
 		name := inv.input.text("work")
 		if !validManualWorkName(name) {
-			return "", &intentResult{Targets: inv.targets(id), Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("%q is not a work name; nothing was submitted", name)}
+			return "", &intentResult{Targets: inv.targets(id), Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("%q is not a work name; nothing was submitted", name),
+				next: append(withoutOption(inv.typedArgv(), "work"), "--work", "NAME"), nextReason: "a work name is one word without /, + or spaces"}
 		}
 		return name, nil
 	}
@@ -365,8 +398,8 @@ func (inv *intentInvocation) manualWorkName(id string, commits []branch.Commit) 
 		lines = append(lines, "  "+shellCommand(append(inv.sameCommand(), "--work", name)))
 	}
 	return "", &intentResult{Targets: inv.targets(id), Outcome: intentRefused, code: 2, text: lines, Data: map[string]any{"candidates": names},
-		Summary:  fmt.Sprintf("goal %s has %d work items (%s); nothing was submitted", id, len(names), strings.Join(names, ", ")),
-		Decision: "name one with --work NAME, or a new name for new work"}
+		Summary: fmt.Sprintf("goal %s has %d work items (%s), so say which; nothing was submitted", id, len(names), strings.Join(names, ", ")),
+		next:    append(inv.sameCommand(), "--work", names[0]), nextReason: "or another listed above, or a new name for new work"}
 }
 
 func validManualWorkName(name string) bool {
@@ -531,10 +564,10 @@ func stageManual(git func(string, ...string) ([]byte, error), worktree string, s
 		}
 		for _, path := range splitNUL(stagedNames) {
 			if !slices.Contains(capture.paths, path) {
-				return manualStaging{}, fmt.Errorf("%s is staged in the goal worktree but is not part of these changes; commit or unstage it yourself first", path)
+				return manualStaging{}, fmt.Errorf("%s is staged in the goal worktree but isn't part of these changes", path)
 			}
 			if slices.Contains(splitNUL(partial), path) {
-				return manualStaging{}, fmt.Errorf("%s is staged with a version other than the file's; staging the file would discard it, so stage or unstage it yourself first", path)
+				return manualStaging{}, fmt.Errorf("%s is staged in a version other than the file on disk", path)
 			}
 		}
 		// The index as the caller left it, pre-staged paths included; a
@@ -556,7 +589,7 @@ func stageManual(git func(string, ...string) ([]byte, error), worktree string, s
 		}
 		if staged, err := cached(); err != nil || !bytes.Equal(staged, capture.patch) {
 			if undoErr := undo(); undoErr != nil {
-				return manualStaging{}, fmt.Errorf("the checkout's changes moved while they were being submitted, and restoring the earlier staging failed: %v", undoErr)
+				return manualStaging{}, fmt.Errorf("the changes moved while being submitted, and the earlier staging couldn't be put back: %v", undoErr)
 			}
 			return manualStaging{}, fmt.Errorf("the checkout's changes moved while they were being submitted; the earlier staging is restored")
 		}

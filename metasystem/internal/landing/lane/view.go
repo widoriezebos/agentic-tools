@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 )
 
@@ -26,6 +27,9 @@ const (
 	BatchWaiting    = "waiting"
 	BatchProving    = "proving"
 	BatchPushing    = "pushing"
+	// BatchHeld is a batch the owner stands down whole because a seat that
+	// joined it is at the helm; it starts when that seat returns the helm.
+	BatchHeld = "held"
 )
 
 // View is the host's landing lane as every reader shows it: landing status
@@ -61,6 +65,12 @@ type OwnerView struct {
 	LastExit  *string `json:"last_exit"`
 	StoppedBy *string `json:"stopped_by"`
 	RetryHint *string `json:"retry_hint"`
+	// LastTickError is the running owner's last failed batch tick, in its
+	// words; null when its last pass ticked clean.
+	LastTickError *string `json:"last_tick_error"`
+	// LastTickProblem is LastTickError as a person reads it: which batch
+	// cannot advance and why, in plain words; null with it.
+	LastTickProblem *string `json:"last_tick_problem"`
 	// Fix is RetryHint as one command a person runs, when it is one; the
 	// verbs print it as their next step, the page shows RetryHint.
 	Fix []string `json:"-"`
@@ -126,6 +136,9 @@ type ViewSources struct {
 	// Ready says whether an owner could run at root (a *Refusal naming the
 	// fix when it cannot); asked only when no owner runs. nil asks nothing.
 	Ready func(root string) error
+	// Helm reads whether a unit's seat is at the helm, the same read the
+	// owner holds a batch on (batch.HelmHeldSeat); nil asks nothing.
+	Helm func(seatRoot string) helm.State
 }
 
 // BuildView reads the lane once and says it for a person and a page.
@@ -133,11 +146,11 @@ func BuildView(sources ViewSources) View {
 	view := View{Owner: OwnerView{State: OwnerNotStarted}}
 	record, ok, err := Read(sources.Home)
 	if err != nil {
-		view.Summary = "the landing lane record is unreadable: " + err.Error()
+		view.Summary = "this computer's landing lane record can't be read (" + err.Error() + "); metasystem landing set replaces it"
 		return view
 	}
 	if !ok {
-		view.Summary = "no landing lane is registered on this host; the first seat that lands with landing.batch-root set registers it, or a person runs: metasystem landing set PATH"
+		view.Summary = "no landing lane is registered on this computer; metasystem landing set registers one"
 		return view
 	}
 	view.Root, view.RegisteredBy, view.RegisteredAt = text(record.Root), text(record.RegisteredBy), text(record.At)
@@ -154,7 +167,7 @@ func BuildView(sources ViewSources) View {
 		}
 	}
 	records, recordsErr := readRecords(sources, record.Root)
-	view.Batch, view.Next = currentBatches(records)
+	view.Batch, view.Next = currentBatches(records, sources.Helm)
 	view.Summary = summary(record.Root, view, recordsErr)
 	return view
 }
@@ -171,6 +184,10 @@ func ownerView(sources ViewSources, root string) OwnerView {
 	state := ReadKeeper(sources.Home)
 	owner.Restarts = state.Restarts
 	owner.LastExit = text(state.LastError)
+	owner.LastTickError = text(LastTickErrorLine(root))
+	if owner.LastTickError != nil {
+		owner.LastTickProblem = text(TickProblem(*owner.LastTickError))
+	}
 	if owner.LastExit == nil {
 		owner.LastExit = text(LastErrorLine(root))
 	}
@@ -260,7 +277,7 @@ func (err *unreadableRecords) Error() string {
 
 // currentBatches picks the batch the lane works on (pushing, then proving,
 // then the oldest waiting or collecting one) and the next one collecting.
-func currentBatches(records []batch.Record) (*BatchView, *NextView) {
+func currentBatches(records []batch.Record, helmOf func(string) helm.State) (*BatchView, *NextView) {
 	var active, queued []batch.Record
 	for _, record := range records {
 		switch record.State {
@@ -277,9 +294,9 @@ func currentBatches(records []batch.Record) (*BatchView, *NextView) {
 	var current *BatchView
 	switch {
 	case len(active) > 0:
-		current = batchView(active[0])
+		current = batchView(active[0], helmOf)
 	case len(queued) > 0:
-		current, queued = batchView(queued[0]), queued[1:]
+		current, queued = batchView(queued[0], helmOf), queued[1:]
 	}
 	if len(queued) == 0 {
 		return current, nil
@@ -321,7 +338,7 @@ func returned(record batch.Record) []Returned {
 	return list
 }
 
-func batchView(record batch.Record) *BatchView {
+func batchView(record batch.Record, helmOf func(string) helm.State) *BatchView {
 	view := &BatchView{ID: record.BatchID, Members: members(record), WaitingFor: []Waiting{}, Returned: returned(record), Since: stateSince(record)}
 	switch record.State {
 	case batch.StateLanding:
@@ -353,7 +370,40 @@ func batchView(record batch.Record) *BatchView {
 	if reason := batch.HoldReason(record); reason != "" {
 		view.State, view.Reason = BatchWaiting, "holds: "+reason
 	}
+	if reason, held := helmHold(record, helmOf); held {
+		view.State, view.Reason = BatchHeld, reason
+	}
 	return view
+}
+
+// helmHold says a batch the owner holds for a seat at the helm, by the
+// owner's own decision (batch.HelmHeldSeat), and the act that releases it.
+// The owner ticks no held batch in any state the lane shows, so none moves.
+func helmHold(record batch.Record, helmOf func(string) helm.State) (string, bool) {
+	if helmOf == nil {
+		return "", false
+	}
+	states := map[string]helm.State{}
+	seat, held := batch.HelmHeldSeat(record, func(root string) bool {
+		states[root] = helmOf(root)
+		return states[root].Active
+	})
+	if !held {
+		return "", false
+	}
+	machine := seat
+	for _, unit := range record.Units {
+		if unit.SeatRoot == seat && unit.Claim.Machine != "" {
+			machine = unit.Claim.Machine
+			break
+		}
+	}
+	state := states[seat]
+	by := state.By
+	if by == "" {
+		by = "unknown"
+	}
+	return fmt.Sprintf("seat %s (%s) is at the helm (%s); the owner starts it when that seat runs: metasystem helm return", machine, seat, by), true
 }
 
 // stateSince is when the batch entered its state: the last history entry
@@ -390,6 +440,11 @@ func summary(root string, view View, recordsErr error) string {
 		}
 	}
 	line := "landing lane " + root + ": " + owner
+	if view.Owner.State == OwnerRunning && view.Owner.LastTickProblem != nil {
+		// The situation a person acts on comes first; the raw error is
+		// --verbose's and --json's.
+		line = *view.Owner.LastTickProblem + "; " + line
+	}
 	var unreadable *unreadableRecords
 	partial := errors.As(recordsErr, &unreadable)
 	switch {
@@ -399,6 +454,10 @@ func summary(root string, view View, recordsErr error) string {
 		line += "; no batch"
 	default:
 		line += fmt.Sprintf("; batch %s %s, %d member%s", view.Batch.ID, view.Batch.State, len(view.Batch.Members), plural(len(view.Batch.Members)))
+		if view.Batch.State == BatchHeld {
+			// The one act that releases it belongs in the one line.
+			line += " (" + view.Batch.Reason + ")"
+		}
 	}
 	if view.Next != nil {
 		line += fmt.Sprintf("; next %s collecting, %d member%s", view.Next.ID, len(view.Next.Members), plural(len(view.Next.Members)))
@@ -417,4 +476,33 @@ func plural(n int) string {
 }
 
 // BatchViewOf is one batch as every reader shows it.
-func BatchViewOf(record batch.Record) BatchView { return *batchView(record) }
+func BatchViewOf(record batch.Record) BatchView { return *batchView(record, nil) }
+
+// tickProblemClasses are the owner's known tick failures in plain words, by a
+// fragment of the error the owner reports.
+var tickProblemClasses = []struct{ fragment, plain string }{
+	{" up --repo ", "the lane owner could not re-arm the lane's engine for its proof"},
+	{"cmd/devgate build", "the lane owner could not rebuild the lane's engine for its proof"},
+	{"fetch origin/main", "the lane owner could not fetch main"},
+	{"before rebind", "the lane owner could not hand its members' claims to the lane"},
+}
+
+// TickProblem says the owner's last failed tick for a person: the batch it
+// could not advance and the cause in plain words, or a generic line for a
+// failure it does not know. The raw error stays the owner's log's.
+func TickProblem(raw string) string {
+	subject := "the landing lane"
+	if rest, found := strings.CutPrefix(raw, "batch "); found {
+		if id, _, cut := strings.Cut(rest, ": "); cut && id != "" && !strings.ContainsAny(id, " \t") {
+			subject = "batch " + id
+		}
+	}
+	cause := "the lane owner's last tick failed"
+	for _, class := range tickProblemClasses {
+		if strings.Contains(raw, class.fragment) {
+			cause = class.plain
+			break
+		}
+	}
+	return subject + " can't advance: " + cause
+}

@@ -260,7 +260,7 @@ func TestArmRefusesWithoutANotifier(t *testing.T) {
 	deps := runnerPolicyDeps(t, root, &runnerPolicyNotify{err: os.ErrNotExist})
 	outcome, err := armWithRearmDeps(root, "/usr/bin/true", false, false, false, "",
 		humanMintDecision("human-terminal", "", "", EnrollmentHumanTerminal), deps)
-	if err == nil || !strings.Contains(err.Error(), "no notification channel is configured") || outcome.Stage != StageBeforeMint {
+	if err == nil || !strings.Contains(err.Error(), "no way to notify the operator is set") || outcome.Stage != StageBeforeMint {
 		t.Fatalf("an unreachable watchdog must refuse before minting: %+v %v", outcome, err)
 	}
 	if _, err := os.Stat(RepoIdentityPath(root)); !os.IsNotExist(err) {

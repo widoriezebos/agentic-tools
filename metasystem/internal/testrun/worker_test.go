@@ -65,7 +65,7 @@ func TestScratchEnvironmentPolicyFollowsTheWorkerCapabilities(t *testing.T) {
 		}
 	}
 	_, err := RequireWorkerCapabilities(t.Context(), reporting(func(fields map[string]any) { fields["workerPolicyVersion"] = 99 }), environment)
-	if !errors.Is(err, ErrWorkerPolicyUnsupported) || !strings.Contains(err.Error(), "install the matching backend compatibility release") {
+	if !errors.Is(err, ErrWorkerPolicyUnsupported) || !strings.Contains(err.Error(), "install a matching engine release") {
 		t.Fatalf("differing known capability: %v", err)
 	}
 	// This engine as its own worker writes its own policy without a probe.

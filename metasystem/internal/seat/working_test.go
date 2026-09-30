@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 )
 
 // workingBox is the projection this package never makes for itself: one goal
@@ -404,7 +406,7 @@ func TestAWorkingThatNamesNoJobIsAMalformedRecord(t *testing.T) {
 		"job":{"id":"","role":"implementer","status":"running","startedAt":null,
 		"capMinutes":null,"capEndsAt":null},"box":null,"chain":[]}}`
 	if _, err := ParseRecord([]byte(torn)); err == nil ||
-		!strings.Contains(err.Error(), "SEAT_PRESENCE_MALFORMED") {
+		!strings.Contains(refusal.DetailOf(err), "SEAT_PRESENCE_MALFORMED") {
 		t.Fatalf("a working with no job id = %v", err)
 	}
 }

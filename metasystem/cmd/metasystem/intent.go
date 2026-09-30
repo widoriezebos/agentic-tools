@@ -21,6 +21,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hookswitch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
 
 // The public command surface is object then action: "goal approve G",
@@ -86,6 +87,9 @@ type intentCommand struct {
 	group string
 	// primary actions appear on the root orientation page.
 	primary bool
+	// laidOut commands print through textui (output-style): their refusals
+	// wrap to the width as their pages do.
+	laidOut bool
 }
 
 var (
@@ -285,9 +289,17 @@ func (c intentCommand) words() []string {
 	return strings.Fields(c.name)
 }
 
-// allFlags is the command's own options plus the two every command takes.
+// allFlags is the command's own options plus those every command takes:
+// --repo, --json, and --verbose, which shows a result's details ("Messages a
+// Person Reads"); a command that groups findings documents its own --verbose.
 func (c intentCommand) allFlags() []intentFlag {
-	return append(append([]intentFlag(nil), c.flags...), intentRepoFlag, intentJSONFlag)
+	flags := append(append([]intentFlag(nil), c.flags...), intentRepoFlag, intentJSONFlag)
+	if !slices.ContainsFunc(c.flags, func(flag intentFlag) bool { return flag.name == intentVerboseFlag.name }) {
+		details := intentVerboseFlag
+		details.hidden, details.usage = true, "also print the details behind the result"
+		flags = append(flags, details)
+	}
+	return flags
 }
 
 func (c intentCommand) lookupFlag(name string) (intentFlag, bool) {
@@ -569,6 +581,9 @@ type intentOwners struct {
 	landing laneVerbOwners
 	// machines are the machine verbs' seams; the zero value is production.
 	machines machineOwners
+	// textEnv is the text layout of one output stream; nil detects it
+	// (inv.textEnv).
+	textEnv func(stream io.Writer) textui.Env
 }
 
 func defaultIntentOwners() intentOwners {
@@ -603,6 +618,9 @@ type intentInvocation struct {
 	// entrants are the registered stores this verb is inside, each held
 	// shared until the verb ends (Part B 3.1 "Entrants").
 	entrants []*diskstore.Entrant
+	// notices holds the helm and grant admission notices until the result
+	// says whether the act proceeded; nil prints them at once.
+	notices *admissionNotices
 }
 
 // runIntent routes one public command. Help needs no repository, identity or
@@ -626,6 +644,10 @@ func runIntentIn(command intentCommand, raw []string, stdout, stderr io.Writer, 
 		owners.dependencies.stderr = stderr
 	}
 	inv := &intentInvocation{command: command, raw: raw, stdout: stdout, stderr: stderr, cwd: cwd, owners: owners}
+	if release, held := processAdmissionNotices.hold(); held {
+		inv.notices = processAdmissionNotices
+		defer release()
+	}
 	input, inputErr := parseIntentArgs(command, raw)
 	inv.input = input
 	if inputErr == nil && input.help {
@@ -669,16 +691,57 @@ func (inv *intentInvocation) selectRoot() *intentResult {
 		inv.stateRoot, err = inv.owners.resolver.RootForInstallation(layout.InstallationRoot)
 	}
 	if err != nil {
-		return &intentResult{Outcome: intentRefused, code: 2,
-			Summary:  notAnInstallation(path, err),
-			Decision: "run this inside the repository, or name it with --repo PATH"}
+		return inv.notARepository(path, err)
 	}
 	if !converted(inv.stateRoot) {
 		return &intentResult{Outcome: intentRefused, code: 1,
-			Summary:  fmt.Sprintf("the installation at %s has no synced goal ledger", shellCommand([]string{inv.stateRoot})),
-			Decision: "a person upgrades the legacy goals file to the synced ledger first: metasystem goal sync --upgrade --by NAME (it shows the digest to review)"}
+			Summary: "this repository's goals are still in the old goals file, so nothing was done",
+			next:    []string{"metasystem", "goal", "sync", "--upgrade", "--by", inv.knownPerson()}, nextReason: "a person converts it; it shows the file to review",
+			Details: []string{"the installation at " + shellCommand([]string{inv.stateRoot}) + " has no synced goal ledger"}}
 	}
 	return nil
+}
+
+// notARepository refuses a command run outside a repository with a
+// metasystem installation: line 2 is the command again, naming the
+// repository, whose path the engine cannot know.
+func (inv *intentInvocation) notARepository(path string, err error) *intentResult {
+	return &intentResult{Outcome: intentRefused, code: 2, Summary: notAnInstallation(path, err),
+		next: append(withoutOption(inv.typedArgv(), "repo"), "--repo", "PATH"), nextReason: "inside the repository, or naming its path",
+		Details: []string{"not an installation because: " + err.Error()}}
+}
+
+// retryWith is this command as the person typed it, less the options drop
+// names (a switch, or an option with its value), plus extra words: the line 2
+// of a refusal whose fix is a changed option.
+func (inv *intentInvocation) retryWith(drop []string, extra ...string) []string {
+	argv := append([]string{"metasystem"}, inv.command.words()...)
+	for index := 0; index < len(inv.raw); index++ {
+		token := inv.raw[index]
+		name, _, joined := strings.Cut(strings.TrimLeft(token, "-"), "=")
+		if strings.HasPrefix(token, "-") && slices.Contains(drop, name) {
+			if definition, known := inv.command.lookupFlag(name); known && definition.value != "" && !joined {
+				index++
+			}
+			continue
+		}
+		argv = append(argv, token)
+	}
+	return append(argv, extra...)
+}
+
+// knownPerson is the person a remedy names: the one at this seat's helm,
+// else the enrolled person, else NAME when nobody is known.
+func (inv *intentInvocation) knownPerson() string {
+	if name := inv.personName(""); name != "" {
+		return name
+	}
+	if inv.stateRoot != "" {
+		if enrollment, err := humanauthority.ReadEnrollment(inv.stateRoot); err == nil && enrollment.Human != "" {
+			return enrollment.Human
+		}
+	}
+	return "NAME"
 }
 
 // notAnInstallation says why path is not a metasystem installation in plain
@@ -697,7 +760,7 @@ func notAnInstallation(path string, err error) string {
 	case strings.Contains(text, "no metasystem installation"), strings.Contains(text, "not a metasystem installation"):
 		return shown + " is not inside a repository with a metasystem installation; nothing was done"
 	}
-	return fmt.Sprintf("%s is not inside one metasystem installation (%v); nothing was done", shown, err)
+	return shown + " is not inside a repository with a metasystem installation; nothing was done"
 }
 
 // The outcomes a public result can have.
@@ -731,11 +794,27 @@ type intentResult struct {
 	Data          any            `json:"data,omitempty"`
 	Next          *intentNext    `json:"next,omitempty"`
 	Decision      string         `json:"decision,omitempty"`
+	// Details are what only --verbose prints: refusal codes, paths the fix
+	// does not need, background ("Messages a Person Reads").
+	Details []string `json:"details,omitempty"`
 
 	text       []string
 	next       []string
 	nextReason string
-	code       int
+	// retry, when no next is set, makes line 2 this command as the person
+	// typed it, with retry as its reason: the remedy of a failure whose
+	// cause may pass (an unreadable record, a lost race).
+	retry string
+	code  int
+	// view draws a converted verb's text page; nil renders the legacy
+	// shape. --json never reads it.
+	view func(*textui.Page)
+	// attention is the banner above the headline (P12): the standing
+	// conditions that change what the person may do.
+	attention func(textui.Env) []textui.Attention
+	// headline is the text headline when --json's Summary carries another
+	// line (withHelm keeps the helm line there).
+	headline *string
 }
 
 func (inv *intentInvocation) render(result intentResult) int {
@@ -744,12 +823,20 @@ func (inv *intentInvocation) render(result intentResult) int {
 	if result.Targets == nil {
 		result.Targets = []intentTarget{}
 	}
+	if len(result.next) == 0 && result.retry != "" && result.Decision == "" && inv.command.name != "" {
+		result.next, result.nextReason = inv.typedArgv(), result.retry
+	}
 	if len(result.next) > 0 {
 		result.Next = &intentNext{Argv: result.next, Reason: result.nextReason}
 	}
 	code := result.code
+	proceeded := result.Outcome == intentConfirmed || result.Outcome == intentUnchanged || result.Outcome == intentPartial || result.Outcome == intentInProgress
 	if code == 0 && result.Outcome != intentConfirmed && result.Outcome != intentUnchanged {
 		code = 1
+	}
+	verbose := inv.input.switched("verbose")
+	if inv.notices != nil {
+		result.Details = append(result.Details, inv.notices.settle(!proceeded, verbose && !inv.input.switched("json"))...)
 	}
 	if inv.input.switched("json") {
 		encoded, err := json.MarshalIndent(result, "", "  ")
@@ -760,34 +847,133 @@ func (inv *intentInvocation) render(result intentResult) int {
 		fmt.Fprintln(inv.stdout, string(encoded))
 		return code
 	}
-	if result.Outcome == intentConfirmed || result.Outcome == intentUnchanged {
-		if result.Summary != "" {
-			fmt.Fprintln(inv.stdout, result.Summary)
-		}
-		for _, line := range result.text {
-			fmt.Fprintln(inv.stdout, line)
-		}
-		if result.Next != nil {
-			fmt.Fprintf(inv.stdout, "next: %s  (%s)\n", shellCommand(result.Next.Argv), result.Next.Reason)
-		}
-		return code
+	succeeded := result.Outcome == intentConfirmed || result.Outcome == intentUnchanged
+	stream := inv.stdout
+	if !succeeded {
+		stream = inv.stderr
 	}
-	fmt.Fprintf(inv.stderr, "metasystem %s: %s\n", inv.command.name, strings.TrimSpace(result.Summary))
-	for _, line := range result.text {
-		fmt.Fprintln(inv.stderr, line)
+	env := inv.textEnv(stream)
+	page := textui.NewLegacy(env)
+	if result.view != nil && succeeded || inv.command.laidOut {
+		page = textui.New(env)
+	}
+	if result.attention != nil {
+		page.Banner(result.attention(env)...)
 	}
 	switch {
-	case result.Next != nil:
-		fmt.Fprintf(inv.stderr, "run: %s\n", shellCommand(result.Next.Argv))
-		if result.Next.Reason != "" {
-			fmt.Fprintf(inv.stderr, "     (%s)\n", result.Next.Reason)
+	case result.view != nil && succeeded:
+		if result.Next != nil {
+			page.Hint(textui.Hint{Argv: result.Next.Argv, Reason: result.Next.Reason})
 		}
-	case result.Decision != "":
-		fmt.Fprintf(inv.stderr, "needed first: %s\n", result.Decision)
-	case result.nextReason != "":
-		fmt.Fprintf(inv.stderr, "hint: %s\n", result.nextReason)
+		result.view(page)
+	case succeeded:
+		inv.legacyConfirmed(page, result)
+	default:
+		inv.legacyRefused(page, result)
 	}
+	if verbose {
+		page.Legacy(detailLines(result.Details)...)
+	}
+	_, _ = io.WriteString(stream, page.String())
 	return code
+}
+
+// legacyConfirmed is an unconverted verb's result (§4 step 4): its Summary
+// is the headline, its lines print as they are, its next step is the hint.
+func (inv *intentInvocation) legacyConfirmed(page *textui.Page, result intentResult) {
+	summary := result.Summary
+	if result.headline != nil {
+		summary = *result.headline
+	}
+	if summary != "" {
+		page.Headline(summary)
+	}
+	page.Legacy(result.text...)
+	if result.Next != nil {
+		page.Hint(textui.Hint{Argv: result.Next.Argv, Reason: result.Next.Reason})
+	}
+}
+
+// legacyRefused is an unconverted verb's refusal or failure: its sentence
+// behind ✗ (D2: the verb's name only with --verbose), its lines, and the
+// remedy as the indented hint.
+func (inv *intentInvocation) legacyRefused(page *textui.Page, result intentResult) {
+	summary := strings.TrimSpace(result.Summary)
+	if result.headline != nil {
+		summary = strings.TrimSpace(*result.headline)
+	}
+	if inv.input.switched("verbose") {
+		summary = "metasystem " + inv.command.name + ": " + summary
+	}
+	var hint textui.Hint
+	switch {
+	case result.Next != nil:
+		hint = textui.Hint{Argv: result.Next.Argv, Reason: result.Next.Reason}
+	case result.Decision != "":
+		hint = textui.Hint{Reason: result.Decision}
+	case result.nextReason != "":
+		hint = textui.Hint{Reason: result.nextReason}
+	}
+	switch {
+	case result.Outcome == intentPartial:
+		page.Mark(textui.Alert, summary)
+	case result.Outcome == intentInProgress:
+		page.Mark(textui.Running, summary)
+	case len(result.text) == 0:
+		page.Refusal(summary, hint)
+		return
+	default:
+		page.Refusal(summary, textui.Hint{})
+	}
+	page.Legacy(result.text...)
+	page.Hint(hint)
+}
+
+// textEnv is the layout of one output stream: its width, colour and
+// symbols, the invocation's clock and zone, and the paths it shortens. A
+// stream that is not a file (a test's or an in-process caller's buffer) is
+// laid out the same everywhere: full width, no colour, the symbols.
+func (inv *intentInvocation) textEnv(stream io.Writer) textui.Env {
+	var env textui.Env
+	if inv.owners.textEnv != nil {
+		env = inv.owners.textEnv(stream)
+	} else {
+		now := time.Now()
+		if inv.owners.commandNow != nil && inv.stateRoot != "" {
+			if at, err := inv.owners.commandNow(inv.stateRoot); err == nil {
+				now = at
+			}
+		}
+		zone := inv.owners.helm.withDefaults().zone
+		if file, ok := stream.(*os.File); ok {
+			env = textui.Detect(file.Fd(), os.Getenv, now, zone)
+		} else {
+			env = textui.DetectWith(false, 0, func(string) string { return "" }, now, zone)
+		}
+		env.Home, _ = os.UserHomeDir()
+		env.Repo = inv.layout.GitRoot
+		env.InRepo = env.Repo != "" && withinDirectory(inv.cwd, env.Repo)
+	}
+	env.Verbose = env.Verbose || inv.input.switched("verbose")
+	return env
+}
+
+// detailLines are a result's details as --verbose prints them, indented
+// under the result.
+func detailLines(details []string) []string {
+	var lines []string
+	for _, line := range details {
+		if strings.TrimSpace(line) != "" {
+			lines = append(lines, "  "+line)
+		}
+	}
+	return lines
+}
+
+// withinDirectory reports whether path is dir or lies below it.
+func withinDirectory(path, dir string) bool {
+	relative, err := filepath.Rel(dir, path)
+	return err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator))
 }
 
 // ownerReport receives one goal owner's typed outcome for a public command,
@@ -815,6 +1001,19 @@ type ownerRefusal struct {
 	code     int
 	sentence string
 	remedy   humanVerbRemedy
+	// refusalCode is the owner's refusal code, a detail --verbose and --json
+	// show ("Messages a Person Reads").
+	refusalCode string
+}
+
+// refusalCodeDetails is a refusal code as the detail --verbose prints.
+func refusalCodeDetails(codes ...string) []string {
+	for _, code := range codes {
+		if code != "" {
+			return []string{"refusal code: " + code}
+		}
+	}
+	return nil
 }
 
 func (d syncRequestDependencies) publish(res goal.PublishResult, err error) int {
@@ -850,7 +1049,7 @@ func publicationLanded(res goal.PublishResult) bool {
 
 func (d syncRequestDependencies) showOutcome(res goal.PublishResult) {
 	if d.report == nil {
-		writeJSONLine(d.outStream(), d.errStream(), map[string]any{"outcome": res.Outcome, "tip": res.Tip, "detail": res.Detail})
+		writeJSONLine(d.outStream(), d.errStream(), publicationRecord(res))
 		return
 	}
 	d.report.result = &res
@@ -900,22 +1099,26 @@ func ownerResult(report *ownerReport, code int, confirmed intentResult) intentRe
 	}
 	switch {
 	case report.refusal != nil:
-		result := intentResult{Outcome: intentRefused, Summary: report.refusal.sentence, text: lines, code: report.refusal.code}
+		result := intentResult{Outcome: intentRefused, Summary: report.refusal.sentence, text: lines, code: report.refusal.code,
+			next: shellWords(report.refusal.remedy.command), Decision: strings.TrimSpace(report.refusal.remedy.words)}
+		if report.result != nil {
+			result.Details = refusalCodeDetails(report.refusal.refusalCode, report.result.Code)
+		} else {
+			result.Details = refusalCodeDetails(report.refusal.refusalCode)
+		}
 		if unchanged {
 			result.Outcome, result.code = intentUnchanged, 0
 		}
-		if report.refusal.remedy.command != "" {
-			result.next = shellWords(report.refusal.remedy.command)
-			result.nextReason = "the goal owner's remedy"
-		} else if words := strings.TrimSpace(report.refusal.remedy.words); words != "" {
-			result.Decision = words
+		if len(result.next) > 0 {
+			result.Decision = ""
 		}
 		if report.result != nil {
 			result.Data = map[string]any{"owner": ownerPublication(*report.result)}
 		}
 		return result
 	case report.failure != nil:
-		return intentResult{Outcome: intentRefused, Summary: report.failure.Error(), text: lines, code: max(code, 1)}
+		return intentResult{Outcome: intentRefused, Summary: report.failure.Error(), text: lines, code: max(code, 1), retry: "once the cause above is fixed",
+			Details: refusalCodeDetails(goal.RefusalCode(report.failure))}
 	case landed && code == 0:
 		confirmed.Outcome = intentConfirmed
 		confirmed.text = append(lines, confirmed.text...)
@@ -923,10 +1126,12 @@ func ownerResult(report *ownerReport, code int, confirmed intentResult) intentRe
 	case unchanged:
 		return intentResult{Outcome: intentUnchanged, Summary: report.result.Detail, text: lines, Data: map[string]any{"owner": ownerPublication(*report.result)}}
 	case report.result != nil:
-		return intentResult{Outcome: intentRefused, Summary: report.result.Detail, text: lines, code: max(code, 1), Data: map[string]any{"owner": ownerPublication(*report.result)}}
+		return intentResult{Outcome: intentRefused, Summary: report.result.Detail, text: lines, code: max(code, 1), retry: "the goals changed meanwhile; try again",
+			Data: map[string]any{"owner": ownerPublication(*report.result)}, Details: refusalCodeDetails(report.result.Code)}
 	}
 	return intentResult{Outcome: intentFailed, code: max(code, 1), text: lines,
-		Summary: "the goal owner stopped without a recorded result; its message is on standard error"}
+		Summary: "the command stopped without saying whether it was done", next: []string{"metasystem", "system", "check"},
+		nextReason: "names what is wrong here"}
 }
 
 // partialResult reports a primary act that landed and later work that did
@@ -963,7 +1168,7 @@ func partialResult(report *ownerReport, code int, confirmed intentResult, lines 
 }
 
 func ownerPublication(res goal.PublishResult) map[string]any {
-	return map[string]any{"outcome": res.Outcome, "tip": res.Tip, "detail": res.Detail}
+	return publicationRecord(res)
 }
 
 // shellWords reads back a command line rendered by shellCommand.

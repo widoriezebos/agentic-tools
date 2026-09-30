@@ -171,7 +171,7 @@ func validateWatchdogOptions(options WatchdogOptions) error {
 		return errors.New("watchdog requires an exact suite identity")
 	}
 	if options.FenceGeneration < 0 {
-		return errors.New("watchdog requires a non-negative fence generation")
+		return errors.New("the watchdog needs a fence number of zero or more")
 	}
 	if options.Silence <= 0 || options.SectionCap <= 0 || options.EvidenceTimeout <= 0 || options.EvidenceMax < 1 {
 		return errors.New("watchdog bounds must be positive")
@@ -224,8 +224,8 @@ func stopStalledSuite(options WatchdogOptions, section, reason string, run Progr
 		prober = identity.KernelProber{}
 	}
 	if state := identity.AliveRef(prober, options.SuiteIdentity); state != identity.Alive {
-		return fmt.Errorf("suite stalled in section %s (%s); evidence: %s; kill refused because suite pid %d no longer has its recorded start identity (%s)",
-			section, reason, evidenceNote, options.SuiteIdentity.Pid, state)
+		return fmt.Errorf("suite stalled in section %s (%s); pid %d is no longer the suite, so it was not killed (%s); evidence: %s",
+			section, reason, options.SuiteIdentity.Pid, state, evidenceNote)
 	}
 	if suiteDone(options.DonePath) {
 		return nil

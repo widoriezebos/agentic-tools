@@ -887,7 +887,7 @@ func TestFakeProbe(t *testing.T) {
 		{name: "milli 1500", env: map[string]string{"METASYSTEM_FIXTURE_CAP_SCALE_MILLI": "1500"}, want: 3},
 		{name: "milli 3000", env: map[string]string{"METASYSTEM_FIXTURE_CAP_SCALE_MILLI": "3000"}, want: 6},
 		{name: "capped at 60", env: map[string]string{"METASYSTEM_FIXTURE_CAP_SCALE_MILLI": "48000"}, want: 60},
-		{name: "milli invalid", env: map[string]string{"METASYSTEM_FIXTURE_CAP_SCALE_MILLI": "0"}, fails: "METASYSTEM_FIXTURE_CAP_SCALE_MILLI must be a positive integer"},
+		{name: "milli invalid", env: map[string]string{"METASYSTEM_FIXTURE_CAP_SCALE_MILLI": "0"}, fails: "the test time scale METASYSTEM_FIXTURE_CAP_SCALE_MILLI is not a whole number above zero"},
 		{name: "scripted failure", env: map[string]string{"METASYSTEM_FAKE_PROBE_FAIL": "1"}, fails: "scripted probe failure"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

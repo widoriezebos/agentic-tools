@@ -116,7 +116,7 @@ func ExecuteBatchDiagnosisWithConfig(root, id, actor string, at time.Time, looku
 	}
 	joined := slices.DeleteFunc(slices.Clone(record.Units), func(unit batch.Unit) bool { return unit.State != batch.UnitJoined })
 	if len(joined) == 0 || record.Proof == nil {
-		return fmt.Errorf("batch %s has no diagnostic authority member or proof", id)
+		return fmt.Errorf("batch %s has no member or test run to diagnose", id)
 	}
 	baseCommit, err := BatchDiagnosisSeams.CommitForTree(root, "origin/main", record.BaseTree)
 	if err != nil {

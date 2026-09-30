@@ -3,6 +3,7 @@ package audit
 import (
 	"crypto/sha256"
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -625,7 +626,7 @@ func stopSurfaceRemovedAssertionFixture(t *testing.T) (*stopSurfaceFixture, Stop
 
 func requireStopSurfaceGoalRefusal(t *testing.T, err error) {
 	t.Helper()
-	if err == nil || !strings.Contains(err.Error(), "STOP_SURFACE_GOAL_REFUSED") {
+	if err == nil || refusal.CodeOf(err) != "STOP_SURFACE_GOAL_REFUSED" || strings.Contains(err.Error(), "STOP_SURFACE_GOAL_REFUSED") {
 		t.Fatalf("goal refusal = %v, want STOP_SURFACE_GOAL_REFUSED", err)
 	}
 }
@@ -633,7 +634,7 @@ func requireStopSurfaceGoalRefusal(t *testing.T, err error) {
 func requireStopSurfaceAuditGoalRefusal(t *testing.T, result StopSurfaceResult) {
 	t.Helper()
 	if !result.Refused() || len(result.Problems) != 1 ||
-		!strings.Contains(result.Problems[0], "STOP_SURFACE_GOAL_REFUSED") || len(result.Moved) != 0 {
+		!strings.Contains(result.Problems[0], "goal") || len(result.Moved) != 0 {
 		t.Fatalf("audit goal refusal = %+v", result)
 	}
 }
@@ -642,7 +643,7 @@ func requireStopSurfaceAuditGoalRefusal(t *testing.T, result StopSurfaceResult) 
 // permission, so nobody is left with a hand edit the Integrity seal refuses.
 func requireStopSurfaceGrantRemedy(t *testing.T, text, goalID string) {
 	t.Helper()
-	if want := "goal " + goalID + " is not allowed stop-test changes; a person runs: metasystem goal allow " + goalID + " stop-test-changes --reason TEXT"; !strings.Contains(text, want) {
+	if want := "goal " + goalID + " is not allowed to change the stop tests\nrun: metasystem goal allow " + goalID + " stop-test-changes --reason TEXT"; !strings.Contains(text, want) {
 		t.Fatalf("the unpermitted-goal refusal does not name %q: %s", want, text)
 	}
 }

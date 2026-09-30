@@ -125,7 +125,7 @@ func TestTrunkRedHoldRetryAndRehold(t *testing.T) {
 	}
 	must(t, store.Update(testBatchID, func(record *Record) error { record.State = StateDiagnosing; return nil }))
 	before = recordBytes(t, store)
-	if err := store.HoldTrunkRed(testBatchID, second, "op-1", secondAt.Add(time.Minute), "actor"); err == nil || !strings.Contains(err.Error(), "cannot reuse trunk-red opid") {
+	if err := store.HoldTrunkRed(testBatchID, second, "op-1", secondAt.Add(time.Minute), "actor"); err == nil || !strings.Contains(err.Error(), "cannot reuse red-main operation id") {
 		t.Fatalf("re-hold reused an earlier opid: %v", err)
 	}
 	if after := recordBytes(t, store); string(after) != string(before) {
@@ -156,7 +156,7 @@ func TestTrunkRedHoldTakesJoinersAndRefusesOtherStates(t *testing.T) {
 		{"open state", StateOpen, "op", "state open", TrunkRed{Groups: []RedGroup{{ID: "fast"}}}, units, nil},
 		{"landed state", StateLanded, "op", "state landed", TrunkRed{Groups: []RedGroup{{ID: "fast"}}}, units, nil},
 		{"already held state", StateHeldTrunkRed, "op", "state held-trunk-red", TrunkRed{Groups: []RedGroup{{ID: "fast"}}}, units, &TrunkRedHold{Opid: "prior", Opids: []string{"prior"}}},
-		{"empty opid", StateProving, "", "empty opid", TrunkRed{Groups: []RedGroup{{ID: "fast"}}}, units, nil},
+		{"empty opid", StateProving, "", "without an operation id", TrunkRed{Groups: []RedGroup{{ID: "fast"}}}, units, nil},
 		{"no groups", StateProving, "op", "without red groups", TrunkRed{}, units, nil},
 		{"no units", StateProving, "op", "without units", TrunkRed{Groups: []RedGroup{{ID: "fast"}}}, nil, nil},
 	}

@@ -248,7 +248,7 @@ func TestFullArcHandParkMapsToOneCascade(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err = mapDeltasFor(endpoint, tip, snap2)
-	if err == nil || !strings.Contains(err.Error(), "all-or-none") {
+	if err == nil || !strings.Contains(err.Error(), "park all of them or none") {
 		t.Fatalf("a partial-arc hand-park refuses: %v", err)
 	}
 }

@@ -92,7 +92,7 @@ func TestRepairAcceptsARewoundRemoteUnderAHuman(t *testing.T) {
 	client.store.mu.Lock()
 	client.store.canonical = firstTip
 	client.store.mu.Unlock()
-	if _, err := FetchAdvance(e); err == nil || !strings.Contains(err.Error(), "rewound") {
+	if _, err := FetchAdvance(e); err == nil || !strings.Contains(err.Error(), "went back in history") {
 		t.Fatalf("the rewind must refuse first: %v", err)
 	}
 	if _, err := RepairAcceptRemote(e, ""); err == nil || !strings.Contains(err.Error(), "--by") {

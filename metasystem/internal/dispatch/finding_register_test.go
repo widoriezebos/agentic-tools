@@ -439,10 +439,10 @@ func TestCritiqueRegisterCrossRootClassConflictBlocks(t *testing.T) {
 		[]any{registerRigor("SHARED", "bounded")})
 	setCriticSubjectFiles(t, repo, "critic-b", "implementer", "tree-b")
 	if _, err := advanceWithPrefix(t, repo, "critic-b", "critic-b"); err == nil ||
-		!strings.Contains(err.Error(), "conflicting rigor classes") ||
+		!strings.Contains(err.Error(), "here and severe elsewhere") ||
 		!strings.Contains(err.Error(), `reviews="implementer" reviewedTree="tree-a"`) ||
 		!strings.Contains(err.Error(), `reviews="implementer" reviewedTree="tree-b"`) ||
-		!strings.Contains(err.Error(), "waiting on the original critic or the human is the only remedy") {
+		!strings.Contains(err.Error(), "the critic or a person settles it") {
 		t.Fatalf("cross-root conflict = %v", err)
 	}
 	if items := readRegister(t, repo, "critic-b"); len(items) != 0 {
@@ -484,7 +484,7 @@ func TestCritiqueRegisterSameReviewedTreeConflictsAcrossReviewTargets(t *testing
 		[]any{registerRigor("F-1", "bounded")})
 	setCriticSubjectFiles(t, repo, "critic-b", "implementer-b", "shared-tree")
 	if _, err := advanceWithPrefix(t, repo, "critic-b", "critic-b"); err == nil ||
-		!strings.Contains(err.Error(), "conflicting rigor classes") {
+		!strings.Contains(err.Error(), "here and severe elsewhere") {
 		t.Fatalf("same-tree conflict = %v", err)
 	}
 }

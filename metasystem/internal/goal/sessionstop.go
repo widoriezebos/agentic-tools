@@ -151,7 +151,7 @@ func validateSessionStop(marker *SessionStop) error {
 		return fmt.Errorf("session stop marker has an invalid attended-human process identity")
 	}
 	if !sessionStopDigest.MatchString(marker.HumanAuthority) || !sessionStopDigest.MatchString(marker.SessionLifecycle) {
-		return fmt.Errorf("session stop marker lacks its human-classification proof or session lifecycle binding")
+		return errors.New("the session stop record doesn't say who stopped it or which session")
 	}
 	return nil
 }
@@ -258,10 +258,10 @@ func (s *Store) WriteSessionStop(marker SessionStop, proof humanauthority.Proof)
 	}
 	marker.SessionId = NormalizeSession(marker.SessionId)
 	if !proof.TerminalValidFor(s.Root) {
-		return SessionStop{}, fmt.Errorf("session stop requires a fresh terminal human-classification proof")
+		return SessionStop{}, errors.New("only a person stops a session, from a terminal they opened")
 	}
 	if _, err := parseISO(marker.WrittenAt); err != nil || proof.CheckedAt.UTC().Format("2006-01-02T15:04:05Z07:00") != marker.WrittenAt {
-		return SessionStop{}, fmt.Errorf("session stop human-classification proof does not match the authorization time")
+		return SessionStop{}, errors.New("the session stop record doesn't match when the person stopped it")
 	}
 	marker.Human = sessionStopHumanRef(proof.InvokerRef)
 	marker.HumanAuthority, err = sessionStopHumanAuthorityToken(proof)

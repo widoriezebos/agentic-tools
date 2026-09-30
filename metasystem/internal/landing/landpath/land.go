@@ -3,6 +3,7 @@ package landpath
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"io"
@@ -42,6 +43,9 @@ type LandRequest struct {
 	// CommitOnly stops the landing after its commit: a change bound for the
 	// landing lane is fetched, rebased, proved and pushed by the lane (U11b).
 	CommitOnly bool
+	// Stop, when set, receives what a landing that stopped tells the person:
+	// the reason and the one command (stop.go).
+	Stop *Stop
 }
 
 // landExit ends a landing with a status from anywhere below Land, as the
@@ -55,9 +59,16 @@ func exitLanding(code int) { panic(landExit{code}) }
 func StopAtSeam(code int) { exitLanding(code) }
 
 // Land runs one landing and returns the exit status the former driver
-// returned. Progress goes to stdout; refusals and failed steps to stderr.
-func Land(owners Owners, request LandRequest, stdout, stderr io.Writer) (status int) {
-	d := &driver{owners: owners, request: request, stdout: stdout, stderr: stderr}
+// returned. A landing that stops writes its two lines (the reason and the
+// one command) to stderr and records them in request.Stop; the step log and
+// every other background line go to details, which a command shows only with
+// --verbose.
+func Land(owners Owners, request LandRequest, details, stderr io.Writer) (status int) {
+	stop := request.Stop
+	if stop == nil {
+		stop = &Stop{}
+	}
+	d := &driver{owners: owners, request: request, details: details, stderr: stderr, stopped: stop}
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			exit, ok := recovered.(landExit)
@@ -72,9 +83,13 @@ func Land(owners Owners, request LandRequest, stdout, stderr io.Writer) (status 
 }
 
 type driver struct {
-	owners         Owners
-	request        LandRequest
-	stdout, stderr io.Writer
+	owners  Owners
+	request LandRequest
+	// details is what only --verbose shows (the step log); stderr carries
+	// the two lines of a stop.
+	details, stderr io.Writer
+	stopped         *Stop
+	told            bool
 
 	messageFile string
 	ownedFile   string
@@ -131,7 +146,8 @@ func (d *driver) cleanup(status int) {
 		output, code := d.owners.GoalCarrying(CarryingRequest{Root: d.request.Root, Goal: d.request.Goal,
 			Abandon: d.carriedRow, Why: why, Lineage: d.request.OwnerLineage})
 		if code != 0 {
-			fmt.Fprintf(d.stderr, "carried landing could not close its reservation: %s\n", strings.TrimRight(output, "\n"))
+			fmt.Fprintln(d.stderr, "the exception's hold on the goal couldn't be released either; --verbose shows why")
+			writeDetails(d.details, "carried landing could not close its reservation: "+strings.TrimRight(output, "\n"))
 		}
 	}
 	if status != 0 {
@@ -145,19 +161,50 @@ func (d *driver) cleanup(status int) {
 	}
 }
 
-func (d *driver) refuse(code int, format string, args ...any) int {
-	fmt.Fprintf(d.stderr, format+"\n", args...)
+// stop records why the landing stops (the first cause wins), writes its
+// background to details and tells the person its two lines once.
+func (d *driver) stop(code int, reason string, run []string, then string, details ...string) int {
+	writeDetails(d.details, details...)
+	d.stopped.said(reason, run, then)
+	d.tell()
 	return code
 }
 
-// runStep announces a step, captures everything it writes, and reports ok.
+// failed stops for an owner's error: reason in plain words, the error in
+// details.
+func (d *driver) failed(code int, reason string, err error) int {
+	cause := ""
+	if err != nil {
+		cause = err.Error()
+	}
+	then := ""
+	if reason == notHolderReason {
+		then = notHolderThen
+	}
+	if d.stopped.Reason == "" {
+		d.stopped.cause = cause
+	}
+	return d.stop(code, reason, nil, then, cause)
+}
+
+// tell writes the recorded stop to the person's stream, once.
+func (d *driver) tell() {
+	if d.told || d.stopped.Reason == "" {
+		return
+	}
+	d.told = true
+	writeStop(d.stderr, *d.stopped)
+}
+
+// runStep logs a step to details, captures everything it writes, and logs
+// that it finished.
 func (d *driver) runStep(name string, step func(out io.Writer) int) int {
 	d.stepName = name
-	fmt.Fprintf(d.stdout, "== STEP: %s\n", name)
+	fmt.Fprintf(d.details, "step: %s\n", name)
 	d.stepOutput.Reset()
 	status := step(&d.stepOutput)
 	if status == 0 {
-		fmt.Fprintln(d.stdout, "-- ok")
+		fmt.Fprintln(d.details, "  ok")
 	}
 	return status
 }
@@ -178,17 +225,26 @@ func (d *driver) lastStepLine() string {
 	return strings.TrimSuffix(string(lastLines(d.stepOutput.Bytes(), 1)), "\n")
 }
 
-// failStep reports a failed step with its retained log and ends the landing.
+// failStep reports a failed step: its cause (the refusal a step recorded,
+// else the step and its last line) to the person, its retained log to
+// details; then it ends the landing.
 func (d *driver) failStep(status int) {
-	d.carryStopReason = fmt.Sprintf("step %s failed with exit %d: %s", d.stepName, status, d.lastStepLine())
-	fmt.Fprintf(d.stderr, "!! STEP FAILED: %s (exit %d)\n", d.stepName, status)
+	cause := firstNonEmpty(d.stopped.cause, d.stopped.Reason, d.lastStepLine())
+	d.carryStopReason = fmt.Sprintf("step %s failed with exit %d: %s", d.stepName, status, cause)
+	fmt.Fprintf(d.details, "step failed: %s (exit %d)\n", d.stepName, status)
 	reference, err := d.owners.OutputSpill(d.request.Root, "land", "log", d.stepOutput.Bytes())
-	d.stderr.Write(lastLines(d.stepOutput.Bytes(), 40))
+	d.details.Write(lastLines(d.stepOutput.Bytes(), 40))
 	if err == nil {
-		fmt.Fprintln(d.stderr, reference)
+		fmt.Fprintln(d.details, reference)
 	} else {
-		fmt.Fprintf(d.stderr, "land: full step log not retained: %v\n", err)
+		fmt.Fprintf(d.details, "full step log not retained: %v\n", err)
 	}
+	last := oneLine(d.lastStepLine())
+	if last == "" {
+		last = fmt.Sprintf("it exited %d", status)
+	}
+	d.stopped.said("the landing stopped at "+d.stepName+": "+last, nil, "fix what stopped it (--verbose shows the step's log), then repeat this command")
+	d.tell()
 	exitLanding(status)
 }
 
@@ -198,10 +254,11 @@ func (d *driver) requiredStep(name string, step func(out io.Writer) int) {
 	}
 }
 
-// carryAsk ends a carried landing with the exact ask a person reads.
-func (d *driver) carryAsk(ask string) {
-	d.carryStopReason = ask
-	fmt.Fprintln(d.stderr, ask)
+// carryAsk ends a carried landing with what the person reads: why it
+// stopped, and the one command or the words that resolve it.
+func (d *driver) carryAsk(reason string, run []string, then string, details ...string) {
+	d.carryStopReason = reason
+	d.stop(3, reason, run, then, details...)
 	exitLanding(3)
 }
 
@@ -211,12 +268,12 @@ func (d *driver) seam(point string) {
 	}
 }
 
-// Usage is the landing's usage line.
+// Usage is the landing's usage line, a detail of a refusal of its options.
 const Usage = "Usage: metasystem work land [G] --message FILE (--staged | PATH...) [--chain J [--recertification R --test-receipt P] [--direct-fix register-carriage] | --direct-fix register-carriage | --direct-fix exact-revert --revert-of C | --direct-fix tier-1 --root-job J (--test-receipt P | --tests CMD)] [--allow-new-plan] [--skip-transport]"
 
-func (d *driver) usage(code int) int {
-	fmt.Fprintln(d.stderr, Usage)
-	return code
+// optionStop refuses options that do not combine; the usage is a detail.
+func (d *driver) optionStop(reason, then string) int {
+	return d.stop(2, reason, nil, then, Usage)
 }
 
 func (d *driver) run() int {
@@ -224,8 +281,7 @@ func (d *driver) run() int {
 	if request.Carried != "" && request.HeldEpoch == "" {
 		epoch, err := d.owners.RequireHolder(request.Root, d.owners.CallerPID, nil)
 		if err != nil {
-			fmt.Fprintln(d.stderr, err)
-			return 1
+			return d.failed(1, notHolderReason, err)
 		}
 		held := "human"
 		if epoch != nil {
@@ -237,8 +293,7 @@ func (d *driver) run() int {
 			status = d.held()
 			return nil
 		}); err != nil {
-			fmt.Fprintln(d.stderr, err)
-			return 1
+			return d.failed(1, notHolderReason, err)
 		}
 		return status
 	}
@@ -250,25 +305,23 @@ func (d *driver) held() int {
 	if request.HeldEpoch != "" {
 		if value, err := strconv.ParseInt(request.HeldEpoch, 10, 64); err == nil && value > 0 && request.HeldEpoch[0] != '0' {
 			if _, err := d.owners.RequireHolder(request.Root, d.owners.CallerPID, &value); err != nil {
-				fmt.Fprintln(d.stderr, err)
-				return 1
+				return d.failed(1, notHolderReason, err)
 			}
 		} else {
 			if request.HeldEpoch != "human" {
 				return 2
 			}
 			if _, err := d.owners.RequireHolder(request.Root, d.owners.CallerPID, nil); err != nil {
-				fmt.Fprintln(d.stderr, err)
-				return 1
+				return d.failed(1, notHolderReason, err)
 			}
 		}
 	}
 	detail, err := d.owners.BrainFence(request.Root, "land")
 	if err != nil {
-		return d.refuse(1, "land refused: brain fence failed")
+		return d.failed(1, "this checkout's role couldn't be read, so nothing was landed", err)
 	}
 	if detail != "" {
-		return d.refuse(2, "%s", detail)
+		return d.stop(2, brainReason, nil, brainThen, detail)
 	}
 	if status := d.validate(); status != 0 {
 		return status
@@ -277,19 +330,18 @@ func (d *driver) held() int {
 	if request.MessageFile == "-" {
 		file, done, err := diskstore.ScratchFile("metasystem-land-message.")
 		if err != nil {
-			fmt.Fprintln(d.stderr, err)
-			return 1
+			return d.failed(1, "the commit message couldn't be saved for the commit, so nothing was landed", err)
 		}
 		d.ownedFile, d.ownedDone = file.Name(), done
 		_, writeErr := file.Write(request.Message)
 		closeErr := file.Close()
 		if writeErr != nil || closeErr != nil {
-			fmt.Fprintln(d.stderr, writeErr, closeErr)
-			return 1
+			return d.stop(1, "the commit message couldn't be saved for the commit, so nothing was landed", nil, "", fmt.Sprint(writeErr, closeErr))
 		}
 		d.messageFile = d.ownedFile
 	} else if !d.owners.FileReadable(request.MessageFile) {
-		return d.refuse(2, "land refused: commit message file is not readable: %s", request.MessageFile)
+		return d.stop(2, "the commit message file can't be read, so nothing was landed", nil,
+			"check the file named by --message, then repeat this command", "message file: "+request.MessageFile)
 	}
 	return d.land()
 }
@@ -299,45 +351,49 @@ var chainIdentifier = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 func (d *driver) validate() int {
 	request := d.request
 	if request.MessageFile == "" {
-		return d.usage(2)
+		return d.optionStop("a landing needs its commit message, so nothing was landed", "name the message file with --message FILE")
 	}
 	if request.StagedOnly && len(request.Pathspecs) > 0 {
-		return d.refuse(2, "land refused: --staged cannot be combined with paths")
+		return d.optionStop("--staged lands what is staged, so it takes no --path, so nothing was landed", "use --staged or --path, not both")
 	}
 	if !request.StagedOnly && len(request.Pathspecs) == 0 && request.Carried == "" {
-		return d.refuse(2, "land refused: name paths or choose --staged")
+		return d.optionStop("nothing to land: no --path and no --staged, so nothing was landed", "name the files with --path, or land what is staged with --staged")
 	}
 	if request.Tests != "" && request.TestReceipt != "" {
-		fmt.Fprintln(d.stderr, "land refused: --tests and --test-receipt cannot be combined; remove --test-receipt for a tier-1 landing, or remove --tests for a receipted chain landing")
-		return d.usage(2)
+		return d.optionStop("--tests and --test-receipt don't go together, so nothing was landed", "drop --test-receipt for a tier-1 landing, or --tests for a receipted chain")
 	}
 	if request.TestReceipt != "" && request.Chain == "" && request.DirectFix != "tier-1" && request.Carried == "" {
-		fmt.Fprintln(d.stderr, "land refused: --test-receipt belongs with --chain or --direct-fix tier-1")
-		return d.usage(2)
+		return d.optionStop("--test-receipt goes with --chain or --direct-fix tier-1, so nothing was landed", "add --chain J, or drop --test-receipt")
 	}
 	if request.Carried != "" && (!request.GoalSet || request.Goal == "") {
-		return d.refuse(2, "land refused: --carried requires --goal")
+		return d.optionStop("an exception landing names its goal, so nothing was landed", "name the goal: metasystem work land G ...")
 	}
 	if request.Recertification != "" && request.Chain == "" {
-		return d.refuse(2, "land refused: --recertification requires --chain <root-job>")
+		return d.optionStop("--recertification goes with --chain, so nothing was landed", "add --chain J with the chain's root job")
 	}
 	if request.Recertification != "" && request.DirectFix != "" && request.DirectFix != "register-carriage" {
-		return d.refuse(2, "land refused: --recertification combines only with the existing register-carriage class")
+		return d.optionStop("--recertification combines only with --direct-fix register-carriage, so nothing was landed", "drop --direct-fix, or use register-carriage")
 	}
 	if request.Recertification != "" && request.TestReceipt == "" {
-		return d.refuse(2, "land refused: a recertified landing requires a fresh --test-receipt for the actual candidate")
+		return d.optionStop("a recertified landing needs a fresh test receipt for this exact change, so nothing was landed", "add --test-receipt PATH")
 	}
 	if request.DirectFix == "tier-1" {
 		if !request.GoalSet || request.Goal == "" || request.RootJob == "" || request.Tests == "" && request.TestReceipt == "" {
-			return d.refuse(2, "land refused: --direct-fix tier-1 requires --goal, --root-job, and either --test-receipt or legacy --tests")
+			return d.optionStop("--direct-fix tier-1 needs a goal, --root-job, and --test-receipt or --tests, so nothing was landed",
+				"add the missing one: metasystem work land G --direct-fix tier-1 --root-job J --test-receipt PATH ...")
 		}
 	} else if request.RootJob != "" || request.Tests != "" {
-		return d.refuse(2, "land refused: --root-job and --tests belong only to --direct-fix tier-1")
+		return d.optionStop("--root-job and --tests go only with --direct-fix tier-1, so nothing was landed", "drop them, or add --direct-fix tier-1")
 	}
 	if request.Chain != "" && chainIdentifier.MatchString(request.Chain) {
 		d.gateWidth = d.owners.JobGateWidth(request.Root, request.Chain)
 		if d.gateWidth == "full" && request.TestReceipt == "" {
-			return d.refuse(2, "land refused: chain %s requires sufficient schema-2 testing evidence; run metasystem test run --goal <goal> and pass the receipt with --test-receipt", request.Chain)
+			testRun := []string{"metasystem", "test", "run"}
+			if request.GoalSet && request.Goal != "" {
+				testRun = append(testRun, "--goal", request.Goal)
+			}
+			return d.stop(2, "chain "+request.Chain+" needs its full test run's receipt, so nothing was landed", testRun,
+				"then pass its receipt with --test-receipt PATH", "the chain's gate width is full: it lands only with sufficient schema-2 testing evidence")
 		}
 	}
 	return 0
@@ -397,10 +453,10 @@ func (d *driver) land() int {
 		}
 		if d.runStep("goal held at the rebased base", d.heldCheck) != 0 {
 			detail := d.lastStepLine()
-			fmt.Fprintln(d.stderr, detail)
+			writeDetails(d.details, detail)
 			d.parkRecertified("chain-recertification-target-moved", detail)
 		}
-		d.stdout.Write(d.stepOutput.Bytes())
+		d.details.Write(d.stepOutput.Bytes())
 		if d.runStep("verify shared testing proof before recertified push", d.verifyCurrentTestingProof) != 0 {
 			d.parkRecertified("chain-recertification-test-command-refused", d.lastStepLine())
 		}
@@ -410,7 +466,7 @@ func (d *driver) land() int {
 		if status := d.runStep("push recertified commit to origin (single attempt)", d.pushOrigin); status != 0 {
 			if d.movingOriginRejection() {
 				detail := d.lastStepLine()
-				d.stderr.Write(d.stepOutput.Bytes())
+				d.details.Write(d.stepOutput.Bytes())
 				d.parkRecertified("chain-recertification-target-moved", detail)
 			}
 			d.failStep(status)
@@ -428,7 +484,7 @@ func (d *driver) land() int {
 		d.requiredStep("fetch origin", d.fetchOrigin)
 		d.requiredStep("rebase onto origin/"+d.branch, d.rebaseOrigin)
 		d.requiredStep("goal held at the rebased base", d.heldCheck)
-		d.stdout.Write(d.stepOutput.Bytes())
+		d.details.Write(d.stepOutput.Bytes())
 		d.requiredStep("verify shared testing proof after rebase", d.verifyCurrentTestingProof)
 		const pushLimit = 3
 		d.sampleBoot()
@@ -442,13 +498,13 @@ func (d *driver) land() int {
 			if !d.movingOriginRejection() || attempt == pushLimit {
 				d.failStep(status)
 			}
-			fmt.Fprintf(d.stdout, "-- retryable rejection: %s (exit %d)\n", d.stepName, status)
-			d.stdout.Write(lastLines(d.stepOutput.Bytes(), 40))
-			fmt.Fprintf(d.stdout, "-- origin moved during push; fetching and rebasing before retry %d of %d\n", attempt+1, pushLimit)
+			fmt.Fprintf(d.details, "retryable rejection: %s (exit %d)\n", d.stepName, status)
+			d.details.Write(lastLines(d.stepOutput.Bytes(), 40))
+			fmt.Fprintf(d.details, "origin moved during push; fetching and rebasing before retry %d of %d\n", attempt+1, pushLimit)
 			d.requiredStep(fmt.Sprintf("fetch origin after push attempt %d", attempt), d.fetchOrigin)
 			d.requiredStep(fmt.Sprintf("rebase onto origin/%s after push attempt %d", d.branch, attempt), d.rebaseOrigin)
 			d.requiredStep("goal held at the rebased base", d.heldCheck)
-			d.stdout.Write(d.stepOutput.Bytes())
+			d.details.Write(d.stepOutput.Bytes())
 			d.requiredStep("verify shared testing proof after retry rebase", d.verifyCurrentTestingProof)
 		}
 		head, _ := d.gitOut("rev-parse", "HEAD")
@@ -472,7 +528,7 @@ func (d *driver) recordRelease() {
 		return
 	}
 	if err := d.owners.RecordRelease(head, d.branch); err != nil {
-		fmt.Fprintf(d.stdout, "-- the goal's workspaces were not recorded for release (%v); they stay until metasystem work workspace --release or the goal's end\n", err)
+		writeDetails(d.details, fmt.Sprintf("the goal's workspaces were not recorded for release (%v); they stay until the goal ends or metasystem work workspace --release", err))
 	}
 }
 
@@ -537,11 +593,12 @@ func (d *driver) checkRulingsIDMints(out io.Writer) int {
 		}
 	}
 	if len(offending) > 0 {
-		fmt.Fprintln(out, "land refused: new rulings ids must be machine-suffixed (R-<n>-<machine>); see the register header (a rewritten historical row must keep its id; only new mints need the suffix)")
+		lines := []string{"new rulings ids must be machine-suffixed (R-<n>-<machine>); a rewritten historical row keeps its id:"}
 		for _, id := range offending {
-			fmt.Fprintf(out, "  %s\n", id)
+			lines = append(lines, "  "+id)
 		}
-		return 2
+		return d.stop(2, "new rulings rows need the machine in their id (R-123-m1e); "+firstPath(offending)+" has none", nil,
+			"add the machine to the new ids in memory/rulings.md, then repeat this command", lines...)
 	}
 	return 0
 }
@@ -549,13 +606,11 @@ func (d *driver) checkRulingsIDMints(out io.Writer) int {
 func (d *driver) verifyChecks(out io.Writer) int {
 	branch, status := d.gitOut("symbolic-ref", "--quiet", "--short", "HEAD")
 	if status != 0 {
-		fmt.Fprintln(out, "land refused: HEAD is not on a branch")
-		return 2
+		return d.stop(2, "this checkout isn't on a branch, so nothing was landed", []string{"git", "switch", "main"}, repeat)
 	}
 	d.branch = branch
 	if d.request.Carried != "" && branch != "main" {
-		fmt.Fprintf(out, "carry asks: the carried landing lands main; you are on %s\n", branch)
-		return 3
+		return d.stop(3, "an exception lands main, and this checkout is on "+branch, []string{"git", "switch", "main"}, repeat)
 	}
 	if status := d.checkRulingsIDMints(out); status != 0 {
 		return status
@@ -564,8 +619,8 @@ func (d *driver) verifyChecks(out io.Writer) int {
 		return d.gitTo(out, "diff", "--cached", "--check", "--")
 	}
 	if d.git("diff", "--cached", "--quiet", "--").Code != 0 {
-		fmt.Fprintln(out, "land refused: path mode requires an empty index; use --staged for an existing staged set")
-		return 2
+		return d.stop(2, "other files are already staged, so landing the named paths would take them along", nil,
+			"land what is staged with --staged, or unstage it first (git restore --staged .)")
 	}
 	return d.gitTo(out, append([]string{"diff", "--check", "--"}, d.request.Pathspecs...)...)
 }
@@ -573,29 +628,35 @@ func (d *driver) verifyChecks(out io.Writer) int {
 func (d *driver) stageChanges(out io.Writer) int {
 	if !d.request.StagedOnly {
 		if len(d.request.Pathspecs) == 0 {
-			fmt.Fprintln(out, "land refused: name paths or choose --staged")
-			return 2
+			return d.optionStop("nothing to land: no --path and no --staged, so nothing was landed", "name the files with --path, or land what is staged with --staged")
 		}
 		if status := d.gitTo(out, append([]string{"add", "--"}, d.request.Pathspecs...)...); status != 0 {
 			return status
 		}
 	}
 	if d.git("diff", "--cached", "--quiet", "--").Code == 0 {
-		fmt.Fprintln(out, "land refused: the caller-selected staging set is empty")
-		return 2
+		return d.stop(2, "nothing is staged, so there is nothing to land", nil, "stage the change (git add), then repeat this command")
 	}
 	var drift bytes.Buffer
 	status := d.owners.Drift(d.request.Root, false, &drift, &drift)
 	if status == 1 {
-		if regexp.MustCompile(`(?m)^(unstaged|register-not-append)\t`).Match(drift.Bytes()) {
-			fmt.Fprintln(out, "land refused: unstaged changes remain after staging; transport requires a clean tree after commit")
-		} else {
-			fmt.Fprintln(out, "land refused: untracked paths remain after staging; transport requires a clean tree after commit")
-		}
+		var lines, paths []string
 		for _, line := range strings.Split(strings.TrimRight(drift.String(), "\n"), "\n") {
-			fmt.Fprintf(out, "  %s\n", line)
+			lines = append(lines, "  "+line)
+			if fields := strings.Split(line, "\t"); len(fields) == 3 {
+				paths = append(paths, fields[2])
+			}
 		}
-		return 2
+		if len(paths) == 0 {
+			paths = []string{"a file"}
+		}
+		kind := "untracked"
+		if regexp.MustCompile(`(?m)^(unstaged|register-not-append)\t`).Match(drift.Bytes()) {
+			kind = "unstaged"
+		}
+		return d.stop(2, "other changed files would stay behind uncommitted: "+firstPath(paths), []string{"git", "status", "--short"},
+			"commit, stash or discard them, then repeat this command",
+			append([]string{kind + " changes remain after staging; the landing needs a clean checkout after its commit:"}, lines...)...)
 	}
 	return status
 }
@@ -630,21 +691,27 @@ func (d *driver) checkReceiptLine(out io.Writer) int {
 	}
 	decision, err := d.owners.ReceiptLine(d.request.Root, tree, goal, d.request.DirectFix)
 	if err != nil {
-		fmt.Fprintf(out, "landing receipt-line: %v\n", err)
-		return 1
+		return d.failed(1, "the receipt record couldn't be read, so nothing was landed", err)
 	}
 	if decision.Refused {
 		detail := decision.Detail
 		if detail == "" {
 			detail = "the landing appends no RECEIPT line"
 		}
-		fmt.Fprintf(out, "land refused: %s\n", detail)
 		// Path mode staged the set itself; give the index back so the
 		// retry is the same command with the ledger path added.
 		if !d.request.StagedOnly && len(d.request.Pathspecs) > 0 {
 			d.git(append([]string{"reset", "-q", "--"}, d.request.Pathspecs...)...)
 		}
-		return 2
+		if decision.Removed {
+			return d.stop(2, "the change deletes the receipt record, so nothing was landed", nil,
+				"restore the record and unstage its deletion, then repeat this command", detail)
+		}
+		then := "add the goal's receipt line, stage the record, then repeat this command"
+		if decision.Command != "" {
+			then = "add the line with " + decision.Command + ", stage the record, then repeat this command"
+		}
+		return d.stop(2, "the change touches code but adds no receipt line for it, so nothing was landed", nil, then, detail)
 	}
 	fmt.Fprintln(out, decision.Encoded)
 	return 0
@@ -681,24 +748,28 @@ func (d *driver) checkSuppliedTestReceipt(out io.Writer) int {
 	case !readable || json.Unmarshal(receipt["tree"], &tree) != nil:
 		failure = "no tree field"
 	}
+	testRun := []string{"metasystem", "test", "run"}
+	if d.request.GoalSet && d.request.Goal != "" {
+		testRun = append(testRun, "--goal", d.request.Goal)
+	}
 	if failure != "" {
-		fmt.Fprintf(out, "land refused: the receipt at %s cannot be read as a landing receipt (%s)\n", path, failure)
-		return 2
+		return d.stop(2, "the test receipt can't be read ("+failure+"), so nothing was landed", testRun,
+			"makes a new one; pass it with --test-receipt, then repeat this command", "receipt: "+path)
 	}
 	if tree == candidate {
 		return 0
 	}
-	mismatch := fmt.Sprintf("land refused: the receipt at %s names tree %s but the staged candidate is %s; make the receipt against this exact candidate", path, tree, candidate)
+	mismatch := fmt.Sprintf("the receipt at %s names tree %s but the staged candidate is %s", path, tree, candidate)
+	stale := "the test receipt is for other files than the staged change, so nothing was landed"
 	if !workspacePresent {
-		fmt.Fprintln(out, mismatch)
-		return 2
+		return d.stop(2, stale, testRun, "makes one for this change; pass it with --test-receipt, then repeat this command", mismatch)
 	}
 	receiptWorkspace, receiptErr := d.owners.Live().Workspace(d.request.Root, tree)
 	candidateWorkspace, candidateErr := d.owners.Live().Workspace(d.request.Root, candidate)
 	if receiptErr != nil {
-		fmt.Fprintln(out, receiptErr)
+		writeDetails(d.details, receiptErr.Error())
 	} else if candidateErr != nil {
-		fmt.Fprintln(out, candidateErr)
+		writeDetails(d.details, candidateErr.Error())
 	} else if receiptWorkspace == candidateWorkspace {
 		return 0
 	}
@@ -710,9 +781,8 @@ func (d *driver) checkSuppliedTestReceipt(out io.Writer) int {
 	if d.owners.Verify(VerifyRequest{Root: d.request.Root, Tree: candidate, Goal: goal}, &verify, &verify) == 0 {
 		return 0
 	}
-	fmt.Fprintln(out, mismatch)
-	out.Write(lastLines(verify.Bytes(), 20))
-	return 2
+	return d.stop(2, stale, testRun, "makes one for this change; pass it with --test-receipt, then repeat this command",
+		mismatch, string(lastLines(verify.Bytes(), 20)))
 }
 
 func (d *driver) createTestReceipt(out io.Writer) int {
@@ -735,7 +805,7 @@ func (d *driver) commitRequest() CommitRequest {
 	commit := CommitRequest{Root: request.Root, Chain: request.Chain, DirectFix: request.DirectFix, RevertOf: request.RevertOf,
 		Goal: request.Goal, GoalSet: request.GoalSet, RootJob: request.RootJob, TestReceipt: request.TestReceipt,
 		Recertification: request.Recertification, MessageFile: d.messageFile, OwnerLineage: request.OwnerLineage,
-		AllowNewPlan: request.AllowNewPlan, LaneJoin: request.CommitOnly}
+		AllowNewPlan: request.AllowNewPlan, LaneJoin: request.CommitOnly, Stop: d.stopped}
 	if request.Carried != "" {
 		commit.HeldEpoch = request.HeldEpoch
 		commit.Carried, commit.LedgerTip, commit.CarriedBy, commit.CarriedPast = request.Carried, d.carriedLedgerTip, d.carriedBy, d.carriedPast
@@ -788,7 +858,8 @@ func (d *driver) restoreIndex() {
 	lock := d.heldIndexPath + ".lock"
 	file, err := os.OpenFile(lock, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
 	if err != nil {
-		fmt.Fprintf(d.stderr, "land: the index could not be given back as the landing found it (%v); unstage with git restore --staged before a retry\n", err)
+		fmt.Fprintln(d.stderr, indexNotRestored)
+		writeDetails(d.details, fmt.Sprintf("the index could not be given back as the landing found it: %v", err))
 		return
 	}
 	_, writeErr := file.WriteString(d.heldIndex)
@@ -798,19 +869,23 @@ func (d *driver) restoreIndex() {
 	}
 	if writeErr != nil || closeErr != nil {
 		os.Remove(lock)
-		fmt.Fprintf(d.stderr, "land: the index could not be given back as the landing found it (%v %v); unstage with git restore --staged before a retry\n", writeErr, closeErr)
+		fmt.Fprintln(d.stderr, indexNotRestored)
+		writeDetails(d.details, fmt.Sprintf("the index could not be given back as the landing found it: %v %v", writeErr, closeErr))
 		return
 	}
-	fmt.Fprintln(d.stderr, "land: the index is given back as the landing found it")
+	writeDetails(d.details, "the staged files are as the landing found them")
 }
+
+// indexNotRestored is the line a person reads when the staged files could
+// not be put back after a landing that stopped.
+const indexNotRestored = "the staged files couldn't be put back as they were; check them with git status before repeating"
 
 func (d *driver) requireCleanAfterCommit(out io.Writer) int {
 	var drift bytes.Buffer
 	status := d.owners.Drift(d.request.Root, true, &drift, &drift)
 	if status == 1 {
-		fmt.Fprintln(out, "land refused: commit succeeded but the tree is not clean, so transport will not start")
-		out.Write(drift.Bytes())
-		return 1
+		return d.stop(1, "committed, but other files are still changed on disk, so nothing was pushed", []string{"git", "status", "--short"},
+			"commit, stash or discard them, then repeat this command", drift.String())
 	}
 	return status
 }
@@ -840,8 +915,17 @@ func (d *driver) gateBeforePush(out io.Writer) int {
 		return 0
 	}
 	if err := d.owners.LandingGate(d.request.Root, d.request.Goal); err != nil {
-		fmt.Fprintf(out, "%v; nothing was pushed\n", err)
-		return 1
+		fmt.Fprintf(out, "%v\n", err)
+		var gate *GateRefusal
+		if errors.As(err, &gate) {
+			if d.stopped.Reason == "" {
+				d.stopped.cause = firstNonEmpty(gate.Cause, gate.Reason)
+			}
+			return d.stop(1, gate.Reason+", so nothing was pushed", gate.Run, gate.Then, gate.Details...)
+		}
+		d.stopped.cause = firstNonEmpty(d.stopped.cause, err.Error())
+		return d.stop(1, "the goal may not land right now, so nothing was pushed", nil,
+			"wait until it may (--verbose shows why), then repeat this command", err.Error())
 	}
 	return 0
 }
@@ -868,8 +952,8 @@ func (d *driver) loadRecertificationFacts(out io.Writer) int {
 		return status
 	}
 	if strings.HasPrefix(d.request.Recertification, "/") {
-		fmt.Fprintln(out, "land refused: --recertification must be the canonical repository-relative path")
-		return 2
+		return d.optionStop("--recertification takes the record's path inside the repository, not an absolute path, so nothing was landed",
+			"name it relative to the repository root")
 	}
 	var record struct {
 		TargetCommit    string `json:"targetCommit"`
@@ -903,13 +987,31 @@ func (d *driver) parkRecertified(reason, detail string) {
 	}
 	output, err := d.owners.Park(request)
 	if err == nil {
-		fmt.Fprintln(d.stdout, "PARKED")
-		fmt.Fprintln(d.stdout, strings.TrimRight(output, "\n"))
+		writeDetails(d.details, "PARKED", "cause: "+reason, detail, output)
+		d.stopped.Reason = ""
+		d.stop(1, "chain "+d.request.Chain+" was set aside: "+recertificationCause(reason), nil,
+			"land the chain again once that is fixed (--verbose shows the parked record)")
 		exitLanding(1)
 	}
-	fmt.Fprintf(d.stderr, "PARK-FAILED cause=%s\n", reason)
-	fmt.Fprintln(d.stderr, strings.TrimRight(output, "\n"))
+	writeDetails(d.details, "PARK-FAILED cause="+reason, detail, output)
+	d.stopped.Reason = ""
+	d.stop(1, "chain "+d.request.Chain+" stopped ("+recertificationCause(reason)+") and couldn't be set aside either", nil,
+		"fix the cause (--verbose shows it), then land the chain again")
 	exitLanding(1)
+}
+
+// recertificationCause is a recertified landing's park reason in plain
+// words.
+func recertificationCause(reason string) string {
+	switch reason {
+	case "chain-recertification-target-moved":
+		return "main moved while it was being landed"
+	case "chain-recertification-test-command-refused", "chain-full-gate-refused":
+		return "its tests haven't passed for this exact change"
+	case "chain-recertification-source-changed":
+		return "its files changed after the commit"
+	}
+	return "the landing check refused it"
 }
 
 func (d *driver) checkRecertificationTarget(out io.Writer) int {
@@ -922,7 +1024,7 @@ func (d *driver) checkRecertificationTarget(out io.Writer) int {
 		return status
 	}
 	if local != d.recertTarget || remote != d.recertTarget {
-		fmt.Fprintf(out, "chain-recertification-target-moved: local=%s remote=%s expected=%s\n", local, remote, d.recertTarget)
+		fmt.Fprintf(out, "main moved: local=%s remote=%s expected=%s\n", local, remote, d.recertTarget)
 		return 1
 	}
 	return 0
@@ -953,7 +1055,7 @@ func (d *driver) verifyRecertifiedCommit(out io.Writer) int {
 		return status
 	}
 	if parent != d.recertTarget || tree != d.recertCandidateTree {
-		fmt.Fprintf(out, "chain-recertification-target-moved: committed parent/tree %s/%s differ from %s/%s\n", parent, tree, d.recertTarget, d.recertCandidateTree)
+		fmt.Fprintf(out, "main moved: committed parent/tree %s/%s differ from %s/%s\n", parent, tree, d.recertTarget, d.recertCandidateTree)
 		return 1
 	}
 	d.recertCandidateCommit = current

@@ -8,6 +8,7 @@ package goal
 // displacement acknowledgments write here).
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"sort"
@@ -255,7 +256,7 @@ func ParseTiers(value string) ([]uint8, error) {
 func parseAttorneyEntry(value string) (PowerOfAttorneyEntry, error) {
 	fields := strings.Fields(value)
 	if len(fields) < 6 || !validOpidShape(fields[0]) {
-		return PowerOfAttorneyEntry{}, fmt.Errorf("expected <opid> by=human:<name> tiers=<n,..> verbs=<verb,..> since=<RFC3339> expires=<YYYY-MM-DD>, or <opid> by=human:<name> verbs=everything for=<machine> checkout=<path> lineage=<lineage> since=<RFC3339> until=<RFC3339>, each with [revoked=<RFC3339> revokedBy=human:<name>]")
+		return PowerOfAttorneyEntry{}, errors.New("a grant line isn't in either recorded form (named acts with tiers, or everything for a machine)")
 	}
 	rec, err := parseKVRecord(strings.Join(fields[1:], " "), []string{"by", "verbs", "since"},
 		[]string{"tiers", "expires", "for", "checkout", "lineage", "until", "revoked", "revokedBy"}, "")
@@ -504,14 +505,14 @@ func ParseRoot(data []byte) (*RootRecord, []Problem) {
 func parseDecomposedEntry(value string) (DecomposedEntry, error) {
 	fields := strings.Fields(value)
 	if len(fields) != 4 || !validId(fields[0]) {
-		return DecomposedEntry{}, fmt.Errorf("expected <goal-id> opid=<opid> at=<RFC3339> oldArc=<goal-id|->")
+		return DecomposedEntry{}, errors.New("a split line isn't in its recorded form: goal, split id, time and old group")
 	}
 	opid, opidFound := strings.CutPrefix(fields[1], "opid=")
 	at, atFound := strings.CutPrefix(fields[2], "at=")
 	oldArc, oldArcFound := strings.CutPrefix(fields[3], "oldArc=")
 	if !opidFound || !atFound || !oldArcFound || !validOpidShape(opid) || !validStamp(at) ||
 		(oldArc != "-" && !validId(oldArc)) {
-		return DecomposedEntry{}, fmt.Errorf("expected <goal-id> opid=<opid> at=<RFC3339> oldArc=<goal-id|->")
+		return DecomposedEntry{}, errors.New("a split line isn't in its recorded form: goal, split id, time and old group")
 	}
 	if oldArc == "-" {
 		oldArc = ""

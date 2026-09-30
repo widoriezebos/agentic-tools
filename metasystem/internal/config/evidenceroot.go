@@ -97,7 +97,7 @@ func ResolveEvidenceRoot(p EvidenceRootParams) (EvidenceRoot, error) {
 
 	home, ok := lookup("HOME")
 	if !ok || strings.TrimSpace(home) == "" || !filepath.IsAbs(home) {
-		return EvidenceRoot{}, fmt.Errorf("the evidence root has no default because HOME is not set to an absolute path; set HOME, or set %s in metasystem.conf.local", EvidenceRootKey)
+		return EvidenceRoot{}, fmt.Errorf("HOME is not an absolute path, so the evidence folder has no default; set %s in metasystem.conf.local", EvidenceRootKey)
 	}
 	path := filepath.Join(home, "metasystem-evidence", filepath.Base(checkout))
 	if withinRepo(realpath.Resolve(path), realpath.Resolve(checkout)) {

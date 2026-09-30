@@ -752,17 +752,17 @@ func TestMissionProvenanceTuple(t *testing.T) {
 	writeRecord(legacyPath, legacyMission)
 	legacyFollow := follow
 	legacyFollow.Parent = legacyPath
-	if err := BuildFollowRecord(legacyFollow); err == nil || !strings.Contains(err.Error(), "predates the host-implementer wall") {
+	if err := BuildFollowRecord(legacyFollow); err == nil || !strings.Contains(err.Error(), "too old to continue") {
 		t.Fatalf("pre-wall mission chain not refused by name: %v", err)
 	}
 
 	// The one owner classifies the two failures distinctly on the public
 	// path too: an ABSENT incarnation key is
 	// "predates the wall"; a present-but-different value is "re-provisioned".
-	if err := VerifyChainIncarnation(root, "m-one", map[string]any{}); err == nil || !strings.Contains(err.Error(), "predates the host-implementer wall") {
+	if err := VerifyChainIncarnation(root, "m-one", map[string]any{}); err == nil || !strings.Contains(err.Error(), "too old to continue") {
 		t.Fatalf("absent incarnation key misclassified: %v", err)
 	}
-	if err := VerifyChainIncarnation(root, "m-one", map[string]any{"missionIncarnation": incarnationA}); err == nil || !strings.Contains(err.Error(), "re-provisioned") {
+	if err := VerifyChainIncarnation(root, "m-one", map[string]any{"missionIncarnation": incarnationA}); err == nil || !strings.Contains(err.Error(), "set up again") {
 		t.Fatalf("stale incarnation misclassified: %v", err)
 	}
 
@@ -815,7 +815,7 @@ func TestCensusFreshVerdicts(t *testing.T) {
 	stale["completedAtEpoch"] = now.Unix() - 500
 	verdict = writeJSONFile(t, dir, "census-stale.json", stale)
 	err := CensusFresh(verdict, statePath, "arm.sh", "/repo", "", now)
-	if err == nil || !strings.Contains(err.Error(), "census verdict is stale") {
+	if err == nil || !strings.Contains(err.Error(), "health check is 500s old") {
 		t.Fatalf("stale census = %v", err)
 	}
 
@@ -826,7 +826,7 @@ func TestCensusFreshVerdicts(t *testing.T) {
 	mismatch["generation"] = 2
 	verdict = writeJSONFile(t, dir, "census-gen.json", mismatch)
 	err = CensusFresh(verdict, statePath, "arm.sh", "/repo", "", now)
-	if err == nil || !strings.Contains(err.Error(), "censusGeneration=2 armedGeneration=3") {
+	if err == nil || !strings.Contains(armingDetail(err), "censusGeneration=2 armedGeneration=3") {
 		t.Fatalf("generation mismatch = %v", err)
 	}
 }

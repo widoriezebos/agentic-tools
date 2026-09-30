@@ -241,8 +241,8 @@ func TestUnitRunRefusesMainBranch(t *testing.T) {
 	fixture := newUnitFixture(t, "", "main")
 	_, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
 	want := "LAUNCH_UNIT_GOAL_BRANCH_REQUIRED worktree=\"" + fixture.worktree + "\" branch=\"main\" required=\"goal/goal\""
-	if err == nil || err.Error() != want {
-		t.Fatalf("error=%v want=%q", err, want)
+	if err == nil || !strings.HasPrefix(ErrorDetail(err), want+": ") {
+		t.Fatalf("error=%v want=%q", ErrorDetail(err), want)
 	}
 	wantRow := refusal.Row{Code: "LAUNCH_UNIT_GOAL_BRANCH_REQUIRED", Owner: "internal/launch", Site: "unit_run.go#UnitRunner.requireGoalBranch", Shape: refusal.Question, H1: refusal.StandingInput}
 	for _, row := range refusal.Rows {
@@ -260,7 +260,7 @@ func TestUnitRunRefusesDetachedHead(t *testing.T) {
 	t.Parallel()
 	fixture := newUnitFixture(t, "", "detached")
 	_, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
-	if err == nil || !strings.Contains(err.Error(), "LAUNCH_UNIT_GOAL_BRANCH_REQUIRED") || !strings.Contains(err.Error(), `branch="detached HEAD"`) || !strings.Contains(err.Error(), `required="goal/goal"`) {
+	if err == nil || !strings.Contains(ErrorDetail(err), "LAUNCH_UNIT_GOAL_BRANCH_REQUIRED") || !strings.Contains(ErrorDetail(err), `branch="detached HEAD"`) || !strings.Contains(ErrorDetail(err), `required="goal/goal"`) {
 		t.Fatalf("error=%v", err)
 	}
 }
@@ -281,7 +281,7 @@ func TestPlanRefusesWhatItCannotRun(t *testing.T) {
 			changed, _ := json.Marshal(value)
 			os.WriteFile(path, changed, 0o600)
 			_, err := fixture.runner.Advance(UnitRequest{Plan: path})
-			if err == nil || !strings.Contains(err.Error(), "UNIT_PLAN_INVALID") {
+			if err == nil || !strings.Contains(ErrorDetail(err), "UNIT_PLAN_INVALID") {
 				t.Fatalf("err=%v", err)
 			}
 			entries, _ := os.ReadDir(fixture.runner.Root)
@@ -368,7 +368,7 @@ func TestRefusedBuildLeavesNoRunRecord(t *testing.T) {
 	fixture.manager.Settings.BuildLinesCap = 1
 	_, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
 	entries, _ := os.ReadDir(fixture.runner.Root)
-	if err == nil || !strings.Contains(err.Error(), "LAUNCH_BUILD_OVERSIZE") || len(entries) != 0 {
+	if err == nil || !strings.Contains(ErrorDetail(err), "LAUNCH_BUILD_OVERSIZE") || len(entries) != 0 {
 		t.Fatalf("entries=%v err=%v", entries, err)
 	}
 }
@@ -414,7 +414,7 @@ func TestSecondCallerRefusesBusy(t *testing.T) {
 	}
 	defer lock.Close()
 	_, err = fixture.runner.Advance(UnitRequest{Resume: result.Record.ID})
-	if err == nil || !strings.Contains(err.Error(), "UNIT_RUN_BUSY") {
+	if err == nil || !strings.Contains(ErrorDetail(err), "UNIT_RUN_BUSY") {
 		t.Fatalf("err=%v", err)
 	}
 }
@@ -570,11 +570,11 @@ func TestFollowUpRefusedUnlessAwaitingJudgement(t *testing.T) {
 	follow := filepath.Join(t.TempDir(), "follow")
 	os.WriteFile(follow, []byte("x"), 0o600)
 	_, err := fixture.runner.Advance(UnitRequest{Resume: result.Record.ID, FollowUp: follow})
-	if err == nil || !strings.Contains(err.Error(), "UNIT_RUN_NOT_AWAITING") {
+	if err == nil || !strings.Contains(ErrorDetail(err), "UNIT_RUN_NOT_AWAITING") {
 		t.Fatalf("err=%v", err)
 	}
 	result.Record.State = "awaiting-judgement"
-	if err := admitFollowUp(result.Record, filepath.Join(t.TempDir(), "missing")); err == nil || !strings.Contains(err.Error(), "UNIT_FOLLOW_UP_MISSING") {
+	if err := admitFollowUp(result.Record, filepath.Join(t.TempDir(), "missing")); err == nil || !strings.Contains(ErrorDetail(err), "UNIT_FOLLOW_UP_MISSING") {
 		t.Fatalf("err=%v", err)
 	}
 }

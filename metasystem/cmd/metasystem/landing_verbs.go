@@ -325,7 +325,7 @@ func landingTestReceiptTo(stdout, stderr io.Writer, parent context.Context, reso
 	}
 	deadline, deadlineCheck, err := proofDeadline(attempt.Deadline, commandClock)
 	if err != nil {
-		fmt.Fprintln(stderr, "landing test-receipt: admit native proof:", err)
+		fmt.Fprintln(stderr, "landing test-receipt: the test run could not be recorded:", err)
 		status = retainIncompleteProofAttempt(stderr, controlRoot, attempt.AttemptID, joined, proofrun.ExitAdmissionRefused)
 		decision.ExitStatus, decision.Disposition, decision.Reason = status, proofrun.DispositionAdmissionRefused, err.Error()
 		_ = proofrun.EncodeResult(stderr, *resultPath, decision)
@@ -335,7 +335,7 @@ func landingTestReceiptTo(stdout, stderr io.Writer, parent context.Context, reso
 	defer cancelResource()
 	lease, release, leaseErr := acquireManagedProofLaunchWithWaitCheck(stderr, resourceContext, controlRoot, confPath, deadlineCheck)
 	if leaseErr != nil {
-		fmt.Fprintln(stderr, "landing test-receipt: admit native proof:", leaseErr)
+		fmt.Fprintln(stderr, "landing test-receipt: the test run could not be recorded:", leaseErr)
 		status = retainIncompleteProofAttempt(stderr, controlRoot, attempt.AttemptID, joined, proofrun.ExitAdmissionRefused)
 		decision.ExitStatus, decision.Disposition, decision.Reason = status, proofrun.DispositionAdmissionRefused, leaseErr.Error()
 		_ = proofrun.EncodeResult(stderr, *resultPath, decision)

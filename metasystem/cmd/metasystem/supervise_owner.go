@@ -59,7 +59,7 @@ func runSuperviseOwnerLoop(args []string, stdout, stderr io.Writer) int {
 	// under it. Configuration-based, never
 	// privilege-based: root's hidepid exemption does not relax this.
 	if value, restricted := identity.RestrictedProcfsAt(procfsMounts); restricted {
-		fmt.Fprintf(stderr, "supervise owner: refusing to arm: /proc is mounted hidepid=%s, which makes another user's live process indistinguishable from a dead one and breaks identity's three-way liveness guarantee\n", value)
+		fmt.Fprintf(stderr, "the machinery was not started: /proc is mounted hidepid=%s, so others' live processes look dead\n", value)
 		return 1
 	}
 	if *scope == "" {

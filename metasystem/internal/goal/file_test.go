@@ -270,10 +270,10 @@ func TestEpisodeBindingContradictionsRefuse(t *testing.T) {
 		{name: "malformed episode time", mutate: func(f *GoalFile) { f.Claimed.EpisodeAt = "not-a-time" }, want: "the claim episode timestamp is malformed"},
 		{name: "episode contradicts history", mutate: func(f *GoalFile) { f.Claimed.EpisodeAt = "2026-08-20T00:34:00Z" }, want: "claimed episodeAt=2026-08-20T00:34:00Z contradicts History revision=2 at=2026-08-20T00:35:00Z"},
 		{name: "episode later than claim time", mutate: func(f *GoalFile) { f.History[1].At = "2026-08-20T03:00:00Z"; f.Claimed.EpisodeAt = f.History[1].At }, want: "claimed episodeAt=2026-08-20T03:00:00Z is later than claimed at=2026-08-20T02:00:00Z"},
-		{name: "inherited obligation equals episode", mutate: func(f *GoalFile) { f.Claimed.EpisodeObligationRevision = 2 }, want: "claimed episodeObligationRevision=2 must be later than episodeRevision=2 and earlier than claim revision=5"},
-		{name: "inherited obligation below episode", mutate: func(f *GoalFile) { f.Claimed.EpisodeObligationRevision = 1 }, want: "claimed episodeObligationRevision=1 must be later than episodeRevision=2 and earlier than claim revision=5"},
-		{name: "inherited obligation equals claim", mutate: func(f *GoalFile) { f.Claimed.EpisodeObligationRevision = 5 }, want: "claimed episodeObligationRevision=5 must be later than episodeRevision=2 and earlier than claim revision=5"},
-		{name: "inherited obligation above claim", mutate: func(f *GoalFile) { f.Claimed.EpisodeObligationRevision = 6 }, want: "claimed episodeObligationRevision=6 must be later than episodeRevision=2 and earlier than claim revision=5"},
+		{name: "inherited obligation equals episode", mutate: func(f *GoalFile) { f.Claimed.EpisodeObligationRevision = 2 }, want: "claim obligation revision 2 must fall after 2 and before 5"},
+		{name: "inherited obligation below episode", mutate: func(f *GoalFile) { f.Claimed.EpisodeObligationRevision = 1 }, want: "claim obligation revision 1 must fall after 2 and before 5"},
+		{name: "inherited obligation equals claim", mutate: func(f *GoalFile) { f.Claimed.EpisodeObligationRevision = 5 }, want: "claim obligation revision 5 must fall after 2 and before 5"},
+		{name: "inherited obligation above claim", mutate: func(f *GoalFile) { f.Claimed.EpisodeObligationRevision = 6 }, want: "claim obligation revision 6 must fall after 2 and before 5"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
@@ -978,7 +978,7 @@ func TestHistoryLineCarriesAPowerOfAttorney(t *testing.T) {
 		t.Fatalf("round trip: %+v %v", parsed, err)
 	}
 	line.Actor = "human:Wido"
-	if _, err := ParseHistoryLine(RenderHistoryLine(line)); err == nil || !strings.Contains(err.Error(), "seat actor") {
+	if _, err := ParseHistoryLine(RenderHistoryLine(line)); err == nil || !strings.Contains(err.Error(), "must be the seat's") {
 		t.Fatalf("an attorney act is never a human actor: %v", err)
 	}
 	line.Actor = "mac-a+lin-1"

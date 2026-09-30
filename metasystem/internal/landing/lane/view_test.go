@@ -3,12 +3,14 @@ package lane
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"reflect"
 	"sort"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 )
 
@@ -56,7 +58,7 @@ func TestViewShapeWithoutALane(t *testing.T) {
 			t.Errorf("%s = %s; want null", key, object[key])
 		}
 	}
-	if got, want := keysOf(t, object["owner"]), []string{"last_exit", "pid", "restarts", "retry_hint", "since", "state", "stopped_by"}; !reflect.DeepEqual(got, want) {
+	if got, want := keysOf(t, object["owner"]), []string{"last_exit", "last_tick_error", "last_tick_problem", "pid", "restarts", "retry_hint", "since", "state", "stopped_by"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("owner keys = %v, want %v", got, want)
 	}
 	if view.Owner.State != OwnerNotStarted || !strings.Contains(view.Summary, "no landing lane is registered") {
@@ -243,5 +245,69 @@ func TestLaneViewShowsTheLanesSpend(t *testing.T) {
 	view := BuildView(sources)
 	if asked != resolved(root)+"|"+AccountID(root) || view.Spend == nil || *view.Spend != (Spend{Account: AccountID(root), Attempts: 2, ReservedMinutes: 90}) {
 		t.Fatalf("asked=%q spend=%+v", asked, view.Spend)
+	}
+}
+
+// A running owner whose last tick failed says so in the one line: the batch
+// and the error, in plain words, with the owner's log beside it in --verbose.
+func TestViewShowsTheOwnersLastTickError(t *testing.T) {
+	t.Parallel()
+	home, root, _ := laneDirs(t)
+	if _, err := Resolve(home, root, "m1e", laneNow, true); err != nil {
+		t.Fatal(err)
+	}
+	view := BuildView(viewSources(home, true, nil))
+	if view.Owner.LastTickError != nil || view.Owner.LastTickProblem != nil || strings.Contains(view.Summary, "can't advance") {
+		t.Fatalf("a clean owner shows a tick error: %+v %q", view.Owner, view.Summary)
+	}
+	path := TickErrorPath(resolved(root))
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("batch b1: read joined goal change:5555 before rebind: absent\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	view = BuildView(viewSources(home, true, nil))
+	if view.Owner.LastTickError == nil || *view.Owner.LastTickError != "batch b1: read joined goal change:5555 before rebind: absent" ||
+		view.Owner.LastTickProblem == nil || *view.Owner.LastTickProblem != "batch b1 can't advance: the lane owner could not hand its members' claims to the lane" ||
+		!strings.HasPrefix(view.Summary, *view.Owner.LastTickProblem+"; landing lane ") || strings.Contains(view.Summary, "before rebind") {
+		t.Fatalf("tick error view = %+v %q", view.Owner, view.Summary)
+	}
+}
+
+// A batch a joined seat's helm holds is shown held, by the owner's own
+// decision (batch.HelmHeldSeat), with the act that releases it; without a
+// helm read, or with the seat not at the helm, it collects as before.
+func TestViewSaysABatchIsHeldForASeatAtTheHelm(t *testing.T) {
+	t.Parallel()
+	home, root, _ := laneDirs(t)
+	if _, err := Resolve(home, root, "m1e", laneNow, true); err != nil {
+		t.Fatal(err)
+	}
+	unit := joinedUnit("change:abc", "m1e")
+	unit.SeatRoot = "/seats/m1e/metasystem"
+	record := batch.Record{BatchID: "b1", State: batch.StateOpen, Units: []batch.Unit{unit}}
+	sources := viewSources(home, true, []batch.Record{record})
+	if view := BuildView(sources); view.Batch == nil || view.Batch.State != BatchCollecting {
+		t.Fatalf("no helm read: batch = %+v", view.Batch)
+	}
+	atHelm := false
+	sources.Helm = func(seat string) helm.State {
+		if seat != unit.SeatRoot {
+			t.Fatalf("helm read of %q", seat)
+		}
+		return helm.State{Active: atHelm, Record: helm.Record{By: "wido"}}
+	}
+	if view := BuildView(sources); view.Batch.State != BatchCollecting {
+		t.Fatalf("seat not at the helm: batch = %+v", view.Batch)
+	}
+	atHelm = true
+	view := BuildView(sources)
+	if view.Batch.State != BatchHeld || !strings.Contains(view.Batch.Reason, "seat m1e (/seats/m1e/metasystem) is at the helm (wido)") ||
+		!strings.Contains(view.Batch.Reason, "metasystem helm return") || !strings.Contains(view.Summary, "batch b1 held, 1 member (seat m1e ") {
+		t.Fatalf("held view = %+v summary %q", view.Batch, view.Summary)
+	}
+	if seat, held := batch.HelmHeldSeat(record, func(string) bool { return true }); !held || seat != unit.SeatRoot {
+		t.Fatalf("owner decision = %q %v", seat, held)
 	}
 }

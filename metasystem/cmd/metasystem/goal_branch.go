@@ -70,7 +70,7 @@ func (d *goalBranchRawDependencies) endpoint(root string) (goal.Endpoint, error)
 		return endpoint, err
 	}
 	if endpoint.Branch != "refs/heads/main" {
-		return goal.Endpoint{}, fmt.Errorf("GOAL_BRANCH_ENDPOINT_UNSUPPORTED: endpoint %s is not refs/heads/main", endpoint.Branch)
+		return goal.Endpoint{}, goal.Coded("GOAL_BRANCH_ENDPOINT_UNSUPPORTED", fmt.Errorf("goal branches land only on main, not %s", endpoint.Branch))
 	}
 	endpoint.Repository = d.GoalRepository
 	return endpoint, nil
@@ -481,7 +481,7 @@ func goalBranchClaimCheckWith(root, goalID string, endpoint goal.Endpoint, confi
 		}
 		file := projection.Tree.Live[goalID]
 		if file == nil || file.Claimed == nil || file.Claimed.Machine != machine || file.Claimed.Lineage != current.OwnerLineage {
-			return fmt.Errorf("goal %s is not claimed by %s+%s, and writing its branch from here would race the session that holds it; the holding session writes it, or a person takes the goal over with metasystem goal claim %s --take-over --reason TEXT", goalID, machine, current.OwnerLineage, goalID)
+			return fmt.Errorf("goal %s is held by another session, not %s (%s); only that session writes its branch\nrun: metasystem goal claim %s --take-over --reason TEXT  (as a person)", goalID, machine, current.OwnerLineage, goalID)
 		}
 		return nil
 	}
@@ -534,7 +534,7 @@ func goalBranchCheckoutSection(root, holderRoot string, body func(withToken func
 func goalBranchCommitToken(root string, pid int64, commit func() error) error {
 	exact, state, err := (identity.KernelProber{}).Probe(pid)
 	if err != nil || state != identity.Alive {
-		return fmt.Errorf("goal branch commit: caller process start time is unreadable")
+		return errors.New("goal branch commit: the process that asked couldn't be checked; try again")
 	}
 	raw := make([]byte, 16)
 	if _, err := rand.Read(raw); err != nil {

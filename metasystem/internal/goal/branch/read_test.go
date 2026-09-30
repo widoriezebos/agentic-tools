@@ -2,6 +2,7 @@ package branch_test
 
 import (
 	"errors"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -307,7 +308,7 @@ func TestGLEBranchReadInterruptedLaunchKeepsFrozenPendingIntent(t *testing.T) {
 		t.Fatalf("changed request after interruption=%v", err)
 	}
 	request.BriefPath, request.Runtime, request.Model = "", "", ""
-	if _, err := branch.RunBranchRead(request); err == nil || !strings.Contains(err.Error(), branch.ReadDispatchPendingCode) || delegates != 1 {
+	if _, err := branch.RunBranchRead(request); err == nil || !strings.Contains(goal.RecordText(err), branch.ReadDispatchPendingCode) || delegates != 1 {
 		t.Fatalf("omitted options after interruption=%v delegates=%d", err, delegates)
 	}
 }
@@ -333,7 +334,7 @@ func TestGLEBranchReadRecordWriteFailureNeverDispatchesAgain(t *testing.T) {
 		},
 	}
 	defer os.Chmod(filepath.Dir(recordPath), 0o755)
-	if _, err := branch.RunBranchRead(request); err == nil || !strings.Contains(err.Error(), branch.ReadDispatchPendingCode) || delegates != 1 {
+	if _, err := branch.RunBranchRead(request); err == nil || !strings.Contains(goal.RecordText(err), branch.ReadDispatchPendingCode) || delegates != 1 {
 		t.Fatalf("post-launch record failure=%v delegates=%d", err, delegates)
 	}
 	if err := os.Chmod(filepath.Dir(recordPath), 0o755); err != nil {
@@ -343,7 +344,7 @@ func TestGLEBranchReadRecordWriteFailureNeverDispatchesAgain(t *testing.T) {
 	if err != nil || !strings.Contains(string(data), `"dispatchPending": true`) || strings.Contains(string(data), `"rootJob"`) {
 		t.Fatalf("retained pending intent=%q err=%v", data, err)
 	}
-	if _, err := branch.RunBranchRead(request); err == nil || !strings.Contains(err.Error(), branch.ReadDispatchPendingCode) || delegates != 1 {
+	if _, err := branch.RunBranchRead(request); err == nil || !strings.Contains(goal.RecordText(err), branch.ReadDispatchPendingCode) || delegates != 1 {
 		t.Fatalf("retry after record failure=%v delegates=%d", err, delegates)
 	}
 }
@@ -460,7 +461,7 @@ func TestGLEBranchReadRedGateClosesDetachedWorkspace(t *testing.T) {
 		NewID:    func(string) (string, error) { ids++; return "id", nil },
 		Delegate: func(string, string, string, string, string) (string, error) { delegates++; return "job", nil },
 	})
-	if err == nil || !strings.Contains(err.Error(), branch.ReadUngatedCode) ||
+	if err == nil || !strings.Contains(goal.RecordText(err), branch.ReadUngatedCode) ||
 		!strings.Contains(err.Error(), "staticcheck red") || detached == "" || ids != 0 || delegates != 0 {
 		t.Fatalf("red gate err=%v detached=%q ids=%d delegates=%d", err, detached, ids, delegates)
 	}

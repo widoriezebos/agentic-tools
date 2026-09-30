@@ -83,6 +83,15 @@ func TestBatchOwnerInspectionUsesInjectedProberAndKeepsReadErrorsUnknown(t *test
 	if err != nil || state != identity.Dead {
 		t.Fatalf("dead inspection state=%s error=%v", state, err)
 	}
+	none := func(string, int64) []lease.Announcement { return nil }
+	_, state, err = batchowner.InspectBatchOwnerWith("root", processRefProber{state: identity.Dead}, read, none)
+	if err != nil || state != identity.Dead {
+		t.Fatalf("unannounced gone holder state=%s error=%v, want dead", state, err)
+	}
+	_, state, err = batchowner.InspectBatchOwnerWith("root", processRefProber{exact: exact, state: identity.Alive}, read, none)
+	if err == nil || state != identity.Unknown {
+		t.Fatalf("unannounced live holder state=%s error=%v, want unknown", state, err)
+	}
 	readErr := errors.New("transient lease read")
 	_, state, err = batchowner.InspectBatchOwnerWith("root", processRefProber{}, func(string) (lease.CurrentHolderView, error) {
 		return lease.CurrentHolderView{}, readErr
@@ -763,7 +772,7 @@ func TestBatchSupervisorTakeoverRebindsJoinedClaims(t *testing.T) {
 	t.Setenv("METASYSTEM_HOOK_DELEGATE_JOB", "stale-batch-proof")
 	attempt, _, _, err := admitProofLaunch(proofLaunchAdmission{ControlRoot: root, ExecutionRoot: root,
 		ConfPath: filepath.Join(root, "metasystem.conf"), GoalID: "standing-validation", CapMin: "1", ScopeClass: "full", CommandClass: "testing"})
-	if err == nil || !strings.Contains(err.Error(), "custody changed before reservation") || attempt.AttemptID != "" {
+	if err == nil || !strings.Contains(err.Error(), "custody changed before its test run was reserved") || attempt.AttemptID != "" {
 		t.Fatalf("stale takeover proof attempt=%+v error=%v", attempt, err)
 	}
 	canonicalRoot, err := filepath.EvalSymlinks(root)

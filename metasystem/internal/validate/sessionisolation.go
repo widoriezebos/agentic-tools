@@ -3,6 +3,7 @@ package validate
 import (
 	"bytes"
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/shellquote"
 	"io"
 	"os"
 	"path/filepath"
@@ -64,7 +65,7 @@ func SessionIsolation(sourceRoot, destinationRoot, manifestPath, harnessRoot str
 				have, haveErr := os.ReadFile(to)
 				want, wantErr := os.ReadFile(from)
 				if haveErr == nil && wantErr == nil && bytes.HasPrefix(want, have) {
-					return "", fmt.Errorf("isolation refused: %s looks like an interrupted copy of %s (a %d-byte prefix of %d bytes); remove %s if it is not your own edit, then repeat the command", to, from, len(have), len(want), to)
+					return "", fmt.Errorf("isolation refused: %s looks like an interrupted copy of %s (%d of %d bytes)\nrun: rm -- %s  (if it is not your own edit; then repeat the command)", to, from, len(have), len(want), shellquote.Word(to))
 				}
 			}
 			continue

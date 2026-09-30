@@ -104,26 +104,33 @@ func acceptingActions(kind string) []string {
 
 func (inv *intentInvocation) refusedKind(ref, kind string) *intentResult {
 	accepting := acceptingActions(kind)
-	result := &intentResult{Outcome: intentRefused, code: 2, Targets: []intentTarget{{Kind: kind, ID: ref}},
-		Summary: fmt.Sprintf("%s does not take a %s reference (%s); nothing was done", inv.command.name, refKindNames[kind], ref)}
-	if len(accepting) > 0 {
-		result.Decision = "a " + refKindNames[kind] + " reference is taken by " + strings.Join(accepting, ", ")
+	summary := fmt.Sprintf("%s does not take a %s reference (%s); nothing was done", inv.command.name, refKindNames[kind], ref)
+	if len(accepting) == 0 {
+		return &intentResult{Outcome: intentRefused, code: 2, Targets: []intentTarget{{Kind: kind, ID: ref}}, Summary: summary,
+			Decision: "nothing to do; no command takes a " + refKindNames[kind] + " reference"}
 	}
-	return result
+	reason := "takes it"
+	if len(accepting) > 1 {
+		reason = "takes it; so do " + strings.Join(accepting[1:], ", ")
+	}
+	return &intentResult{Outcome: intentRefused, code: 2, Targets: []intentTarget{{Kind: kind, ID: ref}}, Summary: summary,
+		next: inv.publicArgv(append(strings.Fields(strings.TrimPrefix(accepting[0], "metasystem ")), ref)...), nextReason: reason}
 }
 
 // resolveWorkRef resolves one reference against the kinds the action
 // accepts, before any effect.
 func (inv *intentInvocation) resolveWorkRef(ref string, accepts []string) (workRef, *intentResult) {
 	if strings.TrimSpace(ref) == "" {
-		return workRef{}, &intentResult{Outcome: intentRefused, code: 2, Summary: inv.command.name + " needs a goal or a work reference; nothing was done"}
+		return workRef{}, &intentResult{Outcome: intentRefused, code: 2, Summary: "no goal or work reference is named; nothing was done",
+			next: inv.typedArgvFor("GOAL"), nextReason: "or a work reference; metasystem work status --all lists them"}
 	}
 	if kind, id := splitReference(ref); kind != "" {
 		if !slices.Contains(accepts, kind) {
 			return workRef{}, inv.refusedKind(ref, kind)
 		}
 		if id == "" {
-			return workRef{}, &intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("%s names no id; nothing was done", ref)}
+			return workRef{}, &intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("%s has no id after the colon; nothing was done", ref),
+				next: inv.publicArgv("work", "status", "--all"), nextReason: "lists the references with their ids"}
 		}
 		switch kind {
 		case refJ1, refJ2:
@@ -174,9 +181,9 @@ func (inv *intentInvocation) resolveWorkRef(ref string, accepts []string) (workR
 		choices = append(choices, map[string]any{"reference": one.qualified(), "purpose": purpose, "argv": argv})
 	}
 	return workRef{}, &intentResult{Outcome: intentRefused, code: 1, Targets: []intentTarget{{Kind: "reference", ID: ref}}, text: lines,
-		Summary:  fmt.Sprintf("%s names %d records (%s); nothing was done", shellCommand([]string{ref}), len(found), strings.Join(candidates, ", ")),
-		Decision: "name the one meant by its qualified reference: " + strings.Join(candidates, " or "),
-		Data:     map[string]any{"candidates": candidates, "choices": choices}}
+		Summary: fmt.Sprintf("%s could mean %d records (%s); nothing was done", shellCommand([]string{ref}), len(found), strings.Join(candidates, ", ")),
+		next:    choices[0]["argv"].([]string), nextReason: "or another one listed above",
+		Data: map[string]any{"candidates": candidates, "choices": choices}}
 }
 
 func (inv *intentInvocation) noReference(ref string, kinds []string) *intentResult {
@@ -186,15 +193,14 @@ func (inv *intentInvocation) noReference(ref string, kinds []string) *intentResu
 			searched = append(searched, refKindNames[kind])
 		}
 	}
-	result := &intentResult{Outcome: intentRefused, code: 1, Targets: []intentTarget{{Kind: "reference", ID: ref}},
-		Summary: fmt.Sprintf("no %s names %s; nothing was done", strings.Join(searched, " or "), shellCommand([]string{ref}))}
+	summary := fmt.Sprintf("no %s names %s; nothing was done", strings.Join(searched, " or "), shellCommand([]string{ref}))
 	if slices.Equal(searched, []string{refKindNames[refProof]}) {
 		// work status lists launches and jobs, never proof attempts (EM-18).
-		result.Decision = "a proof attempt's id is the proof:ID in the output of metasystem test run"
-		return result
+		return &intentResult{Outcome: intentRefused, code: 1, Targets: []intentTarget{{Kind: "reference", ID: ref}}, Summary: summary,
+			Decision: "nothing to wait on; metasystem test run prints the reference to wait on"}
 	}
-	result.next, result.nextReason = inv.publicArgv("work", "status", "--all"), "lists this user's launches and this repository's dispatch jobs with their references"
-	return result
+	return &intentResult{Outcome: intentRefused, code: 1, Targets: []intentTarget{{Kind: "reference", ID: ref}}, Summary: summary,
+		next: inv.publicArgv("work", "status", "--all"), nextReason: "lists your launches and this repository's jobs with their references"}
 }
 
 // knownGoal reports whether the ledger of the selected repository knows the
@@ -267,7 +273,8 @@ func (inv *intentInvocation) findJobs(id string, searchLaunch, searchDispatch bo
 			found = append(found, intentJob{id: id, kind: "launch", launch: record})
 		case errors.Is(err, fs.ErrNotExist), strings.Contains(err.Error(), "invalid launch id"):
 		default:
-			return nil, &intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: fmt.Sprintf("the launch record %s is unreadable: %v", id, err)}
+			return nil, &intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: fmt.Sprintf("the record of %s can't be read, so nothing was done", id),
+				next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}
 		}
 	}
 	if searchDispatch && dispatchJobIDPattern.MatchString(id) {
@@ -280,7 +287,8 @@ func (inv *intentInvocation) findJobs(id string, searchLaunch, searchDispatch bo
 			case readErr == nil:
 				found = append(found, intentJob{id: id, kind: "dispatch", dispatch: object, recordPath: path})
 			default:
-				return nil, &intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: fmt.Sprintf("the dispatch job record %s is unreadable: %v", path, readErr)}
+				return nil, &intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: fmt.Sprintf("the record of job %s can't be read, so nothing was done", id),
+					next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{path + ": " + readErr.Error()}}
 			}
 		}
 	}

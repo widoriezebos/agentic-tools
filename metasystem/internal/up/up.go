@@ -220,7 +220,7 @@ func proveCallerDescendsFromTarget(callerPid, targetPid int64) error {
 		}
 		current = parent
 	}
-	return fmt.Errorf("explicit session pid is not the caller or one of its ancestors")
+	return errors.New("the session process you named is not this process or one that started it")
 }
 
 func resolveSessionIdentity(options Options) (sessionIdentity, error) {
@@ -244,7 +244,7 @@ func resolveSessionIdentity(options Options) (sessionIdentity, error) {
 		}
 		ancestor, err := findAncestor(installationRoot(options), int64(os.Getppid()), runtimeName)
 		if err != nil {
-			return sessionIdentity{}, fmt.Errorf("runtime-signature ancestry proof failed: %w", err)
+			return sessionIdentity{}, fmt.Errorf("this process could not be traced back to its session: %w", err)
 		}
 		pid, started, runtimeName = ancestor.Pid, ancestor.PidStartedAt, ancestor.Runtime
 		startTicks, bootID = ancestor.PidStartTicks, ancestor.BootID
@@ -280,11 +280,11 @@ func resolveSessionIdentity(options Options) (sessionIdentity, error) {
 		}
 		recheckedCaller, err := census.AuthIdentity(callerPid, authorization.Identity())
 		if err != nil || !sameAuthenticatedProcess(callerIdentity, recheckedCaller) {
-			return sessionIdentity{}, fmt.Errorf("calling process identity changed during ancestry proof")
+			return sessionIdentity{}, errors.New("this process changed while it was being traced back to its session")
 		}
 		recheckedTarget, err := census.AuthIdentity(pid, authorization.Identity())
 		if err != nil || !sameAuthenticatedProcess(authIdentity, recheckedTarget) {
-			return sessionIdentity{}, fmt.Errorf("session pid identity changed during ancestry proof")
+			return sessionIdentity{}, errors.New("the session process changed while it was being checked")
 		}
 		startTicks, bootID = authIdentity.PidStartTicks, authIdentity.BootID
 		return sessionIdentity{
@@ -504,7 +504,7 @@ func ensureSupervision(options Options, enrolled *steward.EnrolledBinary, compon
 				remedy = "at an agent-free terminal, run: " + command
 			}
 		} else if err == nil {
-			err = fmt.Errorf("the checkout %s was stopped and armed again while the supervision owner started; the supervision owner has been ended; the caller may retry", options.Scope)
+			err = fmt.Errorf("%s was restarted while its supervisor started, so this supervisor was ended; run the command again", options.Scope)
 			remedy = "retry metasystem session start"
 		}
 		failed := failure(components, "supervision-owner", err, remedy)
@@ -563,7 +563,7 @@ func enrollmentDrift(components []ComponentOutcome, err error, installationRoot,
 	remedy := fmt.Sprintf("this engine is not eligible for automatic re-arm; from an agent-free terminal run metasystem system start --repo %s, or relay the human's recorded word with --temporary-human-word and --review-by", repoRoot)
 	if strings.Contains(err.Error(), "owns no resolving remote-tracking landing ref") {
 		remedy = fmt.Sprintf("fetch or pull the configured remote once so its remote-tracking landing ref resolves, or from an agent-free terminal run metasystem system start --repo %s", repoRoot)
-	} else if strings.Contains(err.Error(), "owns no remote-tracking landing ref") {
+	} else if errors.Is(err, steward.ErrNoLandingRef) {
 		remedy = fmt.Sprintf("run git -C %s config --local metasystem.steward.landing-ref refs/remotes/<remote>/<branch> once on this machine, or re-arm at the terminal", installationRoot)
 	} else if remote, ok := notLandedRemote(err.Error()); ok {
 		remedy = fmt.Sprintf("run git -C %s fetch %s once, then rerun metasystem session start, or from an agent-free terminal run metasystem system start --repo %s", installationRoot, remote, repoRoot)
@@ -711,7 +711,7 @@ func ordinaryBody(options Options) (Result, rearmFact) {
 	if err != nil {
 		switch rearmed.Stage {
 		case steward.StageStopAttempted:
-			detail := fmt.Errorf("re-arm eligible (engine %s landed %s on %s); stopping runner pid %d for replacement failed: %w; the enrollment still names generation %d",
+			detail := fmt.Errorf("the new engine %s (landed %s on %s) is not in use: the old steward (pid %d) did not stop\n%w; install %d stays",
 				rearmed.EngineBuild, shortCommit(rearmed.LandedCommit), rearmed.LandingRef,
 				rearmed.StoppedRunnerPid, err, rearmed.PreviousGeneration)
 			return finish(failure(components, "accepted-engine", detail,

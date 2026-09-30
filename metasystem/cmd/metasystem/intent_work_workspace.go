@@ -59,8 +59,8 @@ func runIntentWorkWorkspace(inv *intentInvocation) int {
 		return inv.render(*problem)
 	}
 	if id == "" {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "work workspace needs the goal it belongs to; nothing was done",
-			Decision: "metasystem work workspace G [--name N] [--copy-of REV]"})
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "a workspace needs the goal it belongs to; nothing was done",
+			next: inv.typedArgvFor("GOAL"), nextReason: "names the goal"})
 	}
 	if problem := inv.selectRoot(); problem != nil {
 		return inv.render(*problem)
@@ -73,7 +73,9 @@ func runIntentWorkWorkspace(inv *intentInvocation) int {
 	}
 	if !diskstore.ValidWorkspaceName(name) {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id),
-			Summary: fmt.Sprintf("%q is not a workspace name: letters, digits, dot, underscore and dash, not starting with a dot or dash, not ending with a dot or .lock; nothing was done", name)})
+			Summary: fmt.Sprintf("%q is not a workspace name; nothing was done", name),
+			next:    append(inv.typedArgvLess("name"), "--name", "bed"), nextReason: "a name of letters, digits, dot, underscore and dash",
+			Details: []string{"a workspace name does not start with a dot or dash and does not end with a dot or .lock"}})
 	}
 	registry := diskstore.CheckoutRegistry(inv.stateRoot)
 	if inv.input.has("release") {
@@ -82,7 +84,8 @@ func runIntentWorkWorkspace(inv *intentInvocation) int {
 	for _, flag := range []string{"discard", "reason"} {
 		if inv.input.has(flag) {
 			return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id),
-				Summary: "--" + flag + " goes with --release; nothing was done"})
+				Summary: "--" + flag + " only goes with --release; nothing was done",
+				next:    inv.typedArgvWith("--release"), nextReason: "releases the workspace"})
 		}
 	}
 	projection, _, problem := inv.projection()
@@ -93,7 +96,8 @@ func runIntentWorkWorkspace(inv *intentInvocation) int {
 		return unknownGoal(inv, id)
 	} else if where != "live" {
 		return inv.render(intentResult{Outcome: intentRefused, Targets: inv.targets(id), code: 1,
-			Summary: fmt.Sprintf("goal %s is %s; a workspace belongs to an open goal, and none was made", id, where)})
+			Summary:  fmt.Sprintf("goal %s is %s, and a workspace belongs to an open goal; none was made", id, where),
+			Decision: "nothing to do; only an open goal gets a workspace"})
 	}
 	copyOf := ""
 	if inv.input.has("copy-of") {
@@ -101,7 +105,8 @@ func runIntentWorkWorkspace(inv *intentInvocation) int {
 		copyOf = strings.TrimSpace(string(out))
 		if err != nil || copyOf == "" {
 			return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id),
-				Summary: fmt.Sprintf("--copy-of %s names no commit of this checkout; nothing was made", inv.input.text("copy-of"))})
+				Summary: fmt.Sprintf("--copy-of %s names no commit of this checkout; nothing was made", inv.input.text("copy-of")),
+				next:    append(inv.typedArgvLess("copy-of"), "--copy-of", "HEAD"), nextReason: "or another commit of this checkout"})
 		}
 	}
 	settings, _ := diskstore.LoadSettings(filepath.Join(inv.layout.InstallationRoot, "metasystem.conf"), nil)
@@ -116,10 +121,10 @@ func runIntentWorkWorkspace(inv *intentInvocation) int {
 			next: inv.publicArgv("work", "workspace", id, "--release", "--name", name), nextReason: "release the existing workspace first"})
 	case errors.As(err, &unproven):
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: inv.targets(id), Summary: "no workspace was made: " + err.Error(),
-			Decision: "metasystem disk show"})
+			next: inv.publicArgv("disk", "show"), nextReason: "names what is at the path"})
 	case err != nil:
-		return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: inv.targets(id), Summary: err.Error(),
-			Decision: "metasystem disk show names what is at the path; the same command makes the workspace once the cause is settled"})
+		return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: inv.targets(id), Summary: "the workspace couldn't be made: " + err.Error(),
+			next: inv.publicArgv("disk", "show"), nextReason: "names what is at the path; then repeat this command"})
 	}
 	environment := append([]string{"TMPDIR=" + workspace.Tmp}, workspaceCaches(inv.layout.InstallationRoot)...)
 	lines := []string{"path: " + workspace.Record.Path}
@@ -161,12 +166,13 @@ func workspaceCaches(installation string) []string {
 func releaseWorkWorkspace(inv *intentInvocation, owners diskOwners, registry diskstore.Registry, owner diskstore.Owner, name string) int {
 	targets := inv.targets(owner.Ref)
 	if inv.input.has("copy-of") {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: targets, Summary: "--copy-of makes a workspace; --release ends one; nothing was done"})
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: targets, Summary: "--copy-of makes a workspace and --release ends one; nothing was done",
+			next: inv.typedArgvLess("copy-of"), nextReason: "releases the workspace"})
 	}
 	record, found, err := diskstore.FindWorkspace(registry, owner, name)
 	if err != nil {
-		return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "the workspace record cannot be read: " + err.Error(),
-			Decision: "metasystem disk show"})
+		return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "the workspace's record can't be read, so nothing was released",
+			next: inv.publicArgv("disk", "show"), nextReason: "shows the registered workspaces", Details: []string{err.Error()}})
 	}
 	if !found {
 		return inv.render(intentResult{Outcome: intentUnchanged, Targets: targets, Summary: fmt.Sprintf("workspace %s of %s is already gone; nothing to release", name, owner.Ref)})
@@ -175,20 +181,22 @@ func releaseWorkWorkspace(inv *intentInvocation, owners diskOwners, registry dis
 	if inv.input.switched("discard") {
 		reason := strings.TrimSpace(inv.input.text("reason"))
 		if reason == "" {
-			return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: targets, Summary: "--discard needs --reason TEXT: why the uncommitted changes may be dropped; nothing was done"})
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: targets, Summary: "--discard needs a reason; nothing was done",
+				next: inv.typedArgvWith("--reason", "TEXT"), nextReason: "TEXT says why the uncommitted changes may be dropped"})
 		}
 		by, err := owners.person(inv.stateRoot)
 		if err != nil {
-			return inv.render(intentResult{Outcome: intentRefused, code: 3, Targets: targets,
-				Summary:  "--discard drops uncommitted work and is a person's act; this shell was not proven to be one; nothing was done",
-				Decision: humanauthority.PersonActRemedy("metasystem work workspace " + owner.Ref + " --release --discard --name " + name + " --reason TEXT")})
+			refusal := inv.personRefusal(owner.Ref, err, "")
+			refusal.code, refusal.Summary = 3, "only a person may drop uncommitted work: "+refusal.Summary
+			return inv.render(*refusal)
 		}
 		discard = &diskstore.Discard{By: by, At: owners.now().UTC(), Reason: reason}
 	}
 	outcome, err := diskstore.ReleaseWorkspace(context.Background(), diskstore.WorkspaceReleaseRequest{Registry: registry, GitRoot: inv.layout.GitRoot,
 		ID: record.ID, Git: owners.git, TakeCensus: owners.census, Discard: discard, By: "work workspace --release", Now: owners.now().UTC()})
 	if err != nil {
-		return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "the release stopped: " + err.Error(), Decision: "metasystem disk show"})
+		return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "the release stopped: " + err.Error(),
+			next: inv.publicArgv("disk", "show"), nextReason: "shows the workspace; then repeat this command"})
 	}
 	data := map[string]any{"release": outcome, "record": record.ID}
 	var lines []string

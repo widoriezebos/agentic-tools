@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -111,7 +112,8 @@ func TestGrantEverythingAtTheEnrolledTerminal(t *testing.T) {
 	}
 
 	code, stdout, _ := b.run(b.owners(), "grant", "list")
-	if code != 0 || !strings.Contains(stdout, id+"  everything  by Wido  for the main session of "+checkout) || !strings.Contains(stdout, "24h00m left") {
+	if listed := strings.Join(strings.Fields(stdout), " "); code != 0 || !strings.Contains(listed, "● everything · by Wido · until tomorrow") ||
+		!strings.Contains(listed, "(24h00m left) for the main session of mac-cli ("+checkout+") id "+id) {
 		t.Fatalf("grant list = %d %q", code, stdout)
 	}
 
@@ -152,13 +154,17 @@ func TestGrantEverythingRefusals(t *testing.T) {
 		{"--acts", "approve", "--tiers", "1", "--for", "24h"},
 	} {
 		code, result := b.runJSON(b.owners(), append([]string{"grant", "add"}, args...)...)
-		if code == 0 || result.Outcome != intentRefused || !strings.Contains(result.Summary+" "+result.Decision, "--for 24h") {
+		next := ""
+		if result.Next != nil {
+			next = strings.Join(result.Next.Argv, " ")
+		}
+		if code == 0 || result.Outcome != intentRefused || !strings.Contains(next, "--for 24h") && !strings.Contains(next, "--until") {
 			t.Errorf("%v = %d %+v", args, code, result)
 		}
 	}
 	fixture := b.owners()
 	fixture.prove = fixedFixtureGoalAuthority
-	if code, result := b.runJSON(fixture, "grant", "add", "--acts", "everything", "--for", "8h"); code == 0 || !strings.Contains(result.Summary, "enrolled terminal") {
+	if code, result := b.runJSON(fixture, "grant", "add", "--acts", "everything", "--for", "8h"); code == 0 || !strings.Contains(result.Summary, "this terminal isn't enrolled") {
 		t.Errorf("a fixture proof granted: %d %+v", code, result)
 	}
 	b.holder = lease.CurrentHolderView{}
@@ -296,5 +302,94 @@ func TestAGrantAnsweredActIsCheckedAtItsEffectAndRefusalsAreLogged(t *testing.T)
 	data, _ := os.ReadFile(attorneyLogPath(checkout))
 	if !strings.Contains(string(data), "refused grant=01M-missing by=Wido act=\"grant add\"") {
 		t.Fatalf("the log lacks the refusal: %q", data)
+	}
+}
+
+// TestGrantStatusLineReadsTheLedgerWhereGrantListDoes (F2): status names
+// the repository top as its path while the ledger is read relative to the
+// installation (the state root), as grant list reads it. A template
+// checkout's top has no plans/goals of its own, so a read there finds no
+// root record; the status line must still show the live grant grant list
+// shows.
+func TestGrantStatusLineReadsTheLedgerWhereGrantListDoes(t *testing.T) {
+	t.Parallel()
+	b := newGrantEverythingBed(t)
+	code, result := b.runJSON(b.owners(), "grant", "add", "--acts", "everything", "--for", "24h")
+	if code != 0 || result.Outcome != intentConfirmed || len(result.Targets) != 1 {
+		t.Fatalf("grant everything = %d %+v", code, result)
+	}
+	id := result.Targets[0].ID
+	code, listed, _ := b.run(b.owners(), "grant", "list")
+	if code != 0 || !strings.Contains(listed, id) {
+		t.Fatalf("grant list = %d %q", code, listed)
+	}
+	top := filepath.Dir(b.root())
+	var read []string
+	inv := &intentInvocation{owners: b.owners(), stateRoot: b.root()}
+	inv.owners.attorney.entries = func(root string) ([]goal.PowerOfAttorneyEntry, error) {
+		read = append(read, root)
+		if root != b.root() {
+			return nil, errors.New("no root record at the repository top")
+		}
+		return b.rootRecord().PowerOfAttorney, nil
+	}
+	if line := inv.attorneyStatusLine(top); !strings.Contains(line, "(grant "+id+")") {
+		t.Fatalf("status line from the repository top = %q (ledger read at %v); grant list shows %q", line, read, listed)
+	}
+}
+
+// The trial: with METASYSTEM_OWNER_LINEAGE set, goal open --origin human
+// (and every other dual person/seat act chosen by actingAs) took the
+// session's shortcut without asking the general grant; only pause and done
+// asked it. Every dual act asks the grant first; a session that names
+// itself with --lineage, or no grant, keeps the shortcut.
+func TestDualActsAskTheGrantBeforeTheSessionShortcut(t *testing.T) {
+	t.Parallel()
+	for _, row := range []struct {
+		command string
+		actor   intentActor
+	}{
+		{"goal open", actorEither},
+		{"goal edit", actorEither},
+		{"goal claim", actorEither},
+		{"goal release", actorEitherStopping},
+		{"goal disallow", actorEither},
+	} {
+		b := newGrantEverythingBed(t)
+		b.lineage = "lin-main"
+		inv := &intentInvocation{command: mustIntentCommand(t, row.command), owners: b.owners(), stateRoot: b.root(),
+			input: intentInput{values: map[string][]string{"origin": {"human"}}}}
+		args, proof, problem := inv.actingAs("open", "g1", row.actor)
+		if problem != nil || proof != nil || slices.Contains(args, "--by") {
+			t.Fatalf("%s without a grant: the session acts as itself: %v %+v", row.command, args, problem)
+		}
+		b.admitted = &humanauthority.HelmGrant{By: "Wido", Class: lease.ClassMain, Grant: "01M-grant"}
+		inv.owners = b.owners()
+		args, _, problem = inv.actingAs("open", "g1", row.actor)
+		if problem != nil || !slices.Equal(args, []string{"--by", "Wido"}) {
+			t.Fatalf("%s under a grant: the act is the person's: %v %+v", row.command, args, problem)
+		}
+		named := &intentInvocation{command: inv.command, owners: b.owners(), stateRoot: b.root(),
+			input: intentInput{values: map[string][]string{"lineage": {"lin-main"}}}}
+		if args, _, _ = named.actingAs("open", "g1", row.actor); slices.Contains(args, "--by") {
+			t.Fatalf("%s: a session naming itself with --lineage acts as itself: %v", row.command, args)
+		}
+	}
+}
+
+// goal allow refused every caller carrying a session lineage as an agent
+// before asking the grant; under a live grant that admits the session the
+// act is the granting person's and goes on to the person's proof.
+func TestAllowAsksTheGrantBeforeRefusingTheSession(t *testing.T) {
+	t.Parallel()
+	b := newGrantEverythingBed(t)
+	b.lineage = "lin-main"
+	allow := []string{"goal", "allow", bedGoal, "stop-test-changes", "--reason", "the hook entry moved"}
+	if _, result := b.runJSON(b.owners(), allow...); !strings.Contains(result.Summary, "not an agent session's") {
+		t.Fatalf("without a grant the session is refused as an agent: %+v", result)
+	}
+	b.admitted = &humanauthority.HelmGrant{By: "Wido", Class: lease.ClassMain, Grant: "01M-grant"}
+	if code, result := b.runJSON(b.owners(), allow...); strings.Contains(result.Summary, "not an agent session's") {
+		t.Fatalf("under a grant the session was refused as an agent: %d %+v", code, result)
 	}
 }

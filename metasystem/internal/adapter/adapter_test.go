@@ -261,14 +261,14 @@ func TestWriteCapabilitySnapshotRejects(t *testing.T) {
 	// Envelope missing the network field.
 	_, err := WriteCapabilitySnapshot(dir, "claude", "1", "h",
 		`[]`, `{}`, `{}`, `{"writeRoots": "mapped", "readRoots": "mapped"}`, validHashes)
-	if err == nil || !strings.Contains(err.Error(), "envelope enforcement") {
+	if err == nil || !strings.Contains(err.Error(), "sandbox declaration") {
 		t.Fatalf("expected an envelope-enforcement refusal, got %v", err)
 	}
 
 	// Envelope with an unknown value.
 	_, err = WriteCapabilitySnapshot(dir, "claude", "1", "h",
 		`[]`, `{}`, `{}`, `{"writeRoots": "mapped", "readRoots": "mapped", "network": "maybe"}`, validHashes)
-	if err == nil || !strings.Contains(err.Error(), "envelope enforcement") {
+	if err == nil || !strings.Contains(err.Error(), "sandbox declaration") {
 		t.Fatalf("expected an envelope-enforcement refusal, got %v", err)
 	}
 

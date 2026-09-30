@@ -482,11 +482,11 @@ func ValidateScratchEnvironment(request TestRunRequest, run *ScratchRun) error {
 	switch descriptor.GoEnv {
 	case goEnvOff:
 		if descriptor.GoEnvDigest != "" {
-			return errors.New("scratch environment: GOENV=off carries a snapshot digest")
+			return errors.New("scratch environment: GOENV=off must carry no snapshot hash")
 		}
 	case goEnvDefault:
 		if descriptor.GoEnvDigest != "" {
-			return errors.New("scratch environment: default GOENV carries a run snapshot digest")
+			return errors.New("scratch environment: the default GOENV must carry no run snapshot hash")
 		}
 	case "file":
 		if err := requireScratchDirectory(descriptor.Root, filepath.Dir(descriptor.goEnvPath())); err != nil {

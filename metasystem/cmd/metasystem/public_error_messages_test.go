@@ -50,11 +50,12 @@ func TestBareGrantRevokeAndGoalOpenNameTheWayForward(t *testing.T) {
 		t.Fatalf("grant revoke = %d %+v", code, result)
 	}
 	code, result = bed.runJSON(owners, "goal", "open")
-	if code != 2 || result.Summary != "a new goal needs G, --basis, --intent, --next, --risk; nothing was done" {
+	if code != 2 || result.Summary != "a new goal needs a goal id, --basis, --intent, --next, --risk; nothing was done" {
 		t.Fatalf("goal open = %d %q", code, result.Summary)
 	}
-	if result.Decision != "metasystem goal open G --intent TEXT --next TEXT --risk severity=N,novelty=N,exposure=N,accumulation=N --basis TEXT; the four risk answers and their basis are a judgement about this goal, not a default" {
-		t.Fatalf("goal open decision = %q", result.Decision)
+	want := []string{"metasystem", "goal", "open", "GOAL", "--json", "--basis", "TEXT", "--intent", "TEXT", "--next", "TEXT", "--risk", "severity=N,novelty=N,exposure=N,accumulation=N"}
+	if result.Next == nil || !slices.Equal(result.Next.Argv, want) || result.Decision != "" {
+		t.Fatalf("goal open next = %+v, decision %q", result.Next, result.Decision)
 	}
 }
 
@@ -85,7 +86,7 @@ func TestUnknownProofAttemptSaysWhereItsIdComesFrom(t *testing.T) {
 	if problem == nil || problem.Summary != "no proof attempt names nosuch; nothing was done" {
 		t.Fatalf("test wait nosuch = %+v", problem)
 	}
-	if len(problem.next) != 0 || problem.Decision != "a proof attempt's id is the proof:ID in the output of metasystem test run" {
+	if len(problem.next) != 0 || problem.Decision != "nothing to wait on; metasystem test run prints the reference to wait on" {
 		t.Fatalf("test wait nosuch points to %v (%q)", problem.next, problem.Decision)
 	}
 	// A search that includes launches or jobs still points to work status.
@@ -104,11 +105,11 @@ func TestHelmTakeRefusalSaysWhyInPlainTerms(t *testing.T) {
 		reason  string
 	}{
 		{80, "an agent started this shell"},
-		{99, "no terminal was found above this shell"},
+		{99, "this shell isn't attached to a terminal"},
 	} {
 		bed := newHelmBed(t, test.invoker, true)
 		code, out := bed.run("helm", "take", "--reason", "by hand")
-		want := "metasystem helm take: only a person at a terminal no agent started can take the helm, and this shell is not one (" + test.reason + "); nothing was done"
+		want := "✗ " + test.reason + ", so the helm wasn't taken\n  → metasystem helm take --reason 'by hand'  in a terminal you opened yourself\n"
 		if code != 3 || !strings.Contains(out, want) || strings.Contains(out, "helm take refused") {
 			t.Errorf("invoker %d: exit %d, output:\n%s\nwant %q", test.invoker, code, out, want)
 		}

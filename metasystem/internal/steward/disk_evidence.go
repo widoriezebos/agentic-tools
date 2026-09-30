@@ -290,7 +290,7 @@ func EvidenceEnv(ctx context.Context, top string, pass DiskPass, by string) (evi
 	}
 	hostCheckouts := class.Checkouts
 	for _, checkout := range missing {
-		unreadable := fmt.Errorf("the armed checkout %s is missing from disk (an unmounted volume?); it is unreadable until it is back or disarmed", checkout)
+		unreadable := fmt.Errorf("the running checkout %s is missing from disk (an unmounted volume?); mount it again or stop it", checkout)
 		hostCheckouts = append(hostCheckouts, evidence.HostCheckout{Installation: checkout, FactsErr: unreadable, SettingsErr: unreadable})
 	}
 	env := evidence.Env{UserHome: userHome, HomeStateRoot: home, Checkouts: hostCheckouts, Now: pass.Now, Entropy: rand.Reader,

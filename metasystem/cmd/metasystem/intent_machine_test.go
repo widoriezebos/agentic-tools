@@ -25,6 +25,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stoptransition"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
 
 // machineBedNow is the bed's clock: the fleet's reader and the lane's.
@@ -49,6 +50,11 @@ type machineBed struct {
 	laneAlive            bool
 	registryUnreadable   bool
 	stopped              map[string]*int
+	// extra are further checkouts a test adds; fleetErr fails the fleet
+	// read, and fleetEdit changes the report it answers.
+	extra     []string
+	fleetErr  error
+	fleetEdit func(*seat.Report)
 }
 
 // machineItem is one fixture process: live until its family stops it.
@@ -172,7 +178,7 @@ func newMachineBed(t *testing.T) *machineBed {
 
 // top answers the repository top of each fixture checkout, as Git would.
 func (b *machineBed) top(path string) (string, error) {
-	for _, checkout := range []string{b.this, b.other, b.landing} {
+	for _, checkout := range append([]string{b.this, b.other, b.landing}, b.extra...) {
 		if path == checkout || strings.HasPrefix(path, checkout+string(filepath.Separator)) {
 			return checkout, nil
 		}
@@ -227,6 +233,12 @@ func (b *machineBed) owners() intentOwners {
 					{Machine: "m1e", Standing: seat.Reachable, This: true, Record: &seat.Record{Machine: "m1e", TickAt: machineBedNow.Format(time.RFC3339)}},
 					{Machine: "m1x", Standing: seat.Reachable, Record: &seat.Record{Machine: "m1x", TickAt: machineBedNow.Add(-time.Hour).Format(time.RFC3339)}},
 					{Machine: "m2a", Standing: seat.Reachable, Record: &seat.Record{Machine: "m2a", TickAt: tickAt}},
+				}
+				if b.fleetErr != nil {
+					return seat.Report{}, b.fleetErr
+				}
+				if b.fleetEdit != nil {
+					b.fleetEdit(&report)
 				}
 				return report, nil
 			},
@@ -299,8 +311,10 @@ func (b *machineBed) fence(checkout string) stopfence.Record {
 	return record
 }
 
+// machineLocal is a helper's start as machine list --verbose tells it: the
+// local time, as short as its distance from now allows (textui.Env.Time).
 func machineLocal(epoch int64) string {
-	return time.Unix(epoch, 0).Local().Format("2006-01-02 15:04 MST")
+	return textui.Env{Now: time.Now(), Zone: time.Local}.Time(time.Unix(epoch, 0))
 }
 
 // TestMachineListSummarizesThisComputerFirst: the default is one summary
@@ -479,8 +493,9 @@ func TestMachineStopRefusals(t *testing.T) {
 	t.Parallel()
 	b := newMachineBed(t)
 	code, result, _ := b.runJSON("machine", "stop", "m2a")
-	if code != 1 || result.Outcome != intentRefused || !strings.Contains(result.Summary, codeMachineOnAnotherComputer) ||
-		!strings.Contains(result.Summary, "stop it on that computer: metasystem system stop --repo PATH") {
+	if code != 1 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "m2a runs on another computer") ||
+		!strings.Contains(strings.Join(result.Details, "\n"), codeMachineOnAnotherComputer) ||
+		result.Next == nil || strings.Join(result.Next.Argv, " ") != "metasystem system stop --repo PATH" {
 		t.Fatalf("machine stop m2a = %d %+v", code, result)
 	}
 	for _, args := range [][]string{{"machine", "stop", "m9z"}, {"machine", "stop"}, {"machine", "stop", "m1e", "--all"}} {
@@ -490,7 +505,7 @@ func TestMachineStopRefusals(t *testing.T) {
 	}
 	b.class = lease.ClassDelegate
 	code, result, _ = b.runJSON("machine", "stop", "--all")
-	if code != 1 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "human act at a terminal") {
+	if code != 1 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "an agent started this shell") {
 		t.Fatalf("an agent's machine stop --all = %d %+v", code, result)
 	}
 	for _, checkout := range []string{b.this, b.landing} {

@@ -18,8 +18,6 @@ import (
 	"fmt"
 	"path"
 	"strings"
-
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 )
 
 // MappedVerb is one lawful row delta the hand edit decomposed
@@ -93,7 +91,7 @@ func mapDeltasFor(e Endpoint, baseCommit string, snap *Snapshot) ([]MappedVerb, 
 				return nil, fmt.Errorf("%s: file name and Id disagree (%s)", d.Path, edited.Id)
 			}
 			if edited.Priority != 0 || edited.Sequence != 0 || rankDiagnosticPresent(problems) {
-				return nil, fmt.Errorf("%s: Priority and Sequence are written by a person's metasystem goal prioritize (%s); a hand-created rank has no reconcile grammar", d.Path, humanauthority.PersonActRemedy("metasystem goal prioritize"))
+				return nil, fmt.Errorf("%s: a new goal's Priority and Sequence are set by metasystem goal prioritize, not by hand", d.Path)
 			}
 			if edited.State != "" && edited.State != StateQueued {
 				return nil, fmt.Errorf("%s: a hand-created goal opens queued; %s is unmappable", d.Path, edited.State)
@@ -105,10 +103,10 @@ func mapDeltasFor(e Endpoint, baseCommit string, snap *Snapshot) ([]MappedVerb, 
 				return nil, fmt.Errorf("%s: a hand-created goal carries no budget; open it, then have the human approve its tuple", d.Path)
 			}
 			if edited.BudgetExtension != nil {
-				return nil, fmt.Errorf("%s: a hand-created goal carries a generated BudgetExtension; only the claim holder's dispatch writes it", d.Path)
+				return nil, fmt.Errorf("%s: a new goal can't carry a BudgetExtension; the working session writes it", d.Path)
 			}
 			if edited.Approved != nil || edited.NormApproval != nil || edited.Sliced != nil || edited.Ratified != nil {
-				return nil, fmt.Errorf("%s: a hand-created goal carries generated scope-boundary evidence; admission and split are the only writers", d.Path)
+				return nil, fmt.Errorf("%s: a new goal can't carry approval or split records; approve and split write them", d.Path)
 			}
 			if edited.Landing != nil || edited.Episode != nil {
 				return nil, fmt.Errorf("%s: a hand-created goal carries no Landing or Episode record; land-ready, release and park write them", d.Path)
@@ -132,7 +130,7 @@ func mapDeltasFor(e Endpoint, baseCommit string, snap *Snapshot) ([]MappedVerb, 
 				return nil, fmt.Errorf("%s: the edited file does not parse", d.Path)
 			}
 			if edited.Priority != baseFile.Priority || edited.Sequence != baseFile.Sequence || rankDiagnosticPresent(problems) {
-				return nil, fmt.Errorf("%s: Priority and Sequence are written by a person's metasystem goal prioritize (%s); a hand-edited rank has no reconcile grammar", d.Path, humanauthority.PersonActRemedy("metasystem goal prioritize"))
+				return nil, fmt.Errorf("%s: Priority and Sequence are set by metasystem goal prioritize, not by hand", d.Path)
 			}
 			// Integrity diagnostics are the hand edit's OWN signature
 			// — the human changed bytes under a machine digest, and
@@ -203,7 +201,7 @@ func mapDeltasFor(e Endpoint, baseCommit string, snap *Snapshot) ([]MappedVerb, 
 				}
 			}
 			if len(members) != len(allLive) {
-				return nil, fmt.Errorf("a partial-arc hand-park refuses: arc %s has %d live members, the edit parks %d — cascades are all-or-none", arc, len(allLive), len(members))
+				return nil, fmt.Errorf("group %s has %d open goals and the edit parks %d; park all of them or none", arc, len(allLive), len(members))
 			}
 			memberStates := map[string]string{}
 			for _, id := range allLive {
@@ -223,7 +221,7 @@ func mapDeltasFor(e Endpoint, baseCommit string, snap *Snapshot) ([]MappedVerb, 
 // set: the state verb first, then one edit for the field remainder.
 func mapOneChange(p string, base, edited *GoalFile) ([]MappedVerb, error) {
 	if base.State == StateQueued && edited.State == StateClaimed {
-		return nil, fmt.Errorf("%s: APPROVAL_REQUIRED: an unapproved queued goal cannot become claimed through reconcile; only goal approve followed by claim creates execution", p)
+		return nil, coded("APPROVAL_REQUIRED", fmt.Errorf("%s: an unapproved goal can't be claimed by hand edit; approve it, then claim it", p))
 	}
 	// Generated fields: a hand-supplied value that DIFFERS from the
 	// base refuses by file and field. (Unchanged copies are the
@@ -325,7 +323,7 @@ func mapOneChange(p string, base, edited *GoalFile) ([]MappedVerb, error) {
 		return nil, fmt.Errorf("%s: Pinned is written by the set-pin verb; a hand-edited pin has no reconcile grammar", p)
 	}
 	if edited.Priority != base.Priority || edited.Sequence != base.Sequence {
-		return nil, fmt.Errorf("%s: Priority and Sequence are written by a person's metasystem goal prioritize (%s); a hand-edited rank has no reconcile grammar", p, humanauthority.PersonActRemedy("metasystem goal prioritize"))
+		return nil, fmt.Errorf("%s: Priority and Sequence are set by metasystem goal prioritize, not by hand", p)
 	}
 	if (edited.Budget == nil) != (base.Budget == nil) ||
 		(edited.Budget != nil && *edited.Budget != *base.Budget) {

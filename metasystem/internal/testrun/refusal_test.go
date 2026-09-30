@@ -9,6 +9,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginecause"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
+	refusalregister "github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 )
 
@@ -30,13 +31,14 @@ func TestEngineRefusalsNameTheirCause(t *testing.T) {
 		{"rearm-failed", engineRefusal("rearm-failed", nil, "up failed")},
 	}
 	for _, tc := range cases {
-		if tc.err == nil || !strings.Contains(tc.err.Error(), engineRefusalCode+": cause="+tc.token) || !strings.Contains(tc.err.Error(), "; run: ") {
+		if tc.err == nil || !strings.Contains(fullRefusal(tc.err), enginecause.Code+": cause="+tc.token) || !strings.Contains(tc.err.Error(), "\nrun: ") ||
+			strings.Contains(tc.err.Error(), enginecause.Code) {
 			t.Errorf("cause %s was not rendered with a remedy: %v", tc.token, tc.err)
 		}
 	}
 	for _, fact := range []string{"fetch-failed", "head-diverged", "dirty-engine-paths", "named-delivery-tree", "live-attempt"} {
 		err := engineRefusal("engine-behind-tip", []enginecause.Fact{enginecause.Value("fact", fact)}, "behind")
-		if !strings.Contains(err.Error(), "cause=engine-behind-tip fact="+fact) {
+		if !strings.Contains(fullRefusal(err), "cause=engine-behind-tip fact="+fact) {
 			t.Errorf("engine-behind-tip outcome %s lost its cause: %v", fact, err)
 		}
 	}
@@ -57,7 +59,7 @@ func TestUnenrolledLinkedWorktreeNamesItsMainCheckout(t *testing.T) {
 		t.Fatal(err)
 	}
 	err = enrollmentRefusal(linked, errors.New("steward identity absent"))
-	if !strings.Contains(err.Error(), "cause=not-enrolled") || !strings.Contains(err.Error(), "linked-worktree='"+root+"'") {
+	if !strings.Contains(fullRefusal(err), "cause=not-enrolled") || !strings.Contains(fullRefusal(err), "linked-worktree='"+root+"'") {
 		t.Fatalf("linked worktree refusal did not name its main checkout: %v", err)
 	}
 }
@@ -156,11 +158,20 @@ func TestDecisionMismatchNamesTheField(t *testing.T) {
 	err := decisionMismatchRefusal("candidate", "ours-base", "digest", PlanOutput{
 		CandidateTree: "candidate", PolicyBaseCommit: "engine-base", BaseContractDigest: "digest",
 	})
-	if err == nil || !strings.Contains(err.Error(), "cause=decision-mismatch field=policy-base-commit ours=ours-base engine=engine-base") {
+	if err == nil || !strings.Contains(fullRefusal(err), "cause=decision-mismatch field=policy-base-commit ours=ours-base engine=engine-base") {
 		t.Fatalf("decision mismatch did not name the field and both values: %v", err)
 	}
 }
 
 func osWriteFile(path, content string) error {
 	return os.WriteFile(path, []byte(content), 0o644)
+}
+
+// fullRefusal is a refusal as --verbose shows it: the two lines a person
+// reads, then the detail with the code, cause and observed facts.
+func fullRefusal(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error() + "\n" + refusalregister.Detail(err)
 }

@@ -22,7 +22,12 @@ type OpError struct {
 	Message string
 }
 
-func (e *OpError) Error() string { return e.Code + ": " + e.Message }
+// Error is the refusal's words; its code is data ("Messages a Person
+// Reads"): RefusalCode, and goal.RecordText for records.
+func (e *OpError) Error() string { return e.Message }
+
+// RefusalCode is the refusal's code.
+func (e *OpError) RefusalCode() string { return e.Code }
 
 func operationRefusal(code, format string, args ...any) error {
 	return &OpError{Code: code, Message: fmt.Sprintf(format, args...)}

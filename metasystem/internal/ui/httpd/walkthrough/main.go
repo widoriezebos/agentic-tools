@@ -2052,7 +2052,7 @@ var calmNotices = []plantedNotice{
 func fixtureJournal(checkout string, calm bool) (string, error) {
 	path := filepath.Join(checkout, "artifacts", "agents", "steward", "notifications.jsonl")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return "", fmt.Errorf("cannot make the walkthrough journal: %v", err)
+		return "", fmt.Errorf("cannot make the walkthrough notifications file: %v", err)
 	}
 	now := time.Now().UTC()
 	planted := []plantedNotice{
@@ -2092,14 +2092,14 @@ func fixtureJournal(checkout string, calm bool) (string, error) {
 		}
 		encoded, err := json.Marshal(record)
 		if err != nil {
-			return "", fmt.Errorf("cannot write the walkthrough journal: %v", err)
+			return "", fmt.Errorf("cannot write the walkthrough notifications file: %v", err)
 		}
 		lines = append(lines, string(encoded))
 	}
 	if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o644); err != nil {
-		return "", fmt.Errorf("cannot write the walkthrough journal: %v", err)
+		return "", fmt.Errorf("cannot write the walkthrough notifications file: %v", err)
 	}
-	fmt.Println("journal " + path)
+	fmt.Println("notifications " + path)
 	return path, nil
 }
 

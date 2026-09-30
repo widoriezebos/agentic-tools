@@ -65,7 +65,7 @@ func mainEndpoint(endpoint goal.Endpoint, err error) (goal.Endpoint, error) {
 		return goal.Endpoint{}, err
 	}
 	if endpoint.Branch != "refs/heads/main" {
-		return goal.Endpoint{}, fmt.Errorf("GOAL_BRANCH_ENDPOINT_UNSUPPORTED: endpoint %s is not refs/heads/main", endpoint.Branch)
+		return goal.Endpoint{}, goal.Coded("GOAL_BRANCH_ENDPOINT_UNSUPPORTED", fmt.Errorf("goal branches land only on main, not %s", endpoint.Branch))
 	}
 	return endpoint, nil
 }
@@ -151,7 +151,7 @@ func ParkCheckWithReaders(root string, endpoint goal.Endpoint, localTip ParkLoca
 	return func(goalID, next string) (string, error) {
 		readRemote := func() (string, string, bool, error) {
 			if endpoint.Branch != "refs/heads/main" {
-				return "", "", false, fmt.Errorf("GOAL_BRANCH_ENDPOINT_UNSUPPORTED: endpoint %s is not refs/heads/main", endpoint.Branch)
+				return "", "", false, goal.Coded("GOAL_BRANCH_ENDPOINT_UNSUPPORTED", fmt.Errorf("goal branches land only on main, not %s", endpoint.Branch))
 			}
 			endpointTip, err := endpointTipReader(root, endpoint)
 			if err != nil {

@@ -13,7 +13,7 @@ import (
 func TestMainEndpointServesMainOnly(t *testing.T) {
 	t.Parallel()
 	if _, err := mainEndpoint(goal.Endpoint{Remote: "origin", Branch: "refs/heads/dev"}, nil); err == nil ||
-		!strings.Contains(err.Error(), "GOAL_BRANCH_ENDPOINT_UNSUPPORTED: endpoint refs/heads/dev is not refs/heads/main") {
+		goal.RefusalCode(err) != "GOAL_BRANCH_ENDPOINT_UNSUPPORTED" || !strings.Contains(err.Error(), "only on main, not refs/heads/dev") {
 		t.Fatalf("a dev endpoint = %v; want the refusal", err)
 	}
 	resolveErr := errors.New("unreadable configuration")

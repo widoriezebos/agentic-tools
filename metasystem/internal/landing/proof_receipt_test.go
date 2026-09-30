@@ -93,7 +93,7 @@ func TestCanonicalReceiptCoverageRefusesChangedParentProjectInput(t *testing.T) 
 	}
 	if _, err := readTestReceipt(ObserveParams{RepoRoot: fixture.root, CandidateTree: fixture.tree,
 		TestReceipt: TestReceiptPath(fixture.root, fixture.tree)}); err == nil ||
-		!strings.Contains(err.Error(), "coverage no longer matches current project inputs") {
+		!strings.Contains(err.Error(), "no longer covers the current inputs") {
 		t.Fatalf("receipt-bound coverage accepted changed parent input: %v", err)
 	}
 }
@@ -111,7 +111,7 @@ func TestCanonicalReceiptCoverageRefusesChangedProjectInputFileOnly(t *testing.T
 	}
 	if _, err := readTestReceiptWithWorkspace(ObserveParams{RepoRoot: fixture.root, CandidateTree: fixture.tree,
 		TestReceipt: TestReceiptPath(fixture.root, fixture.tree)}, workspace); err == nil ||
-		!strings.Contains(err.Error(), "coverage no longer matches current project inputs") {
+		!strings.Contains(err.Error(), "no longer covers the current inputs") {
 		t.Fatalf("receipt-bound coverage accepted changed project input: %v", err)
 	}
 }

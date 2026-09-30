@@ -585,7 +585,7 @@ func TestTheLoopRefusesARefTheEngineWouldNotHaveMade(t *testing.T) {
 	state := fetchState(holder)
 	testutil.Expect(t, "the tick", state.Outcome, OutcomeFailed)
 	testutil.Expect(t, "the refusal is the engine's",
-		strings.Contains(state.Message, "the accepted tree's identity cannot be read"), true)
+		strings.Contains(state.Message, "the goal list's identity can't be read"), true)
 	testutil.Expect(t, "failures", state.Failures, 1)
 	testutil.Expect(t, "the refs are untouched", b.metasystemRefs(), refsBefore)
 
@@ -650,7 +650,7 @@ func TestTheLoopRefusesAContradictedSyncMode(t *testing.T) {
 	state := fetchState(holder)
 	testutil.Expect(t, "the tick", state.Outcome, OutcomeFailed)
 	testutil.Expect(t, "the refusal is the engine's",
-		strings.Contains(state.Message, "sync-mode mismatch refused"), true)
+		strings.Contains(state.Message, "but the settings"), true)
 	testutil.Expect(t, "failures", state.Failures, 1)
 	testutil.Expect(t, "no ref was created", b.metasystemRefs(), "")
 

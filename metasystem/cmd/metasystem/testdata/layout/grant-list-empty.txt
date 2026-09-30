@@ -1,0 +1,2 @@
+No live grants
+→ metasystem grant list --all  also lists revoked and expired grants

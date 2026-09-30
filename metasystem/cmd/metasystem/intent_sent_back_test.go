@@ -77,7 +77,7 @@ func TestTheHolderRevisesOnceFromThePublishedBrief(t *testing.T) {
 	// A later pass finds the attempt line and revises nothing twice: the
 	// plain work revise answers, and the brief is never sent again.
 	code, result = bed.runJSON(owners, "work", "revise", bedGoal)
-	if code == 0 || len(calls) != 1 || !strings.Contains(result.Summary, "--brief") {
+	if code == 0 || len(calls) != 1 || result.Next == nil || !slices.Contains(result.Next.Argv, "--brief") {
 		t.Fatalf("a second pass revised again or did not fall back: %d %+v calls=%d", code, result, len(calls))
 	}
 }
@@ -126,7 +126,7 @@ func TestOnlyTheHolderTakesTheStep(t *testing.T) {
 	bed.lineage = "another-session"
 	var calls []reviseCall
 	code, result := bed.runJSON(holderOwners(bed, &calls, func(int) intentResult { return attemptStarted(3) }), "work", "revise", bedGoal)
-	if code == 0 || len(calls) != 0 || !strings.Contains(result.Summary, "the seat that holds it revises") {
+	if code == 0 || len(calls) != 0 || !strings.Contains(result.Summary, "another session holds it") || !strings.Contains(result.Decision, "revises it") {
 		t.Fatalf("a session that does not hold the goal took the step: %d %+v", code, result)
 	}
 }

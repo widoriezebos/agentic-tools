@@ -180,7 +180,7 @@ func CheckSettings(live, shipped []byte, runtime, installationRel string, regist
 					}
 				}
 				if matches != 1 {
-					return fmt.Errorf("hook configuration event %s has %d handlers with the expected matcher, type, command, runtime action, timeout, and synchronous behavior; want 1", event, matches)
+					return fmt.Errorf("the hook for %s is set up %d times; it must be set up exactly once", event, matches)
 				}
 			}
 		}

@@ -23,6 +23,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
 
 // diskOwners are the seams disk show and disk clean call; zero values are
@@ -256,8 +257,9 @@ func runIntentDiskClean(inv *intentInvocation) int {
 	}
 	if chosen > 1 {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2,
-			Summary: "disk clean does one thing at a time: choose one of --preview, --strays, --release ID, --leases, --discard j2:ID or --go-cache; nothing was done",
-			next:    inv.publicArgv("disk", "clean", "--preview"), nextReason: "see what a pass would do first"})
+			Summary: "disk clean does one thing at a time, and more than one was asked; nothing was done",
+			next:    inv.publicArgv("disk", "clean", "--preview"), nextReason: "see what a pass would do first",
+			Details: []string{"choose one of --preview, --strays, --release, --leases, --discard or --go-cache"}})
 	}
 	switch {
 	case inv.input.has("go-cache"):
@@ -273,7 +275,8 @@ func runIntentDiskClean(inv *intentInvocation) int {
 	}
 	if inv.input.has("plan") {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2,
-			Summary: "--plan ID names the preview --strays acts on; alone it does nothing: metasystem disk clean --strays --plan ID; nothing was done"})
+			Summary: "--plan names the preview that --strays acts on, and alone it does nothing; nothing was done",
+			next:    inv.publicArgv("disk", "clean", "--strays", "--plan", inv.input.text("plan")), nextReason: "remove the strays that preview listed"})
 	}
 	pass := steward.DiskPass{Mode: diskstore.ModeApply, Now: owners.now().UTC(), Clock: owners.now, ForgetRemoved: true, Clones: true}
 	if inv.input.switched("preview") {
@@ -291,7 +294,8 @@ func runIntentDiskClean(inv *intentInvocation) int {
 	result, err := owners.pass(context.Background(), top, pass)
 	if err != nil {
 		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "disk clean stopped: " + err.Error(),
-			Decision: "metasystem disk show prints the last complete report; metasystem system check names what else is wrong"})
+			next: []string{"metasystem", "system", "check"}, nextReason: "names what is wrong here",
+			Details: []string{"metasystem disk show prints the last complete report"}})
 	}
 	lines := append(diskReportLines(inv, result.Checkout), diskReportLines(inv, result.Machine)...)
 	data := map[string]any{"checkout": result.Checkout, "machine": result.Machine}
@@ -389,9 +393,17 @@ func provenPerson(reader humanauthority.Reader, pid func() int64, now func(root 
 func diskPerson(inv *intentInvocation, owners diskOwners, top, act string) (string, *intentResult) {
 	by, err := owners.person(top)
 	if err != nil {
-		return "", &intentResult{Outcome: intentRefused, code: 3,
-			Summary:  "disk clean " + act + " is a person's act, and this shell was not proven to be one: " + humanauthority.PlainReason(err) + "; nothing was done",
-			Decision: humanauthority.PersonActRemedy("metasystem disk clean "+act) + "; metasystem disk clean --preview shows what it would act on"}
+		// Only a person cleans this way: the plain reason and the one
+		// command that resolves it (humanauthority.RemedyFor).
+		refusal := inv.personRefusal("", err, "")
+		refusal.code = 3
+		if len(refusal.next) == 0 {
+			// A cause the enrollment does not resolve: the same command, by
+			// the person at their own terminal.
+			refusal.retry = "at your enrolled terminal, in a shell you opened yourself"
+		}
+		refusal.Details = append(refusal.Details, "disk clean "+act+" is a person's act; metasystem disk clean --preview shows what it would act on")
+		return "", refusal
 	}
 	return by, nil
 }
@@ -467,12 +479,12 @@ func renderPersonOutcomes(inv *intentInvocation, act, many, by string, outcomes 
 	data := map[string]any{"by": by, "outcomes": outcomes}
 	summary := fmt.Sprintf("%s: %d done", act, done)
 	if freed := diskstore.Freed(outcomes); freed > 0 {
-		summary += fmt.Sprintf(", %s freed", diskBytes(freed))
+		summary += fmt.Sprintf(", %s freed", textui.BytesMiB(freed))
 	}
 	if declined > 0 {
 		summary = fmt.Sprintf("%s: %d done, %d kept with the reason and the command that settles each", act, done, declined)
 		if freed := diskstore.Freed(outcomes); freed > 0 {
-			summary += fmt.Sprintf("; %s freed", diskBytes(freed))
+			summary += fmt.Sprintf("; %s freed", textui.BytesMiB(freed))
 		}
 	}
 	if !verbose && len(lines) < len(outcomes) {
@@ -528,7 +540,7 @@ func runDiskRelease(inv *intentInvocation, owners diskOwners, top string) int {
 func runDiskDiscard(inv *intentInvocation, owners diskOwners, top string) int {
 	chain, found := strings.CutPrefix(inv.input.text("discard"), "j2:")
 	if !found || chain == "" {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--discard names a dispatch chain as j2:ID; nothing was done",
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--discard names a kept workspace by its chain, which starts with j2:; nothing was done",
 			next: inv.publicArgv("disk", "show"), nextReason: "the reports name each kept workspace with its chain"})
 	}
 	reason := strings.TrimSpace(inv.input.text("reason"))
@@ -616,9 +628,9 @@ func diskTrimSummary(reports []gocache.TrimReport) (string, bool) {
 			case report.Phase == "measure" && diskTrimNotStarted(report):
 				resuming = append(resuming, name+" is not measured yet")
 			case report.Phase == "measure":
-				resuming = append(resuming, fmt.Sprintf("still measuring %s (%s counted so far)", name, diskBytes(report.Checkpoint.BytesSoFar)))
+				resuming = append(resuming, fmt.Sprintf("still measuring %s (%s counted so far)", name, textui.BytesMiB(report.Checkpoint.BytesSoFar)))
 			default:
-				resuming = append(resuming, fmt.Sprintf("still trimming %s to its %s cap", name, diskBytes(report.CapBytes)))
+				resuming = append(resuming, fmt.Sprintf("still trimming %s to its %s cap", name, textui.BytesMiB(report.CapBytes)))
 			}
 		case "lock-held":
 			problems = append(problems, "another steward is trimming "+name+" now")
@@ -626,13 +638,13 @@ func diskTrimSummary(reports []gocache.TrimReport) (string, bool) {
 			problems = append(problems, name+" was not trimmed: "+report.Reason)
 		case "complete":
 			if report.BytesAfter > report.CapBytes {
-				over = append(over, fmt.Sprintf("%s stays over its %s cap: %s used within the last %s is never trimmed", name, diskBytes(report.CapBytes), diskBytes(report.MinKeepBytes), diskMinutes(report.MinKeepMinutes)))
+				over = append(over, fmt.Sprintf("%s stays over its %s cap: %s used within the last %s is never trimmed", name, textui.BytesMiB(report.CapBytes), textui.BytesMiB(report.MinKeepBytes), diskMinutes(report.MinKeepMinutes)))
 			}
 		}
 	}
 	var parts []string
 	if removed > 0 {
-		parts = append(parts, fmt.Sprintf("trimmed the machine caches: %d entries, %s freed", removed, diskBytes(freed)))
+		parts = append(parts, fmt.Sprintf("trimmed the machine caches: %d entries, %s freed", removed, textui.BytesMiB(freed)))
 	}
 	if len(resuming) > 0 {
 		parts = append(parts, strings.Join(resuming, "; ")+"; "+diskPlural(len(resuming), "it resumes", "they resume")+
@@ -695,18 +707,18 @@ func diskTrimLine(report gocache.TrimReport) string {
 		return line + ", not measured yet: the pass ended before it reached this cache; the next pass starts it"
 	}
 	if report.Phase == "measure" {
-		line += fmt.Sprintf(", measuring (%s counted so far; the next pass resumes at shard %s)", diskBytes(report.Checkpoint.BytesSoFar), report.Checkpoint.Shard)
+		line += fmt.Sprintf(", measuring (%s counted so far; the next pass resumes at shard %s)", textui.BytesMiB(report.Checkpoint.BytesSoFar), report.Checkpoint.Shard)
 		if report.OverCap {
-			line += fmt.Sprintf(", %d removed (%s)%s", report.EntriesRemoved, diskBytes(report.BytesRemoved), diskOverCap(report))
+			line += fmt.Sprintf(", %d removed (%s)%s", report.EntriesRemoved, textui.BytesMiB(report.BytesRemoved), diskOverCap(report))
 		}
 		return line
 	}
-	line += fmt.Sprintf(", %s of %s cap, %d removed (%s)", diskBytes(report.BytesAfter), diskBytes(report.CapBytes), report.EntriesRemoved, diskBytes(report.BytesRemoved))
+	line += fmt.Sprintf(", %s of %s cap, %d removed (%s)", textui.BytesMiB(report.BytesAfter), textui.BytesMiB(report.CapBytes), report.EntriesRemoved, textui.BytesMiB(report.BytesRemoved))
 	if report.OverCap {
 		line += diskOverCap(report)
 	}
 	if report.BytesAfter > report.CapBytes && report.Phase == "idle" {
-		line += fmt.Sprintf("; %s used within the last %s stays", diskBytes(report.MinKeepBytes), diskMinutes(report.MinKeepMinutes))
+		line += fmt.Sprintf("; %s used within the last %s stays", textui.BytesMiB(report.MinKeepBytes), diskMinutes(report.MinKeepMinutes))
 	}
 	if report.UnknownCount > 0 {
 		line += fmt.Sprintf("; %d entries not Go's layout were left untouched", report.UnknownCount)
@@ -730,17 +742,6 @@ func diskTrimNotStarted(report gocache.TrimReport) bool {
 	return report.Checkpoint.BytesSoFar == 0 && report.Checkpoint.LastName == "" && (report.Checkpoint.Shard == "" || report.Checkpoint.Shard == "00")
 }
 
-func diskBytes(size int64) string {
-	const gib, mib = int64(1) << 30, int64(1) << 20
-	switch {
-	case size >= gib:
-		return fmt.Sprintf("%.1f GiB", float64(size)/float64(gib))
-	case size >= mib:
-		return fmt.Sprintf("%.1f MiB", float64(size)/float64(mib))
-	}
-	return fmt.Sprintf("%d B", size)
-}
-
 // runDiskLeases is a person's settlement of the host's dirty admission
 // leases (3.8 --leases, DL2-19, DL3B-02): each is judged by the proof the
 // admission path uses under admission.lock and the lease's own flock; one
@@ -755,8 +756,8 @@ func runDiskLeases(inv *intentInvocation, owners diskOwners, top string) int {
 	}
 	reports, busy, err := owners.leases(top)
 	if err != nil {
-		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the proof-admission leases cannot be read: " + err.Error() + "; nothing was reclaimed",
-			Decision: "metasystem system check names what else is wrong"})
+		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the test-run leases cannot be read, so nothing was reclaimed",
+			next: []string{"metasystem", "system", "check"}, nextReason: "names what is wrong here", Details: []string{"leases: " + err.Error()}})
 	}
 	var outcomes []diskstore.PersonOutcome
 	for _, report := range reports {
@@ -780,7 +781,7 @@ func runDiskLeases(inv *intentInvocation, owners diskOwners, top string) int {
 		outcomes = append(outcomes, outcome)
 	}
 	if len(outcomes) == 0 {
-		return inv.render(intentResult{Outcome: intentUnchanged, Summary: "no dirty proof-admission lease on this host; nothing to do", Data: map[string]any{"by": by}})
+		return inv.render(intentResult{Outcome: intentUnchanged, Summary: "no test-run lease is left over on this computer; nothing to do", Data: map[string]any{"by": by}})
 	}
 	return renderPersonOutcomes(inv, "leases", "leases", by, outcomes)
 }

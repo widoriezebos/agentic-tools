@@ -117,7 +117,7 @@ func (a RecordedChannelAuthority) ValidateRecorded() error {
 	if (a.Outcome != AuthorityOutcomeAuthenticatedChannelWord && a.Outcome != AuthorityOutcomeVerifiedChannelAnswer) ||
 		a.Provider == "" || a.UserID == "" || a.MessageRef == "" || a.Step < 1 ||
 		(a.Outcome == AuthorityOutcomeVerifiedChannelAnswer && a.ContextID == "") {
-		return fmt.Errorf("authenticated channel authority proof is incomplete")
+		return fmt.Errorf("the recorded channel answer is incomplete (who, where or which message is missing)")
 	}
 	return nil
 }

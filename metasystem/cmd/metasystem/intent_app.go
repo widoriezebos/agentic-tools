@@ -113,7 +113,8 @@ func (inv *intentInvocation) appRef() (string, string, *intentResult) {
 	at, goal := strings.TrimSpace(inv.input.text("at")), strings.TrimSpace(inv.input.text("goal"))
 	if inv.input.has("at") && inv.input.has("goal") {
 		return "", "", &intentResult{Outcome: intentRefused, code: 2,
-			Summary: "--at and --goal name the same thing; use one of them. Nothing was done"}
+			Summary: "--at and --goal name the same run; give one of them. Nothing was done",
+			next:    inv.retryWith([]string{"at"}), nextReason: "the goal's run"}
 	}
 	if goal != "" {
 		return "goal/" + goal, goal, nil
@@ -131,7 +132,8 @@ func (inv *intentInvocation) appWait() (time.Duration, *intentResult) {
 	seconds, err := strconv.ParseInt(inv.input.text("wait-seconds"), 10, 64)
 	if err != nil || seconds < 0 || seconds > int64((1<<63-1)/time.Second) {
 		return 0, &intentResult{Outcome: intentRefused, code: 2,
-			Summary: "--wait-seconds needs a nonnegative whole number of seconds that fits a duration; nothing was done"}
+			Summary: "--wait-seconds needs a whole number of seconds, 0 or more; nothing was done",
+			next:    inv.retryWith([]string{"wait-seconds"}, "--wait-seconds", "15"), nextReason: "or the number you want"}
 	}
 	return time.Duration(seconds) * time.Second, nil
 }
@@ -145,12 +147,13 @@ func (inv *intentInvocation) appVerb(verb string) int {
 	targets := []intentTarget{{Kind: "app", ID: layout.GitRoot}}
 	roots, err := lifecycle.ResolveRootsWith(inv.owners.processes.process.repositoryTop, inv.owners.resolver.RootForInstallation, layout.GitRoot, installation)
 	if err != nil {
-		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: err.Error() + "; nothing was done"})
+		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: err.Error() + "; nothing was done",
+			next: []string{"metasystem", "system", "check"}, nextReason: "names what is wrong here"})
 	}
 	_, contract, contractPath, err := loadPhysicalLaunchContract(roots.Installation)
 	if err != nil {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets,
-			Summary: err.Error() + "; nothing was done"})
+			Summary: err.Error() + "; nothing was done", next: []string{"metasystem", "help", "app", "start"}, nextReason: "what the launch contract holds"})
 	}
 	ref, goal, problem := inv.appRef()
 	if problem != nil {
@@ -190,7 +193,8 @@ func (inv *intentInvocation) appVerb(verb string) int {
 		started.text = append(stopped.text, started.text...)
 		return inv.render(started)
 	}
-	return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: targets, Summary: "unknown app action " + verb})
+	return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: targets, Summary: "app has no action " + verb + "; nothing was done",
+		next: []string{"metasystem", "help", "app"}, nextReason: "the app actions"})
 }
 
 func appData(run appRun, status applaunch.Status) map[string]any {
@@ -222,7 +226,7 @@ func appData(run appRun, status applaunch.Status) map[string]any {
 func (inv *intentInvocation) appStatus(run appRun, targets []intentTarget) intentResult {
 	status, err := run.status()
 	if err != nil {
-		return intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "the run record could not be read: " + err.Error()}
+		return appRecordUnreadable(targets, nil, err)
 	}
 	summary := "the application is " + string(status.State)
 	switch status.State {
@@ -250,7 +254,8 @@ func (inv *intentInvocation) appLog(run appRun, targets []intentTarget) intentRe
 	if inv.input.has("lines") {
 		parsed, err := strconv.Atoi(inv.input.text("lines"))
 		if err != nil || parsed < 1 {
-			return intentResult{Outcome: intentRefused, code: 2, Targets: targets, Summary: "--lines needs a positive whole number; nothing was done"}
+			return intentResult{Outcome: intentRefused, code: 2, Targets: targets, Summary: "--lines needs a whole number above 0; nothing was done",
+				next: inv.retryWith([]string{"lines"}, "--lines", "40"), nextReason: "or the number you want"}
 		}
 		lines = parsed
 	}
@@ -262,7 +267,7 @@ func (inv *intentInvocation) appLog(run appRun, targets []intentTarget) intentRe
 	}
 	if err != nil {
 		return intentResult{Outcome: intentRefused, code: 1, Targets: targets,
-			Summary: "the log at " + path + " cannot be read: " + err.Error()}
+			Summary: "the application's log cannot be read", retry: "try again", Details: []string{"log " + path + ": " + err.Error()}}
 	}
 	if !inv.input.has("follow") {
 		return intentResult{Outcome: intentConfirmed, Targets: targets, Summary: "the last " + strconv.Itoa(len(tail)) + " line(s) of " + path,
@@ -270,7 +275,8 @@ func (inv *intentInvocation) appLog(run appRun, targets []intentTarget) intentRe
 	}
 	if inv.input.has("json") {
 		return intentResult{Outcome: intentRefused, code: 2, Targets: targets,
-			Summary: "--follow prints a stream, which is not one JSON result; use it without --json. Nothing was done"}
+			Summary: "--follow prints a stream, which is not one JSON result; nothing was done",
+			next:    inv.retryWith([]string{"json"}), nextReason: "without --json"}
 	}
 	for _, line := range tail {
 		fmt.Fprintln(inv.stdout, line)
@@ -278,10 +284,17 @@ func (inv *intentInvocation) appLog(run appRun, targets []intentTarget) intentRe
 	ctx, stop := appFollowContext()
 	defer stop()
 	if err := applaunch.Follow(ctx, path, inv.stdout, 0); err != nil {
-		return intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "the log could not be followed: " + err.Error()}
+		return intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "the log stopped being followed: " + err.Error(), retry: "follow it again"}
 	}
 	return intentResult{Outcome: intentConfirmed, Targets: targets, Summary: "stopped following " + path,
 		Data: map[string]any{"run": run.key, "log": path}}
+}
+
+// appRecordUnreadable is the failure of a verb that could not read the
+// run's own record: the read may pass, so line 2 is the command again.
+func appRecordUnreadable(targets []intentTarget, lines []string, err error) intentResult {
+	return intentResult{Outcome: intentFailed, code: 1, Targets: targets, text: lines, Summary: "the application's run record could not be read",
+		retry: "try again", Details: []string{"run record: " + err.Error()}}
 }
 
 // appFollowContext is how long `log --follow` follows: until the person
@@ -296,7 +309,7 @@ var appFollowContext = func() (context.Context, context.CancelFunc) {
 func (inv *intentInvocation) appStart(run appRun, targets []intentTarget, reset bool) intentResult {
 	status, err := run.status()
 	if err != nil {
-		return intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "the run record could not be read: " + err.Error()}
+		return appRecordUnreadable(targets, nil, err)
 	}
 	var lines []string
 	if moved, commit := run.tipMoved(status); moved {
@@ -312,7 +325,7 @@ func (inv *intentInvocation) appStart(run appRun, targets []intentTarget, reset 
 			return stopped
 		}
 		if status, err = run.status(); err != nil {
-			return intentResult{Outcome: intentFailed, code: 1, Targets: targets, text: lines, Summary: "the run record could not be read: " + err.Error()}
+			return appRecordUnreadable(targets, lines, err)
 		}
 	}
 	switch status.State {
@@ -331,11 +344,12 @@ func (inv *intentInvocation) appStart(run appRun, targets []intentTarget, reset 
 	case applaunch.Finished:
 		if err := run.endRun(status.Record, false, logWriter(&lines)); err != nil {
 			return intentResult{Outcome: intentFailed, code: 1, Targets: targets, text: lines,
-				Summary: "the ended run's evidence could not be preserved: " + err.Error()}
+				Summary: "nothing was started: " + err.Error(), retry: "once the cause above is fixed"}
 		}
 	}
 	if err := run.allocateAddress(); err != nil {
-		return intentResult{Outcome: intentRefused, code: 1, Targets: targets, text: lines, Summary: err.Error() + "; nothing was started"}
+		return intentResult{Outcome: intentRefused, code: 1, Targets: targets, text: lines, Summary: err.Error() + "; nothing was started",
+			retry: "once the cause above is fixed"}
 	}
 	if run.ref != "" {
 		commit, from, err := run.resolveCommitFor(run.ref)
@@ -345,22 +359,26 @@ func (inv *intentInvocation) appStart(run appRun, targets []intentTarget, reset 
 				next:    inv.publicArgv("goal", "show", run.goal), nextReason: "shows whether the goal exists and where its work stands"}
 		}
 		if err != nil {
-			return intentResult{Outcome: intentRefused, code: 1, Targets: targets, text: lines, Summary: err.Error() + "; nothing was started"}
+			return intentResult{Outcome: intentRefused, code: 1, Targets: targets, text: lines, Summary: err.Error() + "; nothing was started",
+				next: inv.retryWith([]string{"at", "goal"}), nextReason: "the standing run, or name a commit that exists"}
 		}
 		run.commit, run.resolvedFrom = commit, from
 		if err := run.takeWorktree(logWriter(&lines)); err != nil {
-			return intentResult{Outcome: intentFailed, code: 1, Targets: targets, text: lines, Summary: "the run's tree could not be taken: " + err.Error()}
+			return intentResult{Outcome: intentFailed, code: 1, Targets: targets, text: lines, Summary: "the run's files could not be checked out: " + err.Error(),
+				retry: "once the cause above is fixed"}
 		}
 		if err := run.preflightTools(); err != nil {
-			return intentResult{Outcome: intentRefused, code: 1, Targets: targets, text: lines, Summary: err.Error() + "; nothing was built or started"}
+			return intentResult{Outcome: intentRefused, code: 1, Targets: targets, text: lines, Summary: err.Error() + "; nothing was built or started",
+				retry: "once the tools are installed"}
 		}
 		if err := run.runContractCommand("build", run.contract.Build, 30*time.Minute, logWriter(&lines)); err != nil {
-			return intentResult{Outcome: intentFailed, code: 1, Targets: targets, text: lines, Summary: err.Error()}
+			return intentResult{Outcome: intentFailed, code: 1, Targets: targets, text: lines, Summary: err.Error(), retry: "once the build is fixed"}
 		}
 	}
 	if run.ref == "" {
 		if err := run.preflightTools(); err != nil {
-			return intentResult{Outcome: intentRefused, code: 1, Targets: targets, text: lines, Summary: err.Error() + "; nothing was prepared or started"}
+			return intentResult{Outcome: intentRefused, code: 1, Targets: targets, text: lines, Summary: err.Error() + "; nothing was prepared or started",
+				retry: "once the tools are installed"}
 		}
 	}
 	switch {
@@ -370,7 +388,7 @@ func (inv *intentInvocation) appStart(run appRun, targets []intentTarget, reset 
 		lines = append(lines, "data: shared with the standing run (the contract declares no prepare)")
 	default:
 		if err := run.prepareData(logWriter(&lines), reset); err != nil {
-			return intentResult{Outcome: intentFailed, code: 1, Targets: targets, text: lines, Summary: err.Error()}
+			return intentResult{Outcome: intentFailed, code: 1, Targets: targets, text: lines, Summary: err.Error(), retry: "once the cause above is fixed"}
 		}
 	}
 	address, err := run.launchSupervisor()
@@ -408,13 +426,13 @@ func (r appRun) tipMoved(status applaunch.Status) (bool, string) {
 func (inv *intentInvocation) appStop(run appRun, targets []intentTarget, wait time.Duration, clean bool) intentResult {
 	before, err := run.status()
 	if err != nil {
-		return intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "the run record could not be read: " + err.Error()}
+		return appRecordUnreadable(targets, nil, err)
 	}
 	if before.State == applaunch.Stopped {
 		if clean {
 			var lines []string
 			if err := run.reclaimWorktree(logWriter(&lines)); err != nil {
-				return intentResult{Outcome: intentFailed, code: 1, Targets: targets, text: lines, Summary: err.Error()}
+				return intentResult{Outcome: intentFailed, code: 1, Targets: targets, text: lines, Summary: err.Error(), retry: "try again"}
 			}
 			return intentResult{Outcome: intentConfirmed, Targets: targets, text: lines, Data: appData(run, before),
 				Summary: "no application run is recorded for " + run.key}
@@ -425,7 +443,7 @@ func (inv *intentInvocation) appStop(run appRun, targets []intentTarget, wait ti
 	result, err := applaunch.Stop(run.roots.StateRoot, run.key, run.contract, applaunch.StopOptions{
 		Probe: applaunch.ProbeOnce, Wait: wait, ProjectRoot: run.tree, Environment: run.environment()})
 	if err != nil {
-		return intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "the application could not be stopped: " + err.Error()}
+		return intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "the application could not be stopped: " + err.Error(), retry: "try again"}
 	}
 	lines := append([]string(nil), result.Lines...)
 	if !result.Proven {
@@ -436,7 +454,7 @@ func (inv *intentInvocation) appStop(run appRun, targets []intentTarget, wait ti
 	}
 	if err := run.endRun(result.Record, clean, logWriter(&lines)); err != nil {
 		return intentResult{Outcome: intentPartial, code: 1, Targets: targets, text: lines,
-			Summary: "the application stopped, but its run could not be closed: " + err.Error()}
+			Summary: "the application stopped, but its run could not be closed: " + err.Error(), retry: "once the cause above is fixed"}
 	}
 	after, _ := run.status()
 	return intentResult{Outcome: intentConfirmed, Targets: targets, text: lines, Data: appData(run, after),
@@ -454,7 +472,7 @@ func (inv *intentInvocation) appCheck(run appRun, targets []intentTarget) intent
 	}
 	status, err := run.status()
 	if err != nil {
-		return intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "the run record could not be read: " + err.Error()}
+		return appRecordUnreadable(targets, nil, err)
 	}
 	if status.State != applaunch.Running || (run.contract.Probed() && status.Readiness != applaunch.Answering) {
 		return intentResult{Outcome: intentRefused, code: 1, Targets: targets, text: status.Lines(), Data: appData(run, status),
@@ -464,7 +482,8 @@ func (inv *intentInvocation) appCheck(run appRun, targets []intentTarget) intent
 	address := status.Record.Address
 	if address == "" {
 		return intentResult{Outcome: intentRefused, code: 1, Targets: targets, Data: appData(run, status),
-			Summary: "this run has no address, so there is nothing for group " + run.contract.Check + " to be run against"}
+			Summary: "this run has no address, so its check " + run.contract.Check + " has nothing to test; nothing was checked",
+			next:    []string{"metasystem", "help", "app", "start"}, nextReason: "how the launch contract gives a run an address"}
 	}
 	// The check runs the testing runner in this process (design 6.2).
 	var stderr bytes.Buffer

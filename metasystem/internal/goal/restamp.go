@@ -1,6 +1,9 @@
 package goal
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
 
 // Restamp moves a claimed goal's stop capability to the authenticated lease
 // epoch without changing the claim binding or its accounting episode.
@@ -29,7 +32,7 @@ func restampRequest(r VerbRequest, id string) PublishRequest {
 				return nil, fmt.Errorf("goal %s is not claimed with a stop capability", id)
 			}
 			if !ownPair(f.Claimed, r.Actor) {
-				return nil, fmt.Errorf("goal %s is claimed by %s+%s; caller pair %s+%s does not match", id,
+				return nil, fmt.Errorf("goal %s is claimed by %s (%s), not this session (%s, %s)", id,
 					f.Claimed.Machine, f.Claimed.Lineage, r.Actor.Machine, r.Actor.Lineage)
 			}
 			rebindEpoch, err := ClaimEpochForRebind(f, r)
@@ -37,11 +40,11 @@ func restampRequest(r VerbRequest, id string) PublishRequest {
 				return nil, err
 			}
 			if r.EpochAuthority != EpochAuthorityHolder {
-				return nil, fmt.Errorf("goal restamp requires the live lease holder of class MAIN")
+				return nil, errors.New("only the session holding the checkout renews a claim")
 			}
 			current := f.StopCapability.ClaimEpoch
 			if rebindEpoch < current {
-				return nil, fmt.Errorf("goal %s stop capability epoch %d cannot move down to lease epoch %d", id, current, rebindEpoch)
+				return nil, fmt.Errorf("goal %s: the claim can't go back from %d to %d", id, current, rebindEpoch)
 			}
 			if rebindEpoch == current {
 				return nil, NothingToDo{Reason: fmt.Sprintf("stop capability already carries lease epoch %d", current)}

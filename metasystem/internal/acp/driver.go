@@ -72,7 +72,7 @@ func (d *NativeDriver) Declaration() delegate.Declaration { return d.declaration
 // the wire opens with the turn.
 func (d *NativeDriver) Open(_ context.Context, req delegate.OpenRequest) (delegate.Session, error) {
 	if req.Endpoint.FromAgent == nil || req.Endpoint.ToAgent == nil || req.Endpoint.Journal == nil {
-		return nil, fmt.Errorf("acp: open needs the full endpoint (from-agent, to-agent, journal)")
+		return nil, errors.New("an agent channel opens only with both agents and its record file named")
 	}
 	return &nativeSession{
 		driver:    d,

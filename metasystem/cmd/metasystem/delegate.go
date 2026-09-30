@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	"errors"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/brain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/delegation"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
@@ -19,6 +20,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
 
 const delegateClaimCapabilityEnv = "METASYSTEM_DELEGATE_CLAIM_CAPABILITY"
@@ -239,12 +241,12 @@ func runDelegateGuardMember(args []string, stdout, stderr io.Writer) int {
 func delegateLifecycleRequest(env delegation.Env, stdin io.Reader, stderr io.Writer) delegation.Request {
 	stdinTTY := false
 	if file, ok := stdin.(*os.File); ok && file != nil {
-		stdinTTY = isTerminal(file.Fd())
+		stdinTTY = textui.IsTerminal(file.Fd())
 	}
 	return delegation.Request{
 		Invocation: delegation.Invocation{CallerPid: int64(os.Getpid())},
 		Env:        env, LockTag: delegation.LockTagOf(os.Args),
-		Stdin: stdin, StdinTTY: stdinTTY, StderrTTY: isTerminal(os.Stderr.Fd()),
+		Stdin: stdin, StdinTTY: stdinTTY, StderrTTY: textui.IsTerminal(os.Stderr.Fd()),
 		Stderr: stderr,
 	}
 }
@@ -423,7 +425,7 @@ func commandExitCode(err error) int {
 
 func normalizeDelegateArgs(args []string) ([]string, string, error) {
 	if len(args) == 0 {
-		return nil, "", fmt.Errorf("usage: metasystem internal delegate --role <role> --brief <file> --goal <id|none-explicit> [--op <id>] [--reviews <job-id>] [--outputs <file> --design <file>]")
+		return nil, "", errors.New("the delegate form is incomplete\nusage: metasystem internal delegate --role <role> --brief <file> --goal <id|none-explicit> [--op <id>] [--reviews <job-id>] [--outputs <file> --design <file>]")
 	}
 	if args[0] == "--cancel" {
 		if len(args) != 2 {

@@ -442,14 +442,14 @@ func TestIntentBuiltUnitToLanding(t *testing.T) {
 	late := filepath.Join(c.worktree, "late.txt")
 	os.WriteFile(late, []byte("typed after the build\n"), 0o644)
 	code, result = c.do("work", "review", "run:"+run)
-	if result.Outcome != intentRefused || !strings.Contains(result.Summary, "UNIT_RESULT_CHANGED") ||
+	if result.Outcome != intentRefused || !strings.Contains(strings.Join(result.Details, " "), "UNIT_RESULT_CHANGED") ||
 		connectionGit(t, c.worktree, "diff", "--cached", "--name-only") != "" || c.commits != 0 {
 		t.Fatalf("stale result: code=%d %+v", code, result)
 	}
 	os.Remove(late)
 	// The same path with other bytes is refused too.
 	os.WriteFile(filepath.Join(c.worktree, "café.txt"), []byte("accentuated\n"), 0o644)
-	if _, result = c.do("work", "review", "run:"+run); !strings.Contains(result.Summary, "UNIT_RESULT_CHANGED") || c.commits != 0 {
+	if _, result = c.do("work", "review", "run:"+run); !strings.Contains(strings.Join(result.Details, " "), "UNIT_RESULT_CHANGED") || c.commits != 0 {
 		t.Fatalf("changed bytes at a result path: %+v", result)
 	}
 	os.WriteFile(filepath.Join(c.worktree, "café.txt"), []byte("accented\n"), 0o644)
@@ -491,7 +491,7 @@ func TestIntentBuiltUnitToLanding(t *testing.T) {
 	// Finished but unclosed: the author's close is named, nothing collected.
 	c.writeCritic(install, "crit1", first, "completed", false)
 	_, result = c.do("work", "review", "run:"+run)
-	if result.Outcome != intentInProgress || !strings.Contains(result.Decision, "work review run:"+run+" --dispositions FILE") ||
+	if result.Outcome != intentInProgress || result.Next == nil || !strings.Contains(shellCommand(result.Next.Argv), "work review run:"+run+" --dispositions FILE") ||
 		len(c.unitCommits("goal/"+c.id)) != 1 || c.commitReads != 0 {
 		t.Fatalf("unclosed critic: %+v", result)
 	}
@@ -594,7 +594,7 @@ func TestIntentBuiltUnitToLanding(t *testing.T) {
 	_, result = c.do(append([]string{"work", "build", c.id, "wrote", "--brief", c.brief("wrote.md", "Another unit.\n"), "--lines", "5"}, workCheck...)...)
 	wrote := resultData(t, result)["run"].(string)
 	code, result = c.do("work", "review", "run:"+wrote)
-	if result.Outcome != intentRefused || !strings.Contains(result.Summary, "proof-wrote") ||
+	if result.Outcome != intentRefused || !strings.Contains(result.Summary, "checks changed its files") || !strings.Contains(strings.Join(result.Details, " "), "proof-wrote") ||
 		connectionGit(t, c.worktree, "diff", "--cached", "--name-only") != "" {
 		t.Fatalf("proof-wrote: code=%d %+v", code, result)
 	}
@@ -606,7 +606,7 @@ func TestIntentBuiltUnitToLanding(t *testing.T) {
 	launches := len(c.starts())
 	code, result = c.do(append([]string{"work", "build", c.id, "unclaimed", "--brief", c.brief("unclaimed.md", "No claim.\n"), "--lines", "5"}, workCheck...)...)
 	// The claim is checked before any run is reserved.
-	if result.Outcome == intentConfirmed || !strings.Contains(result.Summary, "GOAL_BRANCH_NOT_HOLDER") || len(c.starts()) != launches {
+	if result.Outcome == intentConfirmed || !strings.Contains(result.Summary, "is not claimed by this session") || len(c.starts()) != launches {
 		t.Fatalf("unclaimed build: code=%d %+v", code, result)
 	}
 	code, result = c.do("work", "revise", "run:"+readFailed, "--brief", c.brief("unclaimed-fold.md", "No claim.\n"))
@@ -654,7 +654,7 @@ func TestIntentGoalWorktreePreparation(t *testing.T) {
 	owners.connection.claimCheck = func(string, string, goal.Endpoint) func() error {
 		return func() error { return errors.New("goal is not claimed by this session") }
 	}
-	if path, result := c.prepare(owners); path != "" || result == nil || !strings.Contains(result.Summary, "not claimed") || hasBranch(c) {
+	if path, result := c.prepare(owners); path != "" || result == nil || !strings.Contains(strings.Join(result.Details, " "), "not claimed") || hasBranch(c) {
 		t.Fatalf("no claim, no preparation: %q %+v", path, result)
 	}
 	os.MkdirAll(c.worktree, 0o700)

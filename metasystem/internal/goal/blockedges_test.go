@@ -873,7 +873,7 @@ func TestRecoveryReplaysASeatsEdgesAndRefusesAJournaledName(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if entry.Outcome != OutcomeRejected || !strings.Contains(entry.Evidence, "cannot be replayed from journal text") {
+	if entry.Outcome != OutcomeRejected || !strings.Contains(entry.Evidence, "can't be finished for them") {
 		t.Fatalf("a journaled name replayed as a person: %+v", entry)
 	}
 	projection, err = projectFetched(endpointFor(root), time.Now())
@@ -907,12 +907,12 @@ func TestANameThatIsNotTheProofsIsRefusedOnEveryEdgeVerb(t *testing.T) {
 	bobOpen, wido := asBob("01J5X00000000000000000C202")
 	if _, err := OpenRisked(bobOpen, "bobs-fix", "An open attributed to Bob.", OriginHuman, "Fix it.",
 		nil, nil, edgeRisk(), 0, "", &budget, wido); err == nil ||
-		!strings.Contains(err.Error(), "the proof names Wido") || !strings.Contains(err.Error(), "attributed to Bob") {
+		!strings.Contains(err.Error(), "this terminal belongs to Wido") || !strings.Contains(err.Error(), "not Bob") {
 		t.Fatalf("an open under somebody else's proof: %v", err)
 	}
 	bobBlock, wido := asBob("01J5X00000000000000000C203")
 	if _, err := Block(bobBlock, "someones-work", "a-defect", wido); err == nil ||
-		!strings.Contains(err.Error(), "the proof names Wido") {
+		!strings.Contains(err.Error(), "this terminal belongs to Wido") {
 		t.Fatalf("a block under somebody else's proof: %v", err)
 	}
 	if acceptedTip(t, root) != before {
@@ -930,7 +930,7 @@ func TestANameThatIsNotTheProofsIsRefusedOnEveryEdgeVerb(t *testing.T) {
 	written := acceptedTip(t, root)
 	bobUnblock, wido := asBob("01J5X00000000000000000C206")
 	if result, err := Unblock(bobUnblock, "someones-work", "a-defect", wido); err != nil ||
-		result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "the proof names Wido") {
+		result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "this terminal belongs to Wido") {
 		t.Fatalf("an unblock under somebody else's proof: %+v %v", result, err)
 	}
 	if acceptedTip(t, root) != written {
@@ -1101,7 +1101,7 @@ func TestRecoveryRefusesAJournaledUnblock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if entry.Outcome != OutcomeRejected || !strings.Contains(entry.Evidence, "cannot be replayed from journal text") {
+	if entry.Outcome != OutcomeRejected || !strings.Contains(entry.Evidence, "can't be finished for them") {
 		t.Fatalf("a journaled unblock was replayed: %+v", entry)
 	}
 	projection, err := projectFetched(endpointFor(root), time.Now())

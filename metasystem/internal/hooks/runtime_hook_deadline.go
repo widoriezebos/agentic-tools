@@ -255,7 +255,7 @@ func runStopDeadlineParent(inv Invocation, ops Ops, harnessRoot string) int {
 			}
 		}
 	case StopWorkerKilled:
-		fmt.Fprintf(inv.Stderr, "stop deadline: worker %d cleanup sent KILL without terminal acknowledgement; custody retained; not waiting\n", workerPid(worker))
+		fmt.Fprintf(inv.Stderr, "stop deadline: worker %d was killed but has not confirmed it ended; it stays watched\n", workerPid(worker))
 	default:
 		fmt.Fprintf(inv.Stderr, "stop deadline: worker %d left running, command line unverifiable\n", workerPid(worker))
 	}

@@ -45,7 +45,7 @@ func init() {
 	registerIdempotency("system restart", idemCreation,
 		"an explicit request for fresh processes: it stops every helper and job and starts new ones, so a second restart is a second cycle, not a repeat; a start of what already runs is system start", nil)
 	registerIdempotency("ui restart", idemCreation,
-		"an explicit request for a fresh interface process running the executable on disk; a second restart replaces the server again, so it is not a repeat; a start of what already runs is ui start", nil)
+		"an explicit request for a fresh interface process running the checkout's own engine; a second restart replaces the server again, so it is not a repeat; a start of what already runs is ui start", nil)
 	registerIdempotency("session start", idemCreation,
 		"each call renews this session's checkout lease (a heartbeat: renewedAt and revision advance) and re-verifies its helpers; the renewal is the act, and the lease's liveness depends on it; the announcement, main id and running helpers are reused, never duplicated", nil)
 
@@ -56,7 +56,7 @@ func init() {
 	registerIdempotency("machine stop", idemStateful, "every machine already stopped with nothing of MetaSystem's running: success, no fence generation, no launch touched", witnessMachineStopRepeat)
 	registerIdempotency("machine start", idemStateful, "a machine already launched and supervised from here: success, no launch record", witnessMachineStartRepeat)
 	registerIdempotency("ui start", idemStateful, "the interface already runs at the address asked for: success, nothing launched", witnessUIStartRepeat)
-	registerIdempotency("ui stop", idemStateful, "the interface is not running: success, nothing signalled", witnessUIStopRepeat)
+	registerIdempotency("ui stop", idemStateful, "no interface runs on this seat, nor alone on another machine of this computer: success, nothing signalled", witnessUIStopRepeat)
 	registerIdempotency("settings coordinator", idemStateful, "--declare of a declared or --withdraw of an undeclared checkout: success, nothing touched", witnessCoordinatorRepeat)
 	registerIdempotency("session stop", idemStateful, "the same person's unspent authorization for this session holds: success, no second authorization", witnessSessionStopRepeat)
 	registerIdempotency("session handoff", idemStateful, "--cancel of a cancelled handoff: success, nothing written; --note is a new handoff and --status/--verify are reads", witnessSessionHandoffCancelRepeat)
@@ -248,8 +248,8 @@ func witnessUIStartRepeat(t *testing.T) {
 	const listen = "127.0.0.1:8765"
 	spawns := 0
 	effects := uiLifecycleEffects{
-		prober:     idemUIProber{exact: exact},
-		executable: func() (string, error) { return "/fake/metasystem", nil },
+		prober: idemUIProber{exact: exact},
+		engine: func(string) (string, error) { return "/fake/metasystem", nil },
 		spawn: func(spec lifecycle.LaunchSpec) (lifecycle.Child, error) {
 			spawns++
 			// The server records itself as it binds; this one is the test
@@ -286,7 +286,7 @@ func witnessUIStartRepeat(t *testing.T) {
 
 func witnessUIStopRepeat(t *testing.T) {
 	roots, exact := idemUIBed(t)
-	effects := uiLifecycleEffects{prober: idemUIProber{exact: exact}, executable: func() (string, error) { return "", errors.New("no launch") },
+	effects := uiLifecycleEffects{prober: idemUIProber{exact: exact}, engine: func(string) (string, error) { return "", errors.New("no launch") },
 		spawn: func(lifecycle.LaunchSpec) (lifecycle.Child, error) {
 			return nil, errors.New("a stop launched the interface")
 		}}
@@ -298,6 +298,21 @@ func witnessUIStopRepeat(t *testing.T) {
 		t.Fatalf("repeated stop = %+v", second)
 	}
 	idemSameTree(t, "a repeated interface stop", before, idemTreeDigest(t, roots.StateRoot))
+
+	// Another machine of this computer running the one interface: the stop
+	// stops it, so it is no repeat; the stop after it is.
+	seats := newUISeatsBed(t)
+	other := seats.seat("ui")
+	seats.live(other, 5401, "127.0.0.1:7878", identity.Alive)
+	across := seats.effects(uiSeatsOf("m1e", other))
+	if first := uiLifecycleRunWith("stop", roots, "", 0, across); first.Result.Code != 0 || first.Unchanged || len(seats.sent) != 1 {
+		t.Fatalf("stop of the other seat's interface = %+v, signals %v", first, seats.sent)
+	}
+	before = idemTreeDigest(t, other.Roots.StateRoot)
+	if second := uiLifecycleRunWith("stop", roots, "", 0, across); second.Result.Code != 0 || !second.Unchanged || len(seats.sent) != 1 {
+		t.Fatalf("repeated stop across seats = %+v, signals %v", second, seats.sent)
+	}
+	idemSameTree(t, "a repeated stop across seats", before, idemTreeDigest(t, other.Roots.StateRoot))
 }
 
 func witnessCoordinatorRepeat(t *testing.T) {

@@ -238,7 +238,7 @@ func MainWithSetup(m *testing.M, setup func() error, declarations ...Declaration
 		statErr := unix.Fstat(4, &readyStat)
 		readyFlags, err := unix.FcntlInt(uintptr(4), unix.F_GETFL, 0)
 		if statErr != nil || readyStat.Mode&unix.S_IFMT != unix.S_IFIFO || err != nil || readyFlags&unix.O_ACCMODE != unix.O_WRONLY {
-			fmt.Fprintf(os.Stderr, "run fixture custodian: ready descriptor 4 is not a pipe opened for writing: mode=%#o flags=%#x stat=%v flags-error=%v\n", readyStat.Mode&unix.S_IFMT, readyFlags, statErr, err)
+			fmt.Fprintf(os.Stderr, "fixture custodian: descriptor 4 must be a pipe open for writing (mode=%#o flags=%#x stat=%v err=%v)\n", readyStat.Mode&unix.S_IFMT, readyFlags, statErr, err)
 			return 2
 		}
 		watch := os.NewFile(3, "fixture-owner-watch")
@@ -584,7 +584,7 @@ func MkdirTemp(pattern string) (string, error) {
 	dir := namespaceTemp.dir
 	namespaceTemp.Unlock()
 	if dir == "" {
-		return "", errors.New("testenv.MkdirTemp: this process has no test namespace; call it from a test of a package whose TestMain runs testenv.Main")
+		return "", errors.New("testenv.MkdirTemp needs a test namespace: call it from a package whose TestMain runs testenv.Main")
 	}
 	return os.MkdirTemp(dir, pattern)
 }
@@ -746,21 +746,29 @@ func registryHomeForProcess(mkdirTemp func(string, string) (string, error)) (*re
 }
 
 func createRegistryHome(mkdirTemp func(string, string) (string, error)) (*registryHomeLease, error) {
-	removeDeadRegistryHomes("/tmp", os.Stderr)
-	registry, primaryErr := createRegistryHomeUnder(mkdirTemp, "/tmp")
+	return createRegistryHomeIn(mkdirTemp, "/tmp", os.TempDir())
+}
+
+// createRegistryHomeIn publishes a home under primary, else under TMPDIR
+// (MkdirTemp's empty directory). Both roots are swept first whichever one
+// this run publishes in: a home made under the TMPDIR fallback, kept by its
+// owner for a joined child that outlived it, would otherwise wait for
+// another run whose primary root fails.
+func createRegistryHomeIn(mkdirTemp func(string, string) (string, error), primary, fallbackRoot string) (*registryHomeLease, error) {
+	removeDeadRegistryHomes(primary, os.Stderr)
+	if fallbackRoot != primary {
+		removeDeadRegistryHomes(fallbackRoot, os.Stderr)
+	}
+	registry, primaryErr := createRegistryHomeUnder(mkdirTemp, primary)
 	if primaryErr == nil {
 		return registry, nil
 	}
 
-	fallbackRoot := os.TempDir()
-	if fallbackRoot != "/tmp" {
-		removeDeadRegistryHomes(fallbackRoot, os.Stderr)
-	}
 	registry, fallbackErr := createRegistryHomeUnder(mkdirTemp, "")
 	if fallbackErr == nil {
 		return registry, nil
 	}
-	return nil, fmt.Errorf("in /tmp: %v; in TMPDIR: %w", primaryErr, fallbackErr)
+	return nil, fmt.Errorf("in %s: %v; in TMPDIR: %w", primary, primaryErr, fallbackErr)
 }
 
 func createRegistryHomeUnder(mkdirTemp func(string, string) (string, error), root string) (*registryHomeLease, error) {
@@ -961,8 +969,9 @@ func removeSettledRegistryHome(home string, output io.Writer) error {
 }
 
 // removeDeadRegistryHomes removes registry homes whose owner lock is free,
-// together with their settled sidecars. Sidecars are only ever handled through
-// their authenticated home: neither age nor an absent home proves ownership.
+// together with their settled sidecars, and staging directories a creator
+// left unpublished. Sidecars are only ever handled through their
+// authenticated home: neither age nor an absent home proves ownership.
 func removeDeadRegistryHomes(root string, output io.Writer) {
 	entries, err := os.ReadDir(root)
 	if err != nil {
@@ -970,6 +979,12 @@ func removeDeadRegistryHomes(root string, output io.Writer) {
 	}
 	for _, entry := range entries {
 		path := filepath.Join(root, entry.Name())
+		if isRegistryStaging(entry.Name()) && entry.IsDir() && entry.Type()&os.ModeSymlink == 0 {
+			if err := removeStaleRegistryStaging(path); err != nil {
+				fmt.Fprintf(output, "remove stale registry staging %s: %v\n", path, err)
+			}
+			continue
+		}
 		if !entry.IsDir() || entry.Type()&os.ModeSymlink != 0 || !strings.HasPrefix(entry.Name(), registryHomePrefix) {
 			continue
 		}
@@ -977,6 +992,65 @@ func removeDeadRegistryHomes(root string, output io.Writer) {
 			fmt.Fprintf(output, "remove dead registry home %s: %v\n", path, err)
 		}
 	}
+}
+
+// isRegistryStaging reports whether name is exactly a staging directory
+// createRegistryHomeUnder makes: the dotted home prefix and MkdirTemp's
+// decimal suffix.
+func isRegistryStaging(name string) bool {
+	digits, found := strings.CutPrefix(name, "."+registryHomePrefix)
+	return found && digits != "" && strings.IndexFunc(digits, func(r rune) bool { return r < '0' || r > '9' }) < 0
+}
+
+// removeStaleRegistryStaging removes a staging directory whose creator died
+// before its publishing rename (a SIGKILL between MkdirTemp and the rename).
+// It fails closed: anything it cannot open, read or lock is kept. The creator
+// takes its shared owner lock before it writes the nonce, so only a complete
+// nonce proves the lock was ever taken; a staging directory without one may
+// be a live creator that has not locked yet, and is kept without being
+// probed, so the probe never makes a live creator's own lock fail. With the
+// nonce complete, an exclusive lock taken without waiting proves the creator
+// gone. Symlinks are never followed: the staging path and its owner file
+// must still be the directory and file that were locked.
+func removeStaleRegistryStaging(staging string) error {
+	info, err := os.Lstat(staging)
+	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	owner, err := openRegistryOwner(staging)
+	if err != nil {
+		if os.IsNotExist(err) || errors.Is(err, unix.ELOOP) {
+			return nil
+		}
+		return err
+	}
+	defer unlockAndClose(owner)
+	if ownerNonce(owner) == "" {
+		return nil
+	}
+	if err := unix.Flock(int(owner.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
+		if lockWouldBlock(err) {
+			return nil
+		}
+		return fmt.Errorf("lock staging owner: %w", err)
+	}
+	registryLockTaken(owner)
+	opened, err := owner.Stat()
+	if err != nil {
+		return err
+	}
+	ownerPath, err := os.Lstat(filepath.Join(staging, registryOwnerFile))
+	if err != nil || !os.SameFile(opened, ownerPath) {
+		return err
+	}
+	current, err := os.Lstat(staging)
+	if err != nil || !os.SameFile(info, current) {
+		return err
+	}
+	return os.RemoveAll(staging)
 }
 
 // HomeSettled is the observation half of the dead-home predicate (Part B

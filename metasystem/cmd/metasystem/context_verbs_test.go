@@ -1003,7 +1003,7 @@ func TestContextVerifyAndCancel(t *testing.T) {
 		return lease.Classification{}, errors.New("injected classification failure")
 	}
 	code, _, problem = captureContextVerb(t, contextHandoffTestRun(t, root), "--root", container, "--cancel", foreign.nonce)
-	if code != 1 || !strings.HasPrefix(problem, "metasystem session handoff: classify caller:") {
+	if code != 1 || !strings.HasPrefix(problem, "metasystem session handoff: who is asking for the handoff cannot be told:") {
 		t.Fatalf("unclassified cancel = code %d stderr %q", code, problem)
 	}
 	classifyContextHandoffCaller = identityClassifier

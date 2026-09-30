@@ -60,7 +60,7 @@ func TestLandingGuardOwnersYieldAtTheHelmWithoutATerminal(t *testing.T) {
 
 	head := runReceiptGit(t, root, "rev-parse", "HEAD")
 	out, err := commit(root, "control.txt")
-	if err == nil || !strings.Contains(out, "the live wrapper ancestry token is missing") || !strings.Contains(out, "refs/heads/main is the published line") {
+	if err == nil || !strings.Contains(out, "an agent commits here only through metasystem work land") || !strings.Contains(out, "refs/heads/main is the published line") {
 		t.Fatalf("control commit without the helm: %v\n%s", err, out)
 	}
 	if after := runReceiptGit(t, root, "rev-parse", "HEAD"); after != head {
@@ -81,7 +81,7 @@ func TestLandingGuardOwnersYieldAtTheHelmWithoutATerminal(t *testing.T) {
 	if after := runReceiptGit(t, root, "rev-parse", "HEAD"); after == head {
 		t.Fatalf("the admitted commit left HEAD at %s", head)
 	}
-	if strings.Count(out, "pre-commit guard: HUMAN AT THE HELM (wido): the wrapper-fence yields; recorded in ") != 1 || !strings.Contains(out, "helm-yields.log") {
+	if strings.Count(out, "HUMAN AT THE HELM (wido): this commit passed the agent-commit check as wido's act") != 1 {
 		t.Fatalf("commit at the helm printed %q", out)
 	}
 	lines := yieldLines(t, yields)
@@ -109,7 +109,7 @@ func TestLandingGuardOwnersYieldAtTheHelmWithoutATerminal(t *testing.T) {
 	}
 	linkedHead := runReceiptGit(t, linked, "rev-parse", "HEAD")
 	out, err = commit(linked, "linked.txt")
-	if err == nil || !strings.Contains(out, "the live wrapper ancestry token is missing") || strings.Contains(out, "HUMAN AT THE HELM") {
+	if err == nil || !strings.Contains(out, "an agent commits here only through metasystem work land") || strings.Contains(out, "HUMAN AT THE HELM") {
 		t.Fatalf("linked worktree commit at the helm: %v\n%s", err, out)
 	}
 	if after := runReceiptGit(t, linked, "rev-parse", "HEAD"); after != linkedHead {

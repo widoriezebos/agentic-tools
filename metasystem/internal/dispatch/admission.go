@@ -7,8 +7,10 @@ import (
 	"strings"
 	"time"
 
+	"errors"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 )
 
 var AdmissionRefusalCodes = []string{"BUDGET_UNKNOWN", "BUDGET_REFUSED", "HAZARD_REFUSED", "RISK_UNANSWERED"}
@@ -104,7 +106,7 @@ func evaluateGoalAdmissionWithReads(repoRoot, stopLineage string, now time.Time,
 	projection, err := goal.Project(endpoint, false, now)
 	if err != nil {
 		if unknown, ok := GoalRecordBudgetUnknown(err); ok {
-			return verdict, fmt.Errorf("BUDGET_UNKNOWN record=%s reason=%s", unknown.Record, unknown.Reason)
+			return verdict, refusal.New("BUDGET_UNKNOWN", "record="+unknown.Record+" reason="+unknown.Reason, fmt.Errorf("the goal's budget cannot be worked out: %s cannot be read", unknown.Record))
 		}
 		return verdict, err
 	}
@@ -243,7 +245,7 @@ func evaluateProofAdmissionForDispatchWithReads(repoRoot, authorityID string, au
 	candidateRevision, proposedCap uint64, now time.Time, role, dispatchMode string, reads goalAdmissionReads, hazards ...HazardClass) (ProofAdmissionVerdict, error) {
 	var result ProofAdmissionVerdict
 	if candidate == nil || candidate.Id == "" {
-		return result, fmt.Errorf("proof admission requires a candidate goal")
+		return result, errors.New("the check run was asked for without the goal it checks")
 	}
 	if candidate.Id == authorityID {
 		verdict, err := evaluateGoalRevisionAdmissionForDispatchWithReads(repoRoot, authorityID, authorityRevision, proposedCap,

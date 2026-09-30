@@ -384,7 +384,7 @@ func (f *proofRunFamily) Inventory() ([]Item, error) {
 func (f *proofRunFamily) Stop(item Item) (Outcome, error) {
 	current, ok := f.items[item.Key]
 	if !ok {
-		return Outcome{}, fmt.Errorf("proof-run item %s disappeared from the typed inventory", item.Key)
+		return Outcome{}, fmt.Errorf("check run %s disappeared from the list of running work", item.Key)
 	}
 	cacheKey := current.record.Key() + ":" + current.component
 	if current.attemptOnly {

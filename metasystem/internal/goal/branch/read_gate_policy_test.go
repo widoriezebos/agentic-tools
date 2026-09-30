@@ -1,6 +1,7 @@
 package branch
 
 import (
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -68,7 +69,7 @@ func TestResolveReadGateRecordsOneRunAndRefusesAChangedTree(t *testing.T) {
 	if closeErr := held.Close(); closeErr != nil {
 		t.Fatal(closeErr)
 	}
-	if err == nil || !strings.Contains(err.Error(), ReadDispatchPendingCode) || gateRuns != 1 {
+	if err == nil || !strings.Contains(goal.RecordText(err), ReadDispatchPendingCode) || gateRuns != 1 {
 		t.Fatalf("concurrent read of the unit was not refused as pending: err=%v runs=%d", err, gateRuns)
 	}
 

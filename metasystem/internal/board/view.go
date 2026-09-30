@@ -171,10 +171,13 @@ func (view View) Lines(now time.Time, location *time.Location, verbose bool) []s
 	}
 	lines := []string{fmt.Sprintf("board: %d seat%s on this host%s", len(view.Seats), plural(len(view.Seats)), bridge)}
 	for _, seat := range view.Seats {
-		lines = append(lines, "  "+seat.Machine+": "+seatText(seat, now, location))
-		if !verbose {
+		if !verbose || seat.Unknown != "" || len(seat.Goals) == 0 {
+			lines = append(lines, "  "+seat.Machine+": "+seatText(seat, now, location))
 			continue
 		}
+		// Verbose gives each goal its own line; the seat line counts them
+		// instead of naming them a second time (F5).
+		lines = append(lines, fmt.Sprintf("  %s: %d goal%s", seat.Machine, len(seat.Goals), plural(len(seat.Goals))))
 		for _, entry := range seat.Goals {
 			lines = append(lines, "    "+goalText(entry, now, location))
 		}
@@ -236,6 +239,11 @@ func seatText(seat SeatView, now time.Time, location *time.Location) string {
 		text += " (" + strings.Join(counts, ", ") + ")"
 	}
 	return text
+}
+
+// Text is the goal's own line, as --verbose prints it under its seat.
+func (entry GoalView) Text(now time.Time, location *time.Location) string {
+	return goalText(entry, now, location)
 }
 
 // goalText is one goal as a person reads it: goal-x, review round 2 of 3

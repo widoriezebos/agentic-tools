@@ -87,7 +87,7 @@ func TestSignedInSessionProofRefusesIncompleteRecords(t *testing.T) {
 		name, user, ref, issuer, want string
 		now                           time.Time
 	}{
-		{name: "zero time", user: "Wido", ref: "sess", issuer: "browser", now: time.Time{}, want: "non-zero observation time"},
+		{name: "zero time", user: "Wido", ref: "sess", issuer: "browser", now: time.Time{}, want: "the time it was seen"},
 		{name: "no issuer", user: "Wido", ref: "sess", issuer: "", now: now, want: "issuer"},
 		{name: "no user", user: "", ref: "sess", issuer: "browser", now: now, want: "user"},
 		{name: "no session reference", user: "Wido", ref: "", issuer: "browser", now: now, want: "session reference"},

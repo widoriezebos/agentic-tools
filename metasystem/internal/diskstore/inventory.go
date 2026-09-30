@@ -3,6 +3,7 @@ package diskstore
 import (
 	"context"
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -55,7 +56,7 @@ type Consumer struct {
 
 // Line renders a consumer for a person.
 func (c Consumer) Line() string {
-	size := formatBytes(c.Bytes)
+	size := textui.Bytes(c.Bytes)
 	if !c.Measured {
 		size = "at least " + size + " (not fully measured within the pass budget)"
 	}

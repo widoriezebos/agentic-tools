@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 )
 
 // goal allow G PERMISSION and goal disallow G PERMISSION record and withdraw
@@ -20,11 +19,15 @@ import (
 func (inv *intentInvocation) permissionWord(id, act string) (goal.Permission, int, bool) {
 	known := "the permissions are: " + strings.Join(goal.PermissionNames(), ", ")
 	if len(inv.input.args) < 2 || strings.TrimSpace(inv.input.args[1]) == "" {
-		return goal.Permission{}, inv.refuse(id, fmt.Sprintf("needs the permission: metasystem goal %s G PERMISSION; nothing was done", act), known), false
+		return goal.Permission{}, inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id),
+			Summary: "no permission was named, so nothing was done",
+			next:    inv.publicArgv("goal", act, id, "PERMISSION"), nextReason: known}), false
 	}
 	permission, err := goal.LookupPermission(inv.input.args[1])
 	if err != nil {
-		return goal.Permission{}, inv.refuse(id, err.Error()+"; nothing was done", ""), false
+		return goal.Permission{}, inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id),
+			Summary: err.Error() + "; nothing was done",
+			next:    inv.publicArgv("goal", act, id, "PERMISSION"), nextReason: known}), false
 	}
 	return permission, 0, true
 }
@@ -44,22 +47,26 @@ func runIntentAllow(inv *intentInvocation) int {
 	}
 	command := goal.AllowCommand(id, permission.Name)
 	if strings.TrimSpace(reason) == "" {
-		return inv.refuse(id, fmt.Sprintf("allowing %s says why; nothing was done", permission.Words), "run "+command)
-	}
-	personAct := func(detail string) int {
-		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: inv.targets(id),
-			Summary:  fmt.Sprintf("allowing %s is a person's act%s; nothing was done", permission.Words, detail),
-			Decision: humanauthority.PersonActRemedy(command) + " (naming themself with --by NAME where the shell carries a session lineage)"})
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id),
+			Summary: fmt.Sprintf("allowing %s needs a reason; nothing was done", permission.Words),
+			next:    shellWords(command), nextReason: "with the reason"})
 	}
 	// An agent session names itself by its lineage; it cannot allow, and
 	// the refusal names the command the person runs.
 	agent := inv.input.has("lineage") || inv.owners.dependencies.ownerLineage != nil && inv.owners.dependencies.ownerLineage() != ""
 	if agent && inv.input.text("by") == "" {
-		return personAct(" and this command runs as an agent session")
+		// A live general grant that admits this session makes the act the
+		// granting person's (M6); the person's proof below answers under it.
+		if _, granted := inv.attorneyActor(); !granted || inv.input.has("lineage") {
+			return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: inv.targets(id),
+				Summary: fmt.Sprintf("allowing %s is a person's act, not an agent session's; nothing was done", permission.Words),
+				next:    shellWords(command), nextReason: "in a terminal you opened yourself"})
+		}
 	}
 	actor, proof, refused := inv.actingAs("allow", id, actorHuman)
 	if refused != nil {
-		return personAct(" and no enrolled person was proven here (" + refused.Summary + ")")
+		refused.Summary = fmt.Sprintf("allowing %s is a person's act, and %s", permission.Words, refused.Summary)
+		return inv.render(*refused)
 	}
 	args := append([]string{"--root", inv.stateRoot, "--id", id}, actor...)
 	change := goal.PermissionChange{Name: permission.Name, Allowed: true}

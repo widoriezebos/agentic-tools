@@ -162,7 +162,7 @@ func TestIntentGoalWorktreeIsolationRetry(t *testing.T) {
 	// A truncated earlier copy is neither kept as complete nor overwritten.
 	partial := settings[:len(settings)/2]
 	os.WriteFile(local, []byte(partial), 0o600)
-	if path, result := c.prepare(owners); path != "" || result == nil || !strings.Contains(result.Summary, "interrupted copy") || !strings.Contains(result.Summary, "remove") || read() != partial {
+	if path, result := c.prepare(owners); path != "" || result == nil || !strings.Contains(result.Summary, "interrupted copy") || !strings.Contains(result.Summary, "rm -- ") || read() != partial {
 		t.Fatalf("partial copy: %q %+v", path, result)
 	}
 	os.Remove(local)

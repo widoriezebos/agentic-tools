@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -95,9 +96,9 @@ func enrollGoalSyncTerminal(t *testing.T, root, terminalID string) (humanauthori
 
 func TestSyncReqLineage(t *testing.T) {
 	const (
-		agentRefusal        = "mutations carry their coordinator's identity: export METASYSTEM_OWNER_LINEAGE or pass --lineage"
-		noEnrollmentRefusal = "a human act derives its lineage from the enrolled terminal, and this checkout has none: run metasystem system enroll --name <your name> here once, or pass --lineage"
-		wrongShellRefusal   = "a human act derives its lineage only at the enrolled terminal: this shell does not descend from it (TERMINAL_NOT_REACHED); a person, at a terminal no agent started, enrolls it once with metasystem system enroll --name NAME, then runs the same command there, or passes --lineage"
+		agentRefusal        = "no session is named; an agent session passes --lineage, a person passes --by"
+		noEnrollmentRefusal = "this terminal isn't enrolled yet, so nothing was done\nrun: metasystem system enroll --name Wido  (then repeat this command)"
+		wrongShellRefusal   = "this terminal isn't enrolled (Wido enrolled another one), so nothing was done\nrun: metasystem system enroll --name Wido  (moves the enrollment here; then repeat this command)"
 	)
 
 	t.Run("human act derives enrolled terminal lineage", func(t *testing.T) {
@@ -128,8 +129,8 @@ func TestSyncReqLineage(t *testing.T) {
 			t.Fatal("unenrolled fixture unexpectedly has an enrollment")
 		}
 		_, err := syncReqWithProofAtWithDependencies("test", root, "Wido", "", nil, facts.commandNow, facts.dependencies())
-		want := noEnrollmentRefusal + ": " + enrollmentErr.Error()
-		if err == nil || err.Error() != want {
+		want := noEnrollmentRefusal
+		if err == nil || err.Error() != want || errors.Unwrap(err) == nil || !strings.Contains(errors.Unwrap(err).Error(), enrollmentErr.Error()) {
 			t.Fatalf("human refusal = %v, want %q", err, want)
 		}
 		facts.expect(1, 1, 1, 0, 0, 0, "repository top", "ledger identity", "guard", "endpoint", "machine", "lineage")
@@ -977,7 +978,7 @@ func TestGoalBudgetKeepsOverNormFixtureAuthorityOutsideTheTerminalFold(t *testin
 	args := []string{"--root", root, "--id", "standing-validation", "--fixture-human-authority", "--lineage", "m1", "8h/10/1201m/1/3"}
 	code, stdout, stderr := fixture.runBudgetTo(args, fixedFixtureGoalAuthority)
 	if code != 1 || !strings.Contains(stdout, `"outcome":"rejected"`) || strings.Count(stderr, "\n") != 2 ||
-		!strings.Contains(stderr, "goal budget: GOAL_NORM_REFUSED") || !strings.Contains(stderr, "no command completes this: a person, at a terminal no agent started, enrolls it once with metasystem system enroll --name NAME, then runs the over-norm box there") {
+		!strings.Contains(stderr, "goal budget: goal standing-validation asks for 1201m") || !strings.Contains(stderr, "run: metasystem system enroll --name Wido") {
 		t.Fatalf("fixture proof reached the enrolled-terminal fold: code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
 	fixture.expectBindings(0)
@@ -996,11 +997,11 @@ func TestGoalClassifySweepEmptyListingInstallsTierLawAndClosesDispatch(t *testin
 	preview, previewCode := captureStdout(t, func(stdout, stderr io.Writer) int {
 		return runGoalClassifySweepWithInputs([]string{"--root", root, "--draft", draft, "--preview"}, fixedFixtureGoalAuthority, fixture.commandNow, withStreams(fixture.dependencies(), stdout, stderr))
 	})
-	markerIndex := strings.LastIndex(preview, "listing-digest ")
+	markerIndex := strings.LastIndex(preview, "confirm with: --confirm ")
 	if previewCode != 0 || markerIndex < 0 || strings.TrimSpace(preview[:markerIndex]) != "" {
 		t.Fatalf("already-risk-scored ledger did not preview as an empty listing: code=%d output=%q", previewCode, preview)
 	}
-	digest := strings.TrimSpace(strings.TrimPrefix(preview[markerIndex:], "listing-digest "))
+	digest := strings.TrimSpace(strings.TrimPrefix(preview[markerIndex:], "confirm with: --confirm "))
 	if len(digest) != 64 {
 		t.Fatalf("empty classification listing had no SHA-256 digest: %q", digest)
 	}
@@ -1213,7 +1214,7 @@ func TestGoalSetObligationTemporaryWordFlagsTravelTogether(t *testing.T) {
 	}
 
 	_, stderr, code := fixture.runReal([]string{"--temporary-human-word", "word", "--review-by", "2026-09-06"})
-	if code != 2 || !strings.Contains(stderr, "requires identity, recurrence") {
+	if code != 2 || !strings.Contains(stderr, "an obligation needs every one of its flags") {
 		t.Fatalf("the temporary pair bypassed ordinary obligation requirements: code=%d stderr=%q", code, stderr)
 	}
 
@@ -1280,7 +1281,7 @@ func TestSTR3Gap05AcceptRiskWritesGoalCounselorAndRegisterThenCloses(t *testing.
 		return runGoalAcceptRiskWithFacts(blankWhy, fixedTemporaryGoalAuthority, fixture.commandNow, withStreams(dependencies, stdout, stderr), nil)
 	})
 	if code != 2 || !strings.Contains(stderr, "goal accept-risk: needs --id, --finding, --chain, and --why") ||
-		!strings.Contains(stderr, "no command completes this: add the missing decision value named in the refusal") {
+		!strings.Contains(stderr, "no command completes this: give the missing values the line above names") {
 		t.Fatalf("blank accepted-risk reason = exit %d stderr %q", code, stderr)
 	}
 	paired := append(append([]string(nil), base...), "--temporary-human-word", "Wido accepts this severe risk")
@@ -1633,7 +1634,7 @@ func TestGoalResumeTemporaryPathConfirmsAndRecordsWords(t *testing.T) {
 		"--temporary-human-word", word, "--review-by", "2026-09-06")
 	code, stdout, stderr := fixture.runResumeTo(args, fixedTemporaryGoalAuthority)
 	if code != 0 || !strings.Contains(stdout, `"outcome":"confirmed"`) ||
-		!strings.Contains(stdout, "goal resume: TEMPORARY authority under a recorded relayed word (human provenance not verified); re-approval due 2026-09-06 at an agent-free terminal") {
+		!strings.Contains(stdout, "resumed on a relayed word for now; the person confirms at their terminal by 2026-09-06") {
 		t.Fatalf("temporary resume did not confirm and announce: code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
 	fixture.expectBindings(1)
@@ -1671,7 +1672,7 @@ func TestGoalApproveAndUnapproveTemporarySurfacesRecordProofs(t *testing.T) {
 	approveCode, approveOut, approveErr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
 		return runGoalApproveWithInputs(approveArgs, fixedTemporaryGoalAuthority, fixture.commandNow, withStreams(fixture.dependencies(), stdout, stderr), nil)
 	})
-	if approveCode != 0 || !strings.Contains(approveOut, `"outcome":"confirmed"`) || !strings.Contains(approveOut, "TEMPORARY authority") {
+	if approveCode != 0 || !strings.Contains(approveOut, `"outcome":"confirmed"`) || !strings.Contains(approveOut, "approved on a relayed word for now") {
 		t.Fatalf("goal approve temporary surface failed: code=%d stdout=%q stderr=%q", approveCode, approveOut, approveErr)
 	}
 
@@ -1729,8 +1730,8 @@ func TestGoalSecondRelayedResumeRefusesWithFirstAct(t *testing.T) {
 	args := append(completeResumeArgs(root),
 		"--temporary-human-word", "Wido authorizes second resume", "--review-by", "2026-09-06")
 	code, stdout, stderr := fixture.runResumeTo(args, fixedTemporaryGoalAuthority)
-	want := `goal standing-validation already used relayed resume authority on 2026-09-01T09:30:00Z with recorded word \"Wido authorizes first resume\"; a further resume needs freshly observed enrolled-terminal authority`
-	if code != 1 || !strings.Contains(stdout, want) || strings.Contains(stdout, "TEMPORARY authority") {
+	want := `goal standing-validation already had one resume on a relayed word (2026-09-01T09:30:00Z, \"Wido authorizes first resume\"); the next resume is the person's, at their terminal`
+	if code != 1 || !strings.Contains(stdout, want) || strings.Contains(stdout, "on a relayed word for now") {
 		t.Fatalf("second relayed resume refusal mismatch: code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
 	fixture.expectBindings(1)
@@ -1778,8 +1779,8 @@ func TestGoalSetObligationAnnouncesTemporaryAuthority(t *testing.T) {
 	args := append(completeSetObligationArgs(fixture.root()),
 		"--temporary-human-word", "Wido authorizes this obligation", "--review-by", "2026-09-06")
 	stdout, stderr, code := fixture.run(args, fixedTemporaryGoalAuthority)
-	if code != 0 || !strings.Contains(stdout, "TEMPORARY authority under a recorded relayed word (human provenance not verified)") ||
-		!strings.Contains(stdout, "re-approval due 2026-09-06 at an agent-free terminal") {
+	if code != 0 || !strings.Contains(stdout, "obligation set on a relayed word for now") ||
+		!strings.Contains(stdout, "the person confirms at their terminal by 2026-09-06") {
 		t.Fatalf("temporary set-obligation did not announce its status: code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
 	if strings.Contains(stderr, personOnlyPrefix) {
@@ -1799,7 +1800,7 @@ func TestGoalSetObligationTemporaryPathConfirmsAndRecords(t *testing.T) {
 		"--review-by", "2026-09-06")
 	stdout, stderr, code := fixture.run(args, fixedTemporaryGoalAuthority)
 	if code != 0 || !strings.Contains(stdout, `"outcome":"confirmed"`) ||
-		!strings.Contains(stdout, "TEMPORARY authority under a recorded relayed word (human provenance not verified)") {
+		!strings.Contains(stdout, "obligation set on a relayed word for now") {
 		t.Fatalf("temporary set-obligation did not complete through the CLI: code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
 
@@ -1846,8 +1847,8 @@ func TestGoalSecondRelayedSetObligationRefusesWithFirstAct(t *testing.T) {
 	secondArgs := append(completeSetObligationArgs(fixture.root()),
 		"--temporary-human-word", "Wido authorizes second obligation", "--review-by", "2026-09-06")
 	stdout, stderr, code := fixture.run(secondArgs, fixedTemporaryGoalAuthority)
-	want := `goal standing-validation already used relayed set-obligation authority on 2026-09-01T10:00:00Z with recorded word \"Wido authorizes first obligation\"; a further set-obligation needs freshly observed enrolled-terminal authority`
-	if code != 1 || !strings.Contains(stdout, want) || strings.Contains(stdout, "TEMPORARY authority") {
+	want := `goal standing-validation already had one set-obligation on a relayed word (2026-09-01T10:00:00Z, \"Wido authorizes first obligation\"); the next set-obligation is the person's, at their terminal`
+	if code != 1 || !strings.Contains(stdout, want) || strings.Contains(stdout, "on a relayed word for now") {
 		t.Fatalf("second relayed set-obligation refusal mismatch: code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
 	fixture.expectTransactions(1, 1)
@@ -2108,7 +2109,7 @@ func TestGoalEnrollTerminalSucceedsOnEveryMachineAndFirstEndsRelay(t *testing.T)
 		Endpoint: endpointB, Actor: goal.Actor{Machine: "mac-b", Lineage: "enrollment-fixture"},
 		Ulid: "01ARZ3NDEKTSV4RRFFQ69G5FAZ", Now: firstAt.Add(time.Minute), ClaimEpoch: 1,
 	}, "relayed-waiting")
-	if err != nil || claim.Outcome != goal.OutcomeRejected || !strings.Contains(claim.Detail, "APPROVAL_EXPIRED") || !strings.Contains(claim.Detail, "fleet's first terminal") {
+	if err != nil || claim.Outcome != goal.OutcomeRejected || claim.Code != "APPROVAL_EXPIRED" || !strings.Contains(claim.Detail, "fleet's first terminal") {
 		t.Fatalf("the first machine's enrollment did not end relayed approval fleet-wide: result=%+v err=%v", claim, err)
 	}
 
@@ -2346,7 +2347,7 @@ func TestProofGoalResolutionNamesTheOnlyBreachStoppedClaim(t *testing.T) {
 	root, reads := repository.root, repository.reads()
 	t.Setenv("METASYSTEM_PROOF_CONTROL_ROOT", "")
 	t.Setenv("METASYSTEM_PROOF_ATTEMPT", "")
-	want := "proof accounting has no live claimed goal for machine mac-cli; the only claim here is breach-stopped: standing-validation (stop stop-standing-validation-r2-f1); pass --goal"
+	want := "machine mac-cli holds only goal standing-validation, which is stopped (stop-standing-validation-r2-f1); name a goal with --goal GOAL"
 
 	for _, test := range []struct {
 		name    string
@@ -2582,7 +2583,7 @@ func TestProofGoalResolutionStaysAmbiguousBesideALandingClaim(t *testing.T) {
 	// Beside a working claim both are live proof targets, so the seat names one.
 	addProofSelectorLiveGoal(t, repository)
 	got, err := uniqueActiveProofGoalWithReads(root, now, reads.ResolveMachine, reads.ResolveEndpoint)
-	if err == nil || got != "" || !strings.Contains(err.Error(), "ambiguous") || !strings.Contains(err.Error(), "--goal") {
+	if err == nil || got != "" || !strings.Contains(err.Error(), "several claimed goals") || !strings.Contains(err.Error(), "--goal") {
 		t.Fatalf("a working claim beside a landing claim did not stay ambiguous: %q %v", got, err)
 	}
 }

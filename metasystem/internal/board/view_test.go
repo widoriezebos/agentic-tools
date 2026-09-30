@@ -117,3 +117,54 @@ func contains(lines []string, want string) bool {
 	}
 	return false
 }
+
+// A goal's Text is the line --verbose prints under its seat, in the zone
+// the reader names.
+func TestGoalViewTextIsItsVerboseLine(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 9, 30, 8, 58, 0, 0, time.UTC)
+	zone := time.FixedZone("CEST", 2*3600)
+	entry := GoalView{Goal: "goal-l", Stage: StageLanded, Since: now.Add(-30 * time.Minute)}
+	if got := entry.Text(now, zone); got != "goal-l, landed since 10:28" {
+		t.Errorf("Text = %q", got)
+	}
+	view := View{Readable: true, Bridge: "absent", Seats: []SeatView{{Machine: "m1e", Goals: []GoalView{entry}}}}
+	if lines := view.Lines(now, zone, true); lines[len(lines)-1] != "    "+entry.Text(now, zone) {
+		t.Errorf("verbose lines = %q", lines)
+	}
+}
+
+// TestVerboseBoardNamesEachGoalOnce (F5): --verbose printed a seat's
+// underway goal twice, on the seat line and again on its own line. The
+// verbose form gives each goal its own line and the seat line counts them.
+func TestVerboseBoardNamesEachGoalOnce(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 9, 30, 9, 0, 0, 0, time.UTC)
+	view := View{Readable: true, Bridge: BridgeLive, Seats: []SeatView{
+		{Machine: "landing", Goals: []GoalView{}},
+		{Machine: "m1e", Goals: []GoalView{{Goal: "switch-on-trial", Unknown: "not claimed", Since: now.Add(-2 * time.Hour)}}},
+		{Machine: "m1b", Goals: []GoalView{{Goal: "goal-x", Stage: StageBuild, Since: now.Add(-time.Hour)}, {Goal: "goal-v", Stage: StageLanded, Since: now.Add(-time.Hour)}}},
+	}}
+	lines := view.Lines(now, time.UTC, true)
+	for _, goalID := range []string{"switch-on-trial", "goal-x", "goal-v"} {
+		count := 0
+		for _, line := range lines {
+			count += strings.Count(line, goalID)
+		}
+		if count != 1 {
+			t.Errorf("--verbose names %s %d times:\n%s", goalID, count, strings.Join(lines, "\n"))
+		}
+	}
+	want := []string{
+		"board: 3 seats on this host (bridge live)",
+		"  landing: nothing underway",
+		"  m1e: 1 goal",
+		"    switch-on-trial unknown: not claimed",
+		"  m1b: 2 goals",
+		"    goal-x, build since 08:00",
+		"    goal-v, landed since 08:00",
+	}
+	if !reflect.DeepEqual(lines, want) {
+		t.Errorf("verbose view:\n%s\nwant:\n%s", strings.Join(lines, "\n"), strings.Join(want, "\n"))
+	}
+}

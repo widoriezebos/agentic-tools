@@ -126,13 +126,13 @@ func TestGoalReviewRefusesARecordThatIsNotThisGoalsReview(t *testing.T) {
 		want string
 	}{
 		{"a review of A offered for B", clearAct(), "other-goal", "is a review of under-review, not of other-goal"},
-		{"an Outcome without the verdict", ReviewAct{Record: reviewPath, Content: reviewRecord("under-review", "send back", reviewedTip), Verdict: VerdictClearToLand}, "under-review", `does not open with "Verdict: clear to land"`},
+		{"an Outcome without the verdict", ReviewAct{Record: reviewPath, Content: reviewRecord("under-review", "send back", reviewedTip), Verdict: VerdictClearToLand}, "under-review", `doesn't start with "Verdict: clear to land"`},
 		{"not in its home", ReviewAct{Record: "plans/designs/review-of-under-review.md", Content: clearAct().Content, Verdict: VerdictClearToLand}, "under-review", "is not a review record in its home"},
 		{"a parent step out of the home", ReviewAct{Record: "plans/reviews/../goals/x.md", Content: clearAct().Content, Verdict: VerdictClearToLand}, "under-review", "is not a review record in its home"},
-		{"an Outcome drafted for another tip", ReviewAct{Record: reviewPath, Content: reviewRecord("under-review", "clear to land", movedTip), Verdict: VerdictClearToLand}, "under-review", "the branch was retipped since; press End again"},
+		{"an Outcome drafted for another tip", ReviewAct{Record: reviewPath, Content: reviewRecord("under-review", "clear to land", movedTip), Verdict: VerdictClearToLand}, "under-review", "but the branch moved to"},
 		{"an Outcome with no Reviewed at", ReviewAct{Record: reviewPath, Content: reviewRecord("under-review", "clear to land", ""), Verdict: VerdictClearToLand}, "under-review", "drafted for no tip"},
-		{"no verdict", ReviewAct{Record: reviewPath, Content: clearAct().Content, Verdict: "no-verdict"}, "under-review", "records clear-to-land or send-back"},
-		{"a send-back with no brief", ReviewAct{Record: reviewPath, Content: reviewRecord("under-review", "send back", reviewedTip), Verdict: VerdictSendBack}, "under-review", "mark at least one finding fix"},
+		{"no verdict", ReviewAct{Record: reviewPath, Content: clearAct().Content, Verdict: "no-verdict"}, "under-review", "the verdict is clear-to-land or send-back, not"},
+		{"a send-back with no brief", ReviewAct{Record: reviewPath, Content: reviewRecord("under-review", "send back", reviewedTip), Verdict: VerdictSendBack}, "under-review", "needs at least one finding marked fix"},
 	}
 	for index, row := range rows {
 		t.Run(row.name, func(t *testing.T) {
@@ -144,7 +144,7 @@ func TestGoalReviewRefusesARecordThatIsNotThisGoalsReview(t *testing.T) {
 		})
 	}
 	request, _ := reviewer(t, endpoint, 2, 20)
-	if _, err := Review(request, "under-review", clearAct(), nil); err == nil || !strings.Contains(err.Error(), "signed-in browser session") {
+	if _, err := Review(request, "under-review", clearAct(), nil); err == nil || !strings.Contains(err.Error(), "only a person records a review") {
 		t.Fatalf("no proof: %v", err)
 	}
 	request.Actor.Human = ""
@@ -233,7 +233,7 @@ func TestGoalReviewSendBackRefusesARecordWithNoFindingAnsweredFix(t *testing.T) 
 	} {
 		act := sendBackAct()
 		act.Content = reviewRecordAnswered("under-review", "send back", reviewedTip, answers...)
-		if _, err := act.Line("under-review", "Wido"); err == nil || !strings.Contains(err.Error(), "no finding answered fix") {
+		if _, err := act.Line("under-review", "Wido"); err == nil || !strings.Contains(err.Error(), "has no finding marked fix") {
 			t.Fatalf("%s: a send-back with no finding answered fix was admitted: %v", name, err)
 		}
 	}
@@ -241,7 +241,7 @@ func TestGoalReviewSendBackRefusesARecordWithNoFindingAnsweredFix(t *testing.T) 
 	request, proof := reviewer(t, endpoint, 9, 1)
 	refused := sendBackAct()
 	refused.Content = reviewRecordAnswered("under-review", "send back", reviewedTip, "unanswered", "left open")
-	if _, err := Review(request, "under-review", refused, proof); err == nil || !strings.Contains(err.Error(), "no finding answered fix") {
+	if _, err := Review(request, "under-review", refused, proof); err == nil || !strings.Contains(err.Error(), "has no finding marked fix") {
 		t.Fatalf("goal review published a send-back with no finding answered fix: %v", err)
 	}
 	admitted := sendBackAct()
@@ -268,7 +268,7 @@ func TestGoalReviewSendBackCountsOnlyAFindingsOwnAnswer(t *testing.T) {
 		if fixes := ReadReviewRecord(act.Content).Fixes; fixes != 0 {
 			t.Fatalf("%s: read %d findings answered fix, the room reads none", name, fixes)
 		}
-		if _, err := act.Line("under-review", "Wido"); err == nil || !strings.Contains(err.Error(), "no finding answered fix") {
+		if _, err := act.Line("under-review", "Wido"); err == nil || !strings.Contains(err.Error(), "has no finding marked fix") {
 			t.Fatalf("%s: a send-back with no finding answered fix was admitted: %v", name, err)
 		}
 	}

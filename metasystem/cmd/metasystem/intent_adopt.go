@@ -80,8 +80,13 @@ func runIntentSystemAdopt(inv *intentInvocation) int {
 			return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "adoption failed: " + err.Error(),
 				next: []string{"metasystem", "system", "check", "--repo", target}, nextReason: "see what the target is missing"})
 		}
-		return inv.render(intentResult{Outcome: intentRefused, code: refusal.Code, Targets: targets,
-			Summary: refusal.Message, text: refusal.Detail, next: refusal.Argv, nextReason: refusal.Remedy, Decision: refusal.Remedy})
+		result := intentResult{Outcome: intentRefused, code: refusal.Code, Targets: targets,
+			Summary: refusal.Message, text: refusal.Detail, next: refusal.Argv, nextReason: refusal.Remedy, Decision: refusal.Remedy}
+		if refusal.Again && len(refusal.Argv) == 0 {
+			// Line 2 is this adoption again, once the cause is gone.
+			result.Decision, result.retry = "", refusal.Remedy
+		}
+		return inv.render(result)
 	}
 	targets = []intentTarget{{Kind: "repository", ID: result.Target}}
 	if result.Already {

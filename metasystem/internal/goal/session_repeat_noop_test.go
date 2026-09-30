@@ -77,7 +77,7 @@ func TestAWithdrawOfAGoalThatIsNotLiveFromASessionIsRefused(t *testing.T) {
 	refused, err := Unapprove(sessionEffectRequest(t, endpoint, 6, 3), "ui-effect-gone",
 		"the board changed", sessionProofForTest(t, endpoint.Root, sessionEffectNow))
 	if err != nil || refused.Outcome != OutcomeRejected ||
-		!strings.Contains(refused.Detail, "APPROVAL_REQUIRED") {
+		!(refused.Code == "APPROVAL_REQUIRED") {
 		t.Fatalf("the withdrawal of a goal that is not live was not the engine's own refusal: %+v %v", refused, err)
 	}
 }

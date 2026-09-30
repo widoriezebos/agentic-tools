@@ -9,6 +9,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/placement"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
 
 // BoundClass is the evidence bound as one class of the machine pass (Round
@@ -156,7 +157,7 @@ func (c *BoundClass) Finish(pass *diskstore.Pass, report *diskstore.Report) {
 	}
 	if c.MachineCap > 0 && c.hostBytes > c.MachineCap {
 		c.notes = append(c.notes, fmt.Sprintf("machine cap: the host's evidence holds %s, over %s = %s by %s; metasystem evidence show --all names every root, and metasystem evidence dispose --over-bound --export DIR --preview shows what a person can remove",
-			formatGiB(c.hostBytes), config.DiskEvidenceMachineCapKey, formatGiB(c.MachineCap), formatGiB(c.hostBytes-c.MachineCap)))
+			textui.GiB(c.hostBytes), config.DiskEvidenceMachineCapKey, textui.GiB(c.MachineCap), textui.GiB(c.hostBytes-c.MachineCap)))
 	}
 	report.EvidenceRoots = append(report.EvidenceRoots, c.lines...)
 	report.Misplaced = append(report.Misplaced, c.misplaced...)
@@ -165,7 +166,7 @@ func (c *BoundClass) Finish(pass *diskstore.Pass, report *diskstore.Report) {
 
 // rootLine is one root with its owner and bytes.
 func rootLine(root Root, bytes int64) string {
-	line := fmt.Sprintf("%s: %s, %s", root.Path, root.Owner, formatGiB(bytes))
+	line := fmt.Sprintf("%s: %s, %s", root.Path, root.Owner, textui.GiB(bytes))
 	if count := len(root.NotManaged); count > 0 {
 		line += fmt.Sprintf("; %d entr%s not managed (metasystem evidence show --all --verbose lists them; remove by hand if unneeded)", count, plural(count, "y", "ies"))
 	}

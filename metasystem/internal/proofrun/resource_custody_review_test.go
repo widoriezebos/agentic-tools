@@ -463,7 +463,7 @@ func TestFixtureDrainRefusesASurvivorThatWillNotDie(t *testing.T) {
 			}
 			return nil
 		}, func() time.Time { return time.Unix(1800000000, 0) }, func() { pauses++ })
-	if err == nil || !strings.Contains(err.Error(), "did not drain") || !observed ||
+	if err == nil || !strings.Contains(err.Error(), "stayed alive through") || !observed ||
 		censuses != fixtureDrainCensuses || signals != fixtureDrainCensuses || pauses != fixtureDrainCensuses {
 		t.Fatalf("undying survivor observed=%t censuses=%d signals=%d pauses=%d err=%v", observed, censuses, signals, pauses, err)
 	}

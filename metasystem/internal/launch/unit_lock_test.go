@@ -32,7 +32,7 @@ func TestUnitLockReleaseSurvivesAnInheritedDescriptor(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if second, err := lock.acquire(); err == nil || !strings.HasPrefix(err.Error(), "UNIT_RUN_BUSY") {
+		if second, err := lock.acquire(); err == nil || !strings.HasPrefix(ErrorDetail(err), "UNIT_RUN_BUSY") {
 			if second != nil {
 				releaseUnitLock(second)
 			}

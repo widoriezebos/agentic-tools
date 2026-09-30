@@ -172,7 +172,7 @@ func TestRecognizeClassifiesTheTarget(t *testing.T) {
 	for _, asset := range ForeignAssets {
 		root := t.TempDir()
 		write(t, root, asset, "x")
-		if _, refusal := recognize(root, sha); refusal == nil || !strings.Contains(refusal.Message, asset) || !strings.Contains(refusal.Remedy, "metasystem-reconciliation.md") {
+		if _, refusal := recognize(root, sha); refusal == nil || !strings.Contains(refusal.Message, asset) || !strings.Contains(strings.Join(refusal.Argv, " "), "metasystem-reconciliation.md") {
 			t.Fatalf("foreign asset %s: %+v", asset, refusal)
 		}
 	}
@@ -190,7 +190,7 @@ func TestRecognizeClassifiesTheTarget(t *testing.T) {
 	incomplete := t.TempDir()
 	write(t, incomplete, "wow.md", "x")
 	write(t, incomplete, "docs/project-rules.md", MarkerPrefix+" `"+sha+"`.\n")
-	if _, refusal := recognize(incomplete, sha); refusal == nil || !strings.Contains(refusal.Message, "not a complete healthy installation") || !strings.Contains(refusal.Remedy, "project-adaptation.md") {
+	if _, refusal := recognize(incomplete, sha); refusal == nil || !strings.Contains(refusal.Message, "half-finished installation") || !strings.Contains(strings.Join(refusal.Argv, " "), "project-adaptation.md") {
 		t.Fatalf("an incomplete installation at the same SHA: %+v", refusal)
 	}
 }

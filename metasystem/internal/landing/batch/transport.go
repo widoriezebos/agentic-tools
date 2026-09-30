@@ -54,7 +54,7 @@ func PublishLandingBranch(root, id, expected, tip string) error {
 	command.Env = gittree.ScrubbedEnviron("LC_ALL=C")
 	if output, err := command.CombinedOutput(); err != nil {
 		text := strings.TrimSpace(string(output))
-		cause := fmt.Errorf("BATCH_LANDING_BRANCH_MOVED: %s: %w", text, err)
+		cause := fmt.Errorf("%s: %s: %w", codeLandingBranchMoved, text, err)
 		return classifyEndpointPushError(text, cause)
 	}
 	return nil
@@ -92,7 +92,7 @@ func RebuildLandingBranch(root, id, baseTree, expected, actor string, survivors 
 			}
 			commit, err := commitChange(root, unit, next, parent)
 			if err != nil {
-				return "", fmt.Errorf("BATCH_LANDING_BRANCH_PREP_REFUSED: %w", err)
+				return "", fmt.Errorf("%s: %w", codeLandingBranchPrepRefused, err)
 			}
 			parent, tree = commit, next
 			continue
@@ -109,13 +109,13 @@ func RebuildLandingBranch(root, id, baseTree, expected, actor string, survivors 
 			command.Stdin = strings.NewReader(BranchLandingMessage(unit.GoalID, build, unit.GoalLast && index == len(unit.Builds)-1) + "Landed-By: " + actor + "\n")
 			output, err := command.CombinedOutput()
 			if err != nil {
-				return "", fmt.Errorf("BATCH_LANDING_BRANCH_PREP_REFUSED: %s: %w", strings.TrimSpace(string(output)), err)
+				return "", fmt.Errorf("%s: %s: %w", codeLandingBranchPrepRefused, strings.TrimSpace(string(output)), err)
 			}
 			parent = strings.TrimSpace(string(output))
 		}
 	}
 	if parent == baseCommit {
-		return "", fmt.Errorf("BATCH_LANDING_BRANCH_PREP_REFUSED: no surviving builds")
+		return "", fmt.Errorf("%s: no surviving builds", codeLandingBranchPrepRefused)
 	}
 	present, err := remoteLandingBranchPresent(root, id)
 	if err != nil {
@@ -153,7 +153,7 @@ func commitForTreeInRef(root, ref, tree string) (string, error) {
 			return fields[0], nil
 		}
 	}
-	return "", fmt.Errorf("BATCH_LAND_TRUNK_MOVED: no %s commit has base tree %s", ref, tree)
+	return "", fmt.Errorf("%s: no %s commit has base tree %s", codeLandTrunkMoved, ref, tree)
 }
 
 // LandLandingBranch performs the only endpoint update and deletes the
@@ -168,7 +168,7 @@ func LandLandingBranch(root, id, baseCommit, tip string) error {
 	command.Env = gittree.ScrubbedEnviron("LC_ALL=C")
 	if output, err := command.CombinedOutput(); err != nil {
 		text := strings.TrimSpace(string(output))
-		cause := fmt.Errorf("BATCH_LAND_PUSH_REFUSED: %s: %w", text, err)
+		cause := fmt.Errorf("%s: %s: %w", codeLandPushRefused, text, err)
 		return classifyEndpointPushError(text, cause)
 	}
 	return nil
@@ -205,14 +205,14 @@ func remoteLandingBranchTip(root, id string) (string, bool, error) {
 	command.Env = gittree.ScrubbedEnviron()
 	output, err := command.CombinedOutput()
 	if err != nil {
-		return "", false, fmt.Errorf("BATCH_LANDING_BRANCH_MOVED: inspect %s: %s: %w", landingBranchRef(id), strings.TrimSpace(string(output)), err)
+		return "", false, fmt.Errorf("%s: inspect %s: %s: %w", codeLandingBranchMoved, landingBranchRef(id), strings.TrimSpace(string(output)), err)
 	}
 	fields := strings.Fields(string(output))
 	if len(fields) == 0 {
 		return "", false, nil
 	}
 	if len(fields) != 2 {
-		return "", false, fmt.Errorf("BATCH_LANDING_BRANCH_MOVED: inspect %s returned an unreadable ref", landingBranchRef(id))
+		return "", false, fmt.Errorf("%s: inspect %s returned an unreadable ref", codeLandingBranchMoved, landingBranchRef(id))
 	}
 	return fields[0], true, nil
 }
@@ -224,7 +224,7 @@ func remoteLandingBranchTipAndTree(root, id string) (string, string, bool, error
 	}
 	tree, err := landingGitOutput(root, "rev-parse", tip+"^{tree}")
 	if err != nil {
-		return "", "", false, fmt.Errorf("BATCH_LANDING_BRANCH_MOVED: inspect %s tree: %w", landingBranchRef(id), err)
+		return "", "", false, fmt.Errorf("%s: inspect %s tree: %w", codeLandingBranchMoved, landingBranchRef(id), err)
 	}
 	return tip, tree, true, nil
 }
@@ -238,7 +238,7 @@ func CleanupLandingBranch(root, id, tip string) error {
 	command := exec.Command("git", "-C", root, "branch", "-D", "landing/"+id)
 	command.Env = gittree.ScrubbedEnviron()
 	if output, err := command.CombinedOutput(); err != nil && !strings.Contains(string(output), "not found") {
-		return fmt.Errorf("BATCH_LAND_CLEANUP_REFUSED: %s: %w", strings.TrimSpace(string(output)), err)
+		return fmt.Errorf("%s: %s: %w", codeLandCleanupRefused, strings.TrimSpace(string(output)), err)
 	}
 	return nil
 }
@@ -271,7 +271,7 @@ type CommitBoundary func(landpath.CommitRequest) (string, int)
 
 func CommitWithWrapperWithRead(root string, declaration CommitDeclaration, goalID, receipt, message, authorName, authorEmail, landedBy, lineage string, commit CommitBoundary, readGit func(root string, args ...string) (string, error)) error {
 	if authorName == "" || authorEmail == "" {
-		return fmt.Errorf("BATCH_LAND_AUTHOR_UNBOUND: goal %s has no configured approver identity", goalID)
+		return fmt.Errorf("%s: goal %s has no configured approver identity", codeLandAuthorUnbound, goalID)
 	}
 	before, err := readGit(root, "rev-parse", "HEAD")
 	if err != nil {

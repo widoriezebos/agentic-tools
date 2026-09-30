@@ -23,7 +23,7 @@ func runSessionIsolate(args []string, stdout, stderr io.Writer) int {
 	flags := newFlagSet("session isolate", stdout, stderr)
 	root := pathFlag(flags, "root", "", "installation whose checkout the session isolates from (default: this engine's)")
 	if flags.Parse(args) != nil || flags.NArg() > 1 {
-		fmt.Fprintln(stderr, "usage: metasystem session isolate [--root INSTALLATION] [NAME]")
+		fmt.Fprintln(stderr, "usage: metasystem session isolate [--root <installation>] [<name>]")
 		return 2
 	}
 	harness := *root

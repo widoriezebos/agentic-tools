@@ -56,20 +56,28 @@ func runIntentGoalReview(inv *intentInvocation) int {
 		return runIntentGoalSitting(inv, id, record)
 	}
 	if record == "" || verdict == "" {
-		return inv.refuse(id, "needs the review record and the verdict; nothing was done",
-			"metasystem goal review "+id+" --record PATH --verdict clear-to-land|send-back")
+		retry := withoutOption(withoutOption(inv.typedArgv(), "record"), "verdict")
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id),
+			Summary: "a review needs its record file and its verdict; nothing was done",
+			next:    append(retry, "--record", reviewRecordOr(record, id), "--verdict", verdictOr(verdict)), nextReason: "or --verdict send-back --brief FILE"})
 	}
 	switch verdict {
 	case goal.VerdictSendBack:
 		if !inv.input.has("brief") {
-			return inv.refuse(id, "a send-back carries its correction brief; nothing was done", "give the findings answered fix with --brief FILE")
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id),
+				Summary: "a send-back needs its brief, the findings to fix; nothing was done",
+				next:    append(inv.typedArgv(), "--brief", "FILE"), nextReason: "the file with the findings answered fix"})
 		}
 	case goal.VerdictClearToLand:
 		if inv.input.has("brief") || inv.input.has("work") {
-			return inv.refuse(id, "clear-to-land carries no brief and names no work; nothing was done", "drop --brief and --work, or send it back with --verdict send-back")
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id),
+				Summary: "clear-to-land takes no brief and no work; nothing was done",
+				next:    withoutOption(withoutOption(inv.typedArgv(), "brief"), "work"), nextReason: "or send it back with --verdict send-back"})
 		}
 	default:
-		return inv.refuse(id, fmt.Sprintf("the verdict is clear-to-land or send-back, not %s; a review that ends without a verdict records nothing on the goal; nothing was done", shellCommand([]string{verdict})), "")
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id),
+			Summary: fmt.Sprintf("the verdict is clear-to-land or send-back, not %s; nothing was done", shellCommand([]string{verdict})),
+			next:    append(withoutOption(inv.typedArgv(), "verdict"), "--verdict", goal.VerdictClearToLand), nextReason: "or --verdict send-back --brief FILE"})
 	}
 	actor, _, problem := inv.actingAs("review", id, actorHuman)
 	if problem != nil {
@@ -145,16 +153,21 @@ func runGoalReviewWithInputs(args []string, prove goalAuthorityProver, commandNo
 func runIntentGoalSitting(inv *intentInvocation, id, record string) int {
 	hold := inv.input.switched("hold")
 	if hold && inv.input.switched("release") {
-		return inv.refuse(id, "--hold opens a sitting and --release ends one; give one of them; nothing was done", "")
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id),
+			Summary: "--hold starts a sitting and --release ends it; give one; nothing was done",
+			next:    withoutFlag(inv.typedArgv(), "release"), nextReason: "or keep --release and drop --hold"})
 	}
 	for _, other := range []string{"verdict", "brief", "work"} {
 		if inv.input.has(other) {
-			return inv.refuse(id, "--"+other+" belongs to a verdict, not to a sitting's hold or release; nothing was done",
-				"metasystem goal review "+id+" --record PATH --hold|--release")
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id),
+				Summary: "--" + other + " goes with a verdict, not with --hold or --release; nothing was done",
+				next:    withoutOption(inv.typedArgv(), other)})
 		}
 	}
 	if record == "" {
-		return inv.refuse(id, "a sitting names its review record; nothing was done", "metasystem goal review "+id+" --record PATH --hold|--release")
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id),
+			Summary: "a sitting needs its review record file; nothing was done",
+			next:    append(inv.typedArgv(), "--record", reviewRecordOr("", id)), nextReason: "the record file of this review"})
 	}
 	actor, _, problem := inv.actingAs("review", id, actorHuman)
 	if problem != nil {
@@ -208,4 +221,32 @@ func runGoalSittingWithInputs(args []string, prove goalAuthorityProver, commandN
 	}
 	result, err := goal.Sitting(request, *id, path, *hold, &proof)
 	return dependencies.publish(result, err)
+}
+
+// reviewRecordOr is the typed review record, else the record's usual place
+// for goal id: the value a refusal's run line fills in.
+func reviewRecordOr(record, id string) string {
+	if record != "" {
+		return record
+	}
+	return "plans/reviews/review-of-" + id + ".md"
+}
+
+// verdictOr is the typed verdict, else clear-to-land.
+func verdictOr(verdict string) string {
+	if verdict != "" {
+		return verdict
+	}
+	return goal.VerdictClearToLand
+}
+
+// withoutFlag is argv less every --name switch.
+func withoutFlag(argv []string, name string) []string {
+	var kept []string
+	for _, arg := range argv {
+		if arg != "--"+name {
+			kept = append(kept, arg)
+		}
+	}
+	return kept
 }

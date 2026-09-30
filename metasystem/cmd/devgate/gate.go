@@ -23,6 +23,13 @@ import (
 // gateRun is one invocation of the static or full gate against one root. A
 // witness consumer runs a second gateRun against its frozen export, in this
 // process, with its own environment copy.
+// The environment variables a gate message names in the command that
+// resolves it.
+const (
+	testWorkersVariable    = "METASYSTEM_TEST_WORKERS"
+	concurrentGateVariable = "METASYSTEM_ALLOW_CONCURRENT_GATE"
+)
+
 type gateRun struct {
 	ctx     context.Context
 	root    string
@@ -30,6 +37,9 @@ type gateRun struct {
 	d       deps
 	workers string
 	fast    bool
+	// verbose prints the details a person asks for with --verbose, such
+	// as the list of checks a passing static run made.
+	verbose bool
 
 	proofWorker bool
 
@@ -203,7 +213,7 @@ func (g *gateRun) full(options gateOptions) int {
 	g.authenticateWorker()
 	if g.env.get("METASYSTEM_GO_GATE_RELAUNCHED") == "1" {
 		if !g.proofWorker {
-			fmt.Fprintln(d.stderr, "go gate: relaunched child is not an authorized proof worker")
+			fmt.Fprintln(d.stderr, "go gate: the relaunched gate is not an authorized test worker")
 			return 1
 		}
 		g.env.unset("METASYSTEM_GO_GATE_RELAUNCHED")
@@ -215,7 +225,7 @@ func (g *gateRun) full(options gateOptions) int {
 		return g.relaunch(options)
 	}
 	if d.lookGo() != nil {
-		fmt.Fprintln(d.stderr, "go gate: go.mod present but no go toolchain on PATH; the committed engine cannot be built")
+		fmt.Fprintln(d.stderr, "go gate: no go toolchain is on this shell's search path, so the committed engine cannot be built")
 		return 1
 	}
 	if status := g.registerOnly("devgate gate"); status != 0 {
@@ -229,7 +239,7 @@ func (g *gateRun) full(options gateOptions) int {
 		return g.consumeFrozen(options)
 	}
 	if g.env.get("METASYSTEM_GATE_FROZEN_TOOLCHAIN") == "1" && g.env.get("GOFLAGS") != ownedGoFlags {
-		fmt.Fprintln(d.stderr, "go gate: frozen proof tree requires GOFLAGS="+ownedGoFlags)
+		fmt.Fprintln(d.stderr, "go gate: the frozen test tree needs GOFLAGS="+ownedGoFlags)
 		return 1
 	}
 	if options.witnessCheckOnly {
@@ -258,7 +268,7 @@ func (g *gateRun) full(options gateOptions) int {
 	coverageCandidate := false
 	if g.env.get("METASYSTEM_PROOF_CONTROL_ROOT") != "" || g.env.get("METASYSTEM_PROOF_ATTEMPT") != "" {
 		if g.env.get("METASYSTEM_PROOF_CONTROL_ROOT") == "" {
-			fmt.Fprintln(d.stderr, "go gate: proof worker locator has no control root")
+			fmt.Fprintln(d.stderr, "go gate: the test worker's settings name no control root")
 			return 1
 		}
 		// A legacy launch has a live control-root/process binding but no
@@ -335,7 +345,7 @@ func (g *gateRun) full(options gateOptions) int {
 		case eligible:
 			if err := d.owners.coverageBegin(coverage); err != nil {
 				_ = os.Remove(g.coverageLog)
-				fmt.Fprintln(d.stderr, "proof-run coverage-begin:", err)
+				fmt.Fprintln(d.stderr, "go gate: coverage measurement could not start:", err)
 				fmt.Fprintln(d.stderr, "go gate: could not claim the authenticated coverage producer slot")
 				return 1
 			}
@@ -408,7 +418,7 @@ func (g *gateRun) full(options gateOptions) int {
 		evidence, err := d.owners.coverageComplete(proofrun.CoverageCompleteOptions{CoverageBeginOptions: coverage,
 			CoverageLog: g.coverageLog, PackageInventory: g.packageList, ModulePrefix: "github.com/widoriezebos/agentic-tools/metasystem/"})
 		if err != nil {
-			fmt.Fprintln(d.stderr, "proof-run coverage-complete:", err)
+			fmt.Fprintln(d.stderr, "go gate: coverage measurement could not finish:", err)
 			if !g.retainCoverage("authenticated coverage publication refused") {
 				fmt.Fprintln(d.stderr, "go gate: authenticated coverage publication and evidence retention both failed")
 			}
@@ -496,7 +506,7 @@ func (g *gateRun) relaunch(options gateOptions) int {
 		"go-gate-"+d.now().UTC().Format("20060102T150405Z")+"-"+strconv.FormatInt(d.selfPid, 10)+".log")
 	tmp, err := os.MkdirTemp(tempDir(g.env), "metasystem-go-gate.")
 	if err != nil {
-		fmt.Fprintln(d.stderr, "go gate: could not prepare retained proof launch")
+		fmt.Fprintln(d.stderr, "go gate: could not prepare the kept test launch")
 		return 1
 	}
 	engine := filepath.Join(tmp, "metasystem")
@@ -506,7 +516,7 @@ func (g *gateRun) relaunch(options gateOptions) int {
 	var banner bytes.Buffer
 	if d.tool(g.ctx, toolCall{dir: g.root, env: g.env.list(), name: engine, args: []string{"internal", "proof-run", "banner",
 		"--suite", "go-gate", "--root", g.root, "--progress", progress, "--log", logPath}, stdout: &banner, stderr: d.stderr}) != nil {
-		fmt.Fprintln(d.stderr, "go gate: could not prepare retained proof launch")
+		fmt.Fprintln(d.stderr, "go gate: could not prepare the kept test launch")
 		return 1
 	}
 	argv := []string{engine, "internal", "proof-run", "launch", "--suite", "go-gate", "--root", g.root,
@@ -587,7 +597,7 @@ func (g *gateRun) runNative(stderr io.Writer) int {
 	defer stop()
 	engine, err := filepath.Abs(g.scratch)
 	if g.scratch == "" || err != nil {
-		fmt.Fprintln(stderr, "proof-run go-gate-tests: no candidate engine for the native custodians")
+		fmt.Fprintln(stderr, "go gate tests: no candidate engine to run the fixture custodians")
 		return 1
 	}
 	ctx = proofrun.WithResourceCustodyExecutable(ctx, engine)
@@ -597,12 +607,12 @@ func (g *gateRun) runNative(stderr io.Writer) int {
 			controlRoot, err = filepath.Abs(controlRoot)
 		}
 		if err != nil {
-			fmt.Fprintln(stderr, "proof-run go-gate-tests:", err)
+			fmt.Fprintln(stderr, "go gate tests:", err)
 			return 3
 		}
 		release, leased, err := d.owners.hostResources(ctx, controlRoot)
 		if err != nil {
-			fmt.Fprintln(stderr, "proof-run go-gate-tests: inherit admitted host resources:", err)
+			fmt.Fprintln(stderr, "go gate tests: the host resources passed down cannot be taken:", err)
 			return 3
 		}
 		defer release()
@@ -616,7 +626,7 @@ func (g *gateRun) runNative(stderr io.Writer) int {
 			rerun.Package, rerun.Test, rerun.First, rerun.Second, rerun.LogPath)
 	}
 	if err != nil {
-		fmt.Fprintf(stderr, "proof-run go-gate-tests: %v (native log: %s)\n", err, result.LogPath)
+		fmt.Fprintf(stderr, "go gate tests: %v (log: %s)\n", err, result.LogPath)
 	}
 	return status
 }
@@ -707,4 +717,19 @@ func copyEvidence(from, to string) error {
 			return fmt.Errorf("evidence %s is not a regular file or directory", path)
 		}
 	})
+}
+
+// verboseLine prints a detail only when --verbose asked for it.
+func (g *gateRun) verboseLine(line string) {
+	if g.verbose {
+		fmt.Fprintln(g.d.stdout, "  "+line)
+	}
+}
+
+// action is the devgate action this run answers as.
+func (g *gateRun) action() string {
+	if g.fast {
+		return "static"
+	}
+	return "gate"
 }

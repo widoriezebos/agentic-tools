@@ -1346,7 +1346,7 @@ func TestHazardConfigurationRefusesAWeakenedMinimum(t *testing.T) {
 		}
 		useRolePacketTable(t, encoded)
 		if _, err := ResolveHazardConfiguration(HazardMechanical, 3); err == nil ||
-			!strings.Contains(err.Error(), "independentCritiqueByTier, and at least one role") {
+			!strings.Contains(err.Error(), "with reach classes, critique tiers and roles") {
 			t.Fatalf("role packet table without independentCritiqueByTier was not refused by the reader: %v", err)
 		}
 	})

@@ -110,7 +110,7 @@ func RecordSources(store Store, id, actor string, at time.Time, resolve func(Rec
 	}
 	return store.Update(id, func(current *Record) error {
 		if current.Proof == nil || current.Proof.AttemptID != record.Proof.AttemptID {
-			return fmt.Errorf("BATCH_PROOF_INPUT_MOVED: batch changed before its sources were recorded")
+			return fmt.Errorf("%s: batch changed before its sources were recorded", codeProofInputMoved)
 		}
 		current.Proof.Sources, current.Proof.SourcesUnresolved = sources, ""
 		if unresolved != nil {
@@ -149,26 +149,26 @@ func flakesStillCarried(uses []FlakeUse, open []OpenEntry, now time.Time) error 
 // binds the plan: only a completion carrying it may finish or refuse it.
 func RequireProofPlan(store Store, id, actor, window, token string, sample proofrun.LoadSample, plan testpolicy.Plan, at time.Time) (Record, error) {
 	if token == "" {
-		return Record{}, fmt.Errorf("BATCH_PROOF_STATE_REFUSED: batch %s proof plan has no token", id)
+		return Record{}, fmt.Errorf("%s: batch %s test plan has no token", codeProofStateRefused, id)
 	}
 	record, err := store.Load(id)
 	if err != nil {
 		return Record{}, err
 	}
 	if record.State != StateSealed || len(record.Units) == 0 {
-		return Record{}, fmt.Errorf("BATCH_PROOF_STATE_REFUSED: batch %s is not a non-empty sealed batch", id)
+		return Record{}, fmt.Errorf("%s: batch %s is not a non-empty sealed batch", codeProofStateRefused, id)
 	}
 	selected := slices.Clone(plan.SelectedGroups)
 	slices.Sort(selected)
 	selected = slices.Compact(selected)
 	for _, required := range record.SelectedGroups {
 		if _, present := slices.BinarySearch(selected, required); !present {
-			return Record{}, fmt.Errorf("BATCH_PROOF_UNION_UNCOVERED: selected tip plan omits %s", required)
+			return Record{}, fmt.Errorf("%s: selected tip plan omits %s", codeProofUnionUncovered, required)
 		}
 	}
 	err = store.Update(id, func(current *Record) error {
 		if current.State != StateSealed || current.TipTree != record.TipTree || !slices.Equal(current.SelectedGroups, record.SelectedGroups) {
-			return fmt.Errorf("BATCH_PROOF_INPUT_MOVED: batch changed before proof admission")
+			return fmt.Errorf("%s: the batch changed before its test run was admitted", codeProofInputMoved)
 		}
 		current.ClosedReason = "proof-admitted"
 		candidateTip := ""
@@ -192,7 +192,7 @@ func RequireProofPlan(store Store, id, actor, window, token string, sample proof
 func RecordUnionRefusal(store Store, id, actor, reason string, at time.Time) error {
 	return store.Update(id, func(record *Record) error {
 		if record.State != StateSealed {
-			return fmt.Errorf("BATCH_PROOF_STATE_REFUSED: batch %s is not sealed", id)
+			return fmt.Errorf("%s: batch %s is not sealed", codeProofStateRefused, id)
 		}
 		record.Proof = &Proof{Status: "union-uncovered", Tree: record.TipTree, Failure: reason}
 		record.Transition(StateSealed, at, "prove-refused", actor, reason)
@@ -208,7 +208,7 @@ func RefuseProofAdmission(store Store, id, actor, token, status, reason string, 
 			return err
 		}
 		if record.State != StateProving || record.Proof == nil || record.Proof.Status != "planned" {
-			return fmt.Errorf("BATCH_PROOF_NOT_ADMITTED: batch %s has no planned proof", id)
+			return fmt.Errorf("%s: batch %s has no planned test run", codeProofNotAdmitted, id)
 		}
 		record.Proof.Status, record.Proof.Failure = status, reason
 		record.Transition(StateSealed, at, "prove-refused", actor, reason)
@@ -224,7 +224,7 @@ func FinishProof(store Store, id, actor, token string, result proofrun.TestResul
 			return err
 		}
 		if record.State != StateProving || record.Proof == nil || record.Proof.Status != "planned" {
-			return fmt.Errorf("BATCH_PROOF_NOT_ADMITTED: batch %s has no planned proof", id)
+			return fmt.Errorf("%s: batch %s has no planned test run", codeProofNotAdmitted, id)
 		}
 		record.Proof.AttemptID = result.AttemptID
 		record.Proof.BaseCommit = result.BaseCommit
@@ -284,7 +284,7 @@ func FinishProof(store Store, id, actor, token string, result proofrun.TestResul
 // as a reopen or a survivor reassembly does, while its run was in flight.
 func staleCompletion(record Record, token string) error {
 	if record.Proof == nil || record.Proof.Token != token {
-		return fmt.Errorf("BATCH_PROOF_STALE_COMPLETION: batch %s proof plan %q is not the one this completion ran", record.BatchID, token)
+		return fmt.Errorf("%s: batch %s test plan %q is not the one this finished run ran", codeProofStaleCompletion, record.BatchID, token)
 	}
 	return nil
 }
@@ -297,7 +297,7 @@ func WithdrawBudgetMember(store Store, id, goalID, actor, reason string, at time
 		return err
 	}
 	if record.State != StateProving || record.Proof == nil || record.Proof.Status != "planned" {
-		return fmt.Errorf("budget withdrawal requires an admitted proof")
+		return fmt.Errorf("a budget withdrawal needs an admitted test run")
 	}
 	return ReassembleSurvivorsWithReturns(store, id, actor, at, []ReturnDecision{{GoalID: goalID, Outcome: UnitWithdrawnBudget, Reason: reason}})
 }
@@ -361,7 +361,7 @@ func reassembleSurvivorsOnBase(store Store, id, actor string, at time.Time, deci
 		next := "inspect ordered member composition before returning the named member"
 		return store.Update(id, func(current *Record) error {
 			if !reflect.DeepEqual(*current, original) {
-				return fmt.Errorf("BATCH_REASSEMBLE_MOVED: batch changed before held decision")
+				return fmt.Errorf("%s: batch changed before held decision", codeReassembleMoved)
 			}
 			if current.Proof == nil {
 				current.Proof = &Proof{}
@@ -415,7 +415,7 @@ func reassembleSurvivorsOnBase(store Store, id, actor string, at time.Time, deci
 	}
 	applyReturns := func(current *Record) error {
 		if !reflect.DeepEqual(*current, original) {
-			return fmt.Errorf("BATCH_REASSEMBLE_MOVED: batch changed before survivor decision")
+			return fmt.Errorf("%s: batch changed before survivor decision", codeReassembleMoved)
 		}
 		for _, decision := range decisions {
 			if err := requestUnitReturn(current, decision.GoalID, decision.Outcome, decision.Reason, actor, at); err != nil {
@@ -456,7 +456,7 @@ func reassembleSurvivorsOnBase(store Store, id, actor string, at time.Time, deci
 			return err
 		}
 		if !reflect.DeepEqual(current, original) {
-			return fmt.Errorf("BATCH_REASSEMBLE_MOVED: batch changed before survivor decision")
+			return fmt.Errorf("%s: batch changed before survivor decision", codeReassembleMoved)
 		}
 		if current.Landing != nil && current.Landing.publishedTip() != "" {
 			if len(survivors) == 0 || !slices.ContainsFunc(survivors, func(unit Unit) bool { return len(unit.Builds) != 0 }) {
@@ -475,7 +475,7 @@ func reassembleSurvivorsOnBase(store Store, id, actor string, at time.Time, deci
 		}
 		return store.updateLocked(id, func(current *Record) error {
 			if !reflect.DeepEqual(*current, original) {
-				return fmt.Errorf("BATCH_REASSEMBLE_MOVED: batch changed before survivor publication")
+				return fmt.Errorf("%s: batch changed before survivor publication", codeReassembleMoved)
 			}
 			*current = next
 			return nil

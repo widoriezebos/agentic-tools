@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 )
 
 func TestClaimLaunchSerializesOperationIdentityAcrossJobsAndChains(t *testing.T) {
@@ -175,7 +176,7 @@ func TestClaimLaunchRequiresLatestImplementerRoundForFreshCritics(t *testing.T) 
 		return ClaimLaunch(params, claimDependenciesForTest(&now, identity.Verification{}))
 	}
 
-	wantStale := "code-critic dispatch --reviews names work (round 1), but that chain's latest implementer round is work-r2 (round 2); name the round job"
+	wantStale := "--reviews names round 1, but the newest round of that work is 2; name work-r2 instead"
 	if _, err := claim("critic-stale", "code-critic", "work", "dispatch"); err == nil || err.Error() != wantStale {
 		t.Fatalf("stale fresh critic = %v, want %q", err, wantStale)
 	}
@@ -185,7 +186,7 @@ func TestClaimLaunchRequiresLatestImplementerRoundForFreshCritics(t *testing.T) 
 	if result, err := claim("critic-follow", "code-critic", "work", "follow-up"); err != nil || result.Outcome != ClaimWON {
 		t.Fatalf("inherited follow-up binding = %s, %v", result.Outcome, err)
 	}
-	wantWarden := "warden dispatch --reviews names work (round 1), but that chain's latest implementer round is work-r2 (round 2); name the round job"
+	wantWarden := "--reviews names round 1, but the newest round of that work is 2; name work-r2 instead"
 	if _, err := claim("warden-stale", "warden", "work", "dispatch"); err == nil || err.Error() != wantWarden {
 		t.Fatalf("stale fresh warden = %v, want %q", err, wantWarden)
 	}
@@ -683,7 +684,7 @@ func TestClaimLaunchRefusesBeforeReservationWhenSliceStartCannotLand(t *testing.
 		}
 		return fmt.Errorf("SLICE_START_UNRECORDED: injected shared-ledger failure")
 	}
-	if _, err := ClaimLaunch(params, dependencies); err == nil || !strings.Contains(err.Error(), "SLICE_START_UNRECORDED") {
+	if _, err := ClaimLaunch(params, dependencies); err == nil || !strings.Contains(refusal.DetailOf(err), "SLICE_START_UNRECORDED") {
 		t.Fatalf("slice-start failure did not refuse launch: %v", err)
 	}
 	if !called {

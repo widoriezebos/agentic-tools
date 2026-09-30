@@ -15,6 +15,10 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 )
 
+// engineRequiredCode leads a refusal the engine re-arm resolves; a person's
+// command shows it only with --verbose.
+const engineRequiredCode = "TEST_POLICY_ENGINE_REQUIRED"
+
 type registerSnapshot struct {
 	path, fullPath  string
 	working, suffix []byte
@@ -83,7 +87,7 @@ func fastForwardPreservingRegistersWith(ctx context.Context, root, tip string, w
 		stagedSuffix, stagedShape := appendDelta(before, beforeOK, staged, stagedOK)
 		workingSuffix, workingShape := appendDelta(staged, stagedOK, working, workingOK)
 		if !landedShape || !stagedShape || !workingShape {
-			return fmt.Errorf("TEST_POLICY_ENGINE_REQUIRED: append-only register %s changed other than by appending", register)
+			return fmt.Errorf("%s: the append-only record %s was rewritten, not only appended to", engineRequiredCode, register)
 		}
 		suffix := append(append([]byte(nil), stagedSuffix...), workingSuffix...)
 		if len(suffix) != 0 {

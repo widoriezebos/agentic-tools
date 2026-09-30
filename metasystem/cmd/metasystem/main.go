@@ -246,6 +246,8 @@ func main() {
 	// A live general power of attorney makes the act of the main session
 	// holding the checkout's lease the granting person's (attorney_admits.go).
 	wireAttorneyAdmission()
+	// Their notices wait for the command's outcome (admission_notice.go).
+	processAdmissionNotices.arm()
 	os.Exit(dispatch(os.Args[1:]))
 }
 
@@ -274,6 +276,14 @@ func dispatchWithFamiliesAndRepositoryTop(args []string, stdout, stderr io.Write
 	if len(args) == 0 {
 		writeIntentRootHelp(stdout)
 		return 0
+	}
+	// The top-level page takes the flags every command takes (F1): bare
+	// metasystem --repo PATH is the page, as it is from any path.
+	if strings.HasPrefix(args[0], "-") {
+		if rest, ok := stripHelpGlobalFlags(args); ok && (len(rest) == 0 || len(rest) == 1 && isHelpWord(rest[0])) {
+			writeIntentRootHelp(stdout)
+			return 0
+		}
 	}
 	if args[0] == "help" {
 		return runIntentHelp(args[1:], stdout, stderr)
@@ -321,6 +331,13 @@ func isHelpWord(word string) bool { return word == "--help" || word == "-h" || w
 // public action or entry takes.
 func dispatchObject(args []string, stdout, stderr io.Writer, registered []family, repositoryTop func(string) (string, error)) int {
 	object := args[0]
+	// An object's page takes the flags every command takes (F1).
+	if len(args) > 1 && strings.HasPrefix(args[1], "-") {
+		if rest, ok := stripHelpGlobalFlags(args[1:]); ok && (len(rest) == 0 || len(rest) == 1 && isHelpWord(rest[0])) {
+			writeIntentObjectHelp(stdout, object)
+			return 0
+		}
+	}
 	if len(args) == 1 || isHelpWord(args[1]) {
 		if len(args) > 2 {
 			fmt.Fprintf(stderr, "usage: metasystem %s ACTION [TARGET...] [OPTIONS]\n", object)
@@ -347,6 +364,43 @@ func dispatchObject(args []string, stdout, stderr io.Writer, registered []family
 	}
 	writeUnknownIntentAction(stderr, object, args[1], args[2:])
 	return 2
+}
+
+// helpGlobalFlags are the flags every public command takes that change
+// nothing a help page shows; the value says whether the flag takes one.
+var helpGlobalFlags = map[string]bool{"repo": true, "root": true, "json": false, "verbose": false}
+
+// stripHelpGlobalFlags removes the help-neutral global flags from args. It
+// fails when one of them is missing its value, so the caller refuses instead
+// of showing a page for a half-typed command line.
+func stripHelpGlobalFlags(args []string) ([]string, bool) {
+	var rest []string
+	for index := 0; index < len(args); index++ {
+		arg := args[index]
+		if !strings.HasPrefix(arg, "-") || isHelpWord(arg) {
+			rest = append(rest, arg)
+			continue
+		}
+		name, _, joined := strings.Cut(strings.TrimLeft(arg, "-"), "=")
+		takesValue, known := helpGlobalFlags[name]
+		switch {
+		case !known:
+			rest = append(rest, arg)
+		case takesValue && !joined:
+			if index+1 >= len(args) || strings.HasPrefix(args[index+1], "-") {
+				return nil, false
+			}
+			index++
+		}
+	}
+	return rest, true
+}
+
+// looksLikeFlagOrPath reports whether a word in an object's or action's
+// place is a flag or a path: no command is spelled like one, so a "did you
+// mean" for it would only guess, and a guess may change state (F1).
+func looksLikeFlagOrPath(word string) bool {
+	return strings.HasPrefix(word, "-") || strings.ContainsRune(word, '/') || strings.HasPrefix(word, ".") || strings.HasPrefix(word, "~")
 }
 
 func familyHasVerb(registered []family, name, verb string) bool {
@@ -395,13 +449,13 @@ func dispatchInternal(args []string, stdout, stderr io.Writer, registered []fami
 				fmt.Fprintf(stderr, "metasystem internal %s: %q is not one of its entrypoints; nothing was done\n", fam.name, args[1])
 			}
 		} else {
-			fmt.Fprintf(stderr, "metasystem internal %s: needs one of its entrypoints named; nothing was done\n", fam.name)
+			fmt.Fprintf(stderr, "internal %s needs one of its entrypoints named; nothing was done\n", fam.name)
 		}
 		writeFamilyHelp(stderr, fam)
 		return 2
 	}
-	fmt.Fprintf(stderr, "metasystem internal: no entrypoint is named %q; nothing was done\n", args[0])
-	fmt.Fprintln(stderr, "metasystem internal, with no further word, lists every entrypoint and the program that starts it; people and agents use metasystem help")
+	fmt.Fprintf(stderr, "no internal entrypoint is named %q; nothing was done\n", args[0])
+	fmt.Fprintln(stderr, "run: metasystem help  (the public commands; metasystem internal lists the entrypoints)")
 	return 2
 }
 
@@ -447,7 +501,9 @@ func writeUnknownIntentCommand(w io.Writer, name string, rest []string) {
 	default:
 		fmt.Fprintf(w, "metasystem: unknown object %q; nothing was done\n", name)
 	}
-	if near := suggestIntent(name, rest); len(near) > 0 {
+	if looksLikeFlagOrPath(name) {
+		// No suggestion: a flag or path is not a misspelt object.
+	} else if near := suggestIntent(name, rest); len(near) > 0 {
 		fmt.Fprintf(w, "did you mean: %s\n", strings.Join(near, " | "))
 	}
 	fmt.Fprintln(w, "metasystem lists the objects; metasystem OBJECT lists its actions")
@@ -456,7 +512,10 @@ func writeUnknownIntentCommand(w io.Writer, name string, rest []string) {
 // writeUnknownIntentAction refuses an action the object does not have.
 func writeUnknownIntentAction(w io.Writer, object, action string, rest []string) {
 	fmt.Fprintf(w, "metasystem %s: unknown action %q; nothing was done\n", object, action)
-	if near := suggestIntentAction(object, action, rest); len(near) > 0 {
+	if looksLikeFlagOrPath(action) {
+		// No suggestion: a flag or path is not a misspelt action, and the
+		// nearest action by spelling may be one that changes state.
+	} else if near := suggestIntentAction(object, action, rest); len(near) > 0 {
 		fmt.Fprintf(w, "did you mean: %s\n", strings.Join(near, " | "))
 	}
 	fmt.Fprintf(w, "metasystem %s lists its actions\n", object)

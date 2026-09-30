@@ -79,7 +79,7 @@ func TestAttorneyAdmitsOnlyTheHolderOfTheBoundCheckout(t *testing.T) {
 	if len(b.logLines) != 1 || !strings.Contains(b.logLines[0], "answered grant=01M-grant by=wido") || !strings.Contains(b.logLines[0], `act="goal approve g1"`) || !strings.Contains(b.logLines[0], "main=main-1") {
 		t.Fatalf("one log line naming the grant: %q", b.logLines)
 	}
-	if !strings.Contains(b.stderr.String(), "POWER OF ATTORNEY (wido, grant 01M-grant): answers the person check of goal approve g1 for the seat's main session") {
+	if !strings.Contains(b.stderr.String(), "POWER OF ATTORNEY (wido, grant 01M-grant): goal approve g1 runs as wido's act") {
 		t.Fatalf("the stderr line: %q", b.stderr.String())
 	}
 	if b.locks != 1 {

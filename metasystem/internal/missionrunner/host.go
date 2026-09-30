@@ -186,8 +186,8 @@ func (e *Engine) terminateGroup(pgid int, tag string, allowFake bool) (string, e
 		return TerminationAlreadyGone, nil
 	}
 	if ownership != janitor.GroupOwned {
-		fmt.Fprintf(os.Stderr, "host process group %d is not provably ours; "+
-			"leaving it to the census rather than signaling an unowned group\n", pgid)
+		fmt.Fprintf(os.Stderr, "process group %d may not be this mission's, so it was not stopped; "+
+			"the process census handles it\n", pgid)
 		e.emit("wind-down", fmt.Sprintf("group %d unowned; skipped", pgid), map[string]string{
 			"missionId": e.Mission, "action": "skipped-unowned", "reason": "ownership-proof-absent",
 		})

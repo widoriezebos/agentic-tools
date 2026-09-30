@@ -36,7 +36,7 @@ func channelIdentityFor(root string, resolveMachine func(string) (string, error)
 		return "", "", err
 	}
 	if lin == "" {
-		return "", "", fmt.Errorf("export METASYSTEM_OWNER_LINEAGE for channel ledger operations")
+		return "", "", errors.New("the channel is changed only from an agent session, and this shell names none")
 	}
 	return m, lin, nil
 }
@@ -264,7 +264,7 @@ func channelWaitWith(callerPID int64, lineage string, stdout, stderr io.Writer, 
 			cursor = q.LedgerCursor
 		}
 		if cursor == "" {
-			fmt.Fprintln(stderr, "channel wait: this legacy question has no ledgerCursor; pass --after with the accepted cursor recorded before the question")
+			fmt.Fprintln(stderr, "this older question has no recorded position to wait from\npass --after with the position recorded before it was asked")
 			return 67
 		}
 	} else if *after != "" {

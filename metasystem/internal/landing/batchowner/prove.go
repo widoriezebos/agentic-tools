@@ -23,6 +23,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/strictjson"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
@@ -85,7 +86,7 @@ var ProductionBatchProofDependencies = BatchProofDependencies{
 func BatchRetainedSources(root string, record batch.Record) (map[string]string, error) {
 	joined := slices.DeleteFunc(slices.Clone(record.Units), func(unit batch.Unit) bool { return unit.State != batch.UnitJoined })
 	if len(joined) == 0 || record.Proof == nil {
-		return nil, fmt.Errorf("batch %s has no joined units or proof to resolve", record.BatchID)
+		return nil, fmt.Errorf("batch %s has no joined units or test run to resolve", record.BatchID)
 	}
 	detached, err := openBatchSourcesWorktree(root, record.BatchID, record.TipTree)
 	if err != nil {
@@ -244,7 +245,7 @@ func ExecuteBatchProof(root, id, actor, window, token string, sample proofrun.Lo
 		return err
 	}
 	if len(record.Units) == 0 {
-		return fmt.Errorf("BATCH_PROOF_STATE_REFUSED: batch %s has no joined units", id)
+		return fmt.Errorf("%s: batch %s has no joined units", codeProofStateRefused, id)
 	}
 	if record.State == batch.StateSealed && record.Proof != nil && record.Proof.Status == "union-uncovered" && record.Proof.Tree == record.TipTree {
 		return nil
@@ -261,7 +262,7 @@ func ExecuteBatchProof(root, id, actor, window, token string, sample proofrun.Lo
 	}
 	if record.State == batch.StateOpen {
 		if dependencies.Seal == nil {
-			return fmt.Errorf("BATCH_PROOF_STATE_REFUSED: proof seal seam is absent")
+			return fmt.Errorf("%s: the test run's seal step is missing", codeProofStateRefused)
 		}
 		if err := dependencies.Seal(root, id, actor, baseTree, at); err != nil {
 			if laneHold(err) {
@@ -275,11 +276,11 @@ func ExecuteBatchProof(root, id, actor, window, token string, sample proofrun.Lo
 		}
 	}
 	if record.State != batch.StateSealed {
-		return fmt.Errorf("BATCH_PROOF_STATE_REFUSED: batch %s is not sealed", id)
+		return fmt.Errorf("%s: batch %s is not sealed", codeProofStateRefused, id)
 	}
 	if record.CostForecast != nil {
 		if !record.CostForecast.Matches(record) {
-			return fmt.Errorf("BATCH_COST_INPUT_MOVED: sealed cost snapshot no longer binds the batch")
+			return fmt.Errorf("%s: sealed cost snapshot no longer binds the batch", codeCostInputMoved)
 		}
 		for _, budget := range record.CostForecast.Budgets {
 			if budget.Fits {
@@ -297,7 +298,7 @@ func ExecuteBatchProof(root, id, actor, window, token string, sample proofrun.Lo
 	}
 	joined := slices.DeleteFunc(slices.Clone(record.Units), func(unit batch.Unit) bool { return unit.State != batch.UnitJoined })
 	if len(joined) == 0 {
-		return fmt.Errorf("BATCH_PROOF_STATE_REFUSED: batch %s has no joined units", id)
+		return fmt.Errorf("%s: batch %s has no joined units", codeProofStateRefused, id)
 	}
 	if (record.Landing == nil || record.Landing.Base != record.BaseTree) && slices.ContainsFunc(joined, func(unit batch.Unit) bool { return len(unit.Builds) != 0 }) {
 		expected := ""
@@ -305,14 +306,14 @@ func ExecuteBatchProof(root, id, actor, window, token string, sample proofrun.Lo
 			if progress.ReceiptTip != "" || progress.HeldChecked || progress.PushComplete || progress.PushedTip != "" ||
 				progress.RearmComplete || progress.CleanupDone || len(progress.Commits) != 0 || len(progress.BuildCommits) != 0 ||
 				progress.RefusedOrigin != "" || progress.RefusedBase != "" || progress.PushRounds != 0 || progress.PushRejection != nil {
-				return fmt.Errorf("BATCH_PROOF_STATE_REFUSED: stale landing candidate has publication or receipt progress")
+				return fmt.Errorf("%s: stale landing candidate has publication or receipt progress", codeProofStateRefused)
 			}
 			expected = progress.CandidateTip
 			if expected == "" {
 				expected = progress.BranchTip
 			}
 			if expected == "" {
-				return fmt.Errorf("BATCH_PROOF_STATE_REFUSED: stale landing candidate has no branch tip")
+				return fmt.Errorf("%s: stale landing candidate has no branch tip", codeProofStateRefused)
 			}
 		}
 		tip, branchErr := batch.RebuildLandingBranch(root, id, record.BaseTree, expected, actor, joined)
@@ -321,11 +322,11 @@ func ExecuteBatchProof(root, id, actor, window, token string, sample proofrun.Lo
 		}
 		candidateTree, treeErr := GitOutput(root, "rev-parse", tip+"^{tree}")
 		if treeErr != nil || candidateTree != record.TipTree {
-			return fmt.Errorf("BATCH_PROOF_TREE_MOVED: rebuilt landing candidate %s has tree %s, want %s: %v", tip, candidateTree, record.TipTree, treeErr)
+			return fmt.Errorf("%s: rebuilt landing candidate %s has tree %s, want %s: %v", codeProofTreeMoved, tip, candidateTree, record.TipTree, treeErr)
 		}
 		if err := store.Update(id, func(current *batch.Record) error {
 			if !reflect.DeepEqual(*current, record) {
-				return fmt.Errorf("BATCH_PROOF_STATE_MOVED: sealed batch changed during landing branch rebuild")
+				return fmt.Errorf("%s: sealed batch changed during landing branch rebuild", codeProofStateMoved)
 			}
 			current.Landing = &batch.LandingProgress{Base: current.BaseTree, BranchTip: tip, CandidateTip: tip}
 			return nil
@@ -499,10 +500,10 @@ func LaunchBatchTipProofWithDependencies(request BatchProofLaunch, dependencies 
 	if request.CandidateTip != "" {
 		candidateTree, treeErr := dependencies.ReadGit(request.Root, "rev-parse", request.CandidateTip+"^{tree}")
 		if treeErr != nil {
-			return proofrun.TestResult{}, fmt.Errorf("resolve batch proof candidate tip %s: %w", request.CandidateTip, treeErr)
+			return proofrun.TestResult{}, fmt.Errorf("resolve the batch's tested tip %s: %w", request.CandidateTip, treeErr)
 		}
 		if candidateTree != request.Tree {
-			return proofrun.TestResult{}, fmt.Errorf("batch proof candidate tip %s has tree %s, want %s", request.CandidateTip, candidateTree, request.Tree)
+			return proofrun.TestResult{}, fmt.Errorf("the batch's tested tip %s has tree %s, want %s", request.CandidateTip, candidateTree, request.Tree)
 		}
 	}
 	binary, err := dependencies.Executable()
@@ -566,7 +567,7 @@ func LaunchBatchTipProofWithDependencies(request BatchProofLaunch, dependencies 
 		launchErr = nil
 	}
 	if launchErr != nil {
-		launchErr = fmt.Errorf("batch tip proof: %s: %w", strings.TrimSpace(string(output)), launchErr)
+		launchErr = fmt.Errorf("the batch tip's test run: %s: %w", strings.TrimSpace(string(output)), launchErr)
 	}
 	return result, launchErr
 }
@@ -583,7 +584,62 @@ var BatchBaseRearm = struct {
 	FastForward func(context.Context, string, string) error
 	Rebuild     func(context.Context, string) error
 	Up          func(context.Context, string, string) (testrun.UpOutcome, error)
-}{landing.FastForwardPreservingRegisters, testrun.RebuildLandedEngine, testrun.UpLandedEngine}
+}{landing.FastForwardPreservingRegisters, testrun.RebuildLandedEngine, OwnerUpLandedEngine}
+
+// OwnerUpLandedEngine is the landing owner's run of the rebuilt engine's
+// ordinary up. The owner is machinery, not a session, so that up re-arms a
+// landed rebuild (its authority is the landed bytes, never the caller) and
+// then ends with a non-zero exit at its session step, before the supervision
+// step. The owner never reads up's words: it judges the run by the state it
+// must leave. The enrolled engine is current, and the lane's supervision is
+// armed, starting the missing rings itself when they are down.
+func OwnerUpLandedEngine(ctx context.Context, installation, projectRoot string) (testrun.UpOutcome, error) {
+	return ownerUpLandedEngineWith(ctx, installation, projectRoot, testrun.UpLandedEngine, enrolledEngineCurrent,
+		func(root string) (bool, error) { return supervisionArmedOrRecovered(ctx, root) })
+}
+
+func ownerUpLandedEngineWith(ctx context.Context, installation, projectRoot string, up func(context.Context, string, string) (testrun.UpOutcome, error),
+	current func(string) error, armed func(string) (bool, error)) (testrun.UpOutcome, error) {
+	outcome, upErr := up(ctx, installation, projectRoot)
+	if upErr == nil {
+		return outcome, nil
+	}
+	if err := current(installation); err != nil {
+		return outcome, fmt.Errorf("%w; the lane's engine is not re-armed: %v", upErr, err)
+	}
+	running, err := armed(installation)
+	if err != nil {
+		return outcome, fmt.Errorf("%w; whether the lane's supervision is armed is unknown: %v", upErr, err)
+	}
+	if !running {
+		return outcome, fmt.Errorf("%w; the lane's supervision is not armed after the re-arm", upErr)
+	}
+	return outcome, nil
+}
+
+// enrolledEngineCurrent says whether the installation's enrolled engine is
+// the one on disk: a rebuild the re-arm did not enroll reads as not current.
+func enrolledEngineCurrent(installation string) error {
+	enrolled, err := steward.OpenEnrolledBinary(installation)
+	if err != nil {
+		return err
+	}
+	return enrolled.Close()
+}
+
+// supervisionArmedOrRecovered reads whether the lane's supervision runs and,
+// when it does not, starts the missing rings the way the scheduler does (up's
+// recovery, which never re-arms) and reads again. Only up's exit is read.
+func supervisionArmedOrRecovered(ctx context.Context, installation string) (bool, error) {
+	if running, err := LandingLaneArmed(installation); err != nil || running {
+		return running, err
+	}
+	command := exec.CommandContext(ctx, filepath.Join(installation, "bin", "metasystem"), "up", "--recover-only", "--if-down",
+		"--repo", installation, "--metasystem-root", installation)
+	command.Dir, command.Env = installation, os.Environ()
+	_ = command.Run()
+	return LandingLaneArmed(installation)
+}
 
 // laneCheckout serializes every step that moves the one lane checkout
 // (settings.Root) across the owner's concurrent runs: a landing (branch prep,
@@ -638,7 +694,7 @@ func RearmBatchBase(root, baseTree string) error {
 		BaseCommit: func(root, tree string) (string, error) {
 			commit, err := commitForTree(root, "origin/main", tree)
 			if err != nil {
-				return "", fmt.Errorf("BATCH_BASE_MOVED: origin/main ancestry has no commit for recorded base tree %s", tree)
+				return "", fmt.Errorf("%s: origin/main ancestry has no commit for recorded base tree %s", codeBaseMoved, tree)
 			}
 			return commit, nil
 		},

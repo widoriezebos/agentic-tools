@@ -1,0 +1,2 @@
+✗ status takes one goal at most; unexpected goal-b; nothing was done
+  → metasystem status goal-a  a job, run or read is metasystem work status REF

@@ -64,7 +64,7 @@ func TestContinueNamedRunIsBoundToItsReservation(t *testing.T) {
 	follow := writeFollowUp(t)
 	_, err = fixture.runner.Continue(UnitRequest{Resume: first.Record.ID, FollowUp: follow})
 	releaseUnitLock(lock)
-	if err == nil || !strings.Contains(err.Error(), "UNIT_RUN_BUSY") || !strings.Contains(err.Error(), "run="+first.Record.ID) {
+	if err == nil || !strings.Contains(ErrorDetail(err), "UNIT_RUN_BUSY") || !strings.Contains(ErrorDetail(err), "run="+first.Record.ID) {
 		t.Fatalf("err=%v", err)
 	}
 
@@ -72,7 +72,7 @@ func TestContinueNamedRunIsBoundToItsReservation(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err = fixture.runner.Continue(UnitRequest{Resume: first.Record.ID, FollowUp: follow})
-	if err == nil || !strings.Contains(err.Error(), "UNIT_NAMED_INPUT_CHANGED") || !strings.Contains(err.Error(), "run="+first.Record.ID) {
+	if err == nil || !strings.Contains(ErrorDetail(err), "UNIT_NAMED_INPUT_CHANGED") || !strings.Contains(ErrorDetail(err), "run="+first.Record.ID) {
 		t.Fatalf("err=%v", err)
 	}
 	requireRecordedRounds(t, fixture, first.Record.ID, 1)
@@ -123,7 +123,7 @@ func TestContinueLegacyRunAndAMissingWorktree(t *testing.T) {
 		if err != nil || read.Record.ID != first.Record.ID || read.Record.State != "awaiting-judgement" || read.Round != 1 {
 			t.Fatalf("result=%+v err=%v", read, err)
 		}
-		if _, err := fixture.runner.Continue(UnitRequest{Resume: first.Record.ID, FollowUp: writeFollowUp(t)}); err == nil || !strings.Contains(err.Error(), "UNIT_PLAN_INVALID") {
+		if _, err := fixture.runner.Continue(UnitRequest{Resume: first.Record.ID, FollowUp: writeFollowUp(t)}); err == nil || !strings.Contains(ErrorDetail(err), "UNIT_PLAN_INVALID") {
 			t.Fatalf("err=%v", err)
 		}
 		requireRecordedRounds(t, fixture, first.Record.ID, 1)
@@ -174,7 +174,7 @@ func TestAdvancePreparedBindsTheRequestAndItsOptions(t *testing.T) {
 		t.Fatalf("repeat=%+v prepared=%v err=%v", again, prepared, err)
 	}
 	_, err = fixture.runner.AdvancePrepared(fixture.worktree, "goal", "U", []byte(`{"brief":"two"}`), options, prepare)
-	if err == nil || !strings.Contains(err.Error(), "UNIT_NAMED_INPUT_CHANGED") || !strings.Contains(err.Error(), "run="+first.Record.ID) || len(prepared) != 1 {
+	if err == nil || !strings.Contains(ErrorDetail(err), "UNIT_NAMED_INPUT_CHANGED") || !strings.Contains(ErrorDetail(err), "run="+first.Record.ID) || len(prepared) != 1 {
 		t.Fatalf("changed request err=%v prepared=%v", err, prepared)
 	}
 	if retained, _ := os.ReadFile(filepath.Join(directory, "request.json")); string(retained) != string(request) {
@@ -187,7 +187,7 @@ func TestAdvancePreparedBindsTheRequestAndItsOptions(t *testing.T) {
 		t.Fatalf("follow-up=%+v err=%v", second, err)
 	}
 	_, err = fixture.runner.Continue(UnitRequest{Resume: first.Record.ID, FollowUp: writeFollowUp(t)})
-	if err == nil || !strings.Contains(err.Error(), "UNIT_ROUND_LIMIT") || !strings.Contains(err.Error(), "limit=2") {
+	if err == nil || !strings.Contains(ErrorDetail(err), "UNIT_ROUND_LIMIT") || !strings.Contains(ErrorDetail(err), "limit=2") {
 		t.Fatalf("err=%v", err)
 	}
 	requireRecordedRounds(t, fixture, first.Record.ID, 2)
@@ -211,10 +211,10 @@ func TestAdvancePreparedRefusesWithoutReserving(t *testing.T) {
 		path := filepath.Join(into, "plan.json")
 		return path, os.WriteFile(path, source, 0o600)
 	}
-	if _, err := fixture.runner.AdvancePrepared(fixture.worktree, "goal", "V", []byte("a"), UnitOptions{}, other); err == nil || !strings.Contains(err.Error(), "UNIT_PLAN_INVALID") {
+	if _, err := fixture.runner.AdvancePrepared(fixture.worktree, "goal", "V", []byte("a"), UnitOptions{}, other); err == nil || !strings.Contains(ErrorDetail(err), "UNIT_PLAN_INVALID") {
 		t.Fatalf("err=%v", err)
 	}
-	if _, err := fixture.runner.AdvancePrepared(filepath.Join(fixture.worktree, "missing"), "goal", "U", []byte("a"), UnitOptions{}, other); err == nil || !strings.Contains(err.Error(), "UNIT_PLAN_INVALID") {
+	if _, err := fixture.runner.AdvancePrepared(filepath.Join(fixture.worktree, "missing"), "goal", "U", []byte("a"), UnitOptions{}, other); err == nil || !strings.Contains(ErrorDetail(err), "UNIT_PLAN_INVALID") {
 		t.Fatalf("err=%v", err)
 	}
 	if entries, _ := filepath.Glob(filepath.Join(fixture.runner.Root, ".named", "*.json")); len(entries) != 0 {
@@ -259,7 +259,7 @@ func TestNamedInputDirectoryFollowsTheUnitIdentity(t *testing.T) {
 		}
 		seen[named] = true
 	}
-	if _, err := fixture.runner.NamedInputDirectory(filepath.Join(other, "missing"), "goal", "U"); err == nil || !strings.Contains(err.Error(), "UNIT_PLAN_INVALID") {
+	if _, err := fixture.runner.NamedInputDirectory(filepath.Join(other, "missing"), "goal", "U"); err == nil || !strings.Contains(ErrorDetail(err), "UNIT_PLAN_INVALID") {
 		t.Fatalf("err=%v", err)
 	}
 }

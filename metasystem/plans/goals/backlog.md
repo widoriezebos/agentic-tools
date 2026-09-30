@@ -6,7 +6,7 @@
 - MigrationEpoch: 2026-08-20T00:00:00Z
 - ManifestDigest: d82032bee818c2d82e6a95e6f1b75347499b88ee8b68c4d20a0f3c94d00ba320
 - MigrationMode: manifest
-- Revision: 104
+- Revision: 106
 - ApprovalGate: since=2026-09-03T14:16:24Z opid=JY54AQT8101VK9353WT9FQYGA9-m0-c5dbf036
 - FleetEnrollment: at=2026-09-06T06:37:21Z machine=m1 generation=1 opid=CMNCRETKYCB18MFZNYFSZJPXQY-m1-a4f8999f
 
@@ -15,6 +15,7 @@ PowerOfAttorney:
 - HN63XDTBD11WDD5B24PCPK89Z6-m1e-c6925449 by=human:Wido tiers=1,2 verbs=approve,set-budget,unpark since=2026-09-13T20:46:45Z expires=2026-09-19
 - STGRH0WVA5WDWK60TM0CBD2P4S-m1c-c6925449 by=human:Wido tiers=1 verbs=approve,set-budget,unpark since=2026-09-16T00:06:45Z expires=2026-09-22
 - FS0EXK42TCS94KQRW8APTQ66EK-m1e-c6925449 by=human:Wido tiers=1,2 verbs=approve,set-budget,unpark since=2026-09-16T07:34:02Z expires=2026-09-20
+- YY6RQ7765HX224V3NT4TN67JFR-m1e-b6a4eb0a by=human:wido verbs=everything for=m1e checkout=/Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem lineage=main-1790454088-93948-21671b since=2026-09-30T08:56:58Z until=2026-10-01T08:56:00Z
 
 History:
 - 2026-08-22T06:30:55Z BXWE9NXAWCGCTR3MFCE8GDC4P5-widos-m5-pro-bf243850 migrate actor=human:wido
@@ -134,4 +135,7 @@ History:
 - 2026-09-21T03:33:11Z ZE2EPBZC81XWKVMHJZPRRPN9CP-m1e-226b0953 ack actor=human:Wido targets=goal-landing-efficiency displaced=m1e+main-1789893000-16595-1a7a6a@2026-09-20T18:49:23Z ack
 - 2026-09-21T03:33:11Z ZE2EPBZC81XWKVMHJZPRRPN9CP-m1e-226b0953 ack actor=human:Wido targets=goal-landing-efficiency displaced=m1e+main-1789893000-16595-1a7a6a@2026-09-20T21:54:19Z ack
 - 2026-09-22T11:27:26Z ETHNG0PHR6PFBGHHAQ7TXFW3NJ-m1e-226b0953 ack actor=m1e+main-1789893000-16595-1a7a6a targets=tests-parallel-and-deterministic displaced=m1e+main-1789893000-16595-1a7a6a@2026-09-22T01:18:20Z ack
-Integrity: sha256=fcdfaa2ffd7629d5520d9f5a31599dddac080b49eed505d1a7ee375c325e0cb1
+- 2026-09-30T08:56:58Z YY6RQ7765HX224V3NT4TN67JFR-m1e-b6a4eb0a grant actor=human:wido reason=verbs=everything for=m1e checkout=/Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem until=2026-10-01T08:56:00Z
+- 2026-09-30T08:58:05Z EEDJWQCK3SC1YPZ56F1EY4GKV9-m1e-f456f182 ack actor=m1e+main-1790454088-93948-21671b targets=verbs-match-intent displaced=m1e+main-1790454088-93948-21671b@2026-09-27T19:58:20Z ack
+- 2026-09-30T08:58:05Z EEDJWQCK3SC1YPZ56F1EY4GKV9-m1e-f456f182 ack actor=m1e+main-1790454088-93948-21671b targets=verbs-match-intent displaced=m1e+main-1790454088-93948-21671b@2026-09-27T19:58:48Z ack
+Integrity: sha256=30dc2965b26d9c26189e24c95dea91e588b6a912991aba0cb129162c08b6c757

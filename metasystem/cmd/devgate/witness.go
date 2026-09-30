@@ -73,7 +73,7 @@ func (g *gateRun) surfaceIdentity(projection behaviorsurface.Projection, manifes
 		return 0, "", err
 	}
 	if !hex64.MatchString(digest) || policy.Version < 1 {
-		return 0, "", errors.New("behavior-surface digest report is malformed")
+		return 0, "", errors.New("the behavior-surface hash report is malformed")
 	}
 	return policy.Version, digest, nil
 }
@@ -299,7 +299,7 @@ func (g *gateRun) reuseEngineWitness() (int, bool) {
 		return 0, false
 	}
 	if !g.engineSkipAuthorized() {
-		fmt.Fprintln(d.stderr, "go gate: witness acceptable, but the prospective behavior-surface policy does not authorize witness-engine-gate; running the full gate")
+		fmt.Fprintln(d.stderr, "go gate: the witness holds, but the surface policy does not let it stand in; running the full gate")
 		return 0, false
 	}
 	stamped := g.env.with("METASYSTEM_BUILD_STAMP=witness-" + digest[:12])
@@ -336,12 +336,12 @@ func (g *gateRun) consumeFrozen(options gateOptions) int {
 	frozen, err := d.owners.freeze(g.root)
 	if err != nil {
 		fmt.Fprintln(d.stderr, "gate witness-freeze:", err)
-		fmt.Fprintln(d.stderr, "go gate: witness consumer could not freeze its live tree; refusing to use it as a proof substrate")
+		fmt.Fprintln(d.stderr, "go gate: the witness could not freeze its live tree, so it is not used")
 		return 1
 	}
 	g.consumerSnapshot = frozen.SnapshotRoot
 	if !hex64.MatchString(frozen.Digest) || !isDir(frozen.Root) || !isDir(frozen.SnapshotRoot) {
-		fmt.Fprintln(d.stderr, "go gate: witness consumer freeze returned an invalid digest or export path")
+		fmt.Fprintln(d.stderr, "go gate: freezing the witness tree returned an invalid hash or export path")
 		return 1
 	}
 	export, err := filepath.EvalSymlinks(frozen.Root)
@@ -498,7 +498,7 @@ func (g *gateRun) writeWitness(prepared witnessIdentity, baselineRel string) int
 	}
 	if _, err := d.owners.verify(g.root, manifestDigest); err != nil {
 		fmt.Fprintln(d.stderr, "gate witness-verify:", err)
-		fmt.Fprintln(d.stderr, "go gate: frozen export changed during the full proof; witness voided")
+		fmt.Fprintln(d.stderr, "go gate: the frozen tree changed while the full gate ran; the witness is void")
 		return 1
 	}
 	identity := prepared
