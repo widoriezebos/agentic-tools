@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"testing"
 )
 
 // hostSharedNames are the host paths that must not follow a process's
@@ -35,11 +36,16 @@ func hostSharedName(name string) bool {
 }
 
 // HostTempRootEnv, set to an absolute directory, is the host temporary root
-// in place of the system's: a test binary's namespace sets it (testenv) so
-// no test touches the host's real temporary directory, and every process it
-// starts inherits it, whatever TMPDIR that process is given. Production sets
-// nothing.
+// in place of the system's, in a test binary only: a test binary's
+// namespace sets it (testenv) so no test touches the host's real temporary
+// directory, and every test binary it starts inherits it, whatever TMPDIR
+// it is given. A production engine never honours it (Round D3 N3): its
+// shared host paths are always the host's.
 const HostTempRootEnv = "METASYSTEM_HOST_TEMP_ROOT"
+
+// hostTempOverrideAllowed reports a Go test binary, the only process that
+// honours HostTempRootEnv.
+var hostTempOverrideAllowed = testing.Testing
 
 var (
 	hostTempOnce  sync.Once
@@ -52,17 +58,24 @@ var (
 // (_CS_DARWIN_USER_TEMP_DIR, /var/folders/…/T), on Linux /tmp; or the
 // directory HostTempRootEnv names.
 func HostTempRoot() (string, error) {
-	hostTempOnce.Do(func() {
-		root, err := os.Getenv(HostTempRootEnv), error(nil)
-		if root == "" {
-			root, err = readHostTempRoot()
-		}
-		if err == nil && !filepath.IsAbs(root) {
-			err = fmt.Errorf("the host temporary root %q is not absolute", root)
-		}
-		hostTempValue, hostTempErr = filepath.Clean(root), err
-	})
+	hostTempOnce.Do(func() { hostTempValue, hostTempErr = resolveHostTempRoot(hostTempOverrideAllowed()) })
 	return hostTempValue, hostTempErr
+}
+
+// resolveHostTempRoot is HostTempRoot's resolution; override says whether
+// HostTempRootEnv may stand in for the system's root.
+func resolveHostTempRoot(override bool) (string, error) {
+	root, err := "", error(nil)
+	if override {
+		root = os.Getenv(HostTempRootEnv)
+	}
+	if root == "" {
+		root, err = readHostTempRoot()
+	}
+	if err == nil && !filepath.IsAbs(root) {
+		err = fmt.Errorf("the host temporary root %q is not absolute", root)
+	}
+	return filepath.Clean(root), err
 }
 
 // HostShared is an allowlisted shared host path under HostTempRoot. An
