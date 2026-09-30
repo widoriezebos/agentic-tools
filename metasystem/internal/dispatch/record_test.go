@@ -283,7 +283,7 @@ func TestRecordCASRefusesEndedAtPatch(t *testing.T) {
 			}
 			_, err := RecordCAS(root, "job-a", "pending", transition.target, patch)
 			wantCode(t, err, 1)
-			if err.Error() != wantMessage {
+			if !strings.HasPrefix(err.Error(), wantMessage+"\nrun: metasystem work status j2:") {
 				t.Fatalf("endedAt refusal = %q, want %q", err, wantMessage)
 			}
 			after, readErr := os.ReadFile(path)
@@ -316,7 +316,7 @@ func TestRecordCASRefusesEndedAtPatch(t *testing.T) {
 	})
 	_, err := RecordCAS(root, "job-a", "completed", "completed", terminalPatch)
 	wantCode(t, err, 1)
-	if err.Error() != wantMessage {
+	if !strings.HasPrefix(err.Error(), wantMessage+"\nrun: metasystem work status j2:") {
 		t.Fatalf("terminal endedAt refusal = %q, want %q", err, wantMessage)
 	}
 	if after := readRecord(t, root, "job-a")["endedAt"]; after != endedAt {

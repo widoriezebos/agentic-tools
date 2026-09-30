@@ -130,7 +130,7 @@ func critiqueRegisterAdvance(repoRoot, rootJob, roundJob string, facts critiqueS
 				return nil
 			}
 			if round != foldedRound+1 {
-				return refuse(3, "critique register round %d cannot advance before round %d has been folded", round, foldedRound+1)
+				return refuse(3, "critique register round %d cannot advance before round %d has been folded", round, foldedRound+1).withRun(jobStatusRun(rootJob))
 			}
 			state.records[rootJob] = root
 			materialHistoryValue, materialHistoryPresent := root[materialByRoundField]

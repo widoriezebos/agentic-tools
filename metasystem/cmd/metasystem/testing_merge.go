@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -157,8 +158,17 @@ func editTestingContract(action string, args []string, edits testingContractEdit
 		err = writeTestingContract(*path, data)
 	}
 	if err != nil {
-		return refusePassthrough(stderr, 1, fmt.Sprintf("the testing contract was not changed: %v", err),
-			textui.Hint{Reason: "nothing to do until the named group, surface or name is corrected"})
+		hint := textui.Hint{Reason: "nothing to do until the named group, surface or name is corrected"}
+		var refusal *contractmerge.Refusal
+		if errors.As(err, &refusal) && refusal.Run != "" {
+			// The contract's refusal carries its own line 2.
+			err = errors.New(refusal.Words())
+			hint = textui.Hint{Reason: refusal.Run}
+			if strings.HasPrefix(refusal.Run, "metasystem ") {
+				hint = textui.Hint{Argv: strings.Fields(refusal.Run)}
+			}
+		}
+		return refusePassthrough(stderr, 1, fmt.Sprintf("the testing contract was not changed: %v", err), hint)
 	}
 	page := passthroughPage(stdout, "", false)
 	file := page.Env().Path(*path)

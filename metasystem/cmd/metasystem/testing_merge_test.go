@@ -186,3 +186,26 @@ func testingMergeClone(t *testing.T, contract testpolicy.Contract) testpolicy.Co
 	}
 	return result
 }
+
+// A refused edit reads in two lines: what was refused, then the contract
+// refusal's own command as the hint, never a "run:" inside line 1.
+func TestTestingEditRefusalShowsItsCommand(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "testing.json")
+	data, err := contractmerge.Render(testingMergeFixture())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var stderr strings.Builder
+	if code := runTestingAddTests([]string{"--file", path, "--group", "app-group", "--tests", " "}, io.Discard, &stderr); code != 1 {
+		t.Fatalf("exit = %d", code)
+	}
+	text := stderr.String()
+	if strings.Contains(text, "run:") || !strings.Contains(text, "name each test once") ||
+		!strings.Contains(text, "→ metasystem test add --help") || strings.Contains(text, "nothing to do until") {
+		t.Fatalf("refusal = %q", text)
+	}
+}

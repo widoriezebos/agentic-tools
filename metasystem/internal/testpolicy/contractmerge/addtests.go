@@ -29,18 +29,20 @@ func AddTests(contract testpolicy.Contract, contractPath, groupID string, additi
 	group := contract.Groups[groupIndex]
 	all, _, err := testpolicy.GoTests(group)
 	if err != nil || group.Adapter != "go" || all {
-		return testpolicy.Contract{}, addTestsRefusal(fmt.Sprintf("group %q", groupID), "tests", "the group runs every Go test of its packages, so it has no list to edit")
+		return testpolicy.Contract{}, addTestsRefusal(fmt.Sprintf("group %q", groupID), "tests", "the group runs every Go test of its packages, so it has no list to edit").
+			withRun(nothingToDo + "the group already runs every Go test of its packages")
 	}
 	var names []string
 	if err := json.Unmarshal(group.Tests, &names); err != nil {
-		return testpolicy.Contract{}, addTestsRefusal(fmt.Sprintf("group %q", groupID), "tests", "the group runs every Go test of its packages, so it has no list to edit")
+		return testpolicy.Contract{}, addTestsRefusal(fmt.Sprintf("group %q", groupID), "tests", "the group runs every Go test of its packages, so it has no list to edit").
+			withRun(nothingToDo + "the group already runs every Go test of its packages")
 	}
 	requested := make([]string, 0, len(additions))
 	seen := map[string]bool{}
 	for _, name := range additions {
 		name = strings.TrimSpace(name)
 		if name == "" || strings.Contains(name, ",") {
-			return testpolicy.Contract{}, addTestsRefusal(fmt.Sprintf("group %q", groupID), "tests", "name each test once, as a Go identifier, with commas between names")
+			return testpolicy.Contract{}, addTestsRefusal(fmt.Sprintf("group %q", groupID), "tests", "name each test once, as a Go identifier, with commas between names").withRun(addHelp)
 		}
 		if !seen[name] {
 			requested = append(requested, name)
@@ -48,7 +50,7 @@ func AddTests(contract testpolicy.Contract, contractPath, groupID string, additi
 		}
 	}
 	if len(requested) == 0 {
-		return testpolicy.Contract{}, addTestsRefusal(fmt.Sprintf("group %q", groupID), "tests", "name at least one test")
+		return testpolicy.Contract{}, addTestsRefusal(fmt.Sprintf("group %q", groupID), "tests", "name at least one test").withRun(addHelp)
 	}
 	available, err := declaredFunctions(contractPath, group)
 	if err != nil {
@@ -56,7 +58,8 @@ func AddTests(contract testpolicy.Contract, contractPath, groupID string, additi
 	}
 	for _, name := range requested {
 		if !available[name] {
-			return testpolicy.Contract{}, addTestsRefusal(fmt.Sprintf("group %q", groupID), "tests", fmt.Sprintf("no func %s( is declared in the group's packages", name))
+			return testpolicy.Contract{}, addTestsRefusal(fmt.Sprintf("group %q", groupID), "tests", fmt.Sprintf("no func %s( is declared in the group's packages", name)).
+				withRun(fmt.Sprintf("git grep -n 'func %s(' -- '*_test.go'", name))
 		}
 	}
 	merged := appendUnique(names, requested...)
@@ -68,7 +71,7 @@ func AddTests(contract testpolicy.Contract, contractPath, groupID string, additi
 	return contract, nil
 }
 
-func addTestsRefusal(entity, field, detail string) error {
+func addTestsRefusal(entity, field, detail string) *Refusal {
 	return &Refusal{Code: AddTestsCode, Entity: entity, Field: field, Detail: detail}
 }
 
@@ -174,18 +177,19 @@ func RemoveTests(contract testpolicy.Contract, groupID string, removals []string
 	all, _, err := testpolicy.GoTests(group)
 	var names []string
 	if err != nil || group.Adapter != "go" || all || json.Unmarshal(group.Tests, &names) != nil {
-		return testpolicy.Contract{}, addTestsRefusal(fmt.Sprintf("group %q", groupID), "tests", "the group runs every Go test of its packages, so it has no list to edit")
+		return testpolicy.Contract{}, addTestsRefusal(fmt.Sprintf("group %q", groupID), "tests", "the group runs every Go test of its packages, so it has no list to edit").
+			withRun(nothingToDo + "the group runs whatever Go tests its packages declare, so a deleted test is gone from it")
 	}
 	drop := map[string]bool{}
 	for _, name := range removals {
 		name = strings.TrimSpace(name)
 		if name == "" {
-			return testpolicy.Contract{}, addTestsRefusal(fmt.Sprintf("group %q", groupID), "tests", "name each test once, as a Go identifier, with commas between names")
+			return testpolicy.Contract{}, addTestsRefusal(fmt.Sprintf("group %q", groupID), "tests", "name each test once, as a Go identifier, with commas between names").withRun(removeHelp)
 		}
 		drop[name] = true
 	}
 	if len(drop) == 0 {
-		return testpolicy.Contract{}, addTestsRefusal(fmt.Sprintf("group %q", groupID), "tests", "name at least one test")
+		return testpolicy.Contract{}, addTestsRefusal(fmt.Sprintf("group %q", groupID), "tests", "name at least one test").withRun(removeHelp)
 	}
 	kept := make([]string, 0, len(names))
 	for _, name := range names {

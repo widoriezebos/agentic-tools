@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -23,8 +22,8 @@ import (
 // refusal from a format string, into the function or local that assembles a
 // line and hands it on, into a constant, onto streams the direct scan does
 // not name, into hook responses, browser refusals and an error type's Error
-// text. Everything it finds is reported; a group enforces its paths with
-// enforceTracedMessages once it has rewritten them.
+// text. Everything it finds is enforced, except what is kept as machine
+// protocol or excluded, with why, in a message_modes_<group>_test.go.
 
 // The trace classes: which blind spot of the direct scan a source was in.
 const (
@@ -138,6 +137,10 @@ type tracePackage struct {
 	methods  map[string][]*traceFunc
 	structs  map[string][]string
 	refusals map[string]bool // types with a RefusalCode method
+	// remedySetters are the methods that set a refusal's remedy field on
+	// their receiver (refuse(...).run(command)): a refusal built by a call
+	// they are chained onto carries its line 2 there.
+	remedySetters map[string]bool
 }
 
 // traceSink is one expression whose value a person reads.
@@ -152,8 +155,7 @@ type traceSink struct {
 	// words, so line 2 must be in them.
 	refusal bool
 	// remedyEmpty: the refusal type has a remedy field that this literal
-	// leaves empty; its no-command is reported, not enforced, until the
-	// remedies are filled (integration, round 2).
+	// leaves empty, so its words must carry line 2 themselves.
 	remedyEmpty bool
 	// pick transforms the text before it is judged (a hook's JSON value).
 	pick func(string) (string, bool)
@@ -234,7 +236,7 @@ func (index *traceIndex) pkg(dir string) *tracePackage {
 	pkg := index.packages[dir]
 	if pkg == nil {
 		pkg = &tracePackage{consts: map[string]ast.Expr{}, funcs: map[string]*traceFunc{}, methods: map[string][]*traceFunc{},
-			structs: map[string][]string{}, refusals: map[string]bool{}}
+			structs: map[string][]string{}, refusals: map[string]bool{}, remedySetters: map[string]bool{}}
 		index.packages[dir] = pkg
 	}
 	return pkg
@@ -304,6 +306,9 @@ func (index *traceIndex) add(module, path string) error {
 				pkg.methods[d.Name.Name] = append(pkg.methods[d.Name.Name], fn)
 				if d.Name.Name == "RefusalCode" {
 					pkg.refusals[receiver] = true
+				}
+				if traceSetsRemedy(d) {
+					pkg.remedySetters[d.Name.Name] = true
 				}
 			} else {
 				pkg.funcs[d.Name.Name] = fn
@@ -394,6 +399,58 @@ func (pkg *tracePackage) traceRemedyLeftEmpty(name string, lit *ast.CompositeLit
 		return false
 	}
 	return true
+}
+
+// traceSetsRemedy says whether a method assigns a remedy field of its
+// receiver (r.Remedy = …, e.Run = …).
+func traceSetsRemedy(d *ast.FuncDecl) bool {
+	if len(d.Recv.List[0].Names) != 1 {
+		return false
+	}
+	receiver := d.Recv.List[0].Names[0].Name
+	sets := false
+	ast.Inspect(d.Body, func(node ast.Node) bool {
+		assign, ok := node.(*ast.AssignStmt)
+		if !ok {
+			return true
+		}
+		for _, lhs := range assign.Lhs {
+			if sel, ok := lhs.(*ast.SelectorExpr); ok && messageTraceRemedyField.MatchString(sel.Sel.Name) {
+				if ident, ok := sel.X.(*ast.Ident); ok && ident.Name == receiver {
+					sets = true
+				}
+			}
+		}
+		return true
+	})
+	return sets
+}
+
+// traceRemedied are the calls in a declaration a remedy setter is chained
+// onto with a command that is not empty: refuse(...).run("metasystem …").
+func (index *traceIndex) traceRemedied(file *traceFile, decl ast.Decl) map[*ast.CallExpr]bool {
+	pkg := index.packages[file.dir]
+	remedied := map[*ast.CallExpr]bool{}
+	ast.Inspect(decl, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok || len(call.Args) != 1 {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok || !pkg.remedySetters[sel.Sel.Name] {
+			return true
+		}
+		inner, ok := sel.X.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		if text, ok := call.Args[0].(*ast.BasicLit); ok && text.Kind == token.STRING && text.Value == `""` {
+			return true
+		}
+		remedied[inner] = true
+		return true
+	})
+	return remedied
 }
 
 var messageTraceRemedyField = regexp.MustCompile(`(?i)remedy|next|decision|command|^run|hint|resolve|second`)
@@ -789,6 +846,7 @@ func (index *traceIndex) close(sinks []traceSink) []traceSink {
 		for _, file := range index.files {
 			for _, decl := range file.file.Decls {
 				caller := index.funcOf[decl]
+				remedied := index.traceRemedied(file, decl)
 				ast.Inspect(decl, func(node ast.Node) bool {
 					call, ok := node.(*ast.CallExpr)
 					if !ok {
@@ -809,7 +867,12 @@ func (index *traceIndex) close(sinks []traceSink) []traceSink {
 						}
 						index.sites[key] = true
 						changed = true
-						sinks = append(sinks, traceSink{fn: caller, file: file, expr: arg, kind: param.kind, format: param.format, class: param.class, refusal: param.refusal, remedyEmpty: param.remedyEmpty})
+						refusal, remedyEmpty := param.refusal, param.remedyEmpty
+						if remedied[call] {
+							// Line 2 is the command chained onto the refusal.
+							refusal, remedyEmpty = false, false
+						}
+						sinks = append(sinks, traceSink{fn: caller, file: file, expr: arg, kind: param.kind, format: param.format, class: param.class, refusal: refusal, remedyEmpty: remedyEmpty})
 					}
 					return true
 				})
@@ -996,16 +1059,15 @@ func (index *traceIndex) emit(sink traceSink) []messageTraced {
 			source.Violations = append(source.Violations, violation)
 		}
 		source.Mode = messageTracedModeFor(sink.file.rel, function)
-		if sink.remedyEmpty && source.Mode == auditEnforce && slices.Equal(source.Violations, []string{"no-command"}) {
-			source.Mode = auditReport
-		}
 		out = append(out, source)
 	}
 	return out
 }
 
 // messageTracedModeFor is a traced source's mode: kept for machine
-// protocol, enforce where a group enforced it, report otherwise.
+// protocol, excluded or enforced where a modes file says so, and enforced
+// everywhere else: every group has rewritten its paths, so a new message
+// anywhere reads as the two-line rule from the start.
 func messageTracedModeFor(file, function string) string {
 	for _, key := range []string{file + "#" + function, file} {
 		if _, kept := messageTraceKept[key]; kept {
@@ -1017,7 +1079,7 @@ func messageTracedModeFor(file, function string) string {
 			return mode
 		}
 	}
-	return auditReport
+	return auditEnforce
 }
 
 // messageTraceGroups are the rewrite groups of the traced inventory: the
@@ -1073,7 +1135,7 @@ func TestAuditMessagesTraced(t *testing.T) {
 	if len(traced) < 500 {
 		t.Fatalf("the traced scan found %d sources; the module holds thousands of assembled messages, so the scan is broken", len(traced))
 	}
-	reported := 0
+	byMode := map[string]int{}
 	for _, source := range traced {
 		if len(source.Violations) == 0 {
 			continue
@@ -1082,9 +1144,10 @@ func TestAuditMessagesTraced(t *testing.T) {
 			t.Errorf("%s:%d (%s) %s/%s %q: %s", source.File, source.Line, source.Function, source.Trace, source.Kind, source.Text, strings.Join(source.Violations, ", "))
 			continue
 		}
-		reported++
+		byMode[source.Mode]++
 	}
-	t.Logf("%d traced message sources, %d with violations in report mode", len(traced), reported)
+	t.Logf("%d traced message sources; with violations: %d in report mode, %d excluded with a reason, %d kept as protocol",
+		len(traced), byMode[auditReport], byMode["excluded"], byMode["kept"])
 	if dir := os.Getenv("METASYSTEM_MESSAGE_INVENTORY_R2"); dir != "" {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatal(err)
@@ -1154,8 +1217,7 @@ func messageTraceMarkdown(traced []messageTraced) string {
 		"(cmd/metasystem/message_trace_test.go). Rule: \"Messages a Person Reads\" in docs/design/design-principles.md. " +
 		"inventory-r2.json has every source: file:line, function, kind (where it shows), trace (the blind spot it was in), text, violations, mode.\n\n")
 	fmt.Fprintf(&b, "%d message sources the direct scan does not hold; %d with at least one violation; %d kept as machine protocol.\n\n", total, violatingTotal, kept)
-	b.WriteString("Every source here is in report mode: nothing turns red until a group rewrites its files and enforces them with " +
-		"enforceTracedMessages in its message_modes_<group>_test.go.\n\n")
+	b.WriteString("Every source is enforced unless it is kept as machine protocol or excluded, with why, in a message_modes_<group>_test.go.\n\n")
 	b.WriteString("What it leaves out, so internal strings are not reported: an argument filled into a format's hole (an id, a path) is not " +
 		"taken for the message; a text without two words (a code, a key, an id) is skipped; a Code field, a log line, a map key and " +
 		"a JSON field other than a hook's systemMessage, stopReason or block reason are no sinks; fakes, fixtures and the interface " +

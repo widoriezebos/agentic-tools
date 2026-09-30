@@ -35,7 +35,7 @@ func CustodyAdd(root, job string, pid int64, reader identity.StartReader, groupR
 	return withRecordSessionLock(root, job, func(recordPath string, transaction *SessionIndexTransaction) error {
 		record, err := readObject(recordPath)
 		if err != nil {
-			return refuse(1, "cannot register custody for %s: %v", job, err)
+			return refuse(1, "cannot register custody for %s: %v", job, err).withRun(jobStatusRun(job))
 		}
 		status := asString(record["status"])
 		if status != "pending" && status != "running" {
@@ -50,7 +50,7 @@ func CustodyAdd(root, job string, pid int64, reader identity.StartReader, groupR
 		}
 		tag := asString(record["instanceTag"])
 		if tag == "" {
-			return refuse(1, "job record %s has no instance tag", job)
+			return refuse(1, "job record %s has no instance tag", job).withRun(jobStatusRun(job))
 		}
 		pgid, groupErr := groupID(pid)
 		if groupErr != nil || pgid < 2 {

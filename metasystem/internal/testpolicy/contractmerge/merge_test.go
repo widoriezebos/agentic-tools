@@ -378,3 +378,69 @@ func TestRefusalReadsInPlainWords(t *testing.T) {
 		t.Errorf("merge refusal %v holds its code", err)
 	}
 }
+
+// Every refusal a person meets while editing or merging the contract ends
+// in its line 2: the command that resolves or shows it, or why there is
+// nothing to do.
+func TestEveryRefusalCarriesItsLine2(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	contractPath := filepath.Join(root, "testing.json")
+	if err := os.WriteFile(filepath.Join(root, "example_test.go"), []byte("package example\nfunc TestBase(t any) {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	listed := mergeFixture()
+	listed.Groups[0].CWD = "."
+	listed.Groups[0].Packages = []string{"."}
+	listed.Groups[0].Tests = json.RawMessage(`["TestBase"]`)
+	all := mergeFixture()
+	all.Groups[0].Tests = json.RawMessage(`"all"`)
+	conflicting := func() error {
+		base := mergeFixture()
+		ours, theirs := cloneFixture(t, base), cloneFixture(t, base)
+		ours.Groups[0].Kind = "component"
+		theirs.Groups[0].Kind = "integration"
+		_, err := Merge(base, ours, theirs)
+		return err
+	}
+	for name, test := range map[string]struct {
+		refuse func() error
+		line2  string
+	}{
+		"add to an all-tests group": {func() error { _, err := AddTests(all, contractPath, "app-group", []string{"TestX"}); return err }, "nothing to do; "},
+		"remove from an all-tests group": {func() error { _, err := RemoveTests(all, "app-group", []string{"TestX"}); return err },
+			"nothing to do; "},
+		"add a blank name": {func() error { _, err := AddTests(listed, contractPath, "app-group", []string{" "}); return err }, "run: metasystem test add --help"},
+		"add no name":      {func() error { _, err := AddTests(listed, contractPath, "app-group", nil); return err }, "run: metasystem test add --help"},
+		"add an absent test": {func() error {
+			_, err := AddTests(listed, contractPath, "app-group", []string{"TestAbsent"})
+			return err
+		}, "run: git grep -n 'func TestAbsent(' -- '*_test.go'"},
+		"remove a blank name":  {func() error { _, err := RemoveTests(listed, "app-group", []string{" "}); return err }, "run: metasystem test remove --help"},
+		"remove no name":       {func() error { _, err := RemoveTests(listed, "app-group", nil); return err }, "run: metasystem test remove --help"},
+		"add to no surface":    {func() error { _, err := AddSurfacePaths(listed, "no-surface", []string{"x"}); return err }, "run: metasystem test add --help"},
+		"remove a blank input": {func() error { _, err := RemoveInputs(listed, "app-group", []string{" "}); return err }, "run: metasystem test remove --help"},
+		"add no path":          {func() error { _, err := AddSurfacePaths(listed, "app", nil); return err }, "run: metasystem test add --help"},
+		"merge a conflict":     {conflicting, "run: git diff :1:metasystem/testing.json :3:metasystem/testing.json"},
+		"merge an unreadable side": {func() error {
+			valid, err := Render(mergeFixture())
+			if err != nil {
+				return err
+			}
+			_, err = MergeBytes(valid, []byte("{"), valid)
+			return err
+		},
+			"run: git show :2:metasystem/testing.json"},
+	} {
+		err := test.refuse()
+		var refusal *Refusal
+		if !errors.As(err, &refusal) {
+			t.Errorf("%s: err = %v, want a refusal", name, err)
+			continue
+		}
+		_, line2, _ := strings.Cut(err.Error(), "\n")
+		if !strings.HasPrefix(line2, test.line2) {
+			t.Errorf("%s: line 2 = %q, want it to begin %q", name, line2, test.line2)
+		}
+	}
+}

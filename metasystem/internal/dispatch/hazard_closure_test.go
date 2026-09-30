@@ -328,7 +328,7 @@ func TestHazardCloseReadsClosureSubject(t *testing.T) {
 		root["reasoningEffort"] = "medium"
 		root["configurationObligations"] = requiredConfigurationByHazard[HazardMechanical]
 		writeRecord(path, root)
-		fixture.requireRefused(hazardCritiqueClosureRefusal, "required maximum critic effort")
+		fixture.requireRefused(hazardCritiqueClosureRefusal, "below maximal effort")
 	})
 }
 
