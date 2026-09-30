@@ -34,13 +34,43 @@ func (r *Refusal) location() string {
 	return r.Entity
 }
 
+// Words are the refusal's line 1: where, and why.
+func (r *Refusal) Words() string { return r.location() + ": " + r.Detail }
+
 func (r *Refusal) Error() string {
-	text := r.location() + ": " + r.Detail
-	if r.Run != "" {
+	text := r.Words()
+	switch {
+	case strings.HasPrefix(r.Run, nothingToDo):
+		text += "\n" + r.Run
+	case r.Run != "":
 		text += "\nrun: " + r.Run
 	}
 	return text
 }
+
+// withRun sets the refusal's line 2: the command that resolves or shows it,
+// or, beginning "nothing to do; ", why no command does.
+func (r *Refusal) withRun(command string) *Refusal {
+	r.Run = command
+	return r
+}
+
+// nothingToDo begins a line 2 that names no command.
+const nothingToDo = "nothing to do; "
+
+// The line 2 of a merge refusal: git's merge holds the three sides as
+// index stages 1 (base), 2 (ours) and 3 (theirs) of the contract.
+const (
+	contractStagePath = "metasystem/testing.json"
+	// mergeConflictRun shows what their side changed, to redo on ours.
+	mergeConflictRun = "git diff :1:" + contractStagePath + " :3:" + contractStagePath
+)
+
+// The line 2 of an edit refusal: the action's forms, with an example.
+const (
+	addHelp    = "metasystem test add --help"
+	removeHelp = "metasystem test remove --help"
+)
 
 // RefusalCode and RefusalDetail are the code and the code-first line
 // --verbose and the refusal records keep.
@@ -48,10 +78,10 @@ func (r *Refusal) RefusalCode() string   { return r.Code }
 func (r *Refusal) RefusalDetail() string { return r.Code + ": " + r.location() + ": " + r.Detail }
 
 func conflict(entity, field, detail string) error {
-	return &Refusal{Code: MergeConflictCode, Entity: entity, Field: field, Detail: detail}
+	return &Refusal{Code: MergeConflictCode, Entity: entity, Field: field, Detail: detail, Run: mergeConflictRun}
 }
 
-func invalid(detail string) error {
+func invalid(detail string) *Refusal {
 	return &Refusal{Code: InvalidContractCode, Entity: "contract", Detail: detail}
 }
 
@@ -94,7 +124,8 @@ func MergeBytes(base, ours, theirs []byte) ([]byte, error) {
 	for i, input := range [][]byte{base, ours, theirs} {
 		value, err := testpolicy.Decode(input)
 		if err != nil {
-			return nil, invalid(fmt.Sprintf("the %s side is not a readable testing contract: %v", []string{"base", "our", "their"}[i], err))
+			return nil, invalid(fmt.Sprintf("the %s side is not a readable testing contract: %v", []string{"base", "our", "their"}[i], err)).
+				withRun(fmt.Sprintf("git show :%d:%s", i+1, contractStagePath))
 		}
 		values[i] = value
 	}

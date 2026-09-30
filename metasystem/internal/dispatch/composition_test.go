@@ -1874,7 +1874,7 @@ func TestHazardDutiesGateChainCompletion(t *testing.T) {
 		refreshHazardMirror(t, repo, evidence, job)
 		err = CloseCheck(repo, job)
 		wantHazardClosureRefusal(t, err, "REFUSED-R22-M1-RULING-O-INDEPENDENT-CRITIQUE")
-		if !strings.Contains(err.Error(), "(ordinary/medium, medium; needs maximal/xhigh)\ndispatch the critic at a class whose builder rows are the critique's (DESIGN-BEARING)") {
+		if !strings.Contains(err.Error(), "(ordinary/medium, medium; needs maximal/xhigh); review again at class DESIGN-BEARING") {
 			t.Fatalf("the refusal does not name the field and the class: %v", err)
 		}
 	})

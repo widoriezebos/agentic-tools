@@ -250,23 +250,25 @@ func CritiqueReadAdmissionForGoal(repoRoot, role, rootJob, goalID string, round 
 }
 
 func redundantReadError(result ReadAdmissionResult, prior cleanReadCandidate, detail string) error {
-	next := fmt.Sprintf("run: metasystem work finish j2:%s", prior.root)
-	if prior.closedLive {
-		next = fmt.Sprintf("run: metasystem work finish j2:%s --evidence %s", prior.read.Subject.ImplementerRoot, prior.root)
-	} else if prior.latestRound > prior.read.Round {
-		next = fmt.Sprintf("round %d is newer than the clean one; revise that work with metasystem work revise first", prior.latestRound)
-	} else if !prior.closeable {
-		next = fmt.Sprintf("it cannot close from round %d yet; see why with metasystem work status j2:%s", prior.read.Round, prior.root)
-	}
 	message := fmt.Sprintf("critic root %s already read subject %s clean at round %d; an equal read changes nothing", prior.root, result.SubjectDigest, prior.read.Round)
 	if detail != "" {
 		message += "; " + detail
 	}
-	message += "\n" + next
+	run := "metasystem work finish j2:" + prior.root
+	if prior.closedLive {
+		run = fmt.Sprintf("metasystem work finish j2:%s --evidence %s", prior.read.Subject.ImplementerRoot, prior.root)
+	} else if prior.latestRound > prior.read.Round {
+		message += fmt.Sprintf("; round %d is newer than the clean one, so revise that work first", prior.latestRound)
+		run = "metasystem work status j2:" + prior.root
+	} else if !prior.closeable {
+		message += fmt.Sprintf("; it cannot close from round %d yet", prior.read.Round)
+		run = "metasystem work status j2:" + prior.root
+	}
 	return &OpError{
 		Code:    11,
 		Reason:  redundantReadRefusal,
 		Message: message,
+		Run:     run,
 	}
 }
 
