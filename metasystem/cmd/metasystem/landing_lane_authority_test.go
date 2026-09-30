@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -347,5 +348,104 @@ func TestAPersonsReturnRunsOnAnyEngineWhilePaused(t *testing.T) {
 	}
 	if unit := record.Units[0]; unit.State != batch.UnitWithdrawn || unit.Disposition != batch.DispositionPerson || unit.Evidence != "person Wido" {
 		t.Fatalf("returned member = %+v", unit)
+	}
+}
+
+// The lane's new claim identity activates only when the old owner holds
+// nothing (lane design r10 §5, Astra R9-01): while the ledger shows any
+// goal claimed by the old owner lineage landing-m1l, landing set refuses,
+// names each one and the command that settles it, and registers nothing;
+// an unreadable ledger registers nothing either.
+func TestLandingSetRefusedWhileTheOldOwnerHoldsClaims(t *testing.T) {
+	t.Parallel()
+	bed := newLaneVerbBed(t)
+	bed.oldClaims = []string{"goal-a", "goal-b"}
+	code, stdout, stderr := bed.run(t, "landing", "set", bed.landingA, "--json")
+	var result intentResult
+	if err := json.Unmarshal([]byte(stdout+stderr), &result); err != nil {
+		t.Fatal(err)
+	}
+	if code == 0 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "goal-a") || !strings.Contains(result.Summary, "goal-b") ||
+		result.Next == nil || !slices.Equal(result.Next.Argv[:4], []string{"metasystem", "goal", "release", "goal-a"}) {
+		t.Fatalf("set with old-owner claims = %d %+v", code, result)
+	}
+	if _, ok, _ := lane.Read(bed.home); ok {
+		t.Fatal("the lane was registered while the old owner held claims")
+	}
+	bed.oldClaims, bed.oldClaimsErr = nil, errors.New("the ledger can't be fetched")
+	if code, _, _ := bed.run(t, "landing", "set", bed.landingA); code == 0 {
+		t.Fatal("the lane was registered on a ledger that could not be read")
+	}
+	if _, ok, _ := lane.Read(bed.home); ok {
+		t.Fatal("the lane was registered on a ledger that could not be read")
+	}
+	bed.oldClaimsErr = nil
+	if code, _, stderr := bed.run(t, "landing", "set", bed.landingA); code != 0 {
+		t.Fatalf("set once the old owner holds nothing = %d %s", code, stderr)
+	}
+}
+
+// The old owner's claims are read from the ledger: a goal claimed under
+// landing-m1l is named, one the lane's claim identity holds is not.
+func TestOldOwnerClaimsAreReadFromTheLedger(t *testing.T) {
+	t.Parallel()
+	seat := syncedClaimedGoalFixture(t)
+	if held, err := laneOldOwnerClaims(seat, laneAuthorityNow); err != nil || len(held) != 0 {
+		t.Fatalf("a seat's claim read as the old owner's: %v %v", held, err)
+	}
+	amendSyncedGoalFixture(t, seat, "the old owner holds it", func(file *goal.GoalFile) {
+		file.Claimed.Machine, file.Claimed.Lineage = "landing", batchowner.LandingOwnerLineage
+		file.Claimed.HandedOver = goal.HandedOver{FromMachine: "mac-cli", FromLineage: "m1", FromEpoch: 1, Batch: "01j5x00000000000000000kd09"}
+		file.StopCapability = &goal.StopCapability{Generation: 1, Revision: file.Claimed.Revision, Machine: "landing", ClaimEpoch: 1}
+	})
+	if held, err := laneOldOwnerClaims(seat, laneAuthorityNow); err != nil || !slices.Equal(held, []string{"standing-validation"}) {
+		t.Fatalf("old-owner claims = %v %v", held, err)
+	}
+	amendSyncedGoalFixture(t, seat, "the lane's claim identity holds it", func(file *goal.GoalFile) {
+		file.Claimed.Lineage = lane.ClaimLineage
+	})
+	if held, err := laneOldOwnerClaims(seat, laneAuthorityNow); err != nil || len(held) != 0 {
+		t.Fatalf("the lane's own claim read as the old owner's: %v %v", held, err)
+	}
+	amendSyncedGoalFixture(t, seat, "a claim the lane holds for no batch", func(file *goal.GoalFile) {
+		file.Claimed.HandedOver = goal.HandedOver{}
+	})
+	if held, err := laneHeldGoals(seat, laneAuthorityNow); err != nil || !slices.Equal(held, []string{"standing-validation"}) {
+		t.Fatalf("unset's hint does not list the goal the lane's claim identity holds: %v %v", held, err)
+	}
+}
+
+// landing unset's hint for a gone lane names goal release G for each goal
+// the ledger still shows the lane holding: a person's release of a claim
+// the lane's claim identity holds is a foreign release a person may make,
+// and it gives the goal back.
+func TestAPersonReleasesAGoalTheLaneHolds(t *testing.T) {
+	t.Parallel()
+	bed := newIntentBed(t, false, func(file *goal.GoalFile) {
+		file.Claimed.HandedOver = goal.HandedOver{FromMachine: file.Claimed.Machine, FromLineage: file.Claimed.Lineage, FromEpoch: 1, Batch: laneAuthorityBatch}
+		file.Claimed.Machine, file.Claimed.Lineage = "lane-host", lane.ClaimLineage
+		if file.StopCapability != nil {
+			file.StopCapability.Machine = "lane-host"
+		}
+	})
+	held := bed.goalFile(bedGoal)
+	if held.Claimed == nil || held.Claimed.Lineage != lane.ClaimLineage {
+		t.Fatalf("fixture goal is not held by the lane: %+v", held.Claimed)
+	}
+	// The person's terminal proves itself at the stopping act, as at any
+	// terminal (rule H1); the hint's command guides to naming the person
+	// when the terminal is not the enrolled one.
+	reader := goalSyncTerminalReader(t, bed.root(), "ttys:fixture_lane_release")
+	bed.facts.reader = &reader
+	owners := bed.owners()
+	owners.prove = unprovable
+	code, result := bed.runJSON(owners, "goal", "release", bedGoal, "--reason", "the landing lane was unset")
+	if code == 0 || result.Next == nil || !strings.HasSuffix(shellCommand(result.Next.Argv), "--by NAME") {
+		t.Fatalf("the hint's release at an unenrolled terminal must guide to --by: %d %+v", code, result)
+	}
+	code, result = bed.runJSON(owners, "goal", "release", bedGoal, "--reason", "the landing lane was unset", "--by", "Wido")
+	released := bed.goalFile(bedGoal)
+	if code != 0 || result.Outcome != intentConfirmed || released.State == goal.StateClaimed {
+		t.Fatalf("a person's release of the lane's claim = %d %+v; goal %+v", code, result, released.Claimed)
 	}
 }

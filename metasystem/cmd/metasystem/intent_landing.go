@@ -29,6 +29,9 @@ import (
 const (
 	codeLandingLaneBusy    = "LANDING_LANE_BUSY"
 	codeLandingLanePushing = "LANDING_LANE_PUSHING"
+	// codeLandingOldOwnerHolds is landing set refused while the old owner
+	// lineage holds claims (design r10 §5, R9-01).
+	codeLandingOldOwnerHolds = "LANDING_LANE_OLD_OWNER_HOLDS"
 )
 
 // laneVerbOwners are the landing verbs' seams; the zero value is production.
@@ -66,6 +69,9 @@ type laneVerbOwners struct {
 	// laneHeld lists the goals the ledger, read from an installation,
 	// shows held by the landing lane.
 	laneHeld func(installation string) ([]string, error)
+	// oldOwnerClaims lists the goals the ledger, read from an
+	// installation, shows claimed by the old owner lineage (R9-01).
+	oldOwnerClaims func(installation string) ([]string, error)
 	// agent proves the caller descends from the landing agent's launch that
 	// holds the lane checkout (K7).
 	agent func(checkout string) error
@@ -126,6 +132,10 @@ func (inv *intentInvocation) landing() laneVerbOwners {
 	if owners.laneHeld == nil {
 		now := owners.now
 		owners.laneHeld = func(installation string) ([]string, error) { return laneHeldGoals(installation, now()) }
+	}
+	if owners.oldOwnerClaims == nil {
+		now := owners.now
+		owners.oldOwnerClaims = func(installation string) ([]string, error) { return laneOldOwnerClaims(installation, now()) }
 	}
 	if owners.agent == nil {
 		owners.agent = laneAgentCaller
@@ -533,6 +543,12 @@ func runIntentLandingSet(inv *intentInvocation) int {
 					"metasystem landing stop pauses the lane; or wait until the batch lands (metasystem landing status shows it)"}})
 		}
 	}
+	// The lane's claim identity activates with this registration, and only
+	// once the old owner holds nothing: its claims are landed or returned
+	// through its own authority first (design r10 §5, Astra R9-01).
+	if refused := inv.oldOwnerHolds(owners, layout); refused != nil {
+		return inv.render(*refused)
+	}
 	// Registering the host's lane decides where every seat lands: a
 	// person's act at an enrolled terminal (design r10 §1). No seat and no
 	// agent registers one.
@@ -860,8 +876,21 @@ func (inv *intentInvocation) goneLaneUnset(owners laneVerbOwners, report lane.Un
 }
 
 // laneHeldGoals are the goals the ledger, fetched at installation, shows
-// handed to a landing batch or claimed by the landing owner's lineage.
+// handed to a landing batch or claimed by a landing lineage: the lane's
+// claim identity or the old owner's.
 func laneHeldGoals(installation string, now time.Time) ([]string, error) {
+	return ledgerClaims(installation, now, func(claim *goal.ClaimRecord) bool {
+		return claim.HandedOver.Batch != "" || claim.Lineage == lane.ClaimLineage || claim.Lineage == batchowner.LandingOwnerLineage
+	})
+}
+
+// laneOldOwnerClaims are the goals the ledger, fetched at installation,
+// shows claimed by the old owner lineage (landing-m1l).
+func laneOldOwnerClaims(installation string, now time.Time) ([]string, error) {
+	return ledgerClaims(installation, now, func(claim *goal.ClaimRecord) bool { return claim.Lineage == batchowner.LandingOwnerLineage })
+}
+
+func ledgerClaims(installation string, now time.Time, held func(*goal.ClaimRecord) bool) ([]string, error) {
 	endpoint, err := goal.ResolveEndpoint(installation)
 	if err != nil {
 		return nil, err
@@ -870,14 +899,35 @@ func laneHeldGoals(installation string, now time.Time) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	var held []string
+	var ids []string
 	for id, file := range projection.Tree.Live {
-		if file.Claimed != nil && (file.Claimed.HandedOver.Batch != "" || file.Claimed.Lineage == batchowner.LandingOwnerLineage) {
-			held = append(held, id)
+		if file.Claimed != nil && held(file.Claimed) {
+			ids = append(ids, id)
 		}
 	}
-	slices.Sort(held)
-	return held, nil
+	slices.Sort(ids)
+	return ids, nil
+}
+
+// oldOwnerHolds refuses a registration while the ledger shows the old
+// owner lineage holding a goal, naming each and the person's release that
+// settles it; an unreadable ledger registers nothing either.
+func (inv *intentInvocation) oldOwnerHolds(owners laneVerbOwners, layout lane.Layout) *intentResult {
+	root := string(layout.Checkout)
+	held, err := owners.oldOwnerClaims(string(layout.Install))
+	if err != nil {
+		return &intentResult{Outcome: intentFailed, code: 1, Targets: laneTargets(root),
+			Summary: "which goals the old landing owner still holds can't be read, so nothing was registered",
+			retry:   "tries again", Details: []string{"reading the ledger in " + string(layout.Install) + ": " + err.Error()}}
+	}
+	if len(held) == 0 {
+		return nil
+	}
+	return &intentResult{Outcome: intentRefused, code: 1, Targets: laneTargets(root),
+		Summary:    fmt.Sprintf("the old landing owner still holds %s (%s), so nothing was registered", textui.Count(len(held), "goal", "goals"), strings.Join(held, ", ")),
+		next:       inv.publicArgv("goal", "release", held[0], "--reason", "the landing lane changes owner"),
+		nextReason: "gives it back; the same for each goal named, then run metasystem landing set " + root + " again",
+		Details:    []string{"refused because: " + codeLandingOldOwnerHolds + ": the new lane's claim identity activates only once every claim of lineage " + batchowner.LandingOwnerLineage + " is landed or returned"}}
 }
 
 // runIntentLandingRestart gives the lane a fresh owner process (a person
