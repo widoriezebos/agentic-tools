@@ -7,8 +7,7 @@
 - Origin: main
 - Next step: Next: read the per-part cost lines ("stop phases") in the hook log on each seat and see whether the health call is still the largest cost. Done when: a test measures the health call's share of the budget and passes under a stated limit, with a fix on main first if health is still the largest cost.
 - OpenedAt: 2026-09-05T10:09:49Z
-- Revision: 14
-- Pinned: m1d
+- Revision: 15
 - BudgetExceptions: 0
 - Sliced: machine=m1d lineage=main-1788683763-71870-f7f607 revision=5 at=2026-09-06T10:52:15Z
 - Parked: by=human:Wido at=2026-09-19T15:48:40Z because=parked 2026-09-19 in Wido's name (his 16:40 CEST grant, "yes you are allowed to open / approve / whatever in my name while working on this mssion"; m1e sync 14): lower priority than his machine-ready target. Resume only when Wido sets its priority and picks the goal. Existing work: on main 1271fa380 (09-06), the Stop hook health preview stops re-reading the world (metasystem/internal/spend/transcript.go, metasystem/internal/spend/cache.go, metasystem/internal/steward/health.go). Wido reopened the goal on 09-16 (df5c833f0) over a 20-42 s regression; no diagnosis of it is recorded. Left: about 100-400 lines, not verified. No origin goal/stop-hook-health-cost branch exists: nothing unlanded exists; the work below is all on main.
@@ -28,4 +27,5 @@ History:
 - 2026-09-19T15:48:30Z KT2340DTG2C5JW1V04KK9VHFBH-m1e-c6925449 edit actor=human:Wido targets=stop-hook-health-cost
 - 2026-09-19T15:48:40Z GPRCEQ4CV83J30TAZGWJNJK2XM-m1e-c6925449 park actor=human:Wido targets=stop-hook-health-cost reason=parked 2026-09-19 in Wido's name (his 16:40 CEST grant, "yes you are allowed to open / approve / whatever in my name while working on this mssion"; m1e sync 14): lower priority than his machine-ready target. Resume only when Wido sets its priority and picks the goal. Existing work: on main 1271fa380 (09-06), the Stop hook health preview stops re-reading the world (metasystem/internal/spend/transcript.go, metasystem/internal/spend/cache.go, metasystem/internal/steward/health.go). Wido reopened the goal on 09-16 (df5c833f0) over a 20-42 s regression; no diagnosis of it is recorded. Left: about 100-400 lines, not verified. No origin goal/stop-hook-health-cost branch exists: nothing unlanded exists; the work below is all on main.
 - 2026-09-30T18:54:18Z CZPP7SHMADFAGF92ZSG5A8HBPK-ui-bc2fda53 edit actor=human:Wido targets=stop-hook-health-cost
-Integrity: sha256=02ddf8a112b18010032a09807a5529f83647b207ccc629ffd50c4da400c0e2f3
+- 2026-09-30T18:59:15Z 8H2WTPKXSDZFVATJ1FB86WYAE1-ui-bc2fda53 set-pin actor=human:Wido targets=stop-hook-health-cost
+Integrity: sha256=ba52b2ef12fb5dfff81751c0765223b6bc890229d6d4a4ce6c13eae00cd7d4cc
