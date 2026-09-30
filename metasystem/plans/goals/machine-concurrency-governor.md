@@ -1,6 +1,6 @@
 # machine-concurrency-governor
 
-- State: queued
+- State: parked
 - Priority: 2
 - Sequence: 35
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: overload makes proofs flaky and slow, no data loss; novelty 2: a machine-wide admission governor is new; exposure 3: every seat on the machine; accumulation 1: one governor and its config"
@@ -9,8 +9,9 @@
 - Origin: human
 - Next step: Next: when a dispatch or suite failure is traced to machine load again, write a small design for load-aware admission using that incident as its test case. Done when: a fixture that dispatches beside a saturating load passes without timeouts.
 - OpenedAt: 2026-08-29T07:38:20Z
-- Revision: 211
+- Revision: 212
 - BudgetExceptions: 0
+- Parked: by=human:Wido at=2026-09-30T18:51:24Z because=Parked until a dispatch or test suite failure on the host is traced to machine load. Since landings run in one batch per machine, overload has not recurred, so building a governor now would solve a problem we do not currently have.
 
 History:
 - 2026-08-29T07:38:20Z XAR0VVP0CKT8476P0AZ8K4KG68-m1-bf243850 open actor=human:wido targets=machine-concurrency-governor
@@ -224,4 +225,5 @@ History:
 - 2026-09-16T20:33:44Z ZDGXCXNCSWQH9NEHA1FFE3340S-m1e-c6925449 unapprove actor=human:Wido targets=machine-concurrency-governor reason=Wido 2026-09-16 22:40 CEST: clean house on priority 1 first, then a few human convenience features; every priority 2+ goal is unapproved until then
 - 2026-09-30T18:48:44Z DRV2G3ER650PC3GDMSYHQN3111-ui-bc2fda53 done actor=human:Wido targets=actionable-metrics,arming-binds-the-installed-engine-identity,census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,critique-launch-verb-enforces-the-round-cap,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,dispatch-bases-chains-on-the-remote-tip,failed-job-attention,first-headless-run,fixture-repo-copies-exclude-the-artifacts-store,fixture-waits-name-their-producer,fleet-join-bootstrap,headless-continuous-delivery-proof,headless-fleet-coordination-proof,human-authority-surface-runs-its-cmd-tests,human-break-glass-commit-keeps-the-ledger-valid,human-wait-does-not-consume-goal-budget,job-record-birth-token,land-verb-writes-the-receipt,law-keys-read-committed-bytes,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,member-size-gate,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,never-idle-ironclad,new-elapsed-budgets-use-explicit-hours,one-goal-act-one-ledger-commit,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged,run-scoped-build-caches-have-a-janitor,runtime-limit-is-not-a-protocol-error,seat-landings-run-the-selected-sections,skipped-test-fails-its-group-on-the-other-os,small-change-lane,steward-revivals-leave-the-receipt-stream,stop-batch-strands-a-resumable-goal,token-spend-fence,trunk-versus-candidate-is-a-verification-step,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=2:36 to=2:35
 - 2026-09-30T18:51:20Z F9XJ69A1V99R92QZGMND6JMDVH-ui-bc2fda53 edit actor=human:Wido targets=machine-concurrency-governor
-Integrity: sha256=74f9910b3ebd8830a83dd45247334a8a59853ea9c08c01ca819bcdcdbe022883
+- 2026-09-30T18:51:24Z MZ4VP01CB1MHVNFR9S8HM7KDWG-ui-bc2fda53 park actor=human:Wido targets=machine-concurrency-governor reason=Parked until a dispatch or test suite failure on the host is traced to machine load. Since landings run in one batch per machine, overload has not recurred, so building a governor now would solve a problem we do not currently have.
+Integrity: sha256=c08969640b3f108e1267cccd906bce1b13b8e6a366168ca13d1116f07a1a4a8a
