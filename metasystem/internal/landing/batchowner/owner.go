@@ -123,6 +123,14 @@ func InspectBatchOwnerWith(root string, prober identity.Prober, readHolder func(
 			StartTicks: announcement.PidStartTicks, BootID: announcement.BootID}
 		return holder.Pid, identity.AliveRef(prober, ref), nil
 	}
+	// No announcement names the holder: a holder pid the kernel reports as
+	// gone is a dead owner (its lease is stale), so a person's start can take
+	// over; any other reading stays unknown.
+	if holder.Pid > 0 {
+		if _, state, probeErr := prober.Probe(holder.Pid); probeErr == nil && state == identity.Dead {
+			return holder.Pid, identity.Dead, nil
+		}
+	}
 	return holder.Pid, identity.Unknown, fmt.Errorf("landing owner announcement is absent")
 }
 
