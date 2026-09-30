@@ -82,7 +82,12 @@ const (
 	// keyed Executable seams (land.go, prove.go), which the field-name rule
 	// counts once the fields are exported for the command's tests; they
 	// hold the same os.Executable values as before, so nothing new launches.
-	verbRatchetSelfSubprocessCeiling = 97
+	// Main cd65f4e2a (the owner judges its re-arm by the state it leaves):
+	// measured 98. The one site added is supervisionArmedOrRecovered's up
+	// --recover-only --if-down (internal/landing/batchowner/prove.go), which
+	// starts the lane's missing rings after a re-arm left them down; main
+	// carried it above the ceiling, and the batch integrating it records it.
+	verbRatchetSelfSubprocessCeiling = 98
 	// R6: instruction text naming a form whose first word is not public, over
 	// the vocabulary frozen when the witness landed. Batch 9 (u9a's public
 	// homes, c3's plan deletions, distill's record removal): measured 12.

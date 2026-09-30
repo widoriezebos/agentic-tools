@@ -481,7 +481,7 @@ func BatchViewOf(record batch.Record) BatchView { return *batchView(record, nil)
 // tickProblemClasses are the owner's known tick failures in plain words, by a
 // fragment of the error the owner reports.
 var tickProblemClasses = []struct{ fragment, plain string }{
-	{"bin/metasystem up --repo", "the lane owner could not re-arm the lane's engine for its proof"},
+	{" up --repo ", "the lane owner could not re-arm the lane's engine for its proof"},
 	{"cmd/devgate build", "the lane owner could not rebuild the lane's engine for its proof"},
 	{"fetch origin/main", "the lane owner could not fetch main"},
 	{"before rebind", "the lane owner could not hand its members' claims to the lane"},

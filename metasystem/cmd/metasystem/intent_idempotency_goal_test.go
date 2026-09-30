@@ -282,7 +282,7 @@ func TestIntentReleaseAtAnUnenrolledTerminal(t *testing.T) {
 	owners := bed.owners()
 	owners.prove = unprovable
 	code, result := bed.runJSON(owners, "goal", "release", bedGoal, "--reason", "the seat is gone")
-	if code == 0 || !strings.Contains(result.Decision, "--by NAME") {
+	if code == 0 || result.Next == nil || !strings.HasSuffix(shellCommand(result.Next.Argv), "--by NAME") {
 		t.Fatalf("an unnamed release at an unenrolled terminal must guide to --by: %d %+v", code, result)
 	}
 	code, result = bed.runJSON(owners, "goal", "release", bedGoal, "--reason", "the seat is gone", "--by", "Wido")

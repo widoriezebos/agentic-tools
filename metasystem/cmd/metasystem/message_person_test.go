@@ -32,13 +32,13 @@ func TestMessagePersonActRefusalIsTwoLines(t *testing.T) {
 	t.Parallel()
 	bed := newIntentBed(t, false, makeQueued)
 	code, stdout, stderr := bed.run(notEnrolledOwners(bed), "grant", "add", "--tiers", "1", "--acts", "approve", "--until", "2026-12-01")
-	want := "metasystem grant add: this terminal isn't enrolled yet, so nothing was done\n" +
-		"run: metasystem system enroll --name Wido  (then repeat this command)\n"
+	want := "✗ this terminal isn't enrolled yet, so nothing was done\n" +
+		"  → metasystem system enroll --name Wido  then repeat this command\n"
 	if code == 0 || stdout != "" || stderr != want {
 		t.Fatalf("grant add = %d\nstdout %q\nstderr %q\nwant   %q", code, stdout, stderr, want)
 	}
 	code, _, verbose := bed.run(notEnrolledOwners(bed), "grant", "add", "--tiers", "1", "--acts", "approve", "--until", "2026-12-01", "--verbose")
-	if code == 0 || !strings.HasPrefix(verbose, want) || !strings.Contains(verbose, humanauthority.OutcomeNotEnrolled) {
+	if code == 0 || !strings.HasPrefix(verbose, strings.Replace(want, "✗ ", "✗ metasystem grant add: ", 1)) || !strings.Contains(verbose, humanauthority.OutcomeNotEnrolled) {
 		t.Fatalf("grant add --verbose = %d %q; want the two lines, then the refusal's code", code, verbose)
 	}
 	code, result := bed.runJSON(notEnrolledOwners(bed), "grant", "add", "--tiers", "1", "--acts", "approve", "--until", "2026-12-01")
@@ -61,15 +61,15 @@ func TestMessageAgentShellNamesTheSessionFlag(t *testing.T) {
 	code, _, stderr := bed.run(owners, "goal", "edit", bedGoal, "--next", "Continue.")
 	lines := strings.Split(strings.TrimSuffix(stderr, "\n"), "\n")
 	if code == 0 || len(lines) != 2 ||
-		lines[0] != "metasystem goal edit: an agent (claude) started this shell and named no session, so nothing was done" ||
-		lines[1] != "run: metasystem goal edit "+bedGoal+" --next Continue. --lineage LINEAGE  (as the session that holds the work)" {
+		lines[0] != "✗ an agent (claude) started this shell and named no session, so nothing was done" ||
+		lines[1] != "  → metasystem goal edit "+bedGoal+" --next Continue. --lineage LINEAGE  as the session that holds the work" {
 		t.Fatalf("goal edit = %d\n%s", code, stderr)
 	}
 	// goal pause and done read the terminal themselves: the same two lines.
 	code, _, stderr = bed.run(owners, "goal", "pause", bedGoal, "--reason", "x")
 	lines = strings.Split(strings.TrimSuffix(stderr, "\n"), "\n")
-	if code == 0 || len(lines) != 2 || lines[0] != "metasystem goal pause: this terminal isn't enrolled (Wido enrolled another one), so nothing was done" ||
-		lines[1] != "run: metasystem system enroll --name Wido  (moves the enrollment here; then repeat this command)" {
+	if code == 0 || len(lines) != 2 || lines[0] != "✗ this terminal isn't enrolled (Wido enrolled another one), so nothing was done" ||
+		lines[1] != "  → metasystem system enroll --name Wido  moves the enrollment here; then repeat this command" {
 		t.Fatalf("goal pause = %d\n%s", code, stderr)
 	}
 }
@@ -86,7 +86,7 @@ func TestMessageAdmissionNoticeWaitsForTheOutcome(t *testing.T) {
 		want    string
 	}{
 		{"refused", intentResult{Outcome: intentRefused, code: 2, Summary: "this terminal isn't enrolled yet, so nothing was done"}, false,
-			"metasystem grant add: this terminal isn't enrolled yet, so nothing was done\n"},
+			"✗ this terminal isn't enrolled yet, so nothing was done\n"},
 		{"confirmed", intentResult{Outcome: intentConfirmed, Summary: "granted p1"}, false,
 			"HUMAN AT THE HELM (wido): grant add runs as wido's act\ngranted p1\n"},
 		{"confirmed verbose", intentResult{Outcome: intentConfirmed, Summary: "granted p1"}, true,
@@ -140,13 +140,13 @@ func TestMessageGrantAddAtTheHelmIsOneRefusal(t *testing.T) {
 	_, err = helm.Write(root, helm.Record{By: "wido", At: time.Now().UTC().Format(time.RFC3339), Reason: "e2e", Checkout: seat.Checkout})
 	helmMust(t, err)
 	code, out := helmEngine(t, root, "grant", "add", "--acts", "everything", "--for", "24h")
-	want := "metasystem grant add: this terminal isn't enrolled (wido enrolled another one), so nothing was done\n" +
-		"run: metasystem system enroll --name wido  (moves the enrollment here; then repeat this command)\n"
+	want := "✗ this terminal isn't enrolled (wido enrolled another one), so nothing was done\n" +
+		"  → metasystem system enroll --name wido  moves the enrollment here; then repeat this command\n"
 	if code != 2 || out != want {
 		t.Fatalf("grant add at the helm = %d\n%s\nwant\n%s", code, out, want)
 	}
 	code, out = helmEngine(t, root, "grant", "add", "--acts", "everything", "--for", "24h", "--verbose")
-	if code != 2 || !strings.HasPrefix(out, want) || !strings.Contains(out, "HUMAN AT THE HELM (wido): grant add runs as wido's act") {
+	if code != 2 || !strings.HasPrefix(out, strings.Replace(want, "✗ ", "✗ metasystem grant add: ", 1)) || !strings.Contains(out, "HUMAN AT THE HELM (wido): grant add runs as wido's act") {
 		t.Fatalf("grant add --verbose at the helm = %d\n%s", code, out)
 	}
 }

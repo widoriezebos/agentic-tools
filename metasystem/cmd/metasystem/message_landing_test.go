@@ -73,13 +73,13 @@ func TestMessageWorkLandRefusalIsTwoLines(t *testing.T) {
 	}
 	b.edit("one\ntwo\n")
 	code, stdout, stderr := b.landText()
-	want := "metasystem work land: goal g1 is not claimed by this session, so nothing was committed\n" +
-		"run: metasystem goal claim g1 --take-over --reason TEXT  (a person takes it over; then repeat this command)\n"
+	want := "✗ goal g1 is not claimed by this session, so nothing was committed\n" +
+		"  → metasystem goal claim g1 --take-over --reason TEXT  a person takes it over; then repeat this command\n"
 	if code == 0 || stdout != "" || stderr != want {
 		t.Fatalf("work land = %d\nstdout %q\nstderr %q\nwant   %q", code, stdout, stderr, want)
 	}
 	_, _, verbose := b.landText("--verbose")
-	if !strings.HasPrefix(verbose, want) || !strings.Contains(verbose, "  verdict: would-refuse code=goal-item-not-held\n") {
+	if !strings.HasPrefix(verbose, strings.Replace(want, "✗ ", "✗ metasystem work land: ", 1)) || !strings.Contains(verbose, "  verdict: would-refuse code=goal-item-not-held\n") {
 		t.Fatalf("work land --verbose:\n%s", verbose)
 	}
 }
@@ -94,7 +94,7 @@ func TestMessageWorkLandJoinRefusalKeepsTheCodeInDetails(t *testing.T) {
 	b.edit("one\nconflicting\n")
 	code, _, stderr := b.landText()
 	first, _, _ := strings.Cut(stderr, "\n")
-	if code == 0 || first != "metasystem work land: the change couldn't join the landing lane: the change does not apply on the batch: notes.md" ||
+	if code == 0 || first != "✗ the change couldn't join the landing lane: the change does not apply on the batch: notes.md" ||
 		strings.Contains(stderr, "BATCH_JOIN_CONFLICT") {
 		t.Fatalf("work land = %d\n%s", code, stderr)
 	}

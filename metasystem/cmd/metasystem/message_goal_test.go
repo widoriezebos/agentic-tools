@@ -44,7 +44,7 @@ func TestMessageGoalAllowWithoutAPermissionNamesTheCommand(t *testing.T) {
 	bed := newGoalCLIBed(t, goalCLISeed{})
 	code, _, stderr := bed.public("goal", "allow", "ship-widget")
 	if code == 0 || !strings.Contains(stderr, "no permission was named, so nothing was done") ||
-		!strings.Contains(stderr, "run: metasystem goal allow ship-widget PERMISSION") || strings.Contains(stderr, "needed first") {
+		!strings.Contains(stderr, "  → metasystem goal allow ship-widget PERMISSION") || strings.Contains(stderr, "needed first") {
 		t.Fatalf("a missing permission must name the command: code=%d %q", code, stderr)
 	}
 }

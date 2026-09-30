@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"slices"
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
@@ -77,7 +78,14 @@ func (inv *intentInvocation) eitherRefusal(target string, err error, stopping bo
 		result.Details = append(result.Details, "an agent session runs it with --lineage LINEAGE; its launcher sets METASYSTEM_OWNER_LINEAGE")
 	}
 	if stopping {
-		result.Details = append(result.Details, "a person at a terminal that is not enrolled may name themself instead: "+shellCommand(append(retry, "--by", "NAME")))
+		named := append(slices.Clone(retry), "--by", "NAME")
+		result.Details = append(result.Details, "a person at a terminal that is not enrolled may name themself instead: "+shellCommand(named))
+		if humanauthority.RemedyFor(inv.stateRoot, err, "", nil).Kind != humanauthority.RemedyAgent {
+			// A stopping act needs no enrolled terminal (H1): the person names
+			// themself, which resolves it where enrolling would move the
+			// enrollment.
+			result.next, result.nextReason = named, "names you; a stopping act needs no enrolled terminal"
+		}
 	}
 	return result
 }

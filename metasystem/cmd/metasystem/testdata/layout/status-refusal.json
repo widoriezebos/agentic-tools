@@ -6,7 +6,14 @@ exit 2
   "targets": [],
   "outcome": "refused",
   "summary": "status takes one goal at most; unexpected goal-b; nothing was done",
-  "decision": "one goal's work is metasystem status G; a job, run or read is metasystem work status REF; every other status is metasystem OBJECT status"
+  "next": {
+    "argv": [
+      "metasystem",
+      "status",
+      "goal-a"
+    ],
+    "reason": "a job, run or read is metasystem work status REF"
+  }
 }
 
 --

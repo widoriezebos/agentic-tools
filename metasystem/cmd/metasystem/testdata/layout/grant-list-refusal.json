@@ -6,7 +6,20 @@ exit 2
   "targets": [],
   "outcome": "refused",
   "summary": "/ is not inside a Git repository; nothing was done",
-  "decision": "run this inside the repository, or name it with --repo PATH"
+  "next": {
+    "argv": [
+      "metasystem",
+      "grant",
+      "list",
+      "--json",
+      "--repo",
+      "PATH"
+    ],
+    "reason": "inside the repository, or naming its path"
+  },
+  "details": [
+    "not an installation because: not a git repository"
+  ]
 }
 
 --

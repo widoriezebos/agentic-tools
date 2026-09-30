@@ -740,21 +740,23 @@ func PlanWithTrustedPolicyEngine(engine string, request SelectionRequest, instal
 		command.Env = append(command.Env, PolicyProbeWorkerEnvironment+"=1")
 	}
 	data, err := command.CombinedOutput()
+	// The refusals below name the command the pinned engine ran, as a fact.
+	commandFact := enginecause.Value("command", enginecause.Command(command.Args...))
 	if err != nil && request.LaneID != "" && strings.Contains(string(data), "flag provided but not defined: -lane") {
 		return PlanOutput{}, laneEngineTooOld(engine)
 	}
 	if err != nil {
-		return PlanOutput{}, engineRefusal("child-failed", []enginecause.Fact{enginecause.Path("engine", engine), enginecause.Value("command", enginecause.Command(append([]string{engine}, args...)...))},
+		return PlanOutput{}, engineRefusal("child-failed", []enginecause.Fact{enginecause.Path("engine", engine), commandFact},
 			fmt.Sprintf("the pinned engine failed while choosing which tests to run (%v)", err), strings.TrimSpace(string(data)))
 	}
 	decoder := json.NewDecoder(strings.NewReader(string(data)))
 	decoder.DisallowUnknownFields()
 	var output PlanOutput
 	if err := decoder.Decode(&output); err != nil {
-		return PlanOutput{}, engineRefusal("child-output", []enginecause.Fact{enginecause.Path("engine", engine), enginecause.Value("command", enginecause.Command(append([]string{engine}, args...)...))}, "the pinned engine's choice of tests could not be read", err.Error())
+		return PlanOutput{}, engineRefusal("child-output", []enginecause.Fact{enginecause.Path("engine", engine), commandFact}, "the pinned engine's choice of tests could not be read", err.Error())
 	}
 	if err := decoder.Decode(&struct{}{}); err != io.EOF {
-		return PlanOutput{}, engineRefusal("child-output", []enginecause.Fact{enginecause.Path("engine", engine), enginecause.Value("command", enginecause.Command(append([]string{engine}, args...)...))}, "the pinned engine printed more than its choice of tests")
+		return PlanOutput{}, engineRefusal("child-output", []enginecause.Fact{enginecause.Path("engine", engine), commandFact}, "the pinned engine printed more than its choice of tests")
 	}
 	return output, nil
 }

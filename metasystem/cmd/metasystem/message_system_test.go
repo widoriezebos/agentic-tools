@@ -38,8 +38,8 @@ func TestMessageRetryIsTheTypedCommand(t *testing.T) {
 	inv, out := systemMessageInvocation(t, "app status", "--goal", "g1")
 	inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the application's run record could not be read", retry: "try again",
 		Details: []string{"run record: permission denied"}})
-	want := "metasystem app status: the application's run record could not be read\n" +
-		"run: metasystem app status --goal g1  (try again)\n"
+	want := "✗ the application's run record could not be read\n" +
+		"  → metasystem app status --goal g1  try again\n"
 	if out.String() != want {
 		t.Fatalf("retry render:\n got  %q\n want %q", out.String(), want)
 	}
@@ -51,7 +51,7 @@ func TestMessageRetryIsTheTypedCommand(t *testing.T) {
 	// A Decision the owner gave wins over the retry.
 	decided, decidedOut := systemMessageInvocation(t, "app status")
 	decided.render(intentResult{Outcome: intentRefused, code: 1, Summary: "x", retry: "try again", Decision: "metasystem system check"})
-	if strings.Contains(decidedOut.String(), "run: metasystem app status") {
+	if strings.Contains(decidedOut.String(), "  → metasystem app status") {
 		t.Fatalf("retry overrode a decision: %q", decidedOut.String())
 	}
 }
