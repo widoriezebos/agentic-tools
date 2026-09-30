@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatchproc"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/returnschema"
@@ -240,14 +241,21 @@ func SelftestRun(p SelftestParams, model string, stdout io.Writer) error {
 	if err := p.RunProbe(); err != nil {
 		return err
 	}
-	dir, err := os.MkdirTemp("", "metasystem-"+p.Runtime+"-selftest.")
+	dir, done, err := diskstore.ScratchDir("metasystem-" + p.Runtime + "-selftest.")
 	if err != nil {
 		return err
 	}
 	// The directory holds the scratch repository every delegate works in:
-	// it is removed only once every job dispatched is proven ended.
+	// it is removed only once every job dispatched is proven ended. A kept
+	// directory keeps its use of the process's scratch root, so the root
+	// outlives this process for the sweeper's proof, never the owner's
+	// release.
 	var dispatched []string
-	defer func() { p.settleSelftest(dir, dispatched) }()
+	defer func() {
+		if !p.settleSelftest(dir, dispatched) {
+			done()
+		}
+	}()
 	selftestID := fmt.Sprintf("%s-selftest-%s-%d", p.Runtime, now().UTC().Format("20060102t150405z"), os.Getpid())
 	scratch := filepath.Join(dir, "repo")
 	nonce := p.Runtime + "-" + randomToken()

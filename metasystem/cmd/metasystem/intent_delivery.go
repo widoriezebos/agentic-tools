@@ -1667,6 +1667,10 @@ type intentLanded struct {
 	// ReleaseSet is the goal's workspaces this landing ends, recorded
 	// before the push and released once the merged branch is swept.
 	ReleaseSet *diskstore.ReleaseSet `json:",omitempty"`
+	// Staged marks a staged landing's record (work land --staged): its
+	// Endpoint is the remote-tracking ref the commit was pushed to, and it
+	// has no branch to sweep, so Swept says the push succeeded.
+	Staged bool `json:",omitempty"`
 }
 
 func (inv *intentInvocation) landGoal(goalID, through string) intentResult {

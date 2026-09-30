@@ -29,6 +29,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/backlog"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/knownissues"
@@ -59,6 +60,9 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	err := run(ctx, os.Args[1:])
 	stop()
+	// The process's scratch root goes before the exit (Part B 3.2
+	// "Process"); one a kept checkout still uses stays for the sweeper.
+	_ = diskstore.ReleaseProcessScratch(context.Background())
 	switch {
 	case errors.Is(err, errUsage):
 		os.Exit(2)
@@ -570,7 +574,22 @@ func removeFixture(checkout string) {
 	_ = os.RemoveAll(evidenceDir(checkout))
 	_ = os.RemoveAll(filepath.Dir(fixtureStoreHome(checkout)))
 	_ = os.RemoveAll(fixtureConversations(checkout))
+	fixtureUses.Lock()
+	done := fixtureUses.done[checkout]
+	delete(fixtureUses.done, checkout)
+	fixtureUses.Unlock()
+	if done != nil {
+		done()
+	}
 }
+
+// fixtureUses ends each fixture checkout's use of the process's scratch
+// root once the checkout is removed; a checkout kept (a shutdown that did
+// not complete) keeps its use, so the root stays for the sweeper.
+var fixtureUses = struct {
+	sync.Mutex
+	done map[string]func()
+}{done: map[string]func(){}}
 
 // ledger is the canned tree the board reads, and the two acts change it the
 // way the engine would: an approval moves a goal to approved, a withdrawal
@@ -717,7 +736,10 @@ func fixtureCheckout(calm bool, register string) (checkout string, err error) {
 	if calm {
 		landed = strings.Replace(landed, "- Status: accepted", "- Status: done", 1)
 	}
-	directory, err := os.MkdirTemp("", "metasystem-walkthrough-")
+	// In the process's registered scratch root (Part B R1): the checkout
+	// and the directories beside it live there, and a walkthrough that is
+	// killed leaves a root the sweeper can prove about.
+	directory, done, err := diskstore.ScratchDir("metasystem-walkthrough-")
 	if err != nil {
 		return "", fmt.Errorf("cannot make the walkthrough checkout: %v", err)
 	}
@@ -725,7 +747,12 @@ func fixtureCheckout(calm bool, register string) (checkout string, err error) {
 		if err != nil {
 			_ = os.RemoveAll(directory)
 			_ = os.RemoveAll(evidenceDir(directory))
+			done()
+			return
 		}
+		fixtureUses.Lock()
+		fixtureUses.done[directory] = done
+		fixtureUses.Unlock()
 	}()
 	for _, planted := range []struct{ relative, text string }{
 		{"metasystem.conf", ""},

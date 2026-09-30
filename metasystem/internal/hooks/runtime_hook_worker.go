@@ -5,6 +5,8 @@ import (
 	"os"
 	"os/exec"
 	"syscall"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 )
 
 // engineWorker is a launched Stop worker, reaped as soon as it exits.
@@ -36,6 +38,11 @@ func launchWorker(engine, installation, runtime string, env []string, stdin, std
 	command.Dir = installation
 	command.Env = env
 	command.Stdin, command.Stdout, command.Stderr = stdin, stdout, stderr
+	// The worker inherits the scratch root's writer lock: a Stop killed at
+	// its budget leaves a root its surviving worker still holds.
+	if err := diskstore.PrepareChild(command); err != nil {
+		return nil, err
+	}
 	if err := command.Start(); err != nil {
 		return nil, err
 	}

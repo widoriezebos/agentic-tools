@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"io"
-	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -77,6 +77,7 @@ type driver struct {
 
 	messageFile string
 	ownedFile   string
+	ownedDone   func()
 	stepName    string
 	stepOutput  bytes.Buffer
 	branch      string
@@ -129,6 +130,9 @@ func (d *driver) cleanup(status int) {
 	}
 	if d.ownedFile != "" {
 		d.owners.RemoveFile(d.ownedFile)
+	}
+	if d.ownedDone != nil {
+		d.ownedDone()
 	}
 }
 
@@ -262,12 +266,12 @@ func (d *driver) held() int {
 	}
 	d.messageFile = request.MessageFile
 	if request.MessageFile == "-" {
-		file, err := os.CreateTemp("", "metasystem-land-message.")
+		file, done, err := diskstore.ScratchFile("metasystem-land-message.")
 		if err != nil {
 			fmt.Fprintln(d.stderr, err)
 			return 1
 		}
-		d.ownedFile = file.Name()
+		d.ownedFile, d.ownedDone = file.Name(), done
 		_, writeErr := file.Write(request.Message)
 		closeErr := file.Close()
 		if writeErr != nil || closeErr != nil {
@@ -392,6 +396,7 @@ func (d *driver) land() int {
 		}
 		d.requiredStep("landing gate before push", d.gateBeforePush)
 		d.sampleBoot()
+		d.recordRelease()
 		if status := d.runStep("push recertified commit to origin (single attempt)", d.pushOrigin); status != 0 {
 			if d.movingOriginRejection() {
 				detail := d.lastStepLine()
@@ -402,6 +407,7 @@ func (d *driver) land() int {
 		}
 		head, _ := d.gitOut("rev-parse", "HEAD")
 		d.hintWaiters(head)
+		d.releaseLanded(head)
 	} else {
 		d.requiredStep("commit", d.commitChanges)
 		d.requiredStep("verify clean after commit", d.requireCleanAfterCommit)
@@ -418,6 +424,7 @@ func (d *driver) land() int {
 		d.sampleBoot()
 		for attempt := 1; attempt <= pushLimit; attempt++ {
 			d.requiredStep("landing gate before push", d.gateBeforePush)
+			d.recordRelease()
 			status := d.runStep(fmt.Sprintf("push origin (attempt %d of %d)", attempt, pushLimit), d.pushOrigin)
 			if status == 0 {
 				break
@@ -436,11 +443,34 @@ func (d *driver) land() int {
 		}
 		head, _ := d.gitOut("rev-parse", "HEAD")
 		d.hintWaiters(head)
+		d.releaseLanded(head)
 	}
 	if !request.SkipTransport {
 		d.requiredStep("sync transport", d.syncTransport)
 	}
 	return 0
+}
+
+// recordRelease records the goal's release set for the commit about to be
+// pushed (the staged route of disk-lifetimes Part B 3.6).
+func (d *driver) recordRelease() {
+	if d.owners.RecordRelease == nil || d.request.Goal == "" {
+		return
+	}
+	head, status := d.gitOut("rev-parse", "HEAD")
+	if status != 0 {
+		return
+	}
+	if err := d.owners.RecordRelease(head, d.branch); err != nil {
+		fmt.Fprintf(d.stdout, "-- the goal's workspaces were not recorded for release (%v); they stay until metasystem work workspace --release or the goal's end\n", err)
+	}
+}
+
+// releaseLanded releases the pushed commit's recorded set.
+func (d *driver) releaseLanded(head string) {
+	if d.owners.ReleaseLanded != nil && d.request.Goal != "" && head != "" {
+		d.owners.ReleaseLanded(head)
+	}
 }
 
 func (d *driver) syncTransport(out io.Writer) int {

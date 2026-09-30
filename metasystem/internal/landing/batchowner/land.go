@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"context"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
@@ -19,6 +20,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	receiptpkg "github.com/widoriezebos/agentic-tools/metasystem/internal/receipt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/strictjson"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 )
@@ -707,9 +709,13 @@ func BatchRecoverySeamsWithGit(root string, store batch.Store, id string, at tim
 			if _, remoteErr := goalbranch.ScrubbedGit(controlRoot, "remote", "get-url", "transport"); remoteErr == nil {
 				transport = "transport"
 			}
-			_, err = BatchGoalBranchSweep(goalbranch.SweepRequest{Repo: controlRoot, Remote: endpoint.Remote, Transport: transport,
-				EndpointTip: record.Landing.PushedTip, GoalID: unit.GoalID, CheckClaim: Engine.BranchClaimCheck(controlRoot, unit.GoalID, endpoint)})
-			return err
+			// Inside the critical section of the goal's registered
+			// worktrees, as goal done's sweep (Round D3 N1).
+			return steward.SweepGoalWorktrees(controlRoot, unit.GoalID, func(ctx context.Context) error {
+				_, err := BatchGoalBranchSweep(goalbranch.SweepRequest{Repo: controlRoot, Remote: endpoint.Remote, Transport: transport,
+					EndpointTip: record.Landing.PushedTip, GoalID: unit.GoalID, CheckClaim: Engine.BranchClaimCheck(controlRoot, unit.GoalID, endpoint), Context: ctx})
+				return err
+			})
 		},
 		Finalize: func(unit batch.Unit, commit string) error {
 			next := RecoveredBatchNext(unit, commit)
@@ -732,6 +738,7 @@ func BatchRecoverySeamsWithGit(root string, store batch.Store, id string, at tim
 			}
 			return batch.CleanupLandingBranch(root, id, record.Landing.PushedTip)
 		},
+		Release: ReleaseMemberSet(id, at),
 	}
 }
 

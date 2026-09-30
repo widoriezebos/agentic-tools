@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/jsonedit"
@@ -141,14 +142,20 @@ func positiveInteger(value string) bool { return positiveIntegerPattern.MatchStr
 
 var naturalPattern = regexp.MustCompile(`^[0-9]+$`)
 
-// tempFile is mktemp: an empty file in dir (or TMPDIR when dir is empty)
-// named after the pattern prefix.
+// tempFile is mktemp: an empty file in dir (or the session's TMPDIR when dir
+// is empty, else the process's scratch root) named after the pattern prefix.
 func (s *session) tempFile(dir, prefix string) (string, error) {
 	if dir == "" {
 		dir = s.env.TempDir
 	}
 	if dir == "" {
-		dir = os.TempDir()
+		// A disposable file of this process: its scratch root, which the
+		// command's release (or the sweeper, if it is killed) removes.
+		scratch, err := diskstore.ProcessScratch()
+		if err != nil {
+			return "", err
+		}
+		dir = scratch
 	}
 	handle, err := os.CreateTemp(dir, prefix+".*")
 	if err != nil {

@@ -18,16 +18,19 @@ package launch
 
 import (
 	"os"
-	"path/filepath"
 	"strings"
 	"syscall"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 )
 
 // LockName is the file every launch on this host contends for.
 const LockName = "metasystem-seat-launch.lock"
 
-// LockPath is that file in the host's temporary directory.
-func LockPath() string { return filepath.Join(os.TempDir(), LockName) }
+// LockPath is that file in the host's temporary directory: a shared host
+// path, which no process's TMPDIR moves (a launcher whose child runs with a
+// process-scratch TMPDIR contends for the same file).
+func LockPath() (string, error) { return diskstore.HostShared(LockName) }
 
 // Lock is one held host lock. Release gives it back.
 type Lock struct {

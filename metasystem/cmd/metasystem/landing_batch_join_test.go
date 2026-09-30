@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
@@ -369,4 +370,26 @@ func directoryTreesOverlap(left, right string) bool {
 		return relative == "." || relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator))
 	}
 	return contains(left, right) || contains(right, left)
+}
+
+// A join records the goal's release set in the member, selected at the
+// member's tip in its seat checkout (disk-lifetimes Part B 3.6, U6d).
+func TestAJoinRecordsTheMembersReleaseSet(t *testing.T) {
+	t.Parallel()
+	base := "base-tree"
+	request, dependencies, _ := sideBySideJoinBed(t, &base)
+	request.ChainHead = strings.Repeat("5", 40)
+	var asked []string
+	dependencies.ReleaseSet = func(seatRoot, goalID, tip string) (*diskstore.ReleaseSet, error) {
+		asked = append(asked, seatRoot+"|"+goalID+"|"+tip)
+		return &diskstore.ReleaseSet{Tip: tip, Stores: []diskstore.ReleaseEntry{{ID: "01K6WORKSPACE0000000000000", State: diskstore.ReleasePending}}}, nil
+	}
+	record := joinGoal(t, request, dependencies, "goal-r")
+	if len(asked) != 1 || asked[0] != request.SeatRoot+"|goal-r|"+request.ChainHead {
+		t.Fatalf("the set was selected with %v", asked)
+	}
+	if len(record.Units) != 1 || record.Units[0].ReleaseSet == nil || record.Units[0].ReleaseSet.Tip != request.ChainHead ||
+		len(record.Units[0].ReleaseSet.Stores) != 1 || record.Units[0].ReleaseSet.Stores[0].State != diskstore.ReleasePending {
+		t.Fatalf("the member does not carry its release set: %+v", record.Units)
+	}
 }

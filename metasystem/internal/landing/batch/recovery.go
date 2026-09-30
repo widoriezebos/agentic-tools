@@ -3,6 +3,8 @@ package batch
 import (
 	"fmt"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 )
 
 type RecoverySeams struct {
@@ -21,6 +23,10 @@ type RecoverySeams struct {
 	Rearm func(string) error
 	// Cleanup removes the detached/local assembly after trailer recognition.
 	Cleanup func() error
+	// Release releases a landed member's recorded release set in its seat
+	// checkout, marking each entry; nil leaves every set for a later
+	// recovery.
+	Release func(Unit, *diskstore.ReleaseSet)
 }
 
 // RecoverPushedSeries recognizes units by individual origin trailers. It never
@@ -34,7 +40,15 @@ func RecoverPushedSeries(store Store, id, actor string, at time.Time, seams Reco
 		return fmt.Errorf("BATCH_RECOVERY_NOT_PUSHED: batch %s has no completed push", id)
 	}
 	for _, snapshot := range record.Units {
-		if snapshot.P6Done || snapshot.State != UnitJoined && snapshot.Outcome != UnitLanded {
+		if snapshot.P6Done {
+			// A landed member's release set is retried by this recovery
+			// until every entry is settled; nothing else of P6 repeats.
+			if err := releaseMemberSet(store, id, snapshot.GoalID, seams); err != nil {
+				return err
+			}
+			continue
+		}
+		if snapshot.State != UnitJoined && snapshot.Outcome != UnitLanded {
 			continue
 		}
 		commit, found := "", false
@@ -116,6 +130,11 @@ func RecoverPushedSeries(store Store, id, actor string, at time.Time, seams Reco
 		}); err != nil {
 			return err
 		}
+		// Only landed work is released: the set recorded at join, after the
+		// pushed series was recognized, never before.
+		if err := releaseMemberSet(store, id, snapshot.GoalID, seams); err != nil {
+			return err
+		}
 	}
 	record, err = store.Load(id)
 	if err != nil {
@@ -171,4 +190,50 @@ func unitByGoal(units []Unit, goalID string) (Unit, bool) {
 		}
 	}
 	return Unit{}, false
+}
+
+// releaseMemberSet runs a landed member's unfinished release set and records
+// each entry's outcome in the batch record. A retry finishes only the
+// recorded ids; a set already finished writes nothing.
+func releaseMemberSet(store Store, id, goalID string, seams RecoverySeams) error {
+	if seams.Release == nil {
+		return nil
+	}
+	current, err := store.Load(id)
+	if err != nil {
+		return err
+	}
+	unit, ok := unitByGoal(current.Units, goalID)
+	if !ok || !unit.P6Done || unit.ReleaseSet == nil || unit.ReleaseSet.Finished() {
+		return nil
+	}
+	set := *unit.ReleaseSet
+	set.Stores = append([]diskstore.ReleaseEntry(nil), unit.ReleaseSet.Stores...)
+	seams.Release(unit, &set)
+	return store.Update(id, func(next *Record) error {
+		for index := range next.Units {
+			if next.Units[index].GoalID == goalID && next.Units[index].ReleaseSet != nil {
+				next.Units[index].ReleaseSet = &set
+			}
+		}
+		return nil
+	})
+}
+
+// RetryReleaseSets retries every landed member's unfinished release set in
+// batch id (disk-lifetimes Part B 3.6: the sweeper's retry, Round D3 N6),
+// through release, which a caller scopes to its own seat's members by
+// leaving other entries untouched. Only recorded ids are touched; a
+// finished set is never run again.
+func RetryReleaseSets(store Store, id string, release func(Unit, *diskstore.ReleaseSet)) error {
+	record, err := store.Load(id)
+	if err != nil {
+		return err
+	}
+	for _, unit := range record.Units {
+		if err := releaseMemberSet(store, id, unit.GoalID, RecoverySeams{Release: release}); err != nil {
+			return err
+		}
+	}
+	return nil
 }

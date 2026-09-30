@@ -29,6 +29,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/audit"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostsetup"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
@@ -316,11 +317,11 @@ func Adopt(options Options) (Result, error) {
 			append([]string{filepath.Join(source, "bin", "metasystem"), "system", "adopt", target, "--repo", source}, adoptFlags(options)...)...)
 	}
 
-	stage, err := os.MkdirTemp("", "metasystem-adopt-")
+	stage, doneStage, err := diskstore.ScratchDir("metasystem-adopt-")
 	if err != nil {
 		return Result{}, err
 	}
-	defer os.RemoveAll(stage)
+	defer doneStage()
 	if refusal := stagePayload(d, options, source, prefix, stage, target); refusal != nil {
 		return Result{}, refusal
 	}

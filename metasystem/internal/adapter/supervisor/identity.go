@@ -11,6 +11,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/adapter"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/jsonedit"
 )
 
@@ -82,11 +83,11 @@ func (d Deps) writeCapabilitySnapshot(runtime, version, hash, transports, capabi
 // throwaway directory, and the constructed bytes are returned. No schema
 // field is invented; the shape the suite decodes IS the shape probes write.
 func contractSnapshot(runtime, enforcement string) ([]byte, error) {
-	dir, err := os.MkdirTemp("", "metasystem-contract.")
+	dir, done, err := diskstore.ScratchDir("metasystem-contract.")
 	if err != nil {
 		return nil, err
 	}
-	defer os.RemoveAll(dir)
+	defer done()
 	path, err := adapter.WriteCapabilitySnapshot(dir, runtime, "0.0.0-contract", "contract0", "[]",
 		`{"sessionEstablishedTimeoutSec":1}`, `{"unverified":[]}`, enforcement, "{}")
 	if err != nil {

@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/adapter"
 )
@@ -56,6 +57,11 @@ type Unit struct {
 	Stages []board.StageSpan `json:"stages,omitempty"`
 	// Change is set on a change member: work made without a goal (U11b).
 	Change *ChangeMember `json:"change,omitempty"`
+	// ReleaseSet is the goal's workspaces this landing ends, recorded at
+	// join in the member's seat checkout and released by the batch's P6
+	// step once the pushed series is recognized (disk-lifetimes Part B 3.6,
+	// R22). An older engine reading the record ignores it.
+	ReleaseSet *diskstore.ReleaseSet `json:"releaseSet,omitempty"`
 
 	unitRecordFields
 }

@@ -286,12 +286,12 @@ func (reclaimer *leaseReclaimer) fixtureRemedy(record hostLeaseRecord) string {
 	if err != nil {
 		return reclaimer.handRemedy(record)
 	}
-	return fmt.Sprintf("no metasystem command settles this; stop the processes whose environment carries %s with owner '%s' (they belong to a dead test run in %s; `ps -axeww -o pid,command` shows the tag), and the next admission pass reclaims it",
+	return fmt.Sprintf("no metasystem command settles this; stop the processes whose environment carries %s with owner '%s' (they belong to a dead test run in %s; `ps -axeww -o pid,command` shows the tag), then metasystem disk clean --leases (or the next admission pass) reclaims it",
 		identity.FixtureOwnerEnv, ref, root)
 }
 
 func (reclaimer *leaseReclaimer) handRemedy(record hostLeaseRecord) string {
-	return fmt.Sprintf("no metasystem verb settles this; list it with `ps -axo pid,pgid,command | awk '$1==%d || $2==%d'`, stop what belongs to the lease, and the next admission pass reclaims it",
+	return fmt.Sprintf("no metasystem verb settles this; list it with `ps -axo pid,pgid,command | awk '$1==%d || $2==%d'`, stop what belongs to the lease, then metasystem disk clean --leases (or the next admission pass) reclaims it",
 		record.Owner.Pid, record.Owner.Pgid)
 }
 

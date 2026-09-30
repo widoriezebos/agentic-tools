@@ -127,7 +127,14 @@ type Owners struct {
 	// goal's name: nil lets the push go, an error is the refusal a person
 	// reads, its register code and the human verb that carries past it. A
 	// nil owner reads no gate.
-	LandingGate   func(root, goal string) error
+	LandingGate func(root, goal string) error
+	// RecordRelease, when set, records the goal's release set for the
+	// commit about to be pushed (branch is the pushed branch), before each
+	// push; ReleaseLanded releases it once the push succeeded
+	// (disk-lifetimes Part B 3.6, the staged route). A failure to record
+	// is reported and never stops the landing: nothing is then released.
+	RecordRelease func(commit, branch string) error
+	ReleaseLanded func(commit string)
 	WeightAdd     func(root, commit, prefix, goal string, numstat []byte, stdout, stderr io.Writer) int
 	SyncTransport func(root, branch string, stdout, stderr io.Writer) int
 

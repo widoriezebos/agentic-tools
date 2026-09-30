@@ -84,10 +84,7 @@ func runStopDeadlineParent(inv Invocation, ops Ops, harnessRoot string) int {
 	p.budgetSec = deadlineBudget(inv.env(stopDeadlineBudgetEnv))
 	p.workerSec = p.budgetSec - 3
 	p.startedEpoch = inv.Now().Unix()
-	dir, err := os.MkdirTemp(inv.TempDir, "metasystem-stop-deadline.")
-	if err != nil {
-		dir, err = os.MkdirTemp("/tmp", "metasystem-stop-deadline.")
-	}
+	dir, err := mkdirStaging(inv.TempDir, "metasystem-stop-deadline.")
 	if err != nil {
 		_ = writeLine(inv.Stdout, mustDegradedStopForm("allowed", "staging-failed"))
 		return 0

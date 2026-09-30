@@ -14,12 +14,15 @@ import (
 	"strings"
 	"time"
 
+	"context"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 )
@@ -100,13 +103,13 @@ func lastOutputLine(output []byte) string {
 }
 
 func readGate(worktree string) (string, error) {
-	proof, err := os.CreateTemp("", "goal-branch-read-gate-*")
+	proof, done, err := diskstore.ScratchFile("goal-branch-read-gate-*")
 	if err != nil {
 		return "", err
 	}
 	proofPath := proof.Name()
 	proof.Close()
-	defer os.Remove(proofPath)
+	defer done()
 	argv := goalBranchStaticArgv(proofPath)
 	command := exec.Command(argv[0], argv[1:]...)
 	command.Dir = worktree
@@ -568,9 +571,13 @@ func goalBranchSweepLandedAt(root, goalID, landing string, endpoint goal.Endpoin
 	if _, remoteErr := goalBranchGit(root, "remote", "get-url", "transport"); remoteErr == nil {
 		transport = "transport"
 	}
-	_, err := branch.Sweep(branch.SweepRequest{Repo: root, Remote: endpoint.Remote, Transport: transport,
-		EndpointTip: landing, GoalID: goalID, CheckClaim: goalBranchClaimCheck(root, goalID, endpoint)})
-	return err
+	// Inside the critical section of the goal's registered worktrees, as
+	// goal done's sweep (Round D3 N1).
+	return steward.SweepGoalWorktrees(root, goalID, func(ctx context.Context) error {
+		_, err := branch.Sweep(branch.SweepRequest{Repo: root, Remote: endpoint.Remote, Transport: transport,
+			EndpointTip: landing, GoalID: goalID, CheckClaim: goalBranchClaimCheck(root, goalID, endpoint), Context: ctx})
+		return err
+	})
 }
 
 // goalBranchPublishRead publishes a collected read's attestation through the

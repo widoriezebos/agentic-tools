@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 )
@@ -445,11 +446,11 @@ func captureManualAt(cwd, patchPath, briefPath string) (manualCapture, error) {
 
 func captureCheckoutChanges(top, head, briefPath string) (manualCapture, error) {
 	capture := manualCapture{source: top, head: head}
-	scratch, err := os.MkdirTemp("", "metasystem-manual-capture-")
+	scratch, done, err := diskstore.ScratchDir("metasystem-manual-capture-")
 	if err != nil {
 		return manualCapture{}, err
 	}
-	defer os.RemoveAll(scratch)
+	defer done()
 	index := filepath.Join(scratch, "index")
 	private := func(args ...string) ([]byte, error) {
 		command := exec.Command("git", append([]string{"-C", top, "--literal-pathspecs"}, args...)...)

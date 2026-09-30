@@ -401,17 +401,17 @@ func TestAuditDiskEveryCompileSiteResolvesTheDomain(t *testing.T) {
 // auditDiskEmptyTempCeiling is the number of os.MkdirTemp/os.CreateTemp calls
 // in non-test Go whose directory argument is the empty string: each writes
 // into the process's TMPDIR with no owner (Part B R1). The design counted 29
-// at d4d124fb8; the tree at bd7e7d388 has 35. U1a moved five onto process
-// scratch (30) and U1b-1 fourteen more (16): the remaining sixteen are U1b-2's
-// command, hook, seat, adapter, adoption and landing sites, zero at U1b-2; it
-// never rises.
-const auditDiskEmptyTempCeiling = 16
+// at d4d124fb8; the tree at bd7e7d388 had 35. U1a moved five onto process
+// scratch, U1b-1 fourteen and U1b-2 the last sixteen (the command, hook,
+// seat, adapter, adoption and landing sites): zero, and it never rises.
+const auditDiskEmptyTempCeiling = 0
 
 // auditDiskTempDirCeiling is the number of os.TempDir() calls in non-test Go
 // outside internal/diskstore and internal/testenv (Part B R1): 9 in the
 // design at d4d124fb8, 11 at bd7e7d388, 10 at fa3c41a16; U1b-1 registered
-// the read context (9); zero at U1b-2.
-const auditDiskTempDirCeiling = 9
+// the read context (9); U1b-2 classified the rest (process scratch, a shared
+// host path, or a validation reader through diskstore.ProcessTempRoot): zero.
+const auditDiskTempDirCeiling = 0
 
 // auditDiskScriptMktempCeiling and auditDiskScriptVariableRmCeiling hold the
 // committed shell files at zero mktemp lines without an engine-prefixed

@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"testing"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 )
@@ -206,15 +207,19 @@ func TestIntentReadFindingsInSandboxTemp(t *testing.T) {
 	if retained, _ := os.ReadFile(copies[0].(string)); len(copies) != 1 || string(retained) != findings {
 		t.Fatalf("retained copies=%v", copies)
 	}
-	if err := os.Remove(output); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Remove(filepath.Dir(output)); err != nil {
+	// The findings directory is a registered store of the unit (Part B R1):
+	// the next round's read runs in the same directory, emptied in place
+	// by the launcher with its marker kept, never removed by hand.
+	before, err := os.Lstat(filepath.Dir(output))
+	if err != nil {
 		t.Fatal(err)
 	}
 	code, result, _ = bed.work("work", "revise", "run:"+data["run"].(string), "--brief", bed.brief("follow-up.md", "Again.\n"))
 	info, err := os.Lstat(filepath.Dir(output))
-	if code != 0 || resultData(t, result)["readClean"] != true || err != nil || !info.IsDir() || info.Mode().Perm() != 0o700 {
-		t.Fatalf("read after the findings directory was cleaned: code=%d %+v info=%v err=%v", code, result, info, err)
+	if code != 0 || resultData(t, result)["readClean"] != true || err != nil || !info.IsDir() || info.Mode().Perm() != 0o700 || !os.SameFile(before, info) {
+		t.Fatalf("the next round's read: code=%d %+v info=%v err=%v", code, result, info, err)
+	}
+	if _, err := os.Lstat(filepath.Join(filepath.Dir(output), diskstore.MarkerName)); err != nil {
+		t.Fatalf("the findings store lost its marker between rounds: %v", err)
 	}
 }

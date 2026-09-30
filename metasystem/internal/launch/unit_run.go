@@ -16,6 +16,7 @@ import (
 	"syscall"
 	"time"
 
+	"context"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
@@ -909,6 +910,16 @@ func choose(value, fallback string) string {
 func prepareReadOutputDirectories(outputs []string) error {
 	for _, output := range outputs {
 		directory := filepath.Dir(output)
+		// A unit read's findings directory is a registered temporary store
+		// (Part B R1): emptied in place, or made again through the registry
+		// when it is gone, never removed or recreated by hand, so its
+		// recorded identity always names it (Round D3).
+		if owner, ok := diskstore.UnitReadFindingsOwner(directory); ok {
+			if err := diskstore.PrepareTempStore(context.Background(), directory, diskstore.UnitReadFindingsClass, owner); err != nil {
+				return fmt.Errorf("UNIT_READ_OUTPUT_UNSAFE directory=%s: %w", directory, err)
+			}
+			continue
+		}
 		if _, err := os.Lstat(directory); err == nil {
 			continue
 		} else if !errors.Is(err, fs.ErrNotExist) {

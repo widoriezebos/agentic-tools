@@ -20,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	"context"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/brain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
@@ -39,6 +40,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/metrics"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 )
 
 type goalRecoveryPolicy struct {
@@ -1846,9 +1848,11 @@ func trySyncMutationWithCompletion(name string, args []string, commandNow func(s
 			if _, remoteErr := goalBranchGit(f.root, "remote", "get-url", "transport"); remoteErr == nil {
 				transport = "transport"
 			}
-			_, err = goalbranch.Sweep(goalbranch.SweepRequest{Repo: f.root, Remote: req.Endpoint.Remote, Transport: transport,
-				EndpointTip: endpointTip, GoalID: goalID, Dropped: dropped, CheckClaim: func() error { return nil }})
-			return err
+			return steward.SweepGoalWorktrees(f.root, goalID, func(ctx context.Context) error {
+				_, err := goalbranch.Sweep(goalbranch.SweepRequest{Repo: f.root, Remote: req.Endpoint.Remote, Transport: transport,
+					EndpointTip: endpointTip, GoalID: goalID, Dropped: dropped, CheckClaim: func() error { return nil }, Context: ctx})
+				return err
+			})
 		}
 		if f.force {
 			if err := forceAdmission(dependencies.helmState(f.root), req.Authority, f.root); err != nil {
@@ -3401,4 +3405,67 @@ func goalDoneWithoutMetrics(req goal.VerbRequest, root, id string) bool {
 	}
 	_, statErr := os.Stat(metrics.GoalReportTarget(root, id))
 	return errors.Is(statErr, fs.ErrNotExist)
+}
+
+// The steward's disk pass retries goal done's sweep for a concluded goal's
+// registered worktree through the same request goal done builds.
+func init() {
+	steward.RegisterGoalBranchSweep(steward.GoalBranchSweep{Plan: goalSweepPlan, Sweep: goalSweepRun})
+}
+
+// goalSweepRequest is goal done's sweep request for goalID at root.
+func goalSweepRequest(ctx context.Context, root, goalID, dropped string) (goalbranch.SweepRequest, error) {
+	endpoint, err := goal.ResolveEndpoint(root)
+	if err != nil {
+		return goalbranch.SweepRequest{}, err
+	}
+	tip, err := goalBranchEndpointTip(root, endpoint)
+	if err != nil {
+		return goalbranch.SweepRequest{}, err
+	}
+	transport := ""
+	if _, remoteErr := goalBranchGit(root, "remote", "get-url", "transport"); remoteErr == nil {
+		transport = "transport"
+	}
+	return goalbranch.SweepRequest{Repo: root, Remote: endpoint.Remote, Transport: transport, EndpointTip: tip, GoalID: goalID,
+		Dropped: dropped, CheckClaim: func() error { return nil }, Context: ctx}, nil
+}
+
+// goalSweepPlan reads goal done's sweep plan from local refs alone (Round
+// D3 N2): the endpoint's main and the goal branch from their
+// remote-tracking refs, nothing fetched and no remote asked; a remote state
+// not known locally is an error, which keeps the worktree.
+func goalSweepPlan(ctx context.Context, root, goalID, dropped string) (string, error) {
+	endpoint, err := goal.ResolveEndpoint(root)
+	if err != nil {
+		return "", err
+	}
+	transport := goalbranch.LocalTrackingTransport{Context: ctx}
+	tip, _, err := transport.RemoteTip(root, endpoint.Remote, "refs/heads/main")
+	if err != nil {
+		return "", err
+	}
+	remotes := ""
+	if _, remoteErr := goalBranchGit(root, "remote", "get-url", "transport"); remoteErr == nil {
+		remotes = "transport"
+	}
+	request := goalbranch.SweepRequest{Repo: root, Remote: endpoint.Remote, Transport: remotes, EndpointTip: tip, GoalID: goalID,
+		Dropped: dropped, CheckClaim: func() error { return nil }, Context: ctx, PushTransport: transport}
+	plan, err := goalbranch.SweepPlan(request)
+	if err != nil {
+		return "", err
+	}
+	if plan.Refusal != nil {
+		return plan.Refusal.Error(), nil
+	}
+	return "", nil
+}
+
+func goalSweepRun(ctx context.Context, root, goalID, dropped string) error {
+	request, err := goalSweepRequest(ctx, root, goalID, dropped)
+	if err != nil {
+		return err
+	}
+	_, err = goalbranch.Sweep(request)
+	return err
 }
