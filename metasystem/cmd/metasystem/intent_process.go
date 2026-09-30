@@ -1004,7 +1004,8 @@ func (inv *intentInvocation) stopResolvedJob(job intentJob) intentResult {
 	if job.kind == "launch" {
 		if job.launch.State.Terminal() {
 			return intentResult{Outcome: intentUnchanged, Targets: targets, Summary: fmt.Sprintf("launch %s already ended: %s", id, job.launch.State),
-				text: []string{launchReport(job.launch)}, Data: map[string]any{"kind": "launch", "record": job.launch}}
+				text: []string{launchReport(job.launch)}, Data: map[string]any{"kind": "launch", "record": job.launch},
+				view: jobStopView(jobReference(job)+" had already ended: "+string(job.launch.State), "", launchReport(job.launch))}
 		}
 		record, err := inv.owners.processes.launches().Cancel(id)
 		if err != nil {
@@ -1012,16 +1013,19 @@ func (inv *intentInvocation) stopResolvedJob(job intentJob) intentResult {
 				retry: "try again", Details: []string{"cancel: " + err.Error()}, Data: map[string]any{"kind": "launch", "record": record}}
 		}
 		return intentResult{Outcome: intentConfirmed, Targets: targets, Summary: fmt.Sprintf("launch %s cancelled: %s", id, record.State),
-			text: []string{launchReport(record)}, Data: map[string]any{"kind": "launch", "record": record}}
+			text: []string{launchReport(record)}, Data: map[string]any{"kind": "launch", "record": record},
+			view: jobStopView("Stopped "+jobReference(job)+": "+string(record.State), "", launchReport(record))}
 	}
 	if status, _ := job.dispatch["status"].(string); dispatchcore.TerminalStatus(status) {
 		// A job that already ended is already stopped: the repeat is success
 		// and never reaches the cancellation owner (R-129-ui).
 		summary := fmt.Sprintf("%s is already stopped: %s", jobReference(job), status)
-		if ended, _ := job.dispatch["endedAt"].(string); ended != "" {
+		ended, _ := job.dispatch["endedAt"].(string)
+		if ended != "" {
 			summary += " (at " + ended + ")"
 		}
-		return intentResult{Outcome: intentUnchanged, Targets: targets, Summary: summary, Data: map[string]any{"kind": "dispatch", "status": status}}
+		return intentResult{Outcome: intentUnchanged, Targets: targets, Summary: summary, Data: map[string]any{"kind": "dispatch", "status": status},
+			view: jobStopView(jobReference(job)+" had already stopped: "+status, ended, "")}
 	}
 	outcome, code, err := inv.owners.processes.cancelDispatch(inv.layout.GitRoot, id)
 	if err != nil {
@@ -1033,6 +1037,7 @@ func (inv *intentInvocation) stopResolvedJob(job intentJob) intentResult {
 	detail, _ := outcome["detail"].(string)
 	if code == 0 && label == "CANCELLED" {
 		result.Outcome, result.Summary = intentConfirmed, fmt.Sprintf("dispatch job %s cancelled", id)
+		result.view = jobStopView("Stopped "+jobReference(job), "", "")
 	} else {
 		result.Outcome, result.Summary = intentRefused, strings.TrimSpace(fmt.Sprintf("dispatch job %s not cancelled: %s %s", id, label, detail))
 		result.code = max(code, 1)
@@ -1220,6 +1225,20 @@ func runIntentWorkStopGoal(inv *intentInvocation, id string) int {
 			lines = append(lines, stopLine)
 		}
 	}
+	view := func(page *textui.Page) {
+		if len(stopped) == 0 {
+			page.Done("No job of goal " + id + " is running; nothing to stop")
+		} else {
+			page.Done("Stopped " + textui.Count(len(stopped), "job", "jobs") + " of goal " + id)
+			section := page.Section("", "")
+			for _, ref := range stopped {
+				section.Item(textui.Stopped, ref)
+			}
+		}
+		if stopLine != "" {
+			page.Facts(textui.KV{Key: "budget stop", Value: []textui.Span{textui.Plain(stopLine)}})
+		}
+	}
 	switch {
 	case len(failed) > 0:
 		return inv.render(intentResult{Outcome: intentPartial, code: 1, Targets: targets, Data: data, text: lines,
@@ -1227,10 +1246,27 @@ func runIntentWorkStopGoal(inv *intentInvocation, id string) int {
 			next:    inv.publicArgv("work", "status", id), nextReason: "shows each of the goal's jobs and its state"})
 	case len(stopped) == 0:
 		return inv.render(intentResult{Outcome: intentUnchanged, Targets: targets, Data: data, text: lines,
-			Summary: fmt.Sprintf("no job of goal %s is running; nothing was stopped", id)})
+			Summary: fmt.Sprintf("no job of goal %s is running; nothing was stopped", id), view: view})
 	}
 	return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: data, text: lines,
-		Summary: fmt.Sprintf("goal %s: %d running job(s) stopped", id, len(stopped))})
+		Summary: fmt.Sprintf("goal %s: %d running job(s) stopped", id, len(stopped)), view: view})
+}
+
+// jobStopView is one job's stop: what happened to it, when it had already
+// ended, and with --verbose its record as the launch owner reports it.
+func jobStopView(done, endedAt, record string) func(*textui.Page) {
+	return func(page *textui.Page) {
+		if at, err := time.Parse(time.RFC3339, endedAt); err == nil {
+			done += " at " + page.Env().Time(at)
+		}
+		page.Done(done)
+		if page.Verbose() && record != "" {
+			section := page.Section("Record", "")
+			for _, line := range strings.Split(strings.TrimSpace(record), "\n") {
+				section.Text(line)
+			}
+		}
+	}
 }
 
 // runIntentSystemRestart stops this checkout's machinery and, only once
@@ -1498,12 +1534,14 @@ func runIntentDoctor(inv *intentInvocation) int {
 	stopped, _, _ := stopfence.Closed(scope.Root)
 	lines, remedies := []string{}, []map[string]any{}
 	var first []string
+	var problems []doctorProblem
 	for _, role := range verdict.Roles {
 		if role.Status == steward.HealthAlive {
 			continue
 		}
 		line := fmt.Sprintf("%s %s: %s", role.Role, role.Status, role.Reason)
 		public, instruction := publicHealthRemedy(role, stopped)
+		problem := doctorProblem{role: string(role.Role), status: string(role.Status), reason: role.Reason, fix: public, instruction: instruction}
 		switch {
 		case len(public) > 0:
 			line += "; remedy: " + shellCommand(public)
@@ -1514,7 +1552,9 @@ func runIntentDoctor(inv *intentInvocation) int {
 			line += "; " + instruction
 		case role.NoAutomaticRemedy:
 			line += "; no command repairs this"
+			problem.instruction = "no command repairs this"
 		}
+		problems = append(problems, problem)
 		lines = append(lines, line)
 		remedies = append(remedies, map[string]any{"role": role.Role, "public": public, "instruction": instruction, "facts": role.RemedyFacts, "ownerRemedy": role.Remedy})
 	}
@@ -1559,11 +1599,58 @@ func runIntentDoctor(inv *intentInvocation) int {
 		code = max(code, 1)
 	}
 	result := intentResult{Outcome: intentConfirmed, code: code, Targets: inv.checkoutTarget(scope),
-		Summary: verdict.LineWithoutRemedies(), text: lines, Data: additiveData(steward.NewHookHealthPreview(verdict), map[string]any{"publicRemedies": remedies, "covenant": covenantData, "adapters": adapters, "skills": skillsData})}
+		Summary: verdict.LineWithoutRemedies(), text: lines, Data: additiveData(steward.NewHookHealthPreview(verdict), map[string]any{"publicRemedies": remedies, "covenant": covenantData, "adapters": adapters, "skills": skillsData}),
+		view: doctorView(inv.statusSeatName(scope.Checkout), string(verdict.Aggregate), problems, lines[len(problems):], first)}
 	if first != nil {
 		result.next, result.nextReason = first, "the first public remedy check found"
 	}
 	return inv.render(inv.withHelm(result, scope.Checkout))
+}
+
+// doctorProblem is one role of the machinery that is not alive, with the
+// public command that repairs it or the words that say what to do.
+type doctorProblem struct {
+	role, status, reason string
+	fix                  []string
+	instruction          string
+}
+
+// doctorView is system check's page: whether the checkout is healthy, each
+// part of its machinery that is not with why and, when its repair is not
+// the page's one hint, how to repair it; then the checkout's own findings
+// (covenant, setup, disk, runtimes, skills) as their owners word them.
+func doctorView(name, aggregate string, problems []doctorProblem, notes []string, hint []string) func(*textui.Page) {
+	return func(page *textui.Page) {
+		switch {
+		case aggregate == "healthy" && len(problems) == 0:
+			page.Headline(name + " is healthy")
+		default:
+			page.Headline(name+" is "+cmpOr(aggregate, "of unknown health"), textui.Count(len(problems), "part needs attention", "parts need attention"))
+		}
+		if len(problems) > 0 {
+			table := page.Section("Machinery", "").Table(textui.Column{}, textui.Column{}, textui.Column{Flex: true, Wrap: true})
+			for _, problem := range problems {
+				state := textui.Failed
+				if problem.status == string(steward.HealthUnknown) {
+					state = textui.Unknown
+				}
+				why := problem.reason
+				switch {
+				case len(problem.fix) > 0 && !slices.Equal(problem.fix, hint):
+					why += "; run " + shellCommand(problem.fix)
+				case len(problem.fix) == 0 && problem.instruction != "":
+					why += "; " + problem.instruction
+				}
+				table.Row(textui.Marked(state, problem.role), textui.Plain(problem.status), textui.Plain(why))
+			}
+		}
+		if len(notes) > 0 {
+			section := page.Section("This checkout", "")
+			for _, note := range notes {
+				section.Text(note)
+			}
+		}
+	}
 }
 
 // runIntentWorkHistory reports how launches ended and why any was refused:
@@ -2453,7 +2540,51 @@ func runIntentSystemSetup(inv *intentInvocation) int {
 		outcome, summary = intentUnchanged, "this checkout is already set up; nothing was changed"
 	}
 	return inv.render(intentResult{Outcome: outcome, Targets: targets, Summary: summary, text: lines,
-		Data: map[string]any{"engine": report.Engine, "runtimes": nonNilLines(report.Runtimes), "changed": nonNilLines(report.Changed), "fence": report.Fence, "fenceHook": report.FenceHook, "mergeDriver": report.MergeDriver}})
+		Data: map[string]any{"engine": report.Engine, "runtimes": nonNilLines(report.Runtimes), "changed": nonNilLines(report.Changed), "fence": report.Fence, "fenceHook": report.FenceHook, "mergeDriver": report.MergeDriver},
+		view: setupView(report)})
+}
+
+// setupView is system setup's page: whether the checkout is now set up or
+// already was, then its runtimes, the files written, the commit fence and
+// the contract merges; the engine and the fence's hook path are
+// --verbose's.
+func setupView(report hookswitch.Report) func(*textui.Page) {
+	return func(page *textui.Page) {
+		env := page.Env()
+		if report.Unchanged() {
+			page.Done("This checkout was already set up to work with its engine; nothing changed")
+		} else {
+			page.Done("This checkout is set up to work with its engine")
+		}
+		plain := func(text string) []textui.Span { return []textui.Span{textui.Plain(text)} }
+		runtimes := "none registered"
+		if len(report.Runtimes) > 0 {
+			runtimes = strings.Join(report.Runtimes, ", ")
+		}
+		facts := []textui.KV{{Key: "runtimes", Value: plain(runtimes)}}
+		if len(report.Changed) > 0 {
+			facts = append(facts, textui.KV{Key: "written", Value: plain(strings.Join(report.Changed, ", "))})
+		}
+		fence := map[string]string{hookswitch.FenceReenrolled: "re-enrolled: the hook from before the engine guard now runs the engine",
+			hookswitch.FenceEnrolled: "enrolled", hookswitch.FenceNoGit: "none, as there is no git repository"}[report.Fence]
+		if fence == "" {
+			fence = "already runs the engine"
+		}
+		facts = append(facts, textui.KV{Key: "commit fence", Value: plain(fence)})
+		switch report.MergeDriver {
+		case contractgit.DriverRegistered:
+			facts = append(facts, textui.KV{Key: "contract merges", Value: plain("through the engine's merge driver")})
+		case contractgit.DriverUnchanged:
+			facts = append(facts, textui.KV{Key: "contract merges", Value: plain("already through the engine's merge driver")})
+		}
+		if page.Verbose() {
+			facts = append(facts, textui.KV{Key: "engine", Value: plain(env.Path(report.Engine))})
+			if report.FenceHook != "" {
+				facts = append(facts, textui.KV{Key: "fence hook", Value: plain(env.Path(report.FenceHook))})
+			}
+		}
+		page.Facts(facts...)
+	}
 }
 
 // diskCheckLine is system check's one line about this checkout's disk pass

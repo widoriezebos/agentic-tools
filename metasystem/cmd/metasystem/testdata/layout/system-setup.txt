@@ -1,0 +1,7 @@
+✓ This checkout is set up to work with its engine
+
+  runtimes          claude
+  written           .claude/agents/demo.md, .claude/settings.json, .claude/skills/demo, AGENTS.md,
+                    CLAUDE.md
+  commit fence      re-enrolled: the hook from before the engine guard now runs the engine
+  contract merges   through the engine's merge driver

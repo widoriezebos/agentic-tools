@@ -1,0 +1,26 @@
+exit 0
+--
+{
+  "schemaVersion": 1,
+  "verb": "system setup",
+  "targets": [
+    {
+      "kind": "checkout",
+      "id": "/Users/wido/GitHub/agentic-tools-m1e"
+    }
+  ],
+  "outcome": "unchanged",
+  "summary": "this checkout is already set up; nothing was changed",
+  "data": {
+    "changed": [],
+    "engine": "/Users/wido/GitHub/agentic-tools-m1e/metasystem/bin/metasystem",
+    "fence": "unchanged",
+    "fenceHook": "/Users/wido/GitHub/agentic-tools-m1e/.git/hooks/pre-commit",
+    "mergeDriver": "unchanged",
+    "runtimes": [
+      "claude"
+    ]
+  }
+}
+
+--

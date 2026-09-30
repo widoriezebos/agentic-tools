@@ -1,0 +1,59 @@
+exit 0
+--
+{
+  "schemaVersion": 1,
+  "verb": "work stop",
+  "targets": [
+    {
+      "kind": "job",
+      "id": "j1:build-trial-91e2"
+    }
+  ],
+  "outcome": "unchanged",
+  "summary": "launch build-trial-91e2 already ended: completed",
+  "data": {
+    "kind": "launch",
+    "record": {
+      "id": "build-trial-91e2",
+      "kind": "build",
+      "adapter": "",
+      "goal": "switch-on-trial",
+      "tag": "",
+      "workingDirectory": "",
+      "inputs": null,
+      "state": "completed",
+      "supervisor": null,
+      "child": null,
+      "processGroup": null,
+      "startedAt": "2026-09-30T05:58:00Z",
+      "finishedAt": "",
+      "exitCode": null,
+      "reason": "",
+      "measured": false,
+      "measurement": {
+        "calls": 0,
+        "toolCalls": 0,
+        "inputTokens": 0,
+        "cacheReadTokens": 0,
+        "cacheCreationTokens": 0,
+        "outputTokens": 0,
+        "compactions": 0,
+        "peakContext": 0,
+        "callsAbove200K": 0,
+        "turns": 0,
+        "resultLines": 0,
+        "resultWords": 0,
+        "resultTail": "",
+        "pageLines": 0,
+        "pageWords": 0,
+        "pageMissing": false,
+        "materialCount": 0,
+        "verdict": ""
+      },
+      "outputs": null,
+      "adapterData": null
+    }
+  }
+}
+
+--

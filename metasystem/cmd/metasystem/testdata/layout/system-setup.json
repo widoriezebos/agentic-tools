@@ -1,0 +1,32 @@
+exit 0
+--
+{
+  "schemaVersion": 1,
+  "verb": "system setup",
+  "targets": [
+    {
+      "kind": "checkout",
+      "id": "/Users/wido/GitHub/agentic-tools-m1e"
+    }
+  ],
+  "outcome": "confirmed",
+  "summary": "this checkout is set up: its runtimes, hooks, commit fence and contract merges run the engine",
+  "data": {
+    "changed": [
+      ".claude/agents/demo.md",
+      ".claude/settings.json",
+      ".claude/skills/demo",
+      "AGENTS.md",
+      "CLAUDE.md"
+    ],
+    "engine": "/Users/wido/GitHub/agentic-tools-m1e/metasystem/bin/metasystem",
+    "fence": "re-enrolled",
+    "fenceHook": "/Users/wido/GitHub/agentic-tools-m1e/.git/hooks/pre-commit",
+    "mergeDriver": "registered",
+    "runtimes": [
+      "claude"
+    ]
+  }
+}
+
+--

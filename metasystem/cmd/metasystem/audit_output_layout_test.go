@@ -53,6 +53,9 @@ type layoutCase struct {
 	// help draws a help page instead of running a verb; help pages carry
 	// no --json of this shape and are always enforced.
 	help func(env textui.Env) *textui.Page
+	// measured names why a case's --json is not byte-stable (a duration it
+	// measures), so the JSON golden is not kept for it.
+	measured string
 }
 
 type layoutBed struct {
@@ -274,7 +277,7 @@ func layoutGolden(name string) string { return filepath.Join("testdata", "layout
 func TestAuditOutputLayoutJSONUnchanged(t *testing.T) {
 	t.Parallel()
 	for _, c := range layoutCases() {
-		if c.help != nil {
+		if c.help != nil || c.measured != "" {
 			continue
 		}
 		t.Run(c.name, func(t *testing.T) {

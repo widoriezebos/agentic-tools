@@ -8,7 +8,9 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stoptransition"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/contractgit"
 )
 
 // The layout goldens of group G1a (status and helm): the process verbs,
@@ -26,6 +28,14 @@ func g1aLayoutCases() []layoutCase {
 		{name: "work-status-empty", args: []string{"work", "status"}, bed: processLayoutBed()},
 		{name: "work-status", args: []string{"work", "status"}, bed: jobsLayoutBed},
 		{name: "work-status-all", args: []string{"work", "status", "--all"}, bed: jobsLayoutBed},
+		{name: "work-stop", args: []string{"work", "stop", "j2:design-r2-4f1c"}, bed: jobsLayoutBed},
+		{name: "work-stop-already", args: []string{"work", "stop", "j2:impl-01"}, bed: jobsLayoutBed},
+		{name: "work-stop-launch-already", args: []string{"work", "stop", "j1:build-trial-91e2"}, bed: jobsLayoutBed},
+		{name: "work-stop-refusal", args: []string{"work", "stop"}, bed: jobsLayoutBed},
+		{name: "system-setup", args: []string{"system", "setup"}, bed: setupLayoutBed(false)},
+		{name: "system-setup-again", args: []string{"system", "setup"}, bed: setupLayoutBed(true)},
+		{name: "system-setup-refusal", args: []string{"system", "setup", "--runtimes", ""}, bed: setupLayoutBed(false)},
+		{name: "system-check", args: []string{"system", "check"}, bed: checkLayoutBed, measured: "each health role's durationMillis"},
 		{name: "question-list-empty", args: []string{"question", "list"}, bed: processLayoutBed()},
 		{name: "question-list", args: []string{"question", "list"}, bed: questionsLayoutBed},
 		{name: "helm-take", args: []string{"helm", "take", "--reason", "coordinating the verb batches"}, bed: helmLayoutBed(true)},
@@ -93,6 +103,9 @@ func jobsLayoutBed(t *testing.T) layoutBed {
 			t.Fatal(err)
 		}
 	}
+	owners.processes.cancelDispatch = func(string, string) (map[string]any, int, error) {
+		return map[string]any{"outcome": "CANCELLED"}, 0, nil
+	}
 	root := realpath.Resolve(b.root())
 	return layoutBed{owners: owners, cwd: b.root(), replace: processLayoutPaths(b, root)}
 }
@@ -123,6 +136,39 @@ func questionsLayoutBed(t *testing.T) layoutBed {
 func processLayoutPaths(b *processBed, root string) []string {
 	home := realpath.Resolve(b.home)
 	return layoutPaths(b.root(), root, "/Users/wido/GitHub/agentic-tools-m1e", home, "/Users/wido", b.home, "/Users/wido")
+}
+
+// setupLayoutBed is a real Git checkout from before the engine guard, its
+// Claude settings running the old stub, set up once already when again.
+func setupLayoutBed(again bool) func(t *testing.T) layoutBed {
+	return func(t *testing.T) layoutBed {
+		bed := newSystemSetupBed(t)
+		if again {
+			if code, result := bed.run(t); code != 0 {
+				t.Fatalf("first setup = %d %+v", code, result)
+			}
+		}
+		owners := intentOwners{resolver: stateroot.NewResolver(stateroot.RepositoryTop, noExecutable)}
+		return layoutBed{owners: owners, cwd: bed.repo, replace: layoutPaths(bed.repo, bed.repo, "/Users/wido/GitHub/agentic-tools-m1e")}
+	}
+}
+
+// checkLayoutBed is that checkout as a Git repository with its skills
+// folder, its machinery never started.
+func checkLayoutBed(t *testing.T) layoutBed {
+	b, owners := processLayoutOwners(t)
+	if output, err := systemSetupGit(t, b.root(), "init", "-q"); err != nil {
+		t.Fatalf("git init: %v %s", err, output)
+	}
+	if err := os.MkdirAll(filepath.Join(b.root(), "skills"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	git := func(args ...string) (string, error) { return systemSetupGit(t, b.root(), args...) }
+	if _, err := contractgit.Register(b.root(), "testing.json", filepath.Join(realpath.Resolve(b.root()), "bin", "metasystem"), git); err != nil {
+		t.Fatal(err)
+	}
+	root := realpath.Resolve(b.root())
+	return layoutBed{owners: owners, cwd: b.root(), replace: processLayoutPaths(b, root)}
 }
 
 func processLayoutOwners(t *testing.T) (*processBed, intentOwners) {

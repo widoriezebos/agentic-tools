@@ -1,0 +1,19 @@
+exit 2
+--
+{
+  "schemaVersion": 1,
+  "verb": "work stop",
+  "targets": [],
+  "outcome": "refused",
+  "summary": "work stop needs the reference of the work to stop: metasystem work stop REF; nothing was done",
+  "next": {
+    "argv": [
+      "metasystem",
+      "work",
+      "status"
+    ],
+    "reason": "lists running work with its references"
+  }
+}
+
+--
