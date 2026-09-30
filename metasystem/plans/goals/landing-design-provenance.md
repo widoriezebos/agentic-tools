@@ -9,8 +9,8 @@
 - Origin: human
 - Next step: Next: When design-gate-at-dispatch lands, add the check to the existing landing evaluator, using the design record that gate produces. Done when: tests refuse a landing with a missing or changed design and pass one with a matching accepted design.
 - OpenedAt: 2026-09-07T21:10:16Z
-- Revision: 14
-- BlockedBy: design-gate-at-dispatch, path-class-manifest
+- Revision: 15
+- BlockedBy: design-gate-at-dispatch
 - Labels: headless-fleet, headless-process
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
@@ -30,4 +30,5 @@ History:
 - 2026-09-11T22:09:00Z C3BMZ7DRFM4AWMATVMSXQZHBTQ-m1-c6925449 done actor=human:Wido targets=adoption-inventory-from-install-set,chain-landing-carries-the-reviewed-diff,commit-goal-binding,design-gate-at-dispatch,first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,hook-enrollment-per-checkout,human-approval-for-execution,idle-every-runtime-enforcement,landing-design-provenance,manifest-floor-at-dispatch,merge-stage-critic-close,metasystem-stop-escalation-proofs,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,one-approval-gate,recovery-rehearsal,recovery-to-good-state,repo-root-paths-ride-agent-commits-unjudged,role-context-composition,role-lane-packets,seat-mutual-awareness reason=priority-order from=2:11 to=2:10
 - 2026-09-13T08:21:48Z NRD0NSKR47C7ESV46MD65VP4V0-m1-c6925449 done actor=human:Wido targets=commit-goal-binding,first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,idle-every-runtime-enforcement,landing-design-provenance,merge-stage-critic-close,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,recovery-rehearsal,recovery-to-good-state,role-context-composition,role-lane-packets,seat-mutual-awareness reason=priority-order from=2:10 to=2:9
 - 2026-09-30T18:50:48Z QDAM01HZXCYW7FEJJXYSWMGP2Z-m1e-b6a4eb0a edit actor=human:wido targets=landing-design-provenance
-Integrity: sha256=64904ec9005e7c20fcd7a8fa5e4aa26eca2eab4d090f1c6073f85a9589b331ee
+- 2026-09-30T18:52:22Z GJ7MVPKDS1PHRTKZJ1SWY2Q2KG-m1e-b6a4eb0a unblock actor=human:wido targets=landing-design-provenance,path-class-manifest reason=blockedBy drops path-class-manifest
+Integrity: sha256=41a618a0e04c63561778ef26f830bd453ecf20271fe8bbe09304aad787646e25
