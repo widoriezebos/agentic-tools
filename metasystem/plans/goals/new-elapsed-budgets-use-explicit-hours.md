@@ -5,11 +5,11 @@
 - Sequence: 49
 - Risk: severity=3 novelty=2 exposure=3 accumulation=1 basis="severity 3: budget enforcement can stop lawful work or permit unbounded time; novelty 2: a bounded change to existing ledger and elapsed projection; exposure 3: shared goal execution across seats; accumulation 1: each episode is evaluated independently, with no new aggregate accounting"
 - Tier: 3
-- Intent: New elapsed budget inputs in hours and minutes are stored verbatim, so 24h stays 24h. Reject newly supplied d tokens with an explanation of the eight-hour legacy versus calendar-day ambiguity and an explicit-hour alternative. Preserve historical d records at their original eight-hour interpretation, including journal recovery; do not silently reinterpret or migrate a live budget.
+- Intent: What: When someone sets a time budget for a goal, "d" (day) is no longer accepted; people write hours, such as 8h or 24h. Budgets already stored with "d" keep their old meaning of eight working hours. Why: Here "1d" means eight working hours, but people read it as 24 hours, and wrong budgets have followed. The tool also turns hours back into "d" when it prints them, which spreads the confusion. Pros: A budget means what it says; no silent misreading. Cons: People used to typing "1d" get a refusal and must retype. Old records still contain "d", so the code that reads it stays.
 - Origin: main
-- Next step: Second independent successor of goal:breach-clock-and-budget-honesty. Reuse accepted Fix 2 and its review decisions in plans/breach-clock-and-budget-honesty-design.md. Retarget all actual input/replay writers and their tests to current main. Wait for goal:budget-raises-preserve-elapsed-origin before operational budget corrections, which otherwise reset the clock. Keep rollout deliberate with old and new binaries; do not absorb human-wait or quota work.
+- Next step: Next: In the budget parser (internal/goalbudget/budget.go), refuse a newly typed "d" with a two-line message that explains d means 8 working hours and suggests the hour form; stop the duration printer from folding hours into "d"; keep reading stored "d" values as 8 hours. Done when: approving a goal with an elapsed budget of 1d is refused with the hour suggestion, 24h is stored and shown as 24h, and an old record with 1d still reads as 8 hours.
 - OpenedAt: 2026-09-11T05:37:45Z
-- Revision: 131
+- Revision: 132
 - Labels: breach-clock-successor
 - BudgetExceptions: 0
 
@@ -145,4 +145,5 @@ History:
 - 2026-09-16T20:32:55Z GS9W7K77HQFFN3G21X02BVJ30P-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,events-package-has-a-test-group,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer reason=priority-order subject=new-elapsed-budgets-use-explicit-hours from=1:54 to=2:49 requested-sequence=49
 - 2026-09-16T20:34:57Z 1Q3BDX6ZHZ8GFC54ADZVET7HC1-m1e-c6925449 unapprove actor=human:Wido targets=new-elapsed-budgets-use-explicit-hours reason=Wido 2026-09-16 22:40 CEST: clean house on priority 1 first, then a few human convenience features; every priority 2+ goal is unapproved until then
 - 2026-09-30T18:43:28Z 17ZEQYV0D51VJJ2W8M9NJW0DRB-m1e-b6a4eb0a set-pin actor=human:wido targets=new-elapsed-budgets-use-explicit-hours
-Integrity: sha256=52f5398395100bd9b623eb1aa9ce260461486cd5767108af5b892966b58b88d2
+- 2026-09-30T18:44:48Z FFG2GPH35KQ689XD8HFEZZAAT8-m1e-b6a4eb0a edit actor=human:wido targets=new-elapsed-budgets-use-explicit-hours
+Integrity: sha256=b4b5d1bc14d1d8de407e92ba990d2500c85dd95f000cb6ebbd4be51db41e93be
