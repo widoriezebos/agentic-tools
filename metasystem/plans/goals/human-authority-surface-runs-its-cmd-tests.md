@@ -9,8 +9,7 @@
 - Origin: main
 - Next step: Next: Clear the pin to the removed seat m1c. Add a check when the test policy loads: every Go package with tests is run by a group of the surface that owns it; then add the missing groups it finds, session_stop.go first (testing.json is generated: register with metasystem testing add-tests). Done when: the check passes on main and a test package with no owning group fails it.
 - OpenedAt: 2026-09-10T08:53:23Z
-- Revision: 129
-- Pinned: m1c
+- Revision: 130
 - BudgetExceptions: 0
 
 History:
@@ -143,4 +142,5 @@ History:
 - 2026-09-16T20:34:22Z WJYYF31S347SFJN3BK8BQ3WPDA-m1e-c6925449 unapprove actor=human:Wido targets=human-authority-surface-runs-its-cmd-tests reason=Wido 2026-09-16 22:40 CEST: clean house on priority 1 first, then a few human convenience features; every priority 2+ goal is unapproved until then
 - 2026-09-30T18:48:44Z DRV2G3ER650PC3GDMSYHQN3111-ui-bc2fda53 done actor=human:Wido targets=actionable-metrics,arming-binds-the-installed-engine-identity,census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,critique-launch-verb-enforces-the-round-cap,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,dispatch-bases-chains-on-the-remote-tip,failed-job-attention,first-headless-run,fixture-repo-copies-exclude-the-artifacts-store,fixture-waits-name-their-producer,fleet-join-bootstrap,headless-continuous-delivery-proof,headless-fleet-coordination-proof,human-authority-surface-runs-its-cmd-tests,human-break-glass-commit-keeps-the-ledger-valid,human-wait-does-not-consume-goal-budget,job-record-birth-token,land-verb-writes-the-receipt,law-keys-read-committed-bytes,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,member-size-gate,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,never-idle-ironclad,new-elapsed-budgets-use-explicit-hours,one-goal-act-one-ledger-commit,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged,run-scoped-build-caches-have-a-janitor,runtime-limit-is-not-a-protocol-error,seat-landings-run-the-selected-sections,skipped-test-fails-its-group-on-the-other-os,small-change-lane,steward-revivals-leave-the-receipt-stream,stop-batch-strands-a-resumable-goal,token-spend-fence,trunk-versus-candidate-is-a-verification-step,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=2:43 to=2:42
 - 2026-09-30T18:49:35Z 4XCCT21R49PHD514FP1SD2MC0X-m1e-b6a4eb0a edit actor=human:wido targets=human-authority-surface-runs-its-cmd-tests
-Integrity: sha256=da26543b26ea00e9267483b44c03f0855f71b26817006b3f7de672b1b6513c45
+- 2026-09-30T18:51:58Z BMVV9F3H545N41DC76D5RB2P3T-m1e-b6a4eb0a set-pin actor=human:wido targets=human-authority-surface-runs-its-cmd-tests
+Integrity: sha256=c00fcc5fcced0d92b6769701335d8fba2fcb9c3da601ab4083d626a75cb3a9b1
