@@ -97,7 +97,9 @@ type PrefixRedError struct {
 	Groups []RedGroup
 }
 
-func (red *PrefixRedError) Error() string { return "prefix proof red for " + red.GoalID }
+func (red *PrefixRedError) Error() string {
+	return "tests failed with goal " + red.GoalID + " in the batch; metasystem landing status --verbose names them"
+}
 
 type PrefixBudgetRefusal struct{ Reason string }
 

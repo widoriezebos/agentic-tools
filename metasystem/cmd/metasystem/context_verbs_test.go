@@ -95,7 +95,7 @@ func TestContextReportVerbRefusesRetiredEvidence(t *testing.T) {
 
 	_, _, _, err := contextWeekReport(t, root, "2026-09-13")
 	var retired *steward.ContextEvidenceRetiredError
-	if !errors.As(err, &retired) || retired.Error() != "CONTEXT_EVIDENCE_RETIRED requested=2026-09-13 retained-since=2026-09-14" {
+	if !errors.As(err, &retired) || retired.RefusalCode() != "CONTEXT_EVIDENCE_RETIRED" || retired.Error() != "the calls of the week of 2026-09-13 are no longer kept (kept since 2026-09-14); nothing to do" {
 		t.Fatalf("retired week report = %v", err)
 	}
 	for path, want := range map[string]string{callsPath: "prior calls\n", reportPath: "prior report\n"} {

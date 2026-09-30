@@ -129,13 +129,13 @@ commitLoop:
 		}
 		trailers := parseHeldTrailers(message)
 		if len(trailers.machine) != 1 {
-			return heldHardRefusal(verdict, entry.commit, "machine-trailer-malformed", fmt.Sprintf("the commit carries %d Machine trailers", len(trailers.machine))), nil
+			return heldHardRefusal(verdict, entry.commit, "machine-trailer-malformed", fmt.Sprintf("the commit carries %d Machine trailers, not one; reword it, then metasystem work land again", len(trailers.machine))), nil
 		}
 		if len(trailers.goalItem) > 1 {
-			return heldHardRefusal(verdict, entry.commit, "machine-trailer-malformed", fmt.Sprintf("the commit carries %d Goal-Item trailers", len(trailers.goalItem))), nil
+			return heldHardRefusal(verdict, entry.commit, "machine-trailer-malformed", fmt.Sprintf("the commit carries %d Goal-Item trailers, not one; reword it, then metasystem work land again", len(trailers.goalItem))), nil
 		}
 		if len(trailers.revision) > 1 {
-			return heldHardRefusal(verdict, entry.commit, "machine-trailer-malformed", fmt.Sprintf("the commit carries %d Goal-Revision trailers", len(trailers.revision))), nil
+			return heldHardRefusal(verdict, entry.commit, "machine-trailer-malformed", fmt.Sprintf("the commit carries %d Goal-Revision trailers, not one; reword it, then metasystem work land again", len(trailers.revision))), nil
 		}
 
 		actor := trailers.machine[0]

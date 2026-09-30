@@ -64,7 +64,7 @@ type PushRejection struct {
 type MissingLeaseBaseError struct{}
 
 func (*MissingLeaseBaseError) Error() string {
-	return "BATCH_LAND_PUSH_REFUSED: endpoint lease base is absent"
+	return "main moved and the batch kept no base to compare it with; metasystem landing status shows the batch"
 }
 
 type LandSeams struct {
@@ -101,7 +101,7 @@ type LandSeams struct {
 
 // FlakeAllowanceRefusal is the recheck's refusal to publish a composed proof
 // whose known flake is no longer carried: every member was already returned.
-type FlakeAllowanceRefusal struct{ Reason string }
+type FlakeAllowanceRefusal struct{ Code, Reason string }
 
 func (refusal *FlakeAllowanceRefusal) Error() string { return refusal.Reason }
 
@@ -229,9 +229,9 @@ func LandSeries(store Store, id, actor string, at time.Time, seams LandSeams) er
 					return errors.Join(carried, err)
 				}
 			}
-			reason := "BATCH_FLAKE_ALLOWANCE_REFUSED: " + carried.Error() + "; nothing was published; " +
+			reason := "a flaky test the batch relied on is no longer allowed (" + carried.Error() + "); nothing was published; " +
 				diagnosticFailure(DiagnosticResult{AttemptID: record.Proof.AttemptID}, record.Proof.RedGroups)
-			return errors.Join(&FlakeAllowanceRefusal{Reason: reason}, returnEveryMember(store, record, actor, at, reason))
+			return errors.Join(&FlakeAllowanceRefusal{Code: codeFlakeAllowanceRefused, Reason: reason}, returnEveryMember(store, record, actor, at, reason))
 		}
 		return nil
 	}

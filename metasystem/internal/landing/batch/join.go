@@ -37,10 +37,10 @@ func (conflict *assemblyConflict) Unwrap() error { return conflict.Cause }
 
 func joinRefusal(record Record) error {
 	if record.ClosedReason != "" {
-		return refuseBatch("BATCH_CLOSED", "batch "+record.BatchID+" closed at "+record.ClosedReason)
+		return refuseBatch("BATCH_CLOSED", "batch "+record.BatchID+" is closed ("+record.ClosedReason+"); metasystem landing status shows the one collecting now")
 	}
 	if record.State != StateOpen {
-		return refuseBatch("BATCH_SEALED", "batch "+record.BatchID+" no longer accepts joins")
+		return refuseBatch("BATCH_SEALED", "batch "+record.BatchID+" takes no more changes; metasystem landing status shows the one collecting now")
 	}
 	return nil
 }
@@ -104,10 +104,10 @@ func assembleChainUnit(root, base string, unit Unit) (next string, err error) {
 		paths.Env = gittree.ScrubbedEnviron()
 		raw, _ := paths.Output()
 		if len(raw) == 0 {
-			return "", &assemblyConflict{GoalID: unit.GoalID, Cause: refuseBatch("BATCH_JOIN_CONFLICT", "unit "+unit.GoalID+" does not apply: "+strings.TrimSpace(string(output)))}
+			return "", &assemblyConflict{GoalID: unit.GoalID, Cause: refuseBatch("BATCH_JOIN_CONFLICT", "goal "+unit.GoalID+" conflicts with the batch ("+strings.TrimSpace(string(output))+"); rebase it on main, then metasystem work land "+unit.GoalID)}
 		}
 		conflicts := strings.Split(strings.TrimSuffix(string(raw), "\x00"), "\x00")
-		return "", &assemblyConflict{GoalID: unit.GoalID, Paths: conflicts, Cause: refuseBatch("BATCH_JOIN_CONFLICT", "unit "+unit.GoalID+" paths "+strings.Join(conflicts, ", "))}
+		return "", &assemblyConflict{GoalID: unit.GoalID, Paths: conflicts, Cause: refuseBatch("BATCH_JOIN_CONFLICT", "goal "+unit.GoalID+" conflicts with the batch in "+strings.Join(conflicts, ", ")+"; rebase it on main, then metasystem work land "+unit.GoalID)}
 	}
 	after, err := workspace.StagedTree()
 	if err != nil {
@@ -255,19 +255,19 @@ func AssembleBranchMembers(root, base string, members []BranchMember) (prefixes 
 	workspace := detached.Workspace()
 	for _, member := range members {
 		if len(member.Builds) == 0 {
-			return nil, refuseBatch("BATCH_JOIN_UNREAD", "goal "+member.GoalID+" contributes no certified build")
+			return nil, refuseBatch("BATCH_JOIN_UNREAD", "goal "+member.GoalID+" has no reviewed build to land; metasystem work review "+member.GoalID+" reviews it")
 		}
 		for _, build := range member.Builds {
 			for _, fold := range build.Folds {
 				if err := applyBranchCommit(root, workspace.Dir, fold.ID); err != nil {
 					var conflict *patchApplyConflict
 					if errors.As(err, &conflict) {
-						return nil, &assemblyConflict{GoalID: member.GoalID, Cause: refuseBatch("BATCH_JOIN_CONFLICT", "goal "+member.GoalID+" fold does not apply: "+err.Error())}
+						return nil, &assemblyConflict{GoalID: member.GoalID, Cause: refuseBatch("BATCH_JOIN_CONFLICT", "goal "+member.GoalID+" conflicts with the batch ("+err.Error()+"); rebase it on main, then metasystem work land "+member.GoalID)}
 					}
 					if contractgit.IsRefusal(err) {
 						return nil, err
 					}
-					return nil, refuseBatch("BATCH_JOIN_REREAD", "goal "+member.GoalID+" fold no longer applies: "+err.Error())
+					return nil, refuseBatch("BATCH_JOIN_REREAD", "goal "+member.GoalID+" no longer applies ("+err.Error()+"); rebase it on main, then metasystem work land "+member.GoalID)
 				}
 			}
 			before, err := workspace.Snapshot("HEAD")
@@ -277,12 +277,12 @@ func AssembleBranchMembers(root, base string, members []BranchMember) (prefixes 
 			if err := applyBranchCommit(root, workspace.Dir, build.Commit); err != nil {
 				var conflict *patchApplyConflict
 				if errors.As(err, &conflict) {
-					return nil, &assemblyConflict{GoalID: member.GoalID, Cause: refuseBatch("BATCH_JOIN_CONFLICT", "goal "+member.GoalID+" build does not apply: "+err.Error())}
+					return nil, &assemblyConflict{GoalID: member.GoalID, Cause: refuseBatch("BATCH_JOIN_CONFLICT", "goal "+member.GoalID+" conflicts with the batch ("+err.Error()+"); rebase it on main, then metasystem work land "+member.GoalID)}
 				}
 				if contractgit.IsRefusal(err) {
 					return nil, err
 				}
-				return nil, refuseBatch("BATCH_JOIN_REREAD", "goal "+member.GoalID+" build no longer applies: "+err.Error())
+				return nil, refuseBatch("BATCH_JOIN_REREAD", "goal "+member.GoalID+" no longer applies ("+err.Error()+"); rebase it on main, then metasystem work land "+member.GoalID)
 			}
 			after, err := workspace.Snapshot("HEAD")
 			if err != nil {
@@ -293,7 +293,7 @@ func AssembleBranchMembers(root, base string, members []BranchMember) (prefixes 
 				return nil, err
 			}
 			if !matches {
-				return nil, refuseBatch("BATCH_JOIN_REREAD", fmt.Sprintf("goal %s build %s applies as %s, not %s", member.GoalID, strings.Join(build.Units, "+"), digest, build.Digest))
+				return nil, refuseBatch("BATCH_JOIN_REREAD", fmt.Sprintf("goal %s build %s changed since its review (%s, not %s); metasystem work review %s reviews it again", member.GoalID, strings.Join(build.Units, "+"), digest, build.Digest, member.GoalID))
 			}
 		}
 		prefix, err := workspace.Snapshot("HEAD")
@@ -334,15 +334,15 @@ func checkMembership(store Store, batchID, goalID, chainID string) error {
 			}
 			if id == batchID {
 				if unit.GoalID == goalID && unit.Chain != chainID {
-					return refuseBatch("BATCH_GOAL_ELSEWHERE", "goal "+goalID+" already belongs to batch "+id)
+					return refuseBatch("BATCH_GOAL_ELSEWHERE", "goal "+goalID+" is already in batch "+id+"; metasystem work wait "+goalID+" --for landing waits for it")
 				}
 				continue
 			}
 			if unit.Chain == chainID {
-				return refuseBatch("BATCH_UNIT_ELSEWHERE", "chain "+chainID+" already belongs to batch "+id)
+				return refuseBatch("BATCH_UNIT_ELSEWHERE", "build "+chainID+" is already in batch "+id+"; metasystem work wait "+goalID+" --for landing waits for it")
 			}
 			if unit.GoalID == goalID {
-				return refuseBatch("BATCH_GOAL_ELSEWHERE", "goal "+goalID+" already belongs to batch "+id)
+				return refuseBatch("BATCH_GOAL_ELSEWHERE", "goal "+goalID+" is already in batch "+id+"; metasystem work wait "+goalID+" --for landing waits for it")
 			}
 		}
 	}

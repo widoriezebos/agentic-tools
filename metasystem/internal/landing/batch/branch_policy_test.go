@@ -123,7 +123,7 @@ func TestBranchPolicyThroughSelectsOnlyReadCleanPrefix(t *testing.T) {
 		status.Prefix = 1
 		readers, calls := strictBranchPolicyReaders(t, refused, status, "prefix", "U-prefix", "R-prefix")
 		_, err := readGoalBranchWithReaders(refused, readers)
-		if err == nil || err.Error() != "BATCH_JOIN_UNREAD: through commit U-later is outside the read-clean prefix" {
+		if err == nil || err.Error() != "BATCH_JOIN_UNREAD: commit U-later is past goal goal-policy's reviewed builds; metasystem work review goal-policy reviews it" {
 			t.Fatalf("outside-prefix refusal = %v", err)
 		}
 		assertBranchPolicyCalls(t, calls, branchPolicyCalls{status: 1})
@@ -189,7 +189,7 @@ func TestBranchPolicyLastUsesOnlyBranchCommits(t *testing.T) {
 		unread.Prefix = 0
 		readers, calls := strictBranchPolicyReaders(t, request, unread, "member", "U-member", "R-member")
 		_, err := readGoalBranchWithReaders(request, readers)
-		if err == nil || err.Error() != "BATCH_JOIN_UNREAD: goal goal-policy is not read clean through its branch tip" {
+		if err == nil || err.Error() != "BATCH_JOIN_UNREAD: goal goal-policy is not reviewed up to its branch tip; metasystem work review goal-policy reviews the rest" {
 			t.Fatalf("unread-tip refusal = %v", err)
 		}
 		assertBranchPolicyCalls(t, calls, branchPolicyCalls{status: 1})

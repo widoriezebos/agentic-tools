@@ -195,7 +195,7 @@ func assembleChangeUnit(root, base string, unit Unit) (next string, err error) {
 			if len(raw) == 0 {
 				files = nil
 			}
-			return "", &assemblyConflict{GoalID: unit.GoalID, Paths: files, Cause: refuseBatch("BATCH_JOIN_CONFLICT", "change "+unit.GoalID+" does not apply: "+err.Error())}
+			return "", &assemblyConflict{GoalID: unit.GoalID, Paths: files, Cause: refuseBatch("BATCH_JOIN_CONFLICT", "change "+unit.GoalID+" conflicts with the batch ("+err.Error()+"); rebase it on main, then metasystem work land "+unit.GoalID)}
 		}
 		return "", err
 	}
