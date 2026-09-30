@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 	"go/ast"
 	"go/format"
 	"go/parser"
@@ -716,32 +717,35 @@ func newStopMoveDeclarations(root string, workspace stopSurfaceWorkspace, baseTr
 
 func requireStopSurfaceGoalPermission(root, goalID string, reader StopSurfaceGoalReader) error {
 	if reader == nil {
-		return stopSurfaceGoalRefusal("no goal record reader")
+		return stopSurfaceGoalRefusal("stop-test changes cannot be checked: no goal record reader was given", "")
 	}
 	goalPath := filepath.Join(root, "plans", "goals", goalID+".md")
 	info, err := os.Stat(goalPath)
 	if err != nil || !info.Mode().IsRegular() {
-		return stopSurfaceGoalRefusal("goal %s has no live ledger record", goalID)
+		return stopSurfaceGoalRefusal(fmt.Sprintf("stop-test changes name goal %s, which has no record", goalID), "")
 	}
 	content, err := os.ReadFile(goalPath)
 	if err != nil {
-		return stopSurfaceGoalRefusal("goal %s record is unreadable: %v", goalID, err)
+		return stopSurfaceGoalRefusal(fmt.Sprintf("the record of goal %s cannot be read: %v", goalID, err), "")
 	}
 	record, problems := reader(goalID, content)
 	if len(problems) != 0 {
-		return stopSurfaceGoalRefusal("goal %s record is invalid: %s", goalID, problems[0])
+		return stopSurfaceGoalRefusal(fmt.Sprintf("the record of goal %s is invalid: %s", goalID, problems[0]), "")
 	}
 	if record.State == "done" || record.State == "abandoned" {
-		return stopSurfaceGoalRefusal("goal %s is %s", goalID, record.State)
+		return stopSurfaceGoalRefusal(fmt.Sprintf("stop-test changes name goal %s, which is %s", goalID, record.State), "")
 	}
 	if !record.StopSurfaceMoves {
-		return stopSurfaceGoalRefusal("goal %s is not allowed stop-test changes; a person runs: metasystem goal allow %s stop-test-changes --reason TEXT", goalID, goalID)
+		return stopSurfaceGoalRefusal(fmt.Sprintf("goal %s is not allowed to change the stop tests", goalID),
+			"metasystem goal allow "+goalID+" stop-test-changes --reason TEXT  (a person runs it)")
 	}
 	return nil
 }
 
-func stopSurfaceGoalRefusal(format string, args ...any) error {
-	return fmt.Errorf("STOP_SURFACE_GOAL_REFUSED "+format, args...)
+// stopSurfaceGoalRefusal refuses a stop-test change its goal does not allow,
+// in plain words, with the command that allows it when there is one.
+func stopSurfaceGoalRefusal(reason, run string) error {
+	return &refusal.Coded{Code: "STOP_SURFACE_GOAL_REFUSED", Reason: reason, Run: run}
 }
 
 func parseStopMoveDeclaration(path string, content []byte) (stopMoveDeclaration, error) {
@@ -762,7 +766,7 @@ func parseStopMoveDeclaration(path string, content []byte) (stopMoveDeclaration,
 	}
 	match := stopDigestName.FindStringSubmatch(filepath.Base(path))
 	if len(match) != 3 || match[1] != goal {
-		return stopMoveDeclaration{}, fmt.Errorf("%s does not name its goal and digest", path)
+		return stopMoveDeclaration{}, fmt.Errorf("%s does not name its goal and content hash", path)
 	}
 	moves := make([]StopSurfaceLine, 0, len(lines)-3)
 	for index, line := range lines[3:] {
@@ -775,7 +779,7 @@ func parseStopMoveDeclaration(path string, content []byte) (stopMoveDeclaration,
 	rows := declarationRows(moves)
 	digest := stopMoveDigest(rows)
 	if match[2] != digest[:12] {
-		return stopMoveDeclaration{}, fmt.Errorf("%s digest does not match its moved lines", path)
+		return stopMoveDeclaration{}, fmt.Errorf("%s content hash does not match its moved lines", path)
 	}
 	return stopMoveDeclaration{path: path, goal: goal, moves: moves}, nil
 }

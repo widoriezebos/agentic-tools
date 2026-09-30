@@ -128,7 +128,7 @@ func TestStopSurfaceAuditAdmitsADeclarationAfterGoalAllow(t *testing.T) {
 
 	options := audit.StopSurfaceOptions{GoalRecord: goal.StopSurfaceGoalReader}
 	_, err := audit.DeclareStopDecisionSurface(root, options, bedGoal, "the hook entry moved")
-	if err == nil || !strings.Contains(err.Error(), "goal "+bedGoal+" is not allowed stop-test changes; a person runs: metasystem goal allow "+bedGoal+" stop-test-changes --reason") {
+	if err == nil || !strings.Contains(err.Error(), "goal "+bedGoal+" is not allowed to change the stop tests\nrun: metasystem goal allow "+bedGoal+" stop-test-changes --reason") {
 		t.Fatalf("a declaration before the allow = %v; want the refusal naming goal allow", err)
 	}
 

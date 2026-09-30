@@ -6,8 +6,10 @@ package main
 // example internal/testrun/protocol.go, read by the landing owner); they
 // say so at their top.
 var _ = enforceMessages(
+	"internal/audit",
 	"internal/candidateengine",
 	"internal/enginecause",
+	"internal/gaterun",
 	"internal/testenv",
 	"internal/testpolicy",
 	"internal/testrun/contract.go",
@@ -17,4 +19,5 @@ var _ = enforceMessages(
 	"internal/testrun/refusal.go",
 	"internal/testrun/verify.go",
 	"internal/testrun/worker.go",
+	"internal/validate",
 )

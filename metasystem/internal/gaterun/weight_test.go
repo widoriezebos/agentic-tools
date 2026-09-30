@@ -365,7 +365,7 @@ func TestWeightDischargeConsumesExactFreshProofRaisesRetroAndReplayChangesNothin
 	if _, _, err := WeightAdd(root, "landing-two", []byte("1\t0\tnext.go\n"), "", 1); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := bed.discharge("bounded", 3, "green-g1", now); err == nil || !strings.Contains(err.Error(), "REFUSED-PROOF-CONSUMED") {
+	if _, err := bed.discharge("bounded", 3, "green-g1", now); err == nil || !strings.Contains(err.Error(), "already reset the validation weight") {
 		t.Fatalf("consumed proof replay was not typed refusal: %v", err)
 	}
 	after, err := loadWeight(root, now)
@@ -398,7 +398,7 @@ func TestFocusedProofCannotDischargeCadence(t *testing.T) {
 		t.Fatal(err)
 	}
 	completeGreenProof(t, bed, "focused-green", &now)
-	if _, err := bed.discharge("bounded", 3, "focused-green", now); err == nil || !strings.Contains(err.Error(), "lacks exact sufficient deep cadence evidence") {
+	if _, err := bed.discharge("bounded", 3, "focused-green", now); err == nil || !strings.Contains(err.Error(), "did not run the full deep test set") {
 		t.Fatalf("focused outer green discharged cadence weight: %v", err)
 	}
 }
@@ -452,7 +452,7 @@ func TestWeightDischargeRefusesProofOlderThanCurrentWeightEpoch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := bed.discharge("bounded", 3, "green-old", now); err == nil || !strings.Contains(err.Error(), "REFUSED-PROOF-STALE") {
+	if _, err := bed.discharge("bounded", 3, "green-old", now); err == nil || !strings.Contains(err.Error(), "the count is now") {
 		t.Fatalf("stale proof did not receive a typed refusal: %v", err)
 	}
 	stateAfter, err := loadWeight(root, now)

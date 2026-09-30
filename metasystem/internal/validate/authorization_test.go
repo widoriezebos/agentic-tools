@@ -85,7 +85,7 @@ func TestMissionAuthorizationIssuance(t *testing.T) {
 	// Outside a runner turn, an accepted merge still refuses issuance —
 	// and therefore the merge.
 	os.Unsetenv("METASYSTEM_MISSION_TURN")
-	expectConformance(t, f, "merge", 1, "requires the current mission turn")
+	expectConformance(t, f, "merge", 1, "needs the current mission turn")
 
 	t.Setenv("METASYSTEM_MISSION_TURN", "m-fix-t2")
 	out, _ := expectConformance(t, f, "merge", 0, "integrationAuthorization=")
@@ -168,7 +168,7 @@ func TestMissionAuthorizationIssuance(t *testing.T) {
 	json.Unmarshal(data, &partial)
 	delete(partial, "stream")
 	f.writeJSON("artifacts/agents/jobs/impl.json", partial)
-	expectConformance(t, f, "merge", 1, "predates the host-implementer wall")
+	expectConformance(t, f, "merge", 1, "predates recorded provenance")
 }
 
 // The wall's issuance preconditions on the FULL merge path: a mission

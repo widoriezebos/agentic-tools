@@ -70,11 +70,11 @@ func (r *conformanceRun) issueAuthorization(finalTree string) error {
 	stream, _ := r.record["stream"].(string)
 	dispatchTurn, _ := r.record["turnId"].(string)
 	if incarnation == "" || stream == "" || dispatchTurn == "" {
-		return fmt.Errorf("mission chain carries incomplete provenance (incarnation/stream/turn); it predates the host-implementer wall and cannot be authorized — dispatch a fresh chain")
+		return fmt.Errorf("this chain predates recorded provenance and cannot be authorized; dispatch a fresh chain")
 	}
 	issuanceTurn := os.Getenv("METASYSTEM_MISSION_TURN")
 	if issuanceTurn == "" {
-		return fmt.Errorf("authorization issuance requires the current mission turn (METASYSTEM_MISSION_TURN); run conformance from inside the mission host turn")
+		return fmt.Errorf("authorization needs the current mission turn; run conformance from inside the mission host's turn")
 	}
 
 	workspace := r.projectWorkspace()
@@ -110,7 +110,8 @@ func (r *conformanceRun) issueAuthorization(finalTree string) error {
 	}
 	if guardrailTouch != "" {
 		if failures := r.wardenReviewFailures(finalTree); len(failures) > 0 {
-			return fmt.Errorf("authorization refused: this chain changes the guardrail %s and its warden review is not in order (%s); dispatch role warden with --reviews %s, close the chain at zero material findings, and re-run conformance", guardrailTouch, strings.Join(failures, "; "), r.job)
+			return fmt.Errorf("authorization refused: guardrail %s changed, but its warden review is not in order (%s)\n"+
+				"dispatch role warden with --reviews %s, close the chain at zero material findings, then rerun conformance", guardrailTouch, strings.Join(failures, "; "), r.job)
 		}
 	}
 	// The trees this record names stay reachable for consumption-time
@@ -126,10 +127,10 @@ func (r *conformanceRun) issueAuthorization(finalTree string) error {
 	// recorded base IS the reviewed tree, byte for byte.
 	applied, err := workspace.Apply(baseTree, patch)
 	if err != nil {
-		return fmt.Errorf("issue-time apply proof failed: %v", err)
+		return fmt.Errorf("the reviewed patch does not apply to its base: %v", err)
 	}
 	if applied != finalTree {
-		return fmt.Errorf("issue-time apply proof failed: apply(patch, base) = %s, reviewed tree is %s", applied, finalTree)
+		return fmt.Errorf("the reviewed patch applied to its base gives tree %s, not the reviewed tree %s", applied, finalTree)
 	}
 
 	identity := map[string]any{}
@@ -138,7 +139,7 @@ func (r *conformanceRun) issueAuthorization(finalTree string) error {
 	}
 	jobRecordDigest, err := canonicalDigest(identity)
 	if err != nil {
-		return fmt.Errorf("cannot digest the job record identity: %v", err)
+		return fmt.Errorf("cannot hash the job record's identity: %v", err)
 	}
 	baseSequence, baseSegment, err := missionBaseSequencePoint(r.root, missionName, baseTree)
 	if err != nil {
@@ -183,7 +184,7 @@ func (r *conformanceRun) issueAuthorization(finalTree string) error {
 	// authorizationDigest field; the filename carries the same digest.
 	digest, err := canonicalDigest(record)
 	if err != nil {
-		return fmt.Errorf("cannot digest the authorization record: %v", err)
+		return fmt.Errorf("cannot hash the authorization record: %v", err)
 	}
 	record["authorizationDigest"] = digest
 
@@ -363,7 +364,7 @@ func missionBaseSequencePoint(root, missionID, baseTree string) (int64, int64, e
 	// HEAD before the turn concludes, and there the remedy is to
 	// conclude the turn, not re-provision. A sharper diagnosis needs
 	// authenticated admission provenance the state does not yet carry.
-	return 0, 0, fmt.Errorf("authorization refused: base tree %s is not a named expected-tree sequence point of mission %s; re-dispatch from the current expected tree", baseTree, missionID)
+	return 0, 0, fmt.Errorf("base tree %s is not a sequence point of mission %s; dispatch again from its current tree", baseTree, missionID)
 }
 
 // priorChainAuthorizations lists the digests of every authorization already
