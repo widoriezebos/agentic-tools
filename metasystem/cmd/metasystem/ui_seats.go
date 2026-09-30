@@ -7,8 +7,11 @@ package main
 // by the lifecycle owner's exact-identity proof.
 
 import (
+	"crypto/sha256"
 	"fmt"
+	"io"
 	"net"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -242,8 +245,112 @@ func uiStartCollision(inventory uiSeatInventory, prober identity.Prober, listen 
 	return lifecycle.Result{}, nil
 }
 
+// uiInstallationEngine is the engine an installation carries: its own
+// bin/metasystem, which ui start and ui restart launch whoever typed them.
 func uiInstallationEngine(installation string) (string, error) {
-	return filepath.Join(installation, "bin", "metasystem"), nil
+	binary := filepath.Join(installation, "bin", "metasystem")
+	if !regularFile(binary) {
+		return "", fmt.Errorf("the installation %s carries no engine at bin/metasystem", shellCommand([]string{installation}))
+	}
+	return binary, nil
 }
 
-func uiFileDigest(path string) (string, error) { return "", nil }
+// uiEngineDecision is what a person does about an installation without an
+// engine.
+const uiEngineDecision = "build and install this checkout's engine (go run ./cmd/devgate build)"
+
+// uiEngineFor resolves the target's engine before anything is stopped or
+// started; a missing one is a refusal that changed nothing.
+func uiEngineFor(engine func(string) (string, error), target lifecycle.Roots, prefix string) (string, *uiLifecycleResult) {
+	binary, err := engine(target.Installation)
+	if err != nil {
+		return "", &uiLifecycleResult{Result: lifecycle.Result{Lines: []string{prefix + err.Error() + "; nothing was done"}, Code: 1}, Decision: uiEngineDecision}
+	}
+	return binary, nil
+}
+
+// uiFileDigest is an engine file's digest in the form the server records.
+func uiFileDigest(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	hash := sha256.New()
+	if _, err := io.Copy(hash, f); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("sha256:%x", hash.Sum(nil)), nil
+}
+
+// uiSeatsExcept is the inventory without the seat a start targets.
+func uiSeatsExcept(inventory uiSeatInventory, target lifecycle.Roots) uiSeatInventory {
+	others := inventory
+	others.Seats = nil
+	for _, other := range inventory.Seats {
+		if other.Roots.StateRoot != target.StateRoot {
+			others.Seats = append(others.Seats, other)
+		}
+	}
+	return others
+}
+
+// uiLaunched is the address and pid a launched server reported ready with.
+type uiLaunched struct {
+	address string
+	pid     int
+}
+
+// uiRestartAcrossSeats is a restart whose own seat runs no interface:
+// exactly one other machine running one, with a complete inventory, is
+// restarted by restart; several, or an inventory that may be incomplete,
+// restart none and are listed. It answers false when no other machine runs
+// one, and this seat's own restart follows.
+func uiRestartAcrossSeats(inventory uiSeatInventory, prober identity.Prober, restart func(other uiSeat, prefix string) uiLifecycleResult, launched func() *uiLaunched) (uiLifecycleResult, bool) {
+	candidates := uiSeatCandidates(inventory, prober)
+	views := uiSeatViews(candidates)
+	problems := append([]string{}, inventory.Problems...)
+	prefix := "no interface for " + inventory.This + "; "
+	restartLine := func(view uiSeatView) string {
+		return strings.Replace(uiSeatStopLine(view), "metasystem ui stop --repo", "metasystem ui restart --repo", 1)
+	}
+	if len(problems) > 0 || len(candidates) > 1 {
+		lines := []string{fmt.Sprintf("%s%d machines of this computer run one; nothing was done", prefix, len(candidates))}
+		if len(problems) > 0 {
+			lines = []string{prefix + uiSeatsProblemLine(problems) + "; nothing was stopped"}
+		}
+		for _, view := range views {
+			lines = append(lines, restartLine(view))
+		}
+		return uiLifecycleResult{Result: lifecycle.Result{Lines: lines, Code: 1}, Seats: views, SeatsProblems: problems}, true
+	}
+	if len(candidates) == 0 {
+		return uiLifecycleResult{}, false
+	}
+	candidate := candidates[0]
+	acted := candidate.seat
+	result := restart(acted, prefix+"machine "+acted.Name+": ")
+	result.Seat = &acted
+	if result.Seats == nil {
+		result.Seats = views
+	}
+	result.SeatsProblems = problems
+	report := result.Restart
+	if report == nil {
+		return result, true
+	}
+	if ready := launched(); report.Started && report.Start.Code == 0 && ready != nil {
+		port := ready.address
+		if _, onlyPort, err := net.SplitHostPort(port); err == nil {
+			port = onlyPort
+		}
+		result.Result = lifecycle.Result{Lines: []string{fmt.Sprintf("%srestarted the interface of machine %s (pid %d -> %d, :%s)", prefix, acted.Name, candidate.view.Pid, ready.pid, port)}}
+		return result, true
+	}
+	lines := make([]string, 0, len(result.Result.Lines))
+	for _, line := range result.Result.Lines {
+		lines = append(lines, prefix+"machine "+acted.Name+": "+line)
+	}
+	result.Result.Lines = lines
+	return result, true
+}

@@ -248,8 +248,8 @@ func witnessUIStartRepeat(t *testing.T) {
 	const listen = "127.0.0.1:8765"
 	spawns := 0
 	effects := uiLifecycleEffects{
-		prober:     idemUIProber{exact: exact},
-		executable: func() (string, error) { return "/fake/metasystem", nil },
+		prober: idemUIProber{exact: exact},
+		engine: func(string) (string, error) { return "/fake/metasystem", nil },
 		spawn: func(spec lifecycle.LaunchSpec) (lifecycle.Child, error) {
 			spawns++
 			// The server records itself as it binds; this one is the test
@@ -286,7 +286,7 @@ func witnessUIStartRepeat(t *testing.T) {
 
 func witnessUIStopRepeat(t *testing.T) {
 	roots, exact := idemUIBed(t)
-	effects := uiLifecycleEffects{prober: idemUIProber{exact: exact}, executable: func() (string, error) { return "", errors.New("no launch") },
+	effects := uiLifecycleEffects{prober: idemUIProber{exact: exact}, engine: func(string) (string, error) { return "", errors.New("no launch") },
 		spawn: func(lifecycle.LaunchSpec) (lifecycle.Child, error) {
 			return nil, errors.New("a stop launched the interface")
 		}}

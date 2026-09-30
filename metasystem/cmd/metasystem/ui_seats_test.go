@@ -81,6 +81,10 @@ func uiSeatsFiredAfter(time.Duration) <-chan time.Time {
 
 func (b *uiSeatsBed) seat(name string) uiSeat {
 	root := realpath.Resolve(b.t.TempDir())
+	// Every seat's installation carries its settings, empty by default.
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), nil, 0o644); err != nil {
+		b.t.Fatal(err)
+	}
 	return uiSeat{Name: name, Checkout: root, Roots: lifecycle.Roots{Checkout: root, Installation: root, StateRoot: root}}
 }
 
@@ -169,8 +173,7 @@ func uiSeatsHoldLock(t *testing.T, stateRoot string) func() {
 
 func (b *uiSeatsBed) effects(inventory func() uiSeatInventory) uiLifecycleEffects {
 	return uiLifecycleEffects{
-		prober:     b.prober,
-		executable: func() (string, error) { return "/fake/own-metasystem", nil },
+		prober: b.prober,
 		engine: func(installation string) (string, error) {
 			b.engines = append(b.engines, installation)
 			return uiInstallationEngine(installation)
@@ -605,7 +608,7 @@ func TestUIRestartRestartsTheOneOtherSeatsInterface(t *testing.T) {
 	invalid.conf(other, "ui.listen=example.com:80\n")
 	got = uiLifecycleRunWith("restart", a.Roots, "127.0.0.1:7878", 0, invalid.effects(uiSeatsOf("m1e", other)))
 	if len(invalid.sent) != 0 || invalid.spawns != 0 || !uiSeatsHasRecord(other.Roots.StateRoot) || got.Result.Code != 1 ||
-		len(got.Result.Lines) != 1 || !strings.Contains(got.Result.Lines[0], "example.com") || !strings.Contains(got.Result.Lines[0], "nothing was done") {
+		len(got.Result.Lines) != 1 || !strings.Contains(got.Result.Lines[0], "the listen address must use a loopback IP literal") || !strings.Contains(got.Result.Lines[0], "nothing was done") {
 		t.Fatalf("restart at an invalid address = signals %v spawns %d, %+v", invalid.sent, invalid.spawns, got)
 	}
 }
@@ -748,5 +751,47 @@ func uiSeatsSetDigest(t *testing.T, stateRoot, digest string) {
 	encoded, _ := json.Marshal(rec)
 	if err := os.WriteFile(path, encoded, 0o600); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// TestUIRestartRendersTheSeatItRestarted (D-restart, seams): a restart of
+// another machine's interface targets that seat and names it in its next
+// steps; a refusal before anything stopped carries its decision; a start
+// that fails where nothing ran does not say something stopped.
+func TestUIRestartRendersTheSeatItRestarted(t *testing.T) {
+	t.Parallel()
+	b := newProcessBed(t)
+	owners := b.owners()
+	other := uiSeat{Name: "ui", Checkout: "/work/agentic-tools-ui"}
+	var answer uiLifecycleResult
+	owners.processes.ui = func(string, lifecycle.Roots, uiIntentOptions) (uiLifecycleResult, error) { return answer, nil }
+
+	line := "no interface for m1e; restarted the interface of machine ui (pid 5501 -> 4343, :8765)"
+	answer = uiLifecycleResult{Result: lifecycle.Result{Lines: []string{line}}, Seat: &other,
+		Restart: &lifecycle.RestartReport{Stop: lifecycle.StoppedNow, Started: true}}
+	code, result := b.runJSON(owners, "ui", "restart")
+	if code != 0 || result.Outcome != intentConfirmed || result.Summary != line || len(result.Targets) != 1 || result.Targets[0].ID != other.Checkout {
+		t.Fatalf("a restart of another seat = %d %+v", code, result)
+	}
+
+	answer = uiLifecycleResult{Result: lifecycle.Result{Lines: []string{"no interface for m1e; machine ui: interface (pid 5501) did not stop within 0s; it was sent SIGTERM and left running"}, Code: 1},
+		Seat: &other, Restart: &lifecycle.RestartReport{Stop: lifecycle.Timeout}}
+	code, result = b.runJSON(owners, "ui", "restart")
+	if code != 1 || result.Outcome != intentPartial || result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "ui", "restart", "--repo", other.Checkout}) {
+		t.Fatalf("a timed-out restart of another seat = %d %+v", code, result)
+	}
+
+	answer = uiLifecycleResult{Result: lifecycle.Result{Lines: []string{"the installation /work/a carries no engine at bin/metasystem; nothing was done"}, Code: 1},
+		Decision: uiEngineDecision}
+	code, result = b.runJSON(owners, "ui", "restart")
+	if code != 1 || result.Outcome != intentRefused || result.Decision != uiEngineDecision {
+		t.Fatalf("a restart without an engine = %d %+v", code, result)
+	}
+
+	answer = uiLifecycleResult{Result: lifecycle.Result{Lines: []string{"cannot launch the interface server: boom"}, Code: 1},
+		Restart: &lifecycle.RestartReport{Stop: lifecycle.StopOutcome(lifecycle.Stopped), Started: true, Start: lifecycle.Result{Code: 1}}}
+	code, result = b.runJSON(owners, "ui", "restart")
+	if code != 1 || result.Outcome != intentPartial || strings.Contains(result.Summary, "stopped but") {
+		t.Fatalf("a restart that started nothing where nothing ran = %d %+v", code, result)
 	}
 }

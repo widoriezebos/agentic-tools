@@ -1673,19 +1673,45 @@ func (inv *intentInvocation) runUIVerb(verb string) int {
 		}
 		return inv.render(intentResult{Outcome: outcome, code: result.Code, Targets: targets, Summary: summary, text: result.Lines, Data: data})
 	}
+	// A restart that acted on another machine's interface targets that
+	// seat, and its next steps name it.
+	next := func(words ...string) []string { return append([]string{"metasystem", "ui"}, words...) }
+	summary := func(fallback string) string { return fallback }
+	if seat := lifecycleResult.Seat; seat != nil {
+		targets = []intentTarget{{Kind: "ui", ID: seat.Checkout}}
+		next = func(words ...string) []string {
+			return append(append([]string{"metasystem", "ui"}, words...), "--repo", seat.Checkout)
+		}
+		summary = func(fallback string) string {
+			if len(result.Lines) > 0 {
+				return result.Lines[0]
+			}
+			return fallback
+		}
+	}
 	restart := lifecycleResult.Restart
+	if restart == nil {
+		// Refused before anything was stopped: a missing engine, an
+		// address that does not resolve, or several machines to choose from.
+		return inv.render(intentResult{Outcome: intentRefused, code: max(result.Code, 1), Targets: targets, text: result.Lines, Data: data,
+			Summary: summary("the interface could not be restarted; nothing was done"), Decision: lifecycleResult.Decision})
+	}
 	data["stop"], data["started"] = restart.Stop, restart.Started
 	switch {
 	case restart.Started && restart.Start.Code == 0:
-		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Summary: "the interface restarted", text: result.Lines, Data: data})
+		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Summary: summary("the interface restarted"), text: result.Lines, Data: data})
 	case restart.Started:
+		// Nothing was stopped when nothing ran: the start alone failed.
+		failed := "the interface stopped but did not start again"
+		if restart.Stop == lifecycle.StopOutcome(lifecycle.Stopped) || restart.Stop == lifecycle.StopOutcome(lifecycle.Stale) {
+			failed = "the interface was not running, and it did not start"
+		}
 		return inv.render(intentResult{Outcome: intentPartial, code: result.Code, Targets: targets, text: result.Lines, Data: data,
-			Summary: "the interface stopped but did not start again",
-			next:    []string{"metasystem", "ui", "start"}, nextReason: "start it once the problem above is fixed"})
+			Summary: failed, next: next("start"), nextReason: "start it once the problem above is fixed"})
 	case restart.Stop == lifecycle.Timeout:
 		return inv.render(intentResult{Outcome: intentPartial, code: max(result.Code, 1), Targets: targets, text: result.Lines, Data: data,
 			Summary: "the interface was asked to stop but is still running, so it was not started again",
-			next:    []string{"metasystem", "ui", "restart"}, nextReason: "try again once it has stopped"})
+			next:    next("restart"), nextReason: "try again once it has stopped"})
 	}
 	return inv.render(intentResult{Outcome: intentRefused, code: max(result.Code, 1), Targets: targets, text: result.Lines, Data: data,
 		Summary: "the interface could not be restarted; nothing was changed"})
@@ -1719,7 +1745,7 @@ func uiLifecycleFor(verb string, roots lifecycle.Roots, options uiIntentOptions)
 	if err != nil {
 		return uiLifecycleResult{}, err
 	}
-	return uiLifecycleRun(verb, roots, listen, options.waitSeconds, options.seats), nil
+	return uiLifecycleRun(verb, roots, listen, options), nil
 }
 
 func sameCanonicalPath(left, right string) bool {
@@ -2106,7 +2132,7 @@ func (inv *intentInvocation) uiTarget(verb string) int {
 		next, nextReason = []string{"metasystem", "ui", "stop", "--repo", ran.Seats[0].Checkout}, "stops the interface of machine "+ran.Seats[0].Machine+", which holds the address"
 	}
 	return inv.render(intentResult{Outcome: intentRefused, code: ran.Result.Code, Targets: targets, Data: data, text: ran.Result.Lines,
-		Summary: "the interface did not " + verb + "; its report is below", next: next, nextReason: nextReason})
+		Summary: "the interface did not " + verb + "; its report is below", next: next, nextReason: nextReason, Decision: ran.Decision})
 }
 
 // uiSeatsData is a lifecycle verb's JSON data: its lines and exit code,

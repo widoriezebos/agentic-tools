@@ -1095,6 +1095,8 @@ type uiLifecycleResult struct {
 	Restart *lifecycle.RestartReport // restart only
 	// Unchanged is a start or stop whose effect already held (R-129-ui).
 	Unchanged bool
+	// Decision is what a person does about a refusal, when one is known.
+	Decision string
 	// Seat is another machine of this computer whose interface the verb
 	// acted on; nil when it acted on this seat only.
 	Seat *uiSeat
@@ -1106,11 +1108,10 @@ type uiLifecycleResult struct {
 
 // uiLifecycleEffects are the process effects of the interface lifecycle:
 // the prober that judges the recorded server, the spawn that launches one,
-// and the executable it runs.
+// and the engine it runs.
 type uiLifecycleEffects struct {
-	prober     identity.Prober
-	spawn      lifecycle.Spawn
-	executable func() (string, error)
+	prober identity.Prober
+	spawn  lifecycle.Spawn
 	// send signals the recorded server (nil is syscall.Kill) and after is
 	// the stop's lock-wait timer (nil is time.After).
 	send  identity.SignalFunc
@@ -1125,36 +1126,56 @@ type uiLifecycleEffects struct {
 
 // uiLifecycleRun runs start, status, stop or restart through the lifecycle
 // owner; it prints nothing.
-func uiLifecycleRun(verb string, roots lifecycle.Roots, listen string, waitSeconds int64, seats func() uiSeatInventory) uiLifecycleResult {
-	return uiLifecycleRunWith(verb, roots, listen, waitSeconds, uiLifecycleEffects{prober: identity.KernelProber{}, spawn: lifecycle.ExecSpawn, executable: os.Executable, seats: seats})
+func uiLifecycleRun(verb string, roots lifecycle.Roots, listen string, options uiIntentOptions) uiLifecycleResult {
+	return uiLifecycleRunWith(verb, roots, listen, options.waitSeconds, uiLifecycleEffects{
+		prober: identity.KernelProber{}, spawn: lifecycle.ExecSpawn, engine: uiInstallationEngine, seats: options.seats,
+		// A seat restarted from another listens where its own settings
+		// say, unless --listen was typed.
+		listenFor: func(target lifecycle.Roots) (string, error) {
+			return uiListen("restart", target, options.listen, options.listenSet)
+		},
+	})
 }
 
 func uiLifecycleRunWith(verb string, roots lifecycle.Roots, listen string, waitSeconds int64, effects uiLifecycleEffects) uiLifecycleResult {
 	prober := effects.prober
 	stop := lifecycle.StopOptions{Prober: prober, Send: effects.send, After: effects.after, Wait: time.Duration(waitSeconds) * time.Second}
+	// The other seats are read at most once per verb, and only when asked.
+	var inventory *uiSeatInventory
+	seats := func() uiSeatInventory {
+		if inventory == nil {
+			read := effects.seats()
+			inventory = &read
+		}
+		return *inventory
+	}
 	var collision *uiSeatView
-	start := func() lifecycle.Result {
+	var launched *uiLaunched
+	start := func(target lifecycle.Roots, listen, engine string) lifecycle.Result {
 		// Another machine of this computer holding the address is named
-		// before anything is spawned, but only when this seat runs no
+		// before anything is spawned, but only when the target runs no
 		// interface: one running elsewhere keeps today's path whole.
 		if effects.seats != nil {
-			if own, err := lifecycle.Read(roots.StateRoot, prober); err == nil && (own.State == lifecycle.Stopped || own.State == lifecycle.Stale) {
-				if refusal, other := uiStartCollision(effects.seats(), prober, listen); other != nil {
+			if own, err := lifecycle.Read(target.StateRoot, prober); err == nil && (own.State == lifecycle.Stopped || own.State == lifecycle.Stale) {
+				if refusal, other := uiStartCollision(uiSeatsExcept(seats(), target), prober, listen); other != nil {
 					collision = other
 					return refusal
 				}
 			}
 		}
-		executable, err := effects.executable()
-		if err != nil {
-			return lifecycle.Result{Lines: []string{"cannot launch the interface server: " + err.Error()}, Code: 1}
-		}
-		return lifecycle.StartResult(lifecycle.LaunchSpec{
-			Executable: executable,
-			Args:       lifecycle.ServeArgs(roots.Checkout, roots.Installation, listen),
-			Dir:        roots.Checkout,
-			LogPath:    filepath.Join(lifecycle.Dir(roots.StateRoot), "server.log"),
+		// The pair the new server was ready with is kept here: the record
+		// it writes may already be gone when the verb reports.
+		address, pid, err := lifecycle.Launch(lifecycle.LaunchSpec{
+			Executable: engine,
+			Args:       lifecycle.ServeArgs(target.Checkout, target.Installation, listen),
+			Dir:        target.Checkout,
+			LogPath:    filepath.Join(lifecycle.Dir(target.StateRoot), "server.log"),
 		}, effects.spawn, 0)
+		if err != nil {
+			return lifecycle.Result{Lines: []string{err.Error()}, Code: 1}
+		}
+		launched = &uiLaunched{address: address, pid: pid}
+		return lifecycle.Result{Lines: []string{fmt.Sprintf("interface running at http://%s (pid %d)", address, pid)}}
 	}
 	collided := func(result uiLifecycleResult) uiLifecycleResult {
 		if collision != nil {
@@ -1164,23 +1185,59 @@ func uiLifecycleRunWith(verb string, roots lifecycle.Roots, listen string, waitS
 	}
 	switch verb {
 	case "start":
-		result, unchanged := lifecycle.StartOnce(roots.StateRoot, prober, listen, start)
+		engine, refusal := uiEngineFor(effects.engine, roots, "")
+		if refusal != nil {
+			return *refusal
+		}
+		result, unchanged := lifecycle.StartOnce(roots.StateRoot, prober, listen, func() lifecycle.Result { return start(roots, listen, engine) })
 		return collided(uiLifecycleResult{Result: result, Unchanged: unchanged})
 	case "status":
-		result, state := lifecycle.StatusReport(roots.StateRoot, prober, nil)
+		// The running server is compared with the engine a restart would
+		// launch: the installation's, not the binary typed.
+		digest := func() (string, error) {
+			engine, err := effects.engine(roots.Installation)
+			if err != nil {
+				return "", err
+			}
+			return uiFileDigest(engine)
+		}
+		result, state := lifecycle.StatusReport(roots.StateRoot, prober, digest)
 		status := uiLifecycleResult{Result: result, State: state}
 		if effects.seats != nil && (state == lifecycle.Stopped || state == lifecycle.Stale) {
-			return uiStatusAcrossSeats(status, effects.seats(), prober)
+			return uiStatusAcrossSeats(status, seats(), prober)
 		}
 		return status
 	case "stop":
 		result, unchanged := lifecycle.StopReport(roots.StateRoot, stop)
 		if unchanged && effects.seats != nil {
-			return uiStopAcrossSeats(result, effects.seats(), stop)
+			return uiStopAcrossSeats(result, seats(), stop)
 		}
 		return uiLifecycleResult{Result: result, Unchanged: unchanged}
 	}
-	report := lifecycle.RestartReportFor(roots.StateRoot, stop, start)
+	if effects.seats != nil {
+		if own, err := lifecycle.Read(roots.StateRoot, prober); err == nil && (own.State == lifecycle.Stopped || own.State == lifecycle.Stale) {
+			if across, ok := uiRestartAcrossSeats(seats(), prober, func(other uiSeat, prefix string) uiLifecycleResult {
+				listen, err := effects.listenFor(other.Roots)
+				if err != nil {
+					return uiLifecycleResult{Result: lifecycle.Result{Lines: []string{prefix + err.Error() + "; nothing was done"}, Code: 1}}
+				}
+				engine, refusal := uiEngineFor(effects.engine, other.Roots, prefix)
+				if refusal != nil {
+					return *refusal
+				}
+				launched = nil
+				report := lifecycle.RestartReportFor(other.Roots.StateRoot, stop, func() lifecycle.Result { return start(other.Roots, listen, engine) })
+				return collided(uiLifecycleResult{Result: report.Result, Restart: &report})
+			}, func() *uiLaunched { return launched }); ok {
+				return across
+			}
+		}
+	}
+	engine, refusal := uiEngineFor(effects.engine, roots, "")
+	if refusal != nil {
+		return *refusal
+	}
+	report := lifecycle.RestartReportFor(roots.StateRoot, stop, func() lifecycle.Result { return start(roots, listen, engine) })
 	return collided(uiLifecycleResult{Result: report.Result, Restart: &report})
 }
 
