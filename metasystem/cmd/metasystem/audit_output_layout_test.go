@@ -56,6 +56,15 @@ type layoutCase struct {
 	// measured names why a case's --json is not byte-stable (a duration it
 	// measures), so the JSON golden is not kept for it.
 	measured string
+	// noJSON is a passthrough action that takes no --json.
+	noJSON bool
+}
+
+// addLayoutCases adds a group's cases from its own file through the group
+// hook, so parallel builders never edit one list.
+func addLayoutCases(cases ...layoutCase) bool {
+	layoutGroupCases = append(layoutGroupCases, func() []layoutCase { return cases })
+	return true
 }
 
 type layoutBed struct {
@@ -63,6 +72,9 @@ type layoutBed struct {
 	cwd     string
 	replace []string  // old, new pairs applied to every output
 	now     time.Time // the bed's clock; zero is layoutNow
+	// words fill a case's placeholder words with the bed's values (a
+	// temporary directory), the way replace takes them out again.
+	words map[string]string
 }
 
 // layoutGroupCases are the goldens a conversion group adds from its own
@@ -268,14 +280,41 @@ func runLayoutCase(t *testing.T, c layoutCase, bed layoutBed, args ...string) (i
 		}
 		return 0, c.help(env).String(), ""
 	}
-	command, rest, ok := resolveIntentArgv(append(append([]string{}, c.args...), args...))
+	words := append(append([]string{}, c.args...), args...)
+	for index, word := range words {
+		if value, ok := bed.words[word]; ok {
+			words[index] = value
+		}
+	}
+	command, rest, ok := resolveIntentArgv(words)
 	if !ok {
 		t.Fatalf("no public command %q", c.args)
 	}
-	var stdout, stderr bytes.Buffer
-	code := runIntentIn(command, rest, &stdout, &stderr, bed.cwd, bed.owners)
+	stdout, stderr := &layoutStream{env: bed.owners.textEnv}, &layoutStream{env: bed.owners.textEnv}
+	var code int
+	if command.run == nil && command.passthrough != nil {
+		// A passthrough prints from its own handler, in the layout its
+		// stream carries; its bed names the installation in the words.
+		code = command.passthrough(rest, stdout, stderr)
+	} else {
+		code = runIntentIn(command, rest, stdout, stderr, bed.cwd, bed.owners)
+	}
 	replacer := strings.NewReplacer(bed.replace...)
 	return code, replacer.Replace(stdout.String()), replacer.Replace(stderr.String())
+}
+
+// layoutStream is a golden's output stream: it carries the golden's text
+// layout to a passthrough handler, which has no owners to ask.
+type layoutStream struct {
+	bytes.Buffer
+	env func(io.Writer) textui.Env
+}
+
+func (s *layoutStream) TextEnv() textui.Env {
+	if s.env == nil {
+		return textui.DetectWith(false, 0, func(string) string { return "" }, layoutNow, time.UTC)
+	}
+	return s.env(s)
 }
 
 func layoutGolden(name string) string { return filepath.Join("testdata", "layout", name) }
@@ -285,7 +324,7 @@ func layoutGolden(name string) string { return filepath.Join("testdata", "layout
 func TestAuditOutputLayoutJSONUnchanged(t *testing.T) {
 	t.Parallel()
 	for _, c := range layoutCases() {
-		if c.help != nil || c.measured != "" {
+		if c.help != nil || c.measured != "" || c.noJSON {
 			continue
 		}
 		t.Run(c.name, func(t *testing.T) {

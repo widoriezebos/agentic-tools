@@ -1,0 +1,1 @@
+stop-loss not triggered: 2 cycles, 0 no-progress, budget 5, no-gain budget none

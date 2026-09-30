@@ -1,0 +1,2 @@
+✗ metasystem test status needs the tree to check; nothing was read
+  → metasystem test status --tree TREE  TREE is the exact tree, as git write-tree prints it

@@ -206,13 +206,13 @@ func witnessDiskSweepRepeat(t *testing.T, bed *diskBed) {
 	dead := bed.store("dead", "dead")
 	alive := bed.store("alive", "alive")
 	code, out := bed.run("disk", "clean")
-	if code != 0 || !strings.Contains(out, "released 1 store(s)") {
+	if code != 0 || !strings.Contains(out, "released 1 store") {
 		t.Fatalf("first clean = %d:\n%s", code, out)
 	}
 	if _, err := os.Stat(dead.Path); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("the dead owner's store survived: %v", err)
 	}
-	if !strings.Contains(out, "kept: "+alive.Path+": owner alive; run metasystem session stop fixture") {
+	if !strings.Contains(flatPage(out), "kept: "+bed.shown(alive.Path)+": owner alive; run metasystem session stop fixture") {
 		t.Fatalf("the kept store is not named with its command:\n%s", out)
 	}
 	stores := filepath.Join(bed.root, "stores-data")
@@ -241,15 +241,15 @@ func TestDiskShowAndPreviewChangeNothing(t *testing.T) {
 	helmMust(t, os.RemoveAll(filepath.Join(bed.home, "stores")))
 	before := diskSnapshot(t, bed.root)
 	code, out := bed.run("disk", "show")
-	if code != 0 || !strings.Contains(out, "checkout: no pass has run yet; metasystem disk clean --preview shows what one would do") {
+	if code != 0 || !strings.Contains(out, "This checkout\n  no pass has run yet") || !strings.Contains(out, "→ metasystem disk clean --preview") {
 		t.Fatalf("show before any pass = %d:\n%s", code, out)
 	}
 	if changed := diskSnapshotDiff(before, diskSnapshot(t, bed.root)); len(changed) != 0 {
 		t.Fatalf("disk show changed %v", changed)
 	}
 	code, out = bed.run("disk", "clean", "--preview")
-	if code != 0 || !strings.Contains(out, "preview: nothing was changed; plan") || !strings.Contains(out, "would release: "+dead.Path) ||
-		!strings.Contains(out, "stray: "+stray) {
+	if code != 0 || !strings.Contains(out, "Preview: nothing was changed · plan") || !strings.Contains(flatPage(out), "would release: "+bed.shown(dead.Path)) ||
+		!strings.Contains(flatPage(out), "stray: "+bed.shown(stray)) {
 		t.Fatalf("preview = %d:\n%s", code, out)
 	}
 	for _, path := range diskSnapshotDiff(before, diskSnapshot(t, bed.root)) {
@@ -259,7 +259,7 @@ func TestDiskShowAndPreviewChangeNothing(t *testing.T) {
 			t.Errorf("the preview changed %s", path)
 		}
 	}
-	if strings.Contains(out, foreign+",") || strings.Contains(out, "stray: "+foreign) {
+	if strings.Contains(out, bed.shown(foreign)+",") || strings.Contains(out, "stray: "+bed.shown(foreign)) {
 		t.Fatalf("a foreign entry was listed as a stray:\n%s", out)
 	}
 	if _, err := os.Stat(dead.Path); err != nil {
@@ -270,7 +270,7 @@ func TestDiskShowAndPreviewChangeNothing(t *testing.T) {
 		t.Fatalf("clean = %d:\n%s", code, out)
 	}
 	code, out = bed.run("disk", "show")
-	if code != 0 || !strings.Contains(out, "released: "+dead.Path) || !strings.Contains(out, "evidence root of this checkout:") {
+	if code != 0 || !strings.Contains(flatPage(out), "released: "+bed.shown(dead.Path)) || !strings.Contains(out, "Evidence\n  root") {
 		t.Fatalf("show after a pass = %d:\n%s", code, out)
 	}
 }
@@ -296,8 +296,8 @@ func TestDiskStraysArePersonsActFromAPreview(t *testing.T) {
 	bed.person = nil
 	bed.census = &diskstore.UseCensus{Taken: true, Processes: []diskstore.CensusProcess{{Pid: 4242, UID: 501, Command: "bash bed.sh", Cwd: held}}}
 	code, out := bed.run("disk", "clean", "--strays")
-	if code != 0 || !strings.Contains(out, "removed: "+idle) || !strings.Contains(out, "kept: "+held+": in use by pid 4242") ||
-		!strings.Contains(out, "run metasystem disk clean --strays once pid 4242 has ended") {
+	if flat := flatPage(out); code != 0 || !strings.Contains(flat, "removed: "+bed.shown(idle)) || !strings.Contains(flat, "kept: "+bed.shown(held)+": in use by pid 4242") ||
+		!strings.Contains(flat, "run metasystem disk clean --strays once pid 4242 has ended") {
 		t.Fatalf("strays = %d:\n%s", code, out)
 	}
 	if _, err := os.Stat(idle); !errors.Is(err, os.ErrNotExist) {
@@ -307,7 +307,7 @@ func TestDiskStraysArePersonsActFromAPreview(t *testing.T) {
 		t.Fatal("the held stray was removed")
 	}
 	before := diskSnapshot(t, bed.root)
-	if code, out := bed.run("disk", "clean", "--strays"); code != 0 || !strings.Contains(out, "already gone: "+idle) {
+	if code, out := bed.run("disk", "clean", "--strays"); code != 0 || !strings.Contains(flatPage(out), "already gone: "+bed.shown(idle)) {
 		t.Fatalf("a repeat = %d:\n%s", code, out)
 	}
 	if changed := diskSnapshotDiff(before, diskSnapshot(t, bed.root)); len(changed) != 0 {
@@ -337,27 +337,28 @@ func TestDiskStraysGroupTheirOutcomes(t *testing.T) {
 		t.Fatalf("preview --verbose = %d, want one line per stray:\n%s", code, out)
 	}
 	code, out := bed.run("disk", "clean", "--strays")
-	if code != 0 || !strings.Contains(out, "strays: 5 done, 5 kept") || !strings.Contains(out, "MiB freed") || !strings.Contains(out, "--verbose prints every item") {
+	flat := flatPage(out)
+	if code != 0 || !strings.Contains(flat, "strays: 5 done, 5 kept") || !strings.Contains(flat, "MiB freed") || !strings.Contains(flat, "--verbose prints every item") {
 		t.Fatalf("strays = %d:\n%s", code, out)
 	}
-	removed := regexp.MustCompile(`(?m)^  removed: 5 strays, [0-9.]+ [KM]iB \(largest: ` + regexp.QuoteMeta(idle[3]) + ` `).FindString(out)
-	kept := regexp.MustCompile(`(?m)^  kept: 5 strays, [0-9.]+ [KM]?i?B: written less than a day ago; a stray is removed once it has been idle a day; run metasystem disk clean --preview tomorrow, then --strays \(largest: `).FindString(out)
+	removed := regexp.MustCompile(`removed: 5 strays, [0-9.]+ [KM]iB \(largest: ` + regexp.QuoteMeta(bed.shown(idle[3])) + ` `).FindString(flat)
+	kept := regexp.MustCompile(`kept: 5 strays, [0-9.]+ [KM]?i?B: written less than a day ago; a stray is removed once it has been idle a day; run metasystem disk clean --preview tomorrow, then --strays \(largest: `).FindString(flat)
 	if removed == "" || kept == "" {
 		t.Fatalf("the strays were not grouped with their count, size and largest:\n%s", out)
 	}
 	named := 0
 	for _, path := range append(append([]string{}, idle...), young...) {
-		named += strings.Count(out, path)
+		named += strings.Count(flat, bed.shown(path)+" ")
 	}
 	if named != 6 {
 		t.Fatalf("the grouped output named %d paths, want the three largest of each group:\n%s", named, out)
 	}
 	code, out = bed.run("disk", "clean", "--strays", "--verbose")
-	if code != 0 || !strings.Contains(out, "already gone: "+idle[0]) || !strings.Contains(out, "kept "+young[4]+": written ") {
+	if code != 0 || !strings.Contains(flatPage(out), "already gone: "+bed.shown(idle[0])) || !strings.Contains(flatPage(out), "kept "+bed.shown(young[4])+": written ") {
 		t.Fatalf("strays --verbose = %d:\n%s", code, out)
 	}
 	for _, path := range append(append([]string{}, idle...), young...) {
-		if !strings.Contains(out, path) {
+		if !strings.Contains(out, bed.shown(path)) {
 			t.Fatalf("--verbose did not name %s:\n%s", path, out)
 		}
 	}
@@ -390,7 +391,7 @@ func TestDiskReleaseByAPerson(t *testing.T) {
 	helmMust(t, err, critical.Write(loaded), critical.Release())
 	bed.census = &diskstore.UseCensus{Taken: true, Processes: []diskstore.CensusProcess{{Pid: 5151, UID: 501, Command: "vim notes", Cwd: record.Path}}}
 	code, out := bed.run("disk", "clean", "--release", record.ID)
-	if code != 0 || !strings.Contains(out, "kept: "+record.Path+": in use by pid 5151") || !strings.Contains(out, "--release "+record.ID+" once pid 5151 has ended") {
+	if flat := flatPage(out); code != 0 || !strings.Contains(flat, "kept: "+bed.shown(record.Path)+": in use by pid 5151") || !strings.Contains(flat, "--release "+record.ID+" once pid 5151 has ended") {
 		t.Fatalf("a held release = %d:\n%s", code, out)
 	}
 	bed.census = &diskstore.UseCensus{Taken: true, Unreadable: []diskstore.CensusGap{{Pid: 7, Reason: "unreadable"}}}
@@ -523,7 +524,7 @@ func TestDiskCleanSummaryTellsForgottenAndUnknown(t *testing.T) {
 	}
 	result.Forgotten = []string{"/private/var/folders/T/tmp.a/repo", "/private/var/folders/T/tmp.b/repo"}
 	code, out := bed.run("disk", "clean")
-	if code != 0 || !strings.Contains(out, "forgot the stale registrations of 2 removed checkouts") {
+	if code != 0 || !strings.Contains(flatPage(out), "forgot the stale registrations of 2 removed checkouts") {
 		t.Fatalf("disk clean = %d:\n%s", code, out)
 	}
 	if code, out := bed.run("disk", "clean", "--preview"); code != 0 || strings.Contains(out, "forgot") {
@@ -534,7 +535,7 @@ func TestDiskCleanSummaryTellsForgottenAndUnknown(t *testing.T) {
 	}
 	result = steward.DiskPassResult{Machine: diskstore.Report{HostUnknown: []string{"host settings unknown: /m1b unreadable: denied; run metasystem settings check there"}}}
 	code, out = bed.run("disk", "clean")
-	if code != 0 || strings.Contains(out, "every store is kept") || !strings.Contains(out, "the machine pass acted on nothing: the host settings are unknown") {
+	if code != 0 || strings.Contains(out, "every store is kept") || !strings.Contains(flatPage(out), "the machine pass acted on nothing: the host settings are unknown") {
 		t.Fatalf("an unknown host = %d:\n%s", code, out)
 	}
 }

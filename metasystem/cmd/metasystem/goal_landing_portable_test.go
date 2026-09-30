@@ -711,7 +711,7 @@ func TestCommandApplicationThreePrefixReceiptConsumer(t *testing.T) {
 	if err := json.Unmarshal(tipOutput, &tip); err != nil || !tip.Delivery.Sufficient {
 		t.Fatalf("real native tip proof is incomplete: %+v err=%v", tip.Delivery, err)
 	}
-	reportOutput := fixture.requireCommand("test", "status", "--result", tipResultPath, "--expensive-ms", "1")
+	reportOutput := fixture.requireCommand("test", "status", "--result", tipResultPath, "--expensive-ms", "1", "--json")
 	var cost proofrun.TestCostSummary
 	if err := json.Unmarshal([]byte(reportOutput), &cost); err != nil || cost.NativeTestGroups != 3 || cost.LaunchCounts.Test != 3 {
 		t.Fatalf("read-only public cost report=%+v err=%v", cost, err)

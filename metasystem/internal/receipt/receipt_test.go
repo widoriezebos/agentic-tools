@@ -605,7 +605,7 @@ func TestCheck(t *testing.T) {
 
 	fresh := fmt.Sprintf("%d|x|RECEIPT|type=other|outcome=parked|note=\n", fixedNow().Unix())
 	os.WriteFile(opts.File, []byte(fresh), 0o644)
-	if result := Check(opts); result.Code != 0 || result.Out[0] != "retro not due: 1 receipts, 0 days since last retro" {
+	if result := Check(opts); result.Code != 0 || result.Out[0] != "retro not due: 1 receipt, 0 days since the last retro" {
 		t.Fatalf("fresh receipt wrong: %+v", result)
 	}
 

@@ -1,0 +1,24 @@
+What MetaSystem keeps on this computer's disk
+
+This checkout  metasystem · last pass Mon 23:00
+  nothing kept
+
+This machine  last pass Mon 23:00
+  tmpdir strays: 2 items, 4.0 KiB
+  evidence bound: 3 items
+  stray: tmp/metasystem-audit.old, 4.0 KiB, idle 3d00h: engine-prefixed entry no store owns; run
+    metasystem disk clean --preview, then metasystem disk clean --strays
+  evidence root /Volumes/Evidence/metasystem-evidence: root of ~/GitHub/agentic-tools-m1e, 0.00 GiB
+  not the engine's: tmp/tmp.* (1 bare tmp.* entries: not engine-named, never touched)
+
+Caches
+  the machine caches are within their caps: nothing removed
+  engine Go cache: absent (user-cache/go-build does not exist)
+  engine staticcheck cache: absent (user-cache/staticcheck does not exist)
+  delegate Go cache: absent (user-cache/metasystem-delegate-go-build does not exist)
+  delegate staticcheck cache: absent (user-cache/metasystem-delegate-staticcheck does not exist)
+
+Evidence
+  root   /Volumes/Evidence/metasystem-evidence  set in metasystem.conf.local
+
+→ metasystem disk clean --preview  shows what a pass would release

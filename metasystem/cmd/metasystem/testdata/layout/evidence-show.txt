@@ -1,0 +1,6 @@
+This checkout keeps 1 evidence item · 32.0 KiB of its 10.0 GiB cap
+
+  root        evidence  segment 0a5c41b756db
+  age floor   90 days
+  items       1 past the age floor and clear · 0 held by an exclusion
+  ledger      judged on the accepted ledger 9498700a9

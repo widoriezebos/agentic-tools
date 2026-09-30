@@ -1,0 +1,6 @@
+2 ledger lines no retro has read · token 2:df115d703ba9
+
+Mon 13:00   implement   shipped   verbs-match-intent: unit 1
+Mon 14:00   implement   shipped   verbs-match-intent: unit 2
+
+→ metasystem receipt retro SUMMARY --covered 2:df115d703ba9  records that a retro read them

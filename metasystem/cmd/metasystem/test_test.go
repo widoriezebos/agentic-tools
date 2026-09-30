@@ -1442,8 +1442,8 @@ func TestFrozenPolicyProbeRefusalNamesResultPathPredicate(t *testing.T) {
 		Plan:        testpolicy.Plan{SelectedGroups: []string{"literal"}},
 	}
 	refusal := frozenPolicyProbeRefusal(request, "/var/folders/metasystem-policy-probe.fixture/result.json")
-	if !strings.Contains(refusal, `result directory="/var/folders/metasystem-policy-probe.fixture"`) ||
-		!strings.Contains(refusal, `project root="/private/var/folders/metasystem-policy-probe.fixture"`) {
+	if !strings.Contains(refusal, `result goes to "/var/folders/metasystem-policy-probe.fixture"`) ||
+		!strings.Contains(refusal, `project directory "/private/var/folders/metasystem-policy-probe.fixture"`) {
 		t.Fatalf("result path predicate diagnostic=%q", refusal)
 	}
 }

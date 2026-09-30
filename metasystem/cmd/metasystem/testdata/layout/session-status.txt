@@ -1,0 +1,16 @@
+! supervision needs repair: no steward runner is recorded
+  → metasystem system start
+
+Stop was allowed · no task in flight · observed 10:50
+
+Seat actions
+  ! claim the next ready goal
+    run   metasystem goal claim verbs-match-intent
+
+Plans  1 plan line older than 7 days: --verbose shows them
+  plans/work.md (open work, touched 2d ago): write the summary view
+
+Summary
+  finished   unknown for this turn
+  goals      1 claimable · 12 queued · no jobs running
+  health     1 alive · 1 dead · 0 unknown

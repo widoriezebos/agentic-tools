@@ -1,0 +1,12 @@
+retro not due: 3 receipts, 1 day since the last retro
+
+Since the last retro
+  receipts              3
+  shipped               2
+  reworked              1
+  type implement        3
+  corrections           3
+  caught by verify      3
+  stop-loss triggered   0
+  critique waivers      0
+  span in days          0.1

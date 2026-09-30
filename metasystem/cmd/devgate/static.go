@@ -150,10 +150,12 @@ func (g *gateRun) static(proofOut string) int {
 	g.dropScratch()
 	if g.installation {
 		fmt.Fprintln(d.stdout, "go gate: fast checks passed; landing still needs the full gate\nrun: go run ./cmd/devgate gate")
-		g.verboseLine("checked: dependency ratchet, parallel ratchet, gofmt, shell parse, vet, staticcheck, dead code, refusal register, SessionStart exit audit, Stop decision surface audit, build")
+		g.verboseLine("checked: dependency ratchet, parallel ratchet, gofmt, shell parse, vet, staticcheck,")
+		g.verboseLine("  dead code, refusal register, SessionStart exit audit, Stop decision surface audit, build")
 	} else {
 		fmt.Fprintln(d.stdout, "go gate: fast checks passed; landing still needs the full gate\nrun: go run ./cmd/devgate gate")
-		g.verboseLine("checked: dependency ratchet, parallel ratchet, gofmt, shell parse, vet, staticcheck, dead code, refusal register, build")
+		g.verboseLine("checked: dependency ratchet, parallel ratchet, gofmt, shell parse, vet, staticcheck,")
+		g.verboseLine("  dead code, refusal register, build")
 	}
 	return 0
 }
@@ -315,7 +317,7 @@ func (g *gateRun) collectStatic() int {
 	// retained proof (the homes are declared inputs of fast-static-build).
 	if g.scratch != "" && g.installation {
 		if out, ok := d.owners.projectCheck(g.root); !ok {
-			reds = append(reds, "project check refused the declared memory (docs/design/design-obligation-gate.md, A design is a record):\n"+strings.TrimRight(out, "\n"))
+			reds = append(reds, "the project check refused a design, decision or question record:\n"+strings.TrimRight(out, "\n"))
 		}
 	}
 

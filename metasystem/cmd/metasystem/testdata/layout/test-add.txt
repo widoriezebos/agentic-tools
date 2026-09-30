@@ -1,0 +1,1 @@
+✓ Added input go.work to group app-group in testing.json

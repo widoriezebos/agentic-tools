@@ -171,7 +171,7 @@ func Parse(data []byte, label string) (*Table, error) {
 			// A count line is NOT the separator: nothing may sit
 			// between the header and its separator row.
 			if expectSeparator {
-				return nil, fail("%s line %d: the canonical header must be followed immediately by its separator row, not the count line", label, n+1)
+				return nil, fail("%s line %d: the count line sits between the header and its separator row", label, n+1)
 			}
 			if countAt >= 0 {
 				return nil, fail("%s carries competing count lines (lines %d and %d); exactly one records the bookkeeping", label, countAt+1, n+1)
@@ -227,7 +227,7 @@ func Parse(data []byte, label string) (*Table, error) {
 			return nil, err
 		}
 		if prev, dup := seenIDs[row.CriterionID]; dup {
-			return nil, fail("%s line %d: criterion id %q already has a row at line %d — two rows for one criterion are contradictory, never additive", label, n+1, row.CriterionID, prev)
+			return nil, fail("%s line %d: criterion id %q already has a row at line %d; one criterion takes one row", label, n+1, row.CriterionID, prev)
 		}
 		seenIDs[row.CriterionID] = n + 1
 		table.Rows = append(table.Rows, *row)
@@ -264,7 +264,7 @@ func parseRow(cells []string, label string, line int) (*Row, error) {
 		return nil, fail("%s line %d: criterion id %q is outside the identity grammar [A-Za-z0-9._-]+", label, line, row.CriterionID)
 	}
 	if row.ProofID == "" {
-		return nil, fail("%s line %d: the proof id cell is empty", label, line)
+		return nil, fail("%s line %d: the %s cell is empty", label, line, canonHeader[2])
 	}
 	if row.Kind != KindRepo && row.Kind != KindExternal {
 		return nil, fail("%s line %d: kind %q is neither %q nor %q", label, line, row.Kind, KindRepo, KindExternal)
@@ -286,14 +286,14 @@ func parseRow(cells []string, label string, line int) (*Row, error) {
 			return nil, fail("%s line %d: a %s row must carry its executable command — %q belongs to planned-floating alone", label, line, row.Status, PlannedCommand)
 		}
 		if row.Kind == KindRepo && len(row.Deps) == 0 {
-			return nil, fail("%s line %d: a %s repo row must declare its repo deps, first entry the proof's entrypoint file", label, line, row.Status)
+			return nil, fail("%s line %d: a %s repo row must declare its repo deps, first the file its command runs", label, line, row.Status)
 		}
 		if row.Kind == KindExternal && row.Source == "" {
 			return nil, fail("%s line %d: a %s external row must name its evidence source", label, line, row.Status)
 		}
 	case StatusPlannedFloating:
 		if len(row.Deps) != 0 {
-			return nil, fail("%s line %d: a planned-floating row declares no deps — its whole meaning is that no proof exists yet", label, line)
+			return nil, fail("%s line %d: a planned-floating row declares no deps, since nothing checks it yet", label, line)
 		}
 		if row.Command != PlannedCommand {
 			return nil, fail("%s line %d: a planned-floating row's command cell is exactly %q", label, line, PlannedCommand)

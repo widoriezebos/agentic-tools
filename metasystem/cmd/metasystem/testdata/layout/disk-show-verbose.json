@@ -1,0 +1,259 @@
+exit 0
+--
+{
+  "schemaVersion": 1,
+  "verb": "disk show",
+  "targets": [
+    {
+      "kind": "checkout",
+      "id": "/Users/wido/GitHub/agentic-tools-m1e/metasystem"
+    }
+  ],
+  "outcome": "confirmed",
+  "summary": "what MetaSystem keeps on this computer's disk",
+  "data": {
+    "caches": [
+      {
+        "cache": "engine-go-build",
+        "root": "/Users/wido/GitHub/agentic-tools-m1e/user-cache/go-build",
+        "capBytes": 32212254720,
+        "keepHours": 12,
+        "passAt": "2026-09-28T21:00:00Z",
+        "durationMs": 0,
+        "endedBy": "absent",
+        "phase": "idle",
+        "checkpoint": {
+          "shard": "",
+          "lastName": "",
+          "bytesSoFar": 0
+        },
+        "bytesBefore": 0,
+        "bytesAfter": 0,
+        "keepWindowEntries": 0,
+        "keepWindowBytes": 0,
+        "entriesRemoved": 0,
+        "bytesRemoved": 0,
+        "asidesFinished": 0,
+        "movedSkips": 0,
+        "unknown": [],
+        "unknownCount": 0,
+        "minKeepMinutes": 120,
+        "minKeepEntries": 0,
+        "minKeepBytes": 0,
+        "overCap": false
+      },
+      {
+        "cache": "engine-staticcheck",
+        "root": "/Users/wido/GitHub/agentic-tools-m1e/user-cache/staticcheck",
+        "capBytes": 2147483648,
+        "keepHours": 12,
+        "passAt": "2026-09-28T21:00:00Z",
+        "durationMs": 0,
+        "endedBy": "absent",
+        "phase": "idle",
+        "checkpoint": {
+          "shard": "",
+          "lastName": "",
+          "bytesSoFar": 0
+        },
+        "bytesBefore": 0,
+        "bytesAfter": 0,
+        "keepWindowEntries": 0,
+        "keepWindowBytes": 0,
+        "entriesRemoved": 0,
+        "bytesRemoved": 0,
+        "asidesFinished": 0,
+        "movedSkips": 0,
+        "unknown": [],
+        "unknownCount": 0,
+        "minKeepMinutes": 120,
+        "minKeepEntries": 0,
+        "minKeepBytes": 0,
+        "overCap": false
+      },
+      {
+        "cache": "delegate-go-build",
+        "root": "/Users/wido/GitHub/agentic-tools-m1e/user-cache/metasystem-delegate-go-build",
+        "capBytes": 10737418240,
+        "keepHours": 12,
+        "passAt": "2026-09-28T21:00:00Z",
+        "durationMs": 0,
+        "endedBy": "absent",
+        "phase": "idle",
+        "checkpoint": {
+          "shard": "",
+          "lastName": "",
+          "bytesSoFar": 0
+        },
+        "bytesBefore": 0,
+        "bytesAfter": 0,
+        "keepWindowEntries": 0,
+        "keepWindowBytes": 0,
+        "entriesRemoved": 0,
+        "bytesRemoved": 0,
+        "asidesFinished": 0,
+        "movedSkips": 0,
+        "unknown": [],
+        "unknownCount": 0,
+        "minKeepMinutes": 120,
+        "minKeepEntries": 0,
+        "minKeepBytes": 0,
+        "overCap": false
+      },
+      {
+        "cache": "delegate-staticcheck",
+        "root": "/Users/wido/GitHub/agentic-tools-m1e/user-cache/metasystem-delegate-staticcheck",
+        "capBytes": 2147483648,
+        "keepHours": 12,
+        "passAt": "2026-09-28T21:00:00Z",
+        "durationMs": 0,
+        "endedBy": "absent",
+        "phase": "idle",
+        "checkpoint": {
+          "shard": "",
+          "lastName": "",
+          "bytesSoFar": 0
+        },
+        "bytesBefore": 0,
+        "bytesAfter": 0,
+        "keepWindowEntries": 0,
+        "keepWindowBytes": 0,
+        "entriesRemoved": 0,
+        "bytesRemoved": 0,
+        "asidesFinished": 0,
+        "movedSkips": 0,
+        "unknown": [],
+        "unknownCount": 0,
+        "minKeepMinutes": 120,
+        "minKeepEntries": 0,
+        "minKeepBytes": 0,
+        "overCap": false
+      }
+    ],
+    "checkout": {
+      "schema": "metasystem.disk-report/1",
+      "kind": "checkout",
+      "name": "/Users/wido/GitHub/agentic-tools-m1e/metasystem",
+      "at": "2026-09-28T21:00:00Z",
+      "mode": "apply",
+      "classes": [
+        {
+          "name": "stores in /Users/wido/GitHub/agentic-tools-m1e/metasystem/artifacts/agents/stores",
+          "items": 0
+        },
+        {
+          "name": "context handoffs",
+          "items": 0
+        },
+        {
+          "name": "usage call sessions",
+          "items": 0
+        },
+        {
+          "name": "engine pins",
+          "items": 0
+        },
+        {
+          "name": "unregistered job worktrees",
+          "items": 0
+        },
+        {
+          "name": "legacy candidate engines",
+          "items": 0
+        },
+        {
+          "name": "proof attempt payloads",
+          "items": 0
+        },
+        {
+          "name": "clones beside the checkout",
+          "items": 0
+        },
+        {
+          "name": "landing release sets",
+          "items": 0
+        },
+        {
+          "name": "batch release sets",
+          "items": 0
+        },
+        {
+          "name": "suite-failure bundles",
+          "items": 0
+        }
+      ],
+      "health": {
+        "status": "ok",
+        "reason": "free space is above the floor"
+      }
+    },
+    "machine": {
+      "schema": "metasystem.disk-report/1",
+      "kind": "machine",
+      "name": "machine",
+      "at": "2026-09-28T21:00:00Z",
+      "mode": "apply",
+      "classes": [
+        {
+          "name": "stores in /Users/wido/GitHub/agentic-tools-m1e/home/.metasystem/stores",
+          "items": 0
+        },
+        {
+          "name": "unit records",
+          "items": 0
+        },
+        {
+          "name": "launch store",
+          "items": 0
+        },
+        {
+          "name": "tmpdir strays",
+          "items": 2,
+          "bytes": 4096
+        },
+        {
+          "name": "evidence bound",
+          "items": 3
+        }
+      ],
+      "strays": [
+        {
+          "class": "tmpdir strays",
+          "key": "/Users/wido/GitHub/agentic-tools-m1e/tmp/metasystem-audit.old",
+          "path": "/Users/wido/GitHub/agentic-tools-m1e/tmp/metasystem-audit.old",
+          "bytes": 4096,
+          "device": 16777233,
+          "inode": 1622845050,
+          "verdict": {
+            "decision": "keep",
+            "reason": "engine-prefixed entry no store owns",
+            "command": "metasystem disk clean --preview, then metasystem disk clean --strays"
+          },
+          "stray": true,
+          "idleSeconds": 259200
+        }
+      ],
+      "foreign": [
+        {
+          "class": "tmpdir strays",
+          "key": "/Users/wido/GitHub/agentic-tools-m1e/tmp/tmp.*",
+          "path": "/Users/wido/GitHub/agentic-tools-m1e/tmp/tmp.*",
+          "verdict": {
+            "decision": "",
+            "reason": "1 bare tmp.* entries: not engine-named, never touched"
+          },
+          "foreign": true
+        }
+      ],
+      "evidenceRoots": [
+        "/Volumes/Evidence/metasystem-evidence: root of /Users/wido/GitHub/agentic-tools-m1e, 0.00 GiB"
+      ],
+      "health": {
+        "status": "ok",
+        "reason": "free space is above the floor"
+      }
+    }
+  }
+}
+
+--

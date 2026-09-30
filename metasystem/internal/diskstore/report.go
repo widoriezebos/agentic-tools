@@ -170,12 +170,52 @@ func MachineReportPath(homeStateRoot string) string {
 // Lines renders the report for a person: short lines, a finding repeated
 // for many items one line with its count and three of them, each with its
 // reason and the command to run.
-func (r Report) Lines() []string { return r.render(false) }
+func (r Report) Lines() []string { return r.render(false, false) }
 
 // VerboseLines is Lines with every item on its own line (--verbose).
-func (r Report) VerboseLines() []string { return r.render(true) }
+func (r Report) VerboseLines() []string { return r.render(true, false) }
 
-func (r Report) render(verbose bool) []string {
+// Rows are the report as a person's terminal shows it, under a heading the
+// caller prints (disk show, disk clean): no title and no indent, counted
+// nouns, ages as durations, only the classes that hold something, and an
+// incomplete use census as a count of the processes it could not inspect.
+// verbose adds every class, every item and the census's processes.
+func (r Report) Rows(verbose bool) []string {
+	if r.Running {
+		return []string{"a pass is running; its report follows when it ends"}
+	}
+	var rows []string
+	for _, line := range r.render(verbose, true)[1:] {
+		rows = append(rows, CountedNouns(strings.TrimPrefix(line, "  ")))
+	}
+	return rows
+}
+
+// itemCounts are the counts other owners write as "N item(s)".
+var itemCounts = regexp.MustCompile(`\b(\d+) ([a-z]+)\(s\)`)
+
+// CountedNouns spells an owner's "1 item(s)" as "1 item" and "2 item(s)"
+// as "2 items", for a person's terminal.
+func CountedNouns(text string) string {
+	return itemCounts.ReplaceAllStringFunc(text, func(match string) string {
+		parts := itemCounts.FindStringSubmatch(match)
+		if parts[1] == "1" {
+			return parts[1] + " " + parts[2]
+		}
+		return parts[1] + " " + parts[2] + "s"
+	})
+}
+
+// personAge is a Go duration a report records as text ("1h0m0s"), as a
+// person reads it; one that does not parse is shown as recorded.
+func personAge(recorded string) string {
+	if age, err := time.ParseDuration(recorded); err == nil {
+		return textui.Duration(age)
+	}
+	return recorded
+}
+
+func (r Report) render(verbose, person bool) []string {
 	var lines []string
 	title := "machine"
 	if r.Kind == "checkout" {
@@ -184,22 +224,43 @@ func (r Report) render(verbose bool) []string {
 	if r.Running {
 		return []string{title + ": a pass is running; its report follows when it ends"}
 	}
+	age := func(d time.Duration) string { return d.String() }
+	if person {
+		age = textui.Duration
+	}
 	lines = append(lines, fmt.Sprintf("%s: %s pass at %s", title, r.Mode, r.At.Format(time.RFC3339)))
 	for _, volume := range r.Volumes {
 		state := "above the floor"
 		if volume.BelowFloor {
 			state = "BELOW the floor"
+			if person {
+				state = "below the floor"
+			}
 		}
 		lines = append(lines, fmt.Sprintf("  free: %s on %s, %s of %s", textui.Bytes(volume.FreeBytes), volume.Path, state, textui.Bytes(volume.FloorBytes)))
 	}
 	if r.Floor != nil && r.Floor.Active {
-		lines = append(lines, "  floor mode: ageing lowered to "+r.Floor.MinAge+"; "+r.Floor.Trim)
+		minAge := r.Floor.MinAge
+		if person {
+			minAge = personAge(minAge)
+		}
+		lines = append(lines, "  floor mode: ageing lowered to "+minAge+"; "+r.Floor.Trim)
 		for _, consumer := range r.Floor.Consumers {
-			lines = append(lines, "  consumer: "+consumer.Line())
+			line := consumer.Line()
+			if person {
+				line = consumer.line(textui.Duration)
+			}
+			lines = append(lines, "  consumer: "+line)
 		}
 	}
 	for _, class := range r.Classes {
+		if person && !verbose && class.Items == 0 && class.Bytes == 0 && class.Released == 0 {
+			continue
+		}
 		line := fmt.Sprintf("  %s: %d item(s)", class.Name, class.Items)
+		if person {
+			line = "  " + class.Name + ": " + textui.Count(class.Items, "item", "items")
+		}
 		if class.Bytes > 0 {
 			line += ", " + textui.Bytes(class.Bytes)
 		}
@@ -219,7 +280,7 @@ func (r Report) render(verbose bool) []string {
 	lines = append(lines, groupedReleases("would release", planned, verbose)...)
 	lines = append(lines, groupedLines("kept", r.Kept, verbose)...)
 	lines = append(lines, groupedLines("pending", r.Pending, verbose)...)
-	lines = append(lines, groupedStrays(r.Strays, verbose)...)
+	lines = append(lines, groupedStrays(r.Strays, verbose, age)...)
 	for _, root := range r.EvidenceRoots {
 		lines = append(lines, "  evidence root "+root)
 	}
@@ -246,7 +307,13 @@ func (r Report) render(verbose bool) []string {
 		if r.Census.Taken {
 			reason = "incomplete: " + strings.Join(r.Census.GapLines(), "; ")
 		}
-		lines = append(lines, "  use census "+reason)
+		if person && !verbose && r.Census.Taken {
+			// A process list of hundreds of system pids is one count.
+			lines = append(lines, fmt.Sprintf("  use census: %s could not be inspected (--verbose names them)",
+				textui.Count(len(r.Census.Unreadable), "process", "processes")))
+		} else {
+			lines = append(lines, "  use census "+reason)
+		}
 	}
 	if r.Census != nil && len(r.Census.NotOurs) > 0 {
 		lines = append(lines, fmt.Sprintf("  use census: unreadable, not ours: %d", len(r.Census.NotOurs)))
@@ -338,7 +405,7 @@ var strayAgePattern = regexp.MustCompile(`, written [0-9hms.]+ ago:`)
 // same reason (whatever their ages) and command are one line with their
 // count, total size and the three largest, at the place of the first.
 // Verbose gives each stray its own line.
-func groupedStrays(strays []Item, verbose bool) []string {
+func groupedStrays(strays []Item, verbose bool, age func(time.Duration) string) []string {
 	type group struct {
 		reason string
 		items  []Item
@@ -363,7 +430,7 @@ func groupedStrays(strays []Item, verbose bool) []string {
 		if len(g.items) == 1 {
 			stray := g.items[0]
 			rendered = append(rendered, fmt.Sprintf("  stray: %s, %s, idle %s: %s; run %s", stray.Path, textui.Bytes(stray.Bytes),
-				(time.Duration(stray.IdleSecs)*time.Second).String(), stray.Verdict.Reason, stray.Verdict.Command))
+				age(time.Duration(stray.IdleSecs)*time.Second), stray.Verdict.Reason, stray.Verdict.Command))
 			continue
 		}
 		largest := append([]Item(nil), g.items...)

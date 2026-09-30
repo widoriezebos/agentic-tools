@@ -19,6 +19,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/candidateengine"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/digest"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginecause"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
@@ -30,6 +31,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/strictjson"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
 
 func runTestWorkerCapabilities(args []string, stdout, stderr io.Writer) int {
@@ -57,20 +59,27 @@ func runTestList(args []string, stdout, stderr io.Writer) int {
 	}
 	installation, contract, path, err := testrun.LoadContract(*root)
 	if err != nil {
+		page := passthroughPage(stderr, *root, false)
 		if _, statErr := os.Stat(*root); errors.Is(statErr, fs.ErrNotExist) {
-			fmt.Fprintf(stderr, "metasystem test list: %s does not exist; nothing was listed\n", *root)
-			return 1
+			page.Refusal(page.Env().Path(*root)+" does not exist; nothing was listed",
+				textui.Hint{Argv: []string{"metasystem", "test", "list"}, Reason: "run it inside the checkout, or name it with --repo"})
+		} else {
+			page.Refusal("the testing contract cannot be read: "+err.Error(), textui.Hint{Argv: []string{"metasystem", "settings", "check"}, Reason: "names what is wrong"})
 		}
-		fmt.Fprintln(stderr, "metasystem test list:", err)
+		printPage(stderr, page)
 		return 1
 	}
 	if *jsonOutput {
 		writeJSONLine(stdout, stderr, map[string]any{"schemaVersion": 1, "installation": installation, "contract": path, "groups": contract.Groups})
 		return 0
 	}
+	page := passthroughPage(stdout, installation, false)
+	page.Headline(textui.Count(len(contract.Groups), "test group", "test groups")+" in the testing contract", page.Env().Path(path))
+	table := page.Section("", "").Table(textui.Column{Title: "GROUP"}, textui.Column{Title: "KIND"}, textui.Column{Title: "ADAPTER", Flex: true})
 	for _, group := range contract.Groups {
-		fmt.Fprintf(stdout, "%s\t%s\t%s\n", group.ID, group.Kind, group.Adapter)
+		table.Row(textui.Plain(group.ID), textui.Plain(group.Kind), textui.Plain(group.Adapter))
 	}
+	printPage(stdout, page)
 	return 0
 }
 
@@ -91,7 +100,7 @@ func runTestPlanAs(name string, args []string, stdout, stderr io.Writer) int {
 		// The refusal a person reads; --verbose adds its detail (code, cause
 		// and facts), and --json a line with it that a planning child's
 		// parent reads.
-		printTestingRefusal(stderr, err, request.Verbose)
+		printTestingRefusalAs(stderr, err, request, jsonOutput)
 		if jsonOutput {
 			writeJSONLine(stdout, stderr, map[string]string{"error": err.Error(), "detail": refusal.Detail(err)})
 		}
@@ -101,11 +110,60 @@ func runTestPlanAs(name string, args []string, stdout, stderr io.Writer) int {
 	if jsonOutput {
 		writeJSONLine(stdout, stderr, output)
 	} else {
-		fmt.Fprintf(stdout, "TEST-PLAN mode=%s required=%s tree=%s groups=%s\n", prepared.Plan.ExecutedMode,
-			prepared.Plan.RequiredMode, prepared.CandidateTree, strings.Join(prepared.Plan.SelectedGroups, ","))
-		printUnmatchedInputsTo(stderr, prepared.UnmatchedInputs)
+		page := passthroughPage(stdout, prepared.Installation, request.Verbose)
+		layTestPlan(page, output)
+		printPage(stdout, page)
 	}
 	return 0
+}
+
+// layTestPlan is a test plan as a person reads it: the groups that would
+// run on the tree and in which mode, the ones it must run, why others are
+// left out (--verbose), and the inputs that match no file.
+func layTestPlan(page *textui.Page, output testrun.PlanOutput) {
+	plan := output.Plan
+	mode := "mode " + string(plan.ExecutedMode)
+	if plan.RequiredMode != "" && plan.RequiredMode != plan.ExecutedMode {
+		mode += " (" + string(plan.RequiredMode) + " required)"
+	}
+	page.Headline(textui.Count(len(plan.SelectedGroups), "test group", "test groups")+" would run on tree "+textui.SHA(output.CandidateTree), mode)
+	required := map[string]bool{}
+	for _, id := range plan.RequiredGroups {
+		required[id] = true
+	}
+	var must, also []string
+	for _, id := range plan.SelectedGroups {
+		if required[id] {
+			must = append(must, id)
+		} else {
+			also = append(also, id)
+		}
+	}
+	section := page.Section("Groups", "")
+	if len(must) > 0 {
+		section.KV("required", textui.Plain(strings.Join(must, ", ")))
+	}
+	if len(also) > 0 {
+		section.KV("also", textui.Plain(strings.Join(also, ", ")))
+	}
+	if len(plan.AffectedSurfaces) > 0 {
+		section.KV("surfaces", textui.Plain(strings.Join(plan.AffectedSurfaces, ", ")))
+	}
+	for _, uncertain := range plan.Uncertainty {
+		section.KV("unsure", textui.Plain(uncertain))
+	}
+	if page.Verbose() && len(plan.Omissions) > 0 {
+		left := page.Section("Left out", "")
+		for _, omission := range plan.Omissions {
+			left.KV(omission.Group, textui.Plain(omission.Reason))
+		}
+	}
+	if len(output.UnmatchedInputs) > 0 {
+		unmatched := page.Section("Inputs that match no file", "")
+		for _, item := range output.UnmatchedInputs {
+			unmatched.KV(item.Group, textui.Plain(item.Pattern))
+		}
+	}
 }
 
 func admitTestingRun(request testrun.SelectionRequest, admission proofLaunchAdmission) (proofrun.Attempt, proofrun.LaunchResult, bool, error) {
@@ -296,6 +354,8 @@ func parseTestingSelection(name string, args []string, execution bool, stdout, s
 
 var prepareTestingForCommand = testrun.Prepare
 
+// printUnmatchedInputsTo names, for a test run, the group inputs that match
+// no file.
 func printUnmatchedInputsTo(stderr io.Writer, values []testrun.UnmatchedInput) {
 	for _, item := range values {
 		fmt.Fprintf(stderr, "TEST-INPUT-NO-MATCH group=%q pattern=%q\n", item.Group, item.Pattern)
@@ -361,7 +421,7 @@ func runTestRunWith(invocation testRunInvocation, args []string) (exit int) {
 	request.CallerPID = invocation.callerPID
 	prepared, err := prepareTestingForCommand(request)
 	if err != nil {
-		printTestingRefusal(invocation.stderr, err, request.Verbose)
+		printTestingRefusal(invocation.stderr, err, request)
 		if errors.Is(err, testrun.ErrWorkerPolicyUnsupported) {
 			return proofrun.ExitAdmissionRefused
 		}
@@ -871,19 +931,19 @@ func runTestWorkerWithCandidateOpener(args []string, opener func(string, string)
 func frozenPolicyProbeRefusal(request proofrun.TestRunRequest, resultPath string) string {
 	switch {
 	case request.Contract.SchemaVersion != 1:
-		return fmt.Sprintf("contract schema=%d, want 1", request.Contract.SchemaVersion)
+		return fmt.Sprintf("its contract has schema %d, not 1", request.Contract.SchemaVersion)
 	case len(request.Contract.Groups) != 1:
-		return fmt.Sprintf("contract group count=%d, want 1", len(request.Contract.Groups))
+		return fmt.Sprintf("its contract has %d groups, not 1", len(request.Contract.Groups))
 	case request.Contract.Groups[0].ID != "literal":
-		return fmt.Sprintf("contract group=%q, want literal", request.Contract.Groups[0].ID)
+		return fmt.Sprintf("its contract's group is %q, not literal", request.Contract.Groups[0].ID)
 	case len(request.Plan.SelectedGroups) != 1:
-		return fmt.Sprintf("selected group count=%d, want 1", len(request.Plan.SelectedGroups))
+		return fmt.Sprintf("its plan selects %d groups, not 1", len(request.Plan.SelectedGroups))
 	case request.Plan.SelectedGroups[0] != "literal":
-		return fmt.Sprintf("selected group=%q, want literal", request.Plan.SelectedGroups[0])
+		return fmt.Sprintf("its plan selects %q, not literal", request.Plan.SelectedGroups[0])
 	case !strings.HasPrefix(filepath.Base(request.ProjectRoot), "metasystem-policy-probe."):
-		return fmt.Sprintf("project root base=%q lacks metasystem-policy-probe prefix", filepath.Base(request.ProjectRoot))
+		return fmt.Sprintf("its project directory %q is not named metasystem-policy-probe.*", filepath.Base(request.ProjectRoot))
 	case filepath.Dir(resultPath) != request.ProjectRoot:
-		return fmt.Sprintf("result directory=%q differs from project root=%q", filepath.Dir(resultPath), request.ProjectRoot)
+		return fmt.Sprintf("its result goes to %q, outside its project directory %q", filepath.Dir(resultPath), request.ProjectRoot)
 	default:
 		return ""
 	}
@@ -901,8 +961,14 @@ func runTestVerifyAs(name string, args []string, stdout, stderr io.Writer) int {
 		return status
 	}
 	if request.Tree == "" {
-		fmt.Fprintf(stderr, "%s needs the tree to check; nothing was read\nrun: metasystem test status --tree TREE\n", commandLabel(name))
+		page := passthroughPage(stderr, request.Root, request.Verbose)
+		page.Refusal(commandLabel(name)+" needs the tree to check; nothing was read",
+			textui.Hint{Argv: []string{"metasystem", "test", "status", "--tree", "TREE"}, Reason: "TREE is the exact tree, as git write-tree prints it"})
+		printPage(stderr, page)
 		return 2
+	}
+	if _, public := publicCommand(name); public && !jsonOutput {
+		return testStatusTo(stdout, stderr, request)
 	}
 	return testVerifyTo(stdout, stderr, request, jsonOutput)
 }
@@ -913,7 +979,9 @@ func testVerifyTo(stdout, stderr io.Writer, request testrun.SelectionRequest, js
 	result, err := verifyRetainedTesting(request)
 	if err != nil {
 		printMovedProofInputsWithoutCandidateEngine(stderr, request)
-		printTestingRefusal(stderr, err, request.Verbose)
+		// The internal verify and the landing path read these two lines as
+		// they always were.
+		printTestingRefusalAs(stderr, err, request, true)
 		return 1
 	}
 	if jsonOutput {
@@ -927,6 +995,36 @@ func testVerifyTo(stdout, stderr io.Writer, request testrun.SelectionRequest, js
 			strings.Join(result.Delivery.MissingGroups, ","), request.Root, request.GoalID, result.CandidateTree)
 		return 1
 	}
+	return 0
+}
+
+// testStatusTo is test status for a person: whether the tree is proven for
+// delivery, or which groups no passing run covers and the run that covers
+// them; it launches nothing.
+func testStatusTo(stdout, stderr io.Writer, request testrun.SelectionRequest) int {
+	result, err := verifyRetainedTesting(request)
+	if err != nil {
+		printMovedProofInputsWithoutCandidateEngine(stderr, request)
+		printTestingRefusal(stderr, err, request)
+		return 1
+	}
+	if !result.Delivery.Sufficient {
+		printMovedProofInputs(stderr, request, result)
+		retry := []string{"metasystem", "test", "run", "--root", request.Root}
+		if request.GoalID != "" {
+			retry = append(retry, "--goal", request.GoalID)
+		}
+		page := passthroughPage(stderr, request.Root, request.Verbose)
+		page.Refusal(fmt.Sprintf("no passing test run covers %s on tree %s: %s", textui.Count(len(result.Delivery.MissingGroups), "group", "groups"),
+			textui.SHA(result.CandidateTree), strings.Join(result.Delivery.MissingGroups, ", ")),
+			textui.Hint{Argv: append(retry, "--tree", result.CandidateTree, "--mode", "auto"), Reason: "runs them"})
+		printPage(stderr, page)
+		return 1
+	}
+	page := passthroughPage(stdout, request.Root, request.Verbose)
+	page.Mark(textui.Done, fmt.Sprintf("Tree %s is proven for delivery", textui.SHA(result.CandidateTree)))
+	page.Facts(textui.KV{Key: "groups", Value: []textui.Span{textui.Plain(strings.Join(result.SelectedGroups, ", "))}})
+	printPage(stdout, page)
 	return 0
 }
 
@@ -1033,17 +1131,56 @@ const movedInputsCode = "proof-input-moved-after-receipt"
 
 func printMovedInputsCode(stderr io.Writer, verbose bool) {
 	if verbose {
-		fmt.Fprintln(stderr, "  code "+movedInputsCode)
+		fmt.Fprintln(stderr, "  "+movedInputsCode)
 	}
 }
 
 // printTestingRefusal prints a testing refusal as a person reads it, and
-// with verbose the detail behind it: the code, the cause and its facts.
-func printTestingRefusal(stderr io.Writer, err error, verbose bool) {
-	fmt.Fprintln(stderr, err)
-	if detail := refusal.Detail(err); verbose && detail != "" {
-		fmt.Fprintln(stderr, "  "+detail)
+// with --verbose the detail behind it: the code, the cause and its facts.
+// When the pinned engine that chooses the tests failed, its remedy is that
+// engine's internal command; a person runs the public test plan with
+// --verbose instead, which shows the engine's own words and names the
+// internal command.
+func printTestingRefusal(stderr io.Writer, err error, request testrun.SelectionRequest) {
+	printTestingRefusalAs(stderr, err, request, false)
+}
+
+// printTestingRefusalAs is printTestingRefusal; with plain it is the two
+// lines --json has always printed beside its JSON line.
+func printTestingRefusalAs(stderr io.Writer, err error, request testrun.SelectionRequest, plain bool) {
+	text, detail := err.Error(), refusal.Detail(err)
+	var engine *enginecause.Refusal
+	if errors.As(err, &engine) && (engine.Token == "child-failed" || engine.Token == "child-output") {
+		// An engine that refused in its own two lines already names what
+		// resolves it; otherwise the public plan shows why.
+		text = engine.Reason
+		if !strings.Contains(text, "\nrun: ") {
+			retry := []string{"metasystem", "test", "plan", "--verbose"}
+			if request.GoalID != "" {
+				retry = append(retry, "--goal", request.GoalID)
+			}
+			if request.Tree != "" {
+				retry = append(retry, "--tree", request.Tree)
+			}
+			text += "\nrun: " + shellCommand(retry)
+		}
+		// The detail names the engine and the command it ran.
+		detail = engine.Detail()
 	}
+	if plain {
+		fmt.Fprintln(stderr, text)
+		if request.Verbose && detail != "" {
+			fmt.Fprintln(stderr, "  "+detail)
+		}
+		return
+	}
+	reason, remedy, _ := strings.Cut(text, "\nrun: ")
+	page := passthroughPage(stderr, request.Root, request.Verbose)
+	page.Refusal(reason, textui.Hint{Reason: remedy})
+	if request.Verbose && detail != "" {
+		page.Section("Details", "").Text(detail)
+	}
+	printPage(stderr, page)
 }
 
 func printMovedProofInputsWithoutCandidateEngine(stderr io.Writer, request testrun.SelectionRequest) {

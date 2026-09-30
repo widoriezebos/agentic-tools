@@ -1,0 +1,2 @@
+✗ / is not inside a Git repository; nothing was done
+  → metasystem disk show --repo PATH  inside the repository, or naming its path

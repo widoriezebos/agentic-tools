@@ -1,0 +1,2 @@
+✗ receipt add needs --outcome (shipped, reworked, blocked, parked); nothing was recorded
+  → metasystem receipt add --help  its forms and options; nothing was recorded

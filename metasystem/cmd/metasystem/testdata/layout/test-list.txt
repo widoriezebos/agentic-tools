@@ -1,0 +1,4 @@
+1 test group in the testing contract · testing.json
+
+GROUP       KIND   ADAPTER
+app-group   unit   go

@@ -786,7 +786,7 @@ func publishCallRetention(stateRoot string, retention callRetention) error {
 }
 
 func publishCallRetirementJournal(stateRoot, path string, journal callRetirementJournal) error {
-	return publishCallRetentionValue(path, journal, stateRoot, "call retirement journal")
+	return publishCallRetentionValue(path, journal, stateRoot, "record of retiring calls")
 }
 
 func publishCallRetentionValue(path string, value any, anchor, label string) error {

@@ -33,7 +33,8 @@ func TestStaticPublishesTheCollectedBuildWithoutRecompiling(t *testing.T) {
 		t.Fatalf("--proof-out touched bin/metasystem: %q", data)
 	}
 	want := "go gate: fast checks passed; landing still needs the full gate\nrun: go run ./cmd/devgate gate\n" +
-		"  checked: dependency ratchet, parallel ratchet, gofmt, shell parse, vet, staticcheck, dead code, refusal register, SessionStart exit audit, Stop decision surface audit, build\n"
+		"  checked: dependency ratchet, parallel ratchet, gofmt, shell parse, vet, staticcheck,\n" +
+		"    dead code, refusal register, SessionStart exit audit, Stop decision surface audit, build\n"
 	if !strings.HasSuffix(w.stdout.String(), want) {
 		t.Fatalf("stdout does not end with the fast pass line:\n%s", w.stdout.String())
 	}
@@ -110,7 +111,7 @@ func TestStaticCollectsEveryRedInOneBlock(t *testing.T) {
 		"--- refusal register failed:\n--- FAIL: TestRegister\n",
 		"--- SessionStart exit audit failed:\nhook start exit audit: bare exit\n",
 		"--- Stop decision surface audit failed:\nremoved: x\n",
-		"--- project check refused the declared memory (docs/design/design-obligation-gate.md, A design is a record):\nplans/designs/x.md:1: duplicate id\n",
+		"--- the project check refused a design, decision or question record:\nplans/designs/x.md:1: duplicate id\n",
 	} {
 		if !strings.Contains(stderr, want) {
 			t.Fatalf("stderr lacks %q:\n%s", want, stderr)

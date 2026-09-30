@@ -1,0 +1,2 @@
+✗ the handoff was refused: note missing; nothing was done
+  → metasystem session handoff --help  its forms and what each needs

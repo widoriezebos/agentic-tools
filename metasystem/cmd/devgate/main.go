@@ -76,12 +76,14 @@ func run(ctx context.Context, args []string, root string, deps deps) int {
 	case "gate":
 		return runGateAction(ctx, args[1:], root, deps)
 	default:
-		fmt.Fprintf(deps.stderr, "devgate: unknown action %q; %s\n", args[0], usage)
+		fmt.Fprintf(deps.stderr, "devgate has no action %q; %s\n", args[0], usage)
 		return 2
 	}
 }
 
-const usage = "usage: go run ./cmd/devgate build [--out PATH] [--trimpath] | static [--proof-out PATH] [--verbose] | gate [--goal GOAL] [--cap-min N] [--witness-check-only] [--arm plain|none --controller-pid PID --state-out FILE [--delivery]]"
+// usage is what devgate says when no action it knows is named: its three
+// actions, and the one a developer runs first.
+const usage = "devgate takes one action: build, static or gate; nothing was run\nrun: go run ./cmd/devgate static"
 
 // deps is every effect the build has on the world, so a test drives the
 // whole action against stubbed Git, a stubbed Go toolchain and a chosen fence.

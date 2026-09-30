@@ -147,11 +147,11 @@ func TestGLEPathPlanReportsOptionalNoMatch(t *testing.T) {
 	if err := json.Unmarshal([]byte(stdout), &output); err != nil || len(output.UnmatchedInputs) != 1 || output.UnmatchedInputs[0] != unmatched[0] {
 		t.Fatalf("public no-match JSON = %q, %v", stdout, err)
 	}
-	status, _, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
+	status, text, _ := runOnOwnStreams(func(stdout, stderr io.Writer) int {
 		return runTestPlan([]string{"--root", root, "--purpose", "diagnostic"}, stdout, stderr)
 	})
-	if status != 0 || !strings.Contains(stderr, "TEST-INPUT-NO-MATCH") || !strings.Contains(stderr, "futrue?.go") {
-		t.Fatalf("public text no-match = %d, %q", status, stderr)
+	if status != 0 || !strings.Contains(text, "Inputs that match no file") || !strings.Contains(text, "futrue?.go") {
+		t.Fatalf("public text no-match = %d, %q", status, text)
 	}
 	if _, err := os.Stat(filepath.Join(root, "src", "futrue1.go")); !os.IsNotExist(err) {
 		t.Fatalf("optional input was created: %v", err)

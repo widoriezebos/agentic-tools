@@ -82,14 +82,14 @@ func TestEvidenceShowIsAShortSummaryThatChangesNothing(t *testing.T) {
 	bed := newEvidenceVerbBed(t)
 	before := evidenceSnapshot(t, bed.root)
 	code, out := bed.run("evidence", "show")
-	if code != 0 || !strings.Contains(out, "evidence of "+bed.gitRoot) || !strings.Contains(out, "1 item(s): ") {
+	if code != 0 || !strings.Contains(out, "This checkout keeps 1 evidence item") || !strings.Contains(out, "1 past the age floor and clear") {
 		t.Fatalf("evidence show = %d:\n%s", code, out)
 	}
 	if strings.Contains(out, "old-chain,") || len(strings.Split(strings.TrimSpace(out), "\n")) > 6 {
 		t.Fatalf("the default is a short summary; --verbose lists items:\n%s", out)
 	}
 	code, out = bed.run("evidence", "show", filepath.Join(bed.chain, "jobs", "old-chain.log"))
-	if code != 0 || !strings.Contains(out, "a live file") {
+	if code != 0 || !strings.Contains(flatPage(out), "a live file") {
 		t.Fatalf("show PATH = %d:\n%s", code, out)
 	}
 	if after := evidenceSnapshot(t, bed.root); after != before {
@@ -128,12 +128,12 @@ func TestEvidenceExportWithoutADestinationNamesBothWays(t *testing.T) {
 func witnessEvidenceExportRepeat(t *testing.T, bed *evidenceVerbBed) {
 	t.Helper()
 	code, out := bed.run("evidence", "export", "old-chain", "--to", bed.export)
-	if code != 0 || !strings.Contains(out, "exported 1 of 1 item(s)") {
+	if code != 0 || !strings.Contains(flatPage(out), "Exported 1 of 1 item") {
 		t.Fatalf("first export = %d:\n%s", code, out)
 	}
 	before := evidenceSnapshot(t, bed.export)
 	code, out = bed.run("evidence", "export", "old-chain", "--to", bed.export)
-	if code != 0 || !strings.Contains(out, "1 already exported and verified") {
+	if code != 0 || !strings.Contains(flatPage(out), "1 already exported and verified") {
 		t.Fatalf("second export = %d:\n%s", code, out)
 	}
 	if after := evidenceSnapshot(t, bed.export); after != before {
@@ -147,7 +147,7 @@ func witnessEvidenceExportRepeat(t *testing.T, bed *evidenceVerbBed) {
 func witnessEvidenceDisposeRepeat(t *testing.T, bed *evidenceVerbBed) {
 	t.Helper()
 	code, out := bed.run("evidence", "dispose", "old-chain", "--export", bed.export, "--preview")
-	if code != 0 || !strings.Contains(out, "preview: nothing was changed") || !strings.Contains(out, "1 clear") || *bed.fetches != 0 {
+	if code != 0 || !strings.Contains(out, "Preview: nothing was changed") || !strings.Contains(flatPage(out), "clear 1 item") || *bed.fetches != 0 {
 		t.Fatalf("preview = %d (fetches %d):\n%s", code, *bed.fetches, out)
 	}
 	if _, err := os.Stat(bed.chain); err != nil {
@@ -159,7 +159,7 @@ func witnessEvidenceDisposeRepeat(t *testing.T, bed *evidenceVerbBed) {
 	}
 	bed.person = nil
 	code, out = bed.run("evidence", "dispose")
-	if code != 0 || !strings.Contains(out, "1 of 1 item(s) disposed") {
+	if code != 0 || !strings.Contains(flatPage(out), "disposed 1 of 1 item") {
 		t.Fatalf("execute = %d:\n%s", code, out)
 	}
 	if _, err := os.Stat(bed.chain); !os.IsNotExist(err) {
@@ -171,14 +171,14 @@ func witnessEvidenceDisposeRepeat(t *testing.T, bed *evidenceVerbBed) {
 		t.Fatalf("one person's receipt with the export: %+v", receipts)
 	}
 	code, out = bed.run("evidence", "dispose")
-	if code != 0 || !strings.Contains(out, "1 already disposed") {
+	if code != 0 || !strings.Contains(flatPage(out), "1 already disposed") {
 		t.Fatalf("a repeat = %d:\n%s", code, out)
 	}
 	if again, _ := diskstore.ReadReceipts(ledger); len(again) != 1 {
 		t.Fatal("a repeat writes no second receipt")
 	}
 	code, out = bed.run("evidence", "show", filepath.Join(bed.chain, "jobs", "old-chain.log"))
-	if code != 0 || !strings.Contains(out, "removed on") || !strings.Contains(out, "exported to") {
+	if code != 0 || !strings.Contains(flatPage(out), "removed on") || !strings.Contains(flatPage(out), "exported to") {
 		t.Fatalf("the pointer answers with the archive = %d:\n%s", code, out)
 	}
 }
@@ -226,7 +226,7 @@ func TestEvidenceDisposeWithoutAPlanTakesOnlyThisSessionsPreview(t *testing.T) {
 		t.Fatal("nothing was removed")
 	}
 	id := strings.TrimSuffix(filepath.Base(plans[0]), ".json")
-	if code, out := bed.run("evidence", "dispose", "--plan", id); code != 0 || !strings.Contains(out, "1 of 1 item(s) disposed") {
+	if code, out := bed.run("evidence", "dispose", "--plan", id); code != 0 || !strings.Contains(flatPage(out), "disposed 1 of 1 item") {
 		t.Fatalf("a named plan runs = %d:\n%s", code, out)
 	}
 }
@@ -237,11 +237,11 @@ func TestEvidenceShowAllVerboseListsTheItemsDisposeAccepts(t *testing.T) {
 	t.Parallel()
 	bed := newEvidenceVerbBed(t)
 	code, out := bed.run("evidence", "show", "--all", "--verbose")
-	if code != 0 || !strings.Contains(out, "chain "+bed.chain) {
+	if code != 0 || !strings.Contains(flatPage(out), "chain "+bed.shown(bed.chain)) {
 		t.Fatalf("--all --verbose = %d:\n%s", code, out)
 	}
 	code, out = bed.run("evidence", "dispose", filepath.Join(bed.root, "AGENTS"), "--preview")
-	if code == 0 || !strings.Contains(out, "not an item; metasystem evidence show --verbose") {
+	if code == 0 || !strings.Contains(out, "not an item; metasystem evidence show --all --verbose") {
 		t.Fatalf("a structure directory in another case is refused = %d:\n%s", code, out)
 	}
 }
@@ -270,7 +270,7 @@ func TestEvidenceShowReportsAnOpenDisposalAndChangesNothing(t *testing.T) {
 	before := evidenceSnapshot(t, bed.root)
 	for _, args := range [][]string{{"evidence", "show"}, {"evidence", "show", "--all"}} {
 		code, out := bed.run(args...)
-		if code != 0 || !strings.Contains(out, "an interrupted removal of "+bed.chain+" is open: metasystem evidence dispose settles it (rolls it back), then preview again") {
+		if code != 0 || !strings.Contains(flatPage(out), "an interrupted removal of "+bed.shown(bed.chain)+" is open: metasystem evidence dispose settles it (rolls it back), then preview again") {
 			t.Fatalf("%v reports the open disposal = %d:\n%s", args, code, out)
 		}
 		if after := evidenceSnapshot(t, bed.root); after != before {
@@ -286,7 +286,7 @@ func TestEvidenceDisposeSettlesAnOpenDisposalFirst(t *testing.T) {
 	bed := newEvidenceVerbBed(t)
 	openEvidenceDisposal(t, bed)
 	code, out := bed.run("evidence", "dispose", "old-chain", "--preview")
-	if code != 0 || !strings.Contains(out, "rolled back, the item is back") || !strings.Contains(out, "1 clear") {
+	if code != 0 || !strings.Contains(flatPage(out), "rolled back, the item is back") || !strings.Contains(flatPage(out), "clear 1 item") {
 		t.Fatalf("the preview settles first, then plans = %d:\n%s", code, out)
 	}
 	if _, err := os.Stat(filepath.Join(bed.chain, "jobs", "old-chain.log")); err != nil {
@@ -302,7 +302,7 @@ func TestEvidenceShowListsNotManagedEntriesAndDisposeRefusesThem(t *testing.T) {
 	legacy := filepath.Join(bed.root, "agents", "old-layout-chain")
 	helmMust(t, os.MkdirAll(filepath.Join(legacy, "jobs"), 0o755), os.WriteFile(filepath.Join(legacy, "jobs", "x.json"), []byte("{}"), 0o644))
 	code, out := bed.run("evidence", "show", "--verbose")
-	if code != 0 || !strings.Contains(out, legacy+", ") || !strings.Contains(out, "not managed: remove by hand if unneeded") {
+	if code != 0 || !strings.Contains(flatPage(out), bed.shown(legacy)+", ") || !strings.Contains(flatPage(out), "not managed: remove by hand if unneeded") {
 		t.Fatalf("show names the entry = %d:\n%s", code, out)
 	}
 	code, out = bed.run("evidence", "dispose", legacy, "--preview")

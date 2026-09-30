@@ -108,7 +108,9 @@ type Resolution struct {
 // authenticate. It never falls through with its paths.
 type Refusal struct{ reason string }
 
-func (r Refusal) Error() string { return "cache domain refused: " + r.reason }
+func (r Refusal) Error() string {
+	return "this process's Go cache was refused: " + r.reason + "\nrun: metasystem system check"
+}
 
 // ResolveDomain decides this process's cache domain by the order of evidence
 // (disk-lifetimes 3.1, A8), the first that holds:
