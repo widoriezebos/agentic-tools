@@ -138,6 +138,9 @@ func notListed(what string) Decision {
 		stopCommand)
 }
 
+// Undecided is the denial of a call the gate could not decide.
+func Undecided(err error) Decision { return undecided(err) }
+
 func undecided(err error) Decision {
 	return deny("the landing tool gate could not decide ("+oneLine(err.Error())+"), so this call is denied", statusCommand)
 }
