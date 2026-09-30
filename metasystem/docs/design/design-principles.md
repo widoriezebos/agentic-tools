@@ -53,6 +53,35 @@ Public command design applies standing ruling R-126-m1e in
 - Use bounded parallelism, explicit timeouts, and cancellation contracts for concurrent work, and propagate correlation context across threads and executors.
 - Give each stage of a pipeline or agent loop a contract: what it consumes, what it produces, what it guarantees, and how it terminates. Preserve provenance when later stages depend on evidence from earlier ones.
 
+## Messages a Person Reads
+
+Every message the system prints by default is read by a person who wants to
+know what happened and what to do next (Wido, 2026-09-30). It is written for
+that person, never for the code that produced it.
+
+- Line 1 says what happened and the concrete reason in this situation, in
+  plain words, short: aim for about 100 characters or fewer.
+- Line 2 is the one command that resolves it, ready to paste, with every
+  value the engine knows filled in (names, paths, ids). A placeholder such as
+  NAME, PATH, ID, G or J appears only when the engine cannot know the value.
+  When nothing needs doing, the message says so instead.
+- Everything else (refusal codes, file paths the fix does not need,
+  background, internal vocabulary) is shown only with `--verbose` or in
+  `--json`.
+- Internal terms never appear in default output unless the person uses them
+  as a public noun in commands: proof, yield, caller classes (HUMAN, MAIN,
+  DELEGATE, UNTRUSTED), lineage, epoch, generation numbers, opid, digest,
+  ledger internals, `would-refuse code=`, step banners such as `== STEP`.
+- Lines never contradict each other: a notice about an act (for example that
+  the person at the helm admitted it) is printed only when the act then
+  proceeds; a refused act prints the refusal alone.
+
+The public command result (`intentResult` in `cmd/metasystem`) carries this
+shape: `Summary` is line 1, `next` (or a `Decision` naming a `metasystem`
+command) is line 2, and `details` hold what only `--verbose` shows.
+`TestAuditMessagesAPersonReads` checks the rule mechanically per package or
+file, reporting or enforcing as its mode table says.
+
 ## Waits Are Used
 
 When the machinery must wait, it uses the wait: it does the work that the

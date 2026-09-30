@@ -1,4 +1,12 @@
 // Package refusal holds the refusal register defined by the human-carried-landing design at HCL-AUDIT-03; refusals that carry no code are recorded by hand at their emitting site, and no test proves that list complete.
+//
+// Every refusal a person reads by default follows "Messages a Person Reads"
+// (docs/design/design-principles.md): line 1 is what happened and the
+// concrete reason in plain words, about 100 characters at most; line 2 is the
+// one command that resolves it, with every value the engine knows filled in
+// (or an explicit "nothing to do"). A row's Code, its Site and every other
+// internal term (proof, yield, caller class, lineage, epoch, generation, opid,
+// digest) appear only with --verbose or in --json, never in the default text.
 package refusal
 
 // CarriedLanding is the human verb that carries a landing past an agent
