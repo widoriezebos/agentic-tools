@@ -87,9 +87,9 @@ func (t Tuple) problem() string {
 	case t.Op == "":
 		return "it names no batch or operation"
 	case t.Kind == KindLanding && t.ProofAttempt == "":
-		return "a landing names the proof attempt it publishes"
+		return "a landing names the test attempt it publishes"
 	case t.Generation < 1:
-		return "it names no lane engine generation"
+		return "it names no lane engine number"
 	}
 	return ""
 }
@@ -212,9 +212,11 @@ func Publish(home string, tuple Tuple, op Operation, authority Authority) error 
 		Message: "main refused the publication, so nothing was published", Detail: strings.TrimSpace(output)}
 }
 
-// remoteMain reads the remote's main.
-func remoteMain(tuple Tuple) (string, error) {
-	out, err := laneGit(tuple.Repo, nil, "ls-remote", "--refs", tuple.RemoteURL, tuple.Ref)
+func remoteMain(tuple Tuple) (string, error) { return RemoteMain(tuple.Repo, tuple.RemoteURL) }
+
+// RemoteMain reads main at remoteURL from repo; empty when it has none.
+func RemoteMain(repo, remoteURL string) (string, error) {
+	out, err := laneGit(repo, nil, "ls-remote", "--refs", remoteURL, MainRef)
 	if err != nil {
 		return "", err
 	}
@@ -250,7 +252,13 @@ func gitSteering(name string) bool {
 // added, and returns its trimmed standard output (standard error with it
 // when it fails).
 func laneGit(dir string, extra []string, args ...string) (string, error) {
+	return laneGitInput(dir, extra, "", args...)
+}
+
+// laneGitInput is laneGit with input on git's standard input.
+func laneGitInput(dir string, extra []string, input string, args ...string) (string, error) {
 	command := exec.Command("git", append([]string{"-C", dir}, args...)...)
+	command.Stdin = strings.NewReader(input)
 	for _, entry := range os.Environ() {
 		name, _, _ := strings.Cut(entry, "=")
 		if !gitSteering(name) {

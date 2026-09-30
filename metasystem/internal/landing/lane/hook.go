@@ -29,7 +29,7 @@ const (
 )
 
 // hookMarker is the line that makes a pre-push hook the lane's own.
-const hookMarker = "# metasystem landing lane pre-push hook"
+const hookMarker = "# the landing lane's pre-push hook, installed by landing set"
 
 // HookScript is the pre-push hook of the lane whose installation's engine
 // is engine, under home.
@@ -113,6 +113,16 @@ func removeHook(checkout string) error {
 	return removeIfPresent(path)
 }
 
+// gitDir is the git directory dir's repository shares across its
+// worktrees, resolved.
+func gitDir(dir string) (string, error) {
+	common, err := laneGit(dir, nil, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	if err != nil {
+		return "", fmt.Errorf("the git folder of %s can't be read: %w", dir, err)
+	}
+	return resolved(common), nil
+}
+
 // PushUpdate is one line git hands a pre-push hook on its standard input.
 type PushUpdate struct {
 	LocalRef, LocalOID, RemoteRef, RemoteOID string
@@ -135,10 +145,11 @@ func ParsePushUpdates(input io.Reader) ([]PushUpdate, error) {
 	return updates, scanner.Err()
 }
 
-// Push is one push the hook judges: the checkout it leaves from, the remote
-// it goes to, the nonce its environment carries and its ref updates.
+// Push is one push the hook judges: the git directory of the repository it
+// leaves from (shared by all its worktrees), the remote it goes to, the
+// nonce its environment carries and its ref updates.
 type Push struct {
-	Checkout  string
+	GitDir    string
 	RemoteURL string
 	Nonce     string
 	Updates   []PushUpdate
@@ -158,7 +169,14 @@ func AdmitPush(home string, push Push) error {
 		if err != nil {
 			return err
 		}
-		if !ok || resolved(record.Root) != resolved(push.Checkout) {
+		if !ok {
+			return nil
+		}
+		laneDir, err := gitDir(record.Root)
+		if err != nil {
+			return err
+		}
+		if laneDir != resolved(push.GitDir) {
 			return nil
 		}
 		notAdmitted := func(why string) error {
@@ -183,7 +201,7 @@ func AdmitPush(home string, push Push) error {
 		}
 		tuple := minted.Tuple
 		switch {
-		case resolved(tuple.Repo) != resolved(push.Checkout):
+		case resolved(tuple.Repo) != resolved(record.Root):
 			return notAdmitted("its token was minted for " + tuple.Repo)
 		case push.RemoteURL != tuple.RemoteURL:
 			return notAdmitted("it goes to " + push.RemoteURL + ", not " + tuple.RemoteURL)
@@ -203,22 +221,20 @@ func AdmitPush(home string, push Push) error {
 	})
 }
 
-// RunPrePush is the internal pre-push entry the lane's hook runs: args are
-// --home HOME, then git's remote name and URL; the updates come on input.
-// It prints a refusal as two lines and returns git's exit status.
-func RunPrePush(args []string, input io.Reader, stderr io.Writer) int {
-	if len(args) != 4 || args[0] != "--home" || args[1] == "" {
-		fmt.Fprintln(stderr, "the landing lane's pre-push hook was run without its home, so nothing was pushed")
-		fmt.Fprintln(stderr, "run: metasystem landing set PATH")
-		return 1
-	}
-	checkout, err := os.Getwd()
+// RunPrePush is the decision of the internal pre-push entry the lane's hook
+// runs, for the push git makes from the current directory to remoteURL,
+// with its updates on input. It prints a refusal as two lines and returns
+// git's exit status.
+func RunPrePush(home, remoteURL string, input io.Reader, stderr io.Writer) int {
+	// Git runs the hook at the top of the worktree that pushes.
+	here, err := os.Getwd()
+	pushing := ""
 	if err == nil {
-		checkout, err = laneGit(checkout, nil, "rev-parse", "--show-toplevel")
+		pushing, err = gitDir(here)
 	}
 	updates, parseErr := ParsePushUpdates(input)
 	if err = errors.Join(err, parseErr); err == nil {
-		err = AdmitPush(args[1], Push{Checkout: checkout, RemoteURL: args[3], Nonce: os.Getenv(TokenEnv), Updates: updates})
+		err = AdmitPush(home, Push{GitDir: pushing, RemoteURL: remoteURL, Nonce: os.Getenv(TokenEnv), Updates: updates})
 	}
 	if err == nil {
 		return 0

@@ -66,6 +66,13 @@ type laneVerbOwners struct {
 	// laneHeld lists the goals the ledger, read from an installation,
 	// shows held by the landing lane.
 	laneHeld func(installation string) ([]string, error)
+	// evidence reads a batch's begin and proof records for landing
+	// publish; nil reads none (K-b writes them).
+	evidence lane.PublishEvidence
+	// remoteURL is the landing checkout's origin.
+	remoteURL func(root string) (string, error)
+	// publish is the lane's publication boundary for a landing.
+	publish func(home string, tuple lane.Tuple) error
 }
 
 func (inv *intentInvocation) landing() laneVerbOwners {
@@ -116,6 +123,17 @@ func (inv *intentInvocation) landing() laneVerbOwners {
 		owners.advance = func(request laneengine.AdvanceRequest) (laneengine.AdvanceOutcome, error) {
 			return laneengine.Advance(request, laneengine.ProductionConditions(request.Home, request.Checkout),
 				laneengine.ProductionSteps(request.Checkout, request.Installation))
+		}
+	}
+	if owners.remoteURL == nil {
+		owners.remoteURL = func(root string) (string, error) {
+			out, err := batchowner.GitOutput(root, "remote", "get-url", "origin")
+			return strings.TrimSpace(out), err
+		}
+	}
+	if owners.publish == nil {
+		owners.publish = func(home string, tuple lane.Tuple) error {
+			return lane.Publish(home, tuple, lane.OpPublish, lane.AuthorityAgent)
 		}
 	}
 	if owners.laneHeld == nil {
@@ -204,6 +222,7 @@ func landingIntentCommands() []intentCommand {
 			run:      runIntentLandingRestart,
 		},
 		landingEngineCommand(),
+		landingPublishCommand(),
 	}
 }
 

@@ -26,7 +26,7 @@ func TestHeldAcceptsOnlyListedLaneCommits(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertHeldRefusal(t, unlisted, 1, "lane-commit-unlisted", integration, "Lane-Integration")
+	assertHeldRefusal(t, unlisted, 1, "lane-commit-unlisted", integration, "did not list")
 	seat := requireHeldVerdict(t, f, base, resolved, "origin", "refs/heads/main")
 	assertHeldRefusal(t, seat, 1, "lane-commit-unlisted", resolved, "Lane-Resolved")
 

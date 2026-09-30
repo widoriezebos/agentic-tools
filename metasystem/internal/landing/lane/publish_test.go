@@ -19,8 +19,9 @@ import (
 // <install>/bin/metasystem internal pre-push …, which the bed links to this
 // binary.
 func prePushChild() (int, bool) {
-	if len(os.Args) > 2 && os.Args[1] == "internal" && os.Args[2] == "pre-push" {
-		return RunPrePush(os.Args[3:], os.Stdin, os.Stderr), true
+	// internal pre-push --home HOME REMOTE URL
+	if len(os.Args) == 7 && os.Args[1] == "internal" && os.Args[2] == "pre-push" && os.Args[3] == "--home" {
+		return RunPrePush(os.Args[4], os.Args[6], os.Stdin, os.Stderr), true
 	}
 	return 0, false
 }

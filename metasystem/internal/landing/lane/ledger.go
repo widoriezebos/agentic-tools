@@ -62,12 +62,16 @@ func ledgerTuple(home string, endpoint goal.Endpoint, tip, commit string) (Tuple
 	if !ok {
 		return Tuple{}, fmt.Errorf("no landing lane is registered on this computer")
 	}
-	// The write leaves from the checkout that built it; the gate refuses it
-	// unless that is the lane's.
-	repo, err := laneGit(endpoint.Root, nil, "rev-parse", "--show-toplevel")
+	// The lane's own ledger writes leave from its installation, in its
+	// checkout; any other endpoint is not the lane's.
+	layout, err := record.Layout()
 	if err != nil {
-		return Tuple{}, fmt.Errorf("the checkout of %s: %w", endpoint.Root, err)
+		return Tuple{}, err
 	}
+	if at := resolved(endpoint.Root); at != string(layout.Install) && at != string(layout.Checkout) {
+		return Tuple{}, fmt.Errorf("the ledger write at %s is not the landing lane's (%s)", endpoint.Root, layout.Install)
+	}
+	repo := string(layout.Checkout)
 	url := endpoint.Remote
 	if out, err := laneGit(endpoint.Root, nil, "remote", "get-url", endpoint.Remote); err == nil && out != "" {
 		url = out

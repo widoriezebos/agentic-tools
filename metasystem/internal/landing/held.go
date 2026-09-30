@@ -167,11 +167,11 @@ commitLoop:
 			if len(trailers.laneIntegration) != 0 {
 				kind = "Lane-Integration"
 			}
-			return heldHardRefusal(verdict, entry.commit, "lane-commit-unlisted", fmt.Sprintf("the commit carries a %s trailer but is not in the series the landing lane began; only landing begin lists the lane's own commits", kind)), nil
+			return heldHardRefusal(verdict, entry.commit, "lane-commit-unlisted", fmt.Sprintf("the commit carries a %s trailer the lane did not list; reword it, then metasystem work land again", kind)), nil
 		}
 		if len(trailers.laneIntegration) != 0 {
 			if len(trailers.laneResolved) != 0 || len(trailers.goalItem) != 0 {
-				return heldHardRefusal(verdict, entry.commit, "machine-trailer-malformed", "a Lane-Integration commit binds no goal and replays no member; reword it, then landing begin again"), nil
+				return heldHardRefusal(verdict, entry.commit, "machine-trailer-malformed", "a Lane-Integration commit binds no goal; reword it, then metasystem work land again"), nil
 			}
 			// The lane's integration commit, listed at begin: its size
 			// is begin's aggregate cap to judge, and it binds no goal.
