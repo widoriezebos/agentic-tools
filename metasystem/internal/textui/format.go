@@ -251,11 +251,13 @@ func SHA(s string) string {
 }
 
 // Command is an argument vector as a person pastes it: a safe word bare,
-// any other single-quoted.
+// any other single-quoted. A home path as a page shows it (Env.Path's ~/…)
+// stays bare when the rest is safe, so the shell expands it as the page
+// means it.
 func Command(argv []string) string {
 	quoted := make([]string, len(argv))
 	for index, arg := range argv {
-		if arg != "" && strings.IndexFunc(arg, func(r rune) bool {
+		if arg != "" && strings.IndexFunc(strings.TrimPrefix(arg, "~/"), func(r rune) bool {
 			return !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || strings.ContainsRune("_@%+=:,./-", r))
 		}) == -1 {
 			quoted[index] = arg

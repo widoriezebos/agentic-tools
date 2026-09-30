@@ -8,6 +8,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -18,6 +19,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/laneengine"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
 
@@ -49,6 +52,14 @@ type laneVerbOwners struct {
 	// helm reads whether a joined unit's seat is at the helm, which holds
 	// its batch whole.
 	helm func(seatRoot string) helm.State
+	// installation is the metasystem installation of a lane checkout: the
+	// module root, where the lane's enrollment lives.
+	installation func(root string) (string, error)
+	// engine admits this process as the lane's enrolled engine (K5): every
+	// kernel verb calls it first.
+	engine func(checkout, installation string, retry []string) (laneengine.Identity, error)
+	// advance moves the lane to landed main's engine.
+	advance func(laneengine.AdvanceRequest) (laneengine.AdvanceOutcome, error)
 }
 
 func (inv *intentInvocation) landing() laneVerbOwners {
@@ -85,6 +96,21 @@ func (inv *intentInvocation) landing() laneVerbOwners {
 	}
 	if owners.helm == nil {
 		owners.helm = helm.Active
+	}
+	if owners.installation == nil {
+		owners.installation = func(root string) (string, error) {
+			layout, err := inv.owners.resolver.ResolveLayout(root)
+			return layout.InstallationRoot, err
+		}
+	}
+	if owners.engine == nil {
+		owners.engine = laneengine.RequireSelf
+	}
+	if owners.advance == nil {
+		owners.advance = func(request laneengine.AdvanceRequest) (laneengine.AdvanceOutcome, error) {
+			return laneengine.Advance(request, laneengine.ProductionConditions(request.Home, request.Checkout),
+				laneengine.ProductionSteps(request.Checkout, request.Installation))
+		}
 	}
 	return owners
 }
@@ -146,6 +172,7 @@ func landingIntentCommands() []intentCommand {
 			examples: []string{"metasystem landing restart"},
 			run:      runIntentLandingRestart,
 		},
+		landingEngineCommand(),
 	}
 }
 
@@ -620,6 +647,7 @@ func (inv *intentInvocation) stopLane(owners laneVerbOwners, home string, record
 			Details: []string{fmt.Sprintf("refused because: %s: batch %s to main now; stopping mid-push would leave main and the batch's record out of step", codeLandingLanePushing, busy)}}, false
 	}
 	by := inv.landingActor(owners)
+	inv.sayWhenTheLaneLockIsHeld(home)
 	if _, err := lane.SetPause(home, by, owners.now()); err != nil {
 		return intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "the landing lane couldn't be stopped",
 			next: inv.sameCommand(), nextReason: "tries again", Details: []string{"the landing lane could not be stopped: " + err.Error()}}, false
@@ -689,4 +717,20 @@ func (inv *intentInvocation) statusLane() *lane.View {
 		return &view
 	}
 	return nil
+}
+
+// sayWhenTheLaneLockIsHeld prints one plain line before a stop waits for the
+// host flock: a landing engine advance holds it while it re-arms, and the
+// stop takes effect only when that finishes.
+func (inv *intentInvocation) sayWhenTheLaneLockIsHeld(home string) {
+	held, err := lock.File(lane.LockPath(home), 0o600, lock.TryExclusive)
+	if err == nil {
+		_ = held.Release()
+		return
+	}
+	if lock.Busy(err) && !inv.input.switched("json") {
+		page := textui.New(inv.textEnv(inv.stderr))
+		page.Mark(textui.Running, "the lane's engine is being changed; the stop takes effect when that finishes")
+		_, _ = io.WriteString(inv.stderr, page.String())
+	}
 }
