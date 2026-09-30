@@ -1,6 +1,6 @@
 # host-setup-from-scratch
 
-- State: queued
+- State: approved
 - Priority: 1
 - Sequence: 5
 - Risk: severity=2 novelty=2 exposure=2 accumulation=1 basis="New person-facing verb composing existing owners (enroll, machine start, system start, landing); touches enrollment and launch resume paths; reverts cleanly; no data deletion"
@@ -9,9 +9,10 @@
 - Origin: main
 - Next step: Next: Build U1 (questions, plan preview, --check), U2 (running the steps, resume, repair) and U3 (the gaps: clone from a URL, machine name, resume, --record) from the accepted design (revision 2 plus the round-2 build rules in section 13) at /Users/wido/LocalStorage/agentic-tools-evidence/host-setup-20260930/host-setup.md, enrolling per checkout in-process (D3 deferred; D1 and D2 as proposed). Approve before switch-on if the machinery should build it. Done when: in a fresh test home, host setup runs to done, a re-run reports everything in place and changes nothing, and a kill in the middle resumes to done.
 - OpenedAt: 2026-09-30T12:03:04Z
-- Revision: 6
+- Revision: 7
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
+- Approved: by=human:wido at=2026-09-30T20:42:42Z revision=7 opid=XB1PN62QBGM1J97G63AKRT5HWP-m1e-b6a4eb0a authority=proven digest=4e885ea1574458703e2efbb616b75305891c0cc9cc8c70287cbf73b3fd7ca269 episode=7
 
 History:
 - 2026-09-30T12:03:04Z FE81AC39M8FFBDH0NM7PXAK290-m1e-b6a4eb0a open actor=human:wido targets=host-setup-from-scratch
@@ -20,4 +21,5 @@ History:
 - 2026-09-30T16:34:55Z 6AHWS37V7SN04Y6KDTN50KFMBP-m1e-b6a4eb0a set-priority actor=human:wido targets=adoption-filled-delivery-passes-on-trunk,beds-run-under-the-oldest-supported-bash,brief-declares-the-round-boundary,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,delegate-sandbox-runs-the-beds,design-rounds-read-less-and-repeat-less,error-checks-use-typed-errors,every-round-gets-an-independent-read,evidence-and-build-output-have-retention-and-stay-unindexed,failures-show-observed-against-expected,fixture-runners-and-fakes-bound-their-own-life,fleet-doctor-repairs-what-stops-other-seats,follow-up-brief-cannot-cite-fresh-trunk-files,host-setup-from-scratch,machinery-runs-unattended-on-codex,one-steward-per-checkout-on-its-own-root,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,receipt-writer-follows-the-worktree-it-runs-in,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,steward-acts-on-behaviour-patterns,stop-hook-never-forces-an-empty-turn,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror reason=priority-order subject=steward-acts-on-behaviour-patterns from=1:3 to=1:4 requested-sequence=3
 - 2026-09-30T18:49:18Z K3HMQEAX00T9PKC270HKJX3KMJ-m1e-b6a4eb0a edit actor=human:wido targets=host-setup-from-scratch
 - 2026-09-30T20:40:12Z HNA3K23WT2SC30HEBK32FHM4JJ-ui-bc2fda53 set-priority actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,cross-cutting-change-inventories-its-readers,design-rounds-read-less-and-repeat-less,error-checks-use-typed-errors,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,host-setup-from-scratch,landing-lane-runtime-redesign,one-steward-per-checkout-on-its-own-root,processes-read-structured-results,receipt-writer-follows-the-worktree-it-runs-in,reviewers-check-the-rulings,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,steward-acts-on-behaviour-patterns,stop-hook-never-forces-an-empty-turn,system-start-launches-your-agent,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror reason=priority-order subject=reviewers-check-the-rulings from=1:4 to=1:5 requested-sequence=1
-Integrity: sha256=2ceeef85f2b6e74b872c90a1e24559fffaae5b03a1d07140b90c4a5303d7a7c2
+- 2026-09-30T20:42:42Z XB1PN62QBGM1J97G63AKRT5HWP-m1e-b6a4eb0a approve actor=human:wido targets=host-setup-from-scratch
+Integrity: sha256=ff5a21e77fc91b511f337c7562cf52c2c6d7a5566ce1352408209fb968423182
