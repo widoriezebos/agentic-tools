@@ -2,12 +2,12 @@
 
 - State: queued
 - Priority: 3
-- Sequence: 20
+- Sequence: 19
 - Intent: What: When the watchdog kills a governed run for load or time, the run ends in a state it can resume from, not in "assumptions failed", which waits for Wido to choose. Why: on 2026-08-31 such a kill put a run into that state although nothing it assumed had changed. Since 2026-09-11 every run's concluding step checks the assumptions, so the original cause is probably gone, but no test proves it and any small drift still trips the breaker. Also left: explain why one run record showed a 3-day limit while the goal budget said 24 hours. Pros: a load kill costs only time, not a human decision. Cons: if the test shows it is needed, a separate kill state is one more state to handle.
 - Origin: main
 - Next step: Next: write a test that kills a governed run mid-section and concludes it through the normal concluding path. Done when: the test passes on main without "assumptions failed", with a separate non-breaking kill state added first if it fails.
 - OpenedAt: 2026-08-31T11:47:26Z
-- Revision: 73
+- Revision: 74
 - BudgetExceptions: 0
 
 History:
@@ -84,4 +84,5 @@ History:
 - 2026-09-30T18:55:13Z 3AN247EJF9QM0ADQC717NE4J7P-ui-bc2fda53 edit actor=human:Wido targets=watchdog-kill-observation-gap
 - 2026-09-30T18:56:32Z NW1RJMGDWV7KMT7572PYEYFHXX-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,fixture-default-branch-assumption,goal-suite-sits-on-the-default-test-timeout,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,set-priority-treats-an-oversize-sequence-as-last,watchdog-kill-observation-gap reason=priority-order from=3:22 to=3:21
 - 2026-09-30T18:57:42Z EATDFDHH90W17M050BRZTK9FJ8-m1e-b6a4eb0a done actor=human:wido targets=answer-archive,app-doctrine,app-guardrail-custody,app-guardrail-program,claude-delegate-scratch-cleanup,claude-denywrite-list-is-a-snapshot,continuous-self-improvement,counselor,cross-repo-guardrails,defect-analysis-gate,delegate-sandbox-cannot-run-the-beds,design-prohibition-is-role-scoped,goal-scope-bounds,goal-suite-sits-on-the-default-test-timeout,hook-demands-what-landing-forbids,host-health-role,human-carried-landing,incident-proposal-drafting,integration-branch,land-verb-pruning,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,narrator-digests,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,same-process-succession,seam-declaration-convergence,set-priority-treats-an-oversize-sequence-as-last,standing-validation,steward-owned-execution,stop-message-truth,uncapped-delegate-fanout,verbs-match-intent,watchdog-kill-observation-gap reason=priority-order from=3:21 to=3:20
-Integrity: sha256=42d14c28cbafae55cab5ced6f1a912f71dbddc5d885e6d059f09b7f44c1527e9
+- 2026-09-30T18:58:45Z BJ7G27AFE5SG1RS2798T95R4PH-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,goal-suite-sits-on-the-default-test-timeout,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,set-priority-treats-an-oversize-sequence-as-last,watchdog-kill-observation-gap reason=priority-order from=3:20 to=3:19
+Integrity: sha256=8cfe8e9ddb8a1bf208cf29de41242d35b0879f44d60f06508f0dfa675927cb84
