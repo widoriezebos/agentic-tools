@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "entries": [],
+  "cadenceClaim": {
+    "key": {
+      "trunkTree": "54a0a76390419bad832f52b4b1b2dc3ac27c9469",
+      "weightGeneration": 0,
+      "forcedWindowStart": "2026-09-30T16:14:14Z"
+    },
+    "ownerMachine": "landing",
+    "opid": "F0MVQ5NPYFBE9Q5NT5BQ9KT4CF-landing-2b626e27",
+    "claimedAt": "2026-09-30T16:14:14Z",
+    "leaseUntil": "2026-09-30T22:14:14Z"
+  }
+}
