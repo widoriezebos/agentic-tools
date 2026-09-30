@@ -434,3 +434,42 @@ func TestHandoverWaitsTheConfiguredClaimLockWait(t *testing.T) {
 		t.Fatalf("handover under a held claim lock = %v; want the refusal after the configured 1s", err)
 	}
 }
+
+// The landing lane's claims carry its custody epoch (lane design r10 K7):
+// the lane's epoch authority renews its own claim to a newer epoch, a stale
+// lane epoch can neither renew nor hand back, and no other lineage may use
+// the lane's authority.
+func TestLaneEpochAuthorityRenewsOnlyTheLanesClaim(t *testing.T) {
+	t.Parallel()
+	endpoint, req := handoverBed(t, "lane-held", false)
+	req.Ulid, req.Now = "01J5X00000000000000000HM01", req.Now.Add(time.Minute)
+	alive := func() (identity.Liveness, error) { return identity.Alive, nil }
+	if res, err := Handover(req, "lane-held", "lane-host", LaneClaimLineage, 3, "batch-l", alive); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("hand to the lane: %+v %v", res, err)
+	}
+	lane := req
+	lane.Actor, lane.CallerClass, lane.EpochAuthority = Actor{Machine: "lane-host", Lineage: LaneClaimLineage}, "", EpochAuthorityLane
+	lane.Ulid, lane.ClaimEpoch = "01J5X00000000000000000HM02", 4
+	if res, err := Handover(lane, "lane-held", "lane-host", LaneClaimLineage, 4, "batch-l", alive); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("lane renewal at its new epoch: %+v %v", res, err)
+	}
+	tree, _ := loadTreeFor(endpoint, acceptedTipForEndpoint(t, endpoint))
+	if got := tree.Live["lane-held"]; got.StopCapability.ClaimEpoch != 4 || got.Claimed.HandedOver.Batch != "batch-l" || got.Claimed.HandedOver.FromMachine != "mac-studio" {
+		t.Fatalf("renewed claim = %+v %+v", got.Claimed, got.StopCapability)
+	}
+	stale := lane
+	stale.Ulid, stale.ClaimEpoch, stale.HandoverTargetRoot = "01J5X00000000000000000HM03", 3, "/seat"
+	if res, err := Handover(stale, "lane-held", "mac-studio", "session-a", 7, "batch-l", alive); err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "is not the current one") {
+		t.Fatalf("a stale lane epoch handing the claim back: %+v %v", res, err)
+	}
+	current := stale
+	current.Ulid, current.ClaimEpoch = "01J5X00000000000000000HM05", 4
+	if res, err := Handover(current, "lane-held", "mac-studio", "session-a", 7, "batch-l", alive); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("the lane at its epoch hands the claim back: %+v %v", res, err)
+	}
+	impostor := lane
+	impostor.Ulid, impostor.Actor.Lineage = "01J5X00000000000000000HM04", "session-b"
+	if _, err := ClaimEpochForRebind(tree.Live["lane-held"], impostor); err == nil {
+		t.Fatal("another lineage used the lane's epoch authority")
+	}
+}

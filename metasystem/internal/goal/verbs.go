@@ -279,6 +279,15 @@ type VerbRequest struct {
 
 const EpochAuthorityHolder = "holder"
 
+// EpochAuthorityLane is the landing lane's own claim epoch: the custody
+// epoch of the host's lane record, which the lane's kernel reads and
+// supplies (lane design r10 K7). Only the lane's claim lineage carries it.
+const EpochAuthorityLane = "lane"
+
+// LaneClaimLineage is the landing lane's stable claim lineage, which
+// belongs to no session.
+const LaneClaimLineage = "landing-lane"
+
 // ClaimEpochForRebind is the single authority for replacing or preserving a
 // claimed goal's stop-capability epoch. Only the authenticated live MAIN
 // holder may replace it; every other actor preserves the recorded epoch.
@@ -286,6 +295,12 @@ func ClaimEpochForRebind(f *GoalFile, r VerbRequest) (int64, error) {
 	if r.EpochAuthority == EpochAuthorityHolder {
 		if r.CallerClass != "MAIN" || r.ClaimEpoch < 1 {
 			return 0, coded("REBIND_EPOCH_UNAUTHENTICATED", fmt.Errorf("this session doesn't hold the checkout, so it can't renew the claim (%s, %d)", r.CallerClass, r.ClaimEpoch))
+		}
+		return r.ClaimEpoch, nil
+	}
+	if r.EpochAuthority == EpochAuthorityLane {
+		if r.Actor.Lineage != LaneClaimLineage || r.Actor.Human != "" || r.ClaimEpoch < 1 {
+			return 0, coded("REBIND_EPOCH_UNAUTHENTICATED", fmt.Errorf("only the landing lane renews a claim at its custody epoch (%s, %d)", r.Actor.Lineage, r.ClaimEpoch))
 		}
 		return r.ClaimEpoch, nil
 	}

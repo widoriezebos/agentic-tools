@@ -67,6 +67,10 @@ type Invocation struct {
 	// Lineage is the owner lineage the request carries; it replaces the
 	// child's inherited METASYSTEM_OWNER_LINEAGE.
 	Lineage string
+	// LaneEpoch, when set, is the landing lane's custody epoch read from the
+	// host's lane record: the call acts as the lane's stable claim identity
+	// at that epoch (lane design r10 K7). Only the lane's kernel sets it.
+	LaneEpoch int64
 }
 
 // FromThisProcess is the context of an edge that replaced a child run with
@@ -80,6 +84,11 @@ type HandoverRequest struct {
 	Root, GoalID, TargetMachine, TargetLineage string
 	TargetEpoch                                int64
 	Batch, TargetRoot                          string
+	// LaneHome is the host home whose lane record authenticates a target
+	// that is the landing lane's claim identity (lineage landing-lane):
+	// the lane is live when that record registers it at TargetEpoch on
+	// TargetMachine, whether or not any agent runs.
+	LaneHome string
 }
 
 // Usage names the missing parts of a handover, or "" when it is complete.
