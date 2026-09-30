@@ -1,14 +1,15 @@
 # cross-repo-guardrails
 
-- State: queued
+- State: parked
 - Priority: 3
 - Sequence: 34
 - Intent: What: An app's guardrails can include files that live in another repository at a fixed commit, such as a frozen set of reference answers in a separate corpus repository, or a pinned upstream the app depends on. Why: For apps like morpheus and yoda the most valuable checks live outside their own repository; today the metasystem can only describe them, not enforce them. Pros: Those checks become enforced, and moving a pin becomes a reviewed guardrail change. Cons: Real design work (how to name and prove the pinned files without trusting the network, what happens when the other repository is missing on a machine), and no adopted app needs it yet.
 - Origin: human
 - Next step: Next: Design first, about a day: how a guardrail names another repository, commit and paths; how a run proves it has the right files offline; how moving a pin is reviewed; and what happens when that repository is missing. Done when: a design is accepted and a test app can declare one guardrail from another repository at a pinned commit that a run checks.
 - OpenedAt: 2026-08-25T06:41:14Z
-- Revision: 81
+- Revision: 82
 - BudgetExceptions: 0
+- Parked: by=human:Wido at=2026-09-30T18:47:26Z because=Parked until morpheus, yoda, or another app whose reference data lives in a separate repository at a pinned commit is adopted under the metasystem. Until then nothing needs it.
 
 History:
 - 2026-08-25T06:41:14Z T0EJERXXCQJN9VY3TJ59AY10CA-m1-bf243850 open actor=human:wido targets=cross-repo-guardrails
@@ -92,4 +93,5 @@ History:
 - 2026-09-15T05:59:02Z G1CSAQJCKM1B4YG6KPG6MAFYNN-m1e-c6925449 set-priority actor=human:Wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,claude-delegate-scratch-cleanup,claude-denywrite-list-is-a-snapshot,continuous-self-improvement,counselor,cross-repo-guardrails,delegate-sandbox-cannot-run-the-beds,design-prohibition-is-role-scoped,effort-by-complexity-per-model,fixture-default-branch-assumption,follow-up-brief-cannot-cite-fresh-trunk-files,goal-suite-sits-on-the-default-test-timeout,human-carried-landing,incident-proposal-drafting,integration-branch,land-verb-pruning,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,seam-declaration-convergence,standing-validation,uncapped-delegate-fanout,watchdog-kill-observation-gap reason=priority-order subject=follow-up-brief-cannot-cite-fresh-trunk-files from=3:36 to=3:35 requested-sequence=67
 - 2026-09-16T21:02:51Z HE021GFD8V1YPVBEXGSBFRHWV0-m1e-c6925449 set-priority actor=human:Wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,claude-delegate-scratch-cleanup,claude-denywrite-list-is-a-snapshot,continuous-self-improvement,counselor,cross-repo-guardrails,delegate-sandbox-cannot-run-the-beds,design-prohibition-is-role-scoped,effort-by-complexity-per-model,fixture-default-branch-assumption,goal-suite-sits-on-the-default-test-timeout,human-carried-landing,incident-proposal-drafting,integration-branch,land-verb-pruning,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,runtime-limit-is-not-a-protocol-error,seam-declaration-convergence,set-priority-treats-an-oversize-sequence-as-last,standing-validation,uncapped-delegate-fanout,watchdog-kill-observation-gap reason=priority-order subject=runtime-limit-is-not-a-protocol-error from=3:35 to=3:34 requested-sequence=54
 - 2026-09-30T18:47:22Z XNK5D366TSRTPFKVS9DHFYP8K4-ui-bc2fda53 edit actor=human:Wido targets=cross-repo-guardrails
-Integrity: sha256=29bca6f1ab10b5095f25ca060ac1fdbda38a4c2e304d2649278c5486b03be137
+- 2026-09-30T18:47:26Z E7Q1MYFEPCE6HCTKCHQJ6QTYJK-ui-bc2fda53 park actor=human:Wido targets=cross-repo-guardrails reason=Parked until morpheus, yoda, or another app whose reference data lives in a separate repository at a pinned commit is adopted under the metasystem. Until then nothing needs it.
+Integrity: sha256=89ff9fae245985bb983f1e3748b1faa822cf786774a349e43408c80a01c13345
