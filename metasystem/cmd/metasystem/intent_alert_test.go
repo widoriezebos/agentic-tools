@@ -39,6 +39,10 @@ func newAlertBed(t *testing.T) alertBed {
 	// resolves its layout from Git; the seat only needs its marker.
 	helmMust(t, os.MkdirAll(filepath.Join(bed.seat, ".git"), 0o755))
 	registerLane(t, bed.home, bed.landing, "Wido", alertTestNow)
+	// Registering made the landing folder a git checkout and left its
+	// installation's metasystem.conf empty; the bed's installations are
+	// templates, as the seat's is.
+	helmMust(t, os.WriteFile(filepath.Join(bed.landing, "metasystem", "metasystem.conf"), []byte("metasystem.template=true\n"), 0o644))
 	return bed
 }
 
