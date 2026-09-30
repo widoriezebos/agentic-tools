@@ -846,7 +846,7 @@ func TestManualReviewProtocolFailureNeedsAcceptedRisk(t *testing.T) {
 	}
 	code, agent := acceptAtReview(acceptArgs...)
 	t.Logf("printed risk decision result: code=%d %+v", code, agent)
-	if code == 0 || agent.Outcome == intentConfirmed || !strings.Contains(agent.Summary, "a person's act") {
+	if code == 0 || agent.Outcome == intentConfirmed || !strings.Contains(strings.Join(agent.Details, " "), "refused because") {
 		t.Fatalf("the risk decision did not reach the authority guard: code=%d %+v", code, agent)
 	}
 	if still, err := dispatchcore.CritiqueOpenFindingIDs(c.worktree, critic); err != nil || !slices.Equal(still, open) {

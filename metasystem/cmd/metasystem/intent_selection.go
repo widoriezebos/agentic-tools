@@ -99,14 +99,13 @@ func (inv *intentInvocation) namedWorkOnly(id string, work []launch.NamedWork) (
 	for _, one := range work {
 		names = append(names, one.Unit)
 	}
-	result := &intentResult{Outcome: intentRefused, code: 1, Targets: inv.targets(id),
-		Summary: fmt.Sprintf("goal %s has no work named %s; nothing was done", id, shellCommand([]string{name}))}
+	summary := fmt.Sprintf("goal %s has no work named %s; nothing was done", id, shellCommand([]string{name}))
 	if len(names) > 0 {
-		result.Summary += "; its work is " + strings.Join(names, ", ")
-	} else {
-		result.next, result.nextReason = inv.publicArgv("work", "build", id, "--work", name, "--brief", "FILE", "--check", "COMMAND..."), "start that work"
+		return nil, &intentResult{Outcome: intentRefused, code: 1, Targets: inv.targets(id), Summary: summary + "; its work is " + strings.Join(names, ", "),
+			next: append(inv.typedArgvLess("work"), "--work", names[0]), nextReason: "or another of its work"}
 	}
-	return nil, result
+	return nil, &intentResult{Outcome: intentRefused, code: 1, Targets: inv.targets(id), Summary: summary,
+		next: inv.publicArgv("work", "build", id, "--work", name, "--brief", "FILE", "--check", "COMMAND..."), nextReason: "start that work"}
 }
 
 func workTargets(id string, work launch.NamedWork) []intentTarget {
@@ -426,8 +425,8 @@ func (inv *intentInvocation) selectWork(id, verb string, work []launch.NamedWork
 			lines = append(lines, fmt.Sprintf("  %s (%s): %s", one.Unit, workStage(one), shellCommand(inv.publicArgv(append(workVerbWords(verb), id, "--work", one.Unit)...))))
 		}
 		return nil, &intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id), text: lines, Data: map[string]any{"candidates": names},
-			Summary:  fmt.Sprintf("goal %s has %d work items this could mean (%s); nothing was done", id, len(matched), strings.Join(names, ", ")),
-			Decision: "name one with --work NAME"}
+			Summary: fmt.Sprintf("goal %s has %d work items this could mean (%s); nothing was done", id, len(matched), strings.Join(names, ", ")),
+			next:    inv.publicArgv(append(workVerbWords(verb), id, "--work", names[0])...), nextReason: "or another one listed above"}
 	}
 	return nil, nil
 }
@@ -494,13 +493,15 @@ func runIntentReviewGoal(inv *intentInvocation, id string) int {
 	for _, only := range []string{"test", "review", "implementation-chain", "artifact", "result", "critic", "by", "lineage", "fixture-human-authority"} {
 		if inv.input.has(only) {
 			return inv.render(intentResult{Outcome: intentRefused, code: 2,
-				Summary: fmt.Sprintf("--%s discharges a finding: review G --finding F --test NAME; nothing was done", only)})
+				Summary: fmt.Sprintf("--%s only goes with --finding, which resolves a review finding; nothing was done", only),
+				next:    inv.typedArgvWith("--finding", "FINDING"), nextReason: "names the finding it resolves"})
 		}
 	}
 	for _, other := range []string{"brief", "tool-calls", "effort", "goal"} {
 		if inv.input.has(other) {
 			return inv.render(intentResult{Outcome: intentRefused, code: 2,
-				Summary: fmt.Sprintf("review G takes --work, --dispositions and --model; --%s belongs to another review subject; nothing was done", other)})
+				Summary: fmt.Sprintf("--%s is not for reviewing a goal's work; nothing was done", other),
+				next:    inv.typedArgvLess(other), nextReason: "a goal's review takes --work, --dispositions and --model"})
 		}
 	}
 	var retry int64
@@ -508,10 +509,12 @@ func runIntentReviewGoal(inv *intentInvocation, id string) int {
 		value, err := strconv.ParseInt(inv.input.text("retry"), 10, 64)
 		if err != nil || value < 1 {
 			return inv.render(intentResult{Outcome: intentRefused, code: 2,
-				Summary: fmt.Sprintf("--retry takes the failed examination round's number, not %s; nothing was done", shellCommand([]string{inv.input.text("retry")}))})
+				Summary: fmt.Sprintf("--retry takes the number of the review round that failed, not %s; nothing was done", shellCommand([]string{inv.input.text("retry")})),
+				next:    append(inv.typedArgvLess("retry"), "--retry", "1"), nextReason: "the round number that metasystem status " + id + " shows"})
 		}
 		if inv.input.has("dispositions") {
-			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--retry examines again and --dispositions decides findings; give one; nothing was done"})
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--retry reviews again and --dispositions decides findings; give one; nothing was done",
+				next: inv.typedArgvLess("dispositions"), nextReason: "reviews again; or drop --retry to decide the findings"})
 		}
 		retry = value
 	}
@@ -550,8 +553,8 @@ func runIntentReviewGoal(inv *intentInvocation, id string) int {
 				lines = append(lines, "  "+shellCommand(inv.publicArgv(append(reviewGoalWords(id), "--work", name)...)))
 			}
 			return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id), text: lines, Data: map[string]any{"candidates": awaiting},
-				Summary:  fmt.Sprintf("goal %s has %d work items awaiting review (%s); nothing was started", id, len(awaiting), strings.Join(awaiting, ", ")),
-				Decision: "name one with --work NAME"})
+				Summary: fmt.Sprintf("goal %s has %d work items awaiting review (%s); nothing was started", id, len(awaiting), strings.Join(awaiting, ", ")),
+				next:    inv.publicArgv(append(reviewGoalWords(id), "--work", awaiting[0])...), nextReason: "or another one listed above"})
 		}
 		if len(awaitingManual) == 1 {
 			manual, manualChosen = awaitingManual, true
@@ -596,7 +599,7 @@ func runIntentReviewGoal(inv *intentInvocation, id string) int {
 	}
 	if !builtWork(*selected) {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: workTargets(id, *selected),
-			Summary: fmt.Sprintf("work %s of goal %s did not pass its proof (%s), so it has no result to review; nothing was started", selected.Unit, id, lastOutcome(*selected)),
+			Summary: fmt.Sprintf("work %s of goal %s did not pass its checks (%s), so there is nothing to review; nothing was started", selected.Unit, id, lastOutcome(*selected)),
 			next:    inv.publicArgv("work", "revise", id, "--work", selected.Unit, "--after", fmt.Sprint(workAttempt(*selected)), "--brief", "FILE"), nextReason: "a correction brief starts one new attempt"})
 	}
 	inv.reviewWork = &reviewWorkContext{goal: id, work: selected.Unit, repair: inv.command.name == "repair"}
@@ -616,7 +619,8 @@ func runIntentReviewDischarge(inv *intentInvocation, id string) int {
 	for _, other := range []string{"work", "dispositions", "model"} {
 		if inv.input.has(other) {
 			return inv.render(intentResult{Outcome: intentRefused, code: 2,
-				Summary: fmt.Sprintf("--finding discharges an obligation and takes no --%s; nothing was done", other)})
+				Summary: fmt.Sprintf("--finding resolves a review finding and takes no --%s; nothing was done", other),
+				next:    inv.typedArgvLess(other), nextReason: "without --" + other})
 		}
 	}
 	if !inv.input.has("review") {
@@ -636,8 +640,12 @@ func runIntentReviewDischarge(inv *intentInvocation, id string) int {
 // revision request.
 func runIntentRevise(inv *intentInvocation) int {
 	if len(inv.input.args) != 1 {
+		retry := inv.typedArgvFor("GOAL")
+		if !inv.input.has("brief") {
+			retry = append(retry, "--brief", "FILE")
+		}
 		return inv.render(intentResult{Outcome: intentRefused, code: 2,
-			Summary: "work revise needs the goal and --brief FILE; nothing was done", Decision: "metasystem work revise G [--work NAME] [--after N] --brief FILE"})
+			Summary: "work revise needs one goal and a correction brief; nothing was done", next: retry, nextReason: "FILE says what to correct"})
 	}
 	ref, problem := inv.resolveWorkRef(inv.input.args[0], inv.command.accepts)
 	if problem != nil {
@@ -648,7 +656,8 @@ func runIntentRevise(inv *intentInvocation) int {
 		for _, other := range []string{"work", "after", "dispositions"} {
 			if inv.input.has(other) {
 				return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: []intentTarget{{Kind: "run", ID: ref.qualified()}},
-					Summary: fmt.Sprintf("work revise %s takes only --brief: the run keeps its own plan, proof and round limit; --%s is not one; nothing was done", ref.qualified(), other)})
+					Summary: fmt.Sprintf("revising run %s takes only --brief, not --%s; nothing was done", ref.qualified(), other),
+					next:    inv.typedArgvLess(other), nextReason: "the run keeps its own plan, checks and round limit"})
 			}
 		}
 		hook := inv.delivery().foldUnitHook
@@ -659,7 +668,8 @@ func runIntentRevise(inv *intentInvocation) int {
 	case refJ2:
 		for _, other := range []string{"work", "after"} {
 			if inv.input.has(other) {
-				return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("work revise %s takes no --%s; nothing was done", ref.qualified(), other)})
+				return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("revising %s takes no --%s; nothing was done", ref.qualified(), other),
+					next: inv.typedArgvLess(other), nextReason: "without --" + other})
 			}
 		}
 		if result := inv.selectRoot(); result != nil {
@@ -669,7 +679,7 @@ func runIntentRevise(inv *intentInvocation) int {
 	}
 	if !inv.input.has("brief") {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2,
-			Summary: "work revise needs the goal and --brief FILE; nothing was done", Decision: "metasystem work revise G [--work NAME] [--after N] --brief FILE"})
+			Summary: "work revise needs a correction brief; nothing was done", next: inv.typedArgvWith("--brief", "FILE"), nextReason: "FILE says what to correct"})
 	}
 	id := ref.id
 	after := 0
@@ -677,7 +687,8 @@ func runIntentRevise(inv *intentInvocation) int {
 		value, err := strconv.Atoi(inv.input.text("after"))
 		if err != nil || value <= 0 {
 			return inv.render(intentResult{Outcome: intentRefused, code: 2,
-				Summary: fmt.Sprintf("--after must be an attempt number such as 2, not %s; nothing was done", shellCommand([]string{inv.input.text("after")}))})
+				Summary: fmt.Sprintf("--after must be an attempt number such as 2, not %s; nothing was done", shellCommand([]string{inv.input.text("after")})),
+				next:    inv.typedArgvLess("after"), nextReason: "follows the newest attempt"})
 		}
 		after = value
 	}
@@ -699,7 +710,8 @@ func runIntentRevise(inv *intentInvocation) int {
 		if err != nil {
 			summary = fileProblem("brief", briefPath, err)
 		}
-		return inv.render(intentResult{Outcome: intentRefused, code: 1, Summary: summary + "; nothing was done"})
+		return inv.render(intentResult{Outcome: intentRefused, code: 1, Summary: summary + "; nothing was done",
+			next: inv.sameCommand(), nextReason: "once --brief names a file that says what to correct"})
 	}
 	work, problem := inv.goalWork(id)
 	if problem != nil {
