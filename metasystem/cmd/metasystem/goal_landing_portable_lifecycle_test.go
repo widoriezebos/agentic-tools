@@ -24,6 +24,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/registry"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
@@ -56,6 +57,91 @@ func waitForPortableOwnerLease(t *testing.T, root string, pid int, exited <-chan
 			t.Fatalf("landing owner %d did not acquire the checkout before the test deadline: %v", pid, err)
 		}
 		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// landingBatchOwnerParkEnv names a directory the test-helper landing owner
+// parks in: after it holds its lease and before any registry or store work
+// it writes "parked" (holding the machine store registry's lock path) and
+// waits for "release". A test pauses the owner only there, a quiet point: a
+// SIGSTOP the moment the lease appeared could land inside
+// diskstore.Registry.Register and hold ~/.metasystem/stores/.register.lock,
+// blocking every other process's registration (fencedflake C3, VM).
+const landingBatchOwnerParkEnv = "METASYSTEM_TEST_BATCH_OWNER_PARK"
+
+func parkBatchOwnerForFixture() error {
+	directory := os.Getenv(landingBatchOwnerParkEnv)
+	if directory == "" {
+		return nil
+	}
+	armed, err := registry.DefaultPath()
+	if err != nil {
+		return fmt.Errorf("fixture park: %w", err)
+	}
+	lockPath := filepath.Join(filepath.Dir(armed), "stores", ".register.lock")
+	staging := filepath.Join(directory, "parked.tmp")
+	if err := os.WriteFile(staging, []byte(lockPath), 0o600); err != nil {
+		return fmt.Errorf("fixture park: %w", err)
+	}
+	if err := os.Rename(staging, filepath.Join(directory, "parked")); err != nil {
+		return fmt.Errorf("fixture park: %w", err)
+	}
+	for attempt := 0; attempt < 36000; attempt++ {
+		if _, err := os.Stat(filepath.Join(directory, "release")); err == nil {
+			return nil
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	return fmt.Errorf("fixture park: never released")
+}
+
+// pauseParkedBatchOwner waits for the owner to park, then stops it while this
+// test holds the machine store registry's lock: at the instant of the stop
+// the owner provably holds no registration critical section.
+func pauseParkedBatchOwner(t *testing.T, directory string, owner *exec.Cmd, exited <-chan struct{}) {
+	t.Helper()
+	var lockPath string
+	for attempt := 0; ; attempt++ {
+		if data, err := os.ReadFile(filepath.Join(directory, "parked")); err == nil {
+			lockPath = string(data)
+			break
+		}
+		select {
+		case <-exited:
+			t.Fatal("the landing owner exited before it parked")
+		default:
+		}
+		if attempt > 6000 {
+			t.Fatal("the landing owner did not park after taking its lease")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if err := os.MkdirAll(filepath.Dir(lockPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	guard, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer guard.Close()
+	for attempt := 0; ; attempt++ {
+		err := syscall.Flock(int(guard.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+		if err == nil {
+			break
+		}
+		if !errors.Is(err, syscall.EWOULDBLOCK) {
+			t.Fatalf("lock the store registry: %v", err)
+		}
+		if attempt > 3000 {
+			t.Fatalf("the store registry lock %s stayed held; the owner would be stopped inside a registration", lockPath)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if err := owner.Process.Signal(syscall.SIGSTOP); err != nil {
+		t.Fatal(err)
+	}
+	if err := syscall.Flock(int(guard.Fd()), syscall.LOCK_UN); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -210,6 +296,9 @@ chmod +x "${out:-bin/metasystem}"
 		"owner", "--root", bed.seats["goal-a"], "--landing-root", landing, "--max-wait", "1m", "--interval", "1h")
 	ownerCommand.Dir = landing
 	ownerCommand.Env = append(ownerCommand.Env, "METASYSTEM_OWNER_LINEAGE="+batchowner.LandingOwnerLineage)
+	ownerParkDirectory := t.TempDir()
+	ownerCommand.Env = append(ownerCommand.Env, landingBatchOwnerParkEnv+"="+ownerParkDirectory)
+	t.Cleanup(func() { _ = os.WriteFile(filepath.Join(ownerParkDirectory, "release"), nil, 0o600) })
 	if err := ownerCommand.Start(); err != nil {
 		t.Fatalf("start landing owner: %v", err)
 	}
@@ -224,9 +313,7 @@ chmod +x "${out:-bin/metasystem}"
 		}
 	})
 	waitForPortableOwnerLease(t, landing, ownerCommand.Process.Pid, ownerExited, func() error { return ownerExitErr })
-	if err := ownerCommand.Process.Signal(syscall.SIGSTOP); err != nil {
-		t.Fatalf("suspend fixture owner cadence: %v", err)
-	}
+	pauseParkedBatchOwner(t, ownerParkDirectory, ownerCommand, ownerExited)
 	join := func(goalID string) string {
 		code, stdout, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
 			return runLandingBatch([]string{"join", "--root", bed.seats[goalID], "--goal", goalID, "--last"}, stdout, stderr)
@@ -581,6 +668,9 @@ chmod +x "${out:-bin/metasystem}"
 	owner := batchAt(t0, "owner", "--root", bed.seats["goal-a"], "--landing-root", landing, "--max-wait", "1m", "--interval", "1h")
 	owner.Dir = landing
 	owner.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	parkDirectory := t.TempDir()
+	owner.Env = append(owner.Env, landingBatchOwnerParkEnv+"="+parkDirectory)
+	t.Cleanup(func() { _ = os.WriteFile(filepath.Join(parkDirectory, "release"), nil, 0o600) })
 	if err := owner.Start(); err != nil {
 		t.Fatal(err)
 	}
@@ -595,9 +685,7 @@ chmod +x "${out:-bin/metasystem}"
 		}
 	})
 	waitForPortableOwnerLease(t, landing, owner.Process.Pid, ownerExited, func() error { return ownerExitErr })
-	if err := owner.Process.Signal(syscall.SIGSTOP); err != nil {
-		t.Fatal(err)
-	}
+	pauseParkedBatchOwner(t, parkDirectory, owner, ownerExited)
 	join := func(goalID string) string {
 		command := batchAt(t0, "join", "--root", bed.seats[goalID], "--goal", goalID, "--last")
 		command.Dir = bed.seats[goalID]
