@@ -121,6 +121,19 @@ func TestLandingAgentStartsOnTheLaneWithItsRoster(t *testing.T) {
 	if records, _ := store.List(); len(records) != 1 {
 		t.Fatalf("a landing agent started into a provider outage: %d launches", len(records))
 	}
+
+	// A start the launcher refuses leaves no brief behind (critique F-2).
+	briefs := func() int {
+		matches, _ := filepath.Glob(filepath.Join(module, "artifacts", "agents", "landing-agent", "*.brief.md"))
+		return len(matches)
+	}
+	before := briefs()
+	refused := agent
+	refused.nonce = func() (string, error) { return "8899aabbccddeeff", nil }
+	manager.Lane = func() (launch.LaneCheckout, error) { return launch.LaneCheckout{}, nil }
+	if _, err := refused.start(checkout, lane.Wake{Reasons: []string{lane.WakeQueued}}); err == nil || briefs() != before {
+		t.Fatalf("a refused start = %v, briefs %d -> %d; want refused and no brief left", err, before, briefs())
+	}
 }
 
 func resolvedPath(path string) string {

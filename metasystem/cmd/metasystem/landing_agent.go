@@ -11,6 +11,7 @@ package main
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -121,11 +122,36 @@ func (a landingAgent) start(root string, wake lane.Wake) (string, error) {
 	}
 	manager := *a.manager()
 	manager.Settings, manager.SettingsError = settings, nil
-	record, err := manager.Start(launch.StartSpec{ID: id, Kind: launch.LandingKind, WorkingDirectory: root, FenceRoot: module, Brief: brief, Tag: nonce})
+	spec := launch.StartSpec{ID: id, Kind: launch.LandingKind, WorkingDirectory: root, FenceRoot: module, Brief: brief, Tag: nonce}
+	if landingAgentSettings != nil {
+		path, err := landingAgentSettings(module)
+		if err != nil {
+			return "", errors.Join(err, os.Remove(brief))
+		}
+		if path != "" {
+			data, _ := json.Marshal(path)
+			spec.AdapterData = map[string]json.RawMessage{"settings": data}
+		}
+	}
+	record, err := manager.Start(spec)
 	if err != nil {
-		return "", err
+		// A start that did not happen leaves no brief behind.
+		return "", errors.Join(err, os.Remove(brief))
 	}
 	return record.ID, nil
+}
+
+// landingAgentSettings names the runtime settings file (the tool gate) the
+// landing agent's launch passes as the record's "settings", for the lane
+// installation at module; nil or empty passes none. The gate and its
+// settings are unit A-b's, whose launcher refuses a landing launch without
+// them.
+var landingAgentSettings func(module string) (string, error)
+
+// cancel stops a landing launch that started as the lane was paused.
+func (a landingAgent) cancel(id string) error {
+	_, err := a.manager().Cancel(id)
+	return err
 }
 
 // reapOutage feeds the lane installation's outage mark from an ended
@@ -186,7 +212,7 @@ func newLandingAgentKeeper(self, home string, agent landingAgent) lane.AgentKeep
 				return "", nil
 			},
 		},
-		Running: agent.running, Start: agent.start, Reap: []func(string) error{agent.reapOutage}}
+		Running: agent.running, Start: agent.start, Reap: []func(string) error{agent.reapOutage}, Cancel: agent.cancel}
 }
 
 // landingLaneSteps is the steward's lane step: the owner's keeper, then the

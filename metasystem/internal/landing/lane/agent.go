@@ -12,6 +12,7 @@ package lane
 import (
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -27,6 +28,9 @@ type AgentState struct {
 	// ReapedAt is when the launch's end was reaped; empty while it runs or
 	// before its reap.
 	ReapedAt string `json:"reapedAt,omitempty"`
+	// StartingAt is a start in progress, claimed under the flock while the
+	// launcher runs outside it.
+	StartingAt string `json:"startingAt,omitempty"`
 }
 
 func agentStatePath(home string) string {
@@ -64,69 +68,47 @@ type AgentKeeper struct {
 	// Reap runs once for each ended launch the keeper started, before the
 	// next start; a failed reap holds the next start and is tried again.
 	Reap []func(id string) error
+	// Cancel stops a launch that started while the lane was paused
+	// meanwhile; nil leaves it to the pause's own reach.
+	Cancel func(id string) error
 }
+
+// AgentCooldown is how long the keeper waits before it wakes a fresh agent
+// for the very reasons the last one ended with: an agent that ended while
+// its reasons still hold would otherwise be relaunched every cycle. Changed
+// reasons wake at once. (The full budget is K-g's.)
+const AgentCooldown = time.Hour
+
+// startClaim bounds a start in progress that another step honours: a start
+// the launcher never finished is taken over after it.
+const startClaim = 10 * time.Minute
 
 // Step observes the lane once and wakes its agent when it has work. It
 // returns the line a steward prints when it changes; empty when no lane is
-// registered.
+// registered or this steward does not keep it. The decision is taken under
+// the lane flock; the wake read and the start run outside it, so a person's
+// landing stop never waits for them, and the start is re-checked under the
+// flock before and after.
 func (k AgentKeeper) Step() string {
-	line := ""
-	err := withLock(k.Home, func() error {
+	var root, line string
+	var state AgentState
+	proceed := false
+	if err := withLock(k.Home, func() error {
 		record, ok, err := Read(k.Home)
 		if err != nil || !ok {
 			return err
 		}
-		line = k.step(record.Root)
+		root = record.Root
+		line, state, proceed = k.decide(root)
 		return nil
-	})
-	if err != nil {
+	}); err != nil {
 		return "the landing agent's keeper can't read the lane: " + err.Error()
 	}
-	return line
-}
-
-func (k AgentKeeper) step(root string) string {
-	if gone(root) {
-		return goneRefusal(Record{Root: root}).Message
+	if !proceed {
+		return line
 	}
-	if by, paused := pausedClosed(k.Home); paused {
-		return fmt.Sprintf("the landing agent at %s is not started: the lane is paused by %s; metasystem landing start resumes it", root, by)
-	}
-	if !k.own(root) {
-		return ""
-	}
-	id, running, err := k.Running()
-	if err != nil {
-		return fmt.Sprintf("the landing agent at %s is not started: whether one runs can't be read (%v)", root, err)
-	}
-	if running {
-		return fmt.Sprintf("the landing agent %s is running at %s", id, root)
-	}
-	state, err := ReadAgentState(k.Home)
-	if err != nil {
-		return fmt.Sprintf("the landing agent at %s is not started: its keeper record can't be read (%v)", root, err)
-	}
-	if state.Launch != "" && state.ReapedAt == "" {
-		for _, reap := range k.Reap {
-			if err := reap(state.Launch); err != nil {
-				return fmt.Sprintf("the landing agent at %s is not started: the end of %s could not be recorded (%v)", root, state.Launch, err)
-			}
-		}
-		state.ReapedAt = k.Now().UTC().Format(time.RFC3339)
-		if err := writeJSON(k.Home, agentStatePath(k.Home), state); err != nil {
-			return "the landing agent's keeper can't write its record: " + err.Error()
-		}
-	}
-	for _, hold := range k.Holds {
-		reason, err := hold(root)
-		if err != nil {
-			return fmt.Sprintf("the landing agent at %s is not started: whether it may start can't be read (%v)", root, err)
-		}
-		if reason != "" {
-			return fmt.Sprintf("the landing agent at %s is not started: %s", root, reason)
-		}
-	}
-	wake := ReadWake(root, k.Now(), k.Sources)
+	now := k.Now()
+	wake := ReadWake(root, now, k.Sources)
 	if len(wake.Reasons) == 0 {
 		line := "the landing lane at " + root + " is idle; no landing agent runs"
 		if len(wake.Unread) > 0 {
@@ -134,15 +116,124 @@ func (k AgentKeeper) step(root string) string {
 		}
 		return line
 	}
-	id, err = k.Start(root, wake)
+	if ended, err := time.Parse(time.RFC3339, state.ReapedAt); err == nil && slices.Equal(state.Reasons, wake.Reasons) && now.Sub(ended) < AgentCooldown {
+		return fmt.Sprintf("the landing agent at %s is not started again yet: the last one ended at %s with the same reasons (%s); it wakes when they change or at %s",
+			root, LocalText(state.ReapedAt), strings.Join(wake.Reasons, ", "), localClock(ended.Add(AgentCooldown)))
+	}
+	// Claim the start under the flock, re-checking what may have changed
+	// while the wake was read.
+	claimed := false
+	if err := withLock(k.Home, func() error {
+		record, ok, err := Read(k.Home)
+		if err != nil || !ok || record.Root != root {
+			line = "the landing agent at " + root + " is not started: the lane changed while its wake was read"
+			return err
+		}
+		if reason, stop := k.recheck(root); stop {
+			line = reason
+			return nil
+		}
+		current, err := ReadAgentState(k.Home)
+		if err != nil {
+			return err
+		}
+		current.StartingAt = k.Now().UTC().Format(time.RFC3339)
+		claimed = true
+		return writeJSON(k.Home, agentStatePath(k.Home), current)
+	}); err != nil {
+		return "the landing agent's keeper can't claim the start: " + err.Error()
+	}
+	if !claimed {
+		return line
+	}
+	id, startErr := k.Start(root, wake)
+	if err := withLock(k.Home, func() error {
+		current, err := ReadAgentState(k.Home)
+		if err != nil {
+			return err
+		}
+		current.StartingAt = ""
+		if startErr != nil {
+			line = fmt.Sprintf("the landing agent at %s could not start for %s: %v", root, strings.Join(wake.Reasons, ", "), startErr)
+			return writeJSON(k.Home, agentStatePath(k.Home), current)
+		}
+		current = AgentState{Launch: id, StartedAt: k.Now().UTC().Format(time.RFC3339), Reasons: wake.Reasons}
+		line = fmt.Sprintf("woke the landing agent %s at %s: %s", id, root, strings.Join(wake.Reasons, ", "))
+		// A pause that came while it started ends it at once.
+		if by, paused := pausedClosed(k.Home); paused && k.Cancel != nil {
+			if err := k.Cancel(id); err != nil {
+				line = fmt.Sprintf("the landing agent %s started at %s as the lane was paused by %s, and could not be stopped: %v; run: metasystem work stop %s", id, root, by, err, id)
+			} else {
+				line = fmt.Sprintf("the landing agent %s started at %s as the lane was paused by %s, and was stopped again", id, root, by)
+			}
+		}
+		return writeJSON(k.Home, agentStatePath(k.Home), current)
+	}); err != nil {
+		return fmt.Sprintf("the landing agent at %s: its keeper record could not be written: %v", root, err)
+	}
+	return line
+}
+
+// recheck is what may stop a start between the decision and the launch: the
+// pause, and an agent that runs or is being started.
+func (k AgentKeeper) recheck(root string) (string, bool) {
+	if by, paused := pausedClosed(k.Home); paused {
+		return fmt.Sprintf("the landing agent at %s is not started: the lane is paused by %s; metasystem landing start resumes it", root, by), true
+	}
+	id, running, err := k.Running()
 	if err != nil {
-		return fmt.Sprintf("the landing agent at %s could not start for %s: %v", root, strings.Join(wake.Reasons, ", "), err)
+		return fmt.Sprintf("the landing agent at %s is not started: whether one runs can't be read (%v)", root, err), true
 	}
-	state = AgentState{Launch: id, StartedAt: k.Now().UTC().Format(time.RFC3339), Reasons: wake.Reasons}
-	if err := writeJSON(k.Home, agentStatePath(k.Home), state); err != nil {
-		return fmt.Sprintf("the landing agent %s started at %s, but its keeper record could not be written: %v", id, root, err)
+	if running {
+		return fmt.Sprintf("the landing agent %s is running at %s", id, root), true
 	}
-	return fmt.Sprintf("woke the landing agent %s at %s: %s", id, root, strings.Join(wake.Reasons, ", "))
+	state, err := ReadAgentState(k.Home)
+	if err != nil {
+		return fmt.Sprintf("the landing agent at %s is not started: its keeper record can't be read (%v)", root, err), true
+	}
+	if at, err := time.Parse(time.RFC3339, state.StartingAt); err == nil && k.Now().Sub(at) < startClaim {
+		return fmt.Sprintf("the landing agent at %s is starting (since %s)", root, LocalText(state.StartingAt)), true
+	}
+	return "", false
+}
+
+// decide is the step's part under the flock: whether this steward may start
+// the agent now, after reaping an ended launch and reading the holds.
+func (k AgentKeeper) decide(root string) (string, AgentState, bool) {
+	if gone(root) {
+		return goneRefusal(Record{Root: root}).Message, AgentState{}, false
+	}
+	if by, paused := pausedClosed(k.Home); paused {
+		return fmt.Sprintf("the landing agent at %s is not started: the lane is paused by %s; metasystem landing start resumes it", root, by), AgentState{}, false
+	}
+	if !k.own(root) {
+		return "", AgentState{}, false
+	}
+	if reason, stop := k.recheck(root); stop {
+		return reason, AgentState{}, false
+	}
+	state, _ := ReadAgentState(k.Home)
+	if state.Launch != "" && state.ReapedAt == "" {
+		for _, reap := range k.Reap {
+			if err := reap(state.Launch); err != nil {
+				return fmt.Sprintf("the landing agent at %s is not started: the end of %s could not be recorded (%v)", root, state.Launch, err), state, false
+			}
+		}
+		state.ReapedAt = k.Now().UTC().Format(time.RFC3339)
+		if err := writeJSON(k.Home, agentStatePath(k.Home), state); err != nil {
+			return "the landing agent's keeper can't write its record: " + err.Error(), state, false
+		}
+	}
+	for _, hold := range k.Holds {
+		reason, err := hold(root)
+		if err != nil {
+			return fmt.Sprintf("the landing agent at %s is not started: whether it may start can't be read (%v)", root, err), state, false
+		}
+		if reason != "" {
+			return fmt.Sprintf("the landing agent at %s is not started: %s", root, reason), state, false
+		}
+	}
+	return "", state, true
 }
 
 // own says whether this steward keeps the lane at root: its checkout is the
