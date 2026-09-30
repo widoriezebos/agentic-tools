@@ -1,0 +1,22 @@
+metasystem system · MetaSystem for this checkout: set up, start, stop, restart, status, check,
+  enroll, adopt, completion
+
+Read
+  status       whether MetaSystem runs for this checkout, and its watchdog's view
+  check        diagnose problems with this checkout, changing nothing
+
+Decide
+  enroll       authenticate your terminal for human decisions in MetaSystem
+
+Work
+  start        start MetaSystem for this checkout
+  stop         stop MetaSystem for this checkout
+  restart      stop and start MetaSystem for this checkout
+
+Shape
+  setup        set this checkout up to work with its engine: runtimes, hooks, commit fence and
+               testing-contract merges
+  adopt        install MetaSystem into a fresh application repository
+  completion   print the shell script that makes Tab complete metasystem commands
+
+→ metasystem system ACTION --help  one action's forms, options and examples

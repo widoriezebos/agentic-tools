@@ -1310,37 +1310,155 @@ func objectActions(object string) []intentCommand {
 	return actions
 }
 
-func writeIntentRootHelp(w io.Writer) {
-	fmt.Fprintln(w, "usage: metasystem OBJECT ACTION [TARGET...] [OPTIONS]")
-	fmt.Fprintln(w, "Say what you want done to what; metasystem prepares, runs, collects and recovers the work.")
-	for _, group := range intentGroups {
-		fmt.Fprintf(w, "\n%s:\n", group.heading)
-		for _, object := range group.objects {
-			fmt.Fprintf(w, "  %-11s %s\n", object, intentObjectSummaries[object])
-		}
+// helpEnv is the layout of a help page written to w: a terminal's width,
+// colour and symbols, and for anything else the full width without colour.
+func helpEnv(w io.Writer) textui.Env {
+	if file, ok := w.(*os.File); ok {
+		return textui.Detect(file.Fd(), os.Getenv, time.Now(), time.Local)
 	}
-	fmt.Fprintln(w)
-	fmt.Fprintln(w, "A typical delivery:")
-	fmt.Fprintln(w, "  metasystem work build my-goal --brief brief.md --check go test ./...")
-	fmt.Fprintln(w, "  metasystem work review my-goal")
-	fmt.Fprintln(w, "  metasystem work land my-goal")
-	fmt.Fprintln(w)
-	fmt.Fprintln(w, "More:")
-	fmt.Fprintln(w, "  metasystem OBJECT                  that object's actions")
-	fmt.Fprintln(w, "  metasystem OBJECT ACTION --help    one action's forms, options and examples")
-	fmt.Fprintln(w, "  metasystem help [OBJECT [ACTION]]  the same pages; help agent, help human and help all by audience")
-	fmt.Fprintln(w, "Options go before or after the target; --repo PATH selects the repository from any path inside it.")
+	return textui.DetectWith(false, 0, func(string) string { return "" }, time.Now(), time.Local)
 }
 
-// writeIntentObjectHelp lists one object's actions, one line each.
-func writeIntentObjectHelp(w io.Writer, object string) {
-	fmt.Fprintf(w, "usage: metasystem %s ACTION [TARGET...] [OPTIONS]\n", object)
-	fmt.Fprintf(w, "%s: %s\n", object, intentObjectSummaries[object])
-	fmt.Fprintln(w, "actions:")
-	for _, command := range objectActions(object) {
-		fmt.Fprintf(w, "  %-15s %s\n", command.action, command.summary)
+// helpRows are a help list's name and summary rows, the names padded to the
+// widest so the summaries align across every section of the page.
+type helpRow struct{ name, summary string }
+
+func helpColumn(rows []helpRow) int {
+	widest := 0
+	for _, row := range rows {
+		widest = max(widest, len([]rune(row.name)))
 	}
-	fmt.Fprintf(w, "metasystem %s ACTION --help shows one action's forms, options and examples.\n", object)
+	return widest
+}
+
+func addHelpRows(section *textui.Section, column int, rows []helpRow) {
+	for _, row := range rows {
+		section.KV(row.name+strings.Repeat(" ", column-len([]rune(row.name))), textui.Plain(row.summary))
+	}
+}
+
+func writeIntentRootHelp(w io.Writer) {
+	_, _ = io.WriteString(w, intentRootHelpPage(helpEnv(w)).String())
+}
+
+// intentRootHelpPage is the top-level help (output-style §6.13): the
+// objects by area, a typical delivery, where the other pages are, and the
+// one command to start with.
+func intentRootHelpPage(env textui.Env) *textui.Page {
+	page := textui.New(env)
+	page.Headline("metasystem", "say what you want done to what; it prepares, runs, collects and recovers the work")
+	var all []helpRow
+	for _, group := range intentGroups {
+		for _, object := range group.objects {
+			all = append(all, helpRow{object, intentObjectSummaries[object]})
+		}
+	}
+	column := helpColumn(all)
+	for _, group := range intentGroups {
+		var rows []helpRow
+		for _, object := range group.objects {
+			rows = append(rows, helpRow{object, intentObjectSummaries[object]})
+		}
+		addHelpRows(page.Section(group.heading, ""), column, rows)
+	}
+	delivery := page.Section("A typical delivery", "")
+	for _, example := range []string{
+		"metasystem work build my-goal --brief brief.md --check go test ./...",
+		"metasystem work review my-goal",
+		"metasystem work land my-goal",
+	} {
+		delivery.Text(example)
+	}
+	more := []helpRow{
+		{"metasystem OBJECT", "that object's actions"},
+		{"metasystem OBJECT ACTION --help", "one action's forms, options and examples"},
+		{"metasystem help [OBJECT [ACTION]]", "the same pages; help agent, help human, help all by audience"},
+	}
+	addHelpRows(page.Section("More", ""), helpColumn(more), more)
+	page.Facts(textui.KV{Key: "usage", Value: []textui.Span{textui.Plain("metasystem OBJECT ACTION [TARGET...] [OPTIONS]")}},
+		textui.KV{Value: []textui.Span{textui.Plain("options go before or after the target; --repo PATH selects the repository from any path inside it")}})
+	page.Hint(textui.Hint{Argv: []string{"metasystem", "status"}, Reason: "what is going on in this checkout"})
+	return page
+}
+
+// intentActionIntents group the actions of an object with more than
+// intentHelpGroupAbove of them by what a person does with them (output-style
+// D4): read, decide, work, shape. An object with fewer is one list.
+const intentHelpGroupAbove = 8
+
+var intentActionIntents = map[string][]struct {
+	heading string
+	actions []string
+}{
+	"goal": {
+		{"Read", []string{"list", "show", "notes"}},
+		{"Decide", []string{"open", "approve", "unapprove", "budget", "prioritize", "pin", "allow", "disallow", "accept-risk", "review", "land-without-sitting"}},
+		{"Work", []string{"claim", "release", "pause", "resume", "done", "reopen", "abandon"}},
+		{"Shape", []string{"edit", "split", "group", "ungroup", "block", "unblock", "sync"}},
+	},
+	"work": {
+		{"Read", []string{"status", "wait"}},
+		{"Work", []string{"brief", "build", "workspace", "review", "revise", "land", "finish", "stop"}},
+	},
+	"test": {
+		{"Read", []string{"plan", "list", "status", "wait"}},
+		{"Work", []string{"run", "declare-moves", "baseline"}},
+		{"Shape", []string{"add", "remove"}},
+	},
+	"system": {
+		{"Read", []string{"status", "check"}},
+		{"Decide", []string{"enroll"}},
+		{"Work", []string{"start", "stop", "restart"}},
+		{"Shape", []string{"setup", "adopt", "completion"}},
+	},
+}
+
+// writeIntentObjectHelp lists one object's actions.
+func writeIntentObjectHelp(w io.Writer, object string) {
+	_, _ = io.WriteString(w, intentObjectHelpPage(helpEnv(w), object).String())
+}
+
+// intentObjectHelpPage is one object's page (output-style §6.12): its
+// actions in one aligned column, grouped by intent when there are many.
+func intentObjectHelpPage(env textui.Env, object string) *textui.Page {
+	page := textui.New(env)
+	page.Headline("metasystem "+object, intentObjectSummaries[object])
+	actions := objectActions(object)
+	var all []helpRow
+	summaries := map[string]string{}
+	for _, command := range actions {
+		all = append(all, helpRow{command.action, command.summary})
+		summaries[command.action] = command.summary
+	}
+	column := helpColumn(all)
+	if len(actions) <= intentHelpGroupAbove || intentActionIntents[object] == nil {
+		var rows []textui.KV
+		for _, row := range all {
+			rows = append(rows, textui.KV{Key: row.name, Value: []textui.Span{textui.Plain(row.summary)}})
+		}
+		page.Facts(rows...)
+	} else {
+		listed := map[string]bool{}
+		for _, group := range intentActionIntents[object] {
+			var rows []helpRow
+			for _, action := range group.actions {
+				if summary, ok := summaries[action]; ok {
+					rows = append(rows, helpRow{action, summary})
+					listed[action] = true
+				}
+			}
+			addHelpRows(page.Section(group.heading, ""), column, rows)
+		}
+		var rest []helpRow
+		for _, row := range all {
+			if !listed[row.name] {
+				rest = append(rest, row)
+			}
+		}
+		addHelpRows(page.Section("More", ""), column, rest)
+	}
+	page.Hint(textui.Hint{Argv: []string{"metasystem", object, "ACTION", "--help"}, Reason: "one action's forms, options and examples"})
+	return page
 }
 
 // writeIntentLong lists commands with every usage, the summary and the first
@@ -1409,65 +1527,108 @@ func writeIntentHelp(w io.Writer, command intentCommand) {
 }
 
 func writeIntentCommandHelp(w io.Writer, command intentCommand) {
-	fmt.Fprintf(w, "%s - %s\n", command.name, command.summary)
-	if slices.Contains(intentAdministrationObjects, command.object) {
-		fmt.Fprintln(w, "MetaSystem administration: this action manages the work system itself.")
+	_, _ = io.WriteString(w, intentCommandHelpPage(helpEnv(w), command).String())
+}
+
+// intentCommandHelpPage is one action's page: what it does, its forms, what
+// else a person should know, its options and examples.
+func intentCommandHelpPage(env textui.Env, command intentCommand) *textui.Page {
+	page := textui.New(env)
+	page.Headline("metasystem "+command.name, command.summary)
+	// A form or an example is a command a person pastes: a table cell,
+	// never broken across lines (P9).
+	forms := page.Section("", "").Table(textui.Column{}, textui.Column{})
+	for index, form := range command.usage {
+		key := ""
+		if index == 0 {
+			key = "  usage"
+		}
+		forms.Row(textui.Plain(key), textui.Plain(form))
 	}
-	fmt.Fprintln(w, "usage:")
-	for _, usage := range command.usage {
-		fmt.Fprintf(w, "  %s\n", usage)
+	about := page.Section("", "")
+	if slices.Contains(intentAdministrationObjects, command.object) {
+		about.Text("MetaSystem administration: this action manages the work system itself.")
+	}
+	for _, paragraph := range helpParagraphs(command.details) {
+		about.Text(paragraph)
 	}
 	if len(command.administrationUsage) > 0 {
-		fmt.Fprintln(w, "MetaSystem administration:")
-		for _, usage := range command.administrationUsage {
-			fmt.Fprintf(w, "  %s\n", usage)
+		admin := page.Section("MetaSystem administration", "").Table(textui.Column{})
+		for _, form := range command.administrationUsage {
+			admin.Row(textui.Plain(form))
 		}
 	}
-	for _, detail := range command.details {
-		fmt.Fprintf(w, "%s\n", detail)
+	type option struct{ spelling, usage string }
+	options := map[bool][]option{}
+	widest := 0
+	for _, definition := range command.helpFlags() {
+		if definition.hidden {
+			continue
+		}
+		spelling := "--" + definition.name
+		if definition.value != "" {
+			spelling += " " + definition.value
+		}
+		if definition.repeat {
+			spelling += " (repeatable)"
+		}
+		usage := definition.usage
+		if len(definition.aliases) > 0 {
+			aliases := make([]string, len(definition.aliases))
+			for index, alias := range definition.aliases {
+				aliases[index] = "--" + alias
+			}
+			usage += " (also " + strings.Join(aliases, ", ") + ")"
+		}
+		options[definition.advanced] = append(options[definition.advanced], option{spelling, usage})
+		widest = max(widest, len([]rune(spelling)))
 	}
-	writeFlags := func(heading string, advanced bool) {
-		var rows []string
-		for _, definition := range command.helpFlags() {
-			if definition.advanced != advanced || definition.hidden {
-				continue
-			}
-			spelling := "--" + definition.name
-			if definition.value != "" {
-				spelling += " " + definition.value
-			}
-			if definition.repeat {
-				spelling += " (repeatable)"
-			}
-			line := fmt.Sprintf("  %-34s %s", spelling, definition.usage)
-			if len(definition.aliases) > 0 {
-				aliases := make([]string, len(definition.aliases))
-				for index, alias := range definition.aliases {
-					aliases[index] = "--" + alias
-				}
-				line += " (also " + strings.Join(aliases, ", ") + ")"
-			}
-			rows = append(rows, line)
-		}
-		if len(rows) == 0 {
-			return
-		}
-		fmt.Fprintln(w, heading)
-		for _, row := range rows {
-			fmt.Fprintln(w, row)
-		}
-	}
-	writeFlags("options:", false)
-	writeFlags("advanced:", true)
-	if len(command.examples) > 0 {
-		fmt.Fprintln(w, "examples:")
-		for _, example := range command.examples {
-			fmt.Fprintf(w, "  %s\n", example)
-		}
-	}
+	aside := ""
 	if command.passthrough == nil {
-		fmt.Fprintln(w, "Options go before or after the target; `--` ends the options.")
+		aside = "before or after the target; -- ends them"
 	}
+	for _, advanced := range []bool{false, true} {
+		title := "Options"
+		if advanced {
+			title = "Advanced"
+		}
+		var rows []helpRow
+		for _, option := range options[advanced] {
+			rows = append(rows, helpRow{option.spelling, option.usage})
+		}
+		if len(rows) > 0 {
+			addHelpRows(page.Section(title, aside), widest, rows)
+			aside = ""
+		}
+	}
+	if len(command.examples) > 0 {
+		examples := page.Section("Examples", "").Table(textui.Column{})
+		for _, example := range command.examples {
+			examples.Row(textui.Plain(example))
+		}
+	}
+	return page
+}
+
+// helpParagraphs joins an action's detail lines into paragraphs: a line
+// that does not end a sentence runs on into the next, so the page wraps
+// whole sentences at its own width.
+func helpParagraphs(details []string) []string {
+	var paragraphs []string
+	open := false
+	for _, detail := range details {
+		detail = strings.TrimSpace(detail)
+		if detail == "" {
+			continue
+		}
+		if open {
+			paragraphs[len(paragraphs)-1] += " " + detail
+		} else {
+			paragraphs = append(paragraphs, detail)
+		}
+		open = !strings.ContainsAny(detail[len(detail)-1:], ".!?:;")
+	}
+	return paragraphs
 }
 
 // helpFlags are the options help shows: a parsed action's own options plus
