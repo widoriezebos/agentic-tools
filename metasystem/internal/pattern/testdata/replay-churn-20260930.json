@@ -1,0 +1,149 @@
+{
+ "source": "origin main (github.com/widoriezebos/agentic-tools) read at 51ce78a17: every commit of 2026-09-30 16:00-16:30Z whose Goal-Transaction names landing-2b626e27 and changed metasystem/plans/goals/trunk-red.json",
+ "commits": [
+  {
+   "commit": "afe560040174bd3cdbe4d46ad54ab677346f42a1",
+   "committedAt": "2026-09-30T16:14:18Z",
+   "goalTransaction": "F0MVQ5NPYFBE9Q5NT5BQ9KT4CF-landing-2b626e27",
+   "path": "metasystem/plans/goals/trunk-red.json"
+  },
+  {
+   "commit": "872230c48c57dd8cd7c0d8462844ab31f1a06fc3",
+   "committedAt": "2026-09-30T16:14:25Z",
+   "goalTransaction": "FJ4TD9C1HVK81M3AEJM01YEB9T-landing-2b626e27",
+   "path": "metasystem/plans/goals/trunk-red.json"
+  },
+  {
+   "commit": "e60da0bcee33d81523574b08175ab1f8add57c13",
+   "committedAt": "2026-09-30T16:15:26Z",
+   "goalTransaction": "8MDWAFSHA6XW1YNCSHKQF4RCCP-landing-2b626e27",
+   "path": "metasystem/plans/goals/trunk-red.json"
+  },
+  {
+   "commit": "cf851ee9af903d716831e2f9500c52be21745274",
+   "committedAt": "2026-09-30T16:15:33Z",
+   "goalTransaction": "HRKN8Z14X4ZT4B0FZZVP0C3QZH-landing-2b626e27",
+   "path": "metasystem/plans/goals/trunk-red.json"
+  },
+  {
+   "commit": "03c0c23892c9b8a69494e7fd4e7deff5444393f6",
+   "committedAt": "2026-09-30T16:16:54Z",
+   "goalTransaction": "77GW7B9AACQB3HEDKRJQT69WPY-landing-2b626e27",
+   "path": "metasystem/plans/goals/trunk-red.json"
+  },
+  {
+   "commit": "f9bfdab60a0a6f084d95f2a1ad94d6b95cb6db71",
+   "committedAt": "2026-09-30T16:17:03Z",
+   "goalTransaction": "T1VCQY83ER84M8D4TDP18VEH7Z-landing-2b626e27",
+   "path": "metasystem/plans/goals/trunk-red.json"
+  },
+  {
+   "commit": "d4d5ec6d6b8c8cf6f5d94bfbe3baf9a86178c48f",
+   "committedAt": "2026-09-30T16:17:31Z",
+   "goalTransaction": "WTT0ETDTYJVWBXD44R8BAAVW6F-landing-2b626e27",
+   "path": "metasystem/plans/goals/trunk-red.json"
+  },
+  {
+   "commit": "63611afcab608b82e726284147dfb60557fe81ec",
+   "committedAt": "2026-09-30T16:17:39Z",
+   "goalTransaction": "4RB08HVKMY571TXP2ZZFGADHJV-landing-2b626e27",
+   "path": "metasystem/plans/goals/trunk-red.json"
+  },
+  {
+   "commit": "a2d9e5286fcfa15fa5133264cc2d6c10461897c6",
+   "committedAt": "2026-09-30T16:18:40Z",
+   "goalTransaction": "NQ2WW63K7PA1Q43VA3DHX4C4Y7-landing-2b626e27",
+   "path": "metasystem/plans/goals/trunk-red.json"
+  },
+  {
+   "commit": "42c1012f006fc4682f5e64532f911d3bd6d93865",
+   "committedAt": "2026-09-30T16:18:47Z",
+   "goalTransaction": "PJE7E3XQ79JZPP3NM2JMS2PWZ7-landing-2b626e27",
+   "path": "metasystem/plans/goals/trunk-red.json"
+  },
+  {
+   "commit": "7efdf057bb8179464fb89c64b3ae26ab76834acb",
+   "committedAt": "2026-09-30T16:19:32Z",
+   "goalTransaction": "07EMNBF9S1BRZRS1X9901SSYZY-landing-2b626e27",
+   "path": "metasystem/plans/goals/trunk-red.json"
+  },
+  {
+   "commit": "10af904c661617b024b23902adfcc57aafb3e448",
+   "committedAt": "2026-09-30T16:19:38Z",
+   "goalTransaction": "KM0MXGB3BPB76H7FMDQHM4ZZ0K-landing-2b626e27",
+   "path": "metasystem/plans/goals/trunk-red.json"
+  },
+  {
+   "commit": "bcf1a9d18c382864dcd28fdb2e0695dcae9767e3",
+   "committedAt": "2026-09-30T16:20:30Z",
+   "goalTransaction": "56DC8R52JJPZGWT10FMQP6RYZ1-landing-2b626e27",
+   "path": "metasystem/plans/goals/trunk-red.json"
+  },
+  {
+   "commit": "19e95e11e6e1c28e0f3e20d50dbfd51baf2b138b",
+   "committedAt": "2026-09-30T16:20:36Z",
+   "goalTransaction": "JTNMNXDGQD259WVVSN8X39ZQ09-landing-2b626e27",
+   "path": "metasystem/plans/goals/trunk-red.json"
+  },
+  {
+   "commit": "b4715b19e62a01772c493b899a94ae3980984af3",
+   "committedAt": "2026-09-30T16:21:32Z",
+   "goalTransaction": "S2T14Y6J9J3WPM8TP44YV94ABD-landing-2b626e27",
+   "path": "metasystem/plans/goals/trunk-red.json"
+  },
+  {
+   "commit": "bb0ef400f730bcc4cf799e8a2cc87d2dc34e837e",
+   "committedAt": "2026-09-30T16:21:39Z",
+   "goalTransaction": "7MF0JE58KCKGM3WA21B794MHPP-landing-2b626e27",
+   "path": "metasystem/plans/goals/trunk-red.json"
+  },
+  {
+   "commit": "9dc165607ec51757f993890a09aab3b997564297",
+   "committedAt": "2026-09-30T16:22:30Z",
+   "goalTransaction": "XRAAPGXWXV2F6Z1ED763Y7TTAY-landing-2b626e27",
+   "path": "metasystem/plans/goals/trunk-red.json"
+  },
+  {
+   "commit": "a892deebab98e7760c6b490751cd53ac5c523a59",
+   "committedAt": "2026-09-30T16:22:37Z",
+   "goalTransaction": "HWJWDKGZ6V7872KKWG0WDFMTGN-landing-2b626e27",
+   "path": "metasystem/plans/goals/trunk-red.json"
+  },
+  {
+   "commit": "805c19d40bd1224c6dd3bbd754c6db2de296f095",
+   "committedAt": "2026-09-30T16:23:41Z",
+   "goalTransaction": "CYPCHS2CR68Q591P0NHXNK9TZ0-landing-2b626e27",
+   "path": "metasystem/plans/goals/trunk-red.json"
+  },
+  {
+   "commit": "e86005c2e49c8cedb6bf090d821182db3c99bf99",
+   "committedAt": "2026-09-30T16:23:48Z",
+   "goalTransaction": "FY9HRRMW24CXWEM3NPQAEGJKQX-landing-2b626e27",
+   "path": "metasystem/plans/goals/trunk-red.json"
+  },
+  {
+   "commit": "916571b63e49e6058375201592fe5a438d81cf75",
+   "committedAt": "2026-09-30T16:24:24Z",
+   "goalTransaction": "SACN4XARN9T2GC0FCPRHCTWTAX-landing-2b626e27",
+   "path": "metasystem/plans/goals/trunk-red.json"
+  },
+  {
+   "commit": "7d0fc86923afaacb75f4252a81c92a4ae0e82ed9",
+   "committedAt": "2026-09-30T16:24:30Z",
+   "goalTransaction": "4316F8BEJSJ6DDFCTANRE2XHX0-landing-2b626e27",
+   "path": "metasystem/plans/goals/trunk-red.json"
+  },
+  {
+   "commit": "f6c70d9fbeb21c3ebe23fb972a7604416d179052",
+   "committedAt": "2026-09-30T16:25:23Z",
+   "goalTransaction": "V3EMJAGFDVX3TATM156GTQSEKN-landing-2b626e27",
+   "path": "metasystem/plans/goals/trunk-red.json"
+  },
+  {
+   "commit": "a5f3439a3ec316a3a396cf0b587e995bd84badbe",
+   "committedAt": "2026-09-30T16:25:29Z",
+   "goalTransaction": "GHQXNQM8KNFVRZHHB5DJ6D3ZYZ-landing-2b626e27",
+   "path": "metasystem/plans/goals/trunk-red.json"
+  }
+ ]
+}

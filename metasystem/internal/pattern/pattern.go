@@ -93,5 +93,6 @@ func defaults(name string, thresholds ...string) map[string]string {
 func Registry() []Pattern {
 	return []Pattern{
 		{Name: Stagnation, Defaults: defaults(Stagnation, "batch-hours", "repeat"), Detect: DetectStagnation},
+		{Name: Churn, Defaults: defaults(Churn, "commits", "window-min"), Detect: DetectChurn},
 	}
 }

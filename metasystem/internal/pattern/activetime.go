@@ -12,6 +12,7 @@ import (
 type state struct {
 	Schema  int                   `json:"schema"`
 	Batches map[string]batchClock `json:"batches"`
+	Trunk   *trunkState           `json:"trunk,omitempty"`
 }
 
 // batchClock is one unfinished batch's observed active time (§1 Active

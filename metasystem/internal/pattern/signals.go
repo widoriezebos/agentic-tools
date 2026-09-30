@@ -19,6 +19,8 @@ type Signals struct {
 	// marked Unreadable.
 	Batches           []BatchSignal
 	BatchesUnreadable bool
+	// Trunk is origin's main as the private ref holds it.
+	Trunk TrunkSignal
 }
 
 // Step is one typed batch history entry: when, which verb, and the states

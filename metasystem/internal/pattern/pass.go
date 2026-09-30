@@ -25,6 +25,12 @@ type Pass struct {
 	Batches BatchReader
 	Helm    HelmReader
 	Pause   PauseReader
+	// Git runs the trunk reader's git; nil is RunGit.
+	Git GitRunner
+	// LaneLineages are the lane's identities churn attributes to the landing
+	// lane by their lineage hash; nil is the stable identity alone (the old
+	// owner's lineage belongs only to the replay of 2026-09-30).
+	LaneLineages []string
 }
 
 func (p Pass) withDefaults() Pass {
@@ -39,6 +45,12 @@ func (p Pass) withDefaults() Pass {
 	}
 	if p.Pause == nil {
 		p.Pause = ReadPause
+	}
+	if p.Git == nil {
+		p.Git = RunGit
+	}
+	if p.LaneLineages == nil {
+		p.LaneLineages = []string{LaneLineage}
 	}
 	return p
 }
@@ -70,8 +82,19 @@ func (p Pass) Run(repoRoot string, now time.Time) error {
 		signals.Batches = batches
 	}
 	maxGap := MaxGap(repoRoot)
+	clearTicks := setting(conf, ClearTicksKey, 2)
+	// The fetch is the one network step: it runs before the alerts lock.
+	churn := mode(conf, Churn) == ModeReport
+	fetched := false
+	if churn {
+		fetched = fetchTrunk(p.Git, laneRoot) == nil
+	}
+	laneHashes := map[string]bool{}
+	for _, lineage := range p.LaneLineages {
+		laneHashes[hash8(lineage)] = true
+	}
 	_, err = steward.UpdatePatterns(repoRoot, steward.PatternCycle{
-		Now: now, ClearTicks: setting(conf, ClearTicksKey, 2), Deliver: p.Deliver,
+		Now: now, ClearTicks: clearTicks, Deliver: p.Deliver,
 		Step: func(raw []byte) ([]byte, []steward.PatternRun, error) {
 			current, err := decodeState(raw)
 			if err != nil {
@@ -84,13 +107,28 @@ func (p Pass) Run(repoRoot string, now time.Time) error {
 			} else {
 				current.account(signals.Batches, now, maxGap)
 			}
+			cycleSignals := signals
+			if churn {
+				if current.Trunk == nil {
+					current.Trunk = &trunkState{}
+				}
+				window := time.Duration(setting(conf, ThresholdKey(Churn, "window-min"), 10)) * time.Minute
+				cycleSignals.Trunk = current.Trunk.read(p.Git, laneRoot, fetched, now, maxGap, window)
+				cycleSignals.Trunk.LaneHashes = laneHashes
+				for work := range current.Trunk.Watched {
+					cycleSignals.Trunk.Watched = append(cycleSignals.Trunk.Watched, work)
+				}
+			}
 			var runs []steward.PatternRun
 			for _, pattern := range Registry() {
 				if mode(conf, pattern.Name) != ModeReport {
 					continue
 				}
-				runs = append(runs, steward.PatternRun{Pattern: pattern.Name,
-					Observations: pattern.Detect(signals, now, thresholds(conf, pattern))})
+				observations := pattern.Detect(cycleSignals, now, thresholds(conf, pattern))
+				if pattern.Name == Churn && current.Trunk != nil {
+					current.Trunk.watch(observations, clearTicks)
+				}
+				runs = append(runs, steward.PatternRun{Pattern: pattern.Name, Observations: observations})
 			}
 			next, err := current.encode()
 			return next, runs, err

@@ -596,12 +596,12 @@ func validateWithRunner(confPath, repoRoot string, runner gitRunner) (tiersAbsen
 		}
 	}
 	// The behaviour patterns' switches and thresholds (v1 reports only).
-	for _, key := range []string{"steward.pattern.stagnation"} {
+	for _, key := range []string{"steward.pattern.stagnation", "steward.pattern.churn"} {
 		if raw, present := values[key]; present && raw != "off" && raw != "report" {
 			add("%s must be off or report, got %s", key, pyRepr(raw))
 		}
 	}
-	for _, knob := range []string{"steward.pattern.stagnation.repeat", "steward.pattern.clear-ticks", "steward.pattern.max-gap-sec"} {
+	for _, knob := range []string{"steward.pattern.stagnation.repeat", "steward.pattern.churn.commits", "steward.pattern.churn.window-min", "steward.pattern.clear-ticks", "steward.pattern.max-gap-sec"} {
 		if raw, present := values[knob]; present {
 			if parsed, parseErr := strconv.Atoi(raw); parseErr != nil || parsed < 1 {
 				add("%s must be a positive integer, got %s", knob, pyRepr(raw))
