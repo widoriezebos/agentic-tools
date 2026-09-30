@@ -15,29 +15,32 @@ import (
 )
 
 type BriefBoundsUnreadable struct {
-	Detail string
+	// Cause is what failed to read back: a detail --verbose and records
+	// show (RefusalDetail), never the words a person reads.
+	Cause string
 	// Remedy is line 2: what the person does about it.
 	Remedy string
 }
 
 // briefBoundsReadRemedy is the unreadable round's line 2: its saved
 // evidence cannot be trusted, so the work goes round again.
-const briefBoundsReadRemedy = "this round's saved brief can't be trusted; revise the work with metasystem work revise"
+const briefBoundsReadRemedy = "revise the work with metasystem work revise"
 
 // Error is the plain words; the code is RefusalCode ("Messages a Person
-// Reads"), and RefusalDetail the code-first line records keep.
+// Reads"), and RefusalDetail the code-first line with the cause that
+// records keep.
 func (e *BriefBoundsUnreadable) Error() string {
-	text := "the brief's bounds cannot be read back: " + e.Detail
+	text := "this round's brief bounds can't be read back, so its saved brief can't be trusted"
 	if e.Remedy != "" {
 		text += "\n" + e.Remedy
 	}
 	return text
 }
 func (e *BriefBoundsUnreadable) RefusalCode() string   { return "BRIEF_BOUNDS_UNREADABLE" }
-func (e *BriefBoundsUnreadable) RefusalDetail() string { return e.RefusalCode() + ": " + e.Detail }
+func (e *BriefBoundsUnreadable) RefusalDetail() string { return e.RefusalCode() + ": " + e.Cause }
 
 func briefBoundsUnreadable(format string, args ...any) error {
-	return &BriefBoundsUnreadable{Detail: fmt.Sprintf(format, args...), Remedy: briefBoundsReadRemedy}
+	return &BriefBoundsUnreadable{Cause: fmt.Sprintf(format, args...), Remedy: briefBoundsReadRemedy}
 }
 
 // ReadRoundBriefBounds reads the admission evidence for one supplied job

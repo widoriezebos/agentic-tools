@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -131,10 +132,11 @@ type traceFunc struct {
 }
 
 type traceParam struct {
-	format  bool
-	class   string
-	kind    string
-	refusal bool
+	format      bool
+	class       string
+	kind        string
+	refusal     bool
+	remedyEmpty bool
 }
 
 // tracePackage is what the traced reading knows of one package directory.
@@ -157,6 +159,10 @@ type traceSink struct {
 	// refusal: a refusal type with no field for its remedy carries these
 	// words, so line 2 must be in them.
 	refusal bool
+	// remedyEmpty: the refusal type has a remedy field that this literal
+	// leaves empty; its no-command is reported, not enforced, until the
+	// remedies are filled (integration, round 2).
+	remedyEmpty bool
 	// pick transforms the text before it is judged (a hook's JSON value).
 	pick func(string) (string, bool)
 }
@@ -360,6 +366,44 @@ func (pkg *tracePackage) traceRefusal(name string) bool {
 	return true
 }
 
+// traceRemedyLeftEmpty says whether a literal of a refusal type that has a
+// field for its remedy leaves that field unset or empty: its words then must
+// carry line 2 themselves, as a refusal type without the field does.
+func (pkg *tracePackage) traceRemedyLeftEmpty(name string, lit *ast.CompositeLit) bool {
+	if !pkg.refusals[name] && !strings.HasSuffix(name, "Refusal") {
+		return false
+	}
+	fields := pkg.structs[name]
+	remedies := 0
+	for _, field := range fields {
+		if messageTraceRemedyField.MatchString(field) {
+			remedies++
+		}
+	}
+	if remedies == 0 {
+		return false
+	}
+	for position, element := range lit.Elts {
+		field, value := "", element
+		if kv, ok := element.(*ast.KeyValueExpr); ok {
+			if key, ok := kv.Key.(*ast.Ident); ok {
+				field = key.Name
+			}
+			value = kv.Value
+		} else if position < len(fields) {
+			field = fields[position]
+		}
+		if !messageTraceRemedyField.MatchString(field) {
+			continue
+		}
+		if text, ok := value.(*ast.BasicLit); ok && text.Kind == token.STRING && text.Value == `""` {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
 var messageTraceRemedyField = regexp.MustCompile(`(?i)remedy|next|decision|command|^run|hint|resolve|second`)
 
 // traceTypeName is a type expression's base name: T for T, *T, pkg.T.
@@ -441,7 +485,8 @@ func (index *traceIndex) directSinks() []traceSink {
 			// Package-level declarations: a hook's fixed JSON responses.
 			ast.Inspect(decl, func(node ast.Node) bool {
 				add := func(expr ast.Expr, kind string, format bool, class string, refusal ...bool) {
-					sinks = append(sinks, traceSink{fn: fn, file: file, expr: expr, kind: kind, format: format, class: class, refusal: len(refusal) == 1 && refusal[0]})
+					sinks = append(sinks, traceSink{fn: fn, file: file, expr: expr, kind: kind, format: format, class: class,
+						refusal: len(refusal) >= 1 && refusal[0], remedyEmpty: len(refusal) == 2 && refusal[1]})
 				}
 				switch n := node.(type) {
 				case *ast.CompositeLit:
@@ -511,7 +556,8 @@ func (index *traceIndex) literalSinks(file *traceFile, pkg *tracePackage, lit *a
 		name := traceTypeName(typ)
 		errorType := strings.HasSuffix(name, "Error") || strings.HasSuffix(name, "Refusal") || pkg.refusals[name]
 		fields := pkg.structs[name]
-		refusal := pkg.traceRefusal(name)
+		remedyEmpty := !pkg.traceRefusal(name) && pkg.traceRemedyLeftEmpty(name, lit)
+		refusal := pkg.traceRefusal(name) || remedyEmpty
 		for position, element := range lit.Elts {
 			field := ""
 			value := element
@@ -527,7 +573,7 @@ func (index *traceIndex) literalSinks(file *traceFile, pkg *tracePackage, lit *a
 			case messageTraceHookFields[field]:
 				add(value, messagePrint, false, messageTraceHook)
 			case errorType && messageTraceFields[field]:
-				add(value, messageError, false, "", refusal)
+				add(value, messageError, false, "", refusal, remedyEmpty)
 			}
 		}
 	}
@@ -741,7 +787,7 @@ func (index *traceIndex) close(sinks []traceSink) []traceSink {
 						class = messageTraceHelper
 					}
 					fn.messageParams[position] = traceParam{format: format || sink.format && traceIsIdentOf(sink.expr, tainted), class: class, kind: sink.kind,
-						refusal: sink.refusal && traceIsWhole(sink.expr, tainted)}
+						refusal: sink.refusal && traceIsWhole(sink.expr, tainted), remedyEmpty: sink.remedyEmpty}
 					changed = true
 					break
 				}
@@ -771,7 +817,7 @@ func (index *traceIndex) close(sinks []traceSink) []traceSink {
 						}
 						index.sites[key] = true
 						changed = true
-						sinks = append(sinks, traceSink{fn: caller, file: file, expr: arg, kind: param.kind, format: param.format, class: param.class, refusal: param.refusal})
+						sinks = append(sinks, traceSink{fn: caller, file: file, expr: arg, kind: param.kind, format: param.format, class: param.class, refusal: param.refusal, remedyEmpty: param.remedyEmpty})
 					}
 					return true
 				})
@@ -958,6 +1004,9 @@ func (index *traceIndex) emit(sink traceSink) []messageTraced {
 			source.Violations = append(source.Violations, violation)
 		}
 		source.Mode = messageTracedModeFor(sink.file.rel, function)
+		if sink.remedyEmpty && source.Mode == auditEnforce && slices.Equal(source.Violations, []string{"no-command"}) {
+			source.Mode = auditReport
+		}
 		out = append(out, source)
 	}
 	return out

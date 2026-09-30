@@ -65,8 +65,10 @@ func checkBriefSource(t *testing.T, f briefSourceFixture, record dispatch.Compos
 func requireBoundsUnreadable(t *testing.T, err error, detail string) {
 	t.Helper()
 	var typed *BriefBoundsUnreadable
-	if !errors.As(err, &typed) || typed.Detail != detail || strings.Contains(err.Error(), "BRIEF_BOUNDS_UNREADABLE") ||
-		!strings.Contains(err.Error(), detail) || typed.RefusalCode() != "BRIEF_BOUNDS_UNREADABLE" || typed.RefusalDetail() != "BRIEF_BOUNDS_UNREADABLE: "+detail {
+	// The cause is a --verbose detail; the words a person reads are plain.
+	if !errors.As(err, &typed) || typed.Cause != detail || strings.Contains(err.Error(), "BRIEF_BOUNDS_UNREADABLE") ||
+		strings.Contains(err.Error(), detail) || !strings.HasPrefix(err.Error(), "this round's brief bounds can't be read back") ||
+		typed.RefusalCode() != "BRIEF_BOUNDS_UNREADABLE" || typed.RefusalDetail() != "BRIEF_BOUNDS_UNREADABLE: "+detail {
 		t.Fatalf("error = %#v, want BRIEF_BOUNDS_UNREADABLE: %s", err, detail)
 	}
 }
@@ -107,7 +109,7 @@ func TestReviewBriefBoundsRoundIsolation(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			_, _, err := validateBriefBoundsSource(f.root, f.job, "2", raw, f.prompt)
 			var typed *BriefBoundsUnreadable
-			if !errors.As(err, &typed) || !strings.HasPrefix(typed.Detail, "decode composition: ") {
+			if !errors.As(err, &typed) || !strings.HasPrefix(typed.Cause, "decode composition: ") {
 				t.Fatalf("error = %#v", err)
 			}
 		})

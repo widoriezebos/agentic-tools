@@ -192,3 +192,77 @@ func messageTraceFixtureChecks(t *testing.T, direct []messageSource, traced []me
 		}
 	}
 }
+
+// messageTraceRemedyFixture is a refusal type with a field for its remedy:
+// a literal that fills it resolves, one that leaves it empty does not.
+const messageTraceRemedyFixture = `package y
+
+import "fmt"
+
+type OpError struct{ Code, Message, Run string }
+
+func (e *OpError) Error() string       { return e.Message }
+func (e *OpError) RefusalCode() string { return e.Code }
+
+func refuse(format string, args ...any) error {
+	return &OpError{Code: "Y_REFUSED", Message: fmt.Sprintf(format, args...)}
+}
+
+func refuseBlank(format string, args ...any) error {
+	return &OpError{Code: "Y_REFUSED", Message: fmt.Sprintf(format, args...), Run: ""}
+}
+
+func refuseRun(run, format string, args ...any) error {
+	return &OpError{Code: "Y_REFUSED", Message: fmt.Sprintf(format, args...), Run: run}
+}
+
+func filled(id string) error {
+	return refuseRun("metasystem landing status", "the batch %s is sealed, so nothing was joined", id)
+}
+
+func empty(id string) error { return refuse("the dispatch record %s was replaced while it was read", id) }
+
+func blank(id string) error { return refuseBlank("the hazard ledger has an unknown entry %s", id) }
+`
+
+// TestAuditMessagesTracedJudgesAnEmptyRemedy: a refusal whose type has a
+// remedy field is no-command when a literal leaves that field empty, and
+// resolves when it fills it. Until those remedies are filled, the finding is
+// reported even on an enforced path.
+func TestAuditMessagesTracedJudgesAnEmptyRemedy(t *testing.T) {
+	module := t.TempDir()
+	dir := filepath.Join(module, "internal", "y")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(module, "cmd"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(module, "go.mod"), []byte("module example.com/fixture\n\ngo 1.27\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "y.go"), []byte(messageTraceRemedyFixture), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	enforceTracedMessages("internal/y/y.go")
+	defer delete(messageTracedModes, "internal/y/y.go")
+	seen := 0
+	for _, source := range messageTraceScan(t, module, messageScan(t, module)) {
+		noCommand := slices.Contains(source.Violations, "no-command")
+		switch source.Text {
+		case "the batch … is sealed, so nothing was joined":
+			seen++
+			if noCommand {
+				t.Errorf("a filled Run resolves: %v", source.Violations)
+			}
+		case "the dispatch record … was replaced while it was read", "the hazard ledger has an unknown entry …":
+			seen++
+			if !noCommand || source.Mode != auditReport {
+				t.Errorf("%q: violations %v mode %q; an empty Run is no-command, reported", source.Text, source.Violations, source.Mode)
+			}
+		}
+	}
+	if seen != 3 {
+		t.Fatalf("the traced scan saw %d of the three refusals", seen)
+	}
+}
