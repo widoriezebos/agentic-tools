@@ -132,7 +132,7 @@ func (m *Manager) Start(spec StartSpec) (Record, error) {
 	if spec.Kind == LandingKind && model == LandingModelUnbound {
 		return Record{}, fmt.Errorf("no model is set for the landing agent here; set %s in metasystem.conf.local", LandingModelKey)
 	}
-		if spec.Kind == "design" && m.Adapters[adapterName] == nil {
+	if spec.Kind == "design" && m.Adapters[adapterName] == nil {
 		return Record{}, errors.New("adapter-unavailable")
 	}
 	absDir, err := filepath.Abs(spec.WorkingDirectory)
