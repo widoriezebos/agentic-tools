@@ -83,6 +83,7 @@ func processIntentCommands() []intentCommand {
 			details: []string{
 				"Done by a person at their enrolled terminal. Every job and helper of this checkout stops, and no new work starts until system start.",
 				"If something keeps running, stop says what, and nothing is reported as stopped that is not.",
+				"This user's running launches of the checkout, in it or in one of its registered worktrees, are cancelled as work stop cancels them, a line each.",
 			},
 			flags:    []intentFlag{intentInstallationFlag},
 			maxArgs:  0,
@@ -278,7 +279,7 @@ func processIntentCommands() []intentCommand {
 			usage: []string{"metasystem machine stop NAME", "metasystem machine stop --all"},
 			details: []string{
 				"A person's act at their enrolled terminal, proved as metasystem system stop proves it. Each machine stops through system stop itself, the landing lane's checkout included; that stop cancels the checkout's running dispatch jobs as work stop does.",
-				"This user's running launches in a stopped checkout are cancelled as work stop cancels them; with --all, every running launch of this user is.",
+				"This user's running launches of a stopped checkout, in it or in one of its registered worktrees, are cancelled as work stop cancels them; with --all, every running launch of this user is.",
 				"NAME is a machine's nickname, its checkout's directory name or its checkout's path. A machine on another computer is stopped on that computer: metasystem system stop --repo PATH.",
 				"A machine already stopped is success. Processes that are not MetaSystem's are never touched. Summary by default; --verbose prints each machine's stop.",
 			},
@@ -711,14 +712,96 @@ func systemStopResult(inv *intentInvocation) intentResult {
 	if report.Unchanged {
 		return processUnchangedResult(inv.checkoutTarget(scope), report)
 	}
+	// The checkout is stopped: this user's launches of it end with it.
+	cancel := inv.cancelCheckoutLaunches(scope.Checkout)
+	report.Lines = append(report.Lines, cancel.lines...)
+	var result intentResult
 	if report.ExitCode != 0 {
 		_, fence := processFence(scope)
-		return intentResult{Outcome: intentPartial, code: report.ExitCode, Targets: inv.checkoutTarget(scope), text: report.Lines,
+		result = intentResult{Outcome: intentPartial, code: report.ExitCode, Targets: inv.checkoutTarget(scope), text: report.Lines,
 			Summary: "stop did not finish: some processes are still running (listed below); no new work starts (" + fence + ")",
 			next:    inv.publicArgv(append([]string{"system", "stop"}, inv.forward("installation")...)...), nextReason: "stop again; end any process that survives a second stop yourself",
 			Data: map[string]any{"lines": nonNilLines(report.Lines), "exitCode": report.ExitCode, "fence": fence}}
+	} else {
+		result = processReportResult(inv.checkoutTarget(scope), "stopped "+scope.Checkout, report)
+		if cancel.failed > 0 {
+			// A launch that could not be cancelled still runs; work stop
+			// cancels it by its reference, a repeated system stop would not.
+			result.Outcome, result.code = intentPartial, 1
+			result.next, result.nextReason = inv.publicArgv("work", "stop", cancel.firstFailed), "cancel the launch that is still running"
+		}
 	}
-	return processReportResult(inv.checkoutTarget(scope), "stopped "+scope.Checkout, report)
+	data := result.Data.(map[string]any)
+	data["launchesCancelled"], data["launchesNotCancelled"], data["launchLines"] = cancel.cancelled, cancel.failed, nonNilLines(cancel.lines)
+	return result
+}
+
+// checkoutLaunchCancel is what cancelCheckoutLaunches did: one line per
+// launch, how many were cancelled and how many were not.
+type checkoutLaunchCancel struct {
+	lines             []string
+	cancelled, failed int
+	// firstFailed is the reference of the first launch not cancelled.
+	firstFailed string
+}
+
+// cancelCheckoutLaunches cancels this user's running launches of checkout
+// as work stop cancels them (stopResolvedJob), one line per launch. A
+// launch is the checkout's where placeLaunches puts it among this
+// computer's machines, so machine list, machine stop and system stop agree:
+// in the checkout or below it, or in one of its registered worktrees.
+func (inv *intentInvocation) cancelCheckoutLaunches(checkout string) checkoutLaunchCancel {
+	var out checkoutLaunchCancel
+	if inv.owners.processes.launches == nil {
+		return out
+	}
+	records, err := inv.owners.processes.launches().List()
+	if err != nil {
+		out.failed++
+		out.lines = append(out.lines, "this user's launches cannot be listed, so none of them was cancelled: "+err.Error())
+		out.firstFailed = "ID"
+		return out
+	}
+	running := records[:0:0]
+	for _, record := range records {
+		if !record.State.Terminal() {
+			running = append(running, record)
+		}
+	}
+	if len(running) == 0 {
+		return out
+	}
+	reading := inv.discoverHostMachines(nil)
+	var mine *hostMachine
+	for _, machine := range reading.Machines {
+		if machine.Checkout == checkout {
+			mine = machine
+		}
+	}
+	if mine == nil {
+		mine = &hostMachine{Checkout: checkout}
+		reading.Machines = append(reading.Machines, mine)
+	}
+	inv.placeLaunchRecords(&reading, running)
+	if reading.LaunchProblem != "" {
+		out.lines = append(out.lines, reading.LaunchProblem)
+	}
+	for _, record := range mine.launchRecords {
+		job := intentJob{id: record.ID, kind: "launch", launch: record}
+		result := inv.stopResolvedJob(job)
+		out.lines = append(out.lines, "launch "+jobReference(job)+": "+result.Summary)
+		switch result.Outcome {
+		case intentConfirmed:
+			out.cancelled++
+		case intentUnchanged:
+		default:
+			out.failed++
+			if out.firstFailed == "" {
+				out.firstFailed = jobReference(job)
+			}
+		}
+	}
+	return out
 }
 
 func (inv *intentInvocation) stopSession() int {

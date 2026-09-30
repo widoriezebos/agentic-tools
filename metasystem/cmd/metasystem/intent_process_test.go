@@ -782,3 +782,100 @@ func TestStatusBoardChecksClaimsAtTheStateRoot(t *testing.T) {
 		t.Fatalf("the board checked claims at %v, want the state root %s", read, installation)
 	}
 }
+
+// TestSystemStopEndsARunningSeatAndItsBuild (seat-works-without-a-person,
+// test 13, D-fence, SW-12, SW-17): system stop, after it stops the
+// checkout, cancels this user's running launches of that checkout as work
+// stop does, one line per launch: the seat running in the checkout root and
+// its build running in the registered sibling worktree <checkout>-<goal>.
+// A launch in a sibling directory Git does not register is not the
+// checkout's and is left alone. machine list places the launches the same
+// way; a repeat stop is unchanged and each launch already ended; machine
+// stop after it finds nothing to cancel. The machine bed is the process bed
+// with a host around it: fixture processes, a real launch store, recorded
+// group signals, and Git's worktree list answered by the bed.
+func TestSystemStopEndsARunningSeatAndItsBuild(t *testing.T) {
+	t.Parallel()
+	b := newMachineBed(t)
+	store := launch.Store{Root: b.launchDir}
+	// Only the launches this test names run.
+	if dir, err := store.StateDir("l-1"); err != nil || os.RemoveAll(dir) != nil {
+		t.Fatalf("the bed's own launch could not be removed: %v", err)
+	}
+	worktree, scratch := b.this+"-g-7", b.this+"-scratch"
+	for _, dir := range []string{worktree, scratch} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	b.worktrees[b.this] = []string{worktree}
+	running := func(id, kind, goal, dir string, pid int64) {
+		ref := identity.Ref{Pid: pid, StartedAtSec: pid}
+		if err := store.Create(launch.Record{ID: id, Kind: kind, Goal: goal, WorkingDirectory: dir, State: launch.Running,
+			Supervisor: &ref, ProcessGroup: &ref, StartedAt: "2026-09-30T09:40:00Z"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	running("l-seat", "seat", "", b.this, 601)
+	running("l-build", "build", "g-7", worktree, 602)
+	running("l-other", "build", "g-9", scratch, 603)
+
+	// machine list places them as system stop will.
+	_, _, data := b.runJSON("machine", "list", "--verbose")
+	host := data["thisComputer"].(map[string]any)
+	placed := map[string]string{}
+	for _, raw := range host["machines"].([]any) {
+		machine := raw.(map[string]any)
+		for _, launched := range machine["launches"].([]any) {
+			placed[launched.(map[string]any)["reference"].(string)] = machine["checkout"].(string)
+		}
+	}
+	for _, launched := range host["launchesElsewhere"].([]any) {
+		placed[launched.(map[string]any)["reference"].(string)] = "elsewhere"
+	}
+	if want := map[string]string{"j1:l-seat": b.this, "j1:l-build": b.this, "j1:l-other": "elsewhere"}; !reflect.DeepEqual(placed, want) {
+		t.Fatalf("machine list placed the launches %v, want %v", placed, want)
+	}
+
+	code, result, stopData := b.runJSON("system", "stop")
+	if code != 0 || result.Outcome != intentConfirmed || result.Summary != "stopped "+b.this {
+		t.Fatalf("system stop = %d %+v", code, result)
+	}
+	var launchLines, all []string
+	for _, line := range stopData["lines"].([]any) {
+		all = append(all, line.(string))
+		if strings.HasPrefix(line.(string), "launch ") {
+			launchLines = append(launchLines, line.(string))
+		}
+	}
+	slices.Sort(launchLines)
+	if want := []string{"launch j1:l-build: launch l-build cancelled: cancelled", "launch j1:l-seat: launch l-seat cancelled: cancelled"}; !reflect.DeepEqual(launchLines, want) {
+		t.Fatalf("system stop's launch lines = %q, want %q (all: %q)", launchLines, want, all)
+	}
+	for id, want := range map[string]launch.State{"l-seat": launch.Cancelled, "l-build": launch.Cancelled, "l-other": launch.Running} {
+		if record, err := store.Read(id); err != nil || record.State != want {
+			t.Fatalf("launch %s = %+v %v, want %s", id, record, err, want)
+		}
+	}
+	if !b.dead[601] || !b.dead[602] || b.dead[603] {
+		t.Fatalf("signalled groups = %v; want 601 and 602 only", b.dead)
+	}
+
+	code, stdout, _ := b.run("system", "stop")
+	if code != 0 || !strings.Contains(stdout, "already stopped") || strings.Contains(stdout, "launch ") {
+		t.Fatalf("a repeated system stop = %d %q", code, stdout)
+	}
+	for _, id := range []string{"l-seat", "l-build"} {
+		code, ended, _ := b.runJSON("work", "stop", "j1:"+id)
+		if code != 0 || ended.Outcome != intentUnchanged || ended.Summary != "launch "+id+" already ended: cancelled" {
+			t.Fatalf("work stop j1:%s after system stop = %d %+v", id, code, ended)
+		}
+	}
+	code, machine, machineData := b.runJSON("machine", "stop", "m1e")
+	if code != 0 || machine.Outcome != intentUnchanged || machineData["launchesCancelled"] != float64(0) {
+		t.Fatalf("machine stop after system stop = %d %+v %v", code, machine, machineData)
+	}
+	if record, _ := store.Read("l-other"); record.State != launch.Running || b.dead[603] {
+		t.Fatalf("the unregistered sibling's launch was touched: %+v", record)
+	}
+}

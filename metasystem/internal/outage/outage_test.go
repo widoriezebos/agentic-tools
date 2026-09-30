@@ -185,3 +185,69 @@ func TestEvidenceClipAndTail(t *testing.T) {
 		t.Fatalf("the tail of a large log still classifies: %s %v", class, ok)
 	}
 }
+
+// TestUsageLimitFeedsTheOutageMark (seat-works-without-a-person, test 18):
+// the provider's usage limit is weather like an overload. The Claude CLI's
+// usage-limit line, the API's rate_limit_error and an HTTP 429 line classify
+// as provider-limit; the same framing rules keep local prose and numbers
+// out; and a result file still classifies only when it declares is_error.
+func TestUsageLimitFeedsTheOutageMark(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		line  string
+		class string
+	}{
+		{"Claude AI usage limit reached|1759262400", ProviderLimit},
+		{"5-hour limit reached ∙ resets 3pm", ProviderLimit},
+		{"You've hit your usage limit · resets 11pm (Europe/Amsterdam)", ProviderLimit},
+		{`API Error: 429 {"type":"error","error":{"type":"rate_limit_error","message":"Number of request tokens has exceeded your per-minute rate limit"}}`, ProviderLimit},
+		{`{"type":"error","error":{"type":"rate_limit_error","message":"slow down"}}`, ProviderLimit},
+		{"HTTP 429 Too Many Requests", ProviderLimit},
+		{"request failed with status 429", ProviderLimit},
+		{"processed 429 records", ""},
+		{"error after 429ms", ""},
+		{"set rate_limit_per_minute in the config", ""},
+		{"the usage limit setting is documented below", ""},
+		// An overload stays an overload.
+		{"API Error: 529 Overloaded", "overloaded"},
+	}
+	for _, c := range cases {
+		log := filepath.Join(t.TempDir(), "host.log")
+		if err := os.WriteFile(log, []byte("benign line\n"+c.line+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		class, _, ok := ClassifyLogs(log)
+		if c.class == "" {
+			if ok {
+				t.Fatalf("%q must not classify (got %s)", c.line, class)
+			}
+			continue
+		}
+		if !ok || class != c.class {
+			t.Fatalf("%q: want %s, got %s (ok=%v)", c.line, c.class, class, ok)
+		}
+	}
+	dir := t.TempDir()
+	limited := filepath.Join(dir, "result.json")
+	if err := os.WriteFile(limited, []byte(`{"type":"result","subtype":"success","is_error":true,"result":"Claude AI usage limit reached|1759262400"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if class, evidence, ok := ClassifyProviderResult(limited); !ok || class != ProviderLimit || !strings.Contains(evidence, "usage limit") {
+		t.Fatalf("a declared error carrying the usage-limit line = %s %q %v", class, evidence, ok)
+	}
+	talking := filepath.Join(dir, "success.json")
+	if err := os.WriteFile(talking, []byte(`{"is_error":false,"result":"Claude AI usage limit reached|1759262400"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, ok := ClassifyProviderResult(talking); ok {
+		t.Fatal("a result that is not an error must not mark an outage, whatever it says")
+	}
+	// The class feeds the mark like any other provider failure.
+	root := t.TempDir()
+	if _, err := Record(root, ProviderLimit, "Claude AI usage limit reached", "steward", t0); err != nil {
+		t.Fatal(err)
+	}
+	if mark, ok := StandingAt(root, t0.Add(time.Minute)); !ok || mark.LastClass != ProviderLimit {
+		t.Fatalf("the usage limit did not stand as an outage: %+v %v", mark, ok)
+	}
+}
