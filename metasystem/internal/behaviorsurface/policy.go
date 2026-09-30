@@ -307,6 +307,46 @@ func (p Policy) Includes(projection Projection, name, prefix string) (bool, erro
 	}
 }
 
+// LandingExclusions names every Git-toplevel-relative path the LANDING
+// projection leaves out for an installation at prefix, as literal paths (a
+// directory covers its subtree): repository operational data, the
+// installation's coordination state and non-repository content, and, for a
+// nested installation, the coordination state its state root keeps at the
+// repository top. It is Includes(Landing) as a path list, for a caller that
+// must hand the same boundary to Git: a commit never records these bytes, so
+// nothing that judges a commit's candidate may read them from disk.
+func (p Policy) LandingExclusions(prefix string) []string {
+	cleanPrefix := strings.Trim(filepath.ToSlash(prefix), "/")
+	under := func(pattern string) string {
+		base := strings.TrimSuffix(pattern, "/**")
+		if cleanPrefix == "" {
+			return base
+		}
+		return cleanPrefix + "/" + base
+	}
+	seen := map[string]bool{}
+	var paths []string
+	add := func(path string) {
+		if !seen[path] {
+			seen[path] = true
+			paths = append(paths, path)
+		}
+	}
+	for _, pattern := range p.RepositoryOperationalDataPaths {
+		add(strings.TrimSuffix(pattern, "/**"))
+	}
+	for _, pattern := range append(append([]string(nil), p.CoordinationPaths...), p.NonRepositoryPaths...) {
+		add(under(pattern))
+	}
+	if cleanPrefix != "" {
+		for _, pattern := range p.CoordinationPaths {
+			add(strings.TrimSuffix(pattern, "/**"))
+		}
+	}
+	sort.Strings(paths)
+	return paths
+}
+
 // SkipAllowed reports whether the named equality claim may authorize omission
 // of this exact validation family. Callers cannot borrow a stronger scope by
 // omitting the distinction.

@@ -426,3 +426,42 @@ func TestLandingExcludesCoordinationStateAtTheRepositoryTop(t *testing.T) {
 		}
 	}
 }
+
+// LandingExclusions is Includes(Landing) as a path list: a path is covered
+// by an exclusion exactly when LANDING leaves it out, at the repository root
+// and under a nested installation.
+func TestLandingExclusionsAreTheLandingProjectionAsPaths(t *testing.T) {
+	policy := mustPolicy(t)
+	names := []string{
+		"artifacts/agents/output/land.log", "evidence/run.txt", "paper/rendered/a.pdf",
+		"memory/receipts.log", "records/narrator-digest.log", "plans/goals/g.md", "plans/goals.md",
+		"plans/goals-accepted.json", "metasystem.conf.local", "bin/tool", ".git/HEAD",
+		"internal/ui/web/_app/node_modules/x/index.js", "cmd/metasystem/main.go", "memory/rulings.md",
+		"metasystem.conf", ".claude/settings.json", "records/goals/g.md", "plans/goals-accepted.json.bak",
+	}
+	for _, prefix := range []string{"", "metasystem/"} {
+		exclusions := policy.LandingExclusions(prefix)
+		var candidates []string
+		for _, name := range names {
+			candidates = append(candidates, name)
+			if prefix != "" {
+				candidates = append(candidates, prefix+name)
+			}
+		}
+		for _, name := range candidates {
+			included, err := policy.Includes(Landing, name, prefix)
+			if err != nil {
+				t.Fatal(err)
+			}
+			covered := false
+			for _, exclusion := range exclusions {
+				if name == exclusion || strings.HasPrefix(name, exclusion+"/") {
+					covered = true
+				}
+			}
+			if covered == included {
+				t.Errorf("prefix %q path %s: LANDING includes=%v but exclusions cover=%v (%v)", prefix, name, included, covered, exclusions)
+			}
+		}
+	}
+}

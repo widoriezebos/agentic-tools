@@ -444,7 +444,7 @@ func prepareOnce(request SelectionRequest) (Preparation, error) {
 		return Preparation{}, fmt.Errorf("delivery impact is unresolved: %s; use diagnostic purpose for the bounded unknown groups", strings.Join(plan.Uncertainty, "; "))
 	}
 	if request.Purpose == testpolicy.PurposeDelivery {
-		if err := CheckDeliveryInputParity(candidateTree, prefix, contractRel, effective, plan, workspace.SnapshotRelevant); err != nil {
+		if err := CheckDeliveryInputParity(candidateTree, prefix, contractRel, effective, plan, deliveryParitySnapshot(workspace, prefix)); err != nil {
 			return Preparation{}, err
 		}
 	}
@@ -782,6 +782,23 @@ func RelevantInputs(prefix, contractRel string, contract testpolicy.Contract, pl
 	}
 	sort.Strings(paths)
 	return paths, nil
+}
+
+// deliveryParitySnapshot projects the relevant working-tree inputs the way
+// the commit boundary judges the bytes it records: whatever the LANDING
+// projection leaves out (the engine's per-run state, local configuration,
+// built engines, coordination records hooks append to) stays at candidate
+// bytes, even when a group declares the whole installation as its input.
+// Otherwise a seat could never deliver: those bytes are on every seat's disk
+// and in no commit.
+func deliveryParitySnapshot(workspace gittree.Workspace, prefix string) func(string, []string) (string, error) {
+	return func(candidateTree string, declarations []string) (string, error) {
+		policy, err := behaviorsurface.Load()
+		if err != nil {
+			return "", err
+		}
+		return workspace.SnapshotRelevantExcluding(candidateTree, declarations, policy.LandingExclusions(prefix))
+	}
 }
 
 func CheckDeliveryInputParity(candidateTree, prefix, contractRel string, contract testpolicy.Contract, plan testpolicy.Plan, snapshot func(candidateTree string, declarations []string) (string, error)) error {
