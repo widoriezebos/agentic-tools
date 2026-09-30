@@ -318,6 +318,29 @@ the engine's `metasystem goal` family (`internal/goal`).
   test union, proves one tip, creates exact prefix receipts, builds every unit
   commit locally in join order, and publishes the complete series with one
   push. Red diagnosis may eject units, but never changes the survivors' order.
+- **Landing lane** — the one checkout per computer where every seat's work
+  is proved and pushed: a separate checkout with the same engine and its
+  own supervision, in which no agent works. The computer's lane record,
+  `~/.metasystem/host/landing-lane.json`, names it; `metasystem landing set
+  PATH` writes the record and `landing status` reads it. A seat with no
+  `landing.batch-root` of its own lands through the recorded lane; a seat
+  whose setting names another checkout is refused. How it works and why:
+  `docs/concepts.md`, "Landing lane"; how to run it:
+  `docs/working-with-agents.md`.
+- **Lane owner** — the batch owner process running in the landing lane's
+  checkout: it collects landing batches, proves one at a time on the
+  computer, pushes, and ejects on red. Every checkout carries the same
+  component; it runs only in the checkout the lane record names and stands
+  idle in every seat. The stewards of the computer's seats restart it when it
+  dies and give up after five deaths in a row; `landing start`, `stop` and
+  `restart` are a person's controls.
+- **The seat lands it itself** — the route when the computer has no landing
+  lane: `metasystem work land` proves the work on the seat and pushes it from
+  there. Correct but slower: a full proof per landing, seats competing for
+  CPU, and a rebase and new proof after a lost push race. It is also the
+  route of the exceptions listed in `docs/project-rules.md`. Formerly called
+  the "hand route", "hand path" or landing "by hand"; those names are old
+  and mean this.
 - **Host board** — `~/.metasystem/host/board/`, one private (`0700`)
   directory per seat of this host named by its enrolled nickname, holding
   one **progress card** per claimed goal (`internal/board`). A card is
