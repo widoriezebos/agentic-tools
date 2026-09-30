@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hooks"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/report"
@@ -55,6 +56,11 @@ func runReportStopStatus(args []string, stdout, stderr io.Writer) int {
 			textui.Hint{Argv: []string{"metasystem", "system", "check"}, Reason: "names what is wrong here"})
 	}
 	page := passthroughPage(stdout, resolvedRoot, *verbose)
+	// Its first line names the open behaviour alerts, live, beside the
+	// report's own record.
+	if attention, open := patternAlertAttention(openPatternAlerts(resolvedRoot, board.Home)); open {
+		page.Banner(attention)
+	}
 	summary.lay(page, resolvedRoot, resolution.Path)
 	printPage(stdout, page)
 	return 0

@@ -89,6 +89,14 @@ type AlertEpisode struct {
 	Cleared         bool                 `json:"cleared"`
 	ClearedAt       time.Time            `json:"clearedAt,omitempty"`
 	SeatIdle        *SeatIdleIncident    `json:"seatIdle,omitempty"`
+	// Evidence, Suppressed, CleanCount, Standing and ClearedBy belong to the
+	// episodes OpenAlert opens (behaviour patterns, design §1); an older
+	// engine reading the record ignores them.
+	Evidence   []AlertEvidence `json:"evidence,omitempty"`
+	Suppressed bool            `json:"suppressed,omitempty"`
+	CleanCount int             `json:"cleanCount,omitempty"`
+	Standing   string          `json:"standing,omitempty"`
+	ClearedBy  *AlertInvoker   `json:"clearedBy,omitempty"`
 }
 
 func alertDir(repoRoot string) string {
@@ -142,6 +150,9 @@ func loadAlertEpisode(path string) (AlertEpisode, error) {
 	if episode.Owner == string(RoleSpendFence) &&
 		(episode.ScopeID == "" || (episode.Ceiling != "tokens" && episode.Ceiling != "money") || episode.Multiple < 1) {
 		return AlertEpisode{}, fmt.Errorf("alert episode %s has incomplete spend identity", filepath.Base(path))
+	}
+	if IsPatternOwner(episode.Owner) && episode.ScopeID == "" {
+		return AlertEpisode{}, fmt.Errorf("alert episode %s has no work identity", filepath.Base(path))
 	}
 	if episode.Owner == seatIdleAlertOwner &&
 		(episode.SeatIdle == nil || episode.SeatIdle.SessionID == "" ||
