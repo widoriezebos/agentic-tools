@@ -235,7 +235,7 @@ func TestIntentReviewEvidenceKinds(t *testing.T) {
 	}
 	code, result := b.do("design", "review", design)
 	expectOutcome(t, "no reader budget", code, result, intentRefused)
-	if len(b.calls) != 0 || !strings.Contains(result.Decision, "--tool-calls") {
+	if len(b.calls) != 0 || result.Next == nil || !slices.Contains(result.Next.Argv, "--tool-calls") {
 		t.Fatalf("a missing reader budget is named, never invented: %+v", result)
 	}
 	code, result = b.do("design", "review", design, "--tool-calls", "30")
@@ -406,7 +406,7 @@ func TestIntentCloseWholeOwner(t *testing.T) {
 	b.writeFile(conf, string(existing)+"\nevidence.root=relative/evidence\n")
 	code, result = b.do("work", "finish", "j2:inv1")
 	expectOutcome(t, "owner refusal", code, result, intentRefused)
-	if closed, _ := b.job("inv1")["chainClosed"].(bool); closed || result.Decision == "" {
+	if closed, _ := b.job("inv1")["chainClosed"].(bool); closed || result.Next == nil {
 		t.Fatalf("an owner refusal leaves the chain open: %+v", result)
 	}
 	evidence := t.TempDir()
@@ -650,7 +650,7 @@ func TestIntentLandRouteEvidence(t *testing.T) {
 	b.writeJob(map[string]any{"jobId": "impl1", "role": "implementer", "status": "completed", "goalId": "standing-validation"})
 	code, result = b.do("work", "land", "j2:impl1")
 	expectOutcome(t, "chain without batch root", code, result, intentRefused)
-	if !strings.Contains(result.Decision, "landing.batch-root") {
+	if result.Next == nil || !slices.Contains(result.Next.Argv, "landing.batch-root") {
 		t.Fatalf("a chain without batch policy names the missing input: %+v", result)
 	}
 }
@@ -704,7 +704,7 @@ func TestIntentLandRecovery(t *testing.T) {
 	preps := len(owners.preps)
 	code, result = b.do("work", "land", "standing-validation")
 	expectOutcome(t, "proof refused", code, result, intentRefused)
-	if len(owners.preps) != preps || !strings.Contains(result.Summary, "no schema-3 receipt") {
+	if len(owners.preps) != preps || !strings.Contains(result.Summary, "gave no usable result") {
 		t.Fatalf("no receipt, no preparation: %+v", result)
 	}
 }
@@ -728,12 +728,12 @@ func TestWorkLandRoutesEverySelectionThroughTheLane(t *testing.T) {
 	if result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "work", "review", "--commit", unit, "--goal", "standing-validation"}) {
 		t.Fatalf("the refusal names the critic read that lets the unit into the lane: %+v", result.Next)
 	}
-	if !strings.Contains(result.Summary, unit) || !strings.Contains(result.Summary, "landing lane") || !strings.Contains(result.Decision, "incident claim") {
+	if !strings.Contains(result.Summary, unit) || !strings.Contains(result.Summary, "landing lane") || !strings.Contains(strings.Join(result.Details, " "), "incident claim") {
 		t.Fatalf("the refusal says what happened and the other way through: %+v", result)
 	}
 	for _, want := range []string{"metasystem incident list", "open trunk red", "not a flake or a closed"} {
-		if !strings.Contains(result.Decision, want) {
-			t.Fatalf("the claim hint does not say %q: %q", want, result.Decision)
+		if !strings.Contains(strings.Join(result.Details, " "), want) {
+			t.Fatalf("the claim hint does not say %q: %q", want, result.Details)
 		}
 	}
 
@@ -743,7 +743,7 @@ func TestWorkLandRoutesEverySelectionThroughTheLane(t *testing.T) {
 	unfetched.owners.redOnMain = func(*intentInvocation, string) (string, error) { return "", goal.ErrLedgerNotFetched }
 	code, result = unfetched.do("work", "land", "standing-validation")
 	expectOutcome(t, "an unreadable red register", code, result, intentRefused)
-	if !strings.Contains(result.Summary, "metasystem goal list --fetch") || result.Decision != "metasystem goal list --fetch" || strings.Contains(result.Summary+result.Decision, "goal sync") {
+	if result.Next == nil || shellCommand(result.Next.Argv) != "metasystem goal list --fetch" || strings.Contains(result.Summary+result.Next.Reason, "goal sync") {
 		t.Fatalf("the unreadable register names one fixing command in summary and decision: %+v", result)
 	}
 
@@ -861,7 +861,8 @@ func TestIntentReviewCommitClosesThenPublishes(t *testing.T) {
 	code, result := b.do("work", "review", "--commit", "abc1234", "--goal", "standing-validation", "--model", "gpt-critic")
 	expectOutcome(t, "terminal but unclosed critic", code, result, intentInProgress)
 	if len(reads) != 1 || !slices.Contains(reads[0], "gpt-critic") || publishes != 0 ||
-		!strings.Contains(result.Decision, "work review --commit abc1234 --goal standing-validation --dispositions FILE") || strings.Contains(result.Decision, "gpt-critic") || strings.Contains(result.Decision, "metasystem close") ||
+		result.Next == nil || !strings.Contains(shellCommand(result.Next.Argv), "work review --commit abc1234 --goal standing-validation --dispositions FILE") ||
+		strings.Contains(shellCommand(result.Next.Argv), "gpt-critic") || strings.Contains(shellCommand(result.Next.Argv), "metasystem close") ||
 		result.Data.(map[string]any)["material"] != float64(1) {
 		t.Fatalf("an unclosed critic names the author's close, then the same review; nothing is collected: %v %+v", reads, result)
 	}
@@ -911,7 +912,7 @@ func TestIntentReviewCommitClosesThenPublishes(t *testing.T) {
 	} {
 		code, result := b.do(args...)
 		expectOutcome(t, strings.Join(args, " "), code, result, intentRefused)
-		if result.Decision == "" {
+		if result.Next == nil && result.Decision == "" {
 			t.Fatalf("an unsupported override names the decision: %+v", result)
 		}
 	}

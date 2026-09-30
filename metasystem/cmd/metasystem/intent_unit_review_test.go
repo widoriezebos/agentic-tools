@@ -491,7 +491,7 @@ func TestIntentBuiltUnitToLanding(t *testing.T) {
 	// Finished but unclosed: the author's close is named, nothing collected.
 	c.writeCritic(install, "crit1", first, "completed", false)
 	_, result = c.do("work", "review", "run:"+run)
-	if result.Outcome != intentInProgress || !strings.Contains(result.Decision, "work review run:"+run+" --dispositions FILE") ||
+	if result.Outcome != intentInProgress || result.Next == nil || !strings.Contains(shellCommand(result.Next.Argv), "work review run:"+run+" --dispositions FILE") ||
 		len(c.unitCommits("goal/"+c.id)) != 1 || c.commitReads != 0 {
 		t.Fatalf("unclosed critic: %+v", result)
 	}
@@ -654,7 +654,7 @@ func TestIntentGoalWorktreePreparation(t *testing.T) {
 	owners.connection.claimCheck = func(string, string, goal.Endpoint) func() error {
 		return func() error { return errors.New("goal is not claimed by this session") }
 	}
-	if path, result := c.prepare(owners); path != "" || result == nil || !strings.Contains(result.Summary, "not claimed") || hasBranch(c) {
+	if path, result := c.prepare(owners); path != "" || result == nil || !strings.Contains(strings.Join(result.Details, " "), "not claimed") || hasBranch(c) {
 		t.Fatalf("no claim, no preparation: %q %+v", path, result)
 	}
 	os.MkdirAll(c.worktree, 0o700)

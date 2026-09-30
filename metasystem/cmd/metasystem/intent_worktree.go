@@ -237,16 +237,16 @@ func (inv *intentInvocation) goalWorktreeEntry(id string) (string, *intentResult
 	entry, taken := registered[filepath.Clean(target)]
 	owned := taken && entry.ref == "" && entry.lock == reason
 	if taken && !owned {
-		return refused(fmt.Sprintf("%s is already a worktree of another branch", target), []string{"git", "-C", inv.layout.GitRoot, "worktree", "list"},
+		return refused(fmt.Sprintf("%s is a worktree of %s that this goal did not create", target, chooseUnitValue(entry.ref, "a detached HEAD")), []string{"git", "-C", inv.layout.GitRoot, "worktree", "list"},
 			"shows it; move or remove it, then repeat this command", "path %s is a worktree of %s that this goal's preparation did not create, not goal/%s", target, chooseUnitValue(entry.ref, "a detached HEAD"), id)
 	}
 	if !taken {
 		if entries, statErr := os.ReadDir(target); statErr == nil && len(entries) > 0 {
-			return refused(fmt.Sprintf("%s already holds other files", target), inv.publicArgv("disk", "show"),
+			return refused(fmt.Sprintf("%s is occupied by other files", target), inv.publicArgv("disk", "show"),
 				"names what is there; move it aside, then repeat this command", "path %s is occupied by files that are not the goal/%s worktree", target, id)
 		} else if statErr != nil && !os.IsNotExist(statErr) {
 			if _, fileErr := os.Stat(target); fileErr == nil {
-				return refused(fmt.Sprintf("%s is already taken", target), inv.publicArgv("disk", "show"),
+				return refused(fmt.Sprintf("%s is occupied", target), inv.publicArgv("disk", "show"),
 					"names what is there; move it aside, then repeat this command", "path %s is occupied and is not the goal/%s worktree", target, id)
 			}
 		}

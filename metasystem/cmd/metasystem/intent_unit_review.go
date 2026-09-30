@@ -445,8 +445,8 @@ func (inv *intentInvocation) commitReview(targets []intentTarget, root, goalID, 
 			} else if inv.reviewWork == nil {
 				join, clean := inv.cleanExaminationJoin(root, goalID, unit, result.RootJob)
 				if !clean {
-					waiting.Decision = fmt.Sprintf("the author decides every finding of %s in a dispositions file, then runs %s",
-						result.RootJob, shellCommand(append(inv.canonicalReviewArgv(targets, goalID, unit), "--dispositions", "FILE")))
+					waiting.next = append(inv.canonicalReviewArgv(targets, goalID, unit), "--dispositions", "FILE")
+					waiting.nextReason = "FILE decides every finding of " + result.RootJob
 					return *waiting
 				}
 				// A completed examination with no findings has nothing to
