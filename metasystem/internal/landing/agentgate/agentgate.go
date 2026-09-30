@@ -375,15 +375,10 @@ func (g gate) command(words []string) Decision {
 	case name == "go" || name == "make" || strings.HasSuffix(name, "devgate"):
 		return deny("the landing agent never builds or runs tests itself; proofs run through the kernel", proveCommand)
 	}
+	// The listed shell commands have no option that runs a program or
+	// writes a file, so their options need no reading.
 	for _, shell := range g.list.Shell {
 		if name == shell {
-			if name == "sort" {
-				for _, word := range words[1:] {
-					if strings.HasPrefix(word, "-o") || strings.HasPrefix(word, "--output") {
-						return notListed("write a file with sort")
-					}
-				}
-			}
 			return allow()
 		}
 	}
@@ -443,9 +438,28 @@ func isLaneBranch(name string) bool {
 	return laneBranch.MatchString(name) && !strings.Contains(name, "..") && !strings.HasSuffix(name, ".lock")
 }
 
-// readDenied are options that make a read-only git subcommand write a file
-// or run a program.
-var readDenied = []string{"--output", "-O", "--open-files-in-pager", "--ext-diff", "--exec", "--upload-pack"}
+// readDenied are long options that make a read-only git subcommand write a
+// file or run a program. Git accepts any unambiguous prefix of a long
+// option, so a word is denied when its name is a prefix of one of these.
+var readDenied = []string{"--output", "--open-files-in-pager", "--ext-diff", "--textconv", "--filters", "--exec", "--upload-pack"}
+
+// deniedReadOption reports a word that names, abbreviates or clusters an
+// option in readDenied, or clusters git grep's -O (open in a pager).
+func deniedReadOption(word string) bool {
+	if strings.HasPrefix(word, "--") {
+		name, _, _ := strings.Cut(word, "=")
+		if len(name) <= 2 {
+			return false
+		}
+		for _, denied := range readDenied {
+			if strings.HasPrefix(denied, name) {
+				return true
+			}
+		}
+		return false
+	}
+	return strings.HasPrefix(word, "-") && strings.Contains(word, "O")
+}
 
 func (g gate) git(args []string) Decision {
 	if len(args) > 0 && args[0] == "--no-pager" {
@@ -476,10 +490,11 @@ func (g gate) git(args []string) Decision {
 
 func (g gate) gitRead(sub string, args []string) Decision {
 	for _, word := range args {
-		for _, prefix := range readDenied {
-			if word == prefix || strings.HasPrefix(word, prefix+"=") || (prefix == "-O" && strings.HasPrefix(word, "-O")) {
-				return notListed("run git " + sub + " " + word)
-			}
+		if word == "--" {
+			break
+		}
+		if deniedReadOption(word) {
+			return notListed("run git " + sub + " " + word + ", which can run a program or write a file")
 		}
 	}
 	switch sub {
@@ -514,9 +529,9 @@ func (g gate) gitRead(sub string, args []string) Decision {
 var laneFlags = map[string]struct{ plain, value []string }{
 	"fetch":       {plain: []string{"-q", "--quiet", "--prune", "-p", "--no-tags"}},
 	"add":         {plain: []string{"-u", "--update", "-A", "--all", "--"}},
-	"cherry-pick": {plain: []string{"-x", "--continue", "--abort", "--skip", "--quit", "--allow-empty", "--keep-redundant-commits", "-n", "--no-commit", "--empty=drop", "--empty=keep", "--empty=stop"}, value: []string{"-m", "--mainline"}},
-	"rebase":      {plain: []string{"--continue", "--abort", "--skip", "--quit", "-q", "--quiet", "--keep-empty"}, value: []string{"--onto"}},
-	"commit":      {plain: []string{"--amend", "--no-edit", "--allow-empty", "-a", "--all", "-q", "--quiet"}, value: []string{"-m", "--message", "-F", "--file", "--trailer"}},
+	"cherry-pick": {plain: []string{"-x", "--continue", "--abort", "--skip", "--quit", "--no-edit", "--allow-empty", "--keep-redundant-commits", "-n", "--no-commit", "--empty=drop", "--empty=keep", "--empty=stop"}, value: []string{"-m", "--mainline"}},
+	"rebase":      {plain: []string{"--continue", "--abort", "--skip", "--quit", "--no-edit", "-q", "--quiet", "--keep-empty"}, value: []string{"--onto"}},
+	"commit":      {plain: []string{"--amend", "--no-edit", "--allow-empty", "-a", "--all", "-q", "--quiet"}, value: []string{"-m", "--message", "--trailer"}}, // -F would copy any file into a commit
 	"checkout":    {plain: []string{"-b", "-B", "--ours", "--theirs", "-q", "--quiet", "--"}},
 }
 
@@ -597,20 +612,17 @@ func contains(list []string, word string) bool {
 	return false
 }
 
+// fetch admits origin only, whole or with refspecs into lane/* branches. No
+// other source and no other destination: a rewritten
+// refs/remotes/origin/main is what the engine advance would build from.
 func (g gate) fetch(positional []string) Decision {
-	for index, word := range positional {
-		if strings.Contains(word, "::") || strings.Contains(word, "upload-pack") {
-			return notListed("fetch through a command transport")
-		}
-		if index == 0 {
-			continue
-		}
+	if len(positional) == 0 || positional[0] != "origin" {
+		return deny("the landing agent fetches from origin only", "git fetch origin")
+	}
+	for _, word := range positional[1:] {
 		_, destination, found := strings.Cut(strings.TrimPrefix(word, "+"), ":")
-		if !found {
-			continue
-		}
-		if !strings.HasPrefix(destination, "refs/remotes/") && !isLaneBranch(strings.TrimPrefix(destination, "refs/heads/")) {
-			return deny("the landing agent fetches only into remote-tracking refs and lane/* branches, not "+destination, "git fetch origin")
+		if !found || !isLaneBranch(strings.TrimPrefix(destination, "refs/heads/")) {
+			return deny("the landing agent fetches origin whole, or a ref into a lane/* branch, not "+word, "git fetch origin")
 		}
 	}
 	return allow()

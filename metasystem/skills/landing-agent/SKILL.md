@@ -26,9 +26,11 @@ Your tool calls pass a fail-closed gate (`lane-agent-tools.json`, the PreToolUse
   `agent inbox`;
 - read-only git (`status`, `log`, `show`, `diff`, `rev-parse`, `merge-base`, `blame`, `grep`,
   `branch --list` and the like);
-- `git fetch`, `git checkout lane/NAME` (or `-b lane/NAME START`), and on a `lane/*` branch only
-  `git add`, `git cherry-pick`, `git rebase` and `git commit`;
-- `Read`, `Grep`, `Glob`, and `Edit`/`Write` by absolute path inside the lane checkout.
+- `git fetch origin` (whole, or `git fetch origin REF:lane/NAME`), `git checkout lane/NAME` (or
+  `-b lane/NAME START`), and on a `lane/*` branch only `git add`, `git cherry-pick`, `git rebase`
+  and `git commit` (message inline with `-m`);
+- `Read`, `Grep`, `Glob`, `Skill`, and `Edit`/`Write` by absolute path inside the lane checkout;
+- `cat`, `ls`, `head`, `tail`, `wc`, `grep`, `cut`, `jq`, `pwd` and `echo`.
 
 Everything else is denied, and a call the gate cannot decide is denied too. Denied by design, so
 never try them:

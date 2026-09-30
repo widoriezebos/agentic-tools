@@ -86,7 +86,7 @@ func sampleCall(t *testing.T, bed directBed, entry agentgate.Entry) (string, boo
 	switch entry.Kind {
 	case "tool":
 		switch entry.Name {
-		case "Read", "Grep", "Glob", "LS", "TodoWrite":
+		case "Read", "Grep", "Glob", "LS", "TodoWrite", "Skill":
 			return landingCall(t, bed.repo, entry.Name, map[string]any{"file_path": inside, "pattern": "x"}), true
 		case "Edit", "MultiEdit", "Write":
 			return landingCall(t, bed.repo, entry.Name, map[string]any{"file_path": inside, "old_string": "a", "new_string": "b", "content": "c"}), true
@@ -174,6 +174,18 @@ func TestGateEntriesThroughRealHook(t *testing.T) {
 	status, stdout, stderr := bed.run(t, bed.repo, project, denied["push"], agentgate.LineageEnv+"=steward-seat", engine, "TMPDIR="+t.TempDir())
 	if status != 0 || stdout != "" {
 		t.Fatalf("a seat's call met the landing gate: status %d stdout %q stderr %q", status, stdout, stderr)
+	}
+}
+
+// The landing launch's hook command carries the lineage itself: a session
+// whose environment lost it is still gated on that route.
+func TestLandingHookCommandGovernsWithoutTheEnvironment(t *testing.T) {
+	t.Parallel()
+	bed := newLandingBed(t)
+	status, stdout, stderr := bed.run(t, bed.repo, landingRoutes(t, bed)["landing"],
+		landingCall(t, bed.repo, "Bash", map[string]any{"command": "git push origin HEAD:main"}), directTestEngineEnv+"=allow", "TMPDIR="+t.TempDir())
+	if _, ok := denial(status, stdout, stderr); !ok {
+		t.Fatalf("a push without the lineage in the environment passed the landing route: status %d stdout %q stderr %q", status, stdout, stderr)
 	}
 }
 

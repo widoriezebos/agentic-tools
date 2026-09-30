@@ -98,6 +98,11 @@ func TestGateAdmitsTheListedCallsOnly(t *testing.T) {
 		"rebase on lane":            bash(t, bed.checkout, "git rebase --onto origin/main HEAD~2"),
 		"branch listing":            bash(t, bed.checkout, "git branch --list 'lane/*'"),
 		"quoted multi-line message": bash(t, bed.checkout, "git commit -m 'first line\n\nLane-Resolved: m1'"),
+		"skill tool":                payload(t, bed.checkout, "Skill", map[string]any{"skill": "landing-agent"}),
+		"fetch origin with prune":   bash(t, bed.checkout, "git fetch --prune origin"),
+		"fetch into a lane branch":  bash(t, bed.checkout, "git fetch origin main:lane/b2"),
+		"continue without edit":     bash(t, bed.checkout, "git cherry-pick --continue --no-edit"),
+		"diff output indicator":     bash(t, bed.checkout, "git diff --output-indicator-new=+"),
 	}
 	for name, data := range allowed {
 		if got := decide(t, bed, data); !got.Allow {
@@ -158,6 +163,29 @@ func TestGateAdmitsTheListedCallsOnly(t *testing.T) {
 		"monitor runs a command":  payload(t, bed.checkout, "Monitor", map[string]any{"command": "git push"}),
 		"add a protected path":    bash(t, bed.checkout, "git add .claude/settings.json"),
 		"checkout protected path": bash(t, bed.checkout, "git checkout main -- .claude/settings.json"),
+		// Critique F-1: options that run a program or write a file, spelled
+		// in full, abbreviated, or clustered.
+		"sort runs a program":        bash(t, bed.checkout, "sort -S 1K --compress-program=sh metasystem/internal/a.go"),
+		"sort abbreviated output":    bash(t, bed.checkout, "sort --out=o1.txt a"),
+		"sort clustered output":      bash(t, bed.checkout, "sort -ro2.txt a"),
+		"date sets the clock":        bash(t, bed.checkout, "date 0101000026"),
+		"git log abbreviated output": bash(t, bed.checkout, "git log --outp=/tmp/x"),
+		"git log short output":       bash(t, bed.checkout, "git log --out /tmp/x"),
+		"git grep pager":             bash(t, bed.checkout, "git grep -Ovim x"),
+		"git grep clustered pager":   bash(t, bed.checkout, "git grep -nOvim x"),
+		"git grep abbreviated pager": bash(t, bed.checkout, "git grep --open=vim x"),
+		"git diff external":          bash(t, bed.checkout, "git diff --ext-diff"),
+		"git diff abbreviated ext":   bash(t, bed.checkout, "git diff --ext"),
+		"git show textconv":          bash(t, bed.checkout, "git show --textconv HEAD"),
+		"git cat-file filters":       bash(t, bed.checkout, "git cat-file --filters HEAD:x"),
+		"commit message from a file": bash(t, bed.checkout, "git commit -F /etc/hosts"),
+		"cherry-pick abbreviated":    bash(t, bed.checkout, "git cherry-pick --cont"),
+		// Critique F-4: fetch rewrites no remote-tracking ref from a source
+		// other than origin, and takes no other source.
+		"fetch self into origin/main": bash(t, bed.checkout, "git fetch . lane/x:refs/remotes/origin/main"),
+		"fetch over origin/main":      bash(t, bed.checkout, "git fetch origin lane/x:refs/remotes/origin/main"),
+		"fetch another repository":    bash(t, bed.checkout, "git fetch /tmp/other"),
+		"fetch the default remote":    bash(t, bed.checkout, "git fetch"),
 	}
 	for name, data := range denied {
 		got := decide(t, bed, data)
