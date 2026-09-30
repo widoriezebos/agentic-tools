@@ -78,6 +78,9 @@ type hostMachine struct {
 	launchRecords []launch.Record
 	// stopResult is machine stop's system stop result for it.
 	stopResult *intentResult
+	// worktreesUnread says Git could not list its registered worktrees
+	// when a launch was placed, so a launch elsewhere may be its own.
+	worktreesUnread bool
 }
 
 // machineProcess is one process status listed, with its start.
@@ -330,6 +333,7 @@ func (inv *intentInvocation) placeLaunchRecords(reading *hostReading, records []
 			read[machine] = true
 			registered, err := inv.registeredWorktreesOf(machine.Checkout)
 			if err != nil {
+				machine.worktreesUnread = true
 				problems = append(problems, fmt.Sprintf("the worktrees of %s cannot be listed, so a launch in one may be missing from it: %v", machine.Checkout, err))
 			}
 			for path := range registered {

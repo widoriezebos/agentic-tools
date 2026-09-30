@@ -728,7 +728,7 @@ func systemStopResult(inv *intentInvocation) intentResult {
 			// A launch that could not be cancelled still runs; work stop
 			// cancels it by its reference, a repeated system stop would not.
 			result.Outcome, result.code = intentPartial, 1
-			result.next, result.nextReason = inv.publicArgv("work", "stop", cancel.firstFailed), "cancel the launch that is still running"
+			result.next, result.nextReason = inv.publicArgv("work", "stop", cancel.firstFailed), "cancel the launch that may still be this checkout's"
 		}
 	}
 	data := result.Data.(map[string]any)
@@ -785,6 +785,19 @@ func (inv *intentInvocation) cancelCheckoutLaunches(checkout string) checkoutLau
 	inv.placeLaunchRecords(&reading, running)
 	if reading.LaunchProblem != "" {
 		out.lines = append(out.lines, reading.LaunchProblem)
+	}
+	if mine.worktreesUnread {
+		// A launch no checkout holds may be this checkout's build in a
+		// worktree Git could not list: not cancelled on a guess, never
+		// passed over as stopped.
+		for _, record := range reading.launchesElsewhere {
+			reference := jobReference(intentJob{id: record.ID, kind: "launch", launch: record})
+			out.lines = append(out.lines, fmt.Sprintf("launch %s in %s: not cancelled; it may be this checkout's, whose worktrees cannot be listed", reference, record.WorkingDirectory))
+			out.failed++
+			if out.firstFailed == "" {
+				out.firstFailed = reference
+			}
+		}
 	}
 	for _, record := range mine.launchRecords {
 		job := intentJob{id: record.ID, kind: "launch", launch: record}
