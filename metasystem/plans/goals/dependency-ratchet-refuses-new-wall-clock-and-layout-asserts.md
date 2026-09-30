@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 2
-- Sequence: 36
+- Sequence: 35
 - Risk: severity=2 novelty=2 exposure=3 accumulation=3 basis="The audit changes fixture rules repository-wide; misses repeatedly leave main red, while false positives block tests rather than production behavior."
 - Tier: 2
 - Intent: What: One test in the suite refuses any new test that relies on the real clock or on sleeping. Why: Tests that depend on real time fail when the computer is busy, and those failures have turned main red again and again. About 190 test files use the real clock today, and nothing stops that number from growing. The shell-bed part of the old goal is obsolete: those beds are gone. Pros: The number of timing-fragile tests can only go down. Cons: Legitimate uses must be declared as allowed clock seams.
 - Origin: human
 - Next step: Next: Write one Go test that counts _test.go files calling time.Now, time.Sleep or time.After outside the declared clock seams, records today's count as the baseline, and fails on any rise. Done when: adding a sleep to a new test file fails the suite with a message naming that file.
 - OpenedAt: 2026-09-16T21:02:59Z
-- Revision: 22
+- Revision: 23
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 
@@ -36,4 +36,5 @@ History:
 - 2026-09-30T19:03:14Z EW0YK54G2ZXWCQ186P7CHAJTVS-m1e-b6a4eb0a abandon actor=human:wido targets=fixture-waits-name-their-producer,chain-landing-carries-the-reviewed-diff,human-authority-surface-runs-its-cmd-tests,metasystem-stop-escalation-proofs,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,steward-revivals-leave-the-receipt-stream,runtime-limit-is-not-a-protocol-error,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,land-verb-writes-the-receipt,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:39 to=2:38
 - 2026-09-30T19:03:20Z 44CEXYNKT1VDM5NC50CJMNQ6B0-m1e-b6a4eb0a abandon actor=human:wido targets=job-record-birth-token,failed-job-attention,watcher-repair-request-never-names-current,actionable-metrics,lease-sweep-death-evidence,winddown-census-handoff-leak,machine-concurrency-governor,token-spend-fence,chain-landing-carries-the-reviewed-diff,human-authority-surface-runs-its-cmd-tests,metasystem-stop-escalation-proofs,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,steward-revivals-leave-the-receipt-stream,runtime-limit-is-not-a-protocol-error,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,land-verb-writes-the-receipt,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:38 to=2:37
 - 2026-09-30T19:03:25Z EKVVX249YM3X4NE8R8GVAYX3GK-m1e-b6a4eb0a abandon actor=human:wido targets=metasystem-stop-escalation-proofs,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,steward-revivals-leave-the-receipt-stream,runtime-limit-is-not-a-protocol-error,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,land-verb-writes-the-receipt,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:37 to=2:36
-Integrity: sha256=e99132cdb99b98788557c03fa5a2bb990abd840c21b99aa1c8f177b6d1999845
+- 2026-09-30T19:05:42Z VT0ZEZ00TC069GDHPXXW3M136T-m1e-b6a4eb0a abandon actor=human:wido targets=chain-landing-carries-the-reviewed-diff,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,steward-revivals-leave-the-receipt-stream,runtime-limit-is-not-a-protocol-error,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,land-verb-writes-the-receipt,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:36 to=2:35
+Integrity: sha256=d595580292f8568d638d17a30df5570b0dd0766a9d9d04c93d28d9ebd4f313f0

@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 2
-- Sequence: 32
+- Sequence: 31
 - Risk: severity=3 novelty=2 exposure=3 accumulation=1 basis="severity 3: budget enforcement can stop lawful work or permit unbounded time; novelty 2: a bounded change to existing ledger and elapsed projection; exposure 3: shared goal execution across seats; accumulation 1: each episode is evaluated independently, with no new aggregate accounting"
 - Tier: 3
 - Intent: What: Time a goal spends waiting on you does not count against its time budget, and is shown separately. Why: Goals get stopped for running over time when much of that time was spent waiting for your answer, and restarting them then needs another act from you. Pros: Budgets measure work, not waiting; fewer needless stops. Cons: A wait must be marked by a recorded event (a goal question, a refused person-only command), never by an agent's say-so, or it becomes free time.
 - Origin: main
 - Next step: Next: Clear the pin to the removed seat m1c. Write a short design: which recorded events start and end a wait, how the elapsed-time check subtracts them, and how reports show them; one Astra round, then build. Done when: a test shows a goal that waited two hours on a recorded question is not stopped for those two hours, and the report shows the wait.
 - OpenedAt: 2026-09-11T05:37:49Z
-- Revision: 147
+- Revision: 148
 - Labels: breach-clock-successor
 - BudgetExceptions: 0
 
@@ -161,4 +161,5 @@ History:
 - 2026-09-30T19:03:14Z EW0YK54G2ZXWCQ186P7CHAJTVS-m1e-b6a4eb0a abandon actor=human:wido targets=fixture-waits-name-their-producer,chain-landing-carries-the-reviewed-diff,human-authority-surface-runs-its-cmd-tests,metasystem-stop-escalation-proofs,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,steward-revivals-leave-the-receipt-stream,runtime-limit-is-not-a-protocol-error,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,land-verb-writes-the-receipt,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:35 to=2:34
 - 2026-09-30T19:03:20Z 44CEXYNKT1VDM5NC50CJMNQ6B0-m1e-b6a4eb0a abandon actor=human:wido targets=job-record-birth-token,failed-job-attention,watcher-repair-request-never-names-current,actionable-metrics,lease-sweep-death-evidence,winddown-census-handoff-leak,machine-concurrency-governor,token-spend-fence,chain-landing-carries-the-reviewed-diff,human-authority-surface-runs-its-cmd-tests,metasystem-stop-escalation-proofs,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,steward-revivals-leave-the-receipt-stream,runtime-limit-is-not-a-protocol-error,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,land-verb-writes-the-receipt,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:34 to=2:33
 - 2026-09-30T19:03:25Z EKVVX249YM3X4NE8R8GVAYX3GK-m1e-b6a4eb0a abandon actor=human:wido targets=metasystem-stop-escalation-proofs,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,steward-revivals-leave-the-receipt-stream,runtime-limit-is-not-a-protocol-error,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,land-verb-writes-the-receipt,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:33 to=2:32
-Integrity: sha256=8ba2923dd0563fd2865604a93d7eb62a1315a16b354355351a61220ca30a779c
+- 2026-09-30T19:05:42Z VT0ZEZ00TC069GDHPXXW3M136T-m1e-b6a4eb0a abandon actor=human:wido targets=chain-landing-carries-the-reviewed-diff,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,steward-revivals-leave-the-receipt-stream,runtime-limit-is-not-a-protocol-error,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,land-verb-writes-the-receipt,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:32 to=2:31
+Integrity: sha256=4460ae010d4764c955e4d38e8fd0cbba518a130945816c6d085665c815110c46

@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 2
-- Sequence: 34
+- Sequence: 33
 - Risk: severity=2 novelty=2 exposure=2 accumulation=2 basis="Steward and receipt machinery changes cadence evidence across every seat; failures pollute measurement but do not corrupt product code."
 - Tier: 2
 - Intent: What: When the steward revives a stalled job, the revival is written to the steward's own event log instead of the task receipts people write; receipt checks and statistics ignore steward rows; and the steward revives nothing within 60 minutes of a unit landing or while a job is live. Why: 81 of 231 receipts were revivals, 42 of them for one goal while five units landed, and uncommitted revival rows inflated the count to 344, so the retro that learns from receipts learns from noise. Pros: honest receipts and retros, and fewer pointless revivals. Cons: the 60-minute rule can delay a revival that was really needed.
 - Origin: human
 - Next step: Next: write a short brief for moving revivals to the steward's event log plus the 60-minute refusal, then build it. Done when: the next retro counts zero steward receipts, its receipt count equals the hand-written receipts, and no revival happened within 60 minutes of a landing.
 - OpenedAt: 2026-09-16T21:02:35Z
-- Revision: 21
+- Revision: 22
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 
@@ -35,4 +35,5 @@ History:
 - 2026-09-30T19:03:14Z EW0YK54G2ZXWCQ186P7CHAJTVS-m1e-b6a4eb0a abandon actor=human:wido targets=fixture-waits-name-their-producer,chain-landing-carries-the-reviewed-diff,human-authority-surface-runs-its-cmd-tests,metasystem-stop-escalation-proofs,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,steward-revivals-leave-the-receipt-stream,runtime-limit-is-not-a-protocol-error,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,land-verb-writes-the-receipt,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:37 to=2:36
 - 2026-09-30T19:03:20Z 44CEXYNKT1VDM5NC50CJMNQ6B0-m1e-b6a4eb0a abandon actor=human:wido targets=job-record-birth-token,failed-job-attention,watcher-repair-request-never-names-current,actionable-metrics,lease-sweep-death-evidence,winddown-census-handoff-leak,machine-concurrency-governor,token-spend-fence,chain-landing-carries-the-reviewed-diff,human-authority-surface-runs-its-cmd-tests,metasystem-stop-escalation-proofs,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,steward-revivals-leave-the-receipt-stream,runtime-limit-is-not-a-protocol-error,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,land-verb-writes-the-receipt,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:36 to=2:35
 - 2026-09-30T19:03:25Z EKVVX249YM3X4NE8R8GVAYX3GK-m1e-b6a4eb0a abandon actor=human:wido targets=metasystem-stop-escalation-proofs,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,steward-revivals-leave-the-receipt-stream,runtime-limit-is-not-a-protocol-error,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,land-verb-writes-the-receipt,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:35 to=2:34
-Integrity: sha256=5e683bf6243699e13de47927ddfa4e06152a46d981b01f1a2cadf43329739848
+- 2026-09-30T19:05:42Z VT0ZEZ00TC069GDHPXXW3M136T-m1e-b6a4eb0a abandon actor=human:wido targets=chain-landing-carries-the-reviewed-diff,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,steward-revivals-leave-the-receipt-stream,runtime-limit-is-not-a-protocol-error,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,land-verb-writes-the-receipt,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:34 to=2:33
+Integrity: sha256=6cf8cc180b1829356f471ba842913c60717b2676283bb528f0acaaf7b09e84a7

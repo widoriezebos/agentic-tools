@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 2
-- Sequence: 39
+- Sequence: 38
 - Risk: severity=3 novelty=2 exposure=2 accumulation=2 basis="severity 3: the verb passes guards on trunk, so an agent reaching it, or a commit it lets through that breaks validation, defeats every guard and blocks every seat, as the 2026-09-15 paper commit did; novelty 2: the human-caller check (arm), the goal integrity record, refresh-only and reconcile exist, while a guarded commit path with restamp and an outside-commit repair are new; exposure 2: human use only, rare; accumulation 2: an unrepaired break blocks all goal mutations until someone repairs it, but leaves no hidden state"
 - Tier: 3
 - Intent: What: A person-only command that commits anything you want, protected files included, and keeps the goal ledger valid. Why: On 09-15 a hand commit changed a goal file without updating its checksum, and every goal command on every seat refused until it was repaired. You asked for a break-glass way to commit anything. Pros: You are never locked out, and the ledger stays valid after your commit. Cons: The design predates syncing the ledger with GitHub and has four open findings; part of it may now be covered by goal repair.
 - Origin: human
 - Next step: Next: Re-check design revision 3 (706125247) against today's GitHub-synced ledger (goal fetch, goal repair with accept-remote), resolve its four open findings (BGCR3-01 to 04), decide what is still needed, then build the first unit. Done when: a test shows a person commits a changed goal file with this command and every goal command still works afterwards.
 - OpenedAt: 2026-09-15T19:11:07Z
-- Revision: 47
+- Revision: 48
 - BudgetExceptions: 0
 
 History:
@@ -60,4 +60,5 @@ History:
 - 2026-09-30T19:03:14Z EW0YK54G2ZXWCQ186P7CHAJTVS-m1e-b6a4eb0a abandon actor=human:wido targets=fixture-waits-name-their-producer,chain-landing-carries-the-reviewed-diff,human-authority-surface-runs-its-cmd-tests,metasystem-stop-escalation-proofs,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,steward-revivals-leave-the-receipt-stream,runtime-limit-is-not-a-protocol-error,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,land-verb-writes-the-receipt,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:42 to=2:41
 - 2026-09-30T19:03:20Z 44CEXYNKT1VDM5NC50CJMNQ6B0-m1e-b6a4eb0a abandon actor=human:wido targets=job-record-birth-token,failed-job-attention,watcher-repair-request-never-names-current,actionable-metrics,lease-sweep-death-evidence,winddown-census-handoff-leak,machine-concurrency-governor,token-spend-fence,chain-landing-carries-the-reviewed-diff,human-authority-surface-runs-its-cmd-tests,metasystem-stop-escalation-proofs,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,steward-revivals-leave-the-receipt-stream,runtime-limit-is-not-a-protocol-error,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,land-verb-writes-the-receipt,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:41 to=2:40
 - 2026-09-30T19:03:25Z EKVVX249YM3X4NE8R8GVAYX3GK-m1e-b6a4eb0a abandon actor=human:wido targets=metasystem-stop-escalation-proofs,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,steward-revivals-leave-the-receipt-stream,runtime-limit-is-not-a-protocol-error,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,land-verb-writes-the-receipt,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:40 to=2:39
-Integrity: sha256=63e41077edb3bfe8a352b0d9c3bbb4a688f0ee3ac4328159d6bc561b89e8e4a7
+- 2026-09-30T19:05:42Z VT0ZEZ00TC069GDHPXXW3M136T-m1e-b6a4eb0a abandon actor=human:wido targets=chain-landing-carries-the-reviewed-diff,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,steward-revivals-leave-the-receipt-stream,runtime-limit-is-not-a-protocol-error,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,land-verb-writes-the-receipt,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:39 to=2:38
+Integrity: sha256=9e8a1bf55a5db160453e662d53ce5aa9144a39390494d7508c590a229f856fa5

@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 2
-- Sequence: 35
+- Sequence: 34
 - Risk: severity=2 novelty=1 exposure=2 accumulation=1 basis="severity 2: wasted box and a misleading failure class, no wrong code lands; novelty 1: one classification branch and one accounting exclusion; exposure 2: every Claude-lane job near the account limit; accumulation 1: one error class, one fixture"
 - Tier: 2
 - Intent: What: When an agent job stops because the account hit its provider's usage limit, the job is recorded as "stopped by usage limit" with the time the limit resets, not as a broken job. It costs the goal no budget or review round, and nothing new starts on that runtime before the reset. Why: The limit is already detected, but the job is still recorded as a protocol error and charged to the goal. A goal can run out of review rounds or budget because of the provider, not because of its own work. Pros: Budgets and review rounds reflect real work, no retry is wasted before the reset, and the person sees when work can resume. Cons: The reset time has to be read from each runtime's own output, which differs per runtime.
 - Origin: main
 - Next step: Next: Where job results are judged (adjudicate.go), record a provider-limit job as runtime_limited with its reset time instead of protocol_error, charge no minutes or review round, and refuse a new launch on that runtime before the reset. Test it with a fake runtime that returns a 429 limit reply. Done when: the fake 429 job shows as runtime_limited with a reset time, the goal's budget is unchanged, and a launch before the reset is refused naming the time.
 - OpenedAt: 2026-09-07T05:26:07Z
-- Revision: 47
+- Revision: 48
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 
@@ -61,4 +61,5 @@ History:
 - 2026-09-30T19:03:14Z EW0YK54G2ZXWCQ186P7CHAJTVS-m1e-b6a4eb0a abandon actor=human:wido targets=fixture-waits-name-their-producer,chain-landing-carries-the-reviewed-diff,human-authority-surface-runs-its-cmd-tests,metasystem-stop-escalation-proofs,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,steward-revivals-leave-the-receipt-stream,runtime-limit-is-not-a-protocol-error,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,land-verb-writes-the-receipt,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:38 to=2:37
 - 2026-09-30T19:03:20Z 44CEXYNKT1VDM5NC50CJMNQ6B0-m1e-b6a4eb0a abandon actor=human:wido targets=job-record-birth-token,failed-job-attention,watcher-repair-request-never-names-current,actionable-metrics,lease-sweep-death-evidence,winddown-census-handoff-leak,machine-concurrency-governor,token-spend-fence,chain-landing-carries-the-reviewed-diff,human-authority-surface-runs-its-cmd-tests,metasystem-stop-escalation-proofs,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,steward-revivals-leave-the-receipt-stream,runtime-limit-is-not-a-protocol-error,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,land-verb-writes-the-receipt,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:37 to=2:36
 - 2026-09-30T19:03:25Z EKVVX249YM3X4NE8R8GVAYX3GK-m1e-b6a4eb0a abandon actor=human:wido targets=metasystem-stop-escalation-proofs,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,steward-revivals-leave-the-receipt-stream,runtime-limit-is-not-a-protocol-error,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,land-verb-writes-the-receipt,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:36 to=2:35
-Integrity: sha256=b0c3ae85b3e49a2bdbe39783620d6ad379f0ba3dbdec25df51b54202069af19a
+- 2026-09-30T19:05:42Z VT0ZEZ00TC069GDHPXXW3M136T-m1e-b6a4eb0a abandon actor=human:wido targets=chain-landing-carries-the-reviewed-diff,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,steward-revivals-leave-the-receipt-stream,runtime-limit-is-not-a-protocol-error,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,land-verb-writes-the-receipt,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:35 to=2:34
+Integrity: sha256=78b93ed96910d0199a5e0973eaa4725f1ea64772595bb86e7db4c76dedd1a088

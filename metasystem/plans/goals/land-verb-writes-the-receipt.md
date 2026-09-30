@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 2
-- Sequence: 37
+- Sequence: 36
 - Risk: severity=3 novelty=2 exposure=3 accumulation=3 basis="The land verb sits on every code delivery and writes audit evidence; a wrong transaction can block delivery or misstate the repository's rework history."
 - Tier: 3
 - Intent: What: Every landing writes its own receipt (outcome, builder, goal, proof), so shipped work and rework are counted without anyone typing rows. Why: The lane already writes receipts for its batches, but nobody has measured how complete they are. Also missing is a "Repairs:" line that marks a fix as rework of an earlier commit. Pros: Truthful records of what shipped and what had to be redone. Cons: While the lane is paused, landings happen by hand and write no lane receipt, so the measurement must cover lane landings only.
 - Origin: human
 - Next step: Next: Measure receipt coverage over the lane's landings since 09-26. If at least 90 percent carry a receipt with the right outcome, conclude; otherwise add the Repairs: trailer to the lane's receipt writer. Done when: the coverage figure is recorded, and either the goal is concluded or a test shows a commit with a Repairs: trailer is recorded as reworked.
 - OpenedAt: 2026-09-16T21:03:07Z
-- Revision: 22
+- Revision: 23
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 
@@ -36,4 +36,5 @@ History:
 - 2026-09-30T19:03:14Z EW0YK54G2ZXWCQ186P7CHAJTVS-m1e-b6a4eb0a abandon actor=human:wido targets=fixture-waits-name-their-producer,chain-landing-carries-the-reviewed-diff,human-authority-surface-runs-its-cmd-tests,metasystem-stop-escalation-proofs,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,steward-revivals-leave-the-receipt-stream,runtime-limit-is-not-a-protocol-error,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,land-verb-writes-the-receipt,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:40 to=2:39
 - 2026-09-30T19:03:20Z 44CEXYNKT1VDM5NC50CJMNQ6B0-m1e-b6a4eb0a abandon actor=human:wido targets=job-record-birth-token,failed-job-attention,watcher-repair-request-never-names-current,actionable-metrics,lease-sweep-death-evidence,winddown-census-handoff-leak,machine-concurrency-governor,token-spend-fence,chain-landing-carries-the-reviewed-diff,human-authority-surface-runs-its-cmd-tests,metasystem-stop-escalation-proofs,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,steward-revivals-leave-the-receipt-stream,runtime-limit-is-not-a-protocol-error,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,land-verb-writes-the-receipt,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:39 to=2:38
 - 2026-09-30T19:03:25Z EKVVX249YM3X4NE8R8GVAYX3GK-m1e-b6a4eb0a abandon actor=human:wido targets=metasystem-stop-escalation-proofs,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,steward-revivals-leave-the-receipt-stream,runtime-limit-is-not-a-protocol-error,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,land-verb-writes-the-receipt,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:38 to=2:37
-Integrity: sha256=69eca161d7ca026d62e054ebb83da7c460a3b393e375b8859ec2ff07f8781a14
+- 2026-09-30T19:05:42Z VT0ZEZ00TC069GDHPXXW3M136T-m1e-b6a4eb0a abandon actor=human:wido targets=chain-landing-carries-the-reviewed-diff,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,steward-revivals-leave-the-receipt-stream,runtime-limit-is-not-a-protocol-error,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,land-verb-writes-the-receipt,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:37 to=2:36
+Integrity: sha256=9e1f28083df42d20fcc61bd5dd9e74093aa61598c976bff5763b112f7a6bd337

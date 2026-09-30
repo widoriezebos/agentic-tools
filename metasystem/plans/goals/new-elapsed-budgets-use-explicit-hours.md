@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 2
-- Sequence: 33
+- Sequence: 32
 - Risk: severity=3 novelty=2 exposure=3 accumulation=1 basis="severity 3: budget enforcement can stop lawful work or permit unbounded time; novelty 2: a bounded change to existing ledger and elapsed projection; exposure 3: shared goal execution across seats; accumulation 1: each episode is evaluated independently, with no new aggregate accounting"
 - Tier: 3
 - Intent: What: When someone sets a time budget for a goal, "d" (day) is no longer accepted; people write hours, such as 8h or 24h. Budgets already stored with "d" keep their old meaning of eight working hours. Why: Here "1d" means eight working hours, but people read it as 24 hours, and wrong budgets have followed. The tool also turns hours back into "d" when it prints them, which spreads the confusion. Pros: A budget means what it says; no silent misreading. Cons: People used to typing "1d" get a refusal and must retype. Old records still contain "d", so the code that reads it stays.
 - Origin: main
 - Next step: Next: In the budget parser (internal/goalbudget/budget.go), refuse a newly typed "d" with a two-line message that explains d means 8 working hours and suggests the hour form; stop the duration printer from folding hours into "d"; keep reading stored "d" values as 8 hours. Done when: approving a goal with an elapsed budget of 1d is refused with the hour suggestion, 24h is stored and shown as 24h, and an old record with 1d still reads as 8 hours.
 - OpenedAt: 2026-09-11T05:37:45Z
-- Revision: 148
+- Revision: 149
 - Labels: breach-clock-successor
 - BudgetExceptions: 0
 
@@ -162,4 +162,5 @@ History:
 - 2026-09-30T19:03:14Z EW0YK54G2ZXWCQ186P7CHAJTVS-m1e-b6a4eb0a abandon actor=human:wido targets=fixture-waits-name-their-producer,chain-landing-carries-the-reviewed-diff,human-authority-surface-runs-its-cmd-tests,metasystem-stop-escalation-proofs,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,steward-revivals-leave-the-receipt-stream,runtime-limit-is-not-a-protocol-error,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,land-verb-writes-the-receipt,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:36 to=2:35
 - 2026-09-30T19:03:20Z 44CEXYNKT1VDM5NC50CJMNQ6B0-m1e-b6a4eb0a abandon actor=human:wido targets=job-record-birth-token,failed-job-attention,watcher-repair-request-never-names-current,actionable-metrics,lease-sweep-death-evidence,winddown-census-handoff-leak,machine-concurrency-governor,token-spend-fence,chain-landing-carries-the-reviewed-diff,human-authority-surface-runs-its-cmd-tests,metasystem-stop-escalation-proofs,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,steward-revivals-leave-the-receipt-stream,runtime-limit-is-not-a-protocol-error,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,land-verb-writes-the-receipt,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:35 to=2:34
 - 2026-09-30T19:03:25Z EKVVX249YM3X4NE8R8GVAYX3GK-m1e-b6a4eb0a abandon actor=human:wido targets=metasystem-stop-escalation-proofs,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,steward-revivals-leave-the-receipt-stream,runtime-limit-is-not-a-protocol-error,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,land-verb-writes-the-receipt,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:34 to=2:33
-Integrity: sha256=8d3b03d2a732726561c51c3ec5dca7d1700feaf5af76175e38e62e4e4b6e6f8c
+- 2026-09-30T19:05:42Z VT0ZEZ00TC069GDHPXXW3M136T-m1e-b6a4eb0a abandon actor=human:wido targets=chain-landing-carries-the-reviewed-diff,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,steward-revivals-leave-the-receipt-stream,runtime-limit-is-not-a-protocol-error,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,land-verb-writes-the-receipt,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:33 to=2:32
+Integrity: sha256=bc3be023e8b8eb7cb4463d5ee9a49a0709a794093cb348bf8d4ec149cc25cb27
