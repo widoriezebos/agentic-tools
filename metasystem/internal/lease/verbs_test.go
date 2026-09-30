@@ -451,7 +451,7 @@ func TestWithHeldGatesAnInProcessWriteLikeHeld(t *testing.T) {
 	stale := int64(99)
 	ran = false
 	if err := WithHeld(root, self, &stale, func() error { ran = true; return nil }); err == nil || ran ||
-		!strings.Contains(err.Error(), "claim epoch changed") {
+		!strings.Contains(err.Error(), "changed hands while this ran") {
 		t.Fatalf("stale epoch: ran=%v err=%v", ran, err)
 	}
 

@@ -10,6 +10,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"errors"
 )
 
 const ResponseSchemaVersion = 1
@@ -134,7 +136,7 @@ func ResolveResponse(root string, payload []byte, runtime, session string) (Reso
 		identity.Installation != response.Report.Installation ||
 		identity.SessionKey+"-"+identity.Attempt != response.Report.ID ||
 		identity.Runtime != response.Runtime {
-		return ResolvedResponse{}, fmt.Errorf("stop response report identity, alias, path, digest, installation, or runtime does not match")
+		return ResolvedResponse{}, errors.New("the stop report answered does not match the one shown")
 	}
 	if runtime != "" && identity.Runtime != runtime {
 		return ResolvedResponse{}, fmt.Errorf("stop response report runtime does not match %q", runtime)

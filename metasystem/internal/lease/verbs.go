@@ -14,6 +14,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 )
 
@@ -75,17 +76,17 @@ func AnnounceWithProofAt(stateRoot, metasystemRoot, session string, pid, start, 
 	root := resolveRoot(stateRoot)
 	metasystemRoot = resolveRoot(metasystemRoot)
 	if ownerLineage != "" && !validLineage(ownerLineage) {
-		return "", fmt.Errorf("owner lineage must match [A-Za-z0-9._-]{1,128}")
+		return "", errors.New("the session name must be 1 to 128 letters, digits, '.', '_' or '-'")
 	}
 	if provenance != nil {
 		switch provenance.Source {
 		case "runtime-signature-ancestry":
 			if provenance.CallerPid != 0 || provenance.CallerPidStartedAt != 0 {
-				return "", fmt.Errorf("runtime-signature provenance must not carry fallback caller fields")
+				return "", errors.New("an announcement signed by the runtime must not also name a fallback identity")
 			}
 		case "explicit-ancestry-fallback":
 			if provenance.CallerPid < 1 || provenance.CallerPidStartedAt < 1 {
-				return "", fmt.Errorf("explicit fallback provenance requires the caller identity")
+				return "", errors.New("a fallback announcement must name who is announcing")
 			}
 		default:
 			return "", fmt.Errorf("announcement identity provenance source is invalid")
@@ -150,7 +151,7 @@ func AnnounceWithProofAt(stateRoot, metasystemRoot, session string, pid, start, 
 		stored := existing.OwnerLineage
 		if ownerLineage != "" && stored != "" && stored != ownerLineage {
 			// A process does not change its logical owner mid-life.
-			return "", fmt.Errorf("announcement already carries owner lineage %s; refusing to replace it with %s", stored, ownerLineage)
+			return "", fmt.Errorf("the announcement already names session %s, so it is not changed to %s", stored, ownerLineage)
 		}
 		changed := false
 		if ownerLineage != "" && stored == "" {
@@ -449,7 +450,7 @@ func RequireHolderAt(root, metasystemRoot string, callerPid int64, expectedEpoch
 	}
 	if lease == nil {
 		if identity.Class != ClassMain {
-			return HolderView{}, fmt.Errorf("checkout lease is absent and caller pid %d is %s, not an authenticated main", callerPid, identity.Class)
+			return HolderView{}, fmt.Errorf("nobody holds this checkout, and process %d is not the checkout's main session", callerPid)
 		}
 		holderClaimer, claimerErr := newClaimerAt(root, metasystemRoot)
 		if claimerErr != nil {
@@ -470,10 +471,10 @@ func RequireHolderAt(root, metasystemRoot string, callerPid int64, expectedEpoch
 		return HolderView{}, stampErr
 	}
 	if !stampClaimer.stampComplete(lease) {
-		return HolderView{}, fmt.Errorf("checkout lease claim sweep is incomplete for the current claim epoch")
+		return HolderView{}, errors.New("the checkout's claims are still being cleaned up; try again in a moment")
 	}
 	if expectedEpoch != nil && lease.ClaimEpoch != *expectedEpoch {
-		return HolderView{}, fmt.Errorf("checkout lease claim epoch changed before the final mutation")
+		return HolderView{}, errHolderChanged
 	}
 	return HolderView{
 		Class: "HOLDER", Holder: true,
@@ -482,9 +483,8 @@ func RequireHolderAt(root, metasystemRoot string, callerPid int64, expectedEpoch
 }
 
 func ownedElsewhere(lease *Lease, identity Classification) error {
-	return fmt.Errorf("OWNED-ELSEWHERE: this checkout is held by %s (caller is %s %s); "+
-		"use metasystem session isolate for an isolated writer",
-		lease.HolderMainId, identity.Class, identity.MainId)
+	return refusal.New("OWNED-ELSEWHERE", fmt.Sprintf("holder=%s class=%s main=%s", lease.HolderMainId, identity.Class, identity.MainId),
+		fmt.Errorf("this checkout is held by %s, not by this session\nfor a separate copy to write in, run: metasystem session isolate", lease.HolderMainId))
 }
 
 // RenewResult reports the lease coordinates after a renewal.
@@ -510,7 +510,7 @@ func Renew(root string, callerPid int64) (RenewResult, error) {
 		return RenewResult{}, err
 	}
 	if identity.Class != ClassMain || identity.MainId != lease.HolderMainId {
-		return RenewResult{}, fmt.Errorf("checkout lease renewal refused: caller is not the authenticated holder")
+		return RenewResult{}, errors.New("the hold on this checkout was not renewed: this session does not hold it")
 	}
 	expected := lease.Revision
 	lease.RenewedAt = nowStamp()
@@ -568,7 +568,7 @@ func gateHolder(root string, identity Classification, expectedEpoch *int64) erro
 		return fmt.Errorf("OWNED-ELSEWHERE: this checkout is held by %s; use metasystem session isolate for an isolated writer", lease.HolderMainId)
 	}
 	if expectedEpoch != nil && lease.ClaimEpoch != *expectedEpoch {
-		return fmt.Errorf("checkout lease claim epoch changed before the final mutation")
+		return errHolderChanged
 	}
 	return nil
 }
@@ -760,3 +760,6 @@ func CheckoutForeignToLineage(root, lineage string) bool {
 	}
 	return leaseLineage(current) != lineage
 }
+
+// errHolderChanged refuses a change when the checkout changed hands under it.
+var errHolderChanged = errors.New("nothing was changed: the checkout changed hands while this ran; try again")

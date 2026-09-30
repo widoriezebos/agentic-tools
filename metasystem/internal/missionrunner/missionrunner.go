@@ -60,7 +60,7 @@ func ScaledWait(baseSeconds int) (time.Duration, error) {
 	}
 	scale, err := strconv.Atoi(raw)
 	if err != nil || scale < 1 {
-		return 0, fmt.Errorf("METASYSTEM_FIXTURE_CAP_SCALE_MILLI must be a positive integer")
+		return 0, fmt.Errorf("the test time scale %s is not a whole number above zero", "METASYSTEM_FIXTURE_CAP_SCALE_MILLI")
 	}
 	d := time.Duration(baseSeconds) * time.Second * time.Duration(scale) / 1000
 	if d < 10*time.Millisecond {

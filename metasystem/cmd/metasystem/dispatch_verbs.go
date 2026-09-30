@@ -45,13 +45,13 @@ func breachStopOrderingHumanWith(root string, caller lease.ClassifyResult, by st
 	typed := strings.TrimPrefix(by, "human:")
 	if caller.Class != lease.ClassHuman {
 		if typed != "" {
-			return "", fmt.Errorf("breach stop: --by names the person ordering the stop; a %s caller records the custodian and takes no --by", caller.Class)
+			return "", errors.New("the stop was not ordered: --by names a person, and this is not a person's terminal; drop --by")
 		}
 		return "", nil
 	}
 	name, err := enrolledName(root, now)
 	if err != nil {
-		return "", fmt.Errorf("breach stop: the stop is admitted for a person and records who ordered it, and no enrolled person was proven here (%v); run it at the enrolled terminal, or enroll this one with metasystem system enroll --name NAME", err)
+		return "", fmt.Errorf("the stop was not ordered: it records who ordered it, and this terminal is not enrolled (%v)\nrun: metasystem system enroll --name <your name>", err)
 	}
 	if typed != "" && typed != name {
 		return "", fmt.Errorf("breach stop: --by %s is not the person enrolled at this terminal (%s); nothing was done", typed, name)

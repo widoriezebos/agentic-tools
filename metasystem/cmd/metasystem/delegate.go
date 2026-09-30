@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	"errors"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/brain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/delegation"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
@@ -423,7 +424,7 @@ func commandExitCode(err error) int {
 
 func normalizeDelegateArgs(args []string) ([]string, string, error) {
 	if len(args) == 0 {
-		return nil, "", fmt.Errorf("usage: metasystem internal delegate --role <role> --brief <file> --goal <id|none-explicit> [--op <id>] [--reviews <job-id>] [--outputs <file> --design <file>]")
+		return nil, "", errors.New("the delegate form is incomplete\nusage: metasystem internal delegate --role <role> --brief <file> --goal <id|none-explicit> [--op <id>] [--reviews <job-id>] [--outputs <file> --design <file>]")
 	}
 	if args[0] == "--cancel" {
 		if len(args) != 2 {

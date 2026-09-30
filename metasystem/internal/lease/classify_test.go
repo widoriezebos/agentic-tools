@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 )
 
@@ -425,7 +426,7 @@ func TestClassifyStewardByInstalledBinaryAndIdentity(t *testing.T) {
 	// in the steward's name is refused by the holder check every landing
 	// makes before it prepares, whoever holds the checkout.
 	announceLiveChild(t, root)
-	if _, err := RequireHolder(root, pid, nil); err == nil || !strings.Contains(err.Error(), "OWNED-ELSEWHERE") {
+	if _, err := RequireHolder(root, pid, nil); err == nil || !strings.Contains(refusal.DetailOf(err), "OWNED-ELSEWHERE") {
 		t.Fatalf("the steward passed the holder check a landing makes: %v", err)
 	}
 }

@@ -524,7 +524,7 @@ func validateWaitRequest(request WaitRequest) error {
 		return err
 	}
 	if request.Owner.MainId == "" || request.Owner.OwnerLineage == "" || request.Owner.SessionId == "" || request.RuntimeSession == "" {
-		return fmt.Errorf("wait registration requires a classified owner, lineage, session, and runtime session")
+		return errors.New("a wait needs its owner, session and runtime session, and one is missing")
 	}
 	if request.Timeout <= 0 || request.Timeout > 24*time.Hour {
 		return fmt.Errorf("wait timeout must be positive and no longer than 24 hours")

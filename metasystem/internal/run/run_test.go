@@ -639,12 +639,12 @@ func TestEpochSeamRefusesStale(t *testing.T) {
 	}
 	current = 6
 	_, err := s.Launch(holder, LaunchParams{Id: "epoch-stale", Kind: "suite", Log: "b.log"})
-	if err == nil || !strings.Contains(err.Error(), "stale") {
+	if err == nil || !strings.Contains(err.Error(), "changed hands since this session took it") {
 		t.Fatalf("a stale-epoch launch was allowed: %v", err)
 	}
 	verifiable = false
 	_, err = s.Launch(holder, LaunchParams{Id: "epoch-blind", Kind: "suite", Log: "c.log"})
-	if err == nil || !strings.Contains(err.Error(), "cannot verify") {
+	if err == nil || !strings.Contains(err.Error(), "cannot be checked") {
 		t.Fatalf("an unverifiable epoch was allowed: %v", err)
 	}
 	// A human carries no epoch and is never gated on it.

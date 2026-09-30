@@ -112,7 +112,7 @@ func runLaunchReport(args []string, stdout, stderr io.Writer) int {
 	sinceText := flags.String("since", "", "include activity at or after this RFC3339 instant")
 	asJSON := flags.Bool("json", false, "print structured report")
 	if flags.Parse(args) != nil || flags.NArg() != 0 || (*id != "" && (*goal != "" || *sinceText != "")) {
-		fmt.Fprintln(stderr, "usage: metasystem work status [G | j1:ID] --history [--since RFC3339] [--json]")
+		fmt.Fprintln(stderr, "usage: metasystem work status [<goal> | j1:<id>] --history [--since RFC3339] [--json]")
 		return 2
 	}
 	var since time.Time

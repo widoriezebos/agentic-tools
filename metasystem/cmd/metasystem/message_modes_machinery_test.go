@@ -1,8 +1,41 @@
 package main
 
 // Group 5 of the "Messages a Person Reads" rewrite: machinery (dispatch,
-// launch, steward, supervision, agents). Each path moves to enforce once its
-// messages are rewritten.
+// launch, steward, supervision, agents). Every path here is rewritten and
+// enforced.
 var _ = enforceMessages(
+	"cmd/metasystem/adapter_runtime_verbs.go",
+	"cmd/metasystem/brain.go",
+	"cmd/metasystem/brain_boot.go",
+	"cmd/metasystem/channel_verbs.go",
+	"cmd/metasystem/context_verbs.go",
+	"cmd/metasystem/delegate.go",
+	"cmd/metasystem/dispatch_verbs.go",
+	"cmd/metasystem/hook_entry.go",
+	"cmd/metasystem/intent_agent.go",
+	"cmd/metasystem/intent_questions.go",
+	"cmd/metasystem/launch_verbs.go",
+	"cmd/metasystem/session_isolate.go",
+	"cmd/metasystem/steward_verbs.go",
+	"cmd/metasystem/supervise_component.go",
+	"cmd/metasystem/supervise_owner.go",
+	"cmd/metasystem/up.go",
+	"cmd/metasystem/wait_register.go",
+	"internal/acp",
+	"internal/adapter",
+	"internal/board",
+	"internal/brain",
+	"internal/delegation",
+	"internal/dispatch",
+	"internal/hooks",
 	"internal/launch",
+	"internal/lease",
+	"internal/missionrunner",
+	"internal/run",
+	"internal/seat",
+	"internal/steward",
+	"internal/stopreport",
+	"internal/stoptransition",
+	"internal/supervise",
+	"internal/up",
 )

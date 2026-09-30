@@ -28,6 +28,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/obligationstate"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
@@ -233,7 +234,7 @@ func TestLandingOwnerComponentForeignHolderDoesNotReannounce(t *testing.T) {
 		t.Fatal(err)
 	}
 	for attempt := 1; attempt <= 3; attempt++ {
-		if err := pass(); err == nil || !strings.Contains(err.Error(), "OWNED-ELSEWHERE") {
+		if err := pass(); err == nil || !strings.Contains(refusal.DetailOf(err), "OWNED-ELSEWHERE") {
 			t.Fatalf("contended pass %d error=%v, want live foreign holder refusal", attempt, err)
 		}
 	}
@@ -362,7 +363,7 @@ func TestLandingOwnerComponentStopsActingAfterLeaseLoss(t *testing.T) {
 	if err := os.WriteFile(leasePath, changedLease, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := pass(); err == nil || !strings.Contains(err.Error(), "OWNED-ELSEWHERE") {
+	if err := pass(); err == nil || !strings.Contains(refusal.DetailOf(err), "OWNED-ELSEWHERE") {
 		t.Fatalf("pass after lease loss error=%v, want holder refusal", err)
 	}
 	if resumes != 1 {
