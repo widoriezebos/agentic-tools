@@ -549,7 +549,7 @@ func TestIntentArgumentsAndRemedies(t *testing.T) {
 		t.Fatalf("unknown goal text = %d %q %q", code, stdout, stderr)
 	}
 	code, stdout, _ = bed.run(bed.owners(), "goal", "show", bedGoal)
-	if code != 0 || !strings.Contains(stdout, bedGoal+"  parked  tier 3") || !strings.Contains(stdout, "→ metasystem goal resume "+bedGoal) {
+	if code != 0 || !strings.Contains(stdout, bedGoal+" is parked · tier 3") || !strings.Contains(stdout, "→ metasystem goal resume "+bedGoal) {
 		t.Fatalf("show text = %d %q", code, stdout)
 	}
 	if got := shellWords(shellCommand([]string{"metasystem", "goal", "budget", "--by", "it's me", "", "1d/2/3m/1/0"})); !slices.Equal(got, []string{"metasystem", "goal", "budget", "--by", "it's me", "", "1d/2/3m/1/0"}) {

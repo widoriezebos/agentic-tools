@@ -223,7 +223,7 @@ func abandonRequest(r VerbRequest, id string, spec AbandonSpec, arguments abando
 					if fromSignedInSession(proof) {
 						return nil, AlreadyHolds{Reason: "goal " + id + " is already abandoned: the same abandon from this signed-in session"}
 					}
-					return nil, AlreadyHolds{Reason: fmt.Sprintf("goal %s is already abandoned (since %s, reason %s)", id, archived.Abandoned.At, archived.Abandoned.Because)}
+					return nil, AlreadyHolds{Reason: fmt.Sprintf("goal %s is already abandoned (since %s, reason %s)", id, recordDay(archived.Abandoned.At), archived.Abandoned.Because)}
 				}
 				return nil, LostToCompetitor{Winner: lastOpid(archived)}
 			}

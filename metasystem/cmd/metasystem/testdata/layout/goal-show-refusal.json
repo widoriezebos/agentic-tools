@@ -1,0 +1,25 @@
+exit 1
+--
+{
+  "schemaVersion": 1,
+  "verb": "goal show",
+  "targets": [
+    {
+      "kind": "goal",
+      "id": "no-such-goal"
+    }
+  ],
+  "outcome": "refused",
+  "summary": "no goal no-such-goal on the accepted ledger; nothing was done",
+  "next": {
+    "argv": [
+      "metasystem",
+      "goal",
+      "list",
+      "--all"
+    ],
+    "reason": "list the goals by id"
+  }
+}
+
+--

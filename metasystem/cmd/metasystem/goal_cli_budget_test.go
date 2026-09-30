@@ -57,7 +57,8 @@ func gcliBudgetRefused(t *testing.T, bed *goalCLIBed, want string, args ...strin
 	t.Helper()
 	before := bed.tip()
 	code, out, errOut := bed.public(args...)
-	if code == 0 || !strings.Contains(out+errOut, want) {
+	// A refusal wraps at the width, so it is read as its words.
+	if code == 0 || !strings.Contains(strings.Join(strings.Fields(out+errOut), " "), want) {
 		t.Fatalf("%v: want a refusal naming %q, got code=%d out=%q err=%q", args, want, code, out, errOut)
 	}
 	if bed.tip() != before {

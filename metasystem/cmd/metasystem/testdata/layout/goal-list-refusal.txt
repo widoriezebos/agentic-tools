@@ -1,0 +1,2 @@
+✗ label "Not A Label" must match ^[a-z][a-z0-9-]{0,31}$; nothing was listed
+  → metasystem goal list  without the label, or with a valid one

@@ -15,6 +15,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/project"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
 
 // The goal commands read the accepted ledger through the existing projection
@@ -148,6 +149,23 @@ func (inv *intentInvocation) ownerCall(targets []intentTarget, run func(syncRequ
 	}
 	result := ownerResult(report, code, confirmed)
 	result.Targets = targets
+	if result.Outcome == intentConfirmed && result.view != nil {
+		// What the owner said on the way prints under the confirmation,
+		// as the legacy shape printed it.
+		notes := append([]string(nil), report.notes...)
+		for _, line := range strings.Split(strings.TrimSpace(report.written.String()), "\n") {
+			if strings.TrimSpace(line) != "" {
+				notes = append(notes, line)
+			}
+		}
+		if len(notes) > 0 {
+			act := result.view
+			result.view = func(page *textui.Page) {
+				act(page)
+				page.Legacy(notes...)
+			}
+		}
+	}
 	return result
 }
 
@@ -345,8 +363,10 @@ func runIntentGoals(inv *intentInvocation) int {
 			}
 		}
 	}
+	listing := goalListing{grouped: grouped, open: len(open), archived: includeArchived, filtered: len(labels) > 0, history: history,
+		banners: projection.Banners, trunkRed: projection.Tree.TrunkRed, horizon: projection.Horizon, tip: projection.Tip}
 	return inv.render(intentResult{Outcome: intentConfirmed, Data: data, text: text,
-		Summary: fmt.Sprintf("%d open goal(s) at %s", len(open), projection.Tip)})
+		Summary: fmt.Sprintf("%d open goal(s) at %s", len(open), projection.Tip), view: listing.view})
 }
 
 // goalHistoryLines reads a goal's ledger history as one line per act: when,
@@ -416,8 +436,10 @@ func runIntentShow(inv *intentInvocation) int {
 	if inv.input.switched("history") {
 		text = append(text, goalHistoryLines("", file)...)
 	}
+	shown := goalShown{file: file, where: where, tip: projection.Tip, budget: view, designs: designs, designProblem: designProblem,
+		allowed: goal.AllowedWords(file), history: inv.input.switched("history")}
 	result := intentResult{Outcome: intentConfirmed, Targets: inv.targets(id), Data: data, text: text,
-		Summary: fmt.Sprintf("%s  %s  tier %d", id, file.State, file.Tier)}
+		Summary: fmt.Sprintf("%s  %s  tier %d", id, file.State, file.Tier), view: shown.view}
 	if where == "live" {
 		result.next, result.nextReason = inv.suggestedNext(file)
 	}
@@ -591,6 +613,11 @@ func tierlessRefusal(inv *intentInvocation, ids []string) *intentResult {
 		Data:     map[string]any{"missing": []string{"risk.severity", "risk.novelty", "risk.exposure", "risk.accumulation", "basis"}, "goals": ids}}
 }
 
+// doneView is an act's page: its confirmation behind ✓.
+func doneView(summary string) func(*textui.Page) {
+	return func(page *textui.Page) { page.Done(summary) }
+}
+
 // afterGoalAct reads the goal back after a confirmed act.
 func (inv *intentInvocation) afterGoalAct(id, act string) intentResult {
 	projection, now, problem := inv.projection()
@@ -606,8 +633,17 @@ func (inv *intentInvocation) afterGoalAct(id, act string) intentResult {
 	if view.Box != "" {
 		summary += " under " + view.Box
 	}
+	shown := goalShown{file: file, budget: view}
 	return intentResult{Summary: summary, text: view.lines(),
-		Data: map[string]any{"where": where, "goal": goalDisplayRecord(file, false), "budget": view}}
+		Data: map[string]any{"where": where, "goal": goalDisplayRecord(file, false), "budget": view},
+		view: func(page *textui.Page) {
+			// The act's confirmation; --verbose adds the budget as spent of
+			// each limit.
+			page.Done(summary)
+			if page.Verbose() {
+				shown.budgetSection(page)
+			}
+		}}
 }
 
 func runIntentApprove(inv *intentInvocation) int {
@@ -689,6 +725,7 @@ func runIntentApprove(inv *intentInvocation) int {
 		}
 		result.Summary = "approved " + strings.Join(approved, ", ")
 		result.Data = map[string]any{"goals": goals}
+		result.view = doneView(result.Summary)
 		return result
 	})
 }
@@ -708,6 +745,11 @@ func runIntentPause(inv *intentInvocation) int {
 	if strings.TrimSpace(reason) == "" {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id),
 			Summary: "pausing a goal needs a reason; nothing was done", next: append(inv.typedArgv(), "--reason", "TEXT"), nextReason: "say why it waits"})
+	}
+	if projection, _, problem := inv.projection(); problem != nil {
+		return inv.render(*problem)
+	} else if file, _ := goalRecord(projection, id); file == nil {
+		return unknownGoal(inv, id)
 	}
 	actor, problem := inv.actorArgs(id, "by", "lineage", "fixture-human-authority")
 	if problem != nil {

@@ -2837,7 +2837,16 @@ func alreadyPausedReason(f *GoalFile) string {
 	if f.Parked.Blocker != "" && reason == "" {
 		reason = "waits for " + f.Parked.Blocker
 	}
-	return fmt.Sprintf("goal %s is already paused (since %s, reason %s)", f.Id, f.Parked.At, reason)
+	return fmt.Sprintf("goal %s is already paused (since %s, reason %s)", f.Id, recordDay(f.Parked.At), reason)
+}
+
+// recordDay is a record's time as the day a person reads ("28 Sep"), or
+// the record as written when it is not a time.
+func recordDay(at string) string {
+	if parsed, err := time.Parse(time.RFC3339, at); err == nil {
+		return parsed.UTC().Format("2 Jan")
+	}
+	return at
 }
 
 // Park pauses a goal with its reason. Parking another machine's

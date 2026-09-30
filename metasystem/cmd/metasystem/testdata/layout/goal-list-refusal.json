@@ -1,0 +1,20 @@
+exit 2
+--
+{
+  "schemaVersion": 1,
+  "verb": "goal list",
+  "targets": [],
+  "outcome": "refused",
+  "summary": "label \"Not A Label\" must match ^[a-z][a-z0-9-]{0,31}$; nothing was listed",
+  "next": {
+    "argv": [
+      "metasystem",
+      "goal",
+      "list",
+      "--json"
+    ],
+    "reason": "without the label, or with a valid one"
+  }
+}
+
+--

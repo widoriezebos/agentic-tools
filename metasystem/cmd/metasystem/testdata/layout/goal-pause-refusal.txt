@@ -1,0 +1,2 @@
+✗ no goal no-such-goal on the accepted ledger; nothing was done
+  → metasystem goal list --all  list the goals by id

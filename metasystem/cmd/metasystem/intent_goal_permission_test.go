@@ -65,7 +65,7 @@ func TestIntentGoalAllowAndDisallowStopTestChanges(t *testing.T) {
 		t.Fatalf("the allow did not land as StopSurface: moves with its reason:\n%s", goal.RenderFile(file))
 	}
 	code, stdout, stderr := bed.run(bed.owners(), "goal", "show", bedGoal)
-	if code != 0 || !strings.Contains(stdout, "Allowed: stop-test changes") {
+	if code != 0 || !strings.Contains(stdout, "Allowed\n  stop-test changes") {
 		t.Fatalf("goal show does not say what the goal is allowed: %d %q %q", code, stdout, stderr)
 	}
 

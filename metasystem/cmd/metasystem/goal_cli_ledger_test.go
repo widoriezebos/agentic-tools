@@ -91,7 +91,7 @@ func TestGoalCLILedgerRiskBasis(t *testing.T) {
 		"--tier", "3", "--reason", "the earlier formula", "--risk", "severity=1,novelty=1,exposure=3,accumulation=1",
 		"--basis", "wide but routine"}, gcliLedgerHuman...)...)
 	tiers := gcliLedgerMust(t, bed, "goal", "list", "--tiers")
-	if !strings.Contains(tiers, "exposed-legacy") || !strings.Contains(tiers, "recorded=3") || !strings.Contains(tiers, "derived=1") {
+	if !strings.Contains(tiers, "exposed-legacy") || !strings.Contains(tiers, "recorded tier 3, its answers derive tier 1") {
 		t.Fatalf("the tier listing does not name the exposure-lifted goal as lowerable: %q", tiers)
 	}
 	gcliLedgerMust(t, bed, "goal", "edit", "exposed-legacy", "--risk", "severity=1,novelty=1,exposure=3,accumulation=1",
@@ -115,8 +115,8 @@ func gcliLedgerListed(listing string) []string {
 	var ids []string
 	for _, line := range strings.Split(listing, "\n") {
 		fields := strings.Fields(line)
-		if len(fields) >= 5 && fields[2] == "tier" && strings.Contains(fields[0], ":") {
-			ids = append(ids, fields[4])
+		if strings.HasPrefix(line, "  ") && len(fields) >= 4 && fields[2] == "tier" {
+			ids = append(ids, fields[1])
 		}
 	}
 	return ids
@@ -216,7 +216,7 @@ func TestGoalCLILedgerSeatBlocker(t *testing.T) {
 		!strings.Contains(parked, " blocker=widget-defect because=blocked by widget-defect") || goalCLILine(parked, "- Claimed:") != "" {
 		t.Fatalf("the blocked goal did not park behind its blocker with the claim cleared:\n%s", parked)
 	}
-	gcliLedgerRefused(t, bed, "returns by itself", "goal", "resume", "ship-widget")
+	gcliLedgerRefused(t, bed, "it resumes by itself then", "goal", "resume", "ship-widget")
 	gcliLedgerMust(t, bed, append([]string{"goal", "approve", "widget-defect"}, gcliLedgerHuman...)...)
 	gcliLedgerMust(t, bed, "goal", "claim", "widget-defect")
 	gcliLedgerMust(t, bed, "goal", "done", "widget-defect", "--reason", "Fixed; ship-widget continues.")
@@ -404,7 +404,7 @@ func TestGoalCLILedgerArchiveAndPrune(t *testing.T) {
 		goal.Change{Path: "plans/goals/done/archive-roundtrip.md", Content: []byte(legacy)},
 		goal.Change{Path: "records/goals/archive-roundtrip.md", Delete: true})
 	listing := gcliLedgerMust(t, bed, "goal", "list", "--all")
-	if !strings.Contains(listing, " done=2 abandoned=0 tip=") {
+	if !strings.Contains(listing, " · 2 done · 0 abandoned") {
 		t.Fatalf("the dual-location soak reader did not count both conclusions: %q", listing)
 	}
 	code, shown, errOut := bed.public("goal", "show", "archive-roundtrip", "--json")
@@ -490,13 +490,14 @@ func TestGoalCLILedgerAbandonedWithAReason(t *testing.T) {
 	stopID := gcliLedgerBreachStop(t, bed, "abandon-a")
 
 	gcliLedgerRefused(t, bed, "only goal resume may clear its launch fence", "goal", "release", "abandon-a", "--reason", "try to clear the fence")
-	gcliLedgerRefused(t, bed, "goal abandon-b is blocked by abandon-a", "goal", "abandon", "abandon-a", "--reason", "fixture", "--by", "Wido")
+	gcliLedgerRefused(t, bed, "goal abandon-b still waits on abandon-a", "goal", "abandon", "abandon-a", "--reason", "fixture", "--by", "Wido")
 
 	gcliLedgerHumanOpen(t, bed, "abandon-successor")
 	doneBefore := ""
-	for _, field := range strings.Fields(gcliLedgerMust(t, bed, "goal", "list", "--all")) {
-		if value, ok := strings.CutPrefix(field, "done="); ok {
-			doneBefore = value
+	fields := strings.Fields(gcliLedgerMust(t, bed, "goal", "list", "--all"))
+	for index, field := range fields {
+		if field == "done" && index > 0 && doneBefore == "" {
+			doneBefore = fields[index-1]
 		}
 	}
 	gcliLedgerMust(t, bed, "goal", "abandon", "abandon-a", "--reason", "fixture", "--successor", "abandon-successor", "--by", "Wido")
@@ -511,7 +512,7 @@ func TestGoalCLILedgerAbandonedWithAReason(t *testing.T) {
 		t.Fatal("the abandoned goal remained in the live path")
 	}
 	summary := gcliLedgerMust(t, bed, "goal", "list", "--all")
-	if !strings.Contains(summary, " done="+doneBefore+" abandoned=1 tip=") {
+	if !strings.Contains(summary, " · "+doneBefore+" done · 1 abandoned") {
 		t.Fatalf("listing conflated done and abandoned (done before %s): %q", doneBefore, summary)
 	}
 	code, listing, errOut := bed.public("goal", "list", "--all", "--json")

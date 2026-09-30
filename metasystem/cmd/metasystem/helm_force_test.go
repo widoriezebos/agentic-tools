@@ -105,7 +105,7 @@ func TestHelmForceIsThePersonsOwnActAtTheHelm(t *testing.T) {
 	takeHelmAt(t, bed.root)
 	// At the helm the plain refusal proposes the force.
 	code, out, errOut = bed.public("goal", "done", "ship-widget", "--reason", "landed by hand")
-	if code == 0 || !strings.Contains(out+errOut, "--accepted \"<reason>\""+proposal) {
+	if code == 0 || !strings.Contains(out+errOut, "→ metasystem goal notes ship-widget"+proposal) {
 		t.Fatalf("plain done at the helm: %d %q %q", code, out, errOut)
 	}
 
