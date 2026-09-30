@@ -36,15 +36,17 @@ type trunkRedBatchRecord struct {
 var LandingLaneRoot func(repoRoot string, now time.Time) (root string, configured bool, err error)
 
 func checkTrunkRed(repoRoot string, now time.Time) RoleVerdict {
-	if !goal.NewWorld(repoRoot) {
+	return checkTrunkRedWith(repoRoot, now, newHealthLedger(repoRoot, now))
+}
+
+func checkTrunkRedWith(repoRoot string, now time.Time, ledger *healthLedger) RoleVerdict {
+	if !ledger.read().newWorld {
 		return roleAlive(RoleTrunkRed, "the bootstrap ledger has no trunk-red register")
 	}
-	endpoint, err := goal.ResolveEndpoint(repoRoot)
-	if err != nil {
+	if err := ledger.endpointErr; err != nil {
 		return roleUnknown(RoleTrunkRed, "the trunk-red ledger endpoint is unreadable: "+err.Error(), "repair the goal sync configuration, then run metasystem system check")
 	}
-	projection, err := goal.Project(endpoint, false, now)
-	return checkTrunkRedFromProjection(repoRoot, now, projection, err, config.ResolveBatchLanding, LandingLaneRoot)
+	return checkTrunkRedFromProjection(repoRoot, now, ledger.projection, ledger.projectionErr, config.ResolveBatchLanding, LandingLaneRoot)
 }
 
 func checkTrunkRedFromProjection(repoRoot string, now time.Time, projection goal.Projection, projectionErr error, resolveBatchLanding func(string, string, func() time.Time) (config.BatchLanding, error), laneRoot func(string, time.Time) (string, bool, error)) RoleVerdict {

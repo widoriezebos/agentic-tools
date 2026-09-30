@@ -42,26 +42,30 @@ type claimedDeliverySnapshot struct {
 }
 
 func checkClaimedGoalDelivery(repoRoot string, now time.Time) RoleVerdict {
-	return checkClaimedGoalDeliveryWithReader(repoRoot, now, readClaimedDeliverySnapshot)
+	return checkClaimedGoalDeliveryWith(repoRoot, now, newHealthLedger(repoRoot, now))
 }
 
-func readClaimedDeliverySnapshot(repoRoot string, now time.Time) (claimedDeliverySnapshot, error) {
-	if !goal.NewWorld(repoRoot) {
+func checkClaimedGoalDeliveryWith(repoRoot string, now time.Time, ledger *healthLedger) RoleVerdict {
+	return checkClaimedGoalDeliveryWithReader(repoRoot, now, func(repoRoot string, _ time.Time) (claimedDeliverySnapshot, error) {
+		return readClaimedDeliverySnapshot(repoRoot, ledger)
+	})
+}
+
+func readClaimedDeliverySnapshot(repoRoot string, ledger *healthLedger) (claimedDeliverySnapshot, error) {
+	if !ledger.read().newWorld {
 		return claimedDeliverySnapshot{}, nil
 	}
 	machine, err := goal.ResolveMachine(repoRoot)
 	if err != nil {
 		return claimedDeliverySnapshot{}, fmt.Errorf("the claimed-goal machine identity is unreadable: %w", err)
 	}
-	endpoint, err := goal.ResolveEndpoint(repoRoot)
-	if err != nil {
+	if err := ledger.endpointErr; err != nil {
 		return claimedDeliverySnapshot{}, fmt.Errorf("the claimed-goal ledger endpoint is unreadable: %w", err)
 	}
-	projection, err := goal.Project(endpoint, false, now)
-	if err != nil {
+	if err := ledger.projectionErr; err != nil {
 		return claimedDeliverySnapshot{}, fmt.Errorf("the claimed-goal ledger is unreadable: %w", err)
 	}
-	return claimedDeliverySnapshot{converted: true, machine: machine, projection: projection}, nil
+	return claimedDeliverySnapshot{converted: true, machine: machine, projection: ledger.projection}, nil
 }
 
 func checkClaimedGoalDeliveryWithReader(repoRoot string, now time.Time, read func(string, time.Time) (claimedDeliverySnapshot, error)) RoleVerdict {
