@@ -14,6 +14,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/behaviorsurface"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
@@ -925,8 +926,8 @@ func TestRetryDecisionPriorMustBeOnTheRequestsTree(t *testing.T) {
 		t.Fatal(err)
 	}
 	request := componentAdmissionRequest(root, baseIdentity, launcher, now.Add(2*time.Second), strings.Repeat("2", 40), "same-plan", map[string]string{"g": identity})
-	if _, err := readRetryDecision(decisionPath, root, request, prior.ProofIdentity.IdentityDigest, prior.AttemptID); err == nil ||
-		!strings.Contains(err.Error(), "RETRY_PRIOR_OUTSIDE_TREE") {
+	var coded *refusal.Coded
+	if _, err := readRetryDecision(decisionPath, root, request, prior.ProofIdentity.IdentityDigest, prior.AttemptID); !errors.As(err, &coded) || coded.Code != "RETRY_PRIOR_OUTSIDE_TREE" {
 		t.Fatalf("cross-tree retry prior was not refused by token: %v", err)
 	}
 }

@@ -2,7 +2,6 @@ package batchowner
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -30,6 +29,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/verbresult"
 )
 
 type BatchJoinRequest struct {
@@ -427,13 +427,22 @@ func productionBatchTreePlanOutputWithGroups(root, goalID, tree string, mode tes
 	if len(groups) != 0 {
 		command.Args = append(command.Args, "--batch-prefix", "--batch-requirements", testrun.BatchRequirementsArgument(groups))
 	}
-	output, err := command.CombinedOutput()
+	verb := testPlanVerb
+	if lane.IsAccount(goalID) {
+		verb = laneTestPlanVerb
+	}
+	child, err := verbresult.Run(command, verb)
 	if err != nil {
-		return testrun.PlanOutput{}, fmt.Errorf("plan joined unit: %s: %w", strings.TrimSpace(string(output)), err)
+		return testrun.PlanOutput{}, fmt.Errorf("plan joined unit: %w", err)
+	}
+	if child.Outcome != verbresult.Confirmed {
+		// The error keeps the child's code, which a caller matches with
+		// errors.As (laneHold), never in these words.
+		return testrun.PlanOutput{}, fmt.Errorf("plan joined unit: %w", child.Err())
 	}
 	var planned testrun.PlanOutput
-	if err := json.Unmarshal(output, &planned); err != nil {
-		return testrun.PlanOutput{}, err
+	if err := child.DecodeData(&planned); err != nil {
+		return testrun.PlanOutput{}, fmt.Errorf("plan joined unit: the plan could not be read: %w", err)
 	}
 	return planned, nil
 }

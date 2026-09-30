@@ -293,12 +293,12 @@ func TestHCL03GoalDoneReadItemsOpenRow(t *testing.T) {
 
 func TestHCL03ProofAdmissionRowsNameEmissions(t *testing.T) {
 	wants := map[string]Row{
-		"CANDIDATE_GOAL_REFUSED":           {Owner: "cmd/metasystem", Site: "proof_run_protocol.go#candidateGoalRefusal", Shape: Question},
-		"CANDIDATE_GOAL_MOVED":             {Owner: "cmd/metasystem", Site: "proof_run_protocol.go#proofAdmissionMoved", Shape: Question},
-		"PROOF_AUTHORITY_REQUIRED":         {Owner: "cmd/metasystem", Site: "proof_run_protocol.go#proofAuthorityRefusal", Shape: Question},
-		"PROOF_AUTHORITY_ARC_MATE_REFUSED": {Owner: "cmd/metasystem", Site: "proof_run_protocol.go#arcMateRefusal", Shape: Question},
+		"CANDIDATE_GOAL_REFUSED":           {Owner: "cmd/metasystem", Site: "proof_run.go#candidateGoalRefusal", Shape: Question},
+		"CANDIDATE_GOAL_MOVED":             {Owner: "cmd/metasystem", Site: "proof_run.go#proofAdmissionMoved", Shape: Question},
+		"PROOF_AUTHORITY_REQUIRED":         {Owner: "cmd/metasystem", Site: "proof_run.go#proofAuthorityRefusal", Shape: Question},
+		"PROOF_AUTHORITY_ARC_MATE_REFUSED": {Owner: "cmd/metasystem", Site: "proof_run.go#arcMateRefusal", Shape: Question},
 		"CANDIDATE_EXTENSION_REFUSED":      {Owner: "internal/dispatch", Site: "admission.go#evaluateCandidateConsumptionAdmissionWithReads", Shape: Question},
-		"RETRY_PRIOR_OUTSIDE_TREE":         {Owner: "internal/proofrun", Site: "protocol.go#retryPriorOutsideTree", Shape: Question},
+		"RETRY_PRIOR_OUTSIDE_TREE":         {Owner: "internal/proofrun", Site: "attempt.go#retryPriorOutsideTree", Shape: Question},
 		"SET_BUDGET_FENCED_SAME_TUPLE":     {Owner: "internal/goal", Site: "verbs.go#setBudgetRequest", Shape: Question},
 		"REBIND_EPOCH_UNAUTHENTICATED":     {Owner: "internal/goal", Site: "verbs.go#ClaimEpochForRebind", Shape: Identity},
 	}

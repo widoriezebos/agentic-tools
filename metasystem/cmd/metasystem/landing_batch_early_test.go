@@ -124,6 +124,7 @@ func TestBatchEarlyProofIsLaunchedAsTheTipProofReservingNoHeadroom(t *testing.T)
 		recorded := filepath.Join(dir, "argv")
 		stub := filepath.Join(dir, "engine")
 		script := "#!/bin/sh\nprintf '%s\\n' \"$@\" > " + recorded + "\nwhile [ $# -gt 0 ]; do [ \"$1\" = --result ] && printf '{}' > \"$2\"; shift; done\n"
+		script = withTestRunEnvelope(t, script+"exit 0\n")
 		if err := testexec.WriteFile(stub, []byte(script), 0o755); err != nil {
 			t.Fatal(err)
 		}

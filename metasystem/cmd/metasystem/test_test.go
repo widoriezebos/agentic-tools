@@ -36,6 +36,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/verbresult"
 )
 
 func TestTestPlanReArmsOnALandedEngine(t *testing.T) {
@@ -757,9 +758,11 @@ func TestTestPlanJSONKeepsItsFieldNames(t *testing.T) {
 	status, stdout, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
 		return runTestPlan([]string{"--root", t.TempDir(), "--purpose", "diagnostic", "--json", "--policy-child"}, stdout, stderr)
 	})
+	// The plan is the envelope's data (R1), its field names as spelled.
 	var fields map[string]any
-	if status != 0 || json.Unmarshal([]byte(stdout), &fields) != nil {
-		t.Fatalf("test plan --json: status=%d stdout=%q stderr=%q", status, stdout, stderr)
+	result, err := verbresult.Read([]byte(stdout), "test plan", status, stderr)
+	if status != 0 || err != nil || json.Unmarshal(result.Data, &fields) != nil {
+		t.Fatalf("test plan --json: status=%d stdout=%q stderr=%q err=%v", status, stdout, stderr, err)
 	}
 	for _, key := range []string{"schemaVersion", "projectRoot", "installationPrefix", "baseCommit", "policyBaseCommit",
 		"candidateTree", "contractDigest", "baseContractDigest", "plan", "groups", "unmatchedInputs"} {
@@ -790,13 +793,13 @@ func TestPolicyChildNeverFetchesOrReArms(t *testing.T) {
 	status, stdout, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
 		return runTestPlan([]string{"--root", t.TempDir(), "--purpose", "diagnostic", "--json", "--policy-child"}, stdout, stderr)
 	})
-	var output testrun.PlanOutput
-	if status != 0 || preparations != 1 || rearmCalls != 0 || stderr != "" || json.Unmarshal([]byte(stdout), &output) != nil {
+	_, planErr := planOfEnvelope(stdout, "test plan", status)
+	if status != 0 || preparations != 1 || rearmCalls != 0 || stderr != "" || planErr != nil {
 		t.Fatalf("policy child did not stay fetch/re-arm free with JSON-only stdout: status=%d preparations=%d rearms=%d stdout=%q stderr=%q", status, preparations, rearmCalls, stdout, stderr)
 	}
 
 	engine := filepath.Join(t.TempDir(), "policy-engine")
-	script := "#!/bin/sh\nseen=\nfor arg in \"$@\"; do [ \"$arg\" = --policy-child ] && seen=1; done\n[ \"$seen\" = 1 ] || exit 9\nprintf '%s\\n' '{\"schemaVersion\":1}'\n"
+	script := "#!/bin/sh\nseen=\nfor arg in \"$@\"; do [ \"$arg\" = --policy-child ] && seen=1; done\n[ \"$seen\" = 1 ] || exit 9\nprintf '%s\\n' '{\"schemaVersion\":1,\"verb\":\"test plan\",\"targets\":[],\"outcome\":\"confirmed\",\"summary\":\"\",\"data\":{\"schemaVersion\":1}}'\n"
 	if err := testexec.WriteFile(engine, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}

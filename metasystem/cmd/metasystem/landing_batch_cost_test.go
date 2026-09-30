@@ -20,16 +20,19 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
+	refusalpkg "github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/verbresult"
 )
 
 func TestBatchCostPrefixGenericBudgetRefusalUsesTypedReturn(t *testing.T) {
 	t.Parallel()
 	root, tree := batchPrefixReceiptTestRoot(t)
 	fake := filepath.Join(root, "budget-refusal-engine")
-	script := fmt.Sprintf("#!/bin/sh\nprintf '%%s\\n' 'metasystem test run: BUDGET_REFUSED reservedJobMinutesLimit used=1000 limit=1000' >&2\nexit %d\n", proofrun.ExitAdmissionRefused)
+	script := testRunEnvelopeScript(t, proofrun.ExitAdmissionRefused, "BUDGET_REFUSED", "goal goal-a has no room in its approved budget for this test run", nil,
+		"metasystem test run: the reserved minutes are spent")
 	if err := testexec.WriteFile(fake, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -37,7 +40,7 @@ func TestBatchCostPrefixGenericBudgetRefusalUsesTypedReturn(t *testing.T) {
 	record := batch.Record{Units: []batch.Unit{{GoalID: "goal-a", Claim: batch.Claim{Revision: 7, AccountingRevision: 5}}}}
 	_, err := batchowner.ExecuteBatchPrefixReceiptWithDependencies(root, "batch", record, "goal-a", tree, batch.PrefixDecision{Groups: []string{"same"}}, dependencies)
 	var budget *batch.PrefixBudgetRefusal
-	if !errors.As(err, &budget) || !strings.Contains(budget.Error(), "BUDGET_REFUSED") {
+	if !errors.As(err, &budget) || !strings.Contains(budget.Error(), "has no room in its approved budget") {
 		t.Fatalf("generic engine budget refusal was not typed for member return: %T %v", err, err)
 	}
 }
@@ -324,10 +327,12 @@ func TestBatchCostPortableJoinRefusesOverBudgetBeforeHandoverAndStatusShowsSnaps
 			if actual == nil {
 				t.Fatal("competing spend passed final admission")
 			}
-			return batch.JoinAdmission{}, batchowner.JoinAdmissionRefusal(actual.Error())
+			// The real refusal crosses the process boundary as the run's
+			// envelope: its code comes from the typed verdict (R4).
+			return batch.JoinAdmission{}, batchowner.JoinAdmissionRefusal(verbresult.FromError("internal test run", proofrun.ExitAdmissionRefused, actual, nil))
 		})
 		var refusal *batch.PrefixBudgetRefusal
-		if !errors.As(err, &refusal) || actual == nil || !strings.Contains(actual.Error(), "BUDGET_REFUSED") {
+		if !errors.As(err, &refusal) || actual == nil || refusalpkg.CodeOf(actual) != "BUDGET_REFUSED" {
 			t.Fatalf("real final budget refusal: returned=%v actual=%v", err, actual)
 		}
 		if !reflect.DeepEqual(costAttemptBytes(t, root), attemptsBefore) {

@@ -3,9 +3,12 @@ package lane
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 )
 
 // accountPrefix marks a lane accounting identity: a proof of a batch whose
@@ -27,21 +30,24 @@ func IsAccount(id string) bool { return strings.HasPrefix(id, accountPrefix) }
 // or gone lane, or a control root outside it is an error: a proof is never
 // charged to a lane that cannot be named.
 //
-// Its refusals lead with CodeAccountUnresolved, the code machines match; a
-// person's command shows the words after it and the code with --verbose.
+// Its refusals are coded CodeAccountUnresolved: a caller matches the code
+// with errors.As, a person reads the plain reason.
 func ResolveAccount(home, controlRoot string) (string, error) {
+	unresolved := func(facts string, reason error) error {
+		return &refusal.Coded{Code: CodeAccountUnresolved, Facts: facts, Reason: reason}
+	}
 	record, ok, err := Read(home)
 	switch {
 	case err != nil:
-		return "", fmt.Errorf("%s: this computer's landing lane record can't be read: %w", CodeAccountUnresolved, err)
+		return "", unresolved("", fmt.Errorf("this computer's landing lane record can't be read: %w", err))
 	case !ok:
-		return "", fmt.Errorf("%s: no landing lane is registered on this computer", CodeAccountUnresolved)
+		return "", unresolved("", errors.New("no landing lane is registered on this computer"))
 	case gone(record.Root):
-		return "", fmt.Errorf("%s: the landing lane %s no longer exists", CodeAccountUnresolved, record.Root)
+		return "", unresolved("lane="+record.Root, fmt.Errorf("the landing lane %s no longer exists", record.Root))
 	}
 	relative, err := filepath.Rel(resolved(record.Root), resolved(controlRoot))
 	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
-		return "", fmt.Errorf("%s: %s is not inside the landing lane %s", CodeAccountUnresolved, controlRoot, record.Root)
+		return "", unresolved("lane="+record.Root, fmt.Errorf("%s is not inside the landing lane %s", controlRoot, record.Root))
 	}
 	return AccountID(record.Root), nil
 }

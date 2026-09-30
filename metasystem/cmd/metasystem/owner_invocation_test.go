@@ -195,7 +195,8 @@ func TestBatchProofCancellationSparesTheResidentOwner(t *testing.T) {
 		"printf '%s\\n' $$ >\"$PROOF_STATE/$goal.pid\"\n" +
 		"if [[ $goal == cancelled ]]; then exec sleep 600; fi\n" +
 		"while [[ ! -e \"$PROOF_STATE/release\" ]]; do sleep 0.05; done\n" +
-		"printf '{}\\n' >\"$result\"\n"
+		"printf '{}\\n' >\"$result\"\nexit 0\n"
+	script = withTestRunEnvelope(t, script)
 	if err := testexec.WriteFile(proof, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}

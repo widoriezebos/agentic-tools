@@ -651,9 +651,9 @@ func TestIntentWaitTestAndSettingsAdapters(t *testing.T) {
 		request, _, code := parseTestingSelection(argv[1]+" "+argv[2], argv[3:], true, t.Output(), t.Output())
 		parsed = request
 		if code != 0 {
-			return nil, code, nil
+			return []byte(testRunEnvelopeLine(t, code, "", "", nil)), code, nil
 		}
-		return []byte(`{"outcome":"red"}`), 1, nil
+		return testRunEnvelopeBytes(t, 1, `{"outcome":"red"}`), 1, nil
 	}
 	run := func(args ...string) (int, intentResult) {
 		var stdout, stderr bytes.Buffer

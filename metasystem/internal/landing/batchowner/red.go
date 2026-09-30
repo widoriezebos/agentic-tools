@@ -17,6 +17,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/adapter"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/verbresult"
 )
 
 var ProductionTrunkRedLedgerOwner = productionBatchLedgerOwner
@@ -169,19 +170,16 @@ func ExecuteBatchDiagnosisWithConfig(root, id, actor string, at time.Time, looku
 
 func batchDiagnosticArgs(root string, request batch.DiagnosticRequest, resultPath string) []string {
 	args := append(append([]string{"internal", "test", "run", "--root", root}, accountFlag(request.GoalID)...), "--tree", request.Tree, "--mode", "canary",
-		"--purpose", "diagnostic", "--groups", strings.Join(request.Groups, ","), "--no-reuse", "--result", resultPath)
+		"--purpose", "diagnostic", "--groups", strings.Join(request.Groups, ","), "--no-reuse", "--result", resultPath, "--json")
 	return append(args, accountRevisions(request.GoalID, request.Claim)...)
 }
 
-var BatchDiagnosticExecute = func(binary string, args []string, dir string, environment []string) ([]byte, int, error) {
+// BatchDiagnosticExecute runs the diagnostic test run child and reads its
+// --json envelope; an unreadable envelope is an error, never a result.
+var BatchDiagnosticExecute = func(binary string, args []string, dir string, environment []string) (verbresult.Result, error) {
 	command := BatchProofCommand(binary, args, false)
 	command.Dir, command.Env = dir, environment
-	output, err := command.CombinedOutput()
-	status := -1
-	if command.ProcessState != nil {
-		status = command.ProcessState.ExitCode()
-	}
-	return output, status, err
+	return runTestRunChild(command)
 }
 
 // clearingDiagnostic is the owner's trunk-red clearing run. That path hands the member's claim beside the
@@ -205,7 +203,7 @@ func LaunchBatchDiagnostic(root, batchID string, request batch.DiagnosticRequest
 }
 
 func LaunchBatchDiagnosticWithExecute(root, batchID string, request batch.DiagnosticRequest,
-	execute func(string, []string, string, []string) ([]byte, int, error),
+	execute func(string, []string, string, []string) (verbresult.Result, error),
 ) (batch.DiagnosticResult, error) {
 	binary, err := os.Executable()
 	if err != nil {
@@ -222,14 +220,17 @@ func LaunchBatchDiagnosticWithExecute(root, batchID string, request batch.Diagno
 	args := batchDiagnosticArgs(root, request, resultPath)
 	// The host load when the run starts, recorded with a flake's sightings.
 	sample := proofrun.SampleLoad(root, "", int64(os.Getpid()), time.Now())
-	output, status, runErr := execute(binary, args, root, append(gittree.ScrubbedEnviron(), "METASYSTEM_OWNER_LINEAGE="+LandingOwnerLineage))
-	if runErr != nil && status == proofrun.ExitAdmissionRefused {
-		return batch.DiagnosticResult{}, &batch.DiagnosticRefusal{Status: strings.TrimSpace(string(output))}
+	child, err := execute(binary, args, root, append(gittree.ScrubbedEnviron(), "METASYSTEM_OWNER_LINEAGE="+LandingOwnerLineage))
+	if err != nil {
+		return batch.DiagnosticResult{}, fmt.Errorf("batch diagnostic: %w", err)
+	}
+	if child.Outcome == verbresult.Refused {
+		return batch.DiagnosticResult{}, &batch.DiagnosticRefusal{Status: child.Err().Error()}
 	}
 	var result proofrun.TestResult
 	if readErr := strictjson.Read(resultPath, &result); readErr != nil {
-		if runErr != nil {
-			return batch.DiagnosticResult{}, fmt.Errorf("batch diagnostic: %s: %w", strings.TrimSpace(string(output)), errors.Join(runErr, readErr))
+		if child.Outcome != verbresult.Confirmed {
+			return batch.DiagnosticResult{}, fmt.Errorf("batch diagnostic: %w", errors.Join(child.Err(), readErr))
 		}
 		return batch.DiagnosticResult{}, readErr
 	}
@@ -238,8 +239,8 @@ func LaunchBatchDiagnosticWithExecute(root, batchID string, request batch.Diagno
 		diagnostic.Evidence = append(diagnostic.Evidence, batch.GroupEvidence{ID: group.ID, Status: group.Status, ExecutionIdentity: group.ExecutionIdentity,
 			LogPath: group.LogPath, LogDigest: group.LogDigest, NativeLaunched: group.NativeLaunched, CollectionComplete: group.CollectionComplete})
 	}
-	if runErr != nil && len(diagnostic.Groups) == 0 {
-		return diagnostic, fmt.Errorf("batch diagnostic: %s: %w", strings.TrimSpace(string(output)), runErr)
+	if child.Outcome != verbresult.Confirmed && len(diagnostic.Groups) == 0 {
+		return diagnostic, fmt.Errorf("batch diagnostic: %w", child.Err())
 	}
 	return diagnostic, nil
 }

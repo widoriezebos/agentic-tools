@@ -56,7 +56,9 @@ func WriteWorkerCapabilities(writer io.Writer) error {
 func RequireWorkerCapabilities(ctx context.Context, engine string, environment []string) (WorkerCapabilities, error) {
 	command := exec.CommandContext(ctx, engine, "test", "worker-capabilities")
 	command.Env = Environment(environment)
-	data, err := command.CombinedOutput()
+	// Stdout only: the handshake is a JSON answer, and a note on stderr is
+	// for a person.
+	data, err := command.Output()
 	if err != nil {
 		return WorkerCapabilities{}, fmt.Errorf("%w: %s did not answer the worker handshake (%v); install a matching engine release first", ErrWorkerPolicyUnsupported,
 			engine, err)

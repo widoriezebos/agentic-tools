@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"reflect"
 	"slices"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -27,6 +26,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/strictjson"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/verbresult"
 )
 
 type BatchProofLaunch struct {
@@ -218,12 +218,6 @@ func BatchSourcesFromVerification(result proofrun.TestResult) map[string]string 
 		}
 	}
 	return sources
-}
-
-// laneHold reports whether an error is one a batch charged to the lane holds
-// on with its plain reason, rather than a failure (U11b).
-func laneHold(err error) bool {
-	return err != nil && (strings.Contains(err.Error(), "LANE_ACCOUNT_UNRESOLVED") || strings.Contains(err.Error(), "LANE_ENGINE_TOO_OLD"))
 }
 
 func proofPlanCovers(plan testpolicy.Plan, union []string) bool {
@@ -440,7 +434,7 @@ func ExecuteBatchProof(root, id, actor, window, token string, sample proofrun.Lo
 // headroom reserved, or to the lane, which has neither (U11b).
 func BatchTipProofArgs(request BatchProofLaunch, executionRoot string) []string {
 	args := append(append([]string{"internal", "test", "run", "--root", executionRoot, "--control-root", request.Root, "--batch-tip"},
-		accountFlag(request.GoalID)...), "--tree", request.Tree, "--mode", string(request.Mode), "--purpose", "delivery", "--result", request.ResultPath)
+		accountFlag(request.GoalID)...), "--tree", request.Tree, "--mode", string(request.Mode), "--purpose", "delivery", "--result", request.ResultPath, "--json")
 	if !request.Early && !lane.IsAccount(request.GoalID) {
 		args = append(args, "--require-diagnostic-headroom")
 	}
@@ -544,40 +538,33 @@ func LaunchBatchTipProofWithDependencies(request BatchProofLaunch, dependencies 
 	// tip proof holds it for the child's life.
 	command := BatchProofCommand(binary, args, request.Early)
 	command.Dir, command.Env = executionRoot, append(gittree.ScrubbedEnviron(), "METASYSTEM_OWNER_LINEAGE="+LandingOwnerLineage)
-	output, launchErr := command.CombinedOutput()
-	if launchErr != nil && command.ProcessState != nil && command.ProcessState.ExitCode() == proofrun.ExitAdmissionRefused {
-		reason := strings.TrimSpace(string(output))
-		kind := "capacity"
-		if strings.Contains(reason, "BATCH_MEMBER_BUDGET_REFUSED") {
-			kind = "budget"
-		} else if strings.Contains(reason, "GOAL_REVISION_MOVED") {
-			kind = "revision"
-		} else if strings.Contains(reason, "CANDIDATE_GOAL_REFUSED") && strings.Contains(reason, "state=fenced") {
-			kind = "fenced"
-		}
-		return proofrun.TestResult{}, &BatchProofAdmissionRefusal{Kind: kind, Reason: reason}
+	child, err := runTestRunChild(command)
+	if err != nil {
+		return proofrun.TestResult{}, fmt.Errorf("the batch tip's test run: %w", err)
+	}
+	if child.Outcome == verbresult.Refused {
+		return proofrun.TestResult{}, &BatchProofAdmissionRefusal{Kind: string(classifyAdmission(child)), Reason: child.Err().Error()}
 	}
 	var result proofrun.TestResult
-	if readErr := strictjson.Read(request.ResultPath, &result); readErr != nil {
-		if launchErr == nil {
-			launchErr = readErr
-		}
+	readErr := strictjson.Read(request.ResultPath, &result)
+	if readErr == nil && BatchProofOutcomeAccepted(child, result) {
+		return result, nil
 	}
-	if launchErr != nil && command.ProcessState != nil && BatchProofExitAccepted(command.ProcessState.ExitCode(), result) {
-		launchErr = nil
+	if child.Outcome == verbresult.Confirmed {
+		return result, fmt.Errorf("the batch tip's test run: %w", readErr)
 	}
-	if launchErr != nil {
-		launchErr = fmt.Errorf("the batch tip's test run: %s: %w", strings.TrimSpace(string(output)), launchErr)
-	}
-	return result, launchErr
+	return result, fmt.Errorf("the batch tip's test run: %w", child.Err())
 }
 
 type BatchProofAdmissionRefusal struct{ Kind, Reason string }
 
 func (refusal *BatchProofAdmissionRefusal) Error() string { return refusal.Reason }
 
-func BatchProofExitAccepted(status int, result proofrun.TestResult) bool {
-	return status == 0 || status == proofrun.ExitReusableSuccess && result.Delivery.Sufficient
+// BatchProofOutcomeAccepted is whether a test run child's result stands as
+// a pass: it confirmed, or it reused an earlier success whose evidence is
+// sufficient.
+func BatchProofOutcomeAccepted(child verbresult.Result, result proofrun.TestResult) bool {
+	return child.Outcome == verbresult.Confirmed || child.Outcome == verbresult.Unchanged && result.Delivery.Sufficient
 }
 
 var BatchBaseRearm = struct {

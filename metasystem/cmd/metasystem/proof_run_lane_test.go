@@ -68,12 +68,12 @@ func TestLaneProofChargesTheLaneNotAGoal(t *testing.T) {
 	unresolved.laneAccount = func(string) (string, error) {
 		return "", errors.New("LANE_ACCOUNT_UNRESOLVED: no landing lane is registered on this host")
 	}
-	if _, _, _, err := admitAsLaneOwner(t, repository, unresolved, lease.ClassMain); err == nil || !strings.Contains(err.Error(), "LANE_ACCOUNT_UNRESOLVED") {
+	if _, _, _, err := admitAsLaneOwner(t, repository, unresolved, lease.ClassMain); err == nil || !strings.Contains(refusalDetail(err), "LANE_ACCOUNT_UNRESOLVED") {
 		t.Fatalf("unresolved lane: %v", err)
 	}
 	other := request
 	other.laneAccount = func(string) (string, error) { return "lane:ffffffffffff", nil }
-	if _, _, _, err := admitAsLaneOwner(t, repository, other, lease.ClassMain); err == nil || !strings.Contains(err.Error(), "LANE_ACCOUNT_UNRESOLVED") {
+	if _, _, _, err := admitAsLaneOwner(t, repository, other, lease.ClassMain); err == nil || !strings.Contains(refusalDetail(err), "LANE_ACCOUNT_UNRESOLVED") {
 		t.Fatalf("another lane's identity: %v", err)
 	}
 	both := request
@@ -94,12 +94,12 @@ func TestLaneProofChargesTheLaneNotAGoal(t *testing.T) {
 
 // TestTrustedPolicyEngineForwardsTheLane (U11b F-3): the pinned trusted-base
 // engine plans a lane-charged run on the lane, never on some goal; an engine
-// that predates --lane is refused with the fix named, never asked with a goal.
+// that answers without its envelope is refused, never asked with a goal.
 func TestTrustedPolicyEngineForwardsTheLane(t *testing.T) {
 	t.Parallel()
 	argsFile := filepath.Join(t.TempDir(), "args")
 	engine := filepath.Join(t.TempDir(), "policy-engine")
-	script := "#!/bin/sh\nprintf '%s\\n' \"$@\" > '" + argsFile + "'\nprintf '%s\\n' '{\"schemaVersion\":1}'\n"
+	script := "#!/bin/sh\nprintf '%s\\n' \"$@\" > '" + argsFile + "'\nprintf '%s\\n' '{\"schemaVersion\":1,\"verb\":\"internal test plan\",\"targets\":[],\"outcome\":\"confirmed\",\"summary\":\"\",\"data\":{\"schemaVersion\":1}}'\n"
 	if err := testexec.WriteFile(engine, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -115,13 +115,14 @@ func TestTrustedPolicyEngineForwardsTheLane(t *testing.T) {
 	if strings.Join(args[:3], " ") != "internal test plan" || !slices.Contains(args, "--lane") || !slices.Contains(args, "lane:0123456789ab") || slices.Contains(args, "--goal") {
 		t.Fatalf("policy child argv=%v", args)
 	}
+	// An engine that answers in words, not the envelope, is read as unknown:
+	// the plan is refused, never guessed from its text (structured-output U1).
 	old := filepath.Join(t.TempDir(), "old-engine")
 	if err := testexec.WriteFile(old, []byte("#!/bin/sh\necho 'flag provided but not defined: -lane' >&2\nexit 2\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := testrun.PlanWithTrustedPolicyEngine(old, request, t.TempDir(), "candidate"); err == nil || !strings.Contains(err.Error(), "LANE_ENGINE_TOO_OLD") ||
-		!strings.Contains(err.Error(), "metasystem landing restart") {
-		t.Fatalf("an engine without --lane: %v", err)
+	if _, err := testrun.PlanWithTrustedPolicyEngine(old, request, t.TempDir(), "candidate"); err == nil || !strings.Contains(err.Error(), "could not be read") {
+		t.Fatalf("an engine answering in words: %v", err)
 	}
 }
 

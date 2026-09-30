@@ -33,7 +33,7 @@ func TestMessageTestVerbsDocumentAndPassVerbose(t *testing.T) {
 	var passed []string
 	owners.work.testRun = func(_ string, argv []string, _ io.Writer) ([]byte, int, error) {
 		passed = argv
-		return []byte(`{"outcome":"red"}`), 1, nil
+		return testRunEnvelopeBytes(t, 1, `{"outcome":"red"}`), 1, nil
 	}
 	var stdout, stderr bytes.Buffer
 	runIntentIn(mustIntentArgvCommand(t, []string{"test", "run"}), []string{"--verbose", "--json"}, &stdout, &stderr, bed.root(), owners)

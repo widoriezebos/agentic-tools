@@ -58,14 +58,10 @@ func enforceTracedMessages(paths ...string) bool {
 	return true
 }
 
-// messageTraceKept are the files (or file#Function) whose texts are machine
-// protocol a parent process reads by its leading code (the kept exceptions
-// of the direct scan), or records a parser reads back; their sources are
-// listed as kept, never reported.
+// messageTraceKept are the files (or file#Function) whose texts are records
+// a parser reads back or stable identifiers; their sources are listed as
+// kept, never reported.
 var messageTraceKept = map[string]string{
-	"cmd/metasystem/proof_run_protocol.go": "proof-run protocol codes a parent reads",
-	"internal/proofrun/protocol.go":        "proof-run protocol codes a parent reads",
-	"internal/testrun/protocol.go":         "test-run protocol codes a parent reads",
 	// A mission ledger's cycle and reset lines are the record its parser
 	// (ParseLedger, the prompt's cycle table) reads back, not a message.
 	"internal/mission/ledger.go#AppendCycle": "mission ledger record lines its parser reads",

@@ -19,6 +19,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/strictjson"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/verbresult"
 )
 
 var batchJoinAdmissionExecutable = os.Executable
@@ -137,21 +138,24 @@ func runBatchAdmissionOnTree(root, batchID, baseTree, goalID string, claim batch
 	if result.FreshEpisode != "" {
 		args = append(args, "--fresh-episode", result.FreshEpisode, "--fresh-expires-at", result.FreshExpiresAt)
 	}
-	command := exec.Command(binary, args...)
+	command := exec.Command(binary, append(args, "--json")...)
 	command.Dir, command.Env = executionRoot, append(gittree.ScrubbedEnviron(), "METASYSTEM_OWNER_LINEAGE="+LandingOwnerLineage)
-	output, runErr := command.CombinedOutput()
-	if runErr != nil && command.ProcessState != nil && command.ProcessState.ExitCode() == proofrun.ExitAdmissionRefused {
-		return batch.JoinAdmission{}, proofrun.TestResult{}, false, JoinAdmissionRefusal(strings.TrimSpace(string(output)))
+	child, err := runTestRunChild(command)
+	if err != nil {
+		return batch.JoinAdmission{}, proofrun.TestResult{}, false, fmt.Errorf("%s: %w", codeJoinTestDropped, err)
+	}
+	if child.Outcome == verbresult.Refused {
+		return batch.JoinAdmission{}, proofrun.TestResult{}, false, JoinAdmissionRefusal(child)
 	}
 	var proof proofrun.TestResult
 	if err := strictjson.Read(result.ResultPath, &proof); err != nil {
-		return batch.JoinAdmission{}, proofrun.TestResult{}, false, fmt.Errorf("%s: read admission result: %w; output=%s", codeJoinTestDropped, err, strings.TrimSpace(string(output)))
+		return batch.JoinAdmission{}, proofrun.TestResult{}, false, fmt.Errorf("%s: read admission result: %w; %s", codeJoinTestDropped, err, child.Summary)
 	}
-	if runErr != nil && (command.ProcessState == nil || !BatchProofExitAccepted(command.ProcessState.ExitCode(), proof)) {
+	if !BatchProofOutcomeAccepted(child, proof) {
 		if len(proof.Delivery.FailingGroups) != 0 {
 			return batch.JoinAdmission{}, proof, true, &batch.JoinAdmissionRed{Reason: "BATCH_JOIN_ADMISSION_RED: " + strings.Join(proof.Delivery.FailingGroups, ",")}
 		}
-		return batch.JoinAdmission{}, proof, true, fmt.Errorf("%s: %s: %w", codeJoinTestDropped, strings.TrimSpace(string(output)), runErr)
+		return batch.JoinAdmission{}, proof, true, fmt.Errorf("%s: %w", codeJoinTestDropped, child.Err())
 	}
 	request := testrun.SelectionRequest{Root: executionRoot, ControlRoot: controlRoot, GoalID: goalID, Tree: tree,
 		Mode: testpolicy.ModeAuto, Purpose: testpolicy.PurposeDelivery, BatchAdmission: true,
@@ -164,19 +168,9 @@ func runBatchAdmissionOnTree(root, batchID, baseTree, goalID string, claim batch
 	return result, proof, true, nil
 }
 
-func JoinAdmissionRefusal(reason string) error {
-	code := batchAdmissionRefusalCode(reason)
-	switch code {
-	case "GOAL_REVISION_MOVED":
-		return &batch.PrefixRevisionRefusal{Reason: reason}
-	case "BATCH_MEMBER_BUDGET_REFUSED", "BUDGET_REFUSED":
-		return &batch.PrefixBudgetRefusal{Reason: reason}
-	case "CANDIDATE_GOAL_REFUSED":
-		if strings.Contains(reason, "state=fenced") {
-			return &batch.PrefixFencedRefusal{Reason: reason}
-		}
-	}
-	return &batch.PrefixAdmissionRefusal{Code: code, Reason: reason}
+// JoinAdmissionRefusal is the batch's refusal for a refused admission run.
+func JoinAdmissionRefusal(child verbresult.Result) error {
+	return admissionRefusal(child)
 }
 
 func retainJoinEpisode(root string, store batch.Store, batchID string, unit batch.Unit, decision batch.JoinAdmission, maxAgeMS int64) (batch.JoinAdmission, error) {

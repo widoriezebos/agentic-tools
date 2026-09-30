@@ -329,7 +329,7 @@ func TestCandidateGoalEligibilityTable(t *testing.T) {
 				}
 				return
 			}
-			if err == nil || !strings.Contains(err.Error(), "CANDIDATE_GOAL_REFUSED") || !strings.Contains(err.Error(), "state="+test.wantState) {
+			if err == nil || !strings.Contains(refusalDetail(err), "CANDIDATE_GOAL_REFUSED") || !strings.Contains(refusalDetail(err), "state="+test.wantState) {
 				t.Fatalf("ineligible candidate file=%+v revision=%d err=%v", file, revision, err)
 			}
 		})
@@ -456,7 +456,7 @@ func TestCandidateGoalTransitionUnderLockIsBeforeOrAfter(t *testing.T) {
 				}
 				return
 			}
-			if err == nil || !strings.Contains(err.Error(), "CANDIDATE_GOAL_MOVED") || attempt.AttemptID != "" {
+			if err == nil || !strings.Contains(refusalDetail(err), "CANDIDATE_GOAL_MOVED") || attempt.AttemptID != "" {
 				t.Fatalf("movement at %s was not refused: attempt=%+v result=%+v err=%v", test.seam, attempt, result, err)
 			}
 			attempts, readErr := proofrun.ReadAttempts(root)
@@ -587,14 +587,14 @@ func TestOneLiveChargedAttemptCountsForBothLenses(t *testing.T) {
 		t.Fatalf("live candidate charge did not split authority capacity from consumption: %+v", authority)
 	}
 	if attempt, err := launch(other.Id, strings.Repeat("c", 40)); err == nil || attempt.AttemptID != "" ||
-		!strings.Contains(err.Error(), "standing-validation") || !strings.Contains(err.Error(), "activeJobLimit") {
+		!strings.Contains(refusalDetail(err), "standing-validation") || !strings.Contains(refusalDetail(err), "activeJobLimit") {
 		t.Fatalf("second authority job was not refused by the authority lens: attempt=%+v err=%v", attempt, err)
 	}
 	if _, err := proofrun.FinalizeAttempt(root, first.AttemptID, proofrun.TerminalFailed, 1, "two-lens witness", nil, now); err != nil {
 		t.Fatal(err)
 	}
 	if attempt, err := launch(candidate.Id, strings.Repeat("d", 40)); err == nil || attempt.AttemptID != "" ||
-		!strings.Contains(err.Error(), candidate.Id) || !strings.Contains(err.Error(), "attemptLimit") {
+		!strings.Contains(refusalDetail(err), candidate.Id) || !strings.Contains(refusalDetail(err), "attemptLimit") {
 		t.Fatalf("second candidate attempt was not refused by the candidate lens: attempt=%+v err=%v", attempt, err)
 	}
 }
@@ -614,7 +614,7 @@ func TestCandidateCannotEscapeAuthorityElapsedLimit(t *testing.T) {
 		ControlRoot: root, ExecutionRoot: root, ConfPath: filepath.Join(root, "metasystem.conf"), GoalID: candidate.Id,
 		AuthorityGoalID: "standing-validation", CapMin: "1", ScopeClass: "full", CommandClass: "testing", Now: now,
 	})
-	if err == nil || attempt.AttemptID != "" || !strings.Contains(err.Error(), "standing-validation") || !strings.Contains(err.Error(), "elapsedLimit") {
+	if err == nil || attempt.AttemptID != "" || !strings.Contains(refusalDetail(err), "standing-validation") || !strings.Contains(refusalDetail(err), "elapsedLimit") {
 		t.Fatalf("candidate escaped the authority clock: attempt=%+v err=%v", attempt, err)
 	}
 }
@@ -649,8 +649,8 @@ func TestCandidateExtensionIsRefusedUntilCandidateBecomesAuthority(t *testing.T)
 		AuthorityGoalID: "standing-validation", CapMin: "1", ScopeClass: "full", CommandClass: "testing", CandidateTree: strings.Repeat("c", 40), Now: now}
 	attempt, _, _, err := admitCandidateProofLaunchWithRepository(t, repository, request)
 	for _, want := range []string{"CANDIDATE_EXTENSION_REFUSED", candidate.Id, "attemptLimit", "claim " + candidate.Id + " as authority", "metasystem goal budget " + candidate.Id + " BOX"} {
-		if err == nil || !strings.Contains(err.Error(), want) || attempt.AttemptID != "" {
-			t.Fatalf("candidate extension refusal did not name %q: attempt=%+v err=%v", want, attempt, err)
+		if err == nil || !strings.Contains(refusalDetail(err), want) || attempt.AttemptID != "" {
+			t.Fatalf("candidate extension refusal did not name %q: attempt=%+v err=%v detail=%s", want, attempt, err, refusalDetail(err))
 		}
 	}
 	repository.amend(t, "standing-validation", func(file *goal.GoalFile) {
@@ -696,7 +696,7 @@ func TestBoundProofContextsRequireTheirOwnAuthority(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			err := enforceBoundProofGoals(test.kind, "run-goal", test.candidate, test.authority)
-			if err == nil || !strings.Contains(err.Error(), "PROOF_AUTHORITY_REQUIRED") || !strings.Contains(err.Error(), "run-goal") {
+			if err == nil || !strings.Contains(refusalDetail(err), "PROOF_AUTHORITY_REQUIRED") || !strings.Contains(refusalDetail(err), "run-goal") {
 				t.Fatalf("bound context accepted candidate=%q authority=%q: %v", test.candidate, test.authority, err)
 			}
 		})
@@ -712,9 +712,9 @@ func TestArcMateAuthorityIsRefused(t *testing.T) {
 	repository.addCandidate(t, "candidate-outside", "arc-b", &goal.RiskRecord{Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "Outside arc witness."})
 	for _, authority := range []string{"standing-validation", ""} {
 		roles, err := resolveProofGoalRolesWithReads(root, "candidate-arc", authority, now, repository.reads())
-		if err == nil || !strings.Contains(err.Error(), "PROOF_AUTHORITY_ARC_MATE_REFUSED") ||
-			!strings.Contains(err.Error(), "candidate-arc") || !strings.Contains(err.Error(), "standing-validation") ||
-			!strings.Contains(err.Error(), "arc-a") || roles.Authority != nil {
+		if err == nil || !strings.Contains(refusalDetail(err), "PROOF_AUTHORITY_ARC_MATE_REFUSED") ||
+			!strings.Contains(refusalDetail(err), "candidate-arc") || !strings.Contains(refusalDetail(err), "standing-validation") ||
+			!strings.Contains(refusalDetail(err), "arc-a") || roles.Authority != nil {
 			t.Fatalf("arc mate authority=%q roles=%+v err=%v", authority, roles, err)
 		}
 	}
@@ -2193,7 +2193,7 @@ func TestBatchRevisionBoundAdmissionRefusesBeforeRunnerOrCharge(t *testing.T) {
 			})
 
 			after := dispatchcore.ProjectBudget(root, binding.File, now)
-			if err == nil || !strings.Contains(err.Error(), "GOAL_REVISION_MOVED") || attempt.AttemptID != "" ||
+			if err == nil || !strings.Contains(refusalDetail(err), "GOAL_REVISION_MOVED") || attempt.AttemptID != "" ||
 				after.Attempts != before.Attempts || after.ReservedJobMinutes != before.ReservedJobMinutes {
 				t.Fatalf("attempt=%+v err=%v budget=%d/%d -> %d/%d", attempt, err,
 					before.Attempts, before.ReservedJobMinutes, after.Attempts, after.ReservedJobMinutes)
@@ -2241,7 +2241,7 @@ func TestBatchP2RequiresDiagnosticHeadroom(t *testing.T) {
 				RequireDiagnosticHeadroom: true,
 			})
 
-			if err == nil || !strings.Contains(err.Error(), "BATCH_MEMBER_BUDGET_REFUSED") || attempt.AttemptID != "" {
+			if err == nil || !strings.Contains(refusalDetail(err), "BATCH_MEMBER_BUDGET_REFUSED") || attempt.AttemptID != "" {
 				t.Fatalf("headroom attempt=%+v err=%v", attempt, err)
 			}
 		})
