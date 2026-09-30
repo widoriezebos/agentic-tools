@@ -144,7 +144,15 @@
       },
       "holds": [],
       "opened": "2026-09-30T16:14:14Z",
-      "closed": null
+      "closed": {
+        "at": "2026-09-30T16:35:57Z",
+        "attempt": "",
+        "baseCommit": "",
+        "how": "hand",
+        "opid": "SKG8YJ8A9KAE77T2G9T1K0XPWJ-m1e-b6a4eb0a",
+        "by": "wido",
+        "why": "Not a red: status unavailable, the lane's scheduled check never ran (standing cadence authority unavailable after engine drift). Recorded by the lane's trunk-red loop 2026-09-30 16:14-16:25Z; lane paused; fix under goal landing-lane-runtime-redesign (step-back memo evidence/lane-stepback-20260930/memo.md)"
+      }
     },
     {
       "id": "tr-section-go-engine-gate-9d35f27d25cc",
