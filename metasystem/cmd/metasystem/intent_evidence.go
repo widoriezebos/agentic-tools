@@ -18,6 +18,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/evidence"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 	"golang.org/x/sys/unix"
 )
 
@@ -125,7 +126,7 @@ func runIntentEvidenceShow(inv *intentInvocation) int {
 		lines = append(lines, env.OpenDisposals()...)
 		for _, root := range env.Roots() {
 			bytes, _, _ := diskstore.Measure(ctx, root.Path)
-			line := fmt.Sprintf("%s: %s, %s", root.Path, root.Owner, evidenceBytes(bytes))
+			line := fmt.Sprintf("%s: %s, %s", root.Path, root.Owner, textui.GiB(bytes))
 			if len(root.NotManaged) > 0 {
 				line += fmt.Sprintf("; %d entries outside every segment, %s", len(root.NotManaged), evidence.NotManagedLine)
 			}
@@ -145,7 +146,7 @@ func runIntentEvidenceShow(inv *intentInvocation) int {
 				lines = append(lines, "the items cannot be listed: "+err.Error())
 			}
 			for _, target := range targets {
-				lines = append(lines, fmt.Sprintf("  %s %s, %s", target.Item.Kind, target.Item.Path, evidenceBytes(target.Item.Bytes)))
+				lines = append(lines, fmt.Sprintf("  %s %s, %s", target.Item.Kind, target.Item.Path, textui.GiB(target.Item.Bytes)))
 			}
 		}
 		summary := fmt.Sprintf("%d evidence root(s) on this host", len(data))
@@ -155,8 +156,6 @@ func runIntentEvidenceShow(inv *intentInvocation) int {
 	lines := view.Lines(inv.input.switched("verbose"))
 	return inv.render(intentResult{Outcome: intentConfirmed, Summary: lines[0], text: lines[1:], Data: view})
 }
-
-func evidenceBytes(bytes int64) string { return fmt.Sprintf("%.2f GiB", float64(bytes)/float64(1<<30)) }
 
 // evidenceTargets are the items the words name, or with --over-bound the
 // removal set and its still-over lines.
@@ -343,7 +342,7 @@ func runIntentEvidenceDispose(inv *intentInvocation) int {
 			already++
 		}
 	}
-	summary := fmt.Sprintf("plan %s: %d of %d item(s) disposed, %s freed", plan.ID, done-already, len(outcomes), evidenceBytes(freed))
+	summary := fmt.Sprintf("plan %s: %d of %d item(s) disposed, %s freed", plan.ID, done-already, len(outcomes), textui.GiB(freed))
 	if already > 0 {
 		summary += fmt.Sprintf("; %d already disposed", already)
 	}
@@ -373,7 +372,7 @@ func evidencePlanResult(inv *intentInvocation, plan evidence.DisposePlan) intent
 			declined++
 		}
 		if inv.input.switched("verbose") || item.State != "clear" {
-			line := fmt.Sprintf("  %s %s: %s, %d files, %s", item.State, item.Step, item.Path, item.Files, evidenceBytes(item.Bytes))
+			line := fmt.Sprintf("  %s %s: %s, %d files, %s", item.State, item.Step, item.Path, item.Files, textui.GiB(item.Bytes))
 			if len(item.Held) > 0 {
 				line += "; held: " + strings.Join(item.Held, "; ") + " (--override takes it anyway)"
 			}
@@ -387,7 +386,7 @@ func evidencePlanResult(inv *intentInvocation, plan evidence.DisposePlan) intent
 	for _, line := range plan.StillOver {
 		lines = append(lines, "  "+line)
 	}
-	summary := fmt.Sprintf("preview: nothing was changed; plan %s: %d clear (%d files, %s), %d held, %d declined", plan.ID, clear, files, evidenceBytes(bytes), held, declined)
+	summary := fmt.Sprintf("preview: nothing was changed; plan %s: %d clear (%d files, %s), %d held, %d declined", plan.ID, clear, files, textui.GiB(bytes), held, declined)
 	if plan.Export != "" {
 		summary += "; each exported to " + plan.Export + " first"
 	}

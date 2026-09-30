@@ -23,6 +23,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
 
 // diskOwners are the seams disk show and disk clean call; zero values are
@@ -467,12 +468,12 @@ func renderPersonOutcomes(inv *intentInvocation, act, many, by string, outcomes 
 	data := map[string]any{"by": by, "outcomes": outcomes}
 	summary := fmt.Sprintf("%s: %d done", act, done)
 	if freed := diskstore.Freed(outcomes); freed > 0 {
-		summary += fmt.Sprintf(", %s freed", diskBytes(freed))
+		summary += fmt.Sprintf(", %s freed", textui.BytesMiB(freed))
 	}
 	if declined > 0 {
 		summary = fmt.Sprintf("%s: %d done, %d kept with the reason and the command that settles each", act, done, declined)
 		if freed := diskstore.Freed(outcomes); freed > 0 {
-			summary += fmt.Sprintf("; %s freed", diskBytes(freed))
+			summary += fmt.Sprintf("; %s freed", textui.BytesMiB(freed))
 		}
 	}
 	if !verbose && len(lines) < len(outcomes) {
@@ -616,9 +617,9 @@ func diskTrimSummary(reports []gocache.TrimReport) (string, bool) {
 			case report.Phase == "measure" && diskTrimNotStarted(report):
 				resuming = append(resuming, name+" is not measured yet")
 			case report.Phase == "measure":
-				resuming = append(resuming, fmt.Sprintf("still measuring %s (%s counted so far)", name, diskBytes(report.Checkpoint.BytesSoFar)))
+				resuming = append(resuming, fmt.Sprintf("still measuring %s (%s counted so far)", name, textui.BytesMiB(report.Checkpoint.BytesSoFar)))
 			default:
-				resuming = append(resuming, fmt.Sprintf("still trimming %s to its %s cap", name, diskBytes(report.CapBytes)))
+				resuming = append(resuming, fmt.Sprintf("still trimming %s to its %s cap", name, textui.BytesMiB(report.CapBytes)))
 			}
 		case "lock-held":
 			problems = append(problems, "another steward is trimming "+name+" now")
@@ -626,13 +627,13 @@ func diskTrimSummary(reports []gocache.TrimReport) (string, bool) {
 			problems = append(problems, name+" was not trimmed: "+report.Reason)
 		case "complete":
 			if report.BytesAfter > report.CapBytes {
-				over = append(over, fmt.Sprintf("%s stays over its %s cap: %s used within the last %s is never trimmed", name, diskBytes(report.CapBytes), diskBytes(report.MinKeepBytes), diskMinutes(report.MinKeepMinutes)))
+				over = append(over, fmt.Sprintf("%s stays over its %s cap: %s used within the last %s is never trimmed", name, textui.BytesMiB(report.CapBytes), textui.BytesMiB(report.MinKeepBytes), diskMinutes(report.MinKeepMinutes)))
 			}
 		}
 	}
 	var parts []string
 	if removed > 0 {
-		parts = append(parts, fmt.Sprintf("trimmed the machine caches: %d entries, %s freed", removed, diskBytes(freed)))
+		parts = append(parts, fmt.Sprintf("trimmed the machine caches: %d entries, %s freed", removed, textui.BytesMiB(freed)))
 	}
 	if len(resuming) > 0 {
 		parts = append(parts, strings.Join(resuming, "; ")+"; "+diskPlural(len(resuming), "it resumes", "they resume")+
@@ -695,18 +696,18 @@ func diskTrimLine(report gocache.TrimReport) string {
 		return line + ", not measured yet: the pass ended before it reached this cache; the next pass starts it"
 	}
 	if report.Phase == "measure" {
-		line += fmt.Sprintf(", measuring (%s counted so far; the next pass resumes at shard %s)", diskBytes(report.Checkpoint.BytesSoFar), report.Checkpoint.Shard)
+		line += fmt.Sprintf(", measuring (%s counted so far; the next pass resumes at shard %s)", textui.BytesMiB(report.Checkpoint.BytesSoFar), report.Checkpoint.Shard)
 		if report.OverCap {
-			line += fmt.Sprintf(", %d removed (%s)%s", report.EntriesRemoved, diskBytes(report.BytesRemoved), diskOverCap(report))
+			line += fmt.Sprintf(", %d removed (%s)%s", report.EntriesRemoved, textui.BytesMiB(report.BytesRemoved), diskOverCap(report))
 		}
 		return line
 	}
-	line += fmt.Sprintf(", %s of %s cap, %d removed (%s)", diskBytes(report.BytesAfter), diskBytes(report.CapBytes), report.EntriesRemoved, diskBytes(report.BytesRemoved))
+	line += fmt.Sprintf(", %s of %s cap, %d removed (%s)", textui.BytesMiB(report.BytesAfter), textui.BytesMiB(report.CapBytes), report.EntriesRemoved, textui.BytesMiB(report.BytesRemoved))
 	if report.OverCap {
 		line += diskOverCap(report)
 	}
 	if report.BytesAfter > report.CapBytes && report.Phase == "idle" {
-		line += fmt.Sprintf("; %s used within the last %s stays", diskBytes(report.MinKeepBytes), diskMinutes(report.MinKeepMinutes))
+		line += fmt.Sprintf("; %s used within the last %s stays", textui.BytesMiB(report.MinKeepBytes), diskMinutes(report.MinKeepMinutes))
 	}
 	if report.UnknownCount > 0 {
 		line += fmt.Sprintf("; %d entries not Go's layout were left untouched", report.UnknownCount)
@@ -728,17 +729,6 @@ func diskMinutes(minutes float64) string {
 // diskTrimNotStarted: a measurement that has not stat'ed its first entry.
 func diskTrimNotStarted(report gocache.TrimReport) bool {
 	return report.Checkpoint.BytesSoFar == 0 && report.Checkpoint.LastName == "" && (report.Checkpoint.Shard == "" || report.Checkpoint.Shard == "00")
-}
-
-func diskBytes(size int64) string {
-	const gib, mib = int64(1) << 30, int64(1) << 20
-	switch {
-	case size >= gib:
-		return fmt.Sprintf("%.1f GiB", float64(size)/float64(gib))
-	case size >= mib:
-		return fmt.Sprintf("%.1f MiB", float64(size)/float64(mib))
-	}
-	return fmt.Sprintf("%d B", size)
 }
 
 // runDiskLeases is a person's settlement of the host's dirty admission

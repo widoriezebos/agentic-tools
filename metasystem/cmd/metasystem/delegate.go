@@ -19,6 +19,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
 
 const delegateClaimCapabilityEnv = "METASYSTEM_DELEGATE_CLAIM_CAPABILITY"
@@ -239,12 +240,12 @@ func runDelegateGuardMember(args []string, stdout, stderr io.Writer) int {
 func delegateLifecycleRequest(env delegation.Env, stdin io.Reader, stderr io.Writer) delegation.Request {
 	stdinTTY := false
 	if file, ok := stdin.(*os.File); ok && file != nil {
-		stdinTTY = isTerminal(file.Fd())
+		stdinTTY = textui.IsTerminal(file.Fd())
 	}
 	return delegation.Request{
 		Invocation: delegation.Invocation{CallerPid: int64(os.Getpid())},
 		Env:        env, LockTag: delegation.LockTagOf(os.Args),
-		Stdin: stdin, StdinTTY: stdinTTY, StderrTTY: isTerminal(os.Stderr.Fd()),
+		Stdin: stdin, StdinTTY: stdinTTY, StderrTTY: textui.IsTerminal(os.Stderr.Fd()),
 		Stderr: stderr,
 	}
 }
