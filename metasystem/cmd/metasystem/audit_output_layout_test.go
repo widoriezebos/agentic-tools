@@ -4,12 +4,22 @@ import (
 	"bytes"
 	"errors"
 	"flag"
+	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"reflect"
+	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
@@ -19,6 +29,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stoptransition"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
 
 // The output-style audit (plans/designs/output-style.md §5): each converted
@@ -44,7 +55,8 @@ type layoutCase struct {
 type layoutBed struct {
 	owners  intentOwners
 	cwd     string
-	replace []string // old, new pairs applied to every output
+	replace []string  // old, new pairs applied to every output
+	now     time.Time // the bed's clock; zero is layoutNow
 }
 
 func layoutCases() []layoutCase {
@@ -94,8 +106,9 @@ func statusLayoutBed(busy bool) func(t *testing.T) layoutBed {
 				{Machine: "m1e", Goals: []board.GoalView{{Goal: "switch-on-trial", Unknown: "not claimed", LastProgressAt: layoutNow.Add(-time.Minute)}}},
 				{Machine: "ui", Goals: []board.GoalView{}}}}
 		}
+		owners.helm.machine = func(string) (string, error) { return "m1e", nil }
 		base := t.TempDir()
-		home, landing := filepath.Join(base, "home"), filepath.Join(base, "agentic-tools-landing")
+		home, landing := filepath.Join(base, "home"), filepath.Join(filepath.Dir(root), "agentic-tools-landing")
 		for _, dir := range []string{home, landing} {
 			if err := os.MkdirAll(dir, 0o755); err != nil {
 				t.Fatal(err)
@@ -135,7 +148,7 @@ func statusLayoutBed(busy bool) func(t *testing.T) layoutBed {
 			owners.attorney.entries = func(string) ([]goal.PowerOfAttorneyEntry, error) { return nil, nil }
 		}
 		return layoutBed{owners: owners, cwd: b.root(), replace: layoutPaths(b.root(), root, "/Users/wido/GitHub/agentic-tools-m1e",
-			home, "/Users/wido/.metasystem-home", landing, "/Users/wido/GitHub/agentic-tools-landing")}
+			home, "/Users/wido/.metasystem-home", landing, "/Users/wido/GitHub/agentic-tools-landing", "~/agentic-tools-landing", "~/GitHub/agentic-tools-landing")}
 	}
 }
 
@@ -148,7 +161,14 @@ func grantListLayoutBed(count int, revoke bool) func(t *testing.T) layoutBed {
 		owners.helm.zone = layoutZone(t)
 		var replace []string
 		for index, spell := range []string{"24h", "8h"}[:count] {
-			code, result := b.runJSON(owners, "grant", "add", "--acts", "everything", "--for", spell)
+			// Each grant is made a minute after the one before, the last now, so
+			// the ledger's order (by start, then by the random id) holds.
+			acting := owners
+			acting.commandNow = func(root string) (time.Time, error) {
+				at, err := b.commandNow(root)
+				return at.Add(time.Duration(index-count+1) * time.Minute), err
+			}
+			code, result := b.runJSON(acting, "grant", "add", "--acts", "everything", "--for", spell)
 			if code != 0 || len(result.Targets) != 1 {
 				t.Fatalf("grant add = %d %+v", code, result)
 			}
@@ -161,18 +181,22 @@ func grantListLayoutBed(count int, revoke bool) func(t *testing.T) layoutBed {
 			}
 		}
 		root := realpath.Resolve(b.root())
-		return layoutBed{owners: owners, cwd: b.root(), replace: append(replace, layoutPaths(b.root(), root, "/Users/wido/GitHub/agentic-tools-m1e")...)}
+		now, err := b.commandNow(b.root())
+		if err != nil {
+			t.Fatal(err)
+		}
+		return layoutBed{owners: owners, cwd: b.root(), now: now, replace: append(replace, layoutPaths(b.root(), root, "/Users/wido/GitHub/agentic-tools-m1e")...)}
 	}
 }
 
-// outsideLayoutBed runs from a directory that is no repository.
+// outsideLayoutBed runs from the file system's root, which is no
+// repository.
 func outsideLayoutBed(t *testing.T) layoutBed {
-	dir := realpath.Resolve(t.TempDir())
 	notARepository := func(string) (string, error) { return "", errors.New("not a git repository") }
 	b := newIntentBed(t, false, nil)
 	owners := b.owners()
 	owners.resolver = stateroot.NewResolver(notARepository, noExecutable)
-	return layoutBed{owners: owners, cwd: dir, replace: []string{dir, "/Users/wido/scratch"}}
+	return layoutBed{owners: owners, cwd: "/"}
 }
 
 // layoutPaths are the replacements of a bed's paths: its root as given and
@@ -235,4 +259,345 @@ func TestAuditOutputLayoutJSONUnchanged(t *testing.T) {
 			}
 		})
 	}
+}
+
+// updateLayout rewrites the text goldens from this tree.
+var updateLayout = flag.Bool("update-layout", false, "rewrite testdata/layout/*.txt from this tree")
+
+// layoutEnv is the goldens' fixed text layout (§5): width 100, no colour,
+// the symbols, the fixed clock in Amsterdam, and the bed's own home and
+// checkout for short paths.
+func layoutEnv(t *testing.T, now time.Time, home, repo string) textui.Env {
+	if now.IsZero() {
+		now = layoutNow
+	}
+	return textui.Env{Width: textui.MaxWidth, Now: now, Zone: layoutZone(t), Home: home, Repo: repo, InRepo: true}
+}
+
+// TestAuditOutputLayout checks the shape of every golden verb's default
+// output (§5 rules 1 to 5) and compares it with its golden; a verb whose
+// run function the mode table enforces fails on a broken rule, the others
+// log it. The coverage and static rules run over the command table and the
+// source (rules 6 and 7).
+func TestAuditOutputLayout(t *testing.T) {
+	t.Parallel()
+	for _, c := range layoutCases() {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			bed := c.bed(t)
+			root := realpath.Resolve(bed.cwd)
+			home := filepath.Dir(root)
+			env := layoutEnv(t, bed.now, home, root)
+			bed.owners.textEnv = func(io.Writer) textui.Env { return env }
+			bed.replace = append([]string{"~/" + filepath.Base(root), "~/GitHub/" + layoutStableBase(bed.replace, root)}, bed.replace...)
+			_, stdout, stderr := runLayoutCase(t, c, bed)
+			got := stdout + stderr
+			path := layoutGolden(c.name + ".txt")
+			if *updateLayout {
+				if err := os.WriteFile(path, []byte(got), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			} else if want, err := os.ReadFile(path); err != nil || got != string(want) {
+				t.Errorf("%s printed:\n%s\nthe golden %s holds:\n%s (%v)", c.name, got, path, want, err)
+			}
+			problems := layoutProblems(got, textui.MaxWidth, bed.replace)
+			if mode := layoutModeOf(t, c.args); mode == auditEnforce {
+				for _, problem := range problems {
+					t.Errorf("%s: %s", c.name, problem)
+				}
+			} else if len(problems) > 0 {
+				t.Logf("%s (report): %s", c.name, strings.Join(problems, "; "))
+			}
+
+			// On a terminal the same page is coloured; with colour off not
+			// one escape is printed.
+			tty := env
+			tty.TTY, tty.Color = true, true
+			bed.owners.textEnv = func(io.Writer) textui.Env { return tty }
+			_, coloured, colouredErr := runLayoutCase(t, c, bed)
+			if plain := layoutStripANSI(coloured + colouredErr); plain != got && layoutModeOf(t, c.args) == auditEnforce {
+				t.Errorf("%s: the coloured page is not the plain page in colour:\n%s", c.name, plain)
+			}
+			if strings.Contains(got, "\x1b") {
+				t.Errorf("%s: an escape without colour: %q", c.name, got)
+			}
+		})
+	}
+}
+
+// layoutStableBase is the stable name a bed's root is replaced with.
+func layoutStableBase(replace []string, root string) string {
+	for index := 0; index+1 < len(replace); index += 2 {
+		if replace[index] == root {
+			return filepath.Base(replace[index+1])
+		}
+	}
+	return filepath.Base(root)
+}
+
+var layoutANSI = regexp.MustCompile("\x1b\\[[0-9;]*m")
+
+func layoutStripANSI(text string) string { return layoutANSI.ReplaceAllString(text, "") }
+
+// layoutModeOf is a verb's layout mode: its run function's, by the table.
+func layoutModeOf(t *testing.T, args []string) string {
+	t.Helper()
+	command, _, ok := resolveIntentArgv(args)
+	if !ok {
+		t.Fatalf("no public command %q", args)
+	}
+	file, function := layoutRunSource(command)
+	return layoutModeFor(file, function)
+}
+
+// layoutRunSource is the module-relative file and name of the function a
+// public command runs: its handler, or a passthrough's owner.
+func layoutRunSource(command intentCommand) (string, string) {
+	var pointer uintptr
+	switch {
+	case command.owner != nil:
+		pointer = reflect.ValueOf(command.owner).Pointer()
+	case command.run != nil:
+		pointer = reflect.ValueOf(command.run).Pointer()
+	default:
+		return "", ""
+	}
+	fn := runtime.FuncForPC(pointer)
+	if fn == nil {
+		return "", ""
+	}
+	file, _ := fn.FileLine(pointer)
+	// main.runX, or path/to/cmd/metasystem.runX in a test binary.
+	name := fn.Name()
+	name = name[strings.LastIndex(name, "/")+1:]
+	_, name, _ = strings.Cut(name, ".")
+	file = filepath.ToSlash(file)
+	if index := strings.LastIndex(file, "/cmd/metasystem/"); index >= 0 {
+		file = file[index+1:]
+	} else if index := strings.LastIndex(file, "cmd/metasystem/"); index >= 0 {
+		file = file[index:]
+	}
+	return file, name
+}
+
+var (
+	layoutEpoch      = regexp.MustCompile(`\b1[6-9]\d{8}\b`)
+	layoutHex        = regexp.MustCompile(`\b[0-9a-f]{40}(?:[0-9a-f]{24})?\b`)
+	layoutUTC        = regexp.MustCompile(`\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?Z\b`)
+	layoutKeyValues  = regexp.MustCompile(`\b[a-z][a-zA-Z_-]*=\S+\s+[a-z][a-zA-Z_-]*=\S+`)
+	layoutErrorChain = regexp.MustCompile(`\b(open|stat|read|lstat) /\S*: no such file`)
+	layoutSymbols    = "●○!✗✓?"
+)
+
+// layoutProblems are the §5 shape rules a page breaks: the headline first
+// (after an optional banner), the width, no raw dumps, breathing room.
+// replace names the bed's stable paths: printed whole they are a path the
+// page should have shortened.
+func layoutProblems(page string, width int, replace []string) []string {
+	var problems []string
+	if page == "" {
+		return []string{"prints nothing"}
+	}
+	if !strings.HasSuffix(page, "\n") {
+		problems = append(problems, "the last line has no newline")
+	}
+	lines := strings.Split(strings.TrimSuffix(page, "\n"), "\n")
+	headline := 0
+	if first := []rune(lines[0]); len(first) > 1 && strings.ContainsRune(layoutSymbols, first[0]) && first[1] == ' ' {
+		for index, line := range lines {
+			if line == "" {
+				headline = index + 1
+				break
+			}
+			if index > 0 && !strings.HasPrefix(line, "  ") && !(len([]rune(line)) > 1 && strings.ContainsRune(layoutSymbols, []rune(line)[0])) {
+				break
+			}
+		}
+	}
+	if headline < len(lines) {
+		line := lines[headline]
+		switch {
+		case line == "" || strings.HasPrefix(line, " "):
+			problems = append(problems, "the headline is not at column 0")
+		case strings.HasPrefix(line, "usage:"):
+			problems = append(problems, "the page opens with usage")
+		case layoutKeyValues.MatchString(line):
+			problems = append(problems, "the headline is a key=value run")
+		}
+	}
+	for index, line := range lines {
+		if n := utf8.RuneCountInString(line); n > width && len(strings.Fields(line)) > 1 {
+			problems = append(problems, fmt.Sprintf("line %d is %d columns: %q", index+1, n, line))
+		}
+		if strings.HasSuffix(line, " ") {
+			problems = append(problems, fmt.Sprintf("line %d ends in a space", index+1))
+		}
+		if line == "" && (index == 0 || index == len(lines)-1 || lines[index-1] == "") {
+			problems = append(problems, fmt.Sprintf("line %d is a blank line at an edge or a second one", index+1))
+		}
+		for _, rule := range []struct {
+			pattern *regexp.Regexp
+			what    string
+		}{{layoutEpoch, "a Unix epoch"}, {layoutHex, "a whole hex digest"}, {layoutUTC, "a UTC stamp"}, {layoutKeyValues, "a key=value run"}, {layoutErrorChain, "a Go error chain"}} {
+			if rule.pattern.MatchString(line) {
+				problems = append(problems, fmt.Sprintf("line %d holds %s: %q", index+1, rule.what, line))
+			}
+		}
+		if strings.Contains(line, "(s)") {
+			problems = append(problems, fmt.Sprintf("line %d counts with (s): %q", index+1, line))
+		}
+		for pair := 0; pair+1 < len(replace); pair += 2 {
+			if stable := replace[pair+1]; strings.HasPrefix(stable, "/Users/wido/") && strings.Contains(line, stable) {
+				problems = append(problems, fmt.Sprintf("line %d holds %s whole, not ~ or repo-relative", index+1, stable))
+			}
+		}
+	}
+	return problems
+}
+
+// The shape rules catch what they name.
+func TestAuditOutputLayoutRulesCatchTheirTriggers(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct{ page, want string }{
+		{"a headline\n", ""},
+		{"! the helm is taken\n  → metasystem helm return\n\nm1e is running\n", ""},
+		{"  indented\n", "column 0"},
+		{"usage: metasystem goal\n", "usage"},
+		{"claimed=3 approved=8\n", "key=value"},
+		{"x " + strings.Repeat("y", 100) + "\n", "columns"},
+		{strings.Repeat("y", 120) + "\n", ""},
+		{"started 1790758391\n", "epoch"},
+		{"tip " + strings.Repeat("a", 40) + "\n", "hex"},
+		{"at 2026-09-30T08:53:15Z\n", "UTC"},
+		{"0 item(s)\n", "(s)"},
+		{"a\n\n\nb\n", "second one"},
+		{"a \n", "space"},
+		{"x: open /tmp/y: no such file or directory\n", "error chain"},
+		{"checkout /Users/wido/GitHub/agentic-tools-m1e\n", "whole"},
+		{"no newline", "newline"},
+		{"", "nothing"},
+	} {
+		problems := strings.Join(layoutProblems(c.page, 100, []string{"/tmp/m1e", "/Users/wido/GitHub/agentic-tools-m1e"}), "; ")
+		if (c.want == "") != (problems == "") || !strings.Contains(problems, c.want) {
+			t.Errorf("%q: problems %q, want one naming %q", c.page, problems, c.want)
+		}
+	}
+}
+
+// Rule 6: every public action is either enforced with a golden or
+// reported with the group that owns its run function's file.
+func TestAuditOutputLayoutCoversEveryPublicAction(t *testing.T) {
+	t.Parallel()
+	golden := map[string]bool{}
+	for _, c := range layoutCases() {
+		command, _, _ := resolveIntentArgv(c.args)
+		golden[command.name] = true
+	}
+	groups := map[string][]string{}
+	for _, command := range publicIntentCommands() {
+		file, function := layoutRunSource(command)
+		group := verbGroup(command.name)
+		if group == "" {
+			group = auditGroupFor(file, function)
+		}
+		switch mode := layoutModeFor(file, function); {
+		case mode == auditEnforce && !golden[command.name]:
+			t.Errorf("%s is enforced but has no golden under testdata/layout", command.name)
+		case mode == auditReport && group == "":
+			t.Errorf("%s runs %s in %s, which no group of the mode table owns", command.name, function, file)
+		default:
+			groups[group+" "+mode] = append(groups[group+" "+mode], command.name)
+		}
+	}
+	for key, names := range groups {
+		t.Logf("%s: %s", key, strings.Join(names, ", "))
+	}
+}
+
+// Rule 7: a function or file the table enforces writes nothing to the
+// invocation's streams itself (the view is the only writer), and no
+// source outside textui writes a raw escape.
+func TestAuditOutputLayoutStatic(t *testing.T) {
+	t.Parallel()
+	module, err := filepath.Abs("../..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	checked := 0
+	err = filepath.WalkDir(module, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil || entry.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return walkErr
+		}
+		rel, _ := filepath.Rel(module, path)
+		rel = filepath.ToSlash(rel)
+		if strings.HasPrefix(rel, "internal/textui/") {
+			return nil
+		}
+		data, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return readErr
+		}
+		if strings.Contains(string(data), `\x1b[`) || strings.Contains(string(data), `\033[`) {
+			t.Errorf("%s writes a raw terminal escape; colour belongs to textui", rel)
+		}
+		if !strings.HasPrefix(rel, "cmd/metasystem/") {
+			return nil
+		}
+		file, parseErr := parser.ParseFile(token.NewFileSet(), path, data, 0)
+		if parseErr != nil {
+			return parseErr
+		}
+		for _, decl := range file.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if !ok || fn.Body == nil {
+				continue
+			}
+			name := fn.Name.Name
+			if fn.Recv != nil && len(fn.Recv.List) == 1 {
+				receiver := fn.Recv.List[0].Type
+				if star, ok := receiver.(*ast.StarExpr); ok {
+					receiver = star.X
+				}
+				if ident, ok := receiver.(*ast.Ident); ok {
+					name = ident.Name + "." + name
+				}
+			}
+			if layoutModeFor(rel, name) != auditEnforce {
+				continue
+			}
+			checked++
+			ast.Inspect(fn.Body, func(node ast.Node) bool {
+				call, ok := node.(*ast.CallExpr)
+				if !ok || len(call.Args) == 0 {
+					return true
+				}
+				selector, ok := call.Fun.(*ast.SelectorExpr)
+				if pkg, isIdent := selectorPackage(selector); !ok || !isIdent || pkg != "fmt" || !strings.HasPrefix(selector.Sel.Name, "Fprint") {
+					return true
+				}
+				if stream, ok := call.Args[0].(*ast.SelectorExpr); ok && (stream.Sel.Name == "stdout" || stream.Sel.Name == "stderr") {
+					t.Errorf("%s#%s writes to the invocation's %s itself; the view is the only writer", rel, name, stream.Sel.Name)
+				}
+				return true
+			})
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if checked == 0 {
+		t.Fatal("no enforced function was checked; the table or the scan is broken")
+	}
+}
+
+func selectorPackage(selector *ast.SelectorExpr) (string, bool) {
+	if selector == nil {
+		return "", false
+	}
+	ident, ok := selector.X.(*ast.Ident)
+	if !ok {
+		return "", false
+	}
+	return ident.Name, true
 }

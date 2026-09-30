@@ -15,12 +15,12 @@ exit 0
         "by": "human:Wido",
         "checkout": "/Users/wido/GitHub/agentic-tools-m1e",
         "for": "mac-cli",
-        "grant": "01K6D2S9W0Q5Y3M7N8P4R2T6V1-m1e-7c1d9e20",
+        "grant": "YY6RQ7765HX224V3NT4TN67JFR-m1e-b6a4eb0a",
         "lineage": "lin-main",
-        "live": true,
-        "revoked": "",
-        "since": "2026-09-01T10:00:00Z",
-        "until": "2026-09-01T18:00:00Z"
+        "live": false,
+        "revoked": "2026-09-01T10:00:00Z",
+        "since": "2026-09-01T09:59:00Z",
+        "until": "2026-09-02T09:59:00Z"
       },
       {
         "acts": [
@@ -29,12 +29,12 @@ exit 0
         "by": "human:Wido",
         "checkout": "/Users/wido/GitHub/agentic-tools-m1e",
         "for": "mac-cli",
-        "grant": "YY6RQ7765HX224V3NT4TN67JFR-m1e-b6a4eb0a",
+        "grant": "01K6D2S9W0Q5Y3M7N8P4R2T6V1-m1e-7c1d9e20",
         "lineage": "lin-main",
-        "live": false,
-        "revoked": "2026-09-01T10:00:00Z",
+        "live": true,
+        "revoked": "",
         "since": "2026-09-01T10:00:00Z",
-        "until": "2026-09-02T10:00:00Z"
+        "until": "2026-09-01T18:00:00Z"
       }
     ]
   }

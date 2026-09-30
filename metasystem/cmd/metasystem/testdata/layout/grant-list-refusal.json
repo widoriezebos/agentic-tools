@@ -5,7 +5,7 @@ exit 2
   "verb": "grant list",
   "targets": [],
   "outcome": "refused",
-  "summary": "/Users/wido/scratch is not inside a Git repository; nothing was done",
+  "summary": "/ is not inside a Git repository; nothing was done",
   "decision": "run this inside the repository, or name it with --repo PATH"
 }
 

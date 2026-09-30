@@ -1,0 +1,8 @@
+2 grants · 1 live · 1 closed
+
+○ everything · by Wido · revoked 12:00 by Wido
+  for   the main session of mac-cli (~/GitHub/agentic-tools-m1e)
+  id    YY6RQ7765HX224V3NT4TN67JFR-m1e-b6a4eb0a
+● everything · by Wido · until 20:00 (8h00m left)
+  for   the main session of mac-cli (~/GitHub/agentic-tools-m1e)
+  id    01K6D2S9W0Q5Y3M7N8P4R2T6V1-m1e-7c1d9e20

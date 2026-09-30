@@ -27,14 +27,9 @@ import (
 // (the test passes and the inventory lists it) or enforced (the test fails).
 
 // messageModeEnforce fails the audit on any violation of the path; every
-// other path is reported only.
-const messageModeEnforce = "enforce"
-
-// messageModes is the per-path mode: a package directory, a file, or a
-// file#Function (file#Type.Method); the longest matching key wins, and a path
-// no key names is reported. A rewrite builder moves its paths here as it
-// fixes them.
-var messageModes = map[string]string{}
+// other path is reported only. The per-path modes are the messages column
+// of auditModes, the table this audit shares with the layout audit.
+const messageModeEnforce = auditEnforce
 
 // messageLineBudget is the first line's length the rule aims at.
 const messageLineBudget = 100
@@ -101,8 +96,8 @@ func messageModeFor(file, function string) string {
 		candidates = append(candidates, dir)
 	}
 	for _, key := range candidates {
-		if mode, ok := messageModes[key]; ok {
-			return mode
+		if mode, ok := auditModes[key]; ok && mode.messages != "" {
+			return mode.messages
 		}
 	}
 	return "report"
@@ -424,7 +419,11 @@ func TestAuditMessageModesNameRealPaths(t *testing.T) {
 	for _, source := range sources {
 		functions[source.File+"#"+source.Function] = true
 	}
-	for key, mode := range messageModes {
+	for key, modes := range auditModes {
+		mode := modes.messages
+		if mode == "" {
+			continue
+		}
 		if mode != messageModeEnforce {
 			t.Errorf("%s: mode %q; the table holds only enforced paths", key, mode)
 		}
