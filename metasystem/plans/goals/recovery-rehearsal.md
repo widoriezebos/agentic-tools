@@ -3,11 +3,11 @@
 - State: queued
 - Priority: 2
 - Sequence: 15
-- Intent: The recovery rehearsal: prove the system comes back from death - kill everything, restore from records alone, verify no invented state (program L16; runtime-accelerators-never-carry law: correctness survives on records alone)
+- Intent: What: A rehearsal that proves the system comes back from a crash: in an isolated test setup, kill the workers, the runner and the steward mid-work, restart, and show that the work is rebuilt from the records alone, with no invented state and nothing done twice; and that a full stop leaves nothing running until someone restarts it. Why: We believe the records are enough to recover, but nobody has ever proved it, so a real crash could lose or duplicate work. Pros: Confidence that a crash is survivable, and any gap found becomes a concrete fix. Cons: It needs a separate test setup and real run time, and it is only meaningful once the repairs it rehearses exist.
 - Origin: human
-- Next step: INTENT: retain a bounded failure/recovery proof from records alone for the headless-fleet effort. CONSTRAINTS: use an isolated adopted repository/fleet and approved run budget, not live development processes. Independently interrupt a delegate, host/mission runner and steward/supervision owner mid-work; after supported restart, prove claim/obligation/run reconstruction or an explicit bounded refusal, preserved evidence and no duplicated accepted effect. Prove full human stop from active and partially failed states leaves no owned worker running and prevents resurrection until authorized restart. Reuse the actual host-runtime-setup and metasystem-stop-verb surfaces as they land; recovery-to-good-state owns partial-state repairs. Earlier probes may expose defects before every repair is done; this goal has no blanket blocker on its repair owners. Conclude only with retained evidence on the integrated final revisions. Fleet message replay and brain absence stay with headless-fleet-coordination-proof. FREEDOMS: fault injection and evidence harness; fixes go to existing or separate bounded goals.
+- Next step: Next: Build the crash-and-restore test in an isolated setup, starting with killing one worker mid-task and restoring from records. Done when: The test kills the worker, restarts, and shows the task rebuilt from records with no duplicated result, and no process is left running after a full stop.
 - OpenedAt: 2026-08-30T15:16:00Z
-- Revision: 24
+- Revision: 25
 - Labels: headless-fleet, headless-proof
 - BudgetExceptions: 0
 
@@ -36,4 +36,5 @@ History:
 - 2026-09-13T07:44:44Z TJ1TBGQ70A0PZH04C34J9P51C5-m1e-c6925449 set-priority actor=human:Wido targets=first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,headless-continuous-delivery-proof,headless-fleet-coordination-proof,metasystem-stop-escalation-proofs,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,recovery-rehearsal,seat-mutual-awareness reason=priority-order subject=metasystem-stop-escalation-proofs from=2:18 to=2:17 requested-sequence=39
 - 2026-09-13T08:21:48Z NRD0NSKR47C7ESV46MD65VP4V0-m1-c6925449 done actor=human:Wido targets=commit-goal-binding,first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,idle-every-runtime-enforcement,landing-design-provenance,merge-stage-critic-close,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,recovery-rehearsal,recovery-to-good-state,role-context-composition,role-lane-packets,seat-mutual-awareness reason=priority-order from=2:17 to=2:16
 - 2026-09-13T08:23:10Z R328E6Y43B7EEREMEA8T0MVQWG-m1-c6925449 done actor=human:Wido targets=first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,headless-continuous-delivery-proof,headless-fleet-coordination-proof,idle-every-runtime-enforcement,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,recovery-rehearsal,recovery-to-good-state,role-lane-packets,seat-mutual-awareness reason=priority-order from=2:16 to=2:15
-Integrity: sha256=ee93f5de97a3a7100ffb58ef17ac3b987b6502059ecbd28a3701fcfe6667726b
+- 2026-09-30T18:52:25Z XF56874GWJXP3FAGH8K7QEYGCM-ui-bc2fda53 edit actor=human:Wido targets=recovery-rehearsal
+Integrity: sha256=b7e32e7721df2aa1353cde859dfd8c81deb8a32689206e0ff63e5eb7b2a06daa
