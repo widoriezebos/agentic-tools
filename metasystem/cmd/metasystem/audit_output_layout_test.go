@@ -87,9 +87,9 @@ func statusLayoutBed(busy bool) func(t *testing.T) layoutBed {
 				&machineFamily{name: "steward", items: []*machineItem{item("steward", "steward-runner", 39052, "steward-runner pid 39052 started 1790758391: running")}},
 				&machineFamily{name: "supervision", items: []*machineItem{
 					item("supervision", "supervision-owner", 39060, "supervision-owner pid 39060 tag metasystem-supervision-owner-m1e-1790758391-38939 generation 205: running"),
-					item("supervision", "watcher", 39061, "repo-watcher pid 39061: running"),
-					item("supervision", "reaper", 39062, "job-reaper pid 39062: running"),
-					item("supervision", "landing-owner", 39063, "landing-batch-owner pid 39063: running")}},
+					item("supervision", "repo-watcher", 39061, "repo-watcher pid 39061: running"),
+					item("supervision", "job-reaper", 39062, "job-reaper pid 39062: running"),
+					item("supervision", "landing-batch-owner", 39063, "landing-batch-owner pid 39063: running")}},
 				&machineFamily{name: "untracked", items: []*machineItem{
 					item("untracked", "untracked", 2878, "untracked pid 2878 claude claude --allow-dangerously-skip-permissions: running"),
 					item("untracked", "untracked", 10947, "untracked pid 10947 codex codex app-server: running")}},

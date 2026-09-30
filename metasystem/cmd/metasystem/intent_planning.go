@@ -2123,7 +2123,11 @@ func grantListView(grants []grantShown, all bool) func(*textui.Page) {
 					end = env.Until(until)
 				}
 				card := section.Item(state, strings.Join([]string{goal.GeneralAct, "by " + by, end}, " · "))
-				card.KV("for", textui.Plain("the main session of "+entry.For+" ("+env.Path(entry.Checkout)+")"))
+				// A checkout is named from the home directory, never
+				// relative to the repository it may itself be inside.
+				outside := env
+				outside.Repo = ""
+				card.KV("for", textui.Plain("the main session of "+entry.For+" ("+outside.Path(entry.Checkout)+")"))
 				card.KV("id", textui.Plain(entry.ID))
 				continue
 			}

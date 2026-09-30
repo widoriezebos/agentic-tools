@@ -146,7 +146,7 @@ func helperName(component string) string {
 	if name, ok := machineComponentNames[component]; ok {
 		return name
 	}
-	return component
+	return strings.ReplaceAll(component, "-", " ")
 }
 
 func earliestStart(items []stoptransition.StatusItem) int64 {

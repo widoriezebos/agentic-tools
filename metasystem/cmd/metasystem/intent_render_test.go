@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
 
@@ -147,5 +148,19 @@ func TestIntentTextEnvOfABuffer(t *testing.T) {
 	env := inv.textEnv(&bytes.Buffer{})
 	if env.Width != textui.MaxWidth || env.Color || env.ASCII || env.TTY || !env.InRepo || env.Repo != "/work/m1e" || env.Zone == nil || env.Now.IsZero() {
 		t.Errorf("env = %+v", env)
+	}
+}
+
+// A grant's checkout is named from the home directory even when it lies
+// inside the repository the list runs in: a bare "metasystem" names nothing.
+func TestGrantListNamesTheCheckoutFromHome(t *testing.T) {
+	t.Parallel()
+	until := time.Date(2026, 10, 1, 8, 56, 0, 0, time.UTC)
+	entry := goal.PowerOfAttorneyEntry{ID: "G-1", By: "human:wido", Verbs: []string{goal.GeneralAct}, For: "m1e",
+		Checkout: "/Users/wido/GitHub/m1e/metasystem", Until: until.Format(time.RFC3339)}
+	page := textui.New(textui.Env{Width: 100, Now: until.Add(-time.Hour), Zone: time.UTC, Home: "/Users/wido", Repo: "/Users/wido/GitHub/m1e"})
+	grantListView([]grantShown{{entry: entry, live: true}}, false)(page)
+	if got := page.String(); !strings.Contains(got, "for   the main session of m1e (~/GitHub/m1e/metasystem)") {
+		t.Errorf("grant list = %q", got)
 	}
 }
