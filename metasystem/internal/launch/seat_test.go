@@ -53,6 +53,7 @@ func TestSeatLaunchIsSessionShapedAndNamesItsLineage(t *testing.T) {
 	m, processes, _, _ := manager(t)
 	m.Adapters = map[string]Adapter{"claude-headless": ClaudeHeadless{Binary: "/fixture/bin/claude"}}
 	m.Supervisor = supervisingStarter(t, m)
+	m.Settings = seatOn()
 	checkout := t.TempDir()
 	briefPath := seatBrief(t)
 	record, err := m.Start(StartSpec{Kind: "seat", WorkingDirectory: checkout, FenceRoot: checkout, Brief: briefPath, Tag: "n0nce"})
@@ -144,8 +145,9 @@ func TestSeatLaunchSettingsResolveLikeALane(t *testing.T) {
 			return "", false
 		}
 	}
+	// A seat is opt-in (Amendment 1): this installation turned it on as auto.
 	conf := filepath.Join(t.TempDir(), "metasystem.conf")
-	if err := os.WriteFile(conf, []byte("# overrides only\n"), 0o600); err != nil {
+	if err := os.WriteFile(conf, []byte(SeatRuntimeKey+"=auto\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	for _, test := range []struct {
@@ -174,7 +176,7 @@ func TestSeatLaunchSettingsResolveLikeALane(t *testing.T) {
 		for _, value := range settings.Values {
 			sources[value.Key] = value.Source
 		}
-		if sources[SeatRuntimeKey] != "default; auto: first of claude,codex,devin on PATH" ||
+		if !strings.HasSuffix(sources[SeatRuntimeKey], "; auto: first of claude,codex,devin on PATH") ||
 			sources[SeatModelKey] != "default via "+BuildModelKey+"."+test.runtime || sources[SeatEffortKey] != "default" {
 			t.Fatalf("%s: sources=%v", test.name, sources)
 		}
@@ -240,6 +242,7 @@ func TestSeatStartDuringStopIsEnded(t *testing.T) {
 	m, processes, _, _ := manager(t)
 	m.Adapters = map[string]Adapter{"claude-headless": ClaudeHeadless{Binary: "/fixture/bin/claude"}}
 	m.Supervisor = supervisingStarter(t, m)
+	m.Settings = seatOn()
 	processes.group = true
 	// A vendored layout: the session works in the checkout, the fence is
 	// the installation state root's below it.
@@ -280,6 +283,7 @@ func TestSeatStartDuringStopIsEnded(t *testing.T) {
 	// starts no supervisor; a supervisor handed such a record starts no child.
 	m2, processes2, _, _ := manager(t)
 	m2.Adapters = map[string]Adapter{"claude-headless": ClaudeHeadless{Binary: "/fixture/bin/claude"}}
+	m2.Settings = seatOn()
 	started := false
 	m2.Supervisor = fakeStarter{func(string) { started = true }}
 	closedCheckout := t.TempDir()
@@ -326,6 +330,7 @@ func TestSeatStartWithoutAFenceRootIsRefused(t *testing.T) {
 	t.Parallel()
 	m, processes, _, _ := manager(t)
 	m.Adapters = map[string]Adapter{"claude-headless": ClaudeHeadless{Binary: "/fixture/bin/claude"}}
+	m.Settings = seatOn()
 	started := false
 	m.Supervisor = fakeStarter{func(string) { started = true }}
 	checkout := t.TempDir()
@@ -347,5 +352,66 @@ func TestSeatStartWithoutAFenceRootIsRefused(t *testing.T) {
 	}
 	if got, err := m.Supervise(seeded.ID); err == nil || got.State != Failed || got.Child != nil || processes.command.Program != "" {
 		t.Fatalf("a seat supervisor naming no fence root = %+v err=%v command=%+v", got, err, processes.command)
+	}
+}
+
+// seatOn is the settings of an installation that turned its seat on.
+func seatOn() Settings {
+	settings := DefaultSettings()
+	settings.SeatRuntime, settings.SeatModel = "claude", "claude-opus-5-5"
+	return settings
+}
+
+// TestSeatIsOffUntilASettingTurnsItOn (Amendment 1): launch.seat.runtime
+// resolves to off by default, the lanes' settings still resolve, and a seat
+// start is refused naming the key; metasystem.conf.local or the environment
+// turns it on.
+func TestSeatIsOffUntilASettingTurnsItOn(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	if err := testexec.WriteFile(filepath.Join(dir, "claude"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	lookup := func(env map[string]string) func(string) (string, bool) {
+		return func(key string) (string, bool) {
+			if key == "PATH" {
+				return dir, true
+			}
+			value, ok := env[key]
+			return value, ok
+		}
+	}
+	conf := filepath.Join(t.TempDir(), "metasystem.conf")
+	if err := os.WriteFile(conf, []byte("# overrides only\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	settings, err := ResolveSettings(conf, lookup(nil))
+	if err != nil || settings.SeatRuntime != "off" || settings.BuildRuntime != "claude" {
+		t.Fatalf("by default the seat is off and the lanes resolve: seat=%q build=%q %v", settings.SeatRuntime, settings.BuildRuntime, err)
+	}
+	m, _, _, _ := manager(t)
+	m.Adapters = map[string]Adapter{"claude-headless": ClaudeHeadless{Binary: "/fixture/bin/claude"}}
+	started := false
+	m.Supervisor = fakeStarter{func(string) { started = true }}
+	m.Settings = settings
+	checkout := t.TempDir()
+	if _, err := m.Start(StartSpec{Kind: "seat", WorkingDirectory: checkout, FenceRoot: checkout, Brief: seatBrief(t), Tag: "n0nce"}); err == nil ||
+		!strings.Contains(err.Error(), SeatRuntimeKey+"=off") || started {
+		t.Fatalf("a seat start while the seat is off = %v started=%t", err, started)
+	}
+	if records, _ := m.Store.List(); len(records) != 0 {
+		t.Fatalf("a refused seat left a record: %+v", records)
+	}
+	if err := os.WriteFile(conf+".local", []byte(SeatRuntimeKey+"=claude\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if settings, err := ResolveSettings(conf, lookup(nil)); err != nil || settings.SeatRuntime != "claude" || settings.SeatModel != "claude-opus-5-5" {
+		t.Fatalf("metasystem.conf.local turns the seat on: %q %q %v", settings.SeatRuntime, settings.SeatModel, err)
+	}
+	if err := os.Remove(conf + ".local"); err != nil {
+		t.Fatal(err)
+	}
+	if settings, err := ResolveSettings(conf, lookup(map[string]string{"METASYSTEM_LAUNCH_SEAT_RUNTIME": "auto"})); err != nil || settings.SeatRuntime != "claude" {
+		t.Fatalf("the environment turns the seat on: %q %v", settings.SeatRuntime, err)
 	}
 }

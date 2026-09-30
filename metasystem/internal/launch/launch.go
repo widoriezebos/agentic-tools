@@ -112,6 +112,9 @@ func (m *Manager) Start(spec StartSpec) (Record, error) {
 	if spec.Effort != "" {
 		effort = spec.Effort
 	}
+	if spec.Kind == "seat" && settings.SeatRuntime == SeatRuntimeOff {
+		return Record{}, fmt.Errorf("a seat is off on this installation (%s=%s); set it to claude, codex or auto in metasystem.conf.local to turn it on", SeatRuntimeKey, SeatRuntimeOff)
+	}
 	adapterName := adapterForLane(spec.Kind, settings.launchRuntime(spec.Kind))
 	if adapterName == "" {
 		return Record{}, fmt.Errorf("launch kind %q is not available", spec.Kind)

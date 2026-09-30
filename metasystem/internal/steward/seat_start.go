@@ -47,6 +47,10 @@ type SeatLaunchState struct {
 type SeatLauncher interface {
 	StartSeat(SeatLaunchSpec) error
 	SeatLaunch(id string) (SeatLaunchState, error)
+	// SeatAllowed says whether this installation starts seats at all, and
+	// why not (Amendment 1): a seat is opt-in per seat, and the host's
+	// landing lane never starts one.
+	SeatAllowed(stateRoot string) (bool, string, error)
 }
 
 // Seat outcomes as the reap records them.
@@ -308,6 +312,15 @@ func decideSeat(repoRoot string, cfg TickConfig, work OpenWork, shared goal.Clai
 	dependencies seatDependencies, state seatTickState) (Decision, *SeatSelection, bool) {
 	owned := work == WorkOwned
 	if work != WorkClaimable && !owned {
+		return Decision{}, nil, false
+	}
+	// A seat is opt-in per seat and the landing lane never starts one
+	// (Amendment 1): while none may start, the ladder is today's.
+	allowed, _, err := dependencies.Launcher.SeatAllowed(repoRoot)
+	if err != nil {
+		return Decision{VerdictDegraded, ActNotify, "whether this installation starts a seat cannot be read: " + err.Error()}, nil, true
+	}
+	if !allowed {
 		return Decision{}, nil, false
 	}
 	doubt := !workers.CensusComplete || workers.Untracked > 0 || workers.Unprovable > 0

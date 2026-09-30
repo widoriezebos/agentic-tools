@@ -153,7 +153,19 @@ func TestStewardTickStartsASeatLaunch(t *testing.T) {
 	manager.Supervisor = seatTickSupervisor{t: t, manager: manager}
 	launcher := newStewardSeatLauncher()
 	launcher.manager = func() *launch.Manager { return manager }
+	// This host's landing lane is another checkout; the installation's own
+	// metasystem.conf turned its seat on (Amendment 1).
+	launcher.laneRoot = func() (string, bool, error) { return filepath.Join(t.TempDir(), "landing"), true, nil }
 	config := steward.TickConfig{Now: now, Seat: launcher}
+
+	// The same checkout registered as the host's landing lane starts no
+	// seat: the tick keeps today's notification (Amendment 1).
+	asLane := launcher
+	asLane.laneRoot = func() (string, bool, error) { return top, true, nil }
+	if held, err := steward.RunTick(install, steward.TickConfig{Now: now, Seat: asLane}, seatTickCensus{}); err != nil ||
+		held.Seat != nil || held.Decision.Action != steward.ActNotify {
+		t.Fatalf("the landing lane's tick starts no seat: %+v %+v %v", held.Decision, held.Seat, err)
+	}
 
 	result, err := steward.RunTick(install, config, seatTickCensus{})
 	if err != nil {

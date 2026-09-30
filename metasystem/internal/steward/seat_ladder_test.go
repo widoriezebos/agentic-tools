@@ -38,7 +38,11 @@ type fakeSeatLauncher struct {
 	starts   []SeatLaunchSpec
 	states   map[string]SeatLaunchState
 	startErr error
+	// off is why this installation starts no seat; empty allows one.
+	off string
 }
+
+func (f *fakeSeatLauncher) SeatAllowed(string) (bool, string, error) { return f.off == "", f.off, nil }
 
 func (f *fakeSeatLauncher) StartSeat(spec SeatLaunchSpec) error {
 	f.starts = append(f.starts, spec)
@@ -831,6 +835,38 @@ func TestASeatStartRereadsItsGroundsUnderTheLock(t *testing.T) {
 		bed, selection := selected(t)
 		if record, err := bed.startUnder(selection, fakeCensus{workers: deadWorkers}); err != nil || record.Goal != "alpha" || len(bed.launcher.starts) != 1 {
 			t.Fatalf("an unchanged selection starts its seat: %+v %v", record, err)
+		}
+	})
+}
+
+// Amendment 1 (Wido, 2026-09-30): a seat is opt-in per seat, and the landing
+// lane never starts one. While the launcher answers that no seat may start,
+// the ladder is today's: claimable work notifies, owned work keeps its path,
+// and no seat is selected, recorded or counted.
+func TestASeatThatIsOffStartsNothingAndTheLadderIsTodays(t *testing.T) {
+	t.Parallel()
+	t.Run("claimable work notifies", func(t *testing.T) {
+		t.Parallel()
+		bed := newSeatBed(t, seatReadyGoal("alpha", "Build it."))
+		bed.launcher.off = "launch.seat.runtime is off"
+		result := bed.tick(deadWorkers)
+		if result.Decision.Action != ActNotify || result.Decision.Verdict != VerdictIdleBacklogDead || result.Seat != nil {
+			t.Fatalf("an installation whose seat is off keeps today's notification: %+v %+v", result.Decision, result.Seat)
+		}
+		if len(bed.records()) != 0 || len(bed.launcher.starts) != 0 {
+			t.Fatal("a seat that is off is never recorded or started")
+		}
+	})
+	t.Run("owned work keeps its path", func(t *testing.T) {
+		t.Parallel()
+		bed := newSeatBed(t, seatClaimedGoal("held", SeatLineage))
+		bed.launcher.off = "this checkout is the host's landing lane"
+		result := bed.tick(deadWorkers)
+		if result.Seat != nil || strings.Contains(result.Decision.Reason, "seat") {
+			t.Fatalf("owned work under a seat that is off keeps today's path: %+v %+v", result.Decision, result.Seat)
+		}
+		if len(bed.records()) != 0 || len(bed.launcher.starts) != 0 {
+			t.Fatal("a seat that is off is never recorded or started")
 		}
 	})
 }

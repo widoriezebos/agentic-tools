@@ -43,6 +43,10 @@ const (
 // predecessor's lease and claim by the lease's own succession rule.
 const SeatOwnerLineage = "steward-seat"
 
+// SeatRuntimeOff is launch.seat.runtime's default: the steward starts no
+// seat until an installation turns it on (Amendment 1).
+const SeatRuntimeOff = config.SeatRuntimeOff
+
 type Setting struct {
 	Key, Value, Source     string
 	ShippedDiffersFromConf *bool `json:"shippedDiffersFromConf,omitempty"`
@@ -176,6 +180,11 @@ func resolveSettings(confPath string, lookupEnv func(string) (string, bool)) (Se
 		value, source, err := resolve(modelKey)
 		if err != nil {
 			return Settings{}, err
+		}
+		// A seat that is off runs no model: nothing is bound for it.
+		if runtimeKey == SeatRuntimeKey && resolved[runtimeKey].Value == config.SeatRuntimeOff && strings.TrimSpace(value) == "" {
+			resolved[modelKey] = Setting{Key: modelKey, Value: config.SeatRuntimeOff, Source: source + "; " + SeatRuntimeKey + "=" + config.SeatRuntimeOff}
+			continue
 		}
 		if strings.TrimSpace(value) == "" {
 			prefix := modelKey

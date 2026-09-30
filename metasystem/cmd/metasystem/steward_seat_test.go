@@ -181,6 +181,12 @@ func TestStewardSeatLauncherStartsTheSeatKindInTheCheckout(t *testing.T) {
 			asked = append(asked, spec)
 			return launch.Record{ID: spec.ID}, nil
 		},
+		settings: func(string) (launch.Settings, error) {
+			settings := launch.DefaultSettings()
+			settings.SeatRuntime, settings.SeatModel = "claude", "claude-opus-5-5"
+			return settings, nil
+		},
+		laneRoot: func() (string, bool, error) { return "", false, nil },
 		repositoryTop: func(path string) (string, error) {
 			if path != "/checkout/metasystem" {
 				return "", fmt.Errorf("the checkout top is read from the state root, not %q", path)
@@ -224,7 +230,60 @@ func TestStewardRunIsArmedWithTheSeatLauncher(t *testing.T) {
 	var config steward.TickConfig
 	wireStewardSeat(&config)
 	launcher, ok := config.Seat.(stewardSeatLauncher)
-	if !ok || launcher.repositoryTop == nil {
+	if !ok || launcher.repositoryTop == nil || launcher.settings == nil || launcher.laneRoot == nil {
 		t.Fatalf("steward run starts seats through the launch lane, at the checkout top: %#v", config.Seat)
 	}
+}
+
+// Amendment 1 (Wido, 2026-09-30): the launcher answers the steward's seat
+// decision from the installation's own layered settings and the host's
+// landing lane record, and refuses a seat start the answer forbids.
+func TestStewardSeatLauncherStartsNoSeatWhenOffOrInTheLandingLane(t *testing.T) {
+	t.Parallel()
+	on := launch.DefaultSettings()
+	on.SeatRuntime, on.SeatModel = "claude", "claude-opus-5-5"
+	off := launch.DefaultSettings()
+	for _, leg := range []struct {
+		name     string
+		settings launch.Settings
+		lane     string
+		reason   string
+	}{
+		{"off by default", off, "", "launch.seat.runtime=off"},
+		{"the landing lane", on, "/checkout", "landing lane"},
+		{"the landing lane named by its installation", on, "/checkout/metasystem", "landing lane"},
+	} {
+		t.Run(leg.name, func(t *testing.T) {
+			t.Parallel()
+			var asked []launch.StartSpec
+			launcher := stewardSeatLauncher{
+				start: func(spec launch.StartSpec) (launch.Record, error) {
+					asked = append(asked, spec)
+					return launch.Record{ID: spec.ID}, nil
+				},
+				repositoryTop: func(string) (string, error) { return "/checkout", nil },
+				settings:      func(string) (launch.Settings, error) { return leg.settings, nil },
+				laneRoot:      func() (string, bool, error) { return leg.lane, leg.lane != "", nil },
+			}
+			allowed, reason, err := launcher.SeatAllowed("/checkout/metasystem")
+			if err != nil || allowed || !strings.Contains(reason, leg.reason) {
+				t.Fatalf("SeatAllowed = %t %q %v, want refused naming %q", allowed, reason, err, leg.reason)
+			}
+			spec := steward.SeatLaunchSpec{ID: "seat-0011223344556677", StateRoot: "/checkout/metasystem", Brief: "/checkout/metasystem/brief.md", Tag: "0011223344556677"}
+			if err := launcher.StartSeat(spec); err == nil || !strings.Contains(err.Error(), leg.reason) || len(asked) != 0 {
+				t.Fatalf("a forbidden seat start = %v, asked %+v", err, asked)
+			}
+		})
+	}
+	t.Run("on, and not the landing lane", func(t *testing.T) {
+		t.Parallel()
+		launcher := stewardSeatLauncher{
+			repositoryTop: func(string) (string, error) { return "/checkout", nil },
+			settings:      func(string) (launch.Settings, error) { return on, nil },
+			laneRoot:      func() (string, bool, error) { return "/elsewhere-landing", true, nil },
+		}
+		if allowed, reason, err := launcher.SeatAllowed("/checkout/metasystem"); err != nil || !allowed {
+			t.Fatalf("a seat turned on outside the landing lane is allowed: %t %q %v", allowed, reason, err)
+		}
+	})
 }
