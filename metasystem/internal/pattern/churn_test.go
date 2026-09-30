@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 )
 
@@ -105,12 +106,11 @@ func openOf(episodes []steward.AlertEpisode) []steward.AlertEpisode {
 // (18:16 and 18:40 CEST): the first sees four and reports nothing; the
 // second sees the rest late, judges windows by committer time, and opens
 // one episode whose burst is the sixth write, 16:17:03Z, attributed to the
-// landing lane by the old owner's lineage hash (the replay's only use of
-// it), with one notification.
+// landing lane by the old owner's lineage hash (a lane lineage until the
+// lane cutover), with one notification.
 func TestReplay20260930Churn(t *testing.T) {
 	t.Parallel()
 	b := newBed(t)
-	b.pass.LaneLineages = []string{LaneLineage, "landing-m1l"}
 	bare := b.origin()
 	data, err := os.ReadFile("testdata/replay-churn-20260930.json")
 	if err != nil {
@@ -171,10 +171,12 @@ func openingDigestFor(pattern, work string, since time.Time) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// Seven days of main like the calibration sample (seats write their goal
-// files at most four times in ten minutes; the lane once writes
-// trunk-red.json 21 times in ten minutes), observed four times a day: one
-// episode, the lane's, which clears once main is quiet.
+// Seven days of real-shaped main (a seat's goal done/abandon run rewrites
+// one goal file 16 times in ten minutes, as m1e-b6a4eb0a did on 09-30
+// between 20:53 and 21:05 CEST; the lane once writes trunk-red.json 21 times
+// in ten minutes), observed four times a day: v1 churn counts only the
+// lane's lineages, so one episode, the lane's, which clears once main is
+// quiet; no seat episode.
 func TestSevenDayMainOneEpisode(t *testing.T) {
 	t.Parallel()
 	b := newBed(t)
@@ -183,13 +185,12 @@ func TestSevenDayMainOneEpisode(t *testing.T) {
 	var commits []trunkCommit
 	n := 0
 	for day := 0; day < 7; day++ {
-		for hour := 8; hour < 20; hour += 2 {
-			for _, seat := range []string{"m1e", "ui"} {
-				for write := 0; write < 4; write++ {
-					n++
-					commits = append(commits, trunkCommit{At: start.Add(time.Duration(day*24+hour)*time.Hour + time.Duration(write*2)*time.Minute),
-						Opid: opid(n, seat, "main-"+seat), Path: fmt.Sprintf("metasystem/plans/goals/goal-%s-%d.json", seat, day)})
-				}
+		for _, seat := range []string{"m1e", "ui"} {
+			run := start.Add(time.Duration(day*24+18)*time.Hour + 53*time.Minute)
+			for write := 0; write < 16; write++ {
+				n++
+				commits = append(commits, trunkCommit{At: run.Add(time.Duration(write*35) * time.Second),
+					Opid: opid(n, seat, "main-"+seat), Path: fmt.Sprintf("metasystem/plans/goals/goal-%s-%d.json", seat, day)})
 			}
 		}
 	}
@@ -302,19 +303,20 @@ func TestStaleFetchIsUnknown(t *testing.T) {
 }
 
 // Attribution is by the opid's lineage hash alone: the lane's stable
-// identity is the landing lane; the old owner's hash, a machine named
-// landing, or a name that starts like the lane are each a machine.
+// identity, and until the lane cutover the old owner's, are the landing
+// lane whatever the machine; any other lineage is not counted in v1, a name
+// that starts like the lane or a machine named like it included.
 func TestLaneAttributionByLineageHash(t *testing.T) {
 	t.Parallel()
-	if lineageHash(LaneLineage) != "106adb03" || lineageHash("landing-m1l") != "2b626e27" {
-		t.Fatalf("hash8 of the lane identities: %s %s", lineageHash(LaneLineage), lineageHash("landing-m1l"))
+	if lineageHash(LaneLineage) != "106adb03" || lineageHash(OwnerLineage) != "2b626e27" || OwnerLineage != batchowner.LandingOwnerLineage {
+		t.Fatalf("the lane identities: %s %s %q", lineageHash(LaneLineage), lineageHash(OwnerLineage), OwnerLineage)
 	}
 	b := newBed(t)
 	bare := b.origin()
 	at := time.Date(2026, 9, 30, 16, 0, 0, 0, time.UTC)
 	writers := []struct{ machine, lineage, path string }{
 		{"m1e", LaneLineage, "a.json"},          // the lane's identity, whatever the machine
-		{"landing", "landing-m1l", "b.json"},    // the deleted owner: a machine outside the replay
+		{"landing", OwnerLineage, "b.json"},     // the old owner, until the cutover
 		{"landing", "landing-lane-2", "c.json"}, // a name that starts like the lane
 		{"landing-lane", "main-seat", "d.json"}, // a machine named like the lane
 	}
@@ -332,11 +334,7 @@ func TestLaneAttributionByLineageHash(t *testing.T) {
 		line, _, _ := strings.Cut(episode.Message, "\n")
 		said[episode.ScopeID[strings.LastIndex(episode.ScopeID, ":")+1:]] = line
 	}
-	for path, want := range map[string]string{
-		"a.json": "The landing lane wrote", "b.json": "Machine landing wrote", "c.json": "Machine landing wrote", "d.json": "Machine landing-lane wrote",
-	} {
-		if !strings.HasPrefix(said[path], want) {
-			t.Errorf("%s: %q; want %q", path, said[path], want)
-		}
+	if len(said) != 2 || !strings.HasPrefix(said["a.json"], "The landing lane wrote") || !strings.HasPrefix(said["b.json"], "The landing lane wrote") {
+		t.Fatalf("episodes by path: %q; want the two lane lineages only", said)
 	}
 }

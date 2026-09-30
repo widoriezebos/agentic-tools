@@ -36,3 +36,23 @@ func TestTickRunsPatternsAfterHealth(t *testing.T) {
 		t.Fatalf("the pass's failure is not the tick's: %v", err)
 	}
 }
+
+// Under the helm the tick's own attempt is complete before the pattern pass
+// runs, so a slow fetch can never make the runner read as stuck.
+func TestHelmTickCompletesBeforePatterns(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	takeHelmFixture(t, root)
+	var seen []bool
+	cfg := TickConfig{Now: helmFixtureClock, Patterns: func(string, time.Time) error {
+		record, err := os.ReadFile(ComponentEvidencePath(root, "steward-tick"))
+		seen = append(seen, err == nil && strings.Contains(string(record), `"HELM"`))
+		return nil
+	}}
+	if _, err := RunTick(root, cfg, fakeCensus{}); err != nil {
+		t.Fatal(err)
+	}
+	if len(seen) != 1 || !seen[0] {
+		t.Fatalf("the pattern pass ran %d times, each after the helm attempt completed: %v", len(seen), seen)
+	}
+}

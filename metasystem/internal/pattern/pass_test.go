@@ -39,3 +39,12 @@ func TestPassRunsOnlyInTheLaneSteward(t *testing.T) {
 		t.Fatalf("the lane's steward did not run the patterns: %+v", b.episodes())
 	}
 }
+
+// One git command of the pass stays well inside the steward's 120 s tick
+// patience: a stalled fetch is a stale trunk, never a stuck runner.
+func TestGitBoundInsideTickPatience(t *testing.T) {
+	t.Parallel()
+	if gitTimeout > 30*time.Second {
+		t.Fatalf("the pass's git bound is %s; want at most 30s", gitTimeout)
+	}
+}

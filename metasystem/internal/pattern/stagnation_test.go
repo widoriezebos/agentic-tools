@@ -36,7 +36,7 @@ func TestAgeReachesThresholdAtDefaultCadence(t *testing.T) {
 	if open[0].Owner != "pattern:stagnation" || open[0].ScopeID != id {
 		t.Fatalf("episode identity %q %q", open[0].Owner, open[0].ScopeID)
 	}
-	if len(b.sent) != 1 || !strings.HasPrefix(b.sent[0], "The landing lane has not moved batch 00000 forward for 2 hours.\nrun: metasystem alert list") {
+	if len(b.sent) != 1 || !strings.HasPrefix(b.sent[0], "The landing lane has worked on batch 00000 for 2 hours without landing it.\nrun: metasystem alert list") {
 		t.Fatalf("notifications %q; want one, two plain lines", b.sent)
 	}
 	b.cycle(first.Add(13 * cadence))
@@ -260,14 +260,14 @@ func TestUnreadableHoldIsNotCounted(t *testing.T) {
 	if got := b.active(id); got != 20*time.Minute {
 		t.Fatalf("counted %s; want 20m", got)
 	}
-	// A member seat whose helm cannot be read (no repository there) is an
-	// unreadable hold too: no episode opens for five refusals.
+	// A member seat whose checkout was removed holds no helm: it is not a
+	// hold and not unreadable, so the batch counts and reports.
 	c := newBed(t)
 	c.writeBatch(id, refused(bedStart, 5), pathOf(c.t.TempDir(), "gone"))
 	c.cycle(minute(10))
 	c.cycle(minute(20))
-	if episodes := c.episodes(); len(episodes) != 0 || c.active(id) != 0 {
-		t.Fatalf("an unreadable member helm reported or counted: %+v %s", episodes, c.active(id))
+	if open := c.open(); len(open) != 1 || c.active(id) != 10*time.Minute {
+		t.Fatalf("a removed member seat blocked the batch: %+v %s", c.episodes(), c.active(id))
 	}
 }
 

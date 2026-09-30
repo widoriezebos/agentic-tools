@@ -275,15 +275,16 @@ func helmTick(repoRoot string, cfg TickConfig, generation int, process identity.
 	result := TickResult{Decision: Decision{VerdictHelm, ActNone, reason}}
 	seatReport, presenceErr := seatPresenceComponent(repoRoot, cfg, generation, process)
 	result.SeatPresence = seatReport
-	// The one exception to HM-7 (design D2): the pattern pass reports under
-	// the helm, because the person at the helm is who needs the report. A
-	// report is not a decision.
-	if patternErr := runPatterns(repoRoot, cfg); patternErr != nil && presenceErr == nil {
-		presenceErr = patternErr
-	}
 	if _, err := completeComponentAttempt(repoRoot, "steward-tick", generation, attemptSeq,
 		ComponentOK, "HELM", reason, nil, cfg.now()); err != nil {
 		return result, fmt.Errorf("record helm tick completion: %w", err)
+	}
+	// The one exception to HM-7 (design D2): the pattern pass reports under
+	// the helm, because the person at the helm is who needs the report. A
+	// report is not a decision. It runs after the attempt completed, so a
+	// slow fetch never reads as a stuck tick.
+	if patternErr := runPatterns(repoRoot, cfg); patternErr != nil && presenceErr == nil {
+		presenceErr = patternErr
 	}
 	return result, presenceErr
 }

@@ -18,8 +18,11 @@ var highWaterRank = map[string]int{
 }
 
 // DetectStagnation observes every lane batch. An unfinished batch is a
-// Finding when its counted active time reaches batch-hours (S1) or when
-// repeat distinct attempts failed since its high-water state last rose (S2).
+// Finding when its counted active time since it was first observed reaches
+// batch-hours (S1: total observed, not-held time in the lane, not time
+// since its last forward move, which is why its episode clears only when
+// the batch lands or dissolves) or when repeat distinct attempts failed
+// since its high-water state last rose (S2).
 func DetectStagnation(signals Signals, _ time.Time, thresholds Thresholds) []Observation {
 	limit := time.Duration(thresholds.float("batch-hours") * float64(time.Hour))
 	repeat := thresholds.int("repeat")
@@ -42,7 +45,7 @@ func DetectStagnation(signals Signals, _ time.Time, thresholds Thresholds) []Obs
 			retried := repeat > 0 && len(attempts) >= repeat
 			if aged {
 				observation.Evidence = append(observation.Evidence, Evidence{Record: b.Record, At: stamp(b.Since),
-					Fact: fmt.Sprintf("counted active time reached batch-hours=%s", thresholds["batch-hours"])})
+					Fact: fmt.Sprintf("counted active time in the lane reached batch-hours=%s", thresholds["batch-hours"])})
 			}
 			if retried {
 				for _, step := range attempts {
@@ -97,7 +100,7 @@ func stagnationMessage(b BatchSignal, aged bool, attempts int) string {
 	}
 	if aged {
 		hours := int(b.Active / time.Hour)
-		return fmt.Sprintf("The landing lane has not moved batch %s forward for %d hour%s.", short, hours, plural(hours))
+		return fmt.Sprintf("The landing lane has worked on batch %s for %d hour%s without landing it.", short, hours, plural(hours))
 	}
 	return fmt.Sprintf("The landing lane tried batch %s %d times without moving it forward.", short, attempts)
 }

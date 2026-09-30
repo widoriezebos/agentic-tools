@@ -112,12 +112,14 @@ func ReadBatchStore(laneRoot string) ([]BatchSignal, error) {
 type HelmReader func(seatRoot string) (active, readable bool)
 
 // ReadHelm is the production HelmReader. A signature that cannot be decoded
-// is a helm taken (helm.Active's rule); a seat that is not a repository is
-// unreadable.
+// is a helm taken (helm.Active's rule). A seat whose checkout was removed,
+// or that is no repository at all, can hold no helm: it reads not held, so
+// a batch whose member seat is gone is still followed (a person at the helm
+// always has a checkout to hold it in).
 func ReadHelm(seatRoot string) (bool, bool) {
 	state := helm.Active(seatRoot)
 	if state.Diagnostic != "" {
-		return false, false
+		return false, true
 	}
 	return state.Active, true
 }

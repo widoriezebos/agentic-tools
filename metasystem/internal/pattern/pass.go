@@ -27,9 +27,9 @@ type Pass struct {
 	Pause   PauseReader
 	// Git runs the trunk reader's git; nil is RunGit.
 	Git GitRunner
-	// LaneLineages are the lane's identities churn attributes to the landing
-	// lane by their lineage hash; nil is the stable identity alone (the old
-	// owner's lineage belongs only to the replay of 2026-09-30).
+	// LaneLineages are the lane's identities, the only lineages churn counts
+	// (by their hash); nil is the stable identity and, until the lane
+	// cutover, the old owner's.
 	LaneLineages []string
 }
 
@@ -50,7 +50,7 @@ func (p Pass) withDefaults() Pass {
 		p.Git = RunGit
 	}
 	if p.LaneLineages == nil {
-		p.LaneLineages = []string{LaneLineage}
+		p.LaneLineages = []string{LaneLineage, OwnerLineage}
 	}
 	return p
 }

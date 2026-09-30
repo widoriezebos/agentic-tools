@@ -79,7 +79,7 @@ func (bed alertBed) run(t *testing.T, cwd string, words ...string) (int, string,
 func (bed alertBed) open(t *testing.T, top, work string) steward.AlertEpisode {
 	t.Helper()
 	episode, created, err := steward.OpenAlert(bed.store(top), steward.AlertOpening{Owner: steward.PatternOwner("stagnation"), Work: work,
-		Since: alertTestNow.Add(-2 * time.Hour), Message: "The landing lane has not moved batch " + work[:5] + " forward for 2 hours.",
+		Since: alertTestNow.Add(-2 * time.Hour), Message: "The landing lane has worked on batch " + work[:5] + " for 2 hours without landing it.",
 		Evidence: []steward.AlertEvidence{{Record: "artifacts/agents/landing-batches/" + work + ".json", At: "2026-09-30T08:59:51Z", Fact: "counted active time reached batch-hours=2"}},
 		Now:      alertTestNow, Deliver: func(string, string) error { return nil }})
 	if err != nil || !created {
@@ -121,8 +121,8 @@ func TestAlertVerbsFromSeatCheckout(t *testing.T) {
 		t.Fatalf("alert list = %d %q %q", code, stdout, stderr)
 	}
 	for _, want := range []string{
-		"  " + laneID + "  The landing lane has not moved batch 4gr18 forward for 2 hours.\n    run: metasystem alert ack " + laneID + "\n",
-		"  " + seatID + "  The landing lane has not moved batch 00000 forward for 2 hours.\n    run: metasystem alert ack " + seatID + "\n",
+		"  " + laneID + "  The landing lane has worked on batch 4gr18 for 2 hours without landing it.\n    run: metasystem alert ack " + laneID + "\n",
+		"  " + seatID + "  The landing lane has worked on batch 00000 for 2 hours without landing it.\n    run: metasystem alert ack " + seatID + "\n",
 	} {
 		if !strings.Contains(stdout, want) {
 			t.Fatalf("alert list lacks %q:\n%s", want, stdout)
@@ -207,7 +207,7 @@ func TestSessionStatusNamesOpenPatternAlerts(t *testing.T) {
 	root := bed.words["ROOT"]
 	for _, work := range []string{"0000000000000000000000000a", "0000000000000000000000000b"} {
 		if _, _, err := steward.OpenAlert(root, steward.AlertOpening{Owner: steward.PatternOwner("stagnation"), Work: work, Since: alertTestNow,
-			Message: "The landing lane has not moved batch 00000 forward for 2 hours.", Now: alertTestNow, Deliver: func(string, string) error { return nil }}); err != nil {
+			Message: "The landing lane has worked on batch 00000 for 2 hours without landing it.", Now: alertTestNow, Deliver: func(string, string) error { return nil }}); err != nil {
 			t.Fatal(err)
 		}
 	}

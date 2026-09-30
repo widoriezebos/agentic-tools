@@ -21,11 +21,18 @@ const TrunkRef = "refs/metasystem/patterns/trunk"
 // commits whose Goal-Transaction carries its lineage hash are the lane's.
 const LaneLineage = "landing-lane"
 
+// OwnerLineage is the old batch owner's lineage
+// (batchowner.LandingOwnerLineage). Until the lane cutover deletes that
+// owner, its commits are the lane's too (build ruling 2026-09-30).
+const OwnerLineage = "landing-m1l"
+
 // GitRunner runs one git command in a directory.
 type GitRunner func(dir string, args ...string) ([]byte, error)
 
 // gitTimeout bounds one git command of the pass; the fetch is the slow one.
-const gitTimeout = 2 * time.Minute
+// It stays well inside the steward's tick patience (120 s), so a stalled
+// fetch is a stale trunk (Unknown), never a runner that reads as stuck.
+const gitTimeout = 30 * time.Second
 
 // RunGit is the production GitRunner.
 func RunGit(dir string, args ...string) ([]byte, error) {

@@ -79,7 +79,7 @@ func TestReplay20260930Stagnation(t *testing.T) {
 		open := b.open()
 		if len(open) > 0 && openedAt.IsZero() {
 			openedAt = now
-			if !strings.HasPrefix(open[0].Message, "The landing lane has not moved batch 4gr18 forward for 2 hours.\n") {
+			if !strings.HasPrefix(open[0].Message, "The landing lane has worked on batch 4gr18 for 2 hours without landing it.\n") {
 				t.Fatalf("the episode says %q", open[0].Message)
 			}
 		}

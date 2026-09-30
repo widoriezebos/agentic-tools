@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
+	"sort"
 	"strings"
 	"time"
 
@@ -123,27 +125,37 @@ func openingDigest(owner, work string, since time.Time) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// mergeEvidence appends the items not already held, keeping the first and
-// the latest when the cap is reached; it reports whether anything changed.
+// mergeEvidence adds the items not already held and keeps the first item
+// and the newest maxAlertEvidence-1 of the rest by time. It reports whether
+// the kept evidence changed: a cycle that sees only items already held, or
+// only items older than every one kept, rewrites nothing.
 func mergeEvidence(held, add []AlertEvidence) ([]AlertEvidence, bool) {
-	changed := false
+	union := append([]AlertEvidence(nil), held...)
 	for _, item := range add {
-		seen := false
-		for _, have := range held {
-			if have == item {
-				seen = true
-				break
-			}
-		}
-		if !seen {
-			held = append(held, item)
-			changed = true
+		if !slices.Contains(union, item) {
+			union = append(union, item)
 		}
 	}
-	if len(held) > maxAlertEvidence {
-		held = append(held[:1:1], held[len(held)-(maxAlertEvidence-1):]...)
+	if len(union) == 0 {
+		return held, false
 	}
-	return held, changed
+	first, rest := union[0], union[1:]
+	if len(held) == 0 {
+		sort.SliceStable(union, func(i, j int) bool { return evidenceTime(union[i]).Before(evidenceTime(union[j])) })
+		first, rest = union[0], union[1:]
+	}
+	rest = append([]AlertEvidence(nil), rest...)
+	sort.SliceStable(rest, func(i, j int) bool { return evidenceTime(rest[i]).Before(evidenceTime(rest[j])) })
+	if len(rest) > maxAlertEvidence-1 {
+		rest = rest[len(rest)-(maxAlertEvidence-1):]
+	}
+	kept := append([]AlertEvidence{first}, rest...)
+	return kept, !slices.Equal(kept, held)
+}
+
+func evidenceTime(item AlertEvidence) time.Time {
+	at, _ := time.Parse(time.RFC3339Nano, item.At)
+	return at
 }
 
 // OpenAlert opens one episode for a piece of work, persists it, and then
@@ -355,9 +367,11 @@ func applyPatternObservation(repoRoot string, episodes *[]AlertEpisode, run Patt
 	return nil, nil
 }
 
-// ClearAlert is a person resolving an episode. A pattern episode stays
-// suppressed for its work until its detector reports that work clear; a
-// repeated clear succeeds and changes nothing.
+// ClearAlert is a person resolving an episode. The episode stays suppressed
+// for its work until the condition has cleared once (a pattern's detector
+// reads the work clear, health reads healthy or another finding, a spend
+// crossing goes away): until then the same finding opens and notifies
+// nothing. A repeated clear succeeds and changes nothing.
 func ClearAlert(repoRoot, episodeID string, invoker AlertInvoker, now time.Time) (AlertEpisode, bool, error) {
 	if !validEpisodeID(episodeID) {
 		return AlertEpisode{}, false, fmt.Errorf("alert episode id is invalid")
@@ -377,7 +391,7 @@ func ClearAlert(repoRoot, episodeID string, invoker AlertInvoker, now time.Time)
 	episode.Resolved, episode.ResolvedAt = true, now.UTC()
 	episode.Cleared, episode.ClearedAt = true, now.UTC()
 	episode.ClearedBy = &invoker
-	episode.Suppressed = IsPatternOwner(episode.Owner)
+	episode.Suppressed = true
 	if err := saveAlertEpisode(repoRoot, episode); err != nil {
 		return AlertEpisode{}, false, err
 	}

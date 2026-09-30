@@ -14,8 +14,8 @@ const Churn = "churn"
 // churnWork is one (machine, lineage-hash, path).
 func churnWork(machine, lineage, path string) string { return machine + "-" + lineage + ":" + path }
 
-// DetectChurn observes every (machine, lineage-hash, path) main was written
-// by: a Finding when commits or more of them fall inside one window-min
+// DetectChurn observes every (machine, lineage-hash, path) a lane lineage
+// wrote on main: a Finding when commits or more of them fall inside one window-min
 // window by committer time (a burst observed late still counts); a Clear
 // only when this cycle's fetch was fresh and the last window is below the
 // threshold; Unknown when main could not be read or the fetch is stale.
@@ -28,6 +28,12 @@ func DetectChurn(signals Signals, now time.Time, thresholds Thresholds) []Observ
 	window := time.Duration(thresholds.int("window-min")) * time.Minute
 	groups := map[string][]TrunkCommit{}
 	for _, commit := range trunk.Commits {
+		// v1 counts only the lane's own lineages (build ruling 2026-09-30):
+		// a seat's ordinary goal run rewrites one goal file 16 times in ten
+		// minutes, which is normal work, not churn.
+		if !trunk.LaneHashes[commit.Lineage] {
+			continue
+		}
 		for _, path := range commit.Paths {
 			work := churnWork(commit.Machine, commit.Lineage, path)
 			groups[work] = append(groups[work], commit)
@@ -117,14 +123,11 @@ func denseWindows(commits []TrunkCommit, limit int, window time.Duration, now ti
 	return dense, crossing
 }
 
-// churnMessage names the writer by its lineage hash alone (never a name
-// prefix) and states both times: when the burst crossed the threshold and
-// when the steward saw it.
-func churnMessage(trunk TrunkSignal, commit TrunkCommit, limit int, crossing churnCrossing) string {
-	who := "Machine " + commit.Machine
-	if trunk.LaneHashes[commit.Lineage] {
-		who = "The landing lane"
-	}
+// churnMessage states both times: when the burst crossed the threshold and
+// when the steward saw it. Only the lane's lineages are counted, so the
+// writer is the landing lane.
+func churnMessage(trunk TrunkSignal, _ TrunkCommit, limit int, crossing churnCrossing) string {
+	who := "The landing lane"
 	minutes := int(math.Ceil(crossing.span.Minutes()))
 	if minutes < 1 {
 		minutes = 1
