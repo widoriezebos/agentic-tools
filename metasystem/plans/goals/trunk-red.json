@@ -297,5 +297,16 @@
       }
     ],
     "opid": "4316F8BEJSJ6DDFCTANRE2XHX0-landing-2b626e27"
+  },
+  "cadenceClaim": {
+    "key": {
+      "trunkTree": "71e8dd435547ed4d6e19c2ede4c3870fb0cfd816",
+      "weightGeneration": 0,
+      "forcedWindowStart": "2026-09-30T16:14:14Z"
+    },
+    "ownerMachine": "landing",
+    "opid": "V3EMJAGFDVX3TATM156GTQSEKN-landing-2b626e27",
+    "claimedAt": "2026-09-30T16:25:19Z",
+    "leaseUntil": "2026-09-30T22:25:19Z"
   }
 }
