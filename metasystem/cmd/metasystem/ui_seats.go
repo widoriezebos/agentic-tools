@@ -241,3 +241,9 @@ func uiStartCollision(inventory uiSeatInventory, prober identity.Prober, listen 
 	}
 	return lifecycle.Result{}, nil
 }
+
+func uiInstallationEngine(installation string) (string, error) {
+	return filepath.Join(installation, "bin", "metasystem"), nil
+}
+
+func uiFileDigest(path string) (string, error) { return "", nil }

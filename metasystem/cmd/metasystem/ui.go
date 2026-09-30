@@ -1117,6 +1117,10 @@ type uiLifecycleEffects struct {
 	after func(time.Duration) <-chan time.Time
 	// seats reads the other machines of this computer; nil is none.
 	seats func() uiSeatInventory
+	// engine is the engine an installation carries, and listenFor the
+	// validated listen address for a seat's roots.
+	engine    func(installation string) (string, error)
+	listenFor func(target lifecycle.Roots) (string, error)
 }
 
 // uiLifecycleRun runs start, status, stop or restart through the lifecycle

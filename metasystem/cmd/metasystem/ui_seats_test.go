@@ -58,6 +58,12 @@ type uiSeatsBed struct {
 	sent   []uiSeatsSignal
 	spawns int
 	after  func(time.Duration) <-chan time.Time
+	// specs are the launches spawned, engines the installations whose
+	// engine was asked for; listen and listenSet are the --listen typed.
+	specs     []lifecycle.LaunchSpec
+	engines   []string
+	listen    string
+	listenSet bool
 }
 
 func newUISeatsBed(t *testing.T) *uiSeatsBed {
@@ -84,6 +90,27 @@ func (b *uiSeatsBed) live(s uiSeat, pid int64, address string, state identity.Li
 	b.t.Helper()
 	uiSeatsWriteRecord(b.t, s.Roots.StateRoot, pid, address)
 	b.prober[pid] = state
+}
+
+// engine installs an engine file under the seat's installation, and conf
+// its metasystem.conf.
+func (b *uiSeatsBed) engine(s uiSeat, content string) string {
+	b.t.Helper()
+	path := filepath.Join(s.Roots.Installation, "bin", "metasystem")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		b.t.Fatal(err)
+	}
+	if err := testexec.WriteFile(path, []byte(content), 0o755); err != nil {
+		b.t.Fatal(err)
+	}
+	return path
+}
+
+func (b *uiSeatsBed) conf(s uiSeat, body string) {
+	b.t.Helper()
+	if err := os.WriteFile(filepath.Join(s.Roots.Installation, "metasystem.conf"), []byte(body), 0o644); err != nil {
+		b.t.Fatal(err)
+	}
 }
 
 func uiSeatsWriteRecord(t *testing.T, stateRoot string, pid int64, address string) {
@@ -143,9 +170,17 @@ func uiSeatsHoldLock(t *testing.T, stateRoot string) func() {
 func (b *uiSeatsBed) effects(inventory func() uiSeatInventory) uiLifecycleEffects {
 	return uiLifecycleEffects{
 		prober:     b.prober,
-		executable: func() (string, error) { return "/fake/metasystem", nil },
+		executable: func() (string, error) { return "/fake/own-metasystem", nil },
+		engine: func(installation string) (string, error) {
+			b.engines = append(b.engines, installation)
+			return uiInstallationEngine(installation)
+		},
+		listenFor: func(target lifecycle.Roots) (string, error) {
+			return uiListen("restart", target, b.listen, b.listenSet)
+		},
 		spawn: func(spec lifecycle.LaunchSpec) (lifecycle.Child, error) {
 			b.spawns++
+			b.specs = append(b.specs, spec)
 			return idemUIChild{address: spec.Args[slices.Index(spec.Args, "--listen")+1]}, nil
 		},
 		send: func(pid int, signal syscall.Signal) error {
@@ -262,6 +297,7 @@ func TestUIStartRefusesTheAddressAnotherSeatHolds(t *testing.T) {
 	b := newUISeatsBed(t)
 	a, other := b.seat("m1e"), b.seat("ui")
 	b.live(other, 5206, "127.0.0.1:8765", identity.Alive)
+	b.engine(a, "engine of m1e")
 	got := uiLifecycleRunWith("start", a.Roots, "127.0.0.1:8765", 0, b.effects(uiSeatsOf("m1e", other)))
 	want := "no interface for m1e; machine ui runs one at 127.0.0.1:8765 (pid 5206); stop it with: metasystem ui stop --repo " + other.Checkout +
 		", or start this seat's at another address with --listen"
@@ -272,19 +308,6 @@ func TestUIStartRefusesTheAddressAnotherSeatHolds(t *testing.T) {
 	got = uiLifecycleRunWith("start", a.Roots, "127.0.0.1:9999", 0, b.effects(uiSeatsOf("m1e", other)))
 	if b.spawns != 1 || got.Result.Code != 0 {
 		t.Fatalf("start at another address = spawns %d, %+v", b.spawns, got)
-	}
-}
-
-// TestUIRestartInAnotherSeatPointsWithoutStoppingIt (D-start, restart).
-func TestUIRestartInAnotherSeatPointsWithoutStoppingIt(t *testing.T) {
-	t.Parallel()
-	b := newUISeatsBed(t)
-	a, other := b.seat("m1e"), b.seat("ui")
-	b.live(other, 5207, "127.0.0.1:7878", identity.Alive)
-	got := uiLifecycleRunWith("restart", a.Roots, "127.0.0.1:7878", 0, b.effects(uiSeatsOf("m1e", other)))
-	if got.Restart == nil || got.Restart.Stop != lifecycle.StopOutcome(lifecycle.Stopped) || !got.Restart.Started || got.Restart.Start.Code != 1 ||
-		len(b.sent) != 0 || b.spawns != 0 || !uiSeatsHasRecord(other.Roots.StateRoot) || !strings.Contains(uiSeatsText(got), "metasystem ui stop --repo "+other.Checkout) {
-		t.Fatalf("restart beside another seat = signals %v spawns %d, %+v %+v", b.sent, b.spawns, got, got.Restart)
 	}
 }
 
@@ -319,6 +342,7 @@ func TestUIStartKeepsTodaysPathWhenThisSeatRuns(t *testing.T) {
 	b := newUISeatsBed(t)
 	a, other := b.seat("m1e"), b.seat("ui")
 	b.live(a, 5210, "127.0.0.1:9999", identity.Alive)
+	b.engine(a, "engine of m1e")
 	b.live(other, 5211, "127.0.0.1:7878", identity.Alive)
 	got := uiLifecycleRunWith("start", a.Roots, "127.0.0.1:7878", 0, b.effects(uiSeatsOf("m1e", other)))
 	if b.spawns != 1 || got.Unchanged || strings.Contains(uiSeatsText(got), "machine ui") || len(got.Seats) != 0 {
@@ -527,5 +551,202 @@ func TestUIHelpNamesTheOtherSeats(t *testing.T) {
 		if page.Command == nil || !slices.Contains(page.Command.Details, want) {
 			t.Errorf("ui %s help lacks %q: %+v", verb, want, page.Command)
 		}
+	}
+}
+
+// uiSeatsSpawned is the launch's engine, --repo, --metasystem-root and
+// --listen.
+func uiSeatsSpawned(spec lifecycle.LaunchSpec) []string {
+	value := func(flag string) string { return spec.Args[slices.Index(spec.Args, flag)+1] }
+	return []string{spec.Executable, value("--repo"), value("--metasystem-root"), value("--listen")}
+}
+
+// TestUIRestartRestartsTheOneOtherSeatsInterface (D-restart, one; AM-01,
+// AM-02): with no interface on this seat and exactly one other machine
+// running one, restart restarts that one with its own engine at its own
+// address, and reports the pid and address the new server was ready with.
+func TestUIRestartRestartsTheOneOtherSeatsInterface(t *testing.T) {
+	t.Parallel()
+	b := newUISeatsBed(t)
+	a, other := b.seat("m1e"), b.seat("ui")
+	b.live(other, 5501, "127.0.0.1:8765", identity.Alive)
+	engine := b.engine(other, "engine of ui")
+	b.conf(other, "ui.listen=127.0.0.1:8765\n")
+	before := idemTreeDigest(t, a.Roots.StateRoot)
+	got := uiLifecycleRunWith("restart", a.Roots, "127.0.0.1:7878", 0, b.effects(uiSeatsOf("m1e", other)))
+	if !slices.Equal(b.sent, []uiSeatsSignal{{5501, syscall.SIGTERM}}) || len(b.specs) != 1 ||
+		!slices.Equal(uiSeatsSpawned(b.specs[0]), []string{engine, other.Checkout, other.Roots.Installation, "127.0.0.1:8765"}) {
+		t.Fatalf("restart of the other seat = signals %v launches %+v, %+v", b.sent, b.specs, got)
+	}
+	if got.Result.Code != 0 || got.Seat == nil || got.Seat.Name != "ui" || got.Restart == nil || got.Restart.Stop != lifecycle.StoppedNow ||
+		!got.Restart.Started || got.Restart.Start.Code != 0 ||
+		!slices.Equal(got.Result.Lines, []string{"no interface for m1e; restarted the interface of machine ui (pid 5501 -> 4343, :8765)"}) {
+		t.Fatalf("restart of the other seat = %+v %+v", got, got.Restart)
+	}
+	idemSameTree(t, "this seat's tree", before, idemTreeDigest(t, a.Roots.StateRoot))
+
+	// A --listen typed takes precedence over the target's own address.
+	typed := newUISeatsBed(t)
+	typed.listen, typed.listenSet = "127.0.0.1:9999", true
+	a, other = typed.seat("m1e"), typed.seat("ui")
+	typed.live(other, 5502, "127.0.0.1:8765", identity.Alive)
+	typed.engine(other, "engine of ui")
+	typed.conf(other, "ui.listen=127.0.0.1:8765\n")
+	got = uiLifecycleRunWith("restart", a.Roots, "127.0.0.1:7878", 0, typed.effects(uiSeatsOf("m1e", other)))
+	if len(typed.specs) != 1 || uiSeatsSpawned(typed.specs[0])[3] != "127.0.0.1:9999" || got.Result.Code != 0 {
+		t.Fatalf("restart with --listen = launches %+v, %+v", typed.specs, got)
+	}
+
+	// The target's address that does not validate stops nothing.
+	invalid := newUISeatsBed(t)
+	a, other = invalid.seat("m1e"), invalid.seat("ui")
+	invalid.live(other, 5503, "127.0.0.1:8765", identity.Alive)
+	invalid.engine(other, "engine of ui")
+	invalid.conf(other, "ui.listen=example.com:80\n")
+	got = uiLifecycleRunWith("restart", a.Roots, "127.0.0.1:7878", 0, invalid.effects(uiSeatsOf("m1e", other)))
+	if len(invalid.sent) != 0 || invalid.spawns != 0 || !uiSeatsHasRecord(other.Roots.StateRoot) || got.Result.Code != 1 ||
+		len(got.Result.Lines) != 1 || !strings.Contains(got.Result.Lines[0], "example.com") || !strings.Contains(got.Result.Lines[0], "nothing was done") {
+		t.Fatalf("restart at an invalid address = signals %v spawns %d, %+v", invalid.sent, invalid.spawns, got)
+	}
+}
+
+// TestUIStartLaunchesTheTargetInstallationsEngine (D-engine): start and
+// restart launch the engine the target installation carries, never the
+// process's own executable.
+func TestUIStartLaunchesTheTargetInstallationsEngine(t *testing.T) {
+	t.Parallel()
+	b := newUISeatsBed(t)
+	a, other := b.seat("m1e"), b.seat("ui")
+	own := b.engine(a, "engine of m1e")
+	got := uiLifecycleRunWith("start", a.Roots, "127.0.0.1:9999", 0, b.effects(uiSeatsOf("m1e", other)))
+	if got.Result.Code != 0 || len(b.specs) != 1 || !slices.Equal(uiSeatsSpawned(b.specs[0]), []string{own, a.Checkout, a.Roots.Installation, "127.0.0.1:9999"}) ||
+		!slices.Contains(b.engines, a.Roots.Installation) {
+		t.Fatalf("start = launches %+v engines %v, %+v", b.specs, b.engines, got)
+	}
+
+	b.live(other, 5504, "127.0.0.1:8765", identity.Alive)
+	theirs := b.engine(other, "engine of ui")
+	third := b.seat("landing")
+	got = uiLifecycleRunWith("restart", third.Roots, "127.0.0.1:7878", 0, b.effects(uiSeatsOf("landing", other)))
+	if got.Result.Code != 0 || len(b.specs) != 2 || uiSeatsSpawned(b.specs[1])[0] != theirs || uiSeatsSpawned(b.specs[1])[1] != other.Checkout ||
+		uiSeatsSpawned(b.specs[1])[2] != other.Roots.Installation || !slices.Contains(b.engines, other.Roots.Installation) {
+		t.Fatalf("restart of another seat = launches %+v engines %v, %+v", b.specs, b.engines, got)
+	}
+}
+
+// TestUIRestartRefusesWhenTheTargetEngineIsMissing (D-engine): no engine,
+// nothing stopped.
+func TestUIRestartRefusesWhenTheTargetEngineIsMissing(t *testing.T) {
+	t.Parallel()
+	b := newUISeatsBed(t)
+	a, other := b.seat("m1e"), b.seat("ui")
+	b.live(other, 5505, "127.0.0.1:8765", identity.Alive)
+	got := uiLifecycleRunWith("restart", a.Roots, "127.0.0.1:7878", 0, b.effects(uiSeatsOf("m1e", other)))
+	text := uiSeatsText(got)
+	if len(b.sent) != 0 || b.spawns != 0 || !uiSeatsHasRecord(other.Roots.StateRoot) || got.Result.Code != 1 ||
+		!strings.Contains(text, other.Roots.Installation) || !strings.Contains(text, "carries no engine at bin/metasystem") {
+		t.Fatalf("restart of a seat without an engine = signals %v spawns %d, %+v", b.sent, b.spawns, got)
+	}
+	got = uiLifecycleRunWith("start", a.Roots, "127.0.0.1:9999", 0, b.effects(uiSeatsOf("m1e", other)))
+	text = uiSeatsText(got)
+	if b.spawns != 0 || got.Result.Code != 1 || !strings.Contains(text, a.Roots.Installation) || !strings.Contains(text, "carries no engine at bin/metasystem") {
+		t.Fatalf("start without an engine = spawns %d, %+v", b.spawns, got)
+	}
+}
+
+// TestUIRestartWithSeveralOrIncompleteRestartsNone (D-restart, several and
+// incomplete).
+func TestUIRestartWithSeveralOrIncompleteRestartsNone(t *testing.T) {
+	t.Parallel()
+	b := newUISeatsBed(t)
+	a, first, second := b.seat("m1e"), b.seat("ui"), b.seat("landing")
+	b.live(first, 5506, "127.0.0.1:7878", identity.Alive)
+	b.live(second, 5507, "127.0.0.1:7879", identity.Alive)
+	b.engine(first, "engine of ui")
+	b.engine(second, "engine of landing")
+	got := uiLifecycleRunWith("restart", a.Roots, "127.0.0.1:7878", 0, b.effects(uiSeatsOf("m1e", first, second)))
+	text := uiSeatsText(got)
+	if len(b.sent) != 0 || b.spawns != 0 || !uiSeatsHasRecord(first.Roots.StateRoot) || !uiSeatsHasRecord(second.Roots.StateRoot) || got.Result.Code != 1 ||
+		!strings.Contains(text, "machine ui: pid 5506 at 127.0.0.1:7878: metasystem ui restart --repo "+first.Checkout) ||
+		!strings.Contains(text, "machine landing: pid 5507 at 127.0.0.1:7879: metasystem ui restart --repo "+second.Checkout) {
+		t.Fatalf("restart with several = signals %v spawns %d, %+v", b.sent, b.spawns, got)
+	}
+
+	m := newMachineBed(t)
+	m.fleetEdit = func(report *seat.Report) { report.CopyProblem = "presence refs unreadable" }
+	u := newUISeatsBed(t)
+	u.live(uiSeat{Roots: lifecycle.Roots{StateRoot: m.landing}}, 5508, "127.0.0.1:7878", identity.Alive)
+	code, result, data := uiSeatsRunVerb(m, func(verb string, roots lifecycle.Roots, options uiIntentOptions) (uiLifecycleResult, error) {
+		return uiLifecycleRunWith(verb, roots, "127.0.0.1:7878", 0, u.effects(options.seats)), nil
+	}, "ui", "restart")
+	var lines []string
+	for _, line := range data["lines"].([]any) {
+		lines = append(lines, line.(string))
+	}
+	problems, _ := data["seatsProblems"].([]any)
+	if code != 1 || result.Outcome != intentRefused || len(u.sent) != 0 || u.spawns != 0 || !uiSeatsHasRecord(m.landing) ||
+		!strings.Contains(strings.Join(lines, "\n"), "presence refs unreadable") || len(problems) != 1 {
+		t.Fatalf("restart with an incomplete inventory = %d signals %v spawns %d %+v data %v", code, u.sent, u.spawns, result, data)
+	}
+}
+
+// TestUIRestartTimeoutWithHeldLock (D-restart, D-proof): the restart's stop
+// leg on another seat that keeps its lock starts nothing.
+func TestUIRestartTimeoutWithHeldLock(t *testing.T) {
+	t.Parallel()
+	b := newUISeatsBed(t)
+	b.after = uiSeatsFiredAfter
+	a, other := b.seat("m1e"), b.seat("ui")
+	b.live(other, 5509, "127.0.0.1:7878", identity.Alive)
+	b.engine(other, "engine of ui")
+	release := uiSeatsHoldLock(t, other.Roots.StateRoot)
+	got := uiLifecycleRunWith("restart", a.Roots, "127.0.0.1:7878", 0, b.effects(uiSeatsOf("m1e", other)))
+	if !slices.Equal(b.sent, []uiSeatsSignal{{5509, syscall.SIGTERM}}) || b.spawns != 0 || !uiSeatsHasRecord(other.Roots.StateRoot) || got.Result.Code != 1 ||
+		got.Restart == nil || got.Restart.Stop != lifecycle.Timeout || got.Seat == nil || got.Seat.Name != "ui" {
+		t.Fatalf("restart of a seat that keeps its lock = signals %v spawns %d, %+v %+v", b.sent, b.spawns, got, got.Restart)
+	}
+	release()
+}
+
+// TestUIStatusComparesTheTargetInstallationsEngine (D-engine): status
+// compares the running server with the engine restart would launch.
+func TestUIStatusComparesTheTargetInstallationsEngine(t *testing.T) {
+	t.Parallel()
+	b := newUISeatsBed(t)
+	a := b.seat("m1e")
+	engine := b.engine(a, "engine of m1e")
+	digest, err := uiFileDigest(engine)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.live(a, 5510, "127.0.0.1:7878", identity.Alive)
+	uiSeatsSetDigest(t, a.Roots.StateRoot, digest)
+	changed := "the executable on disk differs from the one the interface is running; to pick it up: metasystem ui restart"
+	got := uiLifecycleRunWith("status", a.Roots, "", 0, b.effects(uiSeatsOf("m1e")))
+	if got.State != lifecycle.Running || slices.Contains(got.Result.Lines, changed) {
+		t.Fatalf("status with the installation's engine running = %+v", got)
+	}
+	b.engine(a, "engine of m1e, rebuilt")
+	got = uiLifecycleRunWith("status", a.Roots, "", 0, b.effects(uiSeatsOf("m1e")))
+	if !slices.Contains(got.Result.Lines, changed) {
+		t.Fatalf("status after the installation's engine changed = %+v", got)
+	}
+}
+
+func uiSeatsSetDigest(t *testing.T, stateRoot, digest string) {
+	t.Helper()
+	path := filepath.Join(lifecycle.Dir(stateRoot), "server.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rec lifecycle.Record
+	if err := json.Unmarshal(data, &rec); err != nil {
+		t.Fatal(err)
+	}
+	rec.ExecutableDigest = digest
+	encoded, _ := json.Marshal(rec)
+	if err := os.WriteFile(path, encoded, 0o600); err != nil {
+		t.Fatal(err)
 	}
 }
