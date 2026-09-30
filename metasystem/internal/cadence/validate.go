@@ -206,6 +206,8 @@ type ValidateLane struct {
 	// Publish publishes a finalized status (K-c routes it through the lane
 	// publication boundary); nil uses the ledger's claim and publish.
 	Publish func(goal.CadenceClaimKey, goal.CadenceStatus, []goal.TrunkRedRecordGroup) error
+	// Force is a person's word past custody that can't be read.
+	Force bool
 	// Gate admits a launch and a publication under the lane's pause (K2):
 	// it runs start under the host flock when the lane admits validate.
 	// nil admits.
@@ -310,6 +312,12 @@ func (v ValidateLane) Seams() (gaterun.ValidateSeams, error) {
 		Launch: func(reservation gaterun.Validation) (string, error) {
 			id := ""
 			err := gate(func() error {
+				// The barrier is read again under the host flock the pause
+				// is read under, so no other kernel execution opens between
+				// the read and this launch's record.
+				if err := custody.Clear(home, v.Probes, v.Force); err != nil {
+					return err
+				}
 				var err error
 				id, err = launchValidation(home, root, v.Owner, clock, store, reservation)
 				return err

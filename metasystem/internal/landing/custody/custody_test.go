@@ -258,3 +258,27 @@ func TestLaneLeasesAreTheInstallationsAndTheUnreadable(t *testing.T) {
 		t.Fatalf("lane leases = %q", names)
 	}
 }
+
+// The barrier a new execution passes: live custody holds it, force or not;
+// unknown custody holds it unless a person forced it.
+func TestClearHoldsNewWorkWhileCustodyIsLiveOrUnknown(t *testing.T) {
+	t.Parallel()
+	home := testHome(t)
+	if err := Clear(home, Probes{}, false); err != nil {
+		t.Fatalf("an empty store: %v", err)
+	}
+	unknown := Probes{Leases: func() ([]Lease, error) { return []Lease{{Name: "lease-heavy-x", State: LeaseUnknown}}, nil }}
+	var held *Held
+	if err := Clear(home, unknown, false); !errors.As(err, &held) || len(held.Unknown) != 1 {
+		t.Fatalf("unknown lease: %v", err)
+	}
+	if err := Clear(home, unknown, true); err != nil {
+		t.Fatalf("unknown lease, forced: %v", err)
+	}
+	live := Probes{Leases: func() ([]Lease, error) { return []Lease{{Name: "lease-heavy-y", State: LeaseLive}}, nil }}
+	for _, force := range []bool{false, true} {
+		if err := Clear(home, live, force); !errors.As(err, &held) || len(held.Live) != 1 {
+			t.Fatalf("live lease, force %v: %v", force, err)
+		}
+	}
+}

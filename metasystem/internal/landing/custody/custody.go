@@ -583,3 +583,34 @@ func Override(home, by string, probes Probes) ([]string, error) {
 	}
 	return passed, nil
 }
+
+// Held is the custody barrier refusing a new execution: what still runs,
+// and what can't be read when no person went past it.
+type Held struct {
+	Live, Unknown []string
+}
+
+func (held *Held) Error() string {
+	if len(held.Live) > 0 {
+		return "landing work still runs: " + strings.Join(held.Live, "; ")
+	}
+	return "whether landing work still runs can't be read: " + strings.Join(held.Unknown, "; ")
+}
+
+// Clear is the barrier every new kernel execution passes before it opens
+// its record (a proof of any subject, a validation, the retained verifier):
+// nil when nothing is live and nothing unknown, or only unknown and a
+// person forced it; else a *Held.
+func Clear(home string, probes Probes, force bool) error {
+	settlement, err := Settle(home, probes)
+	if err != nil {
+		settlement.Unknown = append(settlement.Unknown, err.Error())
+	}
+	if settlement.Settled(force) {
+		return nil
+	}
+	if len(settlement.Live) > 0 {
+		return &Held{Live: settlement.Live}
+	}
+	return &Held{Unknown: settlement.Unknown}
+}

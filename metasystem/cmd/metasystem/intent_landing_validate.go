@@ -56,7 +56,7 @@ func productionLaneValidate(request laneValidateRequest) (gaterun.ValidateOutcom
 	validate := cadence.ValidateLane{Home: request.Home, Root: request.Installation,
 		Owner: cadence.Owner{Epoch: int64(request.Epoch), Lineage: laneValidationLineage, Require: func() error { return nil },
 			FetchOrigin: batchowner.FetchBatchOrigin, WeightThreshold: weightThreshold, Prepare: prepareTestingForCommand, WorkerPolicy: testingWorkerPolicy},
-		Clock: time.Now, Probes: probes, Gate: gate}
+		Clock: time.Now, Probes: probes, Gate: gate, Force: request.Force}
 	seams, err := validate.Seams()
 	if err != nil {
 		return gaterun.ValidateOutcome{}, err
