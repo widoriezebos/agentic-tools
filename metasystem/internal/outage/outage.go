@@ -194,10 +194,11 @@ var (
 	overloadCodeRe = regexp.MustCompile(`(?i)(?:^|[^a-z])(?:status|http|code|error)[^a-z0-9]{1,4}(5[0-9][0-9])(?:[^0-9a-z]|$)`)
 	// The limit rules: the Claude CLI's usage-limit line ("Claude AI usage
 	// limit reached|<epoch>", "5-hour limit reached ∙ resets 3pm", "You've
-	// hit your usage limit"), the API's own rate_limit_error token, and a
+	// hit your usage limit", "You've hit your session limit, resets
+	// 12:10am"), the API's own rate_limit_error token, and a
 	// 429 under the same framing as the 5xx rule, so a count of 429 records
 	// or a 429ms duration is nothing.
-	limitWordRe = regexp.MustCompile(`(?i)(?:usage|5-hour|weekly|session) limit (?:reached|exceeded)|hit your (?:usage )?limit|(?:^|[^a-z_])rate_limit_error(?:[^a-z_]|$)`)
+	limitWordRe = regexp.MustCompile(`(?i)(?:usage|5-hour|weekly|session) limit (?:reached|exceeded)|hit your (?:usage |session |weekly )?limit|(?:^|[^a-z_])rate_limit_error(?:[^a-z_]|$)`)
 	limitCodeRe = regexp.MustCompile(`(?i)(?:^|[^a-z])(?:status|http|code|error)[^a-z0-9]{1,4}429(?:[^0-9a-z]|$)`)
 )
 

@@ -235,6 +235,15 @@ func TestUsageLimitFeedsTheOutageMark(t *testing.T) {
 	if class, evidence, ok := ClassifyProviderResult(limited); !ok || class != ProviderLimit || !strings.Contains(evidence, "usage limit") {
 		t.Fatalf("a declared error carrying the usage-limit line = %s %q %v", class, evidence, ok)
 	}
+	// The wording a delegate's terminal result carried on 2026-09-06
+	// (records/goals/delegate-death-names-the-account-limit.md).
+	session := filepath.Join(dir, "session.json")
+	if err := os.WriteFile(session, []byte(`{"type":"result","subtype":"success","is_error":true,"api_error_status":429,"result":"You've hit your session limit, resets 12:10am (Europe/Amsterdam)"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if class, evidence, ok := ClassifyProviderResult(session); !ok || class != ProviderLimit || !strings.Contains(evidence, "session limit") {
+		t.Fatalf("a declared error carrying the session-limit line = %s %q %v", class, evidence, ok)
+	}
 	talking := filepath.Join(dir, "success.json")
 	if err := os.WriteFile(talking, []byte(`{"is_error":false,"result":"Claude AI usage limit reached|1759262400"}`), 0o644); err != nil {
 		t.Fatal(err)

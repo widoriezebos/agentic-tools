@@ -58,6 +58,8 @@ type machineBed struct {
 	// worktrees are the further worktrees Git registers for a checkout;
 	// every checkout lists itself first, as git worktree list does.
 	worktrees map[string][]string
+	// worktreesErr fails git worktree list for every checkout.
+	worktreesErr error
 }
 
 // machineItem is one fixture process: live until its family stops it.
@@ -194,6 +196,9 @@ func (b *machineBed) top(path string) (string, error) {
 func (b *machineBed) git(dir string, args ...string) ([]byte, error) {
 	if strings.Join(args, " ") != "worktree list --porcelain" {
 		return nil, fmt.Errorf("the machine bed runs no git %s", strings.Join(args, " "))
+	}
+	if b.worktreesErr != nil {
+		return nil, b.worktreesErr
 	}
 	top, err := b.top(dir)
 	if err != nil {

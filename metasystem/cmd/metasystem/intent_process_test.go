@@ -879,3 +879,40 @@ func TestSystemStopEndsARunningSeatAndItsBuild(t *testing.T) {
 		t.Fatalf("the unregistered sibling's launch was touched: %+v", record)
 	}
 }
+
+// TestSystemStopIsPartialWhenTheWorktreesCannotBeListed (test 13's Git
+// error path, SOL-C-02): when Git cannot list the checkout's worktrees, a
+// running launch outside the checkout may be its build in a registered
+// worktree. system stop still stops the checkout, but it is partial, never
+// confirmed: it names the launch it could not place and work stop for it,
+// and cancels nothing it cannot place.
+func TestSystemStopIsPartialWhenTheWorktreesCannotBeListed(t *testing.T) {
+	t.Parallel()
+	b := newMachineBed(t)
+	store := launch.Store{Root: b.launchDir}
+	worktree := b.this + "-g-7"
+	if err := os.MkdirAll(worktree, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	b.worktrees[b.this] = []string{worktree}
+	b.worktreesErr = errors.New("git worktree: fatal: unable to read the worktree list")
+	ref := identity.Ref{Pid: 602, StartedAtSec: 602}
+	if err := store.Create(launch.Record{ID: "l-build", Kind: "build", Goal: "g-7", WorkingDirectory: worktree, State: launch.Running,
+		Supervisor: &ref, ProcessGroup: &ref, StartedAt: "2026-09-30T09:40:00Z"}); err != nil {
+		t.Fatal(err)
+	}
+	code, result, data := b.runJSON("system", "stop")
+	if code == 0 || result.Outcome != intentPartial || result.Next == nil || strings.Join(result.Next.Argv, " ") != "metasystem work stop j1:l-build" {
+		t.Fatalf("system stop with the worktrees unreadable = %d %+v", code, result)
+	}
+	lines := fmt.Sprint(data["lines"])
+	if !strings.Contains(lines, "unable to read the worktree list") || !strings.Contains(lines, "launch j1:l-build") {
+		t.Fatalf("system stop did not say what it could not place: %s", lines)
+	}
+	if !stopfence.Completed(b.fence(b.this)) {
+		t.Fatalf("the checkout was not stopped: %+v", b.fence(b.this))
+	}
+	if record, _ := store.Read("l-build"); record.State != launch.Running || b.dead[602] {
+		t.Fatalf("a launch the stop could not place was cancelled: %+v", record)
+	}
+}
