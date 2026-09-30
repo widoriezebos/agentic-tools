@@ -396,6 +396,11 @@ func diskPerson(inv *intentInvocation, owners diskOwners, top, act string) (stri
 		// command that resolves it (humanauthority.RemedyFor).
 		refusal := inv.personRefusal("", err, "")
 		refusal.code = 3
+		if len(refusal.next) == 0 {
+			// A cause the enrollment does not resolve: the same command, by
+			// the person at their own terminal.
+			refusal.retry = "at your enrolled terminal, in a shell you opened yourself"
+		}
 		refusal.Details = append(refusal.Details, "disk clean "+act+" is a person's act; metasystem disk clean --preview shows what it would act on")
 		return "", refusal
 	}

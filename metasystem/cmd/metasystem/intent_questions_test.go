@@ -126,7 +126,7 @@ func TestIntentQuestionJourney(t *testing.T) {
 		t.Fatalf("retry and withdraw together: %+v", result)
 	}
 	// A channel question is answered in its thread; local text is no proof.
-	if _, result := run("question", "answer", "q1", "yes"); result.Outcome != intentRefused || result.Decision != channel.ReplyInstructions(read("q1")) || read("q1").Answer != nil {
+	if _, result := run("question", "answer", "q1", "yes"); result.Outcome != intentRefused || !slices.Contains(result.Details, channel.ReplyInstructions(read("q1"))) || read("q1").Answer != nil {
 		t.Fatalf("channel answer: %+v", result)
 	}
 	// A shared id is never resolved by precedence.

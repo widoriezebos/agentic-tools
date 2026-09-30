@@ -272,7 +272,7 @@ func refusedWith(t *testing.T, options Options, want string) *Refusal {
 	if !errors.As(err, &refusal) {
 		t.Fatalf("adoption into %s was not refused: %v", options.Target, err)
 	}
-	text := refusal.Message + "\n" + strings.Join(refusal.Detail, "\n") + "\n" + refusal.Remedy
+	text := refusal.Message + "\n" + strings.Join(refusal.Detail, "\n") + "\n" + refusal.Remedy + "\n" + strings.Join(refusal.Argv, " ")
 	if !strings.Contains(text, want) {
 		t.Fatalf("refusal does not say %q:\n%s", want, text)
 	}

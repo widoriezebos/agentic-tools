@@ -156,7 +156,7 @@ func TestIntentRepairAuthority(t *testing.T) {
 	legacy := []byte("# Goals\n")
 	b.writeFile(filepath.Join(state, "plans", "goals.md"), string(legacy))
 	digest := goal.SourceDigestOf(legacy)
-	if _, result, ran := owner("goal", "sync", "--upgrade", "--by", "Wido"); result.Outcome != intentRefused || ran != nil || !strings.Contains(result.Decision, digest) {
+	if _, result, ran := owner("goal", "sync", "--upgrade", "--by", "Wido"); result.Outcome != intentRefused || ran != nil || !strings.Contains(resultLine2(result), digest) {
 		t.Errorf("bare upgrade: %+v %v", result, ran)
 	}
 	if _, result, ran := owner("goal", "sync", "--upgrade", "--by", "Wido", "--source-digest", strings.Repeat("c", 64)); result.Outcome != intentRefused || ran != nil {
@@ -168,7 +168,7 @@ func TestIntentRepairAuthority(t *testing.T) {
 	}
 	// A legacy installation is sent to the public upgrade, never to an
 	// internal command.
-	if _, result, _ := owner("goal", "list"); result.Outcome != intentRefused || !strings.Contains(result.Decision, "metasystem goal sync --upgrade") || strings.Contains(result.Decision, "internal") {
+	if _, result, _ := owner("goal", "list"); result.Outcome != intentRefused || !strings.Contains(resultLine2(result), "metasystem goal sync --upgrade") || strings.Contains(resultLine2(result), "internal") {
 		t.Errorf("legacy ledger remedy: %+v", result)
 	}
 }

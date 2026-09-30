@@ -328,7 +328,7 @@ func TestIntentRepositorySelection(t *testing.T) {
 	}
 	outside := filepath.Join(base, "elsewhere")
 	writeTree(outside, "note.md")
-	if got, problem := selected(outside); problem == nil || problem.code != 2 || problem.Decision == "" || got != "" {
+	if got, problem := selected(outside); problem == nil || problem.code != 2 || len(problem.next) == 0 || got != "" {
 		t.Errorf("a path outside every installation selected %q problem %+v", got, problem)
 	}
 	var stdout, stderr bytes.Buffer

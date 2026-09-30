@@ -41,7 +41,7 @@ func TestFamilyMissesAnswerWithTheFamilysInternalHelp(t *testing.T) {
 func TestInternalMissPointsAtTheInternalList(t *testing.T) {
 	t.Parallel()
 	code, _, stderr := runCLI("internal", "nosuch")
-	if code != 2 || strings.Contains(stderr, "unknown object") || !strings.Contains(stderr, "metasystem internal, with no further word, lists") || !strings.Contains(stderr, `"nosuch"`) {
+	if code != 2 || strings.Contains(stderr, "unknown object") || !strings.Contains(stderr, "run: metasystem help") || !strings.Contains(stderr, "metasystem internal lists the entrypoints") || !strings.Contains(stderr, `"nosuch"`) {
 		t.Fatalf("internal miss: code %d stderr %q", code, stderr)
 	}
 }

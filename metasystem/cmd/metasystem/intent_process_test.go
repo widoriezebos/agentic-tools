@@ -425,8 +425,8 @@ func TestIntentProcessAndAnswerTargets(t *testing.T) {
 		b := newProcessBed(t)
 		b.question = channel.Question{ID: "q-7", Goal: "g", State: "open", Wants: "resume g 1d/10/720m/1/3"}
 		code, result := b.runJSON(b.owners(), "question", "answer", "q-7")
-		if code != 1 || result.Outcome != intentRefused || !strings.Contains(result.Decision, "Reply in this thread with this token verbatim") ||
-			!strings.Contains(result.Decision, b.question.Wants) {
+		if code != 1 || result.Outcome != intentRefused || !strings.Contains(strings.Join(result.Details, "\n"), "Reply in this thread with this token verbatim") ||
+			!strings.Contains(strings.Join(result.Details, "\n"), b.question.Wants) || !strings.Contains(resultLine2(result), "metasystem question show channel:q-7") {
 			t.Fatalf("channel answer = %d %+v", code, result)
 		}
 		b.question.Answer = &channel.Answer{}

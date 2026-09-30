@@ -557,7 +557,7 @@ func (inv *intentInvocation) selectProcessScope() (processScope, int, *intentRes
 		return processScope{}, 0, &intentResult{Outcome: intentRefused, code: 1,
 			Summary: "this installation has no built engine yet, so nothing was done",
 			next:    strings.Fields(hookswitch.BuildCommand), nextReason: "in " + installation + ", builds the engine; then repeat this command",
-			Details: []string{"no engine at " + binary}}
+			Details: []string{"no engine in " + filepath.Join(installation, "bin")}}
 	}
 	if inv.stateRoot, err = inv.owners.resolver.RootForInstallation(installation); err != nil {
 		return processScope{}, 0, &intentResult{Outcome: intentRefused, code: 1, Summary: "this installation's records cannot be found, so nothing was done",

@@ -701,7 +701,7 @@ func TestRootOwnedProcessWithWritableExecutableCannotHideArguments(t *testing.T)
 		snapshots: map[int64][]Snapshot{97: {snapshot}}}
 	proof, err := ProveTerminal(authorityRoot(t), 97, reader, time.Unix(2050, 0))
 	if err == nil || proof.Outcome != OutcomeArgvUnreadable ||
-		!strings.Contains(err.Error(), "protected from group and other writes") {
+		!strings.Contains(err.Error(), "not a protected system file") {
 		t.Fatalf("writable executable admitted withheld arguments: proof=%+v err=%v", proof, err)
 	}
 }

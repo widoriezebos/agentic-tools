@@ -94,6 +94,10 @@ type Record struct {
 // ParseRecord validates one framed object against REG-2 and returns
 // its typed form. A torn marker parses to a Record with Event torn and
 // nothing else (it carries no claim state).
+// generationField is the record field that numbers a supervision run; a
+// defect in it is named by the field, which is what a repair edits.
+const generationField = "generation"
+
 func ParseRecord(raw map[string]any) (*Record, error) {
 	version, ok := number(raw["schemaVersion"])
 	if !ok || version != 1 {
@@ -144,12 +148,12 @@ func ParseRecord(raw map[string]any) (*Record, error) {
 		if record.OwnerPidStartedAt, ok = number(raw["ownerPidStartedAt"]); !ok || record.OwnerPidStartedAt < 1 {
 			return nil, fmt.Errorf("armed %s: invalid ownerPidStartedAt", record.OwnerTag)
 		}
-		if record.Generation, ok = number(raw["generation"]); !ok || record.Generation < 0 {
-			return nil, fmt.Errorf("armed %s: invalid run number", record.OwnerTag)
+		if record.Generation, ok = number(raw[generationField]); !ok || record.Generation < 0 {
+			return nil, fmt.Errorf("armed %s: invalid %s field", record.OwnerTag, generationField)
 		}
 	case EventRelaunched:
-		if record.Generation, ok = number(raw["generation"]); !ok || record.Generation < 1 {
-			return nil, fmt.Errorf("relaunched %s: invalid run number", record.OwnerTag)
+		if record.Generation, ok = number(raw[generationField]); !ok || record.Generation < 1 {
+			return nil, fmt.Errorf("relaunched %s: invalid %s field", record.OwnerTag, generationField)
 		}
 		record.WatcherTag, _ = raw["watcherTag"].(string)
 		record.ReaperTag, _ = raw["reaperTag"].(string)
@@ -165,8 +169,8 @@ func ParseRecord(raw map[string]any) (*Record, error) {
 			return nil, fmt.Errorf("relaunched %s: invalid retiredThrough", record.OwnerTag)
 		}
 	case EventLaunched:
-		if record.Generation, ok = number(raw["generation"]); !ok || record.Generation < 1 {
-			return nil, fmt.Errorf("launched %s: invalid run number", record.OwnerTag)
+		if record.Generation, ok = number(raw[generationField]); !ok || record.Generation < 1 {
+			return nil, fmt.Errorf("launched %s: invalid %s field", record.OwnerTag, generationField)
 		}
 		record.Component, _ = raw["component"].(string)
 		if !Components[record.Component] {

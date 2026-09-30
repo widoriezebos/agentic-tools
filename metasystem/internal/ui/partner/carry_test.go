@@ -200,8 +200,8 @@ func TestANameTheNewPlaceHasTakenRefusesTheCarryAndMovesNothing(t *testing.T) {
 	}
 	testutil.Expect(t, "how many files moved", moved, 0)
 	testutil.Expect(t, "that it says which name", strings.Contains(err.Error(), "seat.json"), true)
-	testutil.Expect(t, "that it says it will not write over it",
-		strings.Contains(err.Error(), "will not write over it"), true)
+	testutil.Expect(t, "that it says it keeps it",
+		strings.Contains(err.Error(), "already exists at") && strings.Contains(err.Error(), "and is kept"), true)
 	// Nothing moved: the whole conversation is still where it was, so the next
 	// open can try again once whatever is in the way has gone.
 	testutil.Expect(t, "how many files are still in the old place", len(names(t, was)), 6)

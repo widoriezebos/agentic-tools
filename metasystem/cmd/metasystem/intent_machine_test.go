@@ -491,7 +491,7 @@ func TestMachineStopRefusals(t *testing.T) {
 	}
 	b.class = lease.ClassDelegate
 	code, result, _ = b.runJSON("machine", "stop", "--all")
-	if code != 1 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "human act at a terminal") {
+	if code != 1 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "an agent started this shell") {
 		t.Fatalf("an agent's machine stop --all = %d %+v", code, result)
 	}
 	for _, checkout := range []string{b.this, b.landing} {

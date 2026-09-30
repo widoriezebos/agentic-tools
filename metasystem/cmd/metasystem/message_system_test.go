@@ -24,6 +24,15 @@ func systemMessageInvocation(t *testing.T, name string, raw ...string) (*intentI
 	return &intentInvocation{command: command, raw: raw, input: input, stdout: &out, stderr: &out}, &out
 }
 
+// resultLine2 is what a result prints as line 2: its command and reason,
+// or its decision.
+func resultLine2(result intentResult) string {
+	if result.Next != nil {
+		return shellCommand(result.Next.Argv) + "  (" + result.Next.Reason + ")"
+	}
+	return result.Decision
+}
+
 func TestMessageRetryIsTheTypedCommand(t *testing.T) {
 	t.Parallel()
 	inv, out := systemMessageInvocation(t, "app status", "--goal", "g1")

@@ -237,10 +237,10 @@ func runIntentGoalSync(inv *intentInvocation) int {
 		scope["entries"] = entries
 		if len(reports) == 0 {
 			return inv.render(intentResult{Outcome: intentUnchanged, Targets: targets, Data: scope,
-				Summary: "no goal change was left unfinished here; nothing to do"})
+				Summary: "no goal change was left unfinished in this whole installation; nothing was recovered"})
 		}
 		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: scope, Details: lines,
-			Summary: fmt.Sprintf("finished %d goal change(s) left unfinished here; changes still running were left alone", len(reports))})
+			Summary: fmt.Sprintf("finished %d unfinished goal change(s) across this whole installation; running ones were left alone", len(reports))})
 	case "publish":
 		goals := inv.input.values["goal"]
 		args := []string{"--root", inv.stateRoot, "--by", inv.input.text("by")}
@@ -439,7 +439,7 @@ func runIntentGoalSyncPreview(inv *intentInvocation) int {
 		}
 	}
 	if err != nil {
-		return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "the goal files could not be compared with the published goals",
+		return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "the goal files could not be compared with their published base",
 			next: []string{"metasystem", "system", "check"}, nextReason: "names what is wrong here", Details: []string{err.Error()}})
 	}
 	lines := make([]string, 0, len(deltas))

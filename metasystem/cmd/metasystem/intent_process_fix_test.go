@@ -106,7 +106,7 @@ func TestIntentProcessCorrections(t *testing.T) {
 			}
 			return code, result
 		}
-		if code, result := run("system", "stop", "--installation", foreign); code != 2 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "does not belong to the checkout") {
+		if code, result := run("system", "stop", "--installation", foreign); code != 2 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "is not part of") {
 			t.Fatalf("foreign installation = %d %+v", code, result)
 		}
 		for _, root := range []string{app, installation, foreign} {
@@ -412,10 +412,10 @@ func TestIntentProcessAdoptedRoots(t *testing.T) {
 	t.Run("a named installation must belong to the selected checkout", func(t *testing.T) {
 		t.Parallel()
 		b := newAdoptedBed(t)
-		if code, result := b.run(b.app, "status"); code != 2 || result.Outcome != intentRefused || !strings.Contains(result.Decision, "--installation DIR") {
+		if code, result := b.run(b.app, "status"); code != 2 || result.Outcome != intentRefused || !strings.Contains(resultLine2(result), "--repo PATH") {
 			t.Fatalf("repository top without an installation = %d %+v", code, result)
 		}
-		if code, result := b.run(b.app, "system", "stop", "--installation", b.foreign); code != 2 || !strings.Contains(result.Summary, "does not belong to the checkout") {
+		if code, result := b.run(b.app, "system", "stop", "--installation", b.foreign); code != 2 || !strings.Contains(result.Summary, "is not part of") {
 			t.Fatalf("foreign installation = %d %+v", code, result)
 		}
 		other := t.TempDir()
@@ -459,7 +459,7 @@ func TestIntentProcessAdoptedRoots(t *testing.T) {
 			}
 		}
 		code, result := b.run(t.TempDir(), "ui", "restart")
-		if code != 2 || result.Outcome != intentRefused || strings.Contains(result.Summary+result.Decision, "--metasystem-root") || !strings.Contains(result.Decision, "--installation DIR") {
+		if code != 2 || result.Outcome != intentRefused || strings.Contains(result.Summary+resultLine2(result), "--metasystem-root") || !strings.Contains(resultLine2(result), "--repo PATH") {
 			t.Fatalf("interface outside a repository = %d %+v", code, result)
 		}
 		if len(seen) != 3 {
