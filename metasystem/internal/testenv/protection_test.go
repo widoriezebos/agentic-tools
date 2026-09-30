@@ -5,8 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"go/ast"
+	"go/build"
+	"go/build/constraint"
 	"go/parser"
 	"go/token"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -24,18 +27,6 @@ const testenvImport = "github.com/widoriezebos/agentic-tools/metasystem/internal
 // Every test package is protected. Keep this list explicit and empty unless a
 // package cannot use the shared boundary and has no subprocess path.
 var testMainExemptions = map[string]string{}
-
-var goOSFilenameSuffixes = map[string]bool{
-	"aix": true, "android": true, "darwin": true, "dragonfly": true, "freebsd": true,
-	"illumos": true, "ios": true, "js": true, "linux": true, "netbsd": true,
-	"openbsd": true, "plan9": true, "solaris": true, "wasip1": true, "windows": true,
-}
-
-var goArchFilenameSuffixes = map[string]bool{
-	"386": true, "amd64": true, "arm": true, "arm64": true, "loong64": true,
-	"mips": true, "mips64": true, "mips64le": true, "mipsle": true, "ppc64": true,
-	"ppc64le": true, "riscv64": true, "s390x": true, "wasm": true,
-}
 
 type packageTests struct {
 	files []testFile
@@ -691,27 +682,54 @@ func (group *packageTests) sharedMainProblem(localTestenv bool) string {
 }
 
 func testMainConstraint(file testFile) string {
+	// Only a line comment before the package clause is a build constraint
+	// (go/build/constraint); the same text anywhere else is plain comment.
 	for _, group := range file.syntax.Comments {
+		if group.End() >= file.syntax.Package {
+			break
+		}
 		for _, comment := range group.List {
-			fields := strings.Fields(comment.Text)
-			if len(fields) > 0 && fields[0] == "//go:build" {
+			if constraint.IsGoBuild(comment.Text) {
 				return "//go:build line"
+			}
+			if constraint.IsPlusBuild(comment.Text) {
+				return "// +build line"
 			}
 		}
 	}
-	base := strings.TrimSuffix(file.name, "_test.go")
-	parts := strings.Split(base, "_")
-	if len(parts) < 2 {
+	return filenameConstraint(file.name)
+}
+
+// filenameConstraint names the GOOS or GOARCH suffix that constrains a Go
+// file name. The known names are go/build's own (every port the toolchain
+// ships and the historical names it still treats as constraints), read
+// through build.Context.MatchFile: under a context with no GOOS and no
+// GOARCH every known suffix excludes the file and no other suffix does.
+func filenameConstraint(name string) string {
+	if goFileNameMatches(build.Context{}, name) {
 		return ""
 	}
-	suffix := parts[len(parts)-1]
-	if goOSFilenameSuffixes[suffix] {
+	base := strings.TrimSuffix(strings.TrimSuffix(name, ".go"), "_test")
+	suffix := base[strings.LastIndex(base, "_")+1:]
+	if knownGOOS(suffix) {
 		return "GOOS filename suffix"
 	}
-	if goArchFilenameSuffixes[suffix] {
-		return "GOARCH filename suffix"
+	return "GOARCH filename suffix"
+}
+
+// knownGOOS reports whether go/build knows name as a GOOS: a name_amd64
+// pair is read as GOOS_GOARCH only when name is a known GOOS, and then a
+// context whose GOOS is empty excludes it; otherwise amd64 alone matches.
+func knownGOOS(name string) bool {
+	return !goFileNameMatches(build.Context{GOARCH: "amd64"}, "x_"+name+"_amd64.go")
+}
+
+func goFileNameMatches(context build.Context, name string) bool {
+	context.OpenFile = func(string) (io.ReadCloser, error) {
+		return io.NopCloser(strings.NewReader("package p\n")), nil
 	}
-	return ""
+	matched, err := context.MatchFile(".", name)
+	return err == nil && matched
 }
 
 func importedAliases(file *ast.File, importPath, defaultName string) map[string]bool {
