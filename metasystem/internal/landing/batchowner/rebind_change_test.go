@@ -6,11 +6,14 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 )
 
 const rebindBatchID = "01j5x00000000000000000rb01"
@@ -90,5 +93,71 @@ func TestRebindBatchClaimsSkipsChangeMembersWithTheRealLedger(t *testing.T) {
 		return nil
 	}); err != nil || len(handed) != 0 {
 		t.Fatalf("change-only rebind handovers=%+v error=%v", handed, err)
+	}
+}
+
+type readableEmptyBoard struct{}
+
+func (readableEmptyBoard) Board(time.Time) batch.BoardPicture { return batch.BoardPicture{Readable: true} }
+
+// The owner's tick on a batch of one change, with the production rebind
+// reading the real ledger, gets past the rebind to a start decision the
+// record carries; before the guard, every tick failed at the rebind and the
+// batch stayed collecting with no decision.
+func TestOwnerTickDecidesAChangeOnlyBatchThroughTheRealRebind(t *testing.T) {
+	t.Parallel()
+	root, tree := rebindLedgerTree(t, "goal-a")
+	now := time.Date(2030, 1, 2, 3, 4, 5, 0, time.UTC)
+	change := batch.NewChangeUnit(batch.ChangeMember{Commit: strings.Repeat("6", 40), Parent: strings.Repeat("4", 40), AskedBy: "seat+seat-lineage", Subject: "a change"},
+		root, "seat", "seat-lineage", []string{"a.go"}, nil)
+	change.State = batch.UnitJoined
+	store := batch.NewStore(root, nil)
+	if err := store.Create(batch.Record{Schema: 1, BatchID: rebindBatchID, State: batch.StateOpen, Units: []batch.Unit{change},
+		History: []batch.HistoryEntry{{At: now.Add(-time.Hour).Format(time.RFC3339Nano), Verb: "join", Detail: change.GoalID + " joined"}}}); err != nil {
+		t.Fatal(err)
+	}
+	settings, err := config.NewBatchLanding(root, time.Minute, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	var reports []string
+	owner, err := batch.NewOwner(batch.OwnerOptions{Store: store, Settings: settings, Actor: LandingOwnerLineage, PID: int64(os.Getpid()),
+		LockDir: filepath.Join(root, "owner-lock"), QueueDir: filepath.Join(root, "owner-queue"), Now: func() time.Time { return now },
+		FetchTree: func() (string, error) { return tree, nil },
+		ReadClaim: func(string, string, string, string) (batch.Claim, error) { return batch.Claim{}, os.ErrNotExist },
+		Rebind: func(batchID, tree string) error {
+			return RebindBatchClaims(root, batchID, tree, "landing-machine", 1, batch.ReadReturnLedgerGoal, func(request ownercall.HandoverRequest) error {
+				t.Errorf("a change-only batch handed over %+v", request)
+				return nil
+			})
+		},
+		Mint: func() (string, error) { return "opid", nil }, LogRed: func(string, batch.TrunkRedRecordOutcome) {},
+		BaseCommit: func(string) (string, error) { return "commit", nil },
+		RunDiagnostic: func(string, batch.DiagnosticRequest, batch.Claim) (batch.DiagnosticResult, error) {
+			return batch.DiagnosticResult{}, nil
+		},
+		DescendsFrom: func(string, string) (bool, error) { return true, nil },
+		Sample:       func() proofrun.LoadSample { return proofrun.LoadSample{OverlapKnown: true} },
+		Admission:    func(proofrun.LoadSample) proofrun.AdmissionCap { return proofrun.AdmissionCap{Max: 8} },
+		Launch:       func(batch.Dispatch) error { return nil },
+		ProbeRun:     func(string, batch.Record) (batch.RunProbe, error) { return batch.RunProbe{State: batch.RunLive}, nil },
+		After:        func(time.Duration) <-chan time.Time { return make(chan time.Time) },
+		Report:       func(id string, err error) { reports = append(reports, id+": "+err.Error()) },
+		Pipeline:     readableEmptyBoard{},
+		Early: batch.EarlySeams{Cheap: func(batch.Record) (batch.EarlyResult, error) { return batch.EarlyResult{}, nil },
+			Prove:  func(batch.Record) (batch.EarlyResult, error) { return batch.EarlyResult{}, nil },
+			Budget: func(batch.Record) (bool, string) { return false, "quiet" }}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := owner.Tick(rebindBatchID); err != nil {
+		t.Fatalf("tick of a change-only batch failed: %v (reports %v)", err, reports)
+	}
+	record, err := store.Load(rebindBatchID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.StartReason == "" && record.Wait == nil {
+		t.Fatalf("change-only batch carries no start decision: state=%s history=%+v", record.State, record.History)
 	}
 }
