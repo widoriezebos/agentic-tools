@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -296,5 +297,38 @@ func TestAGrantAnsweredActIsCheckedAtItsEffectAndRefusalsAreLogged(t *testing.T)
 	data, _ := os.ReadFile(attorneyLogPath(checkout))
 	if !strings.Contains(string(data), "refused grant=01M-missing by=Wido act=\"grant add\"") {
 		t.Fatalf("the log lacks the refusal: %q", data)
+	}
+}
+
+// TestGrantStatusLineReadsTheLedgerWhereGrantListDoes (F2): status names
+// the repository top as its path while the ledger is read relative to the
+// installation (the state root), as grant list reads it. A template
+// checkout's top has no plans/goals of its own, so a read there finds no
+// root record; the status line must still show the live grant grant list
+// shows.
+func TestGrantStatusLineReadsTheLedgerWhereGrantListDoes(t *testing.T) {
+	t.Parallel()
+	b := newGrantEverythingBed(t)
+	code, result := b.runJSON(b.owners(), "grant", "add", "--acts", "everything", "--for", "24h")
+	if code != 0 || result.Outcome != intentConfirmed || len(result.Targets) != 1 {
+		t.Fatalf("grant everything = %d %+v", code, result)
+	}
+	id := result.Targets[0].ID
+	code, listed, _ := b.run(b.owners(), "grant", "list")
+	if code != 0 || !strings.Contains(listed, id) {
+		t.Fatalf("grant list = %d %q", code, listed)
+	}
+	top := filepath.Dir(b.root())
+	var read []string
+	inv := &intentInvocation{owners: b.owners(), stateRoot: b.root()}
+	inv.owners.attorney.entries = func(root string) ([]goal.PowerOfAttorneyEntry, error) {
+		read = append(read, root)
+		if root != b.root() {
+			return nil, errors.New("no root record at the repository top")
+		}
+		return b.rootRecord().PowerOfAttorney, nil
+	}
+	if line := inv.attorneyStatusLine(top); !strings.Contains(line, "(grant "+id+")") {
+		t.Fatalf("status line from the repository top = %q (ledger read at %v); grant list shows %q", line, read, listed)
 	}
 }
