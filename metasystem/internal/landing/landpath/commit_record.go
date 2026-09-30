@@ -32,7 +32,7 @@ func (b *boundary) refuseAgent(decided decision) int {
 			"add them to internal/pathclass/path-classes.txt, rebuild with go run ./cmd/devgate build, then repeat this command"
 	case "ledger-path-not-goal-verb":
 		reason, then = "the change edits goal files, which change only through goal commands, so nothing was committed",
-			"unstage the goal files and make that change with a metasystem goal command"
+			"unstage the goal files and make that change through the goal commands (goal edit, say)"
 	case "runtime-path-refused":
 		reason, then = "the change includes files the running system writes, which are never landed", "unstage them, then repeat this command"
 	case "exact-revert-record-refused":

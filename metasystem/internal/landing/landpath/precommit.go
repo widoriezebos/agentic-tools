@@ -146,7 +146,7 @@ func guard(owners GuardOwners, root, workTree string, stderr io.Writer, notices 
 	}
 	if len(ledger) > 0 {
 		fmt.Fprintf(stderr, "goal files change only through goal commands, and this commit edits %s\n", firstPath(ledger))
-		fmt.Fprintf(stderr, "run: git restore --staged %s  (then make the change with a metasystem goal command)\n", strings.Join(quoted(ledger), " "))
+		fmt.Fprintf(stderr, "run: git restore --staged %s  (then make the change through the goal commands)\n", strings.Join(quoted(ledger), " "))
 		return 1
 	}
 	var backups []string
