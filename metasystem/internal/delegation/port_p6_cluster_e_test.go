@@ -40,7 +40,7 @@ func TestFollowUpRefusesARunningFreshRound(t *testing.T) {
 	message := b.writeFile("follow.md", "Working Mode: design\n\nAgain.\n")
 	result := b.run("follow-up", "--job", "active-turn", "--message", message)
 	requireExit(t, result, 1, b.stderr.String())
-	if !strings.Contains(b.stderr.String(), "use a fresh dispatch after pending, running, process-lost") {
+	if !strings.Contains(b.stderr.String(), "follow-up refused: a follow-up does not continue the newest round") {
 		t.Fatalf("stderr %q", b.stderr.String())
 	}
 	if exists(b.recordPath("active-turn-r2")) || len(b.calls("adapter.Launch")) != 0 {

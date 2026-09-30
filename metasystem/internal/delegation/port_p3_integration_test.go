@@ -387,8 +387,7 @@ func TestDispatchIntegrationAWritableReviewRoleIsQuarantined(t *testing.T) {
 
 	refused := b.dispatchAs(criticArgv(outputs, "review-live.md", brief, "review-live-write", "--workspace", b.root)...)
 	requireExit(t, refused, 2, b.stderr.String())
-	if !strings.Contains(b.stderr.String(), "design-critic live-checkout write refusal") ||
-		!strings.Contains(b.stderr.String(), "incident class: critic-workspace-custody") || !strings.Contains(b.stderr.String(), "pass --worktree") {
+	if !strings.Contains(b.stderr.String(), "design-critic refused: a review role could write in the coordinator's checkout") || !strings.Contains(b.stderr.String(), "pass --worktree") {
 		t.Fatalf("stderr %q", b.stderr.String())
 	}
 	requireNothingPublished(t, b, "review-live-write")

@@ -43,8 +43,8 @@ func TestP7ModelOverrideWithoutTiersRefusesBeforeAnyJob(t *testing.T) {
 	requireExit(t, result, 1, b.stderr.String())
 	stderr := b.stderr.String()
 	for _, want := range []string{
-		"dispatch escalation refused: roster resolves to fake:fake-model, requested pair is fake:fake-escalated, and model tiers are absent.",
-		"Configure model.tier.* to rank both pairs",
+		"dispatch escalation refused: fake:fake-escalated is requested, the roster gives fake:fake-model, and no model tiers rank them",
+		"configure model.tier.* to rank both",
 		"add fake:fake-escalated to a signed envelope.dispatch-allow mission contract",
 		"--approve-escalation",
 	} {
@@ -72,7 +72,7 @@ func TestP7ApproveEscalationRequiresAnInteractiveTTY(t *testing.T) {
 			Stdin: strings.NewReader("APPROVE Someone\n"), StdinTTY: tty.stdin, StderrTTY: tty.stderr,
 		}, []string{"dispatch", "--role", "implementer", "--brief", brief, "--model", "fake-escalated", "--approve-escalation", "--job-id", "escalation-non-tty"})
 		requireExit(t, result, 1, b.stderr.String())
-		if !strings.Contains(b.stderr.String(), "--approve-escalation requires an interactive TTY") {
+		if !strings.Contains(b.stderr.String(), "--approve-escalation needs an interactive terminal") {
 			t.Fatalf("tty %+v: stderr %q", tty, b.stderr.String())
 		}
 		b.stderr.Reset()
@@ -127,7 +127,7 @@ func TestP7ApprovalFlagWithoutAnEscalationIsRefused(t *testing.T) {
 	brief := b.brief("brief.md", "implement", "Do the thing.")
 	result := b.runTTY("APPROVE Someone\n", "dispatch", "--role", "implementer", "--brief", brief, "--approve-escalation", "--job-id", "needless")
 	requireExit(t, result, 1, b.stderr.String())
-	if !strings.Contains(b.stderr.String(), "--approve-escalation is unnecessary") {
+	if !strings.Contains(b.stderr.String(), "--approve-escalation is not needed") {
 		t.Fatalf("stderr %q", b.stderr.String())
 	}
 	b.requireNoJobRecords()
@@ -155,17 +155,17 @@ func TestP7MissionContextRefusals(t *testing.T) {
 			e.MissionID, e.MissionLease = "mission-alpha", lease
 			return e
 		}, []string{"--job-id", "mission-ambiguous", "--mission", "another"},
-			"ambiguous mission context: --mission and METASYSTEM_MISSION_ID disagree"},
+			"--mission names another mission than the one this process runs in"},
 		{"half an inherited context", func(e delegation.Env) delegation.Env {
 			e.MissionID = "mission-alpha"
 			return e
 		}, []string{"--job-id", "mission-half"},
-			"ambiguous inherited mission context: both METASYSTEM_MISSION_ID and METASYSTEM_MISSION_LEASE are required"},
+			"the inherited mission context is incomplete"},
 		{"a turn without a mission", func(e delegation.Env) delegation.Env {
 			e.MissionTurn = "t1"
 			return e
 		}, []string{"--job-id", "mission-turn-only"},
-			"ambiguous inherited mission context: METASYSTEM_MISSION_TURN requires a mission"},
+			"the inherited mission context names a runner turn but no mission"},
 	} {
 		argv := append([]string{"dispatch", "--role", "implementer", "--brief", brief}, tc.args...)
 		result := b.runEnv(tc.env(base), argv...)

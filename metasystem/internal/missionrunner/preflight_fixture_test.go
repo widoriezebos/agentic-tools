@@ -616,7 +616,7 @@ func TestWallPreflightPreconditions(t *testing.T) {
 		observed := b.admission(b.source.signed, true)
 		err := b.engine.armAndPreflight("start")
 		if err == nil || !strings.Contains(err.Error(), "initial baseline is dirty") ||
-			!strings.Contains(err.Error(), "wall.sealed-baseline="+observed) {
+			!strings.Contains(err.Error(), "wall.sealed-baseline to "+observed) {
 			t.Fatalf("unsealed dirt must refuse and name its observed tree %s: %v", observed, err)
 		}
 		b.done()
@@ -631,7 +631,7 @@ func TestWallPreflightPreconditions(t *testing.T) {
 		if err == nil {
 			t.Fatal("the dirty start must refuse before sealing")
 		}
-		parts := strings.Split(err.Error(), "wall.sealed-baseline=")
+		parts := strings.Split(err.Error(), "wall.sealed-baseline to ")
 		if len(parts) != 2 {
 			t.Fatalf("the refusal must name the sealable tree: %v", err)
 		}
@@ -917,10 +917,10 @@ func TestNonRegularStatePathFreezesTheMission(t *testing.T) {
 		t.Fatal(err)
 	}
 	fencesBefore := readTestDoc(t, e.fencesPath())
-	if _, _, _, err := e.initializeState(b.lease); err == nil || !strings.Contains(err.Error(), "non-regular object") {
+	if _, _, _, err := e.initializeState(b.lease); err == nil || !strings.Contains(err.Error(), "is not a regular file") {
 		t.Fatalf("start must refuse the shape by name: %v", err)
 	}
-	if _, _, _, err := e.resumeState(); err == nil || !strings.Contains(err.Error(), "non-regular object") {
+	if _, _, _, err := e.resumeState(); err == nil || !strings.Contains(err.Error(), "is not a regular file") {
 		t.Fatalf("resume must refuse the shape by name: %v", err)
 	}
 	if !pathExists(e.approvedContractPath()) {
@@ -942,7 +942,7 @@ func TestNonRegularStatePathFreezesTheMission(t *testing.T) {
 	if err := os.Symlink(filepath.Join(t.TempDir(), "never-exists.json"), statePath); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, _, err := e.resumeState(); err == nil || !strings.Contains(err.Error(), "non-regular object") {
+	if _, _, _, err := e.resumeState(); err == nil || !strings.Contains(err.Error(), "is not a regular file") {
 		t.Fatalf("resume must name a dangling symlink, not report absence: %v", err)
 	}
 	if err := os.Remove(statePath); err != nil {
@@ -1046,7 +1046,7 @@ func TestLostStateFreezesTheBornMission(t *testing.T) {
 	// the id — a lived mission's refs are never a rebirth's to drop.
 	writeText(t, ledgerPath, "# Mission Ledger\n")
 	if _, _, _, err := engine.initializeState(leasePath); err == nil ||
-		!strings.Contains(err.Error(), "anchor namespace") {
+		!strings.Contains(err.Error(), "anchor refs already exist") {
 		t.Fatalf("surviving anchors alone must refuse rebirth: %v", err)
 	}
 	if anchors := missionRefs(); !maps.Equal(anchors, bornAnchors) {
@@ -1107,7 +1107,7 @@ func TestSealedBaselineBirthsAndRuns(t *testing.T) {
 	if err == nil {
 		t.Fatal("the dirty start must refuse before sealing")
 	}
-	parts := strings.Split(err.Error(), "wall.sealed-baseline=")
+	parts := strings.Split(err.Error(), "wall.sealed-baseline to ")
 	if len(parts) != 2 {
 		t.Fatalf("the refusal must name the sealable tree: %v", err)
 	}

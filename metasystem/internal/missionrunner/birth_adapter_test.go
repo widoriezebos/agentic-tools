@@ -20,7 +20,7 @@ func TestGitAdapterNonRegularStatePublicPreflight(t *testing.T) {
 	}
 	fencesBefore := readTestDoc(t, engine.fencesPath())
 	if err := engine.armAndPreflight("start"); err == nil ||
-		!strings.Contains(err.Error(), "non-regular object") {
+		!strings.Contains(err.Error(), "is not a regular file") {
 		t.Fatalf("the pin ladder must refuse the shape by name: %v", err)
 	}
 	if !pathExists(engine.approvedContractPath()) {

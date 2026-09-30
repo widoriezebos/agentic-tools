@@ -468,5 +468,5 @@ func fenceRefusal(root string, record stopfence.Record) error {
 }
 
 func rearmedCreationError(root, thing string) error {
-	return failf(3, "the checkout %s was stopped and armed again while %s started; %s has been ended; the caller may retry", root, thing, thing)
+	return failf(3, "the checkout %s was stopped and armed again while %s started, so %s was ended\nnothing is left behind; run the same command again", root, thing, thing)
 }

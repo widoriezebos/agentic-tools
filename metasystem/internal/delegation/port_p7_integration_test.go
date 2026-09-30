@@ -212,7 +212,7 @@ func TestP7MissionScopedDispatchIntegration(t *testing.T) {
 	// A mission dispatch outside a runner turn, or without a stream, refuses.
 	result = b.runEnv(b.dispatchEnv("fresh"), dispatchArgs("mission-no-turn", "--mission", "mission-alpha", "--stream", "main")...)
 	requireExit(t, result, 2, b.stderr.String())
-	if !strings.Contains(b.stderr.String(), "mission dispatch requires a runner turn") {
+	if !strings.Contains(b.stderr.String(), "mission dispatch needs a mission runner turn") {
 		t.Fatalf("stderr %q", b.stderr.String())
 	}
 

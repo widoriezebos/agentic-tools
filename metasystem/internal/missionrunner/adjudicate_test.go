@@ -117,7 +117,7 @@ func TestValidateReturnIdentity(t *testing.T) {
 			// names the absent witness.
 			"claimed session with no witness",
 			func(doc map[string]any) { doc["identity"].(map[string]any)["sessionId"] = "sess-1" },
-			"neither the announced session nor any harness-observed session",
+			"neither the announced one nor one the harness saw",
 		},
 	}
 	for _, tc := range cases {

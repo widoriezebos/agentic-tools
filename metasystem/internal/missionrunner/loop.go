@@ -1904,7 +1904,7 @@ func (e *Engine) cycleReserveAndBuildTurn(c *cycleContext) (map[string]any, bool
 		// that never should reach reservation: adopting the current
 		// workspace as the expected tree here would silently redefine
 		// the baseline the wall exists to pin.
-		return nil, true, failf(3, "mission state records no initial baseline and no expected-tree event; re-provision the mission under the wall's preflight")
+		return nil, true, failf(3, "mission state records no initial baseline and no expected-tree event\nre-provision the mission under the wall's preflight")
 	}
 	if expectedNow != preTree {
 		violation := fmt.Sprintf("workspace drifted between turns: the filtered projection %s does not equal the expected tree %s", preTree, expectedNow)

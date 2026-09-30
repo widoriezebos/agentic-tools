@@ -159,7 +159,7 @@ func TestCovenantPreflightRefusesUndeclaredThreshold(t *testing.T) {
 		"wall.guardrails":        "gate.sh, goldens/",
 	}
 	if err := engine.covenantPreflight(extra); err == nil ||
-		!strings.Contains(err.Error(), "undeclared threshold") {
+		!strings.Contains(err.Error(), "a threshold the covenant does not declare") {
 		t.Fatalf("an undeclared threshold metric must refuse: %v", err)
 	}
 }

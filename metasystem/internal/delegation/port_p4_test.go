@@ -53,7 +53,7 @@ func TestP4FollowUpRefusesAPendingOrCancelledNewestRound(t *testing.T) {
 		message := b.writeFile("follow.md", "follow up\n")
 		result := b.run("follow-up", "--job", job, "--message", message)
 		requireExit(t, result, 1, b.stderr.String())
-		if !strings.Contains(b.stderr.String(), "use a fresh dispatch after pending, running, process-lost") {
+		if !strings.Contains(b.stderr.String(), "follow-up refused: a follow-up does not continue the newest round") {
 			t.Fatalf("%s: stderr %q", status, b.stderr.String())
 		}
 		if b.exists("artifacts/agents/jobs/"+job+"-r2.json") || b.exists("artifacts/agents/"+job+"/rounds/2") || len(b.calls("adapter.Launch")) != 0 {
@@ -76,7 +76,7 @@ func TestP4FollowUpAfterACapRefusesWhenTheWorktreeIsGone(t *testing.T) {
 	message := b.writeFile("follow.md", "follow up\n")
 	result := b.run("follow-up", "--job", "capped-gone", "--message", message)
 	requireExit(t, result, 1, b.stderr.String())
-	want := fmt.Sprintf("follow-up after a cap needs the chain's worktree %s, which is gone; nothing is left to continue, use a fresh dispatch", gone)
+	want := fmt.Sprintf("follow-up refused: the chain's worktree %s is gone, so nothing is left to continue\nuse a fresh dispatch", gone)
 	if !strings.Contains(b.stderr.String(), want) {
 		t.Fatalf("stderr %q", b.stderr.String())
 	}
