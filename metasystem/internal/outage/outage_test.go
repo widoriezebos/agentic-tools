@@ -192,6 +192,7 @@ func TestEvidenceClipAndTail(t *testing.T) {
 // as provider-limit; the same framing rules keep local prose and numbers
 // out; and a result file still classifies only when it declares is_error.
 func TestUsageLimitFeedsTheOutageMark(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		line  string
 		class string

@@ -55,6 +55,9 @@ type machineBed struct {
 	extra     []string
 	fleetErr  error
 	fleetEdit func(*seat.Report)
+	// worktrees are the further worktrees Git registers for a checkout;
+	// every checkout lists itself first, as git worktree list does.
+	worktrees map[string][]string
 }
 
 // machineItem is one fixture process: live until its family stops it.
@@ -104,7 +107,7 @@ func newMachineBed(t *testing.T) *machineBed {
 	t.Helper()
 	base := t.TempDir()
 	b := &machineBed{t: t, class: lease.ClassHuman, home: filepath.Join(base, "home"), launchDir: filepath.Join(base, "launches"),
-		dead: map[int64]bool{}, laneAlive: true, stopped: map[string]*int{}}
+		dead: map[int64]bool{}, laneAlive: true, stopped: map[string]*int{}, worktrees: map[string][]string{}}
 	for _, dir := range []string{b.home, b.launchDir} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatal(err)
@@ -186,6 +189,23 @@ func (b *machineBed) top(path string) (string, error) {
 	return "", fmt.Errorf("fatal: not a git repository: %s", path)
 }
 
+// git answers git worktree list --porcelain for each fixture checkout: the
+// checkout itself, then the worktrees the test registered; no Git runs.
+func (b *machineBed) git(dir string, args ...string) ([]byte, error) {
+	if strings.Join(args, " ") != "worktree list --porcelain" {
+		return nil, fmt.Errorf("the machine bed runs no git %s", strings.Join(args, " "))
+	}
+	top, err := b.top(dir)
+	if err != nil {
+		return nil, err
+	}
+	blocks := []string{"worktree " + top + "\nHEAD 0123456789abcdef0123456789abcdef01234567\nbranch refs/heads/main\n"}
+	for _, worktree := range b.worktrees[top] {
+		blocks = append(blocks, "worktree "+worktree+"\nHEAD 0123456789abcdef0123456789abcdef01234567\nbranch refs/heads/goal/"+filepath.Base(worktree)+"\n")
+	}
+	return []byte(strings.Join(blocks, "\n")), nil
+}
+
 type machineProber struct{ dead map[int64]bool }
 
 func (p machineProber) Probe(pid int64) (identity.Exact, identity.Liveness, error) {
@@ -262,6 +282,7 @@ func (b *machineBed) owners() intentOwners {
 			records: func(string) ([]batch.Record, error) { return nil, nil },
 			now:     func() time.Time { return machineBedNow },
 		},
+		work: intentWorkOwners{git: b.git},
 		machines: machineOwners{
 			registryPath: func() (string, error) {
 				if b.registryUnreadable {
