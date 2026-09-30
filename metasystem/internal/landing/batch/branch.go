@@ -92,9 +92,9 @@ func groupBranchBuilds(status goalbranch.Status, count int) []BranchBuild {
 	return groups
 }
 
-func requireCriticRootSource(unit string, attestation goalbranch.Attestation) error {
+func requireCriticRootSource(goalID, unit string, attestation goalbranch.Attestation) error {
 	if attestation.Source.Kind != "critic-root" {
-		return refuseBatch("BATCH_JOIN_UNREAD", "build "+unit+" was read outside a critic-root job")
+		return refuseBatch("BATCH_JOIN_UNREAD", "build "+unit+" of goal "+goalID+" was not read by its review; metasystem work review "+goalID+" reads it")
 	}
 	return nil
 }
@@ -132,7 +132,7 @@ func readGoalBranchWithReaders(request BranchReadRequest, readers branchReaders)
 	count := status.Prefix
 	if request.Last {
 		if count == 0 || count != len(status.Units) {
-			return BranchMember{}, refuseBatch("BATCH_JOIN_UNREAD", "goal "+request.GoalID+" is not read clean through its branch tip")
+			return BranchMember{}, refuseBatch("BATCH_JOIN_UNREAD", "goal "+request.GoalID+" is not reviewed up to its branch tip; metasystem work review "+request.GoalID+" reviews the rest")
 		}
 	} else {
 		count = 0
@@ -143,7 +143,7 @@ func readGoalBranchWithReaders(request BranchReadRequest, readers branchReaders)
 			}
 		}
 		if count == 0 {
-			return BranchMember{}, refuseBatch("BATCH_JOIN_UNREAD", "through commit "+request.Through+" is outside the read-clean prefix")
+			return BranchMember{}, refuseBatch("BATCH_JOIN_UNREAD", "commit "+request.Through+" is past goal "+request.GoalID+"'s reviewed builds; metasystem work review "+request.GoalID+" reviews it")
 		}
 	}
 	member := BranchMember{GoalID: request.GoalID, Tip: request.BranchTip, Last: request.Last, Builds: groupBranchBuilds(status, count)}
@@ -152,9 +152,9 @@ func readGoalBranchWithReaders(request BranchReadRequest, readers branchReaders)
 		unit := status.Units[index]
 		attestation, err := readers.attestation(request.Repo, request.BranchTip, request.EndpointTip, request.GoalID, unit.Unit, build.Commit)
 		if err != nil {
-			return BranchMember{}, refuseBatch("BATCH_JOIN_UNREAD", "build "+unit.Unit+" has no valid branch attestation: "+err.Error())
+			return BranchMember{}, refuseBatch("BATCH_JOIN_UNREAD", "build "+unit.Unit+" of goal "+request.GoalID+" has no valid review record ("+err.Error()+"); metasystem work review "+request.GoalID+" reviews it")
 		}
-		if err := requireCriticRootSource(unit.Unit, attestation); err != nil {
+		if err := requireCriticRootSource(request.GoalID, unit.Unit, attestation); err != nil {
 			return BranchMember{}, err
 		}
 		build.Attestation = attestation

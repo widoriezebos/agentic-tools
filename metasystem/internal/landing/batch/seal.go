@@ -88,7 +88,12 @@ func SealWithForecast(store Store, id, baseTree, owner string, at time.Time, pla
 type SealChangedDuringGateRefusal struct{ BatchID string }
 
 func (refusal *SealChangedDuringGateRefusal) Error() string {
-	return fmt.Sprintf("BATCH_SEAL_CHANGED_DURING_GATE: batch %s changed during seal preparation", refusal.BatchID)
+	return fmt.Sprintf("batch %s changed while it was being closed; nothing to do, its owner closes it again", refusal.BatchID)
+}
+
+// RefusalCode is the registered code, for --json and the register.
+func (refusal *SealChangedDuringGateRefusal) RefusalCode() string {
+	return "BATCH_SEAL_CHANGED_DURING_GATE"
 }
 
 type sealMemberRevision struct {

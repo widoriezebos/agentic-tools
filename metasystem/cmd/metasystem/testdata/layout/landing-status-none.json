@@ -1,0 +1,31 @@
+exit 0
+--
+{
+  "schemaVersion": 1,
+  "verb": "landing status",
+  "targets": [],
+  "outcome": "confirmed",
+  "summary": "no landing lane is registered on this computer; metasystem landing set registers one",
+  "data": {
+    "root": null,
+    "registered_by": null,
+    "registered_at": null,
+    "owner": {
+      "state": "not-started",
+      "pid": null,
+      "since": null,
+      "restarts": 0,
+      "last_exit": null,
+      "stopped_by": null,
+      "retry_hint": null,
+      "last_tick_error": null,
+      "last_tick_problem": null
+    },
+    "batch": null,
+    "next": null,
+    "spend": null,
+    "summary": "no landing lane is registered on this computer; metasystem landing set registers one"
+  }
+}
+
+--

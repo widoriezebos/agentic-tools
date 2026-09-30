@@ -359,7 +359,7 @@ func TestBatchProofDurableUnionRefusalSkipsSecondRearm(t *testing.T) {
 			return proofrun.TestResult{}, nil
 		},
 	}
-	if err := batchowner.ExecuteBatchProof(root, batchID, "owner", "full", "token", proofrun.LoadSample{}, time.Unix(1, 0), deps); err == nil || !strings.Contains(err.Error(), "BATCH_PROOF_UNION_UNCOVERED") {
+	if err := batchowner.ExecuteBatchProof(root, batchID, "owner", "full", "token", proofrun.LoadSample{}, time.Unix(1, 0), deps); err == nil || !strings.Contains(err.Error(), "the tests chosen for the batch miss some of its changes") {
 		t.Fatalf("first union refusal=%v", err)
 	}
 	firstRearms, firstPlans := rearms, plans
@@ -458,7 +458,7 @@ func TestBatchProofRefusalTransitions(t *testing.T) {
 				refusals++
 			}
 		}
-		if err == nil || !strings.Contains(err.Error(), "BATCH_PROOF_UNION_UNCOVERED") || loadErr != nil || launches != 0 ||
+		if err == nil || !strings.Contains(err.Error(), "the tests chosen for the batch miss some of its changes") || loadErr != nil || launches != 0 ||
 			record.Proof == nil || record.Proof.Status != "union-uncovered" || refusals != 1 {
 			t.Fatalf("error=%v load=%v launches=%d refusals=%d record=%+v", err, loadErr, launches, refusals, record)
 		}

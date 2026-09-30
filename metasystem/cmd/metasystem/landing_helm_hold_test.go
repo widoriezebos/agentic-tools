@@ -57,7 +57,7 @@ func TestLandingStatusNamesABatchHeldForASeatAtTheHelm(t *testing.T) {
 		}
 	}
 	code, stdout, stderr := bed.run(t, "landing", "status")
-	if code != 0 || !strings.Contains(stdout, "batch 4gr18 held") || !strings.Contains(stdout, "metasystem helm return") {
+	if code != 0 || !strings.Contains(stdout, "held   batch 4gr18") || !strings.Contains(stdout, "metasystem helm return") {
 		t.Fatalf("landing status = %d %q %q", code, stdout, stderr)
 	}
 	inv := &intentInvocation{owners: bed.owners()}

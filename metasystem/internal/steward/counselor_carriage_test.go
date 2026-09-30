@@ -145,7 +145,7 @@ func TestCounselorRenderFailureSurfacesCounselorNamedHealth(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	healthLine := "HEALTH unhealthy — counselor=dead"
+	healthLine := "HEALTH unhealthy — the counselor's brief for"
 	if !bytes.Contains(digest, []byte(healthLine)) || !bytes.Contains(digest, []byte("source: counselor-brief-health")) {
 		t.Fatalf("render failure did not reach the counselor-named digest health line: %s", digest)
 	}

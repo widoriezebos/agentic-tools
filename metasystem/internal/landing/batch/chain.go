@@ -38,66 +38,66 @@ func readJob(root, id string) (dispatch.JobRecord, error) {
 func readCertifiedChain(root, goalID, chainID string, goalRevision uint64) (certifiedChain, error) {
 	implementation, err := readJob(root, chainID)
 	if os.IsNotExist(err) {
-		return certifiedChain{}, refuseBatch("BATCH_JOIN_CHAIN_REQUIRED", "join requires a delegate --role implementer chain with a closed code-critic chain")
+		return certifiedChain{}, refuseBatch("BATCH_JOIN_CHAIN_REQUIRED", "goal "+goalID+" has no reviewed build to land; metasystem work build "+goalID+" makes one")
 	}
 	if err != nil || implementation.JobID() != chainID || implementation.ParentJob() != "" {
-		return certifiedChain{}, refuseBatch("BATCH_JOIN_CHAIN_UNREAD", "implementation chain root is unreadable")
+		return certifiedChain{}, refuseBatch("BATCH_JOIN_CHAIN_UNREAD", "the build of goal "+goalID+" can't be read; metasystem work status "+goalID+" shows its jobs")
 	}
 	if implementation.Role() != "implementer" {
-		return certifiedChain{}, refuseBatch("BATCH_JOIN_CHAIN_NOT_IMPLEMENTATION", "chain root is not an implementer job")
+		return certifiedChain{}, refuseBatch("BATCH_JOIN_CHAIN_NOT_IMPLEMENTATION", "job "+chainID+" is not a build; metasystem work status "+goalID+" names the goal's builds")
 	}
 	if closed, _ := implementation.Raw()["chainClosed"].(bool); !closed {
-		return certifiedChain{}, refuseBatch("BATCH_JOIN_CHAIN_UNCLOSED", "implementation chain is open")
+		return certifiedChain{}, refuseBatch("BATCH_JOIN_CHAIN_UNCLOSED", "the build of goal "+goalID+" is not reviewed yet; metasystem work review "+goalID+" reviews it")
 	}
 	if err := dispatch.CloseCheck(root, chainID); err != nil {
-		return certifiedChain{}, refuseBatch("BATCH_JOIN_CHAIN_UNREAD", "implementation chain closure is invalid")
+		return certifiedChain{}, refuseBatch("BATCH_JOIN_CHAIN_UNREAD", "the build of goal "+goalID+" did not close cleanly; metasystem work review "+goalID+" reviews it")
 	}
 	revision, present := implementation.GoalRevision()
 	if !present || implementation.GoalID() != goalID {
-		return certifiedChain{}, refuseBatch("BATCH_JOIN_CHAIN_UNREAD", "implementation chain does not bind the named goal")
+		return certifiedChain{}, refuseBatch("BATCH_JOIN_CHAIN_UNREAD", "job "+chainID+" is not a build of goal "+goalID+"; metasystem work status "+goalID+" names its builds")
 	}
 	if revision != goalRevision {
-		return certifiedChain{}, refuseBatch("BATCH_JOIN_CHAIN_REVISION_MOVED", fmt.Sprintf("chain goal revision is %d, claim revision is %d", revision, goalRevision))
+		return certifiedChain{}, refuseBatch("BATCH_JOIN_CHAIN_REVISION_MOVED", fmt.Sprintf("goal %s changed after its build (revision %d, now %d); metasystem work build %s builds it again", goalID, revision, goalRevision, goalID))
 	}
 	criticID, _ := implementation.Raw()["independentCritiqueJobRef"].(string)
 	critic, err := readJob(root, criticID)
 	if err != nil || critic.JobID() != criticID || critic.ParentJob() != "" {
-		return certifiedChain{}, refuseBatch("BATCH_JOIN_CHAIN_UNREAD", "closed code-critic root is unreadable")
+		return certifiedChain{}, refuseBatch("BATCH_JOIN_CHAIN_UNREAD", "the review of goal "+goalID+" can't be read; metasystem work review "+goalID+" reviews it again")
 	}
 	if critic.Role() != "code-critic" {
-		return certifiedChain{}, refuseBatch("BATCH_JOIN_CHAIN_UNREAD", "critic chain root is not a code-critic job")
+		return certifiedChain{}, refuseBatch("BATCH_JOIN_CHAIN_UNREAD", "the review of goal "+goalID+" is not a code review; metasystem work review "+goalID+" reviews it")
 	}
 	if closed, _ := critic.Raw()["chainClosed"].(bool); !closed {
-		return certifiedChain{}, refuseBatch("BATCH_JOIN_CHAIN_UNCLOSED", "code-critic chain is open")
+		return certifiedChain{}, refuseBatch("BATCH_JOIN_CHAIN_UNCLOSED", "the review of goal "+goalID+" is still running; metasystem work wait "+goalID+" waits for it")
 	}
 	if err := dispatch.CloseCheck(root, criticID); err != nil {
-		return certifiedChain{}, refuseBatch("BATCH_JOIN_CHAIN_UNREAD", "code-critic chain closure is invalid")
+		return certifiedChain{}, refuseBatch("BATCH_JOIN_CHAIN_UNREAD", "the review of goal "+goalID+" did not close cleanly; metasystem work review "+goalID+" reviews it again")
 	}
 	closure, present, err := dispatch.ReadClosure(critic.Raw())
 	if err != nil || !present || closure.CriticRoot != criticID {
-		return certifiedChain{}, refuseBatch("BATCH_JOIN_CHAIN_UNREAD", "code-critic closure is unreadable")
+		return certifiedChain{}, refuseBatch("BATCH_JOIN_CHAIN_UNREAD", "the review of goal "+goalID+" has no readable verdict; metasystem work review "+goalID+" reviews it again")
 	}
 	if closure.Subject.Kind != dispatch.SubjectLive {
-		return certifiedChain{}, refuseBatch("BATCH_JOIN_CHAIN_UNREAD", "code-critic closure subject is not live")
+		return certifiedChain{}, refuseBatch("BATCH_JOIN_CHAIN_UNREAD", "the review of goal "+goalID+" read no live build; metasystem work review "+goalID+" reviews the build")
 	}
 	if closure.Subject.ImplementerRoot != chainID {
-		return certifiedChain{}, refuseBatch("BATCH_JOIN_CHAIN_UNREAD", "code-critic closure certifies another implementation chain")
+		return certifiedChain{}, refuseBatch("BATCH_JOIN_CHAIN_UNREAD", "the review of goal "+goalID+" certifies another build; metasystem work review "+goalID+" reviews this one")
 	}
 	member, err := readJob(root, closure.Subject.ReviewedMember)
 	if err != nil {
-		return certifiedChain{}, refuseBatch("BATCH_JOIN_CHAIN_UNREAD", "certified implementer round is unreadable")
+		return certifiedChain{}, refuseBatch("BATCH_JOIN_CHAIN_UNREAD", "the reviewed round of goal "+goalID+" can't be read; metasystem work review "+goalID+" reviews it again")
 	}
 	round, roundOK := member.Round()
 	if member.JobID() != closure.Subject.ReviewedMember || member.Role() != "implementer" || !roundOK || round < 1 {
-		return certifiedChain{}, refuseBatch("BATCH_JOIN_CHAIN_UNREAD", "certified implementer round is unreadable")
+		return certifiedChain{}, refuseBatch("BATCH_JOIN_CHAIN_UNREAD", "the reviewed round of goal "+goalID+" can't be read; metasystem work review "+goalID+" reviews it again")
 	}
 	members, err := dispatch.ChainMemberStatuses(filepath.Join(root, "artifacts", "agents", "jobs"), chainID, false)
 	if err != nil || !slices.Contains(members, member.JobID()+"|"+member.Status()) {
-		return certifiedChain{}, refuseBatch("BATCH_JOIN_CHAIN_UNREAD", "certified implementer is outside implementation chain")
+		return certifiedChain{}, refuseBatch("BATCH_JOIN_CHAIN_UNREAD", "the reviewed round of goal "+goalID+" is not part of its build; metasystem work review "+goalID+" reviews it again")
 	}
 	patch, err := os.ReadFile(filepath.Join(root, "artifacts", "agents", chainID, "rounds", fmt.Sprint(round), "diff.patch"))
 	if digest := sha256.Sum256(patch); err != nil || hex.EncodeToString(digest[:]) != closure.Subject.DiffDigest {
-		return certifiedChain{}, refuseBatch("BATCH_JOIN_CHAIN_UNREAD", "certified diff is unreadable or changed")
+		return certifiedChain{}, refuseBatch("BATCH_JOIN_CHAIN_UNREAD", "the reviewed change of goal "+goalID+" is missing or changed; metasystem work review "+goalID+" reviews it again")
 	}
 	return certifiedChain{ID: chainID, ReviewedTree: closure.Subject.ReviewedProjectTree, Digest: closure.Subject.DiffDigest, Patch: patch}, nil
 }
@@ -107,7 +107,7 @@ func transportChain(root string, chain certifiedChain) error {
 		if bytes.Equal(prior, chain.Patch) {
 			return nil
 		}
-		return refuseBatch("BATCH_CHAIN_CONFLICT", "landing root already carries different bytes for chain "+chain.ID)
+		return refuseBatch("BATCH_CHAIN_CONFLICT", "the landing lane holds another build "+chain.ID+"; metasystem landing status shows the batch that has it")
 	} else if !os.IsNotExist(err) {
 		return err
 	}

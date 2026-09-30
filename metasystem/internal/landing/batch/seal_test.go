@@ -385,7 +385,7 @@ func TestBatchSealReleasesLockDuringSelectionAndRefusesChangedCandidate(t *testi
 	close(releasePlan)
 	err := <-sealDone
 	var changed *SealChangedDuringGateRefusal
-	if !errors.As(err, &changed) || changed.BatchID != testBatchID || !strings.Contains(err.Error(), "changed during seal preparation") {
+	if !errors.As(err, &changed) || changed.BatchID != testBatchID || !strings.Contains(err.Error(), "changed while it was being closed") {
 		t.Fatalf("changed-candidate refusal=%T %v", err, err)
 	}
 	record := load(t, f.store)

@@ -366,7 +366,7 @@ func ExecuteBatchProof(root, id, actor, window, token string, sample proofrun.Lo
 		}
 	}
 	if !proofPlanCovers(plan, record.SelectedGroups) {
-		reason := "BATCH_PROOF_UNION_UNCOVERED: selected tip plan omits the sealed union"
+		reason := "the tests chosen for the batch miss some of its changes; nothing to do, its owner chooses again"
 		if err := batch.RecordUnionRefusal(store, id, actor, reason, at); err != nil {
 			return err
 		}

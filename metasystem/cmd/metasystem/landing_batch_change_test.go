@@ -19,6 +19,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/adapter"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
 
 const laneChangeCommit = "abcdef0123456789abcdef0123456789abcdef01"
@@ -328,11 +329,13 @@ func TestLandingStatusVerbosePrintsReturnedChanges(t *testing.T) {
 	view := lane.View{Batch: &lane.BatchView{ID: "b1", State: lane.BatchCollecting, Members: []lane.Member{{Goal: "change:abcdef012345", Seat: "m1e"}},
 		Returned: []lane.Returned{{Goal: "change:1234567890ab", Seat: "ui", Outcome: batch.UnitEjected, Reason: "EJECTED from landing batch b1: TestNotes failed"}}},
 		Spend: &lane.Spend{Account: "lane:0123456789ab", Attempts: 3, ReservedMinutes: 120}}
-	lines := strings.Join(landingViewDetail(view), "\n")
-	if !strings.Contains(lines, "lane spend (lane:0123456789ab, batches of changes; no goal's budget): 3 attempts, 120 reserved minutes") {
+	root := "/lanes/landing"
+	view.Root, view.Owner = &root, lane.OwnerView{State: lane.OwnerRunning}
+	lines := oneSpaced(landingStatusPage(view, true))
+	if !strings.Contains(lines, "spend 3 attempts · 120 reserved minutes · lane:0123456789ab, charged to no goal") {
 		t.Fatalf("verbose status names no lane spend:\n%s", lines)
 	}
-	if !strings.Contains(lines, "  member change:abcdef012345 from m1e") || !strings.Contains(lines, "  ejected change:1234567890ab from ui: EJECTED from landing batch b1: TestNotes failed") {
+	if !strings.Contains(lines, "change:abcdef012345 from m1e") || !strings.Contains(lines, "ejected change:1234567890ab from ui: EJECTED from landing batch b1: TestNotes failed") {
 		t.Fatalf("verbose status:\n%s", lines)
 	}
 }
@@ -504,8 +507,15 @@ func TestLandingStatusVerboseNamesTheLastTickErrorAndTheOwnerLog(t *testing.T) {
 	t.Parallel()
 	root, failure := "/lanes/landing", "batch b1: read joined goal change:5555 before rebind: absent"
 	view := lane.View{Root: &root, Owner: lane.OwnerView{State: lane.OwnerRunning, LastTickError: &failure}}
-	lines := strings.Join(landingViewDetail(view), "\n")
-	if !strings.Contains(lines, "last tick failed: "+failure) || !strings.Contains(lines, "owner log: "+batchowner.OwnerLogPath(root)) {
+	lines := landingStatusPage(view, true)
+	if !strings.Contains(lines, "last tick    "+failure) || !strings.Contains(lines, "owner log    "+batchowner.OwnerLogPath(root)) {
 		t.Fatalf("verbose status:\n%s", lines)
 	}
+}
+
+// landingStatusPage is landing status's page of view, at the full width.
+func landingStatusPage(view lane.View, verbose bool) string {
+	page := textui.New(textui.Env{Width: textui.MaxWidth, Now: time.Now(), Zone: time.UTC, Verbose: verbose})
+	(&intentInvocation{}).landingStatusView(view, false)(page)
+	return page.String()
 }

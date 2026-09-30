@@ -240,7 +240,7 @@ func handoffIdentityFromObject(object map[string]any) (identity.Ref, bool) {
 func readStableSource(root, relative, purpose string, required bool) (capturedSource, error) {
 	source := capturedSource{purpose: purpose, source: filepath.ToSlash(relative), required: required}
 	if err := validateSourcePath(source.source); err != nil {
-		return source, refusal("HANDOFF_REFERENCE", fmt.Sprintf("path=%s expected=inside-root found=outside-root", source.source))
+		return source, refusal("HANDOFF_REFERENCE", fmt.Sprintf("%s is outside this checkout; name a file inside it, then metasystem session handoff", source.source))
 	}
 	path := filepath.Join(root, filepath.FromSlash(source.source))
 	before, err := os.Lstat(path)
@@ -253,21 +253,21 @@ func readStableSource(root, relative, purpose string, required bool) (capturedSo
 		if os.IsNotExist(err) {
 			found = "missing"
 		}
-		return source, refusal("HANDOFF_REFERENCE", fmt.Sprintf("path=%s expected=readable-regular found=%s", source.source, found))
+		return source, refusal("HANDOFF_REFERENCE", fmt.Sprintf("%s is %s; name a readable file, then metasystem session handoff again", source.source, found))
 	}
 	if !before.Mode().IsRegular() {
-		return source, refusal("HANDOFF_REFERENCE", fmt.Sprintf("path=%s expected=regular found=%s", source.source, before.Mode()))
+		return source, refusal("HANDOFF_REFERENCE", fmt.Sprintf("%s is not a plain file (%s); name one, then metasystem session handoff again", source.source, before.Mode()))
 	}
 	resolved, err := canonicalExistingPath(path)
 	if err != nil {
-		return source, refusal("HANDOFF_REFERENCE", fmt.Sprintf("path=%s expected=inside-root found=unreadable", source.source))
+		return source, refusal("HANDOFF_REFERENCE", fmt.Sprintf("%s can't be resolved; name a readable file, then metasystem session handoff again", source.source))
 	}
 	if _, inside := relativePathInside(root, resolved); !inside || resolved != path {
-		return source, refusal("HANDOFF_REFERENCE", fmt.Sprintf("path=%s expected=inside-root found=symlink-escape", source.source))
+		return source, refusal("HANDOFF_REFERENCE", fmt.Sprintf("%s links outside this checkout; name a file inside it, then metasystem session handoff", source.source))
 	}
 	first, err := os.ReadFile(path)
 	if err != nil {
-		return source, refusal("HANDOFF_REFERENCE", fmt.Sprintf("path=%s expected=readable-regular found=unreadable", source.source))
+		return source, refusal("HANDOFF_REFERENCE", fmt.Sprintf("%s can't be read; name a readable file, then metasystem session handoff again", source.source))
 	}
 	handoffSourceAfterRead(path)
 	second, err := os.ReadFile(path)
@@ -313,7 +313,7 @@ func activeDelegateCaller(root string, caller HandoffCaller) (HandoffCaller, err
 	tag := handoffString(object, "instanceTag")
 	mainID := handoffString(object, "mainId")
 	if !ok || runtime == "" || session == "" || tag == "" || mainID == "" || handoffString(object, "jobId") != jobID || handoffString(object, "status") != "running" {
-		return HandoffCaller{}, refusal("HANDOFF_NOT_HOLDER", "active continuation has no complete recorded custodian identity")
+		return HandoffCaller{}, refusal("HANDOFF_NOT_HOLDER", "the continuation's record lacks who runs it, so it can't hand off; metasystem status shows it")
 	}
 	caller.Runtime, caller.Session, caller.Ref, caller.Tag, caller.MainId = runtime, session, ref, tag, mainID
 	return caller, nil
@@ -347,7 +347,7 @@ func admitHandoffCaller(root string, caller HandoffCaller) (HandoffCaller, error
 			return HandoffCaller{}, err
 		}
 		if caller.Machine == "" {
-			return HandoffCaller{}, refusal("HANDOFF_NOT_HOLDER", "active continuation has no machine identity")
+			return HandoffCaller{}, refusal("HANDOFF_NOT_HOLDER", "the running continuation names no machine, so it can't hand off; metasystem status shows it")
 		}
 	default:
 		return HandoffCaller{}, refusal("HANDOFF_NOT_HOLDER", "")
@@ -546,7 +546,7 @@ func capturePlanReferences(root, nextStep string) ([]capturedSource, error) {
 		}
 		seen[candidate] = true
 		if err := validateSourcePath(candidate); err != nil {
-			return nil, refusal("HANDOFF_REFERENCE", fmt.Sprintf("path=%s expected=inside-root found=outside-root", candidate))
+			return nil, refusal("HANDOFF_REFERENCE", fmt.Sprintf("the next step names %s, outside this checkout; fix it, then metasystem session handoff", candidate))
 		}
 		if _, err := os.Lstat(filepath.Join(root, filepath.FromSlash(candidate))); os.IsNotExist(err) {
 			continue
@@ -565,11 +565,11 @@ func captureScratch(root string, scratch []ScratchArg) ([]capturedSource, error)
 	sources := make([]capturedSource, 0, len(scratch))
 	for _, arg := range scratch {
 		if strings.TrimSpace(arg.Purpose) == "" || strings.ContainsAny(arg.Purpose, "\r\n") {
-			return nil, refusal("HANDOFF_REFERENCE", fmt.Sprintf("path=%s expected=nonempty-purpose found=invalid", arg.Path))
+			return nil, refusal("HANDOFF_REFERENCE", fmt.Sprintf("%s has no one-line purpose; give it one, then metasystem session handoff again", arg.Path))
 		}
 		key := arg.Purpose + "\x00" + arg.Path
 		if seen[key] {
-			return nil, refusal("HANDOFF_REFERENCE", fmt.Sprintf("path=%s expected=unique-reference found=duplicate", arg.Path))
+			return nil, refusal("HANDOFF_REFERENCE", fmt.Sprintf("%s is named twice for one purpose; name it once, then metasystem session handoff", arg.Path))
 		}
 		seen[key] = true
 		source, err := readStableSource(root, arg.Path, arg.Purpose, arg.Required)

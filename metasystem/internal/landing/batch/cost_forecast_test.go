@@ -1,6 +1,7 @@
 package batch
 
 import (
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -232,7 +233,7 @@ func TestBatchCostSealPublishesExactSnapshotAndRejectsConcurrentClose(t *testing
 	}
 	store2, record2, _, _ := costJoinBed(t)
 	err = seal(store2, record2, true)
-	if err == nil || !strings.Contains(err.Error(), "BATCH_SEAL_CHANGED_DURING_GATE") {
+	if changed := (*SealChangedDuringGateRefusal)(nil); !errors.As(err, &changed) || changed.RefusalCode() != "BATCH_SEAL_CHANGED_DURING_GATE" {
 		t.Fatalf("concurrent closure crossed seal forecast CAS: %v", err)
 	}
 	current, loadErr := store2.Load(record2.BatchID)
@@ -287,7 +288,7 @@ func TestBatchCostSealRejectsEpisodeChangedDuringForecast(t *testing.T) {
 			Currency: "snapshot-not-revalidated", Binding: CostBinding(candidate, joinedUnits(candidate.Units), candidate.PrefixTrees)}, nil
 	}
 	err := SealWithForecast(store, record.BatchID, record.BaseTree, "owner", time.Unix(5, 0), plan, forecast)
-	if err == nil || !strings.Contains(err.Error(), "BATCH_SEAL_CHANGED_DURING_GATE") {
+	if changed := (*SealChangedDuringGateRefusal)(nil); !errors.As(err, &changed) || changed.RefusalCode() != "BATCH_SEAL_CHANGED_DURING_GATE" {
 		t.Fatalf("episode mutation crossed seal CAS: %v", err)
 	}
 	current, err := store.Load(record.BatchID)

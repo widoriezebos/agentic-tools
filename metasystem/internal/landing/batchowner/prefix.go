@@ -125,7 +125,7 @@ func AuthorizeChangeWith(controlRoot string, unit batch.Unit, projection goal.Pr
 	if !person && (file == nil || file.State != goal.StateClaimed || file.Claimed == nil || file.Claimed.Machine+"+"+file.Claimed.Lineage != change.AskedBy ||
 		file.Claimed.Revision != change.GoalRevision) {
 		return &batch.PrefixRevisionRefusal{Reason: "BATCH_PREFIX_AUTHORITY_REFUSED: change " + unit.GoalID + " was committed in goal " + change.Goal +
-			"'s name by " + change.AskedBy + " at revision " + fmt.Sprint(change.GoalRevision) + ", and that claim moved; commit it again and land it"}
+			"'s name by " + change.AskedBy + " at revision " + fmt.Sprint(change.GoalRevision) + ", and that claim moved; commit it again, then metasystem work land " + change.Goal}
 	}
 	settings, err := goal.ResolveGateSettings(filepath.Join(controlRoot, "metasystem.conf"))
 	if err != nil {

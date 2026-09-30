@@ -53,7 +53,7 @@ func publishJoinWithAdmission(store Store, batchID string, unit Unit, actor stri
 			}
 			for _, existing := range record.Units {
 				if existing.State == UnitJoining {
-					return refuseBatch("BATCH_JOIN_PENDING", "another member's admission is pending")
+					return refuseBatch("BATCH_JOIN_PENDING", "another change is joining "+batchID+"; metasystem work land "+unit.GoalID+" tries again after it")
 				}
 			}
 			live := slices.DeleteFunc(slices.Clone(record.Units), func(existing Unit) bool { return existing.State != UnitJoined })
@@ -158,7 +158,7 @@ func ResumeJoinAdmission(store Store, batchID, goalID, actor string, at time.Tim
 	return store.locked(func() error {
 		if err := store.updateLocked(batchID, func(current *Record) error {
 			if current.State != StateOpen {
-				return refuseBatch("BATCH_SEALED", "batch sealed during admission")
+				return refuseBatch("BATCH_SEALED", "batch "+batchID+" closed while "+goalID+" joined; metasystem work land "+goalID+" joins the next one")
 			}
 			for index := range current.Units {
 				candidate := &current.Units[index]

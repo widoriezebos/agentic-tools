@@ -216,7 +216,7 @@ func TestTrunkRedFailedOutcomeMintsOneNewOpid(t *testing.T) {
 			t.Fatalf("error=%v, want failed transaction", err)
 		}
 		record := load(t, store)
-		if len(record.TrunkRed.Opids) != 2 || record.TrunkRed.Opid != "op-2" || mintCalls != 1 || failed.Error() != "TRUNK_RED_RECORD_FAILED aborted: entry missing" || record.History[len(record.History)-1].Verb != "trunk-red-record-failed" || record.History[len(record.History)-1].Detail != "opid=op-1 outcome=aborted new-opid=op-2" {
+		if len(record.TrunkRed.Opids) != 2 || record.TrunkRed.Opid != "op-2" || mintCalls != 1 || failed.Error() != "the red on main could not be recorded (aborted: entry missing); metasystem landing status shows the held batch" || failed.RefusalCode() != "TRUNK_RED_RECORD_FAILED" || record.History[len(record.History)-1].Verb != "trunk-red-record-failed" || record.History[len(record.History)-1].Detail != "opid=op-1 outcome=aborted new-opid=op-2" {
 			t.Fatalf("record=%+v mint calls=%d", record, mintCalls)
 		}
 		before := recordBytes(t, store)

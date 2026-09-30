@@ -1,0 +1,61 @@
+exit 0
+--
+{
+  "schemaVersion": 1,
+  "verb": "landing status",
+  "targets": [
+    {
+      "kind": "landing-lane",
+      "id": "/Users/wido/GitHub/agentic-tools-landing"
+    }
+  ],
+  "outcome": "confirmed",
+  "summary": "landing lane /Users/wido/GitHub/agentic-tools-landing: owner running (pid 38928); batch 4gr18nm8t3nyev9sssda9jgtsq proving, 2 members; next 7kq2m9x4c1vbn8hzt5pwe3dyra collecting, 1 member",
+  "data": {
+    "root": "/Users/wido/GitHub/agentic-tools-landing",
+    "registered_by": "Wido",
+    "registered_at": "2026-09-30T06:58:00Z",
+    "owner": {
+      "state": "running",
+      "pid": 38928,
+      "since": "2026-09-30T08:53:00Z",
+      "restarts": 0,
+      "last_exit": null,
+      "stopped_by": null,
+      "retry_hint": null,
+      "last_tick_error": null,
+      "last_tick_problem": null
+    },
+    "batch": {
+      "id": "4gr18nm8t3nyev9sssda9jgtsq",
+      "state": "proving",
+      "members": [
+        {
+          "goal": "verbs-match-intent",
+          "seat": "m1e"
+        },
+        {
+          "goal": "switch-on-trial",
+          "seat": "ui"
+        }
+      ],
+      "waiting_for": [],
+      "returned": [],
+      "since": "2026-09-30T08:55:00Z",
+      "reason": "proving: "
+    },
+    "next": {
+      "id": "7kq2m9x4c1vbn8hzt5pwe3dyra",
+      "members": [
+        {
+          "goal": "disk-lifetimes",
+          "seat": "m1e"
+        }
+      ]
+    },
+    "spend": null,
+    "summary": "landing lane /Users/wido/GitHub/agentic-tools-landing: owner running (pid 38928); batch 4gr18nm8t3nyev9sssda9jgtsq proving, 2 members; next 7kq2m9x4c1vbn8hzt5pwe3dyra collecting, 1 member"
+  }
+}
+
+--

@@ -2,6 +2,7 @@ package landing
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -307,7 +308,8 @@ func TestAdvanceRefusesCheckoutLockBeforeGit(t *testing.T) {
 
 func assertAdvanceRefusal(t *testing.T, err error, code string) {
 	t.Helper()
-	if err == nil || !strings.Contains(err.Error(), "advance refused: "+code+":") {
+	var refusal *advanceRefusal
+	if !errors.As(err, &refusal) || refusal.Code() != code || !strings.Contains(err.Error(), "metasystem work land") {
 		t.Fatalf("advance error = %v, want %s", err, code)
 	}
 }

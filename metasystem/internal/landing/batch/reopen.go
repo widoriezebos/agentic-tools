@@ -19,7 +19,7 @@ func prepareHeldReopen(store Store, id, newBaseTree string) (heldReopen, error) 
 		return heldReopen{}, fmt.Errorf("batch %s is not held-trunk-red", id)
 	}
 	if newBaseTree == record.BaseTree || record.TrunkRed != nil && newBaseTree == record.TrunkRed.Red.BaseTree {
-		return heldReopen{}, refuseBatch("BATCH_REOPEN_SAME_TREE", "held batch requires a new base tree")
+		return heldReopen{}, refuseBatch("BATCH_REOPEN_SAME_TREE", "batch "+id+" is held until main changes; metasystem landing status shows why it is held")
 	}
 	survivors := joinedUnits(record.Units)
 	prefixes, err := store.reassembly.assemble(newBaseTree, survivors)

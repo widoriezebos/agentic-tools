@@ -3,6 +3,7 @@ package landing
 import (
 	"bytes"
 	"crypto/sha1"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -457,7 +458,8 @@ func TestAdvanceRefusesContendedRegister(t *testing.T) {
 	f.detach(false)
 	f.classify()
 	_, err := f.call()
-	if err == nil || !strings.Contains(err.Error(), "advance refused: advance-register-contended: records/narrator-digest.log") || !regexp.MustCompile(`[0-9a-f]{40,64}`).MatchString(err.Error()) {
+	var refusal *advanceRefusal
+	if !errors.As(err, &refusal) || refusal.Code() != "advance-register-contended" || !strings.Contains(err.Error(), "(records/narrator-digest.log") || !regexp.MustCompile(`[0-9a-f]{40,64}`).MatchString(err.Error()) {
 		t.Fatalf("contended advance = %v", err)
 	}
 	if f.head != f.landing {

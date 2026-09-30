@@ -74,6 +74,7 @@ func layoutCases() []layoutCase {
 		{name: "grant-list-empty", args: []string{"grant", "list"}, bed: grantListLayoutBed(0, false)},
 		{name: "grant-list-refusal", args: []string{"grant", "list"}, bed: outsideLayoutBed},
 	}
+	cases = append(cases, g1bLayoutCases()...)
 	for _, group := range layoutGroupCases {
 		cases = append(cases, group()...)
 	}
