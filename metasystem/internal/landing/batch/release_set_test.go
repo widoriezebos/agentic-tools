@@ -61,3 +61,31 @@ func TestBatchP6ReleasesTheRecordedSetOnlyAfterThePush(t *testing.T) {
 		t.Fatalf("a member with no recorded set gained one: %+v", record.Units[1])
 	}
 }
+
+// Round D3 N6: the sweeper's retry finishes a landed member's unfinished
+// set through the same step, touching only recorded ids, and leaves a
+// member P6 has not reached alone.
+func TestRetryReleaseSetsFinishesOnlyLandedMembersSets(t *testing.T) {
+	_, store := landingBed(t)
+	pending := func() *diskstore.ReleaseSet {
+		return &diskstore.ReleaseSet{Tip: "t", Stores: []diskstore.ReleaseEntry{{ID: "01K6WORKSPACE0000000000000", State: diskstore.ReleasePending}}}
+	}
+	must(t, store.Update(testBatchID, func(next *Record) error {
+		next.Units[0].ReleaseSet, next.Units[0].P6Done = pending(), true
+		next.Units[1].ReleaseSet = pending()
+		return nil
+	}))
+	var released []string
+	must(t, RetryReleaseSets(store, testBatchID, func(unit Unit, set *diskstore.ReleaseSet) {
+		released = append(released, unit.GoalID)
+		set.Stores[0].State = diskstore.ReleaseReleased
+	}))
+	record := load(t, store)
+	if len(released) != 1 || released[0] != record.Units[0].GoalID || !record.Units[0].ReleaseSet.Finished() || record.Units[1].ReleaseSet.Finished() {
+		t.Fatalf("released %v, units %+v", released, record.Units)
+	}
+	must(t, RetryReleaseSets(store, testBatchID, func(unit Unit, _ *diskstore.ReleaseSet) { released = append(released, "again:"+unit.GoalID) }))
+	if len(released) != 1 {
+		t.Fatalf("a finished set ran again: %v", released)
+	}
+}

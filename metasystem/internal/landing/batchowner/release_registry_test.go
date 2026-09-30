@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 )
 
@@ -64,5 +65,27 @@ func TestTheBatchRouteReadsTheSeatsStoreRegistry(t *testing.T) {
 	set, err := SelectMemberReleaseSet(installation, "g", tip)
 	if err != nil || set == nil || len(set.Stores) != 1 || set.Stores[0].ID != workspace.Record.ID {
 		t.Fatalf("the member's set = %+v, %v; want the workspace recorded at the state root %s", set, err, control)
+	}
+}
+
+// Round D3 N6: a seat's retry sees only its own landed members' unfinished
+// sets, and the engine registers it with the steward.
+func TestUnfinishedSeatReleaseSetsAreTheSeatsOwn(t *testing.T) {
+	t.Parallel()
+	lane := t.TempDir()
+	pending := &diskstore.ReleaseSet{Tip: "t", Stores: []diskstore.ReleaseEntry{{ID: "01K6WORKSPACE0000000000000", State: diskstore.ReleasePending}}}
+	store := batch.NewStore(lane, nil)
+	claim := batch.Claim{Machine: "m", Lineage: "l", Epoch: 1, Revision: 1, AccountingRevision: 1}
+	if err := store.Create(batch.Record{Schema: 1, BatchID: "01j5x00000000000000000cc01", BaseTree: "b", TipTree: "b", State: batch.StateOpen, Units: []batch.Unit{
+		{GoalID: "mine", Chain: "c1", SeatRoot: "/seat/a", P6Done: true, ReleaseSet: pending, State: batch.UnitJoined, Claim: claim},
+		{GoalID: "theirs", Chain: "c2", SeatRoot: "/seat/b", P6Done: true, ReleaseSet: pending, State: batch.UnitJoined, Claim: claim},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if ids, err := UnfinishedSeatReleaseSets(lane, "/seat/a"); err != nil || len(ids) != 1 {
+		t.Fatalf("seat a = %v, %v", ids, err)
+	}
+	if ids, err := UnfinishedSeatReleaseSets(lane, "/seat/c"); err != nil || len(ids) != 0 {
+		t.Fatalf("seat c = %v, %v", ids, err)
 	}
 }

@@ -505,3 +505,51 @@ func ReleaseMemberSet(batchID string, at time.Time) func(batch.Unit, *diskstore.
 		diskstore.RunReleaseSet(context.Background(), request, set)
 	}
 }
+
+// The steward's checkout pass retries its own seat's batch members'
+// unfinished release sets (Round D3 N6).
+func init() {
+	steward.RegisterBatchReleaseRetry(steward.BatchReleaseRetry{Unfinished: UnfinishedSeatReleaseSets, Retry: RetrySeatReleaseSets})
+}
+
+// UnfinishedSeatReleaseSets lists the batches in lane holding a landed
+// member of seat whose release set is unfinished. It reads only; an absent
+// lane has none.
+func UnfinishedSeatReleaseSets(lane, seat string) ([]string, error) {
+	records, err := batch.NewStore(lane, nil).Records()
+	if err != nil {
+		return nil, err
+	}
+	var ids []string
+	for _, record := range records {
+		for _, unit := range record.Units {
+			if unit.P6Done && unit.ReleaseSet != nil && !unit.ReleaseSet.Finished() && sameSeat(unit.SeatRoot, seat) {
+				ids = append(ids, record.BatchID)
+				break
+			}
+		}
+	}
+	return ids, nil
+}
+
+// RetrySeatReleaseSets retries seat's landed members' unfinished sets in
+// batch id, leaving every other seat's members to their own checkout.
+func RetrySeatReleaseSets(_ context.Context, lane, seat, id string, at time.Time) error {
+	release := ReleaseMemberSet(id, at)
+	return batch.RetryReleaseSets(batch.NewStore(lane, nil), id, func(unit batch.Unit, set *diskstore.ReleaseSet) {
+		if sameSeat(unit.SeatRoot, seat) {
+			release(unit, set)
+		}
+	})
+}
+
+// sameSeat compares two installation paths by their resolved spelling.
+func sameSeat(left, right string) bool {
+	resolve := func(path string) string {
+		if resolved, err := filepath.EvalSymlinks(path); err == nil {
+			return resolved
+		}
+		return filepath.Clean(path)
+	}
+	return left != "" && resolve(left) == resolve(right)
+}

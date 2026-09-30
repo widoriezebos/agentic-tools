@@ -219,3 +219,21 @@ func releaseMemberSet(store Store, id, goalID string, seams RecoverySeams) error
 		return nil
 	})
 }
+
+// RetryReleaseSets retries every landed member's unfinished release set in
+// batch id (disk-lifetimes Part B 3.6: the sweeper's retry, Round D3 N6),
+// through release, which a caller scopes to its own seat's members by
+// leaving other entries untouched. Only recorded ids are touched; a
+// finished set is never run again.
+func RetryReleaseSets(store Store, id string, release func(Unit, *diskstore.ReleaseSet)) error {
+	record, err := store.Load(id)
+	if err != nil {
+		return err
+	}
+	for _, unit := range record.Units {
+		if err := releaseMemberSet(store, id, unit.GoalID, RecoverySeams{Release: release}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
