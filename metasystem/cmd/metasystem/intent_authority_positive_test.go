@@ -565,7 +565,7 @@ func TestIntentCarriedGoalDeliveryGitAdapter(t *testing.T) {
 	}
 	// Nothing proved the candidate yet: the carried commit's own battery
 	// check refuses, the candidate stays staged, and the same word continues.
-	if code == 0 || result.Outcome != intentPartial || len(b.lands) != 1 || !strings.Contains(string(b.lands[0].stderr), "carry-battery-unverified") {
+	if code == 0 || result.Outcome != intentPartial || len(b.lands) != 1 || !strings.Contains(string(b.lands[0].stdout)+string(b.lands[0].stderr), "carry-battery-unverified") {
 		t.Fatalf("the unproved carried landing did not stop at its battery check: %d %+v", code, result)
 	}
 	if main := f.remote(t, "refs/heads/main"); main == mainBefore {

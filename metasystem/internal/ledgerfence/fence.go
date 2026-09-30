@@ -42,7 +42,7 @@ func Ensure(root string) error {
 		// Fail closed: a checkout without an EXECUTABLE engine cannot run
 		// the fence, and a mutation without the fence is exactly what
 		// enrollment forbids.
-		return fmt.Errorf("this checkout has no executable engine at %s to run the pre-commit guard; the ledger fence cannot be enrolled, so the mutation refuses; build it with: go run ./cmd/devgate build", engine)
+		return fmt.Errorf("no built metasystem at %s runs the commit hook, so nothing changed; run go run ./cmd/devgate build", engine)
 	}
 	// The probes run with git's steering env scrubbed (GIT_DIR and
 	// friends): an inherited broken GIT_DIR must neither read as
@@ -105,7 +105,7 @@ func Ensure(root string) error {
 	commonDir := strings.TrimRight(string(commonOut), "\n")
 	topDir := strings.TrimRight(string(topOut0), "\n")
 	if !within(hookDir, commonDir) && !within(hookDir, topDir) {
-		return fmt.Errorf("this repository's hooks directory %s is shared (core.hooksPath outside the repository); composing the ledger fence there would break unrelated repositories — enroll by hand, then re-run", hookDir)
+		return fmt.Errorf("the git hooks folder %s is shared with other repositories; add the goal hook by hand, then repeat", hookDir)
 	}
 	hookPath := filepath.Join(hookDir, "pre-commit")
 	existing, readErr := os.ReadFile(hookPath)
@@ -162,7 +162,7 @@ func Ensure(root string) error {
 	localPath := filepath.Join(hookDir, "pre-commit.local")
 	if readErr == nil && !isOurComposer(string(existing)) {
 		if _, localErr := os.Stat(localPath); localErr == nil {
-			return fmt.Errorf("pre-commit and pre-commit.local both exist and neither enrolls the guard; compose them by hand before mutating the ledger")
+			return fmt.Errorf("pre-commit and pre-commit.local both exist without the goal hook; merge them by hand, then repeat")
 		}
 		if err := os.Rename(hookPath, localPath); err != nil {
 			return err
@@ -194,7 +194,7 @@ func Ensure(root string) error {
 	}
 	hookInfo, hookStatErr := os.Stat(hookPath)
 	if hookStatErr != nil || hookInfo.Mode()&0o111 == 0 {
-		return fmt.Errorf("the enrolled pre-commit hook did not come out executable; fix the filesystem before mutating the ledger")
+		return fmt.Errorf("the pre-commit hook could not be made executable; fix its permissions, then repeat")
 	}
 	return nil
 }

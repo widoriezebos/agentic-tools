@@ -157,10 +157,10 @@ func authenticatedParkActor(root, chain string, view lease.ClassifyResult) (acto
 	}
 	holder, err := lease.CurrentHolder(root)
 	if err != nil {
-		return "", nil, fmt.Errorf("current holder lineage is unreadable: %w", err)
+		return "", nil, fmt.Errorf("the session holding this checkout can't be identified: %w", err)
 	}
 	if holder.OwnerLineage == "" {
-		return "", nil, fmt.Errorf("current holder lineage is unreadable")
+		return "", nil, fmt.Errorf("the session holding this checkout can't be identified")
 	}
 	actor = machine + "+" + holder.OwnerLineage
 	if goalValue != nil {
@@ -282,7 +282,7 @@ func Park(params ParkParams) (ParkResult, error) {
 		return fail(fmt.Errorf("park requires root, a valid chain, reason, and detail"))
 	}
 	if params.CallerPID <= 0 {
-		return fail(fmt.Errorf("caller pid is required"))
+		return fail(fmt.Errorf("park needs the calling process id"))
 	}
 	clock := params.Clock
 	if clock == nil {

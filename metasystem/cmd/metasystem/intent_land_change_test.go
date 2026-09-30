@@ -124,7 +124,7 @@ func TestWorkLandMessageJoinsTheLaneAsAChange(t *testing.T) {
 	b.lookup = errors.New("batch 01j5x unreadable: unexpected end of JSON input")
 	code, result = b.land()
 	expectOutcome(t, "unreadable lane", code, result, intentRefused)
-	if len(b.joins) != 1 || !strings.Contains(result.Summary, "unreadable") {
+	if len(b.joins) != 1 || !strings.Contains(result.Summary, "can't be read") {
 		t.Fatalf("unreadable lane: joins=%d result=%+v", len(b.joins), result)
 	}
 	b.lookup = nil
@@ -168,8 +168,8 @@ func TestWorkLandMessageJoinsTheLaneAsAChange(t *testing.T) {
 	base := refusing.seatGit("rev-parse", "HEAD")
 	code, result = refusing.land()
 	expectOutcome(t, "refused join", code, result, intentRefused)
-	if !strings.Contains(result.Summary, "BATCH_JOIN_CONFLICT") || strings.Contains(result.Summary, "joins it again") ||
-		!strings.Contains(result.Summary, "fix them and run the same command") || refusing.seatGit("rev-parse", "HEAD") != base ||
+	if !strings.Contains(result.Summary, "change does not apply: notes.md") || strings.Contains(result.Summary, "BATCH_JOIN_CONFLICT") ||
+		!strings.Contains(strings.Join(result.Details, "\n"), "BATCH_JOIN_CONFLICT") || !strings.Contains(result.Decision, "fix them, then repeat this command") || refusing.seatGit("rev-parse", "HEAD") != base ||
 		refusing.seatGit("status", "--porcelain", "--", "notes.md") != "M notes.md" {
 		t.Fatalf("refused join: head=%s result=%+v", refusing.seatGit("rev-parse", "HEAD"), result)
 	}
@@ -199,8 +199,8 @@ func TestWorkLandMessageJoinsTheLaneAsAChange(t *testing.T) {
 	code, result = ownerless.land()
 	expectOutcome(t, "joined without an owner", code, result, intentInProgress)
 	ownerlessHead := ownerless.seatGit("rev-parse", "HEAD")
-	if !strings.Contains(result.Summary, "joined landing batch b-3; the lane owner could not be started: BATCH_OWNER_INDETERMINATE") ||
-		!strings.Contains(result.Summary, "metasystem landing start") || !changePinned(ownerless.install, ownerlessHead) {
+	if !strings.Contains(result.Summary, "joined landing batch b-3, but the lane couldn't be started: supervision refused") ||
+		result.Next == nil || strings.Join(result.Next.Argv, " ") != "metasystem landing start" || !changePinned(ownerless.install, ownerlessHead) {
 		t.Fatalf("ownerless: result=%+v", result)
 	}
 

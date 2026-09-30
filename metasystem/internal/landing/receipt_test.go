@@ -423,7 +423,7 @@ func TestCreateTestReceiptRefusesIsolatedCandidateMotion(t *testing.T) {
 		io.Discard,
 		io.Discard,
 	)
-	if err == nil || !strings.Contains(err.Error(), "test receipt refused: the candidate changed while the command ran") {
+	if err == nil || !strings.Contains(err.Error(), "test receipt refused: files changed while the tests ran") {
 		t.Fatalf("candidate-changing command error = %v", err)
 	}
 	if _, statErr := os.Stat(TestReceiptPath(f.root, candidate)); !os.IsNotExist(statErr) {

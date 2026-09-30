@@ -98,7 +98,7 @@ var liveChangeStates = []string{UnitJoining, UnitJoined, UnitReturnPending, Unit
 func JoinChange(store Store, join ChangeJoin) (Record, error) {
 	unit := join.Unit
 	if unit.Change == nil || unit.GoalID != ChangeID(unit.Change.Commit) || unit.Chain != unit.GoalID || unit.Claim.Machine == "" || unit.Claim.Lineage == "" {
-		return Record{}, fmt.Errorf("BATCH_CHANGE_UNREADABLE: change member %s is incomplete", unit.GoalID)
+		return Record{}, fmt.Errorf("%s: change member %s is incomplete", codeChangeUnreadable, unit.GoalID)
 	}
 	var joined Record
 	err := store.locked(func() error {
@@ -223,7 +223,7 @@ func ChangeLandingMessage(message, id string) string {
 // and committer and adds the Landing-Change trailer. It returns the commit.
 func ReplayChange(root string, unit Unit) (string, error) {
 	if unit.Change == nil {
-		return "", fmt.Errorf("BATCH_CHANGE_UNREADABLE: unit %s is not a change", unit.GoalID)
+		return "", fmt.Errorf("%s: unit %s is not a change", codeChangeUnreadable, unit.GoalID)
 	}
 	if _, err := batchMergeDriverArgs(); err != nil {
 		return "", err
@@ -253,12 +253,12 @@ func ReplayChange(root string, unit Unit) (string, error) {
 func commitChange(root string, unit Unit, tree, parent string) (string, error) {
 	message, err := branchCommitMessage(root, unit.Change.Commit)
 	if err != nil {
-		return "", fmt.Errorf("BATCH_CHANGE_UNREADABLE: change %s message: %w", unit.GoalID, err)
+		return "", fmt.Errorf("%s: change %s message: %w", codeChangeUnreadable, unit.GoalID, err)
 	}
 	identity, err := landingGitOutput(root, "show", "-s", "--format=%an%x00%ae%x00%aI%x00%cn%x00%ce", unit.Change.Commit)
 	fields := strings.Split(identity, "\x00")
 	if err != nil || len(fields) != 5 {
-		return "", fmt.Errorf("BATCH_CHANGE_UNREADABLE: change %s identity: %v", unit.GoalID, err)
+		return "", fmt.Errorf("%s: change %s identity: %v", codeChangeUnreadable, unit.GoalID, err)
 	}
 	command := exec.Command("git", "-C", root, "commit-tree", tree, "-p", parent)
 	command.Env = append(gittree.ScrubbedEnviron(), "GIT_AUTHOR_NAME="+fields[0], "GIT_AUTHOR_EMAIL="+fields[1], "GIT_AUTHOR_DATE="+fields[2],

@@ -49,13 +49,13 @@ func TestCarriedFreshLandsOneCommitPastOneRefusal(t *testing.T) {
 	if !strings.Contains(c.git.message, "Carried-Judge: live sha256=") {
 		t.Fatalf("judge trailer:\n%s", c.git.message)
 	}
-	c.linesInOrder("== STEP: fetch origin for carried landing", "== STEP: stage caller paths", "== STEP: receipt line for the landing",
-		"== STEP: fetch origin after carry reservation", "== STEP: commit", "== STEP: goal held at the rebased base",
+	c.linesInOrder("step: fetch origin for carried landing", "step: stage caller paths", "step: receipt line for the landing",
+		"step: fetch origin after carry reservation", "step: commit", "step: goal held at the rebased base",
 		"carried reservation: row-1\n", "carried ledger: "+carriedReservedTip+"\n", "carried judge: live sha256=",
 		"carried live failure: -\n", "carried ordinary verdict: pass carried code=missing-declaration\n",
 		"carried testing result: sufficient=true missing=- failing=- uncovered=- discrepancies=-\n",
 		"carried obligation finding: carried:c1\n", "carried exception count after this one: 1\n",
-		"== STEP: push carried commit to origin (single attempt)", "== STEP: complete carried goal record")
+		"step: push carried commit to origin (single attempt)", "step: complete carried goal record")
 	if c.pushes() != 1 || c.commits() != 1 || len(c.calls("abandon")) != 0 || c.log.has("transport") {
 		t.Fatalf("pushes=%d commits=%d log=%v", c.pushes(), c.commits(), c.log.calls)
 	}
@@ -205,8 +205,8 @@ func TestCarriedCrashBeforePushClosesTheIntentAndReleases(t *testing.T) {
 	c = newCarriedBed(t)
 	c.git.on("push", func(GitCall) GitResult { return failed(1, " ! [rejected] main -> main (fetch first)\n") })
 	status, _ = c.landCarried(carriedRequest())
-	c.expect(status, 3, "origin moved during the push; rerun metasystem work land g1 --using-exception op1")
-	c.inOrder("intent carrying=row-1", "carried entry=entry-1", "abandon row-1 why=origin moved during the push; rerun metasystem work land g1 --using-exception op1")
+	c.expect(status, 3, "main moved while this landed, so nothing was pushed\nrun: metasystem work land g1 --using-exception op1  (lands it on the new main)\n")
+	c.inOrder("intent carrying=row-1", "carried entry=entry-1", "abandon row-1 why=main moved while this landed, so nothing was pushed")
 	if c.pushes() != 1 || c.log.has("notify") {
 		t.Fatalf("pushes=%d log=%v", c.pushes(), c.log.calls)
 	}
@@ -215,7 +215,7 @@ func TestCarriedCrashBeforePushClosesTheIntentAndReleases(t *testing.T) {
 	c = newCarriedBed(t)
 	c.git.on("push", func(GitCall) GitResult { return failed(1, "remote: permission denied\n") })
 	status, _ = c.landCarried(carriedRequest())
-	c.expect(status, 1, "!! STEP FAILED: push carried commit to origin (single attempt) (exit 1)")
+	c.expect(status, 1, "step failed: push carried commit to origin (single attempt) (exit 1)")
 	c.inOrder("carried entry=entry-1", "abandon row-1 why=step push carried commit to origin (single attempt) failed with exit 1: remote: permission denied")
 
 	// An intent the ledger owner refuses stops before the push and releases
@@ -271,7 +271,7 @@ func TestCarriedKillBeforePushRecoversTheLocalCommit(t *testing.T) {
 		t.Fatalf("log %v", c.log.calls)
 	}
 	c.linesInOrder("carried reservation: row-1\n", "carried obligation finding: carried:"+rebased+"\n",
-		"== STEP: push carried commit to origin (single attempt)")
+		"step: push carried commit to origin (single attempt)")
 	if got := strings.Join(c.seams, ","); got != "before-push,after-push,after-record" {
 		t.Fatalf("recovery seams %s", got)
 	}
@@ -317,7 +317,7 @@ func TestCarriedLocalRecoveryReservation(t *testing.T) {
 		c := recovering(t)
 		c.status.Reservation = "reservation: expired:row-0"
 		status, _ := c.landCarried(carriedRequest())
-		c.expect(status, 3, "word op1 expired; record a new exception; the local commit remains at HEAD")
+		c.expect(status, 3, "exception op1 has expired; its commit stays at HEAD\nneeded first: record a new one with metasystem work land g1 --exception CODE --reason R\n")
 		if c.pushes() != 0 || len(c.calls("abandon")) != 0 || len(c.calls("intent")) != 0 || len(c.calls("reserve")) != 0 {
 			t.Fatalf("log %v", c.log.calls)
 		}
@@ -328,7 +328,7 @@ func TestCarriedLocalRecoveryReservation(t *testing.T) {
 		c.git.originHead = "h9"
 		c.rebaseConflict = true
 		status, _ := c.landCarried(carriedRequest())
-		c.expect(status, 3, "rebase conflict while recovering local carried commit; resolve by hand against origin/main and rerun")
+		c.expect(status, 3, "the unfinished exception commit conflicts with main")
 		if len(c.git.called("rebase --abort")) != 1 || c.pushes() != 0 || len(c.calls("abandon")) != 0 {
 			t.Fatalf("calls %v log %v", c.git.calls, c.log.calls)
 		}
@@ -338,7 +338,7 @@ func TestCarriedLocalRecoveryReservation(t *testing.T) {
 		c.status.Reservation = "reservation: open:row-0"
 		c.git.message = strings.Replace(c.git.message, "Carry: op1", "Carry: op9", 1)
 		status, _ := c.landCarried(carriedRequest())
-		c.expect(status, 1, "land refused: local carried commit names Carry: op9, not op1")
+		c.expect(status, 1, "local carried commit names Carry: op9, not op1")
 		c.inOrder("abandon row-0 why=carried landing exited before its push (status 1)")
 		if c.pushes() != 0 {
 			t.Fatal("pushed a foreign commit")
@@ -349,14 +349,14 @@ func TestCarriedLocalRecoveryReservation(t *testing.T) {
 		c.status.Reservation = "reservation: open:row-0"
 		c.git.message += "\nCarried-Battery: red"
 		status, _ := c.landCarried(carriedRequest())
-		c.expect(status, 1, "land refused: local carried commit c1' has 2 Carried-Battery trailers; expected exactly one")
+		c.expect(status, 1, "local carried commit c1' has 2 Carried-Battery trailers; expected exactly one")
 	})
 	t.Run("missing goal item refuses", func(t *testing.T) {
 		c := recovering(t)
 		c.status.Reservation = "reservation: open:row-0"
 		c.git.message = strings.Replace(c.git.message, "Goal-Item: g1", "Goal-Item: g2", 1)
 		status, _ := c.landCarried(carriedRequest())
-		c.expect(status, 1, "land refused: local carried commit must have exactly one Goal-Item: g1")
+		c.expect(status, 1, "local carried commit must have exactly one Goal-Item: g1")
 	})
 	t.Run("moved workspace asks for a replacement", func(t *testing.T) {
 		c := recovering(t)
@@ -364,9 +364,9 @@ func TestCarriedLocalRecoveryReservation(t *testing.T) {
 		c.status.Source = "answer"
 		c.status.Workspace = "w-old"
 		status, _ := c.landCarried(carriedRequest())
-		c.expect(status, 3, "word workspace=w-old candidate workspace=w-t1 (tree t1); a person replaces the exception: metasystem work land g1 --exception missing-declaration --replace-exception op1 --reason 'the recovered carried workspace changed' --by wido")
+		c.expect(status, 3, "word workspace=w-old candidate workspace=w-t1 (tree t1)", "run: metasystem work land g1 --exception missing-declaration --replace-exception op1 --reason 'the recovered carried workspace changed' --by wido")
 		c.inOrder("channel-ask goal=g1 wants=carry workspace=w-t1 goal=g1 past=missing-declaration fact=the recovered commit workspace differs from the channel carry word",
-			"abandon row-0 why=word workspace=w-old")
+			"abandon row-0 why=the files changed since exception op1 was recorded")
 	})
 }
 
@@ -384,7 +384,7 @@ func TestCarriedAsksBeforeAnyCommit(t *testing.T) {
 			Refusal: "word past=conflicting-declarations but the landing saw ordinary=missing-declaration", Provenance: "none change=x",
 			VerdictTrailer: "would-refuse code=carried-refusal-mismatch"}
 		status, _ := c.landCarried(carriedRequest())
-		c.expect(status, 3, "the landing saw ordinary=missing-declaration", "!! STEP FAILED: commit (exit 3)")
+		c.expect(status, 3, "the landing saw ordinary=missing-declaration", "step failed: commit (exit 3)")
 		c.inOrder("reserve ref=op1", "observe judge=live", "abandon row-1 why=step commit failed with exit 3: carried-refusal-mismatch: word past=conflicting-declarations but the landing saw ordinary=missing-declaration")
 		if c.commits() != 0 || c.pushes() != 0 || len(c.calls("intent")) != 0 || len(c.calls("abandon")) != 1 {
 			t.Fatalf("commits=%d pushes=%d log=%v", c.commits(), c.pushes(), c.log.calls)
@@ -397,28 +397,28 @@ func TestCarriedAsksBeforeAnyCommit(t *testing.T) {
 	}{
 		{"origin unreachable", func(c *carriedBed) {
 			c.git.on("fetch", func(GitCall) GitResult { return failed(128, "fatal: unable to access origin\n") })
-		}, "the code remote could not be fetched; repair origin and rerun metasystem work land g1 --using-exception op1"},
+		}, "origin couldn't be fetched, so nothing was landed\nrun: metasystem work land g1 --using-exception op1  (once origin answers)\n"},
 		{"goal fetch failed", func(c *carriedBed) { c.fetchOutput, c.fetchCode = "goal fetch: remote refused\n", 1 }, "goal fetch: remote refused"},
 		{"goal fetch without a tip", func(c *carriedBed) { c.fetchOutput = "fetched tip=abc\n" }, "goal fetch returned no accepted ledger tip: fetched tip=abc"},
 		{"carry status failed", func(c *carriedBed) {
 			c.statusOutput, c.statusCode = "carry-ledger-moved: accepted ledger is x, not y", 1
 		}, "carry-ledger-moved: accepted ledger is x, not y"},
-		{"carry status incomplete", func(c *carriedBed) { c.status.Reservation = "" }, "carry status was incomplete; fetch the ledger and rerun"},
+		{"carry status incomplete", func(c *carriedBed) { c.status.Reservation = "" }, "exception op1 reads incomplete in the goal records"},
 		{"superseded word", func(c *carriedBed) { c.status.Consumption = "superseded:op2" },
-			"word op1 was superseded by op2; land under it: metasystem work land g1 --using-exception op2"},
-		{"expired word", func(c *carriedBed) { c.status.Word = "expired" }, "word op1 expired; record a new exception"},
-		{"missing word", func(c *carriedBed) { c.status.Word = "missing" }, "carry word op1 is missing on goal g1; fetch the ledger"},
-		{"unproven word", func(c *carriedBed) { c.status.Word = "unproven" }, "carry word op1 is not proven; issue it from a verified terminal"},
-		{"unknown word state", func(c *carriedBed) { c.status.Word = "odd" }, "carry word op1 has unknown state odd"},
-		{"unsupported consumption", func(c *carriedBed) { c.status.Consumption = "elsewhere:x" }, "word op1 has unsupported consumption state elsewhere:x"},
-		{"not on main", func(c *carriedBed) { c.git.branch = "topic" }, "carry asks: the carried landing lands main; you are on topic"},
+			"exception op1 was replaced by op2\nrun: metasystem work land g1 --using-exception op2\n"},
+		{"expired word", func(c *carriedBed) { c.status.Word = "expired" }, "exception op1 has expired, so nothing was landed"},
+		{"missing word", func(c *carriedBed) { c.status.Word = "missing" }, "goal g1 has no exception op1, so nothing was landed"},
+		{"unproven word", func(c *carriedBed) { c.status.Word = "unproven" }, "exception op1 wasn't recorded by a person at an enrolled terminal"},
+		{"unknown word state", func(c *carriedBed) { c.status.Word = "odd" }, "carry word state: odd"},
+		{"unsupported consumption", func(c *carriedBed) { c.status.Consumption = "elsewhere:x" }, "consumption state: elsewhere:x"},
+		{"not on main", func(c *carriedBed) { c.git.branch = "topic" }, "an exception lands main, and this checkout is on topic\nrun: git switch main  (then repeat this command)\n"},
 		{"reservation refused", func(c *carriedBed) {
 			c.reserveOutput, c.reserveCode = "carry-debt-unpaid: carry debt is unpaid: reservation r-a on goal g0 is in flight (seat=m1 expires=x)\n", 3
 		}, "carry-debt-unpaid: carry debt is unpaid: reservation r-a on goal g0 is in flight (seat=m1 expires=x)"},
 		{"reservation incomplete", func(c *carriedBed) { c.reserveOutput = "carrying=row-1 ledger=short\n" },
 			"reservation returned an incomplete row: carrying=row-1 ledger=short"},
 		{"workspace moved before the reservation", func(c *carriedBed) { c.status.Workspace = "w-old" },
-			"word workspace=w-old candidate workspace=w-t1 (tree t1); a person replaces the exception: metasystem work land g1 --exception missing-declaration --replace-exception op1 --reason 'origin moved the carried workspace' --by wido"},
+			"word workspace=w-old candidate workspace=w-t1 (tree t1)"},
 	}
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
@@ -458,7 +458,7 @@ func TestCarriedOriginMoveAfterTheReservationReleasesIt(t *testing.T) {
 		c.rebaseConflict = true
 		c.git.on("diff --name-only --diff-filter=U", func(GitCall) GitResult { return ok("payload.txt\nother.txt\n") })
 		status, _ := c.landCarried(carriedRequest())
-		c.expect(status, 3, "rebase conflict on payload.txt,other.txt; resolve by hand against origin/main, stage, rerun")
+		c.expect(status, 3, "the change conflicts with main in payload.txt,other.txt, so nothing was landed")
 		c.inOrder("reserve ref=op1", "abandon row-1 why=carried landing stopped at rebase conflict")
 		if len(c.git.called("rebase --abort")) != 1 || len(c.git.called("reset --soft h0")) != 1 || len(c.git.called("update-ref HEAD wip h0")) != 1 {
 			t.Fatalf("the WIP was not unwound: %v", c.git.calls)
@@ -479,7 +479,7 @@ func TestCarriedOriginMoveAfterTheReservationReleasesIt(t *testing.T) {
 			return ok("t1\n")
 		})
 		status, _ := c.landCarried(carriedRequest())
-		c.expect(status, 3, "word workspace=w-t1 candidate workspace=w-t2 (tree t2); a person replaces the exception: metasystem work land g1 --exception missing-declaration --replace-exception op1 --reason 'origin moved the carried workspace' --by wido")
+		c.expect(status, 3, "word workspace=w-t1 candidate workspace=w-t2 (tree t2)", "run: metasystem work land g1 --exception missing-declaration --replace-exception op1 --reason 'origin moved the carried workspace' --by wido  (a person replaces the exception)")
 		c.inOrder("reserve ref=op1", "abandon row-1 why=origin moved the carried workspace",
 			"channel-ask goal=g1 wants=carry workspace=w-t2 goal=g1 past=missing-declaration fact=origin moved the candidate workspace after the channel carry word")
 		if c.commits() != 0 || c.pushes() != 0 {
@@ -537,7 +537,7 @@ func TestCarriedCrashAfterPushCompletesTheRecord(t *testing.T) {
 	request := carriedRequest()
 	request.StagedOnly = false
 	status, _ = c.landCarried(request)
-	c.expect(status, 0, "already landed as "+pushed+"; completing the record", "== STEP: complete carried goal record")
+	c.expect(status, 0, "already landed as "+pushed+"; completing the record", "step: complete carried goal record")
 	if c.pushes() != 1 || c.commits() != 1 || len(c.calls("carried entry=entry-1 rebuild= ref= repair=false")) != 1 || len(c.calls("abandon")) != 0 {
 		t.Fatalf("pushes=%d commits=%d log=%v", c.pushes(), c.commits(), c.log.calls)
 	}
@@ -548,13 +548,13 @@ func TestCarriedCrashAfterPushCompletesTheRecord(t *testing.T) {
 	c.status.Intent = "none"
 	request.SkipTransport = false
 	status, _ = c.landCarried(request)
-	c.expect(status, 0, "== STEP: rebuild carried goal record")
+	c.expect(status, 0, "step: rebuild carried goal record")
 	c.inOrder("carried entry= rebuild="+pushed+" ref=op1 repair=false", "transport main")
 
 	c.status.Consumption = "ledger:row-9"
 	c.status.Counselor = "counselor: missing"
 	status, _ = c.landCarried(request)
-	c.expect(status, 0, "== STEP: repair carried counselor record", "already recorded in the goal ledger as row-9")
+	c.expect(status, 0, "step: repair carried counselor record", "already recorded in the goal ledger as row-9")
 	if len(c.calls("carried entry= rebuild= ref=op1 repair=true")) != 1 {
 		t.Fatalf("log %v", c.log.calls)
 	}
@@ -571,7 +571,7 @@ func TestCarriedCrashAfterPushCompletesTheRecord(t *testing.T) {
 	c.status.Intent = "carrying:entry-1"
 	c.carriedCode = 1
 	status, _ = c.landCarried(request)
-	c.expect(status, 1, "!! STEP FAILED: complete carried goal record (exit 1)")
+	c.expect(status, 1, "step failed: complete carried goal record (exit 1)")
 	if len(c.calls("abandon")) != 0 {
 		t.Fatalf("log %v", c.log.calls)
 	}

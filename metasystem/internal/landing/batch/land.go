@@ -123,7 +123,7 @@ func LandSeries(store Store, id, actor string, at time.Time, seams LandSeams) er
 		return err
 	}
 	if record.State != StateLanding || record.Proof == nil || record.Proof.Status != "green" {
-		return fmt.Errorf("BATCH_LAND_STATE_REFUSED: batch %s has no green landing candidate", id)
+		return fmt.Errorf("%s: batch %s has no green landing candidate", codeLandStateRefused, id)
 	}
 	proofOwner := ""
 	for index := len(record.History) - 1; index >= 0; index-- {
@@ -135,11 +135,11 @@ func LandSeries(store Store, id, actor string, at time.Time, seams LandSeams) er
 		break
 	}
 	if proofOwner == "" || proofOwner != actor {
-		return fmt.Errorf("BATCH_LAND_DELEGATION_REFUSED: landing actor %s is not green-proof owner %s", actor, proofOwner)
+		return fmt.Errorf("%s: landing actor %s is not %s, who owns the green test run", codeLandDelegationRefused, actor, proofOwner)
 	}
 	units := joinedUnits(record.Units)
 	if len(units) == 0 {
-		return fmt.Errorf("BATCH_LAND_STATE_REFUSED: batch %s has no joined units", id)
+		return fmt.Errorf("%s: batch %s has no joined units", codeLandStateRefused, id)
 	}
 	progress := LandingProgress{Base: record.BaseTree, Commits: map[string]string{}, BuildCommits: map[string]string{}}
 	if record.Landing != nil {
@@ -199,10 +199,10 @@ func LandSeries(store Store, id, actor string, at time.Time, seams LandSeams) er
 			return landed, checkErr
 		}
 		if seams.SeriesOnOrigin == nil {
-			return false, fmt.Errorf("BATCH_LAND_UNWIRED: already-landed helper is absent")
+			return false, fmt.Errorf("%s: already-landed helper is absent", codeLandUnwired)
 		}
 		if seams.Abandon == nil {
-			return false, fmt.Errorf("BATCH_LAND_UNWIRED: abandon helper is absent")
+			return false, fmt.Errorf("%s: abandon helper is absent", codeLandUnwired)
 		}
 		if err := seams.Abandon(candidateTip, detachAt); err != nil {
 			return false, err
@@ -216,7 +216,7 @@ func LandSeries(store Store, id, actor string, at time.Time, seams LandSeams) er
 			return nil
 		}
 		if seams.FlakeRegister == nil || seams.Now == nil {
-			return fmt.Errorf("BATCH_LAND_UNWIRED: the flake register recheck is absent")
+			return fmt.Errorf("%s: the flake register recheck is absent", codeLandUnwired)
 		}
 		open, err := seams.FlakeRegister()
 		now, nowErr := seams.Now()
@@ -240,7 +240,7 @@ func LandSeries(store Store, id, actor string, at time.Time, seams LandSeams) er
 			return false, err
 		}
 		if seams.RecoverPush == nil {
-			return false, fmt.Errorf("BATCH_LAND_PUSH_REFUSED: origin %s refused the complete series: %w", recoveryOrigin, pushErr)
+			return false, fmt.Errorf("%s: origin %s refused the complete series: %w", codeLandPushRefused, recoveryOrigin, pushErr)
 		}
 		recovery, recoveryErr := seams.RecoverPush(recoveryOrigin, record.BaseTree, candidateTip, recheckFlakes)
 		if recoveryErr != nil {
@@ -268,7 +268,7 @@ func LandSeries(store Store, id, actor string, at time.Time, seams LandSeams) er
 			if storeErr := holdPushRejection(recovery.Origin, recoveryErr); storeErr != nil {
 				return false, errors.Join(pushErr, recoveryErr, storeErr)
 			}
-			return false, fmt.Errorf("BATCH_LAND_PUSH_REFUSED: origin %s held after remote rejection: %w", recovery.Origin, recoveryErr)
+			return false, fmt.Errorf("%s: origin %s held after remote rejection: %w", codeLandPushRefused, recovery.Origin, recoveryErr)
 		}
 		progress.RefusedOrigin, progress.RefusedBase = recovery.Origin, recoveryOrigin
 		if recoveryErr != nil {
@@ -288,17 +288,17 @@ func LandSeries(store Store, id, actor string, at time.Time, seams LandSeams) er
 				}
 				return abandonAndReopen(progress.publishedTip(), recovery.Origin, baseTree)
 			}
-			return false, fmt.Errorf("BATCH_LAND_PUSH_REFUSED: origin %s recovery failed: %w", recoveryOrigin, errors.Join(pushErr, recoveryErr))
+			return false, fmt.Errorf("%s: origin %s recovery failed: %w", codeLandPushRefused, recoveryOrigin, errors.Join(pushErr, recoveryErr))
 		}
 		if recovery.Reopen {
 			if landed, checkErr := markAlreadyLanded(recovery.Origin, candidateTip); checkErr != nil || landed {
 				return landed, checkErr
 			}
 			if seams.SeriesOnOrigin == nil {
-				return false, fmt.Errorf("BATCH_LAND_UNWIRED: already-landed helper is absent")
+				return false, fmt.Errorf("%s: already-landed helper is absent", codeLandUnwired)
 			}
 			if seams.Abandon == nil {
-				return false, fmt.Errorf("BATCH_LAND_UNWIRED: abandon helper is absent")
+				return false, fmt.Errorf("%s: abandon helper is absent", codeLandUnwired)
 			}
 			if abandonErr := seams.Abandon(candidateTip, recovery.Origin); abandonErr != nil {
 				return false, abandonErr
@@ -306,7 +306,7 @@ func LandSeries(store Store, id, actor string, at time.Time, seams LandSeams) er
 			return false, ReopenMovedBase(store, id, recovery.BaseTree, recovery.LandedBy, actor, at)
 		}
 		if !recovery.Pushed || recovery.Tip == "" {
-			return false, fmt.Errorf("BATCH_LAND_PUSH_REFUSED: origin %s is unchanged after the refused push: %w", recoveryOrigin, pushErr)
+			return false, fmt.Errorf("%s: origin %s is unchanged after the refused push: %w", codeLandPushRefused, recoveryOrigin, pushErr)
 		}
 		progress.PushComplete, progress.PushedTip = true, recovery.Tip
 		progress.recordReceiptTip(recovery.Tip)
@@ -322,11 +322,11 @@ func LandSeries(store Store, id, actor string, at time.Time, seams LandSeams) er
 		}
 		if seams.VerifySeries != nil {
 			if err := seams.VerifySeries(units, cloneStrings(progress.Commits)); err != nil {
-				return false, fmt.Errorf("BATCH_PREFIX_PROOF_REFUSED: final series: %w", err)
+				return false, fmt.Errorf("%s: final series: %w", codePrefixProofRefused, err)
 			}
 		}
 		if seams.Push == nil {
-			return false, fmt.Errorf("BATCH_LAND_UNWIRED: push helper is absent")
+			return false, fmt.Errorf("%s: push helper is absent", codeLandUnwired)
 		}
 		pushErr := seams.Push(record.BaseTree, candidateTip)
 		if pushErr == nil {
@@ -353,10 +353,10 @@ func LandSeries(store Store, id, actor string, at time.Time, seams LandSeams) er
 			if storeErr := holdPushRejection(origin, pushErr); storeErr != nil {
 				return false, errors.Join(pushErr, storeErr)
 			}
-			return false, fmt.Errorf("BATCH_LAND_PUSH_REFUSED: origin %s held after remote rejection: %w", origin, pushErr)
+			return false, fmt.Errorf("%s: origin %s held after remote rejection: %w", codeLandPushRefused, origin, pushErr)
 		}
 		if !IsStaleEndpointLease(pushErr) {
-			return false, fmt.Errorf("BATCH_LAND_PUSH_REFUSED: endpoint push failed without a stale lease: %w", pushErr)
+			return false, fmt.Errorf("%s: endpoint push failed without a stale lease: %w", codeLandPushRefused, pushErr)
 		}
 		if seams.LeaseBase == "" {
 			return false, &MissingLeaseBaseError{}
@@ -367,7 +367,7 @@ func LandSeries(store Store, id, actor string, at time.Time, seams LandSeams) er
 			return false, errors.Join(pushErr, storeErr)
 		}
 		if origin == progress.RefusedBase {
-			return false, fmt.Errorf("BATCH_LAND_PUSH_REFUSED: origin %s is unchanged after the refused push: %w", origin, pushErr)
+			return false, fmt.Errorf("%s: origin %s is unchanged after the refused push: %w", codeLandPushRefused, origin, pushErr)
 		}
 		return recoverNow(origin, candidateTip, pushErr)
 	}
@@ -387,7 +387,7 @@ func LandSeries(store Store, id, actor string, at time.Time, seams LandSeams) er
 			candidateTip = progress.Commits[units[len(units)-1].GoalID]
 		}
 		if candidateTip == "" {
-			return fmt.Errorf("BATCH_LAND_PUSH_REFUSED: held landing has no candidate tip")
+			return fmt.Errorf("%s: held landing has no candidate tip", codeLandPushRefused)
 		}
 		pushed, pushErr := attemptPush(candidateTip)
 		if pushErr != nil {
@@ -403,7 +403,7 @@ func LandSeries(store Store, id, actor string, at time.Time, seams LandSeams) er
 			candidateTip = progress.Commits[units[len(units)-1].GoalID]
 		}
 		if candidateTip == "" {
-			return fmt.Errorf("BATCH_LAND_PUSH_REFUSED: refused landing has no candidate tip")
+			return fmt.Errorf("%s: refused landing has no candidate tip", codeLandPushRefused)
 		}
 		if progress.RefusedBase == origin {
 			baseTree, treeErr := originTree(origin)
@@ -440,14 +440,14 @@ func LandSeries(store Store, id, actor string, at time.Time, seams LandSeams) er
 		}
 		if unit.IsChange() {
 			if seams.ReplayChange == nil {
-				return fmt.Errorf("BATCH_LAND_UNWIRED: change replay helper is absent")
+				return fmt.Errorf("%s: change replay helper is absent", codeLandUnwired)
 			}
 			commit, replayErr := seams.ReplayChange(unit)
 			if replayErr != nil {
 				return ejectRefusedMember(store, id, actor, at, record.BaseTree, unit, replayErr, seams.Reset)
 			}
 			if commit == "" {
-				return fmt.Errorf("BATCH_LAND_COMMIT_REFUSED: change %s returned no commit", unit.GoalID)
+				return fmt.Errorf("%s: change %s returned no commit", codeLandCommitRefused, unit.GoalID)
 			}
 			progress.Commits[unit.GoalID] = commit
 			if err := store.Update(id, func(current *Record) error { current.Landing = &progress; return nil }); err != nil {
@@ -466,11 +466,11 @@ func LandSeries(store Store, id, actor string, at time.Time, seams LandSeams) er
 			ok = true
 		}
 		if !ok || receipt.Tree != record.PrefixTrees[index] {
-			return fmt.Errorf("BATCH_LAND_RECEIPT_REFUSED: unit %s has no exact prefix receipt", unit.GoalID)
+			return fmt.Errorf("%s: unit %s has no exact prefix receipt", codeLandReceiptRefused, unit.GoalID)
 		}
 		if len(unit.Builds) != 0 {
 			if seams.ApplyBuild == nil || seams.AppendBuildReceipt == nil || seams.CommitBuild == nil {
-				return fmt.Errorf("BATCH_LAND_UNWIRED: branch member helpers are incomplete")
+				return fmt.Errorf("%s: branch member helpers are incomplete", codeLandUnwired)
 			}
 			for _, build := range unit.Builds {
 				if progress.BuildCommits[build.Commit] != "" {
@@ -487,7 +487,7 @@ func LandSeries(store Store, id, actor string, at time.Time, seams LandSeams) er
 					return ejectRefusedMember(store, id, actor, at, record.BaseTree, unit, err, seams.Reset)
 				}
 				if commit == "" {
-					return fmt.Errorf("BATCH_LAND_COMMIT_REFUSED: build %s returned no commit", build.Commit)
+					return fmt.Errorf("%s: build %s returned no commit", codeLandCommitRefused, build.Commit)
 				}
 				progress.BuildCommits[build.Commit] = commit
 				progress.Commits[unit.GoalID] = commit
@@ -498,7 +498,7 @@ func LandSeries(store Store, id, actor string, at time.Time, seams LandSeams) er
 			continue
 		}
 		if seams.Apply == nil || seams.AppendReceipt == nil || seams.Commit == nil {
-			return fmt.Errorf("BATCH_LAND_UNWIRED: local series helpers are incomplete")
+			return fmt.Errorf("%s: local series helpers are incomplete", codeLandUnwired)
 		}
 		if err = seams.Apply(unit); err == nil {
 			err = seams.AppendReceipt(unit, receipt)
@@ -511,7 +511,7 @@ func LandSeries(store Store, id, actor string, at time.Time, seams LandSeams) er
 			return ejectRefusedMember(store, id, actor, at, record.BaseTree, unit, err, seams.Reset)
 		}
 		if commit == "" {
-			return fmt.Errorf("BATCH_LAND_COMMIT_REFUSED: unit %s returned no commit", unit.GoalID)
+			return fmt.Errorf("%s: unit %s returned no commit", codeLandCommitRefused, unit.GoalID)
 		}
 		progress.Commits[unit.GoalID] = commit
 		if err := store.Update(id, func(current *Record) error { current.Landing = &progress; return nil }); err != nil {
@@ -530,7 +530,7 @@ func LandSeries(store Store, id, actor string, at time.Time, seams LandSeams) er
 	}
 	if !progress.HeldChecked {
 		if seams.Held == nil {
-			return fmt.Errorf("BATCH_LAND_HELD_REFUSED: held helper is absent")
+			return fmt.Errorf("%s: held helper is absent", codeLandHeldRefused)
 		}
 		if heldErr := seams.Held(record.BaseTree, tip); heldErr != nil {
 			// A refusal naming one member's commit ejects that member (a
@@ -550,7 +550,7 @@ func LandSeries(store Store, id, actor string, at time.Time, seams LandSeams) er
 					}
 				}
 			}
-			return fmt.Errorf("BATCH_LAND_HELD_REFUSED: complete series did not pass held: %w", heldErr)
+			return fmt.Errorf("%s: complete series did not pass held: %w", codeLandHeldRefused, heldErr)
 		}
 		progress.HeldChecked = true
 		if err := store.Update(id, func(current *Record) error { current.Landing = &progress; return nil }); err != nil {
@@ -604,11 +604,11 @@ func reopenLandingCandidate(store Store, id, newBaseTree, landedBy, actor string
 	}
 	reopenable := record.State == StateLanding || !allowSameBase && slices.Contains([]string{StateOpen, StateSealed, StateProving}, record.State)
 	if !reopenable || newBaseTree == "" || (!allowSameBase && newBaseTree == record.BaseTree) {
-		return fmt.Errorf("BATCH_LAND_PUSH_REFUSED: moved trunk did not supply a new landing base")
+		return fmt.Errorf("%s: moved trunk did not supply a new landing base", codeLandPushRefused)
 	}
 	units := joinedUnits(record.Units)
 	if len(units) == 0 {
-		return fmt.Errorf("BATCH_LAND_STATE_REFUSED: batch %s has no joined units", id)
+		return fmt.Errorf("%s: batch %s has no joined units", codeLandStateRefused, id)
 	}
 	return reassembleSurvivorsOnBase(store, id, actor, at, nil, newBaseTree, detail, landedBy)
 }
@@ -735,7 +735,7 @@ func landedCommitOf(progress LandingProgress, unit Unit, commit string) bool {
 func ejectHeldMember(store Store, id, actor string, at time.Time, base string, unit Unit, cause error, reset func(string) error) error {
 	if reset != nil {
 		if err := reset(base); err != nil {
-			return fmt.Errorf("BATCH_LAND_HELD_REFUSED: change %s: reset: %w", unit.GoalID, err)
+			return fmt.Errorf("%s: change %s: reset: %w", codeLandHeldRefused, unit.GoalID, err)
 		}
 	}
 	kind := "goal"

@@ -145,9 +145,8 @@ type Owners struct {
 	Held           func(root, base, commit, remote, ref string, stdout, stderr io.Writer) int
 	// LandingGate reads a goal's landing gate (g1-s70 D2) against a freshly
 	// fetched ledger, immediately before each push of a landing in that
-	// goal's name: nil lets the push go, an error is the refusal a person
-	// reads, its register code and the human verb that carries past it. A
-	// nil owner reads no gate.
+	// goal's name: nil lets the push go; a *GateRefusal is the refusal a
+	// person reads, any other error its cause. A nil owner reads no gate.
 	LandingGate func(root, goal string) error
 	// RecordRelease, when set, records the goal's release set for the
 	// commit about to be pushed (branch is the pushed branch), before each
@@ -186,8 +185,33 @@ type Owners struct {
 type ReceiptDecision struct {
 	Refused bool
 	Detail  string
+	// Removed is a refusal because the landing deletes the receipt record;
+	// Command is the one command that writes a missing line.
+	Removed bool
+	Command string
 	// Encoded is the decision as the owner encodes it.
 	Encoded string
+}
+
+// GateRefusal is a goal's landing gate refusing a push, in the two lines a
+// person reads: why the goal may not land now, and the one command (or the
+// words) that resolves it; its register code and the human verb that
+// carries past it are details.
+type GateRefusal struct {
+	Reason  string
+	Run     []string
+	Then    string
+	Details []string
+	// Cause is the refusal in its register's terms, for records.
+	Cause string
+}
+
+// Error is the refusal in its register's terms when it has them.
+func (g *GateRefusal) Error() string {
+	if g.Cause != "" {
+		return g.Cause
+	}
+	return g.Reason
 }
 
 // RecertificationFacts are the transport facts of a recertification record.

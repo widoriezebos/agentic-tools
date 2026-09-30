@@ -472,7 +472,7 @@ func FetchBatchOrigin(root string) (string, string, error) {
 	command := exec.Command("git", "-C", root, "fetch", "origin", "+refs/heads/main:refs/remotes/origin/main")
 	command.Env = gittree.ScrubbedEnviron()
 	if output, err := command.CombinedOutput(); err != nil {
-		return "", "", fmt.Errorf("BATCH_LAND_PUSH_REFUSED: fetch origin/main: %s: %w", strings.TrimSpace(string(output)), err)
+		return "", "", fmt.Errorf("%s: fetch origin/main: %s: %w", codeLandPushRefused, strings.TrimSpace(string(output)), err)
 	}
 	commit, err := GitOutput(root, "rev-parse", "refs/remotes/origin/main")
 	if err != nil {
@@ -497,7 +497,7 @@ func RebasedPrefixTreesWith(root, base, tip string, units []batch.Unit, readGit 
 		}
 	}
 	if len(commits) != want {
-		return nil, fmt.Errorf("BATCH_PREFIX_PROOF_REFUSED: rebased series has %d commits, want %d", len(commits), want)
+		return nil, fmt.Errorf("%s: rebased series has %d commits, want %d", codePrefixProofRefused, len(commits), want)
 	}
 	trees := make([]string, 0, len(units))
 	offset := 0
@@ -584,7 +584,7 @@ func ExecuteBatchPrefixReceiptWithDependencies(root, id string, record batch.Rec
 	var result proofrun.TestResult
 	if err := strictjson.Read(resultPath, &result); err != nil {
 		if runErr != nil {
-			return batch.PrefixRunResult{}, fmt.Errorf("run batch prefix proof: %s: %w", strings.TrimSpace(string(output)), runErr)
+			return batch.PrefixRunResult{}, fmt.Errorf("run the batch's test run: %s: %w", strings.TrimSpace(string(output)), runErr)
 		}
 		return batch.PrefixRunResult{}, err
 	}
@@ -774,7 +774,7 @@ func commitForTree(root, ref, tree string) (string, error) {
 			return fields[0], nil
 		}
 	}
-	return "", fmt.Errorf("BATCH_LAND_TRUNK_MOVED: no %s commit has base tree %s", ref, tree)
+	return "", fmt.Errorf("%s: no %s commit has base tree %s", codeLandTrunkMoved, ref, tree)
 }
 
 func GitOutput(root string, args ...string) (string, error) {

@@ -28,7 +28,7 @@ func TestLaneAccountResolvesOnlyTheHostLane(t *testing.T) {
 	if err != nil || !IsAccount(id) || id != AccountID(root) || len(id) != len("lane:")+12 {
 		t.Fatalf("account=%q err=%v", id, err)
 	}
-	if _, err := ResolveAccount(home, t.TempDir()); err == nil || !strings.Contains(err.Error(), "is not the landing lane") {
+	if _, err := ResolveAccount(home, t.TempDir()); err == nil || !strings.Contains(err.Error(), "is not inside the landing lane") {
 		t.Fatalf("another checkout: %v", err)
 	}
 	if IsAccount("goal-a") || IsAccount("change:abc") {

@@ -111,7 +111,7 @@ type Keeper struct {
 // start asks for.
 func UnarmedRefusal(root string) *Refusal {
 	return &Refusal{Code: CodeUnarmed,
-		Message: fmt.Sprintf("the landing lane's owner at %s cannot run: that checkout's machinery is not started (its supervision is not armed), so nothing can start or keep its owner", root),
+		Message: fmt.Sprintf("the landing lane can't run: its checkout %s isn't started (its supervision is not armed)", root),
 		Fix:     "a person runs, at a terminal no agent started: metasystem system start --repo " + root,
 		Argv:    []string{"metasystem", "system", "start", "--repo", root}}
 }
@@ -120,7 +120,7 @@ func UnarmedRefusal(root string) *Refusal {
 // signs what it lands with that name, so it stops at every start there.
 func NoMachineRefusal(root string) *Refusal {
 	return &Refusal{Code: CodeNoMachine,
-		Message: fmt.Sprintf("the landing checkout %s has no machine nickname, so its owner stops at every start there", root),
+		Message: fmt.Sprintf("the landing checkout %s has no machine nickname yet, so the lane can't run there", root),
 		Fix:     "name it once: git -C " + root + " config metasystem.goal.machine landing (any one word), then run metasystem landing start",
 		Argv:    []string{"git", "-C", root, "config", "metasystem.goal.machine", "landing"}}
 }

@@ -22,7 +22,7 @@ func prepareProspectiveBatchCost(root string, record batch.Record, incoming batc
 	assemble func(string, string, []batch.Unit) ([]string, error)) (batch.Unit, batch.CostForecast, error) {
 	unitTrees, err := assemble(root, record.BaseTree, []batch.Unit{incoming})
 	if err != nil || len(unitTrees) != 1 {
-		return batch.Unit{}, batch.CostForecast{}, fmt.Errorf("BATCH_COST_INPUT_MOVED: incoming unit tree: %w", err)
+		return batch.Unit{}, batch.CostForecast{}, fmt.Errorf("%s: incoming unit tree: %w", codeCostInputMoved, err)
 	}
 	selection, err := batch.PlanJoinedUnit(root, record.BaseTree, incoming, unitTrees[0], plan)
 	if err != nil {
@@ -39,7 +39,7 @@ func prepareProspectiveBatchCost(root string, record batch.Record, incoming batc
 	units = append(units, incoming)
 	prefixes, err := assemble(root, record.BaseTree, units)
 	if err != nil || len(prefixes) != len(units) {
-		return batch.Unit{}, batch.CostForecast{}, fmt.Errorf("BATCH_COST_INPUT_MOVED: prospective series: %w", err)
+		return batch.Unit{}, batch.CostForecast{}, fmt.Errorf("%s: prospective series: %w", codeCostInputMoved, err)
 	}
 	candidate := record
 	candidate.Units = units
@@ -72,7 +72,7 @@ func ForecastBatchCostWith(root string, candidate batch.Record, incoming *batch.
 		}
 	}
 	if len(units) == 0 || len(candidate.PrefixTrees) != len(units) || candidate.TipTree != candidate.PrefixTrees[len(units)-1] {
-		return batch.CostForecast{}, fmt.Errorf("BATCH_COST_INPUT_MOVED: incomplete cumulative prefix series")
+		return batch.CostForecast{}, fmt.Errorf("%s: incomplete cumulative prefix series", codeCostInputMoved)
 	}
 	capMinutes, err := testrun.ProofCostCap(root)
 	if err != nil {
@@ -135,11 +135,11 @@ func ForecastBatchCostWith(root string, candidate batch.Record, incoming *batch.
 		}
 		request := evidence.Request
 		if request.ID != selection.ID || request.Tree != selection.Tree || request.ChargeGoal != selection.GoalID {
-			return batch.CostForecast{}, fmt.Errorf("BATCH_COST_INPUT_MOVED: selection %s returned a different request", selection.ID)
+			return batch.CostForecast{}, fmt.Errorf("%s: selection %s returned a different request", codeCostInputMoved, selection.ID)
 		}
 		for _, row := range evidence.Groups {
 			if row.RequestID != selection.ID || row.Tree != selection.Tree || row.ChargeGoal != selection.GoalID {
-				return batch.CostForecast{}, fmt.Errorf("BATCH_COST_INPUT_MOVED: %s returned an unbound group", selection.ID)
+				return batch.CostForecast{}, fmt.Errorf("%s: %s returned an unbound group", codeCostInputMoved, selection.ID)
 			}
 			if row.Status == "reusable" {
 				forecast.Reusable++
@@ -250,7 +250,7 @@ func batchBudgetProjection(root string, unit batch.Unit, incoming *batch.Unit, a
 		}
 		if binding.Revision != incoming.Claim.Revision || binding.File == nil || binding.File.Claimed == nil ||
 			binding.File.Claimed.AccountingRevision != incoming.Claim.AccountingRevision {
-			return BatchCostBudgetProjection{}, fmt.Errorf("BATCH_COST_INPUT_MOVED: incoming claim changed before handover")
+			return BatchCostBudgetProjection{}, fmt.Errorf("%s: incoming claim changed before handover", codeCostInputMoved)
 		}
 		return BatchCostBudgetProjection{Budget: dispatchcore.ProjectBudget(incoming.SeatRoot, binding.File, at), LandingClaim: binding.File.IsLandingClaim()}, nil
 	}
@@ -264,12 +264,12 @@ func batchBudgetProjection(root string, unit batch.Unit, incoming *batch.Unit, a
 		return BatchCostBudgetProjection{}, err
 	}
 	if projection.Tree == nil || projection.Tree.Live[unit.GoalID] == nil {
-		return BatchCostBudgetProjection{}, fmt.Errorf("BATCH_COST_AUTHORITY_REFUSED: member %s is absent from accepted ledger", unit.GoalID)
+		return BatchCostBudgetProjection{}, fmt.Errorf("%s: member %s is absent from accepted ledger", codeCostAuthorityRefused, unit.GoalID)
 	}
 	file := projection.Tree.Live[unit.GoalID]
 	if file.State != goal.StateClaimed || file.Claimed == nil || file.Claimed.Revision != unit.Claim.Revision ||
 		file.Claimed.AccountingRevision != unit.Claim.AccountingRevision || file.IsFencedClaim() {
-		return BatchCostBudgetProjection{}, fmt.Errorf("BATCH_COST_AUTHORITY_REFUSED: member %s claim changed or fenced", unit.GoalID)
+		return BatchCostBudgetProjection{}, fmt.Errorf("%s: member %s claim changed or fenced", codeCostAuthorityRefused, unit.GoalID)
 	}
 	return BatchCostBudgetProjection{Budget: dispatchcore.ProjectBudget(controlRoot, file, at), LandingClaim: file.IsLandingClaim()}, nil
 }
@@ -285,5 +285,5 @@ func ForecastCostRefusal(forecast batch.CostForecast) error {
 	if len(reasons) == 0 {
 		return nil
 	}
-	return fmt.Errorf("BATCH_COST_HEADROOM_REFUSED: %s; the proof would spend past an approved box, so a person raises it with metasystem goal budget G BOX", strings.Join(reasons, "; "))
+	return fmt.Errorf("%s: %s; the test run would exceed the approved budget (metasystem goal budget raises it)", codeCostHeadroomRefused, strings.Join(reasons, "; "))
 }

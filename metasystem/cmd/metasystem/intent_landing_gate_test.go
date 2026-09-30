@@ -53,7 +53,7 @@ func clearedAt(tip string) func(*goal.GoalFile) {
 func expectGateRefusal(t *testing.T, label string, code int, result intentResult, want string) {
 	t.Helper()
 	expectOutcome(t, label, code, result, intentRefused)
-	if !strings.Contains(result.Summary, want) {
+	if !strings.Contains(result.Summary+"\n"+strings.Join(result.Details, "\n"), want) {
 		t.Fatalf("%s: the refusal does not say %q: %+v", label, want, result)
 	}
 }
@@ -63,7 +63,7 @@ func TestWorkLandMeetsTheGateAtEveryForm(t *testing.T) {
 	b, owners, _ := gatedDeliveryBed(t, waitingToLandBed)
 	code, result := b.do("work", "land", bedGoal)
 	expectGateRefusal(t, "work land G", code, result, "waits for a person")
-	if len(owners.joins) != 0 || owners.candidates != 0 || result.Decision != "metasystem goal land-without-sitting "+bedGoal+" --reason TEXT" {
+	if len(owners.joins) != 0 || owners.candidates != 0 || result.Next == nil || strings.Join(result.Next.Argv, " ") != "metasystem goal land-without-sitting "+bedGoal+" --reason TEXT" {
 		t.Fatalf("the refusal joined or proved something, or names no human verb: %+v", result)
 	}
 

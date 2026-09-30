@@ -163,7 +163,7 @@ func (owner *Owner) Complete(done Completion) {
 func (owner *Owner) complete(done Completion) error {
 	run := owner.inflight[done.ID]
 	if run == nil || run.attached || run.token != done.Token {
-		return errors.Join(done.Err, fmt.Errorf("BATCH_PROOF_STALE_COMPLETION: batch %s has no run for this completion; discarded", done.ID))
+		return errors.Join(done.Err, fmt.Errorf("%s: batch %s has no run for this completion; discarded", codeProofStaleCompletion, done.ID))
 	}
 	delete(owner.inflight, done.ID)
 	return errors.Join(done.Err, owner.stampRunner(done.ID, done.Token, run.runner), run.lock.release())

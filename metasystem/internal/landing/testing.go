@@ -34,7 +34,7 @@ func prepareTestingReceiptPayloadWithWorkspace(installationRoot, tree string, re
 		return TestReceipt{}, nil, fmt.Errorf("testing result is not sufficient delivery evidence: %v", err)
 	}
 	if result.CandidateEngineIdentityVersion != proofrun.CandidateEngineIdentitySchemaVersion || result.CandidateEngineDigest == "" || result.CandidateEngineBuildIdentity == "" {
-		return TestReceipt{}, nil, fmt.Errorf("testing result has no candidate engine build identity or digest")
+		return TestReceipt{}, nil, fmt.Errorf("the test result does not name the engine build that ran it")
 	}
 	if result.CandidateTree != tree {
 		return TestReceipt{}, nil, fmt.Errorf("testing result proves tree %s, not receipt tree %s", result.CandidateTree, tree)

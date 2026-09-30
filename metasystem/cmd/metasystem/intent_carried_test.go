@@ -511,7 +511,7 @@ func TestIntentCarriedReplacement(t *testing.T) {
 	indexBefore := goalSyncMutationGit(t, f.mainRoot, "write-tree")
 	_, result := b.land("standing-validation", "--exception", "missing-declaration", "--reason", "flaky host", "--by", "Wido", "--upgrade-goals")
 	first, _ := carriedResultData(result)["exception"].(string)
-	if result.Outcome != intentPartial || first == "" || !strings.Contains(result.Summary, "carried-checkout-dirty") || !strings.Contains(result.Summary, "notes.txt") || len(b.lands) != 0 {
+	if result.Outcome != intentPartial || first == "" || !strings.Contains(withDetails(result), "carried-checkout-dirty") || !strings.Contains(result.Summary, "notes.txt") || len(b.lands) != 0 {
 		t.Fatalf("an untracked top-level path did not refuse before staging: %+v", result)
 	}
 	if index := goalSyncMutationGit(t, f.mainRoot, "write-tree"); index != goalSyncMutationGit(t, f.mainRoot, "rev-parse", "HEAD^{tree}") && index != indexBefore {
@@ -523,7 +523,7 @@ func TestIntentCarriedReplacement(t *testing.T) {
 	// A peer's product outside the engine: the enrolled engine stays current.
 	b.publishProduct("benchmark/peer.sh", "#!/usr/bin/env bash\n# moved\nexit 0\n")
 	_, moved := b.shown(result)
-	if moved.Outcome != intentPartial || !strings.Contains(moved.Summary, "carried-origin-moved") || moved.Next == nil ||
+	if moved.Outcome != intentPartial || !strings.Contains(withDetails(moved), "carried-origin-moved") || moved.Next == nil ||
 		!slices.Contains(moved.Next.Argv, "--replace-exception") || !slices.Contains(moved.Next.Argv, first) {
 		t.Fatalf("moved product did not show the explicit replacement: %+v", moved)
 	}
@@ -707,7 +707,7 @@ func TestIntentCarriedChannelWordMismatchRefuses(t *testing.T) {
 	opid := b.answerCarry(endpoint, "01K6CARRYCHANNEXWKRD00000B")
 	head := goalSyncMutationGit(t, b.f.mainRoot, "rev-parse", "HEAD")
 	code, result := b.land("standing-validation", "--using-exception", opid)
-	if code == 0 || result.Outcome != intentPartial || !strings.Contains(result.Summary, "not the exception's "+endpoint) ||
+	if code == 0 || result.Outcome != intentPartial || !strings.Contains(withDetails(result), "not the exception's "+endpoint) ||
 		carriedResultData(result)["staged"] != nil || len(b.lands) != 0 || b.owner("goal", "carry") != 0 {
 		t.Fatalf("a mismatched channel word was not refused: %d %+v", code, result)
 	}
@@ -746,7 +746,7 @@ func TestIntentCarriedAmbiguousRetainedBaseNeedsReplacement(t *testing.T) {
 		head := goalSyncMutationGit(t, f.mainRoot, "rev-parse", "HEAD")
 		carries, lands := b.owner("goal", "carry"), len(b.lands)
 		code, refused := b.land(args...)
-		if code == 0 || !strings.Contains(refused.Summary, "carried-subject-ambiguous") || refused.Next == nil ||
+		if code == 0 || !strings.Contains(withDetails(refused), "carried-subject-ambiguous") || refused.Next == nil ||
 			!slicesHasPrefix(refused.Next.Argv, want) || !slices.Contains(refused.Next.Argv, "Wido") {
 			t.Fatalf("%v did not refuse the ambiguous composition with the public replacement: %d %+v", args, code, refused)
 		}
@@ -820,7 +820,7 @@ func TestIntentCarriedChannelWordAdoptionStopsWhenBindingFails(t *testing.T) {
 	})
 	code, result := b.land("standing-validation", "--using-exception", opid)
 	if code == 0 || result.Outcome == intentConfirmed || carriedResultData(result)["staged"] != nil ||
-		!strings.Contains(result.Summary, "cannot be bound") || b.owner("goal", "carry") != 0 {
+		!strings.Contains(withDetails(result), "cannot be bound") || b.owner("goal", "carry") != 0 {
 		t.Fatalf("a composition that cannot be bound was adopted: %d %+v %v", code, result, b.calls)
 	}
 	if obstructed != 1 {
@@ -879,8 +879,9 @@ func TestIntentCarriedPushReadsTheGateAgain(t *testing.T) {
 	}
 	code, stopped := b.shown(proved)
 	ran := b.lands[len(b.lands)-1]
-	if code == 0 || reads != 2 || !strings.Contains(string(ran.stderr), "!! STEP FAILED: landing gate before push") ||
-		!strings.Contains(string(ran.stderr), goal.GateHeldBySitting) || strings.Contains(string(ran.stdout), "== STEP: push carried commit") {
+	if code == 0 || reads != 2 || !strings.Contains(string(ran.stdout), "step failed: landing gate before push") ||
+		!strings.Contains(string(ran.stdout), goal.GateHeldBySitting) || !strings.Contains(string(ran.stderr), "held by Wido's review sitting, so nothing was pushed") ||
+		strings.Contains(string(ran.stdout), "step: push carried commit") {
 		t.Fatalf("a hold recorded after admission did not stop the carried push: %d reads=%d %+v\n%s\n%s", code, reads, stopped, ran.stdout, ran.stderr)
 	}
 	// The ledger shares origin main in this bed, so only the carried commit

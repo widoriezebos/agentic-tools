@@ -132,10 +132,10 @@ func sealRevisionOf(record Record) sealRevision {
 
 func sealableRecord(record Record) error {
 	if record.State != StateOpen {
-		return fmt.Errorf("BATCH_PROOF_STATE_REFUSED: batch %s must be open before seal", record.BatchID)
+		return fmt.Errorf("%s: batch %s must be open before seal", codeProofStateRefused, record.BatchID)
 	}
 	if len(joinedUnits(record.Units)) == 0 {
-		return fmt.Errorf("BATCH_PROOF_STATE_REFUSED: batch %s has no joined units", record.BatchID)
+		return fmt.Errorf("%s: batch %s has no joined units", codeProofStateRefused, record.BatchID)
 	}
 	return nil
 }
@@ -143,7 +143,7 @@ func sealableRecord(record Record) error {
 func prepareSealCandidate(root, baseTree string, record *Record, assemble func(string, string, []Unit) ([]string, error)) ([]Unit, error) {
 	units := joinedUnits(record.Units)
 	if len(units) == 0 {
-		return nil, fmt.Errorf("BATCH_PROOF_STATE_REFUSED: batch %s has no joined units", record.BatchID)
+		return nil, fmt.Errorf("%s: batch %s has no joined units", codeProofStateRefused, record.BatchID)
 	}
 	prefixes, err := assemble(root, baseTree, units)
 	if err != nil {

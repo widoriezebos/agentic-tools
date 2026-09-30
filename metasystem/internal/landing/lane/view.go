@@ -139,11 +139,11 @@ func BuildView(sources ViewSources) View {
 	view := View{Owner: OwnerView{State: OwnerNotStarted}}
 	record, ok, err := Read(sources.Home)
 	if err != nil {
-		view.Summary = "the landing lane record is unreadable: " + err.Error()
+		view.Summary = "this computer's landing lane record can't be read (" + err.Error() + "); metasystem landing set replaces it"
 		return view
 	}
 	if !ok {
-		view.Summary = "no landing lane is registered on this host; the first seat that lands with landing.batch-root set registers it, or a person runs: metasystem landing set PATH"
+		view.Summary = "no landing lane is registered on this computer; metasystem landing set registers one"
 		return view
 	}
 	view.Root, view.RegisteredBy, view.RegisteredAt = text(record.Root), text(record.RegisteredBy), text(record.At)

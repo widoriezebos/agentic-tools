@@ -113,7 +113,7 @@ func InspectBatchOwnerWith(root string, prober identity.Prober, readHolder func(
 		return 0, identity.Unknown, err
 	}
 	if holder.OwnerLineage != LandingOwnerLineage {
-		return holder.Pid, identity.Unknown, fmt.Errorf("landing checkout is held by lineage %s", holder.OwnerLineage)
+		return holder.Pid, identity.Unknown, fmt.Errorf("the landing checkout is held by session %s", holder.OwnerLineage)
 	}
 	for _, announcement := range announcements(root, holder.Pid) {
 		if announcement.MainId != holder.MainId {
@@ -174,7 +174,7 @@ func EnsureBatchOwner(root string) error {
 	defer unix.Flock(int(lock.Fd()), unix.LOCK_UN)
 	pid, state, err := BatchOwnerEnsure.Inspect(root)
 	if err != nil && state == identity.Unknown {
-		return fmt.Errorf("BATCH_OWNER_INDETERMINATE: %w", err)
+		return fmt.Errorf("%s: %w", codeOwnerIndeterminate, err)
 	}
 	switch state {
 	case identity.Alive:
@@ -182,7 +182,7 @@ func EnsureBatchOwner(root string) error {
 	case identity.Dead:
 		return BatchOwnerEnsure.Launch(root)
 	default:
-		return fmt.Errorf("BATCH_OWNER_INDETERMINATE: owner liveness is unknown")
+		return fmt.Errorf("%s: owner liveness is unknown", codeOwnerIndeterminate)
 	}
 }
 
@@ -198,7 +198,7 @@ func acquireBatchOwnerWithRetention(root string, retainAnnouncement bool) (Batch
 	pid := int64(os.Getpid())
 	exact, state, err := (identity.KernelProber{}).Probe(pid)
 	if err != nil || state != identity.Alive || exact.StartedAt.Unix() < 1 {
-		return BatchOwnerLease{}, fmt.Errorf("BATCH_OWNER_IDENTITY_UNKNOWN: pid %d state=%s: %v", pid, state, err)
+		return BatchOwnerLease{}, fmt.Errorf("%s: pid %d state=%s: %v", codeOwnerIdentityUnknown, pid, state, err)
 	}
 	session := "landing-owner-" + strconv.FormatInt(pid, 10)
 	held := BatchOwnerLease{Root: root, Session: session, Pid: pid, Started: exact.StartedAt.Unix()}
@@ -208,7 +208,7 @@ func acquireBatchOwnerWithRetention(root string, retainAnnouncement bool) (Batch
 		if !retainAnnouncement {
 			err = errors.Join(err, held.Retire())
 		}
-		return held, fmt.Errorf("BATCH_OWNER_OWNED_ELSEWHERE: %w", err)
+		return held, fmt.Errorf("%s: %w", codeOwnerOwnedElsewhere, err)
 	}
 	held.Announced = true
 	holder, err := lease.RequireHolder(root, pid, nil)
@@ -216,10 +216,10 @@ func acquireBatchOwnerWithRetention(root string, retainAnnouncement bool) (Batch
 		if !retainAnnouncement {
 			err = errors.Join(err, held.Retire())
 		}
-		return held, fmt.Errorf("BATCH_OWNER_OWNED_ELSEWHERE: holder proof failed: %w", err)
+		return held, fmt.Errorf("%s: the landing checkout's holder could not be checked: %w", codeOwnerOwnedElsewhere, err)
 	}
 	if !holder.Holder || holder.ClaimEpoch == nil || holder.MainId == nil {
-		proofErr := fmt.Errorf("BATCH_OWNER_OWNED_ELSEWHERE: holder proof returned class=%s holder=%t", holder.Class, holder.Holder)
+		proofErr := fmt.Errorf("%s: the landing checkout is not held by the lane (class=%s holder=%t)", codeOwnerOwnedElsewhere, holder.Class, holder.Holder)
 		if !retainAnnouncement {
 			proofErr = errors.Join(proofErr, held.Retire())
 		}
@@ -249,10 +249,10 @@ func (held BatchOwnerLease) hasAnnouncement() bool {
 func (held BatchOwnerLease) Require() error {
 	holder, err := lease.RequireHolder(held.Root, held.Pid, &held.Epoch)
 	if err != nil {
-		return fmt.Errorf("BATCH_OWNER_OWNED_ELSEWHERE: holder proof failed: %w", err)
+		return fmt.Errorf("%s: the landing checkout's holder could not be checked: %w", codeOwnerOwnedElsewhere, err)
 	}
 	if !holder.Holder || holder.ClaimEpoch == nil || holder.MainId == nil {
-		return fmt.Errorf("BATCH_OWNER_OWNED_ELSEWHERE: holder proof returned class=%s holder=%t", holder.Class, holder.Holder)
+		return fmt.Errorf("%s: the landing checkout is not held by the lane (class=%s holder=%t)", codeOwnerOwnedElsewhere, holder.Class, holder.Holder)
 	}
 	return nil
 }
@@ -279,7 +279,7 @@ func fetchBatchTree(root string) (string, error) {
 		return "", err
 	}
 	if origin != fetched.Tip {
-		return "", fmt.Errorf("BATCH_BASE_MOVED: validated goal tip %s differs from origin/main %s", fetched.Tip, origin)
+		return "", fmt.Errorf("%s: validated goal tip %s differs from origin/main %s", codeBaseMoved, fetched.Tip, origin)
 	}
 	return tree, nil
 }
@@ -463,7 +463,7 @@ func RebindBatchClaims(root, batchID, tree, machine string, epoch int64, read fu
 			continue
 		}
 		if ledger.ClaimEpoch > uint64(epoch) {
-			return fmt.Errorf("rebind joined goal %s: claim epoch %d is ahead of owner epoch %d", unit.GoalID, ledger.ClaimEpoch, epoch)
+			return fmt.Errorf("rebind joined goal %s: its claim %d is newer than the lane's %d", unit.GoalID, ledger.ClaimEpoch, epoch)
 		}
 		if err := handover(ownercall.HandoverRequest{Root: controlRoot, GoalID: unit.GoalID, TargetMachine: machine,
 			TargetLineage: LandingOwnerLineage, TargetEpoch: epoch, Batch: batchID}); err != nil {
