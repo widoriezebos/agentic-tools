@@ -20,7 +20,7 @@ func SeatEnvironment() []string {
 
 // seatNoFenceRoot refuses a seat that names no state root to bind its
 // process-creation fence to.
-const seatNoFenceRoot = "a seat launch names the installation state root whose stop fence it binds to, and this one names none"
+const seatNoFenceRoot = "this seat launch names no state root, so it has no stop fence to bind to"
 
 // seatFenceClosed reads the checkout's process-creation fence once and
 // returns the fence's own description when it is closed, or why it could not

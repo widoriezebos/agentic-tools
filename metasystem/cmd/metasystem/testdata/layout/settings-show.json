@@ -5,7 +5,7 @@ exit 0
   "verb": "settings show",
   "targets": [],
   "outcome": "confirmed",
-  "summary": "20 setting(s) of /Users/wido/GitHub/agentic-tools-m1e",
+  "summary": "23 setting(s) of /Users/wido/GitHub/agentic-tools-m1e",
   "data": {
     "adapters": null,
     "conf": "/Users/wido/GitHub/agentic-tools-m1e/metasystem.conf",
@@ -109,6 +109,21 @@ exit 0
         "Key": "launch.read.runtime",
         "Value": "fake",
         "Source": "default; auto: none of fake on PATH, first listed"
+      },
+      {
+        "Key": "launch.seat.runtime",
+        "Value": "off",
+        "Source": "default"
+      },
+      {
+        "Key": "launch.seat.model",
+        "Value": "off",
+        "Source": "default; launch.seat.runtime=off"
+      },
+      {
+        "Key": "launch.seat.effort",
+        "Value": "xhigh",
+        "Source": "default"
       }
     ]
   }

@@ -13,6 +13,9 @@ exit 0
   "summary": "stopped /Users/wido/GitHub/agentic-tools-m1e",
   "data": {
     "exitCode": 0,
+    "launchLines": [],
+    "launchesCancelled": 0,
+    "launchesNotCancelled": 0,
     "lines": [
       "checkout /Users/wido/GitHub/agentic-tools-m1e",
       "nothing is running",
