@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
@@ -44,6 +45,9 @@ type laneVerbOwners struct {
 	ready func(root string) error
 	// machine is a checkout's machine nickname.
 	machine func(root string) (string, error)
+	// helm reads whether a joined unit's seat is at the helm, which holds
+	// its batch whole.
+	helm func(seatRoot string) helm.State
 }
 
 func (inv *intentInvocation) landing() laneVerbOwners {
@@ -77,6 +81,9 @@ func (inv *intentInvocation) landing() laneVerbOwners {
 	}
 	if owners.machine == nil {
 		owners.machine = goal.ResolveMachine
+	}
+	if owners.helm == nil {
+		owners.helm = helm.Active
 	}
 	return owners
 }
@@ -168,7 +175,7 @@ func (inv *intentInvocation) laneContext(needLane bool) (owners laneVerbOwners, 
 }
 
 func (inv *intentInvocation) laneView(owners laneVerbOwners, home string) lane.View {
-	sources := lane.ViewSources{Home: home, Now: owners.now(), Owner: owners.probe, Records: owners.records, Ready: owners.ready}
+	sources := lane.ViewSources{Home: home, Now: owners.now(), Owner: owners.probe, Records: owners.records, Ready: owners.ready, Helm: owners.helm}
 	if inv.input.switched("verbose") {
 		// The lane's spend is a full read of its proof store: only --verbose
 		// pays for it (N-5).

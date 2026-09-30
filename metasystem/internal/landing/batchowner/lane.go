@@ -22,6 +22,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
@@ -302,7 +303,7 @@ func landingLaneView(home func() (string, error), now time.Time) lane.View {
 
 // LandingLaneViewSources are the production reads of the lane's view.
 func LandingLaneViewSources(laneHome string, now time.Time) lane.ViewSources {
-	return lane.ViewSources{Home: laneHome, Now: now, Owner: LandingLaneOwnerProbe, Ready: LandingLaneReady}
+	return lane.ViewSources{Home: laneHome, Now: now, Owner: LandingLaneOwnerProbe, Ready: LandingLaneReady, Helm: helm.Active}
 }
 
 // EndLaneOwner ends the lane's running owner for a restart: the process the

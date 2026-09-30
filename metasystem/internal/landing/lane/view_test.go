@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 )
 
@@ -243,5 +244,42 @@ func TestLaneViewShowsTheLanesSpend(t *testing.T) {
 	view := BuildView(sources)
 	if asked != resolved(root)+"|"+AccountID(root) || view.Spend == nil || *view.Spend != (Spend{Account: AccountID(root), Attempts: 2, ReservedMinutes: 90}) {
 		t.Fatalf("asked=%q spend=%+v", asked, view.Spend)
+	}
+}
+
+// A batch a joined seat's helm holds is shown held, by the owner's own
+// decision (batch.HelmHeldSeat), with the act that releases it; without a
+// helm read, or with the seat not at the helm, it collects as before.
+func TestViewSaysABatchIsHeldForASeatAtTheHelm(t *testing.T) {
+	t.Parallel()
+	home, root, _ := laneDirs(t)
+	if _, err := Resolve(home, root, "m1e", laneNow, true); err != nil {
+		t.Fatal(err)
+	}
+	unit := joinedUnit("change:abc", "m1e")
+	unit.SeatRoot = "/seats/m1e/metasystem"
+	record := batch.Record{BatchID: "b1", State: batch.StateOpen, Units: []batch.Unit{unit}}
+	sources := viewSources(home, true, []batch.Record{record})
+	if view := BuildView(sources); view.Batch == nil || view.Batch.State != BatchCollecting {
+		t.Fatalf("no helm read: batch = %+v", view.Batch)
+	}
+	atHelm := false
+	sources.Helm = func(seat string) helm.State {
+		if seat != unit.SeatRoot {
+			t.Fatalf("helm read of %q", seat)
+		}
+		return helm.State{Active: atHelm, Record: helm.Record{By: "wido"}}
+	}
+	if view := BuildView(sources); view.Batch.State != BatchCollecting {
+		t.Fatalf("seat not at the helm: batch = %+v", view.Batch)
+	}
+	atHelm = true
+	view := BuildView(sources)
+	if view.Batch.State != BatchHeld || !strings.Contains(view.Batch.Reason, "seat m1e (/seats/m1e/metasystem) is at the helm (wido)") ||
+		!strings.Contains(view.Batch.Reason, "metasystem helm return") || !strings.Contains(view.Summary, "batch b1 held, 1 member (seat m1e ") {
+		t.Fatalf("held view = %+v summary %q", view.Batch, view.Summary)
+	}
+	if seat, held := batch.HelmHeldSeat(record, func(string) bool { return true }); !held || seat != unit.SeatRoot {
+		t.Fatalf("owner decision = %q %v", seat, held)
 	}
 }
