@@ -271,7 +271,7 @@ func (inv *intentInvocation) findJobs(id string, searchLaunch, searchDispatch bo
 		switch {
 		case err == nil:
 			found = append(found, intentJob{id: id, kind: "launch", launch: record})
-		case errors.Is(err, fs.ErrNotExist), strings.Contains(err.Error(), "invalid launch id"):
+		case errors.Is(err, fs.ErrNotExist), errors.Is(err, launch.ErrInvalidID):
 		default:
 			return nil, &intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: fmt.Sprintf("the record of %s can't be read, so nothing was done", id),
 				next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}

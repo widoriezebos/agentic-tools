@@ -21,7 +21,7 @@ package wiredoc
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
+	"errors"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 )
@@ -69,6 +69,9 @@ func RenderValue(value any) ([]byte, error) {
 // single Decode with no EOF check, which is the dispatch reader's
 // long-standing contract (record.go:291). Narrowing any of this is a
 // behavior change Phase 5 does not carry.
+// ErrNotObject refuses a document that parses but is not a JSON object.
+var ErrNotObject = errors.New("not a JSON object")
+
 func Decode(data []byte) (*Doc, error) {
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.UseNumber()
@@ -78,7 +81,7 @@ func Decode(data []byte) (*Doc, error) {
 	}
 	object, ok := value.(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("not a JSON object")
+		return nil, ErrNotObject
 	}
 	return &Doc{raw: object}, nil
 }

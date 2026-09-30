@@ -748,18 +748,14 @@ func (inv *intentInvocation) knownPerson() string {
 // notAnInstallation says why path is not a metasystem installation in plain
 // words: it does not exist, it is not inside a Git repository, or the
 // repository has no installation. The resolver's own wording is kept only
-// for a cause none of these names.
+// for a cause none of these names. The cause is err's type, never its words.
 func notAnInstallation(path string, err error) string {
 	shown := shellCommand([]string{path})
 	if _, statErr := os.Stat(path); errors.Is(statErr, fs.ErrNotExist) {
 		return shown + " does not exist; nothing was done"
 	}
-	text := err.Error()
-	switch {
-	case strings.Contains(text, "not inside a Git repository"), strings.Contains(text, "not a git repository"):
+	if errors.Is(err, stateroot.ErrNotInRepository) {
 		return shown + " is not inside a Git repository; nothing was done"
-	case strings.Contains(text, "no metasystem installation"), strings.Contains(text, "not a metasystem installation"):
-		return shown + " is not inside a repository with a metasystem installation; nothing was done"
 	}
 	return shown + " is not inside a repository with a metasystem installation; nothing was done"
 }

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"path/filepath"
 	"strconv"
-	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 )
@@ -101,14 +100,10 @@ func (inv *intentInvocation) diagnosticReadResult(result launch.ReadResult, err 
 			out.Outcome, out.code = intentInProgress, 124
 			out.next, out.nextReason = inv.sameCommand(), "tries again once the running read has ended"
 		case "READ_RETRY_RUNNING":
-			ref := ""
-			if _, rest, found := strings.Cut(launch.ErrorDetail(err), "ref="); found {
-				ref, _, _ = strings.Cut(rest, " ")
-			}
+			// The launch names the running read in its result, beside the code.
 			out.code = 1
-			if ref != "" {
-				out.Targets = []intentTarget{{Kind: "read", ID: readRefPrefix + ref}}
-				out.next, out.nextReason = inv.publicArgv("work", "stop", readRefPrefix+ref), "a retry follows only an attempt that ended; this stops the running one"
+			if result.Ref != "" {
+				out.next, out.nextReason = inv.publicArgv("work", "stop", readRefPrefix+result.Ref), "a retry follows only an attempt that ended; this stops the running one"
 			}
 		case "READ_RETRY_UNKNOWN", "READ_REQUEST_INVALID", "READ_PATCH_UNREADABLE", "READ_BRIEF_MISSING", "READ_INPUT_MISSING", "READ_CHECKOUT_UNAVAILABLE":
 		default:

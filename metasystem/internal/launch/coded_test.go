@@ -32,3 +32,25 @@ func TestCodedErrorKeepsTheCodeOutOfTheDefaultText(t *testing.T) {
 		t.Fatal("a coded refusal no longer matches its sentinel")
 	}
 }
+
+// A malformed launch id is ErrInvalidID by type: a caller that treats it as
+// no such launch decides with errors.Is, never on the words.
+func TestReadOfAMalformedIDIsErrInvalidID(t *testing.T) {
+	t.Parallel()
+	if _, err := (Store{Root: t.TempDir()}).Read("../not an id"); !errors.Is(err, ErrInvalidID) {
+		t.Fatalf("read of a malformed id = %v, want ErrInvalidID", err)
+	}
+}
+
+// A review refused because the run is still running says so by type; the
+// other not-ready refusals do not.
+func TestReviewStillRunningIsTyped(t *testing.T) {
+	t.Parallel()
+	running := reviewStillRunning("r", "running")
+	if !IsCode(running, "UNIT_REVIEW_NOT_READY") || !errors.Is(running, ErrRunStillRunning) || running.Error() != "run r is still running, so there is no result to review yet" {
+		t.Fatalf("still running = %v", running)
+	}
+	if other := coded("UNIT_REVIEW_NOT_READY", "", errors.New("attempt 1 is still running green")); errors.Is(other, ErrRunStillRunning) {
+		t.Fatal("words that say still running made a still-running refusal")
+	}
+}

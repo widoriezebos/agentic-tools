@@ -2,6 +2,7 @@ package capability
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -114,7 +115,8 @@ func TestSelectNoMatchNamesChangedKeys(t *testing.T) {
 	e.writeEnvelope(t, map[string]any{"network": "allow"})
 
 	err := selectFixture(e.root, e.runtime, e.role, e.identity("abc123"), 30, e.envelopePath, e.outputPath)
-	if err == nil || !strings.Contains(err.Error(), "changed configuration keys: model") {
+	var miss *SnapshotMiss
+	if !errors.As(err, &miss) || !strings.Contains(err.Error(), "changed configuration keys: model") {
 		t.Fatalf("no match should name the changed key, got %v", err)
 	}
 }
@@ -124,7 +126,7 @@ func TestSelectStaleSnapshot(t *testing.T) {
 	e.writeSnapshot(t, "codex-0.146.0-abc123-20260101-001.json", baseSnapshot("abc123", "2026-01-01T00:00:00Z"))
 	e.writeRequirements(t, map[string]any{"required": []any{}, "optional": map[string]any{}, "waivers": map[string]any{}})
 	e.writeEnvelope(t, map[string]any{"network": "allow"})
-	if err := selectFixture(e.root, e.runtime, e.role, e.identity("abc123"), 30, e.envelopePath, e.outputPath); err == nil || !strings.Contains(err.Error(), "stale") {
+	if err := selectFixture(e.root, e.runtime, e.role, e.identity("abc123"), 30, e.envelopePath, e.outputPath); !errors.As(err, new(*SnapshotMiss)) || !strings.Contains(err.Error(), "stale") {
 		t.Fatalf("an old snapshot should be stale, got %v", err)
 	}
 }
@@ -134,7 +136,7 @@ func TestSelectMissingRequiredCapability(t *testing.T) {
 	e.writeSnapshot(t, "codex-0.146.0-abc123-20260810-001.json", baseSnapshot("abc123", "2026-08-10T00:00:00Z"))
 	e.writeRequirements(t, map[string]any{"required": []any{"resume"}, "optional": map[string]any{}, "waivers": map[string]any{}})
 	e.writeEnvelope(t, map[string]any{"network": "allow"})
-	if err := selectFixture(e.root, e.runtime, e.role, e.identity("abc123"), 30, e.envelopePath, e.outputPath); err == nil || !strings.Contains(err.Error(), "required runtime capabilities are absent") {
+	if err := selectFixture(e.root, e.runtime, e.role, e.identity("abc123"), 30, e.envelopePath, e.outputPath); err == nil || errors.As(err, new(*SnapshotMiss)) || !strings.Contains(err.Error(), "required runtime capabilities are absent") {
 		t.Fatalf("a missing required capability should refuse, got %v", err)
 	}
 }

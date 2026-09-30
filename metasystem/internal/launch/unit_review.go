@@ -3,6 +3,7 @@ package launch
 import (
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -68,6 +69,19 @@ type UnitReview struct {
 // feedback; it neither admits nor refuses a committed review.
 var UnitReviewReadyOutcomes = map[string]bool{"green": true, "read-failed": true, "read-compacted": true}
 
+// ErrRunStillRunning marks the UNIT_REVIEW_NOT_READY refusal of a run whose
+// attempt has not finished: the caller offers to wait, decided by errors.Is.
+var ErrRunStillRunning = errors.New("the run is still running")
+
+type stillRunningError struct{ error }
+
+func (stillRunningError) Is(target error) bool { return target == ErrRunStillRunning }
+
+func reviewStillRunning(id, state string) error {
+	return coded("UNIT_REVIEW_NOT_READY", "run="+id+" state="+state,
+		stillRunningError{fmt.Errorf("run %s is still running, so there is no result to review yet", id)})
+}
+
 // ReviewSubject calls bind under the run's lock with its latest completed
 // round. retain records that round's subject in the run before the caller's
 // next external effect; it is the run's only subject writer.
@@ -88,7 +102,7 @@ func (runner *UnitRunner) ReviewSubject(id string, bind func(review UnitReview, 
 		return err
 	}
 	if record.State != "awaiting-judgement" || len(record.Rounds) == 0 {
-		return coded("UNIT_REVIEW_NOT_READY", "run="+id+" state="+string(record.State), fmt.Errorf("run %s is still running, so there is no result to review yet", id))
+		return reviewStillRunning(id, string(record.State))
 	}
 	round := record.Rounds[len(record.Rounds)-1]
 	if !UnitReviewReadyOutcomes[round.Outcome] {

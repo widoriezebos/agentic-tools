@@ -3,6 +3,7 @@ package delegation
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path"
@@ -80,7 +81,7 @@ func (s *session) internalAuthority(mode AuthorityMode, job string) error {
 		return s.die(1, fmt.Sprintf("unknown control-plane mode %q", mode))
 	}
 	if err := s.l.ports.Lease.Authorize(s.inv, mode, job); err != nil {
-		if strings.HasPrefix(err.Error(), "control-plane write refused: caller classification failed") {
+		if errors.Is(err, ErrCallerUnidentified) {
 			return s.die(1, "control-plane write refused: this process could not be identified\nrun: metasystem system check")
 		}
 		s.eprintln(err.Error())
@@ -483,7 +484,7 @@ func (s *session) selectSnapshot(runtime, role, envelope, output string) error {
 	// Self-heal ONLY a genuine snapshot miss, absent or stale. A select that
 	// found a snapshot and refused on policy must stand: a fresh probe would
 	// launder the unverified state away.
-	if !strings.Contains(err.Error(), "no capability snapshot matches") && !strings.Contains(err.Error(), "capability snapshot is stale") {
+	if !errors.As(err, new(*capability.SnapshotMiss)) {
 		return exitWith(1)
 	}
 	if err := adapter.Probe(s.ctx, runtime); err != nil {

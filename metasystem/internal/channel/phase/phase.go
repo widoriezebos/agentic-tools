@@ -2,6 +2,7 @@ package phase
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -132,7 +133,7 @@ func loadFake(root string) (channel.Provider, channel.DestinationConfig, string,
 		return p, d, face, err
 	case "telegram":
 		listener, err := Get(root, fakeListenerKey, "")
-		if err != nil && err.Error() != "no value configured for "+fakeListenerKey {
+		if err != nil && !errors.Is(err, config.ErrNoValue) {
 			return nil, channel.DestinationConfig{}, face, err
 		}
 		if listener == "" {

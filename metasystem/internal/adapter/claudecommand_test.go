@@ -2,6 +2,7 @@ package adapter
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -43,16 +44,13 @@ func TestClaudeBudgetPolicy(t *testing.T) {
 	if err != nil || budget != "12.5" || turns != "9" {
 		t.Fatalf("overrides = (%s,%s,%v)", budget, turns, err)
 	}
-	if _, _, err := ClaudeBudget(stubEnv(map[string]string{"METASYSTEM_CLAUDE_MAX_BUDGET_USD": "free"})); err == nil ||
-		err.Error() != "invalid_native_budget" {
+	if _, _, err := ClaudeBudget(stubEnv(map[string]string{"METASYSTEM_CLAUDE_MAX_BUDGET_USD": "free"})); !errors.Is(err, ErrInvalidNativeBudget) {
 		t.Fatalf("budget refusal = %v", err)
 	}
-	if _, _, err := ClaudeBudget(stubEnv(map[string]string{"METASYSTEM_CLAUDE_MAX_BUDGET_USD": "0"})); err == nil ||
-		err.Error() != "invalid_native_budget" {
+	if _, _, err := ClaudeBudget(stubEnv(map[string]string{"METASYSTEM_CLAUDE_MAX_BUDGET_USD": "0"})); !errors.Is(err, ErrInvalidNativeBudget) {
 		t.Fatalf("zero budget refusal = %v", err)
 	}
-	if _, _, err := ClaudeBudget(stubEnv(map[string]string{"METASYSTEM_CLAUDE_MAX_TURNS": "0"})); err == nil ||
-		err.Error() != "invalid_native_turn_limit" {
+	if _, _, err := ClaudeBudget(stubEnv(map[string]string{"METASYSTEM_CLAUDE_MAX_TURNS": "0"})); !errors.Is(err, ErrInvalidNativeTurnLimit) {
 		t.Fatalf("turns refusal = %v", err)
 	}
 }

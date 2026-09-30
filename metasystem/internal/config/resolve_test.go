@@ -498,3 +498,14 @@ func TestGetLocalOverlayModeScopedKeys(t *testing.T) {
 		t.Fatalf("committed mode key must still beat base: %q %d %v", value, code, err)
 	}
 }
+
+// An unset key with no default is ErrNoValue by type, whatever its words
+// (goal error-checks-use-typed-errors).
+func TestGetUnsetKeyIsErrNoValue(t *testing.T) {
+	root := t.TempDir()
+	putFile(t, filepath.Join(root, "metasystem.conf"), "")
+	_, code, err := Get(GetParams{Key: "channel.destination.fleet.fake.listener", ConfPath: filepath.Join(root, "metasystem.conf")})
+	if code == 0 || !errors.Is(err, ErrNoValue) {
+		t.Fatalf("unset key: code=%d err=%v", code, err)
+	}
+}
