@@ -1,6 +1,6 @@
 # failures-show-observed-against-expected
 
-- State: parked
+- State: done
 - Priority: 1
 - Sequence: 23
 - Risk: severity=2 novelty=1 exposure=3 accumulation=3 basis="severity 2: a one-line failure sends the builder guessing, and a confident wrong guess costs a whole round; novelty 1: printing observed and expected is a known discipline; exposure 3: every failing assertion in every bed and fixture; accumulation 3: every guess-round compounds across seats and days"
@@ -8,13 +8,13 @@
 - Intent: Delivery-efficiency phase D. When an assertion fails, the failure must show what was observed against what was expected, on the surface the builder reads, never a one-line verdict. Why: on 2026-09-14 the hook bed said only 'declared brain start omitted the registry event name'; the builder's first fix was confidently wrong (it restored a field that was not the cause, and its own test had been accepting a malformed object), and the real cause - the arming-failure message replacing the whole context object - only appeared when the seat captured the emitted bytes by hand and ran the same row on trunk beside it. DONE: a bed assertion failure prints the observed value and the expected value or pattern, bounded, with the file and line; a Go fixture failure does the same through one shared helper; a fixture proves both, and the sweep in beds-report-every-failure finds no bare one-line failure left. Companion of row 24, which owns the scenario split and the no-silent-exit guard; this goal owns what a failure says.
 - Origin: human
 - Next step: parked 2026-09-19 by Wido: "park list is ok" (16:40 CEST, under his machine-ready target). Resume only when Wido picks the goal. Existing work: on main 537e1a6e0 (1a, engine prints observed against expected, expect.go:158) and dc267cec (1b, METASYSTEM_BED_FAILURES in scripts/agents/fixture-assert.sh:59). Left: 1c harness report fields and 1d fixture-assert audit, each at most 400 lines, then the bed migrations (at least 1,098 sites, verification-loop-design.md:240,411), several thousand lines unsized.
+- Concluded: The observed-versus-expected test helper (internal/testutil/expect.go) is in use across the Go tests; the bash half is moot because the bash assertions were deleted (d40f67a63).
 - OpenedAt: 2026-09-14T19:25:47Z
-- Revision: 171
+- Revision: 172
 - Budget: elapsedLimit=2d attemptLimit=20 reservedJobMinutesLimit=720 activeJobLimit=2 reviewRoundLimit=2
 - BudgetExceptions: 3
 - Approved: by=human:Wido at=2026-09-15T06:42:12Z revision=56 opid=XHNRK0A1TCHZ64SC6SCRGQB9K1-m1b-c6925449 authority=proven digest=fbd730e48f1f45a9fd99143bcf63581a01a7c9b5ba232140a2c3457af8ede0e2
 - Sliced: machine=m1b lineage=main-1789191336-90295-e4b24b revision=11 at=2026-09-14T22:39:44Z
-- Parked: by=human:Wido at=2026-09-19T15:46:36Z because=parked 2026-09-19 by Wido: "park list is ok" (16:40 CEST, under his machine-ready target). Resume only when Wido picks the goal. Existing work: on main 537e1a6e0 (1a, engine prints observed against expected, expect.go:158) and dc267cec (1b, METASYSTEM_BED_FAILURES in scripts/agents/fixture-assert.sh:59). Left: 1c harness report fields and 1d fixture-assert audit, each at most 400 lines, then the bed migrations (at least 1,098 sites, verification-loop-design.md:240,411), several thousand lines unsized.
 
 History:
 - 2026-09-14T19:25:47Z B9YWHY0CP8CV0QY1J09Y4NZ39D-m1e-c6925449 open actor=human:Wido targets=failures-show-observed-against-expected
@@ -188,4 +188,5 @@ History:
 - 2026-09-30T18:54:44Z Y6G0ABX98N5SW2MKYHX9J3922E-m1e-b6a4eb0a done actor=human:wido targets=busy-seat-shells-are-ended,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,delegate-sandbox-runs-the-beds,every-round-gets-an-independent-read,evidence-and-build-output-have-retention-and-stay-unindexed,failures-show-observed-against-expected,fixture-runners-and-fakes-bound-their-own-life,follow-up-brief-cannot-cite-fresh-trunk-files,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,round-proof-feeds-the-next-brief,testing-surfaces-declare-their-mirror reason=priority-order from=1:26 to=1:25
 - 2026-09-30T18:55:11Z JJ0ZP8DJNS0WWGYRKN65YRQMHH-m1e-b6a4eb0a done actor=human:wido targets=cross-cutting-change-inventories-its-readers,delegate-sandbox-runs-the-beds,every-round-gets-an-independent-read,failures-show-observed-against-expected,testing-surfaces-declare-their-mirror reason=priority-order from=1:25 to=1:24
 - 2026-09-30T18:56:08Z 9M9METEPW54CBJ0M0X57VPP77N-m1e-b6a4eb0a done actor=human:wido targets=cross-cutting-change-inventories-its-readers,every-round-gets-an-independent-read,failures-show-observed-against-expected,testing-surfaces-declare-their-mirror reason=priority-order from=1:24 to=1:23
-Integrity: sha256=4ff4aa57a5e5c2efc9fe74f1d83998c2c341965d59fcc3945f2dc8682d4d75e2
+- 2026-09-30T18:56:19Z 1D3RXJ4CDWBR9TP5CP8AE5CN86-m1e-b6a4eb0a done actor=human:wido targets=cross-cutting-change-inventories-its-readers,failures-show-observed-against-expected,testing-surfaces-declare-their-mirror
+Integrity: sha256=38d432a4e7263c3cf00eb159b20ba3cf1be52ee421452276edb93efce1c03276

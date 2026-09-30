@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 1
-- Sequence: 24
+- Sequence: 23
 - Risk: severity=2 novelty=2 exposure=2 accumulation=2 basis="severity 2: a narrowed proof selection silently under-tests; novelty 2: a new contract feature; exposure 2: every change to a mirrored surface; accumulation 2: grows with each mirrored surface"
 - Tier: 2
 - Intent: What: When one test area must always run the same tests as another, testing.json says so, and a missing test group is refused when the file is read instead of being found later in a long test run. Why: On 09-14 a new test group was added to one area and not to its twin; it surfaced only in a full package run. Pros: The mistake cannot be written, and no long run is needed to find it. Cons: It adds a field to the test configuration format, and the tool that generates testing.json must support it.
 - Origin: human
 - Next step: Next: testing.json is generated, so add a "mirrors" field to the test-area schema that metasystem testing add-tests and the contract reader both honour; move context-budget to it; refuse a mirror with a missing group when the file is loaded. Done when: repeating the 09-14 mistake is refused when testing.json is loaded, naming the group and the area.
 - OpenedAt: 2026-09-14T16:16:33Z
-- Revision: 147
+- Revision: 148
 - BudgetExceptions: 0
 
 History:
@@ -160,4 +160,5 @@ History:
 - 2026-09-30T18:54:44Z Y6G0ABX98N5SW2MKYHX9J3922E-m1e-b6a4eb0a done actor=human:wido targets=busy-seat-shells-are-ended,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,delegate-sandbox-runs-the-beds,every-round-gets-an-independent-read,evidence-and-build-output-have-retention-and-stay-unindexed,failures-show-observed-against-expected,fixture-runners-and-fakes-bound-their-own-life,follow-up-brief-cannot-cite-fresh-trunk-files,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,round-proof-feeds-the-next-brief,testing-surfaces-declare-their-mirror reason=priority-order from=1:27 to=1:26
 - 2026-09-30T18:55:11Z JJ0ZP8DJNS0WWGYRKN65YRQMHH-m1e-b6a4eb0a done actor=human:wido targets=cross-cutting-change-inventories-its-readers,delegate-sandbox-runs-the-beds,every-round-gets-an-independent-read,failures-show-observed-against-expected,testing-surfaces-declare-their-mirror reason=priority-order from=1:26 to=1:25
 - 2026-09-30T18:56:08Z 9M9METEPW54CBJ0M0X57VPP77N-m1e-b6a4eb0a done actor=human:wido targets=cross-cutting-change-inventories-its-readers,every-round-gets-an-independent-read,failures-show-observed-against-expected,testing-surfaces-declare-their-mirror reason=priority-order from=1:25 to=1:24
-Integrity: sha256=b6b04b56069c48a866e7221136456a4a47f25f218a25216d251d1070a1dfc438
+- 2026-09-30T18:56:19Z 1D3RXJ4CDWBR9TP5CP8AE5CN86-m1e-b6a4eb0a done actor=human:wido targets=cross-cutting-change-inventories-its-readers,failures-show-observed-against-expected,testing-surfaces-declare-their-mirror reason=priority-order from=1:24 to=1:23
+Integrity: sha256=dde77f54a979b8a3e6cd1de827710730b4d4fed4816978d3b8cdfea35a2fa61d
