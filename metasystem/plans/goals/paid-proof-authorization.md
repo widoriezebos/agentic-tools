@@ -2,12 +2,12 @@
 
 - State: parked
 - Priority: 3
-- Sequence: 22
+- Sequence: 21
 - Intent: What: Tests that cost real money (for example a paid benchmark against a model provider) are marked as paid, run only under an explicit spending permission, and have their cost counted against a budget. Why: In the morpheus project the paid benchmark runs on a person's memory and goodwill, with no permission or budget in the system. Pros: Paid checks become safe to schedule; a person approves spending once and can see what it cost. Cons: No test in this repository costs money, so there is nothing here to prove it on.
 - Origin: human
 - Next step: Next: When an adopted project declares a paid test, design a cost class for tests (free, metered, paid), the spending permission (reuse the existing grant mechanism rather than inventing a second one), and the rule that a paid test is never part of the routine test set; then build. Done when: a paid test refuses to run without a permission, and its cost shows against a budget.
 - OpenedAt: 2026-08-25T06:41:21Z
-- Revision: 92
+- Revision: 93
 - BudgetExceptions: 0
 - Parked: by=human:Wido at=2026-09-13T08:24:03Z because=Not now (2026-09-13 backlog consolidation, Wido's word): Not-now: no proof in this repository costs money; the driving case is morpheus's bench in another repository and it queues behind cross-repo-guardrails (slice1, 3:56); premise (no cost class on evidence rows) verified true 09-11; Wido's 08-25 study-area vision, unpark on his word.
 
@@ -104,4 +104,5 @@ History:
 - 2026-09-30T19:01:02Z Q28ZFJP6FHWSVGMG3R2GVEP7BX-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:25 to=3:24
 - 2026-09-30T19:01:13Z DN3ERWTSCYYGJTN9EFDHJT67Y4-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,paid-proof-authorization,precedent-index,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:24 to=3:23
 - 2026-09-30T19:03:07Z JDM7B50MEP0PRANP3DT763E93H-m1e-b6a4eb0a abandon actor=human:wido targets=delegate-sandbox-cannot-run-the-beds,uncapped-delegate-fanout,claude-denywrite-list-is-a-snapshot,claude-delegate-scratch-cleanup,seam-declaration-convergence,human-carried-landing,standing-validation,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,incident-proposal-drafting,counselor,precedent-index,reconciliation-guards,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:23 to=3:22
-Integrity: sha256=0bfa99a973f1a3796c6ba230a3c94f31d6cb70f44e287ca1ff113bbea12d0887
+- 2026-09-30T19:03:31Z T2PWQ4HQED6XHXN942K5R4WJ4V-m1e-b6a4eb0a abandon actor=human:wido targets=precedent-index,reconciliation-guards,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:22 to=3:21
+Integrity: sha256=ea09bf31dc800584edc6a844de0bb9d10df03bc250dd1e97c5f48bf55ddc2866

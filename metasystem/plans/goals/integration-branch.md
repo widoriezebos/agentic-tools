@@ -2,12 +2,12 @@
 
 - State: parked
 - Priority: 3
-- Sequence: 28
+- Sequence: 27
 - Intent: What: You can name the branch all work lands in, instead of it always being the repository's default branch. Why: Repositories with a protected main branch allow merges only through pull requests, which would block MetaSystem's own landing. Pros: MetaSystem can work in organisation repositories with protected branches, and promotion to main stays a person's decision. Cons: Needs a proper design; the goal ledger has to move with the chosen branch or the two drift apart.
 - Origin: human
 - Next step: Next: When an adopted repository with protected branches comes up, design it (four to six hours): list every place that assumes the default branch, and cover the five recorded points (two governance systems, person-led promotion, the ledger follows the branch, the setting belongs to the app, inception). Done when: the design is accepted.
 - OpenedAt: 2026-08-23T19:32:07Z
-- Revision: 94
+- Revision: 95
 - BudgetExceptions: 0
 - Parked: by=human:Wido at=2026-09-13T08:23:39Z because=Not now (2026-09-13 backlog consolidation, Wido's word): Wido 2026-08-24: 'low priority, queued behind the app-guardrail program'; no protected-branch incident since; pull forward when inception targets an org repo with protected branches; needs the recorded design loop carrying the five considerations (two governance systems, human promotion, ledger foll
 
@@ -106,4 +106,5 @@ History:
 - 2026-09-30T19:01:02Z Q28ZFJP6FHWSVGMG3R2GVEP7BX-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:31 to=3:30
 - 2026-09-30T19:01:13Z DN3ERWTSCYYGJTN9EFDHJT67Y4-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,paid-proof-authorization,precedent-index,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:30 to=3:29
 - 2026-09-30T19:03:07Z JDM7B50MEP0PRANP3DT763E93H-m1e-b6a4eb0a abandon actor=human:wido targets=delegate-sandbox-cannot-run-the-beds,uncapped-delegate-fanout,claude-denywrite-list-is-a-snapshot,claude-delegate-scratch-cleanup,seam-declaration-convergence,human-carried-landing,standing-validation,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,incident-proposal-drafting,counselor,precedent-index,reconciliation-guards,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:29 to=3:28
-Integrity: sha256=feec94ea8440b89d957a58ba15f025385c14e3c0173ea800f9897fc0a1cb5b2e
+- 2026-09-30T19:03:31Z T2PWQ4HQED6XHXN942K5R4WJ4V-m1e-b6a4eb0a abandon actor=human:wido targets=precedent-index,reconciliation-guards,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:28 to=3:27
+Integrity: sha256=8b9b9ca734a88fad6e8e87444aa04203f0deee021af9556ab078db7731653c3a

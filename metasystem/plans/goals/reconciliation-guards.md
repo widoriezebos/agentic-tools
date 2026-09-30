@@ -2,12 +2,12 @@
 
 - State: parked
 - Priority: 3
-- Sequence: 21
+- Sequence: 20
 - Intent: Two independently kept records that must agree become a guard class — spend vs provider billing, ledger vs git, recorded vs derived — and token spend joins as program-health telemetry: actuals vs appetite estimates, projected vs planned, surfaced to the human ONLY when off-track (Wido 2026-08-25, auditing study area + the financial addition)
 - Origin: human
 - Next step: Appetite: 1d design-first. Two parts. (1) THE GUARD CLASS: a reconciliation is a declared pair of record sources plus a comparison; a mismatch is a finding regardless of green (the evidence table's recorded-vs-derived counts and morpheus's $12.88-journal-vs-$39.54-bill are the existing instances to generalize from). (2) SPEND TELEMETRY (Wido's bounds: useful metric, do not go overboard): actual token/money spend from existing usage records vs the appetite-derived estimate per goal, plus a projection for the remaining queue from observed burn; OWNER: the NARRATOR — appetites are already its ledger and spend is the appetite's money shadow — with off-track alerts riding the steward's content-blind channel and trends reviewed at the counselor's sitting; the materiality law from the same study area applies: a noise floor below which nothing is surfaced, alert only when off-track beyond it. Queue: after near-miss-register.
 - OpenedAt: 2026-08-25T06:54:48Z
-- Revision: 92
+- Revision: 93
 - BudgetExceptions: 0
 - Parked: by=human:Wido at=2026-09-13T08:24:10Z because=Not now (2026-09-13 backlog consolidation, Wido's word): Not-now: the spend half is served first by token-spend-fence calibration (alert role landed 0acb0973) and actionable-metrics (slice1); the guard class has no second live instance beyond the evidence-table counts; near-miss-register (its queue predecessor) is done, so Wido may unpark it by word; 1d d
 
@@ -104,4 +104,5 @@ History:
 - 2026-09-30T19:01:02Z Q28ZFJP6FHWSVGMG3R2GVEP7BX-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:24 to=3:23
 - 2026-09-30T19:01:13Z DN3ERWTSCYYGJTN9EFDHJT67Y4-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,paid-proof-authorization,precedent-index,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:23 to=3:22
 - 2026-09-30T19:03:07Z JDM7B50MEP0PRANP3DT763E93H-m1e-b6a4eb0a abandon actor=human:wido targets=delegate-sandbox-cannot-run-the-beds,uncapped-delegate-fanout,claude-denywrite-list-is-a-snapshot,claude-delegate-scratch-cleanup,seam-declaration-convergence,human-carried-landing,standing-validation,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,incident-proposal-drafting,counselor,precedent-index,reconciliation-guards,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:22 to=3:21
-Integrity: sha256=0e235fb2aaf2e67e456230f911cdf75c08d2ff4df4cf5c7efa98e6c78bb05edb
+- 2026-09-30T19:03:31Z T2PWQ4HQED6XHXN942K5R4WJ4V-m1e-b6a4eb0a abandon actor=human:wido targets=precedent-index,reconciliation-guards,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:21 to=3:20
+Integrity: sha256=6e19fda43b6bf2aafa57f91eba76da0accfed51a3b871f64524e8d7f713ce353
