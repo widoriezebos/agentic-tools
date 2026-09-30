@@ -231,16 +231,20 @@ func processIntentCommands() []intentCommand {
 		},
 		{
 			object: "ui", action: "start", audience: "both", summary: "start the browser interface",
-			usage: []string{"metasystem ui start [--listen ADDRESS]"}, flags: []intentFlag{intentUIListenFlag, intentInstallationFlag}, maxArgs: 0,
+			usage:   []string{"metasystem ui start [--listen ADDRESS]"},
+			details: []string{"When this seat runs no interface, names the machine of this computer that does."},
+			flags:   []intentFlag{intentUIListenFlag, intentInstallationFlag}, maxArgs: 0,
 			examples: []string{"metasystem ui start"}, run: func(inv *intentInvocation) int { return inv.uiTarget("start") },
 		},
 		{
 			object: "ui", action: "stop", audience: "both", summary: "stop the browser interface",
-			usage: []string{"metasystem ui stop [--wait-seconds N]"}, flags: []intentFlag{intentUIWaitFlag, intentInstallationFlag}, maxArgs: 0,
+			usage:   []string{"metasystem ui stop [--wait-seconds N]"},
+			details: []string{"When this seat runs no interface and exactly one other machine of this computer does, stop stops that one and says which; when several do, it lists each with its --repo command and stops none."},
+			flags:   []intentFlag{intentUIWaitFlag, intentInstallationFlag}, maxArgs: 0,
 			examples: []string{"metasystem ui stop"}, run: func(inv *intentInvocation) int { return inv.uiTarget("stop") },
 		},
 		{
-			object: "ui", action: "restart", audience: "both", summary: "restart the browser interface with the executable on disk",
+			object: "ui", action: "restart", audience: "both", summary: "restart the browser interface with the checkout's own engine",
 			usage:    []string{"metasystem ui restart [--listen ADDRESS] [--wait-seconds N]"},
 			details:  []string{"An agent may do this within its authorization. Starting the interface through an agent does not authenticate a person for its human actions."},
 			flags:    []intentFlag{intentUIListenFlag, intentUIWaitFlag, intentInstallationFlag},
@@ -249,7 +253,9 @@ func processIntentCommands() []intentCommand {
 		},
 		{
 			object: "ui", action: "status", audience: "both", summary: "whether the browser interface runs, and where",
-			usage: []string{"metasystem ui status"}, flags: []intentFlag{intentInstallationFlag}, maxArgs: 0,
+			usage:   []string{"metasystem ui status"},
+			details: []string{"When this seat runs no interface, names the machine of this computer that does."},
+			flags:   []intentFlag{intentInstallationFlag}, maxArgs: 0,
 			examples: []string{"metasystem ui status"}, run: func(inv *intentInvocation) int { return inv.uiTarget("status") },
 		},
 		{
@@ -1704,13 +1710,14 @@ func (inv *intentInvocation) runUIVerb(verb string) int {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: err.Error() + "; nothing was done",
 			next: []string{"metasystem", "system", "check"}, nextReason: "names what is wrong here"})
 	}
+	options.seats = func() uiSeatInventory { return inv.uiOtherSeats(layout) }
 	lifecycleResult, err := inv.owners.processes.ui(verb, roots, options)
 	if err != nil {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: err.Error() + "; nothing was done",
 			next: inv.publicArgv("ui", "status"), nextReason: "what the interface is doing now"})
 	}
 	result := lifecycleResult.Result
-	data := map[string]any{"lines": nonNilLines(result.Lines), "exitCode": result.Code}
+	data := uiSeatsData(lifecycleResult)
 	if verb == "status" {
 		data["state"] = lifecycleResult.State
 		outcome := intentConfirmed
@@ -1723,21 +1730,57 @@ func (inv *intentInvocation) runUIVerb(verb string) int {
 		}
 		return inv.render(intentResult{Outcome: outcome, code: result.Code, Targets: targets, Summary: summary, text: result.Lines, Data: data})
 	}
+	// A restart that acted on another machine's interface targets that
+	// seat, and its next steps name it.
+	next := func(words ...string) []string { return append([]string{"metasystem", "ui"}, words...) }
+	// On a branch whose summary is the first line naming the seat, the text
+	// is the rest; every other branch keeps all lines.
+	summary := func(fallback string) (string, []string) { return fallback, result.Lines }
+	text := result.Lines
+	if seat := lifecycleResult.Seat; seat != nil {
+		targets = []intentTarget{{Kind: "ui", ID: seat.Checkout}}
+		next = func(words ...string) []string {
+			return append(append([]string{"metasystem", "ui"}, words...), "--repo", seat.Checkout)
+		}
+		summary = func(fallback string) (string, []string) {
+			if len(result.Lines) > 0 {
+				return result.Lines[0], uiLinesAfterSummary(result.Lines)
+			}
+			return fallback, nil
+		}
+	}
 	restart := lifecycleResult.Restart
+	if restart == nil {
+		refusedSummary := "the interface could not be restarted; nothing was done"
+		refused, refusedText := summary(refusedSummary)
+		if lifecycleResult.Seat == nil && len(result.Lines) == 1 {
+			// This seat's own refusal: its one line says it, as before.
+			refused, refusedText = result.Lines[0], nil
+		}
+		// Refused before anything was stopped: a missing engine, an
+		// address that does not resolve, or several machines to choose from.
+		return inv.render(intentResult{Outcome: intentRefused, code: max(result.Code, 1), Targets: targets, text: refusedText, Data: data,
+			Summary: refused, Decision: lifecycleResult.Decision})
+	}
 	data["stop"], data["started"] = restart.Stop, restart.Started
 	switch {
 	case restart.Started && restart.Start.Code == 0:
-		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Summary: "the interface restarted", text: result.Lines, Data: data})
+		restarted, restartedText := summary("the interface restarted")
+		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Summary: restarted, text: restartedText, Data: data})
 	case restart.Started:
-		return inv.render(intentResult{Outcome: intentPartial, code: result.Code, Targets: targets, text: result.Lines, Data: data,
-			Summary: "the interface stopped but did not start again",
-			next:    []string{"metasystem", "ui", "start"}, nextReason: "start it once the problem above is fixed"})
+		// Nothing was stopped when nothing ran: the start alone failed.
+		failed := "the interface stopped but did not start again"
+		if restart.Stop == lifecycle.StopOutcome(lifecycle.Stopped) || restart.Stop == lifecycle.StopOutcome(lifecycle.Stale) {
+			failed = "the interface was not running, and it did not start"
+		}
+		return inv.render(intentResult{Outcome: intentPartial, code: result.Code, Targets: targets, text: text, Data: data,
+			Summary: failed, next: next("start"), nextReason: "start it once the problem above is fixed"})
 	case restart.Stop == lifecycle.Timeout:
-		return inv.render(intentResult{Outcome: intentPartial, code: max(result.Code, 1), Targets: targets, text: result.Lines, Data: data,
+		return inv.render(intentResult{Outcome: intentPartial, code: max(result.Code, 1), Targets: targets, text: text, Data: data,
 			Summary: "the interface was asked to stop but is still running, so it was not started again",
-			next:    []string{"metasystem", "ui", "restart"}, nextReason: "try again once it has stopped"})
+			next:    next("restart"), nextReason: "try again once it has stopped"})
 	}
-	return inv.render(intentResult{Outcome: intentRefused, code: max(result.Code, 1), Targets: targets, text: result.Lines, Data: data,
+	return inv.render(intentResult{Outcome: intentRefused, code: max(result.Code, 1), Targets: targets, text: text, Data: data,
 		Summary: "the interface could not be restarted; nothing was changed", next: inv.publicArgv("ui", "status"), nextReason: "what the interface is doing now"})
 }
 
@@ -1745,6 +1788,9 @@ type uiIntentOptions struct {
 	listen      string
 	listenSet   bool
 	waitSeconds int64
+	// seats reads the other machines of this computer, only when a verb
+	// needs them.
+	seats func() uiSeatInventory
 }
 
 func (inv *intentInvocation) uiOptions() (uiIntentOptions, *intentResult) {
@@ -1758,16 +1804,6 @@ func (inv *intentInvocation) uiOptions() (uiIntentOptions, *intentResult) {
 		options.waitSeconds = seconds
 	}
 	return options, nil
-}
-
-// uiLifecycleFor runs one interface lifecycle verb with the interface's own
-// defaults; an error is a refusal before anything was done.
-func uiLifecycleFor(verb string, roots lifecycle.Roots, options uiIntentOptions) (uiLifecycleResult, error) {
-	listen, err := uiListen(verb, roots, options.listen, options.listenSet)
-	if err != nil {
-		return uiLifecycleResult{}, err
-	}
-	return uiLifecycleRun(verb, roots, listen, options.waitSeconds), nil
 }
 
 func sameCanonicalPath(left, right string) bool {
@@ -2124,12 +2160,32 @@ func (inv *intentInvocation) uiTarget(verb string) int {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: err.Error() + "; nothing was done",
 			next: []string{"metasystem", "system", "check"}, nextReason: "names what is wrong here"})
 	}
+	options.seats = func() uiSeatInventory { return inv.uiOtherSeats(layout) }
 	ran, err := inv.owners.processes.ui(verb, roots, options)
 	if err != nil {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: err.Error() + "; nothing was done",
 			next: inv.publicArgv("ui", "status"), nextReason: "what the interface is doing now"})
 	}
-	data := map[string]any{"lines": nonNilLines(ran.Result.Lines), "exitCode": ran.Result.Code}
+	data := uiSeatsData(ran)
+	if ran.Seat != nil {
+		// The verb acted on another machine's interface: that seat is the
+		// target, and the line that says which is the summary.
+		targets = []intentTarget{{Kind: "ui", ID: ran.Seat.Checkout}}
+		summary := "the interface of machine " + ran.Seat.Name
+		if len(ran.Result.Lines) > 0 {
+			summary = ran.Result.Lines[0]
+		}
+		// The summary is the first line, so the text is the rest.
+		text := uiLinesAfterSummary(ran.Result.Lines)
+		switch {
+		case ran.Result.Code != 0:
+			return inv.render(intentResult{Outcome: intentRefused, code: ran.Result.Code, Targets: targets, Data: data, text: text, Summary: summary,
+				next: []string{"metasystem", "ui", "status", "--repo", ran.Seat.Checkout}, nextReason: "what that interface is doing now"})
+		case ran.Unchanged:
+			return inv.render(intentResult{Outcome: intentUnchanged, Targets: targets, Data: data, text: text, Summary: summary})
+		}
+		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: data, text: text, Summary: summary})
+	}
 	if ran.Unchanged && ran.Result.Code == 0 {
 		summary := map[string]string{"start": "the interface already runs", "stop": "the interface is already stopped"}[verb]
 		if len(ran.Result.Lines) > 0 {
@@ -2141,8 +2197,26 @@ func (inv *intentInvocation) uiTarget(verb string) int {
 		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: data, text: ran.Result.Lines,
 			Summary: map[string]string{"start": "the interface is started", "stop": "the interface is stopped"}[verb]})
 	}
+	next, nextReason := inv.publicArgv("ui", "status"), "what the interface is doing now"
+	if verb == "start" && len(ran.Seats) == 1 {
+		next, nextReason = []string{"metasystem", "ui", "stop", "--repo", ran.Seats[0].Checkout}, "stops the interface of machine "+ran.Seats[0].Machine+", which holds the address"
+	}
 	return inv.render(intentResult{Outcome: intentRefused, code: ran.Result.Code, Targets: targets, Data: data, text: ran.Result.Lines,
-		Summary: "the interface did not " + verb + "; its report is below", next: inv.publicArgv("ui", "status"), nextReason: "what the interface is doing now"})
+		Summary: "the interface did not " + verb + "; its report is below", next: next, nextReason: nextReason, Decision: ran.Decision})
+}
+
+// uiSeatsData is a lifecycle verb's JSON data: its lines and exit code,
+// and the other machines of this computer it names, when it read them.
+func uiSeatsData(ran uiLifecycleResult) map[string]any {
+	data := map[string]any{"lines": nonNilLines(ran.Result.Lines), "exitCode": ran.Result.Code}
+	if ran.Seats != nil || ran.SeatsProblems != nil {
+		seats := ran.Seats
+		if seats == nil {
+			seats = []uiSeatView{}
+		}
+		data["seats"], data["seatsProblems"] = seats, nonNilLines(ran.SeatsProblems)
+	}
+	return data
 }
 
 // runIntentStartMachine adds one machine to the fleet through the seat
@@ -2274,4 +2348,13 @@ func diskCheckLine(root string) string {
 	}
 	return fmt.Sprintf("disk: last pass %s released %d, kept %d, left %d pending; metasystem disk show prints the report",
 		report.At.Format(time.RFC3339), len(report.Actions), len(report.Kept), len(report.Pending))
+}
+
+// uiLinesAfterSummary is a result's lines after the first, which the
+// rendering prints as the summary.
+func uiLinesAfterSummary(lines []string) []string {
+	if len(lines) <= 1 {
+		return nil
+	}
+	return lines[1:]
 }
