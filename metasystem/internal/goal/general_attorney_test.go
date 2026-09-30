@@ -179,30 +179,32 @@ func TestAnActUnderAGrantRechecksItAtTheEffect(t *testing.T) {
 	}
 	id := human.opid()
 	clock := human.Now.Add(time.Minute)
-	unbind := BindAttorneyEffect(endpoint.Root, id, func() (time.Time, error) { return clock, nil })
-	defer unbind()
-	open := func(n int, name string) (PublishResult, error) {
-		return OpenRisked(asPerson(t, endpoint.Root, attorneyReq(endpoint, n, "mac-a")), name, "Work "+name+".", OriginHuman, "Do it.", nil, nil,
+	bound := endpoint.WithAttorneyEffect(id, func() (time.Time, error) { return clock, nil })
+	if bound.AttorneyEffect() != id || endpoint.AttorneyEffect() != "" {
+		t.Fatalf("the binding belongs to the bound endpoint only: %q %q", bound.AttorneyEffect(), endpoint.AttorneyEffect())
+	}
+	open := func(on Endpoint, n int, name string) (PublishResult, error) {
+		request := asPerson(t, endpoint.Root, attorneyReq(endpoint, n, "mac-a"))
+		request.Endpoint = on
+		return OpenRisked(request, name, "Work "+name+".", OriginHuman, "Do it.", nil, nil,
 			RiskRecord{Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "routine"}, 0, "", nil, nil)
 	}
-	if res, err := open(50, "while-live"); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := open(bound, 50, "while-live"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("an act while the grant is live: %+v %v", res, err)
 	}
 	clock = until
-	res, err = open(51, "after-expiry")
+	res, err = open(bound, 51, "after-expiry")
 	expectRefusal(t, "expired at the effect", res, err, "is not live")
+	if res, err := open(endpoint, 55, "other-act"); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("another act on the same root is not bound: %+v %v", res, err)
+	}
 
 	clock = human.Now.Add(2 * time.Minute)
-	revoke := withUlid(human, 52)
-	unbind()
-	if res, err := Revoke(revoke, proof, id); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Revoke(withUlid(human, 52), proof, id); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("revoke: %+v %v", res, err)
 	}
-	unbind = BindAttorneyEffect(endpoint.Root, id, func() (time.Time, error) { return clock, nil })
-	res, err = open(53, "after-revoke")
+	res, err = open(bound, 53, "after-revoke")
 	expectRefusal(t, "revoked at the effect", res, err, "revoked")
-	unbind()
-	if res, err := open(54, "unbound"); err != nil || res.Outcome != OutcomeConfirmed {
-		t.Fatalf("an unbound process is not checked: %+v %v", res, err)
-	}
+	res, err = open(endpoint.WithAttorneyEffect("01M-unknown", func() (time.Time, error) { return clock, nil }), 54, "unknown-grant")
+	expectRefusal(t, "unknown grant", res, err, "not recorded")
 }

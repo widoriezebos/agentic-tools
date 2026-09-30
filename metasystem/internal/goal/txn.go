@@ -36,6 +36,9 @@ type Endpoint struct {
 	captureTimers          attentionTimerSource
 	carriedCounselorAppend func(string, string, HistoryLine, time.Time) error
 	blockedRecovery        SensitiveRecoveryPolicy
+	// attorney is the general grant one act's publishes re-check; set only
+	// through WithAttorneyEffect.
+	attorney *attorneyBinding
 }
 
 // ConfigureBlockedRecovery binds the live policy a publish on this endpoint

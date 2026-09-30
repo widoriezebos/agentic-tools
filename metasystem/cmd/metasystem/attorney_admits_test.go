@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -24,7 +25,6 @@ type attorneyAdmitBed struct {
 	readErr  error
 	logLines []string
 	locks    int
-	bound    []string
 	stderr   bytes.Buffer
 }
 
@@ -63,11 +63,6 @@ func (b *attorneyAdmitBed) admitter() *attorneyAdmitter {
 			return nil
 		},
 		lockShared: func(string) error { b.locks++; return b.lockErr },
-		bind: func(root, id string, _ func() (time.Time, error)) func() {
-			b.bound = append(b.bound, id)
-			return func() {}
-		},
-		clock: func(string) (time.Time, error) { return attorneyAdmitNow, nil },
 	}}
 }
 
@@ -81,14 +76,14 @@ func TestAttorneyAdmitsOnlyTheHolderOfTheBoundCheckout(t *testing.T) {
 	if !ok || grant.Grant != "01M-grant" || grant.By != "wido" || grant.Class != lease.ClassMain || grant.Until != "2026-10-01T06:00:00Z" {
 		t.Fatalf("the holder was not admitted: %+v %v", grant, ok)
 	}
-	if len(b.logLines) != 1 || !strings.Contains(b.logLines[0], "act grant=01M-grant by=wido") || !strings.Contains(b.logLines[0], `act="goal approve g1"`) || !strings.Contains(b.logLines[0], "main=main-1") {
+	if len(b.logLines) != 1 || !strings.Contains(b.logLines[0], "answered grant=01M-grant by=wido") || !strings.Contains(b.logLines[0], `act="goal approve g1"`) || !strings.Contains(b.logLines[0], "main=main-1") {
 		t.Fatalf("one log line naming the grant: %q", b.logLines)
 	}
-	if !strings.Contains(b.stderr.String(), "POWER OF ATTORNEY (wido, grant 01M-grant): goal approve g1 admitted for the seat's main session") {
+	if !strings.Contains(b.stderr.String(), "POWER OF ATTORNEY (wido, grant 01M-grant): answers the person check of goal approve g1 for the seat's main session") {
 		t.Fatalf("the stderr line: %q", b.stderr.String())
 	}
-	if b.locks != 1 || len(b.bound) == 0 || b.bound[0] != "01M-grant" {
-		t.Fatalf("locked %d, bound %v", b.locks, b.bound)
+	if b.locks != 1 {
+		t.Fatalf("the grantee locked %d times", b.locks)
 	}
 
 	refusals := map[string]func(*attorneyAdmitBed){
@@ -129,8 +124,12 @@ func TestAttorneyAdmitsOnlyTheHolderOfTheBoundCheckout(t *testing.T) {
 		if grant, ok := bed.admitter().admit(bed.root, 80, now); ok {
 			t.Errorf("%s: admitted %+v", label, grant)
 		}
-		if bed.stderr.Len() != 0 || len(bed.bound) != 0 || (label != "log append fails" && len(bed.logLines) != 0) {
-			t.Errorf("%s: a refusal left a trace: %q %v %v", label, bed.stderr.String(), bed.bound, bed.logLines)
+		grantee := label == "log append fails" || label == "lock fails"
+		if !grantee && bed.locks != 0 {
+			t.Errorf("%s: a caller the grant does not name took the grant lock", label)
+		}
+		if bed.stderr.Len() != 0 || (label != "log append fails" && len(bed.logLines) != 0) {
+			t.Errorf("%s: a refusal left a trace: %q %v", label, bed.stderr.String(), bed.logLines)
 		}
 	}
 
@@ -141,5 +140,29 @@ func TestAttorneyAdmitsOnlyTheHolderOfTheBoundCheckout(t *testing.T) {
 	}
 	if _, ok := again.admit(b.root, 80, attorneyAdmitNow); !ok || len(b.logLines) != 2 {
 		t.Fatalf("a repeat proof in one process logged again: %q", b.logLines)
+	}
+}
+
+// A revoke on a checkout no grantee act ever locked neither waits nor makes
+// the lock file; one a grantee holds shared waits, bounded, and says so.
+func TestGrantLockExclusiveTouchesOnlyALockAGranteeMade(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	lock := &grantLock{}
+	held, err := lock.exclusive(root, time.Second, func(time.Duration) { t.Fatal("waited on a lock no one made") })
+	if err != nil || !held {
+		t.Fatalf("no lock file = %v %v", held, err)
+	}
+	if _, err := os.Stat(grantLockPath(root)); !os.IsNotExist(err) {
+		t.Fatalf("a revoke made the lock file: %v", err)
+	}
+	grantee := &grantLock{}
+	if err := grantee.shared(root); err != nil {
+		t.Fatal(err)
+	}
+	waits := 0
+	held, err = (&grantLock{}).exclusive(root, 250*time.Millisecond, func(time.Duration) { waits++ })
+	if err != nil || held || waits == 0 {
+		t.Fatalf("a grantee's hold = %v %v after %d waits", held, err, waits)
 	}
 }

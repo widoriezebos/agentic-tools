@@ -29,7 +29,7 @@ func GrantGeneral(r VerbRequest, proof *humanauthority.Proof, g GeneralGrant) (P
 	if r.Actor.Human == "" {
 		return PublishResult{}, fmt.Errorf("a general power of attorney is a person's act and requires --by from an authorized human boundary")
 	}
-	if proof == nil || proof.Helm != nil || !proof.ValidFor(r.Endpoint.Root) {
+	if proof == nil || proof.Helm != nil || !proof.EnrolledTerminalFor(r.Endpoint.Root) {
 		return PublishResult{}, fmt.Errorf("a general power of attorney is granted only by the person's own proof at the enrolled terminal, never at the helm or under a grant: %s", humanauthority.PersonActRemedy("metasystem grant add --acts everything --for 24h"))
 	}
 	for label, value := range map[string]string{"machine": g.Machine, "checkout": g.Checkout, "lineage": g.Lineage} {
@@ -85,6 +85,7 @@ func GrantGeneral(r VerbRequest, proof *humanauthority.Proof, g GeneralGrant) (P
 			t.Root.PowerOfAttorney = append(t.Root.PowerOfAttorney, entry)
 			t.Root.Revision++
 			t.Root.History = append(t.Root.History, HistoryLine{At: r.stamp(), Opid: r.opid(), Verb: "grant", Actor: r.Actor.historyActor(), Keep: -1, Reason: reason})
+			recordSessionAuthority(&t.Root.History[len(t.Root.History)-1], proof)
 			return []Change{{Path: goalsPrefix + "backlog.md", Content: RenderRoot(t.Root)}}, nil
 		},
 		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
@@ -129,31 +130,35 @@ func rootEntriesAt(e Endpoint, tip string) ([]PowerOfAttorneyEntry, error) {
 	return record.PowerOfAttorney, nil
 }
 
-// attorneyEffect binds the acts of this process on one ledger root to a
-// general grant, so every mutation re-checks it at the tip it lands on.
-var attorneyEffect sync.Map // root -> attorneyBinding
-
+// attorneyBinding ties one act's endpoint to the general grant that
+// answered its person check, so each of its mutations re-checks the grant.
 type attorneyBinding struct {
 	id  string
 	now func() (time.Time, error)
 }
 
-// BindAttorneyEffect makes every publish on root re-check grant id against
-// now at the tip it commits on; the returned function unbinds it. The
-// command edge binds it when a grant admits the act.
-func BindAttorneyEffect(root, id string, now func() (time.Time, error)) func() {
-	key := filepath.Clean(root)
-	attorneyEffect.Store(key, attorneyBinding{id: id, now: now})
-	return func() { attorneyEffect.Delete(key) }
+// WithAttorneyEffect returns a copy of the endpoint whose publishes re-check
+// grant id against now at the tip each commits on. The binding lives with
+// the request that carries this endpoint and ends with it.
+func (e Endpoint) WithAttorneyEffect(id string, now func() (time.Time, error)) Endpoint {
+	e.attorney = &attorneyBinding{id: id, now: now}
+	return e
+}
+
+// AttorneyEffect names the grant this endpoint's publishes re-check, if any.
+func (e Endpoint) AttorneyEffect() string {
+	if e.attorney == nil {
+		return ""
+	}
+	return e.attorney.id
 }
 
 // guardAttorneyEffect wraps a mutation with the bound grant's re-check.
 func guardAttorneyEffect(e Endpoint, mutate func(string) ([]Change, error)) func(string) ([]Change, error) {
-	value, bound := attorneyEffect.Load(filepath.Clean(e.Root))
-	if !bound {
+	if e.attorney == nil {
 		return mutate
 	}
-	binding := value.(attorneyBinding)
+	binding := *e.attorney
 	return func(tip string) ([]Change, error) {
 		entries, err := rootEntriesAt(e, tip)
 		if err != nil {

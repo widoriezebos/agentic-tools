@@ -1,6 +1,7 @@
 package main
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -69,5 +70,18 @@ func TestGrantEndParsesTheEasyForms(t *testing.T) {
 	fall := time.Date(2026, 10, 24, 12, 0, 0, 0, zone)
 	if _, err := parseGrantEnd(fall, zone, "", "02:30"); err == nil || !strings.Contains(err.Error(), "twice") {
 		t.Errorf("02:30 on the autumn change = %v, want happens twice", err)
+	}
+}
+
+// The examples a refusal prints are valid on any day: no fixed date.
+func TestGrantEndExamplesHoldOnAnyDay(t *testing.T) {
+	t.Parallel()
+	if regexp.MustCompile(`[0-9]{4}-[0-9]{2}-[0-9]{2}`).MatchString(grantEndExamples) {
+		t.Fatalf("the examples name a fixed date: %q", grantEndExamples)
+	}
+	for _, want := range []string{"--for 24h", "--until 18:00", "--until tomorrow", "--until YYYY-MM-DD"} {
+		if !strings.Contains(grantEndExamples, want) {
+			t.Errorf("the examples lack %q: %q", want, grantEndExamples)
+		}
 	}
 }

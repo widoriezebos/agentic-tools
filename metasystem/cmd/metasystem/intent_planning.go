@@ -1582,9 +1582,13 @@ func runIntentGrant(inv *intentInvocation) int {
 	if problem := inv.selectRoot(); problem != nil {
 		return inv.render(*problem)
 	}
-	actor, _, problem := inv.actingAs("grant", "", actorHuman)
+	actor, proof, problem := inv.actingAs("grant", "", actorHuman)
 	if problem != nil {
 		return inv.render(*problem)
+	}
+	if proof != nil && proof.Helm != nil && proof.Helm.Grant != "" {
+		_ = humanauthority.RecordAttorneyRefusal(inv.stateRoot, *proof, "grant add", "a grant is added only by the person's own proof", proof.CheckedAt)
+		return inv.refuse("", "a power of attorney is added only by the person's own proof, never under a grant; nothing was done", humanauthority.PersonActRemedy("metasystem grant add"))
 	}
 	args := append([]string{"--root", inv.stateRoot, "--tiers", inv.input.text("tiers"), "--verbs", strings.Join(verbs, ","), "--expires", inv.input.text("until")}, actor...)
 	report := &ownerReport{}

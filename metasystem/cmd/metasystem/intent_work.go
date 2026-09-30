@@ -2015,6 +2015,7 @@ func (inv *intentInvocation) directPersonProof(act string) *intentResult {
 		return refused(humanauthority.PlainReason(err))
 	}
 	if proof.Helm != nil || !proof.EnrolledTerminalFor(inv.stateRoot) {
+		_ = humanauthority.RecordAttorneyRefusal(inv.stateRoot, proof, act, "set only by the person's own proof", now)
 		return refused("this shell was admitted by the helm or a grant, not proven by its own ancestry")
 	}
 	return nil

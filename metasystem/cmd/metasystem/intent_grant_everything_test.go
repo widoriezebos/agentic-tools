@@ -268,3 +268,33 @@ func TestGrantEverythingReadsInText(t *testing.T) {
 	}
 	t.Logf("$ metasystem grant add --acts everything --for 8h\n%s$ metasystem grant list\n%s$ metasystem status (first line)\n%s\n$ metasystem grant revoke %s\n%s", added, listed, status, id, revoked)
 }
+
+// A goal act a grant answered carries the grant to its effect: when the
+// grant is not on the ledger the act lands on, it is refused there, and a
+// person's own act is untouched. A grant add the grant answered is refused
+// and logged as refused, never as admitted.
+func TestAGrantAnsweredActIsCheckedAtItsEffectAndRefusalsAreLogged(t *testing.T) {
+	t.Parallel()
+	b := newGrantEverythingBed(t)
+	grantProof := func(root string, _ int64, _ humanauthority.Reader, _, _ string, at time.Time) (humanauthority.Proof, error) {
+		return humanauthority.HelmProof(root, humanauthority.HelmGrant{By: "Wido", Class: lease.ClassMain, Grant: "01M-missing", Until: "2099-01-01T00:00:00Z"}, at)
+	}
+	owners := b.owners()
+	owners.prove = grantProof
+	code, result := b.runJSON(owners, "goal", "prioritize", bedGoal, "1")
+	if code == 0 || !strings.Contains(result.Summary+" "+result.Decision, "01M-missing is not recorded") {
+		t.Fatalf("an act under an unrecorded grant = %d %+v", code, result)
+	}
+	if code, result := b.runJSON(b.owners(), "goal", "prioritize", bedGoal, "1"); code != 0 || result.Outcome != intentConfirmed {
+		t.Fatalf("the person's own act = %d %+v", code, result)
+	}
+	code, result = b.runJSON(owners, "grant", "add", "--acts", "everything", "--for", "8h")
+	if code == 0 || result.Outcome != intentRefused {
+		t.Fatalf("a grant add under a grant = %d %+v", code, result)
+	}
+	checkout, _ := filepath.EvalSymlinks(b.root())
+	data, _ := os.ReadFile(attorneyLogPath(checkout))
+	if !strings.Contains(string(data), "refused grant=01M-missing by=Wido act=\"grant add\"") {
+		t.Fatalf("the log lacks the refusal: %q", data)
+	}
+}

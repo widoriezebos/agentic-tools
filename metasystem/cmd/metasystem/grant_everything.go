@@ -12,7 +12,7 @@ import (
 
 // grantEndExamples are the easy forms of a general grant's end, printed with
 // every refusal of one.
-const grantEndExamples = "metasystem grant add --acts everything --for 24h (or 8h, 7d, 1w), --until 18:00, --until tomorrow or --until 2026-10-07"
+const grantEndExamples = "metasystem grant add --acts everything --for 24h (or 8h, 7d, 1w), --until 18:00, --until tomorrow, or a date within the next 7 days, --until YYYY-MM-DD"
 
 var grantForPattern = regexp.MustCompile(`^([1-9][0-9]{0,3})([hdw])$`)
 var grantClockPattern = regexp.MustCompile(`^([01]?[0-9]|2[0-3]):([0-5][0-9])$`)

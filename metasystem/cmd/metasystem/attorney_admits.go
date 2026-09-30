@@ -47,8 +47,6 @@ type attorneyAdmitOwners struct {
 	stderr     io.Writer
 	appendLog  func(root, line string) error
 	lockShared func(root string) error
-	bind       func(root, id string, now func() (time.Time, error)) func()
-	clock      func(root string) (time.Time, error)
 }
 
 func (o attorneyAdmitOwners) withDefaults() attorneyAdmitOwners {
@@ -74,16 +72,10 @@ func (o attorneyAdmitOwners) withDefaults() attorneyAdmitOwners {
 		o.stderr = os.Stderr
 	}
 	if o.appendLog == nil {
-		o.appendLog = appendAttorneyLog
+		o.appendLog = humanauthority.AppendAttorneyLog
 	}
 	if o.lockShared == nil {
 		o.lockShared = processGrantLock.shared
-	}
-	if o.bind == nil {
-		o.bind = goal.BindAttorneyEffect
-	}
-	if o.clock == nil {
-		o.clock = goalCommandNow
 	}
 	return o
 }
@@ -109,11 +101,6 @@ func canonicalCheckout(root string) (string, error) {
 	return filepath.EvalSymlinks(abs)
 }
 
-// attorneyLogPath is the local, append-only record of every admitted act.
-func attorneyLogPath(root string) string {
-	return filepath.Join(root, "artifacts", "agents", "authority", "power-of-attorney.log")
-}
-
 func (a *attorneyAdmitter) admit(root string, pid int64, now time.Time) (humanauthority.HelmGrant, bool) {
 	o := a.owners.withDefaults()
 	if now.IsZero() {
@@ -123,32 +110,33 @@ func (a *attorneyAdmitter) admit(root string, pid int64, now time.Time) (humanau
 	if err != nil || o.fixture(checkout) {
 		return humanauthority.HelmGrant{}, false
 	}
-	// The shared grant lock is taken before the last read of the grant, so
-	// a local revoke that returned is seen, and one that starts waits.
-	if err := o.lockShared(checkout); err != nil {
-		return humanauthority.HelmGrant{}, false
-	}
-	entries, err := o.grants(checkout)
-	if err != nil {
-		return humanauthority.HelmGrant{}, false
-	}
 	machine, err := o.machine(checkout)
 	if err != nil || machine == "" {
 		return humanauthority.HelmGrant{}, false
 	}
-	var live []goal.PowerOfAttorneyEntry
-	for _, entry := range entries {
-		if !entry.General() || entry.For != machine || entry.Checkout != checkout {
-			continue
+	live := func() (goal.PowerOfAttorneyEntry, bool) {
+		entries, err := o.grants(checkout)
+		if err != nil {
+			return goal.PowerOfAttorneyEntry{}, false
 		}
-		if ok, _ := entry.LiveAt(now); ok {
-			live = append(live, entry)
+		var found []goal.PowerOfAttorneyEntry
+		for _, entry := range entries {
+			if !entry.General() || entry.For != machine || entry.Checkout != checkout {
+				continue
+			}
+			if ok, _ := entry.LiveAt(now); ok {
+				found = append(found, entry)
+			}
 		}
+		if len(found) != 1 {
+			return goal.PowerOfAttorneyEntry{}, false
+		}
+		return found[0], true
 	}
-	if len(live) != 1 {
+	entry, ok := live()
+	if !ok {
 		return humanauthority.HelmGrant{}, false
 	}
-	entry := live[0]
 	class, err := o.classify(checkout, pid)
 	if err != nil || class.Class != lease.ClassMain || class.MainId == "" {
 		return humanauthority.HelmGrant{}, false
@@ -157,50 +145,38 @@ func (a *attorneyAdmitter) admit(root string, pid int64, now time.Time) (humanau
 	if err != nil || holder.MainId != class.MainId || holder.OwnerLineage != entry.Lineage {
 		return humanauthority.HelmGrant{}, false
 	}
+	// Only the grantee takes the grant lock, and only on the checkout the
+	// grant binds; the grant is read again under it, so a local revoke that
+	// returned is seen and one that starts waits for this act.
+	if err := o.lockShared(checkout); err != nil {
+		return humanauthority.HelmGrant{}, false
+	}
+	if again, ok := live(); !ok || again.ID != entry.ID {
+		return humanauthority.HelmGrant{}, false
+	}
 	person := strings.TrimPrefix(entry.By, "human:")
 	verb := o.verb()
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	key := entry.ID + "\x00" + verb
 	if !a.logged[key] {
-		line := fmt.Sprintf("%s act grant=%s by=%s act=%q class=%s main=%s pid=%d", now.UTC().Format(time.RFC3339), entry.ID, person, verb, class.Class, class.MainId, pid)
+		// "answered": the grant answered this act's person check; the act's
+		// own checks may still refuse it, and a hard limit logs "refused".
+		line := fmt.Sprintf("%s answered grant=%s by=%s act=%q class=%s main=%s pid=%d", now.UTC().Format(time.RFC3339), entry.ID, person, verb, class.Class, class.MainId, pid)
 		if err := o.appendLog(checkout, line); err != nil {
 			return humanauthority.HelmGrant{}, false
 		}
-		fmt.Fprintf(o.stderr, "POWER OF ATTORNEY (%s, grant %s): %s admitted for the seat's main session; recorded in %s\n", person, entry.ID, verb, attorneyLogPath(checkout))
+		fmt.Fprintf(o.stderr, "POWER OF ATTORNEY (%s, grant %s): answers the person check of %s for the seat's main session; recorded in %s\n", person, entry.ID, verb, attorneyLogPath(checkout))
 		if a.logged == nil {
 			a.logged = map[string]bool{}
 		}
 		a.logged[key] = true
-		clock := func() (time.Time, error) { return o.clock(checkout) }
-		o.bind(checkout, entry.ID, clock)
-		if clean := filepath.Clean(root); clean != checkout {
-			o.bind(clean, entry.ID, clock)
-		}
 	}
 	return humanauthority.HelmGrant{By: person, Since: entry.Since, Class: class.Class, Checkout: entry.Checkout, Grant: entry.ID, Until: entry.Until}, true
 }
 
-// appendAttorneyLog appends one line and makes it durable before the act.
-func appendAttorneyLog(root, line string) error {
-	path := attorneyLogPath(root)
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return err
-	}
-	file, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o600)
-	if err != nil {
-		return err
-	}
-	if _, err := file.WriteString(line + "\n"); err != nil {
-		file.Close()
-		return err
-	}
-	if err := file.Sync(); err != nil {
-		file.Close()
-		return err
-	}
-	return file.Close()
-}
+// attorneyLogPath is the local, append-only record of every answered act.
+func attorneyLogPath(root string) string { return humanauthority.AttorneyLogPath(root) }
 
 // grantLock serializes acts admitted under a general grant with a local
 // revoke: an admitted act holds the lock shared until its process exits; a
@@ -253,9 +229,21 @@ func (l *grantLock) shared(root string) error {
 func (l *grantLock) exclusive(root string, wait time.Duration, sleep func(time.Duration)) (bool, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	file, err := l.open(root)
-	if err != nil {
-		return false, err
+	file := l.file[root]
+	if file == nil {
+		// Only a grantee's act makes the lock; with none, none can hold it.
+		existing, err := os.OpenFile(grantLockPath(root), os.O_RDWR, 0)
+		if os.IsNotExist(err) {
+			return true, nil
+		}
+		if err != nil {
+			return false, err
+		}
+		if l.file == nil {
+			l.file = map[string]*os.File{}
+		}
+		l.file[root] = existing
+		file = existing
 	}
 	const step = 100 * time.Millisecond
 	for waited := time.Duration(0); ; waited += step {

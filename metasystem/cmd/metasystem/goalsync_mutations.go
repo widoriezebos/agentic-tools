@@ -726,6 +726,11 @@ func syncReqClassifiedWithTerminalGradeAtWithDependencies(root, by, lineageFlag 
 		Endpoint: e, Actor: goal.Actor{Machine: machine, Lineage: lineage, Human: by},
 		Authority: authority, Ulid: ulid, Now: now, CallerClass: classification.Class,
 	}
+	if authority != nil && authority.Helm != nil && authority.Helm.Grant != "" {
+		// The act a general grant answered re-checks it at every tip it
+		// lands on; the binding ends with this request.
+		req.Endpoint = req.Endpoint.WithAttorneyEffect(authority.Helm.Grant, func() (time.Time, error) { return commandNow(root) })
+	}
 	if classification.Holder && classification.ClaimEpoch != nil {
 		req.EpochAuthority = goal.EpochAuthorityHolder
 	}

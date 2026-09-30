@@ -89,6 +89,9 @@ func runIntentGrantEverything(inv *intentInvocation) int {
 		return inv.render(*problem)
 	}
 	if proof == nil || proof.Helm != nil || !proof.EnrolledTerminalFor(inv.stateRoot) {
+		if proof != nil {
+			_ = humanauthority.RecordAttorneyRefusal(inv.stateRoot, *proof, "grant add", "a grant is added only by the person's own proof", now)
+		}
 		return inv.refuse("", "a general power of attorney is the person's own act at the enrolled terminal, never at the helm or under a grant; nothing was done",
 			humanauthority.PersonActRemedy("metasystem grant add --acts everything --for 24h"))
 	}

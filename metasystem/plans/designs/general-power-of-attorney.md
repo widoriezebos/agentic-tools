@@ -251,3 +251,11 @@ Built by Claude on Opus 5.5 on branch `poa`: unit 1 at `837ec7b63`, unit 2 in th
 - **Proof-run class checks.** Only `legacyProofLaunchAllowed` swapped to the grant-aware classifier. `admitProofLaunchWithReadsAndClassifier` and `admitLaneProofLaunch` keep `classifyVerbCaller`, because the holder main already passes there as the goal's coordinator or the lane owner. Turning it into HUMAN would move it off the claim-epoch path.
 - **M5.** It has no dedicated witness: the change is the clock argument, and existing split and disk tests cover the path.
 - **M3, second half.** It is not built (§11).
+
+The read of `d130e04e0` found no material findings. Four smaller items were fixed afterwards:
+- **Grant lock.** Only the grantee takes the grant lock, after it is classified, on the grant's bound checkout, and the grant is read again under the lock. A revoke never creates the lock file.
+- **Log wording.** The log says `answered` when the grant answers a person check. It says `refused` when a hard limit then refuses the act: grant add, settings set of an authority key, or interface start.
+- **Effect re-check.** The re-check is bound to the one request, through `Endpoint.WithAttorneyEffect`, set by the goal request builder. It is no longer process-wide.
+- **Refusal examples.** They name no fixed date.
+
+In addition, `GrantGeneral` now refuses the fixture proof itself, and its History line records a session authority as the scoped `Grant` does.
