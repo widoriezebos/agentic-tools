@@ -1,0 +1,45 @@
+exit 0
+--
+{
+  "schemaVersion": 1,
+  "verb": "question withdraw",
+  "targets": [
+    {
+      "kind": "question",
+      "id": "q2"
+    }
+  ],
+  "outcome": "confirmed",
+  "summary": "question q2 is withdrawn",
+  "data": {
+    "question": {
+      "id": "q2",
+      "goal": "standing-validation",
+      "kind": "other",
+      "machine": "",
+      "openedAt": "0001-01-01T00:00:00Z",
+      "facts": [
+        "Split the batch?"
+      ],
+      "options": [
+        {
+          "label": "yes",
+          "consequence": "split"
+        }
+      ],
+      "recommendation": "",
+      "wants": "",
+      "thread": {
+        "id": "m1",
+        "threadID": "thread-1"
+      },
+      "state": "closed",
+      "undelivered": 0,
+      "answer": null,
+      "rejected": null,
+      "factsDigest": ""
+    }
+  }
+}
+
+--

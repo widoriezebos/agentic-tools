@@ -1,0 +1,41 @@
+exit 0
+--
+{
+  "schemaVersion": 1,
+  "verb": "goal sync",
+  "targets": [
+    {
+      "kind": "installation",
+      "id": "/Users/wido/GitHub/agentic-tools-m1e"
+    }
+  ],
+  "outcome": "confirmed",
+  "summary": "1 goal file(s) differ from their published base 5e1f0c2a9; nothing was changed",
+  "data": {
+    "base": "5e1f0c2a9d3b7e6f4a8c1d0b2e9f7a6c5d4b3a21",
+    "edits": [
+      {
+        "Path": "plans/goals/standing-validation.md",
+        "Kind": "changed"
+      }
+    ],
+    "goals": [
+      "standing-validation"
+    ]
+  },
+  "next": {
+    "argv": [
+      "metasystem",
+      "goal",
+      "sync",
+      "--publish",
+      "--goal",
+      "standing-validation",
+      "--by",
+      "NAME"
+    ],
+    "reason": "a person publishes these reviewed edits, naming each goal"
+  }
+}
+
+--

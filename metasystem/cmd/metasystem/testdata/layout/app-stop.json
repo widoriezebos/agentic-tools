@@ -1,0 +1,21 @@
+exit 0
+--
+{
+  "schemaVersion": 1,
+  "verb": "app stop",
+  "targets": [
+    {
+      "kind": "app",
+      "id": "standing"
+    }
+  ],
+  "outcome": "confirmed",
+  "summary": "no application run is recorded for standing",
+  "data": {
+    "readiness": "no-probe",
+    "run": "standing",
+    "state": "stopped"
+  }
+}
+
+--

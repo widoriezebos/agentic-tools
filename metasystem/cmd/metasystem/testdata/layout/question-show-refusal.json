@@ -1,0 +1,24 @@
+exit 1
+--
+{
+  "schemaVersion": 1,
+  "verb": "question show",
+  "targets": [
+    {
+      "kind": "question",
+      "id": "nosuch"
+    }
+  ],
+  "outcome": "refused",
+  "summary": "nothing was done: there is no question nosuch",
+  "next": {
+    "argv": [
+      "metasystem",
+      "question",
+      "list"
+    ],
+    "reason": "lists the open questions with their ids"
+  }
+}
+
+--

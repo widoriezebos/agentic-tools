@@ -1,0 +1,30 @@
+exit 0
+--
+{
+  "schemaVersion": 1,
+  "verb": "settings coordinator",
+  "targets": [
+    {
+      "kind": "coordinator",
+      "id": "/Users/wido/GitHub/agentic-tools-m1e"
+    }
+  ],
+  "outcome": "confirmed",
+  "summary": "no coordinator is declared for this checkout",
+  "data": {
+    "state": "undeclared"
+  },
+  "next": {
+    "argv": [
+      "metasystem",
+      "settings",
+      "coordinator",
+      "--declare",
+      "--by",
+      "Wido"
+    ],
+    "reason": "a person at an agent-free terminal declares it"
+  }
+}
+
+--

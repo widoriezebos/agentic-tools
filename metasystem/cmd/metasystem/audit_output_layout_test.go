@@ -60,7 +60,7 @@ type layoutBed struct {
 }
 
 func layoutCases() []layoutCase {
-	return []layoutCase{
+	return append([]layoutCase{
 		{name: "status", args: []string{"status"}, bed: statusLayoutBed(true)},
 		{name: "status-verbose", args: []string{"status", "--verbose"}, bed: statusLayoutBed(true)},
 		{name: "status-quiet", args: []string{"status"}, bed: statusLayoutBed(false)},
@@ -69,7 +69,7 @@ func layoutCases() []layoutCase {
 		{name: "grant-list-all", args: []string{"grant", "list", "--all"}, bed: grantListLayoutBed(2, true)},
 		{name: "grant-list-empty", args: []string{"grant", "list"}, bed: grantListLayoutBed(0, false)},
 		{name: "grant-list-refusal", args: []string{"grant", "list"}, bed: outsideLayoutBed},
-	}
+	}, g5LayoutCases()...)
 }
 
 // statusLayoutBed is a checkout with its five helpers and two processes
@@ -310,11 +310,15 @@ func TestAuditOutputLayout(t *testing.T) {
 			}
 
 			// On a terminal the same page is coloured; with colour off not
-			// one escape is printed.
-			tty := env
+			// one escape is printed. The coloured run has a bed of its own,
+			// so an act is coloured on its first run too.
+			fresh := c.bed(t)
+			freshRoot := realpath.Resolve(fresh.cwd)
+			tty := layoutEnv(t, fresh.now, filepath.Dir(freshRoot), freshRoot)
 			tty.TTY, tty.Color = true, true
-			bed.owners.textEnv = func(io.Writer) textui.Env { return tty }
-			_, coloured, colouredErr := runLayoutCase(t, c, bed)
+			fresh.owners.textEnv = func(io.Writer) textui.Env { return tty }
+			fresh.replace = append([]string{"~/" + filepath.Base(freshRoot), "~/GitHub/" + layoutStableBase(fresh.replace, freshRoot)}, fresh.replace...)
+			_, coloured, colouredErr := runLayoutCase(t, c, fresh)
 			if plain := layoutStripANSI(coloured + colouredErr); plain != got && layoutModeOf(t, c.args) == auditEnforce {
 				t.Errorf("%s: the coloured page is not the plain page in colour:\n%s", c.name, plain)
 			}

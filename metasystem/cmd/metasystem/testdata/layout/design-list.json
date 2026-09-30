@@ -1,0 +1,53 @@
+exit 0
+--
+{
+  "schemaVersion": 1,
+  "verb": "design list",
+  "targets": [],
+  "outcome": "confirmed",
+  "summary": "4 design record(s)",
+  "data": {
+    "goal": "",
+    "kind": "design",
+    "records": [
+      {
+        "goals": [
+          "standing-validation"
+        ],
+        "id": "01M3FDYDMV0G5V9YC1M9XAKGZR",
+        "kind": "design",
+        "path": "/Users/wido/GitHub/agentic-tools-m1e/plans/designs/agent-help.md",
+        "status": "done",
+        "title": "Help an agent choose and complete the right task"
+      },
+      {
+        "goals": [],
+        "id": "01M3QQ5T6Y7Z8A9B0C1D2E3F4G",
+        "kind": "design",
+        "path": "/Users/wido/GitHub/agentic-tools-m1e/plans/designs/output-style.md",
+        "status": "accepted",
+        "title": "Output style: one shape for every metasystem command"
+      },
+      {
+        "goals": [
+          "standing-validation"
+        ],
+        "id": "01M3FDYDMV0G5V9YC1M9XAKGZR",
+        "kind": "design",
+        "path": "plans/designs/agent-help.md",
+        "status": "done",
+        "title": "Help an agent choose and complete the right task"
+      },
+      {
+        "goals": [],
+        "id": "01M3QQ5T6Y7Z8A9B0C1D2E3F4G",
+        "kind": "design",
+        "path": "plans/designs/output-style.md",
+        "status": "accepted",
+        "title": "Output style: one shape for every metasystem command"
+      }
+    ]
+  }
+}
+
+--

@@ -1,0 +1,22 @@
+exit 2
+--
+{
+  "schemaVersion": 1,
+  "verb": "app restart",
+  "targets": [],
+  "outcome": "refused",
+  "summary": "--wait-seconds needs a whole number of seconds, 0 or more; nothing was done",
+  "next": {
+    "argv": [
+      "metasystem",
+      "app",
+      "restart",
+      "--json",
+      "--wait-seconds",
+      "15"
+    ],
+    "reason": "or the number you want"
+  }
+}
+
+--

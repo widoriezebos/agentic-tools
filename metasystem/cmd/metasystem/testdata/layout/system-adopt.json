@@ -1,0 +1,37 @@
+exit 0
+--
+{
+  "schemaVersion": 1,
+  "verb": "system adopt",
+  "targets": [
+    {
+      "kind": "repository",
+      "id": "/Users/wido/GitHub/my-app"
+    }
+  ],
+  "outcome": "confirmed",
+  "summary": "adopted at template SHA ab0bc127117582063d021e2794c9a43a76ddf130 into /Users/wido/GitHub/my-app",
+  "data": {
+    "installed": [
+      "/Users/wido/GitHub/my-app/.claude/skills/verify",
+      "/Users/wido/GitHub/my-app/.claude/skills/retro"
+    ],
+    "notes": [
+      "the target had no README; none was written"
+    ],
+    "sha": "ab0bc127117582063d021e2794c9a43a76ddf130",
+    "target": "/Users/wido/GitHub/my-app"
+  },
+  "next": {
+    "argv": [
+      "metasystem",
+      "settings",
+      "check",
+      "--repo",
+      "/Users/wido/GitHub/my-app"
+    ],
+    "reason": "after filling the facts above"
+  }
+}
+
+--

@@ -1,0 +1,19 @@
+exit 2
+--
+{
+  "schemaVersion": 1,
+  "verb": "design show",
+  "targets": [],
+  "outcome": "refused",
+  "summary": "design show needs the goal whose designs it shows; nothing was done",
+  "next": {
+    "argv": [
+      "metasystem",
+      "design",
+      "list"
+    ],
+    "reason": "lists the design records with their goals"
+  }
+}
+
+--
