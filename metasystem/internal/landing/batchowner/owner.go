@@ -693,10 +693,7 @@ func RunBatchOwnerPass(out io.Writer, owner *batch.Owner, held BatchOwnerLease, 
 		BatchOwnerResume(owner)
 		ticks.End()
 	}
-	// root is the checkout's git toplevel; the cadence reads the goal ledger,
-	// the run store and the testing contract of the installation, which on a
-	// checkout that nests the module is its metasystem/ directory.
-	controlRoot := batch.ModuleRoot(root)
+	controlRoot := BatchOwnerCadenceRoot(root)
 	BatchOwnerPassWith(owner, root, BatchOwnerPassSeams{Helm: helm.Active, Resume: resume, Out: out, Now: clock,
 		Cadence: func() {
 			cadence.start(func() {
@@ -706,6 +703,12 @@ func RunBatchOwnerPass(out io.Writer, owner *batch.Owner, held BatchOwnerLease, 
 			})
 		}})
 }
+
+// BatchOwnerCadenceRoot is the root a cadence tick runs on. The owner's root
+// is the checkout's git toplevel; the cadence reads the goal ledger, the run
+// store and the testing contract of the installation, which on a checkout
+// that nests the module is its metasystem/ directory.
+func BatchOwnerCadenceRoot(root string) string { return batch.ModuleRoot(root) }
 
 type BatchOwnerPassSeams struct {
 	Helm    func(string) helm.State

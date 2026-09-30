@@ -1,9 +1,7 @@
 package batchowner
 
 import (
-	"bytes"
 	"errors"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,7 +11,6 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/cadence"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 )
 
@@ -25,6 +22,7 @@ import (
 // with the module in a subdirectory; the tick is the production cadence.RunTick
 // up to its testing preparation, which stops it once the ledger has projected.
 func TestBatchOwnerCadenceTickReadsTheLedgerFromTheNestedModule(t *testing.T) {
+	t.Parallel()
 	top := t.TempDir()
 	module := filepath.Join(top, "metasystem")
 	if err := os.MkdirAll(filepath.Join(module, "plans", "goals"), 0o755); err != nil {
@@ -54,30 +52,24 @@ func TestBatchOwnerCadenceTickReadsTheLedgerFromTheNestedModule(t *testing.T) {
 	git("update-ref", goal.AcceptedRef, commit)
 	git("config", "goal.sync-remote", "local")
 
-	previousEngine, previousStart, previousReport, previousResume := Engine, BatchOwnerCadenceStart, BatchOwnerCadenceReport, BatchOwnerResume
-	t.Cleanup(func() {
-		Engine, BatchOwnerCadenceStart, BatchOwnerCadenceReport, BatchOwnerResume = previousEngine, previousStart, previousReport, previousResume
-	})
-	BatchOwnerResume = func(*batch.Owner) {}
 	prepared := errors.New("fixture stops at the testing preparation")
-	var preparedRoot string
-	Engine.CadenceTick = func(root string, held BatchOwnerLease, clock func() time.Time) (cadence.TickOutput, error) {
-		return cadence.RunTick(root, cadence.Owner{
+	tick := func(root string) (string, error) {
+		var preparedRoot string
+		_, err := cadence.RunTick(root, cadence.Owner{
 			FetchOrigin: func(string) (string, string, error) { return commit, tree, nil },
 			Prepare: func(request testrun.SelectionRequest) (testrun.Preparation, error) {
 				preparedRoot = request.Root
 				return testrun.Preparation{}, prepared
 			},
-		}, clock)
+		}, time.Now)
+		return preparedRoot, err
 	}
-	BatchOwnerCadenceStart = func(tick func()) { tick() }
-	var reported error
-	BatchOwnerCadenceReport = func(_ io.Writer, err error) { reported = err }
-
-	var out bytes.Buffer
-	RunBatchOwnerPass(&out, nil, BatchOwnerLease{}, top, time.Now, NewBatchOwnerCadence(), nil)
-	if reported == nil || !strings.Contains(reported.Error(), prepared.Error()) {
-		t.Fatalf("cadence tick on the toplevel = %v; want the ledger to project from the module and the tick to reach its preparation", reported)
+	if _, err := tick(top); err == nil || !strings.Contains(err.Error(), "the root record is missing") {
+		t.Fatalf("a tick on the toplevel = %v; want the refusal the lane owner reported", err)
+	}
+	preparedRoot, err := tick(BatchOwnerCadenceRoot(top))
+	if err == nil || !strings.Contains(err.Error(), prepared.Error()) {
+		t.Fatalf("cadence tick on the owner's cadence root = %v; want the ledger to project from the module and the tick to reach its preparation", err)
 	}
 	if preparedRoot != module {
 		t.Fatalf("cadence preparation root = %q, want the module %q", preparedRoot, module)

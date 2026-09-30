@@ -12,6 +12,7 @@ import (
 // AliveRef keeps reporting it Alive for the callers that wait on the reap
 // itself (a launcher's watchdog). Everything else classifies as AliveRef does.
 func TestLiveRefClassifiesAZombieAsDead(t *testing.T) {
+	t.Parallel()
 	ref := Ref{Pid: 42, StartedAtSec: 100}
 	for _, test := range []struct {
 		name string
