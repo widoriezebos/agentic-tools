@@ -42,6 +42,7 @@ func g1bLayoutCases() []layoutCase {
 		{name: "landing-start-refusal", args: []string{"landing", "start"}, bed: landingLayoutBed(landingLayoutNone)},
 		{name: "landing-stop-refusal", args: []string{"landing", "stop"}, bed: landingLayoutBed(landingLayoutPushing)},
 		{name: "landing-restart", args: []string{"landing", "restart"}, bed: landingLayoutBed(landingLayoutRunning)},
+		{name: "landing-unset", args: []string{"landing", "unset"}, bed: landingLayoutBed(landingLayoutNone)},
 	}
 }
 

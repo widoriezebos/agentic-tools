@@ -268,7 +268,7 @@ func journalStep(home, step string, now time.Time) error {
 	return withLock(home, func() error {
 		journal, fenced, err := ReadUnset(home)
 		if err != nil || !fenced {
-			return errors.Join(err, errors.New("the landing lane's unset journal is gone, so the unset did not continue"))
+			return errors.Join(err, errors.New("the record of this landing unset is gone, so it did not go on"))
 		}
 		if !journal.Done(step) {
 			journal.Steps = append(journal.Steps, UnsetStep{Step: step, At: now.UTC().Format(time.RFC3339)})
@@ -285,7 +285,7 @@ func unregister(home string, confirm func() ([]Unresolved, error), listed []Unre
 	err = withLock(home, func() error {
 		journal, fenced, err := ReadUnset(home)
 		if err != nil || !fenced {
-			return errors.Join(err, errors.New("the landing lane's unset journal is gone, so the lane was not unregistered"))
+			return errors.Join(err, errors.New("the record of this landing unset is gone, so the lane was not unregistered"))
 		}
 		confirmed, err := confirm()
 		if err != nil {

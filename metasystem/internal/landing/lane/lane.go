@@ -263,7 +263,7 @@ func epochPath(home string) string { return filepath.Join(HostDir(home), "landin
 func readEpoch(home string) (uint64, error) {
 	var epoch epochRecord
 	if _, err := readJSON(epochPath(home), &epoch); err != nil {
-		return 0, fmt.Errorf("the lane's custody epoch cannot be read, so no epoch is handed out that may have been used before: %w", err)
+		return 0, fmt.Errorf("the landing lane's registration count can't be read, so nothing was registered: %w", err)
 	}
 	return epoch.CustodyEpoch, nil
 }
