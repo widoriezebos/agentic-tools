@@ -141,24 +141,53 @@ func SignatureText(runtime string) (string, error) {
 	return strings.Join(lines, "\n") + "\n", nil
 }
 
-// localConfigPaths are the checkout-relative runtime configuration files a
-// runtime reads from the project, formerly printed by each adapter's
-// `local-config-paths` verb.
-var localConfigPaths = map[string][]string{
-	"claude": {".claude/settings.json", ".claude/settings.local.json"},
-	"codex":  {".codex/config.toml"},
-	"devin":  {".devin/config.json", ".devin/config.local.json", ".devin/hooks.v1.json"},
+// configPath is one checkout-relative configuration file a runtime reads
+// from the project. Local is true for the seat-local file a checkout keeps
+// untracked by convention (a runtime's own local settings): it is the seat's
+// harness state, never delivery content. Shared configuration the repository
+// commits stays content.
+type configPath struct {
+	Path  string
+	Local bool
+}
+
+// configPaths are each runtime's declared configuration files, formerly
+// printed by each adapter's `local-config-paths` verb: the one source for
+// what a goal worktree copies from the seat (all of them) and for what is
+// never delivery content (the local ones).
+var configPaths = map[string][]configPath{
+	"claude": {{Path: ".claude/settings.json"}, {Path: ".claude/settings.local.json", Local: true}},
+	"codex":  {{Path: ".codex/config.toml", Local: true}},
+	"devin":  {{Path: ".devin/config.json"}, {Path: ".devin/config.local.json", Local: true}, {Path: ".devin/hooks.v1.json"}},
 	"fake":   {},
 }
 
-// LocalConfigPaths returns a runtime's checkout-relative configuration
-// files. ok is false for a runtime without an adapter.
-func LocalConfigPaths(runtime string) ([]string, bool) {
+func declaredConfigPaths(runtime string, localOnly bool) ([]string, bool) {
 	d, found := Lookup(runtime)
 	if !found || !d.HasAdapter {
 		return nil, false
 	}
-	return append([]string(nil), localConfigPaths[runtime]...), true
+	paths := []string{}
+	for _, path := range configPaths[runtime] {
+		if !localOnly || path.Local {
+			paths = append(paths, path.Path)
+		}
+	}
+	return paths, true
+}
+
+// LocalConfigPaths returns a runtime's checkout-relative configuration
+// files, shared and seat-local, which a goal worktree copies from the seat.
+// ok is false for a runtime without an adapter.
+func LocalConfigPaths(runtime string) ([]string, bool) {
+	return declaredConfigPaths(runtime, false)
+}
+
+// SeatLocalConfigPaths returns only the seat-local configuration files of
+// a runtime: untracked by convention and never delivery content. ok is
+// false for a runtime without an adapter.
+func SeatLocalConfigPaths(runtime string) ([]string, bool) {
+	return declaredConfigPaths(runtime, true)
 }
 
 // EnforcementMapJSON is the adapter's declared envelope-enforcement map in

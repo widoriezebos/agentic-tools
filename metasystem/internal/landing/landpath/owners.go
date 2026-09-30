@@ -69,7 +69,25 @@ type Judge struct {
 // an exact whole-project tree (the owner of `test status --tree`).
 type VerifyRequest struct {
 	Root, Tree, Goal string
+	// Scope is how much of the delivery plan this seat must have proved.
+	Scope ProofScope
 }
+
+// ProofScope is how much retained proof the commit boundary requires on the
+// seat. A change joining the landing lane is proved by the lane before it
+// is pushed, so the seat proves less; without a lane the seat proves it all.
+type ProofScope string
+
+const (
+	// ProofFull: the whole delivery plan (no landing lane).
+	ProofFull ProofScope = "full"
+	// ProofAdmission: the plan's admission-phase groups (a code change
+	// joining the lane).
+	ProofAdmission ProofScope = "admission"
+	// ProofNone: no retained proof, the candidate still matching the
+	// working tree (a change outside ENGINE and PAYLOAD joining the lane).
+	ProofNone ProofScope = "none"
+)
 
 // BootSample is one boot-clock sample taken before a publication.
 type BootSample struct {
@@ -115,6 +133,9 @@ type Owners struct {
 	Verify func(request VerifyRequest, stdout, stderr io.Writer) int
 	// SelectLanding filters paths through the LANDING projection.
 	SelectLanding func(paths []string, prefix string) ([]string, error)
+	// SelectCode filters paths through the ENGINE and PAYLOAD projections:
+	// what makes a lane change a code change.
+	SelectCode func(paths []string, prefix string) ([]string, error)
 	// Live is the live judge (this engine).
 	Live func() Judge
 	// BuildBaseJudge builds the engine at HEAD in a scratch worktree of
