@@ -20,7 +20,9 @@ import (
 // §2 and §3; begin, prove, publish, return and validate arrive with units
 // K-b, K-c, K-d and K-f). Each is declared through laneKernelCommand, which
 // checks the engine before the verb runs; TestEveryLaneKernelVerbChecksItsEngineFirst
-// holds every one of them to it.
+// holds every one of them to it. landing return checks it first on every
+// path but a person's --disposition person, which a person runs on any
+// engine (intent_landing_return.go).
 var laneKernelActions = map[string]bool{"begin": true, "prove": true, "publish": true, "return": true, "validate": true, "engine": true}
 
 // laneKernel is a kernel verb's admission: the registered lane, its

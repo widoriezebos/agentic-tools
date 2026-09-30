@@ -66,6 +66,11 @@ type laneVerbOwners struct {
 	// laneHeld lists the goals the ledger, read from an installation,
 	// shows held by the landing lane.
 	laneHeld func(installation string) ([]string, error)
+	// agent proves the caller descends from the landing agent's launch that
+	// holds the lane checkout (K7).
+	agent func(checkout string) error
+	// returnMember runs one typed return (K8).
+	returnMember func(batchowner.MemberReturn) (batchowner.MemberReturnReport, error)
 }
 
 func (inv *intentInvocation) landing() laneVerbOwners {
@@ -121,6 +126,12 @@ func (inv *intentInvocation) landing() laneVerbOwners {
 	if owners.laneHeld == nil {
 		now := owners.now
 		owners.laneHeld = func(installation string) ([]string, error) { return laneHeldGoals(installation, now()) }
+	}
+	if owners.agent == nil {
+		owners.agent = laneAgentCaller
+	}
+	if owners.returnMember == nil {
+		owners.returnMember = batchowner.ReturnMember
 	}
 	if owners.unset == nil {
 		probe, end, now := owners.probe, owners.end, owners.now
@@ -204,6 +215,7 @@ func landingIntentCommands() []intentCommand {
 			run:      runIntentLandingRestart,
 		},
 		landingEngineCommand(),
+		landingReturnCommand(),
 	}
 }
 

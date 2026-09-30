@@ -6,8 +6,11 @@ package main
 // lane checkout takes part.
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -15,10 +18,14 @@ import (
 
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/laneengine"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
@@ -84,16 +91,13 @@ func (bed laneAuthorityBed) ledger(t *testing.T) *goal.GoalFile {
 	return file
 }
 
-// A join works while no agent runs: the goal is handed to the lane's claim
-// identity at the source seat's word, the member is queued, and nothing is
-// started for it.
-func TestJoinWithNoAgentRunning(t *testing.T) {
-	t.Parallel()
-	bed := newLaneAuthorityBed(t)
-	if _, err := lease.CurrentHolder(bed.lane); !errors.Is(err, lease.ErrLeaseAbsent) {
-		t.Fatalf("the lane checkout has a lease holder (%v); the bed must run no agent", err)
-	}
-	const batchID = "01j5x00000000000000000kd01"
+const laneAuthorityBatch = "01j5x00000000000000000kd01"
+
+// join joins standing-validation from the seat to the lane through the
+// production join and the production handover (reading this bed's host
+// home); the stubs stand in only for reading the seat's build.
+func (bed laneAuthorityBed) join(t *testing.T) (batch.Record, error) {
+	t.Helper()
 	dependencies := batchowner.ProductionBatchJoinDependencies()
 	dependencies.Binding = func(string, string, time.Time) (dispatchcore.GoalBinding, error) {
 		return dispatchcore.GoalBinding{Revision: 3, Machine: "mac-cli", Lineage: "m1",
@@ -103,7 +107,7 @@ func TestJoinWithNoAgentRunning(t *testing.T) {
 		return batch.CertifiedChain{ID: "chain-a", Patch: bed.patch}, nil
 	}
 	dependencies.Base = func(string) (string, error) { return bed.base, nil }
-	dependencies.Mint = func() (string, error) { return batchID, nil }
+	dependencies.Mint = func() (string, error) { return laneAuthorityBatch, nil }
 	dependencies.Author, dependencies.ReleaseSet, dependencies.CostForecast = nil, nil, nil
 	dependencies.ProtectedTests = func(string, string, string) error { return nil }
 	dependencies.Plan = func(string, string, string) (testpolicy.Plan, error) {
@@ -114,12 +118,24 @@ func TestJoinWithNoAgentRunning(t *testing.T) {
 	}
 	// The production handover, reading this bed's host home.
 	dependencies.Handover = batchowner.LaneForwardHandover(func() (string, error) { return bed.home, nil }, &batchowner.BatchOwnerCalls)
-	record, err := batchowner.ExecuteBatchJoin(batchowner.BatchJoinRequest{SeatRoot: bed.seat, LandingRoot: bed.lane,
+	return batchowner.ExecuteBatchJoin(batchowner.BatchJoinRequest{SeatRoot: bed.seat, LandingRoot: bed.lane,
 		GoalID: "standing-validation", ChainID: "chain-a", At: laneAuthorityNow}, dependencies)
+}
+
+// A join works while no agent runs: the goal is handed to the lane's claim
+// identity at the source seat's word, the member is queued, and nothing is
+// started for it.
+func TestJoinWithNoAgentRunning(t *testing.T) {
+	t.Parallel()
+	bed := newLaneAuthorityBed(t)
+	if _, err := lease.CurrentHolder(bed.lane); !errors.Is(err, lease.ErrLeaseAbsent) {
+		t.Fatalf("the lane checkout has a lease holder (%v); the bed must run no agent", err)
+	}
+	record, err := bed.join(t)
 	if err != nil {
 		t.Fatalf("join with no agent running: %v", err)
 	}
-	if record.BatchID != batchID || len(record.Units) != 1 || record.Units[0].State != batch.UnitJoined {
+	if record.BatchID != laneAuthorityBatch || len(record.Units) != 1 || record.Units[0].State != batch.UnitJoined {
 		t.Fatalf("queued batch = %+v", record)
 	}
 	file := bed.ledger(t)
@@ -127,8 +143,8 @@ func TestJoinWithNoAgentRunning(t *testing.T) {
 	if claim.Machine != "lane-host" || claim.Lineage != lane.ClaimLineage || claim.Epoch != bed.record.CustodyEpoch {
 		t.Fatalf("custody went to %+v, want lane-host+%s at custody epoch %d", claim, lane.ClaimLineage, bed.record.CustodyEpoch)
 	}
-	if handed := file.Claimed.HandedOver; handed.Batch != batchID || handed.FromMachine != "mac-cli" || handed.FromLineage != "m1" {
-		t.Fatalf("handed over = %+v, want the seat's claim recorded for batch %s", handed, batchID)
+	if handed := file.Claimed.HandedOver; handed.Batch != laneAuthorityBatch || handed.FromMachine != "mac-cli" || handed.FromLineage != "m1" {
+		t.Fatalf("handed over = %+v, want the seat's claim recorded for batch %s", handed, laneAuthorityBatch)
 	}
 	if _, err := lease.CurrentHolder(bed.lane); !errors.Is(err, lease.ErrLeaseAbsent) {
 		t.Fatalf("the join started something that holds the lane checkout: %v", err)
@@ -156,5 +172,180 @@ func TestLaneHandoverRefusesAStaleLaneIdentity(t *testing.T) {
 	}
 	if _, err := laneClaimTargetLiveness("", "lane-host", 2); err == nil || !strings.Contains(err.Error(), "no host lane record") {
 		t.Fatalf("no home named: %v", err)
+	}
+}
+
+// laneReturnBed is the joined bed as the lane's kernel sees it: the ledger's
+// checkout now answers as the lane's installation (the lane's machine), the
+// batch store is the lane checkout's, and the verb's seams are this bed's.
+type laneReturnBed struct {
+	laneAuthorityBed
+	person      error
+	agent       error
+	engineCalls int
+}
+
+func newLaneReturnBed(t *testing.T) *laneReturnBed {
+	t.Helper()
+	bed := &laneReturnBed{laneAuthorityBed: newLaneAuthorityBed(t)}
+	if _, err := bed.join(t); err != nil {
+		t.Fatal(err)
+	}
+	// In production the lane's goal acts run in its own installation,
+	// whose machine is the lane's; this bed's one ledger stands in for it.
+	goalSyncMutationGit(t, bed.seat, "config", "metasystem.goal.machine", "lane-host")
+	// The seat's session that joined has ended: its announcement names a
+	// process that is gone, so the goal is released rather than handed back.
+	ended := exec.Command("cat")
+	input, err := ended.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ended.Start(); err != nil {
+		t.Fatal(err)
+	}
+	exact, state, err := (identity.KernelProber{}).Probe(int64(ended.Process.Pid))
+	if err != nil || state != identity.Alive {
+		t.Fatalf("probe the seat's session: %s %v", state, err)
+	}
+	if _, err := lease.AnnounceWithPair(bed.seat, "session-m1", int64(ended.Process.Pid), exact.StartedAt.Unix(), exact.StartTicks, exact.BootID, "lane-return-test", "metasystem", "m1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := input.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := ended.Wait(); err != nil {
+		t.Fatal(err)
+	}
+	bed.person = humanauthority.Refusedf(humanauthority.OutcomeNotEnrolled, "human authority has no readable terminal enrollment")
+	return bed
+}
+
+func (bed *laneReturnBed) run(t *testing.T, words ...string) (int, intentResult) {
+	t.Helper()
+	command, ok := findIntentAction("landing", "return")
+	if !ok {
+		t.Fatal("no public command landing return")
+	}
+	notARepository := func(string) (string, error) { return "", errors.New("not a repository") }
+	owners := intentOwners{resolver: stateroot.NewResolver(notARepository, os.Executable), landing: laneVerbOwners{
+		home: func() (string, error) { return bed.home, nil },
+		now:  func() time.Time { return laneAuthorityNow },
+		person: func(string) (string, error) {
+			if bed.person != nil {
+				return "", bed.person
+			}
+			return "Wido", nil
+		},
+		agent:        func(string) error { return bed.agent },
+		installation: func(string) (string, error) { return bed.seat, nil },
+		engine: func(string, string, []string) (laneengine.Identity, error) {
+			bed.engineCalls++
+			return laneengine.Identity{Running: "enrolled"}, nil
+		},
+		returnMember: func(request batchowner.MemberReturn) (batchowner.MemberReturnReport, error) {
+			request.Fetch = func(string) (string, error) {
+				return strings.TrimSpace(goalSyncMutationGit(t, bed.seat, "rev-parse", goal.AcceptedRef+"^{tree}")), nil
+			}
+			return batchowner.ReturnMember(request)
+		},
+	}}
+	var stdout, stderr bytes.Buffer
+	code := runIntentIn(command, append(words, "--json"), &stdout, &stderr, bed.lane, owners)
+	var result intentResult
+	if err := json.Unmarshal([]byte(stdout.String()+stderr.String()), &result); err != nil {
+		t.Fatalf("landing return %v: %v\n%s%s", words, err, stdout.String(), stderr.String())
+	}
+	return code, result
+}
+
+func (bed *laneReturnBed) laneHolds(t *testing.T) bool {
+	t.Helper()
+	file := bed.ledger(t)
+	return file.Claimed != nil && file.Claimed.Lineage == lane.ClaimLineage && file.Claimed.HandedOver.Batch == laneAuthorityBatch
+}
+
+// The landing agent returns a member as red only on a red attempt of its
+// batch that names it; a proof that could not run is refused and nothing
+// moves; a pause holds the agent's return; once admitted, the member is
+// given back under the lane's claim identity and read back from the ledger.
+func TestLandingReturnRedNeedsItsRedAttemptAndHonoursThePause(t *testing.T) {
+	t.Parallel()
+	bed := newLaneReturnBed(t)
+	store := batch.NewStore(bed.lane, nil)
+	if err := batch.RecordProofAttempt(store, laneAuthorityBatch, batch.ProofAttempt{ID: "p1", Subject: batch.MemberSubject("standing-validation"), Outcome: batch.AttemptUnavailable}, "lane:test", laneAuthorityNow); err != nil {
+		t.Fatal(err)
+	}
+	code, result := bed.run(t, "standing-validation", "--disposition", "red")
+	if code == 0 || result.Outcome != intentRefused || !strings.Contains(strings.Join(result.Details, " "), batch.CodeReturnEvidenceMissing) || !bed.laneHolds(t) {
+		t.Fatalf("red on an unavailable proof = %d %+v; the lane must still hold the goal", code, result)
+	}
+	if bed.engineCalls == 0 {
+		t.Fatal("the agent's return ran without its engine check")
+	}
+	if err := batch.RecordProofAttempt(store, laneAuthorityBatch, batch.ProofAttempt{ID: "p2", Subject: batch.MemberSubject("standing-validation"), Outcome: batch.AttemptRed}, "lane:test", laneAuthorityNow); err != nil {
+		t.Fatal(err)
+	}
+	bed.agent = errors.New("the lane checkout is held by session steward-seat, not by its landing agent")
+	if code, result := bed.run(t, "standing-validation", "--disposition", "red"); code == 0 || result.Outcome != intentRefused || !bed.laneHolds(t) {
+		t.Fatalf("a return by neither the agent nor a person = %d %+v", code, result)
+	}
+	bed.agent = nil
+	if _, err := lane.SetPause(bed.home, "Wido", laneAuthorityNow); err != nil {
+		t.Fatal(err)
+	}
+	if code, result := bed.run(t, "standing-validation", "--disposition", "red"); code == 0 || !strings.Contains(strings.Join(result.Details, " "), lane.CodePaused) || !bed.laneHolds(t) {
+		t.Fatalf("the agent's return while paused = %d %+v", code, result)
+	}
+	if _, err := lane.ClearPause(bed.home); err != nil {
+		t.Fatal(err)
+	}
+	code, result = bed.run(t, "standing-validation", "--disposition", "red", "--reason", "its own test fails")
+	if code != 0 || result.Outcome != intentConfirmed || bed.laneHolds(t) {
+		t.Fatalf("red return with its red attempt = %d %+v", code, result)
+	}
+	record, err := store.Load(laneAuthorityBatch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unit := record.Units[0]; unit.State != batch.UnitEjected || unit.Disposition != batch.DispositionRed || unit.Evidence != "attempt p2 ("+batch.MemberSubject("standing-validation")+")" || unit.ReturnDisposition == "" {
+		t.Fatalf("returned member = %+v", unit)
+	}
+	if file := bed.ledger(t); file.Claimed != nil && file.Claimed.Lineage == lane.ClaimLineage {
+		t.Fatalf("the ledger still shows the lane holding the goal: %+v", file.Claimed)
+	}
+	again, repeat := bed.run(t, "standing-validation", "--disposition", "red", "--reason", "its own test fails")
+	if again != 0 || repeat.Outcome != intentUnchanged {
+		t.Fatalf("a repeat of a confirmed return = %d %+v", again, repeat)
+	}
+}
+
+// A person's return is cleanup (K2, K8): it needs the person at an enrolled
+// terminal and no other evidence, it is admitted while the lane is paused,
+// and it runs on whatever engine the person's seat has (humans are never
+// denied a verb; the engine identity guards the agent's acts).
+func TestAPersonsReturnRunsOnAnyEngineWhilePaused(t *testing.T) {
+	t.Parallel()
+	bed := newLaneReturnBed(t)
+	if _, err := lane.SetPause(bed.home, "Wido", laneAuthorityNow); err != nil {
+		t.Fatal(err)
+	}
+	if code, result := bed.run(t, "standing-validation", "--disposition", "person"); code == 0 || result.Outcome != intentRefused || !bed.laneHolds(t) {
+		t.Fatalf("a person's return with no person proven = %d %+v", code, result)
+	}
+	bed.person = nil
+	code, result := bed.run(t, "standing-validation", "--disposition", "person", "--reason", "the design changes first")
+	if code != 0 || result.Outcome != intentConfirmed || bed.laneHolds(t) {
+		t.Fatalf("a person's return while paused = %d %+v", code, result)
+	}
+	if bed.engineCalls != 0 {
+		t.Fatalf("a person's return checked the lane's engine %d times", bed.engineCalls)
+	}
+	record, err := batch.NewStore(bed.lane, nil).Load(laneAuthorityBatch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unit := record.Units[0]; unit.State != batch.UnitWithdrawn || unit.Disposition != batch.DispositionPerson || unit.Evidence != "person Wido" {
+		t.Fatalf("returned member = %+v", unit)
 	}
 }

@@ -4,8 +4,8 @@ package batchowner
 // reconcile, return at a person's word, and confirm by reading back.
 // internal/landing/lane owns the journal, the fence and the order; this file
 // binds the steps to the batch store, origin and the ledger. The returns go
-// through the existing return functions with a person's authority; K-d
-// replaces Return's body with typed evidence per disposition.
+// as typed returns with disposition person (K8), each goal given back under
+// the authority the ledger shows holding it.
 
 import (
 	"fmt"
@@ -42,6 +42,9 @@ func ProductionUnsetLane(home, by string) UnsetLane {
 func (u UnsetLane) Seams() lane.UnsetSeams {
 	return lane.UnsetSeams{Settle: u.settle, Records: u.records, Reconcile: u.reconcile, Return: u.returnBatch, Confirm: u.confirm}
 }
+
+// home is the host home the unset works on, for the lane's claim identity.
+func (u UnsetLane) home() (string, error) { return u.Home, nil }
 
 func (u UnsetLane) store(layout lane.Layout) batch.Store {
 	return batch.NewStore(string(layout.Checkout), identity.KernelProber{})
@@ -209,7 +212,9 @@ func (u UnsetLane) returnBatch(layout lane.Layout, record batch.Record, reason s
 	}
 	for _, unit := range record.Units {
 		if unit.State == batch.UnitJoining || unit.State == batch.UnitJoined {
-			if err := batch.RequestReturn(store, record.BatchID, unit.GoalID, batch.UnitWithdrawn, reason, u.By, at); err != nil {
+			// A person's return (landing return --disposition person): the
+			// person's word is its evidence (K8).
+			if _, err := batch.RequestTypedReturn(store, record.BatchID, unit.GoalID, batch.DispositionPerson, u.By, reason, u.By, at); err != nil {
 				return nil, err
 			}
 		}
@@ -218,7 +223,7 @@ func (u UnsetLane) returnBatch(layout lane.Layout, record batch.Record, reason s
 	if err != nil {
 		return nil, err
 	}
-	seams := returnSeamsAt(string(layout.Checkout), string(layout.Install), func() string { return tree }, &u.Calls)
+	seams := returnSeamsAt(string(layout.Checkout), string(layout.Install), func() string { return tree }, &u.Calls, u.home)
 	failures, returnErr := batch.ReturnUnits(store, record.BatchID, tree, u.By, at, seams)
 	var unresolved []lane.Unresolved
 	for _, failure := range failures {

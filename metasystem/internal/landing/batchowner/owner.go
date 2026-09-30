@@ -400,12 +400,15 @@ func batchEditNext(root, goalID, next string) error {
 }
 
 func ProductionReturnSeams(root string, tree func() string) batch.ReturnSeams {
-	return returnSeamsAt(root, batch.ModuleRoot(root), tree, &BatchOwnerCalls)
+	return returnSeamsAt(root, batch.ModuleRoot(root), tree, &BatchOwnerCalls, LandingLaneHome)
 }
 
 // returnSeamsAt are the return seams of the lane whose checkout is root and
-// whose installation (ledger) is controlRoot, publishing through calls, read when each is made.
-func returnSeamsAt(root, controlRoot string, tree func() string, calls *BatchOwnerCallSet) batch.ReturnSeams {
+// whose installation (ledger) is controlRoot, publishing through calls, read
+// when each is made. Each goal goes back under the authority that holds it
+// on the ledger (claimAuthority): the lane's claim identity, read from the
+// host record under home, or the old owner's lineage for its own claims.
+func returnSeamsAt(root, controlRoot string, tree func() string, calls *BatchOwnerCallSet, home func() (string, error)) batch.ReturnSeams {
 	return batch.ReturnSeams{
 		Read: func(_ string, tree, goalID string) (batch.ReturnLedgerGoal, error) {
 			return BatchReturnLedgerGoal(controlRoot, tree, goalID)
@@ -422,15 +425,27 @@ func returnSeamsAt(root, controlRoot string, tree func() string, calls *BatchOwn
 			if err != nil {
 				return err
 			}
-			return calls.Handover(LandingOwnerInvocation(), ownercall.HandoverRequest{Root: controlRoot, GoalID: goalID,
+			invocation, err := claimAuthority(controlRoot, goalID, record, calls, home)
+			if err != nil {
+				return err
+			}
+			return calls.Handover(invocation, ownercall.HandoverRequest{Root: controlRoot, GoalID: goalID,
 				TargetMachine: source.Machine, TargetLineage: source.Lineage, TargetEpoch: int64(epoch),
 				Batch: record.Batch, TargetRoot: loaded.SeatRoot})
 		},
 		Release: func(goalID, next string) error {
-			if err := calls.EditNext(LandingOwnerInvocation(), controlRoot, goalID, next); err != nil {
+			record, err := BatchReturnLedgerGoal(controlRoot, tree(), goalID)
+			if err != nil {
 				return err
 			}
-			return calls.Release(LandingOwnerInvocation(), controlRoot, goalID)
+			invocation, err := claimAuthority(controlRoot, goalID, record, calls, home)
+			if err != nil {
+				return err
+			}
+			if err := calls.EditNext(invocation, controlRoot, goalID, next); err != nil {
+				return err
+			}
+			return calls.Release(invocation, controlRoot, goalID)
 		},
 	}
 }

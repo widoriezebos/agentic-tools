@@ -27,6 +27,11 @@ type unitRecordFields struct {
 	Outcome           string `json:"outcome,omitempty"`
 	Failure           string `json:"failure,omitempty"`
 	ReturnDisposition string `json:"returnDisposition,omitempty"`
+	// Disposition is the typed way the member leaves (K8: red, conflict,
+	// seam-too-large or person) and Evidence the batch record that admits
+	// it; both are kept once the return settles.
+	Disposition string `json:"disposition,omitempty"`
+	Evidence    string `json:"evidence,omitempty"`
 }
 type Unit struct {
 	GoalID         string         `json:"goalId"`
@@ -105,6 +110,7 @@ type Record struct {
 	// Early is what the owner did with the wait (D14, R27).
 	Early *Early `json:"early,omitempty"`
 	batchRecordFields
+	evidenceFields
 }
 
 func (record *Record) Transition(to string, at time.Time, verb, actor, detail string) {
