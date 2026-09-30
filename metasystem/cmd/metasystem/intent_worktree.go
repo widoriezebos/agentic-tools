@@ -103,7 +103,13 @@ func (inv *intentInvocation) goalWorktreeInstallation(worktree string) string {
 type registeredWorktree struct{ ref, lock string }
 
 func (inv *intentInvocation) registeredWorktrees() (map[string]registeredWorktree, error) {
-	output, err := inv.work().git(inv.layout.GitRoot, "worktree", "list", "--porcelain")
+	return inv.registeredWorktreesOf(inv.layout.GitRoot)
+}
+
+// registeredWorktreesOf is registeredWorktrees for the repository whose
+// checkout is root: a machine's, when launches are placed by checkout.
+func (inv *intentInvocation) registeredWorktreesOf(root string) (map[string]registeredWorktree, error) {
+	output, err := inv.work().git(root, "worktree", "list", "--porcelain")
 	if err != nil {
 		return nil, err
 	}

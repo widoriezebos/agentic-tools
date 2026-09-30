@@ -311,6 +311,15 @@ var coreSettings = []Setting{
 	// runtime's own window for the model (Wido, 2026-09-20).
 	{Key: "launch.seat.window.tokens", Default: "0", ProofInput: true,
 		Meaning: "the seat's context window cap in tokens; 0 imposes none"},
+	// A seat main the steward starts headless runs on its own runtime, model
+	// and effort; its model follows the build lane's binding for its runtime
+	// unless launch.seat.model names one for every runtime.
+	{Key: "launch.seat.runtime", Default: SeatRuntimeOff, ProofInput: true,
+		Meaning: "the runtime of a seat main the steward starts; off (the default) starts none, auto is the first of metasystem.runtimes on PATH"},
+	{Key: "launch.seat.model", Default: "", ProofInput: true,
+		Meaning: "a steward-started seat main's model on any runtime; empty takes launch.build.model.<runtime>"},
+	{Key: "launch.seat.effort", Default: "xhigh", ProofInput: true,
+		Meaning: "a steward-started seat main's effort, translated by the runtime adapter"},
 	{Key: "launch.build.window.tokens", Default: "0", ProofInput: true,
 		Meaning: "the build lane's context window cap in tokens; 0 imposes none"},
 	{Key: "launch.design.window.tokens", Default: "0", ProofInput: true,

@@ -1,6 +1,7 @@
 // Package outage is the shared record of a model-provider outage: one
 // small mark every layer can write when a provider call comes back
-// overloaded (529/overloaded/5xx) and every layer can read to stop
+// overloaded (529/overloaded/5xx) or limited (usage limit, rate_limit_error,
+// 429) and every layer can read to stop
 // blaming local machinery for the provider's weather. The mark is a
 // HEALTH HINT, not a ledger: writers race last-write-wins, a torn or
 // unreadable mark reads as no outage, and consumers must stay correct
@@ -33,6 +34,11 @@ import (
 // feeding it. Provider retries and steward-tick revival probes arrive
 // well inside this window during a real outage.
 const Horizon = 30 * time.Minute
+
+// ProviderLimit is the class of a provider's usage or rate limit: the
+// Claude CLI's usage-limit line, the API's rate_limit_error, an HTTP 429.
+// It is the provider's weather like an overload, so it feeds the mark.
+const ProviderLimit = "provider-limit"
 
 // evidenceClip bounds the stored evidence line.
 const evidenceClip = 200
@@ -186,10 +192,18 @@ func Clear(repoRoot string) error {
 var (
 	overloadWordRe = regexp.MustCompile(`(?i)(?:^|[^a-z])overloaded(?:[^a-z]|$)`)
 	overloadCodeRe = regexp.MustCompile(`(?i)(?:^|[^a-z])(?:status|http|code|error)[^a-z0-9]{1,4}(5[0-9][0-9])(?:[^0-9a-z]|$)`)
+	// The limit rules: the Claude CLI's usage-limit line ("Claude AI usage
+	// limit reached|<epoch>", "5-hour limit reached ∙ resets 3pm", "You've
+	// hit your usage limit", "You've hit your session limit, resets
+	// 12:10am"), the API's own rate_limit_error token, and a
+	// 429 under the same framing as the 5xx rule, so a count of 429 records
+	// or a 429ms duration is nothing.
+	limitWordRe = regexp.MustCompile(`(?i)(?:usage|5-hour|weekly|session) limit (?:reached|exceeded)|hit your (?:usage |session |weekly )?limit|(?:^|[^a-z_])rate_limit_error(?:[^a-z_]|$)`)
+	limitCodeRe = regexp.MustCompile(`(?i)(?:^|[^a-z])(?:status|http|code|error)[^a-z0-9]{1,4}429(?:[^0-9a-z]|$)`)
 )
 
-// classifyLine names a line of provider-error evidence; empty means
-// not overload-shaped.
+// classifyLine names a line of provider-error evidence: an overload, a
+// 5xx, or the provider's usage or rate limit; empty means neither.
 func classifyLine(line string) string {
 	l := strings.ToLower(line)
 	code := overloadCodeRe.FindStringSubmatch(line)
@@ -201,6 +215,9 @@ func classifyLine(line string) string {
 	}
 	if code != nil {
 		return "http-" + code[1]
+	}
+	if limitWordRe.MatchString(line) || limitCodeRe.MatchString(line) {
+		return ProviderLimit
 	}
 	return ""
 }

@@ -18,6 +18,11 @@ import (
 // naming a runtime explicitly always wins over it.
 const AutoRuntime = "auto"
 
+// SeatRuntimeOff is launch.seat.runtime's value, and its default, for an
+// installation whose steward starts no seat (Amendment 1 of the seat design,
+// Wido 2026-09-30: a seat is opt-in per seat).
+const SeatRuntimeOff = "off"
+
 var runtimeSelectionKey = regexp.MustCompile(`^(?:role\.[a-z0-9-]+|mode\.[a-z0-9-]+\.role\.[a-z0-9-]+|launch\.[a-z0-9-]+)\.runtime$`)
 
 // RuntimeSelectionKey reports whether key picks the runtime of a role, a

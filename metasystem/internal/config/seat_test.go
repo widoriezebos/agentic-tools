@@ -140,3 +140,16 @@ func TestSeatPresenceFixtureRootAcceptsLocalOverrides(t *testing.T) {
 		t.Fatalf("fixture override: namespace=%q err=%v", namespace, err)
 	}
 }
+
+// Amendment 1 (Wido, 2026-09-30): a steward-started seat is opt-in per
+// seat. launch.seat.runtime defaults to off; the layered settings turn it on.
+func TestSeatRuntimeIsOffUntilTurnedOn(t *testing.T) {
+	t.Parallel()
+	if value, ok := CompiledDefault("launch.seat.runtime"); !ok || value != SeatRuntimeOff {
+		t.Fatalf("launch.seat.runtime defaults to %q, want %q", value, SeatRuntimeOff)
+	}
+	setting, _ := compiledSetting("launch.seat.runtime")
+	if !strings.Contains(setting.Meaning, "off") {
+		t.Fatalf("the key's meaning names off: %q", setting.Meaning)
+	}
+}

@@ -78,6 +78,9 @@ type hostMachine struct {
 	launchRecords []launch.Record
 	// stopResult is machine stop's system stop result for it.
 	stopResult *intentResult
+	// worktreesUnread says Git could not list its registered worktrees
+	// when a launch was placed, so a launch elsewhere may be its own.
+	worktreesUnread bool
 }
 
 // machineProcess is one process status listed, with its start.
@@ -310,26 +313,88 @@ func (inv *intentInvocation) placeLaunches(reading *hostReading) {
 		reading.LaunchProblem = "this user's launches cannot be listed: " + err.Error()
 		return
 	}
+	inv.placeLaunchRecords(reading, records)
+}
+
+// placeLaunchRecords places each running record: in the machine whose
+// checkout is its working directory or holds it; else in the machine one
+// of whose registered worktrees (git worktree list) is or holds it, where
+// a goal's build runs as the sibling <checkout>-<goal>; else elsewhere.
+// A worktree two machines' repositories share goes to the machine whose
+// checkout path shares the longest prefix with the launch's, so every
+// reader places a launch alike whichever checkout it runs from. The
+// worktrees are read only for a launch no checkout holds.
+func (inv *intentInvocation) placeLaunchRecords(reading *hostReading, records []launch.Record) {
+	worktrees := map[*hostMachine][]string{}
+	read := map[*hostMachine]bool{}
+	var problems []string
+	worktreesOf := func(machine *hostMachine) []string {
+		if !read[machine] && machine.State != "unknown" {
+			read[machine] = true
+			registered, err := inv.registeredWorktreesOf(machine.Checkout)
+			if err != nil {
+				machine.worktreesUnread = true
+				problems = append(problems, fmt.Sprintf("the worktrees of %s cannot be listed, so a launch in one may be missing from it: %v", machine.Checkout, err))
+			}
+			for path := range registered {
+				if path != machine.Checkout {
+					worktrees[machine] = append(worktrees[machine], path)
+				}
+			}
+		}
+		return worktrees[machine]
+	}
 	for _, record := range records {
 		if record.State.Terminal() {
 			continue
 		}
 		job := intentJob{id: record.ID, kind: "launch", launch: record}
 		view := machineLaunch{Reference: jobReference(job), Purpose: jobPurpose(job)}
-		placed := false
+		var owner *hostMachine
 		for _, machine := range reading.Machines {
 			if machinePathWithin(record.WorkingDirectory, machine.Checkout) {
-				machine.Launches = append(machine.Launches, view)
-				machine.launchRecords = append(machine.launchRecords, record)
-				placed = true
+				owner = machine
 				break
 			}
 		}
-		if !placed {
-			reading.LaunchesElsewhere = append(reading.LaunchesElsewhere, view)
-			reading.launchesElsewhere = append(reading.launchesElsewhere, record)
+		if owner == nil && record.WorkingDirectory != "" {
+			shared := -1
+			for _, machine := range reading.Machines {
+				for _, worktree := range worktreesOf(machine) {
+					if !machinePathWithin(record.WorkingDirectory, worktree) {
+						continue
+					}
+					if common := commonPrefixLength(machine.Checkout, record.WorkingDirectory); common > shared || (common == shared && machine.Checkout < owner.Checkout) {
+						owner, shared = machine, common
+					}
+				}
+			}
 		}
+		if owner != nil {
+			owner.Launches = append(owner.Launches, view)
+			owner.launchRecords = append(owner.launchRecords, record)
+			continue
+		}
+		reading.LaunchesElsewhere = append(reading.LaunchesElsewhere, view)
+		reading.launchesElsewhere = append(reading.launchesElsewhere, record)
 	}
+	if len(problems) > 0 {
+		sort.Strings(problems)
+		problems = append([]string{reading.LaunchProblem}, problems...)
+		if problems[0] == "" {
+			problems = problems[1:]
+		}
+		reading.LaunchProblem = strings.Join(problems, "; ")
+	}
+}
+
+// commonPrefixLength is how many leading bytes a and b share.
+func commonPrefixLength(a, b string) int {
+	length := 0
+	for length < len(a) && length < len(b) && a[length] == b[length] {
+		length++
+	}
+	return length
 }
 
 // machinePathWithin reports whether path is root or lies below it.
@@ -909,7 +974,7 @@ func (inv *intentInvocation) stopHostMachines(reading hostReading, targets []*ho
 		}
 		stoppable = append(stoppable, machine)
 	}
-	stoppedAlready, stopped, unfinished := 0, 0, 0
+	stoppedAlready, stopped, unfinished, cancelled, cancelFailed := 0, 0, 0, 0, 0
 	var lines []string
 	var launches []launch.Record
 	views := []map[string]any{}
@@ -930,21 +995,28 @@ func (inv *intentInvocation) stopHostMachines(reading hostReading, targets []*ho
 				}
 			}
 		}
+		// system stop cancelled the launches of a checkout it stopped, a
+		// line each; an already-stopped checkout's are cancelled below.
+		if data, ok := result.Data.(map[string]any); ok {
+			launchLines, _ := data["launchLines"].([]string)
+			lines = append(lines, launchLines...)
+			done, _ := data["launchesCancelled"].(int)
+			failed, _ := data["launchesNotCancelled"].(int)
+			cancelled, cancelFailed = cancelled+done, cancelFailed+failed
+		}
 		switch result.Outcome {
 		case intentUnchanged:
 			stoppedAlready++
+			launches = append(launches, machine.launchRecords...)
 		case intentConfirmed:
 			stopped++
 		default:
 			unfinished++
-			continue
 		}
-		launches = append(launches, machine.launchRecords...)
 	}
 	if all && unfinished == 0 {
 		launches = append(launches, reading.launchesElsewhere...)
 	}
-	cancelled, cancelFailed := 0, 0
 	for _, record := range launches {
 		result := inv.stopResolvedJob(intentJob{id: record.ID, kind: "launch", launch: record})
 		lines = append(lines, "launch "+launchJobPrefix+record.ID+": "+result.Summary)
