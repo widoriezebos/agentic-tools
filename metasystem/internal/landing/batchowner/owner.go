@@ -436,7 +436,9 @@ func RebindBatchClaims(root, batchID, tree, machine string, epoch int64, read fu
 		return err
 	}
 	for _, unit := range record.Units {
-		if unit.State != batch.UnitJoined {
+		// A change holds no ledger claim: its authority is its own commit,
+		// so there is nothing to rebind and no goal file to read.
+		if unit.State != batch.UnitJoined || unit.IsChange() {
 			continue
 		}
 		ledger, err := read(controlRoot, tree, unit.GoalID)
