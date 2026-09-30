@@ -300,7 +300,7 @@ func ClaimEpochForRebind(f *GoalFile, r VerbRequest) (int64, error) {
 	}
 	if r.EpochAuthority == EpochAuthorityLane {
 		if r.Actor.Lineage != LaneClaimLineage || r.Actor.Human != "" || r.ClaimEpoch < 1 {
-			return 0, coded("REBIND_EPOCH_UNAUTHENTICATED", fmt.Errorf("only the landing lane renews a claim at its custody epoch (%s, %d)", r.Actor.Lineage, r.ClaimEpoch))
+			return 0, coded("REBIND_EPOCH_UNAUTHENTICATED", fmt.Errorf("only the landing lane renews its own claim, not %s (%d)", r.Actor.Lineage, r.ClaimEpoch))
 		}
 		return r.ClaimEpoch, nil
 	}

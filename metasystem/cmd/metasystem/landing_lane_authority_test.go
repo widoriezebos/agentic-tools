@@ -449,3 +449,60 @@ func TestAPersonReleasesAGoalTheLaneHolds(t *testing.T) {
 		t.Fatalf("a person's release of the lane's claim = %d %+v; goal %+v", code, result, released.Claimed)
 	}
 }
+
+func init() {
+	registerIdempotency("landing return", idemStateful, "the member is already returned with that disposition: success, nothing written", witnessLandingReturnRepeat)
+}
+
+// witnessLandingReturnRepeat runs a person's return twice: the second is
+// success that leaves the lane's batch store and the ledger as they were.
+func witnessLandingReturnRepeat(t *testing.T) {
+	bed := newLaneReturnBed(t)
+	bed.person = nil
+	if code, result := bed.run(t, "standing-validation", "--disposition", "person"); code != 0 || result.Outcome != intentConfirmed {
+		t.Fatalf("first return = %d %+v", code, result)
+	}
+	store, ledger := idemTreeDigest(t, filepath.Join(bed.lane, "artifacts")), goalSyncMutationGit(t, bed.seat, "rev-parse", goal.AcceptedRef)
+	if code, result := bed.run(t, "standing-validation", "--disposition", "person"); code != 0 || result.Outcome != intentUnchanged {
+		t.Fatalf("repeated return = %d %+v", code, result)
+	}
+	idemSameTree(t, "a repeated landing return", store, idemTreeDigest(t, filepath.Join(bed.lane, "artifacts")))
+	if after := goalSyncMutationGit(t, bed.seat, "rev-parse", goal.AcceptedRef); after != ledger {
+		t.Fatalf("a repeated return wrote the ledger: %s -> %s", ledger, after)
+	}
+}
+
+// The return verb's layout goldens join G1b through the group hook.
+var _ = func() bool {
+	layoutGroupCases = append(layoutGroupCases, landingReturnLayoutCases)
+	return true
+}()
+
+func landingReturnLayoutCases() []layoutCase {
+	return []layoutCase{
+		{name: "landing-return", args: []string{"landing", "return", "verbs-match-intent", "--disposition", "person", "--reason", "the design changes first"}, bed: landingReturnLayoutBed},
+		{name: "landing-return-refusal", args: []string{"landing", "return", "verbs-match-intent", "--disposition", "red"}, bed: landingReturnLayoutBed},
+	}
+}
+
+// landingReturnLayoutBed is the running lane's bed whose returns answer as
+// the batch's records do: a person's return confirmed, a red refused for
+// want of a failing test run.
+func landingReturnLayoutBed(t *testing.T) layoutBed {
+	bed := landingLayoutBed(landingLayoutRunning)(t)
+	bed.owners.landing.installation = func(root string) (string, error) { return filepath.Join(root, "metasystem"), nil }
+	bed.owners.landing.engine = func(string, string, []string) (laneengine.Identity, error) {
+		return laneengine.Identity{Running: "sha256:" + strings.Repeat("b", 64)}, nil
+	}
+	bed.owners.landing.agent = func(string) error { return nil }
+	bed.owners.landing.returnMember = func(request batchowner.MemberReturn) (batchowner.MemberReturnReport, error) {
+		report := batchowner.MemberReturnReport{Batch: "4gr18nm8t3nyev9sssda9jgtsq", Member: request.Member, Disposition: request.Disposition}
+		if request.Disposition != batch.DispositionPerson {
+			return report, &batch.ReturnRefusal{Code: batch.CodeReturnEvidenceMissing, Member: request.Member, Disposition: request.Disposition,
+				Message: "no failing test run of this batch names " + request.Member + ", so it was not returned as red"}
+		}
+		report.Evidence, report.Settled, report.Confirmed = "person "+request.Person, batch.ReturnReleased, true
+		return report, nil
+	}
+	return bed
+}

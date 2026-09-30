@@ -54,7 +54,7 @@ func renewLaneClaim(controlRoot, goalID string, ledger batch.ReturnLedgerGoal, c
 	case ledger.Machine != claim.Machine:
 		return fmt.Errorf("goal %s is held by the landing lane on %s, not by this computer's lane on %s", goalID, ledger.Machine, claim.Machine)
 	case ledger.ClaimEpoch > claim.Epoch:
-		return fmt.Errorf("goal %s is held at the lane's custody epoch %d, later than this computer's %d, so this lane does not hold it", goalID, ledger.ClaimEpoch, claim.Epoch)
+		return fmt.Errorf("goal %s is held by a later registration of the lane (%d > %d), not by this one", goalID, ledger.ClaimEpoch, claim.Epoch)
 	case ledger.ClaimEpoch == claim.Epoch:
 		return nil
 	}

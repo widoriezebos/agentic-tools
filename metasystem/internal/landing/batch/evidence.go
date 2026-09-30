@@ -114,7 +114,7 @@ func (refusal *ReturnRefusal) RefusalWords() string { return refusal.Message }
 // id again changes nothing.
 func RecordProofAttempt(store Store, batchID string, attempt ProofAttempt, actor string, at time.Time) error {
 	if attempt.ID == "" || !validSubject(attempt.Subject) || !slices.Contains([]string{AttemptGreen, AttemptRed, AttemptUnavailable}, attempt.Outcome) {
-		return fmt.Errorf("proof attempt %+v needs an id, a subject batch, base or member:M, and an outcome green, red or unavailable", attempt)
+		return fmt.Errorf("test run %q needs an id, a subject (batch, base, member:M) and an outcome", attempt.ID)
 	}
 	if attempt.At == "" {
 		attempt.At = at.UTC().Format(time.RFC3339Nano)
@@ -185,9 +185,9 @@ func ReturnEvidence(record Record, member, disposition, person string) (string, 
 				unavailable = true
 			}
 		}
-		message := fmt.Sprintf("no proof of batch %s failed on %s, so it was not returned as red", record.BatchID, member)
+		message := fmt.Sprintf("no failing test run of this batch names %s, so it was not returned as red", member)
 		if unavailable {
-			message = fmt.Sprintf("the proof of %s in batch %s could not run, which is not %s's failure, so it was not returned as red", member, record.BatchID, member)
+			message = fmt.Sprintf("the tests of %s could not run, which is not its failure, so it was not returned as red", member)
 		}
 		return refuse(CodeReturnEvidenceMissing, message)
 	}

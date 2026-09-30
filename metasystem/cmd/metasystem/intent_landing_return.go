@@ -63,7 +63,7 @@ func runIntentLandingReturn(inv *intentInvocation) int {
 		if err := kernel.owners.agent(kernel.record.Root); err != nil {
 			return inv.render(intentResult{Outcome: intentRefused, code: 3, Targets: targets,
 				Summary: "only the landing agent, or a person at an enrolled terminal, returns a member with evidence; nothing was returned",
-				next:    inv.publicArgv("landing", "return", member, "--disposition", batch.DispositionPerson), nextReason: "a person gives it back at their word",
+				next:    inv.publicArgv("landing", "return", member, "--disposition", batch.DispositionPerson), nextReason: "a person returns it",
 				Details: []string{"refused because: " + err.Error(), "the person's check: " + refusalCause(personErr)}})
 		}
 	}
@@ -116,7 +116,7 @@ func (inv *intentInvocation) returnMember(targets []intentTarget, disposition st
 	if len(inv.input.args) != 1 || !slices.Contains(batch.Dispositions, disposition) {
 		return "", &intentResult{Outcome: intentRefused, code: 2, Targets: targets,
 			Summary: "landing return names one member and how it leaves: red, conflict, seam-too-large or person; nothing was returned",
-			next:    inv.publicArgv("landing", "return", "MEMBER", "--disposition", batch.DispositionPerson), nextReason: "a person gives MEMBER back at their word"}
+			next:    inv.publicArgv("landing", "return", "MEMBER", "--disposition", batch.DispositionPerson), nextReason: "a person returns MEMBER"}
 	}
 	return inv.input.args[0], nil
 }
@@ -138,7 +138,8 @@ func (inv *intentInvocation) landingReturn(owners laneVerbOwners, home string, r
 			next: inv.publicArgv("landing", "status", "--verbose"), nextReason: "shows the batch's proofs and members",
 			Details: []string{"refused because: " + returnRefusal.Code}}
 		if returnRefusal.Code == batch.CodeReturnEvidenceMissing && disposition != batch.DispositionPerson {
-			result.next, result.nextReason = inv.publicArgv("landing", "return", member, "--disposition", batch.DispositionPerson), "a person gives it back at their word"
+			result.next, result.nextReason = inv.publicArgv("landing", "return", member, "--disposition", batch.DispositionPerson), "a person returns it"
+			result.Details = append(result.Details, "a person returns it at their word: metasystem landing return MEMBER --disposition person")
 		}
 		return inv.render(result)
 	case errors.As(err, &laneRefusal):

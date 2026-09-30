@@ -140,7 +140,7 @@ func laneClaimTargetLiveness(home, targetMachine string, targetEpoch int64) (ide
 		return identity.Unknown, err
 	}
 	if claim.Machine != targetMachine || targetEpoch < 1 || claim.Epoch != uint64(targetEpoch) {
-		return identity.Unknown, fmt.Errorf("the landing lane is %s at custody epoch %d, not %s at %d", claim.Machine, claim.Epoch, targetMachine, targetEpoch)
+		return identity.Unknown, fmt.Errorf("the landing lane registered now is %s (registration %d), not %s (%d)", claim.Machine, claim.Epoch, targetMachine, targetEpoch)
 	}
 	return identity.Alive, nil
 }

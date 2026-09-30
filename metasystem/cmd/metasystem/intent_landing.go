@@ -927,7 +927,8 @@ func (inv *intentInvocation) oldOwnerHolds(owners laneVerbOwners, layout lane.La
 		Summary:    fmt.Sprintf("the old landing owner still holds %s (%s), so nothing was registered", textui.Count(len(held), "goal", "goals"), strings.Join(held, ", ")),
 		next:       inv.publicArgv("goal", "release", held[0], "--reason", "the landing lane changes owner"),
 		nextReason: "gives it back; the same for each goal named, then run metasystem landing set " + root + " again",
-		Details:    []string{"refused because: " + codeLandingOldOwnerHolds + ": the new lane's claim identity activates only once every claim of lineage " + batchowner.LandingOwnerLineage + " is landed or returned"}}
+		Details: []string{"refused because: " + codeLandingOldOwnerHolds + ": the new lane's claim identity activates only once every claim of lineage " + batchowner.LandingOwnerLineage + " is landed or returned",
+			"a person gives each back: metasystem goal release G --reason TEXT"}}
 }
 
 // runIntentLandingRestart gives the lane a fresh owner process (a person
