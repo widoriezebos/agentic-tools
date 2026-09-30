@@ -15,7 +15,8 @@ import (
 // installation's METASYSTEM_DELEGATE_ROOT (the retired runtime-common.sh
 // delegate_callback, now that dispatch.sh is gone), and relays the
 // callback's output and exit status; the self-test's status read answers the
-// callback's stdout line and an empty string on a refusal.
+// status in the callback's --json envelope and an empty string on a refusal
+// or an answer that is not an envelope.
 func TestEngineDispatcherRunsTheDelegateEntry(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
@@ -25,7 +26,7 @@ func TestEngineDispatcherRunsTheDelegateEntry(t *testing.T) {
 	if err := testexec.WriteFile(engine, []byte(`#!/bin/sh
 printf '%s|root=%s\n' "$*" "${METASYSTEM_DELEGATE_ROOT-}" >>"`+log+`"
 case "$3" in
-  status) echo running ;;
+  status) printf '%s\n' '{"schemaVersion":1,"verb":"internal delegate status","targets":[],"outcome":"confirmed","summary":"job j1 is running","data":{"status":"running"}}' ;;
   __record-cas) exit 3 ;;
 esac
 `), 0o755); err != nil {
@@ -47,7 +48,7 @@ esac
 	}
 	want := []string{
 		"internal delegate __record-cas --job j1|root=" + root,
-		"internal delegate status --job j1|root=" + root,
+		"internal delegate status --job j1 --json|root=" + root,
 		"internal delegate reap --job j1|root=" + root,
 	}
 	if got := strings.Split(strings.TrimSpace(string(data)), "\n"); strings.Join(got, "\n") != strings.Join(want, "\n") {
@@ -56,5 +57,14 @@ esac
 	refusing := Deps{Dispatch: EngineDispatcher{Root: root, Engine: filepath.Join(dir, "missing-engine")}}
 	if got := refusing.lifecycleStatus("j1"); got != "" {
 		t.Fatalf("status through a failing entry = %q, want empty", got)
+	}
+	// A bare status word is no answer: the status is read from the
+	// envelope's data, never from the callback's words.
+	words := filepath.Join(dir, "words-engine")
+	if err := testexec.WriteFile(words, []byte("#!/bin/sh\necho running\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if got := (Deps{Dispatch: EngineDispatcher{Root: root, Engine: words}}).lifecycleStatus("j1"); got != "" {
+		t.Fatalf("a bare status word read as %q, want empty", got)
 	}
 }
