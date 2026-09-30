@@ -1,0 +1,21 @@
+exit 2
+--
+{
+  "schemaVersion": 1,
+  "verb": "system enroll",
+  "targets": [],
+  "outcome": "refused",
+  "summary": "enroll needs your name; nothing was done",
+  "next": {
+    "argv": [
+      "metasystem",
+      "system",
+      "enroll",
+      "--name",
+      "wido"
+    ],
+    "reason": "in a terminal you opened yourself, with your own name"
+  }
+}
+
+--

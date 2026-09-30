@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
@@ -39,6 +40,9 @@ func g1aLayoutCases() []layoutCase {
 		{name: "design-check", args: []string{"design", "check", "docs/examples/design-obligation-matrix.md"}, bed: designCheckLayoutBed},
 		{name: "design-check-both", args: []string{"design", "check", "docs/examples/design-obligation-matrix.md", "docs/examples/design-obligation-matrix.md"}, bed: designCheckLayoutBed},
 		{name: "design-check-refusal", args: []string{"design", "check"}, bed: designCheckLayoutBed},
+		{name: "system-enroll", args: []string{"system", "enroll", "--name", "Wido"}, bed: enrollLayoutBed(false), measured: "the enrollment carries the owner's own clock"},
+		{name: "system-enroll-again", args: []string{"system", "enroll", "--name", "Wido"}, bed: enrollLayoutBed(true), measured: "the enrollment carries the owner's own clock"},
+		{name: "system-enroll-refusal", args: []string{"system", "enroll"}, bed: enrollLayoutBed(false)},
 		{name: "question-list-empty", args: []string{"question", "list"}, bed: processLayoutBed()},
 		{name: "question-list", args: []string{"question", "list"}, bed: questionsLayoutBed},
 		{name: "helm-take", args: []string{"helm", "take", "--reason", "coordinating the verb batches"}, bed: helmLayoutBed(true)},
@@ -182,6 +186,30 @@ func designCheckLayoutBed(t *testing.T) layoutBed {
 		t.Fatal(err)
 	}
 	return layoutBed{owners: b.owners(), cwd: module, replace: layoutPaths(module, realpath.Resolve(module), "/Users/wido/GitHub/agentic-tools-m1e/metasystem")}
+}
+
+// enrollLayoutBed is that checkout at a person's terminal, enrolled there
+// once already when again.
+func enrollLayoutBed(again bool) func(t *testing.T) layoutBed {
+	return func(t *testing.T) layoutBed {
+		b, owners := processLayoutOwners(t)
+		reader := goalSyncTerminalReader(t, b.root(), "tty-layout")
+		b.facts.reader = &reader
+		owners = b.owners()
+		owners.helm.machine = func(string) (string, error) { return "m1e", nil }
+		owners.helm.zone = layoutZone(t)
+		owners.commandNow = func(string) (time.Time, error) { return layoutNow, nil }
+		owners.processes.enroll = func(root string, _ int64, _ humanauthority.Reader, by string, now time.Time) (humanauthority.Enrollment, error) {
+			return humanauthority.Enroll(root, reader.exact.Pid, reader, by, now)
+		}
+		if again {
+			if code, stdout, stderr := b.run(owners, "system", "enroll", "--name", "Wido"); code != 0 {
+				t.Fatalf("first enrollment = %d %s%s", code, stdout, stderr)
+			}
+		}
+		root := realpath.Resolve(b.root())
+		return layoutBed{owners: owners, cwd: b.root(), replace: processLayoutPaths(b, root)}
+	}
 }
 
 func processLayoutOwners(t *testing.T) (*processBed, intentOwners) {

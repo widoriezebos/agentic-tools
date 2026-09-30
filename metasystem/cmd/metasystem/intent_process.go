@@ -1337,10 +1337,12 @@ func runIntentEnroll(inv *intentInvocation) int {
 		return inv.render(result)
 	case code == 0 && report.result != nil && report.result.Unchanged:
 		return inv.render(intentResult{Outcome: intentUnchanged, Targets: targets, Summary: report.result.Detail,
-			Data: map[string]any{"enrollment": report.value, "fleetPublished": true, "owner": ownerPublication(*report.result)}})
+			Data: map[string]any{"enrollment": report.value, "fleetPublished": true, "owner": ownerPublication(*report.result)},
+			view: doneView("This terminal is already enrolled for " + name + ", and the fleet knows it")})
 	case code == 0 && report.result != nil:
 		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Summary: "this terminal is enrolled for " + name + " and the fleet cutoff is published",
-			Data: map[string]any{"enrollment": report.value, "fleetPublished": true, "owner": ownerPublication(*report.result)}})
+			Data: map[string]any{"enrollment": report.value, "fleetPublished": true, "owner": ownerPublication(*report.result)},
+			view: doneView("This terminal is enrolled for " + name + ", and every machine of the fleet is told")})
 	}
 	return inv.render(ownerResult(report, code, intentResult{}))
 }
@@ -1605,6 +1607,16 @@ func runIntentDoctor(inv *intentInvocation) int {
 		result.next, result.nextReason = first, "the first public remedy check found"
 	}
 	return inv.render(inv.withHelm(result, scope.Checkout))
+}
+
+// doneView is an act whose one line says all: what holds now.
+func doneView(text string) func(*textui.Page) {
+	return func(page *textui.Page) {
+		if text != "" {
+			text = strings.ToUpper(text[:1]) + text[1:]
+		}
+		page.Done(text)
+	}
 }
 
 // doctorProblem is one role of the machinery that is not alive, with the

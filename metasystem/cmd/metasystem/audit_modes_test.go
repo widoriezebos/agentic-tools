@@ -48,6 +48,7 @@ var auditModes = map[string]auditMode{
 	"cmd/metasystem/intent_process.go#runIntentSystemSetup":   {layout: auditEnforce},
 	"cmd/metasystem/intent_process.go#runIntentDoctor":        {layout: auditEnforce},
 	"cmd/metasystem/intent_table.go#runIntentDesignCheck":     {layout: auditEnforce},
+	"cmd/metasystem/intent_process.go#runIntentEnroll":        {layout: auditEnforce},
 	"cmd/metasystem/intent_table.go":                          {group: "G1a"},
 	"cmd/metasystem/intent_process.go":                        {group: "G1a"},
 	"cmd/metasystem/intent_helm.go":                           {group: "G1a"},
