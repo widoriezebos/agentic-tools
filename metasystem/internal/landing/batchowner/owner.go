@@ -180,6 +180,11 @@ func EnsureBatchOwner(root string) error {
 	case identity.Alive:
 		return BatchOwnerEnsure.Wake(pid)
 	case identity.Dead:
+		// A running landing agent is the lane's one composition owner: no
+		// batch owner is launched beside it, and there is nothing to wake.
+		if reason, err := landingAgentHold(root); err != nil || reason != "" {
+			return err
+		}
 		return BatchOwnerEnsure.Launch(root)
 	default:
 		return fmt.Errorf("%s: owner liveness is unknown", codeOwnerIndeterminate)
