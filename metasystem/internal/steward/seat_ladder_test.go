@@ -16,10 +16,21 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
 )
 
 const seatBedMachine = "bed-m1"
+
+// The steward reads and counts seats under the lineage the launch lane sets
+// in the seat's environment: one lineage per installation, never two
+// spellings (D-seat).
+func TestSeatLineageIsTheLaunchLanes(t *testing.T) {
+	t.Parallel()
+	if SeatLineage != launch.SeatOwnerLineage {
+		t.Fatalf("the steward's seat lineage %q is not the launch lane's %q", SeatLineage, launch.SeatOwnerLineage)
+	}
+}
 
 // fakeSeatLauncher records every seat start and answers each launch's state
 // as the test declares it.

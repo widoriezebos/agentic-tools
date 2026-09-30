@@ -11,13 +11,16 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 )
 
 // SeatLineage is the one owner lineage of every seat main the steward starts
 // on this installation, the machinery's own convention like the landing
 // lane's owner lineage: a successor inherits a dead predecessor's lease and
-// claim by the lease's own succession rule.
-const SeatLineage = "steward-seat"
+// claim by the lease's own succession rule. It is the launch lane's
+// constant, the lineage the seat launch sets in the seat's environment, so
+// the two cannot drift.
+const SeatLineage = launch.SeatOwnerLineage
 
 // SeatHeld is one claim this machine holds, as the seat ladder reads it.
 type SeatHeld struct {
