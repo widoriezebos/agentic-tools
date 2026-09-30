@@ -210,7 +210,7 @@ func TestGLEBatchRequirementsFollowLegacyTrustedPolicyFloor(t *testing.T) {
 for arg in "$@"; do
   case "$arg" in --batch-requirements|--batch-prefix|--groups) exit 93;; esac
 done
-printf '%s\n' '{"schemaVersion":1,"candidateTree":"candidate","plan":{"purpose":"delivery","requiredGroups":["floor"],"selectedGroups":["floor"],"stages":[{"id":"canary","groups":["floor"]}]}}'
+printf '%s\n' '{"schemaVersion":1,"verb":"test plan","targets":[],"outcome":"confirmed","summary":"","data":{"schemaVersion":1,"candidateTree":"candidate","plan":{"purpose":"delivery","requiredGroups":["floor"],"selectedGroups":["floor"],"stages":[{"id":"canary","groups":["floor"]}]}}}'
 `
 	if err := testexec.WriteFile(engine, []byte(script), 0o755); err != nil {
 		t.Fatal(err)

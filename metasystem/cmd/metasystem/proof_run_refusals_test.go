@@ -16,6 +16,7 @@ import (
 // "run:" command when one resolves it. The code travels in the envelope's
 // code field, the candidate's state in its data.
 func TestMessageProofAdmissionRefusalsArePlain(t *testing.T) {
+	t.Parallel()
 	codeWord := regexp.MustCompile(`\b[A-Z][A-Z0-9]*_[A-Z0-9_]+\b|\b[a-zA-Z]+=`)
 	cases := []struct {
 		code string

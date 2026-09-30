@@ -583,14 +583,14 @@ func TestOneLiveChargedAttemptCountsForBothLenses(t *testing.T) {
 		t.Fatalf("live candidate charge did not split authority capacity from consumption: %+v", authority)
 	}
 	if attempt, err := launch(other.Id, strings.Repeat("c", 40)); err == nil || attempt.AttemptID != "" ||
-		!strings.Contains(err.Error(), "standing-validation") || !strings.Contains(err.Error(), "activeJobLimit") {
+		!strings.Contains(refusalDetail(err), "standing-validation") || !strings.Contains(refusalDetail(err), "activeJobLimit") {
 		t.Fatalf("second authority job was not refused by the authority lens: attempt=%+v err=%v", attempt, err)
 	}
 	if _, err := proofrun.FinalizeAttempt(root, first.AttemptID, proofrun.TerminalFailed, 1, "two-lens witness", nil, now); err != nil {
 		t.Fatal(err)
 	}
 	if attempt, err := launch(candidate.Id, strings.Repeat("d", 40)); err == nil || attempt.AttemptID != "" ||
-		!strings.Contains(err.Error(), candidate.Id) || !strings.Contains(err.Error(), "attemptLimit") {
+		!strings.Contains(refusalDetail(err), candidate.Id) || !strings.Contains(refusalDetail(err), "attemptLimit") {
 		t.Fatalf("second candidate attempt was not refused by the candidate lens: attempt=%+v err=%v", attempt, err)
 	}
 }
@@ -610,7 +610,7 @@ func TestCandidateCannotEscapeAuthorityElapsedLimit(t *testing.T) {
 		ControlRoot: root, ExecutionRoot: root, ConfPath: filepath.Join(root, "metasystem.conf"), GoalID: candidate.Id,
 		AuthorityGoalID: "standing-validation", CapMin: "1", ScopeClass: "full", CommandClass: "testing", Now: now,
 	})
-	if err == nil || attempt.AttemptID != "" || !strings.Contains(err.Error(), "standing-validation") || !strings.Contains(err.Error(), "elapsedLimit") {
+	if err == nil || attempt.AttemptID != "" || !strings.Contains(refusalDetail(err), "standing-validation") || !strings.Contains(refusalDetail(err), "elapsedLimit") {
 		t.Fatalf("candidate escaped the authority clock: attempt=%+v err=%v", attempt, err)
 	}
 }
@@ -645,8 +645,8 @@ func TestCandidateExtensionIsRefusedUntilCandidateBecomesAuthority(t *testing.T)
 		AuthorityGoalID: "standing-validation", CapMin: "1", ScopeClass: "full", CommandClass: "testing", CandidateTree: strings.Repeat("c", 40), Now: now}
 	attempt, _, _, err := admitCandidateProofLaunchWithRepository(t, repository, request)
 	for _, want := range []string{"CANDIDATE_EXTENSION_REFUSED", candidate.Id, "attemptLimit", "claim " + candidate.Id + " as authority", "metasystem goal budget " + candidate.Id + " BOX"} {
-		if err == nil || !strings.Contains(err.Error(), want) || attempt.AttemptID != "" {
-			t.Fatalf("candidate extension refusal did not name %q: attempt=%+v err=%v", want, attempt, err)
+		if err == nil || !strings.Contains(refusalDetail(err), want) || attempt.AttemptID != "" {
+			t.Fatalf("candidate extension refusal did not name %q: attempt=%+v err=%v detail=%s", want, attempt, err, refusalDetail(err))
 		}
 	}
 	repository.amend(t, "standing-validation", func(file *goal.GoalFile) {
