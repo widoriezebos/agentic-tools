@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 2
-- Sequence: 47
+- Sequence: 46
 - Risk: severity=2 novelty=2 exposure=2 accumulation=2 basis="Steward and receipt machinery changes cadence evidence across every seat; failures pollute measurement but do not corrupt product code."
 - Tier: 2
 - Intent: What: When the steward revives a stalled job, the revival is written to the steward's own event log instead of the task receipts people write; receipt checks and statistics ignore steward rows; and the steward revives nothing within 60 minutes of a unit landing or while a job is live. Why: 81 of 231 receipts were revivals, 42 of them for one goal while five units landed, and uncommitted revival rows inflated the count to 344, so the retro that learns from receipts learns from noise. Pros: honest receipts and retros, and fewer pointless revivals. Cons: the 60-minute rule can delay a revival that was really needed.
 - Origin: human
 - Next step: Next: write a short brief for moving revivals to the steward's event log plus the 60-minute refusal, then build it. Done when: the next retro counts zero steward receipts, its receipt count equals the hand-written receipts, and no revival happened within 60 minutes of a landing.
 - OpenedAt: 2026-09-16T21:02:35Z
-- Revision: 8
+- Revision: 9
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 
@@ -22,4 +22,5 @@ History:
 - 2026-09-30T18:53:59Z VV6DZEZSH34P7FKDBK2N5YMJQC-ui-bc2fda53 edit actor=human:Wido targets=steward-revivals-leave-the-receipt-stream
 - 2026-09-30T18:54:23Z CK7693X39MWN0EDV9FXCKZMBH2-m1e-b6a4eb0a done actor=human:wido targets=census-lifecycle-scenario-holds-under-load,critique-launch-verb-enforces-the-round-cap,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,human-break-glass-commit-keeps-the-ledger-valid,land-verb-writes-the-receipt,member-size-gate,one-goal-act-one-ledger-commit,runtime-limit-is-not-a-protocol-error,seat-landings-run-the-selected-sections,small-change-lane,steward-revivals-leave-the-receipt-stream,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:49 to=2:48
 - 2026-09-30T18:54:58Z 76304SH5SME1NM10DRAXEEMT2X-ui-bc2fda53 abandon actor=human:Wido targets=watch-verb,watcher-repair-request-never-names-current,actionable-metrics,lease-sweep-death-evidence,winddown-census-handoff-leak,machine-concurrency-governor,token-spend-fence,fixture-waits-name-their-producer,skipped-test-fails-its-group-on-the-other-os,fixture-repo-copies-exclude-the-artifacts-store,chain-landing-carries-the-reviewed-diff,human-authority-surface-runs-its-cmd-tests,repo-root-paths-ride-agent-commits-unjudged,dispatch-bases-chains-on-the-remote-tip,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,steward-revivals-leave-the-receipt-stream,runtime-limit-is-not-a-protocol-error,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,land-verb-writes-the-receipt,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,small-change-lane,seat-landings-run-the-selected-sections,trunk-versus-candidate-is-a-verification-step,member-size-gate reason=priority-order from=2:48 to=2:47
-Integrity: sha256=bf4d698f4e541f5287ba305134ec788303c21ad686dfa07d463f2cd4c0edc3c3
+- 2026-09-30T18:55:45Z J2V8JPZDAXR6P97TR6YSBFPZ4J-m1e-b6a4eb0a done actor=human:wido targets=dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,dispatch-bases-chains-on-the-remote-tip,human-break-glass-commit-keeps-the-ledger-valid,human-wait-does-not-consume-goal-budget,land-verb-writes-the-receipt,member-size-gate,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,one-goal-act-one-ledger-commit,pipelines-never-lose-a-truncated-producer,runtime-limit-is-not-a-protocol-error,seat-landings-run-the-selected-sections,small-change-lane,steward-revivals-leave-the-receipt-stream,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:47 to=2:46
+Integrity: sha256=3a0b26ae47686c5fdc648105456d3dcf7ad21f030dd8f057c2455961eabafbb4

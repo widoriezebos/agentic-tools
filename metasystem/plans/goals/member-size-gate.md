@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 2
-- Sequence: 56
+- Sequence: 55
 - Risk: severity=1 novelty=2 exposure=2 accumulation=1 basis="severity 1: a refused slice is re-sliced, nothing lands wrongly; novelty 2: goal slice gains a measured refusal; exposure 2: every slice; accumulation 1: nothing builds on the count"
 - Tier: 2
 - Intent: Delivery-efficiency phase D, delegate loop. Goal slice refuses a member whose design names more than a set number of files or moves more than one owner, with the count in the refusal, so a member is split before its build rather than after nineteen rounds. Why: the stop-decisions member touched twenty-two files and five thousand lines and replaced the deadline parent in one build; Wido's rule of 2026-09-10 is one mechanism per member. DONE: a fixture slices an oversized member draft and is refused with the count; a compliant draft passes; the limits live in metasystem.conf. every mechanism in this goal lives in the Go engine, the ledger verbs and the adapter contract, never in one runtime; it is proven on at least two runtimes.
 - Origin: human
 - Next step: Design page: the two limits, where they are read, the refusal text, the fixture; then build.
 - OpenedAt: 2026-09-14T15:31:38Z
-- Revision: 103
+- Revision: 104
 - BudgetExceptions: 0
 
 History:
@@ -116,4 +116,5 @@ History:
 - 2026-09-30T18:54:23Z CK7693X39MWN0EDV9FXCKZMBH2-m1e-b6a4eb0a done actor=human:wido targets=census-lifecycle-scenario-holds-under-load,critique-launch-verb-enforces-the-round-cap,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,human-break-glass-commit-keeps-the-ledger-valid,land-verb-writes-the-receipt,member-size-gate,one-goal-act-one-ledger-commit,runtime-limit-is-not-a-protocol-error,seat-landings-run-the-selected-sections,small-change-lane,steward-revivals-leave-the-receipt-stream,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:59 to=2:58
 - 2026-09-30T18:54:58Z 6FC56FK2Q9DZ430CQB2YEJHWF3-m1e-b6a4eb0a done actor=human:wido targets=critique-launch-verb-enforces-the-round-cap,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,human-break-glass-commit-keeps-the-ledger-valid,land-verb-writes-the-receipt,member-size-gate,one-goal-act-one-ledger-commit,runtime-limit-is-not-a-protocol-error,seat-landings-run-the-selected-sections,small-change-lane,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:58 to=2:57
 - 2026-09-30T18:54:58Z 76304SH5SME1NM10DRAXEEMT2X-ui-bc2fda53 abandon actor=human:Wido targets=watch-verb,watcher-repair-request-never-names-current,actionable-metrics,lease-sweep-death-evidence,winddown-census-handoff-leak,machine-concurrency-governor,token-spend-fence,fixture-waits-name-their-producer,skipped-test-fails-its-group-on-the-other-os,fixture-repo-copies-exclude-the-artifacts-store,chain-landing-carries-the-reviewed-diff,human-authority-surface-runs-its-cmd-tests,repo-root-paths-ride-agent-commits-unjudged,dispatch-bases-chains-on-the-remote-tip,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,steward-revivals-leave-the-receipt-stream,runtime-limit-is-not-a-protocol-error,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,land-verb-writes-the-receipt,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,small-change-lane,seat-landings-run-the-selected-sections,trunk-versus-candidate-is-a-verification-step,member-size-gate reason=priority-order from=2:57 to=2:56
-Integrity: sha256=a1f527d3428f0df9d855f1badba65f13f8a34a5ce1c45bfc942451cb2e060673
+- 2026-09-30T18:55:45Z J2V8JPZDAXR6P97TR6YSBFPZ4J-m1e-b6a4eb0a done actor=human:wido targets=dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,dispatch-bases-chains-on-the-remote-tip,human-break-glass-commit-keeps-the-ledger-valid,human-wait-does-not-consume-goal-budget,land-verb-writes-the-receipt,member-size-gate,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,one-goal-act-one-ledger-commit,pipelines-never-lose-a-truncated-producer,runtime-limit-is-not-a-protocol-error,seat-landings-run-the-selected-sections,small-change-lane,steward-revivals-leave-the-receipt-stream,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:56 to=2:55
+Integrity: sha256=735817624ac2bed4b904f86e56b43458a1fee3687e4f0fe47c5ad94eb340e5e0

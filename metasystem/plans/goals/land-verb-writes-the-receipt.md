@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 2
-- Sequence: 50
+- Sequence: 49
 - Risk: severity=3 novelty=2 exposure=3 accumulation=3 basis="The land verb sits on every code delivery and writes audit evidence; a wrong transaction can block delivery or misstate the repository's rework history."
 - Tier: 3
 - Intent: What: Every landing writes its own receipt (outcome, builder, goal, proof), so shipped work and rework are counted without anyone typing rows. Why: The lane already writes receipts for its batches, but nobody has measured how complete they are. Also missing is a "Repairs:" line that marks a fix as rework of an earlier commit. Pros: Truthful records of what shipped and what had to be redone. Cons: While the lane is paused, landings happen by hand and write no lane receipt, so the measurement must cover lane landings only.
 - Origin: human
 - Next step: Next: Measure receipt coverage over the lane's landings since 09-26. If at least 90 percent carry a receipt with the right outcome, conclude; otherwise add the Repairs: trailer to the lane's receipt writer. Done when: the coverage figure is recorded, and either the goal is concluded or a test shows a commit with a Repairs: trailer is recorded as reworked.
 - OpenedAt: 2026-09-16T21:03:07Z
-- Revision: 9
+- Revision: 10
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 
@@ -23,4 +23,5 @@ History:
 - 2026-09-30T18:54:23Z CK7693X39MWN0EDV9FXCKZMBH2-m1e-b6a4eb0a done actor=human:wido targets=census-lifecycle-scenario-holds-under-load,critique-launch-verb-enforces-the-round-cap,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,human-break-glass-commit-keeps-the-ledger-valid,land-verb-writes-the-receipt,member-size-gate,one-goal-act-one-ledger-commit,runtime-limit-is-not-a-protocol-error,seat-landings-run-the-selected-sections,small-change-lane,steward-revivals-leave-the-receipt-stream,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:53 to=2:52
 - 2026-09-30T18:54:58Z 6FC56FK2Q9DZ430CQB2YEJHWF3-m1e-b6a4eb0a done actor=human:wido targets=critique-launch-verb-enforces-the-round-cap,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,human-break-glass-commit-keeps-the-ledger-valid,land-verb-writes-the-receipt,member-size-gate,one-goal-act-one-ledger-commit,runtime-limit-is-not-a-protocol-error,seat-landings-run-the-selected-sections,small-change-lane,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:52 to=2:51
 - 2026-09-30T18:54:58Z 76304SH5SME1NM10DRAXEEMT2X-ui-bc2fda53 abandon actor=human:Wido targets=watch-verb,watcher-repair-request-never-names-current,actionable-metrics,lease-sweep-death-evidence,winddown-census-handoff-leak,machine-concurrency-governor,token-spend-fence,fixture-waits-name-their-producer,skipped-test-fails-its-group-on-the-other-os,fixture-repo-copies-exclude-the-artifacts-store,chain-landing-carries-the-reviewed-diff,human-authority-surface-runs-its-cmd-tests,repo-root-paths-ride-agent-commits-unjudged,dispatch-bases-chains-on-the-remote-tip,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,steward-revivals-leave-the-receipt-stream,runtime-limit-is-not-a-protocol-error,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,land-verb-writes-the-receipt,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,small-change-lane,seat-landings-run-the-selected-sections,trunk-versus-candidate-is-a-verification-step,member-size-gate reason=priority-order from=2:51 to=2:50
-Integrity: sha256=65de55af02f42ff04edfdb71b180e2dd672e94fa41855501dc6d664836e65615
+- 2026-09-30T18:55:45Z J2V8JPZDAXR6P97TR6YSBFPZ4J-m1e-b6a4eb0a done actor=human:wido targets=dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,dispatch-bases-chains-on-the-remote-tip,human-break-glass-commit-keeps-the-ledger-valid,human-wait-does-not-consume-goal-budget,land-verb-writes-the-receipt,member-size-gate,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,one-goal-act-one-ledger-commit,pipelines-never-lose-a-truncated-producer,runtime-limit-is-not-a-protocol-error,seat-landings-run-the-selected-sections,small-change-lane,steward-revivals-leave-the-receipt-stream,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:50 to=2:49
+Integrity: sha256=0fb564077a38817480d31814a0a9aa46779deed28ac31b94884b8d2e2181f5bf
