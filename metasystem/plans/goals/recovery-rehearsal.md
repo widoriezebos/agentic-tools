@@ -1,15 +1,16 @@
 # recovery-rehearsal
 
-- State: queued
+- State: parked
 - Priority: 2
 - Sequence: 15
 - Intent: What: A rehearsal that proves the system comes back from a crash: in an isolated test setup, kill the workers, the runner and the steward mid-work, restart, and show that the work is rebuilt from the records alone, with no invented state and nothing done twice; and that a full stop leaves nothing running until someone restarts it. Why: We believe the records are enough to recover, but nobody has ever proved it, so a real crash could lose or duplicate work. Pros: Confidence that a crash is survivable, and any gap found becomes a concrete fix. Cons: It needs a separate test setup and real run time, and it is only meaningful once the repairs it rehearses exist.
 - Origin: human
 - Next step: Next: Build the crash-and-restore test in an isolated setup, starting with killing one worker mid-task and restoring from records. Done when: The test kills the worker, restarts, and shows the task rebuilt from records with no duplicated result, and no process is left running after a full stop.
 - OpenedAt: 2026-08-30T15:16:00Z
-- Revision: 25
+- Revision: 26
 - Labels: headless-fleet, headless-proof
 - BudgetExceptions: 0
+- Parked: by=human:Wido at=2026-09-30T18:52:31Z because=Parked until recovery-to-good-state has an accepted design. This rehearsal tests the repairs that design will define, so building it earlier would test paths that do not exist yet.
 
 History:
 - 2026-08-30T15:16:00Z 6KKF5W270WZ3FHW761YFDD6C6B-m1-bf243850 open actor=m1+coordinator targets=recovery-rehearsal
@@ -37,4 +38,5 @@ History:
 - 2026-09-13T08:21:48Z NRD0NSKR47C7ESV46MD65VP4V0-m1-c6925449 done actor=human:Wido targets=commit-goal-binding,first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,idle-every-runtime-enforcement,landing-design-provenance,merge-stage-critic-close,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,recovery-rehearsal,recovery-to-good-state,role-context-composition,role-lane-packets,seat-mutual-awareness reason=priority-order from=2:17 to=2:16
 - 2026-09-13T08:23:10Z R328E6Y43B7EEREMEA8T0MVQWG-m1-c6925449 done actor=human:Wido targets=first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,headless-continuous-delivery-proof,headless-fleet-coordination-proof,idle-every-runtime-enforcement,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,recovery-rehearsal,recovery-to-good-state,role-lane-packets,seat-mutual-awareness reason=priority-order from=2:16 to=2:15
 - 2026-09-30T18:52:25Z XF56874GWJXP3FAGH8K7QEYGCM-ui-bc2fda53 edit actor=human:Wido targets=recovery-rehearsal
-Integrity: sha256=b7e32e7721df2aa1353cde859dfd8c81deb8a32689206e0ff63e5eb7b2a06daa
+- 2026-09-30T18:52:31Z 3AC3P22X8PV2KTY1BFBZASWYE0-ui-bc2fda53 park actor=human:Wido targets=recovery-rehearsal reason=Parked until recovery-to-good-state has an accepted design. This rehearsal tests the repairs that design will define, so building it earlier would test paths that do not exist yet.
+Integrity: sha256=f6797ec3e25df6af22c880ea4f2db0695a42782407454f7ac8415c7faf11c429
