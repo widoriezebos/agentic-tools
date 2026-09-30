@@ -1,15 +1,101 @@
 {
   "schema": 1,
-  "entries": [],
-  "cadenceClaim": {
-    "key": {
-      "trunkTree": "54a0a76390419bad832f52b4b1b2dc3ac27c9469",
-      "weightGeneration": 0,
-      "forcedWindowStart": "2026-09-30T16:14:14Z"
+  "entries": [
+    {
+      "id": "tr-section-gate-fail-open-tripwire-cdcbc7d814b3",
+      "identity": "tr-section-gate-fail-open-tripwire-cdcbc7d814b3",
+      "group": "section/gate-fail-open-tripwire",
+      "status": "unavailable",
+      "failures": [],
+      "notRunReason": "standing cadence authority is unavailable",
+      "sightings": [
+        {
+          "attempt": "cadence-unavailable",
+          "batch": "",
+          "baseCommit": "c615cf141ece51ae23e2ecc93e23a15871016555",
+          "baseTree": "54a0a76390419bad832f52b4b1b2dc3ac27c9469",
+          "logPath": "",
+          "logDigest": "",
+          "seenAt": "2026-09-30T16:14:14Z",
+          "opid": "FJ4TD9C1HVK81M3AEJM01YEB9T-landing-2b626e27"
+        }
+      ],
+      "owner": {
+        "machine": "",
+        "since": "",
+        "how": "",
+        "by": ""
+      },
+      "fixGoal": "",
+      "fixBranch": {
+        "name": "",
+        "commit": "",
+        "state": ""
+      },
+      "holds": [],
+      "opened": "2026-09-30T16:14:14Z",
+      "closed": null
     },
-    "ownerMachine": "landing",
-    "opid": "F0MVQ5NPYFBE9Q5NT5BQ9KT4CF-landing-2b626e27",
-    "claimedAt": "2026-09-30T16:14:14Z",
-    "leaseUntil": "2026-09-30T22:14:14Z"
+    {
+      "id": "tr-section-go-engine-gate-9d35f27d25cc",
+      "identity": "tr-section-go-engine-gate-9d35f27d25cc",
+      "group": "section/go-engine-gate",
+      "status": "unavailable",
+      "failures": [],
+      "notRunReason": "standing cadence authority is unavailable",
+      "sightings": [
+        {
+          "attempt": "cadence-unavailable",
+          "batch": "",
+          "baseCommit": "c615cf141ece51ae23e2ecc93e23a15871016555",
+          "baseTree": "54a0a76390419bad832f52b4b1b2dc3ac27c9469",
+          "logPath": "",
+          "logDigest": "",
+          "seenAt": "2026-09-30T16:14:14Z",
+          "opid": "FJ4TD9C1HVK81M3AEJM01YEB9T-landing-2b626e27"
+        }
+      ],
+      "owner": {
+        "machine": "",
+        "since": "",
+        "how": "",
+        "by": ""
+      },
+      "fixGoal": "",
+      "fixBranch": {
+        "name": "",
+        "commit": "",
+        "state": ""
+      },
+      "holds": [],
+      "opened": "2026-09-30T16:14:14Z",
+      "closed": null
+    }
+  ],
+  "cadence": {
+    "trunkCommit": "c615cf141ece51ae23e2ecc93e23a15871016555",
+    "trunkTree": "54a0a76390419bad832f52b4b1b2dc3ac27c9469",
+    "trigger": "forced-window",
+    "runId": "cadence-unavailable",
+    "attemptId": "cadence-unavailable",
+    "startedAt": "2026-09-30T16:14:14Z",
+    "endedAt": "2026-09-30T16:14:14Z",
+    "weightGeneration": 0,
+    "forcedWindowStart": "2026-09-30T16:14:14Z",
+    "groups": [
+      {
+        "group": "section/gate-fail-open-tripwire",
+        "executionIdentity": "b931926c8f3eea5b917caa8eb66c3604673a41d6a53049b249e9575502806db4",
+        "status": "unavailable",
+        "evidenceDigest": "8f94b9322943469922097afe264d200ed57096d41a44a6b7da270696ffe0daa7"
+      },
+      {
+        "group": "section/go-engine-gate",
+        "executionIdentity": "e218ec19df6963ccaf7bad5b466ccb4dacee12090bebfa4dc3c1f2ff07daf268",
+        "status": "unavailable",
+        "evidenceDigest": "8610a4b6987aac70718813f4e7001ee818d2173c4015349c60466528132bf78b"
+      }
+    ],
+    "opid": "FJ4TD9C1HVK81M3AEJM01YEB9T-landing-2b626e27"
   }
 }
