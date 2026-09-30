@@ -168,7 +168,7 @@ func TestIntentGoalsReadFlags(t *testing.T) {
 		}
 	}
 	code, stdout, stderr := bed.run(bed.owners(), "goal", "list", "--pretty")
-	if code != 2 || !strings.Contains(stdout+stderr, "--pretty formats JSON") {
+	if code != 2 || !strings.Contains(stdout+stderr, "--pretty only formats --json output") {
 		t.Fatalf("goals --pretty without --json = %d %q %q", code, stdout, stderr)
 	}
 	if code, result := bed.runJSON(bed.owners(), "goal", "list", "--pretty"); code != 0 || result.Outcome != intentConfirmed {

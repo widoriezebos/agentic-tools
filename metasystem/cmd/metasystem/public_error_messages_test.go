@@ -50,11 +50,12 @@ func TestBareGrantRevokeAndGoalOpenNameTheWayForward(t *testing.T) {
 		t.Fatalf("grant revoke = %d %+v", code, result)
 	}
 	code, result = bed.runJSON(owners, "goal", "open")
-	if code != 2 || result.Summary != "a new goal needs G, --basis, --intent, --next, --risk; nothing was done" {
+	if code != 2 || result.Summary != "a new goal needs a goal id, --basis, --intent, --next, --risk; nothing was done" {
 		t.Fatalf("goal open = %d %q", code, result.Summary)
 	}
-	if result.Decision != "metasystem goal open G --intent TEXT --next TEXT --risk severity=N,novelty=N,exposure=N,accumulation=N --basis TEXT; the four risk answers and their basis are a judgement about this goal, not a default" {
-		t.Fatalf("goal open decision = %q", result.Decision)
+	want := []string{"metasystem", "goal", "open", "GOAL", "--json", "--basis", "TEXT", "--intent", "TEXT", "--next", "TEXT", "--risk", "severity=N,novelty=N,exposure=N,accumulation=N"}
+	if result.Next == nil || !slices.Equal(result.Next.Argv, want) || result.Decision != "" {
+		t.Fatalf("goal open next = %+v, decision %q", result.Next, result.Decision)
 	}
 }
 

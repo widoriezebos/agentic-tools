@@ -163,6 +163,17 @@ func gcliForgivingWords(t *testing.T, label, verb string, code int, stderr, sent
 	}
 }
 
+// gcliForgivingRun asserts a two-line refusal whose second line is the
+// command that resolves it ("Messages a Person Reads").
+func gcliForgivingRun(t *testing.T, label, verb string, code int, stderr, sentence, run string) {
+	t.Helper()
+	lines := gcliForgivingLines(stderr)
+	if code == 0 || len(lines) != 2 || !strings.HasPrefix(lines[0], "metasystem "+verb+": "+sentence) ||
+		!strings.HasPrefix(lines[1], "run: "+run) || strings.Contains(stderr, "needed first") {
+		t.Fatalf("%s did not print the two-line run refusal (sentence %q, run %q): code=%d stderr=%q", label, sentence, run, code, stderr)
+	}
+}
+
 // gcliForgivingCommand asserts the public command refusal and returns the
 // printed remedy: the verb's sentence and "run: COMMAND".
 func gcliForgivingCommand(t *testing.T, label, verb string, code int, stderr string) []string {
@@ -485,8 +496,11 @@ func TestGoalCLIForgivingBudgetMembers(t *testing.T) {
 	tip := bed.tip()
 	code, _, stderr := gcliForgivingPublic(bed, "goal", "budget", "mixed-box", "4h/6/360m/1/2", gcliForgivingFixture,
 		"--elapsed-limit", "8h", "--attempt-limit", "10", "--reserved-job-minutes-limit", "1200", "--active-job-limit", "1", "--review-round-limit", "3")
-	gcliForgivingWords(t, "compact and long form together", "goal budget", code, stderr,
-		"gives the box twice, as 4h/6/360m/1/2 and as --elapsed-limit", "give either the compact box or all five long limits")
+	gcliForgivingRun(t, "compact and long form together", "goal budget", code, stderr,
+		"the budget is given twice, as 4h/6/360m/1/2 and as --elapsed-limit", "metasystem goal budget mixed-box 4h/6/360m/1/2")
+	if lines := gcliForgivingLines(stderr); strings.Contains(lines[len(lines)-1], "--attempt-limit") {
+		t.Fatalf("the retry kept a long limit: %q", stderr)
+	}
 	if bed.tip() != tip {
 		t.Fatal("the mixed box published")
 	}
@@ -764,7 +778,11 @@ func TestGoalCLIForgivingHumanRefusals(t *testing.T) {
 
 	tip = bed.tip()
 	code, _, stderr = gcliForgivingPublic(bed, "goal", "unapprove", "fix-docs", "--by", "Wido", gcliForgivingFixture)
-	gcliForgivingWords(t, "unapprove's unseen reason", "goal unapprove", code, stderr, "needs the reason the approval is withdrawn", "say why with --reason TEXT")
+	gcliForgivingRun(t, "unapprove's unseen reason", "goal unapprove", code, stderr, "withdrawing an approval needs a reason",
+		"metasystem goal unapprove fix-docs --by Wido")
+	if !strings.Contains(stderr, "--reason TEXT") {
+		t.Fatalf("the retry names no --reason: %q", stderr)
+	}
 
 	// accept-risk with fixture authority and a temporary word.
 	jobs := filepath.Join(bed.root, "artifacts", "agents", "jobs")
