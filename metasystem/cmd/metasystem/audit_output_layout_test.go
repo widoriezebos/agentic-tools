@@ -318,11 +318,15 @@ func TestAuditOutputLayout(t *testing.T) {
 			}
 
 			// On a terminal the same page is coloured; with colour off not
-			// one escape is printed.
-			tty := env
+			// one escape is printed. The coloured run has a bed of its own,
+			// so an act is coloured on its first run too.
+			fresh := c.bed(t)
+			freshRoot := realpath.Resolve(fresh.cwd)
+			tty := layoutEnv(t, fresh.now, filepath.Dir(freshRoot), freshRoot)
 			tty.TTY, tty.Color = true, true
-			bed.owners.textEnv = func(io.Writer) textui.Env { return tty }
-			_, coloured, colouredErr := runLayoutCase(t, c, bed)
+			fresh.owners.textEnv = func(io.Writer) textui.Env { return tty }
+			fresh.replace = append([]string{"~/" + filepath.Base(freshRoot), "~/GitHub/" + layoutStableBase(fresh.replace, freshRoot)}, fresh.replace...)
+			_, coloured, colouredErr := runLayoutCase(t, c, fresh)
 			if plain := layoutStripANSI(coloured + colouredErr); plain != got && layoutModeOf(t, c.args) == auditEnforce {
 				t.Errorf("%s: the coloured page is not the plain page in colour:\n%s", c.name, plain)
 			}
@@ -395,6 +399,9 @@ var (
 	layoutKeyValues  = regexp.MustCompile(`\b[a-z][a-zA-Z_-]*=\S+\s+[a-z][a-zA-Z_-]*=\S+`)
 	layoutErrorChain = regexp.MustCompile(`\b(open|stat|read|lstat) /\S*: no such file`)
 	layoutSymbols    = "●○!✗✓?"
+	// layoutBannerSymbols lead a banner line (P12): a live condition or one
+	// that needs a person. An act's ✓ or a refusal's ✗ is a headline.
+	layoutBannerSymbols = "●!"
 )
 
 // layoutProblems are the §5 shape rules a page breaks: the headline first
@@ -411,7 +418,7 @@ func layoutProblems(page string, width int, replace []string) []string {
 	}
 	lines := strings.Split(strings.TrimSuffix(page, "\n"), "\n")
 	headline := 0
-	if first := []rune(lines[0]); len(first) > 1 && strings.ContainsRune(layoutSymbols, first[0]) && first[1] == ' ' {
+	if first := []rune(lines[0]); len(first) > 1 && strings.ContainsRune(layoutBannerSymbols, first[0]) && first[1] == ' ' {
 		for index, line := range lines {
 			if line == "" {
 				headline = index + 1
