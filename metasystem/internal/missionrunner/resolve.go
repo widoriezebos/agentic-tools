@@ -35,7 +35,7 @@ func (e *Engine) ResolveTaint(taintID int64, variant, tree, resolvedBy, reason s
 	// Human-reserved (the design's words): an agent classifying as MAIN,
 	// DELEGATE, supervision, or adapter never resolves taint — the whole
 	// point of the taint is that the machines stop until a human rules.
-	if view, err := lease.Classify(e.Root, e.callerPid()); err != nil {
+	if view, err := lease.ClassifyPersonAt(e.Root, e.Root, e.callerPid(), e.now()); err != nil {
 		fmt.Fprintf(e.answerErrors(), "resolve refused: caller classification failed: %v\n", err)
 		return 3
 	} else if view.Class != lease.ClassHuman {

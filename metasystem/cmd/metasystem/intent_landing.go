@@ -70,7 +70,7 @@ func (inv *intentInvocation) landing() laneVerbOwners {
 		owners.end = batchowner.EndLaneOwner
 	}
 	if owners.person == nil {
-		owners.person = provenPerson(humanauthority.KernelReader{}, func() int64 { return int64(os.Getppid()) }, time.Now)
+		owners.person = provenPerson(humanauthority.KernelReader{}, func() int64 { return int64(os.Getppid()) }, goalCommandNow)
 	}
 	if owners.ready == nil {
 		owners.ready = batchowner.LandingLaneReady

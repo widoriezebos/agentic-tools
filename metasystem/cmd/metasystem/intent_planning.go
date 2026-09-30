@@ -256,18 +256,22 @@ func intentPlanningCommands() []intentCommand {
 		},
 		{
 			object: "grant", action: "add", audience: "human", summary: "record a power of attorney a seat acts under",
-			usage: []string{"metasystem grant add --tiers LIST --acts LIST --until DATE"},
+			usage: []string{"metasystem grant add --acts everything --for 24h", "metasystem grant add --tiers LIST --acts LIST --until DATE"},
 			details: []string{
-				"--acts is from approve, budget and resume-parked; a seat then acts with --under GRANT on approve, budget and resume of a parked goal.",
-				"--until is the last day covered, YYYY-MM-DD, at most seven days out. The grant's id is printed.",
+				"--acts everything: the main session holding this checkout's lease acts for you in every person's act, bar granting, enrolling and taking the helm, until the end.",
+				"Its end is --for 8h, 24h, 7d or 1w (elapsed), or --until 18:00 (today, or tomorrow once passed), --until tomorrow or --until YYYY-MM-DD (the end of that day), at most one week.",
+				"Only you at the enrolled terminal grant it. Rebuild every seat's engine before the first: older engines refuse a ledger that holds one.",
+				"--acts from approve, budget and resume-parked: a seat then acts with --under GRANT on approve, budget and resume of a parked goal.",
+				"There --until is the last day covered, YYYY-MM-DD, at most seven days out. The grant's id is printed.",
 			},
 			flags: withFlags([]intentFlag{
 				{name: "tiers", value: "LIST", usage: "the tiers covered, for example 1 or 1,2"},
-				{name: "acts", value: "LIST", usage: "the acts covered: approve, budget, resume-parked"},
-				{name: "until", aliases: []string{"expires"}, value: "DATE", usage: "the last day covered, YYYY-MM-DD"},
+				{name: "acts", value: "LIST", usage: "everything, or the acts covered: approve, budget, resume-parked"},
+				{name: "for", value: "DURATION", usage: "with everything: how long, 8h, 24h, 7d or 1w"},
+				{name: "until", aliases: []string{"expires"}, value: "DATE", usage: "the end: HH:MM, tomorrow or YYYY-MM-DD"},
 			}, intentHumanActFlags, intentRelayFlags),
 			maxArgs:  0,
-			examples: []string{"metasystem grant add --tiers 1 --acts approve,budget --until 2026-10-01"},
+			examples: []string{"metasystem grant add --acts everything --for 24h", "metasystem grant add --acts everything --until 18:00", "metasystem grant add --tiers 1 --acts approve,budget --until 2026-10-01"},
 			run:      runIntentGrant,
 		},
 		{
@@ -1546,6 +1550,12 @@ func runIntentUnapprove(inv *intentInvocation) int {
 var grantActs = map[string]string{"approve": "approve", "budget": "set-budget", "resume-parked": "unpark"}
 
 func runIntentGrant(inv *intentInvocation) int {
+	if isGeneralActs(inv.input.text("acts")) {
+		return runIntentGrantEverything(inv)
+	}
+	if inv.input.has("for") {
+		return inv.refuse("", "--for goes with --acts everything; a scoped grant ends with --until YYYY-MM-DD; nothing was done", grantEndExamples)
+	}
 	var missing []string
 	for _, name := range []string{"tiers", "acts", "until"} {
 		if inv.input.text(name) == "" {
@@ -1572,9 +1582,13 @@ func runIntentGrant(inv *intentInvocation) int {
 	if problem := inv.selectRoot(); problem != nil {
 		return inv.render(*problem)
 	}
-	actor, _, problem := inv.actingAs("grant", "", actorHuman)
+	actor, proof, problem := inv.actingAs("grant", "", actorHuman)
 	if problem != nil {
 		return inv.render(*problem)
+	}
+	if proof != nil && proof.Helm != nil && proof.Helm.Grant != "" {
+		_ = humanauthority.RecordAttorneyRefusal(inv.stateRoot, *proof, "grant add", "a grant is added only by the person's own proof", proof.CheckedAt)
+		return inv.refuse("", "a power of attorney is added only by the person's own proof, never under a grant; nothing was done", humanauthority.PersonActRemedy("metasystem grant add"))
 	}
 	args := append([]string{"--root", inv.stateRoot, "--tiers", inv.input.text("tiers"), "--verbs", strings.Join(verbs, ","), "--expires", inv.input.text("until")}, actor...)
 	report := &ownerReport{}
@@ -1614,12 +1628,22 @@ func runIntentRevoke(inv *intentInvocation) int {
 	if problem != nil {
 		return inv.render(*problem)
 	}
+	// A local revoke waits, bounded, for acts admitted under a grant to
+	// finish; it publishes either way.
+	var waited []string
+	if checkout, err := canonicalCheckout(inv.stateRoot); err == nil {
+		if locked, lockErr := inv.owners.attorney.withDefaults().exclusive(checkout, revokeLockWait); lockErr == nil && !locked {
+			waited = append(waited, "an act admitted under a grant was still running after "+revokeLockWait.String()+"; the revoke is published anyway")
+		}
+	}
 	args := append([]string{"--root", inv.stateRoot, "--id", entry}, actor...)
-	return inv.render(inv.ownerCall([]intentTarget{{Kind: "grant", ID: entry}}, func(dependencies syncRequestDependencies) int {
+	result := inv.ownerCall([]intentTarget{{Kind: "grant", ID: entry}}, func(dependencies syncRequestDependencies) int {
 		return runGoalRevokeWithInputs(args, inv.owners.prove, inv.owners.commandNow, dependencies)
 	}, func() intentResult {
 		return intentResult{Summary: "revoked " + entry, Data: map[string]any{"grant": entry}}
-	}))
+	})
+	result.text = append(result.text, waited...)
+	return inv.render(result)
 }
 
 func runIntentSplit(inv *intentInvocation) int {
@@ -2022,7 +2046,18 @@ func runIntentGrantList(inv *intentInvocation) int {
 		entries = projection.Tree.Root.PowerOfAttorney
 	}
 	lines, views := []string{}, []map[string]any{}
+	zone := inv.owners.helm.withDefaults().zone
 	for _, entry := range entries {
+		if entry.General() {
+			line, live := generalGrantLine(entry, now, zone)
+			if !live && !inv.input.switched("all") {
+				continue
+			}
+			lines = append(lines, line)
+			views = append(views, map[string]any{"grant": entry.ID, "by": entry.By, "acts": entry.Verbs, "for": entry.For, "checkout": entry.Checkout,
+				"lineage": entry.Lineage, "since": entry.Since, "until": entry.Until, "revoked": entry.Revoked, "live": live})
+			continue
+		}
 		live, why := entry.LiveAt(now)
 		if !live && !inv.input.switched("all") {
 			continue

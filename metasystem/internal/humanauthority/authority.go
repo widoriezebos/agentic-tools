@@ -868,7 +868,7 @@ func Prove(root string, invokerPID int64, reader Reader, now time.Time) (Proof, 
 		proof.Grade = ""
 		return proof, fmt.Errorf("%s: human authority has no readable terminal enrollment: %w", proof.Outcome, err)
 	}
-	return proveEnrolled(root, invokerPID, reader, now, enrollment, AtHelm)
+	return proveEnrolled(root, invokerPID, reader, now, enrollment, AtHelm, AtAttorney)
 }
 
 // HelmGrant is what the seat's helm answers for a caller the walk refused:
@@ -878,12 +878,22 @@ type HelmGrant struct {
 	Since    string `json:"since,omitempty"`
 	Class    string `json:"class,omitempty"`
 	Checkout string `json:"checkout,omitempty"`
+	// Grant names the general power of attorney that admitted the caller
+	// when the person is away; empty for the helm. Until is its end.
+	Grant string `json:"grant,omitempty"`
+	Until string `json:"until,omitempty"`
 }
 
 // AtHelm is the owner seam the command edge wires once at startup: while the
 // seat is at the helm, a caller the enrolled-terminal walk refused is the
 // holder's act when the helm grants it. Nil in the library: no helm.
 var AtHelm func(root string, invokerPID int64) (HelmGrant, bool)
+
+// AtAttorney is the owner seam for a general power of attorney, wired once at
+// startup by the command edge: when the walk refused and the helm did not
+// admit, a caller a live grant admits at now is the granting person's act,
+// with a helm-shaped proof whose Grant names the grant. Nil in the library.
+var AtAttorney func(root string, invokerPID int64, now time.Time) (HelmGrant, bool)
 
 // HelmProof is the proof of an act the person at the helm admitted: proven
 // at the enrolled grade, bound to root, naming the holder. The enrolled
@@ -909,7 +919,7 @@ func HelmProof(root string, grant HelmGrant, now time.Time) (Proof, error) {
 
 // proveEnrolled walks to the enrolled terminal; when the walk refuses and the
 // seat's helm admits the caller, the act is the holder's (HelmProof).
-func proveEnrolled(root string, invokerPID int64, reader Reader, now time.Time, enrollment Enrollment, atHelm func(string, int64) (HelmGrant, bool)) (Proof, error) {
+func proveEnrolled(root string, invokerPID int64, reader Reader, now time.Time, enrollment Enrollment, atHelm func(string, int64) (HelmGrant, bool), atAttorney func(string, int64, time.Time) (HelmGrant, bool)) (Proof, error) {
 	signatures, signatureDigest, err := signatureSet(root)
 	if err != nil {
 		return Proof{}, err
@@ -929,6 +939,15 @@ func proveEnrolled(root string, invokerPID int64, reader Reader, now time.Time, 
 			if helmErr == nil {
 				helm.InvokerRef, helm.SignatureSetDigest, helm.Nodes = proof.InvokerRef, proof.SignatureSetDigest, proof.Nodes
 				return helm, nil
+			}
+		}
+	}
+	if err != nil && atAttorney != nil {
+		if grant, admitted := atAttorney(root, invokerPID, now); admitted && grant.Grant != "" {
+			attorney, attorneyErr := HelmProof(root, grant, now)
+			if attorneyErr == nil {
+				attorney.InvokerRef, attorney.SignatureSetDigest, attorney.Nodes = proof.InvokerRef, proof.SignatureSetDigest, proof.Nodes
+				return attorney, nil
 			}
 		}
 	}

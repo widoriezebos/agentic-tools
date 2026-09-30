@@ -1888,6 +1888,9 @@ func Grant(r VerbRequest, proof *humanauthority.Proof, tiers []uint8, verbs []st
 	if r.Actor.Human == "" {
 		return PublishResult{}, fmt.Errorf("goal grant is human-only and requires --by from an authorized human boundary")
 	}
+	if proof != nil && proof.Helm != nil && proof.Helm.Grant != "" {
+		return PublishResult{}, fmt.Errorf("a power of attorney is granted only by the person's own proof at the enrolled terminal, never under a grant (%s): %s", proof.Helm.Grant, humanauthority.PersonActRemedy("metasystem grant add"))
+	}
 	_, _, temporary, err := approvalProofClassForApprove(r.Endpoint.Root, proof)
 	if err != nil {
 		return PublishResult{}, err

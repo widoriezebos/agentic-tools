@@ -243,6 +243,9 @@ func main() {
 	// While the seat is at the helm, a person proof refused in the seat's
 	// primary checkout is the holder's act (helm_admits.go).
 	wireHelmAdmission()
+	// A live general power of attorney makes the act of the main session
+	// holding the checkout's lease the granting person's (attorney_admits.go).
+	wireAttorneyAdmission()
 	os.Exit(dispatch(os.Args[1:]))
 }
 

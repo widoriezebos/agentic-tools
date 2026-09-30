@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 )
@@ -95,6 +96,9 @@ type Classification struct {
 	JobId          string
 	Announcement   *Announcement
 	FixtureGranted bool
+	// Attorney is set only by ClassifyPersonAt: the general power of
+	// attorney that made this caller a person for a person-act check.
+	Attorney *humanauthority.HelmGrant
 }
 
 // ClassificationFailureKind distinguishes a failure to observe the caller

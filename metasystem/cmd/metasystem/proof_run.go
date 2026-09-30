@@ -545,7 +545,7 @@ func legacyProofLaunchAllowed(root string) bool {
 	if fixtureauth.FixtureModeRoot(root) || !goal.NewWorld(root) {
 		return true
 	}
-	classification, err := classifyVerbCaller(root, int64(os.Getppid()))
+	classification, err := personVerbCaller(root, int64(os.Getppid()))
 	return err == nil && classification.Class == lease.ClassHuman
 }
 

@@ -430,6 +430,12 @@ func (inv *intentInvocation) helmStatusLines(path string) []string {
 // the helm, and leaves it untouched otherwise.
 func (inv *intentInvocation) withHelm(result intentResult, path string) intentResult {
 	lines := inv.helmStatusLines(path)
+	if attorney := inv.attorneyStatusLine(path); attorney != "" {
+		lines = append(lines, attorney)
+		if data, ok := result.Data.(map[string]any); ok {
+			data["powerOfAttorney"] = attorney
+		}
+	}
 	if lines == nil {
 		return result
 	}

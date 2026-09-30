@@ -726,6 +726,11 @@ func syncReqClassifiedWithTerminalGradeAtWithDependencies(root, by, lineageFlag 
 		Endpoint: e, Actor: goal.Actor{Machine: machine, Lineage: lineage, Human: by},
 		Authority: authority, Ulid: ulid, Now: now, CallerClass: classification.Class,
 	}
+	if authority != nil && authority.Helm != nil && authority.Helm.Grant != "" {
+		// The act a general grant answered re-checks it at every tip it
+		// lands on; the binding ends with this request.
+		req.Endpoint = req.Endpoint.WithAttorneyEffect(authority.Helm.Grant, func() (time.Time, error) { return commandNow(root) })
+	}
 	if classification.Holder && classification.ClaimEpoch != nil {
 		req.EpochAuthority = goal.EpochAuthorityHolder
 	}
@@ -3072,7 +3077,12 @@ func runGoalSplitWithInputs(args []string, commandNow func(string) (time.Time, e
 	var proof *humanauthority.Proof
 	var ratification goal.SplitRatification
 	if f.by != "" {
-		observed, proofErr := humanauthority.Prove(f.root, int64(os.Getppid()), nil, time.Now().UTC())
+		now, nowErr := commandNow(f.root)
+		if nowErr != nil {
+			dependencies.complain("SPLIT_RATIFY_REFUSED: goal split could not read its clock:", nowErr)
+			return 1
+		}
+		observed, proofErr := humanauthority.Prove(f.root, int64(os.Getppid()), nil, now)
 		if proofErr != nil {
 			dependencies.complain("SPLIT_RATIFY_REFUSED: goal split could not prove enrolled human ancestry:", proofErr)
 			return 1
