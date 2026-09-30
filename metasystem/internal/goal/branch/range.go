@@ -51,6 +51,7 @@ func (e *RangeError) Error() string {
 
 // RefusalCode is the refusal's code.
 func (e *RangeError) RefusalCode() string { return e.Code }
+
 func refuse(commit, reason string) error { return &RangeError{RangeCode, commit, reason} }
 
 func parseUnits(value string) ([]string, bool) {

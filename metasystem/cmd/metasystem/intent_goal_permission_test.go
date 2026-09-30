@@ -29,7 +29,7 @@ func TestIntentGoalAllowAndDisallowStopTestChanges(t *testing.T) {
 	code, result := bed.runJSON(bed.owners(), allow...)
 	bed.expectNoEffect(before, allow, code, result)
 	if code != 1 || !strings.Contains(result.Summary, "allowing stop-test changes is a person's act") ||
-		!strings.Contains(result.Decision, "metasystem goal allow "+bedGoal+" stop-test-changes --reason TEXT") {
+		result.Next == nil || strings.Join(result.Next.Argv, " ") != "metasystem goal allow "+bedGoal+" stop-test-changes --reason TEXT" {
 		t.Fatalf("an agent's allow = %d %+v; want a person's-act refusal naming the command", code, result)
 	}
 	// The word itself is checked first: an unknown permission lists the known

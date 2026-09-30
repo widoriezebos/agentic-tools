@@ -347,7 +347,7 @@ func TestIntentRepairGoalsGitAdapterAcceptsHandEditsThroughReconcile(t *testing.
 	if len(calls) != 1 || !slicesEqual(calls[0][2:], []string{"goal", "reconcile", "--root", root, "--by", "Wido", "--id", "another-goal"}) {
 		t.Fatalf("scoped owner argv = %v", calls)
 	}
-	if code == 0 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "RECONCILE_OUTSIDE_SCOPE") || !strings.Contains(result.Summary, "standing-validation") {
+	if code == 0 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "not only of another-goal") || !strings.Contains(result.Summary, "standing-validation") {
 		t.Fatalf("publication outside its named goals: %d %+v", code, result)
 	}
 	if record, exists, err := goal.ReadBase(root); err != nil || exists && (record.RefreshDue || record.Publishing) {
@@ -506,7 +506,7 @@ func TestIntentRepairGoalsGitAdapterAcceptsRemoteHistoryInADeclaredCoordinator(t
 	t.Setenv("METASYSTEM_FAKE_PROCESS_IDENTITY_FILE", emptyTable)
 	var calls [][]string
 	code, result := runIntentRealOwner(t, root, &calls, "goal", "sync", "--accept-remote-history", "--by", "Wido")
-	if result.Outcome != intentRefused || code == 0 || !strings.Contains(result.Summary, "the brain never carries a human's word into goal repair") ||
+	if result.Outcome != intentRefused || code == 0 || !strings.Contains(result.Summary, "which never acts in a person's name for goal repair") ||
 		goalSyncMutationGit(t, root, "rev-parse", goal.AcceptedRef) != later {
 		t.Fatalf("declared coordinator, no terminal fact: %d %+v", code, result)
 	}

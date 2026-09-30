@@ -606,7 +606,7 @@ func TestIntentBuiltUnitToLanding(t *testing.T) {
 	launches := len(c.starts())
 	code, result = c.do(append([]string{"work", "build", c.id, "unclaimed", "--brief", c.brief("unclaimed.md", "No claim.\n"), "--lines", "5"}, workCheck...)...)
 	// The claim is checked before any run is reserved.
-	if result.Outcome == intentConfirmed || !strings.Contains(result.Summary, "GOAL_BRANCH_NOT_HOLDER") || len(c.starts()) != launches {
+	if result.Outcome == intentConfirmed || !strings.Contains(result.Summary, "is not claimed by this session") || len(c.starts()) != launches {
 		t.Fatalf("unclaimed build: code=%d %+v", code, result)
 	}
 	code, result = c.do("work", "revise", "run:"+readFailed, "--brief", c.brief("unclaimed-fold.md", "No claim.\n"))

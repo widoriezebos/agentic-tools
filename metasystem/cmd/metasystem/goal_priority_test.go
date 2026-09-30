@@ -27,7 +27,7 @@ func TestGoalPriorityAuthority(t *testing.T) {
 		stderr, code := captureStderr(t, func(stdout, stderr io.Writer) int {
 			return runGoalSetPriorityWithAuthorityAndInputs(args, unobserved, withStreams(fixture.dependencies(), stdout, stderr))
 		})
-		if code == 0 || !strings.Contains(stderr, "freshly observed enrolled-terminal human authority") {
+		if code == 0 || !strings.Contains(stderr, "only a person sets priorities") {
 			t.Fatalf("a human name and supplied lineage reordered without observed authority: code=%d stderr=%q", code, stderr)
 		}
 		endpoint, err := fixture.resolve(root)
@@ -159,7 +159,7 @@ func TestGoalPrioritySelection(t *testing.T) {
 		stdout, code := captureStdout(t, func(stdout, stderr io.Writer) int {
 			return fixture.next([]string{"--root", root, "--machine", "m1"}, stdout, stderr)
 		})
-		want := "no claimable goal for machine m1; claim would refuse 1 (first: over-norm): GOAL_NORM_REFUSED"
+		want := "no claimable goal for machine m1; claim would refuse 1 (first: over-norm): goal over-norm asks for 2400m"
 		if code != 0 || !strings.Contains(stdout, want) || strings.Contains(stdout, "no matching eligible work") {
 			t.Fatalf("refused selection: code=%d output=%q, want %q", code, stdout, want)
 		}

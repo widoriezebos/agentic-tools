@@ -106,8 +106,8 @@ func TestIntentBuildForeignClaimRefused(t *testing.T) {
 	before := bed.goalFile(bedGoal)
 	result := claimFixtureBuild(t, bed, owners)
 	after := bed.goalFile(bedGoal)
-	if result.Outcome != intentRefused || !strings.Contains(result.Summary, "GOAL_BRANCH_NOT_HOLDER") ||
-		!strings.Contains(result.Summary, "mac-cli+m1") || after.Claimed == nil || after.Claimed.Machine != "mac-other" ||
+	if result.Outcome != intentRefused || !strings.Contains(result.Summary, "held by another session, not mac-cli (m1)") ||
+		strings.Contains(result.Summary, "GOAL_BRANCH_NOT_HOLDER") || after.Claimed == nil || after.Claimed.Machine != "mac-other" ||
 		claimHistory(after) != claimHistory(before) || len(bed.starter.launched()) != 0 {
 		t.Fatalf("foreign claim: %+v claimed=%+v launches=%v", result, after.Claimed, bed.starter.launched())
 	}

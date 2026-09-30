@@ -45,7 +45,7 @@ func TestGoalSyncOwnersRunInThisProcess(t *testing.T) {
 
 	// The bed names no lineage and no person: the owner's own refusal comes
 	// back as the result, not on this process's standard error.
-	if code, result := b.do("goal", "sync", "--refresh"); code == 0 || !strings.Contains(result.Summary, "mutations carry their coordinator's identity") {
+	if code, result := b.do("goal", "sync", "--refresh"); code == 0 || !strings.Contains(result.Summary, "no session is named") {
 		t.Fatalf("goal sync --refresh = %d %+v", code, result)
 	}
 	if _, result := b.do("goal", "sync", "--publish", "--goal", "g", "--by", "Wido"); result.Summary != "goal reconcile: the bed proves no person" {

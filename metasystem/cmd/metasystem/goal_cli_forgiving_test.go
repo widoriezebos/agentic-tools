@@ -11,7 +11,6 @@ import (
 
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 )
 
 // The forgiving budget scenarios of goal-cli-fixtures.sh (forgiving-*), run
@@ -413,7 +412,9 @@ func TestGoalCLIForgivingBudgetStates(t *testing.T) {
 	// A done goal refuses with words only.
 	tip := bed.tip()
 	code, _, stderr = gcliForgivingPublic(bed, "goal", "budget", "port-engine", "norm", "--by", "Wido", gcliForgivingFixture)
-	gcliForgivingWords(t, "port-engine", "goal budget", code, stderr, "the goal is done and its archived budget is read-only", "reopen the goal")
+	if remedy := gcliForgivingCommand(t, "port-engine", "goal budget", code, stderr); strings.Join(remedy, " ") != "metasystem goal reopen port-engine" || !strings.Contains(stderr, "the goal is done and its archived budget is read-only") {
+		t.Fatalf("port-engine: %q", stderr)
+	}
 	// An unknown goal: the public router answers before the owner and names
 	// the listing as its next command (the family printed words only).
 	code, _, stderr = gcliForgivingPublic(bed, "goal", "budget", "absent-goal", "norm", "--by", "Wido", gcliForgivingFixture)
@@ -515,11 +516,13 @@ func TestGoalCLIForgivingBudgetMembers(t *testing.T) {
 
 	code, _, stderr = gcliForgivingPublic(bed, "goal", "budget", "rejected-reference", "norm", "--approved-ref", "missing-reference", gcliForgivingFixture)
 	gcliForgivingWords(t, "a rejected approval reference", "goal budget", code, stderr,
-		"GOAL_NORM_REFUSED: --approved-ref missing-reference", "the approved reference must cover this exact goal revision and box")
+		"--approved-ref missing-reference names no ruling", "the approved reference must cover this exact goal revision and box")
 
 	code, _, stderr = gcliForgivingPublic(bed, "goal", "budget", "fixture-over-norm", "8h/10/1201m/1/3", gcliForgivingFixture)
-	gcliForgivingWords(t, "fixture authority over the norm", "goal budget", code, stderr,
-		"GOAL_NORM_REFUSED: goal fixture-over-norm", humanauthority.PersonActRemedy("the over-norm box"))
+	if remedy := gcliForgivingCommand(t, "fixture authority over the norm", "goal budget", code, stderr); !strings.Contains(stderr, "goal fixture-over-norm asks for 1201m") ||
+		strings.Join(remedy[:3], " ") != "metasystem system enroll" {
+		t.Fatalf("fixture authority over the norm must say why and name system enroll: %q", stderr)
+	}
 	if bed.tip() != tip {
 		t.Fatal("a words refusal published")
 	}
@@ -542,12 +545,15 @@ func TestGoalCLIForgivingBudgetIdentityAliases(t *testing.T) {
 		t.Fatalf("an explicit --by did not win over the enrollment name:\n%s", record)
 	}
 
-	// A fieldless enrollment: words only.
+	// A fieldless enrollment: the enroll command, the name left to the person.
 	gcliForgivingOpen(t, bed, "nameless-enrollment")
 	writeFixtureEnrollment(t, bed.root, "")
 	tip := bed.tip()
 	code, _, stderr := gcliForgivingPublic(bed, "goal", "budget", "nameless-enrollment", "norm", gcliForgivingFixture)
-	gcliForgivingWords(t, "a fieldless enrollment", "goal budget", code, stderr, "the enrolled terminal has no recorded name", "")
+	if remedy := gcliForgivingCommand(t, "a fieldless enrollment", "goal budget", code, stderr); !strings.Contains(stderr, "the enrolled terminal has no recorded name") ||
+		strings.Join(remedy, " ") != "metasystem system enroll --name NAME" {
+		t.Fatalf("a fieldless enrollment must name system enroll: %q", stderr)
+	}
 	if bed.tip() != tip {
 		t.Fatal("the nameless refusal published")
 	}
@@ -807,7 +813,7 @@ func TestGoalCLIForgivingHumanRefusals(t *testing.T) {
 	// set-obligation (public goal edit --obligation) without its values.
 	tip = bed.tip()
 	code, _, stderr = gcliForgivingPublic(bed, "goal", "edit", "ship-widget", "--obligation", "DRAFT", gcliForgivingFixture)
-	gcliForgivingWords(t, "set-obligation's absent values", "goal edit", code, stderr, "requires identity, recurrence", "supply every missing named flag")
+	gcliForgivingWords(t, "set-obligation's absent values", "goal edit", code, stderr, "an obligation needs every one of its flags", "give every option an obligation takes")
 
 	// enroll-terminal (public system enroll) without a name: the public form
 	// prints its own usage as the command, where the family printed words.

@@ -111,7 +111,7 @@ func (fixture *landingOwnerOrdinaryFixture) resolve(root string) (batchowner.Pro
 		return batchowner.ProductionBatchOwnerInputs{}, fmt.Errorf("landing-owner enrollment on resolution %d is %q, want %q", fixture.calls, fixture.machine, want)
 	}
 	if fixture.machine == "" {
-		return batchowner.ProductionBatchOwnerInputs{}, fmt.Errorf("no machine nickname is enrolled on this machine; name it once with: git config metasystem.goal.machine NAME")
+		return batchowner.ProductionBatchOwnerInputs{}, fmt.Errorf("this machine has no name yet; name it once\nrun: git config metasystem.goal.machine <name>")
 	}
 	lockDir, queueDir, err := batchowner.BatchOwnerFixtureProofLockDirectories(root)
 	if err != nil {
