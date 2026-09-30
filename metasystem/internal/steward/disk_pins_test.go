@@ -348,3 +348,31 @@ func TestPinsHoldWhenTheirTimeOrLockCannotBeRead(t *testing.T) {
 		})
 	}
 }
+
+// TestAGracePinSaysWhatIsKnownOfItsReplacement (F4): a re-arm seconds ago
+// printed every older pin as "replaced 0s ago". Only the installed
+// generation's minting time is known; an older pin's own replacement time is
+// not, and a duration under a minute is never printed as zero.
+func TestAGracePinSaysWhatIsKnownOfItsReplacement(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 9, 30, 8, 53, 15, 0, time.UTC)
+	name := "generation-183-" + strings.Repeat("b", 64)
+	for label, c := range map[string]struct {
+		minted time.Time
+		want   string
+	}{
+		"re-armed seconds ago": {minted: now.Add(-4 * time.Second),
+			want: "generation 183 was replaced (time unknown); it stays for disk.pin-grace-hours after generation 205 was installed under a minute ago"},
+		"re-armed two hours ago": {minted: now.Add(-2 * time.Hour),
+			want: "generation 183 was replaced (time unknown); it stays for disk.pin-grace-hours after generation 205 was installed 2h0m0s ago"},
+	} {
+		keep := pinKeep{installed: "generation-205-" + strings.Repeat("a", 64), current: 205, replacedAt: c.minted, generation: map[int]string{}}
+		verdict := judgePin(filepath.Join("/pins", name), keep, nil, now, 24*time.Hour)
+		if verdict.Decision != diskstore.Keep || verdict.Reason != c.want {
+			t.Errorf("%s: %+v, want the reason %q", label, verdict, c.want)
+		}
+		if strings.Contains(verdict.Reason, " 0s ago") {
+			t.Errorf("%s: a missing or sub-minute time printed as zero: %q", label, verdict.Reason)
+		}
+	}
+}

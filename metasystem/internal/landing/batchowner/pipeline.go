@@ -129,16 +129,17 @@ func PipelineStall(installation string) time.Duration {
 	return config.DefaultPipelineSettings().Stall
 }
 
-// AcceptedClaims maps every live claimed goal of the checkout's accepted
-// ledger to its holder: the claims a one-shot view checks the board
-// against.
-func AcceptedClaims(checkout string) func() (map[string]string, error) {
+// AcceptedClaims maps every live claimed goal of the accepted ledger to its
+// holder: the claims a one-shot view checks the board against. ledgerRoot
+// is the installation's state root: the ledger's files are read relative to
+// it, and a template checkout's repository top holds none.
+func AcceptedClaims(ledgerRoot string) func() (map[string]string, error) {
 	return func() (map[string]string, error) {
-		tip, exists, err := goal.AcceptedLedgerTip(checkout)
+		tip, exists, err := goal.AcceptedLedgerTip(ledgerRoot)
 		if err != nil || !exists {
 			return map[string]string{}, err
 		}
-		projection, err := goal.ProjectAt(checkout, tip)
+		projection, err := goal.ProjectAt(ledgerRoot, tip)
 		if err != nil {
 			return nil, err
 		}

@@ -55,9 +55,13 @@ func runIntentAllow(inv *intentInvocation) int {
 	// the refusal names the command the person runs.
 	agent := inv.input.has("lineage") || inv.owners.dependencies.ownerLineage != nil && inv.owners.dependencies.ownerLineage() != ""
 	if agent && inv.input.text("by") == "" {
-		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: inv.targets(id),
-			Summary: fmt.Sprintf("allowing %s is a person's act, not an agent session's; nothing was done", permission.Words),
-			next:    shellWords(command), nextReason: "in a terminal you opened yourself"})
+		// A live general grant that admits this session makes the act the
+		// granting person's (M6); the person's proof below answers under it.
+		if _, granted := inv.attorneyActor(); !granted || inv.input.has("lineage") {
+			return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: inv.targets(id),
+				Summary: fmt.Sprintf("allowing %s is a person's act, not an agent session's; nothing was done", permission.Words),
+				next:    shellWords(command), nextReason: "in a terminal you opened yourself"})
+		}
 	}
 	actor, proof, refused := inv.actingAs("allow", id, actorHuman)
 	if refused != nil {

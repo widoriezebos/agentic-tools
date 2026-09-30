@@ -23,6 +23,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/missionrunner"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stoptransition"
@@ -756,4 +757,28 @@ func TestStatusShowsTheBoardAndEachUnfinishedBatch(t *testing.T) {
 			t.Fatalf("work status = %d:\n%s", code, stdout)
 		}
 	})
+}
+
+// TestStatusBoardChecksClaimsAtTheStateRoot (F3): the board's claim check
+// reads the goal ledger, whose files are read relative to the root given; in
+// a template checkout the repository top carries no plans/goals, so a check
+// there sees no claim at all and every live card reads "not claimed". The
+// one-shot view reads the ledger at the state root, where goal list does.
+func TestStatusBoardChecksClaimsAtTheStateRoot(t *testing.T) {
+	t.Parallel()
+	top := t.TempDir()
+	installation := filepath.Join(top, "metasystem")
+	var read []string
+	inv := &intentInvocation{
+		layout:    stateroot.Layout{GitRoot: top, RepositoryRoot: top, InstallationRoot: installation, InstallationRel: "metasystem", Template: true},
+		stateRoot: installation,
+		owners: intentOwners{delivery: &intentDeliveryOwners{boardView: func(ledgerRoot string, _ time.Time) board.View {
+			read = append(read, ledgerRoot)
+			return board.View{}
+		}}},
+	}
+	inv.hostBoardView(time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC))
+	if !slices.Equal(read, []string{installation}) {
+		t.Fatalf("the board checked claims at %v, want the state root %s", read, installation)
+	}
 }

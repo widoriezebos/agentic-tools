@@ -248,6 +248,12 @@ func (inv *intentInvocation) liveGeneralGrant(paths ...string) (goal.PowerOfAtto
 	if len(candidates) == 0 || inv.owners.commandNow == nil {
 		return goal.PowerOfAttorneyEntry{}, false
 	}
+	// The ledger is read where grant list reads it: at the state root. Its
+	// files are read relative to the root given, so a template checkout's
+	// repository top (status's path) finds no root record (F2).
+	if inv.stateRoot != "" {
+		first = inv.stateRoot
+	}
 	entries, err := owners.entries(first)
 	if err != nil {
 		return goal.PowerOfAttorneyEntry{}, false
