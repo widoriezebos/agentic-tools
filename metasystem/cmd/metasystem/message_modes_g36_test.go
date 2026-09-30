@@ -55,7 +55,8 @@ func groupSourceFiles(groups ...string) []string {
 func TestAuditGroupsThreeAndSixEnforceTheirFiles(t *testing.T) {
 	t.Parallel()
 	for _, want := range []string{"cmd/metasystem/intent_disk.go", "internal/evidence/person.go", "internal/gocache/resolve_domain.go",
-		"cmd/metasystem/report.go", "cmd/metasystem/test_cold_budget.go", "cmd/devgate/main.go", "internal/validate/brief_bounds_source.go"} {
+		"cmd/metasystem/report.go", "cmd/metasystem/test_cold_budget.go", "cmd/devgate/main.go", "internal/validate/brief_bounds_source.go",
+		"cmd/metasystem/passthrough_page.go"} {
 		if messageTracedModes[want] != auditEnforce || auditModes[want].messages != messageModeEnforce {
 			t.Errorf("%s is not enforced in both readings", want)
 		}
