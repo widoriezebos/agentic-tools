@@ -46,6 +46,6 @@
     "segments": [".git", ".claude", ".agents", ".codex", ".devin", ".githooks"],
     "names": ["metasystem.conf", "metasystem.conf.local"],
     "pairs": ["plans/goals", "records/goals"],
-    "shallowDirs": ["bin"]
+    "shallowDirs": ["bin", "artifacts"]
   }
 }
