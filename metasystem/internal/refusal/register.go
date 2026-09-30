@@ -426,6 +426,7 @@ var Rows = []Row{
 var Exclusions = []Exclusion{
 	{Pattern: "trunk-red-record-refused", Reason: "a batch history verb rather than a refusal returned to a caller"},
 	{Pattern: "admission-refused", Reason: "a durable batch proof status rather than a refusal returned to a caller"},
+	{Pattern: "cadence-unavailable", Reason: "the attempt name a cadence status records when its deep check could not run, not a refusal returned to a caller"},
 	{Pattern: "verifier-unavailable", Reason: "a durable batch history verb counting a failed retained verification rather than a refusal returned to a caller"},
 	{Pattern: "prove-refused", Reason: "a durable batch history verb rather than a refusal returned to a caller"},
 	{Pattern: "FETCH_HEAD", Reason: "Git's fetched-head pseudoref"},

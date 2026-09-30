@@ -254,6 +254,7 @@ func TestCadenceAbsentStandingAuthorityPublishesNonGreen(t *testing.T) {
 }
 
 func TestCadenceUnavailableRepeatWritesNothingWhileAuthorityIsMissing(t *testing.T) {
+	t.Parallel()
 	now, probe := cadenceTestStart.Add(time.Hour), cadenceProbe("section/deep", strings.Repeat("1", 64), "reused")
 	input, deps, ledger, executions := cadenceFixture(&now, probe)
 	// The last tick could not run; since then main moved (its own ledger
@@ -279,6 +280,7 @@ func TestCadenceUnavailableRepeatWritesNothingWhileAuthorityIsMissing(t *testing
 }
 
 func TestCadenceMissingAuthorityWritesNothingEvenTheFirstTime(t *testing.T) {
+	t.Parallel()
 	now, probe := cadenceTestStart.Add(time.Hour), cadenceProbe("section/deep", strings.Repeat("1", 64), "failed")
 	input, deps, ledger, executions := cadenceFixture(&now, probe)
 	deps.AuthorityGap = func(time.Time) error { return errors.New("goal standing-validation is not approved") }
@@ -397,6 +399,7 @@ func TestCadencePackagesUseNoWallClock(t *testing.T) {
 // goal's claim and release) move main without changing what the cadence
 // judges; they never count as a trunk change that runs or republishes it.
 func TestCadenceLaneRecordMoveIsNotATrunkChange(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name         string
 		prior        string
@@ -434,6 +437,7 @@ func TestCadenceLaneRecordMoveIsNotATrunkChange(t *testing.T) {
 }
 
 func TestCadenceRefusedWeightDischargeIsUnavailableNotRed(t *testing.T) {
+	t.Parallel()
 	now, probe := cadenceTestStart.Add(time.Hour), cadenceProbe("section/deep", strings.Repeat("1", 64), "failed")
 	input, deps, ledger, _ := cadenceFixture(&now, probe)
 	input.WeightDue = true
