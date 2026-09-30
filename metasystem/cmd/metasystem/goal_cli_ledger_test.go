@@ -202,7 +202,7 @@ func TestGoalCLILedgerSeatBlocker(t *testing.T) {
 	t.Parallel()
 	bed := newGoalCLIBed(t, goalCLISeed{})
 	bed.announceHolder()
-	refusal := gcliLedgerRefused(t, bed, "R-93-m1e", "goal", "open", "stray-idea", "--intent", "An improvement that blocks nothing.",
+	refusal := gcliLedgerRefused(t, bed, "a seat opens only a defect that blocks its claimed goal", "goal", "open", "stray-idea", "--intent", "An improvement that blocks nothing.",
 		"--next", "Do it.", "--risk", "severity=1,novelty=1,exposure=1,accumulation=1", "--basis", "seat blocker fixture")
 	if !strings.Contains(refusal, "--blocks") {
 		t.Fatalf("the seat open refusal does not name --blocks: %q", refusal)

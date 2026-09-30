@@ -3154,7 +3154,7 @@ func TestCommitProofTerminalTriesARefusedLockAgainAndNamesTheHolder(t *testing.T
 	for _, want := range []string{
 		"try 1 of 6 waits behind lock fence is held by pid 4242 (started 7) alive",
 		"try 2 of 6 waits behind lock fence is held by pid 4242",
-		"try 3 of 6 waits behind LOCK_BUSY rank=goal-revision key=standing-validation/r2 holder=pid=4343,tag=goal-resume",
+		"try 3 of 6 waits behind another process (pid=4343,tag=goal-resume) is changing goal standing-validation/r2 right now",
 	} {
 		if !strings.Contains(launcherErrors, want) {
 			t.Fatalf("the refused try did not name its holder on the launcher's stream: want %q in\n%s", want, launcherErrors)

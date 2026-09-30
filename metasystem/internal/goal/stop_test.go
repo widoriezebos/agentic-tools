@@ -439,7 +439,7 @@ func TestAbandonOfABreachStoppedClaimKeepsTheFenceFreesTheQuotaAndEnforcesTheDep
 	abandonReq := verbReqFor(endpoint, "01J5X00000000000000001T070", "mac-a")
 	abandonReq.Actor.Human = "Wido"
 	result, err := Abandon(abandonReq, "stop-me", AbandonSpec{Because: "stopped permanently"}, goalHumanProof(t, root, abandonReq.Now))
-	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "goal dependent is blocked by stop-me") {
+	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "goal dependent still waits on stop-me") {
 		t.Fatalf("uncovered dependency did not refuse: %+v %v", result, err)
 	}
 	abandonReq.Ulid = "01J5X00000000000000001T080"

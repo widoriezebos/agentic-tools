@@ -159,7 +159,7 @@ func TestAttestedBoundaryValidatesTheClosureBundle(t *testing.T) {
 	params.AttestedSnapshot = bundleGit(t, clone, "rev-parse", "HEAD")
 	bundleGit(t, clone, "switch", "--quiet", "main")
 	bundleWrite(t, clone, "metasystem/product.go", []byte("package product\n// changed\n"))
-	if got := landing.Observe(params); got.Verdict == "pass" || !strings.Contains(got.Detail, "fails its digest") {
+	if got := landing.Observe(params); got.Verdict == "pass" || !strings.Contains(got.Detail, "changed after the review") {
 		t.Fatalf("tampered boundary = %+v", got)
 	}
 }

@@ -51,7 +51,7 @@ func TestByWithoutProofIsRefusedForStoppingRows(t *testing.T) {
 	if !errors.As(err, &gradeErr) || gradeErr.Needed != humanauthority.GradeEnrolled || gradeErr.Got != humanauthority.GradeTerminal {
 		t.Fatalf("enrolled row did not return the typed grade refusal: %#v", err)
 	}
-	if !strings.Contains(err.Error(), "needs enrolled-grade human authority") || strings.Contains(err.Error(), "TERMINAL_") {
+	if !strings.Contains(err.Error(), "needs a person's enrolled-grade word") || strings.Contains(err.Error(), "TERMINAL_") {
 		t.Fatalf("typed grade refusal text is not a plain sentence: %v", err)
 	}
 
@@ -118,7 +118,7 @@ func TestUnparkGradeFollowsTheStandingApproval(t *testing.T) {
 	terminal.Actor.Human = "wido"
 	terminal.Authority = testTerminalAuthority(t, root.Root, terminal.Now)
 	result, err := Unpark(terminal, "approved-pause")
-	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "needs enrolled-grade human authority") {
+	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "needs a person's enrolled-grade word") {
 		t.Fatalf("terminal proof restored approved work: %+v %v", result, err)
 	}
 
@@ -203,7 +203,7 @@ func TestHumanOriginGoalsAreHumanReserved(t *testing.T) {
 		t.Fatalf("human park: %+v %v", res, err)
 	}
 	res, err = Unpark(verbReqFor(a, "01J5X00000000000000000HG40", "mac-a"), "human-owned")
-	if err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "human's pause") {
+	if err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "only a person, or a grant naming resume-parked, lifts that") {
 		t.Fatalf("agent unpark of a human's park refuses: %+v %v", res, err)
 	}
 	humanUnpark := verbReqFor(a, "01J5X00000000000000000HG50", "mac-a")

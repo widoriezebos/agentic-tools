@@ -300,7 +300,7 @@ func TestSweepRefusesUnlandedLocalTip(t *testing.T) {
 	_, err := sweepWithDependencies(rig.request(repo, sweepPolicyEndpoint), rig.dependencies())
 	var refusal *OpError
 	if !errors.As(err, &refusal) || refusal.Code != SweepUnlandedCode ||
-		!strings.Contains(refusal.Message, "goal/goal-a") || !strings.Contains(refusal.Message, "local") ||
+		!strings.Contains(refusal.Message, "goal goal-a's branch") || !strings.Contains(refusal.Message, "local") ||
 		!strings.Contains(refusal.Message, sweepPolicyLocal+" (plan )") {
 		t.Fatalf("unlanded local sweep = %v", err)
 	}
@@ -395,7 +395,7 @@ func TestSweepRefusalNamesEveryUnlandedCommit(t *testing.T) {
 	if !errors.As(err, &refusal) || refusal.Code != SweepUnlandedCode {
 		t.Fatalf("unlanded local sweep = %v", err)
 	}
-	wantPrefix := fmt.Sprintf("goal/goal-a at local tip %s has unlanded commits: ", local)
+	wantPrefix := fmt.Sprintf("goal goal-a's branch at local (%s) has commits that never landed: ", local)
 	if !strings.HasPrefix(refusal.Message, wantPrefix) {
 		t.Fatalf("refusal = %q, want prefix %q", refusal.Message, wantPrefix)
 	}
@@ -409,7 +409,7 @@ func TestSweepRefusalNamesEveryUnlandedCommit(t *testing.T) {
 		previous = at
 	}
 	if strings.Contains(refusal.Message, commits[8]) || strings.Contains(refusal.Message, commits[9]+" (unit tail-9)") ||
-		!strings.HasSuffix(refusal.Message, "and 2 more") {
+		!strings.HasSuffix(refusal.Message, "and 2 more\nrun: metasystem work land goal-a") {
 		t.Fatalf("refusal cap = %q", refusal.Message)
 	}
 }
@@ -457,7 +457,7 @@ func TestSweepRefusesTransportTipWithUnlandedCommit(t *testing.T) {
 	_, err := sweepWithDependencies(req, rig.dependencies())
 	var refusal *OpError
 	if !errors.As(err, &refusal) || refusal.Code != SweepUnlandedCode ||
-		!strings.Contains(refusal.Message, "at transport tip "+sweepPolicyLocal) {
+		!strings.Contains(refusal.Message, "at transport ("+sweepPolicyLocal+")") {
 		t.Fatalf("unlanded transport sweep = %v", err)
 	}
 	if rig.tips["origin"] == "" {

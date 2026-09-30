@@ -906,7 +906,14 @@ func (inv *intentInvocation) legacyRefused(page *textui.Page, result intentResul
 		summary = "metasystem " + inv.command.name + ": " + summary
 	}
 	var hint textui.Hint
+	// An owner's message brings its own line 2 ("Messages a Person Reads");
+	// it is the hint unless the verb named a remedy of its own.
+	retried := result.retry != "" && result.Next != nil && slices.Equal(result.Next.Argv, inv.typedArgv())
+	if first, owned, ok := ownerRemedy(summary); ok && result.Decision == "" && (result.Next == nil || retried) {
+		summary, hint = first, owned
+	}
 	switch {
+	case len(hint.Argv) > 0 || hint.Reason != "":
 	case result.Next != nil:
 		hint = textui.Hint{Argv: result.Next.Argv, Reason: result.Next.Reason}
 	case result.Decision != "":
@@ -927,6 +934,25 @@ func (inv *intentInvocation) legacyRefused(page *textui.Page, result intentResul
 	}
 	page.Legacy(result.text...)
 	page.Hint(hint)
+}
+
+// ownerRemedy splits an owner's two-line message into its line 1 and its
+// line 2 as a hint: a "run: C" line, or a "nothing to do; why" line.
+func ownerRemedy(text string) (string, textui.Hint, bool) {
+	first, second, found := strings.Cut(text, "\n")
+	if !found || strings.Contains(second, "\n") {
+		return text, textui.Hint{}, false
+	}
+	if command, isRun := strings.CutPrefix(second, "run: "); isRun {
+		if strings.HasPrefix(command, "metasystem ") && !strings.ContainsAny(command, ",;()'\"") {
+			return first, textui.Hint{Argv: strings.Fields(command)}, true
+		}
+		return first, textui.Hint{Reason: command}, true
+	}
+	if strings.HasPrefix(second, "nothing to do") {
+		return first, textui.Hint{Reason: second}, true
+	}
+	return text, textui.Hint{}, false
 }
 
 // textEnv is the layout of one output stream: its width, colour and

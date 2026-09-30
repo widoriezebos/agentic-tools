@@ -93,7 +93,7 @@ func TestBreachStoppedClaimLeavesMachineQuotaOpenButKeepsResumeFence(t *testing.
 	claimC := verbReqFor(endpoint, "01J5X00000000000000000T080", "mac-a")
 	claimC.ClaimEpoch = 9
 	if result, err := claimApprovedForTest(t, claimC, "third-c", budget); err != nil || result.Outcome != OutcomeRejected ||
-		!strings.Contains(result.Detail, "quota is one claim per machine") {
+		!strings.Contains(result.Detail, "a machine holds one claim at a time") {
 		t.Fatalf("goal B must still consume the machine quota: %+v %v", result, err)
 	}
 }

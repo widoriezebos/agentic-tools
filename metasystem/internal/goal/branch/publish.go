@@ -86,7 +86,7 @@ func landPushWithRepository(req LandPushRequest, repository landPushRepository) 
 	}
 	endpoint, present, err := repository.RemoteTip(req.Repo, req.Remote, req.EndpointRef)
 	if err != nil || !present {
-		return PreparedLanding{}, operationRefusal(LandTrunkMovedCode, "endpoint holds %s, not prepared tip %s", endpoint, prepared.Endpoint)
+		return PreparedLanding{}, operationRefusal(LandTrunkMovedCode, "main is at %s, not at %s where goal %s's landing was prepared\nrun: metasystem work land %s", endpoint, prepared.Endpoint, req.GoalID, req.GoalID)
 	}
 	landingRef := "refs/heads/" + prepared.Branch
 	landingTip, present, err := repository.RemoteTip(req.Repo, req.Remote, landingRef)
@@ -94,10 +94,10 @@ func landPushWithRepository(req LandPushRequest, repository landPushRepository) 
 		return prepared, nil
 	}
 	if endpoint != prepared.Endpoint {
-		return PreparedLanding{}, operationRefusal(LandTrunkMovedCode, "endpoint holds %s, not prepared tip %s", endpoint, prepared.Endpoint)
+		return PreparedLanding{}, operationRefusal(LandTrunkMovedCode, "main is at %s, not at %s where goal %s's landing was prepared\nrun: metasystem work land %s", endpoint, prepared.Endpoint, req.GoalID, req.GoalID)
 	}
 	if err != nil || !present || landingTip != prepared.Landing {
-		return PreparedLanding{}, operationRefusal(LandBranchMovedCode, "landing branch holds %s, not prepared tip %s", landingTip, prepared.Landing)
+		return PreparedLanding{}, operationRefusal(LandBranchMovedCode, "goal %s's landing branch is at %s, not at the prepared %s\nrun: metasystem work land %s", req.GoalID, landingTip, prepared.Landing, req.GoalID)
 	}
 	fetched := "refs/metasystem/goals/landing-push/" + req.GoalID
 	defer repository.Clear(req.Repo, fetched)
@@ -105,7 +105,7 @@ func landPushWithRepository(req LandPushRequest, repository landPushRepository) 
 		return PreparedLanding{}, err
 	}
 	if err := repository.Ancestor(req.Repo, prepared.Endpoint, prepared.Landing); err != nil {
-		return PreparedLanding{}, operationRefusal(LandTrunkMovedCode, "prepared landing %s is not a fast-forward of %s", prepared.Landing, prepared.Endpoint)
+		return PreparedLanding{}, operationRefusal(LandTrunkMovedCode, "goal %s's prepared landing %s doesn't build on main at %s\nrun: metasystem work land %s", req.GoalID, prepared.Landing, prepared.Endpoint, req.GoalID)
 	}
 	if req.Hooks.AfterRemoteRead != nil {
 		if err := req.Hooks.AfterRemoteRead(); err != nil {
@@ -120,18 +120,18 @@ func landPushWithRepository(req LandPushRequest, repository landPushRepository) 
 		endpointNow, _, _ := repository.RemoteTip(req.Repo, req.Remote, req.EndpointRef)
 		landingNow, landingPresent, _ := repository.RemoteTip(req.Repo, req.Remote, landingRef)
 		if endpointNow != prepared.Endpoint {
-			return PreparedLanding{}, operationRefusal(LandTrunkMovedCode, "endpoint moved from %s to %s", prepared.Endpoint, endpointNow)
+			return PreparedLanding{}, operationRefusal(LandTrunkMovedCode, "main moved from %s to %s while goal %s landed\nrun: metasystem work land %s", prepared.Endpoint, endpointNow, req.GoalID, req.GoalID)
 		}
 		if !landingPresent || landingNow != prepared.Landing {
-			return PreparedLanding{}, operationRefusal(LandBranchMovedCode, "landing branch moved from %s to %s", prepared.Landing, landingNow)
+			return PreparedLanding{}, operationRefusal(LandBranchMovedCode, "goal %s's landing branch moved from %s to %s while it landed\nrun: metasystem work land %s", req.GoalID, prepared.Landing, landingNow, req.GoalID)
 		}
-		return PreparedLanding{}, operationRefusal(LandTrunkMovedCode, "atomic landing lease refused: %v", pushErr)
+		return PreparedLanding{}, operationRefusal(LandTrunkMovedCode, "origin refused goal %s's landing push: %v\nrun: metasystem work land %s", req.GoalID, pushErr, req.GoalID)
 	}
 	if outcome == CASUnknown {
 		endpointNow, _, endpointErr := repository.RemoteTip(req.Repo, req.Remote, req.EndpointRef)
 		_, landingPresent, landingErr := repository.RemoteTip(req.Repo, req.Remote, landingRef)
 		if endpointErr != nil || landingErr != nil || endpointNow != prepared.Landing || landingPresent {
-			return PreparedLanding{}, operationRefusal(PushUnknownCode, "landing outcome is unknown: %v", pushErr)
+			return PreparedLanding{}, operationRefusal(PushUnknownCode, "whether goal %s landed on origin is unknown: %v\nrun: metasystem work land %s", req.GoalID, pushErr, req.GoalID)
 		}
 	}
 	return prepared, nil

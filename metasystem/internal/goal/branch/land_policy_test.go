@@ -667,7 +667,7 @@ func TestGoalLandingRefusesFoldWithStalePreimage(t *testing.T) {
 	f.expect("remote", "open:"+endpoint, "reset:"+endpoint, "head", "index", "raw:"+fold, "entry:"+f.nodes[endpoint].tree+":metasystem/plans/goal-a.md", "close")
 	_, err := prepareLanding(f.request(endpoint, tip, out, receipt), f.repository())
 	requireLandingRefusal(t, err, UnitRereadCode)
-	if !strings.Contains(err.Error(), "has stale preimage") || !strings.Contains(err.Error(), "metasystem/plans/goal-a.md") {
+	if !strings.Contains(err.Error(), "no longer applies to main") || !strings.Contains(err.Error(), "metasystem/plans/goal-a.md") {
 		t.Fatalf("stale fold refusal = %v", err)
 	}
 	f.consumed()
@@ -1225,12 +1225,12 @@ func TestGoalLandingPreparationSeries(t *testing.T) {
 	f.expect("close")
 	_, discoveryErr := prepareLanding(through, f.repository())
 	f.consumed()
-	const marker = "candidate workspace "
+	const marker = "not on the tree to land, "
 	at := strings.LastIndex(fmt.Sprint(discoveryErr), marker)
 	if at < 0 {
 		t.Fatalf("partial candidate discovery = %v", discoveryErr)
 	}
-	throughProjected := strings.TrimSpace(fmt.Sprint(discoveryErr)[at+len(marker):])
+	throughProjected, _, _ := strings.Cut(fmt.Sprint(discoveryErr)[at+len(marker):], "\n")
 	throughReceipt := filepath.Join(t.TempDir(), "through-receipt.json")
 	f.writeReceipt(throughReceipt, throughProjected, "attempt-through")
 	through.TestReceipt = throughReceipt
@@ -1539,12 +1539,12 @@ func TestBranchLandingSyncMergesTestingContractBySurface(t *testing.T) {
 	f.expect("close")
 	_, discoveryErr := prepareLanding(request, f.repository())
 	f.consumed()
-	const marker = "candidate workspace "
+	const marker = "not on the tree to land, "
 	markerAt := strings.LastIndex(fmt.Sprint(discoveryErr), marker)
 	if markerAt < 0 {
 		t.Fatalf("sync candidate discovery = %v", discoveryErr)
 	}
-	candidate := strings.TrimSpace(fmt.Sprint(discoveryErr)[markerAt+len(marker):])
+	candidate, _, _ := strings.Cut(fmt.Sprint(discoveryErr)[markerAt+len(marker):], "\n")
 	f.writeReceipt(receipt, candidate, "branch-sync")
 	request.Out = filepath.Join(t.TempDir(), "prepared")
 	f.expectSuccess(tip, 1)

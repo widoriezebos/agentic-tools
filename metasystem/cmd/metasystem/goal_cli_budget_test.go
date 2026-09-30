@@ -555,7 +555,7 @@ func TestGoalCLIBudgetPowerOfAttorney(t *testing.T) {
 
 	gcliBudgetHumanMust(t, bed, "goal", "pause", "poa-late", "--reason", "wait for the vendor's 1.2 release")
 	gcliBudgetRefused(t, bed, "covers approve,set-budget, not unpark", "goal", "resume", "poa-late", "--under", entry, "--verified", "1.2 is on the vendor's page")
-	gcliBudgetRefused(t, bed, "lifting a human's pause is a human act", "goal", "resume", "poa-late")
+	gcliBudgetRefused(t, bed, "only a person, or a grant naming resume-parked, lifts that", "goal", "resume", "poa-late")
 	lift := gcliBudgetGrant(t, bed, "1,2", "resume-parked", "2026-08-24")
 	gcliBudgetRefused(t, bed, "--verified", "goal", "resume", "poa-late", "--under", lift)
 	gcliBudgetRefused(t, bed, "seat's own act", "goal", "resume", "poa-late", "--under", lift, "--verified", "it holds", "--by", "Wido")

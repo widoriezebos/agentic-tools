@@ -159,7 +159,7 @@ func foldRangeWithReads(r attestationReads, repo, endpointTip, unitCommit, goalI
 		}
 		return folds, nil
 	}
-	return nil, operationRefusal(ReadInvalidCode, "unit commit %s is outside the goal range", unitCommit)
+	return nil, operationRefusal(ReadInvalidCode, "build %s is not on goal %s's branch\nrun: metasystem work status %s", unitCommit, goalID, goalID)
 }
 
 func digestAttestation(att Attestation) (string, error) {
@@ -206,7 +206,7 @@ func testPathsFromEntries(entries []Entry) []string {
 	return paths
 }
 
-func validateTestChangesWithReads(r attestationReads, repo, commit string, supplied []TestChange) error {
+func validateTestChangesWithReads(r attestationReads, repo, goalID, commit string, supplied []TestChange) error {
 	required, err := requiredTestChangesWithReads(r, repo, commit)
 	if err != nil {
 		return err
@@ -215,14 +215,14 @@ func validateTestChangesWithReads(r attestationReads, repo, commit string, suppl
 	var got []string
 	for _, item := range supplied {
 		if strings.TrimSpace(item.ReaderWord) == "" || seen[item.Path] {
-			return operationRefusal(ReadTestsUnnamedCode, "every changed test needs one nonempty reader word")
+			return operationRefusal(ReadTestsUnnamedCode, "each changed test needs a reviewer's word, and one has none\nrun: metasystem work review %s", goalID)
 		}
 		seen[item.Path] = true
 		got = append(got, item.Path)
 	}
 	sort.Strings(got)
 	if strings.Join(required, "\x00") != strings.Join(got, "\x00") {
-		return operationRefusal(ReadTestsUnnamedCode, "changed tests are %v, but the attestation names %v", required, got)
+		return operationRefusal(ReadTestsUnnamedCode, "the review names tests %v, but the build changed %v\nrun: metasystem work review %s", got, required, goalID)
 	}
 	return nil
 }
@@ -313,11 +313,11 @@ func readAttestationAt(r attestationReads, repo, snapshot, goalID, commit string
 	decoder := json.NewDecoder(strings.NewReader(string(data)))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&att); err != nil {
-		return Attestation{}, operationRefusal(ReadInvalidCode, "attestation %s is malformed: %v", rel, err)
+		return Attestation{}, operationRefusal(ReadInvalidCode, "the review record %s is damaged (%v)\nrun: metasystem work review %s", rel, err, goalID)
 	}
 	canonical, err := json.MarshalIndent(att, "", "  ")
 	if err != nil || !bytes.Equal(data, append(canonical, '\n')) {
-		return Attestation{}, operationRefusal(ReadInvalidCode, "attestation %s is not in its canonical form", rel)
+		return Attestation{}, operationRefusal(ReadInvalidCode, "the review record %s was edited by hand\nrun: metasystem work review %s", rel, goalID)
 	}
 	return att, nil
 }
@@ -335,21 +335,21 @@ func withClosureBundle(r attestationReads, repo, snapshot, goalID, commit string
 	path := closureBundlePath(goalID, commit)
 	data, err := attestationFileAt(r, repo, snapshot, path)
 	if err != nil {
-		return operationRefusal(ReadInvalidCode, "critic closure bundle for %s is unreadable", commit)
+		return operationRefusal(ReadInvalidCode, "the reviewer's saved files for %s can't be read\nrun: metasystem work review %s", commit, goalID)
 	}
 	sum := sha256.Sum256(data)
 	if hex.EncodeToString(sum[:]) != source.ClosureSHA256 {
-		return operationRefusal(ReadInvalidCode, "critic closure bundle for %s fails its digest", commit)
+		return operationRefusal(ReadInvalidCode, "the reviewer's saved files for %s changed after the review\nrun: metasystem work review %s", commit, goalID)
 	}
 	var bundle closureBundle
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&bundle); err != nil || bundle.SchemaVersion != 1 || bundle.RootJob != source.RootJob {
-		return operationRefusal(ReadInvalidCode, "critic closure bundle for %s is malformed", commit)
+		return operationRefusal(ReadInvalidCode, "the reviewer's saved files for %s are damaged\nrun: metasystem work review %s", commit, goalID)
 	}
 	canonical, err := json.MarshalIndent(bundle, "", "  ")
 	if err != nil || !bytes.Equal(data, append(canonical, '\n')) {
-		return operationRefusal(ReadInvalidCode, "critic closure bundle for %s is not in its canonical form", commit)
+		return operationRefusal(ReadInvalidCode, "the reviewer's saved files for %s were edited by hand\nrun: metasystem work review %s", commit, goalID)
 	}
 	temporary, done, err := diskstore.ScratchDir("goal-read-closure-*")
 	if err != nil {
@@ -358,7 +358,7 @@ func withClosureBundle(r attestationReads, repo, snapshot, goalID, commit string
 	defer done()
 	for path, content := range bundle.Files {
 		if !safeClosureBundlePath(path) {
-			return operationRefusal(ReadInvalidCode, "critic closure bundle for %s has unsafe path %q", commit, path)
+			return operationRefusal(ReadInvalidCode, "the reviewer's saved files for %s name a path outside them (%q)\nrun: metasystem work review %s", commit, path, goalID)
 		}
 		target := filepath.Join(temporary, filepath.FromSlash(path))
 		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
@@ -386,7 +386,7 @@ func validateCriticSource(r attestationReads, repo, snapshot, goalID, commit str
 
 func validateAttestation(r attestationReads, repo, snapshot, endpointTip, goalID, unit, commit string, seen map[string]bool) (Attestation, error) {
 	if seen[commit] {
-		return Attestation{}, operationRefusal(ReadInvalidCode, "attestation carry cycle at %s", commit)
+		return Attestation{}, operationRefusal(ReadInvalidCode, "the review of %s carries over from itself in a loop\nrun: metasystem work review %s", commit, goalID)
 	}
 	seen[commit] = true
 	att, err := readAttestationAt(r, repo, snapshot, goalID, commit)
@@ -394,24 +394,24 @@ func validateAttestation(r attestationReads, repo, snapshot, endpointTip, goalID
 		return Attestation{}, err
 	}
 	if att.SchemaVersion != 1 || att.Goal != goalID || att.Unit != unit || att.Verdict != "LAND" || att.Subject.Commit != commit {
-		return Attestation{}, operationRefusal(ReadInvalidCode, "attestation identity or verdict does not match %s/%s at %s", goalID, unit, commit)
+		return Attestation{}, operationRefusal(ReadInvalidCode, "the review record at %s is not a landing verdict for %s/%s\nrun: metasystem work review %s", commit, goalID, unit, goalID)
 	}
 	digest, err := digestAttestation(att)
 	if err != nil || digest != att.SHA256 {
-		return Attestation{}, operationRefusal(ReadInvalidCode, "attestation %s fails its self-digest", commit)
+		return Attestation{}, operationRefusal(ReadInvalidCode, "the review record of %s changed after it was written\nrun: metasystem work review %s", commit, goalID)
 	}
 	subject, read, err := computeSubjectWithReads(r, repo, commit)
 	if err != nil || subject != att.Subject {
-		return Attestation{}, operationRefusal(ReadInvalidCode, "attestation %s does not match its commit subject", commit)
+		return Attestation{}, operationRefusal(ReadInvalidCode, "the review record of %s describes other changes than the build holds\nrun: metasystem work review %s", commit, goalID)
 	}
 	folds, err := foldRangeWithReads(r, repo, endpointTip, commit, goalID)
 	if err != nil || !sameFoldDigests(folds, att.Folds) {
-		return Attestation{}, operationRefusal(ReadInvalidCode, "attestation %s does not match its fold range", commit)
+		return Attestation{}, operationRefusal(ReadInvalidCode, "the review record of %s no longer matches the goal branch below it\nrun: metasystem work review %s", commit, goalID)
 	}
 	if att.Gate.Kind != "go-gate-fast" || att.Gate.RunID == "" || att.Gate.Tree != subject.Tree {
-		return Attestation{}, operationRefusal(ReadUngatedCode, "attestation %s has no fast-gate observation on tree %s", commit, subject.Tree)
+		return Attestation{}, operationRefusal(ReadUngatedCode, "the review of %s has no passing quick check of tree %s\nrun: metasystem work review %s", commit, subject.Tree, goalID)
 	}
-	if err := validateTestChangesWithReads(r, repo, commit, att.TestsChanged); err != nil {
+	if err := validateTestChangesWithReads(r, repo, goalID, commit, att.TestsChanged); err != nil {
 		return Attestation{}, err
 	}
 	if att.Carry != nil {
@@ -421,7 +421,7 @@ func validateAttestation(r attestationReads, repo, snapshot, endpointTip, goalID
 		}
 		if att.Carry.FromTree != prior.Subject.Tree || att.Carry.ToCommit != commit || att.Carry.ToTree != subject.Tree ||
 			prior.Subject.UnitDigest != subject.UnitDigest || !sameFoldDigests(prior.Folds, folds) || prior.Source != att.Source {
-			return Attestation{}, operationRefusal(ReadStaleCode, "carry from %s does not preserve the unit and fold bytes", att.Carry.FromCommit)
+			return Attestation{}, operationRefusal(ReadStaleCode, "the review carried over from %s no longer fits: the changes moved since\nrun: metasystem work review %s", att.Carry.FromCommit, goalID)
 		}
 		return att, nil
 	}
@@ -429,18 +429,18 @@ func validateAttestation(r attestationReads, repo, snapshot, endpointTip, goalID
 	case "critic-root":
 		closure, err := validateCriticSource(r, repo, snapshot, goalID, commit, att.Source, read)
 		if err != nil || closure.Round != att.Source.Round {
-			return Attestation{}, operationRefusal(ReadInvalidCode, "critic source for %s is not a clean bound closure: %v", commit, err)
+			return Attestation{}, operationRefusal(ReadInvalidCode, "the reviewer's job for %s did not finish cleanly (%s)\nrun: metasystem work review %s", commit, firstLine(err), goalID)
 		}
 	case "reader-record":
 		if att.Source.ClosureSHA256 != "" || !safeReaderRecord(att.Source.ReaderRecord) {
-			return Attestation{}, operationRefusal(ReadInvalidCode, "reader record path is outside records/misc")
+			return Attestation{}, operationRefusal(ReadInvalidCode, "the reader's record is not under records/misc\nrun: metasystem work review %s", goalID)
 		}
 		digest, data, err := fileSHA256At(r, repo, snapshot, att.Source.ReaderRecord)
 		if err != nil || digest != att.Source.RecordSHA256 || !strings.Contains(string(data), commit) || !strings.Contains(string(data), subject.UnitDigest) {
-			return Attestation{}, operationRefusal(ReadInvalidCode, "reader record for %s is missing or changed", commit)
+			return Attestation{}, operationRefusal(ReadInvalidCode, "the reader's record for %s is missing or changed\nrun: metasystem work review %s", commit, goalID)
 		}
 	default:
-		return Attestation{}, operationRefusal(ReadInvalidCode, "attestation %s has unknown source %q", commit, att.Source.Kind)
+		return Attestation{}, operationRefusal(ReadInvalidCode, "the review record of %s names an unknown reviewer kind %q\nrun: metasystem work review %s", commit, att.Source.Kind, goalID)
 	}
 	return att, nil
 }
@@ -640,7 +640,7 @@ func unitCommitInRangeWithReads(r attestationReads, repo, endpointTip, tip, goal
 			return commits[i].ID, nil
 		}
 	}
-	return "", operationRefusal(ReadInvalidCode, "goal branch has no build %s", unitList(units))
+	return "", operationRefusal(ReadInvalidCode, "goal %s's branch has no build %s\nrun: metasystem work status %s", goalID, unitList(units), goalID)
 }
 
 func prospectiveReadPatch(repo string, generated map[string][]byte, readerRecord string) ([]byte, error) {
@@ -704,7 +704,7 @@ func commitRead(req CommitReadRequest, r attestationReads, e readCommitEffects) 
 		return "", Attestation{}, err
 	}
 	if req.GateRunID == "" || req.GateTree == "" {
-		return "", Attestation{}, operationRefusal(ReadUngatedCode, "a fast-gate run id and tree are required")
+		return "", Attestation{}, operationRefusal(ReadUngatedCode, "the review can't be recorded without its passing quick check\nrun: metasystem work review %s", req.GoalID)
 	}
 	unitCommit, err := unitCommitInRangeWithReads(r, req.Repo, req.EndpointTip, state.baseTip, req.GoalID, units)
 	if err != nil {
@@ -715,9 +715,9 @@ func commitRead(req CommitReadRequest, r attestationReads, e readCommitEffects) 
 		return "", Attestation{}, err
 	}
 	if req.GateTree != subject.Tree {
-		return "", Attestation{}, operationRefusal(ReadUngatedCode, "fast gate observed tree %s, not unit tree %s", req.GateTree, subject.Tree)
+		return "", Attestation{}, operationRefusal(ReadUngatedCode, "the quick check ran on tree %s, not on the build's tree %s\nrun: metasystem work review %s", req.GateTree, subject.Tree, req.GoalID)
 	}
-	if err := validateTestChangesWithReads(r, req.Repo, unitCommit, req.TestsChanged); err != nil {
+	if err := validateTestChangesWithReads(r, req.Repo, req.GoalID, unitCommit, req.TestsChanged); err != nil {
 		return "", Attestation{}, err
 	}
 	folds, err := foldRangeWithReads(r, req.Repo, req.EndpointTip, unitCommit, req.GoalID)
@@ -737,7 +737,7 @@ func commitRead(req CommitReadRequest, r attestationReads, e readCommitEffects) 
 			return "", Attestation{}, err
 		}
 		if prior.Subject.UnitDigest != subject.UnitDigest || !sameFoldDigests(prior.Folds, folds) {
-			return "", Attestation{}, operationRefusal(ReadStaleCode, "carry from %s does not preserve the unit and fold bytes", req.Carry)
+			return "", Attestation{}, operationRefusal(ReadStaleCode, "the review carried over from %s no longer fits: the changes moved since\nrun: metasystem work review %s", req.Carry, req.GoalID)
 		}
 		att.Source = prior.Source
 		if prior.Source.ClosureSHA256 != "" {

@@ -33,6 +33,16 @@ func operationRefusal(code, format string, args ...any) error {
 	return &OpError{Code: code, Message: fmt.Sprintf(format, args...)}
 }
 
+// firstLine is an error's line 1: a refusal wrapped into another keeps its
+// words and gives way to the wrapper's line 2 ("Messages a Person Reads").
+func firstLine(err error) string {
+	if err == nil {
+		return ""
+	}
+	line, _, _ := strings.Cut(err.Error(), "\n")
+	return line
+}
+
 // pushProtocolAvailable is set by the push owner when the binary can publish
 // every commit it creates. A binary assembled without that owner fails closed.
 var pushProtocolAvailable bool
@@ -60,7 +70,7 @@ func validName(value string) bool {
 
 func checkClaim(check func() error) error {
 	if check == nil {
-		return operationRefusal(NotHolderCode, "the goal claim cannot be verified")
+		return operationRefusal(NotHolderCode, "this session's claim on the goal can't be checked\nrun: metasystem goal list")
 	}
 	if err := check(); err != nil {
 		return operationRefusal(NotHolderCode, "%v", err)
@@ -72,7 +82,7 @@ func CheckHolder(check func() error) error { return checkClaim(check) }
 
 func CheckCommitAccess(goalID string, check func() error) error {
 	if !pushProtocolAvailable {
-		return operationRefusal(UnavailableCode, "this binary cannot publish goal branches")
+		return operationRefusal(UnavailableCode, "this engine was built without the goal-branch publisher, so it can't publish work\nrun: metasystem system check")
 	}
 	if !validName(goalID) {
 		return fmt.Errorf("goal id must be one nonempty path-free word")
@@ -162,7 +172,7 @@ func (r commitRepository) inspectCommitBranch(req CommitRequest) (commitBranchSt
 			return state, err
 		}
 		if head != req.EndpointTip {
-			return state, operationRefusal(RangeCode, "the first commit must start at endpoint tip %s", req.EndpointTip)
+			return state, operationRefusal(RangeCode, "goal %s's first commit must start at main's tip %s, and this checkout is elsewhere\nrun: metasystem work status %s", req.GoalID, req.EndpointTip, req.GoalID)
 		}
 	}
 	state.originTip, _, err = r.facts.Tip(req.Repo, originTipRef(req.GoalID))
@@ -200,9 +210,9 @@ func (r commitRepository) inspectCommitBranch(req CommitRequest) (commitBranchSt
 			state.baseTip, state.originTip, state.adopt = remoteTip, remoteTip, true
 			return state, nil
 		}
-		return state, staleBranch(req.Remote, state.localTip, remoteTip, state.originTip)
+		return state, staleBranch(req.GoalID, req.Remote, state.localTip, remoteTip, state.originTip)
 	case state.originTip != "":
-		return state, staleBranch(req.Remote, state.localTip, "", state.originTip)
+		return state, staleBranch(req.GoalID, req.Remote, state.localTip, "", state.originTip)
 	default:
 		state.baseTip = state.localTip
 		return state, nil
@@ -269,7 +279,7 @@ func validateCommitPaths(kind Kind, paths []string, goalID string) error {
 			allowed = class == ClassRead || class == ClassReadClosure || class == ClassReadProse
 		}
 		if !allowed {
-			return operationRefusal(RangeCode, "path %s has class %s, which kind %s does not allow", path, class, kind)
+			return operationRefusal(RangeCode, "a %s may not change %s (a %s file)\nrun: metasystem work status %s", commitWord(kind), path, class, goalID)
 		}
 		if class == ClassRead {
 			reads++
@@ -282,7 +292,7 @@ func validateCommitPaths(kind Kind, paths []string, goalID string) error {
 		}
 	}
 	if kind == Read && (reads != 1 || closures > 1 || prose > 1) {
-		return operationRefusal(RangeCode, "read commit needs one attestation, at most one closure bundle, and at most one prose record; found %d, %d, and %d", reads, closures, prose)
+		return operationRefusal(RangeCode, "a review commit holds one review record and at most one of each extra; found %d, %d and %d\nrun: metasystem work review %s", reads, closures, prose, goalID)
 	}
 	return nil
 }
@@ -347,7 +357,7 @@ func (r commitRepository) adoptionCheckoutClean(req CommitRequest, state commitB
 	}
 	for _, item := range unstaged {
 		if !allowedSet[item] {
-			return operationRefusal(StaleCode, "local tip %s cannot adopt remote tip %s while the checkout has unstaged tracked changes", state.localTip, state.baseTip)
+			return operationRefusal(StaleCode, "goal %s's branch moved on origin to %s, and this checkout has unstaged changes in its way\nrun: metasystem work status %s", req.GoalID, state.baseTip, req.GoalID)
 		}
 	}
 	return nil
@@ -364,7 +374,7 @@ func (r commitRepository) buildCommitOnto(req CommitRequest, state commitBranchS
 	}
 	defer close()
 	if err := r.effects.Apply(worktree, patch); err != nil {
-		return "", operationRefusal(StaleCode, "the staged change does not apply to remote tip %s: %v", state.baseTip, err)
+		return "", operationRefusal(StaleCode, "the staged change doesn't apply to goal %s's branch as origin holds it (%s): %v\nrun: metasystem work status %s", req.GoalID, state.baseTip, err, req.GoalID)
 	}
 	if err := r.effects.Commit(worktree, subject, trailer, false); err != nil {
 		return "", err
@@ -401,7 +411,7 @@ func (r commitRepository) checkoutInstallPreflight(req CommitRequest, newTip str
 	}
 	for _, path := range tipChanges {
 		if unstagedSet[path] {
-			return "", "", operationRefusal(StaleCode, "installing goal branch tip %s would overwrite unstaged tracked path %s", newTip, path)
+			return "", "", operationRefusal(StaleCode, "the new commit %s would overwrite your unstaged change to %s\nrun: metasystem work status %s", newTip, path, req.GoalID)
 		}
 	}
 	current := r.facts.HeadRef(req.Repo)
@@ -412,7 +422,7 @@ func (r commitRepository) checkoutInstallPreflight(req CommitRequest, newTip str
 		}
 		for _, worktree := range worktrees {
 			if worktree.Branch == goalBranchRef(req.GoalID) {
-				return "", "", operationRefusal(StaleCode, "goal branch %s is already checked out at %s", req.GoalID, worktree.Path)
+				return "", "", operationRefusal(StaleCode, "goal %s's branch is checked out in another worktree, %s\nrun: metasystem work status %s", req.GoalID, worktree.Path, req.GoalID)
 			}
 		}
 	}
@@ -442,11 +452,11 @@ func (r commitRepository) installCommitOnto(req CommitRequest, state commitBranc
 		return err
 	}
 	if err := r.effects.Checkout(req.Repo, indexTree, newTip); err != nil {
-		return operationRefusal(StaleCode, "installing goal branch tip %s failed: %v", newTip, err)
+		return operationRefusal(StaleCode, "the new commit %s couldn't be checked out here: %v\nrun: metasystem work status %s", newTip, err, req.GoalID)
 	}
 	rollbackCheckout := func(cause error) error {
 		if rollbackErr := r.effects.Checkout(req.Repo, newTip, indexTree); rollbackErr != nil {
-			return operationRefusal(StaleCode, "%v; checkout rollback failed: %v", cause, rollbackErr)
+			return operationRefusal(StaleCode, "%s; putting the checkout back failed too (%v)\nrun: metasystem work status %s", firstLine(cause), rollbackErr, req.GoalID)
 		}
 		return cause
 	}
@@ -521,7 +531,7 @@ func (r commitRepository) amendUnit(req CommitRequest, state commitBranchState) 
 	}
 	for _, path := range paths {
 		if class := PathClass(path); class != ClassUnit {
-			return "", operationRefusal(RangeCode, "path %s has class %s, which kind unit does not allow", path, class)
+			return "", operationRefusal(RangeCode, "a build may not change %s (a %s file)\nrun: metasystem work status %s", path, class, req.GoalID)
 		}
 	}
 	commits, err := r.facts.Range(req.Repo, req.EndpointTip, previous, req.GoalID)
@@ -532,13 +542,13 @@ func (r commitRepository) amendUnit(req CommitRequest, state commitBranchState) 
 	for _, commit := range commits {
 		if commit.Kind == Unit && sameUnits(commit.Units, units) {
 			if target != "" {
-				return "", operationRefusal(RangeCode, "goal branch repeats build %s", list)
+				return "", operationRefusal(RangeCode, "goal %s's branch holds build %s twice\nrun: metasystem work status %s", req.GoalID, list, req.GoalID)
 			}
 			target = commit.ID
 		}
 	}
 	if target == "" {
-		return "", operationRefusal(RangeCode, "goal branch has no build %s to amend", list)
+		return "", operationRefusal(RangeCode, "goal %s's branch has no build %s to correct\nrun: metasystem work status %s", req.GoalID, list, req.GoalID)
 	}
 	patch, err := r.facts.Patch(req.Repo)
 	if err != nil {
@@ -558,7 +568,7 @@ func (r commitRepository) amendUnit(req CommitRequest, state commitBranchState) 
 	}
 	defer close()
 	if err := r.effects.Apply(worktree, patch); err != nil {
-		return "", operationRefusal(RangeCode, "the staged fix does not apply to build %s: %v", list, err)
+		return "", operationRefusal(RangeCode, "the staged fix doesn't apply to build %s: %v\nrun: metasystem work status %s", list, err, req.GoalID)
 	}
 	subject, trailer, err := commitMessage(req, "")
 	if err != nil {
@@ -584,7 +594,7 @@ func (r commitRepository) amendUnit(req CommitRequest, state commitBranchState) 
 			continue
 		}
 		if err := r.effects.Replay(worktree, commit); err != nil {
-			return "", operationRefusal(RangeCode, "commit %s does not replay after amending build %s: %v", commit, list, err)
+			return "", operationRefusal(RangeCode, "after correcting build %s, the later commit %s no longer applies: %v\nrun: metasystem work status %s", list, commit, err, req.GoalID)
 		}
 	}
 	newTip, err := r.facts.Head(worktree)
@@ -601,7 +611,7 @@ func (r commitRepository) amendUnit(req CommitRequest, state commitBranchState) 
 			return "", err
 		}
 		if newTree != wantedTree {
-			return "", operationRefusal(RangeCode, "the replayed branch does not equal the staged tree")
+			return "", operationRefusal(RangeCode, "after the correction, the goal branch doesn't hold what was staged\nrun: metasystem work status %s", req.GoalID)
 		}
 	}
 	if _, err := r.facts.Range(worktree, req.EndpointTip, newTip, req.GoalID); err != nil {

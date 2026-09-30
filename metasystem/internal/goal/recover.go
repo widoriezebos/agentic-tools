@@ -259,11 +259,11 @@ func completeFromIntent(e Endpoint, entry Entry, policy SensitiveRecoveryPolicy)
 		// A verb recovery cannot rebuild generically terminalizes
 		// toward its own re-runnable entry point, named — never a
 		// silent wedge (the pushed block clears).
-		if err := MarkTerminal(e.Root, entry.Opid, OutcomeRejected, rebuildErr.Error()); err != nil {
+		if err := MarkTerminal(e.Root, entry.Opid, OutcomeRejected, RecordText(rebuildErr)); err != nil {
 			return "", err
 		}
 		CleanupRefs(e, entry.Opid)
-		return "not rebuildable: " + rebuildErr.Error(), nil
+		return "not rebuildable: " + RecordText(rebuildErr), nil
 	}
 	req = recoveryHumanBoundaryRequest(req, journaledHuman)
 	res, err := runTransaction(e, req)

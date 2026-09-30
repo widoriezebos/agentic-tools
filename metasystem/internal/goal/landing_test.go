@@ -79,7 +79,7 @@ func TestLandReadyOpensTheSlotBesideAWorkingClaim(t *testing.T) {
 		t.Fatalf("a second landing slot is refused: %+v %v", res, err)
 	}
 	// A third working claim is still over the quota.
-	if res, err := claimApprovedForTest(t, landingReqFor(a, "01J5X00000000000000000NA17", "mac-a", landAt.Add(4*time.Minute)), "third-c", budget); err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "quota is one claim per machine") {
+	if res, err := claimApprovedForTest(t, landingReqFor(a, "01J5X00000000000000000NA17", "mac-a", landAt.Add(4*time.Minute)), "third-c", budget); err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "a machine holds one claim at a time") {
 		t.Fatalf("the working claim still consumes the quota: %+v %v", res, err)
 	}
 	// The frontier lists the landing goal apart and continues the working

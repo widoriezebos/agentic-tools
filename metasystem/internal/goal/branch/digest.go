@@ -48,7 +48,7 @@ func rawEntriesWithGit(repo, commit string, gitRead func(string, ...string) ([]b
 		return nil, err
 	}
 	if fields := strings.Fields(string(parents)); len(fields) < 2 {
-		return nil, refuse(commit, "the unit digest requires a parent")
+		return nil, rangeRefusal("", commit, "a build commit needs a parent to compare against, and this one has none")
 	}
 	return gitRead(repo, "diff-tree", "-r", "-z", "--no-renames", "--full-index", commit+"^", commit)
 }
@@ -91,7 +91,7 @@ func parseRawEntries(commit string, raw []byte) ([]Entry, error) {
 	for i := 0; i+1 < len(parts) && len(parts[i]) > 0; i += 2 {
 		fields := strings.Fields(string(parts[i]))
 		if len(fields) != 5 || !strings.HasPrefix(fields[0], ":") {
-			return nil, refuse(commit, "git returned a malformed raw tree entry")
+			return nil, rangeRefusal("", commit, "git listed its changed files in a form this engine can't read")
 		}
 		entries = append(entries, Entry{strings.TrimPrefix(fields[0], ":"), fields[1], fields[2], fields[3], fields[4], string(parts[i+1])})
 	}

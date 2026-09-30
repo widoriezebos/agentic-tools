@@ -95,7 +95,7 @@ func TestFixtureObligationEvidenceRefusals(t *testing.T) {
 		e, o, critic := valid, obligation, validCriticRecord()
 		tc.change(&e, &o, critic)
 		writeProofJSON(t, filepath.Join(root, "artifacts", "agents", "jobs", "critic-root.json"), critic)
-		if err := proveFixtureObligation(e, o); err == nil || !strings.Contains(err.Error(), "discharge-review-obligation") || !strings.Contains(err.Error(), tc.want) {
+		if err := proveFixtureObligation(e, o); err == nil || !strings.Contains(err.Error(), "can't be closed by this test run") || !strings.Contains(err.Error(), tc.want) {
 			t.Fatalf("%s refusal = %v, want %q", tc.name, err, tc.want)
 		}
 	}

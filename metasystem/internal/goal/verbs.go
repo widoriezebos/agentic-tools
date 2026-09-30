@@ -43,13 +43,33 @@ type AnswerProof struct {
 	Step                int64
 }
 
+// ResumeApprovalToken is the token a channel approval of a resume carries
+// word for word. It is protocol a person pastes, never a message: its
+// key=value fields are what AuthenticatedChannelApproval matches.
 func ResumeApprovalToken(goalID string, b Budget) string {
 	args := budgetIntentArgs(b)
-	return fmt.Sprintf("goal=%s resume elapsed=%s attempts=%s minutes=%s active=%s", goalID, args["elapsedLimit"], args["attemptLimit"], args["reservedJobMinutesLimit"], args["activeJobLimit"])
+	return approvalToken("goal", goalID, "", "resume", "elapsed", args["elapsedLimit"], "attempts", args["attemptLimit"],
+		"minutes", args["reservedJobMinutesLimit"], "active", args["activeJobLimit"])
 }
 
+// SetObligationApprovalToken is the token a channel approval of an
+// obligation's state carries word for word (protocol, as above).
 func SetObligationApprovalToken(goalID string, state ObligationState, owner string) string {
-	return fmt.Sprintf("goal=%s set-obligation state=%s owner=%s", goalID, state, owner)
+	return approvalToken("goal", goalID, "", "set-obligation", "state", string(state), "owner", owner)
+}
+
+// approvalToken joins key/value pairs as key=value words; an empty key
+// writes its value as a bare word.
+func approvalToken(pairs ...string) string {
+	words := make([]string, 0, len(pairs)/2)
+	for index := 0; index+1 < len(pairs); index += 2 {
+		if pairs[index] == "" {
+			words = append(words, pairs[index+1])
+			continue
+		}
+		words = append(words, pairs[index]+"="+pairs[index+1])
+	}
+	return strings.Join(words, " ")
 }
 
 func Asked(r VerbRequest, id, qid, kind, firstFact string) (PublishResult, error) {
@@ -321,7 +341,7 @@ type GradeRefused struct {
 }
 
 func (e GradeRefused) Error() string {
-	return fmt.Sprintf("goal %s: %s needs %s-grade human authority, but this proof carries the %s grade", e.Verb, e.Row, e.Needed, e.Got)
+	return fmt.Sprintf("goal %s: %s needs a person's %s-grade word, and the one given is %s-grade", e.Verb, e.Row, e.Needed, e.Got)
 }
 
 func (r VerbRequest) requireHuman(row humanAuthorityRow, grade string) error {
@@ -796,7 +816,7 @@ func OpenRisked(r VerbRequest, id, intent, origin, nextStep string, blocks, bloc
 		return PublishResult{}, handErr
 	}
 	if hand == nil && len(blocks) == 0 {
-		return PublishResult{}, fmt.Errorf("%s", SeatOpenNeedsBlocker)
+		return PublishResult{}, errors.New(seatOpenNeedsBlocker(id))
 	}
 	if err := risk.Validate(); err != nil {
 		return PublishResult{}, fmt.Errorf("invalid risk: %v", err)
@@ -836,7 +856,14 @@ func OpenRisked(r VerbRequest, id, intent, origin, nextStep string, blocks, bloc
 
 // SeatOpenNeedsBlocker is the refusal a seat's open without --blocks gets:
 // the ruling, the lawful forms, and where a non-blocking discovery goes.
-const SeatOpenNeedsBlocker = "a seat opens only the defect that blocks its claimed goal: name that goal with --blocks <goal-id>, and it parks with the blocker recorded until the blocker is done (R-93-m1e, Wido 2026-09-11). An improvement that blocks nothing is a proposal in memory/backlog-notes.md, never a goal; every other goal is opened by a person (--origin human)"
+// Line 1 is the rule (R-93-m1e): a seat opens only the defect that blocks
+// its claimed goal, which parks until the blocker is done; an improvement
+// that blocks nothing is a proposal in memory/backlog-notes.md, and every
+// other goal is a person's to open.
+func seatOpenNeedsBlocker(id string) string {
+	return "a seat opens only a defect that blocks its claimed goal, and this open names no such goal\n" +
+		"run: metasystem goal open " + id + " --blocks GOAL, with GOAL the goal this session claims and the rest as typed"
+}
 
 // openRequest builds the verb's complete transaction request — the
 // ONE mutation semantics both the live verb and recovery replay
@@ -1339,7 +1366,7 @@ func Claim(r VerbRequest, id string, budgets ...Budget) (PublishResult, error) {
 	return publishedCard(Publish(r.Endpoint, claimRequest(r, id, nil)))(func() { writeOwnCard(r, id, board.StageClaimedIdle) })
 }
 
-func claimQuotaRefusal(t *TreeGoals, r VerbRequest, id string) string {
+func claimQuotaRefusal(t *TreeGoals, r VerbRequest, id string) error {
 	target := t.Live[id]
 	var held []string
 	for _, heldID := range sortedGoalIds(t.Live) {
@@ -1352,10 +1379,10 @@ func claimQuotaRefusal(t *TreeGoals, r VerbRequest, id string) string {
 		held = append(held, heldID)
 	}
 	if len(held) == 0 {
-		return ""
+		return nil
 	}
-	return fmt.Sprintf("%s: machine %s already claims %s: the quota is one claim per machine (one arc counts once); run metasystem goal release --id %s before claiming %s",
-		ClaimQuotaCode, r.Actor.Machine, strings.Join(held, ", "), held[0], id)
+	return coded(ClaimQuotaCode, fmt.Errorf("machine %s already claims %s, and a machine holds one claim at a time\nrun: metasystem goal release %s, then metasystem goal claim %s",
+		r.Actor.Machine, strings.Join(held, ", "), held[0], id))
 }
 
 // Handover transfers one claim from its current holder to one authenticated
@@ -1506,8 +1533,8 @@ func claimRequest(r VerbRequest, id string, supplied *Budget) PublishRequest {
 			if err != nil {
 				return nil, err
 			}
-			if refusal := claimQuotaRefusal(t, r, id); refusal != "" {
-				return nil, fmt.Errorf("%s", refusal)
+			if refusal := claimQuotaRefusal(t, r, id); refusal != nil {
+				return nil, refusal
 			}
 			f.State = StateClaimed
 			f.Budget = &budget
@@ -2386,7 +2413,7 @@ func DischargeReviewObligation(r VerbRequest, id, finding, chain, by, citation s
 }
 
 func proveFixtureObligation(evidence DischargeEvidence, obligation ReviewObligation) error {
-	prefix := fmt.Sprintf("discharge-review-obligation obligation finding=%s chain=%s", obligation.Finding, obligation.Chain)
+	prefix := fmt.Sprintf("finding %s of review %s can't be closed by this test run", obligation.Finding, obligation.Chain)
 	refuse := func(format string, args ...any) error { return fmt.Errorf(prefix+": "+format, args...) }
 	for _, field := range []struct{ name, value string }{{"--root", evidence.Root}, {"--implementation-chain", evidence.ImplementationChain}, {"--artifact", evidence.Artifact}, {"--result", evidence.ResultRunID}, {"--critic", evidence.CriticRoot}} {
 		if field.value == "" {
@@ -2756,15 +2783,15 @@ func acceptOpenReadItems(f *GoalFile, r VerbRequest) []string {
 	return ids
 }
 
-// overridableDoneRe is the fixed shape of the three goal-state refusals of
-// done besides the read items' typed one.
-var overridableDoneRe = regexp.MustCompile(`^goal \S+ (has open review obligation finding=|has an open exception \(|is blocked by \S+, which is not done)`)
+// overridableDoneRe is the fixed shape of the four goal-state refusals of
+// done a forced conclusion overrides.
+var overridableDoneRe = regexp.MustCompile(`^goal \S+ (has open review notes |has open review obligation finding=|has an open exception \(|is blocked by \S+, which is not done)`)
 
 // ConclusionOverridable reports whether a rejected done's detail is one of
 // the four goal-state refusals a forced conclusion overrides: open read
 // items, an open review obligation, an open carry word, a blocker not done.
 func ConclusionOverridable(detail string) bool {
-	return strings.HasPrefix(detail, "GOAL_DONE_READ_ITEMS_OPEN: ") || overridableDoneRe.MatchString(detail)
+	return overridableDoneRe.MatchString(detail)
 }
 
 func depState(t *TreeGoals, id string) string {
@@ -3029,7 +3056,7 @@ func unparkRequest(r VerbRequest, id, verified string) PublishRequest {
 					grade = humanauthority.GradeEnrolled
 					rowName = "unpark of a human park to approved"
 				}
-				missing := fmt.Sprintf("goal %s was parked by %s; lifting a human's pause is a human act, or the seat's under a power of attorney that names resume-parked (metasystem goal resume %s --under GRANT --verified TEXT)", id, f.Parked.By, id)
+				missing := fmt.Sprintf("goal %s was paused by %s, and only a person, or a grant naming resume-parked, lifts that\nrun: metasystem goal resume %s --under GRANT --verified TEXT", id, strings.TrimPrefix(f.Parked.By, "human:"), id)
 				if err := r.requireHuman(humanAuthorityRow{Verb: "unpark", Name: rowName, Missing: missing, Session: true}, grade); err != nil {
 					return nil, err
 				}
@@ -3041,7 +3068,7 @@ func unparkRequest(r VerbRequest, id, verified string) PublishRequest {
 					if depState(t, dep) == StateDone {
 						continue
 					}
-					missing := fmt.Sprintf("goal %s is parked behind %s, which is not done; it returns by itself when every blocker is done (R-93-m1e), and lifting it earlier is a human act", id, dep)
+					missing := fmt.Sprintf("goal %s waits on %s, which isn't done; it resumes by itself then, and only a person resumes it earlier\nnothing to do; wait for %s, or a person runs metasystem goal resume %s", id, dep, dep, id)
 					if r.Actor.Human == "" {
 						return nil, fmt.Errorf("%s", missing)
 					}
