@@ -486,6 +486,13 @@ func (r textRow) lines(p *Page, s *Section, _ int) []line {
 	return []line{{prefix: []Span{spaces(s.indent)}, body: []Span{Plain(string(r))}, hang: s.indent + 2}}
 }
 
+// fixedRow is a line printed whole, never wrapped.
+type fixedRow string
+
+func (r fixedRow) lines(p *Page, s *Section, _ int) []line {
+	return []line{{prefix: []Span{spaces(s.indent)}, body: []Span{Plain(string(r))}, nowrap: true}}
+}
+
 func (s *Section) spaced() bool { return true }
 
 func (s *Section) lines(p *Page) []line {
@@ -519,6 +526,10 @@ func (s *Section) KV(key string, value ...Span) {
 
 // Text adds wrapped prose with a hanging indent.
 func (s *Section) Text(text string) { s.rows = append(s.rows, textRow(text)) }
+
+// Fixed adds a line printed whole however wide: fixed text another agent
+// reads verbatim (a peer message's preface), never prose to wrap.
+func (s *Section) Fixed(text string) { s.rows = append(s.rows, fixedRow(text)) }
 
 // Item adds a card: its symbol and title, then key/value rows under it.
 func (s *Section) Item(state State, title string) *Item {

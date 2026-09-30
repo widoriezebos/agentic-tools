@@ -583,8 +583,8 @@ func runAgentInbox(inv *intentInvocation) int {
 }
 
 // agentInboxView is the inbox: how many messages, then each message after
-// its fixed preface, its quoted lines kept quoted however they wrap, then the
-// notes on what was not shown or not marked.
+// its fixed preface printed whole, its quoted lines kept quoted however they
+// wrap, then the notes on what was not shown or not marked.
 func agentInboxView(messages []board.Message, seat agentSeat, all bool, notes []string, verbose bool) func(*textui.Page) {
 	return func(page *textui.Page) {
 		env := page.Env()
@@ -604,7 +604,9 @@ func agentInboxView(messages []board.Message, seat agentSeat, all bool, notes []
 			for _, line := range strings.Split(board.Render(message, seat.now, env.Zone), "\n") {
 				quoted, isQuote := strings.CutPrefix(line, "> ")
 				if !isQuote {
-					section.Text(line)
+					// The preface and closing lines are fixed text the
+					// seat's agent reads verbatim: printed whole, not wrapped.
+					section.Fixed(line)
 					continue
 				}
 				pieces := []string{quoted}

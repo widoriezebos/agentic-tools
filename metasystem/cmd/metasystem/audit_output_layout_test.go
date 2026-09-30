@@ -441,7 +441,7 @@ func layoutProblems(page string, width int, replace []string) []string {
 		}
 	}
 	for index, line := range lines {
-		if n := utf8.RuneCountInString(line); n > width && len(strings.Fields(line)) > 1 {
+		if n := utf8.RuneCountInString(line); n > width && len(strings.Fields(line)) > 1 && !layoutFixedLine(line) {
 			problems = append(problems, fmt.Sprintf("line %d is %d columns: %q", index+1, n, line))
 		}
 		if strings.HasSuffix(line, " ") {
@@ -615,4 +615,16 @@ func selectorPackage(selector *ast.SelectorExpr) (string, bool) {
 		return "", false
 	}
 	return ident.Name, true
+}
+
+// layoutFixedLine is a peer message's or note's fixed frame line, which
+// the seat's agent reads verbatim: printed whole, so exempt from the width
+// rule (Wido's ruling, 2026-09-30).
+func layoutFixedLine(line string) bool {
+	for _, frame := range []string{board.Preface, board.NotePreface, board.NoteClosing} {
+		if fixed, _, _ := strings.Cut(frame, "%"); strings.HasPrefix(line, fixed) {
+			return true
+		}
+	}
+	return false
 }
