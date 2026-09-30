@@ -1,6 +1,6 @@
 # error-checks-use-typed-errors
 
-- State: queued
+- State: approved
 - Priority: 1
 - Sequence: 7
 - Risk: severity=1 novelty=1 exposure=1 accumulation=1 basis="In-process refactor with no process boundary; behaviour preserved; tests pin each decision; reverts cleanly"
@@ -9,9 +9,11 @@
 - Origin: main
 - Next step: Next: Convert the remaining places that decide on error text (about ten; list them with a grep at ec495cbc8) to errors.Is or errors.As on refusal.Coded; give the closed trunk-red record a code field instead of the text match in IsTrunkRedClosed; land the error-text audit test at zero. Builder verbs-typederr is on it; hand work. Done when: the audit passes with no allowed exceptions and rewording a message changes no decision.
 - OpenedAt: 2026-09-30T12:03:35Z
-- Revision: 11
+- Revision: 12
 - Pinned: m1e
+- Budget: elapsedLimit=1h attemptLimit=3 reservedJobMinutesLimit=360 activeJobLimit=1 reviewRoundLimit=0
 - BudgetExceptions: 0
+- Approved: by=human:wido at=2026-09-30T19:05:20Z revision=12 opid=EHRDT2NB82CWFV1Y5TWP35KJQ3-m1e-b6a4eb0a authority=proven digest=91a2ca47fe117e2d9389710efa0b67b85a86c62018b5f73b80327fcbcff020c5 episode=12
 
 History:
 - 2026-09-30T12:03:35Z JMRCDJGB10YRZKEABA5JT58418-m1e-b6a4eb0a open actor=human:wido targets=error-checks-use-typed-errors,processes-read-structured-results
@@ -25,4 +27,5 @@ History:
 - 2026-09-30T18:20:16Z 2T4MM23JH8NHKEGQNME50HKJMV-m1e-b6a4eb0a approve actor=human:wido targets=error-checks-use-typed-errors
 - 2026-09-30T19:05:10Z H2X0YVHJPXD3F2YMZDZG5F7KDD-m1e-b6a4eb0a unapprove actor=human:wido targets=error-checks-use-typed-errors reason=Unapproved only to rewrite its intent in plain English (backlog sync 2026-09-30); approved again right after
 - 2026-09-30T19:05:15Z 7A1J1RP2EBFKX6AFPM1TWM9E1Z-m1e-b6a4eb0a edit actor=human:wido targets=error-checks-use-typed-errors
-Integrity: sha256=deb7296666df80f7178e33a32b40eaeba8b9dbdcb67621ff96fc0bf4cc7f5654
+- 2026-09-30T19:05:20Z EHRDT2NB82CWFV1Y5TWP35KJQ3-m1e-b6a4eb0a approve actor=human:wido targets=error-checks-use-typed-errors
+Integrity: sha256=a651a851b46b3ec550c9607be969022c75a9b322e559451b74fa17c0a2df6c60
