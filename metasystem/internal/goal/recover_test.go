@@ -260,24 +260,24 @@ func TestRecoveryUnblocksAStrandedPush(t *testing.T) {
 		Verb: "claim", Targets: []string{"claimable"}, Args: budgetIntentArgs(testBudget()),
 	})
 
-	// The stranded push blocks ordinary mutations…
-	_, err := Open(verbReqFor(aEndpoint, "01J5X00000000000000000Q030", "mac-a"), "blocked-out", "Waits.", "main", "Go.")
-	if err == nil || !strings.Contains(err.Error(), opid) {
-		t.Fatalf("a pushed entry blocks by name: %v", err)
+	// The stranded push blocks the clone durably…
+	if blocking, blocked, err := PushedBlocking(a); err != nil || !blocked || blocking.Opid != opid {
+		t.Fatalf("a pushed entry blocks by name: %+v %v %v", blocking, blocked, err)
 	}
-	// …until recovery completes the dead owner's claim.
+	// …and because its owner is provably dead, the next ordinary mutation
+	// runs recovery for it (completing the dead owner's claim) and then
+	// publishes (fencedflake, 2026-09-30).
+	if res, err := Open(verbReqFor(aEndpoint, "01J5X00000000000000000Q030", "mac-a"), "blocked-out", "Waits.", "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("the publish did not recover the dead owner's push: %+v %v", res, err)
+	}
 	reports, err := Recover(aEndpoint)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var clear bool
 	for _, rep := range reports {
-		if rep.Opid == opid && rep.Action == ActionComplete {
-			clear = true
+		if rep.Opid == opid && rep.Action != ActionNothingToDo {
+			t.Fatalf("the publish left the stranded push for a later recovery: %+v", reports)
 		}
-	}
-	if !clear {
-		t.Fatalf("recovery completes the stranded push: %+v", reports)
 	}
 	p, err := projectFetched(aEndpoint, time.Now())
 	if err != nil {
