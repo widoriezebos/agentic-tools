@@ -259,7 +259,7 @@ func TestIntentProofReferenceFeedsWaitProof(t *testing.T) {
 	owners := bed.workOwners()
 	exit := metarun.ExitInterrupted
 	owners.work.testRun = func(dir string, argv []string, stderr io.Writer) ([]byte, int, error) {
-		return []byte(`{"attemptId":"proof-20260926-a1","status":"running"}`), exit, nil
+		return testRunEnvelopeBytes(t, exit, `{"attemptId":"proof-20260926-a1","status":"running"}`), exit, nil
 	}
 	var waitArgs []string
 	owners.work.wait = func(args []string, print func(metarun.WaitResult, bool), _, _ io.Writer) int {

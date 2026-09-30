@@ -87,19 +87,31 @@ func TestGLEBatchSupplementalFreshnessUsesTheSelectedPlan(t *testing.T) {
 func TestGLEBatchFencedTipAdmissionNamesMemberForReassembly(t *testing.T) {
 	t.Parallel()
 	root, tree := batchPrefixReceiptTestRoot(t)
-	stub := filepath.Join(t.TempDir(), "fenced-test-run")
-	if err := testexec.WriteFile(stub, []byte("#!/bin/sh\nprintf 'CANDIDATE_GOAL_REFUSED state=fenced\\n' >&2\nexit 78\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	dependencies := batchTestExecutionDependencies(t, root, tree, stub)
-	_, err := batchowner.LaunchBatchTipProofWithDependencies(batchowner.BatchProofLaunch{Root: root, GoalID: "goal-c", Tree: tree, Mode: testpolicy.ModeAuto,
-		ResultPath: filepath.Join(t.TempDir(), "result.json")}, dependencies)
-	var refusal *batchowner.BatchProofAdmissionRefusal
-	if !errors.As(err, &refusal) || refusal.Kind != "fenced" {
-		t.Fatalf("tip fence classified as %T %v", err, err)
-	}
-	if proofrun.ExitAdmissionRefused != 78 {
-		t.Fatal("test stub exit no longer matches admission refusal")
+	// The tip run's kind comes from the envelope's code and data: a fenced
+	// candidate is ejected, and a bare budget refusal withdraws the member
+	// as the prefix run does (one classifier; the tip once called it
+	// capacity).
+	for _, test := range []struct {
+		code, kind string
+		data       any
+	}{
+		{"CANDIDATE_GOAL_REFUSED", "fenced", map[string]string{"state": "fenced"}},
+		{"CANDIDATE_GOAL_REFUSED", "capacity", map[string]string{"state": "claimed"}},
+		{"BUDGET_REFUSED", "budget", nil},
+		{"GOAL_REVISION_MOVED", "revision", nil},
+	} {
+		stub := filepath.Join(t.TempDir(), "refused-test-run")
+		script := testRunEnvelopeScript(t, proofrun.ExitAdmissionRefused, test.code, "refused", test.data, "state=fenced BATCH_MEMBER_BUDGET_REFUSED in a note")
+		if err := testexec.WriteFile(stub, []byte(script), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		dependencies := batchTestExecutionDependencies(t, root, tree, stub)
+		_, err := batchowner.LaunchBatchTipProofWithDependencies(batchowner.BatchProofLaunch{Root: root, GoalID: "goal-c", Tree: tree, Mode: testpolicy.ModeAuto,
+			ResultPath: filepath.Join(t.TempDir(), "result.json")}, dependencies)
+		var refusal *batchowner.BatchProofAdmissionRefusal
+		if !errors.As(err, &refusal) || refusal.Kind != test.kind {
+			t.Fatalf("tip %s %v classified as %T %v, want %s", test.code, test.data, err, err, test.kind)
+		}
 	}
 }
 

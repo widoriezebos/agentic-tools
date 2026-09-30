@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"errors"
 	"io"
 	"os"
@@ -76,8 +75,8 @@ func TestGLEPathRootGoPackageExpansionPlansWithCompleteInputs(t *testing.T) {
 	status, stdout, _ := runOnOwnStreams(func(stdout, stderr io.Writer) int {
 		return runTestPlan([]string{"--root", root, "--purpose", "diagnostic", "--json"}, stdout, stderr)
 	})
-	var output testrun.PlanOutput
-	if err := json.Unmarshal([]byte(stdout), &output); status != 0 || err != nil ||
+	output, err := planOfEnvelope(stdout, "test plan", status)
+	if status != 0 || err != nil ||
 		!slices.Equal(output.Plan.SelectedGroups, []string{selected}) ||
 		len(output.Groups) != 1 || output.Groups[0].ID != selected {
 		t.Fatalf("public root-package JSON plan = status %d output %q: %v", status, stdout, err)
@@ -86,7 +85,7 @@ func TestGLEPathRootGoPackageExpansionPlansWithCompleteInputs(t *testing.T) {
 		t: t, candidate: candidate, declarations: []string{"*", "*/**", "go.mod", "metasystem.conf", "testing.json"},
 		tree: "working-root-tree", wantCalls: 1,
 	}
-	err := testrun.CheckDeliveryInputParity(candidate, "", "testing.json", contract, plan, fact.snapshot)
+	err = testrun.CheckDeliveryInputParity(candidate, "", "testing.json", contract, plan, fact.snapshot)
 	fact.assertConsumed()
 	if err == nil || err.Error() != "delivery candidate differs from relevant working-tree inputs: candidate=candidate-root-tree working=working-root-tree" {
 		t.Fatalf("root package input closure did not refuse nested input: %v", err)
@@ -143,8 +142,8 @@ func TestGLEPathPlanReportsOptionalNoMatch(t *testing.T) {
 	if status != 0 {
 		t.Fatalf("public plan status = %d", status)
 	}
-	var output testrun.PlanOutput
-	if err := json.Unmarshal([]byte(stdout), &output); err != nil || len(output.UnmatchedInputs) != 1 || output.UnmatchedInputs[0] != unmatched[0] {
+	output, err := planOfEnvelope(stdout, "test plan", status)
+	if err != nil || len(output.UnmatchedInputs) != 1 || output.UnmatchedInputs[0] != unmatched[0] {
 		t.Fatalf("public no-match JSON = %q, %v", stdout, err)
 	}
 	status, _, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {

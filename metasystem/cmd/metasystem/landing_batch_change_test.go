@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,6 +17,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/adapter"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
@@ -405,12 +407,14 @@ func TestBatchChangeOnlyProofIsChargedToTheLane(t *testing.T) {
 }
 
 // TestLaneHoldIsVisibleOnTheBatch (U11b N-8, F-3): a lane that cannot be
-// named at the seal's forecast, or a pinned engine without --lane at the
-// plan, holds the batch with its plain reason on the record, and the lane
-// view (landing status, /api/board) says it.
+// named, at the seal's forecast or behind the plan, holds the batch with
+// its plain reason on the record, and the lane view (landing status,
+// /api/board) says it. The hold is read from the error's code
+// (errors.As), never its words: a plain error that merely says the code
+// is a failure, not a hold (structured-output U1).
 func TestLaneHoldIsVisibleOnTheBatch(t *testing.T) {
 	t.Parallel()
-	for _, step := range []string{"seal", "plan"} {
+	for _, step := range []string{"seal", "plan", "words"} {
 		root := t.TempDir()
 		const id = "01j5x00000000000000000ba84"
 		change := laneChangeUnit()
@@ -420,15 +424,18 @@ func TestLaneHoldIsVisibleOnTheBatch(t *testing.T) {
 		if err := store.Create(record); err != nil {
 			t.Fatal(err)
 		}
-		reason := "LANE_ACCOUNT_UNRESOLVED: no landing lane is registered on this host"
+		unresolved := &refusal.Coded{Code: lane.CodeAccountUnresolved, Reason: errors.New("no landing lane is registered on this host")}
 		dependencies := batchowner.BatchProofDependencies{
 			Base:        func(string) (string, error) { return "base-tree", nil },
 			Rearm:       func(string, string) error { return nil },
 			Attempts:    func(string) ([]proofrun.Attempt, error) { return nil, nil },
 			LaneAccount: func(string) (string, error) { return "lane:0123456789ab", nil },
 			Seal: func(root, id, actor, base string, at time.Time) error {
-				if step == "seal" {
-					return errors.New(reason)
+				switch step {
+				case "seal":
+					return unresolved
+				case "words":
+					return errors.New("LANE_ACCOUNT_UNRESOLVED: said, not coded")
 				}
 				return store.Update(id, func(current *batch.Record) error {
 					current.Seal = map[string]batch.Claim{change.GoalID: {}}
@@ -437,20 +444,26 @@ func TestLaneHoldIsVisibleOnTheBatch(t *testing.T) {
 				})
 			},
 			Plan: func(string, string, string, testpolicy.Mode) (testpolicy.Plan, error) {
-				return testpolicy.Plan{}, errors.New("LANE_ENGINE_TOO_OLD: the pinned policy engine predates --lane; run: metasystem landing restart")
+				return testpolicy.Plan{}, fmt.Errorf("plan joined unit: %w", unresolved)
 			},
 			Launch: func(batchowner.BatchProofLaunch) (proofrun.TestResult, error) {
 				t.Fatal("a held batch launched")
 				return proofrun.TestResult{}, nil
 			},
 		}
-		_ = batchowner.ExecuteBatchProof(root, id, "landing+owner", "window", "token", proofrun.LoadSample{}, time.Unix(10, 0), dependencies)
+		proofErr := batchowner.ExecuteBatchProof(root, id, "landing+owner", "window", "token", proofrun.LoadSample{}, time.Unix(10, 0), dependencies)
 		after, err := store.Load(id)
 		if err != nil {
 			t.Fatal(err)
 		}
-		want := map[string]string{"seal": "LANE_ACCOUNT_UNRESOLVED", "plan": "metasystem landing restart"}[step]
 		view := lane.BatchViewOf(after)
+		if step == "words" {
+			if proofErr == nil || strings.HasPrefix(view.Reason, "holds: ") {
+				t.Fatalf("an uncoded error held the batch: err=%v reason=%q", proofErr, view.Reason)
+			}
+			continue
+		}
+		want := "no landing lane is registered on this host"
 		if !strings.Contains(view.Reason, want) || !strings.HasPrefix(view.Reason, "holds: ") {
 			t.Fatalf("%s hold: state=%s reason=%q history=%+v", step, after.State, view.Reason, after.History)
 		}

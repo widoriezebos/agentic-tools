@@ -34,9 +34,9 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes/external"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/verbresult"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/verbresult"
 )
 
 // The work commands prepare and advance an agent's unit of work: brief

@@ -90,12 +90,12 @@ func TestLaneProofChargesTheLaneNotAGoal(t *testing.T) {
 
 // TestTrustedPolicyEngineForwardsTheLane (U11b F-3): the pinned trusted-base
 // engine plans a lane-charged run on the lane, never on some goal; an engine
-// that predates --lane is refused with the fix named, never asked with a goal.
+// that answers without its envelope is refused, never asked with a goal.
 func TestTrustedPolicyEngineForwardsTheLane(t *testing.T) {
 	t.Parallel()
 	argsFile := filepath.Join(t.TempDir(), "args")
 	engine := filepath.Join(t.TempDir(), "policy-engine")
-	script := "#!/bin/sh\nprintf '%s\\n' \"$@\" > '" + argsFile + "'\nprintf '%s\\n' '{\"schemaVersion\":1}'\n"
+	script := "#!/bin/sh\nprintf '%s\\n' \"$@\" > '" + argsFile + "'\nprintf '%s\\n' '{\"schemaVersion\":1,\"verb\":\"internal test plan\",\"targets\":[],\"outcome\":\"confirmed\",\"summary\":\"\",\"data\":{\"schemaVersion\":1}}'\n"
 	if err := testexec.WriteFile(engine, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -111,12 +111,13 @@ func TestTrustedPolicyEngineForwardsTheLane(t *testing.T) {
 	if strings.Join(args[:3], " ") != "internal test plan" || !slices.Contains(args, "--lane") || !slices.Contains(args, "lane:0123456789ab") || slices.Contains(args, "--goal") {
 		t.Fatalf("policy child argv=%v", args)
 	}
+	// An engine that answers in words, not the envelope, is read as unknown:
+	// the plan is refused, never guessed from its text (structured-output U1).
 	old := filepath.Join(t.TempDir(), "old-engine")
 	if err := testexec.WriteFile(old, []byte("#!/bin/sh\necho 'flag provided but not defined: -lane' >&2\nexit 2\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := testrun.PlanWithTrustedPolicyEngine(old, request, t.TempDir(), "candidate"); err == nil || !strings.Contains(err.Error(), "LANE_ENGINE_TOO_OLD") ||
-		!strings.Contains(err.Error(), "metasystem landing restart") {
-		t.Fatalf("an engine without --lane: %v", err)
+	if _, err := testrun.PlanWithTrustedPolicyEngine(old, request, t.TempDir(), "candidate"); err == nil || !strings.Contains(err.Error(), "could not be read") {
+		t.Fatalf("an engine answering in words: %v", err)
 	}
 }

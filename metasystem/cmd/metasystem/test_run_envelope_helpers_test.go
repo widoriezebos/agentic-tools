@@ -2,12 +2,15 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/shellquote"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/verbresult"
 )
 
@@ -56,4 +59,48 @@ func withTestRunEnvelope(t *testing.T, script string) string {
 		t.Fatalf("fake test run script's final exit: %v", err)
 	}
 	return trimmed[:at] + "\nprintf '%s' " + shellquote.Quote(testRunEnvelopeLine(t, exit, "", "", nil)) + trimmed[at:] + "\n"
+}
+
+// planOfEnvelope reads a test plan --json answer: one envelope of verb whose
+// data is the plan (R1).
+func planOfEnvelope(stdout, verb string, status int) (testrun.PlanOutput, error) {
+	result, err := verbresult.Read([]byte(stdout), verb, status, "")
+	if err != nil {
+		return testrun.PlanOutput{}, err
+	}
+	var output testrun.PlanOutput
+	return output, result.DecodeData(&output)
+}
+
+// testRunEnvelopeBytes is a fake in-process runner's stdout: the envelope
+// its exit stands for, with data (raw JSON).
+func testRunEnvelopeBytes(t *testing.T, exit int, data string) []byte {
+	t.Helper()
+	return []byte(testRunEnvelopeLine(t, exit, "", "", json.RawMessage(data)))
+}
+
+// TestAuditEnvelopeFieldsMatchThePublicResult: the internal verbs'
+// envelope (internal/verbresult) is the public intentResult on the wire,
+// plus its code: every field a public verb prints has the same name there.
+func TestAuditEnvelopeFieldsMatchThePublicResult(t *testing.T) {
+	t.Parallel()
+	names := func(value any) map[string]bool {
+		fields := map[string]bool{}
+		kind := reflect.TypeOf(value)
+		for index := range kind.NumField() {
+			if tag, _, _ := strings.Cut(kind.Field(index).Tag.Get("json"), ","); tag != "" && tag != "-" {
+				fields[tag] = true
+			}
+		}
+		return fields
+	}
+	envelope := names(verbresult.Result{})
+	for name := range names(intentResult{}) {
+		if !envelope[name] {
+			t.Errorf("the public result's field %q is missing from verbresult.Result", name)
+		}
+	}
+	if !envelope["code"] {
+		t.Error("verbresult.Result has no code field")
+	}
 }
