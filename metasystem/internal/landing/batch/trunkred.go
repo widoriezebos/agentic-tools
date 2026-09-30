@@ -94,11 +94,14 @@ type OpenEntry struct {
 	LastBaseCommit                   string
 	Class, Identity, Owner           string
 	AllowanceUntil                   time.Time
+	// Unavailable marks an entry whose check could not run: no red on main.
+	Unavailable bool
 }
 
-// HoldsLanding reports whether the entry holds a landing: only a trunk red does.
+// HoldsLanding reports whether the entry holds a landing: only a trunk red
+// does, and never a check that could not run.
 func (entry OpenEntry) HoldsLanding() bool {
-	return entry.Class == "" || entry.Class == ClassTrunkRed
+	return !entry.Unavailable && (entry.Class == "" || entry.Class == ClassTrunkRed)
 }
 
 // CarriesLanding reports whether a known flake's allowance is still running at now.

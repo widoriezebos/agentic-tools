@@ -71,6 +71,17 @@ func checkTrunkRedFromProjection(repoRoot string, now time.Time, projection goal
 	if !now.UTC().Before(window.Add(cadenceHealthInterval + time.Minute)) {
 		return roleDead(RoleTrunkRed, fmt.Sprintf("deep validation cadence is overdue at trunk %s tree %s", cadence.TrunkCommit, cadence.TrunkTree), remedy)
 	}
+	if cadence.Unavailable() {
+		// The check could not run: main is not known red, and the cause is
+		// the one command that lets the cadence run again.
+		reason := fmt.Sprintf("the deep validation could not run at trunk %s", cadence.TrunkCommit)
+		unavailableRemedy := remedy
+		if gap := goal.StandingAuthorityGap(projection.Tree, goal.StandingValidationGoal, goal.Actor{}); gap != nil {
+			reason += ": " + gap.Reason
+			unavailableRemedy = gap.Command
+		}
+		return roleUnknown(RoleTrunkRed, reason, unavailableRemedy)
+	}
 	if !cadence.Green() {
 		return roleDead(RoleTrunkRed, fmt.Sprintf("deep validation cadence is non-green at trunk %s tree %s", cadence.TrunkCommit, cadence.TrunkTree), remedy)
 	}
@@ -84,7 +95,7 @@ func checkTrunkRedFromProjection(repoRoot string, now time.Time, projection goal
 	var unowned []string
 	tracked := 0
 	for _, entry := range projection.Tree.TrunkRed {
-		if entry.Closed != nil {
+		if entry.Closed != nil || entry.CheckUnavailable() {
 			continue
 		}
 		if entry.EntryClass() != goal.TrunkRedClassTrunkRed {

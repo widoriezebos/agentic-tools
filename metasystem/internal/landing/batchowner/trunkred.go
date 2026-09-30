@@ -158,16 +158,22 @@ func (owner LedgerTrunkRedOwner) Open() ([]batch.OpenEntry, error) {
 		if entry.Closed != nil {
 			continue
 		}
-		lastBaseCommit := ""
-		if len(entry.Sightings) > 0 {
-			lastBaseCommit = entry.Sightings[len(entry.Sightings)-1].BaseCommit
-		}
-		allowance, _ := time.Parse(time.RFC3339, entry.AllowanceUntil)
-		open = append(open, batch.OpenEntry{ID: entry.ID, Group: entry.Group, OwnerMachine: entry.Owner.Machine,
-			FixGoal: entry.FixGoal, Holds: append([]string(nil), entry.Holds...), LastBaseCommit: lastBaseCommit,
-			Class: entry.EntryClass(), AllowanceUntil: allowance, Identity: entry.Identity, Owner: cmp.Or(entry.Owner.By, entry.Owner.Machine)})
+		open = append(open, openEntryFrom(entry))
 	}
 	return open, nil
+}
+
+// openEntryFrom reads one open ledger entry for the landing path.
+func openEntryFrom(entry goal.TrunkRedEntry) batch.OpenEntry {
+	lastBaseCommit := ""
+	if len(entry.Sightings) > 0 {
+		lastBaseCommit = entry.Sightings[len(entry.Sightings)-1].BaseCommit
+	}
+	allowance, _ := time.Parse(time.RFC3339, entry.AllowanceUntil)
+	return batch.OpenEntry{ID: entry.ID, Group: entry.Group, OwnerMachine: entry.Owner.Machine,
+		FixGoal: entry.FixGoal, Holds: append([]string(nil), entry.Holds...), LastBaseCommit: lastBaseCommit,
+		Class: entry.EntryClass(), AllowanceUntil: allowance, Identity: entry.Identity, Owner: cmp.Or(entry.Owner.By, entry.Owner.Machine),
+		Unavailable: entry.CheckUnavailable()}
 }
 
 func (owner LedgerTrunkRedOwner) runJournaled(opid string, publish func() (goal.PublishResult, error)) (goal.PublishResult, error) {

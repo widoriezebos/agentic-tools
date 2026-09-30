@@ -14,6 +14,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/digest"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gaterun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
@@ -271,5 +272,82 @@ func TestTickRefusesBeforeRunningByCode(t *testing.T) {
 	output, err := RunTick(t.TempDir(), owner, time.Now)
 	if !errors.As(err, &refusal) || refusal.Code != cadenceLedgerUnreadable || output.Trunk.Tree != "" || prepared != 0 {
 		t.Fatalf("ledgerless trunk = %+v, %v (prepared %d), want the unreadable-ledger refusal before preparation", output, err, prepared)
+	}
+}
+
+func TestCadenceAuthorityGapReadsTheStandingGoalWithoutWriting(t *testing.T) {
+	t.Parallel()
+	lane := goal.Actor{Machine: "landing", Lineage: "landing-owner"}
+	unapproved := &goal.TreeGoals{Live: map[string]*goal.GoalFile{AuthorityGoal: {State: goal.StateQueued}}}
+	err := cadenceAuthorityGap(unapproved, lane)(time.Unix(1, 0))
+	var gap *goal.AuthorityGap
+	if !errors.As(err, &gap) || !strings.Contains(gap.Reason, "not approved") || gap.Command != "metasystem goal approve "+AuthorityGoal {
+		t.Fatalf("unapproved standing goal gap=%v", err)
+	}
+	ready := &goal.TreeGoals{Live: map[string]*goal.GoalFile{AuthorityGoal: {State: goal.StateApproved, Obligation: &goal.GovernedObligation{}}}}
+	if err := cadenceAuthorityGap(ready, lane)(time.Unix(1, 0)); err != nil {
+		t.Fatalf("approved standing goal with an obligation reported %v", err)
+	}
+}
+
+func TestLaneRecordOnlyMoveReadsTheChangedPathsUnderTheModule(t *testing.T) {
+	t.Parallel()
+	repo := t.TempDir()
+	git := func(args ...string) string {
+		t.Helper()
+		command := exec.Command("git", append([]string{"-C", repo}, args...)...)
+		command.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null",
+			"GIT_AUTHOR_NAME=bed", "GIT_AUTHOR_EMAIL=bed@example.invalid", "GIT_COMMITTER_NAME=bed", "GIT_COMMITTER_EMAIL=bed@example.invalid")
+		output, err := command.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, output)
+		}
+		return strings.TrimSpace(string(output))
+	}
+	write := func(path, content string) {
+		t.Helper()
+		full := filepath.Join(repo, filepath.FromSlash(path))
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	commit := func(message string) gaterun.CadenceTrunk {
+		git("add", "-A")
+		git("commit", "-qm", message)
+		return gaterun.CadenceTrunk{Commit: git("rev-parse", "HEAD"), Tree: git("rev-parse", "HEAD^{tree}")}
+	}
+	git("init", "-q")
+	write("metasystem/plans/goals/trunk-red.json", "{}\n")
+	write("metasystem/plans/goals/standing-validation.md", "# standing-validation\n")
+	write("metasystem/main.go", "package main\n")
+	base := commit("base")
+	write("metasystem/plans/goals/trunk-red.json", "{\"schema\":1}\n")
+	register := commit("trunk-red record")
+	write("metasystem/plans/goals/standing-validation.md", "# standing-validation\nclaimed\n")
+	standing := commit("goal claim standing-validation")
+	write("metasystem/main.go", "package main\n\nfunc main() {}\n")
+	code := commit("code")
+	module := filepath.Join(repo, "metasystem")
+	move := laneRecordOnlyMove(module)
+	for _, tc := range []struct {
+		name     string
+		from, to gaterun.CadenceTrunk
+		want     bool
+	}{
+		{"register only", base, register, true},
+		{"register and standing goal", base, standing, true},
+		{"with code", base, code, false},
+		{"code only", standing, code, false},
+	} {
+		got, err := move(tc.from, tc.to)
+		if err != nil || got != tc.want {
+			t.Fatalf("%s: record-only=%t err=%v, want %t", tc.name, got, err, tc.want)
+		}
+	}
+	if got, err := move(gaterun.CadenceTrunk{Commit: strings.Repeat("0", 40)}, code); err == nil || got {
+		t.Fatalf("an unknown recorded trunk read as record-only=%t err=%v", got, err)
 	}
 }

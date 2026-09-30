@@ -245,8 +245,46 @@ func TestCadenceAbsentStandingAuthorityPublishesNonGreen(t *testing.T) {
 	input, deps, ledger, executions := cadenceFixture(&now, probe)
 	deps.ClaimAuthority = func(time.Time) (CadenceAuthority, error) { return CadenceAuthority{}, errors.New("absent") }
 	result, err := RunCadenceTick(input, deps)
-	if err != nil || *executions != 0 || !result.Published || result.Status == nil || result.Status.Green() || len(ledger.published) != 1 || ledger.published[0].Status != "unavailable" {
+	// The check could not run: the status says unavailable with its cause,
+	// and no trunk-red entry is opened, since main was never judged red.
+	if err != nil || *executions != 0 || !result.Published || result.Status == nil || result.Status.Green() || len(ledger.published) != 0 ||
+		result.Status.Groups[0].Status != "unavailable" || !strings.Contains(result.Unavailable, "absent") {
 		t.Fatalf("authority refusal=%+v executions=%d red=%+v err=%v", result, *executions, ledger.published, err)
+	}
+}
+
+func TestCadenceUnavailableRepeatWritesNothingWhileAuthorityIsMissing(t *testing.T) {
+	now, probe := cadenceTestStart.Add(time.Hour), cadenceProbe("section/deep", strings.Repeat("1", 64), "reused")
+	input, deps, ledger, executions := cadenceFixture(&now, probe)
+	// The last tick could not run; since then main moved (its own ledger
+	// commit), so the fetched trunk differs from the recorded one.
+	input.Latest.TrunkCommit, input.Latest.TrunkTree = strings.Repeat("c", 40), strings.Repeat("d", 40)
+	input.Latest.RunID, input.Latest.AttemptID, input.Latest.Groups[0].Status = "cadence-unavailable", "cadence-unavailable", "unavailable"
+	claims := 0
+	deps.ClaimAuthority = func(time.Time) (CadenceAuthority, error) { claims++; return CadenceAuthority{}, errors.New("absent") }
+	deps.AuthorityGap = func(time.Time) error { return errors.New("goal standing-validation is not approved") }
+	result, err := RunCadenceTick(input, deps)
+	if err != nil || result.Published || ledger.claims != 0 || claims != 0 || *executions != 0 || !strings.Contains(result.Unavailable, "not approved") {
+		t.Fatalf("repeat unavailable tick=%+v ledger claims=%d authority claims=%d executions=%d err=%v", result, ledger.claims, claims, *executions, err)
+	}
+	// Once the authority is there again, the tick claims and runs.
+	deps.AuthorityGap = func(time.Time) error { return nil }
+	deps.ClaimAuthority = func(time.Time) (CadenceAuthority, error) {
+		return CadenceAuthority{GoalID: "standing-validation", ObligationRevision: 3}, nil
+	}
+	result, err = RunCadenceTick(input, deps)
+	if err != nil || !result.Published || ledger.claims != 1 || *executions != 1 || result.Unavailable != "" {
+		t.Fatalf("restored authority tick=%+v ledger claims=%d executions=%d err=%v", result, ledger.claims, *executions, err)
+	}
+}
+
+func TestCadenceMissingAuthorityWritesNothingEvenTheFirstTime(t *testing.T) {
+	now, probe := cadenceTestStart.Add(time.Hour), cadenceProbe("section/deep", strings.Repeat("1", 64), "failed")
+	input, deps, ledger, executions := cadenceFixture(&now, probe)
+	deps.AuthorityGap = func(time.Time) error { return errors.New("goal standing-validation is not approved") }
+	result, err := RunCadenceTick(input, deps)
+	if err != nil || result.Published || ledger.claims != 0 || ledger.status != nil || *executions != 0 || !strings.Contains(result.Unavailable, "not approved") {
+		t.Fatalf("first unavailable tick=%+v claims=%d executions=%d err=%v", result, ledger.claims, *executions, err)
 	}
 }
 
@@ -352,5 +390,56 @@ func TestCadencePackagesUseNoWallClock(t *testing.T) {
 				t.Errorf("%s uses %s", path, forbidden)
 			}
 		}
+	}
+}
+
+// The lane's own record commits (the trunk-red register, the standing
+// goal's claim and release) move main without changing what the cadence
+// judges; they never count as a trunk change that runs or republishes it.
+func TestCadenceLaneRecordMoveIsNotATrunkChange(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		prior        string
+		recordOnly   bool
+		forced       bool
+		claims, runs int
+	}{
+		{"red, record-only move", "failed", true, false, 0, 0},
+		{"green, record-only move", "passed", true, false, 0, 0},
+		{"red, code move", "failed", false, false, 1, 1},
+		{"green, code move", "passed", false, false, 1, 0},
+		{"red, record-only move, forced window", "failed", true, true, 1, 1},
+	} {
+		now, probe := cadenceTestStart.Add(time.Hour), cadenceProbe("section/deep", strings.Repeat("1", 64), "reused")
+		if tc.forced {
+			now = cadenceTestStart.Add(CadenceForcedInterval)
+		}
+		input, deps, ledger, executions := cadenceFixture(&now, probe)
+		input.Latest.Groups[0].Status = tc.prior
+		recorded := CadenceTrunk{Commit: strings.Repeat("c", 40), Tree: strings.Repeat("d", 40)}
+		input.Latest.TrunkCommit, input.Latest.TrunkTree = recorded.Commit, recorded.Tree
+		asked := 0
+		deps.RecordOnlyMove = func(from, to CadenceTrunk) (bool, error) {
+			asked++
+			if from != recorded || to.Commit != strings.Repeat("a", 40) {
+				t.Fatalf("%s: record move asked from %+v to %+v", tc.name, from, to)
+			}
+			return tc.recordOnly, nil
+		}
+		result, err := RunCadenceTick(input, deps)
+		if err != nil || asked != 1 || ledger.claims != tc.claims || *executions != tc.runs || result.Published != (tc.claims == 1) {
+			t.Fatalf("%s: tick=%+v asked=%d claims=%d runs=%d err=%v", tc.name, result, asked, ledger.claims, *executions, err)
+		}
+	}
+}
+
+func TestCadenceRefusedWeightDischargeIsUnavailableNotRed(t *testing.T) {
+	now, probe := cadenceTestStart.Add(time.Hour), cadenceProbe("section/deep", strings.Repeat("1", 64), "failed")
+	input, deps, ledger, _ := cadenceFixture(&now, probe)
+	input.WeightDue = true
+	deps.DischargeWeight = func(CadenceAuthority, string, uint64, time.Time) error { return errors.New("refused") }
+	result, err := RunCadenceTick(input, deps)
+	if err != nil || !result.Published || result.Status == nil || result.Status.Groups[0].Status != "unavailable" || len(ledger.published) != 0 {
+		t.Fatalf("refused discharge tick=%+v red=%+v err=%v", result, ledger.published, err)
 	}
 }

@@ -65,6 +65,24 @@ func (status CadenceStatus) Green() bool {
 	return true
 }
 
+// CadenceUnavailableAttempt is the attempt of a cadence whose deep check
+// could not run (no standing authority, no terminal runner result).
+const CadenceUnavailableAttempt = "cadence-unavailable"
+
+// Unavailable reports a status whose check could not run or could not be
+// discharged: every group is "unavailable". It is not a red.
+func (status CadenceStatus) Unavailable() bool {
+	if len(status.Groups) == 0 {
+		return false
+	}
+	for _, group := range status.Groups {
+		if group.Status != "unavailable" {
+			return false
+		}
+	}
+	return true
+}
+
 type CadenceClaim struct {
 	Key          CadenceClaimKey `json:"key"`
 	OwnerMachine string          `json:"ownerMachine"`

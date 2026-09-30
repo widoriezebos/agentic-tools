@@ -41,7 +41,7 @@ const (
 	// fetched trunk refused: its policy engine, contract or checkout.
 	cadencePreparationRefused = "CADENCE_PREPARATION_REFUSED"
 	// AuthorityGoal is the standing goal a cadence run is claimed under.
-	AuthorityGoal = "standing-validation"
+	AuthorityGoal = goal.StandingValidationGoal
 )
 
 // Refusal is a tick refused before it ran, by code.
@@ -132,6 +132,8 @@ func RunTick(root string, owner Owner, clock func() time.Time) (TickOutput, erro
 		},
 		Ledger: gaterun.GoalCadenceLedger{Endpoint: endpoint, Actor: actor},
 	}
+	deps.AuthorityGap = cadenceAuthorityGap(projection.Tree, actor)
+	deps.RecordOnlyMove = laneRecordOnlyMove(root)
 	deps.ClaimAuthority = func(at time.Time) (gaterun.CadenceAuthority, error) {
 		return claimCadenceAuthority(endpoint, actor, owner.Epoch, at)
 	}
@@ -277,6 +279,48 @@ func claimCadenceAuthority(endpoint goal.Endpoint, actor goal.Actor, epoch int64
 		return gaterun.CadenceAuthority{}, fmt.Errorf("standing cadence authority is unavailable: %v", err)
 	}
 	return gaterun.CadenceAuthority{GoalID: AuthorityGoal, ObligationRevision: binding.File.Obligation.Revision}, nil
+}
+
+// laneRecordOnlyMove reads, in the lane checkout at root (the module), the
+// paths changed from one trunk commit to another and says whether every one
+// is a lane record (goal.IsLaneRecordPath under the module's prefix).
+func laneRecordOnlyMove(root string) func(from, to gaterun.CadenceTrunk) (bool, error) {
+	return func(from, to gaterun.CadenceTrunk) (bool, error) {
+		git := func(args ...string) (string, error) {
+			command := exec.Command("git", append([]string{"-C", root}, args...)...)
+			command.Env = gittree.ScrubbedEnviron()
+			output, err := command.Output()
+			if err != nil {
+				return "", fmt.Errorf("git %s: %w", strings.Join(args, " "), err)
+			}
+			return string(output), nil
+		}
+		prefix, err := git("rev-parse", "--show-prefix")
+		if err != nil {
+			return false, err
+		}
+		names, err := git("diff", "--no-renames", "--name-only", "-z", from.Commit, to.Commit, "--")
+		if err != nil {
+			return false, err
+		}
+		for _, name := range strings.Split(names, "\x00") {
+			if name != "" && !goal.IsLaneRecordPath(name, strings.TrimSpace(prefix)) {
+				return false, nil
+			}
+		}
+		return true, nil
+	}
+}
+
+// cadenceAuthorityGap reads the tick's ledger projection for why the
+// standing authority is missing, without claiming or writing anything.
+func cadenceAuthorityGap(tree *goal.TreeGoals, actor goal.Actor) func(time.Time) error {
+	return func(time.Time) error {
+		if gap := goal.StandingAuthorityGap(tree, AuthorityGoal, actor); gap != nil {
+			return gap
+		}
+		return nil
+	}
 }
 
 func releaseCadenceAuthority(endpoint goal.Endpoint, actor goal.Actor, authority gaterun.CadenceAuthority, at time.Time) error {

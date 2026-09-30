@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/behaviorsurface"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/pathpattern"
 )
 
@@ -639,6 +640,11 @@ func DecideMovedBase(record Record, changed []string, installationPrefix string)
 		return MovedBase{Reopen: true}
 	}
 	installationPrefix = strings.Trim(filepath.ToSlash(installationPrefix), "/")
+	// The lane's own record commits change nothing a batch proves.
+	changed = slices.DeleteFunc(slices.Clone(changed), func(path string) bool { return goal.IsLaneRecordPath(path, installationPrefix) })
+	if len(changed) == 0 {
+		return MovedBase{}
+	}
 	for _, changedPath := range changed {
 		policyPath := filepath.ToSlash(changedPath)
 		if installationPrefix != "" && policyPath != installationPrefix && !strings.HasPrefix(policyPath, installationPrefix+"/") {

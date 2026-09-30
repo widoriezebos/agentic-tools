@@ -150,6 +150,14 @@ type TrunkRedEntry struct {
 	FixProof       *TrunkRedFixProof `json:"fixProof,omitempty"`
 }
 
+// CheckUnavailable reports an entry whose check could not run: status
+// "unavailable" with no failing test. It records no red on main and holds
+// no landing; old engines opened such entries for a cadence without its
+// standing authority.
+func (entry TrunkRedEntry) CheckUnavailable() bool {
+	return entry.Status == "unavailable" && len(entry.Failures) == 0
+}
+
 // EntryClass reads an absent class as trunk-red.
 func (entry TrunkRedEntry) EntryClass() string {
 	if entry.Class == "" {
