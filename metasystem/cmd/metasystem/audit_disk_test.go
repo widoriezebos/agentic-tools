@@ -511,9 +511,145 @@ func auditDiskGoSites(t *testing.T, include func(rel string) bool, classify func
 	return sites
 }
 
+// auditDiskEmptyTempHelperLines returns, per file of one package, the lines
+// of calls that pass the literal "" to a same-package function whose
+// parameter reaches the directory argument of os.MkdirTemp or os.CreateTemp,
+// directly or through further such helpers: frozenWorkerProbePaths("") is
+// os.MkdirTemp("", …) by another spelling. Plain function calls only; a
+// method or a function value is not followed.
+func auditDiskEmptyTempHelperLines(fileSet *token.FileSet, files []*ast.File) map[*ast.File][]int {
+	type function struct {
+		decl   *ast.FuncDecl
+		file   *ast.File
+		params map[string]int
+	}
+	functions := map[string]function{}
+	for _, file := range files {
+		for _, decl := range file.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if !ok || fn.Recv != nil || fn.Body == nil {
+				continue
+			}
+			params := map[string]int{}
+			index := 0
+			for _, field := range fn.Type.Params.List {
+				if len(field.Names) == 0 {
+					index++
+					continue
+				}
+				for _, name := range field.Names {
+					params[name.Name] = index
+					index++
+				}
+			}
+			functions[fn.Name.Name] = function{decl: fn, file: file, params: params}
+		}
+	}
+	// roots[name][i]: parameter i of name reaches a temp call's directory.
+	roots := map[string]map[int]bool{}
+	for changed := true; changed; {
+		changed = false
+		for name, fn := range functions {
+			osNames := auditDiskImportNames(fn.file, "os")
+			ast.Inspect(fn.decl.Body, func(node ast.Node) bool {
+				call, ok := node.(*ast.CallExpr)
+				if !ok {
+					return true
+				}
+				var reached []int
+				switch fun := call.Fun.(type) {
+				case *ast.SelectorExpr:
+					if ident, ok := fun.X.(*ast.Ident); ok && osNames[ident.Name] && (fun.Sel.Name == "MkdirTemp" || fun.Sel.Name == "CreateTemp") {
+						reached = []int{0}
+					}
+				case *ast.Ident:
+					for index := range roots[fun.Name] {
+						reached = append(reached, index)
+					}
+				}
+				for _, index := range reached {
+					if index >= len(call.Args) {
+						continue
+					}
+					argument, ok := call.Args[index].(*ast.Ident)
+					if !ok {
+						continue
+					}
+					param, isParam := fn.params[argument.Name]
+					if !isParam || roots[name][param] {
+						continue
+					}
+					if roots[name] == nil {
+						roots[name] = map[int]bool{}
+					}
+					roots[name][param], changed = true, true
+				}
+				return true
+			})
+		}
+	}
+	lines := map[*ast.File][]int{}
+	for _, file := range files {
+		ast.Inspect(file, func(node ast.Node) bool {
+			call, ok := node.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			ident, ok := call.Fun.(*ast.Ident)
+			if !ok {
+				return true
+			}
+			for index := range roots[ident.Name] {
+				if index >= len(call.Args) {
+					continue
+				}
+				if literal, ok := call.Args[index].(*ast.BasicLit); ok && literal.Kind == token.STRING {
+					if value, err := strconv.Unquote(literal.Value); err == nil && value == "" {
+						lines[file] = append(lines[file], fileSet.Position(call.Pos()).Line)
+					}
+				}
+			}
+			return true
+		})
+	}
+	return lines
+}
+
+// auditDiskEmptyTempHelperSites is auditDiskEmptyTempHelperLines over every
+// package of the module's non-test Go.
+func auditDiskEmptyTempHelperSites(t *testing.T) []ratchetSite {
+	t.Helper()
+	_, module := verbRatchetRoots(t)
+	fileSet := token.NewFileSet()
+	packages := map[string][]*ast.File{}
+	relative := map[*ast.File]string{}
+	walkRatchetFiles(t, module, []string{".git", "node_modules", "artifacts", "testdata", "bin"}, nil, func(path, rel string) {
+		if !strings.HasSuffix(rel, ".go") || strings.HasSuffix(rel, "_test.go") {
+			return
+		}
+		parsed, err := parser.ParseFile(fileSet, path, nil, 0)
+		if err != nil {
+			t.Fatalf("parse %s: %v", rel, err)
+		}
+		directory := filepath.Dir(rel) + "\x00" + parsed.Name.Name
+		packages[directory] = append(packages[directory], parsed)
+		relative[parsed] = rel
+	})
+	var sites []ratchetSite
+	for _, files := range packages {
+		for file, lines := range auditDiskEmptyTempHelperLines(fileSet, files) {
+			for _, line := range lines {
+				sites = append(sites, ratchetSite{path: relative[file], line: line})
+			}
+		}
+	}
+	return sites
+}
+
 func TestAuditDiskEmptyArgumentTempCalls(t *testing.T) {
 	t.Parallel()
 	sites := auditDiskGoSites(t, func(string) bool { return true }, auditDiskEmptyTempLines)
+	sites = append(sites, auditDiskEmptyTempHelperSites(t)...)
 	checkVerbRatchet(t, "empty-argument os.MkdirTemp/os.CreateTemp calls in non-test Go", "auditDiskEmptyTempCeiling",
 		len(sites), auditDiskEmptyTempCeiling, sites)
 }
@@ -648,6 +784,21 @@ func c() { clock.Sleep(1) }
 	}
 	if got := auditDiskEmptyTempLines(fileSet, parsed); !reflect.DeepEqual(got, []int{3, 3}) {
 		t.Errorf("empty-argument temp lines = %v, want [3 3]", got)
+	}
+	helperSource := `package p
+import sys "os"
+func make(dir, prefix string) (string, error) { return sys.MkdirTemp(dir, prefix) }
+func through(label, root string) (string, error) { return make(root, label) }
+func named(prefix string) (string, error) { return make("/literal", prefix) }
+func a() { _, _ = make("", "x"); _, _ = through("y", ""); _, _ = through("", "/root"); _, _ = named("") }
+`
+	helperSet := token.NewFileSet()
+	helperFile, err := parser.ParseFile(helperSet, "helper.go", helperSource, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := auditDiskEmptyTempHelperLines(helperSet, []*ast.File{helperFile})[helperFile]; !reflect.DeepEqual(got, []int{6, 6}) {
+		t.Errorf("empty-argument helper lines = %v, want [6 6]", got)
 	}
 	if got := auditDiskSelectorLines(fileSet, parsed, "os", "TempDir"); !reflect.DeepEqual(got, []int{4}) {
 		t.Errorf("TempDir lines = %v, want [4]", got)
