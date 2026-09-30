@@ -14,6 +14,10 @@ import (
 const (
 	DefaultLocalWaitTimeout  = 4 * time.Hour
 	MaxRegisteredWaitTimeout = 24 * time.Hour
+	// MaxPidlessLocalWaitTimeout bounds a local wait with no process to
+	// watch (in-session sub-agents): it ends at its deadline, and a longer
+	// wait is registered again.
+	MaxPidlessLocalWaitTimeout = 2 * time.Hour
 )
 
 // RegisterWaitRequest describes work that another process or a person must
@@ -50,8 +54,11 @@ func validateRegisterWaitRequest(request RegisterWaitRequest) error {
 		return fmt.Errorf("wait timeout must be positive and no longer than 24 hours")
 	}
 	if request.Kind == "local" {
-		if request.Pid <= 0 || strings.TrimSpace(request.Label) == "" {
-			return fmt.Errorf("local wait requires a positive pid and a label")
+		if request.Pid < 0 || strings.TrimSpace(request.Label) == "" {
+			return fmt.Errorf("local wait requires a label and, when it tracks a process, a positive pid")
+		}
+		if request.Pid == 0 && request.Timeout > MaxPidlessLocalWaitTimeout {
+			return fmt.Errorf("a local wait with no pid lasts at most 2 hours; register it again to renew it")
 		}
 		if request.Question != "" {
 			return fmt.Errorf("local wait cannot carry a human question")
@@ -106,6 +113,11 @@ func (s *Store) sweepRegisteredWaits(owner Caller, runtimeSession, by string, op
 		end := false
 		switch row.Kind {
 		case "local":
+			if row.Pid == 0 {
+				deadline, parseErr := time.Parse(time.RFC3339Nano, row.Deadline)
+				end = parseErr != nil || !now.Before(deadline)
+				break
+			}
 			liveness, mode := identity.AliveRefComparison(s.prober(), registeredWaitRef(row))
 			end = liveness == identity.Dead && exactRegisteredWaitMode(mode)
 		case "human":
@@ -136,7 +148,7 @@ func (s *Store) RegisterDetachedWait(request RegisterWaitRequest, options WaitOp
 	var processRef identity.Ref
 	var registeredBootID string
 	var registeredBootNanos int64
-	if request.Kind == "local" {
+	if request.Kind == "local" && request.Pid != 0 {
 		exact, state, err := s.prober().Probe(request.Pid)
 		if state == identity.Dead {
 			return Waiter{}, &waiterError{ExitNoRecord, fmt.Sprintf("process %d is not alive", request.Pid)}
@@ -148,6 +160,8 @@ func (s *Store) RegisterDetachedWait(request RegisterWaitRequest, options WaitOp
 		if !exactRegisteredWaitMode(processRef.Mode()) {
 			return Waiter{}, &waiterError{ExitWaiterUnknown, fmt.Sprintf("process %d identity is not exact enough to detect pid reuse", request.Pid)}
 		}
+	}
+	if request.Kind == "local" {
 		bootID, elapsed, err := options.BootClock()
 		if err != nil || bootID == "" {
 			return Waiter{}, &waiterError{ExitWaiterUnknown, "the boot identity is unavailable"}
