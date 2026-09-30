@@ -54,7 +54,7 @@ func (p Process) ClassifiablePid(prober identity.Prober) (int64, error) {
 	}
 	exact, state, err := prober.Probe(p.Pid)
 	if err != nil || state != identity.Alive || exact.StartedAt.Unix() != p.StartedAt {
-		return 0, fmt.Errorf("the supplied caller identity pid %d started at %d is no longer that process (state=%s): %v", p.Pid, p.StartedAt, state, err)
+		return 0, fmt.Errorf("the process that asked (pid %d, started %d) is gone or replaced (%s): %v", p.Pid, p.StartedAt, state, err)
 	}
 	return p.Pid, nil
 }

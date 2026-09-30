@@ -12,6 +12,7 @@ package goal
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -134,7 +135,7 @@ func Answer(r VerbRequest, id, qid, text, wants string, proof AnswerProof) (Publ
 		return PublishResult{}, fmt.Errorf("answer requires the question identifier it answers")
 	}
 	if proof.Provider == "" || proof.User == "" || proof.Ref == "" || proof.Step < 1 || strings.TrimSpace(text) == "" {
-		return PublishResult{}, fmt.Errorf("answer requires complete authenticated channel proof and text")
+		return PublishResult{}, errors.New("an answer needs its text and the signed-in channel message it came from")
 	}
 	return Publish(r.Endpoint, answerRequest(r, id, qid, text, wants, proof))
 }
@@ -264,12 +265,12 @@ const EpochAuthorityHolder = "holder"
 func ClaimEpochForRebind(f *GoalFile, r VerbRequest) (int64, error) {
 	if r.EpochAuthority == EpochAuthorityHolder {
 		if r.CallerClass != "MAIN" || r.ClaimEpoch < 1 {
-			return 0, fmt.Errorf("REBIND_EPOCH_UNAUTHENTICATED: holder epoch authority is contradictory: class=%s claimEpoch=%d", r.CallerClass, r.ClaimEpoch)
+			return 0, coded("REBIND_EPOCH_UNAUTHENTICATED", fmt.Errorf("this session doesn't hold the checkout, so it can't renew the claim (%s, %d)", r.CallerClass, r.ClaimEpoch))
 		}
 		return r.ClaimEpoch, nil
 	}
 	if r.EpochAuthority != "" {
-		return 0, fmt.Errorf("REBIND_EPOCH_UNAUTHENTICATED: epoch authority %q is unknown", r.EpochAuthority)
+		return 0, coded("REBIND_EPOCH_UNAUTHENTICATED", fmt.Errorf("the claim renewal names an unknown source %q, so it was refused", r.EpochAuthority))
 	}
 	if f != nil && f.StopCapability != nil && f.StopCapability.ClaimEpoch >= 1 {
 		return f.StopCapability.ClaimEpoch, nil
@@ -278,7 +279,7 @@ func ClaimEpochForRebind(f *GoalFile, r VerbRequest) (int64, error) {
 	if f != nil && f.Id != "" {
 		id = "goal " + f.Id
 	}
-	return 0, fmt.Errorf("REBIND_EPOCH_UNAUTHENTICATED: %s has neither authenticated holder authority nor a recorded stop-capability epoch to preserve", id)
+	return 0, coded("REBIND_EPOCH_UNAUTHENTICATED", fmt.Errorf("%s can't be renewed: this session doesn't hold the checkout and no stop is recorded", id))
 }
 
 type humanAuthorityRow struct {
@@ -348,7 +349,7 @@ func (r VerbRequest) requireHuman(row humanAuthorityRow, grade string) error {
 	if r.Authority.TerminalValidFor(r.Endpoint.Root) && got == humanauthority.GradeTerminal && grade == humanauthority.GradeEnrolled {
 		return GradeRefused{Verb: row.Verb, Row: row.Name, Needed: grade, Got: got}
 	}
-	return fmt.Errorf("goal %s: the human authority proof for %s is not valid for this checkout", row.Verb, row.Name)
+	return fmt.Errorf("goal %s: who acted for %s couldn't be confirmed in this checkout", row.Verb, row.Name)
 }
 
 func (r VerbRequest) opid() string {
@@ -411,7 +412,7 @@ func newClaimRecord(machine, lineage, at string, revision uint64) *ClaimRecord {
 
 func bindClaim(f *GoalFile, machine, lineage, at string, revision uint64, claimEpoch int64) error {
 	if claimEpoch < 1 {
-		return fmt.Errorf("claim requires the authenticated lease holder's positive claim epoch")
+		return errors.New("only the session that holds this checkout can claim; start one with metasystem session start")
 	}
 	f.Claimed = newClaimRecord(machine, lineage, at, revision)
 	f.Claimed.EpisodeAt = at
@@ -503,7 +504,7 @@ func resumeEpisode(f *GoalFile, kept EpisodeRecord, claimedAt string) error {
 	}
 	gap := claimed.Sub(released)
 	if gap < 0 {
-		return fmt.Errorf("goal %s: the claim at %s precedes the release at %s the kept episode records (CLOCK_REGRESSED)", f.Id, claimedAt, kept.Released)
+		return coded("CLOCK_REGRESSED", fmt.Errorf("goal %s: the claim at %s is earlier than its last release at %s; check the clock", f.Id, claimedAt, kept.Released))
 	}
 	f.Claimed.AccountingRevision = kept.AccountingRevision
 	f.Claimed.EpisodeAt = kept.EpisodeAt
@@ -901,7 +902,7 @@ func openRequest(r VerbRequest, id, intent, origin, nextStep string, blocks, blo
 				return nil, err
 			}
 			if retired, ok := rootDecomposed(t.Root, id); ok {
-				return nil, fmt.Errorf("goal id %s is retired: it names a decomposed parent (split opid %s); pick a different id", id, retired.Opid)
+				return nil, fmt.Errorf("goal id %s was used by a goal that was split (%s); pick a different id", id, retired.Opid)
 			}
 			if f, exists := t.Live[id]; exists {
 				if opidLanded(f, r) {
@@ -1177,7 +1178,7 @@ func humanHand(r VerbRequest, proof *humanauthority.Proof) (admitted *humanautho
 	// does not — a channel account, a relayed word — the name stands, and
 	// what the proof settles is that a person acted rather than which.
 	if named := humanOfProof(r.Endpoint.Root, proof); named != "" && named != r.Actor.Human {
-		return nil, false, fmt.Errorf("the proof names %s and the act is attributed to %s; an act is recorded under the person who made it", named, r.Actor.Human)
+		return nil, false, fmt.Errorf("this terminal belongs to %s, not %s; an act is recorded under the person who made it", named, r.Actor.Human)
 	}
 	return proof, relayed, nil
 }
@@ -1330,10 +1331,10 @@ func Claim(r VerbRequest, id string, budgets ...Budget) (PublishResult, error) {
 		return PublishResult{}, fmt.Errorf("%s", detail)
 	}
 	if r.Actor.Human != "" {
-		return PublishResult{}, fmt.Errorf("claim is an agent session's act: a claim binds the session that works the goal, and a person's claim would hold goal %s with no session to work it; steer which machine takes it with metasystem goal pin %s MACHINE or metasystem goal prioritize %s 1, or move a standing claim with metasystem goal claim %s --take-over --reason TEXT", id, id, id, id)
+		return PublishResult{}, fmt.Errorf("a claim is made by the agent session that works goal %s, not by a person\nrun: metasystem goal prioritize %s 1  (to have it picked up first)", id, id)
 	}
 	if len(budgets) != 0 || r.ApprovedRef != "" {
-		return PublishResult{}, fmt.Errorf("the budget and any norm approval were bound by the human's approval; goal claim carries no tuple or --approved-ref")
+		return PublishResult{}, errors.New("a claim takes the budget the goal was approved with; drop the budget options")
 	}
 	return publishedCard(Publish(r.Endpoint, claimRequest(r, id, nil)))(func() { writeOwnCard(r, id, board.StageClaimedIdle) })
 }
@@ -1361,10 +1362,10 @@ func claimQuotaRefusal(t *TreeGoals, r VerbRequest, id string) string {
 // live target without starting a new claim or budget episode.
 func Handover(r VerbRequest, id, targetMachine, targetLineage string, targetClaimEpoch int64, batch string, targetLiveness func() (identity.Liveness, error)) (PublishResult, error) {
 	if r.Actor.Human != "" {
-		return PublishResult{}, fmt.Errorf("handover moves a claim between agent sessions, and a person's handover would leave goal %s with no session bound to its hand-back; a person moves another holder's claim with metasystem goal claim %s --take-over --reason TEXT", id, id)
+		return PublishResult{}, fmt.Errorf("a handover moves goal %s between agent sessions; a person takes it over instead\nrun: metasystem goal claim %s --take-over --reason TEXT", id, id)
 	}
 	if err := ValidateMachineNickname(targetMachine); err != nil || strings.TrimSpace(targetLineage) == "" || targetClaimEpoch < 1 || strings.TrimSpace(batch) == "" || targetLiveness == nil {
-		return PublishResult{}, fmt.Errorf("handover requires a target machine, lineage, positive claim epoch, batch, and liveness verifier")
+		return PublishResult{}, errors.New("a handover needs the receiving machine, its session, its batch and a way to check it is alive")
 	}
 	args := map[string]string{"targetMachine": targetMachine, "targetLineage": targetLineage,
 		"targetClaimEpoch": strconv.FormatInt(targetClaimEpoch, 10), "batch": batch}
@@ -1411,10 +1412,10 @@ func Handover(r VerbRequest, id, targetMachine, targetLineage string, targetClai
 			samePair := f.Claimed.Machine == targetMachine && f.Claimed.Lineage == targetLineage
 			if samePair {
 				if rebindEpoch != targetClaimEpoch || targetClaimEpoch <= currentEpoch {
-					return nil, fmt.Errorf("goal %s same-pair handover is an epoch rebind: authenticated target epoch %d must be higher than current epoch %d", id, targetClaimEpoch, currentEpoch)
+					return nil, fmt.Errorf("goal %s: a handover to the same session must renew its claim (%d is not after %d)", id, targetClaimEpoch, currentEpoch)
 				}
 			} else if rebindEpoch != currentEpoch {
-				return nil, fmt.Errorf("goal %s handover caller epoch %d does not match the current holder epoch %d", id, r.ClaimEpoch, currentEpoch)
+				return nil, fmt.Errorf("goal %s: this session's claim (%d) is not the current one (%d), so it can't hand over", id, r.ClaimEpoch, currentEpoch)
 			}
 			handedOver := f.Claimed.HandedOver
 			returnTarget := handedOver.present() && targetMachine == handedOver.FromMachine && targetLineage == handedOver.FromLineage
@@ -1429,7 +1430,7 @@ func Handover(r VerbRequest, id, targetMachine, targetLineage string, targetClai
 				return nil, fmt.Errorf("goal %s --target-root is only permitted for a return", id)
 			}
 			if returning && uint64(targetClaimEpoch) < handedOver.FromEpoch {
-				return nil, fmt.Errorf("goal %s return target epoch %d must be at least source epoch %d", id, targetClaimEpoch, handedOver.FromEpoch)
+				return nil, fmt.Errorf("goal %s: the return goes to an older claim (%d) than the one it left (%d)", id, targetClaimEpoch, handedOver.FromEpoch)
 			}
 			liveness, livenessErr := targetLiveness()
 			if livenessErr != nil || liveness != identity.Alive {
@@ -1483,7 +1484,7 @@ func claimRequest(r VerbRequest, id string, supplied *Budget) PublishRequest {
 					return nil, AlreadyHolds{Reason: "goal " + id + " is already claimed by this session (" + f.Claimed.Machine + "+" + f.Claimed.Lineage + ", since " + f.Claimed.At + ")"}
 				}
 				if f.Claimed != nil && f.Claimed.Machine == r.Actor.Machine {
-					return nil, fmt.Errorf("goal %s is claimed by this machine's lineage %s; the pair is the ownership key and a second lineage is refused by name", id, f.Claimed.Lineage)
+					return nil, fmt.Errorf("goal %s is already claimed by another session on this machine (%s)", id, f.Claimed.Lineage)
 				}
 				return nil, LostToCompetitor{Winner: lastOpid(f)}
 			}
@@ -1491,7 +1492,7 @@ func claimRequest(r VerbRequest, id string, supplied *Budget) PublishRequest {
 				return nil, approvalRequired(f, "claim")
 			}
 			if f.Pinned != "" && f.Pinned != r.Actor.Machine {
-				return nil, fmt.Errorf("goal %s is pinned to machine %s and this machine is %s; only the pinned machine may claim it (a human re-pins with set-pin)", id, f.Pinned, r.Actor.Machine)
+				return nil, fmt.Errorf("goal %s is pinned to machine %s, not %s\nrun: metasystem goal pin %s %s", id, f.Pinned, r.Actor.Machine, id, r.Actor.Machine)
 			}
 			for _, dep := range f.Blocked {
 				if depState(t, dep) != StateDone {
@@ -1689,7 +1690,7 @@ func setBudgetRequest(r VerbRequest, id string, budget Budget, proof *humanautho
 				return nil, err
 			}
 			if f.State != StateClaimed || f.Claimed == nil {
-				return nil, fmt.Errorf("budgets on unclaimed work are the human's approval act, set through goal approve --id %s with --budget", id)
+				return nil, fmt.Errorf("goal %s isn't claimed; its budget is set when it is approved\nrun: metasystem goal approve %s --budget BOX", id, id)
 			}
 			var entry *PowerOfAttorneyEntry
 			if r.Attorney != nil {
@@ -1723,7 +1724,7 @@ func setBudgetRequest(r VerbRequest, id string, budget Budget, proof *humanautho
 			resumedStopID := ""
 			if f.StopFence != nil {
 				if f.Budget != nil && *f.Budget == budget {
-					return nil, fmt.Errorf("SET_BUDGET_FENCED_SAME_TUPLE: goal %s is breach-stopped by %s and the supplied budget is unchanged; resume it under its standing box with metasystem goal resume %s", id, f.StopFence.StopID, id)
+					return nil, coded("SET_BUDGET_FENCED_SAME_TUPLE", fmt.Errorf("goal %s stopped at its budget (%s) and this is the same budget\nrun: metasystem goal resume %s", id, f.StopFence.StopID, id))
 				}
 				if _, approvalErr := requireApprovedForClaim(r.Endpoint.Root, t, f, r.Now, "set-budget resume"); approvalErr != nil {
 					return nil, approvalErr
@@ -1787,7 +1788,7 @@ func setBudgetRequest(r VerbRequest, id string, budget Budget, proof *humanautho
 // over-norm reference.
 func attorneyActRequest(r VerbRequest, proof *humanauthority.Proof) error {
 	if r.Actor.Human != "" || proof != nil {
-		return fmt.Errorf("an act under power of attorney is the seat's own: it takes --under <entry>, not --by or a human proof")
+		return errors.New("an act under a grant is the seat's own; drop --by")
 	}
 	if r.ApprovedRef != "" {
 		return fmt.Errorf("an act under power of attorney stays within the tier box; --approved-ref is the human's own act")
@@ -1801,7 +1802,7 @@ func attorneyActRequest(r VerbRequest, proof *humanauthority.Proof) error {
 func liveAttorney(t *TreeGoals, r VerbRequest, verb string) (PowerOfAttorneyEntry, error) {
 	entry, ok := rootAttorney(t.Root, r.Attorney.ID)
 	if !ok {
-		return PowerOfAttorneyEntry{}, fmt.Errorf("power of attorney %s is not recorded on the ledger tip", r.Attorney.ID)
+		return PowerOfAttorneyEntry{}, fmt.Errorf("grant %s isn't recorded; list the grants with metasystem grant list", r.Attorney.ID)
 	}
 	if live, why := entry.LiveAt(r.Now); !live {
 		return PowerOfAttorneyEntry{}, fmt.Errorf("power of attorney %s is not live: %s", entry.ID, why)
@@ -1833,7 +1834,7 @@ func withinTierBox(root string, f *GoalFile, budget Budget) error {
 	if budget.ElapsedDuration() > box.ElapsedDuration() || budget.AttemptLimit > box.AttemptLimit ||
 		budget.ReservedJobMinutesLimit > box.ReservedJobMinutesLimit || budget.ActiveJobLimit > box.ActiveJobLimit ||
 		budget.ReviewRoundLimit > box.ReviewRoundLimit {
-		return fmt.Errorf("GOAL_NORM_REFUSED: an act under power of attorney stays within goal %s's tier %d box (%s); the human's own act raises it", f.Id, tier, renderBudgetRecord(box))
+		return coded("GOAL_NORM_REFUSED", fmt.Errorf("a grant covers goal %s only up to its tier %d budget (%s); a person raises it", f.Id, tier, renderBudgetRecord(box)))
 	}
 	return nil
 }
@@ -1870,7 +1871,7 @@ func resolveAttorneyForEndpoint(e Endpoint, id, verb string, now time.Time) (Pow
 	}
 	entry, ok := rootAttorney(p.Tree.Root, id)
 	if !ok {
-		return PowerOfAttorneyEntry{}, fmt.Errorf("no power of attorney %s is recorded; a person records one with metasystem grant add --tiers 1,2 --acts approve,budget,resume-parked --until YYYY-MM-DD", id)
+		return PowerOfAttorneyEntry{}, fmt.Errorf("grant %s isn't recorded; list the grants with metasystem grant list", id)
 	}
 	if live, why := entry.LiveAt(now); !live {
 		return PowerOfAttorneyEntry{}, fmt.Errorf("power of attorney %s is not live: %s", entry.ID, why)
@@ -1889,14 +1890,14 @@ func Grant(r VerbRequest, proof *humanauthority.Proof, tiers []uint8, verbs []st
 		return PublishResult{}, fmt.Errorf("goal grant is human-only and requires --by from an authorized human boundary")
 	}
 	if proof != nil && proof.Helm != nil && proof.Helm.Grant != "" {
-		return PublishResult{}, fmt.Errorf("a power of attorney is granted only by the person's own proof at the enrolled terminal, never under a grant (%s): %s", proof.Helm.Grant, humanauthority.PersonActRemedy("metasystem grant add"))
+		return PublishResult{}, fmt.Errorf("a grant is added by the person at their own terminal, never under another grant (%s)", proof.Helm.Grant)
 	}
 	_, _, temporary, err := approvalProofClassForApprove(r.Endpoint.Root, proof)
 	if err != nil {
 		return PublishResult{}, err
 	}
 	if temporary {
-		return PublishResult{}, fmt.Errorf("a relayed word cannot grant a power of attorney; grant it by a verified channel answer, or: %s", humanauthority.PersonActRemedy("metasystem grant add"))
+		return PublishResult{}, errors.New("a relayed word can't add a grant; the person adds it at their terminal or answers in the channel")
 	}
 	for _, tier := range tiers {
 		if tier != 1 && tier != 2 {
@@ -1919,7 +1920,7 @@ func Grant(r VerbRequest, proof *humanauthority.Proof, tiers []uint8, verbs []st
 	day := r.Now.UTC()
 	today := time.Date(day.Year(), day.Month(), day.Day(), 0, 0, 0, 0, time.UTC)
 	if expiry.Before(today) || expiry.After(today.AddDate(0, 0, AttorneyMaxDays-1)) {
-		return PublishResult{}, fmt.Errorf("--expires must fall between today and %s (no entry lives longer than %d days, the expiry day included, R-95-m1e)", today.AddDate(0, 0, AttorneyMaxDays-1).Format("2006-01-02"), AttorneyMaxDays)
+		return PublishResult{}, fmt.Errorf("--expires must be between today and %s; a grant lasts at most %d days", today.AddDate(0, 0, AttorneyMaxDays-1).Format("2006-01-02"), AttorneyMaxDays)
 	}
 	reason := "tiers=" + renderTiers(tiers) + " verbs=" + strings.Join(canonicalVerbs, ",") + " expires=" + expires
 	return Publish(r.Endpoint, PublishRequest{
@@ -1972,7 +1973,7 @@ func Revoke(r VerbRequest, proof *humanauthority.Proof, id string) (PublishResul
 		return PublishResult{}, err
 	}
 	if temporary {
-		return PublishResult{}, fmt.Errorf("a relayed word cannot revoke a power of attorney; revoke it by a verified channel answer, or: %s", humanauthority.PersonActRemedy("metasystem grant revoke"))
+		return PublishResult{}, errors.New("a relayed word can't revoke a grant; the person does it at their terminal or answers in the channel")
 	}
 	return Publish(r.Endpoint, PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
@@ -2012,7 +2013,7 @@ func Revoke(r VerbRequest, proof *humanauthority.Proof, id string) (PublishResul
 // no field-level mutation can rewrite an earlier obligation revision.
 func SetObligation(r VerbRequest, id string, proposed GovernedObligation, proof *humanauthority.Proof) (PublishResult, error) {
 	if r.Actor.Human == "" || proof == nil || !proof.AuthorizesSetObligation(r.Endpoint.Root) {
-		return PublishResult{}, fmt.Errorf("set-obligation requires freshly observed enrolled-human authority or a recorded temporary relay whose human provenance is not verified")
+		return PublishResult{}, errors.New("only a person sets an obligation, from their own terminal or with a recorded relayed word")
 	}
 	temporaryAuthority := proof.TemporarySetObligationFor(r.Endpoint.Root)
 	if !validObligationState(proposed.State) {
@@ -2052,7 +2053,7 @@ func SetObligation(r VerbRequest, id string, proposed GovernedObligation, proof 
 				}
 			}
 			if f.StopFence != nil {
-				return nil, fmt.Errorf("goal %s is breach-stopped; resume under its standing approved tuple before creating another obligation", id)
+				return nil, fmt.Errorf("goal %s stopped at its budget; resume it before adding an obligation\nrun: metasystem goal resume %s", id, id)
 			}
 			o := proposed
 			o.Revision = f.Revision + 1
@@ -2230,7 +2231,7 @@ func Done(r VerbRequest, id, conclusion string) (PublishResult, error) {
 	if residueVocabRe.MatchString(conclusion) {
 		links := residueLinkRe.FindAllStringSubmatch(conclusion, -1)
 		if len(links) == 0 {
-			return PublishResult{}, fmt.Errorf("the conclusion names residue without scheduling it: link each residue's open backlog item as goal:<id>, or open one first (R-4: residue is a scheduled debt, not a prose note)")
+			return PublishResult{}, errors.New("the conclusion names left-over work without a goal for it; link each as goal:<id>, or open one first")
 		}
 		for _, link := range links {
 			if _, err := os.Stat(filepath.Join(r.Endpoint.Root, "plans", "goals", link[1]+".md")); err != nil {
@@ -2757,7 +2758,7 @@ func acceptOpenReadItems(f *GoalFile, r VerbRequest) []string {
 
 // overridableDoneRe is the fixed shape of the three goal-state refusals of
 // done besides the read items' typed one.
-var overridableDoneRe = regexp.MustCompile(`^goal \S+ (has open review obligation finding=|has open carry word |is blocked by \S+, which is not done)`)
+var overridableDoneRe = regexp.MustCompile(`^goal \S+ (has open review obligation finding=|has an open exception \(|is blocked by \S+, which is not done)`)
 
 // ConclusionOverridable reports whether a rejected done's detail is one of
 // the four goal-state refusals a forced conclusion overrides: open read
@@ -2933,7 +2934,7 @@ func parkRequest(r VerbRequest, id, because string) PublishRequest {
 // stay in the history; Goal-free clears when it was declared.
 func Unpark(r VerbRequest, id string) (PublishResult, error) {
 	if r.Attorney != nil {
-		return PublishResult{}, fmt.Errorf("an unpark under power of attorney says what the seat verified: use metasystem goal resume %s --under GRANT --verified TEXT", id)
+		return PublishResult{}, fmt.Errorf("an unpark under a grant says what the seat checked\nrun: metasystem goal resume %s --under GRANT --verified TEXT", id)
 	}
 	return Publish(r.Endpoint, unparkRequest(r, id, ""))
 }
@@ -2950,7 +2951,7 @@ func UnparkUnderAttorney(r VerbRequest, id, verified string) (PublishResult, err
 		return PublishResult{}, err
 	}
 	if strings.TrimSpace(verified) == "" || strings.ContainsAny(verified, "\r\n") {
-		return PublishResult{}, fmt.Errorf("an unpark under power of attorney says, in one line, what the seat verified holds now (--verified); the park's own reason names the condition")
+		return PublishResult{}, errors.New("an unpark under a grant says in one line what the seat checked holds now (--verified)")
 	}
 	return Publish(r.Endpoint, unparkRequest(r, id, verified))
 }
@@ -3006,14 +3007,14 @@ func unparkRequest(r VerbRequest, id, verified string) PublishRequest {
 					return nil, fmt.Errorf("power of attorney %s lifts a person's park on tier-1 goals only (R-105-m1e); goal %s is tier %d", entry.ID, id, f.Tier)
 				}
 				if f.Parked != nil && f.Parked.Blocker != "" {
-					return nil, fmt.Errorf("goal %s is parked behind %s; a blocker's park returns by itself when every blocker is done (R-93-m1e), and no power of attorney lifts it", id, f.Parked.Blocker)
+					return nil, fmt.Errorf("goal %s waits for %s and comes back by itself once that is done; a grant can't lift it", id, f.Parked.Blocker)
 				}
 				// A person's park that gained a blocker edge afterwards is
 				// not a blocker's park, but lifting it proves nothing: the
 				// goal cannot be claimed until the blocker is done.
 				for _, dep := range f.Blocked {
 					if depState(t, dep) != StateDone {
-						return nil, fmt.Errorf("goal %s is blocked by %s, which is not done; a power of attorney lifts a person's park only when the goal can be worked (R-93-m1e)", id, dep)
+						return nil, fmt.Errorf("goal %s is blocked by %s, which isn't done, so a grant can't unpark it yet", id, dep)
 					}
 				}
 			}
@@ -3319,7 +3320,7 @@ func reopenAbandonedRequest(r VerbRequest, id string) PublishRequest {
 				return nil, fmt.Errorf("goal %s is not abandoned; reopen --id names a done goal or an abandoned one", id)
 			}
 			if _, decomposed := rootDecomposed(t.Root, id); decomposed {
-				return nil, fmt.Errorf("goal %s was decomposed into arc %s; a decomposed parent never returns — reopen or claim its member goals, or open a new goal under a new id", id, id)
+				return nil, fmt.Errorf("goal %s was split into member goals and never comes back; reopen a member or open a new goal", id)
 			}
 			for _, liveID := range sortedGoalIds(t.Live) {
 				dependent := t.Live[liveID]
@@ -3334,7 +3335,7 @@ func reopenAbandonedRequest(r VerbRequest, id string) PublishRequest {
 			}
 			if f.StopFence != nil {
 				if err := VerifyStopBatchComplete(r.Endpoint.Root, id, *f.StopCapability, *f.StopFence); err != nil {
-					return nil, fmt.Errorf("goal %s stays abandoned: %v; finish stop %s on the checkout that holds it (metasystem work stop %s), or open a successor goal and carry the work there", id, err, f.StopFence.StopID, id)
+					return nil, fmt.Errorf("goal %s stays abandoned until its stop finishes (%v)\nrun: metasystem work stop %s  (on the checkout that holds it)", id, err, id)
 				}
 			}
 
@@ -3465,7 +3466,7 @@ func reopenRequest(r VerbRequest, id string) PublishRequest {
 				return nil, fmt.Errorf("goal %s is not in the archive; reopen moves archived goals back", id)
 			}
 			if _, decomposed := rootDecomposed(t.Root, id); decomposed {
-				return nil, fmt.Errorf("goal %s was decomposed into arc %s; a decomposed parent never returns — reopen or claim its member goals, or open a new goal under a new id", id, id)
+				return nil, fmt.Errorf("goal %s was split into member goals and never comes back; reopen a member or open a new goal", id)
 			}
 			// Reopening under claimed dependents is the transition
 			// closure's refusal: a claimed goal's blockers must stay
@@ -3500,7 +3501,7 @@ func reopenRequest(r VerbRequest, id string) PublishRequest {
 					// The arc has no live members; the reopen re-founds it queued.
 				case standing.allParked:
 					if r.Actor.Human == "" {
-						return nil, fmt.Errorf("goal %s rejoins arc %s, whose every live member is parked; reopening into an all-parked arc is a human act", id, f.Arc)
+						return nil, fmt.Errorf("goal %s would rejoin group %s, where every goal is parked; only a person reopens it", id, f.Arc)
 					}
 					parked := standing.newestParked.Parked
 					f.State = StateParked
@@ -3701,12 +3702,15 @@ func editRequestReportingRiskRaise(r VerbRequest, id string, fields EditFields, 
 			// Allowing a permission is a person's act under the same proof a
 			// lowering takes; the refusal names the command the person runs.
 			if fields.Permission != nil && fields.Permission.Allowed && !permission.Holds(f) {
-				remedy := humanauthority.PersonActRemedy(AllowCommand(id, permission.Name))
 				if r.Actor.Human == "" {
-					return nil, fmt.Errorf("allowing %s is a person's act; %s", permission.Words, remedy)
+					return nil, fmt.Errorf("allowing %s is a person's act, at their own terminal\nrun: %s", permission.Words, AllowCommand(id, permission.Name))
 				}
 				if _, _, _, proofErr := approvalProofClass(r.Endpoint.Root, fields.Proof); proofErr != nil {
-					return nil, fmt.Errorf("allowing %s is a person's act: %v; %s", permission.Words, proofErr, remedy)
+					remedy := humanauthority.RemedyFor(r.Endpoint.Root, proofErr, r.Actor.Human, strings.Fields(AllowCommand(id, permission.Name)))
+					if len(remedy.Argv) == 0 {
+						return nil, fmt.Errorf("allowing %s is a person's act: %s", permission.Words, remedy.Reason)
+					}
+					return nil, fmt.Errorf("allowing %s is a person's act, and %s\nrun: %s  (%s)", permission.Words, remedy.Reason, strings.Join(remedy.Argv, " "), remedy.Then)
 				}
 			}
 			// The table's edit rows: queued is open to all, claimed is
@@ -4003,7 +4007,7 @@ func stealRequestWithReason(r VerbRequest, id, reason string) PublishRequest {
 					return nil, fmt.Errorf("goal %s is breach-stopped by %s; only goal resume may replace its claim authority", member.Id, member.StopFence.StopID)
 				}
 				if member.Pinned != "" && member.Pinned != r.Actor.Machine {
-					return nil, fmt.Errorf("goal %s is pinned to machine %s and this machine is %s; a take-over here would contradict the pin — clear it with metasystem goal pin %s --clear, take over with metasystem goal claim %s --take-over --reason TEXT, then re-pin with metasystem goal pin %s MACHINE", member.Id, member.Pinned, r.Actor.Machine, member.Id, member.Id, member.Id)
+					return nil, fmt.Errorf("goal %s is pinned to machine %s, not %s, so it can't be taken over here\nrun: metasystem goal pin %s --clear", member.Id, member.Pinned, r.Actor.Machine, member.Id)
 				}
 				if r.ApprovedRef != "" {
 					return nil, fmt.Errorf("steal uses the standing approval and does not take --approved-ref")
@@ -4038,7 +4042,7 @@ func stealRequestWithReason(r VerbRequest, id, reason string) PublishRequest {
 // OpenClaim is the retired open-and-claim surface. Approval must be a distinct
 // human act before an execution claim, so this helper always refuses.
 func OpenClaim(r VerbRequest, id, intent, origin, nextStep string, budget Budget, labels ...string) (PublishResult, error) {
-	return PublishResult{}, fmt.Errorf("APPROVAL_REQUIRED: open --claim is retired; open the goal queued, have the human approve its exact intent and budget, then claim it")
+	return PublishResult{}, coded("APPROVAL_REQUIRED", errors.New("open --claim is gone; open the goal, have a person approve it, then claim it"))
 }
 
 // openClaimRequest builds the verb's complete transaction request — the
@@ -4056,7 +4060,7 @@ func openClaimRequest(r VerbRequest, id, intent, origin, nextStep string, budget
 			budgetIntentArgs(budget)))},
 		Message: "goal open --claim " + id,
 		Mutate: func(tip string) ([]Change, error) {
-			return nil, fmt.Errorf("APPROVAL_REQUIRED: recovery cannot replay retired open --claim for goal %s; close this entry by hand", id)
+			return nil, coded("APPROVAL_REQUIRED", fmt.Errorf("an interrupted open --claim of goal %s can't be finished; close it by hand", id))
 		},
 		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
 	}, nil
@@ -4249,10 +4253,10 @@ func ClaimArc(r VerbRequest, id string, budgets ...Budget) (PublishResult, error
 		return PublishResult{}, fmt.Errorf("%s", detail)
 	}
 	if r.Actor.Human != "" {
-		return PublishResult{}, fmt.Errorf("claim is an agent session's act: a claim binds the session that works the goal, and a person's claim would hold goal %s with no session to work it; steer which machine takes it with metasystem goal pin %s MACHINE or metasystem goal prioritize %s 1, or move a standing claim with metasystem goal claim %s --take-over --reason TEXT", id, id, id, id)
+		return PublishResult{}, fmt.Errorf("a claim is made by the agent session that works goal %s, not by a person\nrun: metasystem goal prioritize %s 1  (to have it picked up first)", id, id)
 	}
 	if len(budgets) != 0 || r.ApprovedRef != "" {
-		return PublishResult{}, fmt.Errorf("the budget and any norm approval were bound by the human's approval; goal claim carries no tuple or --approved-ref")
+		return PublishResult{}, errors.New("a claim takes the budget the goal was approved with; drop the budget options")
 	}
 	return Publish(r.Endpoint, claimArcRequest(r, id, nil))
 }
@@ -4292,7 +4296,7 @@ func claimArcRequest(r VerbRequest, id string, supplied *Budget) PublishRequest 
 						continue // already ours; the cascade completes the set
 					}
 					if m.Claimed != nil && m.Claimed.Machine == r.Actor.Machine {
-						return nil, fmt.Errorf("arc member %s is claimed by this machine's lineage %s; the pair is the ownership key and a second lineage is refused by name", m.Id, m.Claimed.Lineage)
+						return nil, fmt.Errorf("group member %s is already claimed by another session on this machine (%s)", m.Id, m.Claimed.Lineage)
 					}
 					return nil, LostToCompetitor{Winner: lastOpid(m)}
 				}
@@ -4644,7 +4648,7 @@ func detachRequest(r VerbRequest, id string) PublishRequest {
 // carries the assignment.
 func pinRefusal(f *GoalFile, machine, how string) error {
 	if f.Pinned != "" && f.Pinned != machine {
-		return fmt.Errorf("goal %s is pinned to machine %s and %s would claim it for %s; only the pinned machine may hold it (a human re-pins with set-pin)", f.Id, f.Pinned, how, machine)
+		return fmt.Errorf("goal %s is pinned to machine %s, so %s can't claim it for %s\nrun: metasystem goal pin %s %s", f.Id, f.Pinned, how, machine, f.Id, machine)
 	}
 	return nil
 }
@@ -4657,7 +4661,7 @@ func SetPin(r VerbRequest, id, pin string) (PublishResult, error) {
 		return PublishResult{}, fmt.Errorf("set-pin names its machine; \"-\" clears the pin")
 	}
 	if pin != "-" && !validPinnedNickname(pin) {
-		return PublishResult{}, fmt.Errorf("set-pin machine %q is not a machine nickname (one word, no whitespace of any kind — exactly the vocabulary claims carry)", pin)
+		return PublishResult{}, fmt.Errorf("%q isn't a machine name; a machine name is one word; metasystem machine list shows them", pin)
 	}
 	return Publish(r.Endpoint, setPinRequest(r, id, pin))
 }
@@ -4703,7 +4707,7 @@ func setPinRequest(r VerbRequest, id, pin string) PublishRequest {
 			// only by explicit direction: refuse so the human decides
 			// between waiting, releasing, and stealing.
 			if next != "" && f.State == StateClaimed && f.Claimed != nil && f.Claimed.Machine != next {
-				return nil, fmt.Errorf("goal %s is claimed by machine %s, and pinning it to %s would strand that claim; release it first (metasystem goal release %s --reason TEXT from the holding session), or take it over with metasystem goal claim %s --take-over --reason TEXT, then pin it with metasystem goal pin %s %s", id, f.Claimed.Machine, next, id, id, id, next)
+				return nil, fmt.Errorf("goal %s is claimed on machine %s; pinning it to %s would strand that claim\nrun: metasystem goal claim %s --take-over --reason TEXT  (then pin it)", id, f.Claimed.Machine, next, id)
 			}
 			f.Pinned = next
 			touch(f, r, "set-pin", []string{id})
@@ -4797,7 +4801,7 @@ func setArcRequest(r VerbRequest, id, arc string) PublishRequest {
 					// claimant gaining one — is the composed-move row
 					// the design explicitly refuses:
 					// release first, then join.
-					return nil, fmt.Errorf("goal %s moves from one claimed arc into another; two claimants cannot trade a member in one move — release it first", id)
+					return nil, fmt.Errorf("goal %s would move between two claimed groups in one step; release it first", id)
 				}
 				if f.State == StateQueued {
 					// Joining a claimed arc does not manufacture approval.
@@ -5495,7 +5499,7 @@ func doneCarryRefusalFor(endpoint Endpoint, tree *TreeGoals, codeTip, id string,
 	if len(open) == 0 {
 		return nil, nil
 	}
-	return open, fmt.Errorf("goal %s has open carry word %s; land it, supersede it, or let it expire; a carried commit without its ledger row must be closed with metasystem work land %s --using-exception %s whether the word is expired or not", id, open[0], id, open[0])
+	return open, fmt.Errorf("goal %s has an open exception (%s); land it, replace it or let it expire\nrun: metasystem work land %s --using-exception %s", id, open[0], id, open[0])
 }
 
 func carryDebtAskAt(root string, tree *TreeGoals, codeTip, exceptRef string, now time.Time) error {
@@ -5604,7 +5608,7 @@ func carrySupersedePrecondition(r VerbRequest, tree *TreeGoals, codeTip string, 
 	}
 	reservation := CarryReservationAt(tree, target.Goal, target.History.Opid, r.Now)
 	if reservation.State == "open" {
-		return CarryWord{}, nil, fmt.Errorf("reservation %s is in flight on %s since %s: it ends when that seat's landing finishes or abandons it, or when the word expires at %s", reservation.History.Opid, targetSeat, reservation.History.At, target.Expires.UTC().Format(time.RFC3339))
+		return CarryWord{}, nil, fmt.Errorf("%s is landing under this exception since %s; wait for it, or until %s", targetSeat, reservation.History.At, target.Expires.UTC().Format(time.RFC3339))
 	}
 	consumption, err := carryConsumptionAtFor(r.Endpoint, tree, codeTip, target)
 	if err != nil {
@@ -5612,7 +5616,7 @@ func carrySupersedePrecondition(r VerbRequest, tree *TreeGoals, codeTip string, 
 	}
 	if consumption.Kind != "none" {
 		if consumption.Kind == "origin" {
-			return CarryWord{}, nil, fmt.Errorf("consumed on origin by %s at %s; the record is incomplete: rerun metasystem work land %s --using-exception %s", consumption.ID, codeTip, target.Goal, target.History.Opid)
+			return CarryWord{}, nil, fmt.Errorf("the exception was used by %s at %s but not recorded\nrun: metasystem work land %s --using-exception %s", consumption.ID, codeTip, target.Goal, target.History.Opid)
 		}
 		return CarryWord{}, nil, fmt.Errorf("supersede target consumed by %s", consumption.ID)
 	}
@@ -5981,7 +5985,7 @@ func Carried(r VerbRequest, entryOpid string) (PublishResult, error) {
 		return PublishResult{}, err
 	}
 	if entry.Intent.Verb != "carried" || entry.Phase != PhaseCreated {
-		return PublishResult{}, fmt.Errorf("journal entry %s is not a created carried intent", entryOpid)
+		return PublishResult{}, fmt.Errorf("pending ledger write %s isn't an unstarted exception landing", entryOpid)
 	}
 	request, err := carriedRequestFromIntent(r.Endpoint, entry)
 	if err != nil {

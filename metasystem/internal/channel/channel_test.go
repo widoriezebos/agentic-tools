@@ -343,7 +343,7 @@ func TestReportPriority(t *testing.T) {
 
 		text := fixture.mustCompose(ReportConfig{RepoRoot: root, Machine: "m1", Now: now, Location: time.UTC}, now.Add(-4*time.Hour), nil)
 		globalLine := "Backlog first: global head — priority 1, sequence 1, approved, unpinned"
-		localLine := "Next for m1: local candidate — priority 2, sequence 1, unpinned; skipped global head: GOAL_NORM_REFUSED"
+		localLine := "Next for m1: local candidate — priority 2, sequence 1, unpinned; skipped global head: goal global-head asks for 2400m"
 		if !strings.Contains(text, globalLine) || !strings.Contains(text, localLine) {
 			t.Fatalf("status did not report the refused global head beside the local candidate:\n%s", text)
 		}
@@ -359,7 +359,7 @@ func TestReportPriority(t *testing.T) {
 		root := fixture.root
 
 		text := fixture.mustCompose(ReportConfig{RepoRoot: root, Machine: "m1", Now: now, Location: time.UTC}, now.Add(-4*time.Hour), nil)
-		want := "Next for m1: none claimable; skipped global head: GOAL_NORM_REFUSED"
+		want := "Next for m1: none claimable; skipped global head: goal global-head asks for 2400m"
 		if !strings.Contains(text, want) || len(strings.Split(text, "\n")) != 3 {
 			t.Fatalf("status did not report the only refused goal without adding a line:\n%s", text)
 		}

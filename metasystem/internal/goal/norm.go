@@ -1,6 +1,7 @@
 package goal
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -98,8 +99,8 @@ func RecordedNormApproval(repoRoot string, tree *TreeGoals, ref, goalID string) 
 }
 
 func refuseGoalNorm(id string, budget, box Budget) error {
-	return fmt.Errorf("GOAL_NORM_REFUSED: goal %s tuple minutes=%d reviewRounds=%d per class exceeds its tier box minutes=%d reviewRounds=%d per class; split it into an arc of members within the box, or record the human word and pass --approved-ref (strict form: goal=%s minutes=%d reviewRounds=%d goalRevision=<r>)",
-		id, budget.ReservedJobMinutesLimit, budget.ReviewRoundLimit, box.ReservedJobMinutesLimit, box.ReviewRoundLimit, id, budget.ReservedJobMinutesLimit, budget.ReviewRoundLimit)
+	return coded("GOAL_NORM_REFUSED", fmt.Errorf("goal %s asks for %dm and %d review rounds, over its tier's %dm and %d; split it, or pass --approved-ref",
+		id, budget.ReservedJobMinutesLimit, budget.ReviewRoundLimit, box.ReservedJobMinutesLimit, box.ReviewRoundLimit))
 }
 
 func goalNormApproval(repoRoot string, tree *TreeGoals, file *GoalFile, budget Budget, approvedRef, operationID string, proof *humanauthority.Proof) (*GoalNormApprovalClaim, error) {
@@ -112,7 +113,7 @@ func goalNormApproval(repoRoot string, tree *TreeGoals, file *GoalFile, budget B
 		return nil, err
 	}
 	if approvedRef != strings.TrimSpace(approvedRef) {
-		return nil, fmt.Errorf("GOAL_NORM_REFUSED: --approved-ref must exactly name a rulings-register row or human goal-history operation")
+		return nil, coded("GOAL_NORM_REFUSED", errors.New("--approved-ref must name a ruling or a person's goal act exactly, without spaces"))
 	}
 	if approvedRef == "" {
 		if budget.ReservedJobMinutesLimit > box.ReservedJobMinutesLimit || budget.ReviewRoundLimit > box.ReviewRoundLimit {
@@ -131,19 +132,19 @@ func goalNormApproval(repoRoot string, tree *TreeGoals, file *GoalFile, budget B
 		return nil, err
 	}
 	if !exists {
-		return nil, fmt.Errorf("GOAL_NORM_REFUSED: --approved-ref %s does not name a rulings-register row or human goal-history operation", approvedRef)
+		return nil, coded("GOAL_NORM_REFUSED", fmt.Errorf("--approved-ref %s names no ruling or person's goal act", approvedRef))
 	}
 	if !proven {
-		return nil, fmt.Errorf("GOAL_NORM_REFUSED: --approved-ref %s must approve this goal with the exact token form goal=<id> minutes=<n> reviewRounds=<n> goalRevision=<r>", approvedRef)
+		return nil, coded("GOAL_NORM_REFUSED", fmt.Errorf("--approved-ref %s doesn't say goal=<id> minutes=<n> reviewRounds=<n> goalRevision=<r>", approvedRef))
 	}
 	if revision != file.Revision {
-		return nil, fmt.Errorf("GOAL_NORM_REFUSED: --approved-ref %s covers goal %s revision %d, not current revision %d; re-approval is required", approvedRef, file.Id, revision, file.Revision)
+		return nil, coded("GOAL_NORM_REFUSED", fmt.Errorf("--approved-ref %s covers goal %s at revision %d, but it is now %d; approve it again", approvedRef, file.Id, revision, file.Revision))
 	}
 	if minutes < budget.ReservedJobMinutesLimit {
-		return nil, fmt.Errorf("GOAL_NORM_REFUSED: reservedJobMinutesLimit %dm exceeds --approved-ref %s's proven %dm", budget.ReservedJobMinutesLimit, approvedRef, minutes)
+		return nil, coded("GOAL_NORM_REFUSED", fmt.Errorf("%dm of job time is more than --approved-ref %s approved (%dm)", budget.ReservedJobMinutesLimit, approvedRef, minutes))
 	}
 	if rounds < budget.ReviewRoundLimit {
-		return nil, fmt.Errorf("GOAL_NORM_REFUSED: reviewRoundLimit %d exceeds --approved-ref %s's proven %d", budget.ReviewRoundLimit, approvedRef, rounds)
+		return nil, coded("GOAL_NORM_REFUSED", fmt.Errorf("%d review rounds are more than --approved-ref %s approved (%d)", budget.ReviewRoundLimit, approvedRef, rounds))
 	}
 	if budget.ReservedJobMinutesLimit <= box.ReservedJobMinutesLimit && budget.ReviewRoundLimit <= box.ReviewRoundLimit {
 		return nil, nil

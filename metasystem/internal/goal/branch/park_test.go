@@ -99,7 +99,7 @@ func TestParkCheckReadsTheRemoteOnlyForABranchBackedGoal(t *testing.T) {
 			summary, err := check("standing", "Start standing.")
 			switch {
 			case test.wantRefusalIn != "":
-				if err == nil || !strings.Contains(err.Error(), test.wantRefusalIn) {
+				if err == nil || !strings.Contains(goal.RecordText(err), test.wantRefusalIn) {
 					t.Fatalf("refusal = %v, want one naming %s", err, test.wantRefusalIn)
 				}
 			case err != nil:

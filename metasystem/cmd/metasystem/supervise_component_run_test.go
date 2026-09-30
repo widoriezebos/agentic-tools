@@ -86,7 +86,7 @@ func TestLandingOwnerComponentRetriesAfterEnrollmentAppears(t *testing.T) {
 	fixture := newLandingOwnerOrdinaryFixture(t, "", "mac-cli")
 	root, pass, release := fixture.root, fixture.pass, fixture.release
 	defer release()
-	if err := pass(); err == nil || !strings.Contains(err.Error(), "no machine nickname is enrolled") {
+	if err := pass(); err == nil || !strings.Contains(err.Error(), "this machine has no name yet") {
 		t.Fatalf("first setup error=%v, want missing machine enrollment", err)
 	}
 	if _, err := lease.CurrentHolder(root); !errors.Is(err, lease.ErrLeaseAbsent) {
@@ -103,7 +103,7 @@ func TestLandingOwnerComponentSetupFailureDoesNotReannounce(t *testing.T) {
 	root, pass, release := fixture.root, fixture.pass, fixture.release
 	defer release()
 	for attempt := 1; attempt <= 3; attempt++ {
-		if err := pass(); err == nil || !strings.Contains(err.Error(), "no machine nickname is enrolled") {
+		if err := pass(); err == nil || !strings.Contains(err.Error(), "this machine has no name yet") {
 			t.Fatalf("setup attempt %d error=%v, want missing machine enrollment", attempt, err)
 		}
 	}
@@ -775,7 +775,7 @@ func TestLandingOwnerResolvesItsBatchRootFromTheCheckoutNotTheInstallation(t *te
 	if err == nil {
 		t.Fatal("the landing owner treated the seats' batch root as someone else's and never activated")
 	}
-	if !strings.Contains(err.Error(), "no machine nickname is enrolled") {
+	if !strings.Contains(err.Error(), "this machine has no name yet") {
 		t.Fatalf("landing owner setup error=%v, want the enrollment error that only a resolved owner reaches", err)
 	}
 }

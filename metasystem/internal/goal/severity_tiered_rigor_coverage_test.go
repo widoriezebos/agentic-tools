@@ -17,7 +17,7 @@ func TestSeverityTieredRigorAcceptedRiskLifecycle(t *testing.T) {
 		t.Fatalf("accept-risk without the human actor = %v", err)
 	}
 	req.Actor.Human = "Wido"
-	if _, err := AcceptedRiskDecision(req, "risk-goal", "F-1", "critic-a", "Wido", "bounded risk", nil); err == nil || !strings.Contains(err.Error(), "human approval requires") {
+	if _, err := AcceptedRiskDecision(req, "risk-goal", "F-1", "critic-a", "Wido", "bounded risk", nil); err == nil || !strings.Contains(err.Error(), "only a person approves") {
 		t.Fatalf("accept-risk without authority proof = %v", err)
 	}
 
@@ -187,7 +187,7 @@ func TestSeverityTieredRigorUtilityWrappers(t *testing.T) {
 		t.Fatalf("approved budget without a human actor = %v", err)
 	}
 	req.Actor.Human = "Wido"
-	if _, err := SetBudgetApproved(req, "utility-goal", testBudget(), nil); err == nil || !strings.Contains(err.Error(), "human approval requires") {
+	if _, err := SetBudgetApproved(req, "utility-goal", testBudget(), nil); err == nil || !strings.Contains(err.Error(), "only a person approves") {
 		t.Fatalf("approved budget without authority proof = %v", err)
 	}
 
@@ -217,7 +217,7 @@ func TestSeverityTieredRigorUtilityWrappers(t *testing.T) {
 	unclaimed := verbReqFor(unclaimedEndpoint, "01J5X00000000000000000SR55", "mac-a")
 	unclaimed.Actor.Human = "Wido"
 	result, err = SetBudgetApproved(unclaimed, "unclaimed-budget", testBudget(), &unclaimedProof)
-	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "budgets on unclaimed work") {
+	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "isn't claimed; its budget is set when it is approved") {
 		t.Fatalf("approved budget on unclaimed goal = %+v, %v", result, err)
 	}
 
@@ -239,7 +239,7 @@ func TestSeverityTieredRigorUtilityWrappers(t *testing.T) {
 	if _, err := SetPin(req, "utility-goal", ""); err == nil || !strings.Contains(err.Error(), "names its machine") {
 		t.Fatalf("empty pin = %v", err)
 	}
-	if _, err := SetPin(req, "utility-goal", "two words"); err == nil || !strings.Contains(err.Error(), "not a machine nickname") {
+	if _, err := SetPin(req, "utility-goal", "two words"); err == nil || !strings.Contains(err.Error(), "isn't a machine name") {
 		t.Fatalf("whitespace pin = %v", err)
 	}
 

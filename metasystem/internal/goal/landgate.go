@@ -1,6 +1,7 @@
 package goal
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"slices"
@@ -372,10 +373,10 @@ func LandWithoutSitting(r VerbRequest, id, tip, because string, proof *humanauth
 		return PublishResult{}, fmt.Errorf("land without a sitting is a human act and names its human (--by)")
 	}
 	if proof == nil || !(proof.ValidFor(r.Endpoint.Root) || proof.SessionValidFor(r.Endpoint.Root)) {
-		return PublishResult{}, fmt.Errorf("land without a sitting requires freshly observed enrolled-terminal human authority or a signed-in browser session")
+		return PublishResult{}, errors.New("only a person lets work land without a sitting, from their own terminal or signed in")
 	}
 	if named := humanOfProof(r.Endpoint.Root, proof); named != "" && named != r.Actor.Human {
-		return PublishResult{}, fmt.Errorf("the proof names %s and the act is attributed to %s; an act is recorded under the person who made it", named, r.Actor.Human)
+		return PublishResult{}, fmt.Errorf("this terminal belongs to %s, not %s; an act is recorded under the person who made it", named, r.Actor.Human)
 	}
 	decided, err := WithoutSittingLine(tip, r.Actor.Human, because)
 	if err != nil {
@@ -394,7 +395,7 @@ func WithoutSittingLine(tip, by, because string) (WithoutSitting, error) {
 	case strings.ContainsAny(because, "\r\n") || !utf8.ValidString(because) || utf8.RuneCountInString(because) > maxWithoutReasonRunes:
 		return WithoutSitting{}, fmt.Errorf("the reason is one line of at most %d characters", maxWithoutReasonRunes)
 	case !reviewCommit.MatchString(tip):
-		return WithoutSitting{}, fmt.Errorf("the goal's branch has no tip to bind the decision to; a decision is recorded against the work it lets land")
+		return WithoutSitting{}, errors.New("the goal's branch has no commits yet, so there is no work to let land")
 	}
 	return WithoutSitting{Tip: tip, By: by, Reason: because}, nil
 }
@@ -442,10 +443,10 @@ func Sitting(r VerbRequest, id, record string, open bool, proof *humanauthority.
 		return PublishResult{}, fmt.Errorf("a review sitting is a human's and names its human (--by)")
 	}
 	if proof == nil || !(proof.ValidFor(r.Endpoint.Root) || proof.SessionValidFor(r.Endpoint.Root)) {
-		return PublishResult{}, fmt.Errorf("a review sitting's hold requires freshly observed enrolled-terminal human authority or a signed-in browser session")
+		return PublishResult{}, errors.New("only a person holds a review sitting, from their own terminal or signed in")
 	}
 	if named := humanOfProof(r.Endpoint.Root, proof); named != "" && named != r.Actor.Human {
-		return PublishResult{}, fmt.Errorf("the proof names %s and the act is attributed to %s; an act is recorded under the person who made it", named, r.Actor.Human)
+		return PublishResult{}, fmt.Errorf("this terminal belongs to %s, not %s; an act is recorded under the person who made it", named, r.Actor.Human)
 	}
 	if !reviewRecordPath.MatchString(record) || strings.HasSuffix(record, ".brief.md") {
 		return PublishResult{}, fmt.Errorf("%s is not a review record in its home; a review record is %s<name>.md", record, ReviewHome)
@@ -567,7 +568,7 @@ func LandedUnder(f *GoalFile, s GateSettings) string {
 // its path lies in the review home.
 func ReviewRecordPath(root, given string) (string, error) {
 	if strings.TrimSpace(given) == "" {
-		return "", fmt.Errorf("a sitting names its review record with --record PATH")
+		return "", errors.New("a sitting names its review record file with --record")
 	}
 	absolute := given
 	if !filepath.IsAbs(absolute) {

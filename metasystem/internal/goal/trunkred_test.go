@@ -226,7 +226,7 @@ func TestTrunkRedRecordOwnClearAndCloseTransactions(t *testing.T) {
 	}
 	other := trunkRedVerbReqFor(endpoint, "01J5X0000000000000000000R6", "mac-b")
 	result, err = OwnTrunkRed(other, TrunkRedOwnArgs{Entry: ownedID, Goal: "solo-goal"})
-	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "TRUNK_RED_OWNED_ELSEWHERE") {
+	if err != nil || result.Outcome != OutcomeRejected || !(result.Code == "TRUNK_RED_OWNED_ELSEWHERE") {
 		t.Fatalf("other machine take: %+v %v", result, err)
 	}
 	human := trunkRedVerbReqFor(endpoint, "01J5X0000000000000000000R7", "mac-b")
@@ -425,7 +425,7 @@ func TestTrunkRedClearZeroExpectedEntryRemainsBound(t *testing.T) {
 	clear.Now = at.Add(time.Hour)
 	result, err := ClearTrunkRed(clear, TrunkRedClearArgs{Entry: entry.ID, Attempt: "green-zero", BaseCommit: "base-zero",
 		BaseTree: "tree-zero", Group: entry.Group})
-	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "TRUNK_RED_CHANGED") {
+	if err != nil || result.Outcome != OutcomeRejected || !(result.Code == "TRUNK_RED_CHANGED") {
 		t.Fatalf("zero expected entry clear: %+v %v", result, err)
 	}
 	if projected := projectedTrunkRedEntryFor(t, endpoint, at.Add(2*time.Hour)); projected.Closed != nil {
@@ -446,7 +446,7 @@ func TestTrunkRedLegacyClearRequestKeepsUnknownAndAlreadyApplied(t *testing.T) {
 			t.Fatal(err)
 		}
 		tip := acceptedTipForEndpoint(t, endpoint)
-		if _, err := rebuilt.Mutate(tip); err == nil || !strings.Contains(err.Error(), "TRUNK_RED_UNKNOWN") {
+		if _, err := rebuilt.Mutate(tip); err == nil || !(RefusalCode(err) == "TRUNK_RED_UNKNOWN") {
 			t.Fatalf("legacy clear of unknown entry: %v", err)
 		}
 	})
@@ -684,10 +684,10 @@ func TestFlakeEntryClosesOnAProvenFixNeverByTime(t *testing.T) {
 		}
 		return result
 	}
-	if result := pass("01J5X0000000000000000000F3", "no-fix", true, ""); result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "TRUNK_RED_FIX_UNPROVEN") {
+	if result := pass("01J5X0000000000000000000F3", "no-fix", true, ""); result.Outcome != OutcomeRejected || !(result.Code == "TRUNK_RED_FIX_UNPROVEN") {
 		t.Fatalf("a pass 90 days on without a fix: %+v", result)
 	}
-	if result := pass("01J5X0000000000000000000F4", "reused", false, "fix-commit"); result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "TRUNK_RED_PASS_NOT_EXECUTED") {
+	if result := pass("01J5X0000000000000000000F4", "reused", false, "fix-commit"); result.Outcome != OutcomeRejected || !(result.Code == "TRUNK_RED_PASS_NOT_EXECUTED") {
 		t.Fatalf("a reused pass: %+v", result)
 	}
 	if entry = projectedTrunkRedEntryFor(t, endpoint, later); entry.Closed != nil || entry.FixProof != nil {

@@ -120,14 +120,14 @@ func TestSplitIsAtomicPermanentAndRewritesDependencies(t *testing.T) {
 	}
 
 	reopen, err := Reopen(verbReqFor(endpoint, "01J5X00000000000000000S170", "mac-a"), "split-parent")
-	if err != nil || reopen.Outcome != OutcomeRejected || !strings.Contains(reopen.Detail, "never returns") {
+	if err != nil || reopen.Outcome != OutcomeRejected || !strings.Contains(reopen.Detail, "never comes back") {
 		t.Fatalf("decomposed parent reopen did not refuse: %+v %v", reopen, err)
 	}
 	if pruned, err := Prune(verbReqFor(endpoint, "01J5X00000000000000000S180", "mac-a"), 0); err != nil || pruned.Outcome != OutcomeConfirmed {
 		t.Fatalf("prune: %+v %v", pruned, err)
 	}
 	recreated, err := Open(verbReqFor(endpoint, "01J5X00000000000000000S190", "mac-a"), "split-parent", "Illicit resurrection.", OriginMain, "Stop.")
-	if err != nil || recreated.Outcome != OutcomeRejected || !strings.Contains(recreated.Detail, "retired") {
+	if err != nil || recreated.Outcome != OutcomeRejected || !strings.Contains(recreated.Detail, "was used by a goal that was split") {
 		t.Fatalf("prune must not reopen the identifier: %+v %v", recreated, err)
 	}
 }
@@ -150,14 +150,14 @@ func TestSliceStartIsImmutableAndBlocksSplit(t *testing.T) {
 	}
 	members := testMembers("sliced-parent")
 	split, err := Split(verbReqFor(endpoint, "01J5X00000000000000000SA30", "mac-a"), "sliced-parent", members, mainRatification("sliced-parent", members), nil)
-	if err != nil || split.Outcome != OutcomeRejected || !strings.Contains(split.Detail, "first slice") {
+	if err != nil || split.Outcome != OutcomeRejected || !strings.Contains(split.Detail, "already has work on") {
 		t.Fatalf("sliced parent must refuse split by its durable coordinates: %+v %v", split, err)
 	}
 	if released, err := Release(verbReqFor(endpoint, "01J5X00000000000000000SA40", "mac-a"), "sliced-parent"); err != nil || released.Outcome != OutcomeConfirmed {
 		t.Fatalf("release: %+v %v", released, err)
 	}
 	split, err = Split(verbReqFor(endpoint, "01J5X00000000000000000SA50", "mac-a"), "sliced-parent", members, mainRatification("sliced-parent", members), nil)
-	if err != nil || split.Outcome != OutcomeRejected || !strings.Contains(split.Detail, "first slice") {
+	if err != nil || split.Outcome != OutcomeRejected || !strings.Contains(split.Detail, "already has work on") {
 		t.Fatalf("release must not erase ever-sliced: %+v %v", split, err)
 	}
 }
@@ -201,7 +201,7 @@ func TestSplitPreconditionsRefuseByNameAndHumanOriginInherits(t *testing.T) {
 		}
 		members := testMembers("foreign-parent")
 		result, err := Split(verbReqFor(b, "01J5X00000000000000000PF10", "mac-b"), "foreign-parent", members, mainRatification("foreign-parent", members), nil)
-		if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "metasystem goal claim foreign-parent --take-over --reason TEXT") {
+		if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "run: metasystem goal pause foreign-parent --reason TEXT") {
 			t.Fatalf("foreign claim did not refuse toward the authority transition: %+v %v", result, err)
 		}
 	})
@@ -248,7 +248,7 @@ func TestSplitPreconditionsRefuseByNameAndHumanOriginInherits(t *testing.T) {
 		human.Actor.Human = "wido"
 		ratification := SplitRatification{Tier: RatifierHuman, By: "wido", DraftSHA256: SplitDraftSHA256("human-parent", members)}
 		refused, err := Split(human, "human-parent", members, ratification, nil)
-		if err != nil || refused.Outcome != OutcomeRejected || !strings.Contains(refused.Detail, "fresh enrolled-terminal proof") {
+		if err != nil || refused.Outcome != OutcomeRejected || !strings.Contains(refused.Detail, "approves this split from their own terminal") {
 			t.Fatalf("human-origin split without proof did not refuse: %+v %v", refused, err)
 		}
 		human.Ulid = "01J5X00000000000000000PH20"
@@ -386,7 +386,7 @@ func TestGoalNormRefusesAndPublishesStrictApproval(t *testing.T) {
 	request := verbReqFor(endpoint, "01J5X00000000000000000GN10", "mac-a")
 	request.Actor.Human = "wido"
 	refused, err := Approve(request, []string{"large-goal"}, &over, testFixtureHumanAuthority(t, root, request.Now))
-	if err != nil || refused.Outcome != OutcomeRejected || !strings.Contains(refused.Detail, "GOAL_NORM_REFUSED") || !strings.Contains(refused.Detail, "split it into an arc of members within the box") {
+	if err != nil || refused.Outcome != OutcomeRejected || !(refused.Code == "GOAL_NORM_REFUSED") || !strings.Contains(refused.Detail, "split it, or pass --approved-ref") {
 		t.Fatalf("over-norm claim did not exercise the typed split remedy: %+v %v", refused, err)
 	}
 	if err := os.MkdirAll(filepath.Join(root, "memory"), 0o755); err != nil {
@@ -511,7 +511,7 @@ func TestSplitAndSliceStartRaceHasExactlyOneWinner(t *testing.T) {
 		return nil
 	}
 	result, err := Publish(a, req)
-	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "first slice") {
+	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "already has work on") {
 		t.Fatalf("split did not lose by the durable sliced fact: %+v %v", result, err)
 	}
 	advanced, err := FetchAdvance(a)
@@ -542,7 +542,7 @@ func TestParkedEverSlicedParentStillRefusesSplit(t *testing.T) {
 	splitHuman := verbReqFor(endpoint, "01J5X00000000000000000PS30", "mac-a")
 	splitHuman.Actor.Human = "wido"
 	result, err := Split(splitHuman, "parked-sliced", members, mainRatification("parked-sliced", members), nil)
-	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "first slice") {
+	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "already has work on") {
 		t.Fatalf("parked state bypassed the immutable sliced refusal: %+v %v", result, err)
 	}
 }
@@ -584,7 +584,7 @@ func TestGoalNormApprovalHistoryStalenessAndAtRestCoverage(t *testing.T) {
 	stale.Actor.Human = "wido"
 	stale.ApprovedRef = "R-251"
 	result, err := Approve(stale, []string{"stale-large"}, &over, testHumanAuthority(t, root, stale.Now))
-	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "not current revision 2") {
+	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "at revision 1, but it is now 2") {
 		t.Fatalf("stale approval did not refuse by both revisions: %+v %v", result, err)
 	}
 

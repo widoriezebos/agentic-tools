@@ -31,8 +31,8 @@ func TestReconcileScopeRefusesAnEditOutsideTheNamedGoals(t *testing.T) {
 	request := humanReconcileReqForEndpoint(endpoint, "01J5X000000000000000000S10")
 	request.ReconcileScope = []string{"a"}
 	result, err := reconcileForTest(t, request)
-	if err == nil || !strings.Contains(err.Error(), "RECONCILE_OUTSIDE_SCOPE") || !strings.Contains(err.Error(), "edits of b,") ||
-		!strings.Contains(err.Error(), "outside the named a") || result.Publish.Tip != "" {
+	if err == nil || !(RefusalCode(err) == "RECONCILE_OUTSIDE_SCOPE") || !strings.Contains(err.Error(), "edits of b,") ||
+		!strings.Contains(err.Error(), "not only of a") || result.Publish.Tip != "" {
 		t.Fatalf("scoped reconcile over an unnamed edit = %+v %v; want a refusal naming b", result, err)
 	}
 	record, exists, err := ReadBase(endpoint.Root)

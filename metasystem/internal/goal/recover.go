@@ -16,8 +16,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 )
 
 // RecoveryReport is one entry's disposition.
@@ -199,7 +197,7 @@ func completeFromIntent(e Endpoint, entry Entry, policy SensitiveRecoveryPolicy)
 		return refuseJournaledHumanIntent(e, taken, recoveryHumanBoundaryDetail(taken.Intent.Verb, nil))
 	}
 	if taken.Intent.Verb == "resume" {
-		detail := "human authority cannot be recovered from journal text; " + humanauthority.PersonActRemedy("metasystem goal resume G")
+		detail := "an interrupted resume was a person's act and can't be finished for them; the person runs it again: metasystem goal resume " + recoveryTarget(taken.Intent)
 		if err := MarkTerminal(e.Root, entry.Opid, OutcomeRejected, detail); err != nil {
 			return "", err
 		}
@@ -207,7 +205,7 @@ func completeFromIntent(e Endpoint, entry Entry, policy SensitiveRecoveryPolicy)
 		return "escalation required: " + detail, nil
 	}
 	if taken.Intent.Verb == "set-priority" {
-		detail := "human authority cannot be recovered from journal text; " + humanauthority.PersonActRemedy("metasystem goal prioritize")
+		detail := "an interrupted prioritize was a person's act and can't be finished for them; the person runs metasystem goal prioritize again"
 		if err := MarkTerminal(e.Root, entry.Opid, OutcomeRejected, detail); err != nil {
 			return "", err
 		}
@@ -215,7 +213,7 @@ func completeFromIntent(e Endpoint, entry Entry, policy SensitiveRecoveryPolicy)
 		return "escalation required: " + detail, nil
 	}
 	if taken.Intent.Verb == "steal" {
-		detail := "human authority cannot be recovered from journal text; " + humanauthority.PersonActRemedy("the take-over, metasystem goal claim G --take-over --reason TEXT,")
+		detail := "an interrupted take-over was a person's act and can't be finished for them; the person runs it again: metasystem goal claim " + recoveryTarget(taken.Intent) + " --take-over --reason TEXT"
 		if err := MarkTerminal(e.Root, entry.Opid, OutcomeRejected, detail); err != nil {
 			return "", err
 		}
@@ -223,7 +221,7 @@ func completeFromIntent(e Endpoint, entry Entry, policy SensitiveRecoveryPolicy)
 		return "escalation required: " + detail, nil
 	}
 	if taken.Intent.Verb == "split" && taken.Intent.Args["ratifierTier"] == RatifierHuman {
-		detail := "human split ratification cannot be recovered from journal text; " + humanauthority.PersonActRemedy("metasystem goal split against the recorded draft")
+		detail := "an interrupted split was a person's act and can't be finished for them; the person runs metasystem goal split " + recoveryTarget(taken.Intent) + " again"
 		if err := MarkTerminal(e.Root, entry.Opid, OutcomeRejected, detail); err != nil {
 			return "", err
 		}
@@ -324,9 +322,9 @@ func hasConditionalRecoveryHumanBoundary(verb string) bool {
 }
 
 func recoveryHumanBoundaryDetail(verb string, required *humanAuthorityRequired) string {
-	detail := fmt.Sprintf("%s is proof-bearing and cannot be replayed from journal text; re-run it from the human authority boundary", verb)
+	detail := fmt.Sprintf("an interrupted %s was a person's act and can't be finished for them; the person runs it again", verb)
 	if required != nil {
-		detail += fmt.Sprintf(" because %s requires %s-grade human authority", required.row.Name, required.grade)
+		detail += fmt.Sprintf(" (%s needs a %s check of who acts)", required.row.Name, required.grade)
 	}
 	return detail
 }
@@ -340,7 +338,7 @@ func recoveryHumanBoundaryDetail(verb string, required *humanAuthorityRequired) 
 // line carries the original operation with no injection seam.
 func requestForEntry(e Endpoint, entry Entry, parkChecks ...func(string, string) (string, error)) (PublishRequest, error) {
 	if len(entry.Opid) < 27 {
-		return PublishRequest{}, fmt.Errorf("the entry's opid %q is not <ulid>-<machine>-<hash>; close it by hand", entry.Opid)
+		return PublishRequest{}, fmt.Errorf("pending ledger write %q has a malformed id; close it by hand", entry.Opid)
 	}
 	r := VerbRequest{
 		Endpoint:    e,
@@ -361,7 +359,7 @@ func requestForEntry(e Endpoint, entry Entry, parkChecks ...func(string, string)
 	}
 	r.CallerClass = entry.Intent.Args["callerClass"]
 	if r.opid() != entry.Opid {
-		return PublishRequest{}, fmt.Errorf("the entry's opid %s does not derive from its recorded identity; close it by hand", entry.Opid)
+		return PublishRequest{}, fmt.Errorf("pending ledger write %s doesn't match the session it names; close it by hand", entry.Opid)
 	}
 	in := entry.Intent
 	target := ""
@@ -480,11 +478,11 @@ func requestForEntry(e Endpoint, entry Entry, parkChecks ...func(string, string)
 		return claimRequest(r, target, budget), nil
 	case "restamp":
 		if r.CallerClass != "MAIN" {
-			return PublishRequest{}, fmt.Errorf("the stored restamp intent is not from a MAIN lease holder; close it by hand")
+			return PublishRequest{}, errors.New("the interrupted restamp wasn't made by the session holding the checkout; close it by hand")
 		}
 		return restampRequest(r, target), nil
 	case "set-budget":
-		return PublishRequest{}, fmt.Errorf("APPROVAL_REQUIRED: set-budget is proof-bearing and cannot be replayed from journal text; re-run it from the human authority boundary and close this entry by hand")
+		return PublishRequest{}, coded("APPROVAL_REQUIRED", fmt.Errorf("an interrupted budget change was a person's act; close it by hand\nrun: metasystem goal budget %s  (as that person)", target))
 	case "extend-budget":
 		parse := func(key string) (uint64, error) {
 			value, err := strconv.ParseUint(in.Args[key], 10, 64)
@@ -516,13 +514,13 @@ func requestForEntry(e Endpoint, entry Entry, parkChecks ...func(string, string)
 		}
 		return extendBudgetRequest(r, target, offer), nil
 	case "grant", "revoke":
-		return PublishRequest{}, fmt.Errorf("%s is proof-bearing and cannot be replayed from journal text; re-run it from the human authority boundary and close this entry by hand", in.Verb)
+		return PublishRequest{}, fmt.Errorf("an interrupted grant %s was a person's act; close it by hand, then the person runs it again", in.Verb)
 	case "set-priority":
-		return PublishRequest{}, fmt.Errorf("set-priority is proof-bearing and cannot be replayed from journal text; %s", humanauthority.PersonActRemedy("metasystem goal prioritize"))
+		return PublishRequest{}, errors.New("an interrupted prioritize was a person's act; the person runs metasystem goal prioritize again")
 	case "engine-floor":
-		return PublishRequest{}, fmt.Errorf("engine-floor is retired and cannot be replayed from journal text")
+		return PublishRequest{}, errors.New("engine-floor no longer exists, so its interrupted write can't be finished; close it by hand")
 	case "abandon", "carry", reviewVerb, LandWithoutSittingVerb:
-		return PublishRequest{}, fmt.Errorf("%s is proof-bearing and cannot be replayed from journal text; %s", in.Verb, humanauthority.PersonActRemedy(""))
+		return PublishRequest{}, fmt.Errorf("an interrupted %s was a person's act and can't be finished for them; the person runs it again", in.Verb)
 	case "split":
 		members, err := ParseMemberDraft([]byte(in.Args["members"]), target)
 		if err != nil {
@@ -530,7 +528,7 @@ func requestForEntry(e Endpoint, entry Entry, parkChecks ...func(string, string)
 		}
 		epoch, err := strconv.ParseInt(in.Args["ratifierClaimEpoch"], 10, 64)
 		if err != nil {
-			return PublishRequest{}, fmt.Errorf("the stored split ratifier claim epoch is invalid: %w", err)
+			return PublishRequest{}, fmt.Errorf("the interrupted split names an unreadable claim: %w", err)
 		}
 		ratification := SplitRatification{
 			Tier: in.Args["ratifierTier"], MainID: in.Args["ratifierMainId"],
@@ -565,12 +563,12 @@ func requestForEntry(e Endpoint, entry Entry, parkChecks ...func(string, string)
 			return unparkArcRequest(r, target), nil
 		}
 		if in.Args["under"] != "" {
-			return PublishRequest{}, fmt.Errorf("an unpark under power of attorney is judged live at the act and cannot be replayed from journal text; close this entry by hand and rerun metasystem goal resume G --under GRANT --verified TEXT while the grant is live")
+			return PublishRequest{}, fmt.Errorf("an interrupted unpark under a grant is judged at the moment; close it by hand\nrun: metasystem goal resume %s --under GRANT --verified TEXT", target)
 		}
 		return unparkRequest(r, target, ""), nil
 	case "reopen":
 		if in.Args["from"] == "abandoned" {
-			return PublishRequest{}, fmt.Errorf("reopen is proof-bearing and cannot be replayed from journal text; %s", humanauthority.PersonActRemedy("metasystem goal reopen G --by NAME"))
+			return PublishRequest{}, fmt.Errorf("an interrupted reopen was a person's act; the person runs metasystem goal reopen %s again", target)
 		}
 		return reopenRequest(r, target), nil
 	case "edit":
@@ -612,7 +610,7 @@ func requestForEntry(e Endpoint, entry Entry, parkChecks ...func(string, string)
 					return PublishRequest{}, fmt.Errorf("%v; close this entry by hand", err)
 				}
 				if change.Allowed {
-					return PublishRequest{}, fmt.Errorf("allowing a goal permission is proof-bearing and cannot be replayed from journal text; %s", humanauthority.PersonActRemedy(AllowCommand(target, change.Name)))
+					return PublishRequest{}, fmt.Errorf("an interrupted permission change was a person's act; the person runs it again: %s", AllowCommand(target, change.Name))
 				}
 				fields.Permission = &change
 			}
@@ -651,7 +649,7 @@ func requestForEntry(e Endpoint, entry Entry, parkChecks ...func(string, string)
 	case "declare-free":
 		return declareFreeRequest(r, in.Args["origin"], in.Args["digest"]), nil
 	}
-	return PublishRequest{}, fmt.Errorf("verb %q re-runs from its own entry point (reconcile from the checkout it captures, migrate from its reviewed inputs); this entry closes toward that path", in.Verb)
+	return PublishRequest{}, fmt.Errorf("an interrupted %s is finished by running it again (from its checkout or reviewed inputs)", in.Verb)
 }
 
 func recoverConfirmedEffect(e Endpoint, tip string, entry Entry) error {
@@ -683,3 +681,12 @@ func commaValues(value string) []string {
 }
 
 func timeNowUTC() time.Time { return time.Now().UTC() }
+
+// recoveryTarget is the goal an interrupted act names, or G when it names
+// none: the goal a person's rerun names.
+func recoveryTarget(in Intent) string {
+	if len(in.Targets) > 0 && in.Targets[0] != "" {
+		return in.Targets[0]
+	}
+	return "G"
+}

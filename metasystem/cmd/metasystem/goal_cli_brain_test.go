@@ -264,7 +264,7 @@ func TestGoalCLIBrainHumanWordRefuses(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	bed.assertMatrix(rows, "this checkout is declared the brain; the brain never carries a human's word into goal")
+	bed.assertMatrix(rows, "this is the coordinator's checkout, which never acts in a person's name for goal")
 	if bed.publications() != 0 {
 		t.Fatal("brain human-word refusal advanced the ledger tip")
 	}
@@ -281,7 +281,7 @@ func TestGoalCLIBrainHumanWordRefuses(t *testing.T) {
 		return runGoalApproveWithInputs([]string{"--root", bed.root(), "--id", "fix-docs", "--by", "Wido", "--budget", "box", "--fixture-human-authority"},
 			gcliBrainNoProof(t), bed.commandNow, d, bed.binding)
 	})
-	if code == 0 || !strings.Contains(said, "this checkout is declared the brain; the brain never carries a human's word into goal approve") {
+	if code == 0 || !strings.Contains(said, "this is the coordinator's checkout, which never acts in a person's name for goal approve") {
 		t.Fatalf("runtimes=codex approve: rc=%d %s", code, said)
 	}
 	gcliBrainWrite(t, conf, fake)
@@ -393,7 +393,7 @@ func TestGoalCLIBrainClassificationFails(t *testing.T) {
 			}, "id")(bed, d, []string{"--root", bed.root(), "--id", "classification-target", "--by", "Wido"})
 		})
 	}
-	classifier := "this checkout is declared the brain and the caller could not be classified"
+	classifier := "this is the coordinator's checkout, and who started this command is unknown"
 	if code, said := bed.approve("classification-target"); code == 0 || !strings.Contains(said, classifier) {
 		t.Errorf("approve: brain goal fence wanted %q, got rc=%d: %s", classifier, code, said)
 	}

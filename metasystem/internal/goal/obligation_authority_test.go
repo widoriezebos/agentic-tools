@@ -231,7 +231,7 @@ func TestRelayedSetObligationIsBoundOncePerGoalPerRuling(t *testing.T) {
 	second.Now = first.Now.Add(time.Minute)
 	secondProof := testTemporaryGoalProof(t, root, "Wido authorizes second obligation", "2026-09-06")
 	result, err := SetObligation(second, "one-relayed-obligation", testGovernedObligation(ObligationDraft), &secondProof)
-	want := `goal one-relayed-obligation already used relayed set-obligation authority on 2026-08-20T22:00:00Z with recorded word "Wido authorizes first obligation"; a further set-obligation needs freshly observed enrolled-terminal authority`
+	want := `goal one-relayed-obligation already had one set-obligation on a relayed word (2026-08-20T22:00:00Z, "Wido authorizes first obligation"); the next set-obligation is the person's, at their terminal`
 	if err != nil || result.Outcome != OutcomeRejected || result.Detail != want {
 		t.Fatalf("second relayed set-obligation refusal mismatch: result=%+v err=%v", result, err)
 	}
@@ -273,7 +273,7 @@ func TestPruneRetainsRelayedUseForAReopenedGoalIdentifier(t *testing.T) {
 	second.Now = first.Now.Add(time.Minute)
 	secondProof := testTemporaryGoalProof(t, root, "Wido authorizes reset obligation", "2026-09-06")
 	result, err := SetObligation(second, "relay-survives-prune", testGovernedObligation(ObligationDraft), &secondProof)
-	want := `goal relay-survives-prune already used relayed set-obligation authority on 2026-08-20T22:00:00Z with recorded word "Wido authorizes retained obligation"; a further set-obligation needs freshly observed enrolled-terminal authority`
+	want := `goal relay-survives-prune already had one set-obligation on a relayed word (2026-08-20T22:00:00Z, "Wido authorizes retained obligation"); the next set-obligation is the person's, at their terminal`
 	if err != nil || result.Outcome != OutcomeRejected || result.Detail != want {
 		t.Fatalf("prune reset the per-goal relay bound: result=%+v err=%v", result, err)
 	}

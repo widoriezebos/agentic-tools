@@ -114,12 +114,12 @@ func TestSyncModeGateHoldsAtFetchAndMutation(t *testing.T) {
 	// the split brain the gate names at fetch and mutation.
 	flipped := endpoint
 	flipped.Remote = "local"
-	if _, err := FetchAdvance(flipped); err == nil || !strings.Contains(err.Error(), "split brain") {
+	if _, err := FetchAdvance(flipped); err == nil || !strings.Contains(err.Error(), "settings say local") {
 		t.Fatalf("the fetch refuses the local flip by name: %v", err)
 	}
 	req := verbReqFor(flipped, "01J5X00000000000000000SG10", "mac-a")
 	openRes, err := Open(req, "smuggled", "Split-brain write.", "main", "Go.")
-	if err == nil || !strings.Contains(err.Error(), "split brain") {
+	if err == nil || !strings.Contains(err.Error(), "settings say local") {
 		t.Fatalf("the mutation refuses the local flip by name: %+v %v", openRes, err)
 	}
 	if repo.store.canonical != res.Tip || repo.accepted != res.Tip {
@@ -140,7 +140,7 @@ func TestSyncModeGateHoldsAtFetchAndMutation(t *testing.T) {
 	remote := local
 	remote.Remote = "origin"
 	if err := SyncModeGate(remote, localRes.Tip); err == nil ||
-		!strings.Contains(err.Error(), "config flip") {
+		!strings.Contains(err.Error(), "set it back to local") {
 		t.Fatalf("the promotion arm refuses by name: %v", err)
 	}
 }

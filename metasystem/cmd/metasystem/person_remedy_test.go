@@ -42,7 +42,7 @@ func TestEveryPersonActRefusalNamesSystemEnroll(t *testing.T) {
 		{"disk clean --release", "metasystem disk clean --release s1", disk("--release s1")},
 		{"disk clean --discard", "metasystem disk clean --discard j2:c1", disk("--discard j2:c1")},
 		{"a human verb's proof", "", func() string {
-			return humanProofRemedy(newHumanVerbValues("park", nil), false, "", "").words
+			return humanProofRemedy(newHumanVerbValues("park", nil), false, "", "", notReached).command
 		}},
 		{"session stop by a shell off the enrolled terminal", "metasystem session stop", func() string {
 			return sessionStopRefusal(notReached)

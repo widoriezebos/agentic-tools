@@ -59,7 +59,7 @@ func TestDoneRefusesUnscheduledResidueInTheConclusion(t *testing.T) {
 	}
 
 	_, err := Done(request, "any-goal", "landed X; the cache half is residue for later")
-	if err == nil || !strings.Contains(err.Error(), "residue is a scheduled debt") {
+	if err == nil || !strings.Contains(err.Error(), "link each as goal:<id>") {
 		t.Fatalf("unlinked residue conclusion must refuse by name: %v", err)
 	}
 	assertNoRepositoryCalls()

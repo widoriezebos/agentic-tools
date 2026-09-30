@@ -259,7 +259,7 @@ func TestClassifySweepRecoverySkipsRowsAlreadyApplied(t *testing.T) {
 		t.Fatalf("interrupted confirmation did not skip the row whose Risk was already applied: %+v %v", recovered, err)
 	}
 	changedDraft := []byte("already-tiered 1,1,1,1 changed basis\nstill-tierless 2,1,1,1 remaining row\n")
-	if _, err := PreviewClassificationSweep(endpoint, changedDraft, human.Now); err == nil || !strings.Contains(err.Error(), "SWEEP_UNKNOWN_GOAL") {
+	if _, err := PreviewClassificationSweep(endpoint, changedDraft, human.Now); err == nil || !(RefusalCode(err) == "SWEEP_UNKNOWN_GOAL") {
 		t.Fatalf("skipping an exact applied row weakened the different-Risk refusal: %v", err)
 	}
 	human.Ulid = "01J5X00000000000000000MD40"
@@ -310,7 +310,7 @@ func TestAgentCannotApprove(t *testing.T) {
 		t.Fatalf("an agent-shaped caller approved execution: %v", err)
 	}
 	request.Actor.Human = "Wido"
-	if _, err := Approve(request, []string{"needs-human"}, ptrBudget(testBudget()), nil); err == nil || !strings.Contains(err.Error(), "freshly observed") {
+	if _, err := Approve(request, []string{"needs-human"}, ptrBudget(testBudget()), nil); err == nil || !strings.Contains(err.Error(), "only a person approves") {
 		t.Fatalf("a --by name without boundary proof approved execution: %v", err)
 	}
 }
@@ -332,14 +332,14 @@ func TestApprovedGoalClaimsAndPayloadEditsInvalidateBinding(t *testing.T) {
 	approved := projection.Tree.Live["bound-work"]
 	intentChanged := *approved
 	intentChanged.Intent = "An intent the human never reviewed."
-	if err := intentChanged.ValidateApprovalRecord(); err == nil || !strings.Contains(err.Error(), "digest") {
+	if err := intentChanged.ValidateApprovalRecord(); err == nil || !strings.Contains(err.Error(), "no longer matches the goal's intent and budget") {
 		t.Fatalf("an intent edit preserved the approval binding: %v", err)
 	}
 	budgetChanged := *approved
 	changedBudget := *approved.Budget
 	changedBudget.AttemptLimit++
 	budgetChanged.Budget = &changedBudget
-	if err := budgetChanged.ValidateApprovalRecord(); err == nil || !strings.Contains(err.Error(), "digest") {
+	if err := budgetChanged.ValidateApprovalRecord(); err == nil || !strings.Contains(err.Error(), "no longer matches the goal's intent and budget") {
 		t.Fatalf("a budget edit preserved the approval binding: %v", err)
 	}
 	newIntent := "Still not authorized."
@@ -412,7 +412,7 @@ func TestUnapprovedExecutionPathsRefuseApprovalRequired(t *testing.T) {
 			t.Fatalf("open: %+v %v", result, err)
 		}
 		result, err := Claim(verbReqFor(endpoint, "01J5X00000000000000000KC10", "mac-a"), "unapproved-claim")
-		if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "APPROVAL_REQUIRED") {
+		if err != nil || result.Outcome != OutcomeRejected || !(result.Code == "APPROVAL_REQUIRED") {
 			t.Fatalf("unapproved claim did not fail closed: %+v %v", result, err)
 		}
 	})
@@ -424,7 +424,7 @@ func TestUnapprovedExecutionPathsRefuseApprovalRequired(t *testing.T) {
 		request := verbReqFor(endpoint, "01J5X00000000000000000KS10", "mac-b")
 		request.Actor.Human = "Wido"
 		result, err := Steal(request, "unapproved-steal")
-		if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "APPROVAL_REQUIRED") {
+		if err != nil || result.Outcome != OutcomeRejected || !(result.Code == "APPROVAL_REQUIRED") {
 			t.Fatalf("unapproved steal did not fail closed: %+v %v", result, err)
 		}
 	})
@@ -453,7 +453,7 @@ func TestUnapprovedExecutionPathsRefuseApprovalRequired(t *testing.T) {
 		edited := *base
 		edited.State = StateClaimed
 		edited.Claimed = &ClaimRecord{Machine: "mac-a", Lineage: "lin-1", At: base.OpenedAt, Revision: 1}
-		if _, err := mapOneChange(livePath(base.Id), base, &edited); err == nil || !strings.Contains(err.Error(), "APPROVAL_REQUIRED") {
+		if _, err := mapOneChange(livePath(base.Id), base, &edited); err == nil || !(RefusalCode(err) == "APPROVAL_REQUIRED") {
 			t.Fatalf("reconcile admitted an unapproved claimed state: %v", err)
 		}
 	})
@@ -479,7 +479,7 @@ func TestUnapprovedExecutionPathsRefuseApprovalRequired(t *testing.T) {
 		request := verbReqFor(endpoint, "01J5X00000000000000000KZ10", "mac-a")
 		request.Actor.Human = "Wido"
 		result, err := Resume(ResumeRequest{VerbRequest: request, GoalID: file.Id, Budget: budget, Authority: testHumanAuthority(t, root, request.Now)})
-		if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "APPROVAL_REQUIRED") {
+		if err != nil || result.Outcome != OutcomeRejected || !(result.Code == "APPROVAL_REQUIRED") {
 			t.Fatalf("unapproved resume did not fail closed: %+v %v", result, err)
 		}
 	})
@@ -490,7 +490,7 @@ func TestApprovedOverNormWithoutCoveringNormApprovalRefusesExecution(t *testing.
 	over := Budget{ElapsedLimit: "1h", AttemptLimit: 1, ReservedJobMinutesLimit: 2400, ActiveJobLimit: 1}
 	assertNormRefused := func(t *testing.T, result PublishResult, err error) {
 		t.Helper()
-		if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "GOAL_NORM_REFUSED") {
+		if err != nil || result.Outcome != OutcomeRejected || !(result.Code == "GOAL_NORM_REFUSED") {
 			t.Fatalf("approved over-norm execution did not refuse without its covering norm approval: %+v %v", result, err)
 		}
 	}
@@ -578,7 +578,7 @@ func TestSweepBindsListedIntentAndPreservesClaimedWork(t *testing.T) {
 	human.Actor.Human = "Wido"
 	proof := testHumanAuthority(t, root, human.Now)
 	result, err := ApproveSweep(human, first.Digest, proof)
-	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "SWEEP_LISTING_CHANGED") {
+	if err != nil || result.Outcome != OutcomeRejected || !(result.Code == "SWEEP_LISTING_CHANGED") {
 		t.Fatalf("the stale seen-intent digest approved a changed intent: %+v %v", result, err)
 	}
 	second, err := PreviewApprovalSweep(endpoint, human.Now)
@@ -683,13 +683,13 @@ func TestFleetEnrollmentExpiresRelayedClaimAndStealEverywhere(t *testing.T) {
 		t.Fatal(err)
 	}
 	claim, err := Claim(verbReqFor(endpointA, "01J5X00000000000000000FE50", "mac-a"), "relay-waiting")
-	if err != nil || claim.Outcome != OutcomeRejected || !strings.Contains(claim.Detail, "APPROVAL_EXPIRED") || !strings.Contains(claim.Detail, "fleet's first terminal") {
+	if err != nil || claim.Outcome != OutcomeRejected || !(claim.Code == "APPROVAL_EXPIRED") || !strings.Contains(claim.Detail, "fleet's first terminal") {
 		t.Fatalf("another machine's enrollment did not expire claim: %+v %v", claim, err)
 	}
 	steal := verbReqFor(endpointB, "01J5X00000000000000000FE60", "mac-b")
 	steal.Actor.Human = "Wido"
 	stolen, err := Steal(steal, "relay-running")
-	if err != nil || stolen.Outcome != OutcomeRejected || !strings.Contains(stolen.Detail, "APPROVAL_EXPIRED") {
+	if err != nil || stolen.Outcome != OutcomeRejected || !(stolen.Code == "APPROVAL_EXPIRED") {
 		t.Fatalf("expired approval created a fresh stolen revision: %+v %v", stolen, err)
 	}
 }

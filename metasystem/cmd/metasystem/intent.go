@@ -851,6 +851,19 @@ type ownerRefusal struct {
 	code     int
 	sentence string
 	remedy   humanVerbRemedy
+	// refusalCode is the owner's refusal code, a detail --verbose and --json
+	// show ("Messages a Person Reads").
+	refusalCode string
+}
+
+// refusalCodeDetails is a refusal code as the detail --verbose prints.
+func refusalCodeDetails(codes ...string) []string {
+	for _, code := range codes {
+		if code != "" {
+			return []string{"refusal code: " + code}
+		}
+	}
+	return nil
 }
 
 func (d syncRequestDependencies) publish(res goal.PublishResult, err error) int {
@@ -886,7 +899,7 @@ func publicationLanded(res goal.PublishResult) bool {
 
 func (d syncRequestDependencies) showOutcome(res goal.PublishResult) {
 	if d.report == nil {
-		writeJSONLine(d.outStream(), d.errStream(), map[string]any{"outcome": res.Outcome, "tip": res.Tip, "detail": res.Detail})
+		writeJSONLine(d.outStream(), d.errStream(), publicationRecord(res))
 		return
 	}
 	d.report.result = &res
@@ -937,6 +950,11 @@ func ownerResult(report *ownerReport, code int, confirmed intentResult) intentRe
 	switch {
 	case report.refusal != nil:
 		result := intentResult{Outcome: intentRefused, Summary: report.refusal.sentence, text: lines, code: report.refusal.code}
+		if report.result != nil {
+			result.Details = refusalCodeDetails(report.refusal.refusalCode, report.result.Code)
+		} else {
+			result.Details = refusalCodeDetails(report.refusal.refusalCode)
+		}
 		if unchanged {
 			result.Outcome, result.code = intentUnchanged, 0
 		}
@@ -950,7 +968,7 @@ func ownerResult(report *ownerReport, code int, confirmed intentResult) intentRe
 		}
 		return result
 	case report.failure != nil:
-		return intentResult{Outcome: intentRefused, Summary: report.failure.Error(), text: lines, code: max(code, 1)}
+		return intentResult{Outcome: intentRefused, Summary: report.failure.Error(), text: lines, code: max(code, 1), Details: refusalCodeDetails(goal.RefusalCode(report.failure))}
 	case landed && code == 0:
 		confirmed.Outcome = intentConfirmed
 		confirmed.text = append(lines, confirmed.text...)
@@ -958,7 +976,8 @@ func ownerResult(report *ownerReport, code int, confirmed intentResult) intentRe
 	case unchanged:
 		return intentResult{Outcome: intentUnchanged, Summary: report.result.Detail, text: lines, Data: map[string]any{"owner": ownerPublication(*report.result)}}
 	case report.result != nil:
-		return intentResult{Outcome: intentRefused, Summary: report.result.Detail, text: lines, code: max(code, 1), Data: map[string]any{"owner": ownerPublication(*report.result)}}
+		return intentResult{Outcome: intentRefused, Summary: report.result.Detail, text: lines, code: max(code, 1), Data: map[string]any{"owner": ownerPublication(*report.result)},
+			Details: refusalCodeDetails(report.result.Code)}
 	}
 	return intentResult{Outcome: intentFailed, code: max(code, 1), text: lines,
 		Summary: "the goal owner stopped without a recorded result; its message is on standard error"}
@@ -998,7 +1017,7 @@ func partialResult(report *ownerReport, code int, confirmed intentResult, lines 
 }
 
 func ownerPublication(res goal.PublishResult) map[string]any {
-	return map[string]any{"outcome": res.Outcome, "tip": res.Tip, "detail": res.Detail}
+	return publicationRecord(res)
 }
 
 // shellWords reads back a command line rendered by shellCommand.

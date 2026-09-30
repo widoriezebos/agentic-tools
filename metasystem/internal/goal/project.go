@@ -155,10 +155,10 @@ func project(e Endpoint, fetchFirst bool, now time.Time, dependencies projection
 		recordMode := tree.Root.SyncMode
 		configLocal := e.LocalMode()
 		if recordMode == SyncLocal && !configLocal {
-			return Projection{}, fmt.Errorf("sync-mode mismatch refused: the ledger is committed local, the config says remote %q — promotion is the backlog-local-promotion goal, not a config flip", e.Remote)
+			return Projection{}, fmt.Errorf("the goal list is kept locally, but the settings name remote %q; set it back to local", e.Remote)
 		}
 		if recordMode == SyncRemote && configLocal {
-			return Projection{}, fmt.Errorf("sync-mode mismatch refused: the ledger is committed remote, the config says local — a split brain is not a mode")
+			return Projection{}, errors.New("the goal list is shared through a remote, but the settings say local; set the remote back")
 		}
 		if recordMode == SyncLocal {
 			p.Banners = append(p.Banners, "single-machine mode: multi-machine guarantees are void here; joining a fleet is the backlog-local-promotion goal")
@@ -666,6 +666,8 @@ func readLiveBacklogActivity(root string, claimLineages map[string]string, legac
 type AdmissionRefusal struct {
 	GoalID string `json:"goalId"`
 	Cause  string `json:"cause"`
+	// Code is the gate's refusal code, when it has one.
+	Code string `json:"code,omitempty"`
 }
 
 // NextVerdict is the complete ordered frontier read by backlog health,
@@ -776,7 +778,7 @@ func Next(p Projection, machine string, requiredLabels ...string) (NextVerdict, 
 				if _, err := requireApprovedForClaimWithContext(admission, t, f, p.Horizon.Now, "claim"); err == nil {
 					v.Ready = append(v.Ready, id)
 				} else if isGoalAdmissionRefusal(err) {
-					v.Refused = append(v.Refused, AdmissionRefusal{GoalID: id, Cause: err.Error()})
+					v.Refused = append(v.Refused, AdmissionRefusal{GoalID: id, Cause: err.Error(), Code: RefusalCode(err)})
 				} else {
 					return NextVerdict{}, fmt.Errorf("cannot answer claimable backlog: %w", err)
 				}

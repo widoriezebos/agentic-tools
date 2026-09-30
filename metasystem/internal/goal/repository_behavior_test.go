@@ -208,7 +208,7 @@ func TestGoalRepositoryFakePublishProtocol(t *testing.T) {
 		req := fakeRootPublishRequest(e, "fake-foreign-gate")
 		req.Mutate = func(string) ([]Change, error) { called = true; return nil, nil }
 		_, err = Publish(e, req)
-		if err == nil || !strings.Contains(err.Error(), "foreign ledger refused") || called {
+		if err == nil || !strings.Contains(err.Error(), "is a different one") || called {
 			t.Fatalf("foreign gate skipped: %v called=%v", err, called)
 		}
 	})
@@ -226,7 +226,7 @@ func TestGoalRepositoryFakePublishProtocol(t *testing.T) {
 		req := fakeRootPublishRequest(e, "fake-rewind-gate")
 		req.Mutate = func(string) ([]Change, error) { called = true; return nil, nil }
 		_, err = Publish(e, req)
-		if err == nil || !strings.Contains(err.Error(), "rewound canonical branch refused") || called || client.accepted != result.Tip {
+		if err == nil || !strings.Contains(err.Error(), "went back in history") || called || client.accepted != result.Tip {
 			t.Fatalf("rewind gate skipped: %v called=%v accepted=%s", err, called, client.accepted)
 		}
 	})

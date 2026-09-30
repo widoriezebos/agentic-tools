@@ -46,7 +46,7 @@ func TestBatchLedgerOwnerDefaultRefusesUnbound(t *testing.T) {
 	facts := batchConfigFacts(root, false, false)
 	owner, err := batchowner.ProductionBatchLedgerOwnerWithConfig(root, facts.config)
 	facts.assertConsumed(t, false)
-	if err == nil || owner != nil || !strings.Contains(err.Error(), "no machine nickname is enrolled") {
+	if err == nil || owner != nil || !strings.Contains(err.Error(), "this machine has no name yet") {
 		t.Fatalf("unbound batch ledger owner=(%T, %v), want missing machine enrollment refusal", owner, err)
 	}
 }
@@ -435,7 +435,7 @@ func TestBatchCommandsResolveInputsBeforeAnnouncement(t *testing.T) {
 			t.Setenv("METASYSTEM_GOAL_NOW", "2026-09-17T10:00:00Z")
 			code, _, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int { return run(seatRoot, landingRoot, facts.source(), stdout, stderr) })
 			facts.assertConsumed(t, true)
-			if code != 1 || !strings.Contains(stderr, "no machine nickname is enrolled") {
+			if code != 1 || !strings.Contains(stderr, "this machine has no name yet") {
 				t.Fatalf("%s setup failure returned code %d stderr %q, want enrollment refusal", name, code, stderr)
 			}
 			if announcements := lease.AnnouncementsFor(landingRoot, int64(os.Getpid())); len(announcements) != 0 {
@@ -713,7 +713,7 @@ func TestBaseRedThenGreenOpensOrPromotesAKnownFlake(t *testing.T) {
 	bare := promotion
 	bare.GreenAttempt = ""
 	for name, refused := range map[string]batch.Promotion{"a tip attempt": tip, "no executed base green": bare} {
-		if _, err := owner.Promote(flakeOpid("K2"), refused); err == nil || !strings.Contains(err.Error(), "TRUNK_RED_FLAKE_NEEDS_MAIN") {
+		if _, err := owner.Promote(flakeOpid("K2"), refused); err == nil || !strings.Contains(goal.RecordText(err), "TRUNK_RED_FLAKE_NEEDS_MAIN") {
 			t.Fatalf("promotion from %s: %v", name, err)
 		}
 	}

@@ -94,7 +94,7 @@ func TestUnapproveRequiresCompleteHumanAuthority(t *testing.T) {
 	if _, err := Unapprove(request, "missing", "", nil); err == nil || !strings.Contains(err.Error(), "requires --by and --because") {
 		t.Fatalf("reasonless unapproval did not refuse before publication: %v", err)
 	}
-	if _, err := Unapprove(request, "missing", "because", nil); err == nil || !strings.Contains(err.Error(), "freshly observed") {
+	if _, err := Unapprove(request, "missing", "because", nil); err == nil || !strings.Contains(err.Error(), "only a person approves") {
 		t.Fatalf("unproved unapproval did not refuse before publication: %v", err)
 	}
 }
@@ -259,7 +259,7 @@ func TestApprovalRequiredNamesEveryClaimProducingPath(t *testing.T) {
 	for _, verb := range []string{"claim", "arc claim", "steal", "set-arc claim", "reconcile set-arc claim", "resume"} {
 		t.Run(verb, func(t *testing.T) {
 			t.Parallel()
-			if _, err := requireApprovedForClaim(t.TempDir(), &TreeGoals{Root: vRoot()}, file, time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC), verb); err == nil || !strings.Contains(err.Error(), "APPROVAL_REQUIRED") || !strings.Contains(err.Error(), "this "+verb+" is refused") {
+			if _, err := requireApprovedForClaim(t.TempDir(), &TreeGoals{Root: vRoot()}, file, time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC), verb); err == nil || !(RefusalCode(err) == "APPROVAL_REQUIRED") || !strings.Contains(err.Error(), "so the "+verb+" was refused") {
 				t.Fatalf("%s did not carry its approval refusal and remedy: %v", verb, err)
 			}
 		})
@@ -275,7 +275,7 @@ func TestExecutionGateRejectsIntentAndBudgetDigestEdits(t *testing.T) {
 
 	intentEdit := *approved
 	intentEdit.Intent = "Intent changed after approval."
-	if _, err := requireApprovedForClaim(root, tree, &intentEdit, time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC), "claim"); err == nil || !strings.Contains(err.Error(), "APPROVAL_REQUIRED") || !strings.Contains(err.Error(), "digest") {
+	if _, err := requireApprovedForClaim(root, tree, &intentEdit, time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC), "claim"); err == nil || !(RefusalCode(err) == "APPROVAL_REQUIRED") || !strings.Contains(err.Error(), "digest") {
 		t.Fatalf("an intent edit retained execution approval: %v", err)
 	}
 
@@ -283,7 +283,7 @@ func TestExecutionGateRejectsIntentAndBudgetDigestEdits(t *testing.T) {
 	changedBudget := *approved.Budget
 	changedBudget.AttemptLimit++
 	budgetEdit.Budget = &changedBudget
-	if _, err := requireApprovedForClaim(root, tree, &budgetEdit, time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC), "resume"); err == nil || !strings.Contains(err.Error(), "APPROVAL_REQUIRED") || !strings.Contains(err.Error(), "digest") {
+	if _, err := requireApprovedForClaim(root, tree, &budgetEdit, time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC), "resume"); err == nil || !(RefusalCode(err) == "APPROVAL_REQUIRED") || !strings.Contains(err.Error(), "digest") {
 		t.Fatalf("a budget edit retained execution approval: %v", err)
 	}
 }
@@ -308,7 +308,7 @@ func TestApprovalRecordRejectsEveryIncompleteBindingClass(t *testing.T) {
 		}, "relayed authority does not match"},
 		{"unknown authority", func(file *GoalFile) { file.Approved.Authority = "delegated" }, "not proven|relayed"},
 		{"missing budget", func(file *GoalFile) { file.Budget = nil }, "requires a complete Budget"},
-		{"changed digest", func(file *GoalFile) { file.Intent = "Changed after approval." }, "digest does not match"},
+		{"changed digest", func(file *GoalFile) { file.Intent = "Changed after approval." }, "no longer matches the goal's intent and budget"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -356,7 +356,7 @@ func TestRelayedSweepExpiresAtReviewDate(t *testing.T) {
 	claim := verbReqFor(endpoint, "01J5X00000000000000000RS10", "mac-a")
 	claim.Now = time.Date(2026, 9, 3, 12, 0, 0, 0, time.UTC)
 	result, err = Claim(claim, waiting.Id)
-	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "APPROVAL_EXPIRED") || !strings.Contains(result.Detail, "review date 2026-09-02 has passed") {
+	if err != nil || result.Outcome != OutcomeRejected || !(result.Code == "APPROVAL_EXPIRED") || !strings.Contains(result.Detail, "review date 2026-09-02 has passed") {
 		t.Fatalf("the relayed word admitted work after its review date: %+v %v", result, err)
 	}
 
@@ -367,7 +367,7 @@ func TestRelayedSweepExpiresAtReviewDate(t *testing.T) {
 	human.Ulid = "01J5X00000000000000000RS20"
 	human.Now = claim.Now
 	result, err = ApproveSweep(human, second.Digest, &proof)
-	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "relayed sweep refuses after any approval exists") {
+	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "can't sweep once a goal is approved") {
 		t.Fatalf("a second relayed sweep did not refuse the standing approval: %+v %v", result, err)
 	}
 }
@@ -454,7 +454,7 @@ func TestOverNormApprovalRefusesWithoutAndPassesWithCoveringToken(t *testing.T) 
 	human.Actor.Human = "Wido"
 	proof := testFixtureHumanAuthority(t, root, human.Now)
 	result, err := Approve(human, []string{"covered-over-norm"}, &over, proof)
-	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "GOAL_NORM_REFUSED") {
+	if err != nil || result.Outcome != OutcomeRejected || !(result.Code == "GOAL_NORM_REFUSED") {
 		t.Fatalf("over-norm approval passed without a covering token: %+v %v", result, err)
 	}
 
@@ -488,7 +488,7 @@ func TestFleetEnrollmentValidationAndIdempotence(t *testing.T) {
 	t.Parallel()
 	endpoint, _ := fakeGoalEndpoint(t)
 	request := verbReqFor(endpoint, "01J5X00000000000000000EN00", "mac-a")
-	if _, err := RecordFleetEnrollment(request, 0); err == nil || !strings.Contains(err.Error(), "positive generation") {
+	if _, err := RecordFleetEnrollment(request, 0); err == nil || !strings.Contains(err.Error(), "enrollment has no number") {
 		t.Fatalf("zero fleet generation did not refuse: %v", err)
 	}
 	result, err := RecordFleetEnrollment(request, 4)

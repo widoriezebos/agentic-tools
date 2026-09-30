@@ -465,7 +465,7 @@ func TestManualPatchInGoalWorktreeAndChangedBrief(t *testing.T) {
 	os.WriteFile(changed, []byte("A different brief for the same change.\n"), 0o600)
 	delegates := len(c.delegates)
 	code, result = manualDo(t, j, root, "work", "review", c.id, "--changes", "--brief", changed, "--work", "alpha")
-	if result.Outcome != intentRefused || !strings.Contains(result.Summary, "GOAL_READ_INVALID") || resultData(t, result)["commit"] != alpha ||
+	if result.Outcome != intentRefused || resultData(t, result)["code"] != "GOAL_READ_INVALID" || strings.Contains(result.Summary, "GOAL_READ_INVALID") || resultData(t, result)["commit"] != alpha ||
 		len(c.delegates) != delegates || !strings.Contains(result.Decision, "--after "+alpha) {
 		t.Fatalf("a changed brief for an already-read version is the read owner's refusal, with no new read: code=%d %+v", code, result)
 	}

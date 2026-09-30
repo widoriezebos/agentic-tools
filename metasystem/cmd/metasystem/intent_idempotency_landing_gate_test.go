@@ -63,7 +63,7 @@ func TestIntentGoalLandWithoutSittingRecordsTheDecisionAtTheTip(t *testing.T) {
 	}
 	noTip := bed.terminalOwners()
 	noTip.delivery = &intentDeliveryOwners{branchTip: func(string, string) (string, error) { return "", nil }}
-	if code, result = bed.runJSON(noTip, "goal", "land-without-sitting", bedGoal, "--reason", "x"); code == 0 || !strings.Contains(result.Summary, "has no tip at origin") {
+	if code, result = bed.runJSON(noTip, "goal", "land-without-sitting", bedGoal, "--reason", "x"); code == 0 || !strings.Contains(result.Summary, "has no commits at origin") {
 		t.Fatalf("a decision with no branch = %d %+v", code, result)
 	}
 }
@@ -92,9 +92,9 @@ func TestIntentGoalReviewHoldsAndReleasesTheSitting(t *testing.T) {
 		args []string
 		want string
 	}{
-		{[]string{"goal", "review", bedGoal, "--record", reviewBedRecord, "--hold", "--release"}, "give one of them"},
-		{[]string{"goal", "review", bedGoal, "--record", reviewBedRecord, "--hold", "--verdict", "clear-to-land"}, "belongs to a verdict"},
-		{[]string{"goal", "review", bedGoal, "--hold"}, "names its review record"},
+		{[]string{"goal", "review", bedGoal, "--record", reviewBedRecord, "--hold", "--release"}, "give one"},
+		{[]string{"goal", "review", bedGoal, "--record", reviewBedRecord, "--hold", "--verdict", "clear-to-land"}, "goes with a verdict"},
+		{[]string{"goal", "review", bedGoal, "--hold"}, "needs its review record file"},
 	} {
 		if code, result := bed.runJSON(bed.terminalOwners(), row.args...); code == 0 || !strings.Contains(result.Summary, row.want) {
 			t.Errorf("%v = %d %+v, want %q", row.args, code, result, row.want)

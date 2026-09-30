@@ -146,7 +146,7 @@ func TestNextPriority(t *testing.T) {
 		projection := Projection{Root: root, Tree: &TreeGoals{Live: map[string]*GoalFile{
 			overNorm.Id: overNorm, claimable.Id: claimable,
 		}, Done: map[string]*GoalFile{}}}
-		if _, err := requireApprovedForClaim(root, projection.Tree, overNorm, projection.Horizon.Now, "claim"); err == nil || !strings.Contains(err.Error(), "GOAL_NORM_REFUSED") {
+		if _, err := requireApprovedForClaim(root, projection.Tree, overNorm, projection.Horizon.Now, "claim"); err == nil || !(RefusalCode(err) == "GOAL_NORM_REFUSED") {
 			t.Fatalf("over-norm fixture did not isolate the norm refusal: %v", err)
 		}
 		if _, err := requireApprovedForClaim(root, projection.Tree, claimable, projection.Horizon.Now, "claim"); err != nil {
@@ -161,7 +161,7 @@ func TestNextPriority(t *testing.T) {
 		if selection.Kind != NextSelectionReady || selection.GoalID != "claimable" || strings.Join(frontier.Ready, ",") != "claimable" {
 			t.Fatalf("over-norm head blocked claimable ranked work: selection=%+v frontier=%+v", selection, frontier)
 		}
-		if len(frontier.Refused) != 1 || frontier.Refused[0].GoalID != "over-norm" || !strings.Contains(frontier.Refused[0].Cause, "GOAL_NORM_REFUSED") {
+		if len(frontier.Refused) != 1 || frontier.Refused[0].GoalID != "over-norm" || !(frontier.Refused[0].Code == "GOAL_NORM_REFUSED") {
 			t.Fatalf("over-norm head was not retained as refused: frontier=%+v", frontier)
 		}
 	})
@@ -182,7 +182,7 @@ func TestNextPriority(t *testing.T) {
 		}
 		selection := SelectNext(frontier)
 		if selection.Kind != NextSelectionNone || selection.GoalID != "" || len(frontier.Refused) != 1 ||
-			frontier.Refused[0].GoalID != "over-norm" || !strings.Contains(frontier.Refused[0].Cause, "GOAL_NORM_REFUSED") ||
+			frontier.Refused[0].GoalID != "over-norm" || !(frontier.Refused[0].Code == "GOAL_NORM_REFUSED") ||
 			len(frontier.Ready) != 0 || len(frontier.Blocked) != 0 || len(frontier.Awaiting) != 0 {
 			t.Fatalf("refused-only frontier drifted: selection=%+v frontier=%+v", selection, frontier)
 		}
@@ -320,7 +320,7 @@ func TestPriorityUnranked(t *testing.T) {
 		}
 		request := priorityVerbReqForEndpoint(endpoint, "01J5X000000000000000000R01", "mac-a")
 		result, err := SetPriority(request, "a", 1, sequencePointer(1), testHumanAuthority(t, root, request.Now))
-		if err == nil || !strings.Contains(err.Error(), "captured tip does not validate") || !strings.Contains(err.Error(), "priority 1") || !strings.Contains(err.Error(), "goal sync --accept-remote-history") {
+		if err == nil || !strings.Contains(err.Error(), "the shared goal list is damaged") || !strings.Contains(err.Error(), "priority 1") || !strings.Contains(err.Error(), "goal sync --accept-remote-history") {
 			t.Fatalf("set-priority did not refuse a malformed accepted order: %+v %v", result, err)
 		}
 		if after := acceptedTipForEndpoint(t, endpoint); after != malformed {
@@ -782,7 +782,7 @@ func TestPriorityRecovery(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := requestForEntry(endpoint, entry); err == nil || !strings.Contains(err.Error(), "system enroll") {
+		if _, err := requestForEntry(endpoint, entry); err == nil || !strings.Contains(err.Error(), "the person runs metasystem goal prioritize again") {
 			t.Fatalf("stored human name reconstructed rank authority: %v", err)
 		}
 		reports, err := Recover(endpoint)
@@ -792,7 +792,7 @@ func TestPriorityRecovery(t *testing.T) {
 		found := false
 		for _, report := range reports {
 			if report.Opid == opid {
-				found = report.Action == ActionComplete && strings.Contains(report.Detail, "cannot be replayed from journal text")
+				found = report.Action == ActionComplete && strings.Contains(report.Detail, "can't be finished for them")
 			}
 		}
 		if !found {

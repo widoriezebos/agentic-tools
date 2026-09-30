@@ -45,7 +45,7 @@ func (d syncRequestDependencies) parseSyncFlags(name string, args []string) (*sy
 // its refusal sentence or kept for the public result.
 func (d syncRequestDependencies) outcomeBeforeRefusal(res goal.PublishResult) {
 	if d.report == nil {
-		writeJSONLine(d.outStream(), d.errStream(), map[string]any{"outcome": res.Outcome, "tip": res.Tip, "detail": res.Detail})
+		writeJSONLine(d.outStream(), d.errStream(), publicationRecord(res))
 		return
 	}
 	d.report.result = &res
@@ -63,4 +63,14 @@ func (d syncRequestDependencies) publishGrant(res goal.PublishResult, entry stri
 	}
 	d.report.entry = entry
 	return d.publish(res, nil)
+}
+
+// publicationRecord is an owner's publication as its JSON line and --json
+// data carry it: the refusal code beside the words, when it has one.
+func publicationRecord(res goal.PublishResult) map[string]any {
+	record := map[string]any{"outcome": res.Outcome, "tip": res.Tip, "detail": res.Detail}
+	if res.Code != "" {
+		record["code"] = res.Code
+	}
+	return record
 }

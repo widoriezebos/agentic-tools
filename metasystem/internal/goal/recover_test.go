@@ -220,7 +220,7 @@ func TestRecoveryRefusesJournaledSetBudgetAuthority(t *testing.T) {
 	if readErr != nil {
 		t.Fatal(readErr)
 	}
-	if _, refusal := requestForEntry(endpoint, entryForRefusal); refusal == nil || !strings.Contains(refusal.Error(), "APPROVAL_REQUIRED: set-budget is proof-bearing and cannot be replayed from journal text") {
+	if _, refusal := requestForEntry(endpoint, entryForRefusal); refusal == nil || !strings.Contains(RecordText(refusal), "APPROVAL_REQUIRED: an interrupted budget change was a person's act") {
 		t.Fatalf("journaled set-budget request did not refuse at construction: %v", refusal)
 	}
 	reports, err := RecoverWithPolicy(endpoint, nil)
@@ -228,7 +228,7 @@ func TestRecoveryRefusesJournaledSetBudgetAuthority(t *testing.T) {
 		t.Fatal(err)
 	}
 	entry, err := ReadEntry(root, opid)
-	if err != nil || entry.Outcome != OutcomeRejected || !strings.Contains(entry.Evidence, "set-budget is proof-bearing and cannot be replayed from journal text") {
+	if err != nil || entry.Outcome != OutcomeRejected || !strings.Contains(entry.Evidence, "an interrupted set-budget was a person's act") {
 		t.Fatalf("journaled set-budget was not refused at the authority boundary: entry=%+v reports=%+v err=%v", entry, reports, err)
 	}
 	if acceptedTipForEndpoint(t, endpoint) != tipBefore {
@@ -341,12 +341,12 @@ func TestRecoveryRefusesToReplayAbandonEngineFloorAndAbandonedReopen(t *testing.
 				Intent: Intent{Verb: test.verb, Targets: []string{"target"}, Args: test.args},
 			}
 			_, err := requestForEntry(endpoint, entry)
-			want := test.verb + " is proof-bearing and cannot be replayed from journal text; " + humanauthority.PersonActRemedy("")
+			want := "an interrupted " + test.verb + " was a person's act and can't be finished for them; the person runs it again"
 			if test.verb == "reopen" {
-				want = "reopen is proof-bearing and cannot be replayed from journal text; " + humanauthority.PersonActRemedy("metasystem goal reopen G --by NAME")
+				want = "an interrupted reopen was a person's act; the person runs metasystem goal reopen target again"
 			}
 			if test.verb == "engine-floor" {
-				want = "engine-floor is retired and cannot be replayed from journal text"
+				want = "engine-floor no longer exists, so its interrupted write can't be finished; close it by hand"
 			}
 			if err == nil || err.Error() != want {
 				t.Fatalf("recovery refusal = %v, want %q", err, want)
@@ -569,7 +569,7 @@ func TestRecoveryReplaysOwnReleaseAndRefusesHumanRequiredStoppingActs(t *testing
 		t.Fatal(err)
 	}
 	recoveredHumanParkEntry, err := ReadEntry(root, recoveredHumanParkOpid)
-	wantHumanParkRefusal := "park is proof-bearing and cannot be replayed from journal text; re-run it from the human authority boundary"
+	wantHumanParkRefusal := "an interrupted park was a person's act and can't be finished for them; the person runs it again"
 	if err != nil || recoveredHumanParkEntry.Phase != PhaseTerminal || recoveredHumanParkEntry.Outcome != OutcomeRejected || recoveredHumanParkEntry.Evidence != wantHumanParkRefusal {
 		t.Fatalf("journaled human park did not close rejected: entry=%+v err=%v reports=%+v", recoveredHumanParkEntry, err, reports)
 	}
@@ -596,7 +596,7 @@ func TestRecoveryReplaysOwnReleaseAndRefusesHumanRequiredStoppingActs(t *testing
 			t.Fatal(recoverErr)
 		}
 		entry, readErr := ReadEntry(root, opid)
-		want := fmt.Sprintf("%s is proof-bearing and cannot be replayed from journal text; re-run it from the human authority boundary because %s requires %s-grade human authority", verb, row, grade)
+		want := fmt.Sprintf("an interrupted %s was a person's act and can't be finished for them; the person runs it again (%s needs a %s check of who acts)", verb, row, grade)
 		if readErr != nil || entry.Phase != PhaseTerminal || entry.Outcome != OutcomeRejected || entry.Evidence != want {
 			t.Fatalf("%s did not close with the fresh human-boundary remedy: entry=%+v err=%v reports=%+v", verb, entry, readErr, reports)
 		}
@@ -932,7 +932,7 @@ func TestRecoveryRunsTheRealVerbSemanticsAcrossAnArc(t *testing.T) {
 	if err != nil || entry.Outcome != OutcomeRejected {
 		t.Fatalf("the unauthorized steal journal did not close rejected: entry=%+v err=%v reports=%+v", entry, err, reports)
 	}
-	wantStealRefusal := "steal is proof-bearing and cannot be replayed from journal text; re-run it from the human authority boundary"
+	wantStealRefusal := "an interrupted steal was a person's act and can't be finished for them; the person runs it again"
 	if entry.Evidence != wantStealRefusal {
 		t.Fatalf("steal recovery did not direct a fresh human-boundary rerun: %+v", entry)
 	}
@@ -993,7 +993,7 @@ func TestRecoveryRefusesJournaledHumanDone(t *testing.T) {
 		t.Fatal(err)
 	}
 	entry, err := ReadEntry(a, storedDone.Opid)
-	want := "done is proof-bearing and cannot be replayed from journal text; re-run it from the human authority boundary"
+	want := "an interrupted done was a person's act and can't be finished for them; the person runs it again"
 	if err != nil || entry.Phase != PhaseTerminal || entry.Outcome != OutcomeRejected || entry.Evidence != want {
 		t.Fatalf("journaled human done did not close rejected: entry=%+v err=%v reports=%+v", entry, err, reports)
 	}
@@ -1066,7 +1066,7 @@ func TestRecoveryCompletesMainSplitAndRejectsHumanOrDoctoredDrafts(t *testing.T)
 		if readErr != nil || projectErr != nil || entry.Outcome != OutcomeRejected || projection.Tree.Live["recover-human-split"] == nil || projection.Tree.Done["recover-human-split"] != nil {
 			t.Fatalf("human journal text changed the parent: entry=%+v reports=%+v read=%v project=%v", entry, reports, readErr, projectErr)
 		}
-		if entry.Evidence != "split is proof-bearing and cannot be replayed from journal text; re-run it from the human authority boundary" {
+		if entry.Evidence != "an interrupted split was a person's act and can't be finished for them; the person runs it again" {
 			t.Fatalf("human recovery did not name the fresh-authority remedy: %+v", entry)
 		}
 	})
@@ -1091,7 +1091,7 @@ func TestRecoveryCompletesMainSplitAndRejectsHumanOrDoctoredDrafts(t *testing.T)
 		}
 		entry, readErr := ReadEntry(root, rebuilt.Opid)
 		projection, projectErr := Project(endpoint, false, time.Now())
-		if readErr != nil || projectErr != nil || entry.Outcome != OutcomeRejected || !strings.Contains(entry.Evidence, "digest") ||
+		if readErr != nil || projectErr != nil || entry.Outcome != OutcomeRejected || !strings.Contains(entry.Evidence, "differ from the approved split draft") ||
 			projection.Tree.Live["recover-doctored"] == nil || projection.Tree.Live["recover-doctored-one"] != nil {
 			t.Fatalf("doctored members did not close rejected by digest with parent untouched: entry=%+v read=%v project=%v", entry, readErr, projectErr)
 		}

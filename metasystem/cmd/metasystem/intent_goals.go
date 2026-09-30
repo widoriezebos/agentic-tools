@@ -26,11 +26,13 @@ import (
 func (inv *intentInvocation) projection() (goal.Projection, time.Time, *intentResult) {
 	endpoint, err := inv.owners.dependencies.endpoint(inv.stateRoot)
 	if err != nil {
-		return goal.Projection{}, time.Time{}, &intentResult{Outcome: intentFailed, Summary: "cannot read the goal ledger: " + err.Error(), code: 1}
+		return goal.Projection{}, time.Time{}, &intentResult{Outcome: intentFailed, Summary: "the goal list can't be found here: " + err.Error(), code: 1,
+			next: inv.publicArgv("system", "status"), nextReason: "shows how this checkout is set up"}
 	}
 	now, err := inv.owners.commandNow(inv.stateRoot)
 	if err != nil {
-		return goal.Projection{}, time.Time{}, &intentResult{Outcome: intentFailed, Summary: "cannot read the goal clock: " + err.Error(), code: 1}
+		return goal.Projection{}, time.Time{}, &intentResult{Outcome: intentFailed, Summary: "the clock can't be read: " + err.Error(), code: 1,
+			next: inv.typedArgv(), nextReason: "try again"}
 	}
 	// --fetch is the goal owner's explicit fetch and validation.
 	projection, err := goal.Project(endpoint, inv.input.switched("fetch"), now)
@@ -40,7 +42,8 @@ func (inv *intentInvocation) projection() (goal.Projection, time.Time, *intentRe
 			next:    inv.publicArgv("goal", "list", "--fetch"), nextReason: "fetches the goal ledger and lists its goals"}
 	}
 	if err != nil {
-		return goal.Projection{}, time.Time{}, &intentResult{Outcome: intentFailed, Summary: "cannot project the accepted goal ledger: " + err.Error(), code: 1}
+		return goal.Projection{}, time.Time{}, &intentResult{Outcome: intentFailed, Summary: "the goal list can't be read: " + err.Error(), code: 1,
+			next: inv.publicArgv("goal", "sync"), nextReason: "shows what differs from the published goal list"}
 	}
 	return projection, now, nil
 }
@@ -55,8 +58,8 @@ func (inv *intentInvocation) singleTarget() (string, *intentResult) {
 	if flagged := inv.input.text("id"); flagged != "" {
 		if named != "" && named != flagged {
 			return "", &intentResult{Outcome: intentRefused, code: 2,
-				Summary:  fmt.Sprintf("names two goals, %s and --id %s; nothing was done", shellCommand([]string{named}), shellCommand([]string{flagged})),
-				Decision: "name the goal once"}
+				Summary: fmt.Sprintf("two goals are named, %s and --id %s; nothing was done", shellCommand([]string{named}), shellCommand([]string{flagged})),
+				next:    withoutOption(inv.typedArgv(), "id"), nextReason: "name the goal once"}
 		}
 		named = flagged
 	}
@@ -87,7 +90,7 @@ func (inv *intentInvocation) publicArgv(words ...string) []string {
 // missingTarget names the command's grammar and the goals it can take.
 func (inv *intentInvocation) missingTarget(fits func(*goal.GoalFile) bool) int {
 	result := intentResult{Outcome: intentRefused, code: 2,
-		Summary: fmt.Sprintf("needs a goal: %s; nothing was done", inv.command.usage[0])}
+		Summary: "no goal was named, so nothing was done", next: append(inv.typedArgv(), "G"), nextReason: "with the goal to act on"}
 	if projection, _, problem := inv.projection(); problem == nil {
 		var candidates []string
 		for _, id := range goal.OrderedOpenGoalIDs(projection.Tree.Live) {
@@ -305,7 +308,7 @@ func runIntentGoals(inv *intentInvocation) int {
 	}
 	labels := inv.input.values["label"]
 	if err := goal.ValidateLabels(labels); err != nil {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: err.Error(), Decision: "use label tokens the ledger accepts"})
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: err.Error() + "; nothing was listed", next: withoutOption(inv.typedArgv(), "label"), nextReason: "without the label, or with a valid one"})
 	}
 	includeArchived, history := inv.input.switched("all"), inv.input.switched("history")
 	grouped := map[string][]*goal.GoalFile{}
@@ -442,8 +445,8 @@ func runIntentBudget(inv *intentInvocation) int {
 	if flagged := inv.input.text("budget"); flagged != "" {
 		if box != "" && box != flagged {
 			return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id),
-				Summary:  fmt.Sprintf("names two boxes, %s and --budget %s; nothing was done", shellCommand([]string{box}), shellCommand([]string{flagged})),
-				Decision: "give the box once"})
+				Summary: fmt.Sprintf("two budgets are named, %s and --budget %s; nothing was done", shellCommand([]string{box}), shellCommand([]string{flagged})),
+				next:    withoutOption(inv.typedArgv(), "budget"), nextReason: "give the budget once"})
 		}
 		box = flagged
 	}
@@ -505,8 +508,8 @@ func (inv *intentInvocation) budgetOwner(id, box string, before *goal.GoalFile) 
 func (inv *intentInvocation) budgetUnderAttorney(file *goal.GoalFile, box, under string) int {
 	if file.IsFencedClaim() {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: inv.targets(file.Id),
-			Summary:  "a power of attorney does not cover a goal stopped by its budget; nothing was done",
-			Decision: humanauthority.PersonActRemedy(shellCommand(inv.publicArgv("goal", "resume", file.Id)))})
+			Summary: "a grant can't change a goal stopped by its budget; a person resumes it; nothing was done",
+			next:    inv.publicArgv("goal", "resume", file.Id), nextReason: "as the person, in a terminal you opened yourself"})
 	}
 	budget, problem := inv.completeBox(box, file)
 	if problem != nil {
@@ -542,25 +545,27 @@ func (inv *intentInvocation) completeBox(box string, file *goal.GoalFile) (goal.
 		}
 		budget, err := config.TierBox(conf, tier)
 		if err != nil {
-			return goal.Budget{}, &intentResult{Outcome: intentFailed, code: 1, Summary: err.Error()}
+			return goal.Budget{}, &intentResult{Outcome: intentFailed, code: 1, Summary: "the tier budgets can't be read: " + err.Error(),
+				next: inv.publicArgv("settings", "show"), nextReason: "shows the configured tier budgets"}
 		}
 		return budget, nil
 	case "keep":
 		if file.Budget == nil {
-			return goal.Budget{}, &intentResult{Outcome: intentRefused, code: 2, Summary: "keep needs a standing box and " + file.Id + " has none",
-				Decision: "give the complete compact box, for example 1d/10/720m/1/3"}
+			return goal.Budget{}, &intentResult{Outcome: intentRefused, code: 2, Summary: file.Id + " has no budget yet to keep; nothing was done",
+				next: inv.publicArgv("goal", "budget", file.Id, "norm"), nextReason: "or give a full budget such as 1d/10/720m/1/3"}
 		}
 		return *file.Budget, nil
 	}
 	reviewRoundMax, err := config.ReviewRoundMax(conf)
 	if err != nil {
-		return goal.Budget{}, &intentResult{Outcome: intentFailed, code: 1, Summary: err.Error()}
+		return goal.Budget{}, &intentResult{Outcome: intentFailed, code: 1, Summary: "the review-round limit can't be read: " + err.Error(),
+			next: inv.publicArgv("settings", "show"), nextReason: "shows the configured limits"}
 	}
 	budget, err := goalbudget.ParseBox(box, file.Budget, reviewRoundMax)
 	if err != nil {
 		return goal.Budget{}, &intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(file.Id),
-			Summary:  fmt.Sprintf("%s is not a box: %v; nothing was done", shellCommand([]string{box}), err),
-			Decision: "give norm, keep, or the complete compact box elapsed/attempts/job-minutes/active-jobs/review-rounds, for example 1d/10/720m/1/3"}
+			Summary: fmt.Sprintf("%s isn't a budget (%v); nothing was done", shellCommand([]string{box}), err),
+			next:    inv.publicArgv("goal", "budget", file.Id, "norm"), nextReason: "or keep, or elapsed/attempts/minutes/jobs/rounds such as 1d/10/720m/1/3"}
 	}
 	return budget, nil
 }
@@ -580,10 +585,10 @@ func budgetLongFlags(budget goal.Budget) []string {
 // No tier or answer is guessed, so no command is offered to run.
 func tierlessRefusal(inv *intentInvocation, ids []string) *intentResult {
 	return &intentResult{Outcome: intentRefused, code: 1, Targets: inv.targets(ids...),
-		Summary: fmt.Sprintf("%s has no tier, so there is no norm box to approve it under; nothing was approved", strings.Join(ids, ", ")),
-		Decision: "classify it first: a person answers the four risk questions (severity, novelty, exposure, accumulation) and states the basis, " +
-			"recorded with metasystem goal edit --id GOAL --risk severity=...,novelty=...,exposure=...,accumulation=... --basis TEXT; then approve again",
-		Data: map[string]any{"missing": []string{"risk.severity", "risk.novelty", "risk.exposure", "risk.accumulation", "basis"}, "goals": ids}}
+		Summary:  fmt.Sprintf("%s has no risk tier yet, so there is no budget to approve it under; nothing was approved", strings.Join(ids, ", ")),
+		Decision: "metasystem goal edit " + ids[0] + " --risk severity=S,novelty=N,exposure=E,accumulation=A --basis TEXT",
+		Details:  []string{"a person scores each risk 1-3 and says why, then approves again; no tier is guessed"},
+		Data:     map[string]any{"missing": []string{"risk.severity", "risk.novelty", "risk.exposure", "risk.accumulation", "basis"}, "goals": ids}}
 }
 
 // afterGoalAct reads the goal back after a confirmed act.
@@ -650,8 +655,8 @@ func runIntentApprove(inv *intentInvocation) int {
 		args = common
 	case box == "keep":
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(ids...),
-			Summary:  "keep is a goal's own standing box, not an approval box; nothing was done",
-			Decision: "approve under each tier's norm (omit --budget), or give the complete compact box"})
+			Summary: "keep keeps a goal's current budget, and an approval has none yet; nothing was done",
+			next:    withoutOption(inv.typedArgv(), "budget"), nextReason: "approves under each tier's usual budget"})
 	case len(ids) == 1 && under == "":
 		// One goal with a box is the budget owner's approval.
 		return inv.budgetOwner(ids[0], box, files[0])
@@ -702,7 +707,7 @@ func runIntentPause(inv *intentInvocation) int {
 	reason := inv.input.text("reason")
 	if strings.TrimSpace(reason) == "" {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id),
-			Summary: "needs the reason the goal is parked; nothing was done", Decision: "say why with --reason TEXT"})
+			Summary: "pausing a goal needs a reason; nothing was done", next: append(inv.typedArgv(), "--reason", "TEXT"), nextReason: "say why it waits"})
 	}
 	actor, problem := inv.actorArgs(id, "by", "lineage", "fixture-human-authority")
 	if problem != nil {
@@ -747,15 +752,16 @@ func runIntentResume(inv *intentInvocation) int {
 	case file.State == goal.StateParked:
 		if inv.input.has("approved-ref") {
 			return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id),
-				Summary: "--approved-ref resumes a goal stopped by its budget; a parked goal's unpark takes none; nothing was done",
+				Summary: "--approved-ref is for a goal stopped by its budget, and this one is paused; nothing was done",
 				next:    inv.publicArgv("goal", "resume", id), nextReason: "the same resume without --approved-ref"})
 		}
 		if inv.input.has("temporary-human-word") || inv.input.has("review-by") {
 			// A relayed word resumes only a goal stopped by its budget; it is
 			// never carried into, or silently dropped from, an unpark.
 			return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id),
-				Summary:  "--temporary-human-word and --review-by resume a goal stopped by its budget; a parked goal's unpark takes neither; nothing was done",
-				Decision: humanauthority.PersonActRemedy(shellCommand(inv.publicArgv("goal", "resume", id))) + ", or a seat unparks it under a power of attorney with --under GRANT --verified TEXT"})
+				Summary: "a relayed word resumes only a goal stopped by its budget, and this one is paused; nothing was done",
+				next:    inv.publicArgv("goal", "resume", id), nextReason: "as the person, in a terminal you opened yourself",
+				Details: []string{"a seat unparks it under a grant with --under GRANT --verified TEXT"}})
 		}
 		var args []string
 		if inv.input.has("under") || inv.input.has("verified") {
@@ -776,13 +782,13 @@ func runIntentResume(inv *intentInvocation) int {
 	case file.IsFencedClaim():
 		if inv.input.has("under") || inv.input.has("verified") {
 			return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: inv.targets(id),
-				Summary:  "a power of attorney covers unparking a parked goal, not resuming a goal stopped by its budget; nothing was done",
-				Decision: humanauthority.PersonActRemedy(shellCommand(inv.publicArgv("goal", "resume", id)))})
+				Summary: "a grant can't resume a goal stopped by its budget; a person does; nothing was done",
+				next:    inv.publicArgv("goal", "resume", id), nextReason: "as the person, in a terminal you opened yourself"})
 		}
 		if file.Budget == nil {
 			return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: inv.targets(id),
-				Summary:  id + " is stopped and has no standing box to resume under; nothing was done",
-				Decision: "a person gives it a box: " + shellCommand(inv.publicArgv("goal", "budget", id, "BOX"))})
+				Summary: id + " is stopped and has no budget to resume under; nothing was done",
+				next:    inv.publicArgv("goal", "budget", id, "norm"), nextReason: "a person gives it a budget"})
 		}
 		args := append([]string{"--root", inv.stateRoot, "--id", id}, budgetLongFlags(*file.Budget)...)
 		args = append(args, inv.forward("by", "lineage", "approved-ref", "temporary-human-word", "review-by", "fixture-human-authority")...)
@@ -818,7 +824,7 @@ func runIntentDone(inv *intentInvocation) int {
 	reason := inv.input.text("reason")
 	if strings.TrimSpace(reason) == "" {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id),
-			Summary: "needs the goal's conclusion; nothing was done", Decision: "state the conclusion with --reason TEXT"})
+			Summary: "finishing a goal needs its conclusion; nothing was done", next: append(inv.typedArgv(), "--reason", "TEXT"), nextReason: "say what was done"})
 	}
 	actor, problem := inv.actorArgs(id, "by", "lineage")
 	if problem != nil {

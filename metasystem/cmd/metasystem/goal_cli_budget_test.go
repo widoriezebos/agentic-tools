@@ -341,10 +341,10 @@ func TestGoalCLIBudgetScopeBounds(t *testing.T) {
 	gcliBudgetOpen(t, bed, "norm-parent", gcliBudgetTierThree, "Split it first.", "--tier", "3")
 	gcliBudgetHumanMust(t, bed, "goal", "approve", "norm-parent", "--budget", "norm")
 	gcliBudgetMust(t, bed, "goal", "claim", "norm-parent")
-	refusal := gcliBudgetRefused(t, bed, "GOAL_NORM_REFUSED: goal norm-parent", append([]string{"goal", "budget", "norm-parent",
+	refusal := gcliBudgetRefused(t, bed, "goal norm-parent asks for 1441m", append([]string{"goal", "budget", "norm-parent",
 		"--elapsed-limit", "1d", "--attempt-limit", "2", "--reserved-job-minutes-limit", "1441", "--active-job-limit", "1",
 		"--review-round-limit", "3"}, gcliBudgetHuman...)...)
-	if !strings.Contains(refusal, "split it into an arc of members within the box") {
+	if !strings.Contains(refusal, "split it, or pass --approved-ref") {
 		t.Fatalf("the norm refusal did not name its split remedy: %q", refusal)
 	}
 
@@ -356,7 +356,7 @@ func TestGoalCLIBudgetScopeBounds(t *testing.T) {
 	code, out, errOut := gcliBudgetFamily(t, bed, "open", "--id", "norm-open-claim", "--intent", "Must not enter claimed over norm.",
 		"--next", "Stop.", "--tier", "3", "--risk", gcliBudgetTierThree, "--basis", "fixture risk", "--claim",
 		"--elapsed-limit", "1d", "--attempt-limit", "2", "--reserved-job-minutes-limit", "1441", "--active-job-limit", "1", "--review-round-limit", "3")
-	if code == 0 || !strings.Contains(out+errOut, "APPROVAL_REQUIRED: open --claim is retired") || bed.tip() != before {
+	if code == 0 || !strings.Contains(out+errOut, "open --claim is gone") || bed.tip() != before {
 		t.Fatalf("retired open --claim did not name the separated approval path: code=%d out=%q err=%q", code, out, errOut)
 	}
 
@@ -385,14 +385,14 @@ func TestGoalCLIBudgetScopeBounds(t *testing.T) {
 	if goalCLILine(blocked, "- BlockedBy: ") != "- BlockedBy: split-parent-one, split-parent-two" || !strings.Contains(blocked, " blocker=split-parent-one because=") {
 		t.Fatalf("the split did not move the blocked goal's edge and park to the members:\n%s", blocked)
 	}
-	gcliBudgetRefused(t, bed, "a decomposed parent never returns", "goal", "reopen", "split-parent", "--next", "Bring it back.")
+	gcliBudgetRefused(t, bed, "was split into member goals and never comes back", "goal", "reopen", "split-parent", "--next", "Bring it back.")
 	if code, out, errOut := gcliBudgetFamily(t, bed, "prune", "--keep", "0"); code != 0 {
 		t.Fatalf("goal prune: code=%d out=%q err=%q", code, out, errOut)
 	}
 	if bed.accepted("records/goals/split-parent.md") != "" {
 		t.Fatal("prune kept the decomposed parent's record")
 	}
-	gcliBudgetRefused(t, bed, "goal id split-parent is retired", append([]string{"goal", "open", "split-parent", "--origin", "human",
+	gcliBudgetRefused(t, bed, "goal id split-parent was used by a goal that was split", append([]string{"goal", "open", "split-parent", "--origin", "human",
 		"--intent", "Illicit resurrection.", "--next", "Stop.", "--tier", "3", "--risk", gcliBudgetTierThree, "--basis", "fixture risk"}, gcliBudgetHuman...)...)
 }
 
@@ -454,22 +454,22 @@ func TestGoalCLIBudgetClassificationSweep(t *testing.T) {
 		t.Fatalf("classification preview did not carry its SHA-256 digest: %q", listing.Digest)
 	}
 	if code, stdout, stderr := gcliBudgetSweep(bed, "--draft", draft, "--preview"); code != 0 || bed.tip() != before ||
-		stdout != want+"\nlisting-digest "+listing.Digest+"\n" || stderr != "" {
+		stdout != want+"\nconfirm with: --confirm "+listing.Digest+"\n" || stderr != "" {
 		t.Fatalf("the preview was not inert on the supplied streams: code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
 
-	for _, row := range []struct{ code, body string }{
-		{"SWEEP_UNKNOWN_GOAL", "fix-docs 1,1,1,1 queued migration\nperf-pass 2,1,1,1 parked migration\nship-widget 3,1,1,1 claimed migration\nabsent-goal 1,1,1,1 unknown"},
-		{"SWEEP_DUPLICATE_GOAL", "fix-docs 1,1,1,1 queued migration\nfix-docs 2,1,1,1 duplicate\nperf-pass 2,1,1,1 parked migration\nship-widget 3,1,1,1 claimed migration"},
-		{"SWEEP_INCOMPLETE", "fix-docs 1,1,1,1 queued migration\nship-widget 3,1,1,1 claimed migration"},
-		{"SWEEP_MALFORMED_ROW", "fix-docs 1 invalid tier\nperf-pass 2,1,1,1 parked migration\nship-widget 3,1,1,1 claimed migration"},
+	for _, row := range []struct{ code, words, body string }{
+		{"SWEEP_UNKNOWN_GOAL", "goal absent-goal isn't an open goal still waiting for its risk", "fix-docs 1,1,1,1 queued migration\nperf-pass 2,1,1,1 parked migration\nship-widget 3,1,1,1 claimed migration\nabsent-goal 1,1,1,1 unknown"},
+		{"SWEEP_DUPLICATE_GOAL", "goal fix-docs is in the draft twice", "fix-docs 1,1,1,1 queued migration\nfix-docs 2,1,1,1 duplicate\nperf-pass 2,1,1,1 parked migration\nship-widget 3,1,1,1 claimed migration"},
+		{"SWEEP_INCOMPLETE", "goal perf-pass is missing from the draft", "fix-docs 1,1,1,1 queued migration\nship-widget 3,1,1,1 claimed migration"},
+		{"SWEEP_MALFORMED_ROW", "draft line 1 (fix-docs) isn't", "fix-docs 1 invalid tier\nperf-pass 2,1,1,1 parked migration\nship-widget 3,1,1,1 claimed migration"},
 	} {
 		path := writeDraft("refusal-"+row.code+".txt", row.body)
-		if _, err := goal.PreviewClassificationSweep(endpoint, []byte(row.body+"\n"), bed.clock()); err == nil || !strings.Contains(err.Error(), row.code) {
+		if _, err := goal.PreviewClassificationSweep(endpoint, []byte(row.body+"\n"), bed.clock()); err == nil || goal.RefusalCode(err) != row.code || !strings.Contains(err.Error(), row.words) {
 			t.Fatalf("classification refusal %s did not fire: %v", row.code, err)
 		}
 		if code, stdout, stderr := gcliBudgetSweep(bed, "--draft", path, "--preview"); code == 0 || bed.tip() != before ||
-			stdout != "" || !strings.HasPrefix(stderr, "goal classify-sweep: "+row.code) {
+			stdout != "" || !strings.HasPrefix(stderr, "goal classify-sweep: "+row.words) {
 			t.Fatalf("classify-sweep --preview did not refuse %s on the supplied stderr: code=%d stdout=%q stderr=%q", row.code, code, stdout, stderr)
 		}
 	}
@@ -480,7 +480,7 @@ func TestGoalCLIBudgetClassificationSweep(t *testing.T) {
 	}
 	changed := writeDraft("changed-draft.txt", changedBody)
 	if code, stdout, stderr := gcliBudgetSweep(bed, "--draft", changed, "--confirm", listing.Digest, "--by", "Wido", "--fixture-human-authority"); code != 1 || bed.tip() != before ||
-		stdout != "" || !strings.HasPrefix(stderr, "goal classify-sweep: SWEEP_LISTING_CHANGED") {
+		stdout != "" || !strings.HasPrefix(stderr, "goal classify-sweep: the list of goals changed since the preview") {
 		t.Fatalf("changed classification draft did not refuse by digest on the supplied stderr: code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
 
@@ -542,7 +542,7 @@ func TestGoalCLIBudgetPowerOfAttorney(t *testing.T) {
 	if line := goalCLILine(bed.goalRecord("poa-small"), "- Budget: "); line != "- Budget: elapsedLimit=1h attemptLimit=2 reservedJobMinutesLimit=120 activeJobLimit=1 reviewRoundLimit=0" {
 		t.Fatalf("set-budget under attorney did not land its box: %q", line)
 	}
-	gcliBudgetRefused(t, bed, "GOAL_NORM_REFUSED", "goal", "budget", "poa-small", "--under", entry, "--elapsed-limit", "8h", "--attempt-limit", "2",
+	gcliBudgetRefused(t, bed, "only up to its tier 1 budget", "goal", "budget", "poa-small", "--under", entry, "--elapsed-limit", "8h", "--attempt-limit", "2",
 		"--reserved-job-minutes-limit", "120", "--active-job-limit", "1", "--review-round-limit", "0")
 	gcliBudgetRefused(t, bed, "covers tier 1 only", "goal", "approve", "poa-medium", "--under", entry)
 
@@ -572,7 +572,7 @@ func TestGoalCLIBudgetPowerOfAttorney(t *testing.T) {
 	gcliBudgetRefused(t, bed, "tier-1 goals only", "goal", "resume", "poa-medium", "--under", lift, "--verified", "it holds")
 	gcliBudgetMust(t, bed, "goal", "open", "poa-defect", "--blocks", "poa-small", "--intent", "The defect that blocks poa-small.",
 		"--next", "Fix it.", "--risk", gcliBudgetTierOne, "--basis", "power of attorney fixture")
-	gcliBudgetRefused(t, bed, "returns by itself", "goal", "resume", "poa-small", "--under", lift, "--verified", "the defect is fixed")
+	gcliBudgetRefused(t, bed, "comes back by itself", "goal", "resume", "poa-small", "--under", lift, "--verified", "the defect is fixed")
 
 	bed.setNow(time.Date(2026, 8, 26, 9, 0, 0, 0, time.UTC))
 	gcliBudgetRefused(t, bed, "expired 2026-08-25", "goal", "approve", "poa-late", "--under", entry)
@@ -642,7 +642,7 @@ func runGoalStoppedSetBudgetWithInputs(values *humanVerbValues, flags *syncFlags
 	}
 	proof, err := proveGoalHumanAuthorityAt("set-budget", flags, prove, commandNow)
 	if err != nil {
-		return refuseHumanVerb(values, 1, err.Error(), humanProofRemedy(values, flags.fixtureHumanAuthority, flags.temporaryWord, flags.reviewBy))
+		return refuseHumanVerb(values, 1, err.Error(), humanProofRemedy(values, flags.fixtureHumanAuthority, flags.temporaryWord, flags.reviewBy, err))
 	}
 	if err := resolveGoalHuman(flags, proof); err != nil {
 		return refuseHumanVerb(values, 2, err.Error(), humanVerbRemedy{words: "re-enroll with goal enroll-terminal --by <your name>, or add --by <your name> to this command"})

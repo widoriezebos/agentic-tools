@@ -7,6 +7,7 @@ package goal
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -153,7 +154,7 @@ func validateStopBatch(batch StopBatch) error {
 	for _, observed := range batch.Observed {
 		if !safeStopID(observed.JobID) || !safeStopID(observed.OperationID) || observed.Machine == "" ||
 			observed.ClaimEpoch < 1 || observed.Status == "" || observed.Disposition == "" || !validStamp(observed.LastObservedAt) {
-			return fmt.Errorf("stop batch has an incomplete observed job generation")
+			return errors.New("the stop record has an incomplete job entry")
 		}
 	}
 	for _, outcome := range batch.CancelOutcomes {
@@ -168,11 +169,11 @@ func validateStopBatch(batch StopBatch) error {
 			proof.ClaimEpoch != batch.ClaimEpoch || proof.StopID != batch.StopID ||
 			proof.FenceEpoch != batch.FenceEpoch || proof.CapabilityGeneration != batch.CapabilityGeneration ||
 			!validStamp(proof.ObservedAt) {
-			return fmt.Errorf("stop batch has an incomplete observed proof attempt")
+			return errors.New("the stop record has an incomplete test-run entry")
 		}
 		for _, key := range proof.ProcessKeys {
 			if key == "" {
-				return fmt.Errorf("stop batch has an empty proof process key")
+				return errors.New("the stop record has a test run without its process")
 			}
 		}
 	}
@@ -361,7 +362,7 @@ func closeStopRequest(r CloseStopRequest) PublishRequest {
 			}
 			if *capability != r.Capability || r.Actor.Machine != capability.Machine ||
 				r.ClaimEpoch != capability.ClaimEpoch {
-				return nil, fmt.Errorf("stop capability does not bind goal %s revision %d machine %s claim epoch %d",
+				return nil, fmt.Errorf("the stop was issued for goal %s at revision %d on %s (claim %d), not this one",
 					r.GoalID, capability.Revision, capability.Machine, capability.ClaimEpoch)
 			}
 			if r.Reason != StopReasonElapsedLimit && r.Reason != StopReasonCorruptOverLimit {
@@ -437,10 +438,10 @@ func checkFenceLiftForRebudget(root string, t *TreeGoals, f *GoalFile, verb stri
 // transaction, creates a new execution revision, and clears the old fence.
 func Resume(r ResumeRequest) (PublishResult, error) {
 	if r.Actor.Human == "" || r.Authority == nil || !r.Authority.AuthorizesResume(r.Endpoint.Root) {
-		return PublishResult{}, fmt.Errorf("goal resume requires freshly observed enrolled-human authority or a recorded temporary relay whose human provenance is not verified")
+		return PublishResult{}, errors.New("only a person resumes a goal, from their own terminal or with a recorded relayed word")
 	}
 	if r.ApprovedRef != "" {
-		return PublishResult{}, fmt.Errorf("goal resume uses the standing approved intent, budget, and norm proof; it does not take --approved-ref")
+		return PublishResult{}, errors.New("resume keeps the approved budget; drop --approved-ref")
 	}
 	if err := r.Budget.Validate(); err != nil {
 		return PublishResult{}, fmt.Errorf("invalid fresh budget: %w", err)
@@ -472,7 +473,7 @@ func resumeRequest(r ResumeRequest) PublishRequest {
 				return nil, approvalErr
 			}
 			if approvedBudget != r.Budget {
-				return nil, fmt.Errorf("APPROVAL_REQUIRED: resume cannot change the human-approved budget; re-approve with the proof-bearing metasystem goal budget before resuming")
+				return nil, coded("APPROVAL_REQUIRED", fmt.Errorf("resume keeps the approved budget; to change it, a person runs metasystem goal budget %s first", r.GoalID))
 			}
 			if err := refuseRelayedAfterFleetEnrollment(t, temporaryAuthority); err != nil {
 				return nil, err

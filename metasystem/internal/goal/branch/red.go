@@ -1,6 +1,7 @@
 package branch
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"sort"
@@ -160,7 +161,7 @@ func recordLandingProgress(recorder LandingProgressRecorder, goal, unit string, 
 func HandleLandingRed(req RedRequest) (RedResult, error) {
 	if req.Goal == "" || !hex40(req.Endpoint) || !hex40(req.BranchTip) || req.Proof.Number < 1 ||
 		!hex40(req.Proof.Candidate) || !hex40(req.Proof.Landing) || len(req.FailingGroups) == 0 {
-		return RedResult{}, fmt.Errorf("landing red classification needs the goal, endpoint, branch, proof, and failing groups")
+		return RedResult{}, errors.New("sorting a failed landing needs the goal, main and branch commits, test run and failing groups")
 	}
 	groups := append([]string(nil), req.FailingGroups...)
 	sort.Strings(groups)

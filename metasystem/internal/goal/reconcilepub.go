@@ -16,8 +16,6 @@ import (
 	"os"
 	"sort"
 	"strings"
-
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 )
 
 // outsideReconcileScope names every goal a mapped row would publish that
@@ -88,8 +86,8 @@ func reconcileFor(r VerbRequest, head func(string) (string, error), anchor func(
 	// another goal after the caller looked is refused, never published
 	// under the caller's name.
 	if outside := outsideReconcileScope(rows, r.ReconcileScope); len(outside) > 0 {
-		return ReconcileResult{}, fmt.Errorf("RECONCILE_OUTSIDE_SCOPE: the goal files also hold edits of %s, outside the named %s; nothing was published",
-			strings.Join(outside, ", "), strings.Join(sortedUnique(append([]string(nil), r.ReconcileScope...)), ", "))
+		return ReconcileResult{}, coded("RECONCILE_OUTSIDE_SCOPE", fmt.Errorf("the goal files also hold edits of %s, not only of %s; nothing was published",
+			strings.Join(outside, ", "), strings.Join(sortedUnique(append([]string(nil), r.ReconcileScope...)), ", ")))
 	}
 	if len(rows) == 0 {
 		return ReconcileResult{Rows: rows}, nil
@@ -111,7 +109,7 @@ func reconcileFor(r VerbRequest, head func(string) (string, error), anchor func(
 	if prior, priorExists, priorErr := ReadBase(r.Endpoint.Root); priorErr != nil {
 		return ReconcileResult{}, priorErr
 	} else if priorExists && prior.RefreshDue && prior.Opid != r.opid() {
-		return ReconcileResult{}, fmt.Errorf("another reconcile session's refresh is pending (opid %s); complete it with goal reconcile --refresh-only first", prior.Opid)
+		return ReconcileResult{}, fmt.Errorf("another sync still has to refresh the goal list (%s)\nrun: metasystem goal sync --refresh", prior.Opid)
 	}
 	if err := WriteBase(r.Endpoint.Root, BaseRecord{
 		Commit: base, WrittenAt: nowISO8601(), RefreshDue: true,
@@ -567,7 +565,7 @@ func applyRow(t *TreeGoals, r VerbRequest, row MappedVerb, session *replaySessio
 				return nil, handErr
 			}
 			if hand == nil {
-				return nil, fmt.Errorf("allowing %s is a person's act, and a name without a proof is not one; %s", permission.Words, humanauthority.PersonActRemedy(AllowCommand(row.Id, change.Name)))
+				return nil, fmt.Errorf("allowing %s is a person's act at their terminal, not a hand edit\nrun: %s", permission.Words, AllowCommand(row.Id, change.Name))
 			}
 		}
 		permission.Set(f, change.Allowed)

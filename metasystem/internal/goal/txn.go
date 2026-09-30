@@ -271,10 +271,10 @@ func SyncModeGate(e Endpoint, tip string) error {
 		return fmt.Errorf("the tip's root record does not parse; the sync mode cannot be gated: %v", problems)
 	}
 	if record.SyncMode == SyncLocal && !e.LocalMode() {
-		return fmt.Errorf("sync-mode mismatch refused: the ledger is committed local, the config says remote %q — promotion is the backlog-local-promotion goal, not a config flip", e.Remote)
+		return fmt.Errorf("the goal list is kept locally, but the settings name remote %q; set it back to local", e.Remote)
 	}
 	if record.SyncMode == SyncRemote && e.LocalMode() {
-		return fmt.Errorf("sync-mode mismatch refused: the ledger is committed remote, the config says local — a split brain is not a mode")
+		return errors.New("the goal list is shared through a remote, but the settings say local; set the remote back")
 	}
 	return nil
 }
@@ -611,10 +611,13 @@ func hintConfirmedWaiters(root string, req PublishRequest, publicationID, bootID
 
 // PublishResult is the transaction's terminal classification.
 type PublishResult struct {
-	Outcome    Outcome
-	Tip        string // the canonical tip this outcome was decided on
-	Commit     string // our transaction commit, when one was built
-	Detail     string
+	Outcome Outcome
+	Tip     string // the canonical tip this outcome was decided on
+	Commit  string // our transaction commit, when one was built
+	Detail  string
+	// Code is a rejected outcome's refusal code, when it has one: data for
+	// --verbose, --json and records, never the default words.
+	Code       string
 	RiskRaised bool // the edit transaction raised the approved goal's risk derivation
 	// Unchanged marks an idempotent repeat (AlreadyHolds): success, and
 	// nothing was recorded.
@@ -628,7 +631,7 @@ type PublishResult struct {
 // exclusion).
 func Publish(e Endpoint, req PublishRequest) (PublishResult, error) {
 	if req.Opid == "" || req.Mutate == nil {
-		return PublishResult{}, fmt.Errorf("a publish needs an opid and a mutation")
+		return PublishResult{}, errors.New("a ledger write needs an id and a change")
 	}
 	req.Mutate = guardAttorneyEffect(e, req.Mutate)
 	if err := clearDeadBlocker(e, req.Opid); err != nil {
@@ -664,9 +667,9 @@ func Publish(e Endpoint, req PublishRequest) (PublishResult, error) {
 				hintConfirmedWaiters(e.Root, req, tip, "", 0)
 				return PublishResult{Outcome: OutcomeConfirmed, Tip: tip, Detail: "idempotent"}, nil
 			}
-			return PublishResult{}, fmt.Errorf("journal entry %s says confirmed but its opid is not in canonical history; branch surgery needs the repair path", req.Opid)
+			return PublishResult{}, fmt.Errorf("ledger write %s was confirmed but is missing from the shared goal list; the list needs repair", req.Opid)
 		}
-		return PublishResult{}, fmt.Errorf("journal entry %s exists and is %s; the recovery rule owns it, not a second publish", req.Opid, existing.Phase)
+		return PublishResult{}, fmt.Errorf("ledger write %s is already %s; finish it with metasystem goal sync --recover", req.Opid, existing.Phase)
 	}
 	if _, err := CreateEntry(e.Root, req.Opid, req.Machine, req.Lineage, req.Intent); err != nil {
 		return PublishResult{}, err
@@ -729,10 +732,10 @@ func CompleteEntry(e Endpoint, req PublishRequest) (PublishResult, error) {
 		return PublishResult{}, err
 	}
 	if entry.Phase != PhaseCreated && entry.Phase != PhasePushed {
-		return PublishResult{}, fmt.Errorf("journal entry %s is %s, not created or pushed", req.Opid, entry.Phase)
+		return PublishResult{}, fmt.Errorf("ledger write %s is already %s, so it can't be continued", req.Opid, entry.Phase)
 	}
 	if !intentsEqual(entry.Intent, req.Intent) {
-		return PublishResult{}, fmt.Errorf("journal entry %s intent differs from the carried request", req.Opid)
+		return PublishResult{}, fmt.Errorf("ledger write %s was started for a different change", req.Opid)
 	}
 	return runTransaction(e, req)
 }
@@ -826,7 +829,7 @@ func runTransaction(e Endpoint, req PublishRequest) (PublishResult, error) {
 			if valErr := validateCommitFor(e, tip); valErr != nil {
 				_ = MarkTerminal(e.Root, req.Opid, OutcomeAbandoned, "captured tip refused: "+valErr.Error())
 				CleanupRefs(e, req.Opid)
-				return PublishResult{}, fmt.Errorf("the captured tip does not validate; follow the ledger repair process: restore a valid canonical tree, then after any rewind run metasystem goal sync --accept-remote-history --by <human> --repo <checkout> on each affected clone: %w", valErr)
+				return PublishResult{}, fmt.Errorf("the shared goal list is damaged, so nothing was written (%w)\nrun: metasystem goal sync --accept-remote-history  (after restoring a valid one)", valErr)
 			}
 		}
 		if err := RecordSteps(e.Root, req.Opid, tip, ""); err != nil {
@@ -853,9 +856,9 @@ func runTransaction(e Endpoint, req PublishRequest) (PublishResult, error) {
 		}
 		if req.Validate != nil {
 			if err := req.Validate(commit); err != nil {
-				_ = MarkTerminal(e.Root, req.Opid, OutcomeRejected, "validation refused: "+err.Error())
+				_ = MarkTerminal(e.Root, req.Opid, OutcomeRejected, "validation refused: "+RecordText(err))
 				CleanupRefs(e, req.Opid)
-				return PublishResult{Outcome: OutcomeRejected, Tip: tip, Commit: commit, Detail: err.Error()}, nil
+				return PublishResult{Outcome: OutcomeRejected, Tip: tip, Commit: commit, Detail: err.Error(), Code: RefusalCode(err)}, nil
 			}
 		}
 
@@ -982,10 +985,10 @@ func terminalFromMutate(e Endpoint, req PublishRequest, tip string, err error) (
 		CleanupRefs(e, opid)
 		return PublishResult{Outcome: OutcomeLost, Tip: tip, Detail: "winner: " + v.Winner}, nil
 	default:
-		if mErr := MarkTerminal(e.Root, opid, OutcomeRejected, err.Error()); mErr != nil {
+		if mErr := MarkTerminal(e.Root, opid, OutcomeRejected, RecordText(err)); mErr != nil {
 			return PublishResult{}, mErr
 		}
 		CleanupRefs(e, opid)
-		return PublishResult{Outcome: OutcomeRejected, Tip: tip, Detail: err.Error()}, nil
+		return PublishResult{Outcome: OutcomeRejected, Tip: tip, Detail: err.Error(), Code: RefusalCode(err)}, nil
 	}
 }

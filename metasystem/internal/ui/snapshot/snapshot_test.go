@@ -291,7 +291,7 @@ func TestObserveNamesEveryLedgerState(t *testing.T) {
 		observation := holder.Observe()
 
 		testutil.Expect(t, "state", observation.State, StateRefused)
-		testutil.Expect(t, "the message is the engine's", strings.Contains(observation.Message, "sync-mode mismatch refused"), true)
+		testutil.Expect(t, "the message is the engine's", strings.Contains(observation.Message, "but the settings"), true)
 	})
 
 	t.Run("a sync branch that is not fully qualified", func(t *testing.T) {
@@ -321,7 +321,7 @@ func TestObserveRereadsConfigurationUnderAStandingTip(t *testing.T) {
 	b.git("config", "goal.sync-remote", "origin")
 	flipped := holder.Observe()
 	testutil.Expect(t, "the flipped state", flipped.State, StateRefused)
-	testutil.Expect(t, "the flipped message", strings.Contains(flipped.Message, "sync-mode mismatch refused"), true)
+	testutil.Expect(t, "the flipped message", strings.Contains(flipped.Message, "but the settings"), true)
 
 	b.git("config", "goal.sync-remote", "local")
 	restored := holder.Observe()

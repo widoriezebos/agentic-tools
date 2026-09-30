@@ -44,7 +44,7 @@ func runIntentGoalLandWithoutSitting(inv *intentInvocation) int {
 	}
 	tip := inv.intentBranchTip(id)
 	if tip == "" {
-		return inv.refuse(id, "goal/"+id+" has no tip at origin, so there is no work to let land; nothing was done", "")
+		return inv.refuse(id, "goal/"+id+" has no commits at origin, so there is no work to let land", "nothing to do until work is pushed to goal/"+id)
 	}
 	actor, _, problem := inv.actingAs("land-without-sitting", id, actorHuman)
 	if problem != nil {

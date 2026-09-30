@@ -91,7 +91,7 @@ func TestApproveUnderASignedInSessionWritesSessionAuthority(t *testing.T) {
 	request := verbReq(root, "01J5X00000000000000000SE10", "mac-a")
 	request.Actor.Human = "Wido"
 	budget := testBudget()
-	if _, err := Approve(request, []string{"session-work"}, &budget, parsedSessionProofForTest(t, root, request.Now)); err == nil || !strings.Contains(err.Error(), "freshly observed") {
+	if _, err := Approve(request, []string{"session-work"}, &budget, parsedSessionProofForTest(t, root, request.Now)); err == nil || !strings.Contains(err.Error(), "only a person approves") {
 		t.Fatalf("a parsed session proof document approved execution: %v", err)
 	}
 	result, err := Approve(request, []string{"session-work"}, &budget, sessionProofForTest(t, root, request.Now))
@@ -127,7 +127,7 @@ func TestUnapproveUnderASignedInSessionWithdrawsApproval(t *testing.T) {
 	}
 	request := verbReq(root, "01J5X00000000000000000SV20", "mac-a")
 	request.Actor.Human = "Wido"
-	if _, err := Unapprove(request, "session-undo", "the human changed their mind", nil); err == nil || !strings.Contains(err.Error(), "freshly observed") {
+	if _, err := Unapprove(request, "session-undo", "the human changed their mind", nil); err == nil || !strings.Contains(err.Error(), "only a person approves") {
 		t.Fatalf("unapprove without proof: %v", err)
 	}
 	result, err := Unapprove(request, "session-undo", "the human changed their mind", sessionProofForTest(t, root, request.Now))
@@ -159,7 +159,7 @@ func TestSetPriorityUnderASignedInSession(t *testing.T) {
 	endpoint := rankedGoalBedForEndpoint(t, map[string][2]uint64{"a": {1, 1}, "b": {1, 2}, "c": {1, 3}})
 	request := priorityVerbReqForEndpoint(endpoint, "01J5X000000000000000000SP1", "mac-a")
 	if _, err := SetPriority(request, "c", 1, sequencePointer(2), parsedSessionProofForTest(t, endpoint.Root, request.Now)); err == nil ||
-		!strings.Contains(err.Error(), "signed-in browser session") {
+		!strings.Contains(err.Error(), "only a person sets priorities") {
 		t.Fatalf("a parsed session proof document reordered the backlog: %v", err)
 	}
 	result, err := SetPriority(request, "c", 1, sequencePointer(2), sessionProofForTest(t, endpoint.Root, request.Now))
@@ -294,9 +294,9 @@ func TestReaderRefusesSessionAuthorityWithoutItsSignedInSessionFacts(t *testing.
 			h.AuthorityOutcome = ""
 			h.ChannelProvider, h.ChannelUser, h.ChannelRef = "", "", ""
 		}, want: "session authority"},
-		{name: "no issuer", strip: func(h *HistoryLine) { h.ChannelProvider = "" }, want: "SIGNED_IN_SESSION requires channelProvider"},
-		{name: "no human", strip: func(h *HistoryLine) { h.ChannelUser = "" }, want: "SIGNED_IN_SESSION requires channelProvider"},
-		{name: "no session reference", strip: func(h *HistoryLine) { h.ChannelRef = "" }, want: "SIGNED_IN_SESSION requires channelProvider"},
+		{name: "no issuer", strip: func(h *HistoryLine) { h.ChannelProvider = "" }, want: "a signed-in browser act names its provider, user and session"},
+		{name: "no human", strip: func(h *HistoryLine) { h.ChannelUser = "" }, want: "a signed-in browser act names its provider, user and session"},
+		{name: "no session reference", strip: func(h *HistoryLine) { h.ChannelRef = "" }, want: "a signed-in browser act names its provider, user and session"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()

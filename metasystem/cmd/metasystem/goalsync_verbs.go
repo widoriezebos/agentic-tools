@@ -62,7 +62,7 @@ func goalMigrateWith(dependencies syncRequestDependencies, stdout, stderr io.Wri
 		return 2
 	}
 	if *root == "" || *sourceDigest == "" || *by == "" {
-		fmt.Fprintln(stderr, "goal migrate: --root, --source-digest, and --by are required — the cutover is a human act on reviewed bytes")
+		fmt.Fprintln(stderr, "goal migrate needs --root, --source-digest and --by: a person upgrades reviewed files")
 		return 2
 	}
 	classification, classErr := brainHumanWordClassificationWithFacts("migrate", *root, *by, nil, dependencies.authorityFacts)

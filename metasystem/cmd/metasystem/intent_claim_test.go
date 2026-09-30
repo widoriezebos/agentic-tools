@@ -31,7 +31,7 @@ func TestIntentBuildClaimsLawfully(t *testing.T) {
 	// so it refuses with its own rule and the goal is left approved.
 	file := free.goalFile(bedGoal)
 	if result.Outcome != intentRefused || !strings.Contains(result.Summary, "build claims goal "+bedGoal+" first") ||
-		!strings.Contains(result.Summary, "lease holder's positive claim epoch") || file.State != goal.StateApproved || file.Claimed != nil {
+		!strings.Contains(result.Summary, "only the session that holds this checkout can claim") || file.State != goal.StateApproved || file.Claimed != nil {
 		t.Fatalf("build did not ask the claim owner, or changed the goal on its refusal: %+v, result %+v", file.Claimed, result)
 	}
 

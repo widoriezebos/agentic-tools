@@ -212,14 +212,14 @@ func TestMigrateRefusalsComeBeforeAnyMutation(t *testing.T) {
 	badOpts := good
 	badOpts.SourceDigest = strings.Repeat("00", 32)
 	_, err := migrateWithStatus(verbReqFor(endpoint, "01J5XM0000000000000000M020", "mac-a"), badOpts, status.status)
-	if err == nil || !strings.Contains(err.Error(), "the manifest is the authority") {
+	if err == nil || !strings.Contains(err.Error(), "use the manifest's") {
 		t.Fatalf("the manifest binds the reviewed literal: %v", err)
 	}
 	staleOpts := good
 	staleOpts.SourceDigest = strings.Repeat("00", 32)
 	staleOpts.ManifestPath = filepath.Join(endpoint.Root, "stale-manifest.md")
 	_, err = migrateWithStatus(verbReqFor(endpoint, "01J5XM0000000000000000M021", "mac-a"), staleOpts, status.status)
-	if err == nil || !strings.Contains(err.Error(), "source digest mismatch") {
+	if err == nil || !strings.Contains(err.Error(), "changed since it was reviewed") {
 		t.Fatalf("the reviewed-source literal gates everything: %v", err)
 	}
 	// Nothing moved: the legacy ledger is untouched on the branch.
@@ -235,7 +235,7 @@ func TestMigrateRefusalsComeBeforeAnyMutation(t *testing.T) {
 	// doomed rerun never mints an entry.
 	bare := MigrateOptions{SourceDigest: digest, Identity: good.Identity, SyncMode: SyncRemote}
 	_, err = migrateWithStatus(verbReqFor(endpoint, "01J5XM0000000000000000M040", "mac-a"), bare, status.status)
-	if err == nil || !strings.Contains(err.Error(), "confusion") {
+	if err == nil || !strings.Contains(err.Error(), "the upgrade already ran") {
 		t.Fatalf("mode confusion refuses by name pre-journal: %v", err)
 	}
 }

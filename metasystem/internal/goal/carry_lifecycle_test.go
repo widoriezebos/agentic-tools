@@ -234,7 +234,7 @@ func TestCarryLifecycleLandsThroughTheJournal(t *testing.T) {
 		t.Fatalf("second carried intent beside a live owner = %v", err)
 	}
 	bogus := carryVerb(seat, "01J5X00000000000000000C012", 7)
-	if _, err := Carried(bogus, "01J5X00000000000000000C996-mac-a-1a2b3c4d"); err == nil || !strings.Contains(err.Error(), "no journal entry") {
+	if _, err := Carried(bogus, "01J5X00000000000000000C996-mac-a-1a2b3c4d"); err == nil || !strings.Contains(err.Error(), "no pending ledger write") {
 		t.Fatalf("carried of an unknown entry = %v", err)
 	}
 	complete := carryVerb(seat, "01J5X00000000000000000C013", 8)
@@ -372,11 +372,11 @@ func TestCarryReadersAndJournalGuards(t *testing.T) {
 		t.Fatalf("duplicate entry = %v", err)
 	}
 	endpoint := Endpoint{Root: root, Remote: "origin", Branch: "refs/heads/main"}
-	if _, err := CompleteEntry(endpoint, PublishRequest{Opid: "01J5X00000000000000000C901-mac-a-1a2b3c4d"}); err == nil || !strings.Contains(err.Error(), "no journal entry") {
+	if _, err := CompleteEntry(endpoint, PublishRequest{Opid: "01J5X00000000000000000C901-mac-a-1a2b3c4d"}); err == nil || !strings.Contains(err.Error(), "no pending ledger write") {
 		t.Fatalf("complete of an unknown entry = %v", err)
 	}
 	different := Intent{Verb: "carried", Targets: []string{"g"}, Args: map[string]string{"approvedRef": "other"}}
-	if _, err := CompleteEntry(endpoint, PublishRequest{Opid: entryOpid, Intent: different}); err == nil || !strings.Contains(err.Error(), "intent differs") {
+	if _, err := CompleteEntry(endpoint, PublishRequest{Opid: entryOpid, Intent: different}); err == nil || !strings.Contains(err.Error(), "was started for a different change") {
 		t.Fatalf("complete with another intent = %v", err)
 	}
 	if intentsEqual(intent, Intent{Verb: "carried", Targets: []string{"h"}, Args: intent.Args}) ||
@@ -388,10 +388,10 @@ func TestCarryReadersAndJournalGuards(t *testing.T) {
 	if err := MarkTerminal(root, entryOpid, OutcomeConfirmed, "landed"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := CompleteEntry(endpoint, PublishRequest{Opid: entryOpid, Intent: intent}); err == nil || !strings.Contains(err.Error(), "not created or pushed") {
+	if _, err := CompleteEntry(endpoint, PublishRequest{Opid: entryOpid, Intent: intent}); err == nil || !strings.Contains(err.Error(), "so it can't be continued") {
 		t.Fatalf("complete of a terminal entry = %v", err)
 	}
-	if _, err := TakeOverForCompletion(root, entryOpid); err == nil || !strings.Contains(err.Error(), "is terminal") {
+	if _, err := TakeOverForCompletion(root, entryOpid); err == nil || !strings.Contains(err.Error(), "already finished") {
 		t.Fatalf("takeover of a terminal entry = %v", err)
 	}
 }
@@ -424,7 +424,7 @@ func TestAbandonRefusesOpenCarryWords(t *testing.T) {
 		tree.Abandoned = map[string]*GoalFile{}
 		declareCarryAt(t, endpoint, "HEAD", ref, "", "")
 		err := abandonCarryRefusalFor(endpoint, tree, "HEAD", "g", file, base)
-		if err == nil || !strings.Contains(err.Error(), "goal g has open carry word "+ref) || !strings.Contains(err.Error(), "let it expire at "+base.Add(time.Hour).Format(time.RFC3339)) {
+		if err == nil || !strings.Contains(err.Error(), "goal g has an open landing exception ("+ref+")") || !strings.Contains(err.Error(), "until "+base.Add(time.Hour).Format(time.RFC3339)) {
 			t.Fatalf("missing-anchor refusal = %v", err)
 		}
 	})
@@ -439,8 +439,8 @@ func TestAbandonRefusesOpenCarryWords(t *testing.T) {
 		if err != nil || result.Outcome != OutcomeRejected {
 			t.Fatalf("abandon with open word: %+v %v", result, err)
 		}
-		want := "goal g has open carry word " + ref
-		if !strings.Contains(result.Detail, want) || !strings.Contains(result.Detail, "--replace-exception "+ref) || !strings.Contains(result.Detail, word.Expires.Format(time.RFC3339)) {
+		want := "goal g has an open landing exception (" + ref + ")"
+		if !strings.Contains(result.Detail, want) || !strings.Contains(result.Detail, word.Expires.Format(time.RFC3339)) {
 			t.Fatalf("open-word refusal = %q", result.Detail)
 		}
 		after, afterTip := acceptedTreeForEndpoint(t, endpoint)
@@ -470,7 +470,7 @@ func TestAbandonRefusesOpenCarryWords(t *testing.T) {
 		declareWordHistory(t, endpoint, ref, "")
 		request := carryVerb(human, "01J5X00000000000000000D031", 3)
 		result, err = Abandon(request, "g", AbandonSpec{Because: "the work is obsolete"}, goalHumanProof(t, root, request.Now))
-		if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "carry reservation "+row+" on goal g is in flight on mac-a") || !strings.Contains(result.Detail, "ends when that seat's landing finishes or abandons it") {
+		if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "goal g is being landed on mac-a under an exception") || !strings.Contains(result.Detail, "once that landing ends") {
 			t.Fatalf("reservation refusal: %+v %v", result, err)
 		}
 		closeRequest := carryVerb(seat, "01J5X00000000000000000D032", 4)
@@ -480,7 +480,7 @@ func TestAbandonRefusesOpenCarryWords(t *testing.T) {
 		declareWordHistory(t, endpoint, ref, "")
 		request = carryVerb(human, "01J5X00000000000000000D033", 5)
 		result, err = Abandon(request, "g", AbandonSpec{Because: "the work is obsolete"}, goalHumanProof(t, root, request.Now))
-		if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "goal g has open carry word "+ref) {
+		if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "goal g has an open landing exception ("+ref) {
 			t.Fatalf("closed reservation hid open word: %+v %v", result, err)
 		}
 	})
@@ -494,7 +494,7 @@ func TestAbandonRefusesOpenCarryWords(t *testing.T) {
 		request := carryVerb(human, "01J5X00000000000000000D040", 121)
 		request.Now = word.Expires.Add(time.Minute)
 		result, err := Abandon(request, "g", AbandonSpec{Because: "the landing will not continue"}, goalHumanProof(t, root, request.Now))
-		if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "goal g has carried commit "+commit+" without its ledger row") || !strings.Contains(result.Detail, "metasystem work land g --using-exception "+ref) {
+		if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "goal g has landed work ("+commit+") that isn't recorded yet") || !strings.Contains(result.Detail, "metasystem work land g --using-exception "+ref) {
 			t.Fatalf("unrecorded carried commit refusal: %+v %v", result, err)
 		}
 	})
@@ -532,7 +532,7 @@ func TestAbandonRefusesOpenCarryWords(t *testing.T) {
 		before, tip := acceptedTreeForEndpoint(t, endpoint)
 		request := carryVerb(human, "01J5X00000000000000000D056", 6)
 		result, err := Abandon(request, "g", AbandonSpec{Because: "both goals are obsolete", Also: []string{"child"}}, goalHumanProof(t, root, request.Now))
-		if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "goal child has open carry word "+carryRequest.opid()) {
+		if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "goal child has an open landing exception ("+carryRequest.opid()+")") {
 			t.Fatalf("also carry refusal: %+v %v", result, err)
 		}
 		after, afterTip := acceptedTreeForEndpoint(t, endpoint)

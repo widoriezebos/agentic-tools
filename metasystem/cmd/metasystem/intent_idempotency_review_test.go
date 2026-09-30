@@ -74,10 +74,10 @@ func TestIntentGoalReviewRecordsTheVerdictAndRefusesInPublicWords(t *testing.T) 
 		args []string
 		want string
 	}{
-		{[]string{"goal", "review", bedGoal, "--verdict", "clear-to-land"}, "needs the review record and the verdict"},
-		{[]string{"goal", "review", bedGoal, "--record", record, "--verdict", "no-verdict"}, "records nothing on the goal"},
-		{[]string{"goal", "review", bedGoal, "--record", record, "--verdict", "send-back"}, "carries its correction brief"},
-		{[]string{"goal", "review", bedGoal, "--record", record, "--verdict", "clear-to-land"}, `does not open with "Verdict: clear to land"`},
+		{[]string{"goal", "review", bedGoal, "--verdict", "clear-to-land"}, "a review needs its record file and its verdict"},
+		{[]string{"goal", "review", bedGoal, "--record", record, "--verdict", "no-verdict"}, "the verdict is clear-to-land or send-back, not"},
+		{[]string{"goal", "review", bedGoal, "--record", record, "--verdict", "send-back"}, "a send-back needs its brief"},
+		{[]string{"goal", "review", bedGoal, "--record", record, "--verdict", "clear-to-land"}, `doesn't start with "Verdict: clear to land"`},
 		{[]string{"goal", "review", bedGoal, "--record", filepath.Join(bed.root(), "plans", "goals", bedGoal+".md"), "--verdict", "clear-to-land"}, "is not a review record in its home"},
 	}
 	for _, row := range rows {
@@ -95,7 +95,7 @@ func TestIntentGoalReviewRecordsTheVerdictAndRefusesInPublicWords(t *testing.T) 
 	// its first call (Sol SOL-S69-02).
 	writeReviewRecordAnswered(t, bed.root(), "send back", "left open")
 	if code, result := bed.runJSON(bed.terminalOwners(), "goal", "review", bedGoal, "--record", record, "--verdict", "send-back", "--brief", brief); code == 0 ||
-		!strings.Contains(result.Summary+" "+result.Decision, "no finding answered fix") {
+		!strings.Contains(result.Summary+" "+result.Decision, "has no finding marked fix") {
 		t.Fatalf("a send-back with no finding answered fix = %d %+v", code, result)
 	}
 	writeReviewRecord(t, bed.root(), "send back")

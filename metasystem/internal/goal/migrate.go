@@ -15,6 +15,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -67,7 +68,7 @@ func migrationCompleteFor(endpoint Endpoint, tip, identity, mode, syncMode, mani
 		record.SyncMode == syncMode && record.ManifestDigest == manifestDigest {
 		return true, nil
 	}
-	return false, fmt.Errorf("a migration already completed with identity %s mode %s sync %s manifest %s; rerunning with mode %s sync %s manifest %s is a confusion, not a repair",
+	return false, fmt.Errorf("the upgrade already ran (%s, %s, %s, %s); rerunning with %s, %s, %s would change it, so nothing was done",
 		record.Identity, record.MigrationMode, record.SyncMode, short(record.ManifestDigest),
 		mode, syncMode, short(manifestDigest))
 }
@@ -147,7 +148,7 @@ func migrateWithStatus(r VerbRequest, opts MigrateOptions, status func(root, pat
 		// The manifest BINDS the reviewed literal itself: a
 		// caller-provided digest that disagrees is a confusion.
 		if manifest.ReviewedSHA256 != opts.SourceDigest {
-			return PublishResult{}, fmt.Errorf("the manifest binds reviewed digest %s but the caller supplied %s; the manifest is the authority", manifest.ReviewedSHA256, opts.SourceDigest)
+			return PublishResult{}, fmt.Errorf("--source-digest %s isn't the reviewed one in the manifest (%s); use the manifest's", opts.SourceDigest, manifest.ReviewedSHA256)
 		}
 	} else {
 		manifest = &Manifest{Epoch: r.stamp()}
@@ -166,7 +167,7 @@ func migrateWithStatus(r VerbRequest, opts MigrateOptions, status func(root, pat
 		return PublishResult{}, fmt.Errorf("the legacy ledger cannot be read: %w", err)
 	}
 	if got := sha256HexBytes(sourceBytes); sourceBytes != nil && got != opts.SourceDigest {
-		return PublishResult{}, fmt.Errorf("source digest mismatch refused: goals.md is %s, the reviewed literal is %s — the migration runs on exactly the reviewed bytes or not at all", got, opts.SourceDigest)
+		return PublishResult{}, fmt.Errorf("goals.md changed since it was reviewed (now %s, reviewed %s); review it again", got, opts.SourceDigest)
 	}
 
 	// The rerun is answered BEFORE any journal write: a
@@ -232,10 +233,10 @@ func migrateWithStatus(r VerbRequest, opts MigrateOptions, status func(root, pat
 				if catErr == nil {
 					catErr = fmt.Errorf("plans/goals.md is absent from the canonical tip")
 				}
-				return nil, fmt.Errorf("the canonical tip carries no plans/goals.md; a completed migration reruns idempotently, anything else is a confusion: %v", catErr)
+				return nil, fmt.Errorf("the shared goal list has no plans/goals.md to upgrade: %v", catErr)
 			}
 			if got := sha256HexBytes(tipSource); got != opts.SourceDigest {
-				return nil, fmt.Errorf("the canonical ledger advanced past the review: the tip's goals.md is %s, the reviewed literal is %s — re-review before migrating", got, opts.SourceDigest)
+				return nil, fmt.Errorf("the shared goals.md changed since it was reviewed (now %s, reviewed %s); review it again", got, opts.SourceDigest)
 			}
 			acceptedFiles, accErr := readCommitFiles(r.Endpoint, tip, "plans/goals-accepted.json")
 			accJSON, acceptedPresent := acceptedFiles["plans/goals-accepted.json"]
@@ -258,11 +259,11 @@ func migrateWithStatus(r VerbRequest, opts MigrateOptions, status func(root, pat
 					return nil, fmt.Errorf("migration precondition refused: the accepted baseline's schemaVersion %d is not 1", accepted.SchemaVersion)
 				}
 				if accepted.Sha256 != sha256HexBytes(tipSource) || accepted.Ledger != string(tipSource) {
-					return nil, fmt.Errorf("migration precondition refused: goals.md diverges from its accepted baseline — run the legacy reconcile first")
+					return nil, errors.New("goals.md has unpublished hand edits; publish or undo them before the upgrade")
 				}
 			}
 			if destinationFiles, lsErr := readCommitFiles(r.Endpoint, tip, goalsPrefix); lsErr == nil && len(destinationFiles) != 0 {
-				return nil, fmt.Errorf("migration precondition refused: %s already exists on the tip without a root record — not all-legacy: a confusion", goalsPrefix)
+				return nil, fmt.Errorf("%s already holds goals but no upgrade record, so the upgrade was refused", goalsPrefix)
 			}
 			if manifestRel != "" {
 				// An in-repo manifest must be byte-identical at the
@@ -279,7 +280,7 @@ func migrateWithStatus(r VerbRequest, opts MigrateOptions, status func(root, pat
 					return nil, fmt.Errorf("migration precondition refused: the manifest is not committed at the canonical tip: %v", mErr)
 				}
 				if sha256HexBytes(tipManifest) != manifestDigest {
-					return nil, fmt.Errorf("migration precondition refused: the manifest read for this migration differs from the one committed at the canonical tip")
+					return nil, errors.New("the upgrade manifest differs from the one already shared, so the upgrade was refused")
 				}
 			}
 			legacy, problems := Parse(tipSource)

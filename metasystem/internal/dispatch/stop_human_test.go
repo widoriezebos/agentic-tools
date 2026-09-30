@@ -99,7 +99,7 @@ func TestStrandedHumanOrderedBreachStopIsNotReplayed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(reports) == 0 || !strings.Contains(reports[len(reports)-1].Detail, "re-run it from the human authority boundary") {
+	if len(reports) == 0 || !strings.Contains(reports[len(reports)-1].Detail, "the person runs it again") {
 		t.Fatalf("a stranded human-ordered stop was not closed for the person to order again: %+v", reports)
 	}
 	if binding, err := bed.binding("bounded", now); err != nil || binding.Fence != nil {

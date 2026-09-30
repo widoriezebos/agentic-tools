@@ -144,13 +144,13 @@ func TestGrantGeneralRecordsOneGrantPerCheckout(t *testing.T) {
 		"none": nil,
 	} {
 		res, err := GrantGeneral(withUlid(human, 43), bad, grant)
-		expectRefusal(t, label, res, err, "enrolled terminal")
+		expectRefusal(t, label, res, err, "at their own terminal")
 	}
 	scoped := withUlid(human, 44)
 	attorneyProof := *proof
 	attorneyProof.Helm = &humanauthority.HelmGrant{By: "Wido", Grant: entry.ID}
 	res, err = Grant(scoped, &attorneyProof, []uint8{1}, []string{"approve"}, human.Now.Format("2006-01-02"))
-	expectRefusal(t, "scoped grant under a grant", res, err, "enrolled terminal")
+	expectRefusal(t, "scoped grant under a grant", res, err, "at their own terminal")
 
 	for label, g := range map[string]GeneralGrant{
 		"past":         {Machine: "mac-a", Checkout: "/seat/checkout", Lineage: "l", Until: human.Now.Add(-time.Minute)},

@@ -369,7 +369,7 @@ func TestBudgetedClaimRevisionLaws(t *testing.T) {
 			t.Fatalf("open: %+v %v", res, err)
 		}
 		missing, err := Claim(verbReqFor(aEndpoint, "01J5X00000000000000000H110", "mac-a"), "budgeted")
-		if err != nil || missing.Outcome != OutcomeRejected || !strings.Contains(missing.Detail, "APPROVAL_REQUIRED") {
+		if err != nil || missing.Outcome != OutcomeRejected || !(missing.Code == "APPROVAL_REQUIRED") {
 			t.Fatalf("claim without approval did not refuse by remedy: %+v %v", missing, err)
 		}
 		res, err := claimApprovedForTest(t, verbReqFor(aEndpoint, "01J5X00000000000000000H120", "mac-a"), "budgeted", testBudget())
@@ -482,7 +482,7 @@ func TestRebindEpochFollowsTheAuthenticatedHolderOnly(t *testing.T) {
 			t.Parallel()
 			got, err := ClaimEpochForRebind(file, test.request)
 			if test.refusal != "" {
-				if err == nil || !strings.Contains(err.Error(), test.refusal) {
+				if err == nil || RefusalCode(err) != test.refusal {
 					t.Fatalf("rebind epoch = %d, %v; want refusal %s", got, err, test.refusal)
 				}
 				return
@@ -492,7 +492,7 @@ func TestRebindEpochFollowsTheAuthenticatedHolderOnly(t *testing.T) {
 			}
 		})
 	}
-	if _, err := ClaimEpochForRebind(&GoalFile{Id: "legacy-without-capability"}, VerbRequest{}); err == nil || !strings.Contains(err.Error(), "REBIND_EPOCH_UNAUTHENTICATED") {
+	if _, err := ClaimEpochForRebind(&GoalFile{Id: "legacy-without-capability"}, VerbRequest{}); err == nil || !(RefusalCode(err) == "REBIND_EPOCH_UNAUTHENTICATED") {
 		t.Fatalf("missing recorded and authenticated epochs were admitted: %v", err)
 	}
 }
@@ -1941,7 +1941,7 @@ func TestMachinePinning(t *testing.T) {
 	repin := verbReqFor(aEndpoint, "01J5X0000000000000000000P6", "mac-a")
 	repin.Actor.Human = "wido"
 	if res, err := SetPin(repin, "gpu-work", "mac-a"); err != nil || res.Outcome != OutcomeRejected ||
-		!strings.Contains(res.Detail, "claimed by machine mac-b") {
+		!strings.Contains(res.Detail, "claimed on machine mac-b") {
 		t.Fatalf("re-pin over a foreign claim rejects: %+v %v", res, err)
 	}
 

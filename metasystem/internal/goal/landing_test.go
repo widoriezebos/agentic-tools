@@ -1015,7 +1015,7 @@ func TestLeaveAndResumeEpisodeCarryTheObligationRevision(t *testing.T) {
 		t.Fatalf("the re-claim did not restore the obligation revision with the gap idle: %+v", c)
 	}
 	// A regressed clock refuses the continuation instead of inventing time.
-	if err := resumeEpisode(f, kept, "2026-08-20T02:00:00Z"); err == nil || !strings.Contains(err.Error(), "CLOCK_REGRESSED") {
+	if err := resumeEpisode(f, kept, "2026-08-20T02:00:00Z"); err == nil || !(RefusalCode(err) == "CLOCK_REGRESSED") {
 		t.Fatalf("a re-claim before the release did not refuse: %v", err)
 	}
 	// A leave whose binding the history cannot vouch for keeps nothing.

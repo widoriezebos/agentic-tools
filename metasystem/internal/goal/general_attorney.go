@@ -1,6 +1,7 @@
 package goal
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -30,7 +31,7 @@ func GrantGeneral(r VerbRequest, proof *humanauthority.Proof, g GeneralGrant) (P
 		return PublishResult{}, fmt.Errorf("a general power of attorney is a person's act and requires --by from an authorized human boundary")
 	}
 	if proof == nil || proof.Helm != nil || !proof.EnrolledTerminalFor(r.Endpoint.Root) {
-		return PublishResult{}, fmt.Errorf("a general power of attorney is granted only by the person's own proof at the enrolled terminal, never at the helm or under a grant: %s", humanauthority.PersonActRemedy("metasystem grant add --acts everything --for 24h"))
+		return PublishResult{}, errors.New("a general grant is added by the person at their own terminal, not at the helm or under a grant")
 	}
 	for label, value := range map[string]string{"machine": g.Machine, "checkout": g.Checkout, "lineage": g.Lineage} {
 		if value == "" || strings.ContainsAny(value, " \t\r\n") {

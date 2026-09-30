@@ -10,6 +10,7 @@ package goal
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -505,7 +506,7 @@ func repeatedRelayedActError(root *RootRecord, f *GoalFile, verb, ruling string)
 	if !ok {
 		return nil
 	}
-	return fmt.Errorf("goal %s already used relayed %s authority on %s with recorded word %q; a further %s needs freshly observed enrolled-terminal authority",
+	return fmt.Errorf("goal %s already had one %s on a relayed word (%s, %q); the next %s is the person's, at their terminal",
 		f.Id, verb, first.At, first.TemporaryHumanWord, verb)
 }
 
@@ -908,7 +909,7 @@ func (f *GoalFile) ValidateApprovalRecord() error {
 		want = legacyApprovalDigest(f.Intent, approvedBudget)
 	}
 	if a.Digest != want {
-		return fmt.Errorf("digest does not match the approved intent and budget")
+		return errors.New("the approval no longer matches the goal's intent and budget; approve it again")
 	}
 	return nil
 }
@@ -1049,7 +1050,7 @@ func (f *GoalFile) ValidateClaimRevision() error {
 	}
 	if obligationRevision := claim.EpisodeObligationRevision; obligationRevision > 0 &&
 		(obligationRevision <= claim.EpisodeRevision || obligationRevision >= revision) {
-		return fmt.Errorf("claimed episodeObligationRevision=%d must be later than episodeRevision=%d and earlier than claim revision=%d",
+		return fmt.Errorf("claim obligation revision %d must fall after %d and before %d",
 			obligationRevision, claim.EpisodeRevision, revision)
 	}
 	return nil
@@ -1969,11 +1970,11 @@ func ParseHistoryLine(line string) (HistoryLine, error) {
 
 	fields := strings.Fields(rest)
 	if len(fields) < 4 {
-		return h, fmt.Errorf("wants <at> <opid> <verb> actor=..., got %q", line)
+		return h, fmt.Errorf("a history line is \"<time> <id> <verb> actor=...\", not %q", line)
 	}
 	h.At, h.Opid, h.Verb = fields[0], fields[1], fields[2]
 	if !validOpidShape(h.Opid) {
-		return h, fmt.Errorf("opid %q is not <ulid>-<machine>-<hash8>", h.Opid)
+		return h, fmt.Errorf("history id %q isn't <ulid>-<machine>-<hash8>", h.Opid)
 	}
 	seenKeys := map[string]bool{}
 	dup := func(key string) error {
@@ -2113,20 +2114,20 @@ func ParseHistoryLine(line string) (HistoryLine, error) {
 	provenAuthority := h.AuthorityOutcome == AuthorityOutcomeHumanAuthorityProven
 	if h.AuthorityOutcome == AuthorityOutcomePowerOfAttorney {
 		if strings.HasPrefix(h.Actor, "human:") || h.AuthorityReviewBy != "" || h.TemporaryHumanWord != "" || !validOpidShape(h.AuthorityRuling) {
-			return h, fmt.Errorf("POWER_OF_ATTORNEY requires the seat actor and authorityRuling=<entry id>, with no relay fields")
+			return h, errors.New("an act under a grant must be the seat's, name its grant, and carry no relayed word")
 		}
 	} else if provenAuthority {
 		if !strings.HasPrefix(h.Actor, "human:") || h.AuthorityReviewBy != "" || h.AuthorityRuling != "" || h.TemporaryHumanWord != "" {
-			return h, fmt.Errorf("HUMAN_AUTHORITY_PROVEN requires a human actor, authorityGeneration, and no relay fields")
+			return h, errors.New("a person's confirmed act must name the person and the enrollment, and carry no relayed word")
 		}
 		if !seenKeys["authorityGeneration"] {
-			return h, fmt.Errorf("HUMAN_AUTHORITY_PROVEN requires authorityGeneration")
+			return h, errors.New("a person's confirmed act must name the enrollment it was confirmed at")
 		}
 	} else if seenKeys["authorityGeneration"] {
-		return h, fmt.Errorf("authorityGeneration requires HUMAN_AUTHORITY_PROVEN")
+		return h, errors.New("only a person's confirmed act names an enrollment")
 	} else if sessionAuthority {
 		if !strings.HasPrefix(h.Actor, "human:") || h.AuthorityReviewBy != "" || h.AuthorityRuling != "" || h.TemporaryHumanWord != "" {
-			return h, fmt.Errorf("SIGNED_IN_SESSION requires a human actor and no relay fields")
+			return h, errors.New("a signed-in browser act must name the person and carry no relayed word")
 		}
 	} else if !channelAuthority {
 		if err := validateRecordedTemporaryAuthority(h.AuthorityOutcome, h.AuthorityReviewBy, h.AuthorityRuling, h.TemporaryHumanWord); err != nil {
@@ -2151,15 +2152,15 @@ func ParseHistoryLine(line string) (HistoryLine, error) {
 			wantCount = 5
 		}
 		if channelCount != wantCount || h.AuthorityReviewBy != "" || h.AuthorityRuling != "" || h.TemporaryHumanWord != "" {
-			return h, fmt.Errorf("channel authority requires provider, user, reference, step, and the context required by its proof class")
+			return h, errors.New("a channel act must name the provider, user, message, step and its context")
 		}
 	} else if sessionAuthority {
 		if h.ChannelProvider == "" || h.ChannelUser == "" || h.ChannelRef == "" ||
 			h.ChannelContext != "" || h.ChannelStep != 0 {
-			return h, fmt.Errorf("SIGNED_IN_SESSION requires channelProvider, channelUser, and channelRef, and carries no channel context or step")
+			return h, errors.New("a signed-in browser act names its provider, user and session, and no channel context or step")
 		}
 	} else if channelCount != 0 {
-		return h, fmt.Errorf("channel proof keys require a channel authority outcome")
+		return h, errors.New("channel keys belong only on a channel or signed-in act")
 	}
 	if h.ApprovedRef != "" && h.Verb != "resume" && h.Verb != "set-obligation" && h.Verb != "carrying" && h.Verb != "carried" {
 		return h, fmt.Errorf("approvedRef= is only valid on resume, set-obligation, carrying, and carried history")
