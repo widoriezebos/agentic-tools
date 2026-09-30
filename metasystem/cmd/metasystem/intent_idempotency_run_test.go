@@ -32,6 +32,7 @@ import (
 func init() {
 	registerIdempotency("session wait", idemCreation, "each registration records one new wait with its own id and deadline; --end of a wait already over succeeds and changes nothing", nil)
 	registerIdempotency("system status", idemRead, "reads the checkout's process families and fence, or the steward's view; changes nothing", nil)
+	registerIdempotency("system completion", idemRead, "prints the shell's completion script from constants; reads and writes nothing", nil)
 	registerIdempotency("system check", idemRead, "the health preview; it writes no observation record (TestIntentProcessAndAnswerTargets)", nil)
 	registerIdempotency("machine list", idemRead, "reads every machine's presence; --refresh fetches a newer copy of that derived state, which a repeat fetches again with the same effect", nil)
 	registerIdempotency("ui status", idemRead, "reads the interface record; removing a dead server's stale record is repair of derived state", nil)
