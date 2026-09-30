@@ -18,6 +18,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/verbresult"
 )
 
@@ -204,7 +205,7 @@ func (bed *kernelBed) fakeChild(name string, result *proofrun.TestResult, envelo
 	script := "#!/bin/sh\nprintf '%s\\n' \"$@\" > '" + argvFile + "'\nout=\nprev=\nfor arg in \"$@\"; do\n  if [ \"$prev\" = --result ]; then out=\"$arg\"; fi\n  prev=\"$arg\"\ndone\n" +
 		copyResult + "\ncat '" + envelopeFile + "'\nexit " + fmt.Sprint(exit) + "\n"
 	executable = filepath.Join(dir, "metasystem")
-	if err := os.WriteFile(executable, []byte(script), 0o755); err != nil {
+	if err := testexec.WriteFile(executable, []byte(script), 0o755); err != nil {
 		bed.t.Fatal(err)
 	}
 	return executable, argvFile
