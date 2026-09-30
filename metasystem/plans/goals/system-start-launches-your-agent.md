@@ -1,21 +1,24 @@
 # system-start-launches-your-agent
 
-- State: queued
+- State: approved
 - Priority: 1
-- Sequence: 5
+- Sequence: 6
 - Risk: severity=2 novelty=1 exposure=2 accumulation=1 basis="Changes what system start does for a person at a terminal; an agent running system start must never spawn a nested agent; reverts cleanly with --no-agent or no config key"
 - Tier: 2
 - Intent: What: A person starts working in a checkout with one command: system start switches on the machinery and then opens the person's chosen agent (Claude, Codex, and so on) in the same terminal. The choice is a local setting, with flags to pick another agent or to only switch on. Why: Today a person runs system start and then starts the agent by hand. The new from-scratch host setup ends with system start, so this completes that path. Pros: One command from nothing to working, the same for every runtime. Cons: The command must tell a person at a real terminal apart from an agent or script, which must never get an agent opened. The opened agent must count as a person's session so the steward stays out of its way.
 - Origin: main
 - Next step: Next: Write a short design: the setting (launch.agent in metasystem.conf.local), the --agent and --no-agent flags, the person-at-a-terminal check, opening the agent through its runtime adapter, how host setup (host-setup-20260930/host-setup.md) ends with it, and how the agent is recorded as a person's session rather than a steward-started seat; one critique round; build. Done when: at a real terminal, system start switches on and opens the configured agent; run by an agent or a script, it only switches on.
 - OpenedAt: 2026-09-30T16:55:50Z
-- Revision: 4
+- Revision: 6
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
+- Approved: by=human:wido at=2026-09-30T20:42:50Z revision=6 opid=GT5GESEXEQJH3DRZGS1R4AB5ZY-m1e-b6a4eb0a authority=proven digest=2d7d386e120263d0ea1dc69f141692a0232bdc37b2cfd8b2c5709ad7c1c2a0e7 episode=6
 
 History:
 - 2026-09-30T16:55:50Z EWJPHN6H6ZEZSRZ86G6BZ9C4E5-m1e-b6a4eb0a open actor=human:wido targets=system-start-launches-your-agent
 - 2026-09-30T16:56:00Z BNF1HFA4GASJX5EKB56DQM1FPA-m1e-b6a4eb0a set-priority actor=human:wido targets=adoption-filled-delivery-passes-on-trunk,beds-run-under-the-oldest-supported-bash,brief-declares-the-round-boundary,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,delegate-sandbox-runs-the-beds,design-rounds-read-less-and-repeat-less,error-checks-use-typed-errors,every-round-gets-an-independent-read,evidence-and-build-output-have-retention-and-stay-unindexed,failures-show-observed-against-expected,fixture-runners-and-fakes-bound-their-own-life,fleet-doctor-repairs-what-stops-other-seats,follow-up-brief-cannot-cite-fresh-trunk-files,machinery-runs-unattended-on-codex,one-steward-per-checkout-on-its-own-root,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,receipt-writer-follows-the-worktree-it-runs-in,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,system-start-launches-your-agent,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror reason=priority-order subject=system-start-launches-your-agent from=unranked to=1:5 requested-sequence=5
 - 2026-09-30T18:21:56Z 1WV9W1D32SNSPMAKZ86CJK1VGM-m1e-b6a4eb0a edit actor=human:wido targets=system-start-launches-your-agent
 - 2026-09-30T18:46:31Z 3MZQAXG69C8DF7BBHGGKM1PPGM-m1e-b6a4eb0a edit actor=human:wido targets=system-start-launches-your-agent
-Integrity: sha256=a40bb6e0814f799156c827b1e8a4bf3f5355c435c616143bd369396fa3aac686
+- 2026-09-30T20:40:12Z HNA3K23WT2SC30HEBK32FHM4JJ-ui-bc2fda53 set-priority actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,cross-cutting-change-inventories-its-readers,design-rounds-read-less-and-repeat-less,error-checks-use-typed-errors,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,host-setup-from-scratch,landing-lane-runtime-redesign,one-steward-per-checkout-on-its-own-root,processes-read-structured-results,receipt-writer-follows-the-worktree-it-runs-in,reviewers-check-the-rulings,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,steward-acts-on-behaviour-patterns,stop-hook-never-forces-an-empty-turn,system-start-launches-your-agent,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror reason=priority-order subject=reviewers-check-the-rulings from=1:5 to=1:6 requested-sequence=1
+- 2026-09-30T20:42:50Z GT5GESEXEQJH3DRZGS1R4AB5ZY-m1e-b6a4eb0a approve actor=human:wido targets=system-start-launches-your-agent
+Integrity: sha256=2a204208f020b2e40d9ce9128877f8433e6508af28ddfb217431cb45c7862a7d

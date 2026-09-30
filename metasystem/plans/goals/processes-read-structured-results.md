@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 2
+- Sequence: 3
 - Risk: severity=2 novelty=1 exposure=2 accumulation=1 basis="Changes the protocol between the landing owner and its proof/test children; a wrong read fails closed to unknown; hard cutover in one landing per unit; reverts cleanly"
 - Tier: 2
 - Intent: No MetaSystem process reads another MetaSystem process's human text: every internal verb a parent calls takes --json and prints exactly one result with a code field; parents read fields, never message text; a static audit refuses new text parsing
 - Origin: main
 - Next step: Build U1 (landing owner reads codes, frees the nine frozen protocol messages, one classifier, static audit with a baseline) then U2 (remaining sites, baseline to zero) from /Users/wido/LocalStorage/agentic-tools-evidence/structured-output-20260930/structured-output.md; U1 lands by hand after its gates (Wido D1). Hard cutover, no old-text fallback; smallest thing that works
 - OpenedAt: 2026-09-30T12:03:21Z
-- Revision: 5
+- Revision: 6
 - Pinned: m1e
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
@@ -21,4 +21,5 @@ History:
 - 2026-09-30T14:43:00Z NQ6E9FR621S02M3J1C2602DTQ9-m1e-b6a4eb0a approve actor=human:wido targets=processes-read-structured-results
 - 2026-09-30T14:44:39Z 5G845G456YKCF52485J98E7Z2H-m1e-b6a4eb0a set-pin actor=human:wido targets=processes-read-structured-results
 - 2026-09-30T16:34:46Z YXR5BXGYAKBTTMBWZMYQ377H7T-m1e-b6a4eb0a set-priority actor=human:wido targets=adoption-filled-delivery-passes-on-trunk,beds-run-under-the-oldest-supported-bash,brief-declares-the-round-boundary,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,delegate-sandbox-runs-the-beds,design-rounds-read-less-and-repeat-less,error-checks-use-typed-errors,every-round-gets-an-independent-read,evidence-and-build-output-have-retention-and-stay-unindexed,failures-show-observed-against-expected,fixture-runners-and-fakes-bound-their-own-life,fleet-doctor-repairs-what-stops-other-seats,follow-up-brief-cannot-cite-fresh-trunk-files,host-setup-from-scratch,landing-lane-runtime-redesign,machinery-runs-unattended-on-codex,one-steward-per-checkout-on-its-own-root,processes-read-structured-results,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,receipt-writer-follows-the-worktree-it-runs-in,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror reason=priority-order subject=landing-lane-runtime-redesign from=1:1 to=1:2 requested-sequence=1
-Integrity: sha256=2fd2965055691bdac66eeb9d12f975b6c9a6cbecfc3fcecb33e78a8127714ee6
+- 2026-09-30T20:40:12Z HNA3K23WT2SC30HEBK32FHM4JJ-ui-bc2fda53 set-priority actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,cross-cutting-change-inventories-its-readers,design-rounds-read-less-and-repeat-less,error-checks-use-typed-errors,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,host-setup-from-scratch,landing-lane-runtime-redesign,one-steward-per-checkout-on-its-own-root,processes-read-structured-results,receipt-writer-follows-the-worktree-it-runs-in,reviewers-check-the-rulings,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,steward-acts-on-behaviour-patterns,stop-hook-never-forces-an-empty-turn,system-start-launches-your-agent,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror reason=priority-order subject=reviewers-check-the-rulings from=1:2 to=1:3 requested-sequence=1
+Integrity: sha256=892aba29d455f7a41a6f4a632cc96b9cbe88771523cc86518555fd8ad8422987

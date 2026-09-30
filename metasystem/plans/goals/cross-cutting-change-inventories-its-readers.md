@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 1
-- Sequence: 21
+- Sequence: 22
 - Risk: severity=2 novelty=2 exposure=3 accumulation=3 basis="severity 2: each missed reader costs a critic round plus a fold round, and the chain can hit the review ceiling before the last one is found; novelty 2: a new preflight step that turns a brief's concept into a search and dispositions its hits; exposure 3: every chain that changes a predicate read in more than one place; accumulation 3: chain bsws-build1b-20260909 paid three reads and three folds for seven sites, one or two per round"
 - Tier: 3
 - Intent: What: When a change redefines a shared idea that many places rely on, the brief lists every place that relies on it before the build starts. Why: One such change needed seven critique rounds because each round found one more place still using the old meaning. A list made up front would have saved most of those rounds. Pros: Fewer rounds for wide changes; critics check a list instead of hunting. Cons: One more step in such briefs. The automatic check first designed for it sits in the old dispatch lane, which no longer runs.
 - Origin: main
 - Next step: Next: Slice 1: add one question to the design-critique skill (skills/design-critique/SKILL.md): "What does this build on, where does that live, and which behaviour wins?". Only if still wanted afterwards, slice 2: the launch lane's build admission checks that the brief accounts for every place its search pattern finds. Done when: the skill carries the question and the next critique round answers it.
 - OpenedAt: 2026-09-10T08:42:28Z
-- Revision: 154
+- Revision: 155
 - Pinned: m1e
 - BudgetExceptions: 0
 
@@ -168,4 +168,5 @@ History:
 - 2026-09-30T18:57:08Z 1M12F43HHGZ10728PZ82TG2YWG-m1e-b6a4eb0a done actor=human:wido targets=busy-seat-shells-are-ended,cross-cutting-change-inventories-its-readers,evidence-and-build-output-have-retention-and-stay-unindexed,fixture-runners-and-fakes-bound-their-own-life,follow-up-brief-cannot-cite-fresh-trunk-files,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,round-proof-feeds-the-next-brief,testing-surfaces-declare-their-mirror reason=priority-order from=1:24 to=1:23
 - 2026-09-30T18:57:20Z 96YGY7PSQV1SVDGAZ9A5SGV49F-m1e-b6a4eb0a done actor=human:wido targets=busy-seat-shells-are-ended,cross-cutting-change-inventories-its-readers,evidence-and-build-output-have-retention-and-stay-unindexed,follow-up-brief-cannot-cite-fresh-trunk-files,round-proof-feeds-the-next-brief,testing-surfaces-declare-their-mirror reason=priority-order from=1:23 to=1:22
 - 2026-09-30T19:00:52Z TF97FR2MH8T93BFVAAQEE4WWBY-m1e-b6a4eb0a done actor=human:wido targets=busy-seat-shells-are-ended,cross-cutting-change-inventories-its-readers,evidence-and-build-output-have-retention-and-stay-unindexed,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,round-proof-feeds-the-next-brief,testing-surfaces-declare-their-mirror reason=priority-order from=1:22 to=1:21
-Integrity: sha256=dfd804e7ae8b064967a227ce8e78fd9f996f4b829ae9450e0c7a5af07c027c7b
+- 2026-09-30T20:40:12Z HNA3K23WT2SC30HEBK32FHM4JJ-ui-bc2fda53 set-priority actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,cross-cutting-change-inventories-its-readers,design-rounds-read-less-and-repeat-less,error-checks-use-typed-errors,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,host-setup-from-scratch,landing-lane-runtime-redesign,one-steward-per-checkout-on-its-own-root,processes-read-structured-results,receipt-writer-follows-the-worktree-it-runs-in,reviewers-check-the-rulings,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,steward-acts-on-behaviour-patterns,stop-hook-never-forces-an-empty-turn,system-start-launches-your-agent,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror reason=priority-order subject=reviewers-check-the-rulings from=1:21 to=1:22 requested-sequence=1
+Integrity: sha256=c5c36786a62ac813c839a10c813342795366ad1bdeda053dcd29515bf82d2e5a

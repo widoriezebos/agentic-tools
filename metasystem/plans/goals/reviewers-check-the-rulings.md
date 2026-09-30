@@ -1,0 +1,21 @@
+# reviewers-check-the-rulings
+
+- State: queued
+- Priority: 1
+- Sequence: 1
+- Risk: severity=2 novelty=1 exposure=3 accumulation=1 basis="review process change for every critic dispatch; no product behaviour change; every seat"
+- Tier: 2
+- Intent: What: Every design critic and code critic checks the work against the standing human rulings, the project's register of Wido's decisions and the decisions recorded on the goal itself, and reports any conflict as a finding that always counts as material, naming the ruling it breaks. Why: today the critic roles are bound only by their brief, their skill and the project rules; the rulings register (175 rulings) and a goal's own human decisions reach a critic only if whoever wrote the brief happened to quote them, so a design or change can quietly contradict a ruling and still pass review. Wido, 2026-09-30: it should definitely be one of the tasks of the reviewer to check the rulings. Pros: decisions the human already made are enforced at every review instead of depending on someone remembering them. Cons: each review reads more material, and the register needs to stay findable by topic as it grows.
+- Origin: human
+- Next step: Next: Fable writes a short design (where the rulings are read from, how a critic reports the rulings it checked, how a conflict is reported), one Astra critique round, then Opus builds it into the design-critic and code-critic roles and skills with tests, Sol reviews the code, and it lands. Done when: a critic dispatched on a goal lists the rulings it checked in its return, and a planted conflict with a ruling is reported as material.
+- OpenedAt: 2026-09-30T20:38:45Z
+- Revision: 4
+- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
+- BudgetExceptions: 0
+
+History:
+- 2026-09-30T20:38:45Z 7PTYSF4TX48MAA3GD0YVH8B9KE-ui-bc2fda53 open actor=human:Wido targets=reviewers-check-the-rulings
+- 2026-09-30T20:39:26Z F3QPMMNF7H18FQW6E0MHE6AZ20-ui-bc2fda53 set-priority actor=human:Wido targets=reviewers-check-the-rulings reason=priority-order subject=reviewers-check-the-rulings from=unranked to=1:22 requested-sequence=append
+- 2026-09-30T20:39:31Z EZAQFM34EEX0HFWAYXVE76B887-ui-bc2fda53 edit actor=human:Wido targets=reviewers-check-the-rulings
+- 2026-09-30T20:40:12Z HNA3K23WT2SC30HEBK32FHM4JJ-ui-bc2fda53 set-priority actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,cross-cutting-change-inventories-its-readers,design-rounds-read-less-and-repeat-less,error-checks-use-typed-errors,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,host-setup-from-scratch,landing-lane-runtime-redesign,one-steward-per-checkout-on-its-own-root,processes-read-structured-results,receipt-writer-follows-the-worktree-it-runs-in,reviewers-check-the-rulings,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,steward-acts-on-behaviour-patterns,stop-hook-never-forces-an-empty-turn,system-start-launches-your-agent,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror reason=priority-order subject=reviewers-check-the-rulings from=1:22 to=1:1 requested-sequence=1
+Integrity: sha256=5911fbce58a9199bbcf72b82d75e53e567381d91d70f59c883b0c719863efb8d
