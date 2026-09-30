@@ -41,10 +41,6 @@ type claimedDeliverySnapshot struct {
 	projection goal.Projection
 }
 
-func checkClaimedGoalDelivery(repoRoot string, now time.Time) RoleVerdict {
-	return checkClaimedGoalDeliveryWith(repoRoot, now, newHealthLedger(repoRoot, now))
-}
-
 func checkClaimedGoalDeliveryWith(repoRoot string, now time.Time, ledger *healthLedger) RoleVerdict {
 	return checkClaimedGoalDeliveryWithReader(repoRoot, now, func(repoRoot string, _ time.Time) (claimedDeliverySnapshot, error) {
 		return readClaimedDeliverySnapshot(repoRoot, ledger)

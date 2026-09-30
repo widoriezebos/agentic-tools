@@ -10,6 +10,7 @@ import (
 // sub-agents): a label and a bounded timeout, at most MaxPidlessLocalWaitTimeout;
 // it ends at its deadline or by EndDetachedWait.
 func TestPidlessLocalWaitIsBoundedAndEndsAtItsDeadline(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	now := time.Date(2026, 9, 30, 10, 0, 0, 0, time.UTC)
 	store := &Store{Root: root, Prober: &registeredWaitProber{}}

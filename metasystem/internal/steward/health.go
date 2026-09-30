@@ -457,11 +457,14 @@ func evaluateHealthRoles(repoRoot, metasystemRoot string, now time.Time, prober 
 }
 
 func evaluateHealthRolesWithMeasure(repoRoot, metasystemRoot string, now time.Time, prober identity.Prober, currentHookAttempt bool, measure spendMeasureFunc) ([]RoleVerdict, SpendObservation) {
+	return evaluateHealthRolesWithLedger(repoRoot, metasystemRoot, now, prober, currentHookAttempt, measure, newHealthLedger(repoRoot, now))
+}
+
+func evaluateHealthRolesWithLedger(repoRoot, metasystemRoot string, now time.Time, prober identity.Prober, currentHookAttempt bool, measure spendMeasureFunc, ledger *healthLedger) ([]RoleVerdict, SpendObservation) {
 	state, stateErr := readHealthObject(filepath.Join(repoRoot, "artifacts", "agents", "supervision", "state.json"))
 	spendStarted := time.Now()
 	spendRole, spendObservation := checkSpendFenceWithMeasure(repoRoot, now, measure)
 	spendRole.DurationMillis = elapsedRoleMillis(spendStarted)
-	ledger := newHealthLedger(repoRoot, now)
 	timed := func(check func() RoleVerdict) RoleVerdict {
 		started := time.Now()
 		role := check()
@@ -1132,10 +1135,6 @@ func checkSessionMain(repoRoot string, prober identity.Prober) RoleVerdict {
 	return roleDead(RoleSessionMain, "no session main is announced", remedy)
 }
 
-func checkClaimedGoalBudgets(repoRoot string, now time.Time) RoleVerdict {
-	return checkClaimedGoalBudgetsWith(repoRoot, now, newHealthLedger(repoRoot, now))
-}
-
 func checkClaimedGoalBudgetsWith(repoRoot string, now time.Time, ledger *healthLedger) RoleVerdict {
 	if !ledger.read().newWorld {
 		return roleAlive(RoleClaimedGoalBudget, "the bootstrap ledger has no claimed-goal records")
@@ -1316,10 +1315,6 @@ func checkClaimedGoalBudgetsFromProjection(repoRoot string, now time.Time, proje
 func breachStopRemedy(goalID, act string) string {
 	return fmt.Sprintf("the armed steward %s on its next tick (metasystem system start arms it); to hold the goal now, run metasystem goal pause %s --reason TEXT",
 		act, goalID)
-}
-
-func checkStopCapabilityEpoch(repoRoot string, now time.Time) RoleVerdict {
-	return checkStopCapabilityEpochWith(repoRoot, now, newHealthLedger(repoRoot, now))
 }
 
 func checkStopCapabilityEpochWith(repoRoot string, now time.Time, ledger *healthLedger) RoleVerdict {

@@ -35,10 +35,6 @@ type trunkRedBatchRecord struct {
 // setting, as before the host lane.
 var LandingLaneRoot func(repoRoot string, now time.Time) (root string, configured bool, err error)
 
-func checkTrunkRed(repoRoot string, now time.Time) RoleVerdict {
-	return checkTrunkRedWith(repoRoot, now, newHealthLedger(repoRoot, now))
-}
-
 func checkTrunkRedWith(repoRoot string, now time.Time, ledger *healthLedger) RoleVerdict {
 	if !ledger.read().newWorld {
 		return roleAlive(RoleTrunkRed, "the bootstrap ledger has no trunk-red register")

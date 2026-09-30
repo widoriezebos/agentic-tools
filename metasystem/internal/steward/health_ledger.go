@@ -15,6 +15,10 @@ type healthLedger struct {
 	now  time.Time
 	once sync.Once
 
+	readWorld    func(string) bool
+	readEndpoint func(string) (goal.Endpoint, error)
+	project      func(goal.Endpoint, bool, time.Time) (goal.Projection, error)
+
 	newWorld      bool
 	endpoint      goal.Endpoint
 	endpointErr   error
@@ -22,25 +26,19 @@ type healthLedger struct {
 	projectionErr error
 }
 
-var (
-	healthLedgerNewWorld = goal.NewWorld
-	healthLedgerResolve  = goal.ResolveEndpoint
-	healthLedgerProject  = goal.Project
-)
-
 func newHealthLedger(root string, now time.Time) *healthLedger {
-	return &healthLedger{root: root, now: now}
+	return &healthLedger{root: root, now: now, readWorld: goal.NewWorld, readEndpoint: goal.ResolveEndpoint, project: goal.Project}
 }
 
 func (l *healthLedger) read() *healthLedger {
 	l.once.Do(func() {
-		if l.newWorld = healthLedgerNewWorld(l.root); !l.newWorld {
+		if l.newWorld = l.readWorld(l.root); !l.newWorld {
 			return
 		}
-		if l.endpoint, l.endpointErr = healthLedgerResolve(l.root); l.endpointErr != nil {
+		if l.endpoint, l.endpointErr = l.readEndpoint(l.root); l.endpointErr != nil {
 			return
 		}
-		l.projection, l.projectionErr = healthLedgerProject(l.endpoint, false, l.now)
+		l.projection, l.projectionErr = l.project(l.endpoint, false, l.now)
 	})
 	return l
 }
