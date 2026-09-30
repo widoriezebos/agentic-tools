@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"fmt"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
@@ -161,4 +162,58 @@ func announcedMains(directory string) (bool, error) {
 		}
 	}
 	return false, nil
+}
+
+// SweepGoalWorktrees runs a goal-branch sweep inside the critical section of
+// every registered worktree of the goal (Part B 3.2 "Goal"; Round D3 N1):
+// goal done's, a hand landing's last-landing sweep and the batch lane's P6
+// sweep alike. Each record lock is taken without waiting and reloaded, the
+// worktree judged by the workspace rules and the use census, every tip
+// archived and read back, then the sweep runs. A goal with no registered
+// worktree sweeps as before. A worktree an engine verb is inside, or one
+// something still keeps, is left for the disk pass, which retries. The
+// registry is the one the goal's worktrees are recorded in: the state root
+// of root's installation.
+func SweepGoalWorktrees(root, goalID string, sweep func(context.Context) error) error {
+	layout, err := stateroot.ResolveLayout(root)
+	if err != nil {
+		return err
+	}
+	registry := diskstore.CheckoutRegistry(StoreControl(layout.InstallationRoot))
+	records, err := diskstore.FindLinkedWorktrees(registry, diskstore.GoalWorktreeClass, diskstore.Owner{Kind: diskstore.OwnerGoal, Ref: goalID})
+	if err != nil {
+		return err
+	}
+	if len(records) == 0 {
+		return sweep(context.Background())
+	}
+	ids := make([]string, 0, len(records))
+	for _, record := range records {
+		ids = append(ids, record.ID)
+	}
+	outcome, err := diskstore.ReleaseLinkedWorktrees(context.Background(), registry, ids, diskstore.LinkedRelease{
+		GitRoot: layout.GitRoot, Git: ExecWorkspaceGit, Now: time.Now().UTC(), By: "the goal-branch sweep",
+		TakeCensus: func() *diskstore.UseCensus {
+			home, _ := HomeStateRoot()
+			census := diskstore.TakeUseCensus(context.Background(), *KernelCensusReader(home, append(ArmedCheckouts(), root)))
+			return &census
+		},
+		Remove: sweep})
+	switch {
+	case err != nil:
+		return err
+	case outcome.Done:
+		return nil
+	}
+	return fmt.Errorf("goal/%s's worktree %s is kept for now: %s; the steward's disk pass retries the sweep (%s)", goalID, outcome.Path, outcome.Reason, outcome.Command)
+}
+
+// StoreControl is the control root whose checkout registry records the
+// stores of an installation's goals and seats: its state root, else the
+// installation itself (Round D3 N9: every route reads the same registry).
+func StoreControl(installation string) string {
+	if root, err := stateroot.RootForInstallation(installation); err == nil && filepath.IsAbs(root) {
+		return root
+	}
+	return installation
 }

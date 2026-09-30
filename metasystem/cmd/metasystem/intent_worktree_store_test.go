@@ -8,6 +8,7 @@ import (
 	"context"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/adapter/supervisor"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"os"
 	"path/filepath"
 )
@@ -75,7 +76,7 @@ func TestGoalDoneSweepWaitsForAVerbInsideTheWorktree(t *testing.T) {
 	}
 	defer inside.leaveStores()
 	swept := false
-	err = sweepGoalWorktrees(layout.InstallationRoot, c.id, func(context.Context) error { swept = true; return nil })
+	err = steward.SweepGoalWorktrees(layout.InstallationRoot, c.id, func(context.Context) error { swept = true; return nil })
 	if err == nil || swept || !strings.Contains(err.Error(), "retries the sweep") {
 		t.Fatalf("a sweep past a verb inside the worktree = %v, swept %v", err, swept)
 	}

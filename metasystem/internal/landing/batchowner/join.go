@@ -478,7 +478,7 @@ func SelectMemberReleaseSet(seatRoot, goalID, tip string) (*diskstore.ReleaseSet
 	if err != nil {
 		return nil, err
 	}
-	set, err := diskstore.SelectReleaseSet(context.Background(), diskstore.CheckoutRegistry(seatRoot), layout.GitRoot, goalID, tip, steward.ExecWorkspaceGit)
+	set, err := diskstore.SelectReleaseSet(context.Background(), diskstore.CheckoutRegistry(steward.StoreControl(layout.InstallationRoot)), layout.GitRoot, goalID, tip, steward.ExecWorkspaceGit)
 	if err != nil {
 		return nil, err
 	}
@@ -495,7 +495,7 @@ func ReleaseMemberSet(batchID string, at time.Time) func(batch.Unit, *diskstore.
 		if err != nil {
 			return
 		}
-		request := diskstore.WorkspaceReleaseRequest{Registry: diskstore.CheckoutRegistry(unit.SeatRoot), GitRoot: layout.GitRoot,
+		request := diskstore.WorkspaceReleaseRequest{Registry: diskstore.CheckoutRegistry(steward.StoreControl(layout.InstallationRoot)), GitRoot: layout.GitRoot,
 			Git: steward.ExecWorkspaceGit, By: "landing batch " + batchID, Now: at.UTC(),
 			TakeCensus: func() *diskstore.UseCensus {
 				home, _ := steward.HomeStateRoot()
