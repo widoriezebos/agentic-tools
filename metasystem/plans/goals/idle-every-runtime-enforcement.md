@@ -2,12 +2,12 @@
 
 - State: parked
 - Priority: 2
-- Sequence: 13
+- Sequence: 12
 - Intent: What: When a seat (an agent session) sits idle while approved work waits, the steward, the background supervisor on each machine, wakes it up or restarts it, on every agent runtime such as Codex and Devin, not only Claude. Why: Claude sessions are already kept from idling by a check at the end of each turn, and the steward already takes over after three refusals; other runtimes have no such check, so they can sit idle with work waiting and nobody acts. Pros: work keeps moving on every runtime without a person nudging it, through one mechanism instead of one per runtime. Cons: letting the steward restart sessions is powerful and can go wrong, for example restart loops or interrupting a person, so it must first run as a watch-only trial, and it depends on the watch-verb goal granting that power.
 - Origin: main
 - Next step: Next: once the watch-verb goal's acting side is on main, write a short design for how the steward re-engages or restarts an idle seat, reusing the existing three-refusals-then-continue path. Done when: the design is accepted and a test shows an idle Codex seat with approved work being re-engaged without a person.
 - OpenedAt: 2026-09-02T15:54:37Z
-- Revision: 22
+- Revision: 23
 - BlockedBy: fleet-doctor-repairs-what-stops-other-seats
 - Labels: headless-fleet, headless-recovery
 - BudgetExceptions: 0
@@ -36,4 +36,5 @@ History:
 - 2026-09-13T08:23:32Z FS9N13ZRK1B0TC0J6HTNA3SRWD-m1-c6925449 park actor=human:Wido targets=idle-every-runtime-enforcement reason=Not now (2026-09-13 backlog consolidation, Wido's word): Blocked on watch-verb (queued 1:19, human origin), whose action authority it consumes; part (3) of never-idle-ironclad's acceptance map; idle-with-backlog-alarm 35c9e4df landed the three-refusal claim-and-continue path; park until watch-verb lands, then design under marking-mode and Law 2.
 - 2026-09-30T18:50:49Z F1BHNJH150QPB1G6YFBZJAWSBQ-ui-bc2fda53 edit actor=human:Wido targets=idle-every-runtime-enforcement
 - 2026-09-30T18:54:58Z 76304SH5SME1NM10DRAXEEMT2X-ui-bc2fda53 abandon actor=human:Wido targets=watch-verb reason=blockedBy watch-verb re-pointed to fleet-doctor-repairs-what-stops-other-seats
-Integrity: sha256=95ee4549fb1c10089b9e491e16b2ef9638384a6531ceca238210e8fa3750ac4f
+- 2026-09-30T18:59:27Z 0HBMG01WYEAC33TK3TYTTXZZVE-m1e-b6a4eb0a done actor=human:wido targets=actionable-metrics,arming-binds-the-installed-engine-identity,chain-landing-carries-the-reviewed-diff,commit-goal-binding,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,failed-job-attention,first-headless-run,fixture-waits-name-their-producer,fleet-pull,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,human-authority-surface-runs-its-cmd-tests,human-break-glass-commit-keeps-the-ledger-valid,human-wait-does-not-consume-goal-budget,idle-every-runtime-enforcement,job-record-birth-token,land-verb-writes-the-receipt,landing-design-provenance,law-keys-read-committed-bytes,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,manifest-floor-at-dispatch,member-size-gate,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,new-elapsed-budgets-use-explicit-hours,one-goal-act-one-ledger-commit,pipelines-never-lose-a-truncated-producer,recovery-rehearsal,recovery-to-good-state,repo-root-paths-ride-agent-commits-unjudged,role-context-composition,runtime-limit-is-not-a-protocol-error,seat-landings-run-the-selected-sections,skipped-test-fails-its-group-on-the-other-os,small-change-lane,steward-revivals-leave-the-receipt-stream,stop-batch-strands-a-resumable-goal,token-spend-fence,trunk-versus-candidate-is-a-verification-step,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=2:13 to=2:12
+Integrity: sha256=05dfe83a4a21c5a0f2a39e0d0cb3b43b84f1d896733fe32a703b19ed8609c3f8

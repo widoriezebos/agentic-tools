@@ -2,14 +2,14 @@
 
 - State: parked
 - Priority: 2
-- Sequence: 9
+- Sequence: 8
 - Risk: severity=3 novelty=2 exposure=3 accumulation=2 basis="A wrong acceptance gate can admit unreviewed changes across every node; it extends existing evidence binding but crosses dispatch and landing."
 - Tier: 3
 - Intent: What: A landing that needed a design is refused unless it names the accepted design and its critique. Why: This is the second half of the design gate: the first half checks when work starts, this half checks when it lands. Pros: No design-bearing change reaches main without its design. Cons: It depends on design-gate-at-dispatch, which is parked.
 - Origin: human
 - Next step: Next: When design-gate-at-dispatch lands, add the check to the existing landing evaluator, using the design record that gate produces. Done when: tests refuse a landing with a missing or changed design and pass one with a matching accepted design.
 - OpenedAt: 2026-09-07T21:10:16Z
-- Revision: 16
+- Revision: 17
 - BlockedBy: design-gate-at-dispatch
 - Labels: headless-fleet, headless-process
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
@@ -33,4 +33,5 @@ History:
 - 2026-09-30T18:50:48Z QDAM01HZXCYW7FEJJXYSWMGP2Z-m1e-b6a4eb0a edit actor=human:wido targets=landing-design-provenance
 - 2026-09-30T18:52:22Z GJ7MVPKDS1PHRTKZJ1SWY2Q2KG-m1e-b6a4eb0a unblock actor=human:wido targets=landing-design-provenance,path-class-manifest reason=blockedBy drops path-class-manifest
 - 2026-09-30T18:52:47Z VG5SQSH3B451DW3GX3Z7X34K6S-m1e-b6a4eb0a park actor=human:wido targets=landing-design-provenance reason=Parked with design-gate-at-dispatch: it resumes when that goal lands after switch-on. Its done blocker path-class-manifest is cleared; the block on design-gate-at-dispatch stays.
-Integrity: sha256=89f60f7d908fb0a9efe3e39c959bafc72011fb3b2c8c86016c5e769410cddb36
+- 2026-09-30T18:59:27Z 0HBMG01WYEAC33TK3TYTTXZZVE-m1e-b6a4eb0a done actor=human:wido targets=actionable-metrics,arming-binds-the-installed-engine-identity,chain-landing-carries-the-reviewed-diff,commit-goal-binding,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,failed-job-attention,first-headless-run,fixture-waits-name-their-producer,fleet-pull,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,human-authority-surface-runs-its-cmd-tests,human-break-glass-commit-keeps-the-ledger-valid,human-wait-does-not-consume-goal-budget,idle-every-runtime-enforcement,job-record-birth-token,land-verb-writes-the-receipt,landing-design-provenance,law-keys-read-committed-bytes,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,manifest-floor-at-dispatch,member-size-gate,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,new-elapsed-budgets-use-explicit-hours,one-goal-act-one-ledger-commit,pipelines-never-lose-a-truncated-producer,recovery-rehearsal,recovery-to-good-state,repo-root-paths-ride-agent-commits-unjudged,role-context-composition,runtime-limit-is-not-a-protocol-error,seat-landings-run-the-selected-sections,skipped-test-fails-its-group-on-the-other-os,small-change-lane,steward-revivals-leave-the-receipt-stream,stop-batch-strands-a-resumable-goal,token-spend-fence,trunk-versus-candidate-is-a-verification-step,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=2:9 to=2:8
+Integrity: sha256=35f8397b5a909428edc459354977bfb37cb60f26b082608fdc3a4a8126a3d592

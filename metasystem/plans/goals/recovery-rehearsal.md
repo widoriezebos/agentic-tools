@@ -2,12 +2,12 @@
 
 - State: parked
 - Priority: 2
-- Sequence: 15
+- Sequence: 14
 - Intent: What: A rehearsal that proves the system comes back from a crash: in an isolated test setup, kill the workers, the runner and the steward mid-work, restart, and show that the work is rebuilt from the records alone, with no invented state and nothing done twice; and that a full stop leaves nothing running until someone restarts it. Why: We believe the records are enough to recover, but nobody has ever proved it, so a real crash could lose or duplicate work. Pros: Confidence that a crash is survivable, and any gap found becomes a concrete fix. Cons: It needs a separate test setup and real run time, and it is only meaningful once the repairs it rehearses exist.
 - Origin: human
 - Next step: Next: Build the crash-and-restore test in an isolated setup, starting with killing one worker mid-task and restoring from records. Done when: The test kills the worker, restarts, and shows the task rebuilt from records with no duplicated result, and no process is left running after a full stop.
 - OpenedAt: 2026-08-30T15:16:00Z
-- Revision: 26
+- Revision: 27
 - Labels: headless-fleet, headless-proof
 - BudgetExceptions: 0
 - Parked: by=human:Wido at=2026-09-30T18:52:31Z because=Parked until recovery-to-good-state has an accepted design. This rehearsal tests the repairs that design will define, so building it earlier would test paths that do not exist yet.
@@ -39,4 +39,5 @@ History:
 - 2026-09-13T08:23:10Z R328E6Y43B7EEREMEA8T0MVQWG-m1-c6925449 done actor=human:Wido targets=first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,headless-continuous-delivery-proof,headless-fleet-coordination-proof,idle-every-runtime-enforcement,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,recovery-rehearsal,recovery-to-good-state,role-lane-packets,seat-mutual-awareness reason=priority-order from=2:16 to=2:15
 - 2026-09-30T18:52:25Z XF56874GWJXP3FAGH8K7QEYGCM-ui-bc2fda53 edit actor=human:Wido targets=recovery-rehearsal
 - 2026-09-30T18:52:31Z 3AC3P22X8PV2KTY1BFBZASWYE0-ui-bc2fda53 park actor=human:Wido targets=recovery-rehearsal reason=Parked until recovery-to-good-state has an accepted design. This rehearsal tests the repairs that design will define, so building it earlier would test paths that do not exist yet.
-Integrity: sha256=f6797ec3e25df6af22c880ea4f2db0695a42782407454f7ac8415c7faf11c429
+- 2026-09-30T18:59:27Z 0HBMG01WYEAC33TK3TYTTXZZVE-m1e-b6a4eb0a done actor=human:wido targets=actionable-metrics,arming-binds-the-installed-engine-identity,chain-landing-carries-the-reviewed-diff,commit-goal-binding,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,failed-job-attention,first-headless-run,fixture-waits-name-their-producer,fleet-pull,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,human-authority-surface-runs-its-cmd-tests,human-break-glass-commit-keeps-the-ledger-valid,human-wait-does-not-consume-goal-budget,idle-every-runtime-enforcement,job-record-birth-token,land-verb-writes-the-receipt,landing-design-provenance,law-keys-read-committed-bytes,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,manifest-floor-at-dispatch,member-size-gate,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,new-elapsed-budgets-use-explicit-hours,one-goal-act-one-ledger-commit,pipelines-never-lose-a-truncated-producer,recovery-rehearsal,recovery-to-good-state,repo-root-paths-ride-agent-commits-unjudged,role-context-composition,runtime-limit-is-not-a-protocol-error,seat-landings-run-the-selected-sections,skipped-test-fails-its-group-on-the-other-os,small-change-lane,steward-revivals-leave-the-receipt-stream,stop-batch-strands-a-resumable-goal,token-spend-fence,trunk-versus-candidate-is-a-verification-step,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=2:15 to=2:14
+Integrity: sha256=a0abd4bff261c0ed53582ddaa0ffb7311bad6c77571e8e3dc36186b891b76798

@@ -2,12 +2,12 @@
 
 - State: parked
 - Priority: 2
-- Sequence: 11
+- Sequence: 10
 - Intent: What: Each new refusal gate comes with a short record: who owns it, when it is reviewed, an example it must refuse, how to appeal, and what happens if the check itself breaks. It also runs in warning-only mode first. Why: A gate without an owner or a review date turns into ceremony nobody owns. Pros: Gates stay honest and can be removed when they stop earning their keep. Cons: Little to govern yet: commit-goal binding has its refusal, the design gate is not built.
 - Origin: main
 - Next step: Next: When design-gate-at-dispatch lands, write the governance record for it and for commit-goal-binding, with a warning-only trial before either may refuse. Done when: each gate has its record and a test shows the ruling sweep flags an overdue review.
 - OpenedAt: 2026-09-01T13:20:51Z
-- Revision: 21
+- Revision: 22
 - BudgetExceptions: 0
 - Parked: by=human:Wido at=2026-09-13T08:23:25Z because=Not now (2026-09-13 backlog consolidation, Wido's word): Two of the three gates (design-gate-at-dispatch 2:7, commit-goal-binding 2:11) are unbuilt, so the records would govern nothing yet; revisit when both land and write the change-class gate's record with them; R-60-m1 (alert before enforce) is the shape; the ruling sweep must flag an overdue review.
 
@@ -33,4 +33,5 @@ History:
 - 2026-09-13T08:21:48Z NRD0NSKR47C7ESV46MD65VP4V0-m1-c6925449 done actor=human:Wido targets=commit-goal-binding,first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,idle-every-runtime-enforcement,landing-design-provenance,merge-stage-critic-close,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,recovery-rehearsal,recovery-to-good-state,role-context-composition,role-lane-packets,seat-mutual-awareness reason=priority-order from=2:12 to=2:11
 - 2026-09-13T08:23:25Z V7VVWSCJQNR5KWGQNTAYY96VM2-m1-c6925449 park actor=human:Wido targets=gate-governance-records reason=Not now (2026-09-13 backlog consolidation, Wido's word): Two of the three gates (design-gate-at-dispatch 2:7, commit-goal-binding 2:11) are unbuilt, so the records would govern nothing yet; revisit when both land and write the change-class gate's record with them; R-60-m1 (alert before enforce) is the shape; the ruling sweep must flag an overdue review.
 - 2026-09-30T18:49:04Z 3WD0Q0ZTNJMXFMWBEKZTRXBQPH-m1e-b6a4eb0a edit actor=human:wido targets=gate-governance-records
-Integrity: sha256=bb8943ec78356b93a0996638b3bf0de8dc22502f1a9edd22b7e9babb143ca2e0
+- 2026-09-30T18:59:27Z 0HBMG01WYEAC33TK3TYTTXZZVE-m1e-b6a4eb0a done actor=human:wido targets=actionable-metrics,arming-binds-the-installed-engine-identity,chain-landing-carries-the-reviewed-diff,commit-goal-binding,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,failed-job-attention,first-headless-run,fixture-waits-name-their-producer,fleet-pull,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,human-authority-surface-runs-its-cmd-tests,human-break-glass-commit-keeps-the-ledger-valid,human-wait-does-not-consume-goal-budget,idle-every-runtime-enforcement,job-record-birth-token,land-verb-writes-the-receipt,landing-design-provenance,law-keys-read-committed-bytes,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,manifest-floor-at-dispatch,member-size-gate,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,new-elapsed-budgets-use-explicit-hours,one-goal-act-one-ledger-commit,pipelines-never-lose-a-truncated-producer,recovery-rehearsal,recovery-to-good-state,repo-root-paths-ride-agent-commits-unjudged,role-context-composition,runtime-limit-is-not-a-protocol-error,seat-landings-run-the-selected-sections,skipped-test-fails-its-group-on-the-other-os,small-change-lane,steward-revivals-leave-the-receipt-stream,stop-batch-strands-a-resumable-goal,token-spend-fence,trunk-versus-candidate-is-a-verification-step,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=2:11 to=2:10
+Integrity: sha256=405c5f984db78f0c6d67417ca5768335be713649a0318439f4f54cbdc249f088
