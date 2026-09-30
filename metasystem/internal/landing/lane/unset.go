@@ -213,7 +213,8 @@ func Unset(home, by string, now time.Time, force bool, seams UnsetSeams) (UnsetR
 // returns the journal of the unset already under way (fresh false). No
 // registered lane and no unset returns a nil journal. A journal that cannot
 // be read is written again from the record, still fenced: its steps are
-// each safe to run again.
+// each safe to run again; with no record left it is the end of an unset
+// that ended, and it is removed.
 func fence(home, by string, now time.Time) (journal *UnsetJournal, fresh bool, err error) {
 	err = withLock(home, func() error {
 		existing, fenced, readErr := ReadUnset(home)
@@ -231,7 +232,9 @@ func fence(home, by string, now time.Time) (journal *UnsetJournal, fresh bool, e
 				Fix:     "a person registers the landing checkout again, which replaces the record, then unsets it: metasystem landing set PATH",
 				Argv:    []string{"metasystem", "landing", "set", "PATH"}}
 		case !ok && fenced:
-			return fmt.Errorf("the landing lane's unset journal cannot be read and no lane record is left to rebuild it from: %w", readErr)
+			// The record goes before the journal when an unset ends: a
+			// journal left without a record is an unset that ended.
+			return removeIfPresent(unsetPath(home))
 		case !ok:
 			return nil
 		}

@@ -185,3 +185,32 @@ func TestUnsetEndsALaneAnOlderEngineRegistered(t *testing.T) {
 		t.Fatalf("unset of an old record = %+v %v (returned %d, gate %v); want the person's returns admitted and the lane unregistered", report, err, returned, gateErr)
 	}
 }
+
+// An unset whose journal cannot be read is not stuck: with the record still
+// there the journal is written again and the unset goes on, fenced all the
+// while; with the record already gone (the unset ended between its two
+// removals) the journal is removed and the host has no lane.
+func TestUnsetRecoversAnUnreadableJournal(t *testing.T) {
+	t.Parallel()
+	home, root, _ := laneDirs(t)
+	register(t, home, root)
+	if err := os.WriteFile(unsetPath(home), []byte("{torn"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := Gate(home, OpJoin, AuthorityAgent, nil); !refusedWith(err, CodeUnsetting) {
+		t.Fatalf("join with an unreadable journal = %v; want the fence to hold", err)
+	}
+	if report, err := Unset(home, "Wido", laneNow, false, emptyUnsetSeams()); err != nil || !report.Unregistered {
+		t.Fatalf("unset over an unreadable journal = %+v %v", report, err)
+	}
+	if err := os.WriteFile(unsetPath(home), []byte("{torn"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if report, err := Unset(home, "Wido", laneNow, false, emptyUnsetSeams()); err != nil || !report.NoLane {
+		t.Fatalf("unset of a journal left without a record = %+v %v; want no lane", report, err)
+	}
+	if _, fenced, _ := ReadUnset(home); fenced {
+		t.Fatalf("the ended unset's journal still fences the host")
+	}
+	register(t, home, root)
+}
