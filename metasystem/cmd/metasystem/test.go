@@ -227,6 +227,7 @@ func parseTestingSelection(name string, args []string, execution bool, stdout, s
 	}
 	if execution {
 		pathFlagVar(flags, &request.ControlRoot, "control-root", "", "durable proof control root for an internal batch proof")
+		pathFlagVar(flags, &request.LaneCheckout, "lane-checkout", "", "the landing lane's checkout a run charged to the lane is admitted against")
 		flags.BoolVar(&request.BatchTipProof, "batch-tip", false, "prove a batch tip projected into its own detached worktree")
 		flags.BoolVar(&request.BatchAdmission, "batch-admission", false, "run selected batch admission checks on an exact tree")
 		flags.StringVar(&request.CapMin, "cap-min", "", "reserved proof minutes")
@@ -251,6 +252,10 @@ func parseTestingSelection(name string, args []string, execution bool, stdout, s
 	}
 	if request.LaneID != "" && (request.GoalID != "" || request.AuthorityGoalID != "" || request.ExpectedGoalRevision != 0 || !landinglane.IsAccount(request.LaneID)) {
 		fmt.Fprintln(stderr, "--lane takes the lane's account (lane:...) and no --goal, --authority or --expected-goal-revision")
+		return request, false, 2
+	}
+	if request.LaneCheckout != "" && (request.LaneID == "" || request.ControlRoot == "") {
+		fmt.Fprintln(stderr, "--lane-checkout names the lane of a run charged to it: give it with --lane and --control-root")
 		return request, false, 2
 	}
 	if request.PolicyChild && (strings.TrimPrefix(name, "internal ") != "test plan" || execution) {
@@ -310,7 +315,9 @@ func parseTestingSelection(name string, args []string, execution bool, stdout, s
 	// root that owns them. batchPrefixProofControlRoot is what makes that safe:
 	// it admits a control root only when the execution root is a linked
 	// worktree sharing its git common directory and prefix.
-	if request.ControlRoot != "" && !request.BatchPrefixReceipt && !request.BatchTipProof && !request.BatchAdmission {
+	// A landing prove names its lane checkout and control root for every
+	// subject it runs, its diagnostic ones included (design r10 K6).
+	if request.ControlRoot != "" && !request.BatchPrefixReceipt && !request.BatchTipProof && !request.BatchAdmission && request.LaneCheckout == "" {
 		fmt.Fprintln(stderr, "--control-root is only for the test runs of a batch")
 		return request, false, 2
 	}
@@ -700,7 +707,7 @@ func runTestRunWith(invocation testRunInvocation, args []string) (exit int) {
 	freshBinding := testrun.FreshnessBinding(preRequest, identities, request.FreshEpisode)
 	preRequest.FreshnessBinding = freshBinding
 	admission := proofLaunchAdmission{ControlRoot: controlRoot,
-		ExecutionRoot: prepared.ProjectRoot, ConfPath: prepared.ConfPath, GoalID: request.GoalID, AuthorityGoalID: request.AuthorityGoalID, LaneID: request.LaneID,
+		ExecutionRoot: prepared.ProjectRoot, ConfPath: prepared.ConfPath, GoalID: request.GoalID, AuthorityGoalID: request.AuthorityGoalID, LaneID: request.LaneID, LaneCheckout: request.LaneCheckout,
 		CandidateRevision: prepared.AccountingRevision, RetryDecision: request.RetryDecision,
 		CapMin: request.CapMin, ExpectedGoalRevision: request.ExpectedGoalRevision,
 		ExpectedAccountingRevision: request.ExpectedAccountingRevision,
