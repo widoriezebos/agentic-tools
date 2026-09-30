@@ -162,7 +162,7 @@ func (inv *intentInvocation) prepareGoalWorktree(id string) (string, *intentResu
 	before := diskstore.PresentPaths(path, manifest)
 	if err := inv.connection().isolate(inv.layout.GitRoot, path); err != nil {
 		return "", &intentResult{Outcome: intentRefused, code: 1, Targets: []intentTarget{{Kind: "goal", ID: id}},
-			Summary: fmt.Sprintf("goal worktree %s is kept, but the adapters' local configuration is not complete in it: %v; nothing was built", path, err),
+			Summary: fmt.Sprintf("the goal worktree %s is kept, but its local configuration isn't complete: %v; nothing was built", path, err),
 			next:    inv.sameCommand(), nextReason: "the same command completes the configuration and continues"}
 	}
 	if problem := inv.recordGoalWorktreeContent(id, path, diskstore.Placed(path, manifest, before)); problem != nil {
@@ -172,9 +172,17 @@ func (inv *intentInvocation) prepareGoalWorktree(id string) (string, *intentResu
 }
 
 func (inv *intentInvocation) goalWorktreeEntry(id string) (string, *intentResult) {
-	refused := func(format string, args ...any) (string, *intentResult) {
-		return "", &intentResult{Outcome: intentRefused, code: 1, Targets: []intentTarget{{Kind: "goal", ID: id}},
-			Summary: fmt.Sprintf(format, args...) + "; nothing was built"}
+	// refused says what stopped the goal worktree in plain words and runs
+	// next (or, with no command, says what to do in then); the account of
+	// the owner that refused is the detail.
+	retry := inv.sameCommand()
+	refused := func(plain string, next []string, then, format string, args ...any) (string, *intentResult) {
+		result := &intentResult{Outcome: intentRefused, code: 1, Targets: []intentTarget{{Kind: "goal", ID: id}},
+			Summary: plain + "; nothing was built", next: next, nextReason: then, Details: []string{fmt.Sprintf(format, args...)}}
+		if next == nil {
+			result.Decision, result.nextReason = then, ""
+		}
+		return "", result
 	}
 	ref, reason := "refs/heads/goal/"+id, goalWorktreeLockReason(id)
 	git := inv.work().git
@@ -199,7 +207,8 @@ func (inv *intentInvocation) goalWorktreeEntry(id string) (string, *intentResult
 	}
 	existing, registered, err := find()
 	if err != nil {
-		return "", &intentResult{Outcome: intentFailed, code: 1, Summary: "cannot list the repository's worktrees: " + err.Error()}
+		return "", &intentResult{Outcome: intentFailed, code: 1, Summary: "the repository's worktrees can't be listed, so nothing was built",
+			next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}
 	}
 	if existing != "" {
 		return existing, nil
@@ -208,11 +217,12 @@ func (inv *intentInvocation) goalWorktreeEntry(id string) (string, *intentResult
 	install := inv.layout.InstallationRoot
 	endpoint, err := conn.endpoint(install)
 	if err != nil {
-		return refused("the goal branch endpoint is unavailable: %v", err)
+		return refused("the goal branch can't be reached", retry, "try again; --verbose shows the cause", "the goal branch endpoint is unavailable: %v", err)
 	}
 	check := conn.claimCheck(install, id, endpoint)
 	if err := branch.CheckHolder(check); err != nil {
-		return refused("goal/%s is prepared only under this session's claim: %v", id, err)
+		return refused(fmt.Sprintf("goal %s's worktree is made only for the session that claims the goal", id), inv.publicArgv("goal", "claim", id),
+			"claims it for this session; then repeat this command", "goal/%s is prepared only under this session's claim: %v", id, err)
 	}
 	target := filepath.Join(filepath.Dir(inv.layout.GitRoot), filepath.Base(inv.layout.GitRoot)+"-"+id)
 	if parent, err := filepath.EvalSymlinks(filepath.Dir(target)); err == nil {
@@ -222,25 +232,28 @@ func (inv *intentInvocation) goalWorktreeEntry(id string) (string, *intentResult
 	local := localErr == nil
 	remoteTip, remote, err := conn.transport.RemoteTip(install, endpoint.Remote, ref)
 	if err != nil {
-		return refused("cannot read %s's goal/%s: %v", endpoint.Remote, id, err)
+		return refused(fmt.Sprintf("goal branch goal/%s on %s can't be read", id, endpoint.Remote), retry, "try again; --verbose shows the cause", "cannot read %s's goal/%s: %v", endpoint.Remote, id, err)
 	}
 	entry, taken := registered[filepath.Clean(target)]
 	owned := taken && entry.ref == "" && entry.lock == reason
 	if taken && !owned {
-		return refused("path %s is a worktree of %s that this goal's preparation did not create, not goal/%s", target, chooseUnitValue(entry.ref, "a detached HEAD"), id)
+		return refused(fmt.Sprintf("%s is already a worktree of another branch", target), []string{"git", "-C", inv.layout.GitRoot, "worktree", "list"},
+			"shows it; move or remove it, then repeat this command", "path %s is a worktree of %s that this goal's preparation did not create, not goal/%s", target, chooseUnitValue(entry.ref, "a detached HEAD"), id)
 	}
 	if !taken {
 		if entries, statErr := os.ReadDir(target); statErr == nil && len(entries) > 0 {
-			return refused("path %s is occupied by files that are not the goal/%s worktree", target, id)
+			return refused(fmt.Sprintf("%s already holds other files", target), inv.publicArgv("disk", "show"),
+				"names what is there; move it aside, then repeat this command", "path %s is occupied by files that are not the goal/%s worktree", target, id)
 		} else if statErr != nil && !os.IsNotExist(statErr) {
 			if _, fileErr := os.Stat(target); fileErr == nil {
-				return refused("path %s is occupied and is not the goal/%s worktree", target, id)
+				return refused(fmt.Sprintf("%s is already taken", target), inv.publicArgv("disk", "show"),
+					"names what is there; move it aside, then repeat this command", "path %s is occupied and is not the goal/%s worktree", target, id)
 			}
 		}
 	}
 	endpointTip, err := conn.endpointTip(install, endpoint)
 	if err != nil {
-		return refused("cannot resolve the landing endpoint's tip: %v", err)
+		return refused("the goal branch's newest commit can't be read", retry, "try again; --verbose shows the cause", "cannot resolve the landing endpoint's tip: %v", err)
 	}
 	adopt, switchOwned := false, false
 	var add []string
@@ -252,7 +265,8 @@ func (inv *intentInvocation) goalWorktreeEntry(id string) (string, *intentResult
 		// worktree it created; only a clean worktree is switched.
 		switchOwned = true
 	case owned:
-		return refused("worktree %s was created for goal/%s's adoption, but %s no longer has that branch", target, id, endpoint.Remote)
+		return refused(fmt.Sprintf("goal branch goal/%s is gone from %s", id, endpoint.Remote), inv.publicArgv("goal", "show", id),
+			"shows the goal's state", "worktree %s was created for goal/%s's adoption, but %s no longer has that branch", target, id, endpoint.Remote)
 	case !local && !remote:
 		add = []string{"worktree", "add", "-b", "goal/" + id, target, endpointTip}
 	case !local:
@@ -269,13 +283,15 @@ func (inv *intentInvocation) goalWorktreeEntry(id string) (string, *intentResult
 			if tip != remoteTip {
 				if _, known := git(inv.layout.GitRoot, "cat-file", "-e", remoteTip+"^{commit}"); known != nil {
 					if _, fetchErr := git(inv.layout.GitRoot, "fetch", "--no-tags", "--refmap=", endpoint.Remote, ref); fetchErr != nil {
-						return refused("cannot fetch %s's goal/%s to compare histories: %v", endpoint.Remote, id, fetchErr)
+						return refused(fmt.Sprintf("goal/%s can't be fetched from %s", id, endpoint.Remote), retry, "try again; --verbose shows the cause", "cannot fetch %s's goal/%s to compare histories: %v", endpoint.Remote, id, fetchErr)
 					}
 				}
 				_, behind := git(inv.layout.GitRoot, "merge-base", "--is-ancestor", tip, remoteTip)
 				_, ahead := git(inv.layout.GitRoot, "merge-base", "--is-ancestor", remoteTip, tip)
 				if behind != nil && ahead != nil {
-					return refused("local goal/%s (%.12s) and %s's (%.12s) have diverged", id, tip, endpoint.Remote, remoteTip)
+					return refused(fmt.Sprintf("the local goal/%s and %s's have diverged", id, endpoint.Remote), nil,
+						"merge or reset the local goal/"+id+" onto "+endpoint.Remote+"'s by hand, then run "+shellCommand(retry),
+						"local goal/%s (%.12s) and %s's (%.12s) have diverged", id, tip, endpoint.Remote, remoteTip)
 				}
 			}
 		}
@@ -290,7 +306,7 @@ func (inv *intentInvocation) goalWorktreeEntry(id string) (string, *intentResult
 			reserved, err = diskstore.ReserveLinkedWorktree(inv.goalWorktreeRegistry(), target, diskstore.GoalWorktreeClass,
 				diskstore.Owner{Kind: diskstore.OwnerGoal, Ref: id}, inv.goalWorktreeControl(), "", time.Now().UTC(), rand.Reader)
 			if err != nil {
-				return refused("goal/%s's worktree %s cannot be registered: %v", id, target, err)
+				return refused("the goal worktree can't be registered", retry, "try again; --verbose shows the cause", "goal/%s's worktree %s cannot be registered: %v", id, target, err)
 			}
 		}
 		if _, addErr := git(inv.layout.GitRoot, add...); addErr != nil {
@@ -304,7 +320,7 @@ func (inv *intentInvocation) goalWorktreeEntry(id string) (string, *intentResult
 				_ = diskstore.AbandonLinkedWorktree(inv.goalWorktreeRegistry(), reserved.ID, addErr.Error())
 			}
 			_, branchErr := git(inv.layout.GitRoot, "rev-parse", "--verify", "-q", ref+"^{commit}")
-			return refused("git worktree add for goal/%s at %s failed: %v (local goal branch present: %v)", id, target, addErr, branchErr == nil)
+			return refused(fmt.Sprintf("git couldn't make the goal worktree at %s", target), retry, "try again; --verbose shows the cause", "git worktree add for goal/%s at %s failed: %v (local goal branch present: %v)", id, target, addErr, branchErr == nil)
 		}
 	}
 	if adopt {
@@ -314,22 +330,24 @@ func (inv *intentInvocation) goalWorktreeEntry(id string) (string, *intentResult
 				GoalID: id, OpID: opid, CheckClaim: check, Transport: conn.transport})
 		}
 		if err != nil {
-			return refused("worktree %s is created detached, but the branch push owner did not adopt %s's goal/%s: %v; the same build resumes the adoption", target, endpoint.Remote, id, err)
+			return refused(fmt.Sprintf("the worktree is made, but %s's goal/%s isn't taken over yet", endpoint.Remote, id), retry,
+				"the same build continues the takeover", "worktree %s is created detached, but the branch push owner did not adopt %s's goal/%s: %v", target, endpoint.Remote, id, err)
 		}
 	}
 	if switchOwned {
 		status, err := git(target, "status", "--porcelain")
 		if err != nil || len(status) != 0 {
-			return refused("worktree %s created for goal/%s has changes; it is left as it is (%v)", target, id, err)
+			return refused(fmt.Sprintf("the goal worktree at %s has changes, so it was left as it is", target), []string{"git", "-C", target, "status"},
+				"shows them; commit or remove them, then repeat this command", "worktree %s created for goal/%s has changes; it is left as it is (%v)", target, id, err)
 		}
 		if _, err := git(target, "switch", "goal/"+id); err != nil {
-			return refused("worktree %s could not switch to goal/%s: %v", target, id, err)
+			return refused(fmt.Sprintf("the goal worktree couldn't switch to goal/%s", id), retry, "try again; --verbose shows the cause", "worktree %s could not switch to goal/%s: %v", target, id, err)
 		}
 	}
 	if again, _, findErr := find(); findErr == nil && again != "" {
 		return again, nil
 	}
-	return refused("git registered no goal/%s worktree at %s", id, target)
+	return refused("git didn't register the goal worktree", retry, "try again; --verbose shows the cause", "git registered no goal/%s worktree at %s", id, target)
 }
 
 // goalWorktreeRegistry is the checkout registry goal worktrees are recorded
@@ -379,7 +397,8 @@ func (inv *intentInvocation) enterGoalWorktree(id, path string) *intentResult {
 		if !matched {
 			record, err := diskstore.ReserveLinkedWorktree(registry, path, diskstore.GoalWorktreeClass, owner, inv.goalWorktreeControl(), "", time.Now().UTC(), rand.Reader)
 			if err != nil {
-				return &intentResult{Outcome: intentFailed, code: 1, Summary: fmt.Sprintf("goal/%s's worktree %s cannot be registered: %v; nothing was built", id, path, err)}
+				return &intentResult{Outcome: intentFailed, code: 1, Summary: "the goal worktree can't be registered, so nothing was built",
+					next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{fmt.Sprintf("goal/%s's worktree %s cannot be registered: %v", id, path, err)}}
 			}
 			records = append(records, record)
 		}
@@ -390,7 +409,8 @@ func (inv *intentInvocation) enterGoalWorktree(id, path string) *intentResult {
 		}
 		if record.State == diskstore.StateReserved && path != "" {
 			if _, err := diskstore.AcceptLinkedWorktree(registry, record.ID); err != nil {
-				return &intentResult{Outcome: intentFailed, code: 1, Summary: fmt.Sprintf("goal/%s's worktree %s cannot be recorded: %v; nothing was built", id, path, err)}
+				return &intentResult{Outcome: intentFailed, code: 1, Summary: "the goal worktree can't be recorded, so nothing was built",
+					next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{fmt.Sprintf("goal/%s's worktree %s cannot be recorded: %v", id, path, err)}}
 			}
 		}
 		if inv.entered(record.ID) {
@@ -401,7 +421,8 @@ func (inv *intentInvocation) enterGoalWorktree(id, path string) *intentResult {
 			return gone
 		}
 		if err != nil {
-			return &intentResult{Outcome: intentFailed, code: 1, Summary: fmt.Sprintf("goal/%s's worktree record cannot be held: %v; nothing was built", id, err)}
+			return &intentResult{Outcome: intentFailed, code: 1, Summary: "the goal worktree's record can't be held, so nothing was built",
+				next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{fmt.Sprintf("goal/%s's worktree record cannot be held: %v", id, err)}}
 		}
 		inv.entrants = append(inv.entrants, entrant)
 	}
@@ -421,7 +442,8 @@ func (inv *intentInvocation) recordGoalWorktreeContent(id, path string, placed [
 			continue
 		}
 		if err := inv.goalWorktreeRegistry().RecordEngineContent(entrant.Record.ID, path, placed, []diskstore.EngineDir{diskstore.EngineStateDir(installation)}); err != nil {
-			return &intentResult{Outcome: intentFailed, code: 1, Summary: fmt.Sprintf("the local configuration placed in goal/%s's worktree cannot be recorded: %v; nothing was built", id, err)}
+			return &intentResult{Outcome: intentFailed, code: 1, Summary: "the configuration placed in the goal worktree can't be recorded, so nothing was built",
+				next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{fmt.Sprintf("goal/%s: %v", id, err)}}
 		}
 	}
 	return nil
