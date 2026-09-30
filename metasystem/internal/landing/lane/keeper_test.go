@@ -52,7 +52,7 @@ func TestKeeperRestartsDeadOwner(t *testing.T) {
 	owner.alive = false
 	clock = clock.Add(10 * time.Minute)
 	line := keeper.Step()
-	if len(owner.starts) != 1 || owner.starts[0] != resolved(root) || !strings.Contains(line, "restarted") {
+	if len(owner.starts) != 1 || owner.starts[0] != resolved(root) || !strings.Contains(line, "asked its supervision to start it (restart 1)") {
 		t.Fatalf("dead: %q, starts %v; want one restart of %s", line, owner.starts, root)
 	}
 	owner.alive = true
