@@ -1,6 +1,6 @@
 # steward-acts-on-behaviour-patterns
 
-- State: queued
+- State: approved
 - Priority: 1
 - Sequence: 3
 - Risk: severity=2 novelty=2 exposure=2 accumulation=2 basis="A new steward role that can pause a component and open goals on its own; a false positive pauses useful work, a miss leaves a stuck system unnoticed; actions are reversible and reported"
@@ -9,11 +9,13 @@
 - Origin: main
 - Next step: Design the smallest extensible shape (detector interface, action set, once-per-incident record, config) with the two first patterns from the 2026-09-30 landing-lane evidence (/Users/wido/LocalStorage/agentic-tools-evidence/lane-stepback-20260930/memo.md); Astra critique; build. Consider folding steward-sees-stuck-capacity's detection in as a later pattern
 - OpenedAt: 2026-09-30T16:34:33Z
-- Revision: 2
+- Revision: 3
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
+- Approved: by=human:wido at=2026-09-30T16:35:13Z revision=3 opid=8M2KPDF10ZAF6XX7957P67VV9S-m1e-b6a4eb0a authority=proven digest=38868745f2bb242da1e3ec3e6a05667d783dbafad3c08781fd6245f9f4e9397a episode=3
 
 History:
 - 2026-09-30T16:34:33Z NYKAP8VJ5X06GBC87A8K6NM3ME-m1e-b6a4eb0a open actor=human:wido targets=steward-acts-on-behaviour-patterns
 - 2026-09-30T16:34:55Z 6AHWS37V7SN04Y6KDTN50KFMBP-m1e-b6a4eb0a set-priority actor=human:wido targets=adoption-filled-delivery-passes-on-trunk,beds-run-under-the-oldest-supported-bash,brief-declares-the-round-boundary,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,delegate-sandbox-runs-the-beds,design-rounds-read-less-and-repeat-less,error-checks-use-typed-errors,every-round-gets-an-independent-read,evidence-and-build-output-have-retention-and-stay-unindexed,failures-show-observed-against-expected,fixture-runners-and-fakes-bound-their-own-life,fleet-doctor-repairs-what-stops-other-seats,follow-up-brief-cannot-cite-fresh-trunk-files,host-setup-from-scratch,machinery-runs-unattended-on-codex,one-steward-per-checkout-on-its-own-root,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,receipt-writer-follows-the-worktree-it-runs-in,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,steward-acts-on-behaviour-patterns,stop-hook-never-forces-an-empty-turn,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror reason=priority-order subject=steward-acts-on-behaviour-patterns from=unranked to=1:3 requested-sequence=3
-Integrity: sha256=22b60d17aa6c7cf8a1ccb24877efd4eec259e3d967890e8cd3f5e328c02791f6
+- 2026-09-30T16:35:13Z 8M2KPDF10ZAF6XX7957P67VV9S-m1e-b6a4eb0a approve actor=human:wido targets=steward-acts-on-behaviour-patterns
+Integrity: sha256=a6dd0c02be5cf0223eea587c37940645449ada248b8f40fa2cb65cc69f1e42c3
