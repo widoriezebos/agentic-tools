@@ -319,7 +319,12 @@ func containsEveryExpectedTest(values, required []testpolicy.ExpectedTest) bool 
 }
 
 func runFrozenWorkerProbe(ctx context.Context, outer proofrun.TestRunRequest, probe testpolicy.ProtectionProbeCase) error {
-	root, packet, resultPath, err := frozenWorkerProbePaths("")
+	probeParent, doneProbe, err := diskstore.ScratchDir("metasystem-policy-probe-parent.")
+	if err != nil {
+		return err
+	}
+	defer doneProbe()
+	root, packet, resultPath, err := frozenWorkerProbePaths(probeParent)
 	if err != nil {
 		return err
 	}

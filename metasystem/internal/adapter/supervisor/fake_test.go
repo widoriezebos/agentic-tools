@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gocache"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/protocol"
@@ -1037,6 +1038,28 @@ func TestFakeSelftest(t *testing.T) {
 		}
 		if snapshots, _ := filepath.Glob(filepath.Join(f.agents(), "capabilities", "fake-*.json")); len(snapshots) != 1 {
 			t.Fatalf("the selftest's probe wrote %q", snapshots)
+		}
+	})
+	// Without a TMPDIR the fake allocates in the process's scratch root,
+	// never in a hard-coded /tmp outside every owner (disk-lifetimes R1).
+	t.Run("without TMPDIR it allocates in process scratch", func(t *testing.T) {
+		f := setup(t)
+		f.env["TMPDIR"] = ""
+		f.env["METASYSTEM_DELEGATE_SELFTEST_INTERNAL"] = ""
+		if code := f.run("fake", "selftest", "--root", f.root); code != 0 {
+			t.Fatalf("exit %d, stderr %s", code, f.stderr.String())
+		}
+		scratch, err := diskstore.ProcessScratch()
+		if err != nil {
+			t.Fatal(err)
+		}
+		fields := strings.Fields(strings.SplitN(readText(t, f.delegates), "\n", 2)[0])
+		if len(fields) < 4 || fields[2] != "--brief" {
+			t.Fatalf("first delegate call = %q", fields)
+		}
+		selftestDir := filepath.Dir(fields[3])
+		if filepath.Dir(selftestDir) != scratch || !strings.HasPrefix(filepath.Base(selftestDir), "metasystem-fake-selftest.") {
+			t.Fatalf("selftest dir %s, want a metasystem-fake-selftest. directory in process scratch %s", selftestDir, scratch)
 		}
 	})
 	t.Run("a failing delegate ends it with its status", func(t *testing.T) {

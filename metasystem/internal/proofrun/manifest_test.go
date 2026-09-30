@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
@@ -500,4 +501,37 @@ func stringHex(value []byte) string {
 		result[i*2+1] = digits[b&0xf]
 	}
 	return string(result)
+}
+
+// TestFreezeAllocatesInProcessScratchAndCleansThere is R1 for the frozen
+// export: its private owner is allocated in this process's scratch root, not
+// in TMPDIR, and cleanup's custody check binds the same root, so the one
+// directory Freeze allocated is the one Close removes.
+func TestFreezeAllocatesInProcessScratchAndCleansThere(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	writeTestFile(t, filepath.Join(root, "internal/source.go"), []byte("package source\n"), 0o644)
+	frozen, err := Freeze(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = frozen.Close() })
+	scratch, err := diskstore.ProcessScratch()
+	if err != nil {
+		t.Fatal(err)
+	}
+	scratch, err = filepath.EvalSymlinks(scratch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner := filepath.Dir(frozen.SnapshotRoot)
+	if filepath.Dir(owner) != scratch || !strings.HasPrefix(filepath.Base(owner), "metasystem-witness-freeze-") {
+		t.Fatalf("frozen owner %s, want a metasystem-witness-freeze- directory in process scratch %s", owner, scratch)
+	}
+	if err := frozen.Close(); err != nil {
+		t.Fatalf("close the frozen export: %v", err)
+	}
+	if _, err := os.Lstat(owner); !os.IsNotExist(err) {
+		t.Fatalf("frozen owner %s survived Close: %v", owner, err)
+	}
 }

@@ -39,11 +39,32 @@ func Freeze(root string) (result FrozenExport, err error) {
 }
 
 func FreezeCandidate(root, candidateTree string) (result FrozenExport, err error) {
-	return freezeCandidateWithHookAt(root, candidateTree, "", nil)
+	custodyRoot, err := frozenCustodyRoot()
+	if err != nil {
+		return FrozenExport{}, err
+	}
+	return freezeCandidateWithHookAt(root, candidateTree, custodyRoot, nil)
 }
 
 func freezeWithHook(root string, afterExport func(projectRoot string)) (result FrozenExport, err error) {
-	return freezeCandidateWithHookAt(root, "", "", afterExport)
+	custodyRoot, err := frozenCustodyRoot()
+	if err != nil {
+		return FrozenExport{}, err
+	}
+	return freezeCandidateWithHookAt(root, "", custodyRoot, afterExport)
+}
+
+// frozenCustodyRoot is the one directory a frozen export's private owner is
+// allocated in and the one CleanupFrozenExport accepts it from: this
+// process's scratch root (R1). Allocating in TMPDIR left an ownerless tree
+// behind every killed freeze; the custody check moved with the allocation,
+// so its meaning -- remove only what Freeze itself allocated -- is kept.
+func frozenCustodyRoot() (string, error) {
+	scratch, err := diskstore.ProcessScratch()
+	if err != nil {
+		return "", fmt.Errorf("frozen-export custody root: %w", err)
+	}
+	return scratch, nil
 }
 
 func freezeWithHookAt(root, temporaryRoot string, afterExport func(projectRoot string)) (result FrozenExport, err error) {
@@ -173,9 +194,12 @@ func CleanupFrozenExport(snapshotRoot string) error {
 		return fmt.Errorf("resolve frozen snapshot cleanup root: %w", err)
 	}
 	owner := filepath.Dir(canonical)
-	temporaryRoot, tempErr := filepath.EvalSymlinks(diskstore.ProcessTempRoot())
+	custodyRoot, tempErr := frozenCustodyRoot()
+	if tempErr == nil {
+		custodyRoot, tempErr = filepath.EvalSymlinks(custodyRoot)
+	}
 	ownerInfo, ownerErr := os.Lstat(owner)
-	if tempErr != nil || filepath.Dir(owner) != temporaryRoot ||
+	if tempErr != nil || filepath.Dir(owner) != custodyRoot ||
 		!strings.HasPrefix(filepath.Base(owner), "metasystem-witness-freeze-") ||
 		(filepath.Base(canonical) != "project" && filepath.Base(canonical) != "tree") ||
 		ownerErr != nil || !ownerInfo.IsDir() || ownerInfo.Mode().Perm() != 0o700 {
