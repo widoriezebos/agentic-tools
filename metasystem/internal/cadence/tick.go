@@ -43,7 +43,16 @@ const (
 // Refusal is a tick refused before it ran, by code.
 type Refusal struct{ Code, Detail string }
 
-func (refusal Refusal) Error() string { return refusal.Code + ": " + refusal.Detail }
+// Error is the plain words; the code is RefusalCode ("Messages a Person
+// Reads"), and RefusalDetail the code-first line records keep.
+func (refusal Refusal) Error() string {
+	if refusal.Code == FetchRefused {
+		return "the cadence tick could not fetch the trunk: " + refusal.Detail
+	}
+	return "the cadence tick could not read its ledger: " + refusal.Detail
+}
+func (refusal Refusal) RefusalCode() string   { return refusal.Code }
+func (refusal Refusal) RefusalDetail() string { return refusal.Code + ": " + refusal.Detail }
 
 // TickOutput is the trunk a production tick judged and its result.
 type TickOutput struct {

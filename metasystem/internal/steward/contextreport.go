@@ -58,7 +58,14 @@ type ContextEvidenceRetiredError struct {
 	RetainedSince time.Time
 }
 
+// Error is the plain words; the code is RefusalCode ("Messages a Person
+// Reads"), and RefusalDetail the code-first line records keep.
 func (e *ContextEvidenceRetiredError) Error() string {
+	return fmt.Sprintf("the week of %s can no longer be reported: call evidence is kept only from %s on", e.WeekStart.Format("2006-01-02"), e.RetainedSince.Format("2006-01-02"))
+}
+
+func (e *ContextEvidenceRetiredError) RefusalCode() string { return "CONTEXT_EVIDENCE_RETIRED" }
+func (e *ContextEvidenceRetiredError) RefusalDetail() string {
 	return fmt.Sprintf("CONTEXT_EVIDENCE_RETIRED requested=%s retained-since=%s", e.WeekStart.Format("2006-01-02"), e.RetainedSince.Format("2006-01-02"))
 }
 

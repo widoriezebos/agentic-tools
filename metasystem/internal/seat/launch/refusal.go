@@ -84,10 +84,15 @@ func (r *Refusal) Error() string {
 		// Rule H1: the one damage refusal of the launch guides. The new
 		// machine's evidence would land in this seat's root or outside
 		// the evidence tree; the person fixes the root and resumes.
-		return r.Code + ": " + r.Message + "; the new machine's evidence would mix with another root's, so set " + config.EvidenceRootKey + " in this seat's metasystem.conf.local to a directory of its own under the fleet's evidence tree, then retry the launch (Retry on the fleet page, or metasystem machine start NAME --resume ID)"
+		return r.Message + "; the new machine's evidence would mix with another root's, so set " + config.EvidenceRootKey + " in this seat's metasystem.conf.local to a directory of its own under the fleet's evidence tree, then retry the launch (Retry on the fleet page, or metasystem machine start NAME --resume ID)"
 	}
-	return r.Code + ": " + r.Message
+	return r.Message
 }
+
+// RefusalCode and RefusalDetail are the code and the code-first line
+// --verbose, --json and the records keep; Error is the words alone.
+func (r *Refusal) RefusalCode() string   { return r.Code }
+func (r *Refusal) RefusalDetail() string { return r.Code + ": " + r.Message }
 
 // refuse is the one constructor, so every refusal reads the same way.
 func refuse(code, format string, args ...any) *Refusal {

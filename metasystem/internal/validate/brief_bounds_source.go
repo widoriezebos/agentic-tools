@@ -16,7 +16,13 @@ import (
 
 type BriefBoundsUnreadable struct{ Detail string }
 
-func (e *BriefBoundsUnreadable) Error() string { return "BRIEF_BOUNDS_UNREADABLE: " + e.Detail }
+// Error is the plain words; the code is RefusalCode ("Messages a Person
+// Reads"), and RefusalDetail the code-first line records keep.
+func (e *BriefBoundsUnreadable) Error() string {
+	return "the brief's bounds cannot be read back: " + e.Detail
+}
+func (e *BriefBoundsUnreadable) RefusalCode() string   { return "BRIEF_BOUNDS_UNREADABLE" }
+func (e *BriefBoundsUnreadable) RefusalDetail() string { return e.RefusalCode() + ": " + e.Detail }
 
 func briefBoundsUnreadable(format string, args ...any) error {
 	return &BriefBoundsUnreadable{Detail: fmt.Sprintf(format, args...)}

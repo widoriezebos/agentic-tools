@@ -479,7 +479,7 @@ func TestLandingOwnerComponentReleaseJoinsCadenceTick(t *testing.T) {
 	if releasedBeforeTick {
 		t.Fatal("landing-owner fixture release returned before its cadence tick ended")
 	}
-	if report.line != "CADENCE_FETCH_REFUSED: injected fetch refusal" || report.afterRelease {
+	if strings.Contains(report.line, "CADENCE_FETCH_REFUSED") || !strings.Contains(report.line, "injected fetch refusal") || report.afterRelease {
 		t.Fatalf("cadence refusal report=%q after-release=%t", report.line, report.afterRelease)
 	}
 }

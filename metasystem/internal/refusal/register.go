@@ -207,7 +207,7 @@ var Rows = []Row{
 	{Code: "TERMINAL_NOT_REACHED", Owner: "internal/humanauthority", Site: "authority.go#ProveTerminal", Shape: Identity},
 
 	{Code: "BRAIN_REFUSED", Owner: "cmd/metasystem", Site: "delegate.go#runDelegateWith", Shape: Agent, Override: "brain withdraw", Commands: 1},
-	{Code: "CONTEXT_EVIDENCE_RETIRED", Owner: "internal/steward", Site: "contextreport.go#ContextEvidenceRetiredError.Error", Shape: Question, H1: StandingInput},
+	{Code: "CONTEXT_EVIDENCE_RETIRED", Owner: "internal/steward", Site: "contextreport.go#ContextEvidenceRetiredError.RefusalCode", Shape: Question, H1: StandingInput},
 	{Code: "HANDOFF_HUMAN_UNPROVEN", Owner: "internal/steward", Site: "handoff_capture.go#handoffHumanRefusal", Shape: Identity},
 	{Code: "HANDOFF_DELEGATES_UNDECLARED", Owner: "cmd/metasystem", Site: "context_verbs.go#contextHandoffDelegates", Shape: Question, H1: StandingInput},
 	{Code: "HANDOFF_DELEGATE_INCOMPLETE", Owner: "cmd/metasystem", Site: "context_verbs.go#contextHandoffDelegates", Shape: Question, H1: StandingInput},
@@ -293,7 +293,7 @@ var Rows = []Row{
 	{Code: "ELAPSED_BREACH", Owner: "internal/steward", Site: "health.go#stopFiringEvidenceSummary", Shape: Agent, Override: "goal resume", Commands: 1},
 	{Code: "BRIEF_AUTHORITY_REFUSED", Owner: "internal/dispatch", Site: "brief.go#BriefAuthorityRefusal.RefusalCode", Shape: Question, H1: StandingInput},
 	{Code: "BRIEF_BOUNDS_INVALID", Owner: "internal/dispatch", Site: "brief.go#BriefBoundsRefusal.RefusalCode", Shape: Question, H1: StandingInput},
-	{Code: "BRIEF_BOUNDS_UNREADABLE", Owner: "internal/validate", Site: "brief_bounds_source.go#BriefBoundsUnreadable.Error", Shape: Question, H1: StandingInput},
+	{Code: "BRIEF_BOUNDS_UNREADABLE", Owner: "internal/validate", Site: "brief_bounds_source.go#BriefBoundsUnreadable.RefusalCode", Shape: Question, H1: StandingInput},
 	{Code: "OBLIGATION_REFUSED", Owner: "internal/dispatch", Site: "governed.go#evaluateGovernedRunAdmissionWithReads", Shape: Agent, Override: "goal edit --obligation", Commands: 1, H1: StandingGuide, Forward: "goal edit"},
 	{Code: "SLICE_CAP_REFUSED", Owner: "internal/dispatch", Site: "slice.go#evaluateSliceAdmissionWithReads", Shape: Agent, Override: "goal approve or goal budget, then --approved-ref", Commands: 2},
 	{Code: "SLICE_START_UNRECORDED", Owner: "internal/dispatch", Site: "claim.go#markFirstSliceWithReads", Shape: Agent, Override: "goal sync --recover", Commands: 1},

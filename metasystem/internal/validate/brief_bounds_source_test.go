@@ -65,7 +65,8 @@ func checkBriefSource(t *testing.T, f briefSourceFixture, record dispatch.Compos
 func requireBoundsUnreadable(t *testing.T, err error, detail string) {
 	t.Helper()
 	var typed *BriefBoundsUnreadable
-	if !errors.As(err, &typed) || typed.Detail != detail || err.Error() != "BRIEF_BOUNDS_UNREADABLE: "+detail {
+	if !errors.As(err, &typed) || typed.Detail != detail || strings.Contains(err.Error(), "BRIEF_BOUNDS_UNREADABLE") ||
+		!strings.Contains(err.Error(), detail) || typed.RefusalCode() != "BRIEF_BOUNDS_UNREADABLE" || typed.RefusalDetail() != "BRIEF_BOUNDS_UNREADABLE: "+detail {
 		t.Fatalf("error = %#v, want BRIEF_BOUNDS_UNREADABLE: %s", err, detail)
 	}
 }
