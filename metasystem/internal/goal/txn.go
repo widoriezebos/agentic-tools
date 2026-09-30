@@ -627,6 +627,7 @@ func Publish(e Endpoint, req PublishRequest) (PublishResult, error) {
 	if req.Opid == "" || req.Mutate == nil {
 		return PublishResult{}, fmt.Errorf("a publish needs an opid and a mutation")
 	}
+	req.Mutate = guardAttorneyEffect(e, req.Mutate)
 	if err := clearDeadBlocker(e, req.Opid); err != nil {
 		return PublishResult{}, err
 	}

@@ -71,7 +71,7 @@ func (o diskOwners) withDefaults() diskOwners {
 		o.now = time.Now
 	}
 	if o.person == nil {
-		o.person = provenPerson(humanauthority.KernelReader{}, func() int64 { return int64(os.Getppid()) }, func() time.Time { return time.Now().UTC() })
+		o.person = provenPerson(humanauthority.KernelReader{}, func() int64 { return int64(os.Getppid()) }, goalCommandNow)
 	}
 	if o.census == nil {
 		o.census = func() *diskstore.UseCensus {
@@ -368,9 +368,13 @@ func diskPlural(count int, one, many string) string {
 
 // provenPerson proves the person at the enrolled terminal from the shell pid
 // names and returns the enrolled name to record.
-func provenPerson(reader humanauthority.Reader, pid func() int64, now func() time.Time) func(root string) (string, error) {
+func provenPerson(reader humanauthority.Reader, pid func() int64, now func(root string) (time.Time, error)) func(root string) (string, error) {
 	return func(root string) (string, error) {
-		if _, err := humanauthority.Prove(root, pid(), reader, now()); err != nil {
+		at, err := now(root)
+		if err != nil {
+			return "", err
+		}
+		if _, err := humanauthority.Prove(root, pid(), reader, at); err != nil {
 			return "", err
 		}
 		if enrollment, readErr := humanauthority.ReadEnrollment(root); readErr == nil && enrollment.Human != "" {

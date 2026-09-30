@@ -550,6 +550,9 @@ type intentOwners struct {
 	// internal/adopt.
 	adopt func(adopt.Options) (adopt.Result, error)
 	helm  helmOwners
+	// attorney are the general power of attorney's seams; the zero value is
+	// production.
+	attorney attorneyIntentOwners
 	// agent are the agent verbs' seams; the zero value is production.
 	agent agentOwners
 	// hookSwitch adjusts system setup's seams; nil keeps production.

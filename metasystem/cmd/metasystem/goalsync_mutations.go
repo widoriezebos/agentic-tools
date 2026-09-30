@@ -3072,7 +3072,12 @@ func runGoalSplitWithInputs(args []string, commandNow func(string) (time.Time, e
 	var proof *humanauthority.Proof
 	var ratification goal.SplitRatification
 	if f.by != "" {
-		observed, proofErr := humanauthority.Prove(f.root, int64(os.Getppid()), nil, time.Now().UTC())
+		now, nowErr := commandNow(f.root)
+		if nowErr != nil {
+			dependencies.complain("SPLIT_RATIFY_REFUSED: goal split could not read its clock:", nowErr)
+			return 1
+		}
+		observed, proofErr := humanauthority.Prove(f.root, int64(os.Getppid()), nil, now)
 		if proofErr != nil {
 			dependencies.complain("SPLIT_RATIFY_REFUSED: goal split could not prove enrolled human ancestry:", proofErr)
 			return 1

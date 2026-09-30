@@ -26,6 +26,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/protocol"
@@ -1879,6 +1880,11 @@ func runIntentSettingsSet(inv *intentInvocation) int {
 	if problem := inv.resolveLayout(); problem != nil {
 		return inv.render(*problem)
 	}
+	if authoritySettings[key] {
+		if problem := inv.directPersonProof("settings set " + key); problem != nil {
+			return inv.render(*problem)
+		}
+	}
 	local := intentConfPath(inv.layout) + ".local"
 	targets := []intentTarget{{Kind: "setting", ID: key}}
 	before, err := os.ReadFile(local)
@@ -1974,4 +1980,42 @@ func (inv *intentInvocation) resumeChannelWait(id string, row metarun.Waiter, ti
 		result.next, result.nextReason = inv.publicArgv("work", "wait", waitRefPrefix+id), "the same wait continues; delivery or the answer is still pending"
 	}
 	return result
+}
+
+// authoritySettings are the keys that decide who the machinery believes is a
+// person: metasystem.runtimes=fake turns on fixture mode, which reclassifies
+// callers from a fixture table and lets the environment set the clock. Only
+// the person's own proof at the enrolled terminal sets them, never the helm
+// and never a power of attorney.
+var authoritySettings = map[string]bool{"metasystem.runtimes": true}
+
+// directPersonProof refuses unless this shell is the person at the enrolled
+// terminal, proven by the walk itself.
+func (inv *intentInvocation) directPersonProof(act string) *intentResult {
+	refused := func(reason string) *intentResult {
+		return &intentResult{Outcome: intentRefused, code: 1, Summary: fmt.Sprintf("%s is the person's own act at the enrolled terminal, never at the helm or under a grant: %s; nothing was done; %s", act, reason, humanauthority.PersonActRemedy("metasystem "+act+" VALUE")),
+			Decision: humanauthority.PersonActRemedy("metasystem " + act + " VALUE")}
+	}
+	if inv.stateRoot == "" {
+		root, err := inv.owners.resolver.RootForInstallation(inv.layout.InstallationRoot)
+		if err != nil {
+			return refused("cannot find this installation's state: " + err.Error())
+		}
+		inv.stateRoot = root
+	}
+	if inv.owners.prove == nil || inv.owners.commandNow == nil {
+		return refused("no person proof is available")
+	}
+	now, err := inv.owners.commandNow(inv.stateRoot)
+	if err != nil {
+		return refused(err.Error())
+	}
+	proof, err := inv.owners.prove(inv.stateRoot, int64(os.Getppid()), nil, "", "", now)
+	if err != nil {
+		return refused(humanauthority.PlainReason(err))
+	}
+	if proof.Helm != nil || !proof.EnrolledTerminalFor(inv.stateRoot) {
+		return refused("this shell was admitted by the helm or a grant, not proven by its own ancestry")
+	}
+	return nil
 }

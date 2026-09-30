@@ -1,6 +1,7 @@
 # General power of attorney
 
 - Kind: design
+- Id: 01M3RKF89YAESX9K6728NZ3A6Z
 - Status: accepted
 - Goals: human-controls-goal
 
