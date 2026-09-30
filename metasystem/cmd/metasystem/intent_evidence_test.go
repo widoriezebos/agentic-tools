@@ -241,7 +241,7 @@ func TestEvidenceShowAllVerboseListsTheItemsDisposeAccepts(t *testing.T) {
 		t.Fatalf("--all --verbose = %d:\n%s", code, out)
 	}
 	code, out = bed.run("evidence", "dispose", filepath.Join(bed.root, "AGENTS"), "--preview")
-	if code == 0 || !strings.Contains(out, "not an item; metasystem evidence show --verbose") {
+	if code == 0 || !strings.Contains(out, "not an item; metasystem evidence show --all --verbose") {
 		t.Fatalf("a structure directory in another case is refused = %d:\n%s", code, out)
 	}
 }

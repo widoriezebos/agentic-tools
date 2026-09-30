@@ -558,7 +558,7 @@ func (g *gateRun) writeWitness(prepared witnessIdentity, baselineRel string) int
 		g.env.get("METASYSTEM_GATE_WITNESS_RUN"), controllerPID, controllerStarted, controllerTicks, controllerBoot,
 		d.now().UTC().Format("2006-01-02T15:04:05Z"), strings.ReplaceAll(strings.TrimRight(goVersion.String(), "\n"), `"`, ""), baselineRel)
 	path := g.env.get("METASYSTEM_GATE_WITNESS_WRITE")
-	if err := os.WriteFile(path, []byte(witness), 0o600); err != nil || os.Chmod(path, 0o600) != nil {
+	if os.WriteFile(path, []byte(witness), 0o600) != nil || os.Chmod(path, 0o600) != nil {
 		fmt.Fprintln(d.stderr, "go gate: witness could not be written")
 		return 1
 	}

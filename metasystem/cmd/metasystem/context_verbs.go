@@ -337,7 +337,10 @@ func runContextHandoffWithInputs(args []string, inputs contextHandoffInputs, std
 	return 0
 }
 
-const contextHandoffUsage = "usage: metasystem session handoff --root ROOT --note PATH (--no-delegates | --delegate id=ID[,asked=TEXT][,output=PATH]...) [--scratch purpose=P,path=REL[,required=true|false]]... [--json] | --root ROOT --cancel NONCE [--by HUMAN]"
+// contextHandoffUsage is the answer to a handoff whose options do not form
+// one of its forms; the help page lists them.
+const contextHandoffUsage = "a handoff takes --note with --no-delegates or --delegate, or --cancel alone; nothing was done\n" +
+	"run: metasystem session handoff --help"
 
 type contextDelegateArg struct {
 	id, asked, output   string

@@ -19,6 +19,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/candidateengine"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/digest"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginecause"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
@@ -91,7 +92,7 @@ func runTestPlanAs(name string, args []string, stdout, stderr io.Writer) int {
 		// The refusal a person reads; --verbose adds its detail (code, cause
 		// and facts), and --json a line with it that a planning child's
 		// parent reads.
-		printTestingRefusal(stderr, err, request.Verbose)
+		printTestingRefusal(stderr, err, request)
 		if jsonOutput {
 			writeJSONLine(stdout, stderr, map[string]string{"error": err.Error(), "detail": refusal.Detail(err)})
 		}
@@ -361,7 +362,7 @@ func runTestRunWith(invocation testRunInvocation, args []string) (exit int) {
 	request.CallerPID = invocation.callerPID
 	prepared, err := prepareTestingForCommand(request)
 	if err != nil {
-		printTestingRefusal(invocation.stderr, err, request.Verbose)
+		printTestingRefusal(invocation.stderr, err, request)
 		if errors.Is(err, testrun.ErrWorkerPolicyUnsupported) {
 			return proofrun.ExitAdmissionRefused
 		}
@@ -871,19 +872,19 @@ func runTestWorkerWithCandidateOpener(args []string, opener func(string, string)
 func frozenPolicyProbeRefusal(request proofrun.TestRunRequest, resultPath string) string {
 	switch {
 	case request.Contract.SchemaVersion != 1:
-		return fmt.Sprintf("contract schema=%d, want 1", request.Contract.SchemaVersion)
+		return fmt.Sprintf("its contract has schema %d, not 1", request.Contract.SchemaVersion)
 	case len(request.Contract.Groups) != 1:
-		return fmt.Sprintf("contract group count=%d, want 1", len(request.Contract.Groups))
+		return fmt.Sprintf("its contract has %d groups, not 1", len(request.Contract.Groups))
 	case request.Contract.Groups[0].ID != "literal":
-		return fmt.Sprintf("contract group=%q, want literal", request.Contract.Groups[0].ID)
+		return fmt.Sprintf("its contract's group is %q, not literal", request.Contract.Groups[0].ID)
 	case len(request.Plan.SelectedGroups) != 1:
-		return fmt.Sprintf("selected group count=%d, want 1", len(request.Plan.SelectedGroups))
+		return fmt.Sprintf("its plan selects %d groups, not 1", len(request.Plan.SelectedGroups))
 	case request.Plan.SelectedGroups[0] != "literal":
-		return fmt.Sprintf("selected group=%q, want literal", request.Plan.SelectedGroups[0])
+		return fmt.Sprintf("its plan selects %q, not literal", request.Plan.SelectedGroups[0])
 	case !strings.HasPrefix(filepath.Base(request.ProjectRoot), "metasystem-policy-probe."):
-		return fmt.Sprintf("project root base=%q lacks metasystem-policy-probe prefix", filepath.Base(request.ProjectRoot))
+		return fmt.Sprintf("its project directory %q is not named metasystem-policy-probe.*", filepath.Base(request.ProjectRoot))
 	case filepath.Dir(resultPath) != request.ProjectRoot:
-		return fmt.Sprintf("result directory=%q differs from project root=%q", filepath.Dir(resultPath), request.ProjectRoot)
+		return fmt.Sprintf("its result goes to %q, outside its project directory %q", filepath.Dir(resultPath), request.ProjectRoot)
 	default:
 		return ""
 	}
@@ -913,7 +914,7 @@ func testVerifyTo(stdout, stderr io.Writer, request testrun.SelectionRequest, js
 	result, err := verifyRetainedTesting(request)
 	if err != nil {
 		printMovedProofInputsWithoutCandidateEngine(stderr, request)
-		printTestingRefusal(stderr, err, request.Verbose)
+		printTestingRefusal(stderr, err, request)
 		return 1
 	}
 	if jsonOutput {
@@ -1033,15 +1034,42 @@ const movedInputsCode = "proof-input-moved-after-receipt"
 
 func printMovedInputsCode(stderr io.Writer, verbose bool) {
 	if verbose {
-		fmt.Fprintln(stderr, "  code "+movedInputsCode)
+		fmt.Fprintln(stderr, "  "+movedInputsCode)
 	}
 }
 
 // printTestingRefusal prints a testing refusal as a person reads it, and
-// with verbose the detail behind it: the code, the cause and its facts.
-func printTestingRefusal(stderr io.Writer, err error, verbose bool) {
+// with --verbose the detail behind it: the code, the cause and its facts.
+// When the pinned engine that chooses the tests failed, its remedy is that
+// engine's internal command; a person runs the public test plan with
+// --verbose instead, which shows the engine's own words and names the
+// internal command.
+func printTestingRefusal(stderr io.Writer, err error, request testrun.SelectionRequest) {
+	var engine *enginecause.Refusal
+	if errors.As(err, &engine) && (engine.Token == "child-failed" || engine.Token == "child-output") {
+		retry := []string{"metasystem", "test", "plan", "--verbose"}
+		if request.GoalID != "" {
+			retry = append(retry, "--goal", request.GoalID)
+		}
+		if request.Tree != "" {
+			retry = append(retry, "--tree", request.Tree)
+		}
+		// An engine that refused in its own two lines already names what
+		// resolves it.
+		reason, remedy, own := strings.Cut(engine.Reason, "\nrun: ")
+		if !own {
+			remedy = shellCommand(retry)
+		}
+		fmt.Fprintln(stderr, reason)
+		fmt.Fprintln(stderr, "run: "+remedy)
+		if request.Verbose {
+			// The detail names the engine and the command it ran.
+			fmt.Fprintln(stderr, "  "+engine.Detail())
+		}
+		return
+	}
 	fmt.Fprintln(stderr, err)
-	if detail := refusal.Detail(err); verbose && detail != "" {
+	if detail := refusal.Detail(err); request.Verbose && detail != "" {
 		fmt.Fprintln(stderr, "  "+detail)
 	}
 }
