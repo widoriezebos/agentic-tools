@@ -1,0 +1,2 @@
+✗ work stop needs the reference of the work to stop: metasystem work stop REF; nothing was done
+  → metasystem work status  lists running work with its references

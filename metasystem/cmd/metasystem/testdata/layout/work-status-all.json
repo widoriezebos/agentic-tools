@@ -1,0 +1,85 @@
+exit 0
+--
+{
+  "schemaVersion": 1,
+  "verb": "work status",
+  "targets": [],
+  "outcome": "confirmed",
+  "summary": "4 known job(s) among this user's launches and the dispatch jobs of /Users/wido/GitHub/agentic-tools-m1e",
+  "data": {
+    "all": true,
+    "jobs": [
+      {
+        "kind": "launch",
+        "purpose": "build launch, completed, goal switch-on-trial",
+        "reference": "j1:build-trial-91e2",
+        "status": [
+          "metasystem",
+          "work",
+          "status",
+          "j1:build-trial-91e2"
+        ]
+      },
+      {
+        "kind": "launch",
+        "purpose": "review launch, running, goal verbs-match-intent",
+        "reference": "j1:review-verbs-3a7c",
+        "status": [
+          "metasystem",
+          "work",
+          "status",
+          "j1:review-verbs-3a7c"
+        ],
+        "stop": [
+          "metasystem",
+          "work",
+          "stop",
+          "j1:review-verbs-3a7c"
+        ],
+        "wait": [
+          "metasystem",
+          "work",
+          "wait",
+          "j1:review-verbs-3a7c"
+        ]
+      },
+      {
+        "kind": "dispatch",
+        "purpose": "builder job, running, goal verbs-match-intent",
+        "reference": "j2:design-r2-4f1c",
+        "status": [
+          "metasystem",
+          "work",
+          "status",
+          "j2:design-r2-4f1c"
+        ],
+        "stop": [
+          "metasystem",
+          "work",
+          "stop",
+          "j2:design-r2-4f1c"
+        ],
+        "wait": [
+          "metasystem",
+          "work",
+          "wait",
+          "j2:design-r2-4f1c"
+        ]
+      },
+      {
+        "kind": "dispatch",
+        "purpose": "implementer job, completed, goal switch-on-trial",
+        "reference": "j2:impl-01",
+        "status": [
+          "metasystem",
+          "work",
+          "status",
+          "j2:impl-01"
+        ]
+      }
+    ],
+    "scope": "this user's launches and the dispatch jobs of /Users/wido/GitHub/agentic-tools-m1e"
+  }
+}
+
+--

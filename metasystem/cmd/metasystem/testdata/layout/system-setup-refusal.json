@@ -1,0 +1,20 @@
+exit 2
+--
+{
+  "schemaVersion": 1,
+  "verb": "system setup",
+  "targets": [],
+  "outcome": "refused",
+  "summary": "--runtimes is empty; name the runtimes, or leave the option out; nothing was done",
+  "next": {
+    "argv": [
+      "metasystem",
+      "system",
+      "setup",
+      "--json"
+    ],
+    "reason": "the runtimes metasystem.runtimes enables"
+  }
+}
+
+--

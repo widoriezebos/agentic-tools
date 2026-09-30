@@ -146,7 +146,7 @@ func TestSupBArmRefusesSurvivorsAndRemoteEvidenceUntilTerminal(t *testing.T) {
 		if code != 1 || len(lines) != 2 ||
 			!strings.Contains(lines[0], "job "+remoteJob+" on machine "+remoteMachine) ||
 			!strings.Contains(lines[0], "record "+remoteRecord+" is missing") ||
-			!strings.Contains(lines[0], "restore that job's record from "+remoteMachine) ||
+			!strings.Contains(lines[0], "restore it from "+remoteMachine) ||
 			lines[1] != "run: metasystem system stop --repo "+repo {
 			t.Fatalf("%s missing-remote arm refusal = code %d stderr %q", label, code, stderr)
 		}

@@ -1,0 +1,4 @@
+✓ 2 plans pass the default gate
+
+✓ docs/examples/design-obligation-matrix.md
+✓ docs/examples/design-obligation-matrix.md

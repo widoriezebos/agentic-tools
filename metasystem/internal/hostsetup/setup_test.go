@@ -596,7 +596,7 @@ func TestGeneratedFreshNonGitLifecycleNoopsOnlyBeforeHandlerInvocation(t *testin
 	if err := os.Remove(filepath.Join(installation, "bin", "metasystem")); err != nil {
 		t.Fatal(err)
 	}
-	if stdout, _, err := run(commands["start"]); err != nil || !strings.Contains(string(stdout), "Metasystem engine missing") ||
+	if stdout, _, err := run(commands["start"]); err != nil || !strings.Contains(string(stdout), "could not find its engine") ||
 		!strings.Contains(string(stdout), "go run ./cmd/devgate build") {
 		t.Fatalf("missing engine was hidden: stdout %q, error %v", stdout, err)
 	}

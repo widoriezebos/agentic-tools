@@ -258,7 +258,7 @@ func TestAResumeThatHasToArmAgainAsksForTheWord(t *testing.T) {
 	if !named || refusal.Code != CodeWordRequired {
 		t.Fatalf("error = %v, want %s", err, CodeWordRequired)
 	}
-	for _, words := range []string{"Discard launch", "launch it again"} {
+	for _, words := range []string{"Discard launch", "launch again"} {
 		if !strings.Contains(refusal.Message, words) {
 			t.Fatalf("refusal %q does not name %q", refusal.Message, words)
 		}

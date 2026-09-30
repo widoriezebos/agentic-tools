@@ -410,7 +410,7 @@ var Rows = []Row{
 	{Code: "SEAT_LAUNCH_DESTINATION_INSIDE_A_CHECKOUT", Owner: "internal/seat/launch", Site: "preflight.go#destination", Shape: Question, H1: StandingInput},
 	{Code: "SEAT_LAUNCH_RUNNING", Owner: "internal/seat/launch", Site: "lock.go#Take", Shape: Question, H1: StandingInput},
 	{Code: "SEAT_LAUNCH_DISK_SHORT", Owner: "internal/seat/launch", Site: "sequence.go#Sequencer.room", Shape: Question, H1: StandingInput},
-	{Code: "SEAT_LAUNCH_EVIDENCE_ROOT_UNSAFE", Owner: "internal/seat/launch", Site: "sequence.go#Sequencer.evidenceRoot", Shape: Question, H1: StandingGuide, Forward: "machine start", ForwardSite: "internal/seat/launch/refusal.go#Refusal.Error"},
+	{Code: "SEAT_LAUNCH_EVIDENCE_ROOT_UNSAFE", Owner: "internal/seat/launch", Site: "sequence.go#Sequencer.evidenceRoot", Shape: Question, H1: StandingGuide, Forward: "machine start", ForwardSite: "internal/seat/launch/refusal.go#evidenceRootCommand"},
 	{Code: "SEAT_LAUNCH_WORD_REQUIRED", Owner: "internal/seat/launch", Site: "sequence.go#Sequencer.enrollment", Shape: Question, H1: StandingIdentity},
 	{Code: "SEAT_LAUNCH_WORD_INVALID", Owner: "internal/seat/launch", Site: "preflight.go#Admit", Shape: Question, H1: StandingInput},
 	{Code: "SEAT_LAUNCH_RECORD_CONFLICT", Owner: "internal/seat/launch", Site: "preflight.go#Admit", Shape: Question, H1: StandingInput},

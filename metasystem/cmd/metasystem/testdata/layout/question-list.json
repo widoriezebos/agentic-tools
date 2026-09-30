@@ -1,0 +1,40 @@
+exit 0
+--
+{
+  "schemaVersion": 1,
+  "verb": "question list",
+  "targets": [],
+  "outcome": "confirmed",
+  "summary": "2 open channel question(s)",
+  "data": {
+    "questions": [
+      {
+        "goal": "verbs-match-intent",
+        "question": "Land slice 2 of the verb redesign now, or wait for the second read?",
+        "reference": "channel:q-20260930-1",
+        "show": [
+          "metasystem",
+          "question",
+          "show",
+          "channel:q-20260930-1"
+        ],
+        "state": "open"
+      },
+      {
+        "goal": "switch-on-trial",
+        "question": "The trial run found one flaky test in the landing lane; quarantine it and continue, or stop the trial until it is fixed?",
+        "reference": "channel:q-20260929-4",
+        "show": [
+          "metasystem",
+          "question",
+          "show",
+          "channel:q-20260929-4"
+        ],
+        "state": "open"
+      }
+    ],
+    "unreadable": []
+  }
+}
+
+--

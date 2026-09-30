@@ -1,0 +1,20 @@
+exit 0
+--
+{
+  "schemaVersion": 1,
+  "verb": "work stop",
+  "targets": [
+    {
+      "kind": "job",
+      "id": "j2:impl-01"
+    }
+  ],
+  "outcome": "unchanged",
+  "summary": "j2:impl-01 is already stopped: completed",
+  "data": {
+    "kind": "dispatch",
+    "status": "completed"
+  }
+}
+
+--

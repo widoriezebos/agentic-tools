@@ -1,0 +1,1 @@
+✓ docs/examples/design-obligation-matrix.md passes the default gate

@@ -1,0 +1,21 @@
+exit 2
+--
+{
+  "schemaVersion": 1,
+  "verb": "system start",
+  "targets": [],
+  "outcome": "refused",
+  "summary": "--if-down restarts only what is down and takes no --temporary-human-word; nothing was done",
+  "next": {
+    "argv": [
+      "metasystem",
+      "system",
+      "start",
+      "--if-down",
+      "--json"
+    ],
+    "reason": ""
+  }
+}
+
+--

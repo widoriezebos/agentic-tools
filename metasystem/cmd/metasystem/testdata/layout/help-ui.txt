@@ -1,0 +1,8 @@
+metasystem ui · the browser interface
+
+  start     start the browser interface
+  stop      stop the browser interface
+  restart   restart the browser interface with the checkout's own engine
+  status    whether the browser interface runs, and where
+
+→ metasystem ui ACTION --help  one action's forms, options and examples

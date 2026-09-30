@@ -64,18 +64,18 @@ func Admit(request Request, record Record) error {
 	}
 	if request.Word != "" || request.ReviewBy != "" {
 		return refuse(CodeWordInvalid,
-			"launch %s was enrolled by %s's signed-in browser session; the temporary word and review date do not travel beside it",
-			record.Launch, record.Enrollment.Human)
+			"%s already approved launch %s in the browser, so it takes no temporary word",
+			record.Enrollment.Human, record.Launch).run(resumeCommand(record.Machine, record.Launch))
 	}
 	if request.Machine != "" && request.Machine != record.Machine {
 		return refuse(CodeRecordConflict,
-			"launch %s is %s's launch of %s and not of %s; its record decides the machine",
-			record.Launch, record.Enrollment.Human, record.Machine, request.Machine)
+			"launch %s starts %s, not %s: %s approved it for that machine",
+			record.Launch, record.Machine, request.Machine, record.Enrollment.Human).run(resumeCommand(record.Machine, record.Launch))
 	}
 	if request.Destination != "" && filepath.Clean(request.Destination) != filepath.Clean(record.Destination) {
 		return refuse(CodeRecordConflict,
-			"launch %s clones into %s and not %s; its record decides the destination",
-			record.Launch, record.Destination, request.Destination)
+			"launch %s clones into %s, not %s: its approval names that place",
+			record.Launch, record.Destination, request.Destination).run(resumeCommand(record.Machine, record.Launch))
 	}
 	return nil
 }
@@ -117,21 +117,29 @@ func Preflight(request Request, facts Facts) error {
 func evidenceRootSet(facts Facts) error {
 	if !filepath.IsAbs(facts.EvidenceRoot) {
 		return refuse(CodeEvidenceRootUnsafe,
-			"this seat's evidence root is not set (the evidence root reads %q)", facts.EvidenceRoot)
+			"this seat's evidence root is not set (it reads %q), so it cannot give the new machine one", facts.EvidenceRoot).run(evidenceRootCommand)
 	}
 	return nil
+}
+
+// startAt is the launch again with another destination.
+func startAt(request Request, destination string) string {
+	command := "metasystem machine start " + request.Machine + " --destination " + destination
+	if request.Resuming() {
+		command += " --resume " + request.Resume
+	}
+	return command
 }
 
 // nickname refuses a name the presence publisher would refuse, this seat's
 // own, and one somebody already carries.
 func nickname(request Request, facts Facts) error {
 	if err := seat.ValidateMachineName(request.Machine); err != nil {
-		return refuse(CodeNicknameInvalid, "%s", err.Error())
+		return refuse(CodeNicknameInvalid, "%s", err.Error()).run("metasystem machine start <another name>")
 	}
 	if facts.This != "" && request.Machine == facts.This {
 		return refuse(CodeNicknameInvalid,
-			"%s is this checkout's own nickname; two machines publishing under one name publish over each other",
-			request.Machine)
+			"%s is this checkout's own name; a new machine needs a name of its own", request.Machine).run("metasystem machine start <another name>")
 	}
 	// A resume redoes the step that sets the nickname, so the name this
 	// launch itself set is not somebody else carrying it.
@@ -141,8 +149,7 @@ func nickname(request Request, facts Facts) error {
 	for _, held := range facts.Taken {
 		if held == request.Machine {
 			return refuse(CodeNicknameTaken,
-				"%s is already the name of a machine in this fleet; choose another name",
-				request.Machine)
+				"%s is already the name of a machine in this fleet", request.Machine).run("metasystem machine start <another name>")
 		}
 	}
 	return nil
@@ -153,7 +160,7 @@ func nickname(request Request, facts Facts) error {
 func destination(request Request, facts Facts) error {
 	if !filepath.IsAbs(request.Destination) {
 		return refuse(CodeDestinationExists,
-			"the destination %q is not an absolute path on this host", request.Destination)
+			"the destination %q is not an absolute path on this host", request.Destination).run(startAt(request, "<an absolute path>"))
 	}
 	path := filepath.Clean(request.Destination)
 	_, err := os.Lstat(path)
@@ -163,17 +170,17 @@ func destination(request Request, facts Facts) error {
 		// to finish rather than somebody else's to be refused for.
 	case err == nil:
 		return refuse(CodeDestinationExists,
-			"%s already exists; a new machine is a fresh clone, so choose an empty place", path)
+			"%s already exists, and a new machine needs an empty place for its clone", path).run(startAt(request, "<an empty place>"))
 	case !os.IsNotExist(err):
-		return refuse(CodeDestinationExists, "%s could not be read: %v", path, err)
+		return refuse(CodeDestinationExists, "the destination %s could not be read (%v)", path, err).run(startAt(request, "<another place>"))
 	}
 	inside, where, err := insideACheckout(path)
 	if err != nil {
-		return refuse(CodeDestinationInsideACheckout, "%s could not be read: %v", path, err)
+		return refuse(CodeDestinationInsideACheckout, "the folders above %s could not be read (%v)", path, err).run(startAt(request, "<another place>"))
 	}
 	if inside {
 		return refuse(CodeDestinationInsideACheckout,
-			"%s lies inside the checkout at %s; a machine is a clone beside the others and never a directory of one", path, where)
+			"%s lies inside the checkout at %s; a new machine goes beside the others", path, where).run(startAt(request, "<a place beside "+where+">"))
 	}
 	return nil
 }

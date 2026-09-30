@@ -187,7 +187,7 @@ func TestDiskObjectRoutesAndHelps(t *testing.T) {
 	}
 	for _, args := range [][]string{{"disk", "show", "--help"}, {"disk", "clean", "--help"}} {
 		code, stdout, _ := routeWith(nil, args...)
-		if code != 0 || !strings.Contains(stdout, "usage:") || !strings.Contains(stdout, "metasystem "+args[0]+" "+args[1]) {
+		if code != 0 || !strings.Contains(stdout, "  usage   ") || !strings.Contains(stdout, "metasystem "+args[0]+" "+args[1]) {
 			t.Errorf("%v help = %d %q", args, code, stdout)
 		}
 	}

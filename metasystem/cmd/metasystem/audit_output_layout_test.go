@@ -50,6 +50,12 @@ type layoutCase struct {
 	name string
 	args []string
 	bed  func(t *testing.T) layoutBed
+	// help draws a help page instead of running a verb; help pages carry
+	// no --json of this shape and are always enforced.
+	help func(env textui.Env) *textui.Page
+	// measured names why a case's --json is not byte-stable (a duration it
+	// measures), so the JSON golden is not kept for it.
+	measured string
 }
 
 type layoutBed struct {
@@ -73,12 +79,40 @@ func layoutCases() []layoutCase {
 		{name: "grant-list-all", args: []string{"grant", "list", "--all"}, bed: grantListLayoutBed(2, true)},
 		{name: "grant-list-empty", args: []string{"grant", "list"}, bed: grantListLayoutBed(0, false)},
 		{name: "grant-list-refusal", args: []string{"grant", "list"}, bed: outsideLayoutBed},
+		// The help pages (§6.12, 6.13): the top level, an object grouped by
+		// intent and one listed plainly, and action pages, one of them with
+		// administration forms and forms wider than the page.
+		{name: "help", help: intentRootHelpPage},
+		{name: "help-goal", help: objectHelpLayout("goal")},
+		{name: "help-system", help: objectHelpLayout("system")},
+		{name: "help-ui", help: objectHelpLayout("ui")},
+		{name: "help-goal-approve", help: actionHelpLayout("goal approve")},
+		{name: "help-system-stop", help: actionHelpLayout("system stop")},
+		{name: "help-work-land", help: actionHelpLayout("work land")},
+		{name: "help-status", help: actionHelpLayout("status")},
 	}
 	for _, group := range layoutGroupCases {
 		cases = append(cases, group()...)
 	}
 	return cases
 }
+
+func objectHelpLayout(object string) func(textui.Env) *textui.Page {
+	return func(env textui.Env) *textui.Page { return intentObjectHelpPage(env, object) }
+}
+
+func actionHelpLayout(name string) func(textui.Env) *textui.Page {
+	return func(env textui.Env) *textui.Page {
+		command, ok := findIntentCommand(name)
+		if !ok {
+			panic("no public command " + name)
+		}
+		return intentCommandHelpPage(env, command)
+	}
+}
+
+// helpLayoutBed is no bed: a help page reads nothing.
+func helpLayoutBed(t *testing.T) layoutBed { return layoutBed{cwd: t.TempDir()} }
 
 // statusLayoutBed is a checkout with its five helpers and two processes
 // that are not ours, the host board, a landing lane with one batch
@@ -227,6 +261,13 @@ func layoutZone(t *testing.T) *time.Location {
 
 func runLayoutCase(t *testing.T, c layoutCase, bed layoutBed, args ...string) (int, string, string) {
 	t.Helper()
+	if c.help != nil {
+		env := layoutEnv(t, bed.now, "", "")
+		if bed.owners.textEnv != nil {
+			env = bed.owners.textEnv(nil)
+		}
+		return 0, c.help(env).String(), ""
+	}
 	command, rest, ok := resolveIntentArgv(append(append([]string{}, c.args...), args...))
 	if !ok {
 		t.Fatalf("no public command %q", c.args)
@@ -244,6 +285,9 @@ func layoutGolden(name string) string { return filepath.Join("testdata", "layout
 func TestAuditOutputLayoutJSONUnchanged(t *testing.T) {
 	t.Parallel()
 	for _, c := range layoutCases() {
+		if c.help != nil || c.measured != "" {
+			continue
+		}
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
 			code, stdout, stderr := runLayoutCase(t, c, c.bed(t), "--json")
@@ -292,12 +336,10 @@ func TestAuditOutputLayout(t *testing.T) {
 	for _, c := range layoutCases() {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
-			bed := c.bed(t)
-			root := realpath.Resolve(bed.cwd)
-			home := filepath.Dir(root)
-			env := layoutEnv(t, bed.now, home, root)
-			bed.owners.textEnv = func(io.Writer) textui.Env { return env }
-			bed.replace = append([]string{"~/" + filepath.Base(root), "~/GitHub/" + layoutStableBase(bed.replace, root)}, bed.replace...)
+			if c.bed == nil {
+				c.bed = helpLayoutBed
+			}
+			bed, _ := layoutPrepared(t, c, false)
 			_, stdout, stderr := runLayoutCase(t, c, bed)
 			got := stdout + stderr
 			path := layoutGolden(c.name + ".txt")
@@ -309,7 +351,7 @@ func TestAuditOutputLayout(t *testing.T) {
 				t.Errorf("%s printed:\n%s\nthe golden %s holds:\n%s (%v)", c.name, got, path, want, err)
 			}
 			problems := layoutProblems(got, textui.MaxWidth, bed.replace)
-			if mode := layoutModeOf(t, c.args); mode == auditEnforce {
+			if mode := layoutModeOf(t, c); mode == auditEnforce {
 				for _, problem := range problems {
 					t.Errorf("%s: %s", c.name, problem)
 				}
@@ -318,16 +360,11 @@ func TestAuditOutputLayout(t *testing.T) {
 			}
 
 			// On a terminal the same page is coloured; with colour off not
-			// one escape is printed. The coloured run has a bed of its own,
-			// so an act is coloured on its first run too.
-			fresh := c.bed(t)
-			freshRoot := realpath.Resolve(fresh.cwd)
-			tty := layoutEnv(t, fresh.now, filepath.Dir(freshRoot), freshRoot)
-			tty.TTY, tty.Color = true, true
-			fresh.owners.textEnv = func(io.Writer) textui.Env { return tty }
-			fresh.replace = append([]string{"~/" + filepath.Base(freshRoot), "~/GitHub/" + layoutStableBase(fresh.replace, freshRoot)}, fresh.replace...)
-			_, coloured, colouredErr := runLayoutCase(t, c, fresh)
-			if plain := layoutStripANSI(coloured + colouredErr); plain != got && layoutModeOf(t, c.args) == auditEnforce {
+			// one escape is printed.
+			// A fresh bed: a verb that acts meets the same world twice.
+			again, _ := layoutPrepared(t, c, true)
+			_, coloured, colouredErr := runLayoutCase(t, c, again)
+			if plain := layoutStripANSI(coloured + colouredErr); plain != got && layoutModeOf(t, c) == auditEnforce {
 				t.Errorf("%s: the coloured page is not the plain page in colour:\n%s", c.name, plain)
 			}
 			if strings.Contains(got, "\x1b") {
@@ -335,6 +372,20 @@ func TestAuditOutputLayout(t *testing.T) {
 			}
 		})
 	}
+}
+
+// layoutPrepared is a fresh bed for one case, laid out by the goldens'
+// fixed layout (on a terminal when tty is set), with the replacements of
+// its short paths.
+func layoutPrepared(t *testing.T, c layoutCase, tty bool) (layoutBed, textui.Env) {
+	t.Helper()
+	bed := c.bed(t)
+	root := realpath.Resolve(bed.cwd)
+	env := layoutEnv(t, bed.now, filepath.Dir(root), root)
+	env.TTY, env.Color = tty, tty
+	bed.owners.textEnv = func(io.Writer) textui.Env { return env }
+	bed.replace = append([]string{"~/" + filepath.Base(root), "~/GitHub/" + layoutStableBase(bed.replace, root)}, bed.replace...)
+	return bed, env
 }
 
 // layoutStableBase is the stable name a bed's root is replaced with.
@@ -352,11 +403,15 @@ var layoutANSI = regexp.MustCompile("\x1b\\[[0-9;]*m")
 func layoutStripANSI(text string) string { return layoutANSI.ReplaceAllString(text, "") }
 
 // layoutModeOf is a verb's layout mode: its run function's, by the table.
-func layoutModeOf(t *testing.T, args []string) string {
+// Help pages are always enforced.
+func layoutModeOf(t *testing.T, c layoutCase) string {
 	t.Helper()
-	command, _, ok := resolveIntentArgv(args)
+	if c.help != nil {
+		return auditEnforce
+	}
+	command, _, ok := resolveIntentArgv(c.args)
 	if !ok {
-		t.Fatalf("no public command %q", args)
+		t.Fatalf("no public command %q", c.args)
 	}
 	file, function := layoutRunSource(command)
 	return layoutModeFor(file, function)
@@ -393,15 +448,16 @@ func layoutRunSource(command intentCommand) (string, string) {
 }
 
 var (
-	layoutEpoch      = regexp.MustCompile(`\b1[6-9]\d{8}\b`)
-	layoutHex        = regexp.MustCompile(`\b[0-9a-f]{40}(?:[0-9a-f]{24})?\b`)
-	layoutUTC        = regexp.MustCompile(`\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?Z\b`)
-	layoutKeyValues  = regexp.MustCompile(`\b[a-z][a-zA-Z_-]*=\S+\s+[a-z][a-zA-Z_-]*=\S+`)
-	layoutErrorChain = regexp.MustCompile(`\b(open|stat|read|lstat) /\S*: no such file`)
-	layoutSymbols    = "●○!✗✓?"
-	// layoutBannerSymbols lead a banner line (P12): a live condition or one
-	// that needs a person. An act's ✓ or a refusal's ✗ is a headline.
-	layoutBannerSymbols = "●!"
+	layoutEpoch         = regexp.MustCompile(`\b1[6-9]\d{8}\b`)
+	layoutHex           = regexp.MustCompile(`\b[0-9a-f]{40}(?:[0-9a-f]{24})?\b`)
+	layoutUTC           = regexp.MustCompile(`\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?Z\b`)
+	layoutKeyValues     = regexp.MustCompile(`\b[a-z][a-zA-Z_-]*=\S+\s+[a-z][a-zA-Z_-]*=\S+`)
+	layoutErrorChain    = regexp.MustCompile(`\b(open|stat|read|lstat) /\S*: no such file`)
+	layoutSymbols       = "●○!✗✓?"
+	layoutBannerSymbols = "●!?"
+	// layoutLoneCommand is a line that holds one command a person pastes,
+	// after its indent and a usage key: P9's lone token, never broken.
+	layoutLoneCommand = regexp.MustCompile(`^\s*(usage\s+)?metasystem \S`)
 )
 
 // layoutProblems are the §5 shape rules a page breaks: the headline first
@@ -418,6 +474,8 @@ func layoutProblems(page string, width int, replace []string) []string {
 	}
 	lines := strings.Split(strings.TrimSuffix(page, "\n"), "\n")
 	headline := 0
+	// A banner is attention (!, ?) or a live condition (●); an act's ✓ or
+	// a refusal's ✗ is the headline itself.
 	if first := []rune(lines[0]); len(first) > 1 && strings.ContainsRune(layoutBannerSymbols, first[0]) && first[1] == ' ' {
 		for index, line := range lines {
 			if line == "" {
@@ -441,7 +499,7 @@ func layoutProblems(page string, width int, replace []string) []string {
 		}
 	}
 	for index, line := range lines {
-		if n := utf8.RuneCountInString(line); n > width && len(strings.Fields(line)) > 1 && !layoutFixedLine(line) {
+		if n := utf8.RuneCountInString(line); n > width && len(strings.Fields(line)) > 1 && !layoutLoneCommand.MatchString(line) && !layoutFixedLine(line) {
 			problems = append(problems, fmt.Sprintf("line %d is %d columns: %q", index+1, n, line))
 		}
 		if strings.HasSuffix(line, " ") {
@@ -476,10 +534,15 @@ func TestAuditOutputLayoutRulesCatchTheirTriggers(t *testing.T) {
 	for _, c := range []struct{ page, want string }{
 		{"a headline\n", ""},
 		{"! the helm is taken\n  → metasystem helm return\n\nm1e is running\n", ""},
+		{"✓ wido has the helm\n\n  terminal   the enrolled one\n", ""},
+		{"! the helm is taken\n\n  indented\n", "column 0"},
 		{"  indented\n", "column 0"},
 		{"usage: metasystem goal\n", "usage"},
 		{"claimed=3 approved=8\n", "key=value"},
 		{"x " + strings.Repeat("y", 100) + "\n", "columns"},
+		{"a headline\n  usage   metasystem goal approve" + strings.Repeat(" G", 40) + "\n", ""},
+		{"a headline\n  metasystem work land" + strings.Repeat(" --x", 30) + "\n", ""},
+		{"a headline\n  the words metasystem" + strings.Repeat(" y", 50) + "\n", "columns"},
 		{strings.Repeat("y", 120) + "\n", ""},
 		{"started 1790758391\n", "epoch"},
 		{"tip " + strings.Repeat("a", 40) + "\n", "hex"},
@@ -505,6 +568,9 @@ func TestAuditOutputLayoutCoversEveryPublicAction(t *testing.T) {
 	t.Parallel()
 	golden := map[string]bool{}
 	for _, c := range layoutCases() {
+		if c.help != nil {
+			continue
+		}
 		command, _, _ := resolveIntentArgv(c.args)
 		golden[command.name] = true
 	}

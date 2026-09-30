@@ -877,7 +877,7 @@ type UnreadableFamilySurvivorError struct {
 
 func (e *UnreadableFamilySurvivorError) Error() string {
 	if e.Path != "" {
-		return fmt.Sprintf("cannot probe the %s survivor because %s could not be read during the last stop: %s; repair that named record before running stop", e.Family, e.Path, e.Reason)
+		return fmt.Sprintf("cannot probe the %s survivor: its record %s could not be read during the last stop (%s)", e.Family, e.Path, e.Reason)
 	}
 	return fmt.Sprintf("%s records could not be read during the last stop: %s", e.Family, e.Reason)
 }
@@ -921,11 +921,11 @@ type RemoteJobEvidenceError struct {
 func (e *RemoteJobEvidenceError) Error() string {
 	switch e.Kind {
 	case "missing":
-		return fmt.Sprintf("cannot establish whether job %s on machine %s is terminal because its record %s is missing; restore that job's record from %s; if the job is still open there, cancel it there with metasystem work stop j2:%s and restore the resulting terminal record", e.JobID, e.MachineID, e.Path, e.MachineID, e.JobID)
+		return fmt.Sprintf("job %s on machine %s may still run: its record %s is missing; restore it from %s or stop the job there", e.JobID, e.MachineID, e.Path, e.MachineID)
 	case "mismatched":
-		return fmt.Sprintf("cannot establish whether job %s on machine %s is terminal because record %s does not match that job and machine: %s; restore the matching record from %s", e.JobID, e.MachineID, e.Path, e.Reason, e.MachineID)
+		return fmt.Sprintf("job %s on machine %s may still run: its record %s does not match it (%s); restore it from %s", e.JobID, e.MachineID, e.Path, e.Reason, e.MachineID)
 	default:
-		return fmt.Sprintf("cannot establish whether job %s on machine %s is terminal because record %s could not be read: %s; repair that named record before running stop", e.JobID, e.MachineID, e.Path, e.Reason)
+		return fmt.Sprintf("job %s on machine %s may still run: its record %s could not be read (%s)", e.JobID, e.MachineID, e.Path, e.Reason)
 	}
 }
 

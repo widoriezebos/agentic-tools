@@ -209,3 +209,26 @@ func TestMissionStatusOfAnUnknownMissionIsRefused(t *testing.T) {
 		t.Fatalf("known mission status = %d %+v", code, result)
 	}
 }
+
+// The status verb decides that a mission has no state from the state
+// itself, never from the words of the owner's status line: an owner that
+// prints anything else for a missing state still gets the refusal.
+func TestMissionStatusWithoutStateIsJudgedFromTheState(t *testing.T) {
+	t.Parallel()
+	b := newProcessBed(t)
+	owners := b.owners()
+	calls := defaultIntentOwnerCalls()
+	calls.missionStatus = func(stdout, stderr io.Writer, root, mission string) int {
+		fmt.Fprintln(stdout, "no state here, in other words")
+		return 7
+	}
+	owners.delivery = &intentDeliveryOwners{executable: func() (string, error) { return "/fake/metasystem", nil },
+		process: func(process intentProcess) intentProcessResult {
+			t.Errorf("an engine child ran: %v", process.argv)
+			return intentProcessResult{code: 1}
+		}, calls: calls}
+	code, result := b.runJSON(owners, "mission", "status", "nosuch")
+	if code != 1 || result.Outcome != intentRefused || result.Summary != "no mission nosuch in this repository; nothing was read" {
+		t.Fatalf("mission status without state = %d %+v", code, result)
+	}
+}

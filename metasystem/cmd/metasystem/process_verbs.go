@@ -184,7 +184,7 @@ func (o processOwners) stop(scope processScope, scale int) (stoptransition.Repor
 	crashStep, err := processStopCrashStep(scope.Root)
 	if err != nil {
 		return stoptransition.Report{}, &processRefusal{verb: "stop", checkout: scope.Checkout, sentence: err.Error() + ", so nothing was stopped",
-			second: "run: env -u " + processStopCrashVariable + " " + processVerbRetryCommand(scope, "stop"), code: 1}
+			second: fmt.Sprintf("run: env -u %s %s", processStopCrashVariable, processVerbRetryCommand(scope, "stop")), code: 1}
 	}
 	if _, refusal := o.humanTerminal(scope, "metasystem system stop", processVerbRetryCommand(scope, "stop")); refusal != nil {
 		return stoptransition.Report{}, refusal

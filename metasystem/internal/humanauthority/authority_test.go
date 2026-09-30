@@ -681,7 +681,7 @@ func TestProtectedSystemImageAdmissionRequiresStableWithheldArgumentsAndRootOwne
 			if test.wantOwner && !strings.Contains(message, "owner uid "+strconv.FormatUint(uint64(test.first.OwnerUID), 10)) {
 				t.Fatalf("refusal did not name its owner: %s", message)
 			}
-			if test.wantWorkaround && !strings.HasSuffix(message, enrollmentAncestryWorkaround) {
+			if test.wantWorkaround && !strings.HasSuffix(message, enrollmentAncestryWorkaround()) {
 				t.Fatalf("refusal did not end with the enrollment workaround: %s", message)
 			}
 			if test.wantReason != "" && !strings.Contains(message, test.wantReason) {

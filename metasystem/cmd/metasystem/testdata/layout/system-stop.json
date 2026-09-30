@@ -1,0 +1,24 @@
+exit 0
+--
+{
+  "schemaVersion": 1,
+  "verb": "system stop",
+  "targets": [
+    {
+      "kind": "checkout",
+      "id": "/Users/wido/GitHub/agentic-tools-m1e"
+    }
+  ],
+  "outcome": "confirmed",
+  "summary": "stopped /Users/wido/GitHub/agentic-tools-m1e",
+  "data": {
+    "exitCode": 0,
+    "lines": [
+      "checkout /Users/wido/GitHub/agentic-tools-m1e",
+      "nothing is running",
+      "stopped /Users/wido/GitHub/agentic-tools-m1e; start again: metasystem system start --repo /Users/wido/GitHub/agentic-tools-m1e"
+    ]
+  }
+}
+
+--

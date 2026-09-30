@@ -1,0 +1,20 @@
+m1e is unhealthy · 9 parts need attention
+
+Machinery
+  ✗ steward-runner         dead      no steward runner is recorded
+  ✗ supervision-owner      dead      no supervision owner holds the repository lock
+  ✗ repo-watcher           dead      no supervision state is recorded
+  ✗ census-freshness       dead      no census success is recorded
+  ? narrator-freshness     unknown   the steward installation generation is unreadable
+  ✗ session-main           dead      no session main is announced
+  ✗ hook-freshness         dead      no hook turn generation is recorded
+  ? ledger-attention       unknown   no ledger-attention pass is recorded; run metasystem goal list
+  ✗ capability-snapshots   dead      missing or stale capability snapshots: fake; the next delegated
+                                     job for each runtime named probes it and records a fresh
+                                     snapshot; nothing needs doing now
+
+This checkout
+  disk: no pass has run for this checkout yet; metasystem disk clean --preview shows what one would
+    do
+
+→ metasystem session start  the first public remedy check found

@@ -23,9 +23,8 @@ import (
 // stopBlockReason is the fixed guidance a block carries. The refusal is
 // bounded — the caller blocks only the first time a given set of open work is
 // seen — so this text tells the agent to act or record why it cannot.
-const stopBlockReason = "Work named in a plan is unblocked and nothing is in flight. Do it now, " +
-	"or record in the plan why it is blocked or waiting on the human. " +
-	"This refusal does not repeat for the same work."
+const stopBlockReason = "Work named in a plan is ready and nothing is in flight, so this turn may not end yet\n" +
+	"Do it now, or record in the plan why it is blocked or waits on a person; this refusal does not repeat for the same work."
 
 const systemMessageTrimNotice = "[system message trimmed to fit the Stop refusal]"
 

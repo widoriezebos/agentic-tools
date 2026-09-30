@@ -1,0 +1,22 @@
+exit 2
+--
+{
+  "schemaVersion": 1,
+  "verb": "helm take",
+  "targets": [],
+  "outcome": "refused",
+  "summary": "helm take needs a reason; nothing was done",
+  "next": {
+    "argv": [
+      "metasystem",
+      "helm",
+      "take",
+      "--json",
+      "--reason",
+      "TEXT"
+    ],
+    "reason": "TEXT says why you take the helm"
+  }
+}
+
+--

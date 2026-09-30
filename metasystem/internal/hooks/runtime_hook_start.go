@@ -25,12 +25,18 @@ import (
 // fixed notice or one validated intentional response, so an ordinary runtime
 // failure can always explain itself.
 
-const startLastResort = `{"systemMessage":"Metasystem SessionStart could not produce its response: role context delivery is unconfirmed; a declared brain may be uninstructed. Rebuild the engine with go run ./cmd/devgate build, then start a new session."}`
+const startLastResort = `{"systemMessage":"MetaSystem could not start this session, so it has no role context\nrun: ` + startRebuild + `"}`
 
-const startBookkeepingNotice = "Metasystem SessionStart published its response but could not finish delivery bookkeeping. Repair supervision from the owning installation, then start a new session; context may repeat."
+// startRebuild is line 2 of a start notice whose cure is a rebuilt engine.
+const startRebuild = "go run ./cmd/devgate build in the metasystem folder, then start a new session"
 
+const startBookkeepingNotice = "MetaSystem started this session but could not record that its context was delivered, so it may repeat\nrun: metasystem session start"
+
+// startNoticeTemplate is a start failure's two lines: what could not be
+// done, so the session has no role context (a declared brain seat is then
+// uninstructed), and the command that repairs it.
 func startNoticeTemplate(cause, remedy string) string {
-	return `{"systemMessage":"Metasystem SessionStart could not ` + cause + `: this session received no role context; if this checkout is a declared brain it is uninstructed. ` + remedy + ` Then start a new session."}`
+	return `{"systemMessage":"MetaSystem could not ` + cause + `, so this session has no role context\nrun: ` + remedy + `"}`
 }
 
 // startNotice is one fixed SessionStart outcome and its exit status.
@@ -39,37 +45,44 @@ type startNotice struct {
 	status int
 }
 
+// The remedies a start notice names.
+const (
+	startCheck   = "metasystem system check, then start a new session"
+	startSetup   = "metasystem system setup, then start a new session"
+	startSession = "metasystem session start, then start a new session"
+)
+
 // StartOutcomeNotices is the SessionStart notice catalog: every fixed outcome
 // the start boundary can publish. "interrupted" exits with the signal's
 // status. The hook-start audit joins this catalog to its executed cases.
 var StartOutcomeNotices = map[string]startNotice{
-	"engine-missing":          {`{"systemMessage":"Metasystem engine missing: this session received no role context; if this checkout is a declared brain it is uninstructed until the engine is rebuilt: run go run ./cmd/devgate build in the metasystem installation, then start a new session"}`, 0},
-	"engine-rebuilding":       {`{"systemMessage":"Metasystem engine is behind this checkout's landed sources: a rebuild runs in the background (log: artifacts/agents/hook-bootstrap.log), so this session received no role context and supervision was not armed; if this checkout is a declared brain it is uninstructed. Start a new session once the rebuild finishes."}`, 0},
-	"engine-skew":             {`{"systemMessage":"Metasystem engine does not answer path state-root: this session received no role context; if this checkout is a declared brain it is uninstructed. Rebuild the engine with go run ./cmd/devgate build, then start a new session."}`, 0},
-	"installation-directory":  {startNoticeTemplate("locate its installation directory", "Restore access to the installed hook and its parent directories."), 0},
-	"checkout-identification": {startNoticeTemplate("identify the checkout and its primary installation", "Restore Git and access to the checkout and its primary metasystem installation."), 0},
-	"resolved-directory":      {startNoticeTemplate("open the resolved installation directory", "Restore access to the installation directory returned by the engine."), 0},
-	"installation-validation": {startNoticeTemplate("validate the metasystem installation", "Restore a complete, readable metasystem installation and rebuild the engine with go run ./cmd/devgate build."), 0},
-	"payload-storage":         {startNoticeTemplate("stage its input", "Restore writable temporary storage and free space."), 0},
-	"boot-storage":            {startNoticeTemplate("stage brain context", "Restore writable temporary storage and free space."), 0},
-	"start-preparation":       {startNoticeTemplate("prepare the session identity and context", "Restore the installed shell tools and rebuild the engine with go run ./cmd/devgate build."), 0},
+	"engine-missing":          {startNoticeTemplate("find its engine", startRebuild), 0},
+	"engine-rebuilding":       {`{"systemMessage":"MetaSystem is rebuilding its engine, so this session has no role context yet\nrun: tail artifacts/agents/hook-bootstrap.log, then start a new session once it is done"}`, 0},
+	"engine-skew":             {startNoticeTemplate("use its engine, which is older than this checkout", startRebuild), 0},
+	"installation-directory":  {startNoticeTemplate("find its installation folder", startCheck), 0},
+	"checkout-identification": {startNoticeTemplate("identify the checkout and its installation", startCheck), 0},
+	"resolved-directory":      {startNoticeTemplate("open its installation folder", startCheck), 0},
+	"installation-validation": {startNoticeTemplate("read a complete installation", startRebuild), 0},
+	"payload-storage":         {startNoticeTemplate("write its input to temporary storage", "metasystem disk show, free space, then start a new session"), 0},
+	"boot-storage":            {startNoticeTemplate("write the brain context to temporary storage", "metasystem disk show, free space, then start a new session"), 0},
+	"start-preparation":       {startNoticeTemplate("prepare the session's identity and context", startRebuild), 0},
 	"response-rendering":      {startLastResort, 0},
 	"unexpected-termination":  {startLastResort, 0},
-	"payload-read":            {startNoticeTemplate("read its session input", "Repair the SessionStart hook input and rebuild the engine with go run ./cmd/devgate build."), 0},
-	"pending-read":            {startNoticeTemplate("read pending steward incidents", "Restore access to the steward incident records and repair unreadable records."), 0},
-	"holder-read":             {startNoticeTemplate("read checkout holder identity", "Restore readable checkout custody records and restart the owning runtime."), 0},
-	"invocation-invalid":      {startNoticeTemplate("accept the runtime invocation", "Repair the installed hook registration."), 2},
-	"runtime-unregistered":    {startNoticeTemplate("find the runtime in its registry", "Repair the installed hook registration."), 2},
-	"runtime-registry":        {startNoticeTemplate("read the runtime registry", "Rebuild the engine with go run ./cmd/devgate build and restore the installed runtime declarations."), 0},
-	"context-contract":        {startNoticeTemplate("read the runtime context contract", "Rebuild the engine with go run ./cmd/devgate build and restore the installed runtime declarations."), 0},
-	"custody-unreadable":      {startNoticeTemplate("authenticate delegate custody", "Restore the recorded delegate custody and restart through its launcher."), 1},
-	"process-identity":        {startNoticeTemplate("identify the owning runtime process", "Restart through the installed runtime launcher."), 0},
-	"brain-boot":              {`{"systemMessage":"Metasystem brain boot failed: this session received no role context; if this checkout is a declared brain it is uninstructed. Rebuild the engine with go run ./cmd/devgate build, then start a new session."}`, 0},
-	"brain-timeout":           {`{"systemMessage":"Metasystem brain boot failed (timeout): this session received no role context; if this checkout is a declared brain it is uninstructed. Rebuild the engine with go run ./cmd/devgate build, then start a new session."}`, 0},
-	"arming":                  {`{"systemMessage":"Metasystem supervision arming failed: this session received no role context; if this checkout is a declared brain it is uninstructed. Repair supervision from the owning installation and run metasystem session start there. Then start a new session."}`, 0},
-	"wait-recovery":           {startNoticeTemplate("read durable wait recovery rows", "Repair supervision from the owning installation and run metasystem session start there."), 0},
-	"temporary-cleanup":       {startNoticeTemplate("remove its temporary files", "Restore temporary-directory access and remove the hooks' leftover temporary files."), 0},
-	"interrupted":             {`{"systemMessage":"Metasystem SessionStart could not finish because it was interrupted: this session received no role context; if this checkout is a declared brain it is uninstructed. Restore the runtime session. Then start a new session."}`, 143},
+	"payload-read":            {startNoticeTemplate("read its session input", startSetup), 0},
+	"pending-read":            {startNoticeTemplate("read the steward's pending incidents", startCheck), 0},
+	"holder-read":             {startNoticeTemplate("read who holds this checkout", startCheck), 0},
+	"invocation-invalid":      {startNoticeTemplate("accept how the runtime called it", startSetup), 2},
+	"runtime-unregistered":    {startNoticeTemplate("find this runtime among its registered runtimes", startSetup), 2},
+	"runtime-registry":        {startNoticeTemplate("read its registered runtimes", startSetup), 0},
+	"context-contract":        {startNoticeTemplate("read how this runtime takes its context", startSetup), 0},
+	"custody-unreadable":      {startNoticeTemplate("confirm which job this delegate session belongs to", "metasystem work status, then restart the job"), 1},
+	"process-identity":        {startNoticeTemplate("identify the agent process it runs in", "metasystem system check, then start a new session through the runtime's launcher"), 0},
+	"brain-boot":              {startNoticeTemplate("prepare the brain seat's context", startRebuild), 0},
+	"brain-timeout":           {startNoticeTemplate("prepare the brain seat's context in time", startRebuild), 0},
+	"arming":                  {startNoticeTemplate("start its supervision", startSession), 0},
+	"wait-recovery":           {startNoticeTemplate("read the waits it must resume", startSession), 0},
+	"temporary-cleanup":       {startNoticeTemplate("remove its temporary files", "metasystem disk clean --preview, then start a new session"), 0},
+	"interrupted":             {`{"systemMessage":"MetaSystem was interrupted while starting this session, so it has no role context\nnothing to do; start a new session"}`, 143},
 }
 
 // StartIntentionalOutcomes are the validated non-notice SessionStart

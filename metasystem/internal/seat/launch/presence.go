@@ -56,12 +56,12 @@ func (p SeatPresence) Taken(namespace string) ([]string, error) {
 	defer func() { _ = p.Forget(namespace) }()
 	if err := p.Transport.Fetch(namespace); err != nil {
 		return nil, refuse(CodeFleetUnreadable,
-			"this seat could not bring in the fleet's presence, so it cannot say which nicknames are taken: %v", err)
+			"this seat could not fetch the fleet's machines, so it cannot tell whether the name is free (%v)", err).run("metasystem machine list --refresh")
 	}
 	copied, err := p.Transport.Read(namespace)
 	if err != nil {
 		return nil, refuse(CodeFleetUnreadable,
-			"this seat could not read the fleet's presence, so it cannot say which nicknames are taken: %v", err)
+			"this seat could not read the fleet's machines, so it cannot tell whether the name is free (%v)", err).run("metasystem machine list --refresh")
 	}
 	names := make([]string, 0, len(copied.Records)+len(copied.Malformed))
 	for name := range copied.Records {

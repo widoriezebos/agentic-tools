@@ -259,7 +259,7 @@ func TestHelmTakeIgnoresAHelmProofForTheEnrollmentGrade(t *testing.T) {
 	b.owners.helm.pid = func() int64 { return 60 }
 	_, out := b.run("helm", "take", "--reason", "by hand")
 	enrollment, err := humanauthority.ReadEnrollment(b.inst)
-	if err != nil || enrollment.Generation != 2 || !strings.Contains(out, "this terminal is now enrolled as Wido") {
+	if err != nil || enrollment.Generation != 2 || !strings.Contains(out, "enrolled now, as Wido") {
 		t.Fatalf("a take at another terminal at the helm did not enroll it from the real walk: %+v %v\n%s", enrollment, err, out)
 	}
 	// The take never asks the helm to admit: ProveTerminal is its proof.

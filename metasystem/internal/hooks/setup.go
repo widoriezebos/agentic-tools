@@ -26,13 +26,6 @@ var lifecycleCommand = regexp.MustCompile(`(?:scripts/agents/supervision-hook\.s
 // command it rewrites and never composes one of its own.
 var launcherFallback = regexp.MustCompile(`^\((.*)\)\s*\|\|\s*(\S.*)$`)
 
-// legacyBlockFallback is the tail the Claude Stop launcher shipped before a
-// launcher failure became a degraded allowance. A live settings file may
-// still carry a launcher rendered with it; it is recognized as this
-// installation's so setup replaces it.
-const legacyBlockFallback = `printf '%s\n' '{"decision":"block","reason":"Metasystem Stop hook launcher failed before a safe verdict; stopping is refused."}'`
-const legacyDegradedFallback = `printf '%s\n' '{"systemMessage":"Metasystem Stop hook launcher failed in its own infrastructure; stopping is allowed with degraded supervision. Cause: hook-bootstrap-failed. Component: hook-launcher. The steward owns repair."}'`
-
 func shippedFallback(command string) string {
 	match := launcherFallback.FindStringSubmatch(command)
 	if len(match) != 3 {
@@ -272,6 +265,10 @@ func desiredSettings(shipped []byte, runtime, installationRel string, registrati
 				desiredCommand := renderCommand(runtime, match[2], installationRel, shippedFallback(command))
 				known[desiredCommand] = true
 				known[renderStubCommand(runtime, match[2], installationRel, shippedFallback(command))] = true
+				if match[2] == "start" {
+					known[renderLauncher(runtime, "start", installationRel, shippedFallback(command),
+						engineInvocationAnswering(runtime, "start", installationRel, legacyStartEngineMissingNotice))] = true
+				}
 				newHandler := cloneMap(handler)
 				newHandler["command"] = desiredCommand
 				newHandlers = append(newHandlers, newHandler)
@@ -325,6 +322,13 @@ func stubInvocation(runtime, action string) string {
 // the hook itself (SessionStart), and a missing one by the person the
 // degraded answer names the command to.
 func engineInvocation(runtime, action, installationRel string) string {
+	return engineInvocationAnswering(runtime, action, installationRel, StartEngineMissingNotice())
+}
+
+// engineInvocationAnswering is engineInvocation whose SessionStart answers
+// startMissing with no engine installed; the legacy launchers carry an
+// earlier wording.
+func engineInvocationAnswering(runtime, action, installationRel, startMissing string) string {
 	primary := `${common%/*}`
 	if installationRel != "" && installationRel != "." {
 		primary += `/` + shellDoubleQuoted(installationRel)
@@ -343,7 +347,7 @@ func engineInvocation(runtime, action, installationRel string) string {
 	case "stop":
 		missing = `; printf '%s\n' ` + shellSingleQuoteLiteral(mustDegradedStopForm("allowed", "engine-missing"))
 	case "start":
-		missing = `; printf '%s\n' ` + shellSingleQuoteLiteral(StartEngineMissingNotice())
+		missing = `; printf '%s\n' ` + shellSingleQuoteLiteral(startMissing)
 	}
 	return `{ ` + selection + run + missing + `; }`
 }
@@ -406,6 +410,9 @@ func knownLegacyCommands(runtime, installationRel string, registrationAtInstalla
 		known[renderStubCommand(runtime, action, installationRel, "")] = true
 		known[renderStubGitRequiredCommand(runtime, action, installationRel, "")] = true
 	}
+	legacyStart := engineInvocationAnswering(runtime, "start", installationRel, legacyStartEngineMissingNotice)
+	known[renderLauncher(runtime, "start", installationRel, "", legacyStart)] = true
+	known[renderGitRequiredLauncher(installationRel, "", legacyStart)] = true
 	if runtime == "claude" {
 		known[renderStubGitRequiredCommand(runtime, "stop", installationRel, legacyBlockFallback)] = true
 		known[renderStubGitRequiredCommand(runtime, "stop", installationRel, legacyDegradedFallback)] = true

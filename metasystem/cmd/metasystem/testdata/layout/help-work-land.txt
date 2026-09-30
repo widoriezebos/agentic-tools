@@ -1,0 +1,88 @@
+metasystem work land · land a goal's reviewed work
+
+  usage   metasystem work land G [--through COMMIT]
+          metasystem work land G --queue-only
+          metasystem work land j2:J
+          metasystem work land G --exception CODE --reason TEXT --by NAME [--expires 2h] [--replace-exception ID [--transfer]]
+          metasystem work land G --using-exception ID
+          metasystem work land [G] --message FILE (--staged | --path P...) [--chain J | --direct-fix CLASS ...]
+
+--queue-only marks the held goal built and waiting to land, and nothing else: no proof runs, no read
+  is collected and nothing is pushed.
+--exception is a person's explicit act, never implied by work land G: the goal's whole landing
+  candidate is computed, the exception past exactly one refusal code (or one group:NAME) is recorded
+  with the enrolled person's proof, and the carried landing delivers it from this checkout's main.
+  Repeating the request rejoins the recorded exception; a changed candidate needs
+  --replace-exception. --using-exception ID lands under an exception already recorded, locally or
+  through the channel.
+The claim leaves the one-claim quota and its elapsed fence until it lands; each machine has one
+  landing slot.
+With landing.batch-root configured, the goal branch (or the certified chain) joins the landing
+  batch, which proves and pushes it.
+Without it, the read-clean goal branch is proved on its landing candidate, prepared and pushed by
+  hand.
+With the batch configured, a selection holding a unit read from a reader record is refused with the
+  critic read that admits it (metasystem work review --commit SHA --goal G); it lands by hand only
+  when G is the fix goal of an open trunk red on main (metasystem incident list names it; metasystem
+  incident claim E --goal G).
+Missing reads, proof or approval refuse with the missing input; no other route is tried instead.
+A repeat reuses the retained receipt and prepared landing; a moved endpoint starts from a new proof.
+  The goal is not concluded: that stays goal done G.
+--message lands a hand-made change instead: the named paths (or the staged set) are staged and
+  committed through the commit boundary with the landing's declarations. With a landing lane the
+  commit is pinned and joins the lane as a change member (change:<first 12 of the commit>): it rides
+  on the proof of the goal members it joins, a batch of changes alone is proved on the lane's
+  account, and it lands with a Landing-Change trailer; the same command reads its membership until
+  it lands, and an ejected change is given back: its commit is undone with its changes kept, to fix
+  and land again.
+Without a lane, and with --local or --recertification, it is rebased onto origin, proved against
+  retained delivery proof, and pushed by hand.
+
+MetaSystem administration
+  metasystem work land G --exception CODE --reason TEXT --by NAME --upgrade-goals [--expires 2h] [--replace-exception ID [--transfer]]
+
+Options  before or after the target; -- ends them
+  --through COMMIT           land a human-approved prefix ending at this unit commit
+  --queue-only               only mark the held goal waiting to land, for a later work land G
+  --message FILE             land a hand-made change with this commit message (- reads it from
+                             standard input)
+  --staged                   with --message: land exactly the staged set
+  --path PATH (repeatable)   with --message: stage and land these paths (relative to the
+                             installation)
+  --repo PATH                the repository, or any directory or file inside it (default: the
+                             current directory) (also --root)
+  --json                     print one JSON result instead of text
+
+Advanced
+  --exception CODE           a person's exception: the one refusal code or group:NAME this landing
+                             is carried past
+  --reason TEXT              with --exception: why
+  --by NAME                  with --exception: the person deciding, at the enrolled terminal
+  --expires DURATION         with --exception: how long it stays usable (default 2h, at most 4h)
+  --replace-exception ID     with --exception: the unused exception this one replaces
+  --transfer                 with --replace-exception: take over an exception recorded on another
+                             seat
+  --upgrade-goals            with --exception: raise the goal ledger's format in the same act
+  --using-exception ID       land under this already recorded exception (local or answered through
+                             the channel)
+  --lineage LINEAGE          the acting agent session, as its launcher named it in
+                             METASYSTEM_OWNER_LINEAGE (default: that variable)
+  --chain J                  with --message: the reviewed implementation chain the change lands
+  --recertification RECORD   with --chain: the canonical recertification record
+  --test-receipt PATH        with --chain or --direct-fix tier-1: the receipt for this exact
+                             candidate
+  --direct-fix CLASS         with --message: register-carriage, exact-revert or tier-1
+  --revert-of COMMIT         with --direct-fix exact-revert: the commit reverted
+  --root-job J               with --direct-fix tier-1: the root implementer job
+  --tests COMMAND            with --direct-fix tier-1: the legacy test command a receipt is made
+                             from
+  --allow-new-plan           with --message: the landing deliberately adds a new plan file
+  --skip-transport           with --message: do not mirror origin to the transport remote
+  --local                    with --message --staged: commit the staged set through the commit
+                             boundary only; nothing is fetched or pushed
+
+Examples
+  metasystem work land verbs-match-intent
+  metasystem work land verbs-match-intent --queue-only
+  metasystem work land verbs-match-intent --through 3f2a9c1
+  metasystem work land j2:impl-01

@@ -34,7 +34,7 @@ func TestWorkStopGoalCompletesItsRecordedStop(t *testing.T) {
 		t.Fatalf("work stop G did not complete stop batch %s: %+v %v", stopID, batch, err)
 	}
 	tip := bed.tip()
-	if out := gcliForgivingMust(t, bed, "work", "stop", "ship-widget"); !strings.Contains(out, "nothing was stopped") || bed.tip() != tip {
+	if out := gcliForgivingMust(t, bed, "work", "stop", "ship-widget"); !strings.Contains(out, "nothing to stop") || bed.tip() != tip {
 		t.Fatalf("a repeated work stop G was not a no-op: %q", out)
 	}
 
@@ -44,7 +44,7 @@ func TestWorkStopGoalCompletesItsRecordedStop(t *testing.T) {
 	}
 
 	code, stdout, stderr = gcliForgivingPublic(bed, "work", "stop", "ship-widget")
-	if code != 0 || !strings.Contains(stdout+stderr, "no job of goal ship-widget is running; nothing was stopped") {
+	if code != 0 || !strings.Contains(stdout+stderr, "No job of goal ship-widget is running; nothing to stop") {
 		t.Fatalf("work stop G with nothing running is not a quiet success: code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
 }

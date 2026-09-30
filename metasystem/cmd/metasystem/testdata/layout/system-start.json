@@ -1,0 +1,25 @@
+exit 0
+--
+{
+  "schemaVersion": 1,
+  "verb": "system start",
+  "targets": [
+    {
+      "kind": "checkout",
+      "id": "/Users/wido/GitHub/agentic-tools-m1e"
+    }
+  ],
+  "outcome": "confirmed",
+  "summary": "started /Users/wido/GitHub/agentic-tools-m1e",
+  "data": {
+    "exitCode": 0,
+    "lines": [
+      "evidence root: /Users/wido/metasystem-evidence/001 (default; set evidence.root in metasystem.conf.local to change)",
+      "checkout /Users/wido/GitHub/agentic-tools-m1e",
+      "steward armed",
+      "armed /Users/wido/GitHub/agentic-tools-m1e generation 1"
+    ]
+  }
+}
+
+--

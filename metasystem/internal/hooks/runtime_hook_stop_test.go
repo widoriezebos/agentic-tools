@@ -471,7 +471,7 @@ func TestStopAdvisorDelivery(t *testing.T) {
 			return 0
 		}
 	}, `{"session_id":"advisor-delivery"}`)
-	if run.status != 0 || !strings.Contains(run.stdout, "OWNED-ELSEWHERE") || !strings.Contains(run.stdout, "advisor protocol guidance") {
+	if run.status != 0 || !strings.Contains(run.stdout, "only advises here") || !strings.Contains(run.stdout, "run: metasystem session isolate") || !strings.Contains(run.stdout, "advisor protocol guidance") {
 		t.Fatalf("advisor = status %d stdout %q", run.status, run.stdout)
 	}
 	if !ops.stopInputs[0].Advisor || ops.stopInputs[0].VerdictFile != "" || ops.called("report turn-verdict") || ops.called("lease renew") {
