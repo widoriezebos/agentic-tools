@@ -1,0 +1,25 @@
+exit 2
+--
+{
+  "schemaVersion": 1,
+  "verb": "settings check",
+  "targets": [],
+  "outcome": "refused",
+  "summary": "/ is not inside a Git repository; nothing was done",
+  "next": {
+    "argv": [
+      "metasystem",
+      "settings",
+      "check",
+      "--json",
+      "--repo",
+      "PATH"
+    ],
+    "reason": "inside the repository, or naming its path"
+  },
+  "details": [
+    "not an installation because: not a git repository"
+  ]
+}
+
+--

@@ -77,12 +77,12 @@ func RunWatchdog(options WatchdogOptions) error {
 		// consumed is accounted when it ends.
 		if !options.Deadline.IsZero() && !now.Before(options.Deadline) && !deadlineNoted {
 			deadlineNoted = true
-			fmt.Fprintf(errorOutput(options), "suite watchdog: the reservation's deadline %s passed in section %s; the suite runs on under the progress rule\n",
-				options.Deadline.UTC().Format(time.RFC3339), section)
+			fmt.Fprintf(errorOutput(options), "suite watchdog: the reservation's deadline passed in section %s; the suite runs on as it progresses\n",
+				section)
 		}
 		if !sectionStarted.IsZero() && now.Sub(sectionStarted) > options.SectionCap && capNoted != section {
 			capNoted = section
-			fmt.Fprintf(errorOutput(options), "suite watchdog: section %s passed its %s cap while still producing output; it runs on under the progress rule\n",
+			fmt.Fprintf(errorOutput(options), "suite watchdog: section %s passed its %s cap but still progresses; it runs on\n",
 				section, options.SectionCap)
 		}
 		// A suite ends for two facts and for nothing else: the supervisor

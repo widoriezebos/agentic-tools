@@ -1,0 +1,21 @@
+exit 2
+--
+{
+  "schemaVersion": 1,
+  "verb": "settings set",
+  "targets": [],
+  "outcome": "refused",
+  "summary": "settings set needs one key and its value; nothing was done",
+  "next": {
+    "argv": [
+      "metasystem",
+      "settings",
+      "set",
+      "KEY",
+      "VALUE"
+    ],
+    "reason": "metasystem settings keys lists the keys"
+  }
+}
+
+--

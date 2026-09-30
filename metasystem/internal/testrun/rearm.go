@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -397,7 +396,9 @@ var (
 			return fmt.Errorf("admit landed engine rebuild: %w", err)
 		}
 		defer lease.Close()
-		fmt.Fprintf(os.Stderr, "metasystem test run: landed engine rebuild host queue=%dms\n", lease.Waited().Milliseconds())
+		if waited := lease.Waited().Round(time.Second); waited > 0 {
+			fmt.Fprintf(os.Stderr, "test run: waited %s for room on this host to rebuild the engine\n", waited)
+		}
 		argv := DevgateBootstrapBuildArgv()
 		command := exec.CommandContext(ctx, argv[0], argv[1:]...)
 		command.Dir = installation
@@ -571,7 +572,7 @@ var landedRearmOpenEnrollment = func(installation string) (steward.InstallIdenti
 // index tree as it stood before any fast-forward, so a delivery run that
 // named that tree can follow the index onto the tip. What it does is told on
 // notes, the invocation's standard error.
-func landedRearm(notes io.Writer, installation, projectRoot, prefix string, namedDeliveryTree bool) (*proofrun.EngineRearm, error) {
+func landedRearm(notes notices, installation, projectRoot, prefix string, namedDeliveryTree bool) (*proofrun.EngineRearm, error) {
 	pinned, openErr := steward.OpenEnrolledBinary(installation)
 	if openErr != nil {
 		// Not enrolled, or rebuilt bytes not yet re-armed: the trusted
@@ -589,7 +590,9 @@ func landedRearm(notes io.Writer, installation, projectRoot, prefix string, name
 			_ = pinned.Close()
 			return &record, nil
 		}
-		fmt.Fprintf(notes, "metasystem test run: %s does not match the enrollment (generation %d, landed %s); judging the engine afresh\n", engineRearmEnv, pinned.Install.Generation, pinned.Install.LandedCommit)
+		notes.say("the saved re-arm is not this engine's enrollment; judging the engine afresh",
+			enginecause.Value("record", engineRearmEnv), enginecause.Value("generation", fmt.Sprint(pinned.Install.Generation)),
+			enginecause.Value("landed", pinned.Install.LandedCommit))
 	}
 	defer pinned.Close()
 	seconds := steward.RearmResolveSeconds(installation)
@@ -610,7 +613,8 @@ func landedRearm(notes io.Writer, installation, projectRoot, prefix string, name
 	}
 	facts.NamedDeliveryTree = namedDeliveryTree
 	if decision := decideLandedRearm(facts, projectRoot); decision.Rearm {
-		fmt.Fprintf(notes, "metasystem test run: the enrolled engine (%s) is behind the landed tip %s of %s by landed commits only; fast-forwarding, rebuilding and re-arming\n", facts.Source, facts.Tip, facts.LandingRef)
+		notes.say("this engine is behind the landing branch; updating, rebuilding and re-arming it",
+			enginecause.Value("engine", facts.Source), enginecause.Value("tip", facts.Tip), enginecause.Value("ref", facts.LandingRef))
 	}
 	// The rebuild and the re-arm are not bounded by the resolver's seconds:
 	// a build takes what it takes, and up has its own bounds.
@@ -618,12 +622,13 @@ func landedRearm(notes io.Writer, installation, projectRoot, prefix string, name
 	if err != nil || record == nil {
 		return nil, err
 	}
-	fmt.Fprintf(notes, "metasystem test run: re-armed %s; restarting this run on the landed engine\n", record.ReArmed)
+	notes.say("re-armed " + record.ReArmed + "; restarting this run on the updated engine")
 	if reexecErr := landedRearmReexec(record); reexecErr != nil {
 		// The re-exec could not happen; this run continues on its own bytes
 		// with the new enrollment as its policy engine, as any run whose
 		// invoking binary is not the pin.
-		fmt.Fprintf(notes, "metasystem test run: could not restart on the landed engine (%v); continuing with the re-armed enrollment as the policy engine\n", reexecErr)
+		notes.say("could not restart on the updated engine; this run goes on, judged by the re-armed one",
+			enginecause.Value("error", reexecErr.Error()))
 	}
 	return record, nil
 }

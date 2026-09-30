@@ -198,8 +198,8 @@ func TestAddTestsValidatesGroupSourceAndIsIdempotent(t *testing.T) {
 	for _, test := range []struct {
 		group, name, detail string
 	}{
-		{"missing", "TestAdded", "unknown group"},
-		{"app-group", "TestAbsent", "no matching func TestAbsent("},
+		{"missing", "TestAdded", "no such group"},
+		{"app-group", "TestAbsent", "no func TestAbsent("},
 	} {
 		_, err := AddTests(base, contractPath, test.group, []string{test.name})
 		var refusal *Refusal
@@ -355,4 +355,26 @@ func surfaceByID(t *testing.T, contract testpolicy.Contract, id string) testpoli
 	}
 	t.Fatalf("surface %s missing", id)
 	return testpolicy.Surface{}
+}
+
+// A refusal reads in two lines: the plain reason, then the command that
+// resolves it when one does; its code is its detail, for --verbose and
+// records, never its default text.
+func TestRefusalReadsInPlainWords(t *testing.T) {
+	t.Parallel()
+	_, err := AddTests(mergeFixture(), "testing.json", "missing", []string{"TestAdded"})
+	var refusal *Refusal
+	if !errors.As(err, &refusal) {
+		t.Fatalf("err = %v", err)
+	}
+	if text := err.Error(); strings.Contains(text, AddTestsCode) || !strings.HasSuffix(text, "\nrun: metasystem test list") {
+		t.Errorf("text %q holds the code or lacks the command", text)
+	}
+	if refusal.RefusalCode() != AddTestsCode || !strings.HasPrefix(refusal.RefusalDetail(), AddTestsCode+": ") {
+		t.Errorf("code %q detail %q", refusal.RefusalCode(), refusal.RefusalDetail())
+	}
+	_, err = MergeBytes([]byte("{"), []byte("{}"), []byte("{}"))
+	if err == nil || strings.Contains(err.Error(), InvalidContractCode) {
+		t.Errorf("merge refusal %v holds its code", err)
+	}
 }

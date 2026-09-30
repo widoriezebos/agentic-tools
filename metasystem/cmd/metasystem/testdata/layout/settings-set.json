@@ -1,0 +1,21 @@
+exit 0
+--
+{
+  "schemaVersion": 1,
+  "verb": "settings set",
+  "targets": [
+    {
+      "kind": "setting",
+      "id": "launch.read.model"
+    }
+  ],
+  "outcome": "unchanged",
+  "summary": "launch.read.model already holds that value in /Users/wido/GitHub/agentic-tools-m1e/metasystem.conf.local; nothing was changed",
+  "data": {
+    "file": "/Users/wido/GitHub/agentic-tools-m1e/metasystem.conf.local",
+    "key": "launch.read.model",
+    "value": "fixture-model"
+  }
+}
+
+--

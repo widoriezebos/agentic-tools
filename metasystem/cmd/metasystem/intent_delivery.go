@@ -50,7 +50,7 @@ func intentDeliveryCommands() []intentCommand {
 	goalFlag := intentFlag{name: "goal", value: "G", usage: "with --commit, or feedback on changes: the goal the subject serves"}
 	return []intentCommand{
 		{
-			object: "work", action: "review", primary: true, audience: "both", summary: "independently review a goal's built work, a job, a run or a commit",
+			object: "work", action: "review", laidOut: true, primary: true, audience: "both", summary: "independently review a goal's built work, a job, a run or a commit",
 			usage: []string{reviewGoalUsage, reviewSubmitUsage, reviewFindingUsage,
 				reviewJobUsage, reviewCommitUsage, reviewRunUsage, reviewChangesUsage, reviewDiffUsage, reviewCheckUsage},
 			helpForms: reviewHelpForms(),
@@ -116,7 +116,7 @@ func intentDeliveryCommands() []intentCommand {
 			run: runIntentReview,
 		},
 		{
-			object: "work", action: "revise", audience: "agent", summary: "correct a goal's work with a brief: one new attempt, reviewed again",
+			object: "work", action: "revise", laidOut: true, audience: "agent", summary: "correct a goal's work with a brief: one new attempt, reviewed again",
 			usage: []string{"metasystem work revise G [--work NAME] [--after N] --brief FILE [--dispositions FILE]", "metasystem work revise j2:R --dispositions FILE --brief FILE", "metasystem work revise run:RUN --brief FILE"},
 			details: []string{
 				"Every attempt of a work item has a number N, whether it passed or failed; --after N names the attempt being corrected.",
@@ -144,7 +144,7 @@ func intentDeliveryCommands() []intentCommand {
 			run:      runIntentReviseSentBack,
 		},
 		{
-			object: "work", action: "land", primary: true, audience: "both", summary: "land a goal's reviewed work",
+			object: "work", action: "land", laidOut: true, primary: true, audience: "both", summary: "land a goal's reviewed work",
 			usage: []string{"metasystem work land G [--through COMMIT]", "metasystem work land G --queue-only", "metasystem work land j2:J",
 				"metasystem work land G --exception CODE --reason TEXT --by NAME [--expires 2h] [--replace-exception ID [--transfer]]",
 				"metasystem work land G --using-exception ID",
@@ -191,7 +191,7 @@ func intentDeliveryCommands() []intentCommand {
 			run:      runIntentLand,
 		},
 		{
-			object: "work", action: "finish", audience: "both", summary: "record a finished job with nothing to review or land as complete",
+			object: "work", action: "finish", laidOut: true, audience: "both", summary: "record a finished job with nothing to review or land as complete",
 			usage: []string{"metasystem work finish j2:J", "metasystem work finish j2:J --evidence R", "metasystem work finish j2:J --dispositions FILE"},
 			details: []string{
 				"For a job whose result is findings, not code: an investigation, or a read that is not reviewed further. Use the reference work status printed.",
@@ -870,7 +870,8 @@ func reviewBrief(mode, chain, goalID string, rounds int64, calls int, threat, sc
 		"",
 		"# Review brief: " + chain,
 		"",
-		fmt.Sprintf("Round budget: %d focused rounds, goal %s's approved review-round limit; exhaustion follows the critique skills' budget rules.", rounds, goalID),
+		fmt.Sprintf("Round budget: %d focused rounds, goal %s's approved review-round limit;", rounds, goalID),
+		"exhaustion follows the critique skills' budget rules.",
 		"",
 		"Threat model: " + threat,
 		"",
@@ -884,9 +885,12 @@ func reviewBrief(mode, chain, goalID string, rounds int64, calls int, threat, sc
 		"",
 		"## Checklist",
 		"",
-		"Batch independent reads: when several files or ranges are needed and none depends on another's content, request them all in one turn, never one per turn.",
+		"Batch independent reads: when several files or ranges are needed and none depends on",
+		"another's content, request them all in one turn, never one per turn.",
 		"",
-		"No single command may wait longer than 240 seconds; run a longer one in the background with its output to a file and poll the file. A wait that outlives the host turn continues with the wait command its result prints.",
+		"No single command may wait longer than 240 seconds; run a longer one in the background",
+		"with its output to a file and poll the file. A wait that outlives the host turn continues",
+		"with the wait command its result prints.",
 		"",
 	}
 	for index, item := range checklist {
@@ -897,13 +901,16 @@ func reviewBrief(mode, chain, goalID string, rounds int64, calls int, threat, sc
 		"",
 		fmt.Sprintf("Maximum reader tool calls: %d", calls),
 		"",
-		"Stop when this number is reached. In the findings file, list every checklist item or part of an item that the budget did not allow you to check.",
+		"Stop when this number is reached. In the findings file, list every checklist item or part",
+		"of an item that the budget did not allow you to check.",
 		"",
 		"## Findings artifact and return shape",
 		"",
 		"Write findings to: "+findings,
 		"",
-		"Inside that file, number findings from most severe to least severe. Each finding names the file, rule, and concrete failure it causes. If there are no material findings, record AGREE and any non-gating observations there.",
+		"Inside that file, number findings from most severe to least severe. Each finding names",
+		"the file, rule, and concrete failure it causes. If there are no material findings,",
+		"record AGREE and any non-gating observations there.",
 		"")
 	return strings.Join(lines, "\n")
 }

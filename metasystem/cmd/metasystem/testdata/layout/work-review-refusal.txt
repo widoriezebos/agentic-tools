@@ -1,0 +1,3 @@
+✗ work review needs what to review; nothing was done
+  → metasystem work review GOAL
+    a goal's work; or j2:JOB, run:RUN, --commit SHA, or --changes for feedback

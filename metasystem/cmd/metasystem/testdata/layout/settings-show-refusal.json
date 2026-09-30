@@ -1,0 +1,19 @@
+exit 1
+--
+{
+  "schemaVersion": 1,
+  "verb": "settings show",
+  "targets": [],
+  "outcome": "refused",
+  "summary": "there is no setting no.such.key in /Users/wido/GitHub/agentic-tools-m1e/metasystem.conf: no value configured for no.such.key",
+  "next": {
+    "argv": [
+      "metasystem",
+      "settings",
+      "show"
+    ],
+    "reason": "list the launch settings"
+  }
+}
+
+--

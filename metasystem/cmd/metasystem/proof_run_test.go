@@ -3236,7 +3236,7 @@ func TestATestingWorkerThatWroteNoResultEndsItsAttemptFailedWithTheFileNamed(t *
 	missing := filepath.Join(root, "artifacts", "terminal-commit", "worker-result.json")
 	var retained *proofrun.TestResult
 	result, launcherErrors := launch([]string{"false"}, testingTerminalCommitWithReads(missing, &retained, &reads))
-	if result != 1 || strings.Contains(launcherErrors, "commit terminal proof result") {
+	if result != 1 || strings.Contains(launcherErrors, "could not record the test run's result") {
 		t.Fatalf("a failed worker without a result did not commit its terminal: result %d\n%s", result, launcherErrors)
 	}
 	stored, err := proofrun.ReadAttempt(root, attempt.AttemptID)
@@ -3252,7 +3252,7 @@ func TestATestingWorkerThatWroteNoResultEndsItsAttemptFailedWithTheFileNamed(t *
 	root, attempt, launch, reads = gitFreeTerminalCommitFixture(t)
 	missing = filepath.Join(root, "artifacts", "terminal-commit", "worker-result.json")
 	result, launcherErrors = launch([]string{"true"}, testingTerminalCommitWithReads(missing, &retained, &reads))
-	if result == 0 || !strings.Contains(launcherErrors, "commit terminal proof result: open "+missing) {
+	if result == 0 || !strings.Contains(launcherErrors, "could not record the test run's result: open "+missing) {
 		t.Fatalf("a success without its result was committed: result %d\n%s", result, launcherErrors)
 	}
 	stored, err = proofrun.ReadAttempt(root, attempt.AttemptID)

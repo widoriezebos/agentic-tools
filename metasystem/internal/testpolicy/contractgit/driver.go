@@ -51,7 +51,7 @@ func DriverArgs(executable func() (string, error)) ([]string, error) {
 func RuntimeDriverArgs() ([]string, error) { return DriverArgs(os.Executable) }
 
 func unresolved(cause error) error {
-	detail := "cannot resolve the metasystem merge-driver executable; run the verb from an installed metasystem binary"
+	detail := "cannot find the metasystem merge driver; run the verb from an installed metasystem binary"
 	if cause != nil {
 		detail += ": " + cause.Error()
 	}

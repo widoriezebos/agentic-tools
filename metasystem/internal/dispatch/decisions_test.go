@@ -959,7 +959,7 @@ func TestCritiqueSevereTerminalBoundary(t *testing.T) {
 	named := filepath.Join(dir, "named.md")
 	os.WriteFile(named, []byte("Addressing F-1 head-on.\n"), 0o644)
 	_, err = CritiqueExhaustionAdvance(repo, "crit", "code-critic", named, "crit-r4")
-	want := "reason=cap-exhausted-human-raise the review-round limit is exhausted with a severe or unproven finding; waiting on the human is the only remedy at terminal round 3 with open finding identifiers: F-1"
+	want := "reason=cap-exhausted-human-raise the review-round limit is exhausted with a severe or unproven finding open; only a person can go on at terminal round 3 with open finding identifiers: F-1"
 	if err == nil || err.Error() != want {
 		t.Fatalf("severe terminal boundary = %v, want %q", err, want)
 	}

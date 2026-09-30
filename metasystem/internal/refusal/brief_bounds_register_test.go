@@ -4,7 +4,7 @@ import "testing"
 
 func TestBriefBoundsRefusalRegistration(t *testing.T) {
 	t.Run("invalid", func(t *testing.T) {
-		want := Row{Code: "BRIEF_BOUNDS_INVALID", Owner: "internal/dispatch", Site: "brief.go#BriefBoundsRefusal.Error", Shape: Question, H1: StandingInput}
+		want := Row{Code: "BRIEF_BOUNDS_INVALID", Owner: "internal/dispatch", Site: "brief.go#BriefBoundsRefusal.RefusalCode", Shape: Question, H1: StandingInput}
 		var got Row
 		for _, row := range Rows {
 			if row.Code == "BRIEF_BOUNDS_INVALID" {

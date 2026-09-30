@@ -318,7 +318,7 @@ func RecordCreate(root, job, sourcePath string) error {
 				// overflow literal matches the regex, errs in Atoi, and
 				// would walk straight through the guard.
 				if n, err := strconv.Atoi(m[1]); err != nil || n >= 2 {
-					return refuse(1, "a fresh job must not claim round %s in its name (%s); continue the existing chain with a follow-up instead", m[1], job)
+					return refuse(1, "a fresh job may not claim round %s in its name (%s); continue the chain with a follow-up", m[1], job)
 				}
 			}
 		}
@@ -342,7 +342,7 @@ func recordCreateLocked(root, job string, record map[string]any, occupancy Sessi
 		if record["parentJob"] == nil {
 			if m := freshRoundSuffixRe.FindStringSubmatch(job); m != nil {
 				if n, err := strconv.Atoi(m[1]); err != nil || n >= 2 {
-					return refuse(1, "a fresh job must not claim round %s in its name (%s); continue the existing chain with a follow-up instead", m[1], job)
+					return refuse(1, "a fresh job may not claim round %s in its name (%s); continue the chain with a follow-up", m[1], job)
 				}
 			}
 		}

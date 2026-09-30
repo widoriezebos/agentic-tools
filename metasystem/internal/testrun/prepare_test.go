@@ -36,9 +36,36 @@ func TestBaseMovedUnderTheRunRestartsPreparationOnce(t *testing.T) {
 		return 0
 	})
 	if status != 0 || prepareErr != nil || calls != 2 || prepared.PolicyBaseCommit != "new-base" ||
-		!state.restarted || os.Getenv("METASYSTEM_PREPARATION_RESTARTED") != "" || !strings.Contains(stderr, "restarting preparation once") {
+		!state.restarted || os.Getenv("METASYSTEM_PREPARATION_RESTARTED") != "" || !strings.Contains(stderr, "starting over once") {
 		t.Fatalf("authenticated move did not restart once from the landed re-arm entry: status=%d calls=%d prepared=%+v err=%v restarted=%t stderr=%q",
 			status, calls, prepared, prepareErr, state.restarted, stderr)
+	}
+}
+
+// The restart notice speaks in plain words; the two revisions it saw are
+// shown only with --verbose.
+func TestBaseMovedNoticeIsPlainUnlessVerbose(t *testing.T) {
+	t.Parallel()
+	for _, verbose := range []bool{false, true} {
+		var notes strings.Builder
+		state := &PreparationState{}
+		calls := 0
+		_, err := prepareWith(SelectionRequest{Preparation: state, Notes: &notes, Verbose: verbose}, func(SelectionRequest) (Preparation, error) {
+			if calls++; calls == 1 {
+				return Preparation{}, &baseMove{ours: "old-base", engine: "new-base"}
+			}
+			return Preparation{}, nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := notes.String()
+		if !strings.HasPrefix(text, "test run: the landing branch moved while the run was starting; starting over once\n") {
+			t.Errorf("verbose=%t: notice %q is not the plain line", verbose, text)
+		}
+		if strings.Contains(text, "ours=old-base") != verbose || strings.Contains(text, "engine=new-base") != verbose {
+			t.Errorf("verbose=%t: notice %q shows its revisions only with --verbose", verbose, text)
+		}
 	}
 }
 

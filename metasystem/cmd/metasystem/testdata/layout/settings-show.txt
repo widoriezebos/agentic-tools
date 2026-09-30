@@ -1,0 +1,22 @@
+20 settings of m1e · 4 configured · 16 defaults
+
+launch.brief.admitted.tokens         120000       default
+launch.build.effort                  xhigh        default
+launch.build.max.changed.lines       1500         default
+launch.build.model                   fake-model   conf
+launch.build.runtime                 fake         default
+launch.build.window.tokens           0            default
+launch.critique.model                fake-model   conf
+launch.critique.runtime              fake         default
+launch.design.baseline.peak.tokens   163000       default
+launch.design.baseline.requests      28           default
+launch.design.baseline.tokens        2432374      default
+launch.design.model                  fake-model   conf
+launch.design.runtime                fake         default
+launch.design.window.tokens          0            default
+launch.read.model                    fake-model   conf
+launch.read.runtime                  fake         default
+launch.read.split.diff.lines         1200         default
+launch.read.window.tokens            0            default
+launch.seat.window.tokens            0            default
+launch.wait.cap.seconds              240          default

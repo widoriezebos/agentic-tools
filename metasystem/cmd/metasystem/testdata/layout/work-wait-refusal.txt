@@ -1,0 +1,3 @@
+✗ work wait needs one thing to wait for; nothing was done
+  → metasystem work wait GOAL
+    a goal's work; or a j2:JOB or run:RUN reference, or --path FILE (metasystem work wait --help)

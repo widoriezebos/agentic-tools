@@ -275,7 +275,7 @@ func reconcileClosedLiveCritique(repoRoot string, state critiqueState, reviewedR
 	}
 	boundRoot := state.chainRoot(rootReviews)
 	if boundRoot != reviewedRoot || boundRoot == criticRoot {
-		return false, reviewClosureBindingError(suppliedJob, criticRoot, root, fmt.Sprintf("critic root reviews binding %q belongs to implementation chain %q instead of requested distinct chain %q", rootReviews, boundRoot, reviewedRoot))
+		return false, reviewClosureBindingError(suppliedJob, criticRoot, root, fmt.Sprintf("critic root reviews %q, of chain %q, not the requested distinct chain %q", rootReviews, boundRoot, reviewedRoot))
 	}
 	if closure.Subject.Kind != readsubject.SubjectLive {
 		return false, reviewClosureBindingError(suppliedJob, criticRoot, root, fmt.Sprintf("closure subject kind %q is not live", closure.Subject.Kind))

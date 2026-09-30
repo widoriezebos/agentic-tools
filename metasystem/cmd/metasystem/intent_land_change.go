@@ -297,7 +297,7 @@ func nothingNewToLand(root string, request landpath.LandRequest) bool {
 func giveChangeBack(root, head string, request landpath.LandRequest) string {
 	current, _ := seatGit(root, "rev-parse", "HEAD")
 	if current != head {
-		return "the commit is no longer this branch's last, so it was left where it is; fold it into a new change and land that"
+		return "the commit is no longer this branch's last, so it stays; fold it into a new change and land that"
 	}
 	mode := "--mixed"
 	where := "in the working tree"
@@ -305,7 +305,7 @@ func giveChangeBack(root, head string, request landpath.LandRequest) string {
 		mode, where = "--soft", "staged"
 	}
 	if output, code := seatGit(root, "reset", "-q", mode, head+"^"); code != 0 {
-		return "undo the commit with git reset " + mode + " HEAD^ (it couldn't be undone: " + output + "), fix the change, then land it again"
+		return "undo the commit with git reset " + mode + " HEAD^ (git said: " + output + "), fix the change, then land it again"
 	}
 	seatGit(root, "update-ref", "-d", batchowner.ChangePinRef(head))
 	return "the commit is undone and its changes are " + where + " again: fix them, then repeat this command"

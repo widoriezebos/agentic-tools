@@ -20,17 +20,32 @@ const (
 
 // Refusal is a semantic refusal rather than an input/output failure. Entity
 // and Field identify the smallest contract location that could not be merged.
+// Its text is the two lines a person reads: where and why, then the command
+// that resolves it when one does (Run); the code is its detail.
 type Refusal struct {
 	Code, Entity, Field, Detail string
+	Run                         string
+}
+
+func (r *Refusal) location() string {
+	if r.Field != "" {
+		return r.Entity + " field " + r.Field
+	}
+	return r.Entity
 }
 
 func (r *Refusal) Error() string {
-	location := r.Entity
-	if r.Field != "" {
-		location += " field " + r.Field
+	text := r.location() + ": " + r.Detail
+	if r.Run != "" {
+		text += "\nrun: " + r.Run
 	}
-	return fmt.Sprintf("%s: %s: %s", r.Code, location, r.Detail)
+	return text
 }
+
+// RefusalCode and RefusalDetail are the code and the code-first line
+// --verbose and the refusal records keep.
+func (r *Refusal) RefusalCode() string   { return r.Code }
+func (r *Refusal) RefusalDetail() string { return r.Code + ": " + r.location() + ": " + r.Detail }
 
 func conflict(entity, field, detail string) error {
 	return &Refusal{Code: MergeConflictCode, Entity: entity, Field: field, Detail: detail}
@@ -79,7 +94,7 @@ func MergeBytes(base, ours, theirs []byte) ([]byte, error) {
 	for i, input := range [][]byte{base, ours, theirs} {
 		value, err := testpolicy.Decode(input)
 		if err != nil {
-			return nil, invalid(fmt.Sprintf("input %d: %v", i+1, err))
+			return nil, invalid(fmt.Sprintf("the %s side is not a readable testing contract: %v", []string{"base", "our", "their"}[i], err))
 		}
 		values[i] = value
 	}

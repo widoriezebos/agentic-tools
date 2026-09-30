@@ -250,7 +250,7 @@ func TestBatchCompositionRefusesNamedTestingContractConflictCleanly(t *testing.T
 	baseTree := branchGit(t, bed.root, "rev-parse", bed.base+"^{tree}")
 	_, err := AssembleBranchMembers(bed.root, baseTree, []BranchMember{memberA, memberB})
 	if err == nil || !strings.Contains(err.Error(), "BATCH_JOIN_REREAD:") ||
-		!strings.Contains(err.Error(), `TESTING_MERGE_CONFLICT: group "shared-group" field targetMs`) {
+		!strings.Contains(err.Error(), `group "shared-group" field targetMs`) {
 		t.Fatalf("named testing contract conflict = %v", err)
 	}
 	if status := branchGit(t, bed.root, "status", "--porcelain=v1", "--untracked-files=all"); status != "" {

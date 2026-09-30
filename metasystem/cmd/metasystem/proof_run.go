@@ -1024,7 +1024,7 @@ func admitProofLaunchWithReadsAndClassifier(request proofLaunchAdmission, makeRe
 		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, err
 	}
 	if boundAuthority && roles.Authority.Id != request.GoalID {
-		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, proofAuthorityRefusal(request.AuthorityGoalID, "does not match the bound proof context")
+		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, proofAuthorityRefusal(request.AuthorityGoalID, "is not the goal this test run is bound to")
 	}
 	authorityGoalID := roles.Authority.Id
 	preLockSnapshots, err := proofAdmissionGoalState(request.ControlRoot, roles.Candidate, now)
@@ -1275,7 +1275,7 @@ func admitProofLaunchWithReadsAndClassifier(request proofLaunchAdmission, makeRe
 			lines := dispatchcore.FormatProofAdmission(verdict)
 			detail := strings.Join(lines, "; ")
 			if detail == "" {
-				detail = "proof admission refused without a printable reason"
+				detail = "the reservation was refused and gave no reason"
 			}
 			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("the test run was not reserved for goal %s (charged to %s, revision %d): %s",
 				request.GoalID, authorityGoalID, binding.Revision, detail)
@@ -2148,7 +2148,7 @@ func proofRunBannerText(suite, root, progress, logPath string) string {
 	if state == "unarmed" {
 		duration = "full-gate"
 	}
-	return fmt.Sprintf("suite-cost suite=%s witness=%s duration=%s heartbeat=%s logs=%s",
+	return fmt.Sprintf("suite %s costs: witness %s, %s; heartbeat in %s, log in %s",
 		suite, state, duration, proofRunDisplayPath(root, progress), proofRunDisplayPath(root, logPath))
 }
 

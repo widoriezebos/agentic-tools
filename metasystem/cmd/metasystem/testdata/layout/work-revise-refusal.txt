@@ -1,0 +1,2 @@
+✗ work revise needs one goal and a correction brief; nothing was done
+  → metasystem work revise GOAL --brief FILE  FILE says what to correct

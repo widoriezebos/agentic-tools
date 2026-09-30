@@ -1,0 +1,17 @@
+exit 0
+--
+{
+  "schemaVersion": 1,
+  "verb": "work wait",
+  "targets": [],
+  "outcome": "unchanged",
+  "summary": "this checkout has no recorded wait continuations",
+  "data": {
+    "waits": {
+      "continuations": null,
+      "outcome": "unchanged"
+    }
+  }
+}
+
+--

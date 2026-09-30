@@ -269,7 +269,7 @@ func publishScratch(stageParent, entry, buildIdentity string, built *Engine, ren
 	}
 	if err := rename(stage, entry); errors.Is(err, unix.EXDEV) {
 		if notes != nil {
-			fmt.Fprintln(notes, "metasystem test run: engine.unpublished: candidate engine stays private to this run:", err)
+			fmt.Fprintln(notes, "test run: the candidate engine stays private to this run; it is on another file system")
 		}
 		return stage, nil
 	} else if err != nil {

@@ -1,0 +1,21 @@
+exit 2
+--
+{
+  "schemaVersion": 1,
+  "verb": "work wait",
+  "targets": [],
+  "outcome": "refused",
+  "summary": "work wait needs one thing to wait for; nothing was done",
+  "next": {
+    "argv": [
+      "metasystem",
+      "work",
+      "wait",
+      "GOAL",
+      "--json"
+    ],
+    "reason": "a goal's work; or a j2:JOB or run:RUN reference, or --path FILE (metasystem work wait --help)"
+  }
+}
+
+--

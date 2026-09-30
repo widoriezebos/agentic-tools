@@ -206,7 +206,7 @@ func LaunchSuite(options LaunchOptions) int {
 		}
 		attempt, readErr := ReadAttempt(controlRoot, options.AttemptID)
 		if readErr != nil {
-			fmt.Fprintln(combinedErr, "suite launcher: read proof identity before launch:", readErr)
+			fmt.Fprintln(combinedErr, "suite launcher: could not read the test run's identity before launch:", readErr)
 			return 1
 		}
 		if attempt.ProofIdentity.CommandClass == "testing" {
@@ -232,7 +232,7 @@ func LaunchSuite(options LaunchOptions) int {
 				context, identityErr = CaptureExecutionContext(options.Root, options.ConfPath, childEnvironment)
 			}
 			if identityErr != nil {
-				fmt.Fprintln(combinedErr, "suite launcher: read joined proof inputs before launch:", identityErr)
+				fmt.Fprintln(combinedErr, "suite launcher: could not read the test run's joined inputs before launch:", identityErr)
 				return 1
 			}
 			local := BuildProofIdentityForContext(context, attempt.ProofIdentity.ScopeClass,
@@ -500,7 +500,7 @@ func LaunchSuite(options LaunchOptions) int {
 			_ = watchdog.Wait()
 		}
 		watchdogCopies.Wait()
-		fmt.Fprintln(combinedErr, "suite launcher: publish proof-run record:", err)
+		fmt.Fprintln(combinedErr, "suite launcher: could not publish the test run's record:", err)
 		return 1
 	}
 	if options.AttemptID != "" {
@@ -519,7 +519,7 @@ func LaunchSuite(options LaunchOptions) int {
 				_ = watchdog.Wait()
 			}
 			watchdogCopies.Wait()
-			fmt.Fprintln(combinedErr, "suite launcher: publish proof attempt processes:", err)
+			fmt.Fprintln(combinedErr, "suite launcher: could not publish the test run's processes:", err)
 			return 1
 		}
 		releaseLaunchMutation()
@@ -566,7 +566,7 @@ func LaunchSuite(options LaunchOptions) int {
 			fmt.Fprintln(combinedErr, "suite launcher: second stop-fence read:", secondFenceErr)
 		}
 		if outcome.Result == StopNotStopped {
-			fmt.Fprintf(combinedErr, "suite launcher: proof-run suite was not stopped: %s\n", outcome.Reason)
+			fmt.Fprintf(combinedErr, "suite launcher: the suite was not stopped: %s\n", outcome.Reason)
 			if err := claim.Close(); err != nil {
 				fmt.Fprintln(combinedErr, "suite launcher: close creation claim:", err)
 			} else {
@@ -719,7 +719,7 @@ func LaunchSuite(options LaunchOptions) int {
 			}
 		}
 		if parityErr != nil {
-			fmt.Fprintln(combinedErr, "suite launcher: proof input parity:", parityErr)
+			fmt.Fprintln(combinedErr, "suite launcher: could not confirm the test run's inputs held:", parityErr)
 			result = 1
 		}
 	}
@@ -730,7 +730,7 @@ func LaunchSuite(options LaunchOptions) int {
 	if options.AttemptID != "" && result == 0 && options.PrepareSuccess != nil {
 		receipt, err = options.PrepareSuccess(completion)
 		if err != nil {
-			fmt.Fprintln(combinedErr, "suite launcher: prepare successful proof delivery:", err)
+			fmt.Fprintln(combinedErr, "suite launcher: could not prepare the passing result for delivery:", err)
 			result = 1
 			completion.ExitStatus = result
 			completion.CompletedAt = now().UTC()
@@ -754,7 +754,7 @@ func LaunchSuite(options LaunchOptions) int {
 			_, err = FinalizeAttempt(controlRoot, options.AttemptID, terminal, result, "proof launcher completed", receipt, completion.CompletedAt)
 		}
 		if err != nil {
-			fmt.Fprintln(combinedErr, "suite launcher: commit terminal proof result:", err)
+			fmt.Fprintln(combinedErr, "suite launcher: could not record the test run's result:", err)
 			return 1
 		}
 		publicationID := ""
@@ -776,7 +776,7 @@ func LaunchSuite(options LaunchOptions) int {
 		}
 	}
 	if err := markDone(controlRoot, record, launcherExact.Ref()); err != nil {
-		fmt.Fprintln(combinedErr, "suite launcher: mark proof-run done:", err)
+		fmt.Fprintln(combinedErr, "suite launcher: could not mark the test run done:", err)
 		return 1
 	}
 	return result

@@ -1,0 +1,2 @@
+✗ work finish needs the job to finish; nothing was done
+  → metasystem work status --all  lists the jobs with their j2: references
