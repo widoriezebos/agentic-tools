@@ -18,31 +18,44 @@ import (
 type openWorkDependencies struct {
 	NewWorld                  func(string) bool
 	ReadClaimableBudgetedWork func(string, time.Time) (goal.ClaimableBudgetedWork, error)
+	// Seat is the seat ladder's wiring (g1-s77); nil keeps the ladder
+	// without seat starts.
+	Seat *seatDependencies
 }
 
 func readOpenWorkWithDependencies(repoRoot string, dependencies openWorkDependencies) (OpenWork, string, error) {
+	work, reason, _, err := readOpenWorkShared(repoRoot, dependencies)
+	return work, reason, err
+}
+
+// readOpenWorkShared is the open-work answer with the converted world's
+// claimable-work snapshot it was judged from; the legacy world and every
+// degraded answer carry none, so the seat ladder never selects from them.
+func readOpenWorkShared(repoRoot string, dependencies openWorkDependencies) (OpenWork, string, *goal.ClaimableBudgetedWork, error) {
 	resolvedRoot, err := goal.ResolveStateRoot(repoRoot)
 	if err != nil {
-		return WorkDegraded, fmt.Sprintf("goal state root is uncertain: %v", err), nil
+		return WorkDegraded, fmt.Sprintf("goal state root is uncertain: %v", err), nil, nil
 	}
 	repoRoot = resolvedRoot
 	if dependencies.NewWorld(repoRoot) {
 		return convertedOpenWorkWithDependencies(repoRoot, dependencies)
 	}
-	return legacyOpenWorkWithReader(repoRoot, dependencies.ReadClaimableBudgetedWork)
+	work, reason, err := legacyOpenWorkWithReader(repoRoot, dependencies.ReadClaimableBudgetedWork)
+	return work, reason, nil, err
 }
 
-func convertedOpenWorkWithDependencies(repoRoot string, dependencies openWorkDependencies) (OpenWork, string, error) {
+func convertedOpenWorkWithDependencies(repoRoot string, dependencies openWorkDependencies) (OpenWork, string, *goal.ClaimableBudgetedWork, error) {
 	if attention, present, err := loadLedgerAttentionState(repoRoot); err != nil {
-		return WorkDegraded, fmt.Sprintf("ledger-attention state unreadable: %v", err), nil
+		return WorkDegraded, fmt.Sprintf("ledger-attention state unreadable: %v", err), nil, nil
 	} else if present && attention.LastOutcome == "failed" {
-		return WorkDegraded, fmt.Sprintf("fresh canonical ledger read failed: %s", attention.LastFailure), nil
+		return WorkDegraded, fmt.Sprintf("fresh canonical ledger read failed: %s", attention.LastFailure), nil, nil
 	}
 	work, err := dependencies.ReadClaimableBudgetedWork(repoRoot, time.Now())
 	if err != nil {
-		return WorkDegraded, fmt.Sprintf("fresh canonical ledger unreadable: %v", err), nil
+		return WorkDegraded, fmt.Sprintf("fresh canonical ledger unreadable: %v", err), nil, nil
 	}
-	return classifySharedBacklog(work)
+	answer, reason, err := classifySharedBacklog(work)
+	return answer, reason, &work, err
 }
 
 func classifySharedBacklog(work goal.ClaimableBudgetedWork) (OpenWork, string, error) {

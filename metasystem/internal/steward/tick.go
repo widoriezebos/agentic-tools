@@ -66,7 +66,10 @@ type TickConfig struct {
 	// Stopping reports that the resident runner received a stop signal:
 	// the tick finishes the stop in progress and starts no further one.
 	// Only RunLoop sets it; nil is never stopping.
-	Stopping          func() bool
+	Stopping func() bool
+	// Seat starts and reads the steward's seat launches (g1-s77); nil starts
+	// no seat and keeps today's notification for ready work.
+	Seat              SeatLauncher
 	narrationLocation *time.Location
 }
 
@@ -110,6 +113,9 @@ type TickResult struct {
 	GoalStops       []BreachStopReport
 	LedgerAttention LedgerAttentionReport
 	SeatPresence    SeatPresenceReport
+	// Seat is the goal a revive decision's seat start names; nil for every
+	// other decision.
+	Seat *SeatSelection
 }
 
 // BreachStopReport is machinery history for one heal-before-notify stop pass.
@@ -373,6 +379,10 @@ func runTickAfterCustodial(repoRoot string, cfg TickConfig, census WorkerCensus,
 		result, degradedErr := degradedTick(repoRoot, err.Error())
 		return result, false, degradedErr
 	}
+	if cfg.Seat != nil {
+		seat := defaultSeatDependencies(cfg.Seat)
+		dependencies.openWork.Seat = &seat
+	}
 	result, err := decideTickWithDependencies(repoRoot, cfg, census, prev, marks, dependencies.openWork)
 	if err != nil {
 		return TickResult{}, false, err
@@ -426,12 +436,19 @@ func decideTickWithDependencies(repoRoot string, cfg TickConfig, census WorkerCe
 	// clock can never outlive the outage's evidence. ONE sample
 	// governs the whole tick — aging, decision, and narration must
 	// tell the same story even when the mark moves mid-tick.
+	// The seat launches are reaped before the outage is sampled: a seat the
+	// provider stopped feeds the mark this same tick holds by.
+	var seat *seatTickState
+	if dependencies.Seat != nil {
+		state := reapSeatLaunches(repoRoot, *dependencies.Seat, cfg.now())
+		seat = &state
+	}
 	outageMark, providerOutage := outage.StandingAt(repoRoot, cfg.now())
 	if providerOutage && marks == prev.Marks {
 		ev = prev
 	}
 
-	d, workReason, err := decideNowWithDependencies(repoRoot, cfg, census, ev, providerOutage, dependencies)
+	d, selection, workReason, err := decideNowWithSeat(repoRoot, cfg, census, ev, providerOutage, dependencies, seat)
 	if err != nil {
 		return TickResult{}, err
 	}
@@ -448,7 +465,7 @@ func decideTickWithDependencies(repoRoot string, cfg TickConfig, census WorkerCe
 		}
 	}
 	return TickResult{Decision: d, Evidence: ev, OpenWork: workReason,
-		ProviderOutage: providerOutage, Outage: outageMark}, nil
+		ProviderOutage: providerOutage, Outage: outageMark, Seat: selection}, nil
 }
 
 // completeTickHealth performs the mandatory end of every tick: one durable
@@ -541,14 +558,23 @@ func degradedTick(repoRoot, reason string) (TickResult, error) {
 }
 
 func decideNowWithDependencies(repoRoot string, cfg TickConfig, census WorkerCensus, ev Evidence, providerOutage bool, dependencies openWorkDependencies) (Decision, string, error) {
+	d, _, workReason, err := decideNowWithSeat(repoRoot, cfg, census, ev, providerOutage, dependencies, nil)
+	return d, workReason, err
+}
+
+// decideNowWithSeat is the ladder with the seat ladder in it (g1-s77): the
+// census is read for claimable work as for owned work, and with the seat
+// wiring present claimable work, and owned work under the seat lineage, are
+// the seat ladder's to decide.
+func decideNowWithSeat(repoRoot string, cfg TickConfig, census WorkerCensus, ev Evidence, providerOutage bool, dependencies openWorkDependencies, seat *seatTickState) (Decision, *SeatSelection, string, error) {
 	cfg = cfg.withDefaults()
-	work, workReason, err := readOpenWorkWithDependencies(repoRoot, dependencies)
+	work, workReason, shared, err := readOpenWorkShared(repoRoot, dependencies)
 	if err != nil {
-		return Decision{}, "", err
+		return Decision{}, nil, "", err
 	}
 
 	workers := Workers{}
-	if work == WorkOwned {
+	if work == WorkOwned || work == WorkClaimable {
 		w, err := census.Workers(repoRoot)
 		if err != nil {
 			// An unreadable census can never prove death.
@@ -557,13 +583,19 @@ func decideNowWithDependencies(repoRoot string, cfg TickConfig, census WorkerCen
 		workers = w
 	}
 
+	if dependencies.Seat != nil && seat != nil && shared != nil {
+		if d, selection, ok := decideSeat(repoRoot, cfg, work, *shared, workers, providerOutage, *dependencies.Seat, *seat); ok {
+			return d, selection, workReason, nil
+		}
+	}
+
 	live, err := LiveIntents(repoRoot)
 	if err != nil {
-		return Decision{VerdictDegraded, ActNotify, err.Error()}, workReason, nil
+		return Decision{VerdictDegraded, ActNotify, err.Error()}, nil, workReason, nil
 	}
 	activeConsumed, err := ConsumedActive(repoRoot)
 	if err != nil {
-		return Decision{VerdictDegraded, ActNotify, err.Error()}, workReason, nil
+		return Decision{VerdictDegraded, ActNotify, err.Error()}, nil, workReason, nil
 	}
 
 	return Decide(Snapshot{
@@ -575,5 +607,5 @@ func decideNowWithDependencies(repoRoot string, cfg TickConfig, census WorkerCen
 		MaxRevivals:        cfg.MaxRevivals,
 		ActiveContinuation: len(live) > 0 || len(activeConsumed) > 0,
 		ProviderOutage:     providerOutage,
-	}), workReason, nil
+	}), nil, workReason, nil
 }

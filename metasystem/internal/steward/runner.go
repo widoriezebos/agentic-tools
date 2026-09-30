@@ -163,6 +163,9 @@ type runnerLoopDependencies struct {
 	// StopSignals is the runner's orderly stop on SIGTERM and SIGINT; its
 	// zero value installs nothing.
 	StopSignals stopSignalSource
+	// StartSeat starts the seat a revive decision selected (g1-s77); nil is
+	// StartSeat.
+	StartSeat func(string, TickConfig, SeatSelection) (SeatRecord, error)
 }
 
 // bridgeStepper is the bridge role as the runner drives it: one step per
@@ -307,7 +310,24 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 				laneLine = line
 			}
 		}
-		resume := err == nil && result.Decision.Action == ActRevive
+		// A revive decision that selected a seat starts the seat main in this
+		// same pass (g1-s77), instead of a delegate revival.
+		if err == nil && result.Decision.Action == ActRevive && result.Seat != nil {
+			startSeat := deps.StartSeat
+			if startSeat == nil {
+				startSeat = StartSeat
+			}
+			if _, startErr := startSeat(top, cfg, *result.Seat); startErr != nil {
+				fmt.Fprintf(os.Stderr, "seat start failed: %v\n", startErr)
+				if qErr := QueueNotification(top, PendingNotification{
+					Nonce:   "seat-start-failure",
+					Message: "steward: seat start failed — " + startErr.Error(),
+				}); qErr != nil {
+					fmt.Fprintf(os.Stderr, "seat-start-failure incident could not queue: %v\n", qErr)
+				}
+			}
+		}
+		resume := err == nil && result.Decision.Action == ActRevive && result.Seat == nil
 		if !resume {
 			// A prepared intent whose launch never happened holds the
 			// active-continuation guard and would otherwise never complete.
