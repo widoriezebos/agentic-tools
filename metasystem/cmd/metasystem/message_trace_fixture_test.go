@@ -86,6 +86,37 @@ func serve(w http.ResponseWriter) { http.Error(w, "the proof lease is gone", 409
 // strings it must not report: a code, a log line, a map key.
 func TestAuditMessagesTracedSeesTheBlindSpots(t *testing.T) {
 	t.Parallel()
+	module := messageTraceFixtureModule(t)
+	direct := messageScan(t, module)
+	traced := messageTraceScan(t, module, direct)
+	messageTraceFixtureChecks(t, direct, traced)
+}
+
+// TestAuditMessagesTracedEnforcesAGroupsPaths: a path a group enforces
+// with enforceTracedMessages is judged in enforce mode. It runs before the
+// parallel audits and removes its fixture key again.
+func TestAuditMessagesTracedEnforcesAGroupsPaths(t *testing.T) {
+	module := messageTraceFixtureModule(t)
+	enforceTracedMessages("internal/x/x.go#summaryLine")
+	defer delete(messageTracedModes, "internal/x/x.go#summaryLine")
+	enforced := 0
+	for _, source := range messageTraceScan(t, module, messageScan(t, module)) {
+		want := auditReport
+		if source.Function == "summaryLine" {
+			want = auditEnforce
+			enforced++
+		}
+		if source.Mode != want {
+			t.Errorf("%s %q: mode %q, want %q", source.Function, source.Text, source.Mode, want)
+		}
+	}
+	if enforced == 0 {
+		t.Error("no source of the enforced function was found")
+	}
+}
+
+func messageTraceFixtureModule(t *testing.T) string {
+	t.Helper()
 	module := t.TempDir()
 	dir := filepath.Join(module, "internal", "x")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -100,8 +131,11 @@ func TestAuditMessagesTracedSeesTheBlindSpots(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "x.go"), []byte(messageTraceFixture), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	direct := messageScan(t, module)
-	traced := messageTraceScan(t, module, direct)
+	return module
+}
+
+func messageTraceFixtureChecks(t *testing.T, direct []messageSource, traced []messageTraced) {
+	t.Helper()
 	found := map[string]string{}
 	for _, source := range traced {
 		found[source.Text] = source.Trace
