@@ -2327,7 +2327,7 @@ func runIntentSystemSetup(inv *intentInvocation) int {
 	case contractgit.DriverUnchanged:
 		lines = append(lines, "the testing contract's merge driver is already registered")
 	}
-	outcome, summary := intentConfirmed, "this checkout is set up: its runtimes, hooks, commit fence and testing-contract merges run the engine"
+	outcome, summary := intentConfirmed, "this checkout is set up: its runtimes, hooks, commit fence and contract merges run the engine"
 	if report.Unchanged() {
 		outcome, summary = intentUnchanged, "this checkout is already set up; nothing was changed"
 	}

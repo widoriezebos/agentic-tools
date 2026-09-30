@@ -54,7 +54,7 @@ func TestFrontierStatusOutsideARepositoryRefuses(t *testing.T) {
 	file := filepath.Join(outside, "plans", "frontier")
 	outsideGit := frontierGitScript(t, []frontierGitStep{{outside, []string{"rev-parse", "--is-inside-work-tree"}, "", errors.New("outside repository")}})
 	lines, ferr := frontierStatusWithGit(FrontierOptions{File: file, Repo: outside}, outsideGit)
-	want := outside + " is not inside a Git repository, so there is no frontier to read; run this inside the repository; nothing was read"
+	want := outside + " is not inside a Git repository, so there is no frontier to read\nrun: cd <the repository> && metasystem experiment status"
 	if ferr == nil || ferr.Code != 2 || ferr.Message != want || len(lines) != 0 {
 		t.Fatalf("status outside a repository = %v %+v, want code 2 and %q", lines, ferr, want)
 	}

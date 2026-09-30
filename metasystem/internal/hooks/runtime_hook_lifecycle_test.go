@@ -230,7 +230,7 @@ func TestSessionEndRetiresAuthorizationThenAnnouncement(t *testing.T) {
 	ops.sessionEnd = func() int { return 1 }
 	run := runHook(t, installation, ops, hookCall{runtime: "claude", event: "end", payload: `{"session_id":"template-human"}`})
 	want := `{"systemMessage":"Steward incidents pending: 2 undelivered; newest: incident"}` + "\n" +
-		`{"systemMessage":"Metasystem could not durably retire this session's unused stop authorization; later stops must treat it as unsafe."}` + "\n"
+		`{"systemMessage":"MetaSystem could not withdraw this session's unused stop permission; later stops treat it as unsafe\nrun: metasystem system check"}` + "\n"
 	if run.status != 0 || run.stdout != want {
 		t.Fatalf("SessionEnd = status %d stdout %q", run.status, run.stdout)
 	}

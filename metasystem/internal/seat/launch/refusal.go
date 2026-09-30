@@ -73,23 +73,42 @@ const (
 	CodeDiscardRunning = "SEAT_LAUNCH_DISCARD_RUNNING"
 )
 
-// Refusal is one of the codes above with the sentence a human acts on.
+// Refusal is one of the codes above with the two lines a person reads:
+// Message, what happened and why, and Remedy, the command that resolves it
+// with the values this launch knows filled in ("run: …"), or why there is
+// nothing to do. The code is for the fleet page and --json; the words never
+// carry it.
 type Refusal struct {
 	Code    string
 	Message string
+	Remedy  string
 }
 
 func (r *Refusal) Error() string {
-	if r.Code == CodeEvidenceRootUnsafe {
-		// Rule H1: the one damage refusal of the launch guides. The new
-		// machine's evidence would land in this seat's root or outside
-		// the evidence tree; the person fixes the root and resumes.
-		return r.Code + ": " + r.Message + "; the new machine's evidence would mix with another root's, so set " + config.EvidenceRootKey + " in this seat's metasystem.conf.local to a directory of its own under the fleet's evidence tree, then retry the launch (Retry on the fleet page, or metasystem machine start NAME --resume ID)"
+	if r.Remedy == "" {
+		return r.Message
 	}
-	return r.Code + ": " + r.Message
+	return r.Message + "\n" + r.Remedy
 }
 
 // refuse is the one constructor, so every refusal reads the same way.
 func refuse(code, format string, args ...any) *Refusal {
 	return &Refusal{Code: code, Message: fmt.Sprintf(format, args...)}
 }
+
+// run sets the refusal's second line to a command.
+func (r *Refusal) run(command string) *Refusal {
+	r.Remedy = "run: " + command
+	return r
+}
+
+// resumeCommand continues a launch once its cause is fixed.
+func resumeCommand(machine, id string) string {
+	return "metasystem machine start " + machine + " --resume " + id
+}
+
+// evidenceRootCommand is the remedy of an evidence root that is not the
+// new machine's own (rule H1: the one damage refusal of the launch guides):
+// this seat's root, set to a directory of its own under the fleet's
+// evidence tree, before the launch is retried.
+const evidenceRootCommand = "metasystem settings set " + config.EvidenceRootKey + " <a directory of this seat's own under the fleet's evidence tree>, then retry the launch"

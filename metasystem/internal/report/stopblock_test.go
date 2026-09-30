@@ -20,7 +20,7 @@ func TestStopBlock(t *testing.T) {
 		t.Fatalf("stop-block must be a block decision: %v", b)
 	}
 	reason, _ := b["reason"].(string)
-	if !strings.Contains(reason, "unblocked and nothing is in flight") {
+	if !strings.Contains(reason, "ready and nothing is in flight") {
 		t.Fatalf("reason missing the standing guidance: %q", reason)
 	}
 	if reason != "PLAN says do X\n\n"+stopBlockReason {

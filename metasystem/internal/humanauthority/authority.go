@@ -489,7 +489,17 @@ func sameRef(left, right ProcessRef) bool {
 	return left.PIDStartedAt == right.PIDStartedAt
 }
 
-const enrollmentAncestryWorkaround = "run metasystem system enroll --name <your name> from a shell whose ancestry up to its session leader is owned by you, for example a shell inside a tmux session you started from Terminal"
+// The enrollment workaround is a refusal's second line: the command, and
+// where to run it.
+const (
+	enrollmentAncestryCommand = "metasystem system enroll --name <your name>"
+	enrollmentAncestryWhere   = "in a shell you own up to its session leader, such as one in a tmux session you started"
+)
+
+// enrollmentAncestryWorkaround is that second line as the refusal ends.
+func enrollmentAncestryWorkaround() string {
+	return "\nrun: " + enrollmentAncestryCommand + "  (" + enrollmentAncestryWhere + ")"
+}
 
 type processReadRefusal struct {
 	outcome         string
@@ -521,7 +531,7 @@ func (refusal *processReadRefusal) Error() string {
 	}
 	fmt.Fprintf(&details, " was not admitted because %s", refusal.reason)
 	if refusal.outcome == OutcomeArgvUnreadable || refusal.outcome == OutcomeUnreadable {
-		fmt.Fprintf(&details, "; %s", enrollmentAncestryWorkaround)
+		details.WriteString(enrollmentAncestryWorkaround())
 	}
 	return details.String()
 }
