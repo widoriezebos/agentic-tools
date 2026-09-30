@@ -1121,14 +1121,26 @@ type uiLifecycleEffects struct {
 
 // uiLifecycleRun runs start, status, stop or restart through the lifecycle
 // owner; it prints nothing.
-func uiLifecycleRun(verb string, roots lifecycle.Roots, listen string, waitSeconds int64) uiLifecycleResult {
-	return uiLifecycleRunWith(verb, roots, listen, waitSeconds, uiLifecycleEffects{prober: identity.KernelProber{}, spawn: lifecycle.ExecSpawn, executable: os.Executable})
+func uiLifecycleRun(verb string, roots lifecycle.Roots, listen string, waitSeconds int64, seats func() uiSeatInventory) uiLifecycleResult {
+	return uiLifecycleRunWith(verb, roots, listen, waitSeconds, uiLifecycleEffects{prober: identity.KernelProber{}, spawn: lifecycle.ExecSpawn, executable: os.Executable, seats: seats})
 }
 
 func uiLifecycleRunWith(verb string, roots lifecycle.Roots, listen string, waitSeconds int64, effects uiLifecycleEffects) uiLifecycleResult {
 	prober := effects.prober
-	stop := lifecycle.StopOptions{Prober: prober, Wait: time.Duration(waitSeconds) * time.Second}
+	stop := lifecycle.StopOptions{Prober: prober, Send: effects.send, After: effects.after, Wait: time.Duration(waitSeconds) * time.Second}
+	var collision *uiSeatView
 	start := func() lifecycle.Result {
+		// Another machine of this computer holding the address is named
+		// before anything is spawned, but only when this seat runs no
+		// interface: one running elsewhere keeps today's path whole.
+		if effects.seats != nil {
+			if own, err := lifecycle.Read(roots.StateRoot, prober); err == nil && (own.State == lifecycle.Stopped || own.State == lifecycle.Stale) {
+				if refusal, other := uiStartCollision(effects.seats(), prober, listen); other != nil {
+					collision = other
+					return refusal
+				}
+			}
+		}
 		executable, err := effects.executable()
 		if err != nil {
 			return lifecycle.Result{Lines: []string{"cannot launch the interface server: " + err.Error()}, Code: 1}
@@ -1140,19 +1152,32 @@ func uiLifecycleRunWith(verb string, roots lifecycle.Roots, listen string, waitS
 			LogPath:    filepath.Join(lifecycle.Dir(roots.StateRoot), "server.log"),
 		}, effects.spawn, 0)
 	}
+	collided := func(result uiLifecycleResult) uiLifecycleResult {
+		if collision != nil {
+			result.Seats = []uiSeatView{*collision}
+		}
+		return result
+	}
 	switch verb {
 	case "start":
 		result, unchanged := lifecycle.StartOnce(roots.StateRoot, prober, listen, start)
-		return uiLifecycleResult{Result: result, Unchanged: unchanged}
+		return collided(uiLifecycleResult{Result: result, Unchanged: unchanged})
 	case "status":
 		result, state := lifecycle.StatusReport(roots.StateRoot, prober, nil)
-		return uiLifecycleResult{Result: result, State: state}
+		status := uiLifecycleResult{Result: result, State: state}
+		if effects.seats != nil && (state == lifecycle.Stopped || state == lifecycle.Stale) {
+			return uiStatusAcrossSeats(status, effects.seats(), prober)
+		}
+		return status
 	case "stop":
 		result, unchanged := lifecycle.StopReport(roots.StateRoot, stop)
+		if unchanged && effects.seats != nil {
+			return uiStopAcrossSeats(result, effects.seats(), stop)
+		}
 		return uiLifecycleResult{Result: result, Unchanged: unchanged}
 	}
 	report := lifecycle.RestartReportFor(roots.StateRoot, stop, start)
-	return uiLifecycleResult{Result: report.Result, Restart: &report}
+	return collided(uiLifecycleResult{Result: report.Result, Restart: &report})
 }
 
 // tierBudgets is the project's budget law, by tier, as the approval sheet

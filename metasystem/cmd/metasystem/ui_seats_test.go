@@ -513,3 +513,19 @@ func TestUIStopRendersTheSeatItStopped(t *testing.T) {
 		t.Fatalf("a stop of several seats = %d %+v", code, result)
 	}
 }
+
+// TestUIHelpNamesTheOtherSeats (D-words): the help of stop, status and
+// start says what each does when another machine runs the interface.
+func TestUIHelpNamesTheOtherSeats(t *testing.T) {
+	t.Parallel()
+	for verb, want := range map[string]string{
+		"stop":   "When this seat runs no interface and exactly one other machine of this computer does, stop stops that one and says which; when several do, it lists each with its --repo command and stops none.",
+		"status": "When this seat runs no interface, names the machine of this computer that does.",
+		"start":  "When this seat runs no interface, names the machine of this computer that does.",
+	} {
+		_, page := readHelpJSON(t, "ui", verb, "--json")
+		if page.Command == nil || !slices.Contains(page.Command.Details, want) {
+			t.Errorf("ui %s help lacks %q: %+v", verb, want, page.Command)
+		}
+	}
+}
