@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
@@ -55,7 +56,7 @@ func authorizeSessionStop(stateRoot, by string) (goal.SessionStop, string, int) 
 		return goal.SessionStop{}, fmt.Sprintf("session stop refused: caller classification failed: %v", err), 3
 	}
 	if classification.Class != lease.ClassHuman {
-		return goal.SessionStop{}, sessionStopRefusal(fmt.Errorf("%s", humanauthority.OutcomeAgent)), 3
+		return goal.SessionStop{}, sessionStopRefusal(stateRoot, by, fmt.Errorf("%s", humanauthority.OutcomeAgent)), 3
 	}
 
 	now := sessionStopNow().UTC()
@@ -65,7 +66,7 @@ func authorizeSessionStop(stateRoot, by string) (goal.SessionStop, string, int) 
 	}
 	humanProof, err := prove(stateRoot, int64(os.Getppid()), now)
 	if err != nil {
-		return goal.SessionStop{}, sessionStopRefusal(err), 3
+		return goal.SessionStop{}, sessionStopRefusal(stateRoot, by, err), 3
 	}
 	holder, err := currentSessionStopHolder(stateRoot)
 	if err != nil {
@@ -102,9 +103,22 @@ func authorizeSessionStop(stateRoot, by string) (goal.SessionStop, string, int) 
 	return marker, "", 0
 }
 
-// sessionStopRefusal says why this shell may not stop the session quietly and
-// what a person does instead: enroll the terminal, then stop from it.
-func sessionStopRefusal(err error) string {
-	return fmt.Sprintf("session stop refused: only a person can stop a session quietly, and %s; nothing was done; %s",
-		humanauthority.PlainReason(err), humanauthority.PersonActRemedy("metasystem session stop --by NAME"))
+// sessionStopRefusal says, in two lines, why this shell may not stop the
+// session quietly and the one command that resolves it, with the person's
+// name filled in (by, else the enrolled person's, NAME only when nobody is
+// known): enroll the terminal, or stop from a terminal the person opened.
+func sessionStopRefusal(stateRoot, by string, err error) string {
+	person := strings.TrimSpace(by)
+	if person == "" {
+		person = "NAME"
+		if enrollment, readErr := humanauthority.ReadEnrollment(stateRoot); readErr == nil && enrollment.Human != "" {
+			person = enrollment.Human
+		}
+	}
+	remedy := humanauthority.RemedyFor(stateRoot, err, by, []string{"metasystem", "session", "stop", "--by", person})
+	reason := "only a person can stop a session quietly: " + remedy.Reason + ", so nothing was done"
+	if len(remedy.Argv) == 0 {
+		return reason
+	}
+	return reason + "\nrun: " + shellCommand(remedy.Argv) + "  (" + remedy.Then + ")"
 }

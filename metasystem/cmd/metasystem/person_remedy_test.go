@@ -44,8 +44,8 @@ func TestEveryPersonActRefusalNamesSystemEnroll(t *testing.T) {
 		{"a human verb's proof", "", func() string {
 			return humanProofRemedy(newHumanVerbValues("park", nil), false, "", "", notReached).command
 		}},
-		{"session stop by a shell off the enrolled terminal", "metasystem session stop", func() string {
-			return sessionStopRefusal(notReached)
+		{"session stop by a shell off the enrolled terminal", "then repeat this command", func() string {
+			return sessionStopRefusal("", "", notReached)
 		}},
 	} {
 		got := test.refusal()
@@ -155,4 +155,25 @@ func sendsToEnrolledTerminal(text string) bool {
 		}
 	}
 	return false
+}
+
+// The session stop refusal is two lines: why, in plain words, and the one
+// command with the person's name filled in, never NAME when a name is known.
+func TestSessionStopRefusalIsTwoLinesWithTheNameFilledIn(t *testing.T) {
+	t.Parallel()
+	got := sessionStopRefusal("", "Wido", errors.New(humanauthority.OutcomeTerminalMissing))
+	lines := strings.Split(got, "\n")
+	if len(lines) != 2 || strings.Contains(got, "NAME") || strings.HasPrefix(lines[0], "session stop refused") ||
+		!strings.Contains(lines[0], "only a person can stop a session quietly") || !strings.HasPrefix(lines[1], "run: metasystem system enroll --name Wido") {
+		t.Fatalf("session stop refusal:\n%s", got)
+	}
+	for _, line := range lines {
+		if len([]rune(line)) > 100 {
+			t.Fatalf("line longer than the page: %q", line)
+		}
+	}
+	agent := sessionStopRefusal("", "Wido", errors.New(humanauthority.OutcomeAgent))
+	if !strings.Contains(agent, "run: metasystem session stop --by Wido") {
+		t.Fatalf("an agent's shell is told the same command, in a terminal the person opened:\n%s", agent)
+	}
 }

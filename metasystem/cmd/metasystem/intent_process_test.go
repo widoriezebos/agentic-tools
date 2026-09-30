@@ -280,7 +280,7 @@ func TestIntentProcessAndAnswerTargets(t *testing.T) {
 		// The quiet session stop is the real owner: this test process is not
 		// an attended human terminal, so it refuses and writes no marker.
 		code, result = b.runJSON(owners, "session", "stop", "--by", "Wido")
-		if code != 3 || result.Outcome != intentRefused || !strings.HasPrefix(result.Summary, "session stop refused") {
+		if code != 3 || result.Outcome != intentRefused || !strings.HasPrefix(result.Summary, "only a person can stop a session quietly") {
 			t.Fatalf("agent session stop = %d %+v", code, result)
 		}
 		if entries, _ := filepath.Glob(filepath.Join(b.root(), "artifacts", "agents", "session-stop*")); len(entries) != 0 {
@@ -459,7 +459,7 @@ func TestIntentProcessAndAnswerTargets(t *testing.T) {
 			t.Fatalf("unknown doctor = %d %+v", code, result)
 		}
 		_, stdout, _ := b.run(owners, "system", "check")
-		if !strings.Contains(stdout, "unknown: no tick yet; remedy: metasystem session start") {
+		if !strings.Contains(stdout, "steward-runner   unknown   no tick yet") || !strings.Contains(stdout, "→ metasystem session start") {
 			t.Fatalf("doctor text dropped the owner remedy: %q", stdout)
 		}
 		missing := filepath.Join(t.TempDir(), "a dir", "x")

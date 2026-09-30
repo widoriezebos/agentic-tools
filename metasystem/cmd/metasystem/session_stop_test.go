@@ -288,7 +288,7 @@ func TestSessionStopAgentClassifiedCallerCannotReachTheWriter(t *testing.T) {
 	// EM-39: the refusal says who may stop, in plain words, never the
 	// classifier's value.
 	if strings.Contains(sentence, "DELEGATE") || strings.Contains(sentence, "classifies") ||
-		!strings.Contains(sentence, "only a person can stop a session quietly, and this shell was started by an agent") {
+		!strings.Contains(sentence, "only a person can stop a session quietly: an agent started this shell") {
 		t.Fatalf("agent refusal sentence %q", sentence)
 	}
 	if entries, err := os.ReadDir(filepath.Join(root, "artifacts", "agents", "session-stops")); err == nil && len(entries) > 0 {
