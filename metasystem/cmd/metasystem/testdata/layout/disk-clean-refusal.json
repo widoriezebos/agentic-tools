@@ -1,0 +1,23 @@
+exit 2
+--
+{
+  "schemaVersion": 1,
+  "verb": "disk clean",
+  "targets": [],
+  "outcome": "refused",
+  "summary": "disk clean does one thing at a time, and more than one was asked; nothing was done",
+  "next": {
+    "argv": [
+      "metasystem",
+      "disk",
+      "clean",
+      "--preview"
+    ],
+    "reason": "see what a pass would do first"
+  },
+  "details": [
+    "choose one of --preview, --strays, --release, --leases, --discard or --go-cache"
+  ]
+}
+
+--

@@ -1,0 +1,8 @@
+sha=9498700a9d0c7b1e2f3a4b5c6d7e8f9a0b1c2d3e
+recorded_epoch=1790589600
+score=0.82
+min_delta=0.01
+direction=max
+max_age_minutes=
+eval=go test ./bench/...
+artifact=runs/1.json

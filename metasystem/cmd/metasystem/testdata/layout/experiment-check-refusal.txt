@@ -1,0 +1,1 @@
+stop-loss triggered: 2 cycles classified no-progress. Stop stacking changes and take the decision up a level

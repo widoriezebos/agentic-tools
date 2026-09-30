@@ -1,0 +1,3 @@
+usage: metasystem test add --file FILE --group GROUP --tests TEST,TEST
+   or: metasystem test add --file FILE --group GROUP --inputs PATTERN,PATTERN
+   or: metasystem test add --file FILE --surface SURFACE --paths PATTERN,PATTERN

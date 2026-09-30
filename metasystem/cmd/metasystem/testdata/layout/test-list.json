@@ -1,0 +1,5 @@
+exit 0
+--
+{"contract":"/Users/wido/GitHub/agentic-tools-m1e/metasystem/testing.json","groups":[{"id":"app-group","kind":"unit","adapter":"go","cwd":".","inputs":["go.mod","go.sum"],"outputs":[],"tools":[],"obligations":[],"platforms":["any"],"targetMs":1000,"packages":["internal/example"],"tests":["TestBase"]}],"installation":"/Users/wido/GitHub/agentic-tools-m1e/metasystem","schemaVersion":1}
+
+--

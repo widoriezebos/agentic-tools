@@ -1,0 +1,3 @@
+1790593200|2026-09-28T11:00:00Z|RECEIPT|type=implement|outcome=shipped|skills=verify|verify=caught|corrections=1|stop_loss=no|goal=verbs-match-intent|critique_waived=none|waiver_stream=none|note=unit 1
+1790596800|2026-09-28T12:00:00Z|RECEIPT|type=implement|outcome=shipped|skills=verify|verify=caught|corrections=1|stop_loss=no|goal=verbs-match-intent|critique_waived=none|waiver_stream=none|note=unit 2
+2 line(s) no retro has covered; token 2:df115d703ba9 (metasystem receipt retro SUMMARY --covered 2:df115d703ba9 records them)

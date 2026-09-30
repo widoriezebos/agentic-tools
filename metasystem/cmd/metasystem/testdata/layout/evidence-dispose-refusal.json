@@ -1,0 +1,22 @@
+exit 2
+--
+{
+  "schemaVersion": 1,
+  "verb": "evidence dispose",
+  "targets": [],
+  "outcome": "refused",
+  "summary": "a disposal removes only what a preview planned, so nothing was removed",
+  "next": {
+    "argv": [
+      "metasystem",
+      "evidence",
+      "dispose",
+      "old-chain",
+      "--json",
+      "--preview"
+    ],
+    "reason": "plans it; then metasystem evidence dispose carries the plan out"
+  }
+}
+
+--

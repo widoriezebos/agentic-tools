@@ -50,6 +50,17 @@ type layoutCase struct {
 	name string
 	args []string
 	bed  func(t *testing.T) layoutBed
+	// noJSON is a passthrough action that takes no --json.
+	noJSON bool
+}
+
+// layoutGroupCases are the cases a conversion group adds from its own file
+// (addLayoutCases), so parallel builders never edit one list.
+var layoutGroupCases []layoutCase
+
+func addLayoutCases(cases ...layoutCase) bool {
+	layoutGroupCases = append(layoutGroupCases, cases...)
+	return true
 }
 
 type layoutBed struct {
@@ -57,10 +68,13 @@ type layoutBed struct {
 	cwd     string
 	replace []string  // old, new pairs applied to every output
 	now     time.Time // the bed's clock; zero is layoutNow
+	// words fill a case's placeholder words with the bed's values (a
+	// temporary directory), the way replace takes them out again.
+	words map[string]string
 }
 
 func layoutCases() []layoutCase {
-	return []layoutCase{
+	return append([]layoutCase{
 		{name: "status", args: []string{"status"}, bed: statusLayoutBed(true)},
 		{name: "status-verbose", args: []string{"status", "--verbose"}, bed: statusLayoutBed(true)},
 		{name: "status-quiet", args: []string{"status"}, bed: statusLayoutBed(false)},
@@ -69,7 +83,7 @@ func layoutCases() []layoutCase {
 		{name: "grant-list-all", args: []string{"grant", "list", "--all"}, bed: grantListLayoutBed(2, true)},
 		{name: "grant-list-empty", args: []string{"grant", "list"}, bed: grantListLayoutBed(0, false)},
 		{name: "grant-list-refusal", args: []string{"grant", "list"}, bed: outsideLayoutBed},
-	}
+	}, layoutGroupCases...)
 }
 
 // statusLayoutBed is a checkout with its five helpers and two processes
@@ -219,14 +233,41 @@ func layoutZone(t *testing.T) *time.Location {
 
 func runLayoutCase(t *testing.T, c layoutCase, bed layoutBed, args ...string) (int, string, string) {
 	t.Helper()
-	command, rest, ok := resolveIntentArgv(append(append([]string{}, c.args...), args...))
+	words := append(append([]string{}, c.args...), args...)
+	for index, word := range words {
+		if value, ok := bed.words[word]; ok {
+			words[index] = value
+		}
+	}
+	command, rest, ok := resolveIntentArgv(words)
 	if !ok {
 		t.Fatalf("no public command %q", c.args)
 	}
-	var stdout, stderr bytes.Buffer
-	code := runIntentIn(command, rest, &stdout, &stderr, bed.cwd, bed.owners)
+	stdout, stderr := &layoutStream{env: bed.owners.textEnv}, &layoutStream{env: bed.owners.textEnv}
+	var code int
+	if command.run == nil && command.passthrough != nil {
+		// A passthrough prints from its own handler, in the layout its
+		// stream carries; its bed names the installation in the words.
+		code = command.passthrough(rest, stdout, stderr)
+	} else {
+		code = runIntentIn(command, rest, stdout, stderr, bed.cwd, bed.owners)
+	}
 	replacer := strings.NewReplacer(bed.replace...)
 	return code, replacer.Replace(stdout.String()), replacer.Replace(stderr.String())
+}
+
+// layoutStream is a golden's output stream: it carries the golden's text
+// layout to a passthrough handler, which has no owners to ask.
+type layoutStream struct {
+	bytes.Buffer
+	env func(io.Writer) textui.Env
+}
+
+func (s *layoutStream) TextEnv() textui.Env {
+	if s.env == nil {
+		return textui.DetectWith(false, 0, func(string) string { return "" }, layoutNow, time.UTC)
+	}
+	return s.env(s)
 }
 
 func layoutGolden(name string) string { return filepath.Join("testdata", "layout", name) }
@@ -236,6 +277,9 @@ func layoutGolden(name string) string { return filepath.Join("testdata", "layout
 func TestAuditOutputLayoutJSONUnchanged(t *testing.T) {
 	t.Parallel()
 	for _, c := range layoutCases() {
+		if c.noJSON {
+			continue
+		}
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
 			code, stdout, stderr := runLayoutCase(t, c, c.bed(t), "--json")

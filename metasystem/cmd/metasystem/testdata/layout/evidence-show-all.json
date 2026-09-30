@@ -1,0 +1,19 @@
+exit 0
+--
+{
+  "schemaVersion": 1,
+  "verb": "evidence show",
+  "targets": [],
+  "outcome": "confirmed",
+  "summary": "1 evidence root(s) on this host",
+  "data": [
+    {
+      "bytes": 36864,
+      "notManaged": null,
+      "owner": "root of /Users/wido/GitHub/agentic-tools-m1e",
+      "root": "/Users/wido/GitHub/agentic-tools-m1e/evidence"
+    }
+  ]
+}
+
+--

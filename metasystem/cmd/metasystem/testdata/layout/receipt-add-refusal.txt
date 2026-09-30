@@ -1,0 +1,1 @@
+receipt add needs --outcome (shipped, reworked, blocked, parked); nothing was recorded

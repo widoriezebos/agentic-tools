@@ -1,0 +1,1 @@
+within noise floor: 0.821 improves on 0.82 but not by more than 0.01; treat as noise

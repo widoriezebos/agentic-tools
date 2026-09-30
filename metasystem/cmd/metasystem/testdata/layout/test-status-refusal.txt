@@ -1,0 +1,2 @@
+metasystem test status needs the tree to check; nothing was read
+run: metasystem test status --tree TREE

@@ -1,0 +1,305 @@
+# No task in flight; Stop allowed
+
+<!-- metasystem-stop-report-v1 {"installation":"/Users/wido/GitHub/agentic-tools-m1e/metasystem","runtime":"claude","session":"session-safe","sessionKey":"608abd248ae1fd87d6ec15a54165223d7298d4b016cb4a999c1ed0e3715faa8e","attempt":"11111111111111111111111111111111","mainId":"main-one","machine":"m1e","lineage":"lineage-1","observedAt":"2026-09-30T08:50:00Z","claimEpoch":7} -->
+
+Observed at: 2026-09-30T08:50:00Z
+
+## Action needed
+
+Supervision needs repair. The exact causes, owners, and remedies are listed first below.
+
+- health steward-runner: no steward runner is recorded Remedy: metasystem system start. Owner: steward.
+
+## Seat actions
+
+- claim-goal (verbs-match-intent): claim the next ready goal Command: `metasystem goal claim verbs-match-intent`. Owner: seat.
+
+## Summary
+
+- Block source: none
+- Task naming: no owned or selected work was proven.
+- Completion: unknown for this turn because there is no complete usable previous observation for this exact seat interval.
+- Claimable goals: 1; queued goals: 12; non-terminal jobs: 0.
+- Health: 1 alive, 1 dead, 0 unknown.
+- Health steward-runner=dead: no steward runner is recorded Remedy: metasystem system start.
+
+## Console text
+
+```text
+Just completed: unknown for this turn.
+No task in flight; Stop allowed; needs supervision repair; Report: metasystem session status --id 1
+```
+
+## Retained Stop control
+
+```json
+{
+  "shouldBlock": false,
+  "blockSource": null,
+  "class": "seat-actionable",
+  "causeCode": "",
+  "judgmentAvailable": true
+}
+```
+
+## Completion observation
+
+```json
+{
+  "schemaVersion": 1,
+  "identity": {
+    "installation": "/Users/wido/GitHub/agentic-tools-m1e/metasystem",
+    "session": "session-safe",
+    "mainId": "main-one"
+  },
+  "collectedAt": "2026-09-30T08:50:00Z",
+  "records": [],
+  "unavailable": []
+}
+```
+
+## Completion
+
+```json
+{
+  "state": "unknown",
+  "baselineReportId": "",
+  "intervalStart": "",
+  "observedAt": "2026-09-30T08:50:00Z",
+  "selected": null,
+  "events": [],
+  "unavailable": [
+    "no usable previous completion observation"
+  ]
+}
+```
+
+## Original turn verdict and frozen judgment
+
+```json
+{
+  "schemaVersion": 1,
+  "identity": {
+    "installation": "/Users/wido/GitHub/agentic-tools-m1e/metasystem",
+    "session": "session-safe",
+    "mainId": "main-one",
+    "observedAt": "2026-09-30T08:50:00Z"
+  },
+  "verdict": {
+    "schemaVersion": 1,
+    "class": "seat-actionable",
+    "shouldBlock": false,
+    "blockSource": null,
+    "openWork": null,
+    "openWorkSignature": "",
+    "goal": null,
+    "ledgerStatus": "ok",
+    "diagnostics": null,
+    "display": "bounded display",
+    "surfaceWatchdog": false,
+    "idleRefusal": false,
+    "countSpent": false,
+    "brainStatusDue": false
+  },
+  "fullDisplay": "",
+  "scan": {
+    "open": [
+      {
+        "kind": "plan",
+        "id": "plans/work.md",
+        "detail": "OPEN-WORK plans/work.md: write the summary view",
+        "fullDetail": "OPEN-WORK plans/work.md: write the summary view",
+        "lineDigest": "",
+        "sourcePath": "plans/work.md",
+        "ownerMainId": "",
+        "requestedAction": "write the summary view",
+        "previouslyRefused": false,
+        "humanRequired": false
+      }
+    ],
+    "templateUnfilled": [],
+    "openWorkWarnings": [],
+    "waitingOnHuman": [],
+    "stalePlans": [
+      {
+        "kind": "plan",
+        "id": "STALE-PLAN plans/old.md: claims work in flight while no job is running",
+        "detail": "STALE-PLAN plans/old.md: claims work in flight while no job is running",
+        "fullDetail": "STALE-PLAN plans/old.md: claims work in flight while no job is running",
+        "lineDigest": "",
+        "sourcePath": "",
+        "ownerMainId": "",
+        "requestedAction": "",
+        "previouslyRefused": false,
+        "humanRequired": false
+      }
+    ],
+    "busy": [],
+    "questions": [],
+    "drafts": [],
+    "unreadable": [],
+    "jobs": [],
+    "runs": [],
+    "runUnreadable": []
+  },
+  "work": {
+    "readSucceeded": true,
+    "claimed": [],
+    "landing": [],
+    "claimable": [
+      {
+        "id": "verbs-match-intent",
+        "intent": "verbs a person reads",
+        "nextStep": "convert the passthroughs",
+        "revision": "4"
+      }
+    ],
+    "selected": null,
+    "selection": "",
+    "refused": [],
+    "inFlight": [],
+    "nonTerminalJobs": [],
+    "queued": 12,
+    "goalFree": false
+  },
+  "ownership": {
+    "state": "none",
+    "goalId": "",
+    "evidence": "no held claim"
+  },
+  "actions": [
+    {
+      "kind": "claim-goal",
+      "targetId": "verbs-match-intent",
+      "instruction": "claim the next ready goal",
+      "command": "metasystem goal claim verbs-match-intent",
+      "owner": "seat",
+      "restriction": "",
+      "humanRequired": false,
+      "supervisionRepair": false
+    }
+  ],
+  "refusal": {
+    "class": "seat-actionable",
+    "causeCode": "",
+    "component": "",
+    "detail": "",
+    "remedy": "",
+    "blockSource": "",
+    "occurrence": 0,
+    "countSpent": false,
+    "idleRefusal": false,
+    "humanStopConsumed": false,
+    "humanRequired": false,
+    "supervisionRepair": false,
+    "escalation": {
+      "intentId": "",
+      "incidentId": "",
+      "alarmDetail": "",
+      "detail": "",
+      "intentPrepared": false,
+      "humanRequired": false,
+      "supervisionRepair": false
+    }
+  }
+}
+```
+
+## Health
+
+```json
+{
+  "schemaVersion": 1,
+  "exitCode": 1,
+  "line": "HEALTH unhealthy — steward-runner=dead (no steward runner is recorded; remedy: metasystem system start); supervision-owner=alive (the owner holds the lock)",
+  "interventions": [
+    {
+      "role": "steward-runner",
+      "humanRequired": false,
+      "supervisionRepair": true,
+      "owner": "steward",
+      "restriction": ""
+    },
+    {
+      "role": "supervision-owner",
+      "humanRequired": false,
+      "supervisionRepair": false,
+      "owner": "",
+      "restriction": ""
+    }
+  ],
+  "verdict": {
+    "schema": 1,
+    "observedAt": "2026-09-30T08:50:00Z",
+    "observation": 0,
+    "aggregate": "unhealthy",
+    "roles": [
+      {
+        "role": "steward-runner",
+        "status": "dead",
+        "reason": "no steward runner is recorded",
+        "remedy": "metasystem system start"
+      },
+      {
+        "role": "supervision-owner",
+        "status": "alive",
+        "reason": "the owner holds the lock"
+      }
+    ],
+    "shouldAlert": false,
+    "findingDigest": ""
+  }
+}
+```
+
+## Pending digest
+
+```json
+{
+  "mode": "pending",
+  "text": "complete digest line\n",
+  "sourcePath": "records/narrator-digest.log",
+  "cursorPrefix": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "sha256": "8bf79a82539a9ab12973cd8678543d3658f58d9e54703b5116469fdf061a7549"
+}
+```
+
+## Receipt
+
+```json
+{
+  "exitCode": 0,
+  "stdout": "receipt current\n",
+  "stderr": ""
+}
+```
+
+## Supervision arming
+
+```json
+{
+  "exitCode": 0,
+  "stdout": "up healthy\n",
+  "stderr": "",
+  "components": [],
+  "aggregate": "up healthy"
+}
+```
+
+## Notices
+
+```json
+[]
+```
+
+## Unavailable observations
+
+```json
+[]
+```
+
+## Existing records
+
+- Full turn verdict: `artifacts/agents/supervision/stop-verdicts/session-safe.txt`
+- Stop refusal records: `artifacts/agents/supervision/stop-refusals/`
+- Narrator log: `records/narrator-digest.log`

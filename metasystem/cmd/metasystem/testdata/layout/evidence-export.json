@@ -1,0 +1,19 @@
+exit 0
+--
+{
+  "schemaVersion": 1,
+  "verb": "evidence export",
+  "targets": [],
+  "outcome": "confirmed",
+  "summary": "exported 1 of 1 item(s) to /Volumes/Backup/metasystem-exports",
+  "data": [
+    {
+      "path": "/Users/wido/GitHub/agentic-tools-m1e/evidence/agents/0a5c41b756db/old-chain",
+      "done": true,
+      "line": "/Users/wido/GitHub/agentic-tools-m1e/evidence/agents/0a5c41b756db/old-chain: exported to /Volumes/Backup/metasystem-exports/0a5c41b756db/old-chain/fda6a0d85418.tar.gz (a936d49d7170)",
+      "export": "/Volumes/Backup/metasystem-exports/0a5c41b756db/old-chain/fda6a0d85418.tar.gz"
+    }
+  ]
+}
+
+--

@@ -1,0 +1,5 @@
+what MetaSystem keeps on this computer's disk
+checkout: no pass has run yet; metasystem disk clean --preview shows what one would do
+machine: no pass has run yet; metasystem disk clean --preview shows what one would do
+caches: no trim pass has run yet; metasystem disk clean --go-cache trims them now
+evidence root of this checkout: /Volumes/Evidence/metasystem-evidence (conf-local)

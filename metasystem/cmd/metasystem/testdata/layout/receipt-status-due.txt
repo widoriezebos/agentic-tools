@@ -1,0 +1,10 @@
+receipts=26
+outcome_shipped=18
+outcome_reworked=8
+type_implement=26
+corrections=26
+caught_by_verify=26
+stop_loss_triggered=0
+critique_waivers=0
+span_days=1.0
+metasystem retro due: 26 receipts since the last retro (max 25)

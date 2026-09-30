@@ -1,0 +1,2 @@
+✗ name where the copies go: --to DIR (or --export DIR), or set evidence.export-dir in metasystem.conf.local; nothing was done
+  → metasystem evidence export old-chain --to DIR  with another directory
