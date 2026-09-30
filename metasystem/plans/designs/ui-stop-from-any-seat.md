@@ -108,3 +108,9 @@ Closed at round 2 (failsafe) on two fixture obligations, US-05 and US-06; the im
 | AM-02 the new pid read from the record had no defined failure outcome | accepted, smallest form | D-restart and Seams (the pair `Launch` returns, carried out of the start closure; no re-read; `internal/ui/lifecycle` unchanged), test 6 |
 
 Amendment read closed on two folds; checked in code critique.
+
+## Built
+
+Slice g1-s76, built by Claude on Opus 5.5 (R-133-ui) on branch `g1-s76`: revision 3 in `748dfc005` (tests red first against stubs, then the seat inventory, the cross-seat stop, the status pointer and the start pre-check; `internal/ui/lifecycle` unchanged); Amendment 1 in `8731893c8` and `65909ca71` (the target installation's own engine for start and restart; restart from any seat at the target's listen, reporting the pid and address `Launch` returned).
+
+Code read by Codex on Sol: read 1 found SOL-US-01 and SOL-US-02. SOL-US-02 (the caller's own invalid `ui.listen` refused a restart of a healthy other seat) was fixed in `105af9d30`, with the doubled "no interface for" line and the restart help's "executable on disk" wording. SOL-US-01 (a cross-seat restart stops the server and then finds its new address held by an unrelated process) was deferred by the seat: a seat's own `ui restart` has the same stop-then-bind order today (`RestartReportFor`), and the case needs a changed address and a foreign listener at once; it is on the later list, reported to Wido. The scoped re-read confirmed SOL-US-02 and found SOL-US-03 (the doubled-line fix dropped the diagnostic of a cross-seat timeout or failed start from the text), fixed in `43d3dc1af` and read by the seat under the stop rule.
