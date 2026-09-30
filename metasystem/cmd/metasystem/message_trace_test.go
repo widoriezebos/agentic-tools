@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -142,6 +141,10 @@ type tracePackage struct {
 	methods  map[string][]*traceFunc
 	structs  map[string][]string
 	refusals map[string]bool // types with a RefusalCode method
+	// remedySetters are the methods that set a refusal's remedy field on
+	// their receiver (refuse(...).run(command)): a refusal built by a call
+	// they are chained onto carries its line 2 there.
+	remedySetters map[string]bool
 }
 
 // traceSink is one expression whose value a person reads.
@@ -156,8 +159,7 @@ type traceSink struct {
 	// words, so line 2 must be in them.
 	refusal bool
 	// remedyEmpty: the refusal type has a remedy field that this literal
-	// leaves empty; its no-command is reported, not enforced, until the
-	// remedies are filled (integration, round 2).
+	// leaves empty, so its words must carry line 2 themselves.
 	remedyEmpty bool
 	// pick transforms the text before it is judged (a hook's JSON value).
 	pick func(string) (string, bool)
@@ -238,7 +240,7 @@ func (index *traceIndex) pkg(dir string) *tracePackage {
 	pkg := index.packages[dir]
 	if pkg == nil {
 		pkg = &tracePackage{consts: map[string]ast.Expr{}, funcs: map[string]*traceFunc{}, methods: map[string][]*traceFunc{},
-			structs: map[string][]string{}, refusals: map[string]bool{}}
+			structs: map[string][]string{}, refusals: map[string]bool{}, remedySetters: map[string]bool{}}
 		index.packages[dir] = pkg
 	}
 	return pkg
@@ -308,6 +310,9 @@ func (index *traceIndex) add(module, path string) error {
 				pkg.methods[d.Name.Name] = append(pkg.methods[d.Name.Name], fn)
 				if d.Name.Name == "RefusalCode" {
 					pkg.refusals[receiver] = true
+				}
+				if traceSetsRemedy(d) {
+					pkg.remedySetters[d.Name.Name] = true
 				}
 			} else {
 				pkg.funcs[d.Name.Name] = fn
@@ -398,6 +403,58 @@ func (pkg *tracePackage) traceRemedyLeftEmpty(name string, lit *ast.CompositeLit
 		return false
 	}
 	return true
+}
+
+// traceSetsRemedy says whether a method assigns a remedy field of its
+// receiver (r.Remedy = …, e.Run = …).
+func traceSetsRemedy(d *ast.FuncDecl) bool {
+	if len(d.Recv.List[0].Names) != 1 {
+		return false
+	}
+	receiver := d.Recv.List[0].Names[0].Name
+	sets := false
+	ast.Inspect(d.Body, func(node ast.Node) bool {
+		assign, ok := node.(*ast.AssignStmt)
+		if !ok {
+			return true
+		}
+		for _, lhs := range assign.Lhs {
+			if sel, ok := lhs.(*ast.SelectorExpr); ok && messageTraceRemedyField.MatchString(sel.Sel.Name) {
+				if ident, ok := sel.X.(*ast.Ident); ok && ident.Name == receiver {
+					sets = true
+				}
+			}
+		}
+		return true
+	})
+	return sets
+}
+
+// traceRemedied are the calls in a declaration a remedy setter is chained
+// onto with a command that is not empty: refuse(...).run("metasystem …").
+func (index *traceIndex) traceRemedied(file *traceFile, decl ast.Decl) map[*ast.CallExpr]bool {
+	pkg := index.packages[file.dir]
+	remedied := map[*ast.CallExpr]bool{}
+	ast.Inspect(decl, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok || len(call.Args) != 1 {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok || !pkg.remedySetters[sel.Sel.Name] {
+			return true
+		}
+		inner, ok := sel.X.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		if text, ok := call.Args[0].(*ast.BasicLit); ok && text.Kind == token.STRING && text.Value == `""` {
+			return true
+		}
+		remedied[inner] = true
+		return true
+	})
+	return remedied
 }
 
 var messageTraceRemedyField = regexp.MustCompile(`(?i)remedy|next|decision|command|^run|hint|resolve|second`)
@@ -793,6 +850,7 @@ func (index *traceIndex) close(sinks []traceSink) []traceSink {
 		for _, file := range index.files {
 			for _, decl := range file.file.Decls {
 				caller := index.funcOf[decl]
+				remedied := index.traceRemedied(file, decl)
 				ast.Inspect(decl, func(node ast.Node) bool {
 					call, ok := node.(*ast.CallExpr)
 					if !ok {
@@ -813,7 +871,12 @@ func (index *traceIndex) close(sinks []traceSink) []traceSink {
 						}
 						index.sites[key] = true
 						changed = true
-						sinks = append(sinks, traceSink{fn: caller, file: file, expr: arg, kind: param.kind, format: param.format, class: param.class, refusal: param.refusal, remedyEmpty: param.remedyEmpty})
+						refusal, remedyEmpty := param.refusal, param.remedyEmpty
+						if remedied[call] {
+							// Line 2 is the command chained onto the refusal.
+							refusal, remedyEmpty = false, false
+						}
+						sinks = append(sinks, traceSink{fn: caller, file: file, expr: arg, kind: param.kind, format: param.format, class: param.class, refusal: refusal, remedyEmpty: remedyEmpty})
 					}
 					return true
 				})
@@ -1000,9 +1063,6 @@ func (index *traceIndex) emit(sink traceSink) []messageTraced {
 			source.Violations = append(source.Violations, violation)
 		}
 		source.Mode = messageTracedModeFor(sink.file.rel, function)
-		if sink.remedyEmpty && source.Mode == auditEnforce && slices.Equal(source.Violations, []string{"no-command"}) {
-			source.Mode = auditReport
-		}
 		out = append(out, source)
 	}
 	return out
