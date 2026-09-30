@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 4
+- Sequence: 3
 - Risk: severity=2 novelty=2 exposure=2 accumulation=2 basis="A new steward role that can pause a component and open goals on its own; a false positive pauses useful work, a miss leaves a stuck system unnoticed; actions are reversible and reported"
 - Tier: 2
 - Intent: The steward detects behaviour patterns across the machinery and acts on them: each pattern is a small detector over signals the machinery already records, with actions from a fixed set (report first in status, pause the component, open a step-back goal, ask the person), thresholds and on/off in metasystem.conf; adding a pattern is one detector plus one config row. First patterns: a component that keeps failing in new ways (stagnation) and the machinery churning main with repeated records
 - Origin: main
 - Next step: Design the smallest extensible shape (detector interface, action set, once-per-incident record, config) with the two first patterns from the 2026-09-30 landing-lane evidence (/Users/wido/LocalStorage/agentic-tools-evidence/lane-stepback-20260930/memo.md); Astra critique; build. Consider folding steward-sees-stuck-capacity's detection in as a later pattern
 - OpenedAt: 2026-09-30T16:34:33Z
-- Revision: 5
+- Revision: 6
 - Pinned: m1e
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
@@ -21,4 +21,5 @@ History:
 - 2026-09-30T16:35:13Z 8M2KPDF10ZAF6XX7957P67VV9S-m1e-b6a4eb0a approve actor=human:wido targets=steward-acts-on-behaviour-patterns
 - 2026-09-30T18:11:24Z 1WF37VGCK7QXDV45308M64079T-m1e-b6a4eb0a set-pin actor=human:wido targets=steward-acts-on-behaviour-patterns
 - 2026-09-30T20:40:12Z HNA3K23WT2SC30HEBK32FHM4JJ-ui-bc2fda53 set-priority actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,cross-cutting-change-inventories-its-readers,design-rounds-read-less-and-repeat-less,error-checks-use-typed-errors,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,host-setup-from-scratch,landing-lane-runtime-redesign,one-steward-per-checkout-on-its-own-root,processes-read-structured-results,receipt-writer-follows-the-worktree-it-runs-in,reviewers-check-the-rulings,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,steward-acts-on-behaviour-patterns,stop-hook-never-forces-an-empty-turn,system-start-launches-your-agent,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror reason=priority-order subject=reviewers-check-the-rulings from=1:3 to=1:4 requested-sequence=1
-Integrity: sha256=d6f0f4a10a517893c64907609db824178c93e2d8ed0532b8812d290fc0f1e830
+- 2026-09-30T20:52:58Z EW3E4CJ6ZPAGTDPFCX7EXX5QJ5-m1e-b6a4eb0a done actor=human:wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,cross-cutting-change-inventories-its-readers,design-rounds-read-less-and-repeat-less,error-checks-use-typed-errors,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,host-setup-from-scratch,one-steward-per-checkout-on-its-own-root,processes-read-structured-results,receipt-writer-follows-the-worktree-it-runs-in,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,steward-acts-on-behaviour-patterns,stop-hook-never-forces-an-empty-turn,system-start-launches-your-agent,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror reason=priority-order from=1:4 to=1:3
+Integrity: sha256=332c4916c881010a0f45a87b007fc3d8097fcd3b694080f1415d99cebdb92f0c

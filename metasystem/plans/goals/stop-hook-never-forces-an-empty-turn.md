@@ -2,14 +2,14 @@
 
 - State: parked
 - Priority: 1
-- Sequence: 15
+- Sequence: 14
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: a wrong refusal rule either forces turns as today or lets an unsafe stop through; novelty 2: refusal causes are reclassified between seat and steward; exposure 3: every seat's every stop; accumulation 1: one hook"
 - Tier: 3
 - Intent: What: The end-of-turn check (the Stop hook on Claude, and its counterpart on other runtimes) refuses to let a session stop only when the session can do something about it, and then names the one command that fixes it. Why: in five September days the check refused 331 times, forcing 292 wasted turns and about 157 million prompt tokens, mostly over machinery faults the session could not fix. Already on main: a failure to read the machinery's own state no longer refuses the stop, and refusals are bounded. Left: every refusal names one clearing command, the same machinery refusal is not repeated within one stop, and proof on two runtimes plus a week under 10 refusals per seat per day. Pros: fewer wasted turns and tokens, and clearer messages. Cons: more effort on a hook Wido may remove altogether; about 25 unlanded design pages wait on a side branch.
 - Origin: human
 - Next step: Next: ask Wido whether the Stop hook stays; if it stays, count one week of stop refusals per seat from the hook log. Done when: either this goal is abandoned because the hook is removed, or a week under 10 refusals per seat per day is recorded and every remaining refusal names its clearing command.
 - OpenedAt: 2026-09-11T15:45:01Z
-- Revision: 123
+- Revision: 124
 - BlockedBy: stop-decisions-record-deadline-evidence, stop-infrastructure-allows-the-seat-to-stop
 - BudgetExceptions: 0
 - Sliced: machine=m1b lineage=main-1789191336-90295-e4b24b revision=20 at=2026-09-12T17:01:57Z
@@ -139,4 +139,5 @@ History:
 - 2026-09-30T18:58:28Z WYFSYA90WXY5AXZCXGDHY9BD29-ui-bc2fda53 edit actor=human:Wido targets=stop-hook-never-forces-an-empty-turn
 - 2026-09-30T18:58:43Z GYYSPDCTGZ5QTMPNVEYQN8KMDH-ui-bc2fda53 set-pin actor=human:Wido targets=stop-hook-never-forces-an-empty-turn
 - 2026-09-30T20:40:12Z HNA3K23WT2SC30HEBK32FHM4JJ-ui-bc2fda53 set-priority actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,cross-cutting-change-inventories-its-readers,design-rounds-read-less-and-repeat-less,error-checks-use-typed-errors,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,host-setup-from-scratch,landing-lane-runtime-redesign,one-steward-per-checkout-on-its-own-root,processes-read-structured-results,receipt-writer-follows-the-worktree-it-runs-in,reviewers-check-the-rulings,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,steward-acts-on-behaviour-patterns,stop-hook-never-forces-an-empty-turn,system-start-launches-your-agent,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror reason=priority-order subject=reviewers-check-the-rulings from=1:14 to=1:15 requested-sequence=1
-Integrity: sha256=f0deacfee354b6e12aeed0933d1d88320914cfb9e3d0e87fd003f1ce4e4029c9
+- 2026-09-30T20:52:58Z EW3E4CJ6ZPAGTDPFCX7EXX5QJ5-m1e-b6a4eb0a done actor=human:wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,cross-cutting-change-inventories-its-readers,design-rounds-read-less-and-repeat-less,error-checks-use-typed-errors,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,host-setup-from-scratch,one-steward-per-checkout-on-its-own-root,processes-read-structured-results,receipt-writer-follows-the-worktree-it-runs-in,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,steward-acts-on-behaviour-patterns,stop-hook-never-forces-an-empty-turn,system-start-launches-your-agent,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror reason=priority-order from=1:15 to=1:14
+Integrity: sha256=ae452f2de77b66b61876702896ce276e89dc53f2e47f15ffa09a3f7298c78723

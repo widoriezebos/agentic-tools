@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 8
+- Sequence: 7
 - Risk: severity=1 novelty=1 exposure=1 accumulation=1 basis="In-process refactor with no process boundary; behaviour preserved; tests pin each decision; reverts cleanly"
 - Tier: 1
 - Intent: What: Go code decides what an error means by its type or code, never by searching the error's text. Why: Wording changes, as the message rewrite (round 2) just showed. When code searches for a phrase and the wording changes, the decision silently goes wrong. The rewrite already moved the unit and launch checks to codes; about ten places still match on text. Pros: Messages can be reworded freely without changing behaviour; a test stops new text matching. Cons: Small; each place needs a code on the error it checks.
 - Origin: main
 - Next step: Next: Convert the remaining places that decide on error text (about ten; list them with a grep at ec495cbc8) to errors.Is or errors.As on refusal.Coded; give the closed trunk-red record a code field instead of the text match in IsTrunkRedClosed; land the error-text audit test at zero. Builder verbs-typederr is on it; hand work. Done when: the audit passes with no allowed exceptions and rewording a message changes no decision.
 - OpenedAt: 2026-09-30T12:03:35Z
-- Revision: 14
+- Revision: 15
 - Pinned: m1e
 - Budget: elapsedLimit=6h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
@@ -31,4 +31,5 @@ History:
 - 2026-09-30T19:05:20Z EHRDT2NB82CWFV1Y5TWP35KJQ3-m1e-b6a4eb0a approve actor=human:wido targets=error-checks-use-typed-errors
 - 2026-09-30T19:05:58Z A5FME3QF47S23WX90MHQVXKS63-m1e-b6a4eb0a approve actor=human:wido targets=error-checks-use-typed-errors
 - 2026-09-30T20:40:12Z HNA3K23WT2SC30HEBK32FHM4JJ-ui-bc2fda53 set-priority actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,cross-cutting-change-inventories-its-readers,design-rounds-read-less-and-repeat-less,error-checks-use-typed-errors,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,host-setup-from-scratch,landing-lane-runtime-redesign,one-steward-per-checkout-on-its-own-root,processes-read-structured-results,receipt-writer-follows-the-worktree-it-runs-in,reviewers-check-the-rulings,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,steward-acts-on-behaviour-patterns,stop-hook-never-forces-an-empty-turn,system-start-launches-your-agent,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror reason=priority-order subject=reviewers-check-the-rulings from=1:7 to=1:8 requested-sequence=1
-Integrity: sha256=fb375a4e980db0424c58789a20783f8ad0b72bcbd38569cdf24d72af5357e8df
+- 2026-09-30T20:52:58Z EW3E4CJ6ZPAGTDPFCX7EXX5QJ5-m1e-b6a4eb0a done actor=human:wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,cross-cutting-change-inventories-its-readers,design-rounds-read-less-and-repeat-less,error-checks-use-typed-errors,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,host-setup-from-scratch,one-steward-per-checkout-on-its-own-root,processes-read-structured-results,receipt-writer-follows-the-worktree-it-runs-in,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,steward-acts-on-behaviour-patterns,stop-hook-never-forces-an-empty-turn,system-start-launches-your-agent,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror reason=priority-order from=1:8 to=1:7
+Integrity: sha256=5f975eaca24d8b886cc95f9bf530fc5816c724012151cbd751a0564ca0f6ffe5

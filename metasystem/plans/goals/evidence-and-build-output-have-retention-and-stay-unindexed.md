@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 1
-- Sequence: 19
+- Sequence: 18
 - Risk: severity=2 novelty=2 exposure=3 accumulation=3 basis="severity 2: disk and indexing churn that slows every seat, no correctness harm; novelty 2: durable-copy acknowledgement and pins before deletion, and path moves across every reader; exposure 3: every proof run writes these stores; accumulation 3: grows by gigabytes per day until pruned"
 - Tier: 2
 - Intent: What: Kept test evidence, pinned engine copies and temporary build output are stored where the Mac's Spotlight search and malware scanner do not index them. Cleanup of these stores already exists (it was built under the disk-lifetimes goal); only the indexing part is left. Why: Tens of thousands of copied source files are indexed and scanned in the background, which slows the machine and wastes disk and CPU while seats work. Pros: Less background load on every seat machine. Cons: Moving stores means every reader and writer must follow them, and a missed one breaks a lookup.
 - Origin: human
 - Next step: Next: Keep the evidence folders, engine pins and build output out of Spotlight, either by placing them in a folder Spotlight skips or by marking each root as not to be indexed, and then count indexed files and disk use over one day of work on three seats. Done when: After that day, the Spotlight index holds none of those files and the counts stay under the thresholds written in the goal.
 - OpenedAt: 2026-09-15T09:05:39Z
-- Revision: 97
+- Revision: 98
 - BudgetExceptions: 0
 
 History:
@@ -110,4 +110,5 @@ History:
 - 2026-09-30T18:57:20Z 96YGY7PSQV1SVDGAZ9A5SGV49F-m1e-b6a4eb0a done actor=human:wido targets=busy-seat-shells-are-ended,cross-cutting-change-inventories-its-readers,evidence-and-build-output-have-retention-and-stay-unindexed,follow-up-brief-cannot-cite-fresh-trunk-files,round-proof-feeds-the-next-brief,testing-surfaces-declare-their-mirror reason=priority-order from=1:20 to=1:19
 - 2026-09-30T19:00:52Z TF97FR2MH8T93BFVAAQEE4WWBY-m1e-b6a4eb0a done actor=human:wido targets=busy-seat-shells-are-ended,cross-cutting-change-inventories-its-readers,evidence-and-build-output-have-retention-and-stay-unindexed,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,round-proof-feeds-the-next-brief,testing-surfaces-declare-their-mirror reason=priority-order from=1:19 to=1:18
 - 2026-09-30T20:40:12Z HNA3K23WT2SC30HEBK32FHM4JJ-ui-bc2fda53 set-priority actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,cross-cutting-change-inventories-its-readers,design-rounds-read-less-and-repeat-less,error-checks-use-typed-errors,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,host-setup-from-scratch,landing-lane-runtime-redesign,one-steward-per-checkout-on-its-own-root,processes-read-structured-results,receipt-writer-follows-the-worktree-it-runs-in,reviewers-check-the-rulings,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,steward-acts-on-behaviour-patterns,stop-hook-never-forces-an-empty-turn,system-start-launches-your-agent,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror reason=priority-order subject=reviewers-check-the-rulings from=1:18 to=1:19 requested-sequence=1
-Integrity: sha256=68c4aab1aa338295c14debe4b9639009ae9cc45e59a71819b652fd6011b1efdf
+- 2026-09-30T20:52:58Z EW3E4CJ6ZPAGTDPFCX7EXX5QJ5-m1e-b6a4eb0a done actor=human:wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,cross-cutting-change-inventories-its-readers,design-rounds-read-less-and-repeat-less,error-checks-use-typed-errors,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,host-setup-from-scratch,one-steward-per-checkout-on-its-own-root,processes-read-structured-results,receipt-writer-follows-the-worktree-it-runs-in,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,steward-acts-on-behaviour-patterns,stop-hook-never-forces-an-empty-turn,system-start-launches-your-agent,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror reason=priority-order from=1:19 to=1:18
+Integrity: sha256=9480d9c30dbef6b891d161a8a0ee6eb1be62d145398ab167cf29c21e4fa9ce4c

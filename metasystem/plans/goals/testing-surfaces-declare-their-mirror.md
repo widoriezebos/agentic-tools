@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 1
-- Sequence: 21
+- Sequence: 20
 - Risk: severity=2 novelty=2 exposure=2 accumulation=2 basis="severity 2: a narrowed proof selection silently under-tests; novelty 2: a new contract feature; exposure 2: every change to a mirrored surface; accumulation 2: grows with each mirrored surface"
 - Tier: 2
 - Intent: What: When one test area must always run the same tests as another, testing.json says so, and a missing test group is refused when the file is read instead of being found later in a long test run. Why: On 09-14 a new test group was added to one area and not to its twin; it surfaced only in a full package run. Pros: The mistake cannot be written, and no long run is needed to find it. Cons: It adds a field to the test configuration format, and the tool that generates testing.json must support it.
 - Origin: human
 - Next step: Next: testing.json is generated, so add a "mirrors" field to the test-area schema that metasystem testing add-tests and the contract reader both honour; move context-budget to it; refuse a mirror with a missing group when the file is loaded. Done when: repeating the 09-14 mistake is refused when testing.json is loaded, naming the group and the area.
 - OpenedAt: 2026-09-14T16:16:33Z
-- Revision: 152
+- Revision: 153
 - BudgetExceptions: 0
 
 History:
@@ -165,4 +165,5 @@ History:
 - 2026-09-30T18:57:20Z 96YGY7PSQV1SVDGAZ9A5SGV49F-m1e-b6a4eb0a done actor=human:wido targets=busy-seat-shells-are-ended,cross-cutting-change-inventories-its-readers,evidence-and-build-output-have-retention-and-stay-unindexed,follow-up-brief-cannot-cite-fresh-trunk-files,round-proof-feeds-the-next-brief,testing-surfaces-declare-their-mirror reason=priority-order from=1:22 to=1:21
 - 2026-09-30T19:00:52Z TF97FR2MH8T93BFVAAQEE4WWBY-m1e-b6a4eb0a done actor=human:wido targets=busy-seat-shells-are-ended,cross-cutting-change-inventories-its-readers,evidence-and-build-output-have-retention-and-stay-unindexed,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,round-proof-feeds-the-next-brief,testing-surfaces-declare-their-mirror reason=priority-order from=1:21 to=1:20
 - 2026-09-30T20:40:12Z HNA3K23WT2SC30HEBK32FHM4JJ-ui-bc2fda53 set-priority actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,cross-cutting-change-inventories-its-readers,design-rounds-read-less-and-repeat-less,error-checks-use-typed-errors,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,host-setup-from-scratch,landing-lane-runtime-redesign,one-steward-per-checkout-on-its-own-root,processes-read-structured-results,receipt-writer-follows-the-worktree-it-runs-in,reviewers-check-the-rulings,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,steward-acts-on-behaviour-patterns,stop-hook-never-forces-an-empty-turn,system-start-launches-your-agent,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror reason=priority-order subject=reviewers-check-the-rulings from=1:20 to=1:21 requested-sequence=1
-Integrity: sha256=1c8defd9de7dabe59c78db7a337bcc9f7f8a944f419c7cad0c01545dd9f47aea
+- 2026-09-30T20:52:58Z EW3E4CJ6ZPAGTDPFCX7EXX5QJ5-m1e-b6a4eb0a done actor=human:wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,cross-cutting-change-inventories-its-readers,design-rounds-read-less-and-repeat-less,error-checks-use-typed-errors,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,host-setup-from-scratch,one-steward-per-checkout-on-its-own-root,processes-read-structured-results,receipt-writer-follows-the-worktree-it-runs-in,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,steward-acts-on-behaviour-patterns,stop-hook-never-forces-an-empty-turn,system-start-launches-your-agent,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror reason=priority-order from=1:21 to=1:20
+Integrity: sha256=e42a8ec0ca613910d24f5ca39548001ad237ee24844d0092abf12af1a4ad8748
