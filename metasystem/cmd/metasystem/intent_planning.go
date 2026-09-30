@@ -484,7 +484,9 @@ func (inv *intentInvocation) actingAs(verb, target string, actor intentActor) ([
 	if stopping {
 		actor = actorEither
 	}
-	if typed == "" && actor == actorEither && agent && !inv.input.has("lineage") {
+	// A claim binds the session that works the goal, so the grant never
+	// makes it the person's: the granted session claims as itself.
+	if typed == "" && actor == actorEither && agent && !inv.input.has("lineage") && verb != "claim" {
 		// A live general grant that admits this session makes a dual act
 		// the granting person's, before the session's own shortcut (M6),
 		// as pause and done already do; the owner proves it again.
