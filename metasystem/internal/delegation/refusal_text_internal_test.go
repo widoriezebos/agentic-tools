@@ -16,7 +16,7 @@ func TestARefusedFormIsNamedNeverSilent(t *testing.T) {
 		var stderr bytes.Buffer
 		life := &Lifecycle{root: t.TempDir()}
 		result := life.Run(context.Background(), Request{Stderr: &stderr, Env: Env{DelegateInternal: true}}, argv)
-		if result.ExitCode != 2 || !strings.Contains(stderr.String(), "metasystem internal delegate "+argv[0]+": ") ||
+		if result.ExitCode != 2 || !strings.Contains(stderr.String(), argv[0]+" is started by the machinery") ||
 			!strings.Contains(stderr.String(), "nothing was done") {
 			t.Errorf("%v: code %d stderr %q", argv, result.ExitCode, stderr.String())
 		}

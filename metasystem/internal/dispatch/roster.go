@@ -70,8 +70,8 @@ func refuseTemplateModel(conf, role, runtime, model string) error {
 	if value, err := rosterGet(conf, key, ""); err != nil || value == missingSentinel {
 		key = "role.default.model." + runtime
 	}
-	return fmt.Errorf("role %s resolves to %s:%s, a template placeholder from %s; set it with: metasystem settings set %s <the %s model this seat runs>, which writes %s.local",
-		role, runtime, model, key, key, runtime, conf)
+	return fmt.Errorf("role %s has no model yet (%s:%s is a template placeholder, from %s)\nrun: metasystem settings set %s <the %s model this seat runs>",
+		role, runtime, model, conf, key, runtime)
 }
 
 func rosterGet(conf, key, mode string, lookup ...func(string) (string, bool)) (string, error) {
@@ -271,7 +271,7 @@ func ResolveRoster(p RosterParams) (RosterResolution, error) {
 	expected := 1
 	for _, index := range indices {
 		if index != expected {
-			return RosterResolution{}, fmt.Errorf("model tiers must be contiguous from 1: found index %d where %d was expected (a gap would be silently ignored during ranking)", index, expected)
+			return RosterResolution{}, fmt.Errorf("model tiers must count up from 1 without a gap: tier %d was found where %d belongs", index, expected)
 		}
 		expected++
 	}

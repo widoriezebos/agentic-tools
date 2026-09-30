@@ -532,7 +532,7 @@ func TestCloseWritesOneClosure(t *testing.T) {
 		t.Fatal(err)
 	}
 	closeReadyCriticChain(t, differentRepo, "different", "different")
-	if err := CritiqueChainClose(differentRepo, "different", false); err == nil || !strings.Contains(err.Error(), "closure") {
+	if err := CritiqueChainClose(differentRepo, "different", false); err == nil || !strings.Contains(err.Error(), "already closed") {
 		t.Fatalf("different closure replacement = %v", err)
 	}
 	assertChainOpen(t, differentRepo, "different")

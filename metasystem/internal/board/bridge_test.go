@@ -323,14 +323,14 @@ func TestBridgeListensOnlyWhereTheStaleRuleAllows(t *testing.T) {
 	if err := os.WriteFile(SocketPath(home), []byte("keep"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Listen(home); err == nil || !strings.Contains(err.Error(), "BRIDGE_SOCKET_PATH_OCCUPIED") {
+	if _, err := Listen(home); err == nil || !strings.Contains(err.(interface{ RefusalDetail() string }).RefusalDetail(), "BRIDGE_SOCKET_PATH_OCCUPIED") {
 		t.Fatalf("a regular file at the path: %v", err)
 	}
 	if data, _ := os.ReadFile(SocketPath(home)); string(data) != "keep" {
 		t.Fatalf("the regular file was touched: %q", data)
 	}
 	long := filepath.Join(shortHome(t), strings.Repeat("x", 110))
-	if _, err := Listen(long); err == nil || !strings.Contains(err.Error(), "BRIDGE_SOCKET_PATH_TOO_LONG") {
+	if _, err := Listen(long); err == nil || !strings.Contains(err.(interface{ RefusalDetail() string }).RefusalDetail(), "BRIDGE_SOCKET_PATH_TOO_LONG") {
 		t.Fatalf("a long path: %v", err)
 	}
 	if _, err := os.Lstat(long); !errors.Is(err, os.ErrNotExist) {

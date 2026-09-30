@@ -59,8 +59,8 @@ func TestBreachStopInsideTheBudgetGuidesThePerson(t *testing.T) {
 	bed := newGoalMutationBed(t)
 	inside := time.Date(2026, 8, 28, 17, 0, 0, 0, time.UTC)
 	_, err := bed.stopOrderedBy("bounded", 2, inside, "Wido")
-	if err == nil || !strings.Contains(err.Error(), "no live-stop breach") ||
-		!strings.Contains(err.Error(), "metasystem work stop") || !strings.Contains(err.Error(), "metasystem goal pause bounded") {
+	if err == nil || !strings.Contains(err.Error(), "no overspend to stop") ||
+		!strings.Contains(err.Error(), "\nrun: metasystem goal pause bounded") {
 		t.Fatalf("an in-budget stop did not guide to the public commands: %v", err)
 	}
 }

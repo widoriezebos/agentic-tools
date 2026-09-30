@@ -126,6 +126,11 @@ type processRefusal struct {
 	code                             int
 	// plain is printed alone by refusals that predate the two-line form.
 	plain string
+	// next is the command that resolves the refusal and nextReason what
+	// goes with it; details are what only --verbose shows.
+	next       []string
+	nextReason string
+	details    []string
 }
 
 // printTo writes the refusal to w.
@@ -433,17 +438,34 @@ func humanTerminalCheck(repo, metasystemRoot, verb string, repositoryTop func(st
 			if refusal := classificationDataRefusal(name, checkout, retryCommand, err); refusal != nil {
 				return false, refusal
 			}
-			return false, &processRefusal{verb: name, checkout: checkout, sentence: "the caller's ancestry could not be read: " + err.Error(), second: "at an agent-free terminal, run: " + retryCommand, code: 1}
+			return false, &processRefusal{verb: name, checkout: checkout, sentence: "the processes behind this shell couldn't be read",
+				second: "in a terminal you opened yourself, run: " + retryCommand, next: shellWords(retryCommand), nextReason: "try again, in a terminal you opened yourself",
+				details: []string{"refused because: " + err.Error()}, code: 1}
 		}
-		return false, &processRefusal{verb: name, plain: fmt.Sprintf("%s: human ancestry proof failed: %v", verb, err), code: 1}
+		return false, &processRefusal{verb: name, plain: fmt.Sprintf("%s: the processes behind this shell couldn't be read (%v); run it in a terminal you opened yourself", verb, err), code: 1}
 	}
 	if classification.Class != lease.ClassHuman {
+		origin := shellOrigin(classification.Class)
 		if strings.HasPrefix(verb, "metasystem ") {
-			return false, &processRefusal{verb: name, checkout: checkout, sentence: name + " is a human act at a terminal; this caller is " + classification.Class, second: "at an agent-free terminal, run: " + retryCommand, code: 1}
+			return false, &processRefusal{verb: name, checkout: checkout, sentence: origin,
+				second: "in a terminal you opened yourself, run: " + retryCommand, next: shellWords(retryCommand), nextReason: "in a terminal you opened yourself",
+				details: []string{name + " is a person's act; this shell's class is " + classification.Class}, code: 1}
 		}
-		return false, &processRefusal{verb: name, plain: fmt.Sprintf("%s: explicit engine enrollment requires an agent-free terminal; caller classified %s", verb, classification.Class), code: 1}
+		return false, &processRefusal{verb: name, plain: fmt.Sprintf("%s: %s; run it in a terminal you opened yourself", verb, origin), code: 1}
 	}
 	return classification.FixtureGranted, nil
+}
+
+// shellOrigin says in plain words who started a shell that is not a
+// person's, from its lease class.
+func shellOrigin(class string) string {
+	switch class {
+	case lease.ClassDelegate, lease.ClassMain:
+		return "an agent started this shell"
+	case lease.ClassSupervision, lease.ClassSteward:
+		return "MetaSystem's own machinery started this shell"
+	}
+	return "this shell can't be traced to a terminal a person opened"
 }
 
 func classificationDataRefusal(verb, checkout, retryCommand string, err error) *processRefusal {
@@ -455,8 +477,8 @@ func classificationDataRefusal(verb, checkout, retryCommand string, err error) *
 	if failure.Path != "" {
 		input += " " + failure.Path
 	}
-	second := "repair " + failure.Path + ", then at an agent-free terminal, run: " + retryCommand
-	return &processRefusal{verb: verb, checkout: checkout, sentence: "caller classification is blocked by " + input + ": " + failure.Reason(), second: second, code: 1}
+	second := "repair " + failure.Path + ", then in a terminal you opened yourself, run: " + retryCommand
+	return &processRefusal{verb: verb, checkout: checkout, sentence: "who started this shell can't be told: " + input + " is damaged (" + failure.Reason() + ")", second: second, code: 1}
 }
 
 // missionFenceBeforeArmFor is the fence check with its caller and report

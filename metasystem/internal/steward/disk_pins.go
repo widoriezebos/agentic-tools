@@ -75,7 +75,7 @@ func (c PinClass) keeps() (pinKeep, error) {
 	keep.installed = filepath.Base(EnrolledExecutionPath(c.Top, identityRecord))
 	keep.current = identityRecord.Generation
 	if keep.replacedAt, err = time.Parse(time.RFC3339, identityRecord.MintedAt); err != nil {
-		return keep, fmt.Errorf("the installed generation's minting time %q cannot be read", identityRecord.MintedAt)
+		return keep, fmt.Errorf("the install time %q of the installed engine cannot be read", identityRecord.MintedAt)
 	}
 	prober := c.Prober
 	if prober == nil {

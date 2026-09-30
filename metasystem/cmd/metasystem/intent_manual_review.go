@@ -90,16 +90,14 @@ func runIntentReviewRef(inv *intentInvocation, verb, ref string) int {
 func (inv *intentInvocation) diagnosticReadResult(result launch.ReadResult, err error, subject string) intentResult {
 	targets := []intentTarget{{Kind: "read", ID: readRefPrefix + result.Ref}}
 	if err != nil {
-		message := err.Error()
-		code, _, _ := strings.Cut(message, ":")
-		code, _, _ = strings.Cut(code, " ")
-		out := intentResult{Outcome: intentRefused, code: 2, Targets: targets, Summary: message, Data: map[string]any{"cause": code}}
+		message, code := err.Error(), launch.ErrorCode(err)
+		out := intentResult{Outcome: intentRefused, code: 2, Targets: targets, Summary: message, Data: map[string]any{"cause": code}, Details: []string{launch.ErrorDetail(err)}}
 		switch code {
 		case "READ_BUSY":
 			out.Outcome, out.code = intentInProgress, 124
 		case "READ_RETRY_RUNNING":
 			ref := ""
-			if _, rest, found := strings.Cut(message, "ref="); found {
+			if _, rest, found := strings.Cut(launch.ErrorDetail(err), "ref="); found {
 				ref, _, _ = strings.Cut(rest, " ")
 			}
 			out.code = 1

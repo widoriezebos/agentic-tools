@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"errors"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
@@ -76,12 +77,12 @@ func prepareIntentUnderLock(repoRoot, receiptFile string, it Intent) error {
 		if cancelErr != nil {
 			_, statErr := os.Lstat(filepath.Join(intentsDir(repoRoot), it.Nonce+".json"))
 			if os.IsNotExist(statErr) {
-				return fmt.Errorf("the revival receipt did not write (%v) and the intent is no longer live, but its cancellation did not finish durably (%v)", res.Err, cancelErr)
+				return fmt.Errorf("the revival was not recorded and the intent has ended, but not cleanly (%v; %v)", res.Err, cancelErr)
 			}
 			if statErr != nil {
-				return fmt.Errorf("the revival receipt did not write (%v), cancellation failed (%v), and intent liveness is unreadable (%v)", res.Err, cancelErr, statErr)
+				return fmt.Errorf("the revival was not recorded, and whether the intent still runs cannot be read (%v; %v; %v)", res.Err, cancelErr, statErr)
 			}
-			return fmt.Errorf("the revival receipt did not write (%v) AND the intent could not cancel (%v): a live half-prepared authorization remains — operator attention needed", res.Err, cancelErr)
+			return fmt.Errorf("a half-prepared intent is still live and needs an operator: not recorded, not cancelled (%v; %v)", res.Err, cancelErr)
 		}
 		return fmt.Errorf("the revival receipt did not write: %v", res.Err)
 	}
@@ -238,7 +239,7 @@ func holdHandoff(repoRoot string, intent Intent, reason string) (ReviveOutcome, 
 
 func claimSeatIdleGoal(repoRoot string, intent Intent) error {
 	if intent.SeatActor == nil || intent.SeatActor.Machine == "" || intent.SeatActor.Lineage == "" || intent.SeatClaimEpoch < 1 {
-		return fmt.Errorf("the recorded seat actor or its positive checkout lease epoch is unavailable")
+		return errors.New("the seat that holds the checkout is not recorded")
 	}
 	endpoint, err := goal.ResolveEndpoint(repoRoot)
 	if err != nil {

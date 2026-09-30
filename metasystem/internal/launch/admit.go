@@ -1,6 +1,7 @@
 package launch
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -39,12 +40,12 @@ func (m *Manager) Admit(spec StartSpec) error {
 	if err == nil {
 		err = m.admit(spec, settings)
 	}
-	if err != nil && strings.HasPrefix(err.Error(), "LAUNCH_") {
+	if code := ErrorCode(err); strings.HasPrefix(code, "LAUNCH_") {
 		now := time.Now
 		if m.Now != nil {
 			now = m.Now
 		}
-		_ = m.Store.AppendRefusal(Refusal{Time: now().UTC().Format(time.RFC3339Nano), Code: strings.Fields(err.Error())[0], Kind: spec.Kind, Goal: spec.Goal, Tag: spec.Tag, Numbers: refusalNumbers(err.Error())})
+		_ = m.Store.AppendRefusal(Refusal{Time: now().UTC().Format(time.RFC3339Nano), Code: code, Kind: spec.Kind, Goal: spec.Goal, Tag: spec.Tag, Numbers: refusalNumbers(ErrorDetail(err))})
 	}
 	return err
 }
@@ -54,7 +55,7 @@ func (m *Manager) admit(spec StartSpec, settings Settings) error {
 		return fmt.Errorf("critique requires --tag and two --input files")
 	}
 	if spec.Kind == "read" && spec.DiffFile == "" {
-		return fmt.Errorf("LAUNCH_READ_UNSIZED missing=diff-file")
+		return coded("LAUNCH_READ_UNSIZED", "missing=diff-file", errors.New("a read needs the diff it reads, and none was given"))
 	}
 	if _, err := m.CheckPack(spec); err != nil {
 		return err
@@ -167,13 +168,13 @@ func buildSize(spec StartSpec) ([]UnitSize, int64, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if spec.UnitsPage != "" {
-			return nil, 0, fmt.Errorf("LAUNCH_BUILD_UNSIZED missing=units-page: %v", err)
+			return nil, 0, coded("LAUNCH_BUILD_UNSIZED", "missing=units-page", fmt.Errorf("the units page %s cannot be read, so the build has no size: %v", spec.UnitsPage, err))
 		}
 		return nil, 0, err
 	}
 	units, size, err := sizesFromTable(string(data), spec.Units)
-	if spec.UnitsPage == "" && err != nil && strings.Contains(err.Error(), "missing=units-table") {
-		return nil, 0, fmt.Errorf("LAUNCH_BUILD_UNSIZED missing=declared-size")
+	if spec.UnitsPage == "" && err != nil && strings.Contains(ErrorDetail(err), "missing=units-table") {
+		return nil, 0, coded("LAUNCH_BUILD_UNSIZED", "missing=declared-size", errors.New("the brief declares no size for this build: give it a units table with a size column"))
 	}
 	return units, size, err
 }
@@ -202,9 +203,9 @@ func sizesFromTable(page string, wanted []string) ([]UnitSize, int64, error) {
 	}
 	if header < 0 {
 		if tableFound {
-			return nil, 0, fmt.Errorf("LAUNCH_BUILD_UNSIZED missing=size-column")
+			return nil, 0, coded("LAUNCH_BUILD_UNSIZED", "missing=size-column", errors.New("the units table has no size column (lines, size, alloc or cap), so the build has no size"))
 		}
-		return nil, 0, fmt.Errorf("LAUNCH_BUILD_UNSIZED missing=units-table")
+		return nil, 0, coded("LAUNCH_BUILD_UNSIZED", "missing=units-table", errors.New("the page has no units table, so the build has no size"))
 	}
 	wants := map[string]bool{}
 	for _, name := range wanted {
@@ -237,7 +238,7 @@ func sizesFromTable(page string, wanted []string) ([]UnitSize, int64, error) {
 		cell := cells[sizeColumn]
 		first := firstInteger.FindString(cell)
 		if first == "" {
-			return nil, 0, fmt.Errorf("LAUNCH_BUILD_UNSIZED unit=%s missing=integer", matched)
+			return nil, 0, coded("LAUNCH_BUILD_UNSIZED", "unit="+matched+" missing=integer", fmt.Errorf("unit %s has no number in its size column, so the build has no size", matched))
 		}
 		lines, _ := strconv.ParseInt(first, 10, 64)
 		if witness := witnessInteger.FindStringSubmatch(cell); len(witness) == 2 {
@@ -249,7 +250,7 @@ func sizesFromTable(page string, wanted []string) ([]UnitSize, int64, error) {
 	}
 	for _, name := range wanted {
 		if !seen[name] {
-			return nil, 0, fmt.Errorf("LAUNCH_BUILD_UNSIZED unit=%s missing=row", name)
+			return nil, 0, coded("LAUNCH_BUILD_UNSIZED", "unit="+name+" missing=row", fmt.Errorf("the units table has no row for unit %s, so the build has no size", name))
 		}
 	}
 	var total int64
@@ -401,7 +402,7 @@ func readDiff(path, mode, share string) ([]byte, int64, error) {
 		}
 	}
 	if len(lines) == 0 {
-		return nil, 0, fmt.Errorf("LAUNCH_READ_UNSPLIT choice=%s missing=%s", mode, share)
+		return nil, 0, coded("LAUNCH_READ_UNSPLIT", "choice="+mode+" missing="+share, fmt.Errorf("the diff has no changes in %s, so there is nothing to read by %s", share, mode))
 	}
 	return []byte(strings.Join(lines, "\n") + "\n"), count, nil
 }

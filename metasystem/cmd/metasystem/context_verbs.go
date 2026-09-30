@@ -86,7 +86,7 @@ func runContextStatus(args []string, stdout, stderr io.Writer) int {
 		}
 	})
 	if *root == "" || flags.NArg() != 0 || (*runtimeName == "") != (*session == "") || (transcriptSupplied && *transcript == "") {
-		fmt.Fprintln(stderr, "usage: metasystem session handoff --status --root ROOT [--runtime R --session S] [--transcript PATH] [--json]")
+		fmt.Fprintln(stderr, "usage: metasystem session handoff --status --root <installation>\n  [--runtime R --session S] [--transcript <file>] [--json]")
 		return 2
 	}
 	if *runtimeName != "" {
@@ -353,7 +353,7 @@ func parseContextDelegates(values []string) ([]contextDelegateArg, error) {
 			key, field, ok := strings.Cut(item, "=")
 			_, duplicate := fields[key]
 			if !ok || duplicate || (key != "id" && key != "asked" && key != "output") {
-				return nil, fmt.Errorf("--delegate must be id=ID[,asked=TEXT][,output=PATH]")
+				return nil, errors.New("--delegate takes id=<id>[,asked=<text>][,output=<file>]")
 			}
 			fields[key] = field
 		}
@@ -450,7 +450,7 @@ func contextHandoffToplevel(root string) string {
 func contextHandoffCallerWithMachine(stateRoot string, resolveMachine func(string) (string, error)) (steward.HandoffCaller, error) {
 	classified, err := classifyContextHandoffCaller(stateRoot, stateRoot, int64(os.Getppid()))
 	if err != nil {
-		return steward.HandoffCaller{}, fmt.Errorf("classify caller: %w", err)
+		return steward.HandoffCaller{}, fmt.Errorf("who is asking for the handoff cannot be told: %w", err)
 	}
 	machine, err := resolveMachine(stateRoot)
 	if err != nil {

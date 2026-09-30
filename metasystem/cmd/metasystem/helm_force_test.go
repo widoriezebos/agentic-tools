@@ -18,9 +18,9 @@ import (
 )
 
 const (
-	forceOutsideText = "goal done --force works only at the helm: take it first (metasystem helm take --reason TEXT), or close what blocks the conclusion"
-	forceAgentText   = "goal done --force is the person's own act: this shell was not proven at the enrolled terminal (admitted by the helm); run it yourself at the terminal you took the helm at (a terminal is enrolled once with " + humanauthority.EnrollCommand + ")"
-	forceNoProofText = "goal done --force is the person's own act: this shell was not proven at the enrolled terminal (no person proof); run it yourself at the terminal you took the helm at (a terminal is enrolled once with " + humanauthority.EnrollCommand + ")"
+	forceOutsideText = "goal done --force works only while you hold the helm: metasystem helm take --reason TEXT"
+	forceAgentText   = "goal done --force is your own act, in the terminal you took the helm in; this shell isn't it"
+	forceNoProofText = forceAgentText
 )
 
 func TestForceAdmissionAdmitsOnlyThePersonsOwnProofAtTheHelm(t *testing.T) {
@@ -250,7 +250,9 @@ func TestHelmForceEndToEnd(t *testing.T) {
 		t.Fatalf("plain done at the helm: %d\n%s", code, out)
 	}
 	code, out = helmEngine(t, root, "goal", "done", "helm-force", "--reason", "x", "--force")
-	if code != 1 || !strings.Contains(out, forceAgentText) || !strings.Contains(out, "HUMAN AT THE HELM (wido)") {
+	// The helm let the act through, but --force refused it: the refusal is
+	// printed alone, never after a notice that the helm admitted it.
+	if code != 1 || !strings.Contains(out, forceAgentText) || strings.Contains(out, "HUMAN AT THE HELM") {
 		t.Fatalf("--force at the helm without a terminal: %d\n%s", code, out)
 	}
 	if after := helmLedgerRecord(t, root, "plans/goals/helm-force.md"); after != record {

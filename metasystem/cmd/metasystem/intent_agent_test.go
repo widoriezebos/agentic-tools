@@ -154,18 +154,18 @@ func TestIntentAgentAskIsDurableAndIdempotent(t *testing.T) {
 		t.Fatalf("--id NEW = %d %+v", code, fresh)
 	}
 	before, _ := os.ReadFile(messageFile(b.home, "m1b", "I"))
-	code, _, stderr := b.run("agent", "ask", "m1b", "--text", "other words", "--id", "I")
-	if code == 0 || !strings.Contains(stderr, "AGENT_ASK_ID_TAKEN") || !strings.Contains(stderr, "--id NEW") {
+	code, _, stderr := b.run("agent", "ask", "m1b", "--text", "other words", "--id", "I", "--verbose")
+	if code == 0 || !strings.Contains(stderr, "AGENT_ASK_ID_TAKEN") || !strings.Contains(stderr, "--id <a new id of your own>") {
 		t.Fatalf("other text under I = %d %q", code, stderr)
 	}
 	if after, _ := os.ReadFile(messageFile(b.home, "m1b", "I")); !bytes.Equal(before, after) {
 		t.Fatal("the refused ask changed I's bytes")
 	}
-	code, _, stderr = b.run("agent", "ask", "m9z", "--text", "anyone?")
+	code, _, stderr = b.run("agent", "ask", "m9z", "--text", "anyone?", "--verbose")
 	if code == 0 || !strings.Contains(stderr, "AGENT_ASK_TARGET_UNKNOWN") || !strings.Contains(stderr, "m1b") {
 		t.Fatalf("an unknown seat = %d %q", code, stderr)
 	}
-	code, _, stderr = b.run("agent", "ask", "m1b", "--text", strings.Repeat("x", board.MaxTextBytes+1))
+	code, _, stderr = b.run("agent", "ask", "m1b", "--text", strings.Repeat("x", board.MaxTextBytes+1), "--verbose")
 	if code == 0 || !strings.Contains(stderr, "AGENT_ASK_TEXT_TOO_LONG") {
 		t.Fatalf("a text over 8 KiB = %d %q", code, stderr)
 	}
@@ -189,7 +189,7 @@ func TestIntentAgentAskIsDurableAndIdempotent(t *testing.T) {
 		return published, err
 	}
 	code, stdout, stderr := doubt.run("agent", "ask", "m1b", "--text", "t")
-	if code == 0 || !strings.Contains(stdout+stderr, "published, not yet durable") {
+	if code == 0 || !strings.Contains(stdout+stderr, "the disk has not confirmed it is saved") {
 		t.Fatalf("an unconfirmed publication = %d %q %q", code, stdout, stderr)
 	}
 }
@@ -216,7 +216,7 @@ func TestIntentAgentAskReachesTheGoal(t *testing.T) {
 	}
 	for goal, fact := range map[string]string{"goal-old": "done on 2026-09-20", "goal-none": "no goal by that id"} {
 		code, _, stderr := b.run("agent", "ask", "--goal", goal, "--text", "q")
-		want := "AGENT_ASK_GOAL_UNKNOWN: " + goal + " is not live on this checkout's accepted ledger (" + fact + "). To ask a machine instead, run: metasystem agent ask MACHINE --text TEXT"
+		want := "nothing was sent: goal " + goal + " is not open (" + fact + "), so nobody works on it"
 		if code == 0 || !strings.Contains(stderr, want) {
 			t.Fatalf("an ask to %s = %d %q, want %q", goal, code, stderr, want)
 		}
@@ -274,7 +274,7 @@ func TestIntentAgentReplyAndInbox(t *testing.T) {
 	if code, again := holder.runJSON("agent", "reply", askID, "--text", "green since 09:40"); code != 0 || again.Outcome != intentUnchanged || agentData(t, again)["id"] != replyID {
 		t.Fatalf("the repeated reply = %d %+v", code, again)
 	}
-	if code, _, stderr := holder.run("agent", "reply", "d-nothing", "--text", "x"); code == 0 || !strings.Contains(stderr, "AGENT_REPLY_THREAD_UNKNOWN") {
+	if code, _, stderr := holder.run("agent", "reply", "d-nothing", "--text", "x", "--verbose"); code == 0 || !strings.Contains(stderr, "AGENT_REPLY_THREAD_UNKNOWN") {
 		t.Fatalf("a reply to an unknown id = %d %q", code, stderr)
 	}
 	if code, stdout, _ = asker.run("agent", "inbox"); code != 0 || !strings.HasPrefix(stdout, "1 peer message for m1a:\n") || !strings.Contains(stdout, "[peer reply from m1b in thread "+askID) || !strings.Contains(stdout, "green since 09:40") {
@@ -312,7 +312,7 @@ func TestIntentAgentReplyAndInbox(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(board.Dir(broken.home), "m1b", "mailbox", "messages"), []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if code, _, stderr := broken.run("agent", "inbox"); code == 0 || !strings.Contains(stderr, "BOARD_UNREADABLE") {
+	if code, _, stderr := broken.run("agent", "inbox", "--verbose"); code == 0 || !strings.Contains(stderr, "BOARD_UNREADABLE") {
 		t.Fatalf("an unlistable mailbox = %d %q", code, stderr)
 	}
 }

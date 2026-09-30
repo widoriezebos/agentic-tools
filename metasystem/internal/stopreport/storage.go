@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"strings"
 
+	"errors"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 )
 
@@ -77,13 +78,13 @@ func ValidateID(id string) error {
 	if aliasPattern.MatchString(id) || fullIDPattern.MatchString(id) {
 		return nil
 	}
-	return fmt.Errorf("stop status id must be 1 to 32 lowercase hexadecimal characters or 64 lowercase hexadecimal characters, a hyphen, and 32 lowercase hexadecimal characters")
+	return errors.New("that is not a stop report id: use the short or the full id the report shows")
 }
 
 // ValidateFullID validates the immutable canonical identifier.
 func ValidateFullID(id string) error {
 	if !fullIDPattern.MatchString(id) {
-		return fmt.Errorf("canonical Stop report id must be 64 lowercase hexadecimal characters, a hyphen, and 32 lowercase hexadecimal characters")
+		return errors.New("that is not a full stop report id (64 hex characters, a hyphen, 32 hex characters)")
 	}
 	return nil
 }
@@ -185,7 +186,7 @@ func ReserveShortestAlias(root, reportID string) (Reservation, error) {
 // PublishAlias binds an owned tombstone to a complete immutable report.
 func PublishAlias(reservation Reservation, reportSHA256 string) error {
 	if !validSHA256(reportSHA256) {
-		return fmt.Errorf("stop report alias binding requires a complete SHA-256 digest")
+		return errors.New("a stop report short id needs the report's full SHA-256 checksum")
 	}
 	wantPath := filepath.Join(reservation.Root, "artifacts", "agents", "supervision", "stop-verdicts", "aliases", reservation.Alias+".json")
 	if reservation.Path != wantPath || !aliasPattern.MatchString(reservation.Alias) || ValidateFullID(reservation.ReportID) != nil {
@@ -295,7 +296,7 @@ func Read(root, id string) ([]byte, Identity, Resolution, error) {
 	}
 	digest := sha256.Sum256(data)
 	if resolution.AliasSHA256 != "" && hex.EncodeToString(digest[:]) != resolution.AliasSHA256 {
-		return nil, Identity{}, Resolution{}, fmt.Errorf("stop report alias %s digest does not match its immutable report", id)
+		return nil, Identity{}, Resolution{}, fmt.Errorf("stop report %s no longer matches its checksum", id)
 	}
 	return data, identity, resolution, nil
 }

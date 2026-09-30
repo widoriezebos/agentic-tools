@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"errors"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 )
@@ -223,7 +224,7 @@ func nextEpisodeID(digest string, episodes []AlertEpisode) string {
 // the human notifier; the existing idle alarm remains the only human alarm.
 func RecordSeatIdleIncident(repoRoot string, incident SeatIdleIncident, now time.Time) (AlertEpisode, error) {
 	if incident.SessionID == "" || (!validEvidenceDigest(incident.BacklogDigest) && incident.BacklogDigest != "ledger-unreadable") || incident.Refusal < 3 {
-		return AlertEpisode{}, fmt.Errorf("a seat-idle incident needs a session, backlog digest, and refusal count of at least three")
+		return AlertEpisode{}, errors.New("an idle-seat alert needs a session, a backlog checksum and at least three refusals")
 	}
 	key := strings.Join([]string{seatIdleAlertOwner, incident.SessionID, incident.BacklogDigest}, "\n")
 	sum := sha256.Sum256([]byte(key))
@@ -389,7 +390,7 @@ func updateAlertEpisodesWith(repoRoot string, health HealthVerdict, message stri
 	}
 	if !validEvidenceDigest(health.FindingDigest) || strings.TrimSpace(message) == "" {
 		unlockAlerts(lock)
-		return AlertEpisode{}, fmt.Errorf("a nonhealthy health verdict needs a finding digest and message")
+		return AlertEpisode{}, errors.New("an unhealthy health result needs a finding checksum and a message")
 	}
 
 	var episode AlertEpisode

@@ -140,7 +140,7 @@ func TestExplicitIdentityFallbackRejectsALiveStrangerTuple(t *testing.T) {
 		Root: t.TempDir(), Pid: exact.Pid, StartTime: exact.StartedAt.Unix(),
 		Runtime: "fixture-runtime", CallerPid: int64(os.Getpid()),
 	})
-	if err == nil || !strings.Contains(err.Error(), "not the caller or one of its ancestors") {
+	if err == nil || !strings.Contains(err.Error(), "not this process or one that started it") {
 		t.Fatalf("a live stranger tuple granted fallback identity: %v", err)
 	}
 }

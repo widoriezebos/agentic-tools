@@ -124,7 +124,7 @@ type ReadResult struct {
 
 var readRefPattern = regexp.MustCompile(`^read-[0-9a-f]{24}$`)
 
-var errReadStopped = errors.New("READ_STOPPED: the read was stopped, so no further read starts")
+var errReadStopped = coded("READ_STOPPED", "", errors.New("the read was stopped, so no further read starts"))
 
 // StartRead freezes a standalone read request and advances it, or rejoins
 // the request's existing reads. Empty changes start nothing.
@@ -133,20 +133,20 @@ func (runner *UnitRunner) StartRead(request ReadRequest) (ReadResult, error) {
 		return ReadResult{}, errors.New("read launch manager is unavailable")
 	}
 	if request.Directory == "" || request.Brief == "" {
-		return ReadResult{}, errors.New("READ_REQUEST_INVALID: a directory and a brief are required")
+		return ReadResult{}, coded("READ_REQUEST_INVALID", "", errors.New("a read needs a directory and a brief, and one of them is missing"))
 	}
 	if request.Retry < 0 {
-		return ReadResult{}, errors.New("READ_REQUEST_INVALID: retry names a displayed attempt number")
+		return ReadResult{}, coded("READ_REQUEST_INVALID", "", errors.New("--retry takes the number of an attempt the read shows"))
 	}
 	git := runner.git()
 	topOutput, err := git.Run(request.Directory, nil, "rev-parse", "--show-toplevel")
 	if err != nil {
-		return ReadResult{}, fmt.Errorf("READ_CHECKOUT_UNAVAILABLE directory=%s: %w", request.Directory, err)
+		return ReadResult{}, coded("READ_CHECKOUT_UNAVAILABLE", "directory="+request.Directory, fmt.Errorf("%s is not a readable Git checkout: %w", request.Directory, err))
 	}
 	top := strings.TrimSpace(string(topOutput))
 	headOutput, err := git.Run(top, nil, "rev-parse", "--verify", "HEAD^{commit}")
 	if err != nil {
-		return ReadResult{}, fmt.Errorf("READ_CHECKOUT_UNAVAILABLE directory=%s: %w", top, err)
+		return ReadResult{}, coded("READ_CHECKOUT_UNAVAILABLE", "directory="+top, fmt.Errorf("%s is not a readable Git checkout: %w", top, err))
 	}
 	head := strings.TrimSpace(string(headOutput))
 	kind := "changes"
@@ -154,7 +154,7 @@ func (runner *UnitRunner) StartRead(request ReadRequest) (ReadResult, error) {
 	if request.Patch != "" {
 		kind = "patch"
 		if diff, err = os.ReadFile(request.Patch); err != nil {
-			return ReadResult{}, fmt.Errorf("READ_PATCH_UNREADABLE patch=%s: %w", request.Patch, err)
+			return ReadResult{}, coded("READ_PATCH_UNREADABLE", "patch="+request.Patch, fmt.Errorf("the patch %s cannot be read: %w", request.Patch, err))
 		}
 	} else {
 		// The caller's own brief inside the checkout is the read's brief,
@@ -172,11 +172,11 @@ func (runner *UnitRunner) StartRead(request ReadRequest) (ReadResult, error) {
 	}
 	files := diffFiles(diff)
 	if len(files) == 0 {
-		return ReadResult{}, fmt.Errorf("READ_PATCH_UNREADABLE: no file change found; supply a Git diff with diff --git headers")
+		return ReadResult{}, coded("READ_PATCH_UNREADABLE", "", errors.New("the patch changes no file; give a Git diff with diff --git headers"))
 	}
 	brief, err := os.ReadFile(request.Brief)
 	if err != nil || len(brief) == 0 {
-		return ReadResult{}, fmt.Errorf("READ_BRIEF_MISSING brief=%s", request.Brief)
+		return ReadResult{}, coded("READ_BRIEF_MISSING", "brief="+request.Brief, fmt.Errorf("the brief %s does not exist", request.Brief))
 	}
 	settings, err := runner.Manager.resolvedSettings()
 	if err != nil {
@@ -189,7 +189,7 @@ func (runner *UnitRunner) StartRead(request ReadRequest) (ReadResult, error) {
 	for _, path := range request.Inputs {
 		data, readErr := os.ReadFile(path)
 		if readErr != nil {
-			return ReadResult{}, fmt.Errorf("READ_INPUT_MISSING input=%s: %w", path, readErr)
+			return ReadResult{}, coded("READ_INPUT_MISSING", "input="+path, fmt.Errorf("the input %s cannot be read: %w", path, readErr))
 		}
 		absolute, _ := filepath.Abs(path)
 		inputs = append(inputs, data)
@@ -216,12 +216,12 @@ func (runner *UnitRunner) StartRead(request ReadRequest) (ReadResult, error) {
 	}
 	if found {
 		if frozen.DiffSHA256 != record.DiffSHA256 || frozen.BriefSHA256 != record.BriefSHA256 || frozen.Base != record.Base || frozen.TopLevel != record.TopLevel {
-			return ReadResult{}, fmt.Errorf("READ_REQUEST_CORRUPT ref=%s: the retained request does not match its ref", record.Ref)
+			return ReadResult{}, coded("READ_REQUEST_CORRUPT", "ref="+record.Ref, fmt.Errorf("the saved request of read %s is damaged: it does not match its name", record.Ref))
 		}
 		return runner.rejoinRead(frozen, request)
 	}
 	if request.Retry != 0 {
-		return ReadResult{}, fmt.Errorf("READ_RETRY_UNKNOWN ref=%s: this request has no attempt to retry; repeat it without retry", record.Ref)
+		return ReadResult{}, coded("READ_RETRY_UNKNOWN", "ref="+record.Ref, errors.New("this read has no attempt to retry yet; run it again without --retry"))
 	}
 	if err := runner.freezeRead(record, diff, brief, inputs); err != nil {
 		return ReadResult{}, err
@@ -251,7 +251,7 @@ func (runner *UnitRunner) rejoinRead(record ReadRequestRecord, request ReadReque
 		return runner.advanceReadLocked(record, &attempt, deadline)
 	}
 	if attempt.Number != request.Retry {
-		return ReadResult{}, fmt.Errorf("READ_RETRY_NOT_LATEST ref=%s attempt=%d: only the latest displayed attempt can be retried", record.Ref, attempt.Number)
+		return ReadResult{}, coded("READ_RETRY_NOT_LATEST", fmt.Sprintf("ref=%s attempt=%d", record.Ref, attempt.Number), fmt.Errorf("only the newest attempt can be retried, and that is attempt %d", attempt.Number))
 	}
 	if runner.readStopRequested(record.Ref, attempt.Number) && attempt.State == readAttemptRunning {
 		if err := runner.finishStoppedRead(record, &attempt); err != nil {
@@ -260,13 +260,14 @@ func (runner *UnitRunner) rejoinRead(record ReadRequestRecord, request ReadReque
 	}
 	switch {
 	case attempt.State == readAttemptRunning:
-		return ReadResult{}, fmt.Errorf("READ_RETRY_RUNNING ref=%s attempt=%d: the attempt has not ended; wait for it or stop it first", record.Ref, attempt.Number)
+		return ReadResult{}, coded("READ_RETRY_RUNNING", fmt.Sprintf("ref=%s attempt=%d", record.Ref, attempt.Number), fmt.Errorf("attempt %d is still running; wait for it or stop it before a retry", attempt.Number))
 	case attempt.Outcome == "green":
-		return ReadResult{}, fmt.Errorf("READ_RETRY_COMPLETE ref=%s attempt=%d: the attempt completed; nothing to retry", record.Ref, attempt.Number)
+		return ReadResult{}, coded("READ_RETRY_COMPLETE", fmt.Sprintf("ref=%s attempt=%d", record.Ref, attempt.Number), fmt.Errorf("attempt %d completed, so there is nothing to retry", attempt.Number))
 	}
 	runner.recoverStrandedReads(attempt)
 	if unproven := runner.unprovenReadLaunches(attempt); len(unproven) != 0 {
-		return ReadResult{}, fmt.Errorf("READ_RETRY_UNPROVEN ref=%s attempt=%d launches=%s: these launches are not proved stopped, so no new attempt starts; stop the read and repeat", record.Ref, attempt.Number, strings.Join(unproven, ","))
+		return ReadResult{}, coded("READ_RETRY_UNPROVEN", fmt.Sprintf("ref=%s attempt=%d launches=%s", record.Ref, attempt.Number, strings.Join(unproven, ",")),
+			fmt.Errorf("attempt %d may still be running, so no new attempt starts; stop the read, then retry", attempt.Number))
 	}
 	next := ReadAttempt{Number: attempt.Number + 1, RetryOf: attempt.Number, State: readAttemptRunning}
 	if err := runner.planReadAttempt(record, &next, false); err != nil {
@@ -300,7 +301,7 @@ func (runner *UnitRunner) AdvanceRead(ref string, timeout time.Duration) (ReadRe
 			}
 			return runner.advanceReadLocked(record, &attempt, deadline)
 		}
-		if !strings.HasPrefix(lockErr.Error(), "READ_BUSY") {
+		if ErrorCode(lockErr) != "READ_BUSY" {
 			return ReadResult{}, lockErr
 		}
 		result, err := runner.InspectRead(ref)
@@ -655,7 +656,7 @@ func (runner *UnitRunner) prepareReadContext(record ReadRequestRecord, attempt *
 	}
 	if _, err := git.Run(checkout, []string{"GIT_CEILING_DIRECTORIES=" + context}, "apply", "--binary", record.Diff); err != nil {
 		if record.Kind != "patch" {
-			return fail(fmt.Errorf("READ_CONTEXT_UNAVAILABLE ref=%s: captured changes do not apply to their own base: %w", record.Ref, err))
+			return fail(coded("READ_CONTEXT_UNAVAILABLE", "ref="+record.Ref, fmt.Errorf("the changes to read no longer apply to the commit they were taken from: %w", err)))
 		}
 		attempt.Limitation = fmt.Sprintf("the supplied patch does not apply to base %s, so the reader's checkout holds the base only: %v", record.Base, err)
 	}
@@ -698,7 +699,7 @@ func (runner *UnitRunner) verifyFrozenRead(record ReadRequestRecord) error {
 		changed = changed || readErr != nil || digestBytes(data) != file.SHA256
 	}
 	if changed {
-		return fmt.Errorf("READ_INPUT_CHANGED ref=%s: the request's retained inputs or read settings no longer match it, so nothing more was launched", record.Ref)
+		return coded("READ_INPUT_CHANGED", "ref="+record.Ref, errors.New("the read's inputs or settings changed since it started, so nothing more was launched"))
 	}
 	return nil
 }
@@ -774,20 +775,20 @@ func (runner *UnitRunner) readLock(ref string, start bool) (*os.File, error) {
 			return nil, err
 		}
 		if !lock.Busy(err) {
-			return nil, fmt.Errorf("READ_LOCK_FAILED ref=%s: %w", ref, err)
+			return nil, coded("READ_LOCK_FAILED", "ref="+ref, fmt.Errorf("read %s cannot be locked for this command: %w", ref, err))
 		}
-		return nil, fmt.Errorf("READ_BUSY ref=%s: another caller is advancing this read; repeat to follow it", ref)
+		return nil, coded("READ_BUSY", "ref="+ref, errors.New("another command is advancing this read; run the same command again to follow it"))
 	}
 	return held.File(), nil
 }
 
 func (runner *UnitRunner) frozenRead(ref string) (ReadRequestRecord, error) {
 	if !readRefPattern.MatchString(ref) {
-		return ReadRequestRecord{}, fmt.Errorf("READ_REF_INVALID ref=%q", ref)
+		return ReadRequestRecord{}, coded("READ_REF_INVALID", fmt.Sprintf("ref=%q", ref), fmt.Errorf("%q is not the name of a read", ref))
 	}
 	record, found, err := runner.readRequestRecord(ref)
 	if err == nil && !found {
-		err = fmt.Errorf("READ_REF_UNKNOWN ref=%s", ref)
+		err = coded("READ_REF_UNKNOWN", "ref="+ref, fmt.Errorf("there is no read named %s", ref))
 	}
 	return record, err
 }
@@ -802,7 +803,7 @@ func (runner *UnitRunner) readRequestRecord(ref string) (ReadRequestRecord, bool
 	}
 	var record ReadRequestRecord
 	if err := json.Unmarshal(data, &record); err != nil || record.Ref != ref {
-		return ReadRequestRecord{}, false, fmt.Errorf("READ_REQUEST_CORRUPT ref=%s", ref)
+		return ReadRequestRecord{}, false, coded("READ_REQUEST_CORRUPT", "ref="+ref, fmt.Errorf("the saved request of read %s is damaged and cannot be read", ref))
 	}
 	return record, true, nil
 }
@@ -832,11 +833,11 @@ func (runner *UnitRunner) latestReadAttempt(ref string) (ReadAttempt, error) {
 		}
 		data, err := os.ReadFile(filepath.Join(runner.readAttemptDir(ref, number), "attempt.json"))
 		if err != nil {
-			return ReadAttempt{}, fmt.Errorf("READ_ATTEMPT_MISSING ref=%s attempt=%d: %w", ref, number, err)
+			return ReadAttempt{}, coded("READ_ATTEMPT_MISSING", fmt.Sprintf("ref=%s attempt=%d", ref, number), fmt.Errorf("attempt %d of read %s is missing: %w", number, ref, err))
 		}
 		var attempt ReadAttempt
 		if err := json.Unmarshal(data, &attempt); err != nil || attempt.Number != number {
-			return ReadAttempt{}, fmt.Errorf("READ_ATTEMPT_CORRUPT ref=%s attempt=%d", ref, number)
+			return ReadAttempt{}, coded("READ_ATTEMPT_CORRUPT", fmt.Sprintf("ref=%s attempt=%d", ref, number), fmt.Errorf("the saved attempt %d of read %s is damaged and cannot be read", number, ref))
 		}
 		return attempt, nil
 	}

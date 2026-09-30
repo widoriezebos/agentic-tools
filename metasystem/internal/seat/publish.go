@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"sort"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 )
 
 // RunnerContext is what only the resident runner knows about itself. It is
@@ -175,7 +177,7 @@ func Compose(machine string, runner RunnerContext, jobs JobSet, box BoxReader, t
 		return Record{}, "", err
 	}
 	if runner.Generation < 1 {
-		return Record{}, "", fmt.Errorf("presence cannot be composed without an armed generation")
+		return Record{}, "", errors.New("presence cannot be published while the machinery is not running")
 	}
 	engine := runner.Engine
 	if engine == "" {
@@ -311,6 +313,6 @@ func Conflict(published *Record, mine Record) error {
 	if !published.At().After(mine.At()) {
 		return nil
 	}
-	return fmt.Errorf("SEAT_PRESENCE_CONFLICT: the presence of %s at %s was published by repository identity %s, not this checkout's %s",
-		mine.Machine, published.TickAt, published.RepoIdentity, mine.RepoIdentity)
+	return refusal.New("SEAT_PRESENCE_CONFLICT", fmt.Sprintf("machine=%s at=%s published=%s mine=%s", mine.Machine, published.TickAt, published.RepoIdentity, mine.RepoIdentity),
+		fmt.Errorf("another checkout also publishes as machine %s; give one of them another name", mine.Machine))
 }

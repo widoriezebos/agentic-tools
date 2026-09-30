@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"errors"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 )
 
@@ -96,7 +97,7 @@ func RequestWatcherRestart(repoRoot, reason string, now time.Time) error {
 	}
 	watcher, ok := state.Components[string(Watcher)]
 	if state.Generation < 1 || !ok || watcher.Pid < 1 || watcher.PidStartedAt < 1 || watcher.InstanceTag == "" {
-		return fmt.Errorf("supervision state has no exact watcher generation to restart")
+		return errors.New("there is no running watcher to restart")
 	}
 	request := WatcherRestartRequest{
 		Schema: 1, Generation: state.Generation, Pid: watcher.Pid, PidStartedAt: watcher.PidStartedAt,

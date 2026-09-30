@@ -1592,7 +1592,7 @@ func TestLiveGenerationReplacementStopsAndReplacesTheRecordedOwner(t *testing.T)
 		t.Fatalf("older generation was not replaced: first=%+v replacement=%+v", started, replaced)
 	}
 	appendPreviousOwnerRows(t, registryPath, root, replaced)
-	if _, err := Shutdown(root, root, "foreign-owner-prefix", 1); err == nil || !strings.Contains(err.Error(), "another repository") {
+	if _, err := Shutdown(root, root, "foreign-owner-prefix", 1); err == nil || !strings.Contains(err.Error(), "does not belong to") {
 		t.Fatalf("shutdown accepted a foreign owner prefix: %v", err)
 	}
 	if _, err := ShutdownAt(root, root, root, "metasystem-supervision-owner-test-", 1); err != nil {
@@ -1890,7 +1890,7 @@ func exerciseCheckoutCustodyInvariant(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, shutdownErr = ShutdownAt(requestedRoot, requestedRoot, requestedRoot, requestedPrefix, 1)
-	if shutdownErr == nil || !strings.Contains(shutdownErr.Error(), "another repository") || !strings.Contains(shutdownErr.Error(), deadForeignOwner.InstanceTag) {
+	if shutdownErr == nil || !strings.Contains(shutdownErr.Error(), "does not belong to") || !strings.Contains(shutdownErr.Error(), deadForeignOwner.InstanceTag) {
 		t.Fatalf("shutdown did not refuse the dead foreign-prefix owner and name the cause: %v", shutdownErr)
 	}
 	readOwner, err := ReadArmingOwner(requestedRoot)
@@ -1951,7 +1951,7 @@ func TestLiveOwnerWithoutPublishedGenerationRefusesRecoveryJoin(t *testing.T) {
 	appendPreviousOwnerRelaunched(t, registryPath, root, owner, 1)
 	options := armingOptions(root)
 	options.OnlyIfDown = true
-	if _, err := EnsureArmed(options); err == nil || !strings.Contains(err.Error(), "did not publish a verifiable generation") {
+	if _, err := EnsureArmed(options); err == nil || !strings.Contains(err.Error(), "did not publish a readable install number") {
 		t.Fatalf("an unpublished live owner was joined: %v", err)
 	}
 	read, err := ReadArmingOwner(root)
@@ -1975,7 +1975,7 @@ func TestGenerationReplacementStopsWhenComponentCensusFails(t *testing.T) {
 	appendPreviousOwnerRows(t, registryPath, root, started)
 	enumerateTakeoverProcesses = func(string) ([]census.Process, error) { return nil, os.ErrPermission }
 	options.Fingerprint = "replacement-fingerprint"
-	if _, err := EnsureArmed(options); !errors.Is(err, os.ErrPermission) || !strings.Contains(err.Error(), "generation replacement refused") {
+	if _, err := EnsureArmed(options); !errors.Is(err, os.ErrPermission) || !strings.Contains(err.Error(), "the supervisor was not replaced") {
 		t.Fatalf("component census failure did not stop generation replacement: %v", err)
 	}
 	enumerateTakeoverProcesses = func(string) ([]census.Process, error) { return nil, nil }

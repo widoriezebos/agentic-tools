@@ -89,7 +89,7 @@ func TestSupervisionBedAOperatorLayoutRefusesAnUnprovenSession(t *testing.T) {
 	}
 	for _, want := range []string{
 		"component=session-identity outcome=failed",
-		"runtime-signature ancestry proof failed",
+		"could not be traced back to its session",
 		"pass --pid <session-pid> and --start-time <epoch-seconds>",
 	} {
 		if !strings.Contains(stdout, want) {

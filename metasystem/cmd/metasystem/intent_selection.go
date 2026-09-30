@@ -737,18 +737,18 @@ func runIntentRevise(inv *intentInvocation) int {
 		message := err.Error()
 		switch {
 		case errors.Is(err, launch.ErrUnitRevisionStale):
-			return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: message + "; nothing was launched",
+			return inv.render(intentResult{Details: launchDetails(err), Outcome: intentRefused, code: 1, Targets: targets, Summary: message + "; nothing was launched",
 				Data:       map[string]any{"current": revised.Current},
 				next:       inv.publicArgv("work", "revise", id, "--work", selected.Unit, "--after", fmt.Sprint(revised.Current), "--brief", inv.callerPath(inv.input.text("brief"))),
 				nextReason: "correct the newest attempt instead; this deliberately starts one new attempt"})
-		case strings.HasPrefix(message, "UNIT_REVISION_CONFLICT"):
-			return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: message + "; nothing was launched",
+		case launch.IsCode(err, "UNIT_REVISION_CONFLICT"):
+			return inv.render(intentResult{Details: launchDetails(err), Outcome: intentRefused, code: 1, Targets: targets, Summary: message + "; nothing was launched",
 				next: inv.publicArgv("status", id, "--work", selected.Unit), nextReason: "the attempt that request created, and what it needs next"})
-		case strings.HasPrefix(message, "UNIT_RUN_NOT_AWAITING"):
-			return inv.render(intentResult{Outcome: intentInProgress, Targets: targets, Summary: message + "; nothing was launched",
+		case launch.IsCode(err, "UNIT_RUN_NOT_AWAITING"):
+			return inv.render(intentResult{Details: launchDetails(err), Outcome: intentInProgress, Targets: targets, Summary: message + "; nothing was launched",
 				next: inv.publicArgv("work", "wait", id, "--work", selected.Unit), nextReason: "wait for the running attempt to finish"})
-		case strings.HasPrefix(message, "UNIT_ROUND_LIMIT"):
-			return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: message + "; nothing was launched",
+		case launch.IsCode(err, "UNIT_ROUND_LIMIT"):
+			return inv.render(intentResult{Details: launchDetails(err), Outcome: intentRefused, code: 1, Targets: targets, Summary: message + "; nothing was launched",
 				Decision: "a person gives the goal a larger box: metasystem goal budget " + id + " BOX"})
 		}
 	}

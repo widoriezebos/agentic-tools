@@ -727,7 +727,7 @@ func taggedTakeoverComponents(root, ownerTag string, processes []census.Process)
 		}
 		generation, err := strconv.ParseInt(processArgument(fields, "--generation"), 10, 64)
 		if err != nil || generation < 1 {
-			return nil, fmt.Errorf("tagged %s pid %d has an invalid generation", component, process.Pid)
+			return nil, fmt.Errorf("the %s process %d carries an unreadable install number", component, process.Pid)
 		}
 		held = append(held, Held{Component: component, Tag: tag, Generation: generation, Identity: identity.Ref{
 			Pid: process.Pid, StartedAtSec: process.Started,
@@ -1039,11 +1039,11 @@ func requireOwnerCheckoutPath(requestedStateRoot string, owner ArmingOwner) erro
 		return fmt.Errorf("read supervision registry before acting for checkout %q: %w", requestedCheckout, err)
 	}
 	if !found {
-		return fmt.Errorf("supervision request for checkout %q names owner tag %q with no registry checkout; refusing to select an owner by tag", requestedCheckout, owner.InstanceTag)
+		return fmt.Errorf("nothing was done: the supervisor %q is not registered for any checkout (asked for %q)", owner.InstanceTag, requestedCheckout)
 	}
 	recordedCheckout = canonicalPathForTakeover(recordedCheckout)
 	if recordedCheckout != requestedCheckout {
-		return fmt.Errorf("supervision request for checkout %q names owner tag %q recorded for checkout %q; refusing to act on another repository", requestedCheckout, owner.InstanceTag, recordedCheckout)
+		return fmt.Errorf("nothing was done: the supervisor %q belongs to %q, not %q", owner.InstanceTag, recordedCheckout, requestedCheckout)
 	}
 	return nil
 }
@@ -1051,7 +1051,7 @@ func requireOwnerCheckoutPath(requestedStateRoot string, owner ArmingOwner) erro
 func requireOwnerTagPrefix(requestedStateRoot, expectedTagPrefix string, owner ArmingOwner) error {
 	requestedCheckout := canonicalPathForTakeover(requestedStateRoot)
 	if !strings.HasPrefix(owner.InstanceTag, expectedTagPrefix) {
-		return fmt.Errorf("supervision request for checkout %q names owner tag %q outside that checkout's prefix %q; refusing to act on another repository", requestedCheckout, owner.InstanceTag, expectedTagPrefix)
+		return fmt.Errorf("nothing was done: the supervisor %q does not belong to %q", owner.InstanceTag, requestedCheckout)
 	}
 	return nil
 }
@@ -1066,7 +1066,7 @@ func appendShutdownEscalated(root string, owner ArmingOwner, outcomes []Componen
 	}
 	exact, state, err := (identity.KernelProber{}).Probe(int64(os.Getpid()))
 	if err != nil || state != identity.Alive {
-		return fmt.Errorf("read shutdown caller identity for escalated registry row")
+		return errors.New("who asked for the shutdown cannot be read")
 	}
 	killed := make([]string, 0, len(outcomes))
 	sweepPending := forceSweepPending
@@ -1201,7 +1201,7 @@ func EnsureArmed(options EnsureOptions) (result EnsureResult, err error) {
 		if options.OnlyIfDown {
 			generation, err := publishedForOwner(options.Root, owner, scaledWait(5, options.WaitScaleMilli))
 			if err != nil {
-				return EnsureResult{}, fmt.Errorf("live owner did not publish a verifiable generation: %w", err)
+				return EnsureResult{}, fmt.Errorf("the running supervisor did not publish a readable install number: %w", err)
 			}
 			inspection := waitUntilArmed(options, owner)
 			return EnsureResult{
@@ -1211,7 +1211,7 @@ func EnsureArmed(options EnsureOptions) (result EnsureResult, err error) {
 		}
 		generation, err := publishedForOwner(options.Root, owner, scaledWait(5, options.WaitScaleMilli))
 		if err != nil {
-			return EnsureResult{}, fmt.Errorf("live owner did not publish a verifiable generation: %w", err)
+			return EnsureResult{}, fmt.Errorf("the running supervisor did not publish a readable install number: %w", err)
 		}
 		if generationMatches(generation, options) {
 			inspection := waitUntilArmed(options, owner)
@@ -1224,7 +1224,7 @@ func EnsureArmed(options EnsureOptions) (result EnsureResult, err error) {
 			return EnsureResult{}, err
 		}
 		if _, err := stopTakeoverComponents(options.Root, options.MetasystemRoot, owner.InstanceTag, options.WaitScaleMilli, false); err != nil {
-			return EnsureResult{}, fmt.Errorf("generation replacement refused: %w", err)
+			return EnsureResult{}, fmt.Errorf("the supervisor was not replaced: %w", err)
 		}
 		if err := releaseDeadOwnerLock(options.Root, owner); err != nil {
 			continue

@@ -34,7 +34,7 @@ func (r ProofAdmissionReads) Validate() error {
 		{"Receipt.FileAt", r.Receipt.FileAt == nil},
 	} {
 		if field.missing {
-			return fmt.Errorf("proof admission reads missing %s", field.name)
+			return fmt.Errorf("the check run cannot be admitted: %s is missing", field.name)
 		}
 	}
 	return nil

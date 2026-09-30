@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+
+	"errors"
 )
 
 // BriefBoundsRecord binds structured bounds to the exact brief admitted for
@@ -32,7 +34,7 @@ func validateBriefBoundsRecord(r BriefBoundsRecord) error {
 		return fmt.Errorf("invalid job, root job, or round identity")
 	}
 	if !incarnationRe.MatchString(r.AdmittedSHA256) {
-		return fmt.Errorf("invalid admitted brief digest")
+		return errors.New("the brief's recorded checksum is not a valid SHA-256")
 	}
 	if r.AdmittedBytes < 0 {
 		return fmt.Errorf("invalid admitted brief byte count")

@@ -109,6 +109,7 @@ type Proof struct {
 	// Helm is the grant of the person at the helm when the walk refused and
 	// the seat's helm admitted the caller: the audit trail of that act.
 	Helm               *HelmGrant `json:"helm,omitempty"`
+	walkRefusal        error
 	observedRoot       string
 	observedTerminalID string
 	observed           bool
@@ -938,6 +939,7 @@ func proveEnrolled(root string, invokerPID int64, reader Reader, now time.Time, 
 			helm, helmErr := HelmProof(root, grant, now)
 			if helmErr == nil {
 				helm.InvokerRef, helm.SignatureSetDigest, helm.Nodes = proof.InvokerRef, proof.SignatureSetDigest, proof.Nodes
+				helm.walkRefusal = err
 				return helm, nil
 			}
 		}
@@ -947,6 +949,7 @@ func proveEnrolled(root string, invokerPID int64, reader Reader, now time.Time, 
 			attorney, attorneyErr := HelmProof(root, grant, now)
 			if attorneyErr == nil {
 				attorney.InvokerRef, attorney.SignatureSetDigest, attorney.Nodes = proof.InvokerRef, proof.SignatureSetDigest, proof.Nodes
+				attorney.walkRefusal = err
 				return attorney, nil
 			}
 		}

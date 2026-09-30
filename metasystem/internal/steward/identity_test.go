@@ -80,7 +80,7 @@ func TestZeroGenerationRefuses(t *testing.T) {
 	if err := MintIdentity(path, InstallIdentity{RepoIdentity: "r", Generation: 0}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := VerifyIdentity(path, "r"); err == nil || !strings.Contains(err.Error(), "generation") {
+	if _, err := VerifyIdentity(path, "r"); err == nil || !strings.Contains(err.Error(), "no valid install number") {
 		t.Fatalf("generation zero must refuse: %v", err)
 	}
 }

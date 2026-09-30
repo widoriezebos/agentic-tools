@@ -198,7 +198,7 @@ func TestReconcileDesignCriticRefusesCritiqueBeforeFinalWork(t *testing.T) {
 	f.writeCriticRecord(t, record)
 	err := ReconcileReviewReference(f.repo, f.work, f.critic)
 	if err == nil || !strings.Contains(err.Error(), "2026-08-30T09:59:00Z") ||
-		!strings.Contains(err.Error(), "2026-08-30T10:00:00Z") || !strings.Contains(err.Error(), "unexamined") {
+		!strings.Contains(err.Error(), "2026-08-30T10:00:00Z") || !strings.Contains(err.Error(), "needs a new critique") {
 		t.Fatalf("early design critique reconciliation = %v", err)
 	}
 	f.assertUnstamped(t)

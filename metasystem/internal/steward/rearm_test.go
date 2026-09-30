@@ -757,7 +757,7 @@ func TestLandingRefReadIgnoresGlobalConfigurationAndOrdinaryBranchMovement(t *te
 		rearmExpected(root, ref+"\n", nil, "config", "--local", "--no-includes", "--get", landingRefConfigKey),
 		rearmExpected(root, first+"\n", nil, "rev-parse", "--verify", "--quiet", ref+"^{commit}"),
 	)
-	wantUnset := fmt.Sprintf("the installation owns no remote-tracking landing ref (%s is <unset>; expected refs/remotes/<remote>/<branch>)", landingRefConfigKey)
+	wantUnset := fmt.Sprintf("no remote landing branch is set: %s is <unset>, not refs/remotes/<remote>/<branch>", landingRefConfigKey)
 	if _, err := readOwnedLandingRefWithDeps(deps, root); err == nil || err.Error() != wantUnset {
 		t.Fatalf("a global landing-ref value changed the absent local value result: %v", err)
 	}
@@ -770,7 +770,7 @@ func TestLandingRefReadIgnoresGlobalConfigurationAndOrdinaryBranchMovement(t *te
 		t.Fatalf("an empty local landing-ref value changed its result: %v", err)
 	}
 	localRef := "refs/heads/trunk"
-	wantMalformed := fmt.Sprintf("the installation owns no remote-tracking landing ref (%s is %s; expected refs/remotes/<remote>/<branch>)", landingRefConfigKey, localRef)
+	wantMalformed := fmt.Sprintf("no remote landing branch is set: %s is %s, not refs/remotes/<remote>/<branch>", landingRefConfigKey, localRef)
 	if _, err := readOwnedLandingRefWithDeps(deps, root); err == nil || err.Error() != wantMalformed {
 		t.Fatalf("a local branch ref was not refused with the expected remote-tracking shape: %v", err)
 	}
@@ -843,7 +843,7 @@ func TestMintPlanReportsARepositoryFailureAsAFailureNotAsDrift(t *testing.T) {
 			expected := append(rearmOwnedRef(bed.root, ref, bed.second), rearmBuild(bed.root, bed.second, bed.second, 0), rearmAncestor(bed.root, bed.second, ref, 0), rearmFailed(bed.root, tc.status, "rev-parse", "--verify", "HEAD^{commit}"))
 			_, err := reArmRebuiltEngineWithDeps(rearmTestDeps(t, expected...), bed.root, bed.root, bed.engine)
 			if tc.status == 1 {
-				want := "ENROLLMENT_DRIFT: resolve landed source at checkout HEAD: git rev-parse --verify HEAD^{commit}: exit status 1 (fatal: not a git repository (or any of the parent directories))"
+				want := "the enrolled engine changed or is missing: resolve landed source at checkout HEAD: git rev-parse --verify HEAD^{commit}: exit status 1 (fatal: not a git repository (or any of the parent directories))"
 				if err == nil || err.Error() != want || !errors.Is(err, ErrEnrollmentDrift) {
 					t.Fatalf("checkout HEAD negative answer changed its mint-plan drift: %v", err)
 				}
@@ -867,7 +867,7 @@ func TestIdentityPublicationKeepsAndClearsDurabilityDoubt(t *testing.T) {
 		}
 		return durable, err
 	}
-	if err := MintIdentity(path, id); err == nil || !strings.Contains(err.Error(), "durability is pending") {
+	if err := MintIdentity(path, id); err == nil || !strings.Contains(err.Error(), "not yet safely on disk") {
 		t.Fatalf("post-rename doubt was reported as durable success: %v", err)
 	}
 	if got, err := VerifyIdentity(path, root); err != nil || got.Generation != 1 {

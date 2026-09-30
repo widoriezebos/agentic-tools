@@ -30,10 +30,10 @@ func TestQuestionAnswerWithoutAQuestionNamesIt(t *testing.T) {
 	}
 }
 
-// EM-21: an act refused because no actor was proven says, in the words the
-// caller typed, who may run it and how; it names no refusal code, no process
-// ancestry and no internal verb, and --lineage, the agent's remedy, is in
-// the action's help.
+// EM-21: an act refused because no actor was proven says why in plain words
+// and names the one command that resolves it; it names no refusal code, no
+// process ancestry and no internal verb, and --lineage, the agent's remedy,
+// is in the action's help and in the refusal's details.
 func TestAnActorRefusalSaysWhoMayActInPublicWords(t *testing.T) {
 	bed := newIntentBed(t, false, makeQueued)
 	unenrolled := goalSyncTerminalReader(t, bed.root(), "ttys:not_enrolled")
@@ -46,10 +46,10 @@ func TestAnActorRefusalSaysWhoMayActInPublicWords(t *testing.T) {
 		args  []string
 		wants []string
 	}{
-		{[]string{"goal", "pause", bedGoal, "--reason", "x"}, []string{"metasystem goal pause", "the terminal enrolled", "--lineage LINEAGE"}},
-		{[]string{"goal", "pin", bedGoal, "m1e"}, []string{"metasystem goal pin is a person's act", "the terminal enrolled"}},
-		{[]string{"grant", "revoke", "grant-1"}, []string{"metasystem grant revoke is a person's act", "the terminal enrolled"}},
-		{[]string{"incident", "close", "incident-1", "--reason", "x"}, []string{"metasystem incident close is a person's act", "the terminal enrolled"}},
+		{[]string{"goal", "pause", bedGoal, "--reason", "x"}, []string{"metasystem goal pause: "}},
+		{[]string{"goal", "pin", bedGoal, "m1e"}, []string{"metasystem goal pin: "}},
+		{[]string{"grant", "revoke", "grant-1"}, []string{"metasystem grant revoke: "}},
+		{[]string{"incident", "close", "incident-1", "--reason", "x"}, []string{"metasystem incident close: "}},
 	} {
 		code, stdout, stderr := bed.run(owners, row.args...)
 		text := stdout + stderr
@@ -58,7 +58,10 @@ func TestAnActorRefusalSaysWhoMayActInPublicWords(t *testing.T) {
 				t.Errorf("%v names %q: %q", row.args, forbidden, text)
 			}
 		}
-		for _, want := range append(row.wants, "does not descend from") {
+		// "Messages a Person Reads": why here in plain words, and the one
+		// command with the enrolled person's name filled in.
+		for _, want := range append(row.wants, "this terminal isn't enrolled (Wido enrolled another one), so nothing was done\n",
+			"run: metasystem system enroll --name Wido  (moves the enrollment here; then repeat this command)\n") {
 			if code == 0 || !strings.Contains(text, want) {
 				t.Errorf("%v: code %d, want %q in %q", row.args, code, want, text)
 			}

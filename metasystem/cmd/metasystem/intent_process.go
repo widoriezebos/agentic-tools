@@ -594,20 +594,24 @@ func nonNilLines(lines []string) []string {
 	return lines
 }
 
-// processRefusalResult keeps the owner's sentence and its own next line; a
-// human act the caller cannot perform from here is named, never run.
-func processRefusalResult(targets []intentTarget, prefix string, refusal *processRefusal, report stoptransition.Report) intentResult {
+// processRefusalResult keeps the owner's sentence and the command that
+// resolves it; a human act the caller cannot perform from here is named,
+// never run. The transition's step lines are details.
+func processRefusalResult(targets []intentTarget, refusal *processRefusal, report stoptransition.Report) intentResult {
 	sentence := strings.TrimSuffix(strings.TrimSpace(refusal.sentence), ".")
 	if refusal.plain != "" && sentence == "" {
 		sentence = refusal.plain
 	}
-	result := intentResult{Outcome: intentRefused, Targets: targets, Summary: prefix + sentence + "; nothing was changed by this step",
-		text: report.Lines, code: max(refusal.code, 1),
-		Data: map[string]any{"lines": nonNilLines(report.Lines), "remedy": refusal.second}}
-	if refusal.second != "" {
-		result.Decision = refusal.second
+	next, reason, decision := refusal.next, refusal.nextReason, ""
+	if command, found := strings.CutPrefix(refusal.second, "run: "); next == nil && found && !strings.ContainsAny(command, ";,") {
+		next = shellWords(command)
+	} else if next == nil {
+		decision = refusal.second
 	}
-	return result
+	return intentResult{Outcome: intentRefused, Targets: targets, Summary: sentence + ", so nothing was changed",
+		next: next, nextReason: reason, Decision: decision, code: max(refusal.code, 1),
+		Details: append(append([]string(nil), refusal.details...), report.Lines...),
+		Data:    map[string]any{"lines": nonNilLines(report.Lines), "remedy": refusal.second}}
 }
 
 // runIntentSystemStart arms this checkout's machinery at a person's word,
@@ -616,7 +620,8 @@ func runIntentSystemStart(inv *intentInvocation) int {
 	if inv.input.switched("if-down") {
 		for _, other := range []string{"temporary-human-word", "review-by"} {
 			if inv.input.has(other) {
-				return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("system start --if-down carries no person's word; --%s is not taken; nothing was done", other)})
+				return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("--if-down restarts only what is down and takes no --%s; nothing was done", other),
+					next: withoutOption(inv.typedArgv(), other)})
 			}
 		}
 		scope, _, problem := inv.selectProcessScope()
@@ -682,7 +687,7 @@ func systemStopResult(inv *intentInvocation) intentResult {
 	}
 	report, refusal := inv.owners.processes.process.stop(scope, scale)
 	if refusal != nil {
-		return processRefusalResult(inv.checkoutTarget(scope), "stop refused: ", refusal, report)
+		return processRefusalResult(inv.checkoutTarget(scope), refusal, report)
 	}
 	if report.Unchanged {
 		return processUnchangedResult(inv.checkoutTarget(scope), report)
@@ -1118,7 +1123,7 @@ func runIntentSystemRestart(inv *intentInvocation) int {
 	owners := inv.owners.processes.process
 	stopped, refusal := owners.stop(scope, scale)
 	if refusal != nil {
-		result := processRefusalResult(targets, "restart refused at its stop, nothing was stopped or started: ", refusal, stopped)
+		result := processRefusalResult(targets, refusal, stopped)
 		return inv.render(result)
 	}
 	if stopped.ExitCode != 0 {
@@ -1148,8 +1153,12 @@ func runIntentSystemRestart(inv *intentInvocation) int {
 func runIntentEnroll(inv *intentInvocation) int {
 	name := strings.TrimSpace(inv.input.text("name"))
 	if name == "" {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "enroll needs your name: --name NAME; nothing was done",
-			next: inv.publicArgv("system", "enroll", "--name", "NAME"), nextReason: "at an agent-free terminal, with your name"})
+		guess := inv.personName("")
+		if guess == "" {
+			guess = inv.owners.helm.withDefaults().account()
+		}
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "enroll needs your name; nothing was done",
+			next: inv.publicArgv("system", "enroll", "--name", guess), nextReason: "in a terminal you opened yourself, with your own name"})
 	}
 	if problem := inv.selectRoot(); problem != nil {
 		return inv.render(*problem)
@@ -1733,7 +1742,7 @@ func processFence(scope processScope) (stopfence.Record, string) {
 func (inv *intentInvocation) startRefusal(scope processScope, scale int, before stopfence.Record, refusal *processRefusal, report stoptransition.Report) intentResult {
 	after, fence := processFence(scope)
 	if after.Generation == before.Generation && after.State == before.State && after.Phase == before.Phase {
-		return processRefusalResult(inv.checkoutTarget(scope), "start refused: ", refusal, report)
+		return processRefusalResult(inv.checkoutTarget(scope), refusal, report)
 	}
 	data := map[string]any{"fence": fence, "lines": nonNilLines(report.Lines), "remedy": refusal.second}
 	lines := append([]string(nil), report.Lines...)
@@ -1745,8 +1754,9 @@ func (inv *intentInvocation) startRefusal(scope processScope, scale int, before 
 		data["running"] = "unknown: " + err.Error()
 	}
 	return intentResult{Outcome: intentPartial, code: max(refusal.code, 1), Targets: inv.checkoutTarget(scope), text: lines, Data: data,
-		Summary: "start began but did not finish: " + strings.TrimSuffix(strings.TrimSpace(refusal.sentence), ".") + "; the checkout accepts new work again (" + fence + ") but not everything is running",
-		next:    inv.publicArgv(append([]string{"system", "start"}, inv.forward("installation")...)...), nextReason: "start again once the problem above is fixed"}
+		Summary: "start began but didn't finish: " + strings.TrimSuffix(strings.TrimSpace(refusal.sentence), ".") + "; new work is accepted, but not everything runs",
+		next:    inv.publicArgv(append([]string{"system", "start"}, inv.forward("installation")...)...), nextReason: "start again once the problem above is fixed",
+		Details: []string{"stop fence: " + fence}}
 }
 
 // askAfterFailure reports a question the channel owner recorded before a

@@ -90,7 +90,7 @@ func latestAdvancementEvidenceWithReads(repoRoot, goalID string, now time.Time, 
 	candidates = append(candidates, landingEvidence...)
 	proofEvidence, err := proofAdvancementEvidence(repoRoot, goalID, now)
 	if err != nil {
-		return nil, fmt.Errorf("budget extension proof evidence: %w", err)
+		return nil, fmt.Errorf("the check results that would extend the budget cannot be read: %w", err)
 	}
 	candidates = append(candidates, proofEvidence...)
 	if len(candidates) == 0 {

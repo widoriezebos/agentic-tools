@@ -367,7 +367,7 @@ func TestIntentBuildConcurrentRepeat(t *testing.T) {
 		case intentConfirmed:
 			runs[resultData(t, result)["run"].(string)] = true
 		case intentInProgress:
-			if codes[index] != 3 || !strings.HasPrefix(result.Summary, "UNIT_RUN_BUSY") || result.Next == nil || !slices.Equal(result.Next.Argv, append([]string{"metasystem", "work", "build", "--json"}, args[2:]...)) {
+			if codes[index] != 3 || !strings.HasPrefix(strings.Join(result.Details, "\n"), "UNIT_RUN_BUSY") || result.Next == nil || !slices.Equal(result.Next.Argv, append([]string{"metasystem", "work", "build", "--json"}, args[2:]...)) {
 				t.Fatalf("busy caller: code=%d %+v", codes[index], result)
 			}
 		default:
@@ -520,7 +520,7 @@ func TestIntentBuildResume(t *testing.T) {
 	}
 	bed.brief("brief.md", "Build the unit, changed.\n")
 	code, result, _ = bed.work(args...)
-	if code != 1 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "UNIT_NAMED_INPUT_CHANGED") || !strings.Contains(result.Summary, "run="+run) || len(bed.starter.launched()) != 2 {
+	if code != 1 || result.Outcome != intentRefused || !strings.Contains(strings.Join(result.Details, "\n"), "UNIT_NAMED_INPUT_CHANGED") || !strings.Contains(strings.Join(result.Details, "\n"), "run="+run) || len(bed.starter.launched()) != 2 {
 		t.Fatalf("changed input: code=%d %+v", code, result)
 	}
 	delete(bed.starter.fail, "proof")

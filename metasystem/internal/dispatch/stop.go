@@ -13,6 +13,7 @@ import (
 	"sort"
 	"time"
 
+	"errors"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalrevision"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
@@ -154,7 +155,7 @@ func stopAttempt(root, stopID, machine string) (string, error) {
 			return ulid, nil
 		}
 	}
-	return "", fmt.Errorf("stop %s has %d attempts that ended without effect; read them under artifacts/agents/goal-transactions before stopping again", stopID, stopAttemptLimit)
+	return "", fmt.Errorf("stop %s was tried %d times without effect; read artifacts/agents/goal-transactions before trying again", stopID, stopAttemptLimit)
 }
 
 // stopAttemptOpid returns the ulid of the attempt at closing stopID that
@@ -215,7 +216,7 @@ func ensureBreachStopWithReads(root, id string, revision uint64, now time.Time, 
 		}
 		reason := stopReasonFor(binding.File, budget)
 		if reason == "" {
-			return goal.StopBatch{}, fmt.Errorf("goal %s revision %d has no live-stop breach: a breach stop fences only a revision over its budget, and fencing one inside it would contradict the budget record; to stop its work, run metasystem work stop REF for the job, or metasystem goal pause %s --reason TEXT to park the goal", id, binding.Revision, id)
+			return goal.StopBatch{}, fmt.Errorf("goal %s is within its budget, so there is no overspend to stop; to pause it instead\nrun: metasystem goal pause %s --reason TEXT", id, id)
 		}
 		if reason == goal.StopReasonElapsedLimit {
 			firingEvidence = &goal.StopFiringEvidence{
@@ -343,7 +344,7 @@ func (policy GoalRecoveryPolicy) breachStopWithReads(endpoint goal.Endpoint, ent
 	ulid, attempt := stopAttemptOpid(entry.Opid, stopID, actor.Machine)
 	if entry.Machine != actor.Machine || entry.Lineage != actor.Lineage || !attempt {
 		release()
-		return goal.PublishRequest{}, nil, fmt.Errorf("the breach-stop journal identity does not match the live custodian operation")
+		return goal.PublishRequest{}, nil, errors.New("the record of this overspend stop does not match the stop now in progress")
 	}
 	request := goal.CloseStopRequest{
 		VerbRequest: goal.VerbRequest{Endpoint: endpoint, Actor: actor, Ulid: ulid, Now: now,
@@ -712,7 +713,7 @@ func cancelStopProof(root, stopID, attemptID string, options proofrun.StopOption
 		return err
 	}
 	if batch.State != goal.StopBatchOpen || !containsStopMember(batch.PendingProofs, attemptID) {
-		return fmt.Errorf("proof attempt %s is not pending in open stop batch %s", attemptID, stopID)
+		return fmt.Errorf("check run %s is not waiting in stop %s", attemptID, stopID)
 	}
 	var observed *goal.StopProof
 	for index := range batch.ObservedProofs {
@@ -725,7 +726,7 @@ func cancelStopProof(root, stopID, attemptID string, options proofrun.StopOption
 	if observed == nil || observed.Terminal != "" || observed.StopID != batch.StopID ||
 		observed.FenceEpoch != batch.FenceEpoch || observed.CapabilityGeneration != batch.CapabilityGeneration ||
 		observed.Machine != batch.Machine || observed.ClaimEpoch != batch.ClaimEpoch {
-		return fmt.Errorf("proof attempt %s has no exact pending member in stop batch %s", attemptID, stopID)
+		return fmt.Errorf("check run %s has no matching entry in stop %s", attemptID, stopID)
 	}
 	attempt, err := proofrun.ReadAttempt(root, attemptID)
 	if err != nil {
@@ -733,7 +734,7 @@ func cancelStopProof(root, stopID, attemptID string, options proofrun.StopOption
 	}
 	if attempt.GoalID != batch.GoalID || attempt.GoalID != observed.GoalID ||
 		attempt.GoalRevision != observed.GoalRevision || attempt.AccountingRevision != observed.AccountingRevision {
-		return fmt.Errorf("proof attempt %s no longer matches stop batch %s authority", attemptID, stopID)
+		return fmt.Errorf("check run %s no longer matches what stop %s was allowed to stop", attemptID, stopID)
 	}
 	if attempt.Terminal != nil {
 		return nil
@@ -750,7 +751,7 @@ func cancelStopProof(root, stopID, attemptID string, options proofrun.StopOption
 	}
 	if attempt.GoalID != observed.GoalID || attempt.GoalRevision != observed.GoalRevision ||
 		attempt.AccountingRevision != observed.AccountingRevision {
-		return fmt.Errorf("proof attempt %s accounting binding changed during stop", attemptID)
+		return fmt.Errorf("check run %s changed its budget record while it was being stopped", attemptID)
 	}
 	if options.TermGrace <= 0 {
 		options.TermGrace = 5 * time.Second
@@ -761,17 +762,17 @@ func cancelStopProof(root, stopID, attemptID string, options proofrun.StopOption
 	if len(attempt.ProcessKeys) == 0 {
 		outcome := proofrun.StopRecordedIdentity("launcher", attempt.Launcher, options)
 		if outcome.Result == proofrun.StopNotStopped {
-			return fmt.Errorf("proof attempt %s launcher was not stopped: %s", attemptID, outcome.Reason)
+			return fmt.Errorf("the launcher of check run %s was not stopped: %s", attemptID, outcome.Reason)
 		}
 	} else {
 		for _, key := range attempt.ProcessKeys {
 			record, readErr := proofrun.ReadProcessRecord(root, key)
 			if readErr != nil {
-				return fmt.Errorf("proof attempt %s process record %s is unreadable: %w", attemptID, key, readErr)
+				return fmt.Errorf("the process record %s of check run %s cannot be read: %w", key, attemptID, readErr)
 			}
 			for _, outcome := range proofrun.Stop(record, options) {
 				if outcome.Result == proofrun.StopNotStopped {
-					return fmt.Errorf("proof attempt %s %s was not stopped: %s", attemptID, outcome.Component, outcome.Reason)
+					return fmt.Errorf("%s of check run %s was not stopped: %s", outcome.Component, attemptID, outcome.Reason)
 				}
 			}
 		}

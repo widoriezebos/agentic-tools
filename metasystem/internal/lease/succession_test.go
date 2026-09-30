@@ -58,7 +58,7 @@ func TestAnnounceLineageFillKeepsTheEpochAndAConflictIsRefusedByName(t *testing.
 		t.Fatalf("the same lineage again must be accepted: %v", err)
 	}
 	err = announce("mission-different")
-	if err == nil || !strings.Contains(err.Error(), "refusing to replace it") {
+	if err == nil || !strings.Contains(err.Error(), "so it is not changed to mission-different") {
 		t.Fatalf("a conflicting lineage must be refused by name, got %v", err)
 	}
 }

@@ -881,7 +881,7 @@ func (inv *intentInvocation) unitSize(unit, brief string, designs []string) (str
 	for index, page := range append([]string{brief}, designs...) {
 		lines, err := launch.DeclaredUnitLines(page, unit)
 		if err != nil {
-			message := err.Error()
+			message := launch.ErrorDetail(err)
 			if strings.Contains(message, "missing=units-table") || strings.Contains(message, "missing=row") || strings.Contains(message, "missing=size-column") {
 				continue
 			}
@@ -1017,17 +1017,17 @@ func (inv *intentInvocation) unitOutcome(runner *launch.UnitRunner, result launc
 	if err != nil {
 		message := err.Error()
 		switch {
-		case strings.HasPrefix(message, "UNIT_RUN_BUSY"):
-			return intentResult{Outcome: intentInProgress, Targets: targets, code: 3, Summary: message,
+		case launch.IsCode(err, "UNIT_RUN_BUSY"):
+			return intentResult{Details: launchDetails(err), Outcome: intentInProgress, Targets: targets, code: 3, Summary: message,
 				next: again, nextReason: "another call is advancing this run; the same command continues it"}
-		case strings.HasPrefix(message, "UNIT_NAMED_INPUT_CHANGED"):
-			return intentResult{Outcome: intentRefused, Targets: targets, code: 1, Summary: message + "; nothing was launched",
+		case launch.IsCode(err, "UNIT_NAMED_INPUT_CHANGED"):
+			return intentResult{Details: launchDetails(err), Outcome: intentRefused, Targets: targets, code: 1, Summary: message + "; nothing was launched",
 				Decision: "send the change as a correction (metasystem work revise G --work NAME --brief FILE), or build it under another work name"}
 		case record.ID != "":
-			return intentResult{Outcome: intentFailed, Targets: append(targets, intentTarget{Kind: "unit", ID: record.ID}), code: 1, Summary: message,
+			return intentResult{Details: launchDetails(err), Outcome: intentFailed, Targets: append(targets, intentTarget{Kind: "unit", ID: record.ID}), code: 1, Summary: message,
 				Data: unitData(record, runner.Manager), next: inv.workArgv(record, "wait"), nextReason: "the work is recorded; continue it once the cause is fixed"}
 		}
-		return intentResult{Outcome: intentRefused, Targets: targets, code: 1, Summary: message}
+		return intentResult{Details: launchDetails(err), Outcome: intentRefused, Targets: targets, code: 1, Summary: message}
 	}
 	targets = append(targets, intentTarget{Kind: "unit", ID: record.ID})
 	data := unitData(record, runner.Manager)

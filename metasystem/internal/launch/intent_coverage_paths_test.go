@@ -101,12 +101,12 @@ func TestDesignOutcomeForAnUnknownAttemptIsRefused(t *testing.T) {
 		return "", "", "", nil
 	}
 	for _, attempt := range []int{0, 3} {
-		if _, err := m.RecordDesignOutcome(request.Destination, attempt, judge); err == nil || !strings.Contains(err.Error(), "DESIGN_ATTEMPT_UNKNOWN") {
+		if _, err := m.RecordDesignOutcome(request.Destination, attempt, judge); err == nil || !strings.Contains(ErrorDetail(err), "DESIGN_ATTEMPT_UNKNOWN") {
 			t.Errorf("attempt %d answered %v; want DESIGN_ATTEMPT_UNKNOWN", attempt, err)
 		}
 	}
 	elsewhere := filepath.Join(filepath.Dir(request.Destination), "other.md")
-	if _, err := m.RecordDesignOutcome(elsewhere, 1, judge); err == nil || !strings.Contains(err.Error(), "DESIGN_ATTEMPT_UNKNOWN") {
+	if _, err := m.RecordDesignOutcome(elsewhere, 1, judge); err == nil || !strings.Contains(ErrorDetail(err), "DESIGN_ATTEMPT_UNKNOWN") {
 		t.Errorf("a document with no entry answered %v; want DESIGN_ATTEMPT_UNKNOWN", err)
 	}
 	if attempts, err := m.DesignAttempts(elsewhere); err != nil || len(attempts) != 0 {
@@ -131,10 +131,10 @@ func TestADamagedOrForeignDesignEntryIsRefusedAsCorrupt(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(dir, "request.json"), []byte(content), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := m.DesignAttempts(request.Destination); err == nil || !strings.Contains(err.Error(), "DESIGN_ENTRY_CORRUPT") {
+		if _, err := m.DesignAttempts(request.Destination); err == nil || !strings.Contains(ErrorDetail(err), "DESIGN_ENTRY_CORRUPT") {
 			t.Errorf("%s listed with %v; want DESIGN_ENTRY_CORRUPT", name, err)
 		}
-		if _, _, err := m.DesignDocument(request.Destination); err == nil || !strings.Contains(err.Error(), "DESIGN_ENTRY_CORRUPT") {
+		if _, _, err := m.DesignDocument(request.Destination); err == nil || !strings.Contains(ErrorDetail(err), "DESIGN_ENTRY_CORRUPT") {
 			t.Errorf("%s read with %v; want DESIGN_ENTRY_CORRUPT", name, err)
 		}
 		if _, err := m.RecordDesignOutcome(request.Destination, 1, func(DesignAttempt) (string, string, string, error) {
@@ -162,7 +162,7 @@ func TestDesignOutcomeIsBusyWhileTheDocumentIsLocked(t *testing.T) {
 		t.Fatalf("a locked document was judged")
 		return "", "", "", nil
 	})
-	if err == nil || !strings.Contains(err.Error(), "DESIGN_BUSY") {
+	if err == nil || !strings.Contains(ErrorDetail(err), "DESIGN_BUSY") {
 		t.Fatalf("recording during a held lock answered %v; want DESIGN_BUSY", err)
 	}
 }

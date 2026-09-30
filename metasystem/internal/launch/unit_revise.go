@@ -48,7 +48,7 @@ type UnitRevisionResult struct {
 
 // ErrUnitRevisionStale is returned when After names an attempt that is no
 // longer the run's newest and no identical request exists for it.
-var ErrUnitRevisionStale = errors.New("UNIT_REVISION_STALE")
+var ErrUnitRevisionStale = errors.New("a correction names the newest attempt, and this one is not")
 
 // Revise creates, or rejoins, the one attempt a correction request asks for.
 // It holds the unit's named lock (when the run is a named unit) and the run
@@ -59,10 +59,10 @@ func (runner *UnitRunner) Revise(request UnitRevisionRequest) (UnitRevisionResul
 		return UnitRevisionResult{}, errors.New("unit launch manager is unavailable")
 	}
 	if len(request.Brief) == 0 {
-		return UnitRevisionResult{}, fmt.Errorf("UNIT_FOLLOW_UP_MISSING")
+		return UnitRevisionResult{}, coded("UNIT_FOLLOW_UP_MISSING", "", errors.New("the correction brief is empty"))
 	}
 	if request.After < 0 {
-		return UnitRevisionResult{}, fmt.Errorf("UNIT_REVISION_INVALID after=%d", request.After)
+		return UnitRevisionResult{}, coded("UNIT_REVISION_INVALID", fmt.Sprintf("after=%d", request.After), fmt.Errorf("--after %d is not an attempt number", request.After))
 	}
 	record, err := runner.read(request.Run)
 	if err != nil {
@@ -85,7 +85,7 @@ func (runner *UnitRunner) Revise(request UnitRevisionRequest) (UnitRevisionResul
 				return UnitRevisionResult{}, err
 			}
 			if !found || entry.Run != record.ID || entry.Digest == "" {
-				return UnitRevisionResult{}, fmt.Errorf("UNIT_NAMED_ENTRY_CORRUPT unit=%s goal=%s run=%s: the unit's entry changed while it was locked", record.Unit, record.Goal, record.ID)
+				return UnitRevisionResult{}, coded("UNIT_NAMED_ENTRY_CORRUPT", unitFacts(record.Unit, record.Goal, "run="+record.ID), fmt.Errorf("the record of unit %s changed while this command held it; run the command again", record.Unit))
 			}
 			bound.named = &namedBinding{unit: record.Unit, goal: record.Goal, worktree: worktree, digest: entry.Digest, run: entry.Run,
 				options: UnitOptions{BuildModel: record.BuildModel, BuildEffort: record.BuildEffort}}
@@ -132,7 +132,8 @@ func (runner *UnitRunner) reviseLocked(request UnitRevisionRequest) (UnitRevisio
 		if same(revision) {
 			retained = &revision
 		} else if request.After != 0 {
-			return UnitRevisionResult{}, fmt.Errorf("UNIT_REVISION_CONFLICT unit=%s goal=%s after=%d attempt=%d: attempt %d was already corrected by a different request, which created attempt %d", record.Unit, record.Goal, revision.After, revision.Attempt, revision.After, revision.Attempt)
+			return UnitRevisionResult{}, coded("UNIT_REVISION_CONFLICT", unitFacts(record.Unit, record.Goal, fmt.Sprintf("after=%d attempt=%d", revision.After, revision.Attempt)),
+				fmt.Errorf("attempt %d was already corrected by another brief, which started attempt %d", revision.After, revision.Attempt))
 		}
 	}
 	if retained == nil {
@@ -141,13 +142,14 @@ func (runner *UnitRunner) reviseLocked(request UnitRevisionRequest) (UnitRevisio
 			after = current
 		}
 		if after != current || current == 0 {
-			return UnitRevisionResult{Current: current}, fmt.Errorf("%w unit=%s goal=%s after=%d current=%d: attempt %d is not the newest attempt; a correction names the current attempt %d", ErrUnitRevisionStale, record.Unit, record.Goal, after, current, after, current)
+			return UnitRevisionResult{Current: current}, coded("UNIT_REVISION_STALE", unitFacts(record.Unit, record.Goal, fmt.Sprintf("after=%d current=%d", after, current)),
+				fmt.Errorf("%w (you named %d, the newest is %d)", ErrUnitRevisionStale, after, current))
 		}
 		if record.State != "awaiting-judgement" {
-			return UnitRevisionResult{Current: current}, fmt.Errorf("UNIT_RUN_NOT_AWAITING unit=%s goal=%s state=%s: attempt %d is still running", record.Unit, record.Goal, record.State, current)
+			return UnitRevisionResult{Current: current}, coded("UNIT_RUN_NOT_AWAITING", unitFacts(record.Unit, record.Goal, "state="+string(record.State)), fmt.Errorf("attempt %d is still running", current))
 		}
 		if record.MaxRounds > 0 && current >= record.MaxRounds {
-			return UnitRevisionResult{Current: current}, fmt.Errorf("UNIT_ROUND_LIMIT unit=%s goal=%s run=%s rounds=%d limit=%d: the approved review-round limit is reached; a further round needs a larger approved box", record.Unit, record.Goal, record.ID, current, record.MaxRounds)
+			return UnitRevisionResult{Current: current}, roundLimit(record, current)
 		}
 		revision := UnitRevision{After: after, Attempt: after + 1, BriefSHA256: briefDigest, DecisionsSHA256: decisionsDigest,
 			RequestedAtUnixSec: runner.Manager.Now().Unix()}
@@ -190,7 +192,7 @@ func (runner *UnitRunner) reviseLocked(request UnitRevisionRequest) (UnitRevisio
 	// outputs and the frozen decisions, which carry the reviewed findings
 	// even when the corrected attempt itself produced no read.
 	if data, err := os.ReadFile(retained.Brief); err != nil || digestHex(data) != retained.BriefSHA256 {
-		return UnitRevisionResult{}, fmt.Errorf("UNIT_REVISION_CORRUPT unit=%s goal=%s after=%d: the frozen brief is missing or changed", record.Unit, record.Goal, retained.After)
+		return UnitRevisionResult{}, coded("UNIT_REVISION_CORRUPT", unitFacts(record.Unit, record.Goal, fmt.Sprintf("after=%d", retained.After)), fmt.Errorf("the kept brief of the correction after attempt %d is missing or changed", retained.After))
 	}
 	if err := runner.requireGoalBranch(plan); err != nil {
 		return UnitRevisionResult{}, err
@@ -198,12 +200,13 @@ func (runner *UnitRunner) reviseLocked(request UnitRevisionRequest) (UnitRevisio
 	previous := readOutputs(runner.Manager, record.Rounds[retained.After-1])
 	if retained.Decisions != "" {
 		if data, err := os.ReadFile(retained.Decisions); err != nil || digestHex(data) != retained.DecisionsSHA256 {
-			return UnitRevisionResult{}, fmt.Errorf("UNIT_REVISION_CORRUPT unit=%s goal=%s after=%d: the frozen decisions are missing or changed", record.Unit, record.Goal, retained.After)
+			return UnitRevisionResult{}, coded("UNIT_REVISION_CORRUPT", unitFacts(record.Unit, record.Goal, fmt.Sprintf("after=%d", retained.After)), fmt.Errorf("the kept decisions of the correction after attempt %d are missing or changed", retained.After))
 		}
 		previous = append(previous, retained.Decisions)
 	}
 	if retained.After != current {
-		return UnitRevisionResult{}, fmt.Errorf("UNIT_REVISION_CORRUPT unit=%s goal=%s after=%d current=%d: the retained request no longer follows the newest attempt", record.Unit, record.Goal, retained.After, current)
+		return UnitRevisionResult{}, coded("UNIT_REVISION_CORRUPT", unitFacts(record.Unit, record.Goal, fmt.Sprintf("after=%d current=%d", retained.After, current)),
+			fmt.Errorf("the kept correction follows attempt %d, but the newest attempt is %d", retained.After, current))
 	}
 	if err := runner.admitRound(plan, retained.Brief, previous); err != nil {
 		return UnitRevisionResult{}, err

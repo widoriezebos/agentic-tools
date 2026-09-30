@@ -7,6 +7,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"errors"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
@@ -71,7 +72,7 @@ func ValidateMission(root, mission, leasePath string) error {
 		}
 	}
 	if !strings.Contains(command, tag) || int64(actualPgid) != pgid {
-		return fmt.Errorf("mission lease holder failed process identity proof")
+		return errors.New("the process holding the mission could not be identified")
 	}
 	return nil
 }

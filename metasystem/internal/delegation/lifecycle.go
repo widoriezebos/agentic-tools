@@ -235,7 +235,7 @@ func (l *Lifecycle) Run(ctx context.Context, request Request, argv []string) Res
 		if len(argv) > 0 {
 			name = argv[0]
 		}
-		fmt.Fprintf(s.stderr, "metasystem internal delegate %s: these arguments (%s) are not a form it takes; it is started by the delegate adapters and the dispatcher with the form they write; nothing was done\n", name, strings.Join(argv, " "))
+		fmt.Fprintf(s.stderr, "nothing was done: %s is started by the machinery, not by hand, and does not take (%s)\n", name, strings.Join(argv, " "))
 	}
 	if s.trap != nil {
 		trap := s.trap

@@ -189,7 +189,7 @@ func (runner *UnitRunner) Advance(request UnitRequest) (UnitResult, error) {
 	}
 	if request.FollowUp != "" {
 		if record.MaxRounds > 0 && len(record.Rounds) >= record.MaxRounds {
-			return UnitResult{}, fmt.Errorf("UNIT_ROUND_LIMIT unit=%s goal=%s run=%s rounds=%d limit=%d: the approved review-round limit is reached; a further round needs a larger approved box", record.Unit, record.Goal, record.ID, len(record.Rounds), record.MaxRounds)
+			return UnitResult{}, roundLimit(record, len(record.Rounds))
 		}
 		if err := admitFollowUp(record, request.FollowUp); err != nil {
 			return UnitResult{}, err
@@ -221,7 +221,7 @@ func (runner *UnitRunner) admitRound(plan UnitPlan, buildBrief string, previous 
 		return err
 	}
 	if err := runner.Manager.admit(spec, settings); err != nil {
-		if !strings.HasPrefix(err.Error(), "LAUNCH_BUILD_OVERSIZE") {
+		if ErrorCode(err) != "LAUNCH_BUILD_OVERSIZE" {
 			return err
 		}
 		units, _, sizeErr := buildSize(spec)
@@ -259,7 +259,8 @@ func (runner *UnitRunner) requireGoalBranch(plan UnitPlan) error {
 	if branch == required {
 		return nil
 	}
-	err := fmt.Errorf("LAUNCH_UNIT_GOAL_BRANCH_REQUIRED worktree=%q branch=%q required=%q", plan.Worktree, branch, required)
+	err := coded("LAUNCH_UNIT_GOAL_BRANCH_REQUIRED", fmt.Sprintf("worktree=%q branch=%q required=%q", plan.Worktree, branch, required),
+		fmt.Errorf("%s is on %s, and work on goal %s is built on its branch %s", plan.Worktree, branch, plan.Goal, required))
 	_ = runner.Manager.Store.AppendRefusal(Refusal{Time: runner.Manager.Now().UTC().Format(time.RFC3339Nano), Code: "LAUNCH_UNIT_GOAL_BRANCH_REQUIRED", Kind: "build", Goal: plan.Goal, Tag: plan.Unit})
 	return err
 }
@@ -443,7 +444,7 @@ func (runner *UnitRunner) driver(record *UnitRunRecord, round *UnitRound) stepDr
 		before: func(spec StartSpec) error {
 			if runner.BeforeModelLaunch != nil && (spec.Kind == "build" || spec.Kind == "read") {
 				if err := runner.BeforeModelLaunch(*record, spec); err != nil {
-					return fmt.Errorf("UNIT_LAUNCH_UNAUTHORIZED unit=%s goal=%s run=%s: %w", record.Unit, record.Goal, record.ID, err)
+					return coded("UNIT_LAUNCH_UNAUTHORIZED", unitFacts(record.Unit, record.Goal, "run="+record.ID), fmt.Errorf("unit %s may not start a launch: %w", record.Unit, err))
 				}
 			}
 			if runner.named != nil {
@@ -476,7 +477,8 @@ func (runner *UnitRunner) ensureBuildSteps(record *UnitRunRecord, round *UnitRou
 	steps := make([]UnitStep, 0, len(groups))
 	for index, group := range groups {
 		if group.OverCap {
-			return 0, fmt.Errorf("LAUNCH_BUILD_OVERSIZE unit=%s size=%d cap=%d", strings.Join(group.Units, ","), group.Size, settings.BuildLinesCap)
+			return 0, coded("LAUNCH_BUILD_OVERSIZE", fmt.Sprintf("unit=%s size=%d cap=%d", strings.Join(group.Units, ","), group.Size, settings.BuildLinesCap),
+				fmt.Errorf("unit %s is %d lines, over the %d-line limit of one build; split it into smaller units", strings.Join(group.Units, ","), group.Size, settings.BuildLinesCap))
 		}
 		name, stepBrief := "build", brief
 		if len(groups) > 1 {
@@ -793,11 +795,11 @@ func (runner *UnitRunner) snapshotRepository(worktree string) (repositorySnapsho
 
 func proofMayStart(round UnitRound, buildCount int) error {
 	if buildCount == 0 || len(round.Steps) < buildCount {
-		return fmt.Errorf("proof requires every build launch to be completed")
+		return errors.New("the checks start only after every build step has passed")
 	}
 	for index := 0; index < buildCount; index++ {
 		if !strings.HasPrefix(round.Steps[index].Name, "build") || round.Steps[index].State != StepPassed {
-			return fmt.Errorf("proof requires every build launch to be completed")
+			return errors.New("the checks start only after every build step has passed")
 		}
 	}
 	return nil
@@ -805,11 +807,11 @@ func proofMayStart(round UnitRound, buildCount int) error {
 
 func admitFollowUp(run UnitRunRecord, path string) error {
 	if run.State != "awaiting-judgement" {
-		return fmt.Errorf("UNIT_RUN_NOT_AWAITING state=%s", run.State)
+		return coded("UNIT_RUN_NOT_AWAITING", "state="+string(run.State), fmt.Errorf("the work is %s, not waiting for judgement, so it takes no follow-up", run.State))
 	}
 	info, err := os.Stat(path)
 	if err != nil || info.Size() == 0 {
-		return fmt.Errorf("UNIT_FOLLOW_UP_MISSING")
+		return coded("UNIT_FOLLOW_UP_MISSING", "", fmt.Errorf("the follow-up brief %s is missing or empty", path))
 	}
 	return nil
 }
@@ -875,9 +877,9 @@ func (runner *UnitRunner) lock(id string) (*os.File, error) {
 			return nil, err
 		}
 		if !lock.Busy(err) {
-			return nil, fmt.Errorf("UNIT_LOCK_FAILED run=%s: %w", id, err)
+			return nil, coded("UNIT_LOCK_FAILED", "run="+id, fmt.Errorf("run %s cannot be locked for this command: %w", id, err))
 		}
-		return nil, fmt.Errorf("UNIT_RUN_BUSY")
+		return nil, coded("UNIT_RUN_BUSY", "run="+id, errors.New("another command is advancing this work; run the same command again to follow it"))
 	}
 	return held.File(), nil
 }
@@ -916,24 +918,24 @@ func prepareReadOutputDirectories(outputs []string) error {
 		// recorded identity always names it (Round D3).
 		if owner, ok := diskstore.UnitReadFindingsOwner(directory); ok {
 			if err := diskstore.PrepareTempStore(context.Background(), directory, diskstore.UnitReadFindingsClass, owner); err != nil {
-				return fmt.Errorf("UNIT_READ_OUTPUT_UNSAFE directory=%s: %w", directory, err)
+				return coded("UNIT_READ_OUTPUT_UNSAFE", "directory="+directory, fmt.Errorf("the read's output directory %s cannot be made private: %w", directory, err))
 			}
 			continue
 		}
 		if _, err := os.Lstat(directory); err == nil {
 			continue
 		} else if !errors.Is(err, fs.ErrNotExist) {
-			return fmt.Errorf("UNIT_READ_OUTPUT_UNSAFE directory=%s: %w", directory, err)
+			return coded("UNIT_READ_OUTPUT_UNSAFE", "directory="+directory, fmt.Errorf("the read's output directory %s cannot be made private: %w", directory, err))
 		}
 		if err := os.MkdirAll(directory, 0o700); err != nil {
-			return fmt.Errorf("UNIT_READ_OUTPUT_UNSAFE directory=%s: %w", directory, err)
+			return coded("UNIT_READ_OUTPUT_UNSAFE", "directory="+directory, fmt.Errorf("the read's output directory %s cannot be made private: %w", directory, err))
 		}
 		info, err := os.Lstat(directory)
 		if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-			return fmt.Errorf("UNIT_READ_OUTPUT_UNSAFE directory=%s: not a private directory", directory)
+			return coded("UNIT_READ_OUTPUT_UNSAFE", "directory="+directory, fmt.Errorf("the read's output directory %s is not private to this user", directory))
 		}
 		if owner, ok := info.Sys().(*syscall.Stat_t); !ok || int(owner.Uid) != os.Getuid() || info.Mode().Perm()&0o077 != 0 {
-			return fmt.Errorf("UNIT_READ_OUTPUT_UNSAFE directory=%s: not a private directory of this user", directory)
+			return coded("UNIT_READ_OUTPUT_UNSAFE", "directory="+directory, fmt.Errorf("the read's output directory %s belongs to another user", directory))
 		}
 	}
 	return nil

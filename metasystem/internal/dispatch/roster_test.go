@@ -65,7 +65,7 @@ func TestResolveRosterDecisions(t *testing.T) {
 			conf: []string{rosterBase,
 				"role.default.runtime=codex", "role.default.model.codex=<model>"},
 			params:  RosterParams{Role: "steward-continuation"},
-			refusal: "role steward-continuation resolves to codex:<model>, a template placeholder from role.default.model.codex; set it with: metasystem settings set role.default.model.codex <the codex model this seat runs>, which writes ",
+			refusal: "\nrun: metasystem settings set role.default.model.codex <the codex model this seat runs>",
 		},
 		{
 			name: "a template placeholder from the role's own model refuses by that key",
@@ -73,7 +73,7 @@ func TestResolveRosterDecisions(t *testing.T) {
 				"role.default.runtime=codex", "role.default.model.codex=gpt-5.6",
 				"role.implementer.runtime=claude", "role.implementer.model.claude=<model>"},
 			params:  RosterParams{Role: "implementer"},
-			refusal: "a template placeholder from role.implementer.model.claude; set it with: metasystem settings set role.implementer.model.claude <the claude model this seat runs>, which writes ",
+			refusal: "\nrun: metasystem settings set role.implementer.model.claude <the claude model this seat runs>",
 		},
 		{
 			name: "main roster cannot be dispatched",
@@ -242,7 +242,7 @@ func TestResolveRosterDecisions(t *testing.T) {
 				"role.implementer.model.codex=gpt-5.6",
 				"model.tier.1=claude:sonnet", "model.tier.3=codex:gpt-5.6"},
 			params:  RosterParams{Role: "implementer", RuntimeOverride: "codex"},
-			refusal: "model tiers must be contiguous from 1: found index 3 where 2 was expected",
+			refusal: "model tiers must count up from 1 without a gap: tier 3 was found where 2 belongs",
 		},
 	}
 	for _, c := range cases {

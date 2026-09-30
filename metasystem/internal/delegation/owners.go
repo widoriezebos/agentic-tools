@@ -127,7 +127,7 @@ func (o ownerLease) Authorize(inv Invocation, mode AuthorityMode, job string) er
 	}
 	classification, err := lease.ClassifyVerb(o.root, inv.CallerPid)
 	if err != nil {
-		return fmt.Errorf("control-plane write refused: caller classification failed: %w", err)
+		return fmt.Errorf("nothing was written: who is asking cannot be told: %w", err)
 	}
 	encoded, err := json.Marshal(classification)
 	if err != nil {
@@ -149,7 +149,7 @@ func (o ownerSteward) AuthorizeDispatch(inv Invocation, intent string) (steward.
 		return steward.DispatchAuthorization{}, err
 	}
 	if classification.Class != lease.ClassSteward {
-		return steward.DispatchAuthorization{}, fmt.Errorf("caller is %s, not the steward; the continuation mode admits exactly one caller", classification.Class)
+		return steward.DispatchAuthorization{}, errors.New("only the steward may continue this work, and this process is not the steward")
 	}
 	return steward.AuthorizeDispatch(o.root, intent)
 }

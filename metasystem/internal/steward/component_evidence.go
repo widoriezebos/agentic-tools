@@ -369,7 +369,7 @@ func completeComponentAttempt(repoRoot, component string, generation int, attemp
 		if !durable {
 			restoredDurably, restoreErr := writeComponentEvidence(repoRoot, path, pending)
 			if restoreErr != nil {
-				return ComponentEvidence{}, fmt.Errorf("component evidence %s OK promotion had unknown durability and its pending state could not be restored: %w", filepath.Base(path), restoreErr)
+				return ComponentEvidence{}, fmt.Errorf("component record %s may not have been saved as OK, and its earlier state could not be put back: %w", filepath.Base(path), restoreErr)
 			}
 			if restoredDurably {
 				_ = os.Remove(componentDurabilityPendingPath(repoRoot, component))

@@ -49,15 +49,15 @@ func TestGrantEndParsesTheEasyForms(t *testing.T) {
 	}
 	for _, c := range []struct{ forValue, until, needle string }{
 		{"", "", "--for 24h"},
-		{"24h", "18:00", "one of"},
+		{"24h", "18:00", "not both"},
 		{"8d", "", "latest"},
 		{"169h", "", "latest"},
 		{"", "2026-10-07", "latest"},
-		{"0h", "", "--for 24h"},
-		{"soon", "", "--for 24h"},
-		{"", "25:00", "--until 18:00"},
-		{"", "yesterday", "--until 18:00"},
-		{"", "2026-09-29", "after now"},
+		{"0h", "", "8h, 24h, 7d or 1w"},
+		{"soon", "", "8h, 24h, 7d or 1w"},
+		{"", "25:00", "like 18:00"},
+		{"", "yesterday", "like 18:00"},
+		{"", "2026-09-29", "already past"},
 	} {
 		if _, err := parseGrantEnd(now, zone, c.forValue, c.until); err == nil || !strings.Contains(err.Error(), c.needle) {
 			t.Errorf("--for %q --until %q = %v, want a refusal naming %q", c.forValue, c.until, err, c.needle)

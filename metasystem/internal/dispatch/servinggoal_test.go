@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 )
 
 // The projection resolves through the parser and refuses when no
@@ -16,7 +17,7 @@ import (
 func TestServingGoalResolvesAndRefuses(t *testing.T) {
 	root := t.TempDir()
 	store := &goal.Store{Root: root}
-	wantError := "no serving goal to project: a converted checkout serves this machine's claimed goal, a legacy checkout its Current goal"
+	wantError := "this checkout serves no goal: it has no claimed goal and no current goal"
 
 	// Absent: refuse.
 	if _, err := servingGoalSection(store.CurrentProjection); err == nil || err.Error() != wantError {
@@ -61,7 +62,7 @@ func TestResolveGoalRevisionUsesTheClaimBinding(t *testing.T) {
 
 	contradictory := newGoalAdmissionBed(t, 5)
 	if _, _, err := contradictory.revision("bounded"); err == nil ||
-		!strings.Contains(err.Error(), "BUDGET_UNKNOWN record=plans/goals/bounded.md") {
+		!strings.Contains(refusal.DetailOf(err), "BUDGET_UNKNOWN record=plans/goals/bounded.md") {
 		t.Fatalf("a nonexistent claimed revision did not name its exact authoritative goal file: %v", err)
 	}
 }

@@ -143,14 +143,14 @@ func TestSupBIneligibleRebuildsRefuseBeforeTouchingTheEnrollment(t *testing.T) {
 			git: func(bed rearmBed) []testgit.Expectation {
 				return []testgit.Expectation{rearmFailed(bed.root, 1, configArgs...)}
 			},
-			want: "the installation owns no remote-tracking landing ref (" + landingRefConfigKey + " is <unset>; expected refs/remotes/<remote>/<branch>)",
+			want: landingRefConfigKey + " is <unset>, not refs/remotes/<remote>/<branch>",
 		},
 		{
 			name: "unqualified landing ref",
 			git: func(bed rearmBed) []testgit.Expectation {
 				return []testgit.Expectation{rearmExpected(bed.root, "main\n", nil, configArgs...)}
 			},
-			want: "the installation owns no remote-tracking landing ref (" + landingRefConfigKey + " is main; expected refs/remotes/<remote>/<branch>)",
+			want: landingRefConfigKey + " is main, not refs/remotes/<remote>/<branch>",
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {

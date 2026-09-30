@@ -243,7 +243,7 @@ func ValidateDeclaration(ledger, machine, declaredBy, declaredAt string) error {
 func RegistryHome() (string, error) {
 	if override := os.Getenv("METASYSTEM_SUPERVISION_REGISTRY_HOME"); override != "" {
 		if !filepath.IsAbs(override) {
-			return "", fmt.Errorf("METASYSTEM_SUPERVISION_REGISTRY_HOME must name an absolute run-scoped home")
+			return "", fmt.Errorf("%s must be an absolute path of this run's own", "METASYSTEM_SUPERVISION_REGISTRY_HOME")
 		}
 		return filepath.Clean(override), nil
 	}
@@ -283,7 +283,7 @@ func Declare(options DeclareOptions) (Record, error) {
 	}
 	current := Read(checkout, options.LedgerIdentity)
 	if current.State == Declared {
-		return Record{}, fmt.Errorf("this checkout is already the brain of ledger %s, declared by %s at %s; withdraw it first: metasystem settings coordinator --withdraw --by <name> --repo %s", current.Record.Ledger, current.Record.DeclaredBy, current.Record.DeclaredAt, checkout)
+		return Record{}, fmt.Errorf("this checkout is already the coordinator, set by %s at %s\nto undo it, run: metasystem settings coordinator --withdraw --by %s --repo %s", current.Record.DeclaredBy, current.Record.DeclaredAt, current.Record.DeclaredBy, checkout)
 	}
 	if current.State == Corrupt {
 		return Record{}, errors.New(RemedialRefusal(current.Reason, checkout))
@@ -299,7 +299,7 @@ func Declare(options DeclareOptions) (Record, error) {
 		if other != "" && other != checkout {
 			otherState := Read(other, options.LedgerIdentity)
 			if otherState.State == Declared {
-				return Record{}, fmt.Errorf("this host already has a brain for ledger %s at %s; one brain per host per fleet; withdraw it there first", options.LedgerIdentity, other)
+				return Record{}, fmt.Errorf("this host already has a coordinator for this fleet, at %s; a host has one; withdraw it there first", other)
 			}
 		}
 	} else if !os.IsNotExist(readErr) {

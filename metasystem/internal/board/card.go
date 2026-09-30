@@ -38,7 +38,7 @@ const SchemaVersion = 1
 const registryHomeEnv = "METASYSTEM_SUPERVISION_REGISTRY_HOME"
 
 // enrollmentRemedy is the command that gives a seat a safe nickname.
-const enrollmentRemedy = "git config metasystem.goal.machine NAME (one word of letters, digits, '.', '_' and '-')"
+const enrollmentRemedy = "git config metasystem.goal.machine <nickname> (one word of letters, digits, '.', '_' and '-')"
 
 // Stage is where a claimed goal stands.
 type Stage string
@@ -194,7 +194,7 @@ func checkName(kind, name string) error {
 	if SafeName(name) {
 		return nil
 	}
-	return fmt.Errorf("BOARD_NAME_UNSAFE: the %s %q is not one word of [A-Za-z0-9._-] and cannot name a board path; no card was written; enroll a safe nickname with: %s", kind, name, enrollmentRemedy)
+	return coded("BOARD_NAME_UNSAFE", kind+"="+name, fmt.Errorf("no card was written: the %s %q is not one word of letters, digits, '.', '_' and '-'\nenroll a safe nickname: %s", kind, name, enrollmentRemedy))
 }
 
 // privateDir makes dir a private directory: created 0700 when absent, a real
@@ -213,7 +213,7 @@ func privateDir(dir string) error {
 		return err
 	}
 	if !info.IsDir() || info.Mode()&fs.ModeSymlink != 0 {
-		return fmt.Errorf("BOARD_PATH_NOT_A_DIRECTORY: %s is not a directory (a symlink or a file stands there); no card was written; move it aside so the board can create its own directory", dir)
+		return notADirectory(dir)
 	}
 	if info.Mode().Perm()&0o077 != 0 {
 		return os.Chmod(dir, 0o700)
@@ -252,7 +252,7 @@ func boardDir(home string) (string, error) {
 		return "", err
 	}
 	if !info.IsDir() || info.Mode()&fs.ModeSymlink != 0 {
-		return "", fmt.Errorf("BOARD_PATH_NOT_A_DIRECTORY: %s is not a directory (a symlink or a file stands there); no card was written; move it aside so the board can create its own directory", home)
+		return "", notADirectory(home)
 	}
 	dir := home
 	for _, component := range []string{"host", "board"} {
@@ -515,4 +515,34 @@ func History(home, goal string) []StageSpan {
 	}
 	sort.SliceStable(spans, func(i, j int) bool { return spans[i].Since.Before(spans[j].Since) })
 	return spans
+}
+
+// notADirectory refuses a board path something else stands at.
+func notADirectory(path string) error {
+	return coded("BOARD_PATH_NOT_A_DIRECTORY", "path="+path,
+		fmt.Errorf("no card was written: %s is a file or symlink, not a directory; move it aside", path))
+}
+
+// boardUnreadable is the refusal of a board that cannot be read.
+func boardUnreadable(err error) error {
+	return coded("BOARD_UNREADABLE", "", fmt.Errorf("the host's message board cannot be read: %w", err))
+}
+
+// codedError is a board refusal: Error is the plain reason; the register code
+// and facts are its detail (it satisfies refusal.Coder, which the board may
+// not import).
+type codedError struct {
+	code, facts string
+	reason      error
+}
+
+func (e *codedError) Error() string       { return e.reason.Error() }
+func (e *codedError) Unwrap() error       { return e.reason }
+func (e *codedError) RefusalCode() string { return e.code }
+func (e *codedError) RefusalDetail() string {
+	return strings.TrimSpace(e.code+" "+e.facts) + ": " + e.reason.Error()
+}
+
+func coded(code, facts string, reason error) error {
+	return &codedError{code: code, facts: facts, reason: reason}
 }

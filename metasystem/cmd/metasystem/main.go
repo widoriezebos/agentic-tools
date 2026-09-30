@@ -246,6 +246,8 @@ func main() {
 	// A live general power of attorney makes the act of the main session
 	// holding the checkout's lease the granting person's (attorney_admits.go).
 	wireAttorneyAdmission()
+	// Their notices wait for the command's outcome (admission_notice.go).
+	processAdmissionNotices.arm()
 	os.Exit(dispatch(os.Args[1:]))
 }
 

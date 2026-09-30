@@ -76,7 +76,7 @@ func (runner *UnitRunner) ReviewSubject(id string, bind func(review UnitReview, 
 		return fmt.Errorf("unit run store is unavailable")
 	}
 	if _, err := runner.read(id); err != nil {
-		return fmt.Errorf("UNIT_RUN_UNKNOWN run=%s: %v", id, err)
+		return coded("UNIT_RUN_UNKNOWN", "run="+id, fmt.Errorf("there is no work run %s: %v", id, err))
 	}
 	lock, err := runner.lock(id)
 	if err != nil {
@@ -88,11 +88,12 @@ func (runner *UnitRunner) ReviewSubject(id string, bind func(review UnitReview, 
 		return err
 	}
 	if record.State != "awaiting-judgement" || len(record.Rounds) == 0 {
-		return fmt.Errorf("UNIT_REVIEW_NOT_READY run=%s state=%s: the round is still running", id, record.State)
+		return coded("UNIT_REVIEW_NOT_READY", "run="+id+" state="+string(record.State), fmt.Errorf("run %s is still running, so there is no result to review yet", id))
 	}
 	round := record.Rounds[len(record.Rounds)-1]
 	if !UnitReviewReadyOutcomes[round.Outcome] {
-		return fmt.Errorf("UNIT_REVIEW_NOT_READY run=%s round=%d outcome=%s: only a round whose proof passed and left the result unchanged is reviewed", id, round.Number, round.Outcome)
+		return coded("UNIT_REVIEW_NOT_READY", fmt.Sprintf("run=%s round=%d outcome=%s", id, round.Number, round.Outcome),
+			fmt.Errorf("attempt %d ended %s; only an attempt whose checks passed with the result unchanged is reviewed", round.Number, round.Outcome))
 	}
 	var after repositorySnapshot
 	data, err := os.ReadFile(filepath.Join(round.Directory, "proof-after.json"))
@@ -100,17 +101,17 @@ func (runner *UnitRunner) ReviewSubject(id string, bind func(review UnitReview, 
 		err = json.Unmarshal(data, &after)
 	}
 	if err != nil {
-		return fmt.Errorf("UNIT_REVIEW_NOT_READY run=%s round=%d: no retained result snapshot: %v", id, round.Number, err)
+		return coded("UNIT_REVIEW_NOT_READY", fmt.Sprintf("run=%s round=%d", id, round.Number), fmt.Errorf("the result of attempt %d was not kept, so it cannot be reviewed: %v", round.Number, err))
 	}
 	diff, err := os.ReadFile(filepath.Join(round.Directory, "worktree.diff"))
 	if err != nil {
-		return fmt.Errorf("UNIT_REVIEW_NOT_READY run=%s round=%d: no retained result diff: %v", id, round.Number, err)
+		return coded("UNIT_REVIEW_NOT_READY", fmt.Sprintf("run=%s round=%d", id, round.Number), fmt.Errorf("the changes of attempt %d were not kept, so they cannot be reviewed: %v", round.Number, err))
 	}
 	review := UnitReview{Record: record, Round: round, Head: strings.TrimSpace(after.Head), Result: after.Tree,
 		Diff: diff, DiffDigest: digestHex(diff), Legacy: after.Tree != "" && !strings.Contains(after.Tree, "\x00")}
 	plan, err := readUnitPlan(record.Plan, record.PlanDirectory)
 	if err != nil {
-		return fmt.Errorf("UNIT_REVIEW_NOT_READY run=%s: its plan is unreadable: %v", id, err)
+		return coded("UNIT_REVIEW_NOT_READY", "run="+id, fmt.Errorf("the plan of run %s cannot be read: %v", id, err))
 	}
 	review.BuildBrief, review.Base = plan.Build.Brief, plan.Base
 	for index := range record.Subjects {
@@ -122,7 +123,7 @@ func (runner *UnitRunner) ReviewSubject(id string, bind func(review UnitReview, 
 		}
 	}
 	if review.Subject != nil && review.Subject.DiffDigest != review.DiffDigest {
-		return fmt.Errorf("UNIT_RESULT_CHANGED run=%s round=%d: the retained result no longer matches its bound subject", id, round.Number)
+		return coded("UNIT_RESULT_CHANGED", fmt.Sprintf("run=%s round=%d", id, round.Number), fmt.Errorf("the kept result of attempt %d changed since it was recorded for review", round.Number))
 	}
 	retain := func(subject UnitSubject) error {
 		if subject.Round != round.Number {

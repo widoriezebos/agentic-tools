@@ -14,7 +14,7 @@ func TestReadWithoutDiffRefusesBeforeRecord(t *testing.T) {
 	m, _, _, _ := manager(t)
 	m.Supervisor = childStarter(m)
 	_, err := m.Start(StartSpec{ID: "unsized-read", Kind: "read", Brief: writeLaunchFile(t, "brief.md", "read\n"), WorkingDirectory: t.TempDir()})
-	if err == nil || !strings.HasPrefix(err.Error(), "LAUNCH_READ_UNSIZED") {
+	if err == nil || !strings.HasPrefix(ErrorDetail(err), "LAUNCH_READ_UNSIZED") {
 		t.Fatalf("error=%v", err)
 	}
 	if _, statErr := os.Stat(filepath.Join(m.Store.Root, "unsized-read")); !os.IsNotExist(statErr) {

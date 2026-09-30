@@ -2106,6 +2106,15 @@ func proveFixtureGoalAuthorityAt(name string, f *syncFlags, commandNow func(stri
 // proven to be; the remedy that follows it names system enroll.
 const personOnlyPrefix = "only a person may run this, and "
 
+// personOnlyError is that refusal: the plain words, and the proof's own
+// refusal kept for --verbose and for the remedy's reading.
+type personOnlyError struct{ cause error }
+
+func (e personOnlyError) Error() string {
+	return personOnlyPrefix + humanauthority.PlainReason(e.cause)
+}
+func (e personOnlyError) Unwrap() error { return e.cause }
+
 func proveGoalHumanAuthority(name string, f *syncFlags, prove goalAuthorityProver) (humanauthority.Proof, error) {
 	return proveGoalHumanAuthorityAt(name, f, prove, goalCommandNow)
 }
@@ -2130,12 +2139,12 @@ func proveGoalHumanAuthorityFor(caller ownercall.Process, name string, f *syncFl
 	}
 	callerPid, err := caller.ClassifiablePid(identity.KernelProber{})
 	if err != nil {
-		return humanauthority.Proof{}, fmt.Errorf("%s%s", personOnlyPrefix, humanauthority.PlainReason(err))
+		return humanauthority.Proof{}, personOnlyError{err}
 	}
 	proof, err := prove(f.root, callerPid, nil, f.temporaryWord, f.reviewBy, ancestryNow)
 	if err != nil {
 		if f.temporaryWord == "" && f.reviewBy == "" {
-			return humanauthority.Proof{}, fmt.Errorf("%s%s", personOnlyPrefix, humanauthority.PlainReason(err))
+			return humanauthority.Proof{}, personOnlyError{err}
 		}
 		return humanauthority.Proof{}, fmt.Errorf("goal %s could not bind its temporary recorded relay: %w", name, err)
 	}

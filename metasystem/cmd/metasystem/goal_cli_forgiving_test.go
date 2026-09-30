@@ -21,7 +21,7 @@ import (
 // family's two-line refusal:
 //
 //	family "goal budget: S" + "run: C"
-//	  public "metasystem goal budget: S" + "run: C" + "     (the goal owner's remedy)"
+//	  public "metasystem goal budget: S" + "run: C"
 //	family "goal budget: S" + "no command completes this: W"
 //	  public "metasystem goal budget: S" + "needed first: W"
 //
@@ -164,13 +164,13 @@ func gcliForgivingWords(t *testing.T, label, verb string, code int, stderr, sent
 }
 
 // gcliForgivingCommand asserts the public command refusal and returns the
-// printed remedy: the verb's sentence, "run: COMMAND" and the reason line.
+// printed remedy: the verb's sentence and "run: COMMAND".
 func gcliForgivingCommand(t *testing.T, label, verb string, code int, stderr string) []string {
 	t.Helper()
 	lines := gcliForgivingLines(stderr)
-	if code == 0 || len(lines) != 3 || !strings.HasPrefix(lines[0], "metasystem "+verb+": ") ||
-		!strings.HasPrefix(lines[1], "run: metasystem ") || lines[2] != "     (the goal owner's remedy)" {
-		t.Fatalf("%s did not print the three-line command refusal: code=%d stderr=%q", label, code, stderr)
+	if code == 0 || len(lines) != 2 || !strings.HasPrefix(lines[0], "metasystem "+verb+": ") ||
+		!strings.HasPrefix(lines[1], "run: metasystem ") {
+		t.Fatalf("%s did not print the two-line command refusal: code=%d stderr=%q", label, code, stderr)
 	}
 	return shellWords(strings.TrimPrefix(lines[1], "run: "))
 }
@@ -418,8 +418,8 @@ func TestGoalCLIForgivingBudgetStates(t *testing.T) {
 	// the listing as its next command (the family printed words only).
 	code, _, stderr = gcliForgivingPublic(bed, "goal", "budget", "absent-goal", "norm", "--by", "Wido", gcliForgivingFixture)
 	lines := gcliForgivingLines(stderr)
-	if code == 0 || len(lines) != 3 || lines[0] != "metasystem goal budget: no goal absent-goal on the accepted ledger; nothing was done" ||
-		lines[1] != "run: metasystem goal list --all" {
+	if code == 0 || len(lines) != 2 || lines[0] != "metasystem goal budget: no goal absent-goal on the accepted ledger; nothing was done" ||
+		lines[1] != "run: metasystem goal list --all  (list the goals by id)" {
 		t.Fatalf("absent-goal did not refuse as an unknown goal: code=%d stderr=%q", code, stderr)
 	}
 	if bed.tip() != tip {
@@ -641,7 +641,7 @@ func TestGoalCLIForgivingHumanRefusals(t *testing.T) {
 	code, _, stderr = gcliForgivingPublic(bed, "goal", "budget", "fixture-pair", "norm", "--by", "Wido", gcliForgivingFixture,
 		"--temporary-human-word", "Wido authorizes this relay", "--review-by", "2026-09-06")
 	lines = gcliForgivingLines(stderr)
-	if code == 0 || len(lines) != 3 || lines[0] != "metasystem goal budget: goal budget fixture authority does not combine with a temporary human word or review date." ||
+	if code == 0 || len(lines) != 2 || lines[0] != "metasystem goal budget: goal budget fixture authority does not combine with a temporary human word or review date." ||
 		!strings.HasPrefix(lines[1], "run: metasystem goal budget ") || bed.tip() != tip {
 		t.Fatalf("fixture and temporary authority did not print the dropped-pair command: code=%d stderr=%q", code, stderr)
 	}
@@ -774,12 +774,13 @@ func TestGoalCLIForgivingHumanRefusals(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(jobs, "fixture-risk.json"), []byte(gcliForgivingRiskJob+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	// The public accept-risk refuses the pair with words only.
+	// The public accept-risk refuses the pair with its reason alone: repeating
+	// the act would not resolve it, and enrolling a terminal would not either.
 	code, _, stderr = gcliForgivingPublic(bed, "goal", "accept-risk", "ship-widget", "--finding", "RISK-1", "--review", "fixture-risk", "--reason", "fixture pair",
 		"--by", "Wido", gcliForgivingFixture, "--temporary-human-word", "Wido authorizes this relay")
-	gcliForgivingWords(t, "the public accept-risk pair", "goal accept-risk", code, stderr,
-		"metasystem goal accept-risk is a person's act, and goal accept-risk fixture authority does not combine with a temporary human word or review date",
-		humanauthority.PersonActRemedy("metasystem goal accept-risk"))
+	if want := "metasystem goal accept-risk: goal accept-risk fixture authority does not combine with a temporary human word or review date, so nothing was done\n"; code == 0 || stderr != want {
+		t.Fatalf("the public accept-risk pair = %d %q, want %q", code, stderr, want)
+	}
 	if bed.tip() != tip {
 		t.Fatal("a refused accept-risk published")
 	}
@@ -812,8 +813,9 @@ func TestGoalCLIForgivingHumanRefusals(t *testing.T) {
 	// prints its own usage as the command, where the family printed words.
 	code, _, stderr = gcliForgivingPublic(bed, "system", "enroll")
 	lines = gcliForgivingLines(stderr)
-	if code == 0 || len(lines) != 3 || lines[0] != "metasystem system enroll: enroll needs your name: --name NAME; nothing was done" ||
-		lines[1] != "run: metasystem system enroll --name NAME" {
+	// The name is filled in: the helm holder's, else this account's.
+	if code == 0 || len(lines) != 2 || lines[0] != "metasystem system enroll: enroll needs your name; nothing was done" ||
+		!strings.HasPrefix(lines[1], "run: metasystem system enroll --name ") || strings.Contains(lines[1], "--name NAME") {
 		t.Fatalf("enroll without a name: code=%d stderr=%q", code, stderr)
 	}
 	if bed.tip() != tip {

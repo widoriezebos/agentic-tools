@@ -152,13 +152,17 @@ func TestGrantEverythingRefusals(t *testing.T) {
 		{"--acts", "approve", "--tiers", "1", "--for", "24h"},
 	} {
 		code, result := b.runJSON(b.owners(), append([]string{"grant", "add"}, args...)...)
-		if code == 0 || result.Outcome != intentRefused || !strings.Contains(result.Summary+" "+result.Decision, "--for 24h") {
+		next := ""
+		if result.Next != nil {
+			next = strings.Join(result.Next.Argv, " ")
+		}
+		if code == 0 || result.Outcome != intentRefused || !strings.Contains(next, "--for 24h") && !strings.Contains(next, "--until") {
 			t.Errorf("%v = %d %+v", args, code, result)
 		}
 	}
 	fixture := b.owners()
 	fixture.prove = fixedFixtureGoalAuthority
-	if code, result := b.runJSON(fixture, "grant", "add", "--acts", "everything", "--for", "8h"); code == 0 || !strings.Contains(result.Summary, "enrolled terminal") {
+	if code, result := b.runJSON(fixture, "grant", "add", "--acts", "everything", "--for", "8h"); code == 0 || !strings.Contains(result.Summary, "this terminal isn't enrolled") {
 		t.Errorf("a fixture proof granted: %d %+v", code, result)
 	}
 	b.holder = lease.CurrentHolderView{}

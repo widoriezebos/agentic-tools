@@ -54,7 +54,7 @@ func TestSettingsRefuseAMalformedValue(t *testing.T) {
 			t.Fatal(err)
 		}
 		_, err := ResolveSettings(conf, func(string) (string, bool) { return "", false })
-		if err == nil || !strings.HasPrefix(err.Error(), "LAUNCH_SETTING_INVALID key="+test.refused) {
+		if err == nil || !strings.HasPrefix(ErrorDetail(err), "LAUNCH_SETTING_INVALID key="+test.refused) {
 			t.Fatalf("%q error=%v", test.content, err)
 		}
 	}

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 	"os"
 	"path/filepath"
 	"strings"
@@ -36,7 +37,7 @@ func TestRequireHolderRefusesNonHolderMain(t *testing.T) {
 		t.Fatalf("announce self: %v", err)
 	}
 	_, err := RequireHolder(root, self, nil)
-	if err == nil || !strings.Contains(err.Error(), "OWNED-ELSEWHERE") {
+	if err == nil || !strings.Contains(refusal.DetailOf(err), "OWNED-ELSEWHERE") {
 		t.Fatalf("a non-holder main must be refused OWNED-ELSEWHERE, got %v", err)
 	}
 }
@@ -118,7 +119,7 @@ func TestExpectedEpochMismatchRefused(t *testing.T) {
 	root := t.TempDir()
 	pid, _ := announceLiveChild(t, root) // holder at epoch 1
 	wrong := int64(2)
-	if _, err := RequireHolder(root, pid, &wrong); err == nil || !strings.Contains(err.Error(), "claim epoch changed") {
+	if _, err := RequireHolder(root, pid, &wrong); err == nil || !strings.Contains(err.Error(), "changed hands while this ran") {
 		t.Fatalf("gating the holder on the wrong epoch must refuse, got %v", err)
 	}
 	// The right epoch passes.

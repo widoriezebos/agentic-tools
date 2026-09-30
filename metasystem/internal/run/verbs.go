@@ -10,9 +10,11 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"errors"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/obligationstate"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 )
 
 // The verbs. Every mutation holds the runs lock for the whole operation;
@@ -64,7 +66,7 @@ func (s *Store) Launch(caller Caller, p LaunchParams) (nonce string, err error) 
 			return stoppedAt(s.Root, fence)
 		}
 		if p.FenceGeneration != nil && fence.Generation != *p.FenceGeneration {
-			return fmt.Errorf("stop fence generation changed from %d to %d before run launch", *p.FenceGeneration, fence.Generation)
+			return fmt.Errorf("the run was not launched: a stop was ordered since it was prepared (stop %d, now %d)", *p.FenceGeneration, fence.Generation)
 		}
 		if err := s.checkEpoch(caller); err != nil {
 			return err
@@ -327,14 +329,14 @@ func (s *Store) Adopt(caller Caller, id string, pid int64) (err error) {
 			return fmt.Errorf("adopt requires a running record; %s is %s", id, record.Status)
 		}
 		if record.Pid == nil {
-			return fmt.Errorf("adopt requires a bound old generation")
+			return errors.New("adopting a run needs the process it replaces")
 		}
 		if identity.AliveRef(s.prober(), identity.Ref{Pid: *record.Pid, StartedAtSec: *record.PidStartedAt,
 			StartTicks: record.PidStartTicks, BootID: record.BootID}) != identity.Dead {
-			return fmt.Errorf("adopt refused: the old generation's leader is not provably dead")
+			return errors.New("the run was not adopted: its old process may still be running")
 		}
 		if record.Pgid != nil && !s.groupEmpty(*record.Pgid) {
-			return fmt.Errorf("adopt refused: the old generation's group is not provably empty")
+			return errors.New("the run was not adopted: processes of its old run may still be running")
 		}
 		exact, state, _ := s.prober().Probe(pid)
 		if state != identity.Alive {
@@ -462,7 +464,7 @@ func (s *Store) refuseTerminalGovernedIDReuse(id string, existing *Record) error
 	}
 	attempt, record, err := obligationstate.FindRun(s.Root, id)
 	if err != nil {
-		return fmt.Errorf("BUDGET_UNKNOWN record=%s reason=%v", record, err)
+		return refusal.New("BUDGET_UNKNOWN", fmt.Sprintf("record=%s reason=%v", record, err), fmt.Errorf("the goal's budget cannot be worked out: %s cannot be read", record))
 	}
 	if attempt != nil {
 		return &TerminalGovernedRunIDReuseError{RunID: id, Record: record}

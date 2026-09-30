@@ -309,7 +309,7 @@ func reviewClosureBindingError(suppliedJob, criticRoot string, root map[string]a
 			round = fmt.Sprint(value)
 		}
 	}
-	return fmt.Errorf("review evidence job %s resolves to critic root %s closure round %s with invalid terminal-subject binding: %s", suppliedJob, criticRoot, round, detail)
+	return fmt.Errorf("review %s ends critique %s at round %s, but that round's subject is recorded wrongly: %s", suppliedJob, criticRoot, round, detail)
 }
 
 func reviewReferenceBinding(evidenceJob string, evidence map[string]any) (field, reviews string, err error) {
@@ -364,7 +364,7 @@ func requireClosedDesignCritique(state critiqueState, evidenceJob string) (strin
 		return "", nil, fmt.Errorf("design-critic root %s has no valid terminal round", criticRoot)
 	}
 	if foldedRound != terminalRound {
-		return "", nil, fmt.Errorf("design-critic root %s has not been folded through terminal round %d; its register is folded through round %d", criticRoot, terminalRound, foldedRound)
+		return "", nil, fmt.Errorf("design critique %s has findings recorded up to round %d, not yet its last round %d", criticRoot, foldedRound, terminalRound)
 	}
 	if open := openRegisterFindingIDs(register); len(open) > 0 {
 		return "", nil, fmt.Errorf("design-critic root %s has open or disputed finding identifiers: %s", criticRoot, strings.Join(open, ", "))
@@ -393,7 +393,7 @@ func requireDesignCritiquePairing(state critiqueState, reviewedRoot, criticRoot 
 		paired = pathOK && path == design
 	}
 	if !paired {
-		return fmt.Errorf("design-critic root %s names design %q but terminal work round %s has diffBoundary %v; expected exactly [%q]", criticRoot, design, final.job, result["diffBoundary"], design)
+		return fmt.Errorf("design critique %s is about %q, but the last work round %s changed %v", criticRoot, design, final.job, result["diffBoundary"])
 	}
 	return nil
 }
@@ -405,7 +405,7 @@ func requireDesignCritiqueTiming(criticRoot string, critic map[string]any, final
 		return fmt.Errorf("design-critic root %s has no valid terminal end time %q", criticRoot, criticEnded)
 	}
 	if endedAt.Before(final.endedAt) {
-		return fmt.Errorf("design-critic root %s ended at %s before final work round %s ended at %s; that final work round is unexamined and requires a later fresh design critique",
+		return fmt.Errorf("design critique %s ended (%s) before work round %s did (%s); that round needs a new critique",
 			criticRoot, criticEnded, final.job, final.endedAt.Format(time.RFC3339Nano))
 	}
 	return nil

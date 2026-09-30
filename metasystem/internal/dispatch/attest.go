@@ -3,6 +3,7 @@ package dispatch
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"regexp"
@@ -69,7 +70,7 @@ func CensusFresh(verdictPath, statePath, armHint, repoHint, expectedFingerprint 
 	generation, generationOK := numInt(value["generation"])
 	digest := asString(value["stateDigest"])
 	if !generationOK || generation < 1 || !hexDigest64.MatchString(digest) {
-		return fmt.Errorf("dispatch refused: census generation fields are invalid")
+		return errors.New("nothing was dispatched: the machinery's last health check is damaged; restart the machinery")
 	}
 	armedBytes, err := os.ReadFile(statePath)
 	if err != nil {
@@ -82,16 +83,16 @@ func CensusFresh(verdictPath, statePath, armHint, repoHint, expectedFingerprint 
 	armed, _ := armedDecoded.(map[string]any)
 	armedGeneration, armedOK := numInt(armed["generation"])
 	if !armedOK || armedGeneration < 1 {
-		return fmt.Errorf("dispatch refused: arming record generation is invalid")
+		return errors.New("nothing was dispatched: the record of the running machinery is damaged; restart the machinery")
 	}
 	if generation != armedGeneration {
 		// The arming-window transient: the one
 		// refusal that is safe to retry before a job record exists gets a
 		// TYPE, so callers branch on a contract instead of grepping the
-		// diagnostic's wording. The message bytes are unchanged.
+		// diagnostic's wording. The counters are a detail.
 		return ArmingWindowError{msg: fmt.Sprintf(
-			"dispatch refused: census verdict is stale (age=%ds window=%ds censusGeneration=%d armedGeneration=%d); retry in a moment; re-arm with %s --repo %s if supervision is dead",
-			age, window, generation, armedGeneration, armHint, repoHint)}
+			"nothing was dispatched: the machinery restarted after its health check %ds ago (limit %ds); try again in a moment\nif the machinery is stopped, run: %s --repo %s",
+			age, window, armHint, repoHint), detail: fmt.Sprintf("censusGeneration=%d armedGeneration=%d", generation, armedGeneration)}
 	}
 	armedDigest := sha256.Sum256(armedBytes)
 	if hex.EncodeToString(armedDigest[:]) != digest {
@@ -99,7 +100,7 @@ func CensusFresh(verdictPath, statePath, armHint, repoHint, expectedFingerprint 
 	}
 	if age >= window {
 		return fmt.Errorf(
-			"dispatch refused: census verdict is stale (age=%ds window=%ds); retry in a moment; re-arm with %s --repo %s if supervision is dead",
+			"nothing was dispatched: the machinery's health check is %ds old (limit %ds); try again in a moment\nif the machinery is stopped, run: %s --repo %s",
 			age, window, armHint, repoHint)
 	}
 	if expectedFingerprint != "" && asString(value["fingerprint"]) != expectedFingerprint {
@@ -154,6 +155,9 @@ func WatcherCeiling(statePath string, now time.Time) (int64, error) {
 // ArmingWindowError marks the between-arming-publication-and-census
 // transient: the only census refusal that is safe to retry before a job
 // record exists. The census-fresh verb surfaces it as exit code 9.
-type ArmingWindowError struct{ msg string }
+type ArmingWindowError struct{ msg, detail string }
 
 func (e ArmingWindowError) Error() string { return e.msg }
+
+// Detail is what --verbose adds: the census and arming counters that differ.
+func (e ArmingWindowError) Detail() string { return e.detail }

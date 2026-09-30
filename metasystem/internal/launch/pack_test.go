@@ -89,7 +89,7 @@ func TestPackCheckRefusesADriftedExcerpt(t *testing.T) {
 				spec.DiffFile = writeLaunchFile(t, "review.diff", "")
 			}
 			err := m.Admit(spec)
-			if err == nil || !strings.HasPrefix(err.Error(), "LAUNCH_BRIEF_PACK_DRIFTED") || !strings.Contains(err.Error(), "range=`") || !strings.Contains(err.Error(), row.want) {
+			if err == nil || !strings.HasPrefix(ErrorDetail(err), "LAUNCH_BRIEF_PACK_DRIFTED") || !strings.Contains(ErrorDetail(err), "range=`") || !strings.Contains(err.Error(), row.want) {
 				t.Fatalf("error=%v", err)
 			}
 		})
@@ -122,7 +122,7 @@ func TestPackCheckAdmitsAFilledBrief(t *testing.T) {
 	}
 	m.Settings = DefaultSettings()
 	m.Settings.BriefCap = 1
-	if err := m.Admit(StartSpec{Kind: "design", Brief: design, WorkingDirectory: directory}); err == nil || !strings.HasPrefix(err.Error(), "LAUNCH_BRIEF_OVERSIZE") {
+	if err := m.Admit(StartSpec{Kind: "design", Brief: design, WorkingDirectory: directory}); err == nil || !strings.HasPrefix(ErrorDetail(err), "LAUNCH_BRIEF_OVERSIZE") {
 		t.Fatalf("oversize filled design error=%v", err)
 	}
 }
@@ -216,7 +216,7 @@ func TestDesignAndReadLaunchesRunThePackCheck(t *testing.T) {
 		if kind == "read" {
 			spec.DiffFile = writeLaunchFile(t, "invalid.diff", "")
 		}
-		if err := m.Admit(spec); err == nil || !strings.HasPrefix(err.Error(), "LAUNCH_BRIEF_PACK_UNFILLED") {
+		if err := m.Admit(spec); err == nil || !strings.HasPrefix(ErrorDetail(err), "LAUNCH_BRIEF_PACK_UNFILLED") {
 			t.Fatalf("%s error=%v", kind, err)
 		}
 	}
@@ -244,7 +244,7 @@ func TestDesignTemplateCarriesRecurringFindings(t *testing.T) {
 	m, _, _, _ := manager(t)
 	m.Templates = nil
 	brief := writeLaunchFile(t, "brief.md", placeholder+"\n")
-	if err := m.Admit(StartSpec{Kind: "design", Brief: brief, WorkingDirectory: t.TempDir()}); err == nil || !strings.HasPrefix(err.Error(), "LAUNCH_BRIEF_PACK_UNFILLED") {
+	if err := m.Admit(StartSpec{Kind: "design", Brief: brief, WorkingDirectory: t.TempDir()}); err == nil || !strings.HasPrefix(ErrorDetail(err), "LAUNCH_BRIEF_PACK_UNFILLED") {
 		t.Fatalf("error=%v", err)
 	}
 }

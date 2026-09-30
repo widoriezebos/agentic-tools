@@ -283,7 +283,7 @@ func (w *Writer) Send(m *Message) error {
 		buffer = append(buffer, '\n')
 		if _, err := w.journal.Write(buffer); err != nil {
 			w.journalErr = err
-			return fmt.Errorf("acp: journal write failed before send: %w", err)
+			return fmt.Errorf("nothing was sent: the message could not be recorded first: %w", err)
 		}
 	}
 	_, err = w.w.Write(append(b, '\n'))

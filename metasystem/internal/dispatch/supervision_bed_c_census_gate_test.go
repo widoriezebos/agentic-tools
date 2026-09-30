@@ -80,7 +80,7 @@ func (gate supCGate) check(fingerprint string) error {
 	return CensusFresh(gate.verdict, gate.state, supCGateArm, supCGateRepo, fingerprint, supCGateNow)
 }
 
-var supCAgePattern = regexp.MustCompile(`age=[0-9]+s`)
+var supCAgePattern = regexp.MustCompile(` [0-9]+s (old|ago) `)
 
 // supCAssertStaleShape is the bed's assert_stale_shape: every stale refusal
 // names the age, the window, the retry remedy and the re-arm remedy.
@@ -90,9 +90,9 @@ func supCAssertStaleShape(t *testing.T, err error, window string) {
 		t.Fatal("stale census was accepted")
 	}
 	message := err.Error()
-	if !strings.Contains(message, "census verdict is stale") || !supCAgePattern.MatchString(message) ||
-		!strings.Contains(message, "window="+window+"s") || !strings.Contains(message, "retry in a moment") ||
-		!strings.Contains(message, "re-arm with metasystem system start --repo "+supCGateRepo+" if supervision is dead") {
+	if !strings.Contains(message, "nothing was dispatched") || !supCAgePattern.MatchString(message) ||
+		!strings.Contains(message, "(limit "+window+"s)") || !strings.Contains(message, "try again in a moment") ||
+		!strings.Contains(message, "\nif the machinery is stopped, run: metasystem system start --repo "+supCGateRepo) {
 		t.Fatalf("stale census refusal did not carry the common diagnostic shape: %q", message)
 	}
 }
@@ -129,7 +129,7 @@ func TestSupCCensusGateGenerationFailedAndFingerprint(t *testing.T) {
 	gate.writeState(t, 5)
 	err := gate.check("fp")
 	supCAssertStaleShape(t, err, "20")
-	if !strings.Contains(err.Error(), "censusGeneration=4") || !strings.Contains(err.Error(), "armedGeneration=5") {
+	if !strings.Contains(armingDetail(err), "censusGeneration=4") || !strings.Contains(armingDetail(err), "armedGeneration=5") {
 		t.Fatalf("generation-stale refusal did not name both generations: %v", err)
 	}
 	var armingWindow ArmingWindowError
@@ -176,4 +176,13 @@ func TestSupCJobRecordCarriesTheCensusJoinKey(t *testing.T) {
 			t.Fatalf("S4-10: cross-component owner asset is missing: %s (%v)", asset, err)
 		}
 	}
+}
+
+// armingDetail is an arming-window refusal's counters (what --verbose adds).
+func armingDetail(err error) string {
+	var window ArmingWindowError
+	if errors.As(err, &window) {
+		return window.Detail()
+	}
+	return ""
 }

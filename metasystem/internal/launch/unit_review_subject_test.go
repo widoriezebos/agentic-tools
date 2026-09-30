@@ -98,7 +98,7 @@ func TestReviewSubjectBindsTheLatestCompletedRound(t *testing.T) {
 		t.Fatal(err)
 	}
 	err = reviewer.ReviewSubject(first.Record.ID, reviewNotCalled(t))
-	if err == nil || !strings.Contains(err.Error(), "UNIT_RESULT_CHANGED") || !strings.Contains(err.Error(), "round=2") {
+	if err == nil || !strings.Contains(ErrorDetail(err), "UNIT_RESULT_CHANGED") || !strings.Contains(ErrorDetail(err), "round=2") {
 		t.Fatalf("err=%v", err)
 	}
 }
@@ -125,17 +125,17 @@ func TestReviewSubjectRefusesARoundThatIsNotReady(t *testing.T) {
 			prepare: func(fixture unitFixture) { fixture.starter.holdKind = "build" }},
 		{name: "proof-red", want: "outcome=proof-red", events: []string{"branch", "round"},
 			prepare: func(fixture unitFixture) { fixture.starter.failKind = "proof" }},
-		{name: "snapshot-missing", want: "no retained result snapshot", events: []string{"branch", "round"},
+		{name: "snapshot-missing", want: "result of attempt 1 was not kept", events: []string{"branch", "round"},
 			spoil: func(t *testing.T, fixture unitFixture, record UnitRunRecord) func() {
 				os.Remove(filepath.Join(record.Rounds[0].Directory, "proof-after.json"))
 				return nil
 			}},
-		{name: "diff-missing", want: "no retained result diff", events: []string{"branch", "round"},
+		{name: "diff-missing", want: "changes of attempt 1 were not kept", events: []string{"branch", "round"},
 			spoil: func(t *testing.T, fixture unitFixture, record UnitRunRecord) func() {
 				os.Remove(filepath.Join(record.Rounds[0].Directory, "worktree.diff"))
 				return nil
 			}},
-		{name: "plan-missing", want: "plan is unreadable", events: []string{"branch", "round"},
+		{name: "plan-missing", want: "cannot be read", events: []string{"branch", "round"},
 			spoil: func(t *testing.T, fixture unitFixture, record UnitRunRecord) func() {
 				os.Remove(record.Plan)
 				return nil
@@ -166,7 +166,7 @@ func TestReviewSubjectRefusesARoundThatIsNotReady(t *testing.T) {
 			}
 			before, _ := os.ReadFile(filepath.Join(fixture.runner.runDir(result.Record.ID), "run.json"))
 			err = fixture.runner.ReviewSubject(result.Record.ID, reviewNotCalled(t))
-			if err == nil || !strings.Contains(err.Error(), row.want) {
+			if err == nil || !strings.Contains(ErrorDetail(err), row.want) {
 				t.Fatalf("err=%v, want %s", err, row.want)
 			}
 			if after, _ := os.ReadFile(filepath.Join(fixture.runner.runDir(result.Record.ID), "run.json")); string(after) != string(before) {
@@ -219,12 +219,12 @@ func TestDeclaredUnitsReadThePagesUnitsTable(t *testing.T) {
 			t.Fatalf("unit=%s lines=%d err=%v, want %d", unit, got, err, lines)
 		}
 	}
-	if _, err := DeclaredUnitLines(page, "reader"); err == nil || !strings.Contains(err.Error(), "unit=reader missing=row") {
+	if _, err := DeclaredUnitLines(page, "reader"); err == nil || !strings.Contains(ErrorDetail(err), "unit=reader missing=row") {
 		t.Fatalf("err=%v", err)
 	}
 	prose := filepath.Join(directory, "prose.md")
 	writeFile(t, prose, "No table here.\n")
-	if _, err := DeclaredUnits(prose); err == nil || !strings.Contains(err.Error(), "missing=units-table") {
+	if _, err := DeclaredUnits(prose); err == nil || !strings.Contains(ErrorDetail(err), "missing=units-table") {
 		t.Fatalf("err=%v", err)
 	}
 	missing := filepath.Join(directory, "missing.md")

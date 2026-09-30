@@ -1159,7 +1159,7 @@ func handoffWithGoalReader(stateRoot string, caller HandoffCaller, record Handof
 		if err := cancelHandoffUnderLock(root, predecessor.Nonce, "superseded by "+nonce); err != nil {
 			_, statErr := os.Lstat(filepath.Join(intentsDir(root), predecessor.Nonce+".json"))
 			if os.IsNotExist(statErr) {
-				return result, fmt.Errorf("handoff %s was staged and predecessor %s is no longer live, but its cancellation did not finish durably: %w", nonce, predecessor.Nonce, err)
+				return result, fmt.Errorf("handoff %s is ready, but the earlier handoff %s could not be fully cancelled: %w", nonce, predecessor.Nonce, err)
 			}
 			if statErr == nil {
 				return result, fmt.Errorf("handoff %s was staged but predecessor %s remains live because supersession failed: %w", nonce, predecessor.Nonce, err)
@@ -1286,7 +1286,7 @@ func handoffCancelReason(stateRoot, root, nonce string, intent Intent, canceller
 		return "", fmt.Errorf("handoff %s cannot be cancelled by a human act: the checkout holder lease cannot be proved: %w", nonce, err)
 	}
 	if lease.HolderMainId != act.HolderMainId || lease.ClaimEpoch != act.ClaimEpoch {
-		return "", fmt.Errorf("handoff %s cannot be cancelled by a human act: the supplied holder coordinates do not match the current checkout lease", nonce)
+		return "", fmt.Errorf("handoff %s was not cancelled: the holder you named does not hold this checkout now", nonce)
 	}
 	// Rule H1: a person may cancel a handoff an earlier holder recorded.
 	// Which session recorded it is bookkeeping, not damage; the act is

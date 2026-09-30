@@ -138,12 +138,12 @@ func readOwnedLandingRefWithDeps(deps rearmResolverDeps, installationRoot string
 		if shown == "" {
 			shown = "<unset>"
 		}
-		return "", fmt.Errorf("the installation owns no remote-tracking landing ref (%s is %s; expected refs/remotes/<remote>/<branch>)", landingRefConfigKey, shown)
+		return "", fmt.Errorf("%w: %s is %s, not refs/remotes/<remote>/<branch>", ErrNoLandingRef, landingRefConfigKey, shown)
 	}
 	tail := strings.TrimPrefix(value, "refs/remotes/")
 	remote, branch, qualified := strings.Cut(tail, "/")
 	if tail == value || !qualified || remote == "" || branch == "" {
-		return "", fmt.Errorf("the installation owns no remote-tracking landing ref (%s is %s; expected refs/remotes/<remote>/<branch>)", landingRefConfigKey, value)
+		return "", fmt.Errorf("%w: %s is %s, not refs/remotes/<remote>/<branch>", ErrNoLandingRef, landingRefConfigKey, value)
 	}
 	if _, err := deps.resolvingRef(installationRoot, value); err != nil {
 		message := fmt.Sprintf("the installation owns no resolving remote-tracking landing ref (%s is %s)", landingRefConfigKey, value)
@@ -738,3 +738,7 @@ func archivedEngineDigestAtCommitWithClock(ctx context.Context, installationRoot
 	}
 	return digestArchivedTree(ctx, toplevel, archiveSpec, policy, clock, seconds)
 }
+
+// ErrNoLandingRef is a re-arm refusal because the installation names no
+// remote branch to land on; up turns it into the git config command.
+var ErrNoLandingRef = errors.New("no remote landing branch is set")

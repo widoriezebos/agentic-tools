@@ -45,7 +45,7 @@ func BlockingReservedCap(agentsDir string, ceiling int64) (ReservedCapBlocker, b
 func BlockingReservedCapAt(agentsDir, metasystemRoot string, ceiling int64) (ReservedCapBlocker, bool, error) {
 	if os.Getenv("METASYSTEM_FAKE_PROCESS_IDENTITY_FILE") != "" {
 		if config.ConfValue(filepath.Join(metasystemRoot, "metasystem.conf"), "metasystem.runtimes", "") != "fake" {
-			return ReservedCapBlocker{}, false, fmt.Errorf("METASYSTEM_FAKE_PROCESS_IDENTITY_FILE is set but metasystem.runtimes is not fake")
+			return ReservedCapBlocker{}, false, fmt.Errorf("%s is set, but metasystem.runtimes is not fake", "METASYSTEM_FAKE_PROCESS_IDENTITY_FILE")
 		}
 	}
 	reserved := map[string]int64{}

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
@@ -475,8 +476,8 @@ func (inv *intentInvocation) actingAs(verb, target string, actor intentActor) ([
 	agent := inv.input.has("lineage") || inv.owners.dependencies.ownerLineage != nil && inv.owners.dependencies.ownerLineage() != ""
 	if typed != "" && actor == actorAgent {
 		return nil, nil, &intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(target),
-			Summary:  fmt.Sprintf("%s is the claim holder's own act and takes no --by; nothing was done", verb),
-			Decision: "the session holding the goal runs it, acting in its own name"}
+			Summary: fmt.Sprintf("%s is done by the session holding the goal, not by a named person; nothing was done", verb),
+			next:    withoutOption(inv.typedArgv(), "by"), nextReason: "from the session that holds the goal"}
 	}
 	stopping := actor == actorEitherStopping
 	if stopping {
@@ -485,8 +486,9 @@ func (inv *intentInvocation) actingAs(verb, target string, actor intentActor) ([
 	if typed == "" && (actor == actorAgent || actor == actorEither && agent) {
 		if !agent {
 			return nil, nil, &intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(target),
-				Summary:  "cannot tell which session acts: no --lineage and no METASYSTEM_OWNER_LINEAGE; nothing was done",
-				Decision: "the session holding the work passes its own lineage with --lineage LINEAGE (a session is started with metasystem session start)"}
+				Summary: "no session is named, so nothing was done",
+				next:    append(inv.typedArgv(), "--lineage", "LINEAGE"), nextReason: "as the session that holds the work",
+				Details: []string{"a session's launcher names it in METASYSTEM_OWNER_LINEAGE; metasystem session start prepares one"}}
 		}
 		return args, nil, nil
 	}
@@ -499,33 +501,30 @@ func (inv *intentInvocation) actingAs(verb, target string, actor intentActor) ([
 	case flags.temporaryWord != "":
 		// A recorded relayed word names the person it relays.
 		if typed == "" {
-			err = fmt.Errorf("a relayed word names its person with --by")
+			return nil, nil, &intentResult{Outcome: intentRefused, code: 1, Targets: inv.targets(target),
+				Summary: "a relayed word needs the name of the person whose word it is, so nothing was done",
+				next:    append(inv.typedArgv(), "--by", "NAME"), nextReason: "with the name of the person whose word it is"}
 		}
 		flags.by = typed
 	default:
 		if err = resolveGoalHuman(flags, proof); err == nil && typed != "" && typed != flags.by {
-			err, mismatch = fmt.Errorf("--by %s is not the person enrolled at this terminal", typed), true
+			mismatch = true
 		}
 	}
-	if err != nil && stopping && typed != "" && !mismatch && flags.temporaryWord == "" {
+	if mismatch {
+		return nil, nil, &intentResult{Outcome: intentRefused, code: 1, Targets: inv.targets(target),
+			Summary: fmt.Sprintf("this terminal is enrolled for %s, not %s, so nothing was done", flags.by, typed),
+			next:    withoutOption(inv.typedArgv(), "by"), nextReason: "the enrolled name is filled in"}
+	}
+	if err != nil && stopping && typed != "" && flags.temporaryWord == "" {
 		// The owner proves the terminal itself when the request is built.
 		return append(args, "--by", typed), nil, nil
 	}
 	if err != nil {
-		// In the words the caller typed: the public command, who may run
-		// it, and the plain reason this shell is not that actor.
-		public := "metasystem " + inv.command.name
-		reason := strings.TrimPrefix(humanauthority.PlainReason(err), personOnlyPrefix)
-		summary := fmt.Sprintf("%s is a person's act, and %s; nothing was done", public, reason)
-		decision := humanauthority.PersonActRemedy(public)
 		if actor == actorEither && typed == "" {
-			summary = fmt.Sprintf("cannot tell who runs %s: %s, and no agent session is named; nothing was done", public, reason)
-			decision = humanauthority.PersonActRemedy(public) + "; an agent runs it from the session its launcher started, which names itself in METASYSTEM_OWNER_LINEAGE, or passes --lineage LINEAGE"
+			return nil, nil, inv.eitherRefusal(target, err, stopping)
 		}
-		if stopping && typed == "" {
-			decision = "a person names themself with --by NAME at a terminal no agent started, or: " + humanauthority.PersonActRemedy(public) + "; an agent passes --lineage LINEAGE"
-		}
-		return nil, nil, &intentResult{Outcome: intentRefused, code: 1, Targets: inv.targets(target), Summary: summary, Decision: decision}
+		return nil, nil, inv.personRefusal(target, err, typed)
 	}
 	return append(args, "--by", flags.by), &proof, nil
 }
@@ -1554,7 +1553,10 @@ func runIntentGrant(inv *intentInvocation) int {
 		return runIntentGrantEverything(inv)
 	}
 	if inv.input.has("for") {
-		return inv.refuse("", "--for goes with --acts everything; a scoped grant ends with --until YYYY-MM-DD; nothing was done", grantEndExamples)
+		tomorrow := time.Now().AddDate(0, 0, 1).Format("2006-01-02")
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "a grant of named acts ends on a date (--until), not after --for; nothing was done",
+			next: append(withoutOption(inv.typedArgv(), "for"), "--until", tomorrow), nextReason: "--for is for --acts everything",
+			Details: []string{grantEndExamples}})
 	}
 	var missing []string
 	for _, name := range []string{"tiers", "acts", "until"} {
@@ -1573,7 +1575,9 @@ func runIntentGrant(inv *intentInvocation) int {
 		}
 		verb, known := grantActs[act]
 		if !known {
-			return inv.refuse("", fmt.Sprintf("%s is not an act a power of attorney covers; they are approve, budget and resume-parked; nothing was done", shellCommand([]string{act})), "")
+			return inv.render(intentResult{Outcome: intentRefused, code: 2,
+				Summary: fmt.Sprintf("%s isn't an act a grant covers; nothing was done", shellCommand([]string{act})),
+				next:    append(withoutOption(inv.typedArgv(), "acts"), "--acts", "approve,budget,resume-parked"), nextReason: "keep the acts you mean"})
 		}
 		if !slices.Contains(verbs, verb) {
 			verbs = append(verbs, verb)
@@ -1588,7 +1592,10 @@ func runIntentGrant(inv *intentInvocation) int {
 	}
 	if proof != nil && proof.Helm != nil && proof.Helm.Grant != "" {
 		_ = humanauthority.RecordAttorneyRefusal(inv.stateRoot, *proof, "grant add", "a grant is added only by the person's own proof", proof.CheckedAt)
-		return inv.refuse("", "a power of attorney is added only by the person's own proof, never under a grant; nothing was done", humanauthority.PersonActRemedy("metasystem grant add"))
+		refusal := inv.personRefusal("", proof.WalkRefusal(), "")
+		refusal.code = 2
+		refusal.Details = append(refusal.Details, "a grant is added only by the person, never under another grant ("+proof.Helm.Grant+")")
+		return inv.render(*refusal)
 	}
 	args := append([]string{"--root", inv.stateRoot, "--tiers", inv.input.text("tiers"), "--verbs", strings.Join(verbs, ","), "--expires", inv.input.text("until")}, actor...)
 	report := &ownerReport{}
@@ -1613,7 +1620,8 @@ func runIntentRevoke(inv *intentInvocation) int {
 	entry := inv.input.text("grant")
 	if len(inv.input.args) > 0 {
 		if entry != "" && entry != inv.input.args[0] {
-			return inv.refuse("", "names two grants; nothing was done", "name the grant once")
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "two different grants are named; nothing was done",
+				next: withoutOption(inv.typedArgv(), "grant"), nextReason: "name the grant once"})
 		}
 		entry = inv.input.args[0]
 	}

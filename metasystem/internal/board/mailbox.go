@@ -681,7 +681,7 @@ func Pending(home, self string, claims func() (Ownership, error), now time.Time)
 	}
 	own, malformed, err := listMailboxReporting(mailboxDir(home, Address{Machine: self}))
 	if err != nil {
-		return inbox, fmt.Errorf("BOARD_UNREADABLE: %w", err)
+		return inbox, boardUnreadable(err)
 	}
 	inbox.Malformed = append(inbox.Malformed, malformed...)
 	for _, message := range own {
@@ -691,14 +691,14 @@ func Pending(home, self string, claims func() (Ownership, error), now time.Time)
 	}
 	goals, err := goalMailboxes(home)
 	if err != nil {
-		return inbox, fmt.Errorf("BOARD_UNREADABLE: %w", err)
+		return inbox, boardUnreadable(err)
 	}
 	candidates := map[string][]Message{}
 	var replies map[string]bool
 	for _, goal := range goals {
 		messages, malformed, err := listMailboxReporting(mailboxDir(home, Address{Goal: goal}))
 		if err != nil {
-			return inbox, fmt.Errorf("BOARD_UNREADABLE: %w", err)
+			return inbox, boardUnreadable(err)
 		}
 		inbox.Malformed = append(inbox.Malformed, malformed...)
 		for _, message := range messages {
@@ -964,7 +964,7 @@ func lockGoalHandover(home, goal string, wait time.Duration, now func() time.Tim
 			if held == "" {
 				held = "a process that left no pid"
 			}
-			return nil, fmt.Errorf("goal %s's claim is being read by a peer-message offer (%s) for longer than %s, so the claim was not moved; run the handover again, and stop that process if it hangs", goal, held, wait)
+			return nil, fmt.Errorf("goal %s was not handed over: a message delivery (%s) held its claim over %s; try again", goal, held, wait)
 		}
 		sleep(100 * time.Millisecond)
 	}
@@ -1080,7 +1080,7 @@ func Count(home, self string, claims func() (Ownership, error), now time.Time) (
 	var counts Counts
 	threads, err := Threads(home)
 	if err != nil {
-		return counts, fmt.Errorf("BOARD_UNREADABLE: %w", err)
+		return counts, boardUnreadable(err)
 	}
 	var owners *Ownership
 	read := false
@@ -1149,7 +1149,7 @@ func Lookup(home, id string) (Message, error) {
 	}
 	threads, err := Threads(home)
 	if err != nil {
-		return Message{}, fmt.Errorf("BOARD_UNREADABLE: %w", err)
+		return Message{}, boardUnreadable(err)
 	}
 	var found []Message
 	for _, thread := range threads {

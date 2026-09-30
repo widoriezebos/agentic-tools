@@ -36,25 +36,25 @@ func (inv *intentInvocation) reviewUnit(run string) intentResult {
 	if err == nil {
 		return result
 	}
-	message := err.Error()
+	message, detail := err.Error(), launch.ErrorDetail(err)
 	switch {
-	case strings.HasPrefix(message, "UNIT_RUN_BUSY"):
-		return intentResult{Targets: targets, Outcome: intentInProgress, code: 3, Summary: message,
+	case launch.IsCode(err, "UNIT_RUN_BUSY"):
+		return intentResult{Targets: targets, Details: []string{detail}, Outcome: intentInProgress, code: 3, Summary: message,
 			next: inv.sameCommand(), nextReason: "another call holds this run; the same command continues it"}
-	case strings.HasPrefix(message, "UNIT_RUN_UNKNOWN"):
-		return intentResult{Targets: targets, Outcome: intentRefused, code: 2, Summary: message}
-	case strings.HasPrefix(message, "UNIT_REVIEW_NOT_READY") && strings.Contains(message, "still running"):
+	case launch.IsCode(err, "UNIT_RUN_UNKNOWN"):
+		return intentResult{Targets: targets, Details: []string{detail}, Outcome: intentRefused, code: 2, Summary: message}
+	case launch.IsCode(err, "UNIT_REVIEW_NOT_READY") && strings.Contains(message, "still running"):
 		record, _ := runner.Status(run)
 		record.ID = run
-		return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: message + "; nothing was committed",
+		return intentResult{Targets: targets, Details: []string{detail}, Outcome: intentRefused, code: 1, Summary: message + "; nothing was committed",
 			next: inv.workArgv(record, "wait"), nextReason: "the attempt must finish before its result is committed"}
-	case strings.HasPrefix(message, "UNIT_REVIEW_NOT_READY"):
+	case launch.IsCode(err, "UNIT_REVIEW_NOT_READY"):
 		record, _ := runner.Status(run)
 		record.ID = run
-		return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: message + "; nothing was committed",
+		return intentResult{Targets: targets, Details: []string{detail}, Outcome: intentRefused, code: 1, Summary: message + "; nothing was committed",
 			next: inv.workArgv(record, "revise", "--after", strconv.Itoa(len(record.Rounds)), "--brief", "FILE"), nextReason: "correct the attempt; a correction brief starts one new attempt"}
 	}
-	return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: message + "; nothing was committed"}
+	return intentResult{Targets: targets, Details: []string{detail}, Outcome: intentRefused, code: 1, Summary: message + "; nothing was committed"}
 }
 
 func splitNUL(data []byte) []string {

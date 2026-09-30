@@ -43,7 +43,7 @@ func AuthorizeDispatch(repo, nonce string) (DispatchAuthorization, error) {
 		return DispatchAuthorization{}, err
 	}
 	if it.RepoIdentity != installed.RepoIdentity || it.InstallGen != installed.Generation {
-		return DispatchAuthorization{}, fmt.Errorf("the authorization was minted under installation generation %d of %q; the current installation is generation %d of %q — a superseded authorization launches nothing",
+		return DispatchAuthorization{}, fmt.Errorf("nothing was launched: the engine was reinstalled since this was approved\n(install %d of %q, now %d of %q)",
 			it.InstallGen, it.RepoIdentity, installed.Generation, installed.RepoIdentity)
 	}
 	return DispatchAuthorization{

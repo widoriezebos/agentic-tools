@@ -102,7 +102,7 @@ func TestSupCShutdownRefusesAForeignOwnerLock(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err = ShutdownAt(root, root, root, "metasystem-supervision-owner-test-", 1)
-	if err == nil || !strings.Contains(err.Error(), "another repository") {
+	if err == nil || !strings.Contains(err.Error(), "does not belong to") {
 		t.Fatalf("shutdown accepted a lock armed for another repository: %v", err)
 	}
 	read, err := ReadArmingOwner(root)

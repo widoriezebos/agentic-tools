@@ -69,7 +69,7 @@ func TestConfigurationIndependentChannelVerbs(t *testing.T) {
 		t.Fatal(err)
 	}
 	var stdout, stderr bytes.Buffer
-	if code := channelWaitWith(int64(os.Getpid()), "", &stdout, &stderr, []string{"--root", root, "--question", q.ID}, nil); code != 67 || !strings.Contains(stderr.String(), "no ledgerCursor") {
+	if code := channelWaitWith(int64(os.Getpid()), "", &stdout, &stderr, []string{"--root", root, "--question", q.ID}, nil); code != 67 || !strings.Contains(stderr.String(), "no recorded position to wait from") {
 		t.Fatalf("legacy cursor-less question was not refused: code=%d stderr=%q", code, stderr.String())
 	}
 	if code, err := channel.TOTPCode("JBSWY3DPEHPK3PXP", time.Unix(59, 0)); err != nil || strings.TrimSpace(code) == "" {
@@ -144,7 +144,7 @@ func TestWaitChannelAnswer(t *testing.T) {
 	code, _, problem = captureChannelOutput(t, func(stdout, stderr io.Writer) int {
 		return runChannelWaitWithMachine([]string{"--root", root, "--question", legacy.ID}, resolveMachine, stdout, stderr)
 	})
-	if code != 67 || !strings.Contains(problem, "no ledgerCursor") {
+	if code != 67 || !strings.Contains(problem, "no recorded position to wait from") {
 		t.Fatalf("legacy question code=%d stderr=%q", code, problem)
 	}
 	code, _, problem = captureChannelOutput(t, func(stdout, stderr io.Writer) int {

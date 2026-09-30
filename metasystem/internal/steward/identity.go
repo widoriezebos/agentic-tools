@@ -27,12 +27,12 @@ import (
 
 // ErrEnrollmentDrift marks a recovery refusal caused by changed, incomplete,
 // or missing enrolled engine bytes.
-var ErrEnrollmentDrift = errors.New("ENROLLMENT_DRIFT")
+var ErrEnrollmentDrift = errors.New("the enrolled engine changed or is missing")
 
 // ErrEngineRebuilt distinguishes changed bytes at the enrolled path from
 // every other enrollment failure. Verifiers refuse both; ordinary up may
 // resolve this one cause after proving the new bytes came from a landed tree.
-var ErrEngineRebuilt = errors.New("enrolled engine digest changed")
+var ErrEngineRebuilt = errors.New("the enrolled engine was rebuilt")
 
 const (
 	EnrollmentHumanTerminal = "human-terminal"
@@ -133,7 +133,7 @@ func MintIdentity(path string, id InstallIdentity) error {
 		return err
 	}
 	if !durable {
-		return fmt.Errorf("steward identity generation %d is visible but its durability is pending", id.Generation)
+		return fmt.Errorf("the steward's identity %d is written but not yet safely on disk", id.Generation)
 	}
 	return nil
 }
@@ -165,7 +165,7 @@ func VerifyIdentity(path, wantRepoIdentity string) (InstallIdentity, error) {
 		return id, fmt.Errorf("steward identity serves repository %q, not %q", id.RepoIdentity, wantRepoIdentity)
 	}
 	if id.Generation < 1 {
-		return id, fmt.Errorf("steward identity carries no valid generation")
+		return id, errors.New("the steward's identity has no valid install number")
 	}
 	switch id.Enrollment {
 	case "":
@@ -222,7 +222,7 @@ type enrolledBytes struct {
 
 func readEnrolledBytes(installed InstallIdentity) enrolledBytes {
 	if installed.InstallPath == "" || installed.InstallDigest == "" {
-		return enrolledBytes{Err: fmt.Errorf("%w: enrolled engine path or digest is absent", ErrEnrollmentDrift)}
+		return enrolledBytes{Err: fmt.Errorf("%w: its path or checksum is not recorded", ErrEnrollmentDrift)}
 	}
 	canonicalInstallPath := canonicalPath(installed.InstallPath)
 	if installed.InstallPath != canonicalInstallPath {

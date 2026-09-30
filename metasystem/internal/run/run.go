@@ -302,10 +302,10 @@ func (s *Store) checkEpoch(caller Caller) error {
 	}
 	current, ok := s.CurrentEpoch()
 	if !ok || current == nil {
-		return fmt.Errorf("cannot verify the lease epoch; refusing the mutation")
+		return errors.New("nothing was changed: whether this session still holds the checkout cannot be checked")
 	}
 	if *current != *caller.ClaimEpoch {
-		return fmt.Errorf("the caller's lease epoch %d is stale (current %d); refusing", *caller.ClaimEpoch, *current)
+		return fmt.Errorf("nothing was changed: the checkout changed hands since this session took it (claim %d, now %d)", *caller.ClaimEpoch, *current)
 	}
 	return nil
 }
@@ -457,7 +457,7 @@ func (s *Store) cas(id, expectStatus string, expectGeneration int, mutate func(*
 			"expected": fmt.Sprintf("%s.g%d", expectStatus, expectGeneration),
 			"found":    fmt.Sprintf("%s.g%d", record.Status, record.Generation),
 		})
-		return nil, fmt.Errorf("run %s is %s (generation %d), not %s (generation %d)",
+		return nil, fmt.Errorf("run %s is %s (record %d), not %s (record %d)",
 			id, record.Status, record.Generation, expectStatus, expectGeneration)
 	}
 	if err := mutate(record); err != nil {

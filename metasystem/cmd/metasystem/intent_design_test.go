@@ -134,7 +134,7 @@ func TestIntentDesignAuthorJourney(t *testing.T) {
 		t.Fatalf("show the kept proposal: %+v", shown)
 	}
 	if _, stale := designRun(t, bed, "design", "write", bed.id, "--brief", bed.brief("stale.md", "Stale.\n"), "--after", "1", "--out", document); stale.Outcome != intentRefused ||
-		!strings.Contains(stale.Summary, "DESIGN_ATTEMPT_STALE") {
+		!strings.Contains(strings.Join(stale.Details, "\n"), "DESIGN_ATTEMPT_STALE") {
 		t.Fatalf("stale after: %+v", stale)
 	}
 }

@@ -124,7 +124,7 @@ func TestVerifyStagedDigestsRefusesADriftedStateFile(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		want := "handoff state digest mismatch expected=" + fixture.binding.StateDigest + " found=" + testDigest(data)
+		want := "the handoff state changed since it was recorded (checksum " + fixture.binding.StateDigest + ", now " + testDigest(data) + ")"
 		if err := VerifyStagedDigests(root, it); err == nil || !strings.Contains(err.Error(), want) {
 			t.Fatalf("valid JSON state tampering must refuse with %q: %v", want, err)
 		}

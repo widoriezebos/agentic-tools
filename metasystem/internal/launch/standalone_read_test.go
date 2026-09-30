@@ -281,7 +281,7 @@ func TestStandaloneReadReplayAndRecovery(t *testing.T) {
 	for _, retry := range []int{2, 7} {
 		request := fixture.request
 		request.Retry = retry
-		if _, err := fixture.runner.StartRead(request); err == nil || !strings.HasPrefix(err.Error(), "READ_RETRY_NOT_LATEST") {
+		if _, err := fixture.runner.StartRead(request); err == nil || !strings.HasPrefix(ErrorDetail(err), "READ_RETRY_NOT_LATEST") {
 			t.Fatalf("retry %d err=%v", retry, err)
 		}
 	}
@@ -301,7 +301,7 @@ func TestStandaloneReadReplayAndRecovery(t *testing.T) {
 	}
 	retry := fixture.request
 	retry.Retry = 1
-	if _, err := fixture.runner.StartRead(retry); err == nil || !strings.HasPrefix(err.Error(), "READ_RETRY_UNPROVEN") || !strings.Contains(err.Error(), stranded) {
+	if _, err := fixture.runner.StartRead(retry); err == nil || !strings.HasPrefix(ErrorDetail(err), "READ_RETRY_UNPROVEN") || !strings.Contains(ErrorDetail(err), stranded) {
 		t.Fatalf("claimed start retry err=%v", err)
 	}
 	if _, err := fixture.manager.Store.Update(stranded, func(record *Record) error {
@@ -310,7 +310,7 @@ func TestStandaloneReadReplayAndRecovery(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := fixture.runner.StartRead(retry); err == nil || !strings.HasPrefix(err.Error(), "READ_RETRY_UNPROVEN") {
+	if _, err := fixture.runner.StartRead(retry); err == nil || !strings.HasPrefix(ErrorDetail(err), "READ_RETRY_UNPROVEN") {
 		t.Fatalf("start inside the cap retry err=%v", err)
 	}
 	if shown, err := fixture.runner.InspectRead(first.Ref); err != nil || shown.Attempt.Number != 1 {
@@ -330,7 +330,7 @@ func TestStandaloneReadReplayAndRecovery(t *testing.T) {
 		t.Fatalf("stranded start not recovered: %+v", recovered)
 	}
 	processes := fixture.manager.Processes.(*fakeProcesses)
-	if _, err := fixture.manager.Supervise(stranded); err == nil || !strings.HasPrefix(err.Error(), "LAUNCH_ALREADY_SUPERVISED") || processes.command.Program != "" || processes.command.LogPath != "" {
+	if _, err := fixture.manager.Supervise(stranded); err == nil || !strings.HasPrefix(ErrorDetail(err), "LAUNCH_ALREADY_SUPERVISED") || processes.command.Program != "" || processes.command.LogPath != "" {
 		t.Fatalf("late supervisor err=%v command=%+v", err, processes.command)
 	}
 	launches = len(fixture.starter.ids)
@@ -342,7 +342,7 @@ func TestStandaloneReadReplayAndRecovery(t *testing.T) {
 	}
 	complete := retry
 	complete.Retry = 2
-	if _, err := fixture.runner.StartRead(complete); err == nil || !strings.HasPrefix(err.Error(), "READ_RETRY_COMPLETE") {
+	if _, err := fixture.runner.StartRead(complete); err == nil || !strings.HasPrefix(ErrorDetail(err), "READ_RETRY_COMPLETE") {
 		t.Fatalf("retry of a complete attempt err=%v", err)
 	}
 	// Changed source is a genuinely new request; the old frozen bytes stay.
@@ -363,7 +363,7 @@ func TestStandaloneReadReplayAndRecovery(t *testing.T) {
 	if err != nil || shown.Attempt.Number != 2 || !shown.Complete {
 		t.Fatalf("show=%+v err=%v", shown.Attempt, err)
 	}
-	if _, err := fixture.runner.InspectRead("read-000000000000000000000000"); err == nil || !strings.HasPrefix(err.Error(), "READ_REF_UNKNOWN") {
+	if _, err := fixture.runner.InspectRead("read-000000000000000000000000"); err == nil || !strings.HasPrefix(ErrorDetail(err), "READ_REF_UNKNOWN") {
 		t.Fatalf("unknown ref err=%v", err)
 	}
 }
@@ -389,7 +389,7 @@ func TestStandaloneReadStopEndsTheSequence(t *testing.T) {
 	}
 	retry := fixture.request
 	retry.Retry = 1
-	if _, err := fixture.runner.StartRead(retry); err == nil || !strings.HasPrefix(err.Error(), "READ_RETRY_RUNNING") {
+	if _, err := fixture.runner.StartRead(retry); err == nil || !strings.HasPrefix(ErrorDetail(err), "READ_RETRY_RUNNING") {
 		t.Fatalf("retry before proof err=%v", err)
 	}
 	waited, err := fixture.runner.AdvanceRead(started.Ref, 0)

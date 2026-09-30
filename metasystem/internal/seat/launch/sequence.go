@@ -702,7 +702,7 @@ func (s *Sequencer) enrollment(record *Record) (stepRun, error) {
 		words = "temporary enrollment, review due " + s.Request.ReviewBy
 	case s.Request.Resuming():
 		return stepRun{}, refuse(CodeWordRequired,
-			"this launch has to enroll %s and its record carries no signed-in enrollment; press Discard launch on the fleet page and launch it again, or resume it at a terminal with --temporary-human-word and --review-by", record.Machine)
+			"%s cannot be enrolled: this launch has no signed-in approval\npress Discard launch on the fleet page and launch it again", record.Machine)
 	}
 	if _, err := s.run(Command{Dir: install, Name: s.binary(record.Destination), Args: args, Budget: s.GitBudget}); err != nil {
 		return stepRun{}, err
@@ -769,7 +769,7 @@ func (s *Sequencer) presence(record *Record) (stepRun, error) {
 	enrolled, ok := s.Host.Enrolled(s.install(record.Destination))
 	if !ok {
 		return stepRun{}, refuse(CodeIdentityUnreadable,
-			"%s carries no identity enrolled for the engine installed there, so no presence record can be recognised as this machine's",
+			"%s has no enrolled engine identity, so its presence cannot be recognised",
 			s.install(record.Destination))
 	}
 	tick := s.cadence(record)

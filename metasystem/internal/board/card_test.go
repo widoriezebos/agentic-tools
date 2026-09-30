@@ -48,7 +48,7 @@ func TestBoardNamesAreConfinedAndPrivate(t *testing.T) {
 		{Seat: seatOf("m1b"), Goal: "a/b", Stage: StageBuild},
 	} {
 		err := WriteAt(home, card)
-		if err == nil || !strings.Contains(err.Error(), "BOARD_NAME_UNSAFE") || !strings.Contains(err.Error(), "git config metasystem.goal.machine NAME") {
+		if err == nil || !strings.Contains(err.(interface{ RefusalDetail() string }).RefusalDetail(), "BOARD_NAME_UNSAFE") || !strings.Contains(err.Error(), "git config metasystem.goal.machine <nickname>") {
 			t.Fatalf("WriteAt(%q/%q) = %v, want BOARD_NAME_UNSAFE with the enrollment remedy", card.Seat.Machine, card.Goal, err)
 		}
 	}
@@ -92,7 +92,7 @@ func TestBoardNamesAreConfinedAndPrivate(t *testing.T) {
 		t.Fatal(err)
 	}
 	err := WriteAt(home, Card{Seat: seatOf("m1c"), Goal: "goal-y", Stage: StageBuild, Writer: Writer{At: t0}})
-	if err == nil || !strings.Contains(err.Error(), "BOARD_PATH_NOT_A_DIRECTORY") {
+	if err == nil || !strings.Contains(err.(interface{ RefusalDetail() string }).RefusalDetail(), "BOARD_PATH_NOT_A_DIRECTORY") {
 		t.Fatalf("write through a symlinked seat directory = %v, want BOARD_PATH_NOT_A_DIRECTORY", err)
 	}
 	if entries, _ := os.ReadDir(target); len(entries) != 0 {

@@ -272,7 +272,7 @@ func TestAdvanceRefusesWhenCheckoutLocked(t *testing.T) {
 	t.Setenv("METASYSTEM_LEASE_LOCK_WAIT_SEC", "0")
 	err = Advance(f.root, "refs/remotes/origin/main", &bytes.Buffer{}, &bytes.Buffer{})
 	assertAdvanceRefusal(t, err, "advance-checkout-locked")
-	if !strings.Contains(err.Error(), "another lease-gated operation holds it") {
+	if !strings.Contains(err.Error(), "this checkout is busy: another command holds it") {
 		t.Fatalf("lock refusal changed its existing text: %v", err)
 	}
 	if got := runAdvanceGit(t, f.root, "rev-parse", "HEAD"); got != head {
@@ -293,7 +293,7 @@ func TestAdvanceRefusesCheckoutLockBeforeGit(t *testing.T) {
 		defer release()
 		err = Advance(root, "refs/remotes/origin/main", &bytes.Buffer{}, &bytes.Buffer{})
 		assertAdvanceRefusal(t, err, "advance-checkout-locked")
-		if !strings.Contains(err.Error(), "another lease-gated operation holds it") {
+		if !strings.Contains(err.Error(), "this checkout is busy: another command holds it") {
 			t.Fatalf("lock refusal changed its existing text: %v", err)
 		}
 		return

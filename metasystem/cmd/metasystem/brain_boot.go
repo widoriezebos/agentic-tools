@@ -548,7 +548,7 @@ func brainStartDelivered(root, repo, declarationSHA string, digestCursor int64, 
 		return fmt.Errorf("the delivery needs a root, a repository and a declaration")
 	}
 	if (digestCursor >= 0) != (digestPrefix != "") {
-		return fmt.Errorf("the delivery needs both digest delivery facts or neither")
+		return errors.New("the narrator summary delivery needs both its cursor and its prefix, or neither")
 	}
 	state := brain.Read(root, ledgerIdentity(root))
 	if state.State != brain.Declared || state.Record == nil {
@@ -566,7 +566,7 @@ func brainStartDelivered(root, repo, declarationSHA string, digestCursor int64, 
 	}
 	if digestCursor >= 0 {
 		if err := narratordigest.AdvanceWithLayoutReader(repo, digestCursor, digestPrefix, resolveLayout, "brain"); err != nil {
-			return fmt.Errorf("advance brain digest: %w", err)
+			return fmt.Errorf("the coordinator's narrator summary could not be advanced: %w", err)
 		}
 	}
 	return nil

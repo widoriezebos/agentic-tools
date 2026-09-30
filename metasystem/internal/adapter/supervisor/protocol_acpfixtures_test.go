@@ -155,7 +155,7 @@ func TestACPFixtureJournalCollisionRefused(t *testing.T) {
 	f := newACPFixture(t, "exec cat >/dev/null\n")
 	journal := filepath.Join(f.dir, "journal.log")
 	writeFile(t, journal, "")
-	if _, err := acp.RunFileTurn(context.Background(), f.config(journal)); err == nil || !strings.Contains(err.Error(), "journal create") {
+	if _, err := acp.RunFileTurn(context.Background(), f.config(journal)); err == nil || !strings.Contains(err.Error(), "record file could not be created") {
 		t.Fatalf("an existing journal must refuse: %v", err)
 	}
 	if data, _ := os.ReadFile(journal); len(data) != 0 {

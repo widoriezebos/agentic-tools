@@ -123,7 +123,7 @@ func RefuseUnsignedMissionCap(confPath, role, runtime, model, source string) err
 			return err
 		}
 		if origin == "conf-local" || origin == "env" {
-			return fmt.Errorf("mission dispatch refused: the mission fence is cap authority; unsigned %s key %s cannot set a mission cap", origin, key)
+			return fmt.Errorf("nothing was dispatched: only the mission's own fence sets its limit, not the %s setting %s", origin, key)
 		}
 	}
 	return nil
