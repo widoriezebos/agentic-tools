@@ -1,6 +1,6 @@
 # error-checks-use-typed-errors
 
-- State: parked
+- State: approved
 - Priority: 1
 - Sequence: 7
 - Risk: severity=1 novelty=1 exposure=1 accumulation=1 basis="In-process refactor with no process boundary; behaviour preserved; tests pin each decision; reverts cleanly"
@@ -9,13 +9,11 @@
 - Origin: main
 - Next step: Replace the 35 in-process error-text decision points (24 sites) inventoried in /Users/wido/LocalStorage/agentic-tools-evidence/structured-output-20260930/structured-output.md with typed errors; extend the static audit to refuse new ones. Priority 2 per Wido 2026-09-30 (D4)
 - OpenedAt: 2026-09-30T12:03:35Z
-- Revision: 7
-- BlockedBy: processes-read-structured-results
+- Revision: 8
 - Pinned: m1e
 - Budget: elapsedLimit=1h attemptLimit=3 reservedJobMinutesLimit=360 activeJobLimit=1 reviewRoundLimit=0
 - BudgetExceptions: 0
 - Approved: by=human:wido at=2026-09-30T18:19:50Z revision=6 opid=A7BVMSJ9XVTXGVWRZPYKWR8J7S-m1e-b6a4eb0a authority=proven digest=331f843dc150f1fd1d1917697844d2b79a1e0ff833e170785b732f57ef2f75bd episode=6
-- Parked: by=human:wido at=2026-09-30T12:03:35Z blocker=processes-read-structured-results because=blocked by processes-read-structured-results; returns when it is done
 
 History:
 - 2026-09-30T12:03:35Z JMRCDJGB10YRZKEABA5JT58418-m1e-b6a4eb0a open actor=human:wido targets=error-checks-use-typed-errors,processes-read-structured-results
@@ -25,4 +23,5 @@ History:
 - 2026-09-30T16:56:00Z BNF1HFA4GASJX5EKB56DQM1FPA-m1e-b6a4eb0a set-priority actor=human:wido targets=adoption-filled-delivery-passes-on-trunk,beds-run-under-the-oldest-supported-bash,brief-declares-the-round-boundary,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,delegate-sandbox-runs-the-beds,design-rounds-read-less-and-repeat-less,error-checks-use-typed-errors,every-round-gets-an-independent-read,evidence-and-build-output-have-retention-and-stay-unindexed,failures-show-observed-against-expected,fixture-runners-and-fakes-bound-their-own-life,fleet-doctor-repairs-what-stops-other-seats,follow-up-brief-cannot-cite-fresh-trunk-files,machinery-runs-unattended-on-codex,one-steward-per-checkout-on-its-own-root,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,receipt-writer-follows-the-worktree-it-runs-in,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,system-start-launches-your-agent,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror reason=priority-order subject=system-start-launches-your-agent from=1:6 to=1:7 requested-sequence=5
 - 2026-09-30T18:19:50Z A7BVMSJ9XVTXGVWRZPYKWR8J7S-m1e-b6a4eb0a approve actor=human:wido targets=error-checks-use-typed-errors
 - 2026-09-30T18:19:56Z NWE0V2SRYP5D7AF63RC7DPXRSQ-m1e-b6a4eb0a set-pin actor=human:wido targets=error-checks-use-typed-errors
-Integrity: sha256=b2d18595a7dacfdddce82c20385bb8f7f1dccb5f15aff600702b12f2fc30e124
+- 2026-09-30T18:20:06Z 2GQ24Q6P44VCMNFMQBHM5J4F00-m1e-b6a4eb0a unblock actor=human:wido targets=error-checks-use-typed-errors,processes-read-structured-results reason=blockedBy drops processes-read-structured-results; every remaining blocker is done and the park lifts
+Integrity: sha256=8c53e776af6c0528ca42188ef9c4ff44b4c52323a1624967f4a9a49fe56706e9
