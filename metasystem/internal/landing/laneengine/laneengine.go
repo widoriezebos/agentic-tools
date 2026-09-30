@@ -50,6 +50,7 @@ const (
 	CodeAdvanceBatchInFlight = "LANE_ENGINE_ADVANCE_BATCH_IN_FLIGHT"
 	CodeAdvanceCustodyLive   = "LANE_ENGINE_ADVANCE_CUSTODY_LIVE"
 	CodeAdvanceNotLanded     = "LANE_ENGINE_ADVANCE_NOT_LANDED"
+	CodeAdvanceRunnerDown    = "LANE_ENGINE_ADVANCE_RUNNER_DOWN"
 )
 
 // Refusal is a refusal a person or the landing agent reads: Message is line
@@ -77,10 +78,12 @@ type Identity struct {
 	Running      string
 }
 
-// runningExecutable is the file whose bytes this process runs. Where the
-// kernel names the running image itself (/proc/self/exe), that is read, so a
-// path replaced after exec cannot pass for the running engine; elsewhere the
-// path the process was started from.
+// runningExecutable is the file whose bytes this process runs. On Linux the
+// kernel names the running image itself (/proc/self/exe), so a path replaced
+// after exec cannot pass for the running engine. Elsewhere (macOS) it is the
+// path the process was started from: bytes replaced at that path after exec
+// are what is hashed, so there the guarantee is the path's content at the
+// check, not the running image's (a same-account residual risk, D6).
 func runningExecutable() (string, error) {
 	if info, err := os.Stat("/proc/self/exe"); err == nil && info.Mode().IsRegular() {
 		return "/proc/self/exe", nil

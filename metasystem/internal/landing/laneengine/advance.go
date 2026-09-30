@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/candidateengine"
@@ -39,17 +40,22 @@ type AdvanceOutcome struct {
 	PreviousGeneration, Generation int
 }
 
-// Conditions are the lane states an advance waits for. Each answers the
-// blocking thing in words, "" when it does not block; an error blocks too.
+// Conditions are the lane states an advance waits for, read under the locks
+// Hold takes. Each answers the blocking thing in words, "" when it does not
+// block; an error blocks too.
 type Conditions struct {
-	// Paused reads the person's pause under the host flock. An unreadable
-	// pause is paused (K2). Unit K-a's lane gate replaces it.
+	// Hold takes, without waiting, the host's proving lock (a test run
+	// holding it is live custody, K9; unit K-f's custody store extends it),
+	// then the host flock every gated operation reads the pause under (K2),
+	// and keeps both until release. The second check, the install and the
+	// re-arm all run inside one Hold, so no proof or begin starts on either
+	// engine while the engine changes.
+	Hold func() (release func(), err error)
+	// Paused reads the person's pause; it runs with the host flock already
+	// held. An unreadable pause is paused. Unit K-a's lane gate replaces it.
 	Paused func() (bool, error)
 	// BatchInFlight names a batch that has begun and not finished.
 	BatchInFlight func() (string, error)
-	// CustodyLive names a live or unknown execution custody (K9). Until unit
-	// K-f's custody store exists, the host's proving flock is the custody.
-	CustodyLive func() (string, error)
 }
 
 // Steps are the effects of an advance.
@@ -72,20 +78,37 @@ func pausePath(home string) string {
 	return filepath.Join(lane.HostDir(home), "landing-lane-paused.json")
 }
 
-// ProductionConditions reads the host's pause, the lane checkout's batch
-// records and the proving flock.
+// ProductionConditions holds the host's proving lock and flock, and reads the
+// host's pause and the lane checkout's batch records.
 func ProductionConditions(home, checkout string) Conditions {
 	return Conditions{
-		Paused: func() (bool, error) {
+		Hold: func() (func(), error) {
 			if err := os.MkdirAll(lane.HostDir(home), 0o700); err != nil {
-				return true, err
+				return nil, err
 			}
-			held, err := lock.File(lane.LockPath(home), 0o600, lock.Exclusive)
+			proving, err := lock.File(lane.ProvingPath(home), 0o600, lock.TryExclusive)
 			if err != nil {
-				return true, err
+				if lock.Busy(err) {
+					return nil, &Refusal{Code: CodeAdvanceCustodyLive, Message: "landing tests are still running, so the engine wasn't changed",
+						Argv:   []string{"metasystem", "landing", "engine", "advance"},
+						Detail: "a test run (" + lane.ProvingHolder(home) + ") holds the host's proving lock; run metasystem landing engine advance again once it ends"}
+				}
+				return nil, err
 			}
-			defer held.Release()
-			_, err = os.ReadFile(pausePath(home))
+			// The holder's pid, as lane.HoldProving writes it, so status
+			// names the advance as the holder.
+			if file := proving.File(); file.Truncate(0) == nil {
+				_, _ = file.WriteAt([]byte(strconv.Itoa(os.Getpid())+"\n"), 0)
+			}
+			host, err := lock.File(lane.LockPath(home), 0o600, lock.Exclusive)
+			if err != nil {
+				_ = proving.Release()
+				return nil, err
+			}
+			return func() { _ = host.Release(); _ = proving.Release() }, nil
+		},
+		Paused: func() (bool, error) {
+			_, err := os.ReadFile(pausePath(home))
 			if errors.Is(err, fs.ErrNotExist) {
 				return false, nil
 			}
@@ -104,13 +127,6 @@ func ProductionConditions(home, checkout string) Conditions {
 				}
 			}
 			return "", nil
-		},
-		CustodyLive: func() (string, error) {
-			holder, busy, err := lane.ProbeProving(home)
-			if err != nil || !busy {
-				return "", err
-			}
-			return "a test run (" + holder + ") holds the host's proving lock", nil
 		},
 	}
 }
@@ -150,7 +166,7 @@ func ProductionSteps(checkout, installation string) Steps {
 			defer cancel()
 			argv := candidateengine.DefaultBuildArgv(staging)
 			command := exec.CommandContext(ctx, argv[0], argv[1:]...)
-			command.Dir = installation
+			command.Dir, command.Env = installation, buildEnvironment(os.Environ())
 			var output bytes.Buffer
 			command.Stdout, command.Stderr = &output, &output
 			if err := command.Run(); err != nil {
@@ -168,10 +184,37 @@ func ProductionSteps(checkout, installation string) Steps {
 	}
 }
 
-// gate refuses while the lane is paused, a batch is in flight or custody is
-// live or unknown. It runs before the build and again immediately before the
-// installed engine changes.
-func gate(conditions Conditions, again []string) error {
+// buildEnvironment is the build's environment: the stamp is always the
+// commit the build classifies, never an inherited override.
+func buildEnvironment(environ []string) []string {
+	kept := make([]string, 0, len(environ))
+	for _, entry := range environ {
+		if !strings.HasPrefix(entry, "METASYSTEM_BUILD_STAMP=") {
+			kept = append(kept, entry)
+		}
+	}
+	return kept
+}
+
+// gate takes the Hold and refuses while the lane is paused, a batch is in
+// flight or custody is live or unknown. On success the caller owns release.
+func gate(conditions Conditions, again []string) (func(), error) {
+	release, err := conditions.Hold()
+	if err != nil {
+		if _, ok := err.(*Refusal); ok {
+			return nil, err
+		}
+		return nil, &Refusal{Code: CodeAdvanceCustodyLive, Message: "whether landing tests still run is unknown, so the engine wasn't changed",
+			Argv: again, Detail: err.Error()}
+	}
+	if err := check(conditions); err != nil {
+		release()
+		return nil, err
+	}
+	return release, nil
+}
+
+func check(conditions Conditions) error {
 	paused, err := conditions.Paused()
 	if paused || err != nil {
 		refusal := &Refusal{Code: CodeAdvancePaused, Message: "the landing lane is stopped, so its engine wasn't changed",
@@ -192,17 +235,25 @@ func gate(conditions Conditions, again []string) error {
 		}
 		return refusal
 	}
-	live, err := conditions.CustodyLive()
-	if live != "" || err != nil {
-		refusal := &Refusal{Code: CodeAdvanceCustodyLive, Message: "landing tests are still running, so the engine wasn't changed",
-			Argv: again, Detail: live + "; run metasystem landing engine advance again once it ends"}
-		if err != nil {
-			refusal.Message = "whether landing tests still run is unknown, so the engine wasn't changed"
-			refusal.Detail = err.Error()
-		}
-		return refusal
-	}
 	return nil
+}
+
+// leftovers removes what an earlier advance that died left beside the
+// enrolled engine: a staged build or a kept enrolled copy whose process no
+// longer runs. It runs under the Hold.
+func leftovers(dir string) {
+	for _, prefix := range []string{".metasystem.advance.", ".metasystem.enrolled."} {
+		paths, _ := filepath.Glob(filepath.Join(dir, prefix+"*"))
+		for _, path := range paths {
+			pid, err := strconv.Atoi(strings.TrimPrefix(filepath.Base(path), prefix))
+			if err != nil || pid <= 0 || pid == os.Getpid() {
+				continue
+			}
+			if errors.Is(syscall.Kill(pid, 0), syscall.ESRCH) {
+				_ = os.Remove(path)
+			}
+		}
+	}
 }
 
 // Advance moves the lane to the engine built from landed origin/main: the
@@ -216,9 +267,11 @@ func Advance(request AdvanceRequest, conditions Conditions, steps Steps) (Advanc
 	if enrolled.InstallPath == "" || enrolled.InstallDigest == "" {
 		return AdvanceOutcome{}, errors.New("the advance was not admitted by the lane's enrolled engine")
 	}
-	if err := gate(conditions, again); err != nil {
+	release, err := gate(conditions, again)
+	if err != nil {
 		return AdvanceOutcome{}, err
 	}
+	release()
 	main, err := steps.FetchMain()
 	if err != nil {
 		return AdvanceOutcome{}, fmt.Errorf("fetch landed main: %w", err)
@@ -255,9 +308,12 @@ func Advance(request AdvanceRequest, conditions Conditions, steps Steps) (Advanc
 			Argv:    []string{"git", "-C", request.Checkout, "status"},
 			Detail:  fmt.Sprintf("built stamp %q, landed main %s: the checkout's engine files differ from main", stamp, main)}
 	}
-	if err := gate(conditions, again); err != nil {
+	release, err = gate(conditions, again)
+	if err != nil {
 		return AdvanceOutcome{}, err
 	}
+	defer release()
+	leftovers(dir)
 	if err := os.Link(enrolled.InstallPath, saved); err != nil {
 		return AdvanceOutcome{}, fmt.Errorf("keep the enrolled engine while the new one is armed: %w", err)
 	}
@@ -270,12 +326,9 @@ func Advance(request AdvanceRequest, conditions Conditions, steps Steps) (Advanc
 		err = fmt.Errorf("the steward did not arm the landed engine (status %q)", rearmed.Status)
 	}
 	if err != nil {
-		if restoreErr := os.Rename(saved, enrolled.InstallPath); restoreErr != nil {
-			return AdvanceOutcome{}, fmt.Errorf("re-arm the landed engine: %w; restoring the enrolled engine failed too: %v", err, restoreErr)
-		}
-		return AdvanceOutcome{}, fmt.Errorf("re-arm the landed engine: %w; the enrolled engine is back in place", err)
+		return AdvanceOutcome{}, afterFailedReArm(request, enrolled, saved, rearmed, err)
 	}
-	outcome.Changed = true
+	outcome.Changed = rearmed.Status == "re-armed"
 	if rearmed.Generation > 0 {
 		outcome.Generation = rearmed.Generation
 	}
@@ -289,4 +342,30 @@ func readStamp(path string) (string, error) {
 	}
 	defer file.Close()
 	return enginebuild.ReadStamp(file)
+}
+
+// afterFailedReArm decides what a failed re-arm leaves. The old bytes go
+// back only while the enrollment still names them (the steward failed before
+// it wrote the new enrollment); once the enrollment names the new engine, the
+// new bytes stay, because restoring the old ones would leave an enrollment
+// that names bytes no longer installed.
+func afterFailedReArm(request AdvanceRequest, previous steward.InstallIdentity, saved string, rearmed steward.ReArmOutcome, cause error) error {
+	current, readErr := Enrollment(request.Installation)
+	if rearmed.Stage < steward.StageMinted && readErr == nil && current.InstallDigest == previous.InstallDigest {
+		if restoreErr := os.Rename(saved, previous.InstallPath); restoreErr != nil {
+			return fmt.Errorf("re-arm the landed engine: %w; restoring the enrolled engine failed too: %v", cause, restoreErr)
+		}
+		return fmt.Errorf("re-arm the landed engine: %w; the enrolled engine is back in place", cause)
+	}
+	detail := fmt.Sprintf("the steward re-arm failed after writing the new enrollment: %v", cause)
+	if readErr == nil {
+		detail = fmt.Sprintf("engine number %d from %s is enrolled and stays installed; its re-arm failed: %v",
+			current.Generation, current.EngineBuild, cause)
+	} else {
+		detail += "; the enrollment can't be read: " + readErr.Error()
+	}
+	return &Refusal{Code: CodeAdvanceRunnerDown,
+		Message: "the landing lane's new engine is enrolled but its steward didn't start",
+		Argv:    []string{"metasystem", "system", "start", "--repo", request.Checkout},
+		Detail:  detail + "; a person at a terminal no agent started runs metasystem system start"}
 }
