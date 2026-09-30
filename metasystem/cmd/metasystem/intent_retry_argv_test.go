@@ -2,6 +2,7 @@ package main
 
 import (
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -29,4 +30,10 @@ func TestTypedArgvLessDropsValueOptionsAndSwitches(t *testing.T) {
 	if got, want := bare.typedArgvWith("--reason", "TEXT"), []string{"metasystem", "goal", "claim", "--arc", "--reason", "TEXT"}; !slices.Equal(got, want) {
 		t.Fatalf("typedArgvWith = %q, want %q", got, want)
 	}
+}
+
+// resultWords is a result's line 1 and its details: where a refusal's code
+// and the owner's own account are read since codes left the default text.
+func resultWords(result intentResult) string {
+	return result.Summary + "\n" + strings.Join(result.Details, "\n")
 }

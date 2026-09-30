@@ -381,8 +381,8 @@ func runIntentWaitWork(inv *intentInvocation, id string) int {
 		names = append(names, one.Unit)
 	}
 	return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id), Data: map[string]any{"candidates": names},
-		Summary:  fmt.Sprintf("goal %s has %d running work items (%s); nothing was done", id, len(running), strings.Join(names, ", ")),
-		Decision: "name one: " + shellCommand(inv.publicArgv("work", "wait", id, "--work", names[0]))})
+		Summary: fmt.Sprintf("goal %s has %d running work items (%s); nothing was done", id, len(running), strings.Join(names, ", ")),
+		next:    inv.publicArgv("work", "wait", id, "--work", names[0]), nextReason: "or another of them"})
 }
 
 // goalQueuedToLand reports whether the goal waits in a landing slot.
@@ -747,21 +747,23 @@ func runIntentRevise(inv *intentInvocation) int {
 	}
 	if err != nil {
 		message := err.Error()
+		plain, details := unitRunnerAccount(message), []string{message}
 		switch {
 		case errors.Is(err, launch.ErrUnitRevisionStale):
-			return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: message + "; nothing was launched",
+			return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Details: details,
+				Summary:    "the correction follows an attempt that is no longer the newest; nothing was launched",
 				Data:       map[string]any{"current": revised.Current},
 				next:       inv.publicArgv("work", "revise", id, "--work", selected.Unit, "--after", fmt.Sprint(revised.Current), "--brief", inv.callerPath(inv.input.text("brief"))),
 				nextReason: "correct the newest attempt instead; this deliberately starts one new attempt"})
 		case strings.HasPrefix(message, "UNIT_REVISION_CONFLICT"):
-			return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: message + "; nothing was launched",
+			return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: plain + "; nothing was launched", Details: details,
 				next: inv.publicArgv("status", id, "--work", selected.Unit), nextReason: "the attempt that request created, and what it needs next"})
 		case strings.HasPrefix(message, "UNIT_RUN_NOT_AWAITING"):
-			return inv.render(intentResult{Outcome: intentInProgress, Targets: targets, Summary: message + "; nothing was launched",
+			return inv.render(intentResult{Outcome: intentInProgress, Targets: targets, Summary: plain + "; nothing was launched", Details: details,
 				next: inv.publicArgv("work", "wait", id, "--work", selected.Unit), nextReason: "wait for the running attempt to finish"})
 		case strings.HasPrefix(message, "UNIT_ROUND_LIMIT"):
-			return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: message + "; nothing was launched",
-				Decision: "a person gives the goal a larger box: metasystem goal budget " + id + " BOX"})
+			return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: plain + "; nothing was launched", Details: details,
+				next: inv.publicArgv("goal", "budget", id, "BOX"), nextReason: "a person gives the goal a larger budget, such as 1d/10/720m/1/5"})
 		}
 	}
 	outcome := inv.unitOutcome(runner, revised.UnitResult, err, targets, again)
@@ -793,8 +795,8 @@ func (inv *intentInvocation) uniqueExamination(id, verb string) (string, *intent
 	}
 	if len(examinations) != 1 {
 		return "", &intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id), Data: map[string]any{"candidates": examinations},
-			Summary:  fmt.Sprintf("goal %s's work records %d examinations (%s), so the finding's review is not unique; nothing was done", id, len(examinations), strings.Join(examinations, ", ")),
-			Decision: "name the review with --review R (" + verb + ")"}
+			Summary: fmt.Sprintf("goal %s has %d reviews (%s), so which one the finding belongs to is unclear; nothing was done", id, len(examinations), strings.Join(examinations, ", ")),
+			next:    inv.typedArgvWith("--review", firstOr(examinations, "REVIEW")), nextReason: "or another review it has"}
 	}
 	return examinations[0], nil
 }

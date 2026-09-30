@@ -73,13 +73,13 @@ func TestIntentNamedContinuationKeepsTheReservation(t *testing.T) {
 	restore := tamper(t, filepath.Join(inputs.(string), "build-brief.md"))
 	for _, args := range [][]string{{"work", "build", "run:" + run}, {"work", "wait", "run:" + run}} {
 		code, refused, _ := bed.work(args...)
-		if code != 1 || refused.Outcome != intentRefused || !strings.Contains(refused.Summary, "UNIT_NAMED_INPUT_CHANGED") || !strings.Contains(refused.Summary, "run="+run) {
+		if code != 1 || refused.Outcome != intentRefused || !strings.Contains(resultWords(refused), "UNIT_NAMED_INPUT_CHANGED") || !strings.Contains(resultWords(refused), "run="+run) {
 			t.Fatalf("%v after a retained input changed: code=%d %+v", args, code, refused)
 		}
 	}
 	restore()
 	bed.manager.Settings.BuildLinesCap++
-	if code, refused, _ := bed.work("work", "wait", "run:"+run); code != 1 || !strings.Contains(refused.Summary, "UNIT_NAMED_INPUT_CHANGED") {
+	if code, refused, _ := bed.work("work", "wait", "run:"+run); code != 1 || !strings.Contains(resultWords(refused), "UNIT_NAMED_INPUT_CHANGED") {
 		t.Fatalf("wait unit after a launch setting changed: code=%d %+v", code, refused)
 	}
 	bed.manager.Settings.BuildLinesCap--
@@ -94,7 +94,7 @@ func TestIntentNamedContinuationKeepsTheReservation(t *testing.T) {
 	launched = len(bed.starter.launched())
 	restore = tamper(t, filepath.Join(inputs.(string), "read-brief.md"))
 	followUp := bed.brief("follow-up.md", "Fix it.\n")
-	if code, refused, _ := bed.work("work", "revise", "run:"+run, "--brief", followUp); code != 1 || !strings.Contains(refused.Summary, "UNIT_NAMED_INPUT_CHANGED") || len(bed.starter.launched()) != launched {
+	if code, refused, _ := bed.work("work", "revise", "run:"+run, "--brief", followUp); code != 1 || !strings.Contains(resultWords(refused), "UNIT_NAMED_INPUT_CHANGED") || len(bed.starter.launched()) != launched {
 		t.Fatalf("fold after a retained input changed: code=%d %+v", code, refused)
 	}
 	restore()
@@ -110,7 +110,7 @@ func TestIntentNamedContinuationKeepsTheReservation(t *testing.T) {
 	if code != 0 || resultData(t, result)["round"].(float64) != 2 || resultData(t, result)["maxRounds"].(float64) != 2 {
 		t.Fatalf("fold with its own brief: code=%d %+v", code, result)
 	}
-	if code, refused, _ := bed.work("work", "revise", "run:"+run, "--brief", followUp); code != 1 || !strings.Contains(refused.Summary, "UNIT_ROUND_LIMIT") {
+	if code, refused, _ := bed.work("work", "revise", "run:"+run, "--brief", followUp); code != 1 || !strings.Contains(resultWords(refused), "UNIT_ROUND_LIMIT") {
 		t.Fatalf("round past the limit: code=%d %+v", code, refused)
 	}
 

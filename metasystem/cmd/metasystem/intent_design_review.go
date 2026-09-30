@@ -493,6 +493,6 @@ func (inv *intentInvocation) collectDesignExamination(plan designReviewPlan, cha
 	}
 	data["template"], data["examination"] = template, chain.NewestRound
 	result.Data = data
-	result.Decision = fmt.Sprintf("decide every finding in %s, then run %s", template, shellCommand(append(inv.sameCommand(), "--dispositions", template)))
+	result.next, result.nextReason = append(inv.sameCommand(), "--dispositions", template), "after deciding every finding in "+template
 	return &result
 }

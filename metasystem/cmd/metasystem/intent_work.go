@@ -312,7 +312,8 @@ func intentWorkCommands() []intentCommand {
 			examples: []string{"metasystem test wait proof:20260925T101500Z-1a2b --timeout 10m"},
 			run: func(inv *intentInvocation) int {
 				if len(inv.input.args) != 1 {
-					return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "test wait needs the proof attempt: metasystem test wait proof:ID; nothing was done"})
+					return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "test wait needs the test run to wait on; nothing was done",
+						Decision: "nothing to wait on yet; metasystem test run prints the reference to wait on"})
 				}
 				ref, problem := inv.resolveWorkRef(inv.input.args[0], inv.command.accepts)
 				if problem != nil {
@@ -386,8 +387,8 @@ func (inv *intentInvocation) resolveLayout() *intentResult {
 	layout, err := inv.owners.resolver.ResolveLayout(path)
 	if err != nil {
 		return &intentResult{Outcome: intentRefused, code: 2,
-			Summary:  notAnInstallation(path, err),
-			Decision: "run this inside the repository, or name it with --repo PATH"}
+			Summary: notAnInstallation(path, err),
+			next:    append(inv.typedArgvLess("repo"), "--repo", "REPOSITORY"), nextReason: "REPOSITORY is a checkout MetaSystem is set up in; or run it inside one"}
 	}
 	inv.layout = layout
 	return nil
@@ -432,7 +433,8 @@ func runIntentBuild(inv *intentInvocation) int {
 			for _, conflicting := range []string{"lines", "model", "effort", "read-tool-calls", "work"} {
 				if inv.input.has(conflicting) {
 					return inv.render(intentResult{Outcome: intentRefused, code: 2,
-						Summary: fmt.Sprintf("work build %s continues a recorded run and takes no --%s; nothing was done", ref.qualified(), conflicting), Decision: "give the run alone"})
+						Summary: fmt.Sprintf("building %s continues a recorded run, which takes no --%s; nothing was done", ref.qualified(), conflicting),
+						next:    inv.publicArgv("work", "build", ref.qualified()), nextReason: "continues the run"})
 				}
 			}
 			runner := inv.unitRunner()
@@ -446,7 +448,8 @@ func runIntentBuild(inv *intentInvocation) int {
 				return inv.render(*inv.refusedKind(inv.input.args[0], kind))
 			}
 			return inv.render(intentResult{Outcome: intentRefused, code: 2,
-				Summary: fmt.Sprintf("work build %s continues a recorded run and takes no brief, proof or unit; nothing was done", inv.input.args[0]), Decision: "give the run alone"})
+				Summary: fmt.Sprintf("building %s continues a recorded run, which takes no brief, checks or work name; nothing was done", inv.input.args[0]),
+				next:    inv.publicArgv("work", "build", inv.input.args[0]), nextReason: "continues the run"})
 		}
 	}
 	return runIntentBuildUnit(inv)
@@ -456,18 +459,20 @@ func runIntentBuildPlan(inv *intentInvocation) int {
 	for _, conflicting := range []string{"brief", "check", "lines", "model", "effort", "read-tool-calls"} {
 		if inv.input.has(conflicting) {
 			return inv.render(intentResult{Outcome: intentRefused, code: 2,
-				Summary: fmt.Sprintf("--plan already holds the brief, size, read and proof; --%s is not taken with it; nothing was done", conflicting), Decision: "give the plan alone, or build from --brief and --check without --plan"})
+				Summary: fmt.Sprintf("--plan already holds the brief, size, review and checks, so --%s doesn't go with it; nothing was done", conflicting),
+				next:    inv.typedArgvLess(conflicting), nextReason: "builds from the plan alone"})
 		}
 	}
 	path := inv.callerPath(inv.input.text("plan"))
 	plan, err := launch.ReadUnitPlan(path)
 	if err != nil {
-		return inv.render(intentResult{Outcome: intentRefused, Summary: err.Error() + "; nothing was built", code: 1})
+		return inv.render(intentResult{Outcome: intentRefused, Summary: err.Error() + "; nothing was built", code: 1,
+			next: inv.sameCommand(), nextReason: "once --plan names a readable plan"})
 	}
 	if named := inv.input.args; len(named) > 0 && (named[0] != plan.Goal || len(named) > 1 && named[1] != plan.Unit) {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2,
-			Summary:  fmt.Sprintf("the plan is unit %s of goal %s, not %s; nothing was built", plan.Unit, plan.Goal, strings.Join(named, " ")),
-			Decision: "name the plan's goal and unit, or none"})
+			Summary: fmt.Sprintf("the plan is work %s of goal %s, not %s; nothing was built", plan.Unit, plan.Goal, strings.Join(named, " ")),
+			next:    inv.publicArgv("work", "build", "--plan", path), nextReason: "builds what the plan names"})
 	}
 	runner := inv.unitRunner()
 	result, err := runner.AdvanceNamed(path)
@@ -482,20 +487,33 @@ var (
 
 func runIntentBuildUnit(inv *intentInvocation) int {
 	if len(inv.input.args) < 1 || len(inv.input.args) > 2 || !inv.input.has("brief") || !inv.input.has("check") {
+		retry := inv.sameCommand()
+		if len(inv.input.args) == 0 {
+			retry = inv.typedArgvFor("GOAL")
+		}
+		if !inv.input.has("brief") {
+			retry = append(retry, "--brief", "FILE")
+		}
+		if !inv.input.has("check") {
+			retry = append(retry, "--check", "COMMAND")
+		}
 		return inv.render(intentResult{Outcome: intentRefused, code: 2,
-			Summary:  "work build needs the goal, --brief FILE and --check COMMAND...; nothing was done",
-			Decision: "metasystem work build G [--work NAME] --brief FILE --check COMMAND... (see metasystem work build --help)"})
+			Summary: "work build needs one goal, a brief and the checks to run; nothing was done",
+			next:    retry, nextReason: "FILE is the brief; COMMAND is the check that must pass (metasystem work build --help)"})
 	}
 	if len(inv.input.args) == 2 && inv.input.has("work") && inv.input.args[1] != inv.input.text("work") {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2,
-			Summary: fmt.Sprintf("the work is named twice, %s and --work %s; nothing was done", inv.input.args[1], inv.input.text("work")), Decision: "give --work NAME once"})
+			Summary: fmt.Sprintf("the work is named twice, %s and --work %s; nothing was done", inv.input.args[1], inv.input.text("work")),
+			next:    inv.typedArgvLess("work"), nextReason: "keeps " + inv.input.args[1]})
 	}
 	if model := inv.input.text("model"); inv.input.has("model") && !intentModelPattern.MatchString(model) {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("--model %s is not a model name; nothing was done", shellCommand([]string{model}))})
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("--model %s is not a model name; nothing was done", shellCommand([]string{model})),
+			next: inv.typedArgvLess("model"), nextReason: "the roster's model"})
 	}
 	if effort := inv.input.text("effort"); inv.input.has("effort") && !slices.Contains(intentEffortOptions, effort) {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2,
-			Summary: fmt.Sprintf("--effort must be one of %s, not %s; nothing was done", strings.Join(intentEffortOptions, ", "), shellCommand([]string{effort}))})
+			Summary: fmt.Sprintf("--effort must be one of %s, not %s; nothing was done", strings.Join(intentEffortOptions, ", "), shellCommand([]string{effort})),
+			next:    append(inv.typedArgvLess("effort"), "--effort", "high"), nextReason: "or another of those"})
 	}
 	id, unit := inv.input.args[0], inv.input.text("work")
 	if len(inv.input.args) == 2 {
@@ -537,12 +555,13 @@ func runIntentBuildUnit(inv *intentInvocation) int {
 	}
 	if where != "live" {
 		return inv.render(intentResult{Outcome: intentRefused, Targets: targets, code: 1,
-			Summary: fmt.Sprintf("goal %s is %s; nothing was built", id, where)})
+			Summary:  fmt.Sprintf("goal %s is %s; nothing was built", id, where),
+			Decision: "nothing to do; only an open goal is built"})
 	}
 	if file.Budget == nil || file.Budget.ReviewRoundLimit <= 0 {
 		return inv.render(intentResult{Outcome: intentRefused, Targets: targets, code: 1,
-			Summary:  fmt.Sprintf("goal %s has no approved box, so its review-round limit is unknown; nothing was built", id),
-			Decision: "a person approves the goal with its box: metasystem goal approve " + id})
+			Summary: fmt.Sprintf("goal %s is not approved with a budget yet; nothing was built", id),
+			next:    inv.publicArgv("goal", "approve", id), nextReason: "a person approves it; then repeat this command"})
 	}
 	if file.State != goal.StateClaimed {
 		// An approved goal nobody holds is claimed through the claim owner,
@@ -557,10 +576,11 @@ func runIntentBuildUnit(inv *intentInvocation) int {
 	// another session holds is refused with the claim owner's own reason.
 	conn := inv.connection()
 	if endpoint, err := conn.endpoint(inv.layout.InstallationRoot); err != nil {
-		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: "the goal branch endpoint is unavailable: " + err.Error() + "; nothing was built"})
+		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: "the goal branch can't be reached, so nothing was built",
+			next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}})
 	} else if err := branch.CheckHolder(conn.claimCheck(inv.layout.InstallationRoot, id, endpoint)); err != nil {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: err.Error() + "; nothing was built",
-			Decision: "the session holding the goal builds it, or a person takes the goal over: metasystem goal claim " + id + " --take-over --reason TEXT"})
+			next: inv.publicArgv("goal", "claim", id, "--take-over", "--reason", "TEXT"), nextReason: "a person takes the goal over; or the session holding it builds"})
 	}
 	designs, problem := inv.acceptedDesignPaths(id)
 	if problem != nil {
@@ -582,8 +602,8 @@ func runIntentBuildUnit(inv *intentInvocation) int {
 		}
 		if len(matched) != 1 {
 			return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id), Data: map[string]any{"candidates": ambiguous},
-				Summary:  fmt.Sprintf("goal %s has %d work items (%s) and this request repeats %d of them; nothing was built", id, len(ambiguous), strings.Join(ambiguous, ", "), len(matched)),
-				Decision: "name the work with --work NAME"})
+				Summary: fmt.Sprintf("goal %s has %d work items (%s), and this request matches %d of them; nothing was built", id, len(ambiguous), strings.Join(ambiguous, ", "), len(matched)),
+				next:    append(inv.typedArgvLess("work"), "--work", firstOr(matched, ambiguous[0])), nextReason: "or another work name"})
 		}
 		if unit = matched[0]; unit != ambiguous[0] {
 			targets = []intentTarget{{Kind: "goal", ID: id}, {Kind: "work", ID: unit}}
@@ -631,12 +651,13 @@ func (inv *intentInvocation) unitRequest(runner *launch.UnitRunner, id, unit str
 	briefPath := inv.callerPath(inv.input.text("brief"))
 	brief, err := os.ReadFile(briefPath)
 	if err != nil {
-		return unitRequest{}, &intentResult{Outcome: intentRefused, code: 1, Summary: fileProblem("brief", briefPath, err) + "; nothing was built"}
+		return unitRequest{}, &intentResult{Outcome: intentRefused, code: 1, Summary: fileProblem("brief", briefPath, err) + "; nothing was built",
+			next: inv.sameCommand(), nextReason: "once --brief names a readable file"}
 	}
 	if missing := missingDecisionLines(brief); len(missing) > 0 {
 		return unitRequest{}, &intentResult{Outcome: intentRefused, code: 1, text: missing,
-			Summary:  fmt.Sprintf("the brief %s still has %d missing decision(s); nothing was built", shellCommand([]string{briefPath}), len(missing)),
-			Decision: "fill each MISSING DECISION line in the brief"}
+			Summary: fmt.Sprintf("the brief %s still has %d missing decision(s), listed above; nothing was built", shellCommand([]string{briefPath}), len(missing)),
+			next:    inv.sameCommand(), nextReason: "after filling each MISSING DECISION line in the brief"}
 	}
 	toolCalls, problem := inv.readToolCalls(brief)
 	if problem != nil {
@@ -661,11 +682,13 @@ func (inv *intentInvocation) unitRequest(runner *launch.UnitRunner, id, unit str
 	}
 	template, err := fs.ReadFile(templates, "review-brief.md")
 	if err != nil {
-		return unitRequest{}, &intentResult{Outcome: intentFailed, code: 1, Summary: "cannot read the review brief template: " + err.Error()}
+		return unitRequest{}, &intentResult{Outcome: intentFailed, code: 1, Summary: "the review brief template can't be read, so nothing was built",
+			next: inv.publicArgv("system", "check"), nextReason: "checks the installation", Details: []string{err.Error()}}
 	}
 	directory, err := runner.NamedInputDirectory(worktree, id, unit)
 	if err != nil {
-		return unitRequest{}, &intentResult{Outcome: intentFailed, code: 1, Summary: "cannot name the unit's input directory: " + err.Error()}
+		return unitRequest{}, &intentResult{Outcome: intentFailed, code: 1, Summary: "the build's input folder can't be made, so nothing was built",
+			next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}
 	}
 	identity := struct {
 		Brief         unitRequestFile   `json:"brief"`
@@ -677,18 +700,21 @@ func (inv *intentInvocation) unitRequest(runner *launch.UnitRunner, id, unit str
 		Effort        string            `json:"effort,omitempty"`
 	}{Check: check, Lines: inv.input.text("lines"), ReadToolCalls: toolCalls, Model: inv.input.text("model"), Effort: inv.input.text("effort"), Designs: []unitRequestFile{}}
 	if identity.Brief, err = fileIdentity(briefPath); err != nil {
-		return unitRequest{}, &intentResult{Outcome: intentRefused, code: 1, Summary: fileProblem("brief", briefPath, err) + "; nothing was built"}
+		return unitRequest{}, &intentResult{Outcome: intentRefused, code: 1, Summary: fileProblem("brief", briefPath, err) + "; nothing was built",
+			next: inv.sameCommand(), nextReason: "once --brief names a readable file"}
 	}
 	for _, design := range designs {
 		entry, err := fileIdentity(design)
 		if err != nil {
-			return unitRequest{}, &intentResult{Outcome: intentRefused, code: 1, Summary: "cannot read the accepted design: " + err.Error() + "; nothing was built"}
+			return unitRequest{}, &intentResult{Outcome: intentRefused, code: 1, Summary: fileProblem("accepted design", design, err) + "; nothing was built",
+				next: inv.sameCommand(), nextReason: "once the design is readable"}
 		}
 		identity.Designs = append(identity.Designs, entry)
 	}
 	encoded, err := json.MarshalIndent(identity, "", "  ")
 	if err != nil {
-		return unitRequest{}, &intentResult{Outcome: intentFailed, code: 1, Summary: err.Error()}
+		return unitRequest{}, &intentResult{Outcome: intentFailed, code: 1, Summary: "the build request can't be written down, so nothing was built",
+			next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}
 	}
 	git := inv.work().git
 	prepare := func(directory string) (string, error) {
@@ -756,11 +782,13 @@ func (inv *intentInvocation) readToolCalls(brief []byte) (int, *intentResult) {
 		value, err := strconv.Atoi(inv.input.text("read-tool-calls"))
 		if err != nil || value <= 0 {
 			return 0, &intentResult{Outcome: intentRefused, code: 2,
-				Summary: fmt.Sprintf("--read-tool-calls must be a positive whole number, not %s; nothing was done", shellCommand([]string{inv.input.text("read-tool-calls")}))}
+				Summary: fmt.Sprintf("--read-tool-calls must be a positive whole number, not %s; nothing was done", shellCommand([]string{inv.input.text("read-tool-calls")})),
+				next:    append(inv.typedArgvLess("read-tool-calls"), "--read-tool-calls", "30"), nextReason: "30 is an example allowance"}
 		}
 		if match := intentReaderToolCalls.FindSubmatch(brief); match != nil && string(match[1]) != strconv.Itoa(value) {
 			return 0, &intentResult{Outcome: intentRefused, code: 2,
-				Summary: fmt.Sprintf("the brief allows the read %s tool calls but --read-tool-calls says %d; nothing was built", match[1], value)}
+				Summary: fmt.Sprintf("the brief allows the review %s tool calls but --read-tool-calls says %d; nothing was built", match[1], value),
+				next:    inv.typedArgvLess("read-tool-calls"), nextReason: "uses the brief's allowance"}
 		}
 		return value, nil
 	}
@@ -772,8 +800,9 @@ func (inv *intentInvocation) readToolCalls(brief []byte) (int, *intentResult) {
 	value, err := config.IntentReviewToolCalls(intentConfPath(inv.layout))
 	if err != nil {
 		return 0, &intentResult{Outcome: intentRefused, code: 1,
-			Summary:  "the independent read's tool-call allowance is unreadable: " + err.Error() + "; nothing was built",
-			Decision: "correct " + config.IntentReviewToolCallsKey + " in metasystem.conf, or name the allowance with --read-tool-calls N"}
+			Summary: "the review's tool-call allowance can't be read from the settings; nothing was built",
+			next:    inv.typedArgvWith("--read-tool-calls", "30"), nextReason: "names it here; or correct " + config.IntentReviewToolCallsKey + " in the settings",
+			Details: []string{err.Error()}}
 	}
 	return value, nil
 }
@@ -803,7 +832,8 @@ func (inv *intentInvocation) goalWorktree(id string) (string, *intentResult) {
 	git := inv.work().git
 	output, err := git(inv.layout.GitRoot, "worktree", "list", "--porcelain")
 	if err != nil {
-		return "", &intentResult{Outcome: intentFailed, code: 1, Summary: "cannot list the repository's worktrees: " + err.Error()}
+		return "", &intentResult{Outcome: intentFailed, code: 1, Summary: "the repository's worktrees can't be listed, so nothing was built",
+			next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}
 	}
 	want := "branch refs/heads/goal/" + id
 	for _, block := range strings.Split(string(output), "\n\n") {
@@ -840,7 +870,8 @@ func (inv *intentInvocation) acceptedDesignPaths(id string) ([]string, *intentRe
 	designs, problem := inv.linkedDesigns(id)
 	if problem != "" {
 		return nil, &intentResult{Outcome: intentFailed, code: 1,
-			Summary: "cannot read the project's design records, so the goal's design is unknown: " + problem + "; nothing was done"}
+			Summary: "the project's design records can't be read, so the goal's design is unknown; nothing was done",
+			next:    inv.publicArgv("design", "list"), nextReason: "shows what is wrong with the records", Details: []string{problem}}
 	}
 	paths := []string{}
 	for _, design := range designs {
@@ -874,7 +905,8 @@ func (inv *intentInvocation) unitSize(unit, brief string, designs []string) (str
 		value, err := strconv.ParseInt(inv.input.text("lines"), 10, 64)
 		if err != nil || value <= 0 {
 			return "", 0, &intentResult{Outcome: intentRefused, code: 2,
-				Summary: fmt.Sprintf("--lines must be a positive whole number of changed lines, not %s; nothing was done", shellCommand([]string{inv.input.text("lines")}))}
+				Summary: fmt.Sprintf("--lines must be a positive whole number of changed lines, not %s; nothing was done", shellCommand([]string{inv.input.text("lines")})),
+				next:    append(inv.typedArgvLess("lines"), "--lines", "N"), nextReason: "N is your estimate of the changed lines"}
 		}
 		given = value
 	}
@@ -885,12 +917,13 @@ func (inv *intentInvocation) unitSize(unit, brief string, designs []string) (str
 			if strings.Contains(message, "missing=units-table") || strings.Contains(message, "missing=row") || strings.Contains(message, "missing=size-column") {
 				continue
 			}
-			return "", 0, &intentResult{Outcome: intentRefused, code: 1, Summary: fmt.Sprintf("the units table in %s: %v; nothing was built", page, err)}
+			return "", 0, &intentResult{Outcome: intentRefused, code: 1, Summary: fmt.Sprintf("the units table in %s can't be read; nothing was built", page),
+				next: inv.sameCommand(), nextReason: "after correcting the table; --verbose shows what is wrong", Details: []string{err.Error()}}
 		}
 		if given != 0 && given != lines {
 			return "", 0, &intentResult{Outcome: intentRefused, code: 2,
-				Summary:  fmt.Sprintf("unit %s is declared at %d lines in %s but --lines says %d; nothing was built", unit, lines, page, given),
-				Decision: "drop --lines to use the declared row, or correct the row"}
+				Summary: fmt.Sprintf("work %s is declared at %d lines in %s, but --lines says %d; nothing was built", unit, lines, page, given),
+				next:    inv.typedArgvLess("lines"), nextReason: "uses the declared size; or correct the row"}
 		}
 		if index == 0 {
 			return "brief", lines, nil
@@ -899,18 +932,21 @@ func (inv *intentInvocation) unitSize(unit, brief string, designs []string) (str
 	}
 	if given == 0 {
 		return "", 0, &intentResult{Outcome: intentRefused, code: 1,
-			Summary:  fmt.Sprintf("LAUNCH_BUILD_UNSIZED unit=%s: neither the brief nor an accepted design of the goal has a units row for it; nothing was built", unit),
-			Decision: fmt.Sprintf("an honest estimate of unit %s's changed lines, given as --lines N, or a units table row in the brief", unit)}
+			Summary: fmt.Sprintf("the size of work %s is unknown: no units row in the brief or an accepted design; nothing was built", unit),
+			next:    inv.typedArgvWith("--lines", "N"), nextReason: "N is your honest estimate of the changed lines; or add a units row to the brief",
+			Details: []string{fmt.Sprintf("LAUNCH_BUILD_UNSIZED unit=%s", unit)}}
 	}
 	return "lines", given, nil
 }
 
 func unitReadModel(runner *launch.UnitRunner) (string, *intentResult) {
 	if runner.Manager == nil {
-		return "", &intentResult{Outcome: intentFailed, code: 1, Summary: "unit launch manager is unavailable"}
+		return "", &intentResult{Outcome: intentFailed, code: 1, Summary: "builds can't be started from this checkout, so nothing was built",
+			Decision: "run metasystem system check: it names what the setup is missing"}
 	}
 	if runner.Manager.SettingsError != nil {
-		return "", &intentResult{Outcome: intentFailed, code: 1, Summary: "cannot read the launch settings: " + runner.Manager.SettingsError.Error()}
+		return "", &intentResult{Outcome: intentFailed, code: 1, Summary: "the launch settings can't be read, so nothing was built",
+			Decision: "run metasystem settings check: it names the broken setting", Details: []string{runner.Manager.SettingsError.Error()}}
 	}
 	settings := runner.Manager.Settings
 	if len(settings.Values) == 0 {
@@ -921,7 +957,8 @@ func unitReadModel(runner *launch.UnitRunner) (string, *intentResult) {
 			return value.Value, nil
 		}
 	}
-	return "", &intentResult{Outcome: intentRefused, code: 1, Summary: "no independent read model is configured (" + launch.ReadModelKey + ")"}
+	return "", &intentResult{Outcome: intentRefused, code: 1, Summary: "no model is set for the independent review, so nothing was built",
+		Decision: "run metasystem settings set " + launch.ReadModelKey + " MODEL"}
 }
 
 type unitBinding struct {
@@ -1016,18 +1053,22 @@ func (inv *intentInvocation) unitOutcome(runner *launch.UnitRunner, result launc
 	record := result.Record
 	if err != nil {
 		message := err.Error()
+		plain, details := unitRunnerAccount(message), []string{message}
 		switch {
 		case strings.HasPrefix(message, "UNIT_RUN_BUSY"):
-			return intentResult{Outcome: intentInProgress, Targets: targets, code: 3, Summary: message,
-				next: again, nextReason: "another call is advancing this run; the same command continues it"}
+			return intentResult{Outcome: intentInProgress, Targets: targets, code: 3, Summary: "another command is advancing this work right now",
+				next: again, nextReason: "the same command continues it", Details: details}
 		case strings.HasPrefix(message, "UNIT_NAMED_INPUT_CHANGED"):
-			return intentResult{Outcome: intentRefused, Targets: targets, code: 1, Summary: message + "; nothing was launched",
-				Decision: "send the change as a correction (metasystem work revise G --work NAME --brief FILE), or build it under another work name"}
+			goalID, unit := targetID(targets, "goal", "GOAL"), targetID(targets, "work", "NAME")
+			return intentResult{Outcome: intentRefused, Targets: targets, code: 1, Summary: plain + "; nothing was launched",
+				next:       inv.publicArgv("work", "revise", goalID, "--work", unit, "--brief", "FILE"),
+				nextReason: "sends the change as a correction; or build it under another work name", Details: details}
 		case record.ID != "":
-			return intentResult{Outcome: intentFailed, Targets: append(targets, intentTarget{Kind: "unit", ID: record.ID}), code: 1, Summary: message,
-				Data: unitData(record, runner.Manager), next: inv.workArgv(record, "wait"), nextReason: "the work is recorded; continue it once the cause is fixed"}
+			return intentResult{Outcome: intentFailed, Targets: append(targets, intentTarget{Kind: "unit", ID: record.ID}), code: 1, Summary: plain,
+				Data: unitData(record, runner.Manager), next: inv.workArgv(record, "wait"), nextReason: "the work is recorded; continue it once the cause is fixed",
+				Details: details}
 		}
-		return intentResult{Outcome: intentRefused, Targets: targets, code: 1, Summary: message}
+		return intentResult{Outcome: intentRefused, Targets: targets, code: 1, Summary: plain, next: again, nextReason: "once that is settled", Details: details}
 	}
 	targets = append(targets, intentTarget{Kind: "unit", ID: record.ID})
 	data := unitData(record, runner.Manager)
@@ -1042,7 +1083,7 @@ func (inv *intentInvocation) unitOutcome(runner *launch.UnitRunner, result launc
 		return intentResult{Outcome: intentFailed, Targets: targets, code: unitExitReadCompacted, Data: data, text: []string{line},
 			Summary:  fmt.Sprintf("run %s round %d: the read was compacted and its verdict does not count", record.ID, round.Number),
 			Decision: "judge the attempt; a correction is " + shellCommand(inv.workArgv(record, "revise", "--after", fmt.Sprint(round.Number), "--brief", "FILE")),
-			next:     inv.workArgv(record, "review"), nextReason: "the proof passed: an independent review examines this result"}
+			next:     inv.workArgv(record, "review"), nextReason: "the checks passed: an independent review examines this result"}
 	}
 	verdict := "no read"
 	if verdicts, _ := data["readVerdicts"].([]string); len(verdicts) > 0 {
@@ -1050,17 +1091,53 @@ func (inv *intentInvocation) unitOutcome(runner *launch.UnitRunner, result launc
 	}
 	text := []string{line}
 	if clean, _ := data["readClean"].(bool); !clean && round.Outcome == "green" {
-		text = append(text, "The build, proof and read processes finished, but the read did not return VERDICT: land; this is not a clean read.")
+		text = append(text, "The build, its checks and the read finished, but the read did not return VERDICT: land; this is not a clean read.")
 	}
 	text = append(text, "The read is preliminary feedback for the author. Nothing is approved, certified or landed. A correction: "+shellCommand(inv.workArgv(record, "revise", "--after", fmt.Sprint(round.Number), "--brief", "FILE")))
 	judged := intentResult{Outcome: intentConfirmed, Targets: targets, Data: data, text: text,
 		Summary: fmt.Sprintf("unit %s of %s: run %s round %d awaits judgement (%s; read verdict: %s)", record.Unit, record.Goal, record.ID, round.Number, round.Outcome, verdict)}
 	if launch.UnitReviewReadyOutcomes[round.Outcome] {
-		judged.next, judged.nextReason = inv.workArgv(record, "review"), "the proof passed: review records this result as the candidate and requests its independent examination"
+		judged.next, judged.nextReason = inv.workArgv(record, "review"), "the checks passed: review records this result and asks for its independent review"
 	} else {
-		judged.next, judged.nextReason = inv.workArgv(record, "revise", "--after", fmt.Sprint(round.Number), "--brief", "FILE"), "the attempt did not pass its proof; a correction brief starts one new attempt"
+		judged.next, judged.nextReason = inv.workArgv(record, "revise", "--after", fmt.Sprint(round.Number), "--brief", "FILE"), "the attempt did not pass its checks; a correction brief starts one new attempt"
 	}
 	return judged
+}
+
+// unitRunnerAccount is the plain part of a unit runner's refusal: its code
+// and key=value head ("UNIT_ROUND_LIMIT unit=u goal=g ...:") are dropped,
+// the words after them kept. A refusal that is only a code says so plainly.
+func unitRunnerAccount(message string) string {
+	head, rest, found := strings.Cut(message, ": ")
+	code, _, _ := strings.Cut(head, " ")
+	if !unitRefusalCode.MatchString(code) {
+		return message
+	}
+	if found && strings.TrimSpace(rest) != "" {
+		return strings.TrimSpace(rest)
+	}
+	return "the build runner refused this request (" + strings.ToLower(strings.ReplaceAll(strings.TrimPrefix(code, "UNIT_"), "_", " ")) + ")"
+}
+
+// withoutWords is argv less every word in drop.
+func withoutWords(argv, drop []string) []string {
+	var kept []string
+	for _, word := range argv {
+		if !slices.Contains(drop, word) {
+			kept = append(kept, word)
+		}
+	}
+	return kept
+}
+
+// targetID is the id of the first target of kind, or fallback.
+func targetID(targets []intentTarget, kind, fallback string) string {
+	for _, target := range targets {
+		if target.Kind == kind && target.ID != "" {
+			return target.ID
+		}
+	}
+	return fallback
 }
 
 // workArgv is a public command about the run's goal and named work.
@@ -1121,7 +1198,8 @@ func unitData(record launch.UnitRunRecord, manager *launch.Manager) map[string]a
 func runIntentReviseRun(inv *intentInvocation, run string) int {
 	if len(inv.input.args) != 1 || !inv.input.has("brief") {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2,
-			Summary: "work revise run:RUN needs --brief FILE; nothing was done", Decision: "metasystem work revise run:RUN --brief FILE"})
+			Summary: "revising a run needs the correction brief; nothing was done",
+			next:    inv.publicArgv("work", "revise", unitRunPrefix+run, "--brief", "FILE"), nextReason: "FILE says what to correct"})
 	}
 	brief := inv.callerPath(inv.input.text("brief"))
 	runner := inv.unitRunner()
@@ -1141,11 +1219,13 @@ func runIntentWorkWait(inv *intentInvocation) int {
 	if inv.input.switched("list") {
 		for _, other := range append([]string{"exit-code", "caller-pid", "run"}, waitModes...) {
 			if inv.input.has(other) {
-				return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("work wait --list takes only --session, not --%s; nothing was done", other)})
+				return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("--list takes only --session, not --%s; nothing was done", other),
+					next: inv.typedArgvLess(other), nextReason: "lists the waits"})
 			}
 		}
 		if len(args) > 0 {
-			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "work wait --list names no target; nothing was done"})
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--list lists every wait and takes no target; nothing was done",
+				next: withoutWords(inv.sameCommand(), args), nextReason: "lists the waits"})
 		}
 		if problem := inv.selectRoot(); problem != nil {
 			return inv.render(*problem)
@@ -1153,39 +1233,45 @@ func runIntentWorkWait(inv *intentInvocation) int {
 		return inv.render(inv.recoverWaits())
 	}
 	if inv.input.has("session") {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--session belongs to work wait --list; nothing was done"})
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--session only goes with --list; nothing was done",
+			next: inv.typedArgvLess("session"), nextReason: "waits without it"})
 	}
 	if inv.input.switched("exit-code") {
 		for _, other := range waitModes {
 			if inv.input.has(other) {
-				return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("work wait --exit-code takes a job or run and --caller-pid, not --%s; nothing was done", other)})
+				return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("--exit-code takes a job or run and --caller-pid, not --%s; nothing was done", other),
+					next: inv.typedArgvLess(other), nextReason: "waits for the exit code"})
 			}
 		}
 		return runIntentWaitExitCode(inv)
 	}
 	for _, only := range []string{"caller-pid", "run"} {
 		if inv.input.has(only) {
-			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("--%s belongs to work wait --exit-code; nothing was done", only)})
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("--%s only goes with --exit-code; nothing was done", only),
+				next: inv.typedArgvWith("--exit-code"), nextReason: "waits for the exit code"})
 		}
 	}
 	if inv.input.has("path") {
 		if len(args) > 0 {
-			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "work wait --path PATH names no other target; nothing was done"})
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--path waits for a path and takes no other target; nothing was done",
+				next: withoutWords(inv.sameCommand(), args), nextReason: "waits for the path"})
 		}
 		for _, other := range append([]string{"work", "for"}, eventSelectors...) {
 			if inv.input.has(other) {
-				return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("work wait --path takes --until and --timeout, not --%s; nothing was done", other)})
+				return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("--path takes --until and --timeout, not --%s; nothing was done", other),
+					next: inv.typedArgvLess(other), nextReason: "waits for the path"})
 			}
 		}
 		return runIntentWaitObserved(inv, "file", inv.input.text("path"))
 	}
 	if inv.input.has("until") {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--until belongs to work wait --path PATH; nothing was done"})
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--until only goes with --path; nothing was done",
+			next: inv.typedArgvLess("until"), nextReason: "waits without it"})
 	}
 	if len(args) != 1 {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2,
-			Summary:  "work wait takes a goal (work wait G), a goal event (work wait G --for landing), a reference such as j2:ID, or --path PATH; nothing was done",
-			Decision: "name what to wait for (see metasystem work wait --help)"})
+			Summary: "work wait needs one thing to wait for; nothing was done",
+			next:    inv.typedArgvFor("GOAL"), nextReason: "a goal's work; or a j2:JOB or run:RUN reference, or --path FILE (metasystem work wait --help)"})
 	}
 	ref, problem := inv.resolveWorkRef(args[0], inv.command.accepts)
 	if problem != nil {
@@ -1195,7 +1281,8 @@ func runIntentWorkWait(inv *intentInvocation) int {
 		for _, other := range append([]string{"work", "for"}, eventSelectors...) {
 			if inv.input.has(other) {
 				return inv.render(intentResult{Outcome: intentRefused, code: 2,
-					Summary: fmt.Sprintf("--%s belongs to a goal's wait; work wait %s takes only --timeout; nothing was done", other, ref.qualified())})
+					Summary: fmt.Sprintf("--%s is for waiting on a goal; waiting on %s takes only --timeout; nothing was done", other, ref.qualified()),
+					next:    inv.typedArgvLess(other), nextReason: "waits on " + ref.qualified()})
 			}
 		}
 	}
@@ -1217,15 +1304,16 @@ func runIntentWorkWait(inv *intentInvocation) int {
 		for _, selector := range eventSelectors {
 			if inv.input.has(selector) {
 				return inv.render(intentResult{Outcome: intentRefused, code: 2,
-					Summary:  fmt.Sprintf("--%s selects a goal event, which --for names; nothing was done", selector),
-					Decision: "metasystem work wait G --for landing|human-act [--verb V] [--since TIP]"})
+					Summary: fmt.Sprintf("--%s picks a goal event, which needs --for; nothing was done", selector),
+					next:    inv.typedArgvWith("--for", "landing"), nextReason: "or --for human-act"})
 			}
 		}
 		return runIntentWaitWork(inv, ref.id)
 	}
 	if inv.input.has("work") {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2,
-			Summary: "--work selects running work and --for a goal event; give one of them; nothing was done"})
+			Summary: "--work waits on running work and --for on a goal event; give one; nothing was done",
+			next:    inv.typedArgvLess("work"), nextReason: "waits on the goal event"})
 	}
 	return runIntentWaitTarget(inv, "goal", ref.id, nil)
 }
@@ -1262,13 +1350,14 @@ func runIntentWaitTarget(inv *intentInvocation, kind, id string, job *intentJob)
 			}
 			if projection.Tip == "" {
 				return inv.render(intentResult{Outcome: intentRefused, Targets: targets, code: 1,
-					Summary:  "the accepted goal ledger has no tip to wait after; nothing was registered",
-					Decision: "the goal-ledger revision to wait after, given as --since TIP"})
+					Summary: "the goal ledger has no revision yet to wait after; nothing was registered",
+					next:    inv.typedArgvWith("--since", "TIP"), nextReason: "TIP is the goal-ledger revision to wait after"})
 			}
 			selector.After = projection.Tip
 		}
 		if err := metarun.ValidateWaitSelector(selector); err != nil {
-			return inv.render(intentResult{Outcome: intentRefused, Targets: targets, code: metarun.ExitInvalidWait, Summary: err.Error() + "; nothing was registered"})
+			return inv.render(intentResult{Outcome: intentRefused, Targets: targets, code: metarun.ExitInvalidWait, Summary: err.Error() + "; nothing was registered",
+				next: inv.typedArgvLess("verb", "question", "chain"), nextReason: "waits for the event without the narrower options"})
 		}
 		args = append(args, "--event", selector.Event, "--after", selector.After)
 		for _, pair := range [][2]string{{"verb", selector.Verb}, {"question", selector.Question}, {"chain", selector.Chain}} {
@@ -1284,7 +1373,8 @@ func runIntentWaitTarget(inv *intentInvocation, kind, id string, job *intentJob)
 	code := inv.work().wait(args, func(result metarun.WaitResult, _ bool) { waited = &result }, inv.stdout, inv.stderr)
 	if waited == nil {
 		return inv.render(intentResult{Outcome: intentFailed, Targets: targets, code: max(code, 1),
-			Summary: "the wait owner stopped before a result; its message is on standard error"})
+			Summary: "the wait stopped before a result; its reason is printed above",
+			next:    inv.sameCommand(), nextReason: "waits again once that is settled"})
 	}
 	outcome := intentResult{Targets: targets, code: waited.ExitCode, Data: waited,
 		Summary: fmt.Sprintf("%s %s: %s", kind, targets[0].ID, strings.TrimSpace(strings.Join([]string{waited.SourceOutcome, waited.Reason}, " ")))}
@@ -1318,7 +1408,8 @@ func runIntentWaitObserved(inv *intentInvocation, kind, ref string) int {
 	case "file":
 		until := inv.input.text("until")
 		if until != "present" && until != "absent" {
-			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "work wait --path PATH needs --until present or --until absent; nothing was done"})
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--path needs --until present or --until absent; nothing was done",
+				next: append(inv.typedArgvLess("until"), "--until", "present"), nextReason: "or --until absent"})
 		}
 		path := inv.callerPath(ref)
 		targets[0].ID = path
@@ -1337,7 +1428,8 @@ func runIntentWaitObserved(inv *intentInvocation, kind, ref string) int {
 	var waited *metarun.WaitResult
 	code := inv.work().wait(args, func(result metarun.WaitResult, _ bool) { waited = &result }, inv.stdout, inv.stderr)
 	if waited == nil {
-		return inv.render(intentResult{Outcome: intentFailed, Targets: targets, code: max(code, 1), Summary: "the wait owner stopped before a result; its message is on standard error"})
+		return inv.render(intentResult{Outcome: intentFailed, Targets: targets, code: max(code, 1), Summary: "the wait stopped before a result; its reason is printed above",
+			next: inv.sameCommand(), nextReason: "waits again once that is settled"})
 	}
 	outcome := intentResult{Targets: targets, code: waited.ExitCode, Data: waited,
 		Summary: fmt.Sprintf("%s %s: %s", kind, targets[0].ID, strings.TrimSpace(strings.Join([]string{waited.SourceOutcome, waited.Reason}, " ")))}
@@ -1378,7 +1470,8 @@ func runIntentWaitResume(inv *intentInvocation, id string) int {
 	var waited *metarun.WaitResult
 	code := inv.work().wait(args, func(result metarun.WaitResult, _ bool) { waited = &result }, inv.stdout, inv.stderr)
 	if waited == nil {
-		return inv.render(intentResult{Outcome: intentFailed, Targets: targets, code: max(code, 1), Summary: "the wait owner stopped before a result; its message is on standard error"})
+		return inv.render(intentResult{Outcome: intentFailed, Targets: targets, code: max(code, 1), Summary: "the wait stopped before a result; its reason is printed above",
+			next: inv.sameCommand(), nextReason: "waits again once that is settled"})
 	}
 	outcome := intentResult{Targets: targets, code: waited.ExitCode, Data: waited,
 		Summary: fmt.Sprintf("wait %s: %s", id, strings.TrimSpace(strings.Join([]string{waited.SourceOutcome, waited.Reason}, " ")))}
@@ -1403,7 +1496,8 @@ func (inv *intentInvocation) waitTimeout() (time.Duration, *intentResult) {
 	value, err := time.ParseDuration(inv.input.text("timeout"))
 	if err != nil || value <= 0 || value > 24*time.Hour {
 		return 0, &intentResult{Outcome: intentRefused, code: 2,
-			Summary: fmt.Sprintf("--timeout must be a positive duration of at most 24h, such as 10m, not %s; nothing was done", shellCommand([]string{inv.input.text("timeout")}))}
+			Summary: fmt.Sprintf("--timeout must be a positive duration of at most 24h, such as 10m, not %s; nothing was done", shellCommand([]string{inv.input.text("timeout")})),
+			next:    append(inv.typedArgvLess("timeout"), "--timeout", "10m"), nextReason: "or another duration up to 24h"}
 	}
 	return value, nil
 }
@@ -1445,7 +1539,8 @@ func runIntentTest(inv *intentInvocation) int {
 	}
 	output, code, err := inv.work().testRun(inv.layout.GitRoot, argv, inv.stderr)
 	if err != nil {
-		return inv.render(intentResult{Outcome: intentFailed, Targets: targets, code: 1, Summary: "cannot run the test runner: " + err.Error()})
+		return inv.render(intentResult{Outcome: intentFailed, Targets: targets, code: 1, Summary: "the tests couldn't be started",
+			next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}})
 	}
 	result := intentResult{Targets: targets, code: code}
 	attempt := ""
@@ -1457,25 +1552,28 @@ func runIntentTest(inv *intentInvocation) int {
 		if json.Unmarshal(trimmed, &reported) == nil && validIntentJobID(reported.AttemptID) {
 			attempt = reported.AttemptID
 			result.Targets = append(result.Targets, intentTarget{Kind: "proof", ID: attempt})
-			result.text = append(result.text, "proof attempt "+attempt+": "+shellCommand(inv.publicArgv("test", "wait", proofRefPrefix+attempt))+" reads its recorded end")
+			result.text = append(result.text, "test run "+attempt+": "+shellCommand(inv.publicArgv("test", "wait", proofRefPrefix+attempt))+" reads how it ended")
 		}
 	} else if len(trimmed) > 0 {
 		result.text = []string{string(trimmed)}
 	}
 	if attempt != "" && (code == metarun.ExitWaitDeadline || code == metarun.ExitInterrupted) {
-		result.Outcome, result.Summary = intentInProgress, fmt.Sprintf("proof attempt %s has not ended", attempt)
-		result.next, result.nextReason = inv.publicArgv("test", "wait", proofRefPrefix+attempt), "waits for the proof attempt's recorded end"
+		result.Outcome, result.Summary = intentInProgress, fmt.Sprintf("test run %s has not ended", attempt)
+		result.next, result.nextReason = inv.publicArgv("test", "wait", proofRefPrefix+attempt), "waits for it to end"
 		return inv.render(result)
 	}
 	switch code {
 	case 0:
 		result.Outcome, result.Summary = intentConfirmed, "the selected tests passed"
 	case proofrun.ExitAdmissionRefused:
-		result.Outcome, result.Summary = intentRefused, "the test runner refused admission; its reason is on standard error"
+		result.Outcome, result.Summary = intentRefused, "the tests were not started now; the reason is printed above"
+		result.next, result.nextReason = inv.sameCommand(), "try again once that is settled"
 	case 2:
-		result.Outcome, result.Summary = intentRefused, "the test runner refused its arguments; its reason is on standard error"
+		result.Outcome, result.Summary = intentRefused, "the test runner refused these options; the reason is printed above"
+		result.next, result.nextReason = inv.publicArgv("test", "run", "--help"), "shows the options it takes"
 	default:
-		result.Outcome, result.Summary = intentFailed, fmt.Sprintf("the test runner exited %d; its result is in data and its reason on standard error", code)
+		result.Outcome, result.Summary = intentFailed, fmt.Sprintf("the test runner exited %d; the reason is printed above", code)
+		result.next, result.nextReason = inv.sameCommand(), "try again once that is settled"
 	}
 	return inv.render(result)
 }
@@ -1513,7 +1611,8 @@ func runIntentSettingsCheck(inv *intentInvocation) int {
 	path, groups, err := testrun.ContractReady(root, false)
 	if err != nil {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Data: map[string]any{"installation": root},
-			Summary: "the settings of " + root + " are valid, but the testing contract is not: " + err.Error()})
+			Summary: "the settings of " + root + " are valid, but the testing contract is not: " + err.Error(),
+			next:    inv.sameCommand(), nextReason: "after correcting the testing contract"})
 	}
 	settings.Summary = "the settings of " + root + " and their testing contract are valid"
 	settings.text = append(settings.text, fmt.Sprintf("testing contract %s: %d group(s)", path, groups))
@@ -1526,7 +1625,8 @@ func runIntentSettingsCheck(inv *intentInvocation) int {
 		settings.text = append(settings.text, "launch contract: none declared")
 	case launchErr != nil:
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Data: map[string]any{"installation": root},
-			Summary: "the settings of " + root + " and their testing contract are valid, but the launch contract is not: " + launchErr.Error()})
+			Summary: "the settings and testing contract are valid, but the launch contract is not: " + launchErr.Error(),
+			next:    inv.sameCommand(), nextReason: "after correcting the launch contract"})
 	default:
 		settings.Summary = "the settings of " + root + ", their testing contract and their launch contract are valid"
 		settings.text = append(settings.text, fmt.Sprintf("launch contract %s: %s, readiness %s, %s",
@@ -1545,7 +1645,8 @@ func runIntentSettings(inv *intentInvocation) int {
 	confPath := intentConfPath(inv.layout)
 	settings, err := inv.work().settings(confPath)
 	if err != nil {
-		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "cannot read the launch settings of " + confPath + ": " + err.Error()})
+		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the launch settings in " + confPath + " can't be read",
+			next: inv.publicArgv("settings", "check"), nextReason: "names what is wrong", Details: []string{err.Error()}})
 	}
 	values := settings.Values
 	if len(inv.input.args) == 1 {
@@ -1592,18 +1693,21 @@ func runIntentWaitExitCode(inv *intentInvocation) int {
 	}
 	if inv.input.has("run") {
 		if len(inv.input.args) != 0 || inv.input.has("caller-pid") {
-			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "work wait --run ID --exit-code names one tracked run and nothing else; nothing was done"})
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--run with --exit-code waits for one tracked run and takes nothing else; nothing was done",
+				next: withoutWords(inv.typedArgvLess("caller-pid"), inv.input.args), nextReason: "waits for the run's exit code"})
 		}
 		return inv.work().runWatch([]string{"--root", root, "--id", inv.input.text("run")}, inv.stdout, inv.stderr)
 	}
 	if len(inv.input.args) != 1 {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "work wait --exit-code needs the job or a tracked run: metasystem work wait j2:J --exit-code | --run ID --exit-code; nothing was done"})
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--exit-code needs one job or a tracked run; nothing was done",
+			next: inv.typedArgvFor("j2:JOB"), nextReason: "or --run RUN for a tracked run"})
 	}
 	job := inv.input.args[0]
 	if kind, id := splitReference(job); kind == refJ2 {
 		job = id
 	} else if kind != "" {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("work wait --exit-code waits for a dispatch job (j2:J) or a tracked run (--run ID), not %s; nothing was done", job)})
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("--exit-code waits for a dispatch job or a tracked run, not %s; nothing was done", job),
+			next: inv.publicArgv("work", "status", "--all"), nextReason: "lists the dispatch jobs with their j2: references"})
 	}
 	args := []string{"--root", root, "--job", job}
 	if inv.input.has("caller-pid") {
@@ -1620,7 +1724,15 @@ func runIntentBrief(inv *intentInvocation) int {
 		return inv.render(*problem)
 	}
 	if id == "" || !inv.input.has("out") {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "brief needs the goal and --out FILE; nothing was written", Decision: "metasystem work brief G --out FILE"})
+		retry := inv.sameCommand()
+		if id == "" {
+			retry = inv.typedArgvFor("GOAL")
+		}
+		if !inv.input.has("out") {
+			retry = append(retry, "--out", "FILE")
+		}
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "a brief needs the goal and the file to write it to; nothing was written",
+			next: retry, nextReason: "FILE is where the brief is written"})
 	}
 	if problem := inv.selectRoot(); problem != nil {
 		return inv.render(*problem)
@@ -1635,7 +1747,8 @@ func runIntentBrief(inv *intentInvocation) int {
 	}
 	targets := inv.targets(id)
 	if where != "live" {
-		return inv.render(intentResult{Outcome: intentRefused, Targets: targets, code: 1, Summary: fmt.Sprintf("goal %s is %s; no brief was written", id, where)})
+		return inv.render(intentResult{Outcome: intentRefused, Targets: targets, code: 1, Summary: fmt.Sprintf("goal %s is %s; no brief was written", id, where),
+			Decision: "nothing to do; only an open goal gets a brief"})
 	}
 	designs, problem := inv.acceptedDesignPaths(id)
 	if problem != nil {
@@ -1655,11 +1768,12 @@ func runIntentBrief(inv *intentInvocation) int {
 				Summary: fmt.Sprintf("%s already holds this brief", out)})
 		}
 		return inv.render(intentResult{Outcome: intentRefused, Targets: targets, code: 1,
-			Summary:  fmt.Sprintf("%s already exists with other content; nothing was written", out),
-			Decision: "name a new --out FILE; the existing file is kept"})
+			Summary: fmt.Sprintf("%s already exists with other content; nothing was written", out),
+			next:    append(inv.typedArgvLess("out"), "--out", strings.TrimSuffix(out, filepath.Ext(out))+"-new"+filepath.Ext(out)), nextReason: "writes a new file; the existing one is kept"})
 	}
 	if _, err := atomicfile.WriteText(out, text, filepath.Dir(out)); err != nil {
-		return inv.render(intentResult{Outcome: intentFailed, Targets: targets, code: 1, Summary: "cannot write the brief: " + err.Error()})
+		return inv.render(intentResult{Outcome: intentFailed, Targets: targets, code: 1, Summary: "the brief can't be written to " + out,
+			next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}})
 	}
 	summary := fmt.Sprintf("wrote the brief for %s to %s", id, out)
 	if len(missing) > 0 {
@@ -1726,7 +1840,8 @@ func (inv *intentInvocation) briefScaffold(file *goal.GoalFile, designs []string
 	for _, design := range designs {
 		data, err := os.ReadFile(design)
 		if err != nil {
-			return "", nil, &intentResult{Outcome: intentFailed, code: 1, Summary: "cannot read the accepted design: " + err.Error() + "; no brief was written"}
+			return "", nil, &intentResult{Outcome: intentFailed, code: 1, Summary: fileProblem("accepted design", design, err) + "; no brief was written",
+				next: inv.sameCommand(), nextReason: "once the design is readable"}
 		}
 		c, r, a := designSections(design, data)
 		constraints, returns, acceptance = append(constraints, c...), append(returns, r...), append(acceptance, a...)
@@ -1821,7 +1936,8 @@ func (inv *intentInvocation) waitLaunch(job intentJob, timeout time.Duration) in
 	targets := []intentTarget{{Kind: "job", ID: ref}}
 	record, ended, err := inv.owners.processes.launches().Wait(job.id, timeout)
 	if err != nil {
-		return intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: fmt.Sprintf("launch %s wait: %v", job.id, err)}
+		return intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: fmt.Sprintf("the wait for launch %s stopped: %v", job.id, err),
+			next: inv.sameCommand(), nextReason: "waits again"}
 	}
 	data := map[string]any{"kind": "launch", "record": record}
 	if !ended {
@@ -1870,12 +1986,14 @@ func launchContractName(contract applaunch.Contract) string {
 func runIntentSettingsSet(inv *intentInvocation) int {
 	if len(inv.input.args) != 2 || strings.TrimSpace(inv.input.args[0]) == "" {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2,
-			Summary: "settings set needs a key and its value: metasystem settings set KEY VALUE; nothing was done"})
+			Summary: "settings set needs one key and its value; nothing was done",
+			next:    inv.publicArgv("settings", "set", "KEY", "VALUE"), nextReason: "metasystem settings keys lists the keys"})
 	}
 	key, value := strings.TrimSpace(inv.input.args[0]), inv.input.args[1]
 	if strings.ContainsAny(key, "= \t\n") || strings.ContainsAny(value, "\n\r") {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2,
-			Summary: "a setting's key has no spaces or '=' and its value is one line; nothing was done"})
+			Summary: "a setting's key has no spaces or '=' and its value is one line; nothing was done",
+			next:    inv.publicArgv("settings", "set", "KEY", "VALUE"), nextReason: "a key without spaces or '=', and a one-line value"})
 	}
 	if problem := inv.resolveLayout(); problem != nil {
 		return inv.render(*problem)
@@ -1890,15 +2008,18 @@ func runIntentSettingsSet(inv *intentInvocation) int {
 	before, err := os.ReadFile(local)
 	existed := err == nil
 	if err != nil && !os.IsNotExist(err) {
-		return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "cannot read " + local + ": " + err.Error()})
+		return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: local + " can't be read, so nothing was set",
+			next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}})
 	}
 	if !existed {
 		if err := os.WriteFile(local, nil, 0o600); err != nil {
-			return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "cannot create " + local + ": " + err.Error()})
+			return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: local + " can't be created, so nothing was set",
+				next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}})
 		}
 	}
 	if err := validate.SetConfKeys(local, []validate.ConfSetting{{Key: key, Value: value}}); err != nil {
-		return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "cannot write " + local + ": " + err.Error()})
+		return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: local + " can't be written, so nothing was set",
+			next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}})
 	}
 	data := map[string]any{"key": key, "value": value, "file": local}
 	if after, err := os.ReadFile(local); existed && err == nil && bytes.Equal(before, after) {
@@ -1914,12 +2035,18 @@ func runIntentSettingsSet(inv *intentInvocation) int {
 // and reason again change nothing (R-129).
 func runIntentDeclareStopMoves(inv *intentInvocation) int {
 	if len(inv.input.args) != 1 {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "test declare-moves needs the goal: metasystem test declare-moves G --reason TEXT; nothing was done"})
+		retry := inv.typedArgvFor("GOAL")
+		if !inv.input.has("reason") {
+			retry = append(retry, "--reason", "TEXT")
+		}
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "declare-moves needs the one goal whose change moves Stop decisions; nothing was done",
+			next: retry, nextReason: "names the goal"})
 	}
 	id, reason := inv.input.args[0], inv.input.text("reason")
 	if strings.TrimSpace(reason) == "" {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id),
-			Summary: "needs the reason the change moves a Stop decision; nothing was done", Decision: "state it with --reason TEXT"})
+			Summary: "declaring the moves needs the reason the change moves a Stop decision; nothing was done",
+			next:    inv.typedArgvWith("--reason", "TEXT"), nextReason: "TEXT says why"})
 	}
 	if problem := inv.selectRoot(); problem != nil {
 		return inv.render(*problem)
@@ -1992,31 +2119,47 @@ var authoritySettings = map[string]bool{"metasystem.runtimes": true}
 // directPersonProof refuses unless this shell is the person at the enrolled
 // terminal, proven by the walk itself.
 func (inv *intentInvocation) directPersonProof(act string) *intentResult {
-	refused := func(reason string) *intentResult {
-		return &intentResult{Outcome: intentRefused, code: 1, Summary: fmt.Sprintf("%s is the person's own act at the enrolled terminal, never at the helm or under a grant: %s; nothing was done; %s", act, reason, humanauthority.PersonActRemedy("metasystem "+act+" VALUE")),
-			Decision: humanauthority.PersonActRemedy("metasystem " + act + " VALUE")}
+	// refused says, in plain words, that only the person at the enrolled
+	// terminal sets this, why this shell is not that, and the one command
+	// that resolves it (the enrollment, the name filled in, or the same
+	// command in a terminal the person opened).
+	refused := func(reason string, err error) *intentResult {
+		remedy := humanauthority.RemedyFor(inv.stateRoot, err, inv.personName(""), inv.typedArgv())
+		if err != nil && remedy.Reason != "" {
+			reason = remedy.Reason
+		}
+		result := &intentResult{Outcome: intentRefused, code: 1,
+			Summary: fmt.Sprintf("only you set %s, at your enrolled terminal, and %s; nothing was done", act, reason),
+			next:    remedy.Argv, nextReason: remedy.Then}
+		if len(result.next) == 0 {
+			result.next, result.nextReason = inv.typedArgv(), "in the terminal you enrolled, never under the helm or a grant"
+		}
+		if err != nil {
+			result.Details = []string{"refused because: " + refusalCause(err)}
+		}
+		return result
 	}
 	if inv.stateRoot == "" {
 		root, err := inv.owners.resolver.RootForInstallation(inv.layout.InstallationRoot)
 		if err != nil {
-			return refused("cannot find this installation's state: " + err.Error())
+			return refused("this installation's state can't be found", err)
 		}
 		inv.stateRoot = root
 	}
 	if inv.owners.prove == nil || inv.owners.commandNow == nil {
-		return refused("no person proof is available")
+		return refused("who is at this terminal can't be checked here", nil)
 	}
 	now, err := inv.owners.commandNow(inv.stateRoot)
 	if err != nil {
-		return refused(err.Error())
+		return refused("the clock can't be read", err)
 	}
 	proof, err := inv.owners.prove(inv.stateRoot, int64(os.Getppid()), nil, "", "", now)
 	if err != nil {
-		return refused(humanauthority.PlainReason(err))
+		return refused(humanauthority.PlainReason(err), err)
 	}
 	if proof.Helm != nil || !proof.EnrolledTerminalFor(inv.stateRoot) {
 		_ = humanauthority.RecordAttorneyRefusal(inv.stateRoot, proof, act, "set only by the person's own proof", now)
-		return refused("this shell was admitted by the helm or a grant, not proven by its own ancestry")
+		return refused("this shell acts under the helm or a grant", nil)
 	}
 	return nil
 }

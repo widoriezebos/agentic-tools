@@ -383,8 +383,8 @@ func (inv *intentInvocation) enterGoalWorktree(id, path string) *intentResult {
 		next:    inv.publicArgv("goal", "show", id), nextReason: "see the goal's state"}
 	records, err := diskstore.FindLinkedWorktrees(registry, diskstore.GoalWorktreeClass, owner)
 	if err != nil {
-		return &intentResult{Outcome: intentFailed, code: 1, Summary: "the store registry cannot be read: " + err.Error() + "; nothing was built",
-			Decision: "metasystem disk show names what cannot be read"}
+		return &intentResult{Outcome: intentFailed, code: 1, Summary: "the registry of goal worktrees can't be read, so nothing was built",
+			next: inv.publicArgv("disk", "show"), nextReason: "names what can't be read", Details: []string{err.Error()}}
 	}
 	if path != "" {
 		if _, err := diskstore.ReadGitIdentity(path); err != nil || filepath.Clean(path) == filepath.Clean(inv.layout.GitRoot) {

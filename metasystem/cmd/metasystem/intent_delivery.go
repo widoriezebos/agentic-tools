@@ -852,8 +852,8 @@ func (inv *intentInvocation) reviewBriefFacts(targets []intentTarget, goalID str
 	file := projection.Tree.Live[goalID]
 	if file == nil || file.Approved == nil || file.Budget == nil || file.Budget.ReviewRoundLimit < 1 {
 		return 0, 0, &intentResult{Targets: targets, Outcome: intentRefused, code: 1,
-			Summary:  fmt.Sprintf("goal %s has no approved review-round budget for this review", goalID),
-			Decision: fmt.Sprintf("approve goal %s with a budget first: metasystem goal approve %s", goalID, goalID)}
+			Summary: fmt.Sprintf("goal %s has no approved budget for review rounds; nothing was reviewed", goalID),
+			next:    inv.publicArgv("goal", "approve", goalID), nextReason: "a person approves it with a budget; then repeat this command"}
 	}
 	return file.Budget.ReviewRoundLimit, calls, nil
 }
@@ -2180,8 +2180,8 @@ func recordWriterPreflight(root, job string) (string, error) {
 func (inv *intentInvocation) closeCriticJob(job string) intentResult {
 	if !inv.input.has("dispositions") {
 		return intentResult{Targets: []intentTarget{jobTarget(job)}, Outcome: intentRefused, code: 2,
-			Summary:  fmt.Sprintf("job %s is a review chain; its findings are decided, not reviewed again; nothing was done", job),
-			Decision: "decide every finding in a dispositions file, then run " + shellCommand(inv.publicArgv("work", "review", dispatchJobPrefix+job, "--dispositions", "FILE"))}
+			Summary: fmt.Sprintf("job %s is a review; its findings are decided, not reviewed again; nothing was done", job),
+			next:    inv.publicArgv("work", "review", dispatchJobPrefix+job, "--dispositions", "FILE"), nextReason: "FILE decides every finding"}
 	}
 	closed := inv.closeChain(job)
 	if closed.Outcome == intentConfirmed || closed.Outcome == intentUnchanged {
