@@ -21,6 +21,7 @@ Run
   system       MetaSystem for this checkout: set up, start, stop, restart, status, check, enroll,
                adopt, completion
   landing      the landing lane on this computer: where every seat's work is proved and pushed
+  alert        what the steward reported and a person should see: list, acknowledge and clear
   machine      the fleet's machines
   disk         what MetaSystem keeps on this computer's disk, and reclaiming it
   evidence     durable evidence outside the checkout: its bound, verified exports, and a person's

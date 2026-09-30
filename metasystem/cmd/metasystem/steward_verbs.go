@@ -29,6 +29,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/pattern"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
@@ -311,6 +312,9 @@ func runStewardRun(args []string, stdout, stderr io.Writer) int {
 	tickConfig.BreachStopReady = stewardRunnerCustodianReady(*repo, productionStewardCustodianFacts())
 	// The steward keeps the host landing lane's owner alive (U12).
 	tickConfig.KeepLandingLane = batchowner.LandingLaneKeeper(batchowner.LandingLaneHome)
+	// The lane's steward reports behaviour patterns; every other steward's
+	// pass finds it is not the lane's and does nothing (D6).
+	tickConfig.Patterns = pattern.Pass{Home: batchowner.LandingLaneHome}.Run
 	wireStewardSeat(&tickConfig)
 	interval := time.Duration(steward.TickSeconds(*repo)) * time.Second
 	err := steward.RunLoop(*repo, stewardCensusFor(*repo), func() error {

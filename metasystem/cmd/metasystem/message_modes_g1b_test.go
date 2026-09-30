@@ -6,6 +6,7 @@ package main
 // traced reading follows their words.
 var _ = enforceTracedMessages(
 	"cmd/metasystem/hold.go",
+	"cmd/metasystem/intent_alert.go",
 	"cmd/metasystem/intent_landing.go",
 	"cmd/metasystem/intent_machine.go",
 	"cmd/metasystem/landing_verbs.go",
@@ -16,5 +17,6 @@ var _ = enforceTracedMessages(
 	"internal/gittree",
 	"internal/landing",
 	"internal/lease",
+	"internal/pattern",
 	"internal/steward",
 )
