@@ -212,7 +212,8 @@ func TestDesignLoopFinalRoundExitsByTheEngine(t *testing.T) {
 		}, []map[string]any{finding("F1", true, "the page is still forgotten"), finding("I1", true, "an invariant")},
 			map[string]string{"F1": "refuted | section 2 line 7 names it | ", "I1": "accepted | a real gap | section 4 holds it"})
 		said := fmt.Sprint(result.Data.(map[string]any)["ownerMessage"])
-		if result.Outcome != intentRefused || b.closes != 1 || !strings.Contains(said, dispatchcore.CritiqueCapExhaustedReason) ||
+		if result.Outcome != intentRefused || b.closes != 1 || strings.Contains(said, dispatchcore.CritiqueCapExhaustedReason) ||
+			fmt.Sprint(result.Data.(map[string]any)["exitCode"]) != fmt.Sprint(dispatchcore.CritiqueCapExhaustedExitCode) ||
 			!strings.Contains(said, "findings I1 for a person to decide") {
 			t.Fatalf("the human-required close: %+v", result)
 		}

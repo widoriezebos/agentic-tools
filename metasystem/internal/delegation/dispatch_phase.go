@@ -841,6 +841,7 @@ func (s *session) resolveMission(explicit string) (string, string, string, error
 func (s *session) readSubject(request dispatch.ReadSubjectRequest, output string) (bool, int, string) {
 	subject, present, err := dispatch.ComputeReadSubject(request)
 	if err != nil {
+		s.noteRefusal(err)
 		code := verbCode(err)
 		message := err.Error()
 		var op *dispatch.OpError

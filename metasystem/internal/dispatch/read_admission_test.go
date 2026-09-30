@@ -905,6 +905,9 @@ func assertReadRefusal(t *testing.T, result ReadAdmissionResult, err error, reas
 	if !strings.Contains(err.Error(), root) || !strings.Contains(err.Error(), result.SubjectDigest) {
 		t.Fatalf("diagnostic lacks root or digest: %v", err)
 	}
+	if strings.Contains(err.Error(), reason) || !strings.Contains(err.Error(), "\n") {
+		t.Fatalf("the words carry the code or lack the command: %q", err.Error())
+	}
 }
 
 // TestReadAdmissionRefusesFreshDesignRootWhileChainOpen: a fresh

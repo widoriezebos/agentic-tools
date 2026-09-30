@@ -30,6 +30,9 @@ type delegateOutcome struct {
 	Headline string `json:"headline"`
 	JobID    string `json:"jobId,omitempty"`
 	Detail   string `json:"detail,omitempty"`
+	// Code is the refusal's code when the owner's refusal carried one: data
+	// for --json and --verbose, never part of the words.
+	Code string `json:"code,omitempty"`
 }
 
 // runDelegate is the operator boundary and the delegate lifecycle's process

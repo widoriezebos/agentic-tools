@@ -126,24 +126,33 @@ var terminalMetadataFields = map[string]bool{
 
 // OpError carries the process exit code a lifecycle refusal must surface. An
 // empty Message is a silent refusal (the caller reads the outcome from the
-// exit code alone); a non-empty Message is printed to stderr.
+// exit code alone); a non-empty Message is printed to stderr. Reason is the
+// refusal's code: data for --verbose, --json and records (RefusalCode,
+// RefusalDetail), never part of the words a person reads by default
+// ("Messages a Person Reads", docs/design/design-principles.md).
 type OpError struct {
 	Code    int
 	Reason  string
 	Message string
 }
 
+// Error is the refusal's words alone.
 func (e *OpError) Error() string {
-	if e.Reason != "" && e.Message != "" {
-		return fmt.Sprintf("reason=%s %s", e.Reason, e.Message)
-	}
-	if e.Reason != "" {
-		return "reason=" + e.Reason
-	}
 	if e.Message != "" {
 		return e.Message
 	}
 	return fmt.Sprintf("dispatch record operation refused with code %d", e.Code)
+}
+
+// RefusalCode is the refusal's code (its Reason), or "" when it has none.
+func (e *OpError) RefusalCode() string { return e.Reason }
+
+// RefusalDetail is the code-first line --verbose and the records keep.
+func (e *OpError) RefusalDetail() string {
+	if e.Reason == "" {
+		return e.Error()
+	}
+	return e.Reason + ": " + e.Error()
 }
 
 func refuse(code int, format string, args ...any) *OpError {
