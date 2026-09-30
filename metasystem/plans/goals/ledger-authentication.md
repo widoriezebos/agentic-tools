@@ -2,12 +2,12 @@
 
 - State: parked
 - Priority: 3
-- Sequence: 28
+- Sequence: 27
 - Intent: What: Records only a person may make in the goal ledger (approvals, stops, resumes) are signed, so a forged one is rejected. Why: Today anyone with write access to the checkout could write a record that looks like your act. Pros: Closes the forgery threat for person-only acts. Cons: A large design touching every person-only command, and no forgery has been seen.
 - Origin: main
 - Next step: Next: When triggered, design it: which acts are signed, how keys are kept, and whether signing is per act or per tree, keeping ordinary agent ledger commands unsigned. Done when: the design is accepted and a test refuses a forged person-only record.
 - OpenedAt: 2026-09-02T11:31:48Z
-- Revision: 93
+- Revision: 94
 - BudgetExceptions: 0
 - Parked: by=human:Wido at=2026-09-13T08:23:45Z because=Not now (2026-09-13 backlog consolidation, Wido's word): Wido 2026-09-02 deferred true forge-proofing to this foundational design program; nothing signs ledger records; never-idle-ironclad explicitly excludes forged history from its readiness claim; back of queue until Wido prioritises; wide blast radius, multi-slice design.
 
@@ -105,4 +105,5 @@ History:
 - 2026-09-30T19:01:13Z DN3ERWTSCYYGJTN9EFDHJT67Y4-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,paid-proof-authorization,precedent-index,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:31 to=3:30
 - 2026-09-30T19:03:07Z JDM7B50MEP0PRANP3DT763E93H-m1e-b6a4eb0a abandon actor=human:wido targets=delegate-sandbox-cannot-run-the-beds,uncapped-delegate-fanout,claude-denywrite-list-is-a-snapshot,claude-delegate-scratch-cleanup,seam-declaration-convergence,human-carried-landing,standing-validation,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,incident-proposal-drafting,counselor,precedent-index,reconciliation-guards,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:30 to=3:29
 - 2026-09-30T19:03:31Z T2PWQ4HQED6XHXN942K5R4WJ4V-m1e-b6a4eb0a abandon actor=human:wido targets=precedent-index,reconciliation-guards,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:29 to=3:28
-Integrity: sha256=df4f3ed0e59b9c661261eb08e0ad61afd08c1a196d498eaff33f5e81461199c7
+- 2026-09-30T19:03:37Z K4KAHDDGS15W364BMRA9KBFSAC-m1e-b6a4eb0a abandon actor=human:wido targets=reconciliation-guards,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:28 to=3:27
+Integrity: sha256=311840fcc1eca69f1f04498b8001b39a81fbe0e57f77a44732ff79206e454756

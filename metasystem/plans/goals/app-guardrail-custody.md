@@ -2,12 +2,12 @@
 
 - State: parked
 - Priority: 3
-- Sequence: 24
+- Sequence: 23
 - Intent: What: The files that act as an app's guardrails (its budgets, its expected reference outputs, its checks) cannot be changed by the same work they judge; changes to them go through their own review with the warden, the reviewer that guards the guardrails, and the riskiest changes need a person. The first half exists: the warden follows the same "stop when the critique is exhausted" rules as the code critic, and changes to the app's covenant escalate. What is left is the person's part: loosening a budget, replacing an expected reference output, or waiving a check needs a person's approval. Why: Without it, an agent could make failing work pass by quietly loosening a budget or rewriting the expected output. Pros: The safety net cannot be weakened by the work it judges. Cons: Adds a human step to every such change, and no adopted app declares budgets or reference outputs yet, so there is nothing real to build it against.
 - Origin: human
 - Next step: Next: Design the person's approval for budget loosening, reference-output replacement and check waivers on top of the app covenant (the covenant decision it used to wait for is done). Done when: in a test app, loosening a budget declared in its covenant is refused without a person's approval and accepted with it.
 - OpenedAt: 2026-08-23T16:29:41Z
-- Revision: 100
+- Revision: 101
 - BudgetExceptions: 0
 - Parked: by=human:Wido at=2026-09-30T18:45:47Z because=Parked until the first adopted app declares budgets or expected reference outputs in its covenant that need a change. Until then there is no real surface to design against.
 
@@ -112,4 +112,5 @@ History:
 - 2026-09-30T19:01:13Z DN3ERWTSCYYGJTN9EFDHJT67Y4-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,paid-proof-authorization,precedent-index,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:27 to=3:26
 - 2026-09-30T19:03:07Z JDM7B50MEP0PRANP3DT763E93H-m1e-b6a4eb0a abandon actor=human:wido targets=delegate-sandbox-cannot-run-the-beds,uncapped-delegate-fanout,claude-denywrite-list-is-a-snapshot,claude-delegate-scratch-cleanup,seam-declaration-convergence,human-carried-landing,standing-validation,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,incident-proposal-drafting,counselor,precedent-index,reconciliation-guards,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:26 to=3:25
 - 2026-09-30T19:03:31Z T2PWQ4HQED6XHXN942K5R4WJ4V-m1e-b6a4eb0a abandon actor=human:wido targets=precedent-index,reconciliation-guards,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:25 to=3:24
-Integrity: sha256=8333a951816c5ed1acf8027f97f81648dff330874fe7cc086da462f89d4dd714
+- 2026-09-30T19:03:37Z K4KAHDDGS15W364BMRA9KBFSAC-m1e-b6a4eb0a abandon actor=human:wido targets=reconciliation-guards,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:24 to=3:23
+Integrity: sha256=27138a2e1109c24045b70bc79cca8ce968ce618e2c2d638c5f1deb4b4122e746

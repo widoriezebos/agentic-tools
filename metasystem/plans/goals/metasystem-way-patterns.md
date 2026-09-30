@@ -2,12 +2,12 @@
 
 - State: parked
 - Priority: 3
-- Sequence: 22
+- Sequence: 21
 - Intent: What: A short catalog of proven practices for bringing the metasystem into an existing project, for example: use recorded replays as a test suite, freeze known-good outputs, record known issues as accepted risks, and put a cost gate on paid benchmarks. Each entry says what the practice is, which question to ask when a project is adopted, and which sign shows it has become relevant later. Why: These practices were learned during the morpheus adoption but live only in people's memory. The next adoption would have to rediscover them. Pros: Every adoption starts from the same proven practices, and the counselor can raise a practice when it becomes relevant. Cons: Half a day of writing for a catalog nobody uses until the next adoption; it may go stale before then.
 - Origin: human
 - Next step: Next: At the next adoption, write the catalog in docs (one entry per practice with its interview question and its trigger), link it from the inception skill's harvest step, and add one paragraph to the counselor's brief so it checks which practices became relevant. Done when: the inception skill points at the catalog and the next adoption interview asks its questions.
 - OpenedAt: 2026-08-25T06:41:27Z
-- Revision: 94
+- Revision: 95
 - BudgetExceptions: 0
 - Parked: by=human:Wido at=2026-09-13T08:23:56Z because=Not now (2026-09-13 backlog consolidation, Wido's word): Wido 2026-08-25; no docs catalog exists and no inception or adoption is in progress to exercise it; half-day deliverable (catalog with harvest question and applicability trigger per pattern, inception harvest step, counselor applicability pass); revive at the next inception or on his word.
 
@@ -106,4 +106,5 @@ History:
 - 2026-09-30T19:01:13Z DN3ERWTSCYYGJTN9EFDHJT67Y4-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,paid-proof-authorization,precedent-index,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:25 to=3:24
 - 2026-09-30T19:03:07Z JDM7B50MEP0PRANP3DT763E93H-m1e-b6a4eb0a abandon actor=human:wido targets=delegate-sandbox-cannot-run-the-beds,uncapped-delegate-fanout,claude-denywrite-list-is-a-snapshot,claude-delegate-scratch-cleanup,seam-declaration-convergence,human-carried-landing,standing-validation,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,incident-proposal-drafting,counselor,precedent-index,reconciliation-guards,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:24 to=3:23
 - 2026-09-30T19:03:31Z T2PWQ4HQED6XHXN942K5R4WJ4V-m1e-b6a4eb0a abandon actor=human:wido targets=precedent-index,reconciliation-guards,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:23 to=3:22
-Integrity: sha256=5c475d1fc3cbfb7d334e745916a4202d70c1833b54248badf456f92af172e118
+- 2026-09-30T19:03:37Z K4KAHDDGS15W364BMRA9KBFSAC-m1e-b6a4eb0a abandon actor=human:wido targets=reconciliation-guards,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:22 to=3:21
+Integrity: sha256=081f764b1c06f19175b1a5b44e2f38d02de8ad37cb6cdaaa1ef9efc7ef74b5eb
