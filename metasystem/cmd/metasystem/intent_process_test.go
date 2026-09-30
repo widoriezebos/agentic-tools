@@ -757,10 +757,3 @@ func TestStatusShowsTheBoardAndEachUnfinishedBatch(t *testing.T) {
 		}
 	})
 }
-
-func tailLines(lines []string, n int) []string {
-	if len(lines) < n {
-		return lines
-	}
-	return lines[len(lines)-n:]
-}

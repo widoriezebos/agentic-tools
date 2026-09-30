@@ -643,15 +643,6 @@ func (inv *intentInvocation) unfinishedBatches() []batch.Record {
 	return records
 }
 
-// batchStatusLine is one unfinished batch's line: why it waits or started,
-// or its state and size when it records neither.
-func batchStatusLine(record batch.Record, now time.Time) string {
-	if line := batch.WaitLine(record, now, time.Local); line != "" {
-		return line
-	}
-	return fmt.Sprintf("batch %s %s, %d unit%s", record.BatchID, record.State, len(record.Units), map[bool]string{true: "", false: "s"}[len(record.Units) == 1])
-}
-
 // runTestBaseline is test baseline: --gate records the trusted refactor
 // baseline, --check asks whether another edit batch may start; both reach
 // the refactor baseline owner.
