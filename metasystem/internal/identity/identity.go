@@ -198,13 +198,39 @@ func AliveRef(prober Prober, ref Ref) Liveness {
 // AliveRefComparison also reports which recorded representation decided the
 // join, including the labeled legacy fallback.
 func AliveRefComparison(prober Prober, ref Ref) (Liveness, ComparisonMode) {
-	var exact Exact
-	var state Liveness
-	if reader, ok := prober.(StartReader); ok {
-		exact, state, _ = reader.ReadStart(ref.Pid)
-	} else {
-		exact, state, _ = prober.Probe(ref.Pid)
+	exact, state := readRef(prober, ref)
+	return classifyRef(exact, state, ref)
+}
+
+// LiveRef is AliveRef for a caller asking whether the recorded process still
+// holds what it held (a lease, a lock, a lane): a zombie has exited and only
+// awaits its parent's reap, so it reads Dead here. AliveRef keeps a zombie
+// Alive for the callers that wait on the reap itself, such as a launcher's
+// watchdog that must not exit before the launcher publishes its result.
+func LiveRef(prober Prober, ref Ref) Liveness {
+	exact, state := readRef(prober, ref)
+	return classifyLive(exact, state, ref)
+}
+
+// classifyLive is LiveRef's classification of one kernel observation.
+func classifyLive(exact Exact, state Liveness, ref Ref) Liveness {
+	live, _ := classifyRef(exact, state, ref)
+	if live == Alive && exact.Zombie {
+		return Dead
 	}
+	return live
+}
+
+func readRef(prober Prober, ref Ref) (Exact, Liveness) {
+	if reader, ok := prober.(StartReader); ok {
+		exact, state, _ := reader.ReadStart(ref.Pid)
+		return exact, state
+	}
+	exact, state, _ := prober.Probe(ref.Pid)
+	return exact, state
+}
+
+func classifyRef(exact Exact, state Liveness, ref Ref) (Liveness, ComparisonMode) {
 	switch state {
 	case Dead:
 		return Dead, ref.Mode()

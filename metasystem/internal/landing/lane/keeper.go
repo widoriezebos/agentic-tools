@@ -253,8 +253,20 @@ func LastErrorPath(root string) string {
 
 // LastErrorLine is the owner's last pass error as one line; empty when it
 // recorded none.
-func LastErrorLine(root string) string {
-	data, err := os.ReadFile(LastErrorPath(root))
+func LastErrorLine(root string) string { return oneLine(LastErrorPath(root)) }
+
+// TickErrorPath is the owner's last batch tick error, beside its last pass
+// error: written when a pass's tick reports one, removed by a clean pass.
+func TickErrorPath(root string) string {
+	return filepath.Join(batch.ModuleRoot(root), "artifacts", "agents", "supervision", "landing-owner.last-tick-error")
+}
+
+// LastTickErrorLine is the owner's last tick error as one line; empty when
+// its last pass ticked clean.
+func LastTickErrorLine(root string) string { return oneLine(TickErrorPath(root)) }
+
+func oneLine(path string) string {
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return ""
 	}

@@ -23,6 +23,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/strictjson"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
@@ -583,7 +584,62 @@ var BatchBaseRearm = struct {
 	FastForward func(context.Context, string, string) error
 	Rebuild     func(context.Context, string) error
 	Up          func(context.Context, string, string) (testrun.UpOutcome, error)
-}{landing.FastForwardPreservingRegisters, testrun.RebuildLandedEngine, testrun.UpLandedEngine}
+}{landing.FastForwardPreservingRegisters, testrun.RebuildLandedEngine, OwnerUpLandedEngine}
+
+// OwnerUpLandedEngine is the landing owner's run of the rebuilt engine's
+// ordinary up. The owner is machinery, not a session, so that up re-arms a
+// landed rebuild (its authority is the landed bytes, never the caller) and
+// then ends with a non-zero exit at its session step, before the supervision
+// step. The owner never reads up's words: it judges the run by the state it
+// must leave. The enrolled engine is current, and the lane's supervision is
+// armed, starting the missing rings itself when they are down.
+func OwnerUpLandedEngine(ctx context.Context, installation, projectRoot string) (testrun.UpOutcome, error) {
+	return ownerUpLandedEngineWith(ctx, installation, projectRoot, testrun.UpLandedEngine, enrolledEngineCurrent,
+		func(root string) (bool, error) { return supervisionArmedOrRecovered(ctx, root) })
+}
+
+func ownerUpLandedEngineWith(ctx context.Context, installation, projectRoot string, up func(context.Context, string, string) (testrun.UpOutcome, error),
+	current func(string) error, armed func(string) (bool, error)) (testrun.UpOutcome, error) {
+	outcome, upErr := up(ctx, installation, projectRoot)
+	if upErr == nil {
+		return outcome, nil
+	}
+	if err := current(installation); err != nil {
+		return outcome, fmt.Errorf("%w; the lane's engine is not re-armed: %v", upErr, err)
+	}
+	running, err := armed(installation)
+	if err != nil {
+		return outcome, fmt.Errorf("%w; whether the lane's supervision is armed is unknown: %v", upErr, err)
+	}
+	if !running {
+		return outcome, fmt.Errorf("%w; the lane's supervision is not armed after the re-arm", upErr)
+	}
+	return outcome, nil
+}
+
+// enrolledEngineCurrent says whether the installation's enrolled engine is
+// the one on disk: a rebuild the re-arm did not enroll reads as not current.
+func enrolledEngineCurrent(installation string) error {
+	enrolled, err := steward.OpenEnrolledBinary(installation)
+	if err != nil {
+		return err
+	}
+	return enrolled.Close()
+}
+
+// supervisionArmedOrRecovered reads whether the lane's supervision runs and,
+// when it does not, starts the missing rings the way the scheduler does (up's
+// recovery, which never re-arms) and reads again. Only up's exit is read.
+func supervisionArmedOrRecovered(ctx context.Context, installation string) (bool, error) {
+	if running, err := LandingLaneArmed(installation); err != nil || running {
+		return running, err
+	}
+	command := exec.CommandContext(ctx, filepath.Join(installation, "bin", "metasystem"), "up", "--recover-only", "--if-down",
+		"--repo", installation, "--metasystem-root", installation)
+	command.Dir, command.Env = installation, os.Environ()
+	_ = command.Run()
+	return LandingLaneArmed(installation)
+}
 
 // laneCheckout serializes every step that moves the one lane checkout
 // (settings.Root) across the owner's concurrent runs: a landing (branch prep,

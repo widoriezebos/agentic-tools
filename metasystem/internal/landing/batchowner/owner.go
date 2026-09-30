@@ -46,8 +46,12 @@ type ProductionBatchOwnerInputs struct {
 	LockDir     string
 	QueueDir    string
 	// Log is where the owner reports each red, start wait and error: the
-	// standard error of the component or command that runs it.
+	// standard error of the component or command that runs it, and the
+	// supervised component's own log file.
 	Log io.Writer
+	// TickErrors keeps the owner's last reported error for landing status;
+	// nil keeps none.
+	TickErrors *TickErrors
 }
 
 // BatchOwnerSource supplies raw command inputs for a single invocation.
@@ -117,7 +121,17 @@ func InspectBatchOwnerWith(root string, prober identity.Prober, readHolder func(
 		}
 		ref := identity.Ref{Pid: announcement.Pid, StartedAtSec: announcement.PidStartedAt,
 			StartTicks: announcement.PidStartTicks, BootID: announcement.BootID}
-		return holder.Pid, identity.AliveRef(prober, ref), nil
+		// An exited owner its parent has not reaped yet is a zombie and
+		// holds nothing: it reads dead, so a restart or ensure replaces it.
+		return holder.Pid, identity.LiveRef(prober, ref), nil
+	}
+	// No announcement names the holder: a holder pid the kernel reports as
+	// gone, or as a zombie, is a dead owner (its lease is stale), so a
+	// person's start can take over; any other reading stays unknown.
+	if holder.Pid > 0 {
+		if exact, state, probeErr := prober.Probe(holder.Pid); probeErr == nil && (state == identity.Dead || state == identity.Alive && exact.Zombie) {
+			return holder.Pid, identity.Dead, nil
+		}
 	}
 	return holder.Pid, identity.Unknown, fmt.Errorf("landing owner announcement is absent")
 }
@@ -436,7 +450,9 @@ func RebindBatchClaims(root, batchID, tree, machine string, epoch int64, read fu
 		return err
 	}
 	for _, unit := range record.Units {
-		if unit.State != batch.UnitJoined {
+		// A change holds no ledger claim: its authority is its own commit,
+		// so there is nothing to rebind and no goal file to read.
+		if unit.State != batch.UnitJoined || unit.IsChange() {
 			continue
 		}
 		ledger, err := read(controlRoot, tree, unit.GoalID)
@@ -600,10 +616,7 @@ func newProductionBatchOwner(settings config.BatchLanding, held BatchOwnerLease,
 		Early:      productionEarlySeams(settings.Root),
 		// One batch proves at a time on the host (U12).
 		Proving: LandingLaneProving(LandingLaneHome),
-		Report: func(id string, err error) {
-			line, _ := json.Marshal(map[string]any{"component": "landing-owner", "batch": id, "error": err.Error()})
-			fmt.Fprintln(inputs.Log, string(line))
-		},
+		Report:  ownerReport(inputs.Log, inputs.TickErrors),
 	})
 }
 
@@ -672,16 +685,30 @@ func ProbeBatchProofRun(controlRoot, id string, record batch.Record, prober iden
 	return batch.RunProbe{State: batch.RunDead, Detail: "no live launcher for goal " + head}, nil
 }
 
-func RunBatchOwnerPass(out io.Writer, owner *batch.Owner, held BatchOwnerLease, root string, clock func() time.Time, cadence *BatchOwnerCadence) {
-	BatchOwnerPassWith(owner, root, BatchOwnerPassSeams{Helm: helm.Active, Resume: BatchOwnerResume, Out: out, Now: clock,
+// RunBatchOwnerPass is one supervised owner pass; ticks, when set, keeps the
+// last error a resume of the batches reported, cleared by a clean resume.
+func RunBatchOwnerPass(out io.Writer, owner *batch.Owner, held BatchOwnerLease, root string, clock func() time.Time, cadence *BatchOwnerCadence, ticks *TickErrors) {
+	resume := func(owner *batch.Owner) {
+		ticks.Begin()
+		BatchOwnerResume(owner)
+		ticks.End()
+	}
+	controlRoot := BatchOwnerCadenceRoot(root)
+	BatchOwnerPassWith(owner, root, BatchOwnerPassSeams{Helm: helm.Active, Resume: resume, Out: out, Now: clock,
 		Cadence: func() {
 			cadence.start(func() {
-				if err := BatchOwnerCadenceTick(root, held, clock); err != nil {
+				if err := BatchOwnerCadenceTick(controlRoot, held, clock); err != nil {
 					BatchOwnerCadenceReport(out, err)
 				}
 			})
 		}})
 }
+
+// BatchOwnerCadenceRoot is the root a cadence tick runs on. The owner's root
+// is the checkout's git toplevel; the cadence reads the goal ledger, the run
+// store and the testing contract of the installation, which on a checkout
+// that nests the module is its metasystem/ directory.
+func BatchOwnerCadenceRoot(root string) string { return batch.ModuleRoot(root) }
 
 type BatchOwnerPassSeams struct {
 	Helm    func(string) helm.State

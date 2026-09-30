@@ -1,0 +1,21 @@
+# terminal-enrollment-per-computer
+
+- State: parked
+- Priority: 1
+- Sequence: 3
+- Risk: severity=3 novelty=2 exposure=2 accumulation=1 basis="Changes who the system accepts as a person across checkouts; a mistake lets an agent act with a person's authority; design and critique required before any build"
+- Tier: 3
+- Intent: A person enrolls a terminal once per computer instead of once per checkout, without letting an agent that one checkout does not recognise act as the person in another
+- Origin: main
+- Next step: Design first: each checkout must prove on the spot, in that checkout, that no agent stands between the person and the act (host-wide agent recognition, fresh target-bound proof, checkout-bound grants); see section 11 of /Users/wido/LocalStorage/agentic-tools-evidence/host-setup-20260930/host-setup.md and finding M2 in astra-r1.md next to it. Deferred by Wido 2026-09-30; picked up after host-setup-from-scratch lands
+- OpenedAt: 2026-09-30T12:03:28Z
+- Revision: 2
+- BlockedBy: host-setup-from-scratch
+- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
+- BudgetExceptions: 0
+- Parked: by=human:wido at=2026-09-30T12:03:28Z blocker=host-setup-from-scratch because=blocked by host-setup-from-scratch; returns when it is done
+
+History:
+- 2026-09-30T12:03:28Z 3DJBXP879TJ1REFFB38F7VBM0J-m1e-b6a4eb0a open actor=human:wido targets=terminal-enrollment-per-computer,host-setup-from-scratch
+- 2026-09-30T12:04:10Z FDXGF7Z6QYKVVH03NWSFXX68TV-m1e-b6a4eb0a set-priority actor=human:wido targets=adoption-filled-delivery-passes-on-trunk,beds-run-under-the-oldest-supported-bash,brief-declares-the-round-boundary,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,delegate-sandbox-runs-the-beds,design-rounds-read-less-and-repeat-less,every-round-gets-an-independent-read,evidence-and-build-output-have-retention-and-stay-unindexed,failures-show-observed-against-expected,fixture-runners-and-fakes-bound-their-own-life,fleet-doctor-repairs-what-stops-other-seats,follow-up-brief-cannot-cite-fresh-trunk-files,machinery-runs-unattended-on-codex,one-steward-per-checkout-on-its-own-root,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,receipt-writer-follows-the-worktree-it-runs-in,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,terminal-enrollment-per-computer,test-environment-edges-are-closed,testing-surfaces-declare-their-mirror reason=priority-order subject=terminal-enrollment-per-computer from=unranked to=1:3 requested-sequence=3
+Integrity: sha256=ad9695707403738cae9378b49dfade519f963922e9bb1d42c71dffd31e51640f

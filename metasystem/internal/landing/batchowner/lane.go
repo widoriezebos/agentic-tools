@@ -334,10 +334,12 @@ func EndLaneOwner(root string) (int64, error) {
 		} else if err != nil {
 			return holder.Pid, fmt.Errorf("the landing owner pid %d could not be ended: %w", holder.Pid, err)
 		}
-		for deadline := time.Now().Add(15 * time.Second); identity.AliveRef(prober, ref) == identity.Alive && time.Now().Before(deadline); {
+		// A zombie is ended: it holds no lease or lock, and only its parent
+		// (the supervision owner) can reap it.
+		for deadline := time.Now().Add(15 * time.Second); identity.LiveRef(prober, ref) == identity.Alive && time.Now().Before(deadline); {
 			time.Sleep(100 * time.Millisecond)
 		}
-		if identity.AliveRef(prober, ref) == identity.Alive {
+		if identity.LiveRef(prober, ref) == identity.Alive {
 			return holder.Pid, fmt.Errorf("the landing owner pid %d is still running 15 seconds after it was asked to end", holder.Pid)
 		}
 		return holder.Pid, nil

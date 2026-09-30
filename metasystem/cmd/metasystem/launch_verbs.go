@@ -61,12 +61,30 @@ func launchSeat(executable string, executableErr error, resolve func(string) (st
 	if executableErr != nil {
 		return board.Seat{}
 	}
-	installation := realpath.Resolve(filepath.Join(filepath.Dir(executable), ".."))
+	installation := launchSeatInstallation(executable)
 	machine, err := resolve(installation)
 	if err != nil {
 		return board.Seat{}
 	}
 	return board.Seat{Machine: machine, Installation: installation}
+}
+
+// launchSeatInstallation is the installation that holds an engine: the
+// nearest ancestor carrying metasystem.conf. The engine runs from
+// <installation>/bin or, enrolled, from its pin under
+// <installation>/artifacts/agents/steward/engine-pins, so the parent of its
+// folder is the installation only in the first case. Without such an
+// ancestor it stays the parent of the engine's folder.
+func launchSeatInstallation(executable string) string {
+	folder := realpath.Resolve(filepath.Dir(executable))
+	for candidate := folder; ; candidate = filepath.Dir(candidate) {
+		if info, err := os.Stat(filepath.Join(candidate, "metasystem.conf")); err == nil && !info.IsDir() {
+			return candidate
+		}
+		if filepath.Dir(candidate) == candidate {
+			return filepath.Dir(folder)
+		}
+	}
 }
 
 var launchManager = newLaunchManager

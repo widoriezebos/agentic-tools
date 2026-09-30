@@ -199,6 +199,8 @@ func runIntentLandingStatus(inv *intentInvocation) int {
 		result.next, result.nextReason = view.Owner.Fix, laneFixReason(view.Owner.Fix)
 	case view.Owner.RetryHint != nil && view.Owner.State == lane.OwnerGivenUp:
 		result.next, result.nextReason = inv.publicArgv("landing", "start"), "the keep-alive gave up; "+*view.Owner.RetryHint
+	case view.Owner.LastTickError != nil && !inv.input.switched("verbose"):
+		result.next, result.nextReason = inv.publicArgv("landing", "status", "--verbose"), "shows the owner's error and the log that holds it"
 	}
 	return inv.render(result)
 }
@@ -229,6 +231,12 @@ func landingViewDetail(view lane.View) []string {
 	}
 	if view.Owner.StoppedBy != nil {
 		lines = append(lines, "stopped by "+*view.Owner.StoppedBy)
+	}
+	if view.Owner.LastTickError != nil {
+		lines = append(lines, "last tick failed: "+*view.Owner.LastTickError)
+	}
+	if view.Root != nil {
+		lines = append(lines, "owner log: "+batchowner.OwnerLogPath(*view.Root))
 	}
 	if view.Owner.RetryHint != nil {
 		lines = append(lines, "to retry: "+*view.Owner.RetryHint)

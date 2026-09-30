@@ -3,6 +3,7 @@ package lane
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"reflect"
 	"sort"
 	"strings"
@@ -56,7 +57,7 @@ func TestViewShapeWithoutALane(t *testing.T) {
 			t.Errorf("%s = %s; want null", key, object[key])
 		}
 	}
-	if got, want := keysOf(t, object["owner"]), []string{"last_exit", "pid", "restarts", "retry_hint", "since", "state", "stopped_by"}; !reflect.DeepEqual(got, want) {
+	if got, want := keysOf(t, object["owner"]), []string{"last_exit", "last_tick_error", "last_tick_problem", "pid", "restarts", "retry_hint", "since", "state", "stopped_by"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("owner keys = %v, want %v", got, want)
 	}
 	if view.Owner.State != OwnerNotStarted || !strings.Contains(view.Summary, "no landing lane is registered") {
@@ -243,5 +244,32 @@ func TestLaneViewShowsTheLanesSpend(t *testing.T) {
 	view := BuildView(sources)
 	if asked != resolved(root)+"|"+AccountID(root) || view.Spend == nil || *view.Spend != (Spend{Account: AccountID(root), Attempts: 2, ReservedMinutes: 90}) {
 		t.Fatalf("asked=%q spend=%+v", asked, view.Spend)
+	}
+}
+
+// A running owner whose last tick failed says so in the one line: the batch
+// and the error, in plain words, with the owner's log beside it in --verbose.
+func TestViewShowsTheOwnersLastTickError(t *testing.T) {
+	t.Parallel()
+	home, root, _ := laneDirs(t)
+	if _, err := Resolve(home, root, "m1e", laneNow, true); err != nil {
+		t.Fatal(err)
+	}
+	view := BuildView(viewSources(home, true, nil))
+	if view.Owner.LastTickError != nil || view.Owner.LastTickProblem != nil || strings.Contains(view.Summary, "can't advance") {
+		t.Fatalf("a clean owner shows a tick error: %+v %q", view.Owner, view.Summary)
+	}
+	path := TickErrorPath(resolved(root))
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("batch b1: read joined goal change:5555 before rebind: absent\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	view = BuildView(viewSources(home, true, nil))
+	if view.Owner.LastTickError == nil || *view.Owner.LastTickError != "batch b1: read joined goal change:5555 before rebind: absent" ||
+		view.Owner.LastTickProblem == nil || *view.Owner.LastTickProblem != "batch b1 can't advance: the lane owner could not hand its members' claims to the lane" ||
+		!strings.HasPrefix(view.Summary, *view.Owner.LastTickProblem+"; landing lane ") || strings.Contains(view.Summary, "before rebind") {
+		t.Fatalf("tick error view = %+v %q", view.Owner, view.Summary)
 	}
 }

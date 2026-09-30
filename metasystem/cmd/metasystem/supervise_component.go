@@ -260,6 +260,11 @@ func setupLandingOwnerWithInputs(stderr io.Writer, metasystemRoot, repo string, 
 	var settings config.BatchLanding
 	var inputs batchowner.ProductionBatchOwnerInputs
 	clock := batchowner.CadenceProductionClock
+	// Supervision discards the component's standard error: every owner line
+	// also goes to its bounded log, and its last tick error stays for
+	// landing status.
+	stderr = io.MultiWriter(stderr, batchowner.NewOwnerLog(repo))
+	ticks := batchowner.NewTickErrors(repo)
 	release = func() error {
 		cadence.Stop()
 		if announced != nil {
@@ -298,7 +303,7 @@ func setupLandingOwnerWithInputs(stderr io.Writer, metasystemRoot, repo string, 
 		if err != nil {
 			return err
 		}
-		inputs.Log = stderr
+		inputs.Log, inputs.TickErrors = stderr, ticks
 		if held == nil {
 			acquired, err := batchowner.AcquireBatchOwnerForComponent(repo)
 			if acquired.Announced {
@@ -326,7 +331,7 @@ func setupLandingOwnerWithInputs(stderr io.Writer, metasystemRoot, repo string, 
 				held = nil
 				return err
 			}
-			batchowner.RunBatchOwnerPass(stderr, owner, *held, repo, clock, cadence)
+			batchowner.RunBatchOwnerPass(stderr, owner, *held, repo, clock, cadence, ticks)
 			return nil
 		}
 		return activePass()
