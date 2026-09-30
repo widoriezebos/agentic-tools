@@ -75,6 +75,10 @@ func newUnsetBed(t *testing.T) *unsetBed {
 	files := map[string][]byte{
 		"metasystem/go.mod":          []byte("module example.com/m\n\ngo 1.22\n"),
 		"metasystem/metasystem.conf": nil,
+		// The ledger's root record, so a finalization reads a valid ledger.
+		"metasystem/plans/goals/backlog.md": goal.RenderRoot(&goal.RootRecord{Identity: "01J5X000000000000000000000", FormatVersion: "1",
+			SyncMode: goal.SyncRemote, MigrationEpoch: "2026-08-20T00:00:00Z", ManifestDigest: strings.Repeat("ab", 32), MigrationMode: "manifest", Revision: 1,
+			History: []goal.HistoryLine{{At: "2026-08-20T09:00:00Z", Opid: "01J5X0000000000000000000A0-mac-a-1a2b3c4d", Verb: "migrate", Actor: "mac-a+lin-1", Keep: -1}}}),
 		// goal-a is held by the lane for this batch, handed over by the seat.
 		"metasystem/plans/goals/goal-a.md": unsetGoalFile("goal-a", &goal.ClaimRecord{Machine: "landing", Lineage: "owner", At: "2026-09-17T10:00:00Z", Revision: 2, AccountingRevision: 1,
 			HandedOver: goal.HandedOver{FromMachine: "seat", FromLineage: "lineage-a", FromEpoch: 4, Batch: unsetBatchID}}),
@@ -295,4 +299,77 @@ func TestUnsetResumesAfterFailedReturn(t *testing.T) {
 func isLaneRefusal(err error, code string) bool {
 	var refusal *lane.Refusal
 	return errors.As(err, &refusal) && refusal.Code == code
+}
+
+// publishLanding pushes to origin's main a landing commit carrying the
+// trailers the lane writes for the batch's joined members, as a push that
+// reached main does.
+func (bed *unsetBed) publishLanding(t *testing.T, trailers ...string) string {
+	t.Helper()
+	unsetGit(t, bed.publisher, "pull", "-q", "--ff-only", "origin", "main")
+	if err := os.WriteFile(filepath.Join(bed.publisher, "landed.txt"), []byte("landed\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	unsetGit(t, bed.publisher, "add", "landed.txt")
+	unsetGit(t, bed.publisher, "commit", "-qm", "landing batch\n\n"+strings.Join(trailers, "\n"))
+	unsetGit(t, bed.publisher, "push", "-q", "origin", "main")
+	return unsetGit(t, bed.publisher, "rev-parse", "HEAD")
+}
+
+// Design r10 §1 step 3: an owner that died after its push reached main but
+// before recording it leaves a batch with no completed push. When every
+// joined member's trailer is on main, the unset records the push and
+// finalizes the members as landed, so it finishes and unregisters instead
+// of holding the batch (and the host) forever. Only some on main keeps
+// the batch and lists those members.
+func TestUnsetFinishesAPushThatReachedMainUnrecorded(t *testing.T) {
+	t.Parallel()
+	partial := newUnsetBed(t)
+	partial.publish = true
+	partial.publishLanding(t, batch.LandingChangeTrailer+": "+partial.fix)
+	report := partial.unset(t)
+	listedOnMain := false
+	for _, entry := range report.Unresolved {
+		listedOnMain = listedOnMain || entry.Member == partial.fix && strings.Contains(entry.Reason, "is on main")
+	}
+	if report.Unregistered || !listedOnMain {
+		t.Fatalf("unset with part of a batch on main = %+v; want that member listed and the lane kept", report)
+	}
+	if goalA := partial.unit(t, "goal-a"); goalA.State != batch.UnitJoined {
+		t.Fatalf("goal-a = %s; a batch partly on main keeps its members", goalA.State)
+	}
+
+	bed := newUnsetBed(t)
+	bed.publish = true
+	tip := bed.publishLanding(t, batch.LandingChangeTrailer+": "+bed.fix, "Landing-Provenance: chain=chain-a")
+	report = bed.unset(t)
+	if !report.Unregistered {
+		t.Fatalf("unset after an unrecorded push reached main = %+v; want it finalized and unregistered", report)
+	}
+	record, err := bed.store.Load(unsetBatchID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.Landing == nil || !record.Landing.PushComplete || record.Landing.PushedTip != tip {
+		t.Fatalf("landing = %+v; want the push recorded at %s", record.Landing, tip)
+	}
+	for _, id := range []string{"goal-a", bed.fix} {
+		if unit := bed.unit(t, id); unit.State != batch.UnitLanded || !unit.P6Done || unit.LandedCommit != tip {
+			t.Fatalf("%s = %s p6=%v commit=%s; want landed at %s", id, unit.State, unit.P6Done, unit.LandedCommit, tip)
+		}
+	}
+}
+
+// Settling re-reads the owner after ending it: an owner still running is
+// live work the unset waits for, never taken as ended.
+func TestUnsetSettleRereadsTheOwnerAfterEndingIt(t *testing.T) {
+	t.Parallel()
+	bed := newUnsetBed(t)
+	steps := UnsetLane{Home: bed.home, By: "Wido", Now: func() time.Time { return unsetNow },
+		Probe: func(string) (lane.OwnerProbe, error) { bed.probes++; return lane.OwnerProbe{Alive: true, PID: 4242}, nil },
+		End:   func(string) (int64, error) { bed.ends++; return 4242, nil }}
+	settlement, err := steps.settle(bed.layout)
+	if err != nil || settlement.Settled(true) || bed.ends != 1 || bed.probes != 2 {
+		t.Fatalf("settle with an owner that outlives its end = %+v %v (ends %d, probes %d); want live work", settlement, err, bed.ends, bed.probes)
+	}
 }

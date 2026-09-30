@@ -74,7 +74,14 @@ func (u UnsetLane) settle(layout lane.Layout) (lane.Settlement, error) {
 		if len(settlement.Live) == 0 {
 			if _, err := u.End(checkout); err != nil {
 				settlement.Unknown = append(settlement.Unknown, "the lane's owner could not be ended: "+err.Error())
+			} else if after, err := u.Probe(checkout); err != nil {
+				settlement.Unknown = append(settlement.Unknown, "whether the lane's owner ended is unknown: "+err.Error())
+			} else if after.Alive {
+				settlement.Live = append(settlement.Live, "the lane's owner still runs after it was asked to end")
 			}
+			// A publication the owner began between the first read and its
+			// end is not finishing any more: reconciliation reads main for
+			// it, member by member.
 		}
 	}
 	holder, busy, err := lane.ProbeProving(u.Home)
@@ -98,36 +105,67 @@ func member(unit batch.Unit) bool {
 	return unit.State == batch.UnitJoining || unit.State == batch.UnitJoined || unit.State == batch.UnitReturnPending
 }
 
-// reconcile finalizes the members of a batch whose push completed and are
-// on main (landed-trailer recovery). A member of a batch with no completed
-// push whose commit is on main anyway is listed and its batch kept: a
-// return would undo a landing.
+// reconcile finalizes the members of a batch that are on main
+// (landed-trailer recovery, design r10 §1 step 3), read from origin's main
+// fetched now. A batch whose push reached main without the record saying
+// so (its owner died between the two) is recorded pushed when every joined
+// member's trailer is on main, and finalized. When only some are, those
+// are listed and the batch kept: returning one on main would undo a
+// landing, and landing the rest is not the unset's to do.
 func (u UnsetLane) reconcile(layout lane.Layout, record batch.Record) ([]lane.Unresolved, error) {
 	if !open(record) {
 		return nil, nil
 	}
 	store := u.store(layout)
 	seams := recoverySeamsAt(string(layout.Checkout), string(layout.Install), store, record.BatchID, u.Now(), GitOutput, &u.Calls)
+	// The lane is going away: its checkout's engine is left as it is.
+	seams.Rearm = func(string) error { return nil }
 	if record.Landing != nil && record.Landing.PushComplete {
-		// The lane is going away: its checkout's engine is left as it is.
-		seams.Rearm = func(string) error { return nil }
 		return nil, batch.RecoverPushedSeries(store, record.BatchID, u.By, u.Now(), seams)
 	}
-	var unresolved []lane.Unresolved
+	var joined []batch.Unit
 	for _, unit := range record.Units {
-		if unit.State != batch.UnitJoined {
-			continue
+		if unit.State == batch.UnitJoined {
+			joined = append(joined, unit)
 		}
+	}
+	if len(joined) == 0 {
+		return nil, nil
+	}
+	if _, err := fetchLandingBaseTree(string(layout.Checkout)); err != nil {
+		return nil, err
+	}
+	var onMain []lane.Unresolved
+	tip := ""
+	for _, unit := range joined {
 		commit, found, err := originTrailer(seams, unit)
 		if err != nil {
 			return nil, err
 		}
 		if found {
-			unresolved = append(unresolved, lane.Unresolved{Batch: record.BatchID, Member: unit.GoalID,
-				Reason: "its commit " + commit + " is on main, but its batch has no completed push to finalize it from"})
+			// Members replay in their order, so the last one's commit is
+			// the pushed tip.
+			tip = commit
+			onMain = append(onMain, lane.Unresolved{Batch: record.BatchID, Member: unit.GoalID,
+				Reason: "its commit " + commit + " is on main, but other members of its batch are not, so it was neither finalized nor returned"})
 		}
 	}
-	return unresolved, nil
+	switch {
+	case len(onMain) == 0:
+		return nil, nil
+	case len(onMain) < len(joined):
+		return onMain, nil
+	}
+	if err := store.Update(record.BatchID, func(next *batch.Record) error {
+		if next.Landing == nil {
+			next.Landing = &batch.LandingProgress{}
+		}
+		next.Landing.PushComplete, next.Landing.PushedTip = true, tip
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	return nil, batch.RecoverPushedSeries(store, record.BatchID, u.By, u.Now(), seams)
 }
 
 func originTrailer(seams batch.RecoverySeams, unit batch.Unit) (string, bool, error) {

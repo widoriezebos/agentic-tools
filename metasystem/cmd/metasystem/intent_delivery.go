@@ -1652,7 +1652,7 @@ func (inv *intentInvocation) landingBatchRoot(targets []intentTarget) (string, b
 	root, configured, err := owners.batchRoot(inv.layout.InstallationRoot, owners.now())
 	var laneRefusal *lane.Refusal
 	if errors.As(err, &laneRefusal) {
-		return "", configured, &intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: laneRefusal.Error(), Decision: laneRefusal.Fix}
+		return "", configured, laneRefusalResult(targets, laneRefusal)
 	}
 	if err != nil {
 		return "", configured, &intentResult{Targets: targets, Outcome: intentRefused, code: 1,
@@ -1660,6 +1660,21 @@ func (inv *intentInvocation) landingBatchRoot(targets []intentTarget) (string, b
 			next:    inv.publicArgv("settings", "check"), nextReason: "names what is wrong with landing.batch-root", Details: []string{err.Error()}}
 	}
 	return root, configured, nil
+}
+
+// laneRefusalResult is a lane refusal as a person reads it: its situation
+// on line 1, its one command on line 2 when it has one (else its fix in
+// words), and its code only under --verbose and --json.
+func laneRefusalResult(targets []intentTarget, refusal *lane.Refusal) *intentResult {
+	result := &intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: refusal.Message,
+		Details: []string{"refused because: " + refusal.Code}}
+	if len(refusal.Argv) == 0 {
+		result.Decision = refusal.Fix
+		return result
+	}
+	reason, _, _ := strings.Cut(refusal.Fix, ": metasystem ")
+	result.next, result.nextReason = refusal.Argv, reason
+	return result
 }
 
 func (inv *intentInvocation) landJob(job string) intentResult {

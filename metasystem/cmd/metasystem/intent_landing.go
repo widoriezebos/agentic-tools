@@ -742,9 +742,12 @@ func runIntentLandingUnset(inv *intentInvocation) int {
 			next: refusal.Argv, nextReason: refusal.Fix, Details: []string{"refused because: " + refusal.Code}})
 	}
 	if err != nil {
-		return inv.render(intentResult{Outcome: intentFailed, code: 1, Data: report,
-			Summary: "the landing lane's unset could not go on (" + oneLine(err.Error()) + "); the lane stays fenced",
-			next:    inv.sameCommand(), nextReason: "continues the unset from where it stopped",
+		summary := "the landing lane's unset could not start (" + oneLine(err.Error()) + "); nothing was changed"
+		if _, fenced, _ := lane.ReadUnset(home); fenced {
+			summary = "the landing lane's unset could not go on (" + oneLine(err.Error()) + "); the lane stays fenced"
+		}
+		return inv.render(intentResult{Outcome: intentFailed, code: 1, Data: report, Summary: summary,
+			next: inv.sameCommand(), nextReason: "tries again once the cause is fixed",
 			Details: []string{"landing unset: " + err.Error()}})
 	}
 	targets := []intentTarget{}
@@ -763,6 +766,11 @@ func runIntentLandingUnset(inv *intentInvocation) int {
 	case report.NoLane:
 		return inv.render(intentResult{Outcome: intentUnchanged, Targets: targets, Data: report,
 			Summary: "no landing lane is registered on this computer; each seat lands its own work"})
+	case report.Unregistered && report.CheckoutGone:
+		summary := "unset this computer's landing lane " + report.Record.Root + ", whose checkout no longer exists; each seat lands its own work now"
+		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: report, Summary: summary,
+			Details: []string{"no batch of the lane could be read, so none was returned; a goal the ledger still shows held by the lane is released with metasystem goal release"},
+			view:    landingDone(summary, report.Record.Root)})
 	case report.Unregistered:
 		summary := "unset this computer's landing lane " + report.Record.Root + "; each seat lands its own work now"
 		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: report, Summary: summary,

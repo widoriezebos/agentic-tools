@@ -98,8 +98,9 @@ func TestJoinIsRefusedWhileTheLaneIsUnset(t *testing.T) {
 	inv := &intentInvocation{layout: stateroot.Layout{InstallationRoot: bed.seatA}, owners: intentOwners{delivery: &intentDeliveryOwners{
 		batchRoot: bed.seams.BatchRoot, now: func() time.Time { return laneTestNow }}}}
 	_, _, refused := inv.landingBatchRoot(nil)
-	if refused == nil || refused.Outcome != intentRefused || !strings.Contains(refused.Summary, lane.CodeUnsetting) || !strings.Contains(refused.Decision, "metasystem landing unset") {
-		t.Fatalf("a join while the lane is unset = %+v; want %s naming metasystem landing unset", refused, lane.CodeUnsetting)
+	if refused == nil || refused.Outcome != intentRefused || strings.Contains(refused.Summary, lane.CodeUnsetting) || !strings.Contains(refused.Summary, "being unset") ||
+		strings.Join(refused.next, " ") != "metasystem landing unset" || !strings.Contains(strings.Join(refused.Details, " "), lane.CodeUnsetting) {
+		t.Fatalf("a join while the lane is unset = %+v; want the situation on line 1, metasystem landing unset on line 2, %s only in the details", refused, lane.CodeUnsetting)
 	}
 	if root, configured, err := bed.seams.Resolve(bed.seatA, laneTestNow); err != nil || !configured || root != bed.landingA {
 		t.Fatalf("a reader during the unset = %q %v %v; want the lane", root, configured, err)
@@ -131,10 +132,13 @@ func TestWorkLandRefusesASeatWhoseRootIsNotTheHostLane(t *testing.T) {
 	if refused == nil || refused.Outcome != intentRefused {
 		t.Fatalf("seat B landed through another lane: %+v", refused)
 	}
-	for _, want := range []string{lane.CodeMismatch, bed.landingA, bed.landingB, "registered by seat-a"} {
+	for _, want := range []string{bed.landingA, bed.landingB, "registered by seat-a"} {
 		if !strings.Contains(refused.Summary, want) {
 			t.Errorf("summary %q lacks %q", refused.Summary, want)
 		}
+	}
+	if strings.Contains(refused.Summary, lane.CodeMismatch) || !strings.Contains(strings.Join(refused.Details, " "), lane.CodeMismatch) {
+		t.Errorf("the code %s belongs in the details, not line 1: %+v", lane.CodeMismatch, refused)
 	}
 	for _, want := range []string{"metasystem settings set landing.batch-root " + bed.landingA, "metasystem landing set " + bed.landingB} {
 		if !strings.Contains(refused.Decision, want) {
@@ -318,5 +322,27 @@ func TestSeatSettingNeverRegisters(t *testing.T) {
 	}
 	if _, ok, _ := lane.Read(bed.home); ok {
 		t.Fatalf("the owner of a checkout naming itself registered the host's lane")
+	}
+}
+
+// At cutover every seat meets an older engine's lane record: work land
+// says so in plain words on line 1, names the one command on line 2, and
+// keeps the code for --verbose and --json.
+func TestWorkLandNamesLandingSetForAnOlderLaneRecord(t *testing.T) {
+	t.Parallel()
+	bed := newLaneBed(t)
+	if err := os.MkdirAll(lane.HostDir(bed.home), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	old := `{"root":"` + bed.landingA + `","registeredBy":"m1e","at":"2026-09-29T18:00:00Z"}`
+	if err := os.WriteFile(lane.RecordPath(bed.home), []byte(old), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	inv := &intentInvocation{layout: stateroot.Layout{InstallationRoot: bed.seatA}, owners: intentOwners{delivery: &intentDeliveryOwners{
+		batchRoot: bed.seams.BatchRoot, now: func() time.Time { return laneTestNow }}}}
+	_, _, refused := inv.landingBatchRoot(nil)
+	if refused == nil || strings.Contains(refused.Summary, lane.CodeRecordIncomplete) || !strings.Contains(refused.Summary, "older engine") ||
+		strings.Join(refused.next, " ") != "metasystem landing set "+bed.landingA || !strings.Contains(strings.Join(refused.Details, " "), lane.CodeRecordIncomplete) {
+		t.Fatalf("work land on an older lane record = %+v", refused)
 	}
 }

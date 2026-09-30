@@ -214,3 +214,45 @@ func TestUnsetRecoversAnUnreadableJournal(t *testing.T) {
 	}
 	register(t, home, root)
 }
+
+// A lane whose checkout is gone holds nothing an unset could read or
+// return: the unset unregisters it at once and says so, whether the record
+// is an older engine's or the checkout vanished during the unset. No
+// command loops on it.
+func TestUnsetOfALaneWhoseCheckoutIsGone(t *testing.T) {
+	t.Parallel()
+	home, root, second := laneDirs(t)
+	if err := os.MkdirAll(HostDir(home), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	old := `{"root":"` + resolved(root) + `","registeredBy":"m1e","at":"2026-09-29T18:00:00Z"}`
+	if err := os.WriteFile(RecordPath(home), []byte(old), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(root); err != nil {
+		t.Fatal(err)
+	}
+	report, err := Unset(home, "Wido", laneNow, false, emptyUnsetSeams())
+	if err != nil || !report.Unregistered || !report.CheckoutGone {
+		t.Fatalf("unset of an old lane whose checkout is gone = %+v %v", report, err)
+	}
+	register(t, home, second)
+	seams := emptyUnsetSeams()
+	seams.Settle = func(Layout) (Settlement, error) { return Settlement{Live: []string{"a proof runs"}}, nil }
+	if report, err := Unset(home, "Wido", laneNow, false, seams); err != nil || report.Stopped != StepSettled {
+		t.Fatalf("unset = %+v %v", report, err)
+	}
+	if err := os.RemoveAll(second); err != nil {
+		t.Fatal(err)
+	}
+	report, err = Unset(home, "Wido", laneNow, false, seams)
+	if err != nil || !report.Unregistered || !report.CheckoutGone {
+		t.Fatalf("resumed unset after the checkout vanished = %+v %v", report, err)
+	}
+	if _, ok, _ := Read(home); ok {
+		t.Fatalf("the lane is still registered")
+	}
+	if _, paused := ReadPause(home); paused {
+		t.Fatalf("the unset left its pause behind")
+	}
+}

@@ -510,6 +510,9 @@ func TestLandingUnsetIsAPersonsActAndUnregisters(t *testing.T) {
 	if record, _, _ := lane.Read(bed.home); record.CustodyEpoch != 2 {
 		t.Fatalf("epoch after set, unset and set = %d; want 2", record.CustodyEpoch)
 	}
+	if _, paused := lane.ReadPause(bed.home); paused {
+		t.Fatalf("a lane set after an unset comes back stopped by the unset's fence")
+	}
 }
 
 // An unset that cannot finish says what is left in line 1 and the command

@@ -109,6 +109,9 @@ type UnsetReport struct {
 	Record  Record `json:"record"`
 	// Unregistered: the lane is gone; each seat lands its own work.
 	Unregistered bool `json:"unregistered,omitempty"`
+	// CheckoutGone: the lane's checkout no longer existed, so no member
+	// could be read or returned; the lane was unregistered as it stood.
+	CheckoutGone bool `json:"checkoutGone,omitempty"`
 	// Stopped is the step the unset waits at when it is not done.
 	Stopped    string       `json:"stopped,omitempty"`
 	Settlement Settlement   `json:"settlement"`
@@ -129,7 +132,10 @@ type UnsetReport struct {
 //  5. Unregister, under the host flock, only when every member is confirmed
 //     returned; otherwise the unresolved members are journaled and listed.
 func Unset(home, by string, now time.Time, force bool, seams UnsetSeams) (UnsetReport, error) {
-	journal, fresh, err := fence(home, by, now)
+	journal, fresh, goneRoot, err := fence(home, by, now)
+	if goneRoot != "" && err == nil {
+		return UnsetReport{Record: Record{Root: goneRoot}, Unregistered: true, CheckoutGone: true}, nil
+	}
 	if err != nil || journal == nil {
 		return UnsetReport{NoLane: journal == nil && err == nil}, err
 	}
@@ -215,15 +221,26 @@ func Unset(home, by string, now time.Time, force bool, seams UnsetSeams) (UnsetR
 // be read is written again from the record, still fenced: its steps are
 // each safe to run again; with no record left it is the end of an unset
 // that ended, and it is removed.
-func fence(home, by string, now time.Time) (journal *UnsetJournal, fresh bool, err error) {
+func fence(home, by string, now time.Time) (journal *UnsetJournal, fresh bool, goneRoot string, err error) {
 	err = withLock(home, func() error {
 		existing, fenced, readErr := ReadUnset(home)
 		if fenced && readErr == nil {
+			if gone(existing.Root) {
+				goneRoot = existing.Root
+				return removeLane(home)
+			}
 			journal = &existing
 			_, err := setPauseLocked(home, by, now)
 			return err
 		}
 		record, ok, err := Read(home)
+		if ok && record.Root != "" && gone(record.Root) {
+			// The checkout that held the lane's batches is gone, so no
+			// member is left in the lane's custody to return: the lane
+			// goes, and the person hears so.
+			goneRoot = record.Root
+			return removeLane(home)
+		}
 		var refusal *Refusal
 		switch {
 		case err != nil && !(errors.As(err, &refusal) && refusal.Code == CodeRecordIncomplete):
@@ -244,7 +261,10 @@ func fence(home, by string, now time.Time) (journal *UnsetJournal, fresh bool, e
 			// landing set would.
 			layout, err := NewLayout(record.Root)
 			if err != nil {
-				return err
+				return &Refusal{Code: CodeRecordIncomplete,
+					Message: "this computer's landing lane " + record.Root + " was registered by an older engine and its layout can't be resolved now, so nothing was returned",
+					Fix:     "a person registers that checkout again, then unsets it: metasystem landing set " + record.Root,
+					Argv:    []string{"metasystem", "landing", "set", record.Root}}
 			}
 			install = string(layout.Install)
 		}
@@ -258,9 +278,20 @@ func fence(home, by string, now time.Time) (journal *UnsetJournal, fresh bool, e
 		return err
 	})
 	if err != nil {
-		return nil, false, err
+		return nil, false, "", err
 	}
-	return journal, fresh, nil
+	return journal, fresh, goneRoot, nil
+}
+
+// removeLane removes the lane's host state, the journal last; the caller
+// holds the lane flock.
+func removeLane(home string) error {
+	for _, path := range []string{RecordPath(home), keeperPath(home), pausePath(home), unsetPath(home)} {
+		if err := removeIfPresent(path); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // journalStep records step as done, once.
@@ -278,7 +309,8 @@ func journalStep(home, step string, now time.Time) error {
 }
 
 // unregister confirms every member under the host flock and, when all are
-// confirmed, removes the lane record, the keeper's state and the journal.
+// confirmed, removes the lane record, the keeper's state, the pause and the
+// journal.
 // Otherwise it journals and returns the unresolved members, each with the
 // most specific reason known: the failure of its return when there was one.
 func unregister(home string, confirm func() ([]Unresolved, error), listed []Unresolved, now time.Time) (unresolved []Unresolved, err error) {
@@ -315,12 +347,10 @@ func unregister(home string, confirm func() ([]Unresolved, error), listed []Unre
 			journal.Unresolved = unresolved
 			return writeJSON(home, unsetPath(home), journal)
 		}
-		for _, path := range []string{RecordPath(home), keeperPath(home), unsetPath(home)} {
-			if err := removeIfPresent(path); err != nil {
-				return err
-			}
-		}
-		return nil
+		// The fence's pause goes with the lane: a later landing set starts
+		// a lane that is not stopped. The journal goes last, so a crash
+		// in between leaves an unset that ends when run again.
+		return removeLane(home)
 	})
 	return unresolved, err
 }
