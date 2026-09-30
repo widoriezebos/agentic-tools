@@ -12,6 +12,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
@@ -50,7 +51,10 @@ func newLaunchManager() *launch.Manager {
 	return &launch.Manager{Store: launch.Store{}, Adapters: map[string]launch.Adapter{"codex-exec": codex, "claude-headless": claude, "devin-print": devin, "plain-exec": launch.PlainExec{}},
 		Processes: processes, Signaler: processes, Prober: prober, Supervisor: launch.OSSupervisorStarter{Prober: prober}, Now: time.Now,
 		Sleep: time.Sleep, Grace: 2 * time.Second, Poll: 50 * time.Millisecond, StartCap: launch.DefaultWaitTimeout,
-		Settings: settings, SettingsError: settingsErr, CompressAbove: disk.Bytes(config.DiskCompressAboveKey), Seat: launchSeat(executable, executableErr, goal.ResolveMachine)}
+		Settings: settings, SettingsError: settingsErr, CompressAbove: disk.Bytes(config.DiskCompressAboveKey), Seat: launchSeat(executable, executableErr, goal.ResolveMachine),
+		// The launcher's lane guard reads the host's lane: a seat never
+		// starts there, the landing agent only there (Amendment 1, A-a).
+		Lane: landingLaneCheckout(batchowner.LandingLaneHome)}
 }
 
 // launchSeat is the engine installation's seat on the host board, resolved

@@ -303,7 +303,8 @@ func landingLaneView(home func() (string, error), now time.Time) lane.View {
 
 // LandingLaneViewSources are the production reads of the lane's view.
 func LandingLaneViewSources(laneHome string, now time.Time) lane.ViewSources {
-	return lane.ViewSources{Home: laneHome, Now: now, Owner: LandingLaneOwnerProbe, Ready: LandingLaneReady, Helm: helm.Active}
+	return lane.ViewSources{Home: laneHome, Now: now, Owner: LandingLaneOwnerProbe, Ready: LandingLaneReady, Helm: helm.Active,
+		Validation: lane.ValidationDue}
 }
 
 // EndLaneOwner ends the lane's running owner for a restart: the process the

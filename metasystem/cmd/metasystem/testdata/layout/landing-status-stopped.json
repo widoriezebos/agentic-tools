@@ -54,6 +54,13 @@ exit 0
       ]
     },
     "spend": null,
+    "wake": {
+      "reasons": [
+        "queued",
+        "unfinished-batch"
+      ],
+      "unread": []
+    },
     "summary": "landing lane /Users/wido/GitHub/agentic-tools-landing: owner stopped by Wido; metasystem landing start resumes it; batch 4gr18nm8t3nyev9sssda9jgtsq proving, 2 members; next 7kq2m9x4c1vbn8hzt5pwe3dyra collecting, 1 member"
   }
 }
