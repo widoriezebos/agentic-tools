@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 // seatBrief writes the brief a steward stages for a seat: prose, no units
@@ -130,7 +131,7 @@ func TestSeatLaunchSettingsResolveLikeALane(t *testing.T) {
 	onPath := func(names ...string) func(string) (string, bool) {
 		dir := t.TempDir()
 		for _, name := range names {
-			if err := os.WriteFile(filepath.Join(dir, name), []byte("#!/bin/sh\n"), 0o755); err != nil {
+			if err := testexec.WriteFile(filepath.Join(dir, name), []byte("#!/bin/sh\n"), 0o755); err != nil {
 				t.Fatal(err)
 			}
 		}
