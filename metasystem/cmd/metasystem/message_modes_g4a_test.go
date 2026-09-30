@@ -5,9 +5,7 @@ package main
 // run/declare-moves/wait, settings show/keys/set/check) and the internal
 // packages those verbs call, except internal/missionrunner and
 // internal/delegation (G4b). Each path below speaks in the two lines of
-// "Messages a Person Reads" in the traced reading too. The protocol files a
-// parent reads by leading code (proof_run_protocol.go,
-// internal/proofrun/protocol.go, internal/testrun/protocol.go) stay kept.
+// "Messages a Person Reads" in the traced reading too.
 var g4aPaths = []string{
 	"cmd/metasystem/delegate.go",
 	"cmd/metasystem/delegate_drivers.go",

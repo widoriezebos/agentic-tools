@@ -34,6 +34,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes/external"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/verbresult"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 )
@@ -129,7 +130,7 @@ func (inv *intentInvocation) work() intentWorkOwners {
 				return nil, 1, fmt.Errorf("the testing runner takes internal test run, not %q", argv)
 			}
 			var stdout bytes.Buffer
-			code := runTestRunWith(testRunInvocation{callerPID: int64(os.Getpid()), stdout: &stdout, stderr: stderr}, argv[3:])
+			code := runTestRunWith(testRunInvocation{callerPID: int64(os.Getpid()), stdout: &stdout, stderr: stderr, name: "internal test run"}, argv[3:])
 			return stdout.Bytes(), code, nil
 		}
 	}
@@ -1559,20 +1560,28 @@ func runIntentTest(inv *intentInvocation) int {
 		return inv.render(intentResult{Outcome: intentFailed, Targets: targets, code: 1, Summary: "the tests couldn't be started",
 			next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}})
 	}
+	// The runner answers with its --json envelope; one that cannot be read
+	// is a failure, never a pass.
+	child, readErr := verbresult.Read(output, "internal test run", code, "")
+	if readErr != nil {
+		return inv.render(intentResult{Outcome: intentFailed, Targets: targets, code: 1, Summary: "the test run's result could not be read",
+			next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{readErr.Error()}})
+	}
 	result := intentResult{Targets: targets, code: code}
 	attempt := ""
-	if trimmed := bytes.TrimSpace(output); json.Valid(trimmed) && len(trimmed) > 0 {
-		result.Data = json.RawMessage(trimmed)
+	if len(child.Data) > 0 {
+		result.Data = child.Data
 		var reported struct {
 			AttemptID string `json:"attemptId"`
 		}
-		if json.Unmarshal(trimmed, &reported) == nil && validIntentJobID(reported.AttemptID) {
+		if json.Unmarshal(child.Data, &reported) == nil && validIntentJobID(reported.AttemptID) {
 			attempt = reported.AttemptID
 			result.Targets = append(result.Targets, intentTarget{Kind: "proof", ID: attempt})
 			result.text = append(result.text, "test run "+attempt+": "+shellCommand(inv.publicArgv("test", "wait", proofRefPrefix+attempt))+" reads how it ended")
 		}
-	} else if len(trimmed) > 0 {
-		result.text = []string{string(trimmed)}
+	}
+	if child.Code != "" {
+		result.Details = append(result.Details, child.Details...)
 	}
 	if attempt != "" && (code == metarun.ExitWaitDeadline || code == metarun.ExitInterrupted) {
 		result.Outcome, result.Summary = intentInProgress, fmt.Sprintf("test run %s has not ended", attempt)

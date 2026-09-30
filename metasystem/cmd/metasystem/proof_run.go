@@ -35,6 +35,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 	runpkg "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
@@ -1272,13 +1273,7 @@ func admitProofLaunchWithReadsAndClassifier(request proofLaunchAdmission, makeRe
 			}
 		}
 		if verdict.Refused() {
-			lines := dispatchcore.FormatProofAdmission(verdict)
-			detail := strings.Join(lines, "; ")
-			if detail == "" {
-				detail = "the reservation was refused and gave no reason"
-			}
-			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("the test run was not reserved for goal %s (charged to %s, revision %d): %s",
-				request.GoalID, authorityGoalID, binding.Revision, detail)
+			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, proofAdmissionVerdictRefusal(verdict, request.GoalID, authorityGoalID, binding.Revision)
 		}
 	}
 	if proofAdmissionBeforePublish != nil {
@@ -1335,7 +1330,8 @@ func admitLaneProofLaunch(request proofLaunchAdmission, caller lease.ClassifyRes
 	}
 	account, err := resolve(request.ControlRoot)
 	if err != nil {
-		if strings.Contains(err.Error(), "LANE_ACCOUNT_UNRESOLVED") {
+		var coded *refusal.Coded
+		if errors.As(err, &coded) && coded.Code == landinglane.CodeAccountUnresolved {
 			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, err
 		}
 		return refuse("%v", err)
@@ -2319,4 +2315,114 @@ func proofRunEngineDirtyWithRead(root string, read func(string, ...string) ([]by
 		}
 	}
 	return false, true
+}
+
+// The admission refusals below are ordinary messages ("Messages a Person
+// Reads"): a plain reason, the command that resolves it on a "run:" line,
+// and the register code and facts as details. A test run's parent reads the
+// code (and, for a refused candidate, its state) from the run's --json
+// envelope (internal/verbresult), never from these words.
+
+func proofAdmissionMoved(before, after proofAdmissionSnapshots, candidateID, authorityID string) error {
+	if before == after {
+		return nil
+	}
+	return &refusal.Coded{Code: "CANDIDATE_GOAL_MOVED",
+		Facts: fmt.Sprintf("goal=%s revision=%d->%d authority=%s authorityRevision=%d->%d", candidateID, before.Candidate.Revision, after.Candidate.Revision,
+			authorityID, before.Authority.Revision, after.Authority.Revision),
+		Reason: fmt.Errorf("goal %s changed while its test run was being admitted, so the run did not start; start it again", candidateID)}
+}
+
+// candidateGoalRefused is a refused candidate goal: its state is the fact a
+// parent branches on (a fenced member is ejected), printed as the envelope's
+// data.
+type candidateGoalRefused struct {
+	*refusal.Coded
+	state string
+}
+
+func (refused *candidateGoalRefused) Unwrap() error { return refused.Coded }
+func (refused *candidateGoalRefused) ResultData() any {
+	return map[string]string{"state": refused.state}
+}
+
+func candidateGoalRefusal(id, state, detail string) error {
+	why := map[string]string{
+		"absent":            "it is not in the goal ledger",
+		goal.StateDone:      "it is done",
+		"fenced":            "a stop holds it",
+		"claimed":           "it is claimed on another machine",
+		"no-budget":         "it has no approved budget",
+		"no-budget-episode": "its budget has no open episode",
+		"moved":             "its budget changed while the run was being admitted",
+		"budget-unknown":    "what it has spent cannot be read",
+	}[state]
+	if why == "" {
+		why = "it is " + state
+	}
+	return &candidateGoalRefused{state: state, Coded: &refusal.Coded{Code: "CANDIDATE_GOAL_REFUSED",
+		Facts:  strings.TrimSpace("goal=" + id + " state=" + state + " " + detail),
+		Reason: fmt.Errorf("goal %s cannot run tests now: %s", id, why), Run: "metasystem goal show " + id}}
+}
+
+func proofAuthorityRefusal(id, detail string) error {
+	subject := "goal " + id
+	if id == "" {
+		subject = "the goal it would be charged to"
+	}
+	return &refusal.Coded{Code: "PROOF_AUTHORITY_REQUIRED", Facts: "authority=" + id,
+		Reason: fmt.Errorf("the test run has no goal to be charged to: %s %s", subject, detail)}
+}
+
+// arcMateRefusal refuses charging a goal's test run to another goal of the
+// same arc: the candidate is claimed and charged to itself.
+func arcMateRefusal(candidate, authority, arc string) error {
+	return &refusal.Coded{Code: "PROOF_AUTHORITY_ARC_MATE_REFUSED", Facts: "goal=" + candidate + " authority=" + authority + " arc=" + arc,
+		Reason: fmt.Errorf("goal %s cannot charge its test run to %s, a goal of the same arc; claim it to charge the run to itself", candidate, authority),
+		Run:    "metasystem goal claim " + candidate}
+}
+
+// goalRevisionMoved refuses a test run sealed on goal revisions that have
+// moved since.
+func goalRevisionMoved(expectedGoal, expectedAccounting, goalRevision, accountingRevision uint64) error {
+	return &refusal.Coded{Code: "GOAL_REVISION_MOVED",
+		Facts:  fmt.Sprintf("sealed=%d/%d now=%d/%d", expectedGoal, expectedAccounting, goalRevision, accountingRevision),
+		Reason: errors.New("the goal changed since its batch was sealed, so its test run did not start")}
+}
+
+// batchMemberBudgetRefused refuses a batch member whose budget has no room
+// for the diagnostic run beside its own; a person raises the budget.
+func batchMemberBudgetRefused(goalID string, minutes uint64) error {
+	return &refusal.Coded{Code: "BATCH_MEMBER_BUDGET_REFUSED", Facts: fmt.Sprintf("goal=%s reservedMinutes=%d", goalID, minutes),
+		Reason: fmt.Errorf("goal %s has no room in its budget for two more test runs; a person raises it", goalID),
+		Run:    "metasystem goal budget " + goalID + " BOX"}
+}
+
+// laneAccountUnresolved refuses a test run charged to a landing lane that
+// cannot be named.
+func laneAccountUnresolved(format string, args ...any) error {
+	return &refusal.Coded{Code: landinglane.CodeAccountUnresolved, Reason: fmt.Errorf(format, args...)}
+}
+
+// proofAdmissionVerdictRefusal is a refused reservation, coded from the
+// typed verdict (R4): a budget with no room is BUDGET_REFUSED, one whose
+// spending cannot be read BUDGET_UNKNOWN, and the formatted lines are only
+// its background.
+func proofAdmissionVerdictRefusal(verdict dispatchcore.ProofAdmissionVerdict, goalID, authorityGoalID string, revision uint64) error {
+	code, reason, run := "", fmt.Errorf("the test run was not reserved for goal %s", goalID), ""
+	for _, lens := range []dispatchcore.GoalRevisionAdmission{verdict.Authority, verdict.Candidate} {
+		if lens.Refusal == nil {
+			continue
+		}
+		if lens.Refusal.Unknown != nil {
+			code, reason = "BUDGET_UNKNOWN", fmt.Errorf("what goal %s has spent cannot be read, so its test run was not reserved", lens.GoalID)
+		} else {
+			code, reason = "BUDGET_REFUSED", fmt.Errorf("goal %s has no room in its approved budget for this test run; a person raises it", lens.GoalID)
+			run = "metasystem goal budget " + lens.GoalID + " BOX"
+		}
+		break
+	}
+	background := strings.Join(dispatchcore.FormatProofAdmission(verdict), "; ")
+	return &refusal.Coded{Code: code, Facts: fmt.Sprintf("goal=%s authority=%s revision=%d", goalID, authorityGoalID, revision),
+		Reason: reason, Run: run, Background: background}
 }

@@ -36,6 +36,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/shellquote"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/verbresult"
 )
 
 // PolicyProbeWorkerEnvironment marks a worker started by the frozen
@@ -763,29 +764,28 @@ func PlanWithTrustedPolicyEngine(engine string, request SelectionRequest, instal
 	if os.Getenv(PolicyProbeWorkerEnvironment) == "1" {
 		command.Env = append(command.Env, PolicyProbeWorkerEnvironment+"=1")
 	}
-	data, err := command.CombinedOutput()
+	// The pinned engine answers with its --json envelope on stdout; its
+	// stderr is quoted only. An unreadable envelope is a refusal, never a
+	// plan.
+	verb := "test plan"
+	if request.LaneID != "" {
+		verb = "internal test plan"
+	}
+	child, err := verbresult.Run(command, verb)
 	// The refusals below name the command the pinned engine ran, as a fact.
 	commandFact := enginecause.Value("command", enginecause.Command(command.Args...))
-	if err != nil && request.LaneID != "" && strings.Contains(string(data), "flag provided but not defined: -lane") {
-		return PlanOutput{}, laneEngineTooOld(engine)
-	}
+	facts := []enginecause.Fact{enginecause.Path("engine", engine), commandFact}
 	if err != nil {
-		reason := fmt.Sprintf("the pinned engine failed while choosing which tests to run (%v)", err)
-		if refused := childRefusalWords(data); refused != "" {
-			// The engine refused in words of its own: they are the reason.
-			reason = refused
-		}
-		return PlanOutput{}, engineRefusal("child-failed", []enginecause.Fact{enginecause.Path("engine", engine), commandFact},
-			reason, strings.TrimSpace(string(data)))
+		return PlanOutput{}, engineRefusal("child-output", facts, "the pinned engine's choice of tests could not be read", err.Error())
 	}
-	decoder := json.NewDecoder(strings.NewReader(string(data)))
-	decoder.DisallowUnknownFields()
+	if child.Outcome != verbresult.Confirmed {
+		// The engine refused in words of its own: they are the reason, and
+		// its code stays readable with errors.As.
+		return PlanOutput{}, &childRefusal{refusal: engineRefusal("child-failed", facts, child.Err().Error(), child.Code), child: child.Err()}
+	}
 	var output PlanOutput
-	if err := decoder.Decode(&output); err != nil {
-		return PlanOutput{}, engineRefusal("child-output", []enginecause.Fact{enginecause.Path("engine", engine), commandFact}, "the pinned engine's choice of tests could not be read", err.Error())
-	}
-	if err := decoder.Decode(&struct{}{}); err != io.EOF {
-		return PlanOutput{}, engineRefusal("child-output", []enginecause.Fact{enginecause.Path("engine", engine), commandFact}, "the pinned engine printed more than its choice of tests")
+	if err := child.DecodeData(&output); err != nil {
+		return PlanOutput{}, engineRefusal("child-output", facts, "the pinned engine's choice of tests could not be read", err.Error())
 	}
 	return output, nil
 }
@@ -922,16 +922,9 @@ func RunRequest(prepared Preparation, attemptID, logRoot, candidateEngine, candi
 	return request
 }
 
-// childRefusalWords is the refusal a policy child printed as its JSON error
-// line ({"error": ...}), or "" when it printed none.
-func childRefusalWords(data []byte) string {
-	for _, line := range strings.Split(string(data), "\n") {
-		var printed struct {
-			Error string `json:"error"`
-		}
-		if json.Unmarshal([]byte(strings.TrimSpace(line)), &printed) == nil && strings.TrimSpace(printed.Error) != "" {
-			return strings.TrimSpace(printed.Error)
-		}
-	}
-	return ""
-}
+// childRefusal is the pinned engine's refusal as this process words it,
+// keeping the child's own coded refusal behind it for errors.As.
+type childRefusal struct{ refusal, child error }
+
+func (err *childRefusal) Error() string   { return err.refusal.Error() }
+func (err *childRefusal) Unwrap() []error { return []error{err.refusal, err.child} }

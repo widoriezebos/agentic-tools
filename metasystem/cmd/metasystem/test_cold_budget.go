@@ -17,6 +17,11 @@ type coldBuildBudgetRefusal struct{ detail string }
 
 func (refusal *coldBuildBudgetRefusal) Error() string { return "BUDGET_REFUSED: " + refusal.detail }
 
+// RefusalCode and RefusalDetail carry the code into the run's --json
+// envelope, where a parent reads it.
+func (refusal *coldBuildBudgetRefusal) RefusalCode() string   { return "BUDGET_REFUSED" }
+func (refusal *coldBuildBudgetRefusal) RefusalDetail() string { return refusal.Error() }
+
 // refuseKnownColdBuildBudget only stops a cold candidate-engine build when a
 // selected group has no retained successful observation at all. In that case
 // the existing attempt-based reuse path cannot provide the whole selection.

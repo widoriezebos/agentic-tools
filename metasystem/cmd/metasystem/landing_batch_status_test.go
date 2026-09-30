@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -27,8 +26,10 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/shellquote"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testgit"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/verbresult"
 )
 
 func TestBatchStatusExposesReturnRevisionHeadroomOwnerLockSampleAndDeadline(t *testing.T) {
@@ -220,10 +221,10 @@ func TestDiagnosticNoReuseForcesFreshRunsAndDeliveryRefuses(t *testing.T) {
 		t.Fatal(err)
 	}
 	wantArgs := []string{"internal", "test", "run", "--root", root, "--goal", "goal-k", "--tree", "base-tree", "--mode", "canary",
-		"--purpose", "diagnostic", "--groups", "F", "--no-reuse", "--result", resultPath,
+		"--purpose", "diagnostic", "--groups", "F", "--no-reuse", "--result", resultPath, "--json",
 		"--expected-goal-revision", "7", "--expected-accounting-revision", "5"}
 	var recorded []string
-	execute := func(_ string, args []string, dir string, _ []string) ([]byte, int, error) {
+	execute := func(_ string, args []string, dir string, _ []string) (verbresult.Result, error) {
 		recorded = slices.Clone(args)
 		if dir != root {
 			t.Fatalf("diagnostic dir=%q want %q", dir, root)
@@ -245,7 +246,7 @@ func TestDiagnosticNoReuseForcesFreshRunsAndDeliveryRefuses(t *testing.T) {
 		if err := os.WriteFile(args[resultAt+1], append(data, '\n'), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		return nil, 0, nil
+		return fakeTestRunResult(0, "", nil), nil
 	}
 	result, err := batchowner.LaunchBatchDiagnosticWithExecute(root, batchID, batch.DiagnosticRequest{GoalID: "goal-k", Tree: "base-tree", Groups: []string{"F"},
 		Claim: batch.Claim{Revision: 7, AccountingRevision: 5}}, execute)
@@ -263,7 +264,7 @@ func TestDiagnosticNoReuseForcesFreshRunsAndDeliveryRefuses(t *testing.T) {
 		}
 	}
 	wantArgs = []string{"internal", "test", "run", "--root", root, "--goal", "goal-k", "--tree", "new-base", "--mode", "canary",
-		"--purpose", "diagnostic", "--groups", "F", "--no-reuse", "--result", resultPath,
+		"--purpose", "diagnostic", "--groups", "F", "--no-reuse", "--result", resultPath, "--json",
 		"--expected-goal-revision", "11", "--expected-accounting-revision", "13"}
 	var forwarded batch.DiagnosticRequest
 	clear := batchowner.ClearingDiagnosticWithLaunch(root, func(launchRoot, launchBatchID string, request batch.DiagnosticRequest) (batch.DiagnosticResult, error) {
@@ -383,7 +384,7 @@ done
 printf '%s\n' '{"attemptId":"source-attempt","delivery":{"sufficient":true},"groups":[{"id":"same","status":"passed","nativeLaunched":true},{"id":"other","status":"reused","reuseAttempt":"tip-attempt"}]}' >"$result"
 exit 76
 `
-	if err := testexec.WriteFile(fake, []byte(script), 0o755); err != nil {
+	if err := testexec.WriteFile(fake, []byte(withTestRunEnvelope(t, script)), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	dependencies := batchTestExecutionDependencies(t, root, tree, fake)
@@ -430,7 +431,7 @@ done
 printf '%s\n' '{"attemptId":"prefix-attempt","groups":[{"id":"red-group","status":"failed","nativeLaunched":true,"logPath":"red.log","logDigest":"sha256:red","inputManifest":["source/**"]}]}' >"$result"
 exit 1
 `
-	if err := testexec.WriteFile(fake, []byte(script), 0o755); err != nil {
+	if err := testexec.WriteFile(fake, []byte(withTestRunEnvelope(t, script)), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	dependencies := batchTestExecutionDependencies(t, root, tree, fake)
@@ -460,11 +461,15 @@ exit 1
 	}
 }
 
+// The prefix run reads the child's envelope code (structured-output U1):
+// a stderr word shaped like another code, printed first, never wins. The
+// four classifiers this replaced took the first *_REFUSED word they saw.
 func TestPrefixReceiptClassifiesRevisionMove(t *testing.T) {
 	t.Parallel()
 	root, tree := batchPrefixReceiptTestRoot(t)
 	fake := filepath.Join(root, "fake-metasystem")
-	script := fmt.Sprintf("#!/usr/bin/env bash\nprintf '%%s\\n' 'GOAL_REVISION_MOVED: goal-a changed after seal' >&2\nexit %d\n", proofrun.ExitAdmissionRefused)
+	script := testRunEnvelopeScript(t, proofrun.ExitAdmissionRefused, "GOAL_REVISION_MOVED", "the goal changed since its batch was sealed", nil,
+		"note: HOST_ADMISSION_REFUSED by an earlier step")
 	if err := testexec.WriteFile(fake, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -472,7 +477,7 @@ func TestPrefixReceiptClassifiesRevisionMove(t *testing.T) {
 	record := batch.Record{Units: []batch.Unit{{GoalID: "goal-a", Claim: batch.Claim{Revision: 7, AccountingRevision: 5}}}}
 	_, err := batchowner.ExecuteBatchPrefixReceiptWithDependencies(root, "batch", record, "goal-a", tree, batch.PrefixDecision{Groups: []string{"same"}}, dependencies)
 	var revision *batch.PrefixRevisionRefusal
-	if !errors.As(err, &revision) || !strings.Contains(revision.Error(), "GOAL_REVISION_MOVED") {
+	if !errors.As(err, &revision) || !strings.Contains(revision.Error(), "the goal changed since its batch was sealed") {
 		t.Fatalf("revision refusal=%T %v", err, err)
 	}
 }
@@ -481,7 +486,7 @@ func TestPrefixReceiptClassifiesCapacityWithoutBudgetWithdrawal(t *testing.T) {
 	t.Parallel()
 	root, tree := batchPrefixReceiptTestRoot(t)
 	fake := filepath.Join(root, "fake-metasystem")
-	script := fmt.Sprintf("#!/usr/bin/env bash\nprintf '%%s\\n' 'ADMISSION_REFUSED rank=host-load retry=retry-when-a-launcher-ends' >&2\nexit %d\n", proofrun.ExitAdmissionRefused)
+	script := testRunEnvelopeScript(t, proofrun.ExitAdmissionRefused, "", "host proof admission is busy", nil, "BATCH_MEMBER_BUDGET_REFUSED in a note")
 	if err := testexec.WriteFile(fake, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -489,7 +494,7 @@ func TestPrefixReceiptClassifiesCapacityWithoutBudgetWithdrawal(t *testing.T) {
 	record := batch.Record{Units: []batch.Unit{{GoalID: "goal-a", Claim: batch.Claim{Revision: 7, AccountingRevision: 5}}}}
 	_, err := batchowner.ExecuteBatchPrefixReceiptWithDependencies(root, "batch", record, "goal-a", tree, batch.PrefixDecision{Groups: []string{"same"}}, dependencies)
 	var admission *batch.PrefixAdmissionRefusal
-	if !errors.As(err, &admission) || admission.Code != "ADMISSION_REFUSED" || !strings.Contains(admission.Error(), "rank=host-load") {
+	if !errors.As(err, &admission) || admission.Code != "" || !strings.Contains(admission.Error(), "host proof admission is busy") {
 		t.Fatalf("capacity refusal=%T %+v", err, admission)
 	}
 }
@@ -498,7 +503,7 @@ func TestPrefixReceiptClassifiesBudgetForWithdrawal(t *testing.T) {
 	t.Parallel()
 	root, tree := batchPrefixReceiptTestRoot(t)
 	fake := filepath.Join(root, "fake-metasystem")
-	script := fmt.Sprintf("#!/usr/bin/env bash\nprintf '%%s\\n' 'BATCH_MEMBER_BUDGET_REFUSED: no diagnostic headroom' >&2\nexit %d\n", proofrun.ExitAdmissionRefused)
+	script := testRunEnvelopeScript(t, proofrun.ExitAdmissionRefused, "BATCH_MEMBER_BUDGET_REFUSED", "goal goal-a has no room in its budget", nil, "")
 	if err := testexec.WriteFile(fake, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -506,8 +511,40 @@ func TestPrefixReceiptClassifiesBudgetForWithdrawal(t *testing.T) {
 	record := batch.Record{Units: []batch.Unit{{GoalID: "goal-a", Claim: batch.Claim{Revision: 7, AccountingRevision: 5}}}}
 	_, err := batchowner.ExecuteBatchPrefixReceiptWithDependencies(root, "batch", record, "goal-a", tree, batch.PrefixDecision{Groups: []string{"same"}}, dependencies)
 	var budget *batch.PrefixBudgetRefusal
-	if !errors.As(err, &budget) || !strings.Contains(budget.Error(), "BATCH_MEMBER_BUDGET_REFUSED") {
+	if !errors.As(err, &budget) || !strings.Contains(budget.Error(), "has no room in its budget") {
 		t.Fatalf("budget refusal=%T %v", err, err)
+	}
+}
+
+// A child whose stdout is empty, truncated or followed by more reads as
+// unknown: the prefix run fails, even with a passing result file in place,
+// and never counts as accepted.
+func TestPrefixReceiptReadsAnUnreadableEnvelopeAsUnknown(t *testing.T) {
+	t.Parallel()
+	good := testRunEnvelopeLine(t, 0, "", "the selected tests passed", nil)
+	for name, stdout := range map[string]string{"empty": "", "truncated": good[:len(good)/2], "trailing": good + "PROOF-RESULT {}\n"} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			root, tree := batchPrefixReceiptTestRoot(t)
+			fake := filepath.Join(root, "fake-metasystem")
+			script := `#!/usr/bin/env bash
+set -euo pipefail
+result=
+for arg in "$@"; do if [[ "${previous:-}" == --result ]]; then result=$arg; fi; previous=$arg; done
+printf '%s\n' '{"attemptId":"prefix-attempt","groups":[{"id":"same","status":"passed","nativeLaunched":true}],"delivery":{"sufficient":true}}' >"$result"
+printf '%s' ` + shellquote.Quote(stdout) + `
+exit 0
+`
+			if err := testexec.WriteFile(fake, []byte(script), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			dependencies := batchTestExecutionDependencies(t, root, tree, fake)
+			record := batch.Record{Units: []batch.Unit{{GoalID: "goal-a", Claim: batch.Claim{Revision: 7, AccountingRevision: 5}}}}
+			result, err := batchowner.ExecuteBatchPrefixReceiptWithDependencies(root, "batch", record, "goal-a", tree, batch.PrefixDecision{Groups: []string{"same"}}, dependencies)
+			if err == nil || result.AttemptID != "" {
+				t.Fatalf("an unreadable envelope was accepted: result=%+v err=%v", result, err)
+			}
+		})
 	}
 }
 

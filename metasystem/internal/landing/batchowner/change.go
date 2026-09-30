@@ -17,6 +17,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/adapter"
 )
 
@@ -217,7 +218,7 @@ func (err *ChangeOwnerStartError) Unwrap() error { return err.Cause }
 func batchLaneAccount(root string) (string, error) {
 	home, err := board.Home()
 	if err != nil {
-		return "", fmt.Errorf("%s: %w", lane.CodeAccountUnresolved, err)
+		return "", &refusal.Coded{Code: lane.CodeAccountUnresolved, Reason: fmt.Errorf("this computer's landing lane cannot be found: %w", err)}
 	}
 	return lane.ResolveAccount(home, batch.ModuleRoot(root))
 }

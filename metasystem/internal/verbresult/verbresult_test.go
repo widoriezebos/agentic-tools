@@ -48,6 +48,7 @@ func envelope(t *testing.T, result Result) string {
 // carries another code-shaped word first (the defect the four classifiers
 // had: the first *_REFUSED word on the combined output won).
 func TestRunReadsTheEnvelopeNotTheStderrWords(t *testing.T) {
+	t.Parallel()
 	printed := envelope(t, Result{Verb: "internal test run", Outcome: Refused, Code: "GOAL_REVISION_MOVED", Summary: "the goal moved"})
 	result, err := Run(child(t, printed, "note: X_REFUSED by an earlier step\n", 78), "internal test run")
 	if err != nil {
@@ -61,6 +62,7 @@ func TestRunReadsTheEnvelopeNotTheStderrWords(t *testing.T) {
 // Every unreadable stdout reads as unknown, with an error quoting stderr,
 // and never as success.
 func TestRunReadsAMissingOrBrokenEnvelopeAsUnknown(t *testing.T) {
+	t.Parallel()
 	good := envelope(t, Result{Verb: "internal test run", Outcome: Confirmed, Summary: "ran"})
 	cases := map[string]struct {
 		stdout string
@@ -78,6 +80,7 @@ func TestRunReadsAMissingOrBrokenEnvelopeAsUnknown(t *testing.T) {
 	}
 	for name, test := range cases {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			status := test.status
 			if status < 0 {
 				status = 0
@@ -103,6 +106,7 @@ func TestRunReadsAMissingOrBrokenEnvelopeAsUnknown(t *testing.T) {
 // The writer maps an exit status and a coded error onto the envelope, and
 // carries a refusal's data; Err gives the code back to errors.As.
 func TestFromErrorCarriesCodeSummaryNextAndData(t *testing.T) {
+	t.Parallel()
 	coded := &refusal.Coded{Code: "CANDIDATE_GOAL_REFUSED", Reason: errors.New("goal g is stopped"), Run: "metasystem goal show g"}
 	result := FromError("internal test run", 78, stateError{coded, "fenced"}, nil)
 	if result.Outcome != Refused || result.Code != "CANDIDATE_GOAL_REFUSED" || result.Summary != "goal g is stopped" ||
@@ -133,6 +137,7 @@ func (e stateError) ResultData() any { return map[string]string{"state": e.state
 // The exit/outcome pairs (R3): the writer's table always passes the
 // reader's check.
 func TestOutcomeForExitIsAlwaysPermitted(t *testing.T) {
+	t.Parallel()
 	for _, status := range []int{0, 1, 2, 3, 75, 76, 77, 78, 124} {
 		if outcome := OutcomeForExit(status); !Permitted(outcome, status) {
 			t.Errorf("exit %d maps to %q, which the reader refuses", status, outcome)

@@ -106,7 +106,8 @@ func Permitted(outcome string, status int) bool {
 }
 
 // FromError is the result of verb ending with status and err: the outcome
-// the status stands for, and, when err carries a register code, that code,
+// the status stands for (refused for a coded error ending with status 1),
+// and, when err carries a register code, that code,
 // its plain reason as the summary and its command as the next step. A plain
 // error has no code.
 func FromError(verb string, status int, err error, data any) Result {
@@ -114,6 +115,7 @@ func FromError(verb string, status int, err error, data any) Result {
 	if err != nil {
 		result.Summary = err.Error()
 		var coded *refusal.Coded
+		var coder refusal.Coder
 		if errors.As(err, &coded) {
 			result.Code = coded.Code
 			if coded.Reason != nil {
@@ -123,6 +125,12 @@ func FromError(verb string, status int, err error, data any) Result {
 				result.Next = &Next{Argv: strings.Fields(coded.Run), Reason: "resolves it"}
 			}
 			result.Details = []string{coded.Detail()}
+		} else if errors.As(err, &coder) {
+			result.Code = coder.RefusalCode()
+			result.Details = []string{coder.RefusalDetail()}
+		}
+		if result.Code != "" && result.Outcome == Failed && status == 1 {
+			result.Outcome = Refused // a coded refusal ending with status 1
 		}
 		var carrier DataCarrier
 		if data == nil && errors.As(err, &carrier) {

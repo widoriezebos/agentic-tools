@@ -1,10 +1,13 @@
 package lane
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 )
 
 // TestLaneAccountResolvesOnlyTheHostLane (U11b): the lane's accounting
@@ -14,7 +17,8 @@ import (
 func TestLaneAccountResolvesOnlyTheHostLane(t *testing.T) {
 	t.Parallel()
 	home, root, _ := laneDirs(t)
-	if _, err := ResolveAccount(home, root); err == nil || !strings.Contains(err.Error(), "LANE_ACCOUNT_UNRESOLVED") {
+	var coded *refusal.Coded
+	if _, err := ResolveAccount(home, root); !errors.As(err, &coded) || coded.Code != CodeAccountUnresolved || strings.Contains(err.Error(), CodeAccountUnresolved) {
 		t.Fatalf("no lane: %v", err)
 	}
 	if _, err := Resolve(home, root, "m1e", laneNow, true); err != nil {

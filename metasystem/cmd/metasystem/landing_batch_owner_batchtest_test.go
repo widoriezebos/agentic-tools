@@ -518,10 +518,12 @@ func TestBatchProofRefusalTransitions(t *testing.T) {
 }
 
 func TestBatchProofAcceptsReusableSuccess(t *testing.T) {
-	if !batchowner.BatchProofExitAccepted(proofrun.ExitReusableSuccess, proofrun.TestResult{Delivery: proofrun.DeliveryJudgment{Sufficient: true}}) {
+	sufficient := proofrun.TestResult{Delivery: proofrun.DeliveryJudgment{Sufficient: true}}
+	if !batchowner.BatchProofOutcomeAccepted(fakeTestRunResult(proofrun.ExitReusableSuccess, "", nil), sufficient) {
 		t.Fatal("reusable sufficient proof was classified red")
 	}
-	if batchowner.BatchProofExitAccepted(proofrun.ExitReusableSuccess, proofrun.TestResult{}) || batchowner.BatchProofExitAccepted(1, proofrun.TestResult{Delivery: proofrun.DeliveryJudgment{Sufficient: true}}) {
+	if batchowner.BatchProofOutcomeAccepted(fakeTestRunResult(proofrun.ExitReusableSuccess, "", nil), proofrun.TestResult{}) ||
+		batchowner.BatchProofOutcomeAccepted(fakeTestRunResult(1, "", nil), sufficient) {
 		t.Fatal("insufficient reuse or an ordinary failure was classified green")
 	}
 }

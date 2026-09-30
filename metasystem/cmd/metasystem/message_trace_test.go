@@ -60,11 +60,7 @@ func enforceTracedMessages(paths ...string) bool {
 // messageTraceKept are the files whose texts are machine protocol a parent
 // process reads by its leading code (the kept exceptions of the direct
 // scan); their sources are listed as kept, never reported.
-var messageTraceKept = map[string]string{
-	"cmd/metasystem/proof_run_protocol.go": "proof-run protocol codes a parent reads",
-	"internal/proofrun/protocol.go":        "proof-run protocol codes a parent reads",
-	"internal/testrun/protocol.go":         "test-run protocol codes a parent reads",
-}
+var messageTraceKept = map[string]string{}
 
 // messageTraceKeptCodes are protocol codes kept in a person's message by
 // decision: the code is not reported, the rest of the text is.

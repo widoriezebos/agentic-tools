@@ -151,3 +151,21 @@ func TestScratchEnvironmentPolicyAgainstABuiltWorker(t *testing.T) {
 	}
 	t.Logf("worker %s reports %+v: this frontend writes %s", engine, capabilities, want)
 }
+
+// The handshake is read from stdout only (structured-output U1): a note
+// the engine writes on stderr never breaks its JSON answer.
+func TestWorkerCapabilitiesReadStdoutOnly(t *testing.T) {
+	t.Parallel()
+	data, err := json.Marshal(CurrentWorkerCapabilities())
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine := filepath.Join(t.TempDir(), "engine")
+	script := "#!/bin/sh\nprintf 'a note for a person\\n' >&2\nprintf '%s\\n' " + shellquote.Quote(string(data)) + "\n"
+	if err := testexec.WriteFile(engine, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := RequireWorkerCapabilities(t.Context(), engine, []string{"PATH=/usr/bin:/bin"}); err != nil {
+		t.Fatalf("a stderr note broke the handshake: %v", err)
+	}
+}

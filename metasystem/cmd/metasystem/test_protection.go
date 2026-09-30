@@ -16,6 +16,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/verbresult"
 )
 
 const policyProbeWorkerEnvironment = testrun.PolicyProbeWorkerEnvironment
@@ -235,20 +236,24 @@ func runFrozenSelectionProbe(ctx context.Context, request proofrun.TestRunReques
 	command := exec.CommandContext(ctx, request.CandidateEngine, "test", "plan", "--root", installation, "--tree", candidateTree,
 		"--mode", "auto", "--purpose", "diagnostic", "--json")
 	command.Env = append(testrun.InheritedEnvironment(request.Environment, os.Environ()), policyProbeWorkerEnvironment+"=1")
-	data, commandErr := command.CombinedOutput()
-	status := processExitStatus(commandErr)
-	if status != probe.ExpectedStatus {
-		return fmt.Errorf("status=%d want=%d output=%s", status, probe.ExpectedStatus, strings.TrimSpace(string(data)))
+	// The candidate's plan answers with its --json envelope (R1): the
+	// probe reads its exit, code and data, never its words.
+	child, readErr := verbresult.Run(command, "test plan")
+	if readErr != nil {
+		return fmt.Errorf("the candidate's plan could not be read: %w", readErr)
+	}
+	if child.Exit != probe.ExpectedStatus {
+		return fmt.Errorf("status=%d want=%d: %s", child.Exit, probe.ExpectedStatus, child.Summary)
 	}
 	if probe.ID == "lower-coverage-floor" {
-		if !strings.Contains(string(data), "TEST_POLICY_COVERAGE_FLOOR_LOWERED") {
-			return fmt.Errorf("stable floor refusal missing: %s", data)
+		if child.Code != "TEST_POLICY_COVERAGE_FLOOR_LOWERED" {
+			return fmt.Errorf("stable floor refusal missing: code=%q %s", child.Code, child.Summary)
 		}
 		return nil
 	}
 	var output testrun.PlanOutput
-	if err := json.Unmarshal(data, &output); err != nil {
-		return fmt.Errorf("decode plan: %w: %s", err, data)
+	if err := child.DecodeData(&output); err != nil {
+		return fmt.Errorf("decode plan: %w", err)
 	}
 	byID := map[string]testpolicy.Group{}
 	for _, group := range output.Groups {
