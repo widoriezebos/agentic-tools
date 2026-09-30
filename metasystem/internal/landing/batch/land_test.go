@@ -1147,18 +1147,29 @@ func TestLandingBranchLeasesEndpointAndDeletesCandidateAtomically(t *testing.T) 
 	})
 }
 
+// The push is classified from git's --porcelain ref status lines on stdout
+// (flag, refs, summary), never from its human text on stderr.
 func TestEndpointPushErrorClassifiesOnlyStaleInfoAsLease(t *testing.T) {
-	stale := classifyEndpointPushError("! [rejected] main -> main (stale info)", errors.New("push failed"))
+	stale := classifyEndpointPushError([]byte("To origin\n!\trefs/heads/main:refs/heads/main\t[rejected] (stale info)\nDone\n"), errors.New("push failed"))
 	if !IsStaleEndpointLease(stale) || IsNonLeaseEndpointRejection(stale) {
 		t.Fatalf("stale classification=%T %v", stale, stale)
 	}
-	hook := classifyEndpointPushError("! [remote rejected] main -> main (pre-receive hook declined)", errors.New("push failed"))
+	atomic := classifyEndpointPushError([]byte("To origin\n!\trefs/heads/x:refs/heads/main\t[rejected] (atomic push failed)\n"+
+		"!\t:refs/heads/landing/b\t[rejected] (stale info)\nDone\n"), errors.New("push failed"))
+	if !IsStaleEndpointLease(atomic) {
+		t.Fatalf("atomic stale classification=%T %v", atomic, atomic)
+	}
+	hook := classifyEndpointPushError([]byte("To origin\n!\trefs/heads/main:refs/heads/main\t[remote rejected] (pre-receive hook declined)\nDone\n"), errors.New("push failed"))
 	if IsStaleEndpointLease(hook) || !IsNonLeaseEndpointRejection(hook) {
 		t.Fatalf("hook classification=%T %v", hook, hook)
 	}
-	infrastructure := classifyEndpointPushError("fatal: unable to access remote", errors.New("push failed"))
+	infrastructure := classifyEndpointPushError(nil, errors.New("push failed: fatal: unable to access remote"))
 	if IsStaleEndpointLease(infrastructure) || IsNonLeaseEndpointRejection(infrastructure) {
 		t.Fatalf("infrastructure classification=%T %v", infrastructure, infrastructure)
+	}
+	words := classifyEndpointPushError(nil, errors.New("push failed: ! [rejected] main -> main (stale info)"))
+	if IsStaleEndpointLease(words) || IsNonLeaseEndpointRejection(words) {
+		t.Fatalf("words outside the porcelain classified as %T %v", words, words)
 	}
 }
 

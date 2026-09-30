@@ -240,9 +240,19 @@ func TestHookPreflightReadsWithoutExecuting(t *testing.T) {
 	if refusal := hookPreflight(Deps{Git: newFakeGit(t, notGit).run}, t.TempDir()); refusal != nil {
 		t.Fatalf("a target without git: %+v", refusal)
 	}
+	// A repository is told by its .git on the filesystem, never by git's
+	// words: a target that has one is a repository whatever git said, and
+	// its failure is a malformed setup the preflight refuses.
+	repository := t.TempDir()
+	if err := os.Mkdir(filepath.Join(repository, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	broken := map[string]fakeAnswer{"rev-parse --is-inside-work-tree": {err: errors.New("fatal: bad config line 1")}}
-	if refusal := hookPreflight(Deps{Git: newFakeGit(t, broken).run}, t.TempDir()); refusal == nil || !strings.Contains(refusal.Message, "cannot be proven") {
+	if refusal := hookPreflight(Deps{Git: newFakeGit(t, broken).run}, repository); refusal == nil || !strings.Contains(refusal.Message, "cannot be proven") {
 		t.Fatalf("a malformed repository: %+v", refusal)
+	}
+	if refusal := hookPreflight(Deps{Git: newFakeGit(t, notGit).run}, repository); refusal == nil || !strings.Contains(refusal.Message, "cannot be proven") {
+		t.Fatalf("a repository whose git said it is none: %+v", refusal)
 	}
 }
 

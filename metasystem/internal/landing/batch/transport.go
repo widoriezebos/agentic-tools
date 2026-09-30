@@ -32,9 +32,40 @@ func IsStaleEndpointLease(err error) bool {
 	return errors.As(err, &push) && push.StaleLease
 }
 
-func classifyEndpointPushError(text string, cause error) error {
-	return &EndpointPushError{Cause: cause, StaleLease: strings.Contains(text, "stale info"),
-		RemoteRejected: strings.Contains(text, "[rejected]") || strings.Contains(text, "[remote rejected]")}
+// classifyEndpointPushError reads a failed push from git's --porcelain ref
+// status lines ("FLAG<TAB>FROM:TO<TAB>SUMMARY"): a ref flagged "!" was
+// rejected, and one whose summary is "[rejected] (stale info)" failed its
+// lease. Git's text on stderr is never read.
+func classifyEndpointPushError(porcelain []byte, cause error) error {
+	classified := &EndpointPushError{Cause: cause}
+	for _, line := range strings.Split(string(porcelain), "\n") {
+		fields := strings.Split(line, "\t")
+		if len(fields) != 3 || fields[0] != "!" {
+			continue
+		}
+		classified.RemoteRejected = true
+		if fields[2] == "[rejected] (stale info)" {
+			classified.StaleLease = true
+		}
+	}
+	return classified
+}
+
+// pushPorcelain runs one git push with --porcelain and, when it fails, the
+// error classified from its ref status lines, quoting stderr for a person.
+func pushPorcelain(root, code string, args ...string) error {
+	command := exec.Command("git", append([]string{"-C", root, "push", "--porcelain"}, args...)...)
+	command.Env = gittree.ScrubbedEnviron("LC_ALL=C")
+	porcelain, err := command.Output()
+	if err == nil {
+		return nil
+	}
+	said := ""
+	var exit *exec.ExitError
+	if errors.As(err, &exit) {
+		said = strings.TrimSpace(string(exit.Stderr))
+	}
+	return classifyEndpointPushError(porcelain, fmt.Errorf("%s: %s: %w", code, said, err))
 }
 
 func landingBranchRef(id string) string { return "refs/heads/landing/" + id }
@@ -50,14 +81,7 @@ func PrepareLandingBranch(root, id, baseCommit string) error {
 // batch ref. An empty expected tip means the ref must still be absent.
 func PublishLandingBranch(root, id, expected, tip string) error {
 	lease := "--force-with-lease=" + landingBranchRef(id) + ":" + expected
-	command := exec.Command("git", "-C", root, "push", "origin", tip+":"+landingBranchRef(id), lease)
-	command.Env = gittree.ScrubbedEnviron("LC_ALL=C")
-	if output, err := command.CombinedOutput(); err != nil {
-		text := strings.TrimSpace(string(output))
-		cause := fmt.Errorf("%s: %s: %w", codeLandingBranchMoved, text, err)
-		return classifyEndpointPushError(text, cause)
-	}
-	return nil
+	return pushPorcelain(root, codeLandingBranchMoved, "origin", tip+":"+landingBranchRef(id), lease)
 }
 
 func DeleteLandingBranch(root, id, expected string) error {
@@ -160,18 +184,10 @@ func commitForTreeInRef(root, ref, tree string) (string, error) {
 // candidate branch in the same atomic remote transaction. Both refs are
 // leased, so a moved endpoint or candidate writes neither ref.
 func LandLandingBranch(root, id, baseCommit, tip string) error {
-	args := []string{"push", "--atomic", "origin",
-		tip + ":refs/heads/main", ":" + landingBranchRef(id),
-		"--force-with-lease=refs/heads/main:" + baseCommit,
-		"--force-with-lease=" + landingBranchRef(id) + ":" + tip}
-	command := exec.Command("git", append([]string{"-C", root}, args...)...)
-	command.Env = gittree.ScrubbedEnviron("LC_ALL=C")
-	if output, err := command.CombinedOutput(); err != nil {
-		text := strings.TrimSpace(string(output))
-		cause := fmt.Errorf("%s: %s: %w", codeLandPushRefused, text, err)
-		return classifyEndpointPushError(text, cause)
-	}
-	return nil
+	return pushPorcelain(root, codeLandPushRefused, "--atomic", "origin",
+		tip+":refs/heads/main", ":"+landingBranchRef(id),
+		"--force-with-lease=refs/heads/main:"+baseCommit,
+		"--force-with-lease="+landingBranchRef(id)+":"+tip)
 }
 
 // AbandonLandingBranch removes an unlanded candidate against its exact tip

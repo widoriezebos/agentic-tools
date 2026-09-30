@@ -970,3 +970,23 @@ func TestMaterializePathsRefusesInRootSymlinkAncestor(t *testing.T) {
 		t.Fatal("the restore must not have written through the in-root link")
 	}
 }
+
+// OutsideRepository reads the filesystem: a .git entry at a directory or
+// above it makes a repository, whatever git would say about it.
+func TestOutsideRepositoryReadsTheFilesystem(t *testing.T) {
+	t.Parallel()
+	outside := t.TempDir()
+	if !OutsideRepository(outside) || !OutsideRepository(filepath.Join(outside, "not", "made")) {
+		t.Fatalf("a directory with no .git above it read as a repository")
+	}
+	inside := filepath.Join(outside, "nested")
+	if err := os.MkdirAll(inside, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(outside, ".git"), []byte("gitdir: /nowhere\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if OutsideRepository(outside) || OutsideRepository(inside) {
+		t.Fatal("a directory under a .git entry read as outside a repository")
+	}
+}
