@@ -9,9 +9,8 @@
 - Origin: main
 - Next step: Second independent successor of goal:breach-clock-and-budget-honesty. Reuse accepted Fix 2 and its review decisions in plans/breach-clock-and-budget-honesty-design.md. Retarget all actual input/replay writers and their tests to current main. Wait for goal:budget-raises-preserve-elapsed-origin before operational budget corrections, which otherwise reset the clock. Keep rollout deliberate with old and new binaries; do not absorb human-wait or quota work.
 - OpenedAt: 2026-09-11T05:37:45Z
-- Revision: 130
+- Revision: 131
 - Labels: breach-clock-successor
-- Pinned: m1c
 - BudgetExceptions: 0
 
 History:
@@ -145,4 +144,5 @@ History:
 - 2026-09-16T20:32:51Z 767PDWBW38QGNKWQNPP2ZXQZ3H-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,events-package-has-a-test-group,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer reason=priority-order subject=human-wait-does-not-consume-goal-budget from=1:55 to=1:54 requested-sequence=48
 - 2026-09-16T20:32:55Z GS9W7K77HQFFN3G21X02BVJ30P-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,events-package-has-a-test-group,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer reason=priority-order subject=new-elapsed-budgets-use-explicit-hours from=1:54 to=2:49 requested-sequence=49
 - 2026-09-16T20:34:57Z 1Q3BDX6ZHZ8GFC54ADZVET7HC1-m1e-c6925449 unapprove actor=human:Wido targets=new-elapsed-budgets-use-explicit-hours reason=Wido 2026-09-16 22:40 CEST: clean house on priority 1 first, then a few human convenience features; every priority 2+ goal is unapproved until then
-Integrity: sha256=a0022ecf14e2ac32e9685bb8ed9ee6e06dd8cef67af0e732de4f3a086f767b42
+- 2026-09-30T18:43:28Z 17ZEQYV0D51VJJ2W8M9NJW0DRB-m1e-b6a4eb0a set-pin actor=human:wido targets=new-elapsed-budgets-use-explicit-hours
+Integrity: sha256=52f5398395100bd9b623eb1aa9ce260461486cd5767108af5b892966b58b88d2
