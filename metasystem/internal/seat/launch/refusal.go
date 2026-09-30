@@ -111,4 +111,5 @@ func resumeCommand(machine, id string) string {
 // new machine's own (rule H1: the one damage refusal of the launch guides):
 // this seat's root, set to a directory of its own under the fleet's
 // evidence tree, before the launch is retried.
-const evidenceRootCommand = "metasystem settings set " + config.EvidenceRootKey + " <a directory of this seat's own under the fleet's evidence tree>, then retry the launch"
+const evidenceRootCommand = "metasystem settings set " + config.EvidenceRootKey + " <a directory of this seat's own under the fleet's evidence tree>, " +
+	"then retry the launch: Retry on the fleet page, or metasystem machine start <name> --resume <launch id>"
