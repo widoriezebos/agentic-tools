@@ -1,0 +1,20 @@
+exit 2
+--
+{
+  "schemaVersion": 1,
+  "verb": "machine stop",
+  "targets": [],
+  "outcome": "refused",
+  "summary": "no machine m9z on this computer or in the fleet; nothing was done",
+  "next": {
+    "argv": [
+      "metasystem",
+      "machine",
+      "list",
+      "--verbose"
+    ],
+    "reason": "names every machine of this computer"
+  }
+}
+
+--

@@ -30,6 +30,7 @@ const (
 	codeProofStaleCompletion     = "BATCH_PROOF_STALE_COMPLETION"
 	codeProofStateRefused        = "BATCH_PROOF_STATE_REFUSED"
 	codeProofUnionUncovered      = "BATCH_PROOF_UNION_UNCOVERED"
+	codeFlakeAllowanceRefused    = "BATCH_FLAKE_ALLOWANCE_REFUSED"
 	codeReassembleMoved          = "BATCH_REASSEMBLE_MOVED"
 	codeRecoveryNotPushed        = "BATCH_RECOVERY_NOT_PUSHED"
 	codeTrunkRedOwnerUnbound     = "TRUNK_RED_OWNER_UNBOUND"

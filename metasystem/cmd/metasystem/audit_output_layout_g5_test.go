@@ -19,16 +19,17 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
 
-// The layout goldens of group G5 (plans/designs/output-style.md §7): goal
-// sync, the design and decision records, settings coordinator, the agent
-// messages, the channel and mission questions, system adopt and the app
-// verbs. Each bed is built fresh for every run, so an act's golden is its
-// first run.
+// The group's goldens join layoutCases through its hook.
 var _ = func() bool {
 	layoutGroupCases = append(layoutGroupCases, g5LayoutCases)
 	return true
 }()
 
+// The layout goldens of group G5 (plans/designs/output-style.md §7): goal
+// sync, the design and decision records, settings coordinator, the agent
+// messages, the channel and mission questions, system adopt and the app
+// verbs. Each bed is built fresh for every run, so an act's golden is its
+// first run.
 func g5LayoutCases() []layoutCase {
 	return []layoutCase{
 		{name: "goal-sync", args: []string{"goal", "sync"}, bed: goalSyncLayoutBed(true)},

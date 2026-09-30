@@ -59,8 +59,11 @@ type ContextEvidenceRetiredError struct {
 }
 
 func (e *ContextEvidenceRetiredError) Error() string {
-	return fmt.Sprintf("CONTEXT_EVIDENCE_RETIRED requested=%s retained-since=%s", e.WeekStart.Format("2006-01-02"), e.RetainedSince.Format("2006-01-02"))
+	return fmt.Sprintf("the calls of the week of %s are no longer kept (kept since %s); nothing to do", e.WeekStart.Format("2006-01-02"), e.RetainedSince.Format("2006-01-02"))
 }
+
+// RefusalCode is the registered code, for --json and the register.
+func (e *ContextEvidenceRetiredError) RefusalCode() string { return "CONTEXT_EVIDENCE_RETIRED" }
 
 var (
 	lookupContextReportRuntime = runtimes.Lookup

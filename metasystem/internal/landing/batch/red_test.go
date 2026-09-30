@@ -1058,7 +1058,7 @@ func TestExpiredAllowanceBetweenPredicateAndPublicationRefusesPublication(t *tes
 				}
 				return
 			}
-			if err == nil || !strings.Contains(err.Error(), "BATCH_FLAKE_ALLOWANCE_REFUSED") || slices.Contains(events, "push") {
+			if refusal := (*FlakeAllowanceRefusal)(nil); !errors.As(err, &refusal) || refusal.Code != "BATCH_FLAKE_ALLOWANCE_REFUSED" || slices.Contains(events, "push") {
 				t.Fatalf("publication was not refused: err=%v events=%v", err, events)
 			}
 			everyMemberReturned(t, store, "known flake F")

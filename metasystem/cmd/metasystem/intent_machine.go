@@ -398,23 +398,7 @@ func plural(count int, one, many string) string {
 
 // machineListSummary is the one line machine list prints first.
 func machineListSummary(reading hostReading, others int) string {
-	running, stopped, unknown, jobs := 0, 0, 0, len(reading.LaunchesElsewhere)
-	for _, machine := range reading.Machines {
-		switch machine.State {
-		case "running":
-			running++
-		case "stopped":
-			stopped++
-		default:
-			unknown++
-		}
-		jobs += len(machine.Launches)
-		for _, work := range machine.Work {
-			if work.Family == "job" {
-				jobs++
-			}
-		}
-	}
+	running, stopped, unknown, jobs := machineCounts(reading)
 	count := plural(len(reading.Machines), "machine", "machines")
 	if reading.RegistryProblem != "" {
 		count = "at least " + count
@@ -542,16 +526,278 @@ func runIntentMachineList(inv *intentInvocation) int {
 	reading := inv.readHostMachines(fleetNames(report))
 	others := otherComputers(report, reading)
 	data["thisComputer"], data["otherComputers"] = reading, others
-	text := intentOwnerLines(report.Text())
-	if inv.input.switched("verbose") {
-		text = append(text, machineListDetail(reading, others, inv.textEnv(inv.stdout))...)
-	}
-	result := intentResult{Outcome: intentConfirmed, Summary: machineListSummary(reading, len(others)), text: text, Data: data}
+	result := intentResult{Outcome: intentConfirmed, Summary: machineListSummary(reading, len(others)), Data: data,
+		view: inv.machineListView(report, reading, others)}
 	if reading.RegistryProblem != "" {
+		// A partial reading keeps its lines on the error stream.
+		result.text = intentOwnerLines(report.Text())
+		if inv.input.switched("verbose") {
+			result.text = append(result.text, machineListDetail(reading, others, inv.textEnv(inv.stderr))...)
+		}
 		result.Outcome, result.code = intentPartial, 1
 		result.Decision = "repair or remove the host registry named above; until then machine list names only the machines the other sources name"
 	}
 	return inv.render(result)
+}
+
+// machineListView is machine list's page (output-style §6.3, 6.4): the
+// headline counts this computer's machines, their jobs and the machines
+// elsewhere; one row per machine of the fleet follows. --verbose adds each
+// machine of this computer with its checkout, helpers, jobs, launches and
+// the lane's owner, the machines on other computers by their last report,
+// and the processes that are not MetaSystem's.
+func (inv *intentInvocation) machineListView(report seat.Report, reading hostReading, others []otherComputerMachine) func(*textui.Page) {
+	return func(page *textui.Page) {
+		env := page.Env()
+		running, stopped, unknown, jobs := machineCounts(reading)
+		count := len(reading.Machines)
+		states := fmt.Sprintf("%d running, %d stopped", running, stopped)
+		switch {
+		case count > 0 && running == count:
+			states = "all running"
+		case count > 0 && stopped == count:
+			states = "all stopped"
+		}
+		if unknown > 0 {
+			states += fmt.Sprintf(", %d unknown", unknown)
+		}
+		elsewhere := ""
+		if len(others) > 0 {
+			elsewhere = fmt.Sprintf("%d elsewhere", len(others))
+		}
+		page.Headline(textui.Count(count, "machine on this computer", "machines on this computer"), states,
+			textui.Count(jobs, "job running", "jobs running"), elsewhere)
+
+		local := map[string]*hostMachine{}
+		for _, machine := range reading.Machines {
+			if machine.Nickname {
+				local[machine.Name] = machine
+			}
+		}
+		if report.NoNickname || len(report.Machines) > 0 {
+			section := page.Section("Fleet", "")
+			if report.NoNickname {
+				section.Text("this checkout has no machine nickname and publishes no presence")
+			}
+			table := section.Table(textui.Column{Title: "machine"}, textui.Column{Title: "doing"}, textui.Column{Title: "seen"},
+				textui.Column{Title: "engine"}, textui.Column{Title: "free", Right: true}, textui.Column{Flex: true, Wrap: true})
+			for _, standing := range report.Machines {
+				table.Row(machineFleetRow(env, standing, local[standing.Machine])...)
+			}
+		}
+		for _, problem := range []string{report.ClaimsUnavailable, report.CopyProblem, reading.LaneProblem, reading.LaunchProblem} {
+			if problem != "" {
+				page.Section("", "").Item(textui.Alert, problem)
+			}
+		}
+		if !page.Verbose() {
+			return
+		}
+		for _, machine := range reading.Machines {
+			machineCard(page, env, machine)
+		}
+		if len(reading.LaunchesElsewhere) > 0 {
+			section := page.Section("Launches outside every machine", "")
+			for _, launched := range reading.LaunchesElsewhere {
+				section.KV(launched.Reference, textui.Plain(launched.Purpose))
+			}
+		}
+		if len(others) > 0 {
+			title := "On other computers"
+			if reading.RegistryProblem != "" {
+				title = "Not found on this computer"
+			}
+			table := page.Section(title, "").Table(textui.Column{}, textui.Column{Flex: true})
+			for _, other := range others {
+				reported := "never reported"
+				if at, err := time.Parse(time.RFC3339, other.LastReported); err == nil {
+					reported = "last reported " + env.Time(at)
+				}
+				table.Row(textui.Plain(other.Machine), textui.Dim(reported))
+			}
+		}
+		if len(reading.NotOurs) > 0 {
+			table := page.Section("Not ours, left alone", "").Table(textui.Column{Right: true}, textui.Column{}, textui.Column{Flex: true}, textui.Column{})
+			for _, process := range reading.NotOurs {
+				since := ""
+				if process.started > 0 {
+					since = env.Since(time.Unix(process.started, 0))
+				}
+				runtime, argv := untrackedCommand(process.Line)
+				table.Row(textui.Plain(fmt.Sprint(process.Pid)), textui.Plain(runtime), textui.Plain(argv), textui.Dim(since))
+			}
+		}
+		if report.Publication != nil || report.CopyReadAt != "" {
+			section := page.Section("Presence", "")
+			if report.Publication != nil {
+				section.KV("this machine", textui.Plain(machinePublication(env, *report.Publication)))
+			}
+			if at, err := time.Parse(time.RFC3339, report.CopyReadAt); err == nil {
+				section.KV("copy", textui.Plain("fetched "+env.Ago(at)+" by "+report.CopySource))
+			}
+		}
+		if reading.OtherRegistered > 0 {
+			page.Section("", "").Text(textui.Count(reading.OtherRegistered, "other registered checkout is not a machine", "other registered checkouts are not machines"))
+			page.Hint(textui.Hint{Argv: inv.publicArgv("disk", "clean"), Reason: "forgets those whose directories are gone"})
+		}
+	}
+}
+
+// machineCounts are this computer's machines by state, and its running jobs.
+func machineCounts(reading hostReading) (running, stopped, unknown, jobs int) {
+	jobs = len(reading.LaunchesElsewhere)
+	for _, machine := range reading.Machines {
+		switch machine.State {
+		case "running":
+			running++
+		case "stopped":
+			stopped++
+		default:
+			unknown++
+		}
+		jobs += len(machine.Launches)
+		for _, work := range machine.Work {
+			if work.Family == "job" {
+				jobs++
+			}
+		}
+	}
+	return running, stopped, unknown, jobs
+}
+
+// machineFleetRow is one machine of the fleet: its state (this computer's
+// reading for a machine it runs, its presence otherwise), what it does,
+// when it last reported, its engine and free space, and why it needs a look.
+func machineFleetRow(env textui.Env, standing seat.MachineStanding, local *hostMachine) []textui.Span {
+	state := textui.Running
+	switch {
+	case standing.Standing == seat.Unreachable:
+		state = textui.Alert
+	case standing.Standing != seat.Reachable:
+		state = textui.Unknown
+	case local != nil && local.State == "stopped":
+		state = textui.Stopped
+	case local != nil && local.State != "running":
+		state = textui.Unknown
+	}
+	name := textui.Marked(state, standing.Machine)
+	if standing.Record == nil {
+		note := standing.Reason
+		if len(standing.Holds) > 0 {
+			note += "; named by the claim on " + strings.Join(standing.Holds, ", ")
+		}
+		return []textui.Span{name, textui.Plain(string(standing.Standing)), textui.Plain(""), textui.Plain(""), textui.Plain(""), textui.Dim(note)}
+	}
+	record := *standing.Record
+	doing := machineActivity(record, env.Now)
+	if local != nil && local.State == "stopped" {
+		doing = "stopped"
+	}
+	seen := "never"
+	if at := record.At(); !at.IsZero() {
+		seen = env.Ago(at)
+	}
+	free := ""
+	if record.DiskFreeBytes != nil {
+		free = textui.Bytes(*record.DiskFreeBytes)
+	}
+	var notes []string
+	if standing.Standing != seat.Reachable {
+		notes = append(notes, standing.Reason)
+	}
+	if len(standing.Holds) > 0 {
+		holds := "holds " + strings.Join(standing.Holds, ", ")
+		if standing.Flag != "" {
+			holds += " (" + standing.Flag + ")"
+		}
+		notes = append(notes, holds)
+	}
+	return []textui.Span{name, textui.Plain(doing), textui.Plain(seen), textui.Plain(textui.SHA(record.Engine)), textui.Plain(free),
+		textui.Dim(strings.Join(notes, "; "))}
+}
+
+// machineActivity is what a machine's presence says it does: its phase
+// where the record carries one, its chain's older words where it does not.
+func machineActivity(record seat.Record, now time.Time) string {
+	if record.Working != nil {
+		return seat.PhaseWords(record.Working, now)
+	}
+	if record.Chain == nil {
+		return "idle"
+	}
+	words := "running " + record.Chain.Role
+	if record.Chain.Round > 0 {
+		words += fmt.Sprintf(" round %d", record.Chain.Round)
+	}
+	if record.Chain.Goal != "" {
+		words += " on " + record.Chain.Goal
+	}
+	return words
+}
+
+// machinePublication is this machine's own publishing state.
+func machinePublication(env textui.Env, state seat.PublicationState) string {
+	if state.LastOutcome == "" {
+		return "no publish has been attempted"
+	}
+	if at, err := time.Parse(time.RFC3339, state.LastSuccessAt); err == nil && state.LastOutcome == seat.OutcomePublished {
+		return "published " + env.Ago(at)
+	}
+	return state.LastOutcome
+}
+
+// machineCard is one machine of this computer as --verbose shows it: its
+// checkout and roles, its helpers, jobs and launches, and the lane's owner.
+func machineCard(page *textui.Page, env textui.Env, machine *hostMachine) {
+	aside := []string{env.Path(machine.Checkout)}
+	if machine.This {
+		aside = append(aside, "this checkout")
+	}
+	if machine.Lane {
+		aside = append(aside, "landing lane")
+	}
+	aside = append(aside, machine.State)
+	var helpers []string
+	var first int64
+	for _, process := range machine.Components {
+		helpers = append(helpers, fmt.Sprintf("%s %d", helperName(process.Component), process.Pid))
+		if process.started > 0 && (first == 0 || process.started < first) {
+			first = process.started
+		}
+	}
+	if first > 0 {
+		aside = append(aside, env.Since(time.Unix(first, 0)))
+	}
+	section := page.Section(machine.Name, strings.Join(aside, " · "))
+	if machine.Reason != "" {
+		section.KV("why", textui.Plain(machine.Reason))
+	}
+	if len(helpers) > 0 {
+		section.KV("pids", textui.Plain(strings.Join(helpers, " · ")))
+	}
+	for _, process := range machine.Work {
+		section.KV("job", textui.Plain(process.processLine(env)))
+	}
+	for _, launched := range machine.Launches {
+		section.KV("launch", textui.Plain(launched.Reference+": "+strings.ReplaceAll(launched.Purpose, machine.Checkout, env.Path(machine.Checkout))))
+	}
+	if owner := machine.LaneOwner; owner != nil {
+		words := owner.State
+		if owner.PID != nil {
+			words += fmt.Sprintf(", pid %d", *owner.PID)
+		}
+		if owner.Since != nil {
+			if at, err := time.Parse(time.RFC3339, *owner.Since); err == nil {
+				words += ", " + env.Since(at)
+			}
+		}
+		section.KV("lane owner", textui.Plain(words))
+	}
+	if machine.State == "stopped" && machine.FenceState == stopfence.StateClosed {
+		if at, err := time.Parse(time.RFC3339, machine.FenceChangedAt); err == nil {
+			section.KV("stopped", textui.Plain(env.Since(at)))
+		}
+	}
 }
 
 // runIntentMachineStop stops MetaSystem on one machine of this computer, or
@@ -741,12 +987,15 @@ func (inv *intentInvocation) stopHostMachines(reading hostReading, targets []*ho
 	case stopped == 0 && cancelled == 0 && !all:
 		result.Outcome = intentUnchanged
 		result.Summary = fmt.Sprintf("MetaSystem is already stopped on %s (%s); %s", targets[0].Name, targets[0].Checkout, machineStoppedTail(targets[0]))
+		result.view = machineStopView(fmt.Sprintf("MetaSystem is already stopped on %s; %s", targets[0].Name, machineStoppedTail(targets[0])), targets[0], lines)
 	case stopped == 0 && cancelled == 0:
 		result.Outcome = intentUnchanged
 		result.Summary = fmt.Sprintf("MetaSystem is already stopped on all %s of this computer; nothing of MetaSystem's is running", plural(len(targets), "machine", "machines"))
+		result.view = machineStopView(result.Summary, nil, lines)
 	case !all:
 		result.Outcome = intentConfirmed
 		result.Summary = fmt.Sprintf("stopped MetaSystem on %s (%s)%s", targets[0].Name, targets[0].Checkout, launchWords)
+		result.view = machineStopView("stopped MetaSystem on "+targets[0].Name+launchWords, targets[0], lines)
 	default:
 		result.Outcome = intentConfirmed
 		result.Summary = fmt.Sprintf("stopped MetaSystem on %s of this computer", plural(len(targets), "machine", "machines"))
@@ -754,8 +1003,29 @@ func (inv *intentInvocation) stopHostMachines(reading hostReading, targets []*ho
 			result.Summary += fmt.Sprintf(" (%d already stopped)", stoppedAlready)
 		}
 		result.Summary += launchWords
+		result.view = machineStopView(result.Summary, nil, lines)
 	}
 	return result
+}
+
+// machineStopView is a finished machine stop: what it did in one line;
+// --verbose adds the machine's checkout and each machine's own stop.
+func machineStopView(done string, machine *hostMachine, lines []string) func(*textui.Page) {
+	return func(page *textui.Page) {
+		page.Done(done)
+		if !page.Verbose() {
+			return
+		}
+		if machine != nil {
+			page.Facts(textui.KV{Key: "checkout", Value: []textui.Span{textui.Plain(page.Env().Path(machine.Checkout))}})
+		}
+		if len(lines) > 0 {
+			section := page.Section("Each machine", "")
+			for _, line := range lines {
+				section.Text(strings.TrimSpace(line))
+			}
+		}
+	}
 }
 
 // machineStoppedTail is the rest of system stop's already-stopped line.

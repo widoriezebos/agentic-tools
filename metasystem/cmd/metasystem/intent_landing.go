@@ -18,6 +18,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
 
 // The landing verbs' refusal codes (register rows name their sites).
@@ -198,12 +199,10 @@ func runIntentLandingStatus(inv *intentInvocation) int {
 		return inv.render(*problem)
 	}
 	view := inv.laneView(owners, home)
-	result := intentResult{Outcome: intentConfirmed, Summary: view.Summary, Data: view}
+	_, _, unreadable := lane.Read(home)
+	result := intentResult{Outcome: intentConfirmed, Summary: view.Summary, Data: view, view: inv.landingStatusView(view, unreadable != nil)}
 	if view.Root != nil {
 		result.Targets = laneTargets(*view.Root)
-	}
-	if inv.input.switched("verbose") {
-		result.text = landingViewDetail(view)
 	}
 	switch {
 	case len(view.Owner.Fix) > 0:
@@ -216,65 +215,173 @@ func runIntentLandingStatus(inv *intentInvocation) int {
 	return inv.render(result)
 }
 
-// landingViewDetail is --verbose: one line per fact of the view.
-func landingViewDetail(view lane.View) []string {
-	value := func(text *string) string {
-		if text == nil {
-			return "none"
+// landingStatusView is landing status's page (output-style §6.5): the
+// headline says whether the lane runs and what it lands; one row per batch
+// says what it does, with its changes under it. --verbose adds the lane's
+// checkout, who registered it, its owner, its log and its spend.
+func (inv *intentInvocation) landingStatusView(view lane.View, unreadable bool) func(*textui.Page) {
+	return func(page *textui.Page) {
+		env := page.Env()
+		if view.Root == nil {
+			if unreadable {
+				page.Mark(textui.Unknown, "This computer's landing lane record can't be read")
+				page.Hint(textui.Hint{Argv: inv.publicArgv("landing", "set", "PATH"), Reason: "registers the landing checkout again, which replaces it"})
+				return
+			}
+			page.Headline("No landing lane is registered on this computer")
+			page.Hint(textui.Hint{Argv: inv.publicArgv("landing", "set", "PATH"), Reason: "registers the landing checkout every seat lands through"})
+			return
 		}
-		return *text
-	}
-	local := func(stamp *string) string {
-		if stamp == nil {
-			return "none"
+		batchFact, nextFact := "", ""
+		if view.Batch != nil {
+			batchFact = textui.Count(len(view.Batch.Members), "change", "changes") + " " + view.Batch.State
 		}
-		return lane.LocalText(*stamp)
-	}
-	lines := []string{"registered by " + value(view.RegisteredBy) + " at " + local(view.RegisteredAt)}
-	owner := "owner: " + view.Owner.State
-	if view.Owner.PID != nil {
-		owner += fmt.Sprintf(", pid %d", *view.Owner.PID)
-	}
-	owner += fmt.Sprintf(", since %s, %d restarts", local(view.Owner.Since), view.Owner.Restarts)
-	lines = append(lines, owner)
-	if view.Owner.LastExit != nil {
-		lines = append(lines, "last exit: "+*view.Owner.LastExit)
-	}
-	if view.Owner.StoppedBy != nil {
-		lines = append(lines, "stopped by "+*view.Owner.StoppedBy)
-	}
-	if view.Owner.LastTickError != nil {
-		lines = append(lines, "last tick failed: "+*view.Owner.LastTickError)
-	}
-	if view.Root != nil {
-		lines = append(lines, "owner log: "+batchowner.OwnerLogPath(*view.Root))
-	}
-	if view.Owner.RetryHint != nil {
-		lines = append(lines, "to retry: "+*view.Owner.RetryHint)
-	}
-	if view.Batch != nil {
-		lines = append(lines, fmt.Sprintf("batch %s %s since %s: %s", view.Batch.ID, view.Batch.State, local(&view.Batch.Since), view.Batch.Reason))
-		for _, member := range view.Batch.Members {
-			lines = append(lines, "  member "+member.Goal+" from "+member.Seat)
+		if view.Next != nil {
+			nextFact = textui.Count(len(view.Next.Members), "change", "changes") + " collecting next"
 		}
-		for _, waited := range view.Batch.WaitingFor {
-			lines = append(lines, "  waits for "+waited.Goal+" on "+waited.Seat+", expected "+local(waited.Expected))
+		owner := view.Owner
+		switch owner.State {
+		case lane.OwnerRunning:
+			if owner.LastTickProblem != nil {
+				// The situation a person acts on is line 1; the raw error
+				// is --verbose's and --json's.
+				page.Mark(textui.Alert, *owner.LastTickProblem)
+				break
+			}
+			page.Headline("The landing lane is running", batchFact, nextFact)
+		case lane.OwnerStopped:
+			by := "a person"
+			if owner.StoppedBy != nil {
+				by = *owner.StoppedBy
+			}
+			page.Mark(textui.Stopped, "The landing lane is stopped by "+by+"; it lands nothing")
+			page.Hint(textui.Hint{Argv: inv.publicArgv("landing", "start"), Reason: "resumes it"})
+		default:
+			words := map[string]string{lane.OwnerGivenUp: "gave up", lane.OwnerRestarting: "is restarting", lane.OwnerNotStarted: "is not running"}[owner.State]
+			if words == "" {
+				words = "is in a state this engine does not know (" + owner.State + ")"
+			}
+			page.Mark(textui.Alert, "The landing lane's owner "+words)
 		}
-		for _, change := range view.Batch.Returned {
-			lines = append(lines, "  "+change.Outcome+" "+change.Goal+" from "+change.Seat+": "+change.Reason)
+		if owner.State != lane.OwnerRunning && owner.State != lane.OwnerStopped {
+			section := page.Section("", "")
+			if owner.LastExit != nil {
+				section.Text("last error: " + *owner.LastExit)
+			}
+			if owner.RetryHint != nil && len(owner.Fix) == 0 {
+				section.Text("to fix: " + *owner.RetryHint)
+			}
+		}
+		if view.Batch != nil || view.Next != nil {
+			table := page.Section("Batches", "").Table(textui.Column{}, textui.Column{Flex: true, Wrap: true})
+			if current := view.Batch; current != nil {
+				text := "batch " + current.ID
+				if at, err := time.Parse(time.RFC3339, current.Since); err == nil {
+					text += " " + env.Since(at)
+				}
+				if reason := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(current.Reason), ":")); reason != "" && reason != current.State {
+					text += " · " + reason
+				}
+				state := textui.Running
+				if current.State == lane.BatchHeld {
+					state = textui.Alert
+				}
+				table.Row(textui.Marked(state, current.State), textui.Plain(text))
+				if members := landingMembers(current.Members); members != "" {
+					table.Row(textui.Plain(""), textui.Dim(members))
+				}
+				for _, change := range current.Returned {
+					table.Row(textui.Plain(""), textui.Plain(change.Outcome+" "+change.Goal+" from "+change.Seat+": "+change.Reason))
+				}
+				if page.Verbose() {
+					for _, waited := range current.WaitingFor {
+						expected := ""
+						if waited.Expected != nil {
+							if at, err := time.Parse(time.RFC3339, *waited.Expected); err == nil {
+								expected = ", expected " + env.Time(at)
+							}
+						}
+						table.Row(textui.Plain(""), textui.Dim("waits for "+waited.Goal+" on "+waited.Seat+expected))
+					}
+				}
+			}
+			if next := view.Next; next != nil {
+				table.Row(textui.Marked(textui.Running, lane.BatchCollecting), textui.Plain("batch "+next.ID+" · next"))
+				if members := landingMembers(next.Members); members != "" {
+					table.Row(textui.Plain(""), textui.Dim(members))
+				}
+			}
+		}
+		if !page.Verbose() {
+			return
+		}
+		section := page.Section("Lane", env.Path(*view.Root))
+		registered := "by " + landingText(view.RegisteredBy)
+		if view.RegisteredAt != nil {
+			if at, err := time.Parse(time.RFC3339, *view.RegisteredAt); err == nil {
+				registered += ", " + env.Time(at)
+			}
+		}
+		section.KV("registered", textui.Plain(registered))
+		ownerWords := []string{owner.State}
+		if owner.Since != nil {
+			if at, err := time.Parse(time.RFC3339, *owner.Since); err == nil {
+				ownerWords[0] += " " + env.Since(at)
+			}
+		}
+		if owner.PID != nil {
+			ownerWords = append(ownerWords, fmt.Sprintf("pid %d", *owner.PID))
+		}
+		ownerWords = append(ownerWords, textui.Count(owner.Restarts, "restart", "restarts"))
+		section.KV("owner", textui.Plain(strings.Join(ownerWords, " · ")))
+		if owner.StoppedBy != nil {
+			section.KV("stopped by", textui.Plain(*owner.StoppedBy))
+		}
+		if owner.LastExit != nil {
+			section.KV("last exit", textui.Plain(*owner.LastExit))
+		}
+		if owner.LastTickError != nil {
+			section.KV("last tick", textui.Plain(*owner.LastTickError))
+		}
+		if owner.RetryHint != nil {
+			section.KV("to retry", textui.Plain(*owner.RetryHint))
+		}
+		section.KV("owner log", textui.Plain(env.Path(batchowner.OwnerLogPath(*view.Root))))
+		if view.Spend != nil {
+			section.KV("spend", textui.Plain(fmt.Sprintf("%s · %s · %s, charged to no goal", textui.Count(view.Spend.Attempts, "attempt", "attempts"),
+				textui.Count(int(view.Spend.ReservedMinutes), "reserved minute", "reserved minutes"), view.Spend.Account)))
 		}
 	}
-	if view.Spend != nil {
-		lines = append(lines, fmt.Sprintf("lane spend (%s, batches of changes; no goal's budget): %d attempts, %d reserved minutes",
-			view.Spend.Account, view.Spend.Attempts, view.Spend.ReservedMinutes))
+}
+
+// landingMembers are a batch's changes and the seats they came from.
+func landingMembers(members []lane.Member) string {
+	var named []string
+	for _, member := range members {
+		named = append(named, member.Goal+" from "+member.Seat)
 	}
-	if view.Next != nil {
-		lines = append(lines, "next batch "+view.Next.ID+" collecting:")
-		for _, member := range view.Next.Members {
-			lines = append(lines, "  member "+member.Goal+" from "+member.Seat)
+	return strings.Join(named, ", ")
+}
+
+func landingText(text *string) string {
+	if text == nil {
+		return "no one recorded"
+	}
+	return *text
+}
+
+// landingDone is a landing act that held: its summary as one line, each
+// of its paths shortened for the page.
+func landingDone(summary string, paths ...string) func(*textui.Page) {
+	return func(page *textui.Page) {
+		text := summary
+		for _, path := range paths {
+			if path != "" {
+				text = strings.ReplaceAll(text, path, page.Env().Path(path))
+			}
 		}
+		page.Done(text)
 	}
-	return lines
 }
 
 func (inv *intentInvocation) landingActor(owners laneVerbOwners) string {
@@ -370,13 +477,14 @@ func runIntentLandingSet(inv *intentInvocation) int {
 	}
 	view := inv.laneView(owners, home)
 	if !changed {
-		return inv.render(intentResult{Outcome: intentUnchanged, Targets: laneTargets(root), Data: view, Summary: "this computer's landing lane is already " + root})
+		return inv.render(intentResult{Outcome: intentUnchanged, Targets: laneTargets(root), Data: view, Summary: "this computer's landing lane is already " + root,
+			view: landingDone("this computer's landing lane is already "+root, root)})
 	}
 	summary := "this computer's landing lane is now " + root
 	if previous.Root != "" {
 		summary += " (it was " + previous.Root + ")"
 	}
-	result := intentResult{Outcome: intentConfirmed, Targets: laneTargets(root), Data: view, Summary: summary,
+	result := intentResult{Outcome: intentConfirmed, Targets: laneTargets(root), Data: view, Summary: summary, view: landingDone(summary, root, previous.Root),
 		next: inv.publicArgv("landing", "start"), nextReason: "start its owner now; otherwise the next landing or the steward starts it"}
 	if len(view.Owner.Fix) > 0 {
 		result.next, result.nextReason = view.Owner.Fix, laneFixReason(view.Owner.Fix)
@@ -464,7 +572,8 @@ func (inv *intentInvocation) startLane(owners laneVerbOwners, home string, recor
 	view := inv.laneView(owners, home)
 	switch {
 	case started && view.Owner.PID != nil:
-		return intentResult{Outcome: intentConfirmed, Targets: targets, Data: view, Summary: fmt.Sprintf("started the landing lane's owner at %s (pid %d)", record.Root, *view.Owner.PID)}
+		return intentResult{Outcome: intentConfirmed, Targets: targets, Data: view, Summary: fmt.Sprintf("started the landing lane's owner at %s (pid %d)", record.Root, *view.Owner.PID),
+			view: landingDone(fmt.Sprintf("started the landing lane's owner at %s (pid %d)", record.Root, *view.Owner.PID), record.Root)}
 	case started:
 		// The launch asks the checkout's supervision for an owner; until
 		// one runs, nothing is claimed started.
@@ -472,9 +581,11 @@ func (inv *intentInvocation) startLane(owners laneVerbOwners, home string, recor
 			Summary: "asked the supervision of " + record.Root + " to start the landing lane's owner; it does not run yet",
 			next:    inv.publicArgv("landing", "status"), nextReason: "shows its pid once it runs, or why it does not"}
 	case resumed || kept || restarted:
-		return intentResult{Outcome: intentConfirmed, Targets: targets, Data: view, Summary: fmt.Sprintf("the landing lane's owner at %s runs again (pid %d); its restart count is cleared", record.Root, probe.PID)}
+		return intentResult{Outcome: intentConfirmed, Targets: targets, Data: view, Summary: fmt.Sprintf("the landing lane's owner at %s runs again (pid %d); its restart count is cleared", record.Root, probe.PID),
+			view: landingDone(fmt.Sprintf("the landing lane's owner at %s runs again (pid %d); its restart count is cleared", record.Root, probe.PID), record.Root)}
 	}
-	return intentResult{Outcome: intentUnchanged, Targets: targets, Data: view, Summary: fmt.Sprintf("the landing lane's owner at %s is already running (pid %d)", record.Root, probe.PID)}
+	return intentResult{Outcome: intentUnchanged, Targets: targets, Data: view, Summary: fmt.Sprintf("the landing lane's owner at %s is already running (pid %d)", record.Root, probe.PID),
+		view: landingDone(fmt.Sprintf("the landing lane's owner at %s is already running (pid %d)", record.Root, probe.PID), record.Root)}
 }
 
 func runIntentLandingStop(inv *intentInvocation) int {
@@ -491,7 +602,16 @@ func runIntentLandingStop(inv *intentInvocation) int {
 func (inv *intentInvocation) stopLane(owners laneVerbOwners, home string, record lane.Record) (intentResult, bool) {
 	targets := laneTargets(record.Root)
 	if pause, paused := lane.ReadPause(home); paused {
-		return intentResult{Outcome: intentUnchanged, Targets: targets, Summary: "the landing lane is already stopped by " + pause.By + " at " + lane.LocalText(pause.At) + "; metasystem landing start resumes it"}, true
+		result := intentResult{Outcome: intentUnchanged, Targets: targets, Summary: "the landing lane is already stopped by " + pause.By + " at " + lane.LocalText(pause.At) + "; metasystem landing start resumes it"}
+		result.view = func(page *textui.Page) {
+			done := "the landing lane is already stopped by " + pause.By
+			if at, err := time.Parse(time.RFC3339, pause.At); err == nil {
+				done += " " + page.Env().Since(at)
+			}
+			page.Done(done)
+			page.Hint(textui.Hint{Argv: inv.publicArgv("landing", "start"), Reason: "resumes it"})
+		}
+		return result, true
 	}
 	if busy := laneBusy(inv.laneView(owners, home), true); busy != "" {
 		return intentResult{Outcome: intentRefused, code: 1, Targets: targets,
@@ -506,7 +626,11 @@ func (inv *intentInvocation) stopLane(owners laneVerbOwners, home string, record
 	}
 	return intentResult{Outcome: intentConfirmed, Targets: targets, Data: inv.laneView(owners, home),
 		Summary: "stopped the landing lane for " + by + "; it lands nothing until metasystem landing start",
-		Details: []string{"the lane at " + record.Root + " advances no batch and its owner is not restarted until metasystem landing start"}}, true
+		Details: []string{"the lane at " + record.Root + " advances no batch and its owner is not restarted until metasystem landing start"},
+		view: func(page *textui.Page) {
+			page.Done("stopped the landing lane for " + by + "; it lands nothing until it starts again")
+			page.Hint(textui.Hint{Argv: inv.publicArgv("landing", "start"), Reason: "resumes it"})
+		}}, true
 }
 
 // runIntentLandingRestart gives the lane a fresh owner process (a person
@@ -538,6 +662,9 @@ func runIntentLandingRestart(inv *intentInvocation) int {
 	}
 	if ended != 0 && (result.Outcome == intentConfirmed || result.Outcome == intentInProgress) {
 		result.Summary = fmt.Sprintf("ended the landing lane's owner pid %d; ", ended) + result.Summary
+		if result.view != nil {
+			result.view = landingDone(result.Summary, record.Root)
+		}
 	}
 	return inv.render(result)
 }
