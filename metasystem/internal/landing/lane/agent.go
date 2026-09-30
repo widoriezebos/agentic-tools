@@ -71,6 +71,10 @@ type AgentKeeper struct {
 	// Cancel stops a launch that started while the lane was paused
 	// meanwhile; nil leaves it to the pause's own reach.
 	Cancel func(id string) error
+	// Exclusive runs the start's claim under the batch owner's ensure lock
+	// of the lane at root, the lock every owner start takes; nil runs it
+	// as is.
+	Exclusive func(root string, fn func() error) error
 }
 
 // AgentCooldown is how long the keeper waits before it wakes a fresh agent
@@ -129,17 +133,30 @@ func (k AgentKeeper) Step() string {
 			line = "the landing agent at " + root + " is not started: the lane changed while its wake was read"
 			return err
 		}
-		if reason, stop := k.recheck(root); stop {
-			line = reason
-			return nil
+		exclusive := k.Exclusive
+		if exclusive == nil {
+			exclusive = func(_ string, fn func() error) error { return fn() }
 		}
-		current, err := ReadAgentState(k.Home)
-		if err != nil {
-			return err
-		}
-		current.StartingAt = k.Now().UTC().Format(time.RFC3339)
-		claimed = true
-		return writeJSON(k.Home, agentStatePath(k.Home), current)
+		// Under the owner's own ensure lock: the holds (the batch owner
+		// among them) are read again and the claim is recorded before any
+		// owner start can look, so an owner and the agent never both start.
+		return exclusive(root, func() error {
+			if reason, stop := k.recheck(root); stop {
+				line = reason
+				return nil
+			}
+			if reason, held := k.held(root); held {
+				line = reason
+				return nil
+			}
+			current, err := ReadAgentState(k.Home)
+			if err != nil {
+				return err
+			}
+			current.StartingAt = k.Now().UTC().Format(time.RFC3339)
+			claimed = true
+			return writeJSON(k.Home, agentStatePath(k.Home), current)
+		})
 	}); err != nil {
 		return "the landing agent's keeper can't claim the start: " + err.Error()
 	}
@@ -159,8 +176,10 @@ func (k AgentKeeper) Step() string {
 		}
 		current = AgentState{Launch: id, StartedAt: k.Now().UTC().Format(time.RFC3339), Reasons: wake.Reasons}
 		line = fmt.Sprintf("woke the landing agent %s at %s: %s", id, root, strings.Join(wake.Reasons, ", "))
-		// A pause that came while it started ends it at once.
+		// A pause that came while it started ends it at once; its reasons
+		// then hold no cooldown.
 		if by, paused := pausedClosed(k.Home); paused && k.Cancel != nil {
+			current.Reasons = nil
 			if err := k.Cancel(id); err != nil {
 				line = fmt.Sprintf("the landing agent %s started at %s as the lane was paused by %s, and could not be stopped: %v; run: metasystem work stop %s", id, root, by, err, id)
 			} else {
@@ -224,16 +243,54 @@ func (k AgentKeeper) decide(root string) (string, AgentState, bool) {
 			return "the landing agent's keeper can't write its record: " + err.Error(), state, false
 		}
 	}
+	if reason, held := k.held(root); held {
+		return reason, state, false
+	}
+	return "", state, true
+}
+
+// held reads the holds: the first that holds, or cannot be read, stops the
+// start.
+func (k AgentKeeper) held(root string) (string, bool) {
 	for _, hold := range k.Holds {
 		reason, err := hold(root)
 		if err != nil {
-			return fmt.Sprintf("the landing agent at %s is not started: whether it may start can't be read (%v)", root, err), state, false
+			return fmt.Sprintf("the landing agent at %s is not started: whether it may start can't be read (%v)", root, err), true
 		}
 		if reason != "" {
-			return fmt.Sprintf("the landing agent at %s is not started: %s", root, reason), state, false
+			return fmt.Sprintf("the landing agent at %s is not started: %s", root, reason), true
 		}
 	}
-	return "", state, true
+	return "", false
+}
+
+// AgentStarting says whether the keeper claimed a landing agent start that
+// has not finished: an owner start honours it as it honours a running
+// agent.
+func AgentStarting(home string, now time.Time) (string, bool) {
+	state, err := ReadAgentState(home)
+	if err != nil {
+		// Unreadable: a start may be in progress.
+		return "an unreadable keeper record", true
+	}
+	at, err := time.Parse(time.RFC3339, state.StartingAt)
+	if err != nil || now.Sub(at) >= startClaim {
+		return "", false
+	}
+	return state.StartingAt, true
+}
+
+// ClearAgentCooldown forgets the reasons the last agent ended with: a
+// person's landing start wakes the agent at once when work is there.
+func ClearAgentCooldown(home string) error {
+	return withLock(home, func() error {
+		state, err := ReadAgentState(home)
+		if err != nil || len(state.Reasons) == 0 {
+			return err
+		}
+		state.Reasons = nil
+		return writeJSON(home, agentStatePath(home), state)
+	})
 }
 
 // own says whether this steward keeps the lane at root: its checkout is the

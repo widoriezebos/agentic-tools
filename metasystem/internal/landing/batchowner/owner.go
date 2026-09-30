@@ -165,7 +165,46 @@ func ensureBatchOwnerWith(root string, seams BatchOwnerEnsureSeams, agentLive fu
 	if err := LandingCheckoutPresent(root); err != nil {
 		return err
 	}
-	lockPath := filepath.Join(root, "artifacts", "agents", "locks", "landing-owner.ensure.lock")
+	return WithOwnerEnsureLock(root, func() error {
+		pid, state, err := seams.Inspect(root)
+		if err != nil && state == identity.Unknown {
+			return fmt.Errorf("%s: %w", codeOwnerIndeterminate, err)
+		}
+		switch state {
+		case identity.Alive:
+			return seams.Wake(pid)
+		case identity.Dead:
+			// A running or starting landing agent is the lane's one
+			// composition owner: no batch owner is launched beside it, and
+			// there is nothing to wake.
+			if reason, err := landingAgentHoldWith(agentLive); err != nil || reason != "" {
+				return err
+			}
+			if err := seams.Launch(root); err != nil {
+				return err
+			}
+			// The launched owner may not run yet: the mark tells a landing
+			// agent's start that one is on its way.
+			return os.WriteFile(ownerLaunchedPath(root), []byte(time.Now().UTC().Format(time.RFC3339)+"\n"), 0o644)
+		default:
+			return fmt.Errorf("%s: owner liveness is unknown", codeOwnerIndeterminate)
+		}
+	})
+}
+
+func ownerEnsureLockPath(root string) string {
+	return filepath.Join(root, "artifacts", "agents", "locks", "landing-owner.ensure.lock")
+}
+
+func ownerLaunchedPath(root string) string {
+	return filepath.Join(root, "artifacts", "agents", "locks", "landing-owner.launched")
+}
+
+// WithOwnerEnsureLock runs fn under the lane checkout's owner ensure lock,
+// the lock every batch owner start takes: a landing agent's start claim
+// taken under it can never interleave with an owner start.
+func WithOwnerEnsureLock(root string, fn func() error) error {
+	lockPath := ownerEnsureLockPath(root)
 	if err := os.MkdirAll(filepath.Dir(lockPath), 0o755); err != nil {
 		return err
 	}
@@ -178,23 +217,19 @@ func ensureBatchOwnerWith(root string, seams BatchOwnerEnsureSeams, agentLive fu
 		return err
 	}
 	defer unix.Flock(int(lock.Fd()), unix.LOCK_UN)
-	pid, state, err := seams.Inspect(root)
-	if err != nil && state == identity.Unknown {
-		return fmt.Errorf("%s: %w", codeOwnerIndeterminate, err)
+	return fn()
+}
+
+// OwnerLaunchedWithin says whether an owner start was launched in the lane
+// checkout at root less than window before now: an owner on its way that
+// no probe sees yet.
+func OwnerLaunchedWithin(root string, now time.Time, window time.Duration) bool {
+	data, err := os.ReadFile(ownerLaunchedPath(root))
+	if err != nil {
+		return false
 	}
-	switch state {
-	case identity.Alive:
-		return seams.Wake(pid)
-	case identity.Dead:
-		// A running landing agent is the lane's one composition owner: no
-		// batch owner is launched beside it, and there is nothing to wake.
-		if reason, err := landingAgentHoldWith(agentLive); err != nil || reason != "" {
-			return err
-		}
-		return seams.Launch(root)
-	default:
-		return fmt.Errorf("%s: owner liveness is unknown", codeOwnerIndeterminate)
-	}
+	at, err := time.Parse(time.RFC3339, strings.TrimSpace(string(data)))
+	return err == nil && now.Sub(at) < window
 }
 
 func AcquireBatchOwner(root string) (BatchOwnerLease, error) {

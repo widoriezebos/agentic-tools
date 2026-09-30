@@ -279,6 +279,7 @@ func (b *machineBed) owners() intentOwners {
 		landing: laneVerbOwners{
 			// The lane beds keep no goal ledger: validation is never due.
 			validation: func(string, time.Time) (bool, error) { return false, nil },
+			agent:      func() (string, bool, error) { return "", false, nil },
 			home:       func() (string, error) { return b.home, nil },
 			probe: func(string) (lane.OwnerProbe, error) {
 				if !b.laneAlive {

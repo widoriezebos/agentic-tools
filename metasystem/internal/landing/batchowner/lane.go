@@ -319,7 +319,10 @@ func landingLaneView(home func() (string, error), now time.Time) lane.View {
 	return lane.BuildView(LandingLaneViewSources(laneHome, now))
 }
 
-// LandingLaneViewSources are the production reads of the lane's view.
+// LandingLaneViewSources are the production reads of the lane's view as the
+// board shows it. Its wake omits validation due on purpose: that read
+// projects the goal ledger, which a page polled every few seconds does not
+// pay for; landing status --json carries the whole wake.
 func LandingLaneViewSources(laneHome string, now time.Time) lane.ViewSources {
 	return lane.ViewSources{Home: laneHome, Now: now, Owner: LandingLaneOwnerProbe, Ready: LandingLaneReady, Helm: helm.Active}
 }

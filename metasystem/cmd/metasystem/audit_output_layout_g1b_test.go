@@ -116,6 +116,7 @@ func landingLayoutBed(kind int) func(t *testing.T) layoutBed {
 		owners := intentOwners{resolver: stateroot.NewResolver(notARepository, os.Executable), landing: laneVerbOwners{
 			// The lane beds keep no goal ledger: validation is never due.
 			validation: func(string, time.Time) (bool, error) { return false, nil },
+			agent:      func() (string, bool, error) { return "", false, nil },
 			home:       func() (string, error) { return home, nil },
 			probe: func(string) (lane.OwnerProbe, error) {
 				if !alive {

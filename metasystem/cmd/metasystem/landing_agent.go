@@ -206,13 +206,33 @@ func newLandingAgentKeeper(self, home string, agent landingAgent) lane.AgentKeep
 				// The owner's keeper asked for an owner this minute: it may
 				// be starting, and the agent never starts into that race.
 				state := lane.ReadKeeper(home)
-				if last, err := time.Parse(time.RFC3339, state.LastLaunch); err == nil && agent.now().Sub(last) < lane.BaseInterval {
+				last, err := time.Parse(time.RFC3339, state.LastLaunch)
+				if err == nil && agent.now().Sub(last) < lane.BaseInterval || batchowner.OwnerLaunchedWithin(root, agent.now(), lane.BaseInterval) {
 					return "the lane's batch owner is starting, and a landing agent never runs beside it", nil
 				}
 				return "", nil
 			},
 		},
-		Running: agent.running, Start: agent.start, Reap: []func(string) error{agent.reapOutage}, Cancel: agent.cancel}
+		Running: agent.running, Start: agent.start, Reap: []func(string) error{agent.reapOutage}, Cancel: agent.cancel,
+		Exclusive: batchowner.WithOwnerEnsureLock}
+}
+
+// liveOrStarting names a landing agent that runs, or whose start the
+// keeper claimed and has not finished: no batch owner starts beside either.
+func (a landingAgent) liveOrStarting(home func() (string, error)) func() (string, bool, error) {
+	return func() (string, bool, error) {
+		if id, running, err := a.running(); err != nil || running {
+			return id, running, err
+		}
+		laneHome, err := home()
+		if err != nil {
+			return "", false, nil
+		}
+		if since, starting := lane.AgentStarting(laneHome, a.now()); starting {
+			return "starting since " + since, true, nil
+		}
+		return "", false, nil
+	}
 }
 
 // landingLaneSteps is the steward's lane step: the owner's keeper, then the
