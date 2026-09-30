@@ -6,4 +6,6 @@ var _ = enforceMessages(
 	"cmd/metasystem/intent_design.go",
 	"cmd/metasystem/intent_design_review.go",
 	"cmd/metasystem/intent_planning.go",
+	"cmd/metasystem/intent_references.go",
+	"cmd/metasystem/intent_review_binding.go",
 )

@@ -86,7 +86,7 @@ func TestUnknownProofAttemptSaysWhereItsIdComesFrom(t *testing.T) {
 	if problem == nil || problem.Summary != "no proof attempt names nosuch; nothing was done" {
 		t.Fatalf("test wait nosuch = %+v", problem)
 	}
-	if len(problem.next) != 0 || problem.Decision != "a proof attempt's id is the proof:ID in the output of metasystem test run" {
+	if len(problem.next) != 0 || problem.Decision != "nothing to wait on; metasystem test run prints the reference to wait on" {
 		t.Fatalf("test wait nosuch points to %v (%q)", problem.next, problem.Decision)
 	}
 	// A search that includes launches or jobs still points to work status.

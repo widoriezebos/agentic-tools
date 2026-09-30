@@ -80,7 +80,7 @@ func TestIntentDoneJobRefusesALaunch(t *testing.T) {
 	before := b.publications()
 	code, result := b.runJSON(owners, "work", "finish", "j1:solo-1")
 	if code != 2 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "does not take a launch reference") ||
-		!strings.Contains(result.Decision, "metasystem work stop") || len(b.calls) != 0 || b.publications() != before {
+		result.Next == nil || !strings.Contains(shellCommand(result.Next.Argv)+" "+result.Next.Reason, "metasystem work stop") || len(b.calls) != 0 || b.publications() != before {
 		t.Fatalf("work finish j1:solo-1 = code %d %+v", code, result)
 	}
 	// A bare launch id is not a dispatch job: it is read as a goal name and

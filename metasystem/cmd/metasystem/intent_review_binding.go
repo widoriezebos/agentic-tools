@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -54,7 +55,7 @@ func (b reviewBinding) line() string {
 func readReviewBinding(data []byte) (reviewBinding, error) {
 	matches := reviewBindingLine.FindAllSubmatch(data, -1)
 	if len(matches) != 1 {
-		return reviewBinding{}, fmt.Errorf("the decisions file has %d review binding lines, not one; start from the template review G writes", len(matches))
+		return reviewBinding{}, fmt.Errorf("the decisions file has %d binding lines, not one; start from the review's decisions template", len(matches))
 	}
 	match := matches[0]
 	attempt, _ := strconv.Atoi(string(match[3]))
@@ -99,7 +100,8 @@ func (inv *intentInvocation) closeWorkReview(targets []intentTarget, root, commi
 	newest, err := inv.newestRoundAt(root, rootJob)
 	if err != nil {
 		return &intentResult{Targets: targets, Outcome: intentFailed, code: 1, Data: data,
-			Summary: fmt.Sprintf("the examination %s of work %s cannot be read: %v", rootJob, work.work, err), next: inv.publicArgv("system", "check"), nextReason: "diagnose the record store"}
+			Summary: fmt.Sprintf("the review of work %s can't be read", work.work), next: inv.publicArgv("system", "check"), nextReason: "diagnoses the record store",
+			Details: []string{fmt.Sprintf("examination %s: %v", rootJob, err)}}
 	}
 	round, status := recordRound(newest), recordText(newest, "status")
 	data["round"], data["status"] = round, status
@@ -112,8 +114,8 @@ func (inv *intentInvocation) closeWorkReview(targets []intentTarget, root, commi
 			cause = fmt.Sprintf("%s with no readable return", status)
 		}
 		return &intentResult{Targets: targets, Outcome: intentFailed, code: 1, Data: data,
-			Summary: fmt.Sprintf("examination round %d of work %s ended %s; it produced no findings to decide, and the review is not complete", round, work.work, cause),
-			next:    append(again, "--retry", strconv.FormatInt(round, 10)), nextReason: "examine the same subject once more in the same review chain, under its round limit; the failed round is kept"}
+			Summary: fmt.Sprintf("review round %d of work %s ended %s without findings, so the review isn't complete", round, work.work, cause),
+			next:    append(again, "--retry", strconv.FormatInt(round, 10)), nextReason: "reviews the same work once more; the failed round is kept"}
 	}
 	binding := reviewBinding{Goal: work.goal, Work: work.work, Attempt: work.attempt, Subject: commit, Examination: rootJob, Round: round, Return: digest}
 	data["binding"], data["verdict"], data["findings"] = binding.line(), verdict, findings
@@ -121,7 +123,7 @@ func (inv *intentInvocation) closeWorkReview(targets []intentTarget, root, commi
 		work.subject.Examination, work.subject.ExaminationRound = rootJob, round
 		if err := work.retain(*work.subject); err != nil {
 			return &intentResult{Targets: targets, Outcome: intentFailed, code: 1, Data: data,
-				Summary: "cannot record the examination with the work: " + err.Error(), next: again, nextReason: "the same command records it"}
+				Summary: "the review can't be recorded with the work", next: again, nextReason: "the same command records it", Details: []string{err.Error()}}
 		}
 	}
 	generated := filepath.Join(filepath.Dir(returnPath), "decisions.md")
@@ -129,8 +131,8 @@ func (inv *intentInvocation) closeWorkReview(targets []intentTarget, root, commi
 	if work.repair {
 		if _, err := os.Stat(generated); err != nil {
 			return &intentResult{Targets: targets, Outcome: intentRefused, code: 1, Data: data,
-				Summary: fmt.Sprintf("examination %s round %d has no retained decisions, so there is no interrupted close to repair; nothing was done", rootJob, round),
-				next:    again, nextReason: "the review itself decides and closes"}
+				Summary: fmt.Sprintf("review round %d has no saved decisions, so there is nothing to repair; nothing was done", round),
+				next:    again, nextReason: "the review itself decides and closes", Details: []string{"examination " + rootJob}}
 		}
 		path = generated
 	}
@@ -138,7 +140,8 @@ func (inv *intentInvocation) closeWorkReview(targets []intentTarget, root, commi
 		if len(findings) > 0 {
 			if _, err := os.Stat(generated); err != nil {
 				if err := os.WriteFile(generated, []byte(decisionsDocument(binding, findings)), 0o600); err != nil {
-					return &intentResult{Targets: targets, Outcome: intentFailed, code: 1, Data: data, Summary: "cannot write the decisions template: " + err.Error()}
+					return &intentResult{Targets: targets, Outcome: intentFailed, code: 1, Data: data, Summary: "the decisions template can't be written",
+						next: again, nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}
 				}
 			}
 			lines := []string{}
@@ -151,34 +154,38 @@ func (inv *intentInvocation) closeWorkReview(targets []intentTarget, root, commi
 			}
 			data["template"] = generated
 			return &intentResult{Targets: targets, Outcome: intentInProgress, code: 1, Data: data, text: lines,
-				Summary:  fmt.Sprintf("the examination of work %s finished with %d finding(s) (%s); the review completes after the author's decisions", work.work, len(findings), verdict),
-				Decision: fmt.Sprintf("decide every finding in %s, then run %s", generated, shellCommand(append(again, "--dispositions", generated)))}
+				Summary: fmt.Sprintf("the review of work %s found %d finding(s) (%s); it completes once you decide them", work.work, len(findings), verdict),
+				next:    append(again, "--dispositions", generated), nextReason: "after deciding every finding in " + generated}
 		}
 		if err := os.WriteFile(generated, []byte(decisionsDocument(binding, nil)), 0o600); err != nil {
-			return &intentResult{Targets: targets, Outcome: intentFailed, code: 1, Data: data, Summary: "cannot write the empty decisions join: " + err.Error()}
+			return &intentResult{Targets: targets, Outcome: intentFailed, code: 1, Data: data, Summary: "the review's empty decisions file can't be written",
+				next: again, nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}
 		}
 		path = generated
 	} else {
 		content, err := os.ReadFile(path)
 		if err != nil {
-			return &intentResult{Targets: targets, Outcome: intentRefused, code: 1, Data: data, Summary: "cannot read the decisions file: " + err.Error()}
+			return &intentResult{Targets: targets, Outcome: intentRefused, code: 1, Data: data, Summary: fileProblem("decisions file", path, err) + "; nothing was closed",
+				next: again, nextReason: "once --dispositions names a readable file"}
 		}
 		bound, err := readReviewBinding(content)
+		var boundTo []string
 		if err == nil && bound != binding {
-			err = fmt.Errorf("the decisions file answers examination %s round %d of attempt %d (subject %s), not the current examination %s round %d of attempt %d (subject %s)",
-				bound.Examination, bound.Round, bound.Attempt, shortSHA(bound.Subject), rootJob, round, work.attempt, shortSHA(commit))
+			err = errors.New("the decisions file answers another review of this work, not the current one")
+			boundTo = append(boundTo, fmt.Sprintf("it answers examination %s round %d of attempt %d (subject %s), not the current examination %s round %d of attempt %d (subject %s)",
+				bound.Examination, bound.Round, bound.Attempt, shortSHA(bound.Subject), rootJob, round, work.attempt, shortSHA(commit)))
 		}
 		if err != nil {
 			if _, statErr := os.Stat(generated); statErr != nil {
 				_ = os.WriteFile(generated, []byte(decisionsDocument(binding, findings)), 0o600)
 			}
 			return &intentResult{Targets: targets, Outcome: intentRefused, code: 1, Data: data, Summary: err.Error() + "; nothing was closed",
-				Decision: fmt.Sprintf("decide the current findings in %s, then run %s", generated, shellCommand(append(again, "--dispositions", generated)))}
+				next: append(again, "--dispositions", generated), nextReason: "after deciding the current findings in " + generated, Details: boundTo}
 		}
 		decisions, violations := validate.Dispositions(path)
 		if len(violations) > 0 {
 			return &intentResult{Targets: targets, Outcome: intentRefused, code: 1, Data: data, text: violations,
-				Summary: "the decisions file is not a complete decision of the findings; nothing was closed", Decision: "correct the named rows and run the same command"}
+				Summary: "the decisions file has rows to correct (listed above); nothing was closed", next: inv.sameCommand(), nextReason: "once they are corrected"}
 		}
 		// A person's accepted risk, recorded on the goal by its owner for
 		// this finding of this examination, is the only lawful exception.
@@ -209,7 +216,8 @@ func (inv *intentInvocation) closeWorkReview(targets []intentTarget, root, commi
 			// The validated decisions are retained beside the return, so a
 			// close interrupted after this point is repaired from them.
 			if err := os.WriteFile(generated, content, 0o600); err != nil {
-				return &intentResult{Targets: targets, Outcome: intentFailed, code: 1, Data: data, Summary: "cannot retain the decisions beside the examination: " + err.Error()}
+				return &intentResult{Targets: targets, Outcome: intentFailed, code: 1, Data: data, Summary: "the decisions can't be saved with the review, so nothing was closed",
+					next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}
 			}
 		}
 		if len(accepted) > 0 {
@@ -327,7 +335,7 @@ func (inv *intentInvocation) reviseDecisions(id string, work launch.NamedWork, a
 	}
 	if violations := validate.CritiqueClosed(returnPath, path); len(violations) > 0 {
 		return nil, &intentResult{Outcome: intentRefused, code: 1, Targets: targets, text: violations,
-			Summary: "the decisions file is not a complete decision of the reviewed findings; nothing was launched", Decision: "correct the named rows and run the same command"}
+			Summary: "the decisions file has rows to correct (listed above); nothing was launched", next: inv.sameCommand(), nextReason: "once they are corrected"}
 	}
 	document := string(content) + "\n## Reviewed findings (examination " + bound.Examination + " round " + fmt.Sprint(bound.Round) + ")\n\n```json\n" +
 		strings.TrimRight(string(findings), "\n") + "\n```\n"
