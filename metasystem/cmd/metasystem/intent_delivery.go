@@ -252,9 +252,10 @@ type intentDeliveryOwners struct {
 	batchUnit   func(landingRoot string, request batchowner.BatchJoinRequest, branchTip string) (batch.Record, batch.Unit, bool, error)
 	publishRead func(root, goalID, unit string) (branch.PublishReadResult, error)
 	batchRoot   func(root string, now time.Time) (string, bool, error)
-	// boardView reads the host board for a one-shot view of the checkout;
-	// nil reads the host this command runs on.
-	boardView func(checkout string, now time.Time) board.View
+	// boardView reads the host board for a one-shot view of the checkout,
+	// checking its cards against the goal ledger at ledgerRoot (the state
+	// root); nil reads the host this command runs on.
+	boardView func(ledgerRoot string, now time.Time) board.View
 	batchJoin func(batchowner.BatchJoinRequest) (batch.Record, error)
 	now       func() time.Time
 	// landingGate evaluates the landing gate for a goal at a branch tip

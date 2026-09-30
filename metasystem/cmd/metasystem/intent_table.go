@@ -615,12 +615,19 @@ func (inv *intentInvocation) statusBoardLines() ([]string, board.View) {
 	return lines, view
 }
 
-// hostBoardView is the board as this checkout's one-shot views show it.
+// hostBoardView is the board as this checkout's one-shot views show it. Its
+// claim check reads the goal ledger at the state root, where goal list reads
+// it: the ledger's files are read relative to the root given, and a template
+// checkout's repository top has none, so every card read "not claimed" (F3).
 func (inv *intentInvocation) hostBoardView(now time.Time) board.View {
-	if inv.owners.delivery != nil && inv.owners.delivery.boardView != nil {
-		return inv.owners.delivery.boardView(inv.layout.GitRoot, now)
+	ledgerRoot := inv.stateRoot
+	if ledgerRoot == "" {
+		ledgerRoot = inv.layout.GitRoot
 	}
-	return batchowner.ProductionPipeline(batchowner.PipelineStall(inv.layout.InstallationRoot), batchowner.AcceptedClaims(inv.layout.GitRoot)).View(now)
+	if inv.owners.delivery != nil && inv.owners.delivery.boardView != nil {
+		return inv.owners.delivery.boardView(ledgerRoot, now)
+	}
+	return batchowner.ProductionPipeline(batchowner.PipelineStall(inv.layout.InstallationRoot), batchowner.AcceptedClaims(ledgerRoot)).View(now)
 }
 
 func (inv *intentInvocation) boardNow() time.Time {
