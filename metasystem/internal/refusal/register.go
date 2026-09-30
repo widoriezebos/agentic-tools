@@ -426,6 +426,7 @@ var Exclusions = []Exclusion{
 	{Pattern: "SIGNED_IN_LAUNCH_GIT_*", Reason: "environment variable names of the g1-s72 end-to-end test's Git stand-in (cmd/metasystem/testdata/signedinlaunchgit), not a refusal"},
 	{Pattern: "METASYSTEM_*", Reason: "this tree's environment variable names"},
 	{Pattern: "LC_ALL", Reason: "an environment name"},
+	{Pattern: "COMP_*", Reason: "bash's programmable-completion variables, read by the shell completion glue (cmd/metasystem/completion.go), not a refusal"},
 	{Pattern: "CGO_ENABLED", Reason: "a Go toolchain environment name"},
 	{Pattern: "STATICCHECK_CACHE", Reason: "a Go toolchain environment name"},
 	{Pattern: "JAVA_HOME", Reason: "a Java toolchain environment name"},

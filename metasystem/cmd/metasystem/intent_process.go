@@ -130,6 +130,18 @@ func processIntentCommands() []intentCommand {
 			run:      runIntentEnroll,
 		},
 		{
+			object: "system", action: "completion", audience: "human", summary: "print the shell script that makes Tab complete metasystem commands",
+			usage: []string{"metasystem system completion zsh|bash"},
+			details: []string{
+				"Tab then completes objects, actions, options, choices, file names and the open goals of the checkout the command acts on.",
+				"Each Tab asks the binary as you typed it, so every checkout answers with its own commands and goals; the script reads nothing and embeds no table.",
+				"zsh: add eval \"$(PATH/bin/metasystem system completion zsh)\" to ~/.zshrc after compinit. bash: the same with bash, in ~/.bashrc.",
+			},
+			maxArgs:  1,
+			examples: []string{"metasystem system completion zsh", "metasystem system completion bash"},
+			run:      runIntentSystemCompletion,
+		},
+		{
 			object: "system", action: "setup", audience: "both", summary: "set this checkout up to work with its engine: runtimes, hooks, commit fence and testing-contract merges",
 			usage: []string{"metasystem system setup [--runtimes CSV|none] [--copy-skills]"},
 			details: []string{
