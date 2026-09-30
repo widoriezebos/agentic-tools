@@ -24,8 +24,7 @@ Run
   alert        what the steward reported and a person should see: list, acknowledge and clear
   machine      the fleet's machines
   disk         what MetaSystem keeps on this computer's disk, and reclaiming it
-  evidence     durable evidence outside the checkout: its bound, verified exports, and a person's
-               disposal
+  evidence     evidence outside the checkout: its bound, verified exports, and a person's disposal
   app          the application this project builds, under its launch contract
   ui           the browser interface
   settings     MetaSystem settings and coordination
