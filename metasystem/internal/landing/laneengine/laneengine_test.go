@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 // enrollBed is a nested lane checkout (checkout root != installation root)
@@ -42,7 +43,7 @@ func newEnrollBed(t *testing.T) *enrollBed {
 func (bed *enrollBed) enroll(t *testing.T, digest, stamp string, bytes []byte) steward.InstallIdentity {
 	t.Helper()
 	if bytes != nil {
-		if err := os.WriteFile(bed.installPath, bytes, 0o755); err != nil {
+		if err := testexec.WriteFile(bed.installPath, bytes, 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -126,7 +127,7 @@ func TestRequireSelfNamesTheWayBack(t *testing.T) {
 		t.Fatalf("intact enrolled bytes: argv %q, want %q", refusal.Argv, want)
 	}
 
-	if err := os.WriteFile(bed.installPath, []byte("rebuilt by hand"), 0o755); err != nil {
+	if err := testexec.WriteFile(bed.installPath, []byte("rebuilt by hand"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	refusal = refusalOf(t, requireSelfErr(bed, retry), CodeNotEnrolled)
@@ -141,7 +142,7 @@ func TestRequireSelfNamesTheWayBack(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(pin), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(pin, enrolled, 0o700); err != nil {
+	if err := testexec.WriteFile(pin, enrolled, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	refusal = refusalOf(t, requireSelfErr(bed, retry), CodeNotEnrolled)

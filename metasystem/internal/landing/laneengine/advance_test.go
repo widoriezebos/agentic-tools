@@ -15,6 +15,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 // advanceBed is a real lane: a bare file:// origin, a nested lane checkout
@@ -93,7 +94,7 @@ func (bed *advanceBed) steps(t *testing.T) Steps {
 		if stamp == "" {
 			stamp = bed.main
 		}
-		return os.WriteFile(staging, []byte("engine @ "+enginebuild.StampRecord(stamp)), 0o755)
+		return testexec.WriteFile(staging, []byte("engine @ "+enginebuild.StampRecord(stamp)), 0o755)
 	}
 	steps.ReArm = func(installPath string) (steward.ReArmOutcome, error) {
 		bed.rearms++

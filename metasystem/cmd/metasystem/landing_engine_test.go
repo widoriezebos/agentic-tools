@@ -15,6 +15,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/laneengine"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 // kernelBed is a host whose registered landing lane is a real nested
@@ -59,7 +60,7 @@ func (bed *kernelBed) enroll(t *testing.T, enrolled []byte) {
 
 func (bed *kernelBed) enrollBuiltFrom(t *testing.T, enrolled []byte, stamp string) {
 	t.Helper()
-	if err := os.WriteFile(bed.installPath, enrolled, 0o755); err != nil {
+	if err := testexec.WriteFile(bed.installPath, enrolled, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	id := steward.InstallIdentity{RepoIdentity: bed.installation, Generation: 7, InstallPath: bed.installPath,
