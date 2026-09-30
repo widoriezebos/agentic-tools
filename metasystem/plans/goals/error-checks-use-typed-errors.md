@@ -1,6 +1,6 @@
 # error-checks-use-typed-errors
 
-- State: approved
+- State: queued
 - Priority: 1
 - Sequence: 7
 - Risk: severity=1 novelty=1 exposure=1 accumulation=1 basis="In-process refactor with no process boundary; behaviour preserved; tests pin each decision; reverts cleanly"
@@ -9,12 +9,9 @@
 - Origin: main
 - Next step: Replace the 35 in-process error-text decision points (24 sites) inventoried in /Users/wido/LocalStorage/agentic-tools-evidence/structured-output-20260930/structured-output.md with typed errors; extend the static audit to refuse new ones. Priority 2 per Wido 2026-09-30 (D4)
 - OpenedAt: 2026-09-30T12:03:35Z
-- Revision: 9
+- Revision: 10
 - Pinned: m1e
-- Budget: elapsedLimit=6h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
-- NormApproval: approvedRef=2T4MM23JH8NHKEGQNME50HKJMV-m1e-b6a4eb0a minutes=720 reviewRounds=2 goalRevision=8
-- Approved: by=human:wido at=2026-09-30T18:20:16Z revision=9 opid=2T4MM23JH8NHKEGQNME50HKJMV-m1e-b6a4eb0a authority=proven digest=4446e406cadd85af65e42f13d1a06c1f413d590424b2c6ef5eb4106d1e801b64 episode=9
 
 History:
 - 2026-09-30T12:03:35Z JMRCDJGB10YRZKEABA5JT58418-m1e-b6a4eb0a open actor=human:wido targets=error-checks-use-typed-errors,processes-read-structured-results
@@ -26,4 +23,5 @@ History:
 - 2026-09-30T18:19:56Z NWE0V2SRYP5D7AF63RC7DPXRSQ-m1e-b6a4eb0a set-pin actor=human:wido targets=error-checks-use-typed-errors
 - 2026-09-30T18:20:06Z 2GQ24Q6P44VCMNFMQBHM5J4F00-m1e-b6a4eb0a unblock actor=human:wido targets=error-checks-use-typed-errors,processes-read-structured-results reason=blockedBy drops processes-read-structured-results; every remaining blocker is done and the park lifts
 - 2026-09-30T18:20:16Z 2T4MM23JH8NHKEGQNME50HKJMV-m1e-b6a4eb0a approve actor=human:wido targets=error-checks-use-typed-errors
-Integrity: sha256=e8547762214fc9a8f09b702019122067e1bef8cf4d399943f14111d400318859
+- 2026-09-30T19:05:10Z H2X0YVHJPXD3F2YMZDZG5F7KDD-m1e-b6a4eb0a unapprove actor=human:wido targets=error-checks-use-typed-errors reason=Unapproved only to rewrite its intent in plain English (backlog sync 2026-09-30); approved again right after
+Integrity: sha256=f639b911671472604451fa0c37bfb05eac076fca238ffcdabeb2c3756a741bc7
