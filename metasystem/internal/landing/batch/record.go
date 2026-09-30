@@ -104,6 +104,13 @@ type Record struct {
 	StartReason string     `json:"startReason,omitempty"`
 	// Early is what the owner did with the wait (D14, R27).
 	Early *Early `json:"early,omitempty"`
+	// Openings are the batch's landing begins, the last one current (K4);
+	// Compositions the composition evidence begin recorded (K8); Attempts
+	// every landing prove of the batch (K6). Openings and Compositions are
+	// append-only; an attempt changes only until it ends.
+	Openings     []Opening             `json:"openings,omitempty"`
+	Compositions []CompositionEvidence `json:"compositions,omitempty"`
+	Attempts     []ProofAttempt        `json:"attempts,omitempty"`
 	batchRecordFields
 }
 
