@@ -554,6 +554,7 @@ type Column struct {
 	Title string // "" for every column: no header row
 	Right bool   // numbers
 	Flex  bool   // the one column that may be cut or moved (P3)
+	Wrap  bool   // a flexible column of prose: it wraps under itself, never cut
 }
 
 // Table adds a table of aligned columns.
@@ -644,8 +645,15 @@ func (t *Table) lines(p *Page, s *Section, _ int) []line {
 			}
 			first = false
 			span := cell(row, index)
-			if index == flex && !moved {
+			if index == flex && !moved && !col.Wrap {
 				span = cut(span, widths[index], ascii)
+			}
+			if index == flex && !moved && col.Wrap && width(span.plain(ascii)) > widths[index] {
+				offset := 0
+				for _, s := range spans {
+					offset += width(s.plain(ascii))
+				}
+				return line{prefix: spans, body: []Span{span}, hang: offset}
 			}
 			pad := widths[index] - width(span.plain(ascii))
 			switch {

@@ -338,3 +338,32 @@ func TestSpansCompose(t *testing.T) {
 	}
 	_ = time.Now
 }
+
+// A wrapping flexible column keeps every word: its text continues under the
+// column instead of being cut.
+func TestAWrappingColumnContinuesUnderItself(t *testing.T) {
+	t.Parallel()
+	env := fixedEnv()
+	env.Width = 50
+	page := New(env)
+	table := page.Section("Landing lane", "").Table(Column{}, Column{Flex: true, Wrap: true})
+	table.Row(Marked(Running, "open"), Plain("batch wa01 waits for goal-x on m1b (build, ~8 min); a separate proof costs ~40 min"))
+	table.Row(Marked(Running, "proving"), Plain("batch wa02 started"))
+	expectPage(t, page, `
+Landing lane
+  ● open      batch wa01 waits for goal-x on m1b
+              (build, ~8 min); a separate proof
+              costs ~40 min
+  ● proving   batch wa02 started
+`)
+	env.Width = 30
+	narrow := New(env)
+	moved := narrow.Section("Landing lane", "").Table(Column{}, Column{Flex: true, Wrap: true})
+	moved.Row(Marked(Running, "collecting"), Plain("batch wa01 waits for goal-x on m1b"))
+	expectPage(t, narrow, `
+Landing lane
+  ● collecting
+    batch wa01 waits for
+    goal-x on m1b
+`)
+}
