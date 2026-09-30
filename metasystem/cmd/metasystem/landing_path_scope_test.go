@@ -20,6 +20,15 @@ func TestLandingPathSelectLeavesRuntimeLocalConfigurationOut(t *testing.T) {
 	if !slices.Equal(selected, []string{".claude/agents/verify.md", "metasystem/cmd/metasystem/main.go"}) {
 		t.Fatalf("LANDING selection = %v", selected)
 	}
+	// Shared runtime configuration the repository commits stays content:
+	// an unstaged edit to it still blocks the commit.
+	shared, err := landingPathSelect([]string{".claude/settings.json", ".devin/config.json", ".devin/hooks.v1.json"}, "metasystem/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(shared, []string{".claude/settings.json", ".devin/config.json", ".devin/hooks.v1.json"}) {
+		t.Fatalf("shared runtime configuration left LANDING: %v", shared)
+	}
 }
 
 // A lane change is code when a staged path is in the ENGINE or PAYLOAD

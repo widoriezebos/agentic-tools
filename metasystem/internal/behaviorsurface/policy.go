@@ -42,21 +42,22 @@ const (
 	OperationalData Class = "OPERATIONAL_DATA"
 	Tailored        Class = "TAILORED"
 	NonRepository   Class = "NON_REPOSITORY"
-	// RuntimeLocalConfig is an agent runtime's checkout-local configuration
-	// (the adapters' declared local-config manifest). A goal worktree gets
-	// it from the seat, never from a commit: it is the seat's harness state
-	// and never delivery content, so LANDING leaves it out.
+	// RuntimeLocalConfig is an agent runtime's seat-local configuration (the
+	// adapters' declarations marked local, such as .claude/settings.local.json):
+	// untracked by convention, the seat's harness state and never delivery
+	// content, so LANDING leaves it out. Shared runtime configuration the
+	// repository commits stays content.
 	RuntimeLocalConfig Class = "RUNTIME_LOCAL_CONFIG"
 )
 
-// runtimeLocalConfigPaths is the one manifest of the adapters' declared
-// local configuration, in Git-toplevel path space (the runtimes read it
-// from the checkout root). Goal worktrees copy exactly this list.
+// runtimeLocalConfigPaths is the adapters' declared seat-local
+// configuration, in Git-toplevel path space (the runtimes read it from the
+// checkout root).
 func runtimeLocalConfigPaths() []string {
 	seen := map[string]bool{}
 	var paths []string
 	for _, name := range runtimes.WithAdapter() {
-		declared, _ := runtimes.LocalConfigPaths(name)
+		declared, _ := runtimes.SeatLocalConfigPaths(name)
 		for _, path := range declared {
 			if !seen[path] {
 				seen[path] = true
