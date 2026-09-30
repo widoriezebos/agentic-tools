@@ -36,9 +36,12 @@ const govulncheckModule = "golang.org/x/vuln/cmd/govulncheck@v1.2.0"
 // served and would silently weaken the suites that make the full gate a
 // landing requirement.
 func runStatic(ctx context.Context, args []string, root string, d deps) int {
-	proofOut := ""
+	proofOut, verbose := "", false
 	for len(args) > 0 {
 		switch args[0] {
+		case "--verbose":
+			verbose = true
+			args = args[1:]
 		case "--proof-out":
 			if len(args) < 2 || args[1] == "" {
 				fmt.Fprintln(d.stderr, "go gate: --proof-out needs a path")
@@ -57,7 +60,7 @@ func runStatic(ctx context.Context, args []string, root string, d deps) int {
 		return 1
 	}
 	env.set("GOMAXPROCS", workers)
-	g := &gateRun{ctx: ctx, root: root, env: env, d: d, workers: workers, fast: true}
+	g := &gateRun{ctx: ctx, root: root, env: env, d: d, workers: workers, fast: true, verbose: verbose}
 	return g.finish(g.static(proofOut))
 }
 
@@ -69,7 +72,7 @@ func gateWorkers(env *environment, stderr io.Writer) (string, bool) {
 		workers = "1"
 	}
 	if !positiveInteger.MatchString(workers) {
-		fmt.Fprintln(stderr, "go gate: METASYSTEM_TEST_WORKERS must be a positive integer")
+		fmt.Fprintf(stderr, "go gate: the test worker count %q is not a positive integer\nrun: unset %s\n", workers, testWorkersVariable)
 		return "", false
 	}
 	return workers, true
@@ -86,7 +89,7 @@ func (g *gateRun) static(proofOut string) int {
 		return 1
 	}
 	if d.lookGo() != nil {
-		fmt.Fprintln(d.stderr, "go gate: go.mod present but no go toolchain on PATH; the committed engine cannot be built")
+		fmt.Fprintln(d.stderr, "go gate: no go toolchain is on this shell's search path, so the committed engine cannot be built")
 		return 1
 	}
 	// A forbidden script dependency is cheaper and more urgent than every
@@ -146,9 +149,11 @@ func (g *gateRun) static(proofOut string) int {
 	}
 	g.dropScratch()
 	if g.installation {
-		fmt.Fprintln(d.stdout, "go gate: fast mode passed (dependency ratchet, parallel ratchet, gofmt, shell parse, vet, staticcheck, dead code, refusal register, SessionStart exit audit, Stop decision surface audit, build); the full gate remains the landing requirement")
+		fmt.Fprintln(d.stdout, "go gate: fast checks passed; landing still needs the full gate\nrun: go run ./cmd/devgate gate")
+		g.verboseLine("checked: dependency ratchet, parallel ratchet, gofmt, shell parse, vet, staticcheck, dead code, refusal register, SessionStart exit audit, Stop decision surface audit, build")
 	} else {
-		fmt.Fprintln(d.stdout, "go gate: fast mode passed (dependency ratchet, parallel ratchet, gofmt, shell parse, vet, staticcheck, dead code, refusal register, build); the full gate remains the landing requirement")
+		fmt.Fprintln(d.stdout, "go gate: fast checks passed; landing still needs the full gate\nrun: go run ./cmd/devgate gate")
+		g.verboseLine("checked: dependency ratchet, parallel ratchet, gofmt, shell parse, vet, staticcheck, dead code, refusal register, build")
 	}
 	return 0
 }
@@ -186,7 +191,8 @@ func (g *gateRun) fence() int {
 		fmt.Fprintf(d.stderr, "gate %s is running as pid %d\n", holder.Gate, holder.Pid)
 	}
 	if len(holders) > 0 {
-		fmt.Fprintln(d.stderr, "go gate: a live gate run owns this checkout; rebuilding now would swap its binary mid-run (METASYSTEM_ALLOW_CONCURRENT_GATE=1 overrides)")
+		fmt.Fprintf(d.stderr, "go gate: a live gate run owns this checkout; rebuilding now would swap its binary mid-run\n"+
+			"run: %s=1 go run ./cmd/devgate %s  (only to run beside it anyway)\n", concurrentGateVariable, g.action())
 		return 1
 	}
 	return 0

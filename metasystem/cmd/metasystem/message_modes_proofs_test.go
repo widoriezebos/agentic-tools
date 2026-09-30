@@ -20,6 +20,7 @@ var _ = enforceMessages(slices.Concat(
 	packageFilesExcept("internal/proofrun", "", "protocol.go"),
 	packageFilesExcept("cmd/metasystem", "^(proof_run|test|testing|validate_verbs)", "proof_run_protocol.go"),
 	[]string{
+		"cmd/devgate",
 		"internal/audit",
 		"internal/candidateengine",
 		"internal/enginecause",

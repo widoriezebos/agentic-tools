@@ -91,7 +91,7 @@ func TestGateRefusesAnUnauthorizedRelaunchedChild(t *testing.T) {
 	w := newGateWorld(t)
 	w.statuses["worker"] = 1
 	w.setenv("METASYSTEM_GO_GATE_RELAUNCHED=1")
-	if code := w.gate(); code != 1 || !strings.Contains(w.stderr.String(), "go gate: relaunched child is not an authorized proof worker") {
+	if code := w.gate(); code != 1 || !strings.Contains(w.stderr.String(), "go gate: the relaunched gate is not an authorized test worker") {
 		t.Fatalf("exit %d stderr %q", code, w.stderr.String())
 	}
 	if len(w.called("proof-run launch")) != 0 {
@@ -208,7 +208,7 @@ func TestGateNativeFailureKeepsItsCompleteOutput(t *testing.T) {
 		t.Fatalf("stderr:\n%s", w.stderr.String())
 	}
 	// The complete diagnostic reaches the parent log before any move.
-	if !strings.Contains(w.stderr.String(), "native red output\n") || !strings.Contains(w.stderr.String(), "proof-run go-gate-tests: native selection failed") {
+	if !strings.Contains(w.stderr.String(), "native red output\n") || !strings.Contains(w.stderr.String(), "go gate tests: native selection failed") {
 		t.Fatalf("native diagnostic not printed:\n%s", w.stderr.String())
 	}
 	data, err := os.ReadFile(keep)
@@ -332,7 +332,7 @@ func TestGateProofLocatorWithoutControlRootRefuses(t *testing.T) {
 	t.Parallel()
 	w := newGateWorld(t)
 	w.setenv("METASYSTEM_PROOF_ATTEMPT=attempt-1")
-	if code := w.gate(); code != 1 || !strings.Contains(w.stderr.String(), "go gate: proof worker locator has no control root") {
+	if code := w.gate(); code != 1 || !strings.Contains(w.stderr.String(), "go gate: the test worker's settings name no control root") {
 		t.Fatalf("exit %d stderr %q", code, w.stderr.String())
 	}
 }
@@ -395,7 +395,7 @@ func TestGateEveryGoPhaseCarriesTheInheritedAllowance(t *testing.T) {
 	}
 	invalid := newGateWorld(t)
 	invalid.setenv("METASYSTEM_TEST_WORKERS=0")
-	if code := invalid.gate(); code != 1 || !strings.Contains(invalid.stderr.String(), "METASYSTEM_TEST_WORKERS must be a positive integer") || len(invalid.calls) != 0 {
+	if code := invalid.gate(); code != 1 || !strings.Contains(invalid.stderr.String(), "is not a positive integer\nrun: unset METASYSTEM_TEST_WORKERS") || len(invalid.calls) != 0 {
 		t.Fatalf("invalid allowance: exit %d calls %v", code, invalid.calls)
 	}
 }
@@ -581,7 +581,7 @@ func TestGateFrozenTreeAcceptsExactlyTheOwnedGoFlags(t *testing.T) {
 		w := newGateWorld(t)
 		w.setenv("METASYSTEM_GATE_FROZEN_TOOLCHAIN=1", "GOFLAGS="+test.goflags)
 		code := w.gate("--witness-check-only")
-		refused := strings.Contains(w.stderr.String(), "go gate: frozen proof tree requires GOFLAGS=-mod=readonly -trimpath")
+		refused := strings.Contains(w.stderr.String(), "go gate: the frozen test tree needs GOFLAGS=-mod=readonly -trimpath")
 		if refused != test.refused || (refused && code != 1) || (!refused && code != 3) {
 			t.Fatalf("GOFLAGS=%q: exit %d refused=%v, want refused=%v\n%s", test.goflags, code, refused, test.refused, w.output())
 		}
