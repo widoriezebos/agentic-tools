@@ -240,12 +240,33 @@ func processIntentCommands() []intentCommand {
 			examples: []string{"metasystem ui status"}, run: func(inv *intentInvocation) int { return inv.uiTarget("status") },
 		},
 		{
-			object: "machine", action: "list", audience: "both", summary: "every machine's presence, this one first",
-			usage:    []string{"metasystem machine list [--refresh]"},
-			flags:    []intentFlag{{name: "refresh", aliases: []string{"fetch"}, usage: "fetch presence now instead of the last copy"}},
+			object: "machine", action: "list", audience: "both", summary: "every machine's presence, this one first, and what MetaSystem runs on this computer",
+			usage: []string{"metasystem machine list [--refresh] [--verbose]"},
+			details: []string{
+				"The first line counts this computer's machines, running and stopped, its running jobs and the machines on other computers; one line per machine of the fleet follows.",
+				"This computer's machines are the checkouts the host registry of armed checkouts records, the landing lane's checkout and this checkout; a registry that cannot be read is reported, never read as no machines.",
+				"--verbose adds each machine of this computer with its checkout, its helpers with pid and start in local time, its running jobs and launches and the landing lane's owner; each machine on another computer with its last report; and the processes that are not MetaSystem's, which nothing touches.",
+				"Each checkout is read exactly as metasystem system status reads it.",
+			},
+			flags: []intentFlag{{name: "refresh", aliases: []string{"fetch"}, usage: "fetch presence now instead of the last copy"},
+				intentVerboseFlag},
 			maxArgs:  0,
-			examples: []string{"metasystem machine list", "metasystem machine list --refresh"},
-			run:      runIntentFleet,
+			examples: []string{"metasystem machine list", "metasystem machine list --verbose", "metasystem machine list --refresh"},
+			run:      runIntentMachineList,
+		},
+		{
+			object: "machine", action: "stop", audience: "human", summary: "stop MetaSystem on one machine of this computer, or on every one",
+			usage: []string{"metasystem machine stop NAME", "metasystem machine stop --all"},
+			details: []string{
+				"A person's act at their enrolled terminal, proved as metasystem system stop proves it. Each machine stops through system stop itself, the landing lane's checkout included; that stop cancels the checkout's running dispatch jobs as work stop does.",
+				"This user's running launches in a stopped checkout are cancelled as work stop cancels them; with --all, every running launch of this user is.",
+				"NAME is a machine's nickname, its checkout's directory name or its checkout's path. A machine on another computer is stopped on that computer: metasystem system stop --repo PATH.",
+				"A machine already stopped is success. Processes that are not MetaSystem's are never touched. Summary by default; --verbose prints each machine's stop.",
+			},
+			flags:    []intentFlag{{name: "all", usage: "every machine of this computer"}, intentVerboseFlag},
+			maxArgs:  1,
+			examples: []string{"metasystem machine stop --all", "metasystem machine stop m1e"},
+			run:      runIntentMachineStop,
 		},
 		{
 			object: "machine", action: "start", audience: "human", summary: "clone, build, configure, enroll and supervise one new machine of this fleet",
@@ -1304,21 +1325,6 @@ func missionAskAnswered(path string) bool {
 	}
 	var ask map[string]any
 	return json.Unmarshal(data, &ask) == nil && ask["answeredAt"] != nil
-}
-
-func runIntentFleet(inv *intentInvocation) int {
-	if problem := inv.selectLayoutRoot(); problem != nil {
-		return inv.render(*problem)
-	}
-	report, err := inv.owners.processes.fleet(inv.layout.GitRoot, inv.input.switched("refresh"), seatFleetNow())
-	if err != nil {
-		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "fleet: " + err.Error()})
-	}
-	encoded, err := report.JSON()
-	if err != nil {
-		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "fleet: " + err.Error()})
-	}
-	return inv.render(intentResult{Outcome: intentConfirmed, Summary: "the fleet", text: intentOwnerLines(report.Text()), Data: json.RawMessage(encoded)})
 }
 
 func runIntentDoctor(inv *intentInvocation) int {

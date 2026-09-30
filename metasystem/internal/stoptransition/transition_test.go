@@ -1551,6 +1551,7 @@ func TestStatusShowsPhaseSurvivorsAndPartialInventoryTruth(t *testing.T) {
 // its family, component, pid and start, and the fence's state and change
 // time, so a caller never parses the printed lines.
 func TestStatusCarriesEachLiveItemAndTheFenceTyped(t *testing.T) {
+	t.Parallel()
 	transition := testTransition(t, &scriptedFamily{name: "supervision", inventories: [][]Item{{
 		{Key: "supervision:watcher:1:41", StatusLine: "watcher pid 41: running", Survivor: stopfence.Survivor{Component: "watcher", Pid: 41, PidStartedAt: 1790000000}},
 	}}})
@@ -1594,6 +1595,7 @@ func TestStatusCarriesEachLiveItemAndTheFenceTyped(t *testing.T) {
 // stop. The repeat is success with no fence generation, and it says what it
 // left alone.
 func TestRepeatedStopWithOnlyOtherProcessesIsAlreadyStopped(t *testing.T) {
+	t.Parallel()
 	other := Item{Key: "untracked:63:1", StatusLine: "untracked pid 63 codex app-server: running", ObserveOnly: true,
 		Survivor: stopfence.Survivor{Component: "untracked", Pid: 63, PidStartedAt: 1}}
 	family := &scriptedFamily{name: "untracked", inventories: [][]Item{{other}, {other}, {other}, {other}, {other}, {other}, {other}, {other}}}
