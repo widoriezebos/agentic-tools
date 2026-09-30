@@ -166,6 +166,16 @@ is landing, so a landing never depends on the state of anyone's seat.
   in a row it gives up and says so, rather than restart a broken owner
   forever; a person fixes the cause and runs `metasystem landing start`.
 
+**The lane's own verbs.** Joining the lane runs no tests: a goal or a
+change is handed over and queued. `metasystem landing begin` records the
+series a batch is composed into on main before any test runs, one
+replay per member's work plus at most 40 lines of the lane's own seam
+fixes. `metasystem landing prove` runs the tests of that recorded series,
+of main, or of one member's own work on main, and records each run on
+the batch as green, red (a test failed) or unavailable (it could not
+run, which is never a member's red). Both act only while the lane is not
+stopped.
+
 **Stopped is not gone.** A stopped lane (`metasystem landing stop`)
 still takes seats' work, which waits in it; a stop may hold half-landed
 work, and landing past it would race that work. A pause that cannot be
