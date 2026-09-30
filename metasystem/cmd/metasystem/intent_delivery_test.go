@@ -468,7 +468,8 @@ func TestIntentCloseWholeOwner(t *testing.T) {
 	// root and file are substituted into exactly the printed command.
 	_, refused := b.do("design", "review", design, "--tool-calls", "30")
 	printed := "metasystem work review j2:ROOT --dispositions FILE"
-	if refused.Outcome != intentRefused || !strings.Contains(refused.Decision, printed) || strings.Contains(refused.Decision, "metasystem close") {
+	if refused.Outcome != intentRefused || refused.Next == nil || len(refused.Next.Argv) != 6 || strings.Join(refused.Next.Argv[:3], " ") != "metasystem work review" ||
+		!strings.HasPrefix(refused.Next.Argv[3], "j2:crit") || strings.Join(refused.Next.Argv[4:], " ") != "--dispositions FILE" {
 		t.Fatalf("the multi-chain refusal: %+v", refused)
 	}
 	followed := strings.Fields(strings.NewReplacer("ROOT", "crit2", "FILE", criticDispositions).Replace(printed))
