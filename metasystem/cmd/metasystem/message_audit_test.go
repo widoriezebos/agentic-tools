@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -32,40 +33,52 @@ const messageModeEnforce = "enforce"
 
 // messageModes is the per-path mode: a package directory, a file, or a
 // file#Function (file#Type.Method); the longest matching key wins, and a path
-// no key names is reported. A rewrite builder moves its paths here as it
-// fixes them.
-var messageModes = map[string]string{
-	// The person, helm and grant family: the reference rewrite.
-	"cmd/metasystem/admission_notice.go":                                         messageModeEnforce,
-	"cmd/metasystem/attorney_admits.go":                                          messageModeEnforce,
-	"cmd/metasystem/grant_everything.go":                                         messageModeEnforce,
-	"cmd/metasystem/helm_admits.go":                                              messageModeEnforce,
-	"cmd/metasystem/helm_force.go":                                               messageModeEnforce,
-	"cmd/metasystem/helm_return.go":                                              messageModeEnforce,
-	"cmd/metasystem/intent_grant_everything.go":                                  messageModeEnforce,
-	"cmd/metasystem/intent_helm.go":                                              messageModeEnforce,
-	"cmd/metasystem/person_refusal.go":                                           messageModeEnforce,
-	"cmd/metasystem/intent_goals.go#intentInvocation.actorArgs":                  messageModeEnforce,
-	"cmd/metasystem/intent_planning.go#intentInvocation.actingAs":                messageModeEnforce,
-	"cmd/metasystem/intent_planning.go#runIntentGrant":                           messageModeEnforce,
-	"cmd/metasystem/intent_planning.go#runIntentRevoke":                          messageModeEnforce,
-	"cmd/metasystem/intent_planning.go#runIntentGrantList":                       messageModeEnforce,
-	"cmd/metasystem/intent_process.go#intentInvocation.startRefusal":             messageModeEnforce,
-	"cmd/metasystem/intent_process.go#processRefusalResult":                      messageModeEnforce,
-	"cmd/metasystem/intent_process.go#runIntentEnroll":                           messageModeEnforce,
-	"cmd/metasystem/intent_process.go#runIntentSystemRestart":                    messageModeEnforce,
-	"cmd/metasystem/intent_process.go#runIntentSystemStart":                      messageModeEnforce,
-	"cmd/metasystem/intent_process.go#systemStopResult":                          messageModeEnforce,
-	"cmd/metasystem/process_verbs.go#classificationDataRefusal":                  messageModeEnforce,
-	"cmd/metasystem/process_verbs.go#humanTerminalCheck":                         messageModeEnforce,
-	"cmd/metasystem/process_verbs.go#processOwners.arm":                          messageModeEnforce,
-	"cmd/metasystem/process_verbs.go#processOwners.stop":                         messageModeEnforce,
-	"cmd/metasystem/goalsync_mutations.go#runGoalEnrollTerminalWithDependencies": messageModeEnforce,
-	"internal/helm":                               messageModeEnforce,
-	"internal/humanauthority/remedy.go":           messageModeEnforce,
-	"internal/humanauthority/authority.go#Enroll": messageModeEnforce,
-	"internal/humanauthority/authority.go#Prove":  messageModeEnforce,
+// no key names is reported. Each rewrite group enforces its paths from a file
+// of its own (message_modes_<group>_test.go) through enforceMessages, so
+// parallel builders never edit one table.
+var messageModes = map[string]string{}
+
+// enforceMessages moves paths to enforce mode; a package-level
+// "var _ = enforceMessages(...)" in each group's file calls it.
+func enforceMessages(paths ...string) bool {
+	for _, path := range paths {
+		messageModes[path] = messageModeEnforce
+	}
+	return true
 }
+
+// The person, helm and grant family: the reference rewrite.
+var _ = enforceMessages(
+	"cmd/metasystem/admission_notice.go",
+	"cmd/metasystem/attorney_admits.go",
+	"cmd/metasystem/grant_everything.go",
+	"cmd/metasystem/helm_admits.go",
+	"cmd/metasystem/helm_force.go",
+	"cmd/metasystem/helm_return.go",
+	"cmd/metasystem/intent_grant_everything.go",
+	"cmd/metasystem/intent_helm.go",
+	"cmd/metasystem/person_refusal.go",
+	"cmd/metasystem/intent_goals.go#intentInvocation.actorArgs",
+	"cmd/metasystem/intent_planning.go#intentInvocation.actingAs",
+	"cmd/metasystem/intent_planning.go#runIntentGrant",
+	"cmd/metasystem/intent_planning.go#runIntentRevoke",
+	"cmd/metasystem/intent_planning.go#runIntentGrantList",
+	"cmd/metasystem/intent_process.go#intentInvocation.startRefusal",
+	"cmd/metasystem/intent_process.go#processRefusalResult",
+	"cmd/metasystem/intent_process.go#runIntentEnroll",
+	"cmd/metasystem/intent_process.go#runIntentSystemRestart",
+	"cmd/metasystem/intent_process.go#runIntentSystemStart",
+	"cmd/metasystem/intent_process.go#systemStopResult",
+	"cmd/metasystem/process_verbs.go#classificationDataRefusal",
+	"cmd/metasystem/process_verbs.go#humanTerminalCheck",
+	"cmd/metasystem/process_verbs.go#processOwners.arm",
+	"cmd/metasystem/process_verbs.go#processOwners.stop",
+	"cmd/metasystem/goalsync_mutations.go#runGoalEnrollTerminalWithDependencies",
+	"internal/helm",
+	"internal/humanauthority/remedy.go",
+	"internal/humanauthority/authority.go#Enroll",
+	"internal/humanauthority/authority.go#Prove",
+)
 
 // messageLineBudget is the first line's length the rule aims at.
 const messageLineBudget = 100
@@ -595,6 +608,10 @@ func messageInventoryMarkdown(sources []messageSource) string {
 	fmt.Fprintf(&b, "# Message inventory\n\nGenerated by `METASYSTEM_MESSAGE_INVENTORY=DIR go test ./cmd/metasystem -run TestAuditMessagesAPersonReads`.\n")
 	fmt.Fprintf(&b, "Rule: \"Messages a Person Reads\" in docs/design/design-principles.md. Each source is one message site (inventory.json has file:line, kind, text, violations).\n\n")
 	fmt.Fprintf(&b, "%d message sources; %d with at least one violation.\n\n", len(sources), totalViolating)
+	b.WriteString("Limits of the scan: it reads each message where it is written. A line a helper builds and returns, or appends to a local slice, " +
+		"is not seen; no-command is judged only where the Decision is a literal; a placeholder is flagged even where the engine cannot know the value, " +
+		"so each needs a look; an error is counted although some never reach a person. The helm-notice contradiction is held by " +
+		"TestAuditAdmissionNoticesWaitForTheOutcome and the end-to-end TestMessageGrantAddAtTheHelmIsOneRefusal, not by this scan.\n\n")
 	fmt.Fprintf(&b, "| violation | count |\n|---|---|\n")
 	for _, kind := range kindNames {
 		fmt.Fprintf(&b, "| %s | %d |\n", kind, kinds[kind])
@@ -612,15 +629,30 @@ func messageInventoryMarkdown(sources []messageSource) string {
 	return b.String()
 }
 
-// messagePartitionGroups is how many rewrite builders the partition feeds.
-const messagePartitionGroups = 6
+// messagePartitionThemes are the rewrite groups, each a theme a builder can
+// hold in mind: a unit (an internal package whole, or one cmd/metasystem
+// file) joins the first theme whose pattern matches it, and the rest is the
+// system group. The sizes were balanced on the 2026-09-30 inventory.
+var messagePartitionThemes = []struct {
+	name     string
+	patterns []*regexp.Regexp
+}{
+	{"goal ledger and goal verbs", []*regexp.Regexp{regexp.MustCompile(`^internal/goal`), regexp.MustCompile(`^cmd/metasystem/(goal|goalsync|intent_goal)`)}},
+	{"work, design and review verbs", []*regexp.Regexp{regexp.MustCompile(`^cmd/metasystem/intent_(delivery|work|selection|unit_review|design|review_binding|sent_back|references|worktree|table|planning)`)}},
+	{"landing, exceptions and manual reviews", []*regexp.Regexp{regexp.MustCompile(`^internal/(landing|ledgerfence|gittree)`),
+		regexp.MustCompile(`^cmd/metasystem/(intent_land|landing|hold|holder_step|intent_exception|intent_evidence|intent_manual)`)}},
+	{"proofs, tests and gates", []*regexp.Regexp{regexp.MustCompile(`^internal/(proofrun|testrun|gaterun|testenv|candidateengine|enginecause|audit|validate|testpolicy)$`),
+		regexp.MustCompile(`^cmd/metasystem/(proof_run|test|testing|validate_verbs)`), regexp.MustCompile(`^cmd/devgate`)}},
+	{"machinery: dispatch, launch, steward, supervision, agents", []*regexp.Regexp{
+		regexp.MustCompile(`^internal/(dispatch|launch|steward|supervise|run|delegation|missionrunner|brain|seat|adapter|acp|board|stopreport|stoptransition|up|lease|hooks)(/|$)`),
+		regexp.MustCompile(`^cmd/metasystem/(steward|supervise|delegate|launch|dispatch|brain|seat|adapter|channel|up\.go|wait|session|context|hook|mission|intent_agent|intent_questions)`)}},
+}
 
 // messagePartitionMarkdown proposes the rewrite partition: the reported
-// violations grouped into units that stay whole (an internal package, or one
-// cmd/metasystem file), packed largest first into the lightest group, so no
-// file is in two groups and the groups carry about equal work.
+// violations in units that stay whole (an internal package, or one
+// cmd/metasystem file), grouped by theme, so no file is in two groups.
 func messagePartitionMarkdown(sources []messageSource) string {
-	units := map[string]map[string]int{}
+	units := map[string]int{}
 	for _, source := range sources {
 		if len(source.Violations) == 0 || source.Mode == messageModeEnforce {
 			continue
@@ -629,51 +661,36 @@ func messagePartitionMarkdown(sources []messageSource) string {
 		if source.Package == "cmd/metasystem" {
 			unit = source.File
 		}
-		if units[unit] == nil {
-			units[unit] = map[string]int{}
-		}
-		units[unit][source.File]++
+		units[unit]++
 	}
-	type weighted struct {
-		name   string
-		weight int
+	groups := make([][]string, len(messagePartitionThemes)+1)
+	weights := make([]int, len(groups))
+	names := make([]string, len(groups))
+	for index, theme := range messagePartitionThemes {
+		names[index] = theme.name
 	}
-	var ordered []weighted
-	for name, files := range units {
-		total := 0
-		for _, count := range files {
-			total += count
-		}
-		ordered = append(ordered, weighted{name, total})
-	}
-	sort.Slice(ordered, func(i, j int) bool {
-		if ordered[i].weight != ordered[j].weight {
-			return ordered[i].weight > ordered[j].weight
-		}
-		return ordered[i].name < ordered[j].name
-	})
-	groups := make([]struct {
-		weight int
-		units  []weighted
-	}, messagePartitionGroups)
-	for _, unit := range ordered {
-		lightest := 0
-		for index := range groups {
-			if groups[index].weight < groups[lightest].weight {
-				lightest = index
+	names[len(names)-1] = "system, app, disk, evidence, interface and the rest"
+	for unit, weight := range units {
+		group := len(messagePartitionThemes)
+		for index, theme := range messagePartitionThemes {
+			if slices.ContainsFunc(theme.patterns, func(pattern *regexp.Regexp) bool { return pattern.MatchString(unit) }) {
+				group = index
+				break
 			}
 		}
-		groups[lightest].weight += unit.weight
-		groups[lightest].units = append(groups[lightest].units, unit)
+		groups[group] = append(groups[group], unit)
+		weights[group] += weight
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "\n## Proposed partition for %d rewrite builders\n\n", messagePartitionGroups)
-	b.WriteString("Each group lists its units (an internal package whole, or one cmd/metasystem file) with the violating sources in it; no file is in two groups. Enforced paths are done and left out.\n")
+	fmt.Fprintf(&b, "\n## Proposed partition for %d rewrite builders\n\n", len(groups))
+	b.WriteString("Each group lists its units (an internal package whole, or one cmd/metasystem file) with the violating sources in it; no file is in two groups. " +
+		"Paths already enforced are done and left out; a file partly enforced lists its remaining sources. " +
+		"A group enforces its paths from cmd/metasystem/message_modes_<group>_test.go with enforceMessages.\n")
 	for index, group := range groups {
-		sort.Slice(group.units, func(i, j int) bool { return group.units[i].name < group.units[j].name })
-		fmt.Fprintf(&b, "\n### Group %d: %d violating sources\n\n", index+1, group.weight)
-		for _, unit := range group.units {
-			fmt.Fprintf(&b, "- %s (%d)\n", unit.name, unit.weight)
+		sort.Strings(group)
+		fmt.Fprintf(&b, "\n### Group %d, %s: %d violating sources\n\n", index+1, names[index], weights[index])
+		for _, unit := range group {
+			fmt.Fprintf(&b, "- %s (%d)\n", unit, units[unit])
 		}
 	}
 	return b.String()
