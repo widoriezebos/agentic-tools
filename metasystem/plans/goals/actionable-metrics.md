@@ -1,14 +1,15 @@
 # actionable-metrics
 
-- State: queued
+- State: parked
 - Priority: 2
 - Sequence: 33
 - Intent: What: Each measurement the system keeps about its own work (for example rework rate or time waiting on checks) comes with a named owner and a named action, and that owner actually acts when the number crosses its threshold. The first part is built: nine metrics are computed from existing records and written when a goal is concluded. Why: Numbers nobody watches are decoration; the point is that a bad number triggers a response, and today nothing reads them or acts on them. Pros: Problems such as heavy rework or long waits get noticed and handled by a role instead of by chance. Cons: The original plan hooked into a watch command that has since been removed, so the acting part must be redesigned on top of the steward, and each alert can add noise if thresholds are wrong.
 - Origin: human
 - Next step: Next: Redesign the second part so the steward (not the removed watch command) raises an incident when a metric crosses its threshold, starting with one metric. Done when: A metric pushed past its threshold in a test produces a steward incident naming the metric, its owner and its action.
 - OpenedAt: 2026-08-25T20:18:07Z
-- Revision: 214
+- Revision: 215
 - BudgetExceptions: 0
+- Parked: by=human:Wido at=2026-09-30T18:45:12Z because=Parked until a role (the steward or the retro) needs to act on a metric and a person asks for it. The first part already records the numbers, and nothing currently depends on acting on them.
 
 History:
 - 2026-08-25T20:18:07Z CE1KNSABESNHJ68SZ8957XZ4V0-m2-bc1be9cb open actor=human:wido targets=actionable-metrics
@@ -225,4 +226,5 @@ History:
 - 2026-09-16T20:31:03Z STZ81SQF520MYKDNNXK9KW53BD-m1e-c6925449 set-priority actor=human:Wido targets=actionable-metrics,census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,dispatch-bases-chains-on-the-remote-tip,events-package-has-a-test-group,fixture-repo-copies-exclude-the-artifacts-store,fixture-waits-name-their-producer,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,lease-sweep-death-evidence,machine-concurrency-governor,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged,run-scoped-build-caches-have-a-janitor,skipped-test-fails-its-group-on-the-other-os,token-spend-fence,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=watcher-repair-request-never-names-current from=1:55 to=1:54 requested-sequence=32
 - 2026-09-16T20:31:11Z Z13WSWGM6M2BZEEHMWC8N808X2-m1e-c6925449 set-priority actor=human:Wido targets=actionable-metrics,census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,dispatch-bases-chains-on-the-remote-tip,events-package-has-a-test-group,fixture-repo-copies-exclude-the-artifacts-store,fixture-waits-name-their-producer,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,lease-sweep-death-evidence,machine-concurrency-governor,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged,run-scoped-build-caches-have-a-janitor,skipped-test-fails-its-group-on-the-other-os,token-spend-fence,winddown-census-handoff-leak reason=priority-order subject=actionable-metrics from=1:54 to=2:33 requested-sequence=33
 - 2026-09-30T18:44:58Z 8J9165JB1293XGWEZ4T437GCDE-ui-bc2fda53 edit actor=human:Wido targets=actionable-metrics
-Integrity: sha256=3225c65c77c524b183158c431c639969a11205f8ae4919530fc7c64951fb0a62
+- 2026-09-30T18:45:12Z K0HWQP4A3JJG5B855W0GFVHAA3-ui-bc2fda53 park actor=human:Wido targets=actionable-metrics reason=Parked until a role (the steward or the retro) needs to act on a metric and a person asks for it. The first part already records the numbers, and nothing currently depends on acting on them.
+Integrity: sha256=0b7869702f13d3762b21cb6124225a212d0152ec9330af79faf0fb51b837d189
