@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 1
-- Sequence: 20
+- Sequence: 19
 - Risk: severity=2 novelty=2 exposure=3 accumulation=3 basis="severity 2: disk and indexing churn that slows every seat, no correctness harm; novelty 2: durable-copy acknowledgement and pins before deletion, and path moves across every reader; exposure 3: every proof run writes these stores; accumulation 3: grows by gigabytes per day until pruned"
 - Tier: 2
 - Intent: What: Kept test evidence, pinned engine copies and temporary build output are stored where the Mac's Spotlight search and malware scanner do not index them. Cleanup of these stores already exists (it was built under the disk-lifetimes goal); only the indexing part is left. Why: Tens of thousands of copied source files are indexed and scanned in the background, which slows the machine and wastes disk and CPU while seats work. Pros: Less background load on every seat machine. Cons: Moving stores means every reader and writer must follow them, and a missed one breaks a lookup.
 - Origin: human
 - Next step: Next: Keep the evidence folders, engine pins and build output out of Spotlight, either by placing them in a folder Spotlight skips or by marking each root as not to be indexed, and then count indexed files and disk use over one day of work on three seats. Done when: After that day, the Spotlight index holds none of those files and the counts stay under the thresholds written in the goal.
 - OpenedAt: 2026-09-15T09:05:39Z
-- Revision: 94
+- Revision: 95
 - BudgetExceptions: 0
 
 History:
@@ -107,4 +107,5 @@ History:
 - 2026-09-30T18:54:04Z F039APNCSYVNCBGW0MAVJXXSR6-m1e-b6a4eb0a done actor=human:wido targets=brief-declares-the-round-boundary,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,delegate-sandbox-runs-the-beds,every-round-gets-an-independent-read,evidence-and-build-output-have-retention-and-stay-unindexed,failures-show-observed-against-expected,fixture-runners-and-fakes-bound-their-own-life,follow-up-brief-cannot-cite-fresh-trunk-files,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,round-proof-feeds-the-next-brief,testing-surfaces-declare-their-mirror reason=priority-order from=1:23 to=1:22
 - 2026-09-30T18:54:44Z Y6G0ABX98N5SW2MKYHX9J3922E-m1e-b6a4eb0a done actor=human:wido targets=busy-seat-shells-are-ended,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,delegate-sandbox-runs-the-beds,every-round-gets-an-independent-read,evidence-and-build-output-have-retention-and-stay-unindexed,failures-show-observed-against-expected,fixture-runners-and-fakes-bound-their-own-life,follow-up-brief-cannot-cite-fresh-trunk-files,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,round-proof-feeds-the-next-brief,testing-surfaces-declare-their-mirror reason=priority-order from=1:22 to=1:21
 - 2026-09-30T18:57:08Z 1M12F43HHGZ10728PZ82TG2YWG-m1e-b6a4eb0a done actor=human:wido targets=busy-seat-shells-are-ended,cross-cutting-change-inventories-its-readers,evidence-and-build-output-have-retention-and-stay-unindexed,fixture-runners-and-fakes-bound-their-own-life,follow-up-brief-cannot-cite-fresh-trunk-files,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,round-proof-feeds-the-next-brief,testing-surfaces-declare-their-mirror reason=priority-order from=1:21 to=1:20
-Integrity: sha256=2783f762bccfe3db9cca4d1b3b45f6e01707e0582ed1a4127ebddd1f33d68a2d
+- 2026-09-30T18:57:20Z 96YGY7PSQV1SVDGAZ9A5SGV49F-m1e-b6a4eb0a done actor=human:wido targets=busy-seat-shells-are-ended,cross-cutting-change-inventories-its-readers,evidence-and-build-output-have-retention-and-stay-unindexed,follow-up-brief-cannot-cite-fresh-trunk-files,round-proof-feeds-the-next-brief,testing-surfaces-declare-their-mirror reason=priority-order from=1:20 to=1:19
+Integrity: sha256=3fafdb4b9633d5d4a4bbfba5a635a78f76446c849b4a27416516d84abc96a7ec

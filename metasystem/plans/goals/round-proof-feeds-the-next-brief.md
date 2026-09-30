@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 1
-- Sequence: 21
+- Sequence: 20
 - Risk: severity=2 novelty=2 exposure=2 accumulation=2 basis="severity 2: a wrong findings file could refuse a legitimate follow-up or let a failing bed through; novelty 2: the round proof gains an output the dispatcher reads; exposure 2: every follow-up round; accumulation 2: later rounds build on the recorded findings"
 - Tier: 2
 - Intent: What: When a build round fails its tests, the next round automatically receives the failing test output, so nobody has to copy test failures into the next instructions by hand. Why: Review findings already flow into the next round, but a test failure ends the round and its output is not passed on. In earlier builds a person relayed failures into more than twenty sets of instructions by hand. Pros: Faster fix rounds; the builder sees the exact failure; less relay work for the seat. Cons: Large test logs could crowd the builder's input, so only the failing steps' output may be passed on.
 - Origin: human
 - Next step: Next: In the launch unit runner (internal/launch/unit_run.go), when a round ends with failing tests, add each failing step's kept output to the next round's inputs, next to the review findings, with a unit test. Drop the older design that aimed at the retired dispatch lane. Done when: a round that fails its tests leads to a next round whose inputs contain the failing output, and a green round adds nothing.
 - OpenedAt: 2026-09-14T15:32:06Z
-- Revision: 126
+- Revision: 127
 - BudgetExceptions: 0
 
 History:
@@ -139,4 +139,5 @@ History:
 - 2026-09-30T18:54:04Z F039APNCSYVNCBGW0MAVJXXSR6-m1e-b6a4eb0a done actor=human:wido targets=brief-declares-the-round-boundary,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,delegate-sandbox-runs-the-beds,every-round-gets-an-independent-read,evidence-and-build-output-have-retention-and-stay-unindexed,failures-show-observed-against-expected,fixture-runners-and-fakes-bound-their-own-life,follow-up-brief-cannot-cite-fresh-trunk-files,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,round-proof-feeds-the-next-brief,testing-surfaces-declare-their-mirror reason=priority-order from=1:24 to=1:23
 - 2026-09-30T18:54:44Z Y6G0ABX98N5SW2MKYHX9J3922E-m1e-b6a4eb0a done actor=human:wido targets=busy-seat-shells-are-ended,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,delegate-sandbox-runs-the-beds,every-round-gets-an-independent-read,evidence-and-build-output-have-retention-and-stay-unindexed,failures-show-observed-against-expected,fixture-runners-and-fakes-bound-their-own-life,follow-up-brief-cannot-cite-fresh-trunk-files,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,round-proof-feeds-the-next-brief,testing-surfaces-declare-their-mirror reason=priority-order from=1:23 to=1:22
 - 2026-09-30T18:57:08Z 1M12F43HHGZ10728PZ82TG2YWG-m1e-b6a4eb0a done actor=human:wido targets=busy-seat-shells-are-ended,cross-cutting-change-inventories-its-readers,evidence-and-build-output-have-retention-and-stay-unindexed,fixture-runners-and-fakes-bound-their-own-life,follow-up-brief-cannot-cite-fresh-trunk-files,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,round-proof-feeds-the-next-brief,testing-surfaces-declare-their-mirror reason=priority-order from=1:22 to=1:21
-Integrity: sha256=265801e8bce86fc8f8c25d4057e5a79bbbbc70848dbc907dfccfed188a6203fa
+- 2026-09-30T18:57:20Z 96YGY7PSQV1SVDGAZ9A5SGV49F-m1e-b6a4eb0a done actor=human:wido targets=busy-seat-shells-are-ended,cross-cutting-change-inventories-its-readers,evidence-and-build-output-have-retention-and-stay-unindexed,follow-up-brief-cannot-cite-fresh-trunk-files,round-proof-feeds-the-next-brief,testing-surfaces-declare-their-mirror reason=priority-order from=1:21 to=1:20
+Integrity: sha256=4dc1791b9c94faa4bac3686199ada6fe37e6f13f148ac09aa4e7360e038cd671

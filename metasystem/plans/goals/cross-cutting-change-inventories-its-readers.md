@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 1
-- Sequence: 23
+- Sequence: 22
 - Risk: severity=2 novelty=2 exposure=3 accumulation=3 basis="severity 2: each missed reader costs a critic round plus a fold round, and the chain can hit the review ceiling before the last one is found; novelty 2: a new preflight step that turns a brief's concept into a search and dispositions its hits; exposure 3: every chain that changes a predicate read in more than one place; accumulation 3: chain bsws-build1b-20260909 paid three reads and three folds for seven sites, one or two per round"
 - Tier: 3
 - Intent: What: When a change redefines a shared idea that many places rely on, the brief lists every place that relies on it before the build starts. Why: One such change needed seven critique rounds because each round found one more place still using the old meaning. A list made up front would have saved most of those rounds. Pros: Fewer rounds for wide changes; critics check a list instead of hunting. Cons: One more step in such briefs. The automatic check first designed for it sits in the old dispatch lane, which no longer runs.
 - Origin: main
 - Next step: Next: Slice 1: add one question to the design-critique skill (skills/design-critique/SKILL.md): "What does this build on, where does that live, and which behaviour wins?". Only if still wanted afterwards, slice 2: the launch lane's build admission checks that the brief accounts for every place its search pattern finds. Done when: the skill carries the question and the next critique round answers it.
 - OpenedAt: 2026-09-10T08:42:28Z
-- Revision: 152
+- Revision: 153
 - Pinned: m1e
 - BudgetExceptions: 0
 
@@ -166,4 +166,5 @@ History:
 - 2026-09-30T18:56:08Z 9M9METEPW54CBJ0M0X57VPP77N-m1e-b6a4eb0a done actor=human:wido targets=cross-cutting-change-inventories-its-readers,every-round-gets-an-independent-read,failures-show-observed-against-expected,testing-surfaces-declare-their-mirror reason=priority-order from=1:26 to=1:25
 - 2026-09-30T18:56:19Z 1D3RXJ4CDWBR9TP5CP8AE5CN86-m1e-b6a4eb0a done actor=human:wido targets=cross-cutting-change-inventories-its-readers,failures-show-observed-against-expected,testing-surfaces-declare-their-mirror reason=priority-order from=1:25 to=1:24
 - 2026-09-30T18:57:08Z 1M12F43HHGZ10728PZ82TG2YWG-m1e-b6a4eb0a done actor=human:wido targets=busy-seat-shells-are-ended,cross-cutting-change-inventories-its-readers,evidence-and-build-output-have-retention-and-stay-unindexed,fixture-runners-and-fakes-bound-their-own-life,follow-up-brief-cannot-cite-fresh-trunk-files,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,round-proof-feeds-the-next-brief,testing-surfaces-declare-their-mirror reason=priority-order from=1:24 to=1:23
-Integrity: sha256=59de79cd5238b211d4cc0025612c707ae71c1e4c761f87b709cb194ca8c9c4c4
+- 2026-09-30T18:57:20Z 96YGY7PSQV1SVDGAZ9A5SGV49F-m1e-b6a4eb0a done actor=human:wido targets=busy-seat-shells-are-ended,cross-cutting-change-inventories-its-readers,evidence-and-build-output-have-retention-and-stay-unindexed,follow-up-brief-cannot-cite-fresh-trunk-files,round-proof-feeds-the-next-brief,testing-surfaces-declare-their-mirror reason=priority-order from=1:23 to=1:22
+Integrity: sha256=f88c2bc74a8d0977063facb8b541f86f2db25b73230acb46207bbbcb7e323a6f

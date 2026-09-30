@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 1
-- Sequence: 19
+- Sequence: 18
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: one core for hours per incident, no data loss; novelty 2: a CPU predicate and child evidence the census lacks today; exposure 3: every seat runs shell commands through the harness; accumulation 1: incidents are rare but unbounded when they occur"
 - Tier: 2
 - Intent: What: The engine notices a seat's shell that keeps burning CPU long after its tool call ended, and deals with it: a shell with no child processes for 30 minutes is ended, and a shell that keeps starting short-lived children (a runaway loop) is reported to its session instead of being ended. Why: on 2026-09 a seat's runaway shell loop burned a CPU core for hours and nobody noticed until a person looked. Wido chose option (a) of design revision 3 on 2026-09-30: report fork-heavy loops, never end them automatically. Pros: idle busy shells stop wasting the machine, and a runaway loop is at least visible to the session that owns it. Cons: the exact runaway loop from the incident is only reported, so a session or a person still ends it by hand; ending it automatically would be a separate goal.
 - Origin: human
 - Next step: Next: have one Astra critique of design revision 3 with option (a) settled, then build it. Done when: on a seat, a childless shell spinning for 30 minutes is ended and its session told, and a fork-heavy loop is reported to its session as busy-forking without being ended.
 - OpenedAt: 2026-09-15T09:05:29Z
-- Revision: 94
+- Revision: 95
 - BudgetExceptions: 0
 
 History:
@@ -107,4 +107,5 @@ History:
 - 2026-09-30T18:54:04Z F039APNCSYVNCBGW0MAVJXXSR6-m1e-b6a4eb0a done actor=human:wido targets=brief-declares-the-round-boundary,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,delegate-sandbox-runs-the-beds,every-round-gets-an-independent-read,evidence-and-build-output-have-retention-and-stay-unindexed,failures-show-observed-against-expected,fixture-runners-and-fakes-bound-their-own-life,follow-up-brief-cannot-cite-fresh-trunk-files,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,round-proof-feeds-the-next-brief,testing-surfaces-declare-their-mirror reason=priority-order from=1:22 to=1:21
 - 2026-09-30T18:54:44Z Y6G0ABX98N5SW2MKYHX9J3922E-m1e-b6a4eb0a done actor=human:wido targets=busy-seat-shells-are-ended,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,delegate-sandbox-runs-the-beds,every-round-gets-an-independent-read,evidence-and-build-output-have-retention-and-stay-unindexed,failures-show-observed-against-expected,fixture-runners-and-fakes-bound-their-own-life,follow-up-brief-cannot-cite-fresh-trunk-files,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,round-proof-feeds-the-next-brief,testing-surfaces-declare-their-mirror reason=priority-order from=1:21 to=1:20
 - 2026-09-30T18:57:08Z 1M12F43HHGZ10728PZ82TG2YWG-m1e-b6a4eb0a done actor=human:wido targets=busy-seat-shells-are-ended,cross-cutting-change-inventories-its-readers,evidence-and-build-output-have-retention-and-stay-unindexed,fixture-runners-and-fakes-bound-their-own-life,follow-up-brief-cannot-cite-fresh-trunk-files,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,round-proof-feeds-the-next-brief,testing-surfaces-declare-their-mirror reason=priority-order from=1:20 to=1:19
-Integrity: sha256=b94070804eb9309f0f205f98c546e6ad37039b8fff3835f6d3ef4744c24490a3
+- 2026-09-30T18:57:20Z 96YGY7PSQV1SVDGAZ9A5SGV49F-m1e-b6a4eb0a done actor=human:wido targets=busy-seat-shells-are-ended,cross-cutting-change-inventories-its-readers,evidence-and-build-output-have-retention-and-stay-unindexed,follow-up-brief-cannot-cite-fresh-trunk-files,round-proof-feeds-the-next-brief,testing-surfaces-declare-their-mirror reason=priority-order from=1:19 to=1:18
+Integrity: sha256=cda68d9e8fbda0633df2c6dd4c754e71bc54ef15cafc03415e3c0109ab256891
