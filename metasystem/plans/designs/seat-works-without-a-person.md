@@ -1,6 +1,7 @@
 # A seat works without a person
 
 - Kind: design
+- Id: 01M3SE7MH9R4K38RV4JY84AK3G
 - Status: draft
 - Goals: seat-works-without-a-person
 
