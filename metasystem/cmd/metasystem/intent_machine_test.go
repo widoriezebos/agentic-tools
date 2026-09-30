@@ -169,9 +169,7 @@ func newMachineBed(t *testing.T) *machineBed {
 	if err := registry.AppendFrame(b.registry, exited); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := lane.Register(b.home, b.landing, "Wido", machineBedNow.Add(-24*time.Hour)); err != nil {
-		t.Fatal(err)
-	}
+	registerLane(t, b.home, b.landing, "Wido", machineBedNow.Add(-24*time.Hour))
 	// One launch of this user works in this checkout.
 	supervisor := identity.Ref{Pid: 555, StartedAtSec: 555}
 	if err := (launch.Store{Root: b.launchDir}).Create(launch.Record{ID: "l-1", Kind: "build", Goal: "g-1", WorkingDirectory: filepath.Join(b.this, "work"),

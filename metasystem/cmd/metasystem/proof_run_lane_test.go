@@ -147,9 +147,7 @@ func TestLaneOwnerProofReadsTheLeaseTheOwnerHoldsOnANestedCheckout(t *testing.T)
 	if err := os.WriteFile(filepath.Join(checkout, "metasystem", "go.mod"), []byte("module example\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := landinglane.Register(home, checkout, "test", time.Now()); err != nil {
-		t.Fatal(err)
-	}
+	registerLane(t, home, checkout, "test", time.Now())
 	held, err := batchowner.AcquireBatchOwnerForComponent(checkout)
 	if err != nil {
 		t.Fatal(err)

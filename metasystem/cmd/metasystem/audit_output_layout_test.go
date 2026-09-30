@@ -194,9 +194,7 @@ func statusLayoutBed(busy bool) func(t *testing.T) layoutBed {
 		}
 		owners.delivery.batchRoot = func(string, time.Time) (string, bool, error) { return "", false, nil }
 		if busy {
-			if _, _, err := lane.Register(home, landing, "Wido", layoutNow.Add(-2*time.Hour)); err != nil {
-				t.Fatal(err)
-			}
+			registerLane(t, home, landing, "Wido", layoutNow.Add(-2*time.Hour))
 			collecting := batch.Record{Schema: 1, BatchID: "4gr18nm8t3nyev9sssda9jgtsq", State: batch.StateOpen,
 				Units:   []batch.Unit{{GoalID: "533209e6d", Chain: "c", SeatRoot: root, State: batch.UnitJoined, Claim: batch.Claim{Machine: "m1e"}}},
 				History: []batch.HistoryEntry{{At: layoutNow.Add(-time.Minute).Format(time.RFC3339Nano), Verb: "open", To: batch.StateOpen}}}

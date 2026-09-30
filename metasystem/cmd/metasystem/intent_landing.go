@@ -49,6 +49,8 @@ type laneVerbOwners struct {
 	// helm reads whether a joined unit's seat is at the helm, which holds
 	// its batch whole.
 	helm func(seatRoot string) helm.State
+	// unset runs landing unset's journaled steps for the person by.
+	unset func(home, by string, force bool) (lane.UnsetReport, error)
 }
 
 func (inv *intentInvocation) landing() laneVerbOwners {
@@ -86,6 +88,14 @@ func (inv *intentInvocation) landing() laneVerbOwners {
 	if owners.helm == nil {
 		owners.helm = helm.Active
 	}
+	if owners.unset == nil {
+		probe, end, now := owners.probe, owners.end, owners.now
+		owners.unset = func(home, by string, force bool) (lane.UnsetReport, error) {
+			steps := batchowner.ProductionUnsetLane(home, by)
+			steps.Probe, steps.End, steps.Now = probe, end, now
+			return lane.Unset(home, by, now(), force, steps.Seams())
+		}
+	}
 	return owners
 }
 
@@ -106,9 +116,10 @@ func landingIntentCommands() []intentCommand {
 		{
 			object: "landing", action: "set", audience: "both", summary: "register or move this computer's landing lane",
 			usage: []string{"metasystem landing set PATH [--by NAME]"},
-			details: []string{"PATH is a dedicated landing checkout; every seat of this computer then lands through it, and a seat whose landing.batch-root names another is refused.",
+			details: []string{"A person's act at an enrolled terminal: only landing set registers a lane, never a seat's landing.batch-root.",
+				"PATH is a dedicated landing checkout, the top folder of a git clone whose MetaSystem installation is PATH or PATH/metasystem; every seat of this computer then lands through it, and a seat whose landing.batch-root names another is refused.",
 				"PATH must have a machine nickname (git -C PATH config metasystem.goal.machine NAME): its owner cannot run without one, so a checkout without it is refused.",
-				"The same PATH again changes nothing. Moving the lane while a batch proves or pushes in it is refused with the way forward: wait, or pause it with landing stop first."},
+				"Each registration takes a new custody epoch. The same PATH again changes nothing. Moving the lane while a batch proves or pushes in it is refused with the way forward: wait, or pause it with landing stop first."},
 			flags:    []intentFlag{byFlag},
 			maxArgs:  1,
 			examples: []string{"metasystem landing set /Users/wido/LocalStorage/GitHub/agentic-tools-landing"},
@@ -129,11 +140,23 @@ func landingIntentCommands() []intentCommand {
 			object: "landing", action: "stop", audience: "both", summary: "pause the landing lane's owner for maintenance until landing start",
 			usage: []string{"metasystem landing stop [--by NAME]"},
 			details: []string{"The owner advances no batch and the keep-alive does not restart it until metasystem landing start; status shows who stopped it and when.",
+				"Seats still join a stopped lane and wait in it; metasystem landing unset is the way back to each seat landing its own work.",
 				"A lane already stopped changes nothing. While a batch is pushing to main, stop is refused with the way forward."},
 			flags:    []intentFlag{byFlag},
 			maxArgs:  0,
 			examples: []string{"metasystem landing stop", "metasystem landing stop --by Wido"},
 			run:      runIntentLandingStop,
+		},
+		{
+			object: "landing", action: "unset", audience: "both", summary: "take this computer's landing lane away, so each seat lands its own work",
+			usage: []string{"metasystem landing unset [--force] [--by NAME]"},
+			details: []string{"A person's act at an enrolled terminal, never refused. It fences the lane (no new joins, no new lane work) and pauses it, lets a push under way finish, ends its owner and waits for a running proof.",
+				"Then it finalizes the members already on main, returns every other member to its seat at the person's word, reads each return back (a goal on the ledger, a change by its recorded disposition) and unregisters the lane only when all are confirmed.",
+				"When something still runs or a return is not confirmed, it stops, lists what is left, and the same command continues; --force goes past state that is unknown, never past work that runs."},
+			flags:    []intentFlag{{name: "force", usage: "go past custody whose state is unknown"}, byFlag},
+			maxArgs:  0,
+			examples: []string{"metasystem landing unset", "metasystem landing unset --force"},
+			run:      runIntentLandingUnset,
 		},
 		{
 			object: "landing", action: "restart", audience: "both", summary: "stop and start the landing lane's owner",
@@ -419,13 +442,27 @@ func runIntentLandingSet(inv *intentInvocation) int {
 	if inv.resolveLayout() == nil {
 		seat = inv.layout.InstallationRoot
 	}
-	root, err := owners.validate(path, seat, owners.now())
-	if err != nil {
+	invalid := func(err error) int {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: laneTargets(path),
 			Summary: fmt.Sprintf("%s can't be the landing lane (%s); nothing was registered", path, oneLine(err.Error())),
 			next:    inv.publicArgv("landing", "set", "PATH"), nextReason: "with a clone of this repository that no seat works in",
 			Details: []string{"refused because: " + lane.CodeRegisterInvalid + ": " + err.Error()}})
 	}
+	root, err := owners.validate(path, seat, owners.now())
+	if err != nil {
+		return invalid(err)
+	}
+	// The lane's one layout is resolved here, once; every reader takes it
+	// from the record.
+	layout, err := lane.NewLayout(root)
+	var refusal *lane.Refusal
+	if errors.As(err, &refusal) {
+		return invalid(errors.New(refusal.Message))
+	}
+	if err != nil {
+		return invalid(err)
+	}
+	root = string(layout.Checkout)
 	// An owner cannot run in a checkout without a machine nickname: it
 	// would die at every start, so the lane is never registered there.
 	if _, err := owners.machine(root); err != nil {
@@ -435,7 +472,11 @@ func runIntentLandingSet(inv *intentInvocation) int {
 			next:    refusal.Argv, nextReason: "any one word, landing reads well; then run metasystem landing set " + root + " again",
 			Details: []string{"refused because: " + refusal.Code + ": " + refusal.Message}})
 	}
-	actor := ""
+	if record.Root == root && record.Install == string(layout.Install) {
+		view := inv.laneView(owners, home)
+		return inv.render(intentResult{Outcome: intentUnchanged, Targets: laneTargets(root), Data: view, Summary: "this computer's landing lane is already " + root,
+			view: landingDone("this computer's landing lane is already "+root, root)})
+	}
 	if record.Root != "" && record.Root != root {
 		if busy := laneBusy(inv.laneView(owners, home), false); busy != "" {
 			return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: laneTargets(record.Root),
@@ -444,32 +485,30 @@ func runIntentLandingSet(inv *intentInvocation) int {
 				Details: []string{fmt.Sprintf("refused because: %s: batch %s in the current lane %s; moving the lane now would leave that batch without its owner", codeLandingLaneBusy, busy, record.Root),
 					"metasystem landing stop pauses the lane; or wait until the batch lands (metasystem landing status shows it)"}})
 		}
-		// Moving the host's lane changes where every seat lands: a
-		// person's act at an enrolled terminal. The first registration and
-		// a repeat stay open to anyone.
-		retry := "metasystem landing set " + root
-		proveAt := seat
-		if proveAt == "" {
-			proveAt = inv.cwd
-		}
-		person, err := owners.person(proveAt)
-		if err != nil {
-			refused := inv.personRefusal("", err, inv.input.text("by"))
-			refused.Targets = laneTargets(record.Root)
-			refused.code = 3
-			refused.Summary = "only a person may move the landing lane, and " + strings.TrimSuffix(refused.Summary, ", so nothing was done") + "; nothing was changed"
-			refused.Details = append(refused.Details, "moving the lane from "+record.Root+" to "+root+"; the retry is "+retry)
-			return inv.render(*refused)
-		}
-		actor = person
 	}
-	if by := strings.TrimSpace(inv.input.text("by")); by != "" || actor == "" {
-		actor = inv.landingActor(owners)
+	// Registering the host's lane decides where every seat lands: a
+	// person's act at an enrolled terminal (design r10 §1). No seat and no
+	// agent registers one.
+	proveAt := seat
+	if proveAt == "" {
+		proveAt = inv.cwd
 	}
-	previous, changed, err := lane.Register(home, root, actor, owners.now())
-	var refusal *lane.Refusal
+	actor, err := owners.person(proveAt)
+	if err != nil {
+		refused := inv.personRefusal("", err, inv.input.text("by"))
+		refused.Targets = laneTargets(root)
+		refused.code = 3
+		refused.Summary = "only a person may register the landing lane, and " + strings.TrimSuffix(refused.Summary, ", so nothing was done") + "; nothing was changed"
+		refused.Details = append(refused.Details, "registering "+root+" as this computer's landing lane; the retry is metasystem landing set "+root)
+		return inv.render(*refused)
+	}
+	if by := strings.TrimSpace(inv.input.text("by")); by != "" {
+		actor = by
+	}
+	previous, changed, err := lane.Register(home, layout, actor, owners.now())
 	if errors.As(err, &refusal) {
-		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: laneTargets(path), Summary: refusal.Error(), Decision: refusal.Fix})
+		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: laneTargets(root), Summary: refusal.Message,
+			next: refusal.Argv, nextReason: refusal.Fix, Details: []string{"refused because: " + refusal.Code}})
 	}
 	if err != nil {
 		return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: laneTargets(root), Summary: "the landing lane couldn't be saved, so nothing was registered",
@@ -484,8 +523,10 @@ func runIntentLandingSet(inv *intentInvocation) int {
 	if previous.Root != "" {
 		summary += " (it was " + previous.Root + ")"
 	}
+	registered, _, _ := lane.Read(home)
 	result := intentResult{Outcome: intentConfirmed, Targets: laneTargets(root), Data: view, Summary: summary, view: landingDone(summary, root, previous.Root),
-		next: inv.publicArgv("landing", "start"), nextReason: "start its owner now; otherwise the next landing or the steward starts it"}
+		Details: []string{fmt.Sprintf("installation %s, custody epoch %d", layout.Install, registered.CustodyEpoch)},
+		next:    inv.publicArgv("landing", "start"), nextReason: "start its owner now; otherwise the next landing or the steward starts it"}
 	if len(view.Owner.Fix) > 0 {
 		result.next, result.nextReason = view.Owner.Fix, laneFixReason(view.Owner.Fix)
 	}
@@ -531,7 +572,42 @@ func runIntentLandingStart(inv *intentInvocation) int {
 	if problem != nil {
 		return inv.render(*problem)
 	}
+	if refused := inv.laneResumable(owners, home, record); refused != nil {
+		return inv.render(*refused)
+	}
 	return inv.render(inv.startLane(owners, home, record, false))
+}
+
+// laneResumable ends a start or restart that must not run: while a person
+// unsets the lane nothing starts it again, and only a person clears a
+// pause (design r10 K2). nil when the verb may go on.
+func (inv *intentInvocation) laneResumable(owners laneVerbOwners, home string, record lane.Record) *intentResult {
+	targets := laneTargets(record.Root)
+	if journal, fenced, _ := lane.ReadUnset(home); fenced {
+		by := journal.By
+		if by == "" {
+			by = "a person"
+		}
+		return &intentResult{Outcome: intentRefused, code: 1, Targets: targets,
+			Summary: "this computer's landing lane is being unset by " + by + ", so it wasn't started",
+			next:    inv.publicArgv("landing", "unset"), nextReason: "finishes the unset; after it each seat lands its own work",
+			Details: []string{"refused because: " + lane.CodeUnsetting}}
+	}
+	pause, paused := lane.ReadPause(home)
+	if !paused {
+		return nil
+	}
+	proveAt := inv.cwd
+	if inv.resolveLayout() == nil {
+		proveAt = inv.layout.InstallationRoot
+	}
+	if _, err := owners.person(proveAt); err != nil {
+		refused := inv.personRefusal("", err, inv.input.text("by"))
+		refused.Targets, refused.code = targets, 3
+		refused.Summary = "only a person may resume the landing lane " + pause.By + " stopped, and " + strings.TrimSuffix(refused.Summary, ", so nothing was done") + "; it stays stopped"
+		return refused
+	}
+	return nil
 }
 
 // startLane ends a pause, forgets the keep-alive's restarts and starts an
@@ -624,13 +700,86 @@ func (inv *intentInvocation) stopLane(owners laneVerbOwners, home string, record
 		return intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "the landing lane couldn't be stopped",
 			next: inv.sameCommand(), nextReason: "tries again", Details: []string{"the landing lane could not be stopped: " + err.Error()}}, false
 	}
+	// Stop holds seats (design r10 §1): their work joins and waits, and the
+	// way to seats landing their own work is unset, which line 2 names.
 	return intentResult{Outcome: intentConfirmed, Targets: targets, Data: inv.laneView(owners, home),
-		Summary: "stopped the landing lane for " + by + "; it lands nothing until metasystem landing start",
+		Summary: "stopped the landing lane for " + by + "; seats' work waits in it until metasystem landing start",
 		Details: []string{"the lane at " + record.Root + " advances no batch and its owner is not restarted until metasystem landing start"},
+		next:    inv.publicArgv("landing", "unset"), nextReason: "lets each seat land its own work instead",
 		view: func(page *textui.Page) {
-			page.Done("stopped the landing lane for " + by + "; it lands nothing until it starts again")
-			page.Hint(textui.Hint{Argv: inv.publicArgv("landing", "start"), Reason: "resumes it"})
+			page.Done("stopped the landing lane for " + by + "; seats' work waits in it until it starts again")
 		}}, true
+}
+
+// runIntentLandingUnset takes the lane away at a person's word (design r10
+// §1): fence, settle, reconcile, return and confirm, then unregister. It is
+// never refused to a person and it resumes: when work still runs or a
+// return is not confirmed, it lists what is left and the same command
+// continues.
+func runIntentLandingUnset(inv *intentInvocation) int {
+	owners, home, _, problem := inv.laneContext(false)
+	if problem != nil {
+		return inv.render(*problem)
+	}
+	proveAt := inv.cwd
+	if inv.resolveLayout() == nil {
+		proveAt = inv.layout.InstallationRoot
+	}
+	by, err := owners.person(proveAt)
+	if err != nil {
+		refused := inv.personRefusal("", err, inv.input.text("by"))
+		refused.code = 3
+		refused.Summary = "only a person may unset the landing lane, and " + strings.TrimSuffix(refused.Summary, ", so nothing was done") + "; nothing was changed"
+		return inv.render(*refused)
+	}
+	if named := strings.TrimSpace(inv.input.text("by")); named != "" {
+		by = named
+	}
+	report, err := owners.unset(home, by, inv.input.switched("force"))
+	if err != nil {
+		return inv.render(intentResult{Outcome: intentFailed, code: 1, Data: report,
+			Summary: "the landing lane's unset could not go on (" + oneLine(err.Error()) + "); the lane stays fenced",
+			next:    inv.sameCommand(), nextReason: "continues the unset from where it stopped",
+			Details: []string{"landing unset: " + err.Error()}})
+	}
+	targets := []intentTarget{}
+	if report.Record.Root != "" {
+		targets = laneTargets(report.Record.Root)
+	}
+	var details []string
+	for _, entry := range report.Unresolved {
+		member := entry.Member
+		if member == "" {
+			member = "its members"
+		}
+		details = append(details, "batch "+entry.Batch+", "+member+": "+entry.Reason)
+	}
+	switch {
+	case report.NoLane:
+		return inv.render(intentResult{Outcome: intentUnchanged, Targets: targets, Data: report,
+			Summary: "no landing lane is registered on this computer; each seat lands its own work"})
+	case report.Unregistered:
+		summary := "unset this computer's landing lane " + report.Record.Root + "; each seat lands its own work now"
+		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: report, Summary: summary,
+			view: landingDone(summary, report.Record.Root)})
+	case report.Stopped == lane.StepSettled:
+		waiting := append(append([]string{}, report.Settlement.Live...), report.Settlement.Unknown...)
+		result := intentResult{Outcome: intentInProgress, Targets: targets, Data: report,
+			Summary: "the landing lane is fenced and waits before returning its members: " + strings.Join(waiting, "; "),
+			next:    inv.publicArgv("landing", "unset"), nextReason: "continues once that work has ended",
+			Details: append(details, "nothing new starts in the lane; its record stays until every member is returned")}
+		if len(report.Settlement.Live) == 0 {
+			result.next, result.nextReason = inv.publicArgv("landing", "unset", "--force"), "goes past what cannot be known, once you have checked it"
+		}
+		return inv.render(result)
+	}
+	summary := fmt.Sprintf("the landing lane is fenced; %s not confirmed returned yet", textui.Count(len(report.Unresolved), "member is", "members are"))
+	if len(report.Unresolved) != 0 {
+		summary += " (" + report.Unresolved[0].Member + ": " + report.Unresolved[0].Reason + ")"
+	}
+	return inv.render(intentResult{Outcome: intentInProgress, Targets: targets, Data: report, Summary: summary,
+		next: inv.publicArgv("landing", "unset"), nextReason: "returns them again and unregisters the lane once all are confirmed",
+		Details: details})
 }
 
 // runIntentLandingRestart gives the lane a fresh owner process (a person
@@ -641,6 +790,9 @@ func runIntentLandingRestart(inv *intentInvocation) int {
 	owners, home, record, problem := inv.laneContext(true)
 	if problem != nil {
 		return inv.render(*problem)
+	}
+	if refused := inv.laneResumable(owners, home, record); refused != nil {
+		return inv.render(*refused)
 	}
 	// A restart ends the running owner; it is refused before anything is
 	// stopped when no new owner could run.

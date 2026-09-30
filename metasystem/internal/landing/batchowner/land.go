@@ -636,7 +636,13 @@ func RecoverBatchLanding(root string, store batch.Store, id, actor string, at ti
 }
 
 func BatchRecoverySeamsWithGit(root string, store batch.Store, id string, at time.Time, gitRead func(string, ...string) (string, error)) batch.RecoverySeams {
-	controlRoot := batch.ModuleRoot(root)
+	return recoverySeamsAt(root, batch.ModuleRoot(root), store, id, at, gitRead, &BatchOwnerCalls)
+}
+
+// recoverySeamsAt are the landed-trailer recovery seams of the lane whose
+// checkout is root and whose installation is controlRoot, editing goals
+// through calls, read when each edit is made.
+func recoverySeamsAt(root, controlRoot string, store batch.Store, id string, at time.Time, gitRead func(string, ...string) (string, error), calls *BatchOwnerCallSet) batch.RecoverySeams {
 	findTrailer := func(matches func(string) bool) (string, bool, error) {
 		format := "%H%x00%B%x00"
 		output, err := gitRead(root, "log", "--first-parent", "origin/main", "--format="+format)
@@ -693,7 +699,7 @@ func BatchRecoverySeamsWithGit(root string, store batch.Store, id string, at tim
 			if current == next {
 				return nil
 			}
-			return batchEditNext(controlRoot, unit.GoalID, next)
+			return calls.EditNext(LandingOwnerInvocation(), controlRoot, unit.GoalID, next)
 		},
 		Rearm: func(tip string) error {
 			return BatchRecoveryRearm(root, tip)
