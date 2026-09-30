@@ -1,0 +1,117 @@
+exit 0
+--
+{
+  "schemaVersion": 1,
+  "verb": "settings show",
+  "targets": [],
+  "outcome": "confirmed",
+  "summary": "20 setting(s) of /Users/wido/GitHub/agentic-tools-m1e",
+  "data": {
+    "adapters": null,
+    "conf": "/Users/wido/GitHub/agentic-tools-m1e/metasystem.conf",
+    "settings": [
+      {
+        "Key": "launch.seat.window.tokens",
+        "Value": "0",
+        "Source": "default"
+      },
+      {
+        "Key": "launch.build.window.tokens",
+        "Value": "0",
+        "Source": "default"
+      },
+      {
+        "Key": "launch.design.window.tokens",
+        "Value": "0",
+        "Source": "default"
+      },
+      {
+        "Key": "launch.read.window.tokens",
+        "Value": "0",
+        "Source": "default"
+      },
+      {
+        "Key": "launch.build.model",
+        "Value": "fake-model",
+        "Source": "conf via launch.build.model.fake"
+      },
+      {
+        "Key": "launch.build.effort",
+        "Value": "xhigh",
+        "Source": "default"
+      },
+      {
+        "Key": "launch.design.model",
+        "Value": "fake-model",
+        "Source": "conf via launch.design.model.fake"
+      },
+      {
+        "Key": "launch.read.model",
+        "Value": "fake-model",
+        "Source": "conf via launch.read.model.fake"
+      },
+      {
+        "Key": "launch.wait.cap.seconds",
+        "Value": "240",
+        "Source": "default"
+      },
+      {
+        "Key": "launch.brief.admitted.tokens",
+        "Value": "120000",
+        "Source": "default"
+      },
+      {
+        "Key": "launch.build.max.changed.lines",
+        "Value": "1500",
+        "Source": "default"
+      },
+      {
+        "Key": "launch.read.split.diff.lines",
+        "Value": "1200",
+        "Source": "default"
+      },
+      {
+        "Key": "launch.design.baseline.tokens",
+        "Value": "2432374",
+        "Source": "default"
+      },
+      {
+        "Key": "launch.design.baseline.requests",
+        "Value": "28",
+        "Source": "default"
+      },
+      {
+        "Key": "launch.design.baseline.peak.tokens",
+        "Value": "163000",
+        "Source": "default"
+      },
+      {
+        "Key": "launch.critique.model",
+        "Value": "fake-model",
+        "Source": "conf via launch.critique.model.fake"
+      },
+      {
+        "Key": "launch.build.runtime",
+        "Value": "fake",
+        "Source": "default; auto: none of fake on PATH, first listed"
+      },
+      {
+        "Key": "launch.critique.runtime",
+        "Value": "fake",
+        "Source": "default; auto: none of fake on PATH, first listed"
+      },
+      {
+        "Key": "launch.design.runtime",
+        "Value": "fake",
+        "Source": "default; auto: none of fake on PATH, first listed"
+      },
+      {
+        "Key": "launch.read.runtime",
+        "Value": "fake",
+        "Source": "default; auto: none of fake on PATH, first listed"
+      }
+    ]
+  }
+}
+
+--

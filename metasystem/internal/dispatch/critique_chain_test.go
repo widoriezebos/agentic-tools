@@ -168,7 +168,7 @@ func TestCritiqueExhaustionAdvanceBackfillsLegacyRoundAccounting(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err := CritiqueExhaustionAdvance(repo, "critic", "code-critic", message, "critic-r4")
-	if err == nil || !strings.Contains(err.Error(), "review rounds are used up") || strings.Contains(err.Error(), "malformed round accounting") {
+	if err == nil || !strings.Contains(err.Error(), "review-round limit is exhausted") || strings.Contains(err.Error(), "malformed round accounting") {
 		t.Fatalf("legacy exhaustion advance = %v", err)
 	}
 }

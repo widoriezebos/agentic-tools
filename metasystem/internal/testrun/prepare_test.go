@@ -45,6 +45,7 @@ func TestBaseMovedUnderTheRunRestartsPreparationOnce(t *testing.T) {
 // The restart notice speaks in plain words; the two revisions it saw are
 // shown only with --verbose.
 func TestBaseMovedNoticeIsPlainUnlessVerbose(t *testing.T) {
+	t.Parallel()
 	for _, verbose := range []bool{false, true} {
 		var notes strings.Builder
 		state := &PreparationState{}

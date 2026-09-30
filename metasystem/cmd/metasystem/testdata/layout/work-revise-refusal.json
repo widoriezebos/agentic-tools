@@ -1,0 +1,23 @@
+exit 2
+--
+{
+  "schemaVersion": 1,
+  "verb": "work revise",
+  "targets": [],
+  "outcome": "refused",
+  "summary": "work revise needs one goal and a correction brief; nothing was done",
+  "next": {
+    "argv": [
+      "metasystem",
+      "work",
+      "revise",
+      "GOAL",
+      "--json",
+      "--brief",
+      "FILE"
+    ],
+    "reason": "FILE says what to correct"
+  }
+}
+
+--

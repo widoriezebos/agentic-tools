@@ -34,6 +34,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes/external"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 )
 
@@ -179,7 +180,7 @@ var intentBriefFlag = intentFlag{name: "brief", value: "FILE", usage: "the brief
 func intentWorkCommands() []intentCommand {
 	return []intentCommand{
 		{
-			object: "work", action: "brief", audience: "agent", summary: "write a brief scaffold from a goal and its accepted design",
+			object: "work", action: "brief", laidOut: true, audience: "agent", summary: "write a brief scaffold from a goal and its accepted design",
 			usage: []string{"metasystem work brief G --out FILE"},
 			details: []string{
 				"Carries the goal's intent and done criteria, its approval and box, its branch worktree, and the accepted design's",
@@ -192,7 +193,7 @@ func intentWorkCommands() []intentCommand {
 			run:      runIntentBrief,
 		},
 		{
-			object: "work", action: "build", primary: true, audience: "agent", summary: "build and test a goal's work, ready for independent review",
+			object: "work", action: "build", laidOut: true, primary: true, audience: "agent", summary: "build and test a goal's work, ready for independent review",
 			usage: []string{
 				"metasystem work build G [--work NAME] --brief FILE --check COMMAND...",
 				"metasystem work build run:RUN",
@@ -232,7 +233,7 @@ func intentWorkCommands() []intentCommand {
 			run: runIntentBuild,
 		},
 		{
-			object: "work", action: "wait", audience: "agent", summary: "wait for a goal's work, its landing, a person's act, a job or a read",
+			object: "work", action: "wait", laidOut: true, audience: "agent", summary: "wait for a goal's work, its landing, a person's act, a job or a read",
 			usage: []string{"metasystem work wait G [--work NAME] [--timeout DURATION]",
 				"metasystem work wait G --for landing|human-act [--verb V] [--since TIP] [--timeout DURATION]",
 				"metasystem work wait REF [--timeout DURATION]",
@@ -275,7 +276,7 @@ func intentWorkCommands() []intentCommand {
 			run: runIntentWorkWait,
 		},
 		{
-			object: "test", action: "run", audience: "both", summary: "run the risk-selected tests for this checkout",
+			object: "test", action: "run", laidOut: true, audience: "both", summary: "run the risk-selected tests for this checkout",
 			usage: []string{"metasystem test run [--goal G] [--authority H] [--mode auto|standard|deep]"},
 			details: []string{
 				"Runs the risk-selected tests for this checkout and reports the result, naming its proof attempt; test wait proof:ID reads that attempt's recorded end.",
@@ -292,7 +293,7 @@ func intentWorkCommands() []intentCommand {
 			run:      runIntentTest,
 		},
 		{
-			object: "test", action: "declare-moves", audience: "agent", summary: "record that this change moves or removes Stop test assertions on purpose",
+			object: "test", action: "declare-moves", laidOut: true, audience: "agent", summary: "record that this change moves or removes Stop test assertions on purpose",
 			usage: []string{"metasystem test declare-moves G --reason TEXT [--base COMMIT]"},
 			details: []string{
 				"The static gate refuses a change that removes or changes an assertion deciding whether work must stop, unless the change carries a declaration.",
@@ -305,26 +306,16 @@ func intentWorkCommands() []intentCommand {
 			run: runIntentDeclareStopMoves,
 		},
 		{
-			object: "test", action: "wait", audience: "agent", summary: "wait for a proof attempt's recorded end",
+			object: "test", action: "wait", laidOut: true, audience: "agent", summary: "wait for a proof attempt's recorded end",
 			usage:    []string{"metasystem test wait proof:ID [--timeout DURATION]"},
 			flags:    []intentFlag{{name: "timeout", value: "DURATION", usage: "how long this invocation waits (for example 20s or 10m)"}},
 			maxArgs:  1,
 			accepts:  []string{refProof},
 			examples: []string{"metasystem test wait proof:20260925T101500Z-1a2b --timeout 10m"},
-			run: func(inv *intentInvocation) int {
-				if len(inv.input.args) != 1 {
-					return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "test wait needs the test run to wait on; nothing was done",
-						Decision: "nothing to wait on yet; metasystem test run prints the reference to wait on"})
-				}
-				ref, problem := inv.resolveWorkRef(inv.input.args[0], inv.command.accepts)
-				if problem != nil {
-					return inv.render(*problem)
-				}
-				return runIntentWaitObserved(inv, "proof", ref.id)
-			},
+			run:      runIntentTestWait,
 		},
 		{
-			object: "settings", action: "show", audience: "both", summary: "the launch settings, or one setting with its source",
+			object: "settings", action: "show", laidOut: true, audience: "both", summary: "the launch settings, or one setting with its source",
 			usage: []string{"metasystem settings show [KEY]"},
 			details: []string{"Without KEY: the launch settings. With KEY: that launch setting or any metasystem.conf key.",
 				"Read only. settings set changes one for this seat; settings check validates them all."},
@@ -333,7 +324,7 @@ func intentWorkCommands() []intentCommand {
 			run:      runIntentSettings,
 		},
 		{
-			object: "settings", action: "keys", audience: "both", summary: "every configured key of the selected installation, with its source",
+			object: "settings", action: "keys", laidOut: true, audience: "both", summary: "every configured key of the selected installation, with its source",
 			usage:    []string{"metasystem settings keys [--matching PREFIX]"},
 			flags:    []intentFlag{{name: "matching", value: "PREFIX", usage: "only keys starting with PREFIX"}},
 			maxArgs:  0,
@@ -341,7 +332,7 @@ func intentWorkCommands() []intentCommand {
 			run:      runIntentSettingsKeys,
 		},
 		{
-			object: "settings", action: "set", audience: "both", summary: "set one configuration key for this checkout's seat",
+			object: "settings", action: "set", laidOut: true, audience: "both", summary: "set one configuration key for this checkout's seat",
 			usage: []string{"metasystem settings set KEY VALUE"},
 			details: []string{"Writes KEY=VALUE into the installation's metasystem.conf.local, the seat's own layer over the shipped metasystem.conf, which is never changed.",
 				"A key already holding the value is left as it is."},
@@ -350,7 +341,7 @@ func intentWorkCommands() []intentCommand {
 			run:      runIntentSettingsSet,
 		},
 		{
-			object: "settings", action: "check", audience: "both", summary: "validate every setting and the testing contract, changing nothing",
+			object: "settings", action: "check", laidOut: true, audience: "both", summary: "validate every setting and the testing contract, changing nothing",
 			usage: []string{"metasystem settings check"},
 			details: []string{"Validates metasystem.conf, then the testing contract it names and the contract's declared tools; no test runs.",
 				"A test run resolves each group's native tests when it runs; this check does not take the host's proof lease."},
@@ -373,6 +364,19 @@ func intentWorkCommands() []intentCommand {
 			run:      runIntentSettingsCoordinator,
 		},
 	}
+}
+
+// runIntentTestWait waits for one test run's recorded end.
+func runIntentTestWait(inv *intentInvocation) int {
+	if len(inv.input.args) != 1 {
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "test wait needs the test run to wait on; nothing was done",
+			Decision: "nothing to wait on yet; metasystem test run prints the reference to wait on"})
+	}
+	ref, problem := inv.resolveWorkRef(inv.input.args[0], inv.command.accepts)
+	if problem != nil {
+		return inv.render(*problem)
+	}
+	return runIntentWaitObserved(inv, "proof", ref.id)
 }
 
 // resolveLayout selects the installation from --repo or the current
@@ -1231,7 +1235,12 @@ func runIntentWorkWait(inv *intentInvocation) int {
 		if problem := inv.selectRoot(); problem != nil {
 			return inv.render(*problem)
 		}
-		return inv.render(inv.recoverWaits())
+		waits := inv.recoverWaits()
+		if waits.Outcome == intentUnchanged {
+			// The headline says there are none; the line under it repeated it.
+			waits.text = nil
+		}
+		return inv.render(waits)
 	}
 	if inv.input.has("session") {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--session only goes with --list; nothing was done",
@@ -1598,7 +1607,12 @@ func runIntentSettingsKeys(inv *intentInvocation) int {
 	}
 	conf, matching := filepath.Join(inv.layout.InstallationRoot, "metasystem.conf"), inv.input.text("matching")
 	ran := ownerCall(func(stdout, _ io.Writer) int { return inv.ownerCalls().configKeys(stdout, conf, matching) })
-	return inv.render(ownerVerbResult(ran, nil, "the configured keys of "+inv.layout.InstallationRoot, map[string]any{"installation": inv.layout.InstallationRoot}))
+	keys := ownerVerbResult(ran, nil, "the configured keys of "+inv.layout.InstallationRoot, map[string]any{"installation": inv.layout.InstallationRoot})
+	if keys.Outcome == intentConfirmed {
+		shown := "the configured keys of " + inv.statusSeatName(inv.layout.GitRoot)
+		keys.headline = &shown
+	}
+	return inv.render(keys)
 }
 
 // runIntentSettingsCheck validates the selected installation's settings.
@@ -1614,16 +1628,23 @@ func runIntentSettingsCheck(inv *intentInvocation) int {
 	if settings.Outcome != intentConfirmed {
 		return inv.render(settings)
 	}
+	// The text names the checkout as a person does; --json keeps the path.
+	seat := inv.statusSeatName(inv.layout.GitRoot)
+	render := func(result intentResult) int {
+		shown := strings.ReplaceAll(result.Summary, root, seat)
+		result.headline = &shown
+		return inv.render(result)
+	}
 	// The testing contract the settings name is validated with its declared
 	// tools; no test runs and no native discovery takes the host's lease.
 	path, groups, err := testrun.ContractReady(root, false)
 	if err != nil {
-		return inv.render(intentResult{Outcome: intentRefused, code: 1, Data: map[string]any{"installation": root},
+		return render(intentResult{Outcome: intentRefused, code: 1, Data: map[string]any{"installation": root},
 			Summary: "the settings of " + root + " are valid, but the testing contract is not: " + err.Error(),
 			next:    inv.sameCommand(), nextReason: "after correcting the testing contract"})
 	}
 	settings.Summary = "the settings of " + root + " and their testing contract are valid"
-	settings.text = append(settings.text, fmt.Sprintf("testing contract %s: %d group(s)", path, groups))
+	settings.text = append(settings.text, fmt.Sprintf("testing contract %s: %s", inv.shownPath(path), textui.Count(groups, "group", "groups")))
 	// The launch contract is validated here too, with the same kind of line:
 	// a project that has one gets its faults named before a start, and a
 	// project that has none is not a project with a problem.
@@ -1632,18 +1653,18 @@ func runIntentSettingsCheck(inv *intentInvocation) int {
 	case errors.Is(launchErr, errNoLaunchContract):
 		settings.text = append(settings.text, "launch contract: none declared")
 	case launchErr != nil:
-		return inv.render(intentResult{Outcome: intentRefused, code: 1, Data: map[string]any{"installation": root},
+		return render(intentResult{Outcome: intentRefused, code: 1, Data: map[string]any{"installation": root},
 			Summary: "the settings and testing contract are valid, but the launch contract is not: " + launchErr.Error(),
 			next:    inv.sameCommand(), nextReason: "after correcting the launch contract"})
 	default:
 		settings.Summary = "the settings of " + root + ", their testing contract and their launch contract are valid"
 		settings.text = append(settings.text, fmt.Sprintf("launch contract %s: %s, readiness %s, %s",
-			launchPath, launchContractName(launchContract), launchContract.ReadyKind(), launchContract.DataWord()))
+			inv.shownPath(launchPath), launchContractName(launchContract), launchContract.ReadyKind(), launchContract.DataWord()))
 		for _, tool := range launchTools {
 			settings.text = append(settings.text, "launch tool "+tool.Line())
 		}
 	}
-	return inv.render(settings)
+	return render(settings)
 }
 
 func runIntentSettings(inv *intentInvocation) int {
@@ -1666,10 +1687,11 @@ func runIntentSettings(inv *intentInvocation) int {
 			value, source, code, err := inv.work().config(key, confPath)
 			if err != nil || code != 0 {
 				reason := fmt.Sprintf("there is no setting %s in %s", shellCommand([]string{key}), confPath)
+				shown := fmt.Sprintf("there is no setting %s in %s", shellCommand([]string{key}), inv.shownPath(confPath))
 				if err != nil {
 					reason += ": " + err.Error()
 				}
-				return inv.render(intentResult{Outcome: intentRefused, code: 1, Summary: reason,
+				return inv.render(intentResult{Outcome: intentRefused, code: 1, Summary: reason, headline: &shown,
 					next: inv.publicArgv("settings", "show"), nextReason: "list the launch settings"})
 			}
 			values = []launch.Setting{{Key: key, Value: value, Source: source}}
@@ -1688,8 +1710,68 @@ func runIntentSettings(inv *intentInvocation) int {
 		data["adapters"] = adapters
 	}
 	return inv.render(intentResult{Outcome: intentConfirmed, Data: data, text: text,
-		Summary: fmt.Sprintf("%d setting(s) of %s", len(values), inv.layout.InstallationRoot)})
+		Summary: fmt.Sprintf("%d setting(s) of %s", len(values), inv.layout.InstallationRoot),
+		view:    settingsView(inv.statusSeatName(inv.layout.GitRoot), len(inv.input.args) == 1, values, data["adapters"])})
 }
+
+// settingsView is settings show's page (output-style §6.14): a table of
+// key, value and where the value comes from, sorted by key; a value is
+// shown as stored, since it is pasted back into settings set. One named
+// setting is one line: its value and its source. --verbose adds each
+// source's whole account.
+func settingsView(seat string, one bool, values []launch.Setting, adapters any) func(*textui.Page) {
+	sorted := slices.Clone(values)
+	slices.SortFunc(sorted, func(a, b launch.Setting) int { return strings.Compare(a.Key, b.Key) })
+	return func(page *textui.Page) {
+		defaults := 0
+		for _, value := range sorted {
+			if settingSource(value.Source) == "default" {
+				defaults++
+			}
+		}
+		facts := []string{}
+		if set := len(sorted) - defaults; set > 0 {
+			facts = append(facts, textui.Number(int64(set))+" configured")
+		}
+		if defaults > 0 {
+			facts = append(facts, textui.Number(int64(defaults))+" "+map[bool]string{true: "default", false: "defaults"}[defaults == 1])
+		}
+		if one && len(sorted) == 1 {
+			source := settingSource(sorted[0].Source)
+			if page.Verbose() {
+				source = sorted[0].Source
+			}
+			page.Headline(sorted[0].Key+" is "+sorted[0].Value, source)
+			return
+		}
+		page.Headline(textui.Count(len(sorted), "setting", "settings")+" of "+seat, facts...)
+		table := page.Section("", "").Table(textui.Column{}, textui.Column{}, textui.Column{Flex: true})
+		for _, value := range sorted {
+			source := textui.Dim(settingSource(value.Source))
+			if page.Verbose() {
+				source = textui.Dim(value.Source)
+			}
+			table.Row(textui.Plain(value.Key), textui.Plain(value.Value), source)
+		}
+		if lines, ok := adapters.([]string); ok && len(lines) > 0 {
+			section := page.Section("Adapters", "")
+			for _, line := range lines {
+				section.Text(line)
+			}
+		}
+	}
+}
+
+// settingSource is a setting's source in one word: default, local (the
+// seat's metasystem.conf.local) or conf.
+func settingSource(source string) string {
+	word, _, _ := strings.Cut(source, " ")
+	return strings.TrimSuffix(word, ";")
+}
+
+// shownPath is a path as a person reads it: repo-relative inside the
+// checkout, ~/… under the home directory.
+func (inv *intentInvocation) shownPath(path string) string { return inv.textEnv(inv.stdout).Path(path) }
 
 // runIntentWaitExitCode blocks until one delegate job or tracked run is
 // terminal and exits with its pinned code, through the job and run waiters.
@@ -2032,10 +2114,17 @@ func runIntentSettingsSet(inv *intentInvocation) int {
 	data := map[string]any{"key": key, "value": value, "file": local}
 	if after, err := os.ReadFile(local); existed && err == nil && bytes.Equal(before, after) {
 		return inv.render(intentResult{Outcome: intentUnchanged, Targets: targets, Data: data,
-			Summary: key + " already holds that value in " + local + "; nothing was changed"})
+			Summary: key + " already holds that value in " + local + "; nothing was changed",
+			view:    settingSetView(key + " already holds " + value + " in " + inv.shownPath(local) + "; nothing was changed")})
 	}
 	return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: data,
-		Summary: key + "=" + value + " is set in " + local})
+		Summary: key + "=" + value + " is set in " + local,
+		view:    settingSetView(key + " is set to " + value + " in " + inv.shownPath(local))})
+}
+
+// settingSetView is settings set's page: what the key holds now, and where.
+func settingSetView(done string) func(*textui.Page) {
+	return func(page *textui.Page) { page.Done(done) }
 }
 
 // runIntentDeclareStopMoves writes the Stop decision move declaration for

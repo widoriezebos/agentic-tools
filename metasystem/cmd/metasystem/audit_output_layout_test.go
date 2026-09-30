@@ -59,8 +59,12 @@ type layoutBed struct {
 	now     time.Time // the bed's clock; zero is layoutNow
 }
 
+// layoutGroupCases are the goldens a conversion group adds from its own
+// file, so parallel groups never edit one list.
+var layoutGroupCases []func() []layoutCase
+
 func layoutCases() []layoutCase {
-	return []layoutCase{
+	cases := []layoutCase{
 		{name: "status", args: []string{"status"}, bed: statusLayoutBed(true)},
 		{name: "status-verbose", args: []string{"status", "--verbose"}, bed: statusLayoutBed(true)},
 		{name: "status-quiet", args: []string{"status"}, bed: statusLayoutBed(false)},
@@ -70,6 +74,10 @@ func layoutCases() []layoutCase {
 		{name: "grant-list-empty", args: []string{"grant", "list"}, bed: grantListLayoutBed(0, false)},
 		{name: "grant-list-refusal", args: []string{"grant", "list"}, bed: outsideLayoutBed},
 	}
+	for _, group := range layoutGroupCases {
+		cases = append(cases, group()...)
+	}
+	return cases
 }
 
 // statusLayoutBed is a checkout with its five helpers and two processes

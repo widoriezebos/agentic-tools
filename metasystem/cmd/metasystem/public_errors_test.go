@@ -348,7 +348,9 @@ func TestMissingFilesAreNamedByPath(t *testing.T) {
 		{[]string{"work", "review"}, "nothing was done"},
 	} {
 		code, stdout, stderr := b.run(b.owners(), row.args...)
-		text := stdout + stderr
+		// A long path takes a line of its own on the page; the words are
+		// read with the lines joined.
+		text := strings.Join(strings.Fields(stdout+stderr), " ")
 		if code == 0 || !strings.Contains(text, row.want) || strings.Contains(text, "no such file") || strings.Contains(text, "open ") {
 			t.Errorf("%v: code %d text %q", row.args, code, text)
 		}

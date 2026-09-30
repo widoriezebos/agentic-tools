@@ -446,7 +446,7 @@ func TestIntentSettingsShowAndKeysAnswerCompiledDefaults(t *testing.T) {
 	for key, want := range map[string]string{"watch.stale-min": "20", "suite.section-cap-min": "45", "testing.contract": "testing.json",
 		"disk.go-cache-cap-gib": "30", "disk.floor-gib": "50"} {
 		code, text := show(key)
-		if code != 0 || !strings.Contains(text, key+"="+want+" (default)") {
+		if code != 0 || !strings.HasPrefix(text, key+" is "+want+" · default\n") {
 			t.Fatalf("settings show %s: code=%d %q; want %s=%s (default)", key, code, text, key, want)
 		}
 	}

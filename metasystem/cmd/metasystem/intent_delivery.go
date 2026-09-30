@@ -50,7 +50,7 @@ func intentDeliveryCommands() []intentCommand {
 	goalFlag := intentFlag{name: "goal", value: "G", usage: "with --commit, or feedback on changes: the goal the subject serves"}
 	return []intentCommand{
 		{
-			object: "work", action: "review", primary: true, audience: "both", summary: "independently review a goal's built work, a job, a run or a commit",
+			object: "work", action: "review", laidOut: true, primary: true, audience: "both", summary: "independently review a goal's built work, a job, a run or a commit",
 			usage: []string{reviewGoalUsage, reviewSubmitUsage, reviewFindingUsage,
 				reviewJobUsage, reviewCommitUsage, reviewRunUsage, reviewChangesUsage, reviewDiffUsage, reviewCheckUsage},
 			helpForms: reviewHelpForms(),
@@ -116,7 +116,7 @@ func intentDeliveryCommands() []intentCommand {
 			run: runIntentReview,
 		},
 		{
-			object: "work", action: "revise", audience: "agent", summary: "correct a goal's work with a brief: one new attempt, reviewed again",
+			object: "work", action: "revise", laidOut: true, audience: "agent", summary: "correct a goal's work with a brief: one new attempt, reviewed again",
 			usage: []string{"metasystem work revise G [--work NAME] [--after N] --brief FILE [--dispositions FILE]", "metasystem work revise j2:R --dispositions FILE --brief FILE", "metasystem work revise run:RUN --brief FILE"},
 			details: []string{
 				"Every attempt of a work item has a number N, whether it passed or failed; --after N names the attempt being corrected.",
@@ -144,7 +144,7 @@ func intentDeliveryCommands() []intentCommand {
 			run:      runIntentReviseSentBack,
 		},
 		{
-			object: "work", action: "land", primary: true, audience: "both", summary: "land a goal's reviewed work",
+			object: "work", action: "land", laidOut: true, primary: true, audience: "both", summary: "land a goal's reviewed work",
 			usage: []string{"metasystem work land G [--through COMMIT]", "metasystem work land G --queue-only", "metasystem work land j2:J",
 				"metasystem work land G --exception CODE --reason TEXT --by NAME [--expires 2h] [--replace-exception ID [--transfer]]",
 				"metasystem work land G --using-exception ID",
@@ -191,7 +191,7 @@ func intentDeliveryCommands() []intentCommand {
 			run:      runIntentLand,
 		},
 		{
-			object: "work", action: "finish", audience: "both", summary: "record a finished job with nothing to review or land as complete",
+			object: "work", action: "finish", laidOut: true, audience: "both", summary: "record a finished job with nothing to review or land as complete",
 			usage: []string{"metasystem work finish j2:J", "metasystem work finish j2:J --evidence R", "metasystem work finish j2:J --dispositions FILE"},
 			details: []string{
 				"For a job whose result is findings, not code: an investigation, or a read that is not reviewed further. Use the reference work status printed.",

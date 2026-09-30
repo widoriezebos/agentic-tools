@@ -1,0 +1,3 @@
+✗ work build needs one goal, a brief and the checks to run; nothing was done
+  → metasystem work build standing-validation --brief FILE --check COMMAND
+    FILE is the brief; COMMAND is the check that must pass (metasystem work build --help)

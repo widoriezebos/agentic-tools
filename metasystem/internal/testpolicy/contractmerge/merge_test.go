@@ -361,6 +361,7 @@ func surfaceByID(t *testing.T, contract testpolicy.Contract, id string) testpoli
 // resolves it when one does; its code is its detail, for --verbose and
 // records, never its default text.
 func TestRefusalReadsInPlainWords(t *testing.T) {
+	t.Parallel()
 	_, err := AddTests(mergeFixture(), "testing.json", "missing", []string{"TestAdded"})
 	var refusal *Refusal
 	if !errors.As(err, &refusal) {

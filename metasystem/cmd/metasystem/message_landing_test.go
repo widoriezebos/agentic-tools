@@ -74,7 +74,8 @@ func TestMessageWorkLandRefusalIsTwoLines(t *testing.T) {
 	b.edit("one\ntwo\n")
 	code, stdout, stderr := b.landText()
 	want := "✗ goal g1 is not claimed by this session, so nothing was committed\n" +
-		"  → metasystem goal claim g1 --take-over --reason TEXT  a person takes it over; then repeat this command\n"
+		"  → metasystem goal claim g1 --take-over --reason TEXT\n" +
+		"    a person takes it over; then repeat this command\n"
 	if code == 0 || stdout != "" || stderr != want {
 		t.Fatalf("work land = %d\nstdout %q\nstderr %q\nwant   %q", code, stdout, stderr, want)
 	}

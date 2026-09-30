@@ -1,0 +1,2 @@
+✗ there is no setting no.such.key in metasystem.conf
+  → metasystem settings show  list the launch settings

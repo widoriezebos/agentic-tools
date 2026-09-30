@@ -1,0 +1,21 @@
+exit 2
+--
+{
+  "schemaVersion": 1,
+  "verb": "work workspace",
+  "targets": [],
+  "outcome": "refused",
+  "summary": "a workspace needs the goal it belongs to; nothing was done",
+  "next": {
+    "argv": [
+      "metasystem",
+      "work",
+      "workspace",
+      "GOAL",
+      "--json"
+    ],
+    "reason": "names the goal"
+  }
+}
+
+--

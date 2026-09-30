@@ -1,0 +1,22 @@
+exit 2
+--
+{
+  "schemaVersion": 1,
+  "verb": "test run",
+  "targets": [],
+  "outcome": "refused",
+  "summary": "/ is not inside a Git repository; nothing was done",
+  "next": {
+    "argv": [
+      "metasystem",
+      "test",
+      "run",
+      "--json",
+      "--repo",
+      "REPOSITORY"
+    ],
+    "reason": "REPOSITORY is a checkout MetaSystem is set up in; or run it inside one"
+  }
+}
+
+--

@@ -16,7 +16,7 @@ const (
 	CritiqueCapExhaustedReason   = "cap-exhausted-human-raise"
 )
 
-const secondExhaustionRefused = "the review rounds are used up with a severe or unproven finding open; only a person can go on"
+const secondExhaustionRefused = "the review-round limit is exhausted with a severe or unproven finding open; only a person can go on"
 const boundedExhaustionRefused = "the review-round limit is exhausted with bounded findings; close the critique register to defer them"
 
 // critiqueState is the record table one critique decision reads: every
