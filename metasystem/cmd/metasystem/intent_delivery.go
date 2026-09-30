@@ -35,6 +35,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/verbresult"
 )
 
 // The delivery commands review a subject, fold a review's accepted findings
@@ -230,7 +231,12 @@ type intentDeliveryOwners struct {
 	// recordWriter asks the record-writer authority owner whether this
 	// engine may write the named chain's records, before anything writes.
 	recordWriter func(root, job string) (cause string, err error)
-	process      func(intentProcess) intentProcessResult
+	// ownerEnvelope runs one owner verb as its own process and reads its
+	// --json envelope (machine start's launch owner).
+	ownerEnvelope func(process intentProcess, verb string) (verbresult.Result, error)
+	// process is a fake engine process a test bed answers owner argv with;
+	// no production owner runs through it.
+	process func(intentProcess) intentProcessResult
 	// landCarried runs one carried landing through the landing path, which
 	// reads gate immediately before its push and records and runs release
 	// around it, and returns what it printed and its exit status.
@@ -332,11 +338,11 @@ func landCarriedWithOwners(owners landpath.Owners, request landpath.LandRequest)
 
 func defaultIntentDeliveryOwners() *intentDeliveryOwners {
 	return &intentDeliveryOwners{
-		recordWriter: recordWriterPreflight,
-		process:      runIntentOwnerProcess,
-		landCarried:  landCarriedInProcess,
-		closeOwner:   inProcessCloseOwner,
-		executable:   os.Executable,
+		recordWriter:  recordWriterPreflight,
+		ownerEnvelope: runIntentOwnerEnvelope,
+		landCarried:   landCarriedInProcess,
+		closeOwner:    inProcessCloseOwner,
+		executable:    os.Executable,
 		branchRead: func(args []string) (branch.BranchReadResult, int, error) {
 			return goalBranchReadRun(args, goalBranchReadDependencies{})
 		},
@@ -376,21 +382,14 @@ func inProcessCloseOwner(root string, args []string) intentProcessResult {
 	return intentProcessResult{stdout: []byte(stdout), stderr: []byte(stderr), code: code}
 }
 
-// runIntentOwnerProcess runs one owner with its own output pipes; the
-// caller reads only the owner's structured output from them.
-func runIntentOwnerProcess(process intentProcess) intentProcessResult {
+// runIntentOwnerEnvelope runs one owner verb as its own process and reads
+// its --json envelope: the owner's answer is its outcome, code and data,
+// never its words.
+func runIntentOwnerEnvelope(process intentProcess, verb string) (verbresult.Result, error) {
 	command := exec.Command(process.argv[0], process.argv[1:]...)
 	command.Dir = process.dir
 	command.Stdin = nil
-	var stdout, stderr bytes.Buffer
-	command.Stdout, command.Stderr = &stdout, &stderr
-	err := command.Run()
-	result := intentProcessResult{stdout: stdout.Bytes(), stderr: stderr.Bytes(), code: commandExitCode(err)}
-	var exit *exec.ExitError
-	if err != nil && !errors.As(err, &exit) {
-		result.err = err
-	}
-	return result
+	return verbresult.Run(command, verb)
 }
 
 func productionIntentBranchState(root, goalID string) (intentBranchState, error) {

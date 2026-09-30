@@ -18,6 +18,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/missionrunner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/project"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/verbresult"
 )
 
 // Administrative operations name one explicit human choice and hand it to
@@ -26,15 +27,50 @@ import (
 // apply unchanged. The public result reports the owner's outcome and output;
 // it never promotes a named person to a proven one.
 
-// engineVerb runs one owner verb of the selected installation's engine.
-func (inv *intentInvocation) engineVerb(args ...string) (intentProcessResult, *intentResult) {
+// engineVerb runs one owner verb of the selected installation's engine as
+// its own process, through the explicit internal entry with --json, and
+// reads its answer from the envelope verb names.
+func (inv *intentInvocation) engineVerb(verb string, args ...string) (verbresult.Result, error, *intentResult) {
 	binary, err := inv.delivery().executable()
 	if err != nil {
-		return intentProcessResult{}, &intentResult{Outcome: intentFailed, code: 1, Summary: "the running engine's own path could not be read, so nothing was done",
+		return verbresult.Result{}, nil, &intentResult{Outcome: intentFailed, code: 1, Summary: "the running engine's own path could not be read, so nothing was done",
 			retry: "try again", Details: []string{"engine path: " + err.Error()}}
 	}
-	// Owner verbs are reached through the explicit internal entry.
-	return inv.delivery().process(intentProcess{argv: append([]string{binary, "internal"}, args...), dir: inv.layout.InstallationRoot}), nil
+	envelope := inv.delivery().ownerEnvelope
+	if envelope == nil {
+		envelope = runIntentOwnerEnvelope
+	}
+	result, readErr := envelope(intentProcess{argv: append(append([]string{binary, "internal"}, args...), "--json"), dir: inv.layout.InstallationRoot}, verb)
+	return result, readErr, nil
+}
+
+// ownerEnvelopeResult is the public outcome of one owner verb's envelope:
+// its data as the owner's record when it confirmed, its summary and code
+// when it did not, and a plain failure when its answer could not be read.
+func ownerEnvelopeResult(owner verbresult.Result, readErr error, targets []intentTarget, done string) intentResult {
+	data := map[string]any{"exitCode": owner.Exit}
+	if len(owner.Data) > 0 {
+		var parsed any
+		if json.Unmarshal(owner.Data, &parsed) == nil {
+			data["owner"] = parsed
+		}
+	}
+	if readErr != nil {
+		return intentResult{Outcome: intentFailed, Targets: targets, Data: data, code: 1,
+			Summary: "the command's answer could not be read, so what it did is unknown", retry: "once the cause is fixed",
+			Details: []string{readErr.Error()}}
+	}
+	if owner.Outcome == verbresult.Confirmed {
+		return intentResult{Outcome: intentConfirmed, Targets: targets, Data: data, Summary: done}
+	}
+	result := intentResult{Outcome: intentRefused, Targets: targets, Data: data, code: max(owner.Exit, 1), Summary: owner.Summary,
+		Details: refusalCodeDetails(owner.Code)}
+	if owner.Next != nil && len(owner.Next.Argv) > 0 {
+		result.next, result.nextReason = owner.Next.Argv, owner.Next.Reason
+	} else {
+		result.retry = "once the cause above is fixed"
+	}
+	return result
 }
 
 // ownerVerbResult is the public outcome of one owner verb run: its structured

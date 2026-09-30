@@ -50,13 +50,6 @@ var structuredOutputExceptions = map[string]string{
 	"internal/testrun/worker.go:RequireWorkerCapabilities":       "retained machine protocol: the worker-capabilities JSON, stdout only",
 }
 
-// structuredOutputBaseline are the captures of our engine's text the second
-// unit (U2) converts: rows T4-T11 of the design. The list only shrinks; U2
-// deletes it.
-var structuredOutputBaseline = map[string]string{
-	"cmd/metasystem/intent_delivery.go:runIntentOwnerProcess": "T8 seat launch --json: envelope summary and code",
-}
-
 // structuredCapture is one capture of a child's output the audit judged.
 type structuredCapture struct {
 	Site    string // module-relative file:function
@@ -367,7 +360,7 @@ func TestAuditNoProcessReadsAnotherProcessText(t *testing.T) {
 	var refused []string
 	for _, capture := range captures {
 		seen[capture.Site] = true
-		if structuredOutputExceptions[capture.Site] != "" || structuredOutputBaseline[capture.Site] != "" {
+		if structuredOutputExceptions[capture.Site] != "" {
 			continue
 		}
 		refused = append(refused, capture.Site+" (line "+strconv.Itoa(capture.Line)+", program "+capture.Program+")")
@@ -384,11 +377,6 @@ func TestAuditNoProcessReadsAnotherProcessText(t *testing.T) {
 			"read the child through internal/verbresult.Run, or, for a program that is not our engine, add its file:function "+
 			"with a reason to structuredOutputExceptions in cmd/metasystem/audit_structured_output_test.go",
 			len(refused), strings.Join(refused, "\n  "))
-	}
-	for site := range structuredOutputBaseline {
-		if !seen[site] {
-			t.Errorf("baseline site %s no longer captures a child's text: delete it from structuredOutputBaseline", site)
-		}
 	}
 	for site := range structuredOutputExceptions {
 		if !seen[site] {
