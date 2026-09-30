@@ -430,11 +430,6 @@ var (
 		if match := upOutcomeField.FindStringSubmatch(last); match != nil {
 			outcome.Outcome = match[1]
 		}
-		if strings.HasPrefix(last, "up outcome=") {
-			if match := upFailedComponentField.FindStringSubmatch(upQuotedValue.ReplaceAllString(last, `""`)); match != nil {
-				outcome.FailedComponent = match[1]
-			}
-		}
 		if err != nil {
 			return outcome, fmt.Errorf("bin/metasystem up --repo %s: %w: %s", projectRoot, err, last)
 		}
@@ -473,18 +468,13 @@ func UpLandedEngine(ctx context.Context, installation, projectRoot string) (UpOu
 const engineRearmEnv = "METASYSTEM_ENGINE_REARM"
 
 // UpOutcome is what the rebuilt engine's up said, as it said it.
-// FailedComponent is the component the aggregate line names as the one that
-// ended up, when it names one.
 type UpOutcome struct {
-	Line            string
-	Outcome         string
-	FailedComponent string
-	Failed          bool
+	Line    string
+	Outcome string
+	Failed  bool
 }
 
 var upOutcomeField = regexp.MustCompile(`\boutcome=([A-Za-z_-]+)`)
-var upFailedComponentField = regexp.MustCompile(`(?:^|\s)component=([A-Za-z_-]+)`)
-var upQuotedValue = regexp.MustCompile(`"(?:[^"\\]|\\.)*"`)
 
 // performLandedRearm brings the checkout to the tip, rebuilds the engine
 // there and re-arms the enrollment; the record names what changed.
