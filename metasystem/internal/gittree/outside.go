@@ -8,7 +8,7 @@ import (
 // OutsideRepository reports whether no directory from dir up to the
 // filesystem root holds a .git entry: git's "not a git repository", read
 // from the filesystem instead of from git's words. A caller whose git probe
-// failed treats dir as holding no repository only when this is true; a
+// ran and exited non-zero treats dir as holding no repository only when this is true; a
 // failure beside a .git is a repository git cannot read, and fails closed.
 func OutsideRepository(dir string) bool {
 	current, err := filepath.Abs(dir)

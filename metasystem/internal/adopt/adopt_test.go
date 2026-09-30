@@ -6,7 +6,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -236,7 +238,9 @@ func TestHookPreflightReadsWithoutExecuting(t *testing.T) {
 	if exists(marker) {
 		t.Fatal("the preflight executed a hook")
 	}
-	notGit := map[string]fakeAnswer{"rev-parse --is-inside-work-tree": {err: errors.New("fatal: not a git repository (or any of the parent directories): .git")}}
+	// A git that ran and exited 128, as it does outside any repository.
+	exited := exec.Command("sh", "-c", "exit 128").Run()
+	notGit := map[string]fakeAnswer{"rev-parse --is-inside-work-tree": {err: fmt.Errorf("git rev-parse --is-inside-work-tree: %w", exited)}}
 	if refusal := hookPreflight(Deps{Git: newFakeGit(t, notGit).run}, t.TempDir()); refusal != nil {
 		t.Fatalf("a target without git: %+v", refusal)
 	}

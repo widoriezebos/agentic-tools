@@ -559,7 +559,8 @@ func markerLine(rules string) (string, bool) {
 func hookPreflight(d Deps, target string) *Refusal {
 	out, err := d.Git(target, true, "rev-parse", "--is-inside-work-tree")
 	if err != nil {
-		if gittree.OutsideRepository(target) {
+		var ran *exec.ExitError
+		if errors.As(err, &ran) && gittree.OutsideRepository(target) {
 			return nil
 		}
 		// A malformed configuration in a valid repository fails the same

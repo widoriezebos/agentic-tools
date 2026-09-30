@@ -60,7 +60,8 @@ func Ensure(root string) error {
 		// repository" would skip the fence while goal writes proceed.
 		// No .git at the root or above it is the proof, read from the
 		// filesystem rather than from git's words.
-		if gittree.OutsideRepository(absRoot) {
+		var ran *exec.ExitError
+		if errors.As(probeErr, &ran) && gittree.OutsideRepository(absRoot) {
 			return nil
 		}
 		return fmt.Errorf("the target's repository shape cannot be proven: %v (%s)", probeErr, strings.TrimSpace(string(probeOut)))
