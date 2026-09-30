@@ -9,9 +9,8 @@
 - Origin: human
 - Next step: Next: ask Wido whether the Stop hook stays; if it stays, count one week of stop refusals per seat from the hook log. Done when: either this goal is abandoned because the hook is removed, or a week under 10 refusals per seat per day is recorded and every remaining refusal names its clearing command.
 - OpenedAt: 2026-09-11T15:45:01Z
-- Revision: 121
+- Revision: 122
 - BlockedBy: stop-decisions-record-deadline-evidence, stop-infrastructure-allows-the-seat-to-stop
-- Pinned: m1b
 - BudgetExceptions: 0
 - Sliced: machine=m1b lineage=main-1789191336-90295-e4b24b revision=20 at=2026-09-12T17:01:57Z
 - Parked: by=human:Wido at=2026-09-19T14:55:55Z displaced=m1b+main-1789560571-22295-8d907a@2026-09-19T14:53:12Z because=parked 2026-09-19 by Wido: "stop hook work: park. We might even kill it. So land the rest." Resume only when Wido picks the goal. Existing work: (1) landed on main: a314e17d3 e57d9f5ec c627c0eff 529d8a649 fed9f5d9e 286efe41e aa0f35e06 fc86daa97 5c6d8f838 f389cf1d4 327c6da60 78f40168c b0b9f37e8; (2) unlanded plans on origin branch goal/stop-hook-never-forces-an-empty-turn, tip 8c71aa84d39fcb29c9e2c0443a708fe06076a507 (one commit on 1e84763e2: 25 files metasystem/plans/stop-hook-never-forces-an-empty-turn-*, +12437).
@@ -138,4 +137,5 @@ History:
 - 2026-09-30T18:51:32Z GYASBCWJ4Q04KFAZBF07Q79SPN-ui-bc2fda53 done actor=human:Wido targets=adoption-filled-delivery-passes-on-trunk,beds-run-under-the-oldest-supported-bash,brief-declares-the-round-boundary,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,delegate-sandbox-runs-the-beds,design-rounds-read-less-and-repeat-less,every-round-gets-an-independent-read,evidence-and-build-output-have-retention-and-stay-unindexed,failures-show-observed-against-expected,fixture-runners-and-fakes-bound-their-own-life,fleet-doctor-repairs-what-stops-other-seats,follow-up-brief-cannot-cite-fresh-trunk-files,machinery-runs-unattended-on-codex,one-steward-per-checkout-on-its-own-root,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,receipt-writer-follows-the-worktree-it-runs-in,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,testing-surfaces-declare-their-mirror reason=priority-order from=1:15 to=1:14
 - 2026-09-30T18:58:23Z 60YCJDVNRZFKV554DVW6N239Q1-ui-bc2fda53 unapprove actor=human:Wido targets=stop-hook-never-forces-an-empty-turn reason=the backlog clean-up of 2026-09-30 rewrites the intent in plain English; approved again with the same box
 - 2026-09-30T18:58:28Z WYFSYA90WXY5AXZCXGDHY9BD29-ui-bc2fda53 edit actor=human:Wido targets=stop-hook-never-forces-an-empty-turn
-Integrity: sha256=2095a8a0af140787f0ef47270d1dae26ac0a806d44c600690591dad57b34f65a
+- 2026-09-30T18:58:43Z GYYSPDCTGZ5QTMPNVEYQN8KMDH-ui-bc2fda53 set-pin actor=human:Wido targets=stop-hook-never-forces-an-empty-turn
+Integrity: sha256=9bb89479a0661683569da2c31d1377650201b1d16b4dee2c657bc65bd30222bb
