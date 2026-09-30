@@ -14,6 +14,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/output"
+	refusalpkg "github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 	usagepkg "github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
 	"golang.org/x/sys/unix"
 )
@@ -250,7 +251,8 @@ func TestContextVerdictReadsConfiguredBounds(t *testing.T) {
 		t.Fatal(err)
 	}
 	role, reading, err := contextBudgetLineWithProber(invalidRoot, invalidRoot, time.Date(2026, 9, 15, 12, 0, 0, 0, time.UTC), ContextOptions{}, healthProbe{})
-	if err == nil || role.Status != HealthUnknown || role.Reason != err.Error() || !strings.Contains(role.Reason, "CONTEXT_CONFIG_INVALID key=context.ceiling.tokens") ||
+	if err == nil || role.Status != HealthUnknown || role.Reason != err.Error() || !strings.Contains(role.Reason, "context.ceiling.tokens must be a positive integer") ||
+		strings.Contains(role.Reason, "CONTEXT_CONFIG_INVALID") || refusalpkg.CodeOf(err) != "CONTEXT_CONFIG_INVALID" ||
 		role.Remedy != "metasystem settings check --repo "+invalidRoot || !reflect.DeepEqual(reading, usagepkg.Reading{}) {
 		t.Fatalf("invalid budget = role %+v reading %+v err %v", role, reading, err)
 	}

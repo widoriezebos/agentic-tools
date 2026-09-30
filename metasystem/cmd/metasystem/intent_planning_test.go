@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -31,7 +30,7 @@ func (b *intentBed) expectNoEffect(before int, args []string, code int, result i
 }
 
 func unprovable(string, int64, humanauthority.Reader, string, string, time.Time) (humanauthority.Proof, error) {
-	return humanauthority.Proof{}, errors.New("no enrolled terminal among this process's ancestors")
+	return humanauthority.Proof{}, humanauthority.Refusedf(humanauthority.OutcomeTerminalMissing, "no enrolled terminal among this process's ancestors")
 }
 
 func TestIntentPlanningIntakeAndEdit(t *testing.T) {

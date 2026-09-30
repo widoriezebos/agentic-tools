@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 )
 
 // validateRepo prepares a repository whose registration checks are gated off
@@ -155,17 +157,20 @@ func TestContextBudgetConfigRefusesInvalidValues(t *testing.T) {
 		{"inverted", ContextHandoffMarginTokensKey + "=250000\n", "key=" + ContextHandoffMarginTokensKey + " reason=must be below", false},
 		{"trigger-over-the-line", ContextHandoffMarginTokensKey + "=143361\n", "key=" + ContextCeilingTokensKey + " reason=trigger 106639 exceeds construction line 106638", false},
 		{"valve-past-the-line", ContextCeilingTokensKey + "=251639\n", "key=" + ContextCeilingTokensKey + " reason=trigger 106639 exceeds construction line 106638", false},
-		{"unknown-context-key", "context.ceiling.token=1\n", "key=context.ceiling.token reason=unknown context key", false},
+		{"unknown-context-key", "context.ceiling.token=1\n", "key=context.ceiling.token reason=is not a known context setting", false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			root := t.TempDir()
 			putFile(t, filepath.Join(root, "metasystem.conf"), test.setting)
+			// The code is data beside the plain words, never in them.
+			words := strings.Replace(strings.TrimPrefix(test.want, "key="), " reason=", " ", 1)
 			_, loadErr := ContextBudget(root)
-			if loadErr == nil || !strings.Contains(loadErr.Error(), "CONTEXT_CONFIG_INVALID "+test.want) {
+			if refusal.CodeOf(loadErr) != "CONTEXT_CONFIG_INVALID" || !strings.Contains(loadErr.Error(), words) ||
+				strings.Contains(loadErr.Error(), "CONTEXT_CONFIG_INVALID") || !strings.Contains(refusal.DetailOf(loadErr), "CONTEXT_CONFIG_INVALID "+test.want) {
 				t.Fatalf("accessor accepted %q: %v", test.setting, loadErr)
 			}
 			problems := validateRepo(t, validConf+test.setting)
-			if !hasProblem(problems, "CONTEXT_CONFIG_INVALID "+test.want) {
+			if !hasProblem(problems, words) {
 				t.Fatalf("Validate accepted %q: %v", test.setting, problems)
 			}
 			if test.knob && !hasProblem(problems, strings.Split(test.setting, "=")[0]+" must be a positive integer") {
@@ -175,7 +180,7 @@ func TestContextBudgetConfigRefusesInvalidValues(t *testing.T) {
 				putFile(t, filepath.Join(root, "metasystem.conf"), "")
 				putFile(t, filepath.Join(root, "other.conf"), test.setting)
 				_, problems, err := Validate(filepath.Join(root, "other.conf"), root)
-				if err != nil || !hasProblem(problems, "key=context.ceiling.token") {
+				if err != nil || !hasProblem(problems, "context.ceiling.token is not a known context setting") {
 					t.Fatalf("nonstandard conf path passed: problems=%v err=%v", problems, err)
 				}
 			}

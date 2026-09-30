@@ -188,7 +188,7 @@ func (b *machineBed) top(path string) (string, error) {
 			return checkout, nil
 		}
 	}
-	return "", fmt.Errorf("fatal: not a git repository: %s", path)
+	return "", notInRepository{"fatal: not a git repository: " + path}
 }
 
 // git answers git worktree list --porcelain for each fixture checkout: the

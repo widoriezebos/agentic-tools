@@ -148,7 +148,7 @@ func readOwnedLandingRefWithDeps(deps rearmResolverDeps, installationRoot string
 	if _, err := deps.resolvingRef(installationRoot, value); err != nil {
 		message := fmt.Sprintf("the installation owns no resolving remote-tracking landing ref (%s is %s)", landingRefConfigKey, value)
 		if gitSaidNo(err) {
-			return "", classifiedJudgment(message, err)
+			return "", &LandingRefError{Ref: value, Unresolved: true, Err: classifiedJudgment(message, err)}
 		}
 		return "", &gitCommandFailure{cause: err}
 	}
@@ -487,7 +487,7 @@ func resolveLandedBuildWithDeps(deps rearmResolverDeps, clock RearmClock, repoRo
 		var err error
 		commit, err = resolveWitnessStampWithDeps(deps, clock, repoRoot, installationRoot, landingRef, witnessBuildStamp.FindStringSubmatch(stamp)[1])
 		if err != nil {
-			return "", fmt.Errorf("rebuilt engine was built from %s, which is not proven landed on %s: %w", stamp, landingRef, err)
+			return "", &LandingRefError{Ref: landingRef, Err: fmt.Errorf("rebuilt engine was built from %s, which is not proven landed on %s: %w", stamp, landingRef, err)}
 		}
 	default:
 		shown := stamp
@@ -498,7 +498,7 @@ func resolveLandedBuildWithDeps(deps rearmResolverDeps, clock RearmClock, repoRo
 	}
 	if _, err := deps.deadlineGit(clock, seconds, "compare-build-ancestry", installationRoot, "merge-base", "--is-ancestor", commit, landingRef); err != nil {
 		if gitSaidNo(err) {
-			return "", classifiedJudgment(fmt.Sprintf("rebuilt engine was built from %s, which is not landed on %s", stamp, landingRef), ErrNotOwned)
+			return "", &LandingRefError{Ref: landingRef, Err: classifiedJudgment(fmt.Sprintf("rebuilt engine was built from %s, which is not landed on %s", stamp, landingRef), ErrNotOwned)}
 		}
 		return "", err
 	}
@@ -737,6 +737,25 @@ func archivedEngineDigestAtCommitWithClock(ctx context.Context, installationRoot
 		archiveSpec = commit + ":" + filepath.ToSlash(prefix)
 	}
 	return digestArchivedTree(ctx, toplevel, archiveSpec, policy, clock, seconds)
+}
+
+// LandingRefError is a re-arm judgment against the landing ref Ref: the ref
+// does not resolve (Unresolved), or the rebuilt engine is not proven landed
+// on it. A caller names the repair from these fields, never the words.
+type LandingRefError struct {
+	Ref        string
+	Unresolved bool
+	Err        error
+}
+
+func (e *LandingRefError) Error() string { return e.Err.Error() }
+func (e *LandingRefError) Unwrap() error { return e.Err }
+
+// Remote is the remote a refs/remotes/<remote>/<branch> Ref names.
+func (e *LandingRefError) Remote() (string, bool) {
+	tail, qualified := strings.CutPrefix(e.Ref, "refs/remotes/")
+	remote, branch, found := strings.Cut(tail, "/")
+	return remote, qualified && found && remote != "" && branch != ""
 }
 
 // ErrNoLandingRef is a re-arm refusal because the installation names no

@@ -150,7 +150,7 @@ func TestTurnVerdictUnknownSampleNeverBlocks(t *testing.T) {
 			}
 			return []string{"--root", root, "--session", "no-sample", "--transcript", path, "--runtime", "claude"}
 		}},
-		{"invalid config", "context.ceiling.tokens=100000\ncontext.handoff.margin.tokens=100000\n", "CONTEXT_CONFIG_INVALID", func(t *testing.T, root string) []string {
+		{"invalid config", "context.ceiling.tokens=100000\ncontext.handoff.margin.tokens=100000\n", "context.handoff.margin.tokens must be below", func(t *testing.T, root string) []string {
 			path := writeContextCommandTranscript(t, root, "invalid-config", 120500, 1, true)
 			return []string{"--root", root, "--session", "invalid-config", "--transcript", path, "--runtime", "claude"}
 		}},

@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"errors"
 	"flag"
 	"fmt"
 	"go/ast"
@@ -257,10 +256,17 @@ func grantListLayoutBed(count int, revoke bool) func(t *testing.T) layoutBed {
 	}
 }
 
+// notInRepository is a fake repository lookup's refusal: its words are the
+// fake's, its type stateroot.ErrNotInRepository's, as the real lookup's.
+type notInRepository struct{ words string }
+
+func (e notInRepository) Error() string      { return e.words }
+func (notInRepository) Is(target error) bool { return target == stateroot.ErrNotInRepository }
+
 // outsideLayoutBed runs from the file system's root, which is no
 // repository.
 func outsideLayoutBed(t *testing.T) layoutBed {
-	notARepository := func(string) (string, error) { return "", errors.New("not a git repository") }
+	notARepository := func(string) (string, error) { return "", notInRepository{"not a git repository"} }
 	b := newIntentBed(t, false, nil)
 	owners := b.owners()
 	owners.resolver = stateroot.NewResolver(notARepository, noExecutable)

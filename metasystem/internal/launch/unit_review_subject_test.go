@@ -219,12 +219,12 @@ func TestDeclaredUnitsReadThePagesUnitsTable(t *testing.T) {
 			t.Fatalf("unit=%s lines=%d err=%v, want %d", unit, got, err, lines)
 		}
 	}
-	if _, err := DeclaredUnitLines(page, "reader"); err == nil || !strings.Contains(ErrorDetail(err), "unit=reader missing=row") {
+	if _, err := DeclaredUnitLines(page, "reader"); UnsizedMissing(err) != "row" || !strings.Contains(ErrorDetail(err), "unit=reader missing=row") {
 		t.Fatalf("err=%v", err)
 	}
 	prose := filepath.Join(directory, "prose.md")
 	writeFile(t, prose, "No table here.\n")
-	if _, err := DeclaredUnits(prose); err == nil || !strings.Contains(ErrorDetail(err), "missing=units-table") {
+	if _, err := DeclaredUnits(prose); UnsizedMissing(err) != "units-table" {
 		t.Fatalf("err=%v", err)
 	}
 	missing := filepath.Join(directory, "missing.md")

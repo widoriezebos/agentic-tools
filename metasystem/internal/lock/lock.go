@@ -245,6 +245,17 @@ func (l *Lock) Release() error {
 	return ReleaseNamed(l.path, l.self, l.codec)
 }
 
+// NotHolderError is ReleaseNamed's refusal: the lock's owner file names
+// another holder, which a caller tells from other failures with errors.As.
+type NotHolderError struct {
+	Path   string
+	Holder Identity
+}
+
+func (e *NotHolderError) Error() string {
+	return fmt.Sprintf("lock %s no longer names this holder (found pid %d started %d)", e.Path, e.Holder.Pid, e.Holder.PidStartedAt)
+}
+
 // ReleaseNamed frees the lock at path when its owner file still decodes
 // to self — the release form for holders that span processes and hold
 // no *Lock handle (the dispatch and census bindings). A nil codec means
@@ -259,7 +270,7 @@ func ReleaseNamed(path string, self Identity, codec OwnerCodec) error {
 			return fmt.Errorf("lock: release verification: %w", err)
 		}
 		if holder != self {
-			return fmt.Errorf("lock %s no longer names this holder (found pid %d started %d)", path, holder.Pid, holder.PidStartedAt)
+			return &NotHolderError{Path: path, Holder: holder}
 		}
 		return removeLock(path)
 	})

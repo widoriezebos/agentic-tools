@@ -9,6 +9,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strconv"
@@ -262,7 +263,7 @@ func evidenceTargets(inv *intentInvocation, env evidence.Env, fetch bool) ([]evi
 		resolved, err := env.Resolve(ctx, argument)
 		if err != nil {
 			summary := err.Error() + "; nothing was done"
-			if strings.Contains(err.Error(), evidence.ErrNotEvidence.Error()) {
+			if errors.Is(err, evidence.ErrNotEvidence) {
 				summary += "; the engine's own leftovers go by metasystem disk clean --strays"
 			}
 			return nil, nil, &intentResult{Outcome: intentRefused, code: 2, Summary: summary, next: inv.publicArgv("evidence", "show", "--all"), nextReason: "list the evidence roots"}

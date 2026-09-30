@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -23,7 +22,7 @@ import (
 func notEnrolledOwners(bed *intentBed) intentOwners {
 	owners := bed.owners()
 	owners.prove = func(string, int64, humanauthority.Reader, string, string, time.Time) (humanauthority.Proof, error) {
-		return humanauthority.Proof{}, errors.New(humanauthority.OutcomeNotEnrolled + ": human authority has no readable terminal enrollment")
+		return humanauthority.Proof{}, humanauthority.Refusedf(humanauthority.OutcomeNotEnrolled, "human authority has no readable terminal enrollment")
 	}
 	return owners
 }
@@ -56,7 +55,7 @@ func TestMessageAgentShellNamesTheSessionFlag(t *testing.T) {
 	bed.facts.reader = &unenrolled
 	owners := bed.owners()
 	owners.prove = func(string, int64, humanauthority.Reader, string, string, time.Time) (humanauthority.Proof, error) {
-		return humanauthority.Proof{}, errors.New(humanauthority.OutcomeAgent + ": claude")
+		return humanauthority.Proof{}, humanauthority.AgentRefused("claude")
 	}
 	code, _, stderr := bed.run(owners, "goal", "edit", bedGoal, "--next", "Continue.")
 	lines := strings.Split(strings.TrimSuffix(stderr, "\n"), "\n")

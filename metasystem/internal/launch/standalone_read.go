@@ -260,7 +260,7 @@ func (runner *UnitRunner) rejoinRead(record ReadRequestRecord, request ReadReque
 	}
 	switch {
 	case attempt.State == readAttemptRunning:
-		return ReadResult{}, coded("READ_RETRY_RUNNING", fmt.Sprintf("ref=%s attempt=%d", record.Ref, attempt.Number), fmt.Errorf("attempt %d is still running; wait for it or stop it before a retry", attempt.Number))
+		return ReadResult{Ref: record.Ref}, coded("READ_RETRY_RUNNING", fmt.Sprintf("ref=%s attempt=%d", record.Ref, attempt.Number), fmt.Errorf("attempt %d is still running; wait for it or stop it before a retry", attempt.Number))
 	case attempt.Outcome == "green":
 		return ReadResult{}, coded("READ_RETRY_COMPLETE", fmt.Sprintf("ref=%s attempt=%d", record.Ref, attempt.Number), fmt.Errorf("attempt %d completed, so there is nothing to retry", attempt.Number))
 	}

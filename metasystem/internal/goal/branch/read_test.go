@@ -212,12 +212,12 @@ func TestGLEBranchReadFreezesSuppliedBriefAndRejectsConflictingRetry(t *testing.
 	if body, err := os.ReadFile(frozenPath); err != nil || string(body) != frozenBody {
 		t.Fatalf("frozen brief changed: %q err=%v", body, err)
 	}
-	if _, err := branch.RunBranchRead(request); err == nil || !strings.Contains(err.Error(), "already started with another brief") {
+	if _, err := branch.RunBranchRead(request); goal.RefusalCode(err) != branch.ReadBriefChangedCode {
 		t.Fatalf("changed brief retry=%v", err)
 	}
 	request.BriefPath = ""
 	request.Runtime = "claude"
-	if _, err := branch.RunBranchRead(request); err == nil || !strings.Contains(err.Error(), "another brief, runtime or model") {
+	if _, err := branch.RunBranchRead(request); goal.RefusalCode(err) != branch.ReadBriefChangedCode {
 		t.Fatalf("changed runtime retry=%v", err)
 	}
 	request.Runtime, request.Model = "", ""
@@ -304,7 +304,7 @@ func TestGLEBranchReadInterruptedLaunchKeepsFrozenPendingIntent(t *testing.T) {
 	if err := os.WriteFile(input, []byte("accepted design B\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := branch.RunBranchRead(request); err == nil || !strings.Contains(err.Error(), "already started with another brief") {
+	if _, err := branch.RunBranchRead(request); goal.RefusalCode(err) != branch.ReadBriefChangedCode {
 		t.Fatalf("changed request after interruption=%v", err)
 	}
 	request.BriefPath, request.Runtime, request.Model = "", "", ""
@@ -395,7 +395,7 @@ func TestGLEBranchReadPrelaunchRefusalRetriesFrozenSelectionOnce(t *testing.T) {
 	if err := os.WriteFile(input, []byte("changed source after refusal\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := branch.RunBranchRead(request); err == nil || !strings.Contains(err.Error(), "already started with another brief") || delegates != 1 {
+	if _, err := branch.RunBranchRead(request); goal.RefusalCode(err) != branch.ReadBriefChangedCode || delegates != 1 {
 		t.Fatalf("conflicting retry=%v delegates=%d", err, delegates)
 	}
 	request.BriefPath, request.Runtime, request.Model = "", "", ""

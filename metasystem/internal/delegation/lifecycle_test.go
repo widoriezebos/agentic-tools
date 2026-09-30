@@ -3,6 +3,7 @@ package delegation_test
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -124,6 +125,23 @@ func TestCallbackAuthorityRefusalLeavesTheRecordUntouched(t *testing.T) {
 	}
 	if _, has := b.record("job-a")["phase"]; has {
 		t.Fatal("a refused callback wrote the record")
+	}
+}
+
+// A caller the lease cannot identify is refused in plain words, decided by
+// the ErrCallerUnidentified type, not by the lease's wording.
+func TestCallbackUnidentifiedCallerIsRefusedInPlainWords(t *testing.T) {
+	t.Parallel()
+	b := newBed(t)
+	b.writeRecord("job-a", map[string]any{"status": "running"})
+	b.doubles.Lease.AuthorizeFunc = func(delegation.Invocation, delegation.AuthorityMode, string) error {
+		return fmt.Errorf("nothing was written: %w: process table unreadable", delegation.ErrCallerUnidentified)
+	}
+	patch := b.writeFile("patch.json", `{"phase":"late"}`)
+	result := b.run("__record-cas", "--job", "job-a", "--expect", "running", "--status", "running", "--patch", patch)
+	requireExit(t, result, 1, b.stderr.String())
+	if !strings.Contains(b.stderr.String(), "this process could not be identified") {
+		t.Fatalf("stderr %q", b.stderr.String())
 	}
 }
 

@@ -366,7 +366,7 @@ func RunBranchRead(request BranchReadRequest) (result BranchReadResult, err erro
 	}
 	if (record.RootJob != "" || record.DispatchPending || record.DispatchRetryable) && (inputSHA256 != "" && inputSHA256 != record.BriefInputSHA256 ||
 		request.Runtime != "" && request.Runtime != record.Runtime || request.Model != "" && request.Model != record.Model) {
-		return result, operationRefusal(ReadInvalidCode, "this build's review already started with another brief, runtime or model\nrun: metasystem work review %s", request.GoalID)
+		return result, operationRefusal(ReadBriefChangedCode, "this build's review already started with another brief, runtime or model\nrun: metasystem work review %s", request.GoalID)
 	}
 	if record.DispatchPending && record.RootJob == "" {
 		return result, operationRefusal(ReadDispatchPendingCode, "whether the reviewer of build %s started is unknown\nrun: metasystem work status %s", request.UnitCommit, request.GoalID)

@@ -520,6 +520,9 @@ func newProcessReadRefusal(pid int64, outcome string, snapshot Snapshot, reason 
 	}
 }
 
+// ProofOutcome is the refusal's outcome (OutcomeOf).
+func (refusal *processReadRefusal) ProofOutcome() (string, string) { return refusal.outcome, "" }
+
 func (refusal *processReadRefusal) Error() string {
 	var details strings.Builder
 	fmt.Fprintf(&details, "%s: process pid %d", refusal.outcome, refusal.pid)
@@ -702,12 +705,12 @@ func ProveTerminal(root string, invokerPID int64, reader Reader, now time.Time) 
 	}
 	proof.InvokerRef = refOf(invoker.Exact)
 	if invoker.TerminalID == "" {
-		return proof, fmt.Errorf("%s", proof.Outcome)
+		return proof, Refused(proof.Outcome, nil)
 	}
 	sessionPID, err := reader.SessionLeader(invokerPID)
 	if err != nil || sessionPID < 1 {
 		proof.Outcome = OutcomeUnreadable
-		return proof, fmt.Errorf("%s", proof.Outcome)
+		return proof, Refused(proof.Outcome, nil)
 	}
 	signatures, signatureDigest, err := signatureSet(root)
 	if err != nil {
@@ -746,7 +749,7 @@ func walkProcessTree(invokerPID int64, invoker Snapshot, reader Reader, signatur
 
 	for current > 0 {
 		if seen[current] {
-			outcome, continuation, err := terminalWalkFailure(agentRuntime, OutcomeCycle, fmt.Errorf("%s", OutcomeCycle))
+			outcome, continuation, err := terminalWalkFailure(agentRuntime, OutcomeCycle, Refused(OutcomeCycle, nil))
 			return nodes, terminalRef, outcome, continuation, err
 		}
 		seen[current] = true
@@ -759,7 +762,7 @@ func walkProcessTree(invokerPID int64, invoker Snapshot, reader Reader, signatur
 			}
 		}
 		if expectedParent != nil && !sameRef(refOf(currentSnapshot.Exact), *expectedParent) {
-			outcome, continuation, err := terminalWalkFailure(agentRuntime, OutcomeReused, fmt.Errorf("%s", OutcomeReused))
+			outcome, continuation, err := terminalWalkFailure(agentRuntime, OutcomeReused, Refused(OutcomeReused, nil))
 			return nodes, terminalRef, outcome, continuation, err
 		}
 
@@ -779,7 +782,7 @@ func walkProcessTree(invokerPID int64, invoker Snapshot, reader Reader, signatur
 		}
 		if terminal != nil && !reachedSession && currentSnapshot.TerminalID != terminal.terminalID && agentRuntime == "" {
 			nodes = append(nodes, node)
-			return nodes, terminalRef, OutcomeTerminalMissing, "", fmt.Errorf("%s", OutcomeTerminalMissing)
+			return nodes, terminalRef, OutcomeTerminalMissing, "", Refused(OutcomeTerminalMissing, nil)
 		}
 		if terminal != nil && current == terminal.sessionPID {
 			node.TerminalMatch = true
@@ -790,10 +793,10 @@ func walkProcessTree(invokerPID int64, invoker Snapshot, reader Reader, signatur
 		if currentSnapshot.ParentPID == 0 {
 			nodes = append(nodes, node)
 			if agentRuntime != "" {
-				return nodes, terminalRef, OutcomeAgent, "", fmt.Errorf("%s: %s", OutcomeAgent, agentRuntime)
+				return nodes, terminalRef, OutcomeAgent, "", AgentRefused(agentRuntime)
 			}
 			if !reachedSession {
-				return nodes, terminalRef, OutcomeTerminalMissing, "", fmt.Errorf("%s", OutcomeTerminalMissing)
+				return nodes, terminalRef, OutcomeTerminalMissing, "", Refused(OutcomeTerminalMissing, nil)
 			}
 			return nodes, terminalRef, OutcomeProven, "", nil
 		}
@@ -802,7 +805,7 @@ func walkProcessTree(invokerPID int64, invoker Snapshot, reader Reader, signatur
 		if readErr != nil {
 			node.ParentRef = ProcessRef{PID: currentSnapshot.ParentPID}
 			nodes = append(nodes, node)
-			outcome, continuation, err := terminalWalkFailure(agentRuntime, OutcomeUnreadable, fmt.Errorf("%s", OutcomeUnreadable))
+			outcome, continuation, err := terminalWalkFailure(agentRuntime, OutcomeUnreadable, Refused(OutcomeUnreadable, nil))
 			return nodes, terminalRef, outcome, continuation, err
 		}
 		parentRef := refOf(parentSnapshot.Exact)
@@ -811,7 +814,7 @@ func walkProcessTree(invokerPID int64, invoker Snapshot, reader Reader, signatur
 		expectedParent = &parentRef
 		current = currentSnapshot.ParentPID
 	}
-	outcome, continuation, err := terminalWalkFailure(agentRuntime, OutcomeUnreadable, fmt.Errorf("%s", OutcomeUnreadable))
+	outcome, continuation, err := terminalWalkFailure(agentRuntime, OutcomeUnreadable, Refused(OutcomeUnreadable, nil))
 	return nodes, terminalRef, outcome, continuation, err
 }
 
@@ -819,7 +822,8 @@ func terminalWalkFailure(agentRuntime, laterOutcome string, laterErr error) (str
 	if agentRuntime == "" {
 		return laterOutcome, "", laterErr
 	}
-	return OutcomeAgent, laterOutcome, fmt.Errorf("%s: %s; later ancestry outcome %s: %v", OutcomeAgent, agentRuntime, laterOutcome, laterErr)
+	return OutcomeAgent, laterOutcome, &OutcomeError{Outcome: OutcomeAgent, Runtime: agentRuntime,
+		text: fmt.Sprintf("%s: %s; later ancestry outcome %s: %v", OutcomeAgent, agentRuntime, laterOutcome, laterErr)}
 }
 
 // Enroll records the direct invoker as this terminal's root only after an
@@ -877,7 +881,7 @@ func Prove(root string, invokerPID int64, reader Reader, now time.Time) (Proof, 
 		}
 		proof.Outcome = OutcomeNotEnrolled
 		proof.Grade = ""
-		return proof, fmt.Errorf("%s: human authority has no readable terminal enrollment: %w", proof.Outcome, err)
+		return proof, Refusedf(proof.Outcome, "human authority has no readable terminal enrollment: %w", err)
 	}
 	return proveEnrolled(root, invokerPID, reader, now, enrollment, AtHelm, AtAttorney)
 }
@@ -975,7 +979,7 @@ func walkToEnrollment(proof Proof, invokerPID int64, reader Reader, enrollment E
 	for current > 0 {
 		if seen[current] {
 			proof.Outcome = OutcomeCycle
-			return proof, fmt.Errorf("%s", proof.Outcome)
+			return proof, Refused(proof.Outcome, nil)
 		}
 		seen[current] = true
 		snapshot, refusal := stableRead(reader, current)
@@ -985,11 +989,11 @@ func walkToEnrollment(proof Proof, invokerPID int64, reader Reader, enrollment E
 		}
 		if snapshot.TerminalID != enrollment.TerminalID {
 			proof.Outcome = OutcomeTerminalMissing
-			return proof, fmt.Errorf("%s", proof.Outcome)
+			return proof, Refused(proof.Outcome, nil)
 		}
 		if expectedParent != nil && !sameRef(refOf(snapshot.Exact), *expectedParent) {
 			proof.Outcome = OutcomeReused
-			return proof, fmt.Errorf("%s", proof.Outcome)
+			return proof, Refused(proof.Outcome, nil)
 		}
 		if proof.InvokerRef.PID == 0 {
 			proof.InvokerRef = refOf(snapshot.Exact)
@@ -997,7 +1001,7 @@ func walkToEnrollment(proof Proof, invokerPID int64, reader Reader, enrollment E
 		parentSnapshot, err := reader.Read(snapshot.ParentPID)
 		if err != nil {
 			proof.Outcome = OutcomeUnreadable
-			return proof, fmt.Errorf("%s", proof.Outcome)
+			return proof, Refused(proof.Outcome, nil)
 		}
 		executable := sha256.Sum256([]byte(snapshot.Executable))
 		arguments := sha256.Sum256([]byte(strings.Join(snapshot.Exact.Argv, "\x00")))
@@ -1010,7 +1014,7 @@ func walkToEnrollment(proof Proof, invokerPID int64, reader Reader, enrollment E
 			node.AgentRuntime = &runtime
 			proof.Nodes = append(proof.Nodes, node)
 			proof.Outcome = OutcomeAgent
-			return proof, fmt.Errorf("%s: %s", proof.Outcome, runtime)
+			return proof, AgentRefused(runtime)
 		}
 		node.TerminalMatch = sameRef(node.Ref, enrollment.TerminalRef) && snapshot.TerminalID == enrollment.TerminalID
 		proof.Nodes = append(proof.Nodes, node)
@@ -1018,12 +1022,12 @@ func walkToEnrollment(proof Proof, invokerPID int64, reader Reader, enrollment E
 			sessionPID, sessionErr := reader.SessionLeader(current)
 			if sessionErr != nil || sessionPID != enrollment.SessionLeader.PID {
 				proof.Outcome = OutcomeTerminalMissing
-				return proof, fmt.Errorf("%s", proof.Outcome)
+				return proof, Refused(proof.Outcome, nil)
 			}
 			sessionSnapshot, sessionRefusal := stableRead(reader, sessionPID)
 			if sessionRefusal != nil || !sameRef(refOf(sessionSnapshot.Exact), enrollment.SessionLeader) {
 				proof.Outcome = OutcomeReused
-				return proof, fmt.Errorf("%s", proof.Outcome)
+				return proof, Refused(proof.Outcome, nil)
 			}
 			proof.Outcome = OutcomeProven
 			proof.Grade = GradeEnrolled
@@ -1033,7 +1037,7 @@ func walkToEnrollment(proof Proof, invokerPID int64, reader Reader, enrollment E
 		expectedParent = &parentRef
 		current = snapshot.ParentPID
 	}
-	return proof, fmt.Errorf("%s", proof.Outcome)
+	return proof, Refused(proof.Outcome, nil)
 }
 
 const (
@@ -1105,28 +1109,26 @@ func PlainReason(err error) string {
 	if err == nil {
 		return ""
 	}
-	text := err.Error()
-	if _, runtime, found := strings.Cut(text, OutcomeAgent+": "); found {
-		runtime, _, _ = strings.Cut(runtime, ";")
-		if runtime = strings.TrimSpace(runtime); runtime != "" {
-			return "this shell was started by an agent (" + runtime + ")"
-		}
+	outcome, runtime := OutcomeOf(err)
+	if outcome == OutcomeAgent && runtime != "" {
+		return "this shell was started by an agent (" + runtime + ")"
 	}
-	for _, row := range []struct{ code, plain string }{
-		{OutcomeTerminalMissing, "this shell does not descend from the terminal enrolled on this machine"},
-		{OutcomeAgent, "this shell was started by an agent"},
-		{OutcomeNotEnrolled, "no terminal is enrolled on this machine"},
-		{OutcomeUnreadable, "the processes that started this shell could not be read"},
-		{OutcomeChanged, "the processes that started this shell changed while they were read"},
-		{OutcomeArgvUnreadable, "the processes that started this shell could not be read"},
-		{OutcomeReused, "a process that started this shell was replaced while it was read"},
-		{OutcomeCycle, "the processes that started this shell could not be read"},
-	} {
-		if strings.Contains(text, row.code) {
-			return row.plain
-		}
+	if plain, ok := outcomePlainWords[outcome]; ok {
+		return plain
 	}
-	return text
+	return err.Error()
+}
+
+// outcomePlainWords are the refusing outcomes in a person's words.
+var outcomePlainWords = map[string]string{
+	OutcomeTerminalMissing: "this shell does not descend from the terminal enrolled on this machine",
+	OutcomeAgent:           "this shell was started by an agent",
+	OutcomeNotEnrolled:     "no terminal is enrolled on this machine",
+	OutcomeUnreadable:      "the processes that started this shell could not be read",
+	OutcomeChanged:         "the processes that started this shell changed while they were read",
+	OutcomeArgvUnreadable:  "the processes that started this shell could not be read",
+	OutcomeReused:          "a process that started this shell was replaced while it was read",
+	OutcomeCycle:           "the processes that started this shell could not be read",
 }
 
 // EnrollCommand enrolls the terminal it is run at as the named person's.

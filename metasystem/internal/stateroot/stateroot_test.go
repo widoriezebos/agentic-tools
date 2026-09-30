@@ -274,7 +274,7 @@ func TestRepositoryTopBuildsCommandAndScrubsEverySteeringVariable(t *testing.T) 
 	}
 	failure := &commandRecorder{t: t, want: want, output: []byte("fatal: inaccessible\n"), err: errors.New("exit status 128")}
 	_, err = repositoryTopWith(path, environment, failure.run)
-	if err == nil || !strings.Contains(err.Error(), "fatal: inaccessible") || len(failure.seen) != 1 {
+	if !errors.Is(err, ErrNotInRepository) || !strings.Contains(err.Error(), "fatal: inaccessible") || len(failure.seen) != 1 {
 		t.Fatalf("combined output lost: %v; requests %v", err, failure.seen)
 	}
 }

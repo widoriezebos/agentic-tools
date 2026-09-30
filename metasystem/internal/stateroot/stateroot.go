@@ -83,6 +83,10 @@ func isGitSteeringVariable(name string) bool {
 	return false
 }
 
+// ErrNotInRepository refuses a path outside any Git repository; a caller
+// tells it from other resolution failures with errors.Is.
+var ErrNotInRepository = errors.New("is not inside a Git repository")
+
 func osRepositoryTop(path string) (string, error) {
 	return repositoryTopWith(path, os.Environ(), runCommand)
 }
@@ -91,7 +95,7 @@ func repositoryTopWith(path string, environment []string, run func(commandReques
 	request := commandRequest{args: []string{"-C", path, "rev-parse", "--show-toplevel"}, env: scrubGitSteering(environment)}
 	output, err := run(request)
 	if err != nil {
-		return "", fmt.Errorf("state root: installation is not inside a Git repository: %s", strings.TrimSpace(string(output)))
+		return "", fmt.Errorf("state root: installation %w: %s", ErrNotInRepository, strings.TrimSpace(string(output)))
 	}
 	return filepath.Abs(strings.TrimSpace(string(output)))
 }

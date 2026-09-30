@@ -4,6 +4,7 @@
 package goalbudget
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"strconv"
@@ -89,6 +90,11 @@ type Budget struct {
 
 // ParseBox reads the compact elapsed/attempts/reserved-minutes/active/rounds
 // form. Empty members inherit from standing when one is available.
+// ErrOverMaximum marks a budget whose review rounds exceed the configured
+// maximum: the words already say what is wrong, so a caller shows them as
+// they are.
+var ErrOverMaximum = errors.New("exceeds configured maximum")
+
 func ParseBox(value string, standing *Budget, reviewRoundMax ...uint64) (Budget, error) {
 	parts := strings.Split(value, "/")
 	if len(parts) != 5 {
@@ -183,7 +189,7 @@ func (b Budget) Validate(reviewRoundMax ...uint64) error {
 		return fmt.Errorf("reviewRoundLimit validation accepts at most one configured ceiling")
 	}
 	if len(reviewRoundMax) == 1 && reviewRoundMax[0] > 0 && uint64(b.ReviewRoundLimit) > reviewRoundMax[0] {
-		return fmt.Errorf("reviewRoundLimit %d exceeds configured maximum %d", b.ReviewRoundLimit, reviewRoundMax[0])
+		return fmt.Errorf("reviewRoundLimit %d %w %d", b.ReviewRoundLimit, ErrOverMaximum, reviewRoundMax[0])
 	}
 	return nil
 }

@@ -48,7 +48,7 @@ func (inv *intentInvocation) reviewUnit(run string) intentResult {
 	case launch.IsCode(err, "UNIT_RUN_UNKNOWN"):
 		return intentResult{Targets: targets, Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("no run %s is recorded; nothing was done", run),
 			next: inv.publicArgv("work", "status", "--all"), nextReason: "lists the runs with their references", Details: details}
-	case launch.IsCode(err, "UNIT_REVIEW_NOT_READY") && strings.Contains(message, "still running"):
+	case launch.IsCode(err, "UNIT_REVIEW_NOT_READY") && errors.Is(err, launch.ErrRunStillRunning):
 		record, _ := runner.Status(run)
 		record.ID = run
 		return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: "the build is still running; nothing was committed",

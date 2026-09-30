@@ -21,6 +21,9 @@ const (
 	ReadTestsUnnamedCode = "GOAL_READ_TESTS_UNNAMED"
 	ReadStaleCode        = "GOAL_READ_STALE"
 	ReadInvalidCode      = "GOAL_READ_INVALID"
+	// ReadBriefChangedCode refuses a read of a build whose review already
+	// started with another brief, runtime or model.
+	ReadBriefChangedCode = "GOAL_READ_BRIEF_CHANGED"
 )
 
 type AttestationSubject struct {

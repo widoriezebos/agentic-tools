@@ -88,6 +88,13 @@ func (run CacheTrimRun) productionPass(settings config.CacheTrim) CacheTrimPass 
 	}
 }
 
+// CacheSettingsError refuses a trim whose disk settings cannot be read: the
+// person fixes the setting, where a failed pass is tried again.
+type CacheSettingsError struct{ Err error }
+
+func (e *CacheSettingsError) Error() string { return e.Err.Error() }
+func (e *CacheSettingsError) Unwrap() error { return e.Err }
+
 // TrimMachineCachesForPerson is `metasystem disk clean` at a terminal: a
 // person expects it to finish the job. It runs pass after pass of the
 // steward's budget (disk.cache-trim-budget-sec), each continuing only the
@@ -98,7 +105,7 @@ func (run CacheTrimRun) productionPass(settings config.CacheTrim) CacheTrimPass 
 func TrimMachineCachesForPerson(ctx context.Context, run CacheTrimRun, progress func(pass int, reports []gocache.TrimReport)) ([]gocache.TrimReport, error) {
 	settings, err := config.CacheTrimSettings(filepath.Join(run.Top, "metasystem.conf"))
 	if err != nil {
-		return nil, err
+		return nil, &CacheSettingsError{Err: err}
 	}
 	clock := run.Clock
 	if clock == nil {

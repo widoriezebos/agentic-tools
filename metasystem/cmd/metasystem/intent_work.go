@@ -920,8 +920,7 @@ func (inv *intentInvocation) unitSize(unit, brief string, designs []string) (str
 	for index, page := range append([]string{brief}, designs...) {
 		lines, err := launch.DeclaredUnitLines(page, unit)
 		if err != nil {
-			message := launch.ErrorDetail(err)
-			if strings.Contains(message, "missing=units-table") || strings.Contains(message, "missing=row") || strings.Contains(message, "missing=size-column") {
+			if missing := launch.UnsizedMissing(err); missing == "units-table" || missing == "row" || missing == "size-column" {
 				continue
 			}
 			return "", 0, &intentResult{Outcome: intentRefused, code: 1, Summary: fmt.Sprintf("the units table in %s can't be read; nothing was built", page),

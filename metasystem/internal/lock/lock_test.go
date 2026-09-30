@@ -324,8 +324,9 @@ func TestReleaseRefusesAfterTakeover(t *testing.T) {
 	if _, err := Acquire(path, Identity{Pid: 2, PidStartedAt: 2}, Options{Wait: time.Second, Probe: dead}); err != nil {
 		t.Fatal(err)
 	}
-	if err := original.Release(); err == nil {
-		t.Fatal("a displaced holder released its successor's lock (SLC-F-001 shape)")
+	var displaced *NotHolderError
+	if err := original.Release(); !errors.As(err, &displaced) || displaced.Holder.Pid != 2 {
+		t.Fatalf("a displaced holder released its successor's lock (SLC-F-001 shape): %v", err)
 	}
 	if holder, _ := Holder(path); holder.Pid != 2 {
 		t.Fatal("successor lost its lock to a displaced release")

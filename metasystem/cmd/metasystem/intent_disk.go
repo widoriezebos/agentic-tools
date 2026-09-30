@@ -872,7 +872,7 @@ func diskTrim(inv *intentInvocation, owners diskOwners) (int, []string, []gocach
 	})
 	if err != nil {
 		summary := "disk clean: " + err.Error()
-		if strings.Contains(err.Error(), "disk.") {
+		if errors.As(err, new(*steward.CacheSettingsError)) {
 			return 0, nil, nil, &intentResult{Outcome: intentRefused, code: 2, Summary: summary + "; nothing was trimmed",
 				Decision: "fix the disk setting with metasystem settings set, then run metasystem disk clean again"}
 		}

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/authority"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 )
 
@@ -24,7 +25,9 @@ func TestBreachStopAdmitsThePersonAndNamesThem(t *testing.T) {
 	now := time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC)
 	root := t.TempDir()
 	enrolled := func(string, time.Time) (string, error) { return "Wido", nil }
-	unproven := func(string, time.Time) (string, error) { return "", errors.New("TERMINAL_NOT_ENROLLED") }
+	unproven := func(string, time.Time) (string, error) {
+		return "", humanauthority.Refused(humanauthority.OutcomeNotEnrolled, nil)
+	}
 	nameRead := false
 	unused := func(string, time.Time) (string, error) { nameRead = true; return "", errors.New("unused") }
 

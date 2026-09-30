@@ -127,7 +127,7 @@ func (o ownerLease) Authorize(inv Invocation, mode AuthorityMode, job string) er
 	}
 	classification, err := lease.ClassifyVerb(o.root, inv.CallerPid)
 	if err != nil {
-		return fmt.Errorf("nothing was written: who is asking cannot be told: %w", err)
+		return fmt.Errorf("nothing was written: %w: %w", ErrCallerUnidentified, err)
 	}
 	encoded, err := json.Marshal(classification)
 	if err != nil {
@@ -139,6 +139,10 @@ func (o ownerLease) Authorize(inv Invocation, mode AuthorityMode, job string) er
 	}
 	return authority.Authorize(string(mode), caller, job)
 }
+
+// ErrCallerUnidentified is Authorize's refusal when the caller's process
+// cannot be classified; admission decides on it with errors.Is.
+var ErrCallerUnidentified = errors.New("who is asking cannot be told")
 
 type ownerSteward struct{ root string }
 

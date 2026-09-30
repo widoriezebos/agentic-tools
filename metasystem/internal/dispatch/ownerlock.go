@@ -108,7 +108,7 @@ func OwnerLockRelease(directory string, pid int64, tag string) error {
 	if err == nil {
 		return nil
 	}
-	if strings.Contains(err.Error(), "no longer names this holder") {
+	if errors.As(err, new(*lock.NotHolderError)) {
 		return ErrOwnerLockNotOwner
 	}
 	// Absent or already replaced-and-gone: nothing of ours remains.

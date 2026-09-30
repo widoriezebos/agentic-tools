@@ -653,13 +653,13 @@ func syncReqClassifiedWithTerminalGradeAtWithDependencies(root, by, lineageFlag 
 		} else {
 			if fullProof.Outcome != humanauthority.OutcomeTerminalMissing && fullProof.Outcome != humanauthority.OutcomeNotEnrolled {
 				if fullErr == nil {
-					fullErr = fmt.Errorf("%s: this terminal couldn't be confirmed as the enrolled one", fullProof.Outcome)
+					fullErr = humanauthority.Refusedf(fullProof.Outcome, "this terminal couldn't be confirmed as the enrolled one")
 				}
-				return goal.VerbRequest{}, fmt.Errorf("only a person may stop this, at a terminal no agent started: %s", humanauthority.PlainReason(fullErr))
+				return goal.VerbRequest{}, fmt.Errorf("only a person may stop this, at a terminal no agent started: %w", humanauthority.Plain(fullErr))
 			}
 			terminalProof, terminalErr := dependencies.proveTerminal(root, dependencies.authorityFacts.caller.Pid, nil, now)
 			if terminalErr != nil {
-				return goal.VerbRequest{}, fmt.Errorf("only a person may stop this, at a terminal no agent started: %s", humanauthority.PlainReason(terminalErr))
+				return goal.VerbRequest{}, fmt.Errorf("only a person may stop this, at a terminal no agent started: %w", humanauthority.Plain(terminalErr))
 			}
 			if !terminalProof.TerminalValidFor(root) || terminalProof.AuthorityGrade() != humanauthority.GradeTerminal {
 				return goal.VerbRequest{}, errors.New("only a person may stop this, at a terminal no agent started")
@@ -686,7 +686,7 @@ func syncReqClassifiedWithTerminalGradeAtWithDependencies(root, by, lineageFlag 
 	if lineage == "" {
 		enrollment, err := humanauthority.ReadEnrollment(root)
 		if err != nil {
-			return goal.VerbRequest{}, personActErrorFor(root, fmt.Errorf("%s: %w", humanauthority.OutcomeNotEnrolled, err), by)
+			return goal.VerbRequest{}, personActErrorFor(root, humanauthority.Refused(humanauthority.OutcomeNotEnrolled, err), by)
 		}
 		now, nowErr := commandNow(root)
 		if nowErr != nil {
@@ -706,10 +706,10 @@ func syncReqClassifiedWithTerminalGradeAtWithDependencies(root, by, lineageFlag 
 			} else if outcome == humanauthority.OutcomeProven {
 				outcome = humanauthority.OutcomeChanged
 			}
-			return goal.VerbRequest{}, personActErrorFor(root, fmt.Errorf("%s: the terminal check ended %s", humanauthority.OutcomeTerminalMissing, outcome), by)
+			return goal.VerbRequest{}, personActErrorFor(root, humanauthority.Refusedf(humanauthority.OutcomeTerminalMissing, "the terminal check ended %s", outcome), by)
 		}
 		if !proof.FixtureOnly && (proof.TerminalGeneration != enrollment.Generation || proof.TerminalRef != enrollment.TerminalRef) {
-			return goal.VerbRequest{}, personActErrorFor(root, fmt.Errorf("%s: the enrolled terminal changed", humanauthority.OutcomeTerminalMissing), by)
+			return goal.VerbRequest{}, personActErrorFor(root, humanauthority.Refusedf(humanauthority.OutcomeTerminalMissing, "the enrolled terminal changed"), by)
 		}
 		lineage = terminalEnrollmentLineage(enrollment)
 		authority = &proof
@@ -1369,7 +1369,7 @@ func completedBudgetRemedy(values *humanVerbValues, file *goal.GoalFile, complet
 }
 
 func malformedBudgetRemedy(values *humanVerbValues, file *goal.GoalFile, value string, fallback goal.Budget, reviewRoundMax uint64, parseErr error, horizon goal.ApprovalHorizon) humanVerbRemedy {
-	if strings.Contains(parseErr.Error(), "exceeds configured maximum") {
+	if errors.Is(parseErr, goalbudget.ErrOverMaximum) {
 		return humanVerbRemedy{words: parseErr.Error()}
 	}
 	completed, box, ok := completeBudgetBox(value, fallback, file.Budget, reviewRoundMax)
@@ -1426,7 +1426,7 @@ func resolveGoalHuman(flags *syncFlags, proof humanauthority.Proof) error {
 		return nil
 	}
 	if !proof.EnrolledTerminalFor(flags.root) && !(proof.FixtureOnly && proof.ValidFor(flags.root)) {
-		return fmt.Errorf("the enrolled terminal has no recorded name")
+		return humanauthority.ErrEnrollmentUnnamed
 	}
 	// At the helm the act is the holder's, whatever name the enrollment has.
 	if proof.Helm != nil {
@@ -1435,11 +1435,11 @@ func resolveGoalHuman(flags *syncFlags, proof humanauthority.Proof) error {
 	}
 	enrollment, err := humanauthority.ReadEnrollment(flags.root)
 	if err != nil || strings.TrimSpace(enrollment.Human) == "" {
-		return fmt.Errorf("the enrolled terminal has no recorded name")
+		return humanauthority.ErrEnrollmentUnnamed
 	}
 	if proof.EnrolledTerminalFor(flags.root) &&
 		(proof.TerminalGeneration != enrollment.Generation || proof.TerminalRef != enrollment.TerminalRef) {
-		return fmt.Errorf("the enrolled terminal has no recorded name")
+		return humanauthority.ErrEnrollmentUnnamed
 	}
 	flags.by = enrollment.Human
 	return nil
@@ -1614,14 +1614,15 @@ func runGoalBudgetPreparedWithInputs(values *humanVerbValues, flags *syncFlags, 
 			detail = err.Error()
 			values.refusalCode = goal.RefusalCode(err)
 		}
-		if file.StopFence != nil && flags.approvedRef != "" && strings.Contains(detail, "--approved-ref") {
+		approvedRefRefused := flags.approvedRef != "" && values.refusalCode == goal.ApprovedRefRefusedCode
+		if file.StopFence != nil && approvedRefRefused {
 			return refuseHumanVerb(values, 1, detail, humanVerbRemedy{command: values.budgetCommandWithoutApprovedRef("keep")})
 		}
-		if flags.approvedRef != "" && strings.Contains(detail, "--approved-ref") {
+		if approvedRefRefused {
 			return refuseHumanVerb(values, 1, detail, humanVerbRemedy{words: "the approved reference must cover this exact goal revision and box"})
 		}
 		if (goal.RefusalCode(err) == "GOAL_NORM_REFUSED" || result.Code == "GOAL_NORM_REFUSED") && !proof.EnrolledTerminalFor(flags.root) {
-			return refuseHumanVerb(values, 1, detail, personRemedy(values, fmt.Errorf("%s: a budget over the tier's is a person's act at their terminal", humanauthority.OutcomeTerminalMissing)))
+			return refuseHumanVerb(values, 1, detail, personRemedy(values, humanauthority.Refusedf(humanauthority.OutcomeTerminalMissing, "a budget over the tier's is a person's act at their terminal")))
 		}
 		if result.Outcome == goal.OutcomeAbandoned {
 			return refuseHumanVerb(values, 1, detail, nothingToDo("the goal already has that budget"))
