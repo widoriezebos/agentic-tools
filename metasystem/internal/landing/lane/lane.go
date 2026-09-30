@@ -250,10 +250,22 @@ func Register(home string, layout Layout, by string, now time.Time) (previous Re
 		if journal, fenced, _ := ReadUnset(home); fenced {
 			return unsettingRefusal(journal)
 		}
+		// The lane's pre-push hook goes into its checkout first (design
+		// r10 §1, K3), also when the registration stands: a lane an
+		// earlier engine registered gets it now.
+		if err := installHook(home, layout); err != nil {
+			return err
+		}
 		// An unreadable or older record is replaced at a person's word.
 		current, ok, readErr := Read(home)
 		if ok && readErr == nil && current.Root == string(layout.Checkout) && current.Install == string(layout.Install) {
 			return nil
+		}
+		if ok && current.Root != "" && resolved(current.Root) != resolved(string(layout.Checkout)) {
+			// The lane moved: the checkout it leaves pushes as any other.
+			if err := removeHook(current.Root); err != nil {
+				return err
+			}
 		}
 		used, err := readEpoch(home)
 		if err != nil {
