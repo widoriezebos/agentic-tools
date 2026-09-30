@@ -2,6 +2,7 @@ package dispatch
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
@@ -69,11 +70,19 @@ type goalAdmissionReads struct {
 	ResolveEndpoint func(string) (goal.Endpoint, error)
 	ResolveMachine  func(string) (string, error)
 	Receipt         receiptAdmissionReads
+	// LandingBatched says whether the goal's change waits in a landing
+	// batch; nil reads no batch.
+	LandingBatched func(root, goalID string, now time.Time) bool
 }
+
+// GoalInLandingBatch is the seam the landing lane wires once: whether a
+// goal's change is a live member of a landing batch of root's lane. Nil in
+// the library: no batch holds any goal.
+var GoalInLandingBatch func(root, goalID string, now time.Time) bool
 
 func concreteGoalAdmissionReads() goalAdmissionReads {
 	return goalAdmissionReads{
 		NewWorld: goal.NewWorld, ResolveEndpoint: goal.ResolveEndpoint, ResolveMachine: goal.ResolveMachine,
-		Receipt: concreteReceiptAdmissionReads(),
+		Receipt: concreteReceiptAdmissionReads(), LandingBatched: GoalInLandingBatch,
 	}
 }
