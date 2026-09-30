@@ -38,18 +38,16 @@ import (
 var LandingLaneHome = board.Home
 
 // LandingLaneSeams are the reads a lane resolution makes beyond the lane
-// itself: who registers, and whether a root is a landing checkout.
+// itself: the host's home, and whether a root is a landing checkout.
 type LandingLaneSeams struct {
 	Home func() (string, error)
-	// By names the seat that registers the lane.
-	By func(installation string) string
 	// Validate admits a root as a dedicated landing checkout for the seat
 	// and returns its canonical form.
 	Validate func(root, seatRoot string, now time.Time) (string, error)
 }
 
 func ProductionLandingLaneSeams() LandingLaneSeams {
-	return LandingLaneSeams{Home: LandingLaneHome, By: LandingLaneRegistrant, Validate: ValidateLandingCheckout}
+	return LandingLaneSeams{Home: LandingLaneHome, Validate: ValidateLandingCheckout}
 }
 
 // LandingLaneRegistrant names a seat by its enrolled nickname, else its path.
@@ -65,23 +63,41 @@ func ValidateLandingCheckout(root, seatRoot string, now time.Time) (string, erro
 	return settings.Root, err
 }
 
-// BatchRoot resolves the lane an installation lands through: its own
-// landing.batch-root against the host's record (lane.Resolve's table). The
-// root is admitted as a landing checkout before this seat registers it, so
-// no seat registers a checkout that cannot land.
+// BatchRoot resolves the lane an installation's work joins: the host's
+// registered lane (lane.Resolve's table), admitted for a join by the lane's
+// gate, which refuses while a person unsets the lane. No registered lane is
+// not configured: the seat lands its own work.
 func (seams LandingLaneSeams) BatchRoot(installation string, now time.Time) (string, bool, error) {
-	return seams.Resolve(installation, now, true)
+	root, configured, err := seams.Resolve(installation, now)
+	if err != nil || !configured {
+		return root, configured, err
+	}
+	home, err := seams.Home()
+	if err != nil {
+		// No host state, no host lane: the seat's own setting decided.
+		return root, true, nil
+	}
+	if err := lane.Gate(home, lane.OpJoin, lane.AuthorityAgent, nil); err != nil {
+		return "", true, err
+	}
+	return root, true, nil
 }
 
-// LandingLaneRoot is the same resolution for a reader: it never registers.
+// LandingLaneRoot is the same resolution for a reader: it never gates.
 // helm's report and the steward's trunk-red check read the lane through it.
 func LandingLaneRoot(installation string, now time.Time) (string, bool, error) {
-	return ProductionLandingLaneSeams().Resolve(installation, now, false)
+	return ProductionLandingLaneSeams().Resolve(installation, now)
 }
 
 func init() { steward.LandingLaneRoot = LandingLaneRoot }
 
-func (seams LandingLaneSeams) Resolve(installation string, now time.Time, register bool) (string, bool, error) {
+// Resolve is the host's registered lane as installation sees it, checked
+// against its own landing.batch-root. Only a person's landing set registers
+// a lane (design r10 §1): with no record there is no lane, whatever the
+// seat names. A host with no home at all keeps no host state, so there the
+// seat's own setting decides, as before the host lane (U12); it registers
+// nothing.
+func (seams LandingLaneSeams) Resolve(installation string, now time.Time) (string, bool, error) {
 	confPath := filepath.Join(installation, "metasystem.conf")
 	raw, _, err := config.Get(config.GetParams{Key: config.BatchRootKey, ConfPath: confPath, Default: "", DefaultSet: true})
 	if err != nil {
@@ -99,8 +115,7 @@ func (seams LandingLaneSeams) Resolve(installation string, now time.Time, regist
 		}
 		return settings.Root, true, nil
 	}
-	by := seams.By(installation)
-	found, err := lane.Resolve(home, raw, by, now, false)
+	found, err := lane.Resolve(home, raw)
 	if err != nil {
 		return "", true, err
 	}
@@ -111,20 +126,16 @@ func (seams LandingLaneSeams) Resolve(installation string, now time.Time, regist
 	if err != nil {
 		return "", true, err
 	}
-	if found.Record.Root == "" && register {
-		if _, err := lane.Resolve(home, root, by, now, true); err != nil {
-			return "", true, err
-		}
-	}
 	return root, true, nil
 }
 
-// LandingOwnerLaneRoot is the lane the owner of repo would serve: its own
-// setting against the host's record, "" when there is none. A checkout that
-// names itself registers itself when the host has no lane; a setting that
-// names another checkout than the host's lane is refused, so the owner of a
-// checkout that is not the lane never runs. paused says a person paused the
-// lane (landing stop).
+// LandingOwnerLaneRoot is the lane the owner of repo would serve: the
+// host's registered lane checked against its own setting, "" when there is
+// none (a host with no home keeps no host state: its own setting decides).
+// A checkout never registers itself; a setting that names another
+// checkout than the host's lane is refused, so the owner of a checkout that
+// is not the lane never runs. paused says a person paused the lane (landing
+// stop), or its pause cannot be read.
 func LandingOwnerLaneRoot(home func() (string, error), metasystemRoot, repo string, now time.Time) (root string, paused bool, err error) {
 	raw, _, err := config.Get(config.GetParams{Key: config.BatchRootKey, ConfPath: filepath.Join(metasystemRoot, "metasystem.conf"), Default: "", DefaultSet: true})
 	if errors.Is(err, os.ErrNotExist) {
@@ -140,9 +151,10 @@ func LandingOwnerLaneRoot(home func() (string, error), metasystemRoot, repo stri
 	}
 	laneHome, homeErr := home()
 	if homeErr != nil {
+		// No host state: the checkout's own setting decides (pre-U12).
 		return raw, false, nil
 	}
-	found, err := lane.Resolve(laneHome, raw, "landing owner of "+repo, now, raw != "" && realpath.Resolve(raw) == realpath.Resolve(repo))
+	found, err := lane.Resolve(laneHome, raw)
 	if err != nil {
 		return "", false, err
 	}

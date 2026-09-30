@@ -400,7 +400,12 @@ func batchEditNext(root, goalID, next string) error {
 }
 
 func ProductionReturnSeams(root string, tree func() string) batch.ReturnSeams {
-	controlRoot := batch.ModuleRoot(root)
+	return returnSeamsAt(root, batch.ModuleRoot(root), tree, &BatchOwnerCalls)
+}
+
+// returnSeamsAt are the return seams of the lane whose checkout is root and
+// whose installation (ledger) is controlRoot, publishing through calls, read when each is made.
+func returnSeamsAt(root, controlRoot string, tree func() string, calls *BatchOwnerCallSet) batch.ReturnSeams {
 	return batch.ReturnSeams{
 		Read: func(_ string, tree, goalID string) (batch.ReturnLedgerGoal, error) {
 			return BatchReturnLedgerGoal(controlRoot, tree, goalID)
@@ -417,15 +422,15 @@ func ProductionReturnSeams(root string, tree func() string) batch.ReturnSeams {
 			if err != nil {
 				return err
 			}
-			return BatchOwnerCalls.Handover(LandingOwnerInvocation(), ownercall.HandoverRequest{Root: controlRoot, GoalID: goalID,
+			return calls.Handover(LandingOwnerInvocation(), ownercall.HandoverRequest{Root: controlRoot, GoalID: goalID,
 				TargetMachine: source.Machine, TargetLineage: source.Lineage, TargetEpoch: int64(epoch),
 				Batch: record.Batch, TargetRoot: loaded.SeatRoot})
 		},
 		Release: func(goalID, next string) error {
-			if err := batchEditNext(controlRoot, goalID, next); err != nil {
+			if err := calls.EditNext(LandingOwnerInvocation(), controlRoot, goalID, next); err != nil {
 				return err
 			}
-			return BatchOwnerCalls.Release(LandingOwnerInvocation(), controlRoot, goalID)
+			return calls.Release(LandingOwnerInvocation(), controlRoot, goalID)
 		},
 	}
 }

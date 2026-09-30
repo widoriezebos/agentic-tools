@@ -32,11 +32,19 @@ func newAlertBed(t *testing.T) alertBed {
 	t.Helper()
 	base := realpath.Resolve(t.TempDir())
 	bed := alertBed{home: filepath.Join(base, "home"), seat: filepath.Join(base, "seat"), landing: filepath.Join(base, "landing")}
+	helmMust(t, os.MkdirAll(filepath.Join(bed.seat, ".git"), 0o755))
+	// The landing checkout is a real one: a lane registers only a git
+	// checkout's top folder.
+	landingCheckout(t, bed.landing)
 	for _, top := range []string{bed.seat, bed.landing} {
-		helmMust(t, os.MkdirAll(filepath.Join(top, ".git"), 0o755), os.MkdirAll(filepath.Join(top, "metasystem"), 0o755),
+		helmMust(t, os.MkdirAll(filepath.Join(top, "metasystem"), 0o755),
 			os.WriteFile(filepath.Join(top, "metasystem", "metasystem.conf"), []byte("metasystem.template=true\n"), 0o644))
 	}
-	if _, _, err := lane.Register(bed.home, bed.landing, "Wido", alertTestNow); err != nil {
+	layout, err := lane.NewLayout(bed.landing)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := lane.Register(bed.home, layout, "Wido", alertTestNow); err != nil {
 		t.Fatal(err)
 	}
 	return bed

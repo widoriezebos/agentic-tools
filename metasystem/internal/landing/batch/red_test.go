@@ -126,7 +126,7 @@ func TestBatchSingleOwnerRedEjectsAndSurvivorsLand(t *testing.T) {
 			t.Fatalf("ejection failure %q lacks %q", reassembled.Units[0].Failure, want)
 		}
 	}
-	must(t, ReturnUnits(store, testBatchID, "tree", "owner", time.Unix(3, 0), returns))
+	must(t, returnUnitsErr(store, testBatchID, "tree", "owner", time.Unix(3, 0), returns))
 	if ejected := load(t, store).Units[0]; ejected.State != UnitEjected || ejected.ReturnDisposition != ReturnHandedBack {
 		t.Fatalf("ejected custody=%+v", ejected)
 	}
@@ -161,7 +161,7 @@ func TestBatchSingleOwnerRedEjectsAndSurvivorsLand(t *testing.T) {
 		Rearm:   func(string) error { return nil },
 		Cleanup: func() error { t.Fatal("landing cleanup ran twice"); return nil },
 	}))
-	must(t, ReturnUnits(store, testBatchID, "tree", "owner", time.Unix(6, 0), returns))
+	must(t, returnUnitsErr(store, testBatchID, "tree", "owner", time.Unix(6, 0), returns))
 	landed := load(t, store)
 	if landed.State != StateLanded || landed.Units[0].State != UnitEjected || landed.Units[1].State != UnitLanded || !landed.Units[1].P6Done || finalized != 1 || handBacks != 2 {
 		t.Fatalf("final landed batch=%+v finalized=%d handbacks=%d", landed, finalized, handBacks)
