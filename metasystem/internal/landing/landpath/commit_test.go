@@ -286,7 +286,7 @@ func TestCommitCarriedStampsJudgeBatteryAndLedger(t *testing.T) {
 	t.Parallel()
 	request := CommitRequest{Goal: "g1", GoalSet: true, Carried: "op1", LedgerTip: "L1", CarriedBy: "human:wido", CarriedPast: "group:unit", HeldEpoch: "human"}
 	carriedObservation := landing.Observation{Mode: "observe", Code: "human-carried", Provenance: "carried opid=op1 past=group:unit ledger=L1 x",
-		VerdictTrailer: "pass carried", GoalRevision: 3}
+		Carried: &landing.CarriedBinding{Opid: "op1", Past: "group:unit", Ledger: "L1"}, VerdictTrailer: "pass carried", GoalRevision: 3}
 	b := newBed(t)
 	b.observed = carriedObservation
 	live := b.owners.Live
@@ -313,7 +313,19 @@ func TestCommitCarriedStampsJudgeBatteryAndLedger(t *testing.T) {
 	b.expect(b.commit(request), 3, "conflicting-declarations: two declarations")
 
 	b = newBed(t)
-	b.observed = landing.Observation{Mode: "observe", Code: "human-carried", Provenance: "carried opid=other past=group:unit ledger=L1 x", VerdictTrailer: "pass"}
+	b.observed = landing.Observation{Mode: "observe", Code: "human-carried", Provenance: "carried opid=other past=group:unit ledger=L1 x",
+		Carried: &landing.CarriedBinding{Opid: "other", Past: "group:unit", Ledger: "L1"}, VerdictTrailer: "pass"}
+	b.expect(b.commit(request), 3, "the deciding observation does not bind the requested word, refusal, and ledger")
+
+	// The binding is read from the typed fields, never from the provenance
+	// words: words that name the request do not bind a mismatched word, and
+	// an observation with no typed binding binds nothing.
+	b = newBed(t)
+	b.observed = landing.Observation{Mode: "observe", Code: "human-carried", Provenance: "carried opid=op1 past=group:unit ledger=L1 x",
+		Carried: &landing.CarriedBinding{Opid: "op1", Past: "group:unit", Ledger: "L2"}, VerdictTrailer: "pass"}
+	b.expect(b.commit(request), 3, "the deciding observation does not bind the requested word, refusal, and ledger")
+	b = newBed(t)
+	b.observed = landing.Observation{Mode: "observe", Code: "human-carried", Provenance: "carried opid=op1 past=group:unit ledger=L1 x", VerdictTrailer: "pass"}
 	b.expect(b.commit(request), 3, "the deciding observation does not bind the requested word, refusal, and ledger")
 
 	b = newBed(t)
@@ -341,7 +353,8 @@ func TestCommitCarriedFallsBackToBaseJudge(t *testing.T) {
 				if r.Judge != "base" || r.LiveFailure != "evaluator-crashed" {
 					t.Fatalf("base request %+v", r)
 				}
-				return landing.Observation{Mode: "observe", Code: "human-carried", Provenance: "c opid=op1 past=group:unit ledger=L1 x", VerdictTrailer: "pass", GoalRevision: 3}, 0
+				return landing.Observation{Mode: "observe", Code: "human-carried", Provenance: "c opid=op1 past=group:unit ledger=L1 x", VerdictTrailer: "pass", GoalRevision: 3,
+					Carried: &landing.CarriedBinding{Opid: "op1", Past: "group:unit", Ledger: "L1", Judge: "base"}}, 0
 			},
 			Workspace:     func(_, tree string) (string, error) { return "bw-" + tree, nil },
 			VerifyCarried: func(string, string, string) ([]byte, int) { return []byte(`{"delivery":{"sufficient":true}}`), 0 },

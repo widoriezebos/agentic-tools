@@ -90,10 +90,8 @@ func (b *boundary) carriedFacts(decided decision, judge Judge, settledTree strin
 	if request.Carried == "" {
 		return facts, 0
 	}
-	if decided.mode != "observe" || decided.code != "human-carried" ||
-		!strings.Contains(decided.provenance, " opid="+request.Carried+" ") ||
-		!strings.Contains(decided.provenance, " past="+request.CarriedPast+" ") ||
-		!strings.Contains(decided.provenance, " ledger="+request.LedgerTip+" ") {
+	if decided.mode != "observe" || decided.code != "human-carried" || decided.carried == nil ||
+		decided.carried.Opid != request.Carried || decided.carried.Past != request.CarriedPast || decided.carried.Ledger != request.LedgerTip {
 		return facts, b.stop(3, "the landing check's answer doesn't match this exception, so nothing was committed", nil,
 			"record the exception again, then repeat this command", "the deciding observation does not bind the requested word, refusal, and ledger")
 	}

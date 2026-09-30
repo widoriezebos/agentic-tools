@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -19,6 +20,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/strictjson"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/verbresult"
 )
 
 func runLandingObserve(args []string, stdout, stderr io.Writer) int {
@@ -42,16 +44,17 @@ func runLandingObserve(args []string, stdout, stderr io.Writer) int {
 	judge := flags.String("judge", "", "carried evaluation engine: live or base")
 	liveFailure := flags.String("live-failure", "", "live evaluator refusal code or exit status used by the base judge")
 	carriedBy := flags.String("carried-by", "", "human actor stamped in the carried commit")
+	asJSON := flags.Bool("json", false, "print one result envelope for a calling process, the observation its data")
 	if flags.Parse(args) != nil || flags.NArg() != 0 {
 		return 2
 	}
 	if *carried != "" && (*judge != "live" && *judge != "base" || *judge == "base" && *liveFailure == "") {
 		fmt.Fprintln(stderr, "landing observe --carried requires --judge live, or --judge base with --live-failure")
-		return 2
+		return answerLandingChild(stdout, *asJSON, landingObserveVerb, 2, errors.New("landing observe --carried requires --judge live, or --judge base with --live-failure"))
 	}
 	now, err := goalCommandNow(*root)
 	if err != nil {
-		return recordExitTo(stderr, err)
+		return answerLandingChild(stdout, *asJSON, landingObserveVerb, recordExitTo(stderr, err), err)
 	}
 	params := landing.ObserveParams{
 		RepoRoot: *root, CandidateTree: *tree, Chain: *chain,
@@ -73,21 +76,43 @@ func runLandingObserve(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 	observation := landing.Observe(params)
+	if *asJSON {
+		result := verbresult.FromError(landingObserveVerb, 0, nil, observation)
+		result.Summary = "the landing was observed: " + observation.Code
+		_ = verbresult.Write(stdout, result)
+		return 0
+	}
 	writeJSONLine(stdout, stderr, observation)
 	return 0
+}
+
+// answerLandingChild ends a base-judge child verb that could not answer:
+// under --json its envelope carries the refusal; the exit is status.
+func answerLandingChild(stdout io.Writer, asJSON bool, verb string, status int, err error) int {
+	if asJSON {
+		_ = verbresult.Write(stdout, verbresult.FromError(verb, status, err, nil))
+	}
+	return status
 }
 
 func runLandingWorkspace(args []string, stdout, stderr io.Writer) int {
 	flags := newFlagSet("landing workspace", stdout, stderr)
 	root := pathFlag(flags, "root", "", "MetaSystem installation root")
 	tree := flags.String("tree", "", "whole-project tree")
+	asJSON := flags.Bool("json", false, "print one result envelope for a calling process, the workspace tree its data")
 	if flags.Parse(args) != nil || !requireFlags(flags, stderr, "root", "tree") || flags.NArg() != 0 || *root == "" || *tree == "" {
 		fmt.Fprintln(stderr, "usage: metasystem internal landing workspace --root INSTALLATION --tree TREE")
-		return 2
+		return answerLandingChild(stdout, *asJSON, landingWorkspaceVerb, 2, errors.New("landing workspace needs --root and --tree"))
 	}
 	workspace, err := landing.ProjectWorkspaceTree(*root, *tree)
 	if err != nil {
-		return recordExitTo(stderr, err)
+		return answerLandingChild(stdout, *asJSON, landingWorkspaceVerb, recordExitTo(stderr, err), err)
+	}
+	if *asJSON {
+		result := verbresult.FromError(landingWorkspaceVerb, 0, nil, map[string]string{"tree": workspace})
+		result.Summary = "the carried workspace is " + workspace
+		_ = verbresult.Write(stdout, result)
+		return 0
 	}
 	fmt.Fprintln(stdout, workspace)
 	return 0

@@ -41,6 +41,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/verbresult"
 )
 
 // landingPathGit runs git with this process's environment.
@@ -276,20 +277,24 @@ func landingPathBaseJudge(toplevel, prefix string, stderr io.Writer) (landpath.J
 		cleanup()
 		return landpath.Judge{}, nil, err
 	}
-	run := func(args ...string) ([]byte, int) {
-		command := exec.Command(engine, append([]string{"internal"}, args...)...)
-		var stdout bytes.Buffer
-		command.Stdout = &stdout
-		if err := command.Run(); err != nil {
-			var exit *exec.ExitError
-			if errors.As(err, &exit) {
-				return stdout.Bytes(), exit.ExitCode()
-			}
-			return stdout.Bytes(), 1
-		}
-		return stdout.Bytes(), 0
+	return landingEngineJudge(engine, bytesSHA256(data)), cleanup, nil
+}
+
+// The envelope verbs of the base judge's children.
+const (
+	landingObserveVerb   = "internal landing observe"
+	landingWorkspaceVerb = "internal landing workspace"
+	testVerifyVerb       = "internal test verify"
+)
+
+// landingEngineJudge asks engine, a different binary, through its own argv:
+// each child answers with its --json envelope, and the judge reads the
+// typed data, never words. An answer that cannot be read is no answer.
+func landingEngineJudge(engine, digest string) landpath.Judge {
+	run := func(verb string, args ...string) (verbresult.Result, error) {
+		return verbresult.Run(exec.Command(engine, append(append([]string{"internal"}, args...), "--json")...), verb)
 	}
-	judge := landpath.Judge{Digest: bytesSHA256(data)}
+	judge := landpath.Judge{Digest: digest}
 	judge.Observe = func(request landpath.ObserveRequest) (landing.Observation, int) {
 		args := []string{"landing", "observe", "--root", request.Root, "--tree", request.Tree}
 		for _, flag := range []struct{ name, value string }{
@@ -304,39 +309,41 @@ func landingPathBaseJudge(toplevel, prefix string, stderr io.Writer) (landpath.J
 				args = append(args, "--"+flag.name, flag.value)
 			}
 		}
-		encoded, status := run(args...)
-		var observed struct {
-			landing.Observation
-			RefusesAgent *bool `json:"refusesAgent"`
+		result, err := run(landingObserveVerb, args...)
+		var observed landing.Observation
+		if err != nil || result.Outcome != verbresult.Confirmed || result.DecodeData(&observed) != nil {
+			return landing.Observation{}, max(result.Exit, 1)
 		}
-		if json.Unmarshal(encoded, &observed) != nil {
-			return landing.Observation{}, status
-		}
-		result := observed.Observation
-		// An engine without the explicit enforcement field is read
-		// conservatively: its would-refuse verdict refuses an agent.
-		if observed.RefusesAgent != nil {
-			result.RefusesAgent = *observed.RefusesAgent
-		} else {
-			result.RefusesAgent = strings.HasPrefix(result.VerdictTrailer, "would-refuse ")
-		}
-		return result, status
+		return observed, 0
 	}
 	judge.Workspace = func(root, tree string) (string, error) {
-		encoded, status := run("landing", "workspace", "--root", root, "--tree", tree)
-		if status != 0 {
-			return "", fmt.Errorf("base judge landing workspace exited %d", status)
+		result, err := run(landingWorkspaceVerb, "landing", "workspace", "--root", root, "--tree", tree)
+		if err != nil {
+			return "", err
 		}
-		return strings.TrimSpace(string(encoded)), nil
+		if result.Outcome != verbresult.Confirmed {
+			return "", result.Err()
+		}
+		var workspace struct {
+			Tree string `json:"tree"`
+		}
+		if err := result.DecodeData(&workspace); err != nil || workspace.Tree == "" {
+			return "", fmt.Errorf("the base judge named no workspace: %v", err)
+		}
+		return workspace.Tree, nil
 	}
 	judge.VerifyCarried = func(root, tree, goalID string) ([]byte, int) {
-		args := []string{"test", "verify", "--root", root, "--tree", tree, "--mode", "auto", "--purpose", "delivery", "--carried", "--json"}
+		args := []string{"test", "verify", "--root", root, "--tree", tree, "--mode", "auto", "--purpose", "delivery", "--carried"}
 		if goalID != "" {
 			args = append(args, "--goal", goalID)
 		}
-		return run(args...)
+		result, err := run(testVerifyVerb, args...)
+		if err != nil {
+			return nil, max(result.Exit, 1)
+		}
+		return result.Data, result.Exit
 	}
-	return judge, cleanup, nil
+	return judge
 }
 
 func landingPathDrift(root string, requireEmptyIndex bool, stdout, stderr io.Writer) int {

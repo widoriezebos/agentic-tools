@@ -265,6 +265,7 @@ func observeCarried(params ObserveParams) Observation {
 	}
 	provenance += " " + ordinaryObservation.Provenance
 	return Observation{SchemaVersion: 1, Mode: "observe", Bar: BarCarried, Verdict: "pass", Code: "human-carried", Provenance: provenance,
+		Carried:        &CarriedBinding{Opid: params.Carried, Past: word.Past, Seat: wordMachine, Ledger: projection.Tip, Judge: params.Judge},
 		VerdictTrailer: "pass bar=d carried=" + word.Past + " base=" + ordinaryObservation.VerdictTrailer,
 		GoalRevision:   file.Claimed.Revision,
 		Detail:         fmt.Sprintf("sufficient=%t missing=%v failing=%v uncovered=%v discrepancies=%v", result.Delivery.Sufficient, result.Delivery.MissingGroups, result.Delivery.FailingGroups, result.Delivery.UncoveredObligations, result.Delivery.Discrepancies)}
