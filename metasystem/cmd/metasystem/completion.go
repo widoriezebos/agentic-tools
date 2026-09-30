@@ -42,18 +42,25 @@ compdef _metasystem metasystem
 
 // completionBashScript is the bash glue, for bash 3.2 and later (no
 // compopt). bash splits a joined --name=value at the =, so the joined form
-// is not completed.
+// is not completed. On :files the current word is unquoted for the lookup
+// (a leading quote and backslash escapes dropped, no eval), each file name
+// stays one candidate, and -o filenames has bash escape what it inserts.
 const completionBashScript = `_metasystem() {
-  local line; local -a lines
+  local line cur; local -a lines
   COMPREPLY=()
   while IFS= read -r line; do lines[${#lines[@]}]=$line; done < <("${COMP_WORDS[0]}" __complete -- "${COMP_WORDS[@]:1:COMP_CWORD}" 2>/dev/null)
   case ${lines[0]} in
     ':prefix '*) return 0 ;;
-    ':files') COMPREPLY=($(compgen -f -- "${COMP_WORDS[COMP_CWORD]}")); return 0 ;;
+    ':files')
+      cur=${COMP_WORDS[COMP_CWORD]}
+      case $cur in \'*|\"*) cur=${cur:1} ;; esac
+      cur=${cur//\\/}
+      while IFS= read -r line; do COMPREPLY[${#COMPREPLY[@]}]=$line; done < <(compgen -f -- "$cur")
+      return 0 ;;
   esac
   for line in "${lines[@]}"; do COMPREPLY[${#COMPREPLY[@]}]=${line%%$'\t'*}; done
 }
-complete -F _metasystem metasystem
+complete -o filenames -F _metasystem metasystem
 `
 
 // completionScripts are the shells system completion prints glue for.
