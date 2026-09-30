@@ -218,7 +218,7 @@ func TestIntentLandException(t *testing.T) {
 	}
 	landFails := true
 	b.handler = runIntentOwnerProcess
-	b.owners.landCarried = func(landpath.LandRequest, func(string, string) error) intentProcessResult {
+	b.owners.landCarried = func(landpath.LandRequest, func(string, string) error, carriedRelease) intentProcessResult {
 		if landFails {
 			return intentProcessResult{code: 1, stderr: []byte("land: the proof token was not reserved\n")}
 		}
