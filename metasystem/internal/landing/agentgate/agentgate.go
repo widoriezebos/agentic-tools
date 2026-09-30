@@ -127,10 +127,12 @@ func deny(situation, command string) Decision {
 }
 
 const (
-	stopCommand    = `metasystem landing stop --reason "WHY THIS CALL IS NEEDED"`
-	statusCommand  = "metasystem landing status"
-	publishCommand = "metasystem landing publish --batch BATCH"
-	proveCommand   = "metasystem landing prove --batch BATCH --subject batch"
+	stopCommand   = `metasystem landing stop --reason "WHY THIS CALL IS NEEDED"`
+	statusCommand = "metasystem landing status"
+	// The kernel's publish and prove verbs arrive with units K-b and K-c;
+	// until then a denial names the lane's status, which says what is next.
+	publishCommand = statusCommand
+	proveCommand   = statusCommand
 )
 
 func notListed(what string) Decision {

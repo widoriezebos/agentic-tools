@@ -23,12 +23,21 @@ const failClosed = `{ printf '%s\n' 'the landing tool gate could not run, so thi
 // lookup or Git discovery stands between the runtime and the engine; the
 // shell's own errors are dropped so the denial reads as its two lines.
 func HookCommand(engine, checkout string) (string, error) {
-	for _, path := range []string{engine, checkout} {
-		if !filepath.IsAbs(path) || strings.ContainsAny(path, "'\n\r") {
-			return "", fmt.Errorf("the landing gate hook needs an absolute path without quotes or newlines, not %q", path)
-		}
+	if err := literalPath(engine); err != nil {
+		return "", err
+	}
+	if err := literalPath(checkout); err != nil {
+		return "", err
 	}
 	return `{ cd '` + checkout + `' && '` + engine + `' internal hook claude tool; } 2>/dev/null || ` + failClosed, nil
+}
+
+// literalPath refuses a path the command could not spell in single quotes.
+func literalPath(path string) error {
+	if !filepath.IsAbs(path) || strings.ContainsAny(path, "'\n\r") {
+		return fmt.Errorf("the landing gate hook needs an absolute path without quotes or newlines, not %q", path)
+	}
+	return nil
 }
 
 // ClaudeSettings is the settings file the landing launch passes to Claude
