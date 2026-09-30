@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 2
-- Sequence: 48
+- Sequence: 47
 - Risk: severity=2 novelty=2 exposure=3 accumulation=3 basis="The audit changes fixture rules repository-wide; misses repeatedly leave main red, while false positives block tests rather than production behavior."
 - Tier: 2
 - Intent: What: One test in the suite refuses any new test that relies on the real clock or on sleeping. Why: Tests that depend on real time fail when the computer is busy, and those failures have turned main red again and again. About 190 test files use the real clock today, and nothing stops that number from growing. The shell-bed part of the old goal is obsolete: those beds are gone. Pros: The number of timing-fragile tests can only go down. Cons: Legitimate uses must be declared as allowed clock seams.
 - Origin: human
 - Next step: Next: Write one Go test that counts _test.go files calling time.Now, time.Sleep or time.After outside the declared clock seams, records today's count as the baseline, and fails on any rise. Done when: adding a sleep to a new test file fails the suite with a message naming that file.
 - OpenedAt: 2026-09-16T21:02:59Z
-- Revision: 10
+- Revision: 11
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 
@@ -24,4 +24,5 @@ History:
 - 2026-09-30T18:54:58Z 6FC56FK2Q9DZ430CQB2YEJHWF3-m1e-b6a4eb0a done actor=human:wido targets=critique-launch-verb-enforces-the-round-cap,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,human-break-glass-commit-keeps-the-ledger-valid,land-verb-writes-the-receipt,member-size-gate,one-goal-act-one-ledger-commit,runtime-limit-is-not-a-protocol-error,seat-landings-run-the-selected-sections,small-change-lane,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:51 to=2:50
 - 2026-09-30T18:54:58Z 76304SH5SME1NM10DRAXEEMT2X-ui-bc2fda53 abandon actor=human:Wido targets=watch-verb,watcher-repair-request-never-names-current,actionable-metrics,lease-sweep-death-evidence,winddown-census-handoff-leak,machine-concurrency-governor,token-spend-fence,fixture-waits-name-their-producer,skipped-test-fails-its-group-on-the-other-os,fixture-repo-copies-exclude-the-artifacts-store,chain-landing-carries-the-reviewed-diff,human-authority-surface-runs-its-cmd-tests,repo-root-paths-ride-agent-commits-unjudged,dispatch-bases-chains-on-the-remote-tip,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,steward-revivals-leave-the-receipt-stream,runtime-limit-is-not-a-protocol-error,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,land-verb-writes-the-receipt,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,small-change-lane,seat-landings-run-the-selected-sections,trunk-versus-candidate-is-a-verification-step,member-size-gate reason=priority-order from=2:50 to=2:49
 - 2026-09-30T18:55:45Z J2V8JPZDAXR6P97TR6YSBFPZ4J-m1e-b6a4eb0a done actor=human:wido targets=dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,dispatch-bases-chains-on-the-remote-tip,human-break-glass-commit-keeps-the-ledger-valid,human-wait-does-not-consume-goal-budget,land-verb-writes-the-receipt,member-size-gate,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,one-goal-act-one-ledger-commit,pipelines-never-lose-a-truncated-producer,runtime-limit-is-not-a-protocol-error,seat-landings-run-the-selected-sections,small-change-lane,steward-revivals-leave-the-receipt-stream,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:49 to=2:48
-Integrity: sha256=a22cbe8894e186d901e06905559a9c1d22d8e3a352a2943a4ec48ceb48f3bad7
+- 2026-09-30T18:56:48Z HWGXEABTQWKVS86TC7SJX2X05J-m1e-b6a4eb0a done actor=human:wido targets=chain-landing-carries-the-reviewed-diff,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,fixture-repo-copies-exclude-the-artifacts-store,human-authority-surface-runs-its-cmd-tests,human-break-glass-commit-keeps-the-ledger-valid,human-wait-does-not-consume-goal-budget,land-verb-writes-the-receipt,member-size-gate,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,one-goal-act-one-ledger-commit,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged,runtime-limit-is-not-a-protocol-error,seat-landings-run-the-selected-sections,small-change-lane,steward-revivals-leave-the-receipt-stream,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:48 to=2:47
+Integrity: sha256=c2c21fad6723b1d63aa289e2c4b3e97019459a5f19e7fea5324fc3821f311b33
