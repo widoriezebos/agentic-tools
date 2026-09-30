@@ -315,7 +315,7 @@ func TestChangeJoinGitAdapterFetchesThePinnedChangeAndJoins(t *testing.T) {
 	bare := run(seat, "rev-parse", "HEAD")
 	run(seat, "update-ref", batchowner.ChangePinRef(bare), bare)
 	if _, err := batchowner.ExecuteChangeJoin(batchowner.ChangeJoinRequest{SeatRoot: seat, LandingRoot: lane, Commit: bare, At: time.Unix(11, 0)}, dependencies); err == nil ||
-		!strings.Contains(err.Error(), "BATCH_CHANGE_UNREADABLE") || !strings.Contains(err.Error(), "commit boundary") {
+		!strings.Contains(err.Error(), "BATCH_CHANGE_UNREADABLE") || !strings.Contains(err.Error(), "names no machine and session") {
 		t.Fatalf("a commit without a Machine trailer joined: %v", err)
 	}
 }

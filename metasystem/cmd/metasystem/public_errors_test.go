@@ -46,10 +46,10 @@ func TestAnActorRefusalSaysWhoMayActInPublicWords(t *testing.T) {
 		args  []string
 		wants []string
 	}{
-		{[]string{"goal", "pause", bedGoal, "--reason", "x"}, []string{"metasystem goal pause: "}},
-		{[]string{"goal", "pin", bedGoal, "m1e"}, []string{"metasystem goal pin: "}},
-		{[]string{"grant", "revoke", "grant-1"}, []string{"metasystem grant revoke: "}},
-		{[]string{"incident", "close", "incident-1", "--reason", "x"}, []string{"metasystem incident close: "}},
+		{[]string{"goal", "pause", bedGoal, "--reason", "x"}, nil},
+		{[]string{"goal", "pin", bedGoal, "m1e"}, nil},
+		{[]string{"grant", "revoke", "grant-1"}, nil},
+		{[]string{"incident", "close", "incident-1", "--reason", "x"}, nil},
 	} {
 		code, stdout, stderr := bed.run(owners, row.args...)
 		text := stdout + stderr
@@ -60,8 +60,8 @@ func TestAnActorRefusalSaysWhoMayActInPublicWords(t *testing.T) {
 		}
 		// "Messages a Person Reads": why here in plain words, and the one
 		// command with the enrolled person's name filled in.
-		for _, want := range append(row.wants, "this terminal isn't enrolled (Wido enrolled another one), so nothing was done\n",
-			"run: metasystem system enroll --name Wido  (moves the enrollment here; then repeat this command)\n") {
+		for _, want := range append(row.wants, "✗ this terminal isn't enrolled (Wido enrolled another one), so nothing was done\n",
+			"  → metasystem system enroll --name Wido  moves the enrollment here; then repeat this command\n") {
 			if code == 0 || !strings.Contains(text, want) {
 				t.Errorf("%v: code %d, want %q in %q", row.args, code, want, text)
 			}

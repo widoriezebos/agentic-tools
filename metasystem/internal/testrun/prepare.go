@@ -746,8 +746,13 @@ func PlanWithTrustedPolicyEngine(engine string, request SelectionRequest, instal
 		return PlanOutput{}, laneEngineTooOld(engine)
 	}
 	if err != nil {
+		reason := fmt.Sprintf("the pinned engine failed while choosing which tests to run (%v)", err)
+		if refused := childRefusalWords(data); refused != "" {
+			// The engine refused in words of its own: they are the reason.
+			reason = refused
+		}
 		return PlanOutput{}, engineRefusal("child-failed", []enginecause.Fact{enginecause.Path("engine", engine), commandFact},
-			fmt.Sprintf("the pinned engine failed while choosing which tests to run (%v)", err), strings.TrimSpace(string(data)))
+			reason, strings.TrimSpace(string(data)))
 	}
 	decoder := json.NewDecoder(strings.NewReader(string(data)))
 	decoder.DisallowUnknownFields()
@@ -891,4 +896,18 @@ func RunRequest(prepared Preparation, attemptID, logRoot, candidateEngine, candi
 	request.Workers, request.AdmissionMaximum = prepared.Workers, prepared.AdmissionMaximum
 	request.ResultSchemaVersion = chooseTestResultSchema(prepared)
 	return request
+}
+
+// childRefusalWords is the refusal a policy child printed as its JSON error
+// line ({"error": ...}), or "" when it printed none.
+func childRefusalWords(data []byte) string {
+	for _, line := range strings.Split(string(data), "\n") {
+		var printed struct {
+			Error string `json:"error"`
+		}
+		if json.Unmarshal([]byte(strings.TrimSpace(line)), &printed) == nil && strings.TrimSpace(printed.Error) != "" {
+			return strings.TrimSpace(printed.Error)
+		}
+	}
+	return ""
 }

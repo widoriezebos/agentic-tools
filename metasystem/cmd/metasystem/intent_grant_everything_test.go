@@ -385,11 +385,11 @@ func TestAllowAsksTheGrantBeforeRefusingTheSession(t *testing.T) {
 	b := newGrantEverythingBed(t)
 	b.lineage = "lin-main"
 	allow := []string{"goal", "allow", bedGoal, "stop-test-changes", "--reason", "the hook entry moved"}
-	if _, result := b.runJSON(b.owners(), allow...); !strings.Contains(result.Summary, "runs as an agent session") {
+	if _, result := b.runJSON(b.owners(), allow...); !strings.Contains(result.Summary, "not an agent session's") {
 		t.Fatalf("without a grant the session is refused as an agent: %+v", result)
 	}
 	b.admitted = &humanauthority.HelmGrant{By: "Wido", Class: lease.ClassMain, Grant: "01M-grant"}
-	if code, result := b.runJSON(b.owners(), allow...); strings.Contains(result.Summary, "runs as an agent session") {
+	if code, result := b.runJSON(b.owners(), allow...); strings.Contains(result.Summary, "not an agent session's") {
 		t.Fatalf("under a grant the session was refused as an agent: %d %+v", code, result)
 	}
 }

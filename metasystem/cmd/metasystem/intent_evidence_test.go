@@ -219,7 +219,7 @@ func TestEvidenceDisposeWithoutAPlanTakesOnlyThisSessionsPreview(t *testing.T) {
 	data, _ = json.Marshal(plan)
 	helmMust(t, os.WriteFile(plans[0], data, 0o644))
 	code, out = bed.run("evidence", "dispose")
-	if code == 0 || !strings.Contains(out, "--preview") || !strings.Contains(out, "--plan ID") {
+	if code == 0 || !strings.Contains(out, "--preview") || !strings.Contains(out, "--plan") {
 		t.Fatalf("another session's preview is not executed by default = %d:\n%s", code, out)
 	}
 	if _, err := os.Stat(bed.chain); err != nil {

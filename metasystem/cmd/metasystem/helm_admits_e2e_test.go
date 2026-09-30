@@ -215,7 +215,7 @@ func helmCommitAt(t *testing.T, root, file, subject string) {
 	command := exec.Command("git", "-C", root, "commit", "-qm", subject)
 	command.Env = testenv.WithoutInheritedControls(gittree.ScrubbedEnviron())
 	command.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-	if out, err := command.CombinedOutput(); err != nil || !strings.Contains(string(out), "HUMAN AT THE HELM (wido): the wrapper-fence yields") {
+	if out, err := command.CombinedOutput(); err != nil || !strings.Contains(string(out), "HUMAN AT THE HELM (wido): this commit passed the agent-commit check") {
 		t.Fatalf("commit %s at the helm: %v\n%s", subject, err, out)
 	}
 }

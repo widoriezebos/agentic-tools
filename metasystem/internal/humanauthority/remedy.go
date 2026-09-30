@@ -63,12 +63,12 @@ func RemedyFor(root string, err error, person string, retry []string) Remedy {
 		}
 		return Remedy{Kind: RemedyAgent, Reason: reason, Argv: retry, Then: "in a terminal you opened yourself"}
 	case contains(OutcomeNotEnrolled, "no terminal is enrolled"),
-		enrolledAs == "" && contains(OutcomeTerminalMissing, "does not descend from the terminal enrolled", "no enrolled terminal among"):
+		enrolledAs == "" && contains(OutcomeTerminalMissing, "does not descend from the terminal enrolled", "no enrolled terminal among", "not the enrolled terminal"):
 		return Remedy{Kind: RemedyNotEnrolled, Reason: "this terminal isn't enrolled yet", Argv: enroll, Then: "then repeat this command"}
 	case contains("the enrolled terminal has no recorded name"):
 		return Remedy{Kind: RemedyNotEnrolled, Reason: "the enrolled terminal has no recorded name", Argv: enroll,
 			Then: "records your name; then repeat this command"}
-	case contains(OutcomeTerminalMissing, "does not descend from the terminal enrolled", "no enrolled terminal among"):
+	case contains(OutcomeTerminalMissing, "does not descend from the terminal enrolled", "no enrolled terminal among", "not the enrolled terminal"):
 		return Remedy{Kind: RemedyOtherTerminal, Reason: "this terminal isn't enrolled (" + enrolledAs + " enrolled another one)", Argv: enroll,
 			Then: "moves the enrollment here; then repeat this command"}
 	case contains(OutcomeUnreadable, OutcomeChanged, OutcomeArgvUnreadable, OutcomeReused, OutcomeCycle,

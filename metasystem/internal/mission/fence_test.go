@@ -228,7 +228,7 @@ func TestFMA_R2_MissionCapSourceBypass(t *testing.T) {
 	writeText(t, conf, "metasystem.runtimes=claude\n")
 	t.Setenv("METASYSTEM_CAP_MIN_CLAUDE_CLAUDE_FABLE_5", "30")
 	if err := dispatchcore.RefuseUnsignedMissionCap(conf, "implementer", "claude", "claude-fable-5-1", "claude-fable-5"); err == nil ||
-		!strings.Contains(err.Error(), "unsigned env key cap.min.claude.claude-fable-5") {
+		!strings.Contains(err.Error(), "not the env setting cap.min.claude.claude-fable-5") {
 		t.Fatalf("unsigned source-only mission cap was not refused: %v", err)
 	}
 }

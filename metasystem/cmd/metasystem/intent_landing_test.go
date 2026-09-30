@@ -445,7 +445,7 @@ func TestLandingStatusSaysAFailingTickInPlainWords(t *testing.T) {
 			if strings.Contains(stdout, raw) {
 				t.Errorf("status without --verbose carries the raw error: %q", stdout)
 			}
-			if !strings.HasPrefix(lines[1], "next: metasystem landing status --verbose") {
+			if !strings.HasPrefix(strings.TrimSpace(lines[1]), "→ metasystem landing status --verbose") {
 				t.Errorf("line 2 = %q; want the verbose status as the one command", lines[1])
 			}
 			_, verbose, _ := bed.run(t, "landing", "status", "--verbose")

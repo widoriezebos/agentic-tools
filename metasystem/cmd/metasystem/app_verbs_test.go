@@ -250,7 +250,7 @@ func TestAppVerbsRefuseWithoutAContract(t *testing.T) {
 		if code == 0 {
 			t.Fatalf("app %s must be refused without a contract:\n%s", verb, out)
 		}
-		if !strings.Contains(out, "write launch.json beside metasystem.conf") || !strings.Contains(out, "run: metasystem help app start") {
+		if !strings.Contains(out, "write launch.json beside metasystem.conf") || !strings.Contains(out, "→ metasystem help app start") {
 			t.Fatalf("app %s must name the file to write:\n%s", verb, out)
 		}
 	}

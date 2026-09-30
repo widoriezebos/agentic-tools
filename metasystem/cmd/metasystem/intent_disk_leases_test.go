@@ -43,7 +43,7 @@ func TestDiskLeasesByAPerson(t *testing.T) {
 	}
 	before := calls
 	bed.person = errors.New("this shell is an agent's")
-	if code, out := bed.run("disk", "clean", "--leases"); code != 3 || !strings.Contains(out, "this shell is an agent's, so nothing was done") || !strings.Contains(out, "run: metasystem disk clean --leases") || calls != before {
+	if code, out := bed.run("disk", "clean", "--leases"); code != 3 || !strings.Contains(out, "this shell is an agent's, so nothing was done") || !strings.Contains(out, "→ metasystem disk clean --leases") || calls != before {
 		t.Fatalf("an agent's --leases = %d (calls %d):\n%s", code, calls, out)
 	}
 	if code, out := bed.run("disk", "clean", "--leases", "--strays"); code != 2 || !strings.Contains(out, "one thing at a time") {

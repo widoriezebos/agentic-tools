@@ -430,7 +430,7 @@ func TestHandoverWaitsTheConfiguredClaimLockWait(t *testing.T) {
 	defer offer.Release()
 	req.Ulid, req.Now = "01J5X00000000000000000HW01", req.Now.Add(time.Minute)
 	_, err = Handover(req, id, "landing", "landing-lineage", 11, "batch-a", func() (identity.Liveness, error) { return identity.Alive, nil })
-	if err == nil || !strings.Contains(err.Error(), "longer than 1s") {
+	if err == nil || !strings.Contains(err.Error(), "held its claim over 1s") {
 		t.Fatalf("handover under a held claim lock = %v; want the refusal after the configured 1s", err)
 	}
 }

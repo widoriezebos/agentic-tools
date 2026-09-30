@@ -7,6 +7,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 // writeUpStub installs a bin/metasystem under root that prints lines as the
@@ -22,7 +24,7 @@ func writeUpStub(t *testing.T, root string, status int, lines ...string) {
 		script.WriteString("printf '%s\\n' '" + line + "'\n")
 	}
 	script.WriteString("exit " + string(rune('0'+status)) + "\n")
-	if err := os.WriteFile(filepath.Join(root, "bin", "metasystem"), []byte(script.String()), 0o755); err != nil {
+	if err := testexec.WriteFile(filepath.Join(root, "bin", "metasystem"), []byte(script.String()), 0o755); err != nil {
 		t.Fatal(err)
 	}
 }

@@ -210,11 +210,11 @@ func TestManualSubmissionReplayAndAmend(t *testing.T) {
 
 	os.WriteFile(filepath.Join(worktree, "alpha.txt"), []byte("alpha v3\n"), 0o644)
 	code, result = manualDo(t, j, worktree, amend...)
-	if result.Outcome != intentRefused || !strings.Contains(result.Summary, "no longer current") || c.commits != 3 {
+	if result.Outcome != intentRefused || !strings.Contains(result.Summary, "is no longer the current one") || c.commits != 3 {
 		t.Fatalf("a different correction of a replaced version is refused: code=%d %+v", code, result)
 	}
 	code, result = manualDo(t, j, worktree, "work", "review", c.id, "--changes", "--brief", brief, "--work", "alpha", "--repo", root)
-	if result.Outcome != intentRefused || !strings.Contains(result.Decision, "--after "+alpha2) || c.commits != 3 {
+	if result.Outcome != intentRefused || result.Next == nil || !strings.Contains(shellCommand(result.Next.Argv), "--after "+alpha2) || c.commits != 3 {
 		t.Fatalf("an unnamed correction names the current version: code=%d %+v", code, result)
 	}
 
@@ -368,7 +368,7 @@ func TestManualCommitRefusalRestoresStaging(t *testing.T) {
 	}
 	before := state()
 	code, result := manualDo(t, j, worktree, "work", "review", c.id, "--changes", "--brief", brief, "--work", "alpha", "--after", resultCommit(t, c), "--repo", root)
-	if result.Outcome != intentRefused || !strings.Contains(result.Summary, "as it was before this submission") || c.commits != 1 {
+	if result.Outcome != intentRefused || !strings.Contains(result.Summary, "the goal worktree is as it was") || c.commits != 1 {
 		t.Fatalf("the commit owner's refusal: code=%d %+v", code, result)
 	}
 	if after := state(); after != before {

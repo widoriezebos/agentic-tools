@@ -736,7 +736,7 @@ func TestGoalBranchCommitIsTheGuardedCommitWrapper(t *testing.T) {
 	goalSyncMutationGit(t, root, "add", "metasystem/guarded.go")
 	raw := exec.Command("git", "-C", root, "commit", "-m", "raw commit must refuse")
 	output, rawErr := raw.CombinedOutput()
-	if rawErr == nil || !strings.Contains(string(output), "live wrapper ancestry token is missing") {
+	if rawErr == nil || !strings.Contains(string(output), "an agent commits here only through metasystem work land") {
 		t.Fatalf("raw git commit err=%v output=%q", rawErr, output)
 	}
 	goalSyncMutationGit(t, root, "add", "-u")

@@ -772,7 +772,7 @@ func TestBatchSupervisorTakeoverRebindsJoinedClaims(t *testing.T) {
 	t.Setenv("METASYSTEM_HOOK_DELEGATE_JOB", "stale-batch-proof")
 	attempt, _, _, err := admitProofLaunch(proofLaunchAdmission{ControlRoot: root, ExecutionRoot: root,
 		ConfPath: filepath.Join(root, "metasystem.conf"), GoalID: "standing-validation", CapMin: "1", ScopeClass: "full", CommandClass: "testing"})
-	if err == nil || !strings.Contains(err.Error(), "custody changed before reservation") || attempt.AttemptID != "" {
+	if err == nil || !strings.Contains(err.Error(), "custody changed before its test run was reserved") || attempt.AttemptID != "" {
 		t.Fatalf("stale takeover proof attempt=%+v error=%v", attempt, err)
 	}
 	canonicalRoot, err := filepath.EvalSymlinks(root)

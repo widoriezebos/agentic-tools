@@ -304,7 +304,7 @@ func TestRunPreflightsStrictRetainedBaselineBeforePreparationOrReservation(t *te
 	}
 
 	_, err := testrun.RequireWorkerCapabilities(t.Context(), engine, []string{"PATH=/usr/bin:/bin"})
-	if !errors.Is(err, testrun.ErrWorkerPolicyUnsupported) || !strings.Contains(err.Error(), "stage, prove, and install the backend compatibility release") {
+	if !errors.Is(err, testrun.ErrWorkerPolicyUnsupported) || !strings.Contains(err.Error(), "install a matching engine release first") {
 		t.Fatalf("unsupported trusted worker refusal=%v", err)
 	}
 	data, err := os.ReadFile(calls)
@@ -334,7 +334,7 @@ func TestWorkerCapabilitiesRefusePreviousProtocolBeforeLaunch(t *testing.T) {
 	// The landed worker speaks protocol 1 and strict-decodes the
 	// Scratch request fields as unknown, so it must be refused before preparation.
 	_, err := testrun.RequireWorkerCapabilities(t.Context(), capabilitiesEngine(1), []string{"PATH=/usr/bin:/bin"})
-	if !errors.Is(err, testrun.ErrWorkerPolicyUnsupported) || !strings.Contains(err.Error(), "install the matching backend compatibility release") {
+	if !errors.Is(err, testrun.ErrWorkerPolicyUnsupported) || !strings.Contains(err.Error(), "install a matching engine release first") {
 		t.Fatalf("previous worker protocol refusal=%v", err)
 	}
 }

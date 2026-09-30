@@ -44,6 +44,8 @@ func TestRemedyForNamesTheReasonAndTheOneCommand(t *testing.T) {
 			Remedy{Kind: RemedyNotEnrolled, Reason: "this terminal isn't enrolled yet", Argv: []string{"metasystem", "system", "enroll", "--name", "NAME"}, Then: "then repeat this command"}},
 		{"no enrolled terminal above the shell, another enrolled", enrolled, "", errors.New("no enrolled terminal among this process's ancestors"),
 			Remedy{Kind: RemedyOtherTerminal, Reason: "this terminal isn't enrolled (" + enrollment.Human + " enrolled another one)", Argv: []string{"metasystem", "system", "enroll", "--name", enrollment.Human}, Then: "moves the enrollment here; then repeat this command"}},
+		{"not the enrolled terminal, none enrolled", bare, "", errors.New("not the enrolled terminal"),
+			Remedy{Kind: RemedyNotEnrolled, Reason: "this terminal isn't enrolled yet", Argv: []string{"metasystem", "system", "enroll", "--name", "NAME"}, Then: "then repeat this command"}},
 		{"the enrollment has no name", enrolled, "wido", errors.New("the enrolled terminal has no recorded name"),
 			Remedy{Kind: RemedyNotEnrolled, Reason: "the enrolled terminal has no recorded name", Argv: []string{"metasystem", "system", "enroll", "--name", "wido"}, Then: "records your name; then repeat this command"}},
 		{"another cause names no command", enrolled, "wido", errors.New("goal budget fixture authority does not combine with a temporary human word"),

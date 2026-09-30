@@ -20,7 +20,7 @@ import (
 // family's two-line refusal:
 //
 //	family "goal budget: S" + "run: C"
-//	  public "✗ S" + "  → C  the goal owner's remedy"
+//	  public "✗ S" + "  → C"
 //	family "goal budget: S" + "no command completes this: W"
 //	  public "✗ S" + "  → W"
 //
@@ -174,14 +174,13 @@ func gcliForgivingRun(t *testing.T, label, verb string, code int, stderr, senten
 }
 
 // gcliForgivingCommand asserts the public command refusal and returns the
-// printed remedy: the verb's sentence behind ✗, then its hint, the command
-// and its reason.
+// printed remedy: the verb's sentence behind ✗, then its hint, the command.
 func gcliForgivingCommand(t *testing.T, label, verb string, code int, stderr string) []string {
 	t.Helper()
 	lines := gcliForgivingLines(stderr)
-	command, reason, _ := strings.Cut(strings.TrimPrefix(lines[len(lines)-1], "  → "), "  ")
+	command, _, _ := strings.Cut(strings.TrimPrefix(lines[len(lines)-1], "  → "), "  ")
 	if code == 0 || len(lines) != 2 || !strings.HasPrefix(lines[0], "✗ ") ||
-		!strings.HasPrefix(lines[1], "  → metasystem ") || reason != "the goal owner's remedy" {
+		!strings.HasPrefix(lines[1], "  → metasystem ") {
 		t.Fatalf("%s did not print the two-line command refusal of %s: code=%d stderr=%q", label, verb, code, stderr)
 	}
 	return shellWords(command)
@@ -805,7 +804,7 @@ func TestGoalCLIForgivingHumanRefusals(t *testing.T) {
 	// the act would not resolve it, and enrolling a terminal would not either.
 	code, _, stderr = gcliForgivingPublic(bed, "goal", "accept-risk", "ship-widget", "--finding", "RISK-1", "--review", "fixture-risk", "--reason", "fixture pair",
 		"--by", "Wido", gcliForgivingFixture, "--temporary-human-word", "Wido authorizes this relay")
-	if want := "metasystem goal accept-risk: goal accept-risk fixture authority does not combine with a temporary human word or review date, so nothing was done\n"; code == 0 || stderr != want {
+	if want := "✗ goal accept-risk fixture authority does not combine with a temporary human word or review date, so nothing was done\n"; code == 0 || stderr != want {
 		t.Fatalf("the public accept-risk pair = %d %q, want %q", code, stderr, want)
 	}
 	if bed.tip() != tip {
