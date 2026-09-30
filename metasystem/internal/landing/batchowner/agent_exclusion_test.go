@@ -2,7 +2,9 @@ package batchowner
 
 import (
 	"errors"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
@@ -41,5 +43,44 @@ func TestNoBatchOwnerLaunchedBesideALandingAgent(t *testing.T) {
 	}
 	if landingLaneKeeper(t.TempDir()).Hold == nil {
 		t.Fatal("the production owner keeper has no landing agent hold")
+	}
+}
+
+// TestSupervisedOwnerYieldsToALandingAgent (A-a, re-review 2 B-1): the
+// supervised owner component takes its lease only under the ensure lock and
+// only when no landing agent runs or is starting; otherwise it takes none
+// and says why. Its lease clears the start mark an owner start left.
+func TestSupervisedOwnerYieldsToALandingAgent(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	acquired := 0
+	acquire := func(string) (BatchOwnerLease, error) { acquired++; return BatchOwnerLease{}, nil }
+	running := func() (string, bool, error) { return "landing-0011", true, nil }
+	if _, reason, err := AcquireBatchOwnerUnlessAgent(root, running, acquire); err != nil || acquired != 0 || !strings.Contains(reason, "landing-0011") {
+		t.Fatalf("an agent runs: reason %q err %v, acquired %d; want the owner to yield", reason, err, acquired)
+	}
+	unreadable := func() (string, bool, error) { return "", false, errors.New("launches unreadable") }
+	if _, _, err := AcquireBatchOwnerUnlessAgent(root, unreadable, acquire); err == nil || acquired != 0 {
+		t.Fatalf("unreadable launches: err %v, acquired %d; want refused", err, acquired)
+	}
+	now := time.Date(2026, 9, 30, 13, 0, 0, 0, time.UTC)
+	seams := BatchOwnerEnsureSeams{
+		Inspect: func(string) (int64, identity.Liveness, error) { return 0, identity.Dead, nil },
+		Wake:    func(int64) error { return nil },
+		Launch:  func(string) error { return nil },
+		Now:     func() time.Time { return now },
+	}
+	none := func() (string, bool, error) { return "", false, nil }
+	if err := ensureBatchOwnerWith(root, seams, none); err != nil {
+		t.Fatal(err)
+	}
+	if !OwnerLaunchedWithin(root, now.Add(9*time.Minute), OwnerStartWindow) || OwnerLaunchedWithin(root, now.Add(OwnerStartWindow), OwnerStartWindow) {
+		t.Fatal("the start mark does not last the start window on the injected clock")
+	}
+	if _, reason, err := AcquireBatchOwnerUnlessAgent(root, none, acquire); err != nil || reason != "" || acquired != 1 {
+		t.Fatalf("no agent: reason %q err %v, acquired %d; want the lease", reason, err, acquired)
+	}
+	if OwnerLaunchedWithin(root, now.Add(time.Minute), OwnerStartWindow) {
+		t.Fatal("the owner took its lease, yet its start mark still holds the agent")
 	}
 }

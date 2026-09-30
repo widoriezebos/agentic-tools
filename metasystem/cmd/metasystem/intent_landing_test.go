@@ -488,7 +488,7 @@ func TestLandingStartWithALandingAgentRunning(t *testing.T) {
 	}
 	starts := bed.starts
 	code, stdout, stderr := bed.run(t, "landing", "start")
-	if code != 0 || bed.starts != starts || !strings.Contains(stdout, "landing agent (landing-0011) runs") || strings.Contains(stdout, "asked the supervision") {
+	if code != 0 || bed.starts != starts || !strings.Contains(stdout, "landing agent landing-0011 runs") || strings.Contains(stdout, "asked the supervision") {
 		t.Fatalf("landing start with an agent running = %d %q %q, owner starts %d -> %d", code, stdout, stderr, starts, bed.starts)
 	}
 	state, err := lane.ReadAgentState(bed.home)

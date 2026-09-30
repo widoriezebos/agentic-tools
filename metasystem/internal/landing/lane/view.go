@@ -176,6 +176,9 @@ func BuildView(sources ViewSources) View {
 	records, recordsErr := readRecords(sources, record.Root)
 	wake := wakeOf(record.Root, sources.Now, records, recordsErr,
 		WakeSources{Validation: sources.Validation, Finalization: sources.Finalization})
+	if _, err := ReadAgentState(sources.Home); err != nil {
+		wake.Unread = append(wake.Unread, UnreadableAgentRecord(sources.Home))
+	}
 	view.Wake = &wake
 	view.Batch, view.Next = currentBatches(records, sources.Helm)
 	view.Summary = summary(record.Root, view, recordsErr)

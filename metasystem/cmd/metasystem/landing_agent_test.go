@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -174,7 +175,18 @@ func TestNoOwnerStartsWhileTheAgentStarts(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(lane.HostDir(home), "landing-agent-keeper.json"), []byte(claim), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if id, running, err := live(); err != nil || !running || !strings.Contains(id, "starting") {
-		t.Fatalf("a claimed start: %q running=%t err=%v; want it named", id, running, err)
+	if id, running, err := live(); err != nil || !running || !strings.Contains(id, "starting") || strings.Contains(id, "T1") {
+		t.Fatalf("a claimed start: %q running=%t err=%v; want it named, with no raw stamp", id, running, err)
+	}
+	// Unknown holds: an unreadable keeper record, or no lane home.
+	if err := os.WriteFile(filepath.Join(lane.HostDir(home), "landing-agent-keeper.json"), []byte("{torn"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := live(); err == nil || !strings.Contains(err.Error(), "metasystem landing start") {
+		t.Fatalf("an unreadable keeper record: err %v; want a hold naming the repair", err)
+	}
+	homeless := agent.liveOrStarting(func() (string, error) { return "", errors.New("no home") })
+	if _, _, err := homeless(); err == nil {
+		t.Fatal("no lane home read as no agent")
 	}
 }

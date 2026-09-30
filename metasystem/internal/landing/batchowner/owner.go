@@ -72,6 +72,8 @@ type BatchOwnerEnsureSeams struct {
 	Inspect func(string) (int64, identity.Liveness, error)
 	Wake    func(int64) error
 	Launch  func(string) error
+	// Now stamps an owner start's mark; nil is the wall clock.
+	Now func() time.Time
 }
 
 var BatchOwnerEnsure = BatchOwnerEnsureSeams{
@@ -184,8 +186,13 @@ func ensureBatchOwnerWith(root string, seams BatchOwnerEnsureSeams, agentLive fu
 				return err
 			}
 			// The launched owner may not run yet: the mark tells a landing
-			// agent's start that one is on its way.
-			return os.WriteFile(ownerLaunchedPath(root), []byte(time.Now().UTC().Format(time.RFC3339)+"\n"), 0o644)
+			// agent's start that one is on its way, until the owner takes
+			// its lease or OwnerStartWindow passes.
+			now := time.Now
+			if seams.Now != nil {
+				now = seams.Now
+			}
+			return os.WriteFile(ownerLaunchedPath(root), []byte(now().UTC().Format(time.RFC3339)+"\n"), 0o644)
 		default:
 			return fmt.Errorf("%s: owner liveness is unknown", codeOwnerIndeterminate)
 		}
@@ -218,6 +225,35 @@ func WithOwnerEnsureLock(root string, fn func() error) error {
 	}
 	defer unix.Flock(int(lock.Fd()), unix.LOCK_UN)
 	return fn()
+}
+
+// OwnerStartWindow is how long an owner start's mark holds a landing agent
+// when the owner never takes its lease.
+const OwnerStartWindow = 10 * time.Minute
+
+// AcquireBatchOwnerUnlessAgent is the supervised owner component's lease,
+// taken under the ensure lock and only while no landing agent runs or is
+// starting: the lane has one composition owner. When an agent holds the lane
+// no lease is taken and reason says so. The lease clears the start mark.
+func AcquireBatchOwnerUnlessAgent(repo string, agentLive func() (string, bool, error), acquire func(string) (BatchOwnerLease, error)) (BatchOwnerLease, string, error) {
+	var lease BatchOwnerLease
+	var reason string
+	err := WithOwnerEnsureLock(repo, func() error {
+		held, err := landingAgentHoldWith(agentLive)
+		if err != nil || held != "" {
+			reason = held
+			return err
+		}
+		lease, err = acquire(repo)
+		if err != nil {
+			return err
+		}
+		if removeErr := os.Remove(ownerLaunchedPath(repo)); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+			return removeErr
+		}
+		return nil
+	})
+	return lease, reason, err
 }
 
 // OwnerLaunchedWithin says whether an owner start was launched in the lane

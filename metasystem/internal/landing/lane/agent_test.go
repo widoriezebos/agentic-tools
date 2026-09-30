@@ -305,14 +305,48 @@ func TestOwnerStartedInTheWindowStopsTheAgent(t *testing.T) {
 	start := keeper.Start
 	var seen bool
 	keeper.Start = func(root string, wake Wake) (string, error) {
-		_, seen = AgentStarting(home, clock)
+		_, seen, _ = AgentStarting(home, clock)
 		return start(root, wake)
 	}
 	keeper.Step()
 	if !seen || len(agent.starts) != 1 {
 		t.Fatalf("an owner start during the agent's start saw it starting=%t, starts %d", seen, len(agent.starts))
 	}
-	if _, starting := AgentStarting(home, clock); starting {
+	if _, starting, err := AgentStarting(home, clock); starting || err != nil {
 		t.Fatal("the start claim outlived the start")
+	}
+}
+
+// TestUnreadableKeeperRecordHoldsUntilAPersonStarts (A-a, re-review 2
+// NB-1): a landing agent keeper record that cannot be read holds every
+// start (the agent's and, through AgentStarting, the owner's) with a line
+// naming the file and the command that repairs it; landing status shows it;
+// a person's landing start (ClearAgentCooldown) replaces it and the hold
+// ends.
+func TestUnreadableKeeperRecordHoldsUntilAPersonStarts(t *testing.T) {
+	t.Parallel()
+	home, _, module := nestedLaneDirs(t)
+	clock := laneNow
+	agent := &fakeAgent{}
+	keeper := agent.keeper(home, module, &clock, WakeSources{Records: noBatches, Validation: func(string, time.Time) (bool, error) { return true, nil }})
+	if err := os.WriteFile(agentStatePath(home), []byte("{torn"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	line := keeper.Step()
+	if len(agent.starts) != 0 || !strings.Contains(line, agentStatePath(home)) || !strings.Contains(line, "run: metasystem landing start") {
+		t.Fatalf("an unreadable record: %q, starts %d; want held, naming the file and the repair", line, len(agent.starts))
+	}
+	if _, _, err := AgentStarting(home, clock); err == nil {
+		t.Fatal("an owner start reads an unreadable keeper record as no agent starting")
+	}
+	view := BuildView(ViewSources{Home: home, Now: laneNow, Owner: func(string) (OwnerProbe, error) { return OwnerProbe{}, nil }, Records: noBatches})
+	if view.Wake == nil || !strings.Contains(strings.Join(view.Wake.Unread, "; "), "run: metasystem landing start") {
+		t.Fatalf("landing status does not show the unreadable record: %+v", view.Wake)
+	}
+	if err := ClearAgentCooldown(home); err != nil {
+		t.Fatal(err)
+	}
+	if keeper.Step(); len(agent.starts) != 1 {
+		t.Fatalf("after a person's start: %d starts; want the agent", len(agent.starts))
 	}
 }

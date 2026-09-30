@@ -10,6 +10,7 @@ package lane
 // Reap (the outage feed now; usage reconciliation with K-g).
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"slices"
@@ -206,12 +207,12 @@ func (k AgentKeeper) recheck(root string) (string, bool) {
 	if running {
 		return fmt.Sprintf("the landing agent %s is running at %s", id, root), true
 	}
-	state, err := ReadAgentState(k.Home)
+	at, starting, err := AgentStarting(k.Home, k.Now())
 	if err != nil {
-		return fmt.Sprintf("the landing agent at %s is not started: its keeper record can't be read (%v)", root, err), true
+		return err.Error(), true
 	}
-	if at, err := time.Parse(time.RFC3339, state.StartingAt); err == nil && k.Now().Sub(at) < startClaim {
-		return fmt.Sprintf("the landing agent at %s is starting (since %s)", root, LocalText(state.StartingAt)), true
+	if starting {
+		return fmt.Sprintf("the landing agent at %s is starting (since %s)", root, localClock(at)), true
 	}
 	return "", false
 }
@@ -265,28 +266,39 @@ func (k AgentKeeper) held(root string) (string, bool) {
 }
 
 // AgentStarting says whether the keeper claimed a landing agent start that
-// has not finished: an owner start honours it as it honours a running
-// agent.
-func AgentStarting(home string, now time.Time) (string, bool) {
+// has not finished, and since when: an owner start honours it as it honours
+// a running agent. A keeper record that cannot be read is an error naming
+// the file and its repair, which every caller holds on.
+func AgentStarting(home string, now time.Time) (time.Time, bool, error) {
 	state, err := ReadAgentState(home)
 	if err != nil {
-		// Unreadable: a start may be in progress.
-		return "an unreadable keeper record", true
+		return time.Time{}, false, errors.New(UnreadableAgentRecord(home))
 	}
 	at, err := time.Parse(time.RFC3339, state.StartingAt)
 	if err != nil || now.Sub(at) >= startClaim {
-		return "", false
+		return time.Time{}, false, nil
 	}
-	return state.StartingAt, true
+	return at, true, nil
+}
+
+// UnreadableAgentRecord says, for a person, that the landing agent's keeper
+// record cannot be read and what repairs it.
+func UnreadableAgentRecord(home string) string {
+	return "the landing agent's keeper record " + agentStatePath(home) + " can't be read, so no landing agent or batch owner starts; run: metasystem landing start"
 }
 
 // ClearAgentCooldown forgets the reasons the last agent ended with: a
-// person's landing start wakes the agent at once when work is there.
+// person's landing start wakes the agent at once when work is there. A
+// record that cannot be read is replaced at the person's word, keeping
+// nothing (its launch, if any, is left to the launch store).
 func ClearAgentCooldown(home string) error {
 	return withLock(home, func() error {
 		state, err := ReadAgentState(home)
-		if err != nil || len(state.Reasons) == 0 {
-			return err
+		if err != nil {
+			return writeJSON(home, agentStatePath(home), AgentState{})
+		}
+		if len(state.Reasons) == 0 {
+			return nil
 		}
 		state.Reasons = nil
 		return writeJSON(home, agentStatePath(home), state)

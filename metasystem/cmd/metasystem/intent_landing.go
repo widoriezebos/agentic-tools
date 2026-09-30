@@ -586,7 +586,10 @@ func (inv *intentInvocation) startLane(owners laneVerbOwners, home string, recor
 				next: inv.publicArgv("landing", "status", "--verbose"), nextReason: "shows the lane's state", Details: []string{err.Error()}}
 		}
 		if live {
-			summary := "the landing agent (" + id + ") runs on the lane at " + record.Root + ", so no batch owner was started beside it"
+			summary := "the landing agent " + id + " runs on the lane at " + record.Root + ", so no batch owner was started beside it"
+			if !strings.HasPrefix(id, "landing-") {
+				summary = id + " holds the lane at " + record.Root + ", so no batch owner was started beside it"
+			}
 			return intentResult{Outcome: intentConfirmed, Targets: targets, Data: inv.laneView(owners, home), Summary: summary,
 				view: landingDone(summary, record.Root)}
 		}

@@ -207,7 +207,7 @@ func newLandingAgentKeeper(self, home string, agent landingAgent) lane.AgentKeep
 				// be starting, and the agent never starts into that race.
 				state := lane.ReadKeeper(home)
 				last, err := time.Parse(time.RFC3339, state.LastLaunch)
-				if err == nil && agent.now().Sub(last) < lane.BaseInterval || batchowner.OwnerLaunchedWithin(root, agent.now(), lane.BaseInterval) {
+				if err == nil && agent.now().Sub(last) < lane.BaseInterval || batchowner.OwnerLaunchedWithin(root, agent.now(), batchowner.OwnerStartWindow) {
 					return "the lane's batch owner is starting, and a landing agent never runs beside it", nil
 				}
 				return "", nil
@@ -226,10 +226,12 @@ func (a landingAgent) liveOrStarting(home func() (string, error)) func() (string
 		}
 		laneHome, err := home()
 		if err != nil {
-			return "", false, nil
+			// No home for the lane: whether an agent is starting is unknown,
+			// and unknown holds.
+			return "", false, fmt.Errorf("this computer's landing lane home can't be found, so no batch owner starts: %w", err)
 		}
-		if since, starting := lane.AgentStarting(laneHome, a.now()); starting {
-			return "starting since " + since, true, nil
+		if _, starting, err := lane.AgentStarting(laneHome, a.now()); err != nil || starting {
+			return "a landing agent that is starting", starting, err
 		}
 		return "", false, nil
 	}
