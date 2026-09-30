@@ -2,12 +2,12 @@
 
 - State: parked
 - Priority: 3
-- Sequence: 38
+- Sequence: 37
 - Intent: What: Records only a person may make in the goal ledger (approvals, stops, resumes) are signed, so a forged one is rejected. Why: Today anyone with write access to the checkout could write a record that looks like your act. Pros: Closes the forgery threat for person-only acts. Cons: A large design touching every person-only command, and no forgery has been seen.
 - Origin: main
 - Next step: Next: When triggered, design it: which acts are signed, how keys are kept, and whether signing is per act or per tree, keeping ordinary agent ledger commands unsigned. Done when: the design is accepted and a test refuses a forged person-only record.
 - OpenedAt: 2026-09-02T11:31:48Z
-- Revision: 83
+- Revision: 84
 - BudgetExceptions: 0
 - Parked: by=human:Wido at=2026-09-13T08:23:45Z because=Not now (2026-09-13 backlog consolidation, Wido's word): Wido 2026-09-02 deferred true forge-proofing to this foundational design program; nothing signs ledger records; never-idle-ironclad explicitly excludes forged history from its readiness claim; back of queue until Wido prioritises; wide blast radius, multi-slice design.
 
@@ -95,4 +95,5 @@ History:
 - 2026-09-16T21:02:51Z HE021GFD8V1YPVBEXGSBFRHWV0-m1e-c6925449 set-priority actor=human:Wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,claude-delegate-scratch-cleanup,claude-denywrite-list-is-a-snapshot,continuous-self-improvement,counselor,cross-repo-guardrails,delegate-sandbox-cannot-run-the-beds,design-prohibition-is-role-scoped,effort-by-complexity-per-model,fixture-default-branch-assumption,goal-suite-sits-on-the-default-test-timeout,human-carried-landing,incident-proposal-drafting,integration-branch,land-verb-pruning,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,runtime-limit-is-not-a-protocol-error,seam-declaration-convergence,set-priority-treats-an-oversize-sequence-as-last,standing-validation,uncapped-delegate-fanout,watchdog-kill-observation-gap reason=priority-order subject=runtime-limit-is-not-a-protocol-error from=3:40 to=3:39 requested-sequence=54
 - 2026-09-30T18:51:03Z MMV1RMV9H72877V4WS2S0B67MY-m1e-b6a4eb0a edit actor=human:wido targets=ledger-authentication
 - 2026-09-30T18:55:56Z KTY8C75R4XFK9MCX3EV1BKHF1E-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,effort-by-complexity-per-model,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,paid-proof-authorization,precedent-index,reconciliation-guards,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:39 to=3:38
-Integrity: sha256=9fe787573b3748e7a25ee60cf6a9f5c793191f29c8f46a7387cf6006fe9c096f
+- 2026-09-30T18:56:32Z NW1RJMGDWV7KMT7572PYEYFHXX-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,fixture-default-branch-assumption,goal-suite-sits-on-the-default-test-timeout,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,set-priority-treats-an-oversize-sequence-as-last,watchdog-kill-observation-gap reason=priority-order from=3:38 to=3:37
+Integrity: sha256=8ba3368e7a6cb7c5f9b73492506a94de7e014b91f61d51ac4e6afbf4729140a0

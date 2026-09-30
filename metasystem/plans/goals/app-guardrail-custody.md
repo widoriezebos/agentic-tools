@@ -2,12 +2,12 @@
 
 - State: parked
 - Priority: 3
-- Sequence: 34
+- Sequence: 33
 - Intent: What: The files that act as an app's guardrails (its budgets, its expected reference outputs, its checks) cannot be changed by the same work they judge; changes to them go through their own review with the warden, the reviewer that guards the guardrails, and the riskiest changes need a person. The first half exists: the warden follows the same "stop when the critique is exhausted" rules as the code critic, and changes to the app's covenant escalate. What is left is the person's part: loosening a budget, replacing an expected reference output, or waiving a check needs a person's approval. Why: Without it, an agent could make failing work pass by quietly loosening a budget or rewriting the expected output. Pros: The safety net cannot be weakened by the work it judges. Cons: Adds a human step to every such change, and no adopted app declares budgets or reference outputs yet, so there is nothing real to build it against.
 - Origin: human
 - Next step: Next: Design the person's approval for budget loosening, reference-output replacement and check waivers on top of the app covenant (the covenant decision it used to wait for is done). Done when: in a test app, loosening a budget declared in its covenant is refused without a person's approval and accepted with it.
 - OpenedAt: 2026-08-23T16:29:41Z
-- Revision: 90
+- Revision: 91
 - BudgetExceptions: 0
 - Parked: by=human:Wido at=2026-09-30T18:45:47Z because=Parked until the first adopted app declares budgets or expected reference outputs in its covenant that need a change. Until then there is no real surface to design against.
 
@@ -102,4 +102,5 @@ History:
 - 2026-09-30T18:45:34Z ZJWB3P0MQFZTBDDJRBTKGAD3J7-ui-bc2fda53 edit actor=human:Wido targets=app-guardrail-custody
 - 2026-09-30T18:45:47Z Y9RVBQ76EK19D0S9JZWYV0WTKR-ui-bc2fda53 park actor=human:Wido targets=app-guardrail-custody reason=Parked until the first adopted app declares budgets or expected reference outputs in its covenant that need a change. Until then there is no real surface to design against.
 - 2026-09-30T18:55:56Z KTY8C75R4XFK9MCX3EV1BKHF1E-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,effort-by-complexity-per-model,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,paid-proof-authorization,precedent-index,reconciliation-guards,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:35 to=3:34
-Integrity: sha256=3bfefe1d89b2188e68e50cda1949bf2d2ef996d1a67ccb13ab947b25dfc89716
+- 2026-09-30T18:56:32Z NW1RJMGDWV7KMT7572PYEYFHXX-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,fixture-default-branch-assumption,goal-suite-sits-on-the-default-test-timeout,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,set-priority-treats-an-oversize-sequence-as-last,watchdog-kill-observation-gap reason=priority-order from=3:34 to=3:33
+Integrity: sha256=d4acb7bf6bc3c4a0f0b6a4182905466dac0f6261100291562231ad611f2ae33e
