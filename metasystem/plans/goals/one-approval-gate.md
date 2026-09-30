@@ -2,12 +2,12 @@
 
 - State: parked
 - Priority: 2
-- Sequence: 4
+- Sequence: 3
 - Intent: What: One human approval covers both a goal and an unattended run of it. The mission contract takes its limits from the goal's approved budget instead of asking for a second, separately typed budget and signature. Why: In the first unattended run (09-03) the same work needed two approvals with two budgets that could disagree. Pros: One word from the person, one budget, no mismatch. Cons: The mission runner has not run since 09-03, so building this now serves a path nobody uses.
 - Origin: main
 - Next step: Next: When a new mission contract is about to be sealed, design how the contract takes its limits from the goal's approved budget (it may narrow them, never widen them) and how its signature points to the approval; one critique round; build. Done when: sealing a contract for an approved goal needs no second budget, and a contract that goes beyond the goal's budget is refused.
 - OpenedAt: 2026-09-03T15:47:08Z
-- Revision: 13
+- Revision: 14
 - Labels: headless-execution, headless-fleet
 - BudgetExceptions: 0
 - Parked: by=human:wido at=2026-09-30T18:43:39Z because=Parked: the mission runner has been idle since 09-03 and only one contract was ever signed. Bring it back when the next mission contract is to be sealed; if unattended missions are retired instead, conclude it with that decision.
@@ -26,4 +26,5 @@ History:
 - 2026-09-11T22:09:00Z C3BMZ7DRFM4AWMATVMSXQZHBTQ-m1-c6925449 done actor=human:Wido targets=adoption-inventory-from-install-set,chain-landing-carries-the-reviewed-diff,commit-goal-binding,design-gate-at-dispatch,first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,hook-enrollment-per-checkout,human-approval-for-execution,idle-every-runtime-enforcement,landing-design-provenance,manifest-floor-at-dispatch,merge-stage-critic-close,metasystem-stop-escalation-proofs,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,one-approval-gate,recovery-rehearsal,recovery-to-good-state,repo-root-paths-ride-agent-commits-unjudged,role-context-composition,role-lane-packets,seat-mutual-awareness reason=priority-order from=2:5 to=2:4
 - 2026-09-30T18:43:39Z 9F9M70GH45ETSFC69DXX0J6VM1-m1e-b6a4eb0a park actor=human:wido targets=one-approval-gate reason=Parked: the mission runner has been idle since 09-03 and only one contract was ever signed. Bring it back when the next mission contract is to be sealed; if unattended missions are retired instead, conclude it with that decision.
 - 2026-09-30T18:44:54Z G322T05NH2W9X529M5EPAHKW0F-m1e-b6a4eb0a edit actor=human:wido targets=one-approval-gate
-Integrity: sha256=ffdc235c0a0d8365221504581da742a3d52bcd5a8068b9880bac0ee81a54901e
+- 2026-09-30T19:02:49Z YMDSWY13X782HV30P4NJGHQ2SY-m1e-b6a4eb0a abandon actor=human:wido targets=account-provenance-carried,one-approval-gate,hook-enrollment-per-checkout,adoption-inventory-from-install-set,design-gate-at-dispatch,landing-design-provenance,commit-goal-binding,gate-governance-records,role-context-composition,idle-every-runtime-enforcement,recovery-to-good-state,recovery-rehearsal,fleet-pull,first-headless-run,headless-continuous-delivery-proof,headless-fleet-coordination-proof,never-idle-ironclad,law-keys-read-committed-bytes,arming-binds-the-installed-engine-identity,stop-batch-strands-a-resumable-goal,live-job-on-a-done-goal-unnoticed,job-record-birth-token,failed-job-attention,watcher-repair-request-never-names-current,actionable-metrics,lease-sweep-death-evidence,winddown-census-handoff-leak,machine-concurrency-governor,token-spend-fence,fixture-waits-name-their-producer,chain-landing-carries-the-reviewed-diff,human-authority-surface-runs-its-cmd-tests,metasystem-stop-escalation-proofs,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,steward-revivals-leave-the-receipt-stream,runtime-limit-is-not-a-protocol-error,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,land-verb-writes-the-receipt,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:4 to=2:3
+Integrity: sha256=f6c74f77a8e42d10bb287330ba6b0bcc3143b0d695d9df0413ea3d6106e12022

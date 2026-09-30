@@ -2,12 +2,12 @@
 
 - State: parked
 - Priority: 2
-- Sequence: 7
+- Sequence: 6
 - Intent: What: Work that needs a design cannot start as a build unless an accepted, critiqued design stands behind it. Why: "Design first" is checked only at the end of the work, not when it starts. The gate was aimed at the old dispatch path, and builds today go through the launch lane by hand. Pros: Stops builds that skip their design. Cons: Building a gate at a door nobody uses now would be wasted work.
 - Origin: main
 - Next step: Next: When unparked, find where the switched-on machinery starts builders and put the check there: refuse a design-bearing build that names no accepted design with a closed critique. Done when: a test refuses such a build and admits one with a matching accepted design.
 - OpenedAt: 2026-09-01T07:18:50Z
-- Revision: 20
+- Revision: 21
 - Labels: headless-fleet, headless-process
 - BudgetExceptions: 0
 - Parked: by=human:wido at=2026-09-30T18:52:29Z because=Parked until the machinery is switched on again and is seen starting builders through the delegate path; the gate belongs where that happens. Its blocker design-chain-has-no-lawful-close is done, so the block is cleared.
@@ -33,4 +33,5 @@ History:
 - 2026-09-30T18:48:42Z GRRG19CVXGCVVX9XCWGFFZ8XAC-m1e-b6a4eb0a edit actor=human:wido targets=design-gate-at-dispatch
 - 2026-09-30T18:52:06Z NP8E5ZEG1V6TH0HVFDZT1ZARVG-m1e-b6a4eb0a unblock actor=human:wido targets=design-gate-at-dispatch,design-chain-has-no-lawful-close reason=blockedBy drops design-chain-has-no-lawful-close
 - 2026-09-30T18:52:29Z CN2SMFX57KE9H4Z75DZJ52A10Q-m1e-b6a4eb0a park actor=human:wido targets=design-gate-at-dispatch reason=Parked until the machinery is switched on again and is seen starting builders through the delegate path; the gate belongs where that happens. Its blocker design-chain-has-no-lawful-close is done, so the block is cleared.
-Integrity: sha256=1432ecd709095f7118aaf29c29a40a25b24b1b365fc3eab53dfebabe363a1ba2
+- 2026-09-30T19:02:49Z YMDSWY13X782HV30P4NJGHQ2SY-m1e-b6a4eb0a abandon actor=human:wido targets=account-provenance-carried,one-approval-gate,hook-enrollment-per-checkout,adoption-inventory-from-install-set,design-gate-at-dispatch,landing-design-provenance,commit-goal-binding,gate-governance-records,role-context-composition,idle-every-runtime-enforcement,recovery-to-good-state,recovery-rehearsal,fleet-pull,first-headless-run,headless-continuous-delivery-proof,headless-fleet-coordination-proof,never-idle-ironclad,law-keys-read-committed-bytes,arming-binds-the-installed-engine-identity,stop-batch-strands-a-resumable-goal,live-job-on-a-done-goal-unnoticed,job-record-birth-token,failed-job-attention,watcher-repair-request-never-names-current,actionable-metrics,lease-sweep-death-evidence,winddown-census-handoff-leak,machine-concurrency-governor,token-spend-fence,fixture-waits-name-their-producer,chain-landing-carries-the-reviewed-diff,human-authority-surface-runs-its-cmd-tests,metasystem-stop-escalation-proofs,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,steward-revivals-leave-the-receipt-stream,runtime-limit-is-not-a-protocol-error,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,land-verb-writes-the-receipt,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:7 to=2:6
+Integrity: sha256=3a6983a2fd5ceb0a1ffebf169bf0dd2a57492e81d9d9d82b5ae8fb483511f954
