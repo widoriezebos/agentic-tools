@@ -1,6 +1,6 @@
 # headless-fleet-coordination-proof
 
-- State: queued
+- State: parked
 - Priority: 2
 - Sequence: 22
 - Risk: severity=3 novelty=2 exposure=3 accumulation=2 basis="False acceptance would grant confidence in multi-node ownership, human authority and reliable message delivery; the scenario spans the fleet but uses isolated resources."
@@ -9,11 +9,12 @@
 - Origin: human
 - Next step: Next: when headless-continuous-delivery-proof is done, re-check which of this proof's parts still apply to a one-computer fleet and plan the run. Done when: a recorded run shows one winner per contested goal, concurrent independent goals, and machines continuing approved work while the brain is unavailable.
 - OpenedAt: 2026-09-07T21:10:22Z
-- Revision: 24
+- Revision: 25
 - BlockedBy: fleet-channel-gateway, fleet-coordinator-brain, fleet-join-bootstrap, headless-continuous-delivery-proof, seat-mutual-awareness
 - Labels: headless-fleet, headless-proof
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
+- Parked: by=human:Wido at=2026-09-30T18:49:43Z because=Parked until headless-continuous-delivery-proof is done. This proof builds on that single-machine proof, which has not started.
 
 History:
 - 2026-09-07T21:10:22Z 9CKET4ABHX5Z08E6FM1XH5FN3A-m1-76f67331 open actor=human:Wido targets=headless-fleet-coordination-proof
@@ -40,4 +41,5 @@ History:
 - 2026-09-13T08:23:10Z R328E6Y43B7EEREMEA8T0MVQWG-m1-c6925449 done actor=human:Wido targets=first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,headless-continuous-delivery-proof,headless-fleet-coordination-proof,idle-every-runtime-enforcement,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,recovery-rehearsal,recovery-to-good-state,role-lane-packets,seat-mutual-awareness reason=priority-order from=2:24 to=2:23
 - 2026-09-30T18:48:44Z DRV2G3ER650PC3GDMSYHQN3111-ui-bc2fda53 done actor=human:Wido targets=actionable-metrics,arming-binds-the-installed-engine-identity,census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,critique-launch-verb-enforces-the-round-cap,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,dispatch-bases-chains-on-the-remote-tip,failed-job-attention,first-headless-run,fixture-repo-copies-exclude-the-artifacts-store,fixture-waits-name-their-producer,fleet-join-bootstrap,headless-continuous-delivery-proof,headless-fleet-coordination-proof,human-authority-surface-runs-its-cmd-tests,human-break-glass-commit-keeps-the-ledger-valid,human-wait-does-not-consume-goal-budget,job-record-birth-token,land-verb-writes-the-receipt,law-keys-read-committed-bytes,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,member-size-gate,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,never-idle-ironclad,new-elapsed-budgets-use-explicit-hours,one-goal-act-one-ledger-commit,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged,run-scoped-build-caches-have-a-janitor,runtime-limit-is-not-a-protocol-error,seat-landings-run-the-selected-sections,skipped-test-fails-its-group-on-the-other-os,small-change-lane,steward-revivals-leave-the-receipt-stream,stop-batch-strands-a-resumable-goal,token-spend-fence,trunk-versus-candidate-is-a-verification-step,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=2:23 to=2:22
 - 2026-09-30T18:49:39Z ZZ06YTA2FZ5GX67WWPPSVMWA99-ui-bc2fda53 edit actor=human:Wido targets=headless-fleet-coordination-proof
-Integrity: sha256=cbb7edbbbbd504e6cfad49a3a4e73ae528bae58a1d6e1702969c636d45280138
+- 2026-09-30T18:49:43Z R5H26RKPK9CSNNJKNRPHX4F0GS-ui-bc2fda53 park actor=human:Wido targets=headless-fleet-coordination-proof reason=Parked until headless-continuous-delivery-proof is done. This proof builds on that single-machine proof, which has not started.
+Integrity: sha256=25c0627e032bc5bf96c7ef8f2ef91a2e136a732afeee5e95b939e3ca4e995213
