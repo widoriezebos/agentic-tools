@@ -355,7 +355,15 @@ func afterFailedReArm(request AdvanceRequest, previous steward.InstallIdentity, 
 		if restoreErr := os.Rename(saved, previous.InstallPath); restoreErr != nil {
 			return fmt.Errorf("re-arm the landed engine: %w; restoring the enrolled engine failed too: %v", cause, restoreErr)
 		}
-		return fmt.Errorf("re-arm the landed engine: %w; the enrolled engine is back in place", cause)
+		if rearmed.Stage < steward.StageStopAttempted {
+			return fmt.Errorf("re-arm the landed engine: %w; the enrolled engine is back in place", cause)
+		}
+		// The steward stopped (or tried to stop) the old runner before it
+		// failed: the enrolled bytes are back, but nothing guards the lane.
+		return &Refusal{Code: CodeAdvanceRunnerDown,
+			Message: "the landing lane's engine is back as it was, but its steward isn't running",
+			Argv:    []string{"metasystem", "system", "start", "--repo", request.Checkout},
+			Detail:  fmt.Sprintf("the re-arm stopped the old runner, then failed: %v; a person at a terminal no agent started runs metasystem system start", cause)}
 	}
 	detail := fmt.Sprintf("the steward re-arm failed after writing the new enrollment: %v", cause)
 	if readErr == nil {

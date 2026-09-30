@@ -177,3 +177,26 @@ func realStewardBedFrom(t *testing.T, bed *advanceBed, enrolled []byte) *advance
 	}
 	return bed
 }
+
+// N-1: the steward stopped the old runner and then failed before the mint:
+// the old bytes go back, but no runner guards the lane, so the advance
+// refuses with the person's system start rather than claiming all is well.
+func TestAdvanceSaysTheRunnerIsDownWhenReArmFailsAfterStopping(t *testing.T) {
+	t.Parallel()
+	bed := newAdvanceBed(t)
+	bed.enrollOld(t)
+	steps := bed.steps(t)
+	steps.ReArm = func(string) (steward.ReArmOutcome, error) {
+		bed.rearms++
+		return steward.ReArmOutcome{Stage: steward.StageStopped}, errors.New("publish the identity: disk full")
+	}
+	_, err := Advance(bed.request(t), ProductionConditions(bed.home, bed.checkout), steps)
+	refusal := refusalOf(t, err, "LANE_ENGINE_ADVANCE_RUNNER_DOWN")
+	if want := []string{"metasystem", "system", "start", "--repo", bed.checkout}; !slices.Equal(refusal.Argv, want) {
+		t.Fatalf("argv %q, want %q", refusal.Argv, want)
+	}
+	if !bytes.Equal(bed.installed(t), bed.enrolled) {
+		t.Fatalf("the enrolled bytes were not put back: %q", bed.installed(t))
+	}
+	bed.nothingLeft(t)
+}

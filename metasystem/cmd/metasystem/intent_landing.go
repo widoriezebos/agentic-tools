@@ -8,6 +8,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -19,6 +20,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/laneengine"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
 
@@ -645,6 +647,7 @@ func (inv *intentInvocation) stopLane(owners laneVerbOwners, home string, record
 			Details: []string{fmt.Sprintf("refused because: %s: batch %s to main now; stopping mid-push would leave main and the batch's record out of step", codeLandingLanePushing, busy)}}, false
 	}
 	by := inv.landingActor(owners)
+	inv.sayWhenTheLaneLockIsHeld(home)
 	if _, err := lane.SetPause(home, by, owners.now()); err != nil {
 		return intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "the landing lane couldn't be stopped",
 			next: inv.sameCommand(), nextReason: "tries again", Details: []string{"the landing lane could not be stopped: " + err.Error()}}, false
@@ -714,4 +717,20 @@ func (inv *intentInvocation) statusLane() *lane.View {
 		return &view
 	}
 	return nil
+}
+
+// sayWhenTheLaneLockIsHeld prints one plain line before a stop waits for the
+// host flock: a landing engine advance holds it while it re-arms, and the
+// stop takes effect only when that finishes.
+func (inv *intentInvocation) sayWhenTheLaneLockIsHeld(home string) {
+	held, err := lock.File(lane.LockPath(home), 0o600, lock.TryExclusive)
+	if err == nil {
+		_ = held.Release()
+		return
+	}
+	if lock.Busy(err) && !inv.input.switched("json") {
+		page := textui.New(inv.textEnv(inv.stderr))
+		page.Mark(textui.Running, "the lane's engine is being changed; the stop takes effect when that finishes")
+		_, _ = io.WriteString(inv.stderr, page.String())
+	}
 }
