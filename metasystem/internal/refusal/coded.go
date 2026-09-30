@@ -80,23 +80,12 @@ func Detail(err error) string {
 	return ""
 }
 
-// CodeOf is the refusal code err carries, or the code-first token of a
-// legacy message ("CODE ..." or "CODE: ..."), or "".
+// CodeOf is the refusal code err carries (a Coder in its chain), or "".
+// The code is data beside the words; the words are never read for one.
 func CodeOf(err error) string {
 	var coded Coder
 	if errors.As(err, &coded) {
 		return coded.RefusalCode()
-	}
-	if err == nil {
-		return ""
-	}
-	first := strings.Fields(strings.SplitN(err.Error(), "\n", 2)[0])
-	if len(first) == 0 {
-		return ""
-	}
-	token := strings.TrimSuffix(first[0], ":")
-	if token == strings.ToUpper(token) && strings.Contains(token, "_") {
-		return token
 	}
 	return ""
 }

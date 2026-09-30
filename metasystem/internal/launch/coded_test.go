@@ -20,8 +20,10 @@ func TestCodedErrorKeepsTheCodeOutOfTheDefaultText(t *testing.T) {
 	if got := ErrorDetail(err); got != "UNIT_RUN_BUSY unit=u goal=g run=r: another command is advancing unit u" {
 		t.Fatalf("detail %q", got)
 	}
-	if got := ErrorCode(errors.New("LAUNCH_BUILD_OVERSIZE size=9 cap=5")); got != "LAUNCH_BUILD_OVERSIZE" {
-		t.Fatalf("legacy code %q", got)
+	// A code-looking first word is words, never a code: the code is data
+	// beside the words (goal error-checks-use-typed-errors).
+	if got := ErrorCode(errors.New("LAUNCH_BUILD_OVERSIZE size=9 cap=5")); got != "" {
+		t.Fatalf("a code read from the words %q", got)
 	}
 	if got := ErrorCode(errors.New("plain words")); got != "" {
 		t.Fatalf("plain error code %q", got)
