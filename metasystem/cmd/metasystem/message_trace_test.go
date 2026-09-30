@@ -69,6 +69,9 @@ var messageTraceKept = map[string]string{
 	// (ParseLedger, the prompt's cycle table) reads back, not a message.
 	"internal/mission/ledger.go#AppendCycle": "mission ledger record lines its parser reads",
 	"internal/mission/ledger.go#AppendReset": "mission ledger record lines its parser reads",
+	// A disk store's name is its stable identifier: disk records and
+	// --json key on it (main's goldens hold it), so it is not reworded.
+	"internal/proofrun/retention.go#Retention.Name": "a disk store's stable name, keyed in records and --json",
 }
 
 // messageTraceKeptCodes are protocol codes kept in a person's message by
