@@ -746,16 +746,18 @@ func registryHomeForProcess(mkdirTemp func(string, string) (string, error)) (*re
 }
 
 func createRegistryHome(mkdirTemp func(string, string) (string, error)) (*registryHomeLease, error) {
+	// Both roots are swept whichever one this run publishes in: a home made
+	// under the TMPDIR fallback, kept by its owner for a joined child that
+	// outlived it, would otherwise wait for another run whose /tmp fails.
 	removeDeadRegistryHomes("/tmp", os.Stderr)
+	if fallbackRoot := os.TempDir(); fallbackRoot != "/tmp" {
+		removeDeadRegistryHomes(fallbackRoot, os.Stderr)
+	}
 	registry, primaryErr := createRegistryHomeUnder(mkdirTemp, "/tmp")
 	if primaryErr == nil {
 		return registry, nil
 	}
 
-	fallbackRoot := os.TempDir()
-	if fallbackRoot != "/tmp" {
-		removeDeadRegistryHomes(fallbackRoot, os.Stderr)
-	}
 	registry, fallbackErr := createRegistryHomeUnder(mkdirTemp, "")
 	if fallbackErr == nil {
 		return registry, nil
@@ -961,8 +963,9 @@ func removeSettledRegistryHome(home string, output io.Writer) error {
 }
 
 // removeDeadRegistryHomes removes registry homes whose owner lock is free,
-// together with their settled sidecars. Sidecars are only ever handled through
-// their authenticated home: neither age nor an absent home proves ownership.
+// together with their settled sidecars, and staging directories a creator
+// left unpublished. Sidecars are only ever handled through their
+// authenticated home: neither age nor an absent home proves ownership.
 func removeDeadRegistryHomes(root string, output io.Writer) {
 	entries, err := os.ReadDir(root)
 	if err != nil {
@@ -970,6 +973,12 @@ func removeDeadRegistryHomes(root string, output io.Writer) {
 	}
 	for _, entry := range entries {
 		path := filepath.Join(root, entry.Name())
+		if isRegistryStaging(entry.Name()) && entry.IsDir() && entry.Type()&os.ModeSymlink == 0 {
+			if err := removeStaleRegistryStaging(path); err != nil {
+				fmt.Fprintf(output, "remove stale registry staging %s: %v\n", path, err)
+			}
+			continue
+		}
 		if !entry.IsDir() || entry.Type()&os.ModeSymlink != 0 || !strings.HasPrefix(entry.Name(), registryHomePrefix) {
 			continue
 		}
@@ -977,6 +986,65 @@ func removeDeadRegistryHomes(root string, output io.Writer) {
 			fmt.Fprintf(output, "remove dead registry home %s: %v\n", path, err)
 		}
 	}
+}
+
+// isRegistryStaging reports whether name is exactly a staging directory
+// createRegistryHomeUnder makes: the dotted home prefix and MkdirTemp's
+// decimal suffix.
+func isRegistryStaging(name string) bool {
+	digits, found := strings.CutPrefix(name, "."+registryHomePrefix)
+	return found && digits != "" && strings.IndexFunc(digits, func(r rune) bool { return r < '0' || r > '9' }) < 0
+}
+
+// removeStaleRegistryStaging removes a staging directory whose creator died
+// before its publishing rename (a SIGKILL between MkdirTemp and the rename).
+// It fails closed: anything it cannot open, read or lock is kept. The creator
+// takes its shared owner lock before it writes the nonce, so only a complete
+// nonce proves the lock was ever taken; a staging directory without one may
+// be a live creator that has not locked yet, and is kept without being
+// probed, so the probe never makes a live creator's own lock fail. With the
+// nonce complete, an exclusive lock taken without waiting proves the creator
+// gone. Symlinks are never followed: the staging path and its owner file
+// must still be the directory and file that were locked.
+func removeStaleRegistryStaging(staging string) error {
+	info, err := os.Lstat(staging)
+	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	owner, err := openRegistryOwner(staging)
+	if err != nil {
+		if os.IsNotExist(err) || errors.Is(err, unix.ELOOP) {
+			return nil
+		}
+		return err
+	}
+	defer unlockAndClose(owner)
+	if ownerNonce(owner) == "" {
+		return nil
+	}
+	if err := unix.Flock(int(owner.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
+		if lockWouldBlock(err) {
+			return nil
+		}
+		return fmt.Errorf("lock staging owner: %w", err)
+	}
+	registryLockTaken(owner)
+	opened, err := owner.Stat()
+	if err != nil {
+		return err
+	}
+	ownerPath, err := os.Lstat(filepath.Join(staging, registryOwnerFile))
+	if err != nil || !os.SameFile(opened, ownerPath) {
+		return err
+	}
+	current, err := os.Lstat(staging)
+	if err != nil || !os.SameFile(info, current) {
+		return err
+	}
+	return os.RemoveAll(staging)
 }
 
 // HomeSettled is the observation half of the dead-home predicate (Part B
