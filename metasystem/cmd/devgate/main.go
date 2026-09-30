@@ -59,7 +59,7 @@ func main() {
 	// The gate's own scratch root, if it made one, is released before the
 	// exit code is returned (Part B 3.2 "Process"); one still in use stays
 	// for the sweeper.
-	_ = diskstore.ReleaseProcessScratch(context.Background())
+	_ = diskstore.ReleaseProcessScratch(context.Background(), diskstore.WriterDrain{Now: time.Now, Sleep: time.Sleep})
 	os.Exit(code)
 }
 
