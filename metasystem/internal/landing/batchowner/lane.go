@@ -226,7 +226,7 @@ func landingLaneKeeper(laneHome string) lane.Keeper {
 			probe, err := LandingLaneOwnerProbe(root)
 			return probe.Alive, err
 		},
-		Start: EnsureBatchOwner, Ready: LandingLaneReady, Hold: landingAgentHold}
+		Start: EnsureBatchOwner, Ready: LandingLaneReady, Hold: func(string) (string, error) { return landingAgentHoldWith(LandingAgentLive) }}
 }
 
 // LandingAgentLive names a landing agent launch on this computer that has
@@ -234,13 +234,13 @@ func landingLaneKeeper(laneHome string) lane.Keeper {
 // layer's). nil is none.
 var LandingAgentLive func() (id string, live bool, err error)
 
-// landingAgentHold holds the owner while a landing agent runs: the lane has
-// one composition owner.
-func landingAgentHold(string) (string, error) {
-	if LandingAgentLive == nil {
+// landingAgentHoldWith holds the owner while a landing agent runs: the lane
+// has one composition owner.
+func landingAgentHoldWith(agentLive func() (string, bool, error)) (string, error) {
+	if agentLive == nil {
 		return "", nil
 	}
-	id, live, err := LandingAgentLive()
+	id, live, err := agentLive()
 	if err != nil || !live {
 		return "", err
 	}

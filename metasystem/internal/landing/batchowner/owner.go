@@ -156,6 +156,12 @@ func BatchOwnerLaunchCommand(binary, repositoryRoot string) *exec.Cmd {
 }
 
 func EnsureBatchOwner(root string) error {
+	return ensureBatchOwnerWith(root, BatchOwnerEnsure, LandingAgentLive)
+}
+
+// ensureBatchOwnerWith is EnsureBatchOwner over its seams and the landing
+// agent read.
+func ensureBatchOwnerWith(root string, seams BatchOwnerEnsureSeams, agentLive func() (string, bool, error)) error {
 	if err := LandingCheckoutPresent(root); err != nil {
 		return err
 	}
@@ -172,20 +178,20 @@ func EnsureBatchOwner(root string) error {
 		return err
 	}
 	defer unix.Flock(int(lock.Fd()), unix.LOCK_UN)
-	pid, state, err := BatchOwnerEnsure.Inspect(root)
+	pid, state, err := seams.Inspect(root)
 	if err != nil && state == identity.Unknown {
 		return fmt.Errorf("%s: %w", codeOwnerIndeterminate, err)
 	}
 	switch state {
 	case identity.Alive:
-		return BatchOwnerEnsure.Wake(pid)
+		return seams.Wake(pid)
 	case identity.Dead:
 		// A running landing agent is the lane's one composition owner: no
 		// batch owner is launched beside it, and there is nothing to wake.
-		if reason, err := landingAgentHold(root); err != nil || reason != "" {
+		if reason, err := landingAgentHoldWith(agentLive); err != nil || reason != "" {
 			return err
 		}
-		return BatchOwnerEnsure.Launch(root)
+		return seams.Launch(root)
 	default:
 		return fmt.Errorf("%s: owner liveness is unknown", codeOwnerIndeterminate)
 	}
