@@ -417,7 +417,7 @@ func TestEnsureTellsNoRepositoryFromAnUnreadableOne(t *testing.T) {
 			if err := os.MkdirAll(filepath.Dir(engine), 0o755); err != nil {
 				t.Fatal(err)
 			}
-			if err := os.WriteFile(engine, []byte("#!/usr/bin/env bash\nexit 0\n"), 0o755); err != nil {
+			if err := testexec.WriteFile(engine, []byte("#!/usr/bin/env bash\nexit 0\n"), 0o755); err != nil {
 				t.Fatal(err)
 			}
 			if tc.gitFile {
