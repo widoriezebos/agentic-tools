@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 1
-- Sequence: 27
+- Sequence: 26
 - Risk: severity=2 novelty=2 exposure=2 accumulation=2 basis="severity 2: a narrowed proof selection silently under-tests; novelty 2: a new contract feature; exposure 2: every change to a mirrored surface; accumulation 2: grows with each mirrored surface"
 - Tier: 2
 - Intent: What: When one test area must always run the same tests as another, testing.json says so, and a missing test group is refused when the file is read instead of being found later in a long test run. Why: On 09-14 a new test group was added to one area and not to its twin; it surfaced only in a full package run. Pros: The mistake cannot be written, and no long run is needed to find it. Cons: It adds a field to the test configuration format, and the tool that generates testing.json must support it.
 - Origin: human
 - Next step: Next: testing.json is generated, so add a "mirrors" field to the test-area schema that metasystem testing add-tests and the contract reader both honour; move context-budget to it; refuse a mirror with a missing group when the file is loaded. Done when: repeating the 09-14 mistake is refused when testing.json is loaded, naming the group and the area.
 - OpenedAt: 2026-09-14T16:16:33Z
-- Revision: 144
+- Revision: 145
 - BudgetExceptions: 0
 
 History:
@@ -157,4 +157,5 @@ History:
 - 2026-09-30T18:53:26Z 4DKZPTA8R49RM2BN0FTV8H7N6H-m1e-b6a4eb0a done actor=human:wido targets=adoption-filled-delivery-passes-on-trunk,beds-run-under-the-oldest-supported-bash,busy-seat-shells-are-ended,cross-cutting-change-inventories-its-readers,delegate-sandbox-runs-the-beds,every-round-gets-an-independent-read,evidence-and-build-output-have-retention-and-stay-unindexed,failures-show-observed-against-expected,round-proof-feeds-the-next-brief,testing-surfaces-declare-their-mirror reason=priority-order from=1:30 to=1:29
 - 2026-09-30T18:53:38Z 8MKAXH2CPR7FEKDBS90M6CWB7Q-m1e-b6a4eb0a done actor=human:wido targets=beds-run-under-the-oldest-supported-bash,cross-cutting-change-inventories-its-readers,delegate-sandbox-runs-the-beds,every-round-gets-an-independent-read,failures-show-observed-against-expected,round-proof-feeds-the-next-brief,testing-surfaces-declare-their-mirror reason=priority-order from=1:29 to=1:28
 - 2026-09-30T18:54:04Z F039APNCSYVNCBGW0MAVJXXSR6-m1e-b6a4eb0a done actor=human:wido targets=brief-declares-the-round-boundary,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,delegate-sandbox-runs-the-beds,every-round-gets-an-independent-read,evidence-and-build-output-have-retention-and-stay-unindexed,failures-show-observed-against-expected,fixture-runners-and-fakes-bound-their-own-life,follow-up-brief-cannot-cite-fresh-trunk-files,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,round-proof-feeds-the-next-brief,testing-surfaces-declare-their-mirror reason=priority-order from=1:28 to=1:27
-Integrity: sha256=407883d38bf5f3b789467e06e39b10d221a4364c479b189c12245e91548f80e3
+- 2026-09-30T18:54:44Z Y6G0ABX98N5SW2MKYHX9J3922E-m1e-b6a4eb0a done actor=human:wido targets=busy-seat-shells-are-ended,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,delegate-sandbox-runs-the-beds,every-round-gets-an-independent-read,evidence-and-build-output-have-retention-and-stay-unindexed,failures-show-observed-against-expected,fixture-runners-and-fakes-bound-their-own-life,follow-up-brief-cannot-cite-fresh-trunk-files,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,round-proof-feeds-the-next-brief,testing-surfaces-declare-their-mirror reason=priority-order from=1:27 to=1:26
+Integrity: sha256=b925fc7699345778e9864bb37f9e6c210929cc796015fae276239d8a17064438
