@@ -506,3 +506,45 @@ func landingReturnLayoutBed(t *testing.T) layoutBed {
 	}
 	return bed
 }
+
+// A lane registered again takes a new custody epoch; landing begin renews
+// every claim the lane holds for the batch to it before it records the
+// series (K7), through the real ledger, and a second renewal writes
+// nothing.
+func TestBeginRenewsTheLanesClaimsToItsCustodyEpoch(t *testing.T) {
+	t.Parallel()
+	bed := newLaneAuthorityBed(t)
+	if _, err := bed.join(t); err != nil {
+		t.Fatal(err)
+	}
+	registerLane(t, bed.home, filepath.Join(filepath.Dir(bed.lane), "interim-lane"), "Wido", laneAuthorityNow)
+	layout, err := lane.NewLayout(bed.lane)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := lane.Register(bed.home, layout, "Wido", laneAuthorityNow); err != nil {
+		t.Fatal(err)
+	}
+	record, _, err := lane.Read(bed.home)
+	if err != nil || record.CustodyEpoch != 4 {
+		t.Fatalf("re-registered lane = %+v %v; want custody epoch 4", record, err)
+	}
+	// The lane's goal acts run in its own installation, whose machine is
+	// the lane's; this bed's one ledger stands in for it.
+	goalSyncMutationGit(t, bed.seat, "config", "metasystem.goal.machine", "lane-host")
+	tree := func() string { return strings.TrimSpace(goalSyncMutationGit(t, bed.seat, "rev-parse", goal.AcceptedRef+"^{tree}")) }
+	if err := batchowner.RenewLaneClaims(bed.home, bed.lane, bed.seat, laneAuthorityBatch, tree(), &batchowner.BatchOwnerCalls); err != nil {
+		t.Fatalf("renewal: %v", err)
+	}
+	file := bed.ledger(t)
+	if file.StopCapability.ClaimEpoch != 4 || file.Claimed.Lineage != lane.ClaimLineage || file.Claimed.HandedOver.Batch != laneAuthorityBatch || file.Claimed.HandedOver.FromMachine != "mac-cli" {
+		t.Fatalf("renewed claim = %+v %+v", file.Claimed, file.StopCapability)
+	}
+	before := goalSyncMutationGit(t, bed.seat, "rev-parse", goal.AcceptedRef)
+	if err := batchowner.RenewLaneClaims(bed.home, bed.lane, bed.seat, laneAuthorityBatch, tree(), &batchowner.BatchOwnerCalls); err != nil {
+		t.Fatalf("second renewal: %v", err)
+	}
+	if after := goalSyncMutationGit(t, bed.seat, "rev-parse", goal.AcceptedRef); after != before {
+		t.Fatalf("a second renewal wrote the ledger")
+	}
+}
