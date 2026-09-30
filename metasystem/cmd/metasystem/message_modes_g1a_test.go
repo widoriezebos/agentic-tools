@@ -3,14 +3,9 @@ package main
 // Group G1a of the round-2 rewrite (status, helm, system, session, mission,
 // ui, work status, question, design check, and the hook texts): every
 // traced path of the group reads as the two-line rule, so the traced
-// reading enforces them.
-//
-// Left in report mode, on purpose:
-//   - internal/adapter/selftestrun.go: its traced texts are the self-test's
-//     brief to the agent under test (a prompt whose PERMITTED_READ token is
-//     the protocol the test checks), not a message a person reads.
-//   - internal/hooks/setup_legacy.go: the tails earlier settings files
-//     carried, matched byte for byte and never printed.
+// reading enforces them. internal/adapter/selftestrun.go (a prompt) and
+// internal/hooks/setup_legacy.go (bytes never printed) are excluded, with
+// why, in message_modes_remedies_test.go.
 var _ = enforceTracedMessages(
 	"cmd/metasystem/helm_return.go",
 	"cmd/metasystem/helpers.go",

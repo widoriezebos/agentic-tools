@@ -22,8 +22,8 @@ import (
 // refusal from a format string, into the function or local that assembles a
 // line and hands it on, into a constant, onto streams the direct scan does
 // not name, into hook responses, browser refusals and an error type's Error
-// text. Everything it finds is reported; a group enforces its paths with
-// enforceTracedMessages once it has rewritten them.
+// text. Everything it finds is enforced, except what is kept as machine
+// protocol or excluded, with why, in a message_modes_<group>_test.go.
 
 // The trace classes: which blind spot of the direct scan a source was in.
 const (
@@ -1069,7 +1069,9 @@ func (index *traceIndex) emit(sink traceSink) []messageTraced {
 }
 
 // messageTracedModeFor is a traced source's mode: kept for machine
-// protocol, enforce where a group enforced it, report otherwise.
+// protocol, excluded or enforced where a modes file says so, and enforced
+// everywhere else: every group has rewritten its paths, so a new message
+// anywhere reads as the two-line rule from the start.
 func messageTracedModeFor(file, function string) string {
 	for _, key := range []string{file + "#" + function, file} {
 		if _, kept := messageTraceKept[key]; kept {
@@ -1081,7 +1083,7 @@ func messageTracedModeFor(file, function string) string {
 			return mode
 		}
 	}
-	return auditReport
+	return auditEnforce
 }
 
 // messageTraceGroups are the rewrite groups of the traced inventory: the
@@ -1137,7 +1139,7 @@ func TestAuditMessagesTraced(t *testing.T) {
 	if len(traced) < 500 {
 		t.Fatalf("the traced scan found %d sources; the module holds thousands of assembled messages, so the scan is broken", len(traced))
 	}
-	reported := 0
+	byMode := map[string]int{}
 	for _, source := range traced {
 		if len(source.Violations) == 0 {
 			continue
@@ -1146,9 +1148,10 @@ func TestAuditMessagesTraced(t *testing.T) {
 			t.Errorf("%s:%d (%s) %s/%s %q: %s", source.File, source.Line, source.Function, source.Trace, source.Kind, source.Text, strings.Join(source.Violations, ", "))
 			continue
 		}
-		reported++
+		byMode[source.Mode]++
 	}
-	t.Logf("%d traced message sources, %d with violations in report mode", len(traced), reported)
+	t.Logf("%d traced message sources; with violations: %d in report mode, %d excluded with a reason, %d kept as protocol",
+		len(traced), byMode[auditReport], byMode["excluded"], byMode["kept"])
 	if dir := os.Getenv("METASYSTEM_MESSAGE_INVENTORY_R2"); dir != "" {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatal(err)
@@ -1218,8 +1221,7 @@ func messageTraceMarkdown(traced []messageTraced) string {
 		"(cmd/metasystem/message_trace_test.go). Rule: \"Messages a Person Reads\" in docs/design/design-principles.md. " +
 		"inventory-r2.json has every source: file:line, function, kind (where it shows), trace (the blind spot it was in), text, violations, mode.\n\n")
 	fmt.Fprintf(&b, "%d message sources the direct scan does not hold; %d with at least one violation; %d kept as machine protocol.\n\n", total, violatingTotal, kept)
-	b.WriteString("Every source here is in report mode: nothing turns red until a group rewrites its files and enforces them with " +
-		"enforceTracedMessages in its message_modes_<group>_test.go.\n\n")
+	b.WriteString("Every source is enforced unless it is kept as machine protocol or excluded, with why, in a message_modes_<group>_test.go.\n\n")
 	b.WriteString("What it leaves out, so internal strings are not reported: an argument filled into a format's hole (an id, a path) is not " +
 		"taken for the message; a text without two words (a code, a key, an id) is skipped; a Code field, a log line, a map key and " +
 		"a JSON field other than a hook's systemMessage, stopReason or block reason are no sinks; fakes, fixtures and the interface " +
