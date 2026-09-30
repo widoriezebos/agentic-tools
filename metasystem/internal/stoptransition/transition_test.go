@@ -1587,3 +1587,30 @@ func TestStatusCarriesEachLiveItemAndTheFenceTyped(t *testing.T) {
 		t.Fatalf("stopped status = %+v err=%v", report, err)
 	}
 }
+
+// TestRepeatedStopWithOnlyOtherProcessesIsAlreadyStopped: a process that is
+// not the metasystem's (observe-only: the codex app-server, the Lima VM) is
+// never signalled, so it cannot make a stop of a stopped checkout a new
+// stop. The repeat is success with no fence generation, and it says what it
+// left alone.
+func TestRepeatedStopWithOnlyOtherProcessesIsAlreadyStopped(t *testing.T) {
+	other := Item{Key: "untracked:63:1", StatusLine: "untracked pid 63 codex app-server: running", ObserveOnly: true,
+		Survivor: stopfence.Survivor{Component: "untracked", Pid: 63, PidStartedAt: 1}}
+	family := &scriptedFamily{name: "untracked", inventories: [][]Item{{other}, {other}, {other}, {other}, {other}, {other}, {other}, {other}}}
+	transition := testTransition(t, family)
+	if err := stopfence.Write(transition.Root, stopfence.Record{State: stopfence.StateClosed, Phase: stopfence.PhaseStopped, Generation: 3,
+		ChangedAt: "2026-09-30T08:00:00Z", Checkout: transition.Checkout, By: stopfence.Actor{Verb: "stop", Process: stopfence.Process{Pid: 7}}}); err != nil {
+		t.Fatal(err)
+	}
+	report, err := transition.Stop()
+	if err != nil || !report.Unchanged || report.ExitCode != 0 {
+		t.Fatalf("repeated stop = %+v err=%v; want already stopped", report, err)
+	}
+	want := "MetaSystem is already stopped for /checkout (since 2026-09-30T08:00:00Z); nothing of MetaSystem's is running; 1 process that is not MetaSystem's is not touched; start again: metasystem system start --repo /checkout"
+	if got := strings.Join(report.Lines, "\n"); got != want {
+		t.Fatalf("repeat = %q, want %q", got, want)
+	}
+	if record, _ := stopfence.Read(transition.Root); record.Generation != 3 || family.stops != 0 {
+		t.Fatalf("the repeat wrote generation %d and signalled %d", record.Generation, family.stops)
+	}
+}

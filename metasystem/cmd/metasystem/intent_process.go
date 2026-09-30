@@ -637,25 +637,31 @@ func runIntentSessionStart(inv *intentInvocation) int {
 
 // runIntentSystemStop stops this checkout's machinery at a person's word.
 func runIntentSystemStop(inv *intentInvocation) int {
+	return inv.render(systemStopResult(inv))
+}
+
+// systemStopResult is system stop's whole act and result for the checkout
+// inv selects; machine stop runs it once per machine of this computer.
+func systemStopResult(inv *intentInvocation) intentResult {
 	scope, scale, problem := inv.selectProcessScope()
 	if problem != nil {
-		return inv.render(*problem)
+		return *problem
 	}
 	report, refusal := inv.owners.processes.process.stop(scope, scale)
 	if refusal != nil {
-		return inv.render(processRefusalResult(inv.checkoutTarget(scope), "stop refused: ", refusal, report))
+		return processRefusalResult(inv.checkoutTarget(scope), "stop refused: ", refusal, report)
 	}
 	if report.Unchanged {
-		return inv.render(processUnchangedResult(inv.checkoutTarget(scope), report))
+		return processUnchangedResult(inv.checkoutTarget(scope), report)
 	}
 	if report.ExitCode != 0 {
 		_, fence := processFence(scope)
-		return inv.render(intentResult{Outcome: intentPartial, code: report.ExitCode, Targets: inv.checkoutTarget(scope), text: report.Lines,
+		return intentResult{Outcome: intentPartial, code: report.ExitCode, Targets: inv.checkoutTarget(scope), text: report.Lines,
 			Summary: "stop did not finish: some processes are still running (listed below); no new work starts (" + fence + ")",
 			next:    inv.publicArgv(append([]string{"system", "stop"}, inv.forward("installation")...)...), nextReason: "stop again; end any process that survives a second stop yourself",
-			Data: map[string]any{"lines": nonNilLines(report.Lines), "exitCode": report.ExitCode, "fence": fence}})
+			Data: map[string]any{"lines": nonNilLines(report.Lines), "exitCode": report.ExitCode, "fence": fence}}
 	}
-	return inv.render(processReportResult(inv.checkoutTarget(scope), "stopped "+scope.Checkout, report))
+	return processReportResult(inv.checkoutTarget(scope), "stopped "+scope.Checkout, report)
 }
 
 func (inv *intentInvocation) stopSession() int {
