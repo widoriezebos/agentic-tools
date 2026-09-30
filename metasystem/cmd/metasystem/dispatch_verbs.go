@@ -51,7 +51,7 @@ func breachStopOrderingHumanWith(root string, caller lease.ClassifyResult, by st
 	}
 	name, err := enrolledName(root, now)
 	if err != nil {
-		return "", fmt.Errorf("the stop was not ordered: it records who ordered it, and this terminal is not enrolled (%v)\nrun: metasystem system enroll --name NAME", err)
+		return "", fmt.Errorf("the stop was not ordered: it records who ordered it, and this terminal is not enrolled (%v)\nrun: metasystem system enroll --name <your name>", err)
 	}
 	if typed != "" && typed != name {
 		return "", fmt.Errorf("breach stop: --by %s is not the person enrolled at this terminal (%s); nothing was done", typed, name)
