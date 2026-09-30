@@ -1,6 +1,6 @@
 # trunk-versus-candidate-is-a-verification-step
 
-- State: queued
+- State: parked
 - Priority: 2
 - Sequence: 61
 - Risk: severity=2 novelty=2 exposure=3 accumulation=2 basis="severity 2: without a same-input comparison a behaviour change hides behind a text change, as a Stop-message build did on 2026-09-13; novelty 2: the engine has no notion of running one input against two trees; exposure 3: every landing that changes an output the seat or the human reads; accumulation 2: each hand-crafted comparison is redone per landing"
@@ -9,8 +9,9 @@
 - Origin: human
 - Next step: Design in the verification-loop program page: what an input is (fixture row, command, Stop payload), how the accepted tree is materialised beside the candidate, how outputs are classified, and the declaration a landing carries. Then build the verb, the classifier and the gate refusal.
 - OpenedAt: 2026-09-14T19:26:09Z
-- Revision: 84
+- Revision: 85
 - BudgetExceptions: 0
+- Parked: by=human:wido at=2026-09-30T18:43:52Z because=Parked: the case that caused it (stop decisions) is now covered by an audit test. Bring it back when another change declared as wording-only turns out to have changed a decision.
 
 History:
 - 2026-09-14T19:26:09Z F328BFJ3QRXCKXGDJQ0YCMNB25-m1e-c6925449 open actor=human:Wido targets=trunk-versus-candidate-is-a-verification-step
@@ -97,4 +98,5 @@ History:
 - 2026-09-17T06:21:54Z PWZJ92JMATF0A4J0955BW1HQTM-m1e-c6925449 set-priority actor=human:Wido targets=cross-cutting-change-inventories-its-readers,deep-sections-cannot-stay-red-unseen,degraded-stop-forms-have-one-source,failures-show-observed-against-expected,member-size-gate,seat-landings-run-the-selected-sections,stop-capability-follows-the-lease-epoch,stop-decision-surface-is-a-gate,stop-response-carries-a-structured-report-reference,test-environment-edges-are-closed,testing-surfaces-declare-their-mirror,trunk-versus-candidate-is-a-verification-step reason=priority-order subject=seat-landings-run-the-selected-sections from=1:39 to=1:38 requested-sequence=60
 - 2026-09-17T06:22:00Z AF17KZN0EH6PNS80FHY0QDPW76-m1e-c6925449 set-priority actor=human:Wido targets=cross-cutting-change-inventories-its-readers,deep-sections-cannot-stay-red-unseen,degraded-stop-forms-have-one-source,failures-show-observed-against-expected,member-size-gate,stop-capability-follows-the-lease-epoch,stop-decision-surface-is-a-gate,stop-response-carries-a-structured-report-reference,test-environment-edges-are-closed,testing-surfaces-declare-their-mirror,trunk-versus-candidate-is-a-verification-step reason=priority-order subject=trunk-versus-candidate-is-a-verification-step from=1:38 to=2:61 requested-sequence=61
 - 2026-09-17T06:23:01Z JX1C79Q5KK0YXZQXBA643BB12N-m1e-c6925449 unapprove actor=human:Wido targets=trunk-versus-candidate-is-a-verification-step reason=Wido 2026-09-17 06:22Z: held until goals-live-on-branches lands; a goal becomes one branch and one proof at the merge, and this goal's landing shape changes with it. Re-scope in one pass after that landing; approval then, not before.
-Integrity: sha256=2ad26c8d1b4a5c013446e3dd423e1ab350889a657f967aed9eaeb9d1c4fda709
+- 2026-09-30T18:43:52Z G2Y61KK6TSSMNA6BM1435XDA29-m1e-b6a4eb0a park actor=human:wido targets=trunk-versus-candidate-is-a-verification-step reason=Parked: the case that caused it (stop decisions) is now covered by an audit test. Bring it back when another change declared as wording-only turns out to have changed a decision.
+Integrity: sha256=59104afe5579b0442333effff974180cfaf14f3df3066f8a47e4d80b6e2a9be1
