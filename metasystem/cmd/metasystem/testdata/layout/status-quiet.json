@@ -1,0 +1,50 @@
+exit 0
+--
+{
+  "schemaVersion": 1,
+  "verb": "status",
+  "targets": [
+    {
+      "kind": "checkout",
+      "id": "/Users/wido/GitHub/agentic-tools-m1e"
+    }
+  ],
+  "outcome": "confirmed",
+  "summary": "status of /Users/wido/GitHub/agentic-tools-m1e",
+  "data": {
+    "board": {
+      "readable": true,
+      "bridge": "live",
+      "seats": [
+        {
+          "machine": "landing",
+          "installation": "",
+          "goals": []
+        },
+        {
+          "machine": "m1e",
+          "installation": "",
+          "goals": [
+            {
+              "goal": "switch-on-trial",
+              "lastProgressAt": "2026-09-30T08:57:00Z",
+              "unknown": "not claimed"
+            }
+          ]
+        },
+        {
+          "machine": "ui",
+          "installation": "",
+          "goals": []
+        }
+      ]
+    },
+    "exitCode": 0,
+    "lines": [
+      "checkout /Users/wido/GitHub/agentic-tools-m1e",
+      "nothing is running"
+    ]
+  }
+}
+
+--
