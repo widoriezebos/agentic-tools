@@ -247,7 +247,7 @@ func runFrozenSelectionProbe(ctx context.Context, request proofrun.TestRunReques
 	}
 	if probe.ID == "lower-coverage-floor" {
 		if child.Code != "TEST_POLICY_COVERAGE_FLOOR_LOWERED" {
-			return fmt.Errorf("stable floor refusal missing: code=%q %s", child.Code, child.Summary)
+			return fmt.Errorf("the plan did not refuse the lowered coverage floor: %s", child.Summary)
 		}
 		return nil
 	}

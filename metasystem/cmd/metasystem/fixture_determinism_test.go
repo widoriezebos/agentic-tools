@@ -293,7 +293,8 @@ func TestLandingReceiptRefusesSemanticBudgetBeforeCommand(t *testing.T) {
 		}
 		code = exit.ExitCode()
 	}
-	if code != proofrun.ExitAdmissionRefused || !bytes.Contains(output, []byte("BUDGET_REFUSED")) {
+	if code != proofrun.ExitAdmissionRefused || !bytes.Contains(output, []byte("has no room in its approved budget")) ||
+		!bytes.Contains(output, []byte("run: metasystem goal budget fixture-budget BOX")) {
 		t.Fatalf("over-budget receipt exit=%d, output=%q", code, output)
 	}
 	t.Logf("receipt exit=%d output=%s", code, output)

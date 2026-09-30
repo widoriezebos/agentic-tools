@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	refusalpkg "github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/shellquote"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/verbresult"
@@ -104,3 +105,8 @@ func TestAuditEnvelopeFieldsMatchThePublicResult(t *testing.T) {
 		t.Error("verbresult.Result has no code field")
 	}
 }
+
+// refusalDetail is a refusal's code-first detail ("CODE facts: reason"),
+// where its code and facts live now that the words a person reads carry
+// neither.
+func refusalDetail(err error) string { return refusalpkg.DetailOf(err) }

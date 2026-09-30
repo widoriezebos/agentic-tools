@@ -64,12 +64,12 @@ func TestLaneProofChargesTheLaneNotAGoal(t *testing.T) {
 	unresolved.laneAccount = func(string) (string, error) {
 		return "", errors.New("LANE_ACCOUNT_UNRESOLVED: no landing lane is registered on this host")
 	}
-	if _, _, _, err := admitAsLaneOwner(t, repository, unresolved, lease.ClassMain); err == nil || !strings.Contains(err.Error(), "LANE_ACCOUNT_UNRESOLVED") {
+	if _, _, _, err := admitAsLaneOwner(t, repository, unresolved, lease.ClassMain); err == nil || !strings.Contains(refusalDetail(err), "LANE_ACCOUNT_UNRESOLVED") {
 		t.Fatalf("unresolved lane: %v", err)
 	}
 	other := request
 	other.laneAccount = func(string) (string, error) { return "lane:ffffffffffff", nil }
-	if _, _, _, err := admitAsLaneOwner(t, repository, other, lease.ClassMain); err == nil || !strings.Contains(err.Error(), "LANE_ACCOUNT_UNRESOLVED") {
+	if _, _, _, err := admitAsLaneOwner(t, repository, other, lease.ClassMain); err == nil || !strings.Contains(refusalDetail(err), "LANE_ACCOUNT_UNRESOLVED") {
 		t.Fatalf("another lane's identity: %v", err)
 	}
 	both := request

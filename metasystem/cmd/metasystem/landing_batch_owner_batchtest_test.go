@@ -809,7 +809,7 @@ func TestBatchSupervisorTakeoverRebindsJoinedClaims(t *testing.T) {
 	attempt, _, _, err = admitProofLaunch(proofLaunchAdmission{ControlRoot: canonicalRoot, ExecutionRoot: canonicalRoot, ConfPath: filepath.Join(canonicalRoot, "metasystem.conf"),
 		GoalID: "standing-validation", CapMin: "1", ScopeClass: "selected", CommandClass: "testing", ExpectedGoalRevision: 3, ExpectedAccountingRevision: 2})
 	after, readErr := proofrun.ReadAttempts(canonicalRoot)
-	if err == nil || !strings.Contains(err.Error(), "GOAL_REVISION_MOVED") || attempt.AttemptID != "" || readErr != nil || len(after) != len(before) {
+	if err == nil || !strings.Contains(refusalDetail(err), "GOAL_REVISION_MOVED") || attempt.AttemptID != "" || readErr != nil || len(after) != len(before) {
 		t.Fatalf("parent revision admission attempt=%+v error=%v attempts=%d->%d read=%v", attempt, err, len(before), len(after), readErr)
 	}
 }

@@ -137,7 +137,7 @@ func TestBatchChangePrefixDecisionPlansGoalMembersOnly(t *testing.T) {
 	}
 	// A prefix of changes alone is planned on the lane's account; a lane that
 	// cannot be named plans nothing (fail closed).
-	if _, err := batchowner.PlanPrefixDecisionWith(t.TempDir(), []batch.Unit{change}, "tip-tree", nil); err == nil || !strings.Contains(err.Error(), "LANE_ACCOUNT_UNRESOLVED") {
+	if _, err := batchowner.PlanPrefixDecisionWith(t.TempDir(), []batch.Unit{change}, "tip-tree", nil); err == nil || !strings.Contains(refusalDetail(err), "LANE_ACCOUNT_UNRESOLVED") {
 		t.Fatalf("a change-only prefix without a lane: %v", err)
 	}
 	record := batch.Record{BatchID: "01j5x00000000000000000ba79", BaseTree: "base-tree", TipTree: "tip-tree", SelectedGroups: []string{"app-a"},
@@ -387,7 +387,7 @@ func TestBatchChangeOnlyProofIsChargedToTheLane(t *testing.T) {
 		}
 		if !resolvable {
 			if err != nil || len(launched) != 0 || after.State != batch.StateSealed || after.Proof == nil || after.Proof.Status != "lane-unresolved" ||
-				!strings.Contains(after.Proof.Failure, "LANE_ACCOUNT_UNRESOLVED") {
+				!strings.Contains(after.Proof.Failure, "no landing lane is registered") {
 				t.Fatalf("unresolved lane: err=%v launched=%d state=%s proof=%+v", err, len(launched), after.State, after.Proof)
 			}
 			continue
