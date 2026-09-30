@@ -65,6 +65,7 @@ func rearmUpInstallation(t *testing.T, engine []byte) string {
 // refusal arrives as the envelope's summary; an up that answers in words
 // only reads as unknown, never as armed.
 func TestLandedRearmUpReadsTheRealUpsEnvelope(t *testing.T) {
+	t.Parallel()
 	installation := rearmUpInstallation(t, rearmUpEngine(t))
 	notARepository := t.TempDir()
 	outcome, err := landedRearmUp(context.Background(), installation, notARepository)

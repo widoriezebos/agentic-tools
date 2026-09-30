@@ -29,19 +29,20 @@ import (
 
 // engineVerb runs one owner verb of the selected installation's engine as
 // its own process, through the explicit internal entry with --json, and
-// reads its answer from the envelope verb names.
-func (inv *intentInvocation) engineVerb(verb string, args ...string) (verbresult.Result, error, *intentResult) {
+// reads its answer from the envelope verb names; the error is an answer
+// that could not be read, the intentResult a refusal before anything ran.
+func (inv *intentInvocation) engineVerb(verb string, args ...string) (verbresult.Result, *intentResult, error) {
 	binary, err := inv.delivery().executable()
 	if err != nil {
-		return verbresult.Result{}, nil, &intentResult{Outcome: intentFailed, code: 1, Summary: "the running engine's own path could not be read, so nothing was done",
-			retry: "try again", Details: []string{"engine path: " + err.Error()}}
+		return verbresult.Result{}, &intentResult{Outcome: intentFailed, code: 1, Summary: "the running engine's own path could not be read, so nothing was done",
+			retry: "try again", Details: []string{"engine path: " + err.Error()}}, nil
 	}
 	envelope := inv.delivery().ownerEnvelope
 	if envelope == nil {
 		envelope = runIntentOwnerEnvelope
 	}
 	result, readErr := envelope(intentProcess{argv: append(append([]string{binary, "internal"}, args...), "--json"), dir: inv.layout.InstallationRoot}, verb)
-	return result, readErr, nil
+	return result, nil, readErr
 }
 
 // ownerEnvelopeResult is the public outcome of one owner verb's envelope:

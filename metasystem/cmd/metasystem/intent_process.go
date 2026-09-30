@@ -2534,7 +2534,7 @@ func runIntentStartMachine(inv *intentInvocation) int {
 			args = append(args, pair[1], inv.input.text(pair[0]))
 		}
 	}
-	owner, readErr, problem := inv.engineVerb(seatLaunchVerb, args...)
+	owner, problem, readErr := inv.engineVerb(seatLaunchVerb, args...)
 	if problem != nil {
 		return inv.render(*problem)
 	}
