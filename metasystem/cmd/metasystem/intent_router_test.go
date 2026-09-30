@@ -281,3 +281,45 @@ func TestIntentRouterObjectPages(t *testing.T) {
 		}
 	}
 }
+
+// TestIntentRouterHelpTakesGlobalFlags (F1): the top-level page and an
+// object's page accept --repo PATH and the other flags every command takes,
+// and a flag or path in the action's place is never answered with a "did you
+// mean" that names an action, least of all one that changes state.
+func TestIntentRouterHelpTakesGlobalFlags(t *testing.T) {
+	t.Parallel()
+	_, rootPage, _ := routeWith(families())
+	_, goalPage, _ := routeWith(families(), "goal")
+	for _, row := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"--repo", "/some/checkout"}, rootPage},
+		{[]string{"--repo=/some/checkout"}, rootPage},
+		{[]string{"--root", "/some/checkout", "--json"}, rootPage},
+		{[]string{"--verbose"}, rootPage},
+		{[]string{"goal", "--repo", "/some/checkout"}, goalPage},
+		{[]string{"goal", "--repo=/some/checkout", "--verbose"}, goalPage},
+		{[]string{"goal", "--json", "--help"}, goalPage},
+	} {
+		code, stdout, stderr := routeWith(families(), row.args...)
+		if code != 0 || stderr != "" || stdout != row.want {
+			t.Errorf("%v = %d %q %q; want the help page", row.args, code, stdout, stderr)
+		}
+	}
+	for _, args := range [][]string{
+		{"goal", "--repo"},
+		{"goal", "--bogus", "/some/checkout"},
+		{"goal", "/some/checkout"},
+		{"--repo"},
+		{"--bogus", "/some/checkout"},
+	} {
+		code, stdout, stderr := routeWith(families(), args...)
+		if code != 2 || stdout != "" || !strings.Contains(stderr, "nothing was done") {
+			t.Errorf("%v = %d %q %q; want a refusal", args, code, stdout, stderr)
+		}
+		if strings.Contains(stderr, "did you mean") {
+			t.Errorf("%v suggests a command for a flag or path: %q", args, stderr)
+		}
+	}
+}
