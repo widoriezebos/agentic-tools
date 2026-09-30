@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"golang.org/x/sys/unix"
@@ -173,6 +175,82 @@ func TestProcessScratchReleaseUnlinksSymlinks(t *testing.T) {
 	}
 }
 
+// The fork-copy witness: a copy of the owner's writer description that
+// goes away shortly after the owner closed its own (a sibling goroutine's
+// child between fork and exec) is waited out and the root released.
+// Before the drain, the owner's single probe left the root to the sweeper
+// and ReleaseProcessScratch returned "kept for the sweeper".
+func TestProcessScratchReleaseWaitsOutAForkCopyOfTheWriter(t *testing.T) {
+	t.Parallel()
+	runOwnerScenario(t, "fork-copy-drained")
+}
+
+// A copy that outlives the drain is a live writer: the root stays for the
+// sweeper, the release errors, and the drain stops at its bound.
+func TestProcessScratchReleaseDrainIsBoundedForALiveWriter(t *testing.T) {
+	t.Parallel()
+	runOwnerScenario(t, "fork-copy-alive")
+}
+
+// forkCopyHolder starts a child holding a duplicate of the owner's writer
+// description, outside the prepare seam (so the owner does not count it as
+// its child), as a child forked by another goroutine holds every
+// descriptor until it execs: the same open file description, so the same
+// flock. release ends it and waits for it.
+func forkCopyHolder(created *processScratch) (release func() error, err error) {
+	child := exec.Command("/bin/sh", "-c", "echo ready; read line || true")
+	child.ExtraFiles = []*os.File{created.writer}
+	stdin, err := child.StdinPipe()
+	if err != nil {
+		return nil, err
+	}
+	stdout, err := child.StdoutPipe()
+	if err != nil {
+		return nil, err
+	}
+	if err := child.Start(); err != nil {
+		return nil, err
+	}
+	ready := make([]byte, len("ready\n"))
+	if _, err := io.ReadFull(stdout, ready); err != nil || string(ready) != "ready\n" {
+		_ = stdin.Close()
+		_ = child.Wait()
+		return nil, fmt.Errorf("holder readiness = %q, %v", ready, err)
+	}
+	released := false
+	return func() error {
+		if released {
+			return nil
+		}
+		released = true
+		_ = stdin.Close()
+		return child.Wait()
+	}, nil
+}
+
+// fakeWriterDrain is the drain on an artificial clock: each sleep calls
+// onSleep, then advances the clock by the step; it never waits.
+func fakeWriterDrain(onSleep func()) (WriterDrain, *int) {
+	clock := time.Unix(0, 0)
+	sleeps := 0
+	return WriterDrain{Now: func() time.Time { return clock }, Sleep: func(step time.Duration) {
+		sleeps++
+		if onSleep != nil {
+			onSleep()
+		}
+		clock = clock.Add(step)
+	}}, &sleeps
+}
+
+// releaseAsTheProcess makes created this process's scratch and releases it
+// through ReleaseProcessScratch, as dispatch does at its end.
+func releaseAsTheProcess(created *processScratch, drain WriterDrain) error {
+	scratchMu.Lock()
+	currentScratch = created
+	scratchMu.Unlock()
+	return ReleaseProcessScratch(context.Background(), drain)
+}
+
 // Round D1 F-6: a temporary store whose creation was cut short after its
 // record, its root still empty, is discarded and made again.
 func TestTempStoreAfterAnInterruptedCreationIsMadeAgain(t *testing.T) {
@@ -324,7 +402,7 @@ var ownerScenarios = map[string]func(created *processScratch) error{
 		if err != nil {
 			return err
 		}
-		if released, err := created.releaseIfIdle(context.Background()); released || err != nil {
+		if released, err := created.releaseIfIdle(context.Background(), WriterDrain{}); released || err != nil {
 			return fmt.Errorf("a release with a user in flight = %v, %v; want kept", released, err)
 		}
 		if _, err := os.Lstat(dir); err != nil {
@@ -346,7 +424,7 @@ var ownerScenarios = map[string]func(created *processScratch) error{
 		if err := child.Start(); err != nil {
 			return err
 		}
-		if released, err := created.releaseIfIdle(context.Background()); released || err != nil {
+		if released, err := created.releaseIfIdle(context.Background(), WriterDrain{}); released || err != nil {
 			return fmt.Errorf("a release with a live prepared child = %v, %v; want kept", released, err)
 		}
 		if _, err := os.Lstat(created.record.Path); err != nil {
@@ -355,6 +433,47 @@ var ownerScenarios = map[string]func(created *processScratch) error{
 		_ = stdin.Close()
 		_ = child.Wait()
 		return releasedAndGone(created)
+	},
+	"fork-copy-drained": func(created *processScratch) error {
+		release, err := forkCopyHolder(created)
+		if err != nil {
+			return err
+		}
+		defer release()
+		var holderErr error
+		drain, sleeps := fakeWriterDrain(func() { holderErr = release() })
+		if err := releaseAsTheProcess(created, drain); err != nil {
+			return fmt.Errorf("a release with a transient fork copy = %v; want released", err)
+		}
+		if holderErr != nil {
+			return fmt.Errorf("holder: %v", holderErr)
+		}
+		if *sleeps != 1 {
+			return fmt.Errorf("the drain slept %d times; want exactly one re-probe", *sleeps)
+		}
+		if _, err := os.Lstat(created.record.Path); !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("the root outlived its release: %v", err)
+		}
+		return nil
+	},
+	"fork-copy-alive": func(created *processScratch) error {
+		release, err := forkCopyHolder(created)
+		if err != nil {
+			return err
+		}
+		defer release()
+		drain, sleeps := fakeWriterDrain(nil)
+		err = releaseAsTheProcess(created, drain)
+		if err == nil || !strings.Contains(err.Error(), "kept for the sweeper") {
+			return fmt.Errorf("a release with a live writer = %v; want kept for the sweeper", err)
+		}
+		if want := int(WriterDrainWindow / WriterDrainStep); *sleeps != want {
+			return fmt.Errorf("the drain slept %d times; want %d", *sleeps, want)
+		}
+		if _, err := os.Lstat(created.record.Path); err != nil {
+			return fmt.Errorf("the root went while a writer lives: %v", err)
+		}
+		return nil
 	},
 	"symlinks": func(created *processScratch) error {
 		outside := os.Getenv("DISKSTORE_SCRATCH_OUTSIDE")
@@ -368,7 +487,7 @@ var ownerScenarios = map[string]func(created *processScratch) error{
 }
 
 func releasedAndGone(created *processScratch) error {
-	if released, err := created.releaseIfIdle(context.Background()); !released || err != nil {
+	if released, err := created.releaseIfIdle(context.Background(), WriterDrain{}); !released || err != nil {
 		return fmt.Errorf("the release = %v, %v; want released", released, err)
 	}
 	if _, err := os.Lstat(created.record.Path); !errors.Is(err, os.ErrNotExist) {

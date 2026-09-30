@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
@@ -292,21 +293,63 @@ func childRunning(cmd *exec.Cmd) bool {
 	return cmd.Process != nil && cmd.ProcessState == nil && unix.Kill(cmd.Process.Pid, 0) == nil
 }
 
+// WriterDrain is the owner's clock for waiting out fork copies of its
+// writer lock. A fork by any goroutine of the owner's process duplicates
+// every descriptor, close-on-exec ones included, and the child keeps the
+// duplicate (and with it the flock) until it execs; on darwin the parent
+// releases syscall.ForkLock as soon as fork returns, before that exec, so
+// closing under ForkLock does not close the window. The copy goes at exec,
+// so the owner re-probes every WriterDrainStep for WriterDrainWindow; a
+// writer alive after that keeps the root for the sweeper. LOCK_UN is no
+// remedy: it would release every real inheritor too. This package reads no
+// clock (R13): the caller passes it. The zero value probes once.
+type WriterDrain struct {
+	Now   func() time.Time
+	Sleep func(time.Duration)
+}
+
+// The owner's drain bound: a fork-to-exec window is microseconds unloaded.
+const (
+	WriterDrainWindow = 2 * time.Second
+	WriterDrainStep   = 5 * time.Millisecond
+)
+
+// takeWriterLock takes lock LOCK_EX|LOCK_NB, re-probing while it is held
+// until the drain window has passed.
+func (d WriterDrain) takeWriterLock(lock *os.File) error {
+	var deadline time.Time
+	for {
+		err := unix.Flock(int(lock.Fd()), unix.LOCK_EX|unix.LOCK_NB)
+		if err == nil || !(errors.Is(err, unix.EWOULDBLOCK) || errors.Is(err, unix.EAGAIN)) || d.Now == nil || d.Sleep == nil {
+			return err
+		}
+		now := d.Now()
+		if deadline.IsZero() {
+			deadline = now.Add(WriterDrainWindow)
+		}
+		if !now.Before(deadline) {
+			return err
+		}
+		d.Sleep(WriterDrainStep)
+	}
+}
+
 // ReleaseProcessScratch is the owner's release at the end of dispatch. A
 // root still in use in this process, or held by a child, stays for the
-// sweeper; any error leaves the record for it too.
-func ReleaseProcessScratch(ctx context.Context) error {
+// sweeper; any error leaves the record for it too. drain waits out fork
+// copies of the writer lock (see WriterDrain).
+func ReleaseProcessScratch(ctx context.Context, drain WriterDrain) error {
 	scratchMu.Lock()
 	scratch := currentScratch
 	scratchMu.Unlock()
 	if scratch == nil {
 		return nil
 	}
-	_, err := scratch.releaseIfIdle(ctx)
+	_, err := scratch.releaseIfIdle(ctx, drain)
 	return err
 }
 
-func (s *processScratch) releaseIfIdle(ctx context.Context) (bool, error) {
+func (s *processScratch) releaseIfIdle(ctx context.Context, drain WriterDrain) (bool, error) {
 	scratchMu.Lock()
 	defer scratchMu.Unlock()
 	if s.released {
@@ -337,7 +380,7 @@ func (s *processScratch) releaseIfIdle(ctx context.Context) (bool, error) {
 		return false, fmt.Errorf("process scratch %s is kept for the sweeper: %w", s.record.Path, err)
 	}
 	defer critical.Release()
-	if verdict := releaseScratchRoot(ctx, critical, "owner"); verdict.Decision != Release {
+	if verdict := releaseScratchRoot(ctx, critical, "owner", drain); verdict.Decision != Release {
 		return false, fmt.Errorf("process scratch %s is kept for the sweeper: %s", s.record.Path, verdict.Reason)
 	}
 	// A normal end leaves nothing. Fail-closed rule 3 keeps the records
@@ -348,10 +391,12 @@ func (s *processScratch) releaseIfIdle(ctx context.Context) (bool, error) {
 
 // closeWriter closes only this process's copy of the writer lock, never
 // LOCK_UN: a child that inherited the description through ExtraFiles keeps
-// the lock, and with it the root, alive. It closes under syscall.ForkLock:
-// a fork in flight holds a duplicate of every descriptor until its exec,
-// which would read as a child holding the lock; with the read lock no fork
-// is in flight, and none after the close can copy it.
+// the lock, and with it the root, alive. It closes under syscall.ForkLock,
+// so no fork starts while the close runs and none after it can copy the
+// descriptor. That does not prove no copy remains: a child forked before
+// the close holds a duplicate until it execs, and on darwin the parent
+// releases ForkLock as soon as fork returns, before that exec. The owner's
+// release waits such copies out (WriterDrain).
 func (s *processScratch) closeWriter() {
 	syscall.ForkLock.RLock()
 	defer syscall.ForkLock.RUnlock()
@@ -525,7 +570,7 @@ func (ProcessProof) Release(ctx context.Context, critical *Critical, census *Use
 	if verdict := useVerdict(census, critical.Record()); verdict.Decision != Release {
 		return verdict
 	}
-	return releaseScratchRoot(ctx, critical, "sweeper")
+	return releaseScratchRoot(ctx, critical, "sweeper", WriterDrain{})
 }
 
 // ownerGroupVerdict keeps a dead owner's root while any live process is in
@@ -575,7 +620,7 @@ func ownerGroupVerdict(record Record) Verdict {
 //     writer lock through a fresh description before anything is removed,
 //     and holds it through the last unlink;
 //  5. the root is the process's, never a person's.
-func releaseScratchRoot(ctx context.Context, critical *Critical, by string) Verdict {
+func releaseScratchRoot(ctx context.Context, critical *Critical, by string, drain WriterDrain) Verdict {
 	record := critical.Record()
 	pending := func(reason string) Verdict {
 		return Verdict{Decision: Pending, Reason: reason, Command: "metasystem disk show"}
@@ -609,7 +654,7 @@ func releaseScratchRoot(ctx context.Context, critical *Critical, by string) Verd
 	}
 	if writer != nil {
 		defer writer.Close()
-		if err := unix.Flock(int(writer.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
+		if err := drain.takeWriterLock(writer); err != nil {
 			if errors.Is(err, unix.EWOULDBLOCK) || errors.Is(err, unix.EAGAIN) {
 				return Verdict{Decision: Keep, Reason: "a process it started still holds its writer lock", Command: "metasystem disk clean, once that process has ended"}
 			}

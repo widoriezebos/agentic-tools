@@ -12,6 +12,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
@@ -249,7 +250,9 @@ func dispatch(args []string) int {
 // still holds, or that a goroutine still uses, stays for the sweeper's
 // process proof.
 func dispatchWithFamilies(args []string, stdout, stderr io.Writer, registered []family) int {
-	defer func() { _ = diskstore.ReleaseProcessScratch(context.Background()) }()
+	defer func() {
+		_ = diskstore.ReleaseProcessScratch(context.Background(), diskstore.WriterDrain{Now: time.Now, Sleep: time.Sleep})
+	}()
 	return dispatchWithFamiliesAndRepositoryTop(args, stdout, stderr, registered, stateroot.RepositoryTop)
 }
 

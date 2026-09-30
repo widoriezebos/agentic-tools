@@ -105,7 +105,7 @@ func processScratchHelper() (code int, handled bool) {
 		}
 		fmt.Printf("child-%s", output)
 		if os.Getenv("DISKSTORE_SCRATCH_EXIT") == "" {
-			if err := ReleaseProcessScratch(context.Background()); err != nil {
+			if err := ReleaseProcessScratch(context.Background(), WriterDrain{}); err != nil {
 				fmt.Printf("parent-release=%v\n", err)
 			}
 		}
@@ -166,7 +166,7 @@ func processScratchHelper() (code int, handled bool) {
 			return fail(err)
 		}
 		fmt.Printf("grandchild=%d\ngrandchild-dir=%s\n", grandchild.Process.Pid, dir)
-		if err := ReleaseProcessScratch(context.Background()); err != nil {
+		if err := ReleaseProcessScratch(context.Background(), WriterDrain{}); err != nil {
 			fmt.Printf("child-release=%v\n", err)
 		}
 		return 0, true
@@ -184,7 +184,7 @@ func processScratchHelper() (code int, handled bool) {
 			return fail(err)
 		}
 		done()
-		if err := ReleaseProcessScratch(context.Background()); err != nil {
+		if err := ReleaseProcessScratch(context.Background(), WriterDrain{}); err != nil {
 			return fail(err)
 		}
 		return 0, true
@@ -199,13 +199,13 @@ func processScratchHelper() (code int, handled bool) {
 			return fail(fmt.Errorf("nested child: %v: %s", err, output))
 		}
 		fmt.Printf("child-%s", output)
-		if err := ReleaseProcessScratch(context.Background()); err != nil {
+		if err := ReleaseProcessScratch(context.Background(), WriterDrain{}); err != nil {
 			return fail(err)
 		}
 		return 0, true
 	case "nested-child":
 		fmt.Printf("tmpdir=%s\n", os.Getenv("TMPDIR"))
-		if err := ReleaseProcessScratch(context.Background()); err != nil {
+		if err := ReleaseProcessScratch(context.Background(), WriterDrain{}); err != nil {
 			return fail(err)
 		}
 		return 0, true
