@@ -1,6 +1,6 @@
 # beds-run-under-the-oldest-supported-bash
 
-- State: parked
+- State: done
 - Priority: 1
 - Sequence: 24
 - Risk: severity=2 novelty=1 exposure=3 accumulation=2 basis="severity 2: a bed that cannot start hides every scenario in it; novelty 1: a known portability class; exposure 3: every bed on every Mac seat; accumulation 2: each new array risks it again"
@@ -8,12 +8,12 @@
 - Intent: Fixture beds must run on the oldest shell a supported machine ships. On 2026-09-14 a new supervision bed expanded an empty array under set -u; macOS ships bash 3.2, which rejects that, so the whole bed died in the second it started while the build's sandbox, on a newer bash, saw nothing. The same class recurs whenever a bed adds an array. DONE: the gate parses and exercises every fixture bed's risky constructs under /bin/bash 3.2 semantics and refuses a bed that would fail there, naming the file and line.
 - Origin: human
 - Next step: parked 2026-09-19 by Wido: "park list is ok" (16:40 CEST, under his machine-ready target). Resume only when Wido picks the goal. Existing work: on main 878acfb8a (scripts/agents/oldest-bash-gate.sh:135, wired at scripts/validate-metasystem.sh:1132-1134) and 9a3eb6056 (B2, push 14). Left, about 395 lines: B3, B4, B5, B6, converting the 164 allowlisted sites in 17 files.
+- Concluded: There are no bash test beds left to run under an old bash: they were ported to Go and deleted (d40f67a63, e58f4545f).
 - OpenedAt: 2026-09-14T16:16:20Z
-- Revision: 138
+- Revision: 139
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-14T18:54:30Z revision=2 opid=EJSD1FG33MKT5NRH95HQJ5XSQD-m1e-c6925449 authority=proven digest=37322810b14872d2df18353f03628f0f19340493c8c98660a7cc2900065de837
-- Parked: by=human:Wido at=2026-09-19T15:46:00Z because=parked 2026-09-19 by Wido: "park list is ok" (16:40 CEST, under his machine-ready target). Resume only when Wido picks the goal. Existing work: on main 878acfb8a (scripts/agents/oldest-bash-gate.sh:135, wired at scripts/validate-metasystem.sh:1132-1134) and 9a3eb6056 (B2, push 14). Left, about 395 lines: B3, B4, B5, B6, converting the 164 allowlisted sites in 17 files.
 
 History:
 - 2026-09-14T16:16:20Z 0R2JYA4MM81F6BQDPSSP9KEJBH-m1e-c6925449 open actor=human:Wido targets=beds-run-under-the-oldest-supported-bash
@@ -154,4 +154,5 @@ History:
 - 2026-09-30T16:56:00Z BNF1HFA4GASJX5EKB56DQM1FPA-m1e-b6a4eb0a set-priority actor=human:wido targets=adoption-filled-delivery-passes-on-trunk,beds-run-under-the-oldest-supported-bash,brief-declares-the-round-boundary,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,delegate-sandbox-runs-the-beds,design-rounds-read-less-and-repeat-less,error-checks-use-typed-errors,every-round-gets-an-independent-read,evidence-and-build-output-have-retention-and-stay-unindexed,failures-show-observed-against-expected,fixture-runners-and-fakes-bound-their-own-life,fleet-doctor-repairs-what-stops-other-seats,follow-up-brief-cannot-cite-fresh-trunk-files,machinery-runs-unattended-on-codex,one-steward-per-checkout-on-its-own-root,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,receipt-writer-follows-the-worktree-it-runs-in,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,system-start-launches-your-agent,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror reason=priority-order subject=system-start-launches-your-agent from=1:25 to=1:26 requested-sequence=5
 - 2026-09-30T18:51:32Z GYASBCWJ4Q04KFAZBF07Q79SPN-ui-bc2fda53 done actor=human:Wido targets=adoption-filled-delivery-passes-on-trunk,beds-run-under-the-oldest-supported-bash,brief-declares-the-round-boundary,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,delegate-sandbox-runs-the-beds,design-rounds-read-less-and-repeat-less,every-round-gets-an-independent-read,evidence-and-build-output-have-retention-and-stay-unindexed,failures-show-observed-against-expected,fixture-runners-and-fakes-bound-their-own-life,fleet-doctor-repairs-what-stops-other-seats,follow-up-brief-cannot-cite-fresh-trunk-files,machinery-runs-unattended-on-codex,one-steward-per-checkout-on-its-own-root,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,receipt-writer-follows-the-worktree-it-runs-in,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,testing-surfaces-declare-their-mirror reason=priority-order from=1:26 to=1:25
 - 2026-09-30T18:53:26Z 4DKZPTA8R49RM2BN0FTV8H7N6H-m1e-b6a4eb0a done actor=human:wido targets=adoption-filled-delivery-passes-on-trunk,beds-run-under-the-oldest-supported-bash,busy-seat-shells-are-ended,cross-cutting-change-inventories-its-readers,delegate-sandbox-runs-the-beds,every-round-gets-an-independent-read,evidence-and-build-output-have-retention-and-stay-unindexed,failures-show-observed-against-expected,round-proof-feeds-the-next-brief,testing-surfaces-declare-their-mirror reason=priority-order from=1:25 to=1:24
-Integrity: sha256=02d5e7dbd0d304498fba86085d16da0cd7ca42b7dc97acaa0d927b227e30541c
+- 2026-09-30T18:53:38Z 8MKAXH2CPR7FEKDBS90M6CWB7Q-m1e-b6a4eb0a done actor=human:wido targets=beds-run-under-the-oldest-supported-bash,cross-cutting-change-inventories-its-readers,delegate-sandbox-runs-the-beds,every-round-gets-an-independent-read,failures-show-observed-against-expected,round-proof-feeds-the-next-brief,testing-surfaces-declare-their-mirror
+Integrity: sha256=f9fabb829b1c9165b352a390fce5d1e853059ba5a43fffab53b57acf122490f1

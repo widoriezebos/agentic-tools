@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 1
-- Sequence: 30
+- Sequence: 29
 - Risk: severity=2 novelty=2 exposure=3 accumulation=3 basis="severity 2: each missed reader costs a critic round plus a fold round, and the chain can hit the review ceiling before the last one is found; novelty 2: a new preflight step that turns a brief's concept into a search and dispositions its hits; exposure 3: every chain that changes a predicate read in more than one place; accumulation 3: chain bsws-build1b-20260909 paid three reads and three folds for seven sites, one or two per round"
 - Tier: 3
 - Intent: What: When a change redefines a shared idea that many places rely on, the brief lists every place that relies on it before the build starts. Why: One such change needed seven critique rounds because each round found one more place still using the old meaning. A list made up front would have saved most of those rounds. Pros: Fewer rounds for wide changes; critics check a list instead of hunting. Cons: One more step in such briefs. The automatic check first designed for it sits in the old dispatch lane, which no longer runs.
 - Origin: main
 - Next step: Next: Slice 1: add one question to the design-critique skill (skills/design-critique/SKILL.md): "What does this build on, where does that live, and which behaviour wins?". Only if still wanted afterwards, slice 2: the launch lane's build admission checks that the brief accounts for every place its search pattern finds. Done when: the skill carries the question and the next critique round answers it.
 - OpenedAt: 2026-09-10T08:42:28Z
-- Revision: 145
+- Revision: 146
 - Pinned: m1e
 - BudgetExceptions: 0
 
@@ -159,4 +159,5 @@ History:
 - 2026-09-30T18:48:21Z CYZAF3X3QW30687P20CV6ZR8BG-m1e-b6a4eb0a edit actor=human:wido targets=cross-cutting-change-inventories-its-readers
 - 2026-09-30T18:51:32Z GYASBCWJ4Q04KFAZBF07Q79SPN-ui-bc2fda53 done actor=human:Wido targets=adoption-filled-delivery-passes-on-trunk,beds-run-under-the-oldest-supported-bash,brief-declares-the-round-boundary,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,delegate-sandbox-runs-the-beds,design-rounds-read-less-and-repeat-less,every-round-gets-an-independent-read,evidence-and-build-output-have-retention-and-stay-unindexed,failures-show-observed-against-expected,fixture-runners-and-fakes-bound-their-own-life,fleet-doctor-repairs-what-stops-other-seats,follow-up-brief-cannot-cite-fresh-trunk-files,machinery-runs-unattended-on-codex,one-steward-per-checkout-on-its-own-root,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,receipt-writer-follows-the-worktree-it-runs-in,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,testing-surfaces-declare-their-mirror reason=priority-order from=1:32 to=1:31
 - 2026-09-30T18:53:26Z 4DKZPTA8R49RM2BN0FTV8H7N6H-m1e-b6a4eb0a done actor=human:wido targets=adoption-filled-delivery-passes-on-trunk,beds-run-under-the-oldest-supported-bash,busy-seat-shells-are-ended,cross-cutting-change-inventories-its-readers,delegate-sandbox-runs-the-beds,every-round-gets-an-independent-read,evidence-and-build-output-have-retention-and-stay-unindexed,failures-show-observed-against-expected,round-proof-feeds-the-next-brief,testing-surfaces-declare-their-mirror reason=priority-order from=1:31 to=1:30
-Integrity: sha256=02f4c077a18a4d19b411efe5d59931d9acc986fdd8be5b03cc6cd7cfc6985b34
+- 2026-09-30T18:53:38Z 8MKAXH2CPR7FEKDBS90M6CWB7Q-m1e-b6a4eb0a done actor=human:wido targets=beds-run-under-the-oldest-supported-bash,cross-cutting-change-inventories-its-readers,delegate-sandbox-runs-the-beds,every-round-gets-an-independent-read,failures-show-observed-against-expected,round-proof-feeds-the-next-brief,testing-surfaces-declare-their-mirror reason=priority-order from=1:30 to=1:29
+Integrity: sha256=66370608d16de8c99a7b99212408570e6e7e91d4339254e1604e6d5544d33486
