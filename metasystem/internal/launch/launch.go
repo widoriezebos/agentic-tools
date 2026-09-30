@@ -13,6 +13,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
 )
 
 const DefaultWaitTimeout = 240 * time.Second
@@ -118,6 +119,13 @@ func (m *Manager) Start(spec StartSpec) (Record, error) {
 	absDir, err := filepath.Abs(spec.WorkingDirectory)
 	if err != nil {
 		return Record{}, err
+	}
+	if spec.Kind == "seat" {
+		// The steward's pre-start read: a seat is never started into a
+		// checkout whose process-creation fence is closed (D-fence).
+		if reason := seatFenceClosed(absDir); reason != "" {
+			return Record{}, errors.New(reason)
+		}
 	}
 	id := spec.ID
 	if id == "" {
@@ -285,6 +293,24 @@ func (m *Manager) Supervise(id string) (Record, error) {
 	if err != nil {
 		return m.failCause(id, "command: "+err.Error(), nil)
 	}
+	var fenceClaim *stopfence.Claim
+	var fenceGeneration int64
+	if record.Kind == "seat" {
+		command.Environment = append(command.Environment, SeatEnvironment()...)
+		// The seat binds to the checkout's process-creation fence as the
+		// steward runner does: read it, open a creation claim before the
+		// child, re-read it once the child is recorded (D-fence).
+		if reason := seatFenceClosed(record.WorkingDirectory); reason != "" {
+			return m.failCause(id, reason, nil)
+		}
+		fence, _ := stopfence.Read(record.WorkingDirectory)
+		fenceGeneration = fence.Generation
+		fenceClaim, err = stopfence.Creating(record.WorkingDirectory, "seat-launch", fenceGeneration, self)
+		if err != nil {
+			return m.failCause(id, "seat-launch creation claim: "+err.Error(), nil)
+		}
+		defer fenceClaim.Close()
+	}
 	paths, err := declaredOutputPaths(record)
 	if err != nil {
 		return m.failCause(id, "declared-outputs: "+err.Error(), nil)
@@ -352,6 +378,14 @@ func (m *Manager) Supervise(id string) (Record, error) {
 			return nil
 		})
 		return Record{}, errors.Join(err, cleanupErr)
+	}
+	if fenceClaim != nil {
+		if reason := seatFenceMoved(record.WorkingDirectory, fenceGeneration); reason != "" {
+			return m.endFencedSeat(id, reason, child, childRef)
+		}
+		if err := fenceClaim.Close(); err != nil {
+			return m.endFencedSeat(id, "seat-launch creation claim: "+err.Error(), child, childRef)
+		}
 	}
 	if record.Reason == "cancel-requested" {
 		_ = m.Processes.SignalGroup(childRef.Pid, syscall.SIGTERM)
@@ -644,7 +678,7 @@ func (m *Manager) Census(reapValues ...bool) ([]string, error) {
 // Start refuses it.
 func adapterForLane(kind, runtime string) string {
 	switch kind {
-	case "build", "critique", "design", "read":
+	case "build", "critique", "design", "read", "seat":
 	case "proof":
 		return "plain-exec"
 	default:

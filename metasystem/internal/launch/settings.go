@@ -33,7 +33,15 @@ const (
 	DesignBaselinePeakTokensKey = "launch.design.baseline.peak.tokens"
 	ShippedSeatWindowKey        = "launch.seat.window.shipped"
 	ShippedClaudeSettingsSource = "internal/runtimes/enforcement/claude-code-hooks.json"
+	SeatRuntimeKey              = "launch.seat.runtime"
+	SeatModelKey                = "launch.seat.model"
+	SeatEffortKey               = "launch.seat.effort"
 )
+
+// SeatOwnerLineage is the owner lineage every steward-started seat main runs
+// under, one per installation, so a successor seat succeeds a dead
+// predecessor's lease and claim by the lease's own succession rule.
+const SeatOwnerLineage = "steward-seat"
 
 type Setting struct {
 	Key, Value, Source     string
@@ -56,6 +64,7 @@ type Settings struct {
 	ReadSplitLines                                    int64
 	DesignBaselineTokens, DesignBaselineRequests      int64
 	DesignBaselinePeakTokens                          int64
+	SeatRuntime, SeatModel, SeatEffort                string
 	Values                                            []Setting
 }
 
@@ -78,6 +87,11 @@ var settingDefaults = []Setting{
 	{Key: CritiqueModelKey, Value: config.MustDefault(CritiqueModelKey), Source: "default"},
 	{Key: BuildRuntimeKey, Value: config.MustDefault(BuildRuntimeKey), Source: "default"}, {Key: CritiqueRuntimeKey, Value: config.MustDefault(CritiqueRuntimeKey), Source: "default"},
 	{Key: DesignRuntimeKey, Value: config.MustDefault(DesignRuntimeKey), Source: "default"}, {Key: ReadRuntimeKey, Value: config.MustDefault(ReadRuntimeKey), Source: "default"},
+	// The seat a steward starts headless (seat-works-without-a-person
+	// D-seat): its runtime, model and effort resolve as a lane's.
+	{Key: SeatRuntimeKey, Value: config.MustDefault(SeatRuntimeKey), Source: "default"},
+	{Key: SeatModelKey, Value: config.MustDefault(SeatModelKey), Source: "default"},
+	{Key: SeatEffortKey, Value: config.MustDefault(SeatEffortKey), Source: "default"},
 }
 
 // LoadShippedSeatWindow reads the seat window the engine's shipped Claude
@@ -109,7 +123,13 @@ func ResolveSettings(confPath string, lookupEnv func(string) (string, bool)) (Se
 // laneModelKeys are each lane's runtime-independent model key; the model a
 // lane's resolved runtime binds is the same key with the runtime appended.
 var laneModelKeys = map[string]string{BuildRuntimeKey: BuildModelKey, CritiqueRuntimeKey: CritiqueModelKey,
-	DesignRuntimeKey: DesignModelKey, ReadRuntimeKey: ReadModelKey}
+	DesignRuntimeKey: DesignModelKey, ReadRuntimeKey: ReadModelKey, SeatRuntimeKey: SeatModelKey}
+
+// boundModelPrefix is the key whose runtime-bound form a lane's empty model
+// takes, when it is not the lane's own: the seat has no per-runtime model
+// keys and runs the build lane's model for its runtime (claude on Opus by
+// the roster's default).
+var boundModelPrefix = map[string]string{SeatModelKey: BuildModelKey}
 
 func resolveSettings(confPath string, lookupEnv func(string) (string, bool)) (Settings, error) {
 	resolve := func(key string) (string, string, error) {
@@ -152,7 +172,11 @@ func resolveSettings(confPath string, lookupEnv func(string) (string, bool)) (Se
 			return Settings{}, err
 		}
 		if strings.TrimSpace(value) == "" {
-			bound := modelKey + "." + resolved[runtimeKey].Value
+			prefix := modelKey
+			if other, ok := boundModelPrefix[modelKey]; ok {
+				prefix = other
+			}
+			bound := prefix + "." + resolved[runtimeKey].Value
 			if value, source, err = resolve(bound); err != nil {
 				return Settings{}, err
 			}
@@ -214,6 +238,12 @@ func resolveSettings(confPath string, lookupEnv func(string) (string, bool)) (Se
 			result.DesignRuntime = setting.Value
 		case ReadRuntimeKey:
 			result.ReadRuntime = setting.Value
+		case SeatRuntimeKey:
+			result.SeatRuntime = setting.Value
+		case SeatModelKey:
+			result.SeatModel = setting.Value
+		case SeatEffortKey:
+			result.SeatEffort = setting.Value
 		}
 	}
 	targets = []*int64{&result.WaitCapSeconds, &result.BriefCap, &result.BuildLinesCap, &result.ReadSplitLines,
@@ -246,6 +276,8 @@ func (s Settings) launchRuntime(kind string) string {
 		return s.DesignRuntime
 	case "read":
 		return s.ReadRuntime
+	case "seat":
+		return s.SeatRuntime
 	default:
 		return ""
 	}
@@ -261,6 +293,8 @@ func (s Settings) launchValues(kind string) (string, string, int64) {
 		return s.DesignModel, s.BuildEffort, s.DesignWindow
 	case "read":
 		return s.ReadModel, s.BuildEffort, s.ReadWindow
+	case "seat":
+		return s.SeatModel, s.SeatEffort, s.SeatWindow
 	default:
 		return "", "", 0
 	}
