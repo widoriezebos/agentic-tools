@@ -2,9 +2,15 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
+	"errors"
 	"io"
 	"slices"
+	"strings"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 )
 
 // test run, test plan and test status take --verbose (group 4 of Messages a
@@ -38,5 +44,31 @@ func TestMessageTestVerbsDocumentAndPassVerbose(t *testing.T) {
 	runIntentIn(mustIntentArgvCommand(t, []string{"test", "run"}), []string{"--json"}, &stdout, &stderr, bed.root(), owners)
 	if slices.Contains(passed, "--verbose") {
 		t.Fatalf("test run without --verbose passed it: %v", passed)
+	}
+}
+
+// A build refused because another session holds the goal keeps the goal
+// branch's refusal code as a detail, for --verbose and --json.
+func TestMessageBuildHolderRefusalKeepsItsCode(t *testing.T) {
+	t.Parallel()
+	bed := newWorkBed(t)
+	brief := bed.brief("brief.md", "Build the unit.\n")
+	owners := bed.workOwners()
+	owners.connection.claimCheck = func(string, string, goal.Endpoint) func() error {
+		return func() error { return errors.New("goal standing-validation is held by another session") }
+	}
+	command, rest, ok := resolveIntentArgv(append([]string{"work", "build", bed.id, "u1", "--brief", brief}, workCheck...))
+	if !ok {
+		t.Fatal("no work build")
+	}
+	var stdout, stderr bytes.Buffer
+	code := runIntentIn(command, append([]string{"--json"}, rest...), &stdout, &stderr, bed.root(), owners)
+	var result intentResult
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("%v %q %q", err, stdout.String(), stderr.String())
+	}
+	if code == 0 || !strings.Contains(result.Summary, "held by another session") || strings.Contains(result.Summary, branch.NotHolderCode) ||
+		!slices.Contains(result.Details, "refusal code: "+branch.NotHolderCode) {
+		t.Fatalf("build at a goal another session holds = %d %+v", code, result)
 	}
 }

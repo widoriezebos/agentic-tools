@@ -581,7 +581,8 @@ func runIntentBuildUnit(inv *intentInvocation) int {
 			next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}})
 	} else if err := branch.CheckHolder(conn.claimCheck(inv.layout.InstallationRoot, id, endpoint)); err != nil {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: err.Error() + "; nothing was built",
-			next: inv.publicArgv("goal", "claim", id, "--take-over", "--reason", "TEXT"), nextReason: "a person takes the goal over; or the session holding it builds"})
+			next: inv.publicArgv("goal", "claim", id, "--take-over", "--reason", "TEXT"), nextReason: "a person takes the goal over; or the session holding it builds",
+			Details: refusalCodeDetails(goal.RefusalCode(err))})
 	}
 	designs, problem := inv.acceptedDesignPaths(id)
 	if problem != nil {

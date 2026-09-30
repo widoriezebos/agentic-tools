@@ -19,6 +19,14 @@ func (d syncRequestDependencies) complain(parts ...any) {
 		fmt.Fprintln(d.errStream(), parts...)
 		return
 	}
+	// One error is kept as it is, so its refusal code reaches --verbose and
+	// --json; other words become the failure's text.
+	if len(parts) == 1 {
+		if err, ok := parts[0].(error); ok {
+			d.report.failure = err
+			return
+		}
+	}
 	d.report.failure = errors.New(strings.TrimSuffix(fmt.Sprintln(parts...), "\n"))
 }
 
