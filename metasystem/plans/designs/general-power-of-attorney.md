@@ -243,3 +243,11 @@ Each of these is later, when it hurts:
 
 1. **M4 for non-ledger acts** is a process-lifetime shared lock against an exclusive, bounded revoke. It is not a per-effect clock re-check. The window left open is that an act admitted before `until` may finish after it, by its own run time.
 2. **M3's second half is not built.** "Fixture signature/clock overrides only in test binaries" would gate `fixtureauth`'s environment reads behind a build tag. It touches 168 files that set fixture mode, and 26 test files that build the engine with plain `go build`, so it needs its own goal. The narrower half is built: the `settings set` key takes a direct person proof, and a fixture-mode root never admits a grant.
+
+## 12. Built
+
+Built by Claude on Opus 5.5 on branch `poa`: unit 1 at `837ec7b63`, unit 2 in the commit that adds this section. It departs from the page in four places:
+- **Status line.** `status` shows no line when the ledger is unreadable, where §7 said it would name the unreadable ledger. Status reads nothing it cannot parse, and no grant is in force either way.
+- **Proof-run class checks.** Only `legacyProofLaunchAllowed` swapped to the grant-aware classifier. `admitProofLaunchWithReadsAndClassifier` and `admitLaneProofLaunch` keep `classifyVerbCaller`, because the holder main already passes there as the goal's coordinator or the lane owner. Turning it into HUMAN would move it off the claim-epoch path.
+- **M5.** It has no dedicated witness: the change is the clock argument, and existing split and disk tests cover the path.
+- **M3, second half.** It is not built (§11).

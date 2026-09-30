@@ -167,7 +167,7 @@ type processArmAuthority struct {
 }
 
 func defaultProcessOwners() processOwners {
-	return processOwners{repositoryTop: stateroot.RepositoryTop, classify: lease.ClassifyAt, transition: processTransition, armSteps: armCheckoutSteps}
+	return processOwners{repositoryTop: stateroot.RepositoryTop, classify: personClassifyAt, transition: processTransition, armSteps: armCheckoutSteps}
 }
 
 func (o processOwners) humanTerminal(scope processScope, verb, retry string) (bool, *processRefusal) {
@@ -401,7 +401,7 @@ func requireHumanTerminal(stderr io.Writer, repo, verb string, retryCommands ...
 		fmt.Fprintf(stderr, "%s: cannot resolve the installed engine: %v\n", verb, err)
 		return false, false
 	}
-	return requireHumanTerminalAtWith(stderr, repo, metasystemRoot, verb, stateroot.RepositoryTop, lease.ClassifyAt, retryCommands...)
+	return requireHumanTerminalAtWith(stderr, repo, metasystemRoot, verb, stateroot.RepositoryTop, personClassifyAt, retryCommands...)
 }
 
 // requireHumanTerminalAtWith prints a refusal on stderr, the invocation's.

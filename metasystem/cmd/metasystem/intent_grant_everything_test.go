@@ -244,3 +244,27 @@ func TestSettingsSetAnAuthorityKeyNeedsTheDirectPerson(t *testing.T) {
 		t.Fatalf("an ordinary key = %d %+v", code, result)
 	}
 }
+
+// The person's view in text: add, list, the status line and revoke, each a
+// short line in local time.
+func TestGrantEverythingReadsInText(t *testing.T) {
+	t.Parallel()
+	b := newGrantEverythingBed(t)
+	code, added, _ := b.run(b.owners(), "grant", "add", "--acts", "everything", "--for", "8h")
+	if code != 0 || !strings.Contains(added, "granted ") || !strings.Contains(added, "ends it") {
+		t.Fatalf("add = %d %q", code, added)
+	}
+	id := strings.TrimSuffix(strings.Fields(strings.SplitN(added, "granted ", 2)[1])[0], ":")
+	code, listed, _ := b.run(b.owners(), "grant", "list")
+	if code != 0 || !strings.Contains(listed, "8h00m left") {
+		t.Fatalf("list = %d %q", code, listed)
+	}
+	inv := &intentInvocation{owners: b.owners(), stateRoot: b.root()}
+	inv.owners.attorney.entries = func(string) ([]goal.PowerOfAttorneyEntry, error) { return b.rootRecord().PowerOfAttorney, nil }
+	status := inv.attorneyStatusLine(b.root())
+	code, revoked, _ := b.run(b.owners(), "grant", "revoke", id)
+	if code != 0 || !strings.Contains(revoked, "revoked "+id) || status == "" {
+		t.Fatalf("revoke = %d %q, status %q", code, revoked, status)
+	}
+	t.Logf("$ metasystem grant add --acts everything --for 8h\n%s$ metasystem grant list\n%s$ metasystem status (first line)\n%s\n$ metasystem grant revoke %s\n%s", added, listed, status, id, revoked)
+}
