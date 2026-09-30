@@ -39,8 +39,9 @@ never try them:
 - denied: `up`, `arm` and `system`;
 - denied: builds and test runners (`go test`, `metasystem test run`, `devgate`); proofs run only through `landing prove`.
 
-Write commands as plain words joined by `&&`, `||`, `;` or `|`, quote anything with spaces, and do
-not use variables, redirections, `cd` or globs: the gate refuses what it cannot read.
+Write commands as plain words joined by `&&`, `||`, `;` or `|`, put anything with spaces or special
+characters in single quotes (a commit message too), and do not use variables, redirections, `cd`,
+globs or backslashes: the gate refuses what it cannot read.
 
 A denial is two lines: what happened, then the one command to run. Take it as information. When
 the denied thing is what the batch really needs, stop and ask (below); never look for a way around
