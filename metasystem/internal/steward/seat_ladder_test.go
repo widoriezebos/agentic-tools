@@ -448,38 +448,52 @@ func TestTickReadsTheCensusForClaimableWork(t *testing.T) {
 	}
 }
 
-const seatUsageLimitResult = `{"type":"result","is_error":true,"result":"API Error: 529 {\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\"}}"}`
+// seatUsageLimitResult is the Claude CLI's usage-limit ending, which the
+// classifier names provider-limit; seatOverloadResult is the overload ending.
+const (
+	seatUsageLimitResult = `{"type":"result","is_error":true,"result":"Claude AI usage limit reached|1759262400"}`
+	seatOverloadResult   = `{"type":"result","is_error":true,"result":"API Error: 529 {\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\"}}"}`
+)
 
-// Test 12. The provider-limit line is the overload line the classifier knows
-// today; the usage-limit class joins classifyLine in internal/outage (test
-// 18), and ClassifyProviderResult is the one API this ladder calls.
+// Test 12. A seat ended by the provider's usage limit, and one ended by an
+// overload, are provider weather: the mark is fed with the classifier's
+// class (internal/outage, test 18), the ladder holds, and past the horizon
+// the successor continues the held goal with the count at zero.
 func TestProviderLimitAfterClaimRecoversWithoutAPerson(t *testing.T) {
 	t.Parallel()
-	bed := newSeatBed(t, seatReadyGoal("held", "Build it."))
-	result := bed.tick(deadWorkers)
-	record := bed.start(result.Seat)
-	// Seat one claims G and its provider stops it.
-	bed.put(seatClaimedGoal("held", SeatLineage))
-	bed.end(record.LaunchID, "failed", seatUsageLimitResult)
-	result = bed.tick(deadWorkers)
-	mark, standing := outage.StandingAt(bed.root, bed.now)
-	if !standing || mark.Source != SeatLineage {
-		t.Fatalf("a provider-limit ending feeds the outage mark: %+v %v", mark, standing)
-	}
-	if result.Decision.Action != ActNotify || result.Seat != nil {
-		t.Fatalf("the ladder holds while the mark stands: %+v", result.Decision)
-	}
-	records := bed.records()
-	if len(records) != 1 || records[0].Outcome != SeatProviderLimit {
-		t.Fatalf("the seat is reaped as provider-limit: %+v", records)
-	}
-	bed.now = bed.now.Add(outage.Horizon + time.Minute)
-	result = bed.tick(deadWorkers)
-	if result.Decision.Action != ActRevive || result.Seat == nil || result.Seat.Goal != "held" || !result.Seat.Held {
-		t.Fatalf("past the horizon the successor starts and continues G: %+v %+v", result.Decision, result.Seat)
-	}
-	if count := SeatNoProgressCount(bed.records(), "held", bed.goals["held"].Approved.Opid); count != 0 {
-		t.Fatalf("provider weather never counts: %d", count)
+	for _, weather := range []struct{ name, result, class string }{
+		{"usage limit", seatUsageLimitResult, outage.ProviderLimit},
+		{"overload", seatOverloadResult, "overloaded"},
+	} {
+		t.Run(weather.name, func(t *testing.T) {
+			t.Parallel()
+			bed := newSeatBed(t, seatReadyGoal("held", "Build it."))
+			result := bed.tick(deadWorkers)
+			record := bed.start(result.Seat)
+			// Seat one claims G and its provider stops it.
+			bed.put(seatClaimedGoal("held", SeatLineage))
+			bed.end(record.LaunchID, "failed", weather.result)
+			result = bed.tick(deadWorkers)
+			mark, standing := outage.StandingAt(bed.root, bed.now)
+			if !standing || mark.Source != SeatLineage || mark.LastClass != weather.class {
+				t.Fatalf("a provider-limit ending feeds the outage mark with class %s: %+v %v", weather.class, mark, standing)
+			}
+			if result.Decision.Action != ActNotify || result.Seat != nil {
+				t.Fatalf("the ladder holds while the mark stands: %+v", result.Decision)
+			}
+			records := bed.records()
+			if len(records) != 1 || records[0].Outcome != SeatProviderLimit {
+				t.Fatalf("the seat is reaped as provider-limit: %+v", records)
+			}
+			bed.now = bed.now.Add(outage.Horizon + time.Minute)
+			result = bed.tick(deadWorkers)
+			if result.Decision.Action != ActRevive || result.Seat == nil || result.Seat.Goal != "held" || !result.Seat.Held {
+				t.Fatalf("past the horizon the successor starts and continues G: %+v %+v", result.Decision, result.Seat)
+			}
+			if count := SeatNoProgressCount(bed.records(), "held", bed.goals["held"].Approved.Opid); count != 0 {
+				t.Fatalf("provider weather never counts: %d", count)
+			}
+		})
 	}
 
 	t.Run("held work is selected before the human-word filter", func(t *testing.T) {
