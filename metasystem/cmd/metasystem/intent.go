@@ -20,6 +20,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hookswitch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
@@ -868,7 +869,7 @@ func (inv *intentInvocation) render(result intentResult) int {
 	case viewed:
 		// A refusal's view draws its own two lines, the hint among them.
 		if result.Next != nil && succeeded {
-			page.Hint(textui.Hint{Argv: result.Next.Argv, Reason: result.Next.Reason})
+			page.Hint(inv.hintFor(result.Next))
 		}
 		result.view(page)
 	case succeeded:
@@ -895,7 +896,7 @@ func (inv *intentInvocation) legacyConfirmed(page *textui.Page, result intentRes
 	}
 	page.Legacy(result.text...)
 	if result.Next != nil {
-		page.Hint(textui.Hint{Argv: result.Next.Argv, Reason: result.Next.Reason})
+		page.Hint(inv.hintFor(result.Next))
 	}
 }
 
@@ -921,7 +922,7 @@ func (inv *intentInvocation) legacyRefused(page *textui.Page, result intentResul
 	switch {
 	case len(hint.Argv) > 0 || hint.Reason != "":
 	case result.Next != nil:
-		hint = textui.Hint{Argv: result.Next.Argv, Reason: result.Next.Reason}
+		hint = inv.hintFor(result.Next)
 	case result.Decision != "":
 		hint = textui.Hint{Reason: result.Decision}
 	case result.nextReason != "":
@@ -1008,6 +1009,20 @@ func detailLines(details []string) []string {
 }
 
 // withinDirectory reports whether path is dir or lies below it.
+// hintFor is a result's next step as the page prints it: a --repo naming
+// the checkout the command already runs in is dropped from the text, while
+// the result's argv, which --json prints, keeps it.
+func (inv *intentInvocation) hintFor(next *intentNext) textui.Hint {
+	argv := next.Argv
+	if at := slices.Index(argv, "--repo"); at >= 0 && at+1 < len(argv) && inv.layout.GitRoot != "" && inv.cwd != "" {
+		checkout := realpath.Resolve(inv.layout.GitRoot)
+		if realpath.Resolve(argv[at+1]) == checkout && withinDirectory(realpath.Resolve(inv.cwd), checkout) {
+			argv = append(slices.Clone(argv[:at]), argv[at+2:]...)
+		}
+	}
+	return textui.Hint{Argv: argv, Reason: next.Reason}
+}
+
 func withinDirectory(path, dir string) bool {
 	relative, err := filepath.Rel(dir, path)
 	return err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator))
