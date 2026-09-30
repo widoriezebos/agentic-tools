@@ -522,15 +522,20 @@ func TestPrefixReceiptClassifiesBudgetForWithdrawal(t *testing.T) {
 func TestPrefixReceiptReadsAnUnreadableEnvelopeAsUnknown(t *testing.T) {
 	t.Parallel()
 	good := testRunEnvelopeLine(t, 0, "", "the selected tests passed", nil)
-	for name, stdout := range map[string]string{"empty": "", "truncated": good[:len(good)/2], "trailing": good + "PROOF-RESULT {}\n"} {
+	for name, stdout := range map[string]string{"readable": good, "empty": "", "truncated": good[:len(good)/2], "trailing": good + "PROOF-RESULT {}\n"} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			root, tree := batchPrefixReceiptTestRoot(t)
+			if err := os.MkdirAll(filepath.Join(root, "artifacts", "agents", "proof-runs", "batch"), 0o755); err != nil {
+				t.Fatal(err)
+			}
 			fake := filepath.Join(root, "fake-metasystem")
 			script := `#!/usr/bin/env bash
 set -euo pipefail
 result=
-for arg in "$@"; do if [[ "${previous:-}" == --result ]]; then result=$arg; fi; previous=$arg; done
+while (( $# )); do
+  if [[ "$1" == --result ]]; then result=$2; shift 2; else shift; fi
+done
 printf '%s\n' '{"attemptId":"prefix-attempt","groups":[{"id":"same","status":"passed","nativeLaunched":true}],"delivery":{"sufficient":true}}' >"$result"
 printf '%s' ` + shellquote.Quote(stdout) + `
 exit 0
@@ -541,6 +546,13 @@ exit 0
 			dependencies := batchTestExecutionDependencies(t, root, tree, fake)
 			record := batch.Record{Units: []batch.Unit{{GoalID: "goal-a", Claim: batch.Claim{Revision: 7, AccountingRevision: 5}}}}
 			result, err := batchowner.ExecuteBatchPrefixReceiptWithDependencies(root, "batch", record, "goal-a", tree, batch.PrefixDecision{Groups: []string{"same"}}, dependencies)
+			if name == "readable" {
+				// The control: the same child with its envelope intact passes.
+				if err != nil || result.AttemptID != "prefix-attempt" {
+					t.Fatalf("a readable envelope was refused: result=%+v err=%v", result, err)
+				}
+				return
+			}
 			if err == nil || result.AttemptID != "" {
 				t.Fatalf("an unreadable envelope was accepted: result=%+v err=%v", result, err)
 			}
