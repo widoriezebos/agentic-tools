@@ -3,6 +3,7 @@ package lane
 import (
 	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -254,5 +255,28 @@ func TestUnsetOfALaneWhoseCheckoutIsGone(t *testing.T) {
 	}
 	if _, paused := ReadPause(home); paused {
 		t.Fatalf("the unset left its pause behind")
+	}
+}
+
+// An older engine's lane whose checkout landing set would refuse (two
+// installations in it) is not sent round to landing set: unset says what is
+// wrong with the checkout and to run landing unset once it is fixed.
+func TestUnsetOfAnOlderLaneSetWouldRefuseSaysWhatToDo(t *testing.T) {
+	t.Parallel()
+	home, root, _ := laneDirs(t)
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(HostDir(home), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	old := `{"root":"` + resolved(root) + `","registeredBy":"m1e","at":"2026-09-29T18:00:00Z"}`
+	if err := os.WriteFile(RecordPath(home), []byte(old), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Unset(home, "Wido", laneNow, false, emptyUnsetSeams())
+	var refusal *Refusal
+	if !errors.As(err, &refusal) || strings.Join(refusal.Argv, " ") != "metasystem landing unset" || !strings.Contains(refusal.Message, "two MetaSystem installations") {
+		t.Fatalf("unset of an old lane set would refuse = %v; want what to fix and landing unset", err)
 	}
 }

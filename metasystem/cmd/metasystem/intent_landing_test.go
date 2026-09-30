@@ -33,6 +33,8 @@ type laneVerbBed struct {
 	noMachine, staysDown bool
 	// unset replaces landing unset's steps; nil runs the real ones.
 	unset func(home, by string, force bool) (lane.UnsetReport, error)
+	// held are the goals the ledger shows the lane holding.
+	held []string
 }
 
 func newLaneVerbBed(t *testing.T) *laneVerbBed {
@@ -97,6 +99,9 @@ func (bed *laneVerbBed) owners() intentOwners {
 		},
 		now:   func() time.Time { return laneTestNow },
 		unset: bed.unset,
+		laneHeld: func(string) ([]string, error) {
+			return bed.held, nil
+		},
 	}}
 }
 
@@ -595,5 +600,47 @@ func TestLandingStartOfAStoppedLaneIsAPersonsAct(t *testing.T) {
 	bed.person = nil
 	if code, _, stderr := bed.run(t, "landing", "start"); code != 0 || bed.starts != 1 {
 		t.Fatalf("start by the person = %d %q", code, stderr)
+	}
+}
+
+// A checkout on a volume that is not mounted is not gone: unset refuses in
+// two plain lines and changes nothing. A checkout removed from its folder
+// is gone: unset unregisters it and names, in the default output, the goals
+// the ledger still shows the lane holding and the command that gives each
+// back.
+func TestLandingUnsetOfAnUnreachableOrGoneCheckout(t *testing.T) {
+	t.Parallel()
+	bed := newLaneVerbBed(t)
+	volume := filepath.Join(filepath.Dir(bed.landingA), "volume")
+	checkout := filepath.Join(volume, "landing")
+	if err := os.MkdirAll(checkout, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	landingCheckout(t, checkout)
+	if code, _, stderr := bed.run(t, "landing", "set", checkout); code != 0 {
+		t.Fatalf("set = %d %q", code, stderr)
+	}
+	if err := os.RemoveAll(volume); err != nil {
+		t.Fatal(err)
+	}
+	code, _, stderr := bed.run(t, "landing", "unset")
+	if code == 0 || !strings.Contains(stderr, "can't be reached") || !strings.Contains(stderr, "metasystem landing unset") || strings.Contains(stderr, lane.CodeUnreachable) {
+		t.Fatalf("unset of an unmounted checkout = %d %q", code, stderr)
+	}
+	if _, ok, _ := lane.Read(bed.home); !ok {
+		t.Fatalf("an unreachable checkout was taken for gone and unregistered")
+	}
+	if err := os.MkdirAll(volume, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	bed.held = []string{"goal-a", "goal-b"}
+	code, stdout, stderr := bed.run(t, "landing", "unset")
+	text := oneSpaced(stdout)
+	if code != 0 || !strings.Contains(text, "its checkout was gone") || !strings.Contains(text, "2 goals: goal-a, goal-b") ||
+		!strings.Contains(text, "metasystem goal release goal-a --reason") {
+		t.Fatalf("unset of a gone checkout = %d %q %q; want the held goals and goal release in the default output", code, stdout, stderr)
+	}
+	if _, ok, _ := lane.Read(bed.home); ok {
+		t.Fatalf("the gone lane is still registered")
 	}
 }

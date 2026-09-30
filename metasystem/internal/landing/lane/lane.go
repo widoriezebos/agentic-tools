@@ -38,6 +38,10 @@ const (
 	// CodePaused is a gated operation refused because a person paused the
 	// lane (or its pause cannot be read).
 	CodePaused = "LANDING_LANE_PAUSED"
+	// CodeUnreachable is a lane checkout that can't be read, which is not
+	// taken for gone: a volume that is not mounted, a folder that can't be
+	// read.
+	CodeUnreachable = "LANDING_LANE_UNREACHABLE"
 	// CodeUnsetting is a join or an agent operation refused while a person
 	// unsets the lane, and a registration refused until that unset ends.
 	CodeUnsetting = "LANDING_LANE_UNSETTING"
@@ -92,6 +96,27 @@ func ProvingPath(home string) string { return filepath.Join(HostDir(home), "land
 func gone(path string) bool {
 	_, err := os.Stat(path)
 	return errors.Is(err, fs.ErrNotExist)
+}
+
+// checkoutGone reports whether path was removed from a folder that is still
+// there: only then is the checkout gone. Any other failure to read it (a
+// volume that is not mounted, a folder that cannot be read) is returned as
+// an error, never taken for gone.
+func checkoutGone(path string) (bool, error) {
+	_, err := os.Stat(path)
+	switch {
+	case err == nil:
+		return false, nil
+	case !errors.Is(err, fs.ErrNotExist):
+		return false, err
+	}
+	if info, parentErr := os.Stat(filepath.Dir(path)); parentErr != nil || !info.IsDir() {
+		if parentErr == nil {
+			parentErr = fmt.Errorf("%s is not a folder", filepath.Dir(path))
+		}
+		return false, fmt.Errorf("the folder that held it can't be reached: %w", parentErr)
+	}
+	return true, nil
 }
 
 func resolved(path string) string { return realpath.Resolve(filepath.Clean(path)) }

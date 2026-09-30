@@ -301,6 +301,20 @@ func isLaneRefusal(err error, code string) bool {
 	return errors.As(err, &refusal) && refusal.Code == code
 }
 
+// beginLanding records that the batch began its landing on origin's main
+// as it stands now: its base is that tree, and no push is recorded.
+func (bed *unsetBed) beginLanding(t *testing.T) {
+	t.Helper()
+	unsetGit(t, bed.publisher, "pull", "-q", "--ff-only", "origin", "main")
+	base := unsetGit(t, bed.publisher, "rev-parse", "HEAD^{tree}")
+	if err := bed.store.Update(unsetBatchID, func(record *batch.Record) error {
+		record.Landing = &batch.LandingProgress{Base: base}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // publishLanding pushes to origin's main a landing commit carrying the
 // trailers the lane writes for the batch's joined members, as a push that
 // reached main does.
@@ -326,6 +340,7 @@ func TestUnsetFinishesAPushThatReachedMainUnrecorded(t *testing.T) {
 	t.Parallel()
 	partial := newUnsetBed(t)
 	partial.publish = true
+	partial.beginLanding(t)
 	partial.publishLanding(t, batch.LandingChangeTrailer+": "+partial.fix)
 	report := partial.unset(t)
 	listedOnMain := false
@@ -341,6 +356,7 @@ func TestUnsetFinishesAPushThatReachedMainUnrecorded(t *testing.T) {
 
 	bed := newUnsetBed(t)
 	bed.publish = true
+	bed.beginLanding(t)
 	tip := bed.publishLanding(t, batch.LandingChangeTrailer+": "+bed.fix, "Landing-Provenance: chain=chain-a")
 	report = bed.unset(t)
 	if !report.Unregistered {
@@ -374,5 +390,27 @@ func TestUnsetSettleRereadsTheOwnerAfterEndingIt(t *testing.T) {
 	settlement, err := steps.settle(bed.layout)
 	if err != nil || settlement.Settled(true) || bed.ends != 1 || bed.probes != 2 {
 		t.Fatalf("settle with an owner that outlives its end = %+v %v (ends %d, probes %d); want live work", settlement, err, bed.ends, bed.probes)
+	}
+}
+
+// Only commits after the batch's base count as its push: trailers of an
+// earlier landing of the same members, before the base (landed and later
+// reverted), never finalize this batch. Its members are returned instead.
+func TestUnsetIgnoresTrailersBeforeTheBatchBase(t *testing.T) {
+	t.Parallel()
+	bed := newUnsetBed(t)
+	bed.publish = true
+	bed.publishLanding(t, batch.LandingChangeTrailer+": "+bed.fix, "Landing-Provenance: chain=chain-a")
+	unsetGit(t, bed.publisher, "revert", "--no-edit", "HEAD")
+	unsetGit(t, bed.publisher, "push", "-q", "origin", "main")
+	bed.beginLanding(t)
+	report := bed.unset(t)
+	if !report.Unregistered {
+		t.Fatalf("unset = %+v; want the members returned and the lane unregistered", report)
+	}
+	for _, id := range []string{"goal-a", bed.fix} {
+		if unit := bed.unit(t, id); unit.State != batch.UnitWithdrawn || unit.P6Done {
+			t.Fatalf("%s = %s p6=%v; an earlier, reverted landing was taken for this batch's push", id, unit.State, unit.P6Done)
+		}
 	}
 }

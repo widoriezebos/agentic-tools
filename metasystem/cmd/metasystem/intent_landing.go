@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -51,6 +52,9 @@ type laneVerbOwners struct {
 	helm func(seatRoot string) helm.State
 	// unset runs landing unset's journaled steps for the person by.
 	unset func(home, by string, force bool) (lane.UnsetReport, error)
+	// laneHeld lists the goals the ledger, read from an installation,
+	// shows held by the landing lane.
+	laneHeld func(installation string) ([]string, error)
 }
 
 func (inv *intentInvocation) landing() laneVerbOwners {
@@ -87,6 +91,10 @@ func (inv *intentInvocation) landing() laneVerbOwners {
 	}
 	if owners.helm == nil {
 		owners.helm = helm.Active
+	}
+	if owners.laneHeld == nil {
+		now := owners.now
+		owners.laneHeld = func(installation string) ([]string, error) { return laneHeldGoals(installation, now()) }
 	}
 	if owners.unset == nil {
 		probe, end, now := owners.probe, owners.end, owners.now
@@ -767,10 +775,7 @@ func runIntentLandingUnset(inv *intentInvocation) int {
 		return inv.render(intentResult{Outcome: intentUnchanged, Targets: targets, Data: report,
 			Summary: "no landing lane is registered on this computer; each seat lands its own work"})
 	case report.Unregistered && report.CheckoutGone:
-		summary := "unset the landing lane " + report.Record.Root + "; its checkout was gone. Each seat lands its own work now"
-		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: report, Summary: summary,
-			Details: []string{"no batch of the lane could be read, so none was returned; a goal the ledger still shows held by the lane is released with metasystem goal release"},
-			view:    landingDone(summary, report.Record.Root)})
+		return inv.render(inv.goneLaneUnset(owners, report, targets, proveAt))
 	case report.Unregistered:
 		summary := "unset this computer's landing lane " + report.Record.Root + "; each seat lands its own work now"
 		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: report, Summary: summary,
@@ -793,6 +798,46 @@ func runIntentLandingUnset(inv *intentInvocation) int {
 	return inv.render(intentResult{Outcome: intentInProgress, Targets: targets, Data: report, Summary: summary,
 		next: inv.publicArgv("landing", "unset"), nextReason: "returns them again and unregisters the lane once all are confirmed",
 		Details: details})
+}
+
+// goneLaneUnset is the unset of a lane whose checkout was gone: no batch
+// could be read, so the goals the ledger still shows the lane holding are
+// named on the page itself, with the command that releases each.
+func (inv *intentInvocation) goneLaneUnset(owners laneVerbOwners, report lane.UnsetReport, targets []intentTarget, installation string) intentResult {
+	summary := "unset the landing lane " + report.Record.Root + "; its checkout was gone. Each seat lands its own work now"
+	held, err := owners.laneHeld(installation)
+	result := intentResult{Outcome: intentConfirmed, Targets: targets, Data: report, Summary: summary}
+	switch {
+	case err != nil:
+		result.Summary += "; which goals it still held can't be read (" + oneLine(err.Error()) + ")"
+		result.next, result.nextReason = inv.publicArgv("goal", "list", "--fetch"), "shows the claims; release each the lane still holds with metasystem goal release G"
+	case len(held) != 0:
+		result.Summary += fmt.Sprintf("; the ledger still shows it holding %s: %s", textui.Count(len(held), "goal", "goals"), strings.Join(held, ", "))
+		result.next = inv.publicArgv("goal", "release", held[0], "--reason", "the landing lane was unset")
+		result.nextReason = "gives the goal back; the same for each other goal named"
+	}
+	return result
+}
+
+// laneHeldGoals are the goals the ledger, fetched at installation, shows
+// handed to a landing batch or claimed by the landing owner's lineage.
+func laneHeldGoals(installation string, now time.Time) ([]string, error) {
+	endpoint, err := goal.ResolveEndpoint(installation)
+	if err != nil {
+		return nil, err
+	}
+	projection, err := goal.Project(endpoint, true, now)
+	if err != nil {
+		return nil, err
+	}
+	var held []string
+	for id, file := range projection.Tree.Live {
+		if file.Claimed != nil && (file.Claimed.HandedOver.Batch != "" || file.Claimed.Lineage == batchowner.LandingOwnerLineage) {
+			held = append(held, id)
+		}
+	}
+	slices.Sort(held)
+	return held, nil
 }
 
 // runIntentLandingRestart gives the lane a fresh owner process (a person

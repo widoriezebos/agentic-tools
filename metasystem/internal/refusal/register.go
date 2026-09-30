@@ -103,6 +103,7 @@ var Rows = []Row{
 	{Code: "LANDING_LANE_NOT_REGISTERED", Owner: "internal/landing/lane", Site: "gate.go#Gate", Shape: Question, H1: StandingGuide, Forward: "landing set"},
 	{Code: "LANDING_LANE_UNKNOWN_OPERATION", Owner: "internal/landing/lane", Site: "gate.go#Gate", Shape: Question, H1: StandingInput},
 	{Code: "LANDING_LANE_PAUSED", Owner: "internal/landing/lane", Site: "gate.go#pausedRefusal", Shape: Question, H1: StandingGuide, Forward: "landing start"},
+	{Code: "LANDING_LANE_UNREACHABLE", Owner: "internal/landing/lane", Site: "unset.go#unreachableRefusal", Shape: Question, H1: StandingGuide, Forward: "landing unset"},
 	{Code: "LANDING_LANE_UNSETTING", Owner: "internal/landing/lane", Site: "gate.go#unsettingRefusal", Shape: Question, H1: StandingGuide, Forward: "landing unset"},
 	{Code: "MACHINE_ON_ANOTHER_COMPUTER", Owner: "cmd/metasystem", Site: "intent_machine.go#intentInvocation.matchMachine", Shape: Question, H1: StandingGuide, Forward: "system stop"},
 	{Code: "LANDING_LANE_BUSY", Owner: "cmd/metasystem", Site: "intent_landing.go#runIntentLandingSet", Shape: Question, H1: StandingGuide, Forward: "landing stop"},

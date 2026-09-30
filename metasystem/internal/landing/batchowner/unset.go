@@ -116,8 +116,15 @@ func (u UnsetLane) reconcile(layout lane.Layout, record batch.Record) ([]lane.Un
 	if !open(record) {
 		return nil, nil
 	}
+	if record.Landing == nil || record.Landing.Base == "" {
+		// The batch never began its landing, so nothing of it can be on
+		// main: its members are returned.
+		return nil, nil
+	}
 	store := u.store(layout)
-	seams := recoverySeamsAt(string(layout.Checkout), string(layout.Install), store, record.BatchID, u.Now(), GitOutput, &u.Calls)
+	// Only commits after the batch's base count: an earlier landing of the
+	// same member, reverted since, is not this batch's push.
+	seams := recoverySeamsAt(string(layout.Checkout), string(layout.Install), record.Landing.Base, store, record.BatchID, u.Now(), GitOutput, &u.Calls)
 	// The lane is going away: its checkout's engine is left as it is.
 	seams.Rearm = func(string) error { return nil }
 	if record.Landing != nil && record.Landing.PushComplete {

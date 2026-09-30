@@ -225,7 +225,9 @@ func fence(home, by string, now time.Time) (journal *UnsetJournal, fresh bool, g
 	err = withLock(home, func() error {
 		existing, fenced, readErr := ReadUnset(home)
 		if fenced && readErr == nil {
-			if gone(existing.Root) {
+			if isGone, err := checkoutGone(existing.Root); err != nil {
+				return unreachableRefusal(existing.Root, err)
+			} else if isGone {
 				goneRoot = existing.Root
 				return removeLane(home)
 			}
@@ -234,12 +236,17 @@ func fence(home, by string, now time.Time) (journal *UnsetJournal, fresh bool, g
 			return err
 		}
 		record, ok, err := Read(home)
-		if ok && record.Root != "" && gone(record.Root) {
+		if ok && record.Root != "" {
 			// The checkout that held the lane's batches is gone, so no
 			// member is left in the lane's custody to return: the lane
-			// goes, and the person hears so.
-			goneRoot = record.Root
-			return removeLane(home)
+			// goes, and the person hears which goals the ledger still
+			// shows it holding.
+			if isGone, err := checkoutGone(record.Root); err != nil {
+				return unreachableRefusal(record.Root, err)
+			} else if isGone {
+				goneRoot = record.Root
+				return removeLane(home)
+			}
 		}
 		var refusal *Refusal
 		switch {
@@ -261,10 +268,17 @@ func fence(home, by string, now time.Time) (journal *UnsetJournal, fresh bool, g
 			// landing set would.
 			layout, err := NewLayout(record.Root)
 			if err != nil {
+				// landing set would refuse this checkout for the same reason,
+				// so the way on is to fix that, then unset again.
+				why := err.Error()
+				var invalid *Refusal
+				if errors.As(err, &invalid) {
+					why = invalid.Message + "; " + invalid.Fix
+				}
 				return &Refusal{Code: CodeRecordIncomplete,
-					Message: "this computer's landing lane " + record.Root + " was registered by an older engine and its layout can't be resolved now, so nothing was returned",
-					Fix:     "a person registers that checkout again, then unsets it: metasystem landing set " + record.Root,
-					Argv:    []string{"metasystem", "landing", "set", record.Root}}
+					Message: "this computer's landing lane " + record.Root + " was registered by an older engine, and its layout can't be read now: " + why,
+					Fix:     "fix the checkout as said, then take the lane away: metasystem landing unset",
+					Argv:    []string{"metasystem", "landing", "unset"}}
 			}
 			install = string(layout.Install)
 		}
@@ -281,6 +295,13 @@ func fence(home, by string, now time.Time) (journal *UnsetJournal, fresh bool, g
 		return nil, false, "", err
 	}
 	return journal, fresh, goneRoot, nil
+}
+
+func unreachableRefusal(root string, err error) *Refusal {
+	return &Refusal{Code: CodeUnreachable,
+		Message: "the landing checkout " + root + " can't be reached (" + err.Error() + "), so nothing was changed",
+		Fix:     "make it reachable (mount its volume), then run again: metasystem landing unset",
+		Argv:    []string{"metasystem", "landing", "unset"}}
 }
 
 // removeLane removes the lane's host state, the journal last; the caller
