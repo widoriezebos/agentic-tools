@@ -691,10 +691,14 @@ func RunBatchOwnerPass(out io.Writer, owner *batch.Owner, held BatchOwnerLease, 
 		BatchOwnerResume(owner)
 		ticks.End()
 	}
+	// root is the checkout's git toplevel; the cadence reads the goal ledger,
+	// the run store and the testing contract of the installation, which on a
+	// checkout that nests the module is its metasystem/ directory.
+	controlRoot := batch.ModuleRoot(root)
 	BatchOwnerPassWith(owner, root, BatchOwnerPassSeams{Helm: helm.Active, Resume: resume, Out: out, Now: clock,
 		Cadence: func() {
 			cadence.start(func() {
-				if err := BatchOwnerCadenceTick(root, held, clock); err != nil {
+				if err := BatchOwnerCadenceTick(controlRoot, held, clock); err != nil {
 					BatchOwnerCadenceReport(out, err)
 				}
 			})
