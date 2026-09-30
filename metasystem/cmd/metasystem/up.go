@@ -110,7 +110,7 @@ func restampStopCapabilityForUp(root, lineage string, claimEpoch int64) (up.Stop
 			return result, nil
 		}
 		if result.FromEpoch > claimEpoch {
-			return result, fmt.Errorf("stop capability epoch %d is ahead of live lease epoch %d", result.FromEpoch, claimEpoch)
+			return result, fmt.Errorf("the stop permission is newer (%d) than this checkout's claim (%d)", result.FromEpoch, claimEpoch)
 		}
 		classification := lease.ClassifyResult{Class: lease.ClassMain, Holder: true, ClaimEpoch: &claimEpoch}
 		request, err := syncReqClassified(root, "", lineage, nil, classification)
@@ -164,7 +164,7 @@ func runUpWith(args []string, repositoryTop func(string) (string, error), stdout
 		}
 	}
 	if modeCount > 1 || (*ifDown && !*recoverOnly) {
-		fmt.Fprintln(stderr, "up: scheduler printing, recovery, retirement, and shutdown modes cannot be combined; --if-down requires --recover-only")
+		fmt.Fprintln(stderr, "choose one of: print the schedule, recover, retire or shut down; --if-down needs --recover-only")
 		return 2
 	}
 	root, err := upMetasystemRoot(*metasystemRoot)
@@ -189,7 +189,7 @@ func runUpWith(args []string, repositoryTop func(string) (string, error), stdout
 	}
 	scale := upWaitScale()
 	if scale == 0 {
-		fmt.Fprintln(stderr, "up: METASYSTEM_FIXTURE_CAP_SCALE_MILLI must be a positive integer")
+		fmt.Fprintf(stderr, "the test time scale %s is not a whole number above zero\n", "METASYSTEM_FIXTURE_CAP_SCALE_MILLI")
 		return 2
 	}
 	options := up.Options{

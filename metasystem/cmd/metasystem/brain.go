@@ -63,11 +63,11 @@ func brainHumanAct(caller ownercall.Process, root, verb string, fixture bool, cl
 	}
 	callerPid, err := caller.ClassifiablePid(identity.KernelProber{})
 	if err != nil {
-		return fmt.Errorf("brain %s could not classify its caller: %w", verb, err)
+		return fmt.Errorf("coordinator %s: who is running this cannot be told: %w", verb, err)
 	}
 	classification, err := classify(root, callerPid)
 	if err != nil {
-		return fmt.Errorf("brain %s could not classify its caller: %w", verb, err)
+		return fmt.Errorf("coordinator %s: who is running this cannot be told: %w", verb, err)
 	}
 	if classification.Class != lease.ClassHuman {
 		return fmt.Errorf("brain %s is a human act; run it from an agent-free terminal", verb)
@@ -102,7 +102,7 @@ func brainDeclareWith(caller ownercall.Process, stdout, stderr io.Writer, root, 
 		return 2
 	}
 	if ledgerIdentity == "" {
-		fmt.Fprintln(stderr, "brain declare needs a migrated ledger identity; a person migrates it first: metasystem goal sync --upgrade --by NAME")
+		fmt.Fprintln(stderr, "this checkout cannot be the coordinator yet: its goal list has not been upgraded\nrun: metasystem goal sync --upgrade --by <your name>")
 		return 2
 	}
 	machine, err := deps.machine(root)
@@ -117,7 +117,7 @@ func brainDeclareWith(caller ownercall.Process, stdout, stderr io.Writer, root, 
 	}
 	state := brain.Read(root, ledgerIdentity)
 	if state.State == brain.Declared {
-		fmt.Fprintf(stderr, "this checkout is already the brain of ledger %s, declared by %s at %s; withdraw it first: metasystem settings coordinator --withdraw --by <name> --repo %s\n", state.Record.Ledger, state.Record.DeclaredBy, state.Record.DeclaredAt, root)
+		fmt.Fprintf(stderr, "this checkout is already the coordinator, set by %s at %s\nto undo it, run: metasystem settings coordinator --withdraw --by %s --repo %s\n", state.Record.DeclaredBy, state.Record.DeclaredAt, state.Record.DeclaredBy, root)
 		return 2
 	}
 	if state.State == brain.Corrupt {

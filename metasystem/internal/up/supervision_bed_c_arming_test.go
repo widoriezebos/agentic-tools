@@ -51,7 +51,7 @@ func TestSupCOmittedIdentityIsInferredFromTheRuntimeAncestor(t *testing.T) {
 	options.FindSessionAncestor = func(string, int64, string) (census.AgentAncestor, error) {
 		return census.AgentAncestor{}, errors.New("no agent-signature ancestor")
 	}
-	if _, err := resolveSessionIdentity(options); err == nil || !strings.Contains(err.Error(), "runtime-signature ancestry proof failed") {
+	if _, err := resolveSessionIdentity(options); err == nil || !strings.Contains(err.Error(), "could not be traced back to its session") {
 		t.Fatalf("an absent ancestor was not refused by name: %v", err)
 	}
 }

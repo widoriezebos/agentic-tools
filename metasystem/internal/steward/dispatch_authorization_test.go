@@ -113,7 +113,7 @@ func TestAuthorizeDispatchAdmitsTheStagedTupleAndNamesEachRefusal(t *testing.T) 
 	superseding.InstallGen = 2
 	consumedIntentOnDisk(t, superseded, superseding)
 	if _, err := AuthorizeDispatch(superseded, superseding.Nonce); err == nil ||
-		!strings.Contains(err.Error(), "minted under installation generation 2") || !strings.Contains(err.Error(), "a superseded authorization launches nothing") {
+		!strings.Contains(err.Error(), "(install 2 of") || !strings.Contains(err.Error(), "reinstalled since this was approved") {
 		t.Fatalf("a superseded generation: %v", err)
 	}
 }

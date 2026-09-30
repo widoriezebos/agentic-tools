@@ -107,7 +107,7 @@ func CancelIntent(repoRoot, nonce, reason string) error {
 	}
 	switch {
 	case tombstoneErr != nil && noticeErr != nil:
-		return fmt.Errorf("intent %s authorization was cancelled, but its tombstone failed (%v) and its handoff notice could not be cleared (%v)", nonce, tombstoneErr, noticeErr)
+		return fmt.Errorf("intent %s was cancelled, but its end marker and its handoff notice could not be written (%v; %v)", nonce, tombstoneErr, noticeErr)
 	case tombstoneErr != nil:
 		if it.Handoff != nil {
 			return fmt.Errorf("intent %s authorization was cancelled, but its tombstone failed: %w", nonce, tombstoneErr)

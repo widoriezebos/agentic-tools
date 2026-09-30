@@ -685,7 +685,7 @@ func TestHandoffPublicationIsExclusiveAndReverified(t *testing.T) {
 		previous := handoffStatePublished
 		handoffStatePublished = func(path string) { writeTestFile(t, path, []byte("{}\n")) }
 		t.Cleanup(func() { handoffStatePublished = previous })
-		if _, err := fixture.handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log")); err == nil || !strings.Contains(err.Error(), "digest mismatch") {
+		if _, err := fixture.handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log")); err == nil || !strings.Contains(err.Error(), "changed since it was recorded") {
 			t.Fatalf("drifted publication minted authority: %v", err)
 		}
 		if directories, intents := handoffArtifactCount(root); directories != 0 || intents != 0 {
@@ -1212,7 +1212,7 @@ func TestCancelHandoffHumanActIsHolderBound(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			root, result, canceller := humanCancelFixture(t)
 			writeStewardRecord(t, leasePath(root), map[string]any{"holderMainId": test.main, "pid": 4242, "pidStartedAt": 100, "claimEpoch": test.epoch})
-			failedCancel(t, root, result.Nonce, canceller, "handoff "+result.Nonce+" cannot be cancelled by a human act: the supplied holder coordinates do not match the current checkout lease")
+			failedCancel(t, root, result.Nonce, canceller, "handoff "+result.Nonce+" was not cancelled: the holder you named does not hold this checkout now")
 		})
 	}
 

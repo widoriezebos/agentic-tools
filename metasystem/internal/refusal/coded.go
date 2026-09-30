@@ -18,6 +18,18 @@ type Coded struct {
 func (e *Coded) Error() string { return e.Reason.Error() }
 func (e *Coded) Unwrap() error { return e.Reason }
 
+// RefusalCode and RefusalDetail make Coded a Coder.
+func (e *Coded) RefusalCode() string   { return e.Code }
+func (e *Coded) RefusalDetail() string { return e.Detail() }
+
+// Coder is any error that carries a register code and a detail line; a
+// package that may not import this one (the board) implements it itself.
+type Coder interface {
+	error
+	RefusalCode() string
+	RefusalDetail() string
+}
+
 // Detail is the code-first line records and --verbose keep:
 // "CODE facts: reason".
 func (e *Coded) Detail() string {
@@ -32,9 +44,9 @@ func New(code, facts string, reason error) error {
 // CodeOf is the refusal code err carries, or the code-first token of a
 // legacy message ("CODE ..." or "CODE: ..."), or "".
 func CodeOf(err error) string {
-	var coded *Coded
+	var coded Coder
 	if errors.As(err, &coded) {
-		return coded.Code
+		return coded.RefusalCode()
 	}
 	if err == nil {
 		return ""
@@ -53,9 +65,9 @@ func CodeOf(err error) string {
 // DetailOf is err's code-first detail line when it carries a code, else its
 // message: what --verbose and the refusal records show.
 func DetailOf(err error) string {
-	var coded *Coded
+	var coded Coder
 	if errors.As(err, &coded) {
-		return coded.Detail()
+		return coded.RefusalDetail()
 	}
 	if err == nil {
 		return ""

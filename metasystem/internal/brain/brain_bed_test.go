@@ -67,7 +67,7 @@ func TestBrainBedDeclareRaceNamesTheWinnerAndRefusesALiveForeignLock(t *testing.
 	if errs[0] != nil {
 		winner, loserErr = two, errs[0]
 	}
-	if !strings.Contains(loserErr.Error(), "already has a brain") || !strings.Contains(loserErr.Error(), winner) {
+	if !strings.Contains(loserErr.Error(), "already has a coordinator") || !strings.Contains(loserErr.Error(), winner) {
 		t.Fatalf("race loser did not name the winner: %v", loserErr)
 	}
 	pointer := PointerPath(registry, testLedger)
@@ -127,7 +127,7 @@ func TestBrainBedSecondDeclarationRefuses(t *testing.T) {
 	if err := bedDeclare(primary, homeOne, testLedger, "brain-one"); err != nil {
 		t.Fatal(err)
 	}
-	if err := bedDeclare(primary, homeOne, testLedger, "brain-one"); err == nil || !strings.Contains(err.Error(), "already the brain") {
+	if err := bedDeclare(primary, homeOne, testLedger, "brain-one"); err == nil || !strings.Contains(err.Error(), "already the coordinator") {
 		t.Fatalf("a second declaration of the same checkout was not refused: %v", err)
 	}
 	if err := bedDeclare(second, homeOne, testLedger, "brain-two"); err == nil || !strings.Contains(err.Error(), primary) {

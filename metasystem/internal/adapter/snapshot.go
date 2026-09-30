@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strconv"
 
+	"errors"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/wiredoc"
 )
 
@@ -50,7 +51,7 @@ func WriteCapabilitySnapshot(dir, runtime, version, configHash, transports, capa
 		return "", err
 	}
 	if !validEnvelopeEnforcement(envelopeValue) {
-		return "", fmt.Errorf("envelope enforcement declaration must map writeRoots, readRoots, and network to mapped or notEnforced")
+		return "", errors.New("the sandbox declaration must set writeRoots, readRoots and network to mapped or notEnforced")
 	}
 	if !validKeyHashes(keyHashesValue) {
 		return "", fmt.Errorf("configuration key hashes must map dotted paths to SHA-256 hashes")

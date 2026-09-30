@@ -382,7 +382,7 @@ func runTickAfterCustodial(repoRoot string, cfg TickConfig, census WorkerCensus,
 	result.LedgerAttention = ledgerReport
 	result.SeatPresence = seatReport
 	if err := narrateDigestWithReaders(repoRoot, prev, result, cfg.now(), dependencies.resolveMachine, dependencies.resolveLayout); err != nil {
-		return result, false, fmt.Errorf("write narrator digest: %w", err)
+		return result, false, fmt.Errorf("the narrator summary could not be written: %w", err)
 	}
 	machine := "this machine"
 	if enrolled, err := dependencies.resolveMachine(repoRoot); err == nil {

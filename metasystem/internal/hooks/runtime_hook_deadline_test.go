@@ -435,7 +435,7 @@ func TestDeadlineKillWithoutTerminalAcknowledgement(t *testing.T) {
 	if run.stdout != mustForm(t, "allowed", "deadline-expired")+"\n" {
 		t.Fatalf("kill = stdout %q stderr %q", run.stdout, run.stderr)
 	}
-	pattern := regexp.MustCompile(`^stop deadline: worker [0-9]+ cleanup sent KILL without terminal acknowledgement; custody retained; not waiting\n$`)
+	pattern := regexp.MustCompile(`^stop deadline: worker [0-9]+ was killed but has not confirmed it ended; it stays watched\n$`)
 	if !pattern.MatchString(run.stderr) {
 		t.Fatalf("cleanup diagnostic = %q", run.stderr)
 	}

@@ -210,7 +210,7 @@ func TestHookDeliveryRefusesAResponseWithoutTheReportField(t *testing.T) {
 			}
 			return payload, HookDeliveryReference{}
 		}},
-		{name: "report digest changed", want: "digest", mutate: func(t *testing.T, _ string, published stopreporttest.Published) ([]byte, HookDeliveryReference) {
+		{name: "report digest changed", want: "checksum", mutate: func(t *testing.T, _ string, published stopreporttest.Published) ([]byte, HookDeliveryReference) {
 			if err := os.WriteFile(published.Response.Report.Path, append(published.Report, []byte("changed\n")...), 0o644); err != nil {
 				t.Fatal(err)
 			}

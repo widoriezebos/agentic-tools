@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 )
 
 // fakeRemote is a remote that answers by ref: a named refusal for the refs it
@@ -202,7 +203,7 @@ func TestTheConflictRefusal(t *testing.T) {
 	mine := fixtureRecord(t)
 	newer := presence("m1e", fixtureClock.Add(time.Minute), 600)
 	newer.RepoIdentity = "another-checkout"
-	if err := Conflict(&newer, mine); err == nil || !strings.Contains(err.Error(), "SEAT_PRESENCE_CONFLICT") {
+	if err := Conflict(&newer, mine); err == nil || !strings.Contains(refusal.DetailOf(err), "SEAT_PRESENCE_CONFLICT") {
 		t.Fatalf("a newer record from another checkout = %v; want the conflict refusal", err)
 	}
 	older := presence("m1e", fixtureClock.Add(-time.Minute), 600)
@@ -226,7 +227,7 @@ func TestPublishRefusesAnUnpublishableNickname(t *testing.T) {
 	broken.Machine = "m1/e"
 	remote := &fakeRemote{}
 	if _, err := Publish(remote, PublishRequest{Record: broken}); err == nil ||
-		!strings.Contains(err.Error(), "SEAT_MACHINE_NICKNAME_INVALID") {
+		!strings.Contains(refusal.DetailOf(err), "SEAT_MACHINE_NICKNAME_INVALID") {
 		t.Fatalf("publish = %v; want the nickname refusal", err)
 	}
 	if len(remote.offered) != 0 {

@@ -246,7 +246,7 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 		return stoppedError(top, "the steward runner", second, true)
 	}
 	if second.Generation != fence.Generation {
-		return fmt.Errorf("the checkout %s was stopped and armed again while the steward runner started; the steward runner has been ended; the caller may retry", top)
+		return fmt.Errorf("%s was restarted while the steward started, so this steward was ended; run the command again", top)
 	}
 	if err := claim.Close(); err != nil {
 		return fmt.Errorf("close steward runner creation claim: %w", err)
@@ -530,7 +530,7 @@ func reArmRebuiltEngineWithDeps(deps rearmResolverDeps, repoRoot, installationRo
 			if errors.As(err, &commandFailure) {
 				return mintPlan{}, fmt.Errorf("read owned landing ref: %w", err)
 			}
-			return mintPlan{}, fmt.Errorf("%w: %v", ErrEnrollmentDrift, err)
+			return mintPlan{}, fmt.Errorf("%w: %w", ErrEnrollmentDrift, err)
 		}
 		sourceCommit, err := resolveLandedBuildWithDeps(deps, SystemRearmClock(), repoRoot, installationRoot, landingRef, bytes.Stamp)
 		if err != nil {
@@ -636,7 +636,7 @@ func ensureRunnerWithDependencies(repoRoot string, enrolled *EnrolledBinary, sca
 		return EnsureRunnerResult{Action: "excluded"}, nil
 	}
 	if !deps.notifyAvailable(top) {
-		return EnsureRunnerResult{}, fmt.Errorf("no notification channel is configured; an unreachable watchdog guards nothing — set metasystem.steward.notify-command")
+		return EnsureRunnerResult{}, errNoNotifyChannel
 	}
 	if enrolled == nil || enrolled.file == nil {
 		return EnsureRunnerResult{}, fmt.Errorf("the enrolled engine is not pinned")
@@ -795,7 +795,7 @@ func repairPinnedRunnerWithClock(top string, pinned *EnrolledBinary, beforeLock 
 		}
 		sleep(50 * time.Millisecond)
 	}
-	return RunnerRepairOutcome{}, fmt.Errorf("replacement runner pid %d did not complete generation %d within %s", replacement.Pid, installed.Generation, wait)
+	return RunnerRepairOutcome{}, fmt.Errorf("the new steward (pid %d) did not finish starting on install %d within %s", replacement.Pid, installed.Generation, wait)
 }
 
 func runnerExclusion(top string, allowFixture bool) (string, bool) {
@@ -841,7 +841,7 @@ func armWithRearmDeps(repoRoot, binaryPath string, replace, machine, allowFixtur
 		return outcome, nil
 	}
 	if !deps.notifyAvailable(top) {
-		return outcome, fmt.Errorf("no notification channel is configured; an unreachable watchdog guards nothing — set metasystem.steward.notify-command")
+		return outcome, errNoNotifyChannel
 	}
 	runnerPath := runnerDir(top)
 	if err := os.MkdirAll(runnerPath, 0o755); err != nil {
@@ -1167,7 +1167,7 @@ func runnerStopWait(root string, seconds int) (time.Duration, error) {
 	if raw := os.Getenv("METASYSTEM_FIXTURE_CAP_SCALE_MILLI"); raw != "" {
 		parsed, err := strconv.Atoi(raw)
 		if err != nil || parsed < 1 {
-			return 0, fmt.Errorf("METASYSTEM_FIXTURE_CAP_SCALE_MILLI must be a positive integer")
+			return 0, fmt.Errorf("the test time scale %s is not a whole number above zero", "METASYSTEM_FIXTURE_CAP_SCALE_MILLI")
 		}
 		scale = parsed
 	}
@@ -1317,3 +1317,6 @@ func readJSON(path string, v any) error {
 	}
 	return json.Unmarshal(data, v)
 }
+
+// errNoNotifyChannel refuses a watchdog nobody would hear.
+var errNoNotifyChannel = errors.New("no way to notify the operator is set, so the steward would watch unheard\nrun: metasystem settings set metasystem.steward.notify-command <command>")

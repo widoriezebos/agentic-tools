@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"errors"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/report"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
@@ -63,7 +64,7 @@ func MapStopOutput(runtime, inputPath, outputPath string) error {
 	}
 	digest := sha256.Sum256(reportBytes)
 	if identity != presentation.Identity || hex.EncodeToString(digest[:]) != presentation.Report.SHA256 || presentation.Report.Path != filepath.Join(presentation.Identity.Installation, "artifacts", "agents", "supervision", "stop-verdicts", presentation.Report.Id+".md") {
-		return fmt.Errorf("stop presentation report identity, path, or digest is inconsistent")
+		return errors.New("the stop report's name, path and checksum do not agree")
 	}
 	if !bytes.Contains(reportBytes, []byte("## Console text\n\n```text\n"+presentation.HumanLine+"\n```\n")) {
 		return fmt.Errorf("stop presentation line does not match its immutable report")

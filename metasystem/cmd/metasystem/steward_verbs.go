@@ -294,7 +294,7 @@ func runStewardRun(args []string, stdout, stderr io.Writer) int {
 	}
 	if os.Getenv("METASYSTEM_STEWARD_RUNNER_IGNORE_TERM") != "" {
 		if !fixtureauth.FixtureModeRoot(*repo) {
-			fmt.Fprintln(stderr, "steward run: METASYSTEM_STEWARD_RUNNER_IGNORE_TERM is fixture-only")
+			fmt.Fprintf(stderr, "the steward ignores the stop signal only in a test bed, and this is not one; unset %s\n", "METASYSTEM_STEWARD_RUNNER_IGNORE_TERM")
 			return 2
 		}
 		signal.Ignore(syscall.SIGTERM)
@@ -359,7 +359,7 @@ func runStewardArmWith(args []string, deps stewardArmDeps, stdout, stderr io.Wri
 		return 2
 	}
 	if *launchRecord != "" && (*temporaryWord != "" || *reviewBy != "") {
-		fmt.Fprintln(stderr, "steward arm: --launch-record cannot be combined with --temporary-human-word or --review-by: a session-enrolled launch carries its human's verdict, not a word")
+		fmt.Fprintln(stderr, "--launch-record carries its person's approval, so it takes no --temporary-human-word or --review-by")
 		return 2
 	}
 	if refused, err := refuseStewardIfStopped(*repo, stdout, stderr); err != nil {
@@ -401,7 +401,7 @@ func runStewardArmWith(args []string, deps stewardArmDeps, stdout, stderr io.Wri
 		// temporary enrollment in their own words, which ride the
 		// identity record until they re-arm at a terminal. Loud by
 		// construction — the word and the review date are durable.
-		fmt.Fprintf(stderr, "steward arm: TEMPORARY enrollment under a recorded remote human word; re-approval due %s at an agent-free terminal\n", *reviewBy)
+		fmt.Fprintf(stderr, "the steward runs on a temporary approval given remotely; a person approves it again by %s\n", *reviewBy)
 	}
 	if seed, err := seedStewardLandingRefWithGit(*repo, deps.landingRefGit); err != nil {
 		fmt.Fprintf(stderr, "steward arm: %v\n", err)
@@ -644,11 +644,11 @@ func sessionEnrollmentFromRecord(repo, recordPath string, repositoryTop func(str
 func sessionCallerCheck(repo, metasystemRoot string, classify processCallerClassifier) error {
 	classification, err := classify(repo, metasystemRoot, int64(os.Getppid()))
 	if err != nil {
-		return fmt.Errorf("a session enrollment classifies its caller and the caller's ancestry could not be read: %w", err)
+		return fmt.Errorf("who is launching this session cannot be told: %w", err)
 	}
 	switch classification.Class {
 	case lease.ClassHuman, lease.ClassUntrusted:
 		return nil
 	}
-	return fmt.Errorf("a session enrollment is a human's launch; caller classified %s", classification.Class)
+	return errors.New("a session is enrolled only from a person's own launch, and this is not one")
 }

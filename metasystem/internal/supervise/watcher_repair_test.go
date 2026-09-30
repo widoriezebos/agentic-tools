@@ -149,7 +149,7 @@ func TestWatcherRepairRefusesUnusableStateAndMalformedRequests(t *testing.T) {
 	if err := os.WriteFile(statePath, []byte(`{"generation":1,"components":{}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := RequestWatcherRestart(root, "missing watcher", now); err == nil || !strings.Contains(err.Error(), "no exact watcher") {
+	if err := RequestWatcherRestart(root, "missing watcher", now); err == nil || !strings.Contains(err.Error(), "no running watcher to restart") {
 		t.Fatalf("incomplete watcher state did not refuse repair: %v", err)
 	}
 	requestPath := watcherRestartRequestPath(root)

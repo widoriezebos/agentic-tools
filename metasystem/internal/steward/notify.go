@@ -21,6 +21,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"errors"
 )
 
 // notifyTimeout bounds one delivery attempt; a hung notifier is a
@@ -147,7 +149,7 @@ func deliver(repoRoot, message string) error {
 func deliverWithDependencies(repoRoot, message string, deps notificationDependencies) error {
 	command, kind := resolveNotifyWithDependencies(repoRoot, deps)
 	if kind == notifyUnavailable {
-		return fmt.Errorf("no notification channel is configured and this platform has no default; the operator cannot be reached")
+		return errors.New("no way to notify the operator is set, and this platform has no default")
 	}
 	if kind == notifyFixtureLog {
 		return appendFixtureNotification(repoRoot, message)

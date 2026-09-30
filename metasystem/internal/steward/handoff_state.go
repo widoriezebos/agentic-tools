@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"errors"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
@@ -475,7 +476,7 @@ func validateHandoffBinding(root, nonce string, binding HandoffBinding) (string,
 		return "", fmt.Errorf("handoff binding state path resolves outside its canonical owned path: expected=%s found=%s", binding.StatePath, resolvedState)
 	}
 	if !handoffDigestPattern.MatchString(binding.StateDigest) {
-		return "", fmt.Errorf("handoff state digest must be lowercase SHA-256 hex")
+		return "", errors.New("the handoff state checksum is not a lowercase SHA-256")
 	}
 	if binding.Runtime == "" || binding.Session == "" || binding.Session != goal.NormalizeSession(binding.Session) {
 		return "", fmt.Errorf("handoff runtime and normalized session are required")
@@ -513,7 +514,7 @@ func verifyBoundHandoffState(root, nonce, goalID string, binding HandoffBinding)
 	sum := sha256.Sum256(data)
 	foundDigest := hex.EncodeToString(sum[:])
 	if foundDigest != binding.StateDigest {
-		return foundDigest, fmt.Errorf("handoff state digest mismatch expected=%s found=%s", binding.StateDigest, foundDigest)
+		return foundDigest, fmt.Errorf("the handoff state changed since it was recorded (checksum %s, now %s)", binding.StateDigest, foundDigest)
 	}
 	var state HandoffState
 	if err := decodeStrictHandoffJSON(data, &state); err != nil {

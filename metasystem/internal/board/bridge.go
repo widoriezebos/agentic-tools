@@ -462,7 +462,8 @@ func maxSocketPath() int {
 func Listen(home string) (net.Listener, error) {
 	path := SocketPath(home)
 	if len(path) > maxSocketPath() {
-		return nil, fmt.Errorf("BRIDGE_SOCKET_PATH_TOO_LONG: the bridge's socket %s is %d bytes, over this platform's %d; the bridge does not serve and every reader reads the board directly; move the home to a shorter path", path, len(path), maxSocketPath())
+		return nil, coded("BRIDGE_SOCKET_PATH_TOO_LONG", fmt.Sprintf("path=%s bytes=%d limit=%d", path, len(path), maxSocketPath()),
+			fmt.Errorf("the board bridge is off: its socket path is %d bytes, over the limit of %d; use a shorter home", len(path), maxSocketPath()))
 	}
 	if _, err := boardDir(home); err != nil {
 		return nil, err
@@ -474,7 +475,7 @@ func Listen(home string) (net.Listener, error) {
 			return nil, err
 		}
 	case err == nil:
-		return nil, fmt.Errorf("BRIDGE_SOCKET_PATH_OCCUPIED: %s is not a socket (a file or directory stands there); the bridge does not serve and every reader reads the board directly; move it aside so the bridge can bind", path)
+		return nil, coded("BRIDGE_SOCKET_PATH_OCCUPIED", "path="+path, fmt.Errorf("the board bridge is off: a file or directory stands at its socket %s; move it aside", path))
 	case !errors.Is(err, fs.ErrNotExist):
 		return nil, err
 	}

@@ -456,7 +456,7 @@ func requireSuccessfulWatcherCensus(supervisionDir string, generation int) error
 		return fmt.Errorf("watcher census completed with verdict %s", verdict.Verdict)
 	}
 	if verdict.Generation == nil || *verdict.Generation != int64(generation) {
-		return fmt.Errorf("watcher census does not belong to supervision generation %d", generation)
+		return fmt.Errorf("the watcher's process census is from another install (want %d)", generation)
 	}
 	return nil
 }
@@ -543,7 +543,7 @@ func setupReaper(stderr io.Writer, repo, metasystemRoot string) func() {
 		if _, err := proofrun.ReconcileAttempts(metasystemRoot, proofrun.ReconcileOptions{
 			Emit: func(line string) { fmt.Fprintln(stderr, "supervise component reaper:", line) },
 		}); err != nil {
-			fmt.Fprintln(stderr, "supervise component reaper: proof attempts:", err)
+			fmt.Fprintln(stderr, "supervise component reaper: check runs:", err)
 		}
 	}
 }

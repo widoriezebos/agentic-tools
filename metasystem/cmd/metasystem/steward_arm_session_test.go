@@ -178,7 +178,7 @@ func TestSessionArmClassifiesItsCaller(t *testing.T) {
 				}
 				return
 			}
-			if err == nil || !strings.Contains(err.Error(), "caller classified "+test.class) {
+			if err == nil || !strings.Contains(err.Error(), "only from a person's own launch") {
 				t.Fatalf("%s caller: error = %v, want a refusal naming the class", test.class, err)
 			}
 		})
@@ -205,7 +205,7 @@ func TestSessionArmRefusesTheTemporaryPairBesideARecord(t *testing.T) {
 			}}
 		args := append([]string{"--repo", t.TempDir(), "--launch-record", "/fixture/record.json"}, pair...)
 		stderr, code := captureStderr(t, func(stdout, stderr io.Writer) int { return runStewardArmWith(args, deps, stdout, stderr) })
-		if code != 2 || called || !strings.Contains(stderr, "--launch-record cannot be combined with --temporary-human-word or --review-by") {
+		if code != 2 || called || !strings.Contains(stderr, "--launch-record carries its person's approval, so it takes no --temporary-human-word or --review-by") {
 			t.Fatalf("pair %v beside --launch-record = code %d called %v stderr %q", pair, code, called, stderr)
 		}
 	}
