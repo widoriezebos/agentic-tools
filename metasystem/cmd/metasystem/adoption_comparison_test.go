@@ -213,7 +213,7 @@ func TestAdoptionComparisonSelectedScenarios(t *testing.T) {
 		isolateFixtureAdmission()
 		first := filepath.Join(bed, name+"-first.json")
 		plan := mustRun(target, engine, "test", "plan", "--root", target, "--goal", "adoption-goal", "--tree", tree, "--mode", "auto", "--purpose", "delivery")
-		if !strings.Contains(plan, "groups=adopted-app-go") || strings.Contains(plan, "go-batchtest") {
+		if !strings.Contains(plan, "adopted-app-go") || strings.Contains(plan, "go-batchtest") {
 			t.Fatalf("adopted app plan selected the wrong tests:\n%s", plan)
 		}
 		mustRun(target, engine, "internal", "test", "run", "--root", target, "--goal", "adoption-goal", "--tree", tree, "--mode", "auto", "--purpose", "delivery", "--cap-min", "10", "--result", first)

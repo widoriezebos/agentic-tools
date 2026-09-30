@@ -3,8 +3,10 @@ package main
 import (
 	"io"
 	"os"
+	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
 
@@ -51,4 +53,62 @@ func passthroughPage(stream io.Writer, repo string, verbose bool) *textui.Page {
 // printPage writes a page to its stream.
 func printPage(stream io.Writer, page *textui.Page) {
 	_, _ = io.WriteString(stream, page.String())
+}
+
+// refusePassthrough prints a refusal's two lines, laid out, on stderr and
+// returns its exit code.
+func refusePassthrough(stderr io.Writer, code int, line1 string, hint textui.Hint) int {
+	page := passthroughPage(stderr, "", false)
+	page.Refusal(shortPaths(page.Env(), line1), hint)
+	printPage(stderr, page)
+	return code
+}
+
+// printOwnerLines lays out the lines an owner answered with: its first
+// output line is the headline and the rest are rows under it; its first
+// error line is a refusal's line 1, a "run: " line after it the hint (else
+// fallback), the rest rows. Paths print as a person reads them, counts as
+// counted nouns.
+func printOwnerLines(stdout, stderr io.Writer, repo string, out, errs []string, code int, fallback textui.Hint) int {
+	if len(out) > 0 {
+		page := passthroughPage(stdout, repo, false)
+		env := page.Env()
+		page.Headline(diskstore.CountedNouns(shortPaths(env, out[0])))
+		if len(out) > 1 {
+			section := page.Section("", "")
+			for _, line := range out[1:] {
+				section.Text(diskstore.CountedNouns(shortPaths(env, strings.TrimSpace(line))))
+			}
+		}
+		printPage(stdout, page)
+	}
+	if len(errs) > 0 {
+		page := passthroughPage(stderr, repo, false)
+		env := page.Env()
+		var hint textui.Hint
+		var rest []string
+		for _, line := range errs[1:] {
+			if remedy, isRemedy := strings.CutPrefix(line, "run: "); isRemedy && hint.Reason == "" {
+				hint.Reason = shortPaths(env, remedy)
+				continue
+			}
+			rest = append(rest, line)
+		}
+		first, remedy, twoLines := strings.Cut(errs[0], "\nrun: ")
+		if twoLines && hint.Reason == "" {
+			hint.Reason = shortPaths(env, remedy)
+		}
+		if hint.Reason == "" {
+			hint = fallback
+		}
+		page.Refusal(diskstore.CountedNouns(shortPaths(env, first)), hint)
+		if len(rest) > 0 {
+			section := page.Section("", "")
+			for _, line := range rest {
+				section.Text(shortPaths(env, strings.TrimSpace(line)))
+			}
+		}
+		printPage(stderr, page)
+	}
+	return code
 }

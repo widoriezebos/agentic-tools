@@ -1,2 +1,2 @@
-fatal: not a git repository (or any of the parent directories): .git
-second-session: /Users/wido/GitHub/agentic-tools-m1e/metasystem is not inside a git checkout: exit status 128
+✗ ~/GitHub/metasystem is not inside a git checkout: exit status 128
+  → metasystem session isolate --repo PATH  PATH is a checkout MetaSystem is set up in

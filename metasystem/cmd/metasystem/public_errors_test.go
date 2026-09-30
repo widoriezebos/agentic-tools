@@ -158,7 +158,7 @@ func TestSessionStatusExampleIsAnIDItTakes(t *testing.T) {
 		}
 	}
 	code, _, stderr := runPublic(t, "session", "status", "--id", "r-7f3a")
-	if code != 2 || !strings.HasPrefix(stderr, "r-7f3a is not a Stop report id") || strings.Contains(stderr, "report stop-status") {
+	if code != 2 || !strings.HasPrefix(stderr, "✗ r-7f3a is not a Stop report id") || strings.Contains(stderr, "report stop-status") {
 		t.Errorf("session status --id r-7f3a: code %d stderr %q", code, stderr)
 	}
 }
@@ -170,7 +170,7 @@ func TestTestBaselineNamesWhatItNeeds(t *testing.T) {
 		args []string
 		want string
 	}{
-		{[]string{"test", "baseline"}, "\nrun: metasystem test baseline --gate 'go test ./...'"},
+		{[]string{"test", "baseline"}, "\n  → metasystem test baseline --gate 'go test ./...'"},
 		{[]string{"test", "baseline", "--gate"}, "--gate needs a value: the gate command that passed, e.g."},
 	} {
 		code, stdout, stderr := runPublic(t, row.args...)
@@ -208,11 +208,11 @@ func TestSystemCheckRemediesArePublicActs(t *testing.T) {
 func TestExperimentCheckNamesTheMissingLedger(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "absent.md")
 	code, _, stderr := runPublic(t, "experiment", "check", "--file", missing)
-	if code != 2 || !strings.Contains(stderr, "metasystem experiment check: no ledger at "+missing) || strings.Contains(stderr, "missing --file") {
+	if code != 2 || !strings.Contains(flatPage(stderr), "there is no ledger at "+missing) || strings.Contains(stderr, "missing --file") {
 		t.Errorf("experiment check --file absent: code %d stderr %q", code, stderr)
 	}
 	code, _, stderr = runPublic(t, "experiment", "check")
-	if code != 2 || !strings.Contains(stderr, "needs the ledger to check; nothing was checked\nrun: metasystem experiment check --file LEDGER") {
+	if code != 2 || !strings.Contains(stderr, "needs the ledger to check; nothing was checked\n  → metasystem experiment check --file LEDGER") {
 		t.Errorf("bare experiment check: code %d stderr %q", code, stderr)
 	}
 	if _, _, stderr := runPublic(t, "experiment", "check", "--bogus"); strings.Contains(stderr, "Exit codes") {
@@ -354,7 +354,7 @@ func TestMissingFilesAreNamedByPath(t *testing.T) {
 		}
 	}
 	code, _, stderr := runPublic(t, "test", "list", "--root", missing)
-	if code == 0 || !strings.Contains(stderr, missing+" does not exist") || strings.Contains(stderr, "lstat") {
+	if code == 0 || !strings.Contains(flatPage(stderr), missing+" does not exist") || strings.Contains(stderr, "lstat") {
 		t.Errorf("test list --root absent: code %d stderr %q", code, stderr)
 	}
 }

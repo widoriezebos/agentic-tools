@@ -1,2 +1,3 @@
-metasystem test baseline: the baseline needs the gate command that passed; nothing was done
-run: metasystem test baseline --gate 'go test ./...'  (your gate command; --check checks the recorded baseline)
+✗ the baseline needs the gate command that passed; nothing was done
+  → metasystem test baseline --gate 'go test ./...' (your gate command; --check checks the recorded
+    baseline)

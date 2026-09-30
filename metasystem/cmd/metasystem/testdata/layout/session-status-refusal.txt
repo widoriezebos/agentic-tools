@@ -1,2 +1,2 @@
-session status needs the id from a Stop line, so nothing was read
-run: metasystem session status --id <the id on the Stop line>
+✗ session status needs the id from a Stop line, so nothing was read
+  → run metasystem session status --id with the id the Stop line printed

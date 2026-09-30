@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"flag"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 )
 
@@ -158,33 +160,14 @@ Exit codes: 0 conforming; 1 conformance failure; 2 usage.
 
 // runValidateStopLoss owns the stop-loss check's calling
 // convention: --file names the investigation ledger. Exit 0 more cycles
-// allowed; 1 stop-loss triggered; 2 usage error.
+// allowed; 1 stop-loss triggered; 2 usage error. It blocks further cycles
+// when a machine-checkable trigger fired: a cycle classified
+// falsified-dead-end, two classified no-progress, as many cycles as the
+// declared "Cycle budget:", or as many trailing cycles without a
+// contract-improved as the declared "No-gain budget:". unresolved never
+// counts toward no-progress; the judgment triggers stay with the agent and
+// the human.
 func runValidateStopLoss(args []string, stdout, stderr io.Writer) int {
-	usage := func() {
-		fmt.Fprint(stderr, `Usage:
-  metasystem experiment check --file <investigation-ledger.md>
-
-Reads the cycle classifications from an investigation ledger and blocks
-further cycles when a machine-checkable stop-loss trigger has fired:
-
-  - any cycle classified falsified-dead-end
-  - two or more cycles classified no-progress
-  - as many cycles as the declared "Cycle budget:" line (when present)
-  - as many trailing cycles without a contract-improved as the declared
-    "No-gain budget:" line (when present; improve mode sets 3)
-
-unresolved (a valid measurement inside a declared noise floor) never counts
-toward the no-progress trigger; only a declared no-gain budget bounds it.
-
-The judgment triggers (repeating one mechanism family, an expensive run
-that taught nothing, no novel fact) stay with the agent and the human.
-This check only enforces what the ledger already states, so a ledger
-that stops recording classifications also stops being protected.
-
-Run it before contracting a new cycle.
-Exit codes: 0 more cycles are allowed; 1 stop-loss triggered; 2 usage error.
-`)
-	}
 	flags := newFlagSet("experiment check", stdout, stderr)
 	file := flags.String("file", "", "the investigation ledger")
 	if err := flags.Parse(args); err != nil {
@@ -193,26 +176,21 @@ Exit codes: 0 more cycles are allowed; 1 stop-loss triggered; 2 usage error.
 		}
 		return 2
 	}
+	help := textui.Hint{Argv: []string{"metasystem", "experiment", "check", "--help"}, Reason: "what it checks and its exit codes"}
 	if flags.NArg() > 0 {
-		usage()
-		return 2
+		return refusePassthrough(stderr, 2, "experiment check takes only --file and the ledger; nothing was checked", help)
 	}
 	if *file == "" {
-		fmt.Fprintln(stderr, "experiment check needs the ledger to check; nothing was checked\nrun: metasystem experiment check --file LEDGER")
-		return 2
+		return refusePassthrough(stderr, 2, "experiment check needs the ledger to check; nothing was checked",
+			textui.Hint{Argv: []string{"metasystem", "experiment", "check", "--file", "LEDGER"}, Reason: "LEDGER is the investigation ledger"})
 	}
 	if _, err := os.Stat(*file); err != nil {
-		fmt.Fprintf(stderr, "metasystem experiment check: no ledger at %s; nothing was checked\n", *file)
-		return 2
+		return refusePassthrough(stderr, 2, "there is no ledger at "+*file+"; nothing was checked",
+			textui.Hint{Argv: []string{"metasystem", "experiment", "check", "--file", "LEDGER"}, Reason: "LEDGER is the investigation ledger"})
 	}
 	out, errs, code := validate.StopLoss(*file)
-	for _, line := range out {
-		fmt.Fprintln(stdout, line)
-	}
-	for _, line := range errs {
-		fmt.Fprintln(stderr, line)
-	}
-	return code
+	return printOwnerLines(stdout, stderr, "", out, errs, code,
+		textui.Hint{Reason: "no further cycle; hand over what was learned and take the decision up a level"})
 }
 
 // movedEffectsReport checks a design page's moved-effect inventory against
@@ -258,8 +236,8 @@ func movedEffectsReport(page []byte, repositoryRoot string) ([]string, int) {
 // new refactor edit batch may start. Exit 0 safe, 1 blocked, 2 usage or
 // environment error — the contract its callers script against.
 func runValidateRefactorBaseline(args []string, stdout, stderr io.Writer) int {
-	usage := func() int {
-		fmt.Fprintln(stderr, `usage: metasystem test baseline --gate CMD [--file F] [--root INSTALLATION]
+	help := func() int {
+		fmt.Fprintln(stdout, `usage: metasystem test baseline --gate CMD [--file F] [--root INSTALLATION]
        metasystem test baseline --check [--file F] [--max-age-minutes N] [--max-commits N] [--root INSTALLATION]
 
 --gate: store the current clean, committed HEAD as the trusted refactor
@@ -269,11 +247,14 @@ ancestor of HEAD, and the cadence backstop is not exceeded. The cadence
 resolves from flags, then environment, then the installation's
 metasystem.conf, then 1440 minutes and 40 commits.
 Exit codes: 0 safe; 1 blocked; 2 usage or environment error.`)
-		return 2
+		return 0
+	}
+	usage := func() int {
+		return refusePassthrough(stderr, 2, "test baseline takes --gate and the command that passed, or --check; nothing was done",
+			textui.Hint{Argv: []string{"metasystem", "test", "baseline", "--help"}, Reason: "its two forms and the cadence"})
 	}
 	if len(args) == 1 && (args[0] == "-h" || args[0] == "--help") {
-		usage()
-		return 0
+		return help()
 	}
 	if len(args) == 0 || (args[0] != "record" && args[0] != "check") {
 		return usage()
@@ -310,7 +291,21 @@ Exit codes: 0 safe; 1 blocked; 2 usage or environment error.`)
 		return 2
 	}
 	p.Cwd = cwd
-	return validate.RefactorBaseline(p, stdout, stderr)
+	var out, errs bytes.Buffer
+	code := validate.RefactorBaseline(p, &out, &errs)
+	return printOwnerLines(stdout, stderr, "", ownerLines(out.String()), ownerLines(errs.String()), code,
+		textui.Hint{Argv: []string{"metasystem", "test", "baseline", "--help"}, Reason: "its two forms and the cadence"})
+}
+
+// ownerLines are an owner's printed lines, without the empty ones.
+func ownerLines(text string) []string {
+	var lines []string
+	for _, line := range strings.Split(text, "\n") {
+		if strings.TrimSpace(line) != "" {
+			lines = append(lines, line)
+		}
+	}
+	return lines
 }
 
 // resolveRefactorCadence resolves the refactor gate's cadence backstops: the

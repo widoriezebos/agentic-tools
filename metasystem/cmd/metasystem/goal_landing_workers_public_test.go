@@ -499,7 +499,7 @@ func runPublicApplicationPhase(t *testing.T, fixture *portableProofFixture, labe
 	tree := fixture.commit(label)
 	baseArgs := []string{"--root", fixture.root, "--goal", "portable", "--tree", tree, "--mode", "auto", "--purpose", "delivery"}
 	planStatus, planOutput := fixture.command(append([]string{"test", "plan"}, baseArgs...)...)
-	if planStatus != 0 || !strings.Contains(planOutput, "groups=application-workers") {
+	if planStatus != 0 || !strings.Contains(planOutput, "application-workers") {
 		t.Fatalf("%s public plan status=%d output=%s", label, planStatus, planOutput)
 	}
 	resultPath := filepath.Join(t.TempDir(), label+".json")

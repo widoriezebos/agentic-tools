@@ -62,7 +62,7 @@ var _ = addLayoutCases(
 	layoutCase{name: "session-isolate-refusal", args: []string{"session", "isolate", "--root", "ROOT"}, bed: passthroughLayoutBed(0), noJSON: true},
 	layoutCase{name: "test-plan-refusal", args: []string{"test", "plan", "--root", "ROOT"}, bed: passthroughGitLayoutBed},
 	layoutCase{name: "test-list", args: []string{"test", "list", "--root", "ROOT"}, bed: passthroughLayoutBed(0)},
-	layoutCase{name: "test-add", args: []string{"test", "add", "--file", "CONTRACT", "--group", "app-group", "--inputs", "go.sum"}, bed: passthroughLayoutBed(0), noJSON: true},
+	layoutCase{name: "test-add", args: []string{"test", "add", "--file", "CONTRACT", "--group", "app-group", "--inputs", "go.work"}, bed: passthroughLayoutBed(0), noJSON: true},
 	layoutCase{name: "test-add-refusal", args: []string{"test", "add", "--file", "CONTRACT"}, bed: passthroughLayoutBed(0), noJSON: true},
 	layoutCase{name: "test-remove", args: []string{"test", "remove", "--file", "CONTRACT", "--group", "app-group", "--inputs", "go.mod"}, bed: passthroughLayoutBed(0), noJSON: true},
 	layoutCase{name: "test-baseline-refusal", args: []string{"test", "baseline"}, bed: passthroughLayoutBed(0), noJSON: true},

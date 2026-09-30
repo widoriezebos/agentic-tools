@@ -32,7 +32,7 @@ func TestTestReportReadsValidatedResultWithoutExecutingProof(t *testing.T) {
 		t.Fatal(err)
 	}
 	output, code := captureStdout(t, func(stdout, stderr io.Writer) int {
-		return runTestReport([]string{"--result", path, "--expensive-ms", "500"}, stdout, stderr)
+		return runTestReport([]string{"--result", path, "--expensive-ms", "500", "--json"}, stdout, stderr)
 	})
 	if code != 0 {
 		t.Fatalf("test report refused valid retained result: %s", output)
@@ -47,7 +47,7 @@ func TestTestReportReadsValidatedResultWithoutExecutingProof(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, code = captureStdout(t, func(stdout, stderr io.Writer) int {
-		return runTestReport([]string{"--result", path, "--expensive-ms", "500"}, stdout, stderr)
+		return runTestReport([]string{"--result", path, "--expensive-ms", "500", "--json"}, stdout, stderr)
 	})
 	if code == 0 {
 		t.Fatal("test report accepted an invalid retained result")
