@@ -1,10 +1,14 @@
 package lane
 
 import (
+	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
 )
 
@@ -90,12 +94,44 @@ func ClearPause(home string) (changed bool, err error) {
 
 // Keeper keeps the host lane's owner alive: one Step per steward cycle.
 // Inspect reports whether the owner of a lane root runs; Start starts it
-// under the lane's own ensure lock.
+// under the lane's own ensure lock. Ready says whether an owner could run at
+// all (a *Refusal naming the fix when it cannot); a lane that is not ready
+// is never restarted and its deaths are not counted, because a restart
+// cannot succeed until a person acts.
 type Keeper struct {
 	Home    string
 	Now     func() time.Time
 	Inspect func(root string) (bool, error)
 	Start   func(root string) error
+	Ready   func(root string) error
+}
+
+// UnarmedRefusal is a lane whose checkout's supervision is not armed:
+// nothing there can start or keep its owner, whatever the keeper or landing
+// start asks for.
+func UnarmedRefusal(root string) *Refusal {
+	return &Refusal{Code: CodeUnarmed,
+		Message: fmt.Sprintf("the landing lane's owner at %s cannot run: that checkout's machinery is not started (its supervision is not armed), so nothing can start or keep its owner", root),
+		Fix:     "a person runs, at a terminal no agent started: metasystem system start --repo " + root,
+		Argv:    []string{"metasystem", "system", "start", "--repo", root}}
+}
+
+// NoMachineRefusal is a landing checkout with no machine nickname: its owner
+// signs what it lands with that name, so it stops at every start there.
+func NoMachineRefusal(root string) *Refusal {
+	return &Refusal{Code: CodeNoMachine,
+		Message: fmt.Sprintf("the landing checkout %s has no machine nickname, so its owner stops at every start there", root),
+		Fix:     "name it once: git -C " + root + " config metasystem.goal.machine landing (any one word), then run metasystem landing start",
+		Argv:    []string{"git", "-C", root, "config", "metasystem.goal.machine", "landing"}}
+}
+
+// notReadyLine is the keeper's line for a lane whose owner cannot run.
+func notReadyLine(root string, err error) string {
+	var refusal *Refusal
+	if errors.As(err, &refusal) {
+		return refusal.Message + "; nothing was started; " + refusal.Fix
+	}
+	return fmt.Sprintf("landing lane owner at %s: whether it can run is unknown (%v); nothing was started", root, err)
 }
 
 // Step observes the owner once and restarts it when it is dead, within the
@@ -138,6 +174,11 @@ func (k Keeper) step(record Record) string {
 		}
 		return "landing lane owner at " + root + " is running"
 	}
+	if k.Ready != nil {
+		if err := k.Ready(root); err != nil {
+			return notReadyLine(root, err)
+		}
+	}
 	if state.GaveUp != "" {
 		return GiveUpLine(root, state)
 	}
@@ -146,7 +187,7 @@ func (k Keeper) step(record Record) string {
 	}
 	if retry, err := time.Parse(time.RFC3339, state.RetryAt); err == nil {
 		if now.Before(retry) {
-			return fmt.Sprintf("landing lane owner at %s is down; restart %d waits until %s", root, state.Restarts+1, localClock(retry))
+			return fmt.Sprintf("landing lane owner at %s is down%s; restart %d waits until %s", root, lastErrorClause(root), state.Restarts+1, localClock(retry))
 		}
 		return k.launch(root, state, now)
 	}
@@ -168,7 +209,7 @@ func (k Keeper) step(record Record) string {
 		if err := writeJSON(k.Home, keeperPath(k.Home), state); err != nil {
 			return "landing lane keeper: " + err.Error()
 		}
-		return fmt.Sprintf("landing lane owner at %s is down; restart %d waits until %s", root, state.Restarts+1, localClock(now.Add(verdict.RelaunchAfter)))
+		return fmt.Sprintf("landing lane owner at %s is down%s; restart %d waits until %s", root, lastErrorClause(root), state.Restarts+1, localClock(now.Add(verdict.RelaunchAfter)))
 	}
 	return k.launch(root, state, now)
 }
@@ -177,7 +218,9 @@ func (k Keeper) launch(root string, state KeeperState, now time.Time) string {
 	startErr := k.Start(root)
 	state.Restarts++
 	state.LastLaunch, state.RetryAt, state.LastError = now.Format(time.RFC3339), "", ""
-	line := fmt.Sprintf("landing lane owner at %s was down; restarted it (restart %d)", root, state.Restarts)
+	// The start asks the checkout's supervision for an owner; whether one
+	// runs is the next cycle's observation, never this line's claim.
+	line := fmt.Sprintf("landing lane owner at %s was down%s; asked its supervision to start it (restart %d)", root, lastErrorClause(root), state.Restarts)
 	if startErr != nil {
 		state.LastError = startErr.Error()
 		line = fmt.Sprintf("landing lane owner at %s was down; restart %d failed: %v", root, state.Restarts, startErr)
@@ -195,13 +238,40 @@ func GiveUpLine(root string, state KeeperState) string {
 		root, state.Failures, LocalText(state.Since), state.Restarts, LocalText(state.GaveUp))
 	if state.LastError != "" {
 		line += "; the last start failed: " + state.LastError
+	} else if last := LastErrorLine(root); last != "" {
+		line += "; its last error: " + last
 	}
 	return line + fmt.Sprintf(". Read %s and owner.log beside it, fix the cause, then run: metasystem landing start", LastErrorPath(root))
 }
 
-// LastErrorPath is the owner's last pass error in the lane's supervision.
+// LastErrorPath is the owner's last pass error in the lane's supervision:
+// the installation's, which a checkout that nests the module keeps under
+// <lane>/metasystem.
 func LastErrorPath(root string) string {
-	return filepath.Join(root, "artifacts", "agents", "supervision", "landing-owner.last-error")
+	return filepath.Join(batch.ModuleRoot(root), "artifacts", "agents", "supervision", "landing-owner.last-error")
+}
+
+// LastErrorLine is the owner's last pass error as one line; empty when it
+// recorded none.
+func LastErrorLine(root string) string {
+	data, err := os.ReadFile(LastErrorPath(root))
+	if err != nil {
+		return ""
+	}
+	var lines []string
+	for _, line := range strings.Split(string(data), "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			lines = append(lines, line)
+		}
+	}
+	return strings.Join(lines, "; ")
+}
+
+func lastErrorClause(root string) string {
+	if last := LastErrorLine(root); last != "" {
+		return " (its last error: " + last + ")"
+	}
+	return ""
 }
 
 func pausedLine(root string, pause Pause) string {

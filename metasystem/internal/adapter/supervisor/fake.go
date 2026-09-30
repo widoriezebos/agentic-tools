@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/adapter"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gocache"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/protocol"
 )
@@ -168,17 +169,29 @@ func fakeGuardedStatus(d Deps, allowed bool, err error) int {
 	return 77
 }
 
-func tempBase(d Deps) string {
+// tempBase is where the fake allocates: the TMPDIR its caller gave it, else
+// this process's scratch root, which the owner's release removes (R1). A
+// hard-coded /tmp would sit outside every owner.
+func tempBase(d Deps) (string, error) {
 	if dir := d.Getenv("TMPDIR"); dir != "" {
-		return dir
+		return dir, nil
 	}
-	return "/tmp"
+	return diskstore.ProcessScratch()
+}
+
+// fakeTempDir is os.MkdirTemp in tempBase.
+func fakeTempDir(d Deps, pattern string) (string, error) {
+	base, err := tempBase(d)
+	if err != nil {
+		return "", err
+	}
+	return os.MkdirTemp(base, pattern)
 }
 
 // probeFakeEnvelopeMechanism proves the fake's envelope refuses a denied
 // write and a denied network call before a snapshot declares them mapped.
 func probeFakeEnvelopeMechanism(d Deps) error {
-	dir, err := os.MkdirTemp(tempBase(d), "metasystem-fake-envelope-probe.*")
+	dir, err := fakeTempDir(d, "metasystem-fake-envelope-probe.*")
 	if err != nil {
 		return err
 	}
@@ -288,7 +301,7 @@ func fakeProbe(d Deps, args []string) int {
 // lifecycle helper, because the standalone shape is exactly what fake
 // proves possible.
 func fakeContract(d Deps) ([]byte, error) {
-	dir, err := os.MkdirTemp(tempBase(d), "metasystem-contract.*")
+	dir, err := fakeTempDir(d, "metasystem-contract.*")
 	if err != nil {
 		return nil, err
 	}
@@ -337,7 +350,7 @@ func fakeSelftest(d Deps) int {
 	if code := fakeProbe(quiet, nil); code != 0 {
 		return code
 	}
-	dir, err := os.MkdirTemp(tempBase(d), "metasystem-fake-selftest.*")
+	dir, err := fakeTempDir(d, "metasystem-fake-selftest.*")
 	if err != nil {
 		fmt.Fprintln(d.Stderr, err)
 		return 1

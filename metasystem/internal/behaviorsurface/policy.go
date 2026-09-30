@@ -18,6 +18,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 )
 
 const SupportedVersion = 2
@@ -40,7 +42,41 @@ const (
 	OperationalData Class = "OPERATIONAL_DATA"
 	Tailored        Class = "TAILORED"
 	NonRepository   Class = "NON_REPOSITORY"
+	// RuntimeLocalConfig is an agent runtime's seat-local configuration (the
+	// adapters' declarations marked local, such as .claude/settings.local.json):
+	// untracked by convention, the seat's harness state and never delivery
+	// content, so LANDING leaves it out. Shared runtime configuration the
+	// repository commits stays content.
+	RuntimeLocalConfig Class = "RUNTIME_LOCAL_CONFIG"
 )
+
+// runtimeLocalConfigPaths is the adapters' declared seat-local
+// configuration, in Git-toplevel path space (the runtimes read it from the
+// checkout root).
+func runtimeLocalConfigPaths() []string {
+	seen := map[string]bool{}
+	var paths []string
+	for _, name := range runtimes.WithAdapter() {
+		declared, _ := runtimes.SeatLocalConfigPaths(name)
+		for _, path := range declared {
+			if !seen[path] {
+				seen[path] = true
+				paths = append(paths, path)
+			}
+		}
+	}
+	sort.Strings(paths)
+	return paths
+}
+
+func isRuntimeLocalConfig(repositoryName string) bool {
+	for _, path := range runtimeLocalConfigPaths() {
+		if repositoryName == path {
+			return true
+		}
+	}
+	return false
+}
 
 // SkipScope names the equality claim that may authorize an omission.
 // WITNESS is ENGINE plus toolchain equality; DELIVERY adds PAYLOAD equality.
@@ -236,6 +272,9 @@ func (p Policy) Classify(name, prefix string) (Class, error) {
 	if err != nil || repositoryName == "" {
 		return Standard, err
 	}
+	if isRuntimeLocalConfig(repositoryName) {
+		return RuntimeLocalConfig, nil
+	}
 	normalized, err := NormalizePath(name, prefix)
 	if err != nil {
 		return Standard, err
@@ -272,7 +311,7 @@ func (p Policy) Includes(projection Projection, name, prefix string) (bool, erro
 		if err != nil || clean == "" {
 			return false, err
 		}
-		if matchesAny(p.RepositoryOperationalDataPaths, clean) {
+		if matchesAny(p.RepositoryOperationalDataPaths, clean) || isRuntimeLocalConfig(clean) {
 			return false, nil
 		}
 		if cleanPrefix != "" && clean != cleanPrefix && !strings.HasPrefix(clean, cleanPrefix+"/") {
@@ -305,6 +344,49 @@ func (p Policy) Includes(projection Projection, name, prefix string) (bool, erro
 	default:
 		return false, fmt.Errorf("unknown behavior-surface projection %q", projection)
 	}
+}
+
+// LandingExclusions names every Git-toplevel-relative path the LANDING
+// projection leaves out for an installation at prefix, as literal paths (a
+// directory covers its subtree): repository operational data, runtime
+// local configuration, the installation's coordination state and
+// non-repository content, and, for a nested installation, the coordination
+// state its state root keeps at the repository top. It is Includes(Landing) as a path list, for a caller that
+// must hand the same boundary to Git: a commit never records these bytes, so
+// nothing that judges a commit's candidate may read them from disk.
+func (p Policy) LandingExclusions(prefix string) []string {
+	cleanPrefix := strings.Trim(filepath.ToSlash(prefix), "/")
+	under := func(pattern string) string {
+		base := strings.TrimSuffix(pattern, "/**")
+		if cleanPrefix == "" {
+			return base
+		}
+		return cleanPrefix + "/" + base
+	}
+	seen := map[string]bool{}
+	var paths []string
+	add := func(path string) {
+		if !seen[path] {
+			seen[path] = true
+			paths = append(paths, path)
+		}
+	}
+	for _, pattern := range p.RepositoryOperationalDataPaths {
+		add(strings.TrimSuffix(pattern, "/**"))
+	}
+	for _, path := range runtimeLocalConfigPaths() {
+		add(path)
+	}
+	for _, pattern := range append(append([]string(nil), p.CoordinationPaths...), p.NonRepositoryPaths...) {
+		add(under(pattern))
+	}
+	if cleanPrefix != "" {
+		for _, pattern := range p.CoordinationPaths {
+			add(strings.TrimSuffix(pattern, "/**"))
+		}
+	}
+	sort.Strings(paths)
+	return paths
 }
 
 // SkipAllowed reports whether the named equality claim may authorize omission

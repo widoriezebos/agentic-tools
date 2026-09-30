@@ -939,6 +939,17 @@ func runStageGroupsScheduled(ctx context.Context, request TestRunRequest, groups
 			if coverageParticipant[index] {
 				groupCtx = withCoverageSources(groupCtx, sources)
 			}
+			// The group's workers return to the pool before its completion is
+			// delivered, so a scheduler that sees no group active also sees the
+			// whole pool free. Released after delivery, a descheduled goroutine
+			// left the pool short at active == 0 and let a later performance
+			// group acquire ahead of the earlier one.
+			deliver := func(outcome stageGroupCompletion) {
+				if release != nil {
+					release()
+				}
+				dependencies.deliverCompletion(completion, outcome)
+			}
 			if release != nil {
 				defer release()
 			}
@@ -950,14 +961,14 @@ func runStageGroupsScheduled(ctx context.Context, request TestRunRequest, groups
 				stageStopped = true
 			}
 			if stageStopped {
-				dependencies.deliverCompletion(completion, stageGroupCompletion{index: index,
+				deliver(stageGroupCompletion{index: index,
 					result: unlaunchedGroupResult(request, group, "testing stage stopped before this group launched"),
 					err:    ctxErr, stoppedBeforeLaunch: ctxErr == nil})
 				return
 			}
 			if err := progress.record(id, "start", "", ""); err != nil {
 				signalStop(stopCause{err: err})
-				dependencies.deliverCompletion(completion, stageGroupCompletion{index: index,
+				deliver(stageGroupCompletion{index: index,
 					result: unlaunchedGroupResult(request, group, "record testing group start: "+err.Error()), err: err})
 				return
 			}
@@ -974,7 +985,7 @@ func runStageGroupsScheduled(ctx context.Context, request TestRunRequest, groups
 			} else if stopAtFirstFailure && groupResult.Status != "passed" && groupResult.Status != "reused" {
 				signalStop(stopCause{haltedBy: id})
 			}
-			dependencies.deliverCompletion(completion, stageGroupCompletion{index: index, result: groupResult, err: progressErr})
+			deliver(stageGroupCompletion{index: index, result: groupResult, err: progressErr})
 		}()
 	}
 	waiting := make([]func(), len(ids))

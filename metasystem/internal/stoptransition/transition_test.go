@@ -1545,3 +1545,74 @@ func TestStatusShowsPhaseSurvivorsAndPartialInventoryTruth(t *testing.T) {
 		}
 	})
 }
+
+// TestStatusCarriesEachLiveItemAndTheFenceTyped is machine list's reading
+// of one checkout: the same inventory status prints, each live item with
+// its family, component, pid and start, and the fence's state and change
+// time, so a caller never parses the printed lines.
+func TestStatusCarriesEachLiveItemAndTheFenceTyped(t *testing.T) {
+	t.Parallel()
+	transition := testTransition(t, &scriptedFamily{name: "supervision", inventories: [][]Item{{
+		{Key: "supervision:watcher:1:41", StatusLine: "watcher pid 41: running", Survivor: stopfence.Survivor{Component: "watcher", Pid: 41, PidStartedAt: 1790000000}},
+	}}})
+	transition.Families = append(transition.Families,
+		&scriptedFamily{name: "job", inventories: [][]Item{{
+			{Key: "job:j-1", StatusLine: "job j-1 running pid 52: running", Survivor: stopfence.Survivor{Component: "job", ID: "j-1", Pid: 52, PidStartedAt: 1790000100}},
+		}}},
+		&scriptedFamily{name: "untracked", inventories: [][]Item{{
+			{Key: "untracked:63:1", StatusLine: "untracked pid 63 codex app-server: running", ObserveOnly: true, Survivor: stopfence.Survivor{Component: "untracked", Pid: 63, PidStartedAt: 1790000200}},
+		}}})
+	report, err := transition.Status()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []StatusItem{
+		{Family: "supervision", Line: "watcher pid 41: running", Component: "watcher", Pid: 41, PidStartedAt: 1790000000},
+		{Family: "job", Line: "job j-1 running pid 52: running", Component: "job", ID: "j-1", Pid: 52, PidStartedAt: 1790000100},
+		{Family: "untracked", Line: "untracked pid 63 codex app-server: running", Component: "untracked", Pid: 63, PidStartedAt: 1790000200, ObserveOnly: true},
+	}
+	if fmt.Sprint(report.Items) != fmt.Sprint(want) {
+		t.Fatalf("items = %+v, want %+v", report.Items, want)
+	}
+	if report.FenceState != stopfence.StateOpen || report.FenceChangedAt != "" {
+		t.Fatalf("an unwritten fence reads %q since %q, want open", report.FenceState, report.FenceChangedAt)
+	}
+
+	stopped := testTransition(t, &scriptedFamily{name: "run", inventories: [][]Item{nil}})
+	if err := stopfence.Write(stopped.Root, stopfence.Record{State: stopfence.StateClosed, Phase: stopfence.PhaseStopped, Generation: 1,
+		ChangedAt: "2026-09-30T08:00:00Z", Checkout: stopped.Checkout, By: stopfence.Actor{Verb: "stop", Process: stopfence.Process{Pid: 7}}}); err != nil {
+		t.Fatal(err)
+	}
+	report, err = stopped.Status()
+	if err != nil || len(report.Items) != 0 || report.FenceState != stopfence.StateClosed || report.FenceChangedAt != "2026-09-30T08:00:00Z" {
+		t.Fatalf("stopped status = %+v err=%v", report, err)
+	}
+}
+
+// TestRepeatedStopWithOnlyOtherProcessesIsAlreadyStopped: a process that is
+// not the metasystem's (observe-only: the codex app-server, the Lima VM) is
+// never signalled, so it cannot make a stop of a stopped checkout a new
+// stop. The repeat is success with no fence generation, and it says what it
+// left alone.
+func TestRepeatedStopWithOnlyOtherProcessesIsAlreadyStopped(t *testing.T) {
+	t.Parallel()
+	other := Item{Key: "untracked:63:1", StatusLine: "untracked pid 63 codex app-server: running", ObserveOnly: true,
+		Survivor: stopfence.Survivor{Component: "untracked", Pid: 63, PidStartedAt: 1}}
+	family := &scriptedFamily{name: "untracked", inventories: [][]Item{{other}, {other}, {other}, {other}, {other}, {other}, {other}, {other}}}
+	transition := testTransition(t, family)
+	if err := stopfence.Write(transition.Root, stopfence.Record{State: stopfence.StateClosed, Phase: stopfence.PhaseStopped, Generation: 3,
+		ChangedAt: "2026-09-30T08:00:00Z", Checkout: transition.Checkout, By: stopfence.Actor{Verb: "stop", Process: stopfence.Process{Pid: 7}}}); err != nil {
+		t.Fatal(err)
+	}
+	report, err := transition.Stop()
+	if err != nil || !report.Unchanged || report.ExitCode != 0 {
+		t.Fatalf("repeated stop = %+v err=%v; want already stopped", report, err)
+	}
+	want := "MetaSystem is already stopped for /checkout (since 2026-09-30T08:00:00Z); nothing of MetaSystem's is running; 1 process that is not MetaSystem's is not touched; start again: metasystem system start --repo /checkout"
+	if got := strings.Join(report.Lines, "\n"); got != want {
+		t.Fatalf("repeat = %q, want %q", got, want)
+	}
+	if record, _ := stopfence.Read(transition.Root); record.Generation != 3 || family.stops != 0 {
+		t.Fatalf("the repeat wrote generation %d and signalled %d", record.Generation, family.stops)
+	}
+}

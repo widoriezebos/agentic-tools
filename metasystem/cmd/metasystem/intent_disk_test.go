@@ -164,8 +164,8 @@ func diskSnapshotDiff(before, after map[string]string) []string {
 	return changed
 }
 
-// The router and help (U6a): disk has show and clean; machine keeps list
-// and start and has no clean.
+// The router and help (U6a): disk has show and clean; machine keeps list,
+// stop and start and has no clean.
 func TestDiskObjectRoutesAndHelps(t *testing.T) {
 	t.Parallel()
 	var actions []string
@@ -179,7 +179,7 @@ func TestDiskObjectRoutesAndHelps(t *testing.T) {
 	for _, command := range objectActions("machine") {
 		machine = append(machine, command.action)
 	}
-	if !slices.Equal(machine, []string{"list", "start"}) {
+	if !slices.Equal(machine, []string{"list", "stop", "start"}) {
 		t.Fatalf("machine actions = %v", machine)
 	}
 	if _, _, ok := resolveIntentArgv([]string{"machine", "clean"}); ok {

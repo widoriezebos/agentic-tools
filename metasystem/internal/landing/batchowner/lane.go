@@ -10,6 +10,7 @@ package batchowner
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -22,10 +23,12 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
 )
 
 // LandingLaneHome is the home the host lane lives under (the board's). An
@@ -213,13 +216,59 @@ func LandingLaneKeeper(home func() (string, error)) func() string {
 	if err != nil {
 		return nil
 	}
-	keeper := lane.Keeper{Home: laneHome, Now: func() time.Time { return time.Now().UTC() },
+	return landingLaneKeeper(laneHome).Step
+}
+
+func landingLaneKeeper(laneHome string) lane.Keeper {
+	return lane.Keeper{Home: laneHome, Now: func() time.Time { return time.Now().UTC() },
 		Inspect: func(root string) (bool, error) {
 			probe, err := LandingLaneOwnerProbe(root)
 			return probe.Alive, err
 		},
-		Start: EnsureBatchOwner}
-	return keeper.Step
+		Start: EnsureBatchOwner, Ready: LandingLaneReady}
+}
+
+// LandingLaneReady says whether an owner could run in the landing checkout
+// at root: the checkout names its machine (the owner signs what it lands
+// with it) and its supervision runs (nothing else starts or keeps the
+// owner). Each missing one is a *lane.Refusal naming the one fix.
+func LandingLaneReady(root string) error {
+	return landingLaneReady(root, goal.ResolveMachine, LandingLaneArmed)
+}
+
+func landingLaneReady(root string, machine func(string) (string, error), armed func(string) (bool, error)) error {
+	if _, err := machine(root); err != nil {
+		return lane.NoMachineRefusal(root)
+	}
+	running, err := armed(root)
+	if err != nil {
+		return err
+	}
+	if !running {
+		return lane.UnarmedRefusal(root)
+	}
+	return nil
+}
+
+// LandingLaneArmed reports whether the supervision of the landing checkout
+// at root runs: its installation's supervision owner record names a live
+// process. No record, or a record of a process that is gone, is not armed.
+func LandingLaneArmed(root string) (bool, error) {
+	owner, err := supervise.ReadArmingOwner(batch.ModuleRoot(root))
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("the supervision owner record of %s is unreadable: %w", root, err)
+	}
+	ref := identity.Ref{Pid: owner.Pid, StartedAtSec: owner.PidStartedAt, StartTicks: owner.PidStartTicks, BootID: owner.BootID}
+	switch identity.AliveTaggedRef(identity.KernelProber{}, ref, owner.InstanceTag) {
+	case identity.Alive:
+		return true, nil
+	case identity.Dead:
+		return false, nil
+	}
+	return false, fmt.Errorf("whether the supervision owner pid %d of %s runs is unknown", owner.Pid, root)
 }
 
 // LandingLaneOwnerProbe reads whether the lane's owner runs, and since when.
@@ -248,7 +297,12 @@ func landingLaneView(home func() (string, error), now time.Time) lane.View {
 	if err != nil {
 		return lane.View{Owner: lane.OwnerView{State: lane.OwnerNotStarted}, Summary: "the landing lane cannot be read: this host has no home for it (" + err.Error() + ")"}
 	}
-	return lane.BuildView(lane.ViewSources{Home: laneHome, Now: now, Owner: LandingLaneOwnerProbe})
+	return lane.BuildView(LandingLaneViewSources(laneHome, now))
+}
+
+// LandingLaneViewSources are the production reads of the lane's view.
+func LandingLaneViewSources(laneHome string, now time.Time) lane.ViewSources {
+	return lane.ViewSources{Home: laneHome, Now: now, Owner: LandingLaneOwnerProbe, Ready: LandingLaneReady}
 }
 
 // EndLaneOwner ends the lane's running owner for a restart: the process the

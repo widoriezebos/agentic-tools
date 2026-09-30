@@ -564,6 +564,8 @@ type intentOwners struct {
 	disk diskOwners
 	// landing are the landing verbs' seams; the zero value is production.
 	landing laneVerbOwners
+	// machines are the machine verbs' seams; the zero value is production.
+	machines machineOwners
 }
 
 func defaultIntentOwners() intentOwners {

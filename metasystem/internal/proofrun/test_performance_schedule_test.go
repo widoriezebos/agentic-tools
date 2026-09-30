@@ -52,7 +52,17 @@ func runPerformanceSchedule(t *testing.T, fail bool) performanceScheduleRun {
 	}()
 	runGroup := func(_ context.Context, _ TestRunRequest, group testpolicy.Group) GroupResult {
 		if group.ID == "performance-b" {
-			<-firstPerformanceStarted
+			// A correct schedule launches performance-b only after
+			// performance-a has run, so its start is already signalled; any
+			// other launch is a fault reported here rather than a wait that
+			// never ends.
+			select {
+			case <-firstPerformanceStarted:
+			default:
+				mu.Lock()
+				faults = append(faults, group.ID+" launched before performance-a started")
+				mu.Unlock()
+			}
 		}
 		mu.Lock()
 		launches = append(launches, group.ID)
@@ -140,4 +150,49 @@ func TestPerformanceScheduling(t *testing.T) {
 			t.Fatalf("W3Halt failed: %v", stopped.launches)
 		}
 	})
+}
+
+// TestStageCompletionReturnsWorkersBeforeDelivery holds the invariant
+// TestPerformanceScheduling depended on by luck: when the scheduler consumes a
+// group's completion, that group's workers are already back in the pool. When
+// the release trailed the delivery, a loaded host could deschedule the group
+// goroutine between the two, so the scheduler saw no group active while the
+// pool was short: performance-a failed to acquire, the release landed, and
+// performance-b acquired ahead of it and waited forever for performance-a.
+func TestStageCompletionReturnsWorkersBeforeDelivery(t *testing.T) {
+	t.Parallel()
+	for _, kind := range []string{"unit", "performance"} {
+		t.Run(kind, func(t *testing.T) {
+			ctx := withTestWorkerPool(context.Background(), 2)
+			pool := testWorkerPoolFromContext(t, ctx)
+			var heldAtDelivery []int
+			ctx = withStageGroupDependencies(ctx, stageGroupDependencies{
+				runGroup: func(_ context.Context, _ TestRunRequest, group testpolicy.Group) GroupResult {
+					return GroupResult{ID: group.ID, Kind: group.Kind, Status: "passed"}
+				},
+				deliverCompletion: func(completion chan<- stageGroupCompletion, outcome stageGroupCompletion) {
+					pool.mu.Lock()
+					heldAtDelivery = append(heldAtDelivery, pool.capacity-pool.available)
+					pool.mu.Unlock()
+					completion <- outcome
+				},
+			})
+			ids := []string{"first", "second"}
+			groups := map[string]testpolicy.Group{
+				"first":  {ID: "first", Kind: kind, Adapter: "command", TargetMS: 2},
+				"second": {ID: "second", Kind: kind, Adapter: "command", TargetMS: 1},
+			}
+			if _, _, err := runStageGroups(ctx, TestRunRequest{Workers: 2, Concurrency: 1}, groups, ids, &progressWriter{}, false); err != nil {
+				t.Fatal(err)
+			}
+			for index, held := range heldAtDelivery {
+				if held != 0 {
+					t.Fatalf("completion %d delivered while its group still held %d workers", index, held)
+				}
+			}
+			if len(heldAtDelivery) != len(ids) {
+				t.Fatalf("delivered %d completions, want %d", len(heldAtDelivery), len(ids))
+			}
+		})
+	}
 }

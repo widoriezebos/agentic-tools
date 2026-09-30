@@ -368,3 +368,86 @@ func TestCommitRetiredComposerRefusalNamesTheFix(t *testing.T) {
 	})
 	b.expect(b.commit(CommitRequest{}), 1, "re-enroll it with: metasystem system setup")
 }
+
+// laneProofBed is a seat whose only retained proof covers the admission
+// groups: the full delivery plan is unproved locally.
+func laneProofBed(t *testing.T, staged string) *bed {
+	b := newBed(t)
+	b.owners.Verify = func(request VerifyRequest, _, stderr io.Writer) int {
+		b.log.add("verify scope=%s", request.Scope)
+		if request.Scope == ProofFull {
+			fmt.Fprintln(stderr, "missing required proof")
+			return 1
+		}
+		return 0
+	}
+	b.owners.SelectCode = func(paths []string, _ string) ([]string, error) {
+		var code []string
+		for _, path := range paths {
+			if strings.HasSuffix(path, ".go") {
+				code = append(code, path)
+			}
+		}
+		return code, nil
+	}
+	b.git.on("diff --cached --no-renames --name-only -z --", func(GitCall) GitResult { return ok(staged) })
+	return b
+}
+
+// A change joining the landing lane is proved by the lane: a records-only
+// change needs no local proof, a code change only its admission groups;
+// without a lane the full delivery proof is still required. Each refusal
+// names which of the three rules it applied.
+func TestCommitLocalProofFollowsTheLane(t *testing.T) {
+	t.Parallel()
+	records := "memory/receipts.log\x00records/narrator-digest.log\x00"
+	b := laneProofBed(t, records)
+	b.expect(b.commit(CommitRequest{LaneJoin: true}), 0)
+	if !b.log.has("verify scope=none") || len(b.git.called("commit")) != 1 {
+		t.Fatalf("records-only lane change: %v", b.log.calls)
+	}
+
+	code := "memory/receipts.log\x00cmd/metasystem/main.go\x00"
+	b = laneProofBed(t, code)
+	b.expect(b.commit(CommitRequest{LaneJoin: true}), 0)
+	if !b.log.has("verify scope=admission") || len(b.git.called("commit")) != 1 {
+		t.Fatalf("code lane change: %v", b.log.calls)
+	}
+
+	b = laneProofBed(t, records)
+	b.expect(b.commit(CommitRequest{}), 1, "agent commit refused: required shared testing proof is missing or insufficient",
+		"a change landed without a landing lane needs its full delivery proof on this seat")
+	if !b.log.has("verify scope=full") || len(b.git.called("commit")) != 0 {
+		t.Fatalf("no-lane change: %v", b.log.calls)
+	}
+
+	for _, c := range []struct {
+		staged, scope, text string
+	}{
+		{records, "none", "a records-only change joining the landing lane needs no local proof, only a candidate that matches the working tree"},
+		{code, "admission", "a code change joining the landing lane needs its admission-phase groups proved on this seat"},
+	} {
+		b = laneProofBed(t, c.staged)
+		b.owners.Verify = func(request VerifyRequest, _, stderr io.Writer) int {
+			b.log.add("verify scope=%s", request.Scope)
+			fmt.Fprintln(stderr, "delivery candidate differs from relevant working-tree inputs")
+			return 1
+		}
+		b.expect(b.commit(CommitRequest{LaneJoin: true}), 1, c.text)
+		if !b.log.has("verify scope="+c.scope) || len(b.git.called("commit")) != 0 {
+			t.Fatalf("%s refusal: %v", c.scope, b.log.calls)
+		}
+	}
+}
+
+// The landing driver's commit-only step is the lane join: its commit
+// boundary applies the lane's proof rule.
+func TestCommitOnlyLandingJoinsTheLaneAtTheBoundary(t *testing.T) {
+	t.Parallel()
+	if !(&driver{request: LandRequest{CommitOnly: true}}).commitRequest().LaneJoin {
+		t.Fatal("a commit-only landing did not ask the boundary for the lane's proof rule")
+	}
+	if (&driver{request: LandRequest{}}).commitRequest().LaneJoin {
+		t.Fatal("a landing without the lane asked for the lane's proof rule")
+	}
+}

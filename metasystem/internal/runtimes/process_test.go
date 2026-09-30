@@ -264,3 +264,26 @@ func TestAdoptionDefaultEmptyWithoutDefault(t *testing.T) {
 		t.Fatalf("AdoptionDefault() = %q, want empty", got)
 	}
 }
+
+// A goal worktree copies every declared configuration file; only the
+// seat-local ones are never delivery content.
+func TestSeatLocalConfigPathsAreTheLocalSubset(t *testing.T) {
+	t.Parallel()
+	for runtime, want := range map[string][]string{
+		"claude": {".claude/settings.local.json"},
+		"codex":  {".codex/config.toml"},
+		"devin":  {".devin/config.local.json"},
+		"fake":   {},
+	} {
+		got, ok := SeatLocalConfigPaths(runtime)
+		if !ok || !reflect.DeepEqual(got, want) {
+			t.Fatalf("SeatLocalConfigPaths(%s) = %v, %v; want %v", runtime, got, ok, want)
+		}
+	}
+	if got, ok := LocalConfigPaths("claude"); !ok || !reflect.DeepEqual(got, []string{".claude/settings.json", ".claude/settings.local.json"}) {
+		t.Fatalf("LocalConfigPaths(claude) = %v, %v", got, ok)
+	}
+	if got, ok := SeatLocalConfigPaths("nosuch"); ok || got != nil {
+		t.Fatalf("SeatLocalConfigPaths(nosuch) = %v, %v", got, ok)
+	}
+}

@@ -33,7 +33,7 @@ var publicPairs = []string{
 	"mission start", "mission status", "mission resume", "mission seal", "mission repair",
 	"system start", "system stop", "system restart", "system status", "system check", "system enroll", "system setup", "system adopt", "system completion",
 	"landing status", "landing set", "landing start", "landing stop", "landing restart",
-	"machine list", "machine start",
+	"machine list", "machine start", "machine stop",
 	"disk show", "disk clean",
 	"evidence show", "evidence export", "evidence dispose",
 	"app start", "app stop", "app restart", "app status", "app log", "app reset", "app check",

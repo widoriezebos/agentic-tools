@@ -81,6 +81,9 @@ func (g *fakeGit) defaults(call GitCall) GitResult {
 		return ok(g.toplevel + "\n")
 	case args == "write-tree":
 		return ok(g.tree + "\n")
+	case args == "rev-parse --git-path index":
+		// No index file: the landing holds nothing to give back.
+		return ok(filepath.Join(g.toplevel, "absent-index") + "\n")
 	case args == "config --get metasystem.goal.machine":
 		return ok(g.machine + "\n")
 	case args == "rev-parse --verify --quiet HEAD", args == "rev-parse HEAD", args == "rev-parse HEAD^{commit}":
