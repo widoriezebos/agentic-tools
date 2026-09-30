@@ -317,8 +317,8 @@ type receiptClockFixtureCase struct {
 func receiptClockFixtureCases() []receiptClockFixtureCase {
 	return []receiptClockFixtureCase{
 		{name: "one-minute-before-expiry", capMinutes: 1, advance: -time.Nanosecond, wantLaunches: 1},
-		{name: "one-minute-exact-expiry", capMinutes: 1, wantExit: proofrun.ExitAdmissionRefused, wantReason: "has passed at semantic time", refusesExpiry: true},
-		{name: "one-minute-after-expiry", capMinutes: 1, advance: time.Nanosecond, wantExit: proofrun.ExitAdmissionRefused, wantReason: "has passed at semantic time", wantObserved: 2, refusesExpiry: true},
+		{name: "one-minute-exact-expiry", capMinutes: 1, wantExit: proofrun.ExitAdmissionRefused, wantReason: "has passed (now ", refusesExpiry: true},
+		{name: "one-minute-after-expiry", capMinutes: 1, advance: time.Nanosecond, wantExit: proofrun.ExitAdmissionRefused, wantReason: "has passed (now ", wantObserved: 2, refusesExpiry: true},
 		{name: "three-minute-event-delayed", capMinutes: 3, advance: -time.Nanosecond, wantLaunches: 1},
 		{name: "outer-cancellation", capMinutes: 1, advance: -time.Second, cancelParent: true, wantExit: proofrun.ExitAdmissionRefused, wantReason: context.Canceled.Error()},
 	}
@@ -455,7 +455,7 @@ func runLandingReceiptPublicSemanticClockCase(t *testing.T, testCase receiptCloc
 	if code != testCase.wantExit || observedWait != 1 || !strings.Contains(problem, testCase.wantReason) {
 		t.Fatalf("public boundary exit=%d want=%d waits=%d stderr=%q", code, testCase.wantExit, observedWait, problem)
 	}
-	if testCase.cancelParent && strings.Contains(problem, "has passed at semantic time") {
+	if testCase.cancelParent && strings.Contains(problem, "has passed (now ") {
 		t.Fatalf("outer cancellation was mislabeled semantic expiry: %s", problem)
 	}
 	launches := 0

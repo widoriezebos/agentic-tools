@@ -126,7 +126,9 @@ func editTestingContract(action string, args []string, edits testingContractEdit
 		}
 	}
 	if edit == nil {
-		fmt.Fprintf(stderr, "usage: metasystem test %s --file FILE --group ID --tests NAME,NAME | --group ID --inputs PATH,PATH | --surface ID --paths PATH,PATH\n", action)
+		fmt.Fprintf(stderr, "usage: metasystem test %[1]s --file FILE --group GROUP --tests TEST,TEST\n"+
+			"   or: metasystem test %[1]s --file FILE --group GROUP --inputs PATTERN,PATTERN\n"+
+			"   or: metasystem test %[1]s --file FILE --surface SURFACE --paths PATTERN,PATTERN\n", action)
 		return 2
 	}
 	data, err := os.ReadFile(*path)

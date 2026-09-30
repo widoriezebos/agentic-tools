@@ -88,9 +88,10 @@ func runTestPlanAs(name string, args []string, stdout, stderr io.Writer) int {
 	request.LandedRearm = !request.PolicyChild
 	prepared, err := prepareTestingForCommand(request)
 	if err != nil {
-		// The refusal a person reads; --json adds its detail (code, cause
-		// and facts), which a planning child's parent reads.
-		fmt.Fprintln(stderr, err)
+		// The refusal a person reads; --verbose adds its detail (code, cause
+		// and facts), and --json a line with it that a planning child's
+		// parent reads.
+		printTestingRefusal(stderr, err, request.Verbose)
 		if jsonOutput {
 			writeJSONLine(stdout, stderr, map[string]string{"error": err.Error(), "detail": refusal.Detail(err)})
 		}
@@ -152,6 +153,7 @@ func parseTestingSelection(name string, args []string, execution bool, stdout, s
 	groups := flags.String("groups", "", "comma-separated diagnostic groups")
 	batchRequirements := flags.String("batch-requirements", "", "strict JSON batch delivery requirements")
 	jsonOutput := flags.Bool("json", false, "emit structured JSON")
+	flags.BoolVar(&request.Verbose, "verbose", false, "also print the details behind a refusal: its code and the facts it saw")
 	flags.BoolVar(&request.PolicyChild, "policy-child", false, "judge policy in the pinned child without re-arming")
 	flags.BoolVar(&request.BatchPrefixReceipt, "batch-prefix", false, "compose delivery evidence for a batch prefix")
 	flags.BoolVar(&request.Carried, "carried", false, "compose a completed red result for carried-landing classification")
@@ -179,12 +181,13 @@ func parseTestingSelection(name string, args []string, execution bool, stdout, s
 		if _, public := publicCommand(name); public {
 			fmt.Fprintf(stderr, "metasystem %s --help shows its forms and options\n", name)
 		} else {
-			fmt.Fprintf(stderr, "usage: metasystem internal %s --root INSTALLATION [--goal ID] [--authority ID] [--tree TREE] [--mode auto|standard|deep|canary] [--purpose delivery|diagnostic|cadence] [--groups ID,ID]\n", name)
+			fmt.Fprintf(stderr, "usage: metasystem internal %s --root INSTALLATION [--goal GOAL] [--authority GOAL] [--tree TREE]\n"+
+				"  [--mode auto|standard|deep|canary] [--purpose delivery|diagnostic|cadence] [--groups GROUP,GROUP]\n", name)
 		}
 		return request, false, 2
 	}
 	if request.LaneID != "" && (request.GoalID != "" || request.AuthorityGoalID != "" || request.ExpectedGoalRevision != 0 || !landinglane.IsAccount(request.LaneID)) {
-		fmt.Fprintln(stderr, "--lane takes the lane's accounting identity (lane:...) and no --goal, --authority or --expected-goal-revision")
+		fmt.Fprintln(stderr, "--lane takes the lane's account (lane:...) and no --goal, --authority or --expected-goal-revision")
 		return request, false, 2
 	}
 	if request.PolicyChild && (strings.TrimPrefix(name, "internal ") != "test plan" || execution) {
@@ -245,7 +248,7 @@ func parseTestingSelection(name string, args []string, execution bool, stdout, s
 	// it admits a control root only when the execution root is a linked
 	// worktree sharing its git common directory and prefix.
 	if request.ControlRoot != "" && !request.BatchPrefixReceipt && !request.BatchTipProof && !request.BatchAdmission {
-		fmt.Fprintln(stderr, "--control-root is internal to a batch proof")
+		fmt.Fprintln(stderr, "--control-root is only for the test runs of a batch")
 		return request, false, 2
 	}
 	if request.NoReuse && request.Purpose != testpolicy.PurposeDiagnostic {
@@ -277,7 +280,7 @@ func parseTestingSelection(name string, args []string, execution bool, stdout, s
 		return request, false, 2
 	}
 	if request.AppAddress != "" && (request.Purpose != testpolicy.PurposeDiagnostic || len(request.Groups) != 1) {
-		fmt.Fprintln(stderr, "--app-address belongs to one named diagnostic group: --mode canary --groups ID")
+		fmt.Fprintln(stderr, "--app-address belongs to one named diagnostic group: --mode canary --groups GROUP")
 		return request, false, 2
 	}
 	if request.AllGroups && request.Purpose != testpolicy.PurposeDelivery {
@@ -358,7 +361,7 @@ func runTestRunWith(invocation testRunInvocation, args []string) (exit int) {
 	request.CallerPID = invocation.callerPID
 	prepared, err := prepareTestingForCommand(request)
 	if err != nil {
-		fmt.Fprintln(invocation.stderr, "metasystem test run:", err)
+		printTestingRefusal(invocation.stderr, err, request.Verbose)
 		if errors.Is(err, testrun.ErrWorkerPolicyUnsupported) {
 			return proofrun.ExitAdmissionRefused
 		}
@@ -731,53 +734,53 @@ func runTestWorkerWithCandidateOpener(args []string, opener func(string, string)
 	}
 	actualPacketDigest, err := fileSHA256(*packet)
 	if err != nil || actualPacketDigest != *packetDigest {
-		fmt.Fprintln(stderr, "metasystem internal test worker: immutable request identity mismatch")
+		fmt.Fprintln(stderr, "test worker: immutable request identity mismatch")
 		return 3
 	}
 	var request proofrun.TestRunRequest
 	if err := strictjson.Read(*packet, &request); err != nil {
-		fmt.Fprintln(stderr, "metasystem internal test worker:", err)
+		fmt.Fprintln(stderr, "test worker:", err)
 		return 2
 	}
 	legacyPolicyProbe := os.Getenv(policyProbeWorkerEnvironment) == "1"
 	if legacyPolicyProbe {
 		refusal := frozenPolicyProbeRefusal(request, *resultPath)
 		if refusal != "" {
-			fmt.Fprintln(stderr, "metasystem internal test worker: unrecognized frozen policy probe:", refusal)
+			fmt.Fprintln(stderr, "test worker: unrecognized frozen policy probe:", refusal)
 			return 3
 		}
 		request.SyntheticProbe = true
 	}
 	if request.CandidateEngine == "" || request.CandidateEngineDigest == "" ||
 		(request.CandidateEngineBuildIdentity == "" && !legacyPolicyProbe) {
-		fmt.Fprintln(stderr, "metasystem internal test worker: input-bound candidate engine is absent")
+		fmt.Fprintln(stderr, "test worker: input-bound candidate engine is absent")
 		return 3
 	}
 	policyDigest, policyDigestErr := fileSHA256(request.PolicyEngine)
 	if request.PolicyEngine == "" || policyDigestErr != nil || policyDigest != request.PolicyEngineDigest {
-		fmt.Fprintln(stderr, "metasystem internal test worker: input-bound policy engine changed")
+		fmt.Fprintln(stderr, "test worker: input-bound policy engine changed")
 		return 3
 	}
 	engineInfo, statErr := os.Stat(request.CandidateEngine)
 	engineDigest, digestErr := fileSHA256(request.CandidateEngine)
 	if statErr != nil || !engineInfo.Mode().IsRegular() || engineInfo.Mode()&0o111 == 0 || digestErr != nil || engineDigest != request.CandidateEngineDigest {
-		fmt.Fprintln(stderr, "metasystem internal test worker: input-bound candidate engine changed")
+		fmt.Fprintln(stderr, "test worker: input-bound candidate engine changed")
 		return 3
 	}
 	controlRoot, attemptID := os.Getenv("METASYSTEM_PROOF_CONTROL_ROOT"), os.Getenv("METASYSTEM_PROOF_ATTEMPT")
 	canonicalControl, err := canonicalProofRoot(controlRoot)
 	if err != nil || canonicalControl == "" || attemptID == "" || attemptID != request.AttemptID {
-		fmt.Fprintln(stderr, "metasystem internal test worker: attempt-bound proof locator mismatch")
+		fmt.Fprintln(stderr, "test worker: the test run named in its settings is not the one it was started for")
 		return 3
 	}
 	if err := proofrun.AuthenticateWorker(canonicalControl, attemptID, os.Getenv("METASYSTEM_PROOF_RECORD_KEY"),
 		os.Getenv("METASYSTEM_PROOF_CREATION_CLAIM"), int64(os.Getppid())); err != nil {
-		fmt.Fprintln(stderr, "metasystem internal test worker:", err)
+		fmt.Fprintln(stderr, "test worker:", err)
 		return 3
 	}
 	attempt, err := proofrun.ReadAttempt(canonicalControl, attemptID)
 	if err != nil {
-		fmt.Fprintln(stderr, "metasystem internal test worker:", err)
+		fmt.Fprintln(stderr, "test worker:", err)
 		return 3
 	}
 	packetControl, controlErr := canonicalProofRoot(request.ControlRoot)
@@ -787,7 +790,7 @@ func runTestWorkerWithCandidateOpener(args []string, opener func(string, string)
 	if controlErr != nil || projectErr != nil || admittedControlErr != nil || admittedProjectErr != nil ||
 		packetControl != canonicalControl || admittedControl != canonicalControl ||
 		(!legacyPolicyProbe && packetProject != admittedProject) {
-		fmt.Fprintln(stderr, "metasystem internal test worker: authenticated request roots do not match the worker packet")
+		fmt.Fprintln(stderr, "test worker: authenticated request roots do not match the worker packet")
 		return 3
 	}
 	request.ControlRoot = canonicalControl
@@ -797,7 +800,7 @@ func runTestWorkerWithCandidateOpener(args []string, opener func(string, string)
 		request.ProjectRoot = admittedProject
 	}
 	if _, err := time.Parse(time.RFC3339Nano, attempt.Deadline); err != nil {
-		fmt.Fprintln(stderr, "metasystem internal test worker: admitted deadline is invalid")
+		fmt.Fprintln(stderr, "test worker: admitted deadline is invalid")
 		return 3
 	}
 	request.Environment = testrun.InheritedEnvironment(request.Environment, os.Environ())
@@ -811,12 +814,12 @@ func runTestWorkerWithCandidateOpener(args []string, opener func(string, string)
 		// command, custodian and Git child inherits the writer.
 		scratch, err := proofrun.OpenScratchRun(canonicalControl, attemptID, *request.Scratch)
 		if err != nil {
-			fmt.Fprintln(stderr, "metasystem internal test worker:", err)
+			fmt.Fprintln(stderr, "test worker:", err)
 			return 3
 		}
 		request.BindScratch(scratch, request.Scratch)
 		if err := proofrun.ValidateScratchEnvironment(request, scratch); err != nil {
-			fmt.Fprintln(stderr, "metasystem internal test worker:", err)
+			fmt.Fprintln(stderr, "test worker:", err)
 			return 3
 		}
 		workerBase = proofrun.WithScratchRun(workerBase, scratch)
@@ -828,7 +831,7 @@ func runTestWorkerWithCandidateOpener(args []string, opener func(string, string)
 	defer cancel()
 	go cancelOnRecordedIntent(stderr, workerContext, cancel, canonicalControl, attemptID)
 	if err := runFrozenPolicyProtectionCorpus(workerContext, request); err != nil {
-		fmt.Fprintln(stderr, "metasystem internal test worker:", err)
+		fmt.Fprintln(stderr, "test worker:", err)
 		return 1
 	}
 	if opener != nil {
@@ -839,27 +842,27 @@ func runTestWorkerWithCandidateOpener(args []string, opener func(string, string)
 	if runErr == nil && request.SyntheticProbe {
 		response, err = frozenNegativeProbeResponse(request, result)
 		if err != nil {
-			fmt.Fprintln(stderr, "metasystem internal test worker:", err)
+			fmt.Fprintln(stderr, "test worker:", err)
 			return 1
 		}
 	}
 	if runErr != nil {
 		if err := proofrun.ValidateTestResult(response); err != nil {
-			fmt.Fprintln(stderr, "metasystem internal test worker:", runErr)
-			fmt.Fprintln(stderr, "metasystem internal test worker: operational result was not retained:", err)
+			fmt.Fprintln(stderr, "test worker:", runErr)
+			fmt.Fprintln(stderr, "test worker: operational result was not retained:", err)
 			return 1
 		}
 	}
 	if err := writePrivateJSON(*resultPath, response); err != nil {
 		if runErr != nil {
-			fmt.Fprintln(stderr, "metasystem internal test worker:", runErr)
+			fmt.Fprintln(stderr, "test worker:", runErr)
 		}
-		fmt.Fprintln(stderr, "metasystem internal test worker:", err)
+		fmt.Fprintln(stderr, "test worker:", err)
 		return 1
 	}
 	printTestingSummaryTo(stdout, result)
 	if runErr != nil {
-		fmt.Fprintln(stderr, "metasystem internal test worker:", runErr)
+		fmt.Fprintln(stderr, "test worker:", runErr)
 		return 1
 	}
 	return status
@@ -898,7 +901,7 @@ func runTestVerifyAs(name string, args []string, stdout, stderr io.Writer) int {
 		return status
 	}
 	if request.Tree == "" {
-		fmt.Fprintf(stderr, "%s: needs the tree: metasystem test status --tree TREE [--goal G]; nothing was read\n", commandLabel(name))
+		fmt.Fprintf(stderr, "%s needs the tree to check; nothing was read\nrun: metasystem test status --tree TREE\n", commandLabel(name))
 		return 2
 	}
 	return testVerifyTo(stdout, stderr, request, jsonOutput)
@@ -910,7 +913,7 @@ func testVerifyTo(stdout, stderr io.Writer, request testrun.SelectionRequest, js
 	result, err := verifyRetainedTesting(request)
 	if err != nil {
 		printMovedProofInputsWithoutCandidateEngine(stderr, request)
-		fmt.Fprintln(stderr, "metasystem test status:", err)
+		printTestingRefusal(stderr, err, request.Verbose)
 		return 1
 	}
 	if jsonOutput {
@@ -920,8 +923,8 @@ func testVerifyTo(stdout, stderr io.Writer, request testrun.SelectionRequest, js
 	}
 	if !result.Delivery.Sufficient {
 		printMovedProofInputs(stderr, request, result)
-		fmt.Fprintf(stderr, "missing required proof; run metasystem test run --root %s --goal %s --tree %s --mode auto; missing groups: %s\n",
-			request.Root, request.GoalID, result.CandidateTree, strings.Join(result.Delivery.MissingGroups, ","))
+		fmt.Fprintf(stderr, "no passing test run covers groups %s on this tree\nrun: metasystem test run --root %s --goal %s --tree %s --mode auto\n",
+			strings.Join(result.Delivery.MissingGroups, ","), request.Root, request.GoalID, result.CandidateTree)
 		return 1
 	}
 	return 0
@@ -1015,10 +1018,31 @@ func printMovedProofInputs(stderr io.Writer, request testrun.SelectionRequest, c
 			}
 		}
 		if len(moved) == 0 {
-			fmt.Fprintf(stderr, "proof-input-moved-after-receipt: group %s was proved on tree %s with a different input identity; no declared path moved; the environment or a tool identity changed\n", id, sourceTree)
+			fmt.Fprintf(stderr, "group %s passed on tree %s, but its environment or a tool changed since\n", id, sourceTree)
+			printMovedInputsCode(stderr, request.Verbose)
 			continue
 		}
-		fmt.Fprintf(stderr, "proof-input-moved-after-receipt: group %s was proved on tree %s with a different input identity; moved declared paths: %s\n", id, sourceTree, strings.Join(moved, ","))
+		fmt.Fprintf(stderr, "group %s passed on tree %s, but files it depends on changed since: %s\n", id, sourceTree, strings.Join(moved, ","))
+		printMovedInputsCode(stderr, request.Verbose)
+	}
+}
+
+// movedInputsCode is the register code of a group whose passing run no
+// longer covers the tree; --verbose shows it.
+const movedInputsCode = "proof-input-moved-after-receipt"
+
+func printMovedInputsCode(stderr io.Writer, verbose bool) {
+	if verbose {
+		fmt.Fprintln(stderr, "  code "+movedInputsCode)
+	}
+}
+
+// printTestingRefusal prints a testing refusal as a person reads it, and
+// with verbose the detail behind it: the code, the cause and its facts.
+func printTestingRefusal(stderr io.Writer, err error, verbose bool) {
+	fmt.Fprintln(stderr, err)
+	if detail := refusal.Detail(err); verbose && detail != "" {
+		fmt.Fprintln(stderr, "  "+detail)
 	}
 }
 
@@ -1067,7 +1091,8 @@ func printMovedProofInputsWithoutCandidateEngine(stderr io.Writer, request testr
 			}
 		}
 		if len(moved) > 0 {
-			fmt.Fprintf(stderr, "proof-input-moved-after-receipt: group %s was proved on tree %s with a different input identity; moved declared paths: %s\n", id, sourceTree, strings.Join(moved, ","))
+			fmt.Fprintf(stderr, "group %s passed on tree %s, but files it depends on changed since: %s\n", id, sourceTree, strings.Join(moved, ","))
+			printMovedInputsCode(stderr, request.Verbose)
 		}
 	}
 }
@@ -1172,7 +1197,7 @@ func cancelOnRecordedIntent(stderr io.Writer, ctx context.Context, cancel contex
 			return
 		case <-ticker.C:
 			if attempt, err := proofrun.ReadAttempt(controlRoot, attemptID); err == nil && attempt.CancellationIntent != "" {
-				fmt.Fprintf(stderr, "metasystem internal test worker: cancellation intent recorded: %s\n", attempt.CancellationIntent)
+				fmt.Fprintf(stderr, "test worker: cancellation intent recorded: %s\n", attempt.CancellationIntent)
 				cancel()
 				return
 			}

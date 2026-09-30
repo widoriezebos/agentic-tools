@@ -1090,8 +1090,8 @@ func testLandingTestReceiptPublicSemanticDeadlineBoundaries(t *testing.T) {
 		wantReason   string
 	}{
 		{name: "deadline-minus-one-nanosecond", advance: -time.Nanosecond, wantLaunches: 1},
-		{name: "exact-deadline", wantExit: proofrun.ExitAdmissionRefused, wantReason: "has passed at semantic time"},
-		{name: "after-deadline", advance: time.Nanosecond, wantExit: proofrun.ExitAdmissionRefused, wantReason: "has passed at semantic time"},
+		{name: "exact-deadline", wantExit: proofrun.ExitAdmissionRefused, wantReason: "has passed (now "},
+		{name: "after-deadline", advance: time.Nanosecond, wantExit: proofrun.ExitAdmissionRefused, wantReason: "has passed (now "},
 		{name: "outer-cancellation", advance: -time.Second, cancelParent: true, wantExit: proofrun.ExitAdmissionRefused, wantReason: context.Canceled.Error()},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -1192,7 +1192,7 @@ func testLandingTestReceiptPublicSemanticDeadlineBoundaries(t *testing.T) {
 			if code != testCase.wantExit || observedWait != 1 || !strings.Contains(problem, testCase.wantReason) {
 				t.Fatalf("public boundary exit=%d want=%d waits=%d stderr=%q", code, testCase.wantExit, observedWait, problem)
 			}
-			if testCase.cancelParent && strings.Contains(problem, "has passed at semantic time") {
+			if testCase.cancelParent && strings.Contains(problem, "has passed (now ") {
 				t.Fatalf("outer cancellation was mislabeled semantic expiry: %s", problem)
 			}
 			launches := 0
@@ -1582,7 +1582,7 @@ printf '{"suite":"landing-receipt","section":"tiny","event":"end","at":"%s","dep
 	}{
 		{"overlay", []string{"GOFLAGS=-overlay=foreign.json"}, "canonical validator refuses GOFLAGS"},
 		{"modfile", []string{"GOFLAGS=-modfile=foreign.mod"}, "canonical validator refuses GOFLAGS"},
-		{"partial-parent", []string{"METASYSTEM_PROOF_CONTROL_ROOT=" + root}, "proof parent locator is incomplete"},
+		{"partial-parent", []string{"METASYSTEM_PROOF_CONTROL_ROOT=" + root}, "inherited only half of its parent test run's settings"},
 		{"terminal-parent", []string{"METASYSTEM_PROOF_CONTROL_ROOT=" + root, "METASYSTEM_PROOF_ATTEMPT=" + attempts[0].AttemptID}, "the parent test run is no longer running"},
 	} {
 		t.Run(refusal.name, func(t *testing.T) {
@@ -1863,12 +1863,12 @@ func runSharedTestingReceiptRecovery(t *testing.T, prefix string) {
 	writeReceiptFixture(t, projectRoot, "payload.txt", "moved declared input\n")
 	runReceiptGit(t, projectRoot, "add", "payload.txt")
 	movedTree := runReceiptGit(t, projectRoot, "write-tree")
-	movedVerify := proofFixture.command(receiptCanaryEnvironmentForRoot(t, root), engine, "test", "verify", "--root", root, "--tree", movedTree, "--goal", "receipt-goal")
+	movedVerify := proofFixture.command(receiptCanaryEnvironmentForRoot(t, root), engine, "test", "verify", "--root", root, "--tree", movedTree, "--goal", "receipt-goal", "--verbose")
 	movedVerify.Env = append(movedVerify.Env, "SHARED_TEST_LAUNCH_COUNT="+launchCount, "METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="+identityTable)
 	movedOutput, movedErr := movedVerify.CombinedOutput()
 	if exit, ok := movedErr.(*exec.ExitError); !ok || exit.ExitCode() != 1 ||
-		!strings.Contains(string(movedOutput), "proof-input-moved-after-receipt: group policy-protection") ||
-		!strings.Contains(string(movedOutput), "moved declared paths: payload.txt") {
+		!strings.Contains(string(movedOutput), "group policy-protection passed on tree ") ||
+		!strings.Contains(string(movedOutput), "files it depends on changed since: payload.txt\n  code proof-input-moved-after-receipt") {
 		t.Fatalf("moved declared input lacked the refusal code, group, or path: err=%v\n%s", movedErr, movedOutput)
 	}
 	writeReceiptFixture(t, projectRoot, "payload.txt", "public shared testing input\n")
@@ -1900,12 +1900,12 @@ func runSharedTestingReceiptRecovery(t *testing.T, prefix string) {
 	writeReceiptFixture(t, root, "testing-coverage-floors.json", `{"floors":{"fixture/application":81.0}}`)
 	runReceiptGit(t, projectRoot, "add", engineDeclaredInput)
 	engineInputTree := runReceiptGit(t, projectRoot, "write-tree")
-	engineInputVerify := proofFixture.command(receiptCanaryEnvironmentForRoot(t, root), engine, "test", "verify", "--root", root, "--tree", engineInputTree, "--goal", "receipt-goal")
+	engineInputVerify := proofFixture.command(receiptCanaryEnvironmentForRoot(t, root), engine, "test", "verify", "--root", root, "--tree", engineInputTree, "--goal", "receipt-goal", "--verbose")
 	engineInputVerify.Env = append(engineInputVerify.Env, "SHARED_TEST_LAUNCH_COUNT="+launchCount, "METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="+identityTable)
 	engineInputOutput, engineInputErr := engineInputVerify.CombinedOutput()
 	if exit, ok := engineInputErr.(*exec.ExitError); !ok || exit.ExitCode() != 1 ||
-		!strings.Contains(string(engineInputOutput), "proof-input-moved-after-receipt: group policy-protection") ||
-		!strings.Contains(string(engineInputOutput), "moved declared paths: "+engineDeclaredInput) {
+		!strings.Contains(string(engineInputOutput), "group policy-protection passed on tree ") ||
+		!strings.Contains(string(engineInputOutput), "files it depends on changed since: "+engineDeclaredInput+"\n  code proof-input-moved-after-receipt") {
 		t.Fatalf("engine-build input move lacked the refusal code, group, or path: err=%v\n%s", engineInputErr, engineInputOutput)
 	}
 	writeReceiptFixture(t, root, "testing-coverage-floors.json", `{"floors":{"fixture/application":80.0}}`)

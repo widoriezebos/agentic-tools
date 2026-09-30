@@ -97,7 +97,9 @@ type SelectionRequest struct {
 	Root, ControlRoot, GoalID, AuthorityGoalID, Tree, CapMin, RetryDecision, ResultPath string
 	// LaneID charges the run to the landing lane instead of a goal: a batch
 	// whose members are all changes (U11b).
-	LaneID                                                     string
+	LaneID string
+	// Verbose asks for the details behind a refusal: its code and facts.
+	Verbose                                                    bool
 	ExpectedGoalRevision, ExpectedAccountingRevision           uint64
 	Mode                                                       testpolicy.Mode
 	Purpose                                                    testpolicy.Purpose

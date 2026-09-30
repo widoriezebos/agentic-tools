@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -2741,7 +2742,7 @@ func TestTestListCheckPlanAndVerifyWithoutLaunching(t *testing.T) {
 	testingFixtureGit(t, root, "add", "internal/policy.txt")
 	testingFixtureGit(t, root, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-m", "change engine projection")
 	changedEngineDestination := strings.TrimSpace(testingFixtureGit(t, root, "rev-parse", "HEAD"))
-	if _, _, _, err := testrun.TrustedPolicyEngine(root, changedEngineDestination, false); err == nil || !strings.Contains(err.Error(), "different ENGINE projections") {
+	if _, _, _, err := testrun.TrustedPolicyEngine(root, changedEngineDestination, false); err == nil || !strings.Contains(refusal.Detail(err), "different ENGINE projections") {
 		t.Fatalf("destination with changed engine inputs reused an older policy engine: %v", err)
 	}
 }

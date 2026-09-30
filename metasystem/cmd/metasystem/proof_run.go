@@ -81,12 +81,12 @@ func runProofRunLaunchWithInputs(args []string,
 	}
 	command := flags.Args()
 	if len(command) == 0 || *root == "" || *conf == "" {
-		fmt.Fprintln(stderr, "usage: metasystem internal proof-run launch --suite S --root R --conf F --progress P --log L --banner B [--selected SECTION] -- COMMAND...")
+		fmt.Fprintln(stderr, "usage: metasystem internal proof-run launch --suite S --root R --conf F\n  --progress P --log L --banner B [--selected SECTION] -- COMMAND...")
 		return 2
 	}
 	executionRoot, err := canonicalProofRoot(*root)
 	if err != nil {
-		fmt.Fprintln(stderr, "proof-run launch:", err)
+		fmt.Fprintln(stderr, "suite launch:", err)
 		return 2
 	}
 	controlRoot := *controlRootFlag
@@ -103,12 +103,12 @@ func runProofRunLaunchWithInputs(args []string,
 	}
 	controlRoot, err = canonicalProofRoot(controlRoot)
 	if err != nil {
-		fmt.Fprintln(stderr, "proof-run launch:", err)
+		fmt.Fprintln(stderr, "suite launch:", err)
 		return 2
 	}
 	commandClock, fixtureClock, err := goalCommandClock(controlRoot)
 	if err != nil {
-		fmt.Fprintln(stderr, "proof-run launch:", err)
+		fmt.Fprintln(stderr, "suite launch:", err)
 		return 1
 	}
 	if *commandClass == "" {
@@ -116,7 +116,7 @@ func runProofRunLaunchWithInputs(args []string,
 	}
 	limits, err := resolveProofRunLimits(*conf)
 	if err != nil {
-		fmt.Fprintln(stderr, "proof-run launch:", err)
+		fmt.Fprintln(stderr, "suite launch:", err)
 		return 1
 	}
 	launchEnvironment := resolvedTestWorkerEnvironment(nil, limits.workers)
@@ -134,13 +134,13 @@ func runProofRunLaunchWithInputs(args []string,
 	}
 	expected, repeated, err := selectedSections(*selected)
 	if err != nil {
-		fmt.Fprintln(stderr, "proof-run launch:", err)
+		fmt.Fprintln(stderr, "suite launch:", err)
 		return 1
 	}
 	if *goalID == "" && noProofLocatorEnvironment() && legacyProofLaunchAllowed(controlRoot) {
 		// Bind the first open generation before waiting for host capacity. A
 		// stop and rearm during that wait cannot authorize this older launch.
-		fenceClosed := errors.New("proof stop fence closed")
+		fenceClosed := errors.New("the stop fence closed before this suite launched")
 		var fence stopfence.Record
 		var fenceReadErr error
 		var fenceStaleErr error
@@ -157,7 +157,7 @@ func runProofRunLaunchWithInputs(args []string,
 			if initialGeneration < 0 {
 				initialGeneration = fence.Generation
 			} else if fence.Generation != initialGeneration {
-				fenceStaleErr = fmt.Errorf("proof stop fence generation changed during host admission: %d to %d; retry proof launch", initialGeneration, fence.Generation)
+				fenceStaleErr = fmt.Errorf("the stop fence moved (%d to %d) while this suite waited for the host; launch it again", initialGeneration, fence.Generation)
 				return fenceStaleErr
 			}
 			return nil
@@ -188,7 +188,7 @@ func runProofRunLaunchWithInputs(args []string,
 			if errors.Is(leaseErr, fenceClosed) || fenceReadErr != nil || fenceStaleErr != nil {
 				return refuseFence()
 			}
-			fmt.Fprintln(stderr, "proof-run launch: admit native proof:", leaseErr)
+			fmt.Fprintln(stderr, "suite launch: the host did not admit the suite:", leaseErr)
 			refusal := proofrun.LaunchResult{SchemaVersion: 1, Disposition: proofrun.DispositionAdmissionRefused, ExitStatus: proofrun.ExitAdmissionRefused}
 			_ = proofrun.EncodeResult(stderr, *resultPath, refusal)
 			return proofrun.ExitAdmissionRefused
@@ -225,7 +225,7 @@ func runProofRunLaunchWithInputs(args []string,
 	if err != nil {
 		refusal := proofrun.LaunchResult{SchemaVersion: 1, Disposition: proofrun.DispositionAdmissionRefused, ExitStatus: proofrun.ExitAdmissionRefused}
 		_ = proofrun.EncodeResult(stderr, *resultPath, refusal)
-		fmt.Fprintln(stderr, "proof-run launch:", err)
+		fmt.Fprintln(stderr, "suite launch:", err)
 		return proofrun.ExitAdmissionRefused
 	}
 	if decision.Disposition != proofrun.DispositionExecuted {
@@ -233,14 +233,14 @@ func runProofRunLaunchWithInputs(args []string,
 			fmt.Fprintln(stderr, decision.Reason)
 		}
 		if err := proofrun.EncodeResult(stderr, *resultPath, decision); err != nil {
-			fmt.Fprintln(stderr, "proof-run launch: publish launch result:", err)
+			fmt.Fprintln(stderr, "suite launch: the launch result could not be written:", err)
 			return 1
 		}
 		return decision.ExitStatus
 	}
 	deadline, deadlineCheck, err := proofDeadline(attempt.Deadline, commandClock)
 	if err != nil {
-		fmt.Fprintln(stderr, "proof-run launch: admit native proof:", err)
+		fmt.Fprintln(stderr, "suite launch: the host did not admit the suite:", err)
 		status := retainIncompleteProofAttempt(stderr, controlRoot, attempt.AttemptID, joined, proofrun.ExitAdmissionRefused)
 		decision.ExitStatus, decision.Disposition = status, proofrun.DispositionAdmissionRefused
 		_ = proofrun.EncodeResult(stderr, *resultPath, decision)
@@ -250,7 +250,7 @@ func runProofRunLaunchWithInputs(args []string,
 	defer cancelResource()
 	lease, release, leaseErr := acquireManagedProofLaunchWithWaitCheck(stderr, resourceContext, controlRoot, *conf, deadlineCheck)
 	if leaseErr != nil {
-		fmt.Fprintln(stderr, "proof-run launch: admit native proof:", leaseErr)
+		fmt.Fprintln(stderr, "suite launch: the host did not admit the suite:", leaseErr)
 		status := retainIncompleteProofAttempt(stderr, controlRoot, attempt.AttemptID, joined, proofrun.ExitAdmissionRefused)
 		decision.ExitStatus, decision.Disposition = status, proofrun.DispositionAdmissionRefused
 		_ = proofrun.EncodeResult(stderr, *resultPath, decision)
@@ -295,7 +295,7 @@ func runProofRunLaunchWithInputs(args []string,
 		decision.Disposition = proofrun.DispositionFailed
 	}
 	if err := proofrun.EncodeResult(stderr, *resultPath, decision); err != nil {
-		fmt.Fprintln(stderr, "proof-run launch: publish launch result:", err)
+		fmt.Fprintln(stderr, "suite launch: the launch result could not be written:", err)
 		return 1
 	}
 	return launchStatus
@@ -304,7 +304,7 @@ func runProofRunLaunchWithInputs(args []string,
 func acquireManagedProofLaunchWithWaitCheck(stderr io.Writer, ctx context.Context, controlRoot, confPath string, check func() error) (*proofrun.HostResourceLease, func(), error) {
 	unmark, err := proofrun.MarkManagedProofProcess()
 	if err != nil {
-		return nil, nil, fmt.Errorf("mark host proof launcher managed: %w", err)
+		return nil, nil, fmt.Errorf("mark this suite launcher as managed by the host: %w", err)
 	}
 	ctx = proofrun.WithHostResourceWaitObserver(ctx, func() {
 		fmt.Fprintln(stderr, proofCapacityWaitLine)
@@ -317,7 +317,7 @@ func acquireManagedProofLaunchWithWaitCheck(stderr io.Writer, ctx context.Contex
 	return lease, func() { _ = lease.Close(); unmark() }, nil
 }
 
-const proofCapacityWaitLine = "proof-run launch: waiting for host proof capacity"
+const proofCapacityWaitLine = "suite launch: waiting for room on this host to run tests"
 
 func runProofRunWorkerAuthorized(args []string, stdout, stderr io.Writer) int {
 	flags := newFlagSet("proof-run worker-authorized", stdout, stderr)
@@ -327,7 +327,7 @@ func runProofRunWorkerAuthorized(args []string, stdout, stderr io.Writer) int {
 	}
 	code, err := authorizeProofWorker(*executionRoot)
 	if err != nil {
-		fmt.Fprintln(stderr, "proof-run worker-authorized:", err)
+		fmt.Fprintln(stderr, "test worker:", err)
 	}
 	return code
 }
@@ -339,7 +339,7 @@ func authorizeProofWorker(executionRoot string) (int, error) {
 	}
 	controlRoot := os.Getenv("METASYSTEM_PROOF_CONTROL_ROOT")
 	if controlRoot == "" {
-		return 3, fmt.Errorf("no proof control root")
+		return 3, fmt.Errorf("no test run control root is set")
 	}
 	canonicalControl, err := canonicalProofRoot(controlRoot)
 	if err != nil {
@@ -509,7 +509,7 @@ func retainIncompleteProofAttempt(stderr io.Writer, root, attemptID string, join
 	}
 	attempt, err := proofrun.ReadAttempt(root, attemptID)
 	if err != nil {
-		fmt.Fprintln(stderr, "proof-run launch: read incomplete attempt:", err)
+		fmt.Fprintln(stderr, "suite launch: the unfinished test run cannot be read:", err)
 		return 1
 	}
 	if attempt.Terminal != nil {
@@ -520,12 +520,12 @@ func retainIncompleteProofAttempt(stderr io.Writer, root, attemptID string, join
 	}
 	now, nowErr := goalCommandNow(root)
 	if nowErr != nil {
-		fmt.Fprintln(stderr, "proof-run launch: read terminal clock:", nowErr)
+		fmt.Fprintln(stderr, "suite launch: the clock for the run's end cannot be read:", nowErr)
 		return 1
 	}
 	if _, err := proofrun.FinalizeAttempt(root, attemptID, proofrun.TerminalUnknown, status,
 		"proof launcher ended before its ordered terminal commit", nil, now); err != nil {
-		fmt.Fprintln(stderr, "proof-run launch: retain unknown terminal outcome:", err)
+		fmt.Fprintln(stderr, "suite launch: the run's unknown outcome could not be recorded:", err)
 		return 1
 	}
 	return status
@@ -597,12 +597,12 @@ func (request proofLaunchAdmission) callerPID() int64 {
 func proofDeadline(raw string, clock func() time.Time) (time.Time, func() error, error) {
 	deadline, err := time.Parse(time.RFC3339Nano, raw)
 	if err != nil {
-		return time.Time{}, nil, fmt.Errorf("admitted proof deadline is invalid: %w", err)
+		return time.Time{}, nil, fmt.Errorf("the test run's admitted deadline is invalid: %w", err)
 	}
 	check := func() error {
 		now := clock()
 		if !deadline.After(now) {
-			return fmt.Errorf("admitted proof deadline %s has passed at semantic time %s",
+			return fmt.Errorf("the test run's admitted deadline %s has passed (now %s)",
 				deadline.UTC().Format(time.RFC3339Nano), now.UTC().Format(time.RFC3339Nano))
 		}
 		return nil
@@ -701,15 +701,6 @@ func proofAdmissionGoalStatesWithReads(root, candidateID, authorityID string, no
 	return proofAdmissionSnapshots{Candidate: candidate, Authority: authority}, nil
 }
 
-func proofAdmissionMoved(before, after proofAdmissionSnapshots, candidateID, authorityID string) error {
-	if before == after {
-		return nil
-	}
-	return fmt.Errorf("CANDIDATE_GOAL_MOVED: candidate goal %s revision %d->%d and authority goal %s revision %d->%d changed during proof admission; retry from the accepted goals",
-		candidateID, before.Candidate.Revision, after.Candidate.Revision,
-		authorityID, before.Authority.Revision, after.Authority.Revision)
-}
-
 func acquireProofAdmissionGoalLocks(root string, snapshots proofAdmissionSnapshots) ([]*goalrevision.Held, error) {
 	coordinates := []proofAdmissionGoalSnapshot{snapshots.Authority}
 	if snapshots.Candidate.ID != snapshots.Authority.ID {
@@ -730,8 +721,8 @@ func acquireProofAdmissionGoalLocks(root string, snapshots proofAdmissionSnapsho
 			for i := len(held) - 1; i >= 0; i-- {
 				_ = held[i].Release()
 			}
-			return nil, fmt.Errorf("proof admission candidate=%s authority=%s could not acquire %s: %w",
-				snapshots.Candidate.ID, snapshots.Authority.ID, coordinate.ID, err)
+			return nil, fmt.Errorf("goal %s could not be locked to admit the test run (candidate %s, charged to %s): %w",
+				coordinate.ID, snapshots.Candidate.ID, snapshots.Authority.ID, err)
 		}
 		held = append(held, lock)
 	}
@@ -742,13 +733,6 @@ func releaseProofAdmissionGoalLocks(held []*goalrevision.Held) {
 	for i := len(held) - 1; i >= 0; i-- {
 		_ = held[i].Release()
 	}
-}
-
-func candidateGoalRefusal(id, state, detail string) error {
-	if detail != "" {
-		detail = " " + detail
-	}
-	return fmt.Errorf("CANDIDATE_GOAL_REFUSED: candidate goal %s state=%s%s", id, state, detail)
 }
 
 func candidateGoalForProof(tree *goal.TreeGoals, id, machine string) (*goal.GoalFile, uint64, error) {
@@ -789,10 +773,6 @@ func candidateGoalForProof(tree *goal.TreeGoals, id, machine string) (*goal.Goal
 	return file, revision, nil
 }
 
-func proofAuthorityRefusal(id, detail string) error {
-	return fmt.Errorf("PROOF_AUTHORITY_REQUIRED: authority goal %s %s", id, detail)
-}
-
 func enforceBoundProofGoals(kind, boundGoal, candidateGoal, authorityGoal string) error {
 	if authorityGoal != "" || candidateGoal != "" && candidateGoal != boundGoal {
 		return proofAuthorityRefusal(boundGoal, "is fixed by the "+kind+"; --goal and --authority cannot select another goal")
@@ -814,7 +794,7 @@ func resolveProofGoalRolesWithReads(root, candidateID, authorityID string, now t
 	}
 	projection, err := goal.Project(endpoint, false, now)
 	if err != nil {
-		return proofGoalRoles{}, fmt.Errorf("resolve proof goals: %w", err)
+		return proofGoalRoles{}, fmt.Errorf("the goals this test run is charged to cannot be read: %w", err)
 	}
 	machine, machineErr := reads.ResolveMachine(root)
 	// The pre-enrollment human path already admits a proof bound to the
@@ -873,8 +853,7 @@ func resolveProofGoalRolesWithReads(root, candidateID, authorityID string, now t
 		}
 	}
 	if candidate.Arc != "" && candidate.Arc == authority.Arc {
-		return proofGoalRoles{}, fmt.Errorf("PROOF_AUTHORITY_ARC_MATE_REFUSED: candidate goal %s and authority goal %s share arc %s; claim %s as its own authority",
-			candidate.Id, authority.Id, candidate.Arc, candidate.Id)
+		return proofGoalRoles{}, arcMateRefusal(candidate.Id, authority.Id, candidate.Arc)
 	}
 	return proofGoalRoles{Candidate: candidate, Authority: authority, CandidateRevision: candidateRevision}, nil
 }
@@ -891,7 +870,7 @@ func admitProofLaunchWithReadsAndClassifier(request proofLaunchAdmission, makeRe
 	classify func(string, int64) (lease.ClassifyResult, error)) (proofrun.Attempt, proofrun.LaunchResult, bool, error) {
 	classifiedCaller, err := classify(request.ControlRoot, request.callerPID())
 	if err != nil {
-		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof caller classification failed: %w", err)
+		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("who started this test run cannot be determined: %w", err)
 	}
 	now := request.Now
 	if now.IsZero() {
@@ -903,23 +882,22 @@ func admitProofLaunchWithReadsAndClassifier(request proofLaunchAdmission, makeRe
 	parentRoot, parentAttempt := os.Getenv("METASYSTEM_PROOF_CONTROL_ROOT"), os.Getenv("METASYSTEM_PROOF_ATTEMPT")
 	if parentRoot != "" || parentAttempt != "" {
 		if parentRoot == "" || parentAttempt == "" {
-			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof parent locator is incomplete")
+			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("this process inherited only half of its parent test run's settings")
 		}
 		canonicalParent, err := canonicalProofRoot(parentRoot)
 		if err != nil || canonicalParent != request.ControlRoot {
-			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof parent control root does not match the requested root")
+			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("the parent test run belongs to another installation than the one named")
 		}
 		attempt, err := proofrun.AuthenticateContext(request.ControlRoot, parentAttempt, request.callerPID())
 		if err != nil {
 			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, err
 		}
 		if request.GoalID != "" && request.GoalID != attempt.AccountedGoal() {
-			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof parent candidate goal %s does not match requested goal %s", attempt.AccountedGoal(), request.GoalID)
+			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("the parent test run is charged to goal %s, not to the named goal %s", attempt.AccountedGoal(), request.GoalID)
 		}
 		if request.ExpectedGoalRevision != 0 && (attempt.GoalRevision != request.ExpectedGoalRevision ||
 			attempt.AccountingRevision != request.ExpectedAccountingRevision) {
-			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("GOAL_REVISION_MOVED: expected goal/accounting revisions %d/%d, found %d/%d",
-				request.ExpectedGoalRevision, request.ExpectedAccountingRevision, attempt.GoalRevision, attempt.AccountingRevision)
+			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, goalRevisionMoved(request.ExpectedGoalRevision, request.ExpectedAccountingRevision, attempt.GoalRevision, attempt.AccountingRevision)
 		}
 		if len(request.ComponentIdentities) > 0 {
 			heldGoal, lockErr := goalrevision.Acquire(request.ControlRoot, revisionLockCoordinate(attempt.GoalID), attempt.GoalRevision, "joined-testing-admission")
@@ -969,21 +947,21 @@ func admitProofLaunchWithReadsAndClassifier(request proofLaunchAdmission, makeRe
 	governedRoot, governedID := os.Getenv("METASYSTEM_PROOF_RUN_ROOT"), os.Getenv("METASYSTEM_PROOF_RUN_ID")
 	if governedRoot != "" || governedID != "" {
 		if governedRoot == "" || governedID == "" {
-			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("governed proof locator is incomplete")
+			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("the governed run's settings name only part of the run")
 		}
 		canonicalGoverned, err := canonicalProofRoot(governedRoot)
 		if err != nil || canonicalGoverned != request.ControlRoot {
-			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("governed proof control root does not match the requested root")
+			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("the governed run belongs to another installation than the one named")
 		}
 		record, err := (&runpkg.Store{Root: request.ControlRoot}).Read(governedID)
 		if err != nil || record == nil || record.Governed == nil || record.Status != runpkg.StatusRunning ||
 			record.Pid == nil || record.PidStartedAt == nil {
-			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("governed proof locator does not name a live bound run")
+			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("the governed run named here is not live")
 		}
 		ancestor := proofrun.ProcessIdentity{Pid: *record.Pid, PidStartedAt: *record.PidStartedAt,
 			PidStartTicks: record.PidStartTicks, BootID: record.BootID}
 		if err := proofrun.AuthenticateAncestor(request.callerPID(), ancestor); err != nil {
-			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("governed proof custody: %w", err)
+			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("the governed run's custody: %w", err)
 		}
 		if err := enforceBoundProofGoals("governed run", record.GoalId, request.GoalID, request.AuthorityGoalID); err != nil {
 			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, err
@@ -991,7 +969,7 @@ func admitProofLaunchWithReadsAndClassifier(request proofLaunchAdmission, makeRe
 		request.GoalID, request.AuthorityGoalID, boundAuthority = record.GoalId, record.GoalId, true
 		started, err := time.Parse(time.RFC3339, record.StartedAt)
 		if err != nil || record.Governed.ExecutionCostMinutes == 0 {
-			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("governed run has no valid proof deadline")
+			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("the governed run has no valid test deadline")
 		}
 		deadline := started.Add(time.Duration(record.Governed.ExecutionCostMinutes) * time.Minute).UTC().Format(time.RFC3339Nano)
 		reservationOwner = &proofrun.ReservationOwner{ControlRoot: request.ControlRoot, RunID: record.RunId,
@@ -1004,11 +982,11 @@ func admitProofLaunchWithReadsAndClassifier(request proofLaunchAdmission, makeRe
 	delegateJob = os.Getenv("METASYSTEM_HOOK_DELEGATE_JOB")
 	if delegateState != "" || delegateInstallation != "" || delegateJob != "" {
 		if delegateState == "" || delegateInstallation == "" || delegateJob == "" {
-			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("native delegate proof locator is incomplete")
+			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("the delegate's settings name only part of its test run")
 		}
 		verified, err := lease.HookDelegate(delegateState, delegateInstallation, delegateJob, request.callerPID())
 		if err != nil || !verified.Delegate || verified.JobID != delegateJob {
-			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("native delegate proof locator is not authenticated")
+			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("the delegate's test run settings could not be authenticated")
 		}
 		record, err := dispatchcore.ReadRecordObject(filepath.Join(delegateState, "artifacts", "agents", "jobs", delegateJob+".json"))
 		if err != nil {
@@ -1032,10 +1010,10 @@ func admitProofLaunchWithReadsAndClassifier(request proofLaunchAdmission, makeRe
 		}
 	}
 	if request.GoalID == "" {
-		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("top-level proof launch requires --goal")
+		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("a test run started on its own needs --goal GOAL")
 	}
 	if makeReads == nil {
-		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof admission reads factory is nil")
+		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("test run admission has no goal reader (an internal error)")
 	}
 	reads := makeReads()
 	if err := reads.Validate(); err != nil {
@@ -1072,13 +1050,13 @@ func admitProofLaunchWithReadsAndClassifier(request proofLaunchAdmission, makeRe
 	if reservationOwner != nil {
 		runRecord, readErr := (&runpkg.Store{Root: request.ControlRoot}).Read(reservationOwner.RunID)
 		if readErr != nil || runRecord == nil || runRecord.Governed == nil {
-			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("governed proof owner became unreadable while resolving its reservation")
+			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("the governed run's owner became unreadable while its test run was reserved")
 		}
 		capValue = int64(runRecord.Governed.ExecutionCostMinutes)
 	} else {
 		capValue, _, _, err = dispatchcore.ResolveCap(request.ConfPath, "proof", "main", "proof", "", request.CapMin)
 		if err != nil || capValue < 1 {
-			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("resolve proof reservation: %w", err)
+			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("the test run cannot be reserved: %w", err)
 		}
 	}
 	binding, err := dispatchcore.ResolveGoalBindingWithReads(request.ControlRoot, authorityGoalID, now, reads)
@@ -1127,7 +1105,7 @@ func admitProofLaunchWithReadsAndClassifier(request proofLaunchAdmission, makeRe
 	}
 	classifiedCaller, err = classify(request.ControlRoot, request.callerPID())
 	if err != nil {
-		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof caller reclassification failed under admission lock: %w", err)
+		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("who started this test run cannot be confirmed: %w", err)
 	}
 	extensionAuthorized := false
 	extensionCallerClass := classifiedCaller.Class
@@ -1139,12 +1117,12 @@ func admitProofLaunchWithReadsAndClassifier(request proofLaunchAdmission, makeRe
 			runRecord.Governed.GoalRevision != reservationOwner.GoalRevision ||
 			runRecord.Governed.ObligationRevision != reservationOwner.ObligationRevision ||
 			runRecord.Governed.AttemptOrdinal != reservationOwner.AttemptOrdinal {
-			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("governed proof owner changed before reservation")
+			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("the governed run's owner changed before its test run was reserved")
 		}
 		ancestor := proofrun.ProcessIdentity{Pid: *runRecord.Pid, PidStartedAt: *runRecord.PidStartedAt,
 			PidStartTicks: runRecord.PidStartTicks, BootID: runRecord.BootID}
 		if err := proofrun.AuthenticateAncestor(request.callerPID(), ancestor); err != nil {
-			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("governed proof custody changed before reservation: %w", err)
+			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("the governed run's custody changed before its test run was reserved: %w", err)
 		}
 	} else if delegateJob != "" {
 		verified, verifyErr := lease.HookDelegate(delegateState, delegateInstallation, delegateJob, request.callerPID())
@@ -1155,7 +1133,7 @@ func admitProofLaunchWithReadsAndClassifier(request proofLaunchAdmission, makeRe
 		if verifyErr != nil || !verified.Delegate || verified.JobID != delegateJob || readErr != nil ||
 			lens.GoalID() != authorityGoalID || !revisionOK || revision != binding.Revision ||
 			lens.MachineID() != binding.Machine || !claimEpochOK || claimEpoch != binding.Capability.ClaimEpoch {
-			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("native delegate proof custody changed before reservation")
+			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("the delegate's custody changed before its test run was reserved")
 		}
 		extensionAuthorized = true
 		extensionCallerClass = lease.ClassDelegate
@@ -1169,23 +1147,23 @@ func admitProofLaunchWithReadsAndClassifier(request proofLaunchAdmission, makeRe
 				holder, holderErr := lease.CurrentHolder(request.ControlRoot)
 				if holderErr == nil && holder.OwnerLineage == binding.File.Claimed.Lineage {
 					return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf(
-						"active coordinator does not own the claimed goal reservation: lease claim epoch %d differs from stop capability claim epoch %d; run metasystem session start (it restamps goal %s)",
-						*classifiedCaller.ClaimEpoch, binding.Capability.ClaimEpoch, authorityGoalID)
+						"this session's claim on goal %s is out of date (claim %d, stop capability %d)\nrun: metasystem session start  (it restamps the claim)",
+						authorityGoalID, *classifiedCaller.ClaimEpoch, binding.Capability.ClaimEpoch)
 				}
 			}
-			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("active coordinator does not own the claimed goal reservation")
+			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("this session does not hold the claim on goal %s", authorityGoalID)
 		}
 		extensionAuthorized = true
 	} else if classifiedCaller.Class != lease.ClassHuman {
-		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof caller has no authenticated goal reservation context")
+		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("this process holds no goal claim to charge the test run to")
 	}
 	binding, err = dispatchcore.ResolveGoalBindingWithReads(request.ControlRoot, authorityGoalID, now, reads)
 	if err != nil || binding.Fence != nil || reservationOwner != nil && binding.Revision != reservationOwner.GoalRevision {
-		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof reservation lost its accepted goal authority")
+		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("the goal this test run is charged to changed before it was reserved")
 	}
 	projection := dispatchcore.ProjectBudget(request.ControlRoot, binding.File, now)
 	if projection.Status != dispatchcore.BudgetKnown {
-		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof reservation budget projection is unknown")
+		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("the goal's test budget cannot be worked out, so the test run was not reserved")
 	}
 	candidateProjection := dispatchcore.ProjectConsumption(request.ControlRoot, roles.Candidate, now)
 	if candidateProjection.Status != dispatchcore.BudgetKnown {
@@ -1196,20 +1174,19 @@ func admitProofLaunchWithReadsAndClassifier(request proofLaunchAdmission, makeRe
 		accountingRevision = binding.Revision
 	}
 	if request.ExpectedGoalRevision != 0 && (binding.Revision != request.ExpectedGoalRevision || accountingRevision != request.ExpectedAccountingRevision) {
-		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("GOAL_REVISION_MOVED: expected goal/accounting revisions %d/%d, found %d/%d",
-			request.ExpectedGoalRevision, request.ExpectedAccountingRevision, binding.Revision, accountingRevision)
+		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, goalRevisionMoved(request.ExpectedGoalRevision, request.ExpectedAccountingRevision, binding.Revision, accountingRevision)
 	}
 	if request.RequireDiagnosticHeadroom {
 		attemptHeadroom := projection.Limits.AttemptLimit >= projection.Attempts && projection.Limits.AttemptLimit-projection.Attempts >= 2
 		minuteHeadroom := uint64(capValue) <= ^uint64(0)/2 && projection.Limits.ReservedJobMinutesLimit >= projection.ReservedJobMinutes &&
 			projection.Limits.ReservedJobMinutesLimit-projection.ReservedJobMinutes >= 2*uint64(capValue)
 		if !attemptHeadroom || !minuteHeadroom {
-			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("BATCH_MEMBER_BUDGET_REFUSED: goal %s needs two attempts and %d reserved minutes of P2 headroom; the proof would spend past its approved box, so a person raises it with metasystem goal budget %s BOX", authorityGoalID, 2*uint64(capValue), authorityGoalID)
+			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, batchMemberBudgetRefused(authorityGoalID, 2*uint64(capValue))
 		}
 	}
 	checkoutFence, fenceErr := stopfence.Read(request.ControlRoot)
 	if fenceErr != nil || checkoutFence.State == stopfence.StateClosed {
-		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof reservation lost checkout-fence authority")
+		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("the checkout's stop fence closed, so the test run was not reserved")
 	}
 	reservation := proofrun.AdmissionRequest{
 		ControlRoot: request.ControlRoot, ExecutionRoot: request.ExecutionRoot, ConfPath: request.ConfPath, GoalID: authorityGoalID,
@@ -1244,12 +1221,12 @@ func admitProofLaunchWithReadsAndClassifier(request proofLaunchAdmission, makeRe
 		}
 		if verdict.Authority.Extension != nil {
 			if !extensionAuthorized {
-				return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof reservation found an extension for goal %s, but only its claim holder pair may apply it", authorityGoalID)
+				return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("goal %s has a budget extension that only its claim holder may apply", authorityGoalID)
 			}
 			if delegateJob == "" {
 				holder, holderErr := lease.CurrentHolder(request.ControlRoot)
 				if holderErr != nil || holder.OwnerLineage != binding.Lineage {
-					return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof reservation could not bind the budget extension to the claim holder pair")
+					return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("the budget extension could not be bound to the goal's claim holder")
 				}
 			}
 			endpoint, endpointErr := reads.ResolveEndpoint(request.ControlRoot)
@@ -1263,24 +1240,24 @@ func admitProofLaunchWithReadsAndClassifier(request proofLaunchAdmission, makeRe
 				CallerClass: extensionCallerClass}
 			extended, extendErr := goal.ExtendBudget(extensionRequest, authorityGoalID, offer)
 			if extendErr != nil {
-				return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof reservation extend budget: %w", extendErr)
+				return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("the goal's budget could not be extended: %w", extendErr)
 			}
 			if extended.Outcome != goal.OutcomeConfirmed {
-				return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof reservation extend budget ended %s: %s", extended.Outcome, extended.Detail)
+				return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("extending the goal's budget ended %s: %s", extended.Outcome, extended.Detail)
 			}
 			binding, err = dispatchcore.ResolveGoalBindingWithReads(request.ControlRoot, authorityGoalID, now, reads)
 			if err != nil || binding.Revision != reservation.GoalRevision {
-				return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof reservation lost its goal binding after budget extension")
+				return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("the test run lost its goal after the budget was extended")
 			}
 			marker := binding.File.BudgetExtension
 			if binding.Machine != extensionRequest.Actor.Machine || binding.Lineage != extensionRequest.Actor.Lineage ||
 				marker == nil || marker.AttemptLimitFrom != offer.AttemptLimitFrom || marker.AttemptLimitTo != offer.AttemptLimitTo ||
 				marker.ReservedJobMinutesFrom != offer.ReservedJobMinutesFrom || marker.ReservedJobMinutesTo != offer.ReservedJobMinutesTo {
-				return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof reservation budget extension is not visible on its authoritative claim pair")
+				return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("the budget extension is not visible on the goal's claim")
 			}
 			projection = dispatchcore.ProjectBudget(request.ControlRoot, binding.File, now)
 			if projection.Status != dispatchcore.BudgetKnown {
-				return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof reservation budget projection became unknown after extension")
+				return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("the goal's test budget cannot be worked out after the extension")
 			}
 			reservation.BudgetEpoch = projection.WeightEpoch
 			reservation.CandidateBudgetEpoch = projection.WeightEpoch
@@ -1300,7 +1277,7 @@ func admitProofLaunchWithReadsAndClassifier(request proofLaunchAdmission, makeRe
 			if detail == "" {
 				detail = "proof admission refused without a printable reason"
 			}
-			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof reservation refused for candidate %s under authority %s revision %d: %s",
+			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("the test run was not reserved for goal %s (charged to %s, revision %d): %s",
 				request.GoalID, authorityGoalID, binding.Revision, detail)
 		}
 	}
@@ -1335,13 +1312,13 @@ func admitProofLaunchWithReadsAndClassifier(request proofLaunchAdmission, makeRe
 // or revision is read or moved.
 func admitLaneProofLaunch(request proofLaunchAdmission, caller lease.ClassifyResult, now time.Time) (proofrun.Attempt, proofrun.LaunchResult, bool, error) {
 	refuse := func(format string, args ...any) (proofrun.Attempt, proofrun.LaunchResult, bool, error) {
-		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("LANE_ACCOUNT_UNRESOLVED: "+format, args...)
+		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, laneAccountUnresolved(format, args...)
 	}
 	if request.GoalID != "" || request.AuthorityGoalID != "" || request.ExpectedGoalRevision != 0 || request.RequireDiagnosticHeadroom {
-		return refuse("a proof charged to the lane names no goal: --goal, --authority, --expected-goal-revision and --require-diagnostic-headroom belong to a goal's proof")
+		return refuse("a test run charged to the lane names no goal: --goal, --authority, --expected-goal-revision and --require-diagnostic-headroom belong to a goal's test run")
 	}
 	if os.Getenv("METASYSTEM_PROOF_RUN_ROOT") != "" || os.Getenv("METASYSTEM_HOOK_DELEGATE_JOB") != "" {
-		return refuse("a governed run or a delegate proves under its goal, never under the lane")
+		return refuse("a governed run or a delegate runs its tests under its goal, never under the lane")
 	}
 	if !landinglane.IsAccount(request.LaneID) {
 		return refuse("%q is not a lane accounting identity", request.LaneID)
@@ -1377,7 +1354,7 @@ func admitLaneProofLaunch(request proofLaunchAdmission, caller lease.ClassifyRes
 	}
 	capValue, _, _, err := dispatchcore.ResolveCap(request.ConfPath, "proof", "main", "proof", "", request.CapMin)
 	if err != nil || capValue < 1 {
-		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("resolve proof reservation: %w", err)
+		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("the test run cannot be reserved: %w", err)
 	}
 	launcher, err := proofrun.CurrentProcessIdentity(nil)
 	if err != nil {
@@ -1406,7 +1383,7 @@ func admitLaneProofLaunch(request proofLaunchAdmission, caller lease.ClassifyRes
 	defer heldProof.Release()
 	checkoutFence, fenceErr := stopfence.Read(request.ControlRoot)
 	if fenceErr != nil || checkoutFence.State == stopfence.StateClosed {
-		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof reservation lost checkout-fence authority")
+		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("the checkout's stop fence closed, so the test run was not reserved")
 	}
 	reservation := proofrun.AdmissionRequest{
 		ControlRoot: request.ControlRoot, ExecutionRoot: request.ExecutionRoot, ConfPath: request.ConfPath,
@@ -1444,7 +1421,7 @@ func proveLaneOwnerCaller(controlRoot string, callerPID int64) error {
 		return err
 	}
 	if holder.OwnerLineage != batchowner.LandingOwnerLineage {
-		return fmt.Errorf("the lane checkout is held by lineage %s, not its landing owner", holder.OwnerLineage)
+		return fmt.Errorf("the lane checkout is held by session %s, not by its landing owner", holder.OwnerLineage)
 	}
 	for _, announcement := range lease.AnnouncementsFor(controlRoot, holder.Pid) {
 		if announcement.MainId != holder.MainId {
@@ -1553,7 +1530,7 @@ type terminalCommitRefused struct {
 }
 
 func (e *terminalCommitRefused) Error() string {
-	return fmt.Sprintf("proof terminal commit refused %d times; the last holder: %s", e.Tries, describeRefusal(e.Holder))
+	return fmt.Sprintf("recording the test run's result was refused %d times; the last holder: %s", e.Tries, describeRefusal(e.Holder))
 }
 
 func (e *terminalCommitRefused) Unwrap() error { return e.Holder }
@@ -1629,7 +1606,7 @@ func acquireTerminalLocks(root, goalID string, revision uint64, ref identity.Ref
 		}
 		last = err
 		if try < terminalCommitTries {
-			fmt.Fprintf(notes, "proof terminal commit: try %d of %d waits behind %s\n", try, terminalCommitTries, describeRefusal(err))
+			fmt.Fprintf(notes, "recording the test run's result: try %d of %d waits behind %s\n", try, terminalCommitTries, describeRefusal(err))
 			terminalLocks.pause(terminalCommitPause)
 		}
 	}
@@ -1653,12 +1630,12 @@ func retainRefusedTerminal(completion proofrun.CompletionContext, refused error,
 	}
 	now, nowErr := goalCommandNow(completion.ControlRoot)
 	if nowErr != nil {
-		fmt.Fprintf(notes, "proof terminal commit: read terminal clock: %v\n", nowErr)
+		fmt.Fprintf(notes, "recording the test run's result: the clock cannot be read: %v\n", nowErr)
 		return
 	}
 	if _, err := proofrun.FinalizeAttempt(completion.ControlRoot, completion.AttemptID, result, status,
 		refused.Error(), nil, now); err != nil {
-		fmt.Fprintf(notes, "proof terminal commit: retain the refused attempt: %v\n", err)
+		fmt.Fprintf(notes, "recording the test run's result: the refused run could not be kept: %v\n", err)
 	}
 }
 
@@ -1694,18 +1671,18 @@ func commitProofTerminalWithReasonAndReads(completion proofrun.CompletionContext
 	}
 	record, err := proofrun.ReadProcessRecord(completion.ControlRoot, completion.RecordKey)
 	if err != nil || record.Status != proofrun.StatusRunning {
-		return fmt.Errorf("proof process inventory is not live at terminal commit")
+		return fmt.Errorf("the test run's process list had ended when its result was recorded")
 	}
 	if completion.ExitStatus == 0 && completion.InputIdentity != attempt.ProofIdentity.IdentityDigest {
-		return fmt.Errorf("proof terminal commit has no matching pre-cleanup input-parity observation")
+		return fmt.Errorf("the test run's result has no matching check of its inputs before cleanup")
 	}
 	fence, err := stopfence.Read(completion.ControlRoot)
 	if err != nil || fence.State == stopfence.StateClosed || fence.Generation != record.FenceGeneration {
-		return fmt.Errorf("proof terminal commit lost stop-fence authority")
+		return fmt.Errorf("the stop fence changed before the test run's result was recorded")
 	}
 	finalizedAt, err := goalCommandNow(completion.ControlRoot)
 	if err != nil {
-		return fmt.Errorf("proof terminal commit clock: %w", err)
+		return fmt.Errorf("the clock for recording the test run's result: %w", err)
 	}
 	// A proof charged to the lane has no goal binding: its authority is the
 	// lane's own lock, held above (U11b).
@@ -1717,7 +1694,7 @@ func commitProofTerminalWithReasonAndReads(completion proofrun.CompletionContext
 			binding, err = dispatchcore.ResolveGoalBindingWithReads(completion.ControlRoot, attempt.GoalID, finalizedAt, *reads)
 		}
 		if err != nil || binding.Revision != attempt.GoalRevision || binding.Fence != nil {
-			return fmt.Errorf("proof terminal commit lost goal-revision authority")
+			return fmt.Errorf("the goal changed before the test run's result was recorded")
 		}
 	}
 	result := proofrun.TerminalFailed
@@ -2036,7 +2013,7 @@ func runProofRunWatchdog(args []string, stdout, stderr io.Writer) int {
 	// them.
 	if !*resourceCustody {
 		if err := closeInheritedDescriptorsAbove(2); err != nil {
-			fmt.Fprintln(stderr, "proof-run watchdog:", err)
+			fmt.Fprintln(stderr, "watchdog:", err)
 			return 1
 		}
 	}
@@ -2047,20 +2024,20 @@ func runProofRunWatchdog(args []string, stdout, stderr io.Writer) int {
 	// passed values after this effective-value validation.
 	if *conf != "" {
 		if err := validateProofRunLimits(*conf); err != nil {
-			fmt.Fprintln(stderr, "proof-run watchdog:", err)
+			fmt.Fprintln(stderr, "watchdog:", err)
 			return 1
 		}
 	}
 	executable, err := os.Executable()
 	if err != nil {
-		fmt.Fprintln(stderr, "proof-run watchdog:", err)
+		fmt.Fprintln(stderr, "watchdog:", err)
 		return 1
 	}
 	var deadline time.Time
 	if *deadlineRaw != "" {
 		deadline, err = time.Parse(time.RFC3339Nano, *deadlineRaw)
 		if err != nil {
-			fmt.Fprintln(stderr, "proof-run watchdog: invalid absolute deadline:", err)
+			fmt.Fprintln(stderr, "watchdog: invalid deadline:", err)
 			return 2
 		}
 	}
@@ -2114,7 +2091,7 @@ func runProofRunCustodyExec(args []string, stdout, stderr io.Writer) int {
 	}
 	_ = release.Close()
 	if err := syscall.Exec(*path, flags.Args(), os.Environ()); err != nil {
-		fmt.Fprintln(stderr, "proof-run custody-exec:", err)
+		fmt.Fprintln(stderr, "fixture custody:", err)
 		return 1
 	}
 	return 0
@@ -2131,7 +2108,7 @@ func runProofRunPreserve(args []string, stdout, stderr io.Writer) int {
 	}
 	result, err := proofrun.PreserveEvidence(*destination, sources, *maxBytes)
 	if err != nil {
-		fmt.Fprintln(stderr, "proof-run preserve:", err)
+		fmt.Fprintln(stderr, "evidence copy:", err)
 		return 1
 	}
 	fmt.Fprintf(stdout, "copied %d bytes; dropped %d paths; copy errors %d\n", result.CopiedBytes, len(result.Dropped), len(result.Errors))

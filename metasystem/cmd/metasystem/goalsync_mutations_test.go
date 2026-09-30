@@ -2582,7 +2582,7 @@ func TestProofGoalResolutionStaysAmbiguousBesideALandingClaim(t *testing.T) {
 	// Beside a working claim both are live proof targets, so the seat names one.
 	addProofSelectorLiveGoal(t, repository)
 	got, err := uniqueActiveProofGoalWithReads(root, now, reads.ResolveMachine, reads.ResolveEndpoint)
-	if err == nil || got != "" || !strings.Contains(err.Error(), "ambiguous") || !strings.Contains(err.Error(), "--goal") {
+	if err == nil || got != "" || !strings.Contains(err.Error(), "several claimed goals") || !strings.Contains(err.Error(), "--goal") {
 		t.Fatalf("a working claim beside a landing claim did not stay ambiguous: %q %v", got, err)
 	}
 }
