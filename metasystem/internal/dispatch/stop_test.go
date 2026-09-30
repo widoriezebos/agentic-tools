@@ -236,7 +236,7 @@ func TestBreachStopCannotForgeAReadableGoalLockOwner(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = OwnerLockRelease(directory, int64(os.Getpid()), tag) })
 	now := time.Date(2026, 8, 28, 21, 0, 0, 0, time.UTC)
-	if _, err := bed.stop("bounded", 2, now); err == nil || !strings.Contains(err.Error(), "LOCK_BUSY") {
+	if _, err := bed.stop("bounded", 2, now); err == nil || goal.RefusalCode(err) != goalrevision.BusyCode {
 		t.Fatalf("readable owner coordinates bypassed acquisition: %v", err)
 	}
 	binding, err := bed.binding("bounded", now)

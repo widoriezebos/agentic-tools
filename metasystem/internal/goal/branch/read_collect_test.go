@@ -52,7 +52,7 @@ func TestGLEBranchReadCollectsAClosedCriticOnceThroughItsJournal(t *testing.T) {
 	request.Collect = true
 	r.expectStart()
 	var refusal *branch.OpError
-	if _, err := branch.RunBranchRead(request); !errors.As(err, &refusal) || refusal.Code != branch.ReadInvalidCode || !strings.Contains(err.Error(), "no critic root") {
+	if _, err := branch.RunBranchRead(request); !errors.As(err, &refusal) || refusal.Code != branch.ReadInvalidCode || !strings.Contains(err.Error(), "no reviewer has started") {
 		t.Fatalf("collect before dispatch: %v", err)
 	}
 	unchanged("collect before dispatch", 0)

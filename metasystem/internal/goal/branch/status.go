@@ -45,7 +45,7 @@ func inspectStatus(repo, endpointTip, tip, goalID string, deps statusDependencie
 		switch commit.Kind {
 		case Unit:
 			if _, exists := unitIndex[commit.ID]; exists {
-				return Status{}, operationRefusal(RangeCode, "goal branch repeats unit commit %s", commit.ID)
+				return Status{}, operationRefusal(RangeCode, "goal %s's branch holds build %s twice\nrun: metasystem work status %s", goalID, commit.ID, goalID)
 			}
 			unitIndex[commit.ID] = len(result.Units)
 			result.Units = append(result.Units, UnitStatus{
@@ -134,7 +134,7 @@ func checkParkBranch(repo, goalID, next string, readRemote ParkBranchRemoteReade
 	}
 	if !localPresent {
 		if nextNamesUnitCommit(repo, goalID, next, deps) {
-			return ParkBranchState{}, operationRefusal(ParkUnpushedCode, "this checkout has no goal/%s; fetch it and check it out", goalID)
+			return ParkBranchState{}, operationRefusal(ParkUnpushedCode, "this checkout has no goal/%s branch, so its work can't be kept while parked\nrun: git fetch origin goal/%s:goal/%s, then metasystem goal pause %s", goalID, goalID, goalID, goalID)
 		}
 		return ParkBranchState{}, nil
 	}
@@ -143,11 +143,11 @@ func checkParkBranch(repo, goalID, next string, readRemote ParkBranchRemoteReade
 		return ParkBranchState{}, err
 	}
 	if !originPresent || localTip != originTip {
-		remote := "<absent>"
+		remote := "no copy"
 		if originPresent {
 			remote = originTip
 		}
-		return ParkBranchState{}, operationRefusal(ParkUnpushedCode, "local goal/%s is %s while origin is %s; push the branch before parking", goalID, localTip, remote)
+		return ParkBranchState{}, operationRefusal(ParkUnpushedCode, "goal/%s here is %s but origin has %s; push it before parking\nrun: git push origin goal/%s, then metasystem goal pause %s", goalID, localTip, remote, goalID, goalID)
 	}
 	status, err := inspectStatus(repo, endpointTip, originTip, goalID, deps)
 	if err != nil {

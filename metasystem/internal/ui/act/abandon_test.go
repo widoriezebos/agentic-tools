@@ -107,10 +107,8 @@ func TestAbandonWithoutASuccessorIsRefusedForALiveDependent(t *testing.T) {
 	}
 	testutil.Expect(t, "the engine refused it", refusal.Kind, KindEngine)
 	for _, wanted := range []string{
-		"goal ui-dependent is blocked by ui-held-up",
-		"re-point it with --successor",
-		"waive it with --waive ui-dependent=<reason>",
-		"abandon it with --also ui-dependent",
+		"goal ui-dependent still waits on ui-held-up, so it must be abandoned too, waived or re-pointed",
+		"--also ui-dependent",
 	} {
 		if !strings.Contains(refusal.Message, wanted) {
 			t.Fatalf("the refusal %q does not say %q", refusal.Message, wanted)

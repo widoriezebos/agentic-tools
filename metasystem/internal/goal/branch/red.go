@@ -213,7 +213,7 @@ func HandleLandingRed(req RedRequest) (RedResult, error) {
 		return RedResult{}, err
 	}
 	return RedResult{Classification: "trunk-red", EndpointAttempt: diagnostic.AttemptID, ProofNumber: proof.Number},
-		operationRefusal(LandTrunkRedCode, "groups %s are red on endpoint %s; the landing remains on %s", strings.Join(groups, ","), req.Endpoint, req.Branch)
+		operationRefusal(LandTrunkRedCode, "test groups %s fail on main itself (%s), so goal %s waits on %s\nrun: metasystem incident list", strings.Join(groups, ","), req.Endpoint, req.Goal, req.Branch)
 }
 
 func RecordLandingGreen(recorder LandingProgressRecorder, goal, lastUnit string, proof LandingProof) error {

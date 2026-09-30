@@ -1,0 +1,15 @@
+exit 0
+--
+{
+  "schemaVersion": 1,
+  "verb": "incident list",
+  "targets": [],
+  "outcome": "confirmed",
+  "summary": "0 incident(s) on main",
+  "data": {
+    "incidents": [],
+    "trackedDefects": []
+  }
+}
+
+--

@@ -374,7 +374,7 @@ func TestGoalCLIAuthorityProofGrades(t *testing.T) {
 		if code == 0 {
 			t.Fatalf("agent shell was allowed to %s: stdout=%q stderr=%q", label, stdout, stderr)
 		}
-		if !regexp.MustCompile(agentRefusal).MatchString(stdout + stderr) {
+		if !regexp.MustCompile(agentRefusal).MatchString(strings.Join(strings.Fields(stdout+stderr), " ")) {
 			t.Fatalf("agent shell %s failed without its exact authority refusal: code=%d stdout=%q stderr=%q", label, code, stdout, stderr)
 		}
 	}

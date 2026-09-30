@@ -253,7 +253,7 @@ func TestAbandonCarriedRepointsEveryDependent(t *testing.T) {
 	abandonReq := verbReqFor(endpoint, "01J5X000000000000000000B20", "mac-a")
 	abandonReq.Actor.Human = "Wido"
 	result, err := Abandon(abandonReq, "blocker", AbandonSpec{Because: "superseded"}, goalHumanProof(t, root, abandonReq.Now))
-	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "goal dependent is blocked by blocker") {
+	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "goals dependent, dependent-two still wait on the goals being abandoned") {
 		t.Fatalf("uncovered dependent must refuse: %+v %v", result, err)
 	}
 
@@ -320,7 +320,7 @@ func TestAbandonRefusesUncoveredLiveDependents(t *testing.T) {
 		t.Fatalf("uncovered dependents must reject atomically: %+v %v", result, err)
 	}
 	for _, id := range []string{"dependent-one", "dependent-two"} {
-		if !strings.Contains(result.Detail, "goal "+id+" is blocked by blocker") {
+		if !strings.Contains(result.Detail, id) || !strings.Contains(result.Detail, "still wait on the goals being abandoned") || !strings.Contains(result.Detail, "--also "+id) {
 			t.Fatalf("refusal omitted %s: %s", id, result.Detail)
 		}
 	}
@@ -453,7 +453,7 @@ func TestAbandonRefusalsAreOrderedInputFirst(t *testing.T) {
 	orderedReq := verbReqFor(orderedEndpoint, "01J5X00000000000000000W120", "mac-a")
 	orderedReq.Actor.Human = "Wido"
 	_, err = Abandon(orderedReq, "primary", AbandonSpec{Because: "reason"}, goalHumanProof(t, orderedRoot, orderedReq.Now))
-	if err == nil || !strings.Contains(err.Error(), "LOCK_BUSY") || !strings.Contains(err.Error(), "lock-order-probe") || strings.Contains(err.Error(), "ordered-job") {
+	if err == nil || RefusalCode(err) != goalrevision.BusyCode || !strings.Contains(err.Error(), "lock-order-probe") || strings.Contains(err.Error(), "ordered-job") {
 		t.Fatalf("after the inputs, the goal-revision lock must refuse before any job read: %v", err)
 	}
 }
@@ -668,7 +668,7 @@ func TestAbandonNeedsNoEngineHistoryInAnUnrelatedProject(t *testing.T) {
 			}
 
 			result, err := Abandon(req, "primary", AbandonSpec{Because: "obsolete"}, proof)
-			if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "goal dependent is blocked by primary") {
+			if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "goal dependent still waits on primary") {
 				t.Fatalf("an uncovered dependent did not refuse the abandon: %+v %v", result, err)
 			}
 			noFloor("the dependent refusal", err, result.Detail)
@@ -859,7 +859,7 @@ func runAbandonLockScenario(t *testing.T, endpoint, competitor Endpoint, compete
 				_ = lock.Release()
 				return fmt.Errorf("concurrent acquire unexpectedly passed for %s", id)
 			}
-			if !strings.Contains(lockErr.Error(), "LOCK_BUSY") {
+			if RefusalCode(lockErr) != goalrevision.BusyCode {
 				return fmt.Errorf("concurrent acquire for %s did not name LOCK_BUSY: %w", id, lockErr)
 			}
 		}

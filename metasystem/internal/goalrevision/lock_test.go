@@ -1,6 +1,7 @@
 package goalrevision
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -64,7 +65,8 @@ func TestMatchingOwnerMetadataDoesNotGrantAnotherHandle(t *testing.T) {
 		t.Fatalf("matching process metadata acquired a second handle: handle=%#v err=%v", second, err)
 	}
 	message := err.Error()
-	if !strings.Contains(message, "LOCK_BUSY rank=goal-revision key=goal-a/r3") ||
+	var busy *Busy
+	if !errors.As(err, &busy) || busy.RefusalCode() != BusyCode || !strings.Contains(message, "is changing goal goal-a/r3") ||
 		!strings.Contains(message, "tag=same-tag") {
 		t.Fatalf("busy refusal did not name the local holder: %v", err)
 	}

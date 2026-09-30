@@ -60,7 +60,7 @@ func TestAbandonAllowsACarrySuccessor(t *testing.T) {
 	}
 	refuse := verbReqFor(endpoint, "01J5X00000000000000000E015", "mac-a")
 	refuse.Actor.Human = "Wido"
-	if result, err := Abandon(refuse, "successor", AbandonSpec{Because: "the successor also stopped"}, goalHumanProof(t, root, refuse.Now)); err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "goal dependent is blocked by successor") {
+	if result, err := Abandon(refuse, "successor", AbandonSpec{Because: "the successor also stopped"}, goalHumanProof(t, root, refuse.Now)); err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "goal dependent still waits on successor") {
 		t.Fatalf("successor ignored live dependent: %+v %v", result, err)
 	}
 	second := verbReqFor(endpoint, "01J5X00000000000000000E016", "mac-a")
@@ -984,8 +984,8 @@ func TestClaimQuotaRefusalNamesTheHeldGoalAndRelease(t *testing.T) {
 	}
 	before := acceptedTipForEndpoint(t, endpoint)
 	result, err := Claim(verbReqFor(endpoint, "01J5X00000000000000000CQ30", "mac-a"), "next-work")
-	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, ClaimQuotaCode) ||
-		!strings.Contains(result.Detail, "held-work") || !strings.Contains(result.Detail, "metasystem goal release --id held-work") {
+	if err != nil || result.Outcome != OutcomeRejected || result.Code != ClaimQuotaCode || strings.Contains(result.Detail, ClaimQuotaCode) ||
+		!strings.Contains(result.Detail, "held-work") || !strings.Contains(result.Detail, "run: metasystem goal release held-work, then metasystem goal claim next-work") {
 		t.Fatalf("quota refusal: %+v %v", result, err)
 	}
 	if after := acceptedTipForEndpoint(t, endpoint); after != before || result.Tip != before {
@@ -2030,7 +2030,7 @@ func TestSeatOpenNamesItsBlockerAndTheParkReturnsOnDone(t *testing.T) {
 	}
 	// A seat open without its blocker is refused with the ruling before anything publishes.
 	before := acceptedTipForEndpoint(t, aEndpoint)
-	if _, err := OpenRisked(verbReqFor(aEndpoint, "01J5X00000000000000000SB02", "mac-a"), "stray-idea", "An improvement that blocks nothing.", OriginMain, "Do it.", nil, nil, risk, 0, "", &budget, nil); err == nil || !strings.Contains(err.Error(), "R-93-m1e") || !strings.Contains(err.Error(), "--blocks") {
+	if _, err := OpenRisked(verbReqFor(aEndpoint, "01J5X00000000000000000SB02", "mac-a"), "stray-idea", "An improvement that blocks nothing.", OriginMain, "Do it.", nil, nil, risk, 0, "", &budget, nil); err == nil || !strings.Contains(err.Error(), "a seat opens only a defect that blocks its claimed goal") || !strings.Contains(err.Error(), "--blocks") {
 		t.Fatalf("a seat open without --blocks is refused with the ruling: %v", err)
 	}
 	if acceptedTipForEndpoint(t, aEndpoint) != before {
@@ -2039,7 +2039,7 @@ func TestSeatOpenNamesItsBlockerAndTheParkReturnsOnDone(t *testing.T) {
 	// --origin human is a word the caller supplies, not a person: without a
 	// proof behind it the open is a seat's and is refused as one, before
 	// anything about the goal is read and with nothing published.
-	if _, err := OpenRisked(namedOnly(aEndpoint.Root, "01J5X00000000000000000SB0M", "mac-a"), "claims-to-be-asked", "An open that says it is a person's.", OriginHuman, "Do it.", nil, nil, risk, 0, "", &budget, nil); err == nil || !strings.Contains(err.Error(), "R-93-m1e") {
+	if _, err := OpenRisked(namedOnly(aEndpoint.Root, "01J5X00000000000000000SB0M", "mac-a"), "claims-to-be-asked", "An open that says it is a person's.", OriginHuman, "Do it.", nil, nil, risk, 0, "", &budget, nil); err == nil || !strings.Contains(err.Error(), "a seat opens only a defect that blocks its claimed goal") {
 		t.Fatalf("a name and an origin opened as a person: %v", err)
 	}
 	if acceptedTipForEndpoint(t, aEndpoint) != before {
@@ -2092,7 +2092,7 @@ func TestSeatOpenNamesItsBlockerAndTheParkReturnsOnDone(t *testing.T) {
 		t.Fatalf("the park rides the open's operation: %+v", last)
 	}
 	// An agent cannot lift the park early, and the parked goal is not claimable.
-	if res, err := Unpark(verbReqFor(aEndpoint, "01J5X00000000000000000SB07", "mac-a"), "current-work"); err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "returns by itself") {
+	if res, err := Unpark(verbReqFor(aEndpoint, "01J5X00000000000000000SB07", "mac-a"), "current-work"); err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "it resumes by itself then") {
 		t.Fatalf("an agent cannot lift a blocker park early: %+v %v", res, err)
 	}
 	if res, err := Claim(verbReqFor(aEndpoint, "01J5X00000000000000000SB08", "mac-a"), "current-work"); err == nil && res.Outcome == OutcomeConfirmed {

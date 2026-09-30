@@ -1,0 +1,18 @@
+! Stopped 1 Sep 11:00: its elapsed-time budget ran out
+
+standing-validation is claimed by mac-cli · tier 3 · stopped by its budget
+
+Intent
+  Govern validation.
+
+Next step
+  Run it.
+
+Budget  this claim
+  elapsed       49h55m of 4h  ! past its limit
+  attempts      0 of 4
+  job minutes   0 of 240
+  active jobs   0 of 2
+
+→ metasystem goal resume standing-validation
+  the goal was stopped by its budget and resumes under its standing box

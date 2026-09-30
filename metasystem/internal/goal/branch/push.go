@@ -212,14 +212,14 @@ func adoptRemoteTipWithRepository(repo, goalID, localTip, remoteTip string, befo
 			return err
 		}
 		if !clean {
-			return operationRefusal(StaleCode, "local tip %s cannot adopt remote tip %s while the checkout has tracked changes", localTip, remoteTip)
+			return operationRefusal(StaleCode, "goal %s's branch moved on origin to %s, and this checkout has changes in its way\nrun: metasystem work status %s", goalID, remoteTip, goalID)
 		}
 		clean, err = repository.TrackedClean(repo, true)
 		if err != nil {
 			return err
 		}
 		if !clean {
-			return operationRefusal(StaleCode, "local tip %s cannot adopt remote tip %s while the checkout has tracked changes", localTip, remoteTip)
+			return operationRefusal(StaleCode, "goal %s's branch moved on origin to %s, and this checkout has changes in its way\nrun: metasystem work status %s", goalID, remoteTip, goalID)
 		}
 		if err := repository.Detach(repo, remoteTip); err != nil {
 			return err
@@ -257,14 +257,14 @@ func adoptRemoteTipWithRepository(repo, goalID, localTip, remoteTip string, befo
 	return nil
 }
 
-func staleBranch(remote, localTip, remoteTip, originTip string) error {
+func staleBranch(goalID, remote, localTip, remoteTip, originTip string) error {
 	if remoteTip == "" {
 		remoteTip = "<absent>"
 	}
 	if originTip == "" {
 		originTip = "<absent>"
 	}
-	return operationRefusal(StaleCode, "local tip %s was based on %s, but %s holds %s", localTip, originTip, remote, remoteTip)
+	return operationRefusal(StaleCode, "goal %s's branch here (%s) was based on %s, but %s now holds %s\nrun: metasystem work status %s", goalID, localTip, originTip, remote, remoteTip, goalID)
 }
 
 func reconcilePushTransactionsWithRepository(req PushRequest, repository pushRepository) (*PushResult, error) {
@@ -296,14 +296,14 @@ func reconcilePushTransactionsWithRepository(req PushRequest, repository pushRep
 				return nil, err
 			}
 			if err := checkClaim(req.CheckClaim); err != nil {
-				return nil, operationRefusal(ClaimLostCode, "%v; pushed tip %s stands", err, txn.New)
+				return nil, operationRefusal(ClaimLostCode, "%s; the pushed commit %s stays on goal %s's branch\nrun: metasystem goal claim %s", firstLine(err), txn.New, req.GoalID, req.GoalID)
 			}
 			return &PushResult{State: "reconciled", Tip: txn.New}, nil
 		case txn.Expected:
 			if err := repository.ClearRef(req.Repo, ref); err != nil {
 				return nil, err
 			}
-			return nil, operationRefusal(PushUnknownCode, "%s still holds %s after the prepared push of %s", req.Remote, remoteTip, txn.New)
+			return nil, operationRefusal(PushUnknownCode, "the earlier push of goal %s's branch didn't arrive: %s still holds %s, not %s\nrun: metasystem work status %s", req.GoalID, req.Remote, remoteTip, txn.New, req.GoalID)
 		default:
 			if present {
 				if err := fetchAndValidateFromRepository(req, remoteTip, repository); err != nil {
@@ -321,7 +321,7 @@ func reconcilePushTransactionsWithRepository(req PushRequest, repository pushRep
 						return nil, err
 					}
 					if err := checkClaim(req.CheckClaim); err != nil {
-						return nil, operationRefusal(ClaimLostCode, "%v; pushed tip %s stands", err, txn.New)
+						return nil, operationRefusal(ClaimLostCode, "%s; the pushed commit %s stays on goal %s's branch\nrun: metasystem goal claim %s", firstLine(err), txn.New, req.GoalID, req.GoalID)
 					}
 					return &PushResult{State: "reconciled", Tip: remoteTip}, nil
 				}
@@ -329,7 +329,7 @@ func reconcilePushTransactionsWithRepository(req PushRequest, repository pushRep
 			if err := repository.ClearRef(req.Repo, ref); err != nil {
 				return nil, err
 			}
-			return nil, operationRefusal(LeaseMovedCode, "%s moved from expected tip %s to %s", req.Remote, txn.Expected, remoteTip)
+			return nil, operationRefusal(LeaseMovedCode, "goal %s's branch moved on %s from %s to %s\nrun: metasystem work status %s", req.GoalID, req.Remote, txn.Expected, remoteTip, req.GoalID)
 		}
 	}
 	return nil, nil
@@ -419,10 +419,10 @@ func pushWithRepository(req PushRequest, repository pushRepository) (PushResult,
 				}
 				return PushResult{State: "adopted", Tip: remoteTip}, nil
 			}
-			return PushResult{}, staleBranch(req.Remote, localTip, remoteTip, originTip)
+			return PushResult{}, staleBranch(req.GoalID, req.Remote, localTip, remoteTip, originTip)
 		}
 	} else if originPresent {
-		return PushResult{}, staleBranch(req.Remote, localTip, "", originTip)
+		return PushResult{}, staleBranch(req.GoalID, req.Remote, localTip, "", originTip)
 	}
 	expected := remoteTip
 	if !remotePresent {
@@ -442,7 +442,7 @@ func pushWithRepository(req PushRequest, repository pushRepository) (PushResult,
 		if err := repository.ClearRef(req.Repo, txnRef(req.OpID)); err != nil {
 			return PushResult{}, err
 		}
-		return PushResult{}, operationRefusal(LeaseMovedCode, "origin moved after tip %s was observed: %v", expected, pushErr)
+		return PushResult{}, operationRefusal(LeaseMovedCode, "goal %s's branch moved on origin while it was pushed: %v\nrun: metasystem work status %s", req.GoalID, pushErr, req.GoalID)
 	}
 	if req.Hooks.AfterPush != nil {
 		if err := req.Hooks.AfterPush(); err != nil {
@@ -452,7 +452,7 @@ func pushWithRepository(req PushRequest, repository pushRepository) (PushResult,
 	if outcome == CASUnknown {
 		observed, present, err := req.Transport.RemoteTip(req.Repo, req.Remote, ref)
 		if err != nil {
-			return PushResult{}, operationRefusal(PushUnknownCode, "%v; reconciliation fetch failed: %v", pushErr, err)
+			return PushResult{}, operationRefusal(PushUnknownCode, "%v; reading origin back failed too (%v)\nrun: metasystem work status %s", pushErr, err, req.GoalID)
 		}
 		if !present {
 			observed = ""
@@ -462,9 +462,9 @@ func pushWithRepository(req PushRequest, repository pushRepository) (PushResult,
 				return PushResult{}, err
 			}
 			if observed != expected {
-				return PushResult{}, operationRefusal(LeaseMovedCode, "origin holds %s instead of proposed tip %s", observed, localTip)
+				return PushResult{}, operationRefusal(LeaseMovedCode, "origin holds %s for goal %s's branch, not the pushed %s\nrun: metasystem work status %s", observed, req.GoalID, localTip, req.GoalID)
 			}
-			return PushResult{}, operationRefusal(PushUnknownCode, "origin still holds %s after an unknown push outcome", observed)
+			return PushResult{}, operationRefusal(PushUnknownCode, "the push of goal %s's branch may have failed: origin still holds %s\nrun: metasystem work status %s", req.GoalID, observed, req.GoalID)
 		}
 	}
 	if err := repository.RecordOrigin(req.Repo, req.GoalID, localTip); err != nil {
@@ -474,7 +474,7 @@ func pushWithRepository(req PushRequest, repository pushRepository) (PushResult,
 		return PushResult{}, err
 	}
 	if err := checkClaim(req.CheckClaim); err != nil {
-		return PushResult{}, operationRefusal(ClaimLostCode, "%v; pushed tip %s stands", err, localTip)
+		return PushResult{}, operationRefusal(ClaimLostCode, "%s; the pushed commit %s stays on goal %s's branch\nrun: metasystem goal claim %s", firstLine(err), localTip, req.GoalID, req.GoalID)
 	}
 	return PushResult{State: "pushed", Tip: localTip}, nil
 }

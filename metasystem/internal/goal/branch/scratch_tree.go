@@ -15,7 +15,7 @@ func ScratchApplyTree(repo, base string, patch []byte) (string, error) {
 	}
 	defer closeScratch()
 	if err := r.effects.Apply(worktree, patch); err != nil {
-		return "", operationRefusal(StaleCode, "the change does not apply to %s: %v", base, err)
+		return "", operationRefusal(StaleCode, "the change doesn't apply to %s: %v\nrun: metasystem work status", base, err)
 	}
 	out, err := gitOutput(worktree, "write-tree")
 	return strings.TrimSpace(string(out)), err

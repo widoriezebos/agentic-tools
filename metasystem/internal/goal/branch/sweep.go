@@ -143,15 +143,15 @@ func droppedCommitWith(repo, endpointTip, goalID, commit, dropped string, read f
 	return matches == 1
 }
 
-func deleteRemoteRef(transport PushTransport, repo, remote, ref, expected, code string) error {
+func deleteRemoteRef(transport PushTransport, repo, goalID, remote, ref, expected, code string) error {
 	outcome, pushErr := transport.Push(repo, remote, ref, expected, "")
 	if outcome == CASRefused {
-		return operationRefusal(code, "%s moved before leased deletion: %v", ref, pushErr)
+		return operationRefusal(code, "%s moved on %s before it could be deleted: %v\nrun: metasystem work status %s", ref, remote, pushErr, goalID)
 	}
 	if outcome == CASUnknown {
 		observed, present, err := transport.RemoteTip(repo, remote, ref)
 		if err != nil || present {
-			return operationRefusal(PushUnknownCode, "%s delete outcome is unknown; it now holds %s: %v", ref, observed, pushErr)
+			return operationRefusal(PushUnknownCode, "whether %s was deleted on %s is unknown; it now holds %s: %v\nrun: metasystem work status %s", ref, remote, observed, pushErr, goalID)
 		}
 	}
 	return nil
@@ -209,7 +209,7 @@ func cleanGoalWorktreesReading(repo, goalID string, read func(string, ...string)
 			if len(entries) > 8 {
 				entries = append(entries[:8], fmt.Sprintf("and %d more", len(entries)-8))
 			}
-			return nil, operationRefusal(StaleCode, "goal/%s worktree %s has uncommitted work: %s", goalID, path, strings.Join(entries, ", "))
+			return nil, operationRefusal(StaleCode, "goal %s's worktree %s has uncommitted work: %s\nrun: metasystem work status %s", goalID, path, strings.Join(entries, ", "), goalID)
 		}
 	}
 	return paths, nil
@@ -247,7 +247,7 @@ func cleanupGoalWorktrees(repo, goalID, endpointTip, localTip string, paths []st
 		if !present {
 			observed = "absent"
 		}
-		return operationRefusal(LeaseMovedCode, "%s moved from expected tip %s to %s", ref, localTip, observed)
+		return operationRefusal(LeaseMovedCode, "%s moved from %s to %s before it could be deleted\nrun: metasystem work status %s", ref, localTip, observed, goalID)
 	}
 	return nil
 }
@@ -279,7 +279,7 @@ func checkSweepTipWith(req SweepRequest, place, tip string, deps sweepDependenci
 		if len(unlanded) > 8 {
 			unlanded = append(unlanded[:8], fmt.Sprintf("and %d more", len(unlanded)-8))
 		}
-		return operationRefusal(SweepUnlandedCode, "goal/%s at %s tip %s has unlanded commits: %s", req.GoalID, place, tip, strings.Join(unlanded, ", "))
+		return operationRefusal(SweepUnlandedCode, "goal %s's branch at %s (%s) has commits that never landed: %s\nrun: metasystem work land %s", req.GoalID, place, tip, strings.Join(unlanded, ", "), req.GoalID)
 	}
 	return nil
 }
@@ -501,12 +501,12 @@ func sweepWithDependencies(req SweepRequest, deps sweepDependencies) (SweepResul
 		return SweepResult{}, err
 	}
 	if originPresent {
-		if err := deleteRemoteRef(req.PushTransport, req.Repo, req.Remote, ref, originTip, LeaseMovedCode); err != nil {
+		if err := deleteRemoteRef(req.PushTransport, req.Repo, req.GoalID, req.Remote, ref, originTip, LeaseMovedCode); err != nil {
 			return SweepResult{}, err
 		}
 	}
 	if transportPresent {
-		if err := deleteRemoteRef(req.PushTransport, req.Repo, req.Transport, ref, transportTip, LeaseMovedCode); err != nil {
+		if err := deleteRemoteRef(req.PushTransport, req.Repo, req.GoalID, req.Transport, ref, transportTip, LeaseMovedCode); err != nil {
 			return SweepResult{}, err
 		}
 	}

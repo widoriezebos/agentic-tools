@@ -1170,7 +1170,7 @@ func runGoalAcceptRiskWithFacts(args []string, prove goalAuthorityProver, comman
 	}
 	classification, err := classifyGoalAuthorityFirstWithFacts("accept-risk", f, dependencies.authorityFacts)
 	if err != nil {
-		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "name an open severe or unproven finding of that critique"})
+		return refuseHumanVerb(values, 1, values.cause(err), humanVerbRemedy{words: "name an open severe or unproven finding of that critique"})
 	}
 	var finding dispatchcore.CritiqueDecisionFinding
 	if f.chain != goal.HumanCarriedChain {
@@ -1182,15 +1182,15 @@ func runGoalAcceptRiskWithFacts(args []string, prove goalAuthorityProver, comman
 	}
 	proof, err := proveGoalHumanAuthorityAt("accept-risk", f, prove, commandNow)
 	if err != nil {
-		return refuseHumanVerb(values, 1, err.Error(), humanProofRemedy(values, f.fixtureHumanAuthority, f.temporaryWord, f.reviewBy, err))
+		return refuseHumanVerb(values, 1, values.cause(err), humanProofRemedy(values, f.fixtureHumanAuthority, f.temporaryWord, f.reviewBy, err))
 	}
 	if err := resolveGoalHuman(f, proof); err != nil {
-		return refuseHumanVerb(values, 2, err.Error(), personRemedy(values, err))
+		return refuseHumanVerb(values, 2, values.cause(err), personRemedy(values, err))
 	}
 	values.by = f.by
 	req, err := syncReqClassifiedWithTerminalGradeAtWithDependencies(f.root, f.by, f.lineage, &proof, classification, false, commandNow, dependencies)
 	if err != nil {
-		return refuseHumanVerb(values, 1, err.Error(), runRemedy("metasystem", "system", "status"))
+		return refuseHumanVerb(values, 1, values.cause(err), runRemedy("metasystem", "system", "status"))
 	}
 	opid := goal.Opid(req.Ulid, req.Actor.Machine, req.Actor.Lineage)
 	var carriedRisk counselor.CarriedAcceptedRiskAppend
@@ -1208,7 +1208,7 @@ func runGoalAcceptRiskWithFacts(args []string, prove goalAuthorityProver, comman
 	}
 	res, err := goal.AcceptedRiskDecision(req, f.id, f.finding, f.chain, f.by, f.why, &proof)
 	if err != nil {
-		return refuseHumanVerb(values, 1, err.Error(), values.showRemedy())
+		return refuseHumanVerb(values, 1, values.cause(err), values.showRemedy())
 	}
 	if res.Unchanged {
 		// The same person's acceptance of the same finding already holds
@@ -1224,23 +1224,23 @@ func runGoalAcceptRiskWithFacts(args []string, prove goalAuthorityProver, comman
 	dependencies.landed(res)
 	opid, err = goal.AcceptedRiskDecisionOpIDWithResolver(f.root, f.id, f.finding, f.chain, req.Now, dependencies.endpoint)
 	if err != nil {
-		return refuseHumanVerb(values, 1, err.Error(), nothingToDo("the act landed, so don't run it again; its accepted-risk record needs a hand repair"))
+		return refuseHumanVerb(values, 1, values.cause(err), nothingToDo("the act landed, so don't run it again; its accepted-risk record needs a hand repair"))
 	}
 	if f.chain == goal.HumanCarriedChain {
 		carriedRisk.OpID = opid
 		if err := counselor.AppendCarriedAcceptedRisk(f.root, carriedRisk); err != nil {
-			return refuseHumanVerb(values, 1, err.Error(), nothingToDo("the act landed, so don't run it again; its carried accepted-risk record needs a hand repair"))
+			return refuseHumanVerb(values, 1, values.cause(err), nothingToDo("the act landed, so don't run it again; its carried accepted-risk record needs a hand repair"))
 		}
 	} else {
 		if err := counselor.AppendAcceptedRisk(f.root, counselor.AcceptedRiskAppend{Goal: f.id, RootJob: f.chain, FindingID: f.finding, Class: finding.RigorClass, Title: finding.Title, Claim: finding.Claim, Evidence: finding.Evidence, Why: f.why, OpID: opid, RecordedAt: req.Now}); err != nil {
-			return refuseHumanVerb(values, 1, err.Error(), nothingToDo("the act landed, so don't run it again; its accepted-risk record needs a hand repair"))
+			return refuseHumanVerb(values, 1, values.cause(err), nothingToDo("the act landed, so don't run it again; its accepted-risk record needs a hand repair"))
 		}
 		if err := dispatchcore.CritiqueRegisterAcceptRisk(f.root, f.chain, f.finding, opid); err != nil {
-			return refuseHumanVerb(values, 1, err.Error(), nothingToDo("the act landed, so don't run it again; the critique register needs a hand repair"))
+			return refuseHumanVerb(values, 1, values.cause(err), nothingToDo("the act landed, so don't run it again; the critique register needs a hand repair"))
 		}
 	}
 	if err := recordGoalApprovalProof(f.root, opid, "goal accept-risk", proof); err != nil {
-		return refuseHumanVerb(values, 1, "the act landed at "+res.Tip+", but the record of who authorized it wasn't saved: "+err.Error(), humanVerbRemedy{words: "nothing to do; the act landed, so don't run it again"})
+		return refuseHumanVerb(values, 1, "the act landed at "+res.Tip+", but the record of who authorized it wasn't saved: "+values.cause(err), humanVerbRemedy{words: "nothing to do; the act landed, so don't run it again"})
 	}
 	return dependencies.publish(res, nil)
 }
@@ -1452,7 +1452,7 @@ func runGoalBudgetWithInputs(args []string, prove goalAuthorityProver, commandNo
 	values.bindDependencies(dependencies)
 	cleaned, box, err := extractGoalBudgetBox(args)
 	if err != nil {
-		return refuseHumanVerb(values, 2, err.Error(), humanVerbRemedy{words: "give one budget, as the last word or with the budget options"})
+		return refuseHumanVerb(values, 2, values.cause(err), humanVerbRemedy{words: "give one budget, as the last word or with the budget options"})
 	}
 	flags, ok := parseHumanSyncFlags(values, "budget", cleaned)
 	if !ok {
@@ -1477,18 +1477,18 @@ func runGoalBudgetPreparedWithInputs(values *humanVerbValues, flags *syncFlags, 
 	}
 	endpoint, err := dependencies.endpoint(flags.root)
 	if err != nil {
-		return refuseHumanVerb(values, 1, err.Error(), runRemedy("metasystem", "system", "status"))
+		return refuseHumanVerb(values, 1, values.cause(err), runRemedy("metasystem", "system", "status"))
 	}
 	if commandNow == nil {
 		return refuseHumanVerb(values, 1, "goal command clock is missing", values.retryRemedy("the clock can't be read; try again"))
 	}
 	now, err := commandNow(flags.root)
 	if err != nil {
-		return refuseHumanVerb(values, 1, err.Error(), values.retryRemedy("the clock can't be read; try again"))
+		return refuseHumanVerb(values, 1, values.cause(err), values.retryRemedy("the clock can't be read; try again"))
 	}
 	projection, err := goal.Project(endpoint, false, now)
 	if err != nil {
-		return refuseHumanVerb(values, 1, err.Error(), runRemedy("metasystem", "goal", "sync"))
+		return refuseHumanVerb(values, 1, values.cause(err), runRemedy("metasystem", "goal", "sync"))
 	}
 	file := projection.Tree.Live[flags.id]
 	if file == nil {
@@ -1503,11 +1503,11 @@ func runGoalBudgetPreparedWithInputs(values *humanVerbValues, flags *syncFlags, 
 	}
 	tierBox, err := config.TierBox(filepath.Join(flags.root, "metasystem.conf"), tier)
 	if err != nil {
-		return refuseHumanVerb(values, 1, err.Error(), runRemedy("metasystem", "settings", "show"))
+		return refuseHumanVerb(values, 1, values.cause(err), runRemedy("metasystem", "settings", "show"))
 	}
 	reviewRoundMax, err := config.ReviewRoundMax(filepath.Join(flags.root, "metasystem.conf"))
 	if err != nil {
-		return refuseHumanVerb(values, 1, err.Error(), runRemedy("metasystem", "settings", "show"))
+		return refuseHumanVerb(values, 1, values.cause(err), runRemedy("metasystem", "settings", "show"))
 	}
 	values.bindGoalView(file, tierBox)
 	approvalHorizon := goal.ApprovalHorizon{Now: now}
@@ -1538,7 +1538,7 @@ func runGoalBudgetPreparedWithInputs(values *humanVerbValues, flags *syncFlags, 
 			if file.Budget != nil {
 				fallback = *file.Budget
 			}
-			return refuseHumanVerb(values, 2, err.Error(), malformedBudgetRemedy(values, file, boxToken, fallback, reviewRoundMax, err, approvalHorizon))
+			return refuseHumanVerb(values, 2, values.cause(err), malformedBudgetRemedy(values, file, boxToken, fallback, reviewRoundMax, err, approvalHorizon))
 		}
 	default:
 		budgetPointer, budgetErr := flags.budgetTuple(true)
@@ -1548,11 +1548,11 @@ func runGoalBudgetPreparedWithInputs(values *humanVerbValues, flags *syncFlags, 
 				fallback = *file.Budget
 			}
 			values.box = &fallback
-			return refuseHumanVerb(values, 2, budgetErr.Error(), completedBudgetRemedy(values, file, fallback, goalbudget.FormatBox(fallback), approvalHorizon))
+			return refuseHumanVerb(values, 2, values.cause(budgetErr), completedBudgetRemedy(values, file, fallback, goalbudget.FormatBox(fallback), approvalHorizon))
 		}
 		budget = *budgetPointer
 		if budgetErr := budget.Validate(reviewRoundMax); budgetErr != nil {
-			return refuseHumanVerb(values, 2, budgetErr.Error(), humanVerbRemedy{words: budgetErr.Error()})
+			return refuseHumanVerb(values, 2, values.cause(budgetErr), humanVerbRemedy{words: budgetErr.Error()})
 		}
 	}
 	values.box = &budget
@@ -1560,19 +1560,19 @@ func runGoalBudgetPreparedWithInputs(values *humanVerbValues, flags *syncFlags, 
 		return refuseHumanVerb(values, 1, "a breach-stopped goal resumes under its standing box before a new box is recorded", humanVerbRemedy{command: values.budgetCommandWithoutApprovedRef("keep")})
 	}
 	if _, err := classifyGoalAuthorityFirstWithFacts(values.verb, flags, dependencies.authorityFacts); err != nil {
-		return refuseHumanVerb(values, 1, err.Error(), personRemedy(values, err))
+		return refuseHumanVerb(values, 1, values.cause(err), personRemedy(values, err))
 	}
 	proof, err := proveGoalHumanAuthorityAt("budget", flags, prove, commandNow)
 	if err != nil {
-		return refuseHumanVerb(values, 1, err.Error(), humanProofRemedy(values, flags.fixtureHumanAuthority, flags.temporaryWord, flags.reviewBy, err))
+		return refuseHumanVerb(values, 1, values.cause(err), humanProofRemedy(values, flags.fixtureHumanAuthority, flags.temporaryWord, flags.reviewBy, err))
 	}
 	if err := resolveGoalHuman(flags, proof); err != nil {
-		return refuseHumanVerb(values, 2, err.Error(), personRemedy(values, err))
+		return refuseHumanVerb(values, 2, values.cause(err), personRemedy(values, err))
 	}
 	values.by = flags.by
 	req, err := syncReqWithProofAtWithDependencies("budget", flags.root, flags.by, flags.lineage, &proof, commandNow, dependencies)
 	if err != nil {
-		return refuseHumanVerb(values, 1, err.Error(), runRemedy("metasystem", "system", "status"))
+		return refuseHumanVerb(values, 1, values.cause(err), runRemedy("metasystem", "system", "status"))
 	}
 	req.ApprovedRef = flags.approvedRef
 	var result goal.PublishResult
@@ -1591,11 +1591,11 @@ func runGoalBudgetPreparedWithInputs(values *humanVerbValues, flags *syncFlags, 
 			}
 			binding, bindingErr := binding(flags.root, flags.id, req.Now)
 			if bindingErr != nil {
-				return refuseHumanVerb(values, 1, bindingErr.Error(), values.showRemedy())
+				return refuseHumanVerb(values, 1, values.cause(bindingErr), values.showRemedy())
 			}
 			held, lockErr := goalrevision.Acquire(flags.root, flags.id, binding.Revision, "goal-resume")
 			if lockErr != nil {
-				return refuseHumanVerb(values, 1, lockErr.Error(), values.retryRemedy("another change to this goal is running; try again when it ends"))
+				return refuseHumanVerb(values, 1, values.cause(lockErr), values.retryRemedy("another change to this goal is running; try again when it ends"))
 			}
 			defer held.Release()
 			result, err = goal.Resume(goal.ResumeRequest{VerbRequest: req, GoalID: flags.id, Budget: budget, Authority: &proof})
@@ -1636,7 +1636,7 @@ func runGoalBudgetPreparedWithInputs(values *humanVerbValues, flags *syncFlags, 
 		err = recordGoalApprovalProof(flags.root, operationID, action, proof)
 	}
 	if err != nil {
-		return refuseHumanVerb(values, 1, "the act landed at "+result.Tip+", but the record of who authorized it wasn't saved: "+err.Error(), humanVerbRemedy{words: "nothing to do; the act landed, so don't run it again"})
+		return refuseHumanVerb(values, 1, "the act landed at "+result.Tip+", but the record of who authorized it wasn't saved: "+values.cause(err), humanVerbRemedy{words: "nothing to do; the act landed, so don't run it again"})
 	}
 	if budgetExceedsCommandBox(budget, tierBox) {
 		count := file.BudgetExceptions
@@ -2443,7 +2443,7 @@ func runGoalClassifySweepWithInputs(args []string, prove goalAuthorityProver, co
 	lineage := fs.String("lineage", "", "this coordinator's lineage")
 	fixtureHumanAuthority := fs.Bool("fixture-human-authority", false, "fixture-only enrolled-human proof; accepted only for an exact fake-runtime root")
 	if err := fs.Parse(args); err != nil {
-		return refuseHumanVerb(values, 2, err.Error(), humanVerbRemedy{words: "drop the option this command doesn't take"})
+		return refuseHumanVerb(values, 2, values.cause(err), humanVerbRemedy{words: "drop the option this command doesn't take"})
 	}
 	values.root, values.lineage, values.by = *root, *lineage, *by
 	values.fixtureHumanAuthority = *fixtureHumanAuthority
@@ -2458,19 +2458,19 @@ func runGoalClassifySweepWithInputs(args []string, prove goalAuthorityProver, co
 	}
 	draft, err := os.ReadFile(*draftPath)
 	if err != nil {
-		return refuseHumanVerb(values, 1, "could not read its draft: "+err.Error(), humanVerbRemedy{words: "check the draft file's path, then preview again"})
+		return refuseHumanVerb(values, 1, "could not read its draft: "+values.cause(err), humanVerbRemedy{words: "check the draft file's path, then preview again"})
 	}
 	endpoint, err := dependencies.endpoint(*root)
 	if err != nil {
-		return refuseHumanVerb(values, 1, err.Error(), runRemedy("metasystem", "system", "status"))
+		return refuseHumanVerb(values, 1, values.cause(err), runRemedy("metasystem", "system", "status"))
 	}
 	now, err := commandNow(*root)
 	if err != nil {
-		return refuseHumanVerb(values, 1, err.Error(), values.retryRemedy("the clock can't be read; try again"))
+		return refuseHumanVerb(values, 1, values.cause(err), values.retryRemedy("the clock can't be read; try again"))
 	}
 	listing, err := goal.PreviewClassificationSweep(endpoint, draft, now)
 	if err != nil {
-		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{command: shellCommand([]string{"metasystem", "internal", "goal", "classify-sweep", "--root", *root, "--draft", *draftPath, "--preview"})})
+		return refuseHumanVerb(values, 1, values.cause(err), humanVerbRemedy{command: shellCommand([]string{"metasystem", "internal", "goal", "classify-sweep", "--root", *root, "--draft", *draftPath, "--preview"})})
 	}
 	if *preview {
 		for _, line := range listing.Lines {
@@ -2484,14 +2484,14 @@ func runGoalClassifySweepWithInputs(args []string, prove goalAuthorityProver, co
 	}
 	authorityFlags := &syncFlags{root: *root, by: *by, lineage: *lineage, fixtureHumanAuthority: *fixtureHumanAuthority}
 	if _, err := classifyGoalAuthorityFirstWithFacts("classify-sweep", authorityFlags, dependencies.authorityFacts); err != nil {
-		return refuseHumanVerb(values, 1, err.Error(), personRemedy(values, err))
+		return refuseHumanVerb(values, 1, values.cause(err), personRemedy(values, err))
 	}
 	proof, err := proveGoalHumanAuthorityAt("classify-sweep", authorityFlags, prove, commandNow)
 	if err != nil {
-		return refuseHumanVerb(values, 1, err.Error(), personRemedy(values, err))
+		return refuseHumanVerb(values, 1, values.cause(err), personRemedy(values, err))
 	}
 	if err := resolveGoalHuman(authorityFlags, proof); err != nil {
-		return refuseHumanVerb(values, 2, err.Error(), personRemedy(values, err))
+		return refuseHumanVerb(values, 2, values.cause(err), personRemedy(values, err))
 	}
 	*by = authorityFlags.by
 	values.by = *by
@@ -2502,7 +2502,7 @@ func runGoalClassifySweepWithInputs(args []string, prove goalAuthorityProver, co
 		}
 		req, reqErr := syncReqWithProofAtWithDependencies("classify-sweep", *root, *by, *lineage, &proof, commandNow, dependencies)
 		if reqErr != nil {
-			return refuseHumanVerb(values, 1, reqErr.Error(), runRemedy("metasystem", "system", "status"))
+			return refuseHumanVerb(values, 1, values.cause(reqErr), runRemedy("metasystem", "system", "status"))
 		}
 		res, installErr := goal.InstallTierLaw(req)
 		if installErr != nil || res.Outcome != goal.OutcomeConfirmed {
@@ -2513,7 +2513,7 @@ func runGoalClassifySweepWithInputs(args []string, prove goalAuthorityProver, co
 			return refuseHumanVerb(values, 1, detail, humanVerbRemedy{command: shellCommand([]string{"metasystem", "internal", "goal", "classify-sweep", "--root", *root, "--draft", *draftPath, "--preview"})})
 		}
 		if proofErr := recordGoalApprovalProof(*root, goal.Opid(req.Ulid, req.Actor.Machine, req.Actor.Lineage), "goal classify-sweep", proof); proofErr != nil {
-			return refuseHumanVerb(values, 1, "the act landed at "+res.Tip+", but the record of who authorized it wasn't saved: "+proofErr.Error(), humanVerbRemedy{words: "nothing to do; the act landed, so don't run it again"})
+			return refuseHumanVerb(values, 1, "the act landed at "+res.Tip+", but the record of who authorized it wasn't saved: "+values.cause(proofErr), humanVerbRemedy{words: "nothing to do; the act landed, so don't run it again"})
 		}
 		writeJSONLine(stdout, stderr, map[string]any{"outcome": goal.OutcomeConfirmed, "classified": 0, "listingDigest": listing.Digest})
 		return 0
@@ -2521,18 +2521,18 @@ func runGoalClassifySweepWithInputs(args []string, prove goalAuthorityProver, co
 	for index, proposal := range listing.Proposals {
 		req, reqErr := syncReqWithProofAtWithDependencies("classify-sweep", *root, *by, *lineage, &proof, commandNow, dependencies)
 		if reqErr != nil {
-			return refuseHumanVerb(values, 1, reqErr.Error(), runRemedy("metasystem", "system", "status"))
+			return refuseHumanVerb(values, 1, values.cause(reqErr), runRemedy("metasystem", "system", "status"))
 		}
 		res, classifyErr := goal.ClassifyTier(req, proposal, index == len(listing.Proposals)-1)
 		if classifyErr != nil {
-			return refuseHumanVerb(values, 1, classifyErr.Error(), humanVerbRemedy{command: shellCommand([]string{"metasystem", "internal", "goal", "classify-sweep", "--root", *root, "--draft", *draftPath, "--preview"})})
+			return refuseHumanVerb(values, 1, values.cause(classifyErr), humanVerbRemedy{command: shellCommand([]string{"metasystem", "internal", "goal", "classify-sweep", "--root", *root, "--draft", *draftPath, "--preview"})})
 		}
 		if res.Outcome != goal.OutcomeConfirmed {
 			writeJSONLine(stdout, stderr, publicationRecord(res))
 			return refuseHumanVerb(values, 1, res.Detail, humanVerbRemedy{command: shellCommand([]string{"metasystem", "internal", "goal", "classify-sweep", "--root", *root, "--draft", *draftPath, "--preview"})})
 		}
 		if proofErr := recordGoalApprovalProof(*root, goal.Opid(req.Ulid, req.Actor.Machine, req.Actor.Lineage), "goal classify-sweep", proof); proofErr != nil {
-			return refuseHumanVerb(values, 1, "the act landed at "+res.Tip+", but the record of who authorized it wasn't saved: "+proofErr.Error(), humanVerbRemedy{words: "nothing to do; the act landed, so don't run it again"})
+			return refuseHumanVerb(values, 1, "the act landed at "+res.Tip+", but the record of who authorized it wasn't saved: "+values.cause(proofErr), humanVerbRemedy{words: "nothing to do; the act landed, so don't run it again"})
 		}
 	}
 	writeJSONLine(stdout, stderr, map[string]any{"outcome": goal.OutcomeConfirmed, "classified": len(listing.Proposals), "listingDigest": listing.Digest})
@@ -2558,15 +2558,15 @@ func runGoalApproveWithInputs(args []string, prove goalAuthorityProver, commandN
 	if f.sweep && f.confirm == "" {
 		e, err := dependencies.endpoint(f.root)
 		if err != nil {
-			return refuseHumanVerb(values, 1, err.Error(), runRemedy("metasystem", "system", "status"))
+			return refuseHumanVerb(values, 1, values.cause(err), runRemedy("metasystem", "system", "status"))
 		}
 		now, err := commandNow(f.root)
 		if err != nil {
-			return refuseHumanVerb(values, 1, err.Error(), values.retryRemedy("the clock can't be read; try again"))
+			return refuseHumanVerb(values, 1, values.cause(err), values.retryRemedy("the clock can't be read; try again"))
 		}
 		listing, err := goal.PreviewApprovalSweep(e, now)
 		if err != nil {
-			return refuseHumanVerb(values, 1, err.Error(), runRemedy("metasystem", "goal", "list"))
+			return refuseHumanVerb(values, 1, values.cause(err), runRemedy("metasystem", "goal", "list"))
 		}
 		stdout := dependencies.outStream()
 		for _, line := range listing.Lines {
@@ -2608,7 +2608,7 @@ func runGoalApproveWithInputs(args []string, prove goalAuthorityProver, commandN
 	}
 	budget, err := f.approvalBudget()
 	if err != nil {
-		return refuseHumanVerb(values, 2, err.Error(), humanVerbRemedy{words: "give each goal its budget with metasystem goal budget"})
+		return refuseHumanVerb(values, 2, values.cause(err), humanVerbRemedy{words: "give each goal its budget with metasystem goal budget"})
 	}
 	classification, err := classifyGoalAuthorityFirstWithFacts("approve", f, dependencies.authorityFacts)
 	if err != nil {
@@ -2616,15 +2616,15 @@ func runGoalApproveWithInputs(args []string, prove goalAuthorityProver, commandN
 	}
 	proof, err := proveGoalHumanAuthorityAt("approve", f, prove, commandNow)
 	if err != nil {
-		return refuseHumanVerb(values, 1, err.Error(), humanProofRemedy(values, f.fixtureHumanAuthority, f.temporaryWord, f.reviewBy, err))
+		return refuseHumanVerb(values, 1, values.cause(err), humanProofRemedy(values, f.fixtureHumanAuthority, f.temporaryWord, f.reviewBy, err))
 	}
 	if err := resolveGoalHuman(f, proof); err != nil {
-		return refuseHumanVerb(values, 2, err.Error(), personRemedy(values, err))
+		return refuseHumanVerb(values, 2, values.cause(err), personRemedy(values, err))
 	}
 	values.by = f.by
 	req, err := syncReqClassifiedWithTerminalGradeAtWithDependencies(f.root, f.by, f.lineage, &proof, classification, false, commandNow, dependencies)
 	if err != nil {
-		return refuseHumanVerb(values, 1, err.Error(), runRemedy("metasystem", "system", "status"))
+		return refuseHumanVerb(values, 1, values.cause(err), runRemedy("metasystem", "system", "status"))
 	}
 	req.ApprovedRef = f.approvedRef
 	var res goal.PublishResult
@@ -2634,7 +2634,7 @@ func runGoalApproveWithInputs(args []string, prove goalAuthorityProver, commandN
 		res, err = goal.Approve(req, f.ids, budget, &proof)
 	}
 	if err != nil {
-		return refuseHumanVerb(values, 1, err.Error(), values.showRemedy())
+		return refuseHumanVerb(values, 1, values.cause(err), values.showRemedy())
 	}
 	if res.Outcome == goal.OutcomeConfirmed {
 		dependencies.landed(res)
@@ -2643,7 +2643,7 @@ func runGoalApproveWithInputs(args []string, prove goalAuthorityProver, commandN
 			action = "goal approve --sweep"
 		}
 		if err := recordGoalApprovalProof(f.root, goal.Opid(req.Ulid, req.Actor.Machine, req.Actor.Lineage), action, proof); err != nil {
-			return refuseHumanVerb(values, 1, "the act landed at "+res.Tip+", but the record of who authorized it wasn't saved: "+err.Error(), humanVerbRemedy{words: "nothing to do; the act landed, so don't run it again"})
+			return refuseHumanVerb(values, 1, "the act landed at "+res.Tip+", but the record of who authorized it wasn't saved: "+values.cause(err), humanVerbRemedy{words: "nothing to do; the act landed, so don't run it again"})
 		}
 		if proof.TemporaryResumeFor(f.root) {
 			dependencies.note(true, fmt.Sprintf("approved on a relayed word for now; the person approves again at their terminal by %s", f.reviewBy))
@@ -2679,24 +2679,24 @@ func runGoalUnapproveWithInputs(args []string, prove goalAuthorityProver, comman
 	}
 	proof, err := proveGoalHumanAuthorityAt("unapprove", f, prove, commandNow)
 	if err != nil {
-		return refuseHumanVerb(values, 1, err.Error(), humanProofRemedy(values, f.fixtureHumanAuthority, f.temporaryWord, f.reviewBy, err))
+		return refuseHumanVerb(values, 1, values.cause(err), humanProofRemedy(values, f.fixtureHumanAuthority, f.temporaryWord, f.reviewBy, err))
 	}
 	if err := resolveGoalHuman(f, proof); err != nil {
-		return refuseHumanVerb(values, 2, err.Error(), personRemedy(values, err))
+		return refuseHumanVerb(values, 2, values.cause(err), personRemedy(values, err))
 	}
 	values.by = f.by
 	req, err := syncReqClassifiedWithTerminalGradeAtWithDependencies(f.root, f.by, f.lineage, &proof, classification, false, commandNow, dependencies)
 	if err != nil {
-		return refuseHumanVerb(values, 1, err.Error(), runRemedy("metasystem", "system", "status"))
+		return refuseHumanVerb(values, 1, values.cause(err), runRemedy("metasystem", "system", "status"))
 	}
 	res, err := goal.Unapprove(req, f.id, f.because, &proof)
 	dependencies.landed(res)
 	if err != nil {
-		return refuseHumanVerb(values, 1, err.Error(), values.showRemedy())
+		return refuseHumanVerb(values, 1, values.cause(err), values.showRemedy())
 	}
 	if res.Outcome == goal.OutcomeConfirmed {
 		if err := recordGoalApprovalProof(f.root, goal.Opid(req.Ulid, req.Actor.Machine, req.Actor.Lineage), "goal unapprove", proof); err != nil {
-			return refuseHumanVerb(values, 1, "the act landed at "+res.Tip+", but the record of who authorized it wasn't saved: "+err.Error(), humanVerbRemedy{words: "nothing to do; the act landed, so don't run it again"})
+			return refuseHumanVerb(values, 1, "the act landed at "+res.Tip+", but the record of who authorized it wasn't saved: "+values.cause(err), humanVerbRemedy{words: "nothing to do; the act landed, so don't run it again"})
 		}
 		if proof.TemporaryResumeFor(f.root) {
 			dependencies.note(true, fmt.Sprintf("withdrawn on a relayed word for now; the person confirms at their terminal by %s", f.reviewBy))
@@ -2937,7 +2937,7 @@ func runGoalResumeWithInputs(args []string, prove goalAuthorityProver, commandNo
 	}
 	budget, err := f.budgetTuple(true)
 	if err != nil {
-		return refuseHumanVerb(values, 2, err.Error(), humanVerbRemedy{command: values.budgetCommand("keep")})
+		return refuseHumanVerb(values, 2, values.cause(err), humanVerbRemedy{command: values.budgetCommand("keep")})
 	}
 	values.box = budget
 	classification, err := classifyGoalAuthorityFirstWithFacts("resume", f, dependencies.authorityFacts)
@@ -2949,13 +2949,13 @@ func runGoalResumeWithInputs(args []string, prove goalAuthorityProver, commandNo
 	}
 	ancestryNow, err := commandNow(f.root)
 	if err != nil {
-		return refuseHumanVerb(values, 1, err.Error(), values.retryRemedy("the clock can't be read; try again"))
+		return refuseHumanVerb(values, 1, values.cause(err), values.retryRemedy("the clock can't be read; try again"))
 	}
 	var proof humanauthority.Proof
 	if f.approvedRef != "" {
 		recorded, approvalErr := goal.AuthenticatedChannelApproval(f.root, f.id, f.approvedRef, goal.ResumeApprovalToken(f.id, *budget), ancestryNow)
 		if approvalErr != nil {
-			return refuseHumanVerb(values, 1, "--approved-ref couldn't be checked: "+approvalErr.Error(), personRemedy(values, approvalErr))
+			return refuseHumanVerb(values, 1, "--approved-ref couldn't be checked: "+values.cause(approvalErr), personRemedy(values, approvalErr))
 		}
 		proof, err = humanauthority.AuthenticatedChannelProof(f.root, recorded, ancestryNow)
 	} else {
@@ -2972,7 +2972,7 @@ func runGoalResumeWithInputs(args []string, prove goalAuthorityProver, commandNo
 	}
 	temporaryAuthority := proof.TemporaryResumeFor(f.root)
 	if err := resolveGoalHuman(f, proof); err != nil {
-		return refuseHumanVerb(values, 2, err.Error(), personRemedy(values, err))
+		return refuseHumanVerb(values, 2, values.cause(err), personRemedy(values, err))
 	}
 	values.by = f.by
 	if dependencies.endpoint == nil {
@@ -2980,7 +2980,7 @@ func runGoalResumeWithInputs(args []string, prove goalAuthorityProver, commandNo
 	}
 	req, err := syncReqClassifiedWithTerminalGradeAtWithDependencies(f.root, f.by, f.lineage, &proof, classification, false, commandNow, dependencies)
 	if err != nil {
-		return refuseHumanVerb(values, 1, err.Error(), runRemedy("metasystem", "system", "status"))
+		return refuseHumanVerb(values, 1, values.cause(err), runRemedy("metasystem", "system", "status"))
 	}
 	req.ApprovedRef = f.approvedRef
 	projection, projectErr := goal.Project(req.Endpoint, false, req.Now)
@@ -2997,7 +2997,7 @@ func runGoalResumeWithInputs(args []string, prove goalAuthorityProver, commandNo
 	}
 	resolvedBinding, err := binding(f.root, f.id, req.Now)
 	if err != nil {
-		return refuseHumanVerb(values, 1, err.Error(), values.showRemedy())
+		return refuseHumanVerb(values, 1, values.cause(err), values.showRemedy())
 	}
 	if resolvedBinding.Fence == nil {
 		projection, projectErr := goal.Project(req.Endpoint, false, req.Now)
@@ -3008,7 +3008,7 @@ func runGoalResumeWithInputs(args []string, prove goalAuthorityProver, commandNo
 					return refuseHumanVerb(values, 1, fmt.Sprintf("revision %d is not breach-stopped", resolvedBinding.Revision), humanVerbRemedy{command: values.budgetCommand("norm")})
 				}
 				if viewErr := bindGoalTierView(values, f.root, file); viewErr != nil {
-					return refuseHumanVerb(values, 1, viewErr.Error(), runRemedy("metasystem", "settings", "show"))
+					return refuseHumanVerb(values, 1, values.cause(viewErr), runRemedy("metasystem", "settings", "show"))
 				}
 				if *file.Budget != *budget {
 					return refuseHumanVerb(values, 1, fmt.Sprintf("revision %d is not breach-stopped", resolvedBinding.Revision), humanVerbRemedy{command: values.budgetCommand(goalbudget.FormatBox(*budget))})
@@ -3019,21 +3019,21 @@ func runGoalResumeWithInputs(args []string, prove goalAuthorityProver, commandNo
 	}
 	held, err := goalrevision.Acquire(f.root, f.id, resolvedBinding.Revision, "goal-resume")
 	if err != nil {
-		return refuseHumanVerb(values, 1, "could not acquire the goal-revision lock: "+err.Error(), values.retryRemedy("another change to this goal is running; try again when it ends"))
+		return refuseHumanVerb(values, 1, "could not acquire the goal-revision lock: "+values.cause(err), values.retryRemedy("another change to this goal is running; try again when it ends"))
 	}
 	defer held.Release()
 	res, err := goal.Resume(goal.ResumeRequest{VerbRequest: req, GoalID: f.id, Budget: *budget, Authority: &proof})
 	if err == nil && res.Outcome == goal.OutcomeConfirmed {
 		dependencies.landed(res)
 		if err := humanauthority.RecordResumeProof(f.root, goal.Opid(req.Ulid, req.Actor.Machine, req.Actor.Lineage), proof); err != nil {
-			return refuseHumanVerb(values, 1, "the act landed at "+res.Tip+", but the record of who authorized it wasn't saved: "+err.Error(), humanVerbRemedy{words: "nothing to do; the act landed, so don't run it again"})
+			return refuseHumanVerb(values, 1, "the act landed at "+res.Tip+", but the record of who authorized it wasn't saved: "+values.cause(err), humanVerbRemedy{words: "nothing to do; the act landed, so don't run it again"})
 		}
 	}
 	if err == nil && res.Outcome == goal.OutcomeConfirmed && temporaryAuthority {
 		dependencies.note(true, fmt.Sprintf("resumed on a relayed word for now; the person confirms at their terminal by %s", f.reviewBy))
 	}
 	if err != nil {
-		return refuseHumanVerb(values, 1, err.Error(), values.showRemedy())
+		return refuseHumanVerb(values, 1, values.cause(err), values.showRemedy())
 	}
 	if res.Outcome != goal.OutcomeConfirmed {
 		dependencies.showOutcome(res)
@@ -3177,7 +3177,7 @@ func runGoalEnrollTerminalWithDependencies(args []string, enroll goalTerminalEnr
 	by := flags.String("by", "", "the human enrolling this terminal")
 	lineage := flags.String("lineage", "", "coordinator lineage used to publish the fleet enrollment")
 	if err := flags.Parse(args); err != nil {
-		return refuseHumanVerb(values, 2, err.Error(), humanVerbRemedy{words: "use only --root, --lineage, and --by with terminal enrollment"})
+		return refuseHumanVerb(values, 2, values.cause(err), humanVerbRemedy{words: "use only --root, --lineage, and --by with terminal enrollment"})
 	}
 	values.root, values.lineage, values.by = *root, *lineage, *by
 	if !converted(*root) {
@@ -3188,7 +3188,7 @@ func runGoalEnrollTerminalWithDependencies(args []string, enroll goalTerminalEnr
 	}
 	enrollment, err := enroll(*root, int64(os.Getppid()), nil, *by, time.Now().UTC())
 	if err != nil {
-		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "run enrollment from a shell whose ancestry to its session leader is owned by you"})
+		return refuseHumanVerb(values, 1, values.cause(err), humanVerbRemedy{words: "run enrollment from a shell whose ancestry to its session leader is owned by you"})
 	}
 	if dependencies.report != nil {
 		// The local enrollment is committed; what follows publishes it.
@@ -3196,7 +3196,7 @@ func runGoalEnrollTerminalWithDependencies(args []string, enroll goalTerminalEnr
 	}
 	req, err := syncReqWithProofAtWithDependencies("enroll-terminal", *root, "terminal", *lineage, nil, commandNow, dependencies)
 	if err != nil {
-		return refuseHumanVerb(values, 1, err.Error(), runRemedy("metasystem", "system", "status"))
+		return refuseHumanVerb(values, 1, values.cause(err), runRemedy("metasystem", "system", "status"))
 	}
 	req.Now = enrollment.EnrolledAt
 	// A repeated enrollment (the same person at the same terminal) whose
@@ -3268,7 +3268,7 @@ func runGoalSetObligationWithAuthorityFactsAtWithDependencies(args []string, pro
 	approvedRef := flags.String("approved-ref", "", "authenticated channel answer operation on this goal")
 	fixtureHumanAuthority := flags.Bool("fixture-human-authority", false, "fixture-only enrolled-human proof; accepted only for an exact fake-runtime root")
 	if err := flags.Parse(args); err != nil {
-		return refuseHumanVerb(values, 2, err.Error(), humanVerbRemedy{words: "drop the option this command doesn't take"})
+		return refuseHumanVerb(values, 2, values.cause(err), humanVerbRemedy{words: "drop the option this command doesn't take"})
 	}
 	values.root, values.lineage, values.id, values.by = *root, *lineage, *id, *by
 	values.approvedRef, values.temporaryWord, values.reviewBy = *approvedRef, *temporaryWord, *reviewBy
@@ -3294,13 +3294,13 @@ func runGoalSetObligationWithAuthorityFactsAtWithDependencies(args []string, pro
 	}
 	ancestryNow, err := commandNow(*root)
 	if err != nil {
-		return refuseHumanVerb(values, 1, err.Error(), values.retryRemedy("the clock can't be read; try again"))
+		return refuseHumanVerb(values, 1, values.cause(err), values.retryRemedy("the clock can't be read; try again"))
 	}
 	var proof humanauthority.Proof
 	if *approvedRef != "" {
 		recorded, approvalErr := goal.AuthenticatedChannelApproval(*root, *id, *approvedRef, goal.SetObligationApprovalToken(*id, goal.ObligationState(*state), *owner), ancestryNow)
 		if approvalErr != nil {
-			return refuseHumanVerb(values, 1, "--approved-ref couldn't be checked: "+approvalErr.Error(), personRemedy(values, approvalErr))
+			return refuseHumanVerb(values, 1, "--approved-ref couldn't be checked: "+values.cause(approvalErr), personRemedy(values, approvalErr))
 		}
 		proof, err = humanauthority.AuthenticatedChannelProof(*root, recorded, ancestryNow)
 	} else {
@@ -3320,13 +3320,13 @@ func runGoalSetObligationWithAuthorityFactsAtWithDependencies(args []string, pro
 	temporaryAuthority := proof.TemporarySetObligationFor(*root)
 	authorityFlags := &syncFlags{root: *root, by: *by}
 	if err := resolveGoalHuman(authorityFlags, proof); err != nil {
-		return refuseHumanVerb(values, 2, err.Error(), personRemedy(values, err))
+		return refuseHumanVerb(values, 2, values.cause(err), personRemedy(values, err))
 	}
 	*by = authorityFlags.by
 	values.by = *by
 	req, err := syncReqClassifiedWithTerminalGradeAtWithDependencies(*root, *by, *lineage, &proof, classification, false, commandNow, dependencies)
 	if err != nil {
-		return refuseHumanVerb(values, 1, err.Error(), runRemedy("metasystem", "system", "status"))
+		return refuseHumanVerb(values, 1, values.cause(err), runRemedy("metasystem", "system", "status"))
 	}
 	operationID := goal.Opid(req.Ulid, req.Actor.Machine, req.Actor.Lineage)
 	governingEffects := make([]goal.GoverningEffect, len(effects))
@@ -3346,11 +3346,11 @@ func runGoalSetObligationWithAuthorityFactsAtWithDependencies(args []string, pro
 	res, err := goal.SetObligation(req, *id, obligation, &proof)
 	dependencies.landed(res)
 	if err != nil {
-		return refuseHumanVerb(values, 1, err.Error(), values.showRemedy())
+		return refuseHumanVerb(values, 1, values.cause(err), values.showRemedy())
 	}
 	if res.Outcome == goal.OutcomeConfirmed {
 		if err := humanauthority.RecordSetObligationProof(*root, operationID, proof); err != nil {
-			return refuseHumanVerb(values, 1, "the act landed at "+res.Tip+", but the record of who authorized it wasn't saved: "+err.Error(), humanVerbRemedy{words: "nothing to do; the act landed, so don't run it again"})
+			return refuseHumanVerb(values, 1, "the act landed at "+res.Tip+", but the record of who authorized it wasn't saved: "+values.cause(err), humanVerbRemedy{words: "nothing to do; the act landed, so don't run it again"})
 		}
 	}
 	if res.Outcome == goal.OutcomeConfirmed && temporaryAuthority {

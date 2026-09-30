@@ -53,7 +53,7 @@ func TestResolveReadGateRecordsOneRunAndRefusesAChangedTree(t *testing.T) {
 		t.Fatalf("replayed gate resolution = %+v err=%v runs=%d ids=%d, want recorded %+v without a new run", replay, err, gateRuns, ids, want)
 	}
 
-	held, err := lockBranchRead(filepath.Join(f.root, ".git", "metasystem", "goal-reads", "goal-a", f.unit+".json"))
+	held, err := lockBranchRead("goal-a", filepath.Join(f.root, ".git", "metasystem", "goal-reads", "goal-a", f.unit+".json"))
 	if err != nil {
 		t.Fatal(err)
 	}

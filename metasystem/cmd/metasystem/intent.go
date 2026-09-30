@@ -149,15 +149,15 @@ func intentCommands() []intentCommand {
 func goalIntentCommands() []intentCommand {
 	return []intentCommand{
 		{
-			object: "goal", action: "list", primary: true, audience: "both", summary: "list the open goals",
+			object: "goal", action: "list", primary: true, audience: "both", laidOut: true, summary: "list the open goals",
 			usage: []string{"metasystem goal list [--all] [--label LABEL]... [--history]", "metasystem goal list --ready [--label LABEL]... [--machine NAME]", "metasystem goal list --tiers"},
 			details: []string{
-				"Lists the accepted goals. --all adds the done and abandoned goals.",
+				"Lists the active goals: claimed, approved, and queued at priority 1. --all lists every goal, the done and abandoned ones too; --label lists every open goal carrying the labels.",
 				"--fetch checks the latest shared goal history before listing it and may update the local copy; it works with every view.",
 				"--ready takes --label and --machine; --tiers takes no filter; --history belongs to the listing. A filter a view cannot honor is refused.",
 			},
 			flags: []intentFlag{
-				{name: "all", aliases: []string{"done"}, usage: "include done and abandoned goals"},
+				{name: "all", aliases: []string{"done"}, usage: "every goal: queued and parked ones too, and the done and abandoned"},
 				{name: "label", value: "LABEL", repeat: true, usage: "only goals carrying every named label"},
 				{name: "ready", usage: "the ready frontier: the goal this machine continues or claims next"},
 				{name: "tiers", usage: "the recorded and derived tiers, and the goals a person may lower"},
@@ -171,7 +171,7 @@ func goalIntentCommands() []intentCommand {
 			run:      runIntentGoalViews,
 		},
 		{
-			object: "goal", action: "show", audience: "both", summary: "one goal's record: intent, next step, budget and designs",
+			object: "goal", action: "show", audience: "both", laidOut: true, summary: "one goal's record: intent, next step, budget and designs",
 			usage:    []string{"metasystem goal show G [--history]"},
 			details:  []string{"goal show G is the goal's record; status G is its live work."},
 			flags:    []intentFlag{intentTargetFlag, {name: "history", advanced: true, usage: "include the goal's ledger history"}},
@@ -180,7 +180,7 @@ func goalIntentCommands() []intentCommand {
 			run:      runIntentShow,
 		},
 		{
-			object: "goal", action: "approve", primary: true, audience: "human", summary: "approve goals for execution",
+			object: "goal", action: "approve", primary: true, audience: "human", laidOut: true, summary: "approve goals for execution",
 			usage: []string{"metasystem goal approve G... [--budget BOX]"},
 			details: []string{
 				"Without --budget each goal is approved under its own tier's norm box, all goals in one act.",
@@ -219,7 +219,7 @@ func goalIntentCommands() []intentCommand {
 			run:      runIntentBudgetWithLimits,
 		},
 		{
-			object: "goal", action: "pause", audience: "both", summary: "park a goal with a reason",
+			object: "goal", action: "pause", audience: "both", laidOut: true, summary: "park a goal with a reason",
 			usage: []string{"metasystem goal pause G --reason TEXT"},
 			flags: []intentFlag{
 				intentTargetFlag,
@@ -911,7 +911,15 @@ func (inv *intentInvocation) legacyRefused(page *textui.Page, result intentResul
 		summary = "metasystem " + inv.command.name + ": " + summary
 	}
 	var hint textui.Hint
+	// An owner's message brings its own line 2 ("Messages a Person Reads");
+	// it is the hint unless the verb named a remedy of its own.
+	retried := result.retry != "" && result.Next != nil && slices.Equal(result.Next.Argv, inv.typedArgv())
+	var middle []string
+	if first, between, owned, ok := ownerRemedy(summary); ok && result.Decision == "" && (result.Next == nil || retried) {
+		summary, middle, hint = first, between, owned
+	}
 	switch {
+	case len(hint.Argv) > 0 || hint.Reason != "":
 	case result.Next != nil:
 		hint = textui.Hint{Argv: result.Next.Argv, Reason: result.Next.Reason}
 	case result.Decision != "":
@@ -924,14 +932,38 @@ func (inv *intentInvocation) legacyRefused(page *textui.Page, result intentResul
 		page.Mark(textui.Alert, summary)
 	case result.Outcome == intentInProgress:
 		page.Mark(textui.Running, summary)
-	case len(result.text) == 0:
+	case len(result.text) == 0 && (len(middle) == 0 || !inv.input.switched("verbose")):
 		page.Refusal(summary, hint)
 		return
 	default:
 		page.Refusal(summary, textui.Hint{})
 	}
+	if inv.input.switched("verbose") {
+		page.Legacy(middle...)
+	}
 	page.Legacy(result.text...)
 	page.Hint(hint)
+}
+
+// ownerRemedy splits an owner's message that ends in its own line 2 (a
+// "run: C" line, or a "nothing to do; why" line) into its line 1, the lines
+// between (which only --verbose prints) and that line 2 as a hint.
+func ownerRemedy(text string) (string, []string, textui.Hint, bool) {
+	lines := strings.Split(text, "\n")
+	if len(lines) < 2 {
+		return text, nil, textui.Hint{}, false
+	}
+	first, middle, last := lines[0], lines[1:len(lines)-1], lines[len(lines)-1]
+	if command, isRun := strings.CutPrefix(last, "run: "); isRun {
+		if strings.HasPrefix(command, "metasystem ") && !strings.ContainsAny(command, ",;()'\"") {
+			return first, middle, textui.Hint{Argv: strings.Fields(command)}, true
+		}
+		return first, middle, textui.Hint{Reason: command}, true
+	}
+	if strings.HasPrefix(last, "nothing to do") {
+		return first, middle, textui.Hint{Reason: last}, true
+	}
+	return text, nil, textui.Hint{}, false
 }
 
 // textEnv is the layout of one output stream: its width, colour and

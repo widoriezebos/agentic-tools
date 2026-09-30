@@ -692,22 +692,22 @@ func clearDeadBlocker(e Endpoint, opid string) error {
 	if !isBlocked || blocking.Opid == opid {
 		return nil
 	}
-	refusal := func(entry Entry, why string) error {
-		message := fmt.Sprintf("journal entry %s is pushed with its outcome unknown; this clone mutates nothing until it is classified", entry.Opid)
+	refusal := func(entry Entry, why, command string) error {
+		message := fmt.Sprintf("an earlier goal change (%s) was pushed, but whether it took effect is unknown", entry.Opid)
 		if why != "" {
 			message += " (" + why + ")"
 		}
-		return errors.New(message)
+		return errors.New(message + "\nrun: " + command)
 	}
 	if OwnerAlive(blocking) {
-		return refusal(blocking, "")
+		return refusal(blocking, "", "metasystem goal sync")
 	}
 	if blocking.Intent.Verb == "breach-stop" && e.blockedRecovery == nil {
-		return refusal(blocking, "its owner is dead, and its breach-stop is recovered only with the live budget projection: run metasystem goal sync --recover")
+		return refusal(blocking, "the process that made it has ended, and a budget stop is recovered only with the live budget", "metasystem goal sync --recover")
 	}
 	report, _, recoverErr := RecoverDeadBlocker(e, blocking, e.blockedRecovery)
 	if recoverErr != nil {
-		return refusal(blocking, "its owner is dead and recovery failed: "+recoverErr.Error())
+		return refusal(blocking, "the process that made it has ended, and recovering it failed: "+recoverErr.Error(), "metasystem goal sync --recover")
 	}
 	left, stands, err := PushedBlocking(e.Root)
 	if err != nil {
@@ -718,7 +718,7 @@ func clearDeadBlocker(e Endpoint, opid string) error {
 		if left.Opid == blocking.Opid && report.Detail != "" {
 			why = "recovery left it: " + report.Detail
 		}
-		return refusal(left, why)
+		return refusal(left, why, "metasystem goal sync --recover")
 	}
 	return nil
 }

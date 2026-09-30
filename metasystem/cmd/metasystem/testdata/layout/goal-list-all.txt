@@ -1,0 +1,21 @@
+! single-machine mode: multi-machine guarantees are void here; joining a fleet is the
+  backlog-local-promotion goal
+! the accepted tree is 49h0m0s old; goal list --fetch validates and advances it
+
+8 open goals · 2 claimed · 2 approved · 3 queued · 1 parked · 0 done · 0 abandoned
+
+Claimed
+  1.1   standing-validation                           tier 3   mac-cli   Push 17 landed the batch l…
+  3.1   machinery-runs-unattended-on-codex            tier 3   ui        Wido rejected the first re…
+
+Approved
+  1.2   test-environment-edges-are-closed             tier 3   Free, tier 1.
+  –     ask-what-happened-follow-ups                  tier 3   Keep the waiting trouble on the room…
+
+Queued
+  1.3   one-steward-per-checkout-on-its-own-root      tier 3   pin m1e · Find how the second stewar…
+  1.4   receipt-writer-follows-the-worktree           tier 2   Locate the root resolution.
+  2.1   fleet-doctor-repairs-what-stops-other-seats   tier 3   Design first.
+
+Parked
+  –     wait-for-the-vendor                           tier 2   waits: wait for the vendor's 1.2 rel…

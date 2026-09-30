@@ -3,6 +3,7 @@ package goal
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -222,7 +223,7 @@ func abandonRequest(r VerbRequest, id string, spec AbandonSpec, arguments abando
 					if fromSignedInSession(proof) {
 						return nil, AlreadyHolds{Reason: "goal " + id + " is already abandoned: the same abandon from this signed-in session"}
 					}
-					return nil, AlreadyHolds{Reason: fmt.Sprintf("goal %s is already abandoned (since %s, reason %s)", id, archived.Abandoned.At, archived.Abandoned.Because)}
+					return nil, AlreadyHolds{Reason: fmt.Sprintf("goal %s is already abandoned (since %s, reason %s)", id, recordDay(archived.Abandoned.At), archived.Abandoned.Because)}
 				}
 				return nil, LostToCompetitor{Winner: lastOpid(archived)}
 			}
@@ -266,12 +267,20 @@ func abandonRequest(r VerbRequest, id string, spec AbandonSpec, arguments abando
 				if arguments.set[dependent] || arguments.waive[dependent] != "" || spec.Carried != "" {
 					continue
 				}
-				for _, blocker := range dependents[dependent] {
-					uncovered = append(uncovered, fmt.Sprintf("goal %s is blocked by %s; re-point it with --successor, waive it with --waive %s=<reason>, or abandon it with --also %s", dependent, blocker, dependent, dependent))
-				}
+				uncovered = append(uncovered, dependent)
 			}
 			if len(uncovered) != 0 {
-				return nil, fmt.Errorf("%s", strings.Join(uncovered, "\n"))
+				// Line 2 abandons the waiting goals in the same act; --waive
+				// DEPENDENT=REASON or --successor G2 are the other ways out.
+				command := []string{"metasystem goal abandon", id, "--reason", strconv.Quote(spec.Because)}
+				for _, dependent := range append(append([]string(nil), arguments.also...), uncovered...) {
+					command = append(command, "--also", dependent)
+				}
+				subject := "goal " + uncovered[0] + " still waits on " + strings.Join(dependents[uncovered[0]], ", ") + ", so it"
+				if len(uncovered) > 1 {
+					subject = "goals " + strings.Join(uncovered, ", ") + " still wait on the goals being abandoned, so they"
+				}
+				return nil, fmt.Errorf("%s must be abandoned too, waived or re-pointed\nrun: %s", subject, strings.Join(command, " "))
 			}
 			var badWaivers []string
 			for dependent := range arguments.waive {

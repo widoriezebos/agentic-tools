@@ -213,7 +213,7 @@ func TestStatusLandReadyPrefixAndParkSafety(t *testing.T) {
 	}
 	_, err = checkParkBranch(repo, "goal-a", "continue", remote, deps)
 	var refusal *OpError
-	wantRefusal := fmt.Sprintf("local goal/goal-a is %s while origin is %s; push the branch before parking", statusNext, statusTip)
+	wantRefusal := fmt.Sprintf("goal/goal-a here is %s but origin has %s; push it before parking\nrun: git push origin goal/goal-a, then metasystem goal pause goal-a", statusNext, statusTip)
 	if !errors.As(err, &refusal) || refusal.Code != ParkUnpushedCode || refusal.Message != wantRefusal || remoteCalls != 2 {
 		t.Fatalf("unpushed park = %v, remote calls = %d", err, remoteCalls)
 	}
@@ -222,7 +222,7 @@ func TestStatusLandReadyPrefixAndParkSafety(t *testing.T) {
 		f.assertCallCount(t, 13)
 		return statusBase, "", false, nil
 	}, deps)
-	if !errors.As(err, &refusal) || refusal.Code != ParkUnpushedCode || refusal.Message != "local goal/goal-a is "+statusTip+" while origin is <absent>; push the branch before parking" || remoteCalls != 3 {
+	if !errors.As(err, &refusal) || refusal.Code != ParkUnpushedCode || refusal.Message != "goal/goal-a here is "+statusTip+" but origin has no copy; push it before parking\nrun: git push origin goal/goal-a, then metasystem goal pause goal-a" || remoteCalls != 3 {
 		t.Fatalf("absent origin park = %v, remote calls = %d", err, remoteCalls)
 	}
 	unreadable := func() (string, string, bool, error) {
@@ -240,7 +240,7 @@ func TestStatusLandReadyPrefixAndParkSafety(t *testing.T) {
 		t.Fatalf("narrated sweep = %v, err = %v", sweep, err)
 	}
 	_, err = checkParkBranch(repo, "goal-a", narrated, unreadable, deps)
-	if !errors.As(err, &refusal) || refusal.Code != ParkUnpushedCode || refusal.Message != "this checkout has no goal/goal-a; fetch it and check it out" || remoteCalls != 3 {
+	if !errors.As(err, &refusal) || refusal.Code != ParkUnpushedCode || refusal.Message != "this checkout has no goal/goal-a branch, so its work can't be kept while parked\nrun: git fetch origin goal/goal-a:goal/goal-a, then metasystem goal pause goal-a" || remoteCalls != 3 {
 		t.Fatalf("missing narrated branch = %v, remote calls = %d", err, remoteCalls)
 	}
 	f.assertCalls(t, "range", "kind", "attestation", "kind", "attestation", "local-tip", "range", "kind", "attestation", "kind", "attestation", "local-tip", "local-tip", "local-tip", "local-tip", "local-tip", "kind", "local-tip", "kind")
@@ -259,7 +259,7 @@ func TestParkRefusalDoesNotClaimOriginState(t *testing.T) {
 		return "", "", false, nil
 	}, f.dependencies())
 	var refusal *OpError
-	if !errors.As(err, &refusal) || refusal.Code != ParkUnpushedCode || refusal.Message != "this checkout has no goal/goal-a; fetch it and check it out" || remoteCalls != 0 {
+	if !errors.As(err, &refusal) || refusal.Code != ParkUnpushedCode || refusal.Message != "this checkout has no goal/goal-a branch, so its work can't be kept while parked\nrun: git fetch origin goal/goal-a:goal/goal-a, then metasystem goal pause goal-a" || remoteCalls != 0 {
 		t.Fatalf("missing local branch refusal = %v, remote calls = %d", err, remoteCalls)
 	}
 	f.assertCalls(t, "local-tip", "kind")
@@ -345,7 +345,7 @@ func TestStatusDependenciesPropagateErrors(t *testing.T) {
 		f := newStatusFacts(t, rangeFact(repo, statusBase, statusTip, "goal-a", []Commit{unit, unit}, nil))
 		_, err := inspectStatus(repo, statusBase, statusTip, "goal-a", f.dependencies())
 		var refusal *OpError
-		if !errors.As(err, &refusal) || refusal.Code != RangeCode || refusal.Message != "goal branch repeats unit commit "+statusU1 {
+		if !errors.As(err, &refusal) || refusal.Code != RangeCode || refusal.Message != "goal goal-a's branch holds build "+statusU1+" twice\nrun: metasystem work status goal-a" {
 			t.Fatalf("repeated unit = %v", err)
 		}
 		f.assertCalls(t, "range")

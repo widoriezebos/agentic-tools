@@ -141,6 +141,30 @@ func (values *humanVerbValues) showRemedy() humanVerbRemedy {
 
 const alreadyCarriesBox = "the goal already carries that box, so there is no new act to record"
 
+// cause is an owner error as a refusal's sentence: its first line (the
+// caller's remedy is line 2), with its refusal code kept for --verbose and
+// --json when it has one.
+func (values *humanVerbValues) cause(err error) string {
+	if err == nil {
+		return ""
+	}
+	if code := goal.RefusalCode(err); code != "" && values.refusalCode == "" {
+		values.refusalCode = code
+	}
+	return ownerLineOne(err.Error())
+}
+
+// ownerLineOne is an owner's message without the line 2 it brings: the
+// public verb prints its own remedy, never two.
+func ownerLineOne(text string) string {
+	for _, marker := range []string{"\nrun: ", "\nnothing to do"} {
+		if index := strings.Index(text, marker); index >= 0 {
+			return text[:index]
+		}
+	}
+	return text
+}
+
 func refuseHumanVerb(values *humanVerbValues, code int, sentence string, remedy humanVerbRemedy) int {
 	// A budget request that completes to the box the goal already carries
 	// asks for an effect that holds: success with no record (R-129-ui,
@@ -154,7 +178,7 @@ func refuseHumanVerb(values *humanVerbValues, code int, sentence string, remedy 
 		fmt.Fprintln(values.outStream(), detail)
 		return 0
 	}
-	sentence = strings.Join(strings.Fields(strings.TrimSpace(sentence)), " ")
+	sentence = strings.Join(strings.Fields(strings.TrimSpace(ownerLineOne(sentence))), " ")
 	sentence = strings.TrimSuffix(sentence, ".") + "."
 	if values.report != nil {
 		values.report.refusal = &ownerRefusal{code: code, sentence: sentence, remedy: remedy, refusalCode: values.refusalCode}

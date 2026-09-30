@@ -43,16 +43,41 @@ type Commit struct {
 
 const RangeCode = "GOAL_BRANCH_RANGE"
 
-type RangeError struct{ Code, Commit, Reason string }
+// commitWord names a goal branch commit of kind in a person's words.
+func commitWord(kind Kind) string {
+	switch kind {
+	case Unit:
+		return "build"
+	case Read:
+		return "review commit"
+	}
+	return string(kind) + " commit"
+}
+
+// RangeError is a goal branch that breaks its shape at one commit. Remedy
+// is its line 2: the command that shows the goal's work, where the goal is
+// known ("Messages a Person Reads").
+type RangeError struct{ Code, Commit, Reason, Remedy string }
 
 func (e *RangeError) Error() string {
-	return fmt.Sprintf("commit %s: %s", e.Commit, e.Reason)
+	if e.Remedy == "" {
+		return fmt.Sprintf("commit %s: %s", e.Commit, e.Reason)
+	}
+	return fmt.Sprintf("commit %s: %s\n%s", e.Commit, e.Reason, e.Remedy)
 }
 
 // RefusalCode is the refusal's code.
 func (e *RangeError) RefusalCode() string { return e.Code }
 
-func refuse(commit, reason string) error { return &RangeError{RangeCode, commit, reason} }
+// rangeRefusal is a range refusal on goalID's branch; its remedy shows the
+// goal's work, or checks this installation when the goal is not known.
+func rangeRefusal(goalID, commit, reason string) error {
+	remedy := "run: metasystem system check"
+	if goalID != "" {
+		remedy = "run: metasystem work status " + goalID
+	}
+	return &RangeError{Code: RangeCode, Commit: commit, Reason: reason, Remedy: remedy}
+}
 
 func parseUnits(value string) ([]string, bool) {
 	parts := strings.Split(value, "+")
@@ -103,18 +128,18 @@ func kindOfWithGit(repo, commit, goalID string, gitRead func(string, ...string) 
 		}
 	}
 	if len(trailers) != 1 {
-		return KindInfo{}, refuse(commit, fmt.Sprintf("expected exactly one kind trailer, found %d", len(trailers)))
+		return KindInfo{}, rangeRefusal(goalID, commit, fmt.Sprintf("it should say whether it is a build, a plan or a review, and it says so %d times", len(trailers)))
 	}
 	key, value := trailers[0][0], trailers[0][1]
 	if key == "Goal-Plan" {
 		if value != goalID {
-			return KindInfo{}, refuse(commit, fmt.Sprintf("Goal-Plan names goal %q, not %q", value, goalID))
+			return KindInfo{}, rangeRefusal(goalID, commit, fmt.Sprintf("it is a plan of goal %q, not of %q", value, goalID))
 		}
 		return KindInfo{Kind: Plan}, nil
 	}
 	fields := strings.Fields(value)
 	if key == "Goal-Read" && len(fields) != 2 {
-		return KindInfo{}, refuse(commit, "Goal-Read is malformed")
+		return KindInfo{}, rangeRefusal(goalID, commit, "its review line is damaged")
 	}
 	first := value
 	if key == "Goal-Read" {
@@ -122,16 +147,16 @@ func kindOfWithGit(repo, commit, goalID string, gitRead func(string, ...string) 
 	}
 	goal, units, ok := splitGoalUnits(first)
 	if !ok {
-		return KindInfo{}, refuse(commit, key+" is malformed")
+		return KindInfo{}, rangeRefusal(goalID, commit, "its "+key+" line is damaged")
 	}
 	if goal != goalID {
-		return KindInfo{}, refuse(commit, fmt.Sprintf("%s names goal %q, not %q", key, goal, goalID))
+		return KindInfo{}, rangeRefusal(goalID, commit, fmt.Sprintf("it belongs to goal %q, not to %q (%s)", goal, goalID, key))
 	}
 	if key == "Goal-Unit" {
 		return KindInfo{Kind: Unit, Units: units, Unit: unitList(units)}, nil
 	}
 	if !hex40(fields[1]) {
-		return KindInfo{}, refuse(commit, "Goal-Read commit id is not full 40-hex")
+		return KindInfo{}, rangeRefusal(goalID, commit, "its review line names the reviewed commit by a short id")
 	}
 	return KindInfo{Kind: Read, Units: units, Unit: unitList(units), CommitID: fields[1]}, nil
 }
@@ -208,7 +233,7 @@ func KindOfWithRaw(repo, commit, goalID string, read func(string, ...string) ([]
 func validateRangeWithGit(repo, endpointTip, tip, goalID string, gitRead func(string, ...string) ([]byte, error)) ([]Commit, error) {
 	baseOut, err := gitRead(repo, "merge-base", endpointTip, tip)
 	if err != nil || strings.TrimSpace(string(baseOut)) == "" {
-		return nil, refuse(tip, "tip and endpoint have no common history")
+		return nil, rangeRefusal(goalID, tip, "the goal branch shares no history with main")
 	}
 	base := strings.TrimSpace(string(baseOut))
 	out, err := gitRead(repo, "rev-list", "--first-parent", "--reverse", "--parents", base+".."+tip)
@@ -226,7 +251,7 @@ func validateRangeWithGit(repo, endpointTip, tip, goalID string, gitRead func(st
 		}
 		id := fields[0]
 		if len(fields) != 2 {
-			return nil, refuse(id, fmt.Sprintf("commit has %d parents; exactly one is required", len(fields)-1))
+			return nil, rangeRefusal(goalID, id, fmt.Sprintf("it has %d parents, and a goal branch commit has one", len(fields)-1))
 		}
 		kind, err := kindOfWithGit(repo, id, goalID, gitRead)
 		if err != nil {
@@ -238,7 +263,7 @@ func validateRangeWithGit(repo, endpointTip, tip, goalID string, gitRead func(st
 		}
 		reads, closures, prose := 0, 0, 0
 		if kind.Kind == Unit && len(entries) == 0 {
-			return nil, refuse(id, "kind unit requires at least one tree entry")
+			return nil, rangeRefusal(goalID, id, "the build changes no file")
 		}
 		for _, entry := range entries {
 			class := PathClass(entry.Path)
@@ -260,16 +285,16 @@ func validateRangeWithGit(repo, endpointTip, tip, goalID string, gitRead func(st
 				}
 			}
 			if !allowed {
-				return nil, refuse(id, fmt.Sprintf("path %s has class %s, which kind %s does not allow", entry.Path, class, kind.Kind))
+				return nil, rangeRefusal(goalID, id, fmt.Sprintf("a %s may not change %s (a %s file)", commitWord(kind.Kind), entry.Path, class))
 			}
 		}
 		if kind.Kind == Read && reads != 1 {
-			return nil, refuse(id, fmt.Sprintf("kind read requires exactly one attestation path, found %d", reads))
+			return nil, rangeRefusal(goalID, id, fmt.Sprintf("a review commit holds one review record, and this one holds %d", reads))
 		}
 		if kind.Kind == Unit {
 			for _, unit := range kind.Units {
 				if earlier := seenUnits[unit]; earlier != "" {
-					return nil, refuse(id, fmt.Sprintf("unit %s is already named by build commit %s", unit, earlier))
+					return nil, rangeRefusal(goalID, id, fmt.Sprintf("build %s was already made by commit %s", unit, earlier))
 				}
 				seenUnits[unit] = id
 			}
@@ -283,7 +308,7 @@ func validateRangeWithGit(repo, endpointTip, tip, goalID string, gitRead func(st
 				present = err == nil && subject.Kind == Unit
 			}
 			if !present || !sameUnits(subject.Units, kind.Units) || !unitLists[kind.Unit] {
-				return nil, refuse(id, "Goal-Read does not name a preceding build commit with the same unit list")
+				return nil, rangeRefusal(goalID, id, "the review names no earlier build of the same work")
 			}
 		}
 		item := Commit{ID: id, Kind: kind.Kind, Units: append([]string(nil), kind.Units...), Unit: kind.Unit}

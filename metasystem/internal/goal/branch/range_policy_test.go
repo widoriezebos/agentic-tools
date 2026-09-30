@@ -144,13 +144,13 @@ func TestValidateRangeRefusals(t *testing.T) {
 			if !errors.As(err, &refusal) || refusal.Code != "GOAL_BRANCH_RANGE" || test.name != "side unit outside endpoint history" && !strings.Contains(err.Error(), test.tip) {
 				t.Fatalf("tip %s: %v", test.tip, err)
 			}
-			if test.name == "unrelated history" && !strings.Contains(refusal.Reason, "no common history") {
+			if test.name == "unrelated history" && !strings.Contains(refusal.Reason, "shares no history with main") {
 				t.Fatalf("history refusal changed: %v", err)
 			}
-			if test.name == "branch base outside endpoint history" && !strings.Contains(refusal.Reason, "expected exactly one kind trailer") {
+			if test.name == "branch base outside endpoint history" && !strings.Contains(refusal.Reason, "whether it is a build, a plan or a review") {
 				t.Fatalf("outside-base refusal changed: %v", err)
 			}
-			if test.name == "side unit outside endpoint history" && !strings.Contains(refusal.Reason, "expected exactly one kind trailer") {
+			if test.name == "side unit outside endpoint history" && !strings.Contains(refusal.Reason, "whether it is a build, a plan or a review") {
 				t.Fatalf("side-unit refusal changed: %v", err)
 			}
 		})
@@ -205,7 +205,7 @@ func TestValidateRangeAcceptsBuildListsAndRejectsDuplicateUnitAcrossBuilds(t *te
 	duplicate := append(rangeTranscript("base", "second", "base", "tip base\nsecond tip\n"), first[2:]...)
 	duplicate = append(duplicate, rangeOutput("Goal-Unit: goal-a/7b+8\n", "show", "-s", "--format=%(trailers:only,unfold=true)", "second"))
 	duplicate = append(duplicate, treeCalls("second", "tip", rawTree("metasystem/b.go"))...)
-	if _, err := validateWithTranscript(t, "base", "second", duplicate...); err == nil || !strings.Contains(err.Error(), "unit 7b is already named") {
+	if _, err := validateWithTranscript(t, "base", "second", duplicate...); err == nil || !strings.Contains(err.Error(), "build 7b was already made") {
 		t.Fatalf("duplicate unit range=%v", err)
 	}
 	rawSingle := rawTree("metasystem/a.go")
@@ -262,7 +262,7 @@ func TestValidateRangeInjectedReaderErrorsAndUnexpectedCalls(t *testing.T) {
 		calls = append(calls, rangeOutput("Goal-Unit: goal-a/u\n", "show", "-s", "--format=%(trailers:only,unfold=true)", hexUnit))
 		_, err := validateWithTranscript(t, "base", "tip", calls...)
 		var refusal *RangeError
-		if !errors.As(err, &refusal) || !strings.Contains(refusal.Reason, "preceding build commit") {
+		if !errors.As(err, &refusal) || !strings.Contains(refusal.Reason, "no earlier build of the same work") {
 			t.Fatalf("out-of-range read subject: %v", err)
 		}
 	})

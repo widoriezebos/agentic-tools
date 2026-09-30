@@ -1,0 +1,1 @@
+goal wait-for-the-vendor is already paused (since 28 Sep, reason wait for the vendor's 1.2 release)
