@@ -8,6 +8,7 @@ package goal
 // claims and quotas key on it.
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"unicode"
@@ -32,7 +33,7 @@ func ResolveMachineWithConfig(root string, lookup func(string, string) (string, 
 			return name, nil
 		}
 	}
-	return "", fmt.Errorf("no machine nickname is enrolled on this machine; name it once with: git config metasystem.goal.machine NAME")
+	return "", errors.New("this machine has no name yet; name it once\nrun: git config metasystem.goal.machine <name>")
 }
 
 // ValidateMachineNickname checks the shared read-and-claim vocabulary. The

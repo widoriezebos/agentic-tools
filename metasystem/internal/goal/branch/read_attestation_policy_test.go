@@ -620,7 +620,7 @@ func TestGoalBranchReadRunsGateDispatchesAndCollectsClosedCritic(t *testing.T) {
 		t.Fatalf("bound=%+v err=%v", bound, err)
 	}
 	f.expectBind(f.root, f.tip, before, extra, false, true)
-	if _, err := bindLandedUnit(f, f.root, f.tip, f.base, "goal-a", f.unit, before, extra); err == nil || !strings.Contains(err.Error(), "does not match attested digest") {
+	if _, err := bindLandedUnit(f, f.root, f.tip, f.base, "goal-a", f.unit, before, extra); err == nil || !strings.Contains(err.Error(), "isn't the one that was read") {
 		t.Fatalf("extra candidate path: %v", err)
 	}
 	nested := filepath.Join(f.root, "metasystem")

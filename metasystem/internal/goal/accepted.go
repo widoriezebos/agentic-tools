@@ -47,7 +47,7 @@ func RepairAcceptRemote(e Endpoint, by string) (AdvanceResult, error) {
 	if present {
 		acceptedIdentity, idErr := treeIdentityFor(e, accepted)
 		if idErr != nil {
-			return AdvanceResult{}, fmt.Errorf("the accepted tree's identity cannot be read: %w", idErr)
+			return AdvanceResult{}, fmt.Errorf("the goal list's identity can't be read: %w", idErr)
 		}
 		fetchedIdentity, idErr := treeIdentityFor(e, fetched)
 		if idErr != nil {
@@ -110,7 +110,7 @@ func validateLegacyArchiveReadOnly(root, before, after string) error {
 		case "A":
 			return fmt.Errorf("%s: the legacy concluded-goal location is read-only; new conclusions belong under %s", p, recordsGoalsRoot)
 		default:
-			return fmt.Errorf("%s: the legacy concluded-goal location is read-only; reopen or prune the standing record through its verb", p)
+			return fmt.Errorf("%s: the old done-goals folder is read-only; change a done goal with its goal command", p)
 		}
 	}
 	return nil
@@ -134,7 +134,7 @@ func validateLegacyArchiveFor(e Endpoint, before, after string) error {
 			return fmt.Errorf("%s: the legacy concluded-goal location is read-only; new conclusions belong under %s", path, recordsGoalsRoot)
 		}
 		if !bytes.Equal(old, content) {
-			return fmt.Errorf("%s: the legacy concluded-goal location is read-only; reopen or prune the standing record through its verb", path)
+			return fmt.Errorf("%s: the old done-goals folder is read-only; change a done goal with its goal command", path)
 		}
 	}
 	return nil

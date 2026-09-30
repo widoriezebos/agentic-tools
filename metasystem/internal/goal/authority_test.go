@@ -142,15 +142,15 @@ func TestClaimIsAgentOnlyAndPairKeyed(t *testing.T) {
 	// refusal names the public commands that steer or move the claim.
 	humanClaim := verbReqFor(a, "01J5X00000000000000000AK10", "mac-a")
 	humanClaim.Actor.Human = "wido"
-	if _, err := Claim(humanClaim, "pair-keyed", testBudget()); err == nil || !strings.Contains(err.Error(), "agent session's act") ||
-		!strings.Contains(err.Error(), "metasystem goal pin pair-keyed MACHINE") ||
-		!strings.Contains(err.Error(), "metasystem goal claim pair-keyed --take-over --reason TEXT") {
+	if _, err := Claim(humanClaim, "pair-keyed", testBudget()); err == nil || !strings.Contains(err.Error(), "made by the agent session") ||
+		!strings.Contains(err.Error(), "run: metasystem goal prioritize pair-keyed 1") ||
+		!strings.Contains(err.Error(), "not by a person") {
 		t.Fatalf("humans cannot claim, and are guided: %v", err)
 	}
-	if _, err := OpenClaim(humanClaim, "other", "X.", "main", "Go.", testBudget()); err == nil || !strings.Contains(err.Error(), "retired") {
+	if _, err := OpenClaim(humanClaim, "other", "X.", "main", "Go.", testBudget()); err == nil || !strings.Contains(err.Error(), "open --claim is gone") {
 		t.Fatalf("humans cannot open --claim: %v", err)
 	}
-	if _, err := ClaimArc(humanClaim, "pair-keyed", testBudget()); err == nil || !strings.Contains(err.Error(), "metasystem goal claim pair-keyed --take-over") {
+	if _, err := ClaimArc(humanClaim, "pair-keyed", testBudget()); err == nil || !strings.Contains(err.Error(), "not by a person") {
 		t.Fatalf("humans cannot claim arcs: %v", err)
 	}
 
@@ -164,7 +164,7 @@ func TestClaimIsAgentOnlyAndPairKeyed(t *testing.T) {
 	secondLineage := verbReqFor(a, "01J5X00000000000000000AK30", "mac-a")
 	secondLineage.Actor.Lineage = "lin-2"
 	res, err := Claim(secondLineage, "pair-keyed")
-	if err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "lineage lin-1") {
+	if err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "another session on this machine (lin-1)") {
 		t.Fatalf("a second lineage refuses by name: %+v %v", res, err)
 	}
 	secondLineage.Ulid = "01J5X00000000000000000AK35"
@@ -381,7 +381,7 @@ func TestReopenAdoptsTheArcState(t *testing.T) {
 		t.Fatalf("park arc: %+v %v", res, err)
 	}
 	res, err = Reopen(verbReqFor(a, "01J5X00000000000000000RA85", "mac-a"), "ra-two")
-	if err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "human act") {
+	if err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "only a person reopens it") {
 		t.Fatalf("agent reopen into a parked arc refuses: %+v %v", res, err)
 	}
 	humanReopen := verbReqFor(a, "01J5X00000000000000000RA86", "mac-a")

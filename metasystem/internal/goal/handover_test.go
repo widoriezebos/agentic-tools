@@ -191,7 +191,7 @@ func TestGoalHandoverAppliesCompleteFieldTable(t *testing.T) {
 		}
 	}
 	holder.Ulid, holder.ClaimEpoch, holder.EpochAuthority = "01J5X00000000000000000HB14", 12, "journal"
-	if res, err := Handover(holder, "field-complete", "landing", "landing-lineage", 12, "batch-a", func() (identity.Liveness, error) { return identity.Alive, nil }); err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "REBIND_EPOCH_UNAUTHENTICATED") {
+	if res, err := Handover(holder, "field-complete", "landing", "landing-lineage", 12, "batch-a", func() (identity.Liveness, error) { return identity.Alive, nil }); err != nil || res.Outcome != OutcomeRejected || !(res.Code == "REBIND_EPOCH_UNAUTHENTICATED") {
 		t.Fatalf("unauthenticated epoch rebind: %+v %v", res, err)
 	}
 	holder.EpochAuthority = EpochAuthorityHolder
@@ -215,13 +215,13 @@ func TestGoalHandoverAppliesCompleteFieldTable(t *testing.T) {
 		}
 	}
 	holder.Ulid = "01J5X00000000000000000HB09"
-	reject("same epoch", holder, "field-complete", "landing", "landing-lineage", 12, func() (identity.Liveness, error) { return identity.Alive, nil }, "must be higher")
+	reject("same epoch", holder, "field-complete", "landing", "landing-lineage", 12, func() (identity.Liveness, error) { return identity.Alive, nil }, "must renew its claim")
 	holder.Ulid, holder.ClaimEpoch = "01J5X00000000000000000HB10", 13
-	reject("stale source epoch", holder, "field-complete", "other", "other-lineage", 4, func() (identity.Liveness, error) { return identity.Alive, nil }, "does not match")
+	reject("stale source epoch", holder, "field-complete", "other", "other-lineage", 4, func() (identity.Liveness, error) { return identity.Alive, nil }, "is not the current one")
 	holder.Actor.Human = "Wido"
 	reject("human caller", holder, "field-complete", "other", "other-lineage", 4, func() (identity.Liveness, error) { return identity.Alive, nil }, "metasystem goal claim field-complete --take-over --reason TEXT")
 	holder.Actor.Human = ""
-	reject("incomplete input", holder, "field-complete", "", "", 0, nil, "requires a target")
+	reject("incomplete input", holder, "field-complete", "", "", 0, nil, "a handover needs the receiving machine")
 	holder.Actor.Human, holder.ClaimEpoch, holder.Ulid = "", 12, "01J5X00000000000000000HB11"
 	reject("missing goal", holder, "absent", "landing", "landing-lineage", 13, func() (identity.Liveness, error) { return identity.Alive, nil }, "is not live")
 	holder.Ulid = "01J5X00000000000000000HB12"
@@ -291,7 +291,7 @@ func TestGoalHandBackRefusals(t *testing.T) {
 		epoch                                           int64
 		occupied                                        bool
 	}{
-		{"epoch below source", "mac-studio", "session-a", "batch-a", "seat-root", "at least source epoch", 6, false},
+		{"epoch below source", "mac-studio", "session-a", "batch-a", "seat-root", "than the one it left", 6, false},
 		{"batch mismatch", "mac-studio", "session-a", "batch-b", "seat-root", "does not match handed-over batch", 8, false},
 		{"source already claimed", "mac-studio", "session-a", "batch-a", "seat-root", "quota is one claim per machine", 8, true},
 		{"target root on forward", "other", "other-lineage", "batch-a", "seat-root", "only permitted for a return", 8, false},

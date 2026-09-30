@@ -196,7 +196,7 @@ func TestRefreshOnlyResolvesPublicationEndpointLazily(t *testing.T) {
 	if err := WriteBase(root, BaseRecord{Commit: tip, RefreshDue: true, Publishing: true}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := refreshOnlyFor(endpoint, resolve, anchor); err == nil || !strings.Contains(err.Error(), "no snapshot") {
+	if _, err := refreshOnlyFor(endpoint, resolve, anchor); err == nil || !strings.Contains(err.Error(), "finished by hand") {
 		t.Fatalf("missing snapshot refusal: %v", err)
 	}
 	snapshot, err := CaptureSnapshot(root)
@@ -340,7 +340,7 @@ func TestRefreshOnlyPublishingUsesEndpointRepositoryAndPreservesGates(t *testing
 				t.Fatalf("capture, cleanup and trailer order: %v", events)
 			}
 			if test.stage == "trailer" {
-				if eventIndex(events, "accepted") != -1 || anchored != 0 || runErr == nil || !strings.Contains(runErr.Error(), "never published") {
+				if eventIndex(events, "accepted") != -1 || anchored != 0 || runErr == nil || !strings.Contains(runErr.Error(), "published nothing") {
 					t.Fatalf("own-opid refusal ran later gates: events=%v anchor=%d err=%v", events, anchored, runErr)
 				}
 			} else {
@@ -348,7 +348,7 @@ func TestRefreshOnlyPublishingUsesEndpointRepositoryAndPreservesGates(t *testing
 					t.Fatalf("accepted gate order: %v", events)
 				}
 				if test.stage == "acceptance" {
-					if runErr == nil || !strings.Contains(runErr.Error(), "acceptance gates") || eventIndex(events, "ancestor:") != -1 || anchored != 0 {
+					if runErr == nil || !strings.Contains(runErr.Error(), "fails its checks") || eventIndex(events, "ancestor:") != -1 || anchored != 0 {
 						t.Fatalf("identity gate: events=%v anchor=%d err=%v", events, anchored, runErr)
 					}
 				} else {
@@ -356,7 +356,7 @@ func TestRefreshOnlyPublishingUsesEndpointRepositoryAndPreservesGates(t *testing
 					if ancestor < 4 || anchored != 0 && test.stage != "refresh" {
 						t.Fatalf("ancestry gate: events=%v anchor=%d", events, anchored)
 					}
-					if test.stage == "sync" && (runErr == nil || !strings.Contains(runErr.Error(), "sync-mode gate") || eventIndex(events, "files:"+tip+":"+ChannelPrefix) != -1) {
+					if test.stage == "sync" && (runErr == nil || !strings.Contains(runErr.Error(), "wrong sharing mode") || eventIndex(events, "files:"+tip+":"+ChannelPrefix) != -1) {
 						t.Fatalf("sync gate: events=%v err=%v", events, runErr)
 					}
 					if test.stage == "validation" && (runErr == nil || !strings.Contains(runErr.Error(), "does not validate") || anchored != 0) {

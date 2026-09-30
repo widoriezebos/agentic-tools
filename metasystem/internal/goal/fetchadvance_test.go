@@ -106,7 +106,7 @@ func TestRewoundBranchRefusesUntilRepair(t *testing.T) {
 	client.store.canonical = seedTip
 	client.store.mu.Unlock()
 	_, err := FetchAdvance(a)
-	if err == nil || !strings.Contains(err.Error(), "rewound") || !strings.Contains(err.Error(), "repair --accept-remote") {
+	if err == nil || !strings.Contains(err.Error(), "went back in history") || !strings.Contains(err.Error(), "goal sync --accept-remote-history") {
 		t.Fatalf("a rewind refuses by name and points at the deliberate path: %v", err)
 	}
 	if after := acceptedTipForEndpoint(t, a); after != before {
@@ -199,7 +199,7 @@ func TestForeignLedgerRefusesByName(t *testing.T) {
 	}
 
 	_, err = FetchAdvance(a)
-	if err == nil || !strings.Contains(err.Error(), "foreign ledger") {
+	if err == nil || !strings.Contains(err.Error(), "is a different one") {
 		t.Fatalf("a foreign ledger refuses by name: %v", err)
 	}
 	if after := acceptedTipForEndpoint(t, a); after != before {
@@ -223,7 +223,7 @@ func TestMutationsRunTheAcceptanceGates(t *testing.T) {
 	client.store.canonical = seed
 	client.store.mu.Unlock()
 	_, err := Open(verbReqFor(a, "01J5X00000000000000000G000", "mac-a"), "onto-rewind", "Must refuse.", "main", "No.")
-	if err == nil || !strings.Contains(err.Error(), "rewound") {
+	if err == nil || !strings.Contains(err.Error(), "went back in history") {
 		t.Fatalf("a mutation onto a rewound branch refuses by name: %v", err)
 	}
 	// The journal closed the attempt honestly.

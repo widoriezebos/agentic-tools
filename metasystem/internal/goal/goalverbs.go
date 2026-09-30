@@ -2,6 +2,7 @@ package goal
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -153,7 +154,7 @@ func (s *Store) withLock(fn func() (Result, error)) (Result, error) {
 func (s *Store) refuseMissionSeat() error {
 	survey := missionstate.Survey(s.Root, s.prober())
 	if active := survey.ActiveMissions(); len(active) > 0 {
-		return fmt.Errorf("goal mutation while a mission is active is refused; the mission's intent is the contract — conclude or park mission %s first", active[0].MissionId)
+		return fmt.Errorf("goals don't change while mission %s is running; finish or park the mission first", active[0].MissionId)
 	}
 	if survey.Indeterminate() {
 		return fmt.Errorf("mission liveness is unknown (%s); refusing goal mutation fail-closed", strings.Join(survey.Unreadable, "; "))
@@ -207,7 +208,7 @@ func (s *Store) mutationLedger(state ledgerState, genesisOK bool) (*Ledger, erro
 		return nil, fmt.Errorf("goals.md was deleted after adoption; run `goal reconcile` to restore from baseline")
 	}
 	if sha256Hex(state.ledgerBytes) != state.base.Sha256 || string(state.ledgerBytes) != state.base.Ledger {
-		return nil, fmt.Errorf("the ledger differs from the accepted baseline (manual edit or interrupted write); run `goal reconcile`")
+		return nil, errors.New("the goal list has hand edits or an interrupted write\nrun: metasystem goal sync")
 	}
 	ledger, problems := Parse(state.ledgerBytes)
 	if len(problems) > 0 {
@@ -401,11 +402,11 @@ func (s *Store) successor(ledger *Ledger, caller Caller, thenId string, andNone 
 			for _, g := range ledger.Queued {
 				ids = append(ids, g.Id)
 			}
-			return fmt.Errorf("--and-none refused: the queue holds %s; promote or park first — declared absence with a standing queue is a contradiction", strings.Join(ids, ", "))
+			return fmt.Errorf("--and-none says nothing is queued, but %s are; start or park them first", strings.Join(ids, ", "))
 		}
 		digest, err := ScanDigest(s.Root)
 		if err != nil {
-			return fmt.Errorf("cannot compute the plans-stream digest: %v", err)
+			return fmt.Errorf("the plans folder couldn't be read: %v", err)
 		}
 		ledger.Free = &Free{Declared: s.nowISO(), Origin: caller.origin(), Digest: digest}
 		return nil
@@ -532,7 +533,7 @@ func (s *Store) DeclareFree(caller Caller) (Result, error) {
 		}
 		digest, err := ScanDigest(s.Root)
 		if err != nil {
-			return Result{}, fmt.Errorf("cannot compute the plans-stream digest: %v", err)
+			return Result{}, fmt.Errorf("the plans folder couldn't be read: %v", err)
 		}
 		renewed := ledger.Free != nil
 		ledger.Free = &Free{Declared: s.nowISO(), Origin: caller.origin(), Digest: digest}
@@ -590,7 +591,7 @@ func (s *Store) reconcileWithProbe(caller Caller, probe func(string) (bool, erro
 		// operations on holder-only authority the caller never earned —
 		// refuse and make it re-run, which re-authorizes as holder-only.
 		if caller.Genesis && state.base != nil {
-			return Result{}, fmt.Errorf("reconcile refused: authorized for genesis but an accepted baseline now exists; re-run `goal reconcile` (it will authorize against the initialized project)")
+			return Result{}, errors.New("the goal list was set up meanwhile, so this first-time sync was refused\nrun: metasystem goal sync")
 		}
 		switch {
 		case state.ledgerBytes == nil && state.base == nil:
@@ -622,7 +623,7 @@ func (s *Store) reconcileWithProbe(caller Caller, probe func(string) (bool, erro
 			// genesis. Only its holder may re-baseline it; any other
 			// genesis caller creates only from a goal-free skeleton.
 			if parsed.HasGoals() && !caller.Holder {
-				return Result{}, fmt.Errorf("genesis reconcile refused: the ledger already carries goals but has no accepted baseline; only the lease holder may re-baseline an initialized project (a deleted goals-accepted.json is restored, not re-adopted)")
+				return Result{}, errors.New("the goal list has goals but no published base; only the session holding the checkout may reset it")
 			}
 			// A caller that is neither the human nor the holder may
 			// baseline only what adoption would: a goal-free ledger on

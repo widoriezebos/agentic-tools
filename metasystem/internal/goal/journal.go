@@ -14,6 +14,7 @@ package goal
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -139,7 +140,7 @@ func (l *JournalLock) Release() {
 func SelfOwner() (OwnerIdentity, error) {
 	self, state, err := identity.KernelProber{}.Probe(int64(os.Getpid()))
 	if err != nil || state != identity.Alive {
-		return OwnerIdentity{}, fmt.Errorf("the journal cannot read its own process identity")
+		return OwnerIdentity{}, errors.New("this process can't read its own identity, so the ledger write was not started")
 	}
 	return OwnerIdentity{
 		Pid: int64(os.Getpid()), StartTicks: self.StartTicks,
@@ -194,7 +195,7 @@ func guardTouch(e Entry) error {
 	if !OwnerAlive(e) {
 		return nil
 	}
-	return fmt.Errorf("journal entry %s belongs to live process %d; only its owner may advance it", e.Opid, e.Owner.Pid)
+	return fmt.Errorf("ledger write %s belongs to running process %d; only that process may continue it", e.Opid, e.Owner.Pid)
 }
 
 func writeEntry(repoRoot string, e Entry) error {
@@ -210,11 +211,11 @@ func writeEntry(repoRoot string, e Entry) error {
 func ReadEntry(repoRoot, opid string) (Entry, error) {
 	data, err := os.ReadFile(entryPath(repoRoot, opid))
 	if err != nil {
-		return Entry{}, fmt.Errorf("no journal entry %s: %w", opid, err)
+		return Entry{}, fmt.Errorf("no pending ledger write %s: %w", opid, err)
 	}
 	var e Entry
 	if err := json.Unmarshal(data, &e); err != nil {
-		return Entry{}, fmt.Errorf("journal entry %s malformed: %w", opid, err)
+		return Entry{}, fmt.Errorf("pending ledger write %s is damaged: %w", opid, err)
 	}
 	return e, nil
 }
@@ -223,7 +224,7 @@ func ReadEntry(repoRoot, opid string) (Entry, error) {
 // caller becomes the owner; a duplicate opid refuses.
 func CreateEntry(repoRoot string, opid, machine, lineage string, intent Intent) (Entry, error) {
 	if opid == "" || intent.Verb == "" {
-		return Entry{}, fmt.Errorf("a journal entry needs an opid and a verb")
+		return Entry{}, errors.New("a ledger write needs an id and a verb")
 	}
 	owner, err := SelfOwner()
 	if err != nil {
@@ -235,7 +236,7 @@ func CreateEntry(repoRoot string, opid, machine, lineage string, intent Intent) 
 	}
 	defer lock.Release()
 	if _, err := os.Stat(entryPath(repoRoot, opid)); err == nil {
-		return Entry{}, fmt.Errorf("journal entry %s already exists", opid)
+		return Entry{}, fmt.Errorf("ledger write %s already exists", opid)
 	}
 	e := Entry{
 		Opid: opid, Machine: machine, Lineage: lineage, Owner: owner,
@@ -251,7 +252,7 @@ func CreateEntry(repoRoot string, opid, machine, lineage string, intent Intent) 
 func ownerForPID(pid int64) (OwnerIdentity, error) {
 	exact, state, err := identity.KernelProber{}.Probe(pid)
 	if err != nil || state != identity.Alive {
-		return OwnerIdentity{}, fmt.Errorf("the owner must be a live ancestor of the caller")
+		return OwnerIdentity{}, ErrOwnerNotLiveAncestor
 	}
 	return OwnerIdentity{Pid: pid, StartTicks: exact.StartTicks, BootID: exact.BootID, PidStartedAt: exact.StartedAt.Unix()}, nil
 }
@@ -276,10 +277,10 @@ func pidIsAncestor(ancestor, descendant int64) bool {
 // can complete the entry while the wrapper remains alive.
 func CreateCarryingEntry(repoRoot, opid, machine, lineage string, intent Intent, ownerPID int64) (Entry, error) {
 	if opid == "" || intent.Verb != "carried" {
-		return Entry{}, fmt.Errorf("a carrying entry needs an opid and carried intent")
+		return Entry{}, errors.New("a carried ledger write needs an id and what it carries")
 	}
 	if !pidIsAncestor(ownerPID, int64(os.Getpid())) {
-		return Entry{}, fmt.Errorf("the owner must be a live ancestor of the caller")
+		return Entry{}, ErrOwnerNotLiveAncestor
 	}
 	owner, err := ownerForPID(ownerPID)
 	if err != nil {
@@ -291,7 +292,7 @@ func CreateCarryingEntry(repoRoot, opid, machine, lineage string, intent Intent,
 	}
 	defer lock.Release()
 	if _, err := os.Stat(entryPath(repoRoot, opid)); err == nil {
-		return Entry{}, fmt.Errorf("journal entry %s already exists", opid)
+		return Entry{}, fmt.Errorf("ledger write %s already exists", opid)
 	}
 	entry := Entry{Opid: opid, Machine: machine, Lineage: lineage, Owner: owner, Intent: intent, Phase: PhaseCreated, CreatedAt: time.Now().UTC().Format(time.RFC3339)}
 	if err := writeEntry(repoRoot, entry); err != nil {
@@ -313,10 +314,10 @@ func TakeOverForCompletion(repoRoot, opid string) (Entry, error) {
 		return Entry{}, err
 	}
 	if entry.Phase == PhaseTerminal {
-		return Entry{}, fmt.Errorf("journal entry %s is terminal; there is nothing to complete", opid)
+		return Entry{}, fmt.Errorf("ledger write %s already finished; there is nothing to complete", opid)
 	}
 	if OwnerAlive(entry) && !pidIsAncestor(entry.Owner.Pid, int64(os.Getpid())) {
-		return Entry{}, fmt.Errorf("journal entry %s belongs to live process %d; the caller is not its descendant", opid, entry.Owner.Pid)
+		return Entry{}, fmt.Errorf("ledger write %s belongs to running process %d, which didn't start this one", opid, entry.Owner.Pid)
 	}
 	owner, err := SelfOwner()
 	if err != nil {
@@ -345,7 +346,7 @@ func RecordSteps(repoRoot, opid, fetchedOid, txnCommit string) error {
 		return err
 	}
 	if e.Phase == PhaseTerminal {
-		return fmt.Errorf("journal entry %s is terminal; steps no longer change", opid)
+		return fmt.Errorf("ledger write %s already finished; its steps no longer change", opid)
 	}
 	if fetchedOid != "" {
 		e.FetchedOid = fetchedOid
@@ -374,7 +375,7 @@ func MarkPushed(repoRoot, opid, expectedOldTip string, attempts int, deadline ti
 		return err
 	}
 	if e.Phase != PhaseCreated && e.Phase != PhasePushed {
-		return fmt.Errorf("journal entry %s is %s; the machine is monotonic (created → pushed → terminal)", opid, e.Phase)
+		return fmt.Errorf("ledger write %s is already %s; it only moves forward (created, pushed, finished)", opid, e.Phase)
 	}
 	e.Phase = PhasePushed
 	e.ExpectedOldTip = expectedOldTip
@@ -399,7 +400,7 @@ func MarkTerminal(repoRoot, opid string, outcome Outcome, evidence string) error
 		return err
 	}
 	if e.Phase == PhaseTerminal {
-		return fmt.Errorf("journal entry %s is already terminal (%s)", opid, e.Outcome)
+		return fmt.Errorf("ledger write %s already finished (%s)", opid, e.Outcome)
 	}
 	e.Phase = PhaseTerminal
 	e.Outcome = outcome
@@ -415,7 +416,7 @@ func MarkTerminal(repoRoot, opid string, outcome Outcome, evidence string) error
 // the owner's own never-pushed entry is removed; every other phase refuses.
 func DiscardUnpushed(repoRoot, opid string) error {
 	if opid == "" || opid != filepath.Base(opid) || strings.ContainsAny(opid, `/\`) {
-		return fmt.Errorf("journal entry %q is not a plain operation id", opid)
+		return fmt.Errorf("%q isn't a plain ledger write id", opid)
 	}
 	lock, err := AcquireJournalLock(repoRoot)
 	if err != nil {
@@ -427,10 +428,10 @@ func DiscardUnpushed(repoRoot, opid string) error {
 		return err
 	}
 	if !callerIsOwner(e) {
-		return fmt.Errorf("journal entry %s belongs to process %d; only its owner discards it", opid, e.Owner.Pid)
+		return fmt.Errorf("ledger write %s belongs to process %d; only that process discards it", opid, e.Owner.Pid)
 	}
 	if e.Phase != PhaseCreated || e.TxnCommit != "" {
-		return fmt.Errorf("journal entry %s is %s; only a never-built entry is discarded", opid, e.Phase)
+		return fmt.Errorf("ledger write %s is already %s; only an unstarted write is discarded", opid, e.Phase)
 	}
 	return os.Remove(entryPath(repoRoot, e.Opid))
 }
@@ -452,7 +453,7 @@ func CorrectLate(repoRoot, opid, evidence string) error {
 		return err
 	}
 	if e.Phase != PhaseTerminal {
-		return fmt.Errorf("journal entry %s is %s, not terminal; the ordinary recovery rule applies", opid, e.Phase)
+		return fmt.Errorf("ledger write %s is %s, not finished; recover it the usual way", opid, e.Phase)
 	}
 	if e.Outcome == OutcomeConfirmed || e.Outcome == OutcomeConfirmedLate {
 		return nil
@@ -477,13 +478,13 @@ func TakeOver(repoRoot, opid string) (Entry, error) {
 		return Entry{}, err
 	}
 	if e.Phase == PhaseTerminal {
-		return Entry{}, fmt.Errorf("journal entry %s is terminal; there is nothing to take over", opid)
+		return Entry{}, fmt.Errorf("ledger write %s already finished; there is nothing to take over", opid)
 	}
 	if callerIsOwner(e) {
 		return e, nil
 	}
 	if OwnerAlive(e) {
-		return Entry{}, fmt.Errorf("journal entry %s belongs to live process %d; a live owner is never displaced", opid, e.Owner.Pid)
+		return Entry{}, fmt.Errorf("ledger write %s belongs to running process %d, which is never displaced", opid, e.Owner.Pid)
 	}
 	owner, err := SelfOwner()
 	if err != nil {
@@ -614,3 +615,7 @@ func PastDeadline(e Entry, now time.Time) bool {
 	}
 	return now.After(d)
 }
+
+// ErrOwnerNotLiveAncestor refuses a ledger write whose named owner is not a
+// running process that started this one.
+var ErrOwnerNotLiveAncestor = errors.New("the owning process must be running and must have started this one")

@@ -286,7 +286,7 @@ func directSource(r attestationReads, req CommitReadRequest, subject Attestation
 	}
 	text := string(data)
 	if !strings.Contains(text, subject.Commit) || !strings.Contains(text, subject.UnitDigest) {
-		return AttestationSource{}, nil, fmt.Errorf("reader record must name commit %s and unit digest %s", subject.Commit, subject.UnitDigest)
+		return AttestationSource{}, nil, fmt.Errorf("the reader's record must name commit %s and change %s", subject.Commit, subject.UnitDigest)
 	}
 	return AttestationSource{Kind: "reader-record", ReaderRecord: req.ReaderRecord, RecordSHA256: digest}, nil, nil
 }
@@ -621,7 +621,7 @@ func bindLandedUnit(r attestationReads, repo, snapshot, endpointTip, goalID, com
 	digest, paths, destructive, err := filteredTransitionDigest(raw, prefix, excluded)
 	if err != nil || digest != att.Subject.UnitDigest {
 		if err == nil {
-			err = fmt.Errorf("candidate digest %s does not match attested digest %s", digest, att.Subject.UnitDigest)
+			err = fmt.Errorf("the change to land (%s) isn't the one that was read (%s)", digest, att.Subject.UnitDigest)
 		}
 		return LandedUnit{}, &LandedUnitError{Code: "change-mismatch", Err: err}
 	}

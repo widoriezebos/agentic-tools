@@ -168,7 +168,7 @@ func TestRefreshOnlyCompletesADiedRefresh(t *testing.T) {
 		t.Fatal(err)
 	}
 	// An ordinary session refuses while the refresh is pending.
-	if _, err := baseTipFor(endpoint, calls.head); err == nil || !strings.Contains(err.Error(), "--refresh-only") {
+	if _, err := baseTipFor(endpoint, calls.head); err == nil || !strings.Contains(err.Error(), "metasystem goal sync --refresh") {
 		t.Fatalf("a pending refresh blocks ordinary reconcile by name: %v", err)
 	}
 	calls.assertConsumed() // A pending base refuses before consulting HEAD or an anchor.
@@ -196,7 +196,7 @@ func TestRefreshOnlyCompletesADiedRefresh(t *testing.T) {
 	if err := WriteBase(a, BaseRecord{Commit: res.Tip, WrittenAt: "2026-08-21T00:00:00Z", RefreshDue: true}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := refreshOnlyFor(endpoint, calls.resolve, calls.anchor); err == nil || !strings.Contains(err.Error(), "no snapshot") {
+	if _, err := refreshOnlyFor(endpoint, calls.resolve, calls.anchor); err == nil || !strings.Contains(err.Error(), "finished by hand") {
 		t.Fatalf("a snapshotless pending record refuses by name: %v", err)
 	}
 	calls.assertConsumed() // Ordinary completion and both refusals never resolve a publication endpoint.
@@ -229,7 +229,7 @@ func TestRefreshOnlyResolvesTheCrashedPublishWindow(t *testing.T) {
 		t.Fatal(err)
 	}
 	calls.expectResolve()
-	if _, err := refreshOnlyFor(endpoint, calls.resolve, calls.anchor); err == nil || !strings.Contains(err.Error(), "never published") {
+	if _, err := refreshOnlyFor(endpoint, calls.resolve, calls.anchor); err == nil || !strings.Contains(err.Error(), "published nothing") {
 		t.Fatalf("an unlanded publish resolves by name (R2-1): %v", err)
 	}
 	calls.assertConsumed() // A missing own-opid trailer must not anchor a commit.

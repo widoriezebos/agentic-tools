@@ -15,6 +15,7 @@ package goal
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -222,7 +223,7 @@ func baseTipFor(e Endpoint, head func(string) (string, error)) (string, error) {
 	}
 	if exists {
 		if rec.RefreshDue {
-			return "", fmt.Errorf("a published reconcile's refresh is pending; goal reconcile --refresh-only completes it before any new session")
+			return "", errors.New("a published sync still has to refresh the goal list\nrun: metasystem goal sync --refresh")
 		}
 		// The recorded commit must still resolve — the anchor ref
 		// below keeps it reachable through gc.
@@ -440,7 +441,7 @@ func refreshOnlyFor(readEndpoint Endpoint, resolve func(string) (Endpoint, error
 		return nil, fmt.Errorf("no refresh is pending; ordinary reconcile owns the next session")
 	}
 	if rec.Snapshot == nil {
-		return nil, fmt.Errorf("the pending record carries no snapshot; this refresh predates the durable capture and completes by hand")
+		return nil, errors.New("this interrupted refresh is from an older version and must be finished by hand")
 	}
 	if rec.Publishing {
 		// The crash fell inside the publish window: whether
@@ -470,7 +471,7 @@ func refreshOnlyFor(readEndpoint Endpoint, resolve func(string) (Endpoint, error
 			if err := WriteBase(repoRoot, BaseRecord{Commit: rec.Commit, WrittenAt: nowISO8601()}); err != nil {
 				return nil, err
 			}
-			return nil, fmt.Errorf("the crashed reconcile never published; the hand edits are untouched in the worktree — re-run goal reconcile")
+			return nil, errors.New("the interrupted sync published nothing; your hand edits are untouched\nrun: metasystem goal sync")
 		}
 		// The tip the completion materializes must pass EVERY
 		// boundary the read side enforces — acceptance (identity and
@@ -485,14 +486,14 @@ func refreshOnlyFor(readEndpoint Endpoint, resolve func(string) (Endpoint, error
 		}
 		if hasAccepted {
 			if gateErr := acceptanceGatesFor(e, acceptedTip, tip); gateErr != nil {
-				return nil, fmt.Errorf("the reconcile published, but the canonical tip fails the acceptance gates; repair the branch, then re-run --refresh-only: %w", gateErr)
+				return nil, fmt.Errorf("the sync published, but the shared goal list fails its checks (%w)\nrun: metasystem goal sync --refresh  (after repairing it)", gateErr)
 			}
 		}
 		if gateErr := SyncModeGate(e, tip); gateErr != nil {
-			return nil, fmt.Errorf("the reconcile published, but the canonical tip fails the sync-mode gate; repair the branch, then re-run --refresh-only: %w", gateErr)
+			return nil, fmt.Errorf("the sync published, but the shared goal list has the wrong sharing mode (%w)\nrun: metasystem goal sync --refresh  (after repairing it)", gateErr)
 		}
 		if valErr := validateCommitFor(e, tip); valErr != nil {
-			return nil, fmt.Errorf("the reconcile published, but the canonical tip does not validate; repair the branch, then re-run --refresh-only: %w", valErr)
+			return nil, fmt.Errorf("the sync published, but the shared goal list is invalid (%w)\nrun: metasystem goal sync --refresh  (after repairing it)", valErr)
 		}
 		return refreshFor(e, tip, &Snapshot{Files: rec.Snapshot}, anchor)
 	}

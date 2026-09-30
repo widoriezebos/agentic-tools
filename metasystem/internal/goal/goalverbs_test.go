@@ -87,7 +87,7 @@ func TestTransitionTableMatrix(t *testing.T) {
 	if _, err := s.Park(mainHolder, "a", "blocked", "", false); err == nil {
 		t.Fatal("parking the only Current without a successor passed")
 	}
-	if _, err := s.Park(mainHolder, "a", "blocked", "", true); err == nil || !strings.Contains(err.Error(), "the queue holds") {
+	if _, err := s.Park(mainHolder, "a", "blocked", "", true); err == nil || !strings.Contains(err.Error(), "says nothing is queued") {
 		t.Fatalf("--and-none with a queue did not refuse by name: %v", err)
 	}
 	if _, err := s.Park(mainHolder, "a", "blocked", "b", false); err != nil {
@@ -224,7 +224,7 @@ func TestReconcileReplaysAuthority(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Mutating verbs refuse the mismatch.
-	if _, err := s.SetNext(mainHolder, "step"); err == nil || !strings.Contains(err.Error(), "reconcile") {
+	if _, err := s.SetNext(mainHolder, "step"); err == nil || !strings.Contains(err.Error(), "metasystem goal sync") {
 		t.Fatalf("mutation on a mismatched ledger did not point at reconcile: %v", err)
 	}
 	// MAIN reconcile refuses the human-origin conclusion.
@@ -368,7 +368,7 @@ func TestGoalMutationRefusesActiveMission(t *testing.T) {
 
 	// Live runner: refuse.
 	s.Prober = fakeProber{verdicts: map[int64]identity.Liveness{4242: identity.Alive}, starts: map[int64]int64{4242: 999}}
-	if _, err := s.SetNext(mainHolder, "step"); err == nil || !strings.Contains(err.Error(), "mission is active") {
+	if _, err := s.SetNext(mainHolder, "step"); err == nil || !strings.Contains(err.Error(), "is running; finish or park the mission") {
 		t.Fatalf("active mission did not refuse: %v", err)
 	}
 
@@ -532,10 +532,10 @@ func TestGenesisRefusesPopulatedLedgerForNonHolder(t *testing.T) {
 		t.Fatal(err)
 	}
 	nonHolderMain := Caller{Class: "MAIN", Holder: false}
-	if _, err := s.Reconcile(nonHolderMain); err == nil || !strings.Contains(err.Error(), "already carries goals") {
+	if _, err := s.Reconcile(nonHolderMain); err == nil || !strings.Contains(err.Error(), "has goals but no published base") {
 		t.Fatalf("a non-holder must not re-baseline a populated ledger: %v", err)
 	}
-	if _, err := s.Reconcile(human); err == nil || !strings.Contains(err.Error(), "already carries goals") {
+	if _, err := s.Reconcile(human); err == nil || !strings.Contains(err.Error(), "has goals but no published base") {
 		t.Fatalf("even the human genesis path refuses a populated ledger without a holder: %v", err)
 	}
 	// The holder (the project's owner) may re-baseline it.
@@ -573,7 +573,7 @@ func TestGenesisAdmitsGoalFreeLedgerForNonHolder(t *testing.T) {
 		name, ledger, reason string
 	}{
 		{"malformed", "# Goals\n\n## Nonsense", "genesis reconcile refused"},
-		{"populated", goalLedger, "already carries goals"},
+		{"populated", goalLedger, "has goals but no published base"},
 	} {
 		t.Run(fixture.name, func(t *testing.T) {
 			other := testStore(t)
@@ -627,7 +627,7 @@ func TestReconcileRefusesGenesisCallerOnceBaselined(t *testing.T) {
 	// the replay and malformed arms would not — the guard refuses them
 	// all uniformly before any arm runs.
 	raced := Caller{Class: "HUMAN", Holder: false, Genesis: true}
-	if _, err := reconcile(s, raced, false, 0); err == nil || !strings.Contains(err.Error(), "authorized for genesis") {
+	if _, err := reconcile(s, raced, false, 0); err == nil || !strings.Contains(err.Error(), "first-time sync was refused") {
 		t.Fatalf("a genesis-admitted caller must be refused once a baseline exists: %v", err)
 	}
 	// A re-run re-authorizes against the initialized project at the

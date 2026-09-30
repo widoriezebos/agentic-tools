@@ -27,12 +27,12 @@ func attorneyReq(endpoint Endpoint, n int, machine string) VerbRequest {
 func expectRefusal(t *testing.T, label string, res PublishResult, err error, needle string) {
 	t.Helper()
 	if err != nil {
-		if strings.Contains(err.Error(), needle) {
+		if strings.Contains(RecordText(err), needle) {
 			return
 		}
 		t.Fatalf("%s: error %v lacks %q", label, err, needle)
 	}
-	if res.Outcome == OutcomeConfirmed || !strings.Contains(res.Detail, needle) {
+	if res.Outcome == OutcomeConfirmed || !strings.Contains(res.Code+": "+res.Detail, needle) {
 		t.Fatalf("%s: %+v lacks %q", label, res, needle)
 	}
 }
@@ -99,7 +99,7 @@ func TestGrantRecordsAPowerOfAttorneyWithinItsBounds(t *testing.T) {
 	bad := attorneyReq(endpoint, 2, "mac-a")
 	bad.Actor.Human = "Wido"
 	res, err = Grant(bad, proof, []uint8{1}, []string{"approve"}, human.Now.AddDate(0, 0, 7).Format("2006-01-02"))
-	expectRefusal(t, "eight calendar days", res, err, "no entry lives longer than 7 days")
+	expectRefusal(t, "eight calendar days", res, err, "a grant lasts at most 7 days")
 	if res, err := Grant(withUlid(bad, 6), proof, []uint8{1}, []string{"approve"}, human.Now.AddDate(0, 0, 6).Format("2006-01-02")); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("seven days, the expiry day included, is the bound: %+v %v", res, err)
 	}
@@ -116,7 +116,7 @@ func TestGrantRecordsAPowerOfAttorneyWithinItsBounds(t *testing.T) {
 	// the relayed-word horizon has passed, so an unobserved relay stands in.
 	relayed := humanauthority.Proof{Outcome: humanauthority.OutcomeTemporary, TemporaryHumanWord: "Wido said so", ReviewBy: expires}
 	res, err = Grant(bad, &relayed, []uint8{1}, []string{"approve"}, expires)
-	expectRefusal(t, "relayed word", res, err, "human")
+	expectRefusal(t, "relayed word", res, err, "only a person")
 
 	// Revoke closes the entry; a second revoke has nothing to do.
 	revoke := attorneyReq(endpoint, 4, "mac-a")
@@ -454,7 +454,7 @@ func TestUnparkUnderPowerOfAttorney(t *testing.T) {
 	if res, err := OpenRisked(asPerson(t, root, withUlid(human, 65)), "fix-paused", "The defect that blocks paused-one.", OriginHuman, "Fix.", []string{"paused-one"}, nil, low, 0, "", &small, nil); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("human open --blocks against a parked goal: %+v %v", res, err)
 	}
-	expectRefusal(t, "park with an unfinished blocker edge", mustPublish(UnparkUnderAttorney(withUlid(lifter, 66), "paused-one", "the condition passed")), nil, "which is not done")
+	expectRefusal(t, "park with an unfinished blocker edge", mustPublish(UnparkUnderAttorney(withUlid(lifter, 66), "paused-one", "the condition passed")), nil, "which isn't done")
 	if res, err := Done(withUlid(human, 67), "fix-paused", "fixed"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("done the blocker: %+v %v", res, err)
 	}
@@ -502,7 +502,7 @@ func TestUnparkUnderPowerOfAttorney(t *testing.T) {
 	if res, err := OpenRisked(attorneyReq(endpoint, 53, "mac-a"), "fix-held", "The defect that blocks held-one.", OriginMain, "Fix.", []string{"held-one"}, nil, low, 0, "", &small, nil); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open --blocks: %+v %v", res, err)
 	}
-	expectRefusal(t, "blocker park", mustPublish(UnparkUnderAttorney(withUlid(lifter, 54), "held-one", "the blocker is done")), nil, "returns by itself")
+	expectRefusal(t, "blocker park", mustPublish(UnparkUnderAttorney(withUlid(lifter, 54), "held-one", "the blocker is done")), nil, "comes back by itself")
 	// Recovery closes an interrupted attorney unpark by name instead of
 	// replaying it as a plain agent unpark.
 	if res, err := Park(withUlid(human, 55), "paused-one", "paused again"); err != nil || res.Outcome != OutcomeConfirmed {
@@ -516,7 +516,7 @@ func TestUnparkUnderPowerOfAttorney(t *testing.T) {
 	}
 	closed := false
 	for _, report := range reports {
-		if report.Opid == opid && strings.Contains(report.Detail, "cannot be replayed") {
+		if report.Opid == opid && strings.Contains(report.Detail, "is judged at the moment") {
 			closed = true
 		}
 	}

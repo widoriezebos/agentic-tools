@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/mail"
 	"os"
@@ -101,14 +102,14 @@ func ParseLandingRecord(data []byte) ([]LandingProof, error) {
 		for _, field := range strings.Fields(strings.TrimSpace(strings.TrimPrefix(line, "- Proof:"))) {
 			key, value, ok := strings.Cut(field, "=")
 			if !ok || key == "" || value == "" || fields[key] != "" {
-				return nil, fmt.Errorf("landing record has a malformed proof line: %s", line)
+				return nil, fmt.Errorf("the landing record has a malformed test-run line: %s", line)
 			}
 			fields[key] = value
 		}
 		n, err := strconv.Atoi(fields["n"])
 		if err != nil || n < 1 || !hex40(fields["endpoint"]) || !hex40(fields["candidate"]) ||
 			!hex40(fields["landing"]) || fields["attempt"] == "" || fields["verdict"] == "" {
-			return nil, fmt.Errorf("landing record has an incomplete proof line: %s", line)
+			return nil, fmt.Errorf("the landing record has an incomplete test-run line: %s", line)
 		}
 		proof := LandingProof{Number: n, Endpoint: fields["endpoint"], Candidate: fields["candidate"],
 			Landing: fields["landing"], Attempt: fields["attempt"], Verdict: fields["verdict"]}
@@ -584,7 +585,7 @@ func prepareLanding(req LandRequest, r landingRepository) (LandResult, error) {
 	}
 	if !validName(req.GoalID) || req.Repo == "" || req.Remote == "" || !req.CandidateOnly && (req.Out == "" || req.TestReceipt == "") ||
 		!hex40(req.EndpointTip) || !hex40(req.BranchTip) || req.Last == (req.Through != "") {
-		return LandResult{}, fmt.Errorf("land-prep needs a goal, endpoint, branch tip, output, receipt, and exactly one of --last or --through")
+		return LandResult{}, errors.New("land-prep needs the goal, main and branch commits, output, receipt, and --last or --through")
 	}
 	if !req.CandidateOnly {
 		if err := requireLandOutputAbsent(req.Out); err != nil {

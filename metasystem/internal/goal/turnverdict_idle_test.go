@@ -431,14 +431,14 @@ func TestRefusedBacklogIsReportedWithoutBlocking(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(work.Claimable) != 0 || len(work.Refused) != 1 || work.Refused[0].GoalID != refused.Id ||
-		!strings.Contains(work.Refused[0].Cause, "GOAL_NORM_REFUSED") {
+		!(work.Refused[0].Code == "GOAL_NORM_REFUSED") {
 		t.Fatalf("claimable work did not retain the admission refusal: %+v", work)
 	}
 	verdict := Verdict{}
 	session := &sessionState{}
 	(&Store{}).enforceIdleBacklog(&verdict, &work, nil, session, "refused-session", "main-1", TurnVerdictOptions{})
 	if verdict.ShouldBlock || verdict.IdleRefusal || session.IdleBlocks != 0 ||
-		!strings.Contains(verdict.Display, "CLAIM WOULD REFUSE: "+refused.Id+": GOAL_NORM_REFUSED") {
+		!strings.Contains(verdict.Display, "CLAIM WOULD REFUSE: "+refused.Id+": goal "+refused.Id+" asks for") {
 		t.Fatalf("refused work changed the idle block state or was not reported: verdict=%+v session=%+v", verdict, session)
 	}
 	withoutRefused := work
@@ -1279,7 +1279,7 @@ func TestSessionStopLibraryAndConsumerRequireHumanClassificationProof(t *testing
 	if _, err := store.WriteSessionStop(SessionStop{
 		SchemaVersion: 3, SessionId: "agent-library", HolderMainId: "main-1", ClaimEpoch: 7,
 		By: "Agent", WrittenAt: "2026-09-02T10:00:00Z", ExpiresAt: "2026-09-02T18:00:00Z",
-	}, humanauthority.Proof{}); err == nil || !strings.Contains(err.Error(), "human-classification proof") {
+	}, humanauthority.Proof{}); err == nil || !strings.Contains(err.Error(), "only a person stops a session") {
 		t.Fatalf("the exported library writer accepted an unclassified caller: %v", err)
 	}
 	if _, err := os.Stat(sessionStopPath(root, "agent-library")); !os.IsNotExist(err) {
@@ -1294,7 +1294,7 @@ func TestSessionStopLibraryAndConsumerRequireHumanClassificationProof(t *testing
 	verdict, err := store.TurnVerdict(ScanResult{}, "agent-library", "", "main-1", TurnVerdictOptions{SeatActor: Actor{Machine: "bed-m1"}})
 	// The old block assertion was the goal's DONE condition reversed; no invalid proof invents authority.
 	if err != nil || verdict.ShouldBlock || verdict.Class != "infrastructure" ||
-		!strings.Contains(verdict.Display, "human-classification proof") {
+		!strings.Contains(verdict.Display, "doesn't say who stopped it") {
 		t.Fatalf("the consumer did not allow the marker read failure as infrastructure: %+v %v", verdict, err)
 	}
 	if _, err := os.Stat(sessionStopPath(root, "agent-library")); err != nil {

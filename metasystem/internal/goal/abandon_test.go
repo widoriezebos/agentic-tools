@@ -535,7 +535,7 @@ func TestAbandonAlsoCascadesToNamedDependentsOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err = abandonRequest(req, "primary", AbandonSpec{Because: "obsolete", Also: []string{"child"}}, dependentArguments, map[string]uint64{"primary": primaryRevision}, nil).Mutate(tip)
-	if err == nil || !strings.Contains(err.Error(), "goal child changed under abandon's lock") || strings.Contains(err.Error(), "revision 0") {
+	if err == nil || !strings.Contains(err.Error(), "goal child changed while it was being abandoned") || strings.Contains(err.Error(), "revision 0") {
 		t.Fatalf("a live dependent absent from the projection did not reach the record-moved refusal without revision zero: %v", err)
 	}
 	_, err = abandonRequest(req, "primary", AbandonSpec{Because: "obsolete"}, abandonArguments{waive: map[string]string{}, set: map[string]bool{"primary": true}}, map[string]uint64{}, nil).Mutate(tip)

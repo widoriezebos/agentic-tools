@@ -43,7 +43,7 @@ type ClassificationSweepListing struct {
 
 func classificationListing(t *TreeGoals, draft []byte) (ClassificationSweepListing, error) {
 	if !utf8.Valid(draft) {
-		return ClassificationSweepListing{}, fmt.Errorf("SWEEP_MALFORMED_ROW: line 1 is not UTF-8")
+		return ClassificationSweepListing{}, coded("SWEEP_MALFORMED_ROW", fmt.Errorf("the draft isn't UTF-8 text, so nothing was classified"))
 	}
 	rows := map[string]ClassificationProposal{}
 	applied := map[string]bool{}
@@ -66,28 +66,28 @@ func classificationListing(t *TreeGoals, draft []byte) (ClassificationSweepListi
 			if len(fields) > 0 {
 				id = fields[0]
 			}
-			return ClassificationSweepListing{}, fmt.Errorf("SWEEP_MALFORMED_ROW: line %d goal %s must be <goal-id> <severity>,<novelty>,<exposure>,<accumulation> <basis>", lineNo, id)
+			return ClassificationSweepListing{}, coded("SWEEP_MALFORMED_ROW", fmt.Errorf("draft line %d (%s) isn't \"<goal> <s>,<n>,<e>,<a> <basis>\" with scores 1-3", lineNo, id))
 		}
 		basis := strings.Join(fields[2:], " ")
 		scores := strings.Split(fields[1], ",")
 		if len(scores) != 4 {
-			return ClassificationSweepListing{}, fmt.Errorf("SWEEP_MALFORMED_ROW: line %d goal %s must be <goal-id> <severity>,<novelty>,<exposure>,<accumulation> <basis>", lineNo, fields[0])
+			return ClassificationSweepListing{}, coded("SWEEP_MALFORMED_ROW", fmt.Errorf("draft line %d (%s) isn't \"<goal> <s>,<n>,<e>,<a> <basis>\" with scores 1-3", lineNo, fields[0]))
 		}
 		risk := RiskRecord{Basis: basis}
 		values := []*uint8{&risk.Severity, &risk.Novelty, &risk.Exposure, &risk.Accumulation}
 		for i, rawScore := range scores {
 			n, err := strconv.ParseUint(rawScore, 10, 8)
 			if err != nil || n < 1 || n > 3 {
-				return ClassificationSweepListing{}, fmt.Errorf("SWEEP_MALFORMED_ROW: line %d goal %s must be <goal-id> <severity>,<novelty>,<exposure>,<accumulation> <basis>", lineNo, fields[0])
+				return ClassificationSweepListing{}, coded("SWEEP_MALFORMED_ROW", fmt.Errorf("draft line %d (%s) isn't \"<goal> <s>,<n>,<e>,<a> <basis>\" with scores 1-3", lineNo, fields[0]))
 			}
 			*values[i] = uint8(n)
 		}
 		if _, duplicate := rows[fields[0]]; duplicate {
-			return ClassificationSweepListing{}, fmt.Errorf("SWEEP_DUPLICATE_GOAL: goal %s appears more than once", fields[0])
+			return ClassificationSweepListing{}, coded("SWEEP_DUPLICATE_GOAL", fmt.Errorf("goal %s is in the draft twice; keep one line for it", fields[0]))
 		}
 		goalFile := t.Live[fields[0]]
 		if goalFile == nil || goalFile.Risk != nil && *goalFile.Risk != risk {
-			return ClassificationSweepListing{}, fmt.Errorf("SWEEP_UNKNOWN_GOAL: goal %s is not an open goal without a Risk record", fields[0])
+			return ClassificationSweepListing{}, coded("SWEEP_UNKNOWN_GOAL", fmt.Errorf("goal %s isn't an open goal still waiting for its risk; drop its line", fields[0]))
 		}
 		derived, tier := risk.DerivedTier(), risk.DerivedTier()
 		humanDecision := goalFile.Tier != 0 && derived < goalFile.Tier
@@ -106,7 +106,7 @@ func classificationListing(t *TreeGoals, draft []byte) (ClassificationSweepListi
 		}
 	}
 	if len(missing) > 0 {
-		return ClassificationSweepListing{}, fmt.Errorf("SWEEP_INCOMPLETE: goal %s is absent from the draft", missing[0])
+		return ClassificationSweepListing{}, coded("SWEEP_INCOMPLETE", fmt.Errorf("goal %s is missing from the draft; add a line for it", missing[0]))
 	}
 	listing := ClassificationSweepListing{TierLawInstalled: t.Root != nil && t.Root.TierLaw != ""}
 	ids := make([]string, 0, len(rows))
@@ -167,7 +167,7 @@ func installTierLawRequest(r VerbRequest) PublishRequest {
 			}
 			for _, id := range sortedGoalIds(t.Live) {
 				if t.Live[id].Tier == 0 {
-					return nil, fmt.Errorf("SWEEP_LISTING_CHANGED: goal %s is still an open tierless goal; preview again", id)
+					return nil, coded("SWEEP_LISTING_CHANGED", fmt.Errorf("goal %s still has no tier; the list changed, so preview again", id))
 				}
 			}
 			t.Root.TierLaw = r.opid()
@@ -203,7 +203,7 @@ func ClassifyTier(r VerbRequest, proposal ClassificationProposal, installLaw boo
 			}
 			f := t.Live[proposal.ID]
 			if f == nil || f.Risk != nil {
-				return nil, fmt.Errorf("SWEEP_LISTING_CHANGED: goal %s is no longer an open goal without a Risk record", proposal.ID)
+				return nil, coded("SWEEP_LISTING_CHANGED", fmt.Errorf("goal %s already has its risk; the list changed, so preview again", proposal.ID))
 			}
 			derived := proposal.Risk.DerivedTier()
 			if derived < f.Tier {
@@ -236,7 +236,7 @@ func ClassifyTier(r VerbRequest, proposal ClassificationProposal, installLaw boo
 			if installLaw {
 				for _, id := range sortedGoalIds(t.Live) {
 					if id != proposal.ID && t.Live[id].Risk == nil {
-						return nil, fmt.Errorf("SWEEP_LISTING_CHANGED: goal %s is still an open goal without a Risk record; preview again", id)
+						return nil, coded("SWEEP_LISTING_CHANGED", fmt.Errorf("goal %s still has no risk; the list changed, so preview again", id))
 					}
 				}
 				t.Root.TierLaw = r.opid()
@@ -264,7 +264,7 @@ func approvalRequired(f *GoalFile, verb string) error {
 	if f != nil {
 		state, id = f.State, f.Id
 	}
-	return fmt.Errorf("APPROVAL_REQUIRED: goal %s is %s and not approved for execution; only the human approves it with goal approve -- this %s is refused", id, state, verb)
+	return coded("APPROVAL_REQUIRED", fmt.Errorf("goal %s isn't approved yet (it is %s), so the %s was refused\nrun: metasystem goal approve %s", id, state, verb, id))
 }
 
 // goalAdmissionRefusal marks a judgement about one goal. Configuration and
@@ -362,7 +362,7 @@ func requireApprovedForClaimWithContext(context *claimAdmissionContext, t *TreeG
 		return Budget{}, refuseGoalAdmission(approvalRequired(f, verb))
 	}
 	if err := f.ValidateApprovalRecord(); err != nil {
-		return Budget{}, refuseGoalAdmission(fmt.Errorf("APPROVAL_REQUIRED: goal %s has an invalid approval: %v", f.Id, err))
+		return Budget{}, refuseGoalAdmission(coded("APPROVAL_REQUIRED", fmt.Errorf("goal %s's approval record is damaged (%v)\nrun: metasystem goal approve %s", f.Id, err, f.Id)))
 	}
 	box, covered, err := budgetHasNormCoverageWithContext(context, f, *f.Budget)
 	if err != nil {
@@ -372,8 +372,8 @@ func requireApprovedForClaimWithContext(context *claimAdmissionContext, t *TreeG
 		return Budget{}, refuseGoalAdmission(refuseGoalNorm(f.Id, *f.Budget, box))
 	}
 	if expired, why := f.ApprovalExpired(approvalHorizon(t, now)); expired {
-		return Budget{}, refuseGoalAdmission(fmt.Errorf("APPROVAL_EXPIRED: goal %s was approved by a relayed word (review by %s, approved %s); that approval no longer admits new work because %s; a fresh approval is required: %s",
-			f.Id, f.Approved.ReviewBy, f.Approved.At, why, humanauthority.PersonActRemedy("metasystem goal approve "+f.Id)))
+		return Budget{}, refuseGoalAdmission(coded("APPROVAL_EXPIRED", fmt.Errorf("goal %s's relayed approval (review by %s) no longer admits new work: %s\nrun: metasystem goal approve %s",
+			f.Id, f.Approved.ReviewBy, why, f.Id)))
 	}
 	return *f.Budget, nil
 }
@@ -387,7 +387,7 @@ func restingState(f *GoalFile) string {
 
 func approvalProofClass(root string, proof *humanauthority.Proof) (authority, reviewBy string, temporary bool, err error) {
 	if proof == nil {
-		return "", "", false, fmt.Errorf("human approval requires freshly observed enrolled-human authority or a recorded temporary relay whose human provenance is not verified")
+		return "", "", false, errors.New("only a person approves, from their own terminal or with a recorded relayed word")
 	}
 	if proof.ValidFor(root) {
 		return ApprovalAuthorityProven, "", false, nil
@@ -398,7 +398,7 @@ func approvalProofClass(root string, proof *humanauthority.Proof) (authority, re
 	if proof.AuthorizesResume(root) && proof.TemporaryResumeFor(root) {
 		return ApprovalAuthorityRelayed, proof.ReviewBy, true, nil
 	}
-	return "", "", false, fmt.Errorf("human approval requires freshly observed enrolled-human authority or a recorded temporary relay whose human provenance is not verified")
+	return "", "", false, errors.New("only a person approves, from their own terminal or with a recorded relayed word")
 }
 
 func approvalProofClassForApprove(root string, proof *humanauthority.Proof) (authority, reviewBy string, temporary bool, err error) {
@@ -446,8 +446,8 @@ func recordSessionAuthority(h *HistoryLine, proof *humanauthority.Proof) {
 
 func refuseRelayedAfterFleetEnrollment(t *TreeGoals, temporary bool) error {
 	if temporary && t != nil && t.Root != nil && t.Root.FleetEnrollment != nil {
-		return fmt.Errorf("RELAY_AFTER_ENROLLMENT: the fleet enrolled its first agent-free terminal at %s on %s; relayed words end at the first enrolled session",
-			t.Root.FleetEnrollment.At, t.Root.FleetEnrollment.Machine)
+		return coded("RELAY_AFTER_ENROLLMENT", fmt.Errorf("relayed words ended when %s enrolled a terminal (%s); the person acts at their terminal",
+			t.Root.FleetEnrollment.Machine, t.Root.FleetEnrollment.At))
 	}
 	return nil
 }
@@ -816,12 +816,12 @@ func ApproveSweep(r VerbRequest, confirm string, proof *humanauthority.Proof) (P
 			}
 			listing := sweepListing(t)
 			if listing.Digest != confirm {
-				return nil, fmt.Errorf("SWEEP_LISTING_CHANGED: confirmation %s does not match current listing %s; preview again", confirm, listing.Digest)
+				return nil, coded("SWEEP_LISTING_CHANGED", fmt.Errorf("the list of goals changed since the preview (%s, now %s); preview again", confirm, listing.Digest))
 			}
 			if temporary {
 				for _, f := range t.Live {
 					if f.Approved != nil {
-						return nil, fmt.Errorf("a relayed sweep refuses after any approval exists; to ratify the fleet, %s", humanauthority.PersonActRemedy("the sweep"))
+						return nil, errors.New("a relayed word can't sweep once a goal is approved; the person runs the sweep at their terminal")
 					}
 				}
 				if first, ok := firstRecordedRelayedActIn(t.Root.History, "", "approve", proof.Departure); ok {
@@ -878,7 +878,7 @@ func ApproveSweep(r VerbRequest, confirm string, proof *humanauthority.Proof) (P
 // synced root record. Later machines observe the same cutoff.
 func RecordFleetEnrollment(r VerbRequest, generation uint64) (PublishResult, error) {
 	if generation == 0 {
-		return PublishResult{}, fmt.Errorf("fleet enrollment requires a positive generation")
+		return PublishResult{}, errors.New("the terminal enrollment has no number, so it can't be recorded; enroll again")
 	}
 	return Publish(r.Endpoint, PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,

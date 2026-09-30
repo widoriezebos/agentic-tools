@@ -192,7 +192,7 @@ func TestSyncModeMismatchRefusesByName(t *testing.T) {
 	// promotion refuses naming the goal.
 	e.Remote = "origin"
 	_, err := Project(e, false, time.Now())
-	if err == nil || !strings.Contains(err.Error(), "backlog-local-promotion") {
+	if err == nil || !strings.Contains(err.Error(), "set it back to local") {
 		t.Fatalf("the mode flip refuses toward the promotion goal: %v", err)
 	}
 }

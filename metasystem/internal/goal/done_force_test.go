@@ -107,7 +107,7 @@ func TestForcedDoneOverridesAnOpenCarryWord(t *testing.T) {
 	endpoint, _, human, _, _, ref := openCarryWordForAbandonTestFor(t, base)
 	declareWordHistory(t, endpoint, ref, "")
 	plain, err := Done(carryVerb(human, "01J5X00000000000000000FC01", 2), "g", "landed by hand")
-	if err != nil || plain.Outcome != OutcomeRejected || !strings.HasPrefix(plain.Detail, "goal g has open carry word "+ref+"; land it, supersede it, or let it expire;") || !ConclusionOverridable(plain.Detail) {
+	if err != nil || plain.Outcome != OutcomeRejected || !strings.HasPrefix(plain.Detail, "goal g has an open exception ("+ref+"); land it, replace it or let it expire") || !ConclusionOverridable(plain.Detail) {
 		t.Fatalf("plain done: %+v %v", plain, err)
 	}
 	request := forced(carryVerb(human, "01J5X00000000000000000FC02", 3))

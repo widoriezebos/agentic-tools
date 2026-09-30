@@ -60,7 +60,7 @@ func TestRestampRefusesAForeignPairALowerEpochAndAnUnclaimedGoal(t *testing.T) {
 		request.Actor.Lineage = "foreign-lineage"
 		request.ClaimEpoch = 5
 		result, err := Restamp(request, "foreign-pair")
-		if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "caller pair") || !strings.Contains(result.Detail, "does not match") {
+		if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "not this session") {
 			t.Fatalf("foreign pair refusal: %+v %v", result, err)
 		}
 	})
@@ -73,7 +73,7 @@ func TestRestampRefusesAForeignPairALowerEpochAndAnUnclaimedGoal(t *testing.T) {
 		request.CallerClass = "MAIN"
 		request.ClaimEpoch = 5
 		result, err := Restamp(request, "main-non-holder")
-		if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "caller pair mac-b+other-main does not match") {
+		if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "not this session (mac-b, other-main)") {
 			t.Fatalf("foreign MAIN pair refusal: %+v %v", result, err)
 		}
 	})
@@ -89,7 +89,7 @@ func TestRestampRefusesAForeignPairALowerEpochAndAnUnclaimedGoal(t *testing.T) {
 		request.Ulid = "01J5X00000000000000000CK20"
 		request.ClaimEpoch = 4
 		result, err := Restamp(request, "lower-epoch")
-		if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "cannot move down") {
+		if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "can't go back from") {
 			t.Fatalf("lower epoch refusal: %+v %v", result, err)
 		}
 	})
@@ -119,7 +119,7 @@ func TestRestampRefusesAForeignPairALowerEpochAndAnUnclaimedGoal(t *testing.T) {
 		request.EpochAuthority = ""
 		request.ClaimEpoch = 5
 		result, err := Restamp(request, "not-holder")
-		if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "live lease holder of class MAIN") {
+		if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "only the session holding the checkout") {
 			t.Fatalf("non-holder refusal: %+v %v", result, err)
 		}
 	})

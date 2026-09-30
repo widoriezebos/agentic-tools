@@ -305,20 +305,20 @@ func waitTreeIdentity(ctx context.Context, root, commit string) (string, error) 
 func waitAcceptanceGates(ctx context.Context, root, accepted, fetched string) error {
 	acceptedIdentity, err := waitTreeIdentity(ctx, root, accepted)
 	if err != nil {
-		return fmt.Errorf("the accepted tree's identity cannot be read: %w", err)
+		return fmt.Errorf("the goal list's identity can't be read: %w", err)
 	}
 	fetchedIdentity, fetchedErr := waitTreeIdentity(ctx, root, fetched)
 	if fetchedErr != nil && (ctx.Err() != nil || errors.Is(fetchedErr, context.DeadlineExceeded) || errors.Is(fetchedErr, context.Canceled)) {
 		return fetchedErr
 	}
 	if fetchedIdentity != "" && fetchedIdentity != acceptedIdentity {
-		return fmt.Errorf("foreign ledger refused: the fetched tree's identity %s is not this ledger's %s — config cannot silently change what the ledger is", fetchedIdentity, acceptedIdentity)
+		return fmt.Errorf("the fetched goal list is a different one (%s, not %s); check the configured remote", fetchedIdentity, acceptedIdentity)
 	}
 	if _, err := waitGit(ctx, root, nil, "merge-base", "--is-ancestor", accepted, fetched); err != nil {
 		if ctx.Err() != nil || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
 			return err
 		}
-		return fmt.Errorf("rewound canonical branch refused: %s does not descend from the accepted tip %s; the projection stays pinned — repair --accept-remote is the deliberate path", short(fetched), short(accepted))
+		return fmt.Errorf("the shared goal list went back in history (%s is not after %s); a person accepts it\nrun: metasystem goal sync --accept-remote-history", short(fetched), short(accepted))
 	}
 	out, err := waitGit(ctx, root, nil, "diff", "--name-status", "--no-renames", accepted, fetched, "--", legacyDonePrefix)
 	if err != nil {
@@ -337,7 +337,7 @@ func waitAcceptanceGates(ctx context.Context, root, accepted, fetched string) er
 		case "A":
 			return fmt.Errorf("%s: the legacy concluded-goal location is read-only; new conclusions belong under %s", path, recordsGoalsRoot)
 		default:
-			return fmt.Errorf("%s: the legacy concluded-goal location is read-only; reopen or prune the standing record through its verb", path)
+			return fmt.Errorf("%s: the old done-goals folder is read-only; change a done goal with its goal command", path)
 		}
 	}
 	return nil
@@ -716,7 +716,7 @@ func CaptureTipBounded(e Endpoint, budget time.Duration) (BoundedCapture, error)
 				if !waitDone {
 					waitErr = <-waited
 				}
-				return fail(fmt.Errorf("goal ledger fetch timed out and its process group could not be inspected: %v (TERM: %v, KILL: %v, wait: %v)", probeErr, termErr, killErr, waitErr))
+				return fail(fmt.Errorf("fetching the goal list timed out, and its git process couldn't be checked: %v (%v, %v, %v)", probeErr, termErr, killErr, waitErr))
 			}
 			if waitDone && groupGone {
 				return fail(fmt.Errorf("goal ledger fetch timed out after %s", budget))
@@ -733,7 +733,7 @@ func CaptureTipBounded(e Endpoint, budget time.Duration) (BoundedCapture, error)
 					waitErr = <-waited
 				}
 				if killErr != nil && killErr != syscall.ESRCH {
-					return fail(fmt.Errorf("goal ledger fetch timed out and its process group could not be killed after %s grace: %v (TERM: %v, wait: %v)", boundedCaptureGrace, killErr, termErr, waitErr))
+					return fail(fmt.Errorf("fetching the goal list timed out, and its git process didn't stop within %s: %v (%v, %v)", boundedCaptureGrace, killErr, termErr, waitErr))
 				}
 				return fail(fmt.Errorf("goal ledger fetch timed out after %s", budget))
 			}

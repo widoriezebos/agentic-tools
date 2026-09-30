@@ -158,7 +158,7 @@ func ParseManifest(data []byte) (*Manifest, error) {
 		line := strings.TrimRight(raw, " \t")
 		if strings.HasPrefix(line, "MIGRATION_EPOCH:") {
 			if len(m.Entries) > 0 || current != nil {
-				return nil, fmt.Errorf("manifest line %d: MIGRATION_EPOCH must precede the first entry", lineNo+1)
+				return nil, fmt.Errorf("manifest line %d: the migration time must come before the first entry", lineNo+1)
 			}
 			m.Epoch = strings.TrimSpace(strings.TrimPrefix(line, "MIGRATION_EPOCH:"))
 			epochCount++
@@ -166,7 +166,7 @@ func ParseManifest(data []byte) (*Manifest, error) {
 		}
 		if strings.HasPrefix(line, "REVIEWED_SOURCE_SHA256:") {
 			if len(m.Entries) > 0 || current != nil {
-				return nil, fmt.Errorf("manifest line %d: REVIEWED_SOURCE_SHA256 must precede the first entry", lineNo+1)
+				return nil, fmt.Errorf("manifest line %d: the reviewed checksum must come before the first entry", lineNo+1)
 			}
 			m.ReviewedSHA256 = strings.TrimSpace(strings.TrimPrefix(line, "REVIEWED_SOURCE_SHA256:"))
 			shaCount++
@@ -238,10 +238,10 @@ func ParseManifest(data []byte) (*Manifest, error) {
 		return nil, err
 	}
 	if epochCount != 1 || shaCount != 1 {
-		return nil, fmt.Errorf("manifest: MIGRATION_EPOCH and REVIEWED_SOURCE_SHA256 are required exactly once (got %d and %d)", epochCount, shaCount)
+		return nil, fmt.Errorf("the manifest needs its migration time and reviewed checksum once each (has %d and %d)", epochCount, shaCount)
 	}
 	if _, err := time.Parse(time.RFC3339, m.Epoch); err != nil {
-		return nil, fmt.Errorf("manifest: MIGRATION_EPOCH is not RFC3339: %v", err)
+		return nil, fmt.Errorf("the manifest's migration time isn't an RFC3339 time: %v", err)
 	}
 	return m, nil
 }

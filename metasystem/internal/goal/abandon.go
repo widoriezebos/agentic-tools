@@ -102,7 +102,7 @@ func Abandon(r VerbRequest, id string, spec AbandonSpec, proof *humanauthority.P
 		for _, job := range jobs {
 			stops = append(stops, "metasystem work stop j2:"+job)
 		}
-		return PublishResult{}, fmt.Errorf("goal abandon refuses while non-terminal jobs name the abandoned set: %s; stop each dispatch job (%s), then repeat the abandon", strings.Join(jobs, ", "), strings.Join(stops, "; "))
+		return PublishResult{}, fmt.Errorf("jobs are still running for these goals (%s); stop them, then abandon again\nrun: %s", strings.Join(jobs, ", "), strings.Join(stops, "; "))
 	}
 	debtDetail := abandonedReviewDebtDetail(projection.Tree, arguments.set)
 	result, err := Publish(r.Endpoint, abandonRequest(r, id, spec, arguments, revisions, proof))
@@ -235,7 +235,7 @@ func abandonRequest(r VerbRequest, id string, spec AbandonSpec, arguments abando
 			for _, goalID := range arguments.also {
 				if _, projected := projectedRevisions[goalID]; !projected {
 					if file := tree.Live[goalID]; file != nil && transitiveLiveDependents(tree, id)[goalID] {
-						return nil, fmt.Errorf("goal %s changed under abandon's lock (it was not live in the projection and is now revision %d); re-read and retry", goalID, file.Revision)
+						return nil, fmt.Errorf("goal %s changed while it was being abandoned (now revision %d); try again", goalID, file.Revision)
 					}
 					return nil, fmt.Errorf("abandon takes one goal; --also names only its live dependents")
 				}
@@ -415,18 +415,18 @@ func abandonCarryRefusalFor(endpoint Endpoint, tree *TreeGoals, codeTip, id stri
 			return err
 		}
 		if consumption.Kind == "origin" {
-			return fmt.Errorf("goal %s has carried commit %s without its ledger row; close it with metasystem work land %s --using-exception %s, even if the word has expired; then retry abandon", id, consumption.ID, id, word.History.Opid)
+			return fmt.Errorf("goal %s has landed work (%s) that isn't recorded yet; record it, then abandon again\nrun: metasystem work land %s --using-exception %s", id, consumption.ID, id, word.History.Opid)
 		}
 		if reservation := CarryReservationAt(tree, id, word.History.Opid, now); reservation.State == "open" {
 			seat, err := OpidMachine(reservation.History.Opid)
 			if err != nil {
 				return err
 			}
-			return fmt.Errorf("carry reservation %s on goal %s is in flight on %s; it ends when that seat's landing finishes or abandons it, or at its expiry; then retry abandon", reservation.History.Opid, id, seat)
+			return fmt.Errorf("goal %s is being landed on %s under an exception; abandon it once that landing ends", id, seat)
 		}
 		delete(refs, word.History.Opid)
 		if now.Before(word.Expires) && (consumption.Kind == "none" || consumption.Kind == "missing-anchor") {
-			return fmt.Errorf("goal %s has open carry word %s; finish its landing, supersede it on a live goal with metasystem work land G2 --exception CODE --reason TEXT --by NAME --replace-exception %s, or let it expire at %s; then retry abandon", id, word.History.Opid, word.History.Opid, word.Expires.UTC().Format(time.RFC3339))
+			return fmt.Errorf("goal %s has an open landing exception (%s) until %s; land it or let it expire, then abandon again", id, word.History.Opid, word.Expires.UTC().Format(time.RFC3339))
 		}
 	}
 	for _, ref := range sortedSet(refs) {
@@ -438,7 +438,7 @@ func abandonCarryRefusalFor(endpoint Endpoint, tree *TreeGoals, codeTip, id stri
 		if err != nil {
 			return err
 		}
-		return fmt.Errorf("carry reservation %s on goal %s is in flight on %s; it ends when that seat's landing finishes or abandons it, or at its expiry; then retry abandon", reservation.History.Opid, id, seat)
+		return fmt.Errorf("goal %s is being landed on %s under an exception; abandon it once that landing ends", id, seat)
 	}
 	return nil
 }
