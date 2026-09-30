@@ -49,6 +49,9 @@ type StartSpec struct {
 	// Round and MaxRounds are the unit round this launch serves and the
 	// run's approved ceiling; the board card carries them (D14, R24).
 	Round, MaxRounds int
+	// FenceRoot is the installation state root whose process-creation
+	// fence a seat launch binds to; empty is the working directory.
+	FenceRoot string
 }
 type Manager struct {
 	Store    Store
@@ -120,10 +123,17 @@ func (m *Manager) Start(spec StartSpec) (Record, error) {
 	if err != nil {
 		return Record{}, err
 	}
+	fenceRoot := ""
 	if spec.Kind == "seat" {
+		fenceRoot = absDir
+		if spec.FenceRoot != "" {
+			if fenceRoot, err = filepath.Abs(spec.FenceRoot); err != nil {
+				return Record{}, err
+			}
+		}
 		// The steward's pre-start read: a seat is never started into a
 		// checkout whose process-creation fence is closed (D-fence).
-		if reason := seatFenceClosed(absDir); reason != "" {
+		if reason := seatFenceClosed(fenceRoot); reason != "" {
 			return Record{}, errors.New(reason)
 		}
 	}
@@ -160,6 +170,9 @@ func (m *Manager) Start(spec StartSpec) (Record, error) {
 	setInt64(record.AdapterData, "window", window)
 	if spec.Page != "" {
 		setString(record.AdapterData, "page", spec.Page)
+	}
+	if fenceRoot != "" {
+		setString(record.AdapterData, "fenceRoot", fenceRoot)
 	}
 	if spec.Kind == "build" {
 		_, record.DeclaredLines, err = buildSize(spec)
@@ -295,17 +308,19 @@ func (m *Manager) Supervise(id string) (Record, error) {
 	}
 	var fenceClaim *stopfence.Claim
 	var fenceGeneration int64
+	var fenceRoot string
 	if record.Kind == "seat" {
 		command.Environment = append(command.Environment, SeatEnvironment()...)
 		// The seat binds to the checkout's process-creation fence as the
 		// steward runner does: read it, open a creation claim before the
 		// child, re-read it once the child is recorded (D-fence).
-		if reason := seatFenceClosed(record.WorkingDirectory); reason != "" {
+		fenceRoot = seatFenceRoot(record)
+		if reason := seatFenceClosed(fenceRoot); reason != "" {
 			return m.failCause(id, reason, nil)
 		}
-		fence, _ := stopfence.Read(record.WorkingDirectory)
+		fence, _ := stopfence.Read(fenceRoot)
 		fenceGeneration = fence.Generation
-		fenceClaim, err = stopfence.Creating(record.WorkingDirectory, "seat-launch", fenceGeneration, self)
+		fenceClaim, err = stopfence.Creating(fenceRoot, "seat-launch", fenceGeneration, self)
 		if err != nil {
 			return m.failCause(id, "seat-launch creation claim: "+err.Error(), nil)
 		}
@@ -380,7 +395,7 @@ func (m *Manager) Supervise(id string) (Record, error) {
 		return Record{}, errors.Join(err, cleanupErr)
 	}
 	if fenceClaim != nil {
-		if reason := seatFenceMoved(record.WorkingDirectory, fenceGeneration); reason != "" {
+		if reason := seatFenceMoved(fenceRoot, fenceGeneration); reason != "" {
 			return m.endFencedSeat(id, reason, child, childRef)
 		}
 		if err := fenceClaim.Close(); err != nil {

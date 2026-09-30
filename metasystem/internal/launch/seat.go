@@ -18,6 +18,15 @@ func SeatEnvironment() []string {
 	return []string{"METASYSTEM_OWNER_LINEAGE=" + SeatOwnerLineage, "METASYSTEM_DELEGATE_ROOT=", "METASYSTEM_SESSION_ID="}
 }
 
+// seatFenceRoot is the state root whose fence a seat record binds to: the
+// root its start named, else its working directory.
+func seatFenceRoot(record Record) string {
+	if root := readString(record.AdapterData, "fenceRoot"); root != "" {
+		return root
+	}
+	return record.WorkingDirectory
+}
+
 // seatFenceClosed reads the checkout's process-creation fence once and
 // returns the fence's own description when it is closed, or why it could not
 // be read; empty means a seat may be created.

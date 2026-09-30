@@ -241,12 +241,15 @@ func TestSeatStartDuringStopIsEnded(t *testing.T) {
 	m.Adapters = map[string]Adapter{"claude-headless": ClaudeHeadless{Binary: "/fixture/bin/claude"}}
 	m.Supervisor = supervisingStarter(t, m)
 	processes.group = true
+	// A vendored layout: the session works in the checkout, the fence is
+	// the installation state root's below it.
 	checkout := t.TempDir()
-	writeFence(t, checkout, stopfence.StateOpen, stopfence.PhaseArmed, 4)
+	stateRoot1 := filepath.Join(checkout, "metasystem")
+	writeFence(t, stateRoot1, stopfence.StateOpen, stopfence.PhaseArmed, 4)
 	var closedFence stopfence.Record
 	claimed := 0
 	processes.onStart = func(Command) {
-		claims, err := stopfence.Claims(checkout, 4)
+		claims, err := stopfence.Claims(stateRoot1, 4)
 		if err == nil {
 			for _, claim := range claims {
 				if claim.Verb == "seat-launch" && claim.Generation == 4 && claim.Creator.Pid == 10 {
@@ -254,22 +257,22 @@ func TestSeatStartDuringStopIsEnded(t *testing.T) {
 				}
 			}
 		}
-		closedFence = writeFence(t, checkout, stopfence.StateClosed, stopfence.PhaseStopped, 5)
+		closedFence = writeFence(t, stateRoot1, stopfence.StateClosed, stopfence.PhaseStopped, 5)
 	}
-	record, err := m.Start(StartSpec{Kind: "seat", WorkingDirectory: checkout, Brief: seatBrief(t), Tag: "n0nce"})
+	record, err := m.Start(StartSpec{Kind: "seat", WorkingDirectory: checkout, FenceRoot: stateRoot1, Brief: seatBrief(t), Tag: "n0nce"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if claimed != 1 {
 		t.Fatalf("the child started outside one seat-launch creation claim (claims seen %d)", claimed)
 	}
-	want, _ := stopfence.ClosedDescription(closedFence, checkout)
+	want, _ := stopfence.ClosedDescription(closedFence, stateRoot1)
 	record, _ = m.Store.Read(record.ID)
 	if record.State != Failed || record.Reason != want || record.Child == nil || processes.group ||
 		!slices.Contains(processes.signals, syscall.SIGTERM) {
 		t.Fatalf("a seat started during a stop = %+v group=%t signals=%v, want failed %q", record, processes.group, processes.signals, want)
 	}
-	if claims, err := stopfence.Claims(checkout, 5); err != nil || len(claims) != 0 {
+	if claims, err := stopfence.Claims(stateRoot1, 5); err != nil || len(claims) != 0 {
 		t.Fatalf("the seat supervisor left its creation claim: %+v %v", claims, err)
 	}
 
@@ -284,6 +287,16 @@ func TestSeatStartDuringStopIsEnded(t *testing.T) {
 	want, _ = stopfence.ClosedDescription(closed, closedCheckout)
 	if _, err := m2.Start(StartSpec{Kind: "seat", WorkingDirectory: closedCheckout, Brief: seatBrief(t), Tag: "n0nce"}); err == nil || err.Error() != want || started {
 		t.Fatalf("a seat start under a closed fence = %v started=%t, want %q", err, started, want)
+	}
+	// The fence lives at the installation's state root, which need not be
+	// the session's working directory (a vendored metasystem/ below the
+	// checkout): the start names it and the fence there binds.
+	vendored := t.TempDir()
+	stateRoot := filepath.Join(vendored, "metasystem")
+	vendoredFence := writeFence(t, stateRoot, stopfence.StateClosed, stopfence.PhaseStopped, 3)
+	wantVendored, _ := stopfence.ClosedDescription(vendoredFence, stateRoot)
+	if _, err := m2.Start(StartSpec{Kind: "seat", WorkingDirectory: vendored, FenceRoot: stateRoot, Brief: seatBrief(t), Tag: "n0nce"}); err == nil || err.Error() != wantVendored || started {
+		t.Fatalf("a seat start under a closed state-root fence = %v started=%t, want %q", err, started, wantVendored)
 	}
 	seeded := seed(t, m2, "seat-closed", Starting)
 	if _, err := m2.Store.Update(seeded.ID, func(r *Record) error {
