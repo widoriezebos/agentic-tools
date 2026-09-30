@@ -9,8 +9,10 @@
 - Origin: human
 - Next step: Next: After switch-on, take the first three design rounds started through the launcher and write the report comparing their tokens and repeated findings with the 09-15 measurement. Done when: the report exists; conclude if it shows the saving, otherwise open one fix.
 - OpenedAt: 2026-09-15T15:21:21Z
-- Revision: 65
+- Revision: 66
+- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
+- Approved: by=human:wido at=2026-09-30T19:05:04Z revision=66 opid=HHV7XSEE1CKWSEDRSY7AHFAHPQ-m1e-b6a4eb0a authority=proven digest=390e823764461b06b474fbbcbe11131f600971007e2d39132427626a59de97b0 episode=66
 - Parked: by=human:Wido at=2026-09-18T21:52:06Z because=pickup: the first three design rounds after re-arm (DONE d report shape at M1b SP/direct/design-rounds-done-d-report-shape.md)
 
 History:
@@ -79,4 +81,5 @@ History:
 - 2026-09-30T18:51:32Z GYASBCWJ4Q04KFAZBF07Q79SPN-ui-bc2fda53 done actor=human:Wido targets=adoption-filled-delivery-passes-on-trunk,beds-run-under-the-oldest-supported-bash,brief-declares-the-round-boundary,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,delegate-sandbox-runs-the-beds,design-rounds-read-less-and-repeat-less,every-round-gets-an-independent-read,evidence-and-build-output-have-retention-and-stay-unindexed,failures-show-observed-against-expected,fixture-runners-and-fakes-bound-their-own-life,fleet-doctor-repairs-what-stops-other-seats,follow-up-brief-cannot-cite-fresh-trunk-files,machinery-runs-unattended-on-codex,one-steward-per-checkout-on-its-own-root,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,receipt-writer-follows-the-worktree-it-runs-in,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,testing-surfaces-declare-their-mirror reason=priority-order from=1:13 to=1:12
 - 2026-09-30T19:04:54Z H184RVB2WMWS0VEDTSK4KA8ATA-m1e-b6a4eb0a unapprove actor=human:wido targets=design-rounds-read-less-and-repeat-less reason=Unapproved only to rewrite its intent in plain English (backlog sync 2026-09-30); approved again right after
 - 2026-09-30T19:04:58Z HY30BK2P9TSN37XCCPY4P1EJ3J-m1e-b6a4eb0a edit actor=human:wido targets=design-rounds-read-less-and-repeat-less
-Integrity: sha256=2859dea9d249eb732af06b0cecb1392a3342ca4134d636f03b49efbdb77224cf
+- 2026-09-30T19:05:04Z HHV7XSEE1CKWSEDRSY7AHFAHPQ-m1e-b6a4eb0a approve actor=human:wido targets=design-rounds-read-less-and-repeat-less
+Integrity: sha256=70ac3f6530b18610f7c50d22218c068e169d52061ec82feabcfd8a0f11cfae9b
