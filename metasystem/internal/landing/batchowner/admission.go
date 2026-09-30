@@ -10,9 +10,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"time"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
@@ -24,31 +22,15 @@ import (
 
 var batchJoinAdmissionExecutable = os.Executable
 
-// productionJoinAdmission runs the selected cheap phase after the member's
-// claim reaches the landing control root. The complete delivery selection is
-// still held by the joining unit for every later prefix and tip decision.
-func productionJoinAdmission(root, batchID string, unit batch.Unit) (batch.JoinAdmission, error) {
-	record, err := batch.NewStore(root, nil).Load(batchID)
-	if err != nil {
-		return batch.JoinAdmission{}, err
-	}
-	if err := AuthorizeBatchMember(root, batch.Record{BatchID: batchID, Seal: map[string]batch.Claim{unit.GoalID: unit.Claim}}, unit); err != nil {
-		return batch.JoinAdmission{}, err
-	}
+// deferredJoinAdmission is a goal's join admission (design r10 K6): the
+// join is custody handover plus enqueue and starts no test run. The member
+// joins with its exact admission tree recorded; landing prove's member
+// subject is where its tests run.
+func deferredJoinAdmission(_ string, _ string, unit batch.Unit) (batch.JoinAdmission, error) {
 	if unit.Admission == nil || unit.Admission.Tree == "" {
 		return batch.JoinAdmission{}, fmt.Errorf("%s: %s has no exact admission tree", codeJoinTestDropped, unit.GoalID)
 	}
-	result, _, ran, err := runBatchAdmissionOnTree(root, batchID, record.BaseTree, unit.GoalID, unit.Claim, unit.Admission.Tree, "join-"+unit.GoalID,
-		func(decision batch.JoinAdmission, maxAgeMS int64) (batch.JoinAdmission, error) {
-			return retainJoinEpisode(root, batch.NewStore(root, nil), batchID, unit, decision, maxAgeMS)
-		})
-	if err != nil || !ran {
-		return result, err
-	}
-	if err := AuthorizeBatchMember(root, batch.Record{BatchID: batchID, Seal: map[string]batch.Claim{unit.GoalID: unit.Claim}}, unit); err != nil {
-		return batch.JoinAdmission{}, err
-	}
-	return result, nil
+	return batch.JoinAdmission{Tree: unit.Admission.Tree, Status: batch.AdmissionDeferred}, nil
 }
 
 // runBatchAdmissionOnTree runs the join's cheap phase, the admission subset
@@ -171,38 +153,4 @@ func runBatchAdmissionOnTree(root, batchID, baseTree, goalID string, claim batch
 // JoinAdmissionRefusal is the batch's refusal for a refused admission run.
 func JoinAdmissionRefusal(child verbresult.Result) error {
 	return admissionRefusal(child)
-}
-
-func retainJoinEpisode(root string, store batch.Store, batchID string, unit batch.Unit, decision batch.JoinAdmission, maxAgeMS int64) (batch.JoinAdmission, error) {
-	now, err := fixtureauth.GoalNow(batch.ModuleRoot(root))
-	if err != nil {
-		return batch.JoinAdmission{}, err
-	}
-	err = store.Update(batchID, func(record *batch.Record) error {
-		for index := range record.Units {
-			current := &record.Units[index]
-			if current.GoalID != unit.GoalID {
-				continue
-			}
-			if current.State != batch.UnitJoining || current.Admission == nil || current.Admission.Tree != decision.Tree || current.Claim != unit.Claim {
-				return fmt.Errorf("%s: %s changed before episode retention", codeJoinPending, unit.GoalID)
-			}
-			if current.Admission.DecisionID == decision.DecisionID && current.Admission.FreshEpisode != "" {
-				if expiry, parseErr := time.Parse(time.RFC3339Nano, current.Admission.FreshExpiresAt); parseErr == nil && now.Before(expiry) {
-					decision.FreshEpisode, decision.FreshExpiresAt = current.Admission.FreshEpisode, current.Admission.FreshExpiresAt
-					return nil
-				}
-			}
-			token, tokenErr := testrun.NewFreshEpisode()
-			if tokenErr != nil {
-				return tokenErr
-			}
-			decision.FreshEpisode = token
-			decision.FreshExpiresAt = now.Add(time.Duration(maxAgeMS) * time.Millisecond).UTC().Format(time.RFC3339Nano)
-			current.Admission.DecisionID, current.Admission.FreshEpisode, current.Admission.FreshExpiresAt = decision.DecisionID, decision.FreshEpisode, decision.FreshExpiresAt
-			return nil
-		}
-		return fmt.Errorf("%s: %s is absent", codeJoinPending, unit.GoalID)
-	})
-	return decision, err
 }
