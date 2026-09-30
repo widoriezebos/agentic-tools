@@ -223,10 +223,13 @@ func (plan *UnitPlan) resolveAndValidate(root string) error {
 }
 
 func planInvalid(field string, cause error) error {
-	if cause == nil {
-		return fmt.Errorf("UNIT_PLAN_INVALID field=%s", field)
+	if field == "plan" && cause != nil {
+		return coded("UNIT_PLAN_INVALID", "field="+field, fmt.Errorf("the unit plan is not valid: %w", cause))
 	}
-	return fmt.Errorf("UNIT_PLAN_INVALID field=%s: %w", field, cause)
+	if cause == nil {
+		return coded("UNIT_PLAN_INVALID", "field="+field, fmt.Errorf("the unit plan's %s is missing or not valid", field))
+	}
+	return coded("UNIT_PLAN_INVALID", "field="+field, fmt.Errorf("the unit plan's %s is not valid: %w", field, cause))
 }
 
 func proofCommands(plan UnitPlan) []ProofCommand { return append([]ProofCommand(nil), plan.Proof...) }

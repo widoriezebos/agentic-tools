@@ -110,7 +110,7 @@ func TestDesignRequestCrashBeforeSupervisor(t *testing.T) {
 	if err != nil || !recovered || record.State != Failed || record.Reason != "supervisor-start-unrecorded" {
 		t.Fatalf("recovery winner: %+v %v %v", record, recovered, err)
 	}
-	if _, err := m.Supervise("20260917t120000-0000000001"); err == nil || !strings.Contains(err.Error(), "LAUNCH_ALREADY_SUPERVISED") {
+	if _, err := m.Supervise("20260917t120000-0000000001"); err == nil || !strings.Contains(ErrorDetail(err), "LAUNCH_ALREADY_SUPERVISED") {
 		t.Fatalf("a late supervisor after recovery must refuse before any child: %v", err)
 	}
 	// The supervisor wins: its claim is recorded first, recovery refuses.

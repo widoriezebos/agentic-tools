@@ -60,7 +60,7 @@ func TestIntentBuildRetainedRequest(t *testing.T) {
 				t.Fatalf("both competing requests ran: %+v", results)
 			}
 			winner = index
-		case strings.HasPrefix(result.Summary, "UNIT_RUN_BUSY") || strings.HasPrefix(result.Summary, "UNIT_NAMED_INPUT_CHANGED"):
+		case strings.HasPrefix(strings.Join(result.Details, "\n"), "UNIT_RUN_BUSY") || strings.HasPrefix(strings.Join(result.Details, "\n"), "UNIT_NAMED_INPUT_CHANGED"):
 		default:
 			t.Fatalf("competing request %d: %+v", index, result)
 		}
@@ -79,7 +79,7 @@ func TestIntentBuildRetainedRequest(t *testing.T) {
 	launched := len(bed.starter.launched())
 
 	code, refused, _ := bed.work(argsFor(loserBrief)...)
-	if code != 1 || refused.Outcome != intentRefused || !strings.Contains(refused.Summary, "UNIT_NAMED_INPUT_CHANGED") || !strings.Contains(refused.Summary, "run="+run) {
+	if code != 1 || refused.Outcome != intentRefused || !strings.Contains(strings.Join(refused.Details, "\n"), "UNIT_NAMED_INPUT_CHANGED") || !strings.Contains(strings.Join(refused.Details, "\n"), "run="+run) {
 		t.Fatalf("different request: code=%d %+v", code, refused)
 	}
 	bed.head = "moved-commit"
@@ -252,7 +252,7 @@ func TestIntentBuildRoundLimitAndReadBudget(t *testing.T) {
 	}
 	launched := len(bed.starter.launched())
 	code, result, _ = bed.work("work", "revise", "run:"+run, "--brief", followUp)
-	if code != 1 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "UNIT_ROUND_LIMIT") || len(bed.starter.launched()) != launched {
+	if code != 1 || result.Outcome != intentRefused || !strings.Contains(strings.Join(result.Details, "\n"), "UNIT_ROUND_LIMIT") || len(bed.starter.launched()) != launched {
 		t.Fatalf("third round: code=%d %+v", code, result)
 	}
 
@@ -288,7 +288,7 @@ func TestIntentBuildModelOverride(t *testing.T) {
 	if code, result, _ = bed.work("work", "build", "run:"+run); code != 0 || resultData(t, result)["buildModel"] != "claude-sonnet-5" {
 		t.Fatalf("resume: code=%d %+v", code, result)
 	}
-	if code, result, _ = bed.work(args("claude-opus-5-5")...); code != 1 || !strings.Contains(result.Summary, "UNIT_NAMED_INPUT_CHANGED") {
+	if code, result, _ = bed.work(args("claude-opus-5-5")...); code != 1 || !strings.Contains(strings.Join(result.Details, "\n"), "UNIT_NAMED_INPUT_CHANGED") {
 		t.Fatalf("another model for the same unit: code=%d %+v", code, result)
 	}
 	if code, result, _ = bed.work(append([]string{"work", "build", bed.id, "bad", "--brief", brief, "--lines", "5", "--effort", "extreme"}, workCheck...)...); code != 2 || result.Outcome != intentRefused {

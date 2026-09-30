@@ -96,7 +96,7 @@ func TestNamedUnitConcurrentRepeatLaunchesOnce(t *testing.T) {
 	run := ""
 	for index, err := range errs {
 		if err != nil {
-			if !strings.Contains(err.Error(), "UNIT_RUN_BUSY") || !strings.Contains(err.Error(), "repeat the same command") {
+			if !strings.Contains(ErrorDetail(err), "UNIT_RUN_BUSY") || !strings.Contains(err.Error(), "run the same command again") {
 				t.Fatalf("err=%v", err)
 			}
 			continue
@@ -130,7 +130,7 @@ func TestNamedUnitBusyCallerNamesTheRunAndLaunchesNothing(t *testing.T) {
 	}
 	defer lock.Close()
 	_, err = fixture.runner.AdvanceNamed(fixture.plan)
-	if err == nil || !strings.Contains(err.Error(), "UNIT_RUN_BUSY") || !strings.Contains(err.Error(), "run="+first.Record.ID) {
+	if err == nil || !strings.Contains(ErrorDetail(err), "UNIT_RUN_BUSY") || !strings.Contains(ErrorDetail(err), "run="+first.Record.ID) {
 		t.Fatalf("err=%v", err)
 	}
 	requireLaunchedOnce(t, fixture, 3)
@@ -177,8 +177,8 @@ func TestNamedUnitChangedInputRefusesWithThePriorRun(t *testing.T) {
 			}
 			row.change(t, fixture)
 			_, err = fixture.runner.AdvanceNamed(fixture.plan)
-			if err == nil || !strings.Contains(err.Error(), "UNIT_NAMED_INPUT_CHANGED") || !strings.Contains(err.Error(), "run="+first.Record.ID) ||
-				!strings.Contains(err.Error(), "follow-up") || !strings.Contains(err.Error(), "another unit name") {
+			if err == nil || !strings.Contains(ErrorDetail(err), "UNIT_NAMED_INPUT_CHANGED") || !strings.Contains(ErrorDetail(err), "run="+first.Record.ID) ||
+				!strings.Contains(err.Error(), "already runs with other inputs") {
 				t.Fatalf("err=%v", err)
 			}
 			requireLaunchedOnce(t, fixture, 3)
@@ -331,7 +331,7 @@ func TestNamedUnitCorruptOrStaleEntryFailsWithoutOverwrite(t *testing.T) {
 			row.spoil(t, fixture, entries[0], first.Record.ID)
 			before, _ := os.ReadFile(entries[0])
 			_, err = fixture.runner.AdvanceNamed(fixture.plan)
-			if err == nil || !strings.Contains(err.Error(), row.want) {
+			if err == nil || !strings.Contains(ErrorDetail(err), row.want) {
 				t.Fatalf("err=%v", err)
 			}
 			after, _ := os.ReadFile(entries[0])
@@ -426,7 +426,7 @@ func TestNamedUnitRunsThePlanItReservedWhenThePlanIsRewritten(t *testing.T) {
 		t.Fatalf("retained=%+v err=%v", retained.Proof, err)
 	}
 	_, err = fixture.runner.AdvanceNamed(fixture.plan)
-	if err == nil || !strings.Contains(err.Error(), "UNIT_NAMED_INPUT_CHANGED") || !strings.Contains(err.Error(), "run="+first.Record.ID) {
+	if err == nil || !strings.Contains(ErrorDetail(err), "UNIT_NAMED_INPUT_CHANGED") || !strings.Contains(ErrorDetail(err), "run="+first.Record.ID) {
 		t.Fatalf("err=%v", err)
 	}
 	requireLaunchedOnce(t, fixture, 3)
@@ -446,7 +446,7 @@ func TestNamedUnitRefusesATamperedRetainedPlanBeforeItsPendingStep(t *testing.T)
 	entries, _ := filepath.Glob(filepath.Join(fixture.runner.Root, ".named", "*.json"))
 	before, _ := os.ReadFile(entries[0])
 	_, err = fixture.runner.AdvanceNamed(fixture.plan)
-	if err == nil || !strings.Contains(err.Error(), "UNIT_NAMED_INPUT_CHANGED") || !strings.Contains(err.Error(), "run="+first.Record.ID) {
+	if err == nil || !strings.Contains(ErrorDetail(err), "UNIT_NAMED_INPUT_CHANGED") || !strings.Contains(ErrorDetail(err), "run="+first.Record.ID) {
 		t.Fatalf("err=%v", err)
 	}
 	if after, _ := os.ReadFile(entries[0]); string(after) != string(before) {
@@ -485,7 +485,7 @@ func TestNamedUnitChangeBeforeAPendingLaunchLaunchesNothingUntilRestored(t *test
 				return nil
 			}
 			_, err := fixture.runner.AdvanceNamed(fixture.plan)
-			if err == nil || !strings.Contains(err.Error(), "UNIT_NAMED_INPUT_CHANGED") || !strings.Contains(err.Error(), "nothing more was launched") {
+			if err == nil || !strings.Contains(ErrorDetail(err), "UNIT_NAMED_INPUT_CHANGED") || !strings.Contains(err.Error(), "nothing more was launched") {
 				t.Fatalf("err=%v", err)
 			}
 			if !slices.Equal(fixture.starter.order, []string{"build", "proof"}) {

@@ -71,11 +71,11 @@ type DesignResult struct {
 
 // ErrDesignStale is returned when After names an attempt that is not the
 // newest one of the document.
-var ErrDesignStale = errors.New("DESIGN_ATTEMPT_STALE")
+var ErrDesignStale = errors.New("a newer attempt of this document exists than the one you named")
 
 // ErrDesignWriterRunning is returned when a new attempt is asked for while
 // the newest attempt's author may still write.
-var ErrDesignWriterRunning = errors.New("DESIGN_WRITER_RUNNING")
+var ErrDesignWriterRunning = errors.New("the newest attempt of this document is still being written")
 
 func designKey(destination string) string {
 	sum := sha256.Sum256([]byte(destination))
@@ -109,7 +109,7 @@ func (m *Manager) designLock(destination string) (*os.File, error) {
 	held, err := lock.File(filepath.Join(directory, "lock"), 0o600, lock.TryExclusive)
 	if err != nil {
 		if isLockFailure(err) && lock.Busy(err) {
-			return nil, fmt.Errorf("DESIGN_BUSY destination=%s: another caller is acting on this document; repeat the same command", destination)
+			return nil, coded("DESIGN_BUSY", "destination="+destination, errors.New("another command is working on this document right now; run the same command again"))
 		}
 		return nil, err
 	}
@@ -129,7 +129,7 @@ func (m *Manager) readDesignEntry(destination string) (designEntry, bool, error)
 	}
 	var entry designEntry
 	if err := json.Unmarshal(data, &entry); err != nil || entry.Destination != destination {
-		return designEntry{}, false, fmt.Errorf("DESIGN_ENTRY_CORRUPT destination=%s", destination)
+		return designEntry{}, false, coded("DESIGN_ENTRY_CORRUPT", "destination="+destination, fmt.Errorf("the saved record of design requests for %s is damaged and cannot be read", destination))
 	}
 	return entry, true, nil
 }
@@ -175,7 +175,8 @@ func (m *Manager) RequestDesign(request DesignRequest) (DesignResult, error) {
 		entry = designEntry{Goal: request.Goal, RecordID: request.RecordID, Destination: request.Destination}
 	}
 	if entry.Goal != request.Goal || entry.RecordID != request.RecordID {
-		return DesignResult{}, fmt.Errorf("DESIGN_DOCUMENT_CONFLICT destination=%s: the document belongs to goal %s record %s", request.Destination, entry.Goal, entry.RecordID)
+		return DesignResult{}, coded("DESIGN_DOCUMENT_CONFLICT", "destination="+request.Destination+" goal="+entry.Goal+" record="+entry.RecordID,
+			fmt.Errorf("%s is already the design document of goal %s; write to another file", request.Destination, entry.Goal))
 	}
 	briefDigest := digestHex(request.Brief)
 	current := len(entry.Attempts)
@@ -194,13 +195,13 @@ func (m *Manager) RequestDesign(request DesignRequest) (DesignResult, error) {
 		after = current
 	}
 	if after != current {
-		return DesignResult{Current: current}, fmt.Errorf("%w destination=%s after=%d current=%d", ErrDesignStale, request.Destination, after, current)
+		return DesignResult{Current: current}, coded("DESIGN_ATTEMPT_STALE", fmt.Sprintf("destination=%s after=%d current=%d", request.Destination, after, current), fmt.Errorf("%w (you named %d, the newest is %d)", ErrDesignStale, after, current))
 	}
 	if current > 0 {
 		newest := entry.Attempts[current-1]
 		if record, readErr := m.Store.Read(newest.LaunchID); readErr == nil && !record.State.Terminal() {
 			if _, recovered, _ := m.RecoverStrandedStart(newest.LaunchID); !recovered {
-				return DesignResult{Current: current}, fmt.Errorf("%w destination=%s attempt=%d launch=%s", ErrDesignWriterRunning, request.Destination, newest.Attempt, newest.LaunchID)
+				return DesignResult{Current: current}, coded("DESIGN_WRITER_RUNNING", fmt.Sprintf("destination=%s attempt=%d launch=%s", request.Destination, newest.Attempt, newest.LaunchID), fmt.Errorf("%w (attempt %d)", ErrDesignWriterRunning, newest.Attempt))
 			}
 		}
 	}
@@ -280,7 +281,7 @@ func (m *Manager) startDesign(request DesignRequest, attempt DesignAttempt) (Des
 func (m *Manager) rejoinDesign(attempt DesignAttempt, current int) (DesignResult, error) {
 	record, err := m.Store.Read(attempt.LaunchID)
 	if err != nil {
-		return DesignResult{Attempt: attempt, Rejoined: true, Current: current}, fmt.Errorf("DESIGN_LAUNCH_UNREADABLE launch=%s: %v", attempt.LaunchID, err)
+		return DesignResult{Attempt: attempt, Rejoined: true, Current: current}, coded("DESIGN_LAUNCH_UNREADABLE", "launch="+attempt.LaunchID, fmt.Errorf("design attempt %d was started but its run record cannot be read: %v", attempt.Attempt, err))
 	}
 	if record.State == Starting {
 		if recovered, ok, _ := m.RecoverStrandedStart(attempt.LaunchID); ok {
@@ -301,7 +302,7 @@ func (m *Manager) RecordDesignOutcome(destination string, attempt int, judge fun
 	defer releaseUnitLock(lock)
 	entry, found, err := m.readDesignEntry(destination)
 	if err != nil || !found || attempt < 1 || attempt > len(entry.Attempts) {
-		return DesignAttempt{}, fmt.Errorf("DESIGN_ATTEMPT_UNKNOWN destination=%s attempt=%d", destination, attempt)
+		return DesignAttempt{}, coded("DESIGN_ATTEMPT_UNKNOWN", fmt.Sprintf("destination=%s attempt=%d", destination, attempt), fmt.Errorf("%s has no design attempt %d", destination, attempt))
 	}
 	retained := entry.Attempts[attempt-1]
 	if retained.Outcome != "" {

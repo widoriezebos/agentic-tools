@@ -279,13 +279,13 @@ func (inv *intentInvocation) designOutcome(id, destination string, result launch
 	data := map[string]any{"goal": id, "document": rel, "attempt": result.Attempt.Attempt, "current": result.Current, "rejoined": result.Rejoined, "draft": result.Attempt.Draft}
 	switch {
 	case errors.Is(err, launch.ErrDesignStale):
-		return intentResult{Outcome: intentRefused, code: 1, Targets: targets, Data: data, Summary: err.Error() + "; nothing was launched",
+		return intentResult{Details: launchDetails(err), Outcome: intentRefused, code: 1, Targets: targets, Data: data, Summary: err.Error() + "; nothing was launched",
 			next: inv.publicArgv("design", "write", id, "--brief", "FILE", "--after", strconv.Itoa(result.Current)), nextReason: "a new attempt follows the newest one"}
 	case errors.Is(err, launch.ErrDesignWriterRunning):
-		return intentResult{Outcome: intentInProgress, Targets: targets, Data: data, Summary: err.Error() + "; nothing was launched",
+		return intentResult{Details: launchDetails(err), Outcome: intentInProgress, Targets: targets, Data: data, Summary: err.Error() + "; nothing was launched",
 			next: inv.publicArgv("work", "wait", id), nextReason: "the current author is still writing"}
 	case err != nil && result.Attempt.Attempt == 0:
-		return intentResult{Outcome: intentRefused, code: 1, Targets: targets, Data: data, Summary: err.Error() + "; nothing was launched"}
+		return intentResult{Details: launchDetails(err), Outcome: intentRefused, code: 1, Targets: targets, Data: data, Summary: err.Error() + "; nothing was launched"}
 	}
 	record := result.Record
 	if err != nil && record.ID == "" {

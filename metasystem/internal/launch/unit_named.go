@@ -113,7 +113,7 @@ func (runner *UnitRunner) Continue(request UnitRequest) (UnitResult, error) {
 		return UnitResult{}, err
 	}
 	if !found || entry.Run != record.ID || entry.Digest == "" {
-		return UnitResult{}, fmt.Errorf("UNIT_NAMED_ENTRY_CORRUPT unit=%s goal=%s run=%s: the unit's entry changed while it was locked", record.Unit, record.Goal, record.ID)
+		return UnitResult{}, coded("UNIT_NAMED_ENTRY_CORRUPT", unitFacts(record.Unit, record.Goal, "run="+record.ID), fmt.Errorf("the record of unit %s changed while this command held it; run the command again", record.Unit))
 	}
 	bound := *runner
 	bound.named = &namedBinding{unit: record.Unit, goal: record.Goal, worktree: worktree, digest: entry.Digest, run: entry.Run,
@@ -160,7 +160,7 @@ func (runner *UnitRunner) AdvancePrepared(worktree, goal, unit string, request [
 	if found {
 		retained, readErr := os.ReadFile(requestPath)
 		if readErr != nil || string(retained) != string(request) {
-			return UnitResult{}, fmt.Errorf("UNIT_NAMED_INPUT_CHANGED unit=%s goal=%s run=%s: this request differs from the one the run started with, whose inputs are kept unchanged; send a follow-up to that run or use another unit name", unit, goal, entry.Run)
+			return UnitResult{}, coded("UNIT_NAMED_INPUT_CHANGED", unitFacts(unit, goal, "run="+entry.Run), fmt.Errorf("unit %s already runs with other inputs than this request", unit))
 		}
 	} else {
 		if err := os.MkdirAll(directory, 0o700); err != nil {
@@ -202,7 +202,7 @@ func (runner *UnitRunner) advanceNamedLocked(named UnitPlan, worktree, key strin
 		return UnitResult{}, err
 	}
 	if _, stagedKey, err := namedUnitIdentity(plan); err != nil || stagedKey != key {
-		return UnitResult{}, fmt.Errorf("UNIT_NAMED_INPUT_CHANGED unit=%s goal=%s: the plan changed while it was read", named.Unit, named.Goal)
+		return UnitResult{}, coded("UNIT_NAMED_INPUT_CHANGED", unitFacts(named.Unit, named.Goal, ""), fmt.Errorf("the plan of unit %s changed while it was read; run the command again", named.Unit))
 	}
 	settings, err := runner.Manager.resolvedSettings()
 	if err != nil {
@@ -219,10 +219,10 @@ func (runner *UnitRunner) advanceNamedLocked(named UnitPlan, worktree, key strin
 	if found {
 		if entry.Worktree != worktree || entry.Goal != plan.Goal || entry.Unit != plan.Unit || !idPattern.MatchString(entry.Run) ||
 			entry.State != namedReserved && entry.State != namedRecorded {
-			return UnitResult{}, fmt.Errorf("UNIT_NAMED_ENTRY_CORRUPT unit=%s goal=%s entry=%s", plan.Unit, plan.Goal, runner.namedPath(key, ".json"))
+			return UnitResult{}, coded("UNIT_NAMED_ENTRY_CORRUPT", unitFacts(plan.Unit, plan.Goal, "entry="+runner.namedPath(key, ".json")), fmt.Errorf("the saved record of unit %s is damaged and cannot be read", plan.Unit))
 		}
 		if entry.Digest != digest {
-			return UnitResult{}, fmt.Errorf("UNIT_NAMED_INPUT_CHANGED unit=%s goal=%s run=%s: the unit's inputs differ from its run; send a follow-up to that run or use another unit name", plan.Unit, plan.Goal, entry.Run)
+			return UnitResult{}, coded("UNIT_NAMED_INPUT_CHANGED", unitFacts(plan.Unit, plan.Goal, "run="+entry.Run), fmt.Errorf("unit %s already runs with other inputs than this request", plan.Unit))
 		}
 	} else {
 		if err := runner.requireGoalBranch(plan); err != nil {
@@ -257,12 +257,12 @@ func (runner *UnitRunner) advanceNamedLocked(named UnitPlan, worktree, key strin
 			return UnitResult{}, err
 		}
 	case errors.Is(err, fs.ErrNotExist):
-		return UnitResult{}, fmt.Errorf("UNIT_NAMED_RUN_MISSING unit=%s goal=%s run=%s: the recorded run is gone", plan.Unit, plan.Goal, entry.Run)
+		return UnitResult{}, coded("UNIT_NAMED_RUN_MISSING", unitFacts(plan.Unit, plan.Goal, "run="+entry.Run), fmt.Errorf("the run recorded for unit %s no longer exists", plan.Unit))
 	case err != nil:
-		return UnitResult{}, fmt.Errorf("UNIT_NAMED_RUN_UNREADABLE unit=%s goal=%s run=%s: %w", plan.Unit, plan.Goal, entry.Run, err)
+		return UnitResult{}, coded("UNIT_NAMED_RUN_UNREADABLE", unitFacts(plan.Unit, plan.Goal, "run="+entry.Run), fmt.Errorf("the run of unit %s cannot be read: %w", plan.Unit, err))
 	}
 	if recorded, pathErr := filepath.EvalSymlinks(record.Worktree); pathErr != nil || recorded != worktree || record.Goal != plan.Goal || record.Unit != plan.Unit || record.ID != entry.Run {
-		return UnitResult{}, fmt.Errorf("UNIT_NAMED_ENTRY_CORRUPT unit=%s goal=%s run=%s: the run belongs to another unit", plan.Unit, plan.Goal, entry.Run)
+		return UnitResult{}, coded("UNIT_NAMED_ENTRY_CORRUPT", unitFacts(plan.Unit, plan.Goal, "run="+entry.Run), fmt.Errorf("the record of unit %s points at a run of another unit", plan.Unit))
 	}
 	if entry.State != namedRecorded {
 		entry.State = namedRecorded
@@ -299,7 +299,8 @@ func (binding *namedBinding) verify(runner *UnitRunner) error {
 	}
 	digest, err := namedUnitDigest(binding.plan, binding.worktree, binding.options.apply(settings))
 	if err != nil || digest != binding.digest {
-		return fmt.Errorf("UNIT_NAMED_INPUT_CHANGED unit=%s goal=%s run=%s: the run's plan, inputs or launch settings no longer match its reservation, so nothing more was launched; restore them, send a follow-up to that run or use another unit name", binding.unit, binding.goal, binding.run)
+		return coded("UNIT_NAMED_INPUT_CHANGED", unitFacts(binding.unit, binding.goal, "run="+binding.run),
+			fmt.Errorf("the plan, inputs or settings of unit %s changed since it started, so nothing more was launched", binding.unit))
 	}
 	return nil
 }
@@ -405,13 +406,13 @@ func (runner *UnitRunner) namedLock(key string, plan UnitPlan) (*os.File, error)
 			return nil, err
 		}
 		if !lock.Busy(err) {
-			return nil, fmt.Errorf("UNIT_LOCK_FAILED unit=%s goal=%s lock=%s: %w", plan.Unit, plan.Goal, runner.namedPath(key, ".lock"), err)
+			return nil, coded("UNIT_LOCK_FAILED", unitFacts(plan.Unit, plan.Goal, "lock="+runner.namedPath(key, ".lock")), fmt.Errorf("unit %s cannot be locked for this command: %w", plan.Unit, err))
 		}
 		run := "reserving"
 		if entry, found, readErr := runner.readNamed(key); readErr == nil && found {
 			run = entry.Run
 		}
-		return nil, fmt.Errorf("UNIT_RUN_BUSY unit=%s goal=%s run=%s: another caller is advancing this unit; repeat the same command to continue", plan.Unit, plan.Goal, run)
+		return nil, coded("UNIT_RUN_BUSY", unitFacts(plan.Unit, plan.Goal, "run="+run), fmt.Errorf("another command is advancing unit %s; run the same command again to follow it", plan.Unit))
 	}
 	return held.File(), nil
 }
@@ -427,7 +428,7 @@ func (runner *UnitRunner) readNamed(key string) (namedUnitEntry, bool, error) {
 	}
 	var entry namedUnitEntry
 	if err := json.Unmarshal(data, &entry); err != nil {
-		return namedUnitEntry{}, false, fmt.Errorf("UNIT_NAMED_ENTRY_CORRUPT entry=%s: %w", path, err)
+		return namedUnitEntry{}, false, coded("UNIT_NAMED_ENTRY_CORRUPT", "entry="+path, fmt.Errorf("a saved unit record is damaged and cannot be read: %w", err))
 	}
 	return entry, true, nil
 }
@@ -499,7 +500,7 @@ func (runner *UnitRunner) NamedWork(worktree, goal string) ([]NamedWork, error) 
 			continue
 		}
 		if _, expected, err := namedUnitIdentity(UnitPlan{Worktree: real, Goal: goal, Unit: entry.Unit}); err != nil || expected != key {
-			return nil, fmt.Errorf("UNIT_NAMED_ENTRY_CORRUPT entry=%s: its goal, unit and worktree do not match its key", runner.namedPath(key, ".json"))
+			return nil, coded("UNIT_NAMED_ENTRY_CORRUPT", "entry="+runner.namedPath(key, ".json"), errors.New("a saved unit record is damaged: its goal, unit and worktree do not match"))
 		}
 		one := NamedWork{Unit: entry.Unit, Run: entry.Run}
 		if entry.Run != "" {
@@ -509,7 +510,8 @@ func (runner *UnitRunner) NamedWork(worktree, goal string) ([]NamedWork, error) 
 			case readErr != nil:
 				return nil, readErr
 			case record.Goal != goal || record.Unit != entry.Unit:
-				return nil, fmt.Errorf("UNIT_NAMED_ENTRY_CORRUPT entry=%s: run %s belongs to goal %s unit %s", runner.namedPath(key, ".json"), entry.Run, record.Goal, record.Unit)
+				return nil, coded("UNIT_NAMED_ENTRY_CORRUPT", "entry="+runner.namedPath(key, ".json")+" run="+entry.Run,
+					fmt.Errorf("a saved unit record points at run %s, which belongs to unit %s of goal %s", entry.Run, record.Unit, record.Goal))
 			default:
 				one.Record = &record
 			}

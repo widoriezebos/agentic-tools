@@ -2,6 +2,7 @@ package launch
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -115,11 +116,11 @@ func resolveSettings(confPath string, lookupEnv func(string) (string, bool)) (Se
 		params := config.GetParams{Key: key, ConfPath: confPath, LookupEnv: lookupEnv}
 		value, _, err := config.Get(params)
 		if err != nil {
-			return "", "", fmt.Errorf("LAUNCH_SETTING_INVALID key=%s: %w", key, err)
+			return "", "", invalidSetting(key, err)
 		}
 		source, err := config.KeyOrigin(params)
 		if err != nil {
-			return "", "", fmt.Errorf("LAUNCH_SETTING_INVALID key=%s: %w", key, err)
+			return "", "", invalidSetting(key, err)
 		}
 		return value, source, nil
 	}
@@ -136,7 +137,7 @@ func resolveSettings(confPath string, lookupEnv func(string) (string, bool)) (Se
 			if raw, _, rawErr := config.Get(config.GetParams{Key: definition.Key, ConfPath: confPath, LookupEnv: lookupEnv, KeepAuto: true}); rawErr == nil && raw == config.AutoRuntime {
 				choice, choiceErr := config.ResolveAutoRuntime(confPath, lookupEnv)
 				if choiceErr != nil {
-					return Settings{}, fmt.Errorf("LAUNCH_SETTING_INVALID key=%s: %w", definition.Key, choiceErr)
+					return Settings{}, invalidSetting(definition.Key, choiceErr)
 				}
 				source += "; " + choice.Describe()
 			}
@@ -157,7 +158,8 @@ func resolveSettings(confPath string, lookupEnv func(string) (string, bool)) (Se
 			}
 			source += " via " + bound
 			if strings.TrimSpace(value) == "" {
-				return Settings{}, fmt.Errorf("LAUNCH_SETTING_INVALID key=%s: the lane runs on %s and neither %s nor %s names its model", modelKey, resolved[runtimeKey].Value, modelKey, bound)
+				return Settings{}, coded("LAUNCH_SETTING_INVALID", "key="+modelKey,
+					fmt.Errorf("no model is set for the %s lane; set %s or %s", resolved[runtimeKey].Value, modelKey, bound))
 			}
 		}
 		resolved[modelKey] = Setting{Key: modelKey, Value: value, Source: source}
@@ -166,14 +168,14 @@ func resolveSettings(confPath string, lookupEnv func(string) (string, bool)) (Se
 	for _, definition := range settingDefaults {
 		setting := resolved[definition.Key]
 		if strings.TrimSpace(setting.Value) == "" {
-			return Settings{}, fmt.Errorf("LAUNCH_SETTING_INVALID key=%s", definition.Key)
+			return Settings{}, invalidSetting(definition.Key, errors.New("it is empty"))
 		}
 		result.Values = append(result.Values, setting)
 	}
 	number := func(index int) (int64, error) {
 		value, err := strconv.ParseInt(result.Values[index].Value, 10, 64)
 		if err != nil || value < 1 {
-			return 0, fmt.Errorf("LAUNCH_SETTING_INVALID key=%s", result.Values[index].Key)
+			return 0, invalidSetting(result.Values[index].Key, errors.New("it is not a positive number"))
 		}
 		return value, nil
 	}
@@ -187,7 +189,7 @@ func resolveSettings(confPath string, lookupEnv func(string) (string, bool)) (Se
 	windowNumber := func(index int) (int64, error) {
 		value, err := strconv.ParseInt(result.Values[index].Value, 10, 64)
 		if err != nil || value < 0 {
-			return 0, fmt.Errorf("LAUNCH_SETTING_INVALID key=%s", result.Values[index].Key)
+			return 0, invalidSetting(result.Values[index].Key, errors.New("it is not zero or a positive number"))
 		}
 		return value, nil
 	}
@@ -262,4 +264,10 @@ func (s Settings) launchValues(kind string) (string, string, int64) {
 	default:
 		return "", "", 0
 	}
+}
+
+// invalidSetting is the refusal of a launch setting that cannot be used: the
+// key and why, with the command that shows the settings.
+func invalidSetting(key string, cause error) error {
+	return coded("LAUNCH_SETTING_INVALID", "key="+key, fmt.Errorf("the setting %s cannot be used: %w; see metasystem settings show", key, cause))
 }

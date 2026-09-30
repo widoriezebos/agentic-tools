@@ -260,7 +260,7 @@ func (m *Manager) Supervise(id string) (Record, error) {
 	}
 	record, err := m.update(id, func(record *Record) error {
 		if record.Supervisor != nil || record.State.Terminal() {
-			return fmt.Errorf("LAUNCH_ALREADY_SUPERVISED: launch %s already has a supervisor", id)
+			return coded("LAUNCH_ALREADY_SUPERVISED", "launch="+id, fmt.Errorf("launch %s is already watched by another process, or has ended", id))
 		}
 		record.Supervisor = &self
 		return nil
