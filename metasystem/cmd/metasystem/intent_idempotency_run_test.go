@@ -45,7 +45,7 @@ func init() {
 	registerIdempotency("system restart", idemCreation,
 		"an explicit request for fresh processes: it stops every helper and job and starts new ones, so a second restart is a second cycle, not a repeat; a start of what already runs is system start", nil)
 	registerIdempotency("ui restart", idemCreation,
-		"an explicit request for a fresh interface process running the executable on disk; a second restart replaces the server again, so it is not a repeat; a start of what already runs is ui start", nil)
+		"an explicit request for a fresh interface process running the checkout's own engine; a second restart replaces the server again, so it is not a repeat; a start of what already runs is ui start", nil)
 	registerIdempotency("session start", idemCreation,
 		"each call renews this session's checkout lease (a heartbeat: renewedAt and revision advance) and re-verifies its helpers; the renewal is the act, and the lease's liveness depends on it; the announcement, main id and running helpers are reused, never duplicated", nil)
 

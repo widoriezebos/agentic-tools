@@ -1122,19 +1122,30 @@ type uiLifecycleEffects struct {
 	// validated listen address for a seat's roots.
 	engine    func(installation string) (string, error)
 	listenFor func(target lifecycle.Roots) (string, error)
+	// listenProblem is why this seat's own listen address does not
+	// resolve; a restart refuses on it only when it restarts this seat.
+	listenProblem error
 }
 
-// uiLifecycleRun runs start, status, stop or restart through the lifecycle
-// owner; it prints nothing.
-func uiLifecycleRun(verb string, roots lifecycle.Roots, listen string, options uiIntentOptions) uiLifecycleResult {
-	return uiLifecycleRunWith(verb, roots, listen, options.waitSeconds, uiLifecycleEffects{
-		prober: identity.KernelProber{}, spawn: lifecycle.ExecSpawn, engine: uiInstallationEngine, seats: options.seats,
-		// A seat restarted from another listens where its own settings
-		// say, unless --listen was typed.
-		listenFor: func(target lifecycle.Roots) (string, error) {
-			return uiListen("restart", target, options.listen, options.listenSet)
-		},
-	})
+// uiLifecycleFor runs one interface lifecycle verb with the interface's own
+// defaults; an error is a refusal before anything was done.
+func uiLifecycleFor(verb string, roots lifecycle.Roots, options uiIntentOptions) (uiLifecycleResult, error) {
+	return uiLifecycleForWith(verb, roots, options, uiLifecycleEffects{prober: identity.KernelProber{}, spawn: lifecycle.ExecSpawn, engine: uiInstallationEngine})
+}
+
+// uiLifecycleForWith is uiLifecycleFor with the process effects given. A
+// restart may restart another seat at that seat's own address, so this
+// seat's address that does not resolve refuses only its own restart.
+func uiLifecycleForWith(verb string, roots lifecycle.Roots, options uiIntentOptions, effects uiLifecycleEffects) (uiLifecycleResult, error) {
+	listen, err := uiListen(verb, roots, options.listen, options.listenSet)
+	if err != nil && verb != "restart" {
+		return uiLifecycleResult{}, err
+	}
+	effects.seats, effects.listenProblem = options.seats, err
+	effects.listenFor = func(target lifecycle.Roots) (string, error) {
+		return uiListen("restart", target, options.listen, options.listenSet)
+	}
+	return uiLifecycleRunWith(verb, roots, listen, options.waitSeconds, effects), nil
 }
 
 func uiLifecycleRunWith(verb string, roots lifecycle.Roots, listen string, waitSeconds int64, effects uiLifecycleEffects) uiLifecycleResult {
@@ -1232,6 +1243,9 @@ func uiLifecycleRunWith(verb string, roots lifecycle.Roots, listen string, waitS
 				return across
 			}
 		}
+	}
+	if effects.listenProblem != nil {
+		return uiLifecycleResult{Result: lifecycle.Result{Lines: []string{effects.listenProblem.Error() + "; nothing was done"}, Code: 1}}
 	}
 	engine, refusal := uiEngineFor(effects.engine, roots, "")
 	if refusal != nil {

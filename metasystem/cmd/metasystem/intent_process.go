@@ -243,7 +243,7 @@ func processIntentCommands() []intentCommand {
 			examples: []string{"metasystem ui stop"}, run: func(inv *intentInvocation) int { return inv.uiTarget("stop") },
 		},
 		{
-			object: "ui", action: "restart", audience: "both", summary: "restart the browser interface with the executable on disk",
+			object: "ui", action: "restart", audience: "both", summary: "restart the browser interface with the checkout's own engine",
 			usage:    []string{"metasystem ui restart [--listen ADDRESS] [--wait-seconds N]"},
 			details:  []string{"An agent may do this within its authorization. Starting the interface through an agent does not authenticate a person for its human actions."},
 			flags:    []intentFlag{intentUIListenFlag, intentUIWaitFlag, intentInstallationFlag},
@@ -1677,7 +1677,9 @@ func (inv *intentInvocation) runUIVerb(verb string) int {
 	// seat, and its next steps name it.
 	next := func(words ...string) []string { return append([]string{"metasystem", "ui"}, words...) }
 	summary := func(fallback string) string { return fallback }
+	text := result.Lines
 	if seat := lifecycleResult.Seat; seat != nil {
+		text = uiLinesAfterSummary(result.Lines)
 		targets = []intentTarget{{Kind: "ui", ID: seat.Checkout}}
 		next = func(words ...string) []string {
 			return append(append([]string{"metasystem", "ui"}, words...), "--repo", seat.Checkout)
@@ -1691,29 +1693,34 @@ func (inv *intentInvocation) runUIVerb(verb string) int {
 	}
 	restart := lifecycleResult.Restart
 	if restart == nil {
+		refusedSummary := "the interface could not be restarted; nothing was done"
+		if lifecycleResult.Seat == nil && len(result.Lines) == 1 {
+			// This seat's own refusal: its one line says it, as before.
+			refusedSummary, text = result.Lines[0], nil
+		}
 		// Refused before anything was stopped: a missing engine, an
 		// address that does not resolve, or several machines to choose from.
-		return inv.render(intentResult{Outcome: intentRefused, code: max(result.Code, 1), Targets: targets, text: result.Lines, Data: data,
-			Summary: summary("the interface could not be restarted; nothing was done"), Decision: lifecycleResult.Decision})
+		return inv.render(intentResult{Outcome: intentRefused, code: max(result.Code, 1), Targets: targets, text: text, Data: data,
+			Summary: summary(refusedSummary), Decision: lifecycleResult.Decision})
 	}
 	data["stop"], data["started"] = restart.Stop, restart.Started
 	switch {
 	case restart.Started && restart.Start.Code == 0:
-		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Summary: summary("the interface restarted"), text: result.Lines, Data: data})
+		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Summary: summary("the interface restarted"), text: text, Data: data})
 	case restart.Started:
 		// Nothing was stopped when nothing ran: the start alone failed.
 		failed := "the interface stopped but did not start again"
 		if restart.Stop == lifecycle.StopOutcome(lifecycle.Stopped) || restart.Stop == lifecycle.StopOutcome(lifecycle.Stale) {
 			failed = "the interface was not running, and it did not start"
 		}
-		return inv.render(intentResult{Outcome: intentPartial, code: result.Code, Targets: targets, text: result.Lines, Data: data,
+		return inv.render(intentResult{Outcome: intentPartial, code: result.Code, Targets: targets, text: text, Data: data,
 			Summary: failed, next: next("start"), nextReason: "start it once the problem above is fixed"})
 	case restart.Stop == lifecycle.Timeout:
-		return inv.render(intentResult{Outcome: intentPartial, code: max(result.Code, 1), Targets: targets, text: result.Lines, Data: data,
+		return inv.render(intentResult{Outcome: intentPartial, code: max(result.Code, 1), Targets: targets, text: text, Data: data,
 			Summary: "the interface was asked to stop but is still running, so it was not started again",
 			next:    next("restart"), nextReason: "try again once it has stopped"})
 	}
-	return inv.render(intentResult{Outcome: intentRefused, code: max(result.Code, 1), Targets: targets, text: result.Lines, Data: data,
+	return inv.render(intentResult{Outcome: intentRefused, code: max(result.Code, 1), Targets: targets, text: text, Data: data,
 		Summary: "the interface could not be restarted; nothing was changed"})
 }
 
@@ -1736,16 +1743,6 @@ func (inv *intentInvocation) uiOptions() (uiIntentOptions, *intentResult) {
 		options.waitSeconds = seconds
 	}
 	return options, nil
-}
-
-// uiLifecycleFor runs one interface lifecycle verb with the interface's own
-// defaults; an error is a refusal before anything was done.
-func uiLifecycleFor(verb string, roots lifecycle.Roots, options uiIntentOptions) (uiLifecycleResult, error) {
-	listen, err := uiListen(verb, roots, options.listen, options.listenSet)
-	if err != nil {
-		return uiLifecycleResult{}, err
-	}
-	return uiLifecycleRun(verb, roots, listen, options), nil
 }
 
 func sameCanonicalPath(left, right string) bool {
@@ -2107,14 +2104,16 @@ func (inv *intentInvocation) uiTarget(verb string) int {
 		if len(ran.Result.Lines) > 0 {
 			summary = ran.Result.Lines[0]
 		}
+		// The summary is the first line, so the text is the rest.
+		text := uiLinesAfterSummary(ran.Result.Lines)
 		switch {
 		case ran.Result.Code != 0:
-			return inv.render(intentResult{Outcome: intentRefused, code: ran.Result.Code, Targets: targets, Data: data, text: ran.Result.Lines, Summary: summary,
+			return inv.render(intentResult{Outcome: intentRefused, code: ran.Result.Code, Targets: targets, Data: data, text: text, Summary: summary,
 				next: []string{"metasystem", "ui", "status", "--repo", ran.Seat.Checkout}, nextReason: "what that interface is doing now"})
 		case ran.Unchanged:
-			return inv.render(intentResult{Outcome: intentUnchanged, Targets: targets, Data: data, text: ran.Result.Lines, Summary: summary})
+			return inv.render(intentResult{Outcome: intentUnchanged, Targets: targets, Data: data, text: text, Summary: summary})
 		}
-		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: data, text: ran.Result.Lines, Summary: summary})
+		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: data, text: text, Summary: summary})
 	}
 	if ran.Unchanged && ran.Result.Code == 0 {
 		summary := map[string]string{"start": "the interface already runs", "stop": "the interface is already stopped"}[verb]
@@ -2276,4 +2275,13 @@ func diskCheckLine(root string) string {
 	}
 	return fmt.Sprintf("disk: last pass %s released %d, kept %d, left %d pending; metasystem disk show prints the report",
 		report.At.Format(time.RFC3339), len(report.Actions), len(report.Kept), len(report.Pending))
+}
+
+// uiLinesAfterSummary is a result's lines after the first, which the
+// rendering prints as the summary.
+func uiLinesAfterSummary(lines []string) []string {
+	if len(lines) <= 1 {
+		return nil
+	}
+	return lines[1:]
 }

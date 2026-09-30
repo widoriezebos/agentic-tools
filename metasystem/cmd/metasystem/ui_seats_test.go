@@ -64,6 +64,9 @@ type uiSeatsBed struct {
 	engines   []string
 	listen    string
 	listenSet bool
+	// ready, when set, is the address the fake child announces instead of
+	// the one it was asked to listen at.
+	ready string
 }
 
 func newUISeatsBed(t *testing.T) *uiSeatsBed {
@@ -184,6 +187,9 @@ func (b *uiSeatsBed) effects(inventory func() uiSeatInventory) uiLifecycleEffect
 		spawn: func(spec lifecycle.LaunchSpec) (lifecycle.Child, error) {
 			b.spawns++
 			b.specs = append(b.specs, spec)
+			if b.ready != "" {
+				return idemUIChild{address: b.ready}, nil
+			}
 			return idemUIChild{address: spec.Args[slices.Index(spec.Args, "--listen")+1]}, nil
 		},
 		send: func(pid int, signal syscall.Signal) error {
@@ -533,6 +539,9 @@ func TestUIStopRendersTheSeatItStopped(t *testing.T) {
 		result.Summary != answer.Result.Lines[0] {
 		t.Fatalf("a stop of another seat = %d %+v", code, result)
 	}
+	if code, stdout, stderr := b.run(owners, "ui", "stop"); code != 0 || strings.Count(stdout+stderr, answer.Result.Lines[0]) != 1 {
+		t.Fatalf("the line naming the seat is not printed once: %d %q %q", code, stdout, stderr)
+	}
 	answer = uiLifecycleResult{Result: lifecycle.Result{Lines: []string{"no interface for m1e; 2 machines of this computer run one; nothing was done"}, Code: 1},
 		Seats: []uiSeatView{{Machine: "ui", Checkout: "/work/a"}, {Machine: "landing", Checkout: "/work/b"}}}
 	code, result = b.runJSON(owners, "ui", "stop")
@@ -555,6 +564,12 @@ func TestUIHelpNamesTheOtherSeats(t *testing.T) {
 			t.Errorf("ui %s help lacks %q: %+v", verb, want, page.Command)
 		}
 	}
+	if _, page := readHelpJSON(t, "ui", "restart", "--json"); page.Command == nil || page.Command.Summary != "restart the browser interface with the checkout's own engine" {
+		t.Errorf("ui restart help summary = %+v", page.Command)
+	}
+	if reason := idempotencyRows["ui restart"].why; strings.Contains(reason, "executable on disk") || !strings.Contains(reason, "the checkout's own engine") {
+		t.Errorf("ui restart idempotency reason = %q", reason)
+	}
 }
 
 // uiSeatsSpawned is the launch's engine, --repo, --metasystem-root and
@@ -575,6 +590,9 @@ func TestUIRestartRestartsTheOneOtherSeatsInterface(t *testing.T) {
 	b.live(other, 5501, "127.0.0.1:8765", identity.Alive)
 	engine := b.engine(other, "engine of ui")
 	b.conf(other, "ui.listen=127.0.0.1:8765\n")
+	// The child announces another address than it was asked for: the
+	// report carries what Launch returned (AM-02).
+	b.ready = "127.0.0.1:8766"
 	before := idemTreeDigest(t, a.Roots.StateRoot)
 	got := uiLifecycleRunWith("restart", a.Roots, "127.0.0.1:7878", 0, b.effects(uiSeatsOf("m1e", other)))
 	if !slices.Equal(b.sent, []uiSeatsSignal{{5501, syscall.SIGTERM}}) || len(b.specs) != 1 ||
@@ -583,7 +601,7 @@ func TestUIRestartRestartsTheOneOtherSeatsInterface(t *testing.T) {
 	}
 	if got.Result.Code != 0 || got.Seat == nil || got.Seat.Name != "ui" || got.Restart == nil || got.Restart.Stop != lifecycle.StoppedNow ||
 		!got.Restart.Started || got.Restart.Start.Code != 0 ||
-		!slices.Equal(got.Result.Lines, []string{"no interface for m1e; restarted the interface of machine ui (pid 5501 -> 4343, :8765)"}) {
+		!slices.Equal(got.Result.Lines, []string{"no interface for m1e; restarted the interface of machine ui (pid 5501 -> 4343, :8766)"}) {
 		t.Fatalf("restart of the other seat = %+v %+v", got, got.Restart)
 	}
 	idemSameTree(t, "this seat's tree", before, idemTreeDigest(t, a.Roots.StateRoot))
@@ -773,6 +791,9 @@ func TestUIRestartRendersTheSeatItRestarted(t *testing.T) {
 	if code != 0 || result.Outcome != intentConfirmed || result.Summary != line || len(result.Targets) != 1 || result.Targets[0].ID != other.Checkout {
 		t.Fatalf("a restart of another seat = %d %+v", code, result)
 	}
+	if code, stdout, stderr := b.run(owners, "ui", "restart"); code != 0 || strings.Count(stdout+stderr, line) != 1 {
+		t.Fatalf("the line naming the restarted seat is not printed once: %d %q %q", code, stdout, stderr)
+	}
 
 	answer = uiLifecycleResult{Result: lifecycle.Result{Lines: []string{"no interface for m1e; machine ui: interface (pid 5501) did not stop within 0s; it was sent SIGTERM and left running"}, Code: 1},
 		Seat: &other, Restart: &lifecycle.RestartReport{Stop: lifecycle.Timeout}}
@@ -793,5 +814,46 @@ func TestUIRestartRendersTheSeatItRestarted(t *testing.T) {
 	code, result = b.runJSON(owners, "ui", "restart")
 	if code != 1 || result.Outcome != intentPartial || strings.Contains(result.Summary, "stopped but") {
 		t.Fatalf("a restart that started nothing where nothing ran = %d %+v", code, result)
+	}
+}
+
+// TestUIRestartIsNotBlockedByTheCallersListen (SOL-US-02): the caller's own
+// ui.listen is resolved for the caller's own restart only; restarting the
+// one other seat uses that seat's address, through the verb's own seam.
+func TestUIRestartIsNotBlockedByTheCallersListen(t *testing.T) {
+	t.Parallel()
+	b := newUISeatsBed(t)
+	a, other := b.seat("m1e"), b.seat("ui")
+	b.conf(a, "ui.listen=example.com:80\n")
+	b.live(other, 5601, "127.0.0.1:8765", identity.Alive)
+	b.engine(other, "engine of ui")
+	b.conf(other, "ui.listen=127.0.0.1:8765\n")
+	options := uiIntentOptions{seats: uiSeatsOf("m1e", other)}
+	got, err := uiLifecycleForWith("restart", a.Roots, options, b.effects(nil))
+	if err != nil || got.Result.Code != 0 || got.Seat == nil || got.Seat.Name != "ui" || len(b.specs) != 1 ||
+		uiSeatsSpawned(b.specs[0])[3] != "127.0.0.1:8765" {
+		t.Fatalf("restart of a healthy seat from one with an invalid ui.listen = %v %+v, launches %+v", err, got, b.specs)
+	}
+
+	// The caller's own restart still refuses on its own address, and
+	// stops nothing.
+	own := newUISeatsBed(t)
+	a = own.seat("m1e")
+	own.conf(a, "ui.listen=example.com:80\n")
+	own.live(a, 5602, "127.0.0.1:7878", identity.Alive)
+	own.engine(a, "engine of m1e")
+	for _, seats := range []func() uiSeatInventory{uiSeatsOf("m1e"), nil} {
+		got, err = uiLifecycleForWith("restart", a.Roots, uiIntentOptions{seats: seats}, own.effects(nil))
+		refused := err != nil && strings.Contains(err.Error(), "loopback") ||
+			err == nil && got.Result.Code == 1 && len(got.Result.Lines) == 1 && strings.Contains(got.Result.Lines[0], "loopback")
+		if !refused || len(own.sent) != 0 || own.spawns != 0 || !uiSeatsHasRecord(a.Roots.StateRoot) {
+			t.Fatalf("the caller's own restart with an invalid ui.listen = %v %+v, signals %v spawns %d", err, got, own.sent, own.spawns)
+		}
+	}
+	a2 := own.seat("m1x")
+	own.conf(a2, "ui.listen=example.com:80\n")
+	got, err = uiLifecycleForWith("restart", a2.Roots, uiIntentOptions{seats: uiSeatsOf("m1x")}, own.effects(nil))
+	if err == nil && got.Result.Code == 0 || own.spawns != 0 {
+		t.Fatalf("restart with no other seat and an invalid ui.listen = %v %+v, spawns %d", err, got, own.spawns)
 	}
 }
