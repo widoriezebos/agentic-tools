@@ -146,7 +146,7 @@ func TestLandingOwnerComponentRecoversFromHolderProofFailure(t *testing.T) {
 	if err := os.WriteFile(bad, []byte("{not json"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := pass(); err == nil || !strings.Contains(err.Error(), "holder proof failed") {
+	if err := pass(); err == nil || !strings.Contains(err.Error(), "holder could not be checked") {
 		t.Fatalf("first pass error=%v, want holder proof failure after the lease claim", err)
 	}
 	if err := os.Remove(bad); err != nil {

@@ -31,7 +31,7 @@ func (store Store) HoldRegisteredTrunkRed(id string, entries []OpenEntry, baseCo
 			return fmt.Errorf("batch %s cannot hold registered trunk red from state %s", id, record.State)
 		}
 		if len(entries) == 0 || opid == "" || len(record.Units) == 0 {
-			return fmt.Errorf("batch %s cannot hold registered trunk red without entries, opid, and units", id)
+			return fmt.Errorf("batch %s cannot hold for a red main without its entries, operation id and units", id)
 		}
 		groups := make([]RedGroup, 0, len(entries))
 		refs := make([]EntryRef, 0, len(entries))
@@ -86,7 +86,7 @@ func (store Store) holdTrunkRed(id, expectedOpid string, red TrunkRed, opid stri
 			return fmt.Errorf("batch %s cannot hold trunk red from state %s", id, record.State)
 		}
 		if opid == "" {
-			return fmt.Errorf("batch %s cannot hold trunk red with an empty opid", id)
+			return fmt.Errorf("batch %s cannot hold for a red main without an operation id", id)
 		}
 		if len(red.Groups) == 0 {
 			return fmt.Errorf("batch %s cannot hold trunk red without red groups", id)
@@ -95,7 +95,7 @@ func (store Store) holdTrunkRed(id, expectedOpid string, red TrunkRed, opid stri
 			return fmt.Errorf("batch %s cannot hold trunk red without units", id)
 		}
 		if record.TrunkRed != nil && slices.Contains(record.TrunkRed.Opids, opid) {
-			return fmt.Errorf("batch %s cannot reuse trunk-red opid %s", id, opid)
+			return fmt.Errorf("batch %s cannot reuse red-main operation id %s", id, opid)
 		}
 		red.BatchID = id
 		red.Joiners = make([]Claim, len(record.Units))

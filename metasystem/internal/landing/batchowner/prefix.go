@@ -53,7 +53,7 @@ func AuthorizeBatchMemberInProjection(controlRoot string, now time.Time, record 
 		return authorizeChangeInProjection(controlRoot, unit, projection)
 	}
 	if projection.Tree == nil {
-		return fmt.Errorf("BATCH_PREFIX_AUTHORITY_REFUSED: live goal projection is empty")
+		return fmt.Errorf("%s: live goal projection is empty", codePrefixAuthorityRefused)
 	}
 	file := projection.Tree.Live[unit.GoalID]
 	if file == nil || file.State != goal.StateClaimed || file.Claimed == nil {
@@ -116,7 +116,7 @@ func AuthorizeChangeWith(controlRoot string, unit batch.Unit, projection goal.Pr
 		return nil
 	}
 	if projection.Tree == nil {
-		return fmt.Errorf("BATCH_PREFIX_AUTHORITY_REFUSED: live goal projection is empty")
+		return fmt.Errorf("%s: live goal projection is empty", codePrefixAuthorityRefused)
 	}
 	file := projection.Tree.Live[change.Goal]
 	// A person's commit holds no claim of the goal (held only warns on it),
@@ -133,7 +133,7 @@ func AuthorizeChangeWith(controlRoot string, unit batch.Unit, projection goal.Pr
 	}
 	tip, err := branchTip(controlRoot, change.Goal)
 	if err != nil {
-		return fmt.Errorf("BATCH_PREFIX_AUTHORITY_REFUSED: goal %s's branch tip cannot be read for change %s's landing gate: %w", change.Goal, unit.GoalID, err)
+		return fmt.Errorf("%s: goal %s's branch tip cannot be read for change %s's landing gate: %w", codePrefixAuthorityRefused, change.Goal, unit.GoalID, err)
 	}
 	if _, err := goal.Gate(file, tip, settings); err != nil {
 		return &batch.PrefixRevisionRefusal{Reason: "BATCH_PREFIX_AUTHORITY_REFUSED: change " + unit.GoalID + " " + err.Error()}
@@ -174,7 +174,7 @@ func ProductionPrefixDecision(root string, units []batch.Unit, tree string) (bat
 
 func PlanPrefixDecisionWith(root string, units []batch.Unit, tree string, plan func(string, string, string, testpolicy.Mode, []string) (testrun.PlanOutput, error)) (batch.PrefixDecision, error) {
 	if len(units) == 0 {
-		return batch.PrefixDecision{}, fmt.Errorf("BATCH_PREFIX_PLAN_REFUSED: no joined members")
+		return batch.PrefixDecision{}, fmt.Errorf("%s: no joined members", codePrefixPlanRefused)
 	}
 	// A change is planned by no goal of its own: the goal members' plans on
 	// the prefix tree hold every change before them (U11b).
@@ -189,7 +189,7 @@ func PlanPrefixDecisionWith(root string, units []batch.Unit, tree string, plan f
 	}
 	units = planned
 	if len(units) == 0 {
-		return batch.PrefixDecision{}, fmt.Errorf("BATCH_PREFIX_PLAN_REFUSED: no joined members")
+		return batch.PrefixDecision{}, fmt.Errorf("%s: no joined members", codePrefixPlanRefused)
 	}
 	outputs := make([]testrun.PlanOutput, 0, len(units))
 	deep := false
@@ -223,12 +223,12 @@ func PlanPrefixDecisionWith(root string, units []batch.Unit, tree string, plan f
 	for index, unit := range units {
 		output := outputs[index]
 		if output.CandidateTree != tree || output.ContractDigest == "" || output.PolicyBaseCommit == "" {
-			return batch.PrefixDecision{}, fmt.Errorf("BATCH_PREFIX_PLAN_REFUSED: incomplete policy decision for %s on %s", unit.GoalID, tree)
+			return batch.PrefixDecision{}, fmt.Errorf("%s: incomplete policy decision for %s on %s", codePrefixPlanRefused, unit.GoalID, tree)
 		}
 		groups = append(groups, output.Plan.SelectedGroups...)
 		for _, admitted := range unit.SelectedGroups {
 			if !slices.Contains(output.Plan.RequiredGroups, admitted) {
-				return batch.PrefixDecision{}, fmt.Errorf("BATCH_PREFIX_PLAN_REFUSED: admitted group %s is absent from %s's required delivery plan", admitted, unit.GoalID)
+				return batch.PrefixDecision{}, fmt.Errorf("%s: admitted group %s is absent from %s's required delivery plan", codePrefixPlanRefused, admitted, unit.GoalID)
 			}
 		}
 		for _, group := range output.Groups {
@@ -244,7 +244,7 @@ func PlanPrefixDecisionWith(root string, units []batch.Unit, tree string, plan f
 	slices.Sort(groups)
 	groups = slices.Compact(groups)
 	if freshRequired && freshMaxAgeMS <= 0 {
-		return batch.PrefixDecision{}, fmt.Errorf("BATCH_PREFIX_PLAN_REFUSED: fresh group has no positive freshness max age")
+		return batch.PrefixDecision{}, fmt.Errorf("%s: fresh group has no positive freshness max age", codePrefixPlanRefused)
 	}
 	identityTree := tree
 	if root != "" {
@@ -293,7 +293,7 @@ func verifyBatchPrefix(root string, unit batch.Unit, tree string, decision batch
 		return err
 	}
 	if !result.Delivery.Sufficient {
-		return fmt.Errorf("BATCH_PREFIX_PROOF_REFUSED: goal %s tree %s missing %s", unit.GoalID, tree, strings.Join(result.Delivery.MissingGroups, ","))
+		return fmt.Errorf("%s: goal %s tree %s missing %s", codePrefixProofRefused, unit.GoalID, tree, strings.Join(result.Delivery.MissingGroups, ","))
 	}
 	return nil
 }
@@ -317,7 +317,7 @@ func VerifyBatchSeriesWith(root string, record batch.Record, trees []string,
 		}
 	}
 	if len(units) == 0 || len(trees) != len(units) {
-		return fmt.Errorf("BATCH_PREFIX_PROOF_REFUSED: incomplete final prefix series")
+		return fmt.Errorf("%s: incomplete final prefix series", codePrefixProofRefused)
 	}
 	for index, unit := range units {
 		last := index == len(units)-1
@@ -345,26 +345,26 @@ func VerifyBatchSeriesWith(root string, record batch.Record, trees []string,
 				}
 				episode, ok := record.PrefixEpisodes[unit.GoalID]
 				if !ok || episode.DecisionID != id {
-					return fmt.Errorf("BATCH_PREFIX_DECISION_MOVED: tip %s requires a new freshness episode", unit.GoalID)
+					return fmt.Errorf("%s: tip %s requires a new freshness episode", codePrefixDecisionMoved, unit.GoalID)
 				}
 				decision.FreshEpisode, decision.FreshExpiresAt = episode.Token, episode.ExpiresAt
 			}
 		} else {
 			receipt, ok := record.Receipts[unit.GoalID]
 			if !ok {
-				return fmt.Errorf("BATCH_PREFIX_PROOF_REFUSED: %s has no receipt", unit.GoalID)
+				return fmt.Errorf("%s: %s has no receipt", codePrefixProofRefused, unit.GoalID)
 			}
 			id, err := batch.PrefixDecisionID(record.BaseTree, trees[index], units[:index+1], record.Seal, decision)
 			if err != nil {
 				return err
 			}
 			if receipt.Tree != trees[index] || receipt.DecisionID != id {
-				return fmt.Errorf("BATCH_PREFIX_DECISION_MOVED: %s requires a new receipt", unit.GoalID)
+				return fmt.Errorf("%s: %s requires a new receipt", codePrefixDecisionMoved, unit.GoalID)
 			}
 			if decision.FreshRequired {
 				episode, ok := record.PrefixEpisodes[unit.GoalID]
 				if !ok || episode.DecisionID != id || episode.Token != receipt.FreshEpisode || episode.ExpiresAt != receipt.FreshExpiresAt {
-					return fmt.Errorf("BATCH_PREFIX_DECISION_MOVED: %s requires a new freshness episode", unit.GoalID)
+					return fmt.Errorf("%s: %s requires a new freshness episode", codePrefixDecisionMoved, unit.GoalID)
 				}
 				decision.FreshEpisode, decision.FreshExpiresAt = episode.Token, episode.ExpiresAt
 			}
@@ -380,7 +380,7 @@ func verifyBatchCommittedSeries(root string, record batch.Record, units []batch.
 	for index, unit := range units {
 		commit := commits[unit.GoalID]
 		if commit == "" {
-			return fmt.Errorf("BATCH_PREFIX_PROOF_REFUSED: %s has no final commit", unit.GoalID)
+			return fmt.Errorf("%s: %s has no final commit", codePrefixProofRefused, unit.GoalID)
 		}
 		if unit.IsChange() && index < len(units)-1 {
 			// A replayed change carries no receipt of its own.
@@ -406,7 +406,7 @@ func verifyBatchCommittedSeries(root string, record batch.Record, units []batch.
 				}
 				episode, ok := record.PrefixEpisodes[unit.GoalID]
 				if !ok || episode.DecisionID != id {
-					return fmt.Errorf("BATCH_PREFIX_DECISION_MOVED: final tip %s requires a new freshness episode", unit.GoalID)
+					return fmt.Errorf("%s: final tip %s requires a new freshness episode", codePrefixDecisionMoved, unit.GoalID)
 				}
 				decision.FreshEpisode, decision.FreshExpiresAt = episode.Token, episode.ExpiresAt
 			}
@@ -418,7 +418,7 @@ func verifyBatchCommittedSeries(root string, record batch.Record, units []batch.
 			}
 			episode, ok := record.PrefixEpisodes[unit.GoalID]
 			if !ok || episode.DecisionID != id {
-				return fmt.Errorf("BATCH_PREFIX_DECISION_MOVED: %s has no final freshness episode", unit.GoalID)
+				return fmt.Errorf("%s: %s has no final freshness episode", codePrefixDecisionMoved, unit.GoalID)
 			}
 			decision.FreshEpisode, decision.FreshExpiresAt = episode.Token, episode.ExpiresAt
 		}

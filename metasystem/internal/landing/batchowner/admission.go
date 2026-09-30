@@ -35,7 +35,7 @@ func productionJoinAdmission(root, batchID string, unit batch.Unit) (batch.JoinA
 		return batch.JoinAdmission{}, err
 	}
 	if unit.Admission == nil || unit.Admission.Tree == "" {
-		return batch.JoinAdmission{}, fmt.Errorf("BATCH_JOIN_TEST_DROPPED: %s has no exact admission tree", unit.GoalID)
+		return batch.JoinAdmission{}, fmt.Errorf("%s: %s has no exact admission tree", codeJoinTestDropped, unit.GoalID)
 	}
 	result, _, ran, err := runBatchAdmissionOnTree(root, batchID, record.BaseTree, unit.GoalID, unit.Claim, unit.Admission.Tree, "join-"+unit.GoalID,
 		func(decision batch.JoinAdmission, maxAgeMS int64) (batch.JoinAdmission, error) {
@@ -88,7 +88,7 @@ func runBatchAdmissionOnTree(root, batchID, baseTree, goalID string, claim batch
 		}
 		fresh = true
 		if group.FreshnessMaxAgeMS == nil || *group.FreshnessMaxAgeMS <= 0 {
-			return batch.JoinAdmission{}, proofrun.TestResult{}, false, fmt.Errorf("BATCH_JOIN_TEST_DROPPED: fresh admission group %s has no positive max age", id)
+			return batch.JoinAdmission{}, proofrun.TestResult{}, false, fmt.Errorf("%s: fresh admission group %s has no positive max age", codeJoinTestDropped, id)
 		}
 		if maxAgeMS == 0 || *group.FreshnessMaxAgeMS < maxAgeMS {
 			maxAgeMS = *group.FreshnessMaxAgeMS
@@ -145,20 +145,20 @@ func runBatchAdmissionOnTree(root, batchID, baseTree, goalID string, claim batch
 	}
 	var proof proofrun.TestResult
 	if err := strictjson.Read(result.ResultPath, &proof); err != nil {
-		return batch.JoinAdmission{}, proofrun.TestResult{}, false, fmt.Errorf("BATCH_JOIN_TEST_DROPPED: read admission result: %w; output=%s", err, strings.TrimSpace(string(output)))
+		return batch.JoinAdmission{}, proofrun.TestResult{}, false, fmt.Errorf("%s: read admission result: %w; output=%s", codeJoinTestDropped, err, strings.TrimSpace(string(output)))
 	}
 	if runErr != nil && (command.ProcessState == nil || !BatchProofExitAccepted(command.ProcessState.ExitCode(), proof)) {
 		if len(proof.Delivery.FailingGroups) != 0 {
 			return batch.JoinAdmission{}, proof, true, &batch.JoinAdmissionRed{Reason: "BATCH_JOIN_ADMISSION_RED: " + strings.Join(proof.Delivery.FailingGroups, ",")}
 		}
-		return batch.JoinAdmission{}, proof, true, fmt.Errorf("BATCH_JOIN_TEST_DROPPED: %s: %w", strings.TrimSpace(string(output)), runErr)
+		return batch.JoinAdmission{}, proof, true, fmt.Errorf("%s: %s: %w", codeJoinTestDropped, strings.TrimSpace(string(output)), runErr)
 	}
 	request := testrun.SelectionRequest{Root: executionRoot, ControlRoot: controlRoot, GoalID: goalID, Tree: tree,
 		Mode: testpolicy.ModeAuto, Purpose: testpolicy.PurposeDelivery, BatchAdmission: true,
 		FreshEpisode: result.FreshEpisode, FreshExpiresAt: result.FreshExpiresAt, ExecutedWorkers: proof.Workers}
 	verified, err := Engine.VerifyRetainedTesting(request)
 	if err != nil || !verified.Delivery.Sufficient {
-		return batch.JoinAdmission{}, proof, true, fmt.Errorf("BATCH_JOIN_TEST_DROPPED: retained admission is incomplete: %w; missing=%v", err, verified.Delivery.MissingGroups)
+		return batch.JoinAdmission{}, proof, true, fmt.Errorf("%s: retained admission is incomplete: %w; missing=%v", codeJoinTestDropped, err, verified.Delivery.MissingGroups)
 	}
 	result.AttemptID, result.Status = proof.AttemptID, "verified"
 	return result, proof, true, nil
@@ -191,7 +191,7 @@ func retainJoinEpisode(root string, store batch.Store, batchID string, unit batc
 				continue
 			}
 			if current.State != batch.UnitJoining || current.Admission == nil || current.Admission.Tree != decision.Tree || current.Claim != unit.Claim {
-				return fmt.Errorf("BATCH_JOIN_PENDING: %s changed before episode retention", unit.GoalID)
+				return fmt.Errorf("%s: %s changed before episode retention", codeJoinPending, unit.GoalID)
 			}
 			if current.Admission.DecisionID == decision.DecisionID && current.Admission.FreshEpisode != "" {
 				if expiry, parseErr := time.Parse(time.RFC3339Nano, current.Admission.FreshExpiresAt); parseErr == nil && now.Before(expiry) {
@@ -208,7 +208,7 @@ func retainJoinEpisode(root string, store batch.Store, batchID string, unit batc
 			current.Admission.DecisionID, current.Admission.FreshEpisode, current.Admission.FreshExpiresAt = decision.DecisionID, decision.FreshEpisode, decision.FreshExpiresAt
 			return nil
 		}
-		return fmt.Errorf("BATCH_JOIN_PENDING: %s is absent", unit.GoalID)
+		return fmt.Errorf("%s: %s is absent", codeJoinPending, unit.GoalID)
 	})
 	return decision, err
 }

@@ -83,7 +83,7 @@ func DiagnoseRed(store Store, id, actor string, failing []RedGroup, prefixGoal s
 		return err
 	}
 	if record.State != StateDiagnosing || record.Proof == nil {
-		return fmt.Errorf("batch %s is not diagnosing a recorded proof", id)
+		return fmt.Errorf("batch %s is not diagnosing a recorded test run", id)
 	}
 	joined := joinedUnits(record.Units)
 	if len(joined) == 0 || seams.Run == nil {
@@ -576,7 +576,7 @@ func (d redDecision) unnamed() error {
 	*composed.Proof = *d.record.Proof
 	composed.Proof.Flakes = uses
 	if d.seams.Sources == nil {
-		return fmt.Errorf("batch %s stays diagnosing: no retained verifier is bound to compose its proof", d.record.BatchID)
+		return fmt.Errorf("batch %s stays diagnosing: no kept verifier can put its test run together", d.record.BatchID)
 	}
 	resolved, err := d.seams.Sources(composed)
 	if err != nil {
@@ -591,7 +591,7 @@ func (d redDecision) unnamed() error {
 	// register journals by opid, so publishing it again is idempotent.
 	if err := d.store.Update(d.record.BatchID, func(current *Record) error {
 		if current.State != StateDiagnosing || current.Proof == nil || current.Proof.AttemptID != d.record.Proof.AttemptID {
-			return fmt.Errorf("BATCH_PROOF_INPUT_MOVED: batch changed before its composed proof was recorded")
+			return fmt.Errorf("%s: the batch changed before its combined test run was recorded", codeProofInputMoved)
 		}
 		current.Proof.Status, current.Proof.Failure, current.Proof.Sources, current.Proof.Flakes = "green", "", sources, uses
 		current.Transition(StateLanding, d.at, "diagnose", d.actor, "composed on known flakes; classification attempt "+run.AttemptID+"; sighting op "+opid)
@@ -644,7 +644,7 @@ func (d redDecision) verifierUnavailable(cause error, run DiagnosticResult) erro
 	}
 	err := d.store.Update(d.record.BatchID, func(current *Record) error {
 		if current.State != StateDiagnosing || current.Proof == nil || current.Proof.AttemptID != d.record.Proof.AttemptID {
-			return fmt.Errorf("BATCH_PROOF_INPUT_MOVED: batch changed before its verifier failure was counted")
+			return fmt.Errorf("%s: batch changed before its verifier failure was counted", codeProofInputMoved)
 		}
 		current.Transition(StateDiagnosing, d.at, "verifier-unavailable", d.actor, fmt.Sprintf("%stry %d of %d: %v", prefix, tries, MaxComposedVerifierAttempts, cause))
 		return nil

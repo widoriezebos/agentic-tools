@@ -458,7 +458,7 @@ func TestBatchOwnerManualProofAndEnvironmentFailuresReleaseAnnouncement(t *testi
 		if err := os.WriteFile(filepath.Join(mains, "zz-invalid-announcement.json"), []byte("{not json"), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := batchowner.AcquireBatchOwner(root); err == nil || !strings.Contains(err.Error(), "holder proof failed") {
+		if _, err := batchowner.AcquireBatchOwner(root); err == nil || !strings.Contains(err.Error(), "holder could not be checked") {
 			t.Fatalf("manual acquisition error=%v, want holder proof failure", err)
 		}
 		if announcements := lease.AnnouncementsFor(root, int64(os.Getpid())); len(announcements) != 0 {

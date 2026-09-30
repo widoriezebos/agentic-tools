@@ -321,7 +321,7 @@ func EndLaneOwner(root string) (int64, error) {
 		return 0, err
 	}
 	if holder.OwnerLineage != LandingOwnerLineage {
-		return 0, fmt.Errorf("the landing checkout is held by lineage %s, not its landing owner; nothing was ended", holder.OwnerLineage)
+		return 0, fmt.Errorf("the landing checkout is held by session %s, not by the landing lane; nothing was ended", holder.OwnerLineage)
 	}
 	prober := identity.KernelProber{}
 	for _, announcement := range lease.AnnouncementsFor(root, holder.Pid) {

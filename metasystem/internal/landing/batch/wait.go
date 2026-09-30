@@ -21,7 +21,7 @@ func WaitComplete(state string) bool {
 // injected clock owns both progress and the hard bound.
 func Wait(store Store, id string, bound time.Duration, clock WaitClock) (Record, error) {
 	if bound <= 0 || clock.Now == nil || clock.After == nil {
-		return Record{}, fmt.Errorf("BATCH_WAIT_BOUND: a positive bound and injected clock are required")
+		return Record{}, fmt.Errorf("%s: a positive bound and injected clock are required", codeWaitBound)
 	}
 	started := clock.Now()
 	interval := bound / 10
@@ -37,7 +37,7 @@ func Wait(store Store, id string, bound time.Duration, clock WaitClock) (Record,
 			return record, nil
 		}
 		if !clock.Now().Before(started.Add(bound)) {
-			return record, fmt.Errorf("BATCH_WAIT_BOUND: batch %s remained %s", id, record.State)
+			return record, fmt.Errorf("%s: batch %s remained %s", codeWaitBound, id, record.State)
 		}
 		<-clock.After(interval)
 	}

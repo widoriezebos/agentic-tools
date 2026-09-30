@@ -138,11 +138,11 @@ func CloseAdmissionForCost(store Store, batchID, actor string, at time.Time, for
 			!slices.Equal(record.SelectedGroups, forecast.Binding.SelectedGroups) ||
 			!slices.EqualFunc(CostBinding(*record, members, record.PrefixTrees).Members, forecast.Binding.Members[:len(members)], func(left, right CostForecastMember) bool { return reflect.DeepEqual(left, right) }) ||
 			record.BaseTree != forecast.Binding.BaseTree {
-			return fmt.Errorf("BATCH_COST_INPUT_MOVED: batch changed before cost closure")
+			return fmt.Errorf("%s: batch changed before cost closure", codeCostInputMoved)
 		}
 		for _, bound := range forecast.Binding.PrefixEpisodes {
 			if costForecastEpisode(*record, bound.GoalID) != bound {
-				return fmt.Errorf("BATCH_COST_INPUT_MOVED: prefix episode changed before cost closure")
+				return fmt.Errorf("%s: prefix episode changed before cost closure", codeCostInputMoved)
 			}
 		}
 		if len(members) == 0 {

@@ -126,18 +126,18 @@ func transportBatchBranchMember(request BatchJoinRequest, _ batch.BranchMember) 
 
 func ProductionBatchAuthor(root string, file *goal.GoalFile) (string, string, string, error) {
 	if file == nil || file.Approved == nil || !strings.HasPrefix(file.Approved.By, "human:") {
-		return "", "", "", fmt.Errorf("BATCH_JOIN_AUTHOR_UNBOUND: goal has no human approver")
+		return "", "", "", fmt.Errorf("%s: goal has no human approver", codeJoinAuthorUnbound)
 	}
 	approver := strings.TrimPrefix(file.Approved.By, "human:")
 	key := "goal.human." + strings.ToLower(approver)
 	identity, _, err := config.Get(config.GetParams{Key: key, ConfPath: filepath.Join(root, "metasystem.conf")})
 	left, right := strings.LastIndex(identity, "<"), strings.LastIndex(identity, ">")
 	if err != nil || left < 1 || right != len(identity)-1 || left >= right-1 {
-		return "", "", "", fmt.Errorf("BATCH_JOIN_AUTHOR_UNBOUND: %s has no complete %s identity", file.Approved.By, key)
+		return "", "", "", fmt.Errorf("%s: %s has no complete %s identity", codeJoinAuthorUnbound, file.Approved.By, key)
 	}
 	name, email := strings.TrimSpace(identity[:left]), strings.TrimSpace(identity[left+1:right])
 	if name == "" || email == "" || !strings.Contains(email, "@") {
-		return "", "", "", fmt.Errorf("BATCH_JOIN_AUTHOR_UNBOUND: %s has no complete %s identity", file.Approved.By, key)
+		return "", "", "", fmt.Errorf("%s: %s has no complete %s identity", codeJoinAuthorUnbound, file.Approved.By, key)
 	}
 	return approver, name, email, nil
 }
@@ -152,7 +152,7 @@ func ExecuteBatchJoin(request BatchJoinRequest, dependencies BatchJoinDependenci
 	var patch []byte
 	if request.Last || request.Through != "" {
 		if dependencies.member == nil {
-			return batch.Record{}, fmt.Errorf("BATCH_JOIN_UNREAD: goal branch reader is unavailable")
+			return batch.Record{}, fmt.Errorf("%s: goal branch reader is unavailable", codeJoinUnread)
 		}
 		member, patch, err = dependencies.member(request)
 	} else {
@@ -187,7 +187,7 @@ func ExecuteBatchJoin(request BatchJoinRequest, dependencies BatchJoinDependenci
 	}
 	if request.Last || request.Through != "" {
 		if dependencies.transportMember == nil {
-			return batch.Record{}, fmt.Errorf("BATCH_JOIN_UNREAD: goal branch transport is unavailable")
+			return batch.Record{}, fmt.Errorf("%s: goal branch transport is unavailable", codeJoinUnread)
 		}
 		err = dependencies.transportMember(request, member)
 	} else {
@@ -229,7 +229,7 @@ func ExecuteBatchJoin(request BatchJoinRequest, dependencies BatchJoinDependenci
 	}
 	slices.Sort(unit.ChangedPaths)
 	if unit.Claim.AccountingRevision == 0 {
-		return batch.Record{}, fmt.Errorf("BATCH_JOIN_REVISION_MOVED: goal %s has no accounting revision", request.GoalID)
+		return batch.Record{}, fmt.Errorf("%s: goal %s has no accounting revision", codeJoinRevisionMoved, request.GoalID)
 	}
 	// The unit is prepared on the addressed batch's base. When the batch it
 	// finally joins has another base (the addressed one was sealed meanwhile and
@@ -252,7 +252,7 @@ func ExecuteBatchJoin(request BatchJoinRequest, dependencies BatchJoinDependenci
 	}
 	handover := func() error { return dependencies.Handover(request, record.BatchID, unit.Claim) }
 	if dependencies.PublishAdmission == nil || dependencies.AdmissionRun == nil {
-		return batch.Record{}, fmt.Errorf("BATCH_JOIN_ADMISSION_UNAVAILABLE: shared admission owner is unavailable")
+		return batch.Record{}, fmt.Errorf("%s: shared admission owner is unavailable", codeJoinAdmissionUnavailable)
 	}
 	var cost *batch.CostForecast
 	if dependencies.CostForecast != nil {
@@ -293,7 +293,7 @@ func ExecuteBatchJoin(request BatchJoinRequest, dependencies BatchJoinDependenci
 	var publishErr error
 	if cost != nil {
 		if dependencies.PublishForecast == nil {
-			return batch.Record{}, fmt.Errorf("BATCH_JOIN_ADMISSION_UNAVAILABLE: cost-bound publication is unavailable")
+			return batch.Record{}, fmt.Errorf("%s: cost-bound publication is unavailable", codeJoinAdmissionUnavailable)
 		}
 		publishErr = dependencies.PublishForecast(store, record.BatchID, unit, actor, request.At, dependencies.Plan, handover, runAdmission, *cost)
 	} else {
@@ -321,7 +321,7 @@ func prepareJoinUnit(root, base string, unit batch.Unit, dependencies BatchJoinD
 		return fmt.Errorf("prepare join unit tree: prefixes=%d: %w", len(prefixes), err)
 	}
 	if dependencies.ProtectedTests == nil {
-		return fmt.Errorf("BATCH_JOIN_TEST_DROPPED: protected test gate is unavailable")
+		return fmt.Errorf("%s: protected test gate is unavailable", codeJoinTestDropped)
 	}
 	return dependencies.ProtectedTests(root, base, prefixes[0])
 }
@@ -392,7 +392,7 @@ func ProductionBatchProtectedTestsWithRawSource(root, baseTree, candidateTree st
 	if err := proofrun.CheckProtectedGoTests(workspace, baseTree, candidateTree, contract); err != nil {
 		var missing *proofrun.ProtectedGoTestMissing
 		if errors.As(err, &missing) {
-			return fmt.Errorf("BATCH_JOIN_TEST_DROPPED: %w", missing)
+			return fmt.Errorf("%s: %w", codeJoinTestDropped, missing)
 		}
 		return err
 	}
@@ -453,10 +453,10 @@ func BatchTreePlanCommand(binary, planningRoot, goalID, tree string, mode testpo
 func productionForwardHandover(request BatchJoinRequest, batchID string, source batch.Claim) error {
 	holder, err := lease.CurrentHolder(request.LandingRoot)
 	if err != nil {
-		return fmt.Errorf("landing owner is not a proven holder: %w", err)
+		return fmt.Errorf("the landing lane does not hold its checkout: %w", err)
 	}
 	if holder.OwnerLineage != LandingOwnerLineage || holder.ClaimEpoch < 1 {
-		return fmt.Errorf("landing owner is not a proven holder: lineage=%s epoch=%d", holder.OwnerLineage, holder.ClaimEpoch)
+		return fmt.Errorf("the landing lane does not hold its checkout (held by session %s, claim %d)", holder.OwnerLineage, holder.ClaimEpoch)
 	}
 	machine, err := goal.ResolveMachine(request.LandingRoot)
 	if err != nil {

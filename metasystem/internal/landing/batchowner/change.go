@@ -99,7 +99,7 @@ func changeParentStack(store batch.Store, lane, parent string, onMain func(strin
 		}
 		switch {
 		case holder == nil:
-			return nil, fmt.Errorf("its parent %s is neither on origin/main nor a change the landing lane holds; rebase it onto origin/main and land it again", parent)
+			return nil, fmt.Errorf("its parent %s is not on origin/main nor in the landing lane; rebase it onto origin/main", parent)
 		case holder.State == batch.UnitLanded:
 			return stack, nil
 		}
@@ -116,7 +116,7 @@ func changeParentStack(store batch.Store, lane, parent string, onMain func(strin
 func ExecuteChangeJoin(request ChangeJoinRequest, dependencies changeJoinDependencies) (batch.Record, error) {
 	id, ref, lane := batch.ChangeID(request.Commit), ChangePinRef(request.Commit), request.LandingRoot
 	unreadable := func(what string, err error) error {
-		return fmt.Errorf("BATCH_CHANGE_UNREADABLE: change %s: %s: %w", id, what, err)
+		return fmt.Errorf("%s: change %s: %s: %w", codeChangeUnreadable, id, what, err)
 	}
 	seatTop, err := dependencies.git(request.SeatRoot, "rev-parse", "--show-toplevel")
 	if err != nil {
@@ -152,7 +152,7 @@ func ExecuteChangeJoin(request ChangeJoinRequest, dependencies changeJoinDepende
 	}
 	machine, lineage, found := strings.Cut(change.AskedBy, "+")
 	if !found || machine == "" || lineage == "" {
-		return batch.Record{}, unreadable("its Machine trailer", fmt.Errorf("%q names no machine and lineage; a change is committed through the commit boundary", change.AskedBy))
+		return batch.Record{}, unreadable("its Machine trailer", fmt.Errorf("%q names no machine and session; land the change with metasystem work land", change.AskedBy))
 	}
 	patch, err := dependencies.git(lane, "diff", "--binary", "--full-index", request.Commit+"^", request.Commit)
 	if err != nil {
@@ -174,7 +174,7 @@ func ExecuteChangeJoin(request ChangeJoinRequest, dependencies changeJoinDepende
 	// commit whose parent main never saw (N-3).
 	stack, err := changeParentStack(store, lane, parent, dependencies.onMain)
 	if err != nil {
-		return batch.Record{}, fmt.Errorf("BATCH_CHANGE_PARENT_UNKNOWN: change %s: %w", id, err)
+		return batch.Record{}, fmt.Errorf("%s: change %s: %w", codeChangeParentUnknown, id, err)
 	}
 	prefixes, err := dependencies.assemble(lane, baseTree, append(stack, unit))
 	if err != nil || len(prefixes) != len(stack)+1 {
@@ -217,7 +217,7 @@ func (err *ChangeOwnerStartError) Unwrap() error { return err.Cause }
 func batchLaneAccount(root string) (string, error) {
 	home, err := board.Home()
 	if err != nil {
-		return "", fmt.Errorf("LANE_ACCOUNT_UNRESOLVED: %w", err)
+		return "", fmt.Errorf("%s: %w", lane.CodeAccountUnresolved, err)
 	}
 	return lane.ResolveAccount(home, batch.ModuleRoot(root))
 }

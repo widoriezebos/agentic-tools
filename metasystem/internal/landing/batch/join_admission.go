@@ -41,7 +41,7 @@ func publishJoinWithAdmission(store Store, batchID string, unit Unit, actor stri
 	plan func(string, string, string) (testpolicy.Plan, error), handover func() error, run JoinAdmissionRun,
 	forecast *CostForecast) error {
 	if run == nil {
-		return fmt.Errorf("BATCH_JOIN_TEST_DROPPED: shared admission runner is unavailable")
+		return fmt.Errorf("%s: shared admission runner is unavailable", codeJoinTestDropped)
 	}
 	err := store.locked(func() error {
 		if err := store.updateLocked(batchID, func(record *Record) error {
@@ -63,7 +63,7 @@ func publishJoinWithAdmission(store Store, batchID string, unit Unit, actor stri
 				if len(forecast.Binding.PrefixTrees) != len(live) ||
 					!slices.Equal(record.PrefixTrees, forecast.Binding.PrefixTrees[:len(live)-1]) ||
 					!reflect.DeepEqual(CostBinding(*record, live, forecast.Binding.PrefixTrees), forecast.Binding) {
-					return fmt.Errorf("BATCH_COST_INPUT_MOVED: batch or member changed before handover")
+					return fmt.Errorf("%s: batch or member changed before handover", codeCostInputMoved)
 				}
 			}
 			prefixes, err := store.reassembly.assemble(record.BaseTree, live)
@@ -71,7 +71,7 @@ func publishJoinWithAdmission(store Store, batchID string, unit Unit, actor stri
 				return err
 			}
 			if forecast != nil && !slices.Equal(prefixes, forecast.Binding.PrefixTrees) {
-				return fmt.Errorf("BATCH_COST_INPUT_MOVED: cumulative prefix trees changed before handover")
+				return fmt.Errorf("%s: cumulative prefix trees changed before handover", codeCostInputMoved)
 			}
 			unitPrefixes, err := store.reassembly.assemble(record.BaseTree, []Unit{unit})
 			if err != nil || len(unitPrefixes) != 1 {
@@ -83,7 +83,7 @@ func publishJoinWithAdmission(store Store, batchID string, unit Unit, actor stri
 			}
 			unit.SelectedGroups = slices.Clone(selection.SelectedGroups)
 			if forecast != nil && !slices.Equal(unit.SelectedGroups, forecast.Binding.Members[len(live)-1].SelectedGroups) {
-				return fmt.Errorf("BATCH_COST_INPUT_MOVED: admission selection changed before handover")
+				return fmt.Errorf("%s: admission selection changed before handover", codeCostInputMoved)
 			}
 			unit.Admission = &JoinAdmission{Tree: unitPrefixes[0], Status: "pending"}
 			record.PrefixTrees, record.TipTree = prefixes, prefixes[len(prefixes)-1]
@@ -110,7 +110,7 @@ func publishJoinWithAdmission(store Store, batchID string, unit Unit, actor stri
 					return nil
 				}
 			}
-			return fmt.Errorf("BATCH_JOIN_PENDING: member %s changed during handover", unit.GoalID)
+			return fmt.Errorf("%s: member %s changed during handover", codeJoinPending, unit.GoalID)
 		})
 	})
 	if err != nil {
@@ -136,13 +136,13 @@ func ResumeJoinAdmission(store Store, batchID, goalID, actor string, at time.Tim
 		}
 	}
 	if !found {
-		return fmt.Errorf("BATCH_JOIN_PENDING: member %s is absent", goalID)
+		return fmt.Errorf("%s: member %s is absent", codeJoinPending, goalID)
 	}
 	if unit.State == UnitJoined {
 		return nil
 	}
 	if unit.State != UnitJoining || unit.Admission == nil || unit.Admission.Tree == "" || unit.Admission.Status != "handed-over" || run == nil {
-		return fmt.Errorf("BATCH_JOIN_PENDING: member %s has no resumable admission", goalID)
+		return fmt.Errorf("%s: member %s has no resumable admission", codeJoinPending, goalID)
 	}
 	result, runErr := run(batchID, unit)
 	if runErr != nil {
@@ -152,7 +152,7 @@ func ResumeJoinAdmission(store Store, batchID, goalID, actor string, at time.Tim
 		return runErr
 	}
 	if result.Status != "verified" || result.Tree != unit.Admission.Tree {
-		return fmt.Errorf("BATCH_JOIN_TEST_DROPPED: member %s has no verified admission on %s", goalID, unit.Admission.Tree)
+		return fmt.Errorf("%s: member %s has no verified admission on %s", codeJoinTestDropped, goalID, unit.Admission.Tree)
 	}
 	closure := unitClosure(store.root, record.BaseTree, result.Tree)
 	return store.locked(func() error {
@@ -169,7 +169,7 @@ func ResumeJoinAdmission(store Store, batchID, goalID, actor string, at time.Tim
 					return nil
 				}
 				if candidate.State != UnitJoining || candidate.Admission == nil || candidate.Admission.Tree != result.Tree || candidate.Claim != unit.Claim {
-					return fmt.Errorf("BATCH_JOIN_PENDING: member %s changed during admission", goalID)
+					return fmt.Errorf("%s: member %s changed during admission", codeJoinPending, goalID)
 				}
 				candidate.Admission, candidate.Closure = &result, closure
 				candidate.Stages = boardHistory(goalID)
@@ -180,7 +180,7 @@ func ResumeJoinAdmission(store Store, batchID, goalID, actor string, at time.Tim
 				appendUnitHistory(current, at, "join", actor, goalID, UnitJoining, UnitJoined)
 				return nil
 			}
-			return fmt.Errorf("BATCH_JOIN_PENDING: member %s disappeared", goalID)
+			return fmt.Errorf("%s: member %s disappeared", codeJoinPending, goalID)
 		}); err != nil {
 			return err
 		}
