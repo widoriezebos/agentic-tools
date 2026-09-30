@@ -2,12 +2,12 @@
 
 - State: parked
 - Priority: 3
-- Sequence: 29
+- Sequence: 28
 - Intent: What: An adopted app's own patterns, architecture choices and conventions are written down as its doctrine and keep evolving as the app grows. The first version exists: the inception interview writes a starting doctrine file. What is left: make the doctrine a binding input to every critique of changes to the app, let the counselor flag when the doctrine no longer matches the code, and decide who changes it (any seat proposes and a person ratifies, or a dedicated architect role). Why: Today the doctrine is written once and then nothing reads or updates it, so it goes stale and critics ignore the app's own rules. Pros: Critiques judge against the app's own rules, and drift gets noticed. Cons: One more input to maintain, the ownership question may add a new role, and there is nothing to test against until an app has lived past inception.
 - Origin: human
 - Next step: Next: Write the design: how the doctrine enters every critique brief automatically, how the counselor detects drift, and who owns doctrine changes, with that last answer brought to Wido. Done when: Wido has accepted a design that answers all three.
 - OpenedAt: 2026-08-23T16:30:15Z
-- Revision: 92
+- Revision: 93
 - BudgetExceptions: 0
 - Parked: by=human:Wido at=2026-09-30T18:45:20Z because=Parked until an adopted app has lived past inception and its doctrine needs its first change. This goal was always meant to come last, and without such an app there is nothing real to design against.
 
@@ -104,4 +104,5 @@ History:
 - 2026-09-30T18:59:00Z 2FKD49AE1ZGA482YG0V3X1ZMS5-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,incident-proposal-drafting,integration-branch,land-verb-pruning,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,set-priority-treats-an-oversize-sequence-as-last,standing-validation,watchdog-kill-observation-gap reason=priority-order from=3:32 to=3:31
 - 2026-09-30T19:00:17Z 7J15GYNCZB96SRZHJ9QXQJ6RNZ-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,set-priority-treats-an-oversize-sequence-as-last,watchdog-kill-observation-gap reason=priority-order from=3:31 to=3:30
 - 2026-09-30T19:00:30Z 05DDEYJ4CQMXX9QH823EW2S9HB-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,claude-delegate-scratch-cleanup,claude-denywrite-list-is-a-snapshot,continuous-self-improvement,counselor,cross-repo-guardrails,delegate-sandbox-cannot-run-the-beds,design-prohibition-is-role-scoped,human-carried-landing,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,narrator-digests,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,seam-declaration-convergence,set-priority-treats-an-oversize-sequence-as-last,standing-validation,uncapped-delegate-fanout,watchdog-kill-observation-gap reason=priority-order from=3:30 to=3:29
-Integrity: sha256=dbcb4b1a129c2d11b3fd0f53ce0f61dfb1ba58d0cf423d2f4df493ce4bf9479e
+- 2026-09-30T19:01:02Z Q28ZFJP6FHWSVGMG3R2GVEP7BX-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:29 to=3:28
+Integrity: sha256=b6e93686086ddf4e93775f94e97bf4617bbcfc7b7e1185412ecd933b3ff9b309

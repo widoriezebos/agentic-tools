@@ -2,12 +2,12 @@
 
 - State: queued
 - Priority: 3
-- Sequence: 20
+- Sequence: 19
 - Intent: What: The system turns what it observes about its own work into written improvement proposals, discusses them with the person, and ends each one as either a new backlog goal or a recorded drop with its reason. Why: Improvement ideas today depend on someone remembering them in a chat; they get lost, or the same idea is raised again and again. Pros: Ideas become visible, get a clear yes or no, and a dropped idea is not raised again. Cons: A proposal queue can grow faster than the person can review it, so the threshold between small items (straight to the backlog) and big ones (proposal first) must be sharp.
 - Origin: human
 - Next step: Next: Write a short design for the loop only: what feeds the proposal queue, what a proposal contains, where the person sees and answers it, and the two endings (scheduled as a goal, or dropped with a reason); reuse the existing drafts folder and leave metric computation to actionable-metrics. Done when: The design page is in plans/designs and a person has accepted it.
 - OpenedAt: 2026-08-24T13:27:11Z
-- Revision: 91
+- Revision: 92
 - Labels: custody
 - BudgetExceptions: 0
 
@@ -103,4 +103,5 @@ History:
 - 2026-09-30T18:59:00Z 2FKD49AE1ZGA482YG0V3X1ZMS5-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,incident-proposal-drafting,integration-branch,land-verb-pruning,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,set-priority-treats-an-oversize-sequence-as-last,standing-validation,watchdog-kill-observation-gap reason=priority-order from=3:23 to=3:22
 - 2026-09-30T19:00:17Z 7J15GYNCZB96SRZHJ9QXQJ6RNZ-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,set-priority-treats-an-oversize-sequence-as-last,watchdog-kill-observation-gap reason=priority-order from=3:22 to=3:21
 - 2026-09-30T19:00:30Z 05DDEYJ4CQMXX9QH823EW2S9HB-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,claude-delegate-scratch-cleanup,claude-denywrite-list-is-a-snapshot,continuous-self-improvement,counselor,cross-repo-guardrails,delegate-sandbox-cannot-run-the-beds,design-prohibition-is-role-scoped,human-carried-landing,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,narrator-digests,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,seam-declaration-convergence,set-priority-treats-an-oversize-sequence-as-last,standing-validation,uncapped-delegate-fanout,watchdog-kill-observation-gap reason=priority-order from=3:21 to=3:20
-Integrity: sha256=0e3835cfe042c9f034c47bdf2dbe9655ccd133b70f2c23ed6210fc14a9bd814d
+- 2026-09-30T19:01:02Z Q28ZFJP6FHWSVGMG3R2GVEP7BX-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:20 to=3:19
+Integrity: sha256=8195037e9629f01facf348eabaab1f56c9a7e966e6cef056eba21045f6a6b850

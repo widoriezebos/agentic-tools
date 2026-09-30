@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 3
-- Sequence: 34
+- Sequence: 33
 - Risk: severity=1 novelty=1 exposure=2 accumulation=1 basis="severity 1: a refused reorder, no wrong ledger state; novelty 1: clamp a bound that already has an append form; exposure 2: every human or seat reorder that names a position; accumulation 1: each refusal is visible and retried"
 - Tier: 1
 - Intent: What: The goal prioritize command accepts a position beyond the end of the queue and puts the goal last, reporting the position it actually used. Why: Asking for position 90 in a queue of 62 is refused today, although the only sensible meaning is "last". It broke a batch of Wido's reorderings on 09-15. Pros: Fewer pointless refusals when reordering the backlog. Cons: A typo in a position moves a goal to the end instead of being caught; reporting the used position keeps that visible.
 - Origin: human
 - Next step: Next: In internal/goal/order.go, turn a position past the end into "last" and report the position used; keep refusing positions below 1; update order_test and the two UI tests that expect the refusal (ui/act/act_test.go:257 and ui/httpd/walkthrough/main.go:1580, so tell the ui seat). Done when: goal prioritize with sequence 999 puts the goal last, says which position it got, and the queue stays numbered 1 to N without gaps.
 - OpenedAt: 2026-09-15T06:06:03Z
-- Revision: 13
+- Revision: 14
 - BudgetExceptions: 0
 
 History:
@@ -26,4 +26,5 @@ History:
 - 2026-09-30T18:59:00Z 2FKD49AE1ZGA482YG0V3X1ZMS5-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,incident-proposal-drafting,integration-branch,land-verb-pruning,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,set-priority-treats-an-oversize-sequence-as-last,standing-validation,watchdog-kill-observation-gap reason=priority-order from=3:37 to=3:36
 - 2026-09-30T19:00:17Z 7J15GYNCZB96SRZHJ9QXQJ6RNZ-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,set-priority-treats-an-oversize-sequence-as-last,watchdog-kill-observation-gap reason=priority-order from=3:36 to=3:35
 - 2026-09-30T19:00:30Z 05DDEYJ4CQMXX9QH823EW2S9HB-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,claude-delegate-scratch-cleanup,claude-denywrite-list-is-a-snapshot,continuous-self-improvement,counselor,cross-repo-guardrails,delegate-sandbox-cannot-run-the-beds,design-prohibition-is-role-scoped,human-carried-landing,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,narrator-digests,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,seam-declaration-convergence,set-priority-treats-an-oversize-sequence-as-last,standing-validation,uncapped-delegate-fanout,watchdog-kill-observation-gap reason=priority-order from=3:35 to=3:34
-Integrity: sha256=c2409976efa01d3b30f97c11e7c19ec55477db2196ebf37c5542dcc1f74b5438
+- 2026-09-30T19:01:02Z Q28ZFJP6FHWSVGMG3R2GVEP7BX-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:34 to=3:33
+Integrity: sha256=0633770c864e38e5e9832782af26e71e1814d369a93e1f5f2a132fe7d42d1dde

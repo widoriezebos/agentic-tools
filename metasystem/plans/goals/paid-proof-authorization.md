@@ -2,12 +2,12 @@
 
 - State: parked
 - Priority: 3
-- Sequence: 25
+- Sequence: 24
 - Intent: What: Tests that cost real money (for example a paid benchmark against a model provider) are marked as paid, run only under an explicit spending permission, and have their cost counted against a budget. Why: In the morpheus project the paid benchmark runs on a person's memory and goodwill, with no permission or budget in the system. Pros: Paid checks become safe to schedule; a person approves spending once and can see what it cost. Cons: No test in this repository costs money, so there is nothing here to prove it on.
 - Origin: human
 - Next step: Next: When an adopted project declares a paid test, design a cost class for tests (free, metered, paid), the spending permission (reuse the existing grant mechanism rather than inventing a second one), and the rule that a paid test is never part of the routine test set; then build. Done when: a paid test refuses to run without a permission, and its cost shows against a budget.
 - OpenedAt: 2026-08-25T06:41:21Z
-- Revision: 89
+- Revision: 90
 - BudgetExceptions: 0
 - Parked: by=human:Wido at=2026-09-13T08:24:03Z because=Not now (2026-09-13 backlog consolidation, Wido's word): Not-now: no proof in this repository costs money; the driving case is morpheus's bench in another repository and it queues behind cross-repo-guardrails (slice1, 3:56); premise (no cost class on evidence rows) verified true 09-11; Wido's 08-25 study-area vision, unpark on his word.
 
@@ -101,4 +101,5 @@ History:
 - 2026-09-30T18:59:00Z 2FKD49AE1ZGA482YG0V3X1ZMS5-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,incident-proposal-drafting,integration-branch,land-verb-pruning,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,set-priority-treats-an-oversize-sequence-as-last,standing-validation,watchdog-kill-observation-gap reason=priority-order from=3:28 to=3:27
 - 2026-09-30T19:00:17Z 7J15GYNCZB96SRZHJ9QXQJ6RNZ-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,set-priority-treats-an-oversize-sequence-as-last,watchdog-kill-observation-gap reason=priority-order from=3:27 to=3:26
 - 2026-09-30T19:00:30Z 05DDEYJ4CQMXX9QH823EW2S9HB-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,claude-delegate-scratch-cleanup,claude-denywrite-list-is-a-snapshot,continuous-self-improvement,counselor,cross-repo-guardrails,delegate-sandbox-cannot-run-the-beds,design-prohibition-is-role-scoped,human-carried-landing,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,narrator-digests,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,seam-declaration-convergence,set-priority-treats-an-oversize-sequence-as-last,standing-validation,uncapped-delegate-fanout,watchdog-kill-observation-gap reason=priority-order from=3:26 to=3:25
-Integrity: sha256=6254f96a8f1d0c6de13db81abb3045ddcf94179848d16b64bab9cf7c974242a1
+- 2026-09-30T19:01:02Z Q28ZFJP6FHWSVGMG3R2GVEP7BX-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:25 to=3:24
+Integrity: sha256=81b036cd158adcb29614062726481122bb92452f388dfbe8a9f1ff34b4b7025e

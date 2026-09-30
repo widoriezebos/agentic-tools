@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 3
-- Sequence: 33
+- Sequence: 32
 - Risk: severity=2 novelty=1 exposure=3 accumulation=2 basis="severity 2: no data or process is at risk, but a design delegate refuses its own brief and the goal stalls until a human notices; novelty 1: the rule is one table row and one role prohibition list; exposure 3: every design round on every machine, on the lane Wido chose for design authoring; accumulation 2: every design brief has to carry an override paragraph, and each one is a place the override can be forgotten or misquoted"
 - Tier: 3
 - Intent: What: The rule "helpers may not write the design" applies to builders only; a helper started to write a design may do so. Why: The working-modes rule forbids design writing to every helper. A design helper once refused its job because of it, and design briefs now need an override paragraph to get past it. Pros: A small text change that removes a trap and keeps builders out of design. Cons: None worth noting.
 - Origin: main
 - Next step: Next: Edit the Design row of the Working Modes table in docs/orchestration.md (and working-modes.md if it mirrors it) so a design helper may write the design and a builder may not; check that brief composition picks up the new row. Done when: a design helper's composed prompt allows writing the design and a builder's still forbids it.
 - OpenedAt: 2026-09-08T06:22:17Z
-- Revision: 88
+- Revision: 89
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 
@@ -102,4 +102,5 @@ History:
 - 2026-09-30T18:59:00Z 2FKD49AE1ZGA482YG0V3X1ZMS5-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,incident-proposal-drafting,integration-branch,land-verb-pruning,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,set-priority-treats-an-oversize-sequence-as-last,standing-validation,watchdog-kill-observation-gap reason=priority-order from=3:36 to=3:35
 - 2026-09-30T19:00:17Z 7J15GYNCZB96SRZHJ9QXQJ6RNZ-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,set-priority-treats-an-oversize-sequence-as-last,watchdog-kill-observation-gap reason=priority-order from=3:35 to=3:34
 - 2026-09-30T19:00:30Z 05DDEYJ4CQMXX9QH823EW2S9HB-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,claude-delegate-scratch-cleanup,claude-denywrite-list-is-a-snapshot,continuous-self-improvement,counselor,cross-repo-guardrails,delegate-sandbox-cannot-run-the-beds,design-prohibition-is-role-scoped,human-carried-landing,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,narrator-digests,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,seam-declaration-convergence,set-priority-treats-an-oversize-sequence-as-last,standing-validation,uncapped-delegate-fanout,watchdog-kill-observation-gap reason=priority-order from=3:34 to=3:33
-Integrity: sha256=71acb244fa421dd7b7cc37cdd6e2ad7e29db3de95bd5c1702137ff4ba088e30a
+- 2026-09-30T19:01:02Z Q28ZFJP6FHWSVGMG3R2GVEP7BX-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:33 to=3:32
+Integrity: sha256=73b49ce1b35cf92d39a1703b92d229e17bbeb08fa9f0bfe76ea221817dc438f7

@@ -2,12 +2,12 @@
 
 - State: parked
 - Priority: 3
-- Sequence: 31
+- Sequence: 30
 - Intent: What: You can name the branch all work lands in, instead of it always being the repository's default branch. Why: Repositories with a protected main branch allow merges only through pull requests, which would block MetaSystem's own landing. Pros: MetaSystem can work in organisation repositories with protected branches, and promotion to main stays a person's decision. Cons: Needs a proper design; the goal ledger has to move with the chosen branch or the two drift apart.
 - Origin: human
 - Next step: Next: When an adopted repository with protected branches comes up, design it (four to six hours): list every place that assumes the default branch, and cover the five recorded points (two governance systems, person-led promotion, the ledger follows the branch, the setting belongs to the app, inception). Done when: the design is accepted.
 - OpenedAt: 2026-08-23T19:32:07Z
-- Revision: 91
+- Revision: 92
 - BudgetExceptions: 0
 - Parked: by=human:Wido at=2026-09-13T08:23:39Z because=Not now (2026-09-13 backlog consolidation, Wido's word): Wido 2026-08-24: 'low priority, queued behind the app-guardrail program'; no protected-branch incident since; pull forward when inception targets an org repo with protected branches; needs the recorded design loop carrying the five considerations (two governance systems, human promotion, ledger foll
 
@@ -103,4 +103,5 @@ History:
 - 2026-09-30T18:59:00Z 2FKD49AE1ZGA482YG0V3X1ZMS5-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,incident-proposal-drafting,integration-branch,land-verb-pruning,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,set-priority-treats-an-oversize-sequence-as-last,standing-validation,watchdog-kill-observation-gap reason=priority-order from=3:34 to=3:33
 - 2026-09-30T19:00:17Z 7J15GYNCZB96SRZHJ9QXQJ6RNZ-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,set-priority-treats-an-oversize-sequence-as-last,watchdog-kill-observation-gap reason=priority-order from=3:33 to=3:32
 - 2026-09-30T19:00:30Z 05DDEYJ4CQMXX9QH823EW2S9HB-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,claude-delegate-scratch-cleanup,claude-denywrite-list-is-a-snapshot,continuous-self-improvement,counselor,cross-repo-guardrails,delegate-sandbox-cannot-run-the-beds,design-prohibition-is-role-scoped,human-carried-landing,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,narrator-digests,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,seam-declaration-convergence,set-priority-treats-an-oversize-sequence-as-last,standing-validation,uncapped-delegate-fanout,watchdog-kill-observation-gap reason=priority-order from=3:32 to=3:31
-Integrity: sha256=f7d1e390b0c001a35e2424b0e0d2f04649b04f7afecd3b2f9584a8ccee50264b
+- 2026-09-30T19:01:02Z Q28ZFJP6FHWSVGMG3R2GVEP7BX-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:31 to=3:30
+Integrity: sha256=cf1e73e36857975f7a855320eea5ee3f1573568fd62376271b35f6affd50175c
