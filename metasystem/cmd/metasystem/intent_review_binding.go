@@ -377,5 +377,8 @@ func (inv *intentInvocation) riskRemedy(closed *intentResult, root, goalID, root
 		rootJob, len(risks), strings.Join(risks, ", "))
 	closed.Decision = fmt.Sprintf("if a person chooses to accept each risk, they give the reason: %s; then run %s",
 		strings.Join(commands, "; "), shellCommand(continuation))
+	// The acceptances are several commands, so the decision names them all;
+	// no single run line stands in for them.
+	closed.next, closed.nextReason = nil, ""
 	return true
 }

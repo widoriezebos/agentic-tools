@@ -1570,7 +1570,7 @@ func runIntentTest(inv *intentInvocation) int {
 		result.next, result.nextReason = inv.sameCommand(), "try again once that is settled"
 	case 2:
 		result.Outcome, result.Summary = intentRefused, "the test runner refused these options; the reason is printed above"
-		result.next, result.nextReason = inv.publicArgv("test", "run", "--help"), "shows the options it takes"
+		result.Decision = "correct the options; metasystem help test run lists the ones it takes"
 	default:
 		result.Outcome, result.Summary = intentFailed, fmt.Sprintf("the test runner exited %d; the reason is printed above", code)
 		result.next, result.nextReason = inv.sameCommand(), "try again once that is settled"

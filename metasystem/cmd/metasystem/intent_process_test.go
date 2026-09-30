@@ -310,7 +310,7 @@ func TestIntentProcessAndAnswerTargets(t *testing.T) {
 		}
 		owners := b.owners()
 		code, ambiguous := b.runJSON(owners, "work", "stop", "job-a")
-		if code != 1 || ambiguous.Outcome != intentRefused || !strings.Contains(ambiguous.Summary, "names 2 records (j1:job-a, j2:job-a)") ||
+		if code != 1 || ambiguous.Outcome != intentRefused || !strings.Contains(ambiguous.Summary, "could mean 2 records (j1:job-a, j2:job-a)") ||
 			strings.Contains(ambiguous.Decision, "internal") || !slices.Equal(ambiguous.Data.(map[string]any)["candidates"].([]any), []any{"j1:job-a", "j2:job-a"}) ||
 			!strings.Contains(fmt.Sprint(ambiguous.Data.(map[string]any)["choices"]), "[metasystem work stop j1:job-a]") {
 			t.Fatalf("ambiguous job = %d %+v", code, ambiguous)
