@@ -431,6 +431,7 @@ func TestLandingExcludesCoordinationStateAtTheRepositoryTop(t *testing.T) {
 // by an exclusion exactly when LANDING leaves it out, at the repository root
 // and under a nested installation.
 func TestLandingExclusionsAreTheLandingProjectionAsPaths(t *testing.T) {
+	t.Parallel()
 	policy := mustPolicy(t)
 	names := []string{
 		"artifacts/agents/output/land.log", "evidence/run.txt", "paper/rendered/a.pdf",

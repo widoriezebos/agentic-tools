@@ -18,6 +18,7 @@ import (
 // hand-made change is judged on the candidate it will commit. A declared
 // input the commit would record still refuses.
 func TestDeliveryParityLeavesWhatTheCommitNeverRecordsAtCandidateBytes(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	write := func(relative, text string) {
 		writeTestingFixtureFile(t, filepath.Join(root, filepath.FromSlash(relative)), []byte(text), 0o644)
