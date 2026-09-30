@@ -20,6 +20,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
 
 // agentOwners are the agent verbs' seams; the zero value is production.
@@ -294,10 +295,13 @@ func agentTargetUnknown(machine string, seats []string) intentResult {
 	if len(sorted) > 0 {
 		armed = strings.Join(sorted, ", ")
 	}
-	return intentResult{Outcome: intentRefused, code: 1,
-		Summary:  fmt.Sprintf("nothing was sent: no running seat on this host is named %s (running: %s)", machine, armed),
+	summary := fmt.Sprintf("nothing was sent: no running seat on this host is named %s (running: %s)", machine, armed)
+	return intentResult{Outcome: intentRefused, code: 1, Summary: summary,
 		Decision: "name one of those seats, or ask a goal's worker: metasystem agent ask --goal <goal> --text <message>",
-		Details:  []string{"code: AGENT_ASK_TARGET_UNKNOWN"}}
+		Details:  []string{"code: AGENT_ASK_TARGET_UNKNOWN"}, viewsRefusal: true,
+		view: func(page *textui.Page) {
+			page.Refusal(summary, textui.Hint{Reason: "name one of those seats, or ask a goal's worker with metasystem agent ask --goal"})
+		}}
 }
 
 // agentGoalUnknown refuses a goal that is not live on the accepted ledger:
@@ -342,17 +346,30 @@ func agentAskResult(inv *intentInvocation, published board.Published, holder str
 		target = "goal " + message.To.Goal
 	}
 	result := intentResult{Outcome: intentConfirmed, Targets: []intentTarget{{Kind: "message", ID: message.ID}}, Data: agentMessageData(message, published)}
+	var headline string
+	var facts []string
 	switch {
 	case message.To.Goal != "" && holder == "":
 		result.Summary = fmt.Sprintf("queued: no agent works on %s now; whoever claims it next receives it (message %s)", message.To.Goal, message.ID)
+		headline, facts = "Queued for goal "+message.To.Goal, []string{"no agent works on it now", "whoever claims it next receives it"}
 	case message.To.Goal != "":
 		result.Summary = fmt.Sprintf("asked whoever works on goal %s, now %s: message %s; the reply comes to this seat's inbox (metasystem agent inbox)", message.To.Goal, holder, message.ID)
+		headline, facts = "Asked whoever works on goal "+message.To.Goal, []string{"now " + holder}
 	default:
 		result.Summary = fmt.Sprintf("asked %s: message %s; the reply comes to this seat's inbox (metasystem agent inbox)", message.To.Machine, message.ID)
+		headline = "Asked " + message.To.Machine
 	}
 	if published.Existing {
 		result.Outcome = intentUnchanged
 		result.Summary = fmt.Sprintf("already asked %s: message %s is the same request and was not sent twice", target, message.ID)
+		headline, facts = "Already asked "+target, []string{"the same request was not sent twice"}
+	}
+	result.view = func(page *textui.Page) {
+		page.Done(joinFacts(page, append([]string{headline}, facts...)...))
+		page.Facts(agentMessageFacts(page, message)...)
+		if holder != "" || message.To.Goal == "" {
+			page.Hint(textui.Hint{Argv: []string{"metasystem", "agent", "inbox"}, Reason: "the reply comes to this seat's inbox"})
+		}
 	}
 	if !published.Durable {
 		return agentNotDurable(inv, message)
@@ -379,6 +396,25 @@ func agentMessageData(message board.Message, published board.Published) map[stri
 		data["deadlineAt"] = message.DeadlineAt.UTC().Format(time.RFC3339)
 	}
 	return data
+}
+
+// agentMessageFacts are a sent message's facts: its id and, when a reply is
+// wanted by a time, that time and what the asker does if none comes;
+// --verbose adds the thread and when it was sent.
+func agentMessageFacts(page *textui.Page, message board.Message) []textui.KV {
+	env := page.Env()
+	rows := []textui.KV{{Key: "message", Value: []textui.Span{textui.Plain(message.ID)}}}
+	if page.Verbose() {
+		rows = append(rows, textui.KV{Key: "thread", Value: []textui.Span{textui.Plain(message.Thread)}},
+			textui.KV{Key: "sent", Value: []textui.Span{textui.Plain(env.Time(message.At))}})
+	}
+	if message.DeadlineAt != nil {
+		rows = append(rows, textui.KV{Key: "reply by", Value: []textui.Span{textui.Plain(env.Time(*message.DeadlineAt))}})
+		if message.IfSilent != "" {
+			rows = append(rows, textui.KV{Key: "if silent", Value: []textui.Span{textui.Plain(message.IfSilent)}})
+		}
+	}
+	return rows
 }
 
 func agentDetailLines(message board.Message) []string {
@@ -424,9 +460,15 @@ func runAgentReply(inv *intentInvocation) int {
 	}
 	result := intentResult{Outcome: intentConfirmed, Targets: []intentTarget{{Kind: "message", ID: published.Message.ID}}, Data: agentMessageData(published.Message, published),
 		Summary: fmt.Sprintf("replied to %s in thread %s: message %s", answered.From.Machine, answered.Thread, published.Message.ID)}
+	headline := []string{"Replied to " + answered.From.Machine, "thread " + answered.Thread}
 	if published.Existing {
 		result.Outcome = intentUnchanged
 		result.Summary = fmt.Sprintf("already replied to %s in thread %s: message %s is the same reply and was not sent twice", answered.From.Machine, answered.Thread, published.Message.ID)
+		headline = []string{"Already replied to " + answered.From.Machine, "thread " + answered.Thread, "the same reply was not sent twice"}
+	}
+	result.view = func(page *textui.Page) {
+		page.Done(joinFacts(page, headline...))
+		page.Facts(agentMessageFacts(page, published.Message)...)
 	}
 	if inv.input.switched("verbose") {
 		result.text = agentDetailLines(published.Message)
@@ -465,6 +507,7 @@ func runAgentInbox(inv *intentInvocation) int {
 	}
 	result := intentResult{Outcome: intentConfirmed}
 	var shown []map[string]any
+	var notes []string
 	for _, message := range messages {
 		rendered := board.Render(message, seat.now, time.Local)
 		if len(result.text) > 0 {
@@ -487,16 +530,24 @@ func runAgentInbox(inv *intentInvocation) int {
 	marks := !all && seat.owners.caller(inv, seat.root) == lease.ClassMain
 	if !all && !marks && len(messages) > 0 {
 		result.text = append(result.text, "shown, not marked read: only this seat's own agent session marks its messages read, so they still reach it")
+		notes = append(notes, "Shown, not marked read: only this seat's own agent session marks its messages read, so they still reach it.")
 	}
 	if marks {
 		defer func() {
 			if printed.err != nil {
 				return
 			}
+			page := textui.New(inv.textEnv(inv.stderr))
 			for _, message := range inbox.Messages {
 				if err := board.Mark(message, seat.machine, seat.lineage, "inbox", seat.now); err != nil {
-					fmt.Fprintf(inv.stderr, "metasystem agent inbox: message %s was shown but not marked read (%v); it is shown again next time\n", message.ID, err)
+					page.Mark(textui.Alert, fmt.Sprintf("message %s was shown but not marked read, so it is shown again next time", message.ID))
+					if page.Verbose() {
+						page.Legacy("  " + err.Error())
+					}
 				}
+			}
+			if lines := page.Lines(); len(lines) > 0 {
+				_, _ = io.WriteString(inv.stderr, page.String())
 			}
 		}()
 	}
@@ -516,6 +567,7 @@ func runAgentInbox(inv *intentInvocation) int {
 			noun = "message was"
 		}
 		result.text = append(result.text, fmt.Sprintf("%d malformed %s not shown: %s", n, noun, strings.Join(inbox.Malformed, ", ")))
+		notes = append(notes, fmt.Sprintf("%s not shown: %s.", sentence(textui.Count(n, "malformed message was", "malformed messages were")), strings.Join(inbox.Malformed, ", ")))
 	}
 	if inbox.GoalWaiting > 0 {
 		reason := "a handover of their goal is in progress"
@@ -523,9 +575,59 @@ func runAgentInbox(inv *intentInvocation) int {
 			reason = "the ledger is unreadable (" + inbox.Unreadable + ")"
 		}
 		result.text = append(result.text, fmt.Sprintf("%d goal messages wait: %s", inbox.GoalWaiting, reason))
+		notes = append(notes, fmt.Sprintf("%s: %s.", sentence(textui.Count(inbox.GoalWaiting, "goal message waits", "goal messages wait")), reason))
 	}
 	result.Data = map[string]any{"seat": seat.machine, "messages": shown, "goalWaiting": inbox.GoalWaiting, "unreadable": inbox.Unreadable}
+	result.view = agentInboxView(messages, seat, all, notes, inv.input.switched("verbose"))
 	return inv.render(result)
+}
+
+// agentInboxView is the inbox: how many messages, then each message after
+// its fixed preface, its quoted lines kept quoted however they wrap, then the
+// notes on what was not shown or not marked.
+func agentInboxView(messages []board.Message, seat agentSeat, all bool, notes []string, verbose bool) func(*textui.Page) {
+	return func(page *textui.Page) {
+		env := page.Env()
+		count := textui.Count(len(messages), "peer message", "peer messages")
+		switch {
+		case len(messages) == 0 && all:
+			page.Headline("No peer messages for " + seat.machine)
+		case len(messages) == 0:
+			page.Headline("Nothing pending for " + seat.machine)
+		case all:
+			page.Headline(sentence(count)+" for "+seat.machine, "read and unread")
+		default:
+			page.Headline(sentence(count) + " for " + seat.machine)
+		}
+		for _, message := range messages {
+			section := page.Section("", "")
+			for _, line := range strings.Split(board.Render(message, seat.now, env.Zone), "\n") {
+				quoted, isQuote := strings.CutPrefix(line, "> ")
+				if !isQuote {
+					section.Text(line)
+					continue
+				}
+				pieces := []string{quoted}
+				if len([]rune(line)) > env.Width {
+					pieces = textui.Wrap(quoted, max(env.Width-2, 20), 0)
+				}
+				for _, piece := range pieces {
+					section.Text(strings.TrimRight("> "+piece, " "))
+				}
+			}
+			if verbose {
+				for _, line := range agentDetailLines(message) {
+					section.Text(strings.TrimSpace(line))
+				}
+			}
+		}
+		if len(notes) > 0 {
+			section := page.Section("", "")
+			for _, note := range notes {
+				section.Text(note)
+			}
+		}
+	}
 }
 
 // agentWriteGuard remembers the first failed write of an output.

@@ -13,6 +13,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
 
 // A question is named by its id. A channel question lives with the channel
@@ -120,28 +121,57 @@ func (inv *intentInvocation) questionView(q questionRef) intentResult {
 		c := q.channel
 		data := map[string]any{"kind": "channel", "question": c, "replyInstructions": channel.ReplyInstructions(c)}
 		result := intentResult{Outcome: intentConfirmed, Targets: targets, Data: data}
+		var headline, fact string
 		switch {
 		case c.State == "closed":
 			result.Summary = fmt.Sprintf("channel question %s is withdrawn", c.ID)
+			headline = "Channel question " + c.ID + " is withdrawn"
 		case c.Answer != nil:
 			result.Summary = fmt.Sprintf("channel question %s is answered through its channel", c.ID)
+			headline = "Channel question " + c.ID + " is answered through its channel"
 		case c.Thread == nil:
 			result.Summary = fmt.Sprintf("channel question %s is not delivered yet (%d failed deliveries)", c.ID, c.Undelivered)
 			result.next, result.nextReason = inv.publicArgv("question", "retry", c.ID), "retry delivering exactly this question; check the channel settings first when it keeps failing"
+			headline, fact = "Channel question "+c.ID+" is not delivered yet", textui.Count(c.Undelivered, "failed delivery", "failed deliveries")
 		default:
 			result.Summary = fmt.Sprintf("channel question %s waits for the person's reply in its channel thread", c.ID)
 			result.text = []string{channel.ReplyInstructions(c)}
+			headline = "Channel question " + c.ID + " waits for the person's reply in its channel thread"
+		}
+		result.view = func(page *textui.Page) {
+			page.Headline(headline, fact)
+			rows := []textui.KV{}
+			if c.Goal != "" {
+				rows = append(rows, textui.KV{Key: "goal", Value: []textui.Span{textui.Plain(c.Goal)}})
+			}
+			if len(c.Facts) > 0 {
+				rows = append(rows, textui.KV{Key: "asks", Value: []textui.Span{textui.Plain(strings.Join(c.Facts, " "))}})
+			}
+			page.Facts(rows...)
+			if c.Thread != nil && c.Answer == nil && c.State != "closed" {
+				page.Section("", "").Text(channel.ReplyInstructions(c))
+			}
 		}
 		return result
 	}
 	answered := q.ask["answeredAt"] != nil
 	data := map[string]any{"kind": "mission", "mission": q.mission, "ask": q.ask}
 	if answered {
-		return intentResult{Outcome: intentConfirmed, Targets: targets, Data: data, Summary: fmt.Sprintf("mission %s's question %s is answered", q.mission, q.id)}
+		answer, _ := q.ask["answer"].(string)
+		return intentResult{Outcome: intentConfirmed, Targets: targets, Data: data, Summary: fmt.Sprintf("mission %s's question %s is answered", q.mission, q.id),
+			view: func(page *textui.Page) {
+				page.Headline("Mission " + q.mission + "'s question " + q.id + " is answered")
+				if answer != "" {
+					page.Facts(textui.KV{Key: "answer", Value: []textui.Span{textui.Plain(answer)}})
+				}
+			}}
 	}
 	return intentResult{Outcome: intentConfirmed, Targets: targets, Data: data,
 		Summary: fmt.Sprintf("mission %s's question %s waits for an answer", q.mission, q.id),
-		next:    inv.publicArgv("question", "answer", q.publicName(), "TEXT"), nextReason: "a person answers the mission's question"}
+		next:    inv.publicArgv("question", "answer", q.publicName(), "TEXT"), nextReason: "a person answers the mission's question",
+		view: func(page *textui.Page) {
+			page.Headline("Mission " + q.mission + "'s question " + q.id + " waits for an answer")
+		}}
 }
 
 func runIntentShowQuestion(inv *intentInvocation, args []string) int {
@@ -195,7 +225,7 @@ func (inv *intentInvocation) waitQuestion(ref string) intentResult {
 	ran := ownerCall(func(stdout, stderr io.Writer) int {
 		return inv.ownerCalls().channelWait(caller, lineage, stdout, stderr, args)
 	})
-	result := ownerVerbResult(ran, []intentTarget{{Kind: "question", ID: q.id}}, "channel question "+q.id+" is answered", nil)
+	result := ownerViewed(ownerVerbResult(ran, []intentTarget{{Kind: "question", ID: q.id}}, "channel question "+q.id+" is answered", nil))
 	if result.Outcome != intentConfirmed {
 		result.Outcome = intentInProgress
 		result.next, result.nextReason = inv.publicArgv("question", "wait", "channel:"+q.id), "the same wait continues; delivery or the answer is still pending"
@@ -204,6 +234,37 @@ func (inv *intentInvocation) waitQuestion(ref string) intentResult {
 		}
 	}
 	return result
+}
+
+// The question verbs of the command table: each needs the question's id.
+func runIntentQuestionRetry(inv *intentInvocation) int {
+	if len(inv.input.args) != 1 {
+		return inv.render(questionIDMissing(inv, "retry"))
+	}
+	return runIntentAskRetry(inv, inv.input.args[0])
+}
+
+func runIntentQuestionWithdraw(inv *intentInvocation) int {
+	if len(inv.input.args) != 1 {
+		return inv.render(questionIDMissing(inv, "withdraw"))
+	}
+	return runIntentAskWithdraw(inv, inv.input.args[0])
+}
+
+func runIntentQuestionShow(inv *intentInvocation) int {
+	return runIntentShowQuestion(inv, inv.input.args)
+}
+
+func runIntentQuestionWait(inv *intentInvocation) int {
+	if len(inv.input.args) != 1 {
+		return inv.render(questionIDMissing(inv, "wait"))
+	}
+	return inv.render(inv.waitQuestion(inv.input.args[0]))
+}
+
+func questionIDMissing(inv *intentInvocation, action string) intentResult {
+	return intentResult{Outcome: intentRefused, code: 2, Summary: "question " + action + " needs the question's id, so nothing was done",
+		next: inv.publicArgv("question", "list"), nextReason: "lists the open questions with their ids"}
 }
 
 // runIntentAskRetry and runIntentAskWithdraw act on one existing channel
@@ -225,13 +286,19 @@ func runIntentAskRetry(inv *intentInvocation, id string) int {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: "question " + id + " was not retried: " + err.Error(),
 			next: inv.publicArgv("settings", "show"), nextReason: "check the channel settings"})
 	}
+	done := func(text ...string) func(*textui.Page) {
+		return func(page *textui.Page) { page.Done(joinFacts(page, text...)) }
+	}
 	switch outcome {
 	case channel.RetryDelivered:
-		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: data, Summary: "question " + id + " is delivered to its channel; no other question was touched"})
+		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: data, Summary: "question " + id + " is delivered to its channel; no other question was touched",
+			view: done("Question "+id+" is delivered to its channel", "no other question was touched")})
 	case channel.RetryAlreadyDelivered:
-		return inv.render(intentResult{Outcome: intentUnchanged, Targets: targets, Data: data, Summary: "question " + id + " was already delivered; nothing was sent again"})
+		return inv.render(intentResult{Outcome: intentUnchanged, Targets: targets, Data: data, Summary: "question " + id + " was already delivered; nothing was sent again",
+			view: done("Question "+id+" was already delivered", "nothing was sent again")})
 	case channel.RetryNotOpen:
-		return inv.render(intentResult{Outcome: intentUnchanged, Targets: targets, Data: data, Summary: "question " + id + " is " + q.State + "; there is nothing to deliver"})
+		return inv.render(intentResult{Outcome: intentUnchanged, Targets: targets, Data: data, Summary: "question " + id + " is " + q.State + "; there is nothing to deliver",
+			view: done("Question "+id+" is "+q.State, "there is nothing to deliver")})
 	}
 	return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Data: data,
 		Summary: fmt.Sprintf("question %s is still not delivered (%d failed deliveries); it stays open", id, q.Undelivered),
@@ -256,10 +323,13 @@ func runIntentAskWithdraw(inv *intentInvocation, id string) int {
 		// Already closed (R-129-ui): success, and nothing is posted or
 		// written again; the channel owner's Close makes the same no-op.
 		summary := "question " + id + " is already withdrawn; nothing was changed"
+		headline := []string{"Question " + id + " is already withdrawn", "nothing was changed"}
 		if before.Answer != nil {
 			summary = "question " + id + " is already closed with its answer recorded; nothing was changed"
+			headline = []string{"Question " + id + " is already closed with its answer recorded", "nothing was changed"}
 		}
-		return inv.render(intentResult{Outcome: intentUnchanged, Targets: targets, Summary: summary})
+		return inv.render(intentResult{Outcome: intentUnchanged, Targets: targets, Summary: summary,
+			view: func(page *textui.Page) { page.Done(joinFacts(page, headline...)) }})
 	}
 	provider, destination := inv.owners.processes.channelLink(inv.stateRoot)
 	q, err := channel.Withdraw(inv.stateRoot, id, reason, provider, destination)
@@ -271,8 +341,11 @@ func runIntentAskWithdraw(inv *intentInvocation, id string) int {
 			next: inv.sameCommand(), nextReason: "once the cause is fixed"})
 	}
 	summary := "question " + id + " is withdrawn"
+	headline := []string{"Question " + id + " is withdrawn"}
 	if before.Answer != nil {
 		summary += "; it had already been answered, and that answer stays recorded"
+		headline = append(headline, "its earlier answer stays recorded")
 	}
-	return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: map[string]any{"question": q}, Summary: summary})
+	return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: map[string]any{"question": q}, Summary: summary,
+		view: func(page *textui.Page) { page.Done(joinFacts(page, headline...)) }})
 }

@@ -13,6 +13,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
 
 // system adopt: install MetaSystem into a fresh application repository. The
@@ -92,7 +93,10 @@ func runIntentSystemAdopt(inv *intentInvocation) int {
 	if result.Already {
 		return inv.render(intentResult{Outcome: intentUnchanged, Targets: targets,
 			Summary: "the target is already this template's installation at " + result.SHA + "; nothing to do",
-			Data:    map[string]any{"sha": result.SHA, "target": result.Target}})
+			Data:    map[string]any{"sha": result.SHA, "target": result.Target},
+			view: func(page *textui.Page) {
+				page.Done(joinFacts(page, "The target is already this template's installation", "at "+textui.SHA(result.SHA), "nothing to do"))
+			}})
 	}
 	lines := append([]string{}, result.Notes...)
 	lines = append(lines, adoptionRegistrations(result.Target, result.Installed)...)
@@ -109,7 +113,46 @@ func runIntentSystemAdopt(inv *intentInvocation) int {
 	return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets,
 		Summary: "adopted at template SHA " + result.SHA + " into " + result.Target, text: lines,
 		Data: map[string]any{"sha": result.SHA, "target": result.Target, "notes": result.Notes, "installed": result.Installed},
-		next: []string{"metasystem", "settings", "check", "--repo", result.Target}, nextReason: "after filling the facts above"})
+		next: []string{"metasystem", "settings", "check", "--repo", result.Target}, nextReason: "after filling the facts above",
+		view: adoptedView(result, inv.input.args[0], inv.knownPerson())})
+}
+
+// adoptedView is a fresh adoption: what was installed where, the notes, the
+// registrations by directory, and the steps that finish it. Commands name the
+// target as the person typed it, which works where they typed it.
+func adoptedView(result adopt.Result, typed, person string) func(*textui.Page) {
+	return func(page *textui.Page) {
+		env := page.Env()
+		page.Done("Adopted at template " + textui.SHA(result.SHA))
+		page.Facts(textui.KV{Key: "into", Value: []textui.Span{textui.Plain(env.Path(result.Target))}})
+		if len(result.Notes) > 0 {
+			notes := page.Section("Notes", "")
+			for _, note := range result.Notes {
+				notes.Text(note)
+			}
+		}
+		counts, order := adoptionRegistrationCounts(result.Target, result.Installed)
+		if len(order) > 0 {
+			registered := page.Section("Registered", "")
+			for _, dir := range order {
+				registered.KV(dir, textui.Plain(textui.Count(counts[dir], "path", "paths")))
+			}
+		}
+		quoted := shellCommand([]string{typed})
+		steps := page.Section("Finish the adoption", "")
+		for _, step := range []string{
+			"1. Replace testing.json with a reviewed application test contract; until then metasystem settings check reports it incomplete.",
+			"2. Fill docs/project-rules.md with verified project facts (commands, invariants, budgets, reserved decisions).",
+			"3. Optionally set models, tiers and the evidence root in metasystem.conf.local; the defaults above apply until you do.",
+			"4. Commit those reviewed bytes from your enrolled terminal (metasystem system enroll --name " + person + "), then upgrade the committed goal ledger with metasystem goal sync --upgrade --by " + person + " before opening the first goal.",
+			"5. Prove and land the first change with metasystem test run, metasystem work review and metasystem work land.",
+			"Or take the guided path for these steps plus covenant v1 and the first goals: the inception interview (skills/inception/SKILL.md), on the coordinator seat, with the person present.",
+			"Then metasystem settings check --repo " + quoted + " and metasystem system check --repo " + quoted + " must both pass.",
+		} {
+			steps.Text(step)
+		}
+		page.Hint(textui.Hint{Argv: []string{"metasystem", "settings", "check", "--repo", typed}, Reason: "after filling the facts above"})
+	}
 }
 
 // adoptionSource is the template installation: the one containing --repo, or
@@ -163,6 +206,17 @@ func adoptGenesis(target string) error {
 // adoptionRegistrations summarizes the registration paths runtime setup wrote,
 // one line per directory; the JSON result keeps every path.
 func adoptionRegistrations(target string, installed []string) []string {
+	counts, order := adoptionRegistrationCounts(target, installed)
+	lines := make([]string, 0, len(order))
+	for _, dir := range order {
+		lines = append(lines, fmt.Sprintf("registered: %d path(s) under %s", counts[dir], dir))
+	}
+	return lines
+}
+
+// adoptionRegistrationCounts counts the registration paths per directory,
+// in the order runtime setup wrote them.
+func adoptionRegistrationCounts(target string, installed []string) (map[string]int, []string) {
 	counts := map[string]int{}
 	var order []string
 	for _, path := range installed {
@@ -175,9 +229,5 @@ func adoptionRegistrations(target string, installed []string) []string {
 		}
 		counts[dir]++
 	}
-	lines := make([]string, 0, len(order))
-	for _, dir := range order {
-		lines = append(lines, fmt.Sprintf("registered: %d path(s) under %s", counts[dir], dir))
-	}
-	return lines
+	return counts, order
 }

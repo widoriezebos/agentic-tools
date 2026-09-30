@@ -16,7 +16,7 @@ exit 0
       "goals": [],
       "id": "01M3MKDZKHW0X90ERJ2M3YS36V",
       "kind": "decision",
-      "path": "/Users/wido/GitHub/agentic-tools-m1e/docs/decisions/checkout-lease.md",
+      "path": "docs/decisions/checkout-lease.md",
       "status": "accepted",
       "title": "Checkout lease: decisions"
     },

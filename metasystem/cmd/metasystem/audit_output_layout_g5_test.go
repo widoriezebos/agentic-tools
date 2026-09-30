@@ -16,6 +16,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
 
 // The layout goldens of group G5 (plans/designs/output-style.md §7): goal
@@ -84,7 +85,7 @@ func goalSyncLayoutBed(edited bool) func(t *testing.T) layoutBed {
 		owners := defaultIntentOwners()
 		owners.resolver = stateroot.NewResolver(fakeTop(root), noExecutable)
 		resolved := realpath.Resolve(root)
-		return layoutBed{owners: owners, cwd: root, replace: append([]string{base, "5e1f0c2a9d3b7e6f4a8c1d0b2e9f7a6c5d4b3a21", shortSHA(base), "5e1f0c2a9"},
+		return layoutBed{owners: owners, cwd: root, replace: append([]string{base, "5e1f0c2a9d3b7e6f4a8c1d0b2e9f7a6c5d4b3a21", shortSHA(base), "5e1f0c2a9", textui.SHA(base), "5e1f0c2a9"},
 			layoutPaths(root, resolved, "/Users/wido/GitHub/agentic-tools-m1e")...)}
 	}
 }
@@ -104,8 +105,12 @@ func recordsLayoutBed(t *testing.T) layoutBed {
 	for path, body := range records {
 		writeTestingFixtureFile(t, filepath.Join(b.root(), filepath.FromSlash(path)), []byte(body), 0o644)
 	}
+	// The checkout is named by its resolved path, as Git names it, so the
+	// records are read from one home.
 	root := realpath.Resolve(b.root())
-	return layoutBed{owners: b.owners(), cwd: b.root(), replace: layoutPaths(b.root(), root, "/Users/wido/GitHub/agentic-tools-m1e")}
+	owners := b.owners()
+	owners.resolver = stateroot.NewResolver(fakeTop(root), noExecutable)
+	return layoutBed{owners: owners, cwd: root, replace: layoutPaths(b.root(), root, "/Users/wido/GitHub/agentic-tools-m1e")}
 }
 
 // agentLayoutBed is seat m1e of a host with three armed seats; asked has
@@ -172,8 +177,10 @@ func adoptLayoutBed(t *testing.T) layoutBed {
 			Installed: []string{filepath.Join(options.Target, ".claude", "skills", "verify"), filepath.Join(options.Target, ".claude", "skills", "retro")}}, nil
 	}
 	root := realpath.Resolve(b.root())
+	owners.resolver = stateroot.NewResolver(fakeTop(root), noExecutable)
 	app := filepath.Join(filepath.Dir(b.root()), "my-app")
-	return layoutBed{owners: owners, cwd: b.root(), replace: append([]string{app, "/Users/wido/GitHub/my-app", filepath.Join(filepath.Dir(root), "my-app"), "/Users/wido/GitHub/my-app"},
+	return layoutBed{owners: owners, cwd: root, replace: append([]string{app, "/Users/wido/GitHub/my-app", filepath.Join(filepath.Dir(root), "my-app"), "/Users/wido/GitHub/my-app",
+		"~/my-app", "~/GitHub/my-app"},
 		layoutPaths(b.root(), root, "/Users/wido/GitHub/agentic-tools-m1e")...)}
 }
 

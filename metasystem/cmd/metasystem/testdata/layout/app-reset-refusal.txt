@@ -1,0 +1,2 @@
+✗ --at and --goal name the same run; give one of them. Nothing was done
+  → metasystem app reset --goal nosuch  the goal's run

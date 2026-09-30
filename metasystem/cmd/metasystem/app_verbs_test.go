@@ -266,10 +266,10 @@ func TestAppStartStatusLogAndStop(t *testing.T) {
 		t.Fatalf("app start: %d\n%s", code, out)
 	}
 	code, out := bed.run("app", "status")
-	if code != 0 || !strings.Contains(out, "state: running") || !strings.Contains(out, "readiness: answering") {
+	if code != 0 || !strings.Contains(out, "The application is running") || !appSays(out, "readiness", "answering") {
 		t.Fatalf("app status must say running and answering:\n%s", out)
 	}
-	if !strings.Contains(out, "data: shared with the standing run") {
+	if !appSays(out, "data", "shared with the standing run") {
 		t.Fatalf("a contract with no prepare says the data word:\n%s", out)
 	}
 	if code, out := bed.run("app", "log"); code != 0 || !strings.Contains(out, "fixtureapp: listening on") {
@@ -282,7 +282,7 @@ func TestAppStartStatusLogAndStop(t *testing.T) {
 	if !strings.Contains(out, "every recorded process is dead") {
 		t.Fatalf("stop must prove death in words:\n%s", out)
 	}
-	if code, out := bed.run("app", "status"); code != 0 || !strings.Contains(out, "state: stopped") {
+	if code, out := bed.run("app", "status"); code != 0 || !strings.Contains(out, "No application run is recorded") {
 		t.Fatalf("after a proven stop the next status says stopped:\n%s", out)
 	}
 	if answered(address) {
@@ -383,7 +383,7 @@ func TestAppResetRunsPrepareAgain(t *testing.T) {
 		t.Fatalf("reset re-runs prepare, ran %d time(s)", runs)
 	}
 	code, out := bed.run("app", "status")
-	if code != 0 || !strings.Contains(out, "data: own, made by prepare") {
+	if code != 0 || !appSays(out, "data", "own, made by prepare") {
 		t.Fatalf("a contract with prepare gives the run its own data:\n%s", out)
 	}
 }
@@ -454,7 +454,7 @@ func TestAppRunThatEndsByItself(t *testing.T) {
 	}
 	eventuallyTrue(t, "the run to end into an ended record", func() bool {
 		_, out := bed.run("app", "status")
-		return strings.Contains(out, "state: ended")
+		return strings.Contains(out, "The application is ended")
 	})
 	_, out := bed.run("app", "status")
 	if !strings.Contains(out, "exit 4") {
@@ -466,6 +466,17 @@ func TestAppRunThatEndsByItself(t *testing.T) {
 	if code, startOut := bed.run("app", "start"); code != 0 {
 		t.Fatalf("the next start closes the ended run and begins again: %d\n%s", code, startOut)
 	}
+}
+
+// appSays reports whether an app page holds the fact key with a value that
+// begins with value.
+func appSays(out, key, value string) bool {
+	for _, line := range strings.Split(out, "\n") {
+		if rest, ok := strings.CutPrefix(strings.TrimSpace(line), key+" "); ok && strings.HasPrefix(strings.TrimSpace(rest), value) {
+			return true
+		}
+	}
+	return false
 }
 
 func answered(address string) bool {
@@ -606,7 +617,7 @@ func TestAppStartPreflightsDeclaredTools(t *testing.T) {
 	if countLines(t, marker) != 0 {
 		t.Fatal("nothing is prepared before the preflight passes")
 	}
-	if _, status := refused.run("app", "status"); !strings.Contains(status, "state: stopped") {
+	if _, status := refused.run("app", "status"); !strings.Contains(status, "No application run is recorded") {
 		t.Fatalf("a refused preflight starts nothing:\n%s", status)
 	}
 
@@ -625,7 +636,7 @@ func TestAppStartPreflightsDeclaredTools(t *testing.T) {
 		!strings.HasPrefix(record.Tools[0].Version, "git version") {
 		t.Fatalf("the record carries the executable found and its version line: %+v", record.Tools)
 	}
-	if _, status := bed.run("app", "status"); !strings.Contains(status, "tool git: "+record.Tools[0].Executable+" (git version") {
+	if _, status := bed.run("app", "status"); !appSays(status, "tool", "git: "+record.Tools[0].Executable+" (git version") {
 		t.Fatalf("status says which tool the run was started with:\n%s", status)
 	}
 }
@@ -640,8 +651,8 @@ func TestAppContractOfStartAloneWorksWithEveryVerb(t *testing.T) {
 		t.Fatalf("app start with start alone: %d\n%s", code, out)
 	}
 	code, out = bed.run("app", "status")
-	if code != 0 || !strings.Contains(out, "state: running") || !strings.Contains(out, "readiness: ready, observed at startup") ||
-		!strings.Contains(out, "data: shared with the standing run") {
+	if code != 0 || !strings.Contains(out, "The application is running") || !appSays(out, "readiness", "ready, observed at startup") ||
+		!appSays(out, "data", "shared with the standing run") {
 		t.Fatalf("no ready means alive is ready, and no prepare means shared data:\n%s", out)
 	}
 	eventuallyTrue(t, "the application's first line in the engine's capture", func() bool {
@@ -660,7 +671,7 @@ func TestAppContractOfStartAloneWorksWithEveryVerb(t *testing.T) {
 	if code, out := bed.run("app", "stop"); code != 0 || !strings.Contains(out, "every recorded process is dead") {
 		t.Fatalf("stop: %d\n%s", code, out)
 	}
-	if code, out := bed.run("app", "status"); code != 0 || !strings.Contains(out, "state: stopped") {
+	if code, out := bed.run("app", "status"); code != 0 || !strings.Contains(out, "No application run is recorded") {
 		t.Fatalf("after stop:\n%s", out)
 	}
 }
@@ -797,7 +808,7 @@ func TestAppCheckRecordsItsVerdict(t *testing.T) {
 	if record.Check == nil || record.Check.Group != "app-smoke" || record.Check.Verdict != "pass" || record.Check.At == "" || record.Check.Address != address {
 		t.Fatalf("the verdict and its time are written on the run record: %+v", record.Check)
 	}
-	if _, status := bed.run("app", "status"); !strings.Contains(status, "check app-smoke: pass at "+record.Check.At) {
+	if _, status := bed.run("app", "status"); !appSays(status, "check", "app-smoke pass at ") {
 		t.Fatalf("status says the last check:\n%s", status)
 	}
 
@@ -818,7 +829,7 @@ func TestAppCheckRecordsItsVerdict(t *testing.T) {
 	}
 	eventuallyTrue(t, "the application to stop answering", func() bool {
 		_, out := darkBed.run("app", "status")
-		return strings.Contains(out, "readiness: not answering")
+		return appSays(out, "readiness", "not answering")
 	})
 	code, out = darkBed.run("app", "check")
 	if code == 0 || !strings.Contains(out, "not live and answering, so its check was not run") || handed != nil {
@@ -851,7 +862,7 @@ func TestAppGoalRunEvidenceIsCopiedBeforeItsRecordIsRemoved(t *testing.T) {
 	}
 	eventuallyTrue(t, "the goal's run to end by itself", func() bool {
 		_, out := bed.run("app", "status", "--goal", "g1")
-		return strings.Contains(out, "state: ended")
+		return strings.Contains(out, "The application is ended")
 	})
 	ended, err := applaunch.ReadRecord(bed.installation, applaunch.KeyFor("goal/g1"))
 	if err != nil {
@@ -950,7 +961,7 @@ func TestAppStartReplacesALiveRunWhoseTipMoved(t *testing.T) {
 	if identity := before.Supervisor; identity == after.Supervisor {
 		t.Fatal("the old run's supervisor must be gone")
 	}
-	if code, out := bed.run("app", "status", "--goal", "g1"); code != 0 || !strings.Contains(out, "commit: "+after.Commit) {
+	if code, out := bed.run("app", "status", "--goal", "g1"); code != 0 || !appSays(out, "commit", after.Commit[:9]) {
 		t.Fatalf("status names the new commit:\n%s", out)
 	}
 }

@@ -1,0 +1,2 @@
+✗ nothing was sent: no running seat on this host is named m1z (running: m1b, m1c, m1e)
+  → name one of those seats, or ask a goal's worker with metasystem agent ask --goal

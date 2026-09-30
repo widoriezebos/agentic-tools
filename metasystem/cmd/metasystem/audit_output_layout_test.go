@@ -391,6 +391,9 @@ var (
 	layoutKeyValues  = regexp.MustCompile(`\b[a-z][a-zA-Z_-]*=\S+\s+[a-z][a-zA-Z_-]*=\S+`)
 	layoutErrorChain = regexp.MustCompile(`\b(open|stat|read|lstat) /\S*: no such file`)
 	layoutSymbols    = "●○!✗✓?"
+	// layoutBannerSymbols lead a banner line (P12): a live condition or one
+	// that needs a person. An act's ✓ or a refusal's ✗ is a headline.
+	layoutBannerSymbols = "●!"
 )
 
 // layoutProblems are the §5 shape rules a page breaks: the headline first
@@ -407,7 +410,7 @@ func layoutProblems(page string, width int, replace []string) []string {
 	}
 	lines := strings.Split(strings.TrimSuffix(page, "\n"), "\n")
 	headline := 0
-	if first := []rune(lines[0]); len(first) > 1 && strings.ContainsRune(layoutSymbols, first[0]) && first[1] == ' ' {
+	if first := []rune(lines[0]); len(first) > 1 && strings.ContainsRune(layoutBannerSymbols, first[0]) && first[1] == ' ' {
 		for index, line := range lines {
 			if line == "" {
 				headline = index + 1

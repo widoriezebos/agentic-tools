@@ -1,0 +1,5 @@
+The last 3 lines of the application's log · app.log
+
+fixture: listening on 127.0.0.1:4100
+fixture: ready
+fixture: served /-/health

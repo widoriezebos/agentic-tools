@@ -33,9 +33,9 @@ func TestSystemAdoptSaysTheEvidenceRootIsOptional(t *testing.T) {
 	if code := runIntentIn(mustIntentCommand(t, "system adopt"), []string{"app", "--repo", installation}, &stdout, &stderr, cwd, owners); code != 0 {
 		t.Fatalf("adopt = %d\n%s%s", code, stdout.String(), stderr.String())
 	}
-	text := stdout.String()
+	text := strings.Join(strings.Fields(stdout.String()), " ")
 	if !strings.Contains(text, note) ||
-		!strings.Contains(text, "  3. Optionally set models, tiers and the evidence root in metasystem.conf.local; the defaults above apply until you do.") ||
+		!strings.Contains(text, "3. Optionally set models, tiers and the evidence root in metasystem.conf.local; the defaults above apply until you do.") ||
 		strings.Contains(text, "durable evidence root") {
 		t.Fatalf("adoption text:\n%s", text)
 	}

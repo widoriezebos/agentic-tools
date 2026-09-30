@@ -1,0 +1,7 @@
+✓ Asked m1b
+
+  message     d-e3b2c5d32bc065015443445dab
+  reply by    11:28
+  if silent   I land alone at 11:30
+
+→ metasystem agent inbox  the reply comes to this seat's inbox

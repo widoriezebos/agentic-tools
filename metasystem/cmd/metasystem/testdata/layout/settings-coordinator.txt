@@ -1,0 +1,3 @@
+No coordinator is declared for this checkout
+→ metasystem settings coordinator --declare --by Wido
+  a person at an agent-free terminal declares it
