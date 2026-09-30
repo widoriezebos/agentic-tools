@@ -1,7 +1,6 @@
 package proofrun
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -256,10 +255,10 @@ func preserveWithBound(options WatchdogOptions, destination string, sources []st
 	for _, source := range sources {
 		args = append(args, "--source", source)
 	}
+	// The copy writes its own durable note (copy-note.txt) in destination;
+	// its words go to the watchdog's error output and are not read here.
 	command := exec.Command(options.Executable, args...)
-	var output bytes.Buffer
-	command.Stdout = &output
-	command.Stderr = &output
+	command.Stdout, command.Stderr = options.ErrorOutput, options.ErrorOutput
 	if err := command.Start(); err != nil {
 		note := fmt.Sprintf("DROPPED evidence copy failed: %v", err)
 		_ = AppendEvidenceNote(destination, note)
@@ -286,16 +285,12 @@ func preserveWithBound(options WatchdogOptions, destination string, sources []st
 		return note
 	}
 	if err != nil {
-		note := fmt.Sprintf("DROPPED evidence copy failed: %v: %s", err, output.String())
+		note := fmt.Sprintf("DROPPED evidence copy failed: %v", err)
 		_ = AppendEvidenceNote(destination, note)
 		fmt.Fprintln(options.ErrorOutput, "suite watchdog:", note)
 		return note
 	}
-	note := output.String()
-	if note == "" {
-		note = "bounded copy completed"
-	}
-	return note
+	return "bounded copy completed; its note is " + filepath.Join(destination, "copy-note.txt")
 }
 
 // shutdownSupervision stops the suite root's supervision through its

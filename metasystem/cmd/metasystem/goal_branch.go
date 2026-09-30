@@ -114,8 +114,13 @@ func readGate(worktree string) (string, error) {
 	command := exec.Command(argv[0], argv[1:]...)
 	command.Dir = worktree
 	command.Env = os.Environ()
-	output, err := command.CombinedOutput()
-	return lastOutputLine(output), err
+	// The gate's exit decides; what it says goes to this process's stderr
+	// for a person, never read here.
+	command.Stdout, command.Stderr = os.Stderr, os.Stderr
+	if err := command.Run(); err != nil {
+		return "the static gate refused this unit; its findings are printed above", err
+	}
+	return "", nil
 }
 
 type readDelegateOutcomeError struct {

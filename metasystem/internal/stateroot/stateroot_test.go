@@ -233,7 +233,7 @@ type commandRecorder struct {
 
 func (r *commandRecorder) run(request commandRequest) ([]byte, error) {
 	r.t.Helper()
-	copyRequest := commandRequest{name: request.name, args: append([]string(nil), request.args...), env: append([]string(nil), request.env...)}
+	copyRequest := commandRequest{args: append([]string(nil), request.args...), env: append([]string(nil), request.env...)}
 	r.seen = append(r.seen, copyRequest)
 	if len(r.seen) != 1 || !reflect.DeepEqual(copyRequest, r.want) {
 		r.t.Fatalf("unexpected command request: %+v", copyRequest)
@@ -256,7 +256,7 @@ func TestRepositoryTopBuildsCommandAndScrubsEverySteeringVariable(t *testing.T) 
 	} {
 		environment = append(environment, name+"=poison")
 	}
-	want := commandRequest{name: "git", args: []string{"-C", path, "rev-parse", "--show-toplevel"}, env: []string{"UNRELATED=kept"}}
+	want := commandRequest{args: []string{"-C", path, "rev-parse", "--show-toplevel"}, env: []string{"UNRELATED=kept"}}
 	success := &commandRecorder{t: t, want: want, output: []byte("  " + path + "\n")}
 	got, err := repositoryTopWith(path, environment, success.run)
 	if err != nil || got != path || len(success.seen) != 1 {

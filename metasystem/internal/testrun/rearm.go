@@ -408,11 +408,12 @@ var (
 			return fmt.Errorf("landed engine rebuild: %w", err)
 		}
 		command.Env = environment
-		var output bytes.Buffer
-		command.Stdout, command.Stderr = &output, &output
+		// The build's exit decides; what it says goes to this run's
+		// stderr, where a person reads it, never read here.
+		command.Stdout, command.Stderr = os.Stderr, os.Stderr
 		err = proofrun.RunResourceCommand(ctx, command, lease)
 		if err != nil {
-			return fmt.Errorf("go run -trimpath ./cmd/devgate build: %w: %s", err, strings.TrimSpace(output.String()))
+			return fmt.Errorf("go run -trimpath ./cmd/devgate build: %w (its output is above)", err)
 		}
 		return nil
 	}
