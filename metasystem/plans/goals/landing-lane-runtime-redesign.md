@@ -1,6 +1,6 @@
 # landing-lane-runtime-redesign
 
-- State: queued
+- State: approved
 - Priority: 1
 - Sequence: 1
 - Risk: severity=3 novelty=2 exposure=3 accumulation=2 basis="The lane pushes to GitHub main for every seat on the host; today's fix-forward chain produced ten defects and two reds on main; mistakes land everyone's work wrongly or block it; design and careful build required"
@@ -9,9 +9,11 @@
 - Origin: main
 - Next step: Next: Design revision 5 (/Users/wido/LocalStorage/agentic-tools-evidence/lane-stepback-20260930/lane-runtime-design.md) folds Astra round 4; run Astra rounds until no material finding is left, take your rulings on D1-D9 (section 11), then build U1-U9 by hand with one independent code critique per unit and the lane paused. Hand work: the machinery must not claim it. Done when: the U9 end-to-end rehearsal passes in the VM on the deploy commit and main is green, so the lane can be switched on.
 - OpenedAt: 2026-09-30T16:34:22Z
-- Revision: 6
+- Revision: 7
 - Pinned: m1e
+- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
+- Approved: by=human:wido at=2026-09-30T19:05:35Z revision=7 opid=1NCFN7DMKXDF4DZ6R1JC3Q9H7Z-m1e-b6a4eb0a authority=proven digest=e97a2428d9f7c53e754e09671d13cb985410975934d05648b2fd5053c3ab874d episode=7
 
 History:
 - 2026-09-30T16:34:22Z 5N2756QTTCFR80BYR8N5ART94Q-m1e-b6a4eb0a open actor=human:wido targets=landing-lane-runtime-redesign
@@ -20,4 +22,5 @@ History:
 - 2026-09-30T18:11:18Z GGVJCYYEYHFRVTJ48B81EYMF7H-m1e-b6a4eb0a set-pin actor=human:wido targets=landing-lane-runtime-redesign
 - 2026-09-30T19:05:26Z 2WWCJAT4SQQ1WJFDFTXVEZNDDH-m1e-b6a4eb0a unapprove actor=human:wido targets=landing-lane-runtime-redesign reason=Unapproved only to rewrite its intent in plain English (backlog sync 2026-09-30); approved again right after
 - 2026-09-30T19:05:30Z 0073VRTZMVT52FEJWB7FWKP429-m1e-b6a4eb0a edit actor=human:wido targets=landing-lane-runtime-redesign
-Integrity: sha256=ba05a8e6ff3903b835fe1e84d7042710aa37b717fbf48b6ae805090a5e58caf8
+- 2026-09-30T19:05:35Z 1NCFN7DMKXDF4DZ6R1JC3Q9H7Z-m1e-b6a4eb0a approve actor=human:wido targets=landing-lane-runtime-redesign
+Integrity: sha256=5a496c3f315f11cab6282e0367cf9a94b77355fa8de1f4cd8fdcd3b9741d6eab
