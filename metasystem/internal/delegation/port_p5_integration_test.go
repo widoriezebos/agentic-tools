@@ -144,10 +144,14 @@ func (b *bed) p5RequireReadRefusal(result delegation.Result, reason, priorRoot, 
 	b.t.Helper()
 	stderr := b.stderr.String()
 	requireExit(b.t, result, 11, stderr)
-	for _, want := range []string{reason, "critic root " + priorRoot, "round 1"} {
+	for _, want := range []string{"critic root " + priorRoot, "round 1"} {
 		if !strings.Contains(stderr, want) {
 			b.t.Fatalf("refusal %q does not carry %q", stderr, want)
 		}
+	}
+	// The code is the outcome's data, never the words a person reads.
+	if outcome := outcomeOf(b.t, result); strings.Contains(stderr, reason) || outcome["code"] != reason {
+		b.t.Fatalf("refusal %q or outcome %v misplaces the code %s", stderr, outcome, reason)
 	}
 	if !p5Digest.MatchString(stderr) {
 		b.t.Fatalf("refusal %q names no subject digest", stderr)
@@ -183,11 +187,11 @@ func TestPortP5DispatchIntegrationSubjectMismatchRefusesBeforeReservation(t *tes
 	b.writeFile("metasystem/review-target.txt", "workspace changed after review\n")
 	result := b.p5DispatchCritic(b.dispatchEnv("fresh"), "subject-mismatch", "review-target")
 	requireExit(t, result, 11, b.stderr.String())
-	if !strings.Contains(b.stderr.String(), "SUBJECT_MISMATCH") {
+	if strings.Contains(b.stderr.String(), "SUBJECT_MISMATCH") || !strings.Contains(b.stderr.String(), "a read now would review a tree nobody recorded") {
 		t.Fatalf("stderr %q", b.stderr.String())
 	}
 	b.p5RequireNothingPublished("subject-mismatch")
-	if outcome := outcomeOf(t, result); outcome["outcome"] != "REFUSED-INTERNAL" {
+	if outcome := outcomeOf(t, result); outcome["outcome"] != "REFUSED-INTERNAL" || outcome["code"] != "SUBJECT_MISMATCH" {
 		t.Fatalf("outcome %v", outcome)
 	}
 }
@@ -596,7 +600,7 @@ func TestPortP5DispatchIntegrationDesignRoundThreeRefusesAtTheTwoRoundLimit(t *t
 	}
 	result := b.runEnv(b.dispatchEnv("follow-up"), "follow-up", "--job", root+"-r2", "--message", message)
 	requireExit(t, result, 10, b.stderr.String())
-	if !strings.Contains(b.stderr.String(), "reason=cap-exhausted-human-raise") {
+	if strings.Contains(b.stderr.String(), "cap-exhausted-human-raise") || !strings.Contains(b.stderr.String(), "the review-round limit is exhausted") {
 		t.Fatalf("stderr %q", b.stderr.String())
 	}
 	if exists(b.recordPath(root+"-r3")) || exists(filepath.Join(b.root, "artifacts", "agents", root, "rounds", "3")) {

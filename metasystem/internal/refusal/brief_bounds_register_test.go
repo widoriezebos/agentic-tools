@@ -16,7 +16,7 @@ func TestBriefBoundsRefusalRegistration(t *testing.T) {
 		}
 	})
 	t.Run("bounds-unreadable", func(t *testing.T) {
-		want := Row{Code: "BRIEF_BOUNDS_UNREADABLE", Owner: "internal/validate", Site: "brief_bounds_source.go#BriefBoundsUnreadable.Error", Shape: Question, H1: StandingInput}
+		want := Row{Code: "BRIEF_BOUNDS_UNREADABLE", Owner: "internal/validate", Site: "brief_bounds_source.go#BriefBoundsUnreadable.RefusalCode", Shape: Question, H1: StandingInput}
 		var got Row
 		for _, row := range Rows {
 			if row.Code == "BRIEF_BOUNDS_UNREADABLE" {

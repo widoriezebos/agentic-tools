@@ -264,7 +264,8 @@ func TestTickRefusesBeforeRunningByCode(t *testing.T) {
 		}}
 	var refusal Refusal
 	if _, err := RunTick(t.TempDir(), owner, time.Now); !errors.As(err, &refusal) || refusal.Code != FetchRefused ||
-		err.Error() != FetchRefused+": origin unreachable" {
+		strings.Contains(err.Error(), FetchRefused) || !strings.Contains(err.Error(), "origin unreachable") ||
+		refusal.RefusalCode() != FetchRefused || refusal.RefusalDetail() != FetchRefused+": origin unreachable" {
 		t.Fatalf("unfetchable trunk = %v, want the fetch refusal", err)
 	}
 	owner.FetchOrigin = func(string) (string, string, error) { return strings.Repeat("a", 40), strings.Repeat("b", 40), nil }

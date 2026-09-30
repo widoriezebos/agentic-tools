@@ -320,6 +320,10 @@ type session struct {
 	windDownKilled       bool
 
 	lastDie string
+	// refusalCode is the code of the last coded owner refusal this session
+	// printed; die carries it into the typed outcome, since the words on
+	// stderr no longer name it ("Messages a Person Reads").
+	refusalCode string
 	// dieJob and dieChild are the job and child ids die names in its typed
 	// refusal (dispatch.sh's ${job:-${child:-}}).
 	dieJob, dieChild string
@@ -361,7 +365,7 @@ func (s *session) die(code int, message string) error {
 		if job == "" {
 			job = s.dieChild
 		}
-		s.recordOutcome("REFUSED-INTERNAL", "refused", message, job)
+		s.recordOutcomeCoded("REFUSED-INTERNAL", "refused", message, job, s.refusalCode)
 	}
 	s.eprintln(message)
 	return &Exit{Code: code, Message: message}

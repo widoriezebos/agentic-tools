@@ -144,7 +144,7 @@ func TestCritiqueReadAdmissionWritesItsResultInEveryOutcome(t *testing.T) {
 		var repo string
 		got := run(t, func(root string) { repo = root; seedRead(t, root, "prior", "completed", true) }, "code-critic", "candidate", 1, "")
 		result := readResult(t, got.result)
-		if got.code != 11 || !strings.Contains(got.stderr, "REDUNDANT_READ") || result.Decision != "REDUNDANT_READ" ||
+		if got.code != 11 || strings.Contains(got.stderr, "REDUNDANT_READ") || !strings.Contains(got.stderr, "an equal read changes nothing") || result.Decision != "REDUNDANT_READ" ||
 			result.CriticRoot != "prior" || result.Round != 1 || result.EventID == "" || !result.EventRecorded || !result.EventDurable {
 			t.Fatalf("redundant = %+v result %+v", got, result)
 		}
@@ -163,7 +163,7 @@ func TestCritiqueReadAdmissionWritesItsResultInEveryOutcome(t *testing.T) {
 		t.Parallel()
 		got := run(t, func(root string) { seedRead(t, root, "outstanding", "running", false) }, "code-critic", "candidate", 1, "")
 		result := readResult(t, got.result)
-		if got.code != 11 || !strings.Contains(got.stderr, "CONCURRENT_READ") || result.Decision != "CONCURRENT_READ" ||
+		if got.code != 11 || strings.Contains(got.stderr, "CONCURRENT_READ") || !strings.Contains(got.stderr, "a second read would race its fold") || result.Decision != "CONCURRENT_READ" ||
 			result.CriticRoot != "outstanding" || result.Round != 1 || result.EventRecorded || result.EventID != "" {
 			t.Fatalf("concurrent = %+v result %+v", got, result)
 		}

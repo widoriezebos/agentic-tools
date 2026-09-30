@@ -154,8 +154,17 @@ type TerminalGovernedRunIDReuseError struct {
 	Record string
 }
 
+// Error is the plain words; the code is RefusalCode ("Messages a Person
+// Reads"), and RefusalDetail the code-first line records keep.
 func (err *TerminalGovernedRunIDReuseError) Error() string {
 	return fmt.Sprintf("run %s already ended a governed attempt (recorded in %s); a new run needs a new name", err.RunID, err.Record)
+}
+
+func (err *TerminalGovernedRunIDReuseError) RefusalCode() string {
+	return "REFUSED-TERMINAL-GOVERNED-ID"
+}
+func (err *TerminalGovernedRunIDReuseError) RefusalDetail() string {
+	return fmt.Sprintf("REFUSED-TERMINAL-GOVERNED-ID: run id %s already owns terminal governed state in %s", err.RunID, err.Record)
 }
 
 // GovernedAdmissionRequest and Result keep policy outside this package. The

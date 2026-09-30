@@ -312,7 +312,8 @@ func TestTheEvidenceRootRefusesThisSeatsOwnRoot(t *testing.T) {
 	built.host.evidenceRoots[destInstall()] = config.EvidenceRoot{Path: sourceEvidence, Origin: "conf"}
 	_, err := built.sequencer.Run(fresh())
 	refusal, named := err.(*Refusal)
-	if !named || refusal.Code != CodeEvidenceRootUnsafe {
+	if !named || refusal.Code != CodeEvidenceRootUnsafe || refusal.RefusalCode() != CodeEvidenceRootUnsafe ||
+		strings.Contains(err.Error(), CodeEvidenceRootUnsafe) || !strings.Contains(err.Error(), "metasystem machine start") {
 		t.Fatalf("error = %v, want %s", err, CodeEvidenceRootUnsafe)
 	}
 	if len(built.host.madeDirs) != 0 {

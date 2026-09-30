@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 )
 
 func chainState(records map[string]map[string]any) critiqueState {
@@ -123,8 +125,8 @@ func TestBoundaryAtThreeRounds(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err = CritiqueExhaustionAdvance(repo, "critic", "code-critic", message, "critic-r4")
-	want := "reason=cap-exhausted-human-raise the review-round limit is exhausted with bounded findings; close the critique register to defer them at round 3 with open finding identifiers: B-1"
-	if err == nil || err.Error() != want {
+	want := "the review-round limit is exhausted with bounded findings; close the critique register to defer them at round 3 with open finding identifiers: B-1"
+	if err == nil || err.Error() != want || refusal.CodeOf(err) != CritiqueCapExhaustedReason {
 		t.Fatalf("bounded terminal boundary = %v, want %q", err, want)
 	}
 }

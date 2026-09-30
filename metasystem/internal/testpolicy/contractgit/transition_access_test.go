@@ -114,7 +114,7 @@ func TestPreflightCommitAttributesWithRefusesCurrentTreeMisuseBeforeOverlay(t *t
 		paths:      "src/data.json\x00",
 		attributes: map[string]string{"before": attrRecord("src/data.json", testingContractMergeDriver)},
 	}
-	if err := PreflightCommitAttributesWith("repo", "before", "commit", a); !IsRefusal(err) || !strings.Contains(err.Error(), AttributeMisuseCode) {
+	if err := PreflightCommitAttributesWith("repo", "before", "commit", a); !IsRefusal(err) || strings.Contains(err.Error(), AttributeMisuseCode) || err.(*Refusal).RefusalCode() != AttributeMisuseCode {
 		t.Fatalf("current-tree misuse err=%v", err)
 	}
 	if a.called("OpenAttributeIndex") {

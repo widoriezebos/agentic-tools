@@ -91,6 +91,11 @@ func (r *Refusal) Error() string {
 	return r.Message + "\n" + r.Remedy
 }
 
+// RefusalCode and RefusalDetail are the code and the code-first line
+// --verbose, --json and the records keep; Error is the words alone.
+func (r *Refusal) RefusalCode() string   { return r.Code }
+func (r *Refusal) RefusalDetail() string { return r.Code + ": " + r.Message }
+
 // refuse is the one constructor, so every refusal reads the same way.
 func refuse(code, format string, args ...any) *Refusal {
 	return &Refusal{Code: code, Message: fmt.Sprintf(format, args...)}
