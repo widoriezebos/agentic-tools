@@ -35,6 +35,7 @@ import (
 // branch critique closure is a fixture record; no TestResult or batch state
 // transition is synthesized.
 func TestGLEBatchPortableOwnerLandsRealCommandApplication(t *testing.T) {
+	t.Skip(oldOwnerCustodySuperseded)
 	runGLEBatchPortableOwnerMovedOrigin(t)
 }
 
@@ -495,6 +496,7 @@ chmod +x "${out:-bin/metasystem}"
 // queued for host capacity. The owner must consume the new fence, return that
 // member, and prove the remaining member before publishing the origin.
 func TestGLEBatchPortableNativeCapacityWaitEjectsElapsedFencedMember(t *testing.T) {
+	t.Skip(oldOwnerCustodySuperseded)
 	batchE2EProcessEnvironment.Lock()
 	t.Cleanup(batchE2EProcessEnvironment.Unlock)
 	// Every child this test starts carries the fixture's owner tag, so a
