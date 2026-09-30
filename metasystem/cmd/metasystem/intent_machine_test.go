@@ -24,6 +24,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stoptransition"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 // machineBedNow is the bed's clock: the fleet's reader and the lane's.
@@ -110,7 +111,7 @@ func newMachineBed(t *testing.T) *machineBed {
 			if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
 				t.Fatal(err)
 			}
-			if err := os.WriteFile(file, []byte("fixture\n"), 0o755); err != nil {
+			if err := testexec.WriteFile(file, []byte("fixture\n"), 0o755); err != nil {
 				t.Fatal(err)
 			}
 		}
