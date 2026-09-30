@@ -1,6 +1,6 @@
 # landing-design-provenance
 
-- State: queued
+- State: parked
 - Priority: 2
 - Sequence: 9
 - Risk: severity=3 novelty=2 exposure=3 accumulation=2 basis="A wrong acceptance gate can admit unreviewed changes across every node; it extends existing evidence binding but crosses dispatch and landing."
@@ -9,11 +9,12 @@
 - Origin: human
 - Next step: Next: When design-gate-at-dispatch lands, add the check to the existing landing evaluator, using the design record that gate produces. Done when: tests refuse a landing with a missing or changed design and pass one with a matching accepted design.
 - OpenedAt: 2026-09-07T21:10:16Z
-- Revision: 15
+- Revision: 16
 - BlockedBy: design-gate-at-dispatch
 - Labels: headless-fleet, headless-process
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
+- Parked: by=human:wido at=2026-09-30T18:52:47Z because=Parked with design-gate-at-dispatch: it resumes when that goal lands after switch-on. Its done blocker path-class-manifest is cleared; the block on design-gate-at-dispatch stays.
 
 History:
 - 2026-09-07T21:10:16Z VRAAJCC9NXEXBP708G8AWM8JQN-m1-76f67331 open actor=human:Wido targets=landing-design-provenance
@@ -31,4 +32,5 @@ History:
 - 2026-09-13T08:21:48Z NRD0NSKR47C7ESV46MD65VP4V0-m1-c6925449 done actor=human:Wido targets=commit-goal-binding,first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,idle-every-runtime-enforcement,landing-design-provenance,merge-stage-critic-close,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,recovery-rehearsal,recovery-to-good-state,role-context-composition,role-lane-packets,seat-mutual-awareness reason=priority-order from=2:10 to=2:9
 - 2026-09-30T18:50:48Z QDAM01HZXCYW7FEJJXYSWMGP2Z-m1e-b6a4eb0a edit actor=human:wido targets=landing-design-provenance
 - 2026-09-30T18:52:22Z GJ7MVPKDS1PHRTKZJ1SWY2Q2KG-m1e-b6a4eb0a unblock actor=human:wido targets=landing-design-provenance,path-class-manifest reason=blockedBy drops path-class-manifest
-Integrity: sha256=41a618a0e04c63561778ef26f830bd453ecf20271fe8bbe09304aad787646e25
+- 2026-09-30T18:52:47Z VG5SQSH3B451DW3GX3Z7X34K6S-m1e-b6a4eb0a park actor=human:wido targets=landing-design-provenance reason=Parked with design-gate-at-dispatch: it resumes when that goal lands after switch-on. Its done blocker path-class-manifest is cleared; the block on design-gate-at-dispatch stays.
+Integrity: sha256=89f60f7d908fb0a9efe3e39c959bafc72011fb3b2c8c86016c5e769410cddb36
