@@ -17,49 +17,42 @@ import (
 
 var validateTestNow = time.Date(2026, 9, 30, 21, 0, 0, 0, time.UTC)
 
-// startOrphanedGroup starts a shell leading its own process group that
-// leaves a sleeping child in the group and exits: the group outlives its
-// leader, as a run's workers outlive the run a run store has already
-// terminalized. It returns the dead leader's identity and the group id;
-// cleanup ends the group by its literal id.
-func startOrphanedGroup(t *testing.T) (identity.Ref, int) {
+// startOrphanedGroup starts a process leading its own process group and a
+// second process in that group, then ends the leader: the group outlives
+// its leader, as a run's workers outlive the run a run store has already
+// terminalized. It returns the dead leader's identity and the member,
+// which endGroup ends; cleanup ends both by their literal pids.
+func startOrphanedGroup(t *testing.T) (identity.Ref, *exec.Cmd) {
 	t.Helper()
-	command := exec.Command("sh", "-c", "sleep 120 & echo started")
-	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	stdout, err := command.StdoutPipe()
-	if err != nil {
+	leader := exec.Command("sleep", "120")
+	leader.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := leader.Start(); err != nil {
 		t.Fatal(err)
 	}
-	if err := command.Start(); err != nil {
+	t.Cleanup(func() { _ = leader.Process.Kill(); _ = leader.Wait() })
+	member := exec.Command("sleep", "120")
+	member.SysProcAttr = &syscall.SysProcAttr{Setpgid: true, Pgid: leader.Process.Pid}
+	if err := member.Start(); err != nil {
 		t.Fatal(err)
 	}
-	group := command.Process.Pid
-	t.Cleanup(func() { _ = syscall.Kill(-group, syscall.SIGKILL) })
-	exact, state, err := (identity.KernelProber{}).Probe(int64(group))
+	t.Cleanup(func() { _ = member.Process.Kill(); _ = member.Wait() })
+	exact, state, err := (identity.KernelProber{}).Probe(int64(leader.Process.Pid))
 	if err != nil || state != identity.Alive {
 		t.Fatalf("probe the group leader: %v %v", state, err)
 	}
-	buffer := make([]byte, 16)
-	if n, _ := stdout.Read(buffer); !strings.HasPrefix(string(buffer[:n]), "started") {
-		t.Fatalf("the group leader said %q", buffer[:n])
-	}
-	if err := command.Wait(); err != nil {
-		t.Fatal(err)
-	}
-	return exact.Ref(), group
+	_ = leader.Process.Kill()
+	_ = leader.Wait()
+	return exact.Ref(), member
 }
 
-// endGroup ends a group this test started and waits, bounded, until the
-// kernel reports it empty.
-func endGroup(t *testing.T, group int) {
+// endGroup ends the group's last member and reaps it: the group is empty.
+func endGroup(t *testing.T, member *exec.Cmd) {
 	t.Helper()
-	_ = syscall.Kill(-group, syscall.SIGKILL)
-	for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
-		if members, err := custody.GroupMembers(int64(group)); err == nil && !members {
-			return
-		}
+	_ = member.Process.Kill()
+	_ = member.Wait()
+	if members, err := custody.GroupMembers(int64(member.SysProcAttr.Pgid)); err != nil || members {
+		t.Fatalf("process group %d after its last member was reaped: members %v, %v", member.SysProcAttr.Pgid, members, err)
 	}
-	t.Fatalf("process group %d did not empty", group)
 }
 
 // TestTerminalRunWithLiveGroupIsUnsettled (K9): the run store already
@@ -71,7 +64,7 @@ func endGroup(t *testing.T, group int) {
 func TestTerminalRunWithLiveGroupIsUnsettled(t *testing.T) {
 	t.Parallel()
 	home := filepath.Join(t.TempDir(), "home")
-	leader, group := startOrphanedGroup(t)
+	leader, member := startOrphanedGroup(t)
 	record, err := custody.Open(home, custody.KindValidate, custodySubject("cadence-run-9"), validateTestNow)
 	if err != nil {
 		t.Fatal(err)
@@ -126,7 +119,7 @@ func TestTerminalRunWithLiveGroupIsUnsettled(t *testing.T) {
 	if pending, err := FinalizationPending(home); err != nil || pending {
 		t.Fatalf("finalization pending while the group runs = %v %v; want not pending", pending, err)
 	}
-	endGroup(t, group)
+	endGroup(t, member)
 	if pending, err := FinalizationPending(home); err != nil || !pending {
 		t.Fatalf("finalization pending once the group ended = %v %v; want pending", pending, err)
 	}
