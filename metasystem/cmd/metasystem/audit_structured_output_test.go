@@ -56,8 +56,6 @@ var structuredOutputExceptions = map[string]string{
 var structuredOutputBaseline = map[string]string{
 	"cmd/metasystem/intent_delivery.go:runIntentOwnerProcess": "T8 seat launch --json: envelope summary and code",
 	"cmd/metasystem/landing_path.go:landingPathBaseJudge":     "T7 landing observe typed provenance, T11 landing workspace --json",
-	"internal/missionrunner/launch.go:runCaptured":            "T5 up --json for mission arm",
-	"internal/testrun/rearm.go:landedRearmUp":                 "T4 up --json for the landed re-arm",
 }
 
 // structuredCapture is one capture of a child's output the audit judged.

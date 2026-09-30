@@ -15,7 +15,7 @@ import (
 func TestLandingOwnerRearmJudgesUpByTheStateItLeaves(t *testing.T) {
 	t.Parallel()
 	failed := func(context.Context, string, string) (testrun.UpOutcome, error) {
-		return testrun.UpOutcome{Failed: true}, errors.New("bin/metasystem up --repo /lane: exit status 1")
+		return testrun.UpOutcome{Outcome: "failed", Failed: "session-identity"}, errors.New("bin/metasystem up --repo /lane: exit status 1")
 	}
 	succeeded := func(context.Context, string, string) (testrun.UpOutcome, error) { return testrun.UpOutcome{}, nil }
 	current := func(string) error { return nil }

@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 	"syscall"
@@ -22,6 +21,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/up"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/verbresult"
 )
 
 // A landed engine is trusted by its landing. When another seat lands engine
@@ -418,21 +419,28 @@ var (
 	// landedRearmUp runs the REBUILT binary's own `up --repo <checkout>`:
 	// the enrollment rules that mint the generation are the landed ones,
 	// not this process's older copy, and the options are exactly what a
-	// person's `metasystem up --repo` would build from this shell. The
-	// result line is returned as up printed it.
+	// person's `metasystem up --repo` would build from this shell. Its
+	// answer is read from up's --json envelope: its outcome and the step it
+	// stopped at are typed data, and an answer that cannot be read is an
+	// error, never an armed engine.
 	landedRearmUp = func(ctx context.Context, installation, projectRoot string) (UpOutcome, error) {
-		command := exec.CommandContext(ctx, filepath.Join(installation, "bin", "metasystem"), "up", "--repo", projectRoot)
+		command := exec.CommandContext(ctx, filepath.Join(installation, "bin", "metasystem"), "up", "--repo", projectRoot, "--json")
 		command.Dir = installation
 		command.Env = os.Environ()
-		out, err := command.CombinedOutput()
-		lines := strings.Split(strings.TrimSpace(string(out)), "\n")
-		last := strings.TrimSpace(lines[len(lines)-1])
-		outcome := UpOutcome{Line: last, Failed: err != nil}
-		if match := upOutcomeField.FindStringSubmatch(last); match != nil {
-			outcome.Outcome = match[1]
-		}
+		result, err := verbresult.Run(command, "up")
 		if err != nil {
-			return outcome, fmt.Errorf("bin/metasystem up --repo %s: %w: %s", projectRoot, err, last)
+			return UpOutcome{}, fmt.Errorf("bin/metasystem up --repo %s gave no readable result: %w", projectRoot, err)
+		}
+		outcome := UpOutcome{Summary: result.Summary}
+		if len(result.Data) > 0 {
+			var data up.Data
+			if err := result.DecodeData(&data); err != nil {
+				return outcome, fmt.Errorf("bin/metasystem up --repo %s gave an unreadable result: %w", projectRoot, err)
+			}
+			outcome.Outcome, outcome.Failed, outcome.ReArmed = data.Outcome, data.Failed, data.ReArmed
+		}
+		if result.Outcome != verbresult.Confirmed {
+			return outcome, fmt.Errorf("bin/metasystem up --repo %s: %w", projectRoot, result.Err())
 		}
 		return outcome, nil
 	}
@@ -468,14 +476,15 @@ func UpLandedEngine(ctx context.Context, installation, projectRoot string) (UpOu
 // the loop guard: a run that finds it never re-arms again.
 const engineRearmEnv = "METASYSTEM_ENGINE_REARM"
 
-// UpOutcome is what the rebuilt engine's up said, as it said it.
+// UpOutcome is what the rebuilt engine's up answered: its outcome, the
+// step it stopped at and what it re-armed, as typed data, and its summary
+// for a person.
 type UpOutcome struct {
-	Line    string
+	Summary string
 	Outcome string
-	Failed  bool
+	Failed  string
+	ReArmed string
 }
-
-var upOutcomeField = regexp.MustCompile(`\boutcome=([A-Za-z_-]+)`)
 
 // performLandedRearm brings the checkout to the tip, rebuilds the engine
 // there and re-arms the enrollment; the record names what changed.
@@ -495,15 +504,19 @@ func performLandedRearm(ctx context.Context, installation, projectRoot string, f
 	// re-opened generation and records up's outcome; only an enrollment
 	// that did not advance is a refusal, with up's own line.
 	result, upErr := landedRearmUp(ctx, installation, projectRoot)
+	reArmed := result.ReArmed
+	if reArmed == "" {
+		reArmed = result.Summary
+	}
 	record := &proofrun.EngineRearm{SourceCommit: facts.Source, LandedTip: facts.Tip, PreviousGeneration: previousGeneration,
-		ReArmed: result.Line, UpOutcome: result.Outcome, At: time.Now().UTC().Format(time.RFC3339Nano)}
+		ReArmed: reArmed, UpOutcome: result.Outcome, At: time.Now().UTC().Format(time.RFC3339Nano)}
 	pinned, openErr := landedRearmOpenEnrollment(installation)
 	if openErr != nil || pinned.Generation <= previousGeneration {
 		if upErr != nil {
 			return nil, engineRefusal("rearm-failed", engineCheckoutFacts(projectRoot), "the rebuilt engine could not restart this checkout's session", fmt.Sprintf("tip %s: %v", facts.Tip, upErr))
 		}
 		return nil, engineRefusal("rearm-failed", engineCheckoutFacts(projectRoot), "the rebuilt engine restarted, but this checkout still runs the old one",
-			fmt.Sprintf("tip %s: the enrollment did not advance past generation %d (%v; up said: %s)", facts.Tip, previousGeneration, openErr, result.Line))
+			fmt.Sprintf("tip %s: the enrollment did not advance past generation %d (%v; up said: %s)", facts.Tip, previousGeneration, openErr, result.Summary))
 	}
 	record.Generation = pinned.Generation
 	return record, nil

@@ -27,6 +27,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/up"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/verbresult"
 )
 
 // The launch side of the runner: what happens in the caller's process before
@@ -178,47 +180,19 @@ func stateShapeRefusal(statePath string) error {
 // repository-steering environment stripped and object replacement
 // disabled, so an inherited GIT_DIR or a planted replace ref can never
 // steer what the runner reads. The same posture applies to every runner
-// git surface.
+// git surface. Every command this runner launches is bounded (B4): a hung
+// child would otherwise stall the mission turn that is waiting for it. A
+// command that could not start reports exit -1 with the launch error as its
+// stderr.
 func gitCaptured(dir string, args ...string) (stdout, stderr string, code int) {
 	full := append([]string{"-c", "core.useReplaceRefs=false", "-c", "gc.auto=0", "-c", "maintenance.auto=false"}, args...)
-	return runCaptured(dir, gittree.ScrubbedEnviron(), "git", full...)
-}
-
-// armSupervision arms supervision for the mission's checkout through the
-// checkout engine's `up` entry (METASYSTEM_BIN, else <root>/bin/metasystem),
-// with the checkout's own metasystem root.
-func (e *Engine) armSupervision(args []string) (stdout, stderr string, code int) {
-	if e.ArmSupervision != nil {
-		return e.ArmSupervision(args)
-	}
-	engine := os.Getenv("METASYSTEM_BIN")
-	if engine == "" {
-		engine = filepath.Join(e.Root, "bin", "metasystem")
-	}
-	return runCaptured(e.Root, nil, engine, append([]string{"up", "--metasystem-root", e.Root}, args...)...)
-}
-
-// runCaptured runs a command from a working directory, capturing both
-// streams. A command that could not start reports exit -1 with the launch
-// error as its stderr.
-func runCaptured(dir string, env []string, name string, args ...string) (stdout, stderr string, code int) {
-	command := exec.Command(name, args...)
+	command := exec.Command("git", full...)
 	command.Dir = dir
-	if env != nil {
-		command.Env = env
-	} else {
-		// Runner-owned scripts inherit the SCRUBBED environment: none of
-		// them lawfully needs a repository-steering variable, and any git
-		// they spawn must judge the checkout it runs in.
-		command.Env = gittree.ScrubbedEnviron()
-	}
+	command.Env = gittree.ScrubbedEnviron()
 	var outBuf, errBuf bytes.Buffer
 	command.Stdout = &outBuf
 	command.Stderr = &errBuf
-	// Every command this runner launches is bounded (B4): a hung child
-	// would otherwise stall the mission turn that is waiting for it.
-	limit := boundedexec.Timeout(filepath.Join(dir, "metasystem.conf"), boundedexec.Local)
-	err := boundedexec.Run(command, limit, "mission runner command "+name)
+	err := boundedexec.Run(command, runnerCommandBound(dir), "mission runner command git")
 	switch typed := err.(type) {
 	case nil:
 		code = 0
@@ -229,6 +203,36 @@ func runCaptured(dir string, env []string, name string, args ...string) (stdout,
 		fmt.Fprintln(&errBuf, err)
 	}
 	return outBuf.String(), errBuf.String(), code
+}
+
+// runnerCommandBound is the bound on one command the runner launches.
+func runnerCommandBound(dir string) boundedexec.Bound {
+	return boundedexec.Timeout(filepath.Join(dir, "metasystem.conf"), boundedexec.Local)
+}
+
+// upVerb is the envelope verb the checkout engine's up answers with.
+const upVerb = "up"
+
+// armSupervision arms supervision for the mission's checkout through the
+// checkout engine's `up --json` entry (METASYSTEM_BIN, else
+// <root>/bin/metasystem), with the checkout's own metasystem root, and
+// reads its answer from the envelope, bounded like every runner command.
+func (e *Engine) armSupervision(args []string) (verbresult.Result, error) {
+	if e.ArmSupervision != nil {
+		return e.ArmSupervision(args)
+	}
+	engine := os.Getenv("METASYSTEM_BIN")
+	if engine == "" {
+		engine = filepath.Join(e.Root, "bin", "metasystem")
+	}
+	command := exec.Command(engine, append([]string{"up", "--metasystem-root", e.Root, "--json"}, args...)...)
+	command.Dir = e.Root
+	// The engine inherits the SCRUBBED environment: it lawfully needs no
+	// repository-steering variable, and any git it spawns must judge the
+	// checkout it runs in.
+	command.Env = gittree.ScrubbedEnviron()
+	read := verbresult.Capture(command, upVerb)
+	return read(boundedexec.Run(command, runnerCommandBound(e.Root), "mission runner command up"))
 }
 
 // firstDetail words a wrapped tool's refusal: stderr when it said anything
@@ -523,6 +527,26 @@ func (e *Engine) pinVerifiedContract(mode string, snapshot []byte, approvedSHA s
 	return atomicWriteJSON(fencesPath, fences)
 }
 
+// requireArmed is mission startup's reading of up's envelope: it confirmed
+// and its typed outcome is armed. Any other answer, or none, is a refusal
+// in up's own summary.
+func requireArmed(result verbresult.Result, err error) error {
+	if err != nil {
+		return err
+	}
+	if result.Outcome != verbresult.Confirmed {
+		return result.Err()
+	}
+	var data up.Data
+	if err := result.DecodeData(&data); err != nil {
+		return fmt.Errorf("up's answer is unreadable: %w", err)
+	}
+	if data.Outcome != "armed" {
+		return fmt.Errorf("up answered %s, not armed", data.Outcome)
+	}
+	return nil
+}
+
 // armAndPreflight arms supervision as the resolved identity, preflights the
 // authored contract, and pins the verified snapshot for this mission.
 func (e *Engine) armAndPreflight(mode string) error {
@@ -553,9 +577,8 @@ func (e *Engine) armAndPreflight(mode string) error {
 		// the predecessor's in-flight delegates.
 		args = append(args, "--owner-lineage", identity.lineage)
 	}
-	stdout, stderr, code := e.armSupervision(args)
-	if code != 0 || !strings.Contains(stdout, "up outcome=armed") {
-		return failf(3, "mission start refused: supervision did not arm: %s", firstDetail(stderr, stdout))
+	if err := requireArmed(e.armSupervision(args)); err != nil {
+		return failf(3, "mission start refused: supervision did not arm: %v", err)
 	}
 	verified, done, err := diskstore.ScratchFile("mission-" + e.Mission + "-verified.*.contract.md")
 	if err != nil {
