@@ -158,7 +158,7 @@ func TestSessionStatusExampleIsAnIDItTakes(t *testing.T) {
 		}
 	}
 	code, _, stderr := runPublic(t, "session", "status", "--id", "r-7f3a")
-	if code != 2 || !strings.Contains(stderr, "metasystem session status: r-7f3a is not a Stop report id") || strings.Contains(stderr, "report stop-status") {
+	if code != 2 || !strings.HasPrefix(stderr, "r-7f3a is not a Stop report id") || strings.Contains(stderr, "report stop-status") {
 		t.Errorf("session status --id r-7f3a: code %d stderr %q", code, stderr)
 	}
 }

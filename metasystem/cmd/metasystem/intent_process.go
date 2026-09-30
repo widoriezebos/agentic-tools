@@ -223,7 +223,8 @@ func processIntentCommands() []intentCommand {
 			examples: []string{"metasystem mission repair demo --problem 2 --confirm-restored 3f2a9c1e0d4b5a6978695a4b3c2d1e0f98765432 --by Wido --reason 'restored from the snapshot'"},
 			run: func(inv *intentInvocation) int {
 				if len(inv.input.args) != 1 {
-					return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "mission repair needs the mission: metasystem mission repair M ...; nothing was done"})
+					return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "mission repair needs the mission's name, so nothing was done",
+						next: inv.retryWith(nil, "MISSION"), nextReason: "with the mission's name"})
 				}
 				return runIntentRepairMission(inv, inv.input.args[0])
 			},
@@ -291,7 +292,8 @@ func processIntentCommands() []intentCommand {
 			examples: []string{"metasystem machine start m1f"},
 			run: func(inv *intentInvocation) int {
 				if len(inv.input.args) != 1 {
-					return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "machine start needs the machine's name: metasystem machine start NAME; nothing was done"})
+					return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "machine start needs the new machine's name, so nothing was done",
+						next: inv.retryWith(nil, "NAME"), nextReason: "with the new machine's name"})
 				}
 				return runIntentStartMachine(inv, inv.input.args[0])
 			},
@@ -357,7 +359,8 @@ func processIntentCommands() []intentCommand {
 			examples: []string{"metasystem question retry q-20260925-1"},
 			run: func(inv *intentInvocation) int {
 				if len(inv.input.args) != 1 {
-					return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "question retry needs the question: metasystem question retry Q; nothing was done"})
+					return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "question retry needs the question's id, so nothing was done",
+						next: inv.publicArgv("question", "list"), nextReason: "lists the open questions with their ids"})
 				}
 				return runIntentAskRetry(inv, inv.input.args[0])
 			},
@@ -370,7 +373,8 @@ func processIntentCommands() []intentCommand {
 			examples: []string{"metasystem question withdraw q-20260925-1 --reason 'decided in the review'"},
 			run: func(inv *intentInvocation) int {
 				if len(inv.input.args) != 1 {
-					return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "question withdraw needs the question: metasystem question withdraw Q --reason TEXT; nothing was done"})
+					return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "question withdraw needs the question's id, so nothing was done",
+						next: inv.publicArgv("question", "list"), nextReason: "lists the open questions with their ids"})
 				}
 				return runIntentAskWithdraw(inv, inv.input.args[0])
 			},
@@ -412,7 +416,8 @@ func processIntentCommands() []intentCommand {
 			examples: []string{"metasystem question wait channel:q-20260925-1 --timeout 10m"},
 			run: func(inv *intentInvocation) int {
 				if len(inv.input.args) != 1 {
-					return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "question wait needs the question: metasystem question wait Q; nothing was done"})
+					return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "question wait needs the question's id, so nothing was done",
+						next: inv.publicArgv("question", "list"), nextReason: "lists the open questions with their ids"})
 				}
 				return inv.render(inv.waitQuestion(inv.input.args[0]))
 			},
@@ -501,9 +506,7 @@ func (inv *intentInvocation) selectInstallation() (stateroot.Layout, string, boo
 	if !inv.input.has("installation") {
 		layout, err := inv.owners.resolver.ResolveLayout(path)
 		if err != nil {
-			return stateroot.Layout{}, "", false, &intentResult{Outcome: intentRefused, code: 2,
-				Summary:  notAnInstallation(path, err),
-				Decision: "run this inside the repository, name it with --repo PATH, or name its installation with --installation DIR"}
+			return stateroot.Layout{}, "", false, inv.notARepository(path, err)
 		}
 		return layout, layout.InstallationRoot, false, nil
 	}
@@ -513,13 +516,17 @@ func (inv *intentInvocation) selectInstallation() (stateroot.Layout, string, boo
 	}
 	installation, err := canonicalPath(named)
 	if err != nil {
-		return stateroot.Layout{}, "", false, &intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("--installation %s: %v", shellCommand([]string{named}), err)}
+		return stateroot.Layout{}, "", false, &intentResult{Outcome: intentRefused, code: 2,
+			Summary: fmt.Sprintf("the installation %s cannot be found, so nothing was done", shellCommand([]string{named})),
+			next:    inv.retryWith([]string{"installation"}), nextReason: "the repository's own installation is found without --installation",
+			Details: []string{"--installation: " + err.Error()}}
 	}
 	owned, ownedErr := inv.owners.resolver.ResolveLayout(installation)
 	if ownedErr != nil || !sameCanonicalPath(owned.InstallationRoot, installation) {
 		return stateroot.Layout{}, "", false, &intentResult{Outcome: intentRefused, code: 2,
-			Summary:  fmt.Sprintf("%s is not a metasystem installation; nothing was done", shellCommand([]string{installation})),
-			Decision: "name the directory that holds the installation's metasystem.conf with --installation DIR"}
+			Summary: fmt.Sprintf("%s is not a metasystem installation; nothing was done", shellCommand([]string{installation})),
+			next:    inv.retryWith([]string{"installation"}), nextReason: "the repository's own installation is found without --installation",
+			Details: []string{"--installation names the directory that holds the installation's metasystem.conf"}}
 	}
 	selected, topErr := inv.owners.processes.process.repositoryTop(path)
 	if topErr != nil || !sameCanonicalPath(owned.GitRoot, selected) {
@@ -528,8 +535,9 @@ func (inv *intentInvocation) selectInstallation() (stateroot.Layout, string, boo
 			checkout = selected
 		}
 		return stateroot.Layout{}, "", false, &intentResult{Outcome: intentRefused, code: 2,
-			Summary:  fmt.Sprintf("the installation %s does not belong to the checkout %s; nothing was done", shellCommand([]string{installation}), shellCommand([]string{checkout})),
-			Decision: "name an installation inside this checkout, or select its checkout with --repo PATH"}
+			Summary: fmt.Sprintf("the installation %s is not part of %s; nothing was done", shellCommand([]string{installation}), shellCommand([]string{checkout})),
+			next:    inv.retryWith([]string{"installation"}), nextReason: "the repository's own installation is found without --installation",
+			Details: []string{"--installation names an installation inside the selected checkout; --repo PATH selects another checkout"}}
 	}
 	return owned, installation, true, nil
 }
@@ -547,15 +555,19 @@ func (inv *intentInvocation) selectProcessScope() (processScope, int, *intentRes
 	binary := filepath.Join(installation, "bin", "metasystem")
 	if !regularFile(binary) {
 		return processScope{}, 0, &intentResult{Outcome: intentRefused, code: 1,
-			Summary:  fmt.Sprintf("the installation %s carries no engine at bin/metasystem", shellCommand([]string{installation})),
-			Decision: "build and install this checkout's engine, or name its installation with --installation DIR"}
+			Summary: "this installation has no built engine yet, so nothing was done",
+			next:    strings.Fields(hookswitch.BuildCommand), nextReason: "in " + installation + ", builds the engine; then repeat this command",
+			Details: []string{"no engine at " + binary}}
 	}
 	if inv.stateRoot, err = inv.owners.resolver.RootForInstallation(installation); err != nil {
-		return processScope{}, 0, &intentResult{Outcome: intentRefused, code: 1, Summary: "the installation's state root cannot be resolved: " + err.Error()}
+		return processScope{}, 0, &intentResult{Outcome: intentRefused, code: 1, Summary: "this installation's records cannot be found, so nothing was done",
+			next: []string{"metasystem", "system", "check"}, nextReason: "names what is wrong here", Details: []string{"state root: " + err.Error()}}
 	}
 	scale := upWaitScale()
 	if scale < 1 {
-		return processScope{}, 0, &intentResult{Outcome: intentRefused, code: 2, Summary: "METASYSTEM_FIXTURE_CAP_SCALE_MILLI must be a positive integer"}
+		return processScope{}, 0, &intentResult{Outcome: intentRefused, code: 2, Summary: "a test setting in the environment scales waits by a number that is not positive, so nothing was done",
+			next: append([]string{"env", "-u", "METASYSTEM_FIXTURE_CAP_SCALE_MILLI"}, inv.typedArgv()...), nextReason: "without the test setting",
+			Details: []string{"METASYSTEM_FIXTURE_CAP_SCALE_MILLI must be a positive integer"}}
 	}
 	// Process records (the stop fence, the steward's runner and health) live
 	// under the state root: the installation of a template checkout, the
@@ -657,7 +669,8 @@ func runIntentSessionStart(inv *intentInvocation) int {
 		binary, err = canonicalPath(binary)
 	}
 	if err != nil {
-		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "cannot resolve the running engine: " + err.Error()})
+		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the running engine's own path could not be read, so the session was not started",
+			retry: "try again", Details: []string{"engine path: " + err.Error()}})
 	}
 	result := owners.up(up.Options{
 		Root: scope.Installation, MetasystemRoot: scope.Installation, Scope: scope.Checkout, Binary: binary,
@@ -705,17 +718,24 @@ func systemStopResult(inv *intentInvocation) intentResult {
 func (inv *intentInvocation) stopSession() int {
 	by := strings.TrimSpace(inv.input.text("by"))
 	if by == "" {
+		_ = inv.selectLayoutRoot() // the enrolled person's name, when there is one
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: []intentTarget{{Kind: "session", ID: ""}},
-			Summary: "stop session needs the attending person: --by NAME; nothing was done",
-			next:    inv.publicArgv("session", "stop", "--by", "NAME"), nextReason: "with your name, at a terminal enrolled with " + humanauthority.EnrollCommand})
+			Summary: "session stop needs your name, so nothing was done",
+			next:    inv.publicArgv("session", "stop", "--by", inv.knownPerson()), nextReason: "at your enrolled terminal"})
 	}
 	if problem := inv.selectLayoutRoot(); problem != nil {
 		return inv.render(*problem)
 	}
 	marker, refusal, code := inv.owners.processes.sessionStop(inv.stateRoot, by)
 	if code != 0 {
-		return inv.render(intentResult{Outcome: intentRefused, code: code, Targets: []intentTarget{{Kind: "session", ID: ""}}, Summary: refusal,
-			Decision: "the refusal names what to do first; the checkout keeps running either way"})
+		result := intentResult{Outcome: intentRefused, code: code, Targets: []intentTarget{{Kind: "session", ID: ""}}, Summary: refusal,
+			retry: "once the cause above is fixed; the checkout keeps running either way"}
+		if code == 3 {
+			// Only a person stops a session quietly: the same command at the
+			// person's own enrolled terminal.
+			result.retry = "at your enrolled terminal, in a shell you opened yourself"
+		}
+		return inv.render(result)
 	}
 	if refusal != "" {
 		// The same person's authorization already holds (R-129-ui).
@@ -723,7 +743,8 @@ func (inv *intentInvocation) stopSession() int {
 			Summary: refusal, Data: map[string]any{"sessionStop": marker}})
 	}
 	return inv.render(intentResult{Outcome: intentConfirmed, Targets: []intentTarget{{Kind: "session", ID: marker.SessionId}},
-		Summary: fmt.Sprintf("session stop authorized once for %s at holder %s epoch %d by %s; the checkout keeps running", marker.SessionId, marker.HolderMainId, marker.ClaimEpoch, marker.By),
+		Summary: fmt.Sprintf("the running session may now stop once without asking (%s's word); the checkout keeps running", marker.By),
+		Details: []string{fmt.Sprintf("session %s, holder %s, lease epoch %d", marker.SessionId, marker.HolderMainId, marker.ClaimEpoch)},
 		Data:    map[string]any{"sessionStop": marker}})
 }
 
@@ -743,9 +764,7 @@ func (inv *intentInvocation) selectLayoutRoot() *intentResult {
 		inv.stateRoot, err = inv.owners.resolver.RootForInstallation(layout.InstallationRoot)
 	}
 	if err != nil {
-		return &intentResult{Outcome: intentRefused, code: 2,
-			Summary:  notAnInstallation(path, err),
-			Decision: "run this inside the repository, or name it with --repo PATH"}
+		return inv.notARepository(path, err)
 	}
 	return nil
 }
@@ -846,7 +865,8 @@ func (inv *intentInvocation) listJobs(all bool) ([]intentJob, string, *intentRes
 	if inv.owners.processes.launches != nil {
 		listed, err := inv.owners.processes.launches().List()
 		if err != nil {
-			return nil, "", &intentResult{Outcome: intentFailed, code: 1, Summary: "this user's launches cannot be listed: " + err.Error()}
+			return nil, "", &intentResult{Outcome: intentFailed, code: 1, Summary: "your launches could not be read, so nothing was listed",
+				retry: "try again", Details: []string{"launches: " + err.Error()}}
 		}
 		records = listed
 	}
@@ -896,8 +916,8 @@ func (inv *intentInvocation) stopResolvedJob(job intentJob) intentResult {
 		}
 		record, err := inv.owners.processes.launches().Cancel(id)
 		if err != nil {
-			return intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: fmt.Sprintf("launch %s cancel: %v", id, err),
-				Data: map[string]any{"kind": "launch", "record": record}}
+			return intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: fmt.Sprintf("launch %s could not be cancelled", jobReference(job)),
+				retry: "try again", Details: []string{"cancel: " + err.Error()}, Data: map[string]any{"kind": "launch", "record": record}}
 		}
 		return intentResult{Outcome: intentConfirmed, Targets: targets, Summary: fmt.Sprintf("launch %s cancelled: %s", id, record.State),
 			text: []string{launchReport(record)}, Data: map[string]any{"kind": "launch", "record": record}}
@@ -913,7 +933,8 @@ func (inv *intentInvocation) stopResolvedJob(job intentJob) intentResult {
 	}
 	outcome, code, err := inv.owners.processes.cancelDispatch(inv.layout.GitRoot, id)
 	if err != nil {
-		return intentResult{Outcome: intentFailed, code: max(code, 1), Targets: targets, Summary: fmt.Sprintf("dispatch job %s cancel: %v", id, err)}
+		return intentResult{Outcome: intentFailed, code: max(code, 1), Targets: targets, Summary: fmt.Sprintf("job %s could not be cancelled", jobReference(job)),
+			retry: "try again", Details: []string{"cancel: " + err.Error()}}
 	}
 	result := intentResult{Targets: targets, code: code, Data: map[string]any{"kind": "dispatch", "owner": outcome}}
 	label, _ := outcome["outcome"].(string)
@@ -936,7 +957,8 @@ func runIntentCheckoutStatus(inv *intentInvocation) int {
 	}
 	report, err := inv.owners.processes.process.status(scope, scale)
 	if err != nil {
-		return inv.render(inv.withHelm(intentResult{Outcome: intentFailed, code: 1, Targets: inv.checkoutTarget(scope), Summary: "status is unknown: " + err.Error()}, scope.Checkout))
+		return inv.render(inv.withHelm(intentResult{Outcome: intentFailed, code: 1, Targets: inv.checkoutTarget(scope), Summary: "this checkout's status could not be read",
+			retry: "try again", Details: []string{"status: " + err.Error()}}, scope.Checkout))
 	}
 	result := processReportResult(inv.checkoutTarget(scope), "status of "+scope.Checkout, report)
 	lines, view := inv.statusBoardLines()
@@ -969,23 +991,27 @@ func runIntentWorkStatus(inv *intentInvocation) int {
 		return runIntentWorkHistory(inv)
 	}
 	if inv.input.has("since") {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--since belongs to work status --history; nothing was done"})
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--since narrows the history, so it needs --history; nothing was done",
+			next: inv.retryWith(nil, "--history"), nextReason: "the history since then"})
 	}
 	if len(inv.input.args) == 0 {
 		if inv.input.has("work") {
-			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--work names a goal's work: work status G --work NAME; nothing was done"})
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--work names one work of a goal, so it needs the goal; nothing was done",
+				next: inv.retryWith(nil, "GOAL"), nextReason: "with the goal's id"})
 		}
 		return runIntentStatusWork(inv)
 	}
 	if inv.input.switched("all") {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--all belongs to the list of running work (work status without a target); nothing was done"})
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--all lists all work, so it takes no goal or job; nothing was done",
+			next: inv.publicArgv("work", "status", "--all"), nextReason: "all work; or drop --all to read the one you named"})
 	}
 	ref, problem := inv.resolveWorkRef(inv.input.args[0], inv.command.accepts)
 	if problem != nil {
 		return inv.render(*problem)
 	}
 	if ref.kind != refGoal && inv.input.has("work") {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--work names a goal's work: work status G --work NAME; nothing was done"})
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--work names one work of a goal, not of a job or run; nothing was done",
+			next: inv.retryWith([]string{"work"}), nextReason: "without --work"})
 	}
 	switch ref.kind {
 	case refGoal:
@@ -997,10 +1023,12 @@ func runIntentWorkStatus(inv *intentInvocation) int {
 		runner := &launch.UnitRunner{Manager: inv.owners.processes.launches()}
 		record, err := runner.Status(ref.id)
 		if errors.Is(err, fs.ErrNotExist) {
-			return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: fmt.Sprintf("no unit run %s of this user; nothing was read", shellCommand([]string{ref.qualified()}))})
+			return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: fmt.Sprintf("you have no unit run %s; nothing was read", shellCommand([]string{ref.qualified()})),
+				next: inv.publicArgv("work", "status"), nextReason: "lists the running work"})
 		}
 		if err != nil {
-			return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: fmt.Sprintf("unit run %s: %v", ref.qualified(), err)})
+			return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: fmt.Sprintf("unit run %s could not be read", ref.qualified()),
+				retry: "try again", Details: []string{"unit run: " + err.Error()}})
 		}
 		lines := []string{}
 		for _, round := range record.Rounds {
@@ -1014,7 +1042,8 @@ func runIntentWorkStatus(inv *intentInvocation) int {
 	if job.kind == "launch" {
 		record, err := inv.owners.processes.launches().Status(job.id)
 		if err != nil {
-			return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: fmt.Sprintf("launch %s status: %v", jobReference(job), err)})
+			return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: fmt.Sprintf("launch %s could not be read", jobReference(job)),
+				retry: "try again", Details: []string{"launch status: " + err.Error()}})
 		}
 		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Summary: fmt.Sprintf("launch %s: %s", jobReference(job), record.State),
 			text: []string{launchReport(record)}, Data: map[string]any{"kind": "launch", "record": record}})
@@ -1193,12 +1222,14 @@ func runIntentAsk(inv *intentInvocation) int {
 		return inv.render(*problem)
 	}
 	if id == "" {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "question ask needs the goal the question is about: " + inv.command.usage[0] + "; nothing was done", Decision: "name the goal"})
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "question ask needs the goal the question is about, so nothing was asked",
+			next: inv.retryWith(nil, "GOAL"), nextReason: "with the goal's id"})
 	}
 	question := strings.TrimSpace(inv.input.text("question"))
 	if question == "" || len(inv.input.values["option"]) == 0 {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id),
-			Summary: "question ask needs --question TEXT and at least one --option 'LABEL: CONSEQUENCE'; nothing was asked"})
+			Summary: "question ask needs the question and at least one answer to choose, so nothing was asked",
+			next:    inv.retryWith([]string{"question"}, "--question", "TEXT", "--option", "LABEL: CONSEQUENCE"), nextReason: "one --option per answer"})
 	}
 	if problem := inv.selectRoot(); problem != nil {
 		return inv.render(*problem)
@@ -1213,16 +1244,19 @@ func runIntentAsk(inv *intentInvocation) int {
 	if inv.input.has("budget") {
 		if kind != "stop" && kind != "budget-above-norm" {
 			return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id),
-				Summary: "--budget proposes a box for --kind stop or --kind budget-above-norm only; nothing was asked"})
+				Summary: "--budget belongs to a stop or budget question only; nothing was asked",
+				next:    inv.retryWith([]string{"budget"}), nextReason: "without --budget"})
 		}
 		reviewRoundMax, err := config.ReviewRoundMax(filepath.Join(inv.stateRoot, "metasystem.conf"))
 		if err != nil {
-			return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: err.Error()})
+			return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the review round limit in metasystem.conf cannot be read, so nothing was asked",
+				next: inv.publicArgv("settings", "check"), nextReason: "names the setting to fix", Details: []string{err.Error()}})
 		}
 		budget, err := goalbudget.ParseBox(inv.input.text("budget"), nil, reviewRoundMax)
 		if err != nil {
 			return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id),
-				Summary: fmt.Sprintf("--budget %s: %v; nothing was asked", shellCommand([]string{inv.input.text("budget")}), err), Decision: "give the complete compact box, for example 1d/10/720m/1/3"})
+				Summary: fmt.Sprintf("--budget %s is not a whole budget box, so nothing was asked", shellCommand([]string{inv.input.text("budget")})),
+				next:    inv.retryWith([]string{"budget"}, "--budget", "1d/10/720m/1/3"), nextReason: "with your own numbers in this shape", Details: []string{err.Error()}})
 		}
 		if kind == "stop" {
 			in.Wants = goal.ResumeApprovalToken(id, budget)
@@ -1231,15 +1265,18 @@ func runIntentAsk(inv *intentInvocation) int {
 		}
 	} else if kind == "stop" || kind == "budget-above-norm" {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id),
-			Summary: fmt.Sprintf("a %s question proposes a box: add --budget BOX; nothing was asked", kind)})
+			Summary: fmt.Sprintf("a %s question proposes a budget box, so nothing was asked", kind),
+			next:    inv.retryWith(nil, "--budget", "1d/10/720m/1/3"), nextReason: "with your own numbers in this shape"})
 	}
 	if kind == "carry" && !goal.ValidCarryToken(in.Wants) {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id),
-			Summary: "a carry question needs --wants exactly 'carry workspace=<sha40> goal=<id> past=<name>'; nothing was asked"})
+			Summary: "a carry question needs --wants in its exact shape, so nothing was asked",
+			next:    inv.retryWith([]string{"wants"}, "--wants", "carry workspace=SHA goal="+id+" past=NAME"), nextReason: "the workspace's 40-character commit, and who it carries past"})
 	}
 	q, warnings, code, err := inv.owners.processes.ask(inv.stateRoot, in)
 	if err != nil && q.ID == "" {
-		return inv.render(intentResult{Outcome: intentRefused, code: max(code, 1), Targets: inv.targets(id), Summary: err.Error() + "; nothing was asked", text: warnings})
+		return inv.render(intentResult{Outcome: intentRefused, code: max(code, 1), Targets: inv.targets(id), Summary: err.Error() + "; nothing was asked", text: warnings,
+			retry: "once the cause above is fixed"})
 	}
 	targets := []intentTarget{{Kind: "goal", ID: id}, {Kind: "question", ID: q.ID}}
 	delivery, pending := "posted to the channel", false
@@ -1288,11 +1325,14 @@ func runIntentAsk(inv *intentInvocation) int {
 func (inv *intentInvocation) answerMission(missionID, askID, answer string) intentResult {
 	targets := []intentTarget{{Kind: "mission", ID: missionID}, {Kind: "question", ID: askID}}
 	if !missionIDRe.MatchString(missionID) || !missionIDRe.MatchString(askID) || strings.TrimSpace(answer) == "" || strings.ContainsRune(answer, 0) {
-		return (intentResult{Outcome: intentRefused, code: 2, Targets: targets, Summary: "a mission and question id are lowercase words with dashes, and the answer is non-empty text; nothing was answered"})
+		return (intentResult{Outcome: intentRefused, code: 2, Targets: targets, Summary: "that is not a mission question with an answer, so nothing was answered",
+			next: inv.publicArgv("question", "list"), nextReason: "lists the open questions with their ids",
+			Details: []string{"a mission and question id are lowercase words with dashes, and the answer is non-empty text"}})
 	}
 	engine, err := inv.owners.processes.mission(inv.stateRoot, missionID)
 	if err != nil {
-		return (intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "mission answer: " + err.Error()})
+		return (intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "mission " + missionID + " could not be opened, so nothing was answered",
+			next: inv.publicArgv("mission", "status", missionID), nextReason: "what the mission is doing", Details: []string{err.Error()}})
 	}
 	var output, errs bytes.Buffer
 	engine.Output, engine.Errors = &output, &errs
@@ -1322,9 +1362,11 @@ func (inv *intentInvocation) answerMission(missionID, askID, answer string) inte
 		return (result)
 	case code == 3:
 		return (intentResult{Outcome: intentRefused, code: code, Targets: targets, text: lines, Data: data,
-			Summary: "the mission did not take the answer; nothing changed"})
+			Summary: "the mission did not take the answer; nothing changed", next: inv.publicArgv("question", "show", missionID+"/"+askID),
+			nextReason: "the question and the answers it takes"})
 	}
-	return (intentResult{Outcome: intentFailed, code: code, Targets: targets, text: lines, Data: data, Summary: "the mission's state could not be read; nothing changed"})
+	return (intentResult{Outcome: intentFailed, code: code, Targets: targets, text: lines, Data: data, Summary: "the mission's state could not be read; nothing changed",
+		next: inv.publicArgv("mission", "status", missionID), nextReason: "what the mission is doing"})
 }
 
 func intentOwnerLines(streams ...string) []string {
@@ -1356,7 +1398,8 @@ func runIntentDoctor(inv *intentInvocation) int {
 	owners := inv.owners.processes
 	now, err := owners.healthNow(scope.Installation)
 	if err != nil {
-		return inv.render(intentResult{Outcome: intentFailed, code: 2, Summary: "doctor: the fixture clock is unreadable: " + err.Error()})
+		return inv.render(intentResult{Outcome: intentFailed, code: 2, Summary: "the test clock of this installation cannot be read, so nothing was checked",
+			retry: "once the test clock file is fixed or removed", Details: []string{"fixture clock: " + err.Error()}})
 	}
 	verdict := owners.health(scope.Root, scope.Installation, now)
 	stopped, _, _ := stopfence.Closed(scope.Root)
@@ -1436,7 +1479,8 @@ func runIntentDoctor(inv *intentInvocation) int {
 func runIntentWorkHistory(inv *intentInvocation) int {
 	for _, other := range []string{"all", "work"} {
 		if inv.input.has(other) {
-			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("work status --history takes a goal or j1:ID and --since, not --%s; nothing was done", other)})
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("--%s does not go with --history; nothing was done", other),
+				next: inv.retryWith([]string{other}), nextReason: "without --" + other})
 		}
 	}
 	var args []string
@@ -1444,13 +1488,15 @@ func runIntentWorkHistory(inv *intentInvocation) int {
 		switch kind, id := splitReference(inv.input.args[0]); kind {
 		case refJ1:
 			if inv.input.has("since") {
-				return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--since narrows a goal's or every launch's history, not one launch's; nothing was done"})
+				return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--since narrows a goal's or every launch's history, not one launch's; nothing was done",
+					next: inv.retryWith([]string{"since"}), nextReason: "the launch's whole history"})
 			}
 			args = []string{"--id", id}
 		case "":
 			args = []string{"--goal", inv.input.args[0]}
 		default:
-			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("work status --history reads launches: a goal or j1:ID, not %s; nothing was done", inv.input.args[0])})
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("the history is kept for goals and launches, not for %s; nothing was done", inv.input.args[0]),
+				next: inv.publicArgv("work", "status", inv.input.args[0]), nextReason: "its current state"})
 		}
 	}
 	if inv.input.has("since") {
@@ -1655,11 +1701,13 @@ func (inv *intentInvocation) runUIVerb(verb string) int {
 	roots, err := lifecycle.ResolveRootsWith(inv.owners.processes.process.repositoryTop, inv.owners.resolver.RootForInstallation, layout.GitRoot, installation)
 	targets := []intentTarget{{Kind: "ui", ID: layout.GitRoot}}
 	if err != nil {
-		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: err.Error() + "; nothing was done"})
+		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: err.Error() + "; nothing was done",
+			next: []string{"metasystem", "system", "check"}, nextReason: "names what is wrong here"})
 	}
 	lifecycleResult, err := inv.owners.processes.ui(verb, roots, options)
 	if err != nil {
-		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: err.Error() + "; nothing was done"})
+		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: err.Error() + "; nothing was done",
+			next: inv.publicArgv("ui", "status"), nextReason: "what the interface is doing now"})
 	}
 	result := lifecycleResult.Result
 	data := map[string]any{"lines": nonNilLines(result.Lines), "exitCode": result.Code}
@@ -1690,7 +1738,7 @@ func (inv *intentInvocation) runUIVerb(verb string) int {
 			next:    []string{"metasystem", "ui", "restart"}, nextReason: "try again once it has stopped"})
 	}
 	return inv.render(intentResult{Outcome: intentRefused, code: max(result.Code, 1), Targets: targets, text: result.Lines, Data: data,
-		Summary: "the interface could not be restarted; nothing was changed"})
+		Summary: "the interface could not be restarted; nothing was changed", next: inv.publicArgv("ui", "status"), nextReason: "what the interface is doing now"})
 }
 
 type uiIntentOptions struct {
@@ -1704,7 +1752,8 @@ func (inv *intentInvocation) uiOptions() (uiIntentOptions, *intentResult) {
 	if inv.input.has("wait-seconds") {
 		seconds, err := strconv.ParseInt(inv.input.text("wait-seconds"), 10, 64)
 		if err != nil || seconds < 0 || seconds > int64((1<<63-1)/time.Second) {
-			return options, &intentResult{Outcome: intentRefused, code: 2, Summary: "--wait-seconds needs a nonnegative whole number of seconds that fits a duration; nothing was done"}
+			return options, &intentResult{Outcome: intentRefused, code: 2, Summary: "--wait-seconds needs a whole number of seconds, 0 or more; nothing was done",
+				next: inv.retryWith([]string{"wait-seconds"}, "--wait-seconds", "15"), nextReason: "or the number you want"}
 		}
 		options.waitSeconds = seconds
 	}
@@ -1804,7 +1853,8 @@ func runIntentAnswerQuestion(inv *intentInvocation) int {
 			next: inv.publicArgv("question", "list"), nextReason: "lists the open questions with their ids"})
 	}
 	if len(args) > 2 {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "answer takes Q and at most one quoted TEXT; nothing was answered"})
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "question answer takes the question and one quoted answer; nothing was answered",
+			next: inv.publicArgv("question", "answer", args[0], strings.Join(args[1:], " ")), nextReason: "the answer as one quoted text"})
 	}
 	text := ""
 	if len(args) == 2 {
@@ -1816,7 +1866,8 @@ func runIntentAnswerQuestion(inv *intentInvocation) int {
 			return inv.render(*problem)
 		}
 		if text != "" && text != fromFile {
-			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "the inline answer and --answer-file differ; nothing was answered", Decision: "give the answer once"})
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "the typed answer and --answer-file differ; nothing was answered",
+				next: inv.publicArgv("question", "answer", args[0], "--answer-file", path), nextReason: "give the answer once"})
 		}
 		text = fromFile
 	}
@@ -1834,8 +1885,9 @@ func runIntentAnswerQuestion(inv *intentInvocation) int {
 			return inv.render(view)
 		}
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: view.Targets, Data: view.Data,
-			Summary:  "channel question " + q.id + " is answered in its channel thread, which authenticates you; text given here is never proof, and nothing was recorded",
-			Decision: channel.ReplyInstructions(q.channel)})
+			Summary: "question " + q.id + " is answered in its channel thread, where you are known; nothing was recorded here",
+			next:    inv.publicArgv("question", "show", "channel:"+q.id), nextReason: "where and how to answer it",
+			Details: []string{channel.ReplyInstructions(q.channel)}})
 	}
 	if strings.TrimSpace(text) == "" {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "a mission question is answered with TEXT (or --answer-file FILE); nothing was answered",
@@ -1845,7 +1897,8 @@ func runIntentAnswerQuestion(inv *intentInvocation) int {
 		recorded, _ := q.ask["answer"].(string)
 		if recorded != text {
 			return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: []intentTarget{{Kind: "question", ID: q.publicName()}},
-				Summary: fmt.Sprintf("mission %s's question %s is already answered with a different answer; nothing was changed", q.mission, q.id)})
+				Summary: fmt.Sprintf("mission %s's question %s is already answered with a different answer; nothing was changed", q.mission, q.id),
+				next:    inv.publicArgv("question", "show", q.publicName()), nextReason: "the recorded answer"})
 		}
 		// The same answer again completes what an interrupted call left;
 		// when the mission already runs, nothing is left and the repeat is
@@ -1890,7 +1943,8 @@ func (inv *intentInvocation) resumeMission(mission string, answered intentResult
 // the mission runner.
 func runIntentMission(inv *intentInvocation, verb, mission string) int {
 	if !missionIDRe.MatchString(mission) {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "a mission id is a lowercase word with dashes; nothing was done"})
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("%q is not a mission name (lowercase words with dashes); nothing was done", mission),
+			next: inv.retryWith(nil), nextReason: "with the mission's name as its contract spells it"})
 	}
 	if problem := inv.selectLayoutRoot(); problem != nil {
 		return inv.render(*problem)
@@ -1934,14 +1988,13 @@ func (inv *intentInvocation) missionStatusWithoutState(mission string) intentRes
 			continue
 		}
 		if _, err := os.Stat(filepath.Join(root, "plans", "mission-"+mission+".contract.md")); err == nil {
-			result := intentResult{Targets: targets, Outcome: intentRefused, code: 1,
-				Summary: "mission " + mission + " has a contract but was never started; nothing was read"}
-			result.next, result.nextReason = inv.publicArgv("mission", "start", mission), "starts the mission its contract describes"
-			return result
+			return intentResult{Targets: targets, Outcome: intentRefused, code: 1,
+				Summary: "mission " + mission + " has a contract but was never started; nothing was read",
+				next:    inv.publicArgv("mission", "start", mission), nextReason: "starts the mission its contract describes"}
 		}
 	}
 	return intentResult{Targets: targets, Outcome: intentRefused, code: 1,
-		Summary: "no mission " + mission + " in this repository; nothing was read"}
+		Summary: "no mission " + mission + " in this repository; nothing was read", next: inv.publicArgv("system", "status"), nextReason: "what runs here"}
 }
 
 // missionOwnerLaunch starts or resumes one mission through the runner in
@@ -1977,7 +2030,8 @@ var missionWaitFlag = intentFlag{name: "wait", usage: "run the mission here unti
 // contract owner in this process. A sealed contract is unchanged (R-129).
 func runIntentMissionSeal(inv *intentInvocation) int {
 	if len(inv.input.args) != 1 {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "mission seal needs the mission: metasystem mission seal M; nothing was done"})
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "mission seal needs the mission's name or contract file, so nothing was done",
+			next: inv.retryWith(nil, "MISSION"), nextReason: "with the mission's name"})
 	}
 	if problem := inv.selectLayoutRoot(); problem != nil {
 		return inv.render(*problem)
@@ -1996,7 +2050,7 @@ func runIntentMissionSeal(inv *intentInvocation) int {
 		return inv.render(intentResult{Targets: targets, Outcome: intentUnchanged, Summary: "the contract is already sealed; nothing changed: " + path})
 	case err != nil:
 		return inv.render(intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: "the contract was not sealed: " + err.Error() + "; nothing was changed",
-			nextReason: "fix the contract and run metasystem mission seal again; a contract that already carries an approval line is sealed before the line is added"})
+			retry: "once the contract is fixed", Details: []string{"a contract that already carries an approval line is sealed before the line is added"}})
 	}
 	lines := make([]string, 0, len(warnings)+1)
 	for _, warning := range warnings {
@@ -2010,7 +2064,8 @@ func runIntentMissionSeal(inv *intentInvocation) int {
 
 func runIntentMissionNamed(inv *intentInvocation, verb string) int {
 	if len(inv.input.args) != 1 {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("mission %s needs the mission: metasystem mission %s M; nothing was done", verb, verb)})
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("mission %s needs the mission's name, so nothing was done", verb),
+			next: inv.retryWith(nil, "MISSION"), nextReason: "with the mission's name"})
 	}
 	return runIntentMission(inv, verb, inv.input.args[0])
 }
@@ -2052,7 +2107,8 @@ func (inv *intentInvocation) uiTarget(verb string) int {
 	}
 	for _, other := range []string{"temporary-human-word", "review-by", "lineage", "by", "work", "machines", "refresh"} {
 		if inv.input.has(other) {
-			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("%s ui takes no --%s; nothing was done", verb, other)})
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("ui %s takes no --%s; nothing was done", verb, other),
+				next: inv.retryWith([]string{other}), nextReason: "without --" + other})
 		}
 	}
 	if verb == "status" {
@@ -2065,11 +2121,13 @@ func (inv *intentInvocation) uiTarget(verb string) int {
 	roots, err := lifecycle.ResolveRootsWith(inv.owners.processes.process.repositoryTop, inv.owners.resolver.RootForInstallation, layout.GitRoot, installation)
 	targets := []intentTarget{{Kind: "ui", ID: layout.GitRoot}}
 	if err != nil {
-		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: err.Error() + "; nothing was done"})
+		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: err.Error() + "; nothing was done",
+			next: []string{"metasystem", "system", "check"}, nextReason: "names what is wrong here"})
 	}
 	ran, err := inv.owners.processes.ui(verb, roots, options)
 	if err != nil {
-		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: err.Error() + "; nothing was done"})
+		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: err.Error() + "; nothing was done",
+			next: inv.publicArgv("ui", "status"), nextReason: "what the interface is doing now"})
 	}
 	data := map[string]any{"lines": nonNilLines(ran.Result.Lines), "exitCode": ran.Result.Code}
 	if ran.Unchanged && ran.Result.Code == 0 {
@@ -2092,7 +2150,8 @@ func (inv *intentInvocation) uiTarget(verb string) int {
 func runIntentStartMachine(inv *intentInvocation, name string) int {
 	for _, other := range []string{"lineage", "installation", "by"} {
 		if inv.input.has(other) {
-			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("start machine takes no --%s; nothing was done", other)})
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("machine start takes no --%s; nothing was done", other),
+				next: inv.retryWith([]string{other}), nextReason: "without --" + other})
 		}
 	}
 	if problem := inv.selectLayoutRoot(); problem != nil {
@@ -2151,7 +2210,8 @@ func runIntentSystemSetup(inv *intentInvocation) int {
 	var options hookswitch.Options
 	if inv.input.has("runtimes") {
 		if strings.TrimSpace(inv.input.text("runtimes")) == "" {
-			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--runtimes names runtimes, or none; nothing was done"})
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--runtimes is empty; name the runtimes, or leave the option out; nothing was done",
+				next: inv.retryWith([]string{"runtimes"}), nextReason: "the runtimes metasystem.runtimes enables"})
 		}
 		options.Runtimes = strings.Split(inv.input.text("runtimes"), ",")
 	}

@@ -183,7 +183,8 @@ func (o processOwners) humanTerminal(scope processScope, verb, retry string) (bo
 func (o processOwners) stop(scope processScope, scale int) (stoptransition.Report, *processRefusal) {
 	crashStep, err := processStopCrashStep(scope.Root)
 	if err != nil {
-		return stoptransition.Report{}, &processRefusal{verb: "stop", checkout: scope.Checkout, sentence: err.Error(), second: "run: " + processVerbRetryCommand(scope, "stop"), code: 1}
+		return stoptransition.Report{}, &processRefusal{verb: "stop", checkout: scope.Checkout, sentence: err.Error() + ", so nothing was stopped",
+			second: "run: env -u " + processStopCrashVariable + " " + processVerbRetryCommand(scope, "stop"), code: 1}
 	}
 	if _, refusal := o.humanTerminal(scope, "metasystem system stop", processVerbRetryCommand(scope, "stop")); refusal != nil {
 		return stoptransition.Report{}, refusal
@@ -219,17 +220,21 @@ func stopRefusalSecondLine(scope processScope, err error) string {
 	return "run: " + processVerbRetryCommand(scope, "status")
 }
 
+// processStopCrashVariable is the test setting that crashes a stop after
+// one of its numbered steps (section 4 of the stop design).
+const processStopCrashVariable = "METASYSTEM_STOP_CRASH_AFTER"
+
 func processStopCrashStep(root string) (int, error) {
-	raw := os.Getenv("METASYSTEM_STOP_CRASH_AFTER")
+	raw := os.Getenv(processStopCrashVariable)
 	if raw == "" {
 		return 0, nil
 	}
 	if !fixtureauth.FixtureModeRoot(root) {
-		return 0, fmt.Errorf("METASYSTEM_STOP_CRASH_AFTER is available only in a fixture-mode root")
+		return 0, errors.New("a test setting that crashes the stop is set, and works only in a test installation")
 	}
 	step, err := strconv.Atoi(raw)
 	if err != nil || step < 1 || step > 9 || strconv.Itoa(step) != raw {
-		return 0, fmt.Errorf("METASYSTEM_STOP_CRASH_AFTER must name a numbered section-4 step from 1 through 9")
+		return 0, errors.New("a test setting that crashes the stop names no stop step (1 through 9)")
 	}
 	return step, nil
 }

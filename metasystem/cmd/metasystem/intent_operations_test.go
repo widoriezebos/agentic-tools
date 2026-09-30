@@ -280,7 +280,7 @@ func TestIntentOwnerRejectionReasonIsKept(t *testing.T) {
 		{name: "reason-over-stderr", stdout: `{"reason":"the owner's reason"}`, stderr: "usage noise\n", want: "the owner's reason"},
 		{name: "stderr", stdout: `{"outcome":"rejected"}`, stderr: "refused: lock held\n", want: "refused: lock held"},
 		{name: "text", stdout: "== STEP: one\n!! STEP FAILED: two\n", want: "!! STEP FAILED: two"},
-		{name: "silent", want: "the owner exited 3 without a reason; its output is under owner"},
+		{name: "silent", want: "the command stopped (exit 3) without saying why; --json shows its output"},
 	} {
 		result := ownerVerbResult(intentProcessResult{code: 3, stdout: []byte(test.stdout), stderr: []byte(test.stderr)}, nil, "done", nil)
 		if result.Outcome != intentRefused || result.code != 3 || result.Summary != test.want || strings.Contains(result.Summary, "changed nothing") {
