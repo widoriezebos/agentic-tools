@@ -17,12 +17,12 @@ func TestStatusPrintsTheRecordAndTheCensusVerdict(t *testing.T) {
 	b.writeRecord("job-a", map[string]any{"status": "running"})
 	result := b.run("status", "--job", "job-a")
 	requireExit(t, result, 0, b.stderr.String())
-	if string(result.Stdout) != "running\n" || strings.TrimSpace(b.stderr.String()) != "CENSUS verdict=ABSENT" {
+	if string(result.Stdout) != "running\n" || strings.TrimSpace(b.stderr.String()) != "last census: none recorded" {
 		t.Fatalf("stdout %q stderr %q", result.Stdout, b.stderr.String())
 	}
 	b.writeFile("artifacts/agents/supervision/last-census.json", `{"verdict":"CLEAN","completedAtEpoch":`+jsonInt(b.doubles.Clock.Now().Unix()-7)+`,"fingerprint":"fp-1"}`)
 	b.run("status", "--job", "job-a")
-	if got := strings.TrimSpace(b.stderr.String()); got != "CENSUS verdict=CLEAN age=7s fingerprint=fp-1" {
+	if got := strings.TrimSpace(b.stderr.String()); got != "last census: CLEAN, 7s ago (fingerprint fp-1)" {
 		t.Fatalf("census line %q", got)
 	}
 	b.writeRecord("job-b", map[string]any{"status": "pending-setup"})

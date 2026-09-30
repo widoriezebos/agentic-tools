@@ -265,7 +265,7 @@ func (s *session) callbackCritiqueMutation(verb string, args []string) error {
 func (s *session) critiqueVerb(verb string, args []string) error {
 	name := "__" + verb
 	if repeated := repeatedFlag(args); repeated != "" {
-		s.eprintf("metasystem internal delegate %s: --%s is given twice; an authority-bearing option is given once; nothing was done\n", name, repeated)
+		s.eprintf("metasystem internal delegate %s: --%s is given twice; nothing was done\ngive each authority-bearing option once\n", name, repeated)
 		return exitWith(2)
 	}
 	set := s.flags(name)
@@ -297,7 +297,7 @@ func (s *session) critiqueVerb(verb string, args []string) error {
 			return exitWith(2)
 		}
 		if *role == "" || *rootJob == "" || *subjectFile == "" || *resultFile == "" {
-			s.eprintln("job critique-read-admission: --repo, --role, --root-job, --round, --subject-file, and --result are required")
+			s.eprintln("job critique-read-admission: required options are missing\ngive --repo, --role, --root-job, --round, --subject-file and --result")
 			return exitWith(2)
 		}
 		return s.critiqueReadAdmission(*role, *rootJob, *goalID, *round, *subjectFile, *resultFile)

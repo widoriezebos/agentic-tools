@@ -114,7 +114,7 @@ func TestDispatchSelectionRefusalsNameTheirCause(t *testing.T) {
 		{"contradictory-mode", []string{"--mode", "verify"}, 1, "contradicts the brief's Working Mode"},
 		{"unregistered-override", []string{"--runtime", "ghost"}, 1, "outside metasystem.runtimes"},
 		{"main-override", []string{"--runtime", "main"}, 1, "assigned to main"},
-		{"costlier-unmapped", []string{"--model", "absent-from-tier"}, 1, "cost direction is unranked"},
+		{"costlier-unmapped", []string{"--model", "absent-from-tier"}, 1, "(cost unranked"},
 		{"ranked-costlier", []string{"--model", "fake-premium"}, 1, "higher (tier 1 -> tier 2)"},
 	} {
 		result := b.run(append(append([]string{}, base...), tc.extra...)...)

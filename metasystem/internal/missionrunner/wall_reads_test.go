@@ -112,8 +112,8 @@ func TestWallReadsConsumersUseEngineFactsWithoutGit(t *testing.T) {
 		wantErr      string
 	}{
 		{"normalized true", "  true\n", 0, ""},
-		{"un-pinned", "false\n", 0, "wall preflight refused: core.fileMode is not pinned true in this repository; run `git config core.fileMode true` (mode-bit drift must be visible to the tree equation)"},
-		{"could not run", "", -1, "wall preflight refused: core.fileMode is not pinned true in this repository; run `git config core.fileMode true` (mode-bit drift must be visible to the tree equation)"},
+		{"un-pinned", "false\n", 0, "wall preflight refused: core.fileMode is not pinned true here, so mode changes go unseen\nrun: git config core.fileMode true"},
+		{"could not run", "", -1, "wall preflight refused: core.fileMode is not pinned true here, so mode changes go unseen\nrun: git config core.fileMode true"},
 	} {
 		t.Run("pin "+tc.name, func(t *testing.T) {
 			facts := &strictWallReads{t: t, git: []wallGitReply{{root: root, args: pinArgs, stdout: tc.stdout, code: tc.code}}}
@@ -321,7 +321,7 @@ func TestWallReadsAdmittedBaselineUsesApprovedBytesAndIsolatesEngines(t *testing
 		id, liveOID, approvedOID, wantTree, wantErr string
 	}{
 		{"alpha", "oid-alpha", "oid-alpha", "record-alpha", ""},
-		{"beta", "oid-unapproved", "oid-beta", "", "wall preflight refused: the workspace contract does not match the approved contract bytes; the mission must run exactly the contract that was pinned"},
+		{"beta", "oid-unapproved", "oid-beta", "", "wall preflight refused: the workspace contract does not match the approved contract bytes\nthe mission runs exactly the contract that was pinned; restore those bytes"},
 	} {
 		t.Run(tc.id, func(t *testing.T) {
 			root := "/virtual/baseline-" + tc.id

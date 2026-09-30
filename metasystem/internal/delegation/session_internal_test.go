@@ -125,7 +125,7 @@ func TestJobCapMustStayBelowTheAttestedWatcherCeiling(t *testing.T) {
 		`{"derivedWatcherCapMin":999,"intervalSec":60,"components":{"watcher":{"pid":4242,"pidStartedAt":7,"instanceTag":"w","heartbeat":%q}}}`, heartbeat))
 	output := filepath.Join(t.TempDir(), "cap.json")
 	err := s.authorizeJobCap("job-a", "implementer", "fake", "fake-model", "", "", "", "dispatch", output)
-	if ExitCode(err) != 1 || !strings.Contains(stderr.String(), "dispatch cap 500m must stay below the live watcher's attested 330m ceiling; re-arm supervision with --rearm --max-cap 500") {
+	if ExitCode(err) != 1 || !strings.Contains(stderr.String(), "dispatch refused: its 500m cap is not below the watcher's 330m ceiling\nre-arm supervision with --max-cap above 500") {
 		t.Fatalf("exit %d stderr %q", ExitCode(err), stderr.String())
 	}
 	stderr.Reset()

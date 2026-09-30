@@ -148,14 +148,14 @@ func (e *Engine) startAmbiguityRefusal(ledger string) error {
 		if evidence == "its ledger booked cycles" {
 			remedy = "restore state.json, or archive the mission directory (its ledger included) by hand"
 		}
-		return failf(3, "mission start refused: this mission has birth evidence (%s) but no state file; a birth may have been interrupted or the state lost — %s; nothing was touched", evidence, remedy)
+		return failf(3, "mission start refused: this mission has birth evidence (%s) but no state file\na birth may have been cut short or the state lost; %s; nothing was touched", evidence, remedy)
 	}
 	anchored, err := e.missionAnchorsExist()
 	if err != nil {
 		return err
 	}
 	if anchored {
-		return failf(3, "mission start refused: this mission's anchor namespace is not empty; a mission may have lived here or a birth crashed mid-staging — inspect refs/metasystem/missions/%s/ and remove the refs by hand; nothing was touched", e.Mission)
+		return failf(3, "mission start refused: this mission's anchor refs already exist; nothing was touched\na mission lived here or a birth crashed; inspect refs/metasystem/missions/%s/ and remove the refs by hand", e.Mission)
 	}
 	return nil
 }
@@ -171,7 +171,7 @@ func stateShapeRefusal(statePath string) error {
 	if err != nil || info.Mode().IsRegular() {
 		return nil
 	}
-	return failf(3, "mission state path is occupied by a non-regular object (%s); remove %s by hand before any start or resume", info.Mode(), statePath)
+	return failf(3, "mission state path %s is not a regular file (%s)\nremove it by hand before any start or resume", statePath, info.Mode())
 }
 
 // gitCaptured runs one git command on the runner's own surface: the
@@ -769,7 +769,7 @@ func (e *Engine) launch(mode string, foreground bool, generations ...int64) erro
 	)
 	if os.Getenv("METASYSTEM_MISSION_RUNNER_IGNORE_TERM") != "" {
 		if !fixtureauth.FixtureModeRoot(e.Root) {
-			return failf(3, "METASYSTEM_MISSION_RUNNER_IGNORE_TERM is fixture-only")
+			return failf(3, "the mission runner's ignore-term switch is set outside a fixture repository\nunset it; it serves fixtures only")
 		}
 		command.Args = append(command.Args, "--ignore-term")
 	}
@@ -858,7 +858,7 @@ func (e *Engine) launch(mode string, foreground bool, generations ...int64) erro
 				if foreground {
 					<-process.done
 				}
-				fmt.Fprintf(e.answerOutput(), "mission=%s started=yes turn=%s\n", e.Mission, valueString(signal["turnId"]))
+				fmt.Fprintf(e.answerOutput(), "mission %s started (turn %s)\n", e.Mission, valueString(signal["turnId"]))
 				return nil
 			}
 			process.waitFor(graceWindow)

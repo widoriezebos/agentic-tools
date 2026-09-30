@@ -81,7 +81,7 @@ func (s *session) internalAuthority(mode AuthorityMode, job string) error {
 	}
 	if err := s.l.ports.Lease.Authorize(s.inv, mode, job); err != nil {
 		if strings.HasPrefix(err.Error(), "control-plane write refused: caller classification failed") {
-			return s.die(1, "control-plane write refused: caller classification failed")
+			return s.die(1, "control-plane write refused: this process could not be identified\nrun: metasystem system check")
 		}
 		s.eprintln(err.Error())
 		return exitWith(1)
@@ -135,7 +135,7 @@ func (s *session) requireGoalAdmission() error {
 		}
 	}
 	s.recordOutcome("REFUSED-BUDGET", "refused", output, "")
-	return s.die(1, "dispatch refused by the goal admission verdict above; supply or revise the governing structured budget before another round")
+	return s.die(1, "dispatch refused: the goal admission verdict above does not admit another round\nrevise the goal's budget, then dispatch again")
 }
 
 // runBreachStopRoutes is run_breach_stop_routes.
@@ -176,7 +176,7 @@ func (s *session) runBreachStopRoutes() error {
 func (s *session) breachStop(goalID string, revision uint64) (goal.StopBatch, error) {
 	caller, err := s.l.ports.Lease.Classify(s.inv)
 	if err != nil {
-		s.eprintln(fmt.Sprintf("job breach-stop: caller authority is unreadable: %v", err))
+		s.eprintln(fmt.Sprintf("job breach-stop: this process's authority cannot be read: %v", err))
 		return goal.StopBatch{}, exitWith(1)
 	}
 	if err := authority.Authorize("stop-custodian", map[string]any{"class": caller.Class, "holder": caller.Holder}, ""); err != nil {
@@ -381,7 +381,7 @@ func (s *session) authorizeJobCap(job, role, runtime, modelKey, aliasSource, mis
 		return s.verbFailure(err)
 	}
 	if capMin >= watchCap {
-		return s.die(1, fmt.Sprintf("dispatch cap %dm must stay below the live watcher's attested %dm ceiling; re-arm supervision with --rearm --max-cap %d", capMin, watchCap, capMin))
+		return s.die(1, fmt.Sprintf("dispatch refused: its %dm cap is not below the watcher's %dm ceiling\nre-arm supervision with --max-cap above %d, or dispatch with a smaller cap", capMin, watchCap, capMin))
 	}
 	return nil
 }

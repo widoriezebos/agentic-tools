@@ -1072,7 +1072,7 @@ func (e *Engine) consumedJobs(state map[string]any) (map[string]bool, error) {
 			return nil, failf(3, "wall inspection cannot read consumed authorization %.12s: %v", digest, err)
 		}
 		if recomputed, derr := validate.AuthorizationRecordDigest(record); derr != nil || recomputed != digest {
-			return nil, failf(3, "consumed authorization %.12s record bytes do not match their digest", digest)
+			return nil, failf(3, "consumed authorization %.12s does not match its recorded hash", digest)
 		}
 		for _, key := range []string{"jobId", "rootJob"} {
 			if job, _ := record[key].(string); job != "" {

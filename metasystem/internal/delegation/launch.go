@@ -141,9 +141,8 @@ func (s *session) claimReservation(lifecycleJob, sessionJob string, request clai
 		return "", "", err
 	}
 	if !acquired {
-		line := fmt.Sprintf("LOCK_BUSY rank=job-lifecycle key=%s retry=retry-after-the-named-holder-releases", lifecycleJob)
-		s.recordOutcome("LOCK_BUSY", "refused", strings.TrimPrefix(line, "LOCK_BUSY "), lifecycleJob)
-		return "", "", s.die(1, line)
+		s.recordOutcome("LOCK_BUSY", "refused", fmt.Sprintf("rank=job-lifecycle key=%s retry=retry-after-the-named-holder-releases", lifecycleJob), lifecycleJob)
+		return "", "", s.die(1, lockBusyMessage("job "+lifecycleJob, "another dispatch", -1))
 	}
 	s.cleanupLifecycle = lifecycleJob
 	preparation, err := s.mustTemp(s.recordLocks, request.prefixed("claim-occupancy"))
