@@ -9,11 +9,12 @@
 - Origin: main
 - Next step: Replace the 35 in-process error-text decision points (24 sites) inventoried in /Users/wido/LocalStorage/agentic-tools-evidence/structured-output-20260930/structured-output.md with typed errors; extend the static audit to refuse new ones. Priority 2 per Wido 2026-09-30 (D4)
 - OpenedAt: 2026-09-30T12:03:35Z
-- Revision: 8
+- Revision: 9
 - Pinned: m1e
-- Budget: elapsedLimit=1h attemptLimit=3 reservedJobMinutesLimit=360 activeJobLimit=1 reviewRoundLimit=0
+- Budget: elapsedLimit=6h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
-- Approved: by=human:wido at=2026-09-30T18:19:50Z revision=6 opid=A7BVMSJ9XVTXGVWRZPYKWR8J7S-m1e-b6a4eb0a authority=proven digest=331f843dc150f1fd1d1917697844d2b79a1e0ff833e170785b732f57ef2f75bd episode=6
+- NormApproval: approvedRef=2T4MM23JH8NHKEGQNME50HKJMV-m1e-b6a4eb0a minutes=720 reviewRounds=2 goalRevision=8
+- Approved: by=human:wido at=2026-09-30T18:20:16Z revision=9 opid=2T4MM23JH8NHKEGQNME50HKJMV-m1e-b6a4eb0a authority=proven digest=4446e406cadd85af65e42f13d1a06c1f413d590424b2c6ef5eb4106d1e801b64 episode=9
 
 History:
 - 2026-09-30T12:03:35Z JMRCDJGB10YRZKEABA5JT58418-m1e-b6a4eb0a open actor=human:wido targets=error-checks-use-typed-errors,processes-read-structured-results
@@ -24,4 +25,5 @@ History:
 - 2026-09-30T18:19:50Z A7BVMSJ9XVTXGVWRZPYKWR8J7S-m1e-b6a4eb0a approve actor=human:wido targets=error-checks-use-typed-errors
 - 2026-09-30T18:19:56Z NWE0V2SRYP5D7AF63RC7DPXRSQ-m1e-b6a4eb0a set-pin actor=human:wido targets=error-checks-use-typed-errors
 - 2026-09-30T18:20:06Z 2GQ24Q6P44VCMNFMQBHM5J4F00-m1e-b6a4eb0a unblock actor=human:wido targets=error-checks-use-typed-errors,processes-read-structured-results reason=blockedBy drops processes-read-structured-results; every remaining blocker is done and the park lifts
-Integrity: sha256=8c53e776af6c0528ca42188ef9c4ff44b4c52323a1624967f4a9a49fe56706e9
+- 2026-09-30T18:20:16Z 2T4MM23JH8NHKEGQNME50HKJMV-m1e-b6a4eb0a approve actor=human:wido targets=error-checks-use-typed-errors
+Integrity: sha256=e8547762214fc9a8f09b702019122067e1bef8cf4d399943f14111d400318859
