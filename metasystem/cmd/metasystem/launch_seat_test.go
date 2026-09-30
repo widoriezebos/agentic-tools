@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 // A launch's seat on the host board names the installation that holds the
@@ -30,7 +31,7 @@ func TestLaunchSeatNamesTheInstallationForAPinnedEngine(t *testing.T) {
 	var resolved string
 	resolve := func(root string) (string, error) { resolved = root; return "m1e", nil }
 	for _, executable := range []string{filepath.Join(pins, "generation-9-abc123"), filepath.Join(installation, "bin", "metasystem")} {
-		if err := os.WriteFile(executable, []byte("engine"), 0o755); err != nil {
+		if err := testexec.WriteFile(executable, []byte("engine"), 0o755); err != nil {
 			t.Fatal(err)
 		}
 		seat := launchSeat(executable, nil, resolve)
