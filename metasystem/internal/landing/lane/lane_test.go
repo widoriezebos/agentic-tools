@@ -17,38 +17,49 @@ func laneDirs(t *testing.T) (home, first, second string) {
 	t.Helper()
 	base := t.TempDir()
 	home, first, second = filepath.Join(base, "home"), filepath.Join(base, "landing-a"), filepath.Join(base, "landing-b")
-	for _, dir := range []string{home, first, second} {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			t.Fatal(err)
-		}
+	if err := os.MkdirAll(home, 0o755); err != nil {
+		t.Fatal(err)
 	}
+	// Both landing checkouts are nested: the checkout root is not the
+	// installation root, the shape the lane runs in.
+	laneCheckout(t, first, true)
+	laneCheckout(t, second, true)
 	return home, first, second
 }
 
-// Two seats whose settings name the same checkout: the first registers it,
-// the second uses the same record, and neither writes a second one.
-func TestResolveRegistersFirstSeatAndUsesItAfter(t *testing.T) {
+// A seat's setting never registers a lane (design r10 §1): with no record
+// every seat, whatever it names, has no lane; once a person registers one,
+// a seat naming it or naming nothing uses it and nothing is rewritten.
+func TestResolveNeverRegistersAndUsesThePersonsLane(t *testing.T) {
 	t.Parallel()
 	home, root, _ := laneDirs(t)
-	first, err := Resolve(home, root, "m1e", laneNow, true)
-	if err != nil || first.Root != resolved(root) || !first.Registered {
-		t.Fatalf("first seat = %+v, %v; want %s registered", first, err, root)
+	for _, seat := range []string{root, ""} {
+		none, err := Resolve(home, seat)
+		if err != nil || none.Root != "" {
+			t.Fatalf("seat %q with nothing registered = %+v, %v; want no lane", seat, none, err)
+		}
 	}
+	if _, err := os.Stat(RecordPath(home)); err == nil {
+		t.Fatalf("a seat's resolution wrote the lane record")
+	}
+	register(t, home, root)
 	info, err := os.Stat(RecordPath(home))
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := Resolve(home, root+string(filepath.Separator), "ui", laneNow.Add(time.Hour), true)
-	if err != nil || second.Root != resolved(root) || second.Registered {
-		t.Fatalf("second seat = %+v, %v; want the same lane, not re-registered", second, err)
+	for _, seat := range []string{root + string(filepath.Separator), ""} {
+		got, err := Resolve(home, seat)
+		if err != nil || got.Root != resolved(root) || got.FromHost != (seat == "") {
+			t.Fatalf("seat %q = %+v, %v; want the person's lane", seat, got, err)
+		}
 	}
 	record, ok, err := Read(home)
 	if err != nil || !ok || record.RegisteredBy != "m1e" || record.At != laneNow.Format(time.RFC3339) {
-		t.Fatalf("record = %+v %v %v; want m1e's registration kept", record, ok, err)
+		t.Fatalf("record = %+v %v %v; want the registration kept", record, ok, err)
 	}
 	after, _ := os.Stat(RecordPath(home))
 	if !after.ModTime().Equal(info.ModTime()) {
-		t.Fatalf("the second seat rewrote the record")
+		t.Fatalf("a seat's resolution rewrote the record")
 	}
 }
 
@@ -57,10 +68,8 @@ func TestResolveRegistersFirstSeatAndUsesItAfter(t *testing.T) {
 func TestResolveRefusesAnotherSeatRoot(t *testing.T) {
 	t.Parallel()
 	home, first, second := laneDirs(t)
-	if _, err := Resolve(home, first, "m1e", laneNow, true); err != nil {
-		t.Fatal(err)
-	}
-	_, err := Resolve(home, second, "ui", laneNow, true)
+	register(t, home, first)
+	_, err := Resolve(home, second)
 	var refusal *Refusal
 	if !errors.As(err, &refusal) || refusal.Code != CodeMismatch {
 		t.Fatalf("err = %v; want %s", err, CodeMismatch)
@@ -77,36 +86,17 @@ func TestResolveRefusesAnotherSeatRoot(t *testing.T) {
 	}
 }
 
-// A seat without a setting (the UI seat) uses the host's lane.
-func TestResolveUnsetSeatUsesHostRecord(t *testing.T) {
-	t.Parallel()
-	home, root, _ := laneDirs(t)
-	none, err := Resolve(home, "", "ui", laneNow, true)
-	if err != nil || none.Root != "" {
-		t.Fatalf("nothing registered = %+v, %v; want no lane", none, err)
-	}
-	if _, err := Resolve(home, root, "m1e", laneNow, true); err != nil {
-		t.Fatal(err)
-	}
-	got, err := Resolve(home, "", "ui", laneNow, true)
-	if err != nil || got.Root != resolved(root) || !got.FromHost {
-		t.Fatalf("unset seat = %+v, %v; want the host's lane", got, err)
-	}
-}
-
 // A registered checkout that is gone is reported, never replaced by a seat's
 // other setting.
 func TestResolveReportsGoneRoot(t *testing.T) {
 	t.Parallel()
 	home, first, second := laneDirs(t)
-	if _, err := Resolve(home, first, "m1e", laneNow, true); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Remove(first); err != nil {
+	register(t, home, first)
+	if err := os.RemoveAll(first); err != nil {
 		t.Fatal(err)
 	}
 	for _, seat := range []string{"", first, second} {
-		_, err := Resolve(home, seat, "ui", laneNow, true)
+		_, err := Resolve(home, seat)
 		var refusal *Refusal
 		if !errors.As(err, &refusal) || refusal.Code != CodeGone || !strings.Contains(err.Error(), first) || !strings.Contains(refusal.Fix, "metasystem landing set PATH") {
 			t.Fatalf("seat %q: err = %v; want %s naming %s", seat, err, CodeGone, first)
@@ -119,25 +109,38 @@ func TestResolveReportsGoneRoot(t *testing.T) {
 }
 
 // Register moves the lane on a person's word, is unchanged on a repeat, and
-// refuses a path that is no directory.
+// refuses while an unset is under way.
 func TestRegisterMovesUnchangedAndRefuses(t *testing.T) {
 	t.Parallel()
 	home, first, second := laneDirs(t)
-	if _, changed, err := Register(home, first, "Wido", laneNow); err != nil || !changed {
+	layoutOf := func(root string) Layout {
+		layout, err := NewLayout(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return layout
+	}
+	if _, changed, err := Register(home, layoutOf(first), "Wido", laneNow); err != nil || !changed {
 		t.Fatalf("first register = %v, %v", changed, err)
 	}
-	if _, changed, err := Register(home, first, "Wido", laneNow.Add(time.Minute)); err != nil || changed {
+	if _, changed, err := Register(home, layoutOf(first), "Wido", laneNow.Add(time.Minute)); err != nil || changed {
 		t.Fatalf("repeat = %v, %v; want unchanged", changed, err)
 	}
-	previous, changed, err := Register(home, second, "Wido", laneNow.Add(time.Hour))
+	previous, changed, err := Register(home, layoutOf(second), "Wido", laneNow.Add(time.Hour))
 	if err != nil || !changed || previous.Root != resolved(first) {
 		t.Fatalf("move = %+v %v %v", previous, changed, err)
 	}
-	for _, bad := range []string{"relative/path", filepath.Join(second, "missing")} {
-		var refusal *Refusal
-		if _, _, err := Register(home, bad, "Wido", laneNow); !errors.As(err, &refusal) || refusal.Code != CodeRegisterInvalid {
-			t.Fatalf("register %q = %v; want %s", bad, err, CodeRegisterInvalid)
-		}
+	var refusal *Refusal
+	if _, _, err := Register(home, Layout{}, "Wido", laneNow); !errors.As(err, &refusal) || refusal.Code != CodeRegisterInvalid {
+		t.Fatalf("register of no layout = %v; want %s", err, CodeRegisterInvalid)
+	}
+	seams := emptyUnsetSeams()
+	seams.Settle = func(Layout) (Settlement, error) { return Settlement{Live: []string{"a proof runs"}}, nil }
+	if report, err := Unset(home, "Wido", laneNow, false, seams); err != nil || report.Stopped != StepSettled {
+		t.Fatalf("unset = %+v %v", report, err)
+	}
+	if _, _, err := Register(home, layoutOf(first), "Wido", laneNow); !errors.As(err, &refusal) || refusal.Code != CodeUnsetting || !strings.Contains(refusal.Fix, "metasystem landing unset") {
+		t.Fatalf("register during an unset = %v; want %s naming landing unset", err, CodeUnsetting)
 	}
 }
 
@@ -219,16 +222,12 @@ func TestProvingLockReleasedWhenHolderDies(t *testing.T) {
 func TestProvingLockOutlivesAPauseAndAMoveUntilTheProofEnds(t *testing.T) {
 	t.Parallel()
 	home, first, second := laneDirs(t)
-	if _, _, err := Register(home, first, "Wido", laneNow); err != nil {
-		t.Fatal(err)
-	}
+	register(t, home, first)
 	child := startProvingHolder(t, home)
 	if _, err := SetPause(home, "Wido", laneNow); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := Register(home, second, "Wido", laneNow); err != nil {
-		t.Fatal(err)
-	}
+	register(t, home, second)
 	if _, busy, _ := ProbeProving(home); !busy {
 		_ = child.Process.Kill()
 		_ = child.Wait()

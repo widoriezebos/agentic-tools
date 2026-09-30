@@ -37,18 +37,40 @@ func ReadReturnLedgerGoal(root, tree, goalID string) (ReturnLedgerGoal, error) {
 }
 
 func readReturnLedgerGoalWithWorkspace(workspace gittree.Workspace, tree, goalID string) (ReturnLedgerGoal, error) {
+	out, present, err := readLedgerGoalWithWorkspace(workspace, tree, goalID)
+	if err == nil && !present {
+		err = fmt.Errorf("goal ledger entry %s is absent from tree %s", goalID, tree)
+	}
+	return out, err
+}
+
+// ReadLedgerGoalAt reads a goal's return custody from the ledger of the
+// installation at root at tree; present is false when the ledger holds no
+// such goal, which no lane then holds.
+func ReadLedgerGoalAt(root, tree, goalID string) (ReturnLedgerGoal, bool, error) {
+	return readLedgerGoalWithWorkspace(gittree.Workspace{Dir: root}, tree, goalID)
+}
+
+// LaneHolds reports whether the ledger still shows the goal of a batch
+// member held for that batch by someone other than the seat it came from:
+// the member is not returned yet.
+func LaneHolds(ledger ReturnLedgerGoal, batchID string, unit Unit) bool {
+	return ledger.Claimed && ledger.Batch == batchID && !(ledger.Machine == unit.Claim.Machine && ledger.Lineage == unit.Claim.Lineage)
+}
+
+func readLedgerGoalWithWorkspace(workspace gittree.Workspace, tree, goalID string) (ReturnLedgerGoal, bool, error) {
 	prefix, err := workspace.Prefix()
 	if err != nil {
-		return ReturnLedgerGoal{}, err
+		return ReturnLedgerGoal{}, false, err
 	}
 	path := prefix + filepath.ToSlash(filepath.Join("plans", "goals", goalID+".md"))
 	data, present, err := workspace.FileAt(tree, path)
 	if err != nil || !present {
-		return ReturnLedgerGoal{}, fmt.Errorf("goal ledger entry %s is absent from tree %s: %w", goalID, tree, err)
+		return ReturnLedgerGoal{}, false, err
 	}
 	file, problems := goal.ParseFile(data)
 	if len(problems) != 0 {
-		return ReturnLedgerGoal{}, fmt.Errorf("goal ledger entry %s is invalid: %v", goalID, problems)
+		return ReturnLedgerGoal{}, true, fmt.Errorf("goal ledger entry %s is invalid: %v", goalID, problems)
 	}
 	out := ReturnLedgerGoal{Next: file.NextStep}
 	if file.Claimed != nil {
@@ -60,7 +82,7 @@ func readReturnLedgerGoalWithWorkspace(workspace gittree.Workspace, tree, goalID
 			}
 		}
 	}
-	return out, nil
+	return out, true, nil
 }
 
 func RequestReturn(store Store, batchID, goalID, outcome, reason, actor string, at time.Time) error {
@@ -85,8 +107,22 @@ func requestUnitReturn(record *Record, goalID, outcome, reason, actor string, at
 	}
 	return fmt.Errorf("batch unit %s is absent", goalID)
 }
-func ReturnUnits(store Store, batchID, tree, actor string, at time.Time, seams ReturnSeams) error {
-	return store.locked(func() error {
+
+// ReturnFailure is a member ReturnUnits could not return this time, and
+// why: it stays return-pending and is tried again.
+type ReturnFailure struct {
+	GoalID, Reason string
+}
+
+// ReturnUnits settles every return-pending member of the batch with the
+// outcome it records. A member whose ledger entry cannot be read, whose seat
+// cannot be proven, or whose hand-back or release fails is never skipped in
+// silence: it is listed, and it stays return-pending while the others are
+// returned. A failed hand-back or release also makes the call's error, the
+// first one, once every member was tried.
+func ReturnUnits(store Store, batchID, tree, actor string, at time.Time, seams ReturnSeams) (failures []ReturnFailure, err error) {
+	var failed error
+	err = store.locked(func() error {
 		record, err := store.Load(batchID)
 		if err != nil {
 			return err
@@ -108,6 +144,7 @@ func ReturnUnits(store Store, batchID, tree, actor string, at time.Time, seams R
 			}
 			ledger, readErr := seams.Read(store.root, tree, unit.GoalID)
 			if readErr != nil {
+				failures = append(failures, ReturnFailure{GoalID: unit.GoalID, Reason: "its goal's ledger entry cannot be read: " + readErr.Error()})
 				continue
 			}
 			if !ledger.Claimed || ledger.Batch != batchID || ledger.Machine == unit.Claim.Machine && ledger.Lineage == unit.Claim.Lineage {
@@ -133,10 +170,19 @@ func ReturnUnits(store Store, batchID, tree, actor string, at time.Time, seams R
 				}
 				err = seams.Release(unit.GoalID, next)
 			default:
+				reason := "whether its seat can take it back is unknown"
+				if target.Reason != "" {
+					reason += ": " + target.Reason
+				}
+				failures = append(failures, ReturnFailure{GoalID: unit.GoalID, Reason: reason})
 				continue
 			}
 			if err != nil {
-				return err
+				failures = append(failures, ReturnFailure{GoalID: unit.GoalID, Reason: err.Error()})
+				if failed == nil {
+					failed = err
+				}
+				continue
 			}
 			if err := store.seams.publish("after-return"); err != nil {
 				return err
@@ -149,8 +195,9 @@ func ReturnUnits(store Store, batchID, tree, actor string, at time.Time, seams R
 				return err
 			}
 		}
-		return nil
+		return failed
 	})
+	return failures, err
 }
 
 func settleReturn(store Store, batchID, goalID, disposition, actor string, at time.Time) error {

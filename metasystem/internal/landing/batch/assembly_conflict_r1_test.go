@@ -202,7 +202,7 @@ func TestGLEBatchPortableOwnerMovedBaseReturnsTwoConflictsAndLandsSurvivor(t *te
 		},
 		Release: func(string, string) error { t.Fatal("live joiner claim was released"); return nil },
 	}
-	must(t, ReturnUnits(store, testBatchID, "tree", "owner", time.Unix(5, 0), returnSeams))
+	must(t, returnUnitsErr(store, testBatchID, "tree", "owner", time.Unix(5, 0), returnSeams))
 	must(t, store.Update(testBatchID, func(record *Record) error {
 		record.Transition(StateSealed, time.Unix(6, 0), "seal", "owner", "")
 		return nil
@@ -246,7 +246,7 @@ func TestGLEBatchPortableOwnerMovedBaseReturnsTwoConflictsAndLandsSurvivor(t *te
 		Rearm:   func(string) error { return nil },
 		Cleanup: func() error { t.Fatal("landing cleanup ran twice"); return nil },
 	}))
-	must(t, ReturnUnits(store, testBatchID, "tree", "owner", time.Unix(11, 0), returnSeams))
+	must(t, returnUnitsErr(store, testBatchID, "tree", "owner", time.Unix(11, 0), returnSeams))
 	landed := load(t, store)
 	if landed.State != StateLanded || landed.Units[0].State != UnitEjected || landed.Units[1].State != UnitEjected ||
 		landed.Units[2].State != UnitLanded || !landed.Units[2].P6Done || finalized != 1 {

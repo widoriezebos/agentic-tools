@@ -160,14 +160,14 @@ func TestBatchReturnIsCrashSafeAndOnce(t *testing.T) {
 					return nil
 				},
 			}
-			firstErr := ReturnUnits(store, testBatchID, "tree-a", "landing+owner", time.Unix(2, 0), seams)
+			firstErr := returnUnitsErr(store, testBatchID, "tree-a", "landing+owner", time.Unix(2, 0), seams)
 			witness(t, test.crash == "" || errors.Is(firstErr, os.ErrProcessDone), "crash error=%v", firstErr)
 			if load(t, store).Units[0].State == UnitReturnPending {
-				must(t, ReturnUnits(store, testBatchID, "tree-a", "landing+owner", time.Unix(3, 0), seams))
+				must(t, returnUnitsErr(store, testBatchID, "tree-a", "landing+owner", time.Unix(3, 0), seams))
 			}
 			path, _ := store.recordPath(testBatchID)
 			before := string(contents(t, path))
-			must(t, ReturnUnits(store, testBatchID, "tree-a", "landing+owner", time.Unix(4, 0), seams))
+			must(t, returnUnitsErr(store, testBatchID, "tree-a", "landing+owner", time.Unix(4, 0), seams))
 			must(t, RequestReturn(store, testBatchID, "goal-a", UnitEjected, "broken proof", "landing+owner", time.Unix(5, 0)))
 			witness(t, RequestReturn(store, testBatchID, "goal-a", UnitLanded, "other", "landing+owner", time.Unix(6, 0)) != nil, "terminal outcome was replaced")
 			unit := load(t, store).Units[0]
@@ -236,9 +236,9 @@ func TestBatchFailedHandbackSeesOccupiedSourceOnNextTick(t *testing.T) {
 			return nil
 		},
 	}
-	witness(t, ReturnUnits(store, testBatchID, "tree-a", "landing+owner", time.Unix(2, 0), seams) != nil, "failed handback returned success")
+	witness(t, returnUnitsErr(store, testBatchID, "tree-a", "landing+owner", time.Unix(2, 0), seams) != nil, "failed handback returned success")
 	witness(t, load(t, store).Units[0].State == UnitReturnPending, "failed handback did not remain pending")
-	must(t, ReturnUnits(store, testBatchID, "tree-b", "landing+owner", time.Unix(3, 0), seams))
+	must(t, returnUnitsErr(store, testBatchID, "tree-b", "landing+owner", time.Unix(3, 0), seams))
 	unit := load(t, store).Units[0]
 	witness(t, targets == 2 && releases == 1 && unit.State == UnitEjected && unit.ReturnDisposition == ReturnReleased,
 		"targets=%d releases=%d unit=%+v", targets, releases, unit)
@@ -260,7 +260,7 @@ func TestBatchSettleWritesLandedOrReturned(t *testing.T) {
 		must(t, store.Create(Record{Schema: 1, BatchID: testBatchID, State: StateOpen, Units: []Unit{{GoalID: goalID, Chain: "chain-a", Claim: Claim{Machine: seat.Machine, Lineage: "lineage-a", Epoch: 4, Revision: 2, AccountingRevision: 1}, State: UnitJoined}}}))
 		must(t, RequestReturn(store, testBatchID, goalID, row.outcome, "settled", "landing+owner", time.Unix(1, 0)))
 		ledger := ReturnLedgerGoal{Claimed: true, Machine: "landing", Lineage: "owner", Batch: testBatchID}
-		must(t, ReturnUnits(store, testBatchID, "tree-a", "landing+owner", time.Unix(2, 0), ReturnSeams{
+		must(t, returnUnitsErr(store, testBatchID, "tree-a", "landing+owner", time.Unix(2, 0), ReturnSeams{
 			Read:     func(string, string, string) (ReturnLedgerGoal, error) { return ledger, nil },
 			Target:   func(Unit) ReturnTarget { return ReturnTarget{State: ReturnTargetLive, Epoch: 9} },
 			HandBack: func(string, Claim, uint64) error { return nil },
@@ -277,5 +277,55 @@ func TestBatchSettleWritesLandedOrReturned(t *testing.T) {
 		if !found {
 			t.Fatalf("%s: board %+v, want %s", row.outcome, picture, row.want)
 		}
+	}
+}
+
+// returnUnitsErr is ReturnUnits for a caller that reads only its error, as
+// the owner's tick does.
+func returnUnitsErr(store Store, batchID, tree, actor string, at time.Time, seams ReturnSeams) error {
+	_, err := ReturnUnits(store, batchID, tree, actor, at, seams)
+	return err
+}
+
+// Design r10 §1 step 4: ReturnUnits never skips a member in silence. An
+// unreadable ledger entry and an unprovable seat are each listed with their
+// reason, and a failed release is listed before its error ends the call;
+// every listed member stays return-pending for the next try.
+func TestReturnUnitsListsEveryMemberItCouldNotReturn(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name, want string
+		read       error
+		target     string
+		release    error
+	}{
+		{name: "unreadable ledger", want: "cannot be read: parse failed", read: errors.New("parse failed"), target: ReturnTargetLive},
+		{name: "unprovable seat", want: "unknown: source identity is not provable", target: ReturnTargetUnknown},
+		{name: "failed release", want: "push rejected", target: ReturnTargetDead, release: errors.New("push rejected")},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			store := returnBed(t)
+			must(t, RequestReturn(store, testBatchID, "goal-a", UnitEjected, "broken proof", "landing+owner", time.Unix(1, 0)))
+			failures, err := ReturnUnits(store, testBatchID, "tree", "landing+owner", time.Unix(2, 0), ReturnSeams{
+				Read: func(string, string, string) (ReturnLedgerGoal, error) {
+					return ReturnLedgerGoal{Claimed: true, Machine: "landing", Lineage: "owner", Batch: testBatchID}, test.read
+				},
+				Target: func(Unit) ReturnTarget {
+					return ReturnTarget{State: test.target, Reason: map[bool]string{true: "source identity is not provable"}[test.target == ReturnTargetUnknown]}
+				},
+				HandBack: func(string, Claim, uint64) error { return nil },
+				Release:  func(string, string) error { return test.release },
+			})
+			if (err != nil) != (test.release != nil) {
+				t.Fatalf("err = %v", err)
+			}
+			if len(failures) != 1 || failures[0].GoalID != "goal-a" || !strings.Contains(failures[0].Reason, test.want) {
+				t.Fatalf("failures = %+v; want goal-a listed with %q", failures, test.want)
+			}
+			if unit := load(t, store).Units[0]; unit.State != UnitReturnPending {
+				t.Fatalf("a listed member settled as %s", unit.State)
+			}
+		})
 	}
 }

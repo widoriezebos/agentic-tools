@@ -47,7 +47,11 @@ func newKernelBed(t *testing.T) *kernelBed {
 	if err := os.WriteFile(filepath.Join(bed.installation, "metasystem.conf"), []byte("metasystem.template=true\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := lane.Register(bed.home, bed.checkout, "Wido", laneTestNow); err != nil {
+	layout, err := lane.NewLayout(bed.checkout)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := lane.Register(bed.home, layout, "Wido", laneTestNow); err != nil {
 		t.Fatal(err)
 	}
 	return bed

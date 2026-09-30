@@ -44,7 +44,11 @@ func newBed(t *testing.T) *bed {
 	if out, err := exec.Command("git", "init", "-q", b.top).CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v %s", err, out)
 	}
-	if _, _, err := lane.Register(b.home, b.top, "Wido", bedStart); err != nil {
+	layout, err := lane.NewLayout(b.top)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := lane.Register(b.home, layout, "Wido", bedStart); err != nil {
 		t.Fatal(err)
 	}
 	b.pass = Pass{Home: func() (string, error) { return b.home, nil },

@@ -171,7 +171,7 @@ func TestBatchMemberRecordReceiptAndNextCarryIdentity(t *testing.T) {
 	}
 	must(t, RequestReturn(store, testBatchID, "goal-a", UnitEjected, "attempt=red groups=group", "owner", time.Unix(4, 0)))
 	var next string
-	must(t, ReturnUnits(store, testBatchID, "tree", "owner", time.Unix(5, 0), ReturnSeams{
+	must(t, returnUnitsErr(store, testBatchID, "tree", "owner", time.Unix(5, 0), ReturnSeams{
 		Read: func(string, string, string) (ReturnLedgerGoal, error) {
 			return ReturnLedgerGoal{Claimed: true, Machine: "landing", Lineage: "owner", Batch: testBatchID}, nil
 		},

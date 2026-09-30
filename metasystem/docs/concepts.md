@@ -130,9 +130,12 @@ seats of one computer.
 computer, next to the seats' checkouts. It runs the same engine and has
 its own supervision, like any seat, but no agent works in it. The
 computer's lane record, `~/.metasystem/host/landing-lane.json`, names
-that checkout. The record is what makes it the lane: every checkout has
-the same batch owner component, and it runs only in the checkout the
-record names. In every other seat it stands idle.
+that checkout, its MetaSystem installation (the checkout itself, or its
+`metasystem` folder) and the custody epoch its registration took. Only a
+person's `metasystem landing set PATH` writes the record; a seat's
+`landing.batch-root` never does. The record is what makes it the lane:
+every checkout has the same batch owner component, and it runs only in
+the checkout the record names. In every other seat it stands idle.
 
 **Why a separate checkout.** Merging and pushing need a clean tree that
 nothing else touches. A seat's checkout is full of half-built work,
@@ -162,6 +165,17 @@ is landing, so a landing never depends on the state of anyone's seat.
   then longer between tries (up to ten minutes). After the fifth death
   in a row it gives up and says so, rather than restart a broken owner
   forever; a person fixes the cause and runs `metasystem landing start`.
+
+**Stopped is not gone.** A stopped lane (`metasystem landing stop`)
+still takes seats' work, which waits in it; a stop may hold half-landed
+work, and landing past it would race that work. A pause that cannot be
+read counts as a pause, and only a person ends it. To go back to each
+seat landing its own work, a person runs `metasystem landing unset`: it
+fences the lane against new work, lets a push under way finish, ends the
+owner, finalizes members already on main, returns every other member to
+its seat, reads each return back, and only then removes the record. When
+something is still running or a return is not confirmed, it stops and
+lists what is left, and the same command continues.
 
 **Without a lane**, the seat lands it itself. `metasystem work land`
 proves the work on the seat and pushes it from there. This is correct,

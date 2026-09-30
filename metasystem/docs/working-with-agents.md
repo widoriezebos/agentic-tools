@@ -107,10 +107,11 @@ metasystem landing stop                        # pause the owner for maintenance
 metasystem landing start                       # end the pause, clear the restart count, start the owner
 metasystem landing restart                     # stop and start the owner, for example when it seems stuck
 metasystem landing set ~/src/repo-landing-2    # move the lane to another checkout
+metasystem landing unset                       # take the lane away: its members go back to their seats, each seat lands its own work
 metasystem machine stop landing                # stop MetaSystem in the lane's checkout altogether
 ```
 
-`landing stop` and `landing restart` are refused while a batch is pushing to main, and moving the lane is refused while a batch proves or pushes in it; each refusal says to wait, or to pause the lane with `landing stop` first. To put the lane on a newly built engine, rebuild it in the lane's checkout and run `metasystem system restart --repo PATH` there.
+`landing set`, `landing unset` and resuming a stopped lane (`landing start`, `landing restart`) are yours to run, at an enrolled terminal; an agent is refused. A stopped lane still takes the seats' work, which waits in it: `landing unset` is the way back to each seat landing its own work. It stops and lists what is left when a push or a proof still runs, or when a returned member does not read back as returned; the same command continues, and `--force` goes past state that cannot be known. `landing stop` and `landing restart` are refused while a batch is pushing to main, and moving the lane is refused while a batch proves or pushes in it; each refusal says to wait, or to pause the lane with `landing stop` first. To put the lane on a newly built engine, rebuild it in the lane's checkout and run `metasystem system restart --repo PATH` there.
 
 **When it is down.** Seats keep going: `work land` still joins the lane's next batch, and the work waits there until the owner runs again. No seat quietly switches to landing the work itself. The steward restarts a dead owner on its own, with growing pauses in between, and gives up after five deaths in a row. `landing status` then reads, for example, `owner given-up after 5 restarts; last error: ...; to fix: ...`: the last error and the one command that fixes it. Typical causes and fixes:
 

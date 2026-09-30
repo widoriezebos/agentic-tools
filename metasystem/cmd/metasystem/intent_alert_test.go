@@ -36,7 +36,11 @@ func newAlertBed(t *testing.T) alertBed {
 		helmMust(t, os.MkdirAll(filepath.Join(top, ".git"), 0o755), os.MkdirAll(filepath.Join(top, "metasystem"), 0o755),
 			os.WriteFile(filepath.Join(top, "metasystem", "metasystem.conf"), []byte("metasystem.template=true\n"), 0o644))
 	}
-	if _, _, err := lane.Register(bed.home, bed.landing, "Wido", alertTestNow); err != nil {
+	layout, err := lane.NewLayout(bed.landing)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := lane.Register(bed.home, layout, "Wido", alertTestNow); err != nil {
 		t.Fatal(err)
 	}
 	return bed
