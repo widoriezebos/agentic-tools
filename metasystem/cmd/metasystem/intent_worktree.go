@@ -156,10 +156,19 @@ func (inv *intentInvocation) prepareGoalWorktree(id string) (string, *intentResu
 	// Every worktree handed to a build, new, reused, resumed or created by
 	// a concurrent call, first has the adapters' declared local
 	// configuration completed; the owner never overwrites existing files.
+	// What the copy places is recorded as the engine's (Round D3 F-1), so
+	// the worktree's release does not count it as work.
+	manifest, _ := supervisor.LocalConfigManifest(supervisor.Deps{Root: inv.layout.InstallationRoot})
+	before := diskstore.PresentPaths(path, manifest)
 	if err := inv.connection().isolate(inv.layout.GitRoot, path); err != nil {
 		return "", &intentResult{Outcome: intentRefused, code: 1, Targets: []intentTarget{{Kind: "goal", ID: id}},
 			Summary: fmt.Sprintf("goal worktree %s is kept, but the adapters' local configuration is not complete in it: %v; nothing was built", path, err),
 			next:    inv.sameCommand(), nextReason: "the same command completes the configuration and continues"}
+	}
+	if placed := diskstore.Placed(path, manifest, before); len(placed) > 0 {
+		if problem := inv.recordGoalWorktreeContent(id, path, placed); problem != nil {
+			return "", problem
+		}
 	}
 	return path, nil
 }
@@ -397,6 +406,20 @@ func (inv *intentInvocation) enterGoalWorktree(id, path string) *intentResult {
 			return &intentResult{Outcome: intentFailed, code: 1, Summary: fmt.Sprintf("goal/%s's worktree record cannot be held: %v; nothing was built", id, err)}
 		}
 		inv.entrants = append(inv.entrants, entrant)
+	}
+	return nil
+}
+
+// recordGoalWorktreeContent records the files the engine just placed in
+// goal id's registered worktree at path.
+func (inv *intentInvocation) recordGoalWorktreeContent(id, path string, placed []string) *intentResult {
+	for _, entrant := range inv.entrants {
+		if entrant.Record.Path != path {
+			continue
+		}
+		if err := inv.goalWorktreeRegistry().RecordEngineContent(entrant.Record.ID, path, placed, nil); err != nil {
+			return &intentResult{Outcome: intentFailed, code: 1, Summary: fmt.Sprintf("the local configuration placed in goal/%s's worktree cannot be recorded: %v; nothing was built", id, err)}
+		}
 	}
 	return nil
 }

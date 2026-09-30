@@ -99,7 +99,14 @@ func sessionMainLiveness(prober identity.Prober) func(path string) (diskstore.Ma
 		if layout, err := stateroot.ResolveLayout(path); err == nil {
 			root = layout.InstallationRoot
 		}
-		if _, err := os.Stat(filepath.Join(root, "artifacts", "agents", "mains")); os.IsNotExist(err) {
+		// No announcement with a session is no main, whatever else the
+		// directory holds (Round D3 N10): a starting session is kept by its
+		// reserved state, never judged dead from an absence.
+		announced, err := announcedMains(filepath.Join(root, "artifacts", "agents", "mains"))
+		if err != nil {
+			return diskstore.MainUnknown, "the session's announcements cannot be read: " + err.Error()
+		}
+		if !announced {
 			return diskstore.MainNone, "no main has announced itself in " + root
 		}
 		verdict := checkSessionMain(root, prober)
@@ -128,4 +135,30 @@ func bootstrapDead(prober identity.Prober) func(string) (bool, bool) {
 		}
 		return false, false
 	}
+}
+
+// announcedMains reports whether the announcements directory holds a main
+// announcement (a JSON file naming a session); an unreadable announcement
+// is an error.
+func announcedMains(directory string) (bool, error) {
+	entries, err := os.ReadDir(directory)
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+		value, err := readHealthObject(filepath.Join(directory, entry.Name()))
+		if err != nil {
+			return false, err
+		}
+		if session, _ := value["sessionId"].(string); session != "" {
+			return true, nil
+		}
+	}
+	return false, nil
 }

@@ -161,9 +161,21 @@ func SecondSession(o SecondSessionOptions) (string, error) {
 	if isolate == nil {
 		isolate = validate.SessionIsolation
 	}
+	before := diskstore.PresentPaths(destination, LocalConfigPaths)
 	newHarness, err := isolate(checkout, destination, manifest.Name(), o.HarnessRoot)
 	if err != nil {
 		return "", err
+	}
+	// What the engine placed in the worktree, and the directory its mains
+	// announce themselves in, are the engine's (Round D3 F-1): unchanged,
+	// they never keep the worktree at its release.
+	installation, relErr := filepath.Rel(canonicalSessionPath(destination), canonicalSessionPath(newHarness))
+	if relErr != nil || strings.HasPrefix(installation, "..") {
+		installation = "."
+	}
+	if err := registry.RecordEngineContent(record.ID, destination, diskstore.Placed(destination, LocalConfigPaths, before),
+		[]diskstore.EngineDir{diskstore.MainAnnouncementsDir(installation)}); err != nil {
+		return "", fmt.Errorf("second-session: what the engine placed in the worktree cannot be recorded: %w", err)
 	}
 
 	pid := strconv.FormatInt(o.Pid, 10)

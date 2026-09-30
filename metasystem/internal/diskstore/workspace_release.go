@@ -310,10 +310,20 @@ func judgeContent(ctx context.Context, git WorkspaceGit, record Record, discard 
 			entries = append(entries, entry)
 		}
 	}
-	if len(status) > 0 {
-		if len(entries) == 0 {
-			entries = []string{strings.TrimSpace(string(status))}
+	if len(status) > 0 && len(entries) == 0 {
+		entries = []string{strings.TrimSpace(string(status))}
+	}
+	if record.Class == GoalWorktreeClass || record.Class == SessionWorktreeClass {
+		// What the engine itself placed there, unchanged, is not the
+		// worktree's content (Round D3 F-1); an unreadable record of it
+		// keeps the worktree.
+		content, err := CheckoutRegistry(record.Checkout).ReadEngineContent(record.ID)
+		if err != nil {
+			return Verdict{Decision: Keep, Reason: err.Error() + "; it is kept", Command: remedy}
 		}
+		entries = content.foreignEntries(record.Path, entries)
+	}
+	if len(entries) > 0 {
 		return Verdict{Decision: Keep, Reason: fmt.Sprintf("the workspace holds %d uncommitted, untracked or ignored entries: %s", len(entries), firstPaths(entries)),
 			Command: remedy}
 	}
