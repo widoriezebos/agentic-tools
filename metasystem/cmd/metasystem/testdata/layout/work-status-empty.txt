@@ -1,0 +1,2 @@
+No jobs running in m1e
+→ metasystem work status --all  also lists ended jobs

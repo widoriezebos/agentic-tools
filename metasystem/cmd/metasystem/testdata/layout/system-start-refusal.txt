@@ -1,0 +1,2 @@
+✗ --if-down restarts only what is down and takes no --temporary-human-word; nothing was done
+  → metasystem system start --if-down

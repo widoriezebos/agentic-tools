@@ -1,0 +1,25 @@
+exit 0
+--
+{
+  "schemaVersion": 1,
+  "verb": "work status",
+  "targets": [],
+  "outcome": "confirmed",
+  "summary": "0 running job(s) among this user's launches and the dispatch jobs of /Users/wido/GitHub/agentic-tools-m1e",
+  "data": {
+    "all": false,
+    "jobs": [],
+    "scope": "this user's launches and the dispatch jobs of /Users/wido/GitHub/agentic-tools-m1e"
+  },
+  "next": {
+    "argv": [
+      "metasystem",
+      "work",
+      "status",
+      "--all"
+    ],
+    "reason": "also lists ended jobs"
+  }
+}
+
+--

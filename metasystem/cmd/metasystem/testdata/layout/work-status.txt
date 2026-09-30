@@ -1,0 +1,7 @@
+2 jobs running in m1e
+
+JOB                      GOAL                 KIND            STATE     SINCE
+● j1:review-verbs-3a7c   verbs-match-intent   review launch   running   10:46
+● j2:design-r2-4f1c      verbs-match-intent   builder job     running   10:46
+
+→ metasystem work status --all  also lists ended jobs

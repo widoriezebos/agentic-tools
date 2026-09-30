@@ -184,7 +184,7 @@ func TestHelmTakeDetachedLeaderIsAcceptedAndNamed(t *testing.T) {
 		if record := b.wantTake(nil, 0, "proven", "Wido"); record.Leader != "python3" {
 			t.Fatalf("detached take recorded leader %q", record.Leader)
 		}
-		if _, out := b.run("helm", "take", "--reason", "by hand"); !strings.Contains(out, "session leader python3 (90@900)") {
+		if _, out := b.run("helm", "take", "--reason", "by hand", "--verbose"); !strings.Contains(out, "session leader python3, pid 90") {
 			t.Fatalf("the terminal line does not name the leader:\n%s", out)
 		}
 	})
@@ -202,7 +202,7 @@ func witnessHelmTakeRepeat(t *testing.T) {
 		first := b.wantTake(nil, 0, "proven", "Wido")
 		before, _ := os.ReadFile(filepath.Join(b.root, ".git", "metasystem", "helm.json"))
 		b.owners.helm.now = func() time.Time { return helmNow.Add(time.Hour) }
-		if code, out := b.run("helm", "take", "--reason", "by hand"); code != 0 || !strings.HasPrefix(out, "applied: HUMAN AT THE HELM since 21:14 CEST (2026-09-28) by Wido") {
+		if code, out := b.run("helm", "take", "--reason", "by hand"); code != 0 || !strings.HasPrefix(out, "✓ Wido already has the helm since") || !strings.Contains(out, ": by hand") {
 			t.Fatalf("repeat take: %d %s", code, out)
 		}
 		if after, _ := os.ReadFile(filepath.Join(b.root, ".git", "metasystem", "helm.json")); !bytes.Equal(before, after) || strings.Count(b.log(), "\n") != 1 {
