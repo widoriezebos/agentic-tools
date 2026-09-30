@@ -1,0 +1,31 @@
+exit 0
+--
+{
+  "schemaVersion": 1,
+  "verb": "machine stop",
+  "targets": [
+    {
+      "kind": "machine",
+      "id": "m1x"
+    }
+  ],
+  "outcome": "unchanged",
+  "summary": "MetaSystem is already stopped on m1x (/Users/wido/GitHub/agentic-tools-m1x); nothing is running",
+  "data": {
+    "launchesCancelled": 0,
+    "machines": [
+      {
+        "checkout": "/Users/wido/GitHub/agentic-tools-m1x",
+        "lines": [
+          "MetaSystem is already stopped for /Users/wido/GitHub/agentic-tools-m1x (since 2026-09-30T09:00:00Z); nothing is running; start again: metasystem system start --repo /Users/wido/GitHub/agentic-tools-m1x"
+        ],
+        "name": "m1x",
+        "outcome": "unchanged",
+        "summary": "MetaSystem is already stopped for /Users/wido/GitHub/agentic-tools-m1x (since 2026-09-30T09:00:00Z); nothing is running; start again: metasystem system start --repo /Users/wido/GitHub/agentic-tools-m1x"
+      }
+    ],
+    "registryProblem": ""
+  }
+}
+
+--

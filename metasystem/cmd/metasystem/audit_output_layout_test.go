@@ -60,7 +60,7 @@ type layoutBed struct {
 }
 
 func layoutCases() []layoutCase {
-	return []layoutCase{
+	return append([]layoutCase{
 		{name: "status", args: []string{"status"}, bed: statusLayoutBed(true)},
 		{name: "status-verbose", args: []string{"status", "--verbose"}, bed: statusLayoutBed(true)},
 		{name: "status-quiet", args: []string{"status"}, bed: statusLayoutBed(false)},
@@ -69,7 +69,7 @@ func layoutCases() []layoutCase {
 		{name: "grant-list-all", args: []string{"grant", "list", "--all"}, bed: grantListLayoutBed(2, true)},
 		{name: "grant-list-empty", args: []string{"grant", "list"}, bed: grantListLayoutBed(0, false)},
 		{name: "grant-list-refusal", args: []string{"grant", "list"}, bed: outsideLayoutBed},
-	}
+	}, g1bLayoutCases()...)
 }
 
 // statusLayoutBed is a checkout with its five helpers and two processes
