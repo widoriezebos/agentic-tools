@@ -1,6 +1,6 @@
 # machinery-runs-unattended-on-codex
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 8
 - Risk: severity=3 novelty=2 exposure=3 accumulation=1 basis="severity 3: a broken dispatch or landing path stops delivery on every seat, and a relaunch leak fills the host-wide admission cap; novelty 2: the launch verbs, batch verbs and gate already exist and are rewired, not invented; exposure 3: every seat and every landing goes through them; accumulation 1: the old dispatch path and the flag code are deleted in the same landings"
@@ -9,12 +9,10 @@
 - Origin: human
 - Next step: Push 17 (58a943387) landed the batch lane; ledger tip after SYNC 17 is 5b9d9588e. In flight: the rehearsal driver job 20260919t193156-acc7dad92f (worktree mruc-rehearse) and the impacted-tests verb U1 to U3 job 20260919t183829-a8e293b0fd (worktree mruc-timpb1, design r2 be795570e, plans/impacted-tests-verb-design.md). The verb's deep-analysis units U4 to U7 are parked under goal test-selection-improves-on-the-simple-rule (Wido 22:50 CEST). Next: push 18 with both jobs and the lessons L1 to L7, the local rehearsal, landing.batch-root on a dedicated checkout, then the staged switch-on with trial goal test-environment-edges-are-closed. A3 and A6 wait (Wido 16:40 CEST).
 - OpenedAt: 2026-09-19T14:45:49Z
-- Revision: 22
+- Revision: 23
 - Budget: elapsedLimit=2d attemptLimit=12 reservedJobMinutesLimit=1200 activeJobLimit=3 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-19T15:49:27Z revision=6 opid=Q2BM49SPT5YPBKH90FFX32T3F9-m1e-c6925449 authority=proven digest=6e3fcca60467676e227960b85c799c1f964a8db2320448c024fbdf059b4c8bd2 episode=6
-- Claimed: machine=ui lineage=main-1790617310-14120-96d9c7 at=2026-09-30T18:44:37Z revision=22 accountingRevision=22 episodeAt=2026-09-30T18:44:37Z episodeRevision=22
-- StopCapability: generation=22 revision=22 machine=ui claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-09-19T14:45:49Z C0AKBJN5K7PM281E91EG4G57TD-m1e-c6925449 open actor=human:Wido targets=machinery-runs-unattended-on-codex
@@ -39,4 +37,5 @@ History:
 - 2026-09-30T16:34:55Z 6AHWS37V7SN04Y6KDTN50KFMBP-m1e-b6a4eb0a set-priority actor=human:wido targets=adoption-filled-delivery-passes-on-trunk,beds-run-under-the-oldest-supported-bash,brief-declares-the-round-boundary,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,delegate-sandbox-runs-the-beds,design-rounds-read-less-and-repeat-less,error-checks-use-typed-errors,every-round-gets-an-independent-read,evidence-and-build-output-have-retention-and-stay-unindexed,failures-show-observed-against-expected,fixture-runners-and-fakes-bound-their-own-life,fleet-doctor-repairs-what-stops-other-seats,follow-up-brief-cannot-cite-fresh-trunk-files,host-setup-from-scratch,machinery-runs-unattended-on-codex,one-steward-per-checkout-on-its-own-root,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,receipt-writer-follows-the-worktree-it-runs-in,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,steward-acts-on-behaviour-patterns,stop-hook-never-forces-an-empty-turn,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror reason=priority-order subject=steward-acts-on-behaviour-patterns from=1:6 to=1:7 requested-sequence=3
 - 2026-09-30T16:56:00Z BNF1HFA4GASJX5EKB56DQM1FPA-m1e-b6a4eb0a set-priority actor=human:wido targets=adoption-filled-delivery-passes-on-trunk,beds-run-under-the-oldest-supported-bash,brief-declares-the-round-boundary,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,delegate-sandbox-runs-the-beds,design-rounds-read-less-and-repeat-less,error-checks-use-typed-errors,every-round-gets-an-independent-read,evidence-and-build-output-have-retention-and-stay-unindexed,failures-show-observed-against-expected,fixture-runners-and-fakes-bound-their-own-life,fleet-doctor-repairs-what-stops-other-seats,follow-up-brief-cannot-cite-fresh-trunk-files,machinery-runs-unattended-on-codex,one-steward-per-checkout-on-its-own-root,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,receipt-writer-follows-the-worktree-it-runs-in,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,system-start-launches-your-agent,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror reason=priority-order subject=system-start-launches-your-agent from=1:7 to=1:8 requested-sequence=5
 - 2026-09-30T18:44:37Z 4WHXVA8XNBKP70DZ91T4WGEDW0-ui-bc2fda53 resume actor=human:Wido targets=machinery-runs-unattended-on-codex
-Integrity: sha256=c30405a856ee1c7e82576d3193d8b873ad238079c6f28bba52782ec3d68afe34
+- 2026-09-30T18:44:51Z KV4F82YWRN8JCEG919P0MM7MZH-ui-bc2fda53 release actor=human:Wido targets=machinery-runs-unattended-on-codex displaced=ui+main-1790617310-14120-96d9c7@2026-09-30T18:44:37Z reason=stray claim of an earlier ui session; the goal is concluded next
+Integrity: sha256=08b13d16511ddfa96383398e1e4c397f60359b9054b92eed109a382b1781488e
