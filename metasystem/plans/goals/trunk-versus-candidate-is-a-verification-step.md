@@ -2,14 +2,14 @@
 
 - State: parked
 - Priority: 2
-- Sequence: 45
+- Sequence: 44
 - Risk: severity=2 novelty=2 exposure=3 accumulation=2 basis="severity 2: without a same-input comparison a behaviour change hides behind a text change, as a Stop-message build did on 2026-09-13; novelty 2: the engine has no notion of running one input against two trees; exposure 3: every landing that changes an output the seat or the human reads; accumulation 2: each hand-crafted comparison is redone per landing"
 - Tier: 2
 - Intent: What: A command that runs the same input through current main and through a proposed change and shows where their outputs differ (a decision, only text, or only evidence), so a change that claims to change only wording can be proven to change only wording. Why: Twice in September a change altered a decision while claiming to be wording only, and was caught only by a comparison made by hand. Pros: Proves "text only" claims with one reusable tool instead of one-off scripts. Cons: A general command is sizeable work, and the case that triggered it is already covered by a dedicated audit test.
 - Origin: human
 - Next step: Next: When it comes back, design the comparison command (what an input is, how main's version is set up beside the change, how differences are classified) and the declaration a landing carries; then build. Done when: a landing declared as text-only is refused when the comparison shows a changed decision.
 - OpenedAt: 2026-09-14T19:26:09Z
-- Revision: 102
+- Revision: 103
 - BudgetExceptions: 0
 - Parked: by=human:wido at=2026-09-30T18:43:52Z because=Parked: the case that caused it (stop decisions) is now covered by an audit test. Bring it back when another change declared as wording-only turns out to have changed a decision.
 
@@ -116,4 +116,5 @@ History:
 - 2026-09-30T19:01:25Z E20F0HZNYRSSV7MD6WN0Q5BESH-m1e-b6a4eb0a done actor=human:wido targets=dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,human-break-glass-commit-keeps-the-ledger-valid,human-wait-does-not-consume-goal-budget,land-verb-writes-the-receipt,metasystem-stop-escalation-proofs,new-elapsed-budgets-use-explicit-hours,one-goal-act-one-ledger-commit,repo-root-paths-ride-agent-commits-unjudged,runtime-limit-is-not-a-protocol-error,seat-landings-run-the-selected-sections,small-change-lane,steward-revivals-leave-the-receipt-stream,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:48 to=2:47
 - 2026-09-30T19:01:36Z 2ZVH1MJDC2668JSXYPX8GM1699-m1e-b6a4eb0a done actor=human:wido targets=seat-landings-run-the-selected-sections,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:47 to=2:46
 - 2026-09-30T19:01:48Z 8WHMJBZTRCJMAC5T97CT4WACF7-m1e-b6a4eb0a done actor=human:wido targets=chain-landing-carries-the-reviewed-diff,dependency-ratchet-refuses-new-wall-clock-and-layout-asserts,human-authority-surface-runs-its-cmd-tests,human-break-glass-commit-keeps-the-ledger-valid,human-wait-does-not-consume-goal-budget,land-verb-writes-the-receipt,metasystem-stop-escalation-proofs,new-elapsed-budgets-use-explicit-hours,one-goal-act-one-ledger-commit,runtime-limit-is-not-a-protocol-error,skipped-test-fails-its-group-on-the-other-os,small-change-lane,steward-revivals-leave-the-receipt-stream,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:46 to=2:45
-Integrity: sha256=90468bbcdcc0f7106aa1783b37bd765db086312529d86c09d893cf7f95635a3c
+- 2026-09-30T19:01:59Z 4C7QVGEBZ5VPGZWKZV9X7VK45B-m1e-b6a4eb0a done actor=human:wido targets=small-change-lane,trunk-versus-candidate-is-a-verification-step reason=priority-order from=2:45 to=2:44
+Integrity: sha256=f10e6a0a23c0769e08869b0f5cfb53a0cf30880719bdd15b6d81803cb8161210
