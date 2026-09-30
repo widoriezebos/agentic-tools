@@ -736,6 +736,11 @@ func runIntentLandingUnset(inv *intentInvocation) int {
 		by = named
 	}
 	report, err := owners.unset(home, by, inv.input.switched("force"))
+	var refusal *lane.Refusal
+	if errors.As(err, &refusal) && len(refusal.Argv) > 0 {
+		return inv.render(intentResult{Outcome: intentRefused, code: 1, Data: report, Summary: refusal.Message,
+			next: refusal.Argv, nextReason: refusal.Fix, Details: []string{"refused because: " + refusal.Code}})
+	}
 	if err != nil {
 		return inv.render(intentResult{Outcome: intentFailed, code: 1, Data: report,
 			Summary: "the landing lane's unset could not go on (" + oneLine(err.Error()) + "); the lane stays fenced",

@@ -1,6 +1,7 @@
 package lane
 
 import (
+	"errors"
 	"fmt"
 )
 
@@ -60,16 +61,19 @@ func Gate(home string, op Operation, authority Authority, start func(Record) err
 		return &Refusal{Code: CodeUnknownOperation, Message: fmt.Sprintf("the landing lane does not know the operation %q, so nothing was started", op),
 			Fix: "run one of the landing verbs: metasystem landing status lists them"}
 	}
+	cleanup := authority == AuthorityPerson && op == OpReturn
 	return withLock(home, func() error {
 		record, ok, err := Read(home)
-		if err != nil {
+		var refusal *Refusal
+		if err != nil && !(cleanup && errors.As(err, &refusal) && refusal.Code == CodeRecordIncomplete) {
+			// A person's cleanup still returns the members of a lane an
+			// older engine registered: that is how its unset ends.
 			return err
 		}
 		if !ok {
 			return &Refusal{Code: CodeNotRegistered, Message: "no landing lane is registered on this computer, so nothing was started",
 				Fix: "a person registers the landing checkout: metasystem landing set PATH"}
 		}
-		cleanup := authority == AuthorityPerson && op == OpReturn
 		if journal, fenced, _ := ReadUnset(home); fenced && !cleanup {
 			return unsettingRefusal(journal)
 		}

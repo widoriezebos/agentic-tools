@@ -151,3 +151,37 @@ func TestUnsetSettleWaitsAndForceOverridesOnlyUnknown(t *testing.T) {
 		t.Fatalf("join after unset = %v; want no lane", err)
 	}
 }
+
+// A lane an older engine registered (no installation, no epoch) can still
+// be unset: its layout is resolved once at the fence, and a person's
+// cleanup returns pass the gate that refuses every other use of the old
+// record.
+func TestUnsetEndsALaneAnOlderEngineRegistered(t *testing.T) {
+	t.Parallel()
+	home, root, _ := laneDirs(t)
+	if err := os.MkdirAll(HostDir(home), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	old := `{"root":"` + resolved(root) + `","registeredBy":"m1e","at":"2026-09-29T18:00:00Z"}`
+	if err := os.WriteFile(RecordPath(home), []byte(old), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := Gate(home, OpProve, AuthorityAgent, nil); !refusedWith(err, CodeRecordIncomplete) {
+		t.Fatalf("agent work on an old record = %v", err)
+	}
+	seams, returned := emptyUnsetSeams(), 0
+	var gateErr error
+	seams.Records = func(Layout) ([]batch.Record, error) { return []batch.Record{{BatchID: "b1"}}, nil }
+	seams.Return = func(layout Layout, _ batch.Record, _ string) ([]Unresolved, error) {
+		returned++
+		if string(layout.Install) != resolved(root)+"/metasystem" {
+			t.Errorf("returns ran on layout %+v", layout)
+		}
+		gateErr = Gate(home, OpReturn, AuthorityPerson, nil)
+		return nil, gateErr
+	}
+	report, err := Unset(home, "Wido", laneNow, false, seams)
+	if err != nil || !report.Unregistered || returned != 1 || gateErr != nil {
+		t.Fatalf("unset of an old record = %+v %v (returned %d, gate %v); want the person's returns admitted and the lane unregistered", report, err, returned, gateErr)
+	}
+}

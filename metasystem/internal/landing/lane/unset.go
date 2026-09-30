@@ -226,7 +226,10 @@ func fence(home, by string, now time.Time) (journal *UnsetJournal, fresh bool, e
 		var refusal *Refusal
 		switch {
 		case err != nil && !(errors.As(err, &refusal) && refusal.Code == CodeRecordIncomplete):
-			return fmt.Errorf("this computer's landing lane record cannot be read, so the lane's members are not known and nothing was returned: %w", err)
+			return &Refusal{Code: CodeRecordIncomplete,
+				Message: "this computer's landing lane record cannot be read (" + err.Error() + "), so the lane's members are not known and nothing was returned",
+				Fix:     "a person registers the landing checkout again, which replaces the record, then unsets it: metasystem landing set PATH",
+				Argv:    []string{"metasystem", "landing", "set", "PATH"}}
 		case !ok && fenced:
 			return fmt.Errorf("the landing lane's unset journal cannot be read and no lane record is left to rebuild it from: %w", readErr)
 		case !ok:
