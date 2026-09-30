@@ -857,3 +857,33 @@ func TestUIRestartIsNotBlockedByTheCallersListen(t *testing.T) {
 		t.Fatalf("restart with no other seat and an invalid ui.listen = %v %+v, spawns %d", err, got, own.spawns)
 	}
 }
+
+// TestUICrossSeatFailuresShowTheirDiagnosticOnce (SOL-US-03): in text
+// output a cross-seat failure's own line is printed exactly once, whether
+// the summary is that line or a generic one.
+func TestUICrossSeatFailuresShowTheirDiagnosticOnce(t *testing.T) {
+	t.Parallel()
+	b := newProcessBed(t)
+	owners := b.owners()
+	other := uiSeat{Name: "ui", Checkout: "/work/agentic-tools-ui"}
+	var answer uiLifecycleResult
+	owners.processes.ui = func(string, lifecycle.Roots, uiIntentOptions) (uiLifecycleResult, error) { return answer, nil }
+	timeout := "no interface for m1e; machine ui: interface (pid 5201) did not stop within 0s; it was sent SIGTERM and left running"
+	failedStart := "no interface for m1e; machine ui: cannot launch the interface server: exec format error"
+	for _, leg := range []struct {
+		name, verb, line string
+		answer           uiLifecycleResult
+	}{
+		{"stop timeout", "stop", timeout, uiLifecycleResult{Result: lifecycle.Result{Lines: []string{timeout}, Code: 1}, Seat: &other}},
+		{"restart timeout", "restart", timeout, uiLifecycleResult{Result: lifecycle.Result{Lines: []string{timeout}, Code: 1}, Seat: &other,
+			Restart: &lifecycle.RestartReport{Stop: lifecycle.Timeout}}},
+		{"restart whose start fails", "restart", failedStart, uiLifecycleResult{Result: lifecycle.Result{Lines: []string{failedStart}, Code: 1}, Seat: &other,
+			Restart: &lifecycle.RestartReport{Stop: lifecycle.StoppedNow, Started: true, Start: lifecycle.Result{Code: 1}}}},
+	} {
+		answer = leg.answer
+		code, stdout, stderr := b.run(owners, "ui", leg.verb)
+		if code != 1 || strings.Count(stdout+stderr, leg.line) != 1 {
+			t.Errorf("%s: the diagnostic is not printed exactly once: %d %q %q", leg.name, code, stdout, stderr)
+		}
+	}
+}

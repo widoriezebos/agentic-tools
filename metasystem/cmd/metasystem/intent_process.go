@@ -1676,37 +1676,40 @@ func (inv *intentInvocation) runUIVerb(verb string) int {
 	// A restart that acted on another machine's interface targets that
 	// seat, and its next steps name it.
 	next := func(words ...string) []string { return append([]string{"metasystem", "ui"}, words...) }
-	summary := func(fallback string) string { return fallback }
+	// On a branch whose summary is the first line naming the seat, the text
+	// is the rest; every other branch keeps all lines.
+	summary := func(fallback string) (string, []string) { return fallback, result.Lines }
 	text := result.Lines
 	if seat := lifecycleResult.Seat; seat != nil {
-		text = uiLinesAfterSummary(result.Lines)
 		targets = []intentTarget{{Kind: "ui", ID: seat.Checkout}}
 		next = func(words ...string) []string {
 			return append(append([]string{"metasystem", "ui"}, words...), "--repo", seat.Checkout)
 		}
-		summary = func(fallback string) string {
+		summary = func(fallback string) (string, []string) {
 			if len(result.Lines) > 0 {
-				return result.Lines[0]
+				return result.Lines[0], uiLinesAfterSummary(result.Lines)
 			}
-			return fallback
+			return fallback, nil
 		}
 	}
 	restart := lifecycleResult.Restart
 	if restart == nil {
 		refusedSummary := "the interface could not be restarted; nothing was done"
+		refused, refusedText := summary(refusedSummary)
 		if lifecycleResult.Seat == nil && len(result.Lines) == 1 {
 			// This seat's own refusal: its one line says it, as before.
-			refusedSummary, text = result.Lines[0], nil
+			refused, refusedText = result.Lines[0], nil
 		}
 		// Refused before anything was stopped: a missing engine, an
 		// address that does not resolve, or several machines to choose from.
-		return inv.render(intentResult{Outcome: intentRefused, code: max(result.Code, 1), Targets: targets, text: text, Data: data,
-			Summary: summary(refusedSummary), Decision: lifecycleResult.Decision})
+		return inv.render(intentResult{Outcome: intentRefused, code: max(result.Code, 1), Targets: targets, text: refusedText, Data: data,
+			Summary: refused, Decision: lifecycleResult.Decision})
 	}
 	data["stop"], data["started"] = restart.Stop, restart.Started
 	switch {
 	case restart.Started && restart.Start.Code == 0:
-		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Summary: summary("the interface restarted"), text: text, Data: data})
+		restarted, restartedText := summary("the interface restarted")
+		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Summary: restarted, text: restartedText, Data: data})
 	case restart.Started:
 		// Nothing was stopped when nothing ran: the start alone failed.
 		failed := "the interface stopped but did not start again"
