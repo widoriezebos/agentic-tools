@@ -38,6 +38,11 @@ type heldTrailers struct {
 	goalItem   []string
 	revision   []string
 	provenance []string
+	// laneResolved and laneIntegration mark the landing lane's own commits
+	// (design r10 K4): a member replay carrying the lane's resolution, and
+	// the one integration commit of a series.
+	laneResolved    []string
+	laneIntegration []string
 }
 
 type heldFacts struct {
@@ -47,6 +52,9 @@ type heldFacts struct {
 	endpoint      func(root string) (goal.Endpoint, error)
 	parentTree    func(root, parent string) (string, error)
 	fileAt        func(root, tree, path string) ([]byte, bool, error)
+	// laneListed are the lane series' commits landing begin listed; nil
+	// outside the lane's publication.
+	laneListed map[string]bool
 }
 
 type heldFiles struct {
@@ -82,6 +90,21 @@ func defaultHeldFacts() heldFacts {
 // plumbing failures needed to open or resolve the repository are errors.
 func Held(root, base, commit, remote, ref string) (HeldVerdict, error) {
 	return heldWithFacts(root, base, commit, remote, ref, defaultHeldFacts())
+}
+
+// HeldLane is Held over the landing lane's canonical series (design r10
+// K4): the commits landing begin listed may be the lane's own. A listed
+// Lane-Integration commit needs no goal binding; a listed Lane-Resolved
+// replay keeps its member's binding, though the lane authored it. A commit
+// carrying a Lane-* trailer that the series does not list is refused, here
+// and in Held, so no push forges a lane commit.
+func HeldLane(root, base, commit, remote, ref string, listed []string) (HeldVerdict, error) {
+	facts := defaultHeldFacts()
+	facts.laneListed = map[string]bool{}
+	for _, id := range listed {
+		facts.laneListed[strings.TrimSpace(id)] = true
+	}
+	return heldWithFacts(root, base, commit, remote, ref, facts)
 }
 
 func heldWithFacts(root, base, commit, remote, ref string, facts heldFacts) (HeldVerdict, error) {
@@ -138,8 +161,30 @@ commitLoop:
 			return heldHardRefusal(verdict, entry.commit, "machine-trailer-malformed", fmt.Sprintf("the commit carries %d Goal-Revision trailers, not one; reword it, then metasystem work land again", len(trailers.revision))), nil
 		}
 
+		laneCommit := len(trailers.laneResolved) != 0 || len(trailers.laneIntegration) != 0
+		if laneCommit && !facts.laneListed[entry.commit] {
+			kind := "Lane-Resolved"
+			if len(trailers.laneIntegration) != 0 {
+				kind = "Lane-Integration"
+			}
+			return heldHardRefusal(verdict, entry.commit, "lane-commit-unlisted", fmt.Sprintf("the commit carries a %s trailer but is not in the series the landing lane began; only landing begin lists the lane's own commits", kind)), nil
+		}
+		if len(trailers.laneIntegration) != 0 {
+			if len(trailers.laneResolved) != 0 || len(trailers.goalItem) != 0 {
+				return heldHardRefusal(verdict, entry.commit, "machine-trailer-malformed", "a Lane-Integration commit binds no goal and replays no member; reword it, then landing begin again"), nil
+			}
+			// The lane's integration commit, listed at begin: its size
+			// is begin's aggregate cap to judge, and it binds no goal.
+			verdict.Outcome = "ok"
+			continue commitLoop
+		}
+
 		actor := trailers.machine[0]
 		human := heldHumanActor(actor)
+		// A listed resolved replay is the lane's authorship of the
+		// member's change: the member's goal must still be held at the
+		// bound revision, by whichever machine claimed it.
+		laneReplay := len(trailers.laneResolved) != 0
 		softened := false
 		refuse := func(code, detail string) bool {
 			if human {
@@ -237,7 +282,7 @@ commitLoop:
 
 		file, state := heldGoalAtParent(files, parentTree, goalID)
 		parentShort := shortHeldCommit(entry.parent)
-		if file == nil || file.State != goal.StateClaimed || file.Claimed == nil || (!human && actor != file.Claimed.Machine+"+"+file.Claimed.Lineage) {
+		if file == nil || file.State != goal.StateClaimed || file.Claimed == nil || (!human && !laneReplay && actor != file.Claimed.Machine+"+"+file.Claimed.Lineage) {
 			if refuse("goal-item-not-held", fmt.Sprintf("goal %s is %s at %s", goalID, state, parentShort)) {
 				return verdict, nil
 			}
@@ -316,6 +361,10 @@ func parseHeldTrailers(message string) heldTrailers {
 			result.revision = append(result.revision, strings.TrimSpace(strings.TrimPrefix(line, "Goal-Revision:")))
 		case strings.HasPrefix(line, "Landing-Provenance:"):
 			result.provenance = append(result.provenance, strings.TrimSpace(strings.TrimPrefix(line, "Landing-Provenance:")))
+		case strings.HasPrefix(line, "Lane-Resolved:"):
+			result.laneResolved = append(result.laneResolved, strings.TrimSpace(strings.TrimPrefix(line, "Lane-Resolved:")))
+		case strings.HasPrefix(line, "Lane-Integration:"):
+			result.laneIntegration = append(result.laneIntegration, strings.TrimSpace(strings.TrimPrefix(line, "Lane-Integration:")))
 		}
 	}
 	return result
