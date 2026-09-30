@@ -46,10 +46,9 @@ func (e *publishEvidence) Verify(lane.ProofAttempt) error { return e.verified }
 // member's commit and the lane's listed integration commit.
 type publishBed struct {
 	*kernelBed
-	origin, seat  string
-	base, head    string
-	evidence      *publishEvidence
-	enrolledPlain string
+	origin, seat string
+	base, head   string
+	evidence     *publishEvidence
 }
 
 const publishBatch = "4gr18nm8t3nyev9sssda9jgtsq"

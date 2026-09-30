@@ -6,7 +6,6 @@ import (
 	"errors"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"slices"
@@ -688,71 +687,6 @@ func TestBatchProofInputsMovedIncludesEnginePaths(t *testing.T) {
 	if !batch.DecideMovedBase(record, []string{"metasystem/internal/other/x.go"}, "metasystem").Reopen {
 		t.Fatal("an engine path outside the selected manifest did not require a new proof")
 	}
-}
-
-func movedBatchGitFixture(t *testing.T) (root, peer, origin, baseCommit, baseTree, tip string) {
-	t.Helper()
-	base := t.TempDir()
-	origin, root, peer = filepath.Join(base, "origin.git"), filepath.Join(base, "landing"), filepath.Join(base, "peer")
-	// -b main is not cosmetic here. Without it the bare origin takes its initial
-	// branch from init.defaultBranch, which this host supplies and an isolated
-	// git configuration does not. The fixture then pushes main to an origin whose
-	// HEAD names master, and the clone below checks out nothing and still exits
-	// zero, so the failure surfaces later as a missing file in the peer tree.
-	if output, err := exec.Command("git", "init", "-q", "-b", "main", "--bare", origin).CombinedOutput(); err != nil {
-		t.Fatalf("init origin: %v: %s", err, output)
-	}
-	if output, err := exec.Command("git", "init", "-q", "-b", "main", root).CombinedOutput(); err != nil {
-		t.Fatalf("init landing: %v: %s", err, output)
-	}
-	runBatchFixtureGit(t, root, "config", "user.name", "Fixture")
-	runBatchFixtureGit(t, root, "config", "user.email", "fixture@example.com")
-	for path, contents := range map[string]string{"source/input.go": "base\n", "plans/goals/ledger.md": "base\n", "unit.txt": "base\n"} {
-		full := filepath.Join(root, filepath.FromSlash(path))
-		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(full, []byte(contents), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	runBatchFixtureGit(t, root, "add", ".")
-	runBatchFixtureGit(t, root, "commit", "-qm", "base")
-	runBatchFixtureGit(t, root, "remote", "add", "origin", origin)
-	runBatchFixtureGit(t, root, "push", "-q", "-u", "origin", "main")
-	baseCommit = strings.TrimSpace(runBatchFixtureGit(t, root, "rev-parse", "HEAD"))
-	baseTree = strings.TrimSpace(runBatchFixtureGit(t, root, "rev-parse", "HEAD^{tree}"))
-	if output, err := exec.Command("git", "clone", "-q", origin, peer).CombinedOutput(); err != nil {
-		t.Fatalf("clone peer: %v: %s", err, output)
-	}
-	runBatchFixtureGit(t, peer, "config", "user.name", "Peer")
-	runBatchFixtureGit(t, peer, "config", "user.email", "peer@example.com")
-	if err := batch.PrepareLandingBranch(root, "01j5x00000000000000000ba21", baseCommit); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(root, "unit.txt"), []byte("candidate\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	runBatchFixtureGit(t, root, "add", "unit.txt")
-	runBatchFixtureGit(t, root, "commit", "-qm", "candidate")
-	tip = strings.TrimSpace(runBatchFixtureGit(t, root, "rev-parse", "HEAD"))
-	if err := batch.PublishLandingBranch(root, "01j5x00000000000000000ba21", "", tip); err != nil {
-		t.Fatal(err)
-	}
-	return root, peer, origin, baseCommit, baseTree, tip
-}
-
-func runBatchFixtureGit(t *testing.T, root string, args ...string) string {
-	t.Helper()
-	commandArgs := append([]string{"-C", root}, args...)
-	if strings.HasSuffix(root, ".git") {
-		commandArgs = append([]string{"--git-dir", root}, args...)
-	}
-	output, err := exec.Command("git", commandArgs...).CombinedOutput()
-	if err != nil {
-		t.Fatalf("git %v: %v: %s", commandArgs, err, output)
-	}
-	return string(output)
 }
 
 func TestBatchMovedEffectsInventoryIsComplete(t *testing.T) {
