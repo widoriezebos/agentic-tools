@@ -50,7 +50,7 @@ func fakeTop(root string) func(string) (string, error) {
 		if withinPath(path, root) || withinPath(path, resolved) {
 			return root, nil
 		}
-		return "", fmt.Errorf("fatal: not a git repository: %s", path)
+		return "", notInRepository{"fatal: not a git repository: " + path}
 	}
 }
 
@@ -293,7 +293,7 @@ func TestIntentRepositorySelection(t *testing.T) {
 				return repository, nil
 			}
 		}
-		return "", fmt.Errorf("fatal: not a git repository: %s", path)
+		return "", notInRepository{"fatal: not a git repository: " + path}
 	}
 	owners := intentOwners{resolver: stateroot.NewResolver(top, noExecutable)}
 	selected := func(cwd string, args ...string) (string, *intentResult) {

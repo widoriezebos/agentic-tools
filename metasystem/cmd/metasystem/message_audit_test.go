@@ -75,7 +75,7 @@ var _ = enforceMessages(
 	"internal/helm",
 	"internal/humanauthority/remedy.go",
 	"internal/humanauthority/authority.go#Enroll",
-	"internal/humanauthority/authority.go#Prove",
+	"internal/humanauthority/outcome_error.go",
 )
 
 // messageLineBudget is the first line's length the rule aims at.
