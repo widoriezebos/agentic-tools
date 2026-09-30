@@ -979,7 +979,9 @@ func testVerifyTo(stdout, stderr io.Writer, request testrun.SelectionRequest, js
 	result, err := verifyRetainedTesting(request)
 	if err != nil {
 		printMovedProofInputsWithoutCandidateEngine(stderr, request)
-		printTestingRefusal(stderr, err, request)
+		// The internal verify and the landing path read these two lines as
+		// they always were.
+		printTestingRefusalAs(stderr, err, request, true)
 		return 1
 	}
 	if jsonOutput {
