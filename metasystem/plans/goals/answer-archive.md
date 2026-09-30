@@ -2,12 +2,12 @@
 
 - State: parked
 - Priority: 3
-- Sequence: 9
+- Sequence: 8
 - Intent: What: One permanent, append-only record of every answer you give the system (replies to questions, approvals, resets), each joined to the question it answered. Why: Your answers are the system's memory of what you decided. Today they would live only in a working inbox that can rotate away. Pros: Nothing you said is lost; you and every machine can list all answers in order. Cons: Only useful once the message gateway that collects answers exists; the record must be kept free of secrets.
 - Origin: main
 - Next step: Next: Nothing until fleet-channel-gateway lands (if that goal is abandoned, abandon this one with it). Then write the archive from the gateway's inbox as an append-only file synced with the other records, about four hours of work. Done when: one command lists every answer received, in order, each with its question and outcome, and rotating the inbox loses nothing.
 - OpenedAt: 2026-09-03T15:27:59Z
-- Revision: 21
+- Revision: 22
 - BudgetExceptions: 0
 - Parked: by=human:Wido at=2026-09-13T08:23:22Z because=Not now (2026-09-13 backlog consolidation, Wido's word): Wido's word 2026-09-03 as companion to fleet-channel-gateway; no archive writer exists and the gateway's inbox it harvests is unfinished, so park as not-now and re-queue (4h box) the day fleet-channel-gateway lands.
 
@@ -33,4 +33,5 @@ History:
 - 2026-09-13T08:22:31Z HEFP5WKYB8V4MWGW41R8JSH6VC-m1-c6925449 done actor=human:Wido targets=answer-archive,app-doctrine,app-guardrail-custody,app-guardrail-program,claude-delegate-scratch-cleanup,claude-denywrite-list-is-a-snapshot,continuous-self-improvement,counselor,cross-repo-guardrails,delegate-sandbox-cannot-run-the-beds,design-prohibition-is-role-scoped,effort-by-complexity-per-model,fable-effort-high,fixture-default-branch-assumption,follow-up-brief-cannot-cite-fresh-trunk-files,goal-suite-sits-on-the-default-test-timeout,hook-demands-what-landing-forbids,human-carried-landing,incident-proposal-drafting,integration-branch,land-verb-pruning,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,narrator-digests,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,runtime-limit-is-not-a-protocol-error,seam-declaration-convergence,shutdown-claims-more-than-it-stops,standing-validation,stop-message-truth,uncapped-delegate-fanout,watchdog-kill-observation-gap reason=priority-order from=3:10 to=3:9
 - 2026-09-13T08:23:22Z G1NPY2VZ5RY1YF7CR5CQF5201N-m1-c6925449 park actor=human:Wido targets=answer-archive reason=Not now (2026-09-13 backlog consolidation, Wido's word): Wido's word 2026-09-03 as companion to fleet-channel-gateway; no archive writer exists and the gateway's inbox it harvests is unfinished, so park as not-now and re-queue (4h box) the day fleet-channel-gateway lands.
 - 2026-09-30T18:47:31Z NBY5WA7QNJ6G2PNGJE3CW4PFPB-m1e-b6a4eb0a edit actor=human:wido targets=answer-archive
-Integrity: sha256=e014c7c16d5871cd4e4c5f7b8ea29988daeb7e9b84fc459a25c2104b3c8c6091
+- 2026-09-30T18:57:42Z EATDFDHH90W17M050BRZTK9FJ8-m1e-b6a4eb0a done actor=human:wido targets=answer-archive,app-doctrine,app-guardrail-custody,app-guardrail-program,claude-delegate-scratch-cleanup,claude-denywrite-list-is-a-snapshot,continuous-self-improvement,counselor,cross-repo-guardrails,defect-analysis-gate,delegate-sandbox-cannot-run-the-beds,design-prohibition-is-role-scoped,goal-scope-bounds,goal-suite-sits-on-the-default-test-timeout,hook-demands-what-landing-forbids,host-health-role,human-carried-landing,incident-proposal-drafting,integration-branch,land-verb-pruning,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,narrator-digests,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,same-process-succession,seam-declaration-convergence,set-priority-treats-an-oversize-sequence-as-last,standing-validation,steward-owned-execution,stop-message-truth,uncapped-delegate-fanout,verbs-match-intent,watchdog-kill-observation-gap reason=priority-order from=3:9 to=3:8
+Integrity: sha256=b5bdbe420ce43ad986125a9d4f3913395c9a4fe212070d5f9a3f7ab0dfdb5d63

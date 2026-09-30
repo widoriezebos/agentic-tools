@@ -2,12 +2,12 @@
 
 - State: queued
 - Priority: 3
-- Sequence: 25
+- Sequence: 24
 - Intent: What: The system turns what it observes about its own work into written improvement proposals, discusses them with the person, and ends each one as either a new backlog goal or a recorded drop with its reason. Why: Improvement ideas today depend on someone remembering them in a chat; they get lost, or the same idea is raised again and again. Pros: Ideas become visible, get a clear yes or no, and a dropped idea is not raised again. Cons: A proposal queue can grow faster than the person can review it, so the threshold between small items (straight to the backlog) and big ones (proposal first) must be sharp.
 - Origin: human
 - Next step: Next: Write a short design for the loop only: what feeds the proposal queue, what a proposal contains, where the person sees and answers it, and the two endings (scheduled as a goal, or dropped with a reason); reuse the existing drafts folder and leave metric computation to actionable-metrics. Done when: The design page is in plans/designs and a person has accepted it.
 - OpenedAt: 2026-08-24T13:27:11Z
-- Revision: 86
+- Revision: 87
 - Labels: custody
 - BudgetExceptions: 0
 
@@ -98,4 +98,5 @@ History:
 - 2026-09-30T18:46:47Z 5QH8C243C1NYW1YYCE0HV0MVS4-ui-bc2fda53 edit actor=human:Wido targets=continuous-self-improvement
 - 2026-09-30T18:55:56Z KTY8C75R4XFK9MCX3EV1BKHF1E-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,effort-by-complexity-per-model,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,paid-proof-authorization,precedent-index,reconciliation-guards,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:27 to=3:26
 - 2026-09-30T18:56:32Z NW1RJMGDWV7KMT7572PYEYFHXX-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,fixture-default-branch-assumption,goal-suite-sits-on-the-default-test-timeout,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,set-priority-treats-an-oversize-sequence-as-last,watchdog-kill-observation-gap reason=priority-order from=3:26 to=3:25
-Integrity: sha256=1acfcbe0d2c750c8f5915ac8cb30fed402e6d39faa5173dd1b3021c7309814e8
+- 2026-09-30T18:57:42Z EATDFDHH90W17M050BRZTK9FJ8-m1e-b6a4eb0a done actor=human:wido targets=answer-archive,app-doctrine,app-guardrail-custody,app-guardrail-program,claude-delegate-scratch-cleanup,claude-denywrite-list-is-a-snapshot,continuous-self-improvement,counselor,cross-repo-guardrails,defect-analysis-gate,delegate-sandbox-cannot-run-the-beds,design-prohibition-is-role-scoped,goal-scope-bounds,goal-suite-sits-on-the-default-test-timeout,hook-demands-what-landing-forbids,host-health-role,human-carried-landing,incident-proposal-drafting,integration-branch,land-verb-pruning,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,narrator-digests,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,same-process-succession,seam-declaration-convergence,set-priority-treats-an-oversize-sequence-as-last,standing-validation,steward-owned-execution,stop-message-truth,uncapped-delegate-fanout,verbs-match-intent,watchdog-kill-observation-gap reason=priority-order from=3:25 to=3:24
+Integrity: sha256=827b1f65c662bc9fa777d91d17cf4a86d9bcd05de296faaa32a78ed1384e57b6

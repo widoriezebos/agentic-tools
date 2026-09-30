@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 3
-- Sequence: 39
+- Sequence: 38
 - Risk: severity=1 novelty=1 exposure=2 accumulation=1 basis="severity 1: a refused reorder, no wrong ledger state; novelty 1: clamp a bound that already has an append form; exposure 2: every human or seat reorder that names a position; accumulation 1: each refusal is visible and retried"
 - Tier: 1
 - Intent: What: The goal prioritize command accepts a position beyond the end of the queue and puts the goal last, reporting the position it actually used. Why: Asking for position 90 in a queue of 62 is refused today, although the only sensible meaning is "last". It broke a batch of Wido's reorderings on 09-15. Pros: Fewer pointless refusals when reordering the backlog. Cons: A typo in a position moves a goal to the end instead of being caught; reporting the used position keeps that visible.
 - Origin: human
 - Next step: Next: In internal/goal/order.go, turn a position past the end into "last" and report the position used; keep refusing positions below 1; update order_test and the two UI tests that expect the refusal (ui/act/act_test.go:257 and ui/httpd/walkthrough/main.go:1580, so tell the ui seat). Done when: goal prioritize with sequence 999 puts the goal last, says which position it got, and the queue stays numbered 1 to N without gaps.
 - OpenedAt: 2026-09-15T06:06:03Z
-- Revision: 8
+- Revision: 9
 - BudgetExceptions: 0
 
 History:
@@ -21,4 +21,5 @@ History:
 - 2026-09-30T18:46:04Z NZJAXSP7D74BTZGZGQXE14GG3Z-m1e-b6a4eb0a edit actor=human:wido targets=set-priority-treats-an-oversize-sequence-as-last
 - 2026-09-30T18:55:56Z KTY8C75R4XFK9MCX3EV1BKHF1E-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,effort-by-complexity-per-model,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,paid-proof-authorization,precedent-index,reconciliation-guards,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:41 to=3:40
 - 2026-09-30T18:56:32Z NW1RJMGDWV7KMT7572PYEYFHXX-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,fixture-default-branch-assumption,goal-suite-sits-on-the-default-test-timeout,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,set-priority-treats-an-oversize-sequence-as-last,watchdog-kill-observation-gap reason=priority-order from=3:40 to=3:39
-Integrity: sha256=24b9d07c3e070d5ab089b357fb2213ca883c593ed64f6c9692770b732cd607db
+- 2026-09-30T18:57:42Z EATDFDHH90W17M050BRZTK9FJ8-m1e-b6a4eb0a done actor=human:wido targets=answer-archive,app-doctrine,app-guardrail-custody,app-guardrail-program,claude-delegate-scratch-cleanup,claude-denywrite-list-is-a-snapshot,continuous-self-improvement,counselor,cross-repo-guardrails,defect-analysis-gate,delegate-sandbox-cannot-run-the-beds,design-prohibition-is-role-scoped,goal-scope-bounds,goal-suite-sits-on-the-default-test-timeout,hook-demands-what-landing-forbids,host-health-role,human-carried-landing,incident-proposal-drafting,integration-branch,land-verb-pruning,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,narrator-digests,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,same-process-succession,seam-declaration-convergence,set-priority-treats-an-oversize-sequence-as-last,standing-validation,steward-owned-execution,stop-message-truth,uncapped-delegate-fanout,verbs-match-intent,watchdog-kill-observation-gap reason=priority-order from=3:39 to=3:38
+Integrity: sha256=3eadeb35d6616a37c09ae5efb80ab5fe11c8f4a1ccc027917212b0e641258c44

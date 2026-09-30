@@ -2,12 +2,12 @@
 
 - State: parked
 - Priority: 3
-- Sequence: 15
+- Sequence: 14
 - Intent: What: For each agent runtime, one source says what it can do; the capability check and the code that drives the runtime read the same declaration. Why: Today the two can disagree, and one reading function returns the same "false" for two different situations (the stream ended, or time ran out). Pros: Fewer surprises when a runtime is added or changed. Cons: Nobody has been hurt by this since August; it is tidying without a current failure.
 - Origin: main
 - Next step: Next: When it comes back, first make the reading function (internal/acp/driver.go, Next) return different results for "stream ended" and "time ran out", tested on both implementations; then add the missing capability field to the runtime registry and check the declaration against the driver. Done when: the capability check and the driver agree for every runtime, and the two end cases can be told apart.
 - OpenedAt: 2026-08-25T06:07:07Z
-- Revision: 47
+- Revision: 48
 - BudgetExceptions: 0
 - Parked: by=human:wido at=2026-09-30T18:43:46Z because=Parked: no failure seen since August. Bring it back when a caller misreads the stream-end result, or when a runtime's capability check disagrees with how its driver behaves.
 
@@ -59,4 +59,5 @@ History:
 - 2026-09-16T21:02:51Z HE021GFD8V1YPVBEXGSBFRHWV0-m1e-c6925449 set-priority actor=human:Wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,claude-delegate-scratch-cleanup,claude-denywrite-list-is-a-snapshot,continuous-self-improvement,counselor,cross-repo-guardrails,delegate-sandbox-cannot-run-the-beds,design-prohibition-is-role-scoped,effort-by-complexity-per-model,fixture-default-branch-assumption,goal-suite-sits-on-the-default-test-timeout,human-carried-landing,incident-proposal-drafting,integration-branch,land-verb-pruning,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,runtime-limit-is-not-a-protocol-error,seam-declaration-convergence,set-priority-treats-an-oversize-sequence-as-last,standing-validation,uncapped-delegate-fanout,watchdog-kill-observation-gap reason=priority-order subject=runtime-limit-is-not-a-protocol-error from=3:16 to=3:15 requested-sequence=54
 - 2026-09-30T18:43:46Z 0QNB0WRFYDEHC98J62SBSDSZP4-m1e-b6a4eb0a park actor=human:wido targets=seam-declaration-convergence reason=Parked: no failure seen since August. Bring it back when a caller misreads the stream-end result, or when a runtime's capability check disagrees with how its driver behaves.
 - 2026-09-30T18:45:59Z 6VGFACYVZ6E0D4Y0D3XYKAD34C-m1e-b6a4eb0a edit actor=human:wido targets=seam-declaration-convergence
-Integrity: sha256=fd334579bbd5510eeaf0441d6cee2f4aa1769aad9893da00e1a69f14114448d8
+- 2026-09-30T18:57:42Z EATDFDHH90W17M050BRZTK9FJ8-m1e-b6a4eb0a done actor=human:wido targets=answer-archive,app-doctrine,app-guardrail-custody,app-guardrail-program,claude-delegate-scratch-cleanup,claude-denywrite-list-is-a-snapshot,continuous-self-improvement,counselor,cross-repo-guardrails,defect-analysis-gate,delegate-sandbox-cannot-run-the-beds,design-prohibition-is-role-scoped,goal-scope-bounds,goal-suite-sits-on-the-default-test-timeout,hook-demands-what-landing-forbids,host-health-role,human-carried-landing,incident-proposal-drafting,integration-branch,land-verb-pruning,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,narrator-digests,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,same-process-succession,seam-declaration-convergence,set-priority-treats-an-oversize-sequence-as-last,standing-validation,steward-owned-execution,stop-message-truth,uncapped-delegate-fanout,verbs-match-intent,watchdog-kill-observation-gap reason=priority-order from=3:15 to=3:14
+Integrity: sha256=809ad46ef7beb5b47f3fa4f95f2cd2b23c0b91731aef02d2dbc32055412e31da

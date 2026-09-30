@@ -2,13 +2,13 @@
 
 - State: parked
 - Priority: 3
-- Sequence: 16
+- Sequence: 15
 - Tier: 3
 - Intent: What: You can fast-track a landing under your own close scrutiny, and the machine never refuses you. The command for this exists and works; what is left is bookkeeping in the list of refusals. Why: One landing refusal has no entry in that list, and eleven landing refusals have no recorded ruling on whether they may ever refuse a person. Pros: Closes the goal cleanly and makes "a person is never refused" checkable for landings. Cons: Needs your ruling on the eleven refusals.
 - Origin: human
 - Next step: Next: Add the missing register row for the tier-1 refusal (internal/landing/tierone.go) in internal/refusal/register.go; ask you to rule on the eleven landing codes in light of "humans are never denied a verb"; drop the old land.sh item (the script is gone). Then conclude, citing ce59b313 and ef296c39. Done when: the refusal-register audit has no open notes.
 - OpenedAt: 2026-09-04T10:56:02Z
-- Revision: 64
+- Revision: 65
 - Labels: governance
 - BudgetExceptions: 0
 - Sliced: machine=m3 lineage=mac-m3 revision=5 at=2026-09-04T14:47:24Z
@@ -79,4 +79,5 @@ History:
 - 2026-09-19T15:47:09Z 5WSAYM5EHE99BATECKJWV89TFY-m1e-c6925449 edit actor=human:Wido targets=human-carried-landing
 - 2026-09-19T15:47:15Z GKWA449NHM4F4Y7Q3G280V7HMP-m1e-c6925449 park actor=human:Wido targets=human-carried-landing reason=parked 2026-09-19 in Wido's name (his 16:40 CEST grant, "yes you are allowed to open / approve / whatever in my name while working on this mssion"; m1e sync 14): lower priority than his machine-ready target. Resume on Wido's ruling on the 11 refusal codes. Existing work: on main ef296c399, the refusal register (metasystem/internal/refusal/register.go), live. Left: about 100 lines: a register row for metasystem/internal/landing/tierone.go:85 and the tier-1 ShellRows in metasystem/scripts/agents/land.sh. No origin goal/human-carried-landing branch exists: nothing unlanded exists; the work below is all on main.
 - 2026-09-30T18:50:13Z 4JCZN52NZS59Y57E43JWH9X4W7-m1e-b6a4eb0a edit actor=human:wido targets=human-carried-landing
-Integrity: sha256=ce4014d245c2cea9713325de2b4ff51b390bc738f005dfe928692dd9a61c6ef5
+- 2026-09-30T18:57:42Z EATDFDHH90W17M050BRZTK9FJ8-m1e-b6a4eb0a done actor=human:wido targets=answer-archive,app-doctrine,app-guardrail-custody,app-guardrail-program,claude-delegate-scratch-cleanup,claude-denywrite-list-is-a-snapshot,continuous-self-improvement,counselor,cross-repo-guardrails,defect-analysis-gate,delegate-sandbox-cannot-run-the-beds,design-prohibition-is-role-scoped,goal-scope-bounds,goal-suite-sits-on-the-default-test-timeout,hook-demands-what-landing-forbids,host-health-role,human-carried-landing,incident-proposal-drafting,integration-branch,land-verb-pruning,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,narrator-digests,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,same-process-succession,seam-declaration-convergence,set-priority-treats-an-oversize-sequence-as-last,standing-validation,steward-owned-execution,stop-message-truth,uncapped-delegate-fanout,verbs-match-intent,watchdog-kill-observation-gap reason=priority-order from=3:16 to=3:15
+Integrity: sha256=a5e1ec00affc9b8766c655025cecf4c7095d16f329ce9265fd22910ced53aa2c
