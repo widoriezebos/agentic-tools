@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/shellquote"
 )
 
 // GuardOwners are what the pre-commit guard reads.
@@ -54,6 +55,10 @@ var (
 // refusal, the agent-commit wrapper proof and the new-plan acknowledgment.
 // root is the metasystem installation root; the working directory of git is
 // the commit's work tree. It returns the hook's exit status.
+//
+// A refusal is the two lines of "Messages a Person Reads": what is wrong with
+// this commit, and the one command that resolves it. A helm notice (the
+// helm let a check through) is printed only when the commit then proceeds.
 func Guard(owners GuardOwners, root, workTree string, stdout, stderr io.Writer) int {
 	// Enrollment's execution probe: the fence proves it RUNS by answering the
 	// nonce and exiting distinctly, so no downstream hook does real work.
@@ -61,6 +66,24 @@ func Guard(owners GuardOwners, root, workTree string, stdout, stderr io.Writer) 
 		fmt.Fprintf(stdout, "guard-probe-ack %s\n", owners.Probe)
 		return GuardProbeStatus
 	}
+	var notices []string
+	status := guard(owners, root, workTree, stderr, &notices)
+	if status == 0 {
+		for _, notice := range notices {
+			fmt.Fprintln(stderr, notice)
+		}
+	}
+	return status
+}
+
+// guardChecks names each check the helm may let through, as a person reads
+// it.
+var guardChecks = map[string]string{"wrapper-fence": "agent-commit check", "new-plan-acknowledgment": "new-plan check"}
+
+// allowNewPlan is the variable that acknowledges a deliberate new plan.
+const allowNewPlan = "METASYSTEM_ALLOW_NEW_PLAN"
+
+func guard(owners GuardOwners, root, workTree string, stderr io.Writer, notices *[]string) int {
 	git := func(args ...string) GitResult { return owners.Git(GitCall{Dir: workTree, Args: args}) }
 	if git("rev-parse", "--show-toplevel").Code != 0 {
 		return 0
@@ -71,7 +94,7 @@ func Guard(owners GuardOwners, root, workTree string, stdout, stderr io.Writer) 
 	// and lets the guard go on.
 	admits := helmAdmission(owners, workTree, git)
 	yield := func(gate string) bool {
-		state, commonDir, admitted := admits()
+		state, _, admitted := admits()
 		if !admitted {
 			return false
 		}
@@ -82,7 +105,11 @@ func Guard(owners GuardOwners, root, workTree string, stdout, stderr io.Writer) 
 		if owners.HelmYield != nil {
 			owners.HelmYield(workTree, helm.Yield{Boundary: "pre-commit", Gate: gate, Would: "refuse", Subject: helmSubject(git, class, err)})
 		}
-		fmt.Fprintf(stderr, "pre-commit guard: HUMAN AT THE HELM (%s): the %s yields; recorded in %s\n", who, gate, filepath.Join(commonDir, "metasystem", "helm-yields.log"))
+		actor := state.By + "'s"
+		if state.Malformed != "" {
+			actor = "the helm's"
+		}
+		*notices = append(*notices, fmt.Sprintf("HUMAN AT THE HELM (%s): this commit passed the %s as %s act", who, guardChecks[gate], actor))
 		return true
 	}
 	if err != nil || class == "" {
@@ -94,15 +121,15 @@ func Guard(owners GuardOwners, root, workTree string, stdout, stderr io.Writer) 
 		}
 		line := fmt.Sprintf("schemaVersion=1 boundary=pre-commit tree=%s verdict=would-refuse code=classifier-unavailable", tree)
 		if appendErr := owners.AppendObservation(root, line); appendErr != nil {
-			fmt.Fprintf(stderr, "pre-commit guard: classifier unavailable and %v\n", appendErr)
+			fmt.Fprintf(stderr, "the commit hook couldn't tell who is committing, nor log that (%v); the commit goes ahead\n", appendErr)
 		}
 	} else if class != "HUMAN" {
 		// Human commits are sovereign; an agent commit that could damage
 		// what the wrapper protects must run under the live landing path
 		// that minted the wrapper token.
 		if reason := wrapperFenced(git, root); reason != "" && !owners.WrapperToken(TokenPath(root), owners.CallerPID) && !yield("wrapper-fence") {
-			fmt.Fprintln(stderr, "pre-commit guard: an agent commit goes through metasystem work land; the live wrapper ancestry token is missing")
-			fmt.Fprintf(stderr, "  fenced because %s; land it with metasystem work land, or commit on a feature branch of a clone no seat holds\n", reason)
+			fmt.Fprintf(stderr, "an agent commits here only through metasystem work land (%s), so the commit was refused\n", reason)
+			fmt.Fprintln(stderr, "run: metasystem work land --message FILE --staged")
 			return 1
 		}
 	}
@@ -118,20 +145,19 @@ func Guard(owners GuardOwners, root, workTree string, stdout, stderr io.Writer) 
 		}
 	}
 	if len(ledger) > 0 {
-		fmt.Fprintln(stderr, "pre-commit guard: goal files change only through goal verbs; hand edits go through goal sync:")
-		for _, path := range ledger {
-			fmt.Fprintf(stderr, "  %s\n", path)
-		}
+		fmt.Fprintf(stderr, "goal files change only through goal commands, and this commit edits %s\n", firstPath(ledger))
+		fmt.Fprintf(stderr, "run: git restore --staged %s  (then make the change with a metasystem goal command)\n", strings.Join(quoted(ledger), " "))
 		return 1
 	}
-	backups := false
+	var backups []string
 	for _, path := range strings.Split(strings.TrimRight(string(git("diff", "--cached", "--name-only", "--diff-filter=AM").Stdout), "\n"), "\n") {
 		if strings.HasSuffix(path, ".orig") {
-			fmt.Fprintf(stderr, "pre-commit guard: refusing %s: patch backups are never tracked\n", path)
-			backups = true
+			backups = append(backups, path)
 		}
 	}
-	if backups {
+	if len(backups) > 0 {
+		fmt.Fprintf(stderr, "%s is a patch backup (.orig), which is never committed\n", firstPath(backups))
+		fmt.Fprintf(stderr, "run: git restore --staged %s  (then repeat the commit)\n", strings.Join(quoted(backups), " "))
 		return 1
 	}
 	if owners.AllowNewPlan {
@@ -152,14 +178,18 @@ func Guard(owners GuardOwners, root, workTree string, stdout, stderr io.Writer) 
 	if len(added) == 0 || yield("new-plan-acknowledgment") {
 		return 0
 	}
-	fmt.Fprintln(stderr, "pre-commit guard: refusing to commit NEW plan file(s):")
-	for _, path := range added {
-		fmt.Fprintf(stderr, "  %s\n", path)
-	}
-	fmt.Fprintln(stderr, "A new plan in the staged set is how a peer session's file gets committed")
-	fmt.Fprintln(stderr, "by accident (0b9ca1b). If this addition is deliberate, acknowledge it:")
-	fmt.Fprintln(stderr, "  METASYSTEM_ALLOW_NEW_PLAN=1 git commit ...")
+	fmt.Fprintf(stderr, "this commit adds a new plan, %s, and a new plan is often another session's file taken along\n", firstPath(added))
+	fmt.Fprintf(stderr, "run: %s=1 git commit ...  (if adding it is deliberate; else git restore --staged it)\n", allowNewPlan)
 	return 1
+}
+
+// quoted is paths as shell words.
+func quoted(paths []string) []string {
+	words := make([]string, len(paths))
+	for index, path := range paths {
+		words[index] = shellquote.Token(path)
+	}
+	return words
 }
 
 // helmAdmission answers, once per guard run, whether the helm admits this

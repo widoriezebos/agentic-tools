@@ -35,7 +35,9 @@ func holderStepTaker(cwd string, owners intentOwners) func(goal.HolderStep) stri
 		runIntentIn(command, []string{step.Goal, "--json"}, &stdout, &stderr, cwd, owners)
 		var result intentResult
 		if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
-			result = intentResult{Outcome: intentFailed, Summary: "work " + verb + " answered nothing the Stop can read: " + strings.TrimSpace(stderr.String())}
+			result = intentResult{Outcome: intentFailed, Summary: "work " + verb + " gave no answer the Stop could read",
+				next: []string{"metasystem", "work", verb, step.Goal}, nextReason: "shows its answer",
+				Details: []string{strings.TrimSpace(stderr.String())}}
 		}
 		return holderStepLine(step, result)
 	}
@@ -61,7 +63,10 @@ func holderStepLine(step goal.HolderStep, result intentResult) string {
 		line += " [" + code + "]"
 	}
 	line += ": " + result.Summary
-	if result.Decision != "" {
+	switch {
+	case result.Next != nil && len(result.Next.Argv) > 0:
+		line += "; a person carries past it: " + shellCommand(result.Next.Argv)
+	case result.Decision != "":
 		line += "; a person carries past it: " + result.Decision
 	}
 	return line

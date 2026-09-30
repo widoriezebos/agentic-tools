@@ -4,11 +4,13 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/landpath"
 )
 
 // The landing gate at every form of work land (g1-s70 D2).
@@ -76,7 +78,13 @@ func (inv *intentInvocation) pushGate() func(root, goalID string) error {
 			gate = productionIntentLandingGate
 		}
 		_, err := gate(inv, goalID, inv.intentBranchTip(goalID))
-		return err
+		if err == nil {
+			return nil
+		}
+		// The landing path tells the person the gate's two lines.
+		result := landingGateRefusal(nil, goalID, err)
+		return &landpath.GateRefusal{Reason: strings.TrimSuffix(result.Summary, ", so nothing was landed"), Run: result.next,
+			Then: result.nextReason, Details: result.Details, Cause: err.Error()}
 	}
 }
 
@@ -108,15 +116,43 @@ func (inv *intentInvocation) admitLanding(targets []intentTarget, goalID, tip st
 	return nil
 }
 
+// landingGateRefusal is the gate's refusal in the two lines a person reads:
+// why the goal may not land now, and the one command that lets it; the
+// gate's code and its full reason are details.
 func landingGateRefusal(targets []intentTarget, goalID string, err error) intentResult {
 	var refusal *goal.GateRefusal
 	if !errors.As(err, &refusal) {
-		return intentResult{Targets: targets, Outcome: intentFailed, code: 1, Summary: "the landing gate cannot be read: " + err.Error() + "; nothing was landed"}
+		return intentResult{Targets: targets, Outcome: intentFailed, code: 1,
+			Summary: "whether goal " + goalID + " may land can't be read now, so nothing was landed",
+			next:    []string{"metasystem", "goal", "sync"}, nextReason: "then repeat this command",
+			Details: []string{"the landing gate could not be read: " + err.Error()}}
 	}
-	result := intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: refusal.Reason + "; nothing was landed",
-		Data: map[string]any{"code": refusal.Code}}
-	if refusal.Code == goal.GateWaitsForHuman {
-		result.Decision = "metasystem goal land-without-sitting " + goalID + " --reason TEXT"
+	result := intentResult{Targets: targets, Outcome: intentRefused, code: 1, Data: map[string]any{"code": refusal.Code},
+		Details: []string{"refused because: " + refusal.Error()}}
+	command := ""
+	if at := strings.LastIndex(refusal.Reason, "metasystem goal "); at >= 0 {
+		command = strings.TrimSpace(refusal.Reason[at:])
+	}
+	switch refusal.Code {
+	case goal.GateHeldBySitting:
+		held, _, _ := strings.Cut(refusal.Reason, ";")
+		result.Summary = held + ", so nothing was landed"
+		result.nextReason = "once the review is over; then repeat this command"
+	case goal.GateWaitsForHuman:
+		why := refusal.Reason
+		if _, after, found := strings.Cut(why, "waits for a person: "); found {
+			why, _, _ = strings.Cut(after, "; a person reviews")
+		}
+		result.Summary = "goal " + goalID + " waits for a person's word before it lands: " + why
+		result.nextReason = "a person lets it land; or review it with metasystem goal review " + goalID
+		if command == "" {
+			command = "metasystem goal land-without-sitting " + goalID + " --reason TEXT"
+		}
+	default:
+		result.Summary = refusal.Reason + ", so nothing was landed"
+	}
+	if command != "" {
+		result.next = shellWords(command)
 	}
 	return result
 }

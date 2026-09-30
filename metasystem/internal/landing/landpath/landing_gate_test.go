@@ -36,7 +36,7 @@ func TestTheStagedFormReadsTheGateImmediatelyBeforeItsPush(t *testing.T) {
 	driverPathMode(b)
 	asked := gateAnswers(b, errors.New(gateHeld))
 	b.expect(b.land(LandRequest{Pathspecs: []string{"payload.txt"}, Goal: "fx", GoalSet: true, SkipTransport: true}), 1,
-		"!! STEP FAILED: landing gate before push (exit 1)", gateHeld)
+		"step failed: landing gate before push (exit 1)", gateHeld)
 	if len(b.git.called("push")) != 0 || len(*asked) != 1 || (*asked)[0] != "fx" {
 		t.Fatalf("a hold recorded after admission did not stop the push: pushes=%d asked=%v", len(b.git.called("push")), *asked)
 	}
@@ -87,8 +87,8 @@ func TestEveryPushRetryReadsTheGateAgain(t *testing.T) {
 	if *releasedPushes != 2 || len(*asked) != 2 {
 		t.Fatalf("the released retry: pushes=%d gate reads=%d, want two of each", *releasedPushes, len(*asked))
 	}
-	driverInOrder(t, released.stdout.String(), "== STEP: landing gate before push", "== STEP: push origin (attempt 1 of 3)",
-		"== STEP: verify shared testing proof after retry rebase", "== STEP: landing gate before push", "== STEP: push origin (attempt 2 of 3)")
+	driverInOrder(t, released.stdout.String(), "step: landing gate before push", "step: push origin (attempt 1 of 3)",
+		"step: verify shared testing proof after retry rebase", "step: landing gate before push", "step: push origin (attempt 2 of 3)")
 }
 
 func TestTheCarriedFormReadsTheGateBeforeItsSinglePush(t *testing.T) {
@@ -99,7 +99,7 @@ func TestTheCarriedFormReadsTheGateBeforeItsSinglePush(t *testing.T) {
 	if killed != "" {
 		t.Fatalf("killed at %s", killed)
 	}
-	c.expect(status, 1, "!! STEP FAILED: landing gate before push (exit 1)", gateHeld)
+	c.expect(status, 1, "step failed: landing gate before push (exit 1)", gateHeld)
 	if c.pushes() != 0 || len(*asked) != 1 || (*asked)[0] != "g1" {
 		t.Fatalf("the exceptional form pushed past a hold: pushes=%d asked=%v", c.pushes(), *asked)
 	}

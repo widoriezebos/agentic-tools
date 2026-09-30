@@ -103,7 +103,7 @@ func TestReproofForwardsDeclarationsToTheEvaluator(t *testing.T) {
 			})
 			request := c.request
 			request.Goal, request.GoalSet, request.OwnerLineage = "fx", true, "human"
-			b.expect(b.commit(request), 1, "would-refuse code="+c.code, "staged paths:\n  README\n", "--chain <root-job-id>", "fix the Change-Class classification")
+			b.expect(b.commit(request), 1, "would-refuse code="+c.code, "staged paths:\n  README\n", "--chain J", "its Change-Class is corrected")
 			if len(*requests) != 1 {
 				t.Fatalf("observed %d times", len(*requests))
 			}
@@ -137,7 +137,7 @@ func TestReproofVendoredInstallationObservesItsSubtree(t *testing.T) {
 	})
 	b.expect(b.commit(CommitRequest{Goal: "fx", GoalSet: true, DirectFix: "register-carriage", OwnerLineage: "human"}), 1,
 		"would-refuse code=path-unclassified", detail,
-		"classify every named path in the engine's path-class policy (internal/pathclass/path-classes.txt, engine source), rebuild the engine, then retry")
+		"add them to internal/pathclass/path-classes.txt, rebuild with go run ./cmd/devgate build, then repeat this command")
 	if len(*requests) != 1 || (*requests)[0].Tree != "sub1" {
 		t.Fatalf("vendored observation %+v", *requests)
 	}
@@ -155,9 +155,9 @@ func TestReproofEvaluatorFailureRefusesAgentAndStampsHuman(t *testing.T) {
 	b.epoch = epochOf(1)
 	b.git.on("diff --cached --name-only -z --", func(GitCall) GitResult { return ok("README\x00") })
 	reproofObserve(b, failing)
-	b.expect(b.commit(CommitRequest{OwnerLineage: "fixture-lineage"}), 1, "landing evaluator failed",
-		"would-refuse code=evaluator-unavailable", "  README\n", "restore or rebuild the proof-built landing evaluator",
-		"--chain <root-job-id>", "fix the Change-Class classification")
+	b.expect(b.commit(CommitRequest{OwnerLineage: "fixture-lineage"}), 1, "the landing check crashed or gave no answer",
+		"would-refuse code=evaluator-unavailable", "  README\n", "run: go run ./cmd/devgate build",
+		"--chain J", "its Change-Class is corrected")
 	if len(b.git.called("commit")) != 0 {
 		t.Fatal("evaluator failure created an agent commit")
 	}
@@ -195,7 +195,7 @@ func TestReproofUnboundInputsAreNamed(t *testing.T) {
 				}
 				return kept, nil
 			}
-			b.expect(b.commit(CommitRequest{HeldEpoch: "human"}), 1, "not what the commit would record", "  "+c.path+"\n")
+			b.expect(b.commit(CommitRequest{HeldEpoch: "human"}), 1, "files on disk differ from the staged change: "+c.path, "  "+c.path+"\n")
 			if strings.Contains(b.stderr.String(), "artifacts/agents/x.log") || len(b.git.called("commit")) != 0 {
 				t.Fatalf("projection or commit: %s %v", b.stderr.String(), b.git.calls)
 			}
@@ -220,7 +220,7 @@ func TestReproofStagedDirectorySymlinksRefuse(t *testing.T) {
 		b.git.on("ls-files -s -z", func(GitCall) GitResult {
 			return ok("120000 abc 0\t" + prefix + "docs\x00120000 abc 0\t" + prefix + "internal/gaterun\x00120000 abc 0\t" + prefix + "skills/linked\x00")
 		})
-		b.expect(b.commit(CommitRequest{HeldEpoch: "human"}), 1, "a critical proof input is a symlink",
+		b.expect(b.commit(CommitRequest{HeldEpoch: "human"}), 1, "a staged file the tests read is a symlink",
 			"  "+prefix+"docs\n", "  "+prefix+"internal/gaterun\n")
 		if strings.Contains(b.stderr.String(), "skills/linked") {
 			t.Fatalf("a non-critical symlink was refused: %s", b.stderr.String())
@@ -237,7 +237,7 @@ func TestReproofAssumeUnchangedEntriesRefuse(t *testing.T) {
 	t.Parallel()
 	b := newBed(t)
 	b.git.on("ls-files -v -z", func(GitCall) GitResult { return ok("h internal/a.go\x00H README\x00") })
-	b.expect(b.commit(CommitRequest{HeldEpoch: "human"}), 1, "assume-unchanged or skip-worktree entries hide proof inputs", "  internal/a.go\n")
+	b.expect(b.commit(CommitRequest{HeldEpoch: "human"}), 1, "Git is told to ignore changes to a file the tests read: internal/a.go", "  internal/a.go\n")
 	if strings.Contains(b.stderr.String(), "README") {
 		t.Fatalf("a plain tracked entry was named: %s", b.stderr.String())
 	}
@@ -251,11 +251,11 @@ func TestReproofGoalDeclarationRefusals(t *testing.T) {
 	b := newBed(t)
 	b.epoch = epochOf(1)
 	b.expect(b.commit(CommitRequest{Goal: "", GoalSet: true, DirectFix: "register-carriage", OwnerLineage: "L"}), 2,
-		"commit refused: --goal must be a lowercase kebab identifier of at most 100 characters")
+		"\"\" is not a goal id")
 	b = newBed(t)
 	b.epoch = epochOf(1)
 	b.expect(b.commit(CommitRequest{Goal: "fx", GoalSet: true, DirectFix: "register-carriage", OwnerLineage: "L", MessageFile: "-"}), 2,
-		"commit refused: -F - is an unscannable commit message source")
+		"the commit message must be a file, not standard input")
 	if len(b.git.called("commit")) != 0 || b.log.has("token") {
 		t.Fatalf("a refused declaration reached an effect: %v", b.log.calls)
 	}
@@ -272,7 +272,7 @@ func TestReproofChangedGoalItemRollsBack(t *testing.T) {
 		return ok(strings.ReplaceAll(b.git.message, "Goal-Item: fx", "Goal-Item: victim") + "\n")
 	})
 	b.expect(b.commit(CommitRequest{Goal: "fx", GoalSet: true, DirectFix: "register-carriage", OwnerLineage: "L"}), 1,
-		"final commit message did not contain exactly one byte-exact Goal-Item")
+		"its message didn't end up with exactly one Goal-Item: line")
 	if len(b.git.called("reset --soft h0")) != 1 {
 		t.Fatalf("not rolled back softly: %v", b.git.calls)
 	}

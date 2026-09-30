@@ -61,16 +61,16 @@ func TestDriverPushRetryRecoversOneMovingOriginRejection(t *testing.T) {
 		t.Fatalf("push attempts = %d, want the rejection plus one retry", pushes)
 	}
 	driverInOrder(t, b.stdout.String(),
-		"== STEP: push origin (attempt 1 of 3)",
-		"-- retryable rejection: push origin (attempt 1 of 3) (exit 1)",
+		"step: push origin (attempt 1 of 3)",
+		"retryable rejection: push origin (attempt 1 of 3) (exit 1)",
 		"[rejected] (fetch first)",
-		"-- origin moved during push; fetching and rebasing before retry 2 of 3",
-		"== STEP: fetch origin after push attempt 1",
-		"== STEP: rebase onto origin/main after push attempt 1",
-		"== STEP: goal held at the rebased base",
-		"== STEP: verify shared testing proof after retry rebase",
-		"== STEP: push origin (attempt 2 of 3)",
-		"== STEP: sync transport")
+		"origin moved during push; fetching and rebasing before retry 2 of 3",
+		"step: fetch origin after push attempt 1",
+		"step: rebase onto origin/main after push attempt 1",
+		"step: goal held at the rebased base",
+		"step: verify shared testing proof after retry rebase",
+		"step: push origin (attempt 2 of 3)",
+		"step: sync transport")
 	if strings.Contains(b.stdout.String(), "attempt 3 of 3") {
 		t.Fatalf("a landed push was retried:\n%s", b.stdout.String())
 	}
@@ -108,11 +108,11 @@ func TestDriverStepFailureSurfacesTheFailingCodeAndStops(t *testing.T) {
 		return "output-reference verb=" + verb + " path=artifacts/agents/output/land-1.log", nil
 	}
 	b.expect(b.land(LandRequest{Pathspecs: []string{"payload.txt"}, SkipTransport: true}), 73,
-		"!! STEP FAILED: fetch origin (exit 73)", "fixture fetch broke with exit 73", "output-reference verb=land")
+		"step failed: fetch origin (exit 73)", "fixture fetch broke with exit 73", "output-reference verb=land")
 	if len(spills) != 1 || !strings.HasPrefix(spills[0], "land.log:") || !strings.Contains(spills[0], "fixture fetch broke with exit 73") {
 		t.Fatalf("retained logs = %q, want exactly one land log holding the failure", spills)
 	}
-	if strings.Contains(b.stdout.String(), "== STEP: rebase onto origin/main") || b.log.has("advance") ||
+	if strings.Contains(b.stdout.String(), "step: rebase onto origin/main") || b.log.has("advance") ||
 		len(b.git.called("push")) != 0 || b.log.has("transport") {
 		t.Fatalf("the chain continued after fetch failed:\n%s\n%v", b.stdout.String(), b.log.calls)
 	}
@@ -165,8 +165,8 @@ func TestDriverNewPlanAcknowledgmentIsTheFlagNotTheEnvironment(t *testing.T) {
 	driverPathMode(b)
 	guardedCommit(b)
 	b.expect(b.land(LandRequest{Pathspecs: []string{"plans/new.md"}, SkipTransport: true}), 1,
-		"pre-commit guard: refusing to commit NEW plan file(s):\n  plans/new.md", "!! STEP FAILED: commit")
-	if b.git.commits != 0 || strings.Contains(b.stdout.String(), "== STEP: fetch origin") || len(b.git.called("fetch")) != 0 {
+		"this commit adds a new plan, plans/new.md", "step failed: commit")
+	if b.git.commits != 0 || strings.Contains(b.stdout.String(), "step: fetch origin") || len(b.git.called("fetch")) != 0 {
 		t.Fatalf("the refused commit continued:\n%s", b.stdout.String())
 	}
 
@@ -230,7 +230,7 @@ func TestDriverReceiptLineRefusalGivesTheIndexBack(t *testing.T) {
 			driverPathMode(b)
 			decide(b, &c.paths)
 			b.expect(b.land(LandRequest{Pathspecs: c.paths, Goal: "fx", GoalSet: true, SkipTransport: true}), 2,
-				"land refused: "+detail, "!! STEP FAILED: receipt line for the landing (exit 2)")
+				"the change touches code but adds no receipt line for it, so nothing was landed", detail, "step failed: receipt line for the landing (exit 2)")
 			if b.git.commits != 0 || len(b.git.called("reset -q -- payload.txt")) != 1 {
 				t.Fatalf("refused landing: commits=%d calls=%v", b.git.commits, b.git.calls)
 			}
@@ -243,7 +243,7 @@ func TestDriverReceiptLineRefusalGivesTheIndexBack(t *testing.T) {
 		b := newBed(t)
 		staged := []string{"payload.txt"}
 		decide(b, &staged)
-		b.expect(b.land(LandRequest{StagedOnly: true, Goal: "fx", GoalSet: true, SkipTransport: true}), 2, "land refused: "+detail)
+		b.expect(b.land(LandRequest{StagedOnly: true, Goal: "fx", GoalSet: true, SkipTransport: true}), 2, "adds no receipt line for it", detail)
 		if len(b.git.called("reset")) != 0 {
 			t.Fatalf("a staged-only refusal reset the caller's index: %v", b.git.calls)
 		}
@@ -254,7 +254,7 @@ func TestDriverReceiptLineRefusalGivesTheIndexBack(t *testing.T) {
 			driverPathMode(b)
 			decide(b, &paths)
 			b.expect(b.land(LandRequest{Pathspecs: paths, Goal: "fx", GoalSet: true, SkipTransport: true}), 0)
-			driverInOrder(t, b.stdout.String(), "== STEP: receipt line for the landing", "-- ok", "== STEP: commit")
+			driverInOrder(t, b.stdout.String(), "step: receipt line for the landing", "  ok", "step: commit")
 			if b.git.commits != 1 || len(b.git.called("add -- "+strings.Join(paths, " "))) != 1 || len(b.git.called("reset")) != 0 {
 				t.Fatalf("landing with its line: commits=%d calls=%v", b.git.commits, b.git.calls)
 			}
@@ -265,7 +265,7 @@ func TestDriverReceiptLineRefusalGivesTheIndexBack(t *testing.T) {
 		b.owners.ReceiptLine = func(string, string, string, string) (ReceiptDecision, error) {
 			return ReceiptDecision{}, fmt.Errorf("ledger unreadable")
 		}
-		b.expect(b.land(LandRequest{StagedOnly: true, SkipTransport: true}), 1, "landing receipt-line: ledger unreadable")
+		b.expect(b.land(LandRequest{StagedOnly: true, SkipTransport: true}), 1, "the receipt record couldn't be read, so nothing was landed", "ledger unreadable")
 		if b.git.commits != 0 {
 			t.Fatal("a landing whose receipt line could not be judged committed")
 		}
@@ -305,12 +305,12 @@ func TestDriverTierOneReceiptsTheStagedCandidateBeforeTheCommit(t *testing.T) {
 	if request.DirectFix != "tier-1" || request.RootJob != "tier-one-root" || request.TestReceipt != want || request.Goal != "fx" || request.Tree != "sub1" {
 		t.Fatalf("commit boundary observed %+v, want tier-1, root job tier-one-root and receipt %s", request, want)
 	}
-	driverInOrder(t, b.stdout.String(), "== STEP: tier-1 test receipt", "-- ok", "== STEP: commit")
+	driverInOrder(t, b.stdout.String(), "step: tier-1 test receipt", "  ok", "step: commit")
 
 	b = newBed(t)
 	b.owners.TestReceipt = func(_, _, _ string, stdout, _ io.Writer) int { fmt.Fprintln(stdout, "command failed"); return 5 }
 	b.expect(b.land(LandRequest{StagedOnly: true, Goal: "fx", GoalSet: true, DirectFix: "tier-1", RootJob: "r", Tests: "false"}), 5,
-		"!! STEP FAILED: tier-1 test receipt (exit 5)", "command failed")
+		"step failed: tier-1 test receipt (exit 5)", "command failed")
 	if b.git.commits != 0 {
 		t.Fatal("a failed tier-1 receipt reached the commit")
 	}
@@ -325,8 +325,8 @@ func TestDriverFullWidthChainReceiptGates(t *testing.T) {
 	t.Parallel()
 	b := newBed(t)
 	b.expect(b.land(LandRequest{StagedOnly: true, Chain: "full-chain", Goal: "fx", GoalSet: true, Tests: "true", TestReceipt: "receipt.json", SkipTransport: true}), 2,
-		"land refused: --tests and --test-receipt cannot be combined; remove --test-receipt for a tier-1 landing, or remove --tests for a receipted chain landing\n"+Usage)
-	if strings.Contains(b.stdout.String(), "== STEP:") || len(b.git.calls) != 0 {
+		"--tests and --test-receipt don't go together, so nothing was landed\n", Usage)
+	if strings.Contains(b.stdout.String(), "step:") || len(b.git.calls) != 0 {
 		t.Fatalf("conflicting receipt inputs started landing work:\n%s\n%v", b.stdout.String(), b.git.calls)
 	}
 
@@ -338,8 +338,8 @@ func TestDriverFullWidthChainReceiptGates(t *testing.T) {
 		return "full"
 	}
 	b.expect(b.land(LandRequest{StagedOnly: true, Chain: "full-chain", Goal: "fx", GoalSet: true, SkipTransport: true}), 2,
-		"land refused: chain full-chain requires sufficient schema-2 testing evidence")
-	if strings.Contains(b.stdout.String(), "== STEP:") || len(b.git.calls) != 0 {
+		"chain full-chain needs its full test run's receipt")
+	if strings.Contains(b.stdout.String(), "step:") || len(b.git.calls) != 0 {
 		t.Fatalf("a missing receipt reached verification:\n%s", b.stdout.String())
 	}
 
@@ -347,9 +347,9 @@ func TestDriverFullWidthChainReceiptGates(t *testing.T) {
 	b.owners.JobGateWidth = func(string, string) string { return "full" }
 	other := driverWriteReceipt(b, "other.json", `{"schemaVersion":2,"tree":"t0"}`)
 	b.expect(b.land(LandRequest{StagedOnly: true, Chain: "full-chain", Goal: "fx", GoalSet: true, TestReceipt: other, SkipTransport: true}), 2,
-		"land refused: the receipt at "+other+" names tree t0 but the staged candidate is t1; make the receipt against this exact candidate",
-		"!! STEP FAILED: test receipt for staged candidate (exit 2)")
-	if strings.Contains(b.stdout.String(), "== STEP: commit") || b.git.commits != 0 {
+		"the test receipt is for other files than the staged change", "the receipt at "+other+" names tree t0 but the staged candidate is t1",
+		"step failed: test receipt for staged candidate (exit 2)")
+	if strings.Contains(b.stdout.String(), "step: commit") || b.git.commits != 0 {
 		t.Fatalf("a mismatched receipt reached the commit:\n%s", b.stdout.String())
 	}
 
@@ -384,9 +384,9 @@ func TestDriverStagingDriftRefusesBeforeTheCommit(t *testing.T) {
 	for _, c := range []struct {
 		name, drift, text string
 	}{
-		{"unstaged product", "unstaged\t M\tpayload.txt\n", "land refused: unstaged changes remain after staging; transport requires a clean tree after commit\n  unstaged\t M\tpayload.txt"},
-		{"rewritten register", "register-not-append\t M\tmemory/receipts.log\n", "land refused: unstaged changes remain after staging; transport requires a clean tree after commit\n  register-not-append\t M\tmemory/receipts.log"},
-		{"untracked path", "untracked\t??\tnotes.txt\n", "land refused: untracked paths remain after staging; transport requires a clean tree after commit\n  untracked\t??\tnotes.txt"},
+		{"unstaged product", "unstaged\t M\tpayload.txt\n", "other changed files would stay behind uncommitted: payload.txt\nrun: git status --short"},
+		{"rewritten register", "register-not-append\t M\tmemory/receipts.log\n", "other changed files would stay behind uncommitted: memory/receipts.log"},
+		{"untracked path", "untracked\t??\tnotes.txt\n", "untracked changes remain after staging; the landing needs a clean checkout after its commit:\n  untracked\t??\tnotes.txt"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			b := newBed(t)
@@ -398,8 +398,8 @@ func TestDriverStagingDriftRefusesBeforeTheCommit(t *testing.T) {
 				return 1
 			}
 			b.expect(b.land(LandRequest{StagedOnly: true, Chain: "full-chain-2", Goal: "fx", GoalSet: true, SkipTransport: true}), 2,
-				c.text, "!! STEP FAILED: stage caller paths (exit 2)")
-			if strings.Contains(b.stdout.String(), "== STEP: commit") || b.git.commits != 0 {
+				c.text, "step failed: stage caller paths (exit 2)")
+			if strings.Contains(b.stdout.String(), "step: commit") || b.git.commits != 0 {
 				t.Fatalf("drift reached the commit:\n%s", b.stdout.String())
 			}
 		})
@@ -421,8 +421,8 @@ func TestDriverStagingDriftRefusesBeforeTheCommit(t *testing.T) {
 		return 0
 	}
 	b.expect(b.land(LandRequest{StagedOnly: true, SkipTransport: true}), 1,
-		"land refused: commit succeeded but the tree is not clean, so transport will not start\nunstaged\t M\tpayload.txt",
-		"!! STEP FAILED: verify clean after commit (exit 1)")
+		"committed, but other files are still changed on disk, so nothing was pushed", "unstaged\t M\tpayload.txt",
+		"step failed: verify clean after commit (exit 1)")
 	if b.git.commits != 1 || len(b.git.called("fetch")) != 0 {
 		t.Fatalf("an unclean tree after commit went on: %v", b.git.calls)
 	}
@@ -441,8 +441,8 @@ func TestDriverContendedRegisterStopsAtTheRebase(t *testing.T) {
 	refusal := "advance refused: advance-register-contended: records/narrator-digest.log " + strings.Repeat("a", 40)
 	b.owners.Advance = func(_, _ string, stdout, _ io.Writer) int { fmt.Fprintln(stdout, refusal); return 1 }
 	b.expect(b.land(LandRequest{Pathspecs: []string{"memory/receipts.log"}, Goal: "fx", GoalSet: true, DirectFix: "register-carriage", SkipTransport: true}), 1,
-		"!! STEP FAILED: rebase onto origin/main (exit 1)", refusal)
-	driverInOrder(t, b.stdout.String(), "== STEP: commit", "== STEP: fetch origin", "== STEP: rebase onto origin/main")
+		"step failed: rebase onto origin/main (exit 1)", refusal)
+	driverInOrder(t, b.stdout.String(), "step: commit", "step: fetch origin", "step: rebase onto origin/main")
 	if b.git.commits != 1 || len(b.git.called("push")) != 0 || b.log.has("held") {
 		t.Fatalf("contended register: commits=%d calls=%v log=%v", b.git.commits, b.git.calls, b.log.calls)
 	}
@@ -474,7 +474,7 @@ func TestDriverBrainFenceRefusesEveryLandingAct(t *testing.T) {
 				b := newBed(t)
 				fence(b)
 				b.expect(b.land(request), 2, detail)
-				if len(b.git.calls) != 0 || strings.Contains(b.stdout.String(), "== STEP") || b.log.has("require-holder") || !b.log.has("brain-fence act=land") {
+				if len(b.git.calls) != 0 || strings.Contains(b.stdout.String(), "step: ") || b.log.has("require-holder") || !b.log.has("brain-fence act=land") {
 					t.Fatalf("a fenced landing had effects: %v %v\n%s", b.git.calls, b.log.calls, b.stdout.String())
 				}
 			})
@@ -504,7 +504,7 @@ func TestDriverBrainFenceRefusesEveryLandingAct(t *testing.T) {
 	}
 	b := newBed(t)
 	b.owners.BrainFence = func(string, string) (string, error) { return "", fmt.Errorf("unreadable") }
-	b.expect(b.land(LandRequest{StagedOnly: true}), 1, "land refused: brain fence failed")
+	b.expect(b.land(LandRequest{StagedOnly: true}), 1, "this checkout's role couldn't be read, so nothing was landed")
 }
 
 // TestDriverUndeclaredNodeLandsGoalFreeCarriage ports
@@ -580,7 +580,7 @@ func TestDriverWorkspaceReceiptAcrossPeerMoves(t *testing.T) {
 		workspaces(b, "w-before", "w-after")
 		path := driverWriteReceipt(b, "receipt.json", receiptBody)
 		b.expect(b.land(LandRequest{StagedOnly: true, Chain: "records-move-chain", Goal: "fx", GoalSet: true, TestReceipt: path, SkipTransport: true}), 0,
-			"== STEP: test receipt for staged candidate")
+			"step: test receipt for staged candidate")
 		if b.log.count("verify tree=t1 goal=fx") != 3 || strings.Contains(b.stdout.String()+b.stderr.String(), "proof-input-moved-after-receipt") {
 			t.Fatalf("records-only move: %v\n%s", b.log.calls, b.stderr.String())
 		}
@@ -598,7 +598,7 @@ func TestDriverWorkspaceReceiptAcrossPeerMoves(t *testing.T) {
 		}
 		path := driverWriteReceipt(b, "receipt.json", receiptBody)
 		b.expect(b.land(LandRequest{StagedOnly: true, Chain: "ledger-move-chain", Goal: "fx", GoalSet: true, TestReceipt: path, SkipTransport: true}), 2,
-			"land refused: the receipt at "+path+" names tree t0 but the staged candidate is t1; make the receipt against this exact candidate",
+			"the test receipt is for other files than the staged change", "the receipt at "+path+" names tree t0 but the staged candidate is t1",
 			"proof-input-moved-after-receipt: group policy-protection", "moved declared paths: payload.txt")
 		if strings.Contains(b.stderr.String(), "verify line 12\n") || b.git.commits != 0 {
 			t.Fatalf("more than twenty verifier lines or a commit:\n%s", b.stderr.String())
@@ -617,7 +617,7 @@ func TestDriverWorkspaceReceiptAcrossPeerMoves(t *testing.T) {
 			return 1
 		}
 		b.expect(b.land(LandRequest{StagedOnly: true, Chain: "input-move-chain", Goal: "fx", GoalSet: true, TestReceipt: path, SkipTransport: true}), 1,
-			"!! STEP FAILED: verify shared testing proof after rebase (exit 1)", "proof-input-moved-after-receipt: group policy-protection",
+			"step failed: verify shared testing proof after rebase (exit 1)", "proof-input-moved-after-receipt: group policy-protection",
 			"scripts/application-input.txt")
 		if b.git.commits != 1 || len(b.git.called("push")) != 0 {
 			t.Fatalf("a moved proof input reached origin: %v", b.git.calls)
@@ -668,7 +668,7 @@ func TestDriverLegacyReceiptIsExactOnly(t *testing.T) {
 	}
 	path := driverWriteReceipt(b, "receipt.json", `{"tree":"sub0"}`)
 	b.expect(b.land(LandRequest{StagedOnly: true, Chain: "cutover-moved-chain", Goal: "fx", GoalSet: true, TestReceipt: path, SkipTransport: true}), 2,
-		"land refused: the receipt at "+path+" names tree sub0 but the staged candidate is sub1; make the receipt against this exact candidate")
+		"the test receipt is for other files than the staged change", "the receipt at "+path+" names tree sub0 but the staged candidate is sub1")
 	if b.git.commits != 0 {
 		t.Fatal("a mismatched old receipt committed")
 	}
@@ -680,7 +680,7 @@ func TestDriverLegacyReceiptIsExactOnly(t *testing.T) {
 				path = driverWriteReceipt(b, "receipt.json", body)
 			}
 			b.expect(b.land(LandRequest{StagedOnly: true, Chain: "c1", TestReceipt: path, SkipTransport: true}), 2,
-				"land refused: the receipt at "+path+" cannot be read as a landing receipt ("+name+")")
+				"the test receipt can't be read ("+name+"), so nothing was landed", "receipt: "+path)
 		})
 	}
 }

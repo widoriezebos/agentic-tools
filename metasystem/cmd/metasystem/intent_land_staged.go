@@ -1,11 +1,13 @@
 package main
 
 import (
-	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
@@ -38,16 +40,17 @@ var stagedLandingFlags = []intentFlag{
 // stage (or take the staged set), commit through the commit boundary, rebase
 // onto origin, prove, push and mirror.
 func runIntentLandStaged(inv *intentInvocation) int {
-	refuse := func(summary string) int {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: summary + "; nothing was done",
-			Decision: "metasystem work land [G] --message FILE (--staged | --path P...)"})
+	refuse := func(summary, decision string) int {
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: summary + ", so nothing was done", Decision: decision,
+			Details: []string{"usage: metasystem work land [G] --message FILE (--staged | --path P...)"}})
 	}
 	if len(inv.input.args) > 1 {
-		return refuse("work land --message takes at most one goal")
+		return refuse("work land --message lands for at most one goal, and "+strconv.Itoa(len(inv.input.args))+" were named",
+			"name one goal: metasystem work land "+inv.input.args[0]+" --message FILE ...")
 	}
 	for _, other := range append([]string{"through", "queue-only", "lineage", "using-exception"}, exceptionOptions...) {
 		if inv.input.has(other) {
-			return refuse("--" + other + " belongs to landing a goal's reviewed work, not a hand-made change")
+			return refuse("--"+other+" is for landing a goal's reviewed work, not a change made by hand", "drop --"+other+", or drop --message to land the goal's work")
 		}
 	}
 	request := landpath.LandRequest{
@@ -70,7 +73,7 @@ func runIntentLandStaged(inv *intentInvocation) int {
 	if request.MessageFile == "-" {
 		message, err := io.ReadAll(os.Stdin)
 		if err != nil {
-			return refuse("the commit message cannot be read from standard input: " + err.Error())
+			return refuse("the commit message couldn't be read from standard input ("+err.Error()+")", "pass the message as a file: --message FILE")
 		}
 		request.Message = message
 	} else if !filepath.IsAbs(request.MessageFile) {
@@ -86,8 +89,8 @@ func runIntentLandStaged(inv *intentInvocation) int {
 	layout, err := inv.owners.resolver.ResolveLayout(path)
 	if err != nil {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2,
-			Summary:  notAnInstallation(path, err),
-			Decision: "run this inside the repository, or name it with --repo PATH"})
+			Summary: notAnInstallation(path, err),
+			next:    append(withoutOption(inv.typedArgv(), "repo"), "--repo", "PATH"), nextReason: "names the repository; or run it inside one"})
 	}
 	request.Root = layout.InstallationRoot
 	owners := landingPathOwners()
@@ -112,11 +115,10 @@ func runIntentLandStaged(inv *intentInvocation) int {
 			owners.ReleaseLanded = func(commit string) { inv.releaseStagedLanding(request.Goal, commit) }
 		}
 	}
-	stdout, stderr := inv.stdout, inv.stderr
-	var captured bytes.Buffer
-	if inv.input.switched("json") {
-		stdout, stderr = &captured, &captured
-	}
+	// The landing path's step log and each refusal's background are the
+	// result's details; its stop is the result's two lines.
+	run := &landingRun{}
+	request.Stop = &run.stop
 	targets := []intentTarget{}
 	if request.GoalSet {
 		targets = append(targets, intentTarget{Kind: "goal", ID: request.Goal})
@@ -132,10 +134,10 @@ func runIntentLandStaged(inv *intentInvocation) int {
 			return inv.render(*refused)
 		}
 		if configured {
-			result := inv.landChange(request, owners, landingRoot, targets, stdout, stderr)
+			result := inv.landChange(request, owners, landingRoot, targets, run)
 			if inv.input.switched("json") {
 				if data, ok := result.Data.(map[string]any); ok {
-					data["output"] = captured.String()
+					data["output"] = run.output()
 				}
 			}
 			return inv.render(result)
@@ -143,42 +145,74 @@ func runIntentLandStaged(inv *intentInvocation) int {
 	}
 	var status int
 	if inv.input.switched("local") {
-		status = landStagedLocally(request, stdout, stderr)
+		if refused := localLandingOptions(request, inv.typedArgv()); refused != nil {
+			return inv.render(*refused)
+		}
+		status = landStagedLocally(request, &run.details, &run.told)
 	} else {
-		status = inv.delivery().runLandPath(owners, request, stdout, stderr)
+		status = inv.delivery().runLandPath(owners, request, &run.details, &run.told)
 	}
 	data := map[string]any{"exitCode": status}
 	if inv.input.switched("json") {
-		data["output"] = captured.String()
+		data["output"] = run.output()
 	}
 	if status != 0 {
-		return inv.render(intentResult{Outcome: intentRefused, code: status, Targets: targets, Data: data,
-			Summary: fmt.Sprintf("the landing stopped with exit %d; the lines above name the cause", status)})
+		return inv.render(run.stopped(intentResult{Outcome: intentRefused, code: status, Targets: targets, Data: data}, status, inv.typedArgv()))
 	}
 	head := strings.TrimSpace(string(landingPathGit(landpath.GitCall{Dir: request.Root, Args: []string{"rev-parse", "HEAD"}}).Stdout))
 	data["commit"] = head
-	return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: data,
-		Summary: fmt.Sprintf("landed %s", head)})
+	summary := fmt.Sprintf("landed %s", head)
+	if inv.input.switched("local") {
+		summary = fmt.Sprintf("committed %s locally; nothing was pushed", shortCommit(head))
+	}
+	return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: data, Summary: summary,
+		text: run.extraLines(), Details: run.detailLines()})
+}
+
+// localLandingOptions refuses --local with options it does not take: it
+// commits exactly the staged set and publishes nothing.
+func localLandingOptions(request landpath.LandRequest, argv []string) *intentResult {
+	if request.StagedOnly && len(request.Pathspecs) == 0 && request.Tests == "" && !request.SkipTransport {
+		return nil
+	}
+	return &intentResult{Outcome: intentRefused, code: 2,
+		Summary: "--local commits exactly what is staged: use --staged, without --path, --tests or --skip-transport",
+		next:    localArgv(argv)}
+}
+
+// localArgv is a --local landing as it runs: --staged, and none of the
+// options --local does not take.
+func localArgv(argv []string) []string {
+	for _, option := range []string{"path", "tests"} {
+		argv = withoutOption(argv, option)
+	}
+	argv = slices.DeleteFunc(argv, func(word string) bool { return word == "--skip-transport" })
+	if !slices.Contains(argv, "--staged") {
+		argv = append(argv, "--staged")
+	}
+	return argv
 }
 
 // landStagedLocally commits the staged set through the commit boundary alone:
 // the former commit.sh without --push, for a caller that publishes itself.
-func landStagedLocally(request landpath.LandRequest, stdout, stderr io.Writer) int {
-	if !request.StagedOnly || len(request.Pathspecs) > 0 || request.Tests != "" || request.SkipTransport {
-		fmt.Fprintln(stderr, "land refused: --local commits exactly the staged set: use --staged, without --path, --tests or --skip-transport")
-		return 2
-	}
+// Its step log and refusal background go to details; a stop's two lines to
+// told and request.Stop.
+func landStagedLocally(request landpath.LandRequest, details, told io.Writer) int {
 	message := request.MessageFile
 	if message == "-" {
 		file, done, err := diskstore.ScratchFile("metasystem-local-commit-message-*")
-		if err != nil {
-			fmt.Fprintln(stderr, err)
-			return 1
+		if err == nil {
+			defer done()
+			_, writeErr := file.Write(request.Message)
+			if closeErr := file.Close(); writeErr != nil || closeErr != nil {
+				err = errors.Join(writeErr, closeErr)
+			}
 		}
-		defer done()
-		_, writeErr := file.Write(request.Message)
-		if closeErr := file.Close(); writeErr != nil || closeErr != nil {
-			fmt.Fprintln(stderr, "land refused: the commit message cannot be written")
+		if err != nil {
+			fmt.Fprintln(details, err)
+			if request.Stop != nil {
+				request.Stop.Reason, request.Stop.Then = "the commit message couldn't be saved for the commit, so nothing was committed", "pass the message as a file: --message FILE"
+			}
 			return 1
 		}
 		message = file.Name()
@@ -186,5 +220,5 @@ func landStagedLocally(request landpath.LandRequest, stdout, stderr io.Writer) i
 	return landpath.Commit(landingPathOwners(), landpath.CommitRequest{Root: request.Root, Chain: request.Chain,
 		DirectFix: request.DirectFix, RevertOf: request.RevertOf, Goal: request.Goal, GoalSet: request.GoalSet,
 		RootJob: request.RootJob, TestReceipt: request.TestReceipt, Recertification: request.Recertification,
-		MessageFile: message, OwnerLineage: request.OwnerLineage, AllowNewPlan: request.AllowNewPlan}, stdout, stderr)
+		MessageFile: message, OwnerLineage: request.OwnerLineage, AllowNewPlan: request.AllowNewPlan, Stop: request.Stop}, details, told)
 }

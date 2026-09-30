@@ -1,6 +1,7 @@
 package landpath
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -11,64 +12,62 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ledgerfence"
 )
 
-// refuseAgent writes an agent refusal for the deciding verdict: its cause,
-// the staged paths, the repair and the lawful exits.
+// refuseAgent refuses an agent's commit for the deciding verdict: what is
+// wrong with this change and the one thing to do, in plain words; the
+// verdict, its code, the staged paths and the declarations that would make
+// the change lawful are details.
 func (b *boundary) refuseAgent(decided decision) int {
 	staged := splitNUL(b.git(b.request.Root, "diff", "--cached", "--name-only", "-z", "--").Stdout)
-	repair := ""
+	goal := b.request.Goal
+	if goal == "" {
+		goal = "G"
+	}
+	reason, then := "the landing check refused this change, so nothing was committed", "fix what the check refused (--verbose shows its answer), then repeat this command"
+	var run []string
 	switch decided.code {
 	case "evaluator-unavailable":
-		fmt.Fprintf(b.stderr, "agent commit refused: the landing evaluator failed or returned an incomplete decision (%s)\n", decided.verdict)
-		repair = "restore or rebuild the proof-built landing evaluator, then retry"
+		reason, run, then = "the landing check crashed or gave no answer, so nothing was committed", []string{"go", "run", "./cmd/devgate", "build"}, "rebuilds it; "+repeat
 	case "path-unclassified":
-		fmt.Fprintf(b.stderr, "agent commit refused: the landing contains an unclassified path (%s)\n", decided.verdict)
-		if decided.refusal != "" {
-			fmt.Fprintln(b.stderr, decided.refusal)
-		}
-		repair = "classify every named path in the engine's path-class policy (internal/pathclass/path-classes.txt, engine source), rebuild the engine, then retry"
+		reason, then = "the change has files no landing rule covers yet, so nothing was committed",
+			"add them to internal/pathclass/path-classes.txt, rebuild with go run ./cmd/devgate build, then repeat this command"
 	case "ledger-path-not-goal-verb":
-		fmt.Fprintf(b.stderr, "agent commit refused: ledger paths change only through goal verbs (%s)\n", decided.verdict)
-		repair = "use the owning goal verb instead of the commit wrapper"
+		reason, then = "the change edits goal files, which change only through goal commands, so nothing was committed",
+			"unstage the goal files and make that change with a metasystem goal command"
 	case "runtime-path-refused":
-		fmt.Fprintf(b.stderr, "agent commit refused: runtime paths cannot be landed (%s)\n", decided.verdict)
-		repair = "remove runtime output from the staged tree"
+		reason, then = "the change includes files the running system writes, which are never landed", "unstage them, then repeat this command"
 	case "exact-revert-record-refused":
-		fmt.Fprintf(b.stderr, "agent commit refused: exact revert cannot delete or truncate records (%s)\n", decided.verdict)
-		repair = "restore the record and carry a forward record instead"
+		reason, then = "a revert may not delete or shorten records, so nothing was committed", "put the record back and add a new record instead"
 	case "goal-item-not-held":
-		fmt.Fprintf(b.stderr, "agent commit refused: the Goal-Item is not held by this machine and lineage (%s)\n", decided.verdict)
-		repair = "use a goal claimed by this machine and lineage"
+		reason, run, then = "goal "+goal+" is not claimed by this session, so nothing was committed",
+			[]string{"metasystem", "goal", "claim", goal, "--take-over", "--reason", "TEXT"}, "a person takes it over; then repeat this command"
 	case "goal-revision-moved":
-		fmt.Fprintf(b.stderr, "agent commit refused: the Goal-Item's claim revision moved since this chain was dispatched (%s)\n", decided.verdict)
-		repair = "the work belongs to a claim that no longer exists; re-dispatch under the current claim, or abandon the work"
+		reason, then = "goal "+goal+" was claimed again after this work started, so the work is no longer its own",
+			"start the work again under the current claim, or drop it"
 	case "goal-binding-missing":
-		fmt.Fprintf(b.stderr, "agent commit refused: this landing names no goal and the ledger is not Goal-free (%s)\n", decided.verdict)
-		repair = "name the held goal with --goal <id>; a goal-bound chain lands under the goal it was dispatched for"
+		reason, then = "this change names no goal, and landings here need one", "name the goal: metasystem work land G --message FILE ..."
 	case "goal-binding-mismatch":
-		fmt.Fprintf(b.stderr, "agent commit refused: the chain was dispatched under a different goal than --goal names (%s)\n", decided.verdict)
-		repair = "land the chain under the goal it was dispatched for"
+		reason, then = "this work was started for another goal than "+goal+", so nothing was committed", "land it under the goal it was started for"
 	case "record-not-owned":
-		fmt.Fprintf(b.stderr, "agent commit refused: the staged record is not owned by this landing (%s)\n", decided.verdict)
-		repair = "carry only new records or records owned by the held goal or actor"
+		reason, then = "the change edits a record another goal owns, so nothing was committed", "unstage that record, or land it from the goal that owns it"
 	case "register-carriage-policy-unreadable", "direct-fix-policy-unreadable":
-		fmt.Fprintf(b.stderr, "agent commit refused: the base path-class policy is unreadable (%s)\n", decided.verdict)
-		repair = "repair the path-class manifest through a reviewed implementation chain"
+		reason, then = "the landing rules on this branch can't be read, so nothing was committed",
+			"repair internal/pathclass/path-classes.txt through a reviewed change"
 	case "register-carriage-not-append-only":
-		fmt.Fprintf(b.stderr, "agent commit refused: register carriage rewrote or deleted existing record bytes (%s)\n", decided.verdict)
-		repair = "restore existing bytes and append complete lines only"
-	default:
-		fmt.Fprintf(b.stderr, "agent commit refused: landing verdict %s\n", decided.verdict)
+		reason, then = "the change rewrites or deletes lines of an append-only record; only new lines may be added",
+			"put the existing lines back, keep only the appended ones, then repeat this command"
 	}
-	fmt.Fprintln(b.stderr, "staged paths:")
-	b.listPaths(staged)
-	if repair != "" {
-		fmt.Fprintln(b.stderr, repair)
+	details := []string{"verdict: " + decided.verdict}
+	if decided.refusal != "" {
+		details = append(details, decided.refusal)
 	}
-	fmt.Fprintln(b.stderr, "lawful classification exits: declare the reviewed implementation chain with --chain <root-job-id>, declare the attested branch commit with --attested <commit>, or fix the Change-Class classification and retry")
+	details = append(details, "staged paths:")
+	details = append(details, pathLines(staged)...)
+	details = append(details, "an agent's change also lands when it declares its reviewed chain (--chain J) or attested commit (--attested C), or when its Change-Class is corrected")
+	status := 1
 	if b.request.Attested != "" {
-		return 3
+		status = 3
 	}
-	return 1
+	return b.stop(status, reason, run, then, details...)
 }
 
 // carriedTrailers are the carried facts the boundary stamps.
@@ -95,12 +94,12 @@ func (b *boundary) carriedFacts(decided decision, judge Judge, settledTree strin
 		!strings.Contains(decided.provenance, " opid="+request.Carried+" ") ||
 		!strings.Contains(decided.provenance, " past="+request.CarriedPast+" ") ||
 		!strings.Contains(decided.provenance, " ledger="+request.LedgerTip+" ") {
-		return facts, b.refuse(3, "carried landing asks: the deciding observation does not bind the requested word, refusal, and ledger")
+		return facts, b.stop(3, "the landing check's answer doesn't match this exception, so nothing was committed", nil,
+			"record the exception again, then repeat this command", "the deciding observation does not bind the requested word, refusal, and ledger")
 	}
 	workspace, err := judge.Workspace(request.Root, settledTree)
 	if err != nil {
-		fmt.Fprintln(b.stderr, err)
-		return facts, b.refuse(1, "agent commit refused: the carried workspace projection is unreadable")
+		return facts, b.failed(1, "the files this exception covers can't be read, so nothing was committed", err)
 	}
 	facts.workspace = workspace
 	encoded, status := judge.VerifyCarried(request.Root, settledTree, request.Goal)
@@ -111,22 +110,25 @@ func (b *boundary) carriedFacts(decided decision, judge Judge, settledTree strin
 			FailingGroups *[]string `json:"failingGroups"`
 		} `json:"delivery"`
 	}
+	unreadable := "the test results for this change can't be read, so nothing was committed"
+	testRun := []string{"metasystem", "test", "run", "--goal", request.Goal}
 	if json.Unmarshal(encoded, &result) != nil || result.Delivery.Sufficient == nil {
-		return facts, b.refuse(3, "test verify failed: no structured delivery result; no word carries an unverified battery; repair the testing tool or its evidence and rerun")
+		return facts, b.stop(3, unreadable, testRun, repeat,
+			"test verify gave no structured delivery result; an exception never carries unread test results")
 	}
 	if *result.Delivery.Sufficient {
 		if status != 0 {
-			return facts, b.refuse(1, "agent commit refused: test verify returned success evidence with a failing process status")
+			return facts, b.stop(1, unreadable, testRun, repeat, "test verify returned success evidence with a failing process status")
 		}
 		facts.battery = "green"
 		return facts, 0
 	}
 	facts.battery = "red"
 	if result.Delivery.MissingGroups == nil {
-		return facts, b.refuse(1, "agent commit refused: test verify returned an unreadable missing-groups list")
+		return facts, b.stop(1, unreadable, testRun, repeat, "test verify returned an unreadable missing-groups list")
 	}
 	if result.Delivery.FailingGroups == nil {
-		return facts, b.refuse(1, "agent commit refused: test verify returned an unreadable failing-groups list")
+		return facts, b.stop(1, unreadable, testRun, repeat, "test verify returned an unreadable failing-groups list")
 	}
 	facts.missing, facts.failing = groupList(*result.Delivery.MissingGroups), groupList(*result.Delivery.FailingGroups)
 	return facts, 0
@@ -215,20 +217,26 @@ func (b *boundary) commit(decided decision, carried carriedTrailers, actor strin
 	}
 	args = append(args, "-F", request.MessageFile)
 	committed := b.owners.Git(GitCall{Dir: request.Root, Args: args, Env: b.commitEnvironment()})
-	b.stdout.Write(committed.Stdout)
-	b.stderr.Write(committed.Stderr)
+	b.details.Write(committed.Stdout)
 	if committed.Code != 0 {
+		code := committed.Code
+		if code < 0 {
+			code = 1
+		}
 		// A composer enrolled before the engine guard runs the deleted
 		// pre-commit-guard.sh and refuses every commit without naming a fix;
 		// the refusal a person meets names it (rule H1).
 		if strings.Contains(string(committed.Stderr), ledgerfence.RetiredComposerRefusal) {
-			fmt.Fprintln(b.stderr, "commit refused: "+ledgerfence.RetiredComposerRemedy)
+			return b.stop(code, "an old pre-commit hook refuses every commit here, so nothing was committed", nil,
+				ledgerfence.RetiredComposerRemedy, string(committed.Stderr))
 		}
-		if committed.Code < 0 {
-			return 1
-		}
-		return committed.Code
+		// git's own refusal (a pre-commit hook's, say) already speaks to the
+		// person: it is the reason.
+		b.stderr.Write(committed.Stderr)
+		b.stopped.said("git commit refused the change: "+oneLine(string(committed.Stderr)), nil, "")
+		return code
 	}
+	b.details.Write(committed.Stderr)
 	landedTree := strings.TrimSpace(string(b.git(request.Root, "rev-parse", "HEAD^{tree}").Stdout))
 	message := string(b.git(request.Root, "log", "-1", "--format=%B").Stdout)
 	message = strings.TrimSuffix(message, "\n")
@@ -286,15 +294,20 @@ func (b *boundary) commit(decided decision, carried carriedTrailers, actor strin
 		}
 		switch {
 		case landedTree != b.provedTree:
-			fmt.Fprintln(b.stderr, "agent commit refused: the commit recorded a tree the static re-proof never judged (content selection beyond the index); the commit was rolled back — stage the exact bytes and commit them plainly")
+			return b.stop(1, "the commit was undone: it recorded other files than the ones checked", nil,
+				"stage exactly the change, without commit options that pick files, then repeat this command",
+				"the commit recorded a tree the landing check never judged (content selected beyond the index)")
 		case postTrailer != "":
-			fmt.Fprintf(b.stderr, "agent commit refused: the final commit message did not contain exactly one byte-exact Goal-Item stamped by --goal; the commit was rolled back; expected exactly one %s trailer, found %d\n", postTrailer, postCount)
+			return b.stop(1, fmt.Sprintf("the commit was undone: its message ended up with %d %s: lines instead of one", postCount, postTrailer), nil,
+				"remove "+postTrailer+": lines from the message (the landing adds them), then repeat this command",
+				fmt.Sprintf("expected exactly one %s trailer, found %d", postTrailer, postCount))
 		case carriedFailed:
-			fmt.Fprintf(b.stderr, "agent commit refused: the final commit message failed the carried-trailer postcondition (%s); the commit was rolled back\n", carriedDetail)
+			return b.stop(1, "the commit was undone: the exception's lines in its message came out wrong", nil,
+				"remove Carr* lines from the message, then repeat this command", "carried-trailer postcondition: "+carriedDetail)
 		default:
-			fmt.Fprintln(b.stderr, "agent commit refused: the final commit message did not contain exactly one byte-exact Goal-Item stamped by --goal; the commit was rolled back")
+			return b.stop(1, "the commit was undone: its message didn't end up with exactly one Goal-Item: line", nil,
+				"remove Goal-Item: lines from the message (the landing adds it), then repeat this command")
 		}
-		return 1
 	}
 	if request.Push {
 		if status := b.push(); status != 0 {
@@ -313,32 +326,39 @@ func (b *boundary) push() int {
 	root := b.request.Root
 	symbolic := b.git(root, "symbolic-ref", "--short", "HEAD")
 	if symbolic.Code != 0 {
-		b.stderr.Write(symbolic.Stderr)
-		return b.refuse(1, "landing push refused: HEAD is not on a branch")
+		return b.stop(1, "committed, but not pushed: this checkout isn't on a branch", []string{"git", "switch", "main"},
+			"then push the commit", string(symbolic.Stderr))
 	}
 	branch := strings.TrimSpace(string(symbolic.Stdout))
 	if fetched := b.git(root, "fetch", "--quiet", "origin", "+refs/heads/"+branch+":refs/remotes/origin/"+branch); fetched.Code != 0 {
-		b.stderr.Write(fetched.Stderr)
-		return b.refuse(1, "landing push refused: origin could not be fetched; the commit stands locally")
+		return b.stop(1, "committed, but not pushed: origin couldn't be reached", []string{"git", "fetch", "origin", branch},
+			"once it works, push the commit", string(fetched.Stderr))
 	}
-	if status := b.owners.Held(root, "refs/remotes/origin/"+branch, "HEAD", "origin", "refs/heads/"+branch, b.stdout, b.stderr); status != 0 {
-		return 1
+	var held bytes.Buffer
+	if status := b.owners.Held(root, "refs/remotes/origin/"+branch, "HEAD", "origin", "refs/heads/"+branch, &held, &held); status != 0 {
+		return b.stop(1, "committed, but not pushed: the goal is no longer this checkout's to land", nil, "check the goal with metasystem goal show (--verbose shows why)", held.String())
 	}
+	writeDetails(b.details, held.String())
 	pushed := b.git(root, "push", "origin", branch)
-	b.stdout.Write(pushed.Stdout)
-	b.stderr.Write(pushed.Stderr)
+	b.details.Write(pushed.Stdout)
 	if pushed.Code != 0 {
-		return b.refuse(1, "landing push failed at origin; the commit stands locally — resolve and push both remotes")
+		return b.stop(1, "committed, but origin refused the push: "+oneLine(string(pushed.Stderr)), []string{"git", "push", "origin", branch},
+			"after resolving it; then push transport too", string(pushed.Stderr))
 	}
+	b.details.Write(pushed.Stderr)
 	remotes := b.git(root, "remote")
 	for _, remote := range strings.Split(string(remotes.Stdout), "\n") {
 		if remote != "transport" {
 			continue
 		}
 		// Transport receives origin's ref, never the local branch.
-		if b.owners.SyncTransport(root, branch, b.stdout, b.stderr) != 0 {
-			return b.refuse(1, "landing push failed at transport with origin already pushed; resolve the transport remote, then mirror origin to it: git fetch origin %s && git push transport refs/remotes/origin/%s:refs/heads/%s", branch, branch, branch)
+		var synced bytes.Buffer
+		if b.owners.SyncTransport(root, branch, &synced, &synced) != 0 {
+			return b.stop(1, "pushed to origin, but the transport copy couldn't be updated",
+				[]string{"git", "push", "transport", "refs/remotes/origin/" + branch + ":refs/heads/" + branch}, "after resolving the transport remote",
+				synced.String())
 		}
+		writeDetails(b.details, synced.String())
 	}
 	return 0
 }
@@ -349,7 +369,7 @@ func (b *boundary) weigh() {
 	root := b.request.Root
 	numstat := b.git(root, "show", "--no-renames", "--numstat", "-z", "--format=", "HEAD")
 	short := strings.TrimSpace(string(b.git(root, "rev-parse", "--short", "HEAD").Stdout))
-	if numstat.Code != 0 || b.owners.WeightAdd(root, short, b.prefix, b.request.Goal, numstat.Stdout, b.stdout, b.stderr) != 0 {
-		fmt.Fprintln(b.stderr, "validation-weight bookkeeping skipped (non-fatal)")
+	if numstat.Code != 0 || b.owners.WeightAdd(root, short, b.prefix, b.request.Goal, numstat.Stdout, b.details, b.details) != 0 {
+		writeDetails(b.details, "validation-weight bookkeeping skipped (non-fatal)")
 	}
 }

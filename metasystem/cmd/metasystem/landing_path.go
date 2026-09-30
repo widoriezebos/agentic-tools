@@ -197,7 +197,7 @@ func landingPathVerify(request landpath.VerifyRequest, stdout, stderr io.Writer)
 		fmt.Fprintln(stderr, "metasystem test status:", err)
 		return 1
 	}
-	fmt.Fprintln(stdout, "records-only change joining the landing lane: no local proof required; the lane proves it")
+	fmt.Fprintln(stdout, "a records-only change joins the landing lane without local tests; the lane tests it")
 	return 0
 }
 
@@ -385,7 +385,8 @@ func landingPathReceiptLineFrom(raw func(gittree.RawRequest) gittree.RawResult, 
 	if err != nil {
 		return landpath.ReceiptDecision{}, err
 	}
-	return landpath.ReceiptDecision{Refused: decision.Outcome == landing.ReceiptLineOutcomeRefused, Detail: decision.Detail, Encoded: string(encoded)}, nil
+	return landpath.ReceiptDecision{Refused: decision.Outcome == landing.ReceiptLineOutcomeRefused, Detail: decision.Detail, Encoded: string(encoded),
+		Removed: decision.Reason == "receipt-ledger-removed", Command: decision.Command}, nil
 }
 
 func landingPathTestReceipt(root, tree, command string, stdout, stderr io.Writer) int {

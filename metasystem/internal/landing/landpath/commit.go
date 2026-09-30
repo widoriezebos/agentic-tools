@@ -48,9 +48,25 @@ type CommitRequest struct {
 	// Env is added to the git commit's environment (the approver identity
 	// a batch landing commits as).
 	Env []string
+	// Stop, when set, receives what a refused commit tells the person: the
+	// reason and the one command (stop.go).
+	Stop *Stop
 }
 
 var goalIdentifier = regexp.MustCompile(`^[a-z0-9-]+$`)
+
+// differs is the test check's word that the files on disk are not the staged
+// candidate.
+var differs = regexp.MustCompile(`differs from relevant working-tree inputs|working-tree inputs differ`)
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
+}
 
 func (request CommitRequest) landingDeclared() bool {
 	return request.Chain != "" || request.DirectFix != "" || request.RevertOf != "" || request.RootJob != "" ||
@@ -61,25 +77,55 @@ func (request CommitRequest) landingDeclared() bool {
 // Commit runs the commit boundary and returns the exit status the former
 // wrapper returned: 0 committed (and pushed, with Push); 1 refused or failed;
 // 2 refused before any effect; 3 a carried landing's ask or an attested
-// landing's refusal. Every refusal is written to stderr.
-func Commit(owners Owners, request CommitRequest, stdout, stderr io.Writer) int {
-	b := &boundary{owners: owners, request: request, stdout: stdout, stderr: stderr}
+// landing's refusal. A refusal's two lines (the reason and the one command)
+// are written to stderr and recorded in request.Stop; git's own output and
+// the refusal's background (codes, verdicts, paths) go to details.
+func Commit(owners Owners, request CommitRequest, details, stderr io.Writer) int {
+	stop := request.Stop
+	if stop == nil {
+		stop = &Stop{}
+	}
+	b := &boundary{owners: owners, request: request, details: details, stderr: stderr, stopped: stop}
 	return b.run()
 }
 
 type boundary struct {
-	owners         Owners
-	request        CommitRequest
-	stdout, stderr io.Writer
+	owners  Owners
+	request CommitRequest
+	// details is what only --verbose shows; stderr carries a refusal's two
+	// lines.
+	details, stderr io.Writer
+	stopped         *Stop
 
 	agent            bool
 	prefix, toplevel string
 	provedTree       string
 }
 
-func (b *boundary) refuse(code int, format string, args ...any) int {
-	fmt.Fprintf(b.stderr, format+"\n", args...)
+// stop refuses the commit: the reason and the one command on stderr, the
+// background in details, and the stop recorded for the caller.
+func (b *boundary) stop(code int, reason string, run []string, then string, details ...string) int {
+	writeDetails(b.details, details...)
+	b.stopped.said(reason, run, then)
+	writeStop(b.stderr, Stop{Reason: reason, Run: run, Then: then})
 	return code
+}
+
+// failed refuses the commit for an owner's error the person cannot act on
+// by its words: reason in plain words, the error in details.
+func (b *boundary) failed(code int, reason string, err error) int {
+	cause := ""
+	if err != nil {
+		cause = err.Error()
+	}
+	then := ""
+	if reason == notHolderReason {
+		then = notHolderThen
+	}
+	if b.stopped.Reason == "" {
+		b.stopped.cause = cause
+	}
+	return b.stop(code, reason, nil, then, cause)
 }
 
 func (b *boundary) git(dir string, args ...string) GitResult {
@@ -93,10 +139,10 @@ func (b *boundary) run() int {
 	if request.landingDeclared() {
 		detail, err := b.owners.BrainFence(request.Root, "land")
 		if err != nil {
-			return b.refuse(1, "land refused: brain fence failed")
+			return b.failed(1, "this checkout's role couldn't be read, so nothing was committed", err)
 		}
 		if detail != "" {
-			return b.refuse(2, "%s", detail)
+			return b.stop(2, brainReason, nil, brainThen, detail)
 		}
 	}
 	if request.HeldEpoch != "" {
@@ -104,8 +150,7 @@ func (b *boundary) run() int {
 	}
 	epoch, err := b.owners.RequireHolder(request.Root, b.owners.CallerPID, nil)
 	if err != nil {
-		fmt.Fprintln(b.stderr, err)
-		return 1
+		return b.failed(1, notHolderReason, err)
 	}
 	held := "human"
 	if epoch != nil {
@@ -116,8 +161,7 @@ func (b *boundary) run() int {
 		status = b.held(held)
 		return nil
 	}); heldErr != nil {
-		fmt.Fprintln(b.stderr, heldErr)
-		return 1
+		return b.failed(1, notHolderReason, heldErr)
 	}
 	return status
 }
@@ -129,51 +173,52 @@ func (b *boundary) held(epoch string) int {
 	if value, err := strconv.ParseInt(epoch, 10, 64); err == nil && value > 0 && epoch[0] != '0' {
 		b.agent = true
 		if _, err := b.owners.RequireHolder(request.Root, b.owners.CallerPID, &value); err != nil {
-			fmt.Fprintln(b.stderr, err)
-			return 1
+			return b.failed(1, notHolderReason, err)
 		}
 	} else {
 		if epoch != "human" {
 			return 2
 		}
 		if _, err := b.owners.RequireHolder(request.Root, b.owners.CallerPID, nil); err != nil {
-			fmt.Fprintln(b.stderr, err)
-			return 1
+			return b.failed(1, notHolderReason, err)
 		}
 	}
 	if b.agent && request.OwnerLineage == "" {
-		return b.refuse(2, "agent commit refused: the lease holder has a claim epoch but no owner lineage; export METASYSTEM_OWNER_LINEAGE in the seat's shell")
+		return b.stop(2, "this agent shell doesn't say which session it is, so nothing was committed", nil,
+			"export METASYSTEM_OWNER_LINEAGE in the session's shell, then repeat this command",
+			"the checkout is held under a claim, and an agent commit names its owner lineage")
 	}
 	if request.Carried != "" && (!request.GoalSet || request.LedgerTip == "" || request.CarriedBy == "" || request.CarriedPast == "") {
-		return b.refuse(2, "commit refused: --carried requires --goal, --ledger-tip, --carried-by, and --carried-past")
+		return b.stop(2, "a carried commit needs its goal, ledger tip, person and past refusal; one is missing", nil, "",
+			"--carried requires --goal, --ledger-tip, --carried-by, and --carried-past")
 	}
 	if request.GoalSet && (request.Goal == "" || len(request.Goal) > 100 || !goalIdentifier.MatchString(request.Goal)) {
-		return b.refuse(2, "commit refused: --goal must be a lowercase kebab identifier of at most 100 characters")
+		return b.stop(2, fmt.Sprintf("%q is not a goal id (lowercase words joined by dashes), so nothing was committed", request.Goal), nil,
+			"name the goal by its id, as metasystem goal list shows it")
 	}
 	if status := b.scanMessage(); status != 0 {
 		return status
 	}
 	started, err := b.owners.StartedAt(b.owners.Getpid())
 	if err != nil {
-		return b.refuse(1, "agent commit wrapper refused: wrapper process start time is unreadable")
+		return b.failed(1, "this process couldn't be read, so nothing was committed; repeat the command", err)
 	}
 	nonce, err := b.owners.TokenNonce()
 	if err != nil {
-		fmt.Fprintln(b.stderr, err)
-		return 1
+		return b.failed(1, "the commit couldn't mark itself as the landing's own, so nothing was committed", err)
 	}
 	token := TokenPath(request.Root)
 	if err := b.owners.WriteToken(token, WrapperToken{WrapperPid: b.owners.Getpid(), WrapperPidStartedAt: started,
 		Nonce: nonce, CreatedAt: b.owners.Now().UTC().Format("2006-01-02T15:04:05Z")}); err != nil {
-		fmt.Fprintln(b.stderr, err)
-		return 1
+		return b.failed(1, "the commit couldn't mark itself as the landing's own, so nothing was committed", err)
 	}
 	defer b.owners.RemoveFile(token)
 	// A malformed session trailer has slipped through four times (claude.ac
 	// for claude.ai): refuse it at the door. The message argument is
 	// scanned, not the repository.
 	if strings.Contains(request.MessageFile, "claude.ac/") {
-		return b.refuse(2, "commit refused: the session trailer says claude.ac — the domain is claude.ai")
+		return b.stop(2, "the commit message's session link says claude.ac; the domain is claude.ai", nil,
+			"correct it to claude.ai in the message, then repeat this command")
 	}
 	return b.proveAndCommit()
 }
@@ -188,23 +233,29 @@ var (
 func (b *boundary) scanMessage() int {
 	path := b.request.MessageFile
 	if path == "-" {
-		return b.refuse(2, "commit refused: -F - is an unscannable commit message source")
+		return b.stop(2, "the commit message must be a file, not standard input, so it can be checked", nil,
+			"write the message to a file and pass it with --message")
 	}
 	if !b.owners.FileReadable(path) {
-		return b.refuse(2, "commit refused: commit message file is not readable: %s", path)
+		return b.stop(2, "the commit message file can't be read, so nothing was committed", nil,
+			"check the file named by --message, then repeat this command", "message file: "+path)
 	}
 	data, err := b.owners.ReadFile(path)
 	if err != nil {
-		return b.refuse(2, "commit refused: commit message file is not readable: %s", path)
+		return b.stop(2, "the commit message file can't be read, so nothing was committed", nil,
+			"check the file named by --message, then repeat this command", "message file: "+path, err.Error())
 	}
 	text := string(data)
+	typed := "the commit message types a line the landing adds itself (%s:), so nothing was committed"
+	remove := "delete that line from the message, then repeat this command"
+	stamped := "Goal-Item, Machine and the Carr* trailers are stamped by the commit, never typed"
 	switch {
 	case carriedItemLine.MatchString(text):
-		return b.refuse(1, "commit refused: Goal-Item and carried trailers are stamped by the wrapper, never typed")
+		return b.stop(1, fmt.Sprintf(typed, carriedItemLine.FindStringSubmatch(text)[1]), nil, remove, stamped)
 	case machineLine.MatchString(text):
-		return b.refuse(2, "commit refused: Machine is stamped by the wrapper, never typed")
+		return b.stop(2, fmt.Sprintf(typed, "Machine"), nil, remove, stamped)
 	case goalItemLine.MatchString(text):
-		return b.refuse(2, "commit refused: Goal-Item and carried trailers are stamped by the wrapper, never typed")
+		return b.stop(2, fmt.Sprintf(typed, "Goal-Item"), nil, remove, stamped)
 	}
 	return 0
 }
@@ -267,7 +318,7 @@ func (b *boundary) proofScope() (ProofScope, error) {
 	}
 	staged := b.git(b.toplevel, "diff", "--cached", "--no-renames", "--name-only", "-z", "--")
 	if staged.Code != 0 {
-		return "", fmt.Errorf("agent commit refused: the staged paths cannot be listed: %s", strings.TrimSpace(string(staged.Stderr)))
+		return "", fmt.Errorf("the staged files can't be listed: %s", strings.TrimSpace(string(staged.Stderr)))
 	}
 	code, err := b.owners.SelectCode(splitNUL(staged.Stdout), b.prefix)
 	if err != nil {
@@ -279,10 +330,21 @@ func (b *boundary) proofScope() (ProofScope, error) {
 	return ProofNone, nil
 }
 
-func (b *boundary) listPaths(paths []string) {
-	for _, path := range paths {
-		fmt.Fprintf(b.stderr, "  %s\n", shellquote.Token(path))
+// pathLines are paths as a refusal's details list them.
+func pathLines(paths []string) []string {
+	lines := make([]string, len(paths))
+	for index, path := range paths {
+		lines[index] = "  " + shellquote.Token(path)
 	}
+	return lines
+}
+
+// firstPath is the first of paths and how many more there are, for line 1.
+func firstPath(paths []string) string {
+	if len(paths) == 1 {
+		return paths[0]
+	}
+	return fmt.Sprintf("%s and %d more", paths[0], len(paths)-1)
 }
 
 func (b *boundary) proveAndCommit() int {
@@ -290,16 +352,14 @@ func (b *boundary) proveAndCommit() int {
 	prefix := b.git(request.Root, "rev-parse", "--show-prefix")
 	top := b.git(request.Root, "rev-parse", "--show-toplevel")
 	if prefix.Code != 0 || top.Code != 0 {
-		b.stderr.Write(prefix.Stderr)
-		b.stderr.Write(top.Stderr)
-		return 1
+		return b.stop(1, "this isn't a Git checkout git can read, so nothing was committed", nil, "", string(prefix.Stderr), string(top.Stderr))
 	}
 	b.prefix = strings.TrimRight(string(prefix.Stdout), "\n")
 	b.toplevel = strings.TrimRight(string(top.Stdout), "\n")
 	proved := b.git(b.toplevel, "write-tree")
 	if proved.Code != 0 {
-		b.stderr.Write(proved.Stderr)
-		return b.refuse(1, "agent commit refused: the index cannot be proved as a tree (unmerged entries?)")
+		return b.stop(1, "the staged files still hold merge conflicts, so nothing was committed", []string{"git", "status"},
+			"resolve and stage the conflicted files, then repeat this command", string(proved.Stderr))
 	}
 	b.provedTree = strings.TrimSpace(string(proved.Stdout))
 	// Every installation carries a testing contract (C1): the commit
@@ -307,34 +367,47 @@ func (b *boundary) proveAndCommit() int {
 	// starts neither tests nor builds. A carried landing defers that
 	// judgment into its observer so a readable red battery can be carried.
 	if b.owners.ConfValue(request.Root, "testing.contract") == "" {
-		return b.refuse(1, "agent commit refused: testing.contract is required in committed metasystem.conf; there is no contract-off landing")
+		return b.stop(1, "metasystem.conf names no test contract (testing.contract), so nothing can be landed", nil,
+			"add testing.contract to the committed metasystem.conf", "there is no landing without a testing contract")
 	}
 	if request.Carried == "" {
 		scope, err := b.proofScope()
 		if err != nil {
-			fmt.Fprintln(b.stderr, err)
-			return 1
+			return b.failed(1, "the staged files can't be read, so nothing was committed", err)
 		}
-		if status := b.owners.Verify(VerifyRequest{Root: request.Root, Tree: b.provedTree, Goal: request.Goal, Scope: scope}, b.stderr, b.stderr); status != 0 {
+		var verified bytes.Buffer
+		if status := b.owners.Verify(VerifyRequest{Root: request.Root, Tree: b.provedTree, Goal: request.Goal, Scope: scope}, &verified, &verified); status != 0 {
+			details := append(strings.Split(strings.TrimRight(verified.String(), "\n"), "\n"), "tests required on this checkout: "+string(scope))
+			if differs.MatchString(verified.String()) {
+				return b.stop(1, "files on disk differ from the staged change, so its test results don't apply to it", []string{"git", "status", "--short"},
+					"stage or stash the other changes, then repeat this command", details...)
+			}
+			testRun := []string{"metasystem", "test", "run"}
+			if request.Goal != "" {
+				testRun = append(testRun, "--goal", request.Goal)
+			}
 			switch scope {
 			case ProofNone:
-				return b.refuse(1, "agent commit refused: the delivery candidate cannot be checked against the working tree; a records-only change joining the landing lane needs no local proof, only a candidate that matches the working tree")
+				return b.stop(1, "the staged change can't be checked against the files on disk, so nothing was committed", []string{"git", "status", "--short"},
+					"stage or stash the other changes, then repeat this command", details...)
 			case ProofAdmission:
-				return b.refuse(1, "agent commit refused: required shared testing proof is missing or insufficient; a code change joining the landing lane needs its admission-phase groups proved on this seat (the lane proves the rest)")
+				return b.stop(1, "the change's tests haven't passed on this checkout yet, so nothing was committed", testRun, repeat,
+					append(details, "a code change joining the landing lane needs its admission tests passed here; the lane runs the rest")...)
 			default:
-				return b.refuse(1, "agent commit refused: required shared testing proof is missing or insufficient; a change landed without a landing lane needs its full delivery proof on this seat")
+				return b.stop(1, "the change's tests haven't passed on this checkout yet, so nothing was committed", testRun, repeat,
+					append(details, "without a landing lane the whole test plan must pass on this checkout")...)
 			}
 		}
+		writeDetails(b.details, verified.String())
 	}
 	unbound, err := b.unboundInputs()
 	if err != nil {
-		fmt.Fprintln(b.stderr, err)
-		return 1
+		return b.failed(1, "the files on disk can't be compared with the staged change, so nothing was committed", err)
 	}
 	if len(unbound) > 0 {
-		fmt.Fprintln(b.stderr, "agent commit refused: the LANDING comparison found projected working-tree bytes that are not what the commit would record at its index endpoint:")
-		b.listPaths(unbound)
-		return b.refuse(1, "stage, stash, or remove them so the proof binds the bytes the commit records")
+		return b.stop(1, "files on disk differ from the staged change: "+firstPath(unbound), []string{"git", "status", "--short"},
+			"stage, stash or remove them, then repeat this command",
+			append([]string{"working-tree files the commit would not record, inside what the landing checks:"}, pathLines(unbound)...)...)
 	}
 	staged := b.git(b.toplevel, "ls-files", "-s", "-z")
 	var gitlinks, symlinks []string
@@ -354,20 +427,18 @@ func (b *boundary) proveAndCommit() int {
 		}
 	}
 	if selected, err := b.owners.SelectLanding(gitlinks, b.prefix); err != nil {
-		fmt.Fprintln(b.stderr, err)
-		return 1
+		return b.failed(1, "the landing rules can't be read, so nothing was committed", err)
 	} else if len(selected) > 0 {
-		fmt.Fprintln(b.stderr, "agent commit refused: a staged gitlink inside the proof scope carries a nested checkout the committed tree does not record:")
-		b.listPaths(selected)
-		return 1
+		return b.stop(1, "a staged folder is a nested Git checkout the commit can't record: "+firstPath(selected),
+			append([]string{"git", "rm", "--cached"}, selected...), repeat,
+			append([]string{"staged gitlinks inside what the landing checks:"}, pathLines(selected)...)...)
 	}
 	if selected, err := b.owners.SelectLanding(symlinks, b.prefix); err != nil {
-		fmt.Fprintln(b.stderr, err)
-		return 1
+		return b.failed(1, "the landing rules can't be read, so nothing was committed", err)
 	} else if len(selected) > 0 {
-		fmt.Fprintln(b.stderr, "agent commit refused: a critical proof input is a symlink; the proofs would follow bytes the committed tree does not record:")
-		b.listPaths(selected)
-		return 1
+		return b.stop(1, "a staged file the tests read is a symlink, which the landing refuses: "+firstPath(selected), nil,
+			"replace it with the real file, then repeat this command",
+			append([]string{"symlinked inputs the tests would follow outside the commit:"}, pathLines(selected)...)...)
 	}
 	// assume-unchanged and skip-worktree entries hide index/worktree
 	// divergence from every diff the closure runs.
@@ -379,26 +450,25 @@ func (b *boundary) proveAndCommit() int {
 		}
 	}
 	if selected, err := b.owners.SelectLanding(hidden, b.prefix); err != nil {
-		fmt.Fprintln(b.stderr, err)
-		return 1
+		return b.failed(1, "the landing rules can't be read, so nothing was committed", err)
 	} else if len(selected) > 0 {
-		fmt.Fprintln(b.stderr, "agent commit refused: assume-unchanged or skip-worktree entries hide proof inputs from the divergence closure:")
-		b.listPaths(selected)
-		return 1
+		return b.stop(1, "Git is told to ignore changes to a file the tests read: "+firstPath(selected),
+			append([]string{"git", "update-index", "--no-assume-unchanged", "--no-skip-worktree", "--"}, selected...), repeat,
+			append([]string{"assume-unchanged or skip-worktree entries hide these inputs:"}, pathLines(selected)...)...)
 	}
 	settled := b.git(b.toplevel, "write-tree")
 	if settled.Code != 0 {
-		b.stderr.Write(settled.Stderr)
-		return b.refuse(1, "agent commit refused: the index cannot be re-proved as a tree")
+		return b.stop(1, "the staged files changed while the landing checked them, so nothing was committed", nil,
+			"stage the change again, then repeat this command", string(settled.Stderr))
 	}
 	settledTree := strings.TrimSpace(string(settled.Stdout))
 	settledUnbound, err := b.unboundInputs()
 	if err != nil {
-		fmt.Fprintln(b.stderr, err)
-		return 1
+		return b.failed(1, "the files on disk can't be compared with the staged change, so nothing was committed", err)
 	}
 	if settledTree != b.provedTree || len(settledUnbound) > 0 {
-		return b.refuse(1, "agent commit refused: the index or a gate input moved while the proof ran; re-stage and retry")
+		return b.stop(1, "the staged files changed while the landing checked them, so nothing was committed", nil,
+			"stage the change again, then repeat this command")
 	}
 	return b.decideAndCommit(settledTree)
 }
@@ -451,7 +521,7 @@ func (b *boundary) decideAndCommit(settledTree string) int {
 	request := b.request
 	machine := strings.TrimSpace(string(b.git(request.Root, "config", "--get", "metasystem.goal.machine").Stdout))
 	if machine == "" {
-		return b.refuse(2, "commit refused: no machine nickname is enrolled on this machine; name it once with: git config metasystem.goal.machine NAME")
+		return b.stop(2, "this machine has no name yet, so nothing was committed", []string{"git", "config", "metasystem.goal.machine", "NAME"}, repeat)
 	}
 	lineage := request.OwnerLineage
 	if lineage == "" {
@@ -479,13 +549,11 @@ func (b *boundary) decideAndCommit(settledTree string) int {
 			decided = read
 			executable, err := b.owners.LiveEngine()
 			if err != nil {
-				fmt.Fprintln(b.stderr, err)
-				return 1
+				return b.failed(1, "the running metasystem program can't be read, so nothing was committed", err)
 			}
 			digest, err := fileDigest(b.owners, executable)
 			if err != nil {
-				fmt.Fprintln(b.stderr, err)
-				return 1
+				return b.failed(1, "the running metasystem program can't be read, so nothing was committed", err)
 			}
 			judgeTrailer = "live sha256=" + digest
 		} else {
@@ -493,14 +561,15 @@ func (b *boundary) decideAndCommit(settledTree string) int {
 			if liveFailure == "" {
 				liveFailure = "exit=" + strconv.Itoa(status)
 			}
-			base, cleanup, err := b.owners.BuildBaseJudge(b.toplevel, b.prefix, b.stderr)
+			base, cleanup, err := b.owners.BuildBaseJudge(b.toplevel, b.prefix, b.details)
 			if err != nil {
-				return b.refuse(3, "no live or base judge decided; the base judge build failed; rebuild and arm an engine at a good commit with steward arm")
+				return b.stop(3, "neither this metasystem nor one built from HEAD could judge the landing, so nothing was committed",
+					[]string{"go", "run", "./cmd/devgate", "build"}, repeat, "the base judge build failed: "+err.Error(), "live judge: "+liveFailure)
 			}
 			defer cleanup()
 			judgeTree := b.git(request.Root, "rev-parse", "HEAD^{tree}")
 			if judgeTree.Code != 0 {
-				b.stderr.Write(judgeTree.Stderr)
+				b.stop(judgeTree.Code, "HEAD can't be read, so nothing was committed", nil, "", string(judgeTree.Stderr))
 				return judgeTree.Code
 			}
 			baseRequest := observe
@@ -508,7 +577,8 @@ func (b *boundary) decideAndCommit(settledTree string) int {
 			observed, status := base.Observe(baseRequest)
 			read, ok := decisionOf(view(observed))
 			if status != 0 || !ok {
-				return b.refuse(3, "no live or base judge decided; base judge exit=%d; rebuild and arm an engine at a good commit with steward arm", status)
+				return b.stop(3, "neither this metasystem nor one built from HEAD could judge the landing, so nothing was committed",
+					[]string{"go", "run", "./cmd/devgate", "build"}, repeat, fmt.Sprintf("the base judge exited %d", status), "live judge: "+liveFailure)
 			}
 			decided, judge = read, base
 			judgeTrailer = "base tree=" + strings.TrimSpace(string(judgeTree.Stdout)) + " sha256=" + base.Digest + " live-failure=" + liveFailure
@@ -520,10 +590,15 @@ func (b *boundary) decideAndCommit(settledTree string) int {
 		}
 	}
 	if request.Carried != "" && decided.mode == "refuse" {
+		details := []string{"verdict: " + decided.verdict}
 		if decided.refusal != "" {
-			return b.refuse(3, "%s: %s", decided.code, decided.refusal)
+			details = append(details, decided.code+": "+decided.refusal)
 		}
-		return b.refuse(3, "carried landing asks: %s", decided.verdict)
+		if b.stopped.Reason == "" {
+			b.stopped.cause = strings.TrimSuffix(decided.code+": "+decided.refusal, ": ")
+		}
+		return b.stop(3, "the landing check refused this exception landing too: "+oneLine(firstNonEmpty(decided.refusal, decided.code)), nil,
+			"record a new exception for what the check refused (--verbose shows its answer)", details...)
 	}
 	if b.agent && decided.refusesAgent {
 		return b.refuseAgent(decided)

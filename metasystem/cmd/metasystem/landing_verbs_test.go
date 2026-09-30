@@ -859,7 +859,7 @@ exit "$status"`
 	unknownWidthOutput, unknownWidthCode := runAsHolder([]string{
 		filepath.Join(root, "bin", "metasystem"), "work", "land", "landing-goal", "--repo", root, "--message", message,
 		"--chain", "invalid_chain", "--recertification", proof,
-		"--test-receipt", filepath.Join(bed, "missing-receipt.json"), "--path", "internal/app/source.txt",
+		"--test-receipt", filepath.Join(bed, "missing-receipt.json"), "--path", "internal/app/source.txt", "--verbose",
 	}, []string{
 		"CLBM_GIT_LOG=" + gitLog, "CLBM_PUSH_COUNT=" + pushCount, "CLBM_PEER=" + peer,
 		"CLBM_REAL_GIT=" + realGit,
@@ -872,7 +872,7 @@ exit "$status"`
 	landOutput, landCode := runAsHolder([]string{
 		filepath.Join(root, "bin", "metasystem"), "work", "land", "landing-goal", "--repo", root, "--message", message,
 		"--chain", "park-chain", "--recertification", proof,
-		"--test-receipt", landing.TestReceiptPath(root, candidateTree), "--path", "internal/app/source.txt",
+		"--test-receipt", landing.TestReceiptPath(root, candidateTree), "--path", "internal/app/source.txt", "--verbose",
 	}, []string{
 		"CLBM_GIT_LOG=" + gitLog, "CLBM_PUSH_COUNT=" + pushCount, "CLBM_PEER=" + peer,
 		"CLBM_REAL_GIT=" + realGit,
