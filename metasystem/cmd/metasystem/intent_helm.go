@@ -129,7 +129,30 @@ func helmIntentCommands() []intentCommand {
 			"Anyone in the seat may run it; returning a helm nobody holds is fine."},
 		examples: []string{"metasystem helm return"},
 		run:      runIntentHelmReturn,
+	}, {
+		object: "helm", action: "status", audience: "both", summary: "who holds this seat's helm, since when and why",
+		usage:    []string{"metasystem helm status"},
+		details:  []string{"Reads the helm as status's banner shows it; it changes nothing."},
+		examples: []string{"metasystem helm status"},
+		run:      runIntentHelmStatus,
 	}}
+}
+
+// runIntentHelmStatus reads the helm and changes nothing: the holder, since
+// when and why, as status's banner shows it, or the machinery at the helm.
+func runIntentHelmStatus(inv *intentInvocation) int {
+	path := inv.helmPath()
+	if _, err := helm.Locate(path); err != nil {
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: err.Error() + "; nothing was read",
+			Decision: "run metasystem helm status inside the seat's checkout"})
+	}
+	reading, active := inv.readHelm(path)
+	if !active {
+		return inv.render(intentResult{Outcome: intentUnchanged, Summary: "the machinery is at the helm"})
+	}
+	result := intentResult{Outcome: intentUnchanged, Summary: reading.lines[0], text: reading.lines[1:],
+		Data: map[string]any{"helm": reading.lines}}
+	return inv.render(result)
 }
 
 func (inv *intentInvocation) helmPath() string {
