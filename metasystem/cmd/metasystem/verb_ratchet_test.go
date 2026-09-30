@@ -87,7 +87,11 @@ const (
 	// the owner's landed-engine re-arm leaves the lane's supervision down, the
 	// owner runs up --recover-only --if-down and reads only its exit, instead
 	// of trusting up's words. Moves to --json with processes-read-structured-results.
-	verbRatchetSelfSubprocessCeiling = 98
+	// The carried landing's base judge (cmd/metasystem/landing_path.go)
+	// asks its engine three children through --json envelopes; the scan now
+	// sees all three calls and the closure, where it saw one before: no new
+	// subprocess (processes-read-structured-results U2).
+	verbRatchetSelfSubprocessCeiling = 101
 	// R6: instruction text naming a form whose first word is not public, over
 	// the vocabulary frozen when the witness landed. Batch 9 (u9a's public
 	// homes, c3's plan deletions, distill's record removal): measured 12.

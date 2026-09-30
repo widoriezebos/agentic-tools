@@ -499,7 +499,7 @@ set -euo pipefail
 if (( $# == 0 )); then
   mkdir -p bin
   out=bin/metasystem
-	printf '#!/usr/bin/env bash\nif [[ "${1:-}" == up ]]; then exit 0; fi\nexport GO_WANT_BATCH_E2E_COMMAND=1\nexec "%%s" "$@"\n' %s >"$out"
+	printf '#!/usr/bin/env bash\nif [[ "${1:-}" == up ]]; then echo \047{"schemaVersion":1,"verb":"up","targets":[],"outcome":"confirmed","summary":"supervision is armed","data":{"outcome":"armed"}}\047; exit 0; fi\nexport GO_WANT_BATCH_E2E_COMMAND=1\nexec "%%s" "$@"\n' %s >"$out"
 else
   [[ "$1" == --trimpath && "$2" == --out && -n "${3:-}" ]]
   out=$3

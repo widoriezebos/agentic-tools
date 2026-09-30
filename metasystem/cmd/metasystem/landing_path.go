@@ -291,8 +291,10 @@ const (
 // each child answers with its --json envelope, and the judge reads the
 // typed data, never words. An answer that cannot be read is no answer.
 func landingEngineJudge(engine, digest string) landpath.Judge {
+	// run asks the engine one internal verb; args end with --json.
 	run := func(verb string, args ...string) (verbresult.Result, error) {
-		return verbresult.Run(exec.Command(engine, append(append([]string{"internal"}, args...), "--json")...), verb)
+		command := exec.Command(engine, append([]string{"internal"}, args...)...)
+		return verbresult.Run(command, verb)
 	}
 	judge := landpath.Judge{Digest: digest}
 	judge.Observe = func(request landpath.ObserveRequest) (landing.Observation, int) {
@@ -309,6 +311,7 @@ func landingEngineJudge(engine, digest string) landpath.Judge {
 				args = append(args, "--"+flag.name, flag.value)
 			}
 		}
+		args = append(args, "--json")
 		result, err := run(landingObserveVerb, args...)
 		var observed landing.Observation
 		if err != nil || result.Outcome != verbresult.Confirmed || result.DecodeData(&observed) != nil {
@@ -317,7 +320,7 @@ func landingEngineJudge(engine, digest string) landpath.Judge {
 		return observed, 0
 	}
 	judge.Workspace = func(root, tree string) (string, error) {
-		result, err := run(landingWorkspaceVerb, "landing", "workspace", "--root", root, "--tree", tree)
+		result, err := run(landingWorkspaceVerb, "landing", "workspace", "--root", root, "--tree", tree, "--json")
 		if err != nil {
 			return "", err
 		}
@@ -337,6 +340,7 @@ func landingEngineJudge(engine, digest string) landpath.Judge {
 		if goalID != "" {
 			args = append(args, "--goal", goalID)
 		}
+		args = append(args, "--json")
 		result, err := run(testVerifyVerb, args...)
 		if err != nil {
 			return nil, max(result.Exit, 1)
