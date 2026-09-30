@@ -83,7 +83,6 @@ func runHookEntry(args []string, stdout, stderr io.Writer) int {
 			info, err := os.Stat(path)
 			return err == nil && !info.IsDir() && info.Mode()&0o111 != 0
 		},
-		TempDir: os.TempDir(),
 		Deadline: hooks.DeadlineDeps{
 			BootClock: identity.BootClock, Prober: identity.KernelProber{}, ParentPid: identity.ParentPid,
 			EventInterval: 20 * time.Millisecond, FixtureDeadline: stopDeadlineFixtureEvent,

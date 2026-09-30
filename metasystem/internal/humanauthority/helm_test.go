@@ -26,7 +26,7 @@ func prove(root string, invokerPID int64, reader Reader, now time.Time, atHelm f
 	if err != nil {
 		return Prove(root, invokerPID, reader, now)
 	}
-	return proveEnrolled(root, invokerPID, reader, now, enrollment, atHelm)
+	return proveEnrolled(root, invokerPID, reader, now, enrollment, atHelm, nil)
 }
 
 func TestProveYieldsToTheHelmForTheAgentBesideThePerson(t *testing.T) {

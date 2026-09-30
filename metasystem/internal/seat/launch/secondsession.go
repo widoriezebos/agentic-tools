@@ -15,6 +15,8 @@ import (
 	"strings"
 	"time"
 
+	"crypto/rand"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 )
 
@@ -38,6 +40,9 @@ type SecondSessionOptions struct {
 	Isolate func(sourceRoot, destinationRoot, manifestPath, harnessRoot string) (string, error)
 	// ArmSupervision runs the new harness's engine `up` entry with the arguments.
 	ArmSupervision func(newHarness string, args []string) error
+	// Registry is the checkout registry the worktree is recorded in; empty
+	// is the harness root's.
+	Registry diskstore.Registry
 }
 
 // SecondSessionError is a refused second session; Code is the exit status.
@@ -116,15 +121,35 @@ func SecondSession(o SecondSessionOptions) (string, error) {
 		}
 		return "", &SecondSessionError{Code: 1, Detail: "second-session destination already exists: " + destination}
 	}
+	// The worktree is registered before git writes a byte of it, reserved
+	// with its bootstrap until a main announces itself (Part B 3.2 "Seat").
+	started, err := o.StartedAt(o.Pid)
+	if err != nil {
+		return "", fmt.Errorf("second-session: this process's start time is unreadable: %w", err)
+	}
+	bootstrap := diskstore.BootstrapRef(o.Pid, started)
+	registry := o.Registry
+	if registry.Dir == "" {
+		registry = diskstore.CheckoutRegistry(o.HarnessRoot)
+	}
+	record, err := diskstore.ReserveLinkedWorktree(registry, destination, diskstore.SessionWorktreeClass,
+		diskstore.Owner{Kind: diskstore.OwnerSession, Ref: name}, o.HarnessRoot, bootstrap, o.Now().UTC(), rand.Reader)
+	if err != nil {
+		return "", fmt.Errorf("second-session: the worktree cannot be registered: %w", err)
+	}
 	if _, err := o.Git("-C", checkout, "worktree", "add", "-q", "-b", "session/"+name, destination, "HEAD"); err != nil {
+		_ = diskstore.AbandonLinkedWorktree(registry, record.ID, err.Error())
 		return "", fmt.Errorf("second-session: git worktree add failed: %w", err)
 	}
+	// Its identity is its .git file; a worktree whose identity cannot be
+	// read keeps a record that never proves it, so it is never removed.
+	_, _ = registry.IdentifyLinkedWorktree(record.ID)
 
-	manifest, err := os.CreateTemp("", "metasystem-local-config-paths.")
+	manifest, doneManifest, err := diskstore.ScratchFile("metasystem-local-config-paths.")
 	if err != nil {
 		return "", err
 	}
-	defer os.Remove(manifest.Name())
+	defer doneManifest()
 	if _, err := manifest.WriteString(Manifest()); err != nil {
 		manifest.Close()
 		return "", err
@@ -136,15 +161,23 @@ func SecondSession(o SecondSessionOptions) (string, error) {
 	if isolate == nil {
 		isolate = validate.SessionIsolation
 	}
+	before := diskstore.PresentPaths(destination, LocalConfigPaths)
 	newHarness, err := isolate(checkout, destination, manifest.Name(), o.HarnessRoot)
 	if err != nil {
 		return "", err
 	}
-
-	started, err := o.StartedAt(o.Pid)
-	if err != nil {
-		return "", fmt.Errorf("second-session: this process's start time is unreadable: %w", err)
+	// What the engine placed in the worktree, and the directory its mains
+	// announce themselves in, are the engine's (Round D3 F-1): unchanged,
+	// they never keep the worktree at its release.
+	installation, relErr := filepath.Rel(canonicalSessionPath(destination), canonicalSessionPath(newHarness))
+	if relErr != nil || strings.HasPrefix(installation, "..") {
+		installation = "."
 	}
+	if err := registry.RecordEngineContent(record.ID, destination, diskstore.Placed(destination, LocalConfigPaths, before),
+		[]diskstore.EngineDir{diskstore.EngineStateDir(installation), diskstore.MainAnnouncementsDir(installation)}); err != nil {
+		return "", fmt.Errorf("second-session: what the engine placed in the worktree cannot be recorded: %w", err)
+	}
+
 	pid := strconv.FormatInt(o.Pid, 10)
 	if err := o.ArmSupervision(newHarness, []string{
 		"--repo", destination,

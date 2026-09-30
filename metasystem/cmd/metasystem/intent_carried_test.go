@@ -94,10 +94,11 @@ func newCarriedDeliveryBed(t *testing.T) *carriedDeliveryBed {
 	}
 	// The carried transaction runs in this process (landpath.Land); the
 	// bed records each run's request.
-	delivery.landCarried = func(request landpath.LandRequest, gate func(string, string) error) intentProcessResult {
+	delivery.landCarried = func(request landpath.LandRequest, gate func(string, string) error, release carriedRelease) intentProcessResult {
 		b.calls = append(b.calls, []string{"landpath", request.Root, "--carried", request.Carried})
 		owners := landingPathOwners()
 		owners.LandingGate = gate
+		release.apply(&owners)
 		crashed := ""
 		if crash := b.crashAt; crash != "" {
 			// The crash seam stops the transaction at the named point as a

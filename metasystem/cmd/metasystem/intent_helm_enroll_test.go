@@ -114,7 +114,7 @@ func TestHelmTakeAdmitsThePersonsActsAtThatTerminal(t *testing.T) {
 	shell := func() int64 { return 60 }
 	bed.owners.helm = helmOwners{reader: person(), pid: shell, now: func() time.Time { return helmNow },
 		machine: func(string) (string, error) { return "m1e", nil }, account: func() string { return "wido" }, zone: time.UTC}
-	bed.owners.disk.person = provenPerson(person(), shell, func() time.Time { return helmNow })
+	bed.owners.disk.person = provenPerson(person(), shell, func(string) (time.Time, error) { return helmNow, nil })
 	idle := bed.stray("metasystem-audit.idle", 72*time.Hour)
 	if code, out := bed.run("disk", "clean", "--preview"); code != 0 {
 		t.Fatalf("preview = %d:\n%s", code, out)

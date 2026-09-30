@@ -122,6 +122,27 @@ func (run *walkthroughRun) openStream(t *testing.T) io.ReadCloser {
 	return response.Body
 }
 
+// leftovers are the entries of a temp root the walkthrough ran in, less the
+// one it may keep: the empty parent directory of every process's scratch
+// root (Part B R1), whose roots it released.
+func leftovers(t *testing.T, temp string) []os.DirEntry {
+	t.Helper()
+	entries, err := os.ReadDir(temp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var left []os.DirEntry
+	for _, entry := range entries {
+		if entry.Name() == "metasystem" && entry.IsDir() {
+			if roots, err := os.ReadDir(filepath.Join(temp, "metasystem")); err == nil && len(roots) == 0 {
+				continue
+			}
+		}
+		left = append(left, entry)
+	}
+	return left
+}
+
 func requireAbsent(t *testing.T, path string) {
 	t.Helper()
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
@@ -145,8 +166,8 @@ func TestWalkthroughSIGTERMRemovesItsCheckout(t *testing.T) {
 	}
 	requireAbsent(t, run.checkout)
 	requireAbsent(t, run.checkout+"-notepad")
-	if entries, err := os.ReadDir(run.temp); err != nil || len(entries) != 0 {
-		t.Fatalf("the temp root holds %v after the exit (%v)", entries, err)
+	if entries := leftovers(t, run.temp); len(entries) != 0 {
+		t.Fatalf("the temp root holds %v after the exit", entries)
 	}
 }
 
@@ -163,8 +184,8 @@ func TestWalkthroughWithAPartnerRemovesItsConversations(t *testing.T) {
 	if code := run.terminate(t); code != 0 {
 		t.Fatalf("exit %d, stderr %s", code, run.stderr.String())
 	}
-	if entries, err := os.ReadDir(run.temp); err != nil || len(entries) != 0 {
-		t.Fatalf("the temp root holds %v after the exit (%v)", entries, err)
+	if entries := leftovers(t, run.temp); len(entries) != 0 {
+		t.Fatalf("the temp root holds %v after the exit", entries)
 	}
 }
 
@@ -204,6 +225,12 @@ func TestWalkthroughKeepsItsCheckoutWhenShutdownDoesNotComplete(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(run.checkout, "metasystem.conf")); err != nil {
 		t.Fatalf("the kept checkout is gone: %v", err)
 	}
+	// Kept inside the process's registered scratch root, which the sweeper
+	// proves about (Part B R1), never loose in TMPDIR.
+	parent, _ := filepath.EvalSymlinks(filepath.Join(run.temp, "metasystem"))
+	if resolved, _ := filepath.EvalSymlinks(run.checkout); filepath.Dir(filepath.Dir(resolved)) != parent || parent == "" {
+		t.Fatalf("the kept checkout %s is not inside a process scratch root under %s", run.checkout, filepath.Join(run.temp, "metasystem"))
+	}
 }
 
 // A flag error exits non-zero without making a checkout; a listen failure
@@ -217,7 +244,7 @@ func TestWalkthroughFailuresLeaveNoCheckout(t *testing.T) {
 	if err := command.Run(); err == nil {
 		t.Fatal("a flag error exited 0")
 	}
-	if entries, _ := os.ReadDir(temp); len(entries) != 0 {
+	if entries := leftovers(t, temp); len(entries) != 0 {
 		t.Fatalf("a flag error made %v", entries)
 	}
 
@@ -232,7 +259,7 @@ func TestWalkthroughFailuresLeaveNoCheckout(t *testing.T) {
 	if err == nil {
 		t.Fatalf("a listen failure exited 0: %s", output)
 	}
-	if entries, _ := os.ReadDir(temp); len(entries) != 0 {
+	if entries := leftovers(t, temp); len(entries) != 0 {
 		t.Fatalf("a listen failure left %v", entries)
 	}
 }

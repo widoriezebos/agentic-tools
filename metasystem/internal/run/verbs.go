@@ -10,6 +10,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/obligationstate"
 )
@@ -539,7 +540,7 @@ func (s *Store) resolveLog(log string) (string, error) {
 		root = s.Root
 	}
 	inRepo := strings.HasPrefix(path, root+string(filepath.Separator))
-	tmpRoot := filepath.Clean(os.TempDir()) + string(filepath.Separator)
+	tmpRoot := filepath.Clean(diskstore.ProcessTempRoot()) + string(filepath.Separator)
 	inTmp := strings.HasPrefix(path, "/tmp/") || strings.HasPrefix(path, tmpRoot) || strings.HasPrefix(path, "/private/tmp/")
 	if !inRepo && !inTmp {
 		return "", fmt.Errorf("log path escapes the repo and /tmp: %s", path)

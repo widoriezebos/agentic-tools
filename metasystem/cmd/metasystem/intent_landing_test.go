@@ -25,6 +25,11 @@ type laneVerbBed struct {
 	pid                           int64
 	person                        error
 	records                       []batch.Record
+	// ready is whether an owner could run in the lane (nil: it could);
+	// noMachine is a checkout without a machine nickname; staysDown is an
+	// owner a start asks for that does not come up.
+	ready                error
+	noMachine, staysDown bool
 }
 
 func newLaneVerbBed(t *testing.T) *laneVerbBed {
@@ -51,6 +56,10 @@ func (bed *laneVerbBed) owners() intentOwners {
 			return lane.OwnerProbe{Alive: true, PID: bed.pid, Since: laneTestNow.Add(-time.Hour)}, nil
 		},
 		start: func(string) error {
+			if !bed.alive && bed.staysDown {
+				bed.starts++
+				return nil
+			}
 			if !bed.alive {
 				bed.starts++
 				bed.alive, bed.pid = true, bed.pid+1
@@ -74,7 +83,14 @@ func (bed *laneVerbBed) owners() intentOwners {
 		records:  func(string) ([]batch.Record, error) { return bed.records, nil },
 		validate: func(root, _ string, _ time.Time) (string, error) { return realpath.Resolve(root), nil },
 		by:       func(string) string { return "seat" },
-		now:      func() time.Time { return laneTestNow },
+		ready:    func(string) error { return bed.ready },
+		machine: func(string) (string, error) {
+			if bed.noMachine {
+				return "", errors.New("no machine nickname is enrolled on this machine")
+			}
+			return "landing", nil
+		},
+		now: func() time.Time { return laneTestNow },
 	}}
 }
 
@@ -284,5 +300,97 @@ func TestLandingSetReplacesACorruptRecord(t *testing.T) {
 	}
 	if record, ok, err := lane.Read(bed.home); err != nil || !ok || record.Root != bed.landingA {
 		t.Fatalf("record after set = %+v %v %v", record, ok, err)
+	}
+}
+
+// A lane whose checkout's supervision is not armed cannot start its owner:
+// landing start and restart say so, name the command a person runs and
+// change nothing; they never claim a start.
+func TestLandingStartRefusesALaneWhoseSupervisionIsNotArmed(t *testing.T) {
+	t.Parallel()
+	bed := newLaneVerbBed(t)
+	if code, _, stderr := bed.run(t, "landing", "set", bed.landingA); code != 0 {
+		t.Fatalf("set = %d %q", code, stderr)
+	}
+	if _, err := lane.SetPause(bed.home, "Wido", laneTestNow); err != nil {
+		t.Fatal(err)
+	}
+	bed.ready = lane.UnarmedRefusal(bed.landingA)
+	for _, verb := range []string{"start", "restart"} {
+		code, stdout, stderr := bed.run(t, "landing", verb)
+		for _, want := range []string{lane.CodeUnarmed, "supervision is not armed", "run: metasystem system start --repo " + bed.landingA, "nothing was started"} {
+			if !strings.Contains(stderr, want) {
+				t.Errorf("%s = %d %q; lacks %q", verb, code, stderr, want)
+			}
+		}
+		if code != 3 || strings.Contains(stdout+stderr, "started the") || bed.starts != 0 || bed.ends != 0 {
+			t.Fatalf("%s = %d %q %q, starts %d ends %d; want a person's act named, nothing started", verb, code, stdout, stderr, bed.starts, bed.ends)
+		}
+	}
+	if _, paused := lane.ReadPause(bed.home); !paused {
+		t.Fatalf("the refused start changed the lane's pause")
+	}
+	var result struct{ Outcome string }
+	_, stdout, _ := bed.run(t, "landing", "start", "--json")
+	if json.Unmarshal([]byte(stdout), &result) != nil || result.Outcome != intentRefused {
+		t.Fatalf("start --json = %q; want outcome refused", stdout)
+	}
+}
+
+// A start whose owner does not come up is not a start: the verb says it
+// asked the checkout's supervision and that the owner does not run yet.
+func TestLandingStartNeverClaimsAnOwnerThatIsNotUp(t *testing.T) {
+	t.Parallel()
+	bed := newLaneVerbBed(t)
+	bed.staysDown = true
+	if code, _, stderr := bed.run(t, "landing", "set", bed.landingA); code != 0 {
+		t.Fatalf("set = %d %q", code, stderr)
+	}
+	code, stdout, _ := bed.run(t, "landing", "start", "--json")
+	var result struct{ Outcome, Summary string }
+	if err := json.Unmarshal([]byte(stdout), &result); err != nil {
+		t.Fatalf("start --json = %d %q", code, stdout)
+	}
+	if bed.starts != 1 || result.Outcome != intentInProgress || strings.Contains(result.Summary, "started the") || !strings.Contains(result.Summary, "does not run yet") {
+		t.Fatalf("start = %d %+v starts %d; want in-progress without a claimed start", code, result, bed.starts)
+	}
+}
+
+// landing set refuses a checkout without a machine nickname, first
+// registration included, with the exact command that names it.
+func TestLandingSetRefusesACheckoutWithoutAMachineNickname(t *testing.T) {
+	t.Parallel()
+	bed := newLaneVerbBed(t)
+	bed.noMachine = true
+	code, _, stderr := bed.run(t, "landing", "set", bed.landingA)
+	for _, want := range []string{lane.CodeNoMachine, "no machine nickname", "run: git -C " + bed.landingA + " config metasystem.goal.machine landing", "nothing was registered"} {
+		if code == 0 || !strings.Contains(stderr, want) {
+			t.Errorf("set without a nickname = %d %q; lacks %q", code, stderr, want)
+		}
+	}
+	if _, ok, _ := lane.Read(bed.home); ok {
+		t.Fatalf("a checkout without a nickname was registered")
+	}
+	bed.noMachine = false
+	if code, stdout, stderr := bed.run(t, "landing", "set", bed.landingA); code != 0 || !strings.Contains(stdout, "is now "+bed.landingA) {
+		t.Fatalf("set once named = %d %q %q", code, stdout, stderr)
+	}
+}
+
+// landing status says why the owner does not run and the one command that
+// fixes it, in its one line and as its next step; set names that step too.
+func TestLandingStatusSaysWhyTheOwnerCannotRun(t *testing.T) {
+	t.Parallel()
+	bed := newLaneVerbBed(t)
+	bed.ready = lane.UnarmedRefusal(bed.landingA)
+	code, stdout, stderr := bed.run(t, "landing", "set", bed.landingA)
+	if code != 0 || !strings.Contains(stdout, "next: metasystem system start --repo "+bed.landingA) {
+		t.Fatalf("set on an unarmed checkout = %d %q %q; want the arming named next", code, stdout, stderr)
+	}
+	code, stdout, _ = bed.run(t, "landing", "status")
+	for _, want := range []string{"owner not-started", "supervision is not armed", "next: metasystem system start --repo " + bed.landingA} {
+		if code != 0 || !strings.Contains(stdout, want) {
+			t.Errorf("status = %d %q; lacks %q", code, stdout, want)
+		}
 	}
 }

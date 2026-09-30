@@ -3,10 +3,10 @@ package batch
 import (
 	"errors"
 	"fmt"
-	"os"
 	"os/exec"
 	"strings"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/landpath"
 )
@@ -280,12 +280,12 @@ func CommitWithWrapperWithRead(root string, declaration CommitDeclaration, goalI
 	// The message lives outside the work tree: an untracked file there is a
 	// working-tree byte the commit would not record, which the boundary
 	// refuses.
-	messageFile, err := os.CreateTemp("", "metasystem-batch-commit-message-*")
+	messageFile, done, err := diskstore.ScratchFile("metasystem-batch-commit-message-*")
 	if err != nil {
 		return err
 	}
 	name := messageFile.Name()
-	defer os.Remove(name)
+	defer done()
 	if _, err := messageFile.WriteString(message); err != nil {
 		messageFile.Close()
 		return err

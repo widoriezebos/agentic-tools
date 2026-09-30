@@ -141,6 +141,10 @@ type Record struct {
 	// live process in either keeps the dead owner's root (Round D1).
 	OwnerGroup   int64 `json:"ownerGroup,omitempty"`
 	OwnerSession int64 `json:"ownerSession,omitempty"`
+	// Bootstrap is a second session's bootstrap process (an encoded
+	// process ref): the record is reserved until a main announces itself,
+	// and a bootstrap that died first is reported (3.2 "Seat").
+	Bootstrap string `json:"bootstrap,omitempty"`
 }
 
 // Registry is one directory of records: the machine registry
@@ -195,6 +199,8 @@ type Registration struct {
 	RootDevice, RootInode, RootGeneration uint64
 	// OwnerGroup and OwnerSession are Record's fields of the same names.
 	OwnerGroup, OwnerSession int64
+	// Bootstrap is Record's field of the same name.
+	Bootstrap string
 }
 
 func validID(id string) bool {
@@ -278,7 +284,7 @@ func (r Registry) Register(reg Registration, now time.Time, entropy io.Reader) (
 		Checkout: reg.Checkout, Lifetime: reg.Lifetime, RebuildFrom: reg.RebuildFrom, CapBytes: reg.CapBytes,
 		CapKind: reg.CapKind, State: StateReserved, Adopted: reg.Adopted, Created: now.UTC(),
 		Notes: reg.Notes, Layout: reg.Layout, Reservation: reg.Reservation, CopyOf: reg.CopyOf,
-		OwnerGroup: reg.OwnerGroup, OwnerSession: reg.OwnerSession,
+		OwnerGroup: reg.OwnerGroup, OwnerSession: reg.OwnerSession, Bootstrap: reg.Bootstrap,
 	}
 	// The lock file exists before the record, so no later reader, prober or
 	// entrant ever has to create it.
@@ -340,9 +346,14 @@ type Unreadable struct {
 }
 
 // Inventory lists every record of the registry. It observes only: an absent
-// registry is empty, and nothing is created or adopted.
+// registry is empty, and nothing is created or adopted. A record removed
+// between the listing and its load is absent, never unreadable.
 func (r Registry) Inventory() ([]Record, []Unreadable) {
-	entries, err := os.ReadDir(r.Dir)
+	return r.inventory(os.ReadDir)
+}
+
+func (r Registry) inventory(readDir func(string) ([]os.DirEntry, error)) ([]Record, []Unreadable) {
+	entries, err := readDir(r.Dir)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
 	}
@@ -357,6 +368,11 @@ func (r Registry) Inventory() ([]Record, []Unreadable) {
 			continue
 		}
 		record, err := r.Load(id)
+		if errors.Is(err, ErrNotFound) {
+			// Removed since the listing (a process scratch owner removes
+			// its own record at its end): absent, not unreadable.
+			continue
+		}
 		if err != nil {
 			unreadable = append(unreadable, Unreadable{Path: r.RecordPath(id), Reason: err.Error()})
 			continue

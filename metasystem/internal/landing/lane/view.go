@@ -3,7 +3,6 @@ package lane
 import (
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -62,6 +61,9 @@ type OwnerView struct {
 	LastExit  *string `json:"last_exit"`
 	StoppedBy *string `json:"stopped_by"`
 	RetryHint *string `json:"retry_hint"`
+	// Fix is RetryHint as one command a person runs, when it is one; the
+	// verbs print it as their next step, the page shows RetryHint.
+	Fix []string `json:"-"`
 }
 
 // Member is one goal in a batch and the seat it came from.
@@ -121,6 +123,9 @@ type ViewSources struct {
 	Records func(root string) ([]batch.Record, error)
 	// Spend reads what the lane at root charged to account; nil shows none.
 	Spend func(root, account string) (Spend, error)
+	// Ready says whether an owner could run at root (a *Refusal naming the
+	// fix when it cannot); asked only when no owner runs. nil asks nothing.
+	Ready func(root string) error
 }
 
 // BuildView reads the lane once and says it for a person and a page.
@@ -167,9 +172,7 @@ func ownerView(sources ViewSources, root string) OwnerView {
 	owner.Restarts = state.Restarts
 	owner.LastExit = text(state.LastError)
 	if owner.LastExit == nil {
-		if data, err := os.ReadFile(LastErrorPath(root)); err == nil {
-			owner.LastExit = text(strings.TrimSpace(string(data)))
-		}
+		owner.LastExit = text(LastErrorLine(root))
 	}
 	if pause, paused := ReadPause(sources.Home); paused {
 		owner.State, owner.StoppedBy, owner.Since = OwnerStopped, text(pause.By), text(pause.At)
@@ -196,7 +199,28 @@ func ownerView(sources ViewSources, root string) OwnerView {
 	case state.Failures > 0 || state.Restarts > 0:
 		owner.State, owner.Since = OwnerRestarting, text(state.Since)
 	}
+	if err == nil && sources.Ready != nil {
+		notReady(&owner, sources.Ready(root))
+	}
 	return owner
+}
+
+// notReady says why no owner can run and what a person runs: a lane whose
+// supervision is not armed has no owner starting, whatever the keeper
+// tried; a missing nickname keeps the keeper's state and names the fix.
+func notReady(owner *OwnerView, err error) {
+	if err == nil {
+		return
+	}
+	var refusal *Refusal
+	if !errors.As(err, &refusal) {
+		owner.LastExit = text("whether the owner can run is unknown: " + err.Error())
+		return
+	}
+	if refusal.Code == CodeUnarmed {
+		owner.State, owner.Since = OwnerNotStarted, nil
+	}
+	owner.LastExit, owner.RetryHint, owner.Fix = text(refusal.Message), text(refusal.Fix), refusal.Argv
 }
 
 func readRecords(sources ViewSources, root string) ([]batch.Record, error) {
@@ -351,9 +375,19 @@ func summary(root string, view View, recordsErr error) string {
 	case OwnerStopped:
 		owner += " by " + *view.Owner.StoppedBy + "; metasystem landing start resumes it"
 	case OwnerGivenUp:
-		owner += fmt.Sprintf(" after %d restarts; metasystem landing start retries", view.Owner.Restarts)
+		owner += fmt.Sprintf(" after %d restart%s", view.Owner.Restarts, plural(view.Owner.Restarts))
 	case OwnerRestarting:
-		owner += fmt.Sprintf(" (%d restarts so far)", view.Owner.Restarts)
+		owner += fmt.Sprintf(" (%d restart%s so far)", view.Owner.Restarts, plural(view.Owner.Restarts))
+	}
+	if view.Owner.State != OwnerRunning && view.Owner.State != OwnerStopped {
+		// Why it does not run and the one fix, in the one line (summary by
+		// default): a count alone tells a person nothing.
+		if view.Owner.LastExit != nil {
+			owner += "; last error: " + *view.Owner.LastExit
+		}
+		if view.Owner.RetryHint != nil {
+			owner += "; to fix: " + *view.Owner.RetryHint
+		}
 	}
 	line := "landing lane " + root + ": " + owner
 	var unreadable *unreadableRecords

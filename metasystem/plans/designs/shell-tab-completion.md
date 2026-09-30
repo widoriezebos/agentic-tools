@@ -3,7 +3,7 @@
 - Kind: design
 - Id: 01M3PW10S9XAG8900VA7YRAG8Y
 - Status: draft
-- Goals: verbs-match-intent
+- Goals: shell-tab-completion
 
 Revision 4: Astra's rounds 1 and 2 and the confirmation read folded (TC-01 to TC-10, section 9); loop closed at the failsafe round on one fixture obligation, TC-08, whose boundary decision now lives in the Go walk.
 
@@ -112,3 +112,9 @@ No change to any verb, parser, owner, help page or table field; no new package; 
 | TC-08 confirmation | Astra confirmation read | HELD | Folded by moving the boundary decision into the Go walk: the engine emits `:prefix N` only for a parser-joined value, the glue does `compset -p N` only then and holds no pattern; `--brief --draft=v1/de` added to the fixture, plus a Go-side test that the directive follows the walk, not the spelling; test 6 no longer requires any `compset -P` literal. Checked in code critique. TC-09 and TC-10 confirmed. |
 
 Closed at round 2 (failsafe) on one fixture obligation, TC-08; implementation gets a code critique.
+
+## 10. Built
+
+Slice g1-s75, built by Claude on Opus 5.5 (R-133-ui) on branch `g1-s75`: `978b29b2a` the tests, red first; `c97a40295` the entry, the walk, the goal reader, both scripts and the `system completion` row; `9c9a602ce` one `COMP_*` row in the refusal register's exclusions (bash's variable names read as codes by `devgate static`). Median of 20 live `__complete -- goal approve ''` runs: 14.8 ms.
+
+Code read by Codex on Sol: read 1 found SOL-TC-01 (bash file completion split paths with spaces), fixed in `a5458079f`; the scoped re-read confirmed it and found SOL-TC-02 (`complete -o filenames` also turned command words into directories: `inte` became `internal/`). Wido ruled bash uses its own fallback: `b34e5813b` registers `complete -o default` and answers `:files` with an empty reply, so readline completes file names itself. Accepted, bash only: a position where the engine offers nothing (`--reason`) falls back to file names. zsh was clean in both reads. The Goals line names the goal Wido opened for this work on 2026-09-30.

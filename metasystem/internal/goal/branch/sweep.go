@@ -300,6 +300,14 @@ func sweepTipCoveredWith(repo, tip string, checked []string, isAncestor func(str
 	return false, nil
 }
 
+// SweepPlan is Sweep's observation: the refusal Sweep would return and what
+// it would remove, read without mutation and without a fetch (a remote tip
+// whose commits are not local is left for Sweep to verify). The disk
+// sweeper reads it before it enters a goal worktree's critical section.
+func SweepPlan(req SweepRequest) (SweepPlanResult, error) {
+	return sweepPlanWithDependencies(req, sweepDependenciesFor(req.context()))
+}
+
 func Sweep(req SweepRequest) (SweepResult, error) {
 	return sweepWithDependencies(req, sweepDependenciesFor(req.context()))
 }

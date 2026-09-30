@@ -40,6 +40,9 @@ type CommitRequest struct {
 	OwnerLineage string
 	// LandedBy is stamped as Landed-By when set.
 	LandedBy string
+	// LaneJoin marks a commit whose change joins the landing lane, which
+	// proves it before the push; the seat's proof scope follows the change.
+	LaneJoin bool
 	// AllowNewPlan acknowledges a new plan file for the pre-commit guard.
 	AllowNewPlan bool
 	// Env is added to the git commit's environment (the approver identity
@@ -251,6 +254,31 @@ func (b *boundary) unboundInputs() ([]string, error) {
 	return b.owners.SelectLanding(paths, b.prefix)
 }
 
+// proofScope is the seat's share of the delivery proof. Without a lane it
+// is the whole plan. A change joining the lane proves only its admission
+// groups when a staged path is in the ENGINE or PAYLOAD projection, and
+// nothing when none is: the lane proves the batch tip before any push.
+func (b *boundary) proofScope() (ProofScope, error) {
+	if !b.request.LaneJoin {
+		return ProofFull, nil
+	}
+	if b.owners.SelectCode == nil {
+		return ProofAdmission, nil
+	}
+	staged := b.git(b.toplevel, "diff", "--cached", "--no-renames", "--name-only", "-z", "--")
+	if staged.Code != 0 {
+		return "", fmt.Errorf("agent commit refused: the staged paths cannot be listed: %s", strings.TrimSpace(string(staged.Stderr)))
+	}
+	code, err := b.owners.SelectCode(splitNUL(staged.Stdout), b.prefix)
+	if err != nil {
+		return "", err
+	}
+	if len(code) > 0 {
+		return ProofAdmission, nil
+	}
+	return ProofNone, nil
+}
+
 func (b *boundary) listPaths(paths []string) {
 	for _, path := range paths {
 		fmt.Fprintf(b.stderr, "  %s\n", shellquote.Token(path))
@@ -282,8 +310,20 @@ func (b *boundary) proveAndCommit() int {
 		return b.refuse(1, "agent commit refused: testing.contract is required in committed metasystem.conf; there is no contract-off landing")
 	}
 	if request.Carried == "" {
-		if status := b.owners.Verify(VerifyRequest{Root: request.Root, Tree: b.provedTree, Goal: request.Goal}, b.stderr, b.stderr); status != 0 {
-			return b.refuse(1, "agent commit refused: required shared testing proof is missing or insufficient")
+		scope, err := b.proofScope()
+		if err != nil {
+			fmt.Fprintln(b.stderr, err)
+			return 1
+		}
+		if status := b.owners.Verify(VerifyRequest{Root: request.Root, Tree: b.provedTree, Goal: request.Goal, Scope: scope}, b.stderr, b.stderr); status != 0 {
+			switch scope {
+			case ProofNone:
+				return b.refuse(1, "agent commit refused: the delivery candidate cannot be checked against the working tree; a records-only change joining the landing lane needs no local proof, only a candidate that matches the working tree")
+			case ProofAdmission:
+				return b.refuse(1, "agent commit refused: required shared testing proof is missing or insufficient; a code change joining the landing lane needs its admission-phase groups proved on this seat (the lane proves the rest)")
+			default:
+				return b.refuse(1, "agent commit refused: required shared testing proof is missing or insufficient; a change landed without a landing lane needs its full delivery proof on this seat")
+			}
 		}
 	}
 	unbound, err := b.unboundInputs()

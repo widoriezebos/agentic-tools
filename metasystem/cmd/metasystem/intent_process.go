@@ -130,6 +130,18 @@ func processIntentCommands() []intentCommand {
 			run:      runIntentEnroll,
 		},
 		{
+			object: "system", action: "completion", audience: "human", summary: "print the shell script that makes Tab complete metasystem commands",
+			usage: []string{"metasystem system completion zsh|bash"},
+			details: []string{
+				"Tab then completes objects, actions, options, choices, file names and the open goals of the checkout the command acts on.",
+				"Each Tab asks the binary as you typed it, so every checkout answers with its own commands and goals; the script reads nothing and embeds no table.",
+				"zsh: add eval \"$(PATH/bin/metasystem system completion zsh)\" to ~/.zshrc after compinit. bash: the same with bash, in ~/.bashrc.",
+			},
+			maxArgs:  1,
+			examples: []string{"metasystem system completion zsh", "metasystem system completion bash"},
+			run:      runIntentSystemCompletion,
+		},
+		{
 			object: "system", action: "setup", audience: "both", summary: "set this checkout up to work with its engine: runtimes, hooks, commit fence and testing-contract merges",
 			usage: []string{"metasystem system setup [--runtimes CSV|none] [--copy-skills]"},
 			details: []string{
@@ -240,12 +252,33 @@ func processIntentCommands() []intentCommand {
 			examples: []string{"metasystem ui status"}, run: func(inv *intentInvocation) int { return inv.uiTarget("status") },
 		},
 		{
-			object: "machine", action: "list", audience: "both", summary: "every machine's presence, this one first",
-			usage:    []string{"metasystem machine list [--refresh]"},
-			flags:    []intentFlag{{name: "refresh", aliases: []string{"fetch"}, usage: "fetch presence now instead of the last copy"}},
+			object: "machine", action: "list", audience: "both", summary: "every machine's presence, this one first, and what MetaSystem runs on this computer",
+			usage: []string{"metasystem machine list [--refresh] [--verbose]"},
+			details: []string{
+				"The first line counts this computer's machines, running and stopped, its running jobs and the machines on other computers; one line per machine of the fleet follows.",
+				"This computer's machines are the fleet's: of the checkouts the host registry of armed checkouts records and this checkout, those with a machine nickname that are armed now or appear in the fleet's presence; and the landing lane's checkout. The registry's other registrations (test beds, scratch clones) are not machines; --verbose counts them. A registry that cannot be read is reported, never read as no machines.",
+				"--verbose adds each machine of this computer with its checkout, its helpers with pid and start in local time, its running jobs and launches and the landing lane's owner; each machine on another computer with its last report; and the processes that are not MetaSystem's, which nothing touches.",
+				"Each checkout is read exactly as metasystem system status reads it.",
+			},
+			flags: []intentFlag{{name: "refresh", aliases: []string{"fetch"}, usage: "fetch presence now instead of the last copy"},
+				intentVerboseFlag},
 			maxArgs:  0,
-			examples: []string{"metasystem machine list", "metasystem machine list --refresh"},
-			run:      runIntentFleet,
+			examples: []string{"metasystem machine list", "metasystem machine list --verbose", "metasystem machine list --refresh"},
+			run:      runIntentMachineList,
+		},
+		{
+			object: "machine", action: "stop", audience: "human", summary: "stop MetaSystem on one machine of this computer, or on every one",
+			usage: []string{"metasystem machine stop NAME", "metasystem machine stop --all"},
+			details: []string{
+				"A person's act at their enrolled terminal, proved as metasystem system stop proves it. Each machine stops through system stop itself, the landing lane's checkout included; that stop cancels the checkout's running dispatch jobs as work stop does.",
+				"This user's running launches in a stopped checkout are cancelled as work stop cancels them; with --all, every running launch of this user is.",
+				"NAME is a machine's nickname, its checkout's directory name or its checkout's path. A machine on another computer is stopped on that computer: metasystem system stop --repo PATH.",
+				"A machine already stopped is success. Processes that are not MetaSystem's are never touched. Summary by default; --verbose prints each machine's stop.",
+			},
+			flags:    []intentFlag{{name: "all", usage: "every machine of this computer"}, intentVerboseFlag},
+			maxArgs:  1,
+			examples: []string{"metasystem machine stop --all", "metasystem machine stop m1e"},
+			run:      runIntentMachineStop,
 		},
 		{
 			object: "machine", action: "start", audience: "human", summary: "clone, build, configure, enroll and supervise one new machine of this fleet",
@@ -637,25 +670,31 @@ func runIntentSessionStart(inv *intentInvocation) int {
 
 // runIntentSystemStop stops this checkout's machinery at a person's word.
 func runIntentSystemStop(inv *intentInvocation) int {
+	return inv.render(systemStopResult(inv))
+}
+
+// systemStopResult is system stop's whole act and result for the checkout
+// inv selects; machine stop runs it once per machine of this computer.
+func systemStopResult(inv *intentInvocation) intentResult {
 	scope, scale, problem := inv.selectProcessScope()
 	if problem != nil {
-		return inv.render(*problem)
+		return *problem
 	}
 	report, refusal := inv.owners.processes.process.stop(scope, scale)
 	if refusal != nil {
-		return inv.render(processRefusalResult(inv.checkoutTarget(scope), "stop refused: ", refusal, report))
+		return processRefusalResult(inv.checkoutTarget(scope), "stop refused: ", refusal, report)
 	}
 	if report.Unchanged {
-		return inv.render(processUnchangedResult(inv.checkoutTarget(scope), report))
+		return processUnchangedResult(inv.checkoutTarget(scope), report)
 	}
 	if report.ExitCode != 0 {
 		_, fence := processFence(scope)
-		return inv.render(intentResult{Outcome: intentPartial, code: report.ExitCode, Targets: inv.checkoutTarget(scope), text: report.Lines,
+		return intentResult{Outcome: intentPartial, code: report.ExitCode, Targets: inv.checkoutTarget(scope), text: report.Lines,
 			Summary: "stop did not finish: some processes are still running (listed below); no new work starts (" + fence + ")",
 			next:    inv.publicArgv(append([]string{"system", "stop"}, inv.forward("installation")...)...), nextReason: "stop again; end any process that survives a second stop yourself",
-			Data: map[string]any{"lines": nonNilLines(report.Lines), "exitCode": report.ExitCode, "fence": fence}})
+			Data: map[string]any{"lines": nonNilLines(report.Lines), "exitCode": report.ExitCode, "fence": fence}}
 	}
-	return inv.render(processReportResult(inv.checkoutTarget(scope), "stopped "+scope.Checkout, report))
+	return processReportResult(inv.checkoutTarget(scope), "stopped "+scope.Checkout, report)
 }
 
 func (inv *intentInvocation) stopSession() int {
@@ -1298,21 +1337,6 @@ func missionAskAnswered(path string) bool {
 	}
 	var ask map[string]any
 	return json.Unmarshal(data, &ask) == nil && ask["answeredAt"] != nil
-}
-
-func runIntentFleet(inv *intentInvocation) int {
-	if problem := inv.selectLayoutRoot(); problem != nil {
-		return inv.render(*problem)
-	}
-	report, err := inv.owners.processes.fleet(inv.layout.GitRoot, inv.input.switched("refresh"), seatFleetNow())
-	if err != nil {
-		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "fleet: " + err.Error()})
-	}
-	encoded, err := report.JSON()
-	if err != nil {
-		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "fleet: " + err.Error()})
-	}
-	return inv.render(intentResult{Outcome: intentConfirmed, Summary: "the fleet", text: intentOwnerLines(report.Text()), Data: json.RawMessage(encoded)})
 }
 
 func runIntentDoctor(inv *intentInvocation) int {

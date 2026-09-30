@@ -20,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	"context"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/brain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
@@ -39,6 +40,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/metrics"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 )
 
 type goalRecoveryPolicy struct {
@@ -47,6 +49,35 @@ type goalRecoveryPolicy struct {
 }
 
 func (p goalRecoveryPolicy) ParkBranchCheck(endpoint goal.Endpoint) func(string, string) (string, error) {
+	return goalParkBranchCheck(p.root, endpoint)
+}
+
+// blockedRecoveryAtCommandClock is goalRecoveryPolicy bound to a request
+// before its clock is read: a publish that meets a dead owner's pushed entry
+// resolves the command's clock then, so a request that never recovers reads
+// no clock for it.
+type blockedRecoveryAtCommandClock struct {
+	root       string
+	commandNow func(string) (time.Time, error)
+}
+
+func (p blockedRecoveryAtCommandClock) policy() (goalRecoveryPolicy, error) {
+	now, err := p.commandNow(p.root)
+	if err != nil {
+		return goalRecoveryPolicy{}, fmt.Errorf("recover the dead owner's pushed entry: %w", err)
+	}
+	return goalRecoveryPolicy{GoalRecoveryPolicy: dispatchcore.GoalRecoveryPolicy{Now: now}, root: p.root}, nil
+}
+
+func (p blockedRecoveryAtCommandClock) BreachStop(endpoint goal.Endpoint, entry goal.Entry) (goal.PublishRequest, func(), error) {
+	policy, err := p.policy()
+	if err != nil {
+		return goal.PublishRequest{}, nil, err
+	}
+	return policy.BreachStop(endpoint, entry)
+}
+
+func (p blockedRecoveryAtCommandClock) ParkBranchCheck(endpoint goal.Endpoint) func(string, string) (string, error) {
 	return goalParkBranchCheck(p.root, endpoint)
 }
 
@@ -601,6 +632,11 @@ func syncReqClassifiedWithTerminalGradeAtWithDependencies(root, by, lineageFlag 
 		return goal.VerbRequest{}, err
 	}
 	configureCarriedCounselor(&e)
+	// A publish blocked by a provably dead owner's pushed entry recovers it
+	// (the batch owner's handover included) under the same live policy
+	// `goal sync --recover` carries, at the command's clock, read only when
+	// that recovery runs.
+	e.ConfigureBlockedRecovery(blockedRecoveryAtCommandClock{root: root, commandNow: commandNow})
 	machine, err := dependencies.machine(root)
 	if err != nil {
 		return goal.VerbRequest{}, err
@@ -689,6 +725,11 @@ func syncReqClassifiedWithTerminalGradeAtWithDependencies(root, by, lineageFlag 
 	req := goal.VerbRequest{
 		Endpoint: e, Actor: goal.Actor{Machine: machine, Lineage: lineage, Human: by},
 		Authority: authority, Ulid: ulid, Now: now, CallerClass: classification.Class,
+	}
+	if authority != nil && authority.Helm != nil && authority.Helm.Grant != "" {
+		// The act a general grant answered re-checks it at every tip it
+		// lands on; the binding ends with this request.
+		req.Endpoint = req.Endpoint.WithAttorneyEffect(authority.Helm.Grant, func() (time.Time, error) { return commandNow(root) })
 	}
 	if classification.Holder && classification.ClaimEpoch != nil {
 		req.EpochAuthority = goal.EpochAuthorityHolder
@@ -1846,9 +1887,11 @@ func trySyncMutationWithCompletion(name string, args []string, commandNow func(s
 			if _, remoteErr := goalBranchGit(f.root, "remote", "get-url", "transport"); remoteErr == nil {
 				transport = "transport"
 			}
-			_, err = goalbranch.Sweep(goalbranch.SweepRequest{Repo: f.root, Remote: req.Endpoint.Remote, Transport: transport,
-				EndpointTip: endpointTip, GoalID: goalID, Dropped: dropped, CheckClaim: func() error { return nil }})
-			return err
+			return steward.SweepGoalWorktrees(f.root, goalID, func(ctx context.Context) error {
+				_, err := goalbranch.Sweep(goalbranch.SweepRequest{Repo: f.root, Remote: req.Endpoint.Remote, Transport: transport,
+					EndpointTip: endpointTip, GoalID: goalID, Dropped: dropped, CheckClaim: func() error { return nil }, Context: ctx})
+				return err
+			})
 		}
 		if f.force {
 			if err := forceAdmission(dependencies.helmState(f.root), req.Authority, f.root); err != nil {
@@ -3034,7 +3077,12 @@ func runGoalSplitWithInputs(args []string, commandNow func(string) (time.Time, e
 	var proof *humanauthority.Proof
 	var ratification goal.SplitRatification
 	if f.by != "" {
-		observed, proofErr := humanauthority.Prove(f.root, int64(os.Getppid()), nil, time.Now().UTC())
+		now, nowErr := commandNow(f.root)
+		if nowErr != nil {
+			dependencies.complain("SPLIT_RATIFY_REFUSED: goal split could not read its clock:", nowErr)
+			return 1
+		}
+		observed, proofErr := humanauthority.Prove(f.root, int64(os.Getppid()), nil, now)
 		if proofErr != nil {
 			dependencies.complain("SPLIT_RATIFY_REFUSED: goal split could not prove enrolled human ancestry:", proofErr)
 			return 1
@@ -3401,4 +3449,67 @@ func goalDoneWithoutMetrics(req goal.VerbRequest, root, id string) bool {
 	}
 	_, statErr := os.Stat(metrics.GoalReportTarget(root, id))
 	return errors.Is(statErr, fs.ErrNotExist)
+}
+
+// The steward's disk pass retries goal done's sweep for a concluded goal's
+// registered worktree through the same request goal done builds.
+func init() {
+	steward.RegisterGoalBranchSweep(steward.GoalBranchSweep{Plan: goalSweepPlan, Sweep: goalSweepRun})
+}
+
+// goalSweepRequest is goal done's sweep request for goalID at root.
+func goalSweepRequest(ctx context.Context, root, goalID, dropped string) (goalbranch.SweepRequest, error) {
+	endpoint, err := goal.ResolveEndpoint(root)
+	if err != nil {
+		return goalbranch.SweepRequest{}, err
+	}
+	tip, err := goalBranchEndpointTip(root, endpoint)
+	if err != nil {
+		return goalbranch.SweepRequest{}, err
+	}
+	transport := ""
+	if _, remoteErr := goalBranchGit(root, "remote", "get-url", "transport"); remoteErr == nil {
+		transport = "transport"
+	}
+	return goalbranch.SweepRequest{Repo: root, Remote: endpoint.Remote, Transport: transport, EndpointTip: tip, GoalID: goalID,
+		Dropped: dropped, CheckClaim: func() error { return nil }, Context: ctx}, nil
+}
+
+// goalSweepPlan reads goal done's sweep plan from local refs alone (Round
+// D3 N2): the endpoint's main and the goal branch from their
+// remote-tracking refs, nothing fetched and no remote asked; a remote state
+// not known locally is an error, which keeps the worktree.
+func goalSweepPlan(ctx context.Context, root, goalID, dropped string) (string, error) {
+	endpoint, err := goal.ResolveEndpoint(root)
+	if err != nil {
+		return "", err
+	}
+	transport := goalbranch.LocalTrackingTransport{Context: ctx}
+	tip, _, err := transport.RemoteTip(root, endpoint.Remote, "refs/heads/main")
+	if err != nil {
+		return "", err
+	}
+	remotes := ""
+	if _, remoteErr := goalBranchGit(root, "remote", "get-url", "transport"); remoteErr == nil {
+		remotes = "transport"
+	}
+	request := goalbranch.SweepRequest{Repo: root, Remote: endpoint.Remote, Transport: remotes, EndpointTip: tip, GoalID: goalID,
+		Dropped: dropped, CheckClaim: func() error { return nil }, Context: ctx, PushTransport: transport}
+	plan, err := goalbranch.SweepPlan(request)
+	if err != nil {
+		return "", err
+	}
+	if plan.Refusal != nil {
+		return plan.Refusal.Error(), nil
+	}
+	return "", nil
+}
+
+func goalSweepRun(ctx context.Context, root, goalID, dropped string) error {
+	request, err := goalSweepRequest(ctx, root, goalID, dropped)
+	if err != nil {
+		return err
+	}
+	_, err = goalbranch.Sweep(request)
+	return err
 }

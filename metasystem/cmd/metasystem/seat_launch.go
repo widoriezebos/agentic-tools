@@ -140,7 +140,11 @@ func runSeatLaunch(args []string, stdout, stderr io.Writer) int {
 	// The loser of the host lock writes the winner's nickname and id into its
 	// own record, so the page shows a refusal a human can read rather than a
 	// launch that never moved.
-	held, err := launch.Take(launch.LockPath(), request.Machine, record.Launch)
+	lockPath, err := launch.LockPath()
+	if err != nil {
+		return stop(err)
+	}
+	held, err := launch.Take(lockPath, request.Machine, record.Launch)
 	if err != nil {
 		return stop(err)
 	}

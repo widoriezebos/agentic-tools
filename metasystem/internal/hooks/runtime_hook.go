@@ -2,12 +2,14 @@ package hooks
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/jsonedit"
 )
 
@@ -80,10 +82,45 @@ func (inv Invocation) withDefaults() Invocation {
 	if inv.Environ == nil {
 		inv.Environ = func() []string { return nil }
 	}
-	if inv.TempDir == "" {
-		inv.TempDir = os.TempDir()
-	}
 	return inv
+}
+
+// stagingRoot is where a hook stages its files: the invocation's TempDir
+// when a caller names one (fixtures), else the process's registered scratch
+// root (Part B U1b-2), resolved only when a hook stages something, so a hook
+// that stages nothing registers nothing. A hook killed at the Stop budget
+// leaves a root the sweeper can prove about, never an unowned TMPDIR entry;
+// without a root, staging fails and the hook answers in its staging form.
+func stagingRoot(root string) (string, error) {
+	if root != "" {
+		return root, nil
+	}
+	scratch, err := diskstore.ProcessScratch()
+	if err != nil {
+		return "", errors.Join(errNoStagingRoot, err)
+	}
+	return scratch, nil
+}
+
+// errNoStagingRoot is a hook with no staging root.
+var errNoStagingRoot = errors.New("the hook has no staging root")
+
+// mkdirStaging is os.MkdirTemp in the hook's staging root, never TMPDIR.
+func mkdirStaging(root, pattern string) (string, error) {
+	root, err := stagingRoot(root)
+	if err != nil {
+		return "", err
+	}
+	return os.MkdirTemp(root, pattern)
+}
+
+// createStaging is os.CreateTemp in the hook's staging root, never TMPDIR.
+func createStaging(root, pattern string) (*os.File, error) {
+	root, err := stagingRoot(root)
+	if err != nil {
+		return nil, err
+	}
+	return os.CreateTemp(root, pattern)
 }
 
 func (inv Invocation) env(name string) string {

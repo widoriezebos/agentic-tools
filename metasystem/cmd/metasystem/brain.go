@@ -34,7 +34,7 @@ type brainActDependencies struct {
 func defaultBrainActDependencies() brainActDependencies {
 	return brainActDependencies{
 		classify: func(root string, callerPid int64) (lease.ClassifyResult, error) {
-			return classifyVerbCaller(root, callerPid)
+			return personVerbCaller(root, callerPid)
 		},
 		ledgerIdentity: goal.ExistingLedgerIdentity,
 		machine:        goal.ResolveMachine,

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/output"
 	usagepkg "github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
@@ -694,9 +695,18 @@ func TestContextTranscriptOverrideDisposesPrivateCursor(t *testing.T) {
 	}()
 
 	parent := t.TempDir()
+	scratch, err := diskstore.ProcessScratch()
+	if err != nil {
+		t.Fatal(err)
+	}
 	var roots []string
 	var removed []string
-	makeContextDiagnosticRoot = func(_ string, pattern string) (string, error) {
+	makeContextDiagnosticRoot = func(dir string, pattern string) (string, error) {
+		// The diagnostic store is made in the process's registered scratch
+		// root, never an unowned TMPDIR entry (Part B U1b-2).
+		if dir != scratch {
+			t.Fatalf("the diagnostic store was made in %q, want the process scratch root %q", dir, scratch)
+		}
 		root, err := os.MkdirTemp(parent, pattern)
 		if err == nil {
 			roots = append(roots, root)

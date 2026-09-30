@@ -176,7 +176,7 @@ func (l *lifecycle) prepare() {
 		l.refuse("runtime '"+inv.Runtime+"' is not registered", 2)
 	}
 	if inv.Event == "stop" {
-		directory, err := os.MkdirTemp(inv.TempDir, "metasystem-stop-presentation.")
+		directory, err := mkdirStaging(inv.TempDir, "metasystem-stop-presentation.")
 		if err != nil {
 			_ = writeLine(inv.Stdout, mustDegradedStopForm("allowed", "staging-failed"))
 			exitHook(0)
@@ -1011,7 +1011,7 @@ func (s *stopRun) emit(response string) {
 	}
 	_ = os.MkdirAll(s.supervisionDir, 0o755)
 	_ = s.appendHookLog(nowStamp(inv.Now()) + " stop response decision=" + decision + " elapsed=" + strconv.FormatInt(s.stopElapsedSec, 10) + "s\n")
-	responseFile, err := os.CreateTemp(inv.TempDir, "metasystem-supervision-response.")
+	responseFile, err := createStaging(inv.TempDir, "metasystem-supervision-response.")
 	if err != nil {
 		_ = writeLine(inv.Stdout, response)
 		s.completeAttempt(HookCompletion{Result: "ERROR", Outcome: "PAYLOAD_STAGE_FAILED"})

@@ -87,6 +87,30 @@ type Report struct {
 	// record was not rewritten; Since is when it reached that state.
 	Unchanged bool
 	Since     string
+	// Items are Status's live items, typed, in the order their lines print:
+	// the same inventory the lines render, for a caller that must not parse
+	// them (machine list). Stop leaves it empty.
+	Items []StatusItem
+	// FenceState is the fence Status read (stopfence.StateOpen or
+	// StateClosed), empty when the record is unreadable; FenceChangedAt is
+	// when it reached that state.
+	FenceState     string
+	FenceChangedAt string
+}
+
+// StatusItem is one live item of Status: its family, the line status
+// prints for it, and the identity the family recorded.
+type StatusItem struct {
+	Family       string
+	Line         string
+	Component    string
+	ID           string
+	MachineID    string
+	Pid          int64
+	PidStartedAt int64
+	// ObserveOnly marks an item stop reports without signalling, such as a
+	// process that is not the metasystem's.
+	ObserveOnly bool
 }
 
 type reportSlot struct {
@@ -278,6 +302,7 @@ func (t *Transition) Status() (Report, error) {
 	}
 	type observation struct {
 		item    *Item
+		family  string
 		failure string
 	}
 	var observed []observation
@@ -297,7 +322,7 @@ func (t *Transition) Status() (Report, error) {
 		}
 		for index := range items {
 			item := items[index]
-			observed = append(observed, observation{item: &item})
+			observed = append(observed, observation{item: &item, family: family.Name()})
 			liveItems++
 		}
 	}
@@ -314,6 +339,9 @@ func (t *Transition) Status() (Report, error) {
 			continue
 		}
 		line := entry.item.StatusLine
+		report.Items = append(report.Items, StatusItem{Family: entry.family, Line: entry.item.StatusLine,
+			Component: entry.item.Survivor.Component, ID: entry.item.Survivor.ID, MachineID: entry.item.Survivor.MachineID,
+			Pid: entry.item.Survivor.Pid, PidStartedAt: entry.item.Survivor.PidStartedAt, ObserveOnly: entry.item.ObserveOnly})
 		for index, survivor := range record.NotStopped {
 			if matched[index] || !sameSurvivorIdentity(entry.item.Survivor, survivor) {
 				continue
@@ -332,6 +360,9 @@ func (t *Transition) Status() (Report, error) {
 		}
 	}
 
+	if fenceErr == nil {
+		report.FenceState, report.FenceChangedAt = record.State, record.ChangedAt
+	}
 	incompleteRecord := fenceErr == nil && record.State == stopfence.StateClosed && !stopfence.Completed(record)
 	if readFailures == 0 && liveItems == 0 {
 		if incompleteRecord {
@@ -389,10 +420,25 @@ func (t *Transition) Stop() (Report, error) {
 	// family running, is a repeat whose effect holds (R-129-ui): no new
 	// fence generation is written. Anything running, or any family that
 	// cannot be read, is a stop to perform.
+	// A process that is not the metasystem's (the untracked family's
+	// observe-only items) is never signalled, so it does not make the repeat
+	// a stop to perform; the line says it was left alone.
 	if stopfence.Completed(previous) {
-		if items, inventoryErr := t.Inventory(); inventoryErr == nil && len(items) == 0 {
-			return Report{Lines: []string{fmt.Sprintf("MetaSystem is already stopped for %s (since %s); nothing is running; start again: metasystem system start --repo %s", t.Checkout, previous.ChangedAt, t.Checkout)},
-				Unchanged: true, Since: previous.ChangedAt}, nil
+		if items, inventoryErr := t.Inventory(); inventoryErr == nil {
+			others := 0
+			for _, item := range items {
+				if item.ObserveOnly && strings.HasPrefix(item.Key, "untracked:") {
+					others++
+				}
+			}
+			if others == len(items) {
+				running := "nothing is running"
+				if others > 0 {
+					running = "nothing of MetaSystem's is running; " + map[bool]string{true: "1 process that is not MetaSystem's is", false: fmt.Sprintf("%d processes that are not MetaSystem's are", others)}[others == 1] + " not touched"
+				}
+				return Report{Lines: []string{fmt.Sprintf("MetaSystem is already stopped for %s (since %s); %s; start again: metasystem system start --repo %s", t.Checkout, previous.ChangedAt, running, t.Checkout)},
+					Unchanged: true, Since: previous.ChangedAt}, nil
+			}
 		}
 	}
 	generation := previous.Generation + 1

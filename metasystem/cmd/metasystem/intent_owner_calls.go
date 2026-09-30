@@ -20,7 +20,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/missionrunner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
@@ -162,7 +161,7 @@ func defaultIntentOwnerCalls() *intentOwnerCalls {
 // with wait, in this process until the mission ends.
 func missionLaunchTo(caller ownercall.Process, stdout, stderr io.Writer, root, mission, mode string, wait bool) int {
 	root = cleanOwnerRoot(root)
-	generation, code := missionFenceBeforeArmFor(caller, stderr, root, mode, stateroot.RepositoryTop, lease.ClassifyAt)
+	generation, code := missionFenceBeforeArmFor(caller, stderr, root, mode, stateroot.RepositoryTop, personClassifyAt)
 	if code != 0 {
 		return code
 	}

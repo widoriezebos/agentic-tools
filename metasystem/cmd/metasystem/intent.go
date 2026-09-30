@@ -15,6 +15,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/adopt"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/audit"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hookswitch"
@@ -549,6 +550,9 @@ type intentOwners struct {
 	// internal/adopt.
 	adopt func(adopt.Options) (adopt.Result, error)
 	helm  helmOwners
+	// attorney are the general power of attorney's seams; the zero value is
+	// production.
+	attorney attorneyIntentOwners
 	// agent are the agent verbs' seams; the zero value is production.
 	agent agentOwners
 	// hookSwitch adjusts system setup's seams; nil keeps production.
@@ -563,6 +567,8 @@ type intentOwners struct {
 	disk diskOwners
 	// landing are the landing verbs' seams; the zero value is production.
 	landing laneVerbOwners
+	// machines are the machine verbs' seams; the zero value is production.
+	machines machineOwners
 }
 
 func defaultIntentOwners() intentOwners {
@@ -594,6 +600,9 @@ type intentInvocation struct {
 	// inferredChain is the one examination root inferred from the goal's
 	// work records, when the caller named none.
 	inferredChain string
+	// entrants are the registered stores this verb is inside, each held
+	// shared until the verb ends (Part B 3.1 "Entrants").
+	entrants []*diskstore.Entrant
 }
 
 // runIntent routes one public command. Help needs no repository, identity or
@@ -630,7 +639,16 @@ func runIntentIn(command intentCommand, raw []string, stdout, stderr io.Writer, 
 	if problem := inv.resolveTextFiles(); problem != nil {
 		return inv.render(*problem)
 	}
+	defer inv.leaveStores()
 	return command.run(inv)
+}
+
+// leaveStores drops every shared hold the verb took on a store it entered.
+func (inv *intentInvocation) leaveStores() {
+	for _, entrant := range inv.entrants {
+		_ = entrant.Leave()
+	}
+	inv.entrants = nil
 }
 
 // selectRoot resolves the repository once: any path inside the repository,
@@ -1021,7 +1039,7 @@ var intentObjectSummaries = map[string]string{
 	"helm":       "human at the helm: take the whole seat out of the machinery's hands, and give it back",
 	"session":    "this agent session: start, stop, whether it may stop, and its handoff",
 	"mission":    "autonomous missions",
-	"system":     "MetaSystem for this checkout: set up, start, stop, restart, status, check, enroll, adopt",
+	"system":     "MetaSystem for this checkout: set up, start, stop, restart, status, check, enroll, adopt, completion",
 	"landing":    "the landing lane on this computer: where every seat's work is proved and pushed",
 	"machine":    "the fleet's machines",
 	"disk":       "what MetaSystem keeps on this computer's disk, and reclaiming it",

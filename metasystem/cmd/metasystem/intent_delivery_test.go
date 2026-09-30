@@ -1116,9 +1116,15 @@ func TestWorkLandHelpStatesTheLaneRouting(t *testing.T) {
 	flat := strings.Join(strings.Fields(page), " ")
 	for _, want := range []string{"read from a reader record is refused", "metasystem work review --commit SHA --goal G",
 		"fix goal of an open trunk red", "metasystem incident claim E --goal G", "joins the lane as a change member", "Landing-Change trailer",
-		"Without a lane, and with --local or --recertification"} {
+		"Without a lane, and with --local or --recertification",
+		"rides on the proof of the goal members it joins", "a batch of changes alone is proved on the lane's account",
+		"an ejected change is given back"} {
 		if !strings.Contains(flat, want) {
 			t.Errorf("work land help does not say %q:\n%s", want, page)
 		}
+	}
+	// Since U11b a batch of changes alone is proved on the lane's account.
+	if strings.Contains(flat, "every proof is charged to a goal") {
+		t.Errorf("work land help still says every proof is charged to a goal:\n%s", page)
 	}
 }

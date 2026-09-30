@@ -188,11 +188,15 @@ func (p DiskPass) registryPath() (string, error) {
 	return registry.DefaultPath()
 }
 
-func (p DiskPass) proofs() map[diskstore.OwnerKind]diskstore.OwnerProof {
+// machineProofs are the owner-kind proofs of the machine registry: the
+// engine's, and a unit read's findings store by its unit (Round D3 N4).
+func (p DiskPass) machineProofs(home string) map[diskstore.OwnerKind]diskstore.OwnerProof {
 	if p.Proofs != nil {
 		return p.Proofs
 	}
-	return diskOwnerProofs()
+	proofs := diskOwnerProofs()
+	proofs[diskstore.OwnerUnit] = diskstore.UnitFindingsProof{UnitRoot: filepath.Join(home, "unit")}
+	return proofs
 }
 
 // DiskPassResult is both reports.
@@ -255,6 +259,9 @@ func SweepDiskStores(ctx context.Context, top string, pass DiskPass) (DiskPassRe
 			}
 			checkoutOptions.Classes = append(checkoutOptions.Classes, LandingReleaseSets{Installation: layout.InstallationRoot,
 				StateRoot: top, GitRoot: layout.GitRoot, Git: ExecWorkspaceGit})
+			lanes, laneErr := landingLaneRoots(layout.InstallationRoot, pass.Now)
+			checkoutOptions.Classes = append(checkoutOptions.Classes, BatchReleaseSets{Seat: layout.InstallationRoot,
+				Lanes: nonEmpty(dedupe(append([]string{top, layout.InstallationRoot}, lanes...)...)...), LaneErr: laneErr, Retry: registeredBatchReleaseRetry})
 		}
 		if suiteFailures, err := suiteFailureClass(top, settings, pass); err == nil {
 			checkoutOptions.Classes = append(checkoutOptions.Classes, suiteFailures)
@@ -351,7 +358,7 @@ func machinePass(ctx context.Context, home, top string, own diskstore.Settings, 
 		tempRoots = nonEmpty(hostTemp, "/tmp")
 	}
 	options.Classes = []diskstore.Class{
-		diskstore.RegisteredStores{Registry: diskstore.MachineRegistry(home), Proofs: pass.proofs()},
+		diskstore.RegisteredStores{Registry: diskstore.MachineRegistry(home), Proofs: pass.machineProofs(home)},
 		&launch.UnitRetention{Root: filepath.Join(home, "unit"), Target: host.Bytes(config.DiskUnitTargetKey), Keep: host.Duration(config.DiskUnitKeepKey),
 			GoalEnded: unitGoalEnded(func(root string) *ledgerView { return checkoutLedger(root, pass.Now) })},
 		launchRetention(home, host),

@@ -14,7 +14,7 @@ import (
 const sessionStopLifetime = 8 * time.Hour
 
 var (
-	classifySessionStopCaller = lease.Classify
+	classifySessionStopCaller = personClassify
 	currentSessionStopHolder  = lease.CurrentHolder
 	classifySessionStopView   = classifyVerbCaller
 	sessionStopNow            = time.Now
@@ -25,6 +25,19 @@ var (
 		}
 		if !proof.TerminalValidFor(root) {
 			return humanauthority.Proof{}, fmt.Errorf("terminal human authority was not proven")
+		}
+		return proof, nil
+	}
+	// proveSessionStopAttorney is the person proof when a general power of
+	// attorney made the caller a person: the enrolled walk's proof, which a
+	// live grant admits with the grant named.
+	proveSessionStopAttorney = func(root string, pid int64, now time.Time) (humanauthority.Proof, error) {
+		proof, err := humanauthority.Prove(root, pid, nil, now)
+		if err != nil {
+			return proof, err
+		}
+		if proof.Helm == nil || proof.Helm.Grant == "" || !proof.TerminalValidFor(root) {
+			return humanauthority.Proof{}, fmt.Errorf("the power of attorney did not admit this session stop")
 		}
 		return proof, nil
 	}
@@ -46,7 +59,11 @@ func authorizeSessionStop(stateRoot, by string) (goal.SessionStop, string, int) 
 	}
 
 	now := sessionStopNow().UTC()
-	humanProof, err := proveSessionStopHuman(stateRoot, int64(os.Getppid()), now)
+	prove := proveSessionStopHuman
+	if classification.Attorney != nil {
+		prove = proveSessionStopAttorney
+	}
+	humanProof, err := prove(stateRoot, int64(os.Getppid()), now)
 	if err != nil {
 		return goal.SessionStop{}, sessionStopRefusal(err), 3
 	}

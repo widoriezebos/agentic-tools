@@ -95,8 +95,7 @@ func TestBrainBedActorSeamCoverage(t *testing.T) {
 	}
 }
 
-const expectedBrainActorSites = `cmd/metasystem/brain.go:			return classifyVerbCaller(root, callerPid)
-cmd/metasystem/goal.go:			return goal.Actor{}, 0, fmt.Errorf("the Stop main %q does not match the announced checkout holder %q", mainID, holder.MainId)
+const expectedBrainActorSites = `cmd/metasystem/goal.go:			return goal.Actor{}, 0, fmt.Errorf("the Stop main %q does not match the announced checkout holder %q", mainID, holder.MainId)
 cmd/metasystem/goal.go:			return goal.Actor{}, 0, fmt.Errorf("the announced checkout holder could not be resolved: %w", err)
 cmd/metasystem/goal.go:			return goal.Actor{}, 0, fmt.Errorf("the checkout holder has no readable main announcement and lineage")
 cmd/metasystem/goal.go:			return goal.Actor{}, 0, fmt.Errorf("the seat machine could not be resolved: %w", err)
@@ -112,7 +111,6 @@ cmd/metasystem/process_verbs.go:	return classifyVerbCallerWith(root, callerPid, 
 cmd/metasystem/process_verbs.go:func classifyVerbCaller(root string, callerPid int64) (lease.ClassifyResult, error) {
 cmd/metasystem/process_verbs.go:func classifyVerbCallerWith(root string, callerPid int64, repositoryTop func(string) (string, error)) (lease.ClassifyResult, error) {
 cmd/metasystem/proof_run.go:				Actor: goal.Actor{Machine: binding.Machine, Lineage: binding.Lineage}, Ulid: ulid, Now: now,
-cmd/metasystem/proof_run.go:	classification, err := classifyVerbCaller(root, int64(os.Getppid()))
 cmd/metasystem/run.go:		view, err := classifyVerbCaller(root, int64(os.Getpid()))
 cmd/metasystem/wait_register.go:	view, err := classifyVerbCaller(root, callerPID)
 internal/cadence/tick.go:	actor := goal.Actor{Machine: machine, Lineage: owner.Lineage}

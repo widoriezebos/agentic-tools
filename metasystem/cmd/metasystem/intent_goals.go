@@ -156,8 +156,15 @@ func (inv *intentInvocation) ownerCall(targets []intentTarget, run func(syncRequ
 func (inv *intentInvocation) actorArgs(id string, names ...string) ([]string, *intentResult) {
 	forwarded := inv.forward(names...)
 	dependencies := inv.owners.dependencies
-	if inv.input.has("by") || inv.input.has("lineage") || inv.input.switched("fixture-human-authority") ||
-		dependencies.ownerLineage != nil && dependencies.ownerLineage() != "" {
+	if inv.input.has("by") || inv.input.has("lineage") || inv.input.switched("fixture-human-authority") {
+		return forwarded, nil
+	}
+	if dependencies.ownerLineage != nil && dependencies.ownerLineage() != "" {
+		// A live general grant that admits this session makes the act the
+		// granting person's, before the session's own shortcut (M6).
+		if by, ok := inv.attorneyActor(); ok {
+			return append(forwarded, "--by", by), nil
+		}
 		return forwarded, nil
 	}
 	refused := func(err error) *intentResult {

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/landpath"
 )
 
@@ -105,6 +106,10 @@ func runIntentLandStaged(inv *intentInvocation) int {
 			// Admission is not the last word: the same gate is read again
 			// immediately before each push.
 			owners.LandingGate = inv.pushGate()
+			// The goal's workspaces this landing ends: recorded before each
+			// push, released once it succeeded (disk-lifetimes Part B 3.6).
+			owners.RecordRelease = func(commit, branch string) error { return inv.recordStagedRelease(request.Goal, commit, branch) }
+			owners.ReleaseLanded = func(commit string) { inv.releaseStagedLanding(request.Goal, commit) }
 		}
 	}
 	stdout, stderr := inv.stdout, inv.stderr
@@ -165,12 +170,12 @@ func landStagedLocally(request landpath.LandRequest, stdout, stderr io.Writer) i
 	}
 	message := request.MessageFile
 	if message == "-" {
-		file, err := os.CreateTemp("", "metasystem-local-commit-message-*")
+		file, done, err := diskstore.ScratchFile("metasystem-local-commit-message-*")
 		if err != nil {
 			fmt.Fprintln(stderr, err)
 			return 1
 		}
-		defer os.Remove(file.Name())
+		defer done()
 		_, writeErr := file.Write(request.Message)
 		if closeErr := file.Close(); writeErr != nil || closeErr != nil {
 			fmt.Fprintln(stderr, "land refused: the commit message cannot be written")

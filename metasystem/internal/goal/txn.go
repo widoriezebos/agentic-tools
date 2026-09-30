@@ -35,7 +35,20 @@ type Endpoint struct {
 	commandEnv             []string
 	captureTimers          attentionTimerSource
 	carriedCounselorAppend func(string, string, HistoryLine, time.Time) error
+	blockedRecovery        SensitiveRecoveryPolicy
+	// attorney is the general grant one act's publishes re-check; set only
+	// through WithAttorneyEffect.
+	attorney *attorneyBinding
 }
+
+// ConfigureBlockedRecovery binds the live policy a publish on this endpoint
+// uses when it recovers a provably dead owner's pushed entry that blocks it.
+func (e *Endpoint) ConfigureBlockedRecovery(policy SensitiveRecoveryPolicy) {
+	e.blockedRecovery = policy
+}
+
+// BlockedRecovery is the bound policy; nil when none was bound.
+func (e Endpoint) BlockedRecovery() SensitiveRecoveryPolicy { return e.blockedRecovery }
 
 // ConfigureCarriedCounselorAppend binds the caller-owned counselor writer to
 // this endpoint. A nil writer leaves an existing binding unchanged.
@@ -617,10 +630,9 @@ func Publish(e Endpoint, req PublishRequest) (PublishResult, error) {
 	if req.Opid == "" || req.Mutate == nil {
 		return PublishResult{}, fmt.Errorf("a publish needs an opid and a mutation")
 	}
-	if blocking, isBlocked, err := PushedBlocking(e.Root); err != nil {
+	req.Mutate = guardAttorneyEffect(e, req.Mutate)
+	if err := clearDeadBlocker(e, req.Opid); err != nil {
 		return PublishResult{}, err
-	} else if isBlocked && blocking.Opid != req.Opid {
-		return PublishResult{}, fmt.Errorf("journal entry %s is pushed with its outcome unknown; this clone mutates nothing until it is classified", blocking.Opid)
 	}
 	// A REPLAY of an opid this clone already journaled: a terminal
 	// confirmed entry re-verifies its postcondition on a fresh
@@ -660,6 +672,52 @@ func Publish(e Endpoint, req PublishRequest) (PublishResult, error) {
 		return PublishResult{}, err
 	}
 	return runTransaction(e, req)
+}
+
+// clearDeadBlocker is the process-independent exclusion with its one lawful
+// way through: a pushed entry of another operation refuses this publish,
+// unless its owner is provably dead (identity-verified, OwnerAlive), in which
+// case the recovery rule classifies that entry and the check runs once more.
+// A live owner, an owner whose liveness cannot be proved, and a dead owner's
+// breach-stop without the live policy that re-establishes its authority all
+// refuse as before (fail closed).
+func clearDeadBlocker(e Endpoint, opid string) error {
+	blocking, isBlocked, err := PushedBlocking(e.Root)
+	if err != nil {
+		return err
+	}
+	if !isBlocked || blocking.Opid == opid {
+		return nil
+	}
+	refusal := func(entry Entry, why string) error {
+		message := fmt.Sprintf("journal entry %s is pushed with its outcome unknown; this clone mutates nothing until it is classified", entry.Opid)
+		if why != "" {
+			message += " (" + why + ")"
+		}
+		return errors.New(message)
+	}
+	if OwnerAlive(blocking) {
+		return refusal(blocking, "")
+	}
+	if blocking.Intent.Verb == "breach-stop" && e.blockedRecovery == nil {
+		return refusal(blocking, "its owner is dead, and its breach-stop is recovered only with the live budget projection: run metasystem goal sync --recover")
+	}
+	report, _, recoverErr := RecoverDeadBlocker(e, blocking, e.blockedRecovery)
+	if recoverErr != nil {
+		return refusal(blocking, "its owner is dead and recovery failed: "+recoverErr.Error())
+	}
+	left, stands, err := PushedBlocking(e.Root)
+	if err != nil {
+		return err
+	}
+	if stands && left.Opid != opid {
+		why := ""
+		if left.Opid == blocking.Opid && report.Detail != "" {
+			why = "recovery left it: " + report.Detail
+		}
+		return refusal(left, why)
+	}
+	return nil
 }
 
 // CompleteEntry runs a request against its already-created journal entry.

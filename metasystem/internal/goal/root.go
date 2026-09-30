@@ -9,6 +9,7 @@ package goal
 
 import (
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -52,6 +53,27 @@ type PowerOfAttorneyEntry struct {
 	Expires   string // YYYY-MM-DD
 	Revoked   string // RFC3339, empty while live
 	RevokedBy string // human:<name>, empty while live
+	// A general entry (Verbs == [GeneralAct]) names neither tiers nor an
+	// expiry day: it is bound to one checkout of one machine and to the
+	// lease-holder lineage recorded when the person granted it, and it ends
+	// at Until, an RFC3339 instant on a whole minute.
+	For      string // the machine the grant is for
+	Checkout string // the canonical absolute path of that checkout
+	Lineage  string // the lease holder's lineage at the grant
+	Until    string // RFC3339 UTC, exclusive
+}
+
+// GeneralAct is the one act of a general power of attorney: every act a
+// person may make, bar the hard limits, for the seat's main session.
+const GeneralAct = "everything"
+
+// GeneralAttorneyMax bounds a general entry's life: an end at most one week
+// of elapsed time after it was granted.
+const GeneralAttorneyMax = 168 * time.Hour
+
+// General reports whether the entry is a general power of attorney.
+func (e PowerOfAttorneyEntry) General() bool {
+	return len(e.Verbs) == 1 && e.Verbs[0] == GeneralAct
 }
 
 // AttorneyVerbs are the verbs a delegation may cover in this build.
@@ -72,6 +94,9 @@ func (e PowerOfAttorneyEntry) Covers(verb string, tier uint8) bool {
 // no earlier than since. The parser reads any well-formed entry so a landed
 // ledger stays readable; an entry outside the bounds is never honoured.
 func (e PowerOfAttorneyEntry) WithinBounds() (bool, string) {
+	if e.General() {
+		return e.generalWithinBounds()
+	}
 	for _, tier := range e.Tiers {
 		if tier != 1 && tier != 2 {
 			return false, "tiers=" + renderTiers(e.Tiers) + " is outside tiers 1 and 2"
@@ -112,6 +137,9 @@ func (e PowerOfAttorneyEntry) LiveAt(now time.Time) (bool, string) {
 	if e.Revoked != "" {
 		return false, "revoked at " + e.Revoked + " by " + e.RevokedBy
 	}
+	if e.General() {
+		return e.generalLiveAt(now)
+	}
 	expires, err := time.Parse("2006-01-02", e.Expires)
 	if err != nil {
 		return false, "expiry " + e.Expires + " is not a date"
@@ -120,6 +148,56 @@ func (e PowerOfAttorneyEntry) LiveAt(now time.Time) (bool, string) {
 	today := time.Date(day.Year(), day.Month(), day.Day(), 0, 0, 0, 0, time.UTC)
 	if today.After(expires) {
 		return false, "expired " + e.Expires
+	}
+	return true, ""
+}
+
+// generalWithinBounds is WithinBounds for a general entry: since before
+// until, at most one week apart, until on a whole minute, an absolute
+// checkout and a named machine and lineage.
+func (e PowerOfAttorneyEntry) generalWithinBounds() (bool, string) {
+	if len(e.Tiers) != 0 || e.Expires != "" {
+		return false, "a general entry names no tiers and no expiry day"
+	}
+	since, err := time.Parse(time.RFC3339, e.Since)
+	if err != nil {
+		return false, "since " + e.Since + " is not RFC3339"
+	}
+	until, err := time.Parse(time.RFC3339, e.Until)
+	if err != nil {
+		return false, "until " + e.Until + " is not RFC3339"
+	}
+	if !until.After(since) || until.Sub(since) > GeneralAttorneyMax {
+		return false, "until " + e.Until + " is not within one week after " + e.Since
+	}
+	if !until.Equal(until.Truncate(time.Minute)) {
+		return false, "until " + e.Until + " is not on a whole minute"
+	}
+	if !filepath.IsAbs(e.Checkout) || e.For == "" || e.Lineage == "" {
+		return false, "a general entry names its machine, its absolute checkout and its lineage"
+	}
+	if e.Revoked != "" {
+		revoked, err := time.Parse(time.RFC3339, e.Revoked)
+		if err != nil || revoked.Before(since) {
+			return false, "revocation " + e.Revoked + " precedes the grant"
+		}
+	}
+	return true, ""
+}
+
+// generalLiveAt reports a general entry live in [since, until) at now; a
+// zero now is never live.
+func (e PowerOfAttorneyEntry) generalLiveAt(now time.Time) (bool, string) {
+	if now.IsZero() {
+		return false, "no clock reading"
+	}
+	since, _ := time.Parse(time.RFC3339, e.Since)
+	until, _ := time.Parse(time.RFC3339, e.Until)
+	if now.Before(since) {
+		return false, "not yet in force (since " + e.Since + ")"
+	}
+	if !now.Before(until) {
+		return false, "expired " + e.Until
 	}
 	return true, ""
 }
@@ -177,23 +255,18 @@ func ParseTiers(value string) ([]uint8, error) {
 func parseAttorneyEntry(value string) (PowerOfAttorneyEntry, error) {
 	fields := strings.Fields(value)
 	if len(fields) < 6 || !validOpidShape(fields[0]) {
-		return PowerOfAttorneyEntry{}, fmt.Errorf("expected <opid> by=human:<name> tiers=<n,..> verbs=<verb,..> since=<RFC3339> expires=<YYYY-MM-DD> [revoked=<RFC3339> revokedBy=human:<name>]")
+		return PowerOfAttorneyEntry{}, fmt.Errorf("expected <opid> by=human:<name> tiers=<n,..> verbs=<verb,..> since=<RFC3339> expires=<YYYY-MM-DD>, or <opid> by=human:<name> verbs=everything for=<machine> checkout=<path> lineage=<lineage> since=<RFC3339> until=<RFC3339>, each with [revoked=<RFC3339> revokedBy=human:<name>]")
 	}
-	rec, err := parseKVRecord(strings.Join(fields[1:], " "), []string{"by", "tiers", "verbs", "since", "expires"}, []string{"revoked", "revokedBy"}, "")
+	rec, err := parseKVRecord(strings.Join(fields[1:], " "), []string{"by", "verbs", "since"},
+		[]string{"tiers", "expires", "for", "checkout", "lineage", "until", "revoked", "revokedBy"}, "")
 	if err != nil {
 		return PowerOfAttorneyEntry{}, err
 	}
-	tiers, err := ParseTiers(rec["tiers"])
-	if err != nil {
-		return PowerOfAttorneyEntry{}, err
-	}
-	entry := PowerOfAttorneyEntry{ID: fields[0], By: rec["by"], Tiers: tiers, Verbs: strings.Split(rec["verbs"], ","),
-		Since: rec["since"], Expires: rec["expires"], Revoked: rec["revoked"], RevokedBy: rec["revokedBy"]}
+	entry := PowerOfAttorneyEntry{ID: fields[0], By: rec["by"], Verbs: strings.Split(rec["verbs"], ","),
+		Since: rec["since"], Expires: rec["expires"], Revoked: rec["revoked"], RevokedBy: rec["revokedBy"],
+		For: rec["for"], Checkout: rec["checkout"], Lineage: rec["lineage"], Until: rec["until"]}
 	if !strings.HasPrefix(entry.By, "human:") || !validStamp(entry.Since) {
 		return PowerOfAttorneyEntry{}, fmt.Errorf("by= must name a human and since= must be RFC3339")
-	}
-	if _, err := time.Parse("2006-01-02", entry.Expires); err != nil {
-		return PowerOfAttorneyEntry{}, fmt.Errorf("expires= must be a date")
 	}
 	if (entry.Revoked != "" || entry.RevokedBy != "") && (!validStamp(entry.Revoked) || !strings.HasPrefix(entry.RevokedBy, "human:")) {
 		return PowerOfAttorneyEntry{}, fmt.Errorf("revoked= must be RFC3339 with revokedBy=human:<name>")
@@ -202,11 +275,51 @@ func parseAttorneyEntry(value string) (PowerOfAttorneyEntry, error) {
 		if strings.TrimSpace(verb) == "" {
 			return PowerOfAttorneyEntry{}, fmt.Errorf("verbs= must list verbs")
 		}
+		if verb == GeneralAct && len(entry.Verbs) != 1 {
+			return PowerOfAttorneyEntry{}, fmt.Errorf("verbs=%s stands alone", GeneralAct)
+		}
+	}
+	if entry.General() {
+		for _, key := range []string{"for", "checkout", "lineage", "until"} {
+			if rec[key] == "" {
+				return PowerOfAttorneyEntry{}, fmt.Errorf("a general entry requires %s=", key)
+			}
+		}
+		if rec["tiers"] != "" || rec["expires"] != "" {
+			return PowerOfAttorneyEntry{}, fmt.Errorf("a general entry names no tiers= and no expires=")
+		}
+		if !validStamp(entry.Until) {
+			return PowerOfAttorneyEntry{}, fmt.Errorf("until= must be RFC3339")
+		}
+		return entry, nil
+	}
+	for _, key := range []string{"for", "checkout", "lineage", "until"} {
+		if _, present := rec[key]; present {
+			return PowerOfAttorneyEntry{}, fmt.Errorf("%s= belongs to a general entry only", key)
+		}
+	}
+	if rec["tiers"] == "" || rec["expires"] == "" {
+		return PowerOfAttorneyEntry{}, fmt.Errorf("a scoped entry requires tiers= and expires=")
+	}
+	tiers, err := ParseTiers(rec["tiers"])
+	if err != nil {
+		return PowerOfAttorneyEntry{}, err
+	}
+	entry.Tiers = tiers
+	if _, err := time.Parse("2006-01-02", entry.Expires); err != nil {
+		return PowerOfAttorneyEntry{}, fmt.Errorf("expires= must be a date")
 	}
 	return entry, nil
 }
 
 func renderAttorneyEntry(e PowerOfAttorneyEntry) string {
+	if e.General() {
+		line := fmt.Sprintf("- %s by=%s verbs=%s for=%s checkout=%s lineage=%s since=%s until=%s", e.ID, e.By, GeneralAct, e.For, e.Checkout, e.Lineage, e.Since, e.Until)
+		if e.Revoked != "" {
+			line += " revoked=" + e.Revoked + " revokedBy=" + e.RevokedBy
+		}
+		return line
+	}
 	line := fmt.Sprintf("- %s by=%s tiers=%s verbs=%s since=%s expires=%s", e.ID, e.By, renderTiers(e.Tiers), strings.Join(e.Verbs, ","), e.Since, e.Expires)
 	if e.Revoked != "" {
 		line += " revoked=" + e.Revoked + " revokedBy=" + e.RevokedBy

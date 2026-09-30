@@ -62,7 +62,11 @@ type TickConfig struct {
 	// it restarts the lane's owner when it died, within the keeper's
 	// thrashing bounds, and returns its line. The command layer supplies it;
 	// nil keeps nothing. RunLoop calls it once per cycle outside the helm.
-	KeepLandingLane   func() string
+	KeepLandingLane func() string
+	// Stopping reports that the resident runner received a stop signal:
+	// the tick finishes the stop in progress and starts no further one.
+	// Only RunLoop sets it; nil is never stopping.
+	Stopping          func() bool
 	narrationLocation *time.Location
 }
 
@@ -123,11 +127,11 @@ func custodialBreachStops(repoRoot string, cfg TickConfig, scanner func(string, 
 	if cfg.BreachStopReady != nil && !cfg.BreachStopReady() {
 		return nil
 	}
-	return runBreachStopCustodianWithScanner(repoRoot, cfg.now(), scanner, cfg.BreachStop)
+	return runBreachStopCustodianWithScanner(repoRoot, cfg.now(), scanner, cfg.BreachStop, cfg.Stopping)
 }
 
 func runBreachStopCustodianWithScanner(repoRoot string, now time.Time,
-	scanner func(string, time.Time) ([]dispatch.StopRoute, error), stop func(string, uint64) (string, error)) []BreachStopReport {
+	scanner func(string, time.Time) ([]dispatch.StopRoute, error), stop func(string, uint64) (string, error), stopping func() bool) []BreachStopReport {
 	routes, err := scanner(repoRoot, now)
 	if err != nil {
 		return []BreachStopReport{{State: "FAILED", Detail: err.Error()}}
@@ -137,6 +141,11 @@ func runBreachStopCustodianWithScanner(repoRoot string, now time.Time,
 		report := BreachStopReport{GoalID: route.GoalID, Revision: route.Revision, StopID: route.StopID}
 		if route.Condition == dispatch.StopRouteIndeterminate {
 			report.State, report.Detail = "INDETERMINATE", route.Failure
+			reports = append(reports, report)
+			continue
+		}
+		if stopping != nil && stopping() {
+			report.State, report.Detail = "DEFERRED", "the runner is stopping; the next runner's tick takes this breach"
 			reports = append(reports, report)
 			continue
 		}

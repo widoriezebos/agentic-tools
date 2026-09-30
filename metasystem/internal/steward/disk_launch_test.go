@@ -89,9 +89,16 @@ func TestCheckoutPassRetriesLandingReleaseSets(t *testing.T) {
 func TestCheckoutProofsCarryTheWorkspaceProof(t *testing.T) {
 	t.Parallel()
 	bed := newStaleBed(t)
-	proof, ok := checkoutProofs(bed.inst, DiskPass{Now: staleNow})[diskstore.OwnerGoal].(diskstore.WorkspaceProof)
+	classes, ok := checkoutProofs(bed.inst, DiskPass{Now: staleNow})[diskstore.OwnerGoal].(diskstore.ClassProofs)
+	if !ok {
+		t.Fatalf("the goal's proofs are not by class: %+v", classes)
+	}
+	proof, ok := classes.ByClass[diskstore.WorkspaceClass].(diskstore.WorkspaceProof)
 	if !ok || proof.GitRoot == "" || proof.Git == nil || proof.Ended == nil {
 		t.Fatalf("proof = %+v", proof)
+	}
+	if worktree, ok := classes.ByClass[diskstore.GoalWorktreeClass].(diskstore.GoalWorktreeProof); !ok || worktree.Plan == nil || worktree.Sweep == nil {
+		t.Fatalf("the goal worktree's proof = %+v", classes.ByClass[diskstore.GoalWorktreeClass])
 	}
 	if ended, known, _ := proof.Ended(diskstore.Owner{Kind: diskstore.OwnerGoal, Ref: "g"}); ended || known {
 		t.Fatalf("no readable ledger: ended=%v known=%v", ended, known)
@@ -109,9 +116,14 @@ func TestDiskPassesCarryTheProcessProof(t *testing.T) {
 	t.Parallel()
 	bed := newStaleBed(t)
 	for name, proofs := range map[string]map[diskstore.OwnerKind]diskstore.OwnerProof{
-		"machine": DiskPass{}.proofs(), "checkout": checkoutProofs(bed.inst, DiskPass{Now: staleNow})} {
+		"machine": DiskPass{}.machineProofs(bed.inst), "checkout": checkoutProofs(bed.inst, DiskPass{Now: staleNow})} {
 		if proof, ok := proofs[diskstore.OwnerProcess].(diskstore.ProcessProof); !ok || proof.Prober == nil {
 			t.Errorf("the %s pass has no process proof: %+v", name, proofs[diskstore.OwnerProcess])
 		}
+	}
+	// A unit read's findings store ends with its unit (Round D3 N4).
+	machine := DiskPass{}.machineProofs(bed.inst)
+	if proof, ok := machine[diskstore.OwnerUnit].(diskstore.UnitFindingsProof); !ok || proof.UnitRoot != filepath.Join(bed.inst, "unit") {
+		t.Errorf("the machine pass has no unit findings proof: %+v", proof)
 	}
 }

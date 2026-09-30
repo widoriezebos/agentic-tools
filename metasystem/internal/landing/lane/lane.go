@@ -28,6 +28,8 @@ const (
 	CodeMismatch        = "LANDING_LANE_MISMATCH"
 	CodeGone            = "LANDING_LANE_GONE"
 	CodeRegisterInvalid = "LANDING_LANE_REGISTER_INVALID"
+	CodeUnarmed         = "LANDING_LANE_UNARMED"
+	CodeNoMachine       = "LANDING_LANE_NO_MACHINE"
 )
 
 // Record is the host's registration of its landing lane.
@@ -38,8 +40,10 @@ type Record struct {
 }
 
 // Refusal is a lane refusal: what happened, and the fix a person runs.
+// Argv is that fix as one command, when it is one.
 type Refusal struct {
 	Code, Message, Fix string
+	Argv               []string
 }
 
 func (r *Refusal) Error() string { return r.Code + ": " + r.Message }

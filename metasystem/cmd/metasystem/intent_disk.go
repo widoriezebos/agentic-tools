@@ -21,6 +21,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/evidence"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gocache"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 )
 
@@ -34,8 +35,12 @@ type diskOwners struct {
 	// name to record.
 	person func(root string) (string, error)
 	census func() *diskstore.UseCensus
-	// proofs are the owner-kind proofs --release may use.
+	// proofs replaces the owner-kind proofs --release uses (fixtures); nil
+	// is the engine's own for the checkout (steward.DiskOwnerProofs).
 	proofs map[diskstore.OwnerKind]diskstore.OwnerProof
+	// leases is a person's settlement of the host's dirty admission leases
+	// (--leases); nil is proofrun.SettleHostLeases.
+	leases func(top string) ([]proofrun.HostLeaseReport, bool, error)
 	// tempRoots are the temporary roots --strays may remove under.
 	tempRoots func() []string
 	// userCacheDir and stateDir are the cache trimmer's seams (Part A):
@@ -66,7 +71,7 @@ func (o diskOwners) withDefaults() diskOwners {
 		o.now = time.Now
 	}
 	if o.person == nil {
-		o.person = provenPerson(humanauthority.KernelReader{}, func() int64 { return int64(os.Getppid()) }, func() time.Time { return time.Now().UTC() })
+		o.person = provenPerson(humanauthority.KernelReader{}, func() int64 { return int64(os.Getppid()) }, goalCommandNow)
 	}
 	if o.census == nil {
 		o.census = func() *diskstore.UseCensus {
@@ -75,8 +80,8 @@ func (o diskOwners) withDefaults() diskOwners {
 			return &census
 		}
 	}
-	if o.proofs == nil {
-		o.proofs = map[diskstore.OwnerKind]diskstore.OwnerProof{}
+	if o.leases == nil {
+		o.leases = proofrun.SettleHostLeases
 	}
 	if o.git == nil {
 		o.git = steward.ExecWorkspaceGit
@@ -94,6 +99,17 @@ func (o diskOwners) withDefaults() diskOwners {
 		}
 	}
 	return o
+}
+
+// proofsFor is the owner-kind proofs a person's --release judges a store of
+// the checkout top by: the fixtures' when set, else every proof the
+// steward's checkout pass has (process scratch, goal and session
+// worktrees, handed-out workspaces, delegate workspaces).
+func (o diskOwners) proofsFor(top string) map[diskstore.OwnerKind]diskstore.OwnerProof {
+	if o.proofs != nil {
+		return o.proofs
+	}
+	return steward.DiskOwnerProofs(top, o.now().UTC())
 }
 
 func diskIntentCommands() []intentCommand {
@@ -116,6 +132,7 @@ func diskIntentCommands() []intentCommand {
 				"metasystem disk clean [--preview] [--floor GIB]",
 				"metasystem disk clean --strays [--plan ID]",
 				"metasystem disk clean --release ID",
+				"metasystem disk clean --leases",
 				"metasystem disk clean --discard j2:ID --reason TEXT",
 				"metasystem disk clean --go-cache",
 			},
@@ -123,7 +140,7 @@ func diskIntentCommands() []intentCommand {
 				"Runs the steward's pass now for this checkout and this machine: a store goes only when its owner is proven ended and nothing still uses it; everything else is kept or pending with the command that settles it. Then it trims the machine's Go and staticcheck caches to their caps (disk.go-cache-cap-gib, disk.delegate-go-cache-cap-gib, disk.staticcheck-cache-cap-gib), least recently used first: everything unused for disk.go-cache-keep-hours goes before anything used within it, and a cache still over its cap loses the rest oldest first, never an entry used within disk.cache-min-keep-minutes. Run at a terminal it finishes the job: pass after pass of the steward's disk.cache-trim-budget-sec, telling each on stderr, until every cache is measured and trimmed or disk.cache-trim-person-budget-sec is spent. A repeat with nothing to do is success.",
 				"It also forgets the host registry's registrations of checkouts whose directories no longer exist (one reaped record each, reason checkout-gone); a registration whose recorded process still runs is kept. The steward's own pass only counts them.",
 				"--go-cache runs only the cache trim.",
-				"--preview changes nothing and writes one plan file whose id it prints. --strays, --release and --discard are a person's acts at the enrolled terminal: --strays removes the engine-named leftovers a preview listed, --release ID removes one registered store whose only obstacle is a use check the machine could not complete, --discard drops a chain's uncommitted work and releases its workspace now, archiving every commit it holds.",
+				"--preview changes nothing and writes one plan file whose id it prints. --strays, --release and --discard are a person's acts at the enrolled terminal: --strays removes the engine-named leftovers a preview listed, --release ID removes one registered store whose only obstacle is a use check the machine could not complete, --discard drops a chain's uncommitted work and releases its workspace now, archiving every commit it holds; --leases settles the host's dirty proof-admission leases whose owners are proven ended, by the proof the admission path uses, and names what keeps each other one.",
 				"Nothing unregistered is ever removed by the pass itself; nothing a live process uses is removed by anyone.",
 				"Output is a short summary: what was removed and the space freed, what was kept grouped by reason with its count and the three largest, and the command that settles it. --verbose prints every item on its own line; --json carries every item either way.",
 			},
@@ -133,6 +150,7 @@ func diskIntentCommands() []intentCommand {
 				{name: "strays", usage: "a person's act: remove the strays a preview listed"},
 				{name: "plan", value: "ID", usage: "the preview to act on (default: the newest)"},
 				{name: "release", value: "ID", usage: "a person's act: release the registered store ID that only an incomplete use check keeps"},
+				{name: "leases", usage: "a person's act: settle the host's dirty proof-admission leases whose owners are proven ended"},
 				{name: "discard", value: "j2:ID", advanced: true, usage: "a person's act: drop chain ID's uncommitted work and release its workspace now"},
 				{name: "reason", value: "TEXT", advanced: true, usage: "why the work may be dropped (with --discard)"},
 				{name: "go-cache", usage: "only trim the Go and staticcheck caches to their caps"},
@@ -231,14 +249,14 @@ func runIntentDiskClean(inv *intentInvocation) int {
 	}
 	owners := inv.owners.disk.withDefaults()
 	chosen := 0
-	for _, name := range []string{"strays", "release", "discard", "go-cache", "preview"} {
+	for _, name := range []string{"strays", "release", "leases", "discard", "go-cache", "preview"} {
 		if inv.input.has(name) {
 			chosen++
 		}
 	}
 	if chosen > 1 {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2,
-			Summary: "disk clean does one thing at a time: choose one of --preview, --strays, --release ID, --discard j2:ID or --go-cache; nothing was done",
+			Summary: "disk clean does one thing at a time: choose one of --preview, --strays, --release ID, --leases, --discard j2:ID or --go-cache; nothing was done",
 			next:    inv.publicArgv("disk", "clean", "--preview"), nextReason: "see what a pass would do first"})
 	}
 	switch {
@@ -248,6 +266,8 @@ func runIntentDiskClean(inv *intentInvocation) int {
 		return runDiskStrays(inv, owners, top)
 	case inv.input.has("release"):
 		return runDiskRelease(inv, owners, top)
+	case inv.input.has("leases"):
+		return runDiskLeases(inv, owners, top)
 	case inv.input.has("discard"):
 		return runDiskDiscard(inv, owners, top)
 	}
@@ -348,9 +368,13 @@ func diskPlural(count int, one, many string) string {
 
 // provenPerson proves the person at the enrolled terminal from the shell pid
 // names and returns the enrolled name to record.
-func provenPerson(reader humanauthority.Reader, pid func() int64, now func() time.Time) func(root string) (string, error) {
+func provenPerson(reader humanauthority.Reader, pid func() int64, now func(root string) (time.Time, error)) func(root string) (string, error) {
 	return func(root string) (string, error) {
-		if _, err := humanauthority.Prove(root, pid(), reader, now()); err != nil {
+		at, err := now(root)
+		if err != nil {
+			return "", err
+		}
+		if _, err := humanauthority.Prove(root, pid(), reader, at); err != nil {
 			return "", err
 		}
 		if enrollment, readErr := humanauthority.ReadEnrollment(root); readErr == nil && enrollment.Human != "" {
@@ -489,7 +513,7 @@ func runDiskRelease(inv *intentInvocation, owners diskOwners, top string) int {
 		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "store " + id + " cannot be read: " + err.Error(),
 			Decision: "metasystem disk show names what the last pass could read"})
 	}
-	verdict, err := diskstore.ReleaseByPerson(context.Background(), registry, id, owners.proofs[record.Owner.Kind], owners.census(), by)
+	verdict, err := diskstore.ReleaseByPerson(context.Background(), registry, id, owners.proofsFor(top)[record.Owner.Kind], owners.census(), by)
 	if err != nil {
 		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "releasing " + id + " stopped: " + err.Error(), Decision: "metasystem disk show"})
 	}
@@ -715,4 +739,48 @@ func diskBytes(size int64) string {
 		return fmt.Sprintf("%.1f MiB", float64(size)/float64(mib))
 	}
 	return fmt.Sprintf("%d B", size)
+}
+
+// runDiskLeases is a person's settlement of the host's dirty admission
+// leases (3.8 --leases, DL2-19, DL3B-02): each is judged by the proof the
+// admission path uses under admission.lock and the lease's own flock; one
+// proven settled is reclaimed, every other is kept with its holder or its
+// unknown and the command that settles it. A person's word overrides no
+// live holder and no unknown. A repeat with nothing dirty succeeds and
+// writes nothing.
+func runDiskLeases(inv *intentInvocation, owners diskOwners, top string) int {
+	by, problem := diskPerson(inv, owners, top, "--leases")
+	if problem != nil {
+		return inv.render(*problem)
+	}
+	reports, busy, err := owners.leases(top)
+	if err != nil {
+		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the proof-admission leases cannot be read: " + err.Error() + "; nothing was reclaimed",
+			Decision: "metasystem system check names what else is wrong"})
+	}
+	var outcomes []diskstore.PersonOutcome
+	for _, report := range reports {
+		outcome := diskstore.PersonOutcome{Path: report.Lease}
+		switch {
+		case report.State == proofrun.HostLeaseReclaimed:
+			outcome.Done, outcome.Reason = true, "reclaimed: "+report.Reason
+		case report.State == proofrun.HostLeaseLive:
+			outcome.Reason = fmt.Sprintf("kept: %s (owner pid %d)", report.Reason, report.Owner.Pid)
+			outcome.Command = fmt.Sprintf("end owner pid %d and what it started, then metasystem disk clean --leases", report.Owner.Pid)
+		case busy:
+			outcome.Reason = "kept: a proof holds admission.lock, so nothing is reclaimed now (" + report.Reason + ")"
+			outcome.Command = "metasystem disk clean --leases once that proof has ended"
+		default:
+			outcome.Reason, outcome.Command = "kept: "+report.Reason, report.Remedy
+			if outcome.Command == "" {
+				outcome.Command = "metasystem disk clean --leases"
+			}
+		}
+		outcome.Finding, outcome.FindingCommand = outcome.Reason, outcome.Command
+		outcomes = append(outcomes, outcome)
+	}
+	if len(outcomes) == 0 {
+		return inv.render(intentResult{Outcome: intentUnchanged, Summary: "no dirty proof-admission lease on this host; nothing to do", Data: map[string]any{"by": by}})
+	}
+	return renderPersonOutcomes(inv, "leases", "leases", by, outcomes)
 }

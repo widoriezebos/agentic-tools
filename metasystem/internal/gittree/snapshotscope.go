@@ -478,6 +478,14 @@ func (w Workspace) SnapshotSeeded(seedCommit, expectedTree string, declaredPaths
 // isolated index so ignored inputs, deletions, modes, and symlinks cannot
 // disappear from a delivery-parity comparison.
 func (w Workspace) SnapshotRelevant(expectedTree string, declaredPaths []string) (string, error) {
+	return w.SnapshotRelevantExcluding(expectedTree, declaredPaths, nil)
+}
+
+// SnapshotRelevantExcluding is SnapshotRelevant with excluded toplevel-
+// relative literal paths (a directory covers its subtree) held at the
+// expected bytes: nothing under them is read from the worktree, even inside
+// a declared directory, and nothing there is hashed.
+func (w Workspace) SnapshotRelevantExcluding(expectedTree string, declaredPaths, excludedPaths []string) (string, error) {
 	if !treeID.MatchString(expectedTree) {
 		return "", fmt.Errorf("gittree relevant snapshot: %q is not a tree id", expectedTree)
 	}
@@ -529,6 +537,21 @@ func (w Workspace) SnapshotRelevant(expectedTree string, declaredPaths []string)
 			}
 		}
 	}
+	excluded := func(path string) bool {
+		for _, exclusion := range excludedPaths {
+			if path == exclusion || strings.HasPrefix(path, exclusion+"/") {
+				return true
+			}
+		}
+		return false
+	}
+	kept := paths[:0]
+	for _, path := range paths {
+		if !excluded(path) {
+			kept = append(kept, path)
+		}
+	}
+	paths = kept
 	sort.Strings(paths)
 	if len(paths) == 0 {
 		return expectedTree, nil
@@ -569,6 +592,9 @@ func (w Workspace) SnapshotRelevant(expectedTree string, declaredPaths []string)
 	}
 	if len(addPaths) > 0 {
 		args := append([]string{"add", "-A", "-f", "--"}, addPaths...)
+		for _, exclusion := range excludedPaths {
+			args = append(args, ":(exclude,literal)"+exclusion)
+		}
 		if _, err := w.git(env, args...); err != nil {
 			return "", fmt.Errorf("gittree relevant snapshot: %w", err)
 		}

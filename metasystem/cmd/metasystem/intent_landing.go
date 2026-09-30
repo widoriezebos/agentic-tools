@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
@@ -38,6 +39,11 @@ type laneVerbOwners struct {
 	// person proves the person at the enrolled terminal of an installation
 	// and names them.
 	person func(root string) (string, error)
+	// ready says whether an owner could run in a lane checkout: a
+	// *lane.Refusal naming the fix when it cannot.
+	ready func(root string) error
+	// machine is a checkout's machine nickname.
+	machine func(root string) (string, error)
 }
 
 func (inv *intentInvocation) landing() laneVerbOwners {
@@ -64,7 +70,13 @@ func (inv *intentInvocation) landing() laneVerbOwners {
 		owners.end = batchowner.EndLaneOwner
 	}
 	if owners.person == nil {
-		owners.person = provenPerson(humanauthority.KernelReader{}, func() int64 { return int64(os.Getppid()) }, time.Now)
+		owners.person = provenPerson(humanauthority.KernelReader{}, func() int64 { return int64(os.Getppid()) }, goalCommandNow)
+	}
+	if owners.ready == nil {
+		owners.ready = batchowner.LandingLaneReady
+	}
+	if owners.machine == nil {
+		owners.machine = goal.ResolveMachine
 	}
 	return owners
 }
@@ -87,6 +99,7 @@ func landingIntentCommands() []intentCommand {
 			object: "landing", action: "set", audience: "both", summary: "register or move this computer's landing lane",
 			usage: []string{"metasystem landing set PATH [--by NAME]"},
 			details: []string{"PATH is a dedicated landing checkout; every seat of this computer then lands through it, and a seat whose landing.batch-root names another is refused.",
+				"PATH must have a machine nickname (git -C PATH config metasystem.goal.machine NAME): its owner cannot run without one, so a checkout without it is refused.",
 				"The same PATH again changes nothing. Moving the lane while a batch proves or pushes in it is refused with the way forward: wait, or pause it with landing stop first."},
 			flags:    []intentFlag{byFlag},
 			maxArgs:  1,
@@ -96,7 +109,9 @@ func landingIntentCommands() []intentCommand {
 		{
 			object: "landing", action: "start", audience: "both", summary: "start the landing lane's owner now and clear its restart count",
 			usage: []string{"metasystem landing start"},
-			details: []string{"Ends a pause, forgets the keep-alive's restarts and give-up, and starts the owner when it is not running.",
+			details: []string{"Ends a pause, forgets the keep-alive's restarts and give-up, and asks the landing checkout's supervision to start the owner when it is not running.",
+				"When no owner could run there (the checkout has no machine nickname, or its supervision is not armed) nothing is changed and the one command that fixes it is named.",
+				"It says started only once the owner runs; until then it says the start was asked for and landing status shows the rest.",
 				"An owner already running, unpaused and without restarts changes nothing."},
 			maxArgs:  0,
 			examples: []string{"metasystem landing start"},
@@ -153,7 +168,7 @@ func (inv *intentInvocation) laneContext(needLane bool) (owners laneVerbOwners, 
 }
 
 func (inv *intentInvocation) laneView(owners laneVerbOwners, home string) lane.View {
-	sources := lane.ViewSources{Home: home, Now: owners.now(), Owner: owners.probe, Records: owners.records}
+	sources := lane.ViewSources{Home: home, Now: owners.now(), Owner: owners.probe, Records: owners.records, Ready: owners.ready}
 	if inv.input.switched("verbose") {
 		// The lane's spend is a full read of its proof store: only --verbose
 		// pays for it (N-5).
@@ -179,7 +194,10 @@ func runIntentLandingStatus(inv *intentInvocation) int {
 	if inv.input.switched("verbose") {
 		result.text = landingViewDetail(view)
 	}
-	if view.Owner.RetryHint != nil && view.Owner.State == lane.OwnerGivenUp {
+	switch {
+	case len(view.Owner.Fix) > 0:
+		result.next, result.nextReason = view.Owner.Fix, laneFixReason(view.Owner.Fix)
+	case view.Owner.RetryHint != nil && view.Owner.State == lane.OwnerGivenUp:
 		result.next, result.nextReason = inv.publicArgv("landing", "start"), "the keep-alive gave up; "+*view.Owner.RetryHint
 	}
 	return inv.render(result)
@@ -280,6 +298,14 @@ func runIntentLandingSet(inv *intentInvocation) int {
 			Summary:  fmt.Sprintf("%s: %s is not a landing checkout: %v; nothing was registered", lane.CodeRegisterInvalid, path, err),
 			Decision: "name a dedicated landing checkout (a clone of this repository that no seat works in)"})
 	}
+	// An owner cannot run in a checkout without a machine nickname: it
+	// would die at every start, so the lane is never registered there.
+	if _, err := owners.machine(root); err != nil {
+		refusal := lane.NoMachineRefusal(root)
+		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: laneTargets(root),
+			Summary: refusal.Code + ": " + refusal.Message + "; nothing was registered",
+			next:    refusal.Argv, nextReason: "name its machine once (any one word; landing reads well), then run metasystem landing set " + root + " again"})
+	}
 	actor := ""
 	if record.Root != "" && record.Root != root {
 		if busy := laneBusy(inv.laneView(owners, home), false); busy != "" {
@@ -322,8 +348,44 @@ func runIntentLandingSet(inv *intentInvocation) int {
 	if previous.Root != "" {
 		summary += " (it was " + previous.Root + ")"
 	}
-	return inv.render(intentResult{Outcome: intentConfirmed, Targets: laneTargets(root), Data: view, Summary: summary,
-		next: inv.publicArgv("landing", "start"), nextReason: "start its owner now; otherwise the next landing or the steward starts it"})
+	result := intentResult{Outcome: intentConfirmed, Targets: laneTargets(root), Data: view, Summary: summary,
+		next: inv.publicArgv("landing", "start"), nextReason: "start its owner now; otherwise the next landing or the steward starts it"}
+	if len(view.Owner.Fix) > 0 {
+		result.next, result.nextReason = view.Owner.Fix, laneFixReason(view.Owner.Fix)
+	}
+	return inv.render(result)
+}
+
+// laneFixReason is why a person runs a lane's fix, by the command it is.
+func laneFixReason(argv []string) string {
+	if len(argv) > 0 && argv[0] == "git" {
+		return "name the landing checkout's machine once (any one word), then run metasystem landing start"
+	}
+	return "a person runs this at a terminal no agent started: it arms the landing checkout's supervision, which starts and keeps its owner"
+}
+
+// laneNotReady is the result that ends a start when no owner could run in
+// the lane: what is missing and the one command that fixes it; nil when an
+// owner could run.
+func (inv *intentInvocation) laneNotReady(owners laneVerbOwners, root string) *intentResult {
+	err := owners.ready(root)
+	if err == nil {
+		return nil
+	}
+	var refusal *lane.Refusal
+	if !errors.As(err, &refusal) {
+		return &intentResult{Outcome: intentFailed, code: 1, Targets: laneTargets(root),
+			Summary: "whether the landing lane's owner at " + root + " can run is unknown: " + err.Error() + "; nothing was started",
+			next:    inv.publicArgv("landing", "status", "--verbose"), nextReason: "read the owner's state"}
+	}
+	code := 1
+	if refusal.Code == lane.CodeUnarmed {
+		// Arming a checkout is a person's act.
+		code = 3
+	}
+	return &intentResult{Outcome: intentRefused, code: code, Targets: laneTargets(root),
+		Summary: refusal.Code + ": " + refusal.Message + "; nothing was started or changed",
+		next:    refusal.Argv, nextReason: laneFixReason(refusal.Argv)}
 }
 
 func runIntentLandingStart(inv *intentInvocation) int {
@@ -338,6 +400,18 @@ func runIntentLandingStart(inv *intentInvocation) int {
 // owner that is not running; unchanged when all three already hold.
 func (inv *intentInvocation) startLane(owners laneVerbOwners, home string, record lane.Record, restarted bool) intentResult {
 	targets := laneTargets(record.Root)
+	probe, err := owners.probe(record.Root)
+	if err != nil {
+		return intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "whether the landing lane's owner runs is unknown: " + err.Error() + "; nothing was started",
+			next: inv.publicArgv("landing", "status", "--verbose"), nextReason: "read the owner's state"}
+	}
+	if !probe.Alive {
+		// Nothing is written before the lane is known to be startable: a
+		// refused start leaves the pause and the keep-alive as they were.
+		if refused := inv.laneNotReady(owners, record.Root); refused != nil {
+			return *refused
+		}
+	}
 	resumed, err := lane.ClearPause(home)
 	kept := lane.ReadKeeper(home) != (lane.KeeperState{})
 	if err == nil && kept {
@@ -345,11 +419,6 @@ func (inv *intentInvocation) startLane(owners laneVerbOwners, home string, recor
 	}
 	if err != nil {
 		return intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "the landing lane's state could not be written: " + err.Error()}
-	}
-	probe, err := owners.probe(record.Root)
-	if err != nil {
-		return intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "whether the landing lane's owner runs is unknown: " + err.Error() + "; nothing was started",
-			next: inv.publicArgv("landing", "status", "--verbose"), nextReason: "read the owner's state"}
 	}
 	started := false
 	if !probe.Alive {
@@ -364,7 +433,11 @@ func (inv *intentInvocation) startLane(owners laneVerbOwners, home string, recor
 	case started && view.Owner.PID != nil:
 		return intentResult{Outcome: intentConfirmed, Targets: targets, Data: view, Summary: fmt.Sprintf("started the landing lane's owner at %s (pid %d)", record.Root, *view.Owner.PID)}
 	case started:
-		return intentResult{Outcome: intentConfirmed, Targets: targets, Data: view, Summary: "started the landing lane's owner at " + record.Root + "; it is still coming up (metasystem landing status shows it)"}
+		// The launch asks the checkout's supervision for an owner; until
+		// one runs, nothing is claimed started.
+		return intentResult{Outcome: intentInProgress, Targets: targets, Data: view,
+			Summary: "asked the supervision of " + record.Root + " to start the landing lane's owner; it does not run yet",
+			next:    inv.publicArgv("landing", "status"), nextReason: "shows its pid once it runs, or why it does not"}
 	case resumed || kept || restarted:
 		return intentResult{Outcome: intentConfirmed, Targets: targets, Data: view, Summary: fmt.Sprintf("the landing lane's owner at %s runs again (pid %d); its restart count is cleared", record.Root, probe.PID)}
 	}
@@ -409,6 +482,11 @@ func runIntentLandingRestart(inv *intentInvocation) int {
 	if problem != nil {
 		return inv.render(*problem)
 	}
+	// A restart ends the running owner; it is refused before anything is
+	// stopped when no new owner could run.
+	if refused := inv.laneNotReady(owners, record.Root); refused != nil {
+		return inv.render(*refused)
+	}
 	if stopped, ok := inv.stopLane(owners, home, record); !ok {
 		return inv.render(stopped)
 	}
@@ -421,9 +499,9 @@ func runIntentLandingRestart(inv *intentInvocation) int {
 	result := inv.startLane(owners, home, record, true)
 	if result.Outcome == intentConfirmed || result.Outcome == intentUnchanged {
 		result.Outcome = intentConfirmed
-		if ended != 0 {
-			result.Summary = fmt.Sprintf("ended the landing lane's owner pid %d; ", ended) + result.Summary
-		}
+	}
+	if ended != 0 && (result.Outcome == intentConfirmed || result.Outcome == intentInProgress) {
+		result.Summary = fmt.Sprintf("ended the landing lane's owner pid %d; ", ended) + result.Summary
 	}
 	return inv.render(result)
 }

@@ -6,10 +6,14 @@ import (
 	"path/filepath"
 	"strings"
 
+	"crypto/rand"
+	"errors"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/adapter/supervisor"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
+	"time"
 )
 
 // intentConnectionOwners are the goal-branch owners the connected public
@@ -136,17 +140,33 @@ func (inv *intentInvocation) registeredWorktrees() (map[string]registeredWorktre
 // refused. The current checkout, its files and any occupied path are left
 // as they are: there is no force, reset or move.
 func (inv *intentInvocation) prepareGoalWorktree(id string) (string, *intentResult) {
+	// An engine verb that enters the goal's registered worktree holds its
+	// record lock shared before it resolves the path, for the verb's whole
+	// life (Part B 3.1 "Entrants"); a worktree being released is gone.
+	if problem := inv.enterGoalWorktree(id, ""); problem != nil {
+		return "", problem
+	}
 	path, problem := inv.goalWorktreeEntry(id)
 	if problem != nil {
 		return path, problem
 	}
+	if problem := inv.enterGoalWorktree(id, path); problem != nil {
+		return "", problem
+	}
 	// Every worktree handed to a build, new, reused, resumed or created by
 	// a concurrent call, first has the adapters' declared local
 	// configuration completed; the owner never overwrites existing files.
+	// What the copy places is recorded as the engine's (Round D3 F-1), so
+	// the worktree's release does not count it as work.
+	manifest, _ := supervisor.LocalConfigManifest(supervisor.Deps{Root: inv.layout.InstallationRoot})
+	before := diskstore.PresentPaths(path, manifest)
 	if err := inv.connection().isolate(inv.layout.GitRoot, path); err != nil {
 		return "", &intentResult{Outcome: intentRefused, code: 1, Targets: []intentTarget{{Kind: "goal", ID: id}},
 			Summary: fmt.Sprintf("goal worktree %s is kept, but the adapters' local configuration is not complete in it: %v; nothing was built", path, err),
 			next:    inv.sameCommand(), nextReason: "the same command completes the configuration and continues"}
+	}
+	if problem := inv.recordGoalWorktreeContent(id, path, diskstore.Placed(path, manifest, before)); problem != nil {
+		return "", problem
 	}
 	return path, nil
 }
@@ -262,12 +282,26 @@ func (inv *intentInvocation) goalWorktreeEntry(id string) (string, *intentResult
 		add = []string{"worktree", "add", target, "goal/" + id}
 	}
 	if add != nil {
+		// Registered before git writes a byte of it (Part B 3.1), with no
+		// file inside the tree.
+		var reserved diskstore.Record
+		if filepath.IsAbs(inv.goalWorktreeControl()) {
+			var err error
+			reserved, err = diskstore.ReserveLinkedWorktree(inv.goalWorktreeRegistry(), target, diskstore.GoalWorktreeClass,
+				diskstore.Owner{Kind: diskstore.OwnerGoal, Ref: id}, inv.goalWorktreeControl(), "", time.Now().UTC(), rand.Reader)
+			if err != nil {
+				return refused("goal/%s's worktree %s cannot be registered: %v", id, target, err)
+			}
+		}
 		if _, addErr := git(inv.layout.GitRoot, add...); addErr != nil {
 			// A concurrent creation of the same worktree is reused; any
 			// other failure is reported with what exists now so a retry
 			// reconciles.
 			if again, _, findErr := find(); findErr == nil && again != "" {
 				return again, nil
+			}
+			if reserved.ID != "" {
+				_ = diskstore.AbandonLinkedWorktree(inv.goalWorktreeRegistry(), reserved.ID, addErr.Error())
 			}
 			_, branchErr := git(inv.layout.GitRoot, "rev-parse", "--verify", "-q", ref+"^{commit}")
 			return refused("git worktree add for goal/%s at %s failed: %v (local goal branch present: %v)", id, target, addErr, branchErr == nil)
@@ -298,6 +332,111 @@ func (inv *intentInvocation) goalWorktreeEntry(id string) (string, *intentResult
 	return refused("git registered no goal/%s worktree at %s", id, target)
 }
 
+// goalWorktreeRegistry is the checkout registry goal worktrees are recorded
+// in.
+func (inv *intentInvocation) goalWorktreeRegistry() diskstore.Registry {
+	return diskstore.CheckoutRegistry(inv.goalWorktreeControl())
+}
+
+// goalWorktreeControl is the control root whose registry records the goal
+// worktrees: the selected state root, else the installation.
+func (inv *intentInvocation) goalWorktreeControl() string {
+	if inv.stateRoot != "" {
+		return inv.stateRoot
+	}
+	return inv.layout.InstallationRoot
+}
+
+// enterGoalWorktree holds goal id's registered worktree shared for the rest
+// of the verb and re-reads its record. With path empty it enters the record
+// the goal already has, before the path is resolved; with the resolved
+// path it registers a linked worktree no record names yet (one made before
+// registration existed, or by this verb), accepts a reservation git has
+// completed, and enters it. A main checkout on goal/<id> is never a store.
+// A record being released or released is gone: the verb refuses as input.
+func (inv *intentInvocation) enterGoalWorktree(id, path string) *intentResult {
+	if !filepath.IsAbs(inv.goalWorktreeControl()) {
+		return nil
+	}
+	registry := inv.goalWorktreeRegistry()
+	owner := diskstore.Owner{Kind: diskstore.OwnerGoal, Ref: id}
+	gone := &intentResult{Outcome: intentRefused, code: 1, Targets: []intentTarget{{Kind: "goal", ID: id}},
+		Summary: fmt.Sprintf("goal %s's worktree is being released because the goal concluded; nothing was built", id),
+		next:    inv.publicArgv("goal", "show", id), nextReason: "see the goal's state"}
+	records, err := diskstore.FindLinkedWorktrees(registry, diskstore.GoalWorktreeClass, owner)
+	if err != nil {
+		return &intentResult{Outcome: intentFailed, code: 1, Summary: "the store registry cannot be read: " + err.Error() + "; nothing was built",
+			Decision: "metasystem disk show names what cannot be read"}
+	}
+	if path != "" {
+		if _, err := diskstore.ReadGitIdentity(path); err != nil || filepath.Clean(path) == filepath.Clean(inv.layout.GitRoot) {
+			return nil
+		}
+		matched := false
+		for _, record := range records {
+			matched = matched || record.Path == path
+		}
+		if !matched {
+			record, err := diskstore.ReserveLinkedWorktree(registry, path, diskstore.GoalWorktreeClass, owner, inv.goalWorktreeControl(), "", time.Now().UTC(), rand.Reader)
+			if err != nil {
+				return &intentResult{Outcome: intentFailed, code: 1, Summary: fmt.Sprintf("goal/%s's worktree %s cannot be registered: %v; nothing was built", id, path, err)}
+			}
+			records = append(records, record)
+		}
+	}
+	for _, record := range records {
+		if path != "" && record.Path != path {
+			continue
+		}
+		if record.State == diskstore.StateReserved && path != "" {
+			if _, err := diskstore.AcceptLinkedWorktree(registry, record.ID); err != nil {
+				return &intentResult{Outcome: intentFailed, code: 1, Summary: fmt.Sprintf("goal/%s's worktree %s cannot be recorded: %v; nothing was built", id, path, err)}
+			}
+		}
+		if inv.entered(record.ID) {
+			continue
+		}
+		entrant, err := registry.Enter(record.ID)
+		if errors.Is(err, diskstore.ErrStoreGone) {
+			return gone
+		}
+		if err != nil {
+			return &intentResult{Outcome: intentFailed, code: 1, Summary: fmt.Sprintf("goal/%s's worktree record cannot be held: %v; nothing was built", id, err)}
+		}
+		inv.entrants = append(inv.entrants, entrant)
+	}
+	return nil
+}
+
+// recordGoalWorktreeContent records the files the engine just placed in
+// goal id's registered worktree at path, and the worktree installation's
+// state root, which only the engine writes.
+func (inv *intentInvocation) recordGoalWorktreeContent(id, path string, placed []string) *intentResult {
+	installation, err := filepath.Rel(path, inv.goalWorktreeInstallation(path))
+	if err != nil || strings.HasPrefix(installation, "..") {
+		installation = "."
+	}
+	for _, entrant := range inv.entrants {
+		if entrant.Record.Path != path {
+			continue
+		}
+		if err := inv.goalWorktreeRegistry().RecordEngineContent(entrant.Record.ID, path, placed, []diskstore.EngineDir{diskstore.EngineStateDir(installation)}); err != nil {
+			return &intentResult{Outcome: intentFailed, code: 1, Summary: fmt.Sprintf("the local configuration placed in goal/%s's worktree cannot be recorded: %v; nothing was built", id, err)}
+		}
+	}
+	return nil
+}
+
+// entered reports a store this verb already holds.
+func (inv *intentInvocation) entered(id string) bool {
+	for _, entrant := range inv.entrants {
+		if entrant.Record.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
 // isolateAdapterConfiguration prepares the files each adapter declares as
 // its local configuration (its local-config-paths manifest) in a new goal
 // worktree, through the same session-isolation owner second sessions use.
@@ -313,11 +452,11 @@ func (inv *intentInvocation) isolateAdapterConfiguration(source, destination str
 	if manifest.Len() == 0 {
 		return nil
 	}
-	file, err := os.CreateTemp("", "metasystem-local-config-paths.")
+	file, done, err := diskstore.ScratchFile("metasystem-local-config-paths.")
 	if err != nil {
 		return err
 	}
-	defer os.Remove(file.Name())
+	defer done()
 	if _, err := file.WriteString(manifest.String()); err != nil {
 		file.Close()
 		return err

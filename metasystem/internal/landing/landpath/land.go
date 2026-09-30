@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"io"
 	"os"
 	"path/filepath"
@@ -77,6 +78,7 @@ type driver struct {
 
 	messageFile string
 	ownedFile   string
+	ownedDone   func()
 	stepName    string
 	stepOutput  bytes.Buffer
 	branch      string
@@ -86,6 +88,11 @@ type driver struct {
 	recertCandidateTree, recertCandidateCommit     string
 
 	boot *BootSample
+
+	// heldIndex is the index file as the landing found it, at heldIndexPath
+	// under HEAD heldIndexHead, until the landing's commit (holdIndex).
+	heldIndex, heldIndexPath, heldIndexHead string
+	heldIndexArmed                          bool
 
 	carriedLedgerTip, carriedRow, carriedEntry          string
 	carriedBy, carriedPast, carriedWorkspace            string
@@ -127,8 +134,14 @@ func (d *driver) cleanup(status int) {
 			fmt.Fprintf(d.stderr, "carried landing could not close its reservation: %s\n", strings.TrimRight(output, "\n"))
 		}
 	}
+	if status != 0 {
+		d.restoreIndex()
+	}
 	if d.ownedFile != "" {
 		d.owners.RemoveFile(d.ownedFile)
+	}
+	if d.ownedDone != nil {
+		d.ownedDone()
 	}
 }
 
@@ -262,12 +275,12 @@ func (d *driver) held() int {
 	}
 	d.messageFile = request.MessageFile
 	if request.MessageFile == "-" {
-		file, err := os.CreateTemp("", "metasystem-land-message.")
+		file, done, err := diskstore.ScratchFile("metasystem-land-message.")
 		if err != nil {
 			fmt.Fprintln(d.stderr, err)
 			return 1
 		}
-		d.ownedFile = file.Name()
+		d.ownedFile, d.ownedDone = file.Name(), done
 		_, writeErr := file.Write(request.Message)
 		closeErr := file.Close()
 		if writeErr != nil || closeErr != nil {
@@ -344,6 +357,7 @@ func (d *driver) land() int {
 		d.runCarried()
 		return 0
 	}
+	d.holdIndex()
 	d.requiredStep("stage caller paths", d.stageChanges)
 	d.requiredStep("receipt line for the landing", d.checkReceiptLine)
 	if request.TestReceipt != "" {
@@ -392,6 +406,7 @@ func (d *driver) land() int {
 		}
 		d.requiredStep("landing gate before push", d.gateBeforePush)
 		d.sampleBoot()
+		d.recordRelease()
 		if status := d.runStep("push recertified commit to origin (single attempt)", d.pushOrigin); status != 0 {
 			if d.movingOriginRejection() {
 				detail := d.lastStepLine()
@@ -402,6 +417,7 @@ func (d *driver) land() int {
 		}
 		head, _ := d.gitOut("rev-parse", "HEAD")
 		d.hintWaiters(head)
+		d.releaseLanded(head)
 	} else {
 		d.requiredStep("commit", d.commitChanges)
 		d.requiredStep("verify clean after commit", d.requireCleanAfterCommit)
@@ -418,6 +434,7 @@ func (d *driver) land() int {
 		d.sampleBoot()
 		for attempt := 1; attempt <= pushLimit; attempt++ {
 			d.requiredStep("landing gate before push", d.gateBeforePush)
+			d.recordRelease()
 			status := d.runStep(fmt.Sprintf("push origin (attempt %d of %d)", attempt, pushLimit), d.pushOrigin)
 			if status == 0 {
 				break
@@ -436,11 +453,34 @@ func (d *driver) land() int {
 		}
 		head, _ := d.gitOut("rev-parse", "HEAD")
 		d.hintWaiters(head)
+		d.releaseLanded(head)
 	}
 	if !request.SkipTransport {
 		d.requiredStep("sync transport", d.syncTransport)
 	}
 	return 0
+}
+
+// recordRelease records the goal's release set for the commit about to be
+// pushed (the staged route of disk-lifetimes Part B 3.6).
+func (d *driver) recordRelease() {
+	if d.owners.RecordRelease == nil || d.request.Goal == "" {
+		return
+	}
+	head, status := d.gitOut("rev-parse", "HEAD")
+	if status != 0 {
+		return
+	}
+	if err := d.owners.RecordRelease(head, d.branch); err != nil {
+		fmt.Fprintf(d.stdout, "-- the goal's workspaces were not recorded for release (%v); they stay until metasystem work workspace --release or the goal's end\n", err)
+	}
+}
+
+// releaseLanded releases the pushed commit's recorded set.
+func (d *driver) releaseLanded(head string) {
+	if d.owners.ReleaseLanded != nil && d.request.Goal != "" && head != "" {
+		d.owners.ReleaseLanded(head)
+	}
 }
 
 func (d *driver) syncTransport(out io.Writer) int {
@@ -695,7 +735,7 @@ func (d *driver) commitRequest() CommitRequest {
 	commit := CommitRequest{Root: request.Root, Chain: request.Chain, DirectFix: request.DirectFix, RevertOf: request.RevertOf,
 		Goal: request.Goal, GoalSet: request.GoalSet, RootJob: request.RootJob, TestReceipt: request.TestReceipt,
 		Recertification: request.Recertification, MessageFile: d.messageFile, OwnerLineage: request.OwnerLineage,
-		AllowNewPlan: request.AllowNewPlan}
+		AllowNewPlan: request.AllowNewPlan, LaneJoin: request.CommitOnly}
 	if request.Carried != "" {
 		commit.HeldEpoch = request.HeldEpoch
 		commit.Carried, commit.LedgerTip, commit.CarriedBy, commit.CarriedPast = request.Carried, d.carriedLedgerTip, d.carriedBy, d.carriedPast
@@ -704,7 +744,64 @@ func (d *driver) commitRequest() CommitRequest {
 }
 
 func (d *driver) commitChanges(out io.Writer) int {
-	return Commit(d.owners, d.commitRequest(), out, out)
+	status := Commit(d.owners, d.commitRequest(), out, out)
+	if status == 0 {
+		d.heldIndexArmed = false
+	}
+	return status
+}
+
+// holdIndex records the index file as the landing finds it, before it
+// stages anything, so a landing that refuses or fails before its commit
+// gives the index back exactly (restoreIndex); the retry then starts from
+// the index its caller left.
+func (d *driver) holdIndex() {
+	path, status := d.gitOut("rev-parse", "--git-path", "index")
+	if status != 0 || path == "" {
+		return
+	}
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(d.request.Root, path)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return
+	}
+	head, _ := d.gitOut("rev-parse", "--verify", "--quiet", "HEAD")
+	d.heldIndex, d.heldIndexPath, d.heldIndexHead, d.heldIndexArmed = string(data), path, head, true
+}
+
+// restoreIndex puts the held index back when the landing ends before its
+// commit. It writes only the index, under git's own index.lock, and never
+// the working tree; a HEAD the landing moved keeps the index it has.
+func (d *driver) restoreIndex() {
+	if !d.heldIndexArmed {
+		return
+	}
+	d.heldIndexArmed = false
+	if head, _ := d.gitOut("rev-parse", "--verify", "--quiet", "HEAD"); head != d.heldIndexHead {
+		return
+	}
+	if data, err := os.ReadFile(d.heldIndexPath); err == nil && string(data) == d.heldIndex {
+		return
+	}
+	lock := d.heldIndexPath + ".lock"
+	file, err := os.OpenFile(lock, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	if err != nil {
+		fmt.Fprintf(d.stderr, "land: the index could not be given back as the landing found it (%v); unstage with git restore --staged before a retry\n", err)
+		return
+	}
+	_, writeErr := file.WriteString(d.heldIndex)
+	closeErr := file.Close()
+	if writeErr == nil && closeErr == nil {
+		writeErr = os.Rename(lock, d.heldIndexPath)
+	}
+	if writeErr != nil || closeErr != nil {
+		os.Remove(lock)
+		fmt.Fprintf(d.stderr, "land: the index could not be given back as the landing found it (%v %v); unstage with git restore --staged before a retry\n", writeErr, closeErr)
+		return
+	}
+	fmt.Fprintln(d.stderr, "land: the index is given back as the landing found it")
 }
 
 func (d *driver) requireCleanAfterCommit(out io.Writer) int {

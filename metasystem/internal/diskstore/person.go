@@ -160,6 +160,9 @@ func ReleaseByPerson(ctx context.Context, registry Registry, id string, proof Ow
 	}
 	defer critical.Release()
 	record = critical.Record()
+	if releaser, ok := proof.(SelfReleaser); ok {
+		return releaseSelfByPerson(ctx, critical, proof, releaser, census, by)
+	}
 	if record.State != StateReleasing {
 		if err := Revalidate(record); err != nil {
 			return Verdict{Decision: Keep, Reason: "the store at the path is not the recorded one: " + err.Error(), Command: "metasystem disk show"}, nil
@@ -217,4 +220,36 @@ func removalStopped(path string, err error) (string, string) {
 			"ls -ld " + entry + " to see its owner, and remove it as that owner"
 	}
 	return "removal stopped: " + err.Error(), "metasystem disk clean --strays again"
+}
+
+// releaseSelfByPerson is --release for a store with its own release
+// sequence (a workspace, a goal, session or delegate worktree): the
+// person's word stands in for the processes the census could not read, and
+// for nothing else: every readable process outside, the owner's end and the
+// content rules, the archive of every tip and the pre-removal walk all run
+// as the sweeper's release runs them, inside the critical section already
+// held.
+func releaseSelfByPerson(ctx context.Context, critical *Critical, proof OwnerProof, releaser SelfReleaser, census *UseCensus, by string) (Verdict, error) {
+	id := critical.Record().ID
+	if census == nil || !census.Taken {
+		return Verdict{Decision: Keep, Reason: "no use census could be taken, so no live process is known to be outside", Command: "metasystem disk clean --release " + id}, nil
+	}
+	if verdict := proof.Observe(ctx, critical.Record()); verdict.Decision != Release {
+		return verdict, nil
+	}
+	waived := *census
+	waived.Unreadable = nil
+	verdict := releaser.Release(ctx, critical, &waived)
+	if verdict.Decision != Release {
+		return verdict, nil
+	}
+	record := critical.Record()
+	if record.State == StateReleased {
+		record.ReleasedBy = "person " + by
+		record.Notes = appendNote(record.Notes, "released by "+by+", who judged the processes the use census could not read")
+		if err := critical.Write(record); err != nil {
+			return Verdict{}, err
+		}
+	}
+	return Verdict{Decision: Release, Reason: "released"}, nil
 }

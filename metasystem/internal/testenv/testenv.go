@@ -39,6 +39,10 @@ const registryNonceSize = 32
 
 const processNamespacePrefix = "metasystem-test-process-"
 
+// hostTempRootEnv is diskstore.HostTempRootEnv, spelled here because
+// diskstore's own tests import this package.
+const hostTempRootEnv = "METASYSTEM_HOST_TEMP_ROOT"
+
 const (
 	fixtureCapScaleEnv      = "METASYSTEM_FIXTURE_CAP_SCALE_MILLI"
 	fixtureCapScalePermille = 1000
@@ -255,6 +259,11 @@ func MainWithSetup(m *testing.M, setup func() error, declarations ...Declaration
 		fmt.Fprintf(os.Stderr, "prepare test environment: %v\n", err)
 		return 2
 	}
+	// The binary's own namespace, which prepare made TMPDIR; a test that
+	// makes another namespace of its own never moves it.
+	namespaceTemp.Lock()
+	namespaceTemp.dir = os.Getenv("TMPDIR")
+	namespaceTemp.Unlock()
 	defer func() {
 		if err := cleanup(); err != nil {
 			fmt.Fprintf(os.Stderr, "clean test environment: %v\n", err)
@@ -538,6 +547,16 @@ func prepare(declarations []Declaration) (func() error, error) {
 	if err := os.Setenv(supervisionRegistryHome, registry.path); err != nil {
 		return fail(fmt.Errorf("pin registry home: %w", err))
 	}
+	// The host temporary root the engine's shared host paths live in (the
+	// seat launch lock, the admission test-directory check, a landing lane's
+	// sources) is the registry home, never the host's own: no test touches
+	// the real one, and every nested test binary and engine child inherits
+	// the same value whatever TMPDIR it is given.
+	if os.Getenv(hostTempRootEnv) == "" {
+		if err := os.Setenv(hostTempRootEnv, registry.path); err != nil {
+			return fail(fmt.Errorf("pin host temporary root: %w", err))
+		}
+	}
 	return func() error {
 		return errors.Join(namespace.cleanup(), registry.cleanup())
 	}, nil
@@ -546,6 +565,28 @@ func prepare(declarations []Declaration) (func() error, error) {
 type environmentValue struct {
 	value   string
 	present bool
+}
+
+// namespaceTemp is the temporary directory of this test binary's process
+// namespace, once Main or MainWithSetup has made it.
+var namespaceTemp struct {
+	sync.Mutex
+	dir string
+}
+
+// MkdirTemp makes a new directory in this test binary's namespace, as
+// os.MkdirTemp does in TMPDIR, for test support outside a test's own
+// t.TempDir (a fixture's leash): it lands in the namespace Main removes,
+// never in the host's temporary root. Before Main has made the namespace it
+// refuses.
+func MkdirTemp(pattern string) (string, error) {
+	namespaceTemp.Lock()
+	dir := namespaceTemp.dir
+	namespaceTemp.Unlock()
+	if dir == "" {
+		return "", errors.New("testenv.MkdirTemp: this process has no test namespace; call it from a test of a package whose TestMain runs testenv.Main")
+	}
+	return os.MkdirTemp(dir, pattern)
 }
 
 type processNamespace struct {

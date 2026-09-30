@@ -193,12 +193,18 @@ func TestHostResourceCapacityWaitsWithoutOwningSlot(t *testing.T) {
 			}
 		})
 		t.Run("temporary_symlink_escape_refuses", func(t *testing.T) {
+			// The boundary is the host's temporary roots, whatever TMPDIR
+			// says (disk-lifetimes Part B U1b-2): a link inside TMPDIR to the
+			// package's own source directory, outside every host temporary
+			// root, is refused before anything is made there.
 			parent := t.TempDir()
-			admitted, outside := filepath.Join(parent, "admitted-temp"), filepath.Join(parent, "outside")
-			for _, path := range []string{admitted, outside} {
-				if err := os.Mkdir(path, 0o700); err != nil {
-					t.Fatal(err)
-				}
+			admitted := filepath.Join(parent, "admitted-temp")
+			if err := os.Mkdir(admitted, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			outside, err := os.Getwd()
+			if err != nil {
+				t.Fatal(err)
 			}
 			t.Setenv("TMPDIR", admitted)
 			link := filepath.Join(admitted, "escape")

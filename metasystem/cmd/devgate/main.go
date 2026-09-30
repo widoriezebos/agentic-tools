@@ -29,6 +29,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/cachedomain"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gocache"
 	"io"
 	"os"
@@ -54,7 +55,12 @@ func main() {
 		fmt.Fprintf(os.Stderr, "devgate: cannot resolve the module directory: %v\n", err)
 		os.Exit(1)
 	}
-	os.Exit(run(context.Background(), os.Args[1:], root, nativeDeps()))
+	code := run(context.Background(), os.Args[1:], root, nativeDeps())
+	// The gate's own scratch root, if it made one, is released before the
+	// exit code is returned (Part B 3.2 "Process"); one still in use stays
+	// for the sweeper.
+	_ = diskstore.ReleaseProcessScratch(context.Background(), diskstore.WriterDrain{Now: time.Now, Sleep: time.Sleep})
+	os.Exit(code)
 }
 
 func run(ctx context.Context, args []string, root string, deps deps) int {

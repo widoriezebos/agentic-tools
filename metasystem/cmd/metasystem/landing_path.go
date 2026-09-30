@@ -25,6 +25,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/brain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/cachedomain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	goalbranch "github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
@@ -174,6 +175,55 @@ func landingPathVerifyRequest(root, tree, goalID string, carried bool) testrun.S
 		Mode: testpolicy.ModeAuto, Purpose: testpolicy.PurposeDelivery, Carried: carried}
 }
 
+// landingPathScopedVerifyRequest is the commit boundary's test status
+// request: the admission scope verifies the plan's admission subset, after
+// the same policy floor and working-tree parity as the whole plan.
+func landingPathScopedVerifyRequest(request landpath.VerifyRequest) testrun.SelectionRequest {
+	selection := landingPathVerifyRequest(request.Root, request.Tree, request.Goal, false)
+	selection.BatchAdmission = request.Scope == landpath.ProofAdmission
+	return selection
+}
+
+// landingPathVerify answers the commit boundary. The none scope (a
+// records-only change joining the landing lane) requires no retained proof
+// but still prepares the delivery decision, so the candidate must match the
+// relevant working-tree inputs and the trusted policy must decide it.
+func landingPathVerify(request landpath.VerifyRequest, stdout, stderr io.Writer) int {
+	selection := landingPathScopedVerifyRequest(request)
+	if request.Scope != landpath.ProofNone {
+		return testVerifyTo(stdout, stderr, selection, false)
+	}
+	if _, err := prepareTestingForCommand(selection); err != nil {
+		fmt.Fprintln(stderr, "metasystem test status:", err)
+		return 1
+	}
+	fmt.Fprintln(stdout, "records-only change joining the landing lane: no local proof required; the lane proves it")
+	return 0
+}
+
+// landingPathSelectCode keeps the paths in the ENGINE or PAYLOAD
+// projection: a lane change touching any of them is a code change.
+func landingPathSelectCode(paths []string, prefix string) ([]string, error) {
+	policy, err := behaviorsurface.Load()
+	if err != nil {
+		return nil, err
+	}
+	var code []string
+	for _, path := range paths {
+		for _, projection := range []behaviorsurface.Projection{behaviorsurface.Engine, behaviorsurface.Payload} {
+			included, err := policy.Includes(projection, path, prefix)
+			if err != nil {
+				return nil, err
+			}
+			if included {
+				code = append(code, path)
+				break
+			}
+		}
+	}
+	return code, nil
+}
+
 func landingPathLiveJudge() landpath.Judge {
 	return landpath.Judge{
 		Observe:   landingPathObserve,
@@ -190,11 +240,10 @@ func landingPathLiveJudge() landpath.Judge {
 // worktree, for a carried landing whose live engine could not decide. The
 // base engine is a different binary: it is asked through its own argv.
 func landingPathBaseJudge(toplevel, prefix string, stderr io.Writer) (landpath.Judge, func(), error) {
-	scratch, err := os.MkdirTemp("", "metasystem-carry-judge.")
+	scratch, cleanup, err := diskstore.ScratchDir("metasystem-carry-judge.")
 	if err != nil {
 		return landpath.Judge{}, nil, err
 	}
-	cleanup := func() { os.RemoveAll(scratch) }
 	worktree := filepath.Join(scratch, "base")
 	add := exec.Command("git", "-C", toplevel, "worktree", "add", "--detach", worktree, "HEAD")
 	add.Stdout, add.Stderr = stderr, stderr
@@ -484,10 +533,9 @@ func landingPathOwners() landpath.Owners {
 			_, err := os.Stat(path)
 			return err == nil
 		},
-		Verify: func(request landpath.VerifyRequest, stdout, stderr io.Writer) int {
-			return testVerifyTo(stdout, stderr, landingPathVerifyRequest(request.Root, request.Tree, request.Goal, false), false)
-		},
+		Verify:         landingPathVerify,
 		SelectLanding:  landingPathSelect,
+		SelectCode:     landingPathSelectCode,
 		Live:           landingPathLiveJudge,
 		BuildBaseJudge: landingPathBaseJudge,
 		Held: func(root, base, commit, remote, ref string, stdout, stderr io.Writer) int {

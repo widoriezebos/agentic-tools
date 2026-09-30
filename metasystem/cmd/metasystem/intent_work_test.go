@@ -14,10 +14,13 @@ import (
 	"testing"
 	"time"
 
+	"context"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/protocol"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/registry"
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
@@ -279,7 +282,7 @@ func (b *workBed) recordReadDirs(result intentResult) {
 	b.readDirsMu.Lock()
 	defer b.readDirsMu.Unlock()
 	for _, output := range plan.Read.Outputs {
-		if dir := filepath.Dir(output); strings.HasPrefix(filepath.Base(dir), "metasystem-unit-read-") {
+		if dir := filepath.Dir(output); strings.HasPrefix(filepath.Base(dir), "metasystem-unit-read.") {
 			b.readDirs[dir] = true
 		}
 	}
@@ -289,7 +292,10 @@ func (b *workBed) removeReadDirs() {
 	b.readDirsMu.Lock()
 	defer b.readDirsMu.Unlock()
 	for dir := range b.readDirs {
-		os.RemoveAll(dir)
+		owner := diskstore.Owner{Kind: diskstore.OwnerUnit, Ref: strings.TrimPrefix(filepath.Base(dir), "metasystem-unit-read.")}
+		if err := diskstore.ReleaseTempStore(context.Background(), dir, unitReadFindingsClass, owner); err != nil {
+			b.t.Errorf("release the read's findings store %s: %v", dir, err)
+		}
 	}
 }
 
@@ -441,6 +447,24 @@ func TestIntentGeneratedUnitPlan(t *testing.T) {
 	}
 	if len(plan.Proof) != 1 || !slices.Equal(plan.Proof[0].Argv, workArgv) || plan.Proof[0].Dir != bed.worktree {
 		t.Fatalf("proof=%+v, want the exact argv %v", plan.Proof, workArgv)
+	}
+	// The read's findings directory outlives the command, so it is a
+	// registered temporary store the unit's named inputs own (Part B R1).
+	if len(plan.Read.Outputs) != 1 {
+		t.Fatalf("read outputs = %v", plan.Read.Outputs)
+	}
+	registryPath, err := registry.DefaultPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	records, _ := diskstore.MachineRegistry(filepath.Dir(registryPath)).Inventory()
+	registered := false
+	for _, record := range records {
+		registered = registered || record.Path == filepath.Dir(plan.Read.Outputs[0]) && record.Class == unitReadFindingsClass &&
+			record.Owner.Kind == diskstore.OwnerUnit && record.State == diskstore.StateAccepted
+	}
+	if !registered {
+		t.Fatalf("the read's findings directory %s is not a registered store of the unit", filepath.Dir(plan.Read.Outputs[0]))
 	}
 	pack := &launch.Manager{Templates: bed.manager.Templates}
 	if _, err := pack.CheckPack(launch.StartSpec{Kind: "read", Brief: plan.Read.Brief, WorkingDirectory: bed.worktree}); err != nil {

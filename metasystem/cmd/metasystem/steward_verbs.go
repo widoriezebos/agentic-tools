@@ -385,7 +385,7 @@ func runStewardArmWith(args []string, deps stewardArmDeps, stdout, stderr io.Wri
 			fmt.Fprintf(stderr, "steward arm: cannot resolve the installed engine: %v\n", err)
 			return 1
 		}
-		if err := sessionCallerCheck(*repo, metasystemRoot, lease.ClassifyAt); err != nil {
+		if err := sessionCallerCheck(*repo, metasystemRoot, personClassifyAt); err != nil {
 			fmt.Fprintln(stderr, "steward arm:", err)
 			return 1
 		}

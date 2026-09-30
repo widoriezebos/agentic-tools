@@ -12,6 +12,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
@@ -88,6 +89,11 @@ func registeredTopLevelEntries() []topLevelEntry {
 			launcher: "cmd/metasystem/steward_verbs.go", evidence: `"internal", "delegate", "--revive"`,
 			run: func(args []string, stdout, stderr io.Writer, _ func(string) (string, error)) int {
 				return runDelegate(args, stdout, stderr)
+			}},
+		{name: "__complete", usage: "__complete -- WORD...",
+			launcher: "cmd/metasystem/completion.go", evidence: "__complete",
+			run: func(args []string, stdout, stderr io.Writer, _ func(string) (string, error)) int {
+				return runCompleteEntry(args, stdout, stderr)
 			}},
 	}
 }
@@ -237,6 +243,9 @@ func main() {
 	// While the seat is at the helm, a person proof refused in the seat's
 	// primary checkout is the holder's act (helm_admits.go).
 	wireHelmAdmission()
+	// A live general power of attorney makes the act of the main session
+	// holding the checkout's lease the granting person's (attorney_admits.go).
+	wireAttorneyAdmission()
 	os.Exit(dispatch(os.Args[1:]))
 }
 
@@ -249,7 +258,9 @@ func dispatch(args []string) int {
 // still holds, or that a goroutine still uses, stays for the sweeper's
 // process proof.
 func dispatchWithFamilies(args []string, stdout, stderr io.Writer, registered []family) int {
-	defer func() { _ = diskstore.ReleaseProcessScratch(context.Background()) }()
+	defer func() {
+		_ = diskstore.ReleaseProcessScratch(context.Background(), diskstore.WriterDrain{Now: time.Now, Sleep: time.Sleep})
+	}()
 	return dispatchWithFamiliesAndRepositoryTop(args, stdout, stderr, registered, stateroot.RepositoryTop)
 }
 

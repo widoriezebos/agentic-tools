@@ -106,7 +106,7 @@ func scanBreachStopsWith(t *testing.T, bed *roleHealthProjectionBed, stop func(s
 					reads++
 					return goal.Endpoint{Root: bed.root, Remote: "local", Branch: goal.LocalLedgerBranch, Repository: repository}, nil
 				})
-		}, stop)
+		}, stop, nil)
 	if reads != 2 {
 		t.Fatalf("stop scan raw reads = %d, want 2", reads)
 	}

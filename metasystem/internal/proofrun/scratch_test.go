@@ -253,6 +253,7 @@ func TestScratchInheritedWriterLockOutlivesTheLaunchersCopy(t *testing.T) {
 	if line, err := bufio.NewReader(stdout).ReadString('\n'); err != nil || line != "ready\n" {
 		t.Fatalf("child readiness = %q, %v", line, err)
 	}
+	run.drain, _ = fakeScratchDrain(time.Second, nil)
 	err = run.Cleanup(nil)
 	if err == nil || !strings.Contains(err.Error(), ScratchIncomplete) || !strings.Contains(err.Error(), "writer-lock-held") {
 		t.Fatalf("cleanup with a live inheritor = %v", err)
@@ -274,6 +275,124 @@ func TestScratchInheritedWriterLockOutlivesTheLaunchersCopy(t *testing.T) {
 	}
 	if outcome := scratchOutcome(ReconcileScratch(control, options), run.ID()); outcome.Action != ReconcileScratchRemoved {
 		t.Fatalf("recovery after the child exited = %+v", outcome)
+	}
+}
+
+// forkCopyHolder starts a child that holds a duplicate of run's writer
+// description until release is called, as a child forked by another
+// goroutine holds every descriptor until it execs: the same open file
+// description, so the same flock.
+func forkCopyHolder(t *testing.T, run *ScratchRun) (release func()) {
+	t.Helper()
+	child := exec.Command("/bin/sh", "-c", "echo ready; read line || true")
+	child.ExtraFiles = []*os.File{run.Writer()}
+	stdin, err := child.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stdout, err := child.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := child.Start(); err != nil {
+		t.Fatal(err)
+	}
+	if line, err := bufio.NewReader(stdout).ReadString('\n'); err != nil || line != "ready\n" {
+		t.Fatalf("holder readiness = %q, %v", line, err)
+	}
+	released := false
+	release = func() {
+		if released {
+			return
+		}
+		released = true
+		_ = stdin.Close()
+		if err := child.Wait(); err != nil {
+			t.Errorf("holder: %v", err)
+		}
+	}
+	t.Cleanup(release)
+	return release
+}
+
+// fakeScratchDrain is the drain on an artificial clock: each sleep advances
+// it by the step and calls onSleep first; it never waits in real time.
+func fakeScratchDrain(window time.Duration, onSleep func(sleeps int)) (scratchDrain, *int) {
+	clock := time.Unix(0, 0)
+	sleeps := 0
+	return scratchDrain{window: window, step: 5 * time.Millisecond, now: func() time.Time { return clock },
+		sleep: func(step time.Duration) {
+			sleeps++
+			if onSleep != nil {
+				onSleep(sleeps)
+			}
+			clock = clock.Add(step)
+		}}, &sleeps
+}
+
+// The fork-copy witness: a copy of the writer description that goes away
+// shortly after Cleanup closed the launcher's copy (a sibling goroutine's
+// child between fork and exec) is waited out, not read as a live writer.
+// Before the drain, Cleanup's single probe returned writer-lock-held here.
+func TestScratchCleanupWaitsOutAForkCopyOfTheWriter(t *testing.T) {
+	// Not parallel: it starts its own writer child while the writer is open (writer-lock note).
+	control := t.TempDir()
+	run, err := CreateScratchRun(control)
+	if err != nil {
+		t.Fatal(err)
+	}
+	release := forkCopyHolder(t, run)
+	drain, sleeps := fakeScratchDrain(time.Second, func(int) { release() })
+	run.drain = drain
+	if err := run.Cleanup(nil); err != nil {
+		t.Fatalf("cleanup with a transient fork copy = %v", err)
+	}
+	if *sleeps != 1 {
+		t.Fatalf("drain slept %d times, want exactly one re-probe", *sleeps)
+	}
+	if _, err := os.Lstat(run.Root()); !os.IsNotExist(err) {
+		t.Fatalf("root survived: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(ScratchStore(control), run.ID()+".json")); !os.IsNotExist(err) {
+		t.Fatalf("record survived: %v", err)
+	}
+}
+
+// A copy that outlives the drain window is a live writer: the root and the
+// record stay, and the drain stops at its bound on the artificial clock.
+func TestScratchCleanupDrainIsBoundedForALiveWriter(t *testing.T) {
+	// Not parallel: it starts its own writer child while the writer is open (writer-lock note).
+	control := t.TempDir()
+	run, err := CreateScratchRun(control)
+	if err != nil {
+		t.Fatal(err)
+	}
+	release := forkCopyHolder(t, run)
+	drain, sleeps := fakeScratchDrain(100*time.Millisecond, nil)
+	run.drain = drain
+	err = run.Cleanup(nil)
+	if err == nil || !strings.Contains(err.Error(), ScratchIncomplete) || !strings.Contains(err.Error(), "writer-lock-held") {
+		t.Fatalf("cleanup with a live writer = %v", err)
+	}
+	if *sleeps != 20 {
+		t.Fatalf("drain slept %d times, want 20 steps of 5ms in a 100ms window", *sleeps)
+	}
+	if _, err := os.Lstat(run.Root()); err != nil {
+		t.Fatalf("root not retained: %v", err)
+	}
+	release()
+	run.drain = scratchDrain{}
+	if err := run.Cleanup(nil); err != nil {
+		t.Fatalf("cleanup after the writer exited: %v", err)
+	}
+}
+
+// The launcher's default drain is on the wall clock with a bound that
+// dwarfs a fork-to-exec window; reconcile keeps its single probe.
+func TestScratchDefaultDrainIsTheLaunchersOnly(t *testing.T) {
+	t.Parallel()
+	if d := defaultScratchDrain; d.window < time.Second || d.step <= 0 || d.step > 10*time.Millisecond || d.now == nil || d.sleep == nil {
+		t.Fatalf("default drain = %+v", d)
 	}
 }
 
@@ -421,6 +540,7 @@ func TestScratchCustodianHoldsTheWriterAfterTheWorkloadClosesIt(t *testing.T) {
 	if record := readScratchRecord(t, control, run.ID()); len(record.Custodians) != 1 || record.Custodians[0].Group <= 0 {
 		t.Fatalf("custodian not recorded before the workload ran: %+v", record)
 	}
+	run.drain, _ = fakeScratchDrain(time.Second, nil)
 	if err := run.Cleanup(nil); err == nil || !strings.Contains(err.Error(), "writer-lock-held") {
 		t.Fatalf("cleanup while the custodian holds the writer = %v", err)
 	}
