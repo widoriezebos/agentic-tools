@@ -438,7 +438,8 @@ func TestLandingExclusionsAreTheLandingProjectionAsPaths(t *testing.T) {
 		"memory/receipts.log", "records/narrator-digest.log", "plans/goals/g.md", "plans/goals.md",
 		"plans/goals-accepted.json", "metasystem.conf.local", "bin/tool", ".git/HEAD",
 		"internal/ui/web/_app/node_modules/x/index.js", "cmd/metasystem/main.go", "memory/rulings.md",
-		"metasystem.conf", ".claude/settings.json", "records/goals/g.md", "plans/goals-accepted.json.bak",
+		"metasystem.conf", ".claude/settings.json", ".claude/settings.local.json", ".codex/config.toml", ".claude/agents/verify.md",
+		"records/goals/g.md", "plans/goals-accepted.json.bak",
 	}
 	for _, prefix := range []string{"", "metasystem/"} {
 		exclusions := policy.LandingExclusions(prefix)

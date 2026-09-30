@@ -81,3 +81,32 @@ func TestDeliveryParityLeavesWhatTheCommitNeverRecordsAtCandidateBytes(t *testin
 		t.Fatalf("ignored declared input inside the landing projection did not refuse: %v", err)
 	}
 }
+
+// Agent-harness local configuration is never delivery content: a seat with
+// .claude/settings.local.json lands a records change although a group
+// declares .claude/** as its input.
+func TestDeliveryParityLeavesRuntimeLocalConfigurationOut(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	write := func(relative, text string) {
+		writeTestingFixtureFile(t, filepath.Join(root, filepath.FromSlash(relative)), []byte(text), 0o644)
+	}
+	testingFixtureGit(t, root, "init", "-q")
+	write(".gitignore", ".claude/settings.local.json\n")
+	write(".claude/settings.json", "{}\n")
+	write("metasystem/metasystem.conf", "testing.contract=testing.json\n")
+	write("metasystem/testing.json", "{}\n")
+	write("metasystem/records/narrator-digest.log", "one\n")
+	testingFixtureGit(t, root, "add", "-A")
+	testingFixtureGit(t, root, "-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-q", "-m", "base")
+	write("metasystem/records/narrator-digest.log", "one\ntwo\n")
+	testingFixtureGit(t, root, "add", "metasystem/records/narrator-digest.log")
+	candidate := strings.TrimSpace(testingFixtureGit(t, root, "write-tree"))
+	write(".claude/settings.local.json", "{\"permissions\":{}}\n")
+
+	contract := testpolicy.Contract{Groups: []testpolicy.Group{{ID: "harness", Inputs: []string{".claude/**", "metasystem/**"}}}}
+	plan := testpolicy.Plan{SelectedGroups: []string{"harness"}}
+	if err := CheckDeliveryInputParity(candidate, "metasystem/", "testing.json", contract, plan, deliveryParitySnapshot(gittree.Workspace{Dir: root}, "metasystem/")); err != nil {
+		t.Fatalf("runtime local configuration moved the delivery candidate: %v", err)
+	}
+}
