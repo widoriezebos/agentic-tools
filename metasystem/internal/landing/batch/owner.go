@@ -190,7 +190,7 @@ func (owner *Owner) Tick(id string) error {
 			}
 		}
 	}
-	if err = ReturnUnits(owner.store, id, tree, owner.actor, at, owner.returns); err != nil {
+	if _, err = ReturnUnits(owner.store, id, tree, owner.actor, at, owner.returns); err != nil {
 		return err
 	}
 	if err = owner.rebind(id, tree); err != nil {

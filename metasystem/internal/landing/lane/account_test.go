@@ -21,9 +21,7 @@ func TestLaneAccountResolvesOnlyTheHostLane(t *testing.T) {
 	if _, err := ResolveAccount(home, root); !errors.As(err, &coded) || coded.Code != CodeAccountUnresolved || strings.Contains(err.Error(), CodeAccountUnresolved) {
 		t.Fatalf("no lane: %v", err)
 	}
-	if _, err := Resolve(home, root, "m1e", laneNow, true); err != nil {
-		t.Fatal(err)
-	}
+	register(t, home, root)
 	module := filepath.Join(root, "metasystem")
 	if err := os.MkdirAll(module, 0o755); err != nil {
 		t.Fatal(err)

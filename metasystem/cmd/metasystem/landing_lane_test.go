@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
@@ -19,8 +20,8 @@ import (
 
 var laneTestNow = time.Date(2026, 9, 29, 18, 0, 0, 0, time.UTC)
 
-// laneBed is a host with a lane home, two landing checkouts and two seats
-// whose settings the test writes; Git is never run.
+// laneBed is a host with a lane home, two nested landing checkouts and two
+// seats whose settings the test writes.
 type laneBed struct {
 	home, landingA, landingB, seatA, seatB string
 	seams                                  batchowner.LandingLaneSeams
@@ -42,8 +43,9 @@ func newLaneBed(t *testing.T) *laneBed {
 		}
 	}
 	bed.home, bed.landingA, bed.landingB = realpath.Resolve(bed.home), realpath.Resolve(bed.landingA), realpath.Resolve(bed.landingB)
+	landingCheckout(t, bed.landingA)
+	landingCheckout(t, bed.landingB)
 	bed.seams = batchowner.LandingLaneSeams{Home: func() (string, error) { return bed.home, nil },
-		By:       func(installation string) string { return filepath.Base(installation) },
 		Validate: func(root, _ string, _ time.Time) (string, error) { return realpath.Resolve(root), nil }}
 	return bed
 }
@@ -55,27 +57,53 @@ func (bed *laneBed) setRoot(t *testing.T, seat, root string) {
 	}
 }
 
-// Two seats naming the same landing checkout: the first registers it and
-// both land through it; a seat with no setting lands through it too.
-func TestBatchRootRegistersTheFirstSeatAndServesTheOthers(t *testing.T) {
+// A person registers the lane; a seat naming it and a seat naming nothing
+// both land through it.
+func TestBatchRootServesThePersonsLane(t *testing.T) {
 	t.Parallel()
 	bed := newLaneBed(t)
+	registerLane(t, bed.home, bed.landingA, "Wido", laneTestNow)
 	bed.setRoot(t, bed.seatA, bed.landingA)
-	root, configured, err := bed.seams.BatchRoot(bed.seatA, laneTestNow)
-	if err != nil || !configured || root != bed.landingA {
-		t.Fatalf("seat A = %q %v %v; want %s", root, configured, err, bed.landingA)
+	for _, seat := range []string{bed.seatA, bed.seatB} {
+		root, configured, err := bed.seams.BatchRoot(seat, laneTestNow)
+		if err != nil || !configured || root != bed.landingA {
+			t.Fatalf("seat %s = %q %v %v; want the person's lane %s", seat, root, configured, err, bed.landingA)
+		}
 	}
 	record, ok, err := lane.Read(bed.home)
-	if err != nil || !ok || record.Root != bed.landingA || record.RegisteredBy != "seat-a" {
+	if err != nil || !ok || record.Root != bed.landingA || record.RegisteredBy != "Wido" || record.Install != filepath.Join(bed.landingA, "metasystem") {
 		t.Fatalf("record = %+v %v %v", record, ok, err)
 	}
-	root, configured, err = bed.seams.BatchRoot(bed.seatB, laneTestNow)
-	if err != nil || !configured || root != bed.landingA {
-		t.Fatalf("unset seat B = %q %v %v; want the host's lane %s", root, configured, err, bed.landingA)
+}
+
+// While a person unsets the lane, a seat's join is refused in plain words
+// naming the one command that finishes the unset; a reader still sees the
+// lane.
+func TestJoinIsRefusedWhileTheLaneIsUnset(t *testing.T) {
+	t.Parallel()
+	bed := newLaneBed(t)
+	registerLane(t, bed.home, bed.landingA, "Wido", laneTestNow)
+	seams := lane.UnsetSeams{
+		Settle: func(lane.Layout) (lane.Settlement, error) {
+			return lane.Settlement{Live: []string{"a proof runs"}}, nil
+		},
+		Records:   func(lane.Layout) ([]batch.Record, error) { return nil, nil },
+		Reconcile: func(lane.Layout, batch.Record) ([]lane.Unresolved, error) { return nil, nil },
+		Return:    func(lane.Layout, batch.Record, string) ([]lane.Unresolved, error) { return nil, nil },
+		Confirm:   func(lane.Layout, []batch.Record) ([]lane.Unresolved, error) { return nil, nil },
 	}
-	bed.setRoot(t, bed.seatB, bed.landingA)
-	if root, _, err = bed.seams.BatchRoot(bed.seatB, laneTestNow); err != nil || root != bed.landingA {
-		t.Fatalf("seat B naming the same lane = %q %v", root, err)
+	if report, err := lane.Unset(bed.home, "Wido", laneTestNow, false, seams); err != nil || report.Stopped != lane.StepSettled {
+		t.Fatalf("unset = %+v %v", report, err)
+	}
+	inv := &intentInvocation{layout: stateroot.Layout{InstallationRoot: bed.seatA}, owners: intentOwners{delivery: &intentDeliveryOwners{
+		batchRoot: bed.seams.BatchRoot, now: func() time.Time { return laneTestNow }}}}
+	_, _, refused := inv.landingBatchRoot(nil)
+	if refused == nil || refused.Outcome != intentRefused || strings.Contains(refused.Summary, lane.CodeUnsetting) || !strings.Contains(refused.Summary, "being unset") ||
+		strings.Join(refused.next, " ") != "metasystem landing unset" || !strings.Contains(strings.Join(refused.Details, " "), lane.CodeUnsetting) {
+		t.Fatalf("a join while the lane is unset = %+v; want the situation on line 1, metasystem landing unset on line 2, %s only in the details", refused, lane.CodeUnsetting)
+	}
+	if root, configured, err := bed.seams.Resolve(bed.seatA, laneTestNow); err != nil || !configured || root != bed.landingA {
+		t.Fatalf("a reader during the unset = %q %v %v; want the lane", root, configured, err)
 	}
 }
 
@@ -96,10 +124,7 @@ func TestBatchRootWithoutAnyLaneIsNotConfigured(t *testing.T) {
 func TestWorkLandRefusesASeatWhoseRootIsNotTheHostLane(t *testing.T) {
 	t.Parallel()
 	bed := newLaneBed(t)
-	bed.setRoot(t, bed.seatA, bed.landingA)
-	if _, _, err := bed.seams.BatchRoot(bed.seatA, laneTestNow); err != nil {
-		t.Fatal(err)
-	}
+	registerLane(t, bed.home, bed.landingA, "seat-a", laneTestNow)
 	bed.setRoot(t, bed.seatB, bed.landingB)
 	inv := &intentInvocation{layout: stateroot.Layout{InstallationRoot: bed.seatB}, owners: intentOwners{delivery: &intentDeliveryOwners{
 		batchRoot: bed.seams.BatchRoot, now: func() time.Time { return laneTestNow }}}}
@@ -107,10 +132,13 @@ func TestWorkLandRefusesASeatWhoseRootIsNotTheHostLane(t *testing.T) {
 	if refused == nil || refused.Outcome != intentRefused {
 		t.Fatalf("seat B landed through another lane: %+v", refused)
 	}
-	for _, want := range []string{lane.CodeMismatch, bed.landingA, bed.landingB, "registered by seat-a"} {
+	for _, want := range []string{bed.landingA, bed.landingB, "registered by seat-a"} {
 		if !strings.Contains(refused.Summary, want) {
 			t.Errorf("summary %q lacks %q", refused.Summary, want)
 		}
+	}
+	if strings.Contains(refused.Summary, lane.CodeMismatch) || !strings.Contains(strings.Join(refused.Details, " "), lane.CodeMismatch) {
+		t.Errorf("the code %s belongs in the details, not line 1: %+v", lane.CodeMismatch, refused)
 	}
 	for _, want := range []string{"metasystem settings set landing.batch-root " + bed.landingA, "metasystem landing set " + bed.landingB} {
 		if !strings.Contains(refused.Decision, want) {
@@ -119,19 +147,20 @@ func TestWorkLandRefusesASeatWhoseRootIsNotTheHostLane(t *testing.T) {
 	}
 }
 
-// The owner serves only the host's lane: a checkout naming itself registers
-// itself; another checkout naming itself is refused and does not run; a
+// The owner serves only the host's lane: the checkout a person registered
+// serves it; another checkout naming itself is refused and does not run; a
 // checkout with no setting serves the lane when it is the lane.
 func TestLandingOwnerServesOnlyTheHostLane(t *testing.T) {
 	t.Parallel()
 	bed := newLaneBed(t)
 	home := bed.seams.Home
-	bed.setRoot(t, bed.landingA, bed.landingA)
+	registerLane(t, bed.home, bed.landingA, "Wido", laneTestNow)
 	for _, landing := range []string{bed.landingA, bed.landingB} {
 		if err := os.WriteFile(filepath.Join(landing, "metasystem.conf"), nil, 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
+	bed.setRoot(t, bed.landingA, bed.landingA)
 	root, paused, err := batchowner.LandingOwnerLaneRoot(home, bed.landingA, bed.landingA, laneTestNow)
 	if err != nil || root != bed.landingA || paused {
 		t.Fatalf("lane A's own owner = %q %v %v", root, paused, err)
@@ -156,7 +185,8 @@ func TestLandingOwnerServesOnlyTheHostLane(t *testing.T) {
 	}
 }
 
-// With no home for the lane, a seat keeps its own setting, as before U12.
+// With no home for the lane, a seat keeps its own setting, as before U12:
+// there is no host state, so nothing is registered, gated or kept.
 func TestBatchRootWithoutALaneHomeKeepsTheSeatSetting(t *testing.T) {
 	t.Parallel()
 	bed := newLaneBed(t)
@@ -183,10 +213,7 @@ func TestHelmHeldBatchesReadsTheHostLaneForAnUnsetSeat(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(bed.seatB, ".git"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	bed.setRoot(t, bed.seatA, bed.landingA)
-	if _, _, err := bed.seams.BatchRoot(bed.seatA, laneTestNow); err != nil {
-		t.Fatal(err)
-	}
+	registerLane(t, bed.home, bed.landingA, "Wido", laneTestNow)
 	batches := filepath.Join(bed.landingA, "artifacts", "agents", "landing-batches")
 	if err := os.MkdirAll(batches, 0o755); err != nil {
 		t.Fatal(err)
@@ -200,7 +227,7 @@ func TestHelmHeldBatchesReadsTheHostLaneForAnUnsetSeat(t *testing.T) {
 		t.Fatal(err)
 	}
 	held, err := helmHeldBatches(bed.seatB, seat, func(installation string, now time.Time) (string, bool, error) {
-		return bed.seams.Resolve(installation, now, false)
+		return bed.seams.Resolve(installation, now)
 	})
 	if err != nil || len(held) != 1 || held[0] != "b1 (proving)" {
 		t.Fatalf("unset seat's held batches = %v %v; want b1 from the host lane", held, err)
@@ -267,5 +294,55 @@ func TestEnsureBatchOwnerRefusesAGoneLane(t *testing.T) {
 	}
 	if _, statErr := os.Stat(gone); !errors.Is(statErr, os.ErrNotExist) {
 		t.Fatalf("the gone lane was recreated: %v", statErr)
+	}
+}
+
+// Only a person's landing set registers a lane (design r10 §1): a seat whose
+// landing.batch-root names a checkout, on a computer with no registered
+// lane, writes no host record and lands its own work; the lane's would-be
+// owner there does not run either.
+func TestSeatSettingNeverRegisters(t *testing.T) {
+	t.Parallel()
+	bed := newLaneBed(t)
+	bed.setRoot(t, bed.seatA, bed.landingA)
+	root, configured, err := bed.seams.BatchRoot(bed.seatA, laneTestNow)
+	if err != nil || configured || root != "" {
+		t.Fatalf("seat naming a lane on a computer with none = %q %v %v; want no lane, so the seat lands itself", root, configured, err)
+	}
+	if _, ok, _ := lane.Read(bed.home); ok {
+		t.Fatalf("a seat's landing.batch-root registered the host's lane")
+	}
+	if err := os.WriteFile(filepath.Join(bed.landingA, "metasystem.conf"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bed.setRoot(t, bed.landingA, bed.landingA)
+	root, _, err = batchowner.LandingOwnerLaneRoot(bed.seams.Home, bed.landingA, bed.landingA, laneTestNow)
+	if err != nil || root != "" {
+		t.Fatalf("a landing checkout naming itself = %q %v; want no lane: it registers nothing and its owner serves none", root, err)
+	}
+	if _, ok, _ := lane.Read(bed.home); ok {
+		t.Fatalf("the owner of a checkout naming itself registered the host's lane")
+	}
+}
+
+// At cutover every seat meets an older engine's lane record: work land
+// says so in plain words on line 1, names the one command on line 2, and
+// keeps the code for --verbose and --json.
+func TestWorkLandNamesLandingSetForAnOlderLaneRecord(t *testing.T) {
+	t.Parallel()
+	bed := newLaneBed(t)
+	if err := os.MkdirAll(lane.HostDir(bed.home), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	old := `{"root":"` + bed.landingA + `","registeredBy":"m1e","at":"2026-09-29T18:00:00Z"}`
+	if err := os.WriteFile(lane.RecordPath(bed.home), []byte(old), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	inv := &intentInvocation{layout: stateroot.Layout{InstallationRoot: bed.seatA}, owners: intentOwners{delivery: &intentDeliveryOwners{
+		batchRoot: bed.seams.BatchRoot, now: func() time.Time { return laneTestNow }}}}
+	_, _, refused := inv.landingBatchRoot(nil)
+	if refused == nil || strings.Contains(refused.Summary, lane.CodeRecordIncomplete) || !strings.Contains(refused.Summary, "older engine") ||
+		strings.Join(refused.next, " ") != "metasystem landing set "+bed.landingA || !strings.Contains(strings.Join(refused.Details, " "), lane.CodeRecordIncomplete) {
+		t.Fatalf("work land on an older lane record = %+v", refused)
 	}
 }
