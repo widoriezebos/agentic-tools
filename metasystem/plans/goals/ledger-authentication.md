@@ -2,12 +2,12 @@
 
 - State: parked
 - Priority: 3
-- Sequence: 33
+- Sequence: 32
 - Intent: What: Records only a person may make in the goal ledger (approvals, stops, resumes) are signed, so a forged one is rejected. Why: Today anyone with write access to the checkout could write a record that looks like your act. Pros: Closes the forgery threat for person-only acts. Cons: A large design touching every person-only command, and no forgery has been seen.
 - Origin: main
 - Next step: Next: When triggered, design it: which acts are signed, how keys are kept, and whether signing is per act or per tree, keeping ordinary agent ledger commands unsigned. Done when: the design is accepted and a test refuses a forged person-only record.
 - OpenedAt: 2026-09-02T11:31:48Z
-- Revision: 88
+- Revision: 89
 - BudgetExceptions: 0
 - Parked: by=human:Wido at=2026-09-13T08:23:45Z because=Not now (2026-09-13 backlog consolidation, Wido's word): Wido 2026-09-02 deferred true forge-proofing to this foundational design program; nothing signs ledger records; never-idle-ironclad explicitly excludes forged history from its readiness claim; back of queue until Wido prioritises; wide blast radius, multi-slice design.
 
@@ -100,4 +100,5 @@ History:
 - 2026-09-30T18:58:45Z BJ7G27AFE5SG1RS2798T95R4PH-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,goal-suite-sits-on-the-default-test-timeout,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,set-priority-treats-an-oversize-sequence-as-last,watchdog-kill-observation-gap reason=priority-order from=3:36 to=3:35
 - 2026-09-30T18:59:00Z 2FKD49AE1ZGA482YG0V3X1ZMS5-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,incident-proposal-drafting,integration-branch,land-verb-pruning,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,set-priority-treats-an-oversize-sequence-as-last,standing-validation,watchdog-kill-observation-gap reason=priority-order from=3:35 to=3:34
 - 2026-09-30T19:00:17Z 7J15GYNCZB96SRZHJ9QXQJ6RNZ-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,set-priority-treats-an-oversize-sequence-as-last,watchdog-kill-observation-gap reason=priority-order from=3:34 to=3:33
-Integrity: sha256=fb8dcef1b6818a9eae45c91a012ef69d61b63566c5b666a15c2fdb033c135b15
+- 2026-09-30T19:00:30Z 05DDEYJ4CQMXX9QH823EW2S9HB-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,claude-delegate-scratch-cleanup,claude-denywrite-list-is-a-snapshot,continuous-self-improvement,counselor,cross-repo-guardrails,delegate-sandbox-cannot-run-the-beds,design-prohibition-is-role-scoped,human-carried-landing,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,narrator-digests,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,seam-declaration-convergence,set-priority-treats-an-oversize-sequence-as-last,standing-validation,uncapped-delegate-fanout,watchdog-kill-observation-gap reason=priority-order from=3:33 to=3:32
+Integrity: sha256=6bce57afcc5bae3af36d872e0796cb980768e4144aada1a8e9cbf9806de0ae32

@@ -2,14 +2,14 @@
 
 - State: parked
 - Priority: 3
-- Sequence: 19
+- Sequence: 18
 - Risk: severity=1 novelty=1 exposure=2 accumulation=2 basis="The registry design's REG-3 text no longer describes what the reduction keeps for owner selection; every reader of the design is exposed to a stale contract, and each further reduction change widens the gap."
 - Tier: 2
 - Intent: What: The design page for the supervision registry says exactly which records the registry keeps and when it drops one, and the code logs every record it drops. Why: The code was changed (e516ad5d) to keep more records and drop conflicting ones, but the page still says anything not listed may be dropped, and dropped conflicts are collected but never reported. Pros: The page matches the code, and a dropped record leaves a trace someone can find. Cons: Very small; not worth a work slot of its own.
 - Origin: main
 - Next step: Next: The next change that touches internal/registry adds one paragraph to docs/design/supervision-registry.md (section REG-3: which records are kept, and the drop rule) and one log line where the reduction drops a conflict. Done when: the page states the drop rule and a dropped conflict shows up in the log.
 - OpenedAt: 2026-09-05T15:09:55Z
-- Revision: 79
+- Revision: 80
 - Labels: robustness
 - BudgetExceptions: 0
 - Parked: by=human:Wido at=2026-09-13T08:24:13Z because=Not now (2026-09-13 backlog consolidation, Wido's word): Ride-along, not a goal: one doc round on docs/design/supervision-registry.md REG-3 (line 141) and one logging line for internal/registry/reduce.go:151-153 Dropped, taken by whoever next touches internal/registry; no runtime defect; leftover of supervision-custody-per-checkout (done e516ad5d).
@@ -94,4 +94,5 @@ History:
 - 2026-09-30T18:58:45Z BJ7G27AFE5SG1RS2798T95R4PH-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,goal-suite-sits-on-the-default-test-timeout,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,set-priority-treats-an-oversize-sequence-as-last,watchdog-kill-observation-gap reason=priority-order from=3:22 to=3:21
 - 2026-09-30T18:59:00Z 2FKD49AE1ZGA482YG0V3X1ZMS5-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,incident-proposal-drafting,integration-branch,land-verb-pruning,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,set-priority-treats-an-oversize-sequence-as-last,standing-validation,watchdog-kill-observation-gap reason=priority-order from=3:21 to=3:20
 - 2026-09-30T19:00:17Z 7J15GYNCZB96SRZHJ9QXQJ6RNZ-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,set-priority-treats-an-oversize-sequence-as-last,watchdog-kill-observation-gap reason=priority-order from=3:20 to=3:19
-Integrity: sha256=834049fa4c1a2e1cc53219723b2b19817e3b79482f508e9c66f803ce73f11444
+- 2026-09-30T19:00:30Z 05DDEYJ4CQMXX9QH823EW2S9HB-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,claude-delegate-scratch-cleanup,claude-denywrite-list-is-a-snapshot,continuous-self-improvement,counselor,cross-repo-guardrails,delegate-sandbox-cannot-run-the-beds,design-prohibition-is-role-scoped,human-carried-landing,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,narrator-digests,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,seam-declaration-convergence,set-priority-treats-an-oversize-sequence-as-last,standing-validation,uncapped-delegate-fanout,watchdog-kill-observation-gap reason=priority-order from=3:19 to=3:18
+Integrity: sha256=b38bb85b373dc000a9a6bf385c8ef480838cfc8266a166246715ead98e10e285

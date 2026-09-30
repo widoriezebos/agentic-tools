@@ -2,12 +2,12 @@
 
 - State: queued
 - Priority: 3
-- Sequence: 16
+- Sequence: 15
 - Intent: What: A permanent record, not work to do. The landing lane's regular validation run (the deep test run that clears accumulated landing risk) runs under this goal's approval, so every such run points to a person's permission and budget. Why: Every automatic deep run needs a person's approval on record, and this goal carries it. The code names this goal directly, so it must never be concluded or picked up as ordinary work. Pros: One lasting place for the approval, and the history of every validation run stays in one record. Cons: It looks like an open goal in the backlog and can confuse reviews or be picked up by mistake. It has been unapproved since 09-11, so the lane's validation run currently reports "authority unavailable".
 - Origin: main
 - Next step: Next: Leave it open and never work it by hand. Per the landing-lane redesign (lane-stepback-20260930/lane-runtime-design.md, decision D2), Wido approves it with an enforced obligation at switch-on, and from then on the landing lane claims it once and holds it. Done when: never, because it stays open. After switch-on, landing status shows the validation run is no longer waiting for authority.
 - OpenedAt: 2026-08-31T10:47:20Z
-- Revision: 79
+- Revision: 80
 - BudgetExceptions: 0
 
 History:
@@ -90,4 +90,5 @@ History:
 - 2026-09-30T18:46:08Z 7GGWVQD235YYYY2DQMKRPR83BK-m1e-b6a4eb0a edit actor=human:wido targets=standing-validation
 - 2026-09-30T18:57:42Z EATDFDHH90W17M050BRZTK9FJ8-m1e-b6a4eb0a done actor=human:wido targets=answer-archive,app-doctrine,app-guardrail-custody,app-guardrail-program,claude-delegate-scratch-cleanup,claude-denywrite-list-is-a-snapshot,continuous-self-improvement,counselor,cross-repo-guardrails,defect-analysis-gate,delegate-sandbox-cannot-run-the-beds,design-prohibition-is-role-scoped,goal-scope-bounds,goal-suite-sits-on-the-default-test-timeout,hook-demands-what-landing-forbids,host-health-role,human-carried-landing,incident-proposal-drafting,integration-branch,land-verb-pruning,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,narrator-digests,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,same-process-succession,seam-declaration-convergence,set-priority-treats-an-oversize-sequence-as-last,standing-validation,steward-owned-execution,stop-message-truth,uncapped-delegate-fanout,verbs-match-intent,watchdog-kill-observation-gap reason=priority-order from=3:18 to=3:17
 - 2026-09-30T18:59:00Z 2FKD49AE1ZGA482YG0V3X1ZMS5-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,incident-proposal-drafting,integration-branch,land-verb-pruning,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,set-priority-treats-an-oversize-sequence-as-last,standing-validation,watchdog-kill-observation-gap reason=priority-order from=3:17 to=3:16
-Integrity: sha256=7394821c1776ce879ee0fa63be67d71311df2e19022c5e65fe15ebfc9ea72d83
+- 2026-09-30T19:00:30Z 05DDEYJ4CQMXX9QH823EW2S9HB-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,claude-delegate-scratch-cleanup,claude-denywrite-list-is-a-snapshot,continuous-self-improvement,counselor,cross-repo-guardrails,delegate-sandbox-cannot-run-the-beds,design-prohibition-is-role-scoped,human-carried-landing,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,narrator-digests,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,seam-declaration-convergence,set-priority-treats-an-oversize-sequence-as-last,standing-validation,uncapped-delegate-fanout,watchdog-kill-observation-gap reason=priority-order from=3:16 to=3:15
+Integrity: sha256=82c9cc951d485bc718ae276f1492724cf7590a257ee5af980610dbd6c977b590

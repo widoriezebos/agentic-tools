@@ -2,12 +2,12 @@
 
 - State: parked
 - Priority: 3
-- Sequence: 31
+- Sequence: 30
 - Intent: What: An umbrella goal: the metasystem can build someone else's app safely and largely on its own, with the app bringing its guardrails (specs, reference outputs, budgets, test batteries) and the metasystem bringing the discipline around them. Four of its six parts are done (the app covenant, the inception interview, guardrail adequacy checks, and the first evolution of guardrails). Left are app-guardrail-custody (the person's approval for weakening guardrails) and app-doctrine (the app's living rules). Why: It keeps the vision in one place and says when the whole program is finished. Pros: One place to see the program's state. Cons: The umbrella has no work of its own; it stays open only as long as its two members wait.
 - Origin: human
 - Next step: Next: Conclude this goal when app-guardrail-custody and app-doctrine have both concluded. Done when: both are done and the empty-repository walkthrough (adopt into an empty repository, go through the interview, receive covenant, doctrine and a starter backlog) still runs end to end.
 - OpenedAt: 2026-08-23T16:29:12Z
-- Revision: 90
+- Revision: 91
 - BudgetExceptions: 0
 - Parked: by=human:Wido at=2026-09-30T18:46:12Z because=Parked until app-guardrail-custody and app-doctrine are both done. It has no work of its own left.
 
@@ -102,4 +102,5 @@ History:
 - 2026-09-30T18:58:45Z BJ7G27AFE5SG1RS2798T95R4PH-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,goal-suite-sits-on-the-default-test-timeout,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,set-priority-treats-an-oversize-sequence-as-last,watchdog-kill-observation-gap reason=priority-order from=3:34 to=3:33
 - 2026-09-30T18:59:00Z 2FKD49AE1ZGA482YG0V3X1ZMS5-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,incident-proposal-drafting,integration-branch,land-verb-pruning,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,set-priority-treats-an-oversize-sequence-as-last,standing-validation,watchdog-kill-observation-gap reason=priority-order from=3:33 to=3:32
 - 2026-09-30T19:00:17Z 7J15GYNCZB96SRZHJ9QXQJ6RNZ-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,set-priority-treats-an-oversize-sequence-as-last,watchdog-kill-observation-gap reason=priority-order from=3:32 to=3:31
-Integrity: sha256=a412b6a54cb8278dc5b007525f88eb683a622d51c67859d68e9309b9cd36b166
+- 2026-09-30T19:00:30Z 05DDEYJ4CQMXX9QH823EW2S9HB-m1e-b6a4eb0a done actor=human:wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,claude-delegate-scratch-cleanup,claude-denywrite-list-is-a-snapshot,continuous-self-improvement,counselor,cross-repo-guardrails,delegate-sandbox-cannot-run-the-beds,design-prohibition-is-role-scoped,human-carried-landing,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,narrator-digests,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,seam-declaration-convergence,set-priority-treats-an-oversize-sequence-as-last,standing-validation,uncapped-delegate-fanout,watchdog-kill-observation-gap reason=priority-order from=3:31 to=3:30
+Integrity: sha256=c2a155308c60ad8ebd7069842a79d45782538b232de350fc4e6fa56e114986fd
