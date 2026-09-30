@@ -497,3 +497,15 @@ func TestHeldRefusalKindsForTheLanding(t *testing.T) {
 		}
 	}
 }
+
+// landing status --verbose names the owner's last failed tick and the log
+// that holds every line it reported.
+func TestLandingStatusVerboseNamesTheLastTickErrorAndTheOwnerLog(t *testing.T) {
+	t.Parallel()
+	root, failure := "/lanes/landing", "batch b1: read joined goal change:5555 before rebind: absent"
+	view := lane.View{Root: &root, Owner: lane.OwnerView{State: lane.OwnerRunning, LastTickError: &failure}}
+	lines := strings.Join(landingViewDetail(view), "\n")
+	if !strings.Contains(lines, "last tick failed: "+failure) || !strings.Contains(lines, "owner log: "+batchowner.OwnerLogPath(root)) {
+		t.Fatalf("verbose status:\n%s", lines)
+	}
+}

@@ -61,6 +61,9 @@ type OwnerView struct {
 	LastExit  *string `json:"last_exit"`
 	StoppedBy *string `json:"stopped_by"`
 	RetryHint *string `json:"retry_hint"`
+	// LastTickError is the running owner's last failed batch tick, in its
+	// words; null when its last pass ticked clean.
+	LastTickError *string `json:"last_tick_error"`
 	// Fix is RetryHint as one command a person runs, when it is one; the
 	// verbs print it as their next step, the page shows RetryHint.
 	Fix []string `json:"-"`
@@ -171,6 +174,7 @@ func ownerView(sources ViewSources, root string) OwnerView {
 	state := ReadKeeper(sources.Home)
 	owner.Restarts = state.Restarts
 	owner.LastExit = text(state.LastError)
+	owner.LastTickError = text(LastTickErrorLine(root))
 	if owner.LastExit == nil {
 		owner.LastExit = text(LastErrorLine(root))
 	}
@@ -372,6 +376,9 @@ func summary(root string, view View, recordsErr error) string {
 	switch view.Owner.State {
 	case OwnerRunning:
 		owner += fmt.Sprintf(" (pid %d)", *view.Owner.PID)
+		if view.Owner.LastTickError != nil {
+			owner += "; its last tick failed: " + *view.Owner.LastTickError
+		}
 	case OwnerStopped:
 		owner += " by " + *view.Owner.StoppedBy + "; metasystem landing start resumes it"
 	case OwnerGivenUp:

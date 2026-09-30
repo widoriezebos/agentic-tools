@@ -46,8 +46,12 @@ type ProductionBatchOwnerInputs struct {
 	LockDir     string
 	QueueDir    string
 	// Log is where the owner reports each red, start wait and error: the
-	// standard error of the component or command that runs it.
+	// standard error of the component or command that runs it, and the
+	// supervised component's own log file.
 	Log io.Writer
+	// TickErrors keeps the owner's last reported error for landing status;
+	// nil keeps none.
+	TickErrors *TickErrors
 }
 
 // BatchOwnerSource supplies raw command inputs for a single invocation.
@@ -602,10 +606,7 @@ func newProductionBatchOwner(settings config.BatchLanding, held BatchOwnerLease,
 		Early:      productionEarlySeams(settings.Root),
 		// One batch proves at a time on the host (U12).
 		Proving: LandingLaneProving(LandingLaneHome),
-		Report: func(id string, err error) {
-			line, _ := json.Marshal(map[string]any{"component": "landing-owner", "batch": id, "error": err.Error()})
-			fmt.Fprintln(inputs.Log, string(line))
-		},
+		Report:  ownerReport(inputs.Log, inputs.TickErrors),
 	})
 }
 
@@ -674,8 +675,15 @@ func ProbeBatchProofRun(controlRoot, id string, record batch.Record, prober iden
 	return batch.RunProbe{State: batch.RunDead, Detail: "no live launcher for goal " + head}, nil
 }
 
-func RunBatchOwnerPass(out io.Writer, owner *batch.Owner, held BatchOwnerLease, root string, clock func() time.Time, cadence *BatchOwnerCadence) {
-	BatchOwnerPassWith(owner, root, BatchOwnerPassSeams{Helm: helm.Active, Resume: BatchOwnerResume, Out: out, Now: clock,
+// RunBatchOwnerPass is one supervised owner pass; ticks, when set, keeps the
+// last error a resume of the batches reported, cleared by a clean resume.
+func RunBatchOwnerPass(out io.Writer, owner *batch.Owner, held BatchOwnerLease, root string, clock func() time.Time, cadence *BatchOwnerCadence, ticks *TickErrors) {
+	resume := func(owner *batch.Owner) {
+		ticks.Begin()
+		BatchOwnerResume(owner)
+		ticks.End()
+	}
+	BatchOwnerPassWith(owner, root, BatchOwnerPassSeams{Helm: helm.Active, Resume: resume, Out: out, Now: clock,
 		Cadence: func() {
 			cadence.start(func() {
 				if err := BatchOwnerCadenceTick(root, held, clock); err != nil {

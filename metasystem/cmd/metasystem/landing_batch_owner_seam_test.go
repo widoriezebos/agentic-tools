@@ -631,7 +631,7 @@ func TestBatchOwnerLoopStopJoinsCadenceTick(t *testing.T) {
 		}
 	default:
 	}
-	batchowner.RunBatchOwnerPass(t.Output(), nil, batchowner.BatchOwnerLease{}, "landing-root", time.Now, cadence)
+	batchowner.RunBatchOwnerPass(t.Output(), nil, batchowner.BatchOwnerLease{}, "landing-root", time.Now, cadence, nil)
 	if starts != 1 {
 		t.Errorf("cadence starts after stop=%d, want one admitted tick", starts)
 	}

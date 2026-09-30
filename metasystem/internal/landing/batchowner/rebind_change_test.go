@@ -98,7 +98,9 @@ func TestRebindBatchClaimsSkipsChangeMembersWithTheRealLedger(t *testing.T) {
 
 type readableEmptyBoard struct{}
 
-func (readableEmptyBoard) Board(time.Time) batch.BoardPicture { return batch.BoardPicture{Readable: true} }
+func (readableEmptyBoard) Board(time.Time) batch.BoardPicture {
+	return batch.BoardPicture{Readable: true}
+}
 
 // The owner's tick on a batch of one change, with the production rebind
 // reading the real ledger, gets past the rebind to a start decision the
