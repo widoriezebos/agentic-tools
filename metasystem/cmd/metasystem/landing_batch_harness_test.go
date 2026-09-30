@@ -194,6 +194,10 @@ func runBatchOwnerWithSource(args []string, source *batchowner.BatchOwnerSource,
 			code = 1
 		}
 	}()
+	if err := parkBatchOwnerForFixture(); err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
 	owner, err := batchowner.BatchOwnerConstruct(settings, held, inputs, clock)
 	if err != nil {
 		fmt.Fprintln(stderr, err)

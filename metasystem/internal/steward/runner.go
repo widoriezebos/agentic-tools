@@ -138,7 +138,8 @@ func RunLoop(repoRoot string, census WorkerCensus, revive func() error, interval
 		Tick: RunTick, DeliverPending: DeliverPending, Resumable: ResumableIntent, Channel: channelphase.Run,
 		TrimCaches: machineCacheTrimmer(nil, ""),
 		Now:        runnerNow, Sleep: runnerSleep, AfterRecordPublished: runnerAfterRecordPublished, SweepDisk: runnerSweepDisk,
-		Bridge: func(top string) bridgeStepper { return newBridgeRole(top) },
+		Bridge:      func(top string) bridgeStepper { return newBridgeRole(top) },
+		StopSignals: productionStopSignals(),
 	})
 }
 
@@ -159,6 +160,9 @@ type runnerLoopDependencies struct {
 	// Bridge makes this runner's bridge role (batch-lane design D14-r2,
 	// R25); nil runs none.
 	Bridge func(top string) bridgeStepper
+	// StopSignals is the runner's orderly stop on SIGTERM and SIGINT; its
+	// zero value installs nothing.
+	StopSignals stopSignalSource
 }
 
 // bridgeStepper is the bridge role as the runner drives it: one step per
@@ -205,6 +209,13 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 	}
 	defer held.Release()
 	_ = os.Remove(runnerStopPath(top))
+	// From here a stop signal drains instead of killing: the tick in
+	// progress finishes its goal transaction, nothing new starts, and the
+	// loop ends. The relay stops before the lock is released.
+	drain := &runnerDrain{}
+	stopWatching := deps.StopSignals.watch(drain)
+	defer stopWatching()
+	cfg.Stopping = drain.Requested
 
 	self, state, err := identity.KernelProber{}.Probe(int64(os.Getpid()))
 	if err != nil || state != identity.Alive {
@@ -252,12 +263,17 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 	bridgeLine, laneLine := "", ""
 
 	for {
-		if _, err := os.Stat(runnerStopPath(top)); err == nil {
+		if _, err := os.Stat(runnerStopPath(top)); err == nil || drain.Requested() {
 			return nil
 		}
 		result, err := deps.Tick(top, cfg, census)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "tick failed: %v\n", err)
+		}
+		// A stop signal during the tick: its work in progress has finished,
+		// and nothing after it starts.
+		if drain.Requested() {
+			return nil
 		}
 		// The disk sweep runs after the tick released arbitration and before
 		// the helm check: disk space belongs to the whole machine, so at the
@@ -278,7 +294,7 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 		// the tick holds this pass, and the tick's decision stays on disk for
 		// the first tick after return (HM-7, HM-13).
 		if helm.Active(top).Active {
-			if stopped := runnerWait(top, interval, deps); stopped {
+			if stopped := runnerWait(top, interval, deps, drain); stopped {
 				return nil
 			}
 			continue
@@ -335,18 +351,18 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 				fmt.Fprintf(os.Stderr, "cache trim: %v\n", trimErr)
 			}
 		}
-		if stopped := runnerWait(top, interval, deps); stopped {
+		if stopped := runnerWait(top, interval, deps, drain); stopped {
 			return nil
 		}
 	}
 }
 
-// runnerWait sleeps one interval in 200 ms steps, watching the stop marker;
-// it reports whether the marker appeared.
-func runnerWait(top string, interval time.Duration, deps runnerLoopDependencies) bool {
+// runnerWait sleeps one interval in 200 ms steps, watching the stop marker
+// and the stop signal; it reports whether either arrived.
+func runnerWait(top string, interval time.Duration, deps runnerLoopDependencies, drain *runnerDrain) bool {
 	deadline := deps.Now().Add(interval)
 	for deps.Now().Before(deadline) {
-		if _, err := os.Stat(runnerStopPath(top)); err == nil {
+		if _, err := os.Stat(runnerStopPath(top)); err == nil || drain.Requested() {
 			return true
 		}
 		deps.Sleep(200 * time.Millisecond)

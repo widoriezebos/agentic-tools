@@ -603,6 +603,12 @@ func syncReqClassifiedWithTerminalGradeAtWithDependencies(root, by, lineageFlag 
 		return goal.VerbRequest{}, err
 	}
 	configureCarriedCounselor(&e)
+	// A publish blocked by a provably dead owner's pushed entry recovers it
+	// (the batch owner's handover included) under the same live policy
+	// `goal sync --recover` carries, at the command's clock.
+	if recoveryNow, nowErr := commandNow(root); nowErr == nil {
+		e.ConfigureBlockedRecovery(goalRecoveryPolicy{GoalRecoveryPolicy: dispatchcore.GoalRecoveryPolicy{Now: recoveryNow}, root: root})
+	}
 	machine, err := dependencies.machine(root)
 	if err != nil {
 		return goal.VerbRequest{}, err

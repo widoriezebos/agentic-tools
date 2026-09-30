@@ -71,77 +71,116 @@ func RecoverWithPolicy(e Endpoint, policy SensitiveRecoveryPolicy) ([]RecoveryRe
 			(entry.Outcome == OutcomeConfirmed || entry.Outcome == OutcomeConfirmedLate) {
 			continue
 		}
-		present, trErr := TrailerPresent(e, tip, entry.Opid)
-		if trErr != nil {
-			return reports, trErr
-		}
-		post := PostconditionAbsent
-		if present {
-			post = PostconditionPresent
-		}
-		action := ClassifyRecovery(entry, post, OwnerAlive(entry), callerIsOwner(entry), PastDeadline(entry, timeNowUTC()))
-		report := RecoveryReport{Opid: entry.Opid, Action: action}
-		switch action {
-		case ActionConfirm:
-			if err := recoverConfirmedEffect(e, tip, entry); err != nil {
-				return reports, err
-			}
-			if err := MarkTerminal(e.Root, entry.Opid, OutcomeConfirmed, "opid found on "+short(tip)+" by recovery"); err != nil {
-				return reports, err
-			}
-			// Accepted advances only onto a VALIDATED tip, recovery
-			// included, and a refused advance is said in the
-			// report — never discarded.
-			if valErr := validateCommitFor(e, tip); valErr != nil {
-				report.Detail = "confirmed on the canonical tip; accepted NOT advanced (the tip does not validate): " + valErr.Error()
-			} else if advErr := advanceAcceptedFor(e, tip); advErr != nil {
-				report.Detail = "confirmed on the canonical tip; accepted NOT advanced: " + advErr.Error()
-			} else {
-				report.Detail = "confirmed on the canonical tip"
-			}
-			CleanupRefs(e, entry.Opid)
-		case ActionConfirmLate:
-			if err := recoverConfirmedEffect(e, tip, entry); err != nil {
-				return reports, err
-			}
-			if err := CorrectLate(e.Root, entry.Opid, "opid found on "+short(tip)+" by recovery"); err != nil {
-				return reports, err
-			}
-			report.Detail = "belief corrected to confirmed-late"
-		case ActionComplete:
-			if entry.Intent.Verb == "slice-start" && entry.Intent.Args["by"] == "" {
-				if err := MarkTerminal(e.Root, entry.Opid, OutcomeAbandoned, "slice-start owner died before its postcondition landed; dispatch never acquired reservation authority"); err != nil {
-					return reports, err
-				}
-				CleanupRefs(e, entry.Opid)
-				report.Detail = "slice-start abandoned without marking the goal sliced; no reservation was authorized"
-				break
-			}
-			detail, err := completeFromIntent(e, entry, policy)
-			if err != nil {
-				return reports, err
-			}
-			report.Detail = detail
-		case ActionLeaveToOwner, ActionKeepRetrying:
-			report.Detail = "a live owner's entry; untouched"
-		case ActionAbandonOwn:
-			if err := MarkTerminal(e.Root, entry.Opid, OutcomeAbandoned, "the owner abandons its never-pushed work"); err != nil {
-				return reports, err
-			}
-			CleanupRefs(e, entry.Opid)
-			report.Detail = "abandoned by its owner"
-		case ActionExpireOwn:
-			if err := MarkTerminal(e.Root, entry.Opid, OutcomeExpired, "the owner's deadline passed"); err != nil {
-				return reports, err
-			}
-			CleanupRefs(e, entry.Opid)
-			report.Detail = "expired at its own deadline"
-		default:
-			report.Detail = "nothing to do"
+		report, err := recoverEntry(e, tip, entry, policy)
+		if err != nil {
+			return reports, err
 		}
 		reports = append(reports, report)
 	}
 	return reports, nil
+}
+
+// RecoverDeadBlocker runs the one rule for a single pushed entry that
+// blocks this clone, and only when its owner is provably dead: the opid on a
+// fresh capture decides first, and a dead owner's work is completed from its
+// stored intent, never pushed blindly. It reports whether it acted; a live
+// owner, or one whose liveness cannot be proved, is left alone.
+func RecoverDeadBlocker(e Endpoint, blocking Entry, policy SensitiveRecoveryPolicy) (RecoveryReport, bool, error) {
+	if blocking.Phase != PhasePushed || OwnerAlive(blocking) {
+		return RecoveryReport{}, false, nil
+	}
+	nonce, err := readNonce()
+	if err != nil {
+		return RecoveryReport{}, false, err
+	}
+	tip, err := CaptureTip(e, nonce)
+	CleanupRefs(e, nonce)
+	if err != nil {
+		return RecoveryReport{}, false, err
+	}
+	// Re-read after the capture: another process may have classified it.
+	entry, err := ReadEntry(e.Root, blocking.Opid)
+	if err != nil {
+		return RecoveryReport{}, false, err
+	}
+	if entry.Phase != PhasePushed || OwnerAlive(entry) {
+		return RecoveryReport{}, false, nil
+	}
+	report, err := recoverEntry(e, tip, entry, policy)
+	return report, true, err
+}
+
+// recoverEntry is the one rule for one entry on the captured tip.
+func recoverEntry(e Endpoint, tip string, entry Entry, policy SensitiveRecoveryPolicy) (RecoveryReport, error) {
+	present, trErr := TrailerPresent(e, tip, entry.Opid)
+	if trErr != nil {
+		return RecoveryReport{}, trErr
+	}
+	post := PostconditionAbsent
+	if present {
+		post = PostconditionPresent
+	}
+	action := ClassifyRecovery(entry, post, OwnerAlive(entry), callerIsOwner(entry), PastDeadline(entry, timeNowUTC()))
+	report := RecoveryReport{Opid: entry.Opid, Action: action}
+	switch action {
+	case ActionConfirm:
+		if err := recoverConfirmedEffect(e, tip, entry); err != nil {
+			return report, err
+		}
+		if err := MarkTerminal(e.Root, entry.Opid, OutcomeConfirmed, "opid found on "+short(tip)+" by recovery"); err != nil {
+			return report, err
+		}
+		// Accepted advances only onto a VALIDATED tip, recovery
+		// included, and a refused advance is said in the
+		// report — never discarded.
+		if valErr := validateCommitFor(e, tip); valErr != nil {
+			report.Detail = "confirmed on the canonical tip; accepted NOT advanced (the tip does not validate): " + valErr.Error()
+		} else if advErr := advanceAcceptedFor(e, tip); advErr != nil {
+			report.Detail = "confirmed on the canonical tip; accepted NOT advanced: " + advErr.Error()
+		} else {
+			report.Detail = "confirmed on the canonical tip"
+		}
+		CleanupRefs(e, entry.Opid)
+	case ActionConfirmLate:
+		if err := recoverConfirmedEffect(e, tip, entry); err != nil {
+			return report, err
+		}
+		if err := CorrectLate(e.Root, entry.Opid, "opid found on "+short(tip)+" by recovery"); err != nil {
+			return report, err
+		}
+		report.Detail = "belief corrected to confirmed-late"
+	case ActionComplete:
+		if entry.Intent.Verb == "slice-start" && entry.Intent.Args["by"] == "" {
+			if err := MarkTerminal(e.Root, entry.Opid, OutcomeAbandoned, "slice-start owner died before its postcondition landed; dispatch never acquired reservation authority"); err != nil {
+				return report, err
+			}
+			CleanupRefs(e, entry.Opid)
+			report.Detail = "slice-start abandoned without marking the goal sliced; no reservation was authorized"
+			break
+		}
+		detail, err := completeFromIntent(e, entry, policy)
+		if err != nil {
+			return report, err
+		}
+		report.Detail = detail
+	case ActionLeaveToOwner, ActionKeepRetrying:
+		report.Detail = "a live owner's entry; untouched"
+	case ActionAbandonOwn:
+		if err := MarkTerminal(e.Root, entry.Opid, OutcomeAbandoned, "the owner abandons its never-pushed work"); err != nil {
+			return report, err
+		}
+		CleanupRefs(e, entry.Opid)
+		report.Detail = "abandoned by its owner"
+	case ActionExpireOwn:
+		if err := MarkTerminal(e.Root, entry.Opid, OutcomeExpired, "the owner's deadline passed"); err != nil {
+			return report, err
+		}
+		CleanupRefs(e, entry.Opid)
+		report.Detail = "expired at its own deadline"
+	default:
+		report.Detail = "nothing to do"
+	}
+	return report, nil
 }
 
 // completeFromIntent takes over a dead owner's operation. A stored human name
