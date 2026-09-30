@@ -479,8 +479,9 @@ func TestMachineStopRefusals(t *testing.T) {
 	t.Parallel()
 	b := newMachineBed(t)
 	code, result, _ := b.runJSON("machine", "stop", "m2a")
-	if code != 1 || result.Outcome != intentRefused || !strings.Contains(result.Summary, codeMachineOnAnotherComputer) ||
-		!strings.Contains(result.Summary, "stop it on that computer: metasystem system stop --repo PATH") {
+	if code != 1 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "m2a runs on another computer") ||
+		!strings.Contains(strings.Join(result.Details, "\n"), codeMachineOnAnotherComputer) ||
+		result.Next == nil || strings.Join(result.Next.Argv, " ") != "metasystem system stop --repo PATH" {
 		t.Fatalf("machine stop m2a = %d %+v", code, result)
 	}
 	for _, args := range [][]string{{"machine", "stop", "m9z"}, {"machine", "stop"}, {"machine", "stop", "m1e", "--all"}} {

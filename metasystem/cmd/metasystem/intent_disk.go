@@ -256,8 +256,9 @@ func runIntentDiskClean(inv *intentInvocation) int {
 	}
 	if chosen > 1 {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2,
-			Summary: "disk clean does one thing at a time: choose one of --preview, --strays, --release ID, --leases, --discard j2:ID or --go-cache; nothing was done",
-			next:    inv.publicArgv("disk", "clean", "--preview"), nextReason: "see what a pass would do first"})
+			Summary: "disk clean does one thing at a time, and more than one was asked; nothing was done",
+			next:    inv.publicArgv("disk", "clean", "--preview"), nextReason: "see what a pass would do first",
+			Details: []string{"choose one of --preview, --strays, --release, --leases, --discard or --go-cache"}})
 	}
 	switch {
 	case inv.input.has("go-cache"):
@@ -273,7 +274,8 @@ func runIntentDiskClean(inv *intentInvocation) int {
 	}
 	if inv.input.has("plan") {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2,
-			Summary: "--plan ID names the preview --strays acts on; alone it does nothing: metasystem disk clean --strays --plan ID; nothing was done"})
+			Summary: "--plan names the preview that --strays acts on, and alone it does nothing; nothing was done",
+			next:    inv.publicArgv("disk", "clean", "--strays", "--plan", inv.input.text("plan")), nextReason: "remove the strays that preview listed"})
 	}
 	pass := steward.DiskPass{Mode: diskstore.ModeApply, Now: owners.now().UTC(), Clock: owners.now, ForgetRemoved: true, Clones: true}
 	if inv.input.switched("preview") {
@@ -291,7 +293,8 @@ func runIntentDiskClean(inv *intentInvocation) int {
 	result, err := owners.pass(context.Background(), top, pass)
 	if err != nil {
 		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "disk clean stopped: " + err.Error(),
-			Decision: "metasystem disk show prints the last complete report; metasystem system check names what else is wrong"})
+			next: []string{"metasystem", "system", "check"}, nextReason: "names what is wrong here",
+			Details: []string{"metasystem disk show prints the last complete report"}})
 	}
 	lines := append(diskReportLines(inv, result.Checkout), diskReportLines(inv, result.Machine)...)
 	data := map[string]any{"checkout": result.Checkout, "machine": result.Machine}
@@ -389,9 +392,12 @@ func provenPerson(reader humanauthority.Reader, pid func() int64, now func(root 
 func diskPerson(inv *intentInvocation, owners diskOwners, top, act string) (string, *intentResult) {
 	by, err := owners.person(top)
 	if err != nil {
-		return "", &intentResult{Outcome: intentRefused, code: 3,
-			Summary:  "disk clean " + act + " is a person's act, and this shell was not proven to be one: " + humanauthority.PlainReason(err) + "; nothing was done",
-			Decision: humanauthority.PersonActRemedy("metasystem disk clean "+act) + "; metasystem disk clean --preview shows what it would act on"}
+		// Only a person cleans this way: the plain reason and the one
+		// command that resolves it (humanauthority.RemedyFor).
+		refusal := inv.personRefusal("", err, "")
+		refusal.code = 3
+		refusal.Details = append(refusal.Details, "disk clean "+act+" is a person's act; metasystem disk clean --preview shows what it would act on")
+		return "", refusal
 	}
 	return by, nil
 }
@@ -528,7 +534,7 @@ func runDiskRelease(inv *intentInvocation, owners diskOwners, top string) int {
 func runDiskDiscard(inv *intentInvocation, owners diskOwners, top string) int {
 	chain, found := strings.CutPrefix(inv.input.text("discard"), "j2:")
 	if !found || chain == "" {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--discard names a dispatch chain as j2:ID; nothing was done",
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--discard names a kept workspace by its chain, which starts with j2:; nothing was done",
 			next: inv.publicArgv("disk", "show"), nextReason: "the reports name each kept workspace with its chain"})
 	}
 	reason := strings.TrimSpace(inv.input.text("reason"))
@@ -755,8 +761,8 @@ func runDiskLeases(inv *intentInvocation, owners diskOwners, top string) int {
 	}
 	reports, busy, err := owners.leases(top)
 	if err != nil {
-		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the proof-admission leases cannot be read: " + err.Error() + "; nothing was reclaimed",
-			Decision: "metasystem system check names what else is wrong"})
+		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the test-run leases cannot be read, so nothing was reclaimed",
+			next: []string{"metasystem", "system", "check"}, nextReason: "names what is wrong here", Details: []string{"leases: " + err.Error()}})
 	}
 	var outcomes []diskstore.PersonOutcome
 	for _, report := range reports {
@@ -780,7 +786,7 @@ func runDiskLeases(inv *intentInvocation, owners diskOwners, top string) int {
 		outcomes = append(outcomes, outcome)
 	}
 	if len(outcomes) == 0 {
-		return inv.render(intentResult{Outcome: intentUnchanged, Summary: "no dirty proof-admission lease on this host; nothing to do", Data: map[string]any{"by": by}})
+		return inv.render(intentResult{Outcome: intentUnchanged, Summary: "no test-run lease is left over on this computer; nothing to do", Data: map[string]any{"by": by}})
 	}
 	return renderPersonOutcomes(inv, "leases", "leases", by, outcomes)
 }

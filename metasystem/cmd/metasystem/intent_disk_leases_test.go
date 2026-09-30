@@ -38,7 +38,7 @@ func TestDiskLeasesByAPerson(t *testing.T) {
 		t.Fatalf("a busy admission lock = %d:\n%s", code, out)
 	}
 	reports, busy = nil, false
-	if code, out := bed.run("disk", "clean", "--leases"); code != 0 || !strings.Contains(out, "no dirty proof-admission lease") {
+	if code, out := bed.run("disk", "clean", "--leases"); code != 0 || !strings.Contains(out, "no test-run lease is left over") {
 		t.Fatalf("a repeat with nothing left = %d:\n%s", code, out)
 	}
 	before := calls

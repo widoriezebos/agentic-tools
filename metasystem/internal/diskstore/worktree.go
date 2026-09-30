@@ -557,7 +557,7 @@ func (c ClassProofs) Apply(ctx context.Context, critical *Critical) error {
 	if proof := c.proof(critical.Record()); proof != nil {
 		return proof.Apply(ctx, critical)
 	}
-	return errors.New("no proof for the store's class")
+	return errors.New("this kind of store has no known way to be released")
 }
 
 // Release is the class's proof's own release sequence; a class whose proof

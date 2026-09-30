@@ -177,7 +177,7 @@ func Trim(ctx context.Context, cfg TrimConfig) (TrimReport, error) {
 	report := TrimReport{Cache: cfg.Name, Root: cfg.Root, CapBytes: cfg.CapBytes, KeepHours: cfg.Keep.Hours(), Unknown: []UnknownEntry{}}
 	report.MinKeepMinutes = cfg.MinKeep.Minutes()
 	if !cacheNamePattern.MatchString(cfg.Name) || !filepath.IsAbs(cfg.Root) || !filepath.IsAbs(cfg.StateDir) || cfg.CapBytes < 1 || cfg.Keep <= 0 || cfg.MinKeep <= 0 {
-		return report, fmt.Errorf("trim %q: needs a cache name, an absolute root and state directory, a positive cap, a positive keep window and a positive floor", cfg.Name)
+		return report, fmt.Errorf("trim %q: the cache's name, folders, cap, keep window or floor is missing or not positive", cfg.Name)
 	}
 	if err := os.MkdirAll(cfg.StateDir, 0o755); err != nil {
 		return report, err

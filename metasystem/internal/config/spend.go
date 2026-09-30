@@ -181,13 +181,13 @@ func refuseUncommittedSpendFamily(confPath string) error {
 			}
 		})
 		if found != "" {
-			return fmt.Errorf("%s accepts only committed root configuration outside a fixture-authorized root; .local source %s is refused", found, localPath)
+			return fmt.Errorf("%s accepts only committed root configuration, so %s may not set it", found, localPath)
 		}
 	}
 	for _, entry := range os.Environ() {
 		name, _, _ := strings.Cut(entry, "=")
 		if strings.HasPrefix(name, "METASYSTEM_SPEND_") {
-			return fmt.Errorf("spend settings accept only committed root configuration outside a fixture-authorized root; environment source %s is refused", name)
+			return fmt.Errorf("spend settings accept only committed root configuration, so the environment's %s is refused", name)
 		}
 	}
 	return nil

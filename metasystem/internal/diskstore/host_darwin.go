@@ -11,7 +11,7 @@ import (
 var readHostTempRoot = func() (string, error) {
 	output, err := exec.Command("/usr/bin/getconf", "DARWIN_USER_TEMP_DIR").Output()
 	if err != nil {
-		return "", fmt.Errorf("read the host temporary root (getconf DARWIN_USER_TEMP_DIR): %w", err)
+		return "", fmt.Errorf("the system's per-user temporary folder could not be read: %w", err)
 	}
 	return strings.TrimSpace(string(output)), nil
 }

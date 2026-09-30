@@ -195,13 +195,13 @@ func (s *TierBoxSet) lawValue(key, fallback string) (string, error) {
 		return fallback, nil
 	}
 	if _, present := os.LookupEnv(EnvName(key)); present {
-		return "", fmt.Errorf("%s accepts only committed root configuration outside a fixture-authorized root; environment source %s is refused", key, EnvName(key))
+		return "", fmt.Errorf("%s accepts only committed root configuration, so the environment's %s is refused", key, EnvName(key))
 	}
 	if s.localFound {
 		if _, present, err := s.local.lookup(key); err != nil {
 			return "", err
 		} else if present {
-			return "", fmt.Errorf("%s accepts only committed root configuration outside a fixture-authorized root; .local source %s is refused", key, s.confPath+".local")
+			return "", fmt.Errorf("%s accepts only committed root configuration, so %s may not set it", key, s.confPath+".local")
 		}
 	}
 	if value, present, err := s.committed.lookup(key); err != nil {
@@ -314,8 +314,7 @@ func budgetLawValue(confPath, key, fallback string) (string, error) {
 		return value, err
 	}
 	if _, present := os.LookupEnv(EnvName(key)); present {
-		return "", fmt.Errorf("%s accepts only committed root configuration outside a fixture-authorized root; environment source %s is refused",
-			key, EnvName(key))
+		return "", fmt.Errorf("%s accepts only committed root configuration, so the environment's %s is refused", key, EnvName(key))
 	}
 	localPath := confPath + ".local"
 	if isFile(localPath) {
@@ -324,8 +323,7 @@ func budgetLawValue(confPath, key, fallback string) (string, error) {
 			return "", err
 		}
 		if present {
-			return "", fmt.Errorf("%s accepts only committed root configuration outside a fixture-authorized root; .local source %s is refused",
-				key, localPath)
+			return "", fmt.Errorf("%s accepts only committed root configuration, so %s may not set it", key, localPath)
 		}
 	}
 	value, present, err := CommittedLookup(confPath, key)
