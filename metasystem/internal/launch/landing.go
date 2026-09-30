@@ -74,7 +74,7 @@ func (m *Manager) admitOnLane(spec StartSpec) error {
 	}
 	if m.Lane == nil {
 		if spec.Kind == LandingKind {
-			return errors.New("the landing agent starts only on this computer's landing lane, and this launcher cannot read the lane")
+			return errors.New("the landing agent starts only on the landing lane, which this launcher cannot read")
 		}
 		return nil
 	}
@@ -92,11 +92,10 @@ func (m *Manager) admitOnLane(spec StartSpec) error {
 		return nil
 	}
 	if !lane.Registered || !samePath(spec.WorkingDirectory, lane.Checkout) || !onLane(spec.FenceRoot) {
-		where := "no landing lane is registered"
-		if lane.Registered {
-			where = "the landing lane is " + lane.Checkout
+		if !lane.Registered {
+			return fmt.Errorf("the landing agent starts only on the landing lane, and none is registered")
 		}
-		return fmt.Errorf("the landing agent starts only on this computer's landing lane, in its checkout; %s, and this start names %s", where, spec.WorkingDirectory)
+		return fmt.Errorf("the landing agent starts only in the lane checkout %s, not %s", lane.Checkout, spec.WorkingDirectory)
 	}
 	records, err := m.Store.List()
 	if err != nil {

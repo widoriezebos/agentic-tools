@@ -100,7 +100,7 @@ func TestSeatStillRefusedOnLane(t *testing.T) {
 	// The landing kind anywhere but the registered lane checkout is refused.
 	elsewhere := t.TempDir()
 	if _, err := m.Start(StartSpec{Kind: "landing", WorkingDirectory: elsewhere, FenceRoot: elsewhere, Brief: landingBrief(t), Tag: "w4ke"}); err == nil ||
-		!strings.Contains(err.Error(), "only on this computer's landing lane") {
+		!strings.Contains(err.Error(), "only in the lane checkout") {
 		t.Fatalf("the landing kind outside the lane = %v; want refused", err)
 	}
 	// Nothing registered: the landing kind has nowhere to run; a seat elsewhere starts.
