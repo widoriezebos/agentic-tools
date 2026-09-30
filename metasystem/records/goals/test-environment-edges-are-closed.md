@@ -1,6 +1,6 @@
 # test-environment-edges-are-closed
 
-- State: claimed
+- State: done
 - Priority: 1
 - Sequence: 27
 - Risk: severity=1 novelty=1 exposure=2 accumulation=1 basis="severity 1: each gap is a rare edge of the shared Go test environment, none changes a result today; novelty 1: small follow-ups to go-tests-never-inherit-a-candidate-engine; exposure 2: every Go test package now goes through testenv.Main; accumulation 1: they do not compound"
@@ -8,13 +8,12 @@
 - Intent: Low findings left by the independent reads of go-tests-never-inherit-a-candidate-engine (2026-09-15), none material. (1) internal/testenv/protection_test.go's build-constraint check misses some GOOS names (hurd, nacl, zos) and GOARCH names (amd64p32, armbe, arm64be, mips64p32, mips64p32le, ppc, riscv, s390, sparc, sparc64), and counts a //go:build comment anywhere in the file, which can only cause a false refusal. (2) A registry home that a joined helper child outlives stays until the next Main scans the same root; under the TMPDIR fallback only a run with the same TMPDIR cleans it. (3) A SIGKILL between MkdirTemp and the publishing rename in testenv.go leaves a dot-named staging directory that the scan never matches. DONE: the check derives the known GOOS and GOARCH names from the Go toolchain (go tool dist list) instead of a hand list and reads only a real build constraint line; a stale staging directory and an orphaned joined home are removed by the next Main once no live lock holds them; a test proves each.
 - Origin: human
 - Next step: Free, tier 1. Build after go-tests-never-inherit-a-candidate-engine lands.
+- Concluded: Landed on GitHub main in batch bedf6b477 (commits 43eedbc28, ec0e20c25, 9a3d1a6b8 merged): GOOS/GOARCH names from go/build, only header constraint lines counted, stale staging dirs and orphaned joined homes removed fail-closed by the next Main; four tests, six mutants killed; VM suite green at 86ffb7111
 - OpenedAt: 2026-09-15T06:23:47Z
-- Revision: 103
+- Revision: 104
 - Budget: elapsedLimit=1h attemptLimit=3 reservedJobMinutesLimit=360 activeJobLimit=1 reviewRoundLimit=0
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-15T06:23:53Z revision=2 opid=AATRE9N7Q7941KP3WHJZZ8AQ0S-m1e-c6925449 authority=proven digest=ef0453e037f7cc31a67cbfd72ec16adde1707ac6525f8155e591750cc7ae0fb3
-- Claimed: machine=m1e lineage=main-1790454088-93948-21671b at=2026-09-30T13:25:28Z revision=103 accountingRevision=103 episodeAt=2026-09-30T13:25:28Z episodeRevision=103
-- StopCapability: generation=103 revision=103 machine=m1e claimEpoch=9 fenceEpoch=0
 
 History:
 - 2026-09-15T06:23:47Z GKX4CJXWVF6MA2F09R54BKWGNQ-m1e-c6925449 open actor=human:Wido targets=test-environment-edges-are-closed
@@ -120,4 +119,5 @@ History:
 - 2026-09-30T12:04:18Z PB0V98VRJZ6BRTAQJY39PQ31XN-m1e-b6a4eb0a set-priority actor=human:wido targets=adoption-filled-delivery-passes-on-trunk,beds-run-under-the-oldest-supported-bash,brief-declares-the-round-boundary,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,delegate-sandbox-runs-the-beds,design-rounds-read-less-and-repeat-less,error-checks-use-typed-errors,every-round-gets-an-independent-read,evidence-and-build-output-have-retention-and-stay-unindexed,failures-show-observed-against-expected,fixture-runners-and-fakes-bound-their-own-life,fleet-doctor-repairs-what-stops-other-seats,follow-up-brief-cannot-cite-fresh-trunk-files,machinery-runs-unattended-on-codex,one-steward-per-checkout-on-its-own-root,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,receipt-writer-follows-the-worktree-it-runs-in,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,test-environment-edges-are-closed,testing-surfaces-declare-their-mirror reason=priority-order subject=error-checks-use-typed-errors from=1:26 to=1:27 requested-sequence=4
 - 2026-09-30T12:45:37Z S3577YM9JC9677WGHBFK79YZGQ-m1e-43182c96 breach-stop actor=m1e+goal-stop-custodian targets=test-environment-edges-are-closed
 - 2026-09-30T13:25:28Z J004243373WBPZNG7FB0Y04CAA-m1e-b6a4eb0a resume actor=human:wido targets=test-environment-edges-are-closed
-Integrity: sha256=634e9c5805419d7bdeaf0e52d4e076dc8ada065215eb2ad55948932738bf3d32
+- 2026-09-30T13:25:35Z MGVYZZ2RHK4FQ552QHEAXX0ZCC-m1e-b6a4eb0a done actor=human:wido targets=cross-cutting-change-inventories-its-readers,failures-show-observed-against-expected,test-environment-edges-are-closed,testing-surfaces-declare-their-mirror displaced=m1e+main-1790454088-93948-21671b@2026-09-30T13:25:28Z
+Integrity: sha256=8deb97269d9e31833617225e9cb566101d3c4da3f9c4bf3a873e6d6af5fa1eb3
