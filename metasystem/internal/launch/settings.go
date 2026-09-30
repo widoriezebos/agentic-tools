@@ -36,6 +36,9 @@ const (
 	SeatRuntimeKey              = "launch.seat.runtime"
 	SeatModelKey                = "launch.seat.model"
 	SeatEffortKey               = "launch.seat.effort"
+	LandingRuntimeKey           = "launch.landing.runtime"
+	LandingModelKey             = "launch.landing.model"
+	LandingEffortKey            = "launch.landing.effort"
 )
 
 // SeatOwnerLineage is the owner lineage every steward-started seat main runs
@@ -69,6 +72,7 @@ type Settings struct {
 	DesignBaselineTokens, DesignBaselineRequests      int64
 	DesignBaselinePeakTokens                          int64
 	SeatRuntime, SeatModel, SeatEffort                string
+	LandingRuntime, LandingModel, LandingEffort       string
 	Values                                            []Setting
 }
 
@@ -96,6 +100,12 @@ var settingDefaults = []Setting{
 	{Key: SeatRuntimeKey, Value: config.MustDefault(SeatRuntimeKey), Source: "default"},
 	{Key: SeatModelKey, Value: config.MustDefault(SeatModelKey), Source: "default"},
 	{Key: SeatEffortKey, Value: config.MustDefault(SeatEffortKey), Source: "default"},
+	// The landing agent (landing-lane-runtime-redesign D2): roster keys that
+	// resolve as a lane's; its model follows the build lane's binding for its
+	// runtime unless launch.landing.model names one for every runtime.
+	{Key: LandingRuntimeKey, Value: config.MustDefault(LandingRuntimeKey), Source: "default"},
+	{Key: LandingModelKey, Value: config.MustDefault(LandingModelKey), Source: "default"},
+	{Key: LandingEffortKey, Value: config.MustDefault(LandingEffortKey), Source: "default"},
 }
 
 // LoadShippedSeatWindow reads the seat window the engine's shipped Claude
@@ -127,16 +137,17 @@ func ResolveSettings(confPath string, lookupEnv func(string) (string, bool)) (Se
 // laneModelKeys are each lane's runtime-independent model key; the model a
 // lane's resolved runtime binds is the same key with the runtime appended.
 var laneModelKeys = map[string]string{BuildRuntimeKey: BuildModelKey, CritiqueRuntimeKey: CritiqueModelKey,
-	DesignRuntimeKey: DesignModelKey, ReadRuntimeKey: ReadModelKey, SeatRuntimeKey: SeatModelKey}
+	DesignRuntimeKey: DesignModelKey, ReadRuntimeKey: ReadModelKey, SeatRuntimeKey: SeatModelKey,
+	LandingRuntimeKey: LandingModelKey}
 
 // laneModelOrder is the order the lanes' models resolve in.
-var laneModelOrder = []string{BuildRuntimeKey, CritiqueRuntimeKey, DesignRuntimeKey, ReadRuntimeKey, SeatRuntimeKey}
+var laneModelOrder = []string{BuildRuntimeKey, CritiqueRuntimeKey, DesignRuntimeKey, ReadRuntimeKey, SeatRuntimeKey, LandingRuntimeKey}
 
 // boundModelPrefix is the key whose runtime-bound form a lane's empty model
-// takes, when it is not the lane's own: the seat has no per-runtime model
-// keys and runs the build lane's model for its runtime (claude on Opus by
-// the roster's default).
-var boundModelPrefix = map[string]string{SeatModelKey: BuildModelKey}
+// takes, when it is not the lane's own: the seat and the landing agent have
+// no per-runtime model keys and run the build lane's model for their runtime
+// (claude on Opus by the roster's default).
+var boundModelPrefix = map[string]string{SeatModelKey: BuildModelKey, LandingModelKey: BuildModelKey}
 
 func resolveSettings(confPath string, lookupEnv func(string) (string, bool)) (Settings, error) {
 	resolve := func(key string) (string, string, error) {
@@ -259,6 +270,12 @@ func resolveSettings(confPath string, lookupEnv func(string) (string, bool)) (Se
 			result.SeatModel = setting.Value
 		case SeatEffortKey:
 			result.SeatEffort = setting.Value
+		case LandingRuntimeKey:
+			result.LandingRuntime = setting.Value
+		case LandingModelKey:
+			result.LandingModel = setting.Value
+		case LandingEffortKey:
+			result.LandingEffort = setting.Value
 		}
 	}
 	targets = []*int64{&result.WaitCapSeconds, &result.BriefCap, &result.BuildLinesCap, &result.ReadSplitLines,
@@ -293,6 +310,8 @@ func (s Settings) launchRuntime(kind string) string {
 		return s.ReadRuntime
 	case "seat":
 		return s.SeatRuntime
+	case "landing":
+		return s.LandingRuntime
 	default:
 		return ""
 	}
@@ -310,6 +329,10 @@ func (s Settings) launchValues(kind string) (string, string, int64) {
 		return s.ReadModel, s.BuildEffort, s.ReadWindow
 	case "seat":
 		return s.SeatModel, s.SeatEffort, s.SeatWindow
+	case "landing":
+		// The landing agent imposes no context window: 0 inherits the
+		// runtime's own window for the model.
+		return s.LandingModel, s.LandingEffort, 0
 	default:
 		return "", "", 0
 	}

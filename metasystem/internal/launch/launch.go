@@ -74,7 +74,11 @@ type Manager struct {
 	CompressAbove int64
 	// Seat is this installation's seat on the host board; an empty
 	// machine writes no card.
-	Seat              board.Seat
+	Seat board.Seat
+	// Lane reads the host's registered landing lane for the launcher's lane
+	// guard: a seat never starts there and the landing kind only there. nil
+	// admits no landing launch.
+	Lane              func() (LaneCheckout, error)
 	supervisorClaimed func(Record)
 }
 
@@ -115,6 +119,9 @@ func (m *Manager) Start(spec StartSpec) (Record, error) {
 	if spec.Kind == "seat" && settings.SeatRuntime == SeatRuntimeOff {
 		return Record{}, fmt.Errorf("seats are off here (%s=%s); set claude, codex or auto in metasystem.conf.local", SeatRuntimeKey, SeatRuntimeOff)
 	}
+	if err := m.admitOnLane(spec); err != nil {
+		return Record{}, err
+	}
 	adapterName := adapterForLane(spec.Kind, settings.launchRuntime(spec.Kind))
 	if adapterName == "" {
 		return Record{}, fmt.Errorf("launch kind %q is not available", spec.Kind)
@@ -127,11 +134,12 @@ func (m *Manager) Start(spec StartSpec) (Record, error) {
 		return Record{}, err
 	}
 	fenceRoot := ""
-	if spec.Kind == "seat" {
-		// A seat binds to the fence of the state root its start names; the
-		// working directory need not keep one (SOL-B-01).
+	if fencedKind(spec.Kind) {
+		// A seat, and the landing agent, bind to the fence of the state root
+		// their start names; the working directory need not keep one
+		// (SOL-B-01).
 		if spec.FenceRoot == "" {
-			return Record{}, errors.New(seatNoFenceRoot)
+			return Record{}, errors.New(noFenceRoot(spec.Kind))
 		}
 		if fenceRoot, err = filepath.Abs(spec.FenceRoot); err != nil {
 			return Record{}, err
@@ -314,23 +322,28 @@ func (m *Manager) Supervise(id string) (Record, error) {
 	var fenceClaim *stopfence.Claim
 	var fenceGeneration int64
 	var fenceRoot string
-	if record.Kind == "seat" {
-		command.Environment = append(command.Environment, SeatEnvironment()...)
-		// The seat binds to the checkout's process-creation fence as the
-		// steward runner does: read it, open a creation claim before the
-		// child, re-read it once the child is recorded (D-fence).
+	if fencedKind(record.Kind) {
+		environment := SeatEnvironment()
+		if record.Kind == LandingKind {
+			environment = LandingEnvironment()
+		}
+		command.Environment = append(command.Environment, environment...)
+		// The seat, and the landing agent, bind to the checkout's
+		// process-creation fence as the steward runner does: read it, open a
+		// creation claim before the child, re-read it once the child is
+		// recorded (D-fence).
 		fenceRoot = readString(record.AdapterData, "fenceRoot")
 		if fenceRoot == "" {
-			return m.failCause(id, seatNoFenceRoot, nil)
+			return m.failCause(id, noFenceRoot(record.Kind), nil)
 		}
 		if reason := seatFenceClosed(fenceRoot); reason != "" {
 			return m.failCause(id, reason, nil)
 		}
 		fence, _ := stopfence.Read(fenceRoot)
 		fenceGeneration = fence.Generation
-		fenceClaim, err = stopfence.Creating(fenceRoot, "seat-launch", fenceGeneration, self)
+		fenceClaim, err = stopfence.Creating(fenceRoot, record.Kind+"-launch", fenceGeneration, self)
 		if err != nil {
-			return m.failCause(id, "seat-launch creation claim: "+err.Error(), nil)
+			return m.failCause(id, record.Kind+"-launch creation claim: "+err.Error(), nil)
 		}
 		defer fenceClaim.Close()
 	}
@@ -407,7 +420,7 @@ func (m *Manager) Supervise(id string) (Record, error) {
 			return m.endFencedSeat(id, reason, child, childRef)
 		}
 		if err := fenceClaim.Close(); err != nil {
-			return m.endFencedSeat(id, "seat-launch creation claim: "+err.Error(), child, childRef)
+			return m.endFencedSeat(id, record.Kind+"-launch creation claim: "+err.Error(), child, childRef)
 		}
 	}
 	if record.Reason == "cancel-requested" {
@@ -701,7 +714,7 @@ func (m *Manager) Census(reapValues ...bool) ([]string, error) {
 // Start refuses it.
 func adapterForLane(kind, runtime string) string {
 	switch kind {
-	case "build", "critique", "design", "read", "seat":
+	case "build", "critique", "design", "read", "seat", LandingKind:
 	case "proof":
 		return "plain-exec"
 	default:
