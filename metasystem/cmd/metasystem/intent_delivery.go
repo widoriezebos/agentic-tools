@@ -1730,8 +1730,9 @@ func (inv *intentInvocation) joinBatch(targets []intentTarget, request batchowne
 		request.At = owners.now()
 		record, err = owners.batchJoin(request)
 		if err != nil {
-			return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: err.Error(), Data: map[string]any{"route": "batch"},
-				next: inv.publicArgv("landing", "status"), nextReason: "shows the landing batches"}
+			words, code := refusalWordsAndCode(err)
+			return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: words, Data: map[string]any{"route": "batch"},
+				next: inv.publicArgv("landing", "status"), nextReason: "shows the landing batches", Details: refusalCodeDetails(code)}
 		}
 		joined, unit = true, batch.Unit{GoalID: request.GoalID, Chain: request.ChainID, State: batch.UnitJoined}
 	}
@@ -2235,4 +2236,18 @@ func replaceWord(argv []string, ref, with string) []string {
 		out = append(out, word)
 	}
 	return out
+}
+
+// refusalWordsAndCode splits an owner's coded refusal into the words a
+// person reads on line 1 and the code --verbose and --json show; an error
+// without a code is its own words.
+func refusalWordsAndCode(err error) (words, code string) {
+	var coded interface {
+		RefusalCode() string
+		RefusalWords() string
+	}
+	if errors.As(err, &coded) {
+		return coded.RefusalWords(), coded.RefusalCode()
+	}
+	return err.Error(), ""
 }

@@ -18,6 +18,12 @@ func (refusal *boundaryRefusal) Error() string {
 	return fmt.Sprintf("%s: %s", refusal.Code, refusal.Detail)
 }
 
+// RefusalCode is the registered code, for --verbose, --json and records.
+func (refusal *boundaryRefusal) RefusalCode() string { return refusal.Code }
+
+// RefusalWords is the refusal as a person reads it: the words alone.
+func (refusal *boundaryRefusal) RefusalWords() string { return refusal.Detail }
+
 func refuseBatch(code, detail string) error {
 	return &boundaryRefusal{Code: code, Detail: detail}
 }
