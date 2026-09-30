@@ -34,7 +34,7 @@ func TestElapsedBudgetThreeBandsAndBreachStopFixedPoint(t *testing.T) {
 	if err != nil || len(routes) != 0 {
 		t.Fatalf("the grace band produced a stop route: %+v %v", routes, err)
 	}
-	if _, err := bed.stop("bounded", 2, betweenThresholds); err == nil || !strings.Contains(err.Error(), "no live-stop breach") {
+	if _, err := bed.stop("bounded", 2, betweenThresholds); err == nil || !strings.Contains(err.Error(), "no overspend to stop") {
 		t.Fatalf("the grace band allowed direct stop custody: %v", err)
 	}
 	binding, err := bed.binding("bounded", betweenThresholds)

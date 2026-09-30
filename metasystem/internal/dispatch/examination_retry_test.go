@@ -37,7 +37,7 @@ func TestExaminationRetryAdmissible(t *testing.T) {
 	// A recorded process that cannot be proven dead is never retried.
 	unproven := round("failed", "process-lost")
 	unproven["pid"] = float64(os.Getpid())
-	if err := ExaminationRetryAdmissible(root, unproven); err == nil || !strings.Contains(err.Error(), "not proven stopped") {
+	if err := ExaminationRetryAdmissible(root, unproven); err == nil || !strings.Contains(err.Error(), "may still be running") {
 		t.Errorf("a live or unprovable process = %v", err)
 	}
 	// The reaper's recorded group-death proof is the owner's proof.

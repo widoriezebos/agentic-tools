@@ -205,7 +205,7 @@ func TestGovernedAdmissionRefusesDurableAssumptionBreaker(t *testing.T) {
 	_, err := evaluateGovernedRunAdmissionWithReads(root, run.GovernedAdmissionRequest{
 		GoalID: "bounded", ObligationRevision: obligationRevision, StandingShared: true,
 	}, time.Date(2026, 8, 28, 10, 30, 0, 0, time.UTC), bed.reads)
-	if err == nil || !strings.Contains(err.Error(), "breaker=ASSUMPTION_FAILED is already terminal on run assumption-failed") {
+	if err == nil || !strings.Contains(err.Error(), "run assumption-failed already stopped this obligation (ASSUMPTION_FAILED)") {
 		t.Fatalf("durable assumption breaker did not close governed admission: %v", err)
 	}
 }

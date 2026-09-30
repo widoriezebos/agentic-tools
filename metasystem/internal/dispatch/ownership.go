@@ -3,6 +3,7 @@ package dispatch
 import (
 	"fmt"
 
+	"errors"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
@@ -158,12 +159,12 @@ func validateOwnershipPatch(record, patch map[string]any) error {
 	proofRef, proofRefOK := identityRefFromObject(proof)
 	if !pgidOK || pgid < 2 || !proofOK || !proofRefOK || !proofRef.NativeExact() ||
 		!sameRecordedIdentity(ref, proofRef) || !looseEqual(proof["pgid"], pgid) {
-		return fmt.Errorf("ownership proof must repeat the exact primary identity and process group")
+		return errors.New("the ownership claim does not repeat the owner's exact process and process group")
 	}
 	tag := asString(record["instanceTag"])
 	if tag == "" || asString(proof["instanceTag"]) != tag ||
 		asString(proof["source"]) != "trusted-launcher" || asString(proof["provenAt"]) == "" {
-		return fmt.Errorf("ownership proof does not match the record tag or trusted launcher")
+		return errors.New("the ownership claim does not match the record's tag or its launcher")
 	}
 	return nil
 }

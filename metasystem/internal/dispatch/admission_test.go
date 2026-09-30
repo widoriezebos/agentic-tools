@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 )
 
@@ -104,8 +105,8 @@ func TestEveryBudgetRefusalNamesObservedAndOpenCaps(t *testing.T) {
 		_, err := evaluateGovernedRunAdmissionWithReads(root, run.GovernedAdmissionRequest{
 			GoalID: "bounded", ObligationRevision: obligationRevision, StandingShared: true,
 		}, time.Date(2026, 8, 28, 10, 30, 0, 0, time.UTC), bed.reads)
-		if err == nil || !strings.Contains(err.Error(), "; reserved observed=0 open-caps=60 limit=60") ||
-			strings.Contains(err.Error(), "rule=setup-refusal-release") {
+		if err == nil || !strings.Contains(refusal.DetailOf(err), "; reserved observed=0 open-caps=60 limit=60") ||
+			strings.Contains(refusal.DetailOf(err), "rule=setup-refusal-release") {
 			t.Fatalf("governed refusal did not carry shared reserved evidence: %v", err)
 		}
 	})

@@ -86,10 +86,10 @@ func Mirror(repoRoot, checkout, evidence, rootJob, job, resultPath string) error
 	for _, source := range sources {
 		store, held, err := stores.RebuildableHolding(source.path)
 		if err != nil {
-			return fmt.Errorf("the mirror holds: whether %s lies in a rebuildable store cannot be read: %v; metasystem disk show names the record", source.relative, err)
+			return fmt.Errorf("mirroring stopped: it cannot tell whether %s is a rebuildable store (%v)\nrun: metasystem disk show", source.relative, err)
 		}
 		if held {
-			return fmt.Errorf("%s lies in rebuildable store %s, which never enters an evidence root; it ends with its goal's landing or conclusion", source.relative, store.ID)
+			return fmt.Errorf("%s is in rebuildable store %s, which is never kept as evidence; it goes when its goal ends", source.relative, store.ID)
 		}
 	}
 	old := map[string]any{}

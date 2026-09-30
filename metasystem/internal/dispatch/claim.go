@@ -10,8 +10,10 @@ import (
 	"strings"
 	"time"
 
+	"errors"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
 )
 
@@ -73,7 +75,7 @@ type ClaimLaunchParams struct {
 // operation publication lock.
 func ClaimLaunchPreflight(params ClaimLaunchParams) (ClaimResult, error) {
 	if !validJobID.MatchString(params.OpID) {
-		return ClaimResult{}, fmt.Errorf("claim-launch opid must be a valid job id")
+		return ClaimResult{}, errors.New("the launch's operation name is not a valid job name")
 	}
 	if params.OperationID == "" {
 		params.OperationID = params.OpID
@@ -116,7 +118,7 @@ func ClaimLaunchPreflight(params ClaimLaunchParams) (ClaimResult, error) {
 		return claimResult(ClaimPreflightAvailable, fingerprint, map[string]any{"resolution": "no-standing-opid", "operationId": params.OperationID}), nil
 	}
 	if err != nil {
-		return ClaimResult{}, fmt.Errorf("claim-launch cannot read standing opid %s: %w", params.OpID, err)
+		return ClaimResult{}, fmt.Errorf("the launch record %s cannot be read: %w", params.OpID, err)
 	}
 	base := map[string]any{"resolution": "preflight-same-opid", "recordPath": recordPath}
 	if asString(record["jobId"]) != params.OpID || recordOperationID(record) != params.OperationID {
@@ -226,7 +228,7 @@ func ClaimLaunch(params ClaimLaunchParams, dependencies ClaimLaunchDependencies)
 		params.GateWidth = "area"
 	}
 	if !validJobID.MatchString(params.OpID) {
-		return ClaimResult{}, fmt.Errorf("claim-launch opid must be a valid job id")
+		return ClaimResult{}, errors.New("the launch's operation name is not a valid job name")
 	}
 	if params.OperationID == "" {
 		params.OperationID = params.OpID
@@ -397,35 +399,36 @@ func markFirstSliceWithReads(params ClaimLaunchParams, now time.Time, reads goal
 	}
 	binding, err := resolveGoalBindingWithReads(params.Root, params.GoalID, now, reads)
 	if err != nil {
-		return fmt.Errorf("SLICE_START_UNRECORDED: goal %s's first-slicing fact could not land on the shared ledger; the reservation is refused: %w", params.GoalID, err)
+		return sliceUnrecorded(params.GoalID, "binding", err)
 	}
 	if binding.Revision != params.GoalRevision || binding.Machine != params.MachineID {
-		return fmt.Errorf("SLICE_START_UNRECORDED: goal %s's accepted claim is %s revision %d, not reservation binding %s revision %d", params.GoalID, binding.Machine, binding.Revision, params.MachineID, params.GoalRevision)
+		return refusal.New("SLICE_START_UNRECORDED", fmt.Sprintf("goal=%s claim=%s/%d reservation=%s/%d", params.GoalID, binding.Machine, binding.Revision, params.MachineID, params.GoalRevision),
+			fmt.Errorf("goal %s is now claimed by %s at revision %d, not by this reservation, so nothing was reserved", params.GoalID, binding.Machine, binding.Revision))
 	}
 	if binding.File.Sliced != nil {
 		return nil
 	}
 	ulid, err := goal.NewOperationULID()
 	if err != nil {
-		return fmt.Errorf("SLICE_START_UNRECORDED: goal %s's first-slicing identity could not be minted; the reservation is refused: %w", params.GoalID, err)
+		return sliceUnrecorded(params.GoalID, "identity", err)
 	}
 	endpoint, err := reads.ResolveEndpoint(params.Root)
 	if err != nil {
-		return fmt.Errorf("SLICE_START_UNRECORDED: goal %s's shared endpoint could not be resolved; the reservation is refused: %w", params.GoalID, err)
+		return sliceUnrecorded(params.GoalID, "endpoint", err)
 	}
 	result, err := goal.MarkSliced(goal.VerbRequest{
 		Endpoint: endpoint, Actor: goal.Actor{Machine: binding.Machine, Lineage: binding.Lineage},
 		Ulid: ulid, Now: now,
 	}, params.GoalID)
 	if err != nil {
-		return fmt.Errorf("SLICE_START_UNRECORDED: goal %s's first-slicing fact could not land on the shared ledger; the reservation is refused: %w", params.GoalID, err)
+		return sliceUnrecorded(params.GoalID, "publish", err)
 	}
 	if result.Outcome != goal.OutcomeConfirmed && result.Outcome != goal.OutcomeAbandoned {
-		return fmt.Errorf("SLICE_START_UNRECORDED: goal %s's first-slicing fact ended %s; the reservation is refused", params.GoalID, result.Outcome)
+		return sliceUnrecorded(params.GoalID, "outcome="+string(result.Outcome), nil)
 	}
 	verified, err := resolveGoalBindingWithReads(params.Root, params.GoalID, now, reads)
 	if err != nil || verified.File.Sliced == nil {
-		return fmt.Errorf("SLICE_START_UNRECORDED: goal %s's first-slicing fact is absent after publication; the reservation is refused", params.GoalID)
+		return sliceUnrecorded(params.GoalID, "absent-after-publication", err)
 	}
 	return nil
 }
@@ -465,7 +468,7 @@ func claimLaunchAttemptLocked(params ClaimLaunchParams, fingerprint LaunchFinger
 			return readErr
 		}
 		if !os.IsNotExist(readErr) {
-			return fmt.Errorf("claim-launch cannot read standing opid %s: %w", params.OpID, readErr)
+			return fmt.Errorf("the launch record %s cannot be read: %w", params.OpID, readErr)
 		}
 		return nil
 	})
@@ -509,7 +512,7 @@ func claimLaunchAttemptLocked(params ClaimLaunchParams, fingerprint LaunchFinger
 				return readErr
 			}
 			if !os.IsNotExist(readErr) {
-				return fmt.Errorf("claim-launch cannot read standing opid %s: %w", params.OpID, readErr)
+				return fmt.Errorf("the launch record %s cannot be read: %w", params.OpID, readErr)
 			}
 
 			if occupancy.Unprovable != nil {
@@ -845,7 +848,7 @@ func validateFreshCriticReviewsLatest(repoRoot, role, reviews, adapterVerb strin
 		}
 	}
 	if latestRound > reviewedRound {
-		return fmt.Errorf("%s dispatch --reviews names %s (round %d), but that chain's latest implementer round is %s (round %d); name the round job", role, reviews, reviewedRound, latestJob, latestRound)
+		return fmt.Errorf("--reviews names round %d, but the newest round of that work is %d; name %s instead", reviewedRound, latestRound, latestJob)
 	}
 	return nil
 }
@@ -898,4 +901,14 @@ func ClaimOutcomeExitCode(outcome ClaimOutcome) int {
 		return 3
 	}
 	return 0
+}
+
+// sliceUnrecorded refuses a reservation whose goal's first start could not be
+// recorded; step names where it failed (a detail).
+func sliceUnrecorded(goalID, step string, cause error) error {
+	reason := fmt.Errorf("the start of goal %s's work could not be recorded, so nothing was reserved", goalID)
+	if cause != nil {
+		reason = fmt.Errorf("the start of goal %s's work could not be recorded, so nothing was reserved: %w", goalID, cause)
+	}
+	return refusal.New("SLICE_START_UNRECORDED", "goal="+goalID+" step="+step, reason)
 }

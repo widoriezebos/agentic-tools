@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"errors"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	critiqueModel "github.com/widoriezebos/agentic-tools/metasystem/internal/critique"
@@ -42,7 +43,7 @@ func VerifyChainIncarnation(root, mission string, parent map[string]any) error {
 	// wall — that is a different fact than a re-provisioned mission, and an
 	// absent key must never read as an empty string that "drifted".
 	if _, present := parent["missionIncarnation"]; !present {
-		return fmt.Errorf("mission chain predates the host-implementer wall (no recorded incarnation); it cannot be extended — dispatch a fresh chain")
+		return errors.New("this mission chain is too old to continue (it has no recorded setup); start a fresh chain")
 	}
 	live, err := missionIncarnation(root, mission)
 	if err != nil {
@@ -50,7 +51,7 @@ func VerifyChainIncarnation(root, mission string, parent map[string]any) error {
 	}
 	recorded, _ := parent["missionIncarnation"].(string)
 	if recorded != live {
-		return fmt.Errorf("mission %s has been re-provisioned since this chain started (incarnation %.12s… is now %.12s…); the chain belongs to a prior incarnation and cannot continue", mission, recorded, live)
+		return fmt.Errorf("mission %s was set up again since this chain started; start a fresh chain (setup %.12s, now %.12s)", mission, recorded, live)
 	}
 	return nil
 }
@@ -68,7 +69,7 @@ func missionIncarnation(root, mission string) (string, error) {
 	}
 	approved, _ := fences["approvedContractSha256"].(string)
 	if !incarnationRe.MatchString(approved) {
-		return "", fmt.Errorf("mission %s has no pinned approved-contract digest; launch the mission before dispatching into it", mission)
+		return "", fmt.Errorf("mission %s has not been launched yet, so nothing can be dispatched into it; launch it first", mission)
 	}
 	return approved, nil
 }
@@ -104,7 +105,7 @@ func nullableEpoch(value string) (any, error) {
 	}
 	epoch, err := strconv.ParseInt(value, 10, 64)
 	if err != nil {
-		return nil, fmt.Errorf("invalid claim epoch %q", value)
+		return nil, fmt.Errorf("the claim counter %q is not a whole number", value)
 	}
 	return epoch, nil
 }
@@ -495,7 +496,7 @@ func buildRecordWithReads(p BuildRecordParams, facts buildWorkspaceFacts, reads 
 			return fmt.Errorf("mission-scoped dispatch requires the checkout root for provenance")
 		}
 		if p.MissionTurn == "" {
-			return fmt.Errorf("mission-scoped dispatch requires the mission turn; run it inside a runner turn (METASYSTEM_MISSION_TURN)")
+			return errors.New("work for a mission is dispatched only from inside the mission's own turn, and this is not one")
 		}
 		if p.Stream == "" {
 			return fmt.Errorf("mission-scoped dispatch requires --stream naming the mission stream it serves")
@@ -746,10 +747,10 @@ func BuildFollowRecord(p BuildFollowRecordParams) error {
 			return err
 		}
 		if _, present := parent["stream"]; !present {
-			return fmt.Errorf("mission chain predates the host-implementer wall (no recorded stream); it cannot be extended — dispatch a fresh chain")
+			return errors.New("this mission chain is too old to continue (it has no recorded stream); start a fresh chain")
 		}
 		if p.MissionTurn == "" {
-			return fmt.Errorf("mission-scoped follow-up requires the mission turn; run it inside a runner turn (METASYSTEM_MISSION_TURN)")
+			return errors.New("a follow-up for a mission is sent only from inside the mission's own turn, and this is not one")
 		}
 	}
 	requested, ok := parent["permissions"].(map[string]any)["requested"]
@@ -805,7 +806,7 @@ func BuildFollowRecord(p BuildFollowRecordParams) error {
 			return fmt.Errorf("parent goal-bound record is revisionless; dispatch a fresh revision-bound chain")
 		}
 		if JobRecordOf(parent).OperationID() == "" {
-			return fmt.Errorf("parent goal-bound record has no reservation operation identifier; dispatch a fresh revision-bound chain")
+			return errors.New("the earlier round has no reservation to continue from; start a fresh chain")
 		}
 	}
 	revision, err := nullableGoalRevision(goalID, p.GoalRevision)
@@ -971,7 +972,7 @@ func readCompositionForJob(path, job, role, runtimeName, model, mission string, 
 	if asString(record["jobId"]) != job || asString(record["role"]) != role || asString(record["runtime"]) != runtimeName ||
 		asString(record["model"]) != model || asString(record["mission"]) != emptyAsNone(mission) || !roundOK || recordedRound != round ||
 		asString(record["packetDigest"]) != packetDigest || asString(record["destructiveReach"]) != string(destructiveReach) {
-		return nil, fmt.Errorf("composition record does not bind the job, role, runtime, model, mission, round, and delivered packet digest")
+		return nil, errors.New("the record of how this job's brief was put together is incomplete")
 	}
 	configuration, configurationOK := record["configurationObligations"].(map[string]any)
 	expectedConfiguration, expectedErr := EffectiveObligations(destructiveReach, goalTier)
@@ -1022,7 +1023,7 @@ func readCompositionForJob(path, job, role, runtimeName, model, mission string, 
 		if asString(source["slot"]) == "" || asString(source["source"]) == "" ||
 			!incarnationRe.MatchString(asString(source["sourceDigest"])) || !incarnationRe.MatchString(asString(source["deliveredDigest"])) ||
 			!startOK || !endOK || !bytesOK || start != previousEnd || end <= start || sourceBytes < 0 {
-			return nil, fmt.Errorf("composition source %d has invalid identity, digests, or byte range", index)
+			return nil, fmt.Errorf("source %d of this job's brief is recorded wrongly (name, checksum or range)", index)
 		}
 		marker, marked := source["admittedBrief"]
 		if len(source) == 8 && !marked {

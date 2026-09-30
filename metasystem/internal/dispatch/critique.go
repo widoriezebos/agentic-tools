@@ -160,7 +160,7 @@ func requireRegisterCaughtUp(state critiqueState, root string, capState critique
 	}
 	if latestRound != capState.round {
 		repoRoot := filepath.Dir(filepath.Dir(state.agents))
-		return fmt.Errorf("critic chain %s has folded through round %d but its latest record is round %d; run job critique-register-advance --repo %s --root-job %s --round-job %s first", root, capState.round, latestRound, repoRoot, root, asString(latest["jobId"]))
+		return fmt.Errorf("the findings of critique %s are recorded up to round %d, but round %d exists\nfirst run job critique-register-advance --repo %s --root-job %s --round-job %s", root, capState.round, latestRound, repoRoot, root, asString(latest["jobId"]))
 	}
 	return nil
 }

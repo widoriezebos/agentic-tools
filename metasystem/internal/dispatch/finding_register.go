@@ -313,7 +313,7 @@ func critiqueRoundAccountingWithReads(repoRoot string, state critiqueState, root
 }
 
 func malformedRoundAccounting(rootJob string, err error) error {
-	return fmt.Errorf("critique root record %s has malformed round accounting: %v; next: continue or close chain %s (work revise, design review, work review --dispositions, work finish), which rebinds its round accounting first", rootJob, err, rootJob)
+	return fmt.Errorf("the round count of critique %s is damaged: %v\ncontinuing or closing that work repairs it (work revise, design review, work review --dispositions, work finish)", rootJob, err)
 }
 
 func foldProtocolError(register []registerFinding, role, roundJob string, roundRecord map[string]any) []registerFinding {
@@ -687,7 +687,7 @@ func critiqueRegisterClose(repoRoot, rootJob string, deferFindings deferReviewOb
 				if asString(root["role"]) == "design-critic" && roundOK && foldedRound == 2 {
 					return roundTwoHumanRaise(roundTwoHumanFindingIDs(root, register, unresolved, blockerIDs))
 				}
-				return fmt.Errorf("%s; next: goal accept-risk --finding <id> --chain <root> --by <human> --why, or raise the goal budget: the chain's next follow-up or close (work revise, design review, work review --dispositions, work finish) carries the raised limit onto it first", strings.Join(blockers, "\n"))
+				return fmt.Errorf("%s\na person accepts each risk (metasystem goal accept-risk --finding <id> --chain <root> --by <human> --why) or raises the goal's budget", strings.Join(blockers, "\n"))
 			}
 			if len(unresolved) == 0 {
 				// Section 4 bullet 3 closes a clean folded second round.
@@ -860,7 +860,7 @@ func cleanClosure(state critiqueState, rootJob string, root map[string]any, regi
 		if existing.CriticRoot == want.CriticRoot && existing.Round == want.Round && existing.Mechanism == want.Mechanism && existing.Subject.Equal(want.Subject) {
 			return want, false, nil
 		}
-		return Closure{}, false, fmt.Errorf("critic root %s already carries closure round %d subject %s; refusing to replace it with round %d subject %s", rootJob, existing.Round, existing.Subject.Digest(), want.Round, want.Subject.Digest())
+		return Closure{}, false, fmt.Errorf("critique %s was already closed at round %d, so it is not closed again at round %d (subjects %s, %s)", rootJob, existing.Round, want.Round, existing.Subject.Digest(), want.Subject.Digest())
 	}
 	roundJob, roundRecord, err := critiqueRecordForRound(state, rootJob, foldedRound)
 	if err != nil {
@@ -1287,7 +1287,7 @@ func critiqueSubjectForRoundWithFacts(repoRoot string, state critiqueState, root
 	relativeDiffPath = filepath.ToSlash(relativeDiffPath)
 	data, err := os.ReadFile(diffPath)
 	if err != nil {
-		return s, fmt.Errorf("reviewed implementer round %s (round %d) has no diff.patch at %s; run validate conformance --stage review --job %s first", reviewedJob, round, relativeDiffPath, reviewedJob)
+		return s, fmt.Errorf("round %d (%s) has no recorded changes at %s\nfirst run validate conformance --stage review --job %s", round, reviewedJob, relativeDiffPath, reviewedJob)
 	}
 	installPrefix, err := facts.InstallPrefix(repoRoot)
 	if err != nil {
@@ -1326,7 +1326,7 @@ func critiqueSubjectForRoundWithFacts(repoRoot string, state critiqueState, root
 		}
 	}
 	if len(s.paths) == 0 {
-		return s, fmt.Errorf("reviewed implementer round %s (round %d) has no changed paths in diff.patch at %s; run validate conformance --stage review --job %s first", reviewedJob, round, relativeDiffPath, reviewedJob)
+		return s, fmt.Errorf("round %d (%s) changes no file in %s\nfirst run validate conformance --stage review --job %s", round, reviewedJob, relativeDiffPath, reviewedJob)
 	}
 	s.tree = asString(result["reviewedTree"])
 	return s, nil
@@ -1644,7 +1644,7 @@ func refuseCrossRootClassConflict(state critiqueState, currentRoot string, prosp
 	for _, finding := range prospective {
 		for class, root := range otherClasses[finding.FindingID] {
 			if class != finding.RigorClass {
-				return fmt.Errorf("finding %s has conflicting rigor classes %s and %s on chain roots %s and %s, whose reviewed subjects are %s and %s; waiting on the original critic or the human is the only remedy",
+				return fmt.Errorf("finding %s is rated %s here and %s elsewhere; the critic or a person settles it\n(critiques %s and %s, subjects %s and %s)",
 					finding.FindingID, finding.RigorClass, class, currentRoot, root, currentSubject, otherSubjects[root])
 			}
 		}

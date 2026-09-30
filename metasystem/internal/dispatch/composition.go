@@ -13,6 +13,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"errors"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/protocol"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
@@ -227,7 +228,7 @@ type CompositionContinuation struct {
 // the recipe refuses before job publication.
 func ComposeRolePacket(p ComposeRolePacketParams) (CompositionRecord, error) {
 	if p.Root == "" || p.Role == "" || p.Brief == "" || p.JobID == "" || p.Runtime == "" || p.Model == "" || p.ToolPolicy == "" || p.Round < 1 || p.Output == "" || p.CompositionOutput == "" {
-		return CompositionRecord{}, fmt.Errorf("role-packet composition requires root, role, brief, job, runtime, model, tool policy, round, output, and composition output")
+		return CompositionRecord{}, errors.New("the brief cannot be put together: a required part of the request is missing")
 	}
 	var admittedBrief *AdmittedBriefMarker
 	if p.AdmittedBounds != "" {
@@ -558,7 +559,7 @@ func readRolePacketTable() ([]byte, rolePacketTable, error) {
 		return nil, table, fmt.Errorf("decode role packet table: %w", err)
 	}
 	if table.SchemaVersion != 1 || len(table.Roles) == 0 || len(table.DestructiveReach) == 0 || len(table.IndependentCritiqueByTier) == 0 {
-		return nil, table, fmt.Errorf("role packet table must be schema version 1 with destructiveReach classes, independentCritiqueByTier, and at least one role")
+		return nil, table, errors.New("the role table is not in the expected form (version 1, with reach classes, critique tiers and roles)")
 	}
 	return data, table, nil
 }

@@ -5,6 +5,8 @@ import (
 	"encoding/hex"
 	"fmt"
 	"strconv"
+
+	"errors"
 )
 
 // DefaultOperationID binds an implicit retry to the complete v2 operation
@@ -30,7 +32,7 @@ func DefaultOperationID(goalID string, goalRevision uint64, mode DispatchMode, r
 		return "", fmt.Errorf("follow-up default operation identity requires a valid parent job")
 	}
 	if role == "" || !incarnationRe.MatchString(briefDigest) {
-		return "", fmt.Errorf("default operation identity requires a role and lowercase SHA-256 brief digest")
+		return "", errors.New("an operation name needs a role and the brief's lowercase SHA-256 checksum")
 	}
 	wire := "delegate-operation-v2\x00" + goalID + "\x00" + strconv.FormatUint(goalRevision, 10) + "\x00" + string(mode) + "\x00" + role + "\x00" + briefDigest + "\x00" + parentJob
 	sum := sha256.Sum256([]byte(wire))

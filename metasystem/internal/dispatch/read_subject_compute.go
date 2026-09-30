@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strings"
 
+	"errors"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 )
 
@@ -253,7 +254,7 @@ func designReadSubject(facts readSubjectFacts, workspace, design, outputsFile, r
 		outputsDigest = digestDeclaredOutputs(outputs)
 	}
 	if outputsDigest == "" {
-		return ReadSubject{}, fmt.Errorf("design subject has no declared outputs digest")
+		return ReadSubject{}, errors.New("the design under review has no checksum of its outputs")
 	}
 	reviewedCommit, err := facts.WorkspaceHead(workspace)
 	if err != nil {

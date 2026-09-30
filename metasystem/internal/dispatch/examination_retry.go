@@ -49,7 +49,7 @@ func examinationRetryAdmissible(repoRoot string, latest map[string]any, custody 
 		// Without the reaper's recorded group-death proof, the custody owner
 		// must prove the recorded processes dead now.
 		if death := ProveCustodyDeath(repoRoot, latest, custody); death.Outcome != CustodyDeathProven {
-			return fmt.Errorf("examination round %d's process is not proven stopped (%s: %s); it is never retried while it may still run", round, death.Outcome, death.Reason)
+			return fmt.Errorf("examination round %d may still be running, so it is not retried (%s: %s)", round, death.Outcome, death.Reason)
 		}
 	}
 	root := asString(latest["jobId"])
