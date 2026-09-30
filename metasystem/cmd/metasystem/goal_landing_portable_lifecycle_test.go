@@ -444,8 +444,14 @@ func TestGLEBatchPortableNativeCapacityWaitEjectsElapsedFencedMember(t *testing.
 	portable.writeBytes("plans/goals/backlog.md", goal.RenderRoot(&goal.RootRecord{
 		Identity: "01ARZ3NDEKTSV4RRFFQ69G5FAV", FormatVersion: "1", SyncMode: goal.SyncRemote, Revision: 1,
 	}), 0o644)
-	if err := os.Remove(filepath.Join(portable.root, "plans", "goals", "portable.md")); err != nil {
-		t.Fatal(err)
+	// Only A and B take part. The shared bed's other seed goals carry
+	// wall-clock claims under a four-hour elapsed limit, so the fixture clock
+	// (2030) puts goal-c in breach too, and the steward runner below would
+	// still be stopping it when the test ends the runner.
+	for _, id := range []string{"portable", "goal-c"} {
+		if err := os.Remove(filepath.Join(portable.root, "plans", "goals", id+".md")); err != nil {
+			t.Fatal(err)
+		}
 	}
 	for _, id := range []string{"goal-a", "goal-b"} {
 		path := filepath.Join(portable.root, "plans", "goals", id+".md")
@@ -780,6 +786,16 @@ chmod +x "${out:-bin/metasystem}"
 	if routesErr != nil || !breachRoute {
 		t.Fatalf("elapsed breach route absent for active B: revision=%d routes=%+v error=%v budget=%+v", revision, routes, routesErr, dispatchcore.ProjectBudget(controlRoot, projection.Tree.Live["goal-b"], t1))
 	}
+	// B's stop must be the steward's only work. The test ends the runner with
+	// SIGTERM once B's stop batch completes; a second route would still be
+	// mid-transaction then, and a breach stop killed after its push leaves a
+	// pushed journal entry that refuses every later publish on this clone,
+	// the survivors' handover included.
+	for _, route := range routes {
+		if route.GoalID != "goal-b" {
+			t.Fatalf("breach route for %s beside B's: the steward would still be stopping it when the test ends the runner: routes=%+v", route.GoalID, routes)
+		}
+	}
 	// The enrolled steward is the authorized stop custodian while the owner
 	// holds the checkout: its resident runner (`steward run`, its own session
 	// as steward arm launches it) runs the delegate lifecycle's breach stop in
@@ -808,6 +824,18 @@ chmod +x "${out:-bin/metasystem}"
 	}
 	stopPortableStewardRunner(t, runner, runnerExited)
 	stopOutput := readPortableRunnerLog(t, runnerLog)
+	// Ending the runner must not orphan a transaction: a pushed entry would
+	// refuse the survivors' handover, and a created one names work the
+	// runner was cut off from.
+	entries, err := goal.Entries(controlRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if entry.Phase != goal.PhaseTerminal {
+			t.Fatalf("the steward runner ended with journal entry %s (%s %v) %s: %s", entry.Opid, entry.Intent.Verb, entry.Intent.Targets, entry.Phase, stopOutput)
+		}
+	}
 	stopBatch, err := goal.ReadStopBatch(controlRoot, completedStopID)
 	if err != nil || stopBatch.State != goal.StopBatchComplete || stopBatch.GoalID != "goal-b" || stopBatch.GoalRevision != revision {
 		t.Fatalf("real stop batch did not complete B's exact revision %d: id=%s batch=%+v err=%v", revision, completedStopID, stopBatch, err)
