@@ -7,8 +7,8 @@
 - Origin: main
 - Next step: Next: once the watch-verb goal's acting side is on main, write a short design for how the steward re-engages or restarts an idle seat, reusing the existing three-refusals-then-continue path. Done when: the design is accepted and a test shows an idle Codex seat with approved work being re-engaged without a person.
 - OpenedAt: 2026-09-02T15:54:37Z
-- Revision: 21
-- BlockedBy: watch-verb
+- Revision: 22
+- BlockedBy: fleet-doctor-repairs-what-stops-other-seats
 - Labels: headless-fleet, headless-recovery
 - BudgetExceptions: 0
 - Parked: by=human:Wido at=2026-09-13T08:23:32Z because=Not now (2026-09-13 backlog consolidation, Wido's word): Blocked on watch-verb (queued 1:19, human origin), whose action authority it consumes; part (3) of never-idle-ironclad's acceptance map; idle-with-backlog-alarm 35c9e4df landed the three-refusal claim-and-continue path; park until watch-verb lands, then design under marking-mode and Law 2.
@@ -35,4 +35,5 @@ History:
 - 2026-09-13T08:23:10Z R328E6Y43B7EEREMEA8T0MVQWG-m1-c6925449 done actor=human:Wido targets=first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,headless-continuous-delivery-proof,headless-fleet-coordination-proof,idle-every-runtime-enforcement,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,recovery-rehearsal,recovery-to-good-state,role-lane-packets,seat-mutual-awareness reason=priority-order from=2:14 to=2:13
 - 2026-09-13T08:23:32Z FS9N13ZRK1B0TC0J6HTNA3SRWD-m1-c6925449 park actor=human:Wido targets=idle-every-runtime-enforcement reason=Not now (2026-09-13 backlog consolidation, Wido's word): Blocked on watch-verb (queued 1:19, human origin), whose action authority it consumes; part (3) of never-idle-ironclad's acceptance map; idle-with-backlog-alarm 35c9e4df landed the three-refusal claim-and-continue path; park until watch-verb lands, then design under marking-mode and Law 2.
 - 2026-09-30T18:50:49Z F1BHNJH150QPB1G6YFBZJAWSBQ-ui-bc2fda53 edit actor=human:Wido targets=idle-every-runtime-enforcement
-Integrity: sha256=b94af94e2bf5c44132192fd7d8a747d1d43e4004921fab2d109abeaa3d534a29
+- 2026-09-30T18:54:58Z 76304SH5SME1NM10DRAXEEMT2X-ui-bc2fda53 abandon actor=human:Wido targets=watch-verb reason=blockedBy watch-verb re-pointed to fleet-doctor-repairs-what-stops-other-seats
+Integrity: sha256=95ee4549fb1c10089b9e491e16b2ef9638384a6531ceca238210e8fa3750ac4f
