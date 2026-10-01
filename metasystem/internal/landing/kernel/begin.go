@@ -38,11 +38,27 @@ type BeginSeams struct {
 	// does for every member before it records anything. It is handed the
 	// lane's installation, where the ledger lives.
 	Authorize func(install string, record batch.Record, unit batch.Unit) error
+	// Renew moves every claim the lane holds for the batch at an older
+	// custody epoch to the host record's (K7) and names the members it
+	// renewed; it runs before anything else of begin.
+	Renew func(request BeginRequest) ([]string, error)
 }
+
+// CodeBeginBaseMoved is begin refusing a series whose base the lane's own
+// claim renewal just moved past.
+const CodeBeginBaseMoved = "LANE_BEGIN_BASE_MOVED"
 
 // ProductionBeginSeams are the production clock, ids and authority.
 func ProductionBeginSeams() BeginSeams {
-	return BeginSeams{Now: func() time.Time { return time.Now().UTC() }, NewID: newAttemptID, Authorize: authorizeMember}
+	return BeginSeams{Now: func() time.Time { return time.Now().UTC() }, NewID: newAttemptID, Authorize: authorizeMember, Renew: renewClaims}
+}
+
+// renewClaims renews the batch's lane-held claims against the ledger on
+// origin's main, through the lane's publication boundary.
+func renewClaims(request BeginRequest) ([]string, error) {
+	checkout := string(request.Layout.Checkout)
+	return batchowner.RenewLaneClaims(request.Home, checkout, string(request.Layout.Install), request.BatchID,
+		func() (string, error) { return batchowner.FetchLaneMainTree(checkout) }, &batchowner.LaneCalls)
 }
 
 // authorizeMember is a batch member's authority, read for a member
@@ -102,8 +118,21 @@ func Begin(request BeginRequest, seams BeginSeams) (BeginOutcome, error) {
 		}
 		return BeginOutcome{Evidence: &evidence}, nil
 	}
-	if seams.Authorize == nil {
-		return BeginOutcome{}, errors.New("landing begin has no member authority to read")
+	if seams.Authorize == nil || seams.Renew == nil {
+		return BeginOutcome{}, errors.New("landing begin has no member authority to read or claims to renew")
+	}
+	// K7: a claim the lane holds at an older custody epoch is renewed
+	// before the base is recorded. The renewal is a ledger write on main,
+	// so a series composed before it no longer starts on main: nothing is
+	// recorded, and the agent composes again on the new main.
+	renewed, err := seams.Renew(request)
+	if err != nil {
+		return BeginOutcome{}, err
+	}
+	if len(renewed) > 0 {
+		return BeginOutcome{}, &Refusal{Code: CodeBeginBaseMoved,
+			Reason: fmt.Sprintf("the lane renewed its claims on %s to its current registration, which moved main past %s", strings.Join(renewed, ", "), request.Base),
+			Next:   "fetch origin, compose the batch again on the new main, and run landing begin again"}
 	}
 	for _, name := range request.Members {
 		for _, unit := range record.Units {

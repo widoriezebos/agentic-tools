@@ -5,7 +5,9 @@ package batch
 // evidence that disposition names:
 //
 //   - red: a red proof attempt of this batch whose subject is the member
-//     (member:M), or the batch whose red names the member;
+//     (member:M), or a red of the whole batch that diagnosis places on the
+//     member: its own red on the same base, or the base green with every
+//     other member green alone;
 //   - conflict and seam-too-large: composition evidence of that kind
 //     naming the member, which begin records when it refuses the series or
 //     a member's replay fails (begin --record-conflict);
@@ -84,13 +86,20 @@ func ReturnEvidence(record Record, member, disposition, person string) (string, 
 		for index := len(record.Attempts) - 1; index >= 0; index-- {
 			attempt := record.Attempts[index]
 			// A running attempt has not spoken yet.
-			if !names(attempt, member) || !attempt.Terminal() {
+			if !covers(attempt, member) || !attempt.Terminal() {
 				continue
 			}
-			switch attempt.Status {
-			case AttemptRed:
+			switch {
+			case attempt.Status == AttemptRed && attempt.Subject == SubjectBatch:
+				// The whole batch's red covers every member; it is this
+				// member's only where diagnosis places it.
+				if placed := placedBy(record, attempt, member); placed != "" {
+					return "attempt " + attempt.ID + " (" + SubjectBatch + ", placed by " + placed + ")", nil
+				}
+				message = fmt.Sprintf("batch attempt %s failed, but nothing places it on %s yet, so it was not returned as red", attempt.ID, member)
+			case attempt.Status == AttemptRed:
 				return "attempt " + attempt.ID + " (" + attemptSubject(attempt) + ")", nil
-			case AttemptUnavailable:
+			case attempt.Status == AttemptUnavailable:
 				message = fmt.Sprintf("the tests of %s could not run, which is not its failure, so it was not returned as red", member)
 			default:
 				message = fmt.Sprintf("the newest test run of %s passed, so it was not returned as red", member)
@@ -108,10 +117,56 @@ func ReturnEvidence(record Record, member, disposition, person string) (string, 
 	return refuse(CodeReturnEvidenceMissing, fmt.Sprintf("batch %s records no %s for %s, so it was not returned as %s", record.BatchID, disposition, member, disposition))
 }
 
-// names reports whether attempt is evidence about member: its subject is
-// the member, or it is a batch attempt that names the member.
-func names(attempt ProofAttempt, member string) bool {
-	return attempt.Subject == SubjectMember && attempt.Member == member || attempt.Subject == SubjectBatch && slices.Contains(attempt.Names, member)
+// covers reports whether attempt speaks about member: its tree holds the
+// member's work (member:M, or a batch whose recorded members include it).
+func covers(attempt ProofAttempt, member string) bool {
+	switch attempt.Subject {
+	case SubjectMember:
+		return attempt.Member == member
+	case SubjectBatch:
+		return slices.Contains(attempt.Covers, member)
+	}
+	return false
+}
+
+// placedBy names the diagnosis that places batch attempt red's failure on
+// member, empty when none does. Diagnosis is read on the same series (its
+// base), each subject by its newest finished attempt:
+//   - the member's own red (member:M), which is M's red by itself;
+//   - for a batch of M alone, whose tree is the base plus M, a green base
+//     that ran every group the batch failed: what turned it red is M.
+//
+// With other members a green base and green members alone do not place the
+// red on any one of them: it is the combination's (a seam, composition
+// evidence), never one member's red.
+func placedBy(record Record, red ProofAttempt, member string) string {
+	newest := func(subject, name string) (ProofAttempt, bool) {
+		for index := len(record.Attempts) - 1; index >= 0; index-- {
+			attempt := record.Attempts[index]
+			if attempt.OpID == red.OpID && attempt.Subject == subject && attempt.Member == name && attempt.Terminal() {
+				return attempt, true
+			}
+		}
+		return ProofAttempt{}, false
+	}
+	if own, ok := newest(SubjectMember, member); ok && own.Status == AttemptRed {
+		return "attempt " + own.ID + " (" + attemptSubject(own) + ")"
+	}
+	if len(red.Covers) != 1 || red.Covers[0] != member || len(red.RedGroups) == 0 {
+		return ""
+	}
+	base, ok := newest(SubjectBase, "")
+	if !ok || base.Status != AttemptGreen {
+		return ""
+	}
+	// A base that never ran a failing group says nothing about it: main may
+	// already be red there.
+	for _, group := range red.RedGroups {
+		if !slices.Contains(base.Groups, group) {
+			return ""
+		}
+	}
+	return "the green base in attempt " + base.ID
 }
 
 // attemptSubject is the subject as landing prove is asked for it: batch,

@@ -1026,6 +1026,12 @@ func TestCaptureTipBoundedKillsTheWholeTransportGroup(t *testing.T) {
 	}
 	checkCalls()
 	for _, pid := range []int{wrapperID, childID} {
+		// Capture returns once the group was sent SIGKILL and its leader
+		// reaped; the descendant's exit completes in the kernel after that,
+		// so it is awaited, not probed once.
+		if err := awaitTransportMemberExit(pid); err != nil {
+			t.Fatalf("await blocking transport member %d's exit: %v", pid, err)
+		}
 		exited, exitErr := transportMemberExited(pid)
 		if exitErr != nil {
 			t.Fatalf("probe blocking transport member %d: %v", pid, exitErr)
@@ -1266,11 +1272,31 @@ func TestCaptureTipBoundedKillsADescendantThatOutlivesTheTransport(t *testing.T)
 	if n, readErr := exitFIFO.Read(make([]byte, 1)); n != 0 || !errors.Is(readErr, io.EOF) {
 		t.Fatalf("read descendant exit witness: bytes=%d err=%v", n, readErr)
 	}
+	// The witness closes when the kernel tears the killed descendant down,
+	// before it marks the process exited; wait for that exit, never probe
+	// it once (the probe raced the kernel under load).
 	for _, pid := range []int{wrapperID, childID} {
+		if err := awaitTransportMemberExit(pid); err != nil {
+			t.Fatalf("await transport member %d's exit after the exit witness: %v", pid, err)
+		}
 		exited, exitErr := transportMemberExited(pid)
 		if exitErr != nil || !exited {
 			t.Fatalf("transport member %d survived after exit witness: exited=%t err=%v", pid, exited, exitErr)
 		}
+	}
+}
+
+// transportExitBound bounds the wait for a killed transport member's exit:
+// a SIGKILLed process exits at once, so reaching it is a defect, reported
+// as a failure instead of a hang. It bounds a hang, never a timing claim.
+const transportExitBound = 30 * time.Second
+
+// The exit wait is bounded: a process that does not exit fails the wait
+// with a plain error instead of hanging the test.
+func TestAwaitTransportMemberExitIsBounded(t *testing.T) {
+	t.Parallel()
+	if err := awaitTransportMemberExitWithin(os.Getpid(), time.Millisecond); err == nil || !strings.Contains(err.Error(), "did not exit within") {
+		t.Fatalf("waiting on a live process = %v; want the bound's failure", err)
 	}
 }
 

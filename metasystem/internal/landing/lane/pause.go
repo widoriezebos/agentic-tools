@@ -3,13 +3,18 @@ package lane
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 	"time"
+	"unicode"
 )
 
 // Pause is a person's deliberate stop of the lane for maintenance.
 type Pause struct {
 	By string `json:"by"`
 	At string `json:"at"`
+	// Reason is why it was stopped, in the stopper's words; empty when
+	// none was given.
+	Reason string `json:"reason,omitempty"`
 }
 
 func pausePath(home string) string { return filepath.Join(HostDir(home), "landing-lane-paused.json") }
@@ -43,8 +48,14 @@ func PauseState(home string) (Pause, bool, error) {
 
 // SetPause records a person's pause; a lane already paused is unchanged.
 func SetPause(home, by string, now time.Time) (changed bool, err error) {
+	return SetPauseBecause(home, by, "", now)
+}
+
+// SetPauseBecause records a person's pause with why it was made; a lane
+// already paused is unchanged, its first reason kept.
+func SetPauseBecause(home, by, reason string, now time.Time) (changed bool, err error) {
 	err = withLock(home, func() error {
-		changed, err = setPauseLocked(home, by, now)
+		changed, err = setPauseLockedBecause(home, by, reason, now)
 		return err
 	})
 	return changed, err
@@ -52,10 +63,46 @@ func SetPause(home, by string, now time.Time) (changed bool, err error) {
 
 // setPauseLocked is SetPause for a caller that holds the lane flock.
 func setPauseLocked(home, by string, now time.Time) (bool, error) {
+	return setPauseLockedBecause(home, by, "", now)
+}
+
+func setPauseLockedBecause(home, by, reason string, now time.Time) (bool, error) {
 	if _, paused := ReadPause(home); paused {
 		return false, nil
 	}
-	return true, writeJSON(home, pausePath(home), Pause{By: by, At: now.UTC().Format(time.RFC3339)})
+	return true, writeJSON(home, pausePath(home), Pause{By: by, At: now.UTC().Format(time.RFC3339), Reason: PauseReason(reason)})
+}
+
+// pauseReasonLimit caps a pause's reason, which line 1 of messages shows.
+const pauseReasonLimit = 200
+
+// PauseReason is a stop's reason as one plain line: control characters and
+// runs of whitespace become one space, and it is cut at pauseReasonLimit
+// characters.
+func PauseReason(reason string) string {
+	plain := strings.Join(strings.Fields(strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return ' '
+		}
+		return r
+	}, reason)), " ")
+	if runes := []rune(plain); len(runes) > pauseReasonLimit {
+		plain = strings.TrimSpace(string(runes[:pauseReasonLimit-1])) + "…"
+	}
+	return plain
+}
+
+// Who names who stopped the lane and why, as line 1 words: "Wido" or
+// "Wido (the same member red twice)".
+func (pause Pause) Who() string {
+	by := pause.By
+	if by == "" {
+		by = "a person"
+	}
+	if pause.Reason == "" {
+		return by
+	}
+	return by + " (" + pause.Reason + ")"
 }
 
 // ClearPause ends a pause, a readable one or not; a lane not paused is

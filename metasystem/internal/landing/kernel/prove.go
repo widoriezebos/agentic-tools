@@ -89,6 +89,8 @@ func newAttemptID() (string, error) {
 type subject struct {
 	kind, member, tree, commit, purpose string
 	groups                              []string
+	// covers are the members whose work the tree holds (K8).
+	covers []string
 }
 
 // Prove runs one subject of batch request.BatchID's current opening as a
@@ -131,7 +133,7 @@ func Prove(request ProveRequest, seams ProveSeams) (batch.ProofAttempt, error) {
 	if err := os.MkdirAll(resultDir, 0o700); err != nil {
 		return batch.ProofAttempt{}, err
 	}
-	attempt := batch.ProofAttempt{ID: id, OpID: opening.OpID, Subject: target.kind, Member: target.member, Commit: target.commit, Tree: target.tree,
+	attempt := batch.ProofAttempt{ID: id, OpID: opening.OpID, Subject: target.kind, Member: target.member, Covers: target.covers, Commit: target.commit, Tree: target.tree,
 		Purpose: target.purpose, Groups: target.groups, Actor: request.Actor, ResultPath: filepath.Join(resultDir, request.BatchID+"-"+id+".json"),
 		StartedAt: seams.Now().Format(time.RFC3339Nano)}
 	command := batchowner.BatchProofCommand(executable, proveArgs(request.Layout, execution, account, target, attempt.ResultPath))
@@ -207,7 +209,7 @@ func Prove(request ProveRequest, seams ProveSeams) (batch.ProofAttempt, error) {
 func resolveSubject(request ProveRequest, record batch.Record, opening batch.Opening, seams ProveSeams) (subject, error) {
 	switch {
 	case request.Subject == batch.SubjectBatch:
-		return subject{kind: batch.SubjectBatch, tree: opening.Tree, commit: opening.Candidate, purpose: "delivery"}, nil
+		return subject{kind: batch.SubjectBatch, tree: opening.Tree, commit: opening.Candidate, purpose: "delivery", covers: slices.Clone(opening.Members)}, nil
 	case request.Subject == batch.SubjectBase:
 		var groups []string
 		for _, name := range opening.Members {
@@ -249,7 +251,7 @@ func resolveSubject(request ProveRequest, record batch.Record, opening batch.Ope
 	if len(groups) == 0 {
 		return subject{}, proveRefused(fmt.Sprintf("%s selects no tests, so there is nothing to prove for it", name), "prove the batch subject instead")
 	}
-	return subject{kind: batch.SubjectMember, member: name, tree: tree, purpose: "diagnostic", groups: groups}, nil
+	return subject{kind: batch.SubjectMember, member: name, tree: tree, purpose: "diagnostic", groups: groups, covers: []string{name}}, nil
 }
 
 func joinedMember(record batch.Record, name string) (batch.Unit, bool) {

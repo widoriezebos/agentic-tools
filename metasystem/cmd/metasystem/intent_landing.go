@@ -239,13 +239,13 @@ func landingIntentCommands() []intentCommand {
 		},
 		{
 			object: "landing", action: "stop", audience: "both", summary: "pause the landing lane for maintenance until landing start",
-			usage: []string{"metasystem landing stop [--by NAME]"},
-			details: []string{"No lane operation runs and no landing agent starts until metasystem landing start; status shows who stopped it and when.",
+			usage: []string{"metasystem landing stop [--reason TEXT] [--by NAME]"},
+			details: []string{"No lane operation runs and no landing agent starts until metasystem landing start; status shows who stopped it, when, and the reason it was given.",
 				"Seats still join a stopped lane and wait in it; metasystem landing unset is the way back to each seat landing its own work.",
 				"A lane already stopped changes nothing. While a batch is pushing to main, stop is refused with the way forward."},
-			flags:    []intentFlag{byFlag},
+			flags:    []intentFlag{{name: "reason", value: "TEXT", usage: "why it is stopped, kept with the stop and shown by status"}, byFlag},
 			maxArgs:  0,
-			examples: []string{"metasystem landing stop", "metasystem landing stop --by Wido"},
+			examples: []string{"metasystem landing stop", "metasystem landing stop --reason 'goal-a is red twice on its own tests'"},
 			run:      runIntentLandingStop,
 		},
 		{
@@ -363,6 +363,9 @@ func (inv *intentInvocation) landingStatusView(view lane.View, unreadable bool) 
 			if owner.StoppedBy != nil {
 				by = *owner.StoppedBy
 			}
+			if owner.StoppedBecause != nil {
+				by += " (" + *owner.StoppedBecause + ")"
+			}
 			page.Mark(textui.Stopped, "The landing lane is stopped by "+by+"; it lands nothing")
 			page.Hint(textui.Hint{Argv: inv.publicArgv("landing", "start"), Reason: "resumes it"})
 		case owner.State == lane.OwnerIdle:
@@ -442,6 +445,9 @@ func (inv *intentInvocation) landingStatusView(view lane.View, unreadable bool) 
 		section.KV("agent", textui.Plain(strings.Join(agentWords, " · ")))
 		if owner.StoppedBy != nil {
 			section.KV("stopped by", textui.Plain(*owner.StoppedBy))
+		}
+		if owner.StoppedBecause != nil {
+			section.KV("because", textui.Plain(*owner.StoppedBecause))
 		}
 		if owner.LastExit != nil {
 			section.KV("why", textui.Plain(*owner.LastExit))
@@ -740,18 +746,18 @@ func runIntentLandingStop(inv *intentInvocation) int {
 	if problem != nil {
 		return inv.render(*problem)
 	}
-	result, _ := inv.stopLane(owners, home, record)
+	result, _ := inv.stopLane(owners, home, record, lane.PauseReason(inv.input.text("reason")))
 	return inv.render(result)
 }
 
 // stopLane pauses the lane at a person's word; a batch pushing to main is
 // never paused mid-push.
-func (inv *intentInvocation) stopLane(owners laneVerbOwners, home string, record lane.Record) (intentResult, bool) {
+func (inv *intentInvocation) stopLane(owners laneVerbOwners, home string, record lane.Record, reason string) (intentResult, bool) {
 	targets := laneTargets(record.Root)
 	if pause, paused := lane.ReadPause(home); paused {
-		result := intentResult{Outcome: intentUnchanged, Targets: targets, Summary: "the landing lane is already stopped by " + pause.By + " at " + lane.LocalText(pause.At) + "; metasystem landing start resumes it"}
+		result := intentResult{Outcome: intentUnchanged, Targets: targets, Summary: "the landing lane is already stopped by " + pause.Who() + " at " + lane.LocalText(pause.At) + "; metasystem landing start resumes it"}
 		result.view = func(page *textui.Page) {
-			done := "the landing lane is already stopped by " + pause.By
+			done := "the landing lane is already stopped by " + pause.Who()
 			if at, err := time.Parse(time.RFC3339, pause.At); err == nil {
 				done += " " + page.Env().Since(at)
 			}
@@ -768,18 +774,19 @@ func (inv *intentInvocation) stopLane(owners laneVerbOwners, home string, record
 	}
 	by := inv.landingActor(owners)
 	inv.sayWhenTheLaneLockIsHeld(home)
-	if _, err := lane.SetPause(home, by, owners.now()); err != nil {
+	if _, err := lane.SetPauseBecause(home, by, reason, owners.now()); err != nil {
 		return intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "the landing lane couldn't be stopped",
 			next: inv.sameCommand(), nextReason: "tries again", Details: []string{"the landing lane could not be stopped: " + err.Error()}}, false
 	}
 	// Stop holds seats (design r10 §1): their work joins and waits, and the
 	// way to seats landing their own work is unset, which line 2 names.
+	who := lane.Pause{By: by, Reason: reason}.Who()
 	return intentResult{Outcome: intentConfirmed, Targets: targets, Data: inv.laneView(owners, home),
-		Summary: "stopped the landing lane for " + by + "; seats' work waits in it until metasystem landing start",
+		Summary: "stopped the landing lane for " + who + "; seats' work waits in it until metasystem landing start",
 		Details: []string{"the lane at " + record.Root + " runs no lane operation and starts no landing agent until metasystem landing start"},
 		next:    inv.publicArgv("landing", "unset"), nextReason: "lets each seat land its own work instead",
 		view: func(page *textui.Page) {
-			page.Done("stopped the landing lane for " + by + "; seats' work waits in it until it starts again")
+			page.Done("stopped the landing lane for " + who + "; seats' work waits in it until it starts again")
 		}}, true
 }
 

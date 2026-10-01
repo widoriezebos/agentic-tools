@@ -1,10 +1,12 @@
 package custody
 
 import (
+	"bufio"
 	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -342,6 +344,66 @@ func TestReusedGroupPidSettles(t *testing.T) {
 	}
 	if settlement, err := Settle(home, Probes{}); err != nil || !settlement.Settled(false) {
 		t.Fatalf("settlement = %+v %v", settlement, err)
+	}
+}
+
+// A group whose leader has exited, and whose pid no process holds, is still
+// live while other members run: the leader's exit is not the group's end.
+// Real processes: the leader starts a member in its own group and exits.
+func TestGroupWithExitedLeaderAndRunningMembersIsLive(t *testing.T) {
+	t.Parallel()
+	home := testHome(t)
+	leaderCommand := exec.Command("sh", "-c", `sleep 120 </dev/null >/dev/null 2>&1 & echo "$!"; read -r _ || :`)
+	leaderCommand.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	stdin, err := leaderCommand.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stdout, err := leaderCommand.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := leaderCommand.Start(); err != nil {
+		t.Fatal(err)
+	}
+	line, err := bufio.NewReader(stdout).ReadString('\n')
+	if err != nil {
+		t.Fatal(err)
+	}
+	member, err := strconv.Atoi(strings.TrimSpace(line))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = syscall.Kill(member, syscall.SIGKILL) })
+	// The leader waits on its input, so its identity is read while it runs.
+	leader, state, err := (identity.KernelProber{}).Probe(int64(leaderCommand.Process.Pid))
+	if err != nil || state != identity.Alive {
+		t.Fatalf("leader probe = %v %v", state, err)
+	}
+	record, err := Open(home, KindProve, "batch b1 attempt a1 member:goal-a", custodyNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := BindChild(home, record.ID, leader.Ref()); err != nil {
+		t.Fatal(err)
+	}
+	_ = stdin.Close()
+	if err := leaderCommand.Wait(); err != nil {
+		t.Fatal(err)
+	}
+	group := int64(leaderCommand.Process.Pid)
+	if _, liveness, err := (identity.KernelProber{}).Probe(group); err != nil || liveness == identity.Alive {
+		t.Fatalf("the leader's pid %d = %v %v; want no process holding it", group, liveness, err)
+	}
+	if members, err := GroupMembers(group); err != nil || !members {
+		t.Fatalf("the group = %v %v; want its member %d running in it", members, err, member)
+	}
+	state2, err := Probe(home, record.ID, Probes{})
+	if err != nil || state2.State != Live || !strings.Contains(state2.Why, "still has members") {
+		t.Fatalf("a group whose leader exited while a member runs = %+v %v; want live", state2, err)
+	}
+	if settlement, err := Settle(home, Probes{}); err != nil || settlement.Settled(false) || len(settlement.Live) != 1 {
+		t.Fatalf("settlement = %+v %v; want the group live", settlement, err)
 	}
 }
 

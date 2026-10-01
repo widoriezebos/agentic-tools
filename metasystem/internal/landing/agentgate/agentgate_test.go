@@ -87,6 +87,7 @@ func TestGateAdmitsTheListedCallsOnly(t *testing.T) {
 		"write a new file":          payload(t, bed.checkout, "Write", map[string]any{"file_path": filepath.Join(bed.module, "internal", "b.go"), "content": "x"}),
 		"landing verb":              bash(t, bed.checkout, "metasystem landing prove --batch b1 --subject member:m1"),
 		"engine advance":            bash(t, bed.checkout, "metasystem landing engine advance"),
+		"stop with a reason":        bash(t, bed.checkout, "metasystem landing stop --reason 'goal-a is red twice on its own tests'"),
 		"module engine by path":     bash(t, bed.module, "bin/metasystem landing status --json"),
 		"read-only verb":            bash(t, bed.checkout, "metasystem goal show some-goal"),
 		"git read with a filter":    bash(t, bed.checkout, "git log --oneline -5 | head -3"),

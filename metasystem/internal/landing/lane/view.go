@@ -70,7 +70,10 @@ type OwnerView struct {
 	Since     *string `json:"since"`
 	LastExit  *string `json:"last_exit"`
 	StoppedBy *string `json:"stopped_by"`
-	RetryHint *string `json:"retry_hint"`
+	// StoppedBecause is the reason the stop was given with; absent when
+	// none was.
+	StoppedBecause *string `json:"stopped_because,omitempty"`
+	RetryHint      *string `json:"retry_hint"`
 	// Fix is RetryHint as one command a person runs, when it is one; the
 	// verbs print it as their next step, the page shows RetryHint.
 	Fix []string `json:"-"`
@@ -194,6 +197,9 @@ func ownerView(sources ViewSources, root string) OwnerView {
 	owner := OwnerView{State: OwnerUnready}
 	if pause, paused := ReadPause(sources.Home); paused {
 		owner.State, owner.StoppedBy, owner.Since = OwnerStopped, text(pause.By), text(pause.At)
+		if pause.Reason != "" {
+			owner.StoppedBecause = text(pause.Reason)
+		}
 		owner.RetryHint = text("metasystem landing start resumes it")
 		return owner
 	}
@@ -419,7 +425,11 @@ func summary(root string, view View, recordsErr error) string {
 			agent += fmt.Sprintf(" (pid %d)", *view.Owner.PID)
 		}
 	case OwnerStopped:
-		agent = "stopped by " + *view.Owner.StoppedBy + "; metasystem landing start resumes it"
+		agent = "stopped by " + *view.Owner.StoppedBy
+		if view.Owner.StoppedBecause != nil {
+			agent += " (" + *view.Owner.StoppedBecause + ")"
+		}
+		agent += "; metasystem landing start resumes it"
 	case OwnerIdle:
 		agent = "idle; its landing agent starts when there is work"
 	default:

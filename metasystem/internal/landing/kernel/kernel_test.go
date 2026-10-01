@@ -179,8 +179,14 @@ func (bed *kernelBed) begin() (BeginOutcome, error) {
 
 func (bed *kernelBed) beginAuthorized(authorize func(string, batch.Record, batch.Unit) error) (BeginOutcome, error) {
 	bed.t.Helper()
+	return bed.beginWith(BeginSeams{Authorize: authorize, Renew: func(BeginRequest) ([]string, error) { return nil, nil }})
+}
+
+func (bed *kernelBed) beginWith(seams BeginSeams) (BeginOutcome, error) {
+	bed.t.Helper()
+	seams.Now, seams.NewID = func() time.Time { return kernelAt }, bed.newID
 	return Begin(BeginRequest{Home: bed.home, Layout: bed.layout, BatchID: bed.batchID, Members: []string{bed.goalID, bed.changeID},
-		Base: bed.base, Head: bed.head, Actor: kernelActor}, BeginSeams{Now: func() time.Time { return kernelAt }, NewID: bed.newID, Authorize: authorize})
+		Base: bed.base, Head: bed.head, Actor: kernelActor}, seams)
 }
 
 // fakeChild is the test run child as a program: it records its argv, writes
@@ -266,13 +272,16 @@ func TestProveRunsEachSubjectOnItsTree(t *testing.T) {
 		t.Fatalf("the candidate is kept at %s, not %s", ref, outcome.Opening.Candidate)
 	}
 	account := lane.AccountID(string(bed.layout.Checkout))
+	// Each attempt records the members it covers (K8): the batch all of
+	// the series' members, member:M only M, the base none.
 	cases := []struct {
 		subject, tree, purpose, groups string
+		covers                         []string
 	}{
-		{batch.SubjectBatch, outcome.Opening.Tree, "delivery", ""},
-		{batch.SubjectBase, bed.tree(bed.base), "diagnostic", "change-standard,feature-standard"},
-		{batch.SubjectMember + ":" + bed.goalID, bed.tree(bed.goalTip), "diagnostic", "feature-standard"},
-		{batch.SubjectMember + ":" + bed.changeID, bed.tree(bed.change), "diagnostic", "change-standard"},
+		{batch.SubjectBatch, outcome.Opening.Tree, "delivery", "", outcome.Opening.Members},
+		{batch.SubjectBase, bed.tree(bed.base), "diagnostic", "change-standard,feature-standard", nil},
+		{batch.SubjectMember + ":" + bed.goalID, bed.tree(bed.goalTip), "diagnostic", "feature-standard", []string{bed.goalID}},
+		{batch.SubjectMember + ":" + bed.changeID, bed.tree(bed.change), "diagnostic", "change-standard", []string{bed.changeID}},
 	}
 	for index, want := range cases {
 		executable, argvFile := bed.fakeChild(fmt.Sprint(index), passed("feature-standard"), verbresult.Result{Outcome: verbresult.Confirmed, Summary: "passed"}, 0)
@@ -292,6 +301,12 @@ func TestProveRunsEachSubjectOnItsTree(t *testing.T) {
 		if attempt.Status != batch.AttemptGreen || attempt.Tree != want.tree || attempt.OpID != outcome.Opening.OpID || attempt.Child == nil {
 			t.Fatalf("prove %s recorded %+v; want green on %s with its child's identity", want.subject, attempt, want.tree)
 		}
+		if !slices.Equal(attempt.Covers, want.covers) || len(want.covers) == 0 && attempt.Covers != nil {
+			t.Fatalf("prove %s covers %q; want %q", want.subject, attempt.Covers, want.covers)
+		}
+	}
+	if len(outcome.Opening.Members) != 2 {
+		t.Fatalf("the series' members = %q; want both", outcome.Opening.Members)
 	}
 	record, err := bed.store().Load(bed.batchID)
 	if err != nil || len(record.Attempts) != len(cases) {
@@ -427,5 +442,60 @@ func TestBeginAuthorizesEveryMember(t *testing.T) {
 	}
 	if len(asked) == 0 || asked[0] != bed.goalID {
 		t.Fatalf("authorized %v; want every member asked", asked)
+	}
+}
+
+// K7 renewal before the base is fixed: begin renews every claim the lane
+// holds at an older custody epoch first. A renewal writes the ledger on
+// main, so the base the series was composed on is no longer main: begin
+// then records nothing and says to compose on the new main. With nothing
+// to renew, begin records the series. Renewal runs before any member is
+// authorized or any series is checked.
+func TestBeginRenewsBeforeItRecordsTheBase(t *testing.T) {
+	t.Parallel()
+	if ProductionBeginSeams().Renew == nil {
+		t.Fatalf("the production begin renews no claim")
+	}
+	bed := newKernelBed(t)
+	var calls []string
+	renewed := []string{bed.goalID}
+	seams := BeginSeams{
+		Renew: func(request BeginRequest) ([]string, error) {
+			calls = append(calls, "renew")
+			if request.BatchID != bed.batchID || request.Home != bed.home || request.Layout != bed.layout {
+				return nil, fmt.Errorf("renewal asked for %+v", request)
+			}
+			return renewed, nil
+		},
+		Authorize: func(string, batch.Record, batch.Unit) error { calls = append(calls, "authorize"); return nil },
+	}
+	_, err := bed.beginWith(seams)
+	var refusal *Refusal
+	if !errors.As(err, &refusal) || refusal.Code != CodeBeginBaseMoved || !strings.Contains(refusal.Reason, bed.goalID) || !strings.Contains(refusal.Next, "compose") {
+		t.Fatalf("begin after a renewal = %v; want it refused for the moved base", err)
+	}
+	if !slices.Equal(calls, []string{"renew"}) {
+		t.Fatalf("begin after a renewal ran %v; want only the renewal", calls)
+	}
+	if record, err := bed.store().Load(bed.batchID); err != nil || len(record.Openings) != 0 {
+		t.Fatalf("begin after a renewal recorded %+v, %v", record.Openings, err)
+	}
+	if out, err := exec.Command("git", "-C", string(bed.layout.Checkout), "rev-parse", "--verify", "--quiet", CandidateRef(bed.batchID)).CombinedOutput(); err == nil {
+		t.Fatalf("begin after a renewal kept a candidate: %s", out)
+	}
+	failing := seams
+	failing.Renew = func(BeginRequest) ([]string, error) { return nil, errors.New("the ledger can't be read") }
+	if _, err := bed.beginWith(failing); err == nil {
+		t.Fatal("begin went on past a renewal that failed")
+	}
+	if record, err := bed.store().Load(bed.batchID); err != nil || len(record.Openings) != 0 {
+		t.Fatalf("begin after a failed renewal recorded %+v, %v", record.Openings, err)
+	}
+	renewed, calls = nil, nil
+	if outcome, err := bed.beginWith(seams); err != nil || !outcome.Changed {
+		t.Fatalf("begin with every claim current: %+v %v", outcome, err)
+	}
+	if len(calls) < 2 || calls[0] != "renew" {
+		t.Fatalf("begin ran %v; want the renewal first", calls)
 	}
 }

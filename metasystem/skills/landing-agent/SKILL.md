@@ -49,9 +49,10 @@ A denial is two lines: what happened, then the one command to run. Take it as in
 the denied thing is what the batch really needs, stop and ask (below); never look for a way around
 the tool gate.
 
-`landing stop` takes no reason: say what repeated and what you need in the `agent ask` that
-follows it. When a step's verb refuses in a way you do not understand, `landing stop` and
-`agent ask` are the way out; do not improvise the step by hand.
+`landing stop --reason TEXT` keeps your reason with the pause, and status shows it to the person;
+say there in a few words what repeated, and in the `agent ask` that follows what you need. When a
+step's verb refuses in a way you do not understand, `landing stop` and `agent ask` are the way out;
+do not improvise the step by hand.
 
 ## The batch, step by step
 
@@ -79,7 +80,9 @@ follows it. When a step's verb refuses in a way you do not understand, `landing 
    commit M failed to apply on), and return the member as `conflict`.
 4. **Begin.** `metasystem landing begin --batch ID --members M1,M2 --base B --head C` durably records the
    series before anything runs. What is proven is what is published: after `begin` you do not
-   change the series; a changed series is a new `begin`.
+   change the series; a changed series is a new `begin`. When the lane was registered again since
+   a member joined, `begin` first renews the lane's claim on it, which moves main; it then records
+   nothing and says so: fetch, compose again on the new main, and `begin` again.
 5. **Prove.** `metasystem landing prove --batch ID --subject batch` runs the lane-charged proof on
    this host. Its answer is typed: green, red or unavailable.
 6. **Triage a red** before returning anyone, within the batch's allowance (4 executions, 2 hours):
@@ -97,7 +100,9 @@ follows it. When a step's verb refuses in a way you do not understand, `landing 
    `metasystem agent ask MACHINE --text ...` when the kernel did not already.
 8. **Hand back** with typed evidence, never without it:
    - `metasystem landing return M --disposition red` needs a red attempt of this batch with
-     subject `member:M`, or `batch` naming M;
+     subject `member:M`, or a red `batch` attempt that triage places on M: M red alone on the
+     same base, or, when M is the batch's only member, the base green on every failing group;
+     a red that every member passes alone is the combination's, never one member's;
    - `metasystem landing return M --disposition conflict` and `--disposition seam-too-large` need
      the composition evidence: the `begin` refusal or the conflict recorded with
      `--record-conflict`;
@@ -119,7 +124,7 @@ Pause the lane and ask when something repeats instead of trying a third time:
 - a denial for something the batch truly needs;
 - the allowance close to spent, or the kernel refusing for a reason you do not understand.
 
-Run `metasystem landing stop`, then `metasystem agent ask MACHINE --text ...` to the seat or
+Run `metasystem landing stop --reason '...'`, then `metasystem agent ask MACHINE --text ...` to the seat or
 `--goal G` that can act, saying what repeated and what you need, and end the session. Only a person clears the pause. A stopped lane is not a failure; guessing on is.
 
 ## Residual risk
