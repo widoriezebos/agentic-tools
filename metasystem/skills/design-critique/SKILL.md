@@ -37,7 +37,7 @@ Apply this test to every finding, and give it to the critic verbatim so findings
 
 **The second test, decisive (R-124, Wido 2026-09-25): does step 1 WORK, and is it SAFE, without this finding?** A finding is material only when step 1 does not work without it (the slice fails at its own first use, or answers wrong) or is not safe without it (authority a human did not give, data lost or overwritten, a silent false answer). A finding that makes step 1 more complete, more robust at a scale or a corner its first use does not reach, more consistent, or more elegant, is real and goes to the deferred list, "later, when it hurts", with the field it will build on. The critic states the answer to this test on every finding. The designer folds only the findings that fail it, and a fold never adds a mechanism to answer a finding that passes it: answering rigor with machinery is the failure mode this rule exists to stop.
 
-Require the critic's verdict line to count only material findings, and to say for each which of the two tests it fails.
+Require the critic's verdict line to count only material findings, and to say for each which of the two tests it fails. A finding about circumvention or hostile input is material only when the brief's threat model names that adversary; a blank threat model means the review-brief template's default, which has none.
 
 ## The Loop
 
