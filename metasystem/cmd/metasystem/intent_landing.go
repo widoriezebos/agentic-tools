@@ -712,12 +712,13 @@ func (inv *intentInvocation) startLane(owners laneVerbOwners, home string, recor
 			next: inv.sameCommand(), nextReason: "tries again", Details: []string{"the landing lane's state could not be written: " + err.Error()}}
 	}
 	view := inv.laneView(owners, home)
+	agent := []string{"its landing agent starts when there is work"}
 	if resumed {
-		summary := "resumed the landing lane at " + record.Root + "; its landing agent starts when there is work"
-		return intentResult{Outcome: intentConfirmed, Targets: targets, Data: view, Summary: summary, view: landingDone(summary, record.Root)}
+		summary := "resumed the landing lane at " + record.Root
+		return intentResult{Outcome: intentConfirmed, Targets: targets, Data: view, Summary: summary, Details: agent, view: landingDone(summary, record.Root)}
 	}
-	summary := "the landing lane at " + record.Root + " is already running; its landing agent starts when there is work"
-	return intentResult{Outcome: intentUnchanged, Targets: targets, Data: view, Summary: summary, view: landingDone(summary, record.Root)}
+	summary := "the landing lane at " + record.Root + " is already running"
+	return intentResult{Outcome: intentUnchanged, Targets: targets, Data: view, Summary: summary, Details: agent, view: landingDone(summary, record.Root)}
 }
 
 func runIntentLandingStop(inv *intentInvocation) int {

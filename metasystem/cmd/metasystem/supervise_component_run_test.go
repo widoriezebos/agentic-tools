@@ -3,14 +3,12 @@ package main
 import (
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	stdruntime "runtime"
 	"testing"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/behaviorsurface"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
@@ -18,23 +16,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/obligationstate"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/run"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 )
-
-func assertLandingOwnerAnnouncementCount(t *testing.T, root string, wantCursors int, wantFence int64) {
-	t.Helper()
-	cursors, err := filepath.Glob(filepath.Join(root, "artifacts", "agents", "mains", "*.protocol-cursor.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	fence, err := steward.ReadEnrollmentFence(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(cursors) != wantCursors || fence != wantFence {
-		t.Fatalf("landing owner announcements wrote %d protocol cursors and fence %d, want %d and %d", len(cursors), fence, wantCursors, wantFence)
-	}
-}
 
 func TestRunPassCarriesGovernedSpendProjection(t *testing.T) {
 	deny, err := filepath.Abs(filepath.Join("..", "..", "internal", "testgit", "testdata", "deny-bin"))
@@ -157,45 +139,4 @@ func TestRunPassCarriesGovernedSpendProjection(t *testing.T) {
 	if err := json.Unmarshal(passBytes, &pass); err != nil || len(pass.ScannedRuns) != 1 || pass.ScannedRuns[0].ID != "governed-pass" {
 		t.Fatalf("run pass attestation=%s error=%v", passBytes, err)
 	}
-}
-
-// nestedLandingCheckoutFixture builds the production shape of this repository: a
-// git checkout whose Go module sits in a nested metasystem directory. It returns
-// the checkout root and the installation root, which is what the steward passes
-// as --scope and --repo respectively.
-func nestedLandingCheckoutFixture(t *testing.T) (checkout, installation string) {
-	t.Helper()
-	// The host's own git configuration is kept out per command rather than with
-	// t.Setenv, which would forbid t.Parallel on every caller.
-	isolated := append(os.Environ(), "GIT_CONFIG_GLOBAL="+os.DevNull,
-		"GIT_CONFIG_SYSTEM="+os.DevNull, "GIT_CONFIG_NOSYSTEM=1")
-	// The configured root is compared after symlink resolution, and the macOS
-	// temporary directory is a symlink, so resolve once here and let every side
-	// of the fixture speak the same path.
-	resolved, err := filepath.EvalSymlinks(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	checkout = resolved
-	installation = filepath.Join(checkout, "metasystem")
-	if err := os.Mkdir(installation, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	module := "module github.com/widoriezebos/agentic-tools/metasystem\n\ngo 1.24\n"
-	if err := os.WriteFile(filepath.Join(installation, "go.mod"), []byte(module), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	for _, args := range [][]string{{"init", "-q"}, {"config", "user.email", "fixture@example.com"},
-		{"config", "user.name", "Fixture"}, {"add", "metasystem/go.mod"}, {"commit", "-qm", "base"}} {
-		command := exec.Command("git", append([]string{"-C", checkout}, args...)...)
-		command.Env = isolated
-		if output, err := command.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v: %s", args, err, output)
-		}
-	}
-	conf := config.BatchRootKey + "=" + checkout + "\n" + config.BatchMaxWaitKey + "=1m\n"
-	if err := os.WriteFile(filepath.Join(installation, "metasystem.conf"), []byte(conf), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	return checkout, installation
 }

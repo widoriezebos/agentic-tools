@@ -513,7 +513,7 @@ func machineListDetail(reading hostReading, others []otherComputerMachine, env t
 			lines = append(lines, "  launch "+launched.Reference+": "+launched.Purpose)
 		}
 		if machine.LaneOwner != nil {
-			owner := "  landing lane owner: " + machine.LaneOwner.State
+			owner := "  landing agent: " + machine.LaneOwner.State
 			if machine.LaneOwner.PID != nil {
 				owner += fmt.Sprintf(", pid %d", *machine.LaneOwner.PID)
 			}
@@ -856,7 +856,7 @@ func machineCard(page *textui.Page, env textui.Env, machine *hostMachine) {
 				words += ", " + env.Since(at)
 			}
 		}
-		section.KV("lane owner", textui.Plain(words))
+		section.KV("lane agent", textui.Plain(words))
 	}
 	if machine.State == "stopped" && machine.FenceState == stopfence.StateClosed {
 		if at, err := time.Parse(time.RFC3339, machine.FenceChangedAt); err == nil {

@@ -9,7 +9,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/brain"
@@ -183,5 +182,3 @@ func TestOwnerCallRequestAuthorityParityWithTheChild(t *testing.T) {
 	}
 	compare("as the lease holder", true)
 }
-
-var syscallTERM = syscall.SIGTERM

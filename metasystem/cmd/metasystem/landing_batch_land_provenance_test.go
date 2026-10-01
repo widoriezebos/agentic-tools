@@ -23,10 +23,6 @@ import (
 
 const batchProvenanceTestID = "01j5x00000000000000000baff"
 
-type batchProvenanceBed struct {
-	root, origin, baseCommit string
-}
-
 func TestBatchRecoveryFindsProductionProvenanceShapes(t *testing.T) {
 	t.Parallel()
 	change := strings.Repeat("a", 64)

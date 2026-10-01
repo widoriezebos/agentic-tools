@@ -141,7 +141,7 @@ func TestLandingVerbsSetStartStop(t *testing.T) {
 	if view := bed.status(t); view.Root == nil || *view.Root != bed.landingA || *view.RegisteredBy != "Wido" || view.Owner.State != lane.OwnerNotStarted {
 		t.Fatalf("status after set = %+v", view)
 	}
-	if code, stdout, _ := bed.run(t, "landing", "start"); code != 0 || !strings.Contains(oneSpaced(stdout), "is already running; its landing agent starts when there is work") {
+	if code, stdout, _ := bed.run(t, "landing", "start"); code != 0 || !strings.Contains(oneSpaced(stdout), "is already running") {
 		t.Fatalf("start of a running lane = %d %q", code, stdout)
 	}
 	if code, stdout, _ := bed.run(t, "landing", "stop", "--by", "Wido"); code != 0 || !strings.Contains(stdout, "stopped the landing lane") {

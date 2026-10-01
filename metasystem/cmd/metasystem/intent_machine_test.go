@@ -378,7 +378,7 @@ func TestMachineListSummarizesThisComputerFirst(t *testing.T) {
 		"stopped since " + local(time.Date(2026, 9, 30, 9, 0, 0, 0, time.UTC)),
 		"agentic-tools-landing " + b.landing + " · landing lane · running · since " + machineLocal(1790000301),
 		"pids landing batch owner 301",
-		"lane owner running, pid 4242, since " + local(machineBedNow.Add(-2*time.Hour)),
+		"lane agent running, pid 4242, since " + local(machineBedNow.Add(-2*time.Hour)),
 		"On other computers m2a last reported " + local(machineBedNow.Add(-3*time.Hour)),
 		"Not ours, left alone 900 codex app-server since " + machineLocal(1790000900),
 	} {

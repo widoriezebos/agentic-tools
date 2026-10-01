@@ -14,7 +14,6 @@ import (
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalrevision"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
@@ -57,149 +56,6 @@ func TestBatchCostLandingReadyElapsedAuthorityMatchesDispatch(t *testing.T) {
 	if err := batchowner.AuthorizeBatchMemberInProjection(root, now, record, unit, projection); !errors.As(err, &fenced) {
 		t.Fatalf("landing-ready elapsed suspension escaped a live fence: %v", err)
 	}
-}
-
-func reserveCostFixtureSpend(root, goalID string, claim batch.Claim, minutes uint64, reads dispatchcore.ProofAdmissionReads) error {
-	canonical, err := canonicalProofRoot(root)
-	if err != nil {
-		return err
-	}
-	root = canonical
-	goalLock, err := goalrevision.Acquire(root, goalID, claim.Revision, "cost-forecast-fixture")
-	if err != nil {
-		return err
-	}
-	defer goalLock.Release()
-	proofLock, err := proofrun.AcquireMutation(root)
-	if err != nil {
-		return err
-	}
-	defer proofLock.Release()
-	launcher, err := proofrun.CurrentProcessIdentity(nil)
-	if err != nil {
-		return err
-	}
-	identity, err := proofrun.BuildProofIdentity(root, filepath.Join(root, "metasystem.conf"), "fixture", "cost-spend", []string{"spend"}, 1)
-	if err != nil {
-		return err
-	}
-	request := proofrun.AdmissionRequest{ControlRoot: root, ExecutionRoot: root, ConfPath: filepath.Join(root, "metasystem.conf"),
-		GoalID: goalID, GoalRevision: claim.Revision, AccountingRevision: claim.AccountingRevision,
-		CandidateGoalID: goalID, CandidateRevision: claim.AccountingRevision, ReservedMinutes: minutes,
-		Identity: identity, Launcher: launcher, Now: time.Now().UTC()}
-	_, decision, err := proofrun.ReserveLocked(privateProofAdmissionRequest(proofrun.WithTestHostLoadSampler(request, "0")))
-	if err != nil {
-		return err
-	}
-	if decision.Disposition != proofrun.DispositionExecuted {
-		return fmt.Errorf("cost fixture reservation was not admitted: %+v", decision)
-	}
-	data, err := os.ReadFile(filepath.Join(root, "plans", "goals", goalID+".md"))
-	if err != nil {
-		return err
-	}
-	file, problems := goal.ParseFile(data)
-	if len(problems) != 0 {
-		return fmt.Errorf("cost fixture goal parse: %v", problems)
-	}
-	projection := dispatchcore.ProjectBudget(root, file, time.Now().UTC())
-	if projection.Status != dispatchcore.BudgetKnown {
-		return fmt.Errorf("cost fixture reservation did not project: %+v", projection.Unknown)
-	}
-	endpoint, err := reads.ResolveEndpoint(root)
-	if err != nil {
-		return err
-	}
-	live, err := goal.Project(endpoint, true, time.Now().UTC())
-	if err != nil {
-		return err
-	}
-	if live.Tree == nil || live.Tree.Live[goalID] == nil {
-		return fmt.Errorf("cost fixture accepted ledger lost %s", goalID)
-	}
-	accepted := dispatchcore.ProjectBudget(root, live.Tree.Live[goalID], time.Now().UTC())
-	if accepted.Status != dispatchcore.BudgetKnown {
-		return fmt.Errorf("cost fixture accepted projection unknown: %+v (accepted rev=%d accounting=%d, local rev=%d accounting=%d)",
-			accepted.Unknown, live.Tree.Live[goalID].Claimed.Revision, live.Tree.Live[goalID].Claimed.AccountingRevision,
-			file.Claimed.Revision, file.Claimed.AccountingRevision)
-	}
-	return nil
-}
-
-// Reserve through the real attempt owner using an identity from an earlier
-// native command/JUnit result. No result or observation record is fabricated.
-func reserveCostNewerGroupObservation(t *testing.T, root, groupID string) proofrun.Attempt {
-	t.Helper()
-	controlRoot, err := canonicalProofRoot(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	attempts, err := proofrun.ReadAttempts(controlRoot)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var source proofrun.Attempt
-	identity := ""
-	for _, attempt := range attempts {
-		if attempt.Terminal == nil || attempt.Terminal.Result != proofrun.TerminalSuccess || attempt.TestResult == nil {
-			continue
-		}
-		for _, group := range attempt.TestResult.Groups {
-			if group.ID == groupID && group.Status == "passed" && group.NativeLaunched && group.ExecutionIdentity != "" {
-				source, identity = attempt, group.ExecutionIdentity
-			}
-		}
-	}
-	if identity == "" {
-		t.Fatalf("no retained native command/JUnit success for %s", groupID)
-	}
-	goalLock, err := goalrevision.Acquire(controlRoot, source.GoalID, source.GoalRevision, "cost-newer-observation-fixture")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer goalLock.Release()
-	proofLock, err := proofrun.AcquireMutation(controlRoot)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer proofLock.Release()
-	launcher, err := proofrun.CurrentProcessIdentity(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	request := proofrun.AdmissionRequest{ControlRoot: controlRoot, ExecutionRoot: source.ExecutionRoot,
-		ConfPath: filepath.Join(controlRoot, "metasystem.conf"), GoalID: source.GoalID,
-		GoalRevision: source.GoalRevision, AccountingRevision: source.AccountingRevision,
-		BudgetEpoch: source.BudgetEpoch, CandidateGoalID: source.CandidateGoalID,
-		CandidateRevision: source.CandidateRevision, CandidateBudgetEpoch: source.CandidateBudgetEpoch,
-		CandidateTree: source.CandidateTree, ReservedMinutes: 1, Identity: source.ProofIdentity,
-		Launcher: launcher, Now: time.Now().UTC(), ComponentIdentities: map[string]string{groupID: identity},
-		SharedComponents: true, ForceAttempt: true, ForceGroups: true}
-	live, decision, err := proofrun.ReserveLocked(privateProofAdmissionRequest(proofrun.WithTestHostLoadSampler(request, "0")))
-	if err != nil || decision.Disposition != proofrun.DispositionExecuted || live.TestOwned[groupID] != identity {
-		t.Fatalf("newer retained producer reservation: attempt=%+v decision=%+v err=%v", live, decision, err)
-	}
-	return live
-}
-
-func costAttemptBytes(t *testing.T, root string) map[string]string {
-	t.Helper()
-	entries, err := os.ReadDir(filepath.Join(root, "artifacts", "agents", "proof-runs", "attempts"))
-	if os.IsNotExist(err) {
-		return map[string]string{}
-	}
-	if err != nil {
-		t.Fatal(err)
-	}
-	files := make(map[string]string, len(entries))
-	for _, entry := range entries {
-		data, err := os.ReadFile(filepath.Join(root, "artifacts", "agents", "proof-runs", "attempts", entry.Name()))
-		if err != nil {
-			t.Fatal(err)
-		}
-		files[entry.Name()] = string(data)
-	}
-	return files
 }
 
 func TestBatchCostFreshForecastMatchesRetainedVerificationAtExpiry(t *testing.T) {
@@ -613,13 +469,4 @@ func TestBatchCostElapsedFollowsLandingReadyAdmission(t *testing.T) {
 			}
 		})
 	}
-}
-
-func costCanonicalRoot(t *testing.T, root string) string {
-	t.Helper()
-	canonical, err := filepath.EvalSymlinks(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return canonical
 }

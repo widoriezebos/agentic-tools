@@ -160,12 +160,9 @@ exit 0
             "state": "running",
             "pid": 4242,
             "since": "2026-09-30T08:00:00Z",
-            "restarts": 0,
             "last_exit": null,
             "stopped_by": null,
-            "retry_hint": null,
-            "last_tick_error": null,
-            "last_tick_problem": null
+            "retry_hint": null
           },
           "statusLines": [
             "checkout /Users/wido/GitHub/agentic-tools-landing",

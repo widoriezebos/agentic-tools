@@ -247,16 +247,6 @@ func (fixture *portableProofFixture) gitBytes(args ...string) []byte {
 	return output
 }
 
-func portableGitAt(t *testing.T, root string, args ...string) string {
-	t.Helper()
-	command := exec.Command("git", append([]string{"-C", root}, args...)...)
-	output, err := command.CombinedOutput()
-	if err != nil {
-		t.Fatalf("git %s: %v: %s", strings.Join(args, " "), err, output)
-	}
-	return strings.TrimSpace(string(output))
-}
-
 func (fixture *portableProofFixture) commit(message string) string {
 	fixture.git("add", "-A")
 	fixture.git("commit", "-qm", message)

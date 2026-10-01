@@ -14,12 +14,9 @@ exit 0
       "state": "not-started",
       "pid": null,
       "since": null,
-      "restarts": 0,
       "last_exit": null,
       "stopped_by": null,
-      "retry_hint": null,
-      "last_tick_error": null,
-      "last_tick_problem": null
+      "retry_hint": null
     },
     "batch": null,
     "next": null,
