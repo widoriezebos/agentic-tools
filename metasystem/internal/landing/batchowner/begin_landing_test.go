@@ -136,7 +136,7 @@ func TestOrdinaryGoalLandingAndRecovery(t *testing.T) {
 	}
 	goalMessage := git("show", "-s", "--format=%B", opening.Series[0].Commit) + "\n"
 	for _, trailer := range []string{"Goal-Unit: ordinary/u1", "Goal-Digest: " + digest, "Goal-Source: " + build, "Goal-Last: ordinary",
-		"Co-Authored-By: Builder <builder@example.invalid>", "Machine: " + actor, "Goal-Item: ordinary", "Goal-Revision: 3"} {
+		"Co-Authored-By: Builder <builder@example.invalid>", "Machine: " + actor, "Goal-Item: ordinary", "Goal-Revision: 3", "Landed-By: " + actor} {
 		if !strings.Contains(goalMessage, trailer+"\n") {
 			t.Errorf("the goal's canonical commit lacks %q:\n%s", trailer, goalMessage)
 		}

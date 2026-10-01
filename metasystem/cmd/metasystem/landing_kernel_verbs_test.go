@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/kernel"
@@ -102,6 +103,14 @@ func TestLandingBeginAndProveVerbs(t *testing.T) {
 // candidate ref and the host home as they were.
 func witnessLandingBeginRepeat(t *testing.T) {
 	bed := newKernelBed(t)
+	// The landed ledger's root: begin reads every member's authority there.
+	root := goal.RenderRoot(&goal.RootRecord{Identity: "01ARZ3NDEKTSV4RRFFQ69G5FAV", FormatVersion: "1", SyncMode: goal.SyncRemote, Revision: 1})
+	if err := os.MkdirAll(filepath.Join(bed.installation, "plans", "goals"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bed.installation, "plans", "goals", "backlog.md"), root, 0o644); err != nil {
+		t.Fatal(err)
+	}
 	main := bed.landMain(t)
 	bed.enroll(t, runningTestBinary(t))
 	git := func(args ...string) string {

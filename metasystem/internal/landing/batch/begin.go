@@ -195,6 +195,11 @@ func (conflict *memberConflict) Error() string { return conflict.cause.Error() }
 // certified patch. It returns the tree after each step, trees[0] being
 // baseTree. A step that does not apply is a *memberConflict.
 func composeMember(root, baseTree string, unit Unit) (trees []string, err error) {
+	return composeSteps(root, baseTree, unit, memberSteps(unit))
+}
+
+// composeSteps applies the given pinned steps of unit on baseTree.
+func composeSteps(root, baseTree string, unit Unit, steps []pinStep) (trees []string, err error) {
 	if _, err := batchMergeDriverArgs(); err != nil {
 		return nil, err
 	}
@@ -208,7 +213,7 @@ func composeMember(root, baseTree string, unit Unit) (trees []string, err error)
 	conflict := func(cause error) error {
 		return &memberConflict{member: unit.GoalID, paths: unmergedPaths(workspace.Dir), cause: cause}
 	}
-	for _, step := range memberSteps(unit) {
+	for _, step := range steps {
 		switch {
 		case unit.IsChange():
 			if err := applyBranchCommit(root, workspace.Dir, unit.Change.Commit); err != nil {
@@ -366,11 +371,10 @@ func PlanOpening(root string, record Record, request BeginRequest) (Opening, err
 	}
 	opening := Opening{OpID: request.OpID, At: request.At.UTC().Format(time.RFC3339Nano), Actor: request.Actor, Members: slices.Clone(request.Members),
 		Base: base, BaseTree: baseTree, Head: head}
-	// Each member's own contribution on B: the pin every replay is judged
-	// against, and the member subject prove runs.
-	pinTrees := map[string][]string{}
+	// Each member's own contribution must apply on B: the member subject
+	// prove runs.
 	for _, unit := range members {
-		trees, err := composeMember(root, baseTree, unit)
+		_, err := composeMember(root, baseTree, unit)
 		var conflict *memberConflict
 		if errors.As(err, &conflict) {
 			return Opening{}, &CompositionRefusal{Code: CodeBeginConflict, Evidence: CompositionEvidence{OpID: request.OpID, At: opening.At, Actor: request.Actor,
@@ -380,9 +384,7 @@ func PlanOpening(root string, record Record, request BeginRequest) (Opening, err
 		if err != nil {
 			return Opening{}, err
 		}
-		pinTrees[unit.GoalID] = trees
 	}
-	stepIndex := map[string]int{}
 	var resolvedMembers []string
 	for index, entry := range series {
 		marks, err := laneMarks(root, entry.commit)
@@ -394,12 +396,12 @@ func PlanOpening(root string, record Record, request BeginRequest) (Opening, err
 				return Opening{}, beginRefused(fmt.Sprintf("commit %s comes after every member's pinned steps but is not marked %s", short(entry.commit), LaneIntegrationTrailer),
 					"mark the final seam fix with a "+LaneIntegrationTrailer+" trailer, or drop it, then run landing begin again")
 			}
-			lines, err := changedLines(root, entry.parent, entry.commit)
+			lines, err := treeDeviation(root, entry.parent, entry.commit)
 			if err != nil {
 				return Opening{}, err
 			}
-			opening.Series = append(opening.Series, SeriesCommit{Source: entry.commit, Kind: SeriesIntegration, Deviation: lines.total(), Resolved: marks.integration})
-			opening.Deviation += lines.total()
+			opening.Series = append(opening.Series, SeriesCommit{Source: entry.commit, Kind: SeriesIntegration, Deviation: lines, Resolved: marks.integration})
+			opening.Deviation += lines
 			continue
 		}
 		if marks.integration != "" {
@@ -407,32 +409,41 @@ func PlanOpening(root string, record Record, request BeginRequest) (Opening, err
 				"keep one integration commit, last, then run landing begin again")
 		}
 		step := steps[index]
-		trees := pinTrees[step.unit.GoalID]
-		at := stepIndex[step.unit.GoalID]
-		stepIndex[step.unit.GoalID] = at + 1
 		commit := SeriesCommit{Source: entry.commit, Kind: SeriesReplay, Member: step.unit.GoalID, Pin: step.pin(), Resolved: marks.resolved}
-		replayID, err := patchID(root, entry.parent, entry.commit)
+		// The pin replayed on this commit's parent is what an exact replay
+		// holds: anything else is the lane's own edit, measured in order
+		// against it (critique F-1, F-3).
+		parentTree, err := git("rev-parse", entry.parent+"^{tree}")
 		if err != nil {
 			return Opening{}, err
 		}
-		pinID, err := patchID(root, trees[at], trees[at+1])
+		replayTree, err := git("rev-parse", entry.commit+"^{tree}")
 		if err != nil {
 			return Opening{}, err
 		}
-		if replayID != pinID {
+		expected := ""
+		replayed, err := composeSteps(root, parentTree, step.unit, []pinStep{step})
+		var conflict *memberConflict
+		switch {
+		case errors.As(err, &conflict):
+			// The pin does not apply on the parent: the whole commit is the
+			// lane's resolution, measured against the parent.
+			expected = parentTree
+		case err != nil:
+			return Opening{}, err
+		default:
+			expected = replayed[1]
+		}
+		if expected != replayTree || conflict != nil {
 			if marks.resolved == "" {
 				return Opening{}, beginRefused(fmt.Sprintf("commit %s differs from %s's pinned %s and is not marked %s", short(entry.commit), step.unit.GoalID, short(step.pin()), LaneResolvedTrailer),
 					"replay the pin exactly, or mark the resolution with a "+LaneResolvedTrailer+" trailer, then run landing begin again")
 			}
-			replay, err := changedLines(root, entry.parent, entry.commit)
+			deviation, err := treeDeviation(root, expected, replayTree)
 			if err != nil {
 				return Opening{}, err
 			}
-			pin, err := changedLines(root, trees[at], trees[at+1])
-			if err != nil {
-				return Opening{}, err
-			}
-			commit.Kind, commit.Deviation = SeriesResolved, replay.against(pin)
+			commit.Kind, commit.Deviation = SeriesResolved, deviation
 			opening.Deviation += commit.Deviation
 			if commit.Deviation != 0 && !slices.Contains(resolvedMembers, step.unit.GoalID) {
 				resolvedMembers = append(resolvedMembers, step.unit.GoalID)
@@ -539,82 +550,93 @@ func laneMarks(root, commit string) (laneMarkings, error) {
 	return laneMarkings{resolved: resolved, integration: integration}, err
 }
 
-// patchID is git's stable patch id of the change from one tree-ish to
-// another; empty for no change.
-func patchID(root, from, to string) (string, error) {
-	diff := exec.Command("git", "-C", root, "diff-tree", "-r", "-p", "--no-renames", "--no-color", "--no-ext-diff", "--full-index", "--binary", from, to)
-	diff.Env = gittree.ScrubbedEnviron("LC_ALL=C")
-	patch, err := diff.Output()
-	if err != nil {
-		return "", fmt.Errorf("diff %s..%s: %w", short(from), short(to), err)
-	}
-	if len(bytes.TrimSpace(patch)) == 0 {
-		return "", nil
-	}
-	id := exec.Command("git", "-C", root, "patch-id", "--stable")
-	id.Env, id.Stdin = gittree.ScrubbedEnviron("LC_ALL=C"), bytes.NewReader(patch)
-	out, err := id.Output()
-	if err != nil {
-		return "", fmt.Errorf("patch id of %s..%s: %w", short(from), short(to), err)
-	}
-	fields := strings.Fields(string(out))
-	if len(fields) == 0 {
-		return "", nil
-	}
-	return fields[0], nil
+// attributeFree are git's options for reading what changed whatever git
+// attributes the checkout holds (critique F-2): no attributes file and no
+// quoted paths.
+func attributeFree(args ...string) []string {
+	return append([]string{"-c", "core.attributesFile=/dev/null", "-c", "core.quotePath=false"}, args...)
 }
 
-// lineCounts are a change's added and removed lines, per file, as a
-// multiset: file header plus sign plus content.
-type lineCounts map[string]int
-
-func (counts lineCounts) total() int {
-	sum := 0
-	for _, count := range counts {
-		sum += count
-	}
-	return sum
-}
-
-// against is the deviation of one change from another: the lines either
-// adds or removes that the other does not.
-func (counts lineCounts) against(other lineCounts) int {
-	deviation := 0
-	for key, count := range counts {
-		if difference := count - other[key]; difference > 0 {
-			deviation += difference
-		}
-	}
-	for key, count := range other {
-		if difference := count - counts[key]; difference > 0 {
-			deviation += difference
-		}
-	}
-	return deviation
-}
-
-func changedLines(root, from, to string) (lineCounts, error) {
-	diff := exec.Command("git", "-C", root, "diff-tree", "-r", "-p", "-U0", "--no-renames", "--no-color", "--no-ext-diff", from, to)
-	diff.Env = gittree.ScrubbedEnviron("LC_ALL=C")
-	out, err := diff.Output()
+// treeDeviation is how many lines the change from one tree to another
+// edits, in order (critique F-2, F-3): each added or removed line of a text
+// file, at least one for a file whose content or mode changes without one
+// (an empty file, a mode), and more than the whole cap for a binary file or
+// a submodule, which a person judges. Git attributes are not read: every
+// file is diffed as text, and binary content is judged from its bytes.
+func treeDeviation(root, from, to string) (int, error) {
+	raw := exec.Command("git", append([]string{"-C", root}, attributeFree("diff-tree", "-r", "-z", "--raw", "--no-renames", "--full-index", from, to)...)...)
+	raw.Env = gittree.ScrubbedEnviron("LC_ALL=C", "GIT_ATTR_NOSYSTEM=1")
+	out, err := raw.Output()
 	if err != nil {
-		return nil, fmt.Errorf("diff %s..%s: %w", short(from), short(to), err)
+		return 0, fmt.Errorf("list the change %s..%s: %w", short(from), short(to), err)
 	}
-	counts := lineCounts{}
-	file, inHunk := "", false
-	for _, line := range strings.Split(string(out), "\n") {
-		switch {
-		case strings.HasPrefix(line, "diff --git "):
-			file, inHunk = line, false
-		case strings.HasPrefix(line, "@@"):
-			inHunk = true
-		case strings.HasPrefix(line, "Binary files "):
-			counts[file+"\x00binary"]++
-		case inHunk && (strings.HasPrefix(line, "+") || strings.HasPrefix(line, "-")):
-			counts[file+"\x00"+line]++
+	fields := strings.Split(strings.TrimSuffix(string(out), "\x00"), "\x00")
+	total := 0
+	for index := 0; index+1 < len(fields); index += 2 {
+		meta := strings.Fields(strings.TrimPrefix(fields[index], ":"))
+		path := fields[index+1]
+		if len(meta) < 5 {
+			return 0, fmt.Errorf("read the change of %s: %q", path, fields[index])
 		}
+		oldMode, newMode, oldBlob, newBlob := meta[0], meta[1], meta[2], meta[3]
+		if oldMode == "160000" || newMode == "160000" {
+			total += SeamCapLines + 1
+			continue
+		}
+		binary := false
+		for _, blob := range []string{oldBlob, newBlob} {
+			if strings.Trim(blob, "0") == "" {
+				continue
+			}
+			isBinary, err := binaryBlob(root, blob)
+			if err != nil {
+				return 0, err
+			}
+			binary = binary || isBinary
+		}
+		if binary {
+			total += SeamCapLines + 1
+			continue
+		}
+		lines := 0
+		if oldBlob != newBlob {
+			diff := exec.Command("git", append([]string{"-C", root}, attributeFree("diff-tree", "-p", "-U0", "--text", "--no-renames", "--no-color", "--no-ext-diff", "--no-textconv", from, to, "--", path)...)...)
+			diff.Env = gittree.ScrubbedEnviron("LC_ALL=C", "GIT_ATTR_NOSYSTEM=1", "GIT_LITERAL_PATHSPECS=1")
+			patch, err := diff.Output()
+			if err != nil {
+				return 0, fmt.Errorf("diff %s: %w", path, err)
+			}
+			inHunk := false
+			for _, line := range strings.Split(string(patch), "\n") {
+				switch {
+				case strings.HasPrefix(line, "@@"):
+					inHunk = true
+				case inHunk && (strings.HasPrefix(line, "+") || strings.HasPrefix(line, "-")):
+					lines++
+				}
+			}
+		}
+		if oldMode != newMode && strings.Trim(oldMode, "0") != "" && strings.Trim(newMode, "0") != "" {
+			lines++
+		}
+		total += max(lines, 1)
 	}
-	return counts, nil
+	return total, nil
+}
+
+// binaryBlob is git's own test for binary content, read from the bytes and
+// not from attributes: a NUL in the first 8000 bytes.
+func binaryBlob(root, blob string) (bool, error) {
+	command := exec.Command("git", "-C", root, "cat-file", "blob", blob)
+	command.Env = gittree.ScrubbedEnviron()
+	data, err := command.Output()
+	if err != nil {
+		return false, fmt.Errorf("read blob %s: %w", short(blob), err)
+	}
+	if len(data) > 8000 {
+		data = data[:8000]
+	}
+	return bytes.IndexByte(data, 0) >= 0, nil
 }
 
 func isAncestor(root, ancestor, descendant string) (bool, error) {
@@ -747,7 +769,7 @@ func canonicalMessage(root, batchID string, request BeginRequest, members map[st
 	if err != nil {
 		return "", commitIdentity{}, err
 	}
-	held := fmt.Sprintf("Machine: %s\nGoal-Item: %s\nGoal-Revision: %d\n", request.Actor, unit.GoalID, revision)
+	held := fmt.Sprintf("Machine: %s\nGoal-Item: %s\nGoal-Revision: %d\nLanded-By: %s\n", request.Actor, unit.GoalID, revision, request.Actor)
 	var message string
 	if len(unit.Builds) != 0 {
 		build := unitBuild(unit, entry.Pin)

@@ -9,6 +9,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 )
 
@@ -28,15 +29,34 @@ type BeginRequest struct {
 	Onto     string
 }
 
-// BeginSeams are begin's clock and op-id minting.
+// BeginSeams are begin's clock, op-id minting and member authority.
 type BeginSeams struct {
 	Now   func() time.Time
 	NewID func() (string, error)
+	// Authorize reads a member's authority on the live ledger (its stop
+	// fence, landing gate and budget): the join no longer does, so begin
+	// does for every member before it records anything. It is handed the
+	// lane's installation, where the ledger lives.
+	Authorize func(install string, record batch.Record, unit batch.Unit) error
 }
 
-// ProductionBeginSeams are the production clock and ids.
+// ProductionBeginSeams are the production clock, ids and authority.
 func ProductionBeginSeams() BeginSeams {
-	return BeginSeams{Now: func() time.Time { return time.Now().UTC() }, NewID: newAttemptID}
+	return BeginSeams{Now: func() time.Time { return time.Now().UTC() }, NewID: newAttemptID, Authorize: authorizeMember}
+}
+
+// authorizeMember is the batch owner's member authority, read for a member
+// the batch has not sealed through the claim it joined with.
+func authorizeMember(install string, record batch.Record, unit batch.Unit) error {
+	seal := map[string]batch.Claim{}
+	for id, claim := range record.Seal {
+		seal[id] = claim
+	}
+	if _, sealed := seal[unit.GoalID]; !sealed && !unit.IsChange() {
+		seal[unit.GoalID] = unit.Claim
+	}
+	record.Seal = seal
+	return batchowner.AuthorizeBatchMember(install, record, unit)
 }
 
 // BeginOutcome is what begin recorded: the opening (Changed false when the
@@ -81,6 +101,20 @@ func Begin(request BeginRequest, seams BeginSeams) (BeginOutcome, error) {
 			return BeginOutcome{}, err
 		}
 		return BeginOutcome{Evidence: &evidence}, nil
+	}
+	if seams.Authorize == nil {
+		return BeginOutcome{}, errors.New("landing begin has no member authority to read")
+	}
+	for _, name := range request.Members {
+		for _, unit := range record.Units {
+			if unit.GoalID != name || unit.State != batch.UnitJoined {
+				continue
+			}
+			if err := seams.Authorize(string(request.Layout.Install), record, unit); err != nil {
+				return BeginOutcome{}, &Refusal{Code: batch.CodeBeginRefused, Reason: fmt.Sprintf("%s can't land now: %v", name, err),
+					Next: "run landing status --verbose to see the member"}
+			}
+		}
 	}
 	opening, planErr := batch.PlanOpening(checkout, record, batch.BeginRequest{BatchID: request.BatchID, Members: request.Members, Base: request.Base,
 		Head: request.Head, LedgerRoot: string(request.Layout.Install), Actor: request.Actor, At: at, OpID: opID})

@@ -174,8 +174,13 @@ func (bed *kernelBed) newID() (string, error) {
 
 func (bed *kernelBed) begin() (BeginOutcome, error) {
 	bed.t.Helper()
+	return bed.beginAuthorized(func(string, batch.Record, batch.Unit) error { return nil })
+}
+
+func (bed *kernelBed) beginAuthorized(authorize func(string, batch.Record, batch.Unit) error) (BeginOutcome, error) {
+	bed.t.Helper()
 	return Begin(BeginRequest{Home: bed.home, Layout: bed.layout, BatchID: bed.batchID, Members: []string{bed.goalID, bed.changeID},
-		Base: bed.base, Head: bed.head, Actor: kernelActor}, BeginSeams{Now: func() time.Time { return kernelAt }, NewID: bed.newID})
+		Base: bed.base, Head: bed.head, Actor: kernelActor}, BeginSeams{Now: func() time.Time { return kernelAt }, NewID: bed.newID, Authorize: authorize})
 }
 
 // fakeChild is the test run child as a program: it records its argv, writes
@@ -387,5 +392,40 @@ func TestProveRefusesWhatItCannotRun(t *testing.T) {
 	}
 	if _, err := os.Stat(argvFile); !os.IsNotExist(err) {
 		t.Fatalf("a refused prove started its child")
+	}
+}
+
+// Critique F-5: the join no longer checks a member's authority, so begin
+// does, for every member, before anything is recorded: a stop fence, a held
+// landing gate or a closed budget refuses the series.
+func TestBeginAuthorizesEveryMember(t *testing.T) {
+	t.Parallel()
+	if ProductionBeginSeams().Authorize == nil {
+		t.Fatalf("the production begin authorizes no member")
+	}
+	bed := newKernelBed(t)
+	var asked []string
+	_, err := bed.beginAuthorized(func(root string, record batch.Record, unit batch.Unit) error {
+		asked = append(asked, unit.GoalID)
+		if root != string(bed.layout.Install) || record.BatchID != bed.batchID {
+			return fmt.Errorf("asked about %s in %s", record.BatchID, root)
+		}
+		if unit.GoalID == bed.goalID {
+			return errors.New("CANDIDATE_GOAL_REFUSED: candidate goal kernel-goal state=fenced")
+		}
+		return nil
+	})
+	var refusal *Refusal
+	if !errors.As(err, &refusal) || !strings.Contains(refusal.Reason, bed.goalID) {
+		t.Fatalf("a fenced member = %v; want begin refused naming it", err)
+	}
+	if record, err := bed.store().Load(bed.batchID); err != nil || len(record.Openings) != 0 {
+		t.Fatalf("a refused member's batch recorded %+v, %v", record.Openings, err)
+	}
+	if outcome, err := bed.begin(); err != nil || !outcome.Changed {
+		t.Fatalf("begin with every member authorized: %+v %v", outcome, err)
+	}
+	if len(asked) == 0 || asked[0] != bed.goalID {
+		t.Fatalf("authorized %v; want every member asked", asked)
 	}
 }

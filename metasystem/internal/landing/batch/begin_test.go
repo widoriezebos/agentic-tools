@@ -369,3 +369,83 @@ func fileAtTree(bed *laneBed, tree, path string) (string, bool, error) {
 	}
 	return string(out), true, nil
 }
+
+// beginOne begins a batch of one change whose pin writes path as pinned and
+// whose replay writes it as replayed, with the Lane-Resolved mark when
+// marked; extra are further files the replay writes.
+func (bed *laneBed) beginOne(t *testing.T, id, path, pinned, replayed string, marked bool, extra map[string]string) (Opening, error) {
+	t.Helper()
+	unit := bed.change(path, pinned, "record: one change")
+	record := bed.batch(id, unit)
+	message := "record: one change\n\nMachine: m1e+human"
+	if marked {
+		message += "\n" + LaneResolvedTrailer + ": a seam"
+	}
+	files := map[string]string{path: replayed}
+	for name, content := range extra {
+		files[name] = content
+	}
+	head := bed.compose(composeStep{files: files, message: message})
+	return bed.begin(record, []string{unit.GoalID}, head)
+}
+
+// Critique F-1: a whitespace-only edit of the pin is a deviation, never an
+// exact replay — in a shell line, an indentation or a string literal it
+// changes what runs.
+func TestBeginCountsAWhitespaceEdit(t *testing.T) {
+	t.Parallel()
+	bed := newLaneBed(t)
+	var refusal *BeginRefusal
+	if _, err := bed.beginOne(t, "01j5x00000000000000000ws01", "metasystem/app/clean.sh", "rm -rf /tmp/x/*\n", "rm -rf /tmp/x/ *\n", false, nil); !errors.As(err, &refusal) ||
+		!strings.Contains(refusal.Reason, "not marked "+LaneResolvedTrailer) {
+		t.Fatalf("an unmarked whitespace edit = %v; want it refused as a deviation", err)
+	}
+	opening, err := bed.beginOne(t, "01j5x00000000000000000ws02", "metasystem/app/clean2.sh", "rm -rf /tmp/x/*\n", "rm -rf /tmp/x/ *\n", true, nil)
+	if err != nil || opening.Deviation != 2 {
+		t.Fatalf("a marked whitespace edit = deviation %d, %v; want 2 lines", opening.Deviation, err)
+	}
+}
+
+// Critique F-2: the deviation does not obey git attributes the agent can
+// write: a `-diff` attribute that makes a pinned text file read as binary
+// still counts its lines, and a binary the lane changes needs a person.
+func TestDeviationIgnoresGitAttributes(t *testing.T) {
+	t.Parallel()
+	bed := newLaneBed(t)
+	info := filepath.Join(bed.checkout, ".git", "info", "attributes")
+	if err := os.MkdirAll(filepath.Dir(info), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(info, []byte("*.go -diff\n*.bin -diff\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := bed.beginOne(t, "01j5x00000000000000000at01", "metasystem/app/pinned.go", numbered("pinned", 1, 5), numbered("pinned", 1, 5)+numbered("smuggled", 1, 45), true, nil)
+	var composition *CompositionRefusal
+	if !errors.As(err, &composition) || composition.Evidence.Deviation < 45 {
+		t.Fatalf("a rewrite hidden behind -diff = %v (%+v); want seam-too-large counting its 45 lines", err, composition)
+	}
+	_, err = bed.beginOne(t, "01j5x00000000000000000at02", "metasystem/app/blob.bin", "pinned\x00bytes\n", "swapped\x00bytes\n", true, nil)
+	if !errors.As(err, &composition) || composition.Evidence.Deviation <= SeamCapLines {
+		t.Fatalf("a swapped binary = %v (%+v); want it over the cap", err, composition)
+	}
+}
+
+// Critique F-3: the deviation is ordered, against the pin replayed on the
+// series parent: reordering the pin's lines, or removing another identical
+// line, is not free; an empty file or a mode change counts too.
+func TestDeviationIsOrderedAgainstThePinOnItsParent(t *testing.T) {
+	t.Parallel()
+	bed := newLaneBed(t)
+	opening, err := bed.beginOne(t, "01j5x00000000000000000rd01", "metasystem/app/order.txt", "first\nsecond\nthird\n", "third\nsecond\nfirst\n", true, nil)
+	if err != nil || opening.Deviation == 0 {
+		t.Fatalf("a reordered pin = deviation %d, %v; want it counted", opening.Deviation, err)
+	}
+	opening, err = bed.beginOne(t, "01j5x00000000000000000rd02", "metasystem/app/base.txt", numbered("base", 1, 10)+"}\nreturn nil\n}\n", numbered("base", 1, 10)+"return nil\n}\n", true, nil)
+	if err != nil || opening.Deviation == 0 {
+		t.Fatalf("another identical line removed = deviation %d, %v; want it counted", opening.Deviation, err)
+	}
+	opening, err = bed.beginOne(t, "01j5x00000000000000000rd03", "metasystem/app/plain.txt", "plain\n", "plain\n", true, map[string]string{"metasystem/app/empty.txt": ""})
+	if err != nil || opening.Deviation < 1 {
+		t.Fatalf("an empty file added in a resolution = deviation %d, %v; want at least 1", opening.Deviation, err)
+	}
+}
