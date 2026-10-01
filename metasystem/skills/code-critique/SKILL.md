@@ -36,6 +36,12 @@ After conformance, attack the implementation itself. Trace changed control flow 
 
 Do not limit this layer to omissions in the brief. A conforming implementation can still be wrong. Report only evidence-backed findings in the shared format; do not rewrite the change.
 
+A Layer 2 finding is material only when it lies inside the brief's threat model (blank means the template's default: our own agents and operators make mistakes, nobody attacks) and gives one of:
+- a reproduction: a failing test, or a command and its observed output; or
+- a traced causal path: the trigger and each step from it to the wrong outcome, cited file:line in the reviewed tree. This is for defects a test cannot pin reliably, such as a race or a platform the reviewer lacks.
+
+A finding with neither ("an agent could, if it tried, ...") is recorded as `noted`, with the reason "no reproduction or traced path", and never blocks. Layer 1 findings are exempt: the diff against the brief is their proof. A passing test refutes a finding only when it exercises the conditions the finding names. This narrows what is admitted; it adds no rounds, and the budgets below and R-124 stay binding.
+
 ## Findings and Dispositions
 
 Use the shared critic `findings` array in canonical `return.json`, with stable `id`, `severity`, boolean `material`, `claim`, and `evidence` fields. Its human projection is:
@@ -81,6 +87,12 @@ goal's budget in the brief before review:
 1. Run both layers over the full implementation and adjudicate every finding.
 2. If corrections were required, send one focused follow-up to the same implementer (`metasystem work revise j2:<review> --dispositions <file> --brief <file>`, or `revise <goal> --after <attempt> --brief <file> --dispositions <file>` for a goal's work). The builder runs checks that reproduce each finding and cover the affected behavior; the selected acceptance checks run once when their evidence is consumed for the exact candidate.
 3. While the reviewer's declared budget has a round left, recompute the whole diff and check it for scope and brief conformance. The substantive confirmation read focuses on the corrections, their consumers and prior findings. Expand that read when a correction changes the design or unrelated behavior.
+
+Fix by subtraction. When the fix for an accepted finding would add a new mechanism (a new type, file, verb, hook, store or check), first try to remove or narrow the behaviour that has the defect, and say in the disposition, in one line, why subtraction would not do. A second mechanism-adding fix in the same chain is a scope signal: ask the human before folding it. Every mechanism added to answer a finding is new attack surface for the next round.
+
+Stop on divergence. From round 2 on, count the adjudicated material findings (accepted, or still open; not `noted`, not `out-of-scope`). With none, the chain closes as usual. If the count is at least the previous round's, or at least half of them (rounded up) cite lines the previous fold added or changed, stop before another fold. Run `take-a-step-back` and report the trajectory to the human. The findings stay open, not dropped. When this and fixtures-as-arbiter both apply, this stop wins: a fold critiquing itself is not a converging chain.
+
+Run before round 2. When the change has a runnable surface, run it for real (`skills/verify/SKILL.md`) after the first fold and before round 2. A failure from that run outranks the open review findings, and round 2 reads the fold plus whatever the run touched.
 
 As the reviewer's R-60-m1 rule, stop at the first round with zero material findings. And as R-124 (Wido, 2026-09-25) refines it: a finding is material only when the slice does not WORK or is not SAFE without the fix; a finding that adds rigor, a corner, a consistency or a proof the slice's first use does not need goes to the design's "later, when it hurts" list under its Built section, not into a fix round. One fix round is the norm; the reviewer says on every finding whether the slice works and is safe without it, and the design owner certifies when nothing that fails that test remains.
 
