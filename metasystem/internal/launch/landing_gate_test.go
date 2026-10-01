@@ -31,6 +31,10 @@ func TestLandingRunsOnlyOnTheGatedAdapter(t *testing.T) {
 	}
 	m, _, _, _ := manager(t)
 	m.Supervisor = childStarter(m)
+	// The roster names claude by default (A-a); a person who names another
+	// runtime for the landing lane is refused at Start.
+	m.Settings = DefaultSettings()
+	m.Settings.LandingRuntime = "codex"
 	if _, err := m.Start(StartSpec{Kind: LandingKind, Tag: "b1", WorkingDirectory: t.TempDir(), Brief: brief(t), Model: "claude-opus-5-5"}); err == nil || !twoLineLandingRefusal(err.Error()) {
 		t.Fatalf("Start admitted an ungated landing lane: %v", err)
 	}

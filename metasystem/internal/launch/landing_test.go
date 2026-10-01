@@ -1,6 +1,7 @@
 package launch
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -34,6 +35,21 @@ func landingBrief(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return path
+}
+
+// landingGate is the tool gate settings a landing launch carries (unit
+// A-b): the Claude adapter refuses a landing session without them.
+func landingGate(t *testing.T) map[string]json.RawMessage {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "landing-tool-gate.json")
+	if err := os.WriteFile(path, []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	data, err := json.Marshal(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return map[string]json.RawMessage{"settings": data}
 }
 
 // laneManager is a manager whose host registers the nested lane checkout.
@@ -77,7 +93,7 @@ func TestSeatStillRefusedOnLane(t *testing.T) {
 		t.Fatalf("a refused seat left records %+v or a command %+v", records, processes.command)
 	}
 
-	record, err := m.Start(StartSpec{Kind: "landing", WorkingDirectory: checkout, FenceRoot: module, Brief: landingBrief(t), Tag: "w4ke"})
+	record, err := m.Start(StartSpec{Kind: "landing", WorkingDirectory: checkout, FenceRoot: module, Brief: landingBrief(t), Tag: "w4ke", AdapterData: landingGate(t)})
 	if err != nil {
 		t.Fatalf("the landing kind on the lane checkout was refused: %v", err)
 	}
@@ -99,14 +115,14 @@ func TestSeatStillRefusedOnLane(t *testing.T) {
 
 	// The landing kind anywhere but the registered lane checkout is refused.
 	elsewhere := t.TempDir()
-	if _, err := m.Start(StartSpec{Kind: "landing", WorkingDirectory: elsewhere, FenceRoot: elsewhere, Brief: landingBrief(t), Tag: "w4ke"}); err == nil ||
+	if _, err := m.Start(StartSpec{Kind: "landing", WorkingDirectory: elsewhere, FenceRoot: elsewhere, Brief: landingBrief(t), Tag: "w4ke", AdapterData: landingGate(t)}); err == nil ||
 		!strings.Contains(err.Error(), "only in the lane checkout") {
 		t.Fatalf("the landing kind outside the lane = %v; want refused", err)
 	}
 	// Nothing registered: the landing kind has nowhere to run; a seat elsewhere starts.
 	none, _ := laneManager(t, checkout, module)
 	none.Lane = func() (LaneCheckout, error) { return LaneCheckout{}, nil }
-	if _, err := none.Start(StartSpec{Kind: "landing", WorkingDirectory: checkout, FenceRoot: module, Brief: landingBrief(t), Tag: "w4ke"}); err == nil {
+	if _, err := none.Start(StartSpec{Kind: "landing", WorkingDirectory: checkout, FenceRoot: module, Brief: landingBrief(t), Tag: "w4ke", AdapterData: landingGate(t)}); err == nil {
 		t.Fatal("the landing kind started with no lane registered")
 	}
 	if _, err := none.Start(StartSpec{Kind: "seat", WorkingDirectory: checkout, FenceRoot: module, Brief: seatBrief(t), Tag: "n0nce"}); err != nil {
@@ -124,7 +140,7 @@ func TestSeatStillRefusedOnLane(t *testing.T) {
 	// No lane reader at all is no answer: the landing kind is refused.
 	unwired, _ := laneManager(t, checkout, module)
 	unwired.Lane = nil
-	if _, err := unwired.Start(StartSpec{Kind: "landing", WorkingDirectory: checkout, FenceRoot: module, Brief: landingBrief(t), Tag: "w4ke"}); err == nil {
+	if _, err := unwired.Start(StartSpec{Kind: "landing", WorkingDirectory: checkout, FenceRoot: module, Brief: landingBrief(t), Tag: "w4ke", AdapterData: landingGate(t)}); err == nil {
 		t.Fatal("the landing kind started with no lane reader")
 	}
 }
@@ -145,7 +161,7 @@ func TestOlderLaneRecordGuardsOnlyTheLane(t *testing.T) {
 		!strings.Contains(err.Error(), "landing lane never starts a seat") {
 		t.Fatalf("a seat on a lane with an older record = %v; want refused", err)
 	}
-	if _, err := m.Start(StartSpec{Kind: "landing", WorkingDirectory: checkout, FenceRoot: module, Brief: landingBrief(t), Tag: "w4ke"}); err == nil ||
+	if _, err := m.Start(StartSpec{Kind: "landing", WorkingDirectory: checkout, FenceRoot: module, Brief: landingBrief(t), Tag: "w4ke", AdapterData: landingGate(t)}); err == nil ||
 		!strings.Contains(err.Error(), "older engine") {
 		t.Fatalf("the landing agent on a lane with an older record = %v; want refused naming the record", err)
 	}
@@ -167,14 +183,14 @@ func TestLandingLaunchOneAtATime(t *testing.T) {
 	if _, err := m.Store.Update(running.ID, func(r *Record) error { r.Kind = "landing"; return nil }); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := m.Start(StartSpec{Kind: "landing", WorkingDirectory: checkout, FenceRoot: module, Brief: landingBrief(t), Tag: "w4ke"}); err == nil ||
+	if _, err := m.Start(StartSpec{Kind: "landing", WorkingDirectory: checkout, FenceRoot: module, Brief: landingBrief(t), Tag: "w4ke", AdapterData: landingGate(t)}); err == nil ||
 		!strings.Contains(err.Error(), "landing-running") {
 		t.Fatalf("a second landing agent = %v; want refused naming the running one", err)
 	}
 	if _, err := m.Store.Update(running.ID, func(r *Record) error { r.State = Completed; return nil }); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := m.Start(StartSpec{Kind: "landing", WorkingDirectory: checkout, FenceRoot: module, Brief: landingBrief(t), Tag: "w4ke"}); err != nil {
+	if _, err := m.Start(StartSpec{Kind: "landing", WorkingDirectory: checkout, FenceRoot: module, Brief: landingBrief(t), Tag: "w4ke", AdapterData: landingGate(t)}); err != nil {
 		t.Fatalf("a landing agent after the last one ended was refused: %v", err)
 	}
 
@@ -182,7 +198,7 @@ func TestLandingLaunchOneAtATime(t *testing.T) {
 	closed := writeFence(t, closedModule, stopfence.StateClosed, stopfence.PhaseStopped, 2)
 	want, _ := stopfence.ClosedDescription(closed, closedModule)
 	fenced, _ := laneManager(t, closedCheckout, closedModule)
-	if _, err := fenced.Start(StartSpec{Kind: "landing", WorkingDirectory: closedCheckout, FenceRoot: closedModule, Brief: landingBrief(t), Tag: "w4ke"}); err == nil || err.Error() != want {
+	if _, err := fenced.Start(StartSpec{Kind: "landing", WorkingDirectory: closedCheckout, FenceRoot: closedModule, Brief: landingBrief(t), Tag: "w4ke", AdapterData: landingGate(t)}); err == nil || err.Error() != want {
 		t.Fatalf("a landing agent under a closed fence = %v; want %q", err, want)
 	}
 }
@@ -245,7 +261,7 @@ func TestLandingSettingsAreRosterKeys(t *testing.T) {
 	m, _ := laneManager(t, checkout, module)
 	m.Adapters["codex-exec"] = CodexExec{Binary: "/fixture/bin/codex"}
 	m.Settings = settings
-	if _, err := m.Start(StartSpec{Kind: "landing", WorkingDirectory: checkout, FenceRoot: module, Brief: landingBrief(t), Tag: "w4ke"}); err == nil ||
+	if _, err := m.Start(StartSpec{Kind: "landing", WorkingDirectory: checkout, FenceRoot: module, Brief: landingBrief(t), Tag: "w4ke", AdapterData: landingGate(t)}); err == nil ||
 		!strings.Contains(err.Error(), "runs only on claude") {
 		t.Fatalf("a landing agent on codex = %v; want refused", err)
 	}
@@ -266,7 +282,7 @@ func TestLandingSettingsAreRosterKeys(t *testing.T) {
 		t.Fatalf("no claude here: build %q landing model %q err %v; want the settings resolved and the landing model unbound", settings.BuildRuntime, settings.LandingModel, err)
 	}
 	m.Settings = settings
-	if _, err := m.Start(StartSpec{Kind: "landing", WorkingDirectory: checkout, FenceRoot: module, Brief: landingBrief(t), Tag: "w4ke"}); err == nil ||
+	if _, err := m.Start(StartSpec{Kind: "landing", WorkingDirectory: checkout, FenceRoot: module, Brief: landingBrief(t), Tag: "w4ke", AdapterData: landingGate(t)}); err == nil ||
 		!strings.Contains(err.Error(), LandingModelKey) {
 		t.Fatalf("a landing agent with no model = %v; want refused naming %s", err, LandingModelKey)
 	}

@@ -119,10 +119,12 @@ func (m *Manager) Start(spec StartSpec) (Record, error) {
 	if spec.Kind == "seat" && settings.SeatRuntime == SeatRuntimeOff {
 		return Record{}, fmt.Errorf("seats are off here (%s=%s); set claude, codex or auto in metasystem.conf.local", SeatRuntimeKey, SeatRuntimeOff)
 	}
-	if err := m.admitOnLane(spec); err != nil {
+	// A landing lane on a runtime its tool gate does not hold on is refused
+	// first, wherever it would run (A-b); then the lane guard (A-a).
+	if err := landingRuntimeRefusal(spec.Kind, settings.launchRuntime(spec.Kind)); err != nil {
 		return Record{}, err
 	}
-	if err := landingRuntimeRefusal(spec.Kind, settings.launchRuntime(spec.Kind)); err != nil {
+	if err := m.admitOnLane(spec); err != nil {
 		return Record{}, err
 	}
 	adapterName := adapterForLane(spec.Kind, settings.launchRuntime(spec.Kind))
