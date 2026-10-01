@@ -85,7 +85,7 @@ func ProductionBatchJoinDependencies() BatchJoinDependencies {
 		member:    ProductionBatchBranchMember, transportMember: transportBatchBranchMember,
 		Assemble:       batch.AssembleUnits,
 		ProtectedTests: ProductionBatchProtectedTests,
-		AdmissionRun:   productionJoinAdmission,
+		AdmissionRun:   deferredJoinAdmission,
 		Plan:           productionJoinPlan, PublishAdmission: batch.PublishJoinWithAdmission,
 		CostForecast: prepareProspectiveBatchCost, PublishForecast: batch.PublishJoinWithAdmissionForecast,
 		Handover: productionForwardHandover, Ensure: EnsureBatchOwner, Author: ProductionBatchAuthor, Prober: identity.KernelProber{},

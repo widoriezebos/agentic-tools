@@ -16,6 +16,11 @@ import (
 // landing checkout. It must verify its exact-tree result before returning.
 type JoinAdmissionRun func(string, Unit) (JoinAdmission, error)
 
+// AdmissionDeferred is a joined member's admission when the join ran
+// nothing: its execution moved behind landing prove (design r10 K6), whose
+// member subject runs it on the recorded tree's contribution.
+const AdmissionDeferred = "deferred"
+
 type JoinAdmissionRed struct{ Reason string }
 
 func (red *JoinAdmissionRed) Error() string { return red.Reason }
@@ -151,7 +156,7 @@ func ResumeJoinAdmission(store Store, batchID, goalID, actor string, at time.Tim
 		}
 		return runErr
 	}
-	if result.Status != "verified" || result.Tree != unit.Admission.Tree {
+	if result.Status != "verified" && result.Status != AdmissionDeferred || result.Tree != unit.Admission.Tree {
 		return fmt.Errorf("%s: member %s has no verified admission on %s", codeJoinTestDropped, goalID, unit.Admission.Tree)
 	}
 	closure := unitClosure(store.root, record.BaseTree, result.Tree)

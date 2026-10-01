@@ -171,3 +171,56 @@ func TestLaneOwnerProofReadsTheLeaseTheOwnerHoldsOnANestedCheckout(t *testing.T)
 		t.Fatalf("a process outside the owner's lineage was accepted: %v", err)
 	}
 }
+
+// TestLaneRunNamesItsLaneCheckout (design r10 K6, the child flags K-a
+// deferred): a lane-charged run takes the lane's checkout and control root
+// from its launcher's flags, for its diagnostic subjects as for its tip, and
+// admits itself against the named checkout, never a root it guesses: the
+// account must be that checkout's and the control root inside it.
+func TestLaneRunNamesItsLaneCheckout(t *testing.T) {
+	t.Parallel()
+	laneCheckout := t.TempDir()
+	controlRoot := filepath.Join(laneCheckout, "metasystem")
+	account := landinglane.AccountID(laneCheckout)
+	args := []string{"--root", t.TempDir(), "--control-root", controlRoot, "--lane-checkout", laneCheckout, "--lane", account,
+		"--tree", strings.Repeat("a", 40), "--mode", "canary", "--purpose", "diagnostic", "--groups", "app-standard", "--no-reuse", "--json"}
+	var stdout, stderr strings.Builder
+	request, ok, status := parseTestingSelection("internal test run", args, true, &stdout, &stderr)
+	if !ok || status != 0 || request.LaneCheckout != laneCheckout || request.ControlRoot != controlRoot || request.Purpose != testpolicy.PurposeDiagnostic {
+		t.Fatalf("a lane diagnostic naming its checkout: ok=%v status=%d request=%+v stderr=%q", ok, status, request, stderr.String())
+	}
+	withoutLane := slices.DeleteFunc(slices.Clone(args), func(arg string) bool { return arg == "--lane" || arg == account })
+	if _, ok, status := parseTestingSelection("internal test run", withoutLane, true, &stdout, &stderr); ok || status != 2 {
+		t.Fatalf("--lane-checkout without --lane: ok=%v status=%d; want a usage refusal", ok, status)
+	}
+
+	now := time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)
+	repository := newProofAdmissionRepositoryFixture(t, now, false)
+	root := repository.root
+	var anchors []string
+	named := proofLaunchAdmission{ControlRoot: root, ExecutionRoot: root, ConfPath: filepath.Join(root, "metasystem.conf"),
+		LaneID: landinglane.AccountID(filepath.Dir(root)), LaneCheckout: filepath.Dir(root),
+		CapMin: "1", ScopeClass: "full", CommandClass: "testing", Now: now,
+		laneAccount: func(anchor string) (string, error) {
+			anchors = append(anchors, anchor)
+			return landinglane.AccountID(anchor), nil
+		},
+		laneOwner: func(anchor string, _ int64) error { anchors = append(anchors, anchor); return nil }}
+	if _, _, _, err := admitAsLaneOwner(t, repository, named, lease.ClassMain); err != nil {
+		t.Fatalf("a lane run naming its checkout: %v", err)
+	}
+	if !slices.Equal(anchors, []string{filepath.Dir(root), filepath.Dir(root)}) {
+		t.Fatalf("the lane was resolved and its owner proven at %v; want the named checkout %s both times", anchors, filepath.Dir(root))
+	}
+	other := named
+	other.LaneCheckout = t.TempDir()
+	if _, _, _, err := admitAsLaneOwner(t, repository, other, lease.ClassMain); err == nil || !strings.Contains(refusalDetail(err), "LANE_ACCOUNT_UNRESOLVED") {
+		t.Fatalf("a run naming another checkout than its lane: %v", err)
+	}
+	outside := named
+	outside.LaneCheckout, outside.LaneID = laneCheckout, account
+	outside.laneAccount = func(anchor string) (string, error) { return landinglane.AccountID(anchor), nil }
+	if _, _, _, err := admitAsLaneOwner(t, repository, outside, lease.ClassMain); err == nil || !strings.Contains(refusalDetail(err), "LANE_ACCOUNT_UNRESOLVED") {
+		t.Fatalf("a control root outside the named lane checkout: %v", err)
+	}
+}

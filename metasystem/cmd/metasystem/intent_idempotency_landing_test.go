@@ -11,6 +11,9 @@ func init() {
 	registerIdempotency("landing set", idemStateful, "the lane is already that checkout: success, the record untouched", witnessLandingSetRepeat)
 	registerIdempotency("landing start", idemStateful, "the owner already runs, unpaused and without restarts: success, nothing started or written", witnessLandingStartRepeat)
 	registerIdempotency("landing stop", idemStateful, "the lane is already stopped: success, the pause untouched", witnessLandingStopRepeat)
+	registerIdempotency("landing begin", idemStateful, "the batch's series is already recorded: success, the opening untouched", witnessLandingBeginRepeat)
+	registerIdempotency("landing prove", idemCreation,
+		"each run is a new test run recorded as its own attempt on the batch, charged to its allowance; a second prove is a second run, not a repeat", nil)
 	registerIdempotency("landing unset", idemStateful, "no lane is registered any more: success, nothing written", witnessLandingUnsetRepeat)
 }
 

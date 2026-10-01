@@ -188,7 +188,8 @@ func TestIntentRouterSuggestsTheCurrentCommand(t *testing.T) {
 		{[]string{"goel", "list"}, []string{"metasystem goal list"}},
 		{[]string{"wrk", "land", "g"}, []string{"metasystem work land g"}},
 		{[]string{"statsu"}, []string{"metasystem status"}},
-		{[]string{"aprove", "g"}, []string{"metasystem goal approve g"}},
+		// aprove is one letter from approve and from prove.
+		{[]string{"aprove", "g"}, []string{"metasystem goal approve g", "metasystem landing prove g"}},
 	} {
 		code, stdout, stderr := routeWith(registered, row.args...)
 		if code != 2 || stdout != "" || !strings.Contains(stderr, "nothing was done") || !strings.Contains(stderr, "metasystem lists the objects") {

@@ -572,12 +572,16 @@ type proofLaunchAdmission struct {
 	// LaneID is the landing lane's accounting identity a proof is charged to
 	// instead of a goal: a batch whose members are all changes (U11b).
 	LaneID string
-	// laneAccount resolves the lane identity of a control root; nil reads the
-	// host's lane record.
-	laneAccount func(controlRoot string) (string, error)
+	// LaneCheckout is the lane checkout the launcher named (--lane-checkout):
+	// the lane is resolved and its owner proven there, and the control root
+	// must lie inside it. Empty resolves them at the control root.
+	LaneCheckout string
+	// laneAccount resolves the lane identity of a lane checkout or control
+	// root; nil reads the host's lane record.
+	laneAccount func(root string) (string, error)
 	// laneOwner proves the caller descends from the lane's owner process;
 	// nil proves it against the lane checkout's lease holder.
-	laneOwner func(controlRoot string, callerPID int64) error
+	laneOwner func(root string, callerPID int64) error
 	// CallerPID is the supplied process the admission classifies and whose
 	// custody it authenticates (design 6.2); zero is this process's parent,
 	// the entry's own caller.
@@ -1318,6 +1322,20 @@ func admitLaneProofLaunch(request proofLaunchAdmission, caller lease.ClassifyRes
 	if !landinglane.IsAccount(request.LaneID) {
 		return refuse("%q is not a lane accounting identity", request.LaneID)
 	}
+	// The launcher names the lane checkout (design r10 K6): the lane is
+	// resolved there, the control root must be inside it, and the account
+	// must be that checkout's. Without it the control root is the anchor.
+	anchor := request.ControlRoot
+	if request.LaneCheckout != "" {
+		anchor = request.LaneCheckout
+		relative, err := filepath.Rel(realpath.Resolve(request.LaneCheckout), realpath.Resolve(request.ControlRoot))
+		if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+			return refuse("the control root %s is not inside the lane checkout %s", request.ControlRoot, request.LaneCheckout)
+		}
+		if landinglane.AccountID(request.LaneCheckout) != request.LaneID {
+			return refuse("the lane checkout %s is not the lane %s", request.LaneCheckout, request.LaneID)
+		}
+	}
 	resolve := request.laneAccount
 	if resolve == nil {
 		resolve = func(controlRoot string) (string, error) {
@@ -1328,7 +1346,7 @@ func admitLaneProofLaunch(request proofLaunchAdmission, caller lease.ClassifyRes
 			return landinglane.ResolveAccount(home, controlRoot)
 		}
 	}
-	account, err := resolve(request.ControlRoot)
+	account, err := resolve(anchor)
 	if err != nil {
 		var coded *refusal.Coded
 		if errors.As(err, &coded) && coded.Code == landinglane.CodeAccountUnresolved {
@@ -1344,7 +1362,7 @@ func admitLaneProofLaunch(request proofLaunchAdmission, caller lease.ClassifyRes
 		if prove == nil {
 			prove = proveLaneOwnerCaller
 		}
-		if err := prove(request.ControlRoot, request.callerPID()); err != nil {
+		if err := prove(anchor, request.callerPID()); err != nil {
 			return refuse("only the lane's owner process, proven by its identity, or a person charges a proof to the lane: %v", err)
 		}
 	}

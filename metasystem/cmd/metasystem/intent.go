@@ -1466,6 +1466,12 @@ var intentActionIntents = map[string][]struct {
 		{"Work", []string{"run", "declare-moves", "baseline"}},
 		{"Shape", []string{"add", "remove"}},
 	},
+	"landing": {
+		{"Read", []string{"status"}},
+		{"Shape", []string{"set", "unset"}},
+		{"Work", []string{"start", "stop", "restart"}},
+		{"Land", []string{"begin", "prove", "engine"}},
+	},
 	"system": {
 		{"Read", []string{"status", "check"}},
 		{"Decide", []string{"enroll"}},

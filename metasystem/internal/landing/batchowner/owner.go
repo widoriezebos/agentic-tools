@@ -627,7 +627,7 @@ func newProductionBatchOwner(settings config.BatchLanding, held BatchOwnerLease,
 			return batch.ReadClaimAt(controlRoot, tree, batchID, goalID)
 		}, Returns: returns,
 		ResumeJoinAdmission: func(batchID string, unit batch.Unit) (batch.JoinAdmission, error) {
-			return productionJoinAdmission(settings.Root, batchID, unit)
+			return deferredJoinAdmission(settings.Root, batchID, unit)
 		},
 		Rebind: func(batchID, tree string) error {
 			return RebindBatchClaims(settings.Root, batchID, tree, inputs.Machine, held.Epoch, batch.ReadReturnLedgerGoal, func(request ownercall.HandoverRequest) error {

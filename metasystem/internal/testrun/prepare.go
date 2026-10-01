@@ -99,6 +99,10 @@ type SelectionRequest struct {
 	// LaneID charges the run to the landing lane instead of a goal: a batch
 	// whose members are all changes (U11b).
 	LaneID string
+	// LaneCheckout is the landing lane's checkout a lane-charged run is
+	// admitted against, named by its launcher (design r10 K6): the account
+	// is that checkout's and the control root lies inside it.
+	LaneCheckout string
 	// Verbose asks for the details behind a refusal: its code and facts.
 	Verbose                                                    bool
 	ExpectedGoalRevision, ExpectedAccountingRevision           uint64

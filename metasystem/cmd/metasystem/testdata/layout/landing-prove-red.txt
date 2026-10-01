@@ -1,0 +1,2 @@
+✗ tests of goal-a on the base of batch 01j5x00000000000000000vb01 failed: app-standard
+  → metasystem landing status --verbose  shows the batch and its recorded runs

@@ -18,8 +18,8 @@ import (
 )
 
 // laneKernelActions are the landing actions the lane's kernel owns (design
-// §2 and §3; begin, prove, publish, return and validate arrive with units
-// K-b, K-c, K-d and K-f). Each is declared through laneKernelCommand, which
+// §2 and §3; begin and prove arrived with K-b; publish, return and validate
+// arrive with units K-c, K-d and K-f). Each is declared through laneKernelCommand, which
 // checks the engine before the verb runs; TestEveryLaneKernelVerbChecksItsEngineFirst
 // holds every one of them to it.
 var laneKernelActions = map[string]bool{"begin": true, "prove": true, "publish": true, "return": true, "validate": true, "engine": true}

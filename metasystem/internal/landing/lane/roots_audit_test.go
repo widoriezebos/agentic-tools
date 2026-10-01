@@ -14,14 +14,15 @@ import (
 var rootGuess = regexp.MustCompile(`ModuleRoot\(|TopLevel\(\)|--show-toplevel`)
 
 // guessesAtK_a are the guesses left when K-a landed, per file, in the
-// lane's own packages. They sit in the owner and the batch machinery that
+// lane's own packages (K-b lowered admission.go's, whose join admission no
+// longer runs; the kernel package guesses none). They sit in the owner and the batch machinery that
 // units K-b to D rewrite or delete; each of those units lowers its count,
 // and D's audit finds none. layout.go is the one place a root is resolved.
 var guessesAtK_a = map[string]int{
 	"batch/join_admission.go": 1,
 	"batch/publish.go":        1,
 	"batch/seal.go":           3,
-	"batchowner/admission.go": 3,
+	"batchowner/admission.go": 2,
 	"batchowner/change.go":    3,
 	"batchowner/cost.go":      2,
 	"batchowner/early.go":     3,
@@ -45,7 +46,7 @@ var guessesAtK_a = map[string]int{
 func TestLaneNeverGuessesRoots(t *testing.T) {
 	t.Parallel()
 	seen := map[string]int{}
-	for _, dir := range []string{"batch", "batchowner", "lane"} {
+	for _, dir := range []string{"batch", "batchowner", "kernel", "lane"} {
 		paths, err := filepath.Glob(filepath.Join("..", dir, "*.go"))
 		if err != nil {
 			t.Fatal(err)
