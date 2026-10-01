@@ -216,8 +216,8 @@ func withRunningProof(view func(*textui.Page), running *landingRunningProof) fun
 		}
 		words := "proving tree " + shortLandingID(running.Tree) + " as attempt " + running.Attempt + ", " + since
 		if running.State == "died" {
-			words = "the proof of tree " + shortLandingID(running.Tree) + " (attempt " + running.Attempt + ") died without a result; the next landing prove runs it again"
+			words = "the test run of tree " + shortLandingID(running.Tree) + " (attempt " + running.Attempt + ") died without a result; the next landing prove runs it again"
 		}
-		page.Section("Proof", "").Text(words)
+		page.Section("Tests", "").Text(words)
 	}
 }

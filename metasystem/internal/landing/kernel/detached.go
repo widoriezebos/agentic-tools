@@ -29,7 +29,7 @@ const CodeProveRunning = "LANE_PROVE_RUNNING"
 
 // diedReason is the recorded reason of a proof whose process ended without
 // a result.
-const diedReason = "the proof's process ended without a result; the next prove runs it again"
+const diedReason = "its test run ended without a result; the next landing prove runs it again"
 
 // StartSeams are a detached start's effects; ProductionStartSeams is the
 // zero case.
@@ -112,7 +112,7 @@ func StartProof(request ProveRequest, seams StartSeams) (Started, error) {
 		argv := []string{executable, "landing", "prove", "--wait", "--tree", subject, "--attempt", id}
 		pid, err := seams.Launch(argv, string(request.Layout.Checkout), filepath.Join(logs, id+".log"))
 		if err != nil {
-			return fmt.Errorf("start the proof of tree %s: %w", tree, err)
+			return fmt.Errorf("start the tests of tree %s: %w", tree, err)
 		}
 		proof := TreeProof{Tree: tree, Commit: commit, Attempt: id, Status: batch.AttemptRunning, StartedAt: seams.Now().Format(time.RFC3339Nano)}
 		proof.Process, err = processOf(prober, pid)
@@ -123,7 +123,7 @@ func StartProof(request ProveRequest, seams StartSeams) (Started, error) {
 			// Unrecorded, the job would run unseen: it is stopped. Its
 			// group is the one just started, by its literal pid.
 			_ = syscall.Kill(-int(pid), syscall.SIGKILL)
-			return fmt.Errorf("record the proof of tree %s: %w", tree, err)
+			return fmt.Errorf("record the test run of tree %s: %w", tree, err)
 		}
 		started = Started{Proof: proof}
 		return nil

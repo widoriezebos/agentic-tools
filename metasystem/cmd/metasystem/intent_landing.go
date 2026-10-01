@@ -943,7 +943,7 @@ func landingWakeWords(reasons []string) string {
 		case lane.WakeUnfinishedBatch:
 			words = append(words, "an unfinished batch")
 		case lane.WakeProofFinished:
-			words = append(words, "a proof that ended")
+			words = append(words, "a test run that ended")
 		default:
 			words = append(words, reason)
 		}
