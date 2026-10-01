@@ -43,13 +43,12 @@ landing runs canary plus standard and finishes in about a minute. The two
 whole-package coverage groups and the big process sections run at cadence
 only. The goal's four risk answers scale the landing's behavior-surface weight
 instead (the landing weighs itself with the highest answer as the factor), so a
-riskier goal brings the deep cadence run sooner. When the configured threshold is due,
-the landing lane's deep validation cadence (`landing validate`) runs the deep selection on trunk
-through the governed run boundary, joined to one testing reservation, and a
-green run discharges the weight with the goal, obligation revision, run id and
-exact weight generation the cadence claimed, and sufficient retained testing
-evidence for every catch class. Direct shell diagnostics and focused
-standard results cannot discharge cadence weight or another obligation.
+riskier goal brings the deep cadence run sooner. The landing lane no longer
+runs that deep selection on trunk (its deep validation verb went with the
+simple lane; deep validation of landed main is deferred until needed), so the
+weight accumulates until a deep run is brought back. Direct shell diagnostics
+and focused standard results cannot discharge cadence weight or another
+obligation.
 
 The retirement observation window is the next two weight-triggered direct
 validations. The steward is the observer and mechanically compares their

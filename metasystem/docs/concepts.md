@@ -156,8 +156,9 @@ is landing, so a landing never depends on the state of anyone's seat.
   seat with the failing run as evidence, and lands the rest in their
   original order.
 - It runs a model only when there is work. The steward of the lane's
-  checkout wakes one landing agent when work is queued, a batch is
-  unfinished or a validation is due; an idle lane runs no agent. The
+  checkout wakes one landing agent when work is queued or a batch is
+  unfinished, the lane is not stopped and no landing agent runs; an idle
+  lane runs no agent. The
   agent works through the lane's own verbs below, and nothing else moves
   main from the lane.
 
@@ -173,7 +174,7 @@ still takes seats' work, which waits in it; a stop may hold half-landed
 work, and landing past it would race that work. A pause that cannot be
 read counts as a pause, and only a person ends it. To go back to each
 seat landing its own work, a person runs `metasystem landing unset`: it
-fences the lane against new work, lets a push under way finish, stops its
+lets a push under way finish, stops its
 landing agent, finalizes members already on main, returns every other member to
 its seat, reads each return back, and only then removes the record. When
 something is still running or a return is not confirmed, it stops and
