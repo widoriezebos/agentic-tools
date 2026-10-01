@@ -3,7 +3,6 @@ package hooks
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -12,7 +11,6 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/jsonedit"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/agentgate"
 )
 
 // stopDeadlineParentEnv names the deadline parent to its Stop worker, and
@@ -135,15 +133,11 @@ func isExecutableFile(path string) bool {
 	return err == nil && !info.IsDir() && info.Mode()&0o111 != 0
 }
 
-// runToolGate is Claude's PreToolUse path. The landing agent's calls are
-// decided here by its fail-closed allowlist. A delegate job is fenced by its
+// runToolGate is Claude's PreToolUse path. A delegate job is fenced by its
 // adapter. A host tool call execs the engine the last start that resolved an
 // executable engine recorded; missing or stale cache state leaves the call
 // untouched.
 func runToolGate(inv Invocation) int {
-	if agentgate.Governs(inv.Lookup) {
-		return runLandingToolGate(inv)
-	}
 	if inv.env("METASYSTEM_HOOK_DELEGATE_JOB") != "" {
 		return 0
 	}
@@ -164,51 +158,6 @@ func runToolGate(inv Invocation) int {
 		return 0
 	}
 	_ = inv.Exec(gate, []string{gate, "adapter", "claude-tool-gate", "--root", installation}, inv.Environ())
-	return 0
-}
-
-// landingPayloadMax bounds the call the landing gate reads; a larger one is
-// not decided, so it is denied.
-const landingPayloadMax = 64 << 20
-
-// runLandingToolGate decides one call of the landing agent (lineage
-// landing-agent) in this process, against lane-agent-tools.json. It never
-// defers to a recorded gate, a delegate fence or the helm, and every failure
-// denies: an unreadable or oversized call and a panic answer the deny
-// object, and a deny object that cannot be written exits 2, the runtime's
-// blocking status, with the reason on stderr.
-func runLandingToolGate(inv Invocation) (status int) {
-	decision := agentgate.Undecided(errors.New("the gate stopped before deciding"))
-	defer func() {
-		if recovered := recover(); recovered != nil {
-			if _, isExit := recovered.(hookExit); isExit {
-				panic(recovered)
-			}
-			decision = agentgate.Undecided(fmt.Errorf("the gate failed: %v", recovered))
-		}
-		status = answerLandingGate(inv, decision)
-	}()
-	payload, err := io.ReadAll(io.LimitReader(inv.Stdin, landingPayloadMax+1))
-	switch {
-	case err != nil:
-		decision = agentgate.Undecided(fmt.Errorf("the call could not be read: %w", err))
-	case len(payload) > landingPayloadMax:
-		decision = agentgate.Undecided(errors.New("the call is larger than the gate reads"))
-	default:
-		decision = agentgate.Decide(agentgate.Request{Payload: payload, Installation: inv.Installation})
-	}
-	return 0
-}
-
-func answerLandingGate(inv Invocation, decision agentgate.Decision) int {
-	answer := agentgate.Response(decision)
-	if answer == nil {
-		return 0
-	}
-	if _, err := inv.Stdout.Write(append(answer, '\n')); err != nil {
-		_, _ = io.WriteString(inv.Stderr, decision.Reason+"\n")
-		return 2
-	}
 	return 0
 }
 
