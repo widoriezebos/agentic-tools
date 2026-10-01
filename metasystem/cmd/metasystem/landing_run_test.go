@@ -152,7 +152,7 @@ func TestLandingRunFromAnotherCheckoutExecsTheLanesEngine(t *testing.T) {
 		t.Fatal(err)
 	}
 	script := "#!/bin/sh\nprintf '%s|%s\\n' \"$(pwd -P)\" \"$*\" > '" + record + "'\n" +
-		"printf '{\\n  \"verb\": \"landing run\",\\n  \"outcome\": \"confirmed\",\\n  \"data\": {\"outcome\": \"started\", \"launch\": \"landing-from-the-lane\"}\\n}\\n'\n"
+		"printf '%s\\n' '{\"schemaVersion\":1,\"verb\":\"landing run\",\"targets\":[],\"outcome\":\"confirmed\",\"summary\":\"started\",\"data\":{\"outcome\":\"started\",\"launch\":\"landing-from-the-lane\"}}'\n"
 	if err := testexec.WriteFile(binary, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}

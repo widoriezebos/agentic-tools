@@ -7,8 +7,6 @@ package main
 // one lane.View /api/board carries.
 
 import (
-	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -29,6 +27,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/verbresult"
 )
 
 // The landing verbs' refusal codes (register rows name their sites).
@@ -892,37 +891,33 @@ func (inv *intentInvocation) handOffLandingRun(record lane.Record) int {
 	command.Dir = string(layout.Checkout)
 	command.Stdin = os.Stdin
 	command.Stderr = inv.stderr
-	asJSON := inv.input.switched("json")
-	var captured bytes.Buffer
-	if asJSON {
-		command.Stdout = &captured
-	} else {
-		command.Stdout = inv.stdout
+	if inv.input.switched("json") {
+		// The lane engine's envelope is read, never its text, and passed on.
+		result, err := verbresult.Run(command, "landing run")
+		if err != nil {
+			return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets,
+				Summary: "the landing lane's engine gave no result, so whether a landing agent started is unknown",
+				next:    inv.publicArgv("landing", "status", "--verbose"), nextReason: "shows whether its landing agent runs",
+				Details: []string{err.Error()}})
+		}
+		if err := verbresult.Write(inv.stdout, result); err != nil {
+			return 1
+		}
+		return result.Exit
 	}
+	// Its text is the lane engine's own two lines, passed through unchanged.
+	command.Stdout = inv.stdout
 	runErr := command.Run()
-	code := 0
 	var exitErr *exec.ExitError
 	switch {
 	case errors.As(runErr, &exitErr):
-		code = exitErr.ExitCode()
+		return exitErr.ExitCode()
 	case runErr != nil:
 		return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets,
-			Summary: "the landing lane's engine " + binary + " could not be run, so no landing agent was started",
-			next:    inv.sameCommand(), nextReason: "tries again", Details: []string{runErr.Error()}})
+			Summary: "the landing lane's engine could not be run, so no landing agent was started",
+			next:    inv.sameCommand(), nextReason: "tries again", Details: []string{binary + ": " + runErr.Error()}})
 	}
-	if asJSON {
-		var result struct {
-			Outcome string `json:"outcome"`
-		}
-		if err := json.Unmarshal(captured.Bytes(), &result); err != nil || result.Outcome == "" {
-			return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets,
-				Summary: "the landing lane's engine " + binary + " gave no result, so whether a landing agent started is unknown",
-				next:    inv.publicArgv("landing", "status", "--verbose"), nextReason: "shows whether its landing agent runs",
-				Details: []string{"its output: " + strings.TrimSpace(captured.String())}})
-		}
-		_, _ = inv.stdout.Write(captured.Bytes())
-	}
-	return code
+	return 0
 }
 
 // landingWakeWords says a wake's reasons in words.
