@@ -287,3 +287,24 @@ func TestLandingSettingsAreRosterKeys(t *testing.T) {
 		t.Fatalf("a landing agent with no model = %v; want refused naming %s", err, LandingModelKey)
 	}
 }
+
+// TestLandingSessionFindsLaneEngineOnPath: the landing agent's skill names
+// `metasystem ...`, so its session has the lane installation's bin directory
+// first on PATH, ahead of everything it inherits; the first real landing
+// session found no metasystem on PATH at all.
+func TestLandingSessionFindsLaneEngineOnPath(t *testing.T) {
+	t.Parallel()
+	checkout, module := nestedLane(t)
+	m, processes := laneManager(t, checkout, module)
+	if _, err := m.Start(StartSpec{Kind: "landing", WorkingDirectory: checkout, FenceRoot: module, Brief: landingBrief(t), Tag: "w4ke", AdapterData: landingGate(t)}); err != nil {
+		t.Fatalf("the landing kind on the lane checkout was refused: %v", err)
+	}
+	absModule, _ := filepath.Abs(module)
+	want := filepath.Join(absModule, "bin") + string(os.PathListSeparator) + os.Getenv("PATH")
+	if got, set := environmentValue(processes.command.Environment, "PATH"); !set || got != want {
+		t.Fatalf("landing PATH = %q set=%t, want the lane bin first: %q", got, set, want)
+	}
+	if got, _ := environmentValue(LandingEnvironment("/lane/metasystem", ""), "PATH"); got != "/lane/metasystem/bin" {
+		t.Fatalf("landing PATH with nothing inherited = %q, want the lane bin alone", got)
+	}
+}
