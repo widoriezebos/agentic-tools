@@ -1,0 +1,27 @@
+exit 1
+--
+{
+  "schemaVersion": 1,
+  "verb": "landing run",
+  "targets": [
+    {
+      "kind": "landing-lane",
+      "id": "/Users/wido/GitHub/agentic-tools-landing"
+    }
+  ],
+  "outcome": "refused",
+  "summary": "the landing lane's engine bin/metasystem is missing, so no landing agent was started",
+  "next": {
+    "argv": [
+      "sh",
+      "-c",
+      "cd /Users/wido/GitHub/agentic-tools-landing/metasystem \u0026\u0026 go run ./cmd/devgate build"
+    ],
+    "reason": "builds the lane's engine; then run metasystem landing run again"
+  },
+  "details": [
+    "the lane's engine /Users/wido/GitHub/agentic-tools-landing/metasystem/bin/metasystem is missing"
+  ]
+}
+
+--

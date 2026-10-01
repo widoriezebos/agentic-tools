@@ -11,6 +11,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 // landingRunBed is a registered lane whose landing agent's keeper is the
@@ -39,6 +40,9 @@ func landingRunBed(t *testing.T) (*laneVerbBed, launch.Store) {
 		keeper.Sources.Records = func(string) ([]batch.Record, error) { return bed.records, nil }
 		return keeper
 	}
+	// landing run runs its step in the lane checkout; from anywhere else
+	// it hands off to the lane's own engine.
+	bed.cwd = bed.landingA
 	return bed, store
 }
 
@@ -127,5 +131,44 @@ func TestLandingRunAtTheHelmIsRefused(t *testing.T) {
 	}
 	if launches := landingLaunches(t, store); len(launches) != 0 {
 		t.Fatalf("a helmed lane started a landing agent: %+v", launches)
+	}
+}
+
+// landing run from a checkout that is not the lane's hands off to the lane
+// installation's own engine, run in the lane checkout, so the lane's engine
+// supervises its landing agent; --json passes through and its JSON result
+// is read. Without that engine it is refused with the build that makes it.
+func TestLandingRunFromAnotherCheckoutExecsTheLanesEngine(t *testing.T) {
+	t.Parallel()
+	bed, store := landingRunBed(t)
+	bed.cwd = bed.landingB
+	binary := filepath.Join(bed.landingA, "metasystem", "bin", "metasystem")
+	code, stdout, stderr := bed.run(t, "landing", "run")
+	if code == 0 || !strings.Contains(oneSpaced(stderr), "cd "+filepath.Join(bed.landingA, "metasystem")+" &&") || !strings.Contains(oneSpaced(stderr), "go run ./cmd/devgate build") {
+		t.Fatalf("landing run without the lane's engine = %d %q %q; want refused with its build", code, stdout, stderr)
+	}
+	record := filepath.Join(t.TempDir(), "argv")
+	if err := os.MkdirAll(filepath.Dir(binary), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	script := "#!/bin/sh\nprintf '%s|%s\\n' \"$(pwd -P)\" \"$*\" > '" + record + "'\n" +
+		"printf '{\\n  \"verb\": \"landing run\",\\n  \"outcome\": \"confirmed\",\\n  \"data\": {\"outcome\": \"started\", \"launch\": \"landing-from-the-lane\"}\\n}\\n'\n"
+	if err := testexec.WriteFile(binary, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	code, stdout, stderr = bed.run(t, "landing", "run", "--json")
+	var result struct {
+		Outcome string
+		Data    struct{ Outcome, Launch string }
+	}
+	if code != 0 || json.Unmarshal([]byte(stdout), &result) != nil || result.Data.Launch != "landing-from-the-lane" {
+		t.Fatalf("landing run --json from another checkout = %d %q %q; want the lane engine's result", code, stdout, stderr)
+	}
+	seen, err := os.ReadFile(record)
+	if err != nil || strings.TrimSpace(string(seen)) != bed.landingA+"|landing run --json" {
+		t.Fatalf("the lane's engine ran as %q %v; want landing run --json in %s", seen, err, bed.landingA)
+	}
+	if launches := landingLaunches(t, store); len(launches) != 0 {
+		t.Fatalf("the calling engine launched itself: %+v", launches)
 	}
 }

@@ -7,10 +7,14 @@ package main
 // one lane.View /api/board carries.
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -23,6 +27,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/kernel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
 
@@ -766,6 +771,12 @@ func runIntentLandingRun(inv *intentInvocation) int {
 	}
 	root := record.Root
 	targets := laneTargets(root)
+	// Outside the lane checkout the lane's own engine runs the step, so the
+	// landing agent is always supervised by the lane's engine, as on a
+	// steward tick, and no seat's restart takes its supervisor down.
+	if !inv.insideLaneCheckout(root) {
+		return inv.handOffLandingRun(record)
+	}
 	// The steward skips the keeper while the lane checkout is at the helm;
 	// landing run does the same.
 	if owners.helm(root).Active {
@@ -823,6 +834,95 @@ func runIntentLandingRun(inv *intentInvocation) int {
 		return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Data: data, Summary: summary, Details: details,
 			next: inv.publicArgv("landing", "status", "--verbose"), nextReason: "shows the lane's state"})
 	}
+}
+
+// insideLaneCheckout says whether landing run was called in the lane
+// checkout: its working directory, or its --repo, is in it.
+func (inv *intentInvocation) insideLaneCheckout(root string) bool {
+	path := inv.cwd
+	if inv.input.has("repo") {
+		path = inv.callerPath(inv.input.text("repo"))
+	}
+	here, checkout := realpath.Resolve(path), realpath.Resolve(root)
+	return here == checkout || strings.HasPrefix(here, checkout+string(filepath.Separator))
+}
+
+// handOffLandingRun runs landing run with the lane installation's own
+// engine in the lane checkout. Its text passes through unchanged; with
+// --json its JSON result is read and passed on.
+func (inv *intentInvocation) handOffLandingRun(record lane.Record) int {
+	targets := laneTargets(record.Root)
+	layout, err := record.Layout()
+	if err != nil {
+		return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets,
+			Summary: "the landing lane's installation can't be read, so no landing agent was started",
+			next:    inv.publicArgv("landing", "set", record.Root), nextReason: "registers the landing checkout again, which records its installation",
+			Details: []string{err.Error()}})
+	}
+	install := string(layout.Install)
+	binary := filepath.Join(install, "bin", "metasystem")
+	if info, err := os.Stat(binary); err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0o111 == 0 {
+		cause := "is missing"
+		if err == nil {
+			cause = "is not an executable file"
+		}
+		build := func(path string) string {
+			// A path shown under ~ keeps its tilde outside the quotes, so
+			// the shell still expands it.
+			if rest, ok := strings.CutPrefix(path, "~/"); ok {
+				return "cd ~/" + shellCommand([]string{rest}) + " && go run ./cmd/devgate build"
+			}
+			return "cd " + shellCommand([]string{path}) + " && go run ./cmd/devgate build"
+		}
+		summary := "the landing lane's engine bin/metasystem " + cause + ", so no landing agent was started"
+		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: summary,
+			next: []string{"sh", "-c", build(install)}, nextReason: "builds the lane's engine; then run metasystem landing run again",
+			Details: []string{"the lane's engine " + binary + " " + cause}, viewsRefusal: true,
+			view: func(page *textui.Page) {
+				page.Refusal(summary, textui.Hint{Reason: build(page.Env().Path(install))})
+			}})
+	}
+	args := []string{"landing", "run"}
+	for _, flag := range []string{"json", "verbose"} {
+		if inv.input.switched(flag) {
+			args = append(args, "--"+flag)
+		}
+	}
+	command := exec.Command(binary, args...)
+	command.Dir = string(layout.Checkout)
+	command.Stdin = os.Stdin
+	command.Stderr = inv.stderr
+	asJSON := inv.input.switched("json")
+	var captured bytes.Buffer
+	if asJSON {
+		command.Stdout = &captured
+	} else {
+		command.Stdout = inv.stdout
+	}
+	runErr := command.Run()
+	code := 0
+	var exitErr *exec.ExitError
+	switch {
+	case errors.As(runErr, &exitErr):
+		code = exitErr.ExitCode()
+	case runErr != nil:
+		return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets,
+			Summary: "the landing lane's engine " + binary + " could not be run, so no landing agent was started",
+			next:    inv.sameCommand(), nextReason: "tries again", Details: []string{runErr.Error()}})
+	}
+	if asJSON {
+		var result struct {
+			Outcome string `json:"outcome"`
+		}
+		if err := json.Unmarshal(captured.Bytes(), &result); err != nil || result.Outcome == "" {
+			return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets,
+				Summary: "the landing lane's engine " + binary + " gave no result, so whether a landing agent started is unknown",
+				next:    inv.publicArgv("landing", "status", "--verbose"), nextReason: "shows whether its landing agent runs",
+				Details: []string{"its output: " + strings.TrimSpace(captured.String())}})
+		}
+		_, _ = inv.stdout.Write(captured.Bytes())
+	}
+	return code
 }
 
 // landingWakeWords says a wake's reasons in words.

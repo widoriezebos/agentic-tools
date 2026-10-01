@@ -41,8 +41,9 @@ func g1bLayoutCases() []layoutCase {
 		{name: "landing-set", args: []string{"landing", "set", "../agentic-tools-landing"}, bed: landingLayoutBed(landingLayoutRunning)},
 		{name: "landing-start", args: []string{"landing", "start"}, bed: landingLayoutBed(landingLayoutRunning)},
 		{name: "landing-start-refusal", args: []string{"landing", "start"}, bed: landingLayoutBed(landingLayoutNone)},
-		{name: "landing-run", args: []string{"landing", "run"}, bed: landingLayoutBed(landingLayoutRunning)},
-		{name: "landing-run-refusal", args: []string{"landing", "run"}, bed: landingLayoutBed(landingLayoutPaused)},
+		{name: "landing-run", args: []string{"landing", "run"}, bed: inTheLaneCheckout(landingLayoutBed(landingLayoutRunning))},
+		{name: "landing-run-refusal", args: []string{"landing", "run"}, bed: inTheLaneCheckout(landingLayoutBed(landingLayoutPaused))},
+		{name: "landing-run-no-engine", args: []string{"landing", "run"}, bed: landingLayoutBed(landingLayoutRunning)},
 		{name: "landing-stop-refusal", args: []string{"landing", "stop"}, bed: landingLayoutBed(landingLayoutPushing)},
 		{name: "landing-unset", args: []string{"landing", "unset"}, bed: landingLayoutBed(landingLayoutNone)},
 	}
@@ -142,6 +143,16 @@ func landingLayoutBed(kind int) func(t *testing.T) layoutBed {
 		return layoutBed{owners: owners, cwd: cwd, now: now, replace: layoutPaths(cwd, cwd, "/Users/wido/GitHub/agentic-tools-m1e",
 			lane.AccountID(landing), "lane:99af5acdbc67", home, "/Users/wido/.metasystem-home", landing, "/Users/wido/GitHub/agentic-tools-landing",
 			"~/agentic-tools-landing", "~/GitHub/agentic-tools-landing")}
+	}
+}
+
+// inTheLaneCheckout is a landing bed called from inside the lane checkout,
+// where landing run takes its step itself.
+func inTheLaneCheckout(bed func(t *testing.T) layoutBed) func(t *testing.T) layoutBed {
+	return func(t *testing.T) layoutBed {
+		layout := bed(t)
+		layout.cwd = filepath.Join(filepath.Dir(layout.cwd), "agentic-tools-landing")
+		return layout
 	}
 }
 
