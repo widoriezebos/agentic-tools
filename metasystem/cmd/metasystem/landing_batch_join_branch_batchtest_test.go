@@ -3,8 +3,10 @@ package main
 import (
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -152,4 +154,38 @@ func TestBatchLaggingBranchExcludesEndpointChanges(t *testing.T) {
 	goalSyncMutationGit(t, bed.root, "push", "-q", "origin", "main")
 	assertBatchBranchPatchGate(t, bed, batchowner.BatchJoinRequest{SeatRoot: bed.root, GoalID: "goal-a", Last: true}, "./trunkgone",
 		"metasystem/trunkgone/value.go", "metasystem/trunk-only.txt")
+}
+
+// installFetchHeadClobberingGit puts a git on PATH that runs the real git and,
+// after every fetch, empties repo's FETCH_HEAD: the shared file another
+// session's fetch rewrites between a join's own fetch and its read.
+func installFetchHeadClobberingGit(t *testing.T, repo string) {
+	t.Helper()
+	real, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bin := t.TempDir()
+	script := "#!/bin/sh\n" + strconv.Quote(real) + " \"$@\"\nstatus=$?\ncase \" $* \" in *\" fetch \"*) : > " +
+		strconv.Quote(filepath.Join(repo, ".git", "FETCH_HEAD")) + " ;; esac\nexit $status\n"
+	writeTestingFixtureFile(t, filepath.Join(bin, "git"), []byte(script), 0o755)
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
+func TestBatchJoinMemberReadsItsOwnFetchNotTheSharedFetchHead(t *testing.T) {
+	bed := newBatchBranchPatchBed(t)
+	commit := addBatchBranchUnit(t, bed, "member", "metasystem/member/value.go", "package member\n")
+	pushBatchGoalBranch(t, bed)
+	tip := goalSyncMutationGit(t, bed.root, "rev-parse", "refs/heads/goal/goal-a")
+	installFetchHeadClobberingGit(t, bed.root)
+	member, _, err := batchowner.ProductionBatchBranchMember(batchowner.BatchJoinRequest{SeatRoot: bed.root, GoalID: "goal-a", Last: true})
+	if err != nil {
+		t.Fatalf("join read the shared FETCH_HEAD: %v", err)
+	}
+	if member.Tip != tip || len(member.Builds) != 1 || member.Builds[0].Commit != commit {
+		t.Fatalf("member tip=%s builds=%+v, want tip %s build %s", member.Tip, member.Builds, tip, commit)
+	}
+	if refs := goalSyncMutationGit(t, bed.root, "for-each-ref", "refs/metasystem/op/"); refs != "" {
+		t.Fatalf("join left its private fetch refs: %s", refs)
+	}
 }

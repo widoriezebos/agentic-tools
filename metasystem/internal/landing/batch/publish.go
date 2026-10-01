@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
+	goalbranch "github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/contractgit"
 )
@@ -106,10 +107,15 @@ func commitForWorkspaceTree(root, tree string) (string, error) {
 	if commit := search("rev-list", "--all", "--reflog"); commit != "" {
 		return commit, nil
 	}
-	if commit := search("rev-list", "--first-parent", "FETCH_HEAD"); commit != "" {
-		return commit, nil
+	// The base came from origin's main; the shared FETCH_HEAD is not read
+	// because other sessions' fetches rewrite it (see goalbranch.FetchTip).
+	main, fetchErr := goalbranch.FetchTip(top, "origin", "refs/heads/main")
+	if fetchErr == nil {
+		if commit := search("rev-list", "--first-parent", main); commit != "" {
+			return commit, nil
+		}
 	}
-	return "", fmt.Errorf("select joined unit: no commit names batch base tree %s", tree)
+	return "", errors.Join(fmt.Errorf("select joined unit: no commit names batch base tree %s", tree), fetchErr)
 }
 
 func joinedUnitPatch(root string, unit Unit) ([]byte, error) {
