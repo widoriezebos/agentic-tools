@@ -1,6 +1,6 @@
 # landing-lane-runtime-redesign
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 4
 - Risk: severity=3 novelty=2 exposure=3 accumulation=2 basis="The lane pushes to GitHub main for every seat on the host; today's fix-forward chain produced ten defects and two reds on main; mistakes land everyone's work wrongly or block it; design and careful build required"
@@ -9,13 +9,11 @@
 - Origin: main
 - Next step: Next: Design revision 5 (/Users/wido/LocalStorage/agentic-tools-evidence/lane-stepback-20260930/lane-runtime-design.md) folds Astra round 4; run Astra rounds until no material finding is left, take your rulings on D1-D9 (section 11), then build U1-U9 by hand with one independent code critique per unit and the lane paused. Hand work: the machinery must not claim it. Done when: the U9 end-to-end rehearsal passes in the VM on the deploy commit and main is green, so the lane can be switched on.
 - OpenedAt: 2026-09-30T16:34:22Z
-- Revision: 11
+- Revision: 12
 - Pinned: m1e
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:wido at=2026-09-30T19:05:35Z revision=7 opid=1NCFN7DMKXDF4DZ6R1JC3Q9H7Z-m1e-b6a4eb0a authority=proven digest=e97a2428d9f7c53e754e09671d13cb985410975934d05648b2fd5053c3ab874d episode=7
-- Claimed: machine=m1e lineage=main-1790454088-93948-21671b at=2026-10-01T03:32:31Z revision=9 accountingRevision=9 episodeAt=2026-10-01T03:32:31Z episodeRevision=9
-- StopCapability: generation=9 revision=9 machine=m1e claimEpoch=9 fenceEpoch=0
 
 History:
 - 2026-09-30T16:34:22Z 5N2756QTTCFR80BYR8N5ART94Q-m1e-b6a4eb0a open actor=human:wido targets=landing-lane-runtime-redesign
@@ -29,4 +27,5 @@ History:
 - 2026-10-01T03:32:31Z Z12HCBR7GFBKK5MK9SSY936S7N-m1e-f456f182 claim actor=m1e+main-1790454088-93948-21671b targets=landing-lane-runtime-redesign
 - 2026-10-01T06:20:14Z 0YN492SGGSTG6B8D1H0T1X29TS-m1e-b6a4eb0a set-priority actor=human:wido targets=ask-what-happened-follow-ups,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,cross-cutting-change-inventories-its-readers,design-rounds-read-less-and-repeat-less,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,host-setup-from-scratch,landing-lane-runtime-redesign,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,reviewers-check-the-rulings,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,steward-acts-on-behaviour-patterns,stop-hook-never-forces-an-empty-turn,system-start-launches-your-agent,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror reason=priority-order subject=ask-what-happened-follow-ups from=1:2 to=1:3 requested-sequence=1
 - 2026-10-01T06:26:13Z 8PFWTKV66HSP90320AT3YC8BFN-m1e-b6a4eb0a set-priority actor=human:wido targets=ask-what-happened-follow-ups,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,critique-findings-need-proof,cross-cutting-change-inventories-its-readers,design-rounds-read-less-and-repeat-less,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,host-setup-from-scratch,landing-lane-runtime-redesign,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,reviewers-check-the-rulings,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,steward-acts-on-behaviour-patterns,stop-hook-never-forces-an-empty-turn,system-start-launches-your-agent,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror reason=priority-order subject=critique-findings-need-proof from=1:3 to=1:4 requested-sequence=1
-Integrity: sha256=04647a0826032eb29e431f69aa58574db780acef63e45d369cdea1e1cff0103c
+- 2026-10-01T06:27:58Z NR3WAY6WPY9TMWYW9P7H614Q4Y-m1e-f456f182 release actor=human:wido targets=landing-lane-runtime-redesign reason=Wido 2026-10-01: fastest track, no new lane work; machine claim needed for critique-findings-need-proof
+Integrity: sha256=38ed6c9e59bcd074ec0a9d8ad1e7cafba0bc7767c8b50f1ecb7320d0938ea29b
