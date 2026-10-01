@@ -22,6 +22,7 @@ func fiveRoundHistory(materials ...int64) []any {
 }
 
 func TestDesignCapFiveRoundTwoResidueDispatchesNextRound(t *testing.T) {
+	t.Parallel()
 	findings := []registerFinding{closeFinding("mechanical", "mechanical", "go test ./m", "title", critiqueModel.Bounded)}
 	repo, root, _ := writeCloseRoot(t, "design-critic", 2, findings, materialHistory(3, 2), 5, 2)
 	var got []goal.ReviewObligation
@@ -31,6 +32,7 @@ func TestDesignCapFiveRoundTwoResidueDispatchesNextRound(t *testing.T) {
 }
 
 func TestDesignCapFiveRoundTwoBlockerIsNotTheHumanRaise(t *testing.T) {
+	t.Parallel()
 	findings := []registerFinding{closeFinding("severe", "mechanical", "go test ./s", "title", critiqueModel.Severe)}
 	repo, root, _ := writeCloseRoot(t, "design-critic", 2, findings, materialHistory(2, 1), 5, 2)
 	_, err := critiqueRegisterClose(repo, root, captureObligations(new([]goal.ReviewObligation)))
@@ -40,6 +42,7 @@ func TestDesignCapFiveRoundTwoBlockerIsNotTheHumanRaise(t *testing.T) {
 }
 
 func TestDesignCapFiveFinalRoundFallingMechanicalDefersFixtures(t *testing.T) {
+	t.Parallel()
 	findings := []registerFinding{closeFinding("finding-a", "mechanical", "go test ./a", "title a", critiqueModel.Bounded)}
 	repo, root, _ := writeCloseRoot(t, "design-critic", 5, findings, fiveRoundHistory(6, 5, 4, 3, 2), 5, 5)
 	var got []goal.ReviewObligation
@@ -49,6 +52,7 @@ func TestDesignCapFiveFinalRoundFallingMechanicalDefersFixtures(t *testing.T) {
 }
 
 func TestDesignCapFiveFinalRoundRaisesTheHuman(t *testing.T) {
+	t.Parallel()
 	cases := map[string]struct {
 		findings []registerFinding
 		history  []any
@@ -58,6 +62,7 @@ func TestDesignCapFiveFinalRoundRaisesTheHuman(t *testing.T) {
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			repo, root, _ := writeCloseRoot(t, "design-critic", 5, tc.findings, tc.history, 5, 5)
 			_, err := critiqueRegisterClose(repo, root, captureObligations(new([]goal.ReviewObligation)))
 			assertHumanRaise(t, err, tc.findings[0].FindingID)
