@@ -45,8 +45,7 @@ func newLaneBed(t *testing.T) *laneBed {
 	bed.home, bed.landingA, bed.landingB = realpath.Resolve(bed.home), realpath.Resolve(bed.landingA), realpath.Resolve(bed.landingB)
 	landingCheckout(t, bed.landingA)
 	landingCheckout(t, bed.landingB)
-	bed.seams = batchowner.LandingLaneSeams{Home: func() (string, error) { return bed.home, nil },
-		Validate: func(root, _ string, _ time.Time) (string, error) { return realpath.Resolve(root), nil }}
+	bed.seams = batchowner.LandingLaneSeams{Home: func() (string, error) { return bed.home, nil }}
 	return bed
 }
 
@@ -76,10 +75,12 @@ func TestBatchRootServesThePersonsLane(t *testing.T) {
 	}
 }
 
-// While a person unsets the lane, a seat's join is refused in plain words
-// naming the one command that finishes the unset; a reader still sees the
-// lane.
-func TestJoinIsRefusedWhileTheLaneIsUnset(t *testing.T) {
+// work land asks lane.Resolve whether a lane is registered, and nothing
+// more (simple lane, unit C): a lane a person is unsetting is still the
+// lane its seats join, because the unset confirms every member under the
+// host flock before it unregisters, and a join while the lane is stopped
+// waits in it. The resolution is the production one over a real home.
+func TestWorkLandAsksOnlyWhetherALaneIsRegistered(t *testing.T) {
 	t.Parallel()
 	bed := newLaneBed(t)
 	registerLane(t, bed.home, bed.landingA, "Wido", laneTestNow)
@@ -95,15 +96,16 @@ func TestJoinIsRefusedWhileTheLaneIsUnset(t *testing.T) {
 	if report, err := lane.Unset(bed.home, "Wido", laneTestNow, false, seams); err != nil || report.Stopped != lane.StepSettled {
 		t.Fatalf("unset = %+v %v", report, err)
 	}
-	inv := &intentInvocation{layout: stateroot.Layout{InstallationRoot: bed.seatA}, owners: intentOwners{delivery: &intentDeliveryOwners{
-		batchRoot: bed.seams.BatchRoot, now: func() time.Time { return laneTestNow }}}}
-	_, _, refused := inv.landingBatchRoot(nil)
-	if refused == nil || refused.Outcome != intentRefused || strings.Contains(refused.Summary, lane.CodeUnsetting) || !strings.Contains(refused.Summary, "being unset") ||
-		strings.Join(refused.next, " ") != "metasystem landing unset" || !strings.Contains(strings.Join(refused.Details, " "), lane.CodeUnsetting) {
-		t.Fatalf("a join while the lane is unset = %+v; want the situation on line 1, metasystem landing unset on line 2, %s only in the details", refused, lane.CodeUnsetting)
+	if _, paused := lane.ReadPause(bed.home); !paused {
+		t.Fatal("the unset's fence did not stop the lane")
 	}
-	if root, configured, err := bed.seams.Resolve(bed.seatA, laneTestNow); err != nil || !configured || root != bed.landingA {
-		t.Fatalf("a reader during the unset = %q %v %v; want the lane", root, configured, err)
+	production := batchowner.ProductionLandingLaneSeams()
+	production.Home = func() (string, error) { return bed.home, nil }
+	inv := &intentInvocation{layout: stateroot.Layout{InstallationRoot: bed.seatA}, owners: intentOwners{delivery: &intentDeliveryOwners{
+		batchRoot: production.BatchRoot, now: func() time.Time { return laneTestNow }}}}
+	root, configured, refused := inv.landingBatchRoot(nil)
+	if refused != nil || !configured || root != bed.landingA {
+		t.Fatalf("work land on a registered lane = %q %v %+v; want the lane %s and no other question asked", root, configured, refused, bed.landingA)
 	}
 }
 
@@ -157,8 +159,8 @@ func TestBatchRootWithoutALaneHomeKeepsTheSeatSetting(t *testing.T) {
 	}
 	bed.setRoot(t, bed.seatA, bed.landingA)
 	noHome := func() (string, error) { return "", errors.New("no home") }
-	seams := batchowner.LandingLaneSeams{Home: noHome, Validate: bed.seams.Validate}
-	root, configured, err := seams.Resolve(bed.seatA, laneTestNow)
+	seams := batchowner.LandingLaneSeams{Home: noHome}
+	root, configured, err := seams.BatchRoot(bed.seatA, laneTestNow)
 	if err != nil || !configured || realpath.Resolve(root) != bed.landingA {
 		t.Fatalf("seat without a lane home = %q %v %v; want its own setting", root, configured, err)
 	}
@@ -191,7 +193,7 @@ func TestHelmHeldBatchesReadsTheHostLaneForAnUnsetSeat(t *testing.T) {
 		t.Fatal(err)
 	}
 	held, err := helmHeldBatches(bed.seatB, seat, func(installation string, now time.Time) (string, bool, error) {
-		return bed.seams.Resolve(installation, now)
+		return bed.seams.BatchRoot(installation, now)
 	})
 	if err != nil || len(held) != 1 || held[0] != "b1 (proving)" {
 		t.Fatalf("unset seat's held batches = %v %v; want b1 from the host lane", held, err)

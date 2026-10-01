@@ -67,9 +67,6 @@ type BatchJoinDependencies struct {
 	ReleaseSet func(seatRoot, goalID, tip string) (*diskstore.ReleaseSet, error)
 }
 
-var BatchJoinDependenciesForCommand = ProductionBatchJoinDependencies
-var BatchTreePlanExecutable = os.Executable
-
 func ProductionBatchJoinDependencies() BatchJoinDependencies {
 	return BatchJoinDependencies{
 		ReleaseSet: SelectMemberReleaseSet,
@@ -413,7 +410,7 @@ func productionBatchTreePlanOutputWithGroups(root, goalID, tree string, mode tes
 	}
 	defer func() { err = errors.Join(err, detached.Close()) }()
 	planningRoot := detached.Workspace().Dir
-	binary, err := BatchTreePlanExecutable()
+	binary, err := os.Executable()
 	if err != nil {
 		return testrun.PlanOutput{}, err
 	}
