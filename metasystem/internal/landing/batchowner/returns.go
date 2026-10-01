@@ -95,19 +95,19 @@ func ProductionReturnTarget(landingRoot, tree string, prober identity.Prober, un
 	return batch.ReturnTarget{State: batch.ReturnTargetUnknown, Reason: "source identity is not provable"}
 }
 
-// BatchOwnerCallSet is the ledger and landing owners the landing path calls
+// LaneCallSet is the ledger and landing owners the landing path calls
 // in its own process, each under an explicit invocation context (design 6.2):
 // the process making the call is the supplied identity, and the lineage is
 // named, never inherited. The engine sets the production set at start; tests
 // replace it.
-type BatchOwnerCallSet struct {
+type LaneCallSet struct {
 	Handover func(ownercall.Invocation, ownercall.HandoverRequest) error
 	EditNext func(invocation ownercall.Invocation, root, goalID, next string) error
 	Release  func(invocation ownercall.Invocation, root, goalID string) error
 	Held     func(root, base, commit, remote, ref string) error
 }
 
-var BatchOwnerCalls BatchOwnerCallSet
+var LaneCalls LaneCallSet
 
 // laneLedger routes goal writes through the lane's publication boundary
 // under the home that names the lane, as op for authority. A host with no
@@ -129,7 +129,7 @@ func laneLedger(home func() (string, error), op lane.Operation, authority lane.A
 // read from the host record under home (claimAuthority); boundary is the
 // publication boundary every goal write of the return goes through (K3):
 // the agent's, or a person's cleanup.
-func returnSeamsAt(root, controlRoot string, tree func() string, calls *BatchOwnerCallSet, boundary func(goal.Endpoint) goal.Endpoint, home func() (string, error)) batch.ReturnSeams {
+func returnSeamsAt(root, controlRoot string, tree func() string, calls *LaneCallSet, boundary func(goal.Endpoint) goal.Endpoint, home func() (string, error)) batch.ReturnSeams {
 	return batch.ReturnSeams{
 		Read: func(_ string, tree, goalID string) (batch.ReturnLedgerGoal, error) {
 			return BatchReturnLedgerGoal(controlRoot, tree, goalID)

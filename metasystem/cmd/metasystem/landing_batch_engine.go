@@ -15,7 +15,7 @@ func init() {
 		ForecastTestingSelection: forecastTestingSelection,
 		BranchClaimCheck:         goalBranchClaimCheck,
 	}
-	batchowner.BatchOwnerCalls = batchowner.BatchOwnerCallSet{Handover: goalHandoverOwner, EditNext: goalEditNextOwner, Release: goalReleaseOwner, Held: landingHeld}
+	batchowner.LaneCalls = batchowner.LaneCallSet{Handover: goalHandoverOwner, EditNext: goalEditNextOwner, Release: goalReleaseOwner, Held: landingHeld}
 	agent := newLandingAgent()
 	batchowner.LandingAgentLive = agent.liveOrStarting(batchowner.LandingLaneHome)
 	batchowner.LandingAgentProbe = agent.probe

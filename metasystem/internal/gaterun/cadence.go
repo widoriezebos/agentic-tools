@@ -33,8 +33,8 @@ type CadenceTickResult struct {
 	ForceGroups  bool
 }
 
-// GoalCadenceLedger adapts the shared goal transaction to the injectable tick
-// boundary used by the landing owner.
+// GoalCadenceLedger adapts the shared goal transaction to the injectable
+// cadence boundary landing validate uses.
 type GoalCadenceLedger struct {
 	Endpoint goal.Endpoint
 	Actor    goal.Actor

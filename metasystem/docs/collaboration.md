@@ -44,7 +44,7 @@ whole-package coverage groups and the big process sections run at cadence
 only. The goal's four risk answers scale the landing's behavior-surface weight
 instead (the landing weighs itself with the highest answer as the factor), so a
 riskier goal brings the deep cadence run sooner. When the configured threshold is due,
-the landing owner's deep validation cadence runs the deep selection on trunk
+the landing lane's deep validation cadence (`landing validate`) runs the deep selection on trunk
 through the governed run boundary, joined to one testing reservation, and a
 green run discharges the weight with the goal, obligation revision, run id and
 exact weight generation the cadence claimed, and sufficient retained testing

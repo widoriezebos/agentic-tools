@@ -124,8 +124,8 @@ type OwnerProbe struct {
 // ViewSources are the reads a view is built from. Records nil reads the
 // lane's batch records from its checkout.
 type ViewSources struct {
-	Home    string
-	Now     time.Time
+	Home string
+	Now  time.Time
 	// Owner reads the landing agent.
 	Owner   func(root string) (OwnerProbe, error)
 	Records func(root string) ([]batch.Record, error)

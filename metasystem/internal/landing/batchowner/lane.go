@@ -164,7 +164,7 @@ func HoldHostProvingFor(home func() (string, error), args []string) ([]string, f
 var LandingAgentLive func() (id string, live bool, err error)
 
 // LandingAgentProbe reads whether the host lane's landing agent runs, and
-// since when: the lane's view shows it where the batch owner was. The
+// since when: the lane's view shows it as the lane's runner. The
 // engine supplies it (the launch store is the command layer's); nil reads
 // no agent running.
 var LandingAgentProbe func(root string) (lane.OwnerProbe, error)

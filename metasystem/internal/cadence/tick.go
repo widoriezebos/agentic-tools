@@ -1,9 +1,9 @@
-// Package cadence is the landing owner's deep validation cadence in
-// production: one tick fetches the trunk, revalidates its deep-only groups
-// from retained evidence without building, and when due claims the standing
-// authority and runs the deep validation as a governed run of this engine's
-// own test run. gaterun decides; this package wires the decision to the
-// ledger, the run store and the testing selection.
+// Package cadence is the landing lane's deep validation cadence in
+// production (landing validate): it revalidates the trunk's deep-only
+// groups from retained evidence without building, and when due claims the
+// standing authority and runs the deep validation as a governed run of this
+// engine's own test run. gaterun decides; this package wires the decision to
+// the ledger, the run store and the testing selection.
 package cadence
 
 import (
@@ -33,10 +33,10 @@ const (
 	AuthorityGoal = "standing-validation"
 )
 
-// Owner is the landing owner a production tick runs under, and the
-// command-side reads it needs: its lineage and lease epoch, whether it still
-// holds that lease, the trunk fetch, the weight threshold, the testing
-// preparation and the worker policy.
+// Owner is the authority a cadence run is claimed under (the lane's claim
+// identity), and the command-side reads it needs: its lineage and epoch,
+// whether it still holds its authority, the trunk fetch, the weight
+// threshold, the testing preparation and the worker policy.
 type Owner struct {
 	Epoch           int64
 	Lineage         string

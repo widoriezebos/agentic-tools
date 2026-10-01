@@ -330,7 +330,7 @@ func fetchLandingBaseTree(root string) (string, error) {
 }
 
 // ProductionBatchProtectedTests asks the testing owner to check base-listed
-// Go tests before join hands the member to the batch owner. The installed
+// Go tests before join hands the member to the landing lane. The installed
 // contract path and each group's cwd are independent of the repository root.
 func ProductionBatchProtectedTests(root, baseTree, candidateTree string) error {
 	return ProductionBatchProtectedTestsWithRawSource(root, baseTree, candidateTree, nil)
@@ -421,9 +421,12 @@ func productionBatchTreePlanOutputWithGroups(root, goalID, tree string, mode tes
 	if len(groups) != 0 {
 		command.Args = append(command.Args, "--batch-prefix", "--batch-requirements", testrun.BatchRequirementsArgument(groups))
 	}
-	verb := testPlanVerb
+	// The planning child answers with the --json envelope (internal/verbresult,
+	// design structured-output.md U1): its outcome and code are read, never
+	// its words.
+	verb := "test plan"
 	if lane.IsAccount(goalID) {
-		verb = laneTestPlanVerb
+		verb = "internal test plan"
 	}
 	child, err := verbresult.Run(command, verb)
 	if err != nil {
@@ -454,7 +457,7 @@ func BatchTreePlanCommand(binary, planningRoot, goalID, tree string, mode testpo
 }
 
 func productionForwardHandover(request BatchJoinRequest, batchID string, source batch.Claim) error {
-	return LaneForwardHandover(LandingLaneHome, &BatchOwnerCalls)(request, batchID, source)
+	return LaneForwardHandover(LandingLaneHome, &LaneCalls)(request, batchID, source)
 }
 
 // LaneForwardHandover hands a joining goal to the landing lane's stable
@@ -463,7 +466,7 @@ func productionForwardHandover(request BatchJoinRequest, batchID string, source 
 // source seat's act, under its own process and lineage; no agent, owner or
 // lease holder of the lane checkout takes part, so a join works while no
 // agent runs.
-func LaneForwardHandover(home func() (string, error), calls *BatchOwnerCallSet) func(BatchJoinRequest, string, batch.Claim) error {
+func LaneForwardHandover(home func() (string, error), calls *LaneCallSet) func(BatchJoinRequest, string, batch.Claim) error {
 	return func(request BatchJoinRequest, batchID string, source batch.Claim) error {
 		dir, err := home()
 		if err != nil {

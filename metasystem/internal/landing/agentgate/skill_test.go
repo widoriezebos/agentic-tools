@@ -30,7 +30,7 @@ func TestLandingAgentSkillMatchesTheGate(t *testing.T) {
 			t.Errorf("the skill never names metasystem %s", entry.Name)
 		}
 	}
-	for _, forbidden := range []string{"metasystem landing set", "metasystem landing unset", "metasystem landing start", "metasystem landing restart", "git push", "--no-verify", "metasystem test run"} {
+	for _, forbidden := range []string{"metasystem landing set", "metasystem landing unset", "metasystem landing start", "git push", "--no-verify", "metasystem test run"} {
 		for _, line := range strings.Split(skill, "\n") {
 			if strings.Contains(line, forbidden) && !strings.Contains(strings.ToLower(line), "never") && !strings.Contains(strings.ToLower(line), "denied") {
 				t.Errorf("the skill names %q outside a prohibition: %q", forbidden, line)

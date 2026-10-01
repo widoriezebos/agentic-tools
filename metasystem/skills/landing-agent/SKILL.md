@@ -37,7 +37,7 @@ never try them:
 
 - denied: `git push` in any form, and `--no-verify` anywhere;
 - denied: remote, config and hook edits, and goal mutations;
-- denied: `metasystem landing set`, `metasystem landing unset`, `metasystem landing start` and `metasystem landing restart`;
+- denied: `metasystem landing set`, `metasystem landing unset` and `metasystem landing start`;
 - denied: `up`, `arm` and `system`;
 - denied: builds and test runners (`go test`, `metasystem test run`, `devgate`); proofs run only through `landing prove`.
 

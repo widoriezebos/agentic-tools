@@ -136,12 +136,12 @@ func registeredFamilies() []family {
 			},
 		},
 		{
-			name: "test", summary: "proof runs on another engine or as the landing owner's child",
+			name: "test", summary: "proof runs on another engine or as landing prove's child",
 			verbs: []verb{
 				{name: "plan", summary: "compute a candidate's risk-selected groups for a pinned or candidate engine", run: func(args []string, stdout, stderr io.Writer) int {
 					return runTestPlanAs("internal test plan", args, stdout, stderr)
 				}, launcher: "cmd/metasystem/test_protection.go", evidence: "\"test\", \"plan\"", required: []string{"root"}},
-				{name: "run", summary: "run one proof as the landing owner's own child", run: runTestRun, launcher: "internal/landing/batchowner/prove.go", evidence: "\"internal\", \"test\", \"run\"", required: []string{"root"}},
+				{name: "run", summary: "run one proof as landing prove's own child", run: runTestRun, launcher: "internal/landing/kernel/prove.go", evidence: "\"internal\", \"test\", \"run\"", required: []string{"root"}},
 				{name: "verify", summary: "verify retained proof on the base engine a carried landing builds", run: runTestVerify, launcher: "cmd/metasystem/landing_path.go", evidence: "\"test\", \"verify\"", required: []string{"root"}},
 				{name: "worker-capabilities", summary: "report the testing worker protocol of a pinned engine", run: runTestWorkerCapabilities, launcher: "internal/testrun/worker.go", evidence: "\"test\", \"worker-capabilities\""},
 				{name: "worker", summary: "execute one admitted selected plan on a pinned engine", run: runTestWorker, launcher: "cmd/metasystem/test_protection.go", evidence: "\"test\", \"worker\"", required: []string{"packet", "packet-sha256", "result"}},
@@ -225,7 +225,7 @@ func registeredFamilies() []family {
 		{
 			name: "run", summary: "the cadence run's detached leader",
 			verbs: []verb{
-				{name: "wrap", summary: "the detached leader of the landing owner's cadence run", run: runRunWrap, launcher: "internal/cadence/tick.go", evidence: "\"run\", \"wrap\""},
+				{name: "wrap", summary: "the detached leader of landing validate's cadence run", run: runRunWrap, launcher: "internal/cadence/tick.go", evidence: "\"run\", \"wrap\""},
 			},
 		},
 		{

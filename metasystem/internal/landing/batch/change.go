@@ -246,8 +246,8 @@ func UnitClosure(root, baseTree, tree string) *adapter.Closure {
 }
 
 // ChargeUnit is the member a batch's proofs are keyed to: its last goal
-// member, else its last member, a change, whose proofs the lane owner
-// charges to the lane itself (U11b). The zero unit when units is empty.
+// member, else its last member, a change, whose proofs the lane charges to
+// itself (U11b). The zero unit when units is empty.
 func ChargeUnit(units []Unit) Unit {
 	if charge, ok := ChargeMember(units); ok {
 		return charge

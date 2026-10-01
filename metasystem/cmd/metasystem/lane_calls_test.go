@@ -11,14 +11,14 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 )
 
-// stubBatchOwnerCalls replaces the landing path's in-process owner calls for
+// stubLaneCalls replaces the landing path's in-process owner calls for
 // one test with run, which sees each call as the argv its former child
 // carried, so a test can keep asserting on the words of the call.
-func stubBatchOwnerCalls(t *testing.T, run func(invocation ownercall.Invocation, argv ...string) error) {
+func stubLaneCalls(t *testing.T, run func(invocation ownercall.Invocation, argv ...string) error) {
 	t.Helper()
-	original := batchowner.BatchOwnerCalls
-	t.Cleanup(func() { batchowner.BatchOwnerCalls = original })
-	batchowner.BatchOwnerCalls = batchowner.BatchOwnerCallSet{
+	original := batchowner.LaneCalls
+	t.Cleanup(func() { batchowner.LaneCalls = original })
+	batchowner.LaneCalls = batchowner.LaneCallSet{
 		Handover: func(invocation ownercall.Invocation, request ownercall.HandoverRequest) error {
 			argv := []string{"goal", "handover", "--root", request.Root, "--id", request.GoalID, "--lineage", invocation.Lineage,
 				"--target-machine", request.TargetMachine, "--target-lineage", request.TargetLineage,

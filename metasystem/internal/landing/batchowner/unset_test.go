@@ -155,7 +155,7 @@ func (bed *unsetBed) publishRelease(t *testing.T, goalID string) {
 func (bed *unsetBed) unset(t *testing.T) lane.UnsetReport {
 	t.Helper()
 	steps := UnsetLane{Home: bed.home, By: "Wido", Now: func() time.Time { return unsetNow },
-		Calls: BatchOwnerCallSet{
+		Calls: LaneCallSet{
 			Handover: func(ownercall.Invocation, ownercall.HandoverRequest) error {
 				t.Fatalf("goal-a was handed back to a seat that holds another goal")
 				return nil

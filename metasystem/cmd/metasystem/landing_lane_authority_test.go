@@ -118,7 +118,7 @@ func (bed laneAuthorityBed) join(t *testing.T) (batch.Record, error) {
 		return batch.JoinAdmission{Tree: unit.Admission.Tree, Status: "verified", AttemptID: "join-admission"}, nil
 	}
 	// The production handover, reading this bed's host home.
-	dependencies.Handover = batchowner.LaneForwardHandover(func() (string, error) { return bed.home, nil }, &batchowner.BatchOwnerCalls)
+	dependencies.Handover = batchowner.LaneForwardHandover(func() (string, error) { return bed.home, nil }, &batchowner.LaneCalls)
 	return batchowner.ExecuteBatchJoin(batchowner.BatchJoinRequest{SeatRoot: bed.seat, LandingRoot: bed.lane,
 		GoalID: "standing-validation", ChainID: "chain-a", At: laneAuthorityNow}, dependencies)
 }
@@ -578,7 +578,7 @@ func TestBeginRenewsTheLanesClaimsToItsCustodyEpoch(t *testing.T) {
 	tree := func() string {
 		return strings.TrimSpace(goalSyncMutationGit(t, bed.seat, "rev-parse", goal.AcceptedRef+"^{tree}"))
 	}
-	if err := batchowner.RenewLaneClaims(bed.home, bed.lane, bed.seat, laneAuthorityBatch, tree(), &batchowner.BatchOwnerCalls); err != nil {
+	if err := batchowner.RenewLaneClaims(bed.home, bed.lane, bed.seat, laneAuthorityBatch, tree(), &batchowner.LaneCalls); err != nil {
 		t.Fatalf("renewal: %v", err)
 	}
 	file := bed.ledger(t)
@@ -586,7 +586,7 @@ func TestBeginRenewsTheLanesClaimsToItsCustodyEpoch(t *testing.T) {
 		t.Fatalf("renewed claim = %+v %+v", file.Claimed, file.StopCapability)
 	}
 	before := goalSyncMutationGit(t, bed.seat, "rev-parse", goal.AcceptedRef)
-	if err := batchowner.RenewLaneClaims(bed.home, bed.lane, bed.seat, laneAuthorityBatch, tree(), &batchowner.BatchOwnerCalls); err != nil {
+	if err := batchowner.RenewLaneClaims(bed.home, bed.lane, bed.seat, laneAuthorityBatch, tree(), &batchowner.LaneCalls); err != nil {
 		t.Fatalf("second renewal: %v", err)
 	}
 	if after := goalSyncMutationGit(t, bed.seat, "rev-parse", goal.AcceptedRef); after != before {

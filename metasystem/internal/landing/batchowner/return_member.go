@@ -24,7 +24,7 @@ type MemberReturn struct {
 	// landing agent asks.
 	Person, Reason, Actor string
 	Now                   time.Time
-	Calls                 *BatchOwnerCallSet
+	Calls                 *LaneCallSet
 	// Fetch fetches origin's main into the lane checkout and names its tree.
 	Fetch func(checkout string) (string, error)
 }

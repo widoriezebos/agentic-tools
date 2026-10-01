@@ -242,7 +242,7 @@ func (a landingAgent) liveOrStarting(home func() (string, error)) func() (string
 }
 
 // probe reads whether a landing agent runs on this computer, its process
-// and since when: what the lane's view shows where the batch owner was.
+// and since when: what the lane's view shows as the lane's runner.
 func (a landingAgent) probe(string) (lane.OwnerProbe, error) {
 	records, err := a.manager().List()
 	if err != nil {

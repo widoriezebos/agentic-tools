@@ -45,7 +45,7 @@ func ProductionBeginSeams() BeginSeams {
 	return BeginSeams{Now: func() time.Time { return time.Now().UTC() }, NewID: newAttemptID, Authorize: authorizeMember}
 }
 
-// authorizeMember is the batch owner's member authority, read for a member
+// authorizeMember is a batch member's authority, read for a member
 // the batch has not sealed through the claim it joined with.
 func authorizeMember(install string, record batch.Record, unit batch.Unit) error {
 	seal := map[string]batch.Claim{}

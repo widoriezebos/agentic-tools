@@ -578,7 +578,7 @@ type proofLaunchAdmission struct {
 	// laneAccount resolves the lane identity of a lane checkout or control
 	// root; nil reads the host's lane record.
 	laneAccount func(root string) (string, error)
-	// laneOwner proves the caller descends from the lane's owner process;
+	// laneOwner proves the caller descends from the lane's landing agent;
 	// nil proves it against the lane checkout's lease holder.
 	laneOwner func(root string, callerPID int64) error
 	// CallerPID is the supplied process the admission classifies and whose
@@ -1362,7 +1362,7 @@ func admitLaneProofLaunch(request proofLaunchAdmission, caller lease.ClassifyRes
 			prove = proveLaneOwnerCaller
 		}
 		if err := prove(anchor, request.callerPID()); err != nil {
-			return refuse("only the lane's owner process, proven by its identity, or a person charges a proof to the lane: %v", err)
+			return refuse("only the lane's landing agent, proven by its identity, or a person charges a proof to the lane: %v", err)
 		}
 	}
 	capValue, _, _, err := dispatchcore.ResolveCap(request.ConfPath, "proof", "main", "proof", "", request.CapMin)

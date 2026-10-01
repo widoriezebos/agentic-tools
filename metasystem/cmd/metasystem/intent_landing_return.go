@@ -140,7 +140,7 @@ func (inv *intentInvocation) landingReturn(owners laneVerbOwners, home string, r
 	}
 	report, err := owners.returnMember(batchowner.MemberReturn{Home: home, Checkout: record.Root, Install: installation,
 		BatchID: strings.TrimSpace(inv.input.text("batch")), Member: member, Disposition: disposition, Person: person,
-		Reason: strings.TrimSpace(inv.input.text("reason")), Actor: actor, Now: owners.now(), Calls: &batchowner.BatchOwnerCalls})
+		Reason: strings.TrimSpace(inv.input.text("reason")), Actor: actor, Now: owners.now(), Calls: &batchowner.LaneCalls})
 	var returnRefusal *batch.ReturnRefusal
 	var laneRefusal *lane.Refusal
 	switch {

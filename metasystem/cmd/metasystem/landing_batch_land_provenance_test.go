@@ -132,7 +132,7 @@ func recoverBatchProvenanceFixture(t *testing.T, chains []string, commitTrailers
 		result := stub.Run(testgit.Call{Dir: dir, Args: args})
 		return string(result.Stdout), result.Err
 	}
-	seams := batchowner.RecoverySeams(root, batch.ModuleRoot(root), "", store, batchProvenanceTestID, time.Unix(3, 0), gitRead, &batchowner.BatchOwnerCalls, laneRecoveryInvocation)
+	seams := batchowner.RecoverySeams(root, batch.ModuleRoot(root), "", store, batchProvenanceTestID, time.Unix(3, 0), gitRead, &batchowner.LaneCalls, laneRecoveryInvocation)
 	finalized := make(map[string]string)
 	seams.Finalize = func(unit batch.Unit, commit string) error {
 		validUnit, validCommit := false, false
@@ -221,8 +221,8 @@ func TestBatchRecoveryLostFinalizeReplyDoesNotRepeatGoalEdit(t *testing.T) {
 	}
 
 	edits := 0
-	realEdit := batchowner.BatchOwnerCalls.EditNext
-	stubBatchOwnerCalls(t, func(invocation ownercall.Invocation, args ...string) error {
+	realEdit := batchowner.LaneCalls.EditNext
+	stubLaneCalls(t, func(invocation ownercall.Invocation, args ...string) error {
 		if len(args) < 3 || args[0] != "internal" || args[1] != "goal" || args[2] != "edit" {
 			return nil
 		}
@@ -315,7 +315,7 @@ func TestBatchLastBranchLandingSweepsGoalBranch(t *testing.T) {
 			}
 			originalSweep := batchowner.BatchGoalBranchSweep
 			t.Cleanup(func() { batchowner.BatchGoalBranchSweep = originalSweep })
-			stubBatchOwnerCalls(t, func(ownercall.Invocation, ...string) error { return nil })
+			stubLaneCalls(t, func(ownercall.Invocation, ...string) error { return nil })
 			sweeps := 0
 			if test.failOnce {
 				batchowner.BatchGoalBranchSweep = func(request goalbranch.SweepRequest) (goalbranch.SweepResult, error) {
@@ -387,6 +387,6 @@ func laneRecoveryInvocation() (ownercall.Invocation, error) {
 // batch through the production seams (lane design r10 §1 step 3), reading
 // origin's main in the bed's checkout.
 func recoverBatchLanding(root string, store batch.Store, at time.Time) error {
-	seams := batchowner.RecoverySeams(root, batch.ModuleRoot(root), "", store, batchProvenanceTestID, at, batchowner.GitOutput, &batchowner.BatchOwnerCalls, laneRecoveryInvocation)
+	seams := batchowner.RecoverySeams(root, batch.ModuleRoot(root), "", store, batchProvenanceTestID, at, batchowner.GitOutput, &batchowner.LaneCalls, laneRecoveryInvocation)
 	return batch.RecoverPushedSeries(store, batchProvenanceTestID, lane.ClaimLineage, at, seams)
 }

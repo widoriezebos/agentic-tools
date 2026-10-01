@@ -115,7 +115,7 @@ func TestUnsetForceRecordsThePersonPastUnknownCustody(t *testing.T) {
 		t.Fatal(err)
 	}
 	steps := UnsetLane{Home: bed.home, By: "Wido", Now: func() time.Time { return unsetNow },
-		Calls: BatchOwnerCallSet{
+		Calls: LaneCallSet{
 			Handover: func(ownercall.Invocation, ownercall.HandoverRequest) error { return nil },
 			EditNext: func(ownercall.Invocation, string, string, string) error { return nil },
 			Release:  func(ownercall.Invocation, string, string) error { return nil },

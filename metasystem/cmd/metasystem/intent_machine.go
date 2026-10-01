@@ -244,7 +244,7 @@ func (inv *intentInvocation) discoverHostMachines(fleet map[string]bool) hostRea
 
 // readHostMachines is discoverHostMachines with each machine's status read
 // by the stop transition status uses, this user's running launches placed
-// in the checkout they work in, and the lane owner's view.
+// in the checkout they work in, and the lane's landing agent.
 func (inv *intentInvocation) readHostMachines(fleet map[string]bool) hostReading {
 	reading := inv.discoverHostMachines(fleet)
 	notOurs := map[int64]bool{}
@@ -609,7 +609,7 @@ func runIntentMachineList(inv *intentInvocation) int {
 // headline counts this computer's machines, their jobs and the machines
 // elsewhere; one row per machine of the fleet follows. --verbose adds each
 // machine of this computer with its checkout, helpers, jobs, launches and
-// the lane's owner, the machines on other computers by their last report,
+// the lane's landing agent, the machines on other computers by their last report,
 // and the processes that are not MetaSystem's.
 func (inv *intentInvocation) machineListView(report seat.Report, reading hostReading, others []otherComputerMachine) func(*textui.Page) {
 	return func(page *textui.Page) {
@@ -812,7 +812,7 @@ func machinePublication(env textui.Env, state seat.PublicationState) string {
 }
 
 // machineCard is one machine of this computer as --verbose shows it: its
-// checkout and roles, its helpers, jobs and launches, and the lane's owner.
+// checkout and roles, its helpers, jobs and launches, and the lane's agent.
 func machineCard(page *textui.Page, env textui.Env, machine *hostMachine) {
 	aside := []string{env.Path(machine.Checkout)}
 	if machine.This {

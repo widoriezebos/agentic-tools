@@ -81,7 +81,7 @@ func FetchBatchOrigin(root string) (string, string, error) {
 // whose tree is baseTree (the batch's base): an earlier landing of the same
 // source, chain or change, reverted since, is never taken for this batch's.
 // A base that is not on main finds nothing.
-func RecoverySeams(root, controlRoot, baseTree string, store batch.Store, id string, at time.Time, gitRead func(string, ...string) (string, error), calls *BatchOwnerCallSet, invoke func() (ownercall.Invocation, error)) batch.RecoverySeams {
+func RecoverySeams(root, controlRoot, baseTree string, store batch.Store, id string, at time.Time, gitRead func(string, ...string) (string, error), calls *LaneCallSet, invoke func() (ownercall.Invocation, error)) batch.RecoverySeams {
 	findTrailer := func(matches func(string) bool) (string, bool, error) {
 		// Each commit is its hash, its tree when bounded, and its message.
 		format, width := "%H%x00%B%x00", 2

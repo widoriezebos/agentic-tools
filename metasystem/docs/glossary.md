@@ -313,11 +313,12 @@ the engine's `metasystem goal` family (`internal/goal`).
   the rerun protocol (`docs/flake-registry.md`): a listed leg earns one
   solo rerun, an unlisted failure is diagnosed first, three sightings
   in thirty days force a fix goal.
-- **Landing batch** — an ordered set of reviewed goal units whose claims have
-  been handed to the dedicated landing owner. The owner seals their selected
-  test union, proves one tip, creates exact prefix receipts, builds every unit
-  commit locally in join order, and publishes the complete series with one
-  push. Red diagnosis may eject units, but never changes the survivors' order.
+- **Landing batch** — an ordered set of goal units and changes whose claims
+  have been handed to the landing lane's claim identity. The lane's landing
+  agent composes them into one series on main (`landing begin`), proves it
+  (`landing prove`), and publishes it with one push (`landing publish`); a
+  member that breaks the proof goes back to its seat (`landing return`), and
+  the survivors keep their order.
 - **Landing lane** — the one checkout per computer where every seat's work
   is proved and pushed: a separate checkout with the same engine and its
   own supervision, in which no agent works. The computer's lane record,
@@ -327,13 +328,12 @@ the engine's `metasystem goal` family (`internal/goal`).
   whose setting names another checkout is refused. How it works and why:
   `docs/concepts.md`, "Landing lane"; how to run it:
   `docs/working-with-agents.md`.
-- **Lane owner** — the batch owner process running in the landing lane's
-  checkout: it collects landing batches, proves one at a time on the
-  computer, pushes, and ejects on red. Every checkout carries the same
-  component; it runs only in the checkout the lane record names and stands
-  idle in every seat. The stewards of the computer's seats restart it when it
-  dies and give up after five deaths in a row; `landing start`, `stop` and
-  `restart` are a person's controls.
+- **Landing agent** — the one agent session per computer that works the
+  landing lane through its kernel verbs (`landing begin`, `prove`,
+  `publish`, `return`, `validate`). The steward of the lane's checkout wakes
+  it only when there is work; `landing stop` and `landing start` are a
+  person's controls. It replaced the lane owner, the batch owner process that
+  earlier engines ran in the lane's checkout.
 - **The seat lands it itself** — the route when the computer has no landing
   lane: `metasystem work land` proves the work on the seat and pushes it from
   there. Correct but slower: a full proof per landing, seats competing for

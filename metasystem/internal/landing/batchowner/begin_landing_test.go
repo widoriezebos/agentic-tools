@@ -165,7 +165,7 @@ func TestOrdinaryGoalLandingAndRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	finalized := map[string]string{}
-	seams := RecoverySeams(checkout, batch.ModuleRoot(checkout), "", store, id, at, GitOutput, &BatchOwnerCalls, nil)
+	seams := RecoverySeams(checkout, batch.ModuleRoot(checkout), "", store, id, at, GitOutput, &LaneCalls, nil)
 	seams.SweepGoalBranch = func(batch.Unit, string) error { return nil }
 	seams.Finalize = func(unit batch.Unit, landed string) error { finalized[unit.GoalID] = landed; return nil }
 	seams.Cleanup = func() error { return nil }

@@ -29,7 +29,7 @@ type UnsetLane struct {
 	By   string
 	Now  func() time.Time
 	// Calls publish the returns' goal changes.
-	Calls BatchOwnerCallSet
+	Calls LaneCallSet
 	// Agent names the landing agent launch that runs on this computer, if
 	// one does; StopAgent asks it to end. nil reads none.
 	Agent     func() (id string, live bool, err error)
@@ -41,7 +41,7 @@ type UnsetLane struct {
 
 // ProductionUnsetLane is landing unset for the person by, on this host.
 func ProductionUnsetLane(home, by string) UnsetLane {
-	return UnsetLane{Home: home, By: by, Now: func() time.Time { return time.Now().UTC() }, Calls: BatchOwnerCalls}
+	return UnsetLane{Home: home, By: by, Now: func() time.Time { return time.Now().UTC() }, Calls: LaneCalls}
 }
 
 // Seams are the unset's steps.

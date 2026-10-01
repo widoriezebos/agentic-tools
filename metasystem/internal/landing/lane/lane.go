@@ -1,7 +1,7 @@
 // Package lane is the host's one landing lane (batch-lane design U12): the
 // record that names the landing checkout every seat of this host lands
 // through, the flock that lets one batch prove at a time on the host, and the
-// keeper that restarts the lane's owner when it dies. Everything lives in the
+// keeper that wakes the lane's landing agent. Everything lives in the
 // host directory beside the board and the bridge (~/.metasystem/host); the
 // caller passes the home, so tests never touch the real one.
 package lane
@@ -375,5 +375,5 @@ func ProvingHolder(home string) string {
 	if pid := strings.TrimSpace(string(data)); err == nil && pid != "" {
 		return "pid " + pid
 	}
-	return "another landing owner"
+	return "another landing proof"
 }
