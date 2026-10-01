@@ -684,31 +684,31 @@ func critiqueRegisterClose(repoRoot, rootJob string, deferFindings deferReviewOb
 			}
 			if len(blockers) > 0 {
 				foldedRound, roundOK := numInt(root[findingRegisterRoundField])
-				if asString(root["role"]) == "design-critic" && roundOK && foldedRound == 2 {
-					return roundTwoHumanRaise(asString(root["goalId"]), roundTwoHumanFindingIDs(root, register, unresolved, blockerIDs))
+				if roundOK && designFinalRound(repoRoot, state, rootJob, root, foldedRound) {
+					return designCapHumanRaise(asString(root["goalId"]), foldedRound, designCapHumanFindingIDs(root, register, unresolved, blockerIDs))
 				}
 				return fmt.Errorf("%s\na person accepts each risk with metasystem goal accept-risk, or raises the goal's budget with metasystem goal budget", strings.Join(blockers, "\n"))
 			}
 			if len(unresolved) == 0 {
-				// Section 4 bullet 3 closes a clean folded second round.
+				// Section 4 bullet 3 closes a clean folded round.
 				return nil
 			}
 			foldedRound, err := findingRegisterRound(root, len(register))
 			if err != nil {
 				return err
 			}
-			designRoundTwo := asString(root["role"]) == "design-critic" && foldedRound == 2
+			designFinal := designFinalRound(repoRoot, state, rootJob, root, foldedRound)
 			useFixture := false
-			if designRoundTwo {
+			if designFinal {
 				// Section 4 bullet 4 defers only fixture-backed mechanical findings on a falling trajectory;
 				// bullet 5 sends every other non-clean row to the human without another automatic round.
-				humanIDs := roundTwoHumanFindingIDs(root, register, unresolved, nil)
+				humanIDs := designCapHumanFindingIDs(root, register, unresolved, nil)
 				if len(humanIDs) > 0 {
-					return roundTwoHumanRaise(asString(root["goalId"]), humanIDs)
+					return designCapHumanRaise(asString(root["goalId"]), foldedRound, humanIDs)
 				}
 				useFixture = true
 			}
-			if !designRoundTwo {
+			if !designFinal {
 				accounting, accountingErr := critiqueRoundAccounting(repoRoot, state, rootJob, root)
 				if accountingErr != nil {
 					return malformedRoundAccounting(rootJob, accountingErr)
@@ -773,7 +773,21 @@ func deferReviewObligationsWithReads(repoRoot, rootJob, goalID, machine, lineage
 	return goal.Opid(req.Ulid, machine, lineage), nil
 }
 
-func roundTwoHumanRaise(goalID string, findingIDs []string) error {
+// designFinalRound reports whether a design critique's folded round is its
+// last: the limit frozen on the chain root (five since 2026-10-01, a backstop;
+// a root frozen earlier keeps its two).
+func designFinalRound(repoRoot string, state critiqueState, rootJob string, root map[string]any, foldedRound int64) bool {
+	if asString(root["role"]) != "design-critic" {
+		return false
+	}
+	limit := int64(designCritiqueRoundLimit)
+	if account, err := critiqueRoundAccounting(repoRoot, state, rootJob, root); err == nil {
+		limit = account.limit
+	}
+	return foldedRound >= limit
+}
+
+func designCapHumanRaise(goalID string, round int64, findingIDs []string) error {
 	unique := map[string]bool{}
 	for _, id := range findingIDs {
 		unique[id] = true
@@ -788,11 +802,11 @@ func roundTwoHumanRaise(goalID string, findingIDs []string) error {
 		first = ids[0]
 	}
 	return &OpError{Code: CritiqueCapExhaustedExitCode, Reason: CritiqueCapExhaustedReason,
-		Message: fmt.Sprintf("design round 2 left findings %s for a person to decide\nrun: metasystem goal accept-risk %s --finding %s --reason TEXT, or re-scope it with metasystem goal edit %s",
-			strings.Join(ids, ", "), goalID, first, goalID)}
+		Message: fmt.Sprintf("design round %d left findings %s for a person to decide\nrun: metasystem goal accept-risk %s --finding %s --reason TEXT, or re-scope it with metasystem goal edit %s",
+			round, strings.Join(ids, ", "), goalID, first, goalID)}
 }
 
-func roundTwoHumanFindingIDs(root map[string]any, register []registerFinding, unresolved []int, ids []string) []string {
+func designCapHumanFindingIDs(root map[string]any, register []registerFinding, unresolved []int, ids []string) []string {
 	for _, i := range unresolved {
 		f := register[i]
 		if f.Grain != "mechanical" || f.Fixture == "" {
@@ -807,26 +821,26 @@ func roundTwoHumanFindingIDs(root map[string]any, register []registerFinding, un
 	return ids
 }
 
+// fallingMaterialTrajectory reports whether the last folded round's material
+// count is below the round before it.
 func fallingMaterialTrajectory(value any) bool {
 	history, ok := value.([]any)
 	if !ok {
 		return false
 	}
-	material := map[int64]int64{}
 	var last int64
+	var counts []int64
 	for _, raw := range history {
 		row, ok := raw.(map[string]any)
 		round, roundOK := numInt(row["round"])
 		count, countOK := numInt(row["material"])
-		if !ok || len(row) != 2 || !roundOK || !countOK || round <= last || round > 2 || count < 0 {
+		if !ok || len(row) != 2 || !roundOK || !countOK || round <= last || count < 0 {
 			return false
 		}
 		last = round
-		material[round] = count
+		counts = append(counts, count)
 	}
-	roundOne, onePresent := material[1]
-	roundTwo, twoPresent := material[2]
-	return onePresent && twoPresent && roundTwo < roundOne
+	return len(counts) >= 2 && counts[len(counts)-1] < counts[len(counts)-2]
 }
 
 func cleanClosure(state critiqueState, rootJob string, root map[string]any, register []registerFinding) (Closure, bool, error) {

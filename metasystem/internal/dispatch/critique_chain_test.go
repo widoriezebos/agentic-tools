@@ -154,6 +154,10 @@ func TestCompletedAndFailedRoundsCountButCancelledDoesNot(t *testing.T) {
 
 func TestCritiqueExhaustionAdvanceBackfillsLegacyRoundAccounting(t *testing.T) {
 	repo := t.TempDir()
+	// The legacy root reads the configured ceiling; pin it at three rounds.
+	if err := os.WriteFile(filepath.Join(repo, "metasystem.conf"), []byte("metasystem.budget.review-round-max=3\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	writeCapRound(t, repo, "critic", "design-critic", 1, false,
 		[]any{registerFindingValue("S-legacy", true, "severe evidence")}, []any{registerRigor("S-legacy", "severe")})
 	writeCapRound(t, repo, "critic", "design-critic", 2, false, []any{}, []any{})

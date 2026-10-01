@@ -193,7 +193,10 @@ func TestTierBoxesAndReviewCeiling(t *testing.T) {
 	wants := map[uint8]struct {
 		minutes uint64
 		rounds  int64
-	}{1: {360, 0}, 2: {720, 2}, 3: {1200, 3}}
+	}{1: {360, 0}, 2: {720, 5}, 3: {1200, 5}}
+	if maximum, err := ReviewRoundMax(conf); err != nil || maximum != 5 {
+		t.Fatalf("default review-round ceiling = %d, %v; want 5 (critique cap is five, Wido 2026-10-01)", maximum, err)
+	}
 	for tier, want := range wants {
 		box, err := TierBox(conf, tier)
 		if err != nil || box.ReservedJobMinutesLimit != want.minutes || box.ReviewRoundLimit != want.rounds {
@@ -239,7 +242,7 @@ func TestTierBoxUsesDefaultsWhenConfigurationFileIsAbsent(t *testing.T) {
 	clearBudgetLawEnvironment(t)
 	conf := filepath.Join(t.TempDir(), "missing-metasystem.conf")
 	box, err := TierBox(conf, 3)
-	if err != nil || box.ReservedJobMinutesLimit != 1200 || box.ReviewRoundLimit != 3 {
+	if err != nil || box.ReservedJobMinutesLimit != 1200 || box.ReviewRoundLimit != 5 {
 		t.Fatalf("missing configuration did not use tier-three defaults: %+v %v", box, err)
 	}
 }

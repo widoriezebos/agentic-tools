@@ -174,7 +174,7 @@ func TestSTR3MigrationBootstrap01ApprovedAndClaimedLegacyGoals(t *testing.T) {
 	if approved.Tier != 1 || approved.Risk == nil || approved.Risk.DerivedTier() != 1 || approved.Budget.ReviewRoundLimit != 0 || approved.State != StateApproved || approved.ValidateApprovalRecord() != nil {
 		t.Fatalf("approved legacy normalization = %+v", approved)
 	}
-	if claimed.Tier != 2 || claimed.Risk == nil || claimed.Risk.DerivedTier() != 2 || claimed.Budget.ReviewRoundLimit != 2 || claimed.State != StateClaimed || claimed.ValidateApprovalRecord() != nil {
+	if claimed.Tier != 2 || claimed.Risk == nil || claimed.Risk.DerivedTier() != 2 || claimed.Budget.ReviewRoundLimit != 5 || claimed.State != StateClaimed || claimed.ValidateApprovalRecord() != nil {
 		t.Fatalf("claimed legacy normalization = %+v", claimed)
 	}
 	if tree.Root.TierLaw != human.opid() {

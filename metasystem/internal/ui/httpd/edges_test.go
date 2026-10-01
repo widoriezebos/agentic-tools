@@ -61,7 +61,7 @@ func edgeLedger(t *testing.T) string {
 	runGit(t, t.TempDir(), "clone", "-q", origin, seed)
 	writeFixture(t, filepath.Join(seed, "README.md"), "seed\n", 0o644)
 	writeFixture(t, filepath.Join(seed, "metasystem.conf"),
-		"metasystem.runtimes=fake\nmetasystem.budget.review-round-max=3\n", 0o644)
+		"metasystem.runtimes=fake\nmetasystem.budget.review-round-max=5\n", 0o644)
 	runGit(t, seed, "add", "README.md", "metasystem.conf")
 	runGit(t, seed, "commit", "-qm", "seed")
 	runGit(t, seed, "push", "-q", "origin", "main")

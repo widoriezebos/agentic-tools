@@ -64,7 +64,7 @@ func TestSendToCritiqueRunsTheVerbWithTheGoalAndTheBudget(t *testing.T) {
 	// The round's own composition names the model reading it.
 	b.writeJSON(filepath.Join(b.install, "artifacts", "agents", "rev1", "rounds", "1", "composition.json"), map[string]any{"model": "gpt-6-astra"})
 	loop, err := designLoopRead(roots, id)
-	if err != nil || loop.State != "reading" || loop.Round != 1 || loop.Limit != 2 || loop.ToolCalls != 30 || loop.Goal != bedGoal || loop.Critic != "gpt-6-astra" {
+	if err != nil || loop.State != "reading" || loop.Round != 1 || loop.Limit != 5 || loop.ToolCalls != 30 || loop.Goal != bedGoal || loop.Critic != "gpt-6-astra" {
 		t.Fatalf("the reading chain: %+v %v", loop, err)
 	}
 }
@@ -146,7 +146,7 @@ func TestARecurringIDIsItsOwnCardInEachRound(t *testing.T) {
 	designDecide(roots, id, 1, httpd.DesignRow{Finding: "F1", Disposition: "accepted", Reasoning: "real", Amendment: "section 2"})
 	b.writeFile(b.design, strings.Replace(string(mustRead(t, b.design)), "First version.", "Second version.", 1))
 	requested, err := designReviewRunWith(roots, id, httpd.DesignAsked{Goal: bedGoal, ToolCalls: 30, After: 1}, owners)
-	if err != nil || !strings.Contains(requested.Summary, "round 2 of critique rev1 requested, the final round") {
+	if err != nil || !strings.Contains(requested.Summary, "round 2 of critique rev1 requested") || strings.Contains(requested.Summary, "the final round") {
 		t.Fatalf("round 2 requested: %+v %v", requested, err)
 	}
 	b.finish("rev1-r2", 2, "completed", finding("F1", true, "second"))

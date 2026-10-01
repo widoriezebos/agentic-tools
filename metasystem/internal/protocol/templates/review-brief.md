@@ -3,6 +3,10 @@
 Round budget: <N focused rounds — agreed before round one; exhaustion
 follows the critique skills' budget rules, never a silent round N+1>
 
+The count is a backstop, not the stop criterion: the loop ends when no
+remaining finding is material under the threat model below (R-124: step 1
+does not work or is not safe without it).
+
 Threat model: <who and what this review defends against, stated
 plainly. A TRUE finding outside this model closes as out-of-scope,
 citing this section — accepted as fact, rejected as work. Example:

@@ -152,11 +152,16 @@ func TestDesignLoopRefutedFindingClosesUnchangedDesign(t *testing.T) {
 // finalRound runs a chain to its answered final round: round 1's F1 is
 // accepted and folded, the follow-up re-raises F1 and adds the round's own
 // findings, and the author folds again. What the round-2 answer does is the
-// engine's close.
+// engine's close. The chain's root froze a two-round limit, as roots
+// dispatched before the cap rose to five did; the final round is the frozen
+// limit, whatever it is.
 func finalRound(t *testing.T, b *designLoopBed, register func(), roundTwo []map[string]any, decisions map[string]string) intentResult {
 	t.Helper()
 	b.review()
 	b.finish("rev1", 1, "completed", finding("F1", true, "the reader forgets the page"))
+	root := b.job("rev1")
+	root["reviewRoundLimit"] = 2
+	b.writeJob(root)
 	first := b.decide(b.review(), map[string]string{"F1": "accepted | a real gap | section 2 names the page"})
 	b.writeFile(b.design, strings.Replace(string(mustRead(t, b.design)), "First version.", "Second version.", 1))
 	if requested := b.review("--dispositions", first, "--after", "1"); len(b.followUps) != 1 || !strings.Contains(requested.Summary, "rev1-r2") ||
@@ -168,6 +173,22 @@ func finalRound(t *testing.T, b *designLoopBed, register func(), roundTwo []map[
 	b.writeFile(b.design, strings.Replace(string(mustRead(t, b.design)), "Second version.", "Third version.", 1))
 	register()
 	return b.review("--dispositions", second, "--after", "2")
+}
+
+// TestDesignLoopRoundTwoOfFiveIsNotFinal: a design chain whose root froze
+// no limit has the design critique's five rounds (Wido 2026-10-01, a
+// backstop), so round 2 is requested as an ordinary round, not the final one.
+func TestDesignLoopRoundTwoOfFiveIsNotFinal(t *testing.T) {
+	t.Parallel()
+	b := newDesignLoopBed(t)
+	b.review()
+	b.finish("rev1", 1, "completed", finding("F1", true, "the reader forgets the page"))
+	first := b.decide(b.review(), map[string]string{"F1": "accepted | a real gap | section 2 names the page"})
+	b.writeFile(b.design, strings.Replace(string(mustRead(t, b.design)), "First version.", "Second version.", 1))
+	requested := b.review("--dispositions", first, "--after", "1")
+	if len(b.followUps) != 1 || !strings.Contains(requested.Summary, "round 2 of critique rev1 requested") || strings.Contains(requested.Summary, "the final round") {
+		t.Fatalf("round 2 of a five-round design chain: %+v", requested)
+	}
 }
 
 // TestDesignLoopFinalRoundExitsByTheEngine (S66-07, S66-08): the final
