@@ -125,7 +125,7 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 	if !inv.input.switched("wait") {
 		running, already, err := plain.Start(admitted.installation, checkout, seams)
 		if err != nil {
-			return inv.render(landingProveRefusal(inv, targets, err))
+			return inv.render(landingProveRefusal(inv, targets, checkout, err))
 		}
 		result := intentResult{Outcome: intentConfirmed, Targets: targets, Data: running,
 			Summary: "proving " + provedWords(running.Commit, running.Tree) + " in the background; end your turn, the keeper wakes the landing agent when it ends"}
@@ -153,7 +153,7 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 	}
 	result, err := plain.Run(admitted.installation, checkout, command, attempt, output, seams)
 	if err != nil {
-		return inv.render(landingProveRefusal(inv, targets, err))
+		return inv.render(landingProveRefusal(inv, targets, checkout, err))
 	}
 	words := provedWords(result.Commit, result.Tree)
 	if result.Result == plain.Green {
@@ -161,12 +161,17 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: result, Summary: summary, view: landingDone(summary, result.Log)})
 	}
 	return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Data: result,
-		Summary: words + " is proven red; its log is " + result.Log,
+		Summary: words + " is proven red" + landingRedReason(result.Reason) + "; its log is " + result.Log,
 		next:    inv.publicArgv("landing", "return", "GOAL", "--reason", "TEXT"), nextReason: "gives the goal that broke it back to its seat"})
 }
 
 // landingProveRefusal renders a prove that could not start or run.
-func landingProveRefusal(inv *intentInvocation, targets []intentTarget, err error) intentResult {
+func landingProveRefusal(inv *intentInvocation, targets []intentTarget, checkout string, err error) intentResult {
+	var dirty *plain.Dirty
+	if errors.As(err, &dirty) {
+		return intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: dirty.Error(),
+			next: []string{"git", "-C", checkout, "status"}, nextReason: "commit or drop them, then prove again"}
+	}
 	var busy *plain.Busy
 	if errors.As(err, &busy) {
 		return intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: busy.Error(),
@@ -229,4 +234,12 @@ func withRunningProof(view func(*textui.Page), running *landingRunningProof) fun
 		}
 		page.Section("Proving", "").Text(words)
 	}
+}
+
+// landingRedReason is a red result's reason besides the command's exit.
+func landingRedReason(reason string) string {
+	if reason == "" {
+		return ""
+	}
+	return " (" + reason + ")"
 }

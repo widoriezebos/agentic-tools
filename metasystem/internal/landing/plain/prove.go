@@ -48,6 +48,16 @@ type Result struct {
 	Log     string `json:"log"`
 	At      string `json:"at"`
 	Attempt string `json:"attempt,omitempty"`
+	// Reason says why a result is red besides the command's exit.
+	Reason string `json:"reason,omitempty"`
+}
+
+// Dirty is a prove refused because the lane checkout has uncommitted or
+// untracked changes: the command would see a tree that is not HEAD's.
+type Dirty struct{ Paths string }
+
+func (d *Dirty) Error() string {
+	return "the lane checkout has uncommitted or untracked changes (" + d.Paths + "), so nothing was proven"
 }
 
 // ProveSeams are a proof's effects.
@@ -151,6 +161,9 @@ func Start(install, checkout string, seams ProveSeams) (Running, bool, error) {
 	if err != nil {
 		return Running{}, false, err
 	}
+	if err := clean(checkout); err != nil {
+		return Running{}, false, err
+	}
 	var started Running
 	already := false
 	err = withLock(install, func() error {
@@ -208,6 +221,12 @@ func Run(install, checkout, command, attempt string, output io.Writer, seams Pro
 		return Result{}, err
 	}
 	running := Running{Attempt: attempt, Tree: tree, Commit: commit}
+	if attempt == "" {
+		// A detached start checked the checkout before it launched this.
+		if err := clean(checkout); err != nil {
+			return Result{}, err
+		}
+	}
 	err = withLock(install, func() error {
 		current, recorded, alive, err := ReadRunning(install, seams)
 		if err != nil {
@@ -243,6 +262,11 @@ func Run(install, checkout, command, attempt string, output io.Writer, seams Pro
 		fmt.Fprintf(output, "\nlanding prove: the command ended: %v\n", runErr)
 	}
 	result := Result{Tree: running.Tree, Commit: running.Commit, Result: outcome, Log: running.Log, At: seams.now().Format(time.RFC3339), Attempt: running.Attempt}
+	// The result holds only for the tree the command saw throughout.
+	if _, after, err := Head(checkout); err != nil || after != running.Tree || clean(checkout) != nil {
+		result.Result, result.Reason = Red, "the tree changed during the proof"
+		fmt.Fprintf(output, "\nlanding prove: %s, so it is red\n", result.Reason)
+	}
 	err = withLock(install, func() error {
 		if err := appendLine(resultsPath(install), result); err != nil {
 			return err
@@ -304,4 +328,22 @@ func Git(dir string, args ...string) (string, error) {
 		return "", err
 	}
 	return strings.TrimSpace(string(out)), nil
+}
+
+// clean refuses a checkout with uncommitted or untracked changes (*Dirty):
+// the command must see exactly HEAD's tree.
+func clean(checkout string) error {
+	status, err := Git(checkout, "status", "--porcelain", "--untracked-files=all")
+	if err != nil {
+		return err
+	}
+	if status == "" {
+		return nil
+	}
+	lines := strings.Split(status, "\n")
+	paths := strings.TrimSpace(lines[0][min(3, len(lines[0])):])
+	if len(lines) > 1 {
+		paths += fmt.Sprintf(" and %d more", len(lines)-1)
+	}
+	return &Dirty{Paths: paths}
 }

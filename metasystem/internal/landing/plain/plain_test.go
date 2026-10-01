@@ -352,6 +352,8 @@ func TestDetachedProveRunsOnceAndRecordsItsResult(t *testing.T) {
 	if _, _, err := Start(b.install, b.checkout, seams); !errors.As(err, &busy) {
 		t.Fatalf("another tree while one runs: %v", err)
 	}
+	// Back to the tree being proven, so its result stands.
+	b.git(b.checkout, "reset", "--quiet", "--hard", running.Commit)
 	b.write(b.blockRelease, "")
 	deadline := time.Now().Add(2 * time.Minute)
 	for {
@@ -458,5 +460,72 @@ func TestProofHoldWhileALiveProofRuns(t *testing.T) {
 	alive = false
 	if reason, err := ProofHold(b.install, seams); err != nil || reason != "" {
 		t.Fatalf("a dead proof holds nothing: %q %v", reason, err)
+	}
+}
+
+// F-1: a checkout with uncommitted or untracked changes is refused before
+// anything runs (Start and Run alike), so a green is never recorded for a
+// committed tree the command did not see; a proof during which HEAD's tree
+// changed, or the worktree got dirty, is recorded red with the reason.
+func TestProveRefusesADirtyCheckoutAndRedsATreeThatChanged(t *testing.T) {
+	t.Parallel()
+	b := newBed(t)
+	b.seat("seat-a", "goal-a")
+	b.merge("goal-a")
+	b.write(filepath.Join(b.checkout, "fix.txt"), "an uncommitted fix\n")
+	var dirty *Dirty
+	if _, err := Run(b.install, b.checkout, b.greenScript, "", &bytes.Buffer{}, ProveSeams{Now: func() time.Time { return bedNow }}); !errors.As(err, &dirty) {
+		t.Fatalf("run in an untracked checkout: %v", err)
+	}
+	seams := ProveSeams{Executable: func() (string, error) { return "/engine", nil },
+		Launch: func([]string, string, string) (int64, error) {
+			t.Fatal("a dirty checkout started a proof")
+			return 0, nil
+		}}
+	if _, _, err := Start(b.install, b.checkout, seams); !errors.As(err, &dirty) {
+		t.Fatalf("start in an untracked checkout: %v", err)
+	}
+	if _, ok, _ := LastResult(b.install); ok {
+		t.Fatal("a refused proof recorded a result")
+	}
+	if err := os.Remove(filepath.Join(b.checkout, "fix.txt")); err != nil {
+		t.Fatal(err)
+	}
+	for name, script := range map[string]string{
+		"dirtied":   "echo changed >> goal-a.txt\n",
+		"committed": "echo changed >> goal-a.txt && git -c user.name=x -c user.email=x@example.invalid commit -qam moved\n",
+	} {
+		before := b.git(b.checkout, "rev-parse", "HEAD^{tree}")
+		result := b.prove(script)
+		if result.Result != Red || result.Tree != before || !strings.Contains(result.Reason, "the tree changed during the proof") {
+			t.Fatalf("%s: %+v", name, result)
+		}
+		b.git(b.checkout, "checkout", "--quiet", "--", ".")
+	}
+}
+
+// F-2: a new hand-in of a goal supersedes the goal's older waiting line:
+// it is not pending, so the keeper does not wake for it forever, and it
+// reads superseded.
+func TestANewHandInSupersedesTheOlderWaitingLine(t *testing.T) {
+	t.Parallel()
+	b := newBed(t)
+	first := b.seat("seat-a", "goal-a")
+	b.handIn("m1e", "goal-a", first)
+	second := b.seat("seat-a", "goal-a")
+	b.handIn("m1e", "goal-a", second)
+	pending, err := Pending(b.install, b.checkout)
+	if err != nil || len(pending) != 1 || pending[0].SHA != second {
+		t.Fatalf("pending: %+v %v", pending, err)
+	}
+	entries, _ := Entries(b.install)
+	if len(entries) != 2 || entries[0].State != StateSuperseded || entries[1].State != StateWaiting {
+		t.Fatalf("entries: %+v", entries)
+	}
+	if _, _, err := Return(b.install, "goal-a", "red", bedNow); err != nil {
+		t.Fatal(err)
+	}
+	if pending, _ := Pending(b.install, b.checkout); len(pending) != 0 {
+		t.Fatalf("after the return nothing is pending: %+v", pending)
 	}
 }

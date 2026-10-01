@@ -249,8 +249,9 @@ type landingStatusData struct {
 	Paused     bool `json:"paused"`
 	AgentAlive bool `json:"agent_alive"`
 	// Queue is every hand-in of queue.jsonl, oldest first, with its state:
-	// waiting, returned, or landed when origin's main (as the lane
-	// checkout last fetched it) contains its sha.
+	// waiting, returned, superseded by a newer hand-in of its goal, or
+	// landed when origin's main (as the lane checkout last fetched it)
+	// contains its sha.
 	Queue        []plain.Entry        `json:"queue"`
 	RunningProof *landingRunningProof `json:"running_proof"`
 	// LastProof is the newest line of results.jsonl.
@@ -309,7 +310,7 @@ func withPlainLane(view func(*textui.Page), data landingStatusData) func(*textui
 		}
 		rows := [][2]string{}
 		for _, entry := range data.Queue {
-			if entry.State == plain.StateLanded && !page.Verbose() {
+			if (entry.State == plain.StateLanded || entry.State == plain.StateSuperseded) && !page.Verbose() {
 				continue
 			}
 			state := entry.State
@@ -329,7 +330,7 @@ func withPlainLane(view func(*textui.Page), data landingStatusData) func(*textui
 		}
 		section := page.Section("Last", "")
 		if proof := data.LastProof; proof != nil {
-			section.KV("proven", textui.Plain(proof.Result+" for "+provedWords(proof.Commit, proof.Tree)+", "+lane.LocalText(proof.At)))
+			section.KV("proven", textui.Plain(proof.Result+landingRedReason(proof.Reason)+" for "+provedWords(proof.Commit, proof.Tree)+", "+lane.LocalText(proof.At)))
 		}
 		if push := data.LastPush; push != nil {
 			section.KV("push", textui.Plain(shortLandingID(push.Commit)+" (from "+shortLandingID(push.Old)+"), "+lane.LocalText(push.At)))

@@ -425,3 +425,29 @@ func witnessLandingReturnRepeat(t *testing.T) {
 	}
 	idemSameTree(t, "a repeated landing return", records, idemTreeDigest(t, plain.Dir(bed.installation)))
 }
+
+// F-1 at the verb: landing prove in a lane checkout with uncommitted or
+// untracked changes refuses in two lines and starts nothing.
+func TestPlainLaneProveRefusesADirtyCheckout(t *testing.T) {
+	t.Parallel()
+	bed := newPlainVerbBed(t)
+	bed.setCommand(t, "true")
+	bed.owners.landing.plainProve = plain.ProveSeams{Executable: func() (string, error) { return "/engine/metasystem", nil },
+		Launch: func([]string, string, string) (int64, error) {
+			t.Error("a dirty checkout started a proof")
+			return 0, nil
+		}}
+	if err := os.WriteFile(filepath.Join(bed.installation, "fix.txt"), []byte("not committed\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"landing", "prove"}, {"landing", "prove", "--wait"}} {
+		code, text := bed.run(t, args...)
+		lines := strings.Split(strings.TrimRight(text, "\n"), "\n")
+		if code != 1 || len(lines) != 2 || !strings.Contains(lines[0], "uncommitted or untracked changes") || !strings.Contains(lines[1], "git -C") {
+			t.Fatalf("%v = %d\n%s", args, code, text)
+		}
+	}
+	if data := bed.status(t); data["last_proof"] != nil {
+		t.Fatalf("a refused prove recorded a result: %v", data["last_proof"])
+	}
+}

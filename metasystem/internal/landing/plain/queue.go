@@ -28,6 +28,9 @@ const (
 	StateWaiting  = "waiting"
 	StateLanded   = "landed"
 	StateReturned = "returned"
+	// StateSuperseded is a waiting line a newer hand-in of its goal
+	// replaced: the lane no longer has work for it.
+	StateSuperseded = "superseded"
 )
 
 // Dir is where the lane keeps its records: in the lane installation.
@@ -116,7 +119,8 @@ func readLines[T any](path string) ([]T, error) {
 }
 
 // Entries are the queue's hand-ins, oldest first, each with its recorded
-// state: waiting or returned (Landed derives landed).
+// state: waiting, returned, or superseded by a newer hand-in of its goal
+// (Landed derives landed).
 func Entries(install string) ([]Entry, error) {
 	lines, err := readLines[Line](queuePath(install))
 	if err != nil {
@@ -128,6 +132,12 @@ func Entries(install string) ([]Entry, error) {
 		key := line.Goal + "@" + line.SHA
 		if line.Outcome == "" {
 			if _, seen := index[key]; !seen && line.Goal != "" && line.SHA != "" {
+				// A new hand-in of a goal supersedes its older waiting line.
+				for at := range entries {
+					if entries[at].Goal == line.Goal && entries[at].State == StateWaiting {
+						entries[at].State = StateSuperseded
+					}
+				}
 				index[key] = len(entries)
 				entries = append(entries, Entry{Goal: line.Goal, Branch: line.Branch, SHA: line.SHA, Seat: line.Seat, At: line.At, State: StateWaiting})
 			}
