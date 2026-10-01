@@ -8,6 +8,7 @@ package main
 
 import (
 	"errors"
+	"os"
 	"strings"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/kernel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
 
@@ -152,6 +154,12 @@ func provenTreeWords(proof kernel.TreeProof) string {
 // it when the proof ends. A repeat while that tree's proof runs is success.
 func runIntentLandingProveDetached(inv *intentInvocation, admitted laneKernel, request kernel.ProveRequest) int {
 	targets := laneTargets(admitted.record.Root)
+	if err := admitted.owners.proofCaller(admitted.layout); err != nil {
+		return inv.render(intentResult{Outcome: intentRefused, code: 3, Targets: targets,
+			Summary: "only the landing agent, or a person, starts a test run of the lane; nothing was started",
+			next:    inv.publicArgv("landing", "status"), nextReason: "shows the lane and its agent",
+			Details: []string{"refused because: " + err.Error()}})
+	}
 	started, err := admitted.owners.startProof(request)
 	if err != nil {
 		return inv.render(landingKernelRefusal(inv, targets, err))
@@ -220,4 +228,17 @@ func withRunningProof(view func(*textui.Page), running *landingRunningProof) fun
 		}
 		page.Section("Tests", "").Text(words)
 	}
+}
+
+// laneProofCaller is the lane test run's own admission, asked once in
+// landing prove's caller before the proof detaches: a person (by the
+// caller's lease class), or a descendant of the lane's landing agent. The
+// detached job is then admitted by its running-proof record
+// (proveLaneProofJob), since it descends from no agent once this process
+// has gone.
+func laneProofCaller(layout lane.Layout) error {
+	if caller, err := classifyVerbCaller(string(layout.Install), int64(os.Getppid())); err == nil && caller.Class == lease.ClassHuman {
+		return nil
+	}
+	return proveLaneOwnerCaller(string(layout.Checkout), int64(os.Getpid()))
 }

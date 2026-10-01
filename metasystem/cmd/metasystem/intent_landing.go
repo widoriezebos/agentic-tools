@@ -68,6 +68,10 @@ type laneVerbOwners struct {
 	push  func(kernel.PushRequest) (kernel.PushOutcome, error)
 	// startProof starts the proof detached and returns at once.
 	startProof func(kernel.ProveRequest) (kernel.Started, error)
+	// proofCaller proves the caller of landing prove may charge a proof to
+	// the lane: a person, or a descendant of its landing agent. It is
+	// checked before the proof detaches, while the caller still lives.
+	proofCaller func(layout lane.Layout) error
 	// unset runs landing unset's journaled steps for the person by.
 	unset func(home, by string, force bool) (lane.UnsetReport, error)
 	// laneHeld lists the goals the ledger, read from an installation,
@@ -130,6 +134,9 @@ func (inv *intentInvocation) landing() laneVerbOwners {
 		owners.startProof = func(request kernel.ProveRequest) (kernel.Started, error) {
 			return kernel.StartProof(request, kernel.ProductionStartSeams())
 		}
+	}
+	if owners.proofCaller == nil {
+		owners.proofCaller = laneProofCaller
 	}
 	if owners.push == nil {
 		owners.push = func(request kernel.PushRequest) (kernel.PushOutcome, error) {
