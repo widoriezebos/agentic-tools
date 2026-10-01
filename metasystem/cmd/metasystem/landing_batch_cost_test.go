@@ -203,7 +203,6 @@ func TestBatchCostPortableJoinRefusesOverBudgetBeforeHandoverAndStatusShowsSnaps
 		dependencies.PublishForecast = func(batch.Store, string, batch.Unit, string, time.Time, func(string, string, string) (testpolicy.Plan, error), func() error, batch.JoinAdmissionRun, batch.CostForecast) error {
 			return fatal("forecast publication")
 		}
-		dependencies.Ensure = func(string) error { return nil }
 		_, err = batchowner.ExecuteBatchJoin(request, dependencies)
 		if err == nil || !strings.Contains(err.Error(), "BATCH_COST_HEADROOM_REFUSED") || *admissionCalls != 0 {
 			t.Fatalf("pre-handover refusal=%v admission calls=%d", err, *admissionCalls)
@@ -991,9 +990,8 @@ func TestBatchCostUnknownJoinKeepsFirstRecordAbsentAndClosesOnlyExistingAdmissio
 					t.Fatal(err)
 				}
 			}
-			handedOver, ensured := false, 0
+			handedOver := false
 			dependencies.Handover = func(batchowner.BatchJoinRequest, string, batch.Claim) error { handedOver = true; return nil }
-			dependencies.Ensure = func(string) error { ensured++; return nil }
 			dependencies.PublishAdmission = func(batch.Store, string, batch.Unit, string, time.Time,
 				func(string, string, string) (testpolicy.Plan, error), func() error, batch.JoinAdmissionRun) error {
 				return fmt.Errorf("unknown budget reached publication")
@@ -1022,14 +1020,14 @@ func TestBatchCostUnknownJoinKeepsFirstRecordAbsentAndClosesOnlyExistingAdmissio
 				t.Fatal(err)
 			}
 			if !existing {
-				if len(records) != 0 || ensured != 0 {
-					t.Fatalf("unknown first member created an empty batch: records=%+v ensured=%d", records, ensured)
+				if len(records) != 0 {
+					t.Fatalf("unknown first member created an empty batch: records=%+v", records)
 				}
 				return
 			}
 			if len(records) != 1 || len(records[0].Units) != 1 || records[0].Units[0].GoalID != "goal-a" ||
-				records[0].ClosedReason != "budget-cost" || ensured != 1 {
-				t.Fatalf("unknown prospective member moved custody or missed existing closure: records=%+v ensured=%d", records, ensured)
+				records[0].ClosedReason != "budget-cost" {
+				t.Fatalf("unknown prospective member moved custody or missed existing closure: records=%+v", records)
 			}
 		})
 	}

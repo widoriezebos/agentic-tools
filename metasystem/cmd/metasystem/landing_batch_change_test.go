@@ -120,8 +120,7 @@ func TestBatchChangeForecastChargesTheGoalMember(t *testing.T) {
 
 // TestBatchChangePrefixDecisionPlansGoalMembersOnly (U11b): a prefix's
 // decision is its goal members' plans on the prefix tree, which holds every
-// change before it; a series verified at landing checks the change's tip
-// with the charge member and asks no receipt of a change.
+// change before it.
 func TestBatchChangePrefixDecisionPlansGoalMembersOnly(t *testing.T) {
 	t.Parallel()
 	change := laneChangeUnit()
@@ -139,35 +138,6 @@ func TestBatchChangePrefixDecisionPlansGoalMembersOnly(t *testing.T) {
 	// cannot be named plans nothing (fail closed).
 	if _, err := batchowner.PlanPrefixDecisionWith(t.TempDir(), []batch.Unit{change}, "tip-tree", nil); err == nil || !strings.Contains(refusalDetail(err), "LANE_ACCOUNT_UNRESOLVED") {
 		t.Fatalf("a change-only prefix without a lane: %v", err)
-	}
-	record := batch.Record{BatchID: "01j5x00000000000000000ba79", BaseTree: "base-tree", TipTree: "tip-tree", SelectedGroups: []string{"app-a"},
-		Units:    []batch.Unit{change, laneGoalUnit(), change},
-		Receipts: map[string]batch.PrefixReceipt{}, Seal: map[string]batch.Claim{"goal-a": {Revision: 7, AccountingRevision: 5}, change.GoalID: {}}}
-	record.Units[2].GoalID, record.Units[2].Chain, record.Units[2].Change = "change:111111111111", "change:111111111111", &batch.ChangeMember{Commit: "111111111111" + strings.Repeat("0", 28)}
-	decide := func(_ string, units []batch.Unit, tree string) (batch.PrefixDecision, error) {
-		if _, ok := batch.ChargeMember(units); !ok {
-			return batch.PrefixDecision{}, errors.New("planned a prefix of changes only at " + tree)
-		}
-		return batch.PrefixDecision{Groups: []string{"app-a"}}, nil
-	}
-	var verified []string
-	verify := func(_ string, unit batch.Unit, tree string, _ batch.PrefixDecision) error {
-		verified = append(verified, unit.GoalID+"@"+tree)
-		return nil
-	}
-	record.Receipts["goal-a"] = batch.PrefixReceipt{GoalID: "goal-a", Tree: "goal-tree"}
-	id, err := batch.PrefixDecisionID(record.BaseTree, "goal-tree", record.Units[:2], record.Seal, batch.PrefixDecision{Groups: []string{"app-a"}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	receipt := record.Receipts["goal-a"]
-	receipt.DecisionID = id
-	record.Receipts["goal-a"] = receipt
-	if err := batchowner.VerifyBatchSeriesWith("", record, []string{"change-tree", "goal-tree", "tip-tree"}, decide, verify); err != nil {
-		t.Fatal(err)
-	}
-	if !slices.Equal(verified, []string{"goal-a@goal-tree", "goal-a@tip-tree"}) {
-		t.Fatalf("verified=%v", verified)
 	}
 }
 
@@ -265,20 +235,18 @@ func TestChangeJoinGitAdapterFetchesThePinnedChangeAndJoins(t *testing.T) {
 	run(seat, "commit", "-qam", "record: notes\n\nMachine: m1e+human\nLanding-Provenance-Verdict: would-refuse code=missing-declaration")
 	commit := run(seat, "rev-parse", "HEAD")
 	run(seat, "update-ref", batchowner.ChangePinRef(commit), commit)
-	ensured := 0
 	dependencies := batchowner.ProductionChangeJoinDependencies()
 	dependencies.Base = func(root string) (string, error) { return run(root, "rev-parse", "HEAD^{tree}"), nil }
 	dependencies.Mint = func() (string, error) { return "01j5x00000000000000000ba82", nil }
 	dependencies.ProtectedTests = func(string, string, string) error { return nil }
 	dependencies.Closure = func(string, string, string) *adapter.Closure { return nil }
-	dependencies.Ensure = func(string) error { ensured++; return nil }
 	request := batchowner.ChangeJoinRequest{SeatRoot: seat, LandingRoot: lane, Commit: commit, At: time.Unix(10, 0)}
 	record, err := batchowner.ExecuteChangeJoin(request, dependencies)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if record.BatchID != "01j5x00000000000000000ba82" || record.State != batch.StateOpen || len(record.Units) != 1 || ensured != 1 {
-		t.Fatalf("record=%+v ensured=%d", record, ensured)
+	if record.BatchID != "01j5x00000000000000000ba82" || record.State != batch.StateOpen || len(record.Units) != 1 {
+		t.Fatalf("record=%+v", record)
 	}
 	unit := record.Units[0]
 	if unit.GoalID != batch.ChangeID(commit) || unit.State != batch.UnitJoined || unit.Claim.Machine != "m1e" || unit.Claim.Lineage != "human" ||
