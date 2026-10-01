@@ -70,7 +70,7 @@ type OwnerView struct {
 	// StoppedBecause is the reason the stop was given with; absent when
 	// none was.
 	StoppedBecause *string `json:"stopped_because,omitempty"`
-	RetryHint *string `json:"retry_hint"`
+	RetryHint      *string `json:"retry_hint"`
 	// LastTickError is the running owner's last failed batch tick, in its
 	// words; null when its last pass ticked clean.
 	LastTickError *string `json:"last_tick_error"`
