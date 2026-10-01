@@ -100,6 +100,16 @@
   },
   "exempt": [
     {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
+      "test": "TestBatchJoinMemberReadsItsOwnFetchNotTheSharedFetchHead",
+      "reason": "sets process-wide PATH so the code under test resolves a stand-in git that empties FETCH_HEAD after every fetch"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner",
+      "test": "TestLandingBaseTreeReadsItsOwnFetchNotTheSharedFetchHead",
+      "reason": "sets process-wide PATH so the code under test resolves a stand-in git that empties FETCH_HEAD after every fetch"
+    },
+    {
       "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/testenv",
       "test": "TestARegistrySweepLeavesNoLockAForkDuplicated",
       "reason": "replaces the package's registryLockTaken seam to stand a fork's duplicate in at every registry lock a sweep takes"

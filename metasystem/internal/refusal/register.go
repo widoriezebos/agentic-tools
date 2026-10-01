@@ -408,7 +408,6 @@ var Rows = []Row{
 
 var Exclusions = []Exclusion{
 	{Pattern: "prove-refused", Reason: "a durable batch history verb rather than a refusal returned to a caller"},
-	{Pattern: "FETCH_HEAD", Reason: "Git's fetched-head pseudoref"},
 	{Pattern: "budget-malformed", Reason: "a typed health remedy cause name rather than a refusal returned to a caller"},
 	{Pattern: "CLAUDE_CONFIG_DIR", Reason: "the Claude Code configuration directory environment variable, not a refusal"},
 	{Pattern: "GIT_*", Reason: "git environment variable names"},
