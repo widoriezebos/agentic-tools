@@ -42,7 +42,6 @@ func g1bLayoutCases() []layoutCase {
 		{name: "landing-start", args: []string{"landing", "start"}, bed: landingLayoutBed(landingLayoutRunning)},
 		{name: "landing-start-refusal", args: []string{"landing", "start"}, bed: landingLayoutBed(landingLayoutNone)},
 		{name: "landing-stop-refusal", args: []string{"landing", "stop"}, bed: landingLayoutBed(landingLayoutPushing)},
-		{name: "landing-restart", args: []string{"landing", "restart"}, bed: landingLayoutBed(landingLayoutRunning)},
 		{name: "landing-unset", args: []string{"landing", "unset"}, bed: landingLayoutBed(landingLayoutNone)},
 	}
 }
@@ -116,7 +115,6 @@ func landingLayoutBed(kind int) func(t *testing.T) layoutBed {
 		owners := intentOwners{resolver: stateroot.NewResolver(notARepository, os.Executable), landing: laneVerbOwners{
 			// The lane beds keep no goal ledger: validation is never due.
 			validation: func(string, time.Time) (bool, error) { return false, nil },
-			agent:      func() (string, bool, error) { return "", false, nil },
 			home:       func() (string, error) { return home, nil },
 			probe: func(string) (lane.OwnerProbe, error) {
 				if !alive {
@@ -124,10 +122,6 @@ func landingLayoutBed(kind int) func(t *testing.T) layoutBed {
 				}
 				return lane.OwnerProbe{Alive: true, PID: pid, Since: now.Add(-5 * time.Minute)}, nil
 			},
-			// A restart's fresh owner keeps the pid, so its repeat prints
-			// the same page.
-			start:    func(string) error { alive = true; return nil },
-			end:      func(string) (int64, error) { alive = false; return pid, nil },
 			person:   func(string) (string, error) { return "Wido", nil },
 			records:  func(string) ([]batch.Record, error) { return records, nil },
 			validate: func(root, _ string, _ time.Time) (string, error) { return realpath.Resolve(root), nil },

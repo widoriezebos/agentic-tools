@@ -13,7 +13,6 @@ import (
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	landinglane "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
@@ -124,52 +123,6 @@ func TestTrustedPolicyEngineForwardsTheLane(t *testing.T) {
 	}
 	if _, err := testrun.PlanWithTrustedPolicyEngine(old, request, t.TempDir(), "candidate"); err == nil || !strings.Contains(err.Error(), "could not be read") {
 		t.Fatalf("an engine answering in words: %v", err)
-	}
-}
-
-// TestLaneOwnerProofReadsTheLeaseTheOwnerHoldsOnANestedCheckout drives the
-// owner-to-proof-child identity path with no seam doubled: on a checkout that
-// nests the module, the supervised owner takes the checkout lease at the
-// lane's toplevel (landingOwnerCheckoutRoot), while its tip proof runs with
-// --control-root at the module root (batch.ModuleRoot). The proof's owner
-// check must find the owner's lease there, and still refuse a process that
-// does not descend from the owner.
-func TestLaneOwnerProofReadsTheLeaseTheOwnerHoldsOnANestedCheckout(t *testing.T) {
-	t.Setenv("METASYSTEM_OWNER_LINEAGE", "")
-	t.Setenv("METASYSTEM_SUPERVISION_REGISTRY_HOME", t.TempDir())
-	home, err := board.Home()
-	if err != nil {
-		t.Fatal(err)
-	}
-	checkout := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(checkout, "metasystem"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(checkout, "metasystem", "go.mod"), []byte("module example\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	registerLane(t, home, checkout, "test", time.Now())
-	held, err := batchowner.AcquireBatchOwnerForComponent(checkout)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := held.Retire(); err != nil {
-			t.Errorf("retire owner: %v", err)
-		}
-	})
-	controlRoot := batch.ModuleRoot(checkout)
-	if controlRoot == checkout {
-		t.Fatalf("fixture is not nested: control root %s", controlRoot)
-	}
-	if _, err := landinglane.ResolveAccount(home, controlRoot); err != nil {
-		t.Fatalf("the proof's control root is not in the lane: %v", err)
-	}
-	if err := proveLaneOwnerCaller(controlRoot, int64(os.Getpid())); err != nil {
-		t.Fatalf("the owner's own proof was refused: %v", err)
-	}
-	if err := proveLaneOwnerCaller(controlRoot, 1); err == nil || !strings.Contains(err.Error(), "does not descend") {
-		t.Fatalf("a process outside the owner's lineage was accepted: %v", err)
 	}
 }
 

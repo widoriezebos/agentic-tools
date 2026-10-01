@@ -10,8 +10,6 @@ import (
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/pathpattern"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 )
@@ -89,18 +87,6 @@ func TestGLEPathRootGoPackageExpansionPlansWithCompleteInputs(t *testing.T) {
 	fact.assertConsumed()
 	if err == nil || err.Error() != "delivery candidate differs from relevant working-tree inputs: candidate=candidate-root-tree working=working-root-tree" {
 		t.Fatalf("root package input closure did not refuse nested input: %v", err)
-	}
-}
-
-func TestGLEPathMovedBaseReopensForDiscoveredLiteral(t *testing.T) {
-	t.Parallel()
-	literal := pathpattern.EncodeLiteral("src/[literal].go")
-	record := batch.Record{Proof: &batch.Proof{SelectedGroups: []string{"app"}, InputManifests: map[string][]string{"app": {literal}}}}
-	if !batch.DecideMovedBase(record, []string{"src/[literal].go"}, "metasystem").Reopen {
-		t.Fatal("moved discovered literal did not reopen proof")
-	}
-	if batch.DecideMovedBase(record, []string{"src/other.go"}, "metasystem").Reopen {
-		t.Fatal("unrelated moved file reopened proof")
 	}
 }
 

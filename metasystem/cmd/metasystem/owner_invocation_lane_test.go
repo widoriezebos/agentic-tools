@@ -13,17 +13,13 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 )
 
-// Only the landing lane's own owner calls publish through the lane's
-// boundary (design r10 K3): the landing owner's invocation carries it, a
-// seat's carries none, and the synced-ledger request an invocation builds
-// resolves its endpoint through the boundary it carries, so a write the
-// boundary refuses leaves main where it was while a seat's write pushes as
-// it always did.
+// Only the landing lane's own calls publish through the lane's boundary
+// (design r10 K3): a seat's invocation carries none, and the synced-ledger
+// request an invocation builds resolves its endpoint through the boundary
+// it carries, so a lane write the boundary refuses leaves main where it was
+// while a seat's write pushes as it always did.
 func TestOnlyTheLanesOwnerCallsTakeTheBoundary(t *testing.T) {
 	t.Parallel()
-	if batchowner.LandingOwnerInvocation().Ledger == nil {
-		t.Fatal("the landing owner's invocation carries no publication boundary")
-	}
 	if ownercall.FromThisProcess("seat-lineage").Ledger != nil {
 		t.Fatal("a seat's invocation carries a publication boundary")
 	}
@@ -48,7 +44,7 @@ func TestOnlyTheLanesOwnerCallsTakeTheBoundary(t *testing.T) {
 	tip := git(checkout, "rev-parse", "HEAD")
 	next := git(checkout, "commit-tree", git(checkout, "rev-parse", "HEAD^{tree}"), "-p", tip, "-m", "goal write\n\nGoal-Transaction: op-1")
 
-	boundary := ownercall.FromThisProcess(batchowner.LandingOwnerLineage)
+	boundary := batchowner.LaneInvocation(lane.ClaimIdentity{Machine: "lane-host", Lineage: lane.ClaimLineage, Epoch: 1})
 	boundary.Ledger = func(endpoint goal.Endpoint) goal.Endpoint {
 		return endpoint.WithCASPublisher(func(goal.Endpoint, string, string) (goal.CASOutcome, error) {
 			return goal.CASRefused, &lane.PublishError{Code: lane.CodeBaseMoved, Message: "main moved"}
