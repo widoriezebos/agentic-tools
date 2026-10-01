@@ -68,7 +68,6 @@ type BatchJoinDependencies struct {
 }
 
 var BatchJoinDependenciesForCommand = ProductionBatchJoinDependencies
-var BatchJoinClock = fixtureauth.GoalNow
 var BatchTreePlanExecutable = os.Executable
 
 func ProductionBatchJoinDependencies() BatchJoinDependencies {

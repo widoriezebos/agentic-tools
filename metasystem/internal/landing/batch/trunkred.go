@@ -81,15 +81,6 @@ type EntryRef struct {
 // Green identifies the proof result that clears a trunk-red entry.
 type Green struct{ AttemptID, BaseCommit, BaseTree, Group string }
 
-// The register's classes (D1); an empty class reads as trunk-red.
-const (
-	ClassTrunkRed     = "trunk-red"
-	ClassPendingFlake = "pending-flake"
-	ClassKnownFlake   = "known-flake"
-	ClassHang         = "hang"
-	ClassQuality      = "quality"
-)
-
 // OpenEntry describes an unresolved register entry.
 type OpenEntry struct {
 	ID, Group, OwnerMachine, FixGoal string
@@ -97,22 +88,6 @@ type OpenEntry struct {
 	LastBaseCommit                   string
 	Class, Identity, Owner           string
 	AllowanceUntil                   time.Time
-}
-
-// HoldsLanding reports whether the entry holds a landing: only a trunk red does.
-func (entry OpenEntry) HoldsLanding() bool {
-	return entry.Class == "" || entry.Class == ClassTrunkRed
-}
-
-// CarriesLanding reports whether a known flake's allowance is still running at now.
-func (entry OpenEntry) CarriesLanding(now time.Time) bool {
-	return entry.Class == ClassKnownFlake && now.Before(entry.AllowanceUntil)
-}
-
-// Expired reports whether a known flake's allowance has ended at now: the
-// identity blocks again until the entry closes by a proven fix or a person.
-func (entry OpenEntry) Expired(now time.Time) bool {
-	return entry.Class == ClassKnownFlake && !now.Before(entry.AllowanceUntil)
 }
 
 // FlakeSighting is a red attempt and its executed rerun on the same tree that
@@ -162,11 +137,6 @@ type FlakeLedgerOwner interface {
 	Promote(opid string, promotion Promotion) ([]EntryRef, error)
 }
 
-// FlakeID is the register identity of one failing test in a group.
-func FlakeID(group string, failure Failure) string {
-	return TrunkRedID(RedGroup{ID: group, Failures: []Failure{failure}})
-}
-
 // LedgerOwner records and clears trunk-red entries outside the batch lock.
 type LedgerOwner interface {
 	Record(opid string, red TrunkRed) ([]EntryRef, error)
@@ -176,65 +146,6 @@ type LedgerOwner interface {
 
 // UnboundLedgerOwner refuses operations until a ledger owner is supplied.
 type UnboundLedgerOwner struct{}
-
-var errLedgerOwnerUnbound = fmt.Errorf("%s: no ledger owner is bound", codeTrunkRedOwnerUnbound)
-
-// Record refuses because no ledger owner is bound.
-func (UnboundLedgerOwner) Record(string, TrunkRed) ([]EntryRef, error) {
-	return nil, errLedgerOwnerUnbound
-}
-
-// Clear refuses because no ledger owner is bound.
-func (UnboundLedgerOwner) Clear(string, EntryRef, Green) error {
-	return errLedgerOwnerUnbound
-}
-
-// Open refuses because no ledger owner is bound.
-func (UnboundLedgerOwner) Open() ([]OpenEntry, error) {
-	return nil, errLedgerOwnerUnbound
-}
-
-// OpenByClass refuses because no ledger owner is bound.
-func (UnboundLedgerOwner) OpenByClass(...string) ([]OpenEntry, error) {
-	return nil, errLedgerOwnerUnbound
-}
-
-// RecordPending refuses because no ledger owner is bound.
-func (UnboundLedgerOwner) RecordPending(string, FlakeSighting) ([]EntryRef, error) {
-	return nil, errLedgerOwnerUnbound
-}
-
-// RecordHang refuses because no ledger owner is bound.
-func (UnboundLedgerOwner) RecordHang(string, HangSighting) ([]EntryRef, error) {
-	return nil, errLedgerOwnerUnbound
-}
-
-// Promote refuses because no ledger owner is bound.
-func (UnboundLedgerOwner) Promote(string, Promotion) ([]EntryRef, error) {
-	return nil, errLedgerOwnerUnbound
-}
-
-// WithLedgerOwner returns a store copy bound to o.
-func (s Store) WithLedgerOwner(o LedgerOwner) Store {
-	s.seams.ledgerOwner = o
-	return s
-}
-
-// LedgerOwner returns the bound owner or a refusing owner when none is bound.
-func (s Store) LedgerOwner() LedgerOwner {
-	if s.seams.ledgerOwner == nil {
-		return UnboundLedgerOwner{}
-	}
-	return s.seams.ledgerOwner
-}
-
-// FlakeLedger returns the bound owner's flake intake, or a refusing owner.
-func (s Store) FlakeLedger() FlakeLedgerOwner {
-	if owner, ok := s.seams.ledgerOwner.(FlakeLedgerOwner); ok {
-		return owner
-	}
-	return UnboundLedgerOwner{}
-}
 
 // OwnerMachine returns the first joiner's machine.
 func (red TrunkRed) OwnerMachine() string {

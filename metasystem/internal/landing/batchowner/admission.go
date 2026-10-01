@@ -2,12 +2,9 @@ package batchowner
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 )
-
-var batchJoinAdmissionExecutable = os.Executable
 
 // deferredJoinAdmission is a goal's join admission (design r10 K6): the
 // join is custody handover plus enqueue and starts no test run. The member

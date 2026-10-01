@@ -8,13 +8,10 @@ package cadence
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
-	"strings"
 	"syscall"
 	"time"
 
@@ -26,7 +23,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/candidateengine"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalrevision"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
@@ -42,17 +38,6 @@ const (
 
 // Refusal is a tick refused before it ran, by code.
 type Refusal struct{ Code, Detail string }
-
-// Error is the plain words; the code is RefusalCode ("Messages a Person
-// Reads"), and RefusalDetail the code-first line records keep.
-func (refusal Refusal) Error() string {
-	if refusal.Code == FetchRefused {
-		return "the cadence tick could not fetch the trunk: " + refusal.Detail + "\nnothing to do now; the next tick fetches again"
-	}
-	return "the cadence tick could not read its ledger: " + refusal.Detail + "\nnothing to do by command: repair the named ledger record; the next tick reads it again"
-}
-func (refusal Refusal) RefusalCode() string   { return refusal.Code }
-func (refusal Refusal) RefusalDetail() string { return refusal.Code + ": " + refusal.Detail }
 
 // TickOutput is the trunk a production tick judged and its result.
 type TickOutput struct {
@@ -93,70 +78,6 @@ type cadenceRevalidationDependencies struct {
 func productionCadenceRevalidationDependencies(owner Owner) cadenceRevalidationDependencies {
 	return cadenceRevalidationDependencies{prepare: owner.Prepare, readAttempts: proofrun.ReadAttempts,
 		buildIdentity: cadenceBuildIdentity, retainedDigest: cadenceRetainedEngineDigest, workerPolicy: owner.WorkerPolicy}
-}
-
-// RunTick is one deep cadence tick of the landing owner:
-// fetch the trunk, revalidate its deep-only groups from retained evidence,
-// and, when due, claim the standing authority and run the deep validation
-// as a governed run of this engine's own test run.
-func RunTick(root string, owner Owner, clock func() time.Time) (TickOutput, error) {
-	commit, tree, err := owner.FetchOrigin(root)
-	if err != nil {
-		return TickOutput{}, Refusal{FetchRefused, err.Error()}
-	}
-	trunk := gaterun.CadenceTrunk{Commit: commit, Tree: tree}
-	now := clock().UTC()
-	endpoint, err := goal.ResolveEndpoint(root)
-	if err != nil {
-		return TickOutput{}, Refusal{cadenceLedgerUnreadable, err.Error()}
-	}
-	if owner.Ledger != nil {
-		endpoint = owner.Ledger(endpoint)
-	}
-	projection, err := goal.Project(endpoint, false, now)
-	if err != nil {
-		return TickOutput{}, Refusal{cadenceLedgerUnreadable, err.Error()}
-	}
-	prepared, err := owner.Prepare(cadencePreparationRequest(root, tree))
-	if err != nil {
-		return TickOutput{}, Refusal{cadenceLedgerUnreadable, err.Error()}
-	}
-	deepOnly, err := testpolicy.DeepOnlySectionGroupIDs(prepared.EffectiveContract)
-	if err != nil {
-		return TickOutput{}, Refusal{cadenceLedgerUnreadable, err.Error()}
-	}
-	weight, due, err := gaterun.WeightCheckAt(root, owner.WeightThreshold(root), now)
-	if err != nil {
-		return TickOutput{}, Refusal{cadenceLedgerUnreadable, err.Error()}
-	}
-	machine, err := goal.ResolveMachine(root)
-	if err != nil {
-		return TickOutput{}, Refusal{cadenceLedgerUnreadable, err.Error()}
-	}
-	actor := goal.Actor{Machine: machine, Lineage: owner.Lineage}
-	deps := gaterun.CadenceDependencies{
-		Clock: clock, Fetch: func() (gaterun.CadenceTrunk, error) { return trunk, nil },
-		Revalidate: func(fetched gaterun.CadenceTrunk) (gaterun.CadenceRevalidation, error) {
-			return revalidateCadenceWith(root, prepared, fetched, deepOnly, productionCadenceRevalidationDependencies(owner))
-		},
-		Ledger: gaterun.GoalCadenceLedger{Endpoint: endpoint, Actor: actor},
-	}
-	deps.ClaimAuthority = func(at time.Time) (gaterun.CadenceAuthority, error) {
-		return claimCadenceAuthority(endpoint, actor, owner.Epoch, at)
-	}
-	deps.ReleaseAuthority = func(authority gaterun.CadenceAuthority, at time.Time) error {
-		return releaseCadenceAuthority(endpoint, actor, authority, at)
-	}
-	deps.Run = func(request gaterun.CadenceRunRequest) (gaterun.CadenceRunResult, error) {
-		return executeCadenceRun(root, owner, clock, request)
-	}
-	deps.DischargeWeight = func(authority gaterun.CadenceAuthority, runID string, _ uint64, at time.Time) error {
-		_, dischargeErr := gaterun.WeightDischargeAt(root, authority.GoalID, authority.ObligationRevision, runID, at)
-		return dischargeErr
-	}
-	result, err := gaterun.RunCadenceTick(gaterun.CadenceTickInput{Latest: projection.Tree.Cadence, Weight: weight, WeightDue: due,
-		DeepOnlyGroups: deepOnly, Lease: gaterun.CadenceForcedInterval}, deps)
-	return TickOutput{Trunk: trunk, Tick: result}, err
 }
 
 func revalidateCadenceWith(root string, prepared testrun.Preparation, trunk gaterun.CadenceTrunk, deepOnly []string, dependencies cadenceRevalidationDependencies) (gaterun.CadenceRevalidation, error) {
@@ -251,15 +172,6 @@ func claimCadenceAuthority(endpoint goal.Endpoint, actor goal.Actor, epoch int64
 	return gaterun.CadenceAuthority{GoalID: AuthorityGoal, ObligationRevision: binding.File.Obligation.Revision}, nil
 }
 
-func releaseCadenceAuthority(endpoint goal.Endpoint, actor goal.Actor, authority gaterun.CadenceAuthority, at time.Time) error {
-	request, err := cadenceRequest(endpoint, actor, 0, at)
-	if err != nil {
-		return err
-	}
-	_, err = goal.Release(request, authority.GoalID)
-	return err
-}
-
 func cadenceRunStore(root string, owner Owner, clock func() time.Time) *runpkg.Store {
 	return &runpkg.Store{Root: root, Now: clock, CurrentEpoch: func() (*int64, bool) {
 		if owner.Require() != nil {
@@ -275,75 +187,6 @@ func cadenceRunStore(root string, owner Owner, clock func() time.Time) *runpkg.S
 		}, ProjectSpend: func(record *runpkg.Record, now time.Time) (runpkg.SpendSnapshot, string) {
 			return dispatchcore.SettledSpendAtConclusion(root, record, now)
 		}}
-}
-
-func executeCadenceRun(root string, owner Owner, clock func() time.Time, request gaterun.CadenceRunRequest) (gaterun.CadenceRunResult, error) {
-	binding, err := dispatchcore.ResolveGoalBinding(root, request.Authority.GoalID, clock().UTC())
-	if err != nil {
-		return gaterun.CadenceRunResult{}, err
-	}
-	lock, err := goalrevision.Acquire(root, request.Authority.GoalID, binding.Revision, "cadence-run")
-	if err != nil {
-		return gaterun.CadenceRunResult{}, err
-	}
-	defer lock.Release()
-	ulid, err := goal.NewOperationULID()
-	if err != nil {
-		return gaterun.CadenceRunResult{}, err
-	}
-	runID := "cadence-" + strings.ToLower(ulid)
-	store := cadenceRunStore(root, owner, clock)
-	creation, err := store.BeginCreation("cadence-run")
-	if err != nil {
-		return gaterun.CadenceRunResult{}, err
-	}
-	defer creation.Close()
-	epoch := owner.Epoch
-	nonce, err := store.Launch(runpkg.Caller{Class: "MAIN", MainId: owner.Lineage, OwnerLineage: owner.Lineage, ClaimEpoch: &epoch}, runpkg.LaunchParams{
-		Id: runID, Kind: "suite", Display: "deep cadence validation", Log: filepath.Join("artifacts", "agents", "runs", runID+".log"),
-		GoalId: request.Authority.GoalID, ObligationRevision: request.Authority.ObligationRevision, StandingShared: true,
-		FenceGeneration: &creation.Generation,
-	})
-	if err != nil {
-		return gaterun.CadenceRunResult{}, err
-	}
-	record, err := store.Read(runID)
-	if err != nil || record == nil {
-		return gaterun.CadenceRunResult{}, fmt.Errorf("cadence governed run record is unreadable: %v", err)
-	}
-	resultPath := filepath.Join(root, "artifacts", "agents", "proof-runs", "cadence", runID+".json")
-	command, err := cadenceRunCommand(root, runID, nonce, record.Log, request.Authority.GoalID, request.Trunk.Tree, resultPath, request.ForceGroups)
-	if err != nil {
-		return gaterun.CadenceRunResult{}, err
-	}
-	if err := command.Start(); err != nil {
-		_ = store.FailLaunch(runID, "wrapper spawn failed: "+err.Error())
-		return gaterun.CadenceRunResult{}, err
-	}
-	if err := store.CompleteLaunch(runID, creation.Generation); err != nil {
-		_ = command.Process.Kill()
-		_ = command.Wait()
-		return gaterun.CadenceRunResult{}, err
-	}
-	_ = command.Wait()
-	if _, err := store.Assess(runID); err != nil {
-		return gaterun.CadenceRunResult{}, err
-	}
-	record, err = store.Read(runID)
-	if err != nil || record == nil || !runpkg.Terminal(record.Status) {
-		return gaterun.CadenceRunResult{}, fmt.Errorf("cadence governed run did not reach a terminal record: %v", err)
-	}
-	data, err := os.ReadFile(resultPath)
-	if err != nil {
-		return gaterun.CadenceRunResult{}, err
-	}
-	var result proofrun.TestResult
-	decoder := json.NewDecoder(strings.NewReader(string(data)))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&result); err != nil {
-		return gaterun.CadenceRunResult{}, err
-	}
-	return gaterun.CadenceRunResult{RunID: runID, Result: result}, nil
 }
 
 // cadenceRunCommand is a deep validation run of this engine's own test run,

@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 )
 
@@ -103,105 +102,6 @@ func (ledger GoalCadenceLedger) Publish(now time.Time, claim string, status goal
 	}
 	_, err = goal.PublishCadence(request, goal.CadencePublishArgs{ClaimOpid: claim, Status: status, Groups: groups})
 	return err
-}
-
-// RunCadenceTick owns trigger choice and one claimed cadence transition. It
-// never waits for a joined claim; a later owner tick reads its terminal result.
-func RunCadenceTick(input CadenceTickInput, deps CadenceDependencies) (result CadenceTickResult, err error) {
-	if deps.Clock == nil || deps.Fetch == nil || deps.Revalidate == nil || deps.Ledger == nil || input.Lease <= 0 || len(input.DeepOnlyGroups) == 0 {
-		return result, fmt.Errorf("cadence tick dependencies are incomplete")
-	}
-	started := deps.Clock().UTC().Truncate(time.Second)
-	trunk, err := deps.Fetch()
-	if err != nil {
-		return result, err
-	}
-	if !cadenceObjectID(trunk.Commit) || !cadenceObjectID(trunk.Tree) {
-		return result, fmt.Errorf("fetched cadence trunk is incomplete")
-	}
-	revalidation, err := deps.Revalidate(trunk)
-	if err != nil {
-		return result, err
-	}
-	probes, err := cadenceProbeMap(input.DeepOnlyGroups, revalidation.Groups)
-	if err != nil {
-		return result, err
-	}
-	trigger, forceGroups, window, due, err := cadenceTrigger(started, input.Latest, input.WeightDue, input.DeepOnlyGroups, probes)
-	if err != nil {
-		return result, err
-	}
-	if !due && input.Latest != nil && input.Latest.TrunkCommit == trunk.Commit && input.Latest.TrunkTree == trunk.Tree {
-		return result, nil
-	}
-	result.Trigger = trigger
-	if !due {
-		result.Trigger = goal.CadenceTriggerRevalidation
-	}
-	key := goal.CadenceClaimKey{TrunkTree: trunk.Tree, WeightGeneration: input.Weight.Generation, ForcedWindowStart: window}
-	claim, err := deps.Ledger.Claim(started, key, input.Lease)
-	if err != nil {
-		return result, err
-	}
-	result.ClaimOutcome = claim.Outcome
-	if claim.Outcome == goal.CadenceClaimComplete {
-		result.Status = claim.Status
-		if claim.Status != nil {
-			result.Trigger = claim.Status.Trigger
-		}
-		return result, nil
-	}
-	if claim.Outcome != goal.CadenceClaimAcquired {
-		return result, nil
-	}
-	if claim.Claim == nil {
-		return result, fmt.Errorf("acquired cadence claim has no record")
-	}
-	if !due {
-		status := cadenceStatus(trunk, goal.CadenceTriggerRevalidation, "", proofrun.TestResult{}, started, started, key, input.DeepOnlyGroups, probes)
-		err = deps.Ledger.Publish(started, claim.Claim.Opid, status, nil)
-		if err == nil {
-			result.Status, result.Published = &status, true
-		}
-		return result, err
-	}
-	result.ForceGroups = forceGroups
-	if deps.ClaimAuthority == nil || deps.ReleaseAuthority == nil || deps.Run == nil {
-		return publishCadenceFailure(result, deps, claim.Claim.Opid, trunk, trigger, key, started, input.DeepOnlyGroups, probes, "standing cadence authority is unavailable")
-	}
-	authority, authorityErr := deps.ClaimAuthority(started)
-	if authorityErr != nil || authority.GoalID == "" || authority.ObligationRevision == 0 {
-		return publishCadenceFailure(result, deps, claim.Claim.Opid, trunk, trigger, key, started, input.DeepOnlyGroups, probes, "standing cadence authority is unavailable")
-	}
-	run, runErr := deps.Run(CadenceRunRequest{Trunk: trunk, Authority: authority, WeightGeneration: input.Weight.Generation, ForceAttempt: true, ForceGroups: forceGroups})
-	result.Executed = true
-	ended := deps.Clock().UTC().Truncate(time.Second)
-	if ended.Before(started) {
-		ended = started
-	}
-	if runErr != nil || run.RunID == "" || run.Result.AttemptID == "" {
-		result, err = publishCadenceFailure(result, deps, claim.Claim.Opid, trunk, trigger, key, started, input.DeepOnlyGroups, probes, "cadence runner did not return a terminal result")
-	} else {
-		status := cadenceStatus(trunk, trigger, run.RunID, run.Result, started, ended, key, input.DeepOnlyGroups, probes)
-		red := batch.RedGroupsToRecordGroups(batch.ResultToRedGroups(run.Result))
-		if cadenceRunGreen(run.Result) && input.WeightDue {
-			if deps.DischargeWeight == nil || deps.DischargeWeight(authority, run.RunID, input.Weight.Generation, ended) != nil {
-				failed := unavailableCadenceResult(input.DeepOnlyGroups, probes, "authorized weight discharge was refused")
-				failed.AttemptID = run.Result.AttemptID
-				status = cadenceStatus(trunk, trigger, run.RunID, failed, started, ended, key, input.DeepOnlyGroups, probes)
-				red = batch.RedGroupsToRecordGroups(batch.ResultToRedGroups(failed))
-			}
-		}
-		err = deps.Ledger.Publish(ended, claim.Claim.Opid, status, red)
-		if err == nil {
-			result.Status, result.Published = &status, true
-		}
-	}
-	releaseErr := deps.ReleaseAuthority(authority, ended)
-	if err == nil && !result.Published {
-		err = releaseErr
-	}
-	return result, err
 }
 
 // cadenceForcedWindow is the forced-window rule: no cadence status yet, or a
@@ -308,26 +208,6 @@ func cadenceStatus(trunk CadenceTrunk, trigger goal.CadenceTrigger, runID string
 	return goal.CadenceStatus{TrunkCommit: trunk.Commit, TrunkTree: trunk.Tree, Trigger: trigger, RunID: runID, AttemptID: run.AttemptID,
 		StartedAt: started.Format(time.RFC3339), EndedAt: ended.Format(time.RFC3339), WeightGeneration: key.WeightGeneration,
 		ForcedWindowStart: key.ForcedWindowStart, Groups: groups}
-}
-
-func publishCadenceFailure(result CadenceTickResult, deps CadenceDependencies, claim string, trunk CadenceTrunk, trigger goal.CadenceTrigger, key goal.CadenceClaimKey, started time.Time, ids []string, probes map[string]proofrun.GroupResult, reason string) (CadenceTickResult, error) {
-	failed := unavailableCadenceResult(ids, probes, reason)
-	status := cadenceStatus(trunk, trigger, "cadence-unavailable", failed, started, started, key, ids, probes)
-	red := batch.RedGroupsToRecordGroups(batch.ResultToRedGroups(failed))
-	err := deps.Ledger.Publish(started, claim, status, red)
-	if err == nil {
-		result.Status, result.Published = &status, true
-	}
-	return result, err
-}
-
-func unavailableCadenceResult(ids []string, probes map[string]proofrun.GroupResult, reason string) proofrun.TestResult {
-	result := proofrun.TestResult{AttemptID: "cadence-unavailable"}
-	for _, id := range ids {
-		result.Groups = append(result.Groups, proofrun.GroupResult{ID: id, Kind: "cadence", InputManifest: []string{"cadence-authority"},
-			ExecutionIdentity: probes[id].ExecutionIdentity, Status: "unavailable", NotRunReason: reason})
-	}
-	return result
 }
 
 func cadenceRunGreen(result proofrun.TestResult) bool {

@@ -3,14 +3,12 @@ package batchowner
 import (
 	"fmt"
 	"os/exec"
-	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
@@ -218,24 +216,6 @@ func batchChargeID(root string, unit batch.Unit, account func(string) (string, e
 	return account(root)
 }
 
-// accountFlag names who a batch proof is charged to on its argv: a goal, or
-// the lane (U11b).
-func accountFlag(id string) []string {
-	if lane.IsAccount(id) {
-		return []string{"--lane", id}
-	}
-	return []string{"--goal", id}
-}
-
-// accountRevisions are a goal's sealed revisions on the argv; the lane has
-// none.
-func accountRevisions(id string, claim batch.Claim) []string {
-	if lane.IsAccount(id) {
-		return nil
-	}
-	return []string{"--expected-goal-revision", fmt.Sprint(claim.Revision), "--expected-accounting-revision", fmt.Sprint(claim.AccountingRevision)}
-}
-
 // LaneSpend is what the lane at root charged to its own account: every
 // retained attempt accounted to it (U11b).
 func LaneSpend(root, account string) (lane.Spend, error) {
@@ -251,24 +231,4 @@ func LaneSpend(root, account string) (lane.Spend, error) {
 		}
 	}
 	return spend, nil
-}
-
-// laneRegistrar names who registered the host lane and whether that is a
-// person: a name with a complete goal.human.<name> identity in the lane
-// checkout's metasystem.conf, as a goal's approver is bound (U11b).
-func laneRegistrar(controlRoot string) (string, bool) {
-	home, err := board.Home()
-	if err != nil {
-		return "", false
-	}
-	record, ok, err := lane.Read(home)
-	if err != nil || !ok {
-		return "", false
-	}
-	name := strings.TrimSpace(record.RegisteredBy)
-	if name == "" || strings.ContainsAny(name, " /+") {
-		return name, false
-	}
-	value, _, err := config.Get(config.GetParams{Key: "goal.human." + strings.ToLower(name), ConfPath: filepath.Join(controlRoot, "metasystem.conf")})
-	return name, err == nil && strings.Contains(value, "@")
 }
