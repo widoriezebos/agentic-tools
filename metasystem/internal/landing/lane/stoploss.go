@@ -241,12 +241,44 @@ func updateStopLossHeld(home string, now time.Time, change func(*StopLoss) error
 // hitHeld records a hit and pauses the lane for the stop-loss; a hit for
 // work already hit is not recorded twice. The caller holds the lane flock.
 func (s *StopLoss) hitHeld(home, kind, work, message, by string, now time.Time) error {
+	s.recordHit(kind, work, message, now)
+	_, err := setPauseLocked(home, by, now)
+	return err
+}
+
+// recordHit records a hit whose alert is owed, without pausing the lane: an
+// allowance hit. A hit for work already hit is not recorded twice.
+func (s *StopLoss) recordHit(kind, work, message string, now time.Time) {
 	if !slices.ContainsFunc(s.Hits, func(hit Hit) bool { return hit.Work == work }) {
 		s.Hits = append(s.Hits, Hit{At: stamp(now), Kind: kind, Work: work, Message: message})
 		s.record(now, "hit", "", "", kind+": "+message)
 	}
-	_, err := setPauseLocked(home, by, now)
-	return err
+}
+
+// allowanceWork is the hit identity of batch's spent allowance under grant.
+func allowanceWork(batch string, grant int) string {
+	return fmt.Sprintf("allowance:%s:%d", batch, grant)
+}
+
+// AllowanceSpent names a batch whose allowance under the grant in force is
+// spent, for a person's landing start to grant a fresh one; false when none
+// is. An unreadable store is an error.
+func AllowanceSpent(home string) (string, bool, error) {
+	store, err := ReadStopLoss(home)
+	if err != nil {
+		return "", false, err
+	}
+	for _, hit := range store.Hits {
+		if hit.Kind != HitAllowance {
+			continue
+		}
+		for _, allowance := range store.Batches {
+			if allowance.Grant == store.Grant && hit.Work == allowanceWork(allowance.Batch, store.Grant) {
+				return allowance.Batch, true, nil
+			}
+		}
+	}
+	return "", false, nil
 }
 
 // allowance finds or opens batch's allowance under the grant in force.
@@ -293,8 +325,8 @@ func (s *StopLoss) sessionDeadline(launch string) (time.Time, bool) {
 
 // allowanceRefusal is an execution refused for a spent allowance.
 func allowanceRefusal(message string) *Refusal {
-	return &Refusal{Code: CodeAllowanceSpent, Message: message + "; the lane is stopped until a person resumes it",
-		Fix: "a person checks the alert and resumes the lane: metasystem landing start", Argv: []string{"metasystem", "landing", "start"}}
+	return &Refusal{Code: CodeAllowanceSpent, Message: message + "; work already proven green still publishes, and a person grants a fresh allowance",
+		Fix: "a person checks the alert and grants a fresh allowance: metasystem landing start", Argv: []string{"metasystem", "landing", "start"}}
 }
 
 // BindBatchHeld takes batch up for the running session at landing begin:
@@ -338,9 +370,12 @@ func (s *StopLoss) clockSince(launch string, now time.Time) time.Time {
 
 // ChargeHeld charges one execution (landing prove, any subject) to batch's
 // allowance before its child starts. A spent allowance (its executions, or
-// the session's time) refuses the execution, records the hit and pauses the
-// lane. The caller holds the lane flock (inside Gate). Publishing reads no
-// allowance: work already admitted and green still publishes.
+// the session's time) refuses the execution and records the hit, whose
+// alert asks a person for a fresh allowance. It does not pause the lane
+// (R8-08): a pause would refuse publish and the agent's returns, and work
+// already admitted and green must still publish; every further execution
+// of the batch is refused here until a person grants a fresh allowance.
+// The caller holds the lane flock (inside Gate).
 func ChargeHeld(home, batch string, now time.Time) error {
 	launch, err := currentLaunch(home)
 	if err != nil {
@@ -353,12 +388,14 @@ func ChargeHeld(home, batch string, now time.Time) error {
 		}
 		if deadline, ok := store.sessionDeadline(launch); ok && !now.Before(deadline) {
 			message := fmt.Sprintf("batch %s's session ran out of its %s at %s, so no further test run was started", batch, AllowanceWindow, localClock(deadline))
-			return errors.Join(allowanceRefusal(message), store.hitHeld(home, HitAllowance, fmt.Sprintf("allowance:%s:%d", batch, store.Grant), message, StopLossBy, now))
+			store.recordHit(HitAllowance, allowanceWork(batch, store.Grant), message, now)
+			return allowanceRefusal(message)
 		}
 		if allowance.Executions >= AllowanceExecutions {
 			message := fmt.Sprintf("batch %s used its allowance of %d test runs, so a further one was not started", batch, AllowanceExecutions)
 			store.record(now, "prove-refused", batch, launch, message)
-			return errors.Join(allowanceRefusal(message), store.hitHeld(home, HitAllowance, fmt.Sprintf("allowance:%s:%d", batch, store.Grant), message, StopLossBy, now))
+			store.recordHit(HitAllowance, allowanceWork(batch, store.Grant), message, now)
+			return allowanceRefusal(message)
 		}
 		allowance.Executions++
 		store.record(now, "prove", batch, launch, fmt.Sprintf("execution %d of %d", allowance.Executions, AllowanceExecutions))
@@ -495,7 +532,7 @@ func StopLossHoldHeld(home string, now time.Time, ceiling int64) (string, error)
 		return "", nil
 	}
 	reason := fmt.Sprintf("the landing agent used %d tokens today, and its daily ceiling is %d", spent, ceiling)
-	message := reason + ", so no further session starts until local midnight or a person resumes the lane"
+	message := reason + ", so the lane is stopped until a person resumes it; the count starts again from the resume, or from local midnight"
 	work := fmt.Sprintf("daily-ceiling:%s:%d", from.Format("2006-01-02"), store.Grant)
 	return reason, updateStopLossHeld(home, now, func(store *StopLoss) error {
 		return store.hitHeld(home, HitCeiling, work, message, StopLossBy, now)
@@ -524,6 +561,9 @@ func DeadlineHitHeld(home, launch string, deadline, now time.Time, settleErr err
 			message += "; the test runs it started could not all be ended (" + settleErr.Error() + ")"
 		}
 		store.record(now, "deadline", "", launch, message)
+		// The deadline pauses the lane (design r10 K10 "Hit: pause"). That
+		// a pause also holds publishing green work is a recorded deviation
+		// from R8-08, pending Wido's ruling (lane-runtime-design.md §2 K10).
 		return store.hitHeld(home, HitDeadline, "deadline:"+launch, message, StopLossBy, now)
 	})
 }
@@ -537,14 +577,24 @@ func LaunchTookUpBatch(store StopLoss, launch string) bool {
 }
 
 // Grant is a person's resume: a fresh allowance (a new grant, so every
-// batch's executions, the session clock, the breaker and the daily count
-// start again) and their word past usage that could not be read. The
-// history is kept.
+// batch's executions, the breaker and the daily count start again) and
+// their word past usage that could not be read. The history is kept. A
+// session the keeper has not seen end keeps its clock: a session whose
+// deadline cancel failed stays bounded, and the keeper cancels it again.
 func Grant(home, by string, now time.Time) error {
 	return withLock(home, func() error {
+		live, err := currentLaunch(home)
+		if err != nil {
+			return err
+		}
 		return updateStopLossHeld(home, now, func(store *StopLoss) error {
 			store.Grant++
-			store.GrantedAt, store.GrantedBy, store.Clock = stamp(now), by, nil
+			store.GrantedAt, store.GrantedBy = stamp(now), by
+			if store.Clock != nil && live != "" && store.Clock.Launch == live {
+				store.Clock.Grant = store.Grant
+			} else {
+				store.Clock = nil
+			}
 			for index := range store.Launches {
 				if usage := store.Launches[index].Usage; usage != nil && !usage.Known && store.Launches[index].AcceptedBy == "" {
 					store.Launches[index].AcceptedBy = by

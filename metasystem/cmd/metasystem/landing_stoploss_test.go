@@ -175,9 +175,9 @@ func TestCancelledLaunchReconciledFromItsTranscript(t *testing.T) {
 }
 
 // TestPersonsResumeGrantsAFreshAllowance (K10, R8-08): a batch that spent
-// its allowance stops the lane; a person's landing start resumes it with a
-// fresh allowance and keeps the history. A start of a lane that was not
-// stopped grants nothing.
+// its allowance waits for a person (the lane is not paused, so green work
+// still publishes); a person's landing start grants a fresh allowance and
+// keeps the history. A start with no allowance spent grants nothing.
 func TestPersonsResumeGrantsAFreshAllowance(t *testing.T) {
 	t.Parallel()
 	bed := newLaneVerbBed(t)
@@ -191,8 +191,11 @@ func TestPersonsResumeGrantsAFreshAllowance(t *testing.T) {
 		_ = charge()
 	}
 	before, err := lane.ReadStopLoss(bed.home)
-	if pause, paused := lane.ReadPause(bed.home); err != nil || !paused || pause.By != lane.StopLossBy {
-		t.Fatalf("a spent allowance: pause %+v %t %v; want the lane stopped by its stop-loss", pause, paused, err)
+	if _, spent, _ := lane.AllowanceSpent(bed.home); err != nil || !spent {
+		t.Fatalf("a spent allowance reads unspent: %v", err)
+	}
+	if _, paused := lane.ReadPause(bed.home); paused {
+		t.Fatal("a spent allowance paused the lane")
 	}
 	if code, stdout, stderr := bed.run(t, "landing", "start"); code != 0 {
 		t.Fatalf("landing start = %d %q %q", code, stdout, stderr)

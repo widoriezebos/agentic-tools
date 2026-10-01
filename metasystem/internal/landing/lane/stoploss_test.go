@@ -255,8 +255,9 @@ func TestDailyCeilingResetsAtLocalMidnight(t *testing.T) {
 }
 
 // TestResumeGrantsAFreshAllowanceAndKeepsHistory (K10, R8-08): a batch's
-// fifth execution is refused and stops the lane; a person's resume grants
-// a fresh allowance of four, and the history of the first is kept.
+// fifth execution is refused and owes an alert, without pausing the lane;
+// a person's grant gives a fresh allowance of four, and the history of the
+// first is kept.
 func TestResumeGrantsAFreshAllowanceAndKeepsHistory(t *testing.T) {
 	t.Parallel()
 	home, _, _ := nestedLaneDirs(t)
@@ -272,15 +273,18 @@ func TestResumeGrantsAFreshAllowanceAndKeepsHistory(t *testing.T) {
 	if err := charge(); !errors.As(err, &refusal) || refusal.Code != CodeAllowanceSpent {
 		t.Fatalf("the fifth execution = %v; want the allowance's refusal", err)
 	}
-	if _, paused := ReadPause(home); !paused {
-		t.Fatal("a spent allowance did not stop the lane")
+	if _, paused := ReadPause(home); paused {
+		t.Fatal("a spent allowance paused the lane")
+	}
+	if batch, spent, err := AllowanceSpent(home); err != nil || !spent || batch != "b-one" {
+		t.Fatalf("spent allowance = %q %t %v; want b-one", batch, spent, err)
 	}
 	before, _ := ReadStopLoss(home)
 	if err := Grant(home, "Wido", laneNow); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ClearPause(home); err != nil {
-		t.Fatal(err)
+	if _, spent, _ := AllowanceSpent(home); spent {
+		t.Fatal("a fresh grant still reads the allowance spent")
 	}
 	for index := 0; index < AllowanceExecutions; index++ {
 		if err := charge(); err != nil {
@@ -366,4 +370,66 @@ func TestHitAlertsOpenOnceThroughTheKeeper(t *testing.T) {
 	other := agent.keeper(home, t.TempDir(), &clock, WakeSources{Records: noBatches})
 	other.Alert = func(string, Hit) error { t.Error("another checkout's steward opened the lane's alert"); return nil }
 	other.Step()
+}
+
+// TestResumeKeepsALiveSessionsDeadline (K10, critique N-5): a session whose
+// deadline cancel failed keeps its clock across a person's resume, so the
+// keeper cancels it again rather than letting it run unbounded.
+func TestResumeKeepsALiveSessionsDeadline(t *testing.T) {
+	t.Parallel()
+	home, _, module := nestedLaneDirs(t)
+	clock := laneNow
+	agent := &fakeAgent{}
+	keeper := agent.keeper(home, module, &clock, WakeSources{Records: func(string) ([]batch.Record, error) { return queuedBatch, nil }})
+	var cancels int
+	keeper.Cancel = func(string) error { cancels++; return errors.New("the session could not be stopped") }
+	keeper.Settle = func(string) error { return nil }
+	keeper.Step()
+	clock = laneNow.Add(AllowanceWindow)
+	if line := keeper.Step(); cancels != 1 || !strings.Contains(line, "could not") {
+		t.Fatalf("a failed cancel: %q, cancels %d", line, cancels)
+	}
+	if err := Grant(home, "Wido", clock); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ClearPause(home); err != nil {
+		t.Fatal(err)
+	}
+	clock = clock.Add(time.Minute)
+	if keeper.Step(); cancels != 2 {
+		t.Fatalf("after the resume the still-running session was not cancelled again: cancels %d", cancels)
+	}
+	if _, paused := ReadPause(home); !paused {
+		t.Fatal("the session still runs past its deadline and the lane is not stopped")
+	}
+}
+
+// TestDeadlineWaitsForAPushInFlight (K10, critique N-4): the deadline
+// cancel does not cut a push to main in half; it waits for the push, at
+// most PushGrace past the deadline.
+func TestDeadlineWaitsForAPushInFlight(t *testing.T) {
+	t.Parallel()
+	home, checkout, module := nestedLaneDirs(t)
+	clock := laneNow
+	agent := &fakeAgent{}
+	keeper := agent.keeper(home, module, &clock, WakeSources{Records: func(string) ([]batch.Record, error) { return queuedBatch, nil }})
+	var cancelled []string
+	keeper.Cancel = func(id string) error { cancelled = append(cancelled, id); agent.running = ""; return nil }
+	keeper.Settle = func(string) error { return nil }
+	keeper.Step()
+	// A publication's push runs: its token is minted by a live process.
+	if err := Gate(home, OpPublish, AuthorityAgent, func(Record) error {
+		_, err := mint(home, Tuple{Repo: checkout}, OpPublish, AuthorityAgent)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	clock = laneNow.Add(AllowanceWindow)
+	if line := keeper.Step(); len(cancelled) != 0 || !strings.Contains(line, "push") {
+		t.Fatalf("a push in flight at the deadline: %q, cancelled %v; want the cancel to wait", line, cancelled)
+	}
+	clock = laneNow.Add(AllowanceWindow + PushGrace)
+	if keeper.Step(); len(cancelled) != 1 {
+		t.Fatalf("PushGrace past the deadline: cancelled %v; want the session cancelled", cancelled)
+	}
 }

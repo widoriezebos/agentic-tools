@@ -91,6 +91,10 @@ type AgentKeeper struct {
 // reasons wake at once. (The full budget is K-g's.)
 const AgentCooldown = time.Hour
 
+// PushGrace bounds how long the keeper's deadline cancel waits for a push
+// to main that is in flight.
+const PushGrace = 10 * time.Minute
+
 // startClaim bounds a start in progress that another step honours: a start
 // the launcher never finished is taken over after it.
 const startClaim = 10 * time.Minute
@@ -125,7 +129,7 @@ func (k AgentKeeper) Step() string {
 func (k AgentKeeper) deadline() string {
 	var root, id string
 	var at time.Time
-	due := false
+	due, waiting := false, false
 	if err := withLock(k.Home, func() error {
 		record, ok, err := Read(k.Home)
 		if err != nil || !ok || gone(record.Root) || !k.own(record) {
@@ -143,10 +147,19 @@ func (k AgentKeeper) deadline() string {
 		if err != nil || !live || running != state.Launch {
 			return err
 		}
+		// A push to main in flight is not cut in half: the cancel waits
+		// for it, at most PushGrace past the deadline.
+		if publishInFlight(k.Home) && k.Now().Before(deadline.Add(PushGrace)) {
+			waiting = true
+			return nil
+		}
 		root, id, at, due = record.Root, state.Launch, deadline, true
 		return nil
 	}); err != nil {
 		return "the landing agent's deadline can't be read: " + err.Error()
+	}
+	if waiting {
+		return "the landing session ran out of its time while it pushes to main; it is stopped once the push ends"
 	}
 	if !due {
 		return ""

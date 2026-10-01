@@ -352,3 +352,19 @@ func ReadPublications(home string) ([]Publication, error) {
 	}
 	return record.Publications, nil
 }
+
+// publishInFlight says whether a lane publication's push runs now: a token
+// whose minting process still lives. The caller holds the lane flock.
+func publishInFlight(home string) bool {
+	entries, err := os.ReadDir(tokenDir(home))
+	if err != nil {
+		return false
+	}
+	for _, entry := range entries {
+		var minted token
+		if _, err := readJSON(filepath.Join(tokenDir(home), entry.Name()), &minted); err == nil && processAlive(minted.Pid) {
+			return true
+		}
+	}
+	return false
+}

@@ -721,8 +721,13 @@ func (inv *intentInvocation) laneResumable(owners laneVerbOwners, home string, r
 			Details: []string{"refused because: " + lane.CodeUnsetting}}
 	}
 	pause, paused := lane.ReadPause(home)
-	if !paused {
+	// A spent allowance is granted afresh only by a person (K10).
+	spentBatch, spent, _ := lane.AllowanceSpent(home)
+	if !paused && !spent {
 		return nil
+	}
+	if !paused {
+		pause.By = "its stop-loss (batch " + spentBatch + " spent its allowance)"
 	}
 	proveAt := inv.cwd
 	if inv.resolveLayout() == nil {
@@ -754,8 +759,12 @@ func (inv *intentInvocation) startLane(owners laneVerbOwners, home string, recor
 			return *refused
 		}
 	}
+	_, spent, spentErr := lane.AllowanceSpent(home)
 	resumed, err := lane.ClearPause(home)
-	if err == nil && resumed {
+	if err == nil && spentErr != nil {
+		err = spentErr
+	}
+	if err == nil && (resumed || spent) {
 		// A person's resume grants the lane a fresh allowance (K10); the
 		// budgets' history is kept.
 		err = lane.Grant(home, inv.landingActor(owners), owners.now())
