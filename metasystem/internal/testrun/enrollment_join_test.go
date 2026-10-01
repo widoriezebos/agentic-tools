@@ -91,6 +91,7 @@ func fileDigestForEnrollment(t *testing.T, path string) string {
 // its detail, and its command names the lane checkout, never the temporary
 // receipt worktree. A goal-only commit after the engine's build is accepted.
 func TestJoinPlanningOnAnOlderBatchBaseNamesTheCauseAndTheRealCheckout(t *testing.T) {
+	t.Parallel()
 	bed := newJoinPlanningBed(t)
 	base, err := TrustedPolicyBase(filepath.Dir(bed.receipt), gittree.Workspace{Dir: filepath.Dir(bed.receipt)})
 	if err != nil {
