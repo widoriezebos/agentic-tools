@@ -422,9 +422,9 @@ func (inv *intentInvocation) closeDesignCritique(plan designReviewPlan, chain di
 			next:    inv.sameCommand(), nextReason: "after changing the design to address them; the critique then reviews the new version"}
 	}
 	if err := dispatchcore.CritiqueRegisterApplyDecisions(inv.layout.InstallationRoot, chain.Root, inv.registerDecisions(chain.Root, round)); err != nil {
-		return &intentResult{Targets: plan.targets, Outcome: intentRefused, code: 1,
+		return withCauseRef(err, intentResult{Targets: plan.targets, Outcome: intentRefused, code: 1,
 			Summary: "the decisions can't be recorded, so nothing was closed",
-			next:    inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{fmt.Sprintf("critique %s: %v", chain.Root, err)}}
+			next:    inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{fmt.Sprintf("critique %s: %v", chain.Root, err)}})
 	}
 	closed := inv.closeChain(chain.Root)
 	closed.Targets = append(append([]intentTarget{}, plan.targets...), closed.Targets...)

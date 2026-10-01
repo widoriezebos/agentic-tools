@@ -405,10 +405,10 @@ func (inv *intentInvocation) composeCarriedSubject(root, primary, goalID string,
 	before := inv.intentBranchTip(goalID)
 	candidate, code, err := inv.delivery().landCandidate([]string{"--root", root, "--goal", goalID, "--last"})
 	if err != nil {
-		return landing.CarriedSubject{}, "", &intentResult{Outcome: intentRefused, code: max(code, 1), Targets: targets, Data: data,
+		return landing.CarriedSubject{}, "", withCauseRef(err, intentResult{Outcome: intentRefused, code: max(code, 1), Targets: targets, Data: data,
 			Summary: "the goal's work can't be put together on top of main, so nothing was recorded",
 			next:    inv.sameCommand(), nextReason: "once what --verbose shows (a conflict with main, say) is fixed",
-			Details: []string{"the landing candidate cannot be composed: " + err.Error()}}
+			Details: []string{"the landing candidate cannot be composed: " + err.Error()}})
 	}
 	workspace, err := landing.ProjectWorkspaceTree(primary, candidate.Result.Candidate)
 	var endpointWorkspace string

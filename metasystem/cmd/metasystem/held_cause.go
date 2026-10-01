@@ -80,3 +80,20 @@ func (result intentResult) withCause(err error) intentResult {
 	result.next, result.nextReason, result.retry, result.Decision = next, then, "", ""
 	return result
 }
+
+// withCauseRef is withCause for a result returned by reference.
+func withCauseRef(err error, result intentResult) *intentResult {
+	result = result.withCause(err)
+	return &result
+}
+
+// argError is the first error among a refusal's format arguments: the
+// cause its detail line was written from.
+func argError(args []any) error {
+	for _, arg := range args {
+		if err, ok := arg.(error); ok {
+			return err
+		}
+	}
+	return nil
+}

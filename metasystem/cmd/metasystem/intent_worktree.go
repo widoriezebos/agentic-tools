@@ -188,7 +188,7 @@ func (inv *intentInvocation) goalWorktreeEntry(id string) (string, *intentResult
 		if next == nil {
 			result.Decision, result.nextReason = then, ""
 		}
-		return "", result
+		return "", withCauseRef(argError(args), *result)
 	}
 	ref, reason := "refs/heads/goal/"+id, goalWorktreeLockReason(id)
 	git := inv.work().git

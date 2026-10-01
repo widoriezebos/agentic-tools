@@ -1170,9 +1170,9 @@ func (inv *intentInvocation) rebindCritiqueBudget(targets []intentTarget, root s
 		rebind = dispatchcore.CritiqueChainBudgetRebind
 	}
 	if _, err := rebind(inv.layout.InstallationRoot, root); err != nil {
-		return &intentResult{Targets: targets, Outcome: intentRefused, code: 1,
+		return withCauseRef(err, intentResult{Targets: targets, Outcome: intentRefused, code: 1,
 			Summary: "the goal's review-round limit can't be applied to this review, so nothing was continued or closed",
-			next:    inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{fmt.Sprintf("chain %s: %v", root, err)}}
+			next:    inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{fmt.Sprintf("chain %s: %v", root, err)}})
 	}
 	return nil
 }
@@ -1342,7 +1342,7 @@ func (inv *intentInvocation) foldReview(review string) intentResult {
 	message, err := inv.composeFoldMessage(review, recordRound(round), subject, subjectRoot, returnPath)
 	if err != nil {
 		return intentResult{Targets: targets, Outcome: intentFailed, Summary: "the follow-up brief can't be put together, so nothing was done",
-			next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}
+			next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}.withCause(err)
 	}
 	outcome, refused := inv.delegate(targets, []string{"--follow-up", subjectRoot, "--brief", message})
 	if refused != nil {
@@ -1438,8 +1438,8 @@ func (inv *intentInvocation) finishedReview(targets []intentTarget, review strin
 	}
 	round, err := inv.newestRound(review)
 	if err != nil {
-		return nil, &intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: "the review's newest round can't be read; nothing was done",
-			next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}
+		return nil, withCauseRef(err, intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: "the review's newest round can't be read; nothing was done",
+			next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}})
 	}
 	if status := recordText(round, "status"); status != "completed" {
 		outcome := intentRefused
@@ -1736,7 +1736,7 @@ func (inv *intentInvocation) joinBatch(targets []intentTarget, request batchowne
 	record, unit, member, err := owners.batchUnit(request.LandingRoot, request, branchTip)
 	if err != nil {
 		return intentResult{Targets: targets, Outcome: intentFailed, Summary: "the landing batches can't be read, so nothing was landed", Data: map[string]any{"route": "batch"},
-			next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}
+			next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}.withCause(err)
 	}
 	joined := false
 	if !member {

@@ -583,7 +583,7 @@ func runIntentBuildUnit(inv *intentInvocation) int {
 	conn := inv.connection()
 	if endpoint, err := conn.endpoint(inv.layout.InstallationRoot); err != nil {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: "the goal branch can't be reached, so nothing was built",
-			next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}})
+			next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}.withCause(err))
 	} else if err := branch.CheckHolder(conn.claimCheck(inv.layout.InstallationRoot, id, endpoint)); err != nil {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: err.Error() + "; nothing was built",
 			next: inv.publicArgv("goal", "claim", id, "--take-over", "--reason", "TEXT"), nextReason: "a person takes the goal over; or the session holding it builds",
@@ -923,8 +923,13 @@ func (inv *intentInvocation) unitSize(unit, brief string, designs []string) (str
 			if missing := launch.UnsizedMissing(err); missing == "units-table" || missing == "row" || missing == "size-column" {
 				continue
 			}
-			return "", 0, &intentResult{Outcome: intentRefused, code: 1, Summary: fmt.Sprintf("the units table in %s can't be read; nothing was built", page),
-				next: inv.sameCommand(), nextReason: "after correcting the table; --verbose shows what is wrong", Details: []string{err.Error()}}
+			summary := fmt.Sprintf("the units table in %s can't be read; nothing was built", page)
+			if launch.UnsizedMissing(err) != "" {
+				// The table's own fault is the cause the person fixes.
+				summary = fmt.Sprintf("%s (%s); nothing was built", err.Error(), page)
+			}
+			return "", 0, &intentResult{Outcome: intentRefused, code: 1, Summary: summary,
+				next: inv.sameCommand(), nextReason: "after correcting the table", Details: []string{err.Error()}}
 		}
 		if given != 0 && given != lines {
 			return "", 0, &intentResult{Outcome: intentRefused, code: 2,
@@ -1557,7 +1562,7 @@ func runIntentTest(inv *intentInvocation) int {
 	output, code, err := inv.work().testRun(inv.layout.GitRoot, argv, inv.stderr)
 	if err != nil {
 		return inv.render(intentResult{Outcome: intentFailed, Targets: targets, code: 1, Summary: "the tests couldn't be started",
-			next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}})
+			next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}.withCause(err))
 	}
 	// The runner answers with its --json envelope; one that cannot be read
 	// is a failure, never a pass.
