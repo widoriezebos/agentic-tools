@@ -394,6 +394,16 @@ func FindOrCreateOpen(store Store, baseTree, id, actor string, at time.Time) (Re
 		if err != nil {
 			return err
 		}
+		// An older-base open batch JoinableOpen passes over gathers nothing
+		// more: dissolved here, it stops being the lane's collecting batch.
+		for _, record := range records {
+			if record.State == StateOpen && record.ClosedReason == "" && record.BaseTree != baseTree && everyMemberLeft(record) {
+				record.Transition(StateDissolved, at, "dissolve", actor, "no member left; a join opened on a newer base")
+				if err := store.write(record); err != nil {
+					return err
+				}
+			}
+		}
 		if open, found := JoinableOpen(records, baseTree); found {
 			selected = open
 			return nil

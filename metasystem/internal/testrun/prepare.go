@@ -702,6 +702,9 @@ func TrustedPolicyEngine(installation, policyBaseCommit string, firstTransition 
 		return "", "", false, err
 	}
 	engine := current
+	// engineCheckout is the checkout the refusals below name: the one that
+	// holds the enrollment, never a temporary worktree borrowing it.
+	engineCheckout := installation
 	if !firstTransition {
 		enrollmentRoot := installation
 		pinned, openErr := steward.OpenEnrolledBinary(enrollmentRoot)
@@ -733,15 +736,16 @@ func TrustedPolicyEngine(installation, policyBaseCommit string, firstTransition 
 		// removes it between two starts.
 		retainPolicyEngine(pinned)
 		engine = steward.EnrolledExecutionPath(enrollmentRoot, identity)
+		engineCheckout = enrollmentRoot
 	}
 	engineInfo, err := os.Stat(engine)
 	if err != nil || !engineInfo.Mode().IsRegular() || engineInfo.Mode().Perm()&0o111 == 0 {
-		facts := append(engineCheckoutFacts(installation), enginecause.Path("engine", engine))
+		facts := append(engineCheckoutFacts(engineCheckout), enginecause.Path("engine", engine))
 		return "", "", false, engineRefusal(enginecause.TokenEngineUnavailable, facts, "the pinned engine is missing or not executable")
 	}
 	sum, err := digest.FileSHA256(engine)
 	if err != nil {
-		facts := append(engineCheckoutFacts(installation), enginecause.Path("engine", engine))
+		facts := append(engineCheckoutFacts(engineCheckout), enginecause.Path("engine", engine))
 		return "", "", false, engineRefusal(enginecause.TokenEngineUnavailable, facts, "the pinned engine could not be read", err.Error())
 	}
 	currentInfo, currentErr := os.Stat(current)
