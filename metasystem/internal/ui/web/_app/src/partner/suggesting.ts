@@ -69,6 +69,13 @@ export type Registered = {
    * that supplies none is offered Use this alone.
    */
   save?: (field: string, text: string) => Promise<Outcome>;
+  /**
+   * Why these words cannot be put in that field, or "" where they can: a field
+   * whose value has a form the sheet reads strictly — the four risk answers —
+   * says so before a press rather than taking half of it (g1-s78). A sheet that
+   * supplies none takes any words in any of its fields.
+   */
+  refuses?: (field: string, text: string) => string;
 };
 
 /**
@@ -341,6 +348,20 @@ export function reach(
     return null;
   }
   return openings.get(card.opening) ?? null;
+}
+
+/**
+ * Why the sheet a card was prepared for will not take its words, or "".
+ *
+ * It is the sheet's own answer, asked of the opening the card belongs to; a
+ * sheet that has gone answers nothing here, because whether Use this can still
+ * be done at all is usable's question below.
+ */
+export function refusalOf(registered: Registered | null, card: Offered | undefined): string {
+  if (registered === null || card === undefined) {
+    return "";
+  }
+  return registered.refuses?.(card.field, card.text) ?? "";
 }
 
 /**

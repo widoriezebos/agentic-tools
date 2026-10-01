@@ -56,6 +56,7 @@ export function AskThePartner({
   opening,
   field,
   value,
+  also = "",
 }: {
   /** The opening this field belongs to, as the sheet minted it. */
   opening: string;
@@ -63,16 +64,23 @@ export function AskThePartner({
   field: string;
   /** What the field holds right now, which decides how the request is worded. */
   value: string;
+  /**
+   * A second field the same request asks for, where one link stands for two:
+   * the risk section asks for the four answers and the line behind them at once
+   * (g1-s78).
+   */
+  also?: string;
 }) {
   const { fillComposer, noteWriting } = usePartner();
+  const asked = also === "" ? field : `${field} and ${also}`;
   return (
     <button
       type="button"
       className="ms-field-ask"
-      title={`Put a request for ${field} in your Project Partner's composer. Nothing is sent.`}
+      title={`Put a request for ${asked} in your Project Partner's composer. Nothing is sent.`}
       onClick={() => {
         noteWriting(opening, field);
-        fillComposer(askLine(field, value));
+        fillComposer(also === "" ? askLine(field, value) : `Suggest the ${asked}`);
       }}
     >
       {ASK_THE_PARTNER}
@@ -180,8 +188,21 @@ export function FieldProposals({
  * back by any of them, which is why every one of them begins "Used".
  */
 function Foot({ card, saves }: { card: Offered; saves: boolean }) {
-  const { use, useAndSave, undo } = usePartner();
+  const { use, useAndSave, undo, refusal } = usePartner();
   const { sent, words } = card.mark;
+  // The sheet will not take these words — they are not the form its field
+  // reads — so the press is not offered at all, and why is said in its place.
+  const refused = card.standing === "waiting" ? refusal(card.id) : "";
+  if (refused !== "") {
+    return (
+      <>
+        <span className="ms-proposal-said" role="status">
+          {refused}
+        </span>
+        <Dismiss id={card.id} />
+      </>
+    );
+  }
   if (card.standing === "waiting") {
     return (
       <>
