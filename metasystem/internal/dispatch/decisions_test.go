@@ -523,7 +523,7 @@ func TestBuildRecordDesignCriticCarriesDeclaredOutputs(t *testing.T) {
 			}
 		})
 	}
-	if limit, _ := numInt(record[reviewRoundLimitField]); limit != 2 {
+	if limit, _ := numInt(record[reviewRoundLimitField]); limit != 5 {
 		t.Fatalf("review round limit = %v", record[reviewRoundLimitField])
 	}
 	if counted, _ := record[reviewChainCountedField].(bool); !counted {

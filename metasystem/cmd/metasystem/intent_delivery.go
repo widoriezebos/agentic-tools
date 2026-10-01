@@ -532,7 +532,13 @@ func recordText(record map[string]any, field string) string {
 }
 
 func recordRound(record map[string]any) int64 {
-	switch value := record["round"].(type) {
+	return recordInt(record, "round")
+}
+
+// recordInt reads an integer field of a job record, whichever decoder read
+// it: the dispatch record reader keeps numbers as json.Number.
+func recordInt(record map[string]any, field string) int64 {
+	switch value := record[field].(type) {
 	case float64:
 		return int64(value)
 	case json.Number:
@@ -872,7 +878,7 @@ func (inv *intentInvocation) reviewBriefFacts(targets []intentTarget, goalID str
 
 // reviewBrief renders the engine's review-brief.md template for one
 // subject. Every value is recorded state or the caller's explicit input.
-const designCritiqueRounds = 2
+const designCritiqueRounds = 5
 
 func reviewBrief(mode, chain, goalID string, rounds int64, calls int, threat, scope, copyPath, contents, findings string, checklist []string) string {
 	lines := []string{
@@ -992,8 +998,9 @@ func (inv *intentInvocation) reviewDesign(file string) intentResult {
 	if lineCount == 0 {
 		lineCount = 1
 	}
-	// A design critique has at most two rounds: the register raises a second
-	// round's unresolved findings to a person (finding_register.go).
+	// A design critique has at most five rounds, a backstop: the register
+	// raises the final round's unresolved findings to a person
+	// (finding_register.go).
 	rounds = min(rounds, designCritiqueRounds)
 	briefText := reviewBrief("design-critique", "design "+record.ID, goalID, rounds, calls,
 		"the threat model the design page states for itself, and goal "+goalID+"'s intent; a true finding outside it closes as out-of-scope.",
