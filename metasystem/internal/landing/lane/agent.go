@@ -152,7 +152,12 @@ func (k AgentKeeper) Run() AgentRun {
 			settledLine += "; a batch with no member left could not be dissolved: " + err.Error()
 		}
 	}
-	wake := ReadWake(registered, now, k.Sources)
+	last, _ := ReadAgentState(k.Home)
+	wake := ReadWake(registered, now, k.Sources, last)
+	if proving := wake.Proving; proving != nil {
+		return agentRun(AgentHeld, root, fmt.Sprintf("the landing agent at %s is not started: proving tree %s (attempt %s, since %s); it is woken when the proof ends",
+			root, shortTree(proving.Tree), proving.Attempt, LocalText(proving.Since))+settledLine)
+	}
 	if len(wake.Reasons) == 0 {
 		line := "the landing lane at " + root + " is idle; no landing agent runs"
 		if len(wake.Unread) > 0 {
@@ -366,4 +371,11 @@ func pausedClosed(home string) (string, bool) {
 		return "an unnamed person", true
 	}
 	return pause.By, true
+}
+
+func shortTree(tree string) string {
+	if len(tree) > 12 {
+		return tree[:12]
+	}
+	return tree
 }

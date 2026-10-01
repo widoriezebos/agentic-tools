@@ -103,9 +103,9 @@ func (bed *kernelBed) runWith(t *testing.T, owners intentOwners, words ...string
 	return code, stdout.String() + stderr.String()
 }
 
-// landing prove and landing push act on the admitted lane: its registered
-// nested layout, the host home and the lane's claim identity reach the
-// kernel, and each outcome reads as two plain lines.
+// landing prove --wait and landing push act on the admitted lane: its
+// registered nested layout, the host home and the lane's claim identity
+// reach the kernel, and each outcome reads as two plain lines.
 func TestLandingProveAndPushVerbs(t *testing.T) {
 	t.Parallel()
 	bed := newKernelBed(t)
@@ -115,7 +115,7 @@ func TestLandingProveAndPushVerbs(t *testing.T) {
 		proved = request
 		return kernel.TreeProof{Tree: strings.Repeat("a", 40), Commit: strings.Repeat("b", 40), Attempt: "a1", Status: batch.AttemptRed, RedGroups: []string{"app-standard"}}, nil
 	}
-	code, text := bed.runWith(t, owners, "landing", "prove")
+	code, text := bed.runWith(t, owners, "landing", "prove", "--wait")
 	if code != 1 || !strings.Contains(text, "tests of bbbbbbbbbbbb (tree aaaaaaaaaaaa) failed: app-standard") || !strings.Contains(text, "landing status --verbose") ||
 		proved.Home != bed.home || string(proved.Layout.Checkout) != bed.checkout || string(proved.Layout.Install) != bed.installation ||
 		!strings.HasSuffix(proved.Actor, "+"+lane.ClaimLineage) || proved.Tree != "" {
@@ -125,13 +125,13 @@ func TestLandingProveAndPushVerbs(t *testing.T) {
 		proved = request
 		return kernel.TreeProof{Tree: strings.Repeat("a", 40), Attempt: "a2", Status: batch.AttemptGreen}, nil
 	}
-	if code, text := bed.runWith(t, owners, "landing", "prove", "--tree", "HEAD~1"); code != 0 || !strings.Contains(text, "landing push may put it on main") || proved.Tree != "HEAD~1" {
+	if code, text := bed.runWith(t, owners, "landing", "prove", "--wait", "--tree", "HEAD~1"); code != 0 || !strings.Contains(text, "landing push may put it on main") || proved.Tree != "HEAD~1" {
 		t.Fatalf("a green prove of --tree = %d (asked %+v)\n%s", code, proved, text)
 	}
 	owners.landing.prove = func(kernel.ProveRequest) (kernel.TreeProof, error) {
 		return kernel.TreeProof{Tree: strings.Repeat("a", 40), Attempt: "a3", Status: batch.AttemptUnavailable, Reason: "the test run was refused: the lane cannot be named"}, nil
 	}
-	code, text = bed.runWith(t, owners, "landing", "prove", "--json")
+	code, text = bed.runWith(t, owners, "landing", "prove", "--wait", "--json")
 	var result intentResult
 	if err := json.Unmarshal([]byte(text), &result); err != nil || code != 1 || result.Outcome != intentFailed ||
 		!strings.Contains(result.Summary, "could not run, which says nothing about the work") || result.Next == nil {
@@ -141,7 +141,7 @@ func TestLandingProveAndPushVerbs(t *testing.T) {
 		return kernel.TreeProof{}, &lane.Refusal{Code: lane.CodePaused, Message: "the landing lane is stopped by Wido, so prove was not started",
 			Fix: "a person resumes it: metasystem landing start", Argv: []string{"metasystem", "landing", "start"}}
 	}
-	if code, text := bed.runWith(t, owners, "landing", "prove"); code != 1 || !strings.Contains(text, "stopped by Wido") || !strings.Contains(text, "landing start") {
+	if code, text := bed.runWith(t, owners, "landing", "prove", "--wait"); code != 1 || !strings.Contains(text, "stopped by Wido") || !strings.Contains(text, "landing start") {
 		t.Fatalf("a paused prove = %d\n%s", code, text)
 	}
 
@@ -212,7 +212,7 @@ func witnessLandingPushRepeat(t *testing.T) {
 var _ = func() bool {
 	layoutGroupCases = append(layoutGroupCases, func() []layoutCase {
 		return []layoutCase{
-			{name: "landing-prove-red", args: []string{"landing", "prove"}, bed: landingKernelLayoutBed()},
+			{name: "landing-prove-red", args: []string{"landing", "prove", "--wait"}, bed: landingKernelLayoutBed()},
 			{name: "landing-push-refusal", args: []string{"landing", "push"}, bed: landingKernelLayoutBed()},
 		}
 	})

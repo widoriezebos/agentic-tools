@@ -89,6 +89,7 @@ exit 0
       }
     ],
     "last_proof": null,
+    "running_proof": null,
     "last_push": null
   }
 }

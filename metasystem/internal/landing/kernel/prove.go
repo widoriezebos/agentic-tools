@@ -21,6 +21,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
@@ -55,6 +56,9 @@ type ProveRequest struct {
 	// checkout's HEAD.
 	Tree  string
 	Actor string
+	// Attempt is the attempt id a detached start chose for this proof
+	// (StartProof); empty draws a new one.
+	Attempt string
 }
 
 // ProveSeams are prove's effects; ProductionProveSeams is the zero case.
@@ -63,11 +67,14 @@ type ProveSeams struct {
 	Executable func() (string, error)
 	Now        func() time.Time
 	NewID      func() (string, error)
+	// Prober reads whether a recorded prover still runs; nil is the
+	// kernel's.
+	Prober identity.Prober
 }
 
 // ProductionProveSeams are the production effects.
 func ProductionProveSeams() ProveSeams {
-	return ProveSeams{Executable: os.Executable, Now: func() time.Time { return time.Now().UTC() }, NewID: newAttemptID}
+	return ProveSeams{Executable: os.Executable, Now: func() time.Time { return time.Now().UTC() }, NewID: newAttemptID, Prober: identity.KernelProber{}}
 }
 
 func newAttemptID() (string, error) {
@@ -88,8 +95,12 @@ type TreeProof struct {
 	// Batches are the queued hand-offs the attempt is recorded on.
 	Batches    []string `json:"batches,omitempty"`
 	ResultPath string   `json:"resultPath"`
-	StartedAt  string   `json:"startedAt"`
-	EndedAt    string   `json:"endedAt,omitempty"`
+	// Process is the exact identity of the process that runs the proof,
+	// while its status is running: a running proof whose process is gone
+	// died without a result.
+	Process   string `json:"process,omitempty"`
+	StartedAt string `json:"startedAt"`
+	EndedAt   string `json:"endedAt,omitempty"`
 }
 
 func proofsDir(layout lane.Layout) string {
@@ -173,16 +184,10 @@ func queued(store batch.Store) ([]batch.Record, map[string][]string, error) {
 func Prove(request ProveRequest, seams ProveSeams) (TreeProof, error) {
 	checkout := string(request.Layout.Checkout)
 	workspace := gittree.Workspace{Dir: checkout}
-	subject := strings.TrimSpace(request.Tree)
-	if subject == "" {
-		subject = "HEAD"
-	}
-	tree, err := workspace.TreeOf(subject)
+	tree, commit, err := subjectOf(workspace, request.Tree)
 	if err != nil {
-		return TreeProof{}, &Refusal{Code: CodeProveRefused, Reason: fmt.Sprintf("%s is not a tree of the lane checkout", subject),
-			Next: "name a commit or tree of the lane checkout, or prove its HEAD"}
+		return TreeProof{}, err
 	}
-	commit, _ := batchowner.GitOutput(checkout, "rev-parse", "--verify", "--quiet", subject+"^{commit}")
 	store := batch.NewStore(checkout, nil)
 	records, members, err := queued(store)
 	if err != nil {
@@ -198,7 +203,13 @@ func Prove(request ProveRequest, seams ProveSeams) (TreeProof, error) {
 	}
 	defer detached.Close()
 	execution := request.Layout.Execution(lane.CheckoutRoot(detached.Workspace().Dir))
-	id, err := seams.NewID()
+	id := request.Attempt
+	if id == "" {
+		if id, err = seams.NewID(); err != nil {
+			return TreeProof{}, err
+		}
+	}
+	self, err := selfProcess(seams.prober())
 	if err != nil {
 		return TreeProof{}, err
 	}
@@ -215,7 +226,7 @@ func Prove(request ProveRequest, seams ProveSeams) (TreeProof, error) {
 	command.Dir, command.Env = string(execution), gittree.ScrubbedEnviron()
 	read := verbresult.Capture(command, testRunVerb)
 	finish := func(status, runAttempt, reason string, red []string) error {
-		proof.Status, proof.Reason, proof.RedGroups = status, reason, red
+		proof.Status, proof.Reason, proof.RedGroups, proof.Process = status, reason, red, ""
 		proof.EndedAt = seams.Now().Format(time.RFC3339Nano)
 		var errs []error
 		for _, record := range records {
@@ -228,6 +239,17 @@ func Prove(request ProveRequest, seams ProveSeams) (TreeProof, error) {
 		layout, err := registered.Layout()
 		if err != nil || layout.Checkout != request.Layout.Checkout || layout.Install != request.Layout.Install {
 			return &Refusal{Code: CodeProveRefused, Reason: "the landing lane moved while the test run was prepared, so nothing was started", Next: "run the same command again"}
+		}
+		running, err := settleRunning(request.Layout, store, seams.prober(), seams.Now(), id)
+		if err != nil {
+			return err
+		}
+		if running != nil {
+			return runningRefusal(*running)
+		}
+		proof.Process = self
+		if err := keepTreeProof(request.Layout, proof); err != nil {
+			return err
 		}
 		for _, record := range records {
 			attempt := batch.ProofAttempt{ID: id, Subject: batch.SubjectBatch, Covers: members[record.BatchID], Commit: commit, Tree: tree,
@@ -256,6 +278,22 @@ func Prove(request ProveRequest, seams ProveSeams) (TreeProof, error) {
 		return proof, err
 	}
 	return proof, nil
+}
+
+// subjectOf is the tree a prove of subject (a commit or tree of the lane
+// checkout; empty is its HEAD) proves, and its commit when it names one.
+func subjectOf(workspace gittree.Workspace, subject string) (tree, commit string, err error) {
+	subject = strings.TrimSpace(subject)
+	if subject == "" {
+		subject = "HEAD"
+	}
+	tree, err = workspace.TreeOf(subject)
+	if err != nil {
+		return "", "", &Refusal{Code: CodeProveRefused, Reason: fmt.Sprintf("%s is not a tree of the lane checkout", subject),
+			Next: "name a commit or tree of the lane checkout, or prove its HEAD"}
+	}
+	commit, _ = batchowner.GitOutput(workspace.Dir, "rev-parse", "--verify", "--quiet", subject+"^{commit}")
+	return tree, commit, nil
 }
 
 // proveArgs is the child's argv: a delivery run of tree as the batch tip,

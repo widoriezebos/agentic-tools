@@ -29,6 +29,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostload"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/kernel"
 	landinglane "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
@@ -581,6 +582,9 @@ type proofLaunchAdmission struct {
 	// laneOwner proves the caller descends from the lane's landing agent;
 	// nil proves it against the lane checkout's lease holder.
 	laneOwner func(root string, callerPID int64) error
+	// laneHome is the host home the lane is read from; nil is the
+	// user's.
+	laneHome func() (string, error)
 	// CallerPID is the supplied process the admission classifies and whose
 	// custody it authenticates (design 6.2); zero is this process's parent,
 	// the entry's own caller.
@@ -1359,7 +1363,12 @@ func admitLaneProofLaunch(request proofLaunchAdmission, caller lease.ClassifyRes
 	if caller.Class != lease.ClassHuman {
 		prove := request.laneOwner
 		if prove == nil {
-			prove = proveLaneOwnerCaller
+			home := request.laneHome
+			if home == nil {
+				home = board.Home
+			}
+			tree := proofAdmissionCandidateTree(request)
+			prove = func(_ string, callerPID int64) error { return proveLaneTestRunCaller(home, callerPID, tree) }
 		}
 		if err := prove(anchor, request.callerPID()); err != nil {
 			return refuse("only the lane's landing agent, proven by its identity, or a person charges a proof to the lane: %v", err)
@@ -1435,7 +1444,65 @@ func admitLaneProofLaunch(request proofLaunchAdmission, caller lease.ClassifyRes
 // on a nested checkout may still carry a stale lease from an earlier lane
 // (2026-10-01).
 func proveLaneOwnerCaller(controlRoot string, callerPID int64) error {
-	home, err := board.Home()
+	return proveLaneAgentCaller(board.Home, callerPID)
+}
+
+// proveLaneTestRunCaller proves the caller of a test run of tree charged to
+// the lane is the lane's: it descends from the landing agent
+// (proveLaneAgentCaller), or it is the lane's own detached proof of that
+// tree. landing prove admitted its caller (the agent, or a person) before it
+// detached the proof; once the agent has exited the job descends from no
+// agent, and is proven instead by the running-proof record StartProof kept
+// under the lane flock: the exact process it names runs and is the caller's
+// ancestor.
+func proveLaneTestRunCaller(home func() (string, error), callerPID int64, tree string) error {
+	agentErr := proveLaneAgentCaller(home, callerPID)
+	if agentErr == nil {
+		return nil
+	}
+	jobErr := proveLaneProofJob(home, callerPID, tree)
+	if jobErr == nil {
+		return nil
+	}
+	return fmt.Errorf("%v; and it is not the lane's running test run: %v", agentErr, jobErr)
+}
+
+// proveLaneProofJob proves callerPID descends from the lane's running proof
+// of tree, by the exact process identity its record names.
+func proveLaneProofJob(homeOf func() (string, error), callerPID int64, tree string) error {
+	home, err := homeOf()
+	if err != nil {
+		return err
+	}
+	record, ok, err := landinglane.Read(home)
+	if err != nil || !ok {
+		return fmt.Errorf("no landing lane is registered on this computer (%v)", err)
+	}
+	layout, err := record.Layout()
+	if err != nil {
+		return err
+	}
+	proof, live, ok, err := kernel.ReadRunningProof(layout, identity.KernelProber{})
+	switch {
+	case err != nil:
+		return err
+	case !ok:
+		return fmt.Errorf("no test run is recorded running in the lane")
+	case live != identity.Alive:
+		return fmt.Errorf("the lane's test run %s no longer runs", proof.Attempt)
+	case tree == "" || proof.Tree != tree:
+		return fmt.Errorf("the lane's running test run %s is of tree %s, not %s", proof.Attempt, proof.Tree, tree)
+	}
+	ref, err := identity.ParseRef(proof.Process)
+	if err != nil {
+		return err
+	}
+	return proofrun.AuthenticateAncestor(callerPID, proofrun.ProcessIdentity{Pid: ref.Pid, PidStartedAt: ref.StartedAtSec,
+		PidStartedAtMicro: ref.StartedAtUnixMicro, PidStartTicks: ref.StartTicks, BootID: ref.BootID})
+}
+
+func proveLaneAgentCaller(homeOf func() (string, error), callerPID int64) error {
+	home, err := homeOf()
 	if err != nil {
 		return err
 	}
