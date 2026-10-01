@@ -32,6 +32,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/project"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
@@ -1764,8 +1765,13 @@ func (inv *intentInvocation) joinBatch(targets []intentTarget, request batchowne
 		record, err = owners.batchJoin(request)
 		if err != nil {
 			words, code := refusalWordsAndCode(err)
+			details := refusalCodeDetails(code)
+			if detail := refusal.Detail(err); detail != "" {
+				// The cause a planning child named, for --verbose only.
+				details = append(details, detail)
+			}
 			return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: words, Data: map[string]any{"route": "batch"},
-				next: inv.publicArgv("landing", "status"), nextReason: "shows the landing batches", Details: refusalCodeDetails(code)}
+				next: inv.publicArgv("landing", "status"), nextReason: "shows the landing batches", Details: details}
 		}
 		joined, unit = true, batch.Unit{GoalID: request.GoalID, Chain: request.ChainID, State: batch.UnitJoined}
 	}

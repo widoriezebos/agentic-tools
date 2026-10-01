@@ -715,14 +715,17 @@ func TrustedPolicyEngine(installation, policyBaseCommit string, firstTransition 
 			return "", "", false, enrollmentRefusal(installation, openErr)
 		}
 		identity := pinned.Install
+		// The refusals below name the checkout that holds the enrollment: a
+		// borrowing temporary worktree (a join's receipt) is gone by the time
+		// a person reads its command.
 		if sourceErr := pinned.VerifySourceAtDestination(enrollmentRoot, policyBaseCommit); sourceErr != nil {
 			_ = pinned.Close()
-			facts := append(engineCheckoutFacts(installation), enginecause.Value("destination", policyBaseCommit))
+			facts := append(engineCheckoutFacts(enrollmentRoot), enginecause.Value("destination", policyBaseCommit))
 			return "", "", false, judgmentRefusal(sourceErr, facts, "the pinned engine was not built from the landing branch this run tests against")
 		}
 		if prepareErr := pinned.PrepareForExecution(); prepareErr != nil {
 			_ = pinned.Close()
-			return "", "", false, engineRefusal(enginecause.TokenEngineUnavailable, engineCheckoutFacts(installation), "the pinned engine could not be opened to run", prepareErr.Error())
+			return "", "", false, engineRefusal(enginecause.TokenEngineUnavailable, engineCheckoutFacts(enrollmentRoot), "the pinned engine could not be opened to run", prepareErr.Error())
 		}
 		// The policy engine runs the plan and every worker of this run, long
 		// after this returns: its pin keeps the preparation lease until the
