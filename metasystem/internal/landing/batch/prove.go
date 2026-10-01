@@ -77,23 +77,19 @@ type ReturnDecision struct {
 }
 
 func ReassembleSurvivorsWithReturns(store Store, id, actor string, at time.Time, decisions []ReturnDecision) error {
-	return reassembleSurvivorsOnBase(store, id, actor, at, decisions, "", "", "")
+	return reassembleSurvivors(store, id, actor, at, decisions)
 }
 
-// reassembleSurvivorsOnBase is the one owner for both returned-member and
-// moved-base composition. A moved base can reveal the first typed conflict;
-// subsequent conflicts are closed in original join order.
-func reassembleSurvivorsOnBase(store Store, id, actor string, at time.Time, decisions []ReturnDecision, newBaseTree, detail, landedBy string) error {
+// reassembleSurvivors composes the members that survive the returned ones,
+// on the batch's base: a survivor that no longer applies is returned too,
+// in original join order.
+func reassembleSurvivors(store Store, id, actor string, at time.Time, decisions []ReturnDecision) error {
 	record, err := store.Load(id)
 	if err != nil {
 		return err
 	}
 	original := record
 	original.Units, original.History = slices.Clone(record.Units), slices.Clone(record.History)
-	movedBase := newBaseTree != ""
-	if movedBase {
-		record.BaseTree = newBaseTree
-	}
 	decisions = slices.Clone(decisions)
 	for _, decision := range decisions {
 		if err := requestUnitReturn(&record, decision.GoalID, decision.Outcome, decision.Reason, actor, at); err != nil {
@@ -144,7 +140,7 @@ func reassembleSurvivorsOnBase(store Store, id, actor string, at time.Time, deci
 			break
 		}
 		var conflict *assemblyConflict
-		if !errors.As(err, &conflict) || (knownRemoved() == "" && !movedBase) {
+		if !errors.As(err, &conflict) || knownRemoved() == "" {
 			return hold("survivor composition unclassified: " + err.Error())
 		}
 		found := false
@@ -157,9 +153,6 @@ func reassembleSurvivorsOnBase(store Store, id, actor string, at time.Time, deci
 			return hold("survivor composition has no joined owner: " + err.Error())
 		}
 		reason := "cannot apply after returning " + knownRemoved() + ": " + err.Error()
-		if knownRemoved() == "" {
-			reason = movedBaseConflictLine(conflict, landedBy)
-		}
 		decision := ReturnDecision{GoalID: conflict.GoalID, Outcome: UnitEjected, Reason: reason}
 		if err := requestUnitReturn(&record, decision.GoalID, decision.Outcome, decision.Reason, actor, at); err != nil {
 			return hold("survivor return unavailable: " + err.Error())
@@ -192,10 +185,6 @@ func reassembleSurvivorsOnBase(store Store, id, actor string, at time.Time, deci
 	if err := applyReturns(&next); err != nil {
 		return err
 	}
-	if movedBase {
-		forgetEarly(&next, at, actor, "base moved to "+newBaseTree)
-	}
-	next.BaseTree = record.BaseTree
 	next.PrefixTrees, next.SelectedGroups, next.Seal, next.Proof, next.Landing, next.Receipts, next.CostForecast = prefixes, nil, nil, nil, nil, nil, nil
 	if len(survivors) == 0 {
 		next.PrefixTrees = nil
@@ -204,11 +193,7 @@ func reassembleSurvivorsOnBase(store Store, id, actor string, at time.Time, deci
 	} else {
 		next.TipTree = prefixes[len(prefixes)-1]
 		next.ClosedReason = ""
-		verb, transitionDetail := "reassemble", "survivors"
-		if movedBase && len(decisions) == 0 {
-			verb, transitionDetail = "trunk-moved", detail
-		}
-		next.Transition(StateOpen, at, verb, actor, transitionDetail)
+		next.Transition(StateOpen, at, "reassemble", actor, "survivors")
 	}
 	branchFailure := ""
 	err = store.locked(func() error {

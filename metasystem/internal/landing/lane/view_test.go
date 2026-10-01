@@ -60,7 +60,7 @@ func TestViewShapeWithoutALane(t *testing.T) {
 	if got, want := keysOf(t, object["owner"]), []string{"last_exit", "pid", "retry_hint", "since", "state", "stopped_by"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("owner keys = %v, want %v", got, want)
 	}
-	if view.Owner.State != OwnerNotStarted || !strings.Contains(view.Summary, "no landing lane is registered") {
+	if view.Owner.State != OwnerUnready || !strings.Contains(view.Summary, "no landing lane is registered") {
 		t.Fatalf("view = %+v", view)
 	}
 }
@@ -128,7 +128,7 @@ func TestViewPausedAndUnknownAgent(t *testing.T) {
 	sources := viewSources(home, false, nil)
 	sources.Owner = func(string) (OwnerProbe, error) { return OwnerProbe{}, os.ErrPermission }
 	view = BuildView(sources)
-	if view.Owner.State != OwnerNotStarted || view.Owner.LastExit == nil || !strings.Contains(*view.Owner.LastExit, "whether the landing agent runs is unknown") ||
+	if view.Owner.State != OwnerUnready || view.Owner.LastExit == nil || !strings.Contains(*view.Owner.LastExit, "whether the landing agent runs is unknown") ||
 		!strings.Contains(view.Summary, "unknown") {
 		t.Fatalf("unknown agent view = %+v %q", view.Owner, view.Summary)
 	}

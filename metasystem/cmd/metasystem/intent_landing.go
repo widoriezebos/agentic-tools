@@ -365,10 +365,10 @@ func (inv *intentInvocation) landingStatusView(view lane.View, unreadable bool) 
 			}
 			page.Mark(textui.Stopped, "The landing lane is stopped by "+by+"; it lands nothing")
 			page.Hint(textui.Hint{Argv: inv.publicArgv("landing", "start"), Reason: "resumes it"})
-		case owner.LastExit == nil && owner.RetryHint == nil:
+		case owner.State == lane.OwnerIdle:
 			// An idle lane runs no model: the keeper wakes the agent when
 			// there is work (design r10 §3).
-			page.Headline("The landing lane is running; its agent starts when there is work", batchFact, nextFact)
+			page.Headline("The landing lane is idle; its agent starts when there is work", batchFact, nextFact)
 		default:
 			page.Mark(textui.Alert, "The landing lane can't run its agent")
 			section := page.Section("", "")

@@ -11,7 +11,7 @@ exit 0
     "registered_by": null,
     "registered_at": null,
     "owner": {
-      "state": "not-started",
+      "state": "unready",
       "pid": null,
       "since": null,
       "last_exit": null,

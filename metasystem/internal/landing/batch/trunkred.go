@@ -78,14 +78,6 @@ type EntryRef struct {
 	Group string `json:"group"`
 }
 
-// OwnerMachine returns the first joiner's machine.
-func (red TrunkRed) OwnerMachine() string {
-	if len(red.Joiners) == 0 {
-		return ""
-	}
-	return red.Joiners[0].Machine
-}
-
 // TrunkRedID returns the stable identity of a red proof group.
 func TrunkRedID(group RedGroup) string {
 	identityLines := make([]string, 0, len(group.Failures))

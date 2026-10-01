@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 	"slices"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
@@ -25,19 +24,4 @@ func recordSelection(record *Record, plan testpolicy.Plan) {
 	if plan.RequiredMode == testpolicy.ModeDeep {
 		record.ClosedReason = "deep-ceiling"
 	}
-}
-
-type committedGoalPrefixError struct{ error }
-
-func readCommittedGoal(moduleRoot, tree, goalID string) ([]byte, bool, error) {
-	return readCommittedGoalWithWorkspace(gittree.Workspace{Dir: moduleRoot}, tree, goalID)
-}
-
-func readCommittedGoalWithWorkspace(workspace gittree.Workspace, tree, goalID string) ([]byte, bool, error) {
-	prefix, err := workspace.Prefix()
-	if err != nil {
-		return nil, false, &committedGoalPrefixError{err}
-	}
-	path := prefix + filepath.ToSlash(filepath.Join("plans", "goals", goalID+".md"))
-	return workspace.FileAt(tree, path)
 }

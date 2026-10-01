@@ -171,7 +171,7 @@ var Rows = []Row{
 	{Code: "BATCH_PREFIX_AUTHORITY_REFUSED", Owner: "internal/landing/batchowner", Site: "prefix.go#AuthorizeBatchMemberInProjection", Shape: Question, H1: StandingInput},
 	{Code: "BATCH_PREFIX_PLAN_REFUSED", Owner: "internal/landing/batchowner", Site: "prefix.go#PlanPrefixDecisionWith", Shape: Question, H1: StandingInput},
 	{Code: "BATCH_MEMBER_BUDGET_REFUSED", Owner: "cmd/metasystem", Site: "proof_run.go#batchMemberBudgetRefused", Shape: Question, H1: StandingGuide, Forward: "goal budget"},
-	{Code: "BATCH_REASSEMBLE_MOVED", Owner: "internal/landing/batch", Site: "prove.go#reassembleSurvivorsOnBase", Shape: Question, H1: StandingAgent},
+	{Code: "BATCH_REASSEMBLE_MOVED", Owner: "internal/landing/batch", Site: "prove.go#reassembleSurvivors", Shape: Question, H1: StandingAgent},
 	{Code: "BATCH_LANDING_BRANCH_MOVED", Owner: "internal/landing/batch", Site: "transport.go#PublishLandingBranch", Shape: Question, H1: StandingAgent},
 	{Code: "BATCH_LANDING_BRANCH_PREP_REFUSED", Owner: "internal/landing/batch", Site: "transport.go#RebuildLandingBranch", Shape: Question, H1: StandingAgent},
 	{Code: "BATCH_LAND_CLEANUP_REFUSED", Owner: "internal/landing/batch", Site: "transport.go#CleanupLandingBranch", Shape: Question, H1: StandingAgent},

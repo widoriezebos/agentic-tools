@@ -12,12 +12,15 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 )
 
-// The lane's runner states as a person reads them: the landing agent runs,
-// a person stopped the lane, or no agent runs now.
+// The lane's runner states as a person reads them: the landing agent runs;
+// a person stopped the lane; no agent runs and none is needed until there is
+// work, which is normal (design r10 §3: an idle lane runs no model); or the
+// lane cannot run an agent, with why and the fix.
 const (
-	OwnerRunning    = "running"
-	OwnerStopped    = "stopped"
-	OwnerNotStarted = "not-started"
+	OwnerRunning = "running"
+	OwnerStopped = "stopped"
+	OwnerIdle    = "idle"
+	OwnerUnready = "unready"
 )
 
 // The current batch's states as a person reads them.
@@ -145,7 +148,7 @@ type ViewSources struct {
 
 // BuildView reads the lane once and says it for a person and a page.
 func BuildView(sources ViewSources) View {
-	view := View{Owner: OwnerView{State: OwnerNotStarted}}
+	view := View{Owner: OwnerView{State: OwnerUnready}}
 	record, ok, err := Read(sources.Home)
 	if err != nil {
 		view.Summary = "this computer's landing lane record can't be read (" + err.Error() + "); metasystem landing set replaces it"
@@ -188,7 +191,7 @@ func text(value string) *string {
 }
 
 func ownerView(sources ViewSources, root string) OwnerView {
-	owner := OwnerView{State: OwnerNotStarted}
+	owner := OwnerView{State: OwnerUnready}
 	if pause, paused := ReadPause(sources.Home); paused {
 		owner.State, owner.StoppedBy, owner.Since = OwnerStopped, text(pause.By), text(pause.At)
 		owner.RetryHint = text("metasystem landing start resumes it")
@@ -212,6 +215,9 @@ func ownerView(sources ViewSources, root string) OwnerView {
 	}
 	if sources.Ready != nil {
 		notReady(&owner, sources.Ready(root))
+	}
+	if owner.LastExit == nil && owner.RetryHint == nil {
+		owner.State = OwnerIdle
 	}
 	return owner
 }
@@ -414,11 +420,14 @@ func summary(root string, view View, recordsErr error) string {
 		}
 	case OwnerStopped:
 		agent = "stopped by " + *view.Owner.StoppedBy + "; metasystem landing start resumes it"
+	case OwnerIdle:
+		agent = "idle; its landing agent starts when there is work"
 	default:
 		// Why the lane cannot run and the one fix, in the one line (summary
 		// by default).
+		agent = "the landing agent can't run"
 		if view.Owner.LastExit != nil {
-			agent += "; " + *view.Owner.LastExit
+			agent = *view.Owner.LastExit
 		}
 		if view.Owner.RetryHint != nil {
 			agent += "; to fix: " + *view.Owner.RetryHint

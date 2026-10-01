@@ -1,13 +1,10 @@
 package batch
 
 import (
-	"bytes"
-	"fmt"
 	"os"
 	"os/exec"
 	"slices"
 	"strings"
-	"sync"
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
@@ -58,49 +55,6 @@ func witness(t *testing.T, ok bool, format string, args ...any) {
 	}
 }
 
-type committedGoalReply struct {
-	module, tree, goal string
-	data               []byte
-	present            bool
-	err                error
-}
-
-func expectCommittedGoals(t *testing.T, store *Store, replies ...committedGoalReply) {
-	t.Helper()
-	var mu sync.Mutex
-	called := 0
-	store.committedGoal = func(module, tree, goal string) ([]byte, bool, error) {
-		mu.Lock()
-		defer mu.Unlock()
-		if called >= len(replies) {
-			t.Errorf("unexpected committed goal read: module=%q tree=%q goal=%q", module, tree, goal)
-			return nil, false, fmt.Errorf("unexpected committed goal read")
-		}
-		want := replies[called]
-		called++
-		if module != want.module || tree != want.tree || goal != want.goal {
-			t.Errorf("committed goal read %d: got module=%q tree=%q goal=%q, want %+v", called, module, tree, goal, want)
-			return nil, false, fmt.Errorf("unexpected committed goal read")
-		}
-		return bytes.Clone(want.data), want.present, want.err
-	}
-	t.Cleanup(func() {
-		mu.Lock()
-		defer mu.Unlock()
-		if called != len(replies) {
-			t.Errorf("committed goal reads=%d, want %d", called, len(replies))
-		}
-	})
-}
-
-func TestBatchJoinConflictNamesFiles(t *testing.T) {
-	bed := assemblyFixture(t)
-	_, err := assembleUnits(bed.root, bed.base, append(bed.record.Units, Unit{GoalID: "goal-conflict", Chain: "conflict", State: UnitJoined}))
-	if err == nil || !strings.Contains(err.Error(), "goal-conflict") || !strings.Contains(err.Error(), "a.go") || !strings.Contains(err.Error(), "b.go") {
-		t.Fatalf("certified patch conflict=%v", err)
-	}
-}
-
 func TestBatchSealAssemblyPreservesMovedTrunkContent(t *testing.T) {
 	t.Parallel()
 	bed := assemblyFixture(t)
@@ -121,5 +75,13 @@ func TestBatchSelectionUnionClosesAtCeiling(t *testing.T) {
 	err := joinRefusal(open)
 	if err == nil || !strings.Contains(err.Error(), "BATCH_CLOSED") {
 		t.Fatalf("join refusal=%v", err)
+	}
+}
+
+func TestBatchJoinConflictNamesFiles(t *testing.T) {
+	bed := assemblyFixture(t)
+	_, err := assembleUnits(bed.root, bed.base, append(bed.record.Units, Unit{GoalID: "goal-conflict", Chain: "conflict", State: UnitJoined}))
+	if err == nil || !strings.Contains(err.Error(), "goal-conflict") || !strings.Contains(err.Error(), "a.go") || !strings.Contains(err.Error(), "b.go") {
+		t.Fatalf("certified patch conflict=%v", err)
 	}
 }

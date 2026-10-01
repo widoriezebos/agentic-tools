@@ -219,7 +219,7 @@ func LandingLaneArmed(root string) (bool, error) {
 func landingLaneView(home func() (string, error), now time.Time) lane.View {
 	laneHome, err := home()
 	if err != nil {
-		return lane.View{Owner: lane.OwnerView{State: lane.OwnerNotStarted}, Summary: "the landing lane cannot be read: this host has no home for it (" + err.Error() + ")"}
+		return lane.View{Owner: lane.OwnerView{State: lane.OwnerUnready}, Summary: "the landing lane cannot be read: this host has no home for it (" + err.Error() + ")"}
 	}
 	return lane.BuildView(LandingLaneViewSources(laneHome, now))
 }

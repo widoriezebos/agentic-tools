@@ -514,8 +514,21 @@ func writeUnknownIntentCommand(w io.Writer, name string, rest []string) {
 	fmt.Fprintln(w, "metasystem lists the objects; metasystem OBJECT lists its actions")
 }
 
+// retiredIntentAction is an action that was removed, with why and the one
+// command that does its work now: someone who learned it is told so, not
+// offered a guess by spelling.
+type retiredIntentAction struct{ why, next string }
+
+var retiredIntentActions = map[string]retiredIntentAction{
+	"landing restart": {why: "the lane has no owner to restart now", next: "metasystem landing start"},
+}
+
 // writeUnknownIntentAction refuses an action the object does not have.
 func writeUnknownIntentAction(w io.Writer, object, action string, rest []string) {
+	if retired, ok := retiredIntentActions[object+" "+action]; ok {
+		fmt.Fprintf(w, "metasystem %s %s was removed; %s; nothing was done\nrun: %s\n", object, action, retired.why, retired.next)
+		return
+	}
 	fmt.Fprintf(w, "metasystem %s: unknown action %q; nothing was done\n", object, action)
 	if looksLikeFlagOrPath(action) {
 		// No suggestion: a flag or path is not a misspelt action, and the

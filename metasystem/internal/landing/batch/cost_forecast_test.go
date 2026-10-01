@@ -17,7 +17,6 @@ func costJoinBed(t *testing.T) (Store, Record, Unit, CostForecast) {
 	record.PrefixTrees, record.TipTree = prefixes, prefixes[len(prefixes)-1]
 	store := NewStore(bed.root, nil)
 	strictReassembly(t, &store)
-	expectCommittedGoals(t, &store)
 	must(t, store.Create(record))
 	incoming := Unit{GoalID: "goal-c", Chain: "chain-c", State: UnitJoining,
 		Claim: Claim{Machine: "seat", Lineage: "l", Epoch: 1, Revision: 9, AccountingRevision: 7}, SelectedGroups: []string{"c"}}
@@ -42,7 +41,6 @@ func costCASBed(t *testing.T) (Store, Record, Unit, CostForecast) {
 	}
 	store := NewStore(t.TempDir(), nil)
 	strictReassembly(t, &store)
-	expectCommittedGoals(t, &store)
 	must(t, store.Create(record))
 	incoming := Unit{GoalID: "goal-c", Chain: "chain-c", State: UnitJoining,
 		Claim: Claim{Machine: "seat", Lineage: "l", Epoch: 1, Revision: 9, AccountingRevision: 7}, SelectedGroups: []string{"c"}}

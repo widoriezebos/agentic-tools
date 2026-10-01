@@ -1,10 +1,5 @@
 package batch
 
-import (
-	"fmt"
-	"strings"
-)
-
 // LandingProgress is the durable boundary between local construction, the
 // single push, and trailer-based recovery.
 type LandingProgress struct {
@@ -44,22 +39,4 @@ type PushRejection struct {
 	Text      string `json:"text"`
 	At        string `json:"at"`
 	OriginTip string `json:"originTip"`
-}
-
-// A moved base is returned, never republished (lane runtime design r10,
-// K3): a lease the endpoint refuses because main moved abandons the
-// candidate and reopens the batch on the new main.
-
-// movedBaseConflictLine is the return of a member whose changes do not apply
-// on the moved base: BATCH_JOIN_CONFLICT's files and the next command.
-func movedBaseConflictLine(conflict *assemblyConflict, landedBy string) string {
-	files := strings.Join(conflict.Paths, ", ")
-	if files == "" {
-		files = conflict.Error()
-	}
-	with := "what landed on main"
-	if landedBy != "" {
-		with = "what landed in batch " + landedBy
-	}
-	return fmt.Sprintf("CONFLICT with %s (files %s). Rebase goal/%s on main, then metasystem work land %s.", with, files, conflict.GoalID, conflict.GoalID)
 }
