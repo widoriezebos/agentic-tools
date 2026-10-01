@@ -7,10 +7,13 @@ package lane
 // one ref update a publication token was minted for.
 
 import (
+	"syscall"
+
 	"bufio"
 	"bytes"
 	"errors"
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"io"
 	"io/fs"
 	"os"
@@ -123,6 +126,31 @@ func gitDir(dir string) (string, error) {
 	return resolved(common), nil
 }
 
+// pushingGitDir is the shared git directory of the repository a hook runs
+// for: GIT_DIR when git set it (relative to here), else here's.
+func pushingGitDir(here, gitDirEnv string) (string, error) {
+	if gitDirEnv == "" {
+		return gitDir(here)
+	}
+	if !filepath.IsAbs(gitDirEnv) {
+		gitDirEnv = filepath.Join(here, gitDirEnv)
+	}
+	common, err := laneGit(here, nil, "--git-dir="+gitDirEnv, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	if err != nil {
+		return "", fmt.Errorf("the git folder %s can't be read: %w", gitDirEnv, err)
+	}
+	return resolved(common), nil
+}
+
+// processAlive reports whether pid names a live process.
+func processAlive(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	err := syscall.Kill(pid, 0)
+	return err == nil || errors.Is(err, syscall.EPERM)
+}
+
 // PushUpdate is one line git hands a pre-push hook on its standard input.
 type PushUpdate struct {
 	LocalRef, LocalOID, RemoteRef, RemoteOID string
@@ -179,6 +207,16 @@ func AdmitPush(home string, push Push) error {
 		if laneDir != resolved(push.GitDir) {
 			return nil
 		}
+		// K3 guards main only: an update that leaves refs/heads/main alone
+		// (landing unset's goal branch sweep deletes branches this way) is
+		// not a publication and needs no token.
+		touchesMain := false
+		for _, update := range push.Updates {
+			touchesMain = touchesMain || update.RemoteRef == MainRef
+		}
+		if !touchesMain {
+			return nil
+		}
 		notAdmitted := func(why string) error {
 			return &Refusal{Code: CodePushNotAdmitted,
 				Message: "only a landing publication pushes from the landing checkout " + record.Root + ", and " + why + "; nothing was pushed",
@@ -191,6 +229,17 @@ func AdmitPush(home string, push Push) error {
 		}
 		if !found {
 			return notAdmitted("this push carries no publication token")
+		}
+		if !processAlive(minted.Pid) {
+			_ = removeIfPresent(tokenPath(home, push.Nonce))
+			return notAdmitted("its publication token's process has ended")
+		}
+		enrolled, err := steward.VerifyIdentity(steward.RepoIdentityPath(record.Install), record.Install)
+		if err != nil {
+			return notAdmitted("the lane engine's enrollment can't be read (" + err.Error() + ")")
+		}
+		if minted.Tuple.Generation != enrolled.Generation {
+			return notAdmitted(fmt.Sprintf("its token was minted for engine number %d, and the lane's enrolled engine is number %d", minted.Tuple.Generation, enrolled.Generation))
 		}
 		cleanup := minted.Authority == AuthorityPerson && minted.Operation == OpReturn
 		if journal, fenced, _ := ReadUnset(home); fenced && !cleanup {
@@ -226,11 +275,14 @@ func AdmitPush(home string, push Push) error {
 // with its updates on input. It prints a refusal as two lines and returns
 // git's exit status.
 func RunPrePush(home, remoteURL string, input io.Reader, stderr io.Writer) int {
-	// Git runs the hook at the top of the worktree that pushes.
+	// The repository that pushes is the one git names in the hook's
+	// environment (git --git-dir=… push sets GIT_DIR and runs the hook
+	// from wherever it was called); otherwise git runs the hook at the top
+	// of the worktree that pushes.
 	here, err := os.Getwd()
 	pushing := ""
 	if err == nil {
-		pushing, err = gitDir(here)
+		pushing, err = pushingGitDir(here, os.Getenv("GIT_DIR"))
 	}
 	updates, parseErr := ParsePushUpdates(input)
 	if err = errors.Join(err, parseErr); err == nil {

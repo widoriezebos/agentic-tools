@@ -156,6 +156,16 @@ func mint(home string, tuple Tuple, op Operation, authority Authority) (string, 
 	if err := os.MkdirAll(tokenDir(home), 0o700); err != nil {
 		return "", err
 	}
+	// A token outlives no process: the tokens of ended processes go.
+	if entries, err := os.ReadDir(tokenDir(home)); err == nil {
+		for _, entry := range entries {
+			var stale token
+			path := filepath.Join(tokenDir(home), entry.Name())
+			if _, err := readJSON(path, &stale); err != nil || !processAlive(stale.Pid) {
+				_ = removeIfPresent(path)
+			}
+		}
+	}
 	return nonce, writeJSON(home, tokenPath(home, nonce), token{Tuple: tuple, Operation: op, Authority: authority, Pid: os.Getpid()})
 }
 

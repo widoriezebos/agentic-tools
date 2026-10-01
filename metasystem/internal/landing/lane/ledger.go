@@ -60,7 +60,19 @@ func LedgerPublisher(home string, op Operation, authority Authority) goal.CASPub
 		case isUnknown(err):
 			return goal.CASUnknown, err
 		default:
-			return goal.CASRefused, err
+			// Every refusal is final for this attempt, a gate's (paused,
+			// fenced, another checkout) too: it stops the retry loop and
+			// carries its reason.
+			var refused *PublishError
+			if errors.As(err, &refused) {
+				return goal.CASRefused, err
+			}
+			wrapped := &PublishError{Code: CodePublishRefused, Expected: tip, Message: err.Error()}
+			var gate *Refusal
+			if errors.As(err, &gate) {
+				wrapped.Code, wrapped.Message, wrapped.Detail = gate.Code, gate.Message, gate.Fix
+			}
+			return goal.CASRefused, wrapped
 		}
 	}
 }

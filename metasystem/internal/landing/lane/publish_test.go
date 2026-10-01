@@ -147,8 +147,9 @@ func (bed *publishBed) push(nonce, remote string, refspecs ...string) (string, e
 
 // The design's K3 witness: the lane checkout's pre-push hook, installed by
 // landing set and run by git itself, admits exactly the one ref update a
-// publication token was minted for, and nothing else: no push without a
-// token, no other commit, ref or remote, no second ref, no push while the
+// publication token was minted for, and nothing else on main: no push to
+// main without a token, no other commit or remote, no second ref beside
+// main, no push while the
 // lane is paused, and no second use of a spent token. Publish mints and
 // pushes the exact tuple with the lease, and main is its new commit.
 func TestHookAdmitsOnlyTheTuple(t *testing.T) {
@@ -177,8 +178,6 @@ func TestHookAdmitsOnlyTheTuple(t *testing.T) {
 	nonce := bed.mintFor(t, tuple)
 	out, err = bed.push(nonce, bed.origin, other+":"+MainRef)
 	refused("another commit under the token", out, err)
-	out, err = bed.push(nonce, bed.origin, next+":refs/heads/elsewhere")
-	refused("another ref under the token", out, err)
 	out, err = bed.push(nonce, bed.origin, next+":"+MainRef, other+":refs/heads/extra")
 	refused("a second ref under the token", out, err)
 	mirror := filepath.Join(filepath.Dir(bed.origin), "mirror.git")
@@ -373,5 +372,95 @@ func TestLaneHookComesAndGoesWithTheLane(t *testing.T) {
 	}
 	if _, ok, _ := Read(bed.home); ok {
 		t.Fatalf("a refused hook registered the lane")
+	}
+}
+
+// F-1: a push of the lane's repository made from another checkout's
+// directory (git --git-dir=<lane>/.git, the hook's cwd is the seat) is
+// judged as the lane's: without a token it moves nothing.
+func TestHookJudgesTheLaneRepositoryFromAnyDirectory(t *testing.T) {
+	t.Parallel()
+	bed := newPublishBed(t)
+	old := bed.main(t)
+	next := bed.commit(t, bed.checkout, old, "elsewhere.txt")
+	out, err := bed.gitEnv(bed.seat, nil, "--git-dir="+filepath.Join(bed.checkout, ".git"), "push", "--porcelain", bed.origin, next+":"+MainRef)
+	if err == nil || bed.main(t) != old {
+		t.Fatalf("a token-less push of the lane repository from the seat's directory moved main:\n%s", out)
+	}
+}
+
+// F-2: the hook guards main only (K3): a token-less push from the lane
+// checkout that does not touch refs/heads/main (landing unset's goal
+// branch sweep deletes branches this way) passes; one that also touches
+// main is refused whole.
+func TestHookAdmitsUpdatesThatLeaveMainAlone(t *testing.T) {
+	t.Parallel()
+	bed := newPublishBed(t)
+	old := bed.main(t)
+	bed.git(t, bed.seat, "push", "--quiet", "origin", old+":refs/heads/goal/ship-widget")
+	if out, err := bed.push("", bed.origin, ":refs/heads/goal/ship-widget"); err != nil {
+		t.Fatalf("the goal branch sweep's delete was refused: %v\n%s", err, out)
+	}
+	next := bed.commit(t, bed.checkout, old, "mixed.txt")
+	if out, err := bed.push("", bed.origin, next+":refs/heads/goal/other", next+":"+MainRef); err == nil || bed.main(t) != old {
+		t.Fatalf("a token-less push touching main among other refs was admitted:\n%s", out)
+	}
+}
+
+// F-3: a gate refusal of the lane's ledger write (here: the lane is
+// paused) ends the goal transaction at once with its reason, never retried
+// to the deadline.
+func TestLaneLedgerWriteRefusedByTheGateStopsWithItsReason(t *testing.T) {
+	t.Parallel()
+	bed := newPublishBed(t)
+	endpoint := LedgerEndpoint(bed.home, goal.Endpoint{Root: bed.install, Remote: "origin", Branch: MainRef}, OpPublish, AuthorityAgent)
+	if _, err := SetPause(bed.home, "Wido", laneNow); err != nil {
+		t.Fatal(err)
+	}
+	attempts := 0
+	result, err := goal.Publish(endpoint, ledgerRequest("op-paused", "paused-write", func(attempt int) error { attempts = attempt; return nil }))
+	if attempts != 1 || goal.RefusalCode(err) != CodePaused || result.Outcome != goal.OutcomeAbandoned || !strings.Contains(result.Detail, "stopped") {
+		t.Fatalf("a paused lane's ledger write = %+v %v after %d attempts; want it stopped at once with the pause", result, err, attempts)
+	}
+}
+
+// F-4: a token is tied to the process that minted it and to the enrolled
+// engine number: a token whose process ended, or minted for another
+// generation, admits nothing, and the next mint removes dead tokens.
+func TestTokensDieWithTheirProcessAndGeneration(t *testing.T) {
+	t.Parallel()
+	bed := newPublishBed(t)
+	old := bed.main(t)
+	next := bed.commit(t, bed.checkout, old, "token.txt")
+	stale := bed.tuple(t, old, next)
+	stale.Generation = 2
+	nonce := bed.mintFor(t, stale)
+	if out, err := bed.push(nonce, bed.origin, next+":"+MainRef); err == nil || bed.main(t) != old {
+		t.Fatalf("a token of another engine number was admitted:\n%s", out)
+	}
+	dead := exec.Command("true")
+	if err := dead.Run(); err != nil {
+		t.Fatal(err)
+	}
+	orphanOf := func() string {
+		nonce := bed.mintFor(t, bed.tuple(t, old, next))
+		var minted token
+		if _, err := readJSON(tokenPath(bed.home, nonce), &minted); err != nil {
+			t.Fatal(err)
+		}
+		minted.Pid = dead.Process.Pid
+		if err := writeJSON(bed.home, tokenPath(bed.home, nonce), minted); err != nil {
+			t.Fatal(err)
+		}
+		return nonce
+	}
+	orphan := orphanOf()
+	if out, err := bed.push(orphan, bed.origin, next+":"+MainRef); err == nil || bed.main(t) != old {
+		t.Fatalf("a token whose process ended was admitted:\n%s", out)
+	}
+	orphan = orphanOf()
+	bed.mintFor(t, bed.tuple(t, old, next))
+	if _, err := os.Stat(tokenPath(bed.home, orphan)); err == nil {
+		t.Fatalf("the next mint left a dead process's token")
 	}
 }

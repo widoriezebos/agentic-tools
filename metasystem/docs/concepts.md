@@ -190,7 +190,11 @@ the lane's enrolled engine. The lane's own goal-list writes go through
 the same boundary. When main moved in the meantime nothing is published,
 and the lane composes again on the new main; it never pushes the old
 series on top by itself. A seat's own goal writes and landings are
-unchanged.
+unchanged. The hook guards main only, and it is not a sandbox: a push
+with `--no-verify`, a checkout whose `core.hooksPath` points elsewhere,
+or a separate clone made under the same account passes it. Those are
+caught only afterwards, by the landing agent's tool gate and the lane's
+detector of what reaches main.
 
 **Without a lane**, the seat lands it itself. `metasystem work land`
 proves the work on the seat and pushes it from there. This is correct,
