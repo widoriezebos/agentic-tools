@@ -223,17 +223,17 @@ func TestWakeReasonsFromLaneState(t *testing.T) {
 		{BatchID: "b-landed", State: batch.StateLanded, Units: []batch.Unit{joined}},
 	}
 	sources := WakeSources{Records: func(string) ([]batch.Record, error) { return records, nil }}
-	if wake := ReadWake(registered, laneNow, sources); len(wake.Reasons) != 0 || len(wake.Unread) != 0 {
+	if wake := ReadWake(registered, laneNow, sources, AgentState{}); len(wake.Reasons) != 0 || len(wake.Unread) != 0 {
 		t.Fatalf("an empty open batch and a landed one wake nothing: %+v", wake)
 	}
 	records = append(records, batch.Record{BatchID: "b-open", State: batch.StateOpen, Units: []batch.Unit{joined}},
 		batch.Record{BatchID: "b-held", State: batch.StateHeldTrunkRed, Units: []batch.Unit{joined}})
-	wake := ReadWake(registered, laneNow, sources)
+	wake := ReadWake(registered, laneNow, sources, AgentState{})
 	if !slices.Equal(wake.Reasons, []string{WakeQueued, WakeUnfinishedBatch}) {
 		t.Fatalf("reasons = %v", wake.Reasons)
 	}
 	sources.Records = func(string) ([]batch.Record, error) { return nil, errors.New("batch store unreadable") }
-	wake = ReadWake(registered, laneNow, sources)
+	wake = ReadWake(registered, laneNow, sources, AgentState{})
 	if len(wake.Reasons) != 0 || len(wake.Unread) != 1 || !strings.Contains(strings.Join(wake.Unread, "; "), "batch store unreadable") {
 		t.Fatalf("unread sources: %+v", wake)
 	}
@@ -318,5 +318,67 @@ func TestKeeperLaunchesOnlyForAQueueNotPausedNoneAlive(t *testing.T) {
 	}
 	if line := keeper.Step(); len(agent.starts) != 2 || !strings.Contains(line, "paused") {
 		t.Fatalf("paused: %q, starts %d; want no launch", line, len(agent.starts))
+	}
+}
+
+// TestKeeperHoldsWhileProvingAndWakesWhenItEnds (detached prove): the
+// landing agent ends its turn once landing prove has started the proof. While
+// that proof runs the keeper starts no agent, whatever is queued (hold
+// "proving"); once it ended with members still queued and its result is
+// newer than the last launch, the keeper wakes the agent for
+// "proof-finished", once. A proof that died without a result holds nothing.
+func TestKeeperHoldsWhileProvingAndWakesWhenItEnds(t *testing.T) {
+	t.Parallel()
+	home, checkout, module := nestedLaneDirs(t)
+	clock := laneNow
+	queued := []batch.Record{{BatchID: "b-open", State: batch.StateOpen, Units: []batch.Unit{{GoalID: "g-one", State: batch.UnitJoined}}}}
+	proof := ProofFact{}
+	sources := WakeSources{Records: func(string) ([]batch.Record, error) { return queued, nil },
+		Proof: func(root string) (ProofFact, error) {
+			if root != checkout {
+				t.Errorf("the proof was read at %q; want the lane checkout %s", root, checkout)
+			}
+			return proof, nil
+		}}
+	agent := &fakeAgent{}
+	keeper := agent.keeper(home, module, &clock, sources)
+	if run := keeper.Run(); run.Outcome != AgentStarted {
+		t.Fatalf("queued work: %+v; want a start", run)
+	}
+
+	// The agent started the proof and ended its turn.
+	agent.running = ""
+	clock = clock.Add(time.Minute)
+	proof = ProofFact{Running: true, Attempt: "a-1", Tree: "1650971012dc6273e72961b5631dbf0ea36defb1", Since: clock.Format(time.RFC3339Nano)}
+	run := keeper.Run()
+	if run.Outcome != AgentHeld || len(agent.starts) != 1 || !strings.Contains(run.Line, "proving") || !strings.Contains(run.Line, "a-1") {
+		t.Fatalf("while the proof runs: %+v, starts %d; want held for proving, naming the attempt", run, len(agent.starts))
+	}
+	view := BuildView(ViewSources{Home: home, Now: clock, Owner: func(string) (OwnerProbe, error) { return OwnerProbe{}, nil },
+		Records: sources.Records, Proof: sources.Proof})
+	if view.Wake == nil || view.Wake.Proving == nil || view.Wake.Proving.Attempt != "a-1" {
+		t.Fatalf("landing status's wake while proving = %+v; want the running proof", view.Wake)
+	}
+
+	// The proof ended: the agent is woken for its result, once.
+	clock = clock.Add(10 * time.Minute)
+	proof = ProofFact{Attempt: "a-1", Tree: proof.Tree, EndedAt: clock.Format(time.RFC3339Nano)}
+	clock = clock.Add(time.Second)
+	run = keeper.Run()
+	if run.Outcome != AgentStarted || len(agent.starts) != 2 || !slices.Contains(agent.starts[1].Reasons, WakeProofFinished) {
+		t.Fatalf("after the proof ended: %+v, starts %+v; want a start for %s", run, agent.starts, WakeProofFinished)
+	}
+	agent.running = ""
+	clock = clock.Add(time.Minute)
+	if run := keeper.Run(); slices.Contains(run.Reasons, WakeProofFinished) {
+		t.Fatalf("a proof result the agent was woken for wakes it again: %+v", run)
+	}
+
+	// A died proof holds nothing.
+	agent.running = ""
+	clock = clock.Add(time.Minute)
+	proof = ProofFact{Died: true, Attempt: "a-2", Tree: proof.Tree, Since: clock.Format(time.RFC3339Nano)}
+	if run := keeper.Run(); run.Outcome != AgentStarted {
+		t.Fatalf("a died proof: %+v; want the agent started to prove again", run)
 	}
 }
