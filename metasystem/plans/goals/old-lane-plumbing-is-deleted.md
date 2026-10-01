@@ -9,7 +9,8 @@
 - Origin: human
 - Next step: After landing-lane-runtime-redesign passes the thorough run: list every package/file only the old lane path reaches, delete it with its tests in one unit, one review, one VM run
 - OpenedAt: 2026-10-01T20:39:26Z
-- Revision: 3
+- Revision: 4
+- Pinned: m1e
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-10-01T20:39:33Z revision=2 opid=00SWRD7T2S89P51T8JM41WAWZ1-m1e-9c612d71 authority=proven digest=d63aa2fbe20cd5f6fe9d05da4af5e1557da8c05dbd0f95ccfe51ecb89085e18e episode=2
@@ -18,4 +19,5 @@ History:
 - 2026-10-01T20:39:26Z A2FE8KN15THX9YBNJYVTT5VD48-m1e-9c612d71 open actor=human:Wido targets=old-lane-plumbing-is-deleted
 - 2026-10-01T20:39:33Z 00SWRD7T2S89P51T8JM41WAWZ1-m1e-9c612d71 approve actor=human:Wido targets=old-lane-plumbing-is-deleted
 - 2026-10-01T20:39:40Z VF58YC4Q7AZ8XVCE0VKHQ3EPC1-m1e-9c612d71 set-priority actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,cross-cutting-change-inventories-its-readers,design-rounds-read-less-and-repeat-less,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,host-setup-from-scratch,landing-deploys-the-engine,old-lane-plumbing-is-deleted,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,reviewers-check-the-rulings,round-proof-feeds-the-next-brief,seat-path-lands-without-help,seat-successor-continues-a-handoff-without-a-human,seat-works-without-a-person,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,steward-acts-on-behaviour-patterns,stop-hook-never-forces-an-empty-turn,system-start-launches-your-agent,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,work-review-starts-its-critic reason=priority-order subject=old-lane-plumbing-is-deleted from=unranked to=1:2 requested-sequence=2
-Integrity: sha256=9b034d5b58cba2a855f5620493f7d2cf7f3bd03cbd7c08dc7d24ebba8ddc51d7
+- 2026-10-01T20:39:49Z QRQBE0MMQEVYS816NYN03ZWQBG-m1e-9c612d71 set-pin actor=human:Wido targets=old-lane-plumbing-is-deleted
+Integrity: sha256=3a83d7686d5067f2737b3f310f38725de4df7f70471cdb9ddf3e882733e86415
