@@ -1,6 +1,6 @@
 {
   "packages": {
-    "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem": 508,
+    "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem": 497,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/acp": 60,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/adapter": 162,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/atif": 7,
@@ -47,7 +47,7 @@
     "github.com/widoriezebos/agentic-tools/metasystem/internal/janitor": 14,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/jsonedit": 5,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/landing": 85,
-    "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch": 126,
+    "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch": 1,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/launch": 72,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/lease": 78,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/lock": 21,
@@ -99,16 +99,6 @@
     "github.com/widoriezebos/agentic-tools/metasystem/internal/wiredoc": 7
   },
   "exempt": [
-    {
-      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
-      "test": "TestBatchJoinMemberReadsItsOwnFetchNotTheSharedFetchHead",
-      "reason": "sets process-wide PATH so the code under test resolves a stand-in git that empties FETCH_HEAD after every fetch"
-    },
-    {
-      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner",
-      "test": "TestLandingBaseTreeReadsItsOwnFetchNotTheSharedFetchHead",
-      "reason": "sets process-wide PATH so the code under test resolves a stand-in git that empties FETCH_HEAD after every fetch"
-    },
     {
       "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/testenv",
       "test": "TestARegistrySweepLeavesNoLockAForkDuplicated",
@@ -181,16 +171,6 @@
     },
     {
       "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
-      "test": "TestBatchLandingRehearsalOnRealOrigin",
-      "reason": "drives the production batch command through its process environment clock and helper controls and owns SIGUSR1 handling"
-    },
-    {
-      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
-      "test": "TestBatchOwnerLoopStopJoinsCadenceTick",
-      "reason": "swaps process-wide batchOwnerRequire, batchOwnerResume, and cadence seams"
-    },
-    {
-      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
       "test": "TestCandidateGoalTransitionUnderLockIsBeforeOrAfter",
       "reason": "swaps process-wide proofAdmissionUnderLocks, proofAdmissionBeforePublish, and proofAdmissionAfterPublish seams"
     },
@@ -203,21 +183,6 @@
       "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
       "test": "TestProofAdmissionAcquireWaitZeroNamesBothGoalsAndBusyPath",
       "reason": "swaps the process-wide goalrevision.AcquireWait seam"
-    },
-    {
-      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
-      "test": "TestLandingOwnerComponentReleaseJoinsCadenceTick",
-      "reason": "swaps process-wide batch-owner cadence seams"
-    },
-    {
-      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
-      "test": "TestLandingOwnerComponentReleaseLeavesNoCadenceChild",
-      "reason": "swaps process-wide batch-owner cadence seams"
-    },
-    {
-      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch",
-      "test": "TestReassembleSurvivorsAdoptsPublishedEquivalentTreeAfterStoreLoss",
-      "reason": "sets process-wide GIT_AUTHOR_DATE and GIT_COMMITTER_DATE to force distinct equivalent commits"
     },
     {
       "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
@@ -246,21 +211,6 @@
     },
     {
       "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
-      "test": "TestGLEGoalBranchNestedLandPrepRoutesLocalRedCandidate",
-      "reason": "captures the public CLI streams and replaces goal-branch delegate and command seams"
-    },
-    {
-      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
-      "test": "TestGLEBatchPortableOwnerLandsRealCommandApplication",
-      "reason": "runs the real public owner and transport lifecycle with process-wide batch and admission controls"
-    },
-    {
-      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
-      "test": "TestGLEBatchPortableNativeCapacityWaitEjectsElapsedFencedMember",
-      "reason": "runs a real public owner, steward stop, native subprocesses, and process-wide host resource leases"
-    },
-    {
-      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
       "test": "TestCommandApplicationPublicProofReuse",
       "reason": "runs real public CLI helpers and uses shared batch, output, and proof-admission seams"
     },
@@ -276,16 +226,6 @@
     },
     {
       "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
-      "test": "TestCommandApplicationThreePrefixReceiptConsumer",
-      "reason": "runs real public CLI helpers and uses shared batch, output, and proof-admission seams"
-    },
-    {
-      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
-      "test": "TestCommandApplicationRedEarlierPrefixBlocksReceipt",
-      "reason": "runs real public CLI helpers and uses shared batch, output, and proof-admission seams"
-    },
-    {
-      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
       "test": "TestCommandApplicationGreenTipCannotHideRedPrefix",
       "reason": "runs real public CLI helpers and uses shared batch, output, and proof-admission seams"
     },
@@ -293,16 +233,6 @@
       "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
       "test": "TestCommandApplicationFreshEpisodeResumesAndRenews",
       "reason": "runs real public CLI helpers and uses shared batch, output, and proof-admission seams"
-    },
-    {
-      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
-      "test": "TestGLEBatchFencedTipAdmissionNamesMemberForReassembly",
-      "reason": "replaces the package-wide batchTipProofExecutable seam"
-    },
-    {
-      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
-      "test": "TestGLEBatchMovedRetryRejectsRevisedMemberBeforePublication",
-      "reason": "replaces package-wide batch child, verification, and endpoint push seams"
     },
     {
       "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
@@ -550,26 +480,6 @@
       "reason": "swaps process-wide hostAdmissionDirectoryForTest while holding the host admission file lock"
     },
     {
-      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
-      "test": "TestBatchCostPrefixGenericBudgetRefusalUsesTypedReturn",
-      "reason": "swaps the package-wide batchPrefixReceiptExecutable seam while exercising typed budget refusal"
-    },
-    {
-      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
-      "test": "TestBatchCostPortableJoinRefusesOverBudgetBeforeHandoverAndStatusShowsSnapshot",
-      "reason": "uses the package-wide batch process environment lock and a real public CLI fixture"
-    },
-    {
-      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
-      "test": "TestBatchCostPortableEvidenceForecastIsReadOnlyAndWarmsFromRealCommand",
-      "reason": "sets process-wide owner lineage and proof admission fixture environment while invoking public CLI"
-    },
-    {
-      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
-      "test": "TestGLEBatchSplitNativeRedReprovesAndPublishesIndependentSurvivor",
-      "reason": "runs in-process public CLI and native proof commands under shared process output and proof admission controls"
-    },
-    {
       "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun",
       "test": "TestManagedSuiteOutputRetainsTailAfterChildWait",
       "reason": "launches a native custodian and host-resource lease while gating public output under process-wide admission controls"
@@ -598,11 +508,6 @@
       "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
       "test": "TestPendingWaitOldPhysicalObservationUsesSemanticClock",
       "reason": "sets the process-wide authorized semantic clock for a process-owned waiter fixture"
-    },
-    {
-      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
-      "test": "TestBatchCostFreshForecastMatchesRetainedVerificationAtExpiry",
-      "reason": "owns the batch process environment lock and authorized clock while invoking the public test command"
     },
     {
       "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/gittree",

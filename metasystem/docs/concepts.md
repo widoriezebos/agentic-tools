@@ -142,82 +142,28 @@ nothing else touches. A seat's checkout is full of half-built work,
 worktrees and records in flight; the lane's checkout holds only what it
 is landing, so a landing never depends on the state of anyone's seat.
 
-**What it does.**
-
-- It collects finished goal work and hand-made changes from every seat
-  into a **batch**, in the order they joined.
-- It proves the batch once: one proof for the whole batch, not one per
-  piece of work. Only one proof runs at a time on the computer, so
-  batches never compete with each other for CPU.
-- On green it pushes the whole batch to main in one push, and each
-  member is recorded as landed.
-- On red its landing agent finds out which member broke the proof, by
-  testing one member's own work on main, gives that member back to its
-  seat with the failing run as evidence, and lands the rest in their
-  original order.
-- It runs a model only when there is work. The steward of the lane's
-  checkout wakes one landing agent when work is queued or a batch is
-  unfinished, the lane is not stopped and no landing agent runs; an idle
-  lane runs no agent. The
-  agent works through the lane's own verbs below, and nothing else moves
-  main from the lane.
-
-**The lane's own verbs.** Joining the lane runs no tests: a goal or a
-change is handed over and queued. The landing agent merges the waiting
-work on main in the lane's checkout. `metasystem landing prove` runs the
-tests of that checkout's HEAD and records the result for its exact tree,
-as green, red (a test failed) or unavailable (it could not run, which is
-never a member's red). Both act only while the lane is not stopped.
+**What it does now.** The lane's hand-in is being rebuilt. While a lane
+is registered, `metasystem work land` refuses and names
+`metasystem landing unset`, which lets each seat land its own work; no
+seat silently lands beside a lane. The lane checkout's steward keeps one
+landing agent: it starts it when the lane has work, the lane is not
+stopped, no landing agent runs and no hold stands. The lane has no source
+of work yet, so no agent starts.
 
 **Stopped is not gone.** A stopped lane (`metasystem landing stop`)
-still takes seats' work, which waits in it; a stop may hold half-landed
-work, and landing past it would race that work. A pause that cannot be
-read counts as a pause, and only a person ends it. To go back to each
-seat landing its own work, a person runs `metasystem landing unset`: it
-lets a push under way finish, stops its
-landing agent, finalizes members already on main, returns every other member to
-its seat, reads each return back, and only then removes the record. When
-something is still running or a return is not confirmed, it stops and
-lists what is left, and the same command continues.
-
-**Only a proven tree moves main from the lane.** `metasystem landing
-push` puts the lane checkout's HEAD on main only when `landing prove`
-recorded a green result for HEAD's exact tree, and only when HEAD
-contains main, so main is never rewritten. Every waiting member main then
-contains is recorded landed. When main moved in the meantime nothing is
-pushed: the agent merges the new main, proves and pushes again. A seat's
-own goal writes and landings are unchanged.
+starts no landing agent. A pause that cannot be read counts as a pause,
+and only a person ends it. To go back to each seat landing its own work,
+a person runs `metasystem landing unset`: it stops the landing agent and
+removes the record. When the agent still runs, it stops and the same
+command continues.
 
 **Without a lane**, the seat lands it itself. `metasystem work land`
-proves the work on the seat and pushes it from there. This is correct,
-but not optimal:
-
-- every landing is a full proof of its own;
-- seats on one computer run their proofs at the same time and compete
-  for CPU;
-- when two seats push at once, the loser rebases and proves again;
-- a change without a goal (`work land --message FILE`) needs a full
-  local proof on the seat before it may land.
-
-With a lane, the seat does less: a change that touches only records,
-memory or plans needs no local proof at all, a change to the engine or
-the shipped payload needs only the quick admission checks locally, and
-the lane proves the batch before anything is pushed.
+proves the work on the seat and pushes it from there.
 
 **When a lane appears.** A person registers it with
-`metasystem landing set PATH`. From its next `work land` on, every seat
-of the computer that has no lane setting of its own lands through it;
-no seat needs a restart. Three nuances:
-
-- The seat's engine must be new enough to read the computer's lane
-  record (landing batch 21 or later). An older engine knows only its own
-  `landing.batch-root` setting and keeps landing the work itself until
-  it is rebuilt and restarted with `metasystem system restart`.
-- A seat whose own `landing.batch-root` names a different checkout is
-  refused, not rerouted: a computer lands through one lane. The refusal
-  names both ways to align: point the seat's setting at the lane, or
-  have a person move the lane.
-- A landing already under way finishes on the route it started on.
+`metasystem landing set PATH`. A seat whose own `landing.batch-root`
+names a different checkout is refused, not rerouted: a computer has one
+lane.
 
 How to set one up, check it, and move or stop it is in
 `docs/working-with-agents.md`.

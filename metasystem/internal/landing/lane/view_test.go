@@ -43,12 +43,12 @@ func TestViewShapeWithoutALane(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, want := keysOf(t, data), []string{"owner", "registered_at", "registered_by", "root", "summary", "wake"}; !reflect.DeepEqual(got, want) {
+	if got, want := keysOf(t, data), []string{"batch", "next", "owner", "registered_at", "registered_by", "root", "summary", "wake"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("lane keys = %v, want %v", got, want)
 	}
 	var object map[string]json.RawMessage
 	_ = json.Unmarshal(data, &object)
-	for _, key := range []string{"root", "registered_by", "registered_at", "wake"} {
+	for _, key := range []string{"root", "registered_by", "registered_at", "batch", "next", "wake"} {
 		if string(object[key]) != "null" {
 			t.Errorf("%s = %s; want null", key, object[key])
 		}

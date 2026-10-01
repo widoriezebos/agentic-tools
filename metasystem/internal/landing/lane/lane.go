@@ -32,9 +32,6 @@ const (
 	// CodeRecordIncomplete is a lane record an older engine wrote: it names
 	// no installation or custody epoch, so a person registers it again.
 	CodeRecordIncomplete = "LANDING_LANE_RECORD_INCOMPLETE"
-	// CodePaused is an operation refused because a person paused the lane
-	// (or its pause cannot be read).
-	CodePaused = "LANDING_LANE_PAUSED"
 	// CodeUnreachable is a lane checkout that can't be read, which is not
 	// taken for gone: a volume that is not mounted, a folder that can't be
 	// read.
