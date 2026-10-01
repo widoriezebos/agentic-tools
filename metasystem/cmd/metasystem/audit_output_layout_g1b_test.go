@@ -41,6 +41,8 @@ func g1bLayoutCases() []layoutCase {
 		{name: "landing-set", args: []string{"landing", "set", "../agentic-tools-landing"}, bed: landingLayoutBed(landingLayoutRunning)},
 		{name: "landing-start", args: []string{"landing", "start"}, bed: landingLayoutBed(landingLayoutRunning)},
 		{name: "landing-start-refusal", args: []string{"landing", "start"}, bed: landingLayoutBed(landingLayoutNone)},
+		{name: "landing-run", args: []string{"landing", "run"}, bed: landingLayoutBed(landingLayoutRunning)},
+		{name: "landing-run-refusal", args: []string{"landing", "run"}, bed: landingLayoutBed(landingLayoutPaused)},
 		{name: "landing-stop-refusal", args: []string{"landing", "stop"}, bed: landingLayoutBed(landingLayoutPushing)},
 		{name: "landing-unset", args: []string{"landing", "unset"}, bed: landingLayoutBed(landingLayoutNone)},
 	}
@@ -127,6 +129,15 @@ func landingLayoutBed(kind int) func(t *testing.T) layoutBed {
 			ready:    func(string) error { return nil },
 			machine:  func(string) (string, error) { return "landing", nil },
 			now:      func() time.Time { return now },
+			// landing run's keeper finds the running agent; it never starts one.
+			keeper: func(home, root string) lane.AgentKeeper {
+				return lane.AgentKeeper{Home: home, Self: root, Now: func() time.Time { return now },
+					Running: func() (string, bool, error) { return "landing-5f0c2a9e7d31b468", alive, nil },
+					Start: func(string, lane.Wake) (string, error) {
+						t.Error("a layout bed started a landing agent")
+						return "", errors.New("no launches in a layout bed")
+					}}
+			},
 		}}
 		return layoutBed{owners: owners, cwd: cwd, now: now, replace: layoutPaths(cwd, cwd, "/Users/wido/GitHub/agentic-tools-m1e",
 			lane.AccountID(landing), "lane:99af5acdbc67", home, "/Users/wido/.metasystem-home", landing, "/Users/wido/GitHub/agentic-tools-landing",
