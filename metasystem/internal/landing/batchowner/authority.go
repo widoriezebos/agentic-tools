@@ -51,14 +51,14 @@ func claimAuthority(controlRoot, goalID string, ledger batch.ReturnLedgerGoal, c
 	return invocation, nil
 }
 
-// notLaneHeld refuses a lane act on a goal the lane does not hold, in a
-// person's words, with the release a person makes.
+// notLaneHeld refuses a lane act on a goal the lane does not hold, in two
+// lines: the situation, then the release a person runs.
 func notLaneHeld(goalID string, ledger batch.ReturnLedgerGoal) error {
 	holder := ledger.Machine + "+" + ledger.Lineage
 	if ledger.Lineage == lane.OldOwnerLineage {
 		holder = "the old landing owner (" + holder + ")"
 	}
-	return fmt.Errorf("goal %s is held by %s, not by this computer's landing lane, so the lane did not give it back; a person releases it: metasystem goal release %s --reason TEXT", goalID, holder, goalID)
+	return fmt.Errorf("goal %s is held by %s, not by this landing lane, so it was not given back\nrun: metasystem goal release %s --reason TEXT", goalID, holder, goalID)
 }
 
 // renewLaneClaim moves a lane-held claim to the lane's current custody

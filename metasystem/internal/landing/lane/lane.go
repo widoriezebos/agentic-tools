@@ -375,5 +375,5 @@ func ProvingHolder(home string) string {
 	if pid := strings.TrimSpace(string(data)); err == nil && pid != "" {
 		return "pid " + pid
 	}
-	return "another landing proof"
+	return "a process that recorded no pid"
 }

@@ -87,7 +87,7 @@ func TestLaneProofChargesTheLaneNotAGoal(t *testing.T) {
 	seat.laneOwner = func(string, int64) error {
 		return errors.New("the lane checkout is held by lineage m1e-coordinator, not its landing owner")
 	}
-	if _, _, _, err := admitAsLaneOwner(t, repository, seat, lease.ClassMain); err == nil || !strings.Contains(err.Error(), "owner process") {
+	if _, _, _, err := admitAsLaneOwner(t, repository, seat, lease.ClassMain); err == nil || !strings.Contains(err.Error(), "landing agent, proven by its identity") {
 		t.Fatalf("a seat coordinator charged the lane: %v", err)
 	}
 }
