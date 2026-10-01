@@ -1,7 +1,10 @@
 package branch
 
 import (
+	"errors"
 	"fmt"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
@@ -19,5 +22,31 @@ func TestBranchRefusalsKeepTheirCodeOutOfTheirWords(t *testing.T) {
 	rangeErr := rangeRefusal("g1", "abc123", "the commit touches two units")
 	if rangeErr.Error() != "commit abc123: the commit touches two units\nrun: metasystem work status g1" || goal.RefusalCode(rangeErr) != RangeCode {
 		t.Fatalf("range refusal: words %q code %q", rangeErr.Error(), goal.RefusalCode(rangeErr))
+	}
+}
+
+// A commit that says nothing of its kind names the trailer to add, with the
+// goal filled in, and the command that adds it as its line 2: the cause a
+// person acts on is the refusal's words, never only --verbose's.
+func TestMissingKindTrailerNamesTheTrailerToAdd(t *testing.T) {
+	t.Parallel()
+	commit := "289c41c7f0123456789abcdef0123456789abcde"
+	_, err := kindOfWithGit("repo", commit, "goal-a", func(string, ...string) ([]byte, error) { return []byte("\n"), nil })
+	var refusal *RangeError
+	if !errors.As(err, &refusal) || refusal.Code != RangeCode {
+		t.Fatalf("missing trailer: %v", err)
+	}
+	if !strings.Contains(refusal.Reason, "doesn't say which goal and unit it builds") || !strings.Contains(refusal.Reason, "Goal-Unit: goal-a/UNIT") {
+		t.Fatalf("missing trailer reason: %q", refusal.Reason)
+	}
+	want := []string{"git", "commit", "--amend", "--no-edit", "--trailer", "Goal-Unit: goal-a/UNIT"}
+	if !slices.Equal(refusal.Fix, want) || refusal.Remedy != `run: git commit --amend --no-edit --trailer "Goal-Unit: goal-a/UNIT"` {
+		t.Fatalf("missing trailer remedy: fix %q remedy %q", refusal.Fix, refusal.Remedy)
+	}
+	_, err = kindOfWithGit("repo", commit, "goal-a", func(string, ...string) ([]byte, error) {
+		return []byte("Goal-Unit: goal-a/u1\nGoal-Plan: goal-a\n"), nil
+	})
+	if !errors.As(err, &refusal) || !strings.Contains(refusal.Reason, "2 times") || refusal.Fix != nil {
+		t.Fatalf("two trailers keep their own words: %v", err)
 	}
 }

@@ -1820,7 +1820,7 @@ func (inv *intentInvocation) landGoalRoute(goalID, through string) intentResult 
 	state, err := owners.branchState(root, goalID)
 	if err != nil {
 		return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: "the goal branch can't be read, so nothing was landed",
-			next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}
+			next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}.withCause(err)
 	}
 	if configured {
 		// The batch may already hold, or have landed and swept, exactly this
