@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -17,6 +18,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginebuild"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/custody"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/custody/laneprobe"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
@@ -29,6 +32,11 @@ import (
 type AdvanceRequest struct {
 	Home, Checkout, Installation string
 	Identity                     Identity
+	// Force is a person's word past custody whose state can't be read; it
+	// never goes past custody that is live. By names the person: the
+	// custody records they went past are recorded settled in their name.
+	Force bool
+	By    string
 }
 
 // AdvanceOutcome is what an advance did. Changed is false when the enrolled
@@ -43,9 +51,9 @@ type AdvanceOutcome struct {
 // Hold takes. Each answers the blocking thing in words, "" when it does not
 // block; an error blocks too.
 type Conditions struct {
-	// Hold takes, without waiting, the host's proving lock (a test run
-	// holding it is live custody, K9; unit K-f's custody store extends it),
-	// then the host flock every gated operation reads the pause under (K2),
+	// Hold takes, without waiting, the host's proving lock (the batch
+	// owner's proofs hold it until unit D deletes that owner), then the host
+	// flock every gated operation reads the pause under (K2),
 	// and keeps both until release. The second check, the install and the
 	// re-arm all run inside one Hold, so no proof or begin starts on either
 	// engine while the engine changes.
@@ -57,6 +65,12 @@ type Conditions struct {
 	Admit func() error
 	// BatchInFlight names a batch that has begun and not finished.
 	BatchInFlight func() (string, error)
+	// Custody reads the lane's one custody barrier (K9): every execution
+	// the kernel launched and the installation's proof leases.
+	Custody func() (custody.Settlement, error)
+	// Override records a person's word past the custody records that read
+	// unknown.
+	Override func(by string) ([]string, error)
 }
 
 // Steps are the effects of an advance.
@@ -76,7 +90,21 @@ type Steps struct {
 // ProductionConditions holds the host's proving lock and flock, and reads the
 // host's pause and the lane checkout's batch records.
 func ProductionConditions(home, checkout string) Conditions {
+	// The lease filter needs the lane's installation; a layout that can't be
+	// read leaves it unknown, which reads the leases as unknown custody.
+	installation := ""
+	if layout, err := lane.NewLayout(checkout); err == nil {
+		installation = string(layout.Install)
+	}
 	return Conditions{
+		// The advance holds the proving lock itself, so custody reads the
+		// store and the leases only.
+		Custody: func() (custody.Settlement, error) {
+			return custody.Settle(home, laneprobe.Production(home, installation, false))
+		},
+		Override: func(by string) ([]string, error) {
+			return custody.Override(home, by, laneprobe.Production(home, installation, false))
+		},
 		Hold: func() (func(), error) {
 			if err := os.MkdirAll(lane.HostDir(home), 0o700); err != nil {
 				return nil, err
@@ -190,7 +218,7 @@ func buildEnvironment(environ []string) []string {
 
 // gate takes the Hold and refuses while the lane is paused, a batch is in
 // flight or custody is live or unknown. On success the caller owns release.
-func gate(conditions Conditions, again []string) (func(), error) {
+func gate(conditions Conditions, again []string, request AdvanceRequest) (func(), error) {
 	release, err := conditions.Hold()
 	if err != nil {
 		if _, ok := err.(*Refusal); ok {
@@ -199,7 +227,7 @@ func gate(conditions Conditions, again []string) (func(), error) {
 		return nil, &Refusal{Code: CodeAdvanceCustodyLive, Message: "whether landing tests still run is unknown, so the engine wasn't changed",
 			Argv: again, Detail: err.Error()}
 	}
-	if err := check(conditions); err != nil {
+	if err := check(conditions, again, request); err != nil {
 		release()
 		return nil, err
 	}
@@ -227,7 +255,7 @@ func admitRefusal(err error) *Refusal {
 		Argv: status, Detail: err.Error()}
 }
 
-func check(conditions Conditions) error {
+func check(conditions Conditions, again []string, request AdvanceRequest) error {
 	if err := conditions.Admit(); err != nil {
 		return admitRefusal(err)
 	}
@@ -240,6 +268,28 @@ func check(conditions Conditions) error {
 			refusal.Detail = err.Error()
 		}
 		return refusal
+	}
+	if conditions.Custody == nil {
+		return &Refusal{Code: CodeAdvanceCustodyUnknown, Message: "whether landing work still runs can't be read, so the engine wasn't changed",
+			Argv: []string{"metasystem", "landing", "status"}, Detail: "no custody read is wired"}
+	}
+	settlement, err := conditions.Custody()
+	if err != nil {
+		settlement.Unknown = append(settlement.Unknown, err.Error())
+	}
+	if len(settlement.Live) > 0 {
+		return &Refusal{Code: CodeAdvanceCustodyLive, Message: "landing work is still running, so the engine wasn't changed",
+			Argv: again, Detail: strings.Join(settlement.Live, "; ") + "; run metasystem landing engine advance again once it ends"}
+	}
+	if len(settlement.Unknown) > 0 && !request.Force {
+		return &Refusal{Code: CodeAdvanceCustodyUnknown, Message: "whether landing work still runs can't be read, so the engine wasn't changed",
+			Argv: append(slices.Clone(again), "--force"), Detail: strings.Join(settlement.Unknown, "; ") + "; a person who has checked it goes past it with --force"}
+	}
+	if len(settlement.Unknown) > 0 && conditions.Override != nil {
+		if _, err := conditions.Override(request.By); err != nil {
+			return &Refusal{Code: CodeAdvanceCustodyUnknown, Message: "the person's word past unknown landing work couldn't be recorded, so the engine wasn't changed",
+				Argv: append(slices.Clone(again), "--force"), Detail: err.Error()}
+		}
 	}
 	return nil
 }
@@ -273,7 +323,7 @@ func Advance(request AdvanceRequest, conditions Conditions, steps Steps) (Advanc
 	if enrolled.InstallPath == "" || enrolled.InstallDigest == "" {
 		return AdvanceOutcome{}, errors.New("the advance was not admitted by the lane's enrolled engine")
 	}
-	release, err := gate(conditions, again)
+	release, err := gate(conditions, again, request)
 	if err != nil {
 		return AdvanceOutcome{}, err
 	}
@@ -314,7 +364,7 @@ func Advance(request AdvanceRequest, conditions Conditions, steps Steps) (Advanc
 			Argv:    []string{"git", "-C", request.Checkout, "status"},
 			Detail:  fmt.Sprintf("built stamp %q, landed main %s: the checkout's engine files differ from main", stamp, main)}
 	}
-	release, err = gate(conditions, again)
+	release, err = gate(conditions, again, request)
 	if err != nil {
 		return AdvanceOutcome{}, err
 	}

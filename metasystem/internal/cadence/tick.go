@@ -312,19 +312,10 @@ func executeCadenceRun(root string, owner Owner, clock func() time.Time, request
 		return gaterun.CadenceRunResult{}, fmt.Errorf("cadence governed run record is unreadable: %v", err)
 	}
 	resultPath := filepath.Join(root, "artifacts", "agents", "proof-runs", "cadence", runID+".json")
-	self, err := os.Executable()
+	command, err := cadenceRunCommand(root, runID, nonce, record.Log, request.Authority.GoalID, request.Trunk.Tree, resultPath, request.ForceGroups)
 	if err != nil {
 		return gaterun.CadenceRunResult{}, err
 	}
-	testArgs := []string{"internal", "test", "run", "--root", root, "--goal", request.Authority.GoalID, "--tree", request.Trunk.Tree,
-		"--mode", "deep", "--purpose", "cadence", "--result", resultPath}
-	if request.ForceGroups {
-		testArgs = append(testArgs, "--force-groups")
-	}
-	wrapArgs := append([]string{"run", "wrap", "--root", root, "--id", runID, "--nonce", nonce, "--log", record.Log, "--", self}, testArgs...)
-	command := exec.Command(self, wrapArgs...)
-	command.Dir, command.Env = root, os.Environ()
-	command.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err := command.Start(); err != nil {
 		_ = store.FailLaunch(runID, "wrapper spawn failed: "+err.Error())
 		return gaterun.CadenceRunResult{}, err
@@ -353,4 +344,23 @@ func executeCadenceRun(root string, owner Owner, clock func() time.Time, request
 		return gaterun.CadenceRunResult{}, err
 	}
 	return gaterun.CadenceRunResult{RunID: runID, Result: result}, nil
+}
+
+// cadenceRunCommand is a deep validation run of this engine's own test run,
+// wrapped as the governed run runID, leading its own session.
+func cadenceRunCommand(root, runID, nonce, log, goalID, tree, resultPath string, forceGroups bool) (*exec.Cmd, error) {
+	self, err := os.Executable()
+	if err != nil {
+		return nil, err
+	}
+	testArgs := []string{"internal", "test", "run", "--root", root, "--goal", goalID, "--tree", tree,
+		"--mode", "deep", "--purpose", "cadence", "--result", resultPath}
+	if forceGroups {
+		testArgs = append(testArgs, "--force-groups")
+	}
+	wrapArgs := append([]string{"run", "wrap", "--root", root, "--id", runID, "--nonce", nonce, "--log", log, "--", self}, testArgs...)
+	command := exec.Command(self, wrapArgs...)
+	command.Dir, command.Env = root, os.Environ()
+	command.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	return command, nil
 }

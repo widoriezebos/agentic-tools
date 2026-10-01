@@ -112,7 +112,9 @@ func laneEngineFixReason(refusal *laneengine.Refusal) string {
 	case refusal.Code == laneengine.CodeNotEnrolled && len(refusal.Argv) > 0 && refusal.Argv[0] != "metasystem":
 		return "runs it on the lane's enrolled engine"
 	case refusal.Code == laneengine.CodeAdvanceCustodyLive:
-		return "tries again once the tests have ended"
+		return "tries again once that work has ended"
+	case refusal.Code == laneengine.CodeAdvanceCustodyUnknown:
+		return "a person goes past it once they have checked it"
 	case strings.HasPrefix(refusal.Code, "LANDING_LANE_"):
 		// The lane gate's refusal (K-a) carries the lane's own fix.
 		if reason, _, found := strings.Cut(refusal.Detail, ": metasystem "); found {
@@ -126,11 +128,13 @@ func laneEngineFixReason(refusal *laneengine.Refusal) string {
 func landingEngineCommand() intentCommand {
 	return laneKernelCommand(intentCommand{
 		object: "landing", action: "engine", audience: "both", summary: "move the landing lane to the engine built from landed main, between batches",
-		usage: []string{"metasystem landing engine advance"},
+		usage: []string{"metasystem landing engine advance [--force] [--by NAME]"},
 		details: []string{"Builds the lane checkout's landed origin/main and makes it the lane's enrolled engine; it is the only way the lane's engine changes.",
-			"Refused while the lane is stopped, while a batch is underway or landing tests still run, and when the checkout is not on landed main.",
+			"Refused while the lane is stopped, while a batch is underway or landing work still runs, and when the checkout is not on landed main.",
+			"Landing work whose state can't be read holds it too, until a person runs it with --force.",
 			"Every landing kernel verb runs only on the lane's enrolled engine; any other executable, a hand-rebuilt one included, is refused.",
 			"An engine already built from landed main changes nothing."},
+		flags:    []intentFlag{{name: "force", usage: "a person goes past landing work whose state can't be read"}, {name: "by", value: "NAME", usage: "the person who forces it"}},
 		maxArgs:  1,
 		examples: []string{"metasystem landing engine advance"},
 	}, runIntentLandingEngine)
@@ -143,8 +147,16 @@ func runIntentLandingEngine(inv *intentInvocation, kernel laneKernel) int {
 			Summary: "landing engine takes one action, advance; nothing was done",
 			next:    inv.publicArgv("landing", "engine", "advance"), nextReason: "moves the lane to landed main's engine"})
 	}
-	outcome, err := kernel.owners.advance(laneengine.AdvanceRequest{Home: kernel.home, Checkout: kernel.record.Root,
-		Installation: kernel.installation, Identity: kernel.identity})
+	request := laneengine.AdvanceRequest{Home: kernel.home, Checkout: kernel.record.Root,
+		Installation: kernel.installation, Identity: kernel.identity}
+	if inv.input.switched("force") {
+		by, refused := inv.forcingPerson(kernel, "the landing engine's advance")
+		if refused != nil {
+			return inv.render(*refused)
+		}
+		request.Force, request.By = true, by
+	}
+	outcome, err := kernel.owners.advance(request)
 	if err != nil {
 		return inv.render(laneEngineResult(err, targets))
 	}

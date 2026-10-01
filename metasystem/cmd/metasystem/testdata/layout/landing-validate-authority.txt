@@ -1,0 +1,2 @@
+✗ goal standing-validation is not approved, so no landing validation runs; main is untouched
+  → metasystem goal approve standing-validation  then run metasystem landing validate again

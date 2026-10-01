@@ -1,0 +1,39 @@
+exit 1
+--
+{
+  "schemaVersion": 1,
+  "verb": "landing validate",
+  "targets": [
+    {
+      "kind": "landing-lane",
+      "id": "/Users/wido/GitHub/agentic-tools-landing"
+    }
+  ],
+  "outcome": "refused",
+  "summary": "goal standing-validation is not approved, so no landing validation runs; main is untouched",
+  "data": {
+    "result": "unavailable",
+    "code": "LANDING_VALIDATE_AUTHORITY_UNAVAILABLE",
+    "reason": "goal standing-validation is not approved, so no landing validation runs",
+    "fix": "metasystem goal approve standing-validation",
+    "key": {
+      "trunkTree": "",
+      "weightGeneration": 0,
+      "forcedWindowStart": ""
+    }
+  },
+  "next": {
+    "argv": [
+      "metasystem",
+      "goal",
+      "approve",
+      "standing-validation"
+    ],
+    "reason": "then run metasystem landing validate again"
+  },
+  "details": [
+    "code: LANDING_VALIDATE_AUTHORITY_UNAVAILABLE"
+  ]
+}
+
+--

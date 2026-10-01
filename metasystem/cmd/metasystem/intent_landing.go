@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gaterun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
@@ -95,6 +96,8 @@ type laneVerbOwners struct {
 	agentCaller func(checkout string) error
 	// returnMember runs one typed return (K8).
 	returnMember func(batchowner.MemberReturn) (batchowner.MemberReturnReport, error)
+	// validateRun runs one landing validate (K-f).
+	validateRun func(laneValidateRequest) (gaterun.ValidateOutcome, error)
 }
 
 func (inv *intentInvocation) landing() laneVerbOwners {
@@ -171,6 +174,9 @@ func (inv *intentInvocation) landing() laneVerbOwners {
 	}
 	if owners.validation == nil {
 		owners.validation = lane.ValidationDue
+	}
+	if owners.validateRun == nil {
+		owners.validateRun = productionLaneValidate
 	}
 	if owners.agent == nil {
 		owners.agent = batchowner.LandingAgentLive
@@ -274,6 +280,7 @@ func landingIntentCommands() []intentCommand {
 		landingProveCommand(),
 		landingPublishCommand(),
 		landingReturnCommand(),
+		landingValidateCommand(),
 	}
 }
 

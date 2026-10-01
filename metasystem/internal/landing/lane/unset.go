@@ -85,6 +85,9 @@ type UnsetSeams struct {
 	// Settle lets an admitted publication finish, stops the lane's agent
 	// and reads whether custody has settled (step 2).
 	Settle func(Layout) (Settlement, error)
+	// Override records a person's --force past the custody whose state
+	// can't be read, in the person's name.
+	Override func(Layout) error
 	// Records are the lane's batch records.
 	Records func(Layout) ([]batch.Record, error)
 	// Reconcile finalizes one batch's members already on main (step 3); it
@@ -153,6 +156,13 @@ func Unset(home, by string, now time.Time, force bool, seams UnsetSeams) (UnsetR
 		if !settlement.Settled(force) {
 			report.Stopped = StepSettled
 			return report, nil
+		}
+		if len(settlement.Unknown) > 0 && seams.Override != nil {
+			// The person's word past unknown custody is recorded against
+			// each record it went past, in their name.
+			if err := seams.Override(layout); err != nil {
+				return report, err
+			}
 		}
 		if err := journalStep(home, StepSettled, now); err != nil {
 			return report, err
