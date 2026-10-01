@@ -9,7 +9,8 @@
 - Origin: human
 - Next step: Reproduce each friction item from 2026-10-01 (list in the m1e work-state note) on current main, fix one at a time by subtraction, then one unattended hand-in from each seat
 - OpenedAt: 2026-10-01T15:55:49Z
-- Revision: 3
+- Revision: 4
+- Pinned: m1e
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-10-01T15:56:02Z revision=2 opid=AS519NWRBRGT3B7D4KCSGFHJ76-m1e-9c612d71 authority=proven digest=1f9c13aa2cf83c4c3516d84f84d8b97301aa3b4b0d65fc946f4d2a4eaa0c20a0 episode=2
@@ -18,4 +19,5 @@ History:
 - 2026-10-01T15:55:49Z JEJN0GE0Z67Y33FQ5KNVKATV1T-m1e-9c612d71 open actor=human:Wido targets=seat-path-lands-without-help
 - 2026-10-01T15:56:02Z AS519NWRBRGT3B7D4KCSGFHJ76-m1e-9c612d71 approve actor=human:Wido targets=seat-path-lands-without-help
 - 2026-10-01T15:56:40Z C8FK8HAETDBWNMDDN5XHWYJR19-m1e-9c612d71 set-priority actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,cross-cutting-change-inventories-its-readers,design-rounds-read-less-and-repeat-less,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,host-setup-from-scratch,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,reviewers-check-the-rulings,round-proof-feeds-the-next-brief,seat-path-lands-without-help,seat-successor-continues-a-handoff-without-a-human,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,steward-acts-on-behaviour-patterns,stop-hook-never-forces-an-empty-turn,system-start-launches-your-agent,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror reason=priority-order subject=seat-path-lands-without-help from=unranked to=1:2 requested-sequence=2
-Integrity: sha256=29a7c15f8baaabcbee015f1f2e0807f8feb025a5ba540c4de0c7ba8009195568
+- 2026-10-01T20:00:42Z CGMM9DFMEWBWKQ584S2EVBS2YQ-m1e-9c612d71 set-pin actor=human:Wido targets=seat-path-lands-without-help
+Integrity: sha256=fd527055b15cbbfa837b8658f26ce5cfdad12595dba9ba9ea4af4f641044cc93
