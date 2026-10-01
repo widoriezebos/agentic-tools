@@ -11,6 +11,7 @@ package launch
 import (
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
@@ -28,9 +29,15 @@ const LandingOwnerLineage = "landing-agent"
 // LandingEnvironment is what a landing launch sets over the launcher's
 // environment, as a seat's does: its lineage, and an empty delegate root and
 // session id, so the child is a session of the lane checkout and not a
-// delegate or the launcher's own session.
-func LandingEnvironment() []string {
-	return []string{"METASYSTEM_OWNER_LINEAGE=" + LandingOwnerLineage, "METASYSTEM_DELEGATE_ROOT=", "METASYSTEM_SESSION_ID="}
+// delegate or the launcher's own session. Its PATH is the inherited one with
+// the lane installation's bin directory (module is the lane's module root)
+// first, so the `metasystem` its skill names is the lane's own engine.
+func LandingEnvironment(module, inheritedPath string) []string {
+	path := filepath.Join(module, "bin")
+	if inheritedPath != "" {
+		path += string(os.PathListSeparator) + inheritedPath
+	}
+	return []string{"METASYSTEM_OWNER_LINEAGE=" + LandingOwnerLineage, "METASYSTEM_DELEGATE_ROOT=", "METASYSTEM_SESSION_ID=", "PATH=" + path}
 }
 
 // LaneCheckout is the host's registered landing lane as the launcher's guard

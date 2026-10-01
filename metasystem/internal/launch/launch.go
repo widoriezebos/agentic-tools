@@ -337,11 +337,6 @@ func (m *Manager) Supervise(id string) (Record, error) {
 	var fenceGeneration int64
 	var fenceRoot string
 	if fencedKind(record.Kind) {
-		environment := SeatEnvironment()
-		if record.Kind == LandingKind {
-			environment = LandingEnvironment()
-		}
-		command.Environment = append(command.Environment, environment...)
 		// The seat, and the landing agent, bind to the checkout's
 		// process-creation fence as the steward runner does: read it, open a
 		// creation claim before the child, re-read it once the child is
@@ -350,6 +345,12 @@ func (m *Manager) Supervise(id string) (Record, error) {
 		if fenceRoot == "" {
 			return m.failCause(id, noFenceRoot(record.Kind), nil)
 		}
+		environment := SeatEnvironment()
+		if record.Kind == LandingKind {
+			// A landing launch's fence root is the lane's module root.
+			environment = LandingEnvironment(fenceRoot, os.Getenv("PATH"))
+		}
+		command.Environment = append(command.Environment, environment...)
 		if reason := seatFenceClosed(fenceRoot); reason != "" {
 			return m.failCause(id, reason, nil)
 		}
