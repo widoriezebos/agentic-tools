@@ -22,9 +22,9 @@ type InstallRoot string
 // what, resolved once by landing set and recorded with the lane, never
 // guessed again by a reader.
 //
-//   - Checkout holds the lease and its announcements, landing-batches and
-//     the ensure lock;
-//   - Install holds the configuration, the ledger, proof runs, runs,
+//   - Checkout holds landing-batches and the ensure lock;
+//   - Install holds the landing agent's lease and its announcements, the
+//     configuration, the ledger, proof runs, runs,
 //     supervision, engine pins, enrollment and bin/metasystem;
 //   - Execution(detached) is where a candidate's tests run;
 //   - the host directory holds the lane record, pause, unset journal,

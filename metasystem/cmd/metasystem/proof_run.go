@@ -1430,9 +1430,10 @@ func admitLaneProofLaunch(request proofLaunchAdmission, caller lease.ClassifyRes
 // (U11b), and neither is a holder under the deleted batch owner's lineage
 // (design r10 §5).
 //
-// The lease is read where the agent holds it: the registered lane checkout
-// (its toplevel), not the control root, which on a checkout that nests the
-// module is the module inside it.
+// The lease and its announcements are read where the agent's session holds
+// them: the lane's recorded installation root, not its checkout root, which
+// on a nested checkout may still carry a stale lease from an earlier lane
+// (2026-10-01).
 func proveLaneOwnerCaller(controlRoot string, callerPID int64) error {
 	home, err := board.Home()
 	if err != nil {
@@ -1445,7 +1446,11 @@ func proveLaneOwnerCaller(controlRoot string, callerPID int64) error {
 	if !ok {
 		return fmt.Errorf("no landing lane is registered on this computer")
 	}
-	laneRoot := record.Root
+	layout, err := record.Layout()
+	if err != nil {
+		return err
+	}
+	laneRoot := string(layout.Install)
 	holder, err := lease.CurrentHolder(laneRoot)
 	if err != nil {
 		return err
@@ -1453,7 +1458,7 @@ func proveLaneOwnerCaller(controlRoot string, callerPID int64) error {
 	// Launch descent from the landing agent is what an agent-issued kernel
 	// operation needs (lane design r10 K7).
 	if holder.OwnerLineage != landinglane.AgentLineage {
-		return fmt.Errorf("the lane checkout is held by session %s, not by its landing agent", holder.OwnerLineage)
+		return fmt.Errorf("the lane's installation is held by session %s, not by its landing agent", holder.OwnerLineage)
 	}
 	for _, announcement := range lease.AnnouncementsFor(laneRoot, holder.Pid) {
 		if announcement.MainId != holder.MainId {
