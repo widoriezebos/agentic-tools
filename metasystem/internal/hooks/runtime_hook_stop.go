@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 )
 
 // lifecycle is one receipt, Stop worker or SessionEnd invocation: the
@@ -77,7 +78,7 @@ func runLifecycle(inv Invocation, ops Ops) int {
 	if inv.Event == "stop" && inv.env(stopDeadlineParentEnv) != strconv.Itoa(inv.Ppid) {
 		return runStopDeadlineParent(inv, ops, l.harnessRoot)
 	}
-	if l.helmAnswers() {
+	if l.helmAnswers() || l.landingAgentStops() {
 		return 0
 	}
 	l.stopStarted = inv.Now().Unix()
@@ -117,6 +118,19 @@ func (l *lifecycle) helmAnswers() bool {
 		return true
 	}
 	form, _ := json.Marshal(map[string]string{"systemMessage": helmNotice(state) + " Stop allowed."})
+	_ = writeLine(l.inv.Stdout, string(form))
+	return true
+}
+
+// landingAgentStops allows a landing agent's Stop before any seat
+// supervision runs: the landing agent is no seat, and its keeper is its
+// supervisor, relaunching it whenever the lane has work queued, so no seat
+// demand (decisions, session status, the seat's goals) ever holds it.
+func (l *lifecycle) landingAgentStops() bool {
+	if l.inv.Event != "stop" || l.inv.env("METASYSTEM_OWNER_LINEAGE") != launch.LandingOwnerLineage {
+		return false
+	}
+	form, _ := json.Marshal(map[string]string{"systemMessage": "landing agent: the keeper supervises this session and relaunches it when work is queued. Stop allowed."})
 	_ = writeLine(l.inv.Stdout, string(form))
 	return true
 }
