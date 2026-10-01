@@ -155,7 +155,7 @@ func (u UnsetLane) reconcile(layout lane.Layout, record batch.Record) ([]lane.Un
 	store := u.store(layout)
 	// Only commits after the batch's base count: an earlier landing of the
 	// same member, reverted since, is not this batch's push.
-	seams := recoverySeamsAt(string(layout.Checkout), string(layout.Install), record.Landing.Base, store, record.BatchID, u.Now(), GitOutput, &u.Calls, u.personCleanup)
+	seams := RecoverySeams(string(layout.Checkout), string(layout.Install), record.Landing.Base, store, record.BatchID, u.Now(), GitOutput, &u.Calls, u.personCleanup)
 	if record.Landing != nil && record.Landing.PushComplete {
 		return nil, batch.RecoverPushedSeries(store, record.BatchID, u.By, u.Now(), seams)
 	}
