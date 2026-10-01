@@ -13,7 +13,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/custody"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 )
 
@@ -395,8 +394,7 @@ func TestUnsetSettleRereadsTheAgentAfterStoppingIt(t *testing.T) {
 			bed.agentReads++
 			return "landing-0123456789abcdef", true, nil
 		},
-		StopAgent: func(string) error { bed.stops++; return nil },
-		Custody:   func(lane.Layout) custody.Probes { return custody.Probes{} }}
+		StopAgent: func(string) error { bed.stops++; return nil }}
 	settlement, err := steps.settle(bed.layout)
 	if err != nil || settlement.Settled(true) || bed.stops != 1 || bed.agentReads != 2 {
 		t.Fatalf("settle with an agent that outlives its stop = %+v %v (stops %d, reads %d); want live work", settlement, err, bed.stops, bed.agentReads)

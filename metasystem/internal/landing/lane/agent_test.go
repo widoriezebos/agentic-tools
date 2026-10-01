@@ -59,9 +59,9 @@ func noBatches(string) ([]batch.Record, error) { return nil, nil }
 // TestKeeperWakesForDueValidation (A-a, §3 Wake): an idle lane with no
 // batch runs no model; when validation falls due the keeper starts the
 // landing agent on the lane checkout, once, naming the reason, and starts no
-// second one while it runs. A pause, a hold (budget, usage or custody not
-// known) and a steward that is not the lane's own start nothing; an ended
-// agent is reaped once, before the next start.
+// second one while it runs. A pause, a hold and a steward that is not the
+// lane's own start nothing; an ended agent is reaped once, before the next
+// start.
 func TestKeeperWakesForDueValidation(t *testing.T) {
 	t.Parallel()
 	home, checkout, module := nestedLaneDirs(t)
@@ -88,16 +88,12 @@ func TestKeeperWakesForDueValidation(t *testing.T) {
 		t.Fatalf("a running agent: %q, starts %d; want no second start", line, len(agent.starts))
 	}
 
-	// The agent ended with validation still due: it is reaped once, and no
-	// fresh agent starts for the same reasons until the cooldown ran out.
+	// The agent ended with validation still due: it is reaped once, and a
+	// fresh agent starts.
 	agent.running = ""
 	clock = clock.Add(time.Minute)
-	if line := keeper.Step(); len(agent.starts) != 1 || !slices.Equal(agent.reaped, []string{"landing-1"}) || !strings.Contains(line, "same reasons") {
-		t.Fatalf("after the agent ended: %q, starts %d, reaped %v; want one reap and the same reasons held", line, len(agent.starts), agent.reaped)
-	}
-	clock = clock.Add(AgentCooldown)
-	if keeper.Step(); len(agent.starts) != 2 || len(agent.reaped) != 1 {
-		t.Fatalf("after the cooldown: starts %d, reaped %v; want a fresh agent", len(agent.starts), agent.reaped)
+	if line := keeper.Step(); len(agent.starts) != 2 || !slices.Equal(agent.reaped, []string{"landing-1"}) {
+		t.Fatalf("after the agent ended: %q, starts %d, reaped %v; want one reap and a fresh agent", line, len(agent.starts), agent.reaped)
 	}
 	agent.running = ""
 	due = false
@@ -146,7 +142,6 @@ func TestKeeperWakesForDueValidation(t *testing.T) {
 		t.Fatalf("another checkout's steward started the landing agent: %d", len(agent.starts))
 	}
 	// The lane's own steward, found by the checkout top, starts it.
-	clock = clock.Add(AgentCooldown)
 	top := agent.keeper(home, checkout, &clock, sources)
 	if top.Step(); len(agent.starts) != 3 {
 		t.Fatalf("the lane's own steward (by its top) did not start the agent: %d", len(agent.starts))
@@ -155,10 +150,9 @@ func TestKeeperWakesForDueValidation(t *testing.T) {
 
 // TestKeeperStartsOutsideTheLaneLock (A-a, critique F-2 and F-3): the start
 // runs outside the lane flock, so a person's landing stop is never kept
-// waiting by it; a pause that lands while the agent starts stops it again.
-// A start the pause stopped holds no cooldown, and a person's landing start
-// clears one. Changed reasons wake at once despite the cooldown. A failed
-// start claims nothing and the next cycle tries again.
+// waiting by it; a pause that lands while the agent starts stops it again,
+// and a person's resume wakes a fresh one. A failed start claims nothing and
+// the next cycle tries again.
 func TestKeeperStartsOutsideTheLaneLock(t *testing.T) {
 	t.Parallel()
 	home, _, module := nestedLaneDirs(t)
@@ -193,33 +187,19 @@ func TestKeeperStartsOutsideTheLaneLock(t *testing.T) {
 	}
 	keeper.Start = start
 	clock = clock.Add(time.Minute)
-	// The start the pause stopped holds no cooldown: the person's resume
-	// wakes a fresh agent at once.
+	// The person's resume wakes a fresh agent at once.
 	if line := keeper.Step(); len(agent.starts) != 2 {
 		t.Fatalf("after the resume: %q, starts %d; want a fresh agent", line, len(agent.starts))
 	}
 	agent.running = ""
-	clock = clock.Add(time.Minute)
-	if line := keeper.Step(); len(agent.starts) != 2 || !strings.Contains(line, "same reasons") {
-		t.Fatalf("same reasons inside the cooldown: %q, starts %d", line, len(agent.starts))
-	}
-	// A person's landing start clears the cooldown.
-	if err := ClearAgentCooldown(home); err != nil {
-		t.Fatal(err)
-	}
-	if line := keeper.Step(); len(agent.starts) != 3 {
-		t.Fatalf("after a person's start: %q, starts %d; want a fresh agent", line, len(agent.starts))
-	}
-	agent.running = ""
-	keeper.Step()
 	reasons = []batch.Record{{BatchID: "b-open", State: batch.StateOpen, Units: []batch.Unit{{GoalID: "g-one", State: batch.UnitJoined}}}}
 	agent.fail = errors.New("the launcher refused")
-	if line := keeper.Step(); len(agent.starts) != 3 || !strings.Contains(line, "the launcher refused") {
+	if line := keeper.Step(); len(agent.starts) != 2 || !strings.Contains(line, "the launcher refused") {
 		t.Fatalf("a failed start: %q", line)
 	}
 	agent.fail = nil
-	if line := keeper.Step(); len(agent.starts) != 4 || !slices.Equal(agent.starts[3].Reasons, []string{WakeQueued, WakeValidationDue}) {
-		t.Fatalf("changed reasons after a failed start: %q, starts %+v; want a start at once", line, agent.starts)
+	if line := keeper.Step(); len(agent.starts) != 3 || !slices.Equal(agent.starts[2].Reasons, []string{WakeQueued, WakeValidationDue}) {
+		t.Fatalf("the next step after a failed start: %q, starts %+v; want a start at once", line, agent.starts)
 	}
 }
 
@@ -298,5 +278,44 @@ func TestUnreadableKeeperRecordHoldsUntilAPersonStarts(t *testing.T) {
 	}
 	if keeper.Step(); len(agent.starts) != 1 {
 		t.Fatalf("after a person's start: %d starts; want the agent", len(agent.starts))
+	}
+}
+
+// TestKeeperLaunchesOnlyForAQueueNotPausedNoneAlive (simple lane §1, rail 2;
+// unit B): the keeper launches the landing agent when the queue is
+// non-empty, the lane is not paused and none is alive, and only then. An
+// agent that ended with work still queued is followed by a fresh one at the
+// next step: no cooldown or budget holds it.
+func TestKeeperLaunchesOnlyForAQueueNotPausedNoneAlive(t *testing.T) {
+	t.Parallel()
+	home, checkout, module := nestedLaneDirs(t)
+	clock := laneNow
+	var records []batch.Record
+	agent := &fakeAgent{}
+	keeper := agent.keeper(home, module, &clock, WakeSources{Records: func(string) ([]batch.Record, error) { return records, nil }})
+
+	if line := keeper.Step(); len(agent.starts) != 0 || !strings.Contains(line, "idle") {
+		t.Fatalf("an empty queue: %q, starts %d; want no launch", line, len(agent.starts))
+	}
+	records = []batch.Record{{BatchID: "b-open", State: batch.StateOpen, Units: []batch.Unit{{GoalID: "g-one", State: batch.UnitJoined}}}}
+	if line := keeper.Step(); len(agent.starts) != 1 || agent.roots[0] != checkout || !slices.Equal(agent.starts[0].Reasons, []string{WakeQueued}) {
+		t.Fatalf("a queued member: %q, starts %+v on %v; want one launch on %s", line, agent.starts, agent.roots, checkout)
+	}
+	if line := keeper.Step(); len(agent.starts) != 1 || !strings.Contains(line, "running") {
+		t.Fatalf("an agent alive: %q, starts %d; want no second launch", line, len(agent.starts))
+	}
+	// The agent ended with the member still queued: the next step launches
+	// a fresh one at once.
+	agent.running = ""
+	clock = clock.Add(time.Minute)
+	if line := keeper.Step(); len(agent.starts) != 2 || !slices.Equal(agent.reaped, []string{"landing-1"}) {
+		t.Fatalf("after the agent ended with work queued: %q, starts %d, reaped %v; want a fresh launch", line, len(agent.starts), agent.reaped)
+	}
+	agent.running = ""
+	if _, err := SetPause(home, "a-person", clock); err != nil {
+		t.Fatal(err)
+	}
+	if line := keeper.Step(); len(agent.starts) != 2 || !strings.Contains(line, "paused") {
+		t.Fatalf("paused: %q, starts %d; want no launch", line, len(agent.starts))
 	}
 }

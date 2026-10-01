@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	custodystore "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/custody"
 	"io"
 	"os"
 	"os/exec"
@@ -292,13 +291,6 @@ func LaunchSuite(options LaunchOptions) int {
 			return 1
 		}
 		custody.spools.follow(combined, combinedErr, log)
-		// The suite joins the custodian's group: bind it to the landing
-		// lane's custody before the suite is born in it.
-		if err := bindLaneCustody(custody.leader); err != nil {
-			_ = custody.finish()
-			fmt.Fprintln(combinedErr, "suite launcher: bind the resource group to the landing lane's custody:", err)
-			return 1
-		}
 		engine := options.WatchdogExecutable
 		if engine == "" {
 			engine, err = os.Executable()
@@ -350,17 +342,6 @@ func LaunchSuite(options LaunchOptions) int {
 		}
 		fmt.Fprintf(combinedErr, "suite launcher: cannot record exact suite identity: %v (%s)\n", probeErr, state)
 		return 1
-	}
-	if custody == nil {
-		// The suite leads a group of its own: the landing lane's custody
-		// holds it, not only the launcher's (K9).
-		if err := bindLaneCustody(suiteExact.Ref()); err != nil {
-			releaseLaunchMutation()
-			_ = syscall.Kill(-suite.Process.Pid, syscall.SIGKILL)
-			_ = suite.Wait()
-			fmt.Fprintln(combinedErr, "suite launcher: bind the suite group to the landing lane's custody:", err)
-			return 1
-		}
 	}
 	if custody != nil {
 		if err := custody.bind(suiteExact.Ref()); err != nil {
@@ -453,17 +434,6 @@ func LaunchSuite(options LaunchOptions) int {
 		}
 		fmt.Fprintf(combinedErr, "suite launcher: cannot record exact watchdog identity: %v (%s)\n", watchdogProbeErr, watchdogState)
 		return 1
-	}
-	if custody == nil {
-		if err := bindLaneCustody(watchdogExact.Ref()); err != nil {
-			releaseLaunchMutation()
-			_ = watchdog.Process.Kill()
-			_ = watchdog.Wait()
-			_ = syscall.Kill(-suite.Process.Pid, syscall.SIGKILL)
-			_ = suite.Wait()
-			fmt.Fprintln(combinedErr, "suite launcher: bind the watchdog group to the landing lane's custody:", err)
-			return 1
-		}
 	}
 	// The watchdog's streams have their own group: its verdict is the last
 	// thing it writes, and exec.Cmd.Wait closes the pipes when the process
@@ -816,18 +786,6 @@ func LaunchSuite(options LaunchOptions) int {
 // launcher before the child receives this launcher's coherent context. In
 // particular, a legacy launch must not pair its new control root with an
 // inherited admitted-attempt identifier.
-// laneCustodyLookup reads the landing lane custody this launch runs under
-// (custody.EnvHome and EnvID, set by the kernel verb that launched it).
-var laneCustodyLookup = os.LookupEnv
-
-// bindLaneCustody binds a process group this launcher made, led by leader,
-// to the landing lane's custody record of the execution it runs in; work
-// no kernel verb launched binds nothing.
-func bindLaneCustody(leader identity.Ref) error {
-	_, err := custodystore.BindFromEnvironment(laneCustodyLookup, leader)
-	return err
-}
-
 func proofChildEnvironment(environment []string) []string {
 	owned := map[string]bool{
 		"METASYSTEM_PROOF_CONTROL_ROOT":   true,
@@ -838,11 +796,6 @@ func proofChildEnvironment(environment []string) []string {
 		"METASYSTEM_PROOF_RUN_ROOT":       true,
 		"METASYSTEM_PROOF_RUN_ID":         true,
 		identity.FixtureAttemptEnv:        true,
-		// The lane's custody belongs to the launcher, which binds the
-		// suite's group; the suite never binds and its proof key never
-		// sees it.
-		custodystore.EnvHome: true,
-		custodystore.EnvID:   true,
 	}
 	base := environment
 	if len(base) == 0 {

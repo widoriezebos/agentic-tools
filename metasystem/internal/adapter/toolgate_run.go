@@ -11,7 +11,6 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/agentgate"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
 )
 
@@ -40,11 +39,6 @@ type ToolGateOptions struct {
 	// gate's single exit only: its text, and the marker to run once the
 	// response carrying it was written. Nil when no delivery is wired.
 	Peer func() (text string, delivered func() error)
-	// LandingAgent decides the call by the landing agent's fail-closed
-	// allowlist (lane-agent-tools.json) instead of the context budget; the
-	// fail-open paths below never apply to it. Installation, Stdin and
-	// Stdout are the only other inputs it reads.
-	LandingAgent bool
 }
 
 type toolGatePayload struct {
@@ -71,13 +65,8 @@ type toolGateDecisionRow struct {
 
 // RunToolGate decides one PreToolUse payload. Operational failures fail open
 // and are recorded; malformed inputs and configuration are returned to the
-// command boundary for diagnostics. The landing agent's call is the
-// exception: every failure denies it, and an error returned for it means the
-// denial could not be written.
+// command boundary for diagnostics.
 func RunToolGate(opts ToolGateOptions) error {
-	if opts.LandingAgent {
-		return runLandingToolGate(opts)
-	}
 	if opts.Clock == nil {
 		return fmt.Errorf("tool gate clock is required")
 	}
@@ -179,35 +168,6 @@ func RunToolGate(opts ToolGateOptions) error {
 	}
 	writeToolGateRow(opts, row, base, decidedAt)
 	return emitToolGate(opts, decision, decision.Deny && opts.Mode == "deny")
-}
-
-// landingPayloadMax bounds the call the landing gate reads.
-const landingPayloadMax = 64 << 20
-
-func runLandingToolGate(opts ToolGateOptions) error {
-	decision := agentgate.Undecided(errors.New("the hook received no call"))
-	if opts.Stdin != nil {
-		payload, err := io.ReadAll(io.LimitReader(opts.Stdin, landingPayloadMax+1))
-		switch {
-		case err != nil:
-			decision = agentgate.Undecided(fmt.Errorf("the call could not be read: %w", err))
-		case len(payload) > landingPayloadMax:
-			decision = agentgate.Undecided(errors.New("the call is larger than the gate reads"))
-		default:
-			decision = agentgate.Decide(agentgate.Request{Payload: payload, Installation: opts.Installation})
-		}
-	}
-	answer := agentgate.Response(decision)
-	if answer == nil {
-		return nil
-	}
-	if opts.Stdout == nil {
-		return errors.New(decision.Reason)
-	}
-	if _, err := opts.Stdout.Write(append(answer, '\n')); err != nil {
-		return errors.New(decision.Reason)
-	}
-	return nil
 }
 
 // emitToolGate is the gate's single exit: one composed response, written
