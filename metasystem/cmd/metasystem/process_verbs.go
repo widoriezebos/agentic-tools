@@ -8,11 +8,15 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	landinglane "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
@@ -154,6 +158,9 @@ type processOwners struct {
 	// evidenceRoot resolves the evidence root a start says; nil is the
 	// owner over the process environment.
 	evidenceRoot func(conf string) (config.EvidenceRoot, error)
+	// laneProof says whether a lane proof runs in the checkout (the proof
+	// hold); nil holds nothing.
+	laneProof func(processScope) (landinglane.ProofHold, bool, error)
 }
 
 // processArmResult is the arm sequence's report: its lines, and whether it
@@ -172,7 +179,46 @@ type processArmAuthority struct {
 }
 
 func defaultProcessOwners() processOwners {
-	return processOwners{repositoryTop: stateroot.RepositoryTop, classify: personClassifyAt, transition: processTransition, armSteps: armCheckoutSteps}
+	return processOwners{repositoryTop: stateroot.RepositoryTop, classify: personClassifyAt, transition: processTransition, armSteps: armCheckoutSteps,
+		laneProof: runningLaneProof}
+}
+
+// runningLaneProof reads the proof hold of this computer's landing lane
+// for the checkout (landinglane.RunningProof).
+func runningLaneProof(scope processScope) (landinglane.ProofHold, bool, error) {
+	home, err := board.Home()
+	if err != nil {
+		return landinglane.ProofHold{}, false, nil
+	}
+	return landinglane.RunningProof(home, scope.Checkout, identity.KernelProber{})
+}
+
+// proofHold is the refusal of a restart while a lane proof runs in the
+// checkout: the restart's stop would cancel the proof, so nothing is
+// stopped or started until it ended. system stop is never held.
+func (o processOwners) proofHold(scope processScope) *processRefusal {
+	if o.laneProof == nil {
+		return nil
+	}
+	hold, held, err := o.laneProof(scope)
+	if err != nil {
+		return &processRefusal{verb: "restart", checkout: scope.Checkout, code: 1,
+			sentence:   "whether the landing lane's tests run here can't be read, and a restart would cancel them",
+			details:    []string{err.Error()},
+			next:       []string{"metasystem", "landing", "status"},
+			nextReason: "shows the lane's test run; metasystem system stop stops everything, a test run too"}
+	}
+	if !held {
+		return nil
+	}
+	since := ""
+	if at, err := time.Parse(time.RFC3339Nano, hold.StartedAt); err == nil {
+		since = " since " + at.Local().Format("15:04")
+	}
+	return &processRefusal{verb: "restart", checkout: scope.Checkout, code: 1,
+		sentence:   fmt.Sprintf("the landing lane's test run %s is running here%s, and a restart would cancel it", hold.Attempt, since),
+		next:       []string{"metasystem", "landing", "status"},
+		nextReason: "shows when the test run has ended; then run metasystem system restart again (metasystem system stop stops everything, the test run too)"}
 }
 
 func (o processOwners) humanTerminal(scope processScope, verb, retry string) (bool, *processRefusal) {
