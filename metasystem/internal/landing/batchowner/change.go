@@ -45,7 +45,6 @@ type changeJoinDependencies struct {
 	ProtectedTests func(string, string, string) error
 	Closure        func(root, baseTree, tree string) *adapter.Closure
 	onMain         func(lane, commit string) (bool, error)
-	Ensure         func(string) error
 	prober         identity.Prober
 }
 
@@ -66,7 +65,7 @@ func ProductionChangeJoinDependencies() changeJoinDependencies {
 			return strings.ToLower(id), err
 		},
 		assemble: batch.AssembleUnits, ProtectedTests: ProductionBatchProtectedTests, Closure: batch.UnitClosure,
-		Ensure: EnsureBatchOwner, prober: identity.KernelProber{},
+		prober: identity.KernelProber{},
 		onMain: func(lane, commit string) (bool, error) {
 			return batchSeriesOnEndpoint(lane, "refs/remotes/origin/main", commit)
 		},
@@ -190,27 +189,11 @@ func ExecuteChangeJoin(request ChangeJoinRequest, dependencies changeJoinDepende
 	if err != nil {
 		return batch.Record{}, err
 	}
-	record, err := batch.JoinChange(store,
+	// The change joins and waits: nothing is started for it; the keeper
+	// wakes the landing agent for queued work (lane design r10 §3).
+	return batch.JoinChange(store,
 		batch.ChangeJoin{Unit: unit, BaseTree: baseTree, NewID: newID, Actor: change.AskedBy, At: request.At})
-	if err != nil {
-		return batch.Record{}, err
-	}
-	if err := dependencies.Ensure(lane); err != nil {
-		// The change is the lane's now; only its owner did not start (N-a).
-		return record, &ChangeOwnerStartError{Record: record, Cause: err}
-	}
-	return record, nil
 }
-
-// ChangeOwnerStartError is a join that wrote the member but could not start
-// the lane's owner: the change is joined and nothing is given back.
-type ChangeOwnerStartError struct {
-	Record batch.Record
-	Cause  error
-}
-
-func (err *ChangeOwnerStartError) Error() string { return err.Cause.Error() }
-func (err *ChangeOwnerStartError) Unwrap() error { return err.Cause }
 
 // batchLaneAccount resolves the accounting identity of the host lane whose
 // checkout is root: what a batch of changes is charged to (U11b). An

@@ -302,8 +302,8 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 			}
 			continue
 		}
-		// The landing lane's keeper restarts the host lane's owner when it
-		// died (U12); at the helm, above, it does not run.
+		// The landing lane's keeper wakes the lane's landing agent when the
+		// lane has work; at the helm, above, it does not run.
 		if cfg.KeepLandingLane != nil {
 			if line := cfg.KeepLandingLane(); line != laneLine {
 				fmt.Fprintln(os.Stderr, line)

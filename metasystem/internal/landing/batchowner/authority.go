@@ -24,18 +24,16 @@ func LaneInvocation(claim lane.ClaimIdentity) ownercall.Invocation {
 	return invocation
 }
 
-// claimAuthority is the authority a lane act on goalID runs under, chosen by
-// who the ledger shows holding it: the lane's claim identity (renewed to the
-// host record's custody epoch first when the ledger holds an older one), or
-// for a claim the old owner lineage holds, that owner's own authority: its
-// claims are settled through the old authority (design r10 §5, R9-01).
-// invoke is the act's own context: the old owner's authority as it is, and
-// for the lane's claim identity the publication boundary (K3) its goal
-// writes go through.
-func claimAuthority(controlRoot, goalID string, ledger batch.ReturnLedgerGoal, calls *BatchOwnerCallSet, home func() (string, error), invoke func() ownercall.Invocation) (ownercall.Invocation, error) {
-	act := invoke()
+// claimAuthority is the authority a lane act on goalID runs under: the
+// lane's claim identity, renewed to the host record's custody epoch first
+// when the ledger holds an older one. The lane acts on no other claim: a
+// goal the ledger shows held by anyone else, the deleted batch owner's
+// lineage included (design r10 §5, R9-01), is refused with a person's
+// release as the way forward. boundary is the publication boundary (K3)
+// the act's goal writes go through.
+func claimAuthority(controlRoot, goalID string, ledger batch.ReturnLedgerGoal, calls *BatchOwnerCallSet, home func() (string, error), boundary func(goal.Endpoint) goal.Endpoint) (ownercall.Invocation, error) {
 	if ledger.Lineage != lane.ClaimLineage {
-		return act, nil
+		return ownercall.Invocation{}, notLaneHeld(goalID, ledger)
 	}
 	dir, err := home()
 	if err != nil {
@@ -45,12 +43,22 @@ func claimAuthority(controlRoot, goalID string, ledger batch.ReturnLedgerGoal, c
 	if err != nil {
 		return ownercall.Invocation{}, err
 	}
-	if err := renewLaneClaim(controlRoot, goalID, ledger, claim, dir, calls, act.Ledger); err != nil {
+	if err := renewLaneClaim(controlRoot, goalID, ledger, claim, dir, calls, boundary); err != nil {
 		return ownercall.Invocation{}, err
 	}
 	invocation := LaneInvocation(claim)
-	invocation.Ledger = act.Ledger
+	invocation.Ledger = boundary
 	return invocation, nil
+}
+
+// notLaneHeld refuses a lane act on a goal the lane does not hold, in a
+// person's words, with the release a person makes.
+func notLaneHeld(goalID string, ledger batch.ReturnLedgerGoal) error {
+	holder := ledger.Machine + "+" + ledger.Lineage
+	if ledger.Lineage == lane.OldOwnerLineage {
+		holder = "the old landing owner (" + holder + ")"
+	}
+	return fmt.Errorf("goal %s is held by %s, not by this computer's landing lane, so the lane did not give it back; a person releases it: metasystem goal release %s --reason TEXT", goalID, holder, goalID)
 }
 
 // renewLaneClaim moves a lane-held claim to the lane's current custody

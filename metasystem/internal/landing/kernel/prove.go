@@ -134,7 +134,7 @@ func Prove(request ProveRequest, seams ProveSeams) (batch.ProofAttempt, error) {
 	attempt := batch.ProofAttempt{ID: id, OpID: opening.OpID, Subject: target.kind, Member: target.member, Commit: target.commit, Tree: target.tree,
 		Purpose: target.purpose, Groups: target.groups, Actor: request.Actor, ResultPath: filepath.Join(resultDir, request.BatchID+"-"+id+".json"),
 		StartedAt: seams.Now().Format(time.RFC3339Nano)}
-	command := batchowner.BatchProofCommand(executable, proveArgs(request.Layout, execution, account, target, attempt.ResultPath), false)
+	command := batchowner.BatchProofCommand(executable, proveArgs(request.Layout, execution, account, target, attempt.ResultPath))
 	command.Dir, command.Env = string(execution), gittree.ScrubbedEnviron()
 	read := verbresult.Capture(command, testRunVerb)
 	started := false

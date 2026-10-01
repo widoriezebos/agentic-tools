@@ -12,12 +12,11 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 )
 
-// The owner's states as a person reads them.
+// The lane's runner states as a person reads them: the landing agent runs,
+// a person stopped the lane, or no agent runs now.
 const (
 	OwnerRunning    = "running"
 	OwnerStopped    = "stopped"
-	OwnerRestarting = "restarting"
-	OwnerGivenUp    = "given-up"
 	OwnerNotStarted = "not-started"
 )
 
@@ -27,8 +26,8 @@ const (
 	BatchWaiting    = "waiting"
 	BatchProving    = "proving"
 	BatchPushing    = "pushing"
-	// BatchHeld is a batch the owner stands down whole because a seat that
-	// joined it is at the helm; it starts when that seat returns the helm.
+	// BatchHeld is a batch held whole because a seat that joined it is at
+	// the helm; it starts when that seat returns the helm.
 	BatchHeld = "held"
 )
 
@@ -59,21 +58,16 @@ type Spend struct {
 	ReservedMinutes uint64 `json:"reserved_minutes"`
 }
 
-// OwnerView is the lane owner and its keep-alive.
+// OwnerView is what runs the lane: its landing agent (lane design r10 §3),
+// started on demand by the keeper, or a person's stop. The page reads it as
+// the lane's "owner".
 type OwnerView struct {
 	State     string  `json:"state"`
 	PID       *int64  `json:"pid"`
 	Since     *string `json:"since"`
-	Restarts  int     `json:"restarts"`
 	LastExit  *string `json:"last_exit"`
 	StoppedBy *string `json:"stopped_by"`
 	RetryHint *string `json:"retry_hint"`
-	// LastTickError is the running owner's last failed batch tick, in its
-	// words; null when its last pass ticked clean.
-	LastTickError *string `json:"last_tick_error"`
-	// LastTickProblem is LastTickError as a person reads it: which batch
-	// cannot advance and why, in plain words; null with it.
-	LastTickProblem *string `json:"last_tick_problem"`
 	// Fix is RetryHint as one command a person runs, when it is one; the
 	// verbs print it as their next step, the page shows RetryHint.
 	Fix []string `json:"-"`
@@ -120,7 +114,7 @@ type NextView struct {
 	Members []Member `json:"members"`
 }
 
-// OwnerProbe is whether the lane's owner runs, and since when.
+// OwnerProbe is whether the lane's landing agent runs, and since when.
 type OwnerProbe struct {
 	Alive bool
 	PID   int64
@@ -132,15 +126,16 @@ type OwnerProbe struct {
 type ViewSources struct {
 	Home    string
 	Now     time.Time
+	// Owner reads the landing agent.
 	Owner   func(root string) (OwnerProbe, error)
 	Records func(root string) ([]batch.Record, error)
 	// Spend reads what the lane at root charged to account; nil shows none.
 	Spend func(root, account string) (Spend, error)
-	// Ready says whether an owner could run at root (a *Refusal naming the
-	// fix when it cannot); asked only when no owner runs. nil asks nothing.
+	// Ready says whether the lane can run at root (a *Refusal naming the
+	// fix when it cannot); asked only when no agent runs. nil asks nothing.
 	Ready func(root string) error
-	// Helm reads whether a unit's seat is at the helm, the same read the
-	// owner holds a batch on (batch.HelmHeldSeat); nil asks nothing.
+	// Helm reads whether a unit's seat is at the helm, which holds a batch
+	// whole (batch.HelmHeldSeat); nil asks nothing.
 	Helm func(seatRoot string) helm.State
 	// Validation and Finalization are the wake's reads beyond the batches
 	// (WakeSources); nil reads nothing for that reason.
@@ -194,16 +189,6 @@ func text(value string) *string {
 
 func ownerView(sources ViewSources, root string) OwnerView {
 	owner := OwnerView{State: OwnerNotStarted}
-	state := ReadKeeper(sources.Home)
-	owner.Restarts = state.Restarts
-	owner.LastExit = text(state.LastError)
-	owner.LastTickError = text(LastTickErrorLine(root))
-	if owner.LastTickError != nil {
-		owner.LastTickProblem = text(TickProblem(*owner.LastTickError))
-	}
-	if owner.LastExit == nil {
-		owner.LastExit = text(LastErrorLine(root))
-	}
 	if pause, paused := ReadPause(sources.Home); paused {
 		owner.State, owner.StoppedBy, owner.Since = OwnerStopped, text(pause.By), text(pause.At)
 		owner.RetryHint = text("metasystem landing start resumes it")
@@ -212,43 +197,34 @@ func ownerView(sources ViewSources, root string) OwnerView {
 	probe, err := sources.Owner(root)
 	switch {
 	case err != nil:
-		owner.LastExit = text("whether the owner runs is unknown: " + err.Error())
+		owner.LastExit = text("whether the landing agent runs is unknown: " + err.Error())
+		return owner
 	case probe.Alive:
 		owner.State = OwnerRunning
-		pid := probe.PID
-		owner.PID = &pid
+		if probe.PID != 0 {
+			pid := probe.PID
+			owner.PID = &pid
+		}
 		if !probe.Since.IsZero() {
 			owner.Since = text(probe.Since.UTC().Format(time.RFC3339))
 		}
 		return owner
 	}
-	switch {
-	case state.GaveUp != "":
-		owner.State, owner.Since = OwnerGivenUp, text(state.GaveUp)
-		owner.RetryHint = text(fmt.Sprintf("read %s, fix the cause, then run: metasystem landing start", LastErrorPath(root)))
-	case state.Failures > 0 || state.Restarts > 0:
-		owner.State, owner.Since = OwnerRestarting, text(state.Since)
-	}
-	if err == nil && sources.Ready != nil {
+	if sources.Ready != nil {
 		notReady(&owner, sources.Ready(root))
 	}
 	return owner
 }
 
-// notReady says why no owner can run and what a person runs: a lane whose
-// supervision is not armed has no owner starting, whatever the keeper
-// tried; a missing nickname keeps the keeper's state and names the fix.
+// notReady says why the lane cannot run and what a person runs.
 func notReady(owner *OwnerView, err error) {
 	if err == nil {
 		return
 	}
 	var refusal *Refusal
 	if !errors.As(err, &refusal) {
-		owner.LastExit = text("whether the owner can run is unknown: " + err.Error())
+		owner.LastExit = text("whether the lane can run is unknown: " + err.Error())
 		return
-	}
-	if refusal.Code == CodeUnarmed {
-		owner.State, owner.Since = OwnerNotStarted, nil
 	}
 	owner.LastExit, owner.RetryHint, owner.Fix = text(refusal.Message), text(refusal.Fix), refusal.Argv
 }
@@ -362,7 +338,7 @@ func batchView(record batch.Record, helmOf func(string) helm.State) *BatchView {
 			view.Reason = "a red is being diagnosed so the rest can land"
 		}
 	default:
-		view.State, view.Reason = BatchCollecting, "collecting joins; it starts when the start rule says so"
+		view.State, view.Reason = BatchCollecting, "collecting joins; it starts when the landing agent begins it"
 		if record.Wait != nil {
 			view.State, view.Reason = BatchWaiting, strings.TrimPrefix(batch.WaitLine(record, record.Wait.Since, time.Local), "batch "+record.BatchID+" ")
 			if !record.Wait.Since.IsZero() {
@@ -389,9 +365,8 @@ func batchView(record batch.Record, helmOf func(string) helm.State) *BatchView {
 	return view
 }
 
-// helmHold says a batch the owner holds for a seat at the helm, by the
-// owner's own decision (batch.HelmHeldSeat), and the act that releases it.
-// The owner ticks no held batch in any state the lane shows, so none moves.
+// helmHold says a batch held for a seat at the helm (batch.HelmHeldSeat),
+// and the act that releases it.
 func helmHold(record batch.Record, helmOf func(string) helm.State) (string, bool) {
 	if helmOf == nil {
 		return "", false
@@ -416,7 +391,7 @@ func helmHold(record batch.Record, helmOf func(string) helm.State) (string, bool
 	if by == "" {
 		by = "unknown"
 	}
-	return fmt.Sprintf("seat %s (%s) is at the helm (%s); the owner starts it when that seat runs: metasystem helm return", machine, seat, by), true
+	return fmt.Sprintf("seat %s (%s) is at the helm (%s); it starts when that seat runs: metasystem helm return", machine, seat, by), true
 }
 
 // stateSince is when the batch entered its state: the last history entry
@@ -431,33 +406,25 @@ func stateSince(record batch.Record) string {
 }
 
 func summary(root string, view View, recordsErr error) string {
-	owner := "owner " + view.Owner.State
+	agent := "landing agent " + view.Owner.State
 	switch view.Owner.State {
 	case OwnerRunning:
-		owner += fmt.Sprintf(" (pid %d)", *view.Owner.PID)
+		if view.Owner.PID != nil {
+			agent += fmt.Sprintf(" (pid %d)", *view.Owner.PID)
+		}
 	case OwnerStopped:
-		owner += " by " + *view.Owner.StoppedBy + "; metasystem landing start resumes it"
-	case OwnerGivenUp:
-		owner += fmt.Sprintf(" after %d restart%s", view.Owner.Restarts, plural(view.Owner.Restarts))
-	case OwnerRestarting:
-		owner += fmt.Sprintf(" (%d restart%s so far)", view.Owner.Restarts, plural(view.Owner.Restarts))
-	}
-	if view.Owner.State != OwnerRunning && view.Owner.State != OwnerStopped {
-		// Why it does not run and the one fix, in the one line (summary by
-		// default): a count alone tells a person nothing.
+		agent = "stopped by " + *view.Owner.StoppedBy + "; metasystem landing start resumes it"
+	default:
+		// Why the lane cannot run and the one fix, in the one line (summary
+		// by default).
 		if view.Owner.LastExit != nil {
-			owner += "; last error: " + *view.Owner.LastExit
+			agent += "; " + *view.Owner.LastExit
 		}
 		if view.Owner.RetryHint != nil {
-			owner += "; to fix: " + *view.Owner.RetryHint
+			agent += "; to fix: " + *view.Owner.RetryHint
 		}
 	}
-	line := "landing lane " + root + ": " + owner
-	if view.Owner.State == OwnerRunning && view.Owner.LastTickProblem != nil {
-		// The situation a person acts on comes first; the raw error is
-		// --verbose's and --json's.
-		line = *view.Owner.LastTickProblem + "; " + line
-	}
+	line := "landing lane " + root + ": " + agent
 	var unreadable *unreadableRecords
 	partial := errors.As(recordsErr, &unreadable)
 	switch {
@@ -490,32 +457,3 @@ func plural(n int) string {
 
 // BatchViewOf is one batch as every reader shows it.
 func BatchViewOf(record batch.Record) BatchView { return *batchView(record, nil) }
-
-// tickProblemClasses are the owner's known tick failures in plain words, by a
-// fragment of the error the owner reports.
-var tickProblemClasses = []struct{ fragment, plain string }{
-	{" up --repo ", "the lane owner could not re-arm the lane's engine for its proof"},
-	{"cmd/devgate build", "the lane owner could not rebuild the lane's engine for its proof"},
-	{"fetch origin/main", "the lane owner could not fetch main"},
-	{"before rebind", "the lane owner could not hand its members' claims to the lane"},
-}
-
-// TickProblem says the owner's last failed tick for a person: the batch it
-// could not advance and the cause in plain words, or a generic line for a
-// failure it does not know. The raw error stays the owner's log's.
-func TickProblem(raw string) string {
-	subject := "the landing lane"
-	if rest, found := strings.CutPrefix(raw, "batch "); found {
-		if id, _, cut := strings.Cut(rest, ": "); cut && id != "" && !strings.ContainsAny(id, " \t") {
-			subject = "batch " + id
-		}
-	}
-	cause := "the lane owner's last tick failed"
-	for _, class := range tickProblemClasses {
-		if strings.Contains(raw, class.fragment) {
-			cause = class.plain
-			break
-		}
-	}
-	return subject + " can't advance: " + cause
-}

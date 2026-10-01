@@ -20,7 +20,7 @@ import (
 // drove the same adapters through the built binary with one-second
 // intervals; here every cycle is driven, so nothing waits on time.
 
-// diskBedComponents stands in for the watcher, reaper and landing owner:
+// diskBedComponents stands in for the watcher and reaper:
 // launches mint identities, stops are proven, and the observation is the
 // bed's to choose (a crash-on-start component never beats: Failing).
 type diskBedComponents struct {
@@ -168,7 +168,7 @@ func (bed *diskBed) requireTerminal(reason string) {
 }
 
 // Establish and publish: the owner publishes engine-stamped state naming
-// exactly the watcher, reaper and landing owner at generation one and stays
+// exactly the watcher and reaper at generation one and stays
 // there (no churn), and every verdict-bearing cycle narrates its basis.
 func TestDiskOwnerEstablishesAndPublishesAStableGenerationOne(t *testing.T) {
 	t.Parallel()
@@ -189,7 +189,7 @@ func TestDiskOwnerEstablishesAndPublishesAStableGenerationOne(t *testing.T) {
 		names = append(names, name)
 	}
 	sort.Strings(names)
-	if state.Engine != "go" || state.Generation != 1 || len(names) != 3 || names[0] != "landing-owner" || names[1] != "reaper" || names[2] != "watcher" {
+	if state.Engine != "go" || state.Generation != 1 || len(names) != 2 || names[0] != "reaper" || names[1] != "watcher" {
 		t.Fatalf("published state = engine %q generation %d components %v", state.Engine, state.Generation, names)
 	}
 	if state.Owner.Pid != bed.self.Pid || state.Owner.InstanceTag != bed.tag {
@@ -199,8 +199,8 @@ func TestDiskOwnerEstablishesAndPublishesAStableGenerationOne(t *testing.T) {
 	if len(relaunched) != 1 || relaunched[0]["generation"] != float64(1) {
 		t.Fatalf("the owner churned generations: %+v", relaunched)
 	}
-	if launched := bed.registryRecords("launched"); len(launched) != 3 {
-		t.Fatalf("launched records = %d, want 3", len(launched))
+	if launched := bed.registryRecords("launched"); len(launched) != 2 {
+		t.Fatalf("launched records = %d, want 2", len(launched))
 	}
 
 	// Observability: every verdict-bearing trace names the root and currency

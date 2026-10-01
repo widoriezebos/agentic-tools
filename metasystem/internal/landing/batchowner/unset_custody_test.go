@@ -74,9 +74,7 @@ func TestUnsetWaitsForAValidationGroupThatOutlivesItsLeader(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "validate-00000000000000aa.json"), record, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	steps := UnsetLane{Home: bed.home, By: "Wido", Now: func() time.Time { return unsetNow },
-		Probe: func(string) (lane.OwnerProbe, error) { return lane.OwnerProbe{}, nil },
-		End:   func(string) (int64, error) { return 0, nil }}
+	steps := UnsetLane{Home: bed.home, By: "Wido", Now: func() time.Time { return unsetNow }}
 	settlement, err := steps.settle(bed.layout)
 	if err != nil || settlement.Settled(true) || !strings.Contains(strings.Join(settlement.Live, "\n"), "process group "+strconv.Itoa(int(leader.Pid))) {
 		t.Fatalf("settle with a validation group that outlives its leader = %+v %v; want it live", settlement, err)
@@ -117,8 +115,6 @@ func TestUnsetForceRecordsThePersonPastUnknownCustody(t *testing.T) {
 		t.Fatal(err)
 	}
 	steps := UnsetLane{Home: bed.home, By: "Wido", Now: func() time.Time { return unsetNow },
-		Probe: func(string) (lane.OwnerProbe, error) { return lane.OwnerProbe{}, nil },
-		End:   func(string) (int64, error) { return 0, nil },
 		Calls: BatchOwnerCallSet{
 			Handover: func(ownercall.Invocation, ownercall.HandoverRequest) error { return nil },
 			EditNext: func(ownercall.Invocation, string, string, string) error { return nil },

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"context"
+
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
@@ -58,7 +59,6 @@ type BatchJoinDependencies struct {
 	CostForecast     func(string, batch.Record, batch.Unit, time.Time, func(string, string, string) (testpolicy.Plan, error), func(string, string, []batch.Unit) ([]string, error)) (batch.Unit, batch.CostForecast, error)
 	PublishForecast  func(batch.Store, string, batch.Unit, string, time.Time, func(string, string, string) (testpolicy.Plan, error), func() error, batch.JoinAdmissionRun, batch.CostForecast) error
 	Handover         func(BatchJoinRequest, string, batch.Claim) error
-	Ensure           func(string) error
 	Author           func(string, *goal.GoalFile) (string, string, string, error)
 	Prober           identity.Prober
 	// ReleaseSet selects, in the seat checkout, the goal's workspaces whose
@@ -275,9 +275,6 @@ func ExecuteBatchJoin(request BatchJoinRequest, dependencies BatchJoinDependenci
 				if err := batch.CloseAdmissionForCost(store, record.BatchID, actor, costNow, forecast); err != nil {
 					return batch.Record{}, err
 				}
-				if dependencies.Ensure != nil {
-					refused = errors.Join(refused, dependencies.Ensure(request.LandingRoot))
-				}
 			}
 			return batch.Record{}, refused
 		}
@@ -304,16 +301,9 @@ func ExecuteBatchJoin(request BatchJoinRequest, dependencies BatchJoinDependenci
 	}
 	if publishErr != nil {
 		// A failed admission may already have handed over the goal and
-		// requested its return. The durable owner must still settle custody.
-		if dependencies.Ensure != nil {
-			publishErr = errors.Join(publishErr, dependencies.Ensure(request.LandingRoot))
-		}
+		// requested its return: the member stays return-pending in the
+		// batch record, where the lane's agent settles it.
 		return batch.Record{}, publishErr
-	}
-	if dependencies.Ensure != nil {
-		if err := dependencies.Ensure(request.LandingRoot); err != nil {
-			return batch.Record{}, err
-		}
 	}
 	return store.Load(record.BatchID)
 }

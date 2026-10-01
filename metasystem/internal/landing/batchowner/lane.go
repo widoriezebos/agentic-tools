@@ -2,21 +2,18 @@ package batchowner
 
 // The host's one landing lane (batch-lane design U12): every seat of this
 // host resolves the landing checkout through the host's record under
-// ~/.metasystem/host, one batch proves at a time on the host, and the
-// steward keeps the lane's owner alive. internal/landing/lane owns the
-// record, the flocks, the keeper and the view; this file binds them to the
-// command's roots, its owner and its clock.
+// ~/.metasystem/host, and one batch proves at a time on the host.
+// internal/landing/lane owns the record, the flocks and the view; this file
+// binds them to the command's roots, the landing agent and the clock.
 
 import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
@@ -26,8 +23,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
 )
@@ -129,77 +124,17 @@ func (seams LandingLaneSeams) Resolve(installation string, now time.Time) (strin
 	return root, true, nil
 }
 
-// LandingOwnerLaneRoot is the lane the owner of repo would serve: the
-// host's registered lane checked against its own setting, "" when there is
-// none (a host with no home keeps no host state: its own setting decides).
-// A checkout never registers itself; a setting that names another
-// checkout than the host's lane is refused, so the owner of a checkout that
-// is not the lane never runs. paused says a person paused the lane (landing
-// stop), or its pause cannot be read.
-func LandingOwnerLaneRoot(home func() (string, error), metasystemRoot, repo string, now time.Time) (root string, paused bool, err error) {
-	raw, _, err := config.Get(config.GetParams{Key: config.BatchRootKey, ConfPath: filepath.Join(metasystemRoot, "metasystem.conf"), Default: "", DefaultSet: true})
-	if errors.Is(err, os.ErrNotExist) {
-		// No installation here, so no owner.
-		return "", false, nil
-	}
-	if err != nil {
-		return "", false, err
-	}
-	raw, err = realpath.Absolute(strings.TrimSpace(raw))
-	if err != nil {
-		return "", false, err
-	}
-	laneHome, homeErr := home()
-	if homeErr != nil {
-		// No host state: the checkout's own setting decides (pre-U12).
-		return raw, false, nil
-	}
-	found, err := lane.Resolve(laneHome, raw)
-	if err != nil {
-		return "", false, err
-	}
-	_, paused = lane.ReadPause(laneHome)
-	return found.Root, paused, nil
-}
-
-// LandingCheckoutPresent refuses a landing checkout that is gone: its owner
-// is never started there and its directories are never created again.
-func LandingCheckoutPresent(root string) error {
-	if _, err := os.Stat(root); errors.Is(err, os.ErrNotExist) {
-		return &lane.Refusal{Code: lane.CodeGone,
-			Message: fmt.Sprintf("the landing checkout %s no longer exists; its owner was not started and nothing was created there", root),
-			Fix:     "restore that checkout, or a person registers the lane that replaces it: metasystem landing set PATH"}
-	}
-	return nil
-}
-
-// LandingLaneProving is the owner's probe of the proving flock: nil when
-// this host keeps no lane home, so nothing is gated.
-func LandingLaneProving(home func() (string, error)) func() (string, bool, error) {
-	laneHome, err := home()
-	if err != nil {
-		return nil
-	}
-	return func() (string, bool, error) { return lane.ProbeProving(laneHome) }
-}
-
 // HoldHostProvingFlag asks an internal test run to hold the host's proving
 // flock for its whole life (U12).
 const HoldHostProvingFlag = "--hold-host-proving"
 
-// BatchProofCommand is the one launcher of a batch's proof children: the tip
-// proof, the red diagnosis and the held-trunk-red clearing. The child holds
-// the host's proving flock for its life, waiting while another proof holds
-// it, and the kernel releases it when the child ends, so one proof runs at a
-// time on the host whatever happens to the owner that launched it.
-func BatchProofCommand(binary string, args []string, spare bool) *exec.Cmd {
-	argv := slices.Clone(args)
-	// spare: the early proof alone launches without the lock, because
-	// speculative work on spare capacity must never delay a real proof.
-	if !spare {
-		argv = append(argv, HoldHostProvingFlag)
-	}
-	return exec.Command(binary, argv...)
+// BatchProofCommand is the one launcher of a batch's proof children
+// (landing prove, K6). The child holds the host's proving flock for its
+// life, waiting while another proof holds it, and the kernel releases it
+// when the child ends, so one proof runs at a time on the host whatever
+// happens to the process that launched it.
+func BatchProofCommand(binary string, args []string) *exec.Cmd {
+	return exec.Command(binary, append(slices.Clone(args), HoldHostProvingFlag)...)
 }
 
 // HoldHostProvingFor is internal test run's side of the launcher: with the
@@ -223,46 +158,28 @@ func HoldHostProvingFor(home func() (string, error), args []string) ([]string, f
 	return rest, release, nil
 }
 
-// LandingLaneKeeper is the steward's keeper step: nil without a lane home.
-func LandingLaneKeeper(home func() (string, error)) func() string {
-	laneHome, err := home()
-	if err != nil {
-		return nil
-	}
-	return landingLaneKeeper(laneHome).Step
-}
-
-func landingLaneKeeper(laneHome string) lane.Keeper {
-	return lane.Keeper{Home: laneHome, Now: func() time.Time { return time.Now().UTC() },
-		Inspect: func(root string) (bool, error) {
-			probe, err := LandingLaneOwnerProbe(root)
-			return probe.Alive, err
-		},
-		Start: EnsureBatchOwner, Ready: LandingLaneReady, Hold: func(string) (string, error) { return landingAgentHoldWith(LandingAgentLive) }}
-}
-
 // LandingAgentLive names a landing agent launch on this computer that has
 // not ended; the engine supplies it (the launch store is the command
 // layer's). nil is none.
 var LandingAgentLive func() (id string, live bool, err error)
 
-// landingAgentHoldWith holds the owner while a landing agent runs: the lane
-// has one composition owner.
-func landingAgentHoldWith(agentLive func() (string, bool, error)) (string, error) {
-	if agentLive == nil {
-		return "", nil
+// LandingAgentProbe reads whether the host lane's landing agent runs, and
+// since when: the lane's view shows it where the batch owner was. The
+// engine supplies it (the launch store is the command layer's); nil reads
+// no agent running.
+var LandingAgentProbe func(root string) (lane.OwnerProbe, error)
+
+func landingAgentProbe(root string) (lane.OwnerProbe, error) {
+	if LandingAgentProbe == nil {
+		return lane.OwnerProbe{}, nil
 	}
-	id, live, err := agentLive()
-	if err != nil || !live {
-		return "", err
-	}
-	return "landing agent " + id + " is running", nil
+	return LandingAgentProbe(root)
 }
 
-// LandingLaneReady says whether an owner could run in the landing checkout
-// at root: the checkout names its machine (the owner signs what it lands
-// with it) and its supervision runs (nothing else starts or keeps the
-// owner). Each missing one is a *lane.Refusal naming the one fix.
+// LandingLaneReady says whether the lane can run in the landing checkout at
+// root: the checkout names its machine (the lane's claims carry it) and its
+// supervision runs (its steward wakes the landing agent). Each missing one
+// is a *lane.Refusal naming the one fix.
 func LandingLaneReady(root string) error {
 	return landingLaneReady(root, goal.ResolveMachine, LandingLaneArmed)
 }
@@ -302,25 +219,6 @@ func LandingLaneArmed(root string) (bool, error) {
 	return false, fmt.Errorf("whether the supervision owner pid %d of %s runs is unknown", owner.Pid, root)
 }
 
-// LandingLaneOwnerProbe reads whether the lane's owner runs, and since when.
-func LandingLaneOwnerProbe(root string) (lane.OwnerProbe, error) {
-	pid, state, err := BatchOwnerEnsure.Inspect(root)
-	switch state {
-	case identity.Alive:
-		probe := lane.OwnerProbe{Alive: true, PID: pid}
-		if exact, liveness, probeErr := (identity.KernelProber{}).Probe(pid); probeErr == nil && liveness == identity.Alive {
-			probe.Since = exact.StartedAt
-		}
-		return probe, nil
-	case identity.Dead:
-		return lane.OwnerProbe{}, nil
-	}
-	if err == nil {
-		err = errors.New("the owner's liveness is unknown")
-	}
-	return lane.OwnerProbe{}, err
-}
-
 // landingLaneView is the lane as landing status, status and /api/board show
 // it; without a lane home, the view says so.
 func landingLaneView(home func() (string, error), now time.Time) lane.View {
@@ -336,47 +234,5 @@ func landingLaneView(home func() (string, error), now time.Time) lane.View {
 // projects the goal ledger, which a page polled every few seconds does not
 // pay for; landing status --json carries the whole wake.
 func LandingLaneViewSources(laneHome string, now time.Time) lane.ViewSources {
-	return lane.ViewSources{Home: laneHome, Now: now, Owner: LandingLaneOwnerProbe, Ready: LandingLaneReady, Helm: helm.Active}
-}
-
-// EndLaneOwner ends the lane's running owner for a restart: the process the
-// checkout lease's holder recorded, proven by its exact identity (pid, start
-// time and boot) immediately before a SIGTERM, never found by name. The
-// owner releases its lease on TERM and its supervision launches a fresh
-// one from the supervision owner's executable path. It returns the ended
-// pid, 0 when no owner held the lane, and waits up to 15 seconds for the
-// process to be gone.
-func EndLaneOwner(root string) (int64, error) {
-	holder, err := lease.CurrentHolder(root)
-	if errors.Is(err, lease.ErrLeaseAbsent) {
-		return 0, nil
-	}
-	if err != nil {
-		return 0, err
-	}
-	if holder.OwnerLineage != LandingOwnerLineage {
-		return 0, fmt.Errorf("the landing checkout is held by session %s, not by the landing lane; nothing was ended", holder.OwnerLineage)
-	}
-	prober := identity.KernelProber{}
-	for _, announcement := range lease.AnnouncementsFor(root, holder.Pid) {
-		if announcement.MainId != holder.MainId {
-			continue
-		}
-		ref := identity.Ref{Pid: announcement.Pid, StartedAtSec: announcement.PidStartedAt, StartTicks: announcement.PidStartTicks, BootID: announcement.BootID}
-		if err := identity.SignalExact(prober, ref, syscall.SIGTERM); errors.Is(err, identity.ErrGone) {
-			return 0, nil
-		} else if err != nil {
-			return holder.Pid, fmt.Errorf("the landing owner pid %d could not be ended: %w", holder.Pid, err)
-		}
-		// A zombie is ended: it holds no lease or lock, and only its parent
-		// (the supervision owner) can reap it.
-		for deadline := time.Now().Add(15 * time.Second); identity.LiveRef(prober, ref) == identity.Alive && time.Now().Before(deadline); {
-			time.Sleep(100 * time.Millisecond)
-		}
-		if identity.LiveRef(prober, ref) == identity.Alive {
-			return holder.Pid, fmt.Errorf("the landing owner pid %d is still running 15 seconds after it was asked to end", holder.Pid)
-		}
-		return holder.Pid, nil
-	}
-	return holder.Pid, fmt.Errorf("the landing owner pid %d has no announcement to prove its identity, so it was not ended", holder.Pid)
+	return lane.ViewSources{Home: laneHome, Now: now, Owner: landingAgentProbe, Ready: LandingLaneReady, Helm: helm.Active}
 }

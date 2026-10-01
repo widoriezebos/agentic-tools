@@ -296,10 +296,7 @@ func Register(home string, layout Layout, by string, now time.Time) (previous Re
 		if err := writeJSON(home, epochPath(home), epochRecord{CustodyEpoch: record.CustodyEpoch}); err != nil {
 			return err
 		}
-		if err := writeJSON(home, RecordPath(home), record); err != nil {
-			return err
-		}
-		return removeIfPresent(keeperPath(home))
+		return writeJSON(home, RecordPath(home), record)
 	})
 	return previous, changed, err
 }

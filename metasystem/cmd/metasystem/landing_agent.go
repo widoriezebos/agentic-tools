@@ -205,10 +205,8 @@ func (a landingAgent) reapOutage(id string) error {
 }
 
 // newLandingAgentKeeper is the keeper's landing-agent step for the steward
-// of self. Its holds: a standing provider outage at the lane installation,
-// and the lane's batch owner still running (a landing agent never runs
-// beside it). The budget, usage and custody gates join here with K-g and
-// K-f.
+// of self. Its hold: a standing provider outage at the lane installation.
+// The budget, usage and custody gates join here with K-g and K-f.
 func newLandingAgentKeeper(self, home string, agent landingAgent) lane.AgentKeeper {
 	return lane.AgentKeeper{Home: home, Now: agent.now, Self: self,
 		Sources: lane.WakeSources{Validation: lane.ValidationDue, Finalization: func(string) (bool, error) { return cadence.FinalizationPending(home) }},
@@ -219,30 +217,12 @@ func newLandingAgentKeeper(self, home string, agent landingAgent) lane.AgentKeep
 				}
 				return "", nil
 			},
-			func(root string) (string, error) {
-				probe, err := batchowner.LandingLaneOwnerProbe(root)
-				if err != nil {
-					return "", err
-				}
-				if probe.Alive {
-					return fmt.Sprintf("the lane's batch owner (pid %d) still runs, and a landing agent never runs beside it", probe.PID), nil
-				}
-				// The owner's keeper asked for an owner this minute: it may
-				// be starting, and the agent never starts into that race.
-				state := lane.ReadKeeper(home)
-				last, err := time.Parse(time.RFC3339, state.LastLaunch)
-				if err == nil && agent.now().Sub(last) < lane.BaseInterval || batchowner.OwnerLaunchedWithin(root, agent.now(), batchowner.OwnerStartWindow) {
-					return "the lane's batch owner is starting, and a landing agent never runs beside it", nil
-				}
-				return "", nil
-			},
 		},
-		Running: agent.running, Start: agent.start, Reap: []func(string) error{agent.reapOutage}, Cancel: agent.cancel,
-		Exclusive: batchowner.WithOwnerEnsureLock}
+		Running: agent.running, Start: agent.start, Reap: []func(string) error{agent.reapOutage}, Cancel: agent.cancel}
 }
 
 // liveOrStarting names a landing agent that runs, or whose start the
-// keeper claimed and has not finished: no batch owner starts beside either.
+// keeper claimed and has not finished.
 func (a landingAgent) liveOrStarting(home func() (string, error)) func() (string, bool, error) {
 	return func() (string, bool, error) {
 		if id, running, err := a.running(); err != nil || running {
@@ -252,7 +232,7 @@ func (a landingAgent) liveOrStarting(home func() (string, error)) func() (string
 		if err != nil {
 			// No home for the lane: whether an agent is starting is unknown,
 			// and unknown holds.
-			return "", false, fmt.Errorf("this computer's landing lane home can't be found, so no batch owner starts: %w", err)
+			return "", false, fmt.Errorf("this computer's landing lane home can't be found, so whether a landing agent is starting is unknown: %w", err)
 		}
 		if _, starting, err := lane.AgentStarting(laneHome, a.now()); err != nil || starting {
 			return "a landing agent that is starting", starting, err
@@ -261,27 +241,27 @@ func (a landingAgent) liveOrStarting(home func() (string, error)) func() (string
 	}
 }
 
-// landingLaneSteps is the steward's lane step: the owner's keeper, then the
-// landing agent's, each line printed when it says something.
-func landingLaneSteps(steps ...func() string) func() string {
-	var live []func() string
-	for _, step := range steps {
-		if step != nil {
-			live = append(live, step)
+// probe reads whether a landing agent runs on this computer, its process
+// and since when: what the lane's view shows where the batch owner was.
+func (a landingAgent) probe(string) (lane.OwnerProbe, error) {
+	records, err := a.manager().List()
+	if err != nil {
+		return lane.OwnerProbe{}, err
+	}
+	for _, record := range records {
+		if record.Kind != launch.LandingKind || record.State.Terminal() {
+			continue
 		}
-	}
-	if len(live) == 0 {
-		return nil
-	}
-	return func() string {
-		var lines []string
-		for _, step := range live {
-			if line := step(); line != "" {
-				lines = append(lines, line)
-			}
+		probe := lane.OwnerProbe{Alive: true}
+		if record.Child != nil {
+			probe.PID = record.Child.Pid
 		}
-		return strings.Join(lines, "\n")
+		if at, err := time.Parse(time.RFC3339, record.StartedAt); err == nil {
+			probe.Since = at
+		}
+		return probe, nil
 	}
+	return lane.OwnerProbe{}, nil
 }
 
 // landingAgentStep is the landing agent's keeper step for the steward of

@@ -317,7 +317,7 @@ func unreachableRefusal(root string, err error) *Refusal {
 // removeLane removes the lane's host state, the journal last; the caller
 // holds the lane flock.
 func removeLane(home string) error {
-	for _, path := range []string{RecordPath(home), keeperPath(home), pausePath(home), unsetPath(home)} {
+	for _, path := range []string{RecordPath(home), pausePath(home), unsetPath(home)} {
 		if err := removeIfPresent(path); err != nil {
 			return err
 		}

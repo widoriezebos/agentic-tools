@@ -18,9 +18,6 @@ type RecoverySeams struct {
 	SweepGoalBranch func(Unit, string) error
 	// Finalize performs one member's idempotent Goal Next edit.
 	Finalize func(Unit, string) error
-	// Rearm fast-forwards the landing checkout to the pushed tip, rebuilds its
-	// engine, and arms supervision after every member has been finalized.
-	Rearm func(string) error
 	// Cleanup removes the detached/local assembly after trailer recognition.
 	Cleanup func() error
 	// Release releases a landed member's recorded release set in its seat
@@ -144,21 +141,6 @@ func RecoverPushedSeries(store Store, id, actor string, at time.Time, seams Reco
 	for _, unit := range record.Units {
 		if unit.State == UnitJoining || unit.State == UnitJoined || unit.Outcome == UnitLanded && !unit.P6Done {
 			complete = false
-		}
-	}
-	if complete && record.Landing != nil && !record.Landing.RearmComplete {
-		if seams.Rearm == nil {
-			return fmt.Errorf("%s: landing re-arm helper is absent", codeP6Refused)
-		}
-		if rearmErr := seams.Rearm(record.Landing.PushedTip); rearmErr != nil {
-			return fmt.Errorf("%s: landing re-arm failed: %w", codeP6Refused, rearmErr)
-		}
-		if err := store.Update(id, func(next *Record) error { next.Landing.RearmComplete = true; return nil }); err != nil {
-			return err
-		}
-		record, err = store.Load(id)
-		if err != nil {
-			return err
 		}
 	}
 	if complete && record.Landing != nil && !record.Landing.CleanupDone {

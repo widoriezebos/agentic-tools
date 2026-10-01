@@ -12,7 +12,7 @@ import (
 
 // ArmedInspection names the first supervision component that prevents an
 // arming attempt from being certified. Component is empty when the complete
-// owner, watcher, reaper, landing owner, and census generation verifies.
+// owner, watcher, reaper, and census generation verifies.
 type ArmedInspection struct {
 	Component string
 	Reason    string

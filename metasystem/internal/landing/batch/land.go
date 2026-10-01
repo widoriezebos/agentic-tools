@@ -24,7 +24,6 @@ type LandingProgress struct {
 	HeldChecked   bool              `json:"heldChecked,omitempty"`
 	PushComplete  bool              `json:"pushComplete,omitempty"`
 	PushedTip     string            `json:"pushedTip,omitempty"`
-	RearmComplete bool              `json:"rearmComplete,omitempty"`
 	CleanupDone   bool              `json:"cleanupDone,omitempty"`
 	RefusedOrigin string            `json:"refusedOrigin,omitempty"`
 	RefusedBase   string            `json:"refusedBase,omitempty"`

@@ -15,7 +15,7 @@ import (
 // TestSupBOrderlyShutdownEndsTheOwnerAndReportsItsComponentsGoneByTheOwner
 // ports the supervision half of the stop-everything bed (supervision-fixtures
 // part B): an orderly owner exits reason=shutdown on TERM and takes its
-// watcher, reaper and landing owner with it, so the stop reports each
+// watcher, reaper and an older engine's landing owner with it, so the stop reports each
 // component "already gone (by the owner)", releases the owner lock and
 // leaves one exited row with reason shutdown in the registry.
 func TestSupBOrderlyShutdownEndsTheOwnerAndReportsItsComponentsGoneByTheOwner(t *testing.T) {
@@ -30,7 +30,7 @@ func TestSupBOrderlyShutdownEndsTheOwnerAndReportsItsComponentsGoneByTheOwner(t 
 	}
 	appendPreviousOwnerRelaunched(t, registryPath, root, owner, 1)
 	components := map[string]stateComponent{}
-	for index, component := range []Component{Watcher, Reaper, LandingOwner} {
+	for index, component := range []Component{Watcher, Reaper, LegacyLandingOwner} {
 		components[string(component)] = stateComponent{
 			Pid: int64(71 + index), PidStartedAt: int64(200 + index),
 			InstanceTag: owner.InstanceTag + "-" + string(component) + "-1",
