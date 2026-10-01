@@ -50,7 +50,7 @@ func (p Pass) withDefaults() Pass {
 		p.Git = RunGit
 	}
 	if p.LaneLineages == nil {
-		p.LaneLineages = []string{LaneLineage, OwnerLineage}
+		p.LaneLineages = []string{LaneLineage}
 	}
 	return p
 }

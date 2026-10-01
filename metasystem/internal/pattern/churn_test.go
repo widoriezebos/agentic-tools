@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 )
 
@@ -106,11 +106,13 @@ func openOf(episodes []steward.AlertEpisode) []steward.AlertEpisode {
 // (18:16 and 18:40 CEST): the first sees four and reports nothing; the
 // second sees the rest late, judges windows by committer time, and opens
 // one episode whose burst is the sixth write, 16:17:03Z, attributed to the
-// landing lane by the old owner's lineage hash (a lane lineage until the
-// lane cutover), with one notification.
+// landing lane by the lineage hash the lane wrote under that day (the old
+// owner's, deleted since by the lane cutover, so the bed names it as the
+// lane's lineage), with one notification.
 func TestReplay20260930Churn(t *testing.T) {
 	t.Parallel()
 	b := newBed(t)
+	b.pass.LaneLineages = []string{lane.OldOwnerLineage}
 	bare := b.origin()
 	data, err := os.ReadFile("testdata/replay-churn-20260930.json")
 	if err != nil {
@@ -303,22 +305,23 @@ func TestStaleFetchIsUnknown(t *testing.T) {
 }
 
 // Attribution is by the opid's lineage hash alone: the lane's stable
-// identity, and until the lane cutover the old owner's, are the landing
-// lane whatever the machine; any other lineage is not counted in v1, a name
-// that starts like the lane or a machine named like it included.
+// identity is the landing lane whatever the machine; any other lineage is
+// not counted in v1, a name that starts like the lane or a machine named
+// like it included, and since the lane cutover (lane design r10 §5) the
+// deleted batch owner's lineage is not the lane's either.
 func TestLaneAttributionByLineageHash(t *testing.T) {
 	t.Parallel()
-	if lineageHash(LaneLineage) != "106adb03" || lineageHash(OwnerLineage) != "2b626e27" || OwnerLineage != batchowner.LandingOwnerLineage {
-		t.Fatalf("the lane identities: %s %s %q", lineageHash(LaneLineage), lineageHash(OwnerLineage), OwnerLineage)
+	if lineageHash(LaneLineage) != "106adb03" || LaneLineage != lane.ClaimLineage {
+		t.Fatalf("the lane identity: %s %q", lineageHash(LaneLineage), LaneLineage)
 	}
 	b := newBed(t)
 	bare := b.origin()
 	at := time.Date(2026, 9, 30, 16, 0, 0, 0, time.UTC)
 	writers := []struct{ machine, lineage, path string }{
-		{"m1e", LaneLineage, "a.json"},          // the lane's identity, whatever the machine
-		{"landing", OwnerLineage, "b.json"},     // the old owner, until the cutover
-		{"landing", "landing-lane-2", "c.json"}, // a name that starts like the lane
-		{"landing-lane", "main-seat", "d.json"}, // a machine named like the lane
+		{"m1e", LaneLineage, "a.json"},              // the lane's identity, whatever the machine
+		{"landing", lane.OldOwnerLineage, "b.json"}, // the deleted owner: not the lane's
+		{"landing", "landing-lane-2", "c.json"},     // a name that starts like the lane
+		{"landing-lane", "main-seat", "d.json"},     // a machine named like the lane
 	}
 	var commits []trunkCommit
 	for index, writer := range writers {
@@ -334,7 +337,7 @@ func TestLaneAttributionByLineageHash(t *testing.T) {
 		line, _, _ := strings.Cut(episode.Message, "\n")
 		said[episode.ScopeID[strings.LastIndex(episode.ScopeID, ":")+1:]] = line
 	}
-	if len(said) != 2 || !strings.HasPrefix(said["a.json"], "The landing lane wrote") || !strings.HasPrefix(said["b.json"], "The landing lane wrote") {
-		t.Fatalf("episodes by path: %q; want the two lane lineages only", said)
+	if len(said) != 1 || !strings.HasPrefix(said["a.json"], "The landing lane wrote") {
+		t.Fatalf("episodes by path: %q; want the lane's own lineage only", said)
 	}
 }
