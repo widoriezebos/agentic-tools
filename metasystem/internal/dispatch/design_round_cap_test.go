@@ -58,17 +58,22 @@ func TestGoalFreeDesignCriticDispatchAndFallbackCapAtFive(t *testing.T) {
 		t.Fatalf("goal-free rebound limit = %v, want 5", record[reviewRoundLimitField])
 	}
 }
-func TestDesignCriticDispatchRequiresTierThree(t *testing.T) {
+
+// Design critique exists at tiers 2 and 3 (Wido 2026-10-01); tier 1 is refused.
+func TestDesignCriticDispatchRequiresTierTwoOrThree(t *testing.T) {
 	bed := newGoalAdmissionBed(t, 2)
 	p := criticRecordParams(t, bed.root, "design-critic")
 	p.Workspace = t.TempDir()
-	p.GoalID, p.GoalRevision, p.GoalTier, p.GateWidth, p.MachineID = "bounded", 2, 2, "full", "bed-m1"
+	p.GoalID, p.GoalRevision, p.GoalTier, p.GateWidth, p.MachineID = "bounded", 2, 1, "full", "bed-m1"
 	err := buildRecordWithReads(p, recordFacts(t, p.Workspace, 1, ""), bed.reads)
-	if err == nil || !strings.Contains(err.Error(), "design-critic at goal tier 2") || !strings.Contains(err.Error(), "design critique exists at tier 3 only") {
-		t.Fatalf("tier-2 refusal = %v", err)
+	if err == nil || !strings.Contains(err.Error(), "design-critic at goal tier 1") || !strings.Contains(err.Error(), "design critique exists at tiers 2 and 3") {
+		t.Fatalf("tier-1 refusal = %v", err)
+	}
+	if err := validateReviewRoundTier("design-critic", true, 2); err != nil {
+		t.Fatalf("tier 2 design critique refused: %v", err)
 	}
 	if _, err := os.Stat(p.Output); !os.IsNotExist(err) {
-		t.Fatalf("tier-2 refusal wrote record: %v", err)
+		t.Fatalf("tier-1 refusal wrote record: %v", err)
 	}
 }
 func TestDesignCriticBudgetRebindRepairsAboveCap(t *testing.T) {

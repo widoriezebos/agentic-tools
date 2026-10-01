@@ -41,8 +41,8 @@ For each substantial piece of work, use this five-step loop:
    finding shows that the design cannot be built as written or would build the
    wrong behavior, and names the artifact; witness bookkeeping, naming and
    record-format findings are notes for the builder's brief, not rounds. The
-   orchestrator dispositions every finding. A second round runs only after a
-   fold that changed a rule; there is never a third. An amendment that records
+   orchestrator dispositions every finding. A further round runs only after a
+   fold that changed a rule, up to the five-round backstop. An amendment that records
    a human ruling gets no round: the ruling is the authority and the builder
    proves the fold (2026-09-17 reset,
    records/misc/delivery-process-reset-2026-09-17.md).
@@ -66,7 +66,7 @@ critique have separate round rules. For code critique and the warden, Part One
 stores a review-round member on the goal: the `metasystem.budget.tier-1`,
 `metasystem.budget.tier-2`, and `metasystem.budget.tier-3` keys in
 `metasystem.conf` provide zero, five, and five rounds, while
-`metasystem.budget.review-round-max` keeps five as the ceiling. The count is a backstop: the loop ends when no remaining finding would change the implementation materially under the brief's threat model and step 1 (R-124), and hitting the cap with material findings open goes to the human. Design critique has five rounds at tier 3 and does not exist below tier 3. A design-critic chain's `reviewRoundLimit` is frozen at 5 at dispatch whatever the goal's stored member says; a chain frozen at 2 before 2026-10-01 keeps its 2. Part Two accounts mechanically (design point STR2-ROUND-ACCOUNTING-05): dispatch freezes the applicable limit on the critic chain root at dispatch (a goal-free non-design root reads the configured ceiling alone), counts each follow-up round against it, and refuses the round past it; exhaustion opens no fresh budget. Only an approved token raising the goal's five-member tuple raises the stored code-critique or warden member, never above the ceiling, and the chain's next follow-up or close (`metasystem work revise`, `metasystem design review --dispositions`, `metasystem work review --dispositions`, `metasystem work finish`) copies that raised member onto every open critic root it continues.
+`metasystem.budget.review-round-max` keeps five as the ceiling. The count is a backstop: the loop ends when no remaining finding would change the implementation materially under the brief's threat model and step 1 (R-124), and hitting the cap with material findings open goes to the human. Design critique has five rounds at tiers 2 and 3 (Wido 2026-10-01) and does not exist at tier 1. A design-critic chain's `reviewRoundLimit` is frozen at 5 at dispatch whatever the goal's stored member says; a chain frozen at 2 before 2026-10-01 is rebound to the current limit at its next round or close. Part Two accounts mechanically (design point STR2-ROUND-ACCOUNTING-05): dispatch freezes the applicable limit on the critic chain root at dispatch (a goal-free non-design root reads the configured ceiling alone), counts each follow-up round against it, and refuses the round past it; exhaustion opens no fresh budget. Only an approved token raising the goal's five-member tuple raises the stored code-critique or warden member, never above the ceiling, and the chain's next follow-up or close (`metasystem work revise`, `metasystem design review --dispositions`, `metasystem work review --dispositions`, `metasystem work finish`) copies that raised member onto every open critic root it continues.
 
 Before reserving a job, the dispatcher judges the exact claimed revision and
 the proposed cap. If that seam refuses on attempts, on reserved minutes, or on both and
