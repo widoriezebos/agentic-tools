@@ -41,7 +41,11 @@ func StandingAuthorityGap(tree *TreeGoals, id string, actor Actor) *AuthorityGap
 		return &AuthorityGap{Reason: fmt.Sprintf("goal %s is pinned to machine %s", id, file.Pinned), Command: show}
 	}
 	if file.Obligation == nil {
-		return &AuthorityGap{Reason: fmt.Sprintf("goal %s binds no governed obligation", id), Command: "metasystem goal edit " + id + " --obligation ENFORCED"}
+		// Binding one takes every obligation field (owner, recurrence,
+		// platform, toolchain, surface digest, effects, review
+		// assumptions), which only the person knows: the command shows
+		// them all.
+		return &AuthorityGap{Reason: fmt.Sprintf("goal %s binds no governed obligation", id), Command: "metasystem goal edit --help"}
 	}
 	return nil
 }

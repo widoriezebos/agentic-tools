@@ -254,3 +254,44 @@ func landingValidateLayoutBed(outcome gaterun.ValidateOutcome) func(t *testing.T
 		return bed
 	}
 }
+
+// --by may name only the person proven at the terminal: another name is
+// refused on both kernel verbs that take --force, and nothing runs.
+func TestKernelForceByNamesOnlyTheProvenPerson(t *testing.T) {
+	t.Parallel()
+	bed := newValidateVerbBed(t)
+	code, stdout, stderr := bed.run(t, "landing", "validate", "--force", "--by", "Mallory")
+	if code != 3 || len(bed.requests) != 0 || !strings.Contains(stdout+stderr, "--by names Mallory, but the person at this terminal is Wido") {
+		t.Fatalf("validate --by another: exit %d, requests %+v\n%s%s", code, bed.requests, stdout, stderr)
+	}
+	bed.outcome = gaterun.ValidateOutcome{Result: gaterun.ValidateNotDue, Key: goal.CadenceClaimKey{TrunkTree: strings.Repeat("1", 40)}}
+	if code, _, _ := bed.run(t, "landing", "validate", "--force", "--by", "wido"); code != 0 || len(bed.requests) != 1 || bed.requests[0].By != "Wido" {
+		t.Fatalf("validate --by the same person: exit %d, requests %+v", code, bed.requests)
+	}
+	var advances []laneengine.AdvanceRequest
+	command, _ := findIntentAction("landing", "engine")
+	owners := bed.kernelBed.owners()
+	owners.landing.advance = func(request laneengine.AdvanceRequest) (laneengine.AdvanceOutcome, error) {
+		advances = append(advances, request)
+		return laneengine.AdvanceOutcome{Commit: "4b825dc642cb6eb9a060e54bf8d69288fbee4904"}, nil
+	}
+	var out, errOut strings.Builder
+	if code := runIntentIn(command, []string{"advance", "--force", "--by", "Mallory"}, &out, &errOut, bed.cwd, owners); code != 3 || len(advances) != 0 {
+		t.Fatalf("advance --by another: exit %d, advances %d\n%s%s", code, len(advances), out.String(), errOut.String())
+	}
+}
+
+// An unbound obligation names the command that lists every field an
+// ENFORCED obligation needs, not a goal edit that would be refused.
+func TestLandingValidateObligationGapNamesTheFields(t *testing.T) {
+	t.Parallel()
+	bed := newValidateVerbBed(t)
+	bed.outcome = gaterun.ValidateOutcome{Result: gaterun.ValidateUnavailable, Code: gaterun.CodeValidateAuthority,
+		Reason: "goal standing-validation binds no governed obligation, so no landing validation runs", Fix: "metasystem goal edit --help"}
+	_, stdout, stderr := bed.run(t, "landing", "validate", "--json")
+	var result intentResult
+	if err := json.Unmarshal([]byte(stdout+stderr), &result); err != nil || result.Next == nil ||
+		strings.Join(result.Next.Argv, " ") != "metasystem goal edit --help" || !strings.Contains(result.Next.Reason, "--obligation ENFORCED") {
+		t.Fatalf("result = %+v %v", result, err)
+	}
+}

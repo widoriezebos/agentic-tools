@@ -10,7 +10,6 @@ import (
 	"errors"
 	"path/filepath"
 	"slices"
-	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/laneengine"
@@ -139,15 +138,9 @@ func runIntentLandingEngine(inv *intentInvocation, kernel laneKernel) int {
 	request := laneengine.AdvanceRequest{Home: kernel.home, Checkout: kernel.record.Root,
 		Installation: kernel.installation, Identity: kernel.identity}
 	if inv.input.switched("force") {
-		by, err := kernel.owners.person(kernel.installation)
-		if err != nil {
-			refused := inv.personRefusal("", err, inv.input.text("by"))
-			refused.code = 3
-			refused.Summary = "only a person may force the landing engine's advance, and " + strings.TrimSuffix(refused.Summary, ", so nothing was done") + "; nothing was changed"
+		by, refused := inv.forcingPerson(kernel, "the landing engine's advance")
+		if refused != nil {
 			return inv.render(*refused)
-		}
-		if named := strings.TrimSpace(inv.input.text("by")); named != "" {
-			by = named
 		}
 		request.Force, request.By = true, by
 	}

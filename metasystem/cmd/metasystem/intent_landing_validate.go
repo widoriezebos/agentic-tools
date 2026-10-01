@@ -8,6 +8,7 @@ package main
 
 import (
 	"errors"
+	"slices"
 	"strings"
 	"time"
 
@@ -84,15 +85,9 @@ func runIntentLandingValidate(inv *intentInvocation, kernel laneKernel) int {
 	targets := laneTargets(kernel.record.Root)
 	request := laneValidateRequest{Home: kernel.home, Checkout: kernel.record.Root, Installation: kernel.installation, Epoch: kernel.record.CustodyEpoch}
 	if inv.input.switched("force") {
-		by, err := kernel.owners.person(kernel.installation)
-		if err != nil {
-			refused := inv.personRefusal("", err, inv.input.text("by"))
-			refused.code = 3
-			refused.Summary = "only a person may force the landing validation, and " + strings.TrimSuffix(refused.Summary, ", so nothing was done") + "; nothing was changed"
+		by, refused := inv.forcingPerson(kernel, "the landing validation")
+		if refused != nil {
 			return inv.render(*refused)
-		}
-		if named := strings.TrimSpace(inv.input.text("by")); named != "" {
-			by = named
 		}
 		request.Force, request.By = true, by
 	}
@@ -150,6 +145,9 @@ func landingValidateResult(inv *intentInvocation, outcome gaterun.ValidateOutcom
 		result.Outcome, result.code = intentRefused, 1
 		result.Summary = firstNonEmpty(outcome.Reason, "the landing validation couldn't run") + "; main is untouched"
 		switch {
+		case strings.HasSuffix(outcome.Fix, " --help"):
+			result.next = strings.Fields(outcome.Fix)
+			result.nextReason = "lists every field goal edit standing-validation --obligation ENFORCED needs; then run landing validate again"
 		case outcome.Fix != "":
 			result.next, result.nextReason = strings.Fields(outcome.Fix), "then run metasystem landing validate again"
 		case outcome.Code == gaterun.CodeValidateCustodyUnknown:
@@ -180,4 +178,24 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+// forcingPerson is the person a kernel verb's --force acts for: the one
+// proven at the enrolled terminal. --by may only name that same person; it
+// never replaces who was proven.
+func (inv *intentInvocation) forcingPerson(kernel laneKernel, what string) (string, *intentResult) {
+	by, err := kernel.owners.person(kernel.installation)
+	if err != nil {
+		refused := inv.personRefusal("", err, inv.input.text("by"))
+		refused.code = 3
+		refused.Summary = "only a person may force " + what + ", and " + strings.TrimSuffix(refused.Summary, ", so nothing was done") + "; nothing was changed"
+		return "", refused
+	}
+	if named := strings.TrimSpace(inv.input.text("by")); named != "" && !strings.EqualFold(named, by) {
+		argv := slices.DeleteFunc(inv.typedArgv(), func(word string) bool { return word == "--by" || word == named || strings.HasPrefix(word, "--by=") })
+		return "", &intentResult{Outcome: intentRefused, code: 3, Targets: laneTargets(kernel.record.Root),
+			Summary: "--by names " + named + ", but the person at this terminal is " + by + "; nothing was changed",
+			next:    argv, nextReason: "forces it as " + by}
+	}
+	return by, nil
 }

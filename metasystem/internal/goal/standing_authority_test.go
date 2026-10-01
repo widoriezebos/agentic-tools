@@ -18,7 +18,7 @@ func TestStandingAuthorityGapNamesWhyTheCadenceCannotRun(t *testing.T) {
 	}{
 		{"missing", nil, lane, "is not open", "metasystem goal show standing-validation"},
 		{"unapproved", &GoalFile{State: StateQueued, Obligation: obligation}, lane, "is not approved", "metasystem goal approve standing-validation"},
-		{"no obligation", &GoalFile{State: StateApproved}, lane, "no governed obligation", "metasystem goal edit standing-validation --obligation ENFORCED"},
+		{"no obligation", &GoalFile{State: StateApproved}, lane, "no governed obligation", "metasystem goal edit --help"},
 		{"held elsewhere", &GoalFile{State: StateClaimed, Obligation: obligation, Claimed: &ClaimRecord{Machine: "m1e", Lineage: "seat"}}, lane, "is claimed by m1e+seat", "metasystem goal show standing-validation"},
 		{"pinned elsewhere", &GoalFile{State: StateApproved, Obligation: obligation, Pinned: "m1e"}, lane, "is pinned to machine m1e", "metasystem goal show standing-validation"},
 	}

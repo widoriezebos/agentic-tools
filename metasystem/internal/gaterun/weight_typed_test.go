@@ -41,6 +41,8 @@ func TestWeightDischargeRefusalsAreTyped(t *testing.T) {
 		_, err := bed.discharge("bounded", 3, "green-proof", *now)
 		typed(t, err, WeightAlreadyReset)
 	})
+	// F-2 (serial: the weight bed sets the package clock).
+	t.Run("read failures keep the green run pending", dischargeReadFailuresKeepTheGreenRunPending)
 	t.Run("unreadable state", func(t *testing.T) {
 		bed, now := weightAuthorityBed(t)
 		if err := os.MkdirAll(filepath.Dir(weightPath(bed.root)), 0o755); err != nil {
@@ -62,7 +64,7 @@ func TestWeightDischargeRefusalsAreTyped(t *testing.T) {
 // validate's Finalize with the real weight code, the green run stays
 // pending with its reservation kept, and its reset happens once the read
 // works again.
-func TestDischargeReadFailuresKeepTheGreenRunPending(t *testing.T) {
+func dischargeReadFailuresKeepTheGreenRunPending(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
 		break_ func(t *testing.T, root string) (restore func())
