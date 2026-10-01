@@ -829,14 +829,15 @@ func runIntentLandingRun(inv *intentInvocation) int {
 		} else if run.Launch != "" {
 			why = "nothing to do; it is at work"
 		}
-		return inv.render(intentResult{Outcome: intentUnchanged, Targets: targets, Data: data, Summary: summary, Details: details,
+		return inv.render(intentResult{Outcome: intentUnchanged, Targets: targets, Data: data, Summary: summary, Details: details, nextReason: why,
 			view: func(page *textui.Page) { page.Done(summary); page.Hint(textui.Hint{Reason: why}) }})
 	case lane.AgentIdle:
 		summary := "the landing lane at " + root + " has no queued work, so no landing agent was started"
-		return inv.render(intentResult{Outcome: intentUnchanged, Targets: targets, Data: data, Summary: summary, Details: details,
+		why := "nothing to do; the lane is empty"
+		return inv.render(intentResult{Outcome: intentUnchanged, Targets: targets, Data: data, Summary: summary, Details: details, nextReason: why,
 			view: func(page *textui.Page) {
 				page.Done(summary)
-				page.Hint(textui.Hint{Reason: "nothing to do; the lane is empty"})
+				page.Hint(textui.Hint{Reason: why})
 			}})
 	case lane.AgentPaused:
 		summary := run.Line

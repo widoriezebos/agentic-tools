@@ -841,6 +841,11 @@ func (inv *intentInvocation) render(result intentResult) int {
 		result.Details = append(result.Details, inv.notices.settle(!proceeded, verbose && !inv.input.switched("json"))...)
 	}
 	if inv.input.switched("json") {
+		// Line 2 that is a reason without a command ("nothing to do; why")
+		// is next with an empty argv, so a reader shows both lines too.
+		if result.Next == nil && result.nextReason != "" {
+			result.Next = &intentNext{Argv: []string{}, Reason: result.nextReason}
+		}
 		encoded, err := json.MarshalIndent(result, "", "  ")
 		if err != nil {
 			fmt.Fprintf(inv.stderr, "metasystem %s: %v\n", inv.command.name, err)
