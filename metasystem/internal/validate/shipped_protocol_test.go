@@ -130,9 +130,10 @@ func copyShippedRoles(t *testing.T) string {
 }
 
 // Quote markers name their canonical source and the content bytes are
-// compared, never a second prose copy. Each mandated (source, marker) pair
-// appears in exactly one orchestrator block, so deleting it cannot go
-// undetected; a drifted binding criterion is refused naming its source.
+// compared, never a second prose copy. Each mandated (file, source, marker)
+// triple appears in exactly one block of that role file, so deleting it
+// cannot go undetected; a drifted binding criterion is refused naming its
+// source. Both critics quote their skill's Check the Rulings paragraph.
 func TestShippedPreambleQuotesHoldAndNameEachDrift(t *testing.T) {
 	t.Parallel()
 	root := filepath.Join("..", "..")
@@ -140,23 +141,25 @@ func TestShippedPreambleQuotesHoldAndNameEachDrift(t *testing.T) {
 	if violations := PreambleQuotes(root, roles); len(violations) != 0 {
 		t.Fatalf("shipped preamble quotes drifted: %v", violations)
 	}
-	orchestrator := shippedFile(t, "internal", "protocol", "roles", "orchestrator.md")
 	for _, mandated := range []struct {
-		source, marker string
-		endsLine       bool
+		file, source, marker string
+		endsLine             bool
 	}{
-		{"AGENTS.md", "## Completion", true},
-		{"docs/orchestration.md", "## Delegation Contract", true},
-		{"docs/orchestration.md", "### Working without the human", true},
-		{"docs/collaboration.md", "## Review Guide in Reports", true},
-		{"docs/collaboration.md", "## Escalation Shape", true},
-		{"docs/project-rules.md", "These require explicit in-task approval", false},
+		{"orchestrator.md", "AGENTS.md", "## Completion", true},
+		{"orchestrator.md", "docs/orchestration.md", "## Delegation Contract", true},
+		{"orchestrator.md", "docs/orchestration.md", "### Working without the human", true},
+		{"orchestrator.md", "docs/collaboration.md", "## Review Guide in Reports", true},
+		{"orchestrator.md", "docs/collaboration.md", "## Escalation Shape", true},
+		{"orchestrator.md", "docs/project-rules.md", "These require explicit in-task approval", false},
+		{"design-critic.md", "skills/design-critique/SKILL.md", "memory/rulings.md", false},
+		{"code-critic.md", "skills/code-critique/SKILL.md", "memory/rulings.md", false},
 	} {
-		switch count := countQuoteBlocks(orchestrator, mandated.source, mandated.marker, mandated.endsLine); {
+		preamble := shippedFile(t, "internal", "protocol", "roles", mandated.file)
+		switch count := countQuoteBlocks(preamble, mandated.source, mandated.marker, mandated.endsLine); {
 		case count < 1:
-			t.Errorf("orchestrator preamble lacks mandated quote block: %s %s", mandated.source, mandated.marker)
+			t.Errorf("%s preamble lacks mandated quote block: %s %s", mandated.file, mandated.source, mandated.marker)
 		case count > 1:
-			t.Errorf("orchestrator required-block deletion would go undetected: %s %s appears in %d blocks", mandated.source, mandated.marker, count)
+			t.Errorf("%s required-block deletion would go undetected: %s %s appears in %d blocks", mandated.file, mandated.source, mandated.marker, count)
 		}
 	}
 
