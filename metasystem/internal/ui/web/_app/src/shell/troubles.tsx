@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { held, released, type Pending, type Trouble } from "./troubling";
+import { browserStore, readPendingTroubles, writePendingTroubles, type Store } from "../storage";
 
 /**
  * The trouble context (g1-s68 D2): what every trouble line presses, mounted
@@ -15,7 +16,8 @@ import { held, released, type Pending, type Trouble } from "./troubling";
  *
  * It also holds the two things a press needs that are nobody's page: the
  * troubles waiting for a running answer, which the line that was pressed and
- * the chip above the composer both read, and the secrets the page holds at
+ * the chip above the composer both read, and which are kept in the browser's
+ * store so a reload finds them still waiting, and the secrets the page holds at
  * this moment — the code being typed, a token field's value — which every
  * trouble is scrubbed of before it is kept or sent.
  */
@@ -59,10 +61,15 @@ export function TroublesAs({ held: given, children }: { held: Partial<Troubles>;
   return <TroublesContext.Provider value={{ ...nothing, ...given }}>{children}</TroublesContext.Provider>;
 }
 
-export function TroubleProvider({ children }: { children: ReactNode }) {
+export function TroubleProvider({ children, store = browserStore() }: { children: ReactNode; store?: Store | null }) {
   // A function in state is set through the updater form, or React calls it.
   const [ask, setAsk] = useState<TroubleAsk | null>(null);
-  const [pending, setPending] = useState<readonly Pending[]>([]);
+  // A question left waiting is kept where a reload finds it: the page that
+  // loads next starts with it, in its own conversation, ready to send.
+  const [pending, setPending] = useState<readonly Pending[]>(() => readPendingTroubles(store));
+  useEffect(() => {
+    writePendingTroubles(pending, store);
+  }, [pending, store]);
   const readers = useRef(new Set<() => string>());
 
   const register = useCallback((next: TroubleAsk | null) => {
