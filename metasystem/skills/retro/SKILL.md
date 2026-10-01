@@ -13,6 +13,7 @@ The metasystem improves itself the same way improve mode improves code: changes 
 - Launch usage for the same period: in the receipt ledger used by `metasystem receipt status`, read the final `RETRO` row and use its second pipe-separated field as the previous retro's RFC3339 time. Run `metasystem work status --history --since <the previous retro's time> --json` and record these four numbers in the retro record: builds over the cap, compactions per build job, compacted reads, and calls above 200K context.
 - Git history for the same period, cross-checked against receipts. A "shipped" receipt followed by fix commits is hidden rework, and it counts as rework.
 - The instruction ledger at `memory/instruction-ledger.md`: every change previous retros adopted, each with its expected effect.
+- The open rows of `memory/retro-topics.md`: topics people raised for this retro. Mine each as a pattern in this period's evidence, and close its row as taken or dropped, with the reason.
 
 ## Step 1: Review the Previous Changes First
 
