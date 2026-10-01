@@ -9,7 +9,8 @@
 - Origin: human
 - Next step: Reproduce on current main with a tier-2 goal branch; find where the request is recorded before the critic launches; make a failed launch fail cleanly so a repeat starts it
 - OpenedAt: 2026-10-01T15:55:55Z
-- Revision: 3
+- Revision: 4
+- Pinned: m1e
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-10-01T15:56:09Z revision=2 opid=JTF90THEXAEBZKTT7TJMMM3JK7-m1e-9c612d71 authority=proven digest=4d6c69ba579b5ab2396d8efcb800241ba587804b9961e47434247b36ed8d1dcf episode=2
@@ -18,4 +19,5 @@ History:
 - 2026-10-01T15:55:55Z CM77Z74SFD4T16WKGNBN0NK4RM-m1e-9c612d71 open actor=human:Wido targets=work-review-starts-its-critic
 - 2026-10-01T15:56:09Z JTF90THEXAEBZKTT7TJMMM3JK7-m1e-9c612d71 approve actor=human:Wido targets=work-review-starts-its-critic
 - 2026-10-01T15:56:47Z PC9CMTV9BS2CRVRDFRZVV9WQHX-m1e-9c612d71 set-priority actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,cross-cutting-change-inventories-its-readers,design-rounds-read-less-and-repeat-less,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,host-setup-from-scratch,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,reviewers-check-the-rulings,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,steward-acts-on-behaviour-patterns,stop-hook-never-forces-an-empty-turn,system-start-launches-your-agent,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror,work-review-starts-its-critic reason=priority-order subject=work-review-starts-its-critic from=unranked to=1:3 requested-sequence=3
-Integrity: sha256=87610117d81affb5a7fc5494f9546466bda8143386c60b72a844ac3378c7351b
+- 2026-10-01T20:00:48Z 7W019CPYZS2YFNMFY5F4SGWT2B-m1e-9c612d71 set-pin actor=human:Wido targets=work-review-starts-its-critic
+Integrity: sha256=7a6decc26e51f8339fd2237c6a18d2b911f02c5f17a9aa90d33d06624f31f4a8
