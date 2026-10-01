@@ -334,6 +334,9 @@ var retiredWithDeletedLibrary = map[string]string{
 	// kill-plumbing (old-lane-plumbing-is-deleted): the old landing lane's batch,
 	// batch owner and kernel were deleted with their tests; the plain lane
 	// re-adds its own.
+	"batch-buildcd-standard/TestContentMergingVerbsRefuseWithoutTheDriver":                      "landing/batch merge_driver_test.go (its internal/goal/branch twin stays)",
+	"batch-buildcd-standard/TestOrdinaryFileCannotOptIntoTheTestingMergeDriver":                 "landing/batch merge_driver_test.go (its internal/goal/branch twin stays)",
+	"batch-buildcd-standard/TestHandRebasedTestingContractHunkRefusesToLand":                    "landing/batch merge_driver_test.go (its internal/goal/branch twin stays)",
 	"landing-command-standard/TestProductionJoinGateSelectsPackagesAgainstTheLandingRoot":       "landing/batchowner BatchTreePlanCommand (old lane plumbing)",
 	"batch-buildb-standard/TestBatchFailedHandbackSeesOccupiedSourceOnNextTick":                 "landing/batch, landing/batchowner and landing/kernel (old lane plumbing)",
 	"batch-buildcd-standard/TestAssembleUnitsKeepsBranchAndChainMembersInJoinOrder":             "landing/batch, landing/batchowner and landing/kernel (old lane plumbing)",
