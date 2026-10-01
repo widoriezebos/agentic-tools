@@ -119,8 +119,8 @@ func (inv *intentInvocation) designDestinationPath(id string, creating bool) (st
 	}
 	read, err := project.Read(roots)
 	if err != nil {
-		return "", "", &intentResult{Outcome: intentFailed, code: 1, Summary: "the project's design records can't be read, so nothing was done",
-			next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}
+		return "", "", withCauseRef(err, intentResult{Outcome: intentFailed, code: 1, Summary: "the project's design records can't be read, so nothing was done",
+			next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}})
 	}
 	var drafts, others []project.Record
 	seen := map[string]bool{}
@@ -395,7 +395,7 @@ func (inv *intentInvocation) showDesignAttempts(id string) intentResult {
 	_, attempts, err := manager.DesignDocument(destination)
 	if err != nil {
 		return intentResult{Outcome: intentFailed, code: 1, Summary: "the design attempts can't be read, so nothing was read",
-			next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}
+			next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}.withCause(err)
 	}
 	rel := relativeOrSame(inv.layout.GitRoot, destination)
 	views, lines := []map[string]any{}, []string{}
@@ -558,7 +558,7 @@ func (inv *intentInvocation) waitDesign(id string, timeout time.Duration) (inten
 	record, _, err := inv.designManager().Wait(view.Attempt.LaunchID, timeout)
 	if err != nil {
 		return intentResult{Outcome: intentFailed, code: 1, Summary: "the design author's progress can't be read",
-			next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}, true
+			next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}.withCause(err), true
 	}
 	return inv.designOutcome(id, view.Destination, launch.DesignResult{Attempt: view.Attempt, Record: record, Current: view.Attempt.Attempt}, nil), true
 }

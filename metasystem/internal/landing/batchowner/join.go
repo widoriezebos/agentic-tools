@@ -95,17 +95,11 @@ func ProductionBatchJoinDependencies() BatchJoinDependencies {
 }
 
 func ProductionBatchBranchMember(request BatchJoinRequest) (batch.BranchMember, []byte, error) {
-	if _, err := branch.ScrubbedGit(request.SeatRoot, "fetch", "--quiet", "origin", "main"); err != nil {
-		return batch.BranchMember{}, nil, err
-	}
-	endpoint, err := branch.ScrubbedGit(request.SeatRoot, "rev-parse", "FETCH_HEAD")
+	endpoint, err := branch.FetchTip(request.SeatRoot, "origin", "refs/heads/main")
 	if err != nil {
 		return batch.BranchMember{}, nil, err
 	}
-	if _, err := branch.ScrubbedGit(request.SeatRoot, "fetch", "--quiet", "origin", "refs/heads/goal/"+request.GoalID); err != nil {
-		return batch.BranchMember{}, nil, err
-	}
-	tip, err := branch.ScrubbedGit(request.SeatRoot, "rev-parse", "FETCH_HEAD")
+	tip, err := branch.FetchTip(request.SeatRoot, "origin", "refs/heads/goal/"+request.GoalID)
 	if err != nil {
 		return batch.BranchMember{}, nil, err
 	}
@@ -322,12 +316,11 @@ func prepareJoinUnit(root, base string, unit batch.Unit, dependencies BatchJoinD
 }
 
 func fetchLandingBaseTree(root string) (string, error) {
-	command := exec.Command("git", "-C", root, "fetch", "--quiet", "origin", "main")
-	command.Env = gittree.ScrubbedEnviron()
-	if output, err := command.CombinedOutput(); err != nil {
-		return "", fmt.Errorf("fetch landing base: %s: %w", strings.TrimSpace(string(output)), err)
+	tip, err := branch.FetchTip(root, "origin", "refs/heads/main")
+	if err != nil {
+		return "", fmt.Errorf("fetch landing base: %w", err)
 	}
-	return (gittree.Workspace{Dir: root}).TreeOf("FETCH_HEAD")
+	return (gittree.Workspace{Dir: root}).TreeOf(tip)
 }
 
 // ProductionBatchProtectedTests asks the testing owner to check base-listed

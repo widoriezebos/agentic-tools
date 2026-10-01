@@ -118,7 +118,7 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 			data["code"] = code
 		}
 		return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Data: data, Summary: plain,
-			next: next, nextReason: then, Details: []string{detail}}
+			next: next, nextReason: then, Details: []string{detail}}.withCause(argError(args))
 	}
 	conn, git := inv.connection(), inv.work().git
 	// The selected installation's endpoint and claim authorize every
@@ -488,7 +488,7 @@ func (inv *intentInvocation) commitReview(targets []intentTarget, root, goalID, 
 				next: inv.sameCommand(), nextReason: "once that is settled", Details: []string{err.Error()}}
 		}
 		return intentResult{Targets: targets, Outcome: intentRefused, code: max(code, 1), Summary: "the review couldn't be requested",
-			next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}
+			next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}.withCause(err)
 	}
 	data := map[string]any{"state": result.State, "rootJob": result.RootJob, "gateRun": result.GateRunID, "attestation": result.AttestationCommit}
 	if result.RootJob != "" {

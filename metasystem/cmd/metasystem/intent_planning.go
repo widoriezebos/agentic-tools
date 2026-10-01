@@ -835,7 +835,7 @@ func runIntentGoalViews(inv *intentInvocation) int {
 	frontier, err := goal.Next(projection, machine, labels...)
 	if err != nil {
 		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the ready goals can't be worked out, so nothing was read",
-			next: inv.typedArgv(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}})
+			next: inv.typedArgv(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}.withCause(err))
 	}
 	selection := goal.SelectNext(frontier)
 	result := intentResult{Outcome: intentConfirmed,
@@ -1111,7 +1111,7 @@ func runIntentClaim(inv *intentInvocation) int {
 		frontier, err := goal.Next(projection, machine, inv.input.values["label"]...)
 		if err != nil {
 			return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the ready goals can't be worked out, so nothing was claimed",
-				next: inv.typedArgvFor("GOAL"), nextReason: "names the goal to claim", Details: []string{err.Error()}})
+				next: inv.typedArgvFor("GOAL"), nextReason: "names the goal to claim", Details: []string{err.Error()}}.withCause(err))
 		}
 		selection := goal.SelectNext(frontier)
 		switch selection.Kind {

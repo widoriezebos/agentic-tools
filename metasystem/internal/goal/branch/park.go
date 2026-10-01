@@ -54,6 +54,26 @@ func OperationID() (string, error) {
 	return "branch-" + hex.EncodeToString(raw), nil
 }
 
+// FetchTip fetches remote's ref into a ref private to this one read and
+// answers the commit it names. FETCH_HEAD is one file per repository that
+// every fetch rewrites, so in a checkout other sessions fetch into it is
+// never read back (2026-10-01: a join's FETCH_HEAD emptied between its own
+// fetch and its rev-parse). The private ref is deleted afterwards; a failed
+// delete leaves only a stray ref under refs/metasystem/op/ and is not the
+// read's error.
+func FetchTip(root, remote, ref string) (string, error) {
+	opid, err := OperationID()
+	if err != nil {
+		return "", err
+	}
+	private := "refs/metasystem/op/" + opid + "/fetch"
+	defer func() { _, _ = ScrubbedGit(root, "update-ref", "-d", private) }()
+	if _, err := ScrubbedGit(root, "fetch", "--quiet", "--no-write-fetch-head", remote, "+"+ref+":"+private); err != nil {
+		return "", err
+	}
+	return ScrubbedGit(root, "rev-parse", "--verify", private+"^{commit}")
+}
+
 // MainEndpoint is root's ledger endpoint, refused unless it serves main:
 // goal branches land on main only.
 func MainEndpoint(root string) (goal.Endpoint, error) {

@@ -56,8 +56,13 @@ func commitWord(kind Kind) string {
 
 // RangeError is a goal branch that breaks its shape at one commit. Remedy
 // is its line 2: the command that shows the goal's work, where the goal is
-// known ("Messages a Person Reads").
-type RangeError struct{ Code, Commit, Reason, Remedy string }
+// known ("Messages a Person Reads"). Trailer, when set, is the kind trailer
+// the commit lacks; only a verb that knows the commit is the goal branch's
+// tip, checked out in the goal worktree, may offer the amend that adds it.
+type RangeError struct {
+	Code, Commit, Reason, Remedy string
+	Trailer                      string
+}
 
 func (e *RangeError) Error() string {
 	if e.Remedy == "" {
@@ -77,6 +82,16 @@ func rangeRefusal(goalID, commit, reason string) error {
 		remedy = "run: metasystem work status " + goalID
 	}
 	return &RangeError{Code: RangeCode, Commit: commit, Reason: reason, Remedy: remedy}
+}
+
+// missingKindRefusal is a commit on goalID's branch with no Goal-Unit,
+// Goal-Plan or Goal-Read trailer: its words name the trailer a build needs,
+// with the goal filled in (the unit is the person's).
+func missingKindRefusal(goalID, commit string) error {
+	trailer := "Goal-Unit: " + goalID + "/UNIT"
+	refusal := rangeRefusal(goalID, commit, "it doesn't say which goal and unit it builds (no trailer "+trailer+")").(*RangeError)
+	refusal.Trailer = trailer
+	return refusal
 }
 
 func parseUnits(value string) ([]string, bool) {
@@ -126,6 +141,9 @@ func kindOfWithGit(repo, commit, goalID string, gitRead func(string, ...string) 
 		if ok && (key == "Goal-Unit" || key == "Goal-Plan" || key == "Goal-Read") {
 			trailers = append(trailers, [2]string{key, strings.TrimSpace(value)})
 		}
+	}
+	if len(trailers) == 0 && goalID != "" {
+		return KindInfo{}, missingKindRefusal(goalID, commit)
 	}
 	if len(trailers) != 1 {
 		return KindInfo{}, rangeRefusal(goalID, commit, fmt.Sprintf("it should say whether it is a build, a plan or a review, and it says so %d times", len(trailers)))

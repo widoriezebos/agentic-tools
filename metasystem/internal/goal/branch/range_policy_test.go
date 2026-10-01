@@ -147,10 +147,10 @@ func TestValidateRangeRefusals(t *testing.T) {
 			if test.name == "unrelated history" && !strings.Contains(refusal.Reason, "shares no history with main") {
 				t.Fatalf("history refusal changed: %v", err)
 			}
-			if test.name == "branch base outside endpoint history" && !strings.Contains(refusal.Reason, "whether it is a build, a plan or a review") {
+			if test.name == "branch base outside endpoint history" && !strings.Contains(refusal.Reason, "doesn't say which goal and unit it builds") {
 				t.Fatalf("outside-base refusal changed: %v", err)
 			}
-			if test.name == "side unit outside endpoint history" && !strings.Contains(refusal.Reason, "whether it is a build, a plan or a review") {
+			if test.name == "side unit outside endpoint history" && !strings.Contains(refusal.Reason, "doesn't say which goal and unit it builds") {
 				t.Fatalf("side-unit refusal changed: %v", err)
 			}
 		})

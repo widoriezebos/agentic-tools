@@ -247,8 +247,11 @@ type intentDeliveryOwners struct {
 	executable  func() (string, error)
 	branchRead  func([]string) (branch.BranchReadResult, int, error)
 	branchState func(root, goalID string) (intentBranchState, error)
-	landPrep    func([]string) (goalBranchLandPrepOutcome, int, error)
-	landPush    func([]string) (branch.PreparedLanding, string, int, error)
+	// trailerWorktree is the goal worktree a missing kind trailer may be
+	// amended in (productionTrailerWorktree); nil offers no amend.
+	trailerWorktree func(root, goalID, commit, endpointTip string) string
+	landPrep        func([]string) (goalBranchLandPrepOutcome, int, error)
+	landPush        func([]string) (branch.PreparedLanding, string, int, error)
 	// landCandidate composes the pending landing and returns the candidate
 	// tree its receipt must prove.
 	landCandidate func([]string) (goalBranchLandPrepOutcome, int, error)
@@ -349,7 +352,8 @@ func defaultIntentDeliveryOwners() *intentDeliveryOwners {
 		branchRead: func(args []string) (branch.BranchReadResult, int, error) {
 			return goalBranchReadRun(args, goalBranchReadDependencies{})
 		},
-		branchState: productionIntentBranchState,
+		branchState:     productionIntentBranchState,
+		trailerWorktree: productionTrailerWorktree,
 		landPrep: func(args []string) (goalBranchLandPrepOutcome, int, error) {
 			return goalBranchLandPrepRun(args, goalBranchLandPrepDependencies{Prepare: branch.PrepareLanding,
 				LoadContract: func(root string) (testpolicy.Contract, error) {
@@ -413,7 +417,8 @@ func productionIntentBranchState(root, goalID string) (intentBranchState, error)
 	}
 	status, err := branch.InspectStatus(root, endpointTip, branchTip, goalID)
 	if err != nil {
-		return intentBranchState{}, err
+		// The tips read so far say whether a refused commit is the tip.
+		return intentBranchState{EndpointTip: endpointTip, BranchTip: branchTip}, err
 	}
 	projection, err := goal.Project(endpoint, true, time.Now().UTC())
 	if err != nil {
@@ -1177,9 +1182,9 @@ func (inv *intentInvocation) rebindCritiqueBudget(targets []intentTarget, root s
 		rebind = dispatchcore.CritiqueChainBudgetRebind
 	}
 	if _, err := rebind(inv.layout.InstallationRoot, root); err != nil {
-		return &intentResult{Targets: targets, Outcome: intentRefused, code: 1,
+		return withCauseRef(err, intentResult{Targets: targets, Outcome: intentRefused, code: 1,
 			Summary: "the goal's review-round limit can't be applied to this review, so nothing was continued or closed",
-			next:    inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{fmt.Sprintf("chain %s: %v", root, err)}}
+			next:    inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{fmt.Sprintf("chain %s: %v", root, err)}})
 	}
 	return nil
 }
@@ -1349,7 +1354,7 @@ func (inv *intentInvocation) foldReview(review string) intentResult {
 	message, err := inv.composeFoldMessage(review, recordRound(round), subject, subjectRoot, returnPath)
 	if err != nil {
 		return intentResult{Targets: targets, Outcome: intentFailed, Summary: "the follow-up brief can't be put together, so nothing was done",
-			next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}
+			next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}.withCause(err)
 	}
 	outcome, refused := inv.delegate(targets, []string{"--follow-up", subjectRoot, "--brief", message})
 	if refused != nil {
@@ -1445,8 +1450,8 @@ func (inv *intentInvocation) finishedReview(targets []intentTarget, review strin
 	}
 	round, err := inv.newestRound(review)
 	if err != nil {
-		return nil, &intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: "the review's newest round can't be read; nothing was done",
-			next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}
+		return nil, withCauseRef(err, intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: "the review's newest round can't be read; nothing was done",
+			next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}})
 	}
 	if status := recordText(round, "status"); status != "completed" {
 		outcome := intentRefused
@@ -1743,7 +1748,7 @@ func (inv *intentInvocation) joinBatch(targets []intentTarget, request batchowne
 	record, unit, member, err := owners.batchUnit(request.LandingRoot, request, branchTip)
 	if err != nil {
 		return intentResult{Targets: targets, Outcome: intentFailed, Summary: "the landing batches can't be read, so nothing was landed", Data: map[string]any{"route": "batch"},
-			next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}
+			next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}.withCause(err)
 	}
 	joined := false
 	if !member {
@@ -1826,8 +1831,12 @@ func (inv *intentInvocation) landGoalRoute(goalID, through string) intentResult 
 	}
 	state, err := owners.branchState(root, goalID)
 	if err != nil {
-		return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: "the goal branch can't be read, so nothing was landed",
-			next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}
+		refused := intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: "the goal branch can't be read, so nothing was landed",
+			next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}.withCause(err)
+		if amend := inv.trailerAmend(err, goalID, state); amend != nil {
+			refused.next, refused.nextReason = amend, ""
+		}
+		return refused
 	}
 	if configured {
 		// The batch may already hold, or have landed and swept, exactly this
