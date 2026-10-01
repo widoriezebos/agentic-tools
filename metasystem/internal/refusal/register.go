@@ -145,6 +145,7 @@ var Rows = []Row{
 	{Code: "LANE_PUSH_UNPROVEN", Owner: "internal/landing/kernel", Site: "push.go#Push", Shape: Question, H1: StandingAgent},
 	{Code: "LANE_PUSH_NOT_FAST_FORWARD", Owner: "internal/landing/kernel", Site: "push.go#Push", Shape: Question, H1: StandingAgent},
 	{Code: "LANE_PROVE_REFUSED", Owner: "internal/landing/kernel", Site: "prove.go#Prove", Shape: Question, H1: StandingInput},
+	{Code: "LANE_PROVE_RUNNING", Owner: "internal/landing/kernel", Site: "detached.go#runningRefusal", Shape: Question, H1: StandingAgent},
 	{Code: "BATCH_CHANGE_PARENT_UNKNOWN", Owner: "internal/landing/batchowner", Site: "change.go#ExecuteChangeJoin", Shape: Question, H1: StandingInput},
 	{Code: "BATCH_CHANGE_STACKED_ELSEWHERE", Owner: "internal/landing/batch", Site: "change.go#JoinChange", Shape: Question, H1: StandingInput},
 	{Code: "BATCH_CHANGE_UNREADABLE", Owner: "internal/landing/batch", Site: "change.go#JoinChange", Shape: Question, H1: StandingInput},

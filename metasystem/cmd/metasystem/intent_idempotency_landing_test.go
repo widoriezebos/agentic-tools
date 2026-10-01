@@ -13,8 +13,7 @@ func init() {
 	registerIdempotency("landing set", idemStateful, "the lane is already that checkout: success, the record untouched", witnessLandingSetRepeat)
 	registerIdempotency("landing start", idemStateful, "the lane already runs, unpaused: success, nothing written", witnessLandingStartRepeat)
 	registerIdempotency("landing stop", idemStateful, "the lane is already stopped: success, the pause untouched", witnessLandingStopRepeat)
-	registerIdempotency("landing prove", idemCreation,
-		"each run is a new test run of the checkout's tree, recorded as its own attempt; a second prove is a second run, not a repeat", nil)
+	registerIdempotency("landing prove", idemStateful, "that tree's proof already runs: success, no second proof started", witnessLandingProveRepeat)
 	registerIdempotency("landing run", idemStateful, "a landing agent already runs: success, no second launch and nothing written", witnessLandingRunRepeat)
 	registerIdempotency("landing unset", idemStateful, "no lane is registered any more: success, nothing written", witnessLandingUnsetRepeat)
 }

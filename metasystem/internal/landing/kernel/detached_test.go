@@ -2,10 +2,11 @@ package kernel
 
 import (
 	"errors"
-	"flag"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -14,10 +15,11 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/verbresult"
 )
 
-// The detached-prove helper's environment: its mode (start, the caller of
+// The detached-prove helper's environment (runDetachedProveHelper): its mode (start, the caller of
 // landing prove; prove, the detached landing prove --wait it starts), and
 // the bed it acts on.
 const (
@@ -28,19 +30,17 @@ const (
 	helperChild    = "METASYSTEM_TEST_DETACHED_PROVE_CHILD"
 )
 
-// TestDetachedProveHelper is not a test: it is the engine's two processes
-// for TestStartProofOutlivesItsCaller. In start mode it is the caller of
-// landing prove, which returns at once; in prove mode it is the detached
-// landing prove --wait --tree T --attempt A that start launched, running the
-// real Prove over a stand-in test run child.
-func TestDetachedProveHelper(t *testing.T) {
-	mode := os.Getenv(helperMode)
-	if mode == "" {
-		t.Skip("the detached-prove helper runs only as its own process")
-	}
+// runDetachedProveHelper is this test binary as the engine's two processes
+// for TestStartProofOutlivesItsCaller, run from TestMain before testenv: in
+// start mode it is the caller of landing prove, which returns at once; in
+// prove mode it is the detached landing prove --wait --tree T --attempt A
+// that start launched, running the real Prove over a stand-in test run
+// child.
+func runDetachedProveHelper(mode string, argv []string) int {
 	layout, err := lane.NewLayout(os.Getenv(helperCheckout))
 	if err != nil {
-		t.Fatal(err)
+		fmt.Fprintln(os.Stderr, err)
+		return 2
 	}
 	request := ProveRequest{Home: os.Getenv(helperHome), Layout: layout, Actor: kernelActor}
 	switch mode {
@@ -49,20 +49,25 @@ func TestDetachedProveHelper(t *testing.T) {
 		seams.Executable = func() (string, error) { return os.Getenv(helperEngine), nil }
 		started, err := StartProof(request, seams)
 		if err != nil || started.Already {
-			t.Fatalf("start = %+v, %v; want a new detached proof", started, err)
+			fmt.Fprintf(os.Stderr, "start = %+v, %v; want a new detached proof\n", started, err)
+			return 1
 		}
 	case "prove":
-		argv := flag.Args()
 		if len(argv) != 7 || argv[0] != "landing" || argv[1] != "prove" || argv[2] != "--wait" {
-			t.Fatalf("the detached proof ran %q; want landing prove --wait --tree T --attempt A", argv)
+			fmt.Fprintf(os.Stderr, "the detached proof ran %q; want landing prove --wait --tree T --attempt A\n", argv)
+			return 2
 		}
 		request.Tree, request.Attempt = argValue(argv, "--tree"), argValue(argv, "--attempt")
 		seams := ProductionProveSeams()
 		seams.Executable = func() (string, error) { return os.Getenv(helperChild), nil }
 		if _, err := Prove(request, seams); err != nil {
-			t.Fatal(err)
+			fmt.Fprintln(os.Stderr, err)
+			return 1
 		}
+	default:
+		return 2
 	}
+	return 0
 }
 
 // landing prove starts the proof as a detached job and returns at once; the
@@ -91,10 +96,10 @@ func TestStartProofOutlivesItsCaller(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(engine), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := testexec.WriteFile(engine, []byte("#!/bin/sh\n"+helperMode+"=prove exec '"+self+"' -test.run='^TestDetachedProveHelper$' -- \"$@\"\n"), 0o755); err != nil {
+	if err := testexec.WriteFile(engine, []byte("#!/bin/sh\n"+helperMode+"=prove exec '"+self+"' \"$@\"\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	caller := exec.Command(self, "-test.run=^TestDetachedProveHelper$")
+	caller := exec.Command(self)
 	caller.Env = append(os.Environ(), helperMode+"=start", helperHome+"="+bed.home, helperCheckout+"="+string(bed.layout.Checkout),
 		helperEngine+"="+engine, helperChild+"="+child)
 	caller.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
@@ -107,7 +112,13 @@ func TestStartProofOutlivesItsCaller(t *testing.T) {
 
 	running, live, ok, err := ReadRunningProof(bed.layout, identity.KernelProber{})
 	if err != nil || !ok || live != identity.Alive || running.Tree != tree || running.Commit != head || running.Status != batch.AttemptRunning || running.Process == "" {
-		t.Fatalf("after its caller ended the proof is %+v %v %v %v; want tree %s running in a live process", running, live, ok, err, tree)
+		logs, _ := filepath.Glob(filepath.Join(string(bed.layout.Checkout), "artifacts", "agents", "landing-proofs", "runs", "*.log"))
+		var said []string
+		for _, path := range logs {
+			data, _ := os.ReadFile(path)
+			said = append(said, string(data))
+		}
+		t.Fatalf("after its caller ended the proof is %+v %v %v %v; want tree %s running in a live process; its log:\n%s", running, live, ok, err, tree, strings.Join(said, "\n"))
 	}
 	if _, proven, _ := ReadTreeProof(bed.layout, tree); !proven {
 		t.Fatalf("the running proof is not kept for its tree")
@@ -131,17 +142,17 @@ func TestStartProofOutlivesItsCaller(t *testing.T) {
 	if err := os.WriteFile(release, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	deadline := time.Now().Add(5 * time.Minute)
-	var kept TreeProof
-	for {
-		kept, _, err = ReadTreeProof(bed.layout, tree)
-		if err == nil && kept.Status != batch.AttemptRunning && kept.Status != "" {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("the detached proof did not end within the bound: %+v %v", kept, err)
-		}
-		time.Sleep(50 * time.Millisecond)
+	// The proof's own process ends once it recorded the result.
+	ref, err := identity.ParseRef(running.Process)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := testutil.AwaitExactExit(identity.KernelProber{}, ref); err != nil {
+		t.Fatalf("the detached proof did not end: %v", err)
+	}
+	kept, _, err := ReadTreeProof(bed.layout, tree)
+	if err != nil {
+		t.Fatal(err)
 	}
 	if kept.Status != batch.AttemptGreen || kept.Attempt != running.Attempt || kept.EndedAt == "" {
 		t.Fatalf("the detached proof ended %+v; want green for attempt %s", kept, running.Attempt)

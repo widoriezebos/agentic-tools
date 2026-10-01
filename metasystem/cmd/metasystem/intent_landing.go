@@ -66,6 +66,8 @@ type laneVerbOwners struct {
 	// proven HEAD on main (rail 1).
 	prove func(kernel.ProveRequest) (kernel.TreeProof, error)
 	push  func(kernel.PushRequest) (kernel.PushOutcome, error)
+	// startProof starts the proof detached and returns at once.
+	startProof func(kernel.ProveRequest) (kernel.Started, error)
 	// unset runs landing unset's journaled steps for the person by.
 	unset func(home, by string, force bool) (lane.UnsetReport, error)
 	// laneHeld lists the goals the ledger, read from an installation,
@@ -122,6 +124,11 @@ func (inv *intentInvocation) landing() laneVerbOwners {
 	if owners.prove == nil {
 		owners.prove = func(request kernel.ProveRequest) (kernel.TreeProof, error) {
 			return kernel.Prove(request, kernel.ProductionProveSeams())
+		}
+	}
+	if owners.startProof == nil {
+		owners.startProof = func(request kernel.ProveRequest) (kernel.Started, error) {
+			return kernel.StartProof(request, kernel.ProductionStartSeams())
 		}
 	}
 	if owners.push == nil {
@@ -263,7 +270,7 @@ func (inv *intentInvocation) laneContext(needLane bool) (owners laneVerbOwners, 
 }
 
 func (inv *intentInvocation) laneView(owners laneVerbOwners, home string) lane.View {
-	sources := lane.ViewSources{Home: home, Now: owners.now(), Owner: owners.probe, Records: owners.records, Ready: owners.ready, Helm: owners.helm}
+	sources := lane.ViewSources{Home: home, Now: owners.now(), Owner: owners.probe, Records: owners.records, Ready: owners.ready, Helm: owners.helm, Proof: laneProof}
 	if inv.input.switched("verbose") {
 		// The lane's spend is a full read of its proof store: only --verbose
 		// pays for it (N-5).
@@ -283,7 +290,9 @@ func runIntentLandingStatus(inv *intentInvocation) int {
 	}
 	view := inv.laneView(owners, home)
 	record, _, unreadable := lane.Read(home)
-	result := intentResult{Outcome: intentConfirmed, Summary: view.Summary, Data: landingStatus(owners, home, record, view), view: inv.landingStatusView(view, unreadable != nil)}
+	data := landingStatus(owners, home, record, view)
+	result := intentResult{Outcome: intentConfirmed, Summary: view.Summary, Data: data,
+		view: withRunningProof(inv.landingStatusView(view, unreadable != nil), data.RunningProof)}
 	if view.Root != nil {
 		result.Targets = laneTargets(*view.Root)
 	}
@@ -303,7 +312,10 @@ type landingStatusData struct {
 	AgentAlive bool              `json:"agent_alive"`
 	Queue      []landingQueued   `json:"queue"`
 	LastProof  *kernel.TreeProof `json:"last_proof"`
-	LastPush   *lane.Publication `json:"last_push"`
+	// RunningProof is the lane's proof recorded running: running while its
+	// process runs, died when it ended without a result.
+	RunningProof *landingRunningProof `json:"running_proof"`
+	LastPush     *lane.Publication    `json:"last_push"`
 }
 
 // landingQueued is one member in the lane that has not landed or gone back.
@@ -338,6 +350,7 @@ func landingStatus(owners laneVerbOwners, home string, record lane.Record, view 
 	if proof, ok, err := kernel.LastTreeProof(layout); err == nil && ok {
 		data.LastProof = &proof
 	}
+	data.RunningProof = readLandingRunningProof(layout)
 	if published, err := lane.ReadPublications(home); err == nil {
 		for index := len(published) - 1; index >= 0; index-- {
 			if published[index].Kind == lane.KindLanding {
@@ -929,6 +942,8 @@ func landingWakeWords(reasons []string) string {
 			words = append(words, "the queued work")
 		case lane.WakeUnfinishedBatch:
 			words = append(words, "an unfinished batch")
+		case lane.WakeProofFinished:
+			words = append(words, "a proof that ended")
 		default:
 			words = append(words, reason)
 		}

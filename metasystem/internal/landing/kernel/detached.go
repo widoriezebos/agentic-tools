@@ -235,3 +235,44 @@ func (seams ProveSeams) prober() identity.Prober {
 func selfProcess(prober identity.Prober) (string, error) {
 	return processOf(prober, int64(os.Getpid()))
 }
+
+// ReadProofFact is the lane's proof as the keeper's wake and landing status
+// read it: the proof that runs (one whose process can't be read counts as
+// running), or else the one that died, and when the last finished proof
+// ended.
+func ReadProofFact(layout lane.Layout, prober identity.Prober) (lane.ProofFact, error) {
+	running, live, ok, err := ReadRunningProof(layout, prober)
+	if err != nil {
+		return lane.ProofFact{}, err
+	}
+	if ok && live != identity.Dead {
+		return lane.ProofFact{Running: true, Attempt: running.Attempt, Tree: running.Tree, Since: running.StartedAt}, nil
+	}
+	var fact lane.ProofFact
+	if ok {
+		fact = lane.ProofFact{Died: true, Attempt: running.Attempt, Tree: running.Tree, Since: running.StartedAt}
+	}
+	paths, err := filepath.Glob(filepath.Join(proofsDir(layout), "*.json"))
+	if err != nil {
+		return fact, err
+	}
+	for _, path := range paths {
+		var proof TreeProof
+		if err := strictjson.Read(path, &proof); err != nil || proof.Status == batch.AttemptRunning || proof.EndedAt == "" {
+			continue
+		}
+		if endedLater(proof.EndedAt, fact.EndedAt) {
+			fact.EndedAt = proof.EndedAt
+		}
+	}
+	return fact, nil
+}
+
+func endedLater(ended, than string) bool {
+	end, err := time.Parse(time.RFC3339Nano, ended)
+	if err != nil {
+		return false
+	}
+	before, err := time.Parse(time.RFC3339Nano, than)
+	return err != nil || end.After(before)
+}

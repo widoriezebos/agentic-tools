@@ -187,6 +187,7 @@ func newLandingAgentKeeper(self, home string, agent landingAgent) lane.AgentKeep
 				return "", nil
 			},
 		},
+		Sources: lane.WakeSources{Proof: laneProof},
 		Running: agent.running, Start: agent.start, Reap: []func(string) error{agent.reapOutage}, Cancel: agent.cancel}
 }
 
