@@ -35,7 +35,7 @@ func landingRunBed(t *testing.T) (*laneVerbBed, launch.Store) {
 		Lane: landingLaneCheckout(func() (string, error) { return bed.home, nil })}
 	agent := landingAgent{manager: func() *launch.Manager { return manager }, settings: installationSettings, now: func() time.Time { return laneTestNow },
 		nonce: func() (string, error) { return "0011223344556677", nil },
-		hold: func(string, launch.Record) error { return nil }}
+		hold:  func(string, launch.Record) error { return nil }}
 	bed.keeper = func(home, root string) lane.AgentKeeper {
 		keeper := newLandingAgentKeeper(root, home, agent)
 		keeper.Sources.Records = func(string) ([]batch.Record, error) { return bed.records, nil }

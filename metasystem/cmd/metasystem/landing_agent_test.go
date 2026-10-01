@@ -67,7 +67,7 @@ func TestLandingAgentStartsOnTheLaneWithItsRoster(t *testing.T) {
 		Lane: landingLaneCheckout(func() (string, error) { return home, nil })}
 	agent := landingAgent{manager: func() *launch.Manager { return manager }, settings: installationSettings, now: func() time.Time { return now },
 		nonce: func() (string, error) { return "0011223344556677", nil },
-		hold: func(string, launch.Record) error { return nil }}
+		hold:  func(string, launch.Record) error { return nil }}
 	keeper := newLandingAgentKeeper(module, home, agent)
 	queued := []batch.Record{{BatchID: "b-one", State: batch.StateOpen, Units: []batch.Unit{{GoalID: "g-one", State: batch.UnitJoined}}}}
 	keeper.Sources.Records = func(string) ([]batch.Record, error) { return queued, nil }
