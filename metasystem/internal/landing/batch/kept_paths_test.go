@@ -462,3 +462,50 @@ func TestHelmHeldSeatNamesTheFirstSeatAtTheHelm(t *testing.T) {
 		t.Fatal("no seat at the helm held the batch")
 	}
 }
+
+// TestJoinableOpenPassesOverAnOldBaseWithNoLiveMember (2026-10-01): an open
+// batch on an older base whose every member left (ejected or withdrawn) is
+// not where a join lands. Its base can predate the lane's engine, which then
+// refuses to plan there; the join opens a batch on the current base instead.
+// An old-base batch with a live member, or with none yet, still gathers.
+func TestJoinableOpenPassesOverAnOldBaseWithNoLiveMember(t *testing.T) {
+	t.Parallel()
+	old, current := testCommit(311), testCommit(312)
+	left := Record{BatchID: "01j5x00000000000000000b311", State: StateOpen, BaseTree: old,
+		Units: []Unit{{GoalID: "ejected-goal", State: UnitEjected}, {GoalID: "withdrawn-goal", State: UnitWithdrawn}}}
+	if record, found := JoinableOpen([]Record{left}, current); found {
+		t.Fatalf("a join addressed the old-base batch whose members all left: %+v", record)
+	}
+	if record, found := JoinableOpen([]Record{left}, old); !found || record.BatchID != left.BatchID {
+		t.Fatalf("an open batch on the join's own base was passed over: %+v found=%v", record, found)
+	}
+	live := left
+	live.BatchID = "01j5x00000000000000000b313"
+	live.Units = append(append([]Unit(nil), left.Units...), Unit{GoalID: "live-goal", State: UnitJoined})
+	if record, found := JoinableOpen([]Record{live, left}, current); !found || record.BatchID != live.BatchID {
+		t.Fatalf("an old-base batch with a live member stopped gathering: %+v found=%v", record, found)
+	}
+}
+
+// TestFindOrCreateOpenDissolvesTheOldBaseBatchItPassesOver: the old-base
+// open batch whose members all left, which a join passes over, is dissolved
+// under the same lock, so it does not stay the lane's collecting batch.
+func TestFindOrCreateOpenDissolvesTheOldBaseBatchItPassesOver(t *testing.T) {
+	t.Parallel()
+	store := NewStore(t.TempDir(), nil)
+	old, current := testCommit(321), testCommit(322)
+	left := Record{Schema: 1, BatchID: "01j5x00000000000000000b321", State: StateOpen, BaseTree: old, TipTree: old,
+		Units: []Unit{{GoalID: "ejected-goal", Chain: "ejected-goal", State: UnitEjected,
+			Claim: Claim{Machine: "m1", Lineage: "lineage-1", Epoch: 1, Revision: 1, AccountingRevision: 1}}}}
+	must(t, store.locked(func() error { return store.write(left) }))
+	created, err := FindOrCreateOpen(store, current, "01j5x00000000000000000b322", "lane", ten)
+	must(t, err)
+	if created.BatchID != "01j5x00000000000000000b322" || created.BaseTree != current {
+		t.Fatalf("the join did not open on the current base: %+v", created)
+	}
+	passed, err := store.Load(left.BatchID)
+	must(t, err)
+	if passed.State != StateDissolved {
+		t.Fatalf("the passed-over batch stayed %s", passed.State)
+	}
+}

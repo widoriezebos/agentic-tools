@@ -128,6 +128,10 @@ func FromError(verb string, status int, err error, data any) Result {
 		} else if errors.As(err, &coder) {
 			result.Code = coder.RefusalCode()
 			result.Details = []string{coder.RefusalDetail()}
+		} else if detail := refusal.Detail(err); detail != "" {
+			// A refusal with a detail but no register code here (a policy
+			// engine's) keeps its cause for the parent's --verbose.
+			result.Details = []string{detail}
 		}
 		if result.Code != "" && result.Outcome == Failed && status == 1 {
 			result.Outcome = Refused // a coded refusal ending with status 1
@@ -245,8 +249,23 @@ func (result Result) Err() error {
 	if result.Next != nil {
 		run = strings.Join(result.Next.Argv, " ")
 	}
-	return &refusal.Coded{Code: result.Code, Reason: errors.New(reason), Run: run}
+	coded := &refusal.Coded{Code: result.Code, Reason: errors.New(reason), Run: run}
+	if len(result.Details) == 0 {
+		return coded
+	}
+	return &childDetail{Coded: coded, detail: strings.Join(result.Details, "; ")}
 }
+
+// childDetail is a child's refusal as its parent holds it: the child's words,
+// and the child's own detail for --verbose rather than one rebuilt from them.
+type childDetail struct {
+	*refusal.Coded
+	detail string
+}
+
+func (e *childDetail) Detail() string        { return e.detail }
+func (e *childDetail) RefusalDetail() string { return e.detail }
+func (e *childDetail) Unwrap() error         { return e.Coded }
 
 // DecodeData reads the result's data into value, refusing unknown fields.
 func (result Result) DecodeData(value any) error {

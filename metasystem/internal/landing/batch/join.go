@@ -353,6 +353,9 @@ func checkMembership(store Store, batchID, goalID, chainID string) error {
 // baseTree, else the newest open batch on any base. Main moves with every
 // ledger commit, so a batch on an older base keeps gathering members; the owner
 // rebases or reopens it when it lands. Sealed and proving batches never join.
+// An older-base batch whose every member left (ejected or withdrawn) gathers
+// nothing more: its base can predate the lane's engine, which then cannot
+// plan a join there (2026-10-01), so the join opens on the current base.
 func JoinableOpen(records []Record, baseTree string) (Record, bool) {
 	var newest Record
 	found := false
@@ -364,11 +367,21 @@ func JoinableOpen(records []Record, baseTree string) (Record, bool) {
 		if record.BaseTree == baseTree {
 			return record, true
 		}
-		if !found {
+		if !found && !everyMemberLeft(record) {
 			newest, found = record, true
 		}
 	}
 	return newest, found
+}
+
+// everyMemberLeft reports whether record had members and none is still in it.
+func everyMemberLeft(record Record) bool {
+	for _, unit := range record.Units {
+		if !terminalUnitState(unit.State) {
+			return false
+		}
+	}
+	return len(record.Units) > 0
 }
 
 // FindOrCreateOpen selects the open batch JoinableOpen names, or creates one on
@@ -380,6 +393,16 @@ func FindOrCreateOpen(store Store, baseTree, id, actor string, at time.Time) (Re
 		records, err := store.Records()
 		if err != nil {
 			return err
+		}
+		// An older-base open batch JoinableOpen passes over gathers nothing
+		// more: dissolved here, it stops being the lane's collecting batch.
+		for _, record := range records {
+			if record.State == StateOpen && record.ClosedReason == "" && record.BaseTree != baseTree && everyMemberLeft(record) {
+				record.Transition(StateDissolved, at, "dissolve", actor, "no member left; a join opened on a newer base")
+				if err := store.write(record); err != nil {
+					return err
+				}
+			}
 		}
 		if open, found := JoinableOpen(records, baseTree); found {
 			selected = open
