@@ -54,6 +54,10 @@ func TestGateRefusesEveryBypassClass(t *testing.T) {
 	deny("git attribute and diff settings", "git config diff.go.binary true", "git config merge.ours.driver true", "git config filter.x.clean sh",
 		"git config core.attributesFile /tmp/a", "git config --local attr.tree HEAD", "git -c core.attributesFile=/tmp/a diff",
 		"git checkout HEAD -- .gitattributes", "git checkout HEAD -- metasystem/.gitattributes", "git add .gitattributes")
+	deny("replace refs", "git replace HEAD main", "git replace -f HEAD main", "git replace --edit HEAD", "git replace --graft HEAD",
+		"git replace -d HEAD", "git --no-pager replace HEAD main", "git update-ref refs/replace/abc HEAD", "git update-ref --stdin",
+		"git fetch origin refs/replace/*:refs/replace/*", "git fetch origin 'refs/replace/*:refs/replace/*'", "git fetch origin main:refs/replace/abc",
+		"git checkout -b lane/b9 refs/replace/abc")
 	deny("git config and remote writes", "git config core.hooksPath /tmp", "git config core.sshCommand sh", "git config core.pager sh", "git config --global core.fsmonitor sh", "git remote set-url origin /tmp/x")
 	deny("git push in any form", "git push", "git push origin HEAD:main", "git push --force", "git --no-pager push", "git push --no-verify")
 	deny("git checkout of protected paths", "git checkout HEAD -- .githooks/pre-push", "git checkout HEAD -- .claude/settings.json",
@@ -99,6 +103,11 @@ func TestGateRefusesEveryBypassClass(t *testing.T) {
 		"Git's info attributes":        filepath.Join(bed.checkout, ".git", "info", "attributes"),
 		"Git's info exclude":           filepath.Join(bed.checkout, ".git", "info", "exclude"),
 		"Git's config":                 filepath.Join(bed.checkout, ".git", "config"),
+		"a replace ref":                filepath.Join(bed.checkout, ".git", "refs", "replace", "abc"),
+		"an upper-case replace ref":    filepath.Join(bed.checkout, ".GIT", "Refs", "Replace", "abc"),
+		"a branch ref":                 filepath.Join(bed.checkout, ".git", "refs", "heads", "main"),
+		"packed refs":                  filepath.Join(bed.checkout, ".git", "packed-refs"),
+		"upper-case packed refs":       filepath.Join(bed.checkout, ".Git", "Packed-Refs"),
 		"upper-case Git config":        filepath.Join(bed.checkout, ".GIT", "Config"),
 		"a root .gitattributes":        filepath.Join(bed.checkout, ".gitattributes"),
 		"a nested .gitattributes":      filepath.Join(bed.module, "internal", ".gitattributes"),
