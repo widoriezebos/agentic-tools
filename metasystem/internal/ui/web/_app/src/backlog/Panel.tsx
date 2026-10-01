@@ -65,6 +65,7 @@ export function Panel({
   writable = [],
   set,
   save,
+  refuses,
   busy = false,
   onClose,
   children,
@@ -145,6 +146,11 @@ export function Panel({
    * path to the one place a press can reach it.
    */
   save?: (field: string, text: string) => Promise<Outcome>;
+  /**
+   * Why words cannot be put in one of those fields, or "": the sheet's own
+   * rule for a field whose value has a form, said before any press (g1-s78).
+   */
+  refuses?: (field: string, text: string) => string;
   onClose: () => void;
   children: ReactNode;
 }) {
@@ -230,6 +236,7 @@ export function Panel({
               writable={writable}
               set={set}
               save={save}
+              refuses={refuses}
             />
           )}
         </div>

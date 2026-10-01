@@ -48,6 +48,7 @@ export function AskAboutSheet({
   writable = [],
   set,
   save,
+  refuses,
 }: {
   sheet: string;
   fields: Field[];
@@ -59,6 +60,8 @@ export function AskAboutSheet({
   set?: (field: string, text: string) => string;
   /** Put words in one of them and send the sheet, where the sheet can send. */
   save?: (field: string, text: string) => Promise<Outcome>;
+  /** Why words cannot be put in one of them, or "" where they can. */
+  refuses?: (field: string, text: string) => string;
 }) {
   const { askAbout, handOver, noteDraft, dropDraft, offerFields, writing } = usePartner();
   // A sheet that does not mint its own — the Project pane's, which hand their
@@ -83,6 +86,7 @@ export function AskAboutSheet({
       raw: (field: string) => fields.find((one) => one.name === field)?.value ?? "",
       set: (field: string, text: string) => set?.(field, text) ?? "",
       save,
+      refuses,
     });
   });
   // And one registration is taken back exactly once: when the sheet goes.

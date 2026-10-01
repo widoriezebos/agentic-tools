@@ -441,6 +441,54 @@ function answerOf(said: string | undefined): Answer {
   return said === "2" || said === "3" ? said : "1";
 }
 
+/** The order and the names the command's form takes, which is the only order it reads. */
+const RISK_KEYS = ["severity", "novelty", "exposure", "accumulation"] as const;
+
+/**
+ * Why a suggestion for the four answers cannot be used: it is not the form the
+ * command takes. It is said in place of Use this, never after a press.
+ */
+export const NOT_THE_RISK_FORM =
+  "Not usable: the four answers must read severity=N,novelty=N,exposure=N,accumulation=N, each 1, 2 or 3";
+
+/**
+ * The four answers a value in the command's own form carries, or null where it
+ * is not that form.
+ *
+ * It is internal/goal/file.go ParseRiskRecord's rule, read on this side so that
+ * a suggestion is judged before it is used rather than refused by the engine
+ * after: four parts, in that order, each name=1, 2 or 3, nothing else. Only the
+ * whitespace around the whole value is forgiven, because that is what a
+ * transport leaves. riskOf below is what turns the parts into the sheet's own
+ * answers; this is what decides there are four of them to turn.
+ */
+export function answersIn(text: string): Record<(typeof RISK_KEYS)[number], string> | null {
+  const parts = text.trim().split(",");
+  if (parts.length !== RISK_KEYS.length) {
+    return null;
+  }
+  const found: Record<string, string> = {};
+  for (const [at, part] of parts.entries()) {
+    const [name, value, extra] = part.split("=");
+    if (name !== RISK_KEYS[at] || extra !== undefined || !/^[123]$/.test(value ?? "")) {
+      return null;
+    }
+    found[name] = value;
+  }
+  return found as Record<(typeof RISK_KEYS)[number], string>;
+}
+
+/**
+ * The sheet's risk with the four answers a suggestion carries, its basis kept —
+ * or null, and nothing changed, where the suggestion is not the form. A
+ * suggestion is used whole or not at all: three answers set and one left would
+ * be a tier nobody proposed.
+ */
+export function withAnswers(risk: Risk, text: string): Risk | null {
+  const found = answersIn(text);
+  return found === null ? null : { ...riskOf(found), basis: risk.basis };
+}
+
 /** The words the approve sheet uses for where a prefilled budget came from. */
 const SOURCE_WORDS: Readonly<Record<BudgetSource, string>> = {
   goal: "the tuple this goal already carries",

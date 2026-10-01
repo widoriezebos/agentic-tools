@@ -1,6 +1,7 @@
 import type { Suggestion } from "./api";
 import { mintKey } from "./asking";
 import type { SheetDraft } from "./drafting";
+import { RISK_ANSWERS } from "../backlog/opening";
 
 /**
  * What the human may do with the words the Partner offered, and when.
@@ -69,6 +70,13 @@ export type Registered = {
    * that supplies none is offered Use this alone.
    */
   save?: (field: string, text: string) => Promise<Outcome>;
+  /**
+   * Why these words cannot be put in that field, or "" where they can: a field
+   * whose value has a form the sheet reads strictly — the four risk answers —
+   * says so before a press rather than taking half of it (g1-s78). A sheet that
+   * supplies none takes any words in any of its fields.
+   */
+  refuses?: (field: string, text: string) => string;
 };
 
 /**
@@ -258,6 +266,12 @@ export function offeredIn(carried: readonly Carried[], marks: Marks, open: reado
       const standing = open.includes(suggestion.opening);
       cards.push({
         ...suggestion,
+        // The four risk answers are a form, and a form has no outer whitespace:
+        // the field holds the form once it is used, so the card carries it
+        // without what a transport left around it, or the card would read as
+        // typed over the instant it was used and lose its Undo (g1-s78, Sol
+        // S78-01). Every other field's words are compared exactly as written.
+        text: suggestion.field === RISK_ANSWERS ? suggestion.text.trim() : suggestion.text,
         id,
         open: standing,
         mark,
@@ -341,6 +355,20 @@ export function reach(
     return null;
   }
   return openings.get(card.opening) ?? null;
+}
+
+/**
+ * Why the sheet a card was prepared for will not take its words, or "".
+ *
+ * It is the sheet's own answer, asked of the opening the card belongs to; a
+ * sheet that has gone answers nothing here, because whether Use this can still
+ * be done at all is usable's question below.
+ */
+export function refusalOf(registered: Registered | null, card: Offered | undefined): string {
+  if (registered === null || card === undefined) {
+    return "";
+  }
+  return registered.refuses?.(card.field, card.text) ?? "";
 }
 
 /**
