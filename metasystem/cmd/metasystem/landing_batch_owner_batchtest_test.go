@@ -331,7 +331,7 @@ func TestBatchTipProofRejectsCandidateTreeMismatchBeforeLaunch(t *testing.T) {
 	root, _, _, _ := batchProofRefusalBed(t)
 	candidateTip := strings.TrimSpace(string(mustOutput(t, exec.Command("git", "-C", root, "rev-parse", "HEAD"))))
 	_, err := batchowner.LaunchBatchTipProof(batchowner.BatchProofLaunch{Root: root, CandidateTip: candidateTip, Tree: strings.Repeat("0", 40)})
-	if err == nil || !strings.Contains(err.Error(), "batch proof candidate tip") || !strings.Contains(err.Error(), "has tree") {
+	if err == nil || !strings.Contains(err.Error(), candidateTip) || !strings.Contains(err.Error(), "has tree") || !strings.Contains(err.Error(), strings.Repeat("0", 40)) {
 		t.Fatalf("candidate/tree mismatch=%v", err)
 	}
 }
