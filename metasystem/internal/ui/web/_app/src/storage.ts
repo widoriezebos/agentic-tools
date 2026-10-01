@@ -155,8 +155,9 @@ export const PARTNER_LINE_HEIGHT_KEY = "ms.ui.partner.line-height";
 
 /**
  * The questions a press on Ask what happened left waiting for their
- * conversation's answer (g1-s68 D2), kept so a reload finds them where they
- * were: in their own conversation, ready to send, with the turn key they were
+ * conversation's answer (g1-s68 D2), kept in the tab's own store so a reload
+ * of that tab finds them where they were, and no other tab reads or writes
+ * them: in their own conversation, ready to send, with the turn key they were
  * minted with, so a send after the reload is the same turn. Nothing else of
  * the page is kept with them; the trouble was scrubbed of every secret before
  * it was held.
@@ -190,6 +191,20 @@ export type Store = {
 export function browserStore(): Store | null {
   try {
     return globalThis.localStorage as Store | null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * This tab's own store, or null where there is none. Never throws. It survives
+ * a reload of the tab and is shared with no other tab, which is what the
+ * waiting questions need: a question taken back in one tab must not be put
+ * back by another (Sol SOL-AF-01).
+ */
+export function tabStore(): Store | null {
+  try {
+    return globalThis.sessionStorage as Store | null;
   } catch {
     return null;
   }
@@ -421,7 +436,7 @@ function text(value: unknown): string {
  * and a line on this page may be given the same one. Anything that is not a
  * waiting question reads as none.
  */
-export function readPendingTroubles(store: Store | null = browserStore()): Pending[] {
+export function readPendingTroubles(store: Store | null = tabStore()): Pending[] {
   const stored = read(PENDING_TROUBLES_KEY, store);
   if (stored === null || stored === "") {
     return [];
@@ -474,6 +489,6 @@ export function readPendingTroubles(store: Store | null = browserStore()): Pendi
 }
 
 /** Keep the waiting questions, or let them all go: "" when none waits. */
-export function writePendingTroubles(list: readonly Pending[], store: Store | null = browserStore()): void {
+export function writePendingTroubles(list: readonly Pending[], store: Store | null = tabStore()): void {
   write(PENDING_TROUBLES_KEY, list.length === 0 ? "" : JSON.stringify(list), store);
 }

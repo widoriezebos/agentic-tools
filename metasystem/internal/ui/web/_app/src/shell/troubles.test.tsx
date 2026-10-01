@@ -1,5 +1,5 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { TroubleProvider, useTroubles } from "./troubles";
 import { chipLine, pendingIn, sendChoice, waitingLine, type Pending, type Trouble } from "./troubling";
@@ -112,5 +112,48 @@ describe("a waiting question", () => {
     expect(() => {
       writePendingTroubles([WAITING], throwing);
     }).not.toThrow();
+  });
+});
+
+// SOL-AF-01: one tab's withdrawal is not undone by another tab. The waiting
+// questions are the tab's own: two tabs share the browser's lasting store but
+// each has a store of its own, and only that one may hold them.
+describe("a waiting question in two tabs", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("withdrawn in tab A, is not offered again by A's reload after tab B adds another", () => {
+    const shared = store();
+    const tabA = store();
+    const tabB = store();
+    const inTab = (tab: Store) => {
+      vi.stubGlobal("localStorage", shared);
+      vi.stubGlobal("sessionStorage", tab);
+    };
+    const P = WAITING;
+    const Q: Pending = { ...WAITING, id: "«r9»", origin: "«r9»", key: "q-turn-key", trouble: { ...LAND, text: "the backlog could not be read" } };
+
+    inTab(tabA);
+    writePendingTroubles([P]);
+    inTab(tabB);
+    writePendingTroubles([P]);
+    // A takes P back; B, still holding P, then adds Q.
+    inTab(tabA);
+    writePendingTroubles([]);
+    inTab(tabB);
+    writePendingTroubles([P, Q]);
+    // A reloads.
+    inTab(tabA);
+    expect(readPendingTroubles().map((entry) => entry.key)).toEqual([]);
+    const markup = renderToStaticMarkup(
+      <TroubleProvider>
+        <Probe conversation={ROOM} />
+      </TroubleProvider>,
+    );
+    expect(markup).toContain("nothing waits");
+    // B's reload still finds both of its own.
+    inTab(tabB);
+    expect(readPendingTroubles().map((entry) => entry.key)).toEqual([P.key, Q.key]);
   });
 });
