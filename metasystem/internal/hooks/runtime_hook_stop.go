@@ -130,7 +130,7 @@ func (l *lifecycle) landingAgentStops() bool {
 	if l.inv.Event != "stop" || l.inv.env("METASYSTEM_OWNER_LINEAGE") != launch.LandingOwnerLineage {
 		return false
 	}
-	form, _ := json.Marshal(map[string]string{"systemMessage": "landing agent: the keeper supervises this session and relaunches it when work is queued. Stop allowed."})
+	form, _ := json.Marshal(map[string]string{"systemMessage": "Landing agent: stop allowed; the keeper relaunches it when work is queued."})
 	_ = writeLine(l.inv.Stdout, string(form))
 	return true
 }
