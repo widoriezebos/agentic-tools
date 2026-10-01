@@ -49,6 +49,7 @@ import {
   NOWHERE,
   reach,
   offeredIn,
+  refusalOf,
   saving,
   undoable,
   undone,
@@ -317,6 +318,12 @@ type Partner = {
   useAndSave: (id: string) => Promise<void>;
   /** Undo: what the field held at the moment of use goes back. */
   undo: (id: string) => void;
+  /**
+   * Why the sheet this card was prepared for will not take its words, or "".
+   * A card it answers for is offered no Use this at all, and the reason is said
+   * where the press would have been (g1-s78).
+   */
+  refusal: (id: string) => string;
   /** Dismiss: the card folds to one line. */
   dismiss: (id: string) => void;
   /** The folded line, pressed: the card is back. */
@@ -679,6 +686,7 @@ const nothing: Partner = {
   use: () => {},
   useAndSave: async () => {},
   undo: () => {},
+  refusal: () => "",
   dismiss: () => {},
   reopen: () => {},
   show: () => {},
@@ -1342,6 +1350,9 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
     if (card === undefined || registered === null || !usable(card, [...openings.current.keys()])) {
       return;
     }
+    if (refusalOf(registered, card) !== "") {
+      return;
+    }
     const previous = registered.set(card.field, card.text);
     setMarks((held) => used(held, id, previous));
   }, [offered]);
@@ -1395,7 +1406,7 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
     if (card === undefined || registered?.save === undefined) {
       return;
     }
-    if (!usable(card, [...openings.current.keys()])) {
+    if (!usable(card, [...openings.current.keys()]) || refusalOf(registered, card) !== "") {
       return;
     }
     const previous = registered.raw(card.field);
@@ -1407,6 +1418,16 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
   const dismiss = useCallback((id: string) => {
     setMarks((held) => folded(held, id, true));
   }, []);
+
+  // Asked at render, of the registration the sheet renews every render: the
+  // sheet's rule is about the words, which do not change under a card.
+  const refusal = useCallback(
+    (id: string) => {
+      const card = cardIn(offered, id);
+      return refusalOf(reach(openings.current, card), card);
+    },
+    [offered],
+  );
 
   const reopen = useCallback((id: string) => {
     setMarks((held) => folded(held, id, false));
@@ -2549,7 +2570,7 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
       store, busy: running, draft, setDraft, send, stop, sending, pendingTrouble, dropTrouble,
       attachments, detach, chosen, ask, clearChosen, passage, askPassage,
       sheetDraft, askAbout, handOver, noteDraft, dropDraft, offerFields, noteSheet,
-      offered, use, useAndSave, undo, dismiss, reopen, show, showing, clearShowing, noteField, revealed,
+      offered, use, useAndSave, undo, refusal, dismiss, reopen, show, showing, clearShowing, noteField, revealed,
       writing, noteWriting, fillComposer,
       capture, moved, refresh, suggest, offerInsert,
       wanted, returnFocus,
@@ -2569,7 +2590,7 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
     [store, running, draft, send, stop, sending, pendingTrouble, dropTrouble, attachments, detach, chosen, ask,
       clearChosen, passage, askPassage, sheetDraft, askAbout, handOver, noteDraft,
       dropDraft, offerFields, noteSheet,
-      offered, use, useAndSave, undo, dismiss, reopen, show, showing, clearShowing, noteField, revealed,
+      offered, use, useAndSave, undo, refusal, dismiss, reopen, show, showing, clearShowing, noteField, revealed,
       writing, noteWriting, fillComposer,
       capture, moved, refresh, suggest, offerInsert, wanted, returnFocus,
       where, room, putOnDesk, openDesk, showOnDesk, setFace, keepRoomNow, walk,

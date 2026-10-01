@@ -14,6 +14,8 @@ import {
   keepsDerived,
   openNote,
   overridesTier,
+  riskForm,
+  riskMeanings,
   slugFrom,
   tierLine,
   unopenable,
@@ -24,6 +26,8 @@ import {
   ID_RULE,
   INTENT_RULE,
   NEXT_STEP_RULE,
+  RISK_ANSWERS,
+  RISK_MEANINGS_FIELD,
   SCORES,
   type Answer,
   type Intake,
@@ -33,6 +37,7 @@ import {
 import { laneTitle } from "./lanes";
 import { Panel } from "./Panel";
 import { AskThePartner, FieldProposals } from "../partner/FieldProposals";
+import { answersIn, NOT_THE_RISK_FORM, withAnswers } from "../partner/proposing";
 import { useOpening } from "../partner/Suggestion";
 import { useFieldInHand } from "../partner/writing";
 import { Button, Hint } from "../shell/controls";
@@ -246,6 +251,16 @@ export function OpenSheet({
         setIntake({ ...intake, nextStep: text });
         return was;
       }
+      case RISK_ANSWERS: {
+        // Whole or not at all: a value that is not the command's form changes
+        // no answer, and the card never offered it (refuses, below).
+        const was = riskForm(risk);
+        const next = withAnswers(risk, text);
+        if (next !== null) {
+          setRisk(next);
+        }
+        return was;
+      }
       case "Why these answers": {
         const was = risk.basis;
         setRisk({ ...risk, basis: text });
@@ -285,6 +300,8 @@ export function OpenSheet({
         { name: "Intent", value: intake.intent },
         { name: "Next step", value: intake.nextStep },
         { name: "Tier", value: intake.tier === "" ? String(derivedTier(risk)) : intake.tier },
+        { name: RISK_ANSWERS, value: riskForm(risk) },
+        { name: RISK_MEANINGS_FIELD, value: riskMeanings() },
         { name: "Why these answers", value: risk.basis },
         { name: "Why that tier", value: intake.why },
         { name: "Labels", value: intake.labels },
@@ -297,9 +314,13 @@ export function OpenSheet({
       // picked from the goals this board carries, so neither is text the
       // Partner writes; the why behind an overridden tier is only on screen
       // while that override stands, and a suggestion for a field nobody can see
-      // is a suggestion nobody can use.
-      writable={["Id", "Intent", "Next step", "Why these answers", "Labels"]}
+      // is a suggestion nobody can use. The four answers the tier is derived
+      // from are one field in the command's own form (g1-s78): a suggestion for
+      // them sets the four pills, and the tier follows from those as it always
+      // did. What they mean travels beside them, to be read and not written.
+      writable={["Id", "Intent", "Next step", RISK_ANSWERS, "Why these answers", "Labels"]}
       set={putWords}
+      refuses={(field, text) => (field === RISK_ANSWERS && answersIn(text) === null ? NOT_THE_RISK_FORM : "")}
       unproven=""
       refusal={engineRefusedField === "" ? refusal : ""}
       note={cannot === "" ? (blocked === "" ? openNote(authority.human) : blocked) : ""}
@@ -395,11 +416,21 @@ export function OpenSheet({
         open={answersOpen ?? false}
         onOpen={setAnswersOpen}
       >
-        <div className="ms-act-matrix">
+        <div className="ms-act-label">
+          <span>The four answers</span>
+          <AskThePartner opening={opening} field={RISK_ANSWERS} value={riskForm(risk)} also="Why these answers" />
+        </div>
+        <div
+          className="ms-act-matrix"
+          onFocus={() => {
+            inHand(RISK_ANSWERS);
+          }}
+        >
           {SCORES.map((score) => (
             <Stops key={score.key} score={score} value={risk[score.key]} onChange={answer} />
           ))}
         </div>
+        <FieldProposals opening={opening} field={RISK_ANSWERS} value={riskForm(risk)} />
         <Field
           id="ms-open-basis"
           label="Why these answers"
