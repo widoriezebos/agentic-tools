@@ -15,8 +15,6 @@ import (
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 )
 
@@ -94,25 +92,6 @@ func TestIntentManualWorkDelivery(t *testing.T) {
 	code, result = do("status", c.id, "--work", "main")
 	if !strings.Contains(result.Summary, "collected and published") {
 		t.Fatalf("status sees the manual work: code=%d %+v", code, result)
-	}
-	// Public land joins the manual unit into the actual batch.
-	landOwners, counts := journeyLandOwners(t, j)
-	var stdout, stderr bytes.Buffer
-	runIntentIn(mustIntentCommand(t, "work land"), []string{c.id, "--repo", root, "--json"}, &stdout, &stderr, root, landOwners)
-	var landed intentResult
-	if err := json.Unmarshal(stdout.Bytes(), &landed); err != nil {
-		t.Fatalf("land printed no result: %v; %q %q", err, stdout.String(), stderr.String())
-	}
-	landData := resultData(t, landed)
-	if landed.Outcome != intentInProgress || landData["route"] != "batch" || landData["joinedNow"] != true || counts.admissions != 1 {
-		t.Fatalf("public land of the manual work: %+v counts %+v", landed, *counts)
-	}
-	record, err := batch.NewStore(j.landingRoot, identity.KernelProber{}).Load(landData["batchId"].(string))
-	if err != nil || len(record.Units) != 1 || len(record.Units[0].Builds) != 1 {
-		t.Fatalf("stored batch = %+v, %v", record, err)
-	}
-	if build := record.Units[0].Builds[0]; build.Commit != commit || build.Attestation.Source.Kind != "critic-root" || build.Attestation.Source.RootJob != critic {
-		t.Fatalf("the member binds the manual version read by its closed critic: %+v", build)
 	}
 }
 

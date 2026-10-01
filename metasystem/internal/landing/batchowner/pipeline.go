@@ -11,7 +11,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/registry"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/httpd"
@@ -53,17 +52,17 @@ func (source HostPipeline) View(now time.Time) board.View {
 }
 
 // read is the armed seats of this host and their classified picture.
-func (source HostPipeline) read(now time.Time) ([]board.Seat, batch.BoardPicture) {
+func (source HostPipeline) read(now time.Time) ([]board.Seat, boardPicture) {
 	seats, err := source.Seats()
 	if err != nil {
-		return nil, batch.BoardPicture{Reason: "registry: " + err.Error()}
+		return nil, boardPicture{Reason: "registry: " + err.Error()}
 	}
 	home, err := source.Home()
 	if err != nil {
-		return seats, batch.BoardPicture{Reason: "board: " + err.Error()}
+		return seats, boardPicture{Reason: "board: " + err.Error()}
 	}
 	picture, _ := board.Read(home, seats, source.Prober, now, source.stall)
-	result := batch.BoardPicture{Cards: picture.Cards, Unknown: picture.Unknown, Readable: true}
+	result := boardPicture{Cards: picture.Cards, Unknown: picture.Unknown, Readable: true}
 	// With no armed seat no claim can be checked, and the ledger is not read.
 	if source.claims == nil || len(seats) == 0 {
 		return seats, result
@@ -152,8 +151,19 @@ func AcceptedClaims(ledgerRoot string) func() (map[string]string, error) {
 
 // checkAgainstLedger applies the board's ledger checks (claim moved, not
 // claimed, no card) to the lane's picture.
-func checkAgainstLedger(picture batch.BoardPicture, seats []board.Seat, claims map[string]string) batch.BoardPicture {
+func checkAgainstLedger(picture boardPicture, seats []board.Seat, claims map[string]string) boardPicture {
 	checked := board.CheckClaims(board.Picture{Cards: picture.Cards, Unknown: picture.Unknown}, seats, claims)
 	picture.Cards, picture.Unknown = checked.Cards, checked.Unknown
 	return picture
+}
+
+// boardPicture is what a pipeline source reads from the host: the cards it
+// believes and the ones it cannot, classified by board.Classify and by the
+// ledger checks only the source can make. Readable is false, with Reason,
+// when the host registry cannot be read.
+type boardPicture struct {
+	Cards    []board.Card
+	Unknown  []board.Unknown
+	Readable bool
+	Reason   string
 }

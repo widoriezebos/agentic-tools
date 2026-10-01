@@ -3,9 +3,6 @@ package batch
 import (
 	"os"
 	"path/filepath"
-	"slices"
-
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
 // ModuleRoot returns the nested MetaSystem module when a checkout contains one.
@@ -15,13 +12,4 @@ func ModuleRoot(checkout string) string {
 		return nested
 	}
 	return checkout
-}
-
-func recordSelection(record *Record, plan testpolicy.Plan) {
-	record.SelectedGroups = append(record.SelectedGroups, plan.SelectedGroups...)
-	slices.Sort(record.SelectedGroups)
-	record.SelectedGroups = slices.Compact(record.SelectedGroups)
-	if plan.RequiredMode == testpolicy.ModeDeep {
-		record.ClosedReason = "deep-ceiling"
-	}
 }

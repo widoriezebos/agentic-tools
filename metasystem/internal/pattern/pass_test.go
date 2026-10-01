@@ -15,7 +15,6 @@ import (
 func TestPassRunsOnlyInTheLaneSteward(t *testing.T) {
 	t.Parallel()
 	b := newBed(t)
-	b.writeBatch(batchID("p"), refused(bedStart, 5), b.seat)
 	seatRepo := filepath.Join(b.seat, "metasystem")
 	if err := os.MkdirAll(seatRepo, 0o755); err != nil {
 		t.Fatal(err)
@@ -35,8 +34,8 @@ func TestPassRunsOnlyInTheLaneSteward(t *testing.T) {
 		t.Fatalf("a host without a lane ran the patterns: %v", err)
 	}
 	b.cycle(bedStart.Add(10 * time.Minute))
-	if len(b.open()) != 1 {
-		t.Fatalf("the lane's steward did not run the patterns: %+v", b.episodes())
+	if _, err := os.Stat(steward.PatternStatePath(b.repo)); err != nil {
+		t.Fatalf("the lane's steward did not run the patterns: %v", err)
 	}
 }
 

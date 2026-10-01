@@ -1350,9 +1350,6 @@ func runIntentSystemRestart(inv *intentInvocation) int {
 	}
 	targets := inv.checkoutTarget(scope)
 	owners := inv.owners.processes.process
-	if hold := owners.proofHold(scope); hold != nil {
-		return inv.render(processRefusalResult(targets, hold, stoptransition.Report{}))
-	}
 	stopped, refusal := owners.stop(scope, scale)
 	if refusal != nil {
 		result := processRefusalResult(targets, refusal, stopped)

@@ -10,7 +10,7 @@ exit 0
     }
   ],
   "outcome": "confirmed",
-  "summary": "landing lane /Users/wido/GitHub/agentic-tools-landing: stopped by Wido; metasystem landing start resumes it; batch 4gr18nm8t3nyev9sssda9jgtsq proving, 2 members; next 7kq2m9x4c1vbn8hzt5pwe3dyra collecting, 1 member",
+  "summary": "landing lane /Users/wido/GitHub/agentic-tools-landing: stopped by Wido; metasystem landing start resumes it",
   "data": {
     "root": "/Users/wido/GitHub/agentic-tools-landing",
     "registered_by": "Wido",
@@ -23,70 +23,15 @@ exit 0
       "stopped_by": "Wido",
       "retry_hint": "metasystem landing start resumes it"
     },
-    "batch": {
-      "id": "4gr18nm8t3nyev9sssda9jgtsq",
-      "state": "proving",
-      "members": [
-        {
-          "goal": "verbs-match-intent",
-          "seat": "m1e"
-        },
-        {
-          "goal": "switch-on-trial",
-          "seat": "ui"
-        }
-      ],
-      "waiting_for": [],
-      "returned": [],
-      "since": "2026-09-30T08:55:00Z",
-      "reason": "proving: "
-    },
-    "next": {
-      "id": "7kq2m9x4c1vbn8hzt5pwe3dyra",
-      "members": [
-        {
-          "goal": "disk-lifetimes",
-          "seat": "m1e"
-        }
-      ]
-    },
-    "spend": null,
+    "batch": null,
+    "next": null,
     "wake": {
-      "reasons": [
-        "queued",
-        "unfinished-batch"
-      ],
+      "reasons": [],
       "unread": []
     },
-    "summary": "landing lane /Users/wido/GitHub/agentic-tools-landing: stopped by Wido; metasystem landing start resumes it; batch 4gr18nm8t3nyev9sssda9jgtsq proving, 2 members; next 7kq2m9x4c1vbn8hzt5pwe3dyra collecting, 1 member",
+    "summary": "landing lane /Users/wido/GitHub/agentic-tools-landing: stopped by Wido; metasystem landing start resumes it",
     "paused": true,
-    "agent_alive": false,
-    "queue": [
-      {
-        "batch": "4gr18nm8t3nyev9sssda9jgtsq",
-        "member": "verbs-match-intent",
-        "seat": "",
-        "head": "c1",
-        "state": "joined"
-      },
-      {
-        "batch": "4gr18nm8t3nyev9sssda9jgtsq",
-        "member": "switch-on-trial",
-        "seat": "",
-        "head": "c2",
-        "state": "joined"
-      },
-      {
-        "batch": "7kq2m9x4c1vbn8hzt5pwe3dyra",
-        "member": "disk-lifetimes",
-        "seat": "",
-        "head": "c3",
-        "state": "joined"
-      }
-    ],
-    "last_proof": null,
-    "running_proof": null,
-    "last_push": null
+    "agent_alive": false
   }
 }
 

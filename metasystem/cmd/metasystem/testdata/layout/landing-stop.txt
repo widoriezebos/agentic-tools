@@ -1,0 +1,2 @@
+✓ stopped the landing lane for Wido; no landing agent starts until it starts again
+→ metasystem landing unset  lets each seat land its own work instead

@@ -139,12 +139,6 @@ func TestRecordWithoutInstallIsRefused(t *testing.T) {
 	if _, err := Resolve(home, ""); !errors.As(err, &refusal) || refusal.Code != CodeRecordIncomplete {
 		t.Fatalf("a seat resolving an old record = %v", err)
 	}
-	if _, err := ResolveAccount(home, root); err == nil {
-		t.Fatalf("a proof was charged to a lane whose record is incomplete")
-	}
-	if err := Gate(home, OpProve, AuthorityAgent, nil); err == nil {
-		t.Fatalf("the gate admitted work in a lane whose record is incomplete")
-	}
 }
 
 // landing set bumps the lane's custody epoch (design r10 §1): every new

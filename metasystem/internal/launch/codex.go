@@ -49,9 +49,6 @@ type CodexExec struct {
 }
 
 func (adapter CodexExec) Command(record Record, stateDir string) (Command, error) {
-	if err := refuseUngatedLanding(record, "codex-exec"); err != nil {
-		return Command{}, err
-	}
 	// window 0 means no cap: the child keeps Codex's own auto-compact limit for
 	// its model. Only a positive value is passed through.
 	window := readInt64(record.AdapterData, "window")

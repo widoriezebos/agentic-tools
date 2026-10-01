@@ -1,16 +1,15 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/landpath"
 )
 
@@ -21,9 +20,52 @@ import (
 // lines and its "would-refuse code=goal-item-not-held ... lawful
 // classification exits" refusal.
 
+// seatLandBed is a delivery bed whose seat is a real repository with one
+// base commit and no landing lane: the landing path's seat steps commit the
+// named paths.
+type seatLandBed struct {
+	*deliveryBed
+	seatGit func(args ...string) string
+}
+
+func newSeatLandBed(t *testing.T) *seatLandBed {
+	t.Helper()
+	b := &seatLandBed{deliveryBed: newDeliveryBed(t)}
+	root := b.install
+	b.seatGit = func(args ...string) string {
+		t.Helper()
+		command := exec.Command("git", append([]string{"-C", root, "-c", "user.name=Wido", "-c", "user.email=wido@example.com"}, args...)...)
+		output, err := command.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, output)
+		}
+		return strings.TrimSpace(string(output))
+	}
+	if err := os.WriteFile(filepath.Join(root, "notes.md"), []byte("one\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	b.seatGit("checkout", "-q", "-B", "main")
+	b.seatGit("add", "notes.md")
+	b.seatGit("commit", "-qm", "base")
+	b.owners.laneRoot = func(string, time.Time) (string, bool, error) { return "", false, nil }
+	b.owners.landPath = func(_ landpath.Owners, request landpath.LandRequest, _, _ io.Writer) int {
+		b.seatGit("add", "--", "notes.md")
+		b.seatGit("commit", "-qm", "record: notes")
+		return 0
+	}
+	return b
+}
+
+func (b *seatLandBed) edit(content string) {
+	b.t.Helper()
+	if err := os.WriteFile(filepath.Join(b.install, "notes.md"), []byte(content), 0o644); err != nil {
+		b.t.Fatal(err)
+	}
+}
+
 // landText runs work land --message on the bed's seat and returns what the
 // person reads.
-func (b *changeLaneBed) landText(extra ...string) (int, string, string) {
+func (b *seatLandBed) landText(extra ...string) (int, string, string) {
 	b.t.Helper()
 	message := filepath.Join(b.t.TempDir(), "message.txt")
 	if err := os.WriteFile(message, []byte("record: notes\n"), 0o644); err != nil {
@@ -37,7 +79,7 @@ func (b *changeLaneBed) landText(extra ...string) (int, string, string) {
 
 func TestMessageWorkLandIsOneLineAndStepsAreDetails(t *testing.T) {
 	t.Parallel()
-	b := newChangeLaneBed(t, false)
+	b := newSeatLandBed(t)
 	stub := b.owners.landPath
 	b.owners.landPath = func(path landpath.Owners, request landpath.LandRequest, details, stderr io.Writer) int {
 		fmt.Fprintln(details, "step: verify checks")
@@ -61,7 +103,7 @@ func TestMessageWorkLandIsOneLineAndStepsAreDetails(t *testing.T) {
 
 func TestMessageWorkLandRefusalIsTwoLines(t *testing.T) {
 	t.Parallel()
-	b := newChangeLaneBed(t, false)
+	b := newSeatLandBed(t)
 	b.owners.landPath = func(_ landpath.Owners, request landpath.LandRequest, details, stderr io.Writer) int {
 		fmt.Fprintln(details, "step: commit")
 		fmt.Fprintln(details, "verdict: would-refuse code=goal-item-not-held")
@@ -81,27 +123,6 @@ func TestMessageWorkLandRefusalIsTwoLines(t *testing.T) {
 	}
 	_, _, verbose := b.landText("--verbose")
 	if !strings.HasPrefix(verbose, strings.Replace(want, "✗ ", "✗ metasystem work land: ", 1)) || !strings.Contains(verbose, "  verdict: would-refuse code=goal-item-not-held\n") {
-		t.Fatalf("work land --verbose:\n%s", verbose)
-	}
-}
-
-// A refused join says why in plain words; the lane's code is a detail.
-func TestMessageWorkLandJoinRefusalKeepsTheCodeInDetails(t *testing.T) {
-	t.Parallel()
-	b := newChangeLaneBed(t, true)
-	b.owners.changeJoin = func(batchowner.ChangeJoinRequest) (batch.Record, error) {
-		return batch.Record{}, errors.New("BATCH_JOIN_CONFLICT: the change does not apply on the batch: notes.md")
-	}
-	b.edit("one\nconflicting\n")
-	code, _, stderr := b.landText()
-	first, _, _ := strings.Cut(stderr, "\n")
-	if code == 0 || first != "✗ the change couldn't join the landing lane: the change does not apply on the batch: notes.md" ||
-		strings.Contains(stderr, "BATCH_JOIN_CONFLICT") {
-		t.Fatalf("work land = %d\n%s", code, stderr)
-	}
-	b.edit("one\nconflicting again\n")
-	_, _, verbose := b.landText("--verbose")
-	if !strings.Contains(verbose, "refused because: BATCH_JOIN_CONFLICT: the change does not apply") {
 		t.Fatalf("work land --verbose:\n%s", verbose)
 	}
 }

@@ -29,7 +29,6 @@ func TestMessageProofAdmissionRefusalsArePlain(t *testing.T) {
 		{"PROOF_AUTHORITY_ARC_MATE_REFUSED", arcMateRefusal("goal-a", "goal-b", "arc-1"), "metasystem goal claim goal-a"},
 		{"GOAL_REVISION_MOVED", goalRevisionMoved(1, 2, 3, 4), ""},
 		{"BATCH_MEMBER_BUDGET_REFUSED", batchMemberBudgetRefused("goal-a", 90), "metasystem goal budget goal-a BOX"},
-		{"LANE_ACCOUNT_UNRESOLVED", laneAccountUnresolved("%q is not a lane accounting identity", "x"), ""},
 	}
 	for _, test := range cases {
 		var coded *refusal.Coded

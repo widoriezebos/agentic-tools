@@ -15,7 +15,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
@@ -422,13 +421,13 @@ func runIntentHelmReturn(inv *intentInvocation) int {
 }
 
 // helmReport is the best-effort account shared by status and return: yields
-// since the take, running work, and the landing batches holding the seat's
-// work. Each source that fails says so in its place.
+// since the take and running work. Each source that fails says so in its
+// place.
 func (inv *intentInvocation) helmReport(seat helm.Seat, since time.Time) []string {
 	lines := []string{fmt.Sprintf("acts the helm let through since the take: %s", helmYieldCount(seat, since))}
 	layout, err := inv.owners.resolver.ResolveLayout(seat.Checkout)
 	if err != nil {
-		return append(lines, "running work: unavailable: "+err.Error(), "landing batches: unavailable: "+err.Error())
+		return append(lines, "running work: unavailable: "+err.Error())
 	}
 	running := 0
 	paths, _ := filepath.Glob(filepath.Join(layout.InstallationRoot, "artifacts", "agents", "jobs", "*.json"))
@@ -437,15 +436,7 @@ func (inv *intentInvocation) helmReport(seat helm.Seat, since time.Time) []strin
 			running++
 		}
 	}
-	lines = append(lines, fmt.Sprintf("running dispatch jobs: %d (metasystem work status lists them; the helm stops none)", running))
-	held, err := helmHeldBatches(layout.InstallationRoot, seat, batchowner.LandingLaneRoot)
-	if err != nil {
-		return append(lines, "landing batches: unavailable: "+err.Error())
-	}
-	if len(held) == 0 {
-		held = []string{"none"}
-	}
-	return append(lines, "landing batches carrying this seat's work: "+strings.Join(held, ", "))
+	return append(lines, fmt.Sprintf("running dispatch jobs: %d (metasystem work status lists them; the helm stops none)", running))
 }
 
 func helmYieldCount(seat helm.Seat, since time.Time) string {
@@ -465,38 +456,6 @@ func helmYieldCount(seat helm.Seat, since time.Time) string {
 		}
 	}
 	return fmt.Sprint(count)
-}
-
-// helmHeldBatches reads the batch records of the lane the installation lands
-// through (its own setting against the host's lane, U12) directly and names
-// those with a unit this seat joined.
-func helmHeldBatches(installation string, seat helm.Seat, laneRoot func(string, time.Time) (string, bool, error)) ([]string, error) {
-	root, configured, err := laneRoot(installation, time.Now().UTC())
-	if err != nil || !configured {
-		return nil, err
-	}
-	paths, err := filepath.Glob(filepath.Join(root, "artifacts", "agents", "landing-batches", "*.json"))
-	var held []string
-	for _, path := range paths {
-		var record struct {
-			BatchID, State string
-			Units          []struct{ SeatRoot string }
-		}
-		data, readErr := os.ReadFile(path)
-		if readErr == nil {
-			readErr = json.Unmarshal(data, &record)
-		}
-		if readErr != nil {
-			return held, readErr
-		}
-		for _, unit := range record.Units {
-			if other, locateErr := helm.Locate(unit.SeatRoot); unit.SeatRoot != "" && locateErr == nil && other.CommonDir == seat.CommonDir {
-				held = append(held, record.BatchID+" ("+record.State+")")
-				break
-			}
-		}
-	}
-	return held, err
 }
 
 // helmReading is what status reads of the helm, once: the signature, the

@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 )
 
@@ -112,7 +112,7 @@ func openOf(episodes []steward.AlertEpisode) []steward.AlertEpisode {
 func TestReplay20260930Churn(t *testing.T) {
 	t.Parallel()
 	b := newBed(t)
-	b.pass.LaneLineages = []string{lane.OldOwnerLineage}
+	b.pass.LaneLineages = []string{"landing-m1l"}
 	bare := b.origin()
 	data, err := os.ReadFile("testdata/replay-churn-20260930.json")
 	if err != nil {
@@ -311,17 +311,17 @@ func TestStaleFetchIsUnknown(t *testing.T) {
 // deleted batch owner's lineage is not the lane's either.
 func TestLaneAttributionByLineageHash(t *testing.T) {
 	t.Parallel()
-	if lineageHash(LaneLineage) != "106adb03" || LaneLineage != lane.ClaimLineage {
+	if lineageHash(LaneLineage) != "106adb03" || LaneLineage != goal.LaneClaimLineage {
 		t.Fatalf("the lane identity: %s %q", lineageHash(LaneLineage), LaneLineage)
 	}
 	b := newBed(t)
 	bare := b.origin()
 	at := time.Date(2026, 9, 30, 16, 0, 0, 0, time.UTC)
 	writers := []struct{ machine, lineage, path string }{
-		{"m1e", LaneLineage, "a.json"},              // the lane's identity, whatever the machine
-		{"landing", lane.OldOwnerLineage, "b.json"}, // the deleted owner: not the lane's
-		{"landing", "landing-lane-2", "c.json"},     // a name that starts like the lane
-		{"landing-lane", "main-seat", "d.json"},     // a machine named like the lane
+		{"m1e", LaneLineage, "a.json"},          // the lane's identity, whatever the machine
+		{"landing", "landing-m1l", "b.json"},    // the deleted owner: not the lane's
+		{"landing", "landing-lane-2", "c.json"}, // a name that starts like the lane
+		{"landing-lane", "main-seat", "d.json"}, // a machine named like the lane
 	}
 	var commits []trunkCommit
 	for index, writer := range writers {

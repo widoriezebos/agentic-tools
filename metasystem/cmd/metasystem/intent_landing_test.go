@@ -12,33 +12,26 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
 
-// laneVerbBed is a computer with a lane home, two nested landing checkouts,
-// a landing agent that runs or not, and the lane's batch records; no
-// process.
+// laneVerbBed is a computer with a lane home, two nested landing checkouts
+// and a landing agent that runs or not; no process.
 type laneVerbBed struct {
 	cwd, home, landingA, landingB string
 	alive                         bool
 	pid                           int64
 	person                        error
-	records                       []batch.Record
 	// ready is whether the lane can run (nil: it can); noMachine is a
 	// checkout without a machine nickname.
 	ready     error
 	noMachine bool
 	// unset replaces landing unset's steps; nil runs the real ones.
 	unset func(home, by string, force bool) (lane.UnsetReport, error)
-	// held are the goals the ledger shows the lane holding.
-	held []string
-	// oldClaims are the goals the ledger shows the old owner lineage
-	// (landing-m1l) holding; oldClaimsErr an unreadable ledger.
-	oldClaims    []string
-	oldClaimsErr error
+	// wake are the reasons the keeper's wake source names.
+	wake []string
 	// keeper is the landing agent's keeper landing run steps; helmed is a
 	// lane checkout at the helm.
 	keeper func(home, root string) lane.AgentKeeper
@@ -76,7 +69,6 @@ func (bed *laneVerbBed) owners() intentOwners {
 			}
 			return "Wido", nil
 		},
-		records:  func(string) ([]batch.Record, error) { return bed.records, nil },
 		validate: func(root, _ string, _ time.Time) (string, error) { return realpath.Resolve(root), nil },
 		by:       func(string) string { return "seat" },
 		ready:    func(string) error { return bed.ready },
@@ -86,14 +78,8 @@ func (bed *laneVerbBed) owners() intentOwners {
 			}
 			return "landing", nil
 		},
-		now:   func() time.Time { return laneTestNow },
-		unset: bed.unset,
-		laneHeld: func(string) ([]string, error) {
-			return bed.held, nil
-		},
-		oldOwnerClaims: func(string) ([]string, error) {
-			return bed.oldClaims, bed.oldClaimsErr
-		},
+		now:    func() time.Time { return laneTestNow },
+		unset:  bed.unset,
 		keeper: bed.keeper,
 		helm: func(root string) helm.State {
 			if bed.helmed {
@@ -177,8 +163,8 @@ func TestLandingVerbsSetStartStop(t *testing.T) {
 }
 
 // landing stop --reason keeps the reason with the pause (design r10 §3,
-// the agent's stop and ask): the stop, status, a repeat and every gated
-// operation the pause holds name it on line 1; line 2 stays the command.
+// the agent's stop and ask): the stop, status and a repeat name it on line
+// 1; line 2 stays the command.
 func TestLandingStopRecordsItsReason(t *testing.T) {
 	t.Parallel()
 	bed := newLaneVerbBed(t)
@@ -203,11 +189,6 @@ func TestLandingStopRecordsItsReason(t *testing.T) {
 	if code, stdout, _ := bed.run(t, "landing", "stop", "--reason", "another"); code != 0 || !strings.Contains(oneSpaced(stdout), "already stopped by Wido ("+reason+")") {
 		t.Fatalf("stop again = %d %q", code, stdout)
 	}
-	var refusal *lane.Refusal
-	err := lane.Gate(bed.home, lane.OpBegin, lane.AuthorityAgent, func(lane.Record) error { return nil })
-	if !errors.As(err, &refusal) || refusal.Code != lane.CodePaused || !strings.Contains(refusal.Message, "stopped by Wido ("+reason+")") {
-		t.Fatalf("a gated operation while stopped with a reason = %v", err)
-	}
 	if code, _, _ := bed.run(t, "landing", "start"); code != 0 {
 		t.Fatalf("start = %d", code)
 	}
@@ -230,56 +211,6 @@ func TestLandingStopRecordsItsReason(t *testing.T) {
 	}
 }
 
-func provingRecord(id, state string) batch.Record {
-	return batch.Record{BatchID: id, State: state, Units: []batch.Unit{{GoalID: "g1", State: batch.UnitJoined, Claim: batch.Claim{Machine: "m1e"}}},
-		History: []batch.HistoryEntry{{At: laneTestNow.Format(time.RFC3339Nano), Verb: "seal", From: batch.StateOpen, To: state}}}
-}
-
-// Moving the lane while a batch proves in it is refused with the way
-// forward; after a person pauses the lane, the move goes through.
-func TestLandingSetRefusesAMoveWhileABatchProves(t *testing.T) {
-	t.Parallel()
-	bed := newLaneVerbBed(t)
-	bed.alive = true
-	if code, _, stderr := bed.run(t, "landing", "set", bed.landingA); code != 0 {
-		t.Fatalf("set = %d %q", code, stderr)
-	}
-	bed.records = []batch.Record{provingRecord("b1", batch.StateProving)}
-	code, _, stderr := bed.run(t, "landing", "set", bed.landingB, "--verbose")
-	for _, want := range []string{codeLandingLaneBusy, "b1 proving", bed.landingA, "metasystem landing stop", "metasystem landing set " + bed.landingB} {
-		if code == 0 || !strings.Contains(stderr, want) {
-			t.Errorf("move while proving = %d %q; lacks %q", code, stderr, want)
-		}
-	}
-	if record, _, _ := lane.Read(bed.home); record.Root != bed.landingA {
-		t.Fatalf("the refused move moved the lane to %s", record.Root)
-	}
-	if code, _, stderr := bed.run(t, "landing", "stop"); code != 0 {
-		t.Fatalf("stop = %d %q", code, stderr)
-	}
-	if code, stdout, stderr := bed.run(t, "landing", "set", bed.landingB); code != 0 || !strings.Contains(oneSpaced(stdout), "it was "+bed.landingA) {
-		t.Fatalf("move after the pause = %d %q %q", code, stdout, stderr)
-	}
-}
-
-// A batch pushing to main is never paused mid-push.
-func TestLandingStopRefusesWhileABatchPushes(t *testing.T) {
-	t.Parallel()
-	bed := newLaneVerbBed(t)
-	bed.alive = true
-	if code, _, stderr := bed.run(t, "landing", "set", bed.landingA); code != 0 {
-		t.Fatalf("set = %d %q", code, stderr)
-	}
-	bed.records = []batch.Record{provingRecord("b1", batch.StateLanding)}
-	code, _, stderr := bed.run(t, "landing", "stop", "--verbose")
-	if code == 0 || !strings.Contains(stderr, codeLandingLanePushing) || !strings.Contains(stderr, "metasystem landing stop again") {
-		t.Fatalf("stop while pushing = %d %q", code, stderr)
-	}
-	if _, paused := lane.ReadPause(bed.home); paused {
-		t.Fatalf("a pushing lane was paused")
-	}
-}
-
 // status shows the lane's headline in its board block.
 func TestStatusShowsTheLandingLaneLine(t *testing.T) {
 	t.Parallel()
@@ -289,8 +220,7 @@ func TestStatusShowsTheLandingLaneLine(t *testing.T) {
 		t.Fatalf("no lane: line %q", line)
 	}
 	registerLane(t, bed.home, bed.landingA, "Wido", laneTestNow)
-	bed.records = []batch.Record{provingRecord("b1", batch.StateProving)}
-	if line := inv.statusLaneLine(); !strings.Contains(line, "landing lane "+bed.landingA) || !strings.Contains(line, "batch b1 proving") {
+	if line := inv.statusLaneLine(); !strings.Contains(line, "landing lane "+bed.landingA) {
 		t.Fatalf("lane line = %q", line)
 	}
 }
@@ -428,8 +358,8 @@ func TestLandingStatusSaysWhyTheLaneCannotRun(t *testing.T) {
 func oneSpaced(page string) string { return strings.Join(strings.Fields(page), " ") }
 
 // landing unset is a person's act (design r10 §1): refused to anyone else
-// with nothing changed; for the person it fences, settles, returns and
-// unregisters the lane, after which there is no lane and each seat lands
+// with nothing changed; for the person it fences, settles and unregisters
+// the lane, after which there is no lane and each seat lands
 // its own work; a repeat changes nothing, and a later landing set takes a
 // new custody epoch.
 func TestLandingUnsetIsAPersonsActAndUnregisters(t *testing.T) {
@@ -471,17 +401,16 @@ func TestLandingUnsetIsAPersonsActAndUnregisters(t *testing.T) {
 	}
 }
 
-// An unset that cannot finish says what is left in line 1 and the command
-// that continues it in line 2; only unknown state is offered --force.
-// While it is under way nothing starts the lane again.
+// An unset that cannot finish says what it waits for in line 1 and the
+// command that continues it in line 2; only unknown state is offered
+// --force. While it is under way nothing starts the lane again.
 func TestLandingUnsetListsWhatIsLeftAndContinues(t *testing.T) {
 	t.Parallel()
 	bed := newLaneVerbBed(t)
 	if code, _, stderr := bed.run(t, "landing", "set", bed.landingA); code != 0 {
 		t.Fatalf("set = %d %q", code, stderr)
 	}
-	report := lane.UnsetReport{Record: lane.Record{Root: bed.landingA}, Stopped: lane.StepReturned,
-		Unresolved: []lane.Unresolved{{Batch: "b1", Member: "goal-a", Reason: "the ledger on main still shows landing+owner holding it for this batch"}}}
+	var report lane.UnsetReport
 	forced := false
 	bed.unset = func(home, by string, force bool) (lane.UnsetReport, error) {
 		forced = force
@@ -490,33 +419,23 @@ func TestLandingUnsetListsWhatIsLeftAndContinues(t *testing.T) {
 		}
 		return report, nil
 	}
-	code, _, stderr := bed.run(t, "landing", "unset", "--verbose")
-	for _, want := range []string{"1 member is not confirmed returned yet", "goal-a", "→ metasystem landing unset", "batch b1, goal-a: the ledger on main"} {
-		if code == 0 || !strings.Contains(oneSpaced(stderr), want) {
-			t.Errorf("unset with a member left = %d %q; lacks %q", code, stderr, want)
-		}
-	}
 	report = lane.UnsetReport{Record: lane.Record{Root: bed.landingA}, Stopped: lane.StepSettled, Settlement: lane.Settlement{Unknown: []string{"whether the lane's owner runs is unknown"}}}
-	code, _, stderr = bed.run(t, "landing", "unset")
+	code, _, stderr := bed.run(t, "landing", "unset")
 	if code == 0 || !strings.Contains(stderr, "whether the lane's owner runs is unknown") || !strings.Contains(stderr, "metasystem landing unset --force") {
 		t.Fatalf("unset waiting on unknown state = %d %q", code, stderr)
 	}
 	if code, _, _ := bed.run(t, "landing", "unset", "--force"); code == 0 || !forced {
 		t.Fatalf("--force did not reach the unset")
 	}
-	report.Settlement = lane.Settlement{Live: []string{"batch b1 is publishing to main"}}
+	report.Settlement = lane.Settlement{Live: []string{"the landing agent landing-1 still runs"}}
 	if code, _, stderr := bed.run(t, "landing", "unset"); code == 0 || strings.Contains(stderr, "--force") {
 		t.Fatalf("unset waiting on live work offered --force: %d %q", code, stderr)
 	}
 	bed.unset = nil
 	seams := lane.UnsetSeams{
 		Settle: func(lane.Layout) (lane.Settlement, error) {
-			return lane.Settlement{Live: []string{"a proof runs"}}, nil
+			return lane.Settlement{Live: []string{"the landing agent runs"}}, nil
 		},
-		Records:   func(lane.Layout) ([]batch.Record, error) { return nil, nil },
-		Reconcile: func(lane.Layout, batch.Record) ([]lane.Unresolved, error) { return nil, nil },
-		Return:    func(lane.Layout, batch.Record, string) ([]lane.Unresolved, error) { return nil, nil },
-		Confirm:   func(lane.Layout, []batch.Record) ([]lane.Unresolved, error) { return nil, nil },
 	}
 	if _, err := lane.Unset(bed.home, "Wido", laneTestNow, false, seams); err != nil {
 		t.Fatal(err)
@@ -556,9 +475,7 @@ func TestLandingStartOfAStoppedLaneIsAPersonsAct(t *testing.T) {
 
 // A checkout on a volume that is not mounted is not gone: unset refuses in
 // two plain lines and changes nothing. A checkout removed from its folder
-// is gone: unset unregisters it and names, in the default output, the goals
-// the ledger still shows the lane holding and the command that gives each
-// back.
+// is gone: unset unregisters it and says so.
 func TestLandingUnsetOfAnUnreachableOrGoneCheckout(t *testing.T) {
 	t.Parallel()
 	bed := newLaneVerbBed(t)
@@ -584,12 +501,9 @@ func TestLandingUnsetOfAnUnreachableOrGoneCheckout(t *testing.T) {
 	if err := os.MkdirAll(volume, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	bed.held = []string{"goal-a", "goal-b"}
 	code, stdout, stderr := bed.run(t, "landing", "unset")
-	text := oneSpaced(stdout)
-	if code != 0 || !strings.Contains(text, "its checkout was gone") || !strings.Contains(text, "2 goals: goal-a, goal-b") ||
-		!strings.Contains(text, "metasystem goal release goal-a --reason") {
-		t.Fatalf("unset of a gone checkout = %d %q %q; want the held goals and goal release in the default output", code, stdout, stderr)
+	if text := oneSpaced(stdout); code != 0 || !strings.Contains(text, "its checkout was gone") || !strings.Contains(text, "Each seat lands its own work now") {
+		t.Fatalf("unset of a gone checkout = %d %q %q", code, stdout, stderr)
 	}
 	if _, ok, _ := lane.Read(bed.home); ok {
 		t.Fatalf("the gone lane is still registered")

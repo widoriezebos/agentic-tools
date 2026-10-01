@@ -36,7 +36,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
-	landinglane "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/metrics"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
@@ -88,16 +87,8 @@ func goalParkBranchCheck(root string, endpoint goal.Endpoint) func(string, strin
 	return goalbranch.ParkCheck(root, endpoint)
 }
 
-func bindHandoverTargetRoot(request *goal.VerbRequest, targetRoot string) {
-	request.HandoverTargetRoot = targetRoot
-}
-
 func configureCarriedCounselor(endpoint *goal.Endpoint) {
 	endpoint.ConfigureCarriedCounselorAppend(counselor.AppendCarriedRow)
-}
-
-func goalHandoverTargetLiveness(root, targetMachine, targetLineage string, targetEpoch int64) (identity.Liveness, error) {
-	return goalHandoverTargetLivenessWithReads(root, targetMachine, targetLineage, targetEpoch, goal.ResolveMachine, identity.KernelProber{})
 }
 
 func goalHandoverTargetLivenessWithReads(root, targetMachine, targetLineage string, targetEpoch int64, resolveMachine func(string) (string, error), prober identity.Prober) (identity.Liveness, error) {
@@ -126,25 +117,6 @@ func goalHandoverTargetLivenessWithReads(root, targetMachine, targetLineage stri
 	return identity.Unknown, nil
 }
 
-// laneClaimTargetLiveness authenticates the landing lane's stable claim
-// identity as a handover target (lane design r10 K7): the host's lane
-// record registers a lane on targetMachine at custody epoch targetEpoch. No
-// session, lease or process is read, so a lane with no agent running takes
-// custody.
-func laneClaimTargetLiveness(home, targetMachine string, targetEpoch int64) (identity.Liveness, error) {
-	if home == "" {
-		return identity.Unknown, fmt.Errorf("no host lane record was named to authenticate the landing lane")
-	}
-	claim, err := landinglane.Claim(home)
-	if err != nil {
-		return identity.Unknown, err
-	}
-	if claim.Machine != targetMachine || targetEpoch < 1 || claim.Epoch != uint64(targetEpoch) {
-		return identity.Unknown, fmt.Errorf("the landing lane registered now is %s (registration %d), not %s (%d)", claim.Machine, claim.Epoch, targetMachine, targetEpoch)
-	}
-	return identity.Alive, nil
-}
-
 func goalHandoverAuthenticationRoot(seatRoot, targetRoot string) (string, error) {
 	if targetRoot != "" {
 		return targetRoot, nil
@@ -155,39 +127,6 @@ func goalHandoverAuthenticationRoot(seatRoot, targetRoot string) (string, error)
 	}
 	landing, err := config.ResolveBatchLanding(filepath.Join(seatRoot, "metasystem.conf"), seatRoot, func() time.Time { return now })
 	return landing.Root, err
-}
-
-var errLegacyLedger = errors.New("this checkout still carries the legacy ledger")
-
-// goalHandoverEffect is the handover owner under an explicit invocation
-// context: classification starts at the supplied identity and the request
-// carries the supplied lineage.
-func goalHandoverEffect(invocation ownercall.Invocation, request ownercall.HandoverRequest) (goal.PublishResult, error) {
-	if !converted(request.Root) {
-		return goal.PublishResult{}, errLegacyLedger
-	}
-	req, err := ownerSyncRequest(invocation, "handover", request.Root, false)
-	if err != nil {
-		return goal.PublishResult{}, err
-	}
-	bindHandoverTargetRoot(&req, request.TargetRoot)
-	liveness := func() (identity.Liveness, error) {
-		if req.Actor.Machine == request.TargetMachine && req.Actor.Lineage == request.TargetLineage {
-			if req.ClaimEpoch != request.TargetEpoch || req.ClaimEpoch < 1 {
-				return identity.Unknown, fmt.Errorf("this session doesn't hold claim %d, so it can't receive the handover", request.TargetEpoch)
-			}
-			return identity.Alive, nil
-		}
-		if request.TargetLineage == goal.LaneClaimLineage {
-			return laneClaimTargetLiveness(request.LaneHome, request.TargetMachine, request.TargetEpoch)
-		}
-		authRoot, err := goalHandoverAuthenticationRoot(request.Root, request.TargetRoot)
-		if err != nil {
-			return identity.Unknown, err
-		}
-		return goalHandoverTargetLiveness(authRoot, request.TargetMachine, request.TargetLineage, request.TargetEpoch)
-	}
-	return goal.Handover(req, request.GoalID, request.TargetMachine, request.TargetLineage, request.TargetEpoch, request.Batch, liveness)
 }
 
 // printCarryMutationTo prints a carry owner's outcome on the caller's

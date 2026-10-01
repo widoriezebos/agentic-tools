@@ -2,16 +2,12 @@ package main
 
 import (
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
@@ -76,22 +72,17 @@ func TestBatchRootServesThePersonsLane(t *testing.T) {
 }
 
 // work land asks lane.Resolve whether a lane is registered, and nothing
-// more (simple lane, unit C): a lane a person is unsetting is still the
-// lane its seats join, because the unset confirms every member under the
-// host flock before it unregisters, and a join while the lane is stopped
-// waits in it. The resolution is the production one over a real home.
+// more (simple lane, unit C): a lane a person is unsetting or has stopped
+// is still the lane, so work land refuses beside it until the unset ends.
+// The resolution is the production one over a real home.
 func TestWorkLandAsksOnlyWhetherALaneIsRegistered(t *testing.T) {
 	t.Parallel()
 	bed := newLaneBed(t)
 	registerLane(t, bed.home, bed.landingA, "Wido", laneTestNow)
 	seams := lane.UnsetSeams{
 		Settle: func(lane.Layout) (lane.Settlement, error) {
-			return lane.Settlement{Live: []string{"a proof runs"}}, nil
+			return lane.Settlement{Live: []string{"the landing agent runs"}}, nil
 		},
-		Records:   func(lane.Layout) ([]batch.Record, error) { return nil, nil },
-		Reconcile: func(lane.Layout, batch.Record) ([]lane.Unresolved, error) { return nil, nil },
-		Return:    func(lane.Layout, batch.Record, string) ([]lane.Unresolved, error) { return nil, nil },
-		Confirm:   func(lane.Layout, []batch.Record) ([]lane.Unresolved, error) { return nil, nil },
 	}
 	if report, err := lane.Unset(bed.home, "Wido", laneTestNow, false, seams); err != nil || report.Stopped != lane.StepSettled {
 		t.Fatalf("unset = %+v %v", report, err)
@@ -102,10 +93,10 @@ func TestWorkLandAsksOnlyWhetherALaneIsRegistered(t *testing.T) {
 	production := batchowner.ProductionLandingLaneSeams()
 	production.Home = func() (string, error) { return bed.home, nil }
 	inv := &intentInvocation{layout: stateroot.Layout{InstallationRoot: bed.seatA}, owners: intentOwners{delivery: &intentDeliveryOwners{
-		batchRoot: production.BatchRoot, now: func() time.Time { return laneTestNow }}}}
-	root, configured, refused := inv.landingBatchRoot(nil)
-	if refused != nil || !configured || root != bed.landingA {
-		t.Fatalf("work land on a registered lane = %q %v %+v; want the lane %s and no other question asked", root, configured, refused, bed.landingA)
+		laneRoot: production.BatchRoot, now: func() time.Time { return laneTestNow }}}}
+	refused := inv.laneRegistered(nil)
+	if refused == nil || refused.Summary != "this computer has a landing lane, whose hand-in isn't built yet" {
+		t.Fatalf("work land on a registered lane = %+v; want the lane's refusal and no other question asked", refused)
 	}
 }
 
@@ -129,8 +120,8 @@ func TestWorkLandRefusesASeatWhoseRootIsNotTheHostLane(t *testing.T) {
 	registerLane(t, bed.home, bed.landingA, "seat-a", laneTestNow)
 	bed.setRoot(t, bed.seatB, bed.landingB)
 	inv := &intentInvocation{layout: stateroot.Layout{InstallationRoot: bed.seatB}, owners: intentOwners{delivery: &intentDeliveryOwners{
-		batchRoot: bed.seams.BatchRoot, now: func() time.Time { return laneTestNow }}}}
-	_, _, refused := inv.landingBatchRoot(nil)
+		laneRoot: bed.seams.BatchRoot, now: func() time.Time { return laneTestNow }}}}
+	refused := inv.laneRegistered(nil)
 	if refused == nil || refused.Outcome != intentRefused {
 		t.Fatalf("seat B landed through another lane: %+v", refused)
 	}
@@ -164,82 +155,6 @@ func TestBatchRootWithoutALaneHomeKeepsTheSeatSetting(t *testing.T) {
 	if err != nil || !configured || realpath.Resolve(root) != bed.landingA {
 		t.Fatalf("seat without a lane home = %q %v %v; want its own setting", root, configured, err)
 	}
-	rest, release, err := batchowner.HoldHostProvingFor(noHome, []string{"internal", "test", "run", batchowner.HoldHostProvingFlag})
-	if err != nil || len(rest) != 3 || release() != nil {
-		t.Fatalf("a host without a lane home gates proofs: %v %v", rest, err)
-	}
-}
-
-// helm's report reads the lane through the lane resolver: a seat with no
-// landing.batch-root of its own sees the batches of the host's lane that
-// carry its work.
-func TestHelmHeldBatchesReadsTheHostLaneForAnUnsetSeat(t *testing.T) {
-	t.Parallel()
-	bed := newLaneBed(t)
-	if err := os.MkdirAll(filepath.Join(bed.seatB, ".git"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	registerLane(t, bed.home, bed.landingA, "Wido", laneTestNow)
-	batches := filepath.Join(bed.landingA, "artifacts", "agents", "landing-batches")
-	if err := os.MkdirAll(batches, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	record := `{"batchId":"b1","state":"proving","units":[{"seatRoot":"` + bed.seatB + `"}]}`
-	if err := os.WriteFile(filepath.Join(batches, "b1.json"), []byte(record), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	seat, err := helm.Locate(bed.seatB)
-	if err != nil {
-		t.Fatal(err)
-	}
-	held, err := helmHeldBatches(bed.seatB, seat, func(installation string, now time.Time) (string, bool, error) {
-		return bed.seams.BatchRoot(installation, now)
-	})
-	if err != nil || len(held) != 1 || held[0] != "b1 (proving)" {
-		t.Fatalf("unset seat's held batches = %v %v; want b1 from the host lane", held, err)
-	}
-}
-
-// The one launcher of a batch's proof children asks each child to hold the
-// host's proving flock for its life.
-func TestBatchProofLauncherAsksTheChildToHoldTheProvingLock(t *testing.T) {
-	t.Parallel()
-	args := []string{"internal", "test", "run", "--root", "/r"}
-	held := batchowner.BatchProofCommand("/bin/metasystem", args)
-	if !slices.Contains(held.Args, batchowner.HoldHostProvingFlag) {
-		t.Fatalf("a proof child launched without the proving lock: %v", held.Args)
-	}
-	if len(args) != 5 {
-		t.Fatalf("the launcher changed its caller's arguments: %v", args)
-	}
-}
-
-// internal test run with the flag holds the host's proving flock until it
-// ends, waiting while another proof holds it; the flag never reaches the run.
-func TestTestRunHoldsTheProvingLockForItsLife(t *testing.T) {
-	t.Parallel()
-	home := t.TempDir()
-	homeOf := func() (string, error) { return home, nil }
-	rest, release, err := batchowner.HoldHostProvingFor(homeOf, []string{"internal", "test", "run", batchowner.HoldHostProvingFlag, "--root", "/r"})
-	if err != nil || slices.Contains(rest, batchowner.HoldHostProvingFlag) || len(rest) != 5 {
-		t.Fatalf("hold = %v %v", rest, err)
-	}
-	if holder, busy, _ := lane.ProbeProving(home); !busy || holder != fmt.Sprintf("pid %d", os.Getpid()) {
-		t.Fatalf("while the run lives: busy=%v holder=%q", busy, holder)
-	}
-	if err := release(); err != nil {
-		t.Fatal(err)
-	}
-	if _, busy, _ := lane.ProbeProving(home); busy {
-		t.Fatalf("the lock outlived the run")
-	}
-	rest, release, err = batchowner.HoldHostProvingFor(homeOf, []string{"internal", "test", "run"})
-	if err != nil || len(rest) != 3 || release() != nil {
-		t.Fatalf("without the flag = %v %v", rest, err)
-	}
-	if _, busy, _ := lane.ProbeProving(home); busy {
-		t.Fatalf("a run without the flag took the lock")
-	}
 }
 
 // Only a person's landing set registers a lane (design r10 §1): a seat whose
@@ -272,8 +187,8 @@ func TestWorkLandNamesLandingSetForAnOlderLaneRecord(t *testing.T) {
 		t.Fatal(err)
 	}
 	inv := &intentInvocation{layout: stateroot.Layout{InstallationRoot: bed.seatA}, owners: intentOwners{delivery: &intentDeliveryOwners{
-		batchRoot: bed.seams.BatchRoot, now: func() time.Time { return laneTestNow }}}}
-	_, _, refused := inv.landingBatchRoot(nil)
+		laneRoot: bed.seams.BatchRoot, now: func() time.Time { return laneTestNow }}}}
+	refused := inv.laneRegistered(nil)
 	if refused == nil || strings.Contains(refused.Summary, lane.CodeRecordIncomplete) || !strings.Contains(refused.Summary, "older engine") ||
 		strings.Join(refused.next, " ") != "metasystem landing set "+bed.landingA || !strings.Contains(strings.Join(refused.Details, " "), lane.CodeRecordIncomplete) {
 		t.Fatalf("work land on an older lane record = %+v", refused)

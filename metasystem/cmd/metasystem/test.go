@@ -24,8 +24,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
-	landinglane "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/output"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
@@ -222,12 +220,8 @@ func parseTestingSelection(name string, args []string, execution bool, stdout, s
 	flags.BoolVar(&request.Carried, "carried", false, "compose a completed red result for carried-landing classification")
 	flags.StringVar(&request.FreshEpisode, "fresh-episode", "", "retained freshness episode for a proof decision")
 	flags.StringVar(&request.FreshExpiresAt, "fresh-expires-at", "", "expiry for a retained freshness episode")
-	if execution || strings.HasPrefix(name, "internal ") {
-		flags.StringVar(&request.LaneID, "lane", "", "the landing lane's accounting identity a batch of changes is charged to, instead of a goal")
-	}
 	if execution {
 		pathFlagVar(flags, &request.ControlRoot, "control-root", "", "durable proof control root for an internal batch proof")
-		pathFlagVar(flags, &request.LaneCheckout, "lane-checkout", "", "the landing lane's checkout a run charged to the lane is admitted against")
 		flags.BoolVar(&request.BatchTipProof, "batch-tip", false, "prove a batch tip projected into its own detached worktree")
 		flags.BoolVar(&request.BatchAdmission, "batch-admission", false, "run selected batch admission checks on an exact tree")
 		flags.StringVar(&request.CapMin, "cap-min", "", "reserved proof minutes")
@@ -248,14 +242,6 @@ func parseTestingSelection(name string, args []string, execution bool, stdout, s
 			fmt.Fprintf(stderr, "usage: metasystem internal %s --root INSTALLATION [--goal GOAL] [--authority GOAL] [--tree TREE]\n"+
 				"  [--mode auto|standard|deep|canary] [--purpose delivery|diagnostic|cadence] [--groups GROUP,GROUP]\n", name)
 		}
-		return request, false, 2
-	}
-	if request.LaneID != "" && (request.GoalID != "" || request.AuthorityGoalID != "" || request.ExpectedGoalRevision != 0 || !landinglane.IsAccount(request.LaneID)) {
-		fmt.Fprintln(stderr, "--lane takes the lane's account (lane:...) and no --goal, --authority or --expected-goal-revision")
-		return request, false, 2
-	}
-	if request.LaneCheckout != "" && (request.LaneID == "" || request.ControlRoot == "") {
-		fmt.Fprintln(stderr, "--lane-checkout names the lane of a run charged to it: give it with --lane and --control-root")
 		return request, false, 2
 	}
 	if request.PolicyChild && (strings.TrimPrefix(name, "internal ") != "test plan" || execution) {
@@ -315,9 +301,7 @@ func parseTestingSelection(name string, args []string, execution bool, stdout, s
 	// root that owns them. batchPrefixProofControlRoot is what makes that safe:
 	// it admits a control root only when the execution root is a linked
 	// worktree sharing its git common directory and prefix.
-	// A landing prove names its lane checkout and control root for every
-	// subject it runs, its diagnostic ones included (design r10 K6).
-	if request.ControlRoot != "" && !request.BatchPrefixReceipt && !request.BatchTipProof && !request.BatchAdmission && request.LaneCheckout == "" {
+	if request.ControlRoot != "" && !request.BatchPrefixReceipt && !request.BatchTipProof && !request.BatchAdmission {
 		fmt.Fprintln(stderr, "--control-root is only for the test runs of a batch")
 		return request, false, 2
 	}
@@ -398,13 +382,6 @@ func runTestRun(args []string, stdout, stderr io.Writer) (exit int) {
 	invocation := testRunInvocation{callerPID: int64(os.Getppid()), stdout: stdout, stderr: stderr, name: "internal test run"}
 	finish := invocation.envelope(invocation.name, args)
 	defer func() { finish(exit) }()
-	// A batch's proof child holds the host's proving flock for its life (U12).
-	args, release, err := batchowner.HoldHostProvingFor(batchowner.LandingLaneHome, args)
-	if err != nil {
-		invocation.fail("metasystem internal test run:", err)
-		return 1
-	}
-	defer release()
 	// The entry supplies its own caller, as it always did.
 	return runTestRunWith(invocation, args)
 }
@@ -707,7 +684,7 @@ func runTestRunWith(invocation testRunInvocation, args []string) (exit int) {
 	freshBinding := testrun.FreshnessBinding(preRequest, identities, request.FreshEpisode)
 	preRequest.FreshnessBinding = freshBinding
 	admission := proofLaunchAdmission{ControlRoot: controlRoot,
-		ExecutionRoot: prepared.ProjectRoot, ConfPath: prepared.ConfPath, GoalID: request.GoalID, AuthorityGoalID: request.AuthorityGoalID, LaneID: request.LaneID, LaneCheckout: request.LaneCheckout,
+		ExecutionRoot: prepared.ProjectRoot, ConfPath: prepared.ConfPath, GoalID: request.GoalID, AuthorityGoalID: request.AuthorityGoalID,
 		CandidateRevision: prepared.AccountingRevision, RetryDecision: request.RetryDecision,
 		CapMin: request.CapMin, ExpectedGoalRevision: request.ExpectedGoalRevision,
 		ExpectedAccountingRevision: request.ExpectedAccountingRevision,

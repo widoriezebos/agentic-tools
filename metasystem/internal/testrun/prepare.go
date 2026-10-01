@@ -28,7 +28,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/digest"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginecause"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
-	landinglane "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/pathpattern"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
@@ -96,13 +95,6 @@ func (prepared Preparation) ProofControlRoot() string {
 
 type SelectionRequest struct {
 	Root, ControlRoot, GoalID, AuthorityGoalID, Tree, CapMin, RetryDecision, ResultPath string
-	// LaneID charges the run to the landing lane instead of a goal: a batch
-	// whose members are all changes (U11b).
-	LaneID string
-	// LaneCheckout is the landing lane's checkout a lane-charged run is
-	// admitted against, named by its launcher (design r10 K6): the account
-	// is that checkout's and the control root lies inside it.
-	LaneCheckout string
 	// Verbose asks for the details behind a refusal: its code and facts.
 	Verbose                                                    bool
 	ExpectedGoalRevision, ExpectedAccountingRevision           uint64
@@ -188,16 +180,6 @@ func ParseBatchRequirements(value string) ([]string, error) {
 		seen[id] = true
 	}
 	return groups, nil
-}
-
-func BatchRequirementsArgument(groups []string) string {
-	if groups == nil {
-		groups = []string{}
-	}
-	encoded, _ := json.Marshal(struct {
-		Groups []string `json:"groups"`
-	}{Groups: groups})
-	return string(encoded)
 }
 
 type baseMove struct {
@@ -302,19 +284,10 @@ func prepareOnce(request SelectionRequest) (Preparation, error) {
 	if err != nil || unborn {
 		return Preparation{}, fmt.Errorf("testing requires a committed project HEAD")
 	}
-	if landinglane.IsAccount(request.GoalID) {
-		// An in-process caller names the lane where a goal would go (U11b).
-		request.LaneID, request.GoalID = request.GoalID, ""
-	}
 	goalID := request.GoalID
 	accountToGoal, err := accountsToGoal(request)
 	if err != nil {
 		return Preparation{}, err
-	}
-	if request.LaneID != "" {
-		// Charged to the lane (U11b): no goal is resolved, and its attempts
-		// are accounted to the lane's identity.
-		goalID, accountToGoal = request.LaneID, false
 	}
 	if accountToGoal {
 		goalID, err = resolveGoalFor(installation, request.GoalID, request.EffectiveCallerPID())
@@ -434,10 +407,7 @@ func prepareOnce(request SelectionRequest) (Preparation, error) {
 		return Preparation{}, err
 	}
 	risk, accountingRevision := testpolicy.GoalRisk{}, uint64(0)
-	if landinglane.IsAccount(goalID) {
-		// The lane has no goal risk; its one accounting revision is 1.
-		accountingRevision = 1
-	} else if accountToGoal {
+	if accountToGoal {
 		risk, accountingRevision, err = GoalRisk(installation, goalID)
 		if err != nil {
 			return Preparation{}, err
@@ -754,10 +724,7 @@ func TrustedPolicyEngine(installation, policyBaseCommit string, firstTransition 
 
 func PlanWithTrustedPolicyEngine(engine string, request SelectionRequest, installation, candidateTree string) (PlanOutput, error) {
 	args := []string{"test", "plan", "--root", installation, "--tree", candidateTree, "--mode", string(request.Mode), "--purpose", string(request.Purpose), "--json", "--policy-child"}
-	if request.LaneID != "" {
-		// A run charged to the lane is planned on the lane (U11b).
-		args = append(append([]string{"internal"}, args...), "--lane", request.LaneID)
-	} else if request.GoalID != "" {
+	if request.GoalID != "" {
 		args = append(args, "--goal", request.GoalID)
 	}
 	if len(request.Groups) > 0 {
@@ -779,9 +746,6 @@ func PlanWithTrustedPolicyEngine(engine string, request SelectionRequest, instal
 	// stderr is quoted only. An unreadable envelope is a refusal, never a
 	// plan.
 	verb := "test plan"
-	if request.LaneID != "" {
-		verb = "internal test plan"
-	}
 	child, err := verbresult.Run(command, verb)
 	// The refusals below name the command the pinned engine ran, as a fact.
 	commandFact := enginecause.Value("command", enginecause.Command(command.Args...))

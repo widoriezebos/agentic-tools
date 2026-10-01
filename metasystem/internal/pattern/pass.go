@@ -20,11 +20,6 @@ type Pass struct {
 	Home func() (string, error)
 	// Deliver is the notifier; nil is the steward's own.
 	Deliver func(repoRoot, message string) error
-	// Batches, Helm and Pause are the readers; nil reads the retained
-	// records.
-	Batches BatchReader
-	Helm    HelmReader
-	Pause   PauseReader
 	// Git runs the trunk reader's git; nil is RunGit.
 	Git GitRunner
 	// LaneLineages are the lane's identities, the only lineages churn counts
@@ -36,15 +31,6 @@ type Pass struct {
 func (p Pass) withDefaults() Pass {
 	if p.Home == nil {
 		p.Home = board.Home
-	}
-	if p.Batches == nil {
-		p.Batches = ReadBatchStore
-	}
-	if p.Helm == nil {
-		p.Helm = ReadHelm
-	}
-	if p.Pause == nil {
-		p.Pause = ReadPause
 	}
 	if p.Git == nil {
 		p.Git = RunGit
@@ -72,15 +58,6 @@ func (p Pass) Run(repoRoot string, now time.Time) error {
 	conf := filepath.Join(repoRoot, "metasystem.conf")
 
 	var signals Signals
-	batches, batchErr := p.Batches(laneRoot)
-	if batchErr != nil {
-		signals.BatchesUnreadable = true
-	} else {
-		paused, pauseErr := p.Pause(home)
-		landingHelm, landingReadable := p.Helm(laneRoot)
-		markHolds(batches, paused, pauseErr, landingHelm, landingReadable, p.Helm)
-		signals.Batches = batches
-	}
 	maxGap := MaxGap(repoRoot)
 	clearTicks := setting(conf, ClearTicksKey, 2)
 	// The fetch is the one network step: it runs before the alerts lock.
@@ -101,11 +78,6 @@ func (p Pass) Run(repoRoot string, now time.Time) error {
 				// A torn state is started over: every interval since is
 				// unobserved, which can only delay a report.
 				current, _ = decodeState(nil)
-			}
-			if signals.BatchesUnreadable {
-				current.unobserved(now)
-			} else {
-				current.account(signals.Batches, now, maxGap)
 			}
 			cycleSignals := signals
 			if churn {

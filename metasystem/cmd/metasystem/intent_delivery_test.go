@@ -22,10 +22,7 @@ import (
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/project"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
@@ -87,7 +84,7 @@ func newDeliveryBedWith(t *testing.T, amend func(*goal.GoalFile)) *deliveryBed {
 		},
 		executable: func() (string, error) { return "/fake/bin/metasystem", nil },
 		now:        func() time.Time { return time.Date(2026, 9, 25, 12, 0, 0, 0, time.UTC) },
-		batchRoot:  func(string, time.Time) (string, bool, error) { return "", false, nil },
+		laneRoot:   func(string, time.Time) (string, bool, error) { return "", false, nil },
 	}
 	// The bed's fakes answer by argv: owner calls reach them as the argv the
 	// former owner children carried.
@@ -505,9 +502,6 @@ func TestIntentCloseWholeOwner(t *testing.T) {
 // landingOwners stands in for the landing owners' effects: each keeps the
 // state its owner would record, so repeats read what an earlier call did.
 type landingOwners struct {
-	joins         []batchowner.BatchJoinRequest
-	joinErr       error
-	member        *batch.Unit
 	candidates    int
 	preps, pushes [][]string
 	red           string
@@ -517,29 +511,11 @@ type landingOwners struct {
 	receiptExit   int
 	receiptTrees  []string
 	status        intentBranchState
-	configured    bool
 	branchDeleted bool
-	// redFix is the open red-on-main entry the goal fixes, or "".
-	redFix string
 }
 
 func (l *landingOwners) install(b *deliveryBed) {
-	b.owners.batchRoot = func(string, time.Time) (string, bool, error) { return "/landing", l.configured, nil }
-	b.owners.redOnMain = func(*intentInvocation, string) (string, error) { return l.redFix, nil }
-	b.owners.batchUnit = func(string, batchowner.BatchJoinRequest, string) (batch.Record, batch.Unit, bool, error) {
-		if l.member == nil {
-			return batch.Record{}, batch.Unit{}, false, nil
-		}
-		return batch.Record{BatchID: "b-1", State: "open"}, *l.member, true, nil
-	}
-	b.owners.batchJoin = func(request batchowner.BatchJoinRequest) (batch.Record, error) {
-		l.joins = append(l.joins, request)
-		if l.joinErr != nil {
-			return batch.Record{}, l.joinErr
-		}
-		l.member = &batch.Unit{GoalID: request.GoalID, Chain: request.ChainID, State: batch.UnitJoined}
-		return batch.Record{BatchID: "b-1", State: "open"}, nil
-	}
+	b.owners.laneRoot = func(string, time.Time) (string, bool, error) { return "", false, nil }
 	b.owners.branchState = func(string, string) (intentBranchState, error) {
 		if l.branchDeleted {
 			return intentBranchState{EndpointTip: l.status.EndpointTip}, nil
@@ -619,36 +595,10 @@ func readBranch(prefix int, sources ...string) intentBranchState {
 func TestIntentLandRouteEvidence(t *testing.T) {
 	t.Parallel()
 	b := newDeliveryBed(t)
-	owners := &landingOwners{configured: true, status: readBranch(2, "critic-root", "critic-root")}
+	owners := &landingOwners{status: readBranch(2, "critic-root", "critic-root")}
 	owners.install(b)
-
-	code, result := b.do("work", "land", "standing-validation")
-	expectOutcome(t, "critic-root evidence joins the batch", code, result, intentInProgress)
-	if len(owners.joins) != 1 || !owners.joins[0].Last || owners.joins[0].LandingRoot != "/landing" || owners.candidates != 0 {
-		t.Fatalf("configured batch with critic-root evidence routes to the batch only: %+v", owners.joins)
-	}
-	code, result = b.do("work", "land", "standing-validation")
-	expectOutcome(t, "repeat reads the membership", code, result, intentInProgress)
-	if len(owners.joins) != 1 || result.Next == nil || result.Data.(map[string]any)["joinedNow"] != false {
-		t.Fatalf("a repeated land must not join twice: %+v", result)
-	}
-	owners.member.State = batch.UnitLanded
-	code, result = b.do("work", "land", "standing-validation")
-	expectOutcome(t, "batch landed", code, result, intentUnchanged)
-	if !strings.Contains(result.Summary, "stays open") {
-		t.Fatalf("landing never concludes the goal: %+v", result)
-	}
-
-	owners.member, owners.joinErr = nil, errors.New("BATCH_JOIN_UNREAD: goal is not read clean through its branch tip")
-	code, result = b.do("work", "land", "standing-validation")
-	expectOutcome(t, "batch refusal", code, result, intentRefused)
-	if owners.candidates != 0 || len(b.calls) != 0 {
-		t.Fatalf("a batch refusal never falls back to the hand route: %+v", result)
-	}
-
-	owners.configured = false
 	b.writeJob(map[string]any{"jobId": "impl1", "role": "implementer", "status": "completed", "goalId": "standing-validation"})
-	code, result = b.do("work", "land", "j2:impl1")
+	code, result := b.do("work", "land", "j2:impl1")
 	expectOutcome(t, "chain without batch root", code, result, intentRefused)
 	if result.Next == nil || !slices.Contains(result.Next.Argv, "landing.batch-root") {
 		t.Fatalf("a chain without batch policy names the missing input: %+v", result)
@@ -707,134 +657,6 @@ func TestIntentLandRecovery(t *testing.T) {
 	if len(owners.preps) != preps || !strings.Contains(result.Summary, "gave no usable result") {
 		t.Fatalf("no receipt, no preparation: %+v", result)
 	}
-}
-
-// With a landing lane configured, the lane is the one route for a goal's
-// selection: a unit read by a reader record, which the lane does not accept,
-// is refused with the read that lets it in, and lands by hand only when its
-// goal fixes an open red on main.
-func TestWorkLandRoutesEverySelectionThroughTheLane(t *testing.T) {
-	t.Parallel()
-	b := newDeliveryBed(t)
-	owners := &landingOwners{configured: true, status: readBranch(2, "critic-root", "reader-record")}
-	owners.install(b)
-
-	code, result := b.do("work", "land", "standing-validation")
-	expectOutcome(t, "a reader-record read under the lane", code, result, intentRefused)
-	if len(owners.joins) != 0 || owners.candidates != 0 || len(owners.pushes) != 0 || len(b.calls) != 0 {
-		t.Fatalf("a selection the lane cannot take is neither joined nor landed by hand: %+v", result)
-	}
-	unit := strings.Repeat("2", 40)
-	if result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "work", "review", "--commit", unit, "--goal", "standing-validation"}) {
-		t.Fatalf("the refusal names the critic read that lets the unit into the lane: %+v", result.Next)
-	}
-	if !strings.Contains(result.Summary, unit) || !strings.Contains(result.Summary, "landing lane") || !strings.Contains(strings.Join(result.Details, " "), "incident claim") {
-		t.Fatalf("the refusal says what happened and the other way through: %+v", result)
-	}
-	for _, want := range []string{"metasystem incident list", "open trunk red", "not a flake or a closed"} {
-		if !strings.Contains(strings.Join(result.Details, " "), want) {
-			t.Fatalf("the claim hint does not say %q: %q", want, result.Details)
-		}
-	}
-
-	unfetched := newDeliveryBed(t)
-	unread := &landingOwners{configured: true, status: readBranch(2, "critic-root", "reader-record")}
-	unread.install(unfetched)
-	unfetched.owners.redOnMain = func(*intentInvocation, string) (string, error) { return "", goal.ErrLedgerNotFetched }
-	code, result = unfetched.do("work", "land", "standing-validation")
-	expectOutcome(t, "an unreadable red register", code, result, intentRefused)
-	if result.Next == nil || shellCommand(result.Next.Argv) != "metasystem goal list --fetch" || strings.Contains(result.Summary+result.Next.Reason, "goal sync") {
-		t.Fatalf("the unreadable register names one fixing command in summary and decision: %+v", result)
-	}
-
-	// Once the named critic read is collected the branch attests the unit
-	// through a critic root, and the same work land joins the lane.
-	reread := newDeliveryBed(t)
-	readAgain := &landingOwners{configured: true, status: readBranch(2, "critic-root", "reader-record")}
-	readAgain.install(reread)
-	if _, result = reread.do("work", "land", "standing-validation"); result.Outcome != intentRefused {
-		t.Fatalf("the reader-record unit was not refused first: %+v", result)
-	}
-	readAgain.status = readBranch(2, "critic-root", "critic-root")
-	code, result = reread.do("work", "land", "standing-validation")
-	expectOutcome(t, "after the critic re-read", code, result, intentInProgress)
-	if len(readAgain.joins) != 1 || readAgain.candidates != 0 {
-		t.Fatalf("the re-read unit did not join the lane: %+v", result)
-	}
-
-	owners.redFix = "tr-0001"
-	code, result = b.do("work", "land", "standing-validation")
-	expectOutcome(t, "a red-on-main fix read by a reader record", code, result, intentConfirmed)
-	if len(owners.joins) != 0 || owners.candidates != 1 || len(owners.pushes) != 1 {
-		t.Fatalf("the fix of an open red on main lands by hand: joins=%d candidates=%d pushes=%d", len(owners.joins), owners.candidates, len(owners.pushes))
-	}
-	data := result.Data.(map[string]any)
-	if data["route"] != "hand" || data["redOnMain"] != "tr-0001" {
-		t.Fatalf("the hand route names the red it fixes: %+v", data)
-	}
-
-	fresh := newDeliveryBed(t)
-	critic := &landingOwners{configured: true, redFix: "tr-0001", status: readBranch(2, "critic-root", "critic-root")}
-	critic.install(fresh)
-	code, result = fresh.do("work", "land", "standing-validation")
-	expectOutcome(t, "a critic-read red-on-main fix", code, result, intentInProgress)
-	if len(critic.joins) != 1 || critic.candidates != 0 {
-		t.Fatalf("a fix the lane can take joins it, where it starts at once: %+v", result)
-	}
-}
-
-// memberUnit is a goal-branch batch member as the batch join records it: its
-// chain is the branch tip and its builds carry the selected unit commits.
-func memberUnit(tip string, last bool, commits ...string) batch.Unit {
-	unit := batch.Unit{GoalID: "standing-validation", Chain: tip, State: batch.UnitJoined, GoalLast: last, BranchTip: tip,
-		Claim: batch.Claim{Machine: "m1", Lineage: "lineage-1", Epoch: 1, Revision: 1, AccountingRevision: 1}}
-	for _, commit := range commits {
-		unit.Builds = append(unit.Builds, batch.BranchBuild{Units: []string{"u-" + commit[:4]}, Commit: commit})
-	}
-	return unit
-}
-
-func TestIntentLandBatchMemberSelection(t *testing.T) {
-	t.Parallel()
-	b := newDeliveryBed(t)
-	landingRoot := t.TempDir()
-	store := batch.NewStore(landingRoot, identity.KernelProber{})
-	first, second := strings.Repeat("1", 40), strings.Repeat("2", 40)
-	prefix := batch.Record{Schema: 1, BatchID: "01k0000000000000000000000a", State: batch.StateOpen, Units: []batch.Unit{memberUnit(first, false, first)}}
-	if err := store.Create(prefix); err != nil {
-		t.Fatal(err)
-	}
-	markBatchLanded(t, landingRoot, prefix.BatchID)
-	joins := 0
-	b.owners.batchRoot = func(string, time.Time) (string, bool, error) { return landingRoot, true, nil }
-	b.owners.batchUnit = productionIntentBatchUnit
-	b.owners.batchJoin = func(batchowner.BatchJoinRequest) (batch.Record, error) {
-		joins++
-		return batch.Record{}, errors.New("unexpected join")
-	}
-	b.owners.branchState = func(string, string) (intentBranchState, error) {
-		return intentBranchState{EndpointTip: strings.Repeat("e", 40)}, nil // the goal branch is gone
-	}
-
-	code, result := b.do("work", "land", "standing-validation", "--through", first)
-	expectOutcome(t, "landed prefix after branch deletion", code, result, intentUnchanged)
-	code, result = b.do("work", "land", "standing-validation")
-	expectOutcome(t, "full request after a landed prefix", code, result, intentRefused)
-	if !strings.Contains(result.Summary, "origin has no goal/standing-validation") || joins != 0 {
-		t.Fatalf("an earlier landed prefix must not answer a whole-goal request: %+v", result)
-	}
-	full := batch.Record{Schema: 1, BatchID: "01k0000000000000000000000b", State: batch.StateOpen, Units: []batch.Unit{memberUnit(second, true, first, second)}}
-	if err := store.Create(full); err != nil {
-		t.Fatal(err)
-	}
-	code, result = b.do("work", "land", "standing-validation")
-	expectOutcome(t, "joined whole goal", code, result, intentInProgress)
-	if joins != 0 || result.Data.(map[string]any)["batchId"] != full.BatchID {
-		t.Fatalf("the whole-goal member is read, never joined again: %+v", result)
-	}
-	markBatchLanded(t, landingRoot, full.BatchID)
-	code, result = b.do("work", "land", "standing-validation")
-	expectOutcome(t, "whole goal landed, branch deleted", code, result, intentUnchanged)
 }
 
 func TestIntentReviewCommitClosesThenPublishes(t *testing.T) {
@@ -921,74 +743,6 @@ func TestIntentReviewCommitClosesThenPublishes(t *testing.T) {
 	}
 }
 
-// markBatchLanded records a batch as landed in the store's own on-disk form;
-// the real store reader then loads it. Reaching landed through the batch
-// owner's proof and push transitions is the owner's own test surface.
-func markBatchLanded(t *testing.T, landingRoot, id string) {
-	t.Helper()
-	path := filepath.Join(landingRoot, "artifacts", "agents", "landing-batches", id+".json")
-	var record map[string]any
-	data, err := os.ReadFile(path)
-	if err != nil || json.Unmarshal(data, &record) != nil {
-		t.Fatalf("batch record %s: %v", path, err)
-	}
-	record["state"] = batch.StateLanded
-	for _, unit := range record["units"].([]any) {
-		unit.(map[string]any)["state"] = batch.UnitLanded
-	}
-	encoded, _ := json.Marshal(record)
-	if err := os.WriteFile(path, encoded, 0o644); err != nil {
-		t.Fatal(err)
-	}
-}
-
-// A landed whole-goal member answers only for the branch tip it joined at:
-// new work on a later goal branch is inspected and routed, never reported
-// as the old landing.
-func TestIntentLandOldWholeLandingDoesNotAnswerFreshBranch(t *testing.T) {
-	t.Parallel()
-	b := newDeliveryBed(t)
-	landingRoot := t.TempDir()
-	store := batch.NewStore(landingRoot, identity.KernelProber{})
-	old, fresh := strings.Repeat("1", 40), strings.Repeat("7", 40)
-	record := batch.Record{Schema: 1, BatchID: "01k0000000000000000000000c", State: batch.StateOpen, Units: []batch.Unit{memberUnit(old, true, old)}}
-	if err := store.Create(record); err != nil {
-		t.Fatal(err)
-	}
-	markBatchLanded(t, landingRoot, record.BatchID)
-	var joins []batchowner.BatchJoinRequest
-	b.owners.batchRoot = func(string, time.Time) (string, bool, error) { return landingRoot, true, nil }
-	b.owners.batchUnit = productionIntentBatchUnit
-	b.owners.batchJoin = func(request batchowner.BatchJoinRequest) (batch.Record, error) {
-		joins = append(joins, request)
-		return batch.Record{BatchID: "01k0000000000000000000000d", State: batch.StateOpen}, nil
-	}
-	b.owners.branchState = func(string, string) (intentBranchState, error) {
-		return intentBranchState{EndpointTip: strings.Repeat("e", 40), BranchTip: fresh, Sources: []string{"critic-root"},
-			Status: branch.Status{Tip: fresh, Prefix: 1, Units: []branch.UnitStatus{{Unit: "u9", Commit: fresh}}}}, nil
-	}
-	code, result := b.do("work", "land", "standing-validation")
-	expectOutcome(t, "fresh branch after an old whole landing", code, result, intentInProgress)
-	if len(joins) != 1 || !joins[0].Last || result.Data.(map[string]any)["joinedNow"] != true {
-		t.Fatalf("the fresh branch must join as new work: %v %+v", joins, result)
-	}
-	failing := errors.New("goal branch unreadable")
-	b.owners.branchState = func(string, string) (intentBranchState, error) { return intentBranchState{}, failing }
-	code, result = b.do("work", "land", "standing-validation")
-	expectOutcome(t, "unreadable branch", code, result, intentRefused)
-	b.owners.branchState = func(string, string) (intentBranchState, error) {
-		return intentBranchState{EndpointTip: strings.Repeat("e", 40)}, nil
-	}
-	code, result = b.do("work", "land", "standing-validation")
-	expectOutcome(t, "retained landing once the branch is gone", code, result, intentUnchanged)
-	if len(joins) != 1 {
-		t.Fatal("a retained landed member is not joined again")
-	}
-}
-
-// TestIntentLandByHandWritesLandingThenLanded (R24, U10a-3, the hand route):
-// the hand route writes landing on the goal's card when it begins, with the
-// landing process as owner, and landed after its push.
 func TestIntentLandByHandWritesLandingThenLanded(t *testing.T) {
 	t.Parallel()
 	goalID := "card-hand-landing"
@@ -1024,147 +778,9 @@ func TestIntentLandByHandWritesLandingThenLanded(t *testing.T) {
 	}
 }
 
-// The red-on-main hand route reads the synced ledger's red register: an open
-// trunk red whose fix goal is the landing goal opens it; the same entry closed,
-// or a known flake, does not.
-func TestWorkLandReadsTheRedOnMainRegisterForTheHandRoute(t *testing.T) {
-	t.Parallel()
-	entry := func(class string, closed bool) goal.TrunkRedEntry {
-		red := goal.TrunkRedEntry{ID: "tr-units", Identity: "tr-units", Group: "units", Status: "open", Failures: []goal.TrunkRedFailure{},
-			Sightings: []goal.TrunkRedSighting{{Attempt: "attempt-1", BaseCommit: strings.Repeat("b", 40), SeenAt: "2026-09-01T09:00:00Z",
-				Opid: goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FR1", "mac-cli", "m1")}},
-			Owner: goal.TrunkRedOwner{Machine: "mac-cli", Since: "2026-09-01T09:10:00Z", How: "joiner"}, FixGoal: bedGoal,
-			Holds: []string{}, Opened: "2026-09-01T09:00:00Z", Class: class}
-		if class == goal.TrunkRedClassKnownFlake {
-			red.AllowanceUntil = "2026-09-04T09:00:00Z"
-		}
-		if closed {
-			red.Closed = &goal.TrunkRedClosure{At: "2026-09-01T10:00:00Z", Attempt: "attempt-2", BaseCommit: strings.Repeat("c", 40),
-				How: "green", Opid: goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FR2", "mac-cli", "m1")}
-		}
-		return red
-	}
-	for _, row := range []struct {
-		name string
-		red  goal.TrunkRedEntry
-		hand bool
-	}{
-		{"open trunk red", entry("", false), true},
-		{"closed trunk red", entry("", true), false},
-		{"known flake", entry(goal.TrunkRedClassKnownFlake, false), false},
-	} {
-		b, owners, _ := gatedDeliveryBed(t, clearedAt(gateBedTip))
-		owners.status = readBranch(2, "critic-root", "reader-record")
-		b.owners.redOnMain = nil
-		if problems := func() []goal.Problem {
-			rendered := goal.RenderTrunkRed([]goal.TrunkRedEntry{row.red})
-			_, problems := goal.ParseTrunkRed(rendered)
-			b.repo.commit(b.repo.canonical).files["plans/goals/trunk-red.json"] = rendered
-			return problems
-		}(); len(problems) != 0 {
-			t.Fatalf("%s: the bed's register is invalid: %v", row.name, problems)
-		}
-		code, result := b.do("work", "land", bedGoal)
-		if row.hand {
-			expectOutcome(t, row.name, code, result, intentConfirmed)
-			if result.Data.(map[string]any)["redOnMain"] != "tr-units" || len(owners.joins) != 0 || len(owners.pushes) != 1 {
-				t.Fatalf("%s: the fix did not land by hand naming its red: %+v", row.name, result)
-			}
-			continue
-		}
-		expectOutcome(t, row.name, code, result, intentRefused)
-		if owners.candidates != 0 || len(owners.joins) != 0 || result.Next == nil {
-			t.Fatalf("%s: a goal fixing no open trunk red took a route: %+v", row.name, result)
-		}
-	}
-}
-
-// The red register is read after a fetch: an open trunk red published on the
-// canonical ledger but not yet accepted by this checkout still opens the hand
-// route for its fix goal.
-func TestWorkLandFetchesTheRedRegisterBeforeRefusing(t *testing.T) {
-	t.Parallel()
-	b, owners, _ := gatedDeliveryBed(t, clearedAt(gateBedTip))
-	owners.status = readBranch(2, "critic-root", "reader-record")
-	b.owners.redOnMain = nil
-	b.owners.landingGate = func(*intentInvocation, string, string) (string, error) { return "the bed's landing", nil }
-	red := goal.TrunkRedEntry{ID: "tr-units", Identity: "tr-units", Group: "units", Status: "open", Failures: []goal.TrunkRedFailure{},
-		Sightings: []goal.TrunkRedSighting{{Attempt: "attempt-1", BaseCommit: strings.Repeat("b", 40), SeenAt: "2026-09-01T09:00:00Z",
-			Opid: goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FR1", "mac-cli", "m1")}},
-		Owner: goal.TrunkRedOwner{Machine: "mac-cli", Since: "2026-09-01T09:10:00Z", How: "joiner"}, FixGoal: bedGoal,
-		Holds: []string{}, Opened: "2026-09-01T09:00:00Z"}
-	parent := b.repo.canonical
-	published, err := b.repo.Build("red-published", parent, []goal.Change{{Path: "plans/goals/trunk-red.json", Content: goal.RenderTrunkRed([]goal.TrunkRedEntry{red})}}, "record a red on main")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := b.repo.Publish(parent, published); err != nil || b.repo.accepted == published {
-		t.Fatalf("the red must be canonical and not yet accepted: %v", err)
-	}
-	code, result := b.do("work", "land", bedGoal)
-	expectOutcome(t, "a red on main not yet fetched", code, result, intentConfirmed)
-	if result.Data.(map[string]any)["redOnMain"] != "tr-units" || len(owners.pushes) != 1 {
-		t.Fatalf("the fix of a freshly published red did not land by hand: %+v", result)
-	}
-}
-
-// work land's help states the routing a person meets with a lane configured.
-func TestWorkLandHelpStatesTheLaneRouting(t *testing.T) {
-	t.Parallel()
-	code, page, problem := runCLIHelp([]string{"help", "work", "land"}, families())
-	if code != 0 {
-		t.Fatalf("help work land = code %d stderr %q", code, problem)
-	}
-	flat := strings.Join(strings.Fields(page), " ")
-	for _, want := range []string{"read from a reader record is refused", "metasystem work review --commit SHA --goal G",
-		"fix goal of an open trunk red", "metasystem incident claim E --goal G", "joins the lane as a change member", "Landing-Change trailer",
-		"Without a lane, and with --local or --recertification",
-		"rides on the proof of the goal members it joins", "a batch of changes alone is proved on the lane's account",
-		"an ejected change is given back"} {
-		if !strings.Contains(flat, want) {
-			t.Errorf("work land help does not say %q:\n%s", want, page)
-		}
-	}
-	// Since U11b a batch of changes alone is proved on the lane's account.
-	if strings.Contains(flat, "every proof is charged to a goal") {
-		t.Errorf("work land help still says every proof is charged to a goal:\n%s", page)
-	}
-}
-
-// A batch owner's refusal to take the goal reads as words on line 1; its
-// code is a detail --verbose and --json show, never the headline.
-func TestIntentLandBatchRefusalSpeaksWordsNotItsCode(t *testing.T) {
-	t.Parallel()
-	b := newDeliveryBed(t)
-	landingRoot := t.TempDir()
-	store := batch.NewStore(landingRoot, identity.KernelProber{})
-	sealed := batch.Record{Schema: 1, BatchID: "01k0000000000000000000000e", State: batch.StateSealed}
-	if err := store.Create(sealed); err != nil {
-		t.Fatal(err)
-	}
-	b.owners.batchRoot = func(string, time.Time) (string, bool, error) { return landingRoot, true, nil }
-	b.owners.batchUnit = productionIntentBatchUnit
-	b.owners.batchJoin = func(batchowner.BatchJoinRequest) (batch.Record, error) {
-		return batch.Record{}, batch.CloseAdmissionForCost(store, sealed.BatchID, "owner", time.Unix(1, 0), batch.CostForecast{})
-	}
-	fresh := strings.Repeat("7", 40)
-	b.owners.branchState = func(string, string) (intentBranchState, error) {
-		return intentBranchState{EndpointTip: strings.Repeat("e", 40), BranchTip: fresh, Sources: []string{"critic-root"},
-			Status: branch.Status{Tip: fresh, Prefix: 1, Units: []branch.UnitStatus{{Unit: "u9", Commit: fresh}}}}, nil
-	}
-	code, result := b.do("work", "land", "standing-validation")
-	expectOutcome(t, "sealed batch", code, result, intentRefused)
-	if strings.Contains(result.Summary, "BATCH_SEALED") || !strings.Contains(result.Summary, "takes no more changes") {
-		t.Fatalf("line 1 is the batch owner's words, without its code: %q", result.Summary)
-	}
-	if !slices.Contains(result.Details, "refusal code: BATCH_SEALED") {
-		t.Fatalf("the code is a detail for --verbose and --json: %q", result.Details)
-	}
-}
-
 // A tier-1 goal stores zero review rounds in its box (R-54-m1), so its unread
-// units land by hand and join the landing lane without a read; a goal with
-// review rounds is still refused at its first unread unit on both routes.
+// units land by hand without a read; a goal with review rounds is still
+// refused at its first unread unit.
 func TestWorkLandTierOneUnitsNeedNoRead(t *testing.T) {
 	t.Parallel()
 	b := newDeliveryBed(t)
@@ -1182,18 +798,4 @@ func TestWorkLandTierOneUnitsNeedNoRead(t *testing.T) {
 		t.Fatalf("a tier-1 goal's unread units do not land by hand: %+v", result)
 	}
 
-	lane := newDeliveryBed(t)
-	laneOwners := &landingOwners{configured: true, status: readBranch(1, "reader-record")}
-	laneOwners.install(lane)
-	code, result = lane.do("work", "land", "standing-validation")
-	expectOutcome(t, "tier-2 unread unit in the lane", code, result, intentRefused)
-	if len(laneOwners.joins) != 0 {
-		t.Fatalf("a goal with review rounds joins the lane unread: %+v", result)
-	}
-	laneOwners.status.ReadsWaived = true
-	code, result = lane.do("work", "land", "standing-validation")
-	expectOutcome(t, "tier-1 unread units in the lane", code, result, intentInProgress)
-	if len(laneOwners.joins) != 1 || !laneOwners.joins[0].Last || len(laneOwners.preps) != 0 {
-		t.Fatalf("a tier-1 goal's unread units do not join the lane: %+v %+v", result, laneOwners.joins)
-	}
 }

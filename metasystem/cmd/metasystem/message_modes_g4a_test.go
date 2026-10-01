@@ -17,7 +17,6 @@ var g4aPaths = []string{
 	"cmd/metasystem/intent_design.go",
 	"cmd/metasystem/intent_design_dispositions.go",
 	"cmd/metasystem/intent_design_review.go",
-	"cmd/metasystem/intent_land_change.go",
 	"cmd/metasystem/intent_land_release.go",
 	"cmd/metasystem/intent_land_staged.go",
 	"cmd/metasystem/intent_manual_review.go",

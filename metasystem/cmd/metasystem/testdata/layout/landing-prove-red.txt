@@ -1,2 +1,0 @@
-✗ tests of 222222222222 (tree 4b825dc642cb) failed: app-standard
-  → metasystem landing status --verbose  shows the waiting members; return the one that broke it

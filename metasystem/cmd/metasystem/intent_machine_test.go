@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
@@ -282,8 +281,7 @@ func (b *machineBed) owners() intentOwners {
 				}
 				return lane.OwnerProbe{Alive: true, PID: 4242, Since: machineBedNow.Add(-2 * time.Hour)}, nil
 			},
-			records: func(string) ([]batch.Record, error) { return nil, nil },
-			now:     func() time.Time { return machineBedNow },
+			now: func() time.Time { return machineBedNow },
 		},
 		work: intentWorkOwners{git: b.git},
 		machines: machineOwners{

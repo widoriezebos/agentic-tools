@@ -1,11 +1,8 @@
 package steward
 
 import (
-	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 
@@ -14,20 +11,6 @@ import (
 )
 
 const cadenceHealthInterval = 6 * time.Hour
-
-type trunkRedBatchRecord struct {
-	BatchID  string `json:"batchId"`
-	State    string `json:"state"`
-	TrunkRed *struct {
-		Opid    string            `json:"opid"`
-		Entries []json.RawMessage `json:"entries"`
-	} `json:"trunkRed"`
-	History []struct {
-		At     string `json:"at"`
-		Verb   string `json:"verb"`
-		Detail string `json:"detail"`
-	} `json:"history"`
-}
 
 // LandingLaneRoot resolves the landing lane a checkout lands through (U12:
 // its own landing.batch-root against the host's one lane, never
@@ -42,10 +25,10 @@ func checkTrunkRedWith(repoRoot string, now time.Time, ledger *healthLedger) Rol
 	if err := ledger.endpointErr; err != nil {
 		return roleUnknown(RoleTrunkRed, "the trunk-red ledger endpoint is unreadable: "+err.Error(), "repair the goal sync configuration, then run metasystem system check")
 	}
-	return checkTrunkRedFromProjection(repoRoot, now, ledger.projection, ledger.projectionErr, config.ResolveBatchLanding, LandingLaneRoot)
+	return checkTrunkRedFromProjection(repoRoot, now, ledger.projection, ledger.projectionErr, LandingLaneRoot)
 }
 
-func checkTrunkRedFromProjection(repoRoot string, now time.Time, projection goal.Projection, projectionErr error, resolveBatchLanding func(string, string, func() time.Time) (config.BatchLanding, error), laneRoot func(string, time.Time) (string, bool, error)) RoleVerdict {
+func checkTrunkRedFromProjection(repoRoot string, now time.Time, projection goal.Projection, projectionErr error, laneRoot func(string, time.Time) (string, bool, error)) RoleVerdict {
 	if projectionErr != nil {
 		return roleUnknown(RoleTrunkRed, "the trunk-red ledger is unreadable: "+projectionErr.Error(), "repair or fetch the goal ledger, then run metasystem system check")
 	}
@@ -76,11 +59,6 @@ func checkTrunkRedFromProjection(repoRoot string, now time.Time, projection goal
 		return roleDead(RoleTrunkRed, fmt.Sprintf("deep validation cadence is non-green at trunk %s tree %s", cadence.TrunkCommit, cadence.TrunkTree), remedy)
 	}
 
-	staleBatches, batchErr := staleUnrecordedTrunkRedBatchesWith(repoRoot, now, resolveBatchLanding, laneRoot)
-	if batchErr != nil {
-		return roleUnknown(RoleTrunkRed, batchErr.Error(), "repair the configured landing batch root, then run metasystem system check")
-	}
-
 	var open []goal.TrunkRedEntry
 	var unowned []string
 	tracked := 0
@@ -103,11 +81,6 @@ func checkTrunkRedFromProjection(repoRoot string, now time.Time, projection goal
 		return roleDead(RoleTrunkRed, "open trunk red without an owner: "+strings.Join(unowned, ", "),
 			"metasystem incident claim "+unowned[0]+" --goal <goal>")
 	}
-	if len(staleBatches) > 0 {
-		first := staleBatches[0]
-		return roleDead(RoleTrunkRed, "held trunk red was not recorded: "+strings.Join(staleBatches, ", "),
-			"a person returns the held batch's members: metasystem landing return MEMBER --disposition person (first held batch "+first+")")
-	}
 	defects := ""
 	if tracked > 0 {
 		defects = fmt.Sprintf("; %d flake or hang entr%s tracked separately (metasystem incident list)", tracked, map[bool]string{true: "y", false: "ies"}[tracked == 1])
@@ -123,79 +96,4 @@ func checkTrunkRedFromProjection(repoRoot string, now time.Time, projection goal
 		}
 	}
 	return roleAlive(RoleTrunkRed, fmt.Sprintf("%d open, all owned; oldest %s", len(open), deliveryAge(now, oldest))+defects)
-}
-
-func staleUnrecordedTrunkRedBatchesWith(repoRoot string, now time.Time, resolveBatchLanding func(string, string, func() time.Time) (config.BatchLanding, error), laneRoot func(string, time.Time) (string, bool, error)) ([]string, error) {
-	if laneRoot != nil {
-		root, configured, err := laneRoot(repoRoot, now)
-		if err != nil {
-			return nil, fmt.Errorf("the trunk-red batch root is unreadable: %w", err)
-		}
-		if !configured {
-			return nil, nil
-		}
-		return staleUnrecordedTrunkRedBatchesIn(root, now)
-	}
-	conf := filepath.Join(repoRoot, "metasystem.conf")
-	configured, _, err := config.Get(config.GetParams{Key: config.BatchRootKey, ConfPath: conf, Default: "", DefaultSet: true})
-	if err != nil {
-		return nil, fmt.Errorf("the trunk-red batch-root configuration is unreadable: %w", err)
-	}
-	if strings.TrimSpace(configured) == "" {
-		return nil, nil
-	}
-	settings, err := resolveBatchLanding(conf, repoRoot, func() time.Time { return now })
-	if err != nil {
-		return nil, fmt.Errorf("the trunk-red batch root is unreadable: %w", err)
-	}
-	return staleUnrecordedTrunkRedBatchesIn(settings.Root, now)
-}
-
-// staleUnrecordedTrunkRedBatchesIn reads one landing checkout's held batches.
-func staleUnrecordedTrunkRedBatchesIn(root string, now time.Time) ([]string, error) {
-	directory := filepath.Join(root, "artifacts", "agents", "landing-batches")
-	entries, err := os.ReadDir(directory)
-	if err != nil {
-		return nil, fmt.Errorf("the trunk-red batch root is unreadable at %s: %w", directory, err)
-	}
-	var stale []string
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
-			continue
-		}
-		path := filepath.Join(directory, entry.Name())
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return nil, fmt.Errorf("the trunk-red batch root is unreadable at %s: %w", path, err)
-		}
-		var record trunkRedBatchRecord
-		if err := json.Unmarshal(data, &record); err != nil {
-			return nil, fmt.Errorf("the trunk-red batch root has an unreadable record at %s: %w", path, err)
-		}
-		if record.State != "held-trunk-red" || record.TrunkRed == nil || len(record.TrunkRed.Entries) != 0 {
-			continue
-		}
-		var heldAt time.Time
-		for _, history := range record.History {
-			if history.Verb != "trunk-red-hold" {
-				continue
-			}
-			candidate, err := time.Parse(time.RFC3339Nano, history.At)
-			if err != nil {
-				return nil, fmt.Errorf("the trunk-red batch root has an unreadable hold time at %s: %w", path, err)
-			}
-			if heldAt.IsZero() || candidate.After(heldAt) {
-				heldAt = candidate
-			}
-		}
-		if !heldAt.IsZero() && now.Sub(heldAt) > goal.DefaultPublishDeadline {
-			batchID := record.BatchID
-			if batchID == "" {
-				batchID = strings.TrimSuffix(entry.Name(), ".json")
-			}
-			stale = append(stale, fmt.Sprintf("batch %s opid %s", batchID, record.TrunkRed.Opid))
-		}
-	}
-	sort.Strings(stale)
-	return stale, nil
 }

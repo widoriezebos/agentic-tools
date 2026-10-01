@@ -19,7 +19,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
 	"strings"
 	"sync"
 	"syscall"
@@ -491,30 +490,6 @@ func SeatInstallation(home, machine string) (string, bool) {
 		}
 	}
 	return "", false
-}
-
-// History is every closed stage span the board holds for goal, on every
-// seat, oldest first: a goal handed from one seat to another keeps the
-// spans its first seat wrote.
-func History(home, goal string) []StageSpan {
-	if !SafeName(goal) {
-		return nil
-	}
-	entries, err := os.ReadDir(Dir(home))
-	if err != nil {
-		return nil
-	}
-	var spans []StageSpan
-	for _, entry := range entries {
-		if !entry.IsDir() || !SafeName(entry.Name()) {
-			continue
-		}
-		if card, ok := readCardFile(filepath.Join(Dir(home), entry.Name(), goal+".json")); ok && card.Goal == goal {
-			spans = append(spans, card.Stages...)
-		}
-	}
-	sort.SliceStable(spans, func(i, j int) bool { return spans[i].Since.Before(spans[j].Since) })
-	return spans
 }
 
 // notADirectory refuses a board path something else stands at.

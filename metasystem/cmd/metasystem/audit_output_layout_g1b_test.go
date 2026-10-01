@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
@@ -44,7 +43,7 @@ func g1bLayoutCases() []layoutCase {
 		{name: "landing-run", args: []string{"landing", "run"}, bed: inTheLaneCheckout(landingLayoutBed(landingLayoutRunning))},
 		{name: "landing-run-refusal", args: []string{"landing", "run"}, bed: inTheLaneCheckout(landingLayoutBed(landingLayoutPaused))},
 		{name: "landing-run-no-engine", args: []string{"landing", "run"}, bed: landingLayoutBed(landingLayoutRunning)},
-		{name: "landing-stop-refusal", args: []string{"landing", "stop"}, bed: landingLayoutBed(landingLayoutPushing)},
+		{name: "landing-stop", args: []string{"landing", "stop", "--by", "Wido"}, bed: landingLayoutBed(landingLayoutRunning)},
 		{name: "landing-unset", args: []string{"landing", "unset"}, bed: landingLayoutBed(landingLayoutNone)},
 	}
 }
@@ -70,15 +69,13 @@ func machineLayoutBed(t *testing.T) layoutBed {
 		"~/agentic-tools-landing", "~/GitHub/agentic-tools-landing", "~/agentic-tools-m1x", "~/GitHub/agentic-tools-m1x")}
 }
 
-// The landing beds: no lane; a lane whose owner runs, one batch proving
-// and one collecting behind it; the same lane paused by Wido; and the same
-// lane with its batch pushing to main. No golden holds a local time
+// The landing beds: no lane; a lane whose agent runs; and the same lane
+// paused by Wido. No golden holds a local time
 // (lane.LocalText reads the host's zone), so they hold in every zone.
 const (
 	landingLayoutNone = iota
 	landingLayoutRunning
 	landingLayoutPaused
-	landingLayoutPushing
 )
 
 func landingLayoutBed(kind int) func(t *testing.T) layoutBed {
@@ -93,20 +90,8 @@ func landingLayoutBed(kind int) func(t *testing.T) layoutBed {
 		cwd, home, landing = realpath.Resolve(cwd), realpath.Resolve(home), realpath.Resolve(landing)
 		now := layoutNow
 		alive := kind != landingLayoutNone
-		records := []batch.Record{}
 		if kind != landingLayoutNone {
 			registerLane(t, home, landing, "Wido", now.Add(-2*time.Hour))
-			records = []batch.Record{
-				{Schema: 1, BatchID: "4gr18nm8t3nyev9sssda9jgtsq", State: map[bool]string{true: batch.StateLanding, false: batch.StateProving}[kind == landingLayoutPushing],
-					Units: []batch.Unit{{GoalID: "verbs-match-intent", Chain: "c1", State: batch.UnitJoined, Claim: batch.Claim{Machine: "m1e"}},
-						{GoalID: "switch-on-trial", Chain: "c2", State: batch.UnitJoined, Claim: batch.Claim{Machine: "ui"}}},
-					History: []batch.HistoryEntry{{At: now.Add(-9 * time.Minute).Format(time.RFC3339Nano), Verb: "open", To: batch.StateOpen},
-						{At: now.Add(-4 * time.Minute).Format(time.RFC3339Nano), Verb: "seal", From: batch.StateOpen, To: batch.StateSealed},
-						{At: now.Add(-3 * time.Minute).Format(time.RFC3339Nano), Verb: "prove", From: batch.StateSealed, To: batch.StateProving}}},
-				{Schema: 1, BatchID: "7kq2m9x4c1vbn8hzt5pwe3dyra", State: batch.StateOpen,
-					Units:   []batch.Unit{{GoalID: "disk-lifetimes", Chain: "c3", State: batch.UnitJoined, Claim: batch.Claim{Machine: "m1e"}}},
-					History: []batch.HistoryEntry{{At: now.Add(-time.Minute).Format(time.RFC3339Nano), Verb: "open", To: batch.StateOpen}}},
-			}
 		}
 		if kind == landingLayoutPaused {
 			if _, err := lane.SetPause(home, "Wido", now.Add(-30*time.Minute)); err != nil {
@@ -124,7 +109,6 @@ func landingLayoutBed(kind int) func(t *testing.T) layoutBed {
 				return lane.OwnerProbe{Alive: true, PID: pid, Since: now.Add(-5 * time.Minute)}, nil
 			},
 			person:   func(string) (string, error) { return "Wido", nil },
-			records:  func(string) ([]batch.Record, error) { return records, nil },
 			validate: func(root, _ string, _ time.Time) (string, error) { return realpath.Resolve(root), nil },
 			by:       func(string) string { return "Wido" },
 			ready:    func(string) error { return nil },
@@ -141,7 +125,7 @@ func landingLayoutBed(kind int) func(t *testing.T) layoutBed {
 			},
 		}}
 		return layoutBed{owners: owners, cwd: cwd, now: now, replace: layoutPaths(cwd, cwd, "/Users/wido/GitHub/agentic-tools-m1e",
-			lane.AccountID(landing), "lane:99af5acdbc67", home, "/Users/wido/.metasystem-home", landing, "/Users/wido/GitHub/agentic-tools-landing",
+			home, "/Users/wido/.metasystem-home", landing, "/Users/wido/GitHub/agentic-tools-landing",
 			"~/agentic-tools-landing", "~/GitHub/agentic-tools-landing")}
 	}
 }

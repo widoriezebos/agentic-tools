@@ -10,16 +10,13 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"os/exec"
 	"path/filepath"
-	"slices"
 	"strings"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
@@ -99,40 +96,6 @@ func (seams LandingLaneSeams) BatchRoot(installation string, now time.Time) (str
 	return found.Root, found.Root != "", nil
 }
 
-// HoldHostProvingFlag asks an internal test run to hold the host's proving
-// flock for its whole life (U12).
-const HoldHostProvingFlag = "--hold-host-proving"
-
-// BatchProofCommand is the one launcher of a batch's proof children
-// (landing prove, K6). The child holds the host's proving flock for its
-// life, waiting while another proof holds it, and the kernel releases it
-// when the child ends, so one proof runs at a time on the host whatever
-// happens to the process that launched it.
-func BatchProofCommand(binary string, args []string) *exec.Cmd {
-	return exec.Command(binary, append(slices.Clone(args), HoldHostProvingFlag)...)
-}
-
-// HoldHostProvingFor is internal test run's side of the launcher: with the
-// flag it takes the proving flock (waiting while another proof holds it) and
-// returns the arguments without the flag; without a lane home it holds
-// nothing.
-func HoldHostProvingFor(home func() (string, error), args []string) ([]string, func() error, error) {
-	rest := slices.DeleteFunc(slices.Clone(args), func(arg string) bool { return arg == HoldHostProvingFlag })
-	nothing := func() error { return nil }
-	if len(rest) == len(args) {
-		return rest, nothing, nil
-	}
-	laneHome, err := home()
-	if err != nil {
-		return rest, nothing, nil
-	}
-	release, err := lane.HoldProving(laneHome)
-	if err != nil {
-		return rest, nothing, fmt.Errorf("the host's proving lock could not be taken: %w", err)
-	}
-	return rest, release, nil
-}
-
 // LandingAgentProbe reads whether the host lane's landing agent runs, and
 // since when: the lane's view shows it as the lane's runner. The
 // engine supplies it (the launch store is the command layer's); nil reads
@@ -200,9 +163,7 @@ func landingLaneView(home func() (string, error), now time.Time) lane.View {
 }
 
 // LandingLaneViewSources are the production reads of the lane's view as the
-// board shows it. Its wake omits validation due on purpose: that read
-// projects the goal ledger, which a page polled every few seconds does not
-// pay for; landing status --json carries the whole wake.
+// board shows it.
 func LandingLaneViewSources(laneHome string, now time.Time) lane.ViewSources {
-	return lane.ViewSources{Home: laneHome, Now: now, Owner: landingAgentProbe, Ready: LandingLaneReady, Helm: helm.Active}
+	return lane.ViewSources{Home: laneHome, Now: now, Owner: landingAgentProbe, Ready: LandingLaneReady}
 }

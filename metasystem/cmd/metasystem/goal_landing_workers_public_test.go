@@ -28,7 +28,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 )
 
 const (
@@ -344,47 +343,6 @@ func TestCommandApplicationWorkerAllowancePublicDelivery(t *testing.T) {
 		preparePublicApplicationWorkerBase(t, fixture)
 		observed := runPublicApplicationPhase(t, fixture, "committed-candidate-workers-2", "green", 2, false, true)
 		requirePublicApplicationGreen(t, fixture, observed)
-		controlRoot, err := canonicalProofRoot(fixture.root)
-		if err != nil {
-			t.Fatal(err)
-		}
-		attemptPath, err := proofrun.AttemptPath(controlRoot, observed.attemptID)
-		if err != nil {
-			t.Fatal(err)
-		}
-		beforeAttempt, err := os.ReadFile(attemptPath)
-		if err != nil {
-			t.Fatal(err)
-		}
-		beforeAttempts, err := proofrun.ReadAttempts(controlRoot)
-		if err != nil {
-			t.Fatal(err)
-		}
-		beforeBuilds, beforeNative := fixture.counts()
-		forecast, err := forecastTestingSelection(fixture.root, testrun.CostSelection{
-			ID: "tip:" + observed.tree, Kind: "tip", Tree: observed.tree, GoalID: "portable",
-			Requirements: []string{"application-workers"}}, 2)
-		if err != nil || len(forecast.Groups) != 1 || forecast.Groups[0].GroupID != "application-workers" ||
-			forecast.Groups[0].Status != "reusable" || !forecast.Groups[0].IdentityKnown || forecast.Groups[0].Reason != "" {
-			t.Fatalf("committed public result forecast=%+v err=%v", forecast, err)
-		}
-		afterBuilds, afterNative := fixture.counts()
-		afterAttempts, err := proofrun.ReadAttempts(controlRoot)
-		if err != nil {
-			t.Fatal(err)
-		}
-		afterAttempt, err := os.ReadFile(attemptPath)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if afterBuilds != beforeBuilds || !maps.Equal(afterNative, beforeNative) ||
-			len(afterAttempts) != len(beforeAttempts) || !bytes.Equal(afterAttempt, beforeAttempt) {
-			t.Fatalf("forecast changed retained proof: builds=%d/%d native=%v/%v attempts=%d/%d bytes-equal=%t",
-				beforeBuilds, afterBuilds, beforeNative, afterNative, len(beforeAttempts), len(afterAttempts), bytes.Equal(beforeAttempt, afterAttempt))
-		}
-		t.Logf("PUBLIC_APPLICATION_FORECAST status=%s identityKnown=%t reason=%q builds=%d native=%v attempts=%d retainedBytes=%d",
-			forecast.Groups[0].Status, forecast.Groups[0].IdentityKnown, forecast.Groups[0].Reason,
-			beforeBuilds, beforeNative, len(beforeAttempts), len(beforeAttempt))
 	})
 	installed, digest := os.Getenv(publicApplicationInstalledBinary), os.Getenv(publicApplicationInstalledDigest)
 	if installed == "" && digest == "" {

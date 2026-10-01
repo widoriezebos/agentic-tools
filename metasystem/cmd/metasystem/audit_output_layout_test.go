@@ -23,7 +23,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
@@ -182,22 +181,16 @@ func statusLayoutBed(busy bool) func(t *testing.T) layoutBed {
 			}
 		}
 		home, landing = realpath.Resolve(home), realpath.Resolve(landing)
-		records := []batch.Record{}
 		owners.landing = laneVerbOwners{
 			home: func() (string, error) { return home, nil },
 			probe: func(string) (lane.OwnerProbe, error) {
 				return lane.OwnerProbe{Alive: true, PID: 38928, Since: layoutNow.Add(-5 * time.Minute)}, nil
 			},
-			records: func(string) ([]batch.Record, error) { return records, nil },
-			now:     func() time.Time { return layoutNow },
+			now: func() time.Time { return layoutNow },
 		}
-		owners.delivery.batchRoot = func(string, time.Time) (string, bool, error) { return "", false, nil }
+		owners.delivery.laneRoot = func(string, time.Time) (string, bool, error) { return "", false, nil }
 		if busy {
 			registerLane(t, home, landing, "Wido", layoutNow.Add(-2*time.Hour))
-			collecting := batch.Record{Schema: 1, BatchID: "4gr18nm8t3nyev9sssda9jgtsq", State: batch.StateOpen,
-				Units:   []batch.Unit{{GoalID: "533209e6d", Chain: "c", SeatRoot: root, State: batch.UnitJoined, Claim: batch.Claim{Machine: "m1e"}}},
-				History: []batch.HistoryEntry{{At: layoutNow.Add(-time.Minute).Format(time.RFC3339Nano), Verb: "open", To: batch.StateOpen}}}
-			records = append(records, collecting)
 			if err := os.MkdirAll(filepath.Join(root, ".git"), 0o755); err != nil {
 				t.Fatal(err)
 			}

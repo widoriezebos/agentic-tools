@@ -10,7 +10,6 @@ This checkout  metasystem · last pass Mon 23:00
   proof attempt payloads: no items
   clones beside the checkout: no items
   landing release sets: no items
-  batch release sets: no items
   suite-failure bundles: no items
 
 This machine  last pass Mon 23:00

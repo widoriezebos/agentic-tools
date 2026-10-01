@@ -3,13 +3,7 @@ package lane
 import (
 	"errors"
 	"fmt"
-	"path/filepath"
-	"sort"
-	"strings"
 	"time"
-
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 )
 
 // The lane's runner states as a person reads them: the landing agent runs;
@@ -23,42 +17,23 @@ const (
 	OwnerUnready = "unready"
 )
 
-// The current batch's states as a person reads them.
-const (
-	BatchCollecting = "collecting"
-	BatchWaiting    = "waiting"
-	BatchProving    = "proving"
-	BatchPushing    = "pushing"
-	// BatchHeld is a batch held whole because a seat that joined it is at
-	// the helm; it starts when that seat returns the helm.
-	BatchHeld = "held"
-)
-
 // View is the host's landing lane as every reader shows it: landing status
 // prints it and the interface's /api/board carries it as "lane". Every key is
 // always present; an absent value is null.
 type View struct {
-	Root         *string    `json:"root"`
-	RegisteredBy *string    `json:"registered_by"`
-	RegisteredAt *string    `json:"registered_at"`
-	Owner        OwnerView  `json:"owner"`
-	Batch        *BatchView `json:"batch"`
-	Next         *NextView  `json:"next"`
-	// Spend is what the lane charged to its own account: the proofs of
-	// batches whose members are all changes (U11b).
-	Spend *Spend `json:"spend"`
+	Root         *string   `json:"root"`
+	RegisteredBy *string   `json:"registered_by"`
+	RegisteredAt *string   `json:"registered_at"`
+	Owner        OwnerView `json:"owner"`
+	// Batch and Next are always null: the interface's committed bundle
+	// still reads them (internal/ui/web/_app/src/fleet/LandingLane.tsx)
+	// until it is rebuilt without them.
+	Batch *struct{} `json:"batch"`
+	Next  *struct{} `json:"next"`
 	// Wake is why the landing agent would run now (§3 Wake): the reasons the
 	// keeper wakes it on, read the same way; null with no lane.
 	Wake    *Wake  `json:"wake"`
 	Summary string `json:"summary"`
-}
-
-// Spend is the lane's own proof spend: its accounting identity, the attempts
-// charged to it and their reserved minutes. No goal's budget holds them.
-type Spend struct {
-	Account         string `json:"account"`
-	Attempts        int    `json:"attempts"`
-	ReservedMinutes uint64 `json:"reserved_minutes"`
 }
 
 // OwnerView is what runs the lane: its landing agent (lane design r10 §3),
@@ -79,47 +54,6 @@ type OwnerView struct {
 	Fix []string `json:"-"`
 }
 
-// Member is one goal in a batch and the seat it came from.
-type Member struct {
-	Goal string `json:"goal"`
-	Seat string `json:"seat"`
-}
-
-// Waiting is a goal the current batch waits for, and when it is expected.
-type Waiting struct {
-	Goal     string  `json:"goal"`
-	Seat     string  `json:"seat"`
-	Expected *string `json:"expected"`
-}
-
-// BatchView is the batch the lane works on now.
-type BatchView struct {
-	ID         string    `json:"id"`
-	State      string    `json:"state"`
-	Members    []Member  `json:"members"`
-	WaitingFor []Waiting `json:"waiting_for"`
-	// Returned are the changes that left the batch, with why: a change holds
-	// no goal whose Next could carry it, so its asker reads it here (U11b).
-	Returned []Returned `json:"returned"`
-	Since    string     `json:"since"`
-	Reason   string     `json:"reason"`
-}
-
-// Returned is one change that left a batch: its id, the asker's seat, the
-// outcome and the reason.
-type Returned struct {
-	Goal    string `json:"goal"`
-	Seat    string `json:"seat"`
-	Outcome string `json:"outcome"`
-	Reason  string `json:"reason"`
-}
-
-// NextView is the batch collecting behind the current one.
-type NextView struct {
-	ID      string   `json:"id"`
-	Members []Member `json:"members"`
-}
-
 // OwnerProbe is whether the lane's landing agent runs, and since when.
 type OwnerProbe struct {
 	Alive bool
@@ -127,25 +61,15 @@ type OwnerProbe struct {
 	Since time.Time
 }
 
-// ViewSources are the reads a view is built from. Records nil reads the
-// lane's batch records from its checkout.
+// ViewSources are the reads a view is built from.
 type ViewSources struct {
 	Home string
 	Now  time.Time
 	// Owner reads the landing agent.
-	Owner   func(root string) (OwnerProbe, error)
-	Records func(root string) ([]batch.Record, error)
-	// Spend reads what the lane at root charged to account; nil shows none.
-	Spend func(root, account string) (Spend, error)
+	Owner func(root string) (OwnerProbe, error)
 	// Ready says whether the lane can run at root (a *Refusal naming the
 	// fix when it cannot); asked only when no agent runs. nil asks nothing.
 	Ready func(root string) error
-	// Helm reads whether a unit's seat is at the helm, which holds a batch
-	// whole (batch.HelmHeldSeat); nil asks nothing.
-	Helm func(seatRoot string) helm.State
-	// Proof reads the lane's proof at the lane checkout, as the keeper's
-	// wake does; nil reads none.
-	Proof func(root string) (ProofFact, error)
 }
 
 // BuildView reads the lane once and says it for a person and a page.
@@ -168,21 +92,12 @@ func BuildView(sources ViewSources) View {
 		return view
 	}
 	view.Owner = ownerView(sources, record.Root)
-	if sources.Spend != nil {
-		if spend, err := sources.Spend(record.Root, AccountID(record.Root)); err == nil {
-			view.Spend = &spend
-		}
-	}
-	records, recordsErr := readRecords(sources, record.Root)
-	proof, proofErr := readProof(sources.Proof, record.Root)
-	agent, agentErr := ReadAgentState(sources.Home)
-	wake := wakeOf(records, recordsErr, proof, proofErr, agent)
-	if err := agentErr; err != nil {
+	wake := ReadWake(record, WakeSources{})
+	if _, err := ReadAgentState(sources.Home); err != nil {
 		wake.Unread = append(wake.Unread, UnreadableAgentRecord(sources.Home))
 	}
 	view.Wake = &wake
-	view.Batch, view.Next = currentBatches(records, sources.Helm)
-	view.Summary = summary(record.Root, view, recordsErr)
+	view.Summary = summary(record.Root, view)
 	return view
 }
 
@@ -241,183 +156,7 @@ func notReady(owner *OwnerView, err error) {
 	owner.LastExit, owner.RetryHint, owner.Fix = text(refusal.Message), text(refusal.Fix), refusal.Argv
 }
 
-func readRecords(sources ViewSources, root string) ([]batch.Record, error) {
-	if sources.Records != nil {
-		return sources.Records(root)
-	}
-	paths, err := filepath.Glob(filepath.Join(root, "artifacts", "agents", "landing-batches", "*.json"))
-	if err != nil {
-		return nil, err
-	}
-	sort.Strings(paths)
-	store := batch.NewStore(root, nil)
-	var records []batch.Record
-	unreadable := 0
-	for _, path := range paths {
-		record, loadErr := store.Load(strings.TrimSuffix(filepath.Base(path), ".json"))
-		if loadErr != nil {
-			// Fail closed means visible: the rest is shown and the record the
-			// lane cannot read is counted in the summary.
-			unreadable++
-			continue
-		}
-		records = append(records, record)
-	}
-	if unreadable != 0 {
-		return records, &unreadableRecords{count: unreadable}
-	}
-	return records, nil
-}
-
-// unreadableRecords counts the batch records the lane could not read.
-type unreadableRecords struct{ count int }
-
-func (err *unreadableRecords) Error() string {
-	return fmt.Sprintf("%d batch record%s unreadable", err.count, plural(err.count))
-}
-
-// currentBatches picks the batch the lane works on (pushing, then proving,
-// then the oldest waiting or collecting one) and the next one collecting.
-func currentBatches(records []batch.Record, helmOf func(string) helm.State) (*BatchView, *NextView) {
-	var active, queued []batch.Record
-	for _, record := range records {
-		switch record.State {
-		case batch.StateLanding, batch.StateProving, batch.StateDiagnosing:
-			active = append(active, record)
-		case batch.StateOpen, batch.StateSealed:
-			queued = append(queued, record)
-		}
-	}
-	sort.SliceStable(active, func(i, j int) bool {
-		return active[i].State == batch.StateLanding && active[j].State != batch.StateLanding
-	})
-	sort.SliceStable(queued, func(i, j int) bool { return firstAt(queued[i]) < firstAt(queued[j]) })
-	var current *BatchView
-	switch {
-	case len(active) > 0:
-		current = batchView(active[0], helmOf)
-	case len(queued) > 0:
-		current, queued = batchView(queued[0], helmOf), queued[1:]
-	}
-	if len(queued) == 0 {
-		return current, nil
-	}
-	return current, &NextView{ID: queued[0].BatchID, Members: members(queued[0])}
-}
-
-func firstAt(record batch.Record) string {
-	if len(record.History) == 0 {
-		return ""
-	}
-	return record.History[0].At
-}
-
-func members(record batch.Record) []Member {
-	list := []Member{}
-	for _, unit := range record.Units {
-		if unit.State == batch.UnitJoined || unit.State == batch.UnitJoining {
-			list = append(list, Member{Goal: unit.GoalID, Seat: unit.Claim.Machine})
-		}
-	}
-	return list
-}
-
-// returned lists the changes that left the batch, with their outcome and
-// reason (U11b); a goal's return is on the goal's own Next.
-func returned(record batch.Record) []Returned {
-	list := []Returned{}
-	for _, unit := range record.Units {
-		if !unit.IsChange() || unit.State == batch.UnitJoined || unit.State == batch.UnitJoining || unit.State == batch.UnitLanded {
-			continue
-		}
-		outcome := unit.Outcome
-		if outcome == "" {
-			outcome = unit.State
-		}
-		list = append(list, Returned{Goal: unit.GoalID, Seat: unit.Claim.Machine, Outcome: outcome, Reason: unit.Failure})
-	}
-	return list
-}
-
-func batchView(record batch.Record, helmOf func(string) helm.State) *BatchView {
-	view := &BatchView{ID: record.BatchID, Members: members(record), WaitingFor: []Waiting{}, Returned: returned(record), Since: stateSince(record)}
-	switch record.State {
-	case batch.StateLanding:
-		view.State, view.Reason = BatchPushing, "the batch proved green and is being pushed to main"
-	case batch.StateProving, batch.StateDiagnosing:
-		view.State, view.Reason = BatchProving, "proving: "+record.StartReason
-		if record.State == batch.StateDiagnosing {
-			view.Reason = "a red is being diagnosed so the rest can land"
-		}
-	default:
-		view.State, view.Reason = BatchCollecting, "collecting joins; it starts when the landing agent begins it"
-		if record.Wait != nil {
-			view.State, view.Reason = BatchWaiting, strings.TrimPrefix(batch.WaitLine(record, record.Wait.Since, time.Local), "batch "+record.BatchID+" ")
-			if !record.Wait.Since.IsZero() {
-				view.Since = record.Wait.Since.UTC().Format(time.RFC3339)
-			}
-			for _, waited := range record.Wait.For {
-				expected := (*string)(nil)
-				if !waited.ExpectedAt.IsZero() {
-					expected = text(waited.ExpectedAt.UTC().Format(time.RFC3339))
-				}
-				view.WaitingFor = append(view.WaitingFor, Waiting{Goal: waited.Goal, Seat: waited.Seat, Expected: expected})
-			}
-		}
-		if wait, waiting := batch.ProvingWait(record); waiting {
-			view.State, view.Reason = BatchWaiting, wait.Detail
-		}
-	}
-	if reason := batch.HoldReason(record); reason != "" {
-		view.State, view.Reason = BatchWaiting, "holds: "+reason
-	}
-	if reason, held := helmHold(record, helmOf); held {
-		view.State, view.Reason = BatchHeld, reason
-	}
-	return view
-}
-
-// helmHold says a batch held for a seat at the helm (batch.HelmHeldSeat),
-// and the act that releases it.
-func helmHold(record batch.Record, helmOf func(string) helm.State) (string, bool) {
-	if helmOf == nil {
-		return "", false
-	}
-	states := map[string]helm.State{}
-	seat, held := batch.HelmHeldSeat(record, func(root string) bool {
-		states[root] = helmOf(root)
-		return states[root].Active
-	})
-	if !held {
-		return "", false
-	}
-	machine := seat
-	for _, unit := range record.Units {
-		if unit.SeatRoot == seat && unit.Claim.Machine != "" {
-			machine = unit.Claim.Machine
-			break
-		}
-	}
-	state := states[seat]
-	by := state.By
-	if by == "" {
-		by = "unknown"
-	}
-	return fmt.Sprintf("seat %s (%s) is at the helm (%s); it starts when that seat runs: metasystem helm return", machine, seat, by), true
-}
-
-// stateSince is when the batch entered its state: the last history entry
-// that changed it, else its first entry.
-func stateSince(record batch.Record) string {
-	for index := len(record.History) - 1; index >= 0; index-- {
-		if entry := record.History[index]; entry.From != entry.To && entry.To == record.State {
-			return entry.At
-		}
-	}
-	return firstAt(record)
-}
-
-func summary(root string, view View, recordsErr error) string {
+func summary(root string, view View) string {
 	agent := "landing agent " + view.Owner.State
 	switch view.Owner.State {
 	case OwnerRunning:
@@ -443,33 +182,5 @@ func summary(root string, view View, recordsErr error) string {
 			agent += "; to fix: " + *view.Owner.RetryHint
 		}
 	}
-	line := "landing lane " + root + ": " + agent
-	var unreadable *unreadableRecords
-	partial := errors.As(recordsErr, &unreadable)
-	switch {
-	case recordsErr != nil && !partial:
-		line += "; its batches are unreadable: " + recordsErr.Error()
-	case view.Batch == nil:
-		line += "; no batch"
-	default:
-		line += fmt.Sprintf("; batch %s %s, %d member%s", view.Batch.ID, view.Batch.State, len(view.Batch.Members), plural(len(view.Batch.Members)))
-		if view.Batch.State == BatchHeld {
-			// The one act that releases it belongs in the one line.
-			line += " (" + view.Batch.Reason + ")"
-		}
-	}
-	if view.Next != nil {
-		line += fmt.Sprintf("; next %s collecting, %d member%s", view.Next.ID, len(view.Next.Members), plural(len(view.Next.Members)))
-	}
-	if partial {
-		line += "; " + unreadable.Error()
-	}
-	return line
-}
-
-func plural(n int) string {
-	if n == 1 {
-		return ""
-	}
-	return "s"
+	return "landing lane " + root + ": " + agent
 }

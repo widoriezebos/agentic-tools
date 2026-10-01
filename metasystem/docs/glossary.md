@@ -313,27 +313,19 @@ the engine's `metasystem goal` family (`internal/goal`).
   the rerun protocol (`docs/flake-registry.md`): a listed leg earns one
   solo rerun, an unlisted failure is diagnosed first, three sightings
   in thirty days force a fix goal.
-- **Landing batch** — an ordered set of goal units and changes whose claims
-  have been handed to the landing lane's claim identity. The lane's landing
-  agent merges them onto main in the lane's checkout, proves the result
-  (`landing prove`), and puts it on main with one push (`landing push`); a
-  member that breaks the proof goes back to its seat (`landing return`), and
-  the survivors keep their order.
 - **Landing lane** — the one checkout per computer where every seat's work
-  is proved and pushed: a separate checkout with the same engine and its
-  own supervision, in which no agent works. The computer's lane record,
+  is to be proved and pushed: a separate checkout with the same engine and
+  its own supervision, in which no agent works. The computer's lane record,
   `~/.metasystem/host/landing-lane.json`, names it; `metasystem landing set
-  PATH` writes the record and `landing status` reads it. A seat with no
-  `landing.batch-root` of its own lands through the recorded lane; a seat
-  whose setting names another checkout is refused. How it works and why:
+  PATH` writes the record and `landing status` reads it. Its hand-in is
+  being rebuilt: while a lane is registered `metasystem work land` refuses
+  and names `metasystem landing unset`. How it works and why:
   `docs/concepts.md`, "Landing lane"; how to run it:
   `docs/working-with-agents.md`.
 - **Landing agent** — the one agent session per computer that works the
-  landing lane through its verbs (`landing status`, `prove`, `push`,
-  `return`), following the landing-agent skill. The steward of the lane's
+  landing lane, following the landing-agent skill. The steward of the lane's
   checkout wakes it only when there is work; `landing stop` and `landing start` are a
-  person's controls. It replaced the lane owner, the batch owner process that
-  earlier engines ran in the lane's checkout.
+  person's controls.
 - **The seat lands it itself** — the route when the computer has no landing
   lane: `metasystem work land` proves the work on the seat and pushes it from
   there. Correct but slower: a full proof per landing, seats competing for
@@ -364,13 +356,3 @@ the engine's `metasystem goal` family (`internal/goal`).
   `~/.metasystem/host/bridge.sock`, decides nothing and writes no card.
   One-shot commands never connect to it; `status` says `bridge live` or
   `bridge absent` from the socket's presence.
-- **Batch withdrawal** — `landing batch withdraw --goal G`, issued by the
-  lineage that joined G before its batch is sealed. It records a pending
-  voluntary withdrawal and removes G from the queued candidate; the landing
-  owner alone hands the claim back or releases it. A sealed batch refuses the
-  request, so the joiner waits for that batch and requeues any follow-up work.
-- **Batch hold** — a durable `held-trunk-red` or `held-unclassified` state.
-  Trunk red means the fresh base diagnostic was red or no member could be
-  named; unclassified means diagnostic admission itself refused. Both are
-  terminal for `landing batch wait` until a new tree or human action reopens
-  the work.

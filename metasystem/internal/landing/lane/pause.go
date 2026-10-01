@@ -34,18 +34,6 @@ func ReadPause(home string) (Pause, bool) {
 	return pause, ok
 }
 
-// PauseState is ReadPause for a reader that must tell an unreadable pause
-// from none: the error is set when the pause record exists but cannot be
-// read or decoded.
-func PauseState(home string) (Pause, bool, error) {
-	var pause Pause
-	ok, err := readJSON(pausePath(home), &pause)
-	if err != nil {
-		return Pause{}, false, err
-	}
-	return pause, ok, nil
-}
-
 // SetPause records a person's pause; a lane already paused is unchanged.
 func SetPause(home, by string, now time.Time) (changed bool, err error) {
 	return SetPauseBecause(home, by, "", now)

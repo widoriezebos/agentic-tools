@@ -8,20 +8,16 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 )
 
-func viewSources(home string, alive bool, records []batch.Record) ViewSources {
+func viewSources(home string, alive bool) ViewSources {
 	return ViewSources{Home: home, Now: laneNow,
 		Owner: func(string) (OwnerProbe, error) {
 			if !alive {
 				return OwnerProbe{}, nil
 			}
 			return OwnerProbe{Alive: true, PID: 4242, Since: laneNow.Add(-time.Hour)}, nil
-		},
-		Records: func(string) ([]batch.Record, error) { return records, nil }}
+		}}
 }
 
 func keysOf(t *testing.T, raw json.RawMessage) []string {
@@ -42,17 +38,17 @@ func keysOf(t *testing.T, raw json.RawMessage) []string {
 func TestViewShapeWithoutALane(t *testing.T) {
 	t.Parallel()
 	home, _, _ := laneDirs(t)
-	view := BuildView(viewSources(home, false, nil))
+	view := BuildView(viewSources(home, false))
 	data, err := json.Marshal(view)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, want := keysOf(t, data), []string{"batch", "next", "owner", "registered_at", "registered_by", "root", "spend", "summary", "wake"}; !reflect.DeepEqual(got, want) {
+	if got, want := keysOf(t, data), []string{"batch", "next", "owner", "registered_at", "registered_by", "root", "summary", "wake"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("lane keys = %v, want %v", got, want)
 	}
 	var object map[string]json.RawMessage
 	_ = json.Unmarshal(data, &object)
-	for _, key := range []string{"root", "registered_by", "registered_at", "batch", "next", "spend", "wake"} {
+	for _, key := range []string{"root", "registered_by", "registered_at", "batch", "next", "wake"} {
 		if string(object[key]) != "null" {
 			t.Errorf("%s = %s; want null", key, object[key])
 		}
@@ -65,49 +61,6 @@ func TestViewShapeWithoutALane(t *testing.T) {
 	}
 }
 
-func joinedUnit(goal, seat string) batch.Unit {
-	return batch.Unit{GoalID: goal, State: batch.UnitJoined, Claim: batch.Claim{Machine: seat}}
-}
-
-// A running landing agent with one batch proving and the next collecting.
-func TestViewProvingBatchAndNext(t *testing.T) {
-	t.Parallel()
-	home, root, _ := laneDirs(t)
-	register(t, home, root)
-	started := laneNow.Add(-5 * time.Minute).Format(time.RFC3339Nano)
-	proving := batch.Record{BatchID: "b1", State: batch.StateProving, StartReason: "nothing else is underway",
-		Units:   []batch.Unit{joinedUnit("g1", "m1e"), joinedUnit("g2", "ui"), {GoalID: "g0", State: batch.UnitEjected}},
-		History: []batch.HistoryEntry{{At: laneNow.Add(-time.Hour).Format(time.RFC3339Nano), Verb: "join", From: "open", To: "open"}, {At: started, Verb: "seal", From: "open", To: batch.StateProving}}}
-	expected := laneNow.Add(20 * time.Minute)
-	collecting := batch.Record{BatchID: "b2", State: batch.StateOpen, Units: []batch.Unit{joinedUnit("g3", "m1e")},
-		Wait: &batch.WaitState{Reason: "g4", Since: laneNow.Add(-2 * time.Minute), For: []batch.Waited{{Goal: "g4", Seat: "ui", ExpectedAt: expected}}}}
-	view := BuildView(viewSources(home, true, []batch.Record{collecting, proving}))
-	if view.Root == nil || *view.Root != resolved(root) || view.RegisteredBy == nil || *view.RegisteredBy != "m1e" {
-		t.Fatalf("registration = %+v", view)
-	}
-	if view.Owner.State != OwnerRunning || view.Owner.PID == nil || *view.Owner.PID != 4242 || view.Owner.Since == nil {
-		t.Fatalf("owner = %+v", view.Owner)
-	}
-	if view.Batch == nil || view.Batch.ID != "b1" || view.Batch.State != BatchProving || view.Batch.Since != started ||
-		!reflect.DeepEqual(view.Batch.Members, []Member{{Goal: "g1", Seat: "m1e"}, {Goal: "g2", Seat: "ui"}}) || view.Batch.WaitingFor == nil {
-		t.Fatalf("batch = %+v", view.Batch)
-	}
-	if view.Next == nil || view.Next.ID != "b2" || !reflect.DeepEqual(view.Next.Members, []Member{{Goal: "g3", Seat: "m1e"}}) {
-		t.Fatalf("next = %+v", view.Next)
-	}
-	for _, want := range []string{resolved(root), "landing agent running (pid 4242)", "batch b1 proving", "next b2"} {
-		if !strings.Contains(view.Summary, want) {
-			t.Errorf("summary %q lacks %q", view.Summary, want)
-		}
-	}
-	// With only the collecting batch, it is the current one and names what it waits for.
-	view = BuildView(viewSources(home, true, []batch.Record{collecting}))
-	if view.Batch == nil || view.Batch.State != BatchWaiting || len(view.Batch.WaitingFor) != 1 || view.Batch.WaitingFor[0].Expected == nil ||
-		*view.Batch.WaitingFor[0].Expected != expected.Format(time.RFC3339) || view.Next != nil {
-		t.Fatalf("waiting batch = %+v next %+v", view.Batch, view.Next)
-	}
-}
-
 // A paused lane says who stopped it and what a person runs; an agent whose
 // state can't be read is said so, never taken as running.
 func TestViewPausedAndUnknownAgent(t *testing.T) {
@@ -117,7 +70,7 @@ func TestViewPausedAndUnknownAgent(t *testing.T) {
 	if _, err := SetPause(home, "Wido", laneNow); err != nil {
 		t.Fatal(err)
 	}
-	view := BuildView(viewSources(home, true, nil))
+	view := BuildView(viewSources(home, true))
 	if view.Owner.State != OwnerStopped || view.Owner.StoppedBy == nil || *view.Owner.StoppedBy != "Wido" || view.Owner.RetryHint == nil ||
 		!strings.Contains(*view.Owner.RetryHint, "metasystem landing start") || !strings.Contains(view.Summary, "stopped by Wido") {
 		t.Fatalf("paused view = %+v %+v", view.Owner, view.Summary)
@@ -125,30 +78,12 @@ func TestViewPausedAndUnknownAgent(t *testing.T) {
 	if _, err := ClearPause(home); err != nil {
 		t.Fatal(err)
 	}
-	sources := viewSources(home, false, nil)
+	sources := viewSources(home, false)
 	sources.Owner = func(string) (OwnerProbe, error) { return OwnerProbe{}, os.ErrPermission }
 	view = BuildView(sources)
 	if view.Owner.State != OwnerUnready || view.Owner.LastExit == nil || !strings.Contains(*view.Owner.LastExit, "whether the landing agent runs is unknown") ||
 		!strings.Contains(view.Summary, "unknown") {
 		t.Fatalf("unknown agent view = %+v %q", view.Owner, view.Summary)
-	}
-}
-
-// F-6: a batch waiting for the proving flock shows "waiting" throughout the
-// wait, joins included, until its state changes.
-func TestViewShowsTheProvingWaitAcrossJoins(t *testing.T) {
-	t.Parallel()
-	home, root, _ := laneDirs(t)
-	register(t, home, root)
-	at := laneNow.Format(time.RFC3339Nano)
-	waiting := batch.Record{BatchID: "b2", State: batch.StateOpen, Units: []batch.Unit{joinedUnit("g3", "m1e"), joinedUnit("g4", "ui")},
-		History: []batch.HistoryEntry{
-			{At: at, Verb: batch.ProvingWaitVerb, From: batch.StateOpen, To: batch.StateOpen, Detail: "another batch proves on this host (pid 99); this batch starts when that proof ends"},
-			{At: at, Verb: "join", From: batch.StateOpen, To: batch.StateOpen, Detail: "g4 joined"},
-		}}
-	view := BuildView(viewSources(home, true, []batch.Record{waiting}))
-	if view.Batch == nil || view.Batch.State != BatchWaiting || !strings.Contains(view.Batch.Reason, "pid 99") {
-		t.Fatalf("a join ended the shown wait: %+v", view.Batch)
 	}
 }
 
@@ -161,108 +96,8 @@ func TestViewOfAGoneLaneNamesTheFix(t *testing.T) {
 	if err := os.RemoveAll(root); err != nil {
 		t.Fatal(err)
 	}
-	view := BuildView(viewSources(home, false, nil))
+	view := BuildView(viewSources(home, false))
 	if view.Root == nil || view.Owner.RetryHint == nil || !strings.Contains(*view.Owner.RetryHint, "metasystem landing set PATH") || !strings.Contains(view.Summary, "no longer exists") {
 		t.Fatalf("gone lane view = %+v %q", view.Owner, view.Summary)
-	}
-}
-
-// TestLaneViewShowsChangeMembers (U11b): a change member is listed as its
-// change id from the asker's seat, and a change that left the batch is
-// listed with its outcome and reason, which is where its asker reads it.
-func TestLaneViewShowsChangeMembers(t *testing.T) {
-	t.Parallel()
-	home, root, _ := laneDirs(t)
-	register(t, home, root)
-	change := batch.NewChangeUnit(batch.ChangeMember{Commit: "abcdef0123456789abcdef0123456789abcdef01", AskedBy: "m1e+human"}, "/seat", "m1e", "human", nil, nil)
-	change.State = batch.UnitJoined
-	ejected := batch.NewChangeUnit(batch.ChangeMember{Commit: "1234567890ab1234567890ab1234567890ab1234", AskedBy: "ui+human"}, "/ui", "ui", "human", nil, nil)
-	ejected.State = batch.UnitEjected
-	open := batch.Record{BatchID: "b1", State: batch.StateOpen, Units: []batch.Unit{joinedUnit("g1", "m1b"), change, ejected}}
-	open.Units[2].Outcome, open.Units[2].Failure = batch.UnitEjected, "EJECTED from landing batch b1: TestNotes failed on the batch tip"
-	view := BuildView(viewSources(home, true, []batch.Record{open}))
-	if view.Batch == nil || !reflect.DeepEqual(view.Batch.Members, []Member{{Goal: "g1", Seat: "m1b"}, {Goal: "change:abcdef012345", Seat: "m1e"}}) {
-		t.Fatalf("members = %+v", view.Batch)
-	}
-	want := []Returned{{Goal: "change:1234567890ab", Seat: "ui", Outcome: batch.UnitEjected, Reason: "EJECTED from landing batch b1: TestNotes failed on the batch tip"}}
-	if !reflect.DeepEqual(view.Batch.Returned, want) {
-		t.Fatalf("returned = %+v", view.Batch.Returned)
-	}
-}
-
-// TestLaneViewUnreadableRecordIsNotFewerMembers (U11b, fail closed): a batch
-// record the lane cannot read makes the summary say so; it never reads as a
-// lane with fewer members.
-func TestLaneViewUnreadableRecordIsNotFewerMembers(t *testing.T) {
-	t.Parallel()
-	home, root, _ := laneDirs(t)
-	register(t, home, root)
-	store := batch.NewStore(root, nil)
-	if err := store.Create(batch.Record{Schema: 1, BatchID: "01j5x00000000000000000ba01", State: batch.StateOpen,
-		Units: []batch.Unit{{GoalID: "g1", Chain: "c1", State: batch.UnitJoined, Claim: batch.Claim{Machine: "m1e", Lineage: "l", Epoch: 1, Revision: 1, AccountingRevision: 1}}}}); err != nil {
-		t.Fatal(err)
-	}
-	broken := root + "/artifacts/agents/landing-batches/01j5x00000000000000000ba02.json"
-	if err := os.WriteFile(broken, []byte("{\"schema\": 1, \"batchId\""), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	sources := viewSources(home, true, nil)
-	sources.Records = nil
-	view := BuildView(sources)
-	if !strings.Contains(view.Summary, "1 batch record unreadable") || view.Batch == nil || len(view.Batch.Members) != 1 {
-		t.Fatalf("an unreadable record must be said beside the rest: %q batch=%+v", view.Summary, view.Batch)
-	}
-}
-
-// TestLaneViewShowsTheLanesSpend (U11b): the proofs a lane charged to its own
-// account (batches of changes) are its spend, shown beside the lane, with no
-// goal named; without a lane the key is null.
-func TestLaneViewShowsTheLanesSpend(t *testing.T) {
-	t.Parallel()
-	home, root, _ := laneDirs(t)
-	register(t, home, root)
-	sources := viewSources(home, true, nil)
-	var asked string
-	sources.Spend = func(laneRoot, account string) (Spend, error) {
-		asked = laneRoot + "|" + account
-		return Spend{Account: account, Attempts: 2, ReservedMinutes: 90}, nil
-	}
-	view := BuildView(sources)
-	if asked != resolved(root)+"|"+AccountID(root) || view.Spend == nil || *view.Spend != (Spend{Account: AccountID(root), Attempts: 2, ReservedMinutes: 90}) {
-		t.Fatalf("asked=%q spend=%+v", asked, view.Spend)
-	}
-}
-
-// A batch a joined seat's helm holds is shown held (batch.HelmHeldSeat), with the act that releases it; without a
-// helm read, or with the seat not at the helm, it collects as before.
-func TestViewSaysABatchIsHeldForASeatAtTheHelm(t *testing.T) {
-	t.Parallel()
-	home, root, _ := laneDirs(t)
-	register(t, home, root)
-	unit := joinedUnit("change:abc", "m1e")
-	unit.SeatRoot = "/seats/m1e/metasystem"
-	record := batch.Record{BatchID: "b1", State: batch.StateOpen, Units: []batch.Unit{unit}}
-	sources := viewSources(home, true, []batch.Record{record})
-	if view := BuildView(sources); view.Batch == nil || view.Batch.State != BatchCollecting {
-		t.Fatalf("no helm read: batch = %+v", view.Batch)
-	}
-	atHelm := false
-	sources.Helm = func(seat string) helm.State {
-		if seat != unit.SeatRoot {
-			t.Fatalf("helm read of %q", seat)
-		}
-		return helm.State{Active: atHelm, Record: helm.Record{By: "wido"}}
-	}
-	if view := BuildView(sources); view.Batch.State != BatchCollecting {
-		t.Fatalf("seat not at the helm: batch = %+v", view.Batch)
-	}
-	atHelm = true
-	view := BuildView(sources)
-	if view.Batch.State != BatchHeld || !strings.Contains(view.Batch.Reason, "seat m1e (/seats/m1e/metasystem) is at the helm (wido)") ||
-		!strings.Contains(view.Batch.Reason, "metasystem helm return") || !strings.Contains(view.Summary, "batch b1 held, 1 member (seat m1e ") {
-		t.Fatalf("held view = %+v summary %q", view.Batch, view.Summary)
-	}
-	if seat, held := batch.HelmHeldSeat(record, func(string) bool { return true }); !held || seat != unit.SeatRoot {
-		t.Fatalf("owner decision = %q %v", seat, held)
 	}
 }

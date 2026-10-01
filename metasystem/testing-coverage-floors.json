@@ -74,7 +74,7 @@
   "internal/knownissues": 95.7,
   "internal/landing": 58.7,
   "internal/landing/batch": 79.2,
-  "internal/landing/batchowner": 5.0,
+  "internal/landing/batchowner": 0.8,
   "internal/landing/landpath": 85.5,
   "internal/launch": 82.8,
   "internal/lease": 78.6,

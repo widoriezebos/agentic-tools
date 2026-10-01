@@ -171,7 +171,7 @@ func newWorkIdemDeliveryBed(t *testing.T) *deliveryBed {
 		},
 		executable: func() (string, error) { return "/fake/bin/metasystem", nil },
 		now:        func() time.Time { return time.Date(2026, 9, 25, 12, 0, 0, 0, time.UTC) },
-		batchRoot:  func(string, time.Time) (string, bool, error) { return "", false, nil },
+		laneRoot:   func(string, time.Time) (string, bool, error) { return "", false, nil },
 	}
 	bed.owners.calls = processBackedOwnerCalls(func() (string, error) { return bed.owners.executable() },
 		func(process intentProcess) intentProcessResult { return bed.owners.process(process) })
@@ -215,23 +215,6 @@ func witnessWorkLandRepeat(t *testing.T) {
 		t.Fatalf("repeated land: code=%d %+v", code, again)
 	}
 	workIdemSameFiles(t, "work land", files, workIdemSnapshot(t, b.root()))
-
-	// Through the landing batch: once the batch owner recorded the landing,
-	// every work land reads it and joins nothing.
-	batched := newWorkIdemDeliveryBed(t)
-	member := &landingOwners{configured: true, status: readBranch(2, "critic-root", "critic-root")}
-	member.install(batched)
-	if code, joined := batched.do("work", "land", "standing-validation"); joined.Outcome != intentInProgress || len(member.joins) != 1 {
-		t.Fatalf("batch join: code=%d %+v", code, joined)
-	}
-	member.member.State, member.member.LandedCommit = "landed", strings.Repeat("4", 40)
-	for round := 1; round <= 2; round++ {
-		code, landed := batched.do("work", "land", "standing-validation")
-		if code != 0 || landed.Outcome != intentUnchanged || len(member.joins) != 1 || member.candidates != 0 || len(member.pushes) != 0 ||
-			!strings.Contains(landed.Summary, "already landed as 4444444") {
-			t.Fatalf("batch-landed read %d: code=%d %+v", round, code, landed)
-		}
-	}
 }
 
 func witnessDesignStopRepeat(t *testing.T) {

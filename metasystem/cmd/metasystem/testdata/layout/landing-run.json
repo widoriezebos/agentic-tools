@@ -14,12 +14,11 @@ exit 0
   "data": {
     "outcome": "running",
     "launch": "landing-5f0c2a9e7d31b468",
-    "root": "/Users/wido/GitHub/agentic-tools-landing",
-    "batch": "4gr18nm8t3nyev9sssda9jgtsq"
+    "root": "/Users/wido/GitHub/agentic-tools-landing"
   },
   "next": {
     "argv": [],
-    "reason": "nothing to do; it is landing 4gr18nm8t3nyev9sssda9jgtsq"
+    "reason": "nothing to do; it is at work"
   },
   "details": [
     "the landing agent landing-5f0c2a9e7d31b468 is running at /Users/wido/GitHub/agentic-tools-landing"

@@ -1,2 +1,0 @@
-✗ the landing lane is busy (batch 4gr18nm8t3nyev9sssda9jgtsq pushing to main), so it wasn't stopped
-  → metasystem landing status  shows when it has landed; then run metasystem landing stop again

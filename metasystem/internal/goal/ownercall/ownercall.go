@@ -88,11 +88,6 @@ type HandoverRequest struct {
 	Root, GoalID, TargetMachine, TargetLineage string
 	TargetEpoch                                int64
 	Batch, TargetRoot                          string
-	// LaneHome is the host home whose lane record authenticates a target
-	// that is the landing lane's claim identity (lineage landing-lane):
-	// the lane is live when that record registers it at TargetEpoch on
-	// TargetMachine, whether or not any agent runs.
-	LaneHome string
 }
 
 // Usage names the missing parts of a handover, or "" when it is complete.

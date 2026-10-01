@@ -259,9 +259,6 @@ func SweepDiskStores(ctx context.Context, top string, pass DiskPass) (DiskPassRe
 			}
 			checkoutOptions.Classes = append(checkoutOptions.Classes, LandingReleaseSets{Installation: layout.InstallationRoot,
 				StateRoot: top, GitRoot: layout.GitRoot, Git: ExecWorkspaceGit})
-			lanes, laneErr := landingLaneRoots(layout.InstallationRoot, pass.Now)
-			checkoutOptions.Classes = append(checkoutOptions.Classes, BatchReleaseSets{Seat: layout.InstallationRoot,
-				Lanes: nonEmpty(dedupe(append([]string{top, layout.InstallationRoot}, lanes...)...)...), LaneErr: laneErr, Retry: registeredBatchReleaseRetry})
 		}
 		if suiteFailures, err := suiteFailureClass(top, settings, pass); err == nil {
 			checkoutOptions.Classes = append(checkoutOptions.Classes, suiteFailures)
