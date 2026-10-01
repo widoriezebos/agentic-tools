@@ -11,7 +11,6 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/custody"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/kernel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
@@ -49,7 +48,7 @@ func TestLandingBeginAndProveVerbs(t *testing.T) {
 		t.Fatalf("landing begin = %d\n%s", code, text)
 	}
 	if begun.Home != bed.home || string(begun.Layout.Checkout) != bed.checkout || string(begun.Layout.Install) != bed.installation ||
-		!strings.HasSuffix(begun.Actor, "+"+batchowner.LandingOwnerLineage) || strings.Join(begun.Members, ",") != "goal-a,change:0123456789ab" ||
+		!strings.HasSuffix(begun.Actor, "+"+lane.ClaimLineage) || strings.Join(begun.Members, ",") != "goal-a,change:0123456789ab" ||
 		begun.Base != "origin/main" || begun.Head != "HEAD" {
 		t.Fatalf("landing begin asked the kernel %+v; want the admitted nested lane, its home and claim identity", begun)
 	}

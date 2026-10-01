@@ -18,7 +18,7 @@ func landingRuntimeRefusal(kind, runtime string) error {
 	if shown == "" {
 		shown = "nothing"
 	}
-	return errors.New("the landing agent runs only on claude, where its tool gate holds, and " + LandingRuntimeKey + " resolves to " + shown + "\n" + landingRuntimeFix)
+	return errors.New("the landing agent runs only on claude, where its gate holds; " + LandingRuntimeKey + " is " + shown + "\n" + landingRuntimeFix)
 }
 
 // refuseUngatedLanding is every non-Claude adapter's refusal of a landing
@@ -27,5 +27,5 @@ func refuseUngatedLanding(record Record, adapter string) error {
 	if record.Kind != LandingKind {
 		return nil
 	}
-	return errors.New("the landing agent runs only on claude, where its tool gate holds, and this launch is on " + adapter + " (" + LandingRuntimeKey + ")\n" + landingRuntimeFix)
+	return errors.New("the landing agent runs only on claude; this launch is on " + adapter + " (" + LandingRuntimeKey + ")\n" + landingRuntimeFix)
 }

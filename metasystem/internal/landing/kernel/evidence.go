@@ -93,7 +93,7 @@ func (e PublishEvidence) Proof(id string) (lane.ProofAttempt, error) {
 // that tree: it must be sufficient for exactly that tree.
 func (e PublishEvidence) Verify(proof lane.ProofAttempt) error {
 	if e.Verifier == nil {
-		return errors.New("this engine has no retained verification for the lane, so the proof can't be verified")
+		return errors.New("this engine can't check the lane's kept test results again, so nothing is published")
 	}
 	if e.Home == "" {
 		return errors.New("the lane's host state is not named, so the retained verification can't be custodied")
@@ -132,7 +132,7 @@ func (e PublishEvidence) verify(proof lane.ProofAttempt) error {
 		return err
 	}
 	if !result.Delivery.Sufficient {
-		return fmt.Errorf("the retained proof is not sufficient for tree %s; missing groups: %v", proof.Tree, result.Delivery.MissingGroups)
+		return fmt.Errorf("the kept test results do not cover tree %s; missing groups: %v", proof.Tree, result.Delivery.MissingGroups)
 	}
 	// The judged candidate is named as a tree or a commit of it.
 	judged, err := (gittree.Workspace{Dir: checkout}).TreeOf(result.CandidateTree)

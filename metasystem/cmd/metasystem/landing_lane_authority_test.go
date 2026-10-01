@@ -253,6 +253,14 @@ func (bed *laneReturnBed) run(t *testing.T, words ...string) (int, intentResult)
 			return laneengine.Identity{Running: "enrolled"}, nil
 		},
 		returnMember: func(request batchowner.MemberReturn) (batchowner.MemberReturnReport, error) {
+			// The bed's one ledger stands in for the lane installation's on
+			// both paths: the agent's kernel admission names the recorded
+			// layout's installation (K-a), the person's the installation
+			// owner, and this bed's ledger is the seat's.
+			request.Install = bed.seat
+			if bed.installationRoot != "" {
+				request.Install = bed.installationRoot
+			}
 			request.Fetch = func(string) (string, error) {
 				return strings.TrimSpace(goalSyncMutationGit(t, bed.seat, "rev-parse", goal.AcceptedRef+"^{tree}")), nil
 			}

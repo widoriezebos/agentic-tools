@@ -80,13 +80,9 @@ func landingValidateCommand() intentCommand {
 
 func runIntentLandingValidate(inv *intentInvocation, kernel laneKernel) int {
 	targets := laneTargets(kernel.record.Root)
-	claim, err := lane.ClaimOf(kernel.record)
+	claim, err := laneClaim(kernel)
 	if err != nil {
-		var refusal *lane.Refusal
-		if errors.As(err, &refusal) {
-			return inv.render(*laneRefusalResult(targets, refusal))
-		}
-		return inv.render(landingKernelFailure(targets, "the landing lane's claim identity can't be read, so nothing ran", err))
+		return inv.render(landingKernelFailure(targets, "the landing lane's machine can't be named, so nothing ran", err))
 	}
 	request := laneValidateRequest{Home: kernel.home, Checkout: kernel.record.Root, Installation: kernel.installation, Claim: claim}
 	if inv.input.switched("force") {

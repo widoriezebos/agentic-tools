@@ -12,7 +12,6 @@ import (
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/custody"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/kernel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
@@ -48,14 +47,25 @@ func landingProveCommand() intentCommand {
 	}, runIntentLandingProve)
 }
 
-// laneClaimActor is the lane's claim identity: its machine and the landing
-// lineage every goal is handed over to.
-func laneClaimActor(kernel laneKernel) (string, error) {
+// laneClaim is the lane's stable claim identity (K7): its machine, the
+// lineage every joined goal is handed over to (landing-lane, unit K-d) and
+// the custody epoch of the host record.
+func laneClaim(kernel laneKernel) (lane.ClaimIdentity, error) {
 	machine, err := kernel.owners.machine(kernel.record.Root)
+	if err != nil {
+		return lane.ClaimIdentity{}, err
+	}
+	return lane.ClaimIdentity{Root: kernel.record.Root, Machine: machine, Lineage: lane.ClaimLineage, Epoch: kernel.record.CustodyEpoch}, nil
+}
+
+// laneClaimActor is the lane's claim identity as a ledger actor: the
+// holder begin requires of every goal member.
+func laneClaimActor(kernel laneKernel) (string, error) {
+	claim, err := laneClaim(kernel)
 	if err != nil {
 		return "", err
 	}
-	return machine + "+" + batchowner.LandingOwnerLineage, nil
+	return claim.Machine + "+" + claim.Lineage, nil
 }
 
 func runIntentLandingBegin(inv *intentInvocation, admitted laneKernel) int {
