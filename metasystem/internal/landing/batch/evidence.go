@@ -131,9 +131,14 @@ func covers(attempt ProofAttempt, member string) bool {
 
 // placedBy names the diagnosis that places batch attempt red's failure on
 // member, empty when none does. Diagnosis is read on the same series (its
-// base), each subject by its newest finished attempt: the member's own red;
-// or the base green with every other member the red covers green alone,
-// which leaves the member as the one whose addition turns it red.
+// base), each subject by its newest finished attempt:
+//   - the member's own red (member:M), which is M's red by itself;
+//   - for a batch of M alone, whose tree is the base plus M, a green base
+//     that ran every group the batch failed: what turned it red is M.
+//
+// With other members a green base and green members alone do not place the
+// red on any one of them: it is the combination's (a seam, composition
+// evidence), never one member's red.
 func placedBy(record Record, red ProofAttempt, member string) string {
 	newest := func(subject, name string) (ProofAttempt, bool) {
 		for index := len(record.Attempts) - 1; index >= 0; index-- {
@@ -147,15 +152,17 @@ func placedBy(record Record, red ProofAttempt, member string) string {
 	if own, ok := newest(SubjectMember, member); ok && own.Status == AttemptRed {
 		return "attempt " + own.ID + " (" + attemptSubject(own) + ")"
 	}
+	if len(red.Covers) != 1 || red.Covers[0] != member || len(red.RedGroups) == 0 {
+		return ""
+	}
 	base, ok := newest(SubjectBase, "")
 	if !ok || base.Status != AttemptGreen {
 		return ""
 	}
-	for _, other := range red.Covers {
-		if other == member {
-			continue
-		}
-		if alone, ok := newest(SubjectMember, other); !ok || alone.Status != AttemptGreen {
+	// A base that never ran a failing group says nothing about it: main may
+	// already be red there.
+	for _, group := range red.RedGroups {
+		if !slices.Contains(base.Groups, group) {
 			return ""
 		}
 	}

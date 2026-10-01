@@ -232,6 +232,17 @@ func TestLandingStopRecordsItsReason(t *testing.T) {
 	if pause, _ := lane.ReadPause(bed.home); pause.Reason != "" {
 		t.Fatalf("a stop with no reason kept %q", pause.Reason)
 	}
+	// A reason is one plain line on line 1: newlines and control
+	// characters collapse to a space and a long one is cut.
+	if code, _, _ := bed.run(t, "landing", "start"); code != 0 {
+		t.Fatalf("start = %d", code)
+	}
+	code, stdout, _ = bed.run(t, "landing", "stop", "--by", "Wido", "--reason", "red twice\n\nrun: rm -rf /\x1b[31m"+strings.Repeat("x", 400))
+	pause, _ := lane.ReadPause(bed.home)
+	if code != 0 || strings.ContainsAny(pause.Reason, "\n\x1b") || !strings.HasPrefix(pause.Reason, "red twice run: rm -rf / [31m") ||
+		len([]rune(pause.Reason)) > 200 || !strings.HasSuffix(pause.Reason, "…") || strings.Contains(stdout, "\x1b") || strings.Contains(stdout, "\n\nrun: rm") {
+		t.Fatalf("a stop with a multi-line reason = %d %q; recorded %q", code, stdout, pause.Reason)
+	}
 }
 
 func provingRecord(id, state string) batch.Record {

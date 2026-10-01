@@ -823,7 +823,7 @@ func runIntentLandingStop(inv *intentInvocation) int {
 	if problem != nil {
 		return inv.render(*problem)
 	}
-	result, _ := inv.stopLane(owners, home, record, strings.TrimSpace(inv.input.text("reason")))
+	result, _ := inv.stopLane(owners, home, record, lane.PauseReason(inv.input.text("reason")))
 	return inv.render(result)
 }
 

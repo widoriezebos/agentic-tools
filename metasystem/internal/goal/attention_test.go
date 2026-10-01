@@ -1286,6 +1286,20 @@ func TestCaptureTipBoundedKillsADescendantThatOutlivesTheTransport(t *testing.T)
 	}
 }
 
+// transportExitBound bounds the wait for a killed transport member's exit:
+// a SIGKILLed process exits at once, so reaching it is a defect, reported
+// as a failure instead of a hang. It bounds a hang, never a timing claim.
+const transportExitBound = 30 * time.Second
+
+// The exit wait is bounded: a process that does not exit fails the wait
+// with a plain error instead of hanging the test.
+func TestAwaitTransportMemberExitIsBounded(t *testing.T) {
+	t.Parallel()
+	if err := awaitTransportMemberExitWithin(os.Getpid(), time.Millisecond); err == nil || !strings.Contains(err.Error(), "did not exit within") {
+		t.Fatalf("waiting on a live process = %v; want the bound's failure", err)
+	}
+}
+
 type fakeAttentionTimerKind string
 
 const (

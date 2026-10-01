@@ -165,8 +165,14 @@ func diagnosisRecord(t *testing.T, members []string, attempts ...[2]string) Reco
 		return nil
 	}))
 	for index, row := range attempts {
-		attempt := ProofAttempt{ID: fmt.Sprintf("d%d", index+1), OpID: "op-1"}
-		switch subject := row[0]; {
+		// A subject may name the groups it ran ("base@g2"); else it ran g1,
+		// the group a red batch attempt fails.
+		subject, ran, named := strings.Cut(row[0], "@")
+		if !named {
+			ran = "g1"
+		}
+		attempt := ProofAttempt{ID: fmt.Sprintf("d%d", index+1), OpID: "op-1", Groups: strings.Split(ran, ",")}
+		switch {
 		case subject == SubjectBatch:
 			attempt.Subject, attempt.Covers = SubjectBatch, members
 		case subject == SubjectBase:
@@ -175,7 +181,11 @@ func diagnosisRecord(t *testing.T, members []string, attempts ...[2]string) Reco
 			attempt.Subject, attempt.Member, attempt.Covers = SubjectMember, strings.TrimPrefix(subject, "member:"), []string{strings.TrimPrefix(subject, "member:")}
 		}
 		must(t, StartAttempt(store, evidenceBatch, attempt))
-		must(t, FinishAttempt(store, evidenceBatch, attempt.ID, row[1], "", "", nil, evidenceNow))
+		var red []string
+		if row[1] == AttemptRed {
+			red = []string{"g1"}
+		}
+		must(t, FinishAttempt(store, evidenceBatch, attempt.ID, row[1], "", "", red, evidenceNow))
 	}
 	record, err := store.Load(evidenceBatch)
 	must(t, err)
@@ -184,8 +194,9 @@ func diagnosisRecord(t *testing.T, members []string, attempts ...[2]string) Reco
 
 // A red of the whole batch covers every member but names none by itself
 // (K8): it is a member's red evidence only when diagnosis places it there,
-// by the member's own red on the same base, or by a green base with every
-// other member green alone. The base's own red names nobody.
+// by the member's own red on the same base, or, for a batch of that member
+// alone, by a green base that ran every failing group. The base's own red
+// names nobody, nor does a combination's.
 func TestBatchRedNamesAMemberOnlyByDiagnosis(t *testing.T) {
 	t.Parallel()
 	pair := []string{"goal-a", "goal-b"}
@@ -202,12 +213,16 @@ func TestBatchRedNamesAMemberOnlyByDiagnosis(t *testing.T) {
 			"attempt d2 (batch, placed by attempt d1 (member:goal-a))"},
 		{"another member's red places nothing here", pair, [][2]string{{"member:goal-a", AttemptRed}, {"batch", AttemptRed}}, "goal-b", ""},
 		{"the member's own red, then green", pair, [][2]string{{"member:goal-a", AttemptRed}, {"member:goal-a", AttemptGreen}, {"batch", AttemptRed}}, "goal-a", ""},
-		{"base green and the other member green alone", pair, [][2]string{{"batch", AttemptRed}, {"base", AttemptGreen}, {"member:goal-b", AttemptGreen}}, "goal-a",
-			"attempt d1 (batch, placed by the green base in attempt d2)"},
+		// With more members, green alone and a green base place the red
+		// on the combination, never on one member (critique F-2).
+		{"base green and the other member green alone", pair, [][2]string{{"batch", AttemptRed}, {"base", AttemptGreen}, {"member:goal-b", AttemptGreen}}, "goal-a", ""},
+		{"base green and every member green alone, then the batch red", pair, [][2]string{{"base", AttemptGreen}, {"member:goal-a", AttemptGreen}, {"member:goal-b", AttemptGreen}, {"batch", AttemptRed}}, "goal-b", ""},
 		{"base green, the other member not run alone", pair, [][2]string{{"batch", AttemptRed}, {"base", AttemptGreen}}, "goal-a", ""},
 		{"base green, but this member green alone", pair, [][2]string{{"batch", AttemptRed}, {"base", AttemptGreen}, {"member:goal-b", AttemptGreen}}, "goal-b", ""},
 		{"one member, base green", []string{"goal-a"}, [][2]string{{"batch", AttemptRed}, {"base", AttemptGreen}}, "goal-a",
 			"attempt d1 (batch, placed by the green base in attempt d2)"},
+		// A base that never ran the failing group clears nothing (F-1).
+		{"one member, base green on other groups", []string{"goal-a"}, [][2]string{{"batch", AttemptRed}, {"base@g2", AttemptGreen}}, "goal-a", ""},
 		{"one member, base red", []string{"goal-a"}, [][2]string{{"batch", AttemptRed}, {"base", AttemptRed}}, "goal-a", ""},
 		{"one member, base could not run", []string{"goal-a"}, [][2]string{{"batch", AttemptRed}, {"base", AttemptUnavailable}}, "goal-a", ""},
 		{"the member's red after the batch's speaks itself", pair, [][2]string{{"batch", AttemptRed}, {"member:goal-a", AttemptRed}}, "goal-a",

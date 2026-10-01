@@ -368,13 +368,13 @@ func TestLandingReturnRedOnABatchRedNeedsDiagnosis(t *testing.T) {
 	t.Parallel()
 	bed := newLaneReturnBed(t)
 	store := batch.NewStore(bed.lane, nil)
-	recordLaneSubjectAttempt(t, store, batch.ProofAttempt{ID: "b1", Subject: batch.SubjectBatch, Covers: []string{"standing-validation"}}, batch.AttemptRed)
+	recordLaneSubjectAttempt(t, store, batch.ProofAttempt{ID: "b1", Subject: batch.SubjectBatch, Covers: []string{"standing-validation"}}, batch.AttemptRed, "app-standard")
 	code, result := bed.run(t, "standing-validation", "--disposition", "red")
 	if code == 0 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "nothing places it on standing-validation yet") ||
 		!strings.Contains(strings.Join(result.Details, " "), batch.CodeReturnEvidenceMissing) || !bed.laneHolds(t) {
 		t.Fatalf("red on an undiagnosed batch red = %d %+v; the lane must still hold the goal", code, result)
 	}
-	recordLaneSubjectAttempt(t, store, batch.ProofAttempt{ID: "b2", Subject: batch.SubjectBase}, batch.AttemptGreen)
+	recordLaneSubjectAttempt(t, store, batch.ProofAttempt{ID: "b2", Subject: batch.SubjectBase, Groups: []string{"app-standard"}}, batch.AttemptGreen)
 	code, result = bed.run(t, "standing-validation", "--disposition", "red")
 	if code != 0 || result.Outcome != intentConfirmed || bed.laneHolds(t) {
 		t.Fatalf("red on a batch red the green base places = %d %+v", code, result)
@@ -390,7 +390,7 @@ func TestLandingReturnRedOnABatchRedNeedsDiagnosis(t *testing.T) {
 
 // recordLaneSubjectAttempt records one finished attempt of the bed's batch,
 // as landing prove does.
-func recordLaneSubjectAttempt(t *testing.T, store batch.Store, attempt batch.ProofAttempt, status string) {
+func recordLaneSubjectAttempt(t *testing.T, store batch.Store, attempt batch.ProofAttempt, status string, redGroups ...string) {
 	t.Helper()
 	err := store.Update(laneAuthorityBatch, func(record *batch.Record) error {
 		if _, ok := record.CurrentOpening(); !ok {
@@ -403,7 +403,7 @@ func recordLaneSubjectAttempt(t *testing.T, store batch.Store, attempt batch.Pro
 		err = batch.StartAttempt(store, laneAuthorityBatch, attempt)
 	}
 	if err == nil {
-		err = batch.FinishAttempt(store, laneAuthorityBatch, attempt.ID, status, "", "", nil, laneAuthorityNow)
+		err = batch.FinishAttempt(store, laneAuthorityBatch, attempt.ID, status, "", "", redGroups, laneAuthorityNow)
 	}
 	if err != nil {
 		t.Fatal(err)

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
@@ -115,7 +116,26 @@ func setPauseLockedBecause(home, by, reason string, now time.Time) (bool, error)
 	if _, paused := ReadPause(home); paused {
 		return false, nil
 	}
-	return true, writeJSON(home, pausePath(home), Pause{By: by, At: now.UTC().Format(time.RFC3339), Reason: strings.TrimSpace(reason)})
+	return true, writeJSON(home, pausePath(home), Pause{By: by, At: now.UTC().Format(time.RFC3339), Reason: PauseReason(reason)})
+}
+
+// pauseReasonLimit caps a pause's reason, which line 1 of messages shows.
+const pauseReasonLimit = 200
+
+// PauseReason is a stop's reason as one plain line: control characters and
+// runs of whitespace become one space, and it is cut at pauseReasonLimit
+// characters.
+func PauseReason(reason string) string {
+	plain := strings.Join(strings.Fields(strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return ' '
+		}
+		return r
+	}, reason)), " ")
+	if runes := []rune(plain); len(runes) > pauseReasonLimit {
+		plain = strings.TrimSpace(string(runes[:pauseReasonLimit-1])) + "…"
+	}
+	return plain
 }
 
 // Who names who stopped the lane and why, as line 1 words: "Wido" or
