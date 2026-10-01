@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -24,7 +23,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/strictjson"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/verbresult"
 )
 
@@ -35,7 +34,7 @@ const testRunVerb = "internal test run"
 
 // Refusal is a kernel verb's refusal: nothing was recorded or started.
 type Refusal struct {
-	Code, Reason, Fix string
+	Code, Reason, Next string
 }
 
 func (refusal *Refusal) Error() string { return refusal.Reason }
@@ -43,8 +42,8 @@ func (refusal *Refusal) Error() string { return refusal.Reason }
 // RefusalCode is the registered code, for --verbose, --json and records.
 func (refusal *Refusal) RefusalCode() string { return refusal.Code }
 
-func proveRefused(reason, fix string) error {
-	return &Refusal{Code: CodeProveRefused, Reason: reason, Fix: fix}
+func proveRefused(reason, next string) error {
+	return &Refusal{Code: CodeProveRefused, Reason: reason, Next: next}
 }
 
 // ProveRequest is one landing prove --batch ID --subject SUBJECT.
@@ -63,8 +62,8 @@ type ProveSeams struct {
 	// which the kernel admitted as the lane's enrolled engine (K5).
 	Executable func() (string, error)
 	// Select plans the tests of a subject tree whose member recorded no
-	// selection, on the lane's account, in its execution root.
-	Select func(executable string, execution lane.InstallRoot, account, tree string) ([]string, error)
+	// selection, on the lane's account.
+	Select func(checkout lane.CheckoutRoot, account, tree string) ([]string, error)
 	Prober identity.Prober
 	Now    func() time.Time
 	NewID  func() (string, error)
@@ -109,7 +108,7 @@ func Prove(request ProveRequest, seams ProveSeams) (batch.ProofAttempt, error) {
 	if err != nil {
 		return batch.ProofAttempt{}, err
 	}
-	target, err := resolveSubject(request, record, opening, seams, executable, account)
+	target, err := resolveSubject(request, record, opening, seams)
 	if err != nil {
 		return batch.ProofAttempt{}, err
 	}
@@ -137,7 +136,7 @@ func Prove(request ProveRequest, seams ProveSeams) (batch.ProofAttempt, error) {
 	gateErr := lane.Gate(request.Home, lane.OpProve, lane.AuthorityAgent, func(registered lane.Record) error {
 		layout, err := registered.Layout()
 		if err != nil || layout.Checkout != request.Layout.Checkout || layout.Install != request.Layout.Install {
-			return proveRefused("the landing lane moved while the proof was prepared, so nothing was started", "run the same command again")
+			return proveRefused("the landing lane moved while the test run was prepared, so nothing was started", "run the same command again")
 		}
 		if err := batch.StartAttempt(store, request.BatchID, attempt); err != nil {
 			return err
@@ -179,7 +178,7 @@ func Prove(request ProveRequest, seams ProveSeams) (batch.ProofAttempt, error) {
 // resolveSubject is the tree, purpose and tests of a prove subject: the
 // candidate's tree as a delivery run; B's, or B plus exactly member M's
 // admitted contribution, as a diagnostic of the members' selected tests.
-func resolveSubject(request ProveRequest, record batch.Record, opening batch.Opening, seams ProveSeams, executable, account string) (subject, error) {
+func resolveSubject(request ProveRequest, record batch.Record, opening batch.Opening, seams ProveSeams) (subject, error) {
 	switch {
 	case request.Subject == batch.SubjectBatch:
 		return subject{kind: batch.SubjectBatch, tree: opening.Tree, commit: opening.Candidate, purpose: "delivery"}, nil
@@ -187,7 +186,7 @@ func resolveSubject(request ProveRequest, record batch.Record, opening batch.Ope
 		var groups []string
 		for _, name := range opening.Members {
 			unit, _ := joinedMember(record, name)
-			selected, err := memberGroups(request, unit, opening, seams, executable, account)
+			selected, err := memberGroups(request, unit, opening, seams)
 			if err != nil {
 				return subject{}, err
 			}
@@ -217,7 +216,7 @@ func resolveSubject(request ProveRequest, record batch.Record, opening batch.Ope
 	if err != nil {
 		return subject{}, fmt.Errorf("build member %s's tree on the base: %w", name, err)
 	}
-	groups, err := memberGroups(request, unit, opening, seams, executable, account)
+	groups, err := memberGroups(request, unit, opening, seams)
 	if err != nil {
 		return subject{}, err
 	}
@@ -237,8 +236,8 @@ func joinedMember(record batch.Record, name string) (batch.Unit, bool) {
 }
 
 // memberGroups are a member's tests: the selection recorded when it joined,
-// else the plan of its own tree on the base.
-func memberGroups(request ProveRequest, unit batch.Unit, opening batch.Opening, seams ProveSeams, executable, account string) ([]string, error) {
+// else the plan of its own tree on the base, on the lane's account.
+func memberGroups(request ProveRequest, unit batch.Unit, opening batch.Opening, seams ProveSeams) ([]string, error) {
 	if len(unit.SelectedGroups) != 0 {
 		return slices.Clone(unit.SelectedGroups), nil
 	}
@@ -249,31 +248,14 @@ func memberGroups(request ProveRequest, unit batch.Unit, opening batch.Opening, 
 	if err != nil {
 		return nil, err
 	}
-	detached, err := (gittree.Workspace{Dir: string(request.Layout.Checkout)}).NewDetachedWorktree(tree)
-	if err != nil {
-		return nil, err
-	}
-	defer detached.Close()
-	return seams.Select(executable, request.Layout.Execution(lane.CheckoutRoot(detached.Workspace().Dir)), account, tree)
+	return seams.Select(request.Layout.Checkout, lane.AccountID(string(request.Layout.Checkout)), tree)
 }
 
-// selectSubjectGroups plans tree on the lane's account in its projection.
-func selectSubjectGroups(executable string, execution lane.InstallRoot, account, tree string) ([]string, error) {
-	command := exec.Command(executable, "internal", "test", "plan", "--root", string(execution), "--lane", account, "--tree", tree,
-		"--mode", "auto", "--purpose", "delivery", "--json")
-	command.Dir, command.Env = string(execution), gittree.ScrubbedEnviron()
-	child, err := verbresult.Run(command, "internal test plan")
-	if err != nil {
-		return nil, err
-	}
-	if child.Outcome != verbresult.Confirmed {
-		return nil, child.Err()
-	}
-	var planned testrun.PlanOutput
-	if err := child.DecodeData(&planned); err != nil {
-		return nil, err
-	}
-	return planned.Plan.SelectedGroups, nil
+// selectSubjectGroups plans tree on the lane's account through the lane's
+// one planner (batchowner's, the same child a batch plan runs).
+func selectSubjectGroups(checkout lane.CheckoutRoot, account, tree string) ([]string, error) {
+	plan, err := batchowner.ProductionBatchTreePlan(string(checkout), account, tree, testpolicy.ModeAuto)
+	return plan.SelectedGroups, err
 }
 
 // proveArgs is the child's argv: a run charged to the lane, whose lane

@@ -1,0 +1,44 @@
+exit 0
+--
+{
+  "schemaVersion": 1,
+  "verb": "landing begin",
+  "targets": [
+    {
+      "kind": "landing-lane",
+      "id": "/Users/wido/GitHub/agentic-tools-landing"
+    },
+    {
+      "kind": "batch",
+      "id": "01j5x00000000000000000vb01"
+    }
+  ],
+  "outcome": "confirmed",
+  "summary": "recorded batch 01j5x00000000000000000vb01's series of 2 commits on main 111111111111; its candidate is 222222222222, with 3 lines of the lane's own",
+  "data": {
+    "opId": "",
+    "at": "",
+    "actor": "",
+    "members": null,
+    "base": "1111111111111111111111111111111111111111",
+    "baseTree": "",
+    "head": "",
+    "candidate": "2222222222222222222222222222222222222222",
+    "tree": "",
+    "series": [
+      {
+        "commit": "",
+        "source": "",
+        "kind": ""
+      },
+      {
+        "commit": "",
+        "source": "",
+        "kind": ""
+      }
+    ],
+    "deviation": 3
+  }
+}
+
+--

@@ -174,9 +174,9 @@ func landingKernelRefusal(inv *intentInvocation, targets []intentTarget, err err
 	var refusal *kernel.Refusal
 	switch {
 	case errors.As(err, &begin):
-		code, reason, fix = begin.Code, begin.Reason, begin.Fix
+		code, reason, fix = begin.Code, begin.Reason, begin.Next
 	case errors.As(err, &refusal):
-		code, reason, fix = refusal.Code, refusal.Reason, refusal.Fix
+		code, reason, fix = refusal.Code, refusal.Reason, refusal.Next
 	default:
 		return intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "the landing lane could not do it: " + oneLine(err.Error()),
 			retry: "tries again", Details: []string{err.Error()}}

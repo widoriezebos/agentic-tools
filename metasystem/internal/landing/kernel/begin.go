@@ -64,7 +64,7 @@ func Begin(request BeginRequest, seams BeginSeams) (BeginOutcome, error) {
 	record, err := store.Load(request.BatchID)
 	if err != nil {
 		return BeginOutcome{}, &Refusal{Code: batch.CodeBeginRefused, Reason: fmt.Sprintf("batch %s can't be read: %v", request.BatchID, err),
-			Fix: "run landing status to see the lane's batches"}
+			Next: "run landing status to see the lane's batches"}
 	}
 	opID, err := seams.NewID()
 	if err != nil {
@@ -117,7 +117,7 @@ func gated(request BeginRequest, write func() error) error {
 		layout, err := registered.Layout()
 		if err != nil || layout.Checkout != request.Layout.Checkout || layout.Install != request.Layout.Install {
 			return &Refusal{Code: batch.CodeBeginRefused, Reason: "the landing lane moved while the series was checked, so nothing was recorded",
-				Fix: "run the same command again"}
+				Next: "run the same command again"}
 		}
 		return write()
 	})

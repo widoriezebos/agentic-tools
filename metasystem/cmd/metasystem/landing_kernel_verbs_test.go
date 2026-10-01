@@ -3,6 +3,9 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -89,5 +92,85 @@ func TestLandingBeginAndProveVerbs(t *testing.T) {
 	code, text = bed.runWith(t, bed.owners(), "landing", "prove", "--batch", kernelVerbBatch, "--subject", "batch")
 	if code != 1 || !strings.Contains(text, "can't be read") || strings.Contains(text, kernel.CodeProveRefused) {
 		t.Fatalf("prove of an unknown batch = %d\n%s", code, text)
+	}
+}
+
+// witnessLandingBeginRepeat runs landing begin twice with the production
+// kernel on a real nested lane whose enrolled engine is this test binary: a
+// batch of one change, composed as its plain replay on landed main. Both
+// runs are success; the second records nothing and leaves the batch, the
+// candidate ref and the host home as they were.
+func witnessLandingBeginRepeat(t *testing.T) {
+	bed := newKernelBed(t)
+	main := bed.landMain(t)
+	bed.enroll(t, runningTestBinary(t))
+	git := func(args ...string) string {
+		t.Helper()
+		out, err := exec.Command("git", append([]string{"-C", bed.checkout, "-c", "user.name=seat", "-c", "user.email=seat@example.invalid", "-c", "commit.gpgsign=false"}, args...)...).CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v %s", args, err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	git("fetch", "--quiet", "origin")
+	if err := os.WriteFile(filepath.Join(bed.installation, "change.txt"), []byte("a seat's change\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git("add", "metasystem/change.txt")
+	git("commit", "--quiet", "-m", "record: a seat's change\n\nMachine: m1e+human")
+	change := git("rev-parse", "HEAD")
+	git("reset", "--quiet", "--hard", main)
+	baseTree := git("rev-parse", main+"^{tree}")
+	unit := batch.NewChangeUnit(batch.ChangeMember{Commit: change, Parent: main, AskedBy: "m1e+human", Subject: "record: a seat's change"},
+		"/seat", "m1e", "human", []string{"metasystem/change.txt"}, nil)
+	unit.State = batch.UnitJoined
+	store := batch.NewStore(bed.checkout, nil)
+	if err := store.Create(batch.Record{Schema: 1, BatchID: kernelVerbBatch, BaseTree: baseTree, TipTree: baseTree, State: batch.StateOpen, Units: []batch.Unit{unit}}); err != nil {
+		t.Fatal(err)
+	}
+	words := []string{"landing", "begin", "--batch", kernelVerbBatch, "--members", unit.GoalID, "--base", main, "--head", change}
+	if code, text := bed.runWith(t, bed.owners(), words...); code != 0 || !strings.Contains(text, "recorded batch "+kernelVerbBatch+"'s series of 1 commits") {
+		t.Fatalf("first begin = %d\n%s", code, text)
+	}
+	record, home := idemTreeDigest(t, filepath.Join(bed.checkout, "artifacts")), idemTreeDigest(t, bed.home)
+	candidate := git("rev-parse", kernel.CandidateRef(kernelVerbBatch))
+	if code, text := bed.runWith(t, bed.owners(), words...); code != 0 || !strings.Contains(text, "already recorded") {
+		t.Fatalf("repeated begin = %d\n%s", code, text)
+	}
+	idemSameTree(t, "a repeated landing begin (batch records)", record, idemTreeDigest(t, filepath.Join(bed.checkout, "artifacts")))
+	idemSameTree(t, "a repeated landing begin (home)", home, idemTreeDigest(t, bed.home))
+	if again := git("rev-parse", kernel.CandidateRef(kernelVerbBatch)); again != candidate {
+		t.Fatalf("a repeated begin moved the candidate %s to %s", candidate, again)
+	}
+}
+
+// The kernel verbs' layout goldens join G1b through the group hook.
+var _ = func() bool {
+	layoutGroupCases = append(layoutGroupCases, landingKernelLayoutCases)
+	return true
+}()
+
+func landingKernelLayoutCases() []layoutCase {
+	return []layoutCase{
+		{name: "landing-begin", args: []string{"landing", "begin", "--batch", kernelVerbBatch, "--members", "goal-a,change:0123456789ab", "--base", "origin/main", "--head", "HEAD"},
+			bed: landingKernelLayoutBed()},
+		{name: "landing-prove-red", args: []string{"landing", "prove", "--batch", kernelVerbBatch, "--subject", "member:goal-a"}, bed: landingKernelLayoutBed()},
+	}
+}
+
+// landingKernelLayoutBed is the running lane's bed whose engine is admitted,
+// with a begin that records a two-commit series and a prove whose member
+// subject is red.
+func landingKernelLayoutBed() func(t *testing.T) layoutBed {
+	return func(t *testing.T) layoutBed {
+		bed := landingEngineLayoutBed(false)(t)
+		bed.owners.landing.begin = func(kernel.BeginRequest) (kernel.BeginOutcome, error) {
+			return kernel.BeginOutcome{Changed: true, Opening: batch.Opening{Base: "1111111111111111111111111111111111111111",
+				Candidate: "2222222222222222222222222222222222222222", Series: make([]batch.SeriesCommit, 2), Deviation: 3}}, nil
+		}
+		bed.owners.landing.prove = func(kernel.ProveRequest) (batch.ProofAttempt, error) {
+			return batch.ProofAttempt{ID: "a1", Subject: batch.SubjectMember, Member: "goal-a", Status: batch.AttemptRed, RedGroups: []string{"app-standard"}}, nil
+		}
+		return bed
 	}
 }

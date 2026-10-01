@@ -126,7 +126,7 @@ type BeginRequest struct {
 
 // BeginRefusal refuses a series begin cannot take; nothing is recorded.
 type BeginRefusal struct {
-	Code, Reason, Fix string
+	Code, Reason, Next string
 }
 
 func (refusal *BeginRefusal) Error() string { return refusal.Reason }
@@ -146,8 +146,8 @@ func (refusal *CompositionRefusal) Error() string { return refusal.Evidence.Deta
 // RefusalCode is the registered code, for --verbose, --json and records.
 func (refusal *CompositionRefusal) RefusalCode() string { return refusal.Code }
 
-func beginRefused(reason, fix string) error {
-	return &BeginRefusal{Code: CodeBeginRefused, Reason: reason, Fix: fix}
+func beginRefused(reason, next string) error {
+	return &BeginRefusal{Code: CodeBeginRefused, Reason: reason, Next: next}
 }
 
 // pinStep is one pinned step of a member's admitted contribution: one
@@ -361,7 +361,7 @@ func PlanOpening(root string, record Record, request BeginRequest) (Opening, err
 	}
 	integration := len(series) == len(steps)+1
 	if len(series) != len(steps) && !integration {
-		return Opening{}, beginRefused(fmt.Sprintf("the series has %d commits but its members pin %d; it needs one commit per pinned step, plus at most one %s commit last",
+		return Opening{}, beginRefused(fmt.Sprintf("the series has %d commits, but its members need %d plus at most one %s",
 			len(series), len(steps), LaneIntegrationTrailer), "compose one commit per change, build or chain, in member order, then run landing begin again")
 	}
 	opening := Opening{OpID: request.OpID, At: request.At.UTC().Format(time.RFC3339Nano), Actor: request.Actor, Members: slices.Clone(request.Members),

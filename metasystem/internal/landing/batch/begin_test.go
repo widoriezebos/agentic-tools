@@ -269,7 +269,7 @@ func TestBeginPinsEveryMemberInALinearSeries(t *testing.T) {
 	if _, err := bed.begin(record, []string{first.GoalID}, head); !errors.As(err, &refusal) || !strings.Contains(refusal.Reason, second.GoalID) {
 		t.Fatalf("a member left out = %v; want a refusal naming %s", err, second.GoalID)
 	}
-	if _, err := bed.begin(record, []string{first.GoalID, second.GoalID}, head); !errors.As(err, &refusal) || !strings.Contains(refusal.Reason, "pin 2") {
+	if _, err := bed.begin(record, []string{first.GoalID, second.GoalID}, head); !errors.As(err, &refusal) || !strings.Contains(refusal.Reason, "need 2") {
 		t.Fatalf("a short series = %v; want a refusal counting the pins", err)
 	}
 	if _, err := bed.begin(record, []string{first.GoalID, second.GoalID}, bed.base); !errors.As(err, &refusal) || !strings.Contains(refusal.Reason, "empty") {
