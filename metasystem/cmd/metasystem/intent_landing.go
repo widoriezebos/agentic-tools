@@ -11,6 +11,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -23,7 +25,9 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/kernel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/verbresult"
 )
 
 // The landing verbs' refusal codes (register rows name their sites).
@@ -75,6 +79,9 @@ type laneVerbOwners struct {
 	agentCaller func(checkout string) error
 	// returnMember runs one return.
 	returnMember func(batchowner.MemberReturn) (batchowner.MemberReturnReport, error)
+	// keeper is the landing agent's keeper of the lane checkout root, the
+	// one the lane checkout's steward runs each tick (landing run).
+	keeper func(home, root string) lane.AgentKeeper
 }
 
 func (inv *intentInvocation) landing() laneVerbOwners {
@@ -145,6 +152,9 @@ func (inv *intentInvocation) landing() laneVerbOwners {
 	if owners.returnMember == nil {
 		owners.returnMember = batchowner.ReturnMember
 	}
+	if owners.keeper == nil {
+		owners.keeper = func(home, root string) lane.AgentKeeper { return newLandingAgentKeeper(root, home, newLandingAgent()) }
+	}
 	return owners
 }
 
@@ -177,12 +187,22 @@ func landingIntentCommands() []intentCommand {
 		{
 			object: "landing", action: "start", audience: "both", summary: "resume the landing lane, so its landing agent runs when there is work",
 			usage: []string{"metasystem landing start"},
-			details: []string{"Ends a pause and forgets the last landing agent's cooldown: the lane checkout's steward then wakes the landing agent as soon as work is queued, a batch is unfinished, or a validation is due.",
+			details: []string{"Ends a pause: the lane checkout's steward then wakes the landing agent at its next tick when work is queued or a batch is unfinished; metasystem landing run wakes it now.",
 				"When the lane can't run (the checkout has no machine nickname, or its supervision is not armed) nothing is changed and the one command that fixes it is named.",
 				"A lane already running changes nothing."},
 			maxArgs:  0,
 			examples: []string{"metasystem landing start"},
 			run:      runIntentLandingStart,
+		},
+		{
+			object: "landing", action: "run", audience: "both", summary: "start the landing agent now when the lane has queued work, instead of at the steward's next tick",
+			usage: []string{"metasystem landing run [--json]"},
+			details: []string{"Takes the same decision the lane checkout's steward takes each tick, under the lane's lock: it starts the landing agent when work is queued, the lane is not stopped and no landing agent runs.",
+				"A landing agent already running, or a lane with nothing queued, changes nothing. A stopped lane, a lane checkout at the helm, or a lane that can't run is refused with the one command that resumes it.",
+				"--json prints the outcome (started, running, idle, paused, held, failed) and the landing agent's session."},
+			maxArgs:  0,
+			examples: []string{"metasystem landing run"},
+			run:      runIntentLandingRun,
 		},
 		{
 			object: "landing", action: "stop", audience: "both", summary: "pause the landing lane for maintenance until landing start",
@@ -724,6 +744,196 @@ func (inv *intentInvocation) startLane(owners laneVerbOwners, home string, recor
 	}
 	summary := "the landing lane at " + record.Root + " is already running"
 	return intentResult{Outcome: intentUnchanged, Targets: targets, Data: view, Summary: summary, Details: agent, view: landingDone(summary, record.Root)}
+}
+
+// landing run starts the landing agent now instead of at the lane
+// checkout's steward's next tick. It runs the keeper's own step (the
+// steward's KeepLandingLane) with the lane checkout as its steward, so the
+// decision, the start claim under the lane flock and the launch are the
+// keeper's; landing run only renders the step's outcome.
+
+// landingRunData is landing run --json's data: the keeper step's outcome,
+// the landing agent's session it started or found running, the wake it
+// started for, and the batch the lane works on.
+type landingRunData struct {
+	Outcome lane.AgentOutcome `json:"outcome"`
+	Launch  string            `json:"launch,omitempty"`
+	Root    string            `json:"root"`
+	Reasons []string          `json:"reasons,omitempty"`
+	Batch   string            `json:"batch,omitempty"`
+}
+
+func runIntentLandingRun(inv *intentInvocation) int {
+	owners, home, record, problem := inv.laneContext(true)
+	if problem != nil {
+		return inv.render(*problem)
+	}
+	root := record.Root
+	targets := laneTargets(root)
+	// Outside the lane checkout the lane's own engine runs the step, so the
+	// landing agent is always supervised by the lane's engine, as on a
+	// steward tick, and no seat's restart takes its supervisor down.
+	if !inv.insideLaneCheckout(root) {
+		return inv.handOffLandingRun(record)
+	}
+	// The steward skips the keeper while the lane checkout is at the helm;
+	// landing run does the same.
+	if owners.helm(root).Active {
+		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets,
+			Summary: "the landing checkout " + root + " is at the helm, so no landing agent was started",
+			next:    []string{"metasystem", "helm", "return", "--repo", root}, nextReason: "gives it back to the machinery; then run metasystem landing run again"})
+	}
+	if refused := inv.laneNotReady(owners, root); refused != nil {
+		return inv.render(*refused)
+	}
+	run := owners.keeper(home, root).Run()
+	data := landingRunData{Outcome: run.Outcome, Launch: run.Launch, Root: root, Reasons: run.Reasons}
+	if view := inv.laneView(owners, home); view.Batch != nil {
+		data.Batch = view.Batch.ID
+	}
+	details := []string{run.Line}
+	switch run.Outcome {
+	case lane.AgentStarted:
+		summary := "started the landing agent " + run.Launch + " for " + landingWakeWords(run.Reasons)
+		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: data, Summary: summary, Details: details,
+			next: inv.publicArgv("landing", "status"), nextReason: "shows what it lands",
+			view: func(page *textui.Page) { page.Done(summary) }})
+	case lane.AgentRunning:
+		summary := "a landing agent is already running at " + root
+		if run.Launch != "" {
+			summary = "the landing agent " + run.Launch + " is already running"
+		}
+		why := "nothing to do; it is starting"
+		if data.Batch != "" {
+			why = "nothing to do; it is landing " + data.Batch
+		} else if run.Launch != "" {
+			why = "nothing to do; it is at work"
+		}
+		return inv.render(intentResult{Outcome: intentUnchanged, Targets: targets, Data: data, Summary: summary, Details: details,
+			view: func(page *textui.Page) { page.Done(summary); page.Hint(textui.Hint{Reason: why}) }})
+	case lane.AgentIdle:
+		summary := "the landing lane at " + root + " has no queued work, so no landing agent was started"
+		return inv.render(intentResult{Outcome: intentUnchanged, Targets: targets, Data: data, Summary: summary, Details: details,
+			view: func(page *textui.Page) {
+				page.Done(summary)
+				page.Hint(textui.Hint{Reason: "nothing to do; the lane is empty"})
+			}})
+	case lane.AgentPaused:
+		summary := run.Line
+		if pause, paused := lane.ReadPause(home); paused {
+			summary = "the landing lane is stopped by " + pause.Who() + ", so no landing agent was started"
+		}
+		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Data: data, Summary: summary, Details: details,
+			next: inv.publicArgv("landing", "start"), nextReason: "resumes the lane; then run metasystem landing run again"})
+	default:
+		summary := run.Line
+		if summary == "" {
+			summary = "the landing agent at " + root + " was not started"
+		}
+		return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Data: data, Summary: summary, Details: details,
+			next: inv.publicArgv("landing", "status", "--verbose"), nextReason: "shows the lane's state"})
+	}
+}
+
+// insideLaneCheckout says whether landing run was called in the lane
+// checkout: its working directory, or its --repo, is in it.
+func (inv *intentInvocation) insideLaneCheckout(root string) bool {
+	path := inv.cwd
+	if inv.input.has("repo") {
+		path = inv.callerPath(inv.input.text("repo"))
+	}
+	here, checkout := realpath.Resolve(path), realpath.Resolve(root)
+	return here == checkout || strings.HasPrefix(here, checkout+string(filepath.Separator))
+}
+
+// handOffLandingRun runs landing run with the lane installation's own
+// engine in the lane checkout. Its text passes through unchanged; with
+// --json its JSON result is read and passed on.
+func (inv *intentInvocation) handOffLandingRun(record lane.Record) int {
+	targets := laneTargets(record.Root)
+	layout, err := record.Layout()
+	if err != nil {
+		return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets,
+			Summary: "the landing lane's installation can't be read, so no landing agent was started",
+			next:    inv.publicArgv("landing", "set", record.Root), nextReason: "registers the landing checkout again, which records its installation",
+			Details: []string{err.Error()}})
+	}
+	install := string(layout.Install)
+	binary := filepath.Join(install, "bin", "metasystem")
+	if info, err := os.Stat(binary); err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0o111 == 0 {
+		cause := "is missing"
+		if err == nil {
+			cause = "is not an executable file"
+		}
+		build := func(path string) string {
+			// A path shown under ~ keeps its tilde outside the quotes, so
+			// the shell still expands it.
+			if rest, ok := strings.CutPrefix(path, "~/"); ok {
+				return "cd ~/" + shellCommand([]string{rest}) + " && go run ./cmd/devgate build"
+			}
+			return "cd " + shellCommand([]string{path}) + " && go run ./cmd/devgate build"
+		}
+		summary := "the landing lane's engine bin/metasystem " + cause + ", so no landing agent was started"
+		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: summary,
+			next: []string{"sh", "-c", build(install)}, nextReason: "builds the lane's engine; then run metasystem landing run again",
+			Details: []string{"the lane's engine " + binary + " " + cause}, viewsRefusal: true,
+			view: func(page *textui.Page) {
+				page.Refusal(summary, textui.Hint{Reason: build(page.Env().Path(install))})
+			}})
+	}
+	args := []string{"landing", "run"}
+	for _, flag := range []string{"json", "verbose"} {
+		if inv.input.switched(flag) {
+			args = append(args, "--"+flag)
+		}
+	}
+	command := exec.Command(binary, args...)
+	command.Dir = string(layout.Checkout)
+	command.Stdin = os.Stdin
+	command.Stderr = inv.stderr
+	if inv.input.switched("json") {
+		// The lane engine's envelope is read, never its text, and passed on.
+		result, err := verbresult.Run(command, "landing run")
+		if err != nil {
+			return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets,
+				Summary: "the landing lane's engine gave no result, so whether a landing agent started is unknown",
+				next:    inv.publicArgv("landing", "status", "--verbose"), nextReason: "shows whether its landing agent runs",
+				Details: []string{err.Error()}})
+		}
+		if err := verbresult.Write(inv.stdout, result); err != nil {
+			return 1
+		}
+		return result.Exit
+	}
+	// Its text is the lane engine's own two lines, passed through unchanged.
+	command.Stdout = inv.stdout
+	runErr := command.Run()
+	var exitErr *exec.ExitError
+	switch {
+	case errors.As(runErr, &exitErr):
+		return exitErr.ExitCode()
+	case runErr != nil:
+		return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets,
+			Summary: "the landing lane's engine could not be run, so no landing agent was started",
+			next:    inv.sameCommand(), nextReason: "tries again", Details: []string{binary + ": " + runErr.Error()}})
+	}
+	return 0
+}
+
+// landingWakeWords says a wake's reasons in words.
+func landingWakeWords(reasons []string) string {
+	words := make([]string, 0, len(reasons))
+	for _, reason := range reasons {
+		switch reason {
+		case lane.WakeQueued:
+			words = append(words, "the queued work")
+		case lane.WakeUnfinishedBatch:
+			words = append(words, "an unfinished batch")
+		default:
+			words = append(words, reason)
+		}
+	}
+	return strings.Join(words, " and ")
 }
 
 func runIntentLandingStop(inv *intentInvocation) int {

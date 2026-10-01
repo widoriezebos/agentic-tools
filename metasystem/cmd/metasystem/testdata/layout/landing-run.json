@@ -1,0 +1,25 @@
+exit 0
+--
+{
+  "schemaVersion": 1,
+  "verb": "landing run",
+  "targets": [
+    {
+      "kind": "landing-lane",
+      "id": "/Users/wido/GitHub/agentic-tools-landing"
+    }
+  ],
+  "outcome": "unchanged",
+  "summary": "the landing agent landing-5f0c2a9e7d31b468 is already running",
+  "data": {
+    "outcome": "running",
+    "launch": "landing-5f0c2a9e7d31b468",
+    "root": "/Users/wido/GitHub/agentic-tools-landing",
+    "batch": "4gr18nm8t3nyev9sssda9jgtsq"
+  },
+  "details": [
+    "the landing agent landing-5f0c2a9e7d31b468 is running at /Users/wido/GitHub/agentic-tools-landing"
+  ]
+}
+
+--
