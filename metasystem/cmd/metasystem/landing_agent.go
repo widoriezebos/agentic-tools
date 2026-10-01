@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/cadence"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/agentgate"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
@@ -210,7 +211,7 @@ func (a landingAgent) reapOutage(id string) error {
 // K-f.
 func newLandingAgentKeeper(self, home string, agent landingAgent) lane.AgentKeeper {
 	return lane.AgentKeeper{Home: home, Now: agent.now, Self: self,
-		Sources: lane.WakeSources{Validation: lane.ValidationDue},
+		Sources: lane.WakeSources{Validation: lane.ValidationDue, Finalization: func(string) (bool, error) { return cadence.FinalizationPending(home) }},
 		Holds: []func(string) (string, error){
 			func(root string) (string, error) {
 				if mark, standing := outage.StandingAt(batch.ModuleRoot(root), agent.now()); standing {

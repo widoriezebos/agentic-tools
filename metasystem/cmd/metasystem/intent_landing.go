@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/cadence"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gaterun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
@@ -78,6 +79,10 @@ type laneVerbOwners struct {
 	// validation reads whether the standing validation is due, one of the
 	// landing agent's wake reasons (A-a).
 	validation func(root string, now time.Time) (bool, error)
+	// finalization reads whether a reserved validation run awaits its
+	// finalization in the host lane state at home, the landing agent's
+	// finalization-pending wake reason (K-f).
+	finalization func(home string) (bool, error)
 	// agent names a landing agent that runs or is starting; no batch owner
 	// starts beside it (A-a).
 	agent func() (string, bool, error)
@@ -174,6 +179,9 @@ func (inv *intentInvocation) landing() laneVerbOwners {
 	}
 	if owners.validation == nil {
 		owners.validation = lane.ValidationDue
+	}
+	if owners.finalization == nil {
+		owners.finalization = cadence.FinalizationPending
 	}
 	if owners.validateRun == nil {
 		owners.validateRun = productionLaneValidate
@@ -316,7 +324,7 @@ func (inv *intentInvocation) laneContext(needLane bool) (owners laneVerbOwners, 
 
 func (inv *intentInvocation) laneView(owners laneVerbOwners, home string) lane.View {
 	sources := lane.ViewSources{Home: home, Now: owners.now(), Owner: owners.probe, Records: owners.records, Ready: owners.ready, Helm: owners.helm,
-		Validation: owners.validation}
+		Validation: owners.validation, Finalization: func(string) (bool, error) { return owners.finalization(home) }}
 	if inv.input.switched("verbose") {
 		// The lane's spend is a full read of its proof store: only --verbose
 		// pays for it (N-5).
