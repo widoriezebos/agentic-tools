@@ -17,6 +17,5 @@ func init() {
 	}
 	batchowner.LaneCalls = batchowner.LaneCallSet{Handover: goalHandoverOwner, EditNext: goalEditNextOwner, Release: goalReleaseOwner, Held: landingHeld}
 	agent := newLandingAgent()
-	batchowner.LandingAgentLive = agent.liveOrStarting(batchowner.LandingLaneHome)
 	batchowner.LandingAgentProbe = agent.probe
 }

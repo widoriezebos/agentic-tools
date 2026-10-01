@@ -221,26 +221,6 @@ func newLandingAgentKeeper(self, home string, agent landingAgent) lane.AgentKeep
 		Running: agent.running, Start: agent.start, Reap: []func(string) error{agent.reapOutage}, Cancel: agent.cancel}
 }
 
-// liveOrStarting names a landing agent that runs, or whose start the
-// keeper claimed and has not finished.
-func (a landingAgent) liveOrStarting(home func() (string, error)) func() (string, bool, error) {
-	return func() (string, bool, error) {
-		if id, running, err := a.running(); err != nil || running {
-			return id, running, err
-		}
-		laneHome, err := home()
-		if err != nil {
-			// No home for the lane: whether an agent is starting is unknown,
-			// and unknown holds.
-			return "", false, fmt.Errorf("this computer's landing lane home can't be found, so whether a landing agent is starting is unknown: %w", err)
-		}
-		if _, starting, err := lane.AgentStarting(laneHome, a.now()); err != nil || starting {
-			return "a landing agent that is starting", starting, err
-		}
-		return "", false, nil
-	}
-}
-
 // probe reads whether a landing agent runs on this computer, its process
 // and since when: what the lane's view shows as the lane's runner.
 func (a landingAgent) probe(string) (lane.OwnerProbe, error) {

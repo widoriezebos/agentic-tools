@@ -158,11 +158,6 @@ func HoldHostProvingFor(home func() (string, error), args []string) ([]string, f
 	return rest, release, nil
 }
 
-// LandingAgentLive names a landing agent launch on this computer that has
-// not ended; the engine supplies it (the launch store is the command
-// layer's). nil is none.
-var LandingAgentLive func() (id string, live bool, err error)
-
 // LandingAgentProbe reads whether the host lane's landing agent runs, and
 // since when: the lane's view shows it as the lane's runner. The
 // engine supplies it (the launch store is the command layer's); nil reads
