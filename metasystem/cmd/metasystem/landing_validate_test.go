@@ -195,7 +195,10 @@ func completedValidationSeams(t *testing.T, home string) gaterun.ValidateSeams {
 			return &goal.CadenceStatus{TrunkTree: tree, WeightGeneration: 3, ForcedWindowStart: key.ForcedWindowStart, RunID: "cadence-run-0",
 				Groups: []goal.CadenceGroupStatus{{Group: "deep", Status: "passed"}}}, nil
 		},
-		Claim:  func(time.Time) (gaterun.CadenceAuthority, error) { refuse("claim"); return gaterun.CadenceAuthority{}, nil },
+		Claim: func(time.Time) (gaterun.CadenceAuthority, error) {
+			refuse("claim")
+			return gaterun.CadenceAuthority{}, nil
+		},
 		Launch: func(gaterun.Validation) (string, error) { refuse("launch"); return "", nil },
 		Publish: func(goal.CadenceClaimKey, goal.CadenceStatus, []goal.TrunkRedRecordGroup) error {
 			refuse("publish")
