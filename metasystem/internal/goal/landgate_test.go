@@ -398,3 +398,17 @@ func TestReviewRecordPathIsInTheReviewHome(t *testing.T) {
 		}
 	}
 }
+
+// A tier-1 goal stores zero review rounds in its box (R-54-m1), so its units
+// land without a read; a budget with rounds, or none recorded, needs them.
+func TestReadsWaivedReadsTheReviewRoundLimit(t *testing.T) {
+	t.Parallel()
+	tierOne := &GoalFile{Tier: 1, Budget: &Budget{ReviewRoundLimit: 0}}
+	tierTwo := &GoalFile{Tier: 2, Budget: &Budget{ReviewRoundLimit: 2}}
+	if !ReadsWaived(tierOne) {
+		t.Fatal("a zero review-round budget must waive the reads")
+	}
+	if ReadsWaived(tierTwo) || ReadsWaived(&GoalFile{Tier: 1}) || ReadsWaived(nil) {
+		t.Fatal("a budget with review rounds, or none recorded, needs its reads")
+	}
+}

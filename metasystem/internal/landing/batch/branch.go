@@ -13,6 +13,9 @@ import (
 type BranchReadRequest struct {
 	Repo, EndpointTip, BranchTip, GoalID, Through string
 	Last                                          bool
+	// ReadsWaived says the goal's budget allows zero review rounds (tier
+	// 1), so every unit on the branch joins without a critic read.
+	ReadsWaived bool
 }
 
 type BranchBuild struct {
@@ -129,14 +132,18 @@ func readGoalBranchWithReaders(request BranchReadRequest, readers branchReaders)
 	if err != nil {
 		return BranchMember{}, err
 	}
-	count := status.Prefix
+	landable := status.Prefix
+	if request.ReadsWaived {
+		landable = len(status.Units)
+	}
+	count := landable
 	if request.Last {
 		if count == 0 || count != len(status.Units) {
 			return BranchMember{}, refuseBatch("BATCH_JOIN_UNREAD", "goal "+request.GoalID+" is not reviewed up to its branch tip; metasystem work review "+request.GoalID+" reviews the rest")
 		}
 	} else {
 		count = 0
-		for index := 0; index < status.Prefix; index++ {
+		for index := 0; index < landable; index++ {
 			if status.Units[index].Commit == request.Through {
 				count = index + 1
 				break
@@ -150,14 +157,18 @@ func readGoalBranchWithReaders(request BranchReadRequest, readers branchReaders)
 	for index := range member.Builds {
 		build := &member.Builds[index]
 		unit := status.Units[index]
-		attestation, err := readers.attestation(request.Repo, request.BranchTip, request.EndpointTip, request.GoalID, unit.Unit, build.Commit)
-		if err != nil {
-			return BranchMember{}, refuseBatch("BATCH_JOIN_UNREAD", "build "+unit.Unit+" of goal "+request.GoalID+" has no valid review record ("+err.Error()+"); metasystem work review "+request.GoalID+" reviews it")
+		// A goal whose reads are waived (tier 1) records the read a unit
+		// has, of any source, and needs none.
+		if !request.ReadsWaived || index < status.Prefix {
+			attestation, err := readers.attestation(request.Repo, request.BranchTip, request.EndpointTip, request.GoalID, unit.Unit, build.Commit)
+			if err != nil {
+				return BranchMember{}, refuseBatch("BATCH_JOIN_UNREAD", "build "+unit.Unit+" of goal "+request.GoalID+" has no valid review record ("+err.Error()+"); metasystem work review "+request.GoalID+" reviews it")
+			}
+			if err := requireCriticRootSource(request.GoalID, unit.Unit, attestation); err != nil && !request.ReadsWaived {
+				return BranchMember{}, err
+			}
+			build.Attestation = attestation
 		}
-		if err := requireCriticRootSource(request.GoalID, unit.Unit, attestation); err != nil {
-			return BranchMember{}, err
-		}
-		build.Attestation = attestation
 		paths := map[string]bool{}
 		for _, fold := range build.Folds {
 			entries, err := readers.entries(request.Repo, fold.ID)

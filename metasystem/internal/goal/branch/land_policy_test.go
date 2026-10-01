@@ -1940,3 +1940,45 @@ func TestGoalLandingCandidateOnlyMatchesPreparationWithoutEffects(t *testing.T) 
 		t.Fatalf("an unbound approver's candidate-only refusal left output or pushed: %v", err)
 	}
 }
+
+// remoteReached stops a landing at its first remote read: every gate before
+// the composition has passed.
+type remoteReached struct{ PushTransport }
+
+var errRemoteReached = errors.New("the landing reached its remote read")
+
+func (remoteReached) RemoteTip(string, string, string) (string, bool, error) {
+	return "", false, errRemoteReached
+}
+
+// A tier-1 goal's budget allows zero review rounds (R-54-m1): its unread
+// units pass the reviewed-prefix gate, as a whole or --through one of them,
+// where a goal with review rounds is refused.
+func TestGoalLandingTierOneLandsUnreadUnits(t *testing.T) {
+	t.Parallel()
+	f := newLandingFacts(t, map[string]string{"base.txt": "base", "metasystem/memory/receipts.log": "1|1970-01-01T00:00:00Z|RECEIPT|type=seed|outcome=shipped\n"})
+	tip := f.plan(f.base, "metasystem/plans/goal-a.md", "approved goal plan\n")
+	first := f.unit(tip, "u1", "metasystem/one.go", "one\n")
+	tip = f.unit(first, "u2", "metasystem/two.go", "two\n")
+	f.writeFiles(f.repo, f.nodes[tip].files)
+	receipt := filepath.Join(t.TempDir(), "receipt.json")
+	request := f.request(f.base, tip, filepath.Join(t.TempDir(), "out"), receipt)
+	request.PushTransport = remoteReached{f}
+	f.expectStatus(f.base, tip)
+	_, err := prepareLanding(request, f.repository())
+	requireLandingRefusal(t, err, LandUnprovenCode)
+	f.consumed()
+
+	request.ReadsWaived = true
+	f.expectStatus(f.base, tip)
+	if _, err := prepareLanding(request, f.repository()); !errors.Is(err, errRemoteReached) {
+		t.Fatalf("a tier-1 goal's unread units are refused: %v", err)
+	}
+	f.consumed()
+	request.Last, request.Through, request.GoalPage = false, first, "- Next step: land through "+first+"\n"
+	f.expectStatus(f.base, tip)
+	if _, err := prepareLanding(request, f.repository()); !errors.Is(err, errRemoteReached) {
+		t.Fatalf("a tier-1 goal's --through an unread unit is refused: %v", err)
+	}
+	f.consumed()
+}

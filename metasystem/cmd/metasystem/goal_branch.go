@@ -413,7 +413,7 @@ func goalBranchLandPrepRun(args []string, dependencies goalBranchLandPrepDepende
 	result, err := dependencies.Prepare(branch.LandRequest{
 		Repo: *root, Remote: endpoint.Remote, EndpointTip: endpointTip, BranchTip: branchTip, GoalID: *goalID,
 		Out: *out, TestReceipt: *receipt, Last: *last, Through: *through, LandingReady: file.Landing != nil,
-		GoalPage: string(goal.RenderFile(file)), ApprovedBy: file.Approved.By, Seat: seat, CheckClaim: check,
+		GoalPage: string(goal.RenderFile(file)), ApprovedBy: file.Approved.By, Seat: seat, CheckClaim: check, ReadsWaived: goal.ReadsWaived(file),
 		CandidateOnly: dependencies.CandidateOnly,
 	})
 	if err != nil {

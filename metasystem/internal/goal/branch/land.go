@@ -39,9 +39,12 @@ type LandRequest struct {
 	Out, TestReceipt, Through                    string
 	Last, LandingReady                           bool
 	GoalPage, ApprovedBy, Seat                   string
-	CheckClaim                                   func() error
-	PushTransport                                PushTransport
-	Hooks                                        LandHooks
+	// ReadsWaived says the goal's budget allows zero review rounds (tier
+	// 1), so every unit on the branch lands without a read.
+	ReadsWaived   bool
+	CheckClaim    func() error
+	PushTransport PushTransport
+	Hooks         LandHooks
 	// CandidateOnly composes the pending landing and returns its projected
 	// candidate workspace tree, the tree a landing receipt must prove,
 	// without reading a receipt or writing artifacts.
@@ -606,19 +609,23 @@ func prepareLanding(req LandRequest, r landingRepository) (LandResult, error) {
 	if err != nil {
 		return LandResult{}, err
 	}
-	count := status.Prefix
+	landable := status.Prefix
+	if req.ReadsWaived {
+		landable = len(status.Units)
+	}
+	count := landable
 	if count == 0 {
 		return LandResult{}, operationRefusal(LandUnprovenCode, "goal %s has no reviewed build ready to land\nrun: metasystem work review %s", req.GoalID, req.GoalID)
 	}
 	if req.Last && !req.LandingReady {
 		return LandResult{}, operationRefusal(LandPartialCode, "--last requires the goal queued to land (metasystem work land %s --queue-only)", req.GoalID)
 	}
-	if req.Last && status.Prefix != len(status.Units) {
+	if req.Last && landable != len(status.Units) {
 		return LandResult{}, operationRefusal(LandPartialCode, "goal %s has a build that isn't reviewed yet, so it can't land as a whole\nrun: metasystem work review %s", req.GoalID, req.GoalID)
 	}
 	if req.Through != "" {
 		count = 0
-		for i := 0; i < status.Prefix; i++ {
+		for i := 0; i < landable; i++ {
 			if status.Units[i].Commit == req.Through {
 				count = i + 1
 				break
