@@ -454,6 +454,3 @@ func plural(n int) string {
 	}
 	return "s"
 }
-
-// BatchViewOf is one batch as every reader shows it.
-func BatchViewOf(record batch.Record) BatchView { return *batchView(record, nil) }

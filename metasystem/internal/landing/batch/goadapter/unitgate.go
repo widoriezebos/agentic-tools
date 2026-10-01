@@ -409,36 +409,6 @@ func packageImportPath(module, pkg string) string {
 	return module + "/" + strings.TrimPrefix(pkg, "./")
 }
 
-// AggregateUnitGateSteps lets go test schedule all ordinary packages in one
-// process while retaining the separately compiled cmd/metasystem batch tests.
-func AggregateUnitGateSteps(selection UnitPackages) []GateStep {
-	packages := append(append([]string{}, selection.Changed...), selection.Dependents...)
-	if len(packages) == 0 {
-		return nil
-	}
-	plain := GateStep{
-		Name: "unit packages",
-		Args: append([]string{"go", "test", "-trimpath", "-count=1", "-timeout", "40m"}, packages...),
-	}
-	steps := []GateStep{plain}
-	if selectionContainsPackage(selection, "./cmd/metasystem") {
-		steps = append(steps, batchTestStep())
-	}
-	return steps
-}
-
-func batchTestStep() GateStep {
-	return GateStep{
-		Name: "package ./cmd/metasystem batchtest",
-		Args: []string{"go", "test", "-trimpath", "-count=1", "-timeout", "40m", "-tags", "batchtest", "./cmd/metasystem"},
-	}
-}
-
-func selectionContainsPackage(selection UnitPackages, wanted string) bool {
-	set := packagePatterns(selection.ModulePath, append(append([]string{}, selection.Changed...), selection.Dependents...))
-	return set.matchesPackage(wanted)
-}
-
 // GateReds maps one failed go test invocation back to package/test lines.
 func GateReds(step GateStep, module, output string) []GateRed {
 	packages := gateStepPackages(step)
