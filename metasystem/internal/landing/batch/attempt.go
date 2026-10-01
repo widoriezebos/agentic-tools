@@ -49,9 +49,11 @@ type ProofAttempt struct {
 	ResultPath string   `json:"resultPath"`
 	RunAttempt string   `json:"runAttempt,omitempty"`
 	RedGroups  []string `json:"redGroups,omitempty"`
-	// Names are the members a red attempt of subject batch names as the
-	// owners of what failed; a return as red may cite it for them (K8).
-	Names  []string `json:"names,omitempty"`
+	// Covers are the members whose work the attempt's tree holds: every
+	// member of the series for subject batch, M for member:M, none for
+	// the base. A red covering a member is that member's red evidence only
+	// as K8 reads it (ReturnEvidence).
+	Covers []string `json:"covers,omitempty"`
 	Reason string   `json:"reason,omitempty"`
 	// Child is the test run child's process identity, recorded when it
 	// starts (K9 reads it to settle custody).

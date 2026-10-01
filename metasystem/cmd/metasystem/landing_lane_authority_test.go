@@ -360,6 +360,56 @@ func TestLandingReturnRedNeedsItsRedAttemptAndHonoursThePause(t *testing.T) {
 	}
 }
 
+// A red of the whole batch backs the agent's red return of a member only
+// once diagnosis places it there (K8): on its own it is refused and the
+// lane keeps the goal; with the base green (the member is the batch's only
+// one) the member is returned on the batch's red.
+func TestLandingReturnRedOnABatchRedNeedsDiagnosis(t *testing.T) {
+	t.Parallel()
+	bed := newLaneReturnBed(t)
+	store := batch.NewStore(bed.lane, nil)
+	recordLaneSubjectAttempt(t, store, batch.ProofAttempt{ID: "b1", Subject: batch.SubjectBatch, Covers: []string{"standing-validation"}}, batch.AttemptRed)
+	code, result := bed.run(t, "standing-validation", "--disposition", "red")
+	if code == 0 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "nothing places the failure on standing-validation") ||
+		!strings.Contains(strings.Join(result.Details, " "), batch.CodeReturnEvidenceMissing) || !bed.laneHolds(t) {
+		t.Fatalf("red on an undiagnosed batch red = %d %+v; the lane must still hold the goal", code, result)
+	}
+	recordLaneSubjectAttempt(t, store, batch.ProofAttempt{ID: "b2", Subject: batch.SubjectBase}, batch.AttemptGreen)
+	code, result = bed.run(t, "standing-validation", "--disposition", "red")
+	if code != 0 || result.Outcome != intentConfirmed || bed.laneHolds(t) {
+		t.Fatalf("red on a batch red the green base places = %d %+v", code, result)
+	}
+	record, err := store.Load(laneAuthorityBatch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unit := record.Units[0]; unit.Disposition != batch.DispositionRed || unit.Evidence != "attempt b1 (batch, placed by the green base in attempt b2)" {
+		t.Fatalf("returned member = %+v", unit)
+	}
+}
+
+// recordLaneSubjectAttempt records one finished attempt of the bed's batch,
+// as landing prove does.
+func recordLaneSubjectAttempt(t *testing.T, store batch.Store, attempt batch.ProofAttempt, status string) {
+	t.Helper()
+	err := store.Update(laneAuthorityBatch, func(record *batch.Record) error {
+		if _, ok := record.CurrentOpening(); !ok {
+			record.Openings = append(record.Openings, batch.Opening{OpID: "op-1", Actor: "lane:test", Members: []string{"standing-validation"}})
+		}
+		return nil
+	})
+	attempt.OpID = "op-1"
+	if err == nil {
+		err = batch.StartAttempt(store, laneAuthorityBatch, attempt)
+	}
+	if err == nil {
+		err = batch.FinishAttempt(store, laneAuthorityBatch, attempt.ID, status, "", "", nil, laneAuthorityNow)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 // A person's return is cleanup (K2, K8): it needs the person at an enrolled
 // terminal and no other evidence, it is admitted while the lane is paused,
 // and it runs on whatever engine the person's seat has (humans are never

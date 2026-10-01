@@ -266,13 +266,16 @@ func TestProveRunsEachSubjectOnItsTree(t *testing.T) {
 		t.Fatalf("the candidate is kept at %s, not %s", ref, outcome.Opening.Candidate)
 	}
 	account := lane.AccountID(string(bed.layout.Checkout))
+	// Each attempt records the members it covers (K8): the batch all of
+	// the series' members, member:M only M, the base none.
 	cases := []struct {
 		subject, tree, purpose, groups string
+		covers                         []string
 	}{
-		{batch.SubjectBatch, outcome.Opening.Tree, "delivery", ""},
-		{batch.SubjectBase, bed.tree(bed.base), "diagnostic", "change-standard,feature-standard"},
-		{batch.SubjectMember + ":" + bed.goalID, bed.tree(bed.goalTip), "diagnostic", "feature-standard"},
-		{batch.SubjectMember + ":" + bed.changeID, bed.tree(bed.change), "diagnostic", "change-standard"},
+		{batch.SubjectBatch, outcome.Opening.Tree, "delivery", "", outcome.Opening.Members},
+		{batch.SubjectBase, bed.tree(bed.base), "diagnostic", "change-standard,feature-standard", nil},
+		{batch.SubjectMember + ":" + bed.goalID, bed.tree(bed.goalTip), "diagnostic", "feature-standard", []string{bed.goalID}},
+		{batch.SubjectMember + ":" + bed.changeID, bed.tree(bed.change), "diagnostic", "change-standard", []string{bed.changeID}},
 	}
 	for index, want := range cases {
 		executable, argvFile := bed.fakeChild(fmt.Sprint(index), passed("feature-standard"), verbresult.Result{Outcome: verbresult.Confirmed, Summary: "passed"}, 0)
@@ -292,6 +295,12 @@ func TestProveRunsEachSubjectOnItsTree(t *testing.T) {
 		if attempt.Status != batch.AttemptGreen || attempt.Tree != want.tree || attempt.OpID != outcome.Opening.OpID || attempt.Child == nil {
 			t.Fatalf("prove %s recorded %+v; want green on %s with its child's identity", want.subject, attempt, want.tree)
 		}
+		if !slices.Equal(attempt.Covers, want.covers) || len(want.covers) == 0 && attempt.Covers != nil {
+			t.Fatalf("prove %s covers %q; want %q", want.subject, attempt.Covers, want.covers)
+		}
+	}
+	if len(outcome.Opening.Members) != 2 {
+		t.Fatalf("the series' members = %q; want both", outcome.Opening.Members)
 	}
 	record, err := bed.store().Load(bed.batchID)
 	if err != nil || len(record.Attempts) != len(cases) {

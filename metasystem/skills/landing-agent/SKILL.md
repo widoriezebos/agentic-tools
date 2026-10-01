@@ -98,7 +98,8 @@ do not improvise the step by hand.
    `metasystem agent ask MACHINE --text ...` when the kernel did not already.
 8. **Hand back** with typed evidence, never without it:
    - `metasystem landing return M --disposition red` needs a red attempt of this batch with
-     subject `member:M`, or `batch` naming M;
+     subject `member:M`, or a red `batch` attempt that triage places on M: M red alone on the
+     same base, or the base green with every other member green alone;
    - `metasystem landing return M --disposition conflict` and `--disposition seam-too-large` need
      the composition evidence: the `begin` refusal or the conflict recorded with
      `--record-conflict`;

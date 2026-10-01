@@ -2,6 +2,7 @@ package batch
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -31,17 +32,19 @@ func evidenceStore(t *testing.T) Store {
 		attempt ProofAttempt
 		status  string
 	}{
-		{ProofAttempt{ID: "a1", Subject: SubjectBatch, Names: []string{"m-red"}}, AttemptRed},
-		{ProofAttempt{ID: "a2", Subject: SubjectMember, Member: "m-unavailable"}, AttemptUnavailable},
-		{ProofAttempt{ID: "a3", Subject: SubjectBatch, Names: []string{"m-unavailable", "m-green"}}, AttemptUnavailable},
-		{ProofAttempt{ID: "a4", Subject: SubjectMember, Member: "m-green"}, AttemptGreen},
+		// m-red's own red places the batch's red on it.
+		{ProofAttempt{ID: "a0", Subject: SubjectMember, Member: "m-red", Covers: []string{"m-red"}}, AttemptRed},
+		{ProofAttempt{ID: "a1", Subject: SubjectBatch, Covers: []string{"m-red"}}, AttemptRed},
+		{ProofAttempt{ID: "a2", Subject: SubjectMember, Member: "m-unavailable", Covers: []string{"m-unavailable"}}, AttemptUnavailable},
+		{ProofAttempt{ID: "a3", Subject: SubjectBatch, Covers: []string{"m-unavailable", "m-green"}}, AttemptUnavailable},
+		{ProofAttempt{ID: "a4", Subject: SubjectMember, Member: "m-green", Covers: []string{"m-green"}}, AttemptGreen},
 		{ProofAttempt{ID: "a5", Subject: SubjectBase}, AttemptRed},
-		{ProofAttempt{ID: "a6", Subject: SubjectMember, Member: "m-flaky"}, AttemptRed},
-		{ProofAttempt{ID: "a7", Subject: SubjectMember, Member: "m-flaky"}, AttemptGreen},
-		{ProofAttempt{ID: "a8", Subject: SubjectBatch, Names: []string{"m-recovered"}}, AttemptRed},
-		{ProofAttempt{ID: "a9", Subject: SubjectMember, Member: "m-recovered"}, AttemptUnavailable},
+		{ProofAttempt{ID: "a6", Subject: SubjectMember, Member: "m-flaky", Covers: []string{"m-flaky"}}, AttemptRed},
+		{ProofAttempt{ID: "a7", Subject: SubjectMember, Member: "m-flaky", Covers: []string{"m-flaky"}}, AttemptGreen},
+		{ProofAttempt{ID: "a8", Subject: SubjectBatch, Covers: []string{"m-recovered"}}, AttemptRed},
+		{ProofAttempt{ID: "a9", Subject: SubjectMember, Member: "m-recovered", Covers: []string{"m-recovered"}}, AttemptUnavailable},
 		// A red still running has not spoken for its member.
-		{ProofAttempt{ID: "a10", Subject: SubjectMember, Member: "m-green"}, AttemptRunning},
+		{ProofAttempt{ID: "a10", Subject: SubjectMember, Member: "m-green", Covers: []string{"m-green"}}, AttemptRunning},
 	} {
 		row.attempt.OpID = "op-1"
 		must(t, StartAttempt(store, evidenceBatch, row.attempt))
@@ -68,7 +71,7 @@ func TestReturnEvidencePerDisposition(t *testing.T) {
 		member, disposition, person string
 		evidence, code              string
 	}{
-		{"m-red", DispositionRed, "", "attempt a1 (batch)", ""},
+		{"m-red", DispositionRed, "", "attempt a1 (batch, placed by attempt a0 (member:m-red))", ""},
 		{"m-unavailable", DispositionRed, "", "", CodeReturnEvidenceMissing},
 		{"m-green", DispositionRed, "", "", CodeReturnEvidenceMissing},
 		{"m-conflict", DispositionRed, "", "", CodeReturnEvidenceMissing},
@@ -116,14 +119,14 @@ func TestTypedReturnKeepsItsEvidenceAndRefusesWithout(t *testing.T) {
 		t.Fatalf("a refused return changed the batch: %+v", after.Units[1])
 	}
 	evidence, err := RequestTypedReturn(store, evidenceBatch, "m-red", DispositionRed, "", "its own test fails", "lane:test", evidenceNow)
-	if err != nil || evidence != "attempt a1 (batch)" {
+	if err != nil || evidence != "attempt a1 (batch, placed by attempt a0 (member:m-red))" {
 		t.Fatalf("red return = %q, %v", evidence, err)
 	}
 	returned, err := store.Load(evidenceBatch)
 	must(t, err)
 	unit := returned.Units[0]
 	if unit.State != UnitReturnPending || unit.Outcome != UnitEjected || unit.Disposition != DispositionRed || unit.Evidence != evidence ||
-		unit.Failure != "red: attempt a1 (batch): its own test fails" {
+		unit.Failure != "red: attempt a1 (batch, placed by attempt a0 (member:m-red)): its own test fails" {
 		t.Fatalf("returned member = %+v", unit)
 	}
 	if again, err := RequestTypedReturn(store, evidenceBatch, "m-red", DispositionRed, "", "its own test fails", "lane:test", evidenceNow); err != nil || again != evidence {
@@ -142,5 +145,86 @@ func TestTypedReturnKeepsItsEvidenceAndRefusesWithout(t *testing.T) {
 	withdrawn, _ := store.Load(evidenceBatch)
 	if unit := withdrawn.Units[5]; unit.Outcome != UnitWithdrawn || unit.Disposition != DispositionPerson || unit.Evidence != "person Wido" {
 		t.Fatalf("person return = %+v", unit)
+	}
+}
+
+// diagnosisRecord is a batch of members whose series op-1 the attempts
+// prove, each with its outcome, as landing prove records them: a batch
+// attempt covers every member, member:M only M, the base none.
+func diagnosisRecord(t *testing.T, members []string, attempts ...[2]string) Record {
+	t.Helper()
+	store := NewStore(t.TempDir(), nil)
+	var units []Unit
+	for _, member := range members {
+		units = append(units, Unit{GoalID: member, Chain: "chain-" + member, SeatRoot: "/seat", State: UnitJoined,
+			Claim: Claim{Machine: "seat", Lineage: "seat-lineage", Epoch: 1, Revision: 2, AccountingRevision: 2}})
+	}
+	must(t, store.Create(Record{Schema: 1, BatchID: evidenceBatch, State: StateProving, Units: units}))
+	must(t, store.Update(evidenceBatch, func(record *Record) error {
+		record.Openings = append(record.Openings, Opening{OpID: "op-1", Actor: "lane:test", Members: members})
+		return nil
+	}))
+	for index, row := range attempts {
+		attempt := ProofAttempt{ID: fmt.Sprintf("d%d", index+1), OpID: "op-1"}
+		switch subject := row[0]; {
+		case subject == SubjectBatch:
+			attempt.Subject, attempt.Covers = SubjectBatch, members
+		case subject == SubjectBase:
+			attempt.Subject = SubjectBase
+		default:
+			attempt.Subject, attempt.Member, attempt.Covers = SubjectMember, strings.TrimPrefix(subject, "member:"), []string{strings.TrimPrefix(subject, "member:")}
+		}
+		must(t, StartAttempt(store, evidenceBatch, attempt))
+		must(t, FinishAttempt(store, evidenceBatch, attempt.ID, row[1], "", "", nil, evidenceNow))
+	}
+	record, err := store.Load(evidenceBatch)
+	must(t, err)
+	return record
+}
+
+// A red of the whole batch covers every member but names none by itself
+// (K8): it is a member's red evidence only when diagnosis places it there,
+// by the member's own red on the same base, or by a green base with every
+// other member green alone. The base's own red names nobody.
+func TestBatchRedNamesAMemberOnlyByDiagnosis(t *testing.T) {
+	t.Parallel()
+	pair := []string{"goal-a", "goal-b"}
+	for _, row := range []struct {
+		name     string
+		members  []string
+		attempts [][2]string
+		member   string
+		evidence string
+	}{
+		{"batch red alone", pair, [][2]string{{"batch", AttemptRed}}, "goal-a", ""},
+		{"batch red alone, the other member", pair, [][2]string{{"batch", AttemptRed}}, "goal-b", ""},
+		{"the member's own red first", pair, [][2]string{{"member:goal-a", AttemptRed}, {"batch", AttemptRed}}, "goal-a",
+			"attempt d2 (batch, placed by attempt d1 (member:goal-a))"},
+		{"another member's red places nothing here", pair, [][2]string{{"member:goal-a", AttemptRed}, {"batch", AttemptRed}}, "goal-b", ""},
+		{"the member's own red, then green", pair, [][2]string{{"member:goal-a", AttemptRed}, {"member:goal-a", AttemptGreen}, {"batch", AttemptRed}}, "goal-a", ""},
+		{"base green and the other member green alone", pair, [][2]string{{"batch", AttemptRed}, {"base", AttemptGreen}, {"member:goal-b", AttemptGreen}}, "goal-a",
+			"attempt d1 (batch, placed by the green base in attempt d2)"},
+		{"base green, the other member not run alone", pair, [][2]string{{"batch", AttemptRed}, {"base", AttemptGreen}}, "goal-a", ""},
+		{"base green, but this member green alone", pair, [][2]string{{"batch", AttemptRed}, {"base", AttemptGreen}, {"member:goal-b", AttemptGreen}}, "goal-b", ""},
+		{"one member, base green", []string{"goal-a"}, [][2]string{{"batch", AttemptRed}, {"base", AttemptGreen}}, "goal-a",
+			"attempt d1 (batch, placed by the green base in attempt d2)"},
+		{"one member, base red", []string{"goal-a"}, [][2]string{{"batch", AttemptRed}, {"base", AttemptRed}}, "goal-a", ""},
+		{"one member, base could not run", []string{"goal-a"}, [][2]string{{"batch", AttemptRed}, {"base", AttemptUnavailable}}, "goal-a", ""},
+		{"the member's red after the batch's speaks itself", pair, [][2]string{{"batch", AttemptRed}, {"member:goal-a", AttemptRed}}, "goal-a",
+			"attempt d2 (member:goal-a)"},
+	} {
+		record := diagnosisRecord(t, row.members, row.attempts...)
+		evidence, err := ReturnEvidence(record, row.member, DispositionRed, "")
+		var refusal *ReturnRefusal
+		switch {
+		case row.evidence != "" && (err != nil || evidence != row.evidence):
+			t.Errorf("%s: %s as red = %q, %v; want %q", row.name, row.member, evidence, err, row.evidence)
+		case row.evidence == "" && (!errors.As(err, &refusal) || refusal.Code != CodeReturnEvidenceMissing):
+			t.Errorf("%s: %s as red = %q, %v; want refused for want of evidence", row.name, row.member, evidence, err)
+		}
+	}
+	record := diagnosisRecord(t, pair, [2]string{"batch", AttemptRed})
+	if _, err := ReturnEvidence(record, "goal-a", DispositionRed, ""); err == nil || !strings.Contains(err.Error(), "--subject member:goal-a") {
+		t.Errorf("an unplaced batch red's refusal = %v; want it to name the member's own proof", err)
 	}
 }
