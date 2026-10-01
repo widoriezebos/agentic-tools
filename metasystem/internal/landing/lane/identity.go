@@ -37,7 +37,7 @@ type ClaimIdentity struct {
 	Epoch   uint64
 }
 
-// Actor is the lane's actor on batch records and in LandSeries, lane:<id>;
+// Actor is the lane's actor on batch records and on what it lands, lane:<id>;
 // a session id is audit only.
 func (identity ClaimIdentity) Actor() string { return AccountID(identity.Root) }
 
