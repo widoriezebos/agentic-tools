@@ -22,8 +22,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/kernel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
@@ -62,16 +62,6 @@ type laneVerbOwners struct {
 	// installation is the metasystem installation of a lane checkout: the
 	// module root.
 	installation func(root string) (string, error)
-	// prove runs the tests of the lane checkout's tree; push puts its
-	// proven HEAD on main (rail 1).
-	prove func(kernel.ProveRequest) (kernel.TreeProof, error)
-	push  func(kernel.PushRequest) (kernel.PushOutcome, error)
-	// startProof starts the proof detached and returns at once.
-	startProof func(kernel.ProveRequest) (kernel.Started, error)
-	// proofCaller proves the caller of landing prove may charge a proof to
-	// the lane: a person, or a descendant of its landing agent. It is
-	// checked before the proof detaches, while the caller still lives.
-	proofCaller func(layout lane.Layout) error
 	// unset runs landing unset's journaled steps for the person by.
 	unset func(home, by string, force bool) (lane.UnsetReport, error)
 	// laneHeld lists the goals the ledger, read from an installation,
@@ -80,14 +70,12 @@ type laneVerbOwners struct {
 	// oldOwnerClaims lists the goals the ledger, read from an
 	// installation, shows claimed by the old owner lineage (R9-01).
 	oldOwnerClaims func(installation string) ([]string, error)
-	// agent proves the caller descends from the landing agent's launch that
-	// holds the lane checkout (K7).
-	agentCaller func(checkout string) error
-	// returnMember runs one return.
-	returnMember func(batchowner.MemberReturn) (batchowner.MemberReturnReport, error)
 	// keeper is the landing agent's keeper of the lane checkout root, the
 	// one the lane checkout's steward runs each tick (landing run).
 	keeper func(home, root string) lane.AgentKeeper
+	// plainProve are landing prove's effects (plain lane); the zero value
+	// starts the engine detached through the kernel's detached start.
+	plainProve plain.ProveSeams
 }
 
 func (inv *intentInvocation) landing() laneVerbOwners {
@@ -125,24 +113,6 @@ func (inv *intentInvocation) landing() laneVerbOwners {
 			return layout.InstallationRoot, err
 		}
 	}
-	if owners.prove == nil {
-		owners.prove = func(request kernel.ProveRequest) (kernel.TreeProof, error) {
-			return kernel.Prove(request, kernel.ProductionProveSeams())
-		}
-	}
-	if owners.startProof == nil {
-		owners.startProof = func(request kernel.ProveRequest) (kernel.Started, error) {
-			return kernel.StartProof(request, kernel.ProductionStartSeams())
-		}
-	}
-	if owners.proofCaller == nil {
-		owners.proofCaller = laneProofCaller
-	}
-	if owners.push == nil {
-		owners.push = func(request kernel.PushRequest) (kernel.PushOutcome, error) {
-			return kernel.Push(request, kernel.ProductionPushSeams())
-		}
-	}
 	if owners.laneHeld == nil {
 		now := owners.now
 		owners.laneHeld = func(installation string) ([]string, error) { return laneHeldGoals(installation, now()) }
@@ -159,12 +129,6 @@ func (inv *intentInvocation) landing() laneVerbOwners {
 	if owners.oldOwnerClaims == nil {
 		now := owners.now
 		owners.oldOwnerClaims = func(installation string) ([]string, error) { return laneOldOwnerClaims(installation, now()) }
-	}
-	if owners.agentCaller == nil {
-		owners.agentCaller = laneAgentCaller
-	}
-	if owners.returnMember == nil {
-		owners.returnMember = batchowner.ReturnMember
 	}
 	if owners.keeper == nil {
 		owners.keeper = func(home, root string) lane.AgentKeeper { return newLandingAgentKeeper(root, home, newLandingAgent()) }
@@ -298,8 +262,12 @@ func runIntentLandingStatus(inv *intentInvocation) int {
 	view := inv.laneView(owners, home)
 	record, _, unreadable := lane.Read(home)
 	data := landingStatus(owners, home, record, view)
-	result := intentResult{Outcome: intentConfirmed, Summary: view.Summary, Data: data,
-		view: withRunningProof(inv.landingStatusView(view, unreadable != nil), data.RunningProof)}
+	summary := view.Summary
+	if view.Root != nil {
+		summary += "; " + landingQueueWords(data.Queue)
+	}
+	result := intentResult{Outcome: intentConfirmed, Summary: summary, Data: data,
+		view: withPlainLane(withRunningProof(inv.landingStatusView(view, unreadable != nil), data.RunningProof), data)}
 	if view.Root != nil {
 		result.Targets = laneTargets(*view.Root)
 	}
@@ -315,58 +283,99 @@ func runIntentLandingStatus(inv *intentInvocation) int {
 // last proof (its tree and result) and the last push.
 type landingStatusData struct {
 	lane.View
-	Paused     bool              `json:"paused"`
-	AgentAlive bool              `json:"agent_alive"`
-	Queue      []landingQueued   `json:"queue"`
-	LastProof  *kernel.TreeProof `json:"last_proof"`
+	Paused     bool `json:"paused"`
+	AgentAlive bool `json:"agent_alive"`
+	// Queue is every hand-in of the plain lane's queue.jsonl, oldest
+	// first, with its state: waiting, returned, or landed when origin's
+	// main contains its sha.
+	Queue []plain.Entry `json:"queue"`
+	// LastProof is the newest line of results.jsonl.
+	LastProof *plain.Result `json:"last_proof"`
 	// RunningProof is the lane's proof recorded running: running while its
 	// process runs, died when it ended without a result.
 	RunningProof *landingRunningProof `json:"running_proof"`
-	LastPush     *lane.Publication    `json:"last_push"`
-}
-
-// landingQueued is one member in the lane that has not landed or gone back.
-type landingQueued struct {
-	Batch  string `json:"batch"`
-	Member string `json:"member"`
-	Seat   string `json:"seat"`
-	Head   string `json:"head"`
-	State  string `json:"state"`
+	// LastPush is the newest push landing push made.
+	LastPush *plain.Pushed `json:"last_push"`
 }
 
 func landingStatus(owners laneVerbOwners, home string, record lane.Record, view lane.View) landingStatusData {
 	_, paused := lane.ReadPause(home)
-	data := landingStatusData{View: view, Paused: paused, AgentAlive: view.Owner.State == lane.OwnerRunning, Queue: []landingQueued{}}
+	data := landingStatusData{View: view, Paused: paused, AgentAlive: view.Owner.State == lane.OwnerRunning, Queue: []plain.Entry{}}
 	layout, err := record.Layout()
 	if err != nil {
 		return data
 	}
-	read := owners.records
-	if read == nil {
-		read = func(root string) ([]batch.Record, error) { return batch.NewStore(root, nil).Records() }
-	}
-	if records, err := read(record.Root); err == nil {
-		for _, batchRecord := range records {
-			for _, unit := range batchRecord.Units {
-				if unit.State == batch.UnitJoining || unit.State == batch.UnitJoined || unit.State == batch.UnitReturnPending {
-					data.Queue = append(data.Queue, landingQueued{Batch: batchRecord.BatchID, Member: unit.GoalID, Seat: unit.SeatRoot, Head: unit.Head(), State: unit.State})
-				}
-			}
+	install := string(layout.Install)
+	if entries, err := plain.Entries(install); err == nil {
+		// Landed is derived: origin's main as the lane checkout last
+		// fetched it contains the line's sha.
+		checkout := string(layout.Checkout)
+		if main, err := plain.Git(checkout, "rev-parse", "--verify", "--quiet", "refs/remotes/origin/main^{commit}"); err == nil {
+			entries, _ = plain.Landed(entries, plain.ContainedIn(checkout, main))
 		}
+		data.Queue = entries
 	}
-	if proof, ok, err := kernel.LastTreeProof(layout); err == nil && ok {
-		data.LastProof = &proof
+	if result, ok, err := plain.LastResult(install); err == nil && ok {
+		data.LastProof = &result
 	}
-	data.RunningProof = readLandingRunningProof(layout)
-	if published, err := lane.ReadPublications(home); err == nil {
-		for index := len(published) - 1; index >= 0; index-- {
-			if published[index].Kind == lane.KindLanding {
-				data.LastPush = &published[index]
-				break
-			}
-		}
+	data.RunningProof = readLandingRunningProof(install, owners.plainProve)
+	if push, ok, err := plain.LastPush(install); err == nil && ok {
+		data.LastPush = &push
 	}
 	return data
+}
+
+// landingQueueWords counts the queue's lines by state, for the one line.
+func landingQueueWords(queue []plain.Entry) string {
+	waiting, returned := 0, 0
+	for _, entry := range queue {
+		switch entry.State {
+		case plain.StateWaiting:
+			waiting++
+		case plain.StateReturned:
+			returned++
+		}
+	}
+	return fmt.Sprintf("%d waiting, %d returned in the queue", waiting, returned)
+}
+
+// withPlainLane adds the plain lane's queue, last proof and last push to
+// landing status's page: the lines that wait or were returned, and with
+// --verbose the landed ones too.
+func withPlainLane(view func(*textui.Page), data landingStatusData) func(*textui.Page) {
+	return func(page *textui.Page) {
+		view(page)
+		if data.Root == nil {
+			return
+		}
+		rows := [][2]string{}
+		for _, entry := range data.Queue {
+			if entry.State == plain.StateLanded && !page.Verbose() {
+				continue
+			}
+			state := entry.State
+			if entry.State == plain.StateReturned {
+				state += ": " + entry.Reason
+			}
+			rows = append(rows, [2]string{entry.Goal, entry.Branch + " at " + shortLandingID(entry.SHA) + " from " + entry.Seat + " · " + state})
+		}
+		if len(rows) > 0 {
+			table := page.Section("Queue", "").Table(textui.Column{}, textui.Column{Flex: true, Wrap: true})
+			for _, row := range rows {
+				table.Row(textui.Plain(row[0]), textui.Plain(row[1]))
+			}
+		}
+		if data.LastProof == nil && data.LastPush == nil {
+			return
+		}
+		section := page.Section("Last", "")
+		if proof := data.LastProof; proof != nil {
+			section.KV("proof", textui.Plain(proof.Result+" for "+provedWords(proof.Commit, proof.Tree)+", "+lane.LocalText(proof.At)))
+		}
+		if push := data.LastPush; push != nil {
+			section.KV("push", textui.Plain(shortLandingID(push.Commit)+" (from "+shortLandingID(push.Old)+"), "+lane.LocalText(push.At)))
+		}
+	}
 }
 
 // landingStatusView is landing status's page (output-style §6.5): the

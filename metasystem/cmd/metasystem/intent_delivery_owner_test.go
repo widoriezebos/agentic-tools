@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -16,9 +15,9 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
@@ -343,55 +342,23 @@ func newBatchAdmissionLanding(t *testing.T) (*wholeOwnerLanding, string) {
 	return f, landingRoot
 }
 
-// TestIntentLandBatchAdmissionGitAdapter drives public land into the actual
-// executeBatchJoin: the member reader, transport, unit assembly, protected
-// test gate, the batch store and PublishJoinWithAdmission. Fake effects are
-// the admission's proof run, the claim handover and the batch owner's start;
-// the cost forecast is not in this claim (costForecast=nil, a real branch).
-func TestIntentLandBatchAdmissionGitAdapter(t *testing.T) {
+// TestWorkLandHandsInOverRealGit drives public work land over a real goal
+// branch with a critic's read, pushed to origin, into a registered plain
+// lane: the seat's own branch reads and gates run, one line with the
+// branch's tip lands in the lane's queue.jsonl, and a repeat appends
+// nothing. No batch is joined and no admission proof runs.
+func TestWorkLandHandsInOverRealGit(t *testing.T) {
 	t.Parallel()
 	f, landingRoot := newBatchAdmissionLanding(t)
-	deps := batchowner.ProductionBatchJoinDependencies()
-	deps.CostForecast = nil
-	var handovers, admissions int
-	deps.Handover = func(batchowner.BatchJoinRequest, string, batch.Claim) error { handovers++; return nil }
-	deps.AdmissionRun = func(_ string, _ string, unit batch.Unit) (batch.JoinAdmission, error) {
-		admissions++
-		if unit.State != batch.UnitJoining || unit.Admission == nil || unit.Admission.Status != "handed-over" {
-			t.Fatalf("admission ran before handover: %+v", unit)
-		}
-		return batch.JoinAdmission{Tree: unit.Admission.Tree, Status: "verified", AttemptID: "batch-admission"}, nil
-	}
-	deps.Plan = func(string, string, string) (testpolicy.Plan, error) {
-		return testpolicy.Plan{SelectedGroups: []string{"go-fixture"}, RequiredGroups: []string{"go-fixture"}}, nil
-	}
-	// The claim/budget binding is a fixture fact: the goal's real projected
-	// file under this fixture claim, not the stop-authority owner.
-	deps.Binding = func(root, goalID string, at time.Time) (dispatchcore.GoalBinding, error) {
-		endpoint, err := branch.MainEndpoint(root)
-		if err != nil {
-			return dispatchcore.GoalBinding{}, err
-		}
-		projection, err := goal.Project(endpoint, true, at)
-		if err != nil {
-			return dispatchcore.GoalBinding{}, err
-		}
-		file := projection.Tree.Live[goalID]
-		if file == nil || file.Claimed == nil {
-			return dispatchcore.GoalBinding{}, fmt.Errorf("fixture goal %s is not claimed", goalID)
-		}
-		binding := dispatchcore.GoalBinding{GoalID: goalID, Revision: file.Revision, Machine: "mac-cli", Lineage: "m1", File: file}
-		binding.Capability.ClaimEpoch = 1
-		return binding, nil
-	}
 	owners := defaultIntentOwners()
 	delivery := belowTheGate(defaultIntentDeliveryOwners())
 	delivery.batchRoot = func(string, time.Time) (string, bool, error) { return landingRoot, true, nil }
-	delivery.batchJoin = func(request batchowner.BatchJoinRequest) (batch.Record, error) {
-		return batchowner.ExecuteBatchJoin(request, deps)
+	delivery.batchJoin = func(batchowner.BatchJoinRequest) (batch.Record, error) {
+		t.Fatal("the plain lane joined a batch")
+		return batch.Record{}, nil
 	}
 	delivery.process = func(process intentProcess) intentProcessResult {
-		t.Fatalf("the batch route ran a subprocess %v", process.argv)
+		t.Fatalf("the hand-in ran a subprocess %v", process.argv)
 		return intentProcessResult{}
 	}
 	owners.delivery = delivery
@@ -406,24 +373,18 @@ func TestIntentLandBatchAdmissionGitAdapter(t *testing.T) {
 		return result
 	}
 	result := run()
-	data, _ := result.Data.(map[string]any)
-	if result.Outcome != intentInProgress || data["route"] != "batch" || data["joinedNow"] != true || handovers != 1 || admissions != 1 {
-		t.Fatalf("batch land = %+v; handovers %d admissions %d", result, handovers, admissions)
+	if data, _ := result.Data.(map[string]any); result.Outcome != intentConfirmed || data["route"] != "lane" || !strings.Contains(result.Summary, "handed to the lane") {
+		t.Fatalf("hand-in = %+v", result)
 	}
-	id, _ := data["batchId"].(string)
-	record, err := batch.NewStore(landingRoot, identity.KernelProber{}).Load(id)
-	if err != nil || len(record.Units) != 1 {
-		t.Fatalf("stored batch %s = %+v, %v", id, record, err)
+	entries, err := plain.Entries(landingRoot)
+	if err != nil || len(entries) != 1 || entries[0].SHA != f.branchTip || entries[0].Branch != "goal/standing-validation" {
+		t.Fatalf("the queue line = %+v %v; want the branch tip %s", entries, err, f.branchTip)
 	}
-	unit := record.Units[0]
-	if unit.State != batch.UnitJoined || unit.Admission == nil || unit.Admission.Status != "verified" || unit.Admission.AttemptID != "batch-admission" ||
-		!unit.GoalLast || unit.BranchTip != f.branchTip || len(unit.Builds) != 1 || unit.Builds[0].Commit != f.unit || unit.Approver != "Wido" {
-		t.Fatalf("the admitted member does not bind this goal branch: %+v admission %+v", unit, unit.Admission)
+	if again := run(); again.Outcome != intentUnchanged || !strings.Contains(again.Summary, "waiting") {
+		t.Fatalf("a repeat = %+v", again)
 	}
-	again := run()
-	if again.Outcome != intentInProgress || again.Data.(map[string]any)["joinedNow"] != false || again.Data.(map[string]any)["batchId"] != id ||
-		handovers != 1 || admissions != 1 {
-		t.Fatalf("a repeat reads the stored membership and never joins again: %+v", again)
+	if entries, _ := plain.Entries(landingRoot); len(entries) != 1 {
+		t.Fatalf("a repeat appended: %+v", entries)
 	}
 }
 

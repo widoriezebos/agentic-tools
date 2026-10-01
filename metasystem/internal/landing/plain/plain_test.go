@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -24,8 +23,6 @@ type bed struct {
 	t                       *testing.T
 	root, origin            string
 	checkout, install       string
-	done                    []string
-	doneErr                 error
 	greenScript, redScript  string
 	stampFile, blockRelease string
 	seats                   int
@@ -128,14 +125,8 @@ func (b *bed) prove(script string) Result {
 	return result
 }
 
-func (b *bed) seams() PushSeams {
-	return PushSeams{Now: func() time.Time { return bedNow }, Done: func(entry Entry, main string) (string, error) {
-		if b.doneErr != nil {
-			return "", b.doneErr
-		}
-		b.done = append(b.done, entry.Goal)
-		return "done", nil
-	}}
+func (b *bed) push() (PushOutcome, error) {
+	return Push(b.install, b.checkout, bedNow)
 }
 
 func (b *bed) originMain() string {
@@ -143,14 +134,20 @@ func (b *bed) originMain() string {
 	return b.git(b.root, "--git-dir", b.origin, "rev-parse", "refs/heads/main")
 }
 
-func states(t *testing.T, install string) map[string]string {
-	t.Helper()
-	entries, err := Entries(install)
+// states are the queue's states, landed derived against origin's main.
+func (b *bed) states() map[string]string {
+	b.t.Helper()
+	entries, err := Entries(b.install)
 	if err != nil {
-		t.Fatal(err)
+		b.t.Fatal(err)
+	}
+	b.git(b.checkout, "fetch", "--quiet", "origin")
+	derived, err := Landed(entries, ContainedIn(b.checkout, b.originMain()))
+	if err != nil {
+		b.t.Fatal(err)
 	}
 	out := map[string]string{}
-	for _, entry := range entries {
+	for _, entry := range derived {
 		out[entry.Goal] = entry.State
 	}
 	return out
@@ -158,8 +155,8 @@ func states(t *testing.T, install string) map[string]string {
 
 // Two seats hand in; the agent stand-in merges both on main, proves the
 // result green with the project's command and pushes: main moves by
-// fast-forward to the proven HEAD, both goals are done, and both lines are
-// landed, done first.
+// fast-forward to the proven HEAD and both lines read landed, derived from
+// main; nothing is settled or recorded for them.
 func TestTwoSeatsHandInAndLandByOneGreenPush(t *testing.T) {
 	t.Parallel()
 	b := newBed(t)
@@ -168,9 +165,10 @@ func TestTwoSeatsHandInAndLandByOneGreenPush(t *testing.T) {
 	shaB := b.seat("seat-b", "goal-b")
 	b.handIn("m1e", "goal-a", shaA)
 	b.handIn("ui", "goal-b", shaB)
-	if got := states(t, b.install); got["goal-a"] != StateWaiting || got["goal-b"] != StateWaiting {
+	if got := b.states(); got["goal-a"] != StateWaiting || got["goal-b"] != StateWaiting {
 		t.Fatalf("hand-ins wait: %v", got)
 	}
+	queue, _ := os.ReadFile(queuePath(b.install))
 	head := b.merge("goal-a", "goal-b")
 	result := b.prove(b.greenScript)
 	tree := b.git(b.checkout, "rev-parse", "HEAD^{tree}")
@@ -181,28 +179,26 @@ func TestTwoSeatsHandInAndLandByOneGreenPush(t *testing.T) {
 	if got := strings.Fields(string(stamp)); len(got) != 3 || got[0] != tree || got[1] != head || got[2] != tree {
 		t.Fatalf("the command gets LANDING_TREE and LANDING_COMMIT and runs at HEAD: %q", stamp)
 	}
-	outcome, err := Push(b.install, b.checkout, b.seams())
+	outcome, err := b.push()
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !outcome.Changed || outcome.Old != before || outcome.Commit != head || b.originMain() != head {
 		t.Fatalf("main fast-forwarded to HEAD: %+v origin=%s", outcome, b.originMain())
 	}
-	slices.Sort(b.done)
-	if strings.Join(b.done, ",") != "goal-a,goal-b" || len(outcome.Settled) != 2 {
-		t.Fatalf("both goals done: %v settled=%+v", b.done, outcome.Settled)
+	if got := b.states(); got["goal-a"] != StateLanded || got["goal-b"] != StateLanded {
+		t.Fatalf("both lines read landed: %v", got)
 	}
-	if got := states(t, b.install); got["goal-a"] != StateLanded || got["goal-b"] != StateLanded {
-		t.Fatalf("both lines landed: %v", got)
+	if after, _ := os.ReadFile(queuePath(b.install)); !bytes.Equal(after, queue) {
+		t.Fatalf("a push wrote the queue: %q", after)
 	}
 	if push, ok, err := LastPush(b.install); err != nil || !ok || push.Commit != head || push.Old != before {
 		t.Fatalf("last push: %+v %v %v", push, ok, err)
 	}
-	// Idempotent: the same push again changes nothing and settles nothing.
-	b.done = nil
-	again, err := Push(b.install, b.checkout, b.seams())
-	if err != nil || again.Changed || len(again.Settled) != 0 || len(b.done) != 0 {
-		t.Fatalf("a repeat push: %+v %v done=%v", again, err, b.done)
+	// Idempotent: the same push again changes nothing.
+	again, err := b.push()
+	if err != nil || again.Changed || again.Commit != head {
+		t.Fatalf("a repeat push: %+v %v", again, err)
 	}
 }
 
@@ -217,7 +213,7 @@ func TestPushRefusesRedUnprovenOtherTreeAndNonFastForward(t *testing.T) {
 	b.merge("goal-a")
 	refused := func(code string) {
 		t.Helper()
-		_, err := Push(b.install, b.checkout, b.seams())
+		_, err := b.push()
 		var refusal *Refusal
 		if !errors.As(err, &refusal) || refusal.Code != code {
 			t.Fatalf("want %s, got %v", code, err)
@@ -241,58 +237,45 @@ func TestPushRefusesRedUnprovenOtherTreeAndNonFastForward(t *testing.T) {
 	b.git(filepath.Join(b.root, "seat-b"), "push", "--quiet", "origin", other+":refs/heads/main")
 	main = b.originMain()
 	refused(CodeNotFastForward)
-	if got := states(t, b.install); got["goal-a"] != StateWaiting {
-		t.Fatalf("nothing settled: %v", got)
+	if got := b.states(); got["goal-a"] != StateWaiting {
+		t.Fatalf("not landed: %v", got)
 	}
 }
 
-// F1: a push that crashed before its settlement is finished by the next
-// push, which settles though it has nothing new to push; a done that fails
-// leaves the line waiting, and it is settled once done succeeds.
-func TestNextPushFinishesASettlementACrashLeft(t *testing.T) {
+// Pending is the keeper's signal: a hand-in neither returned nor in main.
+// A line main already contains (pushed, or merged by any route) is not
+// pending, nor is a returned one.
+func TestPendingIsWhatMainDoesNotHoldAndNotReturned(t *testing.T) {
 	t.Parallel()
 	b := newBed(t)
-	sha := b.seat("seat-a", "goal-a")
-	b.handIn("m1e", "goal-a", sha)
-	head := b.merge("goal-a")
-	b.prove(b.greenScript)
-	// The crash: main got HEAD, nothing was settled.
-	b.git(b.checkout, "push", "--quiet", "origin", "HEAD:refs/heads/main")
-	b.doneErr = errors.New("the ledger can't be reached")
-	if _, err := Push(b.install, b.checkout, b.seams()); err == nil || !strings.Contains(err.Error(), "the ledger can't be reached") {
-		t.Fatalf("a failed done is the push's error: %v", err)
+	shaA := b.seat("seat-a", "goal-a")
+	shaB := b.seat("seat-b", "goal-b")
+	shaC := b.seat("seat-c", "goal-c")
+	b.handIn("m1e", "goal-a", shaA)
+	b.handIn("m1e", "goal-b", shaB)
+	b.handIn("ui", "goal-c", shaC)
+	pending := func() []string {
+		t.Helper()
+		entries, err := Pending(b.install, b.checkout)
+		if err != nil {
+			t.Fatal(err)
+		}
+		goals := []string{}
+		for _, entry := range entries {
+			goals = append(goals, entry.Goal)
+		}
+		return goals
 	}
-	if got := states(t, b.install); got["goal-a"] != StateWaiting {
-		t.Fatalf("no landed line before done: %v", got)
+	if got := pending(); strings.Join(got, ",") != "goal-a,goal-b,goal-c" {
+		t.Fatalf("all pending: %v", got)
 	}
-	b.doneErr = nil
-	outcome, err := Push(b.install, b.checkout, b.seams())
-	if err != nil || outcome.Changed || outcome.Commit != head || len(outcome.Settled) != 1 || strings.Join(b.done, ",") != "goal-a" {
-		t.Fatalf("the next push settles: %+v %v done=%v", outcome, err, b.done)
-	}
-	if got := states(t, b.install); got["goal-a"] != StateLanded {
-		t.Fatalf("landed: %v", got)
-	}
-}
-
-// A refused push still settles what main already holds.
-func TestARefusedPushStillSettlesWhatMainHolds(t *testing.T) {
-	t.Parallel()
-	b := newBed(t)
-	sha := b.seat("seat-a", "goal-a")
-	b.handIn("m1e", "goal-a", sha)
 	b.merge("goal-a")
 	b.git(b.checkout, "push", "--quiet", "origin", "HEAD:refs/heads/main")
-	b.write(filepath.Join(b.checkout, "next.txt"), "next\n")
-	b.git(b.checkout, "add", "next.txt")
-	b.git(b.checkout, "commit", "--quiet", "-m", "next")
-	_, err := Push(b.install, b.checkout, b.seams())
-	var refusal *Refusal
-	if !errors.As(err, &refusal) || refusal.Code != CodeUnproven {
-		t.Fatalf("unproven: %v", err)
+	if _, _, err := Return(b.install, "goal-b", "red", bedNow); err != nil {
+		t.Fatal(err)
 	}
-	if got := states(t, b.install); got["goal-a"] != StateLanded {
-		t.Fatalf("settled though refused: %v", got)
+	if got := pending(); strings.Join(got, ",") != "goal-c" {
+		t.Fatalf("landed and returned are not pending: %v", got)
 	}
 }
 

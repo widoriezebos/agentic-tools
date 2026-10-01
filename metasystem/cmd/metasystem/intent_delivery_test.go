@@ -22,7 +22,6 @@ import (
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
@@ -525,6 +524,9 @@ type landingOwners struct {
 
 func (l *landingOwners) install(b *deliveryBed) {
 	b.owners.batchRoot = func(string, time.Time) (string, bool, error) { return "/landing", l.configured, nil }
+	// The plain lane's installation, where work land hands in.
+	laneInstall := filepath.Join(b.t.TempDir(), "lane", "metasystem")
+	b.owners.laneInstall = func(string) (string, error) { return laneInstall, nil }
 	b.owners.redOnMain = func(*intentInvocation, string) (string, error) { return l.redFix, nil }
 	b.owners.batchUnit = func(string, batchowner.BatchJoinRequest, string) (batch.Record, batch.Unit, bool, error) {
 		if l.member == nil {
@@ -794,49 +796,6 @@ func memberUnit(tip string, last bool, commits ...string) batch.Unit {
 	return unit
 }
 
-func TestIntentLandBatchMemberSelection(t *testing.T) {
-	t.Parallel()
-	b := newDeliveryBed(t)
-	landingRoot := t.TempDir()
-	store := batch.NewStore(landingRoot, identity.KernelProber{})
-	first, second := strings.Repeat("1", 40), strings.Repeat("2", 40)
-	prefix := batch.Record{Schema: 1, BatchID: "01k0000000000000000000000a", State: batch.StateOpen, Units: []batch.Unit{memberUnit(first, false, first)}}
-	if err := store.Create(prefix); err != nil {
-		t.Fatal(err)
-	}
-	markBatchLanded(t, landingRoot, prefix.BatchID)
-	joins := 0
-	b.owners.batchRoot = func(string, time.Time) (string, bool, error) { return landingRoot, true, nil }
-	b.owners.batchUnit = productionIntentBatchUnit
-	b.owners.batchJoin = func(batchowner.BatchJoinRequest) (batch.Record, error) {
-		joins++
-		return batch.Record{}, errors.New("unexpected join")
-	}
-	b.owners.branchState = func(string, string) (intentBranchState, error) {
-		return intentBranchState{EndpointTip: strings.Repeat("e", 40)}, nil // the goal branch is gone
-	}
-
-	code, result := b.do("work", "land", "standing-validation", "--through", first)
-	expectOutcome(t, "landed prefix after branch deletion", code, result, intentUnchanged)
-	code, result = b.do("work", "land", "standing-validation")
-	expectOutcome(t, "full request after a landed prefix", code, result, intentRefused)
-	if !strings.Contains(result.Summary, "origin has no goal/standing-validation") || joins != 0 {
-		t.Fatalf("an earlier landed prefix must not answer a whole-goal request: %+v", result)
-	}
-	full := batch.Record{Schema: 1, BatchID: "01k0000000000000000000000b", State: batch.StateOpen, Units: []batch.Unit{memberUnit(second, true, first, second)}}
-	if err := store.Create(full); err != nil {
-		t.Fatal(err)
-	}
-	code, result = b.do("work", "land", "standing-validation")
-	expectOutcome(t, "joined whole goal", code, result, intentInProgress)
-	if joins != 0 || result.Data.(map[string]any)["batchId"] != full.BatchID {
-		t.Fatalf("the whole-goal member is read, never joined again: %+v", result)
-	}
-	markBatchLanded(t, landingRoot, full.BatchID)
-	code, result = b.do("work", "land", "standing-validation")
-	expectOutcome(t, "whole goal landed, branch deleted", code, result, intentUnchanged)
-}
-
 func TestIntentReviewCommitClosesThenPublishes(t *testing.T) {
 	t.Parallel()
 	b := newDeliveryBed(t)
@@ -939,50 +898,6 @@ func markBatchLanded(t *testing.T, landingRoot, id string) {
 	encoded, _ := json.Marshal(record)
 	if err := os.WriteFile(path, encoded, 0o644); err != nil {
 		t.Fatal(err)
-	}
-}
-
-// A landed whole-goal member answers only for the branch tip it joined at:
-// new work on a later goal branch is inspected and routed, never reported
-// as the old landing.
-func TestIntentLandOldWholeLandingDoesNotAnswerFreshBranch(t *testing.T) {
-	t.Parallel()
-	b := newDeliveryBed(t)
-	landingRoot := t.TempDir()
-	store := batch.NewStore(landingRoot, identity.KernelProber{})
-	old, fresh := strings.Repeat("1", 40), strings.Repeat("7", 40)
-	record := batch.Record{Schema: 1, BatchID: "01k0000000000000000000000c", State: batch.StateOpen, Units: []batch.Unit{memberUnit(old, true, old)}}
-	if err := store.Create(record); err != nil {
-		t.Fatal(err)
-	}
-	markBatchLanded(t, landingRoot, record.BatchID)
-	var joins []batchowner.BatchJoinRequest
-	b.owners.batchRoot = func(string, time.Time) (string, bool, error) { return landingRoot, true, nil }
-	b.owners.batchUnit = productionIntentBatchUnit
-	b.owners.batchJoin = func(request batchowner.BatchJoinRequest) (batch.Record, error) {
-		joins = append(joins, request)
-		return batch.Record{BatchID: "01k0000000000000000000000d", State: batch.StateOpen}, nil
-	}
-	b.owners.branchState = func(string, string) (intentBranchState, error) {
-		return intentBranchState{EndpointTip: strings.Repeat("e", 40), BranchTip: fresh, Sources: []string{"critic-root"},
-			Status: branch.Status{Tip: fresh, Prefix: 1, Units: []branch.UnitStatus{{Unit: "u9", Commit: fresh}}}}, nil
-	}
-	code, result := b.do("work", "land", "standing-validation")
-	expectOutcome(t, "fresh branch after an old whole landing", code, result, intentInProgress)
-	if len(joins) != 1 || !joins[0].Last || result.Data.(map[string]any)["joinedNow"] != true {
-		t.Fatalf("the fresh branch must join as new work: %v %+v", joins, result)
-	}
-	failing := errors.New("goal branch unreadable")
-	b.owners.branchState = func(string, string) (intentBranchState, error) { return intentBranchState{}, failing }
-	code, result = b.do("work", "land", "standing-validation")
-	expectOutcome(t, "unreadable branch", code, result, intentRefused)
-	b.owners.branchState = func(string, string) (intentBranchState, error) {
-		return intentBranchState{EndpointTip: strings.Repeat("e", 40)}, nil
-	}
-	code, result = b.do("work", "land", "standing-validation")
-	expectOutcome(t, "retained landing once the branch is gone", code, result, intentUnchanged)
-	if len(joins) != 1 {
-		t.Fatal("a retained landed member is not joined again")
 	}
 }
 
@@ -1128,37 +1043,6 @@ func TestWorkLandHelpStatesTheLaneRouting(t *testing.T) {
 	// Since U11b a batch of changes alone is proved on the lane's account.
 	if strings.Contains(flat, "every proof is charged to a goal") {
 		t.Errorf("work land help still says every proof is charged to a goal:\n%s", page)
-	}
-}
-
-// A batch owner's refusal to take the goal reads as words on line 1; its
-// code is a detail --verbose and --json show, never the headline.
-func TestIntentLandBatchRefusalSpeaksWordsNotItsCode(t *testing.T) {
-	t.Parallel()
-	b := newDeliveryBed(t)
-	landingRoot := t.TempDir()
-	store := batch.NewStore(landingRoot, identity.KernelProber{})
-	sealed := batch.Record{Schema: 1, BatchID: "01k0000000000000000000000e", State: batch.StateSealed}
-	if err := store.Create(sealed); err != nil {
-		t.Fatal(err)
-	}
-	b.owners.batchRoot = func(string, time.Time) (string, bool, error) { return landingRoot, true, nil }
-	b.owners.batchUnit = productionIntentBatchUnit
-	b.owners.batchJoin = func(batchowner.BatchJoinRequest) (batch.Record, error) {
-		return batch.Record{}, batch.CloseAdmissionForCost(store, sealed.BatchID, "owner", time.Unix(1, 0), batch.CostForecast{})
-	}
-	fresh := strings.Repeat("7", 40)
-	b.owners.branchState = func(string, string) (intentBranchState, error) {
-		return intentBranchState{EndpointTip: strings.Repeat("e", 40), BranchTip: fresh, Sources: []string{"critic-root"},
-			Status: branch.Status{Tip: fresh, Prefix: 1, Units: []branch.UnitStatus{{Unit: "u9", Commit: fresh}}}}, nil
-	}
-	code, result := b.do("work", "land", "standing-validation")
-	expectOutcome(t, "sealed batch", code, result, intentRefused)
-	if strings.Contains(result.Summary, "BATCH_SEALED") || !strings.Contains(result.Summary, "takes no more changes") {
-		t.Fatalf("line 1 is the batch owner's words, without its code: %q", result.Summary)
-	}
-	if !slices.Contains(result.Details, "refusal code: BATCH_SEALED") {
-		t.Fatalf("the code is a detail for --verbose and --json: %q", result.Details)
 	}
 }
 

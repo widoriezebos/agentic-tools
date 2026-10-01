@@ -1871,7 +1871,7 @@ func (inv *intentInvocation) landGoalRoute(goalID, through string) intentResult 
 		if through != "" && selected != "" {
 			selected = through
 		}
-		if result := inv.laneQueueState(targets, install, goalID, selected); result != nil {
+		if result := inv.laneQueueState(targets, install, goalID, selected, state.EndpointTip); result != nil {
 			return *result
 		}
 	}
@@ -1898,7 +1898,7 @@ func (inv *intentInvocation) landGoalRoute(goalID, through string) intentResult 
 	// reader record lands by hand only as the fix of an open red on main.
 	unread := slices.IndexFunc(state.Sources[:min(count, len(state.Sources))], func(source string) bool { return source != "critic-root" })
 	if unread < 0 || state.ReadsWaived {
-		return inv.handIn(targets, laneInstall, goalID, subject)
+		return inv.handIn(targets, laneInstall, goalID, subject, state.EndpointTip)
 	}
 	entry, err := inv.redOnMainFixed(goalID)
 	if err != nil {

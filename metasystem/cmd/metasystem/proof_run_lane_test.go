@@ -272,19 +272,13 @@ func TestLaneAgentIsProvenAtTheInstallationRoot(t *testing.T) {
 		return checkout, string(layout.Install)
 	}
 
-	checkout, install := lane("landing-m1l", landinglane.AgentLineage)
+	_, install := lane("landing-m1l", landinglane.AgentLineage)
 	if err := proveLaneOwnerCaller(install, int64(os.Getpid())); err != nil {
 		t.Fatalf("the agent holding the installation was refused a proof over a stale checkout lease: %v", err)
 	}
-	if err := laneAgentCaller(checkout); err != nil {
-		t.Fatalf("the agent holding the installation was refused a return over a stale checkout lease: %v", err)
-	}
 
-	checkout, install = lane(landinglane.AgentLineage, "steward-seat")
+	_, install = lane(landinglane.AgentLineage, "steward-seat")
 	if err := proveLaneOwnerCaller(install, int64(os.Getpid())); err == nil || !strings.Contains(err.Error(), "not by its landing agent") {
 		t.Fatalf("a seat holding the installation charged the lane: %v", err)
-	}
-	if err := laneAgentCaller(checkout); err == nil || !strings.Contains(err.Error(), "not by its landing agent") {
-		t.Fatalf("a seat holding the installation returned a member: %v", err)
 	}
 }

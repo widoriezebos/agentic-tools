@@ -1,66 +1,47 @@
 ---
 name: landing-agent
-description: Land the work queued in this computer's landing lane on main as its landing agent - merge the waiting members on main, prove the result, push it, and hand a member that breaks it back to its seat. Use only in a landing session the keeper started in the registered lane checkout (lineage landing-agent). Do not use on a seat, for a seat's own landing (metasystem work land), or to change the lane itself.
+description: Land the work queued in this computer's landing lane on main as its landing agent - merge the waiting goal branches on main, prove the result, push it, and hand a branch that breaks it back to its seat. Use only in a landing session the keeper started in the registered lane checkout (lineage landing-agent). Do not use on a seat, for a seat's own landing (metasystem work land), or to change the lane itself.
 ---
 
 # Landing agent
 
-You are this computer's landing agent. The keeper starts you when work waits in the lane, the lane
-is not stopped, and no other landing agent runs. You work in the lane checkout only. You hold the
-judgement: how to merge, how to fix a conflict, and which member broke a red. Three rails hold
-whatever you believe:
+You are this computer's landing agent, in the lane checkout. You decide how to merge, how to fix a
+conflict and which branch broke a red. The lane only gives you what you can't do alone:
 
-- `metasystem landing push` pushes only a HEAD whose exact tree `metasystem landing prove` recorded
-  green, and only when HEAD contains main: main is never rewritten;
-- one landing agent runs per computer;
-- a person's `metasystem landing stop` pauses the lane: then prove and push refuse, and you stop.
+- `metasystem landing status --json`: `queue` (each line's `goal`, `branch`, `sha`, `seat`,
+  `state`: `waiting`, `landed` when main holds its sha, or `returned`), `running_proof`,
+  `last_proof`, `last_push`, `paused`.
+- `metasystem landing prove`: starts the project's proof command on HEAD's exact tree in the
+  background and returns. **End your turn after it**; you are woken when it ends. Never wait for it.
+- `metasystem landing push`: pushes HEAD to main only when `last_proof` is green for exactly HEAD's
+  tree and HEAD contains origin's main. Nothing else.
+- `metasystem landing return GOAL --reason TEXT`: hands a goal back to its seat with the reason.
 
-Nothing you remember from an earlier session counts: the lane's records are the state.
+You never run `goal done`: a seat concludes its own goal when it sees it landed. Never push main
+with git, force anything, skip hooks, or run `landing set`, `unset` or `start`.
 
 ## The loop
 
-1. Read `metasystem landing status --json`. `queue` lists each waiting member with its batch, its
-   `head` (the commit to merge) and its state; `paused` says whether the lane is stopped;
-   `last_proof` and `last_push` say what was proven and pushed last. When `paused` is true, stop.
-2. In the lane checkout, bring main in and merge the waiting members on it:
-   `git fetch origin`, `git checkout --detach origin/main`, then `git merge --no-ff HEAD_OF_MEMBER`
-   for each member whose state is `joined`, one at a time. Fix a conflict yourself when the fix is
-   small and plain; commit it with a message that says what you resolved.
-3. Run `metasystem landing prove`; it starts the proof and returns. End your turn: you are woken
-   when it ends. Then read `metasystem landing status --json` `last_proof`. The proof runs the
-   selected tests of HEAD's tree, the same tests a seat's own landing runs, and belongs to the lane:
-   it goes on when your session ends. Never wait for it in a loop; while it runs `landing status`
-   shows it in `running_proof` and no other landing agent starts.
-4. When it is green, run `metasystem landing push`. Every member main then contains is recorded
-   landed and its goal goes back to its seat as landed. Go to step 1.
-5. When it is red, decide which member caused it: read the failing tests, the members' diffs and,
-   when that does not settle it, prove smaller merges (main plus one member) with
-   `metasystem landing prove`, ending your turn after each as in step 3. Then hand that member
-   back with `metasystem landing return MEMBER --reason TEXT`, saying which tests fail and why you
-   place them on it. Start again at step 1 without it.
-6. When a member does not merge and the conflict is not yours to fix, return it the same way, with
-   the conflicting paths as the reason.
-7. Stop only when the queue holds no `joined` member: every member is pushed (landed) or returned
-   with `metasystem landing return MEMBER --reason TEXT`, or a proof you started runs (step 3).
-   Never end the session with a member still queued that you cannot land (a conflict you cannot
-   resolve, a red you place on it, anything you cannot finish): return it with its reason first.
-   The keeper starts a new session on every steward tick while work is queued and no proof runs.
-8. When a batch shows `held-unclassified` after a return, return its remaining members too, each
-   with its reason; never leave a batch held.
+1. Read `landing status --json`. If `paused`, stop. If a proof runs, end your turn.
+2. If a proof ended since you merged: green → `landing push`; red → see 3. Otherwise:
+   `git fetch origin`, `git checkout --detach origin/main`, then `git merge --no-ff origin/BRANCH`
+   for every `waiting` line, and `landing prove`. End your turn.
 
-## When the run itself fails
+## Cases
 
-A prove that ends `unavailable` says nothing about the work, nor does a proof that `landing status`
-shows as `died` (its process ended without a result): no member is returned for it. Read
-the reason, fix what is in your reach (a checkout left mid-merge, a stale fetch), and prove again.
-When it stays unavailable, or main itself is red without any member, return the queued members
-with that as the reason, then stop and leave it to a person: say what you saw in your final
-message.
+1. **One branch, green:** merge it, prove, push.
+2. **Several waiting:** merge them all, prove once, push once.
+3. **Red:** find the culprit. Read the log in `last_proof`; when it doesn't settle it, prove
+   smaller merges (latest main plus one branch), one proof per turn. Return the culprit with the
+   failing tests as the reason, then merge the rest on latest main, prove and push.
+4. **Conflict:** fix it when it is small and plain, and commit saying what you resolved. Otherwise
+   return the branch with the conflicting paths as the reason.
+5. **Main moved during the proof** (push refuses: HEAD does not contain main): merge again on the
+   new main and prove again.
+6. **Lane paused:** stop at once.
+7. **The proof won't run** (it died, or its command fails before testing anything): retry it
+   once; if it fails again, return the waiting branches with what you saw as the reason, and say
+   it in your final message.
 
-## What you never do
-
-- Push with git: main is never pushed but through `metasystem landing push`.
-- Edit main's history, force anything, or skip hooks.
-- Return a member without a reason that names the failing tests or the conflict.
-- Never run `metasystem landing set`, `metasystem landing unset` or `metasystem landing start`:
-  those are a person's acts.
+Never end your session with a `waiting` line you could act on: push it, return it, or have a
+proof running.

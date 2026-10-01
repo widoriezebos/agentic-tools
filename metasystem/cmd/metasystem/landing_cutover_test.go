@@ -18,7 +18,6 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
@@ -54,30 +53,6 @@ func TestCutoverRefusedWithOldOwnerClaims(t *testing.T) {
 		}
 		if record, _, _ := lane.Read(verbs.home); record.Root != verbs.landingB || record.CustodyEpoch != 0 {
 			t.Fatalf("the refused set changed the lane record: %+v", record)
-		}
-	})
-
-	// A person's return of a member the ledger shows claimed under the old
-	// lineage moves nothing: the lane acts only as its own claim identity,
-	// so the return is not confirmed, the ledger still shows the old
-	// claim, and the reason names a person's release.
-	t.Run("return", func(t *testing.T) {
-		bed := newLaneReturnBed(t)
-		// The ledger's entry as the join left it, now held under the old
-		// lineage.
-		if err := os.WriteFile(filepath.Join(bed.seat, "plans", "goals", "standing-validation.md"), goal.RenderFile(bed.ledger(t)), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		amendSyncedGoalFixture(t, bed.seat, "the old owner holds it", func(file *goal.GoalFile) {
-			file.Claimed.Lineage = oldOwnerLineage
-		})
-		bed.person = nil
-		code, result := bed.run(t, "standing-validation", "--reason", "the lane changes owner")
-		if code == 0 || result.Outcome == intentConfirmed || result.Next == nil || !strings.Contains(strings.Join(result.Next.Argv, " "), "goal release standing-validation") {
-			t.Fatalf("a person's return of an old-owner claim = %d %+v; want it unconfirmed, naming a person's release", code, result)
-		}
-		if file := bed.ledger(t); file.Claimed == nil || file.Claimed.Lineage != oldOwnerLineage {
-			t.Fatalf("the old owner's claim was moved: %+v", file.Claimed)
 		}
 	})
 

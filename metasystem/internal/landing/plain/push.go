@@ -2,10 +2,7 @@ package plain
 
 // landing push: HEAD goes on main only when results.jsonl says green for
 // exactly HEAD's tree and origin's main is an ancestor of HEAD, leased at
-// that main. Then every waiting hand-in main contains is settled. The
-// settlement runs on every push, also when there is nothing new to push or
-// the push is refused, so a crash between a push and its settlement is
-// finished by the next push.
+// that main. Nothing else: a hand-in main then contains reads landed.
 
 import (
 	"errors"
@@ -41,34 +38,21 @@ type Pushed struct {
 }
 
 // PushOutcome is what a push did: main moved from Old to Commit
-// (Changed), or already held HEAD; Settled are the hand-ins it settled.
+// (Changed), or already held HEAD.
 type PushOutcome struct {
-	Old     string  `json:"old"`
-	Commit  string  `json:"commit"`
-	Tree    string  `json:"tree"`
-	Changed bool    `json:"changed"`
-	Settled []Entry `json:"settled"`
-}
-
-// PushSeams are a push's effects.
-type PushSeams struct {
-	Now func() time.Time
-	// Done concludes a settled hand-in's goal; it returns a note kept with
-	// the landed line.
-	Done func(entry Entry, main string) (string, error)
+	Old     string `json:"old"`
+	Commit  string `json:"commit"`
+	Tree    string `json:"tree"`
+	Changed bool   `json:"changed"`
 }
 
 // Push runs landing push in the lane checkout.
-func Push(install, checkout string, seams PushSeams) (PushOutcome, error) {
-	now := func() time.Time { return time.Now().UTC() }
-	if seams.Now != nil {
-		now = seams.Now
-	}
+func Push(install, checkout string, now time.Time) (PushOutcome, error) {
 	head, tree, err := Head(checkout)
 	if err != nil {
 		return PushOutcome{}, err
 	}
-	outcome := PushOutcome{Commit: head, Tree: tree, Settled: []Entry{}}
+	outcome := PushOutcome{Commit: head, Tree: tree}
 	if _, err := Git(checkout, "fetch", "--quiet", "origin", "+refs/heads/main:refs/remotes/origin/main"); err != nil {
 		return outcome, fmt.Errorf("fetch origin's main: %w", err)
 	}
@@ -77,42 +61,33 @@ func Push(install, checkout string, seams PushSeams) (PushOutcome, error) {
 		return outcome, fmt.Errorf("read origin's main: %w", err)
 	}
 	outcome.Old = old
-	settle := func(main string) error {
-		settled, err := Settle(install, main, func(sha, main string) (bool, error) { return contains(checkout, sha, main) }, seams.Done, now())
-		outcome.Settled = append(outcome.Settled, settled...)
-		return err
-	}
-	// What main already holds is settled first: a push that crashed before
-	// its settlement is finished here.
-	settleErr := settle(old)
 	onMain, err := IsAncestor(checkout, head, old)
 	if err != nil {
-		return outcome, errors.Join(err, settleErr)
+		return outcome, err
 	}
 	if onMain {
 		outcome.Commit = old
-		return outcome, settleErr
+		return outcome, nil
 	}
 	if refusal := provenGreen(install, tree); refusal != nil {
-		return outcome, errors.Join(refusal, settleErr)
+		return outcome, refusal
 	}
 	forward, err := IsAncestor(checkout, old, head)
 	if err != nil {
-		return outcome, errors.Join(err, settleErr)
+		return outcome, err
 	}
 	if !forward {
-		return outcome, errors.Join(&Refusal{Code: CodeNotFastForward,
+		return outcome, &Refusal{Code: CodeNotFastForward,
 			Reason: "HEAD does not contain origin's main " + Short(old) + ", so pushing it would rewrite main; nothing was pushed",
-			Next:   "merge origin/main into the lane checkout, prove it and push again"}, settleErr)
+			Next:   "merge origin/main into the lane checkout, prove it and push again"}
 	}
 	if _, err := Git(checkout, "push", "--quiet", "--force-with-lease=refs/heads/main:"+old, "origin", head+":refs/heads/main"); err != nil {
-		return outcome, errors.Join(fmt.Errorf("push %s to main: %w", Short(head), err), settleErr)
+		return outcome, fmt.Errorf("push %s to main: %w", Short(head), err)
 	}
 	outcome.Changed = true
-	recordErr := withLock(install, func() error {
-		return appendLine(pushesPath(install), Pushed{Old: old, Commit: head, Tree: tree, At: now().Format(time.RFC3339)})
+	return outcome, withLock(install, func() error {
+		return appendLine(pushesPath(install), Pushed{Old: old, Commit: head, Tree: tree, At: now.UTC().Format(time.RFC3339)})
 	})
-	return outcome, errors.Join(settleErr, recordErr, settle(head))
 }
 
 // provenGreen refuses a tree results.jsonl does not hold green.
@@ -138,13 +113,18 @@ func LastPush(install string) (Pushed, bool, error) {
 	return pushes[len(pushes)-1], true, nil
 }
 
-// contains says whether main contains sha; a commit the checkout does not
-// have is not in main, which the checkout holds whole.
-func contains(dir, sha, main string) (bool, error) {
-	if _, err := Git(dir, "cat-file", "-e", sha+"^{commit}"); err != nil {
-		return false, nil
+// ContainedIn says, in the checkout at dir, whether main contains a sha. A
+// commit the checkout does not have is not in main, which the checkout
+// holds whole; a main it does not have contains nothing it can tell.
+func ContainedIn(dir, main string) func(sha string) (bool, error) {
+	return func(sha string) (bool, error) {
+		for _, commit := range []string{main, sha} {
+			if _, err := Git(dir, "cat-file", "-e", commit+"^{commit}"); err != nil {
+				return false, nil
+			}
+		}
+		return IsAncestor(dir, sha, main)
 	}
-	return IsAncestor(dir, sha, main)
 }
 
 // IsAncestor says whether ancestor is commit or one of its ancestors.

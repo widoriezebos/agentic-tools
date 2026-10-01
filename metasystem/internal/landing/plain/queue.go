@@ -1,11 +1,12 @@
-// Package plain is the plain landing lane (plain-lane design, revision 2):
+// Package plain is the plain landing lane (plain-lane design, revision 3):
 // seats hand goal branches to the lane by one line in a queue file, the
 // landing agent merges and proves them, and landing push puts a proven HEAD
-// on main and settles each line main then contains. Its threat model is our
-// own agents and operators making mistakes and crashing: nothing here
-// defends against an adversary. Every record is a JSON line appended under
-// one small file lock, and every act is idempotent, so a crash at any point
-// is finished by doing the same thing again.
+// on main. Nothing is settled: a line is landed when main contains its sha,
+// derived whenever it is read, and the seat concludes its own goal. Its
+// threat model is our own agents and operators making mistakes and
+// crashing: nothing here defends against an adversary. Every record is a
+// JSON line appended under one small file lock, and every act is
+// idempotent.
 package plain
 
 import (
@@ -21,7 +22,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 )
 
-// The states of a queued line.
+// The states of a queued line. Waiting and returned are recorded; landed
+// is derived: main contains the line's sha.
 const (
 	StateWaiting  = "waiting"
 	StateLanded   = "landed"
@@ -40,7 +42,7 @@ func runningPath(install string) string { return filepath.Join(Dir(install), "ru
 func lockPath(install string) string    { return filepath.Join(Dir(install), "lane.lock") }
 
 // Line is one line of queue.jsonl: a seat's hand-in (no Outcome), or the
-// outcome of the hand-in with the same goal and sha.
+// "returned" outcome of the hand-in with the same goal and sha.
 type Line struct {
 	Goal    string `json:"goal"`
 	Branch  string `json:"branch,omitempty"`
@@ -49,8 +51,6 @@ type Line struct {
 	At      string `json:"at"`
 	Outcome string `json:"outcome,omitempty"`
 	Reason  string `json:"reason,omitempty"`
-	// Main is the main a landed line was settled against.
-	Main string `json:"main,omitempty"`
 }
 
 // Entry is one hand-in and what became of it.
@@ -62,9 +62,8 @@ type Entry struct {
 	At     string `json:"at"`
 	State  string `json:"state"`
 	Reason string `json:"reason,omitempty"`
-	Main   string `json:"main,omitempty"`
-	// SettledAt is when it landed or was returned.
-	SettledAt string `json:"settled_at,omitempty"`
+	// ReturnedAt is when it was returned.
+	ReturnedAt string `json:"returned_at,omitempty"`
 }
 
 // withLock runs fn under the lane's file lock, creating its folder.
@@ -116,7 +115,8 @@ func readLines[T any](path string) ([]T, error) {
 	return out, scanner.Err()
 }
 
-// Entries are the queue's hand-ins, oldest first, each with its state.
+// Entries are the queue's hand-ins, oldest first, each with its recorded
+// state: waiting or returned (Landed derives landed).
 func Entries(install string) ([]Entry, error) {
 	lines, err := readLines[Line](queuePath(install))
 	if err != nil {
@@ -137,12 +137,12 @@ func Entries(install string) ([]Entry, error) {
 		if !seen || entries[at].State != StateWaiting {
 			continue
 		}
-		entries[at].State, entries[at].Reason, entries[at].Main, entries[at].SettledAt = line.Outcome, line.Reason, line.Main, line.At
+		entries[at].State, entries[at].Reason, entries[at].ReturnedAt = line.Outcome, line.Reason, line.At
 	}
 	return entries, nil
 }
 
-// Waiting are the hand-ins without an outcome.
+// Waiting are the hand-ins not returned, landed or not.
 func Waiting(install string) ([]Entry, error) {
 	entries, err := Entries(install)
 	waiting := []Entry{}
@@ -175,7 +175,7 @@ func HandIn(install string, line Line) (entry Entry, added bool, err error) {
 	if line.Goal == "" || line.SHA == "" {
 		return Entry{}, false, errors.New("a hand-in names its goal and its commit")
 	}
-	line.Outcome, line.Reason, line.Main = "", "", ""
+	line.Outcome, line.Reason = "", ""
 	err = withLock(install, func() error {
 		entries, err := Entries(install)
 		if err != nil {
@@ -220,49 +220,51 @@ func Return(install, goal, reason string, now time.Time) (entry Entry, changed b
 		if err := appendLine(queuePath(install), Line{Goal: goal, SHA: latest.SHA, At: at, Outcome: StateReturned, Reason: reason}); err != nil {
 			return err
 		}
-		latest.State, latest.Reason, latest.SettledAt = StateReturned, reason, at
+		latest.State, latest.Reason, latest.ReturnedAt = StateReturned, reason, at
 		entry, changed = latest, true
 		return nil
 	})
 	return entry, changed, err
 }
 
-// Settle settles every waiting hand-in whose sha main contains: first done
-// (the goal's conclusion), then its "landed" line, so a crash between the
-// two leaves the line waiting and the next Settle finishes it. A hand-in
-// whose done fails stays waiting and its error is returned with the rest
-// still settled.
-func Settle(install, main string, contains func(sha, main string) (bool, error), done func(Entry, string) (string, error), now time.Time) ([]Entry, error) {
-	var settled []Entry
+// Landed derives each waiting entry's landing: one whose sha main
+// contains is landed. contains reads it; an error leaves the entry
+// waiting and is returned with the rest still derived.
+func Landed(entries []Entry, contains func(sha string) (bool, error)) ([]Entry, error) {
+	out := make([]Entry, 0, len(entries))
 	var problems []error
-	err := withLock(install, func() error {
-		waiting, err := Waiting(install)
-		if err != nil {
-			return err
-		}
-		for _, entry := range waiting {
-			inside, err := contains(entry.SHA, main)
+	for _, entry := range entries {
+		if entry.State == StateWaiting {
+			inside, err := contains(entry.SHA)
 			if err != nil {
 				problems = append(problems, fmt.Errorf("%s: %w", entry.Goal, err))
-				continue
+			} else if inside {
+				entry.State = StateLanded
 			}
-			if !inside {
-				continue
-			}
-			note, err := done(entry, main)
-			if err != nil {
-				problems = append(problems, fmt.Errorf("%s: %w", entry.Goal, err))
-				continue
-			}
-			at := now.UTC().Format(time.RFC3339)
-			if err := appendLine(queuePath(install), Line{Goal: entry.Goal, SHA: entry.SHA, At: at, Outcome: StateLanded, Reason: note, Main: main}); err != nil {
-				problems = append(problems, fmt.Errorf("%s: %w", entry.Goal, err))
-				continue
-			}
-			entry.State, entry.Reason, entry.Main, entry.SettledAt = StateLanded, note, main, at
-			settled = append(settled, entry)
 		}
-		return nil
-	})
-	return settled, errors.Join(append([]error{err}, problems...)...)
+		out = append(out, entry)
+	}
+	return out, errors.Join(problems...)
+}
+
+// Pending are the hand-ins the lane still has work for: neither returned
+// nor contained in origin's main as the lane checkout last fetched it. It
+// is the signal a keeper wakes the landing agent on.
+func Pending(install, checkout string) ([]Entry, error) {
+	waiting, err := Waiting(install)
+	if err != nil || len(waiting) == 0 {
+		return []Entry{}, err
+	}
+	main, err := Git(checkout, "rev-parse", "--verify", "--quiet", "refs/remotes/origin/main^{commit}")
+	if err != nil {
+		return waiting, nil
+	}
+	derived, err := Landed(waiting, ContainedIn(checkout, main))
+	pending := []Entry{}
+	for _, entry := range derived {
+		if entry.State == StateWaiting {
+			pending = append(pending, entry)
+		}
+	}
+	return pending, err
 }
