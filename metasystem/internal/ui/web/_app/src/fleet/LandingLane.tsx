@@ -6,8 +6,7 @@ import type { Lane, LaneBatch, LaneMember, LaneNext, LaneOwner, LaneOwnerState, 
 /**
  * The host's landing lane (U12; Wido 2026-09-29: "the status of the landing
  * component on the fleet page"): one batch-landing lane per host, one batch
- * proving at a time, and an owner process the steward keeps alive until it
- * gives up.
+ * proving at a time, and a landing agent that runs when there is work.
  *
  * It is drawn from the same /api/board response the host board is, so it
  * adds no request. The panel shows and never acts: the `metasystem landing`
@@ -18,16 +17,15 @@ import type { Lane, LaneBatch, LaneMember, LaneNext, LaneOwner, LaneOwnerState, 
  * panel says it does not report one rather than claiming the host has none.
  */
 
-/** What a person runs to start a stopped or given-up owner. */
+/** What a person runs to resume a lane a person stopped. */
 export const START_COMMAND = "metasystem landing start";
 
 /** The status colour each owner state takes, in the tokens the page uses. */
 const TONE: Record<LaneOwnerState, "ok" | "warn" | "bad" | "neutral"> = {
   running: "ok",
-  restarting: "warn",
+  idle: "neutral",
   stopped: "bad",
-  "given-up": "bad",
-  "not-started": "neutral",
+  unready: "warn",
 };
 
 function toneOf(state: string): string {
@@ -44,10 +42,6 @@ function when(stamp: string, now: Date): string {
     return minuteTime(stamp);
   }
   return at.toDateString() === now.toDateString() ? minuteTime(stamp) : dateAndTime(stamp);
-}
-
-function plural(count: number, word: string): string {
-  return `${String(count)} ${word}${count === 1 ? "" : "s"}`;
 }
 
 export function LaneBlock({ lane, now = new Date() }: { lane: Lane | null | undefined; now?: Date }) {
@@ -93,10 +87,10 @@ function Owner({ owner, now }: { owner: LaneOwner; now: Date }) {
   if (owner.pid !== null) {
     facts.push(`pid ${String(owner.pid)}`);
   }
-  if (owner.restarts > 0) {
-    facts.push(plural(owner.restarts, "restart"));
-  }
-  const needsStart = owner.state === "stopped" || owner.state === "given-up" || owner.state === "not-started";
+  // Idle is the normal state of a ready lane with nothing to land: it gets no
+  // prompt. Unready says why and what fixes it in retry_hint. Only a lane a
+  // person stopped is resumed with landing start.
+  const needsStart = owner.state === "stopped";
   return (
     <div className="ms-fleet-lane-owner">
       <p className="ms-fleet-lane-line">
@@ -107,7 +101,10 @@ function Owner({ owner, now }: { owner: LaneOwner; now: Date }) {
         {facts.length > 0 && <span className="ms-fleet-lane-facts">{facts.join(" · ")}</span>}
       </p>
       {owner.stopped_by !== null && owner.stopped_by !== "" && (
-        <p className="ms-fleet-lane-note">Stopped by {owner.stopped_by}.</p>
+        <p className="ms-fleet-lane-note">
+          Stopped by {owner.stopped_by}
+          {owner.stopped_because !== undefined && owner.stopped_because !== "" ? `: ${owner.stopped_because}` : ""}.
+        </p>
       )}
       {owner.last_exit !== null && owner.last_exit !== "" && (
         <p className="ms-fleet-lane-note">
@@ -119,7 +116,7 @@ function Owner({ owner, now }: { owner: LaneOwner; now: Date }) {
       )}
       {needsStart && (
         <p className="ms-fleet-lane-note">
-          To start it, run <code className="ms-mono ms-fleet-lane-command">{START_COMMAND}</code>
+          To resume it, run <code className="ms-mono ms-fleet-lane-command">{START_COMMAND}</code>
         </p>
       )}
     </div>

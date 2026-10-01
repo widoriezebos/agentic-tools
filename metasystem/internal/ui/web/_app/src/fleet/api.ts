@@ -357,21 +357,24 @@ export type BoardPayload = {
   lane?: Lane | null;
 };
 
-/** What the lane's owner process is doing, as the steward keeps it. */
-export type LaneOwnerState = "running" | "stopped" | "restarting" | "given-up" | "not-started";
+/**
+ * What runs the lane: its landing agent, started on demand when there is
+ * work. Idle is normal (a ready lane with nothing to land); unready is a lane
+ * that cannot run, with the reason and the fix in retry_hint.
+ */
+export type LaneOwnerState = "running" | "idle" | "stopped" | "unready";
 
 /**
- * The lane's owner: the process the steward keeps alive, how often it had to
- * restart it, and — once it stopped or the steward gave up — who stopped it
- * and what a person does next.
+ * The lane's owner: its landing agent while one runs, or a person's stop, and
+ * what a person does next when it cannot run.
  */
 export type LaneOwner = {
   state: LaneOwnerState;
   pid: number | null;
   since: string | null;
-  restarts: number;
   last_exit: string | null;
   stopped_by: string | null;
+  stopped_because?: string;
   retry_hint: string | null;
 };
 
@@ -382,7 +385,7 @@ export type LaneMember = { goal: string; seat: string };
 export type LaneWaiting = { goal: string; seat: string; expected: string | null };
 
 /** Where the batch in hand is: one batch proves at a time on a host. */
-export type LaneBatchState = "collecting" | "waiting" | "proving" | "pushing";
+export type LaneBatchState = "collecting" | "waiting" | "proving" | "pushing" | "held";
 
 /** The batch the lane is working on now. */
 export type LaneBatch = {

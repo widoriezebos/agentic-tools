@@ -903,10 +903,9 @@
 
 /*
  * The host's landing lane, above its seats. The owner's state takes the same
- * status tokens the standings pill does: running is the ok pair, restarting
- * the marker pair, stopped or given up the danger colour on the surface, and
- * not started the muted surface, because a lane nobody started is not an
- * alarm. Every line wraps, so the panel reads at phone width without a
+ * status tokens the standings pill does: running is the ok pair, unready
+ * the marker pair, stopped the danger colour on the surface, and idle the
+ * muted surface, because a ready lane with nothing to land is not an alarm. Every line wraps, so the panel reads at phone width without a
  * sideways scroll; a long root path breaks anywhere rather than overflowing.
  */
 .ms-fleet-lane-summary {
