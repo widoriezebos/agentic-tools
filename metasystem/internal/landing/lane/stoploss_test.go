@@ -2,6 +2,7 @@ package lane
 
 import (
 	"errors"
+	"os"
 	"os/exec"
 	"slices"
 	"strings"
@@ -431,5 +432,42 @@ func TestDeadlineWaitsForAPushInFlight(t *testing.T) {
 	clock = laneNow.Add(AllowanceWindow + PushGrace)
 	if keeper.Step(); len(cancelled) != 1 {
 		t.Fatalf("PushGrace past the deadline: cancelled %v; want the session cancelled", cancelled)
+	}
+}
+
+// TestRepeatedBindLeavesTheStoreUnchanged (R-129-ui): begin repeated for the
+// batch its session already took up is success with no second record: the
+// stop-loss store is not rewritten, with or without a running session.
+func TestRepeatedBindLeavesTheStoreUnchanged(t *testing.T) {
+	t.Parallel()
+	for _, withSession := range []bool{false, true} {
+		home, _, module := nestedLaneDirs(t)
+		clock := laneNow
+		if withSession {
+			agent := &fakeAgent{}
+			keeper := agent.keeper(home, module, &clock, WakeSources{Records: func(string) ([]batch.Record, error) { return queuedBatch, nil }})
+			keeper.Step()
+		}
+		begin := func() error {
+			return Gate(home, OpBegin, AuthorityAgent, func(Record) error { return BindBatchHeld(home, "b-one", clock) })
+		}
+		if err := begin(); err != nil {
+			t.Fatal(err)
+		}
+		first, err := os.ReadFile(stopLossPath(home))
+		if err != nil {
+			t.Fatal(err)
+		}
+		clock = clock.Add(time.Minute)
+		if err := begin(); err != nil {
+			t.Fatalf("session=%v: the same batch begun again: %v", withSession, err)
+		}
+		again, err := os.ReadFile(stopLossPath(home))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(again) != string(first) {
+			t.Fatalf("session=%v: a repeated begin rewrote the stop-loss store:\n%s\nwas\n%s", withSession, again, first)
+		}
 	}
 }

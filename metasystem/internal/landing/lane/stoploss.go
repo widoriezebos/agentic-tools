@@ -338,6 +338,11 @@ func BindBatchHeld(home, batch string, now time.Time) error {
 	if err != nil {
 		return err
 	}
+	// A repeat whose binding holds is success with no second record
+	// (R-129-ui): the store is not written again.
+	if current, err := ReadStopLoss(home); err == nil && current.boundTo(batch, launch) {
+		return nil
+	}
 	return updateStopLossHeld(home, now, func(store *StopLoss) error {
 		if launch != "" {
 			for _, other := range store.Batches {
@@ -355,6 +360,24 @@ func BindBatchHeld(home, batch string, now time.Time) error {
 		store.record(now, "begin", batch, launch, "")
 		return nil
 	})
+}
+
+// boundTo is whether batch's allowance under the grant in force already
+// holds launch (any allowance when no session runs) and no other batch
+// of that grant holds it: binding again would change nothing.
+func (s *StopLoss) boundTo(batch, launch string) bool {
+	bound := false
+	for _, allowance := range s.Batches {
+		if allowance.Grant != s.Grant {
+			continue
+		}
+		if allowance.Batch == batch {
+			bound = launch == "" || slices.Contains(allowance.Launches, launch)
+		} else if launch != "" && slices.Contains(allowance.Launches, launch) {
+			return false
+		}
+	}
+	return bound
 }
 
 // clockSince is when the running session's allowance began: its clock, or
