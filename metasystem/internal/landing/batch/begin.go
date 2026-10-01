@@ -307,8 +307,8 @@ func applyChainPatch(root, worktree string, unit Unit) error {
 }
 
 func unmergedPaths(dir string) []string {
-	command := exec.Command("git", "-C", dir, "diff", "--name-only", "--diff-filter=U", "-z")
-	command.Env = gittree.ScrubbedEnviron("LC_ALL=C")
+	command := realGit(dir, "diff", "--name-only", "--diff-filter=U", "-z")
+	command.Env = realObjectsEnviron("LC_ALL=C")
 	raw, _ := command.Output()
 	if len(raw) == 0 {
 		return nil
@@ -550,6 +550,18 @@ func laneMarks(root, commit string) (laneMarkings, error) {
 	return laneMarkings{resolved: resolved, integration: integration}, err
 }
 
+// realGit is a git command in root that reads the real objects: replace
+// refs are off by config and by environment (re-review), whatever refs/replace
+// holds. Every git call of begin goes through it or landingGitOutput.
+func realGit(root string, args ...string) *exec.Cmd {
+	return exec.Command("git", append([]string{"-C", root, "-c", "core.useReplaceRefs=false"}, args...)...)
+}
+
+// realObjectsEnviron is the scrubbed environment with replacement off.
+func realObjectsEnviron(extra ...string) []string {
+	return gittree.ScrubbedEnviron(append([]string{"GIT_NO_REPLACE_OBJECTS=1"}, extra...)...)
+}
+
 // attributeFree are git's options for reading what changed whatever git
 // attributes the checkout holds (critique F-2): no attributes file and no
 // quoted paths.
@@ -564,8 +576,8 @@ func attributeFree(args ...string) []string {
 // a submodule, which a person judges. Git attributes are not read: every
 // file is diffed as text, and binary content is judged from its bytes.
 func treeDeviation(root, from, to string) (int, error) {
-	raw := exec.Command("git", append([]string{"-C", root}, attributeFree("diff-tree", "-r", "-z", "--raw", "--no-renames", "--full-index", from, to)...)...)
-	raw.Env = gittree.ScrubbedEnviron("LC_ALL=C", "GIT_ATTR_NOSYSTEM=1")
+	raw := realGit(root, attributeFree("diff-tree", "-r", "-z", "--raw", "--no-renames", "--full-index", from, to)...)
+	raw.Env = realObjectsEnviron("LC_ALL=C", "GIT_ATTR_NOSYSTEM=1")
 	out, err := raw.Output()
 	if err != nil {
 		return 0, fmt.Errorf("list the change %s..%s: %w", short(from), short(to), err)
@@ -600,8 +612,8 @@ func treeDeviation(root, from, to string) (int, error) {
 		}
 		lines := 0
 		if oldBlob != newBlob {
-			diff := exec.Command("git", append([]string{"-C", root}, attributeFree("diff-tree", "-p", "-U0", "--text", "--no-renames", "--no-color", "--no-ext-diff", "--no-textconv", from, to, "--", path)...)...)
-			diff.Env = gittree.ScrubbedEnviron("LC_ALL=C", "GIT_ATTR_NOSYSTEM=1", "GIT_LITERAL_PATHSPECS=1")
+			diff := realGit(root, attributeFree("diff-tree", "-p", "-U0", "--text", "--no-renames", "--no-color", "--no-ext-diff", "--no-textconv", from, to, "--", path)...)
+			diff.Env = realObjectsEnviron("LC_ALL=C", "GIT_ATTR_NOSYSTEM=1", "GIT_LITERAL_PATHSPECS=1")
 			patch, err := diff.Output()
 			if err != nil {
 				return 0, fmt.Errorf("diff %s: %w", path, err)
@@ -627,8 +639,8 @@ func treeDeviation(root, from, to string) (int, error) {
 // binaryBlob is git's own test for binary content, read from the bytes and
 // not from attributes: a NUL in the first 8000 bytes.
 func binaryBlob(root, blob string) (bool, error) {
-	command := exec.Command("git", "-C", root, "cat-file", "blob", blob)
-	command.Env = gittree.ScrubbedEnviron()
+	command := realGit(root, "cat-file", "blob", blob)
+	command.Env = realObjectsEnviron()
 	data, err := command.Output()
 	if err != nil {
 		return false, fmt.Errorf("read blob %s: %w", short(blob), err)
@@ -640,8 +652,8 @@ func binaryBlob(root, blob string) (bool, error) {
 }
 
 func isAncestor(root, ancestor, descendant string) (bool, error) {
-	command := exec.Command("git", "-C", root, "merge-base", "--is-ancestor", ancestor, descendant)
-	command.Env = gittree.ScrubbedEnviron()
+	command := realGit(root, "merge-base", "--is-ancestor", ancestor, descendant)
+	command.Env = realObjectsEnviron()
 	err := command.Run()
 	var exit *exec.ExitError
 	if errors.As(err, &exit) && exit.ExitCode() == 1 {
@@ -701,8 +713,8 @@ func writeCanonicalSeries(root, batchID string, request BeginRequest, members []
 		if err != nil {
 			return err
 		}
-		command := exec.Command("git", "-C", root, "commit-tree", tree, "-p", parent)
-		command.Env = append(gittree.ScrubbedEnviron(), "GIT_AUTHOR_NAME="+identity.authorName, "GIT_AUTHOR_EMAIL="+identity.authorEmail,
+		command := realGit(root, "commit-tree", tree, "-p", parent)
+		command.Env = append(realObjectsEnviron(), "GIT_AUTHOR_NAME="+identity.authorName, "GIT_AUTHOR_EMAIL="+identity.authorEmail,
 			"GIT_AUTHOR_DATE="+identity.authorDate, "GIT_COMMITTER_NAME="+identity.committerName, "GIT_COMMITTER_EMAIL="+identity.committerEmail,
 			"GIT_COMMITTER_DATE="+identity.committerDate)
 		command.Stdin = strings.NewReader(message)

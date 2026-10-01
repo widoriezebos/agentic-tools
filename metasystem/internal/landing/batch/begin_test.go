@@ -449,3 +449,24 @@ func TestDeviationIsOrderedAgainstThePinOnItsParent(t *testing.T) {
 		t.Fatalf("an empty file added in a resolution = deviation %d, %v; want at least 1", opening.Deviation, err)
 	}
 }
+
+// Re-review: a replace ref cannot hide the lane's own content. The resolved
+// replay carries 45 extra lines; `git replace` maps its tree to the exact
+// pin's tree, so a diff that honours replace refs sees no change. Begin's
+// count must read the real objects.
+func TestDeviationIgnoresReplaceRefs(t *testing.T) {
+	t.Parallel()
+	bed := newLaneBed(t)
+	unit := bed.change("metasystem/app/replaced.txt", numbered("pinned", 1, 5), "record: one change")
+	record := bed.batch("01j5x00000000000000000rp01", unit)
+	exact := bed.compose(composeStep{files: map[string]string{"metasystem/app/replaced.txt": numbered("pinned", 1, 5)},
+		message: "record: one change\n\nMachine: m1e+human"})
+	head := bed.compose(composeStep{files: map[string]string{"metasystem/app/replaced.txt": numbered("pinned", 1, 5) + numbered("smuggled", 1, 45)},
+		message: "record: one change\n\nMachine: m1e+human\n" + LaneResolvedTrailer + ": a seam"})
+	bed.git("replace", bed.tree(head), bed.tree(exact))
+	_, err := bed.begin(record, []string{unit.GoalID}, head)
+	var composition *CompositionRefusal
+	if !errors.As(err, &composition) || composition.Evidence.Deviation < 45 {
+		t.Fatalf("content hidden behind a replace ref = %v (%+v); want seam-too-large counting its 45 lines", err, composition)
+	}
+}

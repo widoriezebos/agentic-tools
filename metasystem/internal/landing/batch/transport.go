@@ -332,8 +332,8 @@ func CommitWithWrapperWithRead(root string, declaration CommitDeclaration, goalI
 }
 
 func landingGitOutput(root string, args ...string) (string, error) {
-	command := exec.Command("git", append([]string{"-C", root}, args...)...)
-	command.Env = gittree.ScrubbedEnviron()
+	command := realGit(root, args...)
+	command.Env = realObjectsEnviron()
 	output, err := command.Output()
 	return strings.TrimSpace(string(output)), err
 }
