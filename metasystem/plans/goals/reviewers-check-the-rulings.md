@@ -1,6 +1,6 @@
 # reviewers-check-the-rulings
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 1
 - Risk: severity=2 novelty=1 exposure=3 accumulation=1 basis="review process change for every critic dispatch; no product behaviour change; every seat"
@@ -9,10 +9,12 @@
 - Origin: human
 - Next step: Next: Fable writes a short design (where the rulings are read from, how a critic reports the rulings it checked, how a conflict is reported), one Astra critique round, then Opus builds it into the design-critic and code-critic roles and skills with tests, Sol reviews the code, and it lands. Done when: a critic dispatched on a goal lists the rulings it checked in its return, and a planted conflict with a ruling is reported as material.
 - OpenedAt: 2026-09-30T20:38:45Z
-- Revision: 9
+- Revision: 10
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-10-01T07:54:04Z revision=9 opid=J6PN808ER6Y09Q6T3D0JKCKWTN-m1e-528c72bf authority=proven digest=2778966e6d0b60e3db4fb97e4114a58b6f96311e630eb3791470009314b1ef2c episode=9
+- Claimed: machine=ui lineage=main-1790664507-87928-61899b at=2026-10-01T07:54:10Z revision=10 accountingRevision=10 episodeAt=2026-10-01T07:54:10Z episodeRevision=10
+- StopCapability: generation=10 revision=10 machine=ui claimEpoch=2 fenceEpoch=0
 
 History:
 - 2026-09-30T20:38:45Z 7PTYSF4TX48MAA3GD0YVH8B9KE-ui-bc2fda53 open actor=human:Wido targets=reviewers-check-the-rulings
@@ -24,4 +26,5 @@ History:
 - 2026-10-01T06:35:08Z RSWAE8KACJEH5AFBYA9YKEKZZM-m1e-f456f182 done actor=human:wido targets=ask-what-happened-follow-ups,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,critique-findings-need-proof,cross-cutting-change-inventories-its-readers,design-rounds-read-less-and-repeat-less,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,host-setup-from-scratch,landing-lane-runtime-redesign,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,reviewers-check-the-rulings,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,steward-acts-on-behaviour-patterns,stop-hook-never-forces-an-empty-turn,system-start-launches-your-agent,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror reason=priority-order from=1:3 to=1:2
 - 2026-10-01T07:49:23Z N43G98VTZ9Z94HBG5K5CPH2C0X-m1e-528c72bf done actor=human:Wido targets=ask-what-happened-follow-ups,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,cross-cutting-change-inventories-its-readers,design-rounds-read-less-and-repeat-less,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,host-setup-from-scratch,landing-lane-runtime-redesign,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,reviewers-check-the-rulings,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,steward-acts-on-behaviour-patterns,stop-hook-never-forces-an-empty-turn,system-start-launches-your-agent,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror reason=priority-order from=1:2 to=1:1
 - 2026-10-01T07:54:04Z J6PN808ER6Y09Q6T3D0JKCKWTN-m1e-528c72bf approve actor=human:Wido targets=reviewers-check-the-rulings
-Integrity: sha256=da2e940a8a096994bc90fb2da172eadaffc847d2ef9042ac9e5a307cf5bd80a8
+- 2026-10-01T07:54:10Z GS4MJ74SR7M92ZNCWCH0TXEBK8-ui-d4023bb7 claim actor=ui+main-1790664507-87928-61899b targets=reviewers-check-the-rulings
+Integrity: sha256=77f289a59c60f33816cc141ef0852e461cf3a94bb6a403ca5b533c5fdc173546
