@@ -76,7 +76,7 @@ export function useOpening(): string {
  * read the same store state, so the two cannot disagree about one suggestion.
  */
 export function SuggestionCard({ id }: { id: string }) {
-  const { offered, use, undo, dismiss, reopen, showing } = usePartner();
+  const { offered, use, undo, dismiss, reopen, showing, refusal } = usePartner();
   const card = cardIn(offered, id);
   const box = useRef<HTMLDivElement | null>(null);
   // The field's link opened the drawer at this card, so the column comes to it.
@@ -141,7 +141,21 @@ export function SuggestionCard({ id }: { id: string }) {
       </p>
       <p className="ms-suggestion-text">{card.text}</p>
       <div className="ms-suggestion-foot">
-        {card.standing === "waiting" && (
+        {card.standing === "waiting" && refusal(id) !== "" && (
+          <>
+            <span className="ms-suggestion-said" role="status">
+              {refusal(id)}
+            </span>
+            <Button
+              onClick={() => {
+                dismiss(id);
+              }}
+            >
+              Dismiss
+            </Button>
+          </>
+        )}
+        {card.standing === "waiting" && refusal(id) === "" && (
           <>
             <Button
               primary

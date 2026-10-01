@@ -410,6 +410,41 @@ export function tierLine(risk: Risk): string {
 }
 
 /**
+ * The four answers as one field the Partner may be asked to fill (g1-s78).
+ *
+ * It is the field's name on the sheet's draft and on the suggestion that comes
+ * back for it. Its value travels in the command's own form — what `goal open
+ * --risk` takes and what the open proposal already carries — so the Partner
+ * writes the four answers one way wherever it writes them, and the sheet reads
+ * a suggestion for them with the same strict rule the command does.
+ */
+export const RISK_ANSWERS = "Risk answers";
+
+/**
+ * What each answer means, handed over beside the answers as context and never
+ * as a field the Partner may write into: the Partner cannot see the pills or
+ * their tooltips, and the answers are to be judged from the same words a human
+ * reads there.
+ */
+export const RISK_MEANINGS_FIELD = "What the answers mean";
+
+/** The four answers in the command's own form: severity=N,novelty=N,exposure=N,accumulation=N. */
+export function riskForm(risk: Risk): string {
+  return SCORES.map((score) => `${score.key}=${risk[score.key]}`).join(",");
+}
+
+/**
+ * Every stop of every score, one score to a line, in the kit's own words — the
+ * twelve phrases the sheet shows a human between the chosen line and the pills'
+ * tooltips.
+ */
+export function riskMeanings(): string {
+  return SCORES.map((score) =>
+    score.stops.map((stop, at) => `${score.key} ${String(at + 1)}: ${stop}`).join("; "),
+  ).join("\n");
+}
+
+/**
  * Whether a tier chosen in the override select is no override at all.
  *
  * The empty option is the derived tier by name, and the derived tier's own
