@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 9
+- Sequence: 8
 - Risk: severity=2 novelty=2 exposure=2 accumulation=1 basis="New person-facing verb composing existing owners (enroll, machine start, system start, landing); touches enrollment and launch resume paths; reverts cleanly; no data deletion"
 - Tier: 2
 - Intent: What: One guided command, metasystem host setup, sets up a computer from scratch and keeps it set up. It asks a few questions, shows the plan, runs the existing commands in order, and on a re-run checks and repairs each step. Why: Setting up a computer today takes many separate commands in the right order, and nothing checks later that it is still set up. Pros: One command for a first setup, a resume after an interruption, and a check-and-repair; it only calls existing commands, so it adds little new behaviour. Cons: It touches many parts (enrollment, the landing lane, seats). Enrollment stays per checkout for now; one enrollment per computer was deferred for safety.
 - Origin: main
 - Next step: Next: Build U1 (questions, plan preview, --check), U2 (running the steps, resume, repair) and U3 (the gaps: clone from a URL, machine name, resume, --record) from the accepted design (revision 2 plus the round-2 build rules in section 13) at /Users/wido/LocalStorage/agentic-tools-evidence/host-setup-20260930/host-setup.md, enrolling per checkout in-process (D3 deferred; D1 and D2 as proposed). Approve before switch-on if the machinery should build it. Done when: in a fresh test home, host setup runs to done, a re-run reports everything in place and changes nothing, and a kill in the middle resumes to done.
 - OpenedAt: 2026-09-30T12:03:04Z
-- Revision: 17
+- Revision: 18
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:wido at=2026-09-30T20:42:42Z revision=7 opid=XB1PN62QBGM1J97G63AKRT5HWP-m1e-b6a4eb0a authority=proven digest=4e885ea1574458703e2efbb616b75305891c0cc9cc8c70287cbf73b3fd7ca269 episode=7
@@ -32,4 +32,5 @@ History:
 - 2026-10-01T15:56:54Z X0K7GM6X5JRN0KQ0MSB11JF6F5-m1e-9c612d71 set-priority actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,cross-cutting-change-inventories-its-readers,design-rounds-read-less-and-repeat-less,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,host-setup-from-scratch,landing-deploys-the-engine,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,reviewers-check-the-rulings,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,steward-acts-on-behaviour-patterns,stop-hook-never-forces-an-empty-turn,system-start-launches-your-agent,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror reason=priority-order subject=landing-deploys-the-engine from=1:6 to=1:7 requested-sequence=4
 - 2026-10-01T15:57:13Z YHRK5YBDQP228G5NWFWB43P111-m1e-9c612d71 set-priority actor=human:Wido targets=builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,cross-cutting-change-inventories-its-readers,design-rounds-read-less-and-repeat-less,evidence-and-build-output-have-retention-and-stay-unindexed,fleet-doctor-repairs-what-stops-other-seats,host-setup-from-scratch,one-steward-per-checkout-on-its-own-root,receipt-writer-follows-the-worktree-it-runs-in,reviewers-check-the-rulings,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,seat-works-without-a-person,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,system-start-launches-your-agent,terminal-enrollment-per-computer,testing-surfaces-declare-their-mirror reason=priority-order subject=seat-works-without-a-person from=1:7 to=1:8 requested-sequence=6
 - 2026-10-01T15:57:20Z KB8SM7BXGGE1JW58TG1TTQ9YHB-m1e-9c612d71 set-priority actor=human:Wido targets=host-setup-from-scratch,reviewers-check-the-rulings,system-start-launches-your-agent reason=priority-order subject=system-start-launches-your-agent from=1:8 to=1:9 requested-sequence=7
-Integrity: sha256=6afc6c0826814e0453d8ed915b9b10e09504088b8729f0bcd70d7b3b535eff26
+- 2026-10-01T15:57:27Z 6J0A75N1MASKEQ8APZPBT9T9CF-m1e-9c612d71 set-priority actor=human:Wido targets=host-setup-from-scratch,reviewers-check-the-rulings reason=priority-order subject=host-setup-from-scratch from=1:9 to=1:8 requested-sequence=8
+Integrity: sha256=40e421ab4ea93c128a3f3b2bbe941867463c7beb61540d9f2d36dc1537fe6537
