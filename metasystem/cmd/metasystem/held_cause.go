@@ -20,8 +20,6 @@ func heldCause(err error) (cause string, next []string, then string, ok bool) {
 	if errors.As(err, &shape) {
 		cause = commitCause(shape.Commit, shape.Reason)
 		switch remedy, isRun := strings.CutPrefix(shape.Remedy, "run: "); {
-		case len(shape.Fix) > 0:
-			return cause, shape.Fix, "", true
 		case isRun && strings.HasPrefix(remedy, "metasystem "):
 			return cause, strings.Fields(remedy), "", true
 		default:
@@ -96,4 +94,55 @@ func argError(args []any) error {
 		}
 	}
 	return nil
+}
+
+// trailerAmend is the command that adds the kind trailer a goal branch
+// commit lacks, offered only where it is right: the commit is goal/G's tip
+// as read, and the trailer owner names the goal worktree that has exactly
+// that commit checked out off main's history. git -C names that worktree,
+// never the installation's checkout, where main is. nil otherwise.
+func (inv *intentInvocation) trailerAmend(err error, goalID string, state intentBranchState) []string {
+	var shape *branch.RangeError
+	owners := inv.delivery()
+	if !errors.As(err, &shape) || shape.Trailer == "" || shape.Commit == "" || shape.Commit != state.BranchTip || owners.trailerWorktree == nil {
+		return nil
+	}
+	worktree := owners.trailerWorktree(inv.layout.InstallationRoot, goalID, shape.Commit, state.EndpointTip)
+	if worktree == "" {
+		return nil
+	}
+	return []string{"git", "-C", worktree, "commit", "--amend", "--no-edit", "--trailer", shape.Trailer}
+}
+
+// productionTrailerWorktree is the worktree of root's repository that has
+// goal/G checked out at commit, when commit is not on main's history (at
+// endpointTip); "" when any of that is not so or can't be read.
+func productionTrailerWorktree(root, goalID, commit, endpointTip string) string {
+	if endpointTip != "" {
+		if _, err := branch.ScrubbedGit(root, "merge-base", "--is-ancestor", commit, endpointTip); err == nil {
+			return ""
+		}
+	}
+	listing, err := branch.ScrubbedGit(root, "worktree", "list", "--porcelain")
+	if err != nil {
+		return ""
+	}
+	for _, block := range strings.Split(listing, "\n\n") {
+		path, ref := "", ""
+		for _, line := range strings.Split(block, "\n") {
+			if value, ok := strings.CutPrefix(line, "worktree "); ok {
+				path = value
+			}
+			if value, ok := strings.CutPrefix(line, "branch "); ok {
+				ref = value
+			}
+		}
+		if path == "" || ref != "refs/heads/goal/"+goalID {
+			continue
+		}
+		if head, err := branch.ScrubbedGit(path, "rev-parse", "HEAD"); err == nil && strings.TrimSpace(head) == commit {
+			return path
+		}
+	}
+	return ""
 }

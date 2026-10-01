@@ -3,7 +3,6 @@ package branch
 import (
 	"errors"
 	"fmt"
-	"slices"
 	"strings"
 	"testing"
 
@@ -25,9 +24,10 @@ func TestBranchRefusalsKeepTheirCodeOutOfTheirWords(t *testing.T) {
 	}
 }
 
-// A commit that says nothing of its kind names the trailer to add, with the
-// goal filled in, and the command that adds it as its line 2: the cause a
-// person acts on is the refusal's words, never only --verbose's.
+// A commit that says nothing of its kind names the trailer it lacks, with
+// the goal filled in; the range owner can't tell whether the commit is the
+// goal branch's tip, so its line 2 stays the goal's work and it carries the
+// trailer for the verb that can (no amend of whatever is checked out).
 func TestMissingKindTrailerNamesTheTrailerToAdd(t *testing.T) {
 	t.Parallel()
 	commit := "289c41c7f0123456789abcdef0123456789abcde"
@@ -39,14 +39,13 @@ func TestMissingKindTrailerNamesTheTrailerToAdd(t *testing.T) {
 	if !strings.Contains(refusal.Reason, "doesn't say which goal and unit it builds") || !strings.Contains(refusal.Reason, "Goal-Unit: goal-a/UNIT") {
 		t.Fatalf("missing trailer reason: %q", refusal.Reason)
 	}
-	want := []string{"git", "commit", "--amend", "--no-edit", "--trailer", "Goal-Unit: goal-a/UNIT"}
-	if !slices.Equal(refusal.Fix, want) || refusal.Remedy != `run: git commit --amend --no-edit --trailer "Goal-Unit: goal-a/UNIT"` {
-		t.Fatalf("missing trailer remedy: fix %q remedy %q", refusal.Fix, refusal.Remedy)
+	if refusal.Trailer != "Goal-Unit: goal-a/UNIT" || refusal.Remedy != "run: metasystem work status goal-a" || strings.Contains(err.Error(), "amend") {
+		t.Fatalf("missing trailer remedy: trailer %q remedy %q", refusal.Trailer, refusal.Remedy)
 	}
 	_, err = kindOfWithGit("repo", commit, "goal-a", func(string, ...string) ([]byte, error) {
 		return []byte("Goal-Unit: goal-a/u1\nGoal-Plan: goal-a\n"), nil
 	})
-	if !errors.As(err, &refusal) || !strings.Contains(refusal.Reason, "2 times") || refusal.Fix != nil {
+	if !errors.As(err, &refusal) || !strings.Contains(refusal.Reason, "2 times") || refusal.Trailer != "" {
 		t.Fatalf("two trailers keep their own words: %v", err)
 	}
 }

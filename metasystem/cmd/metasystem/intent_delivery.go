@@ -247,8 +247,11 @@ type intentDeliveryOwners struct {
 	executable  func() (string, error)
 	branchRead  func([]string) (branch.BranchReadResult, int, error)
 	branchState func(root, goalID string) (intentBranchState, error)
-	landPrep    func([]string) (goalBranchLandPrepOutcome, int, error)
-	landPush    func([]string) (branch.PreparedLanding, string, int, error)
+	// trailerWorktree is the goal worktree a missing kind trailer may be
+	// amended in (productionTrailerWorktree); nil offers no amend.
+	trailerWorktree func(root, goalID, commit, endpointTip string) string
+	landPrep        func([]string) (goalBranchLandPrepOutcome, int, error)
+	landPush        func([]string) (branch.PreparedLanding, string, int, error)
 	// landCandidate composes the pending landing and returns the candidate
 	// tree its receipt must prove.
 	landCandidate func([]string) (goalBranchLandPrepOutcome, int, error)
@@ -346,7 +349,8 @@ func defaultIntentDeliveryOwners() *intentDeliveryOwners {
 		branchRead: func(args []string) (branch.BranchReadResult, int, error) {
 			return goalBranchReadRun(args, goalBranchReadDependencies{})
 		},
-		branchState: productionIntentBranchState,
+		branchState:     productionIntentBranchState,
+		trailerWorktree: productionTrailerWorktree,
 		landPrep: func(args []string) (goalBranchLandPrepOutcome, int, error) {
 			return goalBranchLandPrepRun(args, goalBranchLandPrepDependencies{Prepare: branch.PrepareLanding,
 				LoadContract: func(root string) (testpolicy.Contract, error) {
@@ -410,7 +414,8 @@ func productionIntentBranchState(root, goalID string) (intentBranchState, error)
 	}
 	status, err := branch.InspectStatus(root, endpointTip, branchTip, goalID)
 	if err != nil {
-		return intentBranchState{}, err
+		// The tips read so far say whether a refused commit is the tip.
+		return intentBranchState{EndpointTip: endpointTip, BranchTip: branchTip}, err
 	}
 	state := intentBranchState{EndpointTip: endpointTip, BranchTip: branchTip, Status: status}
 	for _, unit := range status.Units[:status.Prefix] {
@@ -1819,8 +1824,12 @@ func (inv *intentInvocation) landGoalRoute(goalID, through string) intentResult 
 	}
 	state, err := owners.branchState(root, goalID)
 	if err != nil {
-		return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: "the goal branch can't be read, so nothing was landed",
+		refused := intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: "the goal branch can't be read, so nothing was landed",
 			next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}.withCause(err)
+		if amend := inv.trailerAmend(err, goalID, state); amend != nil {
+			refused.next, refused.nextReason = amend, ""
+		}
+		return refused
 	}
 	if configured {
 		// The batch may already hold, or have landed and swept, exactly this

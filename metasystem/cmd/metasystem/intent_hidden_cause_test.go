@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os/exec"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -13,20 +15,32 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 )
 
-// A goal branch whose commit lacks its Goal-Unit trailer refuses the landing
-// in the two lines of "Messages a Person Reads": line 1 names the commit and
-// the missing trailer, line 2 the command that adds it with the goal filled
-// in. The generic "can't be read" sentence hid both behind --verbose.
+// missingTrailer is the range owner's refusal of a commit with no kind
+// trailer on goal standing-validation.
+func missingTrailer(commit string) *branch.RangeError {
+	return &branch.RangeError{Code: branch.RangeCode, Commit: commit,
+		Reason:  "it doesn't say which goal and unit it builds (no trailer Goal-Unit: standing-validation/UNIT)",
+		Remedy:  "run: metasystem work status standing-validation",
+		Trailer: "Goal-Unit: standing-validation/UNIT"}
+}
+
+// A goal branch whose tip lacks its Goal-Unit trailer refuses the landing in
+// the two lines of "Messages a Person Reads": line 1 names the commit and the
+// missing trailer, line 2 amends it in the goal worktree (git -C, never the
+// installation's own checkout, where main is). The generic "can't be read"
+// sentence hid both behind --verbose.
 func TestIntentLandNamesTheMissingGoalUnitTrailer(t *testing.T) {
 	t.Parallel()
 	b := newDeliveryBed(t)
-	commit := "289c41c7f0123456789abcdef0123456789abcde"
-	refusal := &branch.RangeError{Code: branch.RangeCode, Commit: commit,
-		Reason: "it doesn't say which goal and unit it builds; add the trailer Goal-Unit: standing-validation/UNIT",
-		Remedy: `run: git commit --amend --no-edit --trailer "Goal-Unit: standing-validation/UNIT"`,
-		Fix:    []string{"git", "commit", "--amend", "--no-edit", "--trailer", "Goal-Unit: standing-validation/UNIT"}}
+	commit, endpoint := "289c41c7f0123456789abcdef0123456789abcde", strings.Repeat("e", 40)
+	refusal := missingTrailer(commit)
 	b.owners.branchState = func(string, string) (intentBranchState, error) {
-		return intentBranchState{}, fmt.Errorf("goal branch: %w", refusal)
+		return intentBranchState{EndpointTip: endpoint, BranchTip: commit}, fmt.Errorf("goal branch: %w", refusal)
+	}
+	var asked []string
+	b.owners.trailerWorktree = func(root, goalID, flagged, endpointTip string) string {
+		asked = []string{goalID, flagged, endpointTip}
+		return "/checkouts/m1-standing-validation"
 	}
 	code, result := b.do("work", "land", "standing-validation")
 	expectOutcome(t, "missing trailer", code, result, intentRefused)
@@ -34,18 +48,89 @@ func TestIntentLandNamesTheMissingGoalUnitTrailer(t *testing.T) {
 		strings.Contains(result.Summary, "can't be read") || !strings.Contains(result.Summary, "nothing was landed") {
 		t.Fatalf("line 1 must name the commit and the trailer: %q", result.Summary)
 	}
-	if result.Next == nil || !slices.Equal(result.Next.Argv, refusal.Fix) {
-		t.Fatalf("line 2 must add the trailer: %+v", result.Next)
+	amend := []string{"git", "-C", "/checkouts/m1-standing-validation", "commit", "--amend", "--no-edit", "--trailer", "Goal-Unit: standing-validation/UNIT"}
+	if result.Next == nil || !slices.Equal(result.Next.Argv, amend) || !slices.Equal(asked, []string{"standing-validation", commit, endpoint}) {
+		t.Fatalf("line 2 must amend in the goal worktree: %+v asked %q", result.Next, asked)
 	}
 	if !slices.ContainsFunc(result.Details, func(detail string) bool { return strings.Contains(detail, commit) }) {
 		t.Fatalf("the raw refusal stays a detail: %q", result.Details)
 	}
 	_, _, stderr := b.run(b.landOwners(), "work", "land", "standing-validation")
 	text := strings.Join(strings.Fields(stderr), " ")
-	if !strings.HasPrefix(text, "✗ commit 289c41c7f doesn't say which goal and unit it builds, so nothing was landed; add the trailer Goal-Unit: standing-validation/UNIT") ||
-		!strings.HasSuffix(text, "→ git commit --amend --no-edit --trailer 'Goal-Unit: standing-validation/UNIT'") {
+	if !strings.HasPrefix(text, "✗ commit 289c41c7f doesn't say which goal and unit it builds (no trailer Goal-Unit: standing-validation/UNIT), so nothing was landed") ||
+		!strings.HasSuffix(text, "→ git -C /checkouts/m1-standing-validation commit --amend --no-edit --trailer 'Goal-Unit: standing-validation/UNIT'") {
 		t.Fatalf("text refusal must be the two lines: %q", stderr)
 	}
+}
+
+// A flagged commit below the goal branch's tip can't be amended where the
+// branch is checked out: line 1 still names it and the trailer, line 2 is
+// the goal's work, and no amend is offered or asked about.
+func TestIntentLandOffersNoAmendBelowTheTip(t *testing.T) {
+	t.Parallel()
+	b := newDeliveryBed(t)
+	commit := "289c41c7f0123456789abcdef0123456789abcde"
+	b.owners.branchState = func(string, string) (intentBranchState, error) {
+		return intentBranchState{EndpointTip: strings.Repeat("e", 40), BranchTip: strings.Repeat("7", 40)}, missingTrailer(commit)
+	}
+	b.owners.trailerWorktree = func(string, string, string, string) string {
+		t.Fatal("a commit below the tip is never amended")
+		return ""
+	}
+	code, result := b.do("work", "land", "standing-validation")
+	expectOutcome(t, "missing trailer below the tip", code, result, intentRefused)
+	if !strings.Contains(result.Summary, "commit 289c41c7f ") || !strings.Contains(result.Summary, "Goal-Unit: standing-validation/UNIT") ||
+		result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "work", "status", "standing-validation"}) {
+		t.Fatalf("below the tip: %+v", result)
+	}
+}
+
+// The goal worktree is offered for the amend only when the flagged commit
+// is what it has checked out on goal/G and is not on main's history.
+func TestTrailerWorktreeOnlyForTheCheckedOutTip(t *testing.T) {
+	t.Parallel()
+	repo, worktree := t.TempDir(), filepath.Join(t.TempDir(), "goal-g")
+	git := func(dir string, args ...string) string {
+		t.Helper()
+		command := exec.Command("git", append([]string{"-C", dir, "-c", "user.name=t", "-c", "user.email=t@example.invalid", "-c", "commit.gpgsign=false"}, args...)...)
+		output, err := command.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %q: %v: %s", args, err, output)
+		}
+		return strings.TrimSpace(string(output))
+	}
+	git(repo, "init", "-q", "-b", "main")
+	git(repo, "commit", "-q", "--allow-empty", "-m", "main")
+	onMain := git(repo, "rev-parse", "HEAD")
+	git(repo, "worktree", "add", "-q", "-b", "goal/g", worktree)
+	git(worktree, "commit", "-q", "--allow-empty", "-m", "below")
+	below := git(worktree, "rev-parse", "HEAD")
+	git(worktree, "commit", "-q", "--allow-empty", "-m", "tip")
+	tip := git(worktree, "rev-parse", "HEAD")
+	if got := productionTrailerWorktree(repo, "g", tip, onMain); realpathOf(t, got) != realpathOf(t, worktree) {
+		t.Fatalf("the checked-out tip is amended in the goal worktree: %q", got)
+	}
+	if got := productionTrailerWorktree(repo, "g", below, onMain); got != "" {
+		t.Fatalf("a commit below the checked-out tip: %q", got)
+	}
+	if got := productionTrailerWorktree(repo, "g", tip, tip); got != "" {
+		t.Fatalf("a commit on main's history: %q", got)
+	}
+	if got := productionTrailerWorktree(repo, "other", tip, onMain); got != "" {
+		t.Fatalf("a goal with no worktree: %q", got)
+	}
+}
+
+func realpathOf(t *testing.T, path string) string {
+	t.Helper()
+	if path == "" {
+		return ""
+	}
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resolved
 }
 
 // An error that carries no remedy of its own keeps the verb's sentence:

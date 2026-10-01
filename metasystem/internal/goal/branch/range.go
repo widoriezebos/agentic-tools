@@ -56,11 +56,12 @@ func commitWord(kind Kind) string {
 
 // RangeError is a goal branch that breaks its shape at one commit. Remedy
 // is its line 2: the command that shows the goal's work, where the goal is
-// known ("Messages a Person Reads"). Fix, when set, is that line 2's command
-// as argv: the one act that repairs the commit (a missing trailer added).
+// known ("Messages a Person Reads"). Trailer, when set, is the kind trailer
+// the commit lacks; only a verb that knows the commit is the goal branch's
+// tip, checked out in the goal worktree, may offer the amend that adds it.
 type RangeError struct {
 	Code, Commit, Reason, Remedy string
-	Fix                          []string
+	Trailer                      string
 }
 
 func (e *RangeError) Error() string {
@@ -85,13 +86,12 @@ func rangeRefusal(goalID, commit, reason string) error {
 
 // missingKindRefusal is a commit on goalID's branch with no Goal-Unit,
 // Goal-Plan or Goal-Read trailer: its words name the trailer a build needs,
-// and its line 2 adds it with the goal filled in (the unit is the person's).
+// with the goal filled in (the unit is the person's).
 func missingKindRefusal(goalID, commit string) error {
 	trailer := "Goal-Unit: " + goalID + "/UNIT"
-	return &RangeError{Code: RangeCode, Commit: commit,
-		Reason: "it doesn't say which goal and unit it builds; add the trailer " + trailer,
-		Remedy: fmt.Sprintf("run: git commit --amend --no-edit --trailer %q", trailer),
-		Fix:    []string{"git", "commit", "--amend", "--no-edit", "--trailer", trailer}}
+	refusal := rangeRefusal(goalID, commit, "it doesn't say which goal and unit it builds (no trailer "+trailer+")").(*RangeError)
+	refusal.Trailer = trailer
+	return refusal
 }
 
 func parseUnits(value string) ([]string, bool) {
