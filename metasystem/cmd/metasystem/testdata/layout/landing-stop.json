@@ -2,7 +2,7 @@ exit 0
 --
 {
   "schemaVersion": 1,
-  "verb": "landing status",
+  "verb": "landing stop",
   "targets": [
     {
       "kind": "landing-lane",
@@ -10,7 +10,7 @@ exit 0
     }
   ],
   "outcome": "confirmed",
-  "summary": "landing lane /Users/wido/GitHub/agentic-tools-landing: stopped by Wido; metasystem landing start resumes it",
+  "summary": "stopped the landing lane for Wido; no landing agent starts until metasystem landing start",
   "data": {
     "root": "/Users/wido/GitHub/agentic-tools-landing",
     "registered_by": "Wido",
@@ -18,7 +18,7 @@ exit 0
     "owner": {
       "state": "stopped",
       "pid": null,
-      "since": "2026-09-30T08:28:00Z",
+      "since": "2026-09-30T08:58:00Z",
       "last_exit": null,
       "stopped_by": "Wido",
       "retry_hint": "metasystem landing start resumes it"
@@ -29,10 +29,19 @@ exit 0
       "reasons": [],
       "unread": []
     },
-    "summary": "landing lane /Users/wido/GitHub/agentic-tools-landing: stopped by Wido; metasystem landing start resumes it",
-    "paused": true,
-    "agent_alive": false
-  }
+    "summary": "landing lane /Users/wido/GitHub/agentic-tools-landing: stopped by Wido; metasystem landing start resumes it"
+  },
+  "next": {
+    "argv": [
+      "metasystem",
+      "landing",
+      "unset"
+    ],
+    "reason": "lets each seat land its own work instead"
+  },
+  "details": [
+    "the lane at /Users/wido/GitHub/agentic-tools-landing starts no landing agent until metasystem landing start"
+  ]
 }
 
 --

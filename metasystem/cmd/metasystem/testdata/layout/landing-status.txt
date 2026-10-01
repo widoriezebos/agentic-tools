@@ -1,7 +1,1 @@
-The landing lane's agent is at work · 2 changes proving · 1 change collecting next
-
-Batches
-  ● proving      batch 4gr18nm8t3nyev9sssda9jgtsq since 10:55
-                 verbs-match-intent from m1e, switch-on-trial from ui
-  ● collecting   batch 7kq2m9x4c1vbn8hzt5pwe3dyra · next
-                 disk-lifetimes from m1e
+The landing lane's agent is at work

@@ -182,16 +182,6 @@ func ParseBatchRequirements(value string) ([]string, error) {
 	return groups, nil
 }
 
-func BatchRequirementsArgument(groups []string) string {
-	if groups == nil {
-		groups = []string{}
-	}
-	encoded, _ := json.Marshal(struct {
-		Groups []string `json:"groups"`
-	}{Groups: groups})
-	return string(encoded)
-}
-
 type baseMove struct {
 	ours, engine string
 }

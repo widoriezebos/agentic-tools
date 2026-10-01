@@ -131,12 +131,12 @@ func registeredFamilies() []family {
 			},
 		},
 		{
-			name: "test", summary: "proof runs on another engine or as landing prove's child",
+			name: "test", summary: "proof runs on another engine or as test run's own runner",
 			verbs: []verb{
 				{name: "plan", summary: "compute a candidate's risk-selected groups for a pinned or candidate engine", run: func(args []string, stdout, stderr io.Writer) int {
 					return runTestPlanAs("internal test plan", args, stdout, stderr)
 				}, launcher: "cmd/metasystem/test_protection.go", evidence: "\"test\", \"plan\"", required: []string{"root"}},
-				{name: "run", summary: "run one proof as landing prove's own child", run: runTestRun, launcher: "internal/landing/kernel/prove.go", evidence: "\"internal\", \"test\", \"run\"", required: []string{"root"}},
+				{name: "run", summary: "run one proof as test run's own runner", run: runTestRun, launcher: "cmd/metasystem/intent_work.go", evidence: "\"internal\", \"test\", \"run\"", required: []string{"root"}},
 				{name: "verify", summary: "verify retained proof on the base engine a carried landing builds", run: runTestVerify, launcher: "cmd/metasystem/landing_path.go", evidence: "\"test\", \"verify\"", required: []string{"root"}},
 				{name: "worker-capabilities", summary: "report the testing worker protocol of a pinned engine", run: runTestWorkerCapabilities, launcher: "internal/testrun/worker.go", evidence: "\"test\", \"worker-capabilities\""},
 				{name: "worker", summary: "execute one admitted selected plan on a pinned engine", run: runTestWorker, launcher: "cmd/metasystem/test_protection.go", evidence: "\"test\", \"worker\"", required: []string{"packet", "packet-sha256", "result"}},
@@ -510,7 +510,7 @@ type retiredIntentAction struct{ why, next string }
 
 var retiredIntentActions = map[string]retiredIntentAction{
 	"landing restart": {why: "the lane has no owner to restart now", next: "metasystem landing start"},
-	"landing publish": {why: "it is landing push now", next: "metasystem landing push"},
+	"landing publish": {why: "the lane's landing is being rebuilt", next: "metasystem landing status"},
 }
 
 // writeUnknownIntentAction refuses an action the object does not have.

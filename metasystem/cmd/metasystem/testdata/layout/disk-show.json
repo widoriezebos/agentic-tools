@@ -174,10 +174,6 @@ exit 0
           "items": 0
         },
         {
-          "name": "batch release sets",
-          "items": 0
-        },
-        {
           "name": "suite-failure bundles",
           "items": 0
         }

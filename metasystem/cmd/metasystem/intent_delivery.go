@@ -2055,17 +2055,3 @@ func replaceWord(argv []string, ref, with string) []string {
 	}
 	return out
 }
-
-// refusalWordsAndCode splits an owner's coded refusal into the words a
-// person reads on line 1 and the code --verbose and --json show; an error
-// without a code is its own words.
-func refusalWordsAndCode(err error) (words, code string) {
-	var coded interface {
-		RefusalCode() string
-		RefusalWords() string
-	}
-	if errors.As(err, &coded) {
-		return coded.RefusalWords(), coded.RefusalCode()
-	}
-	return err.Error(), ""
-}

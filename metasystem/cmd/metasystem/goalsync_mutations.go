@@ -87,16 +87,8 @@ func goalParkBranchCheck(root string, endpoint goal.Endpoint) func(string, strin
 	return goalbranch.ParkCheck(root, endpoint)
 }
 
-func bindHandoverTargetRoot(request *goal.VerbRequest, targetRoot string) {
-	request.HandoverTargetRoot = targetRoot
-}
-
 func configureCarriedCounselor(endpoint *goal.Endpoint) {
 	endpoint.ConfigureCarriedCounselorAppend(counselor.AppendCarriedRow)
-}
-
-func goalHandoverTargetLiveness(root, targetMachine, targetLineage string, targetEpoch int64) (identity.Liveness, error) {
-	return goalHandoverTargetLivenessWithReads(root, targetMachine, targetLineage, targetEpoch, goal.ResolveMachine, identity.KernelProber{})
 }
 
 func goalHandoverTargetLivenessWithReads(root, targetMachine, targetLineage string, targetEpoch int64, resolveMachine func(string) (string, error), prober identity.Prober) (identity.Liveness, error) {
@@ -135,36 +127,6 @@ func goalHandoverAuthenticationRoot(seatRoot, targetRoot string) (string, error)
 	}
 	landing, err := config.ResolveBatchLanding(filepath.Join(seatRoot, "metasystem.conf"), seatRoot, func() time.Time { return now })
 	return landing.Root, err
-}
-
-var errLegacyLedger = errors.New("this checkout still carries the legacy ledger")
-
-// goalHandoverEffect is the handover owner under an explicit invocation
-// context: classification starts at the supplied identity and the request
-// carries the supplied lineage.
-func goalHandoverEffect(invocation ownercall.Invocation, request ownercall.HandoverRequest) (goal.PublishResult, error) {
-	if !converted(request.Root) {
-		return goal.PublishResult{}, errLegacyLedger
-	}
-	req, err := ownerSyncRequest(invocation, "handover", request.Root, false)
-	if err != nil {
-		return goal.PublishResult{}, err
-	}
-	bindHandoverTargetRoot(&req, request.TargetRoot)
-	liveness := func() (identity.Liveness, error) {
-		if req.Actor.Machine == request.TargetMachine && req.Actor.Lineage == request.TargetLineage {
-			if req.ClaimEpoch != request.TargetEpoch || req.ClaimEpoch < 1 {
-				return identity.Unknown, fmt.Errorf("this session doesn't hold claim %d, so it can't receive the handover", request.TargetEpoch)
-			}
-			return identity.Alive, nil
-		}
-		authRoot, err := goalHandoverAuthenticationRoot(request.Root, request.TargetRoot)
-		if err != nil {
-			return identity.Unknown, err
-		}
-		return goalHandoverTargetLiveness(authRoot, request.TargetMachine, request.TargetLineage, request.TargetEpoch)
-	}
-	return goal.Handover(req, request.GoalID, request.TargetMachine, request.TargetLineage, request.TargetEpoch, request.Batch, liveness)
 }
 
 // printCarryMutationTo prints a carry owner's outcome on the caller's

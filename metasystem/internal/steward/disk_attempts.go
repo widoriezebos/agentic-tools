@@ -238,16 +238,6 @@ func (n validationWindowNamer) Named(context.Context, time.Time) ([]string, erro
 	return named, nil
 }
 
-func dedupe(paths ...string) []string {
-	var unique []string
-	for _, path := range paths {
-		if !containsPath(unique, path) {
-			unique = append(unique, path)
-		}
-	}
-	return unique
-}
-
 // readRecordJSON reads one record and names its path in an error.
 func readRecordJSON(path string, value any) error {
 	data, err := os.ReadFile(path)

@@ -66,16 +66,6 @@ func (b *bed) setting(line string) {
 	}
 }
 
-func (b *bed) writeRaw(path string, data []byte) {
-	b.t.Helper()
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		b.t.Fatal(err)
-	}
-	if err := os.WriteFile(path, data, 0o644); err != nil {
-		b.t.Fatal(err)
-	}
-}
-
 func (b *bed) cycle(now time.Time) {
 	b.t.Helper()
 	if err := b.pass.Run(b.repo, now); err != nil {
@@ -98,28 +88,9 @@ func (b *bed) episodes() []steward.AlertEpisode {
 	return mine
 }
 
-func (b *bed) open() []steward.AlertEpisode {
-	var open []steward.AlertEpisode
-	for _, episode := range b.episodes() {
-		if !episode.Cleared {
-			open = append(open, episode)
-		}
-	}
-	return open
-}
-
 func (b *bed) takeHelm(root string) {
 	b.t.Helper()
 	if _, err := helm.Write(root, helm.Record{By: "Wido", At: bedStart.Format(time.RFC3339), Reason: "fixture"}); err != nil {
 		b.t.Fatal(err)
 	}
 }
-
-func (b *bed) returnHelm(root string) {
-	b.t.Helper()
-	if _, err := helm.Remove(root); err != nil {
-		b.t.Fatal(err)
-	}
-}
-
-var bedInvoker = steward.AlertInvoker{Pid: 4242, PidStartedAt: 77, UID: 501}

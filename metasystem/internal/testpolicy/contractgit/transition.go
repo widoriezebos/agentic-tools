@@ -14,13 +14,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/contractmerge"
 )
 
-// PreflightCommitAttributes prevents an incoming commit from assigning the
-// testing-contract driver to an ordinary path. Both the current tree and the
-// tree with the commit's own attribute-file changes are checked.
-func PreflightCommitAttributes(repo, before, commit string) error {
-	return PreflightCommitAttributesWith(repo, before, commit, DefaultCommitAccess())
-}
-
 func PreflightCommitAttributesWith(repo, before, commit string, a CommitAccess) error {
 	paths, err := commitPaths(a, repo, commit+"^", commit, "")
 	if err != nil || len(paths) == 0 {
@@ -39,42 +32,6 @@ func PreflightCommitAttributesWith(repo, before, commit string, a CommitAccess) 
 	return refuseMisusedAttributeWith(a, repo, overlay, commit, paths)
 }
 
-// PreflightPatchAttributes applies only attribute-file hunks to an isolated
-// index, then checks every path named by the full-index patch against the
-// attributes before and after those hunks.
-func PreflightPatchAttributes(repo, before, label string, patch []byte) error {
-	paths, err := patchPaths(repo, patch)
-	if err != nil || len(paths) == 0 {
-		return err
-	}
-	if err := refuseMisusedAttribute(repo, before, label, paths); err != nil {
-		return err
-	}
-	var attributes []string
-	for _, path := range paths {
-		if filepath.Base(path) == ".gitattributes" {
-			attributes = append(attributes, path)
-		}
-	}
-	if len(attributes) == 0 {
-		return nil
-	}
-	overlay, cleanup, err := patchAttributeOverlay(repo, before, patch, attributes)
-	if cleanup != nil {
-		defer cleanup()
-	}
-	if err != nil {
-		return err
-	}
-	return refuseMisusedAttribute(repo, overlay, label, paths)
-}
-
-// CheckCommitContract requires the applied contract bytes to be the semantic
-// merge of the source parent, the pre-apply tree, and the source commit.
-func CheckCommitContract(repo, before, after, commit, label string) error {
-	return CheckCommitContractWith(repo, before, after, commit, label, DefaultCommitAccess())
-}
-
 func CheckCommitContractWith(repo, before, after, commit, label string, a CommitAccess) error {
 	paths, err := commitPaths(a, repo, commit+"^", commit, TestingContractPath)
 	changed := len(paths) != 0
@@ -90,32 +47,6 @@ func CheckCommitContractWith(repo, before, after, commit, label string, a Commit
 		return err
 	}
 	return checkContractBytesWith(a.File, repo, before, after, base, theirs, label)
-}
-
-// CheckPatchContract applies the same invariant to a full-index patch. The
-// old and new blob ids are the source transition's authoritative endpoints.
-func CheckPatchContract(repo, before, after string, patch []byte, label string) error {
-	base, theirs, present, err := patchContractBlobs(patch)
-	if err != nil || !present {
-		return err
-	}
-	return checkContractBlobs(repo, before, after, base, theirs, label)
-}
-
-func checkContractBlobs(repo, before, after, baseBlob, theirsBlob, label string) error {
-	base, err := runGit(repo, nil, "cat-file", "blob", baseBlob)
-	if err != nil {
-		return err
-	}
-	theirs, err := runGit(repo, nil, "cat-file", "blob", theirsBlob)
-	if err != nil {
-		return err
-	}
-	return checkContractBytes(repo, before, after, base, theirs, label)
-}
-
-func checkContractBytes(repo, before, after string, base, theirs []byte, label string) error {
-	return checkContractBytesWith(treeFile, repo, before, after, base, theirs, label)
 }
 
 func checkContractBytesWith(file func(string, string, string) ([]byte, error), repo, before, after string, base, theirs []byte, label string) error {
@@ -146,58 +77,6 @@ func firstDifference(left, right []byte) int {
 		}
 	}
 	return limit
-}
-
-func patchContractBlobs(patch []byte) (string, string, bool, error) {
-	lines := bytes.Split(patch, []byte{'\n'})
-	wanted := []byte("diff --git a/" + TestingContractPath + " b/" + TestingContractPath)
-	for i, line := range lines {
-		if !bytes.Equal(line, wanted) {
-			continue
-		}
-		for _, header := range lines[i+1:] {
-			if bytes.HasPrefix(header, []byte("diff --git ")) {
-				break
-			}
-			if !bytes.HasPrefix(header, []byte("index ")) {
-				continue
-			}
-			pair := strings.Fields(strings.TrimPrefix(string(header), "index "))
-			if len(pair) == 0 {
-				break
-			}
-			base, theirs, ok := strings.Cut(pair[0], "..")
-			if !ok || len(base) != 40 || len(theirs) != 40 || strings.Trim(base, "0") == "" || strings.Trim(theirs, "0") == "" {
-				return "", "", false, fmt.Errorf("testing contract patch lacks full nonzero blob ids")
-			}
-			return base, theirs, true, nil
-		}
-		return "", "", false, fmt.Errorf("testing contract patch lacks an index line")
-	}
-	return "", "", false, nil
-}
-
-func patchPaths(repo string, patch []byte) ([]string, error) {
-	out, err := runGitInput(repo, nil, patch, "apply", "--numstat", "-z", "-")
-	if err != nil {
-		return nil, err
-	}
-	var paths []string
-	for _, record := range bytes.Split(out, []byte{0}) {
-		if len(record) == 0 {
-			continue
-		}
-		fields := bytes.SplitN(record, []byte{'\t'}, 3)
-		if len(fields) != 3 || len(fields[2]) == 0 {
-			return nil, fmt.Errorf("full-index patch has a malformed numstat record")
-		}
-		paths = append(paths, string(fields[2]))
-	}
-	return paths, nil
-}
-
-func refuseMisusedAttribute(repo, tree, commit string, paths []string) error {
-	return refuseMisusedAttributeWith(DefaultCommitAccess(), repo, tree, commit, paths)
 }
 
 func refuseMisusedAttributeWith(a CommitAccess, repo, tree, commit string, paths []string) error {
@@ -251,27 +130,6 @@ func attributeOverlayWith(a CommitAccess, repo, before, commit string, paths []s
 	}
 	tree, err := a.AttributeTree(repo, name)
 	return tree, cleanup, err
-}
-
-func patchAttributeOverlay(repo, before string, patch []byte, paths []string) (string, func(), error) {
-	name, cleanup, err := temporaryIndex()
-	if err != nil {
-		return "", nil, err
-	}
-	env := []string{"GIT_INDEX_FILE=" + name}
-	if _, err := runGit(repo, env, "read-tree", before); err != nil {
-		return "", cleanup, err
-	}
-	args := []string{"apply", "--cached", "--whitespace=nowarn"}
-	for _, path := range paths {
-		args = append(args, "--include="+path)
-	}
-	args = append(args, "-")
-	if _, err := runGitInput(repo, env, patch, args...); err != nil {
-		return "", cleanup, err
-	}
-	out, err := runGit(repo, env, "write-tree")
-	return strings.TrimSpace(string(out)), cleanup, err
 }
 
 func temporaryIndex() (string, func(), error) {

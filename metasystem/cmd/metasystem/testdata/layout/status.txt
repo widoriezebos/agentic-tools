@@ -4,12 +4,9 @@
   → metasystem system enroll --name wido  run it at that terminal
 ● wido's grant is live: everything, until tomorrow 10:56 (23h58m left)
 
-m1e is running · 5 helpers · no jobs · 1 change waiting to land
+m1e is running · 5 helpers · no jobs
 
 Seats on this host  bridge live
   ○ landing   nothing underway
   ? m1e       switch-on-trial unknown: not claimed since 10:57
   ○ ui        nothing underway
-
-Landing lane
-  ● held   batch 4gr18nm8t3nyev9sssda9jgtsq · 1 change (533209e6d from m1e)

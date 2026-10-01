@@ -301,8 +301,6 @@ func parseTestingSelection(name string, args []string, execution bool, stdout, s
 	// root that owns them. batchPrefixProofControlRoot is what makes that safe:
 	// it admits a control root only when the execution root is a linked
 	// worktree sharing its git common directory and prefix.
-	// A landing prove names its lane checkout and control root for every
-	// subject it runs, its diagnostic ones included (design r10 K6).
 	if request.ControlRoot != "" && !request.BatchPrefixReceipt && !request.BatchTipProof && !request.BatchAdmission {
 		fmt.Fprintln(stderr, "--control-root is only for the test runs of a batch")
 		return request, false, 2

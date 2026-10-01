@@ -59,11 +59,9 @@ var auditModes = map[string]auditMode{
 	"internal/stoptransition/transition.go":                  {group: "G1a"},
 	"internal/stoptransition/families.go":                    {group: "G1a"},
 	// G1b machine and landing.
-	"cmd/metasystem/intent_machine.go":        {group: "G1b", layout: auditEnforce},
-	"cmd/metasystem/intent_landing.go":        {group: "G1b", layout: auditEnforce},
-	"cmd/metasystem/intent_landing_kernel.go": {group: "G1b", layout: auditEnforce},
-	"cmd/metasystem/intent_landing_return.go": {group: "G1b", layout: auditEnforce},
-	"cmd/metasystem/intent_alert.go":          {group: "G1b"},
+	"cmd/metasystem/intent_machine.go": {group: "G1b", layout: auditEnforce},
+	"cmd/metasystem/intent_landing.go": {group: "G1b", layout: auditEnforce},
+	"cmd/metasystem/intent_alert.go":   {group: "G1b"},
 	// G2 goals and grants.
 	"cmd/metasystem/intent_goals.go":                       {group: "G2"},
 	"cmd/metasystem/intent_planning.go":                    {group: "G2"},
@@ -96,7 +94,6 @@ var auditModes = map[string]auditMode{
 	"cmd/metasystem/intent_work_workspace.go": {group: "G4"},
 	"cmd/metasystem/intent_design.go":         {group: "G4"},
 	"cmd/metasystem/intent_sent_back.go":      {group: "G4"},
-	"cmd/metasystem/intent_land_change.go":    {group: "G4"},
 	"cmd/metasystem/intent_land_release.go":   {group: "G4"},
 	"cmd/metasystem/intent_land_staged.go":    {group: "G4"},
 	"cmd/metasystem/intent_manual_review.go":  {group: "G4"},

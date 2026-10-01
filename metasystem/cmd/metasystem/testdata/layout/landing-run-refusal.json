@@ -13,8 +13,7 @@ exit 1
   "summary": "the landing lane is stopped by Wido, so no landing agent was started",
   "data": {
     "outcome": "paused",
-    "root": "/Users/wido/GitHub/agentic-tools-landing",
-    "batch": "4gr18nm8t3nyev9sssda9jgtsq"
+    "root": "/Users/wido/GitHub/agentic-tools-landing"
   },
   "next": {
     "argv": [

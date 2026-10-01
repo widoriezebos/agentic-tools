@@ -36,14 +36,6 @@ const (
 // Thresholds are one pattern's resolved threshold values by name.
 type Thresholds map[string]string
 
-func (t Thresholds) float(name string) float64 {
-	value, err := strconv.ParseFloat(t[name], 64)
-	if err != nil {
-		return 0
-	}
-	return value
-}
-
 func (t Thresholds) int(name string) int {
 	value, err := strconv.Atoi(t[name])
 	if err != nil {
