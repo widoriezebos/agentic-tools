@@ -39,7 +39,8 @@ func TestStopEndsLiveWorkAndSettles(t *testing.T) {
 		signalled = append(signalled, pid)
 		return syscall.Kill(pid, sig)
 	}
-	settlement, err := Stop(home, Probes{}, signal, 50*time.Millisecond, time.Sleep)
+	// The grace waits for the signalled child to end, never on the clock.
+	settlement, err := Stop(home, Probes{}, signal, time.Second, func(time.Duration) { <-done })
 	if err != nil || !settlement.Settled(false) {
 		t.Fatalf("after the stop: %+v %v; want custody settled", settlement, err)
 	}
@@ -52,5 +53,4 @@ func TestStopEndsLiveWorkAndSettles(t *testing.T) {
 	if !slices.Contains(signalled, -pid) {
 		t.Fatalf("signalled %v; want the live execution's group -%d", signalled, pid)
 	}
-	<-done
 }

@@ -21,7 +21,8 @@ var (
 
 // startSleeper starts a real kernel execution under custody: a process in
 // its own group, recorded before it starts. Cleanup ends it by its own pid.
-func startSleeper(t *testing.T, home string) {
+// The channel closes when it has ended.
+func startSleeper(t *testing.T, home string) <-chan struct{} {
 	t.Helper()
 	command := exec.Command("sleep", "300")
 	if _, err := custody.Start(home, custody.KindProve, "batch b-one attempt a1 batch", laneNow, command); err != nil {
@@ -33,13 +34,15 @@ func startSleeper(t *testing.T, home string) {
 		_ = command.Process.Kill()
 		<-done
 	})
+	return done
 }
 
 // stopCustody is the keeper's Settle on this host: the custody store's own
-// stop, with real signals and a short grace.
-func stopCustody(home string) func(string) error {
+// stop, with real signals; its grace waits for the execution to end, never
+// on the clock.
+func stopCustody(home string, ended <-chan struct{}) func(string) error {
 	return func(string) error {
-		settlement, err := custody.Stop(home, custody.Probes{}, nil, 50*time.Millisecond, time.Sleep)
+		settlement, err := custody.Stop(home, custody.Probes{}, nil, time.Second, func(time.Duration) { <-ended })
 		if err != nil {
 			return err
 		}
@@ -63,12 +66,13 @@ func TestDeadlineCancelsAndSettles(t *testing.T) {
 	keeper := agent.keeper(home, module, &clock, WakeSources{Records: func(string) ([]batch.Record, error) { return queuedBatch, nil }})
 	var cancelled []string
 	keeper.Cancel = func(id string) error { cancelled = append(cancelled, id); agent.running = ""; return nil }
-	keeper.Settle = stopCustody(home)
+	var ended <-chan struct{}
+	keeper.Settle = func(root string) error { return stopCustody(home, ended)(root) }
 
 	if line := keeper.Step(); len(agent.starts) != 1 {
 		t.Fatalf("queued work: %q; want the agent started", line)
 	}
-	startSleeper(t, home)
+	ended = startSleeper(t, home)
 	clock = laneNow.Add(AllowanceWindow - time.Minute)
 	if line := keeper.Step(); len(cancelled) != 0 || !strings.Contains(line, "running") {
 		t.Fatalf("before the deadline: %q, cancelled %v; want it left running", line, cancelled)
