@@ -12,9 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
-	goalbranch "github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
@@ -22,47 +19,42 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/verbresult"
 )
 
-const kernelActor = "m1e+landing-m1l"
+const kernelActor = "m1e+landing-lane"
 
 var kernelAt = time.Date(2026, 10, 1, 10, 0, 0, 0, time.UTC)
 
 // kernelBed is a registered lane with a nested checkout (checkout root ≠
-// installation root), a bare origin, and a batch of one goal of two
-// dependent builds and one change, composed by the agent as plain replays.
+// installation root) and a bare origin, and two hand-offs queued in it:
+// two batch records of one change each, whose heads branch off main.
 type kernelBed struct {
-	t                     *testing.T
-	home, dir             string
-	layout                lane.Layout
-	base, goalTip, change string
-	batchID               string
-	goalID, changeID      string
-	head                  string
-	ids                   int
+	t                 *testing.T
+	home, dir         string
+	origin            string
+	layout            lane.Layout
+	base              string
+	first, second     string
+	firstID, secondID string
+	ids               int
 }
+
+var (
+	firstBatch  = "01j5x00000000000000000kb01"
+	secondBatch = "01j5x00000000000000000kb02"
+)
 
 func newKernelBed(t *testing.T) *kernelBed {
 	t.Helper()
-	bed := &kernelBed{t: t, dir: t.TempDir(), batchID: "01j5x00000000000000000kb01", goalID: "kernel-goal"}
+	bed := &kernelBed{t: t, dir: t.TempDir()}
 	bed.home = filepath.Join(bed.dir, "home")
 	checkout := filepath.Join(bed.dir, "lane")
-	origin := filepath.Join(bed.dir, "origin.git")
-	run(t, "", "git", "init", "-q", "--bare", "-b", "main", origin)
+	bed.origin = filepath.Join(bed.dir, "origin.git")
+	run(t, "", "git", "init", "-q", "--bare", "-b", "main", bed.origin)
 	run(t, "", "git", "init", "-q", "-b", "main", checkout)
 	bed.write(checkout, ".gitignore", "/artifacts/\n/metasystem/artifacts/\n")
 	bed.write(checkout, "metasystem/metasystem.conf", "metasystem.template=true\n")
 	bed.write(checkout, "metasystem/app/base.txt", "base\n")
-	machine, lineage, _ := strings.Cut(kernelActor, "+")
-	ledger := goal.RenderFile(&goal.GoalFile{Id: bed.goalID, State: goal.StateClaimed, Intent: "Fixture goal.", Origin: goal.OriginMain,
-		NextStep: "Land it.", OpenedAt: "2026-09-30T08:00:00Z", Revision: 1,
-		Claimed: &goal.ClaimRecord{Machine: machine, Lineage: lineage, At: "2026-09-30T08:00:00Z", Revision: 1, AccountingRevision: 1},
-		History: []goal.HistoryLine{{At: "2026-09-30T08:00:00Z", Opid: "01ARZ3NDEKTSV4RRFFQ69G5FAW-m1e-00000001", Verb: "claim", Actor: kernelActor,
-			Targets: []string{bed.goalID}, Keep: -1}}})
-	if _, problems := goal.ParseFile(ledger); len(problems) != 0 {
-		t.Fatalf("invalid goal: %v", problems)
-	}
-	bed.write(checkout, "metasystem/plans/goals/"+bed.goalID+".md", string(ledger))
 	bed.base = bed.commit(checkout, "base")
-	bed.git(checkout, "remote", "add", "origin", origin)
+	bed.git(checkout, "remote", "add", "origin", bed.origin)
 	bed.git(checkout, "push", "-q", "origin", "main")
 	bed.git(checkout, "fetch", "-q", "origin")
 	layout, err := lane.NewLayout(checkout)
@@ -76,54 +68,42 @@ func newKernelBed(t *testing.T) *kernelBed {
 	if _, _, err := lane.Register(bed.home, layout, "Wido", kernelAt); err != nil {
 		t.Fatal(err)
 	}
-
-	// A goal of two dependent builds (the second on a fold of the first).
-	bed.git(checkout, "checkout", "-q", "-b", "goal/"+bed.goalID, bed.base)
-	bed.write(checkout, "metasystem/app/feature.txt", "alpha\nbeta\ngamma\n")
-	one := bed.commit(checkout, "build one")
-	bed.write(checkout, "metasystem/app/feature.txt", "alpha\nBETA\ngamma\n")
-	fold := bed.commit(checkout, "read fix")
-	bed.write(checkout, "metasystem/app/feature.txt", "alpha\nBETA\nGAMMA\ndelta\n")
-	two := bed.commit(checkout, "build two")
-	bed.goalTip = two
-	digestOne, err := goalbranch.UnitDigest(checkout, one)
-	if err != nil {
-		t.Fatal(err)
-	}
-	digestTwo, err := goalbranch.UnitDigest(checkout, two)
-	if err != nil {
-		t.Fatal(err)
-	}
-	bed.git(checkout, "checkout", "-q", "--detach", bed.base)
-	bed.write(checkout, "metasystem/app/change.txt", "a seat's change\n")
-	bed.change = bed.commit(checkout, "record: a seat's change\n\nMachine: m1e+human")
-	bed.git(checkout, "checkout", "-q", "main")
-
-	goalUnit := batch.BindBranchMember(batch.Unit{GoalID: bed.goalID, Chain: two, SeatRoot: "/seat", State: batch.UnitJoined, Approver: "Wido",
-		AuthorName: "Wido Riezebos", AuthorEmail: "wido@example.invalid", SelectedGroups: []string{"feature-standard"},
-		Claim: batch.Claim{Machine: "m1e", Lineage: "seat", Epoch: 1, Revision: 1, AccountingRevision: 1}},
-		batch.BranchMember{GoalID: bed.goalID, Tip: two, Last: true, Builds: []batch.BranchBuild{
-			{Units: []string{"u1"}, Commit: one, Digest: digestOne},
-			{Units: []string{"u2"}, Commit: two, Digest: digestTwo, Folds: []goalbranch.Commit{{ID: fold, Kind: goalbranch.Read, Unit: "u1"}}}}})
-	changeUnit := batch.NewChangeUnit(batch.ChangeMember{Commit: bed.change, Parent: bed.base, AskedBy: "m1e+human", Subject: "record: a seat's change"},
-		"/seat", "m1e", "human", []string{"metasystem/app/change.txt"}, nil)
-	changeUnit.State, changeUnit.SelectedGroups = batch.UnitJoined, []string{"change-standard"}
-	bed.changeID = changeUnit.GoalID
-	baseTree := bed.git(checkout, "rev-parse", bed.base+"^{tree}")
-	if err := bed.store().Create(batch.Record{Schema: 1, BatchID: bed.batchID, BaseTree: baseTree, TipTree: baseTree, State: batch.StateOpen,
-		Units: []batch.Unit{goalUnit, changeUnit}}); err != nil {
-		t.Fatal(err)
-	}
-	bed.git(checkout, "checkout", "-q", "-B", "lane/"+bed.batchID, bed.base)
-	bed.git(checkout, "cherry-pick", one)
-	bed.git(checkout, "cherry-pick", fold)
-	bed.git(checkout, "cherry-pick", two)
-	bed.git(checkout, "reset", "-q", "--soft", "HEAD~2")
-	bed.git(checkout, "commit", "-q", "-m", "build two with its fold")
-	bed.git(checkout, "cherry-pick", bed.change)
-	bed.head = bed.git(checkout, "rev-parse", "HEAD")
-	bed.git(checkout, "checkout", "-q", "main")
+	bed.first = bed.change(checkout, "one.txt")
+	bed.second = bed.change(checkout, "two.txt")
+	bed.firstID = bed.queue(firstBatch, bed.first, "metasystem/app/one.txt")
+	bed.secondID = bed.queue(secondBatch, bed.second, "metasystem/app/two.txt")
 	return bed
+}
+
+// change is a seat's change on main's base, off to the side.
+func (bed *kernelBed) change(checkout, name string) string {
+	bed.git(checkout, "checkout", "-q", "--detach", bed.base)
+	bed.write(checkout, "metasystem/app/"+name, name+"\n")
+	commit := bed.commit(checkout, "record: "+name)
+	bed.git(checkout, "checkout", "-q", "main")
+	return commit
+}
+
+// queue is one hand-off: a batch record holding the change as its joined
+// member.
+func (bed *kernelBed) queue(id, commit, path string) string {
+	unit := batch.NewChangeUnit(batch.ChangeMember{Commit: commit, Parent: bed.base, AskedBy: "m1e+human", Subject: "record"},
+		"/seat", "m1e", "human", []string{path}, nil)
+	unit.State = batch.UnitJoined
+	tree := bed.tree(bed.base)
+	if err := bed.store().Create(batch.Record{Schema: 1, BatchID: id, BaseTree: tree, TipTree: tree, State: batch.StateOpen, Units: []batch.Unit{unit}}); err != nil {
+		bed.t.Fatal(err)
+	}
+	return unit.GoalID
+}
+
+// merge is the agent's step 2: main with the named heads merged in.
+func (bed *kernelBed) merge(heads ...string) string {
+	checkout := string(bed.layout.Checkout)
+	for _, head := range heads {
+		bed.git(checkout, "merge", "-q", "--no-ff", "--no-edit", head)
+	}
+	return bed.git(checkout, "rev-parse", "HEAD")
 }
 
 func run(t *testing.T, dir, name string, args ...string) string {
@@ -167,26 +147,13 @@ func (bed *kernelBed) tree(rev string) string {
 	return bed.git(string(bed.layout.Checkout), "rev-parse", rev+"^{tree}")
 }
 
+func (bed *kernelBed) originMain() string {
+	return run(bed.t, "", "git", "-C", bed.origin, "rev-parse", "refs/heads/main")
+}
+
 func (bed *kernelBed) newID() (string, error) {
 	bed.ids++
 	return fmt.Sprintf("01j5x00000000000000000k%03d", bed.ids), nil
-}
-
-func (bed *kernelBed) begin() (BeginOutcome, error) {
-	bed.t.Helper()
-	return bed.beginAuthorized(func(string, batch.Record, batch.Unit) error { return nil })
-}
-
-func (bed *kernelBed) beginAuthorized(authorize func(string, batch.Record, batch.Unit) error) (BeginOutcome, error) {
-	bed.t.Helper()
-	return bed.beginWith(BeginSeams{Authorize: authorize, Renew: func(BeginRequest) ([]string, error) { return nil, nil }})
-}
-
-func (bed *kernelBed) beginWith(seams BeginSeams) (BeginOutcome, error) {
-	bed.t.Helper()
-	seams.Now, seams.NewID = func() time.Time { return kernelAt }, bed.newID
-	return Begin(BeginRequest{Home: bed.home, Layout: bed.layout, BatchID: bed.batchID, Members: []string{bed.goalID, bed.changeID},
-		Base: bed.base, Head: bed.head, Actor: kernelActor}, seams)
 }
 
 // fakeChild is the test run child as a program: it records its argv, writes
@@ -222,11 +189,15 @@ func (bed *kernelBed) fakeChild(name string, result *proofrun.TestResult, envelo
 	return executable, argvFile
 }
 
-func (bed *kernelBed) prove(subject, executable string) (batch.ProofAttempt, error) {
+func (bed *kernelBed) prove(tree, executable string) (TreeProof, error) {
 	bed.t.Helper()
-	return Prove(ProveRequest{Home: bed.home, Layout: bed.layout, BatchID: bed.batchID, Subject: subject, Actor: kernelActor},
-		ProveSeams{Executable: func() (string, error) { return executable, nil }, Prober: identity.KernelProber{},
-			Now: func() time.Time { return kernelAt }, NewID: bed.newID})
+	return Prove(ProveRequest{Home: bed.home, Layout: bed.layout, Tree: tree, Actor: kernelActor},
+		ProveSeams{Executable: func() (string, error) { return executable, nil }, Now: func() time.Time { return kernelAt }, NewID: bed.newID})
+}
+
+func (bed *kernelBed) push() (PushOutcome, error) {
+	bed.t.Helper()
+	return Push(PushRequest{Home: bed.home, Layout: bed.layout, Actor: kernelActor}, ProductionPushSeams())
 }
 
 func argValue(argv []string, flag string) string {
@@ -256,113 +227,86 @@ func passed(groups ...string) *proofrun.TestResult {
 	return result
 }
 
-// K4, K6: begin records the canonical series before anything runs; prove
-// runs each subject's exact tree as a lane-charged run that names the
-// lane's checkout and control root, and records every attempt with its
-// subject: the candidate as a delivery run, B, and B plus exactly the
-// member's two dependent builds and their fold.
-func TestProveRunsEachSubjectOnItsTree(t *testing.T) {
+func failed(group string) *proofrun.TestResult {
+	return &proofrun.TestResult{AttemptID: "run-2", Groups: []proofrun.GroupResult{{ID: group, Status: "failed"}}}
+}
+
+// landing prove proves the lane checkout's HEAD tree as one lane-charged
+// delivery run (the same selected tests a seat's own landing runs), starts
+// its child itself, and records the attempt on every queued hand-off's
+// batch record and as the tree's result that landing push reads.
+func TestProveRecordsTheHeadTreeOnEveryQueuedBatch(t *testing.T) {
 	t.Parallel()
 	bed := newKernelBed(t)
-	outcome, err := bed.begin()
-	if err != nil || !outcome.Changed {
-		t.Fatalf("begin: %+v %v", outcome, err)
+	head := bed.merge(bed.first, bed.second)
+	executable, argvFile := bed.fakeChild("green", passed("app-standard"), verbresult.Result{Outcome: verbresult.Confirmed, Summary: "passed"}, 0)
+	proof, err := bed.prove("", executable)
+	if err != nil {
+		t.Fatalf("prove: %v", err)
 	}
-	if ref := bed.git(string(bed.layout.Checkout), "rev-parse", CandidateRef(bed.batchID)); ref != outcome.Opening.Candidate {
-		t.Fatalf("the candidate is kept at %s, not %s", ref, outcome.Opening.Candidate)
+	tree := bed.tree(head)
+	argv := readArgv(t, argvFile)
+	if argValue(argv, "--tree") != tree || argValue(argv, "--purpose") != "delivery" || !slices.Contains(argv, "--batch-tip") ||
+		argValue(argv, "--mode") != "auto" || argValue(argv, "--lane") != lane.AccountID(string(bed.layout.Checkout)) ||
+		argValue(argv, "--lane-checkout") != string(bed.layout.Checkout) || argValue(argv, "--control-root") != string(bed.layout.Install) {
+		t.Fatalf("prove ran %q; want a lane-charged delivery run of tree %s", argv, tree)
 	}
-	account := lane.AccountID(string(bed.layout.Checkout))
-	// Each attempt records the members it covers (K8): the batch all of
-	// the series' members, member:M only M, the base none.
-	cases := []struct {
-		subject, tree, purpose, groups string
-		covers                         []string
-	}{
-		{batch.SubjectBatch, outcome.Opening.Tree, "delivery", "", outcome.Opening.Members},
-		{batch.SubjectBase, bed.tree(bed.base), "diagnostic", "change-standard,feature-standard", nil},
-		{batch.SubjectMember + ":" + bed.goalID, bed.tree(bed.goalTip), "diagnostic", "feature-standard", []string{bed.goalID}},
-		{batch.SubjectMember + ":" + bed.changeID, bed.tree(bed.change), "diagnostic", "change-standard", []string{bed.changeID}},
+	if proof.Tree != tree || proof.Commit != head || proof.Status != batch.AttemptGreen || !slices.Equal(proof.Batches, []string{firstBatch, secondBatch}) {
+		t.Fatalf("prove = %+v; want green on HEAD's tree %s for both hand-offs", proof, tree)
 	}
-	for index, want := range cases {
-		executable, argvFile := bed.fakeChild(fmt.Sprint(index), passed("feature-standard"), verbresult.Result{Outcome: verbresult.Confirmed, Summary: "passed"}, 0)
-		attempt, err := bed.prove(want.subject, executable)
-		if err != nil {
-			t.Fatalf("prove %s: %v", want.subject, err)
+	kept, ok, err := ReadTreeProof(bed.layout, tree)
+	if err != nil || !ok || kept.Status != batch.AttemptGreen || kept.Attempt != proof.Attempt {
+		t.Fatalf("the tree's kept result = %+v %v %v; want the green attempt", kept, ok, err)
+	}
+	for id, member := range map[string]string{firstBatch: bed.firstID, secondBatch: bed.secondID} {
+		record, err := bed.store().Load(id)
+		if err != nil || len(record.Attempts) != 1 {
+			t.Fatalf("batch %s attempts = %+v %v; want the one", id, record.Attempts, err)
 		}
-		argv := readArgv(t, argvFile)
-		if argValue(argv, "--tree") != want.tree || argValue(argv, "--purpose") != want.purpose || argValue(argv, "--groups") != want.groups ||
-			argValue(argv, "--lane") != account || argValue(argv, "--lane-checkout") != string(bed.layout.Checkout) ||
-			argValue(argv, "--control-root") != string(bed.layout.Install) || !slices.Contains(argv, "--hold-host-proving") {
-			t.Fatalf("prove %s ran %q; want tree %s, purpose %s, groups %q on the lane's named checkout and control root", want.subject, argv, want.tree, want.purpose, want.groups)
-		}
-		if root := argValue(argv, "--root"); filepath.Base(root) != "metasystem" || strings.HasPrefix(root, string(bed.layout.Checkout)+string(filepath.Separator)) {
-			t.Fatalf("prove %s ran in %s; want the installation of its own projection of the tree", want.subject, root)
-		}
-		if attempt.Status != batch.AttemptGreen || attempt.Tree != want.tree || attempt.OpID != outcome.Opening.OpID || attempt.Child == nil {
-			t.Fatalf("prove %s recorded %+v; want green on %s with its child's identity", want.subject, attempt, want.tree)
-		}
-		if !slices.Equal(attempt.Covers, want.covers) || len(want.covers) == 0 && attempt.Covers != nil {
-			t.Fatalf("prove %s covers %q; want %q", want.subject, attempt.Covers, want.covers)
+		attempt := record.Attempts[0]
+		if attempt.ID != proof.Attempt || attempt.Tree != tree || attempt.Status != batch.AttemptGreen || !slices.Equal(attempt.Covers, []string{member}) {
+			t.Fatalf("batch %s recorded %+v; want the green attempt covering %s", id, attempt, member)
 		}
 	}
-	if len(outcome.Opening.Members) != 2 {
-		t.Fatalf("the series' members = %q; want both", outcome.Opening.Members)
+
+	// A red names its failing tests, and --tree proves another tree.
+	executable, argvFile = bed.fakeChild("red", failed("app-standard"), verbresult.Result{Outcome: verbresult.Failed, Summary: "tests failed"}, 1)
+	red, err := bed.prove(bed.first, executable)
+	if err != nil || red.Status != batch.AttemptRed || red.Tree != bed.tree(bed.first) || !slices.Equal(red.RedGroups, []string{"app-standard"}) {
+		t.Fatalf("prove --tree of a red tree = %+v %v; want red naming app-standard", red, err)
 	}
-	record, err := bed.store().Load(bed.batchID)
-	if err != nil || len(record.Attempts) != len(cases) {
-		t.Fatalf("recorded attempts = %d, %v; want %d", len(record.Attempts), err, len(cases))
+	if argValue(readArgv(t, argvFile), "--tree") != bed.tree(bed.first) {
+		t.Fatalf("prove --tree ran another tree")
 	}
 }
 
-// K2: the pause holds. Begin and prove read it under the host flock right
-// before they act: while the lane is stopped nothing is recorded and no
-// child starts.
-func TestPauseHoldsBeginAndProve(t *testing.T) {
+// A stopped lane starts nothing: no child, no attempt, no kept result.
+func TestPauseHoldsProve(t *testing.T) {
 	t.Parallel()
 	bed := newKernelBed(t)
+	bed.merge(bed.first)
 	if _, err := lane.SetPause(bed.home, "Wido", kernelAt); err != nil {
 		t.Fatal(err)
 	}
+	executable, argvFile := bed.fakeChild("paused", passed("app-standard"), verbresult.Result{Outcome: verbresult.Confirmed}, 0)
 	var paused *lane.Refusal
-	if _, err := bed.begin(); !errors.As(err, &paused) || paused.Code != lane.CodePaused {
-		t.Fatalf("begin while paused = %v; want the pause's refusal", err)
-	}
-	if record, err := bed.store().Load(bed.batchID); err != nil || len(record.Openings) != 0 || record.State != batch.StateOpen {
-		t.Fatalf("a paused begin recorded %+v, %v", record.Openings, err)
-	}
-	if _, err := lane.ClearPause(bed.home); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := bed.begin(); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := lane.SetPause(bed.home, "Wido", kernelAt); err != nil {
-		t.Fatal(err)
-	}
-	executable, argvFile := bed.fakeChild("paused", passed("feature-standard"), verbresult.Result{Outcome: verbresult.Confirmed}, 0)
-	if _, err := bed.prove(batch.SubjectBatch, executable); !errors.As(err, &paused) || paused.Code != lane.CodePaused {
+	if _, err := bed.prove("", executable); !errors.As(err, &paused) || paused.Code != lane.CodePaused {
 		t.Fatalf("prove while paused = %v; want the pause's refusal", err)
 	}
 	if _, err := os.Stat(argvFile); !os.IsNotExist(err) {
 		t.Fatalf("a paused prove started its child")
 	}
-	if record, err := bed.store().Load(bed.batchID); err != nil || len(record.Attempts) != 0 {
+	if record, err := bed.store().Load(firstBatch); err != nil || len(record.Attempts) != 0 {
 		t.Fatalf("a paused prove recorded %+v, %v", record.Attempts, err)
 	}
 }
 
-// K6, design §8: an attempt is typed. A failed test is red; a refused or
-// unfinished run, or one without a readable result, is unavailable, never
-// red.
+// An attempt is typed: a refused run, or one without a readable result, is
+// unavailable, never red.
 func TestProveTypesItsOutcome(t *testing.T) {
 	t.Parallel()
 	bed := newKernelBed(t)
-	if _, err := bed.begin(); err != nil {
-		t.Fatal(err)
-	}
-	failed := passed("feature-standard")
-	failed.Groups = append(failed.Groups, proofrun.GroupResult{ID: "change-standard", Status: "failed"})
-	failed.Delivery.Sufficient = false
+	bed.merge(bed.first)
 	cases := []struct {
 		name   string
 		result *proofrun.TestResult
@@ -370,132 +314,120 @@ func TestProveTypesItsOutcome(t *testing.T) {
 		exit   int
 		want   string
 	}{
-		{"red", failed, verbresult.Result{Outcome: verbresult.Failed, Summary: "tests failed"}, 1, batch.AttemptRed},
 		{"refused", nil, verbresult.Result{Outcome: verbresult.Refused, Code: "LANE_ACCOUNT_UNRESOLVED", Summary: "the lane cannot be named"}, 2, batch.AttemptUnavailable},
-		{"no-result", nil, verbresult.Result{Outcome: verbresult.Failed, Summary: "the engine is not enrolled"}, 1, batch.AttemptUnavailable},
-		{"cancelled", &proofrun.TestResult{AttemptID: "run-2", Groups: []proofrun.GroupResult{{ID: "feature-standard", Status: "cancelled"}}},
+		{"no-result", nil, verbresult.Result{Outcome: verbresult.Failed, Summary: "it broke"}, 1, batch.AttemptUnavailable},
+		{"cancelled", &proofrun.TestResult{AttemptID: "run-2", Groups: []proofrun.GroupResult{{ID: "app-standard", Status: "cancelled"}}},
 			verbresult.Result{Outcome: verbresult.Failed, Summary: "cancelled"}, 1, batch.AttemptUnavailable},
 	}
 	for _, want := range cases {
 		executable, _ := bed.fakeChild(want.name, want.result, want.reply, want.exit)
-		attempt, err := bed.prove(batch.SubjectMember+":"+bed.changeID, executable)
-		if err != nil || attempt.Status != want.want {
-			t.Fatalf("%s child: attempt %+v, %v; want %s", want.name, attempt, err, want.want)
-		}
-		if want.want == batch.AttemptRed && !slices.Equal(attempt.RedGroups, []string{"change-standard"}) {
-			t.Fatalf("red attempt names %v; want change-standard", attempt.RedGroups)
+		proof, err := bed.prove("", executable)
+		if err != nil || proof.Status != want.want {
+			t.Fatalf("%s child: %+v, %v; want %s", want.name, proof, err, want.want)
 		}
 	}
 }
 
-// K6: prove needs the batch's recorded series, and a subject of it.
-func TestProveRefusesWhatItCannotRun(t *testing.T) {
+// Rail 1: landing push puts only a tree landing prove recorded green on
+// main, and only as a fast-forward of main. It then marks every queued
+// member whose head the pushed commit contains as landed; the others stay
+// queued.
+func TestPushPushesOnlyAProvenFastForward(t *testing.T) {
 	t.Parallel()
 	bed := newKernelBed(t)
-	executable, argvFile := bed.fakeChild("none", passed("x"), verbresult.Result{Outcome: verbresult.Confirmed}, 0)
+	bed.merge(bed.first)
 	var refusal *Refusal
-	if _, err := bed.prove(batch.SubjectBatch, executable); !errors.As(err, &refusal) || !strings.Contains(refusal.Reason, "no series") {
-		t.Fatalf("prove before begin = %v; want a refusal", err)
+	if _, err := bed.push(); !errors.As(err, &refusal) || refusal.Code != CodePushUnproven {
+		t.Fatalf("push of an unproven HEAD = %v; want %s", err, CodePushUnproven)
 	}
-	if _, err := bed.begin(); err != nil {
+	executable, _ := bed.fakeChild("red", failed("app-standard"), verbresult.Result{Outcome: verbresult.Failed, Summary: "tests failed"}, 1)
+	if _, err := bed.prove("", executable); err != nil {
 		t.Fatal(err)
 	}
-	for _, subject := range []string{"everything", batch.SubjectMember + ":", batch.SubjectMember + ":stranger"} {
-		if _, err := bed.prove(subject, executable); !errors.As(err, &refusal) {
-			t.Fatalf("prove %q = %v; want a refusal", subject, err)
-		}
+	if _, err := bed.push(); !errors.As(err, &refusal) || refusal.Code != CodePushUnproven {
+		t.Fatalf("push of a red HEAD = %v; want %s", err, CodePushUnproven)
 	}
-	if _, err := os.Stat(argvFile); !os.IsNotExist(err) {
-		t.Fatalf("a refused prove started its child")
+	if bed.originMain() != bed.base {
+		t.Fatalf("a refused push moved main")
 	}
-}
 
-// Critique F-5: the join no longer checks a member's authority, so begin
-// does, for every member, before anything is recorded: a stop fence, a held
-// landing gate or a closed budget refuses the series.
-func TestBeginAuthorizesEveryMember(t *testing.T) {
-	t.Parallel()
-	if ProductionBeginSeams().Authorize == nil {
-		t.Fatalf("the production begin authorizes no member")
+	// Main moves past the proven HEAD: a green proof does not make a
+	// rewrite of main a push.
+	other := filepath.Join(bed.dir, "other")
+	run(t, "", "git", "clone", "-q", bed.origin, other)
+	bed.write(other, "metasystem/app/other.txt", "other\n")
+	moved := bed.commit(other, "someone else's landing")
+	bed.git(other, "push", "-q", "origin", "main")
+	executable, _ = bed.fakeChild("green", passed("app-standard"), verbresult.Result{Outcome: verbresult.Confirmed, Summary: "passed"}, 0)
+	if _, err := bed.prove("", executable); err != nil {
+		t.Fatal(err)
 	}
-	bed := newKernelBed(t)
-	var asked []string
-	_, err := bed.beginAuthorized(func(root string, record batch.Record, unit batch.Unit) error {
-		asked = append(asked, unit.GoalID)
-		if root != string(bed.layout.Install) || record.BatchID != bed.batchID {
-			return fmt.Errorf("asked about %s in %s", record.BatchID, root)
-		}
-		if unit.GoalID == bed.goalID {
-			return errors.New("CANDIDATE_GOAL_REFUSED: candidate goal kernel-goal state=fenced")
-		}
-		return nil
-	})
-	var refusal *Refusal
-	if !errors.As(err, &refusal) || !strings.Contains(refusal.Reason, bed.goalID) {
-		t.Fatalf("a fenced member = %v; want begin refused naming it", err)
+	if _, err := bed.push(); !errors.As(err, &refusal) || refusal.Code != CodePushNotFastForward {
+		t.Fatalf("push over a moved main = %v; want %s", err, CodePushNotFastForward)
 	}
-	if record, err := bed.store().Load(bed.batchID); err != nil || len(record.Openings) != 0 {
-		t.Fatalf("a refused member's batch recorded %+v, %v", record.Openings, err)
+	if bed.originMain() != moved {
+		t.Fatalf("a refused push rewrote main")
 	}
-	if outcome, err := bed.begin(); err != nil || !outcome.Changed {
-		t.Fatalf("begin with every member authorized: %+v %v", outcome, err)
-	}
-	if len(asked) == 0 || asked[0] != bed.goalID {
-		t.Fatalf("authorized %v; want every member asked", asked)
-	}
-}
 
-// K7 renewal before the base is fixed: begin renews every claim the lane
-// holds at an older custody epoch first. A renewal writes the ledger on
-// main, so the base the series was composed on is no longer main: begin
-// then records nothing and says to compose on the new main. With nothing
-// to renew, begin records the series. Renewal runs before any member is
-// authorized or any series is checked.
-func TestBeginRenewsBeforeItRecordsTheBase(t *testing.T) {
-	t.Parallel()
-	if ProductionBeginSeams().Renew == nil {
-		t.Fatalf("the production begin renews no claim")
+	// The agent merges main again and proves the new HEAD: it pushes.
+	checkout := string(bed.layout.Checkout)
+	bed.git(checkout, "fetch", "-q", "origin")
+	head := bed.merge("origin/main")
+	if _, err := bed.push(); !errors.As(err, &refusal) || refusal.Code != CodePushUnproven {
+		t.Fatalf("push of the re-merged, unproven HEAD = %v; want %s", err, CodePushUnproven)
 	}
-	bed := newKernelBed(t)
-	var calls []string
-	renewed := []string{bed.goalID}
-	seams := BeginSeams{
-		Renew: func(request BeginRequest) ([]string, error) {
-			calls = append(calls, "renew")
-			if request.BatchID != bed.batchID || request.Home != bed.home || request.Layout != bed.layout {
-				return nil, fmt.Errorf("renewal asked for %+v", request)
-			}
-			return renewed, nil
-		},
-		Authorize: func(string, batch.Record, batch.Unit) error { calls = append(calls, "authorize"); return nil },
+	executable, _ = bed.fakeChild("green-again", passed("app-standard"), verbresult.Result{Outcome: verbresult.Confirmed, Summary: "passed"}, 0)
+	if _, err := bed.prove("", executable); err != nil {
+		t.Fatal(err)
 	}
-	_, err := bed.beginWith(seams)
-	var refusal *Refusal
-	if !errors.As(err, &refusal) || refusal.Code != CodeBeginBaseMoved || !strings.Contains(refusal.Reason, bed.goalID) || !strings.Contains(refusal.Next, "compose") {
-		t.Fatalf("begin after a renewal = %v; want it refused for the moved base", err)
+	outcome, err := bed.push()
+	if err != nil || !outcome.Changed || outcome.Commit != head || outcome.Old != moved {
+		t.Fatalf("push of a proven fast-forward = %+v %v; want main moved from %s to %s", outcome, err, moved, head)
 	}
-	if !slices.Equal(calls, []string{"renew"}) {
-		t.Fatalf("begin after a renewal ran %v; want only the renewal", calls)
+	if bed.originMain() != head {
+		t.Fatalf("main is %s; want the pushed %s", bed.originMain(), head)
 	}
-	if record, err := bed.store().Load(bed.batchID); err != nil || len(record.Openings) != 0 {
-		t.Fatalf("begin after a renewal recorded %+v, %v", record.Openings, err)
+	if !slices.Equal(outcome.Landed, []string{bed.firstID}) {
+		t.Fatalf("landed = %q; want only the contained %s", outcome.Landed, bed.firstID)
 	}
-	if out, err := exec.Command("git", "-C", string(bed.layout.Checkout), "rev-parse", "--verify", "--quiet", CandidateRef(bed.batchID)).CombinedOutput(); err == nil {
-		t.Fatalf("begin after a renewal kept a candidate: %s", out)
+	first, _ := bed.store().Load(firstBatch)
+	if first.Units[0].State != batch.UnitLanded || first.State != batch.StateLanded {
+		t.Fatalf("the contained hand-off is %s/%s; want landed", first.State, first.Units[0].State)
 	}
-	failing := seams
-	failing.Renew = func(BeginRequest) ([]string, error) { return nil, errors.New("the ledger can't be read") }
-	if _, err := bed.beginWith(failing); err == nil {
-		t.Fatal("begin went on past a renewal that failed")
+	second, _ := bed.store().Load(secondBatch)
+	if second.Units[0].State != batch.UnitJoined {
+		t.Fatalf("the hand-off main does not contain is %s; want it still queued", second.Units[0].State)
 	}
-	if record, err := bed.store().Load(bed.batchID); err != nil || len(record.Openings) != 0 {
-		t.Fatalf("begin after a failed renewal recorded %+v, %v", record.Openings, err)
+	published, err := lane.ReadPublications(bed.home)
+	if err != nil || len(published) != 1 || published[0].New != head || published[0].Old != moved {
+		t.Fatalf("publication record = %+v %v; want the one push", published, err)
 	}
-	renewed, calls = nil, nil
-	if outcome, err := bed.beginWith(seams); err != nil || !outcome.Changed {
-		t.Fatalf("begin with every claim current: %+v %v", outcome, err)
+
+	// The same push again changes nothing.
+	if again, err := bed.push(); err != nil || again.Changed {
+		t.Fatalf("a repeated push = %+v %v; want it unchanged", again, err)
 	}
-	if len(calls) < 2 || calls[0] != "renew" {
-		t.Fatalf("begin ran %v; want the renewal first", calls)
+
+	// A stopped lane pushes nothing.
+	if _, err := lane.SetPause(bed.home, "Wido", kernelAt); err != nil {
+		t.Fatal(err)
+	}
+	head = bed.merge(bed.second)
+	executable, _ = bed.fakeChild("green-paused", passed("app-standard"), verbresult.Result{Outcome: verbresult.Confirmed, Summary: "passed"}, 0)
+	if _, err := lane.ClearPause(bed.home); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := bed.prove("", executable); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := lane.SetPause(bed.home, "Wido", kernelAt); err != nil {
+		t.Fatal(err)
+	}
+	var paused *lane.Refusal
+	if _, err := bed.push(); !errors.As(err, &paused) || paused.Code != lane.CodePaused {
+		t.Fatalf("push while paused = %v; want the pause's refusal", err)
+	}
+	if bed.originMain() == head {
+		t.Fatalf("a paused lane pushed")
 	}
 }

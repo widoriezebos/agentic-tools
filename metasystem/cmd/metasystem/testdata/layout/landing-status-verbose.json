@@ -62,7 +62,34 @@ exit 0
       ],
       "unread": []
     },
-    "summary": "landing lane /Users/wido/GitHub/agentic-tools-landing: landing agent running (pid 38928); batch 4gr18nm8t3nyev9sssda9jgtsq proving, 2 members; next 7kq2m9x4c1vbn8hzt5pwe3dyra collecting, 1 member"
+    "summary": "landing lane /Users/wido/GitHub/agentic-tools-landing: landing agent running (pid 38928); batch 4gr18nm8t3nyev9sssda9jgtsq proving, 2 members; next 7kq2m9x4c1vbn8hzt5pwe3dyra collecting, 1 member",
+    "paused": false,
+    "agent_alive": true,
+    "queue": [
+      {
+        "batch": "4gr18nm8t3nyev9sssda9jgtsq",
+        "member": "verbs-match-intent",
+        "seat": "",
+        "head": "c1",
+        "state": "joined"
+      },
+      {
+        "batch": "4gr18nm8t3nyev9sssda9jgtsq",
+        "member": "switch-on-trial",
+        "seat": "",
+        "head": "c2",
+        "state": "joined"
+      },
+      {
+        "batch": "7kq2m9x4c1vbn8hzt5pwe3dyra",
+        "member": "disk-lifetimes",
+        "seat": "",
+        "head": "c3",
+        "state": "joined"
+      }
+    ],
+    "last_proof": null,
+    "last_push": null
   }
 }
 

@@ -378,8 +378,8 @@ func unregister(home string, confirm func() ([]Unresolved, error), listed []Unre
 			journal.Unresolved = unresolved
 			return writeJSON(home, unsetPath(home), journal)
 		}
-		// The lane's pre-push hook goes with it, so the checkout pushes as
-		// any other. The fence's pause goes with the lane: a later landing
+		// A pre-push hook an earlier engine installed goes with it, so the
+		// checkout pushes as any other. The fence's pause goes with the lane: a later landing
 		// set starts a lane that is not stopped. The journal goes last, so
 		// a crash in between leaves an unset that ends when run again.
 		if err := removeHook(journal.Root); err != nil {

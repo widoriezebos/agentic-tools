@@ -162,14 +162,11 @@ is landing, so a landing never depends on the state of anyone's seat.
   main from the lane.
 
 **The lane's own verbs.** Joining the lane runs no tests: a goal or a
-change is handed over and queued. `metasystem landing begin` records the
-series a batch is composed into on main before any test runs, one
-replay per member's work plus at most 40 lines of the lane's own seam
-fixes. `metasystem landing prove` runs the tests of that recorded series,
-of main, or of one member's own work on main, and records each run on
-the batch as green, red (a test failed) or unavailable (it could not
-run, which is never a member's red). Both act only while the lane is not
-stopped.
+change is handed over and queued. The landing agent merges the waiting
+work on main in the lane's checkout. `metasystem landing prove` runs the
+tests of that checkout's HEAD and records the result for its exact tree,
+as green, red (a test failed) or unavailable (it could not run, which is
+never a member's red). Both act only while the lane is not stopped.
 
 **Stopped is not gone.** A stopped lane (`metasystem landing stop`)
 still takes seats' work, which waits in it; a stop may hold half-landed
@@ -182,24 +179,13 @@ its seat, reads each return back, and only then removes the record. When
 something is still running or a return is not confirmed, it stops and
 lists what is left, and the same command continues.
 
-**Only a publication moves main from the lane.** `metasystem landing set`
-puts a pre-push hook in the lane's checkout, never in a seat's, and
-`landing unset` takes it away. From that checkout, main moves only
-through the lane's one publication boundary. It publishes an exact update
-(this commit, this tree, on top of this main), and git's pushes pass the
-hook only for that update. `metasystem landing publish --batch ID` puts a
-proven batch on main: exactly the series the batch began with, each commit
-with a `Landing-Proof` trailer and its tree unchanged. It publishes only
-when the batch's latest tests passed on that series and were judged by
-the lane's enrolled engine. The lane's own goal-list writes go through
-the same boundary. When main moved in the meantime nothing is published,
-and the lane composes again on the new main; it never pushes the old
-series on top by itself. A seat's own goal writes and landings are
-unchanged. The hook guards main only, and it is not a sandbox: a push
-with `--no-verify`, a checkout whose `core.hooksPath` points elsewhere,
-or a separate clone made under the same account passes it. Those are
-caught only afterwards, by the landing agent's tool gate and the lane's
-detector of what reaches main.
+**Only a proven tree moves main from the lane.** `metasystem landing
+push` puts the lane checkout's HEAD on main only when `landing prove`
+recorded a green result for HEAD's exact tree, and only when HEAD
+contains main, so main is never rewritten. Every waiting member main then
+contains is recorded landed. When main moved in the meantime nothing is
+pushed: the agent merges the new main, proves and pushes again. A seat's
+own goal writes and landings are unchanged.
 
 **Without a lane**, the seat lands it itself. `metasystem work land`
 proves the work on the seat and pushes it from there. This is correct,

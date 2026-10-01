@@ -130,7 +130,3 @@ func RenewLaneClaims(home, checkout, install, batchID string, tree func() (strin
 	}
 	return renewed, nil
 }
-
-// FetchLaneMainTree fetches origin's main into the lane checkout and names
-// its tree: where the lane reads the ledger it renews against.
-func FetchLaneMainTree(checkout string) (string, error) { return fetchLandingBaseTree(checkout) }
