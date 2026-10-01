@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
 )
 
@@ -64,7 +66,8 @@ func TestLandingAgentStartsOnTheLaneWithItsRoster(t *testing.T) {
 		Supervisor: recordingSupervisor{store}, Now: func() time.Time { return now }, Sleep: func(time.Duration) {}, Poll: time.Second, StartCap: time.Minute,
 		Lane: landingLaneCheckout(func() (string, error) { return home, nil })}
 	agent := landingAgent{manager: func() *launch.Manager { return manager }, settings: installationSettings, now: func() time.Time { return now },
-		nonce: func() (string, error) { return "0011223344556677", nil }}
+		nonce: func() (string, error) { return "0011223344556677", nil },
+		hold:  func(string, launch.Record) error { return nil }}
 	keeper := newLandingAgentKeeper(module, home, agent)
 	queued := []batch.Record{{BatchID: "b-one", State: batch.StateOpen, Units: []batch.Unit{{GoalID: "g-one", State: batch.UnitJoined}}}}
 	keeper.Sources.Records = func(string) ([]batch.Record, error) { return queued, nil }
@@ -186,5 +189,102 @@ func TestLandingAgentSkillUsesTheVerbsAsDeclared(t *testing.T) {
 	}
 	if checked == 0 {
 		t.Fatal("the skill spells no landing or agent command")
+	}
+}
+
+// childSupervisor is recordingSupervisor with a real child: the process
+// the launch records as its agent.
+type childSupervisor struct {
+	store launch.Store
+	child identity.Ref
+}
+
+func (s childSupervisor) StartSupervisor(id, _ string) (identity.Ref, error) {
+	_, err := s.store.Update(id, func(record *launch.Record) error {
+		child := s.child
+		record.Child, record.ProcessGroup, record.State = &child, &child, launch.Running
+		return nil
+	})
+	return identity.Ref{Pid: 10, StartedAtSec: 10}, err
+}
+
+// startedSleeper starts a process this test owns and returns its command
+// and identity; the test stops it by its own pid.
+func startedSleeper(t *testing.T) (*exec.Cmd, identity.Ref) {
+	t.Helper()
+	cmd := exec.Command("/bin/sleep", "300")
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = cmd.Process.Kill(); _ = cmd.Wait() })
+	pid := int64(cmd.Process.Pid)
+	started, ok := lease.StartedAt(pid, nil)
+	if !ok {
+		t.Fatalf("the start time of pid %d could not be read", pid)
+	}
+	return cmd, identity.Ref{Pid: pid, StartedAtSec: started}
+}
+
+// TestLandingLaunchHoldsTheLaneInstallation (2026-10-01): a landing launch
+// announces its agent at the lane installation and takes its lease under
+// the landing-agent lineage before the agent runs a tool, replacing the
+// lease a dead earlier landing agent left; the agent never has to run
+// session start to prove it is the lane's agent.
+func TestLandingLaunchHoldsTheLaneInstallation(t *testing.T) {
+	t.Parallel()
+	base := t.TempDir()
+	home, checkout := filepath.Join(base, "home"), filepath.Join(base, "landing")
+	module := filepath.Join(checkout, "metasystem")
+	for _, dir := range []string{home, module} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for path, content := range map[string]string{
+		filepath.Join(module, "go.mod"):                "module fixture\n",
+		filepath.Join(module, "metasystem.conf"):       "# overrides only\n",
+		filepath.Join(module, "metasystem.conf.local"): "launch.landing.runtime=claude\nlaunch.landing.model=claude-roster-model\n",
+	} {
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	registerLane(t, home, checkout, "a-person", time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC))
+	checkout, module = resolvedPath(checkout), resolvedPath(module)
+
+	// An earlier landing agent held the lane installation and died.
+	earlier, earlierRef := startedSleeper(t)
+	if _, err := lease.Announce(module, "earlier-landing", earlierRef.Pid, earlierRef.StartedAtSec, "claude:earlier", "claude", launch.LandingOwnerLineage); err != nil {
+		t.Fatal(err)
+	}
+	if holder, err := lease.CurrentHolder(module); err != nil || holder.Pid != earlierRef.Pid {
+		t.Fatalf("earlier holder = %+v %v; want pid %d", holder, err, earlierRef.Pid)
+	}
+	_ = earlier.Process.Kill()
+	_ = earlier.Wait()
+
+	_, agentRef := startedSleeper(t)
+	now := time.Date(2026, 9, 30, 13, 0, 0, 0, time.UTC)
+	store := launch.Store{Root: filepath.Join(base, "launches")}
+	manager := &launch.Manager{Store: store, Adapters: map[string]launch.Adapter{"claude-headless": launch.ClaudeHeadless{Binary: "/fixture/bin/claude", ProjectsRoot: filepath.Join(base, "projects")}},
+		Supervisor: childSupervisor{store, agentRef}, Now: func() time.Time { return now }, Sleep: func(time.Duration) {}, Poll: time.Second, StartCap: time.Minute,
+		Lane: landingLaneCheckout(func() (string, error) { return home, nil })}
+	agent := landingAgent{manager: func() *launch.Manager { return manager }, settings: installationSettings, now: func() time.Time { return now },
+		nonce: func() (string, error) { return "0123456789abcdef", nil }}
+	id, err := agent.start(checkout, lane.Wake{Reasons: []string{lane.WakeQueued}})
+	if err != nil {
+		t.Fatalf("start = %v", err)
+	}
+	holder, err := lease.CurrentHolder(module)
+	if err != nil || holder.Pid != agentRef.Pid || holder.OwnerLineage != launch.LandingOwnerLineage {
+		t.Fatalf("after launch %s the lane installation is held by %+v %v; want the new landing agent pid %d under %s",
+			id, holder, err, agentRef.Pid, launch.LandingOwnerLineage)
+	}
+	found := false
+	for _, announcement := range lease.AnnouncementsFor(module, agentRef.Pid) {
+		found = found || announcement.MainId == holder.MainId
+	}
+	if !found {
+		t.Fatalf("the holder %s has no announcement for pid %d", holder.MainId, agentRef.Pid)
 	}
 }

@@ -52,6 +52,10 @@ type AgentKeeper struct {
 	Self string
 	// Sources are the wake's reads, the same landing status --json uses.
 	Sources WakeSources
+	// Settle runs before each wake read: it settles the lane's batches the
+	// agent cannot act on (SettleMemberless) and lists what it settled; an
+	// error is shown on the step's line and holds nothing. nil settles none.
+	Settle func(root string, now time.Time) ([]string, error)
 	// Holds are the conditions besides the pause that hold a start: each
 	// returns why it holds, empty when it does not; an error holds too,
 	// because unknown is never a go.
@@ -138,13 +142,23 @@ func (k AgentKeeper) Run() AgentRun {
 		return result
 	}
 	now := k.Now()
+	settledLine := ""
+	if k.Settle != nil {
+		settled, err := k.Settle(root, now)
+		if len(settled) > 0 {
+			settledLine = "; dissolved the batches with no member left: " + strings.Join(settled, ", ")
+		}
+		if err != nil {
+			settledLine += "; a batch with no member left could not be dissolved: " + err.Error()
+		}
+	}
 	wake := ReadWake(registered, now, k.Sources)
 	if len(wake.Reasons) == 0 {
 		line := "the landing lane at " + root + " is idle; no landing agent runs"
 		if len(wake.Unread) > 0 {
 			line += " (unread: " + strings.Join(wake.Unread, "; ") + ")"
 		}
-		return agentRun(AgentIdle, root, line)
+		return agentRun(AgentIdle, root, line+settledLine)
 	}
 	// Claim the start under the flock, re-checking what may have changed
 	// while the wake was read.

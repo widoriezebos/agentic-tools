@@ -124,3 +124,36 @@ func (record *Record) Transition(to string, at time.Time, verb, actor, detail st
 	record.History = append(record.History, entry)
 	record.State = to
 }
+
+// Memberless reports whether record is a batch past collecting, neither
+// landed nor dissolved, whose every member was withdrawn or returned
+// (withdrawn, withdrawn for budget, or ejected), or that has none: nothing
+// in it can be proven, pushed or returned.
+func Memberless(record Record) bool {
+	switch record.State {
+	case StateOpen, StateSealed, StateLanded, StateDissolved:
+		return false
+	}
+	for _, unit := range record.Units {
+		switch unit.State {
+		case UnitWithdrawn, UnitWithdrawnBudget, UnitEjected:
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// DissolveMemberless settles the batch id as dissolved when, read under the
+// store's lock, it is still Memberless; done says whether it was.
+func DissolveMemberless(store Store, id, actor string, at time.Time) (done bool, err error) {
+	err = store.Update(id, func(record *Record) error {
+		if !Memberless(*record) {
+			return nil
+		}
+		record.Transition(StateDissolved, at, "dissolve", actor, "no member left")
+		done = true
+		return nil
+	})
+	return done && err == nil, err
+}
