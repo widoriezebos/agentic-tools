@@ -45,7 +45,7 @@ func ProductionUnsetLane(home, by string) UnsetLane {
 
 // Seams are the unset's steps.
 func (u UnsetLane) Seams() lane.UnsetSeams {
-	return lane.UnsetSeams{Settle: u.settle, Records: u.records, Reconcile: u.reconcile, Return: u.returnBatch, Confirm: u.confirm}
+	return lane.UnsetSeams{Settle: u.settle, Override: u.override, Records: u.records, Reconcile: u.reconcile, Return: u.returnBatch, Confirm: u.confirm}
 }
 
 func (u UnsetLane) store(layout lane.Layout) batch.Store {
@@ -93,19 +93,27 @@ func (u UnsetLane) settle(layout lane.Layout) (lane.Settlement, error) {
 	// The lane's one custody barrier (K9): every execution the kernel
 	// launched, the installation's proof leases, and the host proving lock
 	// the batch owner's proofs hold.
-	probes := u.Custody
-	if probes == nil {
-		probes = func(layout lane.Layout) custody.Probes {
-			return laneprobe.Production(u.Home, string(layout.Install), true)
-		}
-	}
-	held, err := custody.Settle(u.Home, probes(layout))
+	held, err := custody.Settle(u.Home, u.probes(layout))
 	if err != nil {
 		settlement.Unknown = append(settlement.Unknown, "whether landing work runs is unknown: "+err.Error())
 	}
 	settlement.Live = append(settlement.Live, held.Live...)
 	settlement.Unknown = append(settlement.Unknown, held.Unknown...)
 	return settlement, nil
+}
+
+func (u UnsetLane) probes(layout lane.Layout) custody.Probes {
+	if u.Custody != nil {
+		return u.Custody(layout)
+	}
+	return laneprobe.Production(u.Home, string(layout.Install), true)
+}
+
+// override records the person's --force past unknown custody against each
+// record it went past.
+func (u UnsetLane) override(layout lane.Layout) error {
+	_, err := custody.Override(u.Home, u.By, u.probes(layout))
+	return err
 }
 
 // open reports whether the batch may still hold members to settle.

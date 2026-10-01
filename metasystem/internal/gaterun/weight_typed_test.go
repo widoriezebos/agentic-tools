@@ -64,7 +64,7 @@ func TestWeightDischargeRefusalsAreTyped(t *testing.T) {
 // works again.
 func TestDischargeReadFailuresKeepTheGreenRunPending(t *testing.T) {
 	for _, tc := range []struct {
-		name  string
+		name   string
 		break_ func(t *testing.T, root string) (restore func())
 	}{
 		{"run record unreadable", func(t *testing.T, root string) func() {

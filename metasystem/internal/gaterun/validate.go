@@ -112,12 +112,19 @@ type ValidateSeams struct {
 	Clock func() time.Time
 	// Reservation reads the durable reservation; nil when none.
 	Reservation func() (*Validation, error)
-	// Reserve writes a reservation durably; it refuses when another is
-	// there. Record updates the reservation of the same run id.
-	Reserve func(Validation) error
-	Record  func(Validation) error
-	// Clear removes the reservation of runID only.
-	Clear func(runID string) error
+	// Start reserves the run durably (key and run id), then, under the
+	// lane's pause and with the reservation held so no other call can judge
+	// it half-started, passes the custody barrier, claims the standing
+	// authority and launches the run under custody, recording the authority
+	// and the custody id in the reservation. It returns the reservation as
+	// recorded. A barrier that holds is a *StartHeld, an authority that
+	// can't be claimed a *StartAuthority, and the lane refusing a
+	// *StartBlocked; when nothing started the reservation is removed.
+	Start func(Validation) (Validation, error)
+	// Clear removes the reservation the caller judged, and only while it
+	// is unchanged: a reservation another call has since moved (recorded a
+	// custody id) is ErrReservationMoved.
+	Clear func(Validation) error
 	// Custody reads a reserved run's custody: by its record, or, when the
 	// launch did not get to record it, by the run id it was opened for.
 	Custody func(Validation) (state, why string)
@@ -128,19 +135,15 @@ type ValidateSeams struct {
 	Wait func(Validation) error
 	// Outcome reads how a settled run ended.
 	Outcome func(Validation) RunOutcome
-	// Authority reads the standing goal's authority gap (nil when a run
-	// may be claimed under it) and claims it.
-	Gap   func() error
-	Claim func(time.Time) (CadenceAuthority, error)
+	// Gap reads the standing goal's authority gap: nil when a run may be
+	// claimed under it.
+	Gap func() error
 	// Plan fetches the trunk and decides the key and whether a run is due.
 	Plan func() (ValidationPlan, error)
 	// Latest is the ledger's latest published status.
 	Latest func() (*goal.CadenceStatus, error)
 	// NewRunID mints a run id.
 	NewRunID func() (string, error)
-	// Launch starts the reserved run under custody and returns its custody
-	// record id; it does not wait.
-	Launch func(Validation) (string, error)
 	// Weight reads the weight state; Discharge resets it for a green run.
 	Weight    func() (WeightState, error)
 	Discharge func(CadenceAuthority, string, time.Time) error
@@ -166,6 +169,28 @@ const (
 	CodeValidateUnavailable    = "LANDING_VALIDATE_UNAVAILABLE"
 	CodeValidatePending        = "LANDING_VALIDATE_FINALIZE_PENDING"
 )
+
+// ErrReservationMoved is a reservation another call changed after this one
+// read it.
+var ErrReservationMoved = errors.New("the validation reservation was changed by another landing validate")
+
+// StartHeld is the custody barrier holding a new run: live work, or work
+// whose state can't be read.
+type StartHeld struct{ Live, Unknown []string }
+
+func (held *StartHeld) Error() string { return "landing work holds the validation" }
+
+// StartAuthority is a standing authority that couldn't be claimed.
+type StartAuthority struct{ Err error }
+
+func (authority *StartAuthority) Error() string { return authority.Err.Error() }
+
+// StartBlocked is the lane refusing the launch (its pause, its fence): the
+// refusal is the call's error.
+type StartBlocked struct{ Err error }
+
+func (blocked *StartBlocked) Error() string { return blocked.Err.Error() }
+func (blocked *StartBlocked) Unwrap() error { return blocked.Err }
 
 // ValidateGap is why the standing validation authority can't carry a run:
 // the plain reason and the one command that closes it.
@@ -254,7 +279,12 @@ func resume(reserved Validation, force bool, seams ValidateSeams) (ValidateOutco
 	if !ended.Usable {
 		// A settled attempt without a result retries under a new run id;
 		// the old governed run is never reused.
-		if err := seams.Clear(reserved.RunID); err != nil {
+		if err := seams.Clear(reserved); err != nil {
+			if errors.Is(err, ErrReservationMoved) {
+				outcome.Result, outcome.Code = ValidateWaiting, CodeValidateCustodyLive
+				outcome.Reason = "another landing validate started run " + reserved.RunID + " meanwhile"
+				return outcome, true, nil
+			}
 			return outcome, true, err
 		}
 		return outcome, false, nil
@@ -296,7 +326,7 @@ func finalize(reserved Validation, result proofrun.TestResult, seams ValidateSea
 		outcome.Reason = "the validation result couldn't be published: " + err.Error()
 		return outcome, nil
 	}
-	if err := seams.Clear(reserved.RunID); err != nil {
+	if err := seams.Clear(reserved); err != nil {
 		return outcome, err
 	}
 	outcome.Result, outcome.Status = ValidateFinalized, &status
@@ -376,39 +406,40 @@ func fresh(force bool, seams ValidateSeams) (ValidateOutcome, error) {
 		return outcome, nil
 	}
 	now := seams.Clock().UTC().Truncate(time.Second)
-	authority, err := seams.Claim(now)
-	if err != nil || authority.GoalID == "" || authority.ObligationRevision == 0 {
-		reason := "the standing validation authority couldn't be claimed"
-		if err != nil {
-			reason += ": " + err.Error()
-		}
-		outcome.Result, outcome.Code, outcome.Reason = ValidateUnavailable, CodeValidateAuthority, reason
-		return outcome, nil
-	}
 	runID, err := seams.NewRunID()
 	if err != nil {
 		return outcome, err
 	}
-	reservation := Validation{Key: plan.Key, RunID: runID, Discharge: plan.WeightDue, Trunk: plan.Trunk, Trigger: plan.Trigger,
-		ForceGroups: plan.ForceGroups, Authority: authority, DeepOnly: plan.DeepOnly, Probes: plan.Probes, ReservedAt: now.Format(time.RFC3339)}
-	if err := seams.Reserve(reservation); err != nil {
-		return outcome, err
-	}
-	outcome.RunID = runID
-	custody, err := seams.Launch(reservation)
-	if custody != "" {
-		reservation.Custody = custody
-		if recordErr := seams.Record(reservation); recordErr != nil {
-			return outcome, errors.Join(err, recordErr)
-		}
-	}
-	if err != nil {
-		// Nothing started, or its start is in custody: the next call
-		// settles the reservation by custody and retries.
+	reservation, err := seams.Start(Validation{Key: plan.Key, RunID: runID, Discharge: plan.WeightDue, Trunk: plan.Trunk, Trigger: plan.Trigger,
+		ForceGroups: plan.ForceGroups, DeepOnly: plan.DeepOnly, Probes: plan.Probes, ReservedAt: now.Format(time.RFC3339)})
+	var held *StartHeld
+	var authority *StartAuthority
+	var blocked *StartBlocked
+	switch {
+	case err == nil:
+	case errors.As(err, &blocked):
+		return outcome, blocked.Err
+	case errors.As(err, &held) && len(held.Live) > 0:
+		outcome.Result, outcome.Code, outcome.Live = ValidateWaiting, CodeValidateCustodyLive, held.Live
+		outcome.Reason = "other landing work still runs, so no validation started"
+		return outcome, nil
+	case errors.As(err, &held):
+		outcome.Result, outcome.Code, outcome.Unknown = ValidateUnavailable, CodeValidateCustodyUnknown, held.Unknown
+		outcome.Reason = "whether other landing work still runs can't be read, so no validation started"
+		return outcome, nil
+	case errors.As(err, &authority):
+		outcome.Result, outcome.Code = ValidateUnavailable, CodeValidateAuthority
+		outcome.Reason = "the standing validation authority couldn't be claimed: " + authority.Err.Error()
+		return outcome, nil
+	default:
+		// Nothing started (the reservation was removed), or its start is in
+		// custody: the next call settles it by custody and retries.
+		outcome.RunID = reservation.RunID
 		outcome.Result, outcome.Code = ValidateUnavailable, CodeValidateUnavailable
 		outcome.Reason = "the validation run couldn't be started: " + err.Error()
 		return outcome, nil
 	}
+	outcome.RunID = runID
 	resumed, done, err := resume(reservation, force, seams)
 	if err != nil || done {
 		return resumed, err

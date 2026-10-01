@@ -7,6 +7,7 @@ package main
 // and a key already published is returned without running.
 
 import (
+	"errors"
 	"strings"
 	"time"
 
@@ -97,7 +98,8 @@ func runIntentLandingValidate(inv *intentInvocation, kernel laneKernel) int {
 	}
 	outcome, err := kernel.owners.validation(request)
 	if err != nil {
-		if refusal, ok := err.(*lane.Refusal); ok {
+		var refusal *lane.Refusal
+		if errors.As(err, &refusal) {
 			return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: refusal.Message,
 				next: refusal.Argv, nextReason: refusal.Fix, Details: []string{"refused because: " + refusal.Code}})
 		}

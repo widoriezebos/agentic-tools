@@ -76,41 +76,99 @@ func writeReservation(home string, reservation gaterun.Validation) error {
 	return err
 }
 
-// Reserve records a run's key and id durably before it launches; another
-// run's reservation refuses it.
-func Reserve(home string, reservation gaterun.Validation) error {
-	return withReservation(home, func(current *gaterun.Validation) error {
+// StartSteps are what starting a reserved validation does under the lane's
+// pause: pass the custody barrier, claim the standing authority, launch
+// the run under custody.
+type StartSteps struct {
+	// Gate runs start under the lane flock when the lane admits validate.
+	Gate func(start func() error) error
+	// Barrier is custody.Clear: nil when nothing holds a new run.
+	Barrier func() error
+	Claim   func(time.Time) (gaterun.CadenceAuthority, error)
+	// Launch starts the run and returns its custody record id ("" when no
+	// record was opened).
+	Launch func(gaterun.Validation) (string, error)
+	Now    func() time.Time
+}
+
+// StartValidation reserves v (its key and run id) durably and starts it,
+// holding the reservation from the reserve to the recorded custody id: no
+// other landing validate can judge the run half-started and clear it. The
+// barrier is passed before the standing authority is claimed, so a run
+// that can't start writes nothing to main. When nothing was started the
+// reservation is removed.
+func StartValidation(home string, v gaterun.Validation, steps StartSteps) (gaterun.Validation, error) {
+	err := withReservation(home, func(current *gaterun.Validation) error {
 		if current != nil {
 			return fmt.Errorf("validation run %s is already reserved", current.RunID)
 		}
-		return writeReservation(home, reservation)
-	})
-}
-
-// RecordReservation updates the reservation of the same run id.
-func RecordReservation(home string, reservation gaterun.Validation) error {
-	return withReservation(home, func(current *gaterun.Validation) error {
-		if current == nil || current.RunID != reservation.RunID {
-			return fmt.Errorf("validation run %s is not the reserved run", reservation.RunID)
+		if err := writeReservation(home, v); err != nil {
+			return err
 		}
-		return writeReservation(home, reservation)
+		admitted := false
+		err := steps.Gate(func() error {
+			admitted = true
+			if err := steps.Barrier(); err != nil {
+				var held *custody.Held
+				if errors.As(err, &held) {
+					return &gaterun.StartHeld{Live: held.Live, Unknown: held.Unknown}
+				}
+				return err
+			}
+			authority, err := steps.Claim(steps.Now().UTC())
+			if err == nil && (authority.GoalID == "" || authority.ObligationRevision == 0) {
+				err = fmt.Errorf("the standing goal binds no obligation")
+			}
+			if err != nil {
+				return &gaterun.StartAuthority{Err: err}
+			}
+			v.Authority = authority
+			if err := writeReservation(home, v); err != nil {
+				return err
+			}
+			id, err := steps.Launch(v)
+			if id != "" {
+				v.Custody = id
+				if recordErr := writeReservation(home, v); recordErr != nil {
+					return errors.Join(err, recordErr)
+				}
+			}
+			return err
+		})
+		if err != nil && !admitted {
+			err = &gaterun.StartBlocked{Err: err}
+		}
+		if err != nil && v.Custody == "" {
+			// Nothing was opened, so nothing runs: the reservation goes.
+			if removeErr := removeReservation(home); removeErr != nil {
+				return errors.Join(err, removeErr)
+			}
+		}
+		return err
 	})
+	return v, err
 }
 
-// ClearReservation removes the reservation of runID only.
-func ClearReservation(home, runID string) error {
+func removeReservation(home string) error {
+	err := os.Remove(ReservationPath(home))
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	return err
+}
+
+// ClearReservation removes the reservation the caller judged, only while it
+// is unchanged: gaterun.ErrReservationMoved when another call has since
+// recorded its custody (or replaced it).
+func ClearReservation(home string, judged gaterun.Validation) error {
 	return withReservation(home, func(current *gaterun.Validation) error {
 		if current == nil {
 			return nil
 		}
-		if current.RunID != runID {
-			return fmt.Errorf("validation run %s is not the reserved run (%s is)", runID, current.RunID)
+		if current.RunID != judged.RunID || current.Custody != judged.Custody {
+			return gaterun.ErrReservationMoved
 		}
-		err := os.Remove(ReservationPath(home))
-		if errors.Is(err, fs.ErrNotExist) {
-			return nil
-		}
-		return err
+		return removeReservation(home)
 	})
 }
 
@@ -267,9 +325,7 @@ func (v ValidateLane) Seams() (gaterun.ValidateSeams, error) {
 	return gaterun.ValidateSeams{
 		Clock:       clock,
 		Reservation: func() (*gaterun.Validation, error) { return ReadReservation(home) },
-		Reserve:     func(reservation gaterun.Validation) error { return Reserve(home, reservation) },
-		Record:      func(reservation gaterun.Validation) error { return RecordReservation(home, reservation) },
-		Clear:       func(runID string) error { return ClearReservation(home, runID) },
+		Clear:       func(reservation gaterun.Validation) error { return ClearReservation(home, reservation) },
 		Custody: func(reservation gaterun.Validation) (string, string) {
 			return ReservationCustody(home, reservation, v.Probes)
 		},
@@ -298,29 +354,24 @@ func (v ValidateLane) Seams() (gaterun.ValidateSeams, error) {
 			}
 			return nil
 		},
-		Claim: func(at time.Time) (gaterun.CadenceAuthority, error) {
-			return claimCadenceAuthority(endpoint, actor, v.Owner.Epoch, at)
-		},
 		Plan:   func() (gaterun.ValidationPlan, error) { return planValidation(root, v.Owner, clock) },
 		Latest: latest,
 		NewRunID: func() (string, error) {
 			ulid, err := goal.NewOperationULID()
 			return "cadence-" + strings.ToLower(ulid), err
 		},
-		Launch: func(reservation gaterun.Validation) (string, error) {
-			id := ""
-			err := gate(func() error {
-				// The barrier is read again under the host flock the pause
-				// is read under, so no other kernel execution opens between
-				// the read and this launch's record.
-				if err := custody.Clear(home, v.Probes, v.Force); err != nil {
-					return err
-				}
-				var err error
-				id, err = launchValidation(home, root, v.Owner, clock, store, reservation)
-				return err
-			})
-			return id, err
+		Start: func(reservation gaterun.Validation) (gaterun.Validation, error) {
+			return StartValidation(home, reservation, StartSteps{Gate: gate, Now: clock,
+				// The barrier is read again under the host flock the pause is
+				// read under, so no other kernel execution opens between the
+				// read and this launch's record.
+				Barrier: func() error { return custody.Clear(home, v.Probes, v.Force) },
+				Claim: func(at time.Time) (gaterun.CadenceAuthority, error) {
+					return claimCadenceAuthority(endpoint, actor, v.Owner.Epoch, at)
+				},
+				Launch: func(reservation gaterun.Validation) (string, error) {
+					return launchValidation(home, root, v.Owner, clock, store, reservation)
+				}})
 		},
 		Weight: func() (gaterun.WeightState, error) {
 			state, _, err := gaterun.WeightCheckAt(root, v.Owner.WeightThreshold(root), clock().UTC())

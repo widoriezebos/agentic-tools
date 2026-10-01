@@ -11,7 +11,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/custody"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 )
 
@@ -78,5 +80,62 @@ func TestUnsetWaitsForAValidationGroupThatOutlivesItsLeader(t *testing.T) {
 	settlement, err := steps.settle(bed.layout)
 	if err != nil || settlement.Settled(true) || !strings.Contains(strings.Join(settlement.Live, "\n"), "process group "+strconv.Itoa(int(leader.Pid))) {
 		t.Fatalf("settle with a validation group that outlives its leader = %+v %v; want it live", settlement, err)
+	}
+}
+
+// A person's landing unset --force past custody that can't be read records
+// whom it went past: the record is settled in the person's name.
+func TestUnsetForceRecordsThePersonPastUnknownCustody(t *testing.T) {
+	t.Parallel()
+	bed := newUnsetBed(t)
+	gone := exec.Command("sleep", "120")
+	if err := gone.Start(); err != nil {
+		t.Fatal(err)
+	}
+	exact, _, err := (identity.KernelProber{}).Probe(int64(gone.Process.Pid))
+	_ = gone.Process.Kill()
+	_ = gone.Wait()
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := identity.EncodeRef(exact.Ref())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Opened by a launcher that died before it recorded what it started.
+	record, err := json.Marshal(map[string]any{"schema": 1, "id": "prove-00000000000000bb", "kind": "prove", "subject": "batch b1",
+		"openedAt": unsetNow.Format(time.RFC3339), "issuer": encoded})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(lane.HostDir(bed.home), "landing-custody")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "prove-00000000000000bb.json")
+	if err := os.WriteFile(path, record, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	steps := UnsetLane{Home: bed.home, By: "Wido", Now: func() time.Time { return unsetNow },
+		Probe: func(string) (lane.OwnerProbe, error) { return lane.OwnerProbe{}, nil },
+		End:   func(string) (int64, error) { return 0, nil },
+		Calls: BatchOwnerCallSet{
+			Handover: func(ownercall.Invocation, ownercall.HandoverRequest) error { return nil },
+			EditNext: func(ownercall.Invocation, string, string, string) error { return nil },
+			Release:  func(ownercall.Invocation, string, string) error { return nil },
+		},
+		Custody: func(lane.Layout) custody.Probes {
+			return custody.Probes{}
+		}}
+	report, err := lane.Unset(bed.home, "Wido", unsetNow, false, steps.Seams())
+	if err != nil || report.Stopped != lane.StepSettled || len(report.Settlement.Unknown) != 1 {
+		t.Fatalf("unset without force = %+v %v; want it stopped at the unknown custody", report, err)
+	}
+	if _, err := lane.Unset(bed.home, "Wido", unsetNow, true, steps.Seams()); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil || !strings.Contains(string(data), `"forced": "Wido"`) {
+		t.Fatalf("the record the forced unset went past = %s %v; want it settled in Wido's name", data, err)
 	}
 }

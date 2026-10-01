@@ -70,24 +70,29 @@ func (bed *validateBed) seams() ValidateSeams {
 			copied := *bed.reservation
 			return &copied, nil
 		},
-		Reserve: func(v Validation) error {
+		Start: func(v Validation) (Validation, error) {
 			if bed.reservation != nil {
-				return fmt.Errorf("already reserved")
+				return v, fmt.Errorf("already reserved")
 			}
-			bed.log = append(bed.log, "reserve "+v.RunID)
-			bed.reservation = &v
-			return nil
-		},
-		Record: func(v Validation) error {
-			bed.log = append(bed.log, "record "+v.RunID+" "+v.Custody)
-			bed.reservation = &v
-			return nil
-		},
-		Clear: func(runID string) error {
-			bed.log = append(bed.log, "clear "+runID)
-			if bed.reservation != nil && bed.reservation.RunID == runID {
-				bed.reservation = nil
+			bed.log = append(bed.log, "start "+v.RunID)
+			if bed.launchErr != nil {
+				return v, bed.launchErr
 			}
+			v.Authority = CadenceAuthority{GoalID: "standing-validation", ObligationRevision: 2}
+			v.Custody = "validate-" + v.RunID
+			bed.reservation = &v
+			// The launched run ends green unless the bed says otherwise.
+			if _, ok := bed.outcome[v.RunID]; !ok {
+				bed.outcome[v.RunID] = RunOutcome{Usable: true, Result: greenResult("attempt-" + v.RunID)}
+			}
+			return v, nil
+		},
+		Clear: func(v Validation) error {
+			bed.log = append(bed.log, "clear "+v.RunID)
+			if bed.reservation != nil && (bed.reservation.RunID != v.RunID || bed.reservation.Custody != v.Custody) {
+				return ErrReservationMoved
+			}
+			bed.reservation = nil
 			return nil
 		},
 		Custody: func(v Validation) (string, string) {
@@ -107,10 +112,6 @@ func (bed *validateBed) seams() ValidateSeams {
 		},
 		Outcome: func(v Validation) RunOutcome { return bed.outcome[v.RunID] },
 		Gap:     func() error { return bed.gap },
-		Claim: func(time.Time) (CadenceAuthority, error) {
-			bed.log = append(bed.log, "claim")
-			return CadenceAuthority{GoalID: "standing-validation", ObligationRevision: 2}, nil
-		},
 		Plan: func() (ValidationPlan, error) {
 			if bed.planErr != nil {
 				return ValidationPlan{}, bed.planErr
@@ -121,17 +122,6 @@ func (bed *validateBed) seams() ValidateSeams {
 		NewRunID: func() (string, error) {
 			bed.runs++
 			return fmt.Sprintf("cadence-run-%d", bed.runs), nil
-		},
-		Launch: func(v Validation) (string, error) {
-			bed.log = append(bed.log, "launch "+v.RunID)
-			if bed.launchErr != nil {
-				return "", bed.launchErr
-			}
-			// The launched run ends green unless the bed says otherwise.
-			if _, ok := bed.outcome[v.RunID]; !ok {
-				bed.outcome[v.RunID] = RunOutcome{Usable: true, Result: greenResult("attempt-" + v.RunID)}
-			}
-			return "validate-" + v.RunID, nil
 		},
 		Weight: func() (WeightState, error) { return bed.weight, bed.weightErr },
 		Discharge: func(_ CadenceAuthority, runID string, _ time.Time) error {
@@ -180,8 +170,7 @@ func TestValidateRecordsKeyAndRunBeforeLaunch(t *testing.T) {
 	if outcome.Result != ValidateFinalized || !outcome.Discharged || outcome.RunID != "cadence-run-1" || outcome.Key != bed.plan.Key {
 		t.Fatalf("outcome = %+v", outcome)
 	}
-	bed.wrote(t, "claim", "reserve cadence-run-1", "launch cadence-run-1", "record cadence-run-1 validate-cadence-run-1",
-		"discharge cadence-run-1", "publish cadence-run-1", "clear cadence-run-1")
+	bed.wrote(t, "start cadence-run-1", "discharge cadence-run-1", "publish cadence-run-1", "clear cadence-run-1")
 }
 
 // A reserved run whose custody is live is attached, not run again: the
@@ -326,7 +315,7 @@ func TestValidateUnavailableWritesNothing(t *testing.T) {
 	if outcome := launch.validate(false); outcome.Result != ValidateUnavailable || len(launch.published) != 0 {
 		t.Fatalf("launch: outcome = %+v", outcome)
 	}
-	launch.wrote(t, "claim", "reserve cadence-run-1", "launch cadence-run-1")
+	launch.wrote(t, "start cadence-run-1")
 }
 
 // A settled run without a usable result is cleared and run again under a
@@ -340,8 +329,7 @@ func TestValidateSettledAttemptRetriesWithNewRunID(t *testing.T) {
 	if outcome.Result != ValidateFinalized || outcome.RunID != "cadence-run-1" || outcome.Retried != "cadence-run-7" {
 		t.Fatalf("outcome = %+v", outcome)
 	}
-	bed.wrote(t, "clear cadence-run-7", "claim", "reserve cadence-run-1", "launch cadence-run-1", "record cadence-run-1 validate-cadence-run-1",
-		"discharge cadence-run-1", "publish cadence-run-1", "clear cadence-run-1")
+	bed.wrote(t, "clear cadence-run-7", "start cadence-run-1", "discharge cadence-run-1", "publish cadence-run-1", "clear cadence-run-1")
 }
 
 // Custody that can't be read blocks a new validation and the finalization

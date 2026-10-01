@@ -184,10 +184,12 @@ func completedValidationSeams(t *testing.T, home string) gaterun.ValidateSeams {
 	return gaterun.ValidateSeams{
 		Clock:       func() time.Time { return laneTestNow },
 		Reservation: func() (*gaterun.Validation, error) { return cadence.ReadReservation(home) },
-		Reserve:     func(v gaterun.Validation) error { refuse("reserve"); return cadence.Reserve(home, v) },
-		Record:      func(v gaterun.Validation) error { refuse("record"); return nil },
-		Clear:       func(runID string) error { return cadence.ClearReservation(home, runID) },
-		Gap:         func() error { return nil },
+		Start: func(v gaterun.Validation) (gaterun.Validation, error) {
+			refuse("start")
+			return v, nil
+		},
+		Clear: func(v gaterun.Validation) error { return cadence.ClearReservation(home, v) },
+		Gap:   func() error { return nil },
 		Plan: func() (gaterun.ValidationPlan, error) {
 			return gaterun.ValidationPlan{Trunk: gaterun.CadenceTrunk{Commit: strings.Repeat("2", 40), Tree: tree}, Key: key, Due: true}, nil
 		},
@@ -195,11 +197,6 @@ func completedValidationSeams(t *testing.T, home string) gaterun.ValidateSeams {
 			return &goal.CadenceStatus{TrunkTree: tree, WeightGeneration: 3, ForcedWindowStart: key.ForcedWindowStart, RunID: "cadence-run-0",
 				Groups: []goal.CadenceGroupStatus{{Group: "deep", Status: "passed"}}}, nil
 		},
-		Claim: func(time.Time) (gaterun.CadenceAuthority, error) {
-			refuse("claim")
-			return gaterun.CadenceAuthority{}, nil
-		},
-		Launch: func(gaterun.Validation) (string, error) { refuse("launch"); return "", nil },
 		Publish: func(goal.CadenceClaimKey, goal.CadenceStatus, []goal.TrunkRedRecordGroup) error {
 			refuse("publish")
 			return nil
