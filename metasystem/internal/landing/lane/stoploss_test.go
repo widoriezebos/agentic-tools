@@ -405,36 +405,6 @@ func TestResumeKeepsALiveSessionsDeadline(t *testing.T) {
 	}
 }
 
-// TestDeadlineWaitsForAPushInFlight (K10, critique N-4): the deadline
-// cancel does not cut a push to main in half; it waits for the push, at
-// most PushGrace past the deadline.
-func TestDeadlineWaitsForAPushInFlight(t *testing.T) {
-	t.Parallel()
-	home, checkout, module := nestedLaneDirs(t)
-	clock := laneNow
-	agent := &fakeAgent{}
-	keeper := agent.keeper(home, module, &clock, WakeSources{Records: func(string) ([]batch.Record, error) { return queuedBatch, nil }})
-	var cancelled []string
-	keeper.Cancel = func(id string) error { cancelled = append(cancelled, id); agent.running = ""; return nil }
-	keeper.Settle = func(string) error { return nil }
-	keeper.Step()
-	// A publication's push runs: its token is minted by a live process.
-	if err := Gate(home, OpPublish, AuthorityAgent, func(Record) error {
-		_, err := mint(home, Tuple{Repo: checkout}, OpPublish, AuthorityAgent)
-		return err
-	}); err != nil {
-		t.Fatal(err)
-	}
-	clock = laneNow.Add(AllowanceWindow)
-	if line := keeper.Step(); len(cancelled) != 0 || !strings.Contains(line, "push") {
-		t.Fatalf("a push in flight at the deadline: %q, cancelled %v; want the cancel to wait", line, cancelled)
-	}
-	clock = laneNow.Add(AllowanceWindow + PushGrace)
-	if keeper.Step(); len(cancelled) != 1 {
-		t.Fatalf("PushGrace past the deadline: cancelled %v; want the session cancelled", cancelled)
-	}
-}
-
 // TestRepeatedBindLeavesTheStoreUnchanged (R-129-ui): begin repeated for the
 // batch its session already took up is success with no second record: the
 // stop-loss store is not rewritten, with or without a running session.

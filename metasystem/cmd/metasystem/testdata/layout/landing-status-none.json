@@ -22,7 +22,12 @@ exit 0
     "next": null,
     "spend": null,
     "wake": null,
-    "summary": "no landing lane is registered on this computer; metasystem landing set registers one"
+    "summary": "no landing lane is registered on this computer; metasystem landing set registers one",
+    "paused": false,
+    "agent_alive": false,
+    "queue": [],
+    "last_proof": null,
+    "last_push": null
   }
 }
 

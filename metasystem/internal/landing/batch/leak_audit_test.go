@@ -144,7 +144,7 @@ func TestLaneImportsNoGoToolchainPackages(t *testing.T) {
 			t.Error(leak)
 		}
 	}
-	for _, required := range []string{"internal/landing/batch/gate.go", "internal/landing/batch/begin.go",
+	for _, required := range []string{"internal/landing/batch/gate.go", "internal/landing/batch/attempt.go",
 		"internal/landing/batch/leak_audit_test.go", "internal/landing/batchowner/join.go", "cmd/metasystem/landing_batch_engine.go"} {
 		if !seen[required] {
 			t.Errorf("the audit scope misses %s", required)

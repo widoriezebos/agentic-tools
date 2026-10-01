@@ -2,15 +2,12 @@ package batch
 
 import (
 	"errors"
-	"fmt"
 	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 )
 
 // These tests hold the batch code the landing lane's kernel keeps (join,
@@ -428,47 +425,6 @@ func TestEndpointPushErrorClassifiesOnlyStaleInfoAsLease(t *testing.T) {
 	}
 }
 
-// TestRecordOpeningSealsOnceAndRefusesChangedMembers: landing begin's
-// opening seals the open batch once; the same series again changes
-// nothing; a series whose members are not the batch's joined members, or a
-// batch past its begin, is refused.
-func TestRecordOpeningSealsOnceAndRefusesChangedMembers(t *testing.T) {
-	t.Parallel()
-	store := NewStore(t.TempDir(), nil)
-	claim := Claim{Machine: "landing", Lineage: "landing-lane", Epoch: 1, Revision: 1, AccountingRevision: 1}
-	must(t, store.Create(Record{Schema: 1, BatchID: testBatchID, State: StateOpen, TipTree: testCommit(2),
-		Units:             []Unit{{GoalID: "goal-a", Chain: "chain-a", Claim: claim, State: UnitJoined}, {GoalID: "goal-b", Chain: "chain-b", Claim: claim, State: UnitJoined}},
-		batchRecordFields: batchRecordFields{BaseTree: testCommit(1)}}))
-	opening := Opening{OpID: "op-1", Actor: "lane:landing", Members: []string{"goal-a", "goal-b"}, Base: testCommit(3), Candidate: testCommit(4)}
-	recorded, changed, err := RecordOpening(store, testBatchID, opening, ten)
-	must(t, err)
-	if current, ok := recorded.CurrentOpening(); !changed || !ok || recorded.State != StateSealed || current.Candidate != opening.Candidate {
-		t.Fatalf("recorded=%+v changed=%v", recorded, changed)
-	}
-	again, changed, err := RecordOpening(store, testBatchID, opening, ten.Add(time.Minute))
-	must(t, err)
-	if changed || len(again.Openings) != 1 || len(again.History) != len(recorded.History) {
-		t.Fatalf("the same series again changed the record: %+v", again)
-	}
-	moved := opening
-	moved.Candidate = testCommit(5)
-	if recorded, changed, err := RecordOpening(store, testBatchID, moved, ten.Add(2*time.Minute)); err != nil || !changed || recorded.State != StateSealed || len(recorded.Openings) != 2 {
-		t.Fatalf("a new candidate on a sealed batch=%+v %v %v", recorded, changed, err)
-	}
-	fewer := opening
-	fewer.Members = []string{"goal-a"}
-	if _, _, err := RecordOpening(store, testBatchID, fewer, ten); err == nil || !strings.Contains(err.Error(), "members changed") {
-		t.Fatalf("changed members=%v", err)
-	}
-	must(t, store.Update(testBatchID, func(record *Record) error {
-		record.Transition(StateLanded, ten, "publish", "lane:landing", "")
-		return nil
-	}))
-	if _, _, err := RecordOpening(store, testBatchID, opening, ten); err == nil || !strings.Contains(err.Error(), "takes no begin") {
-		t.Fatalf("a landed batch=%v", err)
-	}
-}
-
 // TestProvingWaitLastsUntilTheStateMoves: a batch waits for the host's
 // proving flock from its last proving-wait entry until a state change
 // follows it.
@@ -504,40 +460,5 @@ func TestHelmHeldSeatNamesTheFirstSeatAtTheHelm(t *testing.T) {
 	}
 	if _, held := HelmHeldSeat(record, func(string) bool { return false }); held {
 		t.Fatal("no seat at the helm held the batch")
-	}
-}
-
-// TestLaneHeldRevisionReadsTheLedgerAtTheBase: a goal member's landing
-// commit names the revision the lane holds the goal at on the base's
-// ledger; a goal held by anyone else, or not on the ledger, is refused.
-func TestLaneHeldRevisionReadsTheLedgerAtTheBase(t *testing.T) {
-	t.Parallel()
-	bed := newLaneBed(t)
-	claimed := func(id, machine, lineage string, revision int) string {
-		history := make([]goal.HistoryLine, revision)
-		for index := range history {
-			history[index] = goal.HistoryLine{At: fmt.Sprintf("2026-10-01T08:%02d:00Z", index), Opid: fmt.Sprintf("01ARZ3NDEKTSV4RRFFQ69G5FAW-%s-%08x", machine, index+1),
-				Verb: "edit", Actor: machine + "+" + lineage, Targets: []string{id}, Keep: -1}
-		}
-		history[revision-1].Verb = "claim"
-		return string(goal.RenderFile(&goal.GoalFile{Id: id, State: goal.StateClaimed, Intent: "Fixture.", Origin: goal.OriginMain,
-			NextStep: "Land.", OpenedAt: "2026-10-01T08:00:00Z", Revision: uint64(revision),
-			Claimed: &goal.ClaimRecord{Machine: machine, Lineage: lineage, At: history[revision-1].At, Revision: uint64(revision), AccountingRevision: uint64(revision)},
-			History: history}))
-	}
-	bed.write("metasystem/plans/goals/goal-a.md", claimed("goal-a", "m1e", "landing-lane", 2))
-	bed.write("metasystem/plans/goals/goal-b.md", claimed("goal-b", "m1b", "seat", 1))
-	base := bed.commit("ledger")
-	if revision, err := laneHeldRevision(bed.install, base, "goal-a", "m1e+landing-lane"); err != nil || revision != 2 {
-		t.Fatalf("held revision=%d %v", revision, err)
-	}
-	if _, err := laneHeldRevision(bed.install, base, "goal-b", "m1e+landing-lane"); err == nil || !strings.Contains(err.Error(), "not held by the landing lane") {
-		t.Fatalf("a goal another seat holds=%v", err)
-	}
-	if _, err := laneHeldRevision(bed.install, base, "goal-z", "m1e+landing-lane"); err == nil || !strings.Contains(err.Error(), "not on the ledger") {
-		t.Fatalf("a goal not on the ledger=%v", err)
-	}
-	if _, err := laneHeldRevision(bed.install, testCommit(77), "goal-a", "m1e+landing-lane"); err == nil {
-		t.Fatal("an unknown base was read")
 	}
 }

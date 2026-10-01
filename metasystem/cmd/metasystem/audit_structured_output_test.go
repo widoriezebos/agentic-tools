@@ -38,7 +38,6 @@ var structuredOutputExceptions = map[string]string{
 	"internal/candidateengine/engine.go:Build":                   "go build",
 	"internal/candidateengine/engine.go:commitTree":              "git commit-tree through scratchGitCommand",
 	"internal/candidateengine/engine.go:projectionTree":          "git plumbing through scratchGitCommand",
-	"internal/landing/laneengine/advance.go:ProductionSteps":     "go run ./cmd/devgate build: the exit decides, the output's tail is only quoted in the error",
 	"internal/goal/attention.go:captureLocalTipBounded":          "git rev-parse --verify",
 	"internal/hostload/memory.go:AvailableMemory":                "vm_stat and getconf",
 	"internal/ledgerfence/fence.go:Ensure":                       "the git hook chain (adopter-extensible scripts) answering the guard's nonce ack with exit 42",

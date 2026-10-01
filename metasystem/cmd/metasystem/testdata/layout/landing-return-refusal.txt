@@ -1,2 +1,2 @@
-✗ no failing test run of this batch names verbs-match-intent, so it was not returned as red
-  → metasystem landing return verbs-match-intent --disposition person  a person returns it
+✗ the return of verbs-match-intent names no reason, so nothing was returned
+  → metasystem landing return verbs-match-intent --reason TEXT  names why it goes back
