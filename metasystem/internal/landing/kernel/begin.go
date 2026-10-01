@@ -97,7 +97,7 @@ func Begin(request BeginRequest, seams BeginSeams) (BeginOutcome, error) {
 		if err != nil {
 			return BeginOutcome{}, err
 		}
-		if err := gated(request, func() error { return batch.RecordComposition(store, request.BatchID, evidence, at) }); err != nil {
+		if err := gated(request, at, func() error { return batch.RecordComposition(store, request.BatchID, evidence, at) }); err != nil {
 			return BeginOutcome{}, err
 		}
 		return BeginOutcome{Evidence: &evidence}, nil
@@ -120,7 +120,7 @@ func Begin(request BeginRequest, seams BeginSeams) (BeginOutcome, error) {
 		Head: request.Head, LedgerRoot: string(request.Layout.Install), Actor: request.Actor, At: at, OpID: opID})
 	var composition *batch.CompositionRefusal
 	if errors.As(planErr, &composition) {
-		if err := gated(request, func() error { return batch.RecordComposition(store, request.BatchID, composition.Evidence, at) }); err != nil {
+		if err := gated(request, at, func() error { return batch.RecordComposition(store, request.BatchID, composition.Evidence, at) }); err != nil {
 			return BeginOutcome{}, err
 		}
 		return BeginOutcome{Evidence: &composition.Evidence}, planErr
@@ -129,7 +129,7 @@ func Begin(request BeginRequest, seams BeginSeams) (BeginOutcome, error) {
 		return BeginOutcome{}, planErr
 	}
 	outcome := BeginOutcome{}
-	err = gated(request, func() error {
+	err = gated(request, at, func() error {
 		if err := updateRef(checkout, CandidateRef(request.BatchID), opening.Candidate); err != nil {
 			return err
 		}
@@ -146,12 +146,17 @@ func Begin(request BeginRequest, seams BeginSeams) (BeginOutcome, error) {
 
 // gated runs one durable write of begin under the pause, in the lane it was
 // prepared for.
-func gated(request BeginRequest, write func() error) error {
+func gated(request BeginRequest, at time.Time, write func() error) error {
 	return lane.Gate(request.Home, lane.OpBegin, lane.AuthorityAgent, func(registered lane.Record) error {
 		layout, err := registered.Layout()
 		if err != nil || layout.Checkout != request.Layout.Checkout || layout.Install != request.Layout.Install {
 			return &Refusal{Code: batch.CodeBeginRefused, Reason: "the landing lane moved while the series was checked, so nothing was recorded",
 				Next: "run the same command again"}
+		}
+		// The session takes the batch up (K10): its allowance starts at the
+		// session's clock, and one session takes up one batch.
+		if err := lane.BindBatchHeld(request.Home, request.BatchID, at); err != nil {
+			return err
 		}
 		return write()
 	})

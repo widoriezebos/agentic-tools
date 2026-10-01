@@ -755,6 +755,11 @@ func (inv *intentInvocation) startLane(owners laneVerbOwners, home string, recor
 		}
 	}
 	resumed, err := lane.ClearPause(home)
+	if err == nil && resumed {
+		// A person's resume grants the lane a fresh allowance (K10); the
+		// budgets' history is kept.
+		err = lane.Grant(home, inv.landingActor(owners), owners.now())
+	}
 	kept := lane.ReadKeeper(home) != (lane.KeeperState{})
 	if err == nil && kept {
 		err = lane.ResetKeeper(home)

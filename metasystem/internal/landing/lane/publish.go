@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 )
 
 // The publication kinds a tuple names.
@@ -195,7 +196,12 @@ func Publish(home string, tuple Tuple, op Operation, authority Authority) error 
 		}
 		minted, err := mint(home, tuple, op, authority)
 		nonce = minted
-		return err
+		if err != nil {
+			return err
+		}
+		// The publication is recorded before it is pushed: the lane watch
+		// (K10) finds every lane-trailed commit on main in one of these.
+		return recordPublication(home, tuple, time.Now())
 	})
 	if err != nil {
 		return err
@@ -296,4 +302,53 @@ func readToken(home, nonce string) (token, bool, error) {
 		return token{}, false, nil
 	}
 	return minted, ok, err
+}
+
+// Publication is one lane publication as the boundary recorded it before
+// its push: what the lane watch matches lane-trailed commits on main
+// against.
+type Publication struct {
+	At           string `json:"at"`
+	Kind         string `json:"kind"`
+	Op           string `json:"op"`
+	ProofAttempt string `json:"proofAttempt,omitempty"`
+	Old          string `json:"old"`
+	New          string `json:"new"`
+}
+
+type publications struct {
+	Schema       int           `json:"schema"`
+	Publications []Publication `json:"publications"`
+}
+
+// publicationsKept bounds the record: the newest publications are kept.
+const publicationsKept = 500
+
+func publicationsPath(home string) string {
+	return filepath.Join(HostDir(home), "landing-publications.json")
+}
+
+// recordPublication appends tuple to the publication record; the caller
+// holds the lane flock.
+func recordPublication(home string, tuple Tuple, now time.Time) error {
+	var record publications
+	if _, err := readJSON(publicationsPath(home), &record); err != nil {
+		return err
+	}
+	record.Schema = 1
+	record.Publications = append(record.Publications, Publication{At: now.UTC().Format(time.RFC3339), Kind: tuple.Kind, Op: tuple.Op,
+		ProofAttempt: tuple.ProofAttempt, Old: tuple.Old, New: tuple.New})
+	if len(record.Publications) > publicationsKept {
+		record.Publications = record.Publications[len(record.Publications)-publicationsKept:]
+	}
+	return writeJSON(home, publicationsPath(home), record)
+}
+
+// ReadPublications is the publication record, oldest first.
+func ReadPublications(home string) ([]Publication, error) {
+	var record publications
+	if _, err := readJSON(publicationsPath(home), &record); err != nil {
+		return nil, err
+	}
+	return record.Publications, nil
 }
