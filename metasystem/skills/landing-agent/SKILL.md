@@ -27,7 +27,13 @@ Nothing you remember from an earlier session counts: the lane's records are the 
    for each member whose state is `joined`, one at a time. Fix a conflict yourself when the fix is
    small and plain; commit it with a message that says what you resolved.
 3. Run `metasystem landing prove`. It runs the selected tests of HEAD's tree, the same tests a
-   seat's own landing runs.
+   seat's own landing runs. A proof often takes longer than your shell tool's 10-minute limit, and
+   your session ends when you end your turn, which kills a proof still running. So start it in the
+   background (`metasystem landing prove > proof.out 2>&1` with run_in_background), then wait in
+   foreground loops of at most 9 minutes each, for example
+   `for i in $(seq 1 54); do grep -qE '^(✓|✗)' proof.out && break; sleep 10; done` (the
+   proof prints its outcome line when it ends), repeated until it has finished; read the result with `metasystem landing status --json`
+   (`last_proof`). Never end your turn while a proof runs.
 4. When it is green, run `metasystem landing push`. Every member main then contains is recorded
    landed and its goal goes back to its seat as landed. Go to step 1.
 5. When it is red, decide which member caused it: read the failing tests, the members' diffs and,
