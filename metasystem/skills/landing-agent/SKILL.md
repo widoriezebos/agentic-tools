@@ -32,7 +32,7 @@ Your tool calls pass a fail-closed gate (`lane-agent-tools.json`, the PreToolUse
 - `Read`, `Grep`, `Glob`, `Skill`, and `Edit`/`Write` by absolute path inside the lane checkout;
 - `cat`, `ls`, `head`, `tail`, `wc`, `grep`, `cut`, `jq`, `pwd` and `echo`.
 
-Everything else is denied, and a call the gate cannot decide is denied too. Denied by design, so
+Everything else is denied, and a call the tool gate cannot decide is denied too. Denied by design, so
 never try them:
 
 - denied: `git push` in any form, and `--no-verify` anywhere;
@@ -43,11 +43,11 @@ never try them:
 
 Write commands as plain words joined by `&&`, `||`, `;` or `|`, put anything with spaces or special
 characters in single quotes (a commit message too), and do not use variables, redirections, `cd`,
-globs or backslashes: the gate refuses what it cannot read.
+globs or backslashes: the tool gate refuses what it cannot read.
 
 A denial is two lines: what happened, then the one command to run. Take it as information. When
 the denied thing is what the batch really needs, stop and ask (below); never look for a way around
-the gate.
+the tool gate.
 
 `landing stop` takes no reason: say what repeated and what you need in the `agent ask` that
 follows it. When a step's verb refuses in a way you do not understand, `landing stop` and
@@ -70,7 +70,7 @@ follows it. When a step's verb refuses in a way you do not understand, `landing 
    one aggregate cap of about 40 lines (D3). Fix only what the combination breaks: a moved call
    site, a renamed helper, an import both members added. A member's own bug is the member's.
    Over the cap, `begin` refuses, and the member goes back as `seam-too-large`.
-   The gate refuses a pick, rebase or branch switch that would write runtime settings, hooks,
+   The tool gate refuses a pick, rebase or branch switch that would write runtime settings, hooks,
    configuration, the engine or runtime state (`.claude`, `.githooks`, `.gitattributes`, `metasystem.conf*`, `bin/`,
    `artifacts/` and the like), and a restore of a directory or by pattern: name files one by one.
    A member that changes such a path is for a person: stop and ask.
@@ -124,11 +124,11 @@ Run `metasystem landing stop`, then `metasystem agent ask MACHINE --text ...` to
 
 ## Residual risk
 
-The gate is prevention against your own tool calls only (D6: one OS account, no sandbox). Code a
+The tool gate is prevention against your own tool calls only (D6: one OS account, no sandbox). Code a
 proof runs as a candidate, and anything else under the lane's OS account, can still push under
 another name, forge a coherent proof record, or tamper with control state together with the
-executable; the runtime also lets a call through when it kills the gate hook at its timeout. Only
+executable; the runtime also lets a call through when it kills the tool gate hook at its timeout. Only
 lane-trailed pushes and rewinds are detected (the lane pauses and alerts). This residual risk is
 accepted under D6 and D8; the independent watcher of what reaches main is goal
-`main-push-watcher`. So never read the gate's silence as proof that main is safe, and report
+`main-push-watcher`. So never read the tool gate's silence as proof that main is safe, and report
 anything on main you did not publish.
