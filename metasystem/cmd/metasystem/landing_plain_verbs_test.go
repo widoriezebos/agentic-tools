@@ -3,13 +3,14 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
+	"syscall"
 	"testing"
-	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gaterun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
@@ -26,7 +27,9 @@ import (
 type plainVerbBed struct {
 	*laneVerbBed
 	registry, checkout, installation, origin, main string
-	owners                                         intentOwners
+	// exited is the FIFO a detached engine child holds until it exits.
+	exited string
+	owners intentOwners
 }
 
 func newPlainVerbBed(t *testing.T) *plainVerbBed {
@@ -167,10 +170,14 @@ func (bed *plainVerbBed) detachedEngine(t *testing.T) plain.ProveSeams {
 	if err != nil {
 		t.Fatal(err)
 	}
+	bed.exited = filepath.Join(filepath.Dir(bed.checkout), "exited.fifo")
+	if err := syscall.Mkfifo(bed.exited, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	return plain.ProveSeams{Executable: func() (string, error) { return executable, nil },
 		Launch: func(argv []string, dir, log string) (int64, error) {
 			return gaterun.LaunchDetached(gaterun.DetachedLaunch{Argv: argv, Dir: dir, Log: log,
-				Env: []string{"GO_WANT_BATCH_E2E_COMMAND=1", "METASYSTEM_SUPERVISION_REGISTRY_HOME=" + bed.registry}})
+				Env: []string{"GO_WANT_BATCH_E2E_COMMAND=1", "METASYSTEM_SUPERVISION_REGISTRY_HOME=" + bed.registry, engineChildExited + "=" + bed.exited}})
 		}}
 }
 
@@ -201,22 +208,12 @@ func TestPlainLaneVerbsLandTwoSeats(t *testing.T) {
 	if code, text := bed.run(t, "landing", "prove"); code != 0 || !strings.Contains(text, "proving") {
 		t.Fatalf("prove = %d\n%s", code, text)
 	}
-	deadline := time.Now().Add(2 * time.Minute)
-	for {
-		data = bed.status(t)
-		if proof, _ := data["last_proof"].(map[string]any); proof != nil {
-			if proof["tree"] != tree || proof["result"] != plain.Green || proof["commit"] != head {
-				t.Fatalf("last_proof = %v", proof)
-			}
-			break
-		}
-		running, _ := data["running_proof"].(map[string]any)
-		if time.Now().After(deadline) || running != nil && running["state"] == "died" {
-			log, _ := running["log"].(string)
-			text, _ := os.ReadFile(log)
-			t.Fatalf("the detached proof never ended: %v\n%s", running, text)
-		}
-		time.Sleep(50 * time.Millisecond)
+	// The verb returned; the detached engine child proves on and records
+	// the result before it exits.
+	waitForEngineChildExit(t, bed.exited)
+	data = bed.status(t)
+	if proof, _ := data["last_proof"].(map[string]any); proof == nil || proof["tree"] != tree || proof["result"] != plain.Green || proof["commit"] != head {
+		t.Fatalf("last_proof = %v, running_proof = %v", data["last_proof"], data["running_proof"])
 	}
 	code, text := bed.run(t, "landing", "push")
 	if code != 0 || !strings.Contains(text, "pushed "+shortLandingID(head)) {
@@ -449,5 +446,20 @@ func TestPlainLaneProveRefusesADirtyCheckout(t *testing.T) {
 	}
 	if data := bed.status(t); data["last_proof"] != nil {
 		t.Fatalf("a refused prove recorded a result: %v", data["last_proof"])
+	}
+}
+
+// waitForEngineChildExit opens the exit FIFO, which lets a child blocked
+// opening it run, and reads it to its end: the child's exit, the only
+// writer.
+func waitForEngineChildExit(t *testing.T, fifo string) {
+	t.Helper()
+	reader, err := os.Open(fifo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	if _, err := io.Copy(io.Discard, reader); err != nil {
+		t.Fatal(err)
 	}
 }

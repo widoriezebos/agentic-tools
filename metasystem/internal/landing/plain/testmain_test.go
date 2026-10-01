@@ -2,6 +2,7 @@ package plain
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"testing"
 
@@ -14,6 +15,9 @@ import (
 const (
 	proveChildEnv     = "PLAIN_TEST_PROVE_CHILD_INSTALL"
 	proveChildCommand = "PLAIN_TEST_PROVE_CHILD_COMMAND"
+	// proveChildExited names a FIFO the child holds open for writing from
+	// its start to its exit (waitForChildExit).
+	proveChildExited = "PLAIN_TEST_PROVE_CHILD_EXITED"
 )
 
 func TestMain(m *testing.M) {
@@ -24,6 +28,16 @@ func TestMain(m *testing.M) {
 }
 
 func runProveChild(install, command string, args []string) int {
+	if fifo := os.Getenv(proveChildExited); fifo != "" {
+		// Kept open until this process exits; the test's reader sees the
+		// end of the FIFO then.
+		held, err := os.OpenFile(fifo, os.O_WRONLY, 0)
+		if err != nil {
+			fmt.Println(err)
+			return 1
+		}
+		defer held.Close()
+	}
 	attempt := ""
 	for index, arg := range args {
 		if arg == "--attempt" && index+1 < len(args) {
@@ -40,4 +54,18 @@ func runProveChild(install, command string, args []string) int {
 		return 1
 	}
 	return 0
+}
+
+// waitForChildExit opens the exit FIFO, which lets a child blocked opening
+// it run, and reads it to its end: the child's exit, the only writer.
+func waitForChildExit(t *testing.T, fifo string) {
+	t.Helper()
+	reader, err := os.Open(fifo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	if _, err := io.Copy(io.Discard, reader); err != nil {
+		t.Fatal(err)
+	}
 }

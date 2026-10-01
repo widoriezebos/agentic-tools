@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -327,7 +328,10 @@ func TestHandInRepeatIsOneLineAndReturnShowsAtTheSeat(t *testing.T) {
 func TestDetachedProveRunsOnceAndRecordsItsResult(t *testing.T) {
 	t.Parallel()
 	b := newBed(t)
-	b.write(filepath.Join(b.root, "block"), "")
+	exited := filepath.Join(b.root, "exited.fifo")
+	if err := syscall.Mkfifo(exited, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	executable, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
@@ -335,7 +339,7 @@ func TestDetachedProveRunsOnceAndRecordsItsResult(t *testing.T) {
 	seams := ProveSeams{Executable: func() (string, error) { return executable, nil },
 		Launch: func(argv []string, dir, log string) (int64, error) {
 			return gaterun.LaunchDetached(gaterun.DetachedLaunch{Argv: argv, Dir: dir, Log: log,
-				Env: []string{proveChildEnv + "=" + b.install, proveChildCommand + "=" + b.greenScript}})
+				Env: []string{proveChildEnv + "=" + b.install, proveChildCommand + "=" + b.greenScript, proveChildExited + "=" + exited}})
 		}}
 	running, already, err := Start(b.install, b.checkout, seams)
 	if err != nil || already || running.Pid == 0 {
@@ -354,24 +358,13 @@ func TestDetachedProveRunsOnceAndRecordsItsResult(t *testing.T) {
 	}
 	// Back to the tree being proven, so its result stands.
 	b.git(b.checkout, "reset", "--quiet", "--hard", running.Commit)
-	b.write(b.blockRelease, "")
-	deadline := time.Now().Add(2 * time.Minute)
-	for {
-		result, ok, err := LastResult(b.install)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if ok {
-			if result.Result != Green || result.Tree != running.Tree || result.Attempt != running.Attempt {
-				t.Fatalf("result: %+v", result)
-			}
-			break
-		}
-		if time.Now().After(deadline) {
-			log, _ := os.ReadFile(running.Log)
-			t.Fatalf("the detached proof never ended: %s", log)
-		}
-		time.Sleep(20 * time.Millisecond)
+	// The child holds the exit FIFO from its start until it exits: opening
+	// it lets the child run, and reading it to the end waits for its exit.
+	waitForChildExit(t, exited)
+	result, ok, err := LastResult(b.install)
+	if err != nil || !ok || result.Result != Green || result.Tree != running.Tree || result.Attempt != running.Attempt {
+		log, _ := os.ReadFile(running.Log)
+		t.Fatalf("result: %+v %v %v\n%s", result, ok, err, log)
 	}
 	if _, recorded, _, _ := ReadRunning(b.install, ProveSeams{}); recorded {
 		t.Fatal("running.json outlives its proof")

@@ -43,8 +43,9 @@ var lawfulExecPrograms = map[string]execAllowance{
 			"Go without cgo has no confstr, and the path is derived from the user's directory-services UUID, not a file the engine can read",
 	},
 	"/bin/sh": {
-		files:  []string{"internal/testutil/"},
-		reason: "test support drives a fixture script; never production decision code",
+		files: []string{"internal/testutil/", "internal/landing/plain/prove.go"},
+		reason: "test support drives a fixture script; never production decision code. " +
+			"internal/landing/plain/prove.go: adapter: runs the project's configured landing.prove.command",
 	},
 }
 
