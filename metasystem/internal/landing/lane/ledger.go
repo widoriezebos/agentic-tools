@@ -8,6 +8,7 @@ package lane
 // retry loop. Seats' own goal writes never take this adapter.
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -29,6 +30,23 @@ func LedgerEndpoint(home string, endpoint goal.Endpoint, op Operation, authority
 func LedgerPublisher(home string, op Operation, authority Authority) goal.CASPublisher {
 	return func(endpoint goal.Endpoint, tip, commit string) (goal.CASOutcome, error) {
 		if endpoint.Repository != nil || endpoint.LocalMode() || endpoint.Branch != MainRef {
+			return goal.PublishCAS(endpoint.WithCASPublisher(nil), tip, commit)
+		}
+		// With no lane registered nothing is lane-scoped (no-lane mode is
+		// first-class): the write publishes as the checkout's own. A lane
+		// record that can't be read publishes nothing.
+		_, registered, err := Read(home)
+		var refusal *Refusal
+		if err != nil && errors.As(err, &refusal) && refusal.Code == CodeRecordIncomplete && op == OpReturn && authority == AuthorityPerson {
+			// A person's cleanup of a lane an older engine registered: that
+			// lane has no hook and no layout to bind a tuple to, so its
+			// returns publish as before and the unset can end.
+			return goal.PublishCAS(endpoint.WithCASPublisher(nil), tip, commit)
+		}
+		if err != nil {
+			return goal.CASRefused, &PublishError{Code: CodePublishRefused, Expected: tip,
+				Message: "the landing lane's record can't be read, so the lane's ledger write was not published", Detail: err.Error()}
+		} else if !registered {
 			return goal.PublishCAS(endpoint.WithCASPublisher(nil), tip, commit)
 		}
 		tuple, err := ledgerTuple(home, endpoint, tip, commit)

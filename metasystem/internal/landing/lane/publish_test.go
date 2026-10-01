@@ -288,6 +288,24 @@ func TestLaneAdapterSurfacesBaseMoved(t *testing.T) {
 	if main := bed.main(t); main != moved {
 		t.Fatalf("main is %s, want the seat's %s untouched", main, moved)
 	}
+	// No-lane mode is first-class: once a person unsets the lane, the same
+	// adapter publishes as the checkout's own write, retrying a lost lease
+	// as always and minting nothing.
+	if report, err := Unset(bed.home, "Wido", laneNow, false, emptyUnsetSeams()); err != nil || !report.Unregistered {
+		t.Fatalf("unset = %+v %v", report, err)
+	}
+	bed.git(t, bed.checkout, "update-ref", "-d", goal.AcceptedRef)
+	attempts = 0
+	unlaned, err := goal.Publish(endpoint, ledgerRequest("op-no-lane", "after-unset", func(attempt int) error {
+		attempts = attempt
+		if attempt == 1 {
+			bed.seatAdvance(t, "seat-after-unset.txt")
+		}
+		return nil
+	}))
+	if err != nil || unlaned.Outcome != goal.OutcomeConfirmed || attempts < 2 || bed.main(t) != unlaned.Commit {
+		t.Fatalf("a write with no lane registered = %+v %v after %d attempts; want it retried and confirmed as before", unlaned, err, attempts)
+	}
 	entry, err := goal.ReadEntry(bed.install, "op-lane-moved")
 	if err != nil || entry.Phase != goal.PhaseTerminal || entry.Outcome != goal.OutcomeAbandoned {
 		t.Fatalf("the refused write's journal entry = %+v %v; want terminal abandoned", entry, err)

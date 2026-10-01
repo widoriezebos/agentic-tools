@@ -414,16 +414,14 @@ func personCleanupInvocation(home string) ownercall.Invocation {
 }
 
 // laneLedger routes goal writes through the lane's publication boundary
-// under the home that names the lane, as op for authority. A home that
-// can't be read publishes nothing.
+// under the home that names the lane, as op for authority. A host with no
+// home keeps no host state and so no lane (as LandingLaneSeams.Resolve
+// reads it): its writes are not the lane's, and publish as before.
 func laneLedger(home func() (string, error), op lane.Operation, authority lane.Authority) func(goal.Endpoint) goal.Endpoint {
 	return func(endpoint goal.Endpoint) goal.Endpoint {
 		at, err := home()
 		if err != nil {
-			return endpoint.WithCASPublisher(func(goal.Endpoint, string, string) (goal.CASOutcome, error) {
-				return goal.CASRefused, &lane.PublishError{Code: lane.CodePublishRefused,
-					Message: "the landing lane's home can't be read, so the lane's ledger write was not published", Detail: err.Error()}
-			})
+			return endpoint
 		}
 		return lane.LedgerEndpoint(at, endpoint, op, authority)
 	}

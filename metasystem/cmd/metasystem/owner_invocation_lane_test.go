@@ -14,12 +14,19 @@ import (
 )
 
 // Only the landing lane's own owner calls publish through the lane's
-// boundary (design r10 K3): the ledger endpoint a lane invocation resolves
-// refuses a push the boundary does not admit (here: the command's tests
-// keep no lane home, so nothing is published), while a seat's invocation
-// on the same checkout pushes its goal write as it always did.
+// boundary (design r10 K3): the landing owner's invocation carries it, a
+// seat's carries none, and the synced-ledger request an invocation builds
+// resolves its endpoint through the boundary it carries, so a write the
+// boundary refuses leaves main where it was while a seat's write pushes as
+// it always did.
 func TestOnlyTheLanesOwnerCallsTakeTheBoundary(t *testing.T) {
 	t.Parallel()
+	if batchowner.LandingOwnerInvocation().Ledger == nil {
+		t.Fatal("the landing owner's invocation carries no publication boundary")
+	}
+	if ownercall.FromThisProcess("seat-lineage").Ledger != nil {
+		t.Fatal("a seat's invocation carries a publication boundary")
+	}
 	base := t.TempDir()
 	origin, checkout := filepath.Join(base, "origin.git"), filepath.Join(base, "checkout")
 	git := func(dir string, args ...string) string {
@@ -41,18 +48,22 @@ func TestOnlyTheLanesOwnerCallsTakeTheBoundary(t *testing.T) {
 	tip := git(checkout, "rev-parse", "HEAD")
 	next := git(checkout, "commit-tree", git(checkout, "rev-parse", "HEAD^{tree}"), "-p", tip, "-m", "goal write\n\nGoal-Transaction: op-1")
 
-	laneEndpoint, err := ownerSyncDependencies(batchowner.LandingOwnerInvocation()).endpoint(checkout)
+	boundary := ownercall.FromThisProcess(batchowner.LandingOwnerLineage)
+	boundary.Ledger = func(endpoint goal.Endpoint) goal.Endpoint {
+		return endpoint.WithCASPublisher(func(goal.Endpoint, string, string) (goal.CASOutcome, error) {
+			return goal.CASRefused, &lane.PublishError{Code: lane.CodeBaseMoved, Message: "main moved"}
+		})
+	}
+	laneEndpoint, err := ownerSyncDependencies(boundary).endpoint(checkout)
 	if err != nil {
 		t.Fatal(err)
 	}
-	outcome, err := goal.PublishCAS(laneEndpoint, tip, next)
-	if outcome != goal.CASRefused || goal.RefusalCode(err) != lane.CodePublishRefused {
-		t.Fatalf("the lane's goal write outside its boundary = %s %v; want refused %s", outcome, err, lane.CodePublishRefused)
+	if outcome, err := goal.PublishCAS(laneEndpoint, tip, next); outcome != goal.CASRefused || !lane.IsBaseMoved(err) {
+		t.Fatalf("a lane goal write through its boundary = %s %v; want the boundary's refusal", outcome, err)
 	}
 	if main := git(origin, "rev-parse", "refs/heads/main"); main != tip {
-		t.Fatalf("the lane's refused goal write moved main to %s", main)
+		t.Fatalf("the refused lane write moved main to %s", main)
 	}
-
 	seatEndpoint, err := ownerSyncDependencies(ownercall.FromThisProcess("seat-lineage")).endpoint(checkout)
 	if err != nil {
 		t.Fatal(err)
