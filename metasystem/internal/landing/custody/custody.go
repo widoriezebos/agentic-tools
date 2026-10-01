@@ -717,3 +717,50 @@ func BindFromEnvironment(lookup func(string) (string, bool), leader identity.Ref
 	}
 	return true, BindGroup(home, id, leader)
 }
+
+// Signal sends sig to a process (pid > 0) or a process group (pid < 0).
+type Signal func(pid int, sig syscall.Signal) error
+
+// Stop ends the landing work still live in custody, at the keeper's word
+// when it cancelled a session at its deadline (K10): each live record's
+// process groups and its child are sent SIGTERM, then after grace SIGKILL,
+// only while custody reads them live by their recorded identity (a reused
+// pid is never signalled). It then settles custody and returns what it
+// read. Unknown custody is never signalled; it stays for a person.
+func Stop(home string, probes Probes, signal Signal, grace time.Duration, sleep func(time.Duration)) (Settlement, error) {
+	probes = probes.defaults()
+	if signal == nil {
+		signal = syscall.Kill
+	}
+	for _, sig := range []syscall.Signal{syscall.SIGTERM, syscall.SIGKILL} {
+		records, _, err := Records(home)
+		if err != nil {
+			return Settlement{}, err
+		}
+		sent := false
+		for _, record := range records {
+			if record.Settled != "" || Judge(record, probes).State != Live {
+				continue
+			}
+			for _, group := range record.Groups {
+				if state, _ := judgeGroup(group, probes); state == Live && group.ID > 1 {
+					_ = signal(-int(group.ID), sig)
+					sent = true
+				}
+			}
+			if record.Child != "" {
+				if ref, err := identity.ParseRef(record.Child); err == nil && ref.Pid > 1 && identity.LiveRef(probes.Prober, ref) == identity.Alive {
+					_ = signal(int(ref.Pid), sig)
+					sent = true
+				}
+			}
+		}
+		if !sent {
+			break
+		}
+		if sleep != nil {
+			sleep(grace)
+		}
+	}
+	return Settle(home, probes)
+}

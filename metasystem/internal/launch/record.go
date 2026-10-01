@@ -58,6 +58,10 @@ type Measurement struct {
 	PageMissing         bool   `json:"pageMissing"`
 	MaterialCount       int    `json:"materialCount"`
 	Verdict             string `json:"verdict"`
+	// UsageRead says the token counts above were read whole from the
+	// runtime's own record of the session (its transcript), whatever the
+	// outcome: a failed or cancelled session is measured too.
+	UsageRead bool `json:"usageRead,omitempty"`
 }
 
 func (m Measurement) TotalTokens() int64 {

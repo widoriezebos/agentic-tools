@@ -311,8 +311,9 @@ func runStewardRun(args []string, stdout, stderr io.Writer) int {
 	tickConfig.BreachStop = delegateBreachStop(*repo)
 	tickConfig.BreachStopReady = stewardRunnerCustodianReady(*repo, productionStewardCustodianFacts())
 	// The lane checkout's own steward wakes its landing agent on demand
-	// (A-a); every other steward's step finds it is not the lane's.
-	tickConfig.KeepLandingLane = landingAgentStep(*repo)
+	// (A-a) and watches the lane's budgets (K10); every other steward's
+	// step finds it is not the lane's.
+	tickConfig.KeepLandingLane = landingLaneSteps(landingAgentStep(*repo), landingLaneWatchStep(*repo))
 	// The lane's steward reports behaviour patterns; every other steward's
 	// pass finds it is not the lane's and does nothing (D6).
 	tickConfig.Patterns = pattern.Pass{Home: batchowner.LandingLaneHome}.Run

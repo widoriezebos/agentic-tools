@@ -152,6 +152,11 @@ func Prove(request ProveRequest, seams ProveSeams) (batch.ProofAttempt, error) {
 		if err := custody.Clear(request.Home, probes, false); err != nil {
 			return err
 		}
+		// The batch's allowance (K10): a spent one refuses this execution,
+		// and the lane stops for a person.
+		if err := lane.ChargeHeld(request.Home, request.BatchID, seams.Now()); err != nil {
+			return err
+		}
 		if err := batch.StartAttempt(store, request.BatchID, attempt); err != nil {
 			return err
 		}
